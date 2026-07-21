@@ -31,6 +31,7 @@ pub fn generate(rules: &Rules, width: i32, height: i32, num_spawns: usize,
         let cur = frontier[ci];
         let nbs: Vec<Pos> = hex::neighbors(cur)
             .into_iter()
+            .map(|n| hex::canon(n, width))
             .filter(|n| wm.tiles.contains_key(n) && !land.contains(n))
             .collect();
         if nbs.is_empty() {
@@ -76,6 +77,7 @@ pub fn generate(rules: &Rules, width: i32, height: i32, num_spawns: usize,
             wm.tiles.get_mut(&cur).unwrap().terrain = "mountain".into();
             let nbs: Vec<Pos> = hex::neighbors(cur)
                 .into_iter()
+                .map(|n| hex::canon(n, width))
                 .filter(|n| land.contains(n))
                 .collect();
             if nbs.is_empty() {
@@ -97,7 +99,8 @@ pub fn generate(rules: &Rules, width: i32, height: i32, num_spawns: usize,
         .tiles
         .iter()
         .filter(|(pos, t)| {
-            t.terrain == "ocean" && hex::neighbors(**pos).iter().any(|n| land.contains(n))
+            t.terrain == "ocean" && hex::neighbors(**pos).iter()
+                .any(|n| land.contains(&hex::canon(*n, width)))
         })
         .map(|(pos, _)| *pos)
         .collect();
@@ -130,13 +133,14 @@ pub fn generate(rules: &Rules, width: i32, height: i32, num_spawns: usize,
                     }
                 }
                 let nbs: Vec<Pos> = hex::neighbors(cur).into_iter()
+                    .map(|n| hex::canon(n, width))
                     .filter(|n| wm.tiles.contains_key(n) && !visited.contains(n))
                     .collect();
                 if nbs.is_empty() {
                     break;
                 }
                 let dist_w = |p: Pos| water_tiles.iter()
-                    .map(|w| hex::distance(p, *w)).min().unwrap_or(99);
+                    .map(|w| hex::wdistance(p, *w, width)).min().unwrap_or(99);
                 cur = *nbs.iter().min_by_key(|n| (dist_w(**n), **n)).unwrap();
             }
         }
@@ -204,7 +208,7 @@ pub fn generate(rules: &Rules, width: i32, height: i32, num_spawns: usize,
         .filter(|p| wm.tiles[p].terrain != "mountain")
         .cloned()
         .collect();
-    let largest = largest_component(&passable);
+    let largest = largest_component(&passable, width);
     let mut cands: Vec<Pos> = largest
         .iter()
         .filter(|p| {
@@ -226,7 +230,7 @@ pub fn generate(rules: &Rules, width: i32, height: i32, num_spawns: usize,
         let best = *pool
             .iter()
             .max_by_key(|c| {
-                let d = spawns.iter().map(|s| hex::distance(**c, *s)).min().unwrap();
+                let d = spawns.iter().map(|s| hex::wdistance(**c, *s, width)).min().unwrap();
                 (d, **c)
             })
             .unwrap();
@@ -240,7 +244,7 @@ pub fn generate(rules: &Rules, width: i32, height: i32, num_spawns: usize,
     (wm, spawns)
 }
 
-fn largest_component(cells: &BTreeSet<Pos>) -> BTreeSet<Pos> {
+fn largest_component(cells: &BTreeSet<Pos>, width: i32) -> BTreeSet<Pos> {
     let mut seen: BTreeSet<Pos> = BTreeSet::new();
     let mut best: BTreeSet<Pos> = BTreeSet::new();
     for start in cells {
@@ -251,7 +255,8 @@ fn largest_component(cells: &BTreeSet<Pos>) -> BTreeSet<Pos> {
         comp.insert(*start);
         let mut stack = vec![*start];
         while let Some(cur) = stack.pop() {
-            for n in hex::neighbors(cur) {
+            for n0 in hex::neighbors(cur) {
+                let n = hex::canon(n0, width);
                 if cells.contains(&n) && !comp.contains(&n) {
                     comp.insert(n);
                     stack.push(n);

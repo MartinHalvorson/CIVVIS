@@ -87,6 +87,16 @@ mod tests {
     }
 
     #[test]
+    fn world_wraps_east_west() {
+        let g = Game::new_full(2, 20, 14, 5, 30, 0, false);
+        let a = crate::hex::offset_to_axial(0, 4);
+        let b = crate::hex::offset_to_axial(19, 4);
+        assert_eq!(g.wdist(a, b), 1);
+        assert!(g.nbrs(a).contains(&b));
+        assert_eq!(crate::hex::canon((b.0 + 1, b.1), 20), a);
+    }
+
+    #[test]
     fn rivers_freshwater_embark_wonders() {
         let g = Game::new_full(2, 24, 16, 3, 60, 0, false);
         // rivers generate

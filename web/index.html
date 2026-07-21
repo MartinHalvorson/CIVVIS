@@ -5,13 +5,13 @@
 <title>Martin Halvorson's Civilization VIS</title>
 <style>
   * { box-sizing: border-box; margin: 0; }
-  body { font: 13px/1.45 "Segoe UI", system-ui, sans-serif; background: #0a0e14;
-         color: #dde3ea; display: flex; height: 100vh; overflow: hidden; }
+  body { font: 13px/1.45 "Segoe UI", system-ui, sans-serif; background: #000;
+         color: #e2e8ef; display: flex; height: 100vh; overflow: hidden; }
   #maparea { flex: 1; position: relative; overflow: hidden; }
   canvas { display: block; }
   #map { cursor: grab; width: 100%; height: 100%; }
-  #side { width: 350px; min-width: 350px; background: linear-gradient(180deg,#161c26,#12161e);
-          padding: 10px; overflow-y: auto; border-left: 1px solid #2a3442; }
+  #side { width: 350px; min-width: 350px; background: linear-gradient(180deg,#0d1119,#000);
+          padding: 10px; overflow-y: auto; border-left: 1px solid #222c3a; }
   h1 { font-size: 15px; margin-bottom: 6px; color: #f0c674; letter-spacing: 0.5px; }
   .sec { background: #1d2430cc; border: 1px solid #28303e; border-radius: 8px;
          padding: 8px 10px; margin-bottom: 8px; }
@@ -130,12 +130,12 @@
 "use strict";
 // ---------------------------------------------------------------- constants
 const S = 36, SQ3 = Math.sqrt(3);
-const TERRAIN = { grassland:"#6f9c4b", plains:"#b0a45c", desert:"#d5c290",
-                  tundra:"#a3a08b", snow:"#e6ebe9", coast:"#6fa3a8",
-                  ocean:"#3d6b78", mountain:"#8d8577" };
-const TERRAIN_HI = { grassland:"#85b25c", plains:"#c2b76d", desert:"#e3d3a4",
-                     tundra:"#b5b29c", snow:"#f2f7f5", coast:"#82b5ba",
-                     ocean:"#4a7d8a", mountain:"#a29a8a" };
+const TERRAIN = { grassland:"#5e9440", plains:"#ab9e4e", desert:"#d8c184",
+                  tundra:"#98a089", snow:"#e8eef2", coast:"#20647e",
+                  ocean:"#0e3752", mountain:"#877f6f" };
+const TERRAIN_HI = { grassland:"#79ad52", plains:"#c1b360", desert:"#e8d49c",
+                     tundra:"#aab29a", snow:"#f6fafc", coast:"#2f7d99",
+                     ocean:"#174a6b", mountain:"#9c9484" };
 const PARCH = "#c7b58a", PARCH_GRID = "#8a795533", PARCH_INK = "#6d5c3a";
 const FEAT_ICON = { forest:"🌲", jungle:"🌴", marsh:"🌾", oasis:"🏝" };
 const RES_ICON = { wheat:"🌾", cattle:"🐄", sheep:"🐑", stone:"🪨", deer:"🦌",
@@ -169,7 +169,25 @@ const YS = 0.80;        // vertical squash: tilted-camera dimetric projection
 const SKIRT = 9;        // extra prism depth below each tile
 function key(p) { return p[0] + "," + p[1]; }
 function pcol(id) { const p = state.players[id]; return p && p.is_barbarian ? "#30262a" : PCOLORS[id % PCOLORS.length]; }
-function hexXY(q, r) { return [S * SQ3 * (q + r / 2), S * 1.5 * r * YS]; }
+function WW() { return state ? S * SQ3 * state.map.width : 1e12; }
+function wrapX(x) { const w = WW(); return x + Math.round((cam.x - x) / w) * w; }
+function canonPos(p) {
+  if (!state) return p;
+  const w = state.map.width;
+  const col = p[0] + ((p[1] - (p[1] & 1)) >> 1);
+  const m = ((col % w) + w) % w;
+  return [p[0] + (m - col), p[1]];
+}
+function nbrTile(pos, d) {
+  return TMAP.get(key(canonPos([pos[0] + d[0], pos[1] + d[1]])));
+}
+function whexDist(a, b) {
+  if (!state) return hexDist(a, b);
+  const w = state.map.width;
+  return Math.min(hexDist(a, b), hexDist([a[0]-w, a[1]], b), hexDist([a[0]+w, a[1]], b));
+}
+// world is an east-west cylinder: x is always the copy nearest the camera
+function hexXY(q, r) { return [wrapX(S * SQ3 * (q + r / 2)), S * 1.5 * r * YS]; }
 function elev(t) {
   if (VIEW !== "beautiful") return 0;
   if (t.terrain === "ocean") return -6;
@@ -191,9 +209,11 @@ function hash2(q, r) { let h = (q * 374761393 + r * 668265263) | 0;
   h = (h ^ (h >> 13)) * 1274126177; return ((h ^ (h >> 16)) >>> 0) / 4294967295; }
 
 function resize() {
-  DPR = window.devicePixelRatio || 1;
+  DPR = window.devicePixelRatio || 1;   // native-resolution backing store (4K crisp)
   cv.width = area.clientWidth * DPR; cv.height = area.clientHeight * DPR;
-  draw();
+  mini.width = 200 * DPR; mini.height = 140 * DPR;
+  mini.style.width = "200px"; mini.style.height = "140px";
+  draw(); if (state) drawMini();
 }
 window.addEventListener("resize", resize);
 
@@ -218,7 +238,7 @@ function pixelToHex(sx, sy) {
   // the candidate whose actual elevation matches the offset best
   let best = null, bd = 1e9;
   for (const off of [0, 7, 13, 16, -5]) {
-    const pos = axialRound(wx, wy + off);
+    const pos = canonPos(axialRound(wx, wy + off));
     const t = TMAP.get(key(pos));
     if (!t) continue;
     const d = Math.abs(elev(t) - off);
@@ -365,13 +385,19 @@ function draw() {
       cx.fillStyle = base;
     }
     cx.fill();
-    if (beau && water) { // waves
+    if (beau && water) { // waves + specular glints (deep OLED water)
       const ph = hash2(t.pos[0], t.pos[1]);
-      cx.strokeStyle = "#ffffff18"; cx.lineWidth = 1.4;
+      cx.strokeStyle = "#9fd8ef22"; cx.lineWidth = 1.4;
       cx.beginPath();
       cx.arc(x - 6 + ph * 8, y - 3, 6, Math.PI * 0.15, Math.PI * 0.85);
       cx.arc(x + 4 - ph * 6, y + 7, 5, Math.PI * 0.15, Math.PI * 0.85);
       cx.stroke();
+      if (ph > 0.6) {
+        cx.fillStyle = "#bfe8ff2e";
+        cx.beginPath();
+        cx.ellipse(x - 10 + ph * 16, y - 8 + ph * 6, 2.4, 0.9, 0, 0, 7);
+        cx.fill();
+      }
     }
     if (!beau) { hexPath(x, y); cx.strokeStyle = "#00000038"; cx.lineWidth = 1; cx.stroke(); }
   }
@@ -384,9 +410,10 @@ function draw() {
     const y = yy - elev(t);
     let drew = false;
     for (const d of DIRS) {
-      const n = TMAP.get(key([t.pos[0]+d[0], t.pos[1]+d[1]]));
+      const n = nbrTile(t.pos, d);
       if (!n || !(n.river || n.terrain === "coast" || n.terrain === "ocean")) continue;
-      const [nx, nyy] = hexXY(n.pos[0], n.pos[1]);
+      let [nx, nyy] = hexXY(n.pos[0], n.pos[1]);
+      nx = nx + Math.round((x - nx) / WW()) * WW(); // stay on this side of the seam
       const ny = nyy - elev(n);
       cx.beginPath(); cx.moveTo(x, y);
       cx.lineTo((x + nx) / 2, (y + ny) / 2); cx.stroke();
@@ -401,7 +428,7 @@ function draw() {
     const [x, yy] = hexXY(t.pos[0], t.pos[1]);
     const y = yy - elev(t);
     for (let i = 0; i < 6; i++) {
-      const n = TMAP.get(key([t.pos[0]+DIRS[i][0], t.pos[1]+DIRS[i][1]]));
+      const n = nbrTile(t.pos, DIRS[i]);
       if (n && n.owner === t.owner) continue;
       const [c1, c2] = EDGE_CORNERS[i];
       const [ax, ay] = corner(x, y, S - 1.5, c1);
@@ -419,15 +446,24 @@ function draw() {
     const y = yy - elev(t);
     const k = key(t.pos);
     if (t.terrain === "mountain") {
-      // drawn peaks
-      cx.fillStyle = beau ? "#565b63" : "#555a61";
-      cx.beginPath(); cx.moveTo(x - 13, y + 9); cx.lineTo(x - 3, y - 11);
-      cx.lineTo(x + 5, y + 9); cx.closePath(); cx.fill();
-      cx.beginPath(); cx.moveTo(x - 1, y + 9); cx.lineTo(x + 7, y - 5);
-      cx.lineTo(x + 14, y + 9); cx.closePath(); cx.fill();
-      if (beau) { cx.fillStyle = "#eef3f7";
-        cx.beginPath(); cx.moveTo(x - 6.5, y - 4); cx.lineTo(x - 3, y - 11);
-        cx.lineTo(x + 0.5, y - 4); cx.closePath(); cx.fill(); }
+      // duotone 3D massif: lit left faces, shadowed right faces, snowcaps
+      const peaks = [[-9, 9, 16, 11], [1, 10, 22, 14], [10, 9, 12, 8]];
+      for (const [px, base, h, hw] of peaks) {
+        const ax = x + px, ay = y + base;
+        cx.fillStyle = beau ? "#a89f8d" : "#6f747c";        // lit face
+        cx.beginPath(); cx.moveTo(ax - hw, ay); cx.lineTo(ax, ay - h);
+        cx.lineTo(ax, ay); cx.closePath(); cx.fill();
+        cx.fillStyle = beau ? "#4e4a42" : "#555a61";        // shadow face
+        cx.beginPath(); cx.moveTo(ax, ay - h); cx.lineTo(ax + hw * 0.85, ay);
+        cx.lineTo(ax, ay); cx.closePath(); cx.fill();
+        if (beau && h >= 14) {                               // snowcap
+          const s = h * 0.34;
+          cx.fillStyle = "#f4f8fb";
+          cx.beginPath(); cx.moveTo(ax - hw * s / h, ay - h + s);
+          cx.lineTo(ax, ay - h); cx.lineTo(ax + hw * 0.85 * s / h, ay - h + s);
+          cx.closePath(); cx.fill();
+        }
+      }
       continue;
     }
     if (minim) {
@@ -435,20 +471,60 @@ function draw() {
         cx.fillRect(x - 5, y - 4, 10, 8); }
       continue;
     }
-    if (t.hills) {
+    if (t.hills && beau) {
+      // 3D mounds with lit/shadow halves
+      const base = TERRAIN[t.terrain] || "#888";
+      for (const [hx, hy, hr] of [[-6, -5, 6.5], [6, -3, 5.5]]) {
+        cx.fillStyle = shade(base, 1.22);
+        cx.beginPath(); cx.arc(x + hx, y + hy, hr, Math.PI, Math.PI * 1.55);
+        cx.arc(x + hx, y + hy, hr, Math.PI * 1.55, 0);
+        cx.closePath(); cx.fill();
+        cx.fillStyle = shade(base, 1.08);
+        cx.beginPath(); cx.arc(x + hx, y + hy, hr, Math.PI * 1.5, 0);
+        cx.lineTo(x + hx - hr, y + hy); cx.closePath(); cx.fill();
+        cx.strokeStyle = "#00000030"; cx.lineWidth = 1;
+        cx.beginPath(); cx.arc(x + hx, y + hy, hr, Math.PI, 0); cx.stroke();
+      }
+    } else if (t.hills) {
       cx.strokeStyle = "#00000055"; cx.lineWidth = 1.8;
       cx.beginPath(); cx.arc(x - 6, y - 7, 5, Math.PI, 0);
       cx.arc(x + 5, y - 7, 5, Math.PI, 0); cx.stroke();
     }
+    if (t.terrain === "desert" && !t.feature && beau) {
+      // dune ridges: light crest over shadow
+      cx.lineWidth = 1.6;
+      for (const [dx2, dy2, r2] of [[-5, 3, 9], [7, -4, 7]]) {
+        cx.strokeStyle = "#00000022";
+        cx.beginPath(); cx.arc(x + dx2, y + dy2 + 1.2, r2, Math.PI * 1.15, Math.PI * 1.85);
+        cx.stroke();
+        cx.strokeStyle = "#fff3d455";
+        cx.beginPath(); cx.arc(x + dx2, y + dy2, r2, Math.PI * 1.15, Math.PI * 1.85);
+        cx.stroke();
+      }
+    }
     if (t.feature === "forest" || t.feature === "jungle") {
-      const col = t.feature === "forest" ? "#1e4d24" : "#1d5c33";
-      const hi = t.feature === "forest" ? "#2c6b33" : "#2f7f47";
-      for (let i = 0; i < 3; i++) {
-        const ang = hash2(t.pos[0] * 3 + i, t.pos[1]) * 6.28;
-        const tx = x + Math.cos(ang) * 8 - 0, ty = y + Math.sin(ang) * 6 + 4;
-        cx.fillStyle = i === 1 ? hi : col;
-        cx.beginPath(); cx.moveTo(tx - 5, ty); cx.lineTo(tx, ty - 11);
-        cx.lineTo(tx + 5, ty); cx.closePath(); cx.fill();
+      const jungle = t.feature === "jungle";
+      for (let i = 0; i < (beau ? 4 : 3); i++) {
+        const hsh = hash2(t.pos[0] * 3 + i, t.pos[1] + i * 7);
+        const ang = hsh * 6.28;
+        const tx = x + Math.cos(ang) * 9, ty = y + Math.sin(ang) * 6 + 5;
+        const th = 10 + hsh * 4, tw = jungle ? 6.5 : 5;
+        if (beau) { // trunk + duotone canopy + shadow
+          cx.fillStyle = "#00000028";
+          cx.beginPath(); cx.ellipse(tx, ty + 1, tw * 0.9, 1.8, 0, 0, 7); cx.fill();
+          cx.fillStyle = "#4a3524";
+          cx.fillRect(tx - 1, ty - 3, 2, 4);
+          cx.fillStyle = jungle ? "#2f8a4c" : "#39774a";       // lit half
+          cx.beginPath(); cx.moveTo(tx - tw, ty - 2); cx.lineTo(tx, ty - th - 2);
+          cx.lineTo(tx, ty - 2); cx.closePath(); cx.fill();
+          cx.fillStyle = jungle ? "#175f31" : "#1e4d2b";       // shadow half
+          cx.beginPath(); cx.moveTo(tx, ty - th - 2); cx.lineTo(tx + tw, ty - 2);
+          cx.lineTo(tx, ty - 2); cx.closePath(); cx.fill();
+        } else {
+          cx.fillStyle = jungle ? "#1d5c33" : "#1e4d24";
+          cx.beginPath(); cx.moveTo(tx - 5, ty); cx.lineTo(tx, ty - 11);
+          cx.lineTo(tx + 5, ty); cx.closePath(); cx.fill();
+        }
       }
     } else if (t.feature === "marsh") {
       cx.strokeStyle = "#2c6b4f"; cx.lineWidth = 1.5;
@@ -645,9 +721,10 @@ function draw() {
 function drawMini() {
   if (!state) return;
   const tiles = state.map.tiles;
-  mx2.fillStyle = "#0a0e14"; mx2.fillRect(0, 0, mini.width, mini.height);
-  const cs = Math.min((mini.width - 8) / (state.map.width + 1),
-                      (mini.height - 8) / (state.map.height + 1));
+  mx2.setTransform(DPR, 0, 0, DPR, 0, 0);
+  mx2.fillStyle = "#000"; mx2.fillRect(0, 0, 200, 140);
+  const cs = Math.min(192 / (state.map.width + 1),
+                      132 / (state.map.height + 1));
   const off = 4;
   for (const t of tiles) {
     const col = t.pos[0] + (t.pos[1] - (t.pos[1] & 1)) / 2, row = t.pos[1];
@@ -673,8 +750,8 @@ function drawMini() {
 }
 mini.addEventListener("click", ev => {
   const r = mini.getBoundingClientRect();
-  const cs = Math.min((mini.width - 8) / (state.map.width + 1),
-                      (mini.height - 8) / (state.map.height + 1));
+  const cs = Math.min(192 / (state.map.width + 1),
+                      132 / (state.map.height + 1));
   const col = (ev.clientX - r.left - 4) / cs, row = (ev.clientY - r.top - 4) / cs;
   cam.x = S * SQ3 * col; cam.y = S * 1.5 * row;
   draw(); drawMini();
@@ -864,7 +941,7 @@ function settleValue(pos) {
   let v = 0;
   const D = [[0,0],[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];
   for (const dd of D) {
-    const t = TMAP.get((pos[0]+dd[0]) + "," + (pos[1]+dd[1]));
+    const t = nbrTile(pos, dd);
     if (!t) continue;
     const y = tileYieldFull(t);
     v += y.food * 1.2 + y.production + y.gold * 0.3;
@@ -874,7 +951,7 @@ function settleValue(pos) {
 function validSettle(t) {
   if (t.terrain === "ocean" || t.terrain === "coast" || t.terrain === "mountain") return false;
   if (t.owner !== null && t.owner !== undefined && t.owner !== 0) return false;
-  for (const c of state.cities) if (hexDist(t.pos, c.pos) < 4) return false;
+  for (const c of state.cities) if (whexDist(t.pos, c.pos) < 4) return false;
   return true;
 }
 function tackStoreKey() { return "civvis-tacks-" + (lastSeed === null ? "x" : lastSeed); }

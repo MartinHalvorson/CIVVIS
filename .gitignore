@@ -2,3 +2,4 @@ target/
 *.save.json
 .idea/
 .pytest_cache/
+civvis-play*.log

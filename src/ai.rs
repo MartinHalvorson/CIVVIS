@@ -207,7 +207,7 @@ impl BasicAi {
         for cid in &city_ids {
             if g.city_can_strike(&g.cities[cid]) {
                 let cpos = g.cities[cid].pos;
-                for pos in hex::disk(cpos, 2) {
+                for pos in g.wdisk(cpos, 2) {
                     let hit = g.units_at(pos).into_iter().any(|oid| {
                         let o = &g.units[&oid];
                         o.owner != pid && g.is_at_war(pid, o.owner)
@@ -359,16 +359,16 @@ impl BasicAi {
 
     fn step_toward(&self, g: &mut Game, pid: usize, uid: u32, target: Pos) -> bool {
         let cur = g.units[&uid].pos;
-        let mut opts: Vec<Pos> = hex::neighbors(cur)
+        let mut opts: Vec<Pos> = g.nbrs(cur)
             .into_iter()
             .filter(|n| g.can_move(uid, *n))
             .collect();
         if opts.is_empty() {
             return false;
         }
-        opts.sort_by_key(|n| (hex::distance(*n, target), *n));
+        opts.sort_by_key(|n| (g.wdist(*n, target), *n));
         let best = opts[0];
-        if hex::distance(best, target) >= hex::distance(cur, target) {
+        if g.wdist(best, target) >= g.wdist(cur, target) {
             return false;
         }
         g.apply(pid, &Action::Move { unit: uid, to: best }).is_ok()
@@ -376,7 +376,7 @@ impl BasicAi {
 
     fn settle_value(&self, g: &Game, pos: Pos) -> f64 {
         let mut total = 0.0;
-        for p in hex::disk(pos, 1) {
+        for p in g.wdisk(pos, 1) {
             if let Some(t) = g.map.get(p) {
                 if t.owner_city.is_some() {
                     continue;
@@ -394,7 +394,7 @@ impl BasicAi {
         }
         let upos = g.units[&uid].pos;
         let mut best: Option<(f64, Pos)> = None;
-        for pos in hex::disk(upos, 5) {
+        for pos in g.wdisk(upos, 5) {
             let t = match g.map.get(pos) {
                 Some(t) => t,
                 None => continue,
@@ -402,7 +402,7 @@ impl BasicAi {
             if g.rules.is_water(t) || !g.rules.is_passable(t) {
                 continue;
             }
-            if g.cities.values().any(|c| hex::distance(c.pos, pos) < 4) {
+            if g.cities.values().any(|c| g.wdist(c.pos, pos) < 4) {
                 continue;
             }
             if let Some(oc) = t.owner_city {
@@ -410,7 +410,7 @@ impl BasicAi {
                     continue;
                 }
             }
-            let val = self.settle_value(g, pos) - 0.4 * hex::distance(upos, pos) as f64;
+            let val = self.settle_value(g, pos) - 0.4 * g.wdist(upos, pos) as f64;
             let better = match &best {
                 None => true,
                 Some((bv, bp)) => val > *bv || (val == *bv && pos > *bp),
@@ -441,7 +441,7 @@ impl BasicAi {
         for cid in g.player_city_ids(pid) {
             for pos in g.cities[&cid].owned_tiles.clone() {
                 if !g.valid_improvements(pid, pos).is_empty() {
-                    let d = hex::distance(upos, pos);
+                    let d = g.wdist(upos, pos);
                     if best.map(|b| (d, pos) < b).unwrap_or(true) {
                         best = Some((d, pos));
                     }
@@ -494,12 +494,12 @@ impl BasicAi {
             if self.barb || my_cities.is_empty() {
                 return true;
             }
-            my_cities.iter().map(|c| hex::distance(tpos, *c)).min().unwrap() <= 6
+            my_cities.iter().map(|c| g.wdist(tpos, *c)).min().unwrap() <= 6
         };
         let mut best: Option<(i32, Pos)> = None;
         for c in g.cities.values() {
             if enemy_ids.contains(&c.owner) {
-                let d = hex::distance(pos, c.pos);
+                let d = g.wdist(pos, c.pos);
                 if best.map(|b| (d, c.pos) < b).unwrap_or(true) {
                     best = Some((d, c.pos));
                 }
@@ -510,7 +510,7 @@ impl BasicAi {
                 if Some(u.owner) == g.barb_pid && !near_home(u.pos) {
                     continue;
                 }
-                let d = hex::distance(pos, u.pos);
+                let d = g.wdist(pos, u.pos);
                 if best.map(|b| (d, u.pos) < b).unwrap_or(true) {
                     best = Some((d, u.pos));
                 }
@@ -521,7 +521,7 @@ impl BasicAi {
                 if enemy_ids.contains(&bp) {
                     for cpos in g.barb_camps.keys() {
                         if near_home(*cpos) {
-                            let d = hex::distance(pos, *cpos);
+                            let d = g.wdist(pos, *cpos);
                             if best.map(|b| (d, *cpos) < b).unwrap_or(true) {
                                 best = Some((d, *cpos));
                             }
@@ -539,7 +539,7 @@ impl BasicAi {
             if g.players[pid].explored.contains(tpos) {
                 continue;
             }
-            let d = hex::distance(pos, *tpos);
+            let d = g.wdist(pos, *tpos);
             if best.map(|b| (d, *tpos) < b).unwrap_or(true) {
                 best = Some((d, *tpos));
             }
@@ -558,7 +558,7 @@ impl BasicAi {
             .collect();
         if !enemy_ids.is_empty() {
             if spec.ranged_strength > 0.0 {
-                for pos in hex::disk(upos, spec.range.max(1)) {
+                for pos in g.wdisk(upos, spec.range.max(1)) {
                     if pos == upos || g.map.get(pos).is_none() {
                         continue;
                     }
@@ -567,7 +567,7 @@ impl BasicAi {
                     }
                 }
             } else {
-                for pos in hex::neighbors(upos) {
+                for pos in g.nbrs(upos) {
                     if g.map.get(pos).is_none() {
                         continue;
                     }
@@ -590,7 +590,7 @@ impl BasicAi {
                 return false;
             }
             let cap = g.cities[&cities[0]].pos;
-            if hex::distance(upos, cap) > 2 {
+            if g.wdist(upos, cap) > 2 {
                 return self.step_toward(g, pid, uid, cap);
             }
             return self.fortify_or_stop(g, pid, uid);
@@ -604,7 +604,7 @@ impl BasicAi {
                 } else {
                     let cap = cities
                         .iter()
-                        .min_by_key(|c| (hex::distance(upos, g.cities[c].pos), **c))
+                        .min_by_key(|c| (g.wdist(upos, g.cities[c].pos), **c))
                         .unwrap();
                     let cpos = g.cities[cap].pos;
                     if cpos == upos {

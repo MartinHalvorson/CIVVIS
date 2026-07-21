@@ -45,6 +45,34 @@ fn pair(a: usize, b: usize) -> (usize, usize) {
     (a.min(b), a.max(b))
 }
 
+impl Game {
+    /// Wrapped hex distance (the world is an east-west cylinder).
+    pub fn wdist(&self, a: Pos, b: Pos) -> i32 {
+        hex::wdistance(a, b, self.map.width)
+    }
+
+    /// Canonicalized in-map neighbors across the wrap seam.
+    pub fn nbrs(&self, p: Pos) -> Vec<Pos> {
+        crate::hex::neighbors(p)
+            .into_iter()
+            .map(|n| hex::canon(n, self.map.width))
+            .filter(|n| self.map.tiles.contains_key(n))
+            .collect()
+    }
+
+    /// Canonicalized in-map disk across the wrap seam.
+    pub fn wdisk(&self, c: Pos, r: i32) -> Vec<Pos> {
+        let mut v: Vec<Pos> = crate::hex::disk(c, r)
+            .into_iter()
+            .map(|p| hex::canon(p, self.map.width))
+            .filter(|p| self.map.tiles.contains_key(p))
+            .collect();
+        v.sort();
+        v.dedup();
+        v
+    }
+}
+
 fn bump(p: &mut Player, key: &str) {
     *p.counters.entry(key.to_string()).or_insert(0) += 1;
 }
@@ -353,8 +381,8 @@ impl Game {
         }
         let major_spawns: Vec<Pos> = spawns.iter().take(num_players).cloned().collect();
         for (i, pos) in spawns.iter().skip(num_players).enumerate() {
-            let crowded = major_spawns.iter().any(|s| hex::distance(*pos, *s) < 4)
-                || g.cities.values().any(|c| hex::distance(*pos, c.pos) < 4);
+            let crowded = major_spawns.iter().any(|s| g.wdist(*pos, *s) < 4)
+                || g.cities.values().any(|c| g.wdist(*pos, c.pos) < 4);
             if crowded {
                 continue;
             }
@@ -388,10 +416,10 @@ impl Game {
                 || self.city_by_pos.contains_key(pos) {
                 continue;
             }
-            if self.cities.values().any(|c| hex::distance(*pos, c.pos) < 4) {
+            if self.cities.values().any(|c| self.wdist(*pos, c.pos) < 4) {
                 continue;
             }
-            if self.barb_camps.keys().any(|cp| hex::distance(*pos, *cp) < 4) {
+            if self.barb_camps.keys().any(|cp| self.wdist(*pos, *cp) < 4) {
                 continue;
             }
             cands.push(*pos);
@@ -636,12 +664,12 @@ impl Game {
     pub fn city_housing(&self, city: &City) -> f64 {
         // fresh water (river/oasis) = 5, coastal = 3, otherwise 2 (Civ 6)
         let center = &self.map.tiles[&city.pos];
-        let fresh = center.river || hex::neighbors(city.pos).iter().any(|n| {
+        let fresh = center.river || self.nbrs(city.pos).iter().any(|n| {
             self.map.get(*n).map(|t| {
                 t.river || t.feature.as_deref() == Some("oasis")
             }).unwrap_or(false)
         });
-        let coastal = hex::neighbors(city.pos).iter().any(|n| {
+        let coastal = self.nbrs(city.pos).iter().any(|n| {
             self.map.get(*n).map(|t| self.rules.is_water(t)).unwrap_or(false)
         });
         let mut h = if fresh { 5.0 } else if coastal { 3.0 } else { 2.0 };
@@ -878,7 +906,7 @@ impl Game {
     }
 
     fn reveal(&mut self, pid: usize, pos: Pos, radius: i32) {
-        for p in hex::disk(pos, radius) {
+        for p in self.wdisk(pos, radius) {
             if self.map.tiles.contains_key(&p) {
                 self.players[pid].explored.insert(p);
             }
@@ -964,7 +992,7 @@ impl Game {
 
     fn can_enter(&self, uid: u32, from: Pos, pos: Pos) -> bool {
         let u = &self.units[&uid];
-        if hex::distance(from, pos) != 1 {
+        if self.wdist(from, pos) != 1 {
             return false;
         }
         let t = match self.map.get(pos) {
@@ -1034,7 +1062,7 @@ impl Game {
             if rem <= 0.0 {
                 continue;
             }
-            for n in hex::neighbors(cur) {
+            for n in self.nbrs(cur) {
                 if !self.map.tiles.contains_key(&n) || !self.can_enter(uid, cur, n) {
                     continue;
                 }
@@ -1081,7 +1109,7 @@ impl Game {
             if rem <= 0.0 {
                 continue;
             }
-            for n in hex::neighbors(cur) {
+            for n in self.nbrs(cur) {
                 if !self.map.tiles.contains_key(&n) || !self.can_enter(uid, cur, n) {
                     continue;
                 }
@@ -1144,7 +1172,7 @@ impl Game {
             return false;
         }
         for c in self.cities.values() {
-            if hex::distance(c.pos, u.pos) < 4 {
+            if self.wdist(c.pos, u.pos) < 4 {
                 return false;
             }
         }
@@ -1206,7 +1234,7 @@ impl Game {
             if self.map.get(dpos).map(|t| t.river).unwrap_or(false) {
                 river = 1;
             }
-            for n in hex::neighbors(dpos) {
+            for n in self.nbrs(dpos) {
                 if let Some(t) = self.map.get(n) {
                     if t.terrain == "mountain" {
                         mountain += 1;
@@ -1369,7 +1397,7 @@ impl Game {
         let want_water = self.rules.districts[dname].water;
         let mut out = Vec::new();
         for pos in &city.owned_tiles {
-            if *pos == city.pos || hex::distance(*pos, city.pos) > 3 {
+            if *pos == city.pos || self.wdist(*pos, city.pos) > 3 {
                 continue;
             }
             let t = &self.map.tiles[pos];
@@ -1410,7 +1438,7 @@ impl Game {
                     }
                 }
                 if spec.domain.as_deref() == Some("sea") {
-                    let coastal = hex::neighbors(city.pos).iter().any(|n| {
+                    let coastal = self.nbrs(city.pos).iter().any(|n| {
                         self.map.get(*n).map(|t| self.rules.is_water(t)).unwrap_or(false)
                     });
                     if !coastal {
@@ -1431,7 +1459,7 @@ impl Game {
                     return false; // one per world
                 }
                 if spec.coastal {
-                    let ok = hex::neighbors(city.pos).iter().any(|n| {
+                    let ok = self.nbrs(city.pos).iter().any(|n| {
                         self.map.get(*n).map(|t| self.rules.is_water(t)).unwrap_or(false)
                     });
                     if !ok {
@@ -1505,14 +1533,14 @@ impl Game {
             let spec = self.rules.units[u.kind.as_str()].clone();
             let embarked = self.is_embarked(&u);
             if u.moves_left > 0.0 {
-                for n in hex::neighbors(u.pos) {
+                for n in self.nbrs(u.pos) {
                     if self.can_move(uid, n) {
                         acts.push(Action::Move { unit: uid, to: n });
                     }
                 }
                 if spec.class == "military" && !embarked {
                     if spec.ranged_strength > 0.0 {
-                        for pos in hex::disk(u.pos, spec.range.max(1)) {
+                        for pos in self.wdisk(u.pos, spec.range.max(1)) {
                             if pos == u.pos || !self.map.tiles.contains_key(&pos) {
                                 continue;
                             }
@@ -1521,7 +1549,7 @@ impl Game {
                             }
                         }
                     } else {
-                        for pos in hex::neighbors(u.pos) {
+                        for pos in self.nbrs(u.pos) {
                             if self.map.tiles.contains_key(&pos)
                                 && self.enemy_target_at(pid, pos)
                             {
@@ -1586,7 +1614,7 @@ impl Game {
         for cid in self.player_city_ids(pid) {
             if self.city_can_strike(&self.cities[&cid]) {
                 let cpos = self.cities[&cid].pos;
-                for pos in hex::disk(cpos, 2) {
+                for pos in self.wdisk(cpos, 2) {
                     if !self.map.tiles.contains_key(&pos) {
                         continue;
                     }
@@ -1749,7 +1777,7 @@ impl Game {
         if u.moves_left <= 0.0 {
             return Err("no moves left".into());
         }
-        if hex::distance(u.pos, target) != 1 {
+        if self.wdist(u.pos, target) != 1 {
             return Err("target not adjacent".into());
         }
         let enemy_ids: Vec<u32> = self
@@ -1895,7 +1923,7 @@ impl Game {
         if u.moves_left <= 0.0 {
             return Err("no moves left".into());
         }
-        if hex::distance(u.pos, target) > spec.range.max(1) {
+        if self.wdist(u.pos, target) > spec.range.max(1) {
             return Err("out of range".into());
         }
         let enemy_ids: Vec<u32> = self
@@ -2046,7 +2074,7 @@ impl Game {
             center.improvement = None;
         }
         let mut claim = vec![pos];
-        claim.extend(hex::neighbors(pos));
+        claim.extend(self.nbrs(pos));
         for tpos in claim {
             if let Some(t) = self.map.tiles.get_mut(&tpos) {
                 if t.owner_city.is_none() {
@@ -2231,7 +2259,7 @@ impl Game {
         if !self.city_can_strike(&self.cities[&cid]) {
             return Err("city cannot strike".into());
         }
-        if hex::distance(self.cities[&cid].pos, target) > 2 {
+        if self.wdist(self.cities[&cid].pos, target) > 2 {
             return Err("out of range".into());
         }
         let enemies: Vec<u32> = self.units_at(target).into_iter()
@@ -2482,7 +2510,7 @@ impl Game {
                     && self.rules.units[u.kind.as_str()].class == "military")
                 .count() as i64 >= n,
             "coastal_city" => cities.iter().any(|c| {
-                hex::neighbors(c.pos).iter().any(|nb| {
+                self.nbrs(c.pos).iter().any(|nb| {
                     self.map.get(*nb).map(|t| self.rules.is_water(t)).unwrap_or(false)
                 })
             }),
@@ -2634,7 +2662,7 @@ impl Game {
         let spec = self.rules.units[kind].clone();
         let want_sea = spec.domain.as_deref() == Some("sea");
         let mut cands = vec![pos];
-        cands.extend(hex::neighbors(pos));
+        cands.extend(self.nbrs(pos));
         for cand in cands {
             let t = match self.map.get(cand) {
                 Some(t) => t,
@@ -2668,12 +2696,12 @@ impl Game {
         let owned = self.cities[&cid].owned_tiles.clone();
         let mut best: Option<((f64, Pos), Pos)> = None;
         for pos in &owned {
-            for n in hex::neighbors(*pos) {
+            for n in self.nbrs(*pos) {
                 let t = match self.map.get(n) {
                     Some(t) => t,
                     None => continue,
                 };
-                if t.owner_city.is_some() || hex::distance(n, city_pos) > 3 {
+                if t.owner_city.is_some() || self.wdist(n, city_pos) > 3 {
                     continue;
                 }
                 let tys = self.rules.tile_yields(t);

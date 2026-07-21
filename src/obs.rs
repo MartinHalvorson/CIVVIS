@@ -12,11 +12,11 @@ pub fn observation(g: &Game, pid: usize) -> Value {
     for uid in g.player_unit_ids(pid) {
         let u = &g.units[&uid];
         let sight = g.rules.units[u.kind.as_str()].sight;
-        vis.extend(hex::disk(u.pos, sight));
+        vis.extend(g.wdisk(u.pos, sight));
     }
     for cid in g.player_city_ids(pid) {
         let c = &g.cities[&cid];
-        vis.extend(hex::disk(c.pos, 2));
+        vis.extend(g.wdisk(c.pos, 2));
         vis.extend(c.owned_tiles.iter().cloned());
     }
     let tiles: Vec<Value> = p.explored.iter().filter_map(|pos| {
