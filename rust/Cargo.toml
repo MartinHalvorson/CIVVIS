@@ -10,7 +10,7 @@ name = "civvis"
 path = "src/lib.rs"
 
 [[bin]]
-name = "civvisr"
+name = "civvis"
 path = "src/main.rs"
 
 [dependencies]

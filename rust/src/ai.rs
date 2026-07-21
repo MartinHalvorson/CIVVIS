@@ -17,6 +17,12 @@ pub trait Ai {
     fn take_turn(&mut self, g: &mut Game, pid: usize);
 }
 
+impl<T: Ai + ?Sized> Ai for Box<T> {
+    fn take_turn(&mut self, g: &mut Game, pid: usize) {
+        (**self).take_turn(g, pid);
+    }
+}
+
 pub fn run_game<A: Ai>(g: &mut Game, ais: &mut [A]) {
     while g.winner.is_none() {
         let pid = g.current;

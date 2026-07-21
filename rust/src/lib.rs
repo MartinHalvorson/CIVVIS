@@ -3,11 +3,14 @@
 //! reference engine (`civvis/`); deterministic per seed within this engine.
 
 pub mod ai;
+pub mod elo;
 pub mod game;
 pub mod hex;
 pub mod mapgen;
+pub mod obs;
 pub mod rng;
 pub mod rules;
+pub mod server;
 pub mod world;
 
 pub type Pos = (i32, i32);

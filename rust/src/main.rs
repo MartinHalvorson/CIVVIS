@@ -157,9 +157,63 @@ fn main() {
                 total_turns as f64 / dt
             );
         }
+        "tournament" => {
+            let names: Vec<String> = args.iter()
+                .position(|a| a == "--ais")
+                .and_then(|i| args.get(i + 1))
+                .map(|s| s.split(',').map(|x| x.trim().to_string()).collect())
+                .unwrap_or_else(|| vec!["basic".to_string(), "random".to_string()]);
+            for n in &names {
+                if !civvis::elo::BUILTIN_AIS.contains(&n.as_str()) {
+                    eprintln!("unknown AI {n:?}; builtin: {:?} (custom bots: \
+                              use civvis::elo::run_tournament from Rust)",
+                              civvis::elo::BUILTIN_AIS);
+                    std::process::exit(1);
+                }
+            }
+            let cfg = civvis::elo::TourneyCfg {
+                games: arg(&args, "--games", 20) as u32,
+                players_per_game: arg(&args, "--players", 4) as usize,
+                width: arg(&args, "--width", 24) as i32,
+                height: arg(&args, "--height", 16) as i32,
+                max_turns: arg(&args, "--turns", 150) as u32,
+                num_city_states: 2,
+                seed: arg(&args, "--seed", 0) as u64,
+                k: arg(&args, "--k", 24) as f64,
+                verbose: !args.iter().any(|a| a == "--quiet"),
+            };
+            let pool = civvis::elo::run_tournament(&names, civvis::elo::builtin_ai, &cfg);
+            println!();
+            print!("{}", civvis::elo::leaderboard(&pool));
+        }
+        "play" => {
+            let players = arg(&args, "--players", 4);
+            let seed = {
+                let s = arg(&args, "--seed", -1);
+                if s >= 0 {
+                    s as u64
+                } else {
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap().subsec_nanos() as u64
+                }
+            };
+            civvis::server::serve(
+                arg(&args, "--port", 8765) as u16,
+                !args.iter().any(|a| a == "--no-open"),
+                civvis::server::Params {
+                    num_players: players as usize,
+                    width: arg(&args, "--width", 28) as i32,
+                    height: arg(&args, "--height", 18) as i32,
+                    seed,
+                    max_turns: arg(&args, "--turns", 500) as u32,
+                    num_city_states: auto_cs(&args, players),
+                });
+        }
         _ => {
-            println!("usage: civvisr <simulate|soak|benchmark> [--players N] [--seed N] \
-                      [--turns N] [--width N] [--height N] [--city-states N] [--games N]");
+            println!("usage: civvis <simulate|soak|benchmark|tournament|play> \
+                      [--players N] [--seed N] [--turns N] [--width N] [--height N] \
+                      [--city-states N] [--games N] [--ais a,b] [--port N] [--no-open]");
         }
     }
 }

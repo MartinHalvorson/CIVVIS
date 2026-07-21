@@ -12,6 +12,9 @@
   #zoomctl { position: fixed; top: 10px; left: 10px; z-index: 6;
              display: flex; flex-direction: column; gap: 4px; }
   #zoomctl button { width: 36px; height: 36px; font-size: 18px; padding: 0; }
+  #modeline { position: fixed; bottom: 10px; left: 10px; background: #141a23cc;
+              padding: 4px 10px; border-radius: 4px; font-size: 12px; z-index: 6;
+              color: #f0c674; }
   #side { width: 340px; min-width: 340px; background: #171d26; padding: 10px;
           overflow-y: auto; border-left: 1px solid #2a3442; }
   h1 { font-size: 15px; margin-bottom: 6px; color: #f0c674; }
@@ -67,6 +70,7 @@
     <button id="zout" title="zoom out">−</button>
     <button id="zhome" title="center on your empire">⌂</button>
   </div>
+  <div id="modeline"></div>
 </div>
 <div id="side">
   <h1>Civilization VIS</h1>
@@ -95,6 +99,13 @@ const PCOLORS = ["#ffd700","#e05050","#50a0e0","#50c878","#c878e0","#e09050","#7
                  "#a0a0ff","#ffa0c0","#80e080","#d0b080"];
 const FEAT = { forest:"♣", jungle:"☘", marsh:"~", oasis:"☉" };
 let state = null, sel = null, selCity = null, ox = 0, oy = 0;
+let lensOn = false, tackMode = false, tacks = [], dragMoved = false;
+let TMAP = new Map(), lastSeed = null, cycleIdx = -1;
+const DISK1 = [[0,0],[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];
+function hexDist(a, b) {
+  const dq = a[0]-b[0], dr = a[1]-b[1];
+  return Math.max(Math.abs(dq), Math.abs(dr), Math.abs(dq+dr));
+}
 const cv = document.getElementById("map"), cx = cv.getContext("2d");
 
 function pcol(id) { const p = state.players[id]; return p && p.is_barbarian ? "#222" : PCOLORS[id % PCOLORS.length]; }
@@ -116,6 +127,7 @@ function legalFor(type) { return state.legal_actions.filter(a => a.type === type
 
 function render(st) {
   state = st;
+  if (st.seed !== undefined && st.seed !== lastSeed) { lastSeed = st.seed; loadTacks(); }
   document.getElementById("err").textContent = st.error || "";
   if (st.error === undefined || st.error === null) { /* keep selection */ }
   drawMap();
@@ -132,6 +144,7 @@ function render(st) {
 
 function drawMap() {
   const tiles = state.map.tiles;
+  TMAP = new Map(tiles.map(t => [key(t.pos), t]));
   let minx=1e9, miny=1e9, maxx=-1e9, maxy=-1e9;
   ox = 0; oy = 0;
   for (const t of tiles) {
@@ -220,6 +233,85 @@ function drawMap() {
     if (sel && sel.id === u.id) { cx.beginPath(); cx.arc(x, y, 11*R, 0, 7);
       cx.strokeStyle = "#f0c674"; cx.lineWidth = 2.5*R; cx.stroke(); }
   }
+  // settler lens (key 2): green = good settle spots
+  if (lensOn) {
+    const vals = [];
+    for (const t of tiles) if (validSettle(t)) vals.push([t.pos, settleValue(t.pos)]);
+    const mx = Math.max(1, ...vals.map(v => v[1]));
+    for (const [p2, v] of vals) {
+      const [x, y] = hexXY(p2[0], p2[1]);
+      hexPath(x, y);
+      cx.fillStyle = `rgba(80,255,120,${(0.12 + 0.5*v/mx).toFixed(2)})`;
+      cx.fill();
+    }
+  }
+  // map tacks (key 3)
+  for (const tk of tacks) {
+    const [x, y] = hexXY(tk[0], tk[1]);
+    cx.font = f(15) + "px sans-serif"; cx.textAlign = "center";
+    cx.fillStyle = "#fff";
+    cx.fillText("📍", x, y - 2*R);
+  }
+}
+
+function tileYield(t) {
+  const y = { food: 0, production: 0, gold: 0 };
+  if (!RULES) return y;
+  const add = src => {
+    if (!src || !src.yields) return;
+    y.food += src.yields.food || 0;
+    y.production += src.yields.production || 0;
+    y.gold += src.yields.gold || 0;
+  };
+  add(RULES.terrains && RULES.terrains[t.terrain]);
+  if (t.hills) y.production += 1;
+  if (t.feature && RULES.features) add(RULES.features[t.feature]);
+  if (t.resource && RULES.resources) add(RULES.resources[t.resource]);
+  return y;
+}
+
+function settleValue(pos) {
+  let v = 0;
+  for (const d of DISK1) {
+    const t = TMAP.get((pos[0]+d[0]) + "," + (pos[1]+d[1]));
+    if (!t) continue;
+    const y = tileYield(t);
+    v += y.food * 1.2 + y.production + y.gold * 0.3;
+  }
+  return v;
+}
+
+function validSettle(t) {
+  if (t.terrain === "ocean" || t.terrain === "coast" || t.terrain === "mountain") return false;
+  if (t.owner !== null && t.owner !== undefined && t.owner !== 0) return false;
+  for (const c of state.cities) if (hexDist(t.pos, c.pos) < 4) return false;
+  return true;
+}
+
+function tackStoreKey() { return "civvis-tacks-" + (lastSeed === null ? "x" : lastSeed); }
+function loadTacks() {
+  try { tacks = JSON.parse(localStorage.getItem(tackStoreKey())) || []; }
+  catch { tacks = []; }
+}
+function saveTacks() { localStorage.setItem(tackStoreKey(), JSON.stringify(tacks)); }
+
+function modeline() {
+  const m = [];
+  if (lensOn) m.push("SETTLER LENS — greener is better (2 to exit)");
+  if (tackMode) m.push("TACK MODE — click to place/remove a 📍 (3 to exit)");
+  document.getElementById("modeline").textContent = m.join("   ");
+}
+
+function nextAction() {
+  if (!state) return;
+  const ready = state.units.filter(u => u.owner === 0 && u.moves_left > 0 && !u.fortified);
+  if (!ready.length) return;
+  cycleIdx = (cycleIdx + 1) % ready.length;
+  sel = ready[cycleIdx]; selCity = null;
+  const [x, y] = hexXY(sel.pos[0], sel.pos[1]);
+  area.scrollLeft = padL() + x - area.clientWidth / 2;
+  area.scrollTop = padT() + y - area.clientHeight / 2;
+  drawMap(); drawSide();
 }
 
 const area = document.getElementById("maparea");
@@ -281,10 +373,16 @@ function pixelToHex(px, py) {
 }
 
 cv.addEventListener("click", ev => {
+  if (dragMoved) { dragMoved = false; return; }
   const rect = cv.getBoundingClientRect();
   const pos = pixelToHex(ev.clientX-rect.left, ev.clientY-rect.top);
   if (!pos) return;
   const k = key(pos);
+  if (tackMode) {
+    const i = tacks.findIndex(t => t[0] === pos[0] && t[1] === pos[1]);
+    if (i >= 0) tacks.splice(i, 1); else tacks.push([pos[0], pos[1]]);
+    saveTacks(); drawMap(); return;
+  }
   // acting on a highlighted tile with the selected unit?
   if (sel) {
     const acts = state.legal_actions.filter(a => a.unit === sel.id &&
@@ -480,10 +578,56 @@ function hook(id, fn) {
 }
 
 document.getElementById("endturn").onclick = () => { sel = null; send({type:"end_turn"}); };
+
+// Civ-style bindings: 1 = next action, 2 = settler lens, 3 = map tacks
 document.addEventListener("keydown", ev => {
+  const tag = (document.activeElement || {}).tagName;
+  if (tag === "SELECT" || tag === "INPUT" || tag === "TEXTAREA") return;
   if (ev.key === "Enter") { sel = null; send({type:"end_turn"}); }
-  if (ev.key === "Escape") { sel = null; selCity = null; drawMap(); drawSide(); }
+  else if (ev.key === "Escape") {
+    sel = null; selCity = null; lensOn = false; tackMode = false;
+    modeline(); drawMap(); drawSide();
+  }
+  else if (ev.key === "1") nextAction();
+  else if (ev.key === "2") { lensOn = !lensOn; tackMode = false; modeline(); drawMap(); }
+  else if (ev.key === "3") { tackMode = !tackMode; lensOn = false; modeline(); drawMap(); }
 });
+
+// right-click: order the selected unit (move / attack / ranged)
+cv.addEventListener("contextmenu", ev => {
+  ev.preventDefault();
+  if (!sel) return;
+  const rect = cv.getBoundingClientRect();
+  const pos = pixelToHex(ev.clientX - rect.left, ev.clientY - rect.top);
+  if (!pos) return;
+  const k = key(pos);
+  const acts = state.legal_actions.filter(a => a.unit === sel.id &&
+    ((a.type === "move" && key(a.to) === k) ||
+     ((a.type === "attack" || a.type === "ranged") && key(a.target) === k)));
+  if (acts.length) {
+    const atk = acts.find(a => a.type !== "move");
+    send(atk || acts[0]);
+  }
+});
+
+// left-drag pans the map (click still selects if the mouse barely moved)
+let dragState = null;
+area.addEventListener("mousedown", ev => {
+  if (ev.button !== 0) return;
+  dragState = { x: ev.clientX, y: ev.clientY,
+                sl: area.scrollLeft, st: area.scrollTop };
+  dragMoved = false;
+});
+window.addEventListener("mousemove", ev => {
+  if (!dragState) return;
+  const dx = ev.clientX - dragState.x, dy = ev.clientY - dragState.y;
+  if (Math.abs(dx) + Math.abs(dy) > 6) dragMoved = true;
+  if (dragMoved) {
+    area.scrollLeft = dragState.sl - dx;
+    area.scrollTop = dragState.st - dy;
+  }
+});
+window.addEventListener("mouseup", () => { dragState = null; });
 document.getElementById("newgame").onclick = async () => {
   const np = +document.getElementById("np").value;
   sel = null; selCity = null;
