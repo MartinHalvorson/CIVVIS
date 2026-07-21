@@ -3,6 +3,10 @@
 Tracked against the [Civilization Wiki](https://civilization.fandom.com/wiki/Civilization_VI).
 Status: ✅ implemented · 🟡 simplified · ❌ not yet.
 
+> **In progress** (claimed by parallel sessions — check before starting a batch):
+> - Session B: zone of control, exact movement (min-1-tile, river crossing +2 MP),
+>   wall HP pool, city ranged strength. Do not touch these.
+
 | System | Status | Notes |
 |---|---|---|
 | Hex map, fog of war, terrain/features/resources | ✅ | tile-based rivers (🟡 vs edge rivers) |
