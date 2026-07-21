@@ -3,80 +3,66 @@
 The engine exists so you can develop advanced AI strategies against a
 Civ-6-like game without a UI in the loop.
 
-## CivEnv (gym-style)
+## In-process Rust agents
 
-```python
-from civvis import CivEnv
+Implement the `Ai` trait; you get the full `Game` API (`legal_actions`,
+`apply`, all queries):
 
-env = CivEnv(num_players=2, width=20, height=14, seed=0,
-             opponent="basic",      # scripted AI for players 1..n
-             max_turns=300,
-             reward_mode="win")     # "win" (+1/-1 terminal) or "score" (shaped)
-obs = env.reset()
-while not env.done:
-    acts = env.legal_actions()          # list of action dicts, always non-empty
-    obs, reward, done, info = env.step(acts[0])
+```rust
+use civvis::{ai::{Ai, run_game, BasicAi}, game::{Action, Game}};
+
+struct MyBot;
+impl Ai for MyBot {
+    fn take_turn(&mut self, g: &mut Game, pid: usize) {
+        // inspect g, apply actions...
+        let _ = g.apply(pid, &Action::EndTurn);
+    }
+}
+
+let mut g = Game::new(4, 28, 18, 1, 250, 2);
+let mut ais = BasicAi::fleet(&g);
+run_game(&mut g, &mut ais);
 ```
 
-- The agent is **player 0**; `step` on `end_turn` runs all opponents and
-  returns when it is your turn again (or the game ended).
-- Illegal actions never crash: state is unchanged and `info["illegal"]`
-  explains why (useful for LLM agents).
-- Observations are JSON-able dicts with fog of war applied: explored tiles,
-  visible enemy units, own cities in full detail, public per-player scores.
-  See `env.observe()` for the exact schema.
-
-## Multi-agent / self-play
-
-Drive `Game` directly — one `take_turn`-style controller per player:
-
-```python
-from civvis import Game
-from civvis.ai import make_ai
-
-g = Game(num_players=4, seed=1, max_turns=250)
-ais = {p.id: make_ai("basic", seed=p.id) for p in g.players}
-while g.winner is None:
-    ais[g.current].take_turn(g, g.current)
-    if g.winner is None:
-        g.apply(g.current, {"type": "end_turn"})
-```
-
-A custom AI is any object with `take_turn(game, pid)` that ends with
-`game.apply(pid, {"type": "end_turn"})`. The scripted `BasicAI` reads full
-state (it cheats on fog) — fair-play agents should restrict themselves to
-`env.observe(pid)`.
-
-## Determinism, speed, evaluation
-
-- Same seed + same actions = identical game (RNG serialized in saves), so
-  experiments reproduce exactly.
-- `civvis benchmark` reports turns/sec; pure-Python engine, no deps, so it
-  parallelizes trivially across processes for self-play data generation.
-- Suggested evaluation: fixed seed set, win-rate vs `basic` + mean score at
-  turn N; keep `random` as a sanity baseline.
-
-## Ideas that fit this engine
-
-- LLM agents: feed `observe()` + `legal_actions()` straight into tool calls.
-- RL: `reward_mode="score"` gives dense shaping; mask actions by type first.
-- MCTS: `Game.to_dict()`/`from_dict()` is a fast copy mechanism for rollouts.
-- Curriculum: shrink `width/height/max_turns` for early training.
+The scripted `BasicAi` reads full state (cheats on fog); fair-play agents
+should restrict themselves to `civvis::obs::observation(&game, pid)`.
 
 ## Elo tournaments
-
-Rate strategies against each other; multiplayer games score as pairwise
-Elo results by final placement:
 
 ```bash
 civvis tournament --ais basic,random --games 40 --players 4
 ```
 
-```python
-from civvis.elo import run_tournament, leaderboard
-pool = run_tournament({"basic": None, "mybot": lambda seed: MyBot(seed)},
-                      games=40, players_per_game=4)
-print(leaderboard(pool))   # ratings, games, winrates
+```rust
+use civvis::elo::{run_tournament, leaderboard, TourneyCfg, builtin_ai};
+let names = vec!["basic".to_string(), "mybot".to_string()];
+let pool = run_tournament(&names, |name, seed| match name {
+    "mybot" => Box::new(MyBot),
+    other => builtin_ai(other, seed),
+}, &TourneyCfg::default());
+println!("{}", leaderboard(&pool));
 ```
 
-Deterministic given `seed`; custom bots only need `take_turn(game, pid)`.
+Multiplayer games score as pairwise Elo results by final placement
+(K/(n-1) scaling). Deterministic given `cfg.seed`.
+
+## External agents over HTTP (any language)
+
+`civvis play --no-open --port 8765` exposes the JSON protocol:
+
+- `GET /state` — observation for player 0 (fog applied) + `legal_actions`
+- `POST /action` body `{"action": {"type": "end_turn"}}` — applies, runs the
+  AI opponents, returns the new state (+`error` string on illegal actions)
+- `GET /rules` — the full ruleset (techs, units, costs, ...)
+- `POST /new` body `{"seed": 7, "num_players": 4}` — fresh game
+
+Actions are plain JSON dicts identical to what `legal_actions` returns —
+feed them straight into LLM tool-calling or an RL policy. One process per
+concurrent game; the engine itself runs ~27k turns/sec single-core, so
+in-process Rust agents are the fast path for self-play at scale.
+
+## Evaluation tips
+
+- Fix a seed set; report Elo vs `basic` plus mean score at turn N.
+- Keep `random` in the pool as a sanity floor.
+- `soak` flags anomalies (no tech progress, minor winners) across seeds.

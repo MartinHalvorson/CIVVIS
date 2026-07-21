@@ -2,128 +2,84 @@
 
 An open-source, **headless-first** 4X strategy engine inspired by the mechanics
 of Civilization VI — aiming to be to Civ 6 what [Unciv](https://github.com/yairm210/Unciv)
-is to Civ 5, with one twist: the engine is designed **AI-first**. Every game can
-run without any UI, at thousands of turns per minute, behind a gym-style API,
-so advanced AI strategies (RL, MCTS, LLM agents) can be developed against it.
+is to Civ 5, designed **AI-first**: every game runs without a UI at tens of
+thousands of turns per second, behind a JSON action protocol, so advanced AI
+strategies (RL, MCTS, LLM agents) can be developed against it.
 
-Not affiliated with Firaxis or 2K. No assets, art, text, or code from
-Civilization VI are used — this is an original implementation of similar
-mechanics.
+**Pure Rust, zero runtime dependencies** (serde only). Not affiliated with
+Firaxis or 2K; no assets, art, text, or code from Civilization VI are used.
 
-## What's implemented (v0.4)
+## What's implemented (v0.6)
 
-- Hex map (axial coords), random continents, climate bands, features, resources
-- Cities: population growth (Civ 6 food curve), border expansion, production
-- **Districts with adjacency bonuses** (campus, holy site, commercial hub,
-  harbor, encampment, theater square) — the signature Civ 6 mechanic
-- Buildings, tile improvements, builders with charges
-- Tech tree **and civics tree** (separate science/culture progress, overflow)
-- Units, melee + ranged combat with Civ 6 damage math (`30·e^(Δ/25)`),
-  city sieges, capture, civilian capture
-- **City-states**: pre-founded minor civs that defend themselves, never expand
-  or start wars, and can be conquered (excluded from victory conditions)
-- **Barbarians**: camps spawn in the fog, raid civs (era-scaled units), yield
-  gold when cleared; they besiege but never capture cities
-- **Housing & amenities**: growth caps from housing, luxury-driven amenities
-  with happiness yield/growth modifiers
-- **Eurekas & Inspirations**: data-driven boost triggers grant 40% of
-  tech/civic cost (kills, improvements, districts, coastal cities, ...)
-- **Unit XP, promotions (+5 str/level), fortify (+6 defending)**
-- **City ranged strikes** once walls are built
-- **Governments** (chiefdom through merchant republic) with empire effects
-- Content through the medieval/renaissance eras: 29 techs, 14 civics,
-  knights/pikemen/musketmen, banks/universities/aqueducts, 8 district types
-- Diplomacy: war/peace; victory by **domination, science, or score**
-- Fog of war (per-player explored + visible sets in observations)
-- Full JSON serialization (save/load), deterministic given a seed
-- Moddable ruleset: all content lives in `civvis/data/*.json` (Unciv-style)
-- Scripted AIs (`basic`, `random`) and a gym-style `CivEnv` for agents
-- Zero runtime dependencies; pure Python
+- Hex map, random continents, climate bands, features, resources, fog of war
+- Cities: Civ 6 growth curve, border expansion, **housing & amenities**
+- **Districts with adjacency bonuses**, buildings, improvements, builder charges
+- Tech tree **and civics tree** (29 techs, 14 civics through the renaissance)
+  with **Eureka/Inspiration boosts** (data-driven triggers)
+- Units with **XP, promotions, fortify**, per-unit sight; melee/ranged combat
+  with Civ 6 damage math; city sieges, capture, **city ranged strikes**
+- **Barbarians** (camps, era-scaled raiders), **city-states**, **governments**
+- War/peace; victory by **domination, science, or score**
+- Deterministic per seed; full JSON save/serialization
+- Moddable ruleset: all content in `data/*.json` (Unciv-style)
+- **Browser GUI** for human vs AI; **Elo tournament harness** for rating AIs
 
-## Two engines, one game
-
-- **`civvis/` (Python)** — the reference implementation and executable spec.
-  Zero deps, easiest to iterate on rules, powers the gym-style env today.
-- **`rust/` (Rust)** — the performance core for AI training. Same ruleset
-  JSONs (embedded at compile time), same JSON action protocol, same
-  mechanics; **~16x faster single-core (36k turns/sec) and parallelizes
-  across cores with no GIL** (~100k+ games/hour on a workstation). PyO3
-  bindings are the next step so Python agents drive the Rust core directly.
+## Build & play
 
 ```bash
-cd rust && cargo build --release
-./target/release/civvisr simulate --players 4 --seed 17
-./target/release/civvisr soak --games 10 --players 4 --turns 120
-./target/release/civvisr benchmark --games 100
+cargo build --release
+./target/release/civvis play --players 4        # browser GUI; you are player 0
 ```
 
-Each engine is deterministic per seed (RNG formats differ between the two).
+GUI: click/right-click to select and order units, drag to pan, wheel to zoom,
+**1** next action, **2** settler lens, **3** map tacks, Enter ends turn; tech
+and civics tree maps, production/buy panels, city strikes, fog of war.
 
-## Play it (human vs AI)
+## Headless AI
 
 ```bash
-pip install -e .
-civvis play --players 4            # opens the browser GUI; you are player 0
+./target/release/civvis simulate --players 4 --seed 42   # AI self-play
+./target/release/civvis soak --games 20 --turns 150      # many games, flag anomalies
+./target/release/civvis benchmark --games 100            # turns/sec
+./target/release/civvis tournament --ais basic,random --games 40   # Elo ratings
 ```
 
-Zero-dependency local web GUI: click units to move/attack, found cities, set
-production, pick research/civics/governments, fortify, city strikes, fog of
-war. `--seed N` for a fixed map, `--no-open` to not launch a browser.
+In-process Rust agents implement one trait:
 
-## Headless simulation
+```rust
+use civvis::{ai::Ai, game::{Action, Game}};
 
-```bash
-pip install -e .
-civvis simulate --players 4 --seed 42          # AI self-play with ascii map
-civvis soak --games 10 --players 4 --turns 120  # many full games, flag anomalies
-civvis benchmark                                # engine speed
+struct MyBot;
+impl Ai for MyBot {
+    fn take_turn(&mut self, g: &mut Game, pid: usize) {
+        for a in g.legal_actions(pid) { /* pick */ }
+        let _ = g.apply(pid, &Action::EndTurn);
+    }
+}
 ```
 
-## Headless AI development
+Rate it: `civvis::elo::run_tournament(&names, |name, seed| ..., &cfg)`.
 
-```python
-from civvis import CivEnv
-
-env = CivEnv(num_players=2, seed=0, opponent="basic", reward_mode="score")
-obs = env.reset()
-while not env.done:
-    action = my_agent.choose(obs, env.legal_actions())   # plain dicts
-    obs, reward, done, info = env.step(action)
-```
-
-Everything — observations, actions, saves — is a plain JSON-able dict, so the
-engine drops straight into RL loops, LLM tool-calling, or a future network
-protocol. See [docs/AI_GUIDE.md](docs/AI_GUIDE.md).
-
-## Programmatic engine use
-
-```python
-from civvis import Game
-
-g = Game(num_players=2, width=24, height=16, seed=7)
-g.apply(0, {"type": "found_city", "unit": 1})
-print(g.legal_actions(0))
-g.save("save.json")
-```
+External agents (any language, incl. Python) drive the same JSON protocol over
+HTTP: `civvis play --no-open` then `GET /state` (observation + legal_actions),
+`POST /action {"action": {"type": "move", "unit": 3, "to": [1, -2]}}`.
+See [docs/AI_GUIDE.md](docs/AI_GUIDE.md).
 
 ## Layout
 
 ```
-civvis/           engine package (zero deps)
-  data/          moddable ruleset JSONs (terrain, units, districts, techs...)
-  game.py        core turn engine + action protocol
-  env.py         gym-style headless environment
-  ai/            scripted baseline AIs
-  cli.py         simulate / benchmark / render
-docs/            architecture, AI guide, roadmap
-tests/           pytest suite
+src/        engine crate (game.rs = turn engine + action protocol,
+            ai.rs, elo.rs, mapgen.rs, obs.rs, server.rs, ...)
+data/       moddable ruleset JSONs (terrain, units, districts, techs, ...)
+web/        single-file browser GUI (vanilla JS, served by src/server.rs)
+docs/       architecture, AI guide, roadmap
 ```
 
 ## Docs
 
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md) — design, action protocol, turn lifecycle
-- [AI_GUIDE.md](docs/AI_GUIDE.md) — building agents against the engine
-- [ROADMAP.md](docs/ROADMAP.md) — path to full Civ 6 parity + GUI client
+- [AI_GUIDE.md](docs/AI_GUIDE.md) — building and rating agents
+- [ROADMAP.md](docs/ROADMAP.md) — path to full Civ 6 parity
 
 ## License
 

@@ -9,7 +9,7 @@ use crate::ai::{Ai, BasicAi};
 use crate::game::{Action, Game};
 use crate::obs::observation;
 
-const EMBEDDED_INDEX: &str = include_str!("../../civvis/web/index.html");
+const EMBEDDED_INDEX: &str = include_str!("../web/index.html");
 
 #[derive(Clone)]
 pub struct Params {
@@ -68,7 +68,7 @@ impl Session {
 }
 
 fn index_html() -> Vec<u8> {
-    for p in ["web/index.html", "civvis/web/index.html"] {
+    for p in ["web/index.html"] {
         if let Ok(b) = std::fs::read(p) {
             return b;
         }

@@ -1,11 +1,4 @@
-__pycache__/
-*.pyc
-*.egg-info/
-build/
-dist/
-.venv/
-.pytest_cache/
-.idea/
+target/
 *.save.json
-rust/target/
-rust/Cargo.lock
+.idea/
+.pytest_cache/

@@ -200,16 +200,16 @@ pub struct Rules {
 impl Rules {
     pub fn embedded() -> Rules {
         Rules {
-            terrains: serde_json::from_str(include_str!("../../civvis/data/terrains.json")).unwrap(),
-            features: serde_json::from_str(include_str!("../../civvis/data/features.json")).unwrap(),
-            resources: serde_json::from_str(include_str!("../../civvis/data/resources.json")).unwrap(),
-            improvements: serde_json::from_str(include_str!("../../civvis/data/improvements.json")).unwrap(),
-            units: serde_json::from_str(include_str!("../../civvis/data/units.json")).unwrap(),
-            districts: serde_json::from_str(include_str!("../../civvis/data/districts.json")).unwrap(),
-            buildings: serde_json::from_str(include_str!("../../civvis/data/buildings.json")).unwrap(),
-            techs: serde_json::from_str(include_str!("../../civvis/data/techs.json")).unwrap(),
-            civics: serde_json::from_str(include_str!("../../civvis/data/civics.json")).unwrap(),
-            governments: serde_json::from_str(include_str!("../../civvis/data/governments.json")).unwrap(),
+            terrains: serde_json::from_str(include_str!("../data/terrains.json")).unwrap(),
+            features: serde_json::from_str(include_str!("../data/features.json")).unwrap(),
+            resources: serde_json::from_str(include_str!("../data/resources.json")).unwrap(),
+            improvements: serde_json::from_str(include_str!("../data/improvements.json")).unwrap(),
+            units: serde_json::from_str(include_str!("../data/units.json")).unwrap(),
+            districts: serde_json::from_str(include_str!("../data/districts.json")).unwrap(),
+            buildings: serde_json::from_str(include_str!("../data/buildings.json")).unwrap(),
+            techs: serde_json::from_str(include_str!("../data/techs.json")).unwrap(),
+            civics: serde_json::from_str(include_str!("../data/civics.json")).unwrap(),
+            governments: serde_json::from_str(include_str!("../data/governments.json")).unwrap(),
         }
     }
 

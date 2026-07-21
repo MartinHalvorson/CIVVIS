@@ -1,5 +1,13 @@
 # Roadmap
 
+## v0.6 (shipped) — pure Rust
+
+Python reference implementation removed (2026-07-21); the Rust crate is now
+the single engine at full v0.5 rules parity, moved to the repo root, with the
+GUI server, observation builder, and Elo harness all in Rust (serde-only
+deps). External agents use the HTTP JSON protocol; in-process agents use the
+`Ai` trait.
+
 ## v0.1 (shipped)
 
 Headless engine: hex map + mapgen, cities/growth/borders, districts with

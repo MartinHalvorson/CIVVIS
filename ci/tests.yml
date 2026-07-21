@@ -1,15 +1,9 @@
 name: tests
 on: [push, pull_request]
 jobs:
-  pytest:
+  cargo-test:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.10", "3.12"]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-      - run: pip install -e . pytest
-      - run: python -m pytest -q
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --release
