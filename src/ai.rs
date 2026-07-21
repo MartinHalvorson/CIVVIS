@@ -72,6 +72,10 @@ impl Ai for RandomAi {
 
 const GOV_PRIORITY: [&str; 6] = ["merchant_republic", "monarchy", "classical_republic",
     "oligarchy", "autocracy", "chiefdom"];
+const POLICY_PRIORITY: [&str; 20] = ["urban_planning", "colonization", "ilkum",
+    "feudal_contract", "agoge", "discipline", "god_king", "insulae", "meritocracy",
+    "serfdom", "conscription", "bastions", "retainers", "town_charters", "craftsmen",
+    "maritime_industries", "maneuver", "limes", "survey", "strategos"];
 
 #[derive(Default)]
 pub struct BasicAi {
@@ -140,6 +144,13 @@ impl BasicAi {
                     }
                     break;
                 }
+            }
+        }
+        let slots = g.gov_slots(pid);
+        let total = slots.military + slots.economic + slots.diplomatic + slots.wildcard;
+        if (g.players[pid].policies.len() as i64) < total {
+            for card in POLICY_PRIORITY {
+                let _ = g.apply(pid, &Action::SlotPolicy { policy: card.to_string() });
             }
         }
     }

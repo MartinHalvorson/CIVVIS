@@ -135,6 +135,8 @@ pub struct Player {
     #[serde(default)]
     pub government: Option<String>,
     #[serde(default)]
+    pub policies: BTreeSet<String>,
+    #[serde(default)]
     pub counters: BTreeMap<String, i64>,
     #[serde(default)]
     pub boosted_techs: BTreeSet<String>,
@@ -164,6 +166,7 @@ impl Player {
             is_minor,
             is_barbarian: false,
             government: None,
+            policies: BTreeSet::new(),
             counters: BTreeMap::new(),
             boosted_techs: BTreeSet::new(),
             boosted_civics: BTreeSet::new(),
@@ -190,6 +193,8 @@ pub enum Action {
     MakePeace { player: usize },
     Fortify { unit: u32 },
     Government { government: String },
+    SlotPolicy { policy: String },
+    UnslotPolicy { policy: String },
     CityStrike { city: u32, target: Pos },
     EndTurn,
 }
@@ -491,6 +496,117 @@ impl Game {
         }
     }
 
+    pub fn has_policy(&self, pid: usize, name: &str) -> bool {
+        self.players[pid].policies.contains(name)
+    }
+
+    /// Survey doubles XP for recon units.
+    fn award_xp(&mut self, uid: u32, amt: i64) {
+        let (owner, kind) = match self.units.get(&uid) {
+            Some(u) => (u.owner, u.kind.clone()),
+            None => return,
+        };
+        let amt = if kind == "scout" && self.has_policy(owner, "survey") {
+            amt * 2
+        } else {
+            amt
+        };
+        self.units.get_mut(&uid).unwrap().xp += amt;
+    }
+
+    /// Discipline: +5 combat strength when fighting barbarians.
+    fn vs_bonus(&self, owner: usize, opponent: usize) -> f64 {
+        if self.players[opponent].is_barbarian && self.has_policy(owner, "discipline") {
+            5.0
+        } else {
+            0.0
+        }
+    }
+
+    /// +% production toward the item at the head of a city's queue from
+    /// slotted policy cards (Agoge, Maneuver, Maritime Industries, Ilkum,
+    /// Colonization, Feudal Contract, Limes).
+    fn item_prod_mult(&self, pid: usize, item: Option<&Item>) -> f64 {
+        let mut bonus: f64 = 0.0;
+        match item {
+            Some(Item::Unit { unit }) => {
+                let spec = &self.rules.units[unit.as_str()];
+                if unit == "builder" && self.has_policy(pid, "ilkum") {
+                    bonus += 0.3;
+                } else if unit == "settler" && self.has_policy(pid, "colonization") {
+                    bonus += 0.5;
+                } else if spec.domain.as_deref() == Some("sea")
+                    && self.has_policy(pid, "maritime_industries") {
+                    bonus += 1.0;
+                } else if spec.cavalry && self.has_policy(pid, "maneuver") {
+                    bonus += 0.5;
+                } else if spec.class == "military" && !spec.siege
+                    && (self.has_policy(pid, "agoge")
+                        || self.has_policy(pid, "feudal_contract")) {
+                    bonus += 0.5;
+                }
+            }
+            Some(Item::Building { building }) => {
+                if (building == "walls" || building == "medieval_walls")
+                    && self.has_policy(pid, "limes") {
+                    bonus += 1.0;
+                }
+            }
+            _ => {}
+        }
+        1.0 + bonus
+    }
+
+    pub fn gov_slots(&self, pid: usize) -> crate::rules::PolicySlots {
+        match &self.players[pid].government {
+            Some(g) => self.rules.governments.get(g)
+                .map(|s| s.slots).unwrap_or_default(),
+            None => Default::default(),
+        }
+    }
+
+    /// Can this set of cards be seated in the player's slots? Typed cards
+    /// fill their own slot type first; overflow and wildcard cards need
+    /// wildcard slots (Civ 6 rule).
+    fn policies_fit(&self, pid: usize, cards: &BTreeSet<String>) -> bool {
+        let slots = self.gov_slots(pid);
+        let (mut m, mut e, mut d, mut w) = (0i64, 0i64, 0i64, 0i64);
+        for c in cards {
+            match self.rules.policies.get(c).map(|p| p.slot.as_str()) {
+                Some("military") => m += 1,
+                Some("economic") => e += 1,
+                Some("diplomatic") => d += 1,
+                _ => w += 1,
+            }
+        }
+        let overflow = (m - slots.military).max(0) + (e - slots.economic).max(0)
+            + (d - slots.diplomatic).max(0);
+        overflow + w <= slots.wildcard
+    }
+
+    /// Cards the player has unlocked and may slot (not yet slotted, civic
+    /// met, not obsoleted by an unlocked successor card).
+    pub fn available_policies(&self, pid: usize) -> Vec<String> {
+        let p = &self.players[pid];
+        if p.is_minor {
+            return vec![];
+        }
+        let obsolete: BTreeSet<&str> = self.rules.policies.values()
+            .filter(|s| {
+                s.civic.as_ref().map(|c| p.civics.contains(c)).unwrap_or(true)
+            })
+            .filter_map(|s| s.replaces.as_deref())
+            .collect();
+        self.rules.policies.iter()
+            .filter(|(name, s)| {
+                !p.policies.contains(*name)
+                    && !obsolete.contains(name.as_str())
+                    && s.civic.as_ref().map(|c| p.civics.contains(c)).unwrap_or(true)
+            })
+            .map(|(name, _)| name.clone())
+            .collect()
+    }
+
     pub fn is_embarked(&self, u: &Unit) -> bool {
         self.rules.units[u.kind.as_str()].domain.as_deref() != Some("sea")
             && self.map.get(u.pos).map(|t| self.rules.is_water(t)).unwrap_or(false)
@@ -532,6 +648,9 @@ impl Game {
         for b in &city.buildings {
             h += self.rules.buildings[b.as_str()].housing;
         }
+        if self.has_policy(city.owner, "insulae") && city.districts.len() >= 2 {
+            h += 1.0;
+        }
         h + self.gov_effects(city.owner).housing
     }
 
@@ -570,6 +689,16 @@ impl Game {
             supply += self.rules.buildings[b.as_str()].amenity;
         }
         supply += self.gov_effects(city.owner).amenity;
+        if self.has_policy(city.owner, "retainers") {
+            let garrison = self.units_at(city.pos).into_iter().any(|id| {
+                let o = &self.units[&id];
+                o.owner == city.owner
+                    && self.rules.units[o.kind.as_str()].class == "military"
+            });
+            if garrison {
+                supply += 1.0;
+            }
+        }
         supply as i64 - 0.max((city.pop - 1) / 2) as i64
     }
 
@@ -694,6 +823,9 @@ impl Game {
         let mut charges = spec.charges;
         if kind == "builder" {
             charges += self.empire_building_sum(owner, |b| b.builder_charges as f64) as i32;
+            if self.has_policy(owner, "serfdom") {
+                charges += 2;
+            }
         }
         let u = Unit {
             id: self.next_id,
@@ -1034,10 +1166,11 @@ impl Game {
     /// fields, or 3 if none (Civ 6 rule).
     pub fn city_ranged_strength(&self, cid: u32) -> f64 {
         let owner = self.cities[&cid].owner;
-        self.units.values()
+        let base = self.units.values()
             .filter(|u| u.owner == owner)
             .map(|u| self.rules.units[u.kind.as_str()].ranged_strength)
-            .fold(3.0, f64::max)
+            .fold(3.0, f64::max);
+        base + if self.has_policy(owner, "bastions") { 5.0 } else { 0.0 }
     }
 
     pub fn city_strength(&self, cid: u32) -> f64 {
@@ -1058,6 +1191,9 @@ impl Game {
         });
         if garrison {
             s += 5.0;
+        }
+        if self.has_policy(city.owner, "bastions") {
+            s += 6.0;
         }
         s
     }
@@ -1086,6 +1222,7 @@ impl Game {
                     }
                 }
             }
+            let mut adj = Yields::default();
             for (key, bonus) in &spec.adjacency {
                 let n = match key.as_str() {
                     "mountain" => mountain,
@@ -1094,13 +1231,28 @@ impl Game {
                     "river" => river,
                     _ => 0,
                 } as f64;
-                ys.food += (n * bonus.food).trunc();
-                ys.production += (n * bonus.production).trunc();
-                ys.gold += (n * bonus.gold).trunc();
-                ys.science += (n * bonus.science).trunc();
-                ys.culture += (n * bonus.culture).trunc();
-                ys.faith += (n * bonus.faith).trunc();
+                adj.food += (n * bonus.food).trunc();
+                adj.production += (n * bonus.production).trunc();
+                adj.gold += (n * bonus.gold).trunc();
+                adj.science += (n * bonus.science).trunc();
+                adj.culture += (n * bonus.culture).trunc();
+                adj.faith += (n * bonus.faith).trunc();
             }
+            // Town Charters / Craftsmen double the district's adjacency bonus
+            let owner = self.map.get(dpos)
+                .and_then(|t| t.owner_city)
+                .and_then(|oc| self.cities.get(&oc))
+                .map(|c| c.owner);
+            if let Some(pid) = owner {
+                let doubled = (dname == "commercial_hub"
+                        && self.has_policy(pid, "town_charters"))
+                    || (dname == "industrial_zone"
+                        && self.has_policy(pid, "craftsmen"));
+                if doubled {
+                    adj.add(adj);
+                }
+            }
+            ys.add(adj);
         }
         ys
     }
@@ -1142,6 +1294,16 @@ impl Game {
             ys.gold += 3.0;
             ys.science += 1.0;
             ys.culture += 1.0;
+            if self.has_policy(city.owner, "god_king") {
+                ys.gold += 1.0;
+                ys.faith += 1.0;
+            }
+        }
+        if self.has_policy(city.owner, "urban_planning") {
+            ys.production += 1.0;
+        }
+        if self.has_policy(city.owner, "meritocracy") {
+            ys.culture += city.districts.len() as f64;
         }
         let eff = self.gov_effects(city.owner);
         ys.production *= 1.0 + eff.production_pct / 100.0;
@@ -1446,6 +1608,16 @@ impl Game {
                     acts.push(Action::Government { government: g.clone() });
                 }
             }
+            for card in self.available_policies(pid) {
+                let mut next = p.policies.clone();
+                next.insert(card.clone());
+                if self.policies_fit(pid, &next) {
+                    acts.push(Action::SlotPolicy { policy: card });
+                }
+            }
+            for card in &p.policies {
+                acts.push(Action::UnslotPolicy { policy: card.clone() });
+            }
         }
         if !p.is_barbarian {
             for o in &self.players {
@@ -1496,6 +1668,8 @@ impl Game {
             Action::MakePeace { player } => self.do_make_peace(pid, *player),
             Action::Fortify { unit } => self.do_fortify(pid, *unit),
             Action::Government { government } => self.do_government(pid, government),
+            Action::SlotPolicy { policy } => self.do_slot_policy(pid, policy),
+            Action::UnslotPolicy { policy } => self.do_unslot_policy(pid, policy),
             Action::CityStrike { city, target } => self.do_city_strike(pid, *city, *target),
             Action::EndTurn => {
                 self.do_end_turn();
@@ -1626,21 +1800,20 @@ impl Game {
                 })
                 .unwrap();
             let d = self.units[&did].clone();
+            let att = att + self.vs_bonus(pid, d.owner);
             let ds = effective_strength(self.unit_strength(&d, true), d.hp)
-                + self.tile_defense_bonus(target);
+                + self.tile_defense_bonus(target)
+                + self.vs_bonus(d.owner, pid);
             let dmg_out = damage(att, ds, &mut self.rng);
             let dmg_in = damage(ds, att, &mut self.rng);
             self.units.get_mut(&did).unwrap().hp -= dmg_out;
-            {
-                let mu = self.units.get_mut(&uid).unwrap();
-                mu.hp -= dmg_in;
-                mu.xp += 5;
-            }
-            self.units.get_mut(&did).unwrap().xp += 4;
+            self.units.get_mut(&uid).unwrap().hp -= dmg_in;
+            self.award_xp(uid, 5);
+            self.award_xp(did, 4);
             let d_dead = self.units[&did].hp <= 0;
             let downer = self.units[&did].owner;
             if d_dead {
-                self.units.get_mut(&uid).unwrap().xp += 3;
+                self.award_xp(uid, 3);
                 bump(&mut self.players[pid], "kills");
                 self.remove_unit(did);
                 self.on_unit_lost(downer);
@@ -1675,11 +1848,8 @@ impl Game {
                 let dmg_in = damage(cs, att, &mut self.rng);
                 let mult = if spec.siege { 1.0 } else { 0.15 };
                 self.city_take_damage(cid, dmg_out, mult);
-                {
-                    let mu = self.units.get_mut(&uid).unwrap();
-                    mu.hp -= dmg_in;
-                    mu.xp += 3;
-                }
+                self.units.get_mut(&uid).unwrap().hp -= dmg_in;
+                self.award_xp(uid, 3);
                 if self.units[&uid].hp <= 0 {
                     self.remove_unit(uid);
                     self.on_unit_lost(pid);
@@ -1758,8 +1928,8 @@ impl Game {
             let mu = self.units.get_mut(&uid).unwrap();
             mu.moves_left = 0.0;
             mu.fortified = false;
-            mu.xp += 3;
         }
+        self.award_xp(uid, 3);
         let military: Vec<u32> = enemy_ids
             .iter()
             .cloned()
@@ -1776,9 +1946,12 @@ impl Game {
                     ea.partial_cmp(&eb).unwrap()
                 })
                 .unwrap();
+            let downer = self.units[&did].owner;
+            let att = att + self.vs_bonus(pid, downer);
             let ds = effective_strength(
                 self.unit_strength(&self.units[&did], true), self.units[&did].hp)
-                + self.tile_defense_bonus(target);
+                + self.tile_defense_bonus(target)
+                + self.vs_bonus(downer, pid);
             let dmg = damage(att, ds, &mut self.rng);
             self.units.get_mut(&did).unwrap().hp -= dmg;
             if self.units[&did].hp <= 0 {
@@ -2021,6 +2194,32 @@ impl Game {
             return Err("already that government".into());
         }
         self.players[pid].government = Some(g.to_string());
+        // new slot layout: drop slotted cards until they fit again
+        while !self.policies_fit(pid, &self.players[pid].policies)
+            && !self.players[pid].policies.is_empty() {
+            let drop = self.players[pid].policies.iter().next_back().unwrap().clone();
+            self.players[pid].policies.remove(&drop);
+        }
+        Ok(())
+    }
+
+    fn do_slot_policy(&mut self, pid: usize, policy: &str) -> Result<(), String> {
+        if !self.available_policies(pid).iter().any(|c| c == policy) {
+            return Err("policy unavailable".into());
+        }
+        let mut next = self.players[pid].policies.clone();
+        next.insert(policy.to_string());
+        if !self.policies_fit(pid, &next) {
+            return Err("no free slot for that card".into());
+        }
+        self.players[pid].policies = next;
+        Ok(())
+    }
+
+    fn do_unslot_policy(&mut self, pid: usize, policy: &str) -> Result<(), String> {
+        if !self.players[pid].policies.remove(policy) {
+            return Err("policy not slotted".into());
+        }
         Ok(())
     }
 
@@ -2179,7 +2378,10 @@ impl Game {
             faith += ys.faith;
         }
         let n_units = self.player_unit_ids(pid).len() as f64;
-        gold -= (n_units - 3.0).max(0.0);
+        // 1 gold/unit past the first three; conscription (-1/unit) zeroes it
+        if !self.has_policy(pid, "conscription") {
+            gold -= (n_units - 3.0).max(0.0);
+        }
         {
             let p = &mut self.players[pid];
             p.gold = (p.gold + gold).max(0.0);
@@ -2334,7 +2536,12 @@ impl Game {
                 city.pop = (city.pop - 1).max(1);
                 city.food = 0.0;
             }
-            city.production += ys.production;
+            let mult = {
+                let c = &self.cities[&cid];
+                self.item_prod_mult(pid, c.queue.first())
+            };
+            let city = self.cities.get_mut(&cid).unwrap();
+            city.production += ys.production * mult;
         }
         let queue_head = self.cities[&cid].queue.first().cloned();
         if let Some(item) = queue_head {
@@ -2356,7 +2563,6 @@ impl Game {
             let need_b = (15 + 8 * (owned - 7).max(0)) as f64;
             if city.border_culture >= need_b {
                 city.border_culture -= need_b;
-                drop(city);
                 self.expand_borders(cid);
             }
         }

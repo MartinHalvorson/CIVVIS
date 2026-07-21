@@ -246,6 +246,40 @@ mod tests {
     }
 
     #[test]
+    fn policy_cards() {
+        let mut g = Game::new_full(2, 24, 16, 9, 60, 0, false);
+        let s = g.player_unit_ids(0).into_iter()
+            .find(|id| g.units[id].kind == "settler").unwrap();
+        g.apply(0, &Action::FoundCity { unit: s }).unwrap();
+        let cid = g.player_city_ids(0)[0];
+        // chiefdom: 1 military + 1 economic slot
+        g.players[0].civics.insert("code_of_laws".to_string());
+        g.apply(0, &Action::Government { government: "chiefdom".to_string() }).unwrap();
+        let base_prod = g.city_yields(cid).production;
+        g.apply(0, &Action::SlotPolicy { policy: "urban_planning".to_string() }).unwrap();
+        assert_eq!(g.city_yields(cid).production, base_prod + 1.0);
+        // second economic card cannot fit (no wildcard slots in chiefdom)
+        assert!(g.apply(0, &Action::SlotPolicy {
+            policy: "god_king".to_string() }).is_err());
+        // military slot still free
+        g.apply(0, &Action::SlotPolicy { policy: "discipline".to_string() }).unwrap();
+        // oligarchy has a wildcard slot: economic overflow fits there
+        g.players[0].civics.insert("political_philosophy".to_string());
+        g.apply(0, &Action::Government { government: "oligarchy".to_string() }).unwrap();
+        g.apply(0, &Action::SlotPolicy { policy: "god_king".to_string() }).unwrap();
+        assert_eq!(g.players[0].policies.len(), 3);
+        // downgrading drops cards until the layout fits again
+        g.apply(0, &Action::Government { government: "chiefdom".to_string() }).unwrap();
+        assert!(g.players[0].policies.len() <= 2);
+        // feudalism obsoletes agoge via feudal_contract
+        g.players[0].civics.insert("craftsmanship".to_string());
+        assert!(g.available_policies(0).iter().any(|c| c == "agoge"));
+        g.players[0].civics.insert("feudalism".to_string());
+        assert!(!g.available_policies(0).iter().any(|c| c == "agoge"));
+        assert!(g.available_policies(0).iter().any(|c| c == "feudal_contract"));
+    }
+
+    #[test]
     fn serialization_roundtrip() {
         let mut g = Game::new(2, 18, 12, 4, 25, 1);
         let mut ais = BasicAi::fleet(&g);

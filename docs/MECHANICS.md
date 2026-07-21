@@ -4,7 +4,7 @@ Tracked against the [Civilization Wiki](https://civilization.fandom.com/wiki/Civ
 Status: ✅ implemented · 🟡 simplified · ❌ not yet.
 
 > **In progress** (claimed by parallel sessions — check before starting a batch):
-> - Session B: policy cards + government slot configs (engine + data; NOT touching web/index.html).
+> - (none currently claimed by session B; GUI wiring for policies/walls is open for the GUI session)
 
 | System | Status | Notes |
 |---|---|---|
@@ -15,7 +15,7 @@ Status: ✅ implemented · 🟡 simplified · ❌ not yet.
 | Districts + adjacency (incl. river) | ✅ | 8 district types |
 | Wonders | 🟡 | 9 wonders, world-unique, effect engine (growth %, builder charges, unit levels); no tile placement |
 | Tech + civics trees, Eureka/Inspiration | ✅ | 29 techs / 14 civics, through renaissance |
-| Governments | 🟡 | flat effects; policy cards ❌ (next up) |
+| Governments + policy cards | ✅ | wiki slot configs (chiefdom M1E1 … merchant republic M1E2D2W1); 20 cards thru guilds; typed slots + wildcard overflow; obsoletion (Agoge→Feudal Contract); slot/unslot actions; effects: yields, prod-toward-item %, housing, amenities, maintenance, builder charges, city def/ranged, vs-barb CS, recon XP |
 | Combat math (Civ 6 formula), XP/promotions | 🟡 | flat +5/level vs promotion trees |
 | Fortify, city ranged strikes, walls | ✅ | wall HP pool (50/level), melee 15% / ranged 50% / siege 100% vs walls, strike = best ranged unit, walls razed on capture |
 | Embarkation (Shipbuilding) | ✅ | embarked strength 10, cannot attack |

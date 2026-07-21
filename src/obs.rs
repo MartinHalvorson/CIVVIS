@@ -98,6 +98,9 @@ pub fn observation(g: &Game, pid: usize) -> Value {
             "civics": p.civics, "civic": p.civic,
             "civic_progress": round1(p.civic_progress),
             "government": p.government,
+            "policies": p.policies,
+            "policy_slots": g.gov_slots(pid),
+            "available_policies": g.available_policies(pid),
             "boosted_techs": p.boosted_techs,
             "boosted_civics": p.boosted_civics,
             "yields": {

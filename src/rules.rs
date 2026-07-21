@@ -189,12 +189,34 @@ pub struct GovEffects {
     pub housing: f64,
 }
 
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PolicySlots {
+    pub military: i64,
+    pub economic: i64,
+    pub diplomatic: i64,
+    pub wildcard: i64,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct GovSpec {
     #[serde(default)]
     pub civic: Option<String>,
     #[serde(default)]
     pub effects: GovEffects,
+    #[serde(default)]
+    pub slots: PolicySlots,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct PolicySpec {
+    pub slot: String, // military | economic | diplomatic | wildcard
+    #[serde(default)]
+    pub civic: Option<String>,
+    #[serde(default)]
+    pub replaces: Option<String>, // unlocking this obsoletes the named card
+    #[serde(default)]
+    pub note: String,
 }
 
 #[derive(Clone)]
@@ -209,6 +231,7 @@ pub struct Rules {
     pub techs: BTreeMap<String, TechSpec>,
     pub civics: BTreeMap<String, TechSpec>,
     pub governments: BTreeMap<String, GovSpec>,
+    pub policies: BTreeMap<String, PolicySpec>,
 }
 
 impl Rules {
@@ -224,6 +247,7 @@ impl Rules {
             techs: serde_json::from_str(include_str!("../data/techs.json")).unwrap(),
             civics: serde_json::from_str(include_str!("../data/civics.json")).unwrap(),
             governments: serde_json::from_str(include_str!("../data/governments.json")).unwrap(),
+            policies: serde_json::from_str(include_str!("../data/policies.json")).unwrap(),
         }
     }
 
