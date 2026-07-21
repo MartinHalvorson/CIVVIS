@@ -122,6 +122,21 @@ def cmd_render(args):
     print(ascii_map(game))
 
 
+def cmd_tournament(args):
+    from .elo import BUILTIN_AIS, leaderboard, run_tournament
+    names = [n.strip() for n in args.ais.split(",") if n.strip()]
+    bad = [n for n in names if n not in BUILTIN_AIS]
+    if bad:
+        raise SystemExit(f"unknown AIs {bad}; builtin: {BUILTIN_AIS} "
+                         "(custom strategies: use civvis.elo.run_tournament in Python)")
+    pool = run_tournament({n: None for n in names}, games=args.games,
+                          players_per_game=args.players, width=args.width,
+                          height=args.height, max_turns=args.turns,
+                          seed=args.seed, k=args.k, verbose=not args.quiet)
+    print()
+    print(leaderboard(pool))
+
+
 def cmd_play(args):
     import random as _random
     from .server import serve
@@ -167,6 +182,19 @@ def main(argv=None):
     r = sub.add_parser("render", help="print ascii map of a save file")
     r.add_argument("load")
     r.set_defaults(func=cmd_render)
+
+    t = sub.add_parser("tournament", help="Elo-rate AI strategies against each other")
+    t.add_argument("--ais", default="basic,random",
+                   help="comma list of builtin AIs (basic, random)")
+    t.add_argument("--games", type=int, default=20)
+    t.add_argument("--players", type=int, default=4)
+    t.add_argument("--width", type=int, default=24)
+    t.add_argument("--height", type=int, default=16)
+    t.add_argument("--turns", type=int, default=150)
+    t.add_argument("--seed", type=int, default=0)
+    t.add_argument("--k", type=float, default=24.0)
+    t.add_argument("--quiet", action="store_true")
+    t.set_defaults(func=cmd_tournament)
 
     p = sub.add_parser("play", help="play in the browser vs AI (you are player 0)")
     p.add_argument("--players", type=int, default=4)

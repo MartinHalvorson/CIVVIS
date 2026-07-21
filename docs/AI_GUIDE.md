@@ -62,3 +62,21 @@ state (it cheats on fog) — fair-play agents should restrict themselves to
 - RL: `reward_mode="score"` gives dense shaping; mask actions by type first.
 - MCTS: `Game.to_dict()`/`from_dict()` is a fast copy mechanism for rollouts.
 - Curriculum: shrink `width/height/max_turns` for early training.
+
+## Elo tournaments
+
+Rate strategies against each other; multiplayer games score as pairwise
+Elo results by final placement:
+
+```bash
+civvis tournament --ais basic,random --games 40 --players 4
+```
+
+```python
+from civvis.elo import run_tournament, leaderboard
+pool = run_tournament({"basic": None, "mybot": lambda seed: MyBot(seed)},
+                      games=40, players_per_game=4)
+print(leaderboard(pool))   # ratings, games, winrates
+```
+
+Deterministic given `seed`; custom bots only need `take_turn(game, pid)`.
