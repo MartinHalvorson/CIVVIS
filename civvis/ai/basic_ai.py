@@ -23,10 +23,15 @@ class BasicAI:
     def __init__(self, seed=0):
         self.rng = random.Random(seed)
 
+    GOV_PRIORITY = ["merchant_republic", "monarchy", "classical_republic",
+                    "oligarchy", "autocracy", "chiefdom"]
+
     def take_turn(self, game, pid):
         self._minor = game.players[pid].is_minor
+        self._barb = game.players[pid].is_barbarian
         try:
-            self._research(game, pid)
+            if not self._barb:
+                self._research(game, pid)
             self._diplomacy(game, pid)
             self._cities(game, pid)
             self._units(game, pid)
@@ -55,12 +60,21 @@ class BasicAI:
             if avail:
                 pick = next((c for c in CIVIC_PRIORITY if c in avail), avail[0])
                 self._try(game, pid, {"type": "civic", "civic": pick})
+        for gname in self.GOV_PRIORITY:
+            spec = game.rules.governments.get(gname)
+            if spec and spec.get("civic") in p.civics:
+                if p.government != gname:
+                    self._try(game, pid, {"type": "government", "government": gname})
+                break
 
     # ------------------------------------------------------------ diplomacy
 
     def _diplomacy(self, game, pid):
+        if self._barb:
+            return
         my_power = game.military_power(pid)
-        others = [o for o in game.players if o.id != pid and o.alive]
+        others = [o for o in game.players
+                  if o.id != pid and o.alive and not o.is_barbarian]
         for o in others:
             if game.is_at_war(pid, o.id) and my_power < 0.6 * game.military_power(o.id):
                 self._try(game, pid, {"type": "make_peace", "player": o.id})
@@ -75,8 +89,19 @@ class BasicAI:
     # --------------------------------------------------------------- cities
 
     def _cities(self, game, pid):
+        if self._barb:
+            return
         p = game.players[pid]
         my_cities = game.player_cities(pid)
+        # walls fire at raiders in range
+        for city in my_cities:
+            if game._city_can_strike(city):
+                for pos in hexgrid.disk(city.pos, 2):
+                    if any(o.owner != pid and game.is_at_war(pid, o.owner)
+                           for o in game.units_at(pos)):
+                        self._try(game, pid, {"type": "city_strike",
+                                              "city": city.id, "target": list(pos)})
+                        break
         my_units = game.player_units(pid)
         settlers = sum(1 for u in my_units if u.type == "settler")
         builders = sum(1 for u in my_units if u.type == "builder")
@@ -181,6 +206,8 @@ class BasicAI:
         return total
 
     def _settler_step(self, game, pid, u):
+        if self._minor:
+            return False  # city-states and barbarians never settle
         best = None
         for pos in hexgrid.disk(u.pos, 5):
             t = game.map.get(pos)
@@ -244,6 +271,8 @@ class BasicAI:
                             return self._try(game, pid, {"type": "attack", "unit": u.id,
                                                          "target": list(pos)})
             target = self._nearest_enemy(game, pid, u.pos, enemies_at_war)
+            if target is None:
+                return self._fortify_or_stop(game, pid, u)
             return self._step_toward(game, pid, u, target)
         # peace: minors guard home; majors explore, then garrison
         if self._minor:
@@ -253,7 +282,7 @@ class BasicAI:
             cap = cities[0].pos
             if hexgrid.distance(u.pos, cap) > 2:
                 return self._step_toward(game, pid, u, cap)
-            return False
+            return self._fortify_or_stop(game, pid, u)
         target = self._nearest_unexplored(game, pid, u.pos)
         if target is None:
             cities = game.player_cities(pid)
@@ -261,8 +290,13 @@ class BasicAI:
                 return False
             target = min(cities, key=lambda c: hexgrid.distance(u.pos, c.pos)).pos
             if target == u.pos:
-                return False
+                return self._fortify_or_stop(game, pid, u)
         return self._step_toward(game, pid, u, target)
+
+    def _fortify_or_stop(self, game, pid, u):
+        if not u.fortified:
+            self._try(game, pid, {"type": "fortify", "unit": u.id})
+        return False
 
     def _is_enemy_tile(self, game, pid, pos, enemy_ids):
         for o in game.units_at(pos):
@@ -285,6 +319,15 @@ class BasicAI:
         return True  # civilians
 
     def _nearest_enemy(self, game, pid, pos, enemy_ids):
+        """Nearest enemy target. Majors chase barbarians (and their camps) only
+        near their own territory; wars against civs have no leash."""
+        my_cities = game.player_cities(pid)
+
+        def near_home(tpos):
+            if self._barb or not my_cities:
+                return True
+            return min(hexgrid.distance(tpos, c.pos) for c in my_cities) <= 6
+
         best = None
         for c in game.cities.values():
             if c.owner in enemy_ids:
@@ -293,9 +336,17 @@ class BasicAI:
                     best = (d, c.pos)
         for u in game.units.values():
             if u.owner in enemy_ids:
+                if u.owner == game.barb_pid and not near_home(u.pos):
+                    continue
                 d = hexgrid.distance(pos, u.pos)
                 if best is None or (d, u.pos) < best:
                     best = (d, u.pos)
+        if game.barb_pid in enemy_ids and not self._barb:
+            for cpos in game.barb_camps:
+                if near_home(cpos):
+                    d = hexgrid.distance(pos, cpos)
+                    if best is None or (d, cpos) < best:
+                        best = (d, cpos)
         return best[1] if best else None
 
     def _nearest_unexplored(self, game, pid, pos):

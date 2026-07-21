@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Martin Halvorson's Civilization VIS</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { font: 13px/1.4 system-ui, sans-serif; background: #10141a; color: #dde3ea;
+         display: flex; height: 100vh; overflow: hidden; }
+  #maparea { flex: 1; overflow: auto; position: relative; }
+  canvas { display: block; cursor: pointer; }
+  #side { width: 340px; min-width: 340px; background: #171d26; padding: 10px;
+          overflow-y: auto; border-left: 1px solid #2a3442; }
+  h1 { font-size: 15px; margin-bottom: 6px; color: #f0c674; }
+  .sec { background: #1e2530; border-radius: 6px; padding: 8px; margin-bottom: 8px; }
+  .sec h2 { font-size: 12px; text-transform: uppercase; color: #8fa1b5; margin-bottom: 4px; }
+  button { background: #2d3a4d; color: #dde3ea; border: 1px solid #40536b;
+           border-radius: 4px; padding: 4px 8px; margin: 2px; cursor: pointer; font-size: 12px; }
+  button:hover { background: #3b4d66; }
+  button.primary { background: #b8860b; border-color: #daa520; font-weight: bold;
+                   width: 100%; padding: 8px; font-size: 14px; }
+  button.primary:hover { background: #daa520; }
+  .bar { background: #0d1117; border-radius: 3px; height: 10px; overflow: hidden; margin: 2px 0; }
+  .bar div { height: 100%; }
+  .chip { display: inline-block; width: 10px; height: 10px; border-radius: 5px; margin-right: 4px; }
+  .row { display: flex; justify-content: space-between; padding: 1px 0; }
+  #err { color: #ff7070; min-height: 16px; font-size: 12px; }
+  #winner { position: absolute; top: 30%; left: 50%; transform: translate(-50%,-50%);
+            background: rgba(20,26,34,.95); border: 2px solid #f0c674; border-radius: 10px;
+            padding: 24px 40px; font-size: 20px; display: none; z-index: 5; text-align: center; }
+  select { background: #2d3a4d; color: #dde3ea; border: 1px solid #40536b; border-radius: 4px;
+           padding: 3px; max-width: 100%; }
+  .small { font-size: 11px; color: #8fa1b5; }
+  .boost { color: #7fd4ff; }
+</style>
+</head>
+<body>
+<div id="maparea">
+  <canvas id="map"></canvas>
+  <div id="winner"></div>
+</div>
+<div id="side">
+  <h1>Civilization VIS</h1>
+  <div class="sec" id="topinfo"></div>
+  <div class="sec"><h2>Research</h2><div id="research"></div></div>
+  <div class="sec"><h2>Civics</h2><div id="civics"></div></div>
+  <div class="sec" id="govsec" style="display:none"><h2>Government</h2><div id="gov"></div></div>
+  <div class="sec" id="unitsec" style="display:none"><h2>Selected unit</h2><div id="unitpanel"></div></div>
+  <div class="sec" id="citysec" style="display:none"><h2>City</h2><div id="citypanel"></div></div>
+  <div class="sec"><h2>Players</h2><div id="players"></div></div>
+  <div id="err"></div>
+  <button class="primary" id="endturn">End Turn (Enter)</button>
+  <div class="sec" style="margin-top:8px">
+    <h2>New game</h2>
+    players <select id="np"><option>2</option><option selected>4</option><option>6</option></select>
+    <button id="newgame">Restart</button>
+  </div>
+</div>
+<script>
+"use strict";
+const S = 24, SQ3 = Math.sqrt(3);
+const TERRAIN = { grassland:"#4c7a3f", plains:"#8a8f3f", desert:"#c9b26b", tundra:"#7d8a7d",
+                  snow:"#dfe6ea", coast:"#3b6d8f", ocean:"#1f3d5c", mountain:"#6b6f76" };
+const PCOLORS = ["#ffd700","#e05050","#50a0e0","#50c878","#c878e0","#e09050","#70d0d0","#f0f080",
+                 "#a0a0ff","#ffa0c0","#80e080","#d0b080"];
+const FEAT = { forest:"♣", jungle:"☘", marsh:"~", oasis:"☉" };
+let state = null, sel = null, selCity = null, ox = 0, oy = 0;
+const cv = document.getElementById("map"), cx = cv.getContext("2d");
+
+function pcol(id) { const p = state.players[id]; return p && p.is_barbarian ? "#222" : PCOLORS[id % PCOLORS.length]; }
+function hexXY(q, r) { return [ox + S*SQ3*(q + r/2), oy + S*1.5*r]; }
+function key(p) { return p[0] + "," + p[1]; }
+
+async function fetchState() { render(await (await fetch("/state")).json()); }
+async function send(action) {
+  const r = await (await fetch("/action", {method:"POST", headers:{"Content-Type":"application/json"},
+                   body: JSON.stringify({action})})).json();
+  render(r);
+}
+
+function legalFor(type) { return state.legal_actions.filter(a => a.type === type); }
+
+function render(st) {
+  state = st;
+  document.getElementById("err").textContent = st.error || "";
+  if (st.error === undefined || st.error === null) { /* keep selection */ }
+  drawMap();
+  drawSide();
+  const w = document.getElementById("winner");
+  if (st.winner !== null && st.winner !== undefined) {
+    const p = st.players[st.winner];
+    w.style.display = "block";
+    w.innerHTML = (st.winner === 0 ? "🏆 Victory!" : "Defeat") +
+      "<br><span class='small'>" + p.civ + " wins by " + st.victory_type +
+      " on turn " + st.turn + "</span>";
+  } else w.style.display = "none";
+}
+
+function drawMap() {
+  const tiles = state.map.tiles;
+  let minx=1e9, miny=1e9, maxx=-1e9, maxy=-1e9;
+  ox = 0; oy = 0;
+  for (const t of tiles) {
+    const [x,y] = hexXY(t.pos[0], t.pos[1]);
+    minx=Math.min(minx,x); maxx=Math.max(maxx,x);
+    miny=Math.min(miny,y); maxy=Math.max(maxy,y);
+  }
+  ox = -minx + S*2; oy = -miny + S*2;
+  cv.width = maxx-minx + S*4; cv.height = maxy-miny + S*4;
+  cx.fillStyle = "#0a0d12"; cx.fillRect(0,0,cv.width,cv.height);
+  const visSet = new Set(state.visible.map(key));
+  const campSet = new Set(state.camps.map(key));
+  const unitsAt = {}, cityAt = {};
+  for (const u of state.units) (unitsAt[key(u.pos)] = unitsAt[key(u.pos)] || []).push(u);
+  for (const c of state.cities) cityAt[key(c.pos)] = c;
+  // move/attack highlights for the selected unit
+  const hl = {};
+  if (sel) {
+    for (const a of state.legal_actions) {
+      if (a.unit !== sel.id) continue;
+      if (a.type === "move") hl[key(a.to)] = "#ffffff";
+      if (a.type === "attack" || a.type === "ranged") hl[key(a.target)] = "#ff5050";
+    }
+  }
+  for (const t of tiles) {
+    const [x,y] = hexXY(t.pos[0], t.pos[1]);
+    const k = key(t.pos);
+    hexPath(x,y);
+    cx.fillStyle = TERRAIN[t.terrain] || "#333";
+    cx.fill();
+    if (t.owner !== null && t.owner !== undefined) {
+      cx.strokeStyle = pcol(t.owner); cx.lineWidth = 1.5; cx.globalAlpha = 0.8;
+      cx.stroke(); cx.globalAlpha = 1;
+    } else { cx.strokeStyle = "#00000040"; cx.lineWidth = 1; cx.stroke(); }
+    cx.fillStyle = "#00000090"; cx.textAlign = "center"; cx.font = "11px sans-serif";
+    if (t.hills) { cx.fillText("◠◠", x, y - 6); }
+    if (t.feature) cx.fillText(FEAT[t.feature] || "?", x - 8, y + 12);
+    if (t.resource) { cx.fillStyle = "#ffe080"; cx.fillText("●", x + 9, y + 12);
+      cx.fillStyle = "#00000090"; }
+    if (t.improvement === "barbarian_camp" || campSet.has(k)) {
+      cx.fillStyle = "#ff4040"; cx.font = "bold 13px sans-serif"; cx.fillText("⛺", x, y+4);
+      cx.fillStyle = "#00000090";
+    } else if (t.improvement) { cx.fillStyle = "#5a4632"; cx.fillRect(x-3, y+6, 6, 4);
+      cx.fillStyle = "#00000090"; }
+    if (t.district) { cx.fillStyle = "#e8e8e8"; cx.fillRect(x-6, y-4, 12, 9);
+      cx.fillStyle = "#111"; cx.font = "bold 9px sans-serif";
+      cx.fillText(t.district[0].toUpperCase(), x, y+3); }
+    if (!visSet.has(k)) { hexPath(x,y); cx.fillStyle = "rgba(5,8,14,0.45)"; cx.fill(); }
+    if (hl[k]) { hexPath(x,y); cx.strokeStyle = hl[k]; cx.lineWidth = 2.5; cx.stroke(); }
+  }
+  // cities
+  for (const c of state.cities) {
+    const [x,y] = hexXY(c.pos[0], c.pos[1]);
+    cx.beginPath(); cx.arc(x, y, 9, 0, 7);
+    cx.fillStyle = pcol(c.owner); cx.fill();
+    cx.strokeStyle = "#111"; cx.lineWidth = 1.5; cx.stroke();
+    cx.fillStyle = "#111"; cx.font = "bold 10px sans-serif"; cx.fillText(c.pop, x, y+3.5);
+    cx.font = "10px sans-serif"; cx.fillStyle = "#fff";
+    cx.fillText((c.is_capital ? "★ " : "") + c.name, x, y - 13);
+    if (c.hp < 200) { cx.fillStyle = "#300"; cx.fillRect(x-12, y+11, 24, 3);
+      cx.fillStyle = "#f33"; cx.fillRect(x-12, y+11, 24*c.hp/200, 3); }
+    if (selCity && selCity.id === c.id) { hexPath(x,y); cx.strokeStyle = "#f0c674";
+      cx.lineWidth = 2.5; cx.stroke(); }
+  }
+  // units (military drawn on top of civilians)
+  for (const u of state.units.sort((a,b) => (a.type==="settler"||a.type==="builder") ? -1 : 1)) {
+    const [x,y] = hexXY(u.pos[0], u.pos[1]);
+    const civ = (u.type === "settler" || u.type === "builder");
+    cx.beginPath();
+    if (civ) { cx.rect(x-6, y-6, 12, 12); } else { cx.arc(x, y, 7, 0, 7); }
+    cx.fillStyle = pcol(u.owner); cx.fill();
+    cx.strokeStyle = u.fortified ? "#fff" : "#111"; cx.lineWidth = u.fortified ? 2.5 : 1.5;
+    cx.stroke();
+    cx.fillStyle = "#111"; cx.font = "bold 9px sans-serif";
+    cx.fillText(u.type[0].toUpperCase(), x, y+3);
+    if (u.hp < 100) { cx.fillStyle = "#300"; cx.fillRect(x-8, y+9, 16, 3);
+      cx.fillStyle = "#3f3"; cx.fillRect(x-8, y+9, 16*u.hp/100, 3); }
+    if (u.level > 1) { cx.fillStyle = "#ffd700"; cx.font = "8px sans-serif";
+      cx.fillText("✦".repeat(u.level-1), x, y-9); }
+    if (sel && sel.id === u.id) { cx.beginPath(); cx.arc(x, y, 11, 0, 7);
+      cx.strokeStyle = "#f0c674"; cx.lineWidth = 2.5; cx.stroke(); }
+  }
+}
+
+function hexPath(x, y) {
+  cx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const a = Math.PI/180 * (60*i - 30);
+    const px = x + S*Math.cos(a), py = y + S*Math.sin(a);
+    i ? cx.lineTo(px,py) : cx.moveTo(px,py);
+  }
+  cx.closePath();
+}
+
+function pixelToHex(px, py) {
+  let best = null, bd = 1e9;
+  for (const t of state.map.tiles) {
+    const [x,y] = hexXY(t.pos[0], t.pos[1]);
+    const d = (x-px)**2 + (y-py)**2;
+    if (d < bd) { bd = d; best = t.pos; }
+  }
+  return bd <= (S*1.1)**2 ? best : null;
+}
+
+cv.addEventListener("click", ev => {
+  const rect = cv.getBoundingClientRect();
+  const pos = pixelToHex(ev.clientX-rect.left, ev.clientY-rect.top);
+  if (!pos) return;
+  const k = key(pos);
+  // acting on a highlighted tile with the selected unit?
+  if (sel) {
+    const acts = state.legal_actions.filter(a => a.unit === sel.id &&
+      ((a.type === "move" && key(a.to) === k) ||
+       ((a.type === "attack" || a.type === "ranged") && key(a.target) === k)));
+    if (acts.length) {
+      const atk = acts.find(a => a.type === "attack" || a.type === "ranged");
+      send(atk || acts[0]);
+      return;
+    }
+  }
+  // strike target?
+  if (selCity && selCity._striking) {
+    const sa = state.legal_actions.find(a => a.type === "city_strike" &&
+      a.city === selCity.id && key(a.target) === k);
+    if (sa) { selCity._striking = false; send(sa); return; }
+  }
+  // select own unit (cycle on repeat click) or own city
+  const here = state.units.filter(u => u.owner === 0 && key(u.pos) === k);
+  const city = state.cities.find(c => c.pos[0] === pos[0] && c.pos[1] === pos[1]);
+  if (here.length) {
+    const idx = sel ? (here.findIndex(u => u.id === sel.id) + 1) % here.length : 0;
+    sel = here[idx];
+    selCity = (city && city.owner === 0 && sel === null) ? city : selCity;
+    if (city && city.owner === 0) selCity = city;
+  } else if (city && city.owner === 0) {
+    selCity = city; sel = null;
+  } else { sel = null; selCity = null; }
+  drawMap(); drawSide();
+});
+
+function drawSide() {
+  const me = state.me, y = me.yields;
+  document.getElementById("topinfo").innerHTML =
+    `<div class="row"><b>Turn ${state.turn}</b><span>` +
+    `\u{1F52C}${y.science} \u{1F3AD}${y.culture} \u{1FA99}${Math.round(me.gold)}` +
+    ` (+${y.gold}) ✡${Math.round(me.faith)}</span></div>`;
+  // research
+  const rdiv = document.getElementById("research");
+  if (me.research) {
+    const cost = techCost(me.research);
+    rdiv.innerHTML = nameB(me.research, me.boosted_techs) +
+      prog(me.research_progress, cost, "#7fd4ff");
+  } else {
+    rdiv.innerHTML = sel1("rsel", legalFor("research").map(a => a.tech), me.boosted_techs);
+    hook("rsel", v => send({type:"research", tech:v}));
+  }
+  const cdiv = document.getElementById("civics");
+  if (me.civic) {
+    cdiv.innerHTML = nameB(me.civic, me.boosted_civics) +
+      prog(me.civic_progress, civicCost(me.civic), "#d4a8ff");
+  } else {
+    cdiv.innerHTML = sel1("csel", legalFor("civic").map(a => a.civic), me.boosted_civics);
+    hook("csel", v => send({type:"civic", civic:v}));
+  }
+  // government
+  const govs = legalFor("government");
+  const gs = document.getElementById("govsec");
+  if (govs.length || me.government) {
+    gs.style.display = "block";
+    document.getElementById("gov").innerHTML = "<b>" + (me.government || "none") + "</b> " +
+      govs.map(a => `<button onclick='send({type:"government",government:"${a.government}"})'>` +
+                    a.government + "</button>").join("");
+  } else gs.style.display = "none";
+  // players
+  document.getElementById("players").innerHTML = state.players
+    .filter(p => !p.is_barbarian)
+    .map(p => `<div class="row"><span><span class="chip" style="background:${pcol(p.id)}"></span>` +
+      `${p.civ}${p.is_minor ? " (CS)" : ""}${p.alive ? "" : " ☠"}` +
+      `${p.at_war_with_me ? " ⚔" : ""}</span><span>${p.score}</span></div>`).join("");
+  drawUnitPanel(); drawCityPanel();
+}
+
+function drawUnitPanel() {
+  const secEl = document.getElementById("unitsec");
+  if (!sel) { secEl.style.display = "none"; return; }
+  const u = state.units.find(x => x.id === sel.id);
+  if (!u) { sel = null; secEl.style.display = "none"; return; }
+  sel = u;
+  secEl.style.display = "block";
+  let h = `<b>${u.type}</b> hp ${u.hp} moves ${u.moves_left}` +
+          (u.level > 1 ? ` lvl ${u.level}` : "") + (u.fortified ? " ⛨" : "") +
+          (u.charges ? ` charges ${u.charges}` : "") + "<br>";
+  for (const a of state.legal_actions) {
+    if (a.unit !== u.id) continue;
+    if (a.type === "found_city") h += `<button onclick='send({type:"found_city",unit:${u.id}})'>Found city</button>`;
+    if (a.type === "improve") h += `<button onclick='send({type:"improve",unit:${u.id},improvement:"${a.improvement}"})'>Build ${a.improvement}</button>`;
+    if (a.type === "fortify") h += `<button onclick='send({type:"fortify",unit:${u.id}})'>Fortify</button>`;
+  }
+  h += `<button onclick='sel=null;drawMap();drawSide()'>Deselect</button>`;
+  document.getElementById("unitpanel").innerHTML = h;
+}
+
+function drawCityPanel() {
+  const secEl = document.getElementById("citysec");
+  if (!selCity) { secEl.style.display = "none"; return; }
+  const c = state.cities.find(x => x.id === selCity.id && x.owner === 0);
+  if (!c) { selCity = null; secEl.style.display = "none"; return; }
+  const striking = selCity._striking;
+  selCity = c; selCity._striking = striking;
+  secEl.style.display = "block";
+  let h = `<b>${c.name}</b> pop ${c.pop} ⌂${c.housing}` +
+    ` ☺${c.amenity_surplus >= 0 ? "+" : ""}${c.amenity_surplus} hp ${c.hp}<br>` +
+    `<span class="small">food</span>` + prog(c.food, c.growth_need, "#50c878");
+  if (c.queue && c.queue.length) {
+    h += `<span class="small">building: ${itemName(c.queue[0])}</span>` +
+         prog(c.production, c.queue_cost, "#e09050");
+  } else h += `<span class="small">production idle (${Math.round(c.production)} banked)</span>`;
+  const prods = state.legal_actions.filter(a => a.type === "produce" && a.city === c.id);
+  h += `<br><select id="prodsel"><option value="">— set production —</option>` +
+    prods.map((a,i) => `<option value="${i}">${itemName(a.item)} (${itemCost(a.item)}⚙)</option>`).join("") +
+    `</select>`;
+  const buys = state.legal_actions.filter(a => a.type === "buy" && a.city === c.id);
+  if (buys.length) h += "<br>" + buys.map(a =>
+    `<button onclick='send(${JSON.stringify(a)})'>Buy ${a.unit} (${a.currency})</button>`).join("");
+  if (state.legal_actions.some(a => a.type === "city_strike" && a.city === c.id)) {
+    h += `<br><button onclick='selCity._striking=true'>\u{1F3F9} Strike (click target)</button>`;
+  }
+  document.getElementById("citypanel").innerHTML = h;
+  const ps = document.getElementById("prodsel");
+  if (ps) ps.onchange = () => { if (ps.value !== "") send(prods[+ps.value]); };
+}
+
+function itemName(it) {
+  return it.unit || it.building || (it.district + " @" + it.pos);
+}
+function itemCost(it) { return "?"; }
+function techCost(t) { return TECH_COSTS[t] || 100; }
+function civicCost(c) { return CIVIC_COSTS[c] || 100; }
+const TECH_COSTS = {agriculture:25,pottery:25,animal_husbandry:25,mining:30,sailing:50,astrology:50,
+  irrigation:50,archery:50,writing:55,masonry:80,bronze_working:80,horseback_riding:120,currency:120,
+  celestial_navigation:120,iron_working:120,shipbuilding:200,mathematics:200,construction:200,
+  engineering:200,metal_casting:240,military_tactics:275,apprenticeship:275,machinery:280,
+  education:300,stirrups:360,castles:390,banking:445,printing:540,gunpowder:540};
+const CIVIC_COSTS = {code_of_laws:20,craftsmanship:40,foreign_trade:40,military_tradition:50,
+  early_empire:60,state_workforce:60,drama_poetry:90,games_recreation:110,political_philosophy:110,
+  defensive_tactics:175,feudalism:275,civil_service:275,mercenaries:290,guilds:385};
+
+function prog(v, total, color) {
+  const pct = Math.min(100, 100*v/Math.max(1,total));
+  return `<div class="bar"><div style="width:${pct}%;background:${color}"></div></div>` +
+         `<span class="small">${Math.round(v)}/${Math.round(total)}</span>`;
+}
+function nameB(n, boosted) {
+  return `<b>${n}</b>` + (boosted.includes(n) ? ` <span class="boost">⚡</span>` : "");
+}
+function sel1(id, opts, boosted) {
+  return `<select id="${id}"><option value="">— choose —</option>` +
+    opts.map(o => `<option>${o}${boosted.includes(o) ? " ⚡" : ""}</option>`).join("") +
+    `</select>`;
+}
+function hook(id, fn) {
+  const el = document.getElementById(id);
+  if (el) el.onchange = () => { if (el.value) fn(el.value.replace(" ⚡","")); };
+}
+
+document.getElementById("endturn").onclick = () => { sel = null; send({type:"end_turn"}); };
+document.addEventListener("keydown", ev => {
+  if (ev.key === "Enter") { sel = null; send({type:"end_turn"}); }
+  if (ev.key === "Escape") { sel = null; selCity = null; drawMap(); drawSide(); }
+});
+document.getElementById("newgame").onclick = async () => {
+  const np = +document.getElementById("np").value;
+  sel = null; selCity = null;
+  render(await (await fetch("/new", {method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({num_players: np, seed: Math.floor(Math.random()*1e9)})})).json());
+};
+
+fetchState();
+</script>
+</body>
+</html>

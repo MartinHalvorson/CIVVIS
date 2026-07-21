@@ -7,7 +7,7 @@ from .world import add_yields, zero_yields
 
 class Ruleset:
     CATEGORIES = ("terrains", "features", "resources", "improvements", "units",
-                  "districts", "buildings", "techs", "civics")
+                  "districts", "buildings", "techs", "civics", "governments")
 
     def __init__(self, data_dir=None):
         data_dir = data_dir or os.path.join(os.path.dirname(__file__), "data")

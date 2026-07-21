@@ -1,0 +1,8 @@
+{
+  "chiefdom": {"civic": "code_of_laws", "effects": {}},
+  "autocracy": {"civic": "political_philosophy", "effects": {"production_pct": 10}},
+  "oligarchy": {"civic": "political_philosophy", "effects": {"combat_strength": 4}},
+  "classical_republic": {"civic": "political_philosophy", "effects": {"amenity": 1, "science_pct": 5}},
+  "monarchy": {"civic": "civil_service", "effects": {"housing": 1, "combat_strength": 5}},
+  "merchant_republic": {"civic": "guilds", "effects": {"gold_pct": 15, "amenity": 1}}
+}

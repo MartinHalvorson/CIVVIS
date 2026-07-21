@@ -1,8 +1,8 @@
 """Gym-style headless environment: the agent controls player 0, scripted AIs
 play the rest. Observations and actions are plain JSON-able dicts."""
-from . import hexgrid
 from .ai import make_ai
 from .game import Game, IllegalAction
+from .obs import observation
 
 
 class CivEnv:
@@ -81,56 +81,4 @@ class CivEnv:
     # ----------------------------------------------------------- observation
 
     def observe(self, pid=0):
-        g = self.game
-        p = g.players[pid]
-        vis = set()
-        for u in g.player_units(pid):
-            vis.update(hexgrid.disk(u.pos, 2))
-        for c in g.player_cities(pid):
-            vis.update(hexgrid.disk(c.pos, 2))
-            vis.update(c.owned_tiles)
-        tiles = []
-        for pos in sorted(p.explored):
-            t = g.map.get(pos)
-            if t is None:
-                continue
-            oc = g.cities.get(t.owner_city) if t.owner_city is not None else None
-            tiles.append({"pos": list(pos), "terrain": t.terrain, "feature": t.feature,
-                          "hills": t.hills, "resource": t.resource,
-                          "improvement": t.improvement, "district": t.district,
-                          "owner": oc.owner if oc else None})
-        units = [u.to_dict() for u in g.units.values()
-                 if u.owner == pid or u.pos in vis]
-        cities = []
-        for c in g.cities.values():
-            if c.pos not in p.explored:
-                continue
-            d = {"id": c.id, "name": c.name, "owner": c.owner, "pos": list(c.pos),
-                 "pop": c.pop, "hp": c.hp, "is_capital": c.is_capital}
-            if c.owner == pid:
-                d.update({"food": c.food, "production": c.production,
-                          "queue": c.queue, "buildings": list(c.buildings),
-                          "districts": {k: list(v) for k, v in c.districts.items()},
-                          "owned_tiles": [list(t) for t in c.owned_tiles]})
-            cities.append(d)
-        return {
-            "turn": g.turn,
-            "player": pid,
-            "current": g.current,
-            "map": {"width": g.map.width, "height": g.map.height, "tiles": tiles},
-            "units": units,
-            "cities": cities,
-            "me": {"gold": p.gold, "faith": p.faith,
-                   "techs": sorted(p.techs), "research": p.research,
-                   "research_progress": p.research_progress,
-                   "civics": sorted(p.civics), "civic": p.civic,
-                   "civic_progress": p.civic_progress},
-            "players": [{"id": o.id, "civ": o.civ, "alive": o.alive,
-                         "is_minor": o.is_minor,
-                         "score": g.score(o.id),
-                         "cities": len(g.player_cities(o.id)),
-                         "at_war_with_me": g.is_at_war(pid, o.id)}
-                        for o in g.players],
-            "winner": g.winner,
-            "victory_type": g.victory_type,
-        }
+        return observation(self.game, pid)

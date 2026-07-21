@@ -1,10 +1,16 @@
 {
   "code_of_laws": {"cost": 20, "requires": []},
-  "craftsmanship": {"cost": 40, "requires": ["code_of_laws"]},
-  "foreign_trade": {"cost": 40, "requires": ["code_of_laws"]},
-  "military_tradition": {"cost": 50, "requires": ["craftsmanship"]},
-  "early_empire": {"cost": 60, "requires": ["foreign_trade"]},
-  "state_workforce": {"cost": 60, "requires": ["craftsmanship"]},
-  "drama_poetry": {"cost": 90, "requires": ["early_empire"]},
-  "political_philosophy": {"cost": 110, "requires": ["state_workforce", "early_empire"]}
+  "craftsmanship": {"cost": 40, "requires": ["code_of_laws"], "boost": {"trigger": "improvements", "count": 2}},
+  "foreign_trade": {"cost": 40, "requires": ["code_of_laws"], "boost": {"trigger": "cities", "count": 2}},
+  "military_tradition": {"cost": 50, "requires": ["craftsmanship"], "boost": {"trigger": "camps", "count": 1}},
+  "early_empire": {"cost": 60, "requires": ["foreign_trade"], "boost": {"trigger": "total_pop", "count": 6}},
+  "state_workforce": {"cost": 60, "requires": ["craftsmanship"], "boost": {"trigger": "districts", "count": 1}},
+  "drama_poetry": {"cost": 90, "requires": ["early_empire"], "boost": {"trigger": "building:monument", "count": 2}},
+  "games_recreation": {"cost": 110, "requires": ["state_workforce"], "boost": {"trigger": "tech:construction", "count": 1}},
+  "political_philosophy": {"cost": 110, "requires": ["state_workforce", "early_empire"], "boost": {"trigger": "cities", "count": 3}},
+  "defensive_tactics": {"cost": 175, "requires": ["political_philosophy"], "boost": {"trigger": "war", "count": 1}},
+  "feudalism": {"cost": 275, "requires": ["defensive_tactics"], "boost": {"trigger": "improvements", "count": 6}},
+  "civil_service": {"cost": 275, "requires": ["defensive_tactics"], "boost": {"trigger": "pop", "count": 7}},
+  "mercenaries": {"cost": 290, "requires": ["feudalism"], "boost": {"trigger": "units", "count": 8}},
+  "guilds": {"cost": 385, "requires": ["feudalism", "civil_service"], "boost": {"trigger": "building:market", "count": 1}}
 }

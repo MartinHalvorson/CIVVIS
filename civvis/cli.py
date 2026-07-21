@@ -47,7 +47,7 @@ def cmd_simulate(args):
         print(f"  {p.civ:<10} score={game.score(p.id):<4} cities={len(cities)} "
               f"pop={sum(c.pop for c in cities)} techs={len(p.techs)} "
               f"{'' if p.alive else '(eliminated)'}")
-    minors = [p for p in game.players if p.is_minor]
+    minors = [p for p in game.players if p.is_minor and not p.is_barbarian]
     if minors:
         parts = []
         for p in minors:
@@ -85,7 +85,7 @@ def cmd_soak(args):
             print(f"seed {seed:3d}  CRASH {type(e).__name__}: {e}")
             continue
         majors = [p for p in game.players if not p.is_minor]
-        minors = [p for p in game.players if p.is_minor]
+        minors = [p for p in game.players if p.is_minor and not p.is_barbarian]
         w = game.players[game.winner]
         flags = []
         if sum(len(game.player_cities(p.id)) for p in majors) == 0:
@@ -120,6 +120,15 @@ def cmd_benchmark(args):
 def cmd_render(args):
     game = Game.load(args.load)
     print(ascii_map(game))
+
+
+def cmd_play(args):
+    import random as _random
+    from .server import serve
+    seed = args.seed if args.seed >= 0 else _random.randrange(1 << 30)
+    serve(port=args.port, open_browser=not args.no_open,
+          num_players=args.players, width=args.width, height=args.height,
+          seed=seed, max_turns=args.turns, num_city_states=auto_cs(args))
 
 
 def main(argv=None):
@@ -158,6 +167,17 @@ def main(argv=None):
     r = sub.add_parser("render", help="print ascii map of a save file")
     r.add_argument("load")
     r.set_defaults(func=cmd_render)
+
+    p = sub.add_parser("play", help="play in the browser vs AI (you are player 0)")
+    p.add_argument("--players", type=int, default=4)
+    p.add_argument("--width", type=int, default=28)
+    p.add_argument("--height", type=int, default=18)
+    p.add_argument("--seed", type=int, default=-1, help="-1 = random")
+    p.add_argument("--turns", type=int, default=500)
+    p.add_argument("--city-states", type=int, default=-1)
+    p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--no-open", action="store_true")
+    p.set_defaults(func=cmd_play)
 
     args = ap.parse_args(argv)
     args.func(args)

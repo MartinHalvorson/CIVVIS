@@ -4,5 +4,6 @@
   "pasture": {"tech": "animal_husbandry", "yields": {"production": 1}},
   "plantation": {"tech": "irrigation", "yields": {"gold": 1}},
   "camp": {"tech": "animal_husbandry", "yields": {"gold": 1}},
-  "fishing_boats": {"tech": "sailing", "yields": {"food": 1}, "water": true}
+  "fishing_boats": {"tech": "sailing", "yields": {"food": 1}, "water": true},
+  "barbarian_camp": {"yields": {}, "unbuildable": true}
 }

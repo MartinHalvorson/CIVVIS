@@ -11,15 +11,22 @@ class Unit:
     hp: int = 100
     moves_left: float = 0.0
     charges: int = 0
+    xp: int = 0
+    level: int = 1
+    fortified: bool = False
 
     def to_dict(self):
         return {"id": self.id, "type": self.type, "owner": self.owner,
                 "pos": list(self.pos), "hp": self.hp,
-                "moves_left": self.moves_left, "charges": self.charges}
+                "moves_left": self.moves_left, "charges": self.charges,
+                "xp": self.xp, "level": self.level, "fortified": self.fortified}
 
     @classmethod
     def from_dict(cls, d):
         d = dict(d)
+        d.setdefault("xp", 0)
+        d.setdefault("level", 1)
+        d.setdefault("fortified", False)
         d["pos"] = tuple(d["pos"])
         return cls(**d)
 
@@ -41,6 +48,7 @@ class City:
     queue: list = field(default_factory=list)        # production item dicts
     original_owner: int = 0
     is_capital: bool = False
+    struck: bool = False  # city ranged strike used this turn
 
     def to_dict(self):
         return {"id": self.id, "name": self.name, "owner": self.owner,
@@ -50,11 +58,12 @@ class City:
                 "districts": {k: list(v) for k, v in self.districts.items()},
                 "owned_tiles": [list(p) for p in self.owned_tiles],
                 "queue": self.queue, "original_owner": self.original_owner,
-                "is_capital": self.is_capital}
+                "is_capital": self.is_capital, "struck": self.struck}
 
     @classmethod
     def from_dict(cls, d):
         d = dict(d)
+        d.setdefault("struck", False)
         d["pos"] = tuple(d["pos"])
         d["districts"] = {k: tuple(v) for k, v in d["districts"].items()}
         d["owned_tiles"] = [tuple(p) for p in d["owned_tiles"]]
@@ -78,9 +87,18 @@ class Player:
     explored: set = field(default_factory=set)
     alive: bool = True
     is_minor: bool = False  # city-state
+    is_barbarian: bool = False
+    government: str = None
+    counters: dict = field(default_factory=dict)  # eureka trigger counters
+    boosted_techs: set = field(default_factory=set)
+    boosted_civics: set = field(default_factory=set)
 
     def to_dict(self):
         return {"id": self.id, "civ": self.civ, "is_minor": self.is_minor,
+                "is_barbarian": self.is_barbarian, "government": self.government,
+                "counters": dict(self.counters),
+                "boosted_techs": sorted(self.boosted_techs),
+                "boosted_civics": sorted(self.boosted_civics),
                 "techs": sorted(self.techs),
                 "research": self.research, "research_progress": self.research_progress,
                 "research_overflow": self.research_overflow,
@@ -94,6 +112,11 @@ class Player:
     def from_dict(cls, d):
         d = dict(d)
         d.setdefault("is_minor", False)
+        d.setdefault("is_barbarian", False)
+        d.setdefault("government", None)
+        d.setdefault("counters", {})
+        d["boosted_techs"] = set(d.get("boosted_techs", []))
+        d["boosted_civics"] = set(d.get("boosted_civics", []))
         d["techs"] = set(d["techs"])
         d["civics"] = set(d["civics"])
         d["explored"] = {tuple(p) for p in d["explored"]}

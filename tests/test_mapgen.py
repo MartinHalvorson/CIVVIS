@@ -15,6 +15,8 @@ def test_map_dimensions_and_land_fraction():
 def test_starting_units():
     g = Game(num_players=3, width=24, height=16, seed=7)
     for p in g.players:
+        if p.is_minor:
+            continue
         types = sorted(u.type for u in g.player_units(p.id))
         assert types == ["settler", "warrior"]
 

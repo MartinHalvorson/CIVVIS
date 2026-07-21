@@ -25,15 +25,20 @@ Next for the Rust core:
 - Ruleset ID interning + yield caching (est. several-fold further speedup)
 - Observation builder + fog in Rust for RL feature extraction
 
-## v0.2 — rules depth
+## v0.4 (shipped) — rules depth + browser GUI
 
-- Housing & amenities (growth caps), rivers + fresh water
-- Eureka/Inspiration boosts
-- Unit promotions, XP, zone of control, fortify
+Housing/amenities, eurekas & inspirations, unit XP/promotions/fortify, city
+ranged strikes, barbarian camps & raiders, governments, medieval/renaissance
+content (29 techs, 14 civics), and `civvis play` — a zero-dep local web GUI
+for human-vs-AI over the JSON action protocol. Rust core still at v0.3 rules;
+batch-port these systems next.
+
+## Later rules depth
+
+- Rivers + fresh water; zone of control
 - Embarkation; ocean crossing gated by tech
-- City ranged strikes; wall HP as separate pool
-- Policy cards + governments (civics currently only unlock content)
-- Barbarian camps
+- Policy cards slotted into governments
+- Wall HP as a separate pool; siege support units
 
 ## v0.3 — systems breadth
 

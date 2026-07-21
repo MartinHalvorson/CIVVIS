@@ -10,7 +10,7 @@ def make(seed=1, cs=3):
 
 def test_city_states_prefounded():
     g = make()
-    minors = [p for p in g.players if p.is_minor]
+    minors = [p for p in g.players if p.is_minor and not p.is_barbarian]
     assert minors  # at least one placed (crowding may skip some)
     for p in minors:
         cities = g.player_cities(p.id)
@@ -25,7 +25,7 @@ def test_city_states_never_expand_or_declare_war():
     ais = {p.id: make_ai("basic", seed=p.id) for p in g.players}
     run_game(g, ais, verbose=False)
     for p in g.players:
-        if not p.is_minor:
+        if not p.is_minor or p.is_barbarian:
             continue
         assert all(u.type != "settler" for u in g.player_units(p.id))
         assert len([c for c in g.cities.values()

@@ -9,7 +9,7 @@ def test_basic_ai_selfplay_progresses():
     run_game(g, ais, verbose=False)
     assert g.winner is not None  # score victory at worst
     assert len(g.cities) >= 2
-    assert all(len(p.techs) > 1 for p in g.players)
+    assert all(len(p.techs) > 1 for p in g.players if not p.is_barbarian)
 
 
 def test_random_ai_selfplay_no_crash():

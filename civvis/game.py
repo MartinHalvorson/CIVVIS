@@ -40,7 +40,7 @@ def growth_threshold(pop):
 
 class Game:
     def __init__(self, num_players=2, width=24, height=16, seed=0, max_turns=500,
-                 ruleset=None, num_city_states=0, _skip_setup=False):
+                 ruleset=None, num_city_states=0, barbarians=True, _skip_setup=False):
         self.rules = ruleset or Ruleset()
         self.seed = seed
         self.max_turns = max_turns
@@ -54,6 +54,8 @@ class Game:
         self.at_war = set()  # of frozenset({a, b})
         self._occ = {}       # pos -> [unit ids]
         self._city_by_pos = {}
+        self.barb_camps = {}  # pos -> next spawn turn
+        self.barb_pid = None
         self.rng = random.Random(seed)
         if _skip_setup:
             self.map = None
@@ -79,6 +81,14 @@ class Game:
             self._found_city_for(p, pos, name=name)
             self._place_new_unit("warrior", pid, pos)
             self._place_new_unit("slinger", pid, pos)
+        if barbarians:
+            pid = len(self.players)
+            self.players.append(Player(id=pid, civ="Barbarians",
+                                       techs=set(STARTING_TECHS),
+                                       is_minor=True, is_barbarian=True))
+            self.barb_pid = pid
+            for _ in range(2):
+                self._spawn_camp()
 
     # ------------------------------------------------------------------ queries
 
@@ -96,7 +106,34 @@ class Game:
         return [c for c in self.cities.values() if c.owner == pid]
 
     def is_at_war(self, a, b):
+        if a == b:
+            return False
+        if self.barb_pid is not None and self.barb_pid in (a, b):
+            return True
         return frozenset((a, b)) in self.at_war
+
+    def gov_effects(self, pid):
+        p = self.players[pid]
+        if not p.government:
+            return {}
+        return self.rules.governments.get(p.government, {}).get("effects", {})
+
+    def unit_strength(self, u, defending=False):
+        s = (self.rules.units[u.type].get("strength", 1) or 1) + 5 * (u.level - 1)
+        s += self.gov_effects(u.owner).get("combat_strength", 0)
+        if defending and u.fortified:
+            s += 6
+        return s
+
+    def unit_ranged_strength(self, u):
+        rs = self.rules.units[u.type].get("ranged_strength", 0)
+        if not rs:
+            return 0
+        return rs + 5 * (u.level - 1) + self.gov_effects(u.owner).get("combat_strength", 0)
+
+    @staticmethod
+    def _bump(p, key):
+        p.counters[key] = p.counters.get(key, 0) + 1
 
     def available_techs(self, p):
         return sorted(t for t, s in self.rules.techs.items()
@@ -213,10 +250,53 @@ class Game:
                 return False
         return True
 
+    def city_housing(self, city):
+        h = 2
+        if any(self.rules.is_water(t) for t in self.map.neighbors(city.pos)):
+            h += 2
+        for b in city.buildings:
+            h += self.rules.buildings[b].get("housing", 0)
+        h += self.gov_effects(city.owner).get("housing", 0)
+        return h
+
+    def empire_luxuries(self, pid):
+        lux = set()
+        for c in self.player_cities(pid):
+            for pos in c.owned_tiles:
+                r = self.map.get(pos).resource
+                if r and self.rules.resources[r]["class"] == "luxury":
+                    lux.add(r)
+        return lux
+
+    def city_amenity_surplus(self, city):
+        supply = len(self.empire_luxuries(city.owner))
+        for dname in city.districts:
+            supply += self.rules.districts[dname].get("amenity", 0)
+        for b in city.buildings:
+            supply += self.rules.buildings[b].get("amenity", 0)
+        supply += self.gov_effects(city.owner).get("amenity", 0)
+        return supply - max(0, (city.pop - 1) // 2)
+
+    def _amenity_yield_mult(self, city):
+        s = self.city_amenity_surplus(city)
+        if s >= 2:
+            return 1.05
+        if s >= 0:
+            return 1.0
+        if s >= -2:
+            return 0.93
+        return 0.85
+
+    def _city_can_strike(self, city):
+        return (not city.struck) and \
+            ("walls" in city.buildings or "medieval_walls" in city.buildings)
+
     def city_strength(self, city):
         s = 10 + 2 * city.pop
         if "walls" in city.buildings:
             s += 10
+        if "medieval_walls" in city.buildings:
+            s += 15
         if "encampment" in city.districts:
             s += self.rules.districts["encampment"].get("defense", 10)
         garrison = [o for o in self.units_at(city.pos)
@@ -272,6 +352,14 @@ class Game:
         ys["culture"] += 0.3 * city.pop
         if city.is_capital and city.owner == city.original_owner:
             add_yields(ys, {"gold": 3, "science": 1, "culture": 1})
+        eff = self.gov_effects(city.owner)
+        for key, yk in (("production_pct", "production"), ("science_pct", "science"),
+                        ("gold_pct", "gold")):
+            if eff.get(key):
+                ys[yk] *= 1 + eff[key] / 100.0
+        m = self._amenity_yield_mult(city)
+        for k in ("production", "gold", "science", "culture", "faith"):
+            ys[k] *= m
         return ys
 
     def valid_improvements(self, p, tile):
@@ -415,12 +503,30 @@ class Game:
         if p.civic is None:
             for c in self.available_civics(p):
                 acts.append({"type": "civic", "civic": c})
-        for o in self.players:
-            if o.id != pid and o.alive:
-                if self.is_at_war(pid, o.id):
-                    acts.append({"type": "make_peace", "player": o.id})
-                else:
-                    acts.append({"type": "declare_war", "player": o.id})
+        for u in self.player_units(pid):
+            spec = self.rules.units[u.type]
+            if spec["class"] == "military" and u.moves_left > 0 and not u.fortified:
+                acts.append({"type": "fortify", "unit": u.id})
+        for c in self.player_cities(pid):
+            if self._city_can_strike(c):
+                for pos in hexgrid.disk(c.pos, 2):
+                    if pos not in self.map.tiles:
+                        continue
+                    if any(o.owner != pid and self.is_at_war(pid, o.owner)
+                           for o in self.units_at(pos)):
+                        acts.append({"type": "city_strike", "city": c.id,
+                                     "target": list(pos)})
+        if not p.is_minor:
+            for g, spec in self.rules.governments.items():
+                if spec.get("civic") in p.civics and p.government != g:
+                    acts.append({"type": "government", "government": g})
+        if not p.is_barbarian:
+            for o in self.players:
+                if o.id != pid and o.alive and not o.is_barbarian:
+                    if self.is_at_war(pid, o.id):
+                        acts.append({"type": "make_peace", "player": o.id})
+                    else:
+                        acts.append({"type": "declare_war", "player": o.id})
         acts.append({"type": "end_turn"})
         return acts
 
@@ -443,6 +549,8 @@ class Game:
             "produce": self._do_produce, "buy": self._do_buy,
             "research": self._do_research, "civic": self._do_civic,
             "declare_war": self._do_declare_war, "make_peace": self._do_make_peace,
+            "fortify": self._do_fortify, "government": self._do_government,
+            "city_strike": self._do_city_strike,
             "end_turn": self._do_end_turn,
         }
         h = handlers.get(action.get("type"))
@@ -473,8 +581,10 @@ class Game:
             if o.owner != u.owner:
                 o.owner = u.owner  # capture undefended civilian
         cost = self.rules.move_cost(self.map.get(to))
+        u.fortified = False
         self._relocate(u, to)
         u.moves_left = max(0.0, u.moves_left - cost)
+        self._maybe_clear_camp(u)
 
     def _auto_declare_war(self, a, b):
         if a != b and not self.is_at_war(a, b):
@@ -505,19 +615,25 @@ class Game:
         if city is not None:
             self._auto_declare_war(u.owner, city.owner)
         military = [e for e in enemies if self.rules.units[e.type]["class"] == "military"]
-        att = effective_strength(spec["strength"], u.hp)
+        u.fortified = False
+        att = effective_strength(self.unit_strength(u), u.hp)
         u.moves_left = 0
         if military:
             d = max(military, key=lambda e: effective_strength(
-                self.rules.units[e.type].get("strength", 1), e.hp))
-            ds = effective_strength(self.rules.units[d.type].get("strength", 1), d.hp) \
+                self.unit_strength(e, defending=True), e.hp))
+            ds = effective_strength(self.unit_strength(d, defending=True), d.hp) \
                 + self._tile_defense_bonus(target)
             d.hp -= damage(att, ds, self.rng)
             u.hp -= damage(ds, att, self.rng)
+            u.xp += 5
+            d.xp += 4
             if d.hp <= 0:
+                u.xp += 3
+                self._bump(p, "kills")
                 self._remove_unit(d.id)
                 self._on_unit_lost(d.owner)
             if u.hp <= 0:
+                self._bump(self.players[d.owner], "kills")
                 self._remove_unit(u.id)
                 self._on_unit_lost(u.owner)
                 return
@@ -530,14 +646,18 @@ class Game:
             cs = self.city_strength(city)
             city.hp -= damage(att, cs, self.rng)
             u.hp -= damage(cs, att, self.rng)
+            u.xp += 3
             if u.hp <= 0:
                 self._remove_unit(u.id)
                 self._on_unit_lost(u.owner)
                 city.hp = max(1, city.hp)
                 return
             if city.hp <= 0:
-                self._capture_city(city, u.owner)
-                self._enter_tile(u, target)
+                if p.is_barbarian:
+                    city.hp = 1  # barbarians cannot capture cities
+                else:
+                    self._capture_city(city, u.owner)
+                    self._enter_tile(u, target)
         else:
             # only undefended civilians: capture them by entering
             self._enter_tile(u, target)
@@ -547,6 +667,62 @@ class Game:
             if o.owner != u.owner:
                 o.owner = u.owner
         self._relocate(u, pos)
+        self._maybe_clear_camp(u)
+
+    def _maybe_clear_camp(self, u):
+        if u.pos in self.barb_camps and u.owner != self.barb_pid \
+                and self.rules.units[u.type]["class"] == "military":
+            del self.barb_camps[u.pos]
+            t = self.map.get(u.pos)
+            if t.improvement == "barbarian_camp":
+                t.improvement = None
+            p = self.players[u.owner]
+            p.gold += 50
+            self._bump(p, "camps")
+
+    def _spawn_camp(self):
+        cands = []
+        for pos, t in self.map.tiles.items():
+            if self.rules.is_water(t) or not self.rules.is_passable(t):
+                continue
+            if t.owner_city is not None or t.improvement or self.city_at(pos):
+                continue
+            if any(hexgrid.distance(pos, c.pos) < 4 for c in self.cities.values()):
+                continue
+            if any(hexgrid.distance(pos, cp) < 4 for cp in self.barb_camps):
+                continue
+            cands.append(pos)
+        if not cands:
+            return
+        cands.sort()
+        pos = cands[self.rng.randrange(len(cands))]
+        self.map.get(pos).improvement = "barbarian_camp"
+        self.barb_camps[pos] = self.turn + 2
+
+    def _barbarian_phase(self):
+        if self.barb_pid is None:
+            return
+        majors = [p for p in self.players if not p.is_minor]
+        if self.turn % 10 == 0 and len(self.barb_camps) < len(majors) + 1:
+            self._spawn_camp()
+        cap = 2 + 2 * len(self.barb_camps)
+        n_barb = len(self.player_units(self.barb_pid))
+        era = max((len(p.techs) for p in majors), default=1)
+        if era < 8:
+            pool = ["warrior"]
+        elif era < 14:
+            pool = ["warrior", "spearman", "archer"]
+        elif era < 22:
+            pool = ["swordsman", "spearman", "archer"]
+        else:
+            pool = ["swordsman", "crossbowman", "pikeman"]
+        for pos, nxt in sorted(self.barb_camps.items()):
+            if self.turn < nxt or n_barb >= cap:
+                continue
+            utype = pool[self.rng.randrange(len(pool))]
+            if self._place_new_unit(utype, self.barb_pid, pos) is not None:
+                n_barb += 1
+                self.barb_camps[pos] = self.turn + 6
 
     def _do_ranged(self, p, action):
         u = self._own_unit(p, action["unit"])
@@ -569,22 +745,26 @@ class Game:
             self._auto_declare_war(u.owner, e.owner)
         if city is not None:
             self._auto_declare_war(u.owner, city.owner)
-        att = effective_strength(rs, u.hp)
+        att = effective_strength(self.unit_ranged_strength(u), u.hp)
+        u.fortified = False
         u.moves_left = 0
+        u.xp += 3
         military = [e for e in enemies if self.rules.units[e.type]["class"] == "military"]
         if military:
             d = max(military, key=lambda e: effective_strength(
-                self.rules.units[e.type].get("strength", 1), e.hp))
-            ds = effective_strength(self.rules.units[d.type].get("strength", 1), d.hp) \
+                self.unit_strength(e, defending=True), e.hp))
+            ds = effective_strength(self.unit_strength(d, defending=True), d.hp) \
                 + self._tile_defense_bonus(target)
             d.hp -= damage(att, ds, self.rng)
             if d.hp <= 0:
+                self._bump(p, "kills")
                 self._remove_unit(d.id)
                 self._on_unit_lost(d.owner)
         elif enemies:
             d = enemies[0]
             d.hp -= damage(att, 1.0, self.rng)
             if d.hp <= 0:
+                self._bump(p, "kills")
                 self._remove_unit(d.id)
                 self._on_unit_lost(d.owner)
         else:
@@ -595,6 +775,8 @@ class Game:
         u = self._own_unit(p, action["unit"])
         if u.type != "settler":
             raise IllegalAction("only settlers found cities")
+        if p.is_barbarian:
+            raise IllegalAction("barbarians do not found cities")
         if not self.can_found_city(u):
             raise IllegalAction("cannot found city here")
         self._found_city_for(p, u.pos)
@@ -637,6 +819,7 @@ class Game:
             tile.feature = None
         u.charges -= 1
         u.moves_left = 0
+        self._bump(p, "improvements")
         if u.charges <= 0:
             self._remove_unit(u.id)
 
@@ -680,6 +863,8 @@ class Game:
         p.research = t
         p.research_progress = p.research_overflow
         p.research_overflow = 0.0
+        if t in p.boosted_techs:
+            p.research_progress += 0.4 * self.rules.techs[t]["cost"]
 
     def _do_civic(self, p, action):
         if p.civic is not None:
@@ -690,11 +875,55 @@ class Game:
         p.civic = c
         p.civic_progress = p.civic_overflow
         p.civic_overflow = 0.0
+        if c in p.boosted_civics:
+            p.civic_progress += 0.4 * self.rules.civics[c]["cost"]
+
+    def _do_fortify(self, p, action):
+        u = self._own_unit(p, action["unit"])
+        if self.rules.units[u.type]["class"] != "military":
+            raise IllegalAction("only military units fortify")
+        u.fortified = True
+        u.moves_left = 0
+
+    def _do_government(self, p, action):
+        g = action["government"]
+        spec = self.rules.governments.get(g)
+        if spec is None or spec.get("civic") not in p.civics:
+            raise IllegalAction("government unavailable")
+        if p.government == g:
+            raise IllegalAction("already that government")
+        p.government = g
+
+    def _do_city_strike(self, p, action):
+        city = self._own_city(p, action["city"])
+        if not self._city_can_strike(city):
+            raise IllegalAction("city cannot strike")
+        target = tuple(action["target"])
+        if hexgrid.distance(city.pos, target) > 2:
+            raise IllegalAction("out of range")
+        enemies = [o for o in self.units_at(target)
+                   if o.owner != p.id and self.is_at_war(p.id, o.owner)]
+        if not enemies:
+            raise IllegalAction("no enemy target")
+        military = [e for e in enemies
+                    if self.rules.units[e.type]["class"] == "military"]
+        d = max(military, key=lambda e: effective_strength(
+            self.unit_strength(e, defending=True), e.hp)) if military else enemies[0]
+        ds = effective_strength(self.unit_strength(d, defending=True), d.hp) \
+            + self._tile_defense_bonus(target)
+        d.hp -= damage(self.city_strength(city), ds, self.rng)
+        if d.hp <= 0:
+            self._bump(p, "kills")
+            self._remove_unit(d.id)
+            self._on_unit_lost(d.owner)
+        city.struck = True
 
     def _do_declare_war(self, p, action):
         o = action["player"]
         if o == p.id or not self.players[o].alive:
             raise IllegalAction("invalid war target")
+        if p.is_barbarian or self.players[o].is_barbarian:
+            raise IllegalAction("barbarians are always at war")
         self.at_war.add(frozenset((p.id, o)))
 
     def _do_make_peace(self, p, action):
@@ -718,6 +947,7 @@ class Game:
         self.current = nxt
         if wrapped:
             self.turn += 1
+            self._barbarian_phase()
             if self.turn > self.max_turns and self.winner is None:
                 majors = [pl for pl in self.players if pl.alive and not pl.is_minor]
                 best = max(majors or self.players,
@@ -729,9 +959,12 @@ class Game:
     # ------------------------------------------------------------ turn engine
 
     def _begin_turn(self, p):
+        self._check_boosts(p)
         for u in self.player_units(p.id):
             spec = self.rules.units[u.type]
             u.moves_left = spec["moves"]
+            while u.level < 4 and u.xp >= 15 * u.level * (u.level + 1) // 2:
+                u.level += 1
             if u.hp < 100:
                 t = self.map.get(u.pos)
                 own = t.owner_city is not None and \
@@ -770,9 +1003,75 @@ class Game:
         else:
             p.civic_overflow += cul
 
+    def _check_boosts(self, p):
+        if p.is_minor:
+            return
+        for name, spec in self.rules.techs.items():
+            if name in p.techs or name in p.boosted_techs:
+                continue
+            b = spec.get("boost")
+            if b and self._boost_met(p, b):
+                p.boosted_techs.add(name)
+                if p.research == name:
+                    p.research_progress += 0.4 * spec["cost"]
+        for name, spec in self.rules.civics.items():
+            if name in p.civics or name in p.boosted_civics:
+                continue
+            b = spec.get("boost")
+            if b and self._boost_met(p, b):
+                p.boosted_civics.add(name)
+                if p.civic == name:
+                    p.civic_progress += 0.4 * spec["cost"]
+
+    def _boost_met(self, p, b):
+        trig = b["trigger"]
+        n = b.get("count", 1)
+        cities = self.player_cities(p.id)
+        if trig in ("kills", "improvements", "camps", "captures"):
+            return p.counters.get(trig, 0) >= n
+        if trig == "cities":
+            return len(cities) >= n
+        if trig == "districts":
+            return sum(len(c.districts) for c in cities) >= n
+        if trig == "pop":
+            return any(c.pop >= n for c in cities)
+        if trig == "total_pop":
+            return sum(c.pop for c in cities) >= n
+        if trig == "units":
+            return len([u for u in self.player_units(p.id)
+                        if self.rules.units[u.type]["class"] == "military"]) >= n
+        if trig.startswith("units_of:"):
+            t = trig.split(":", 1)[1]
+            return len([u for u in self.player_units(p.id) if u.type == t]) >= n
+        if trig.startswith("district:"):
+            d = trig.split(":", 1)[1]
+            return any(d in c.districts for c in cities)
+        if trig.startswith("building:"):
+            bn = trig.split(":", 1)[1]
+            return sum(1 for c in cities if bn in c.buildings) >= n
+        if trig.startswith("tech:"):
+            return trig.split(":", 1)[1] in p.techs
+        if trig == "coastal_city":
+            return any(any(self.rules.is_water(t) for t in self.map.neighbors(c.pos))
+                       for c in cities)
+        if trig == "war":
+            return any(self.is_at_war(p.id, o.id) for o in self.players
+                       if o.id != p.id and not o.is_barbarian)
+        return False
+
     def _process_city(self, p, city):
+        city.struck = False
         ys = self.city_yields(city)
-        city.food += ys["food"] - 2 * city.pop
+        surplus = ys["food"] - 2 * city.pop
+        if surplus > 0:
+            headroom = self.city_housing(city) - city.pop
+            hf = 1.0 if headroom > 1 else (
+                0.5 if headroom == 1 else (0.25 if headroom > -2 else 0.0))
+            s_am = self.city_amenity_surplus(city)
+            af = 1.1 if s_am >= 2 else (
+                1.0 if s_am >= 0 else (0.75 if s_am >= -2 else 0.5))
+            surplus *= hf * af
+        city.food += surplus
         need = growth_threshold(city.pop)
         if city.food >= need:
             city.pop += 1
@@ -869,6 +1168,7 @@ class Game:
         for o in self.units_at(city.pos):
             if o.owner == old:
                 o.owner = new_owner
+        self._bump(self.players[new_owner], "captures")
         self._check_elimination(old)
         self._check_domination()
 
@@ -878,7 +1178,7 @@ class Game:
 
     def _check_elimination(self, pid):
         p = self.players[pid]
-        if not p.alive:
+        if not p.alive or p.is_barbarian:
             return
         if self.player_cities(pid):
             return
@@ -914,6 +1214,8 @@ class Game:
             "victory_type": self.victory_type, "next_id": self.next_id,
             "rng_state": [s[0], list(s[1]), s[2]],
             "at_war": sorted(sorted(pair) for pair in self.at_war),
+            "barb_pid": self.barb_pid,
+            "barb_camps": sorted([list(pos), nxt] for pos, nxt in self.barb_camps.items()),
             "map": self.map.to_dict(),
             "players": [p.to_dict() for p in self.players],
             "units": [u.to_dict() for u in self.units.values()],
@@ -932,6 +1234,8 @@ class Game:
         rs = d["rng_state"]
         g.rng.setstate((rs[0], tuple(rs[1]), rs[2]))
         g.at_war = {frozenset(pair) for pair in d["at_war"]}
+        g.barb_pid = d.get("barb_pid")
+        g.barb_camps = {tuple(pos): nxt for pos, nxt in d.get("barb_camps", [])}
         g.map = WorldMap.from_dict(d["map"])
         g.players = [Player.from_dict(pd) for pd in d["players"]]
         for ud in d["units"]:

@@ -10,7 +10,7 @@ Not affiliated with Firaxis or 2K. No assets, art, text, or code from
 Civilization VI are used — this is an original implementation of similar
 mechanics.
 
-## What's implemented (v0.1)
+## What's implemented (v0.4)
 
 - Hex map (axial coords), random continents, climate bands, features, resources
 - Cities: population growth (Civ 6 food curve), border expansion, production
@@ -22,6 +22,17 @@ mechanics.
   city sieges, capture, civilian capture
 - **City-states**: pre-founded minor civs that defend themselves, never expand
   or start wars, and can be conquered (excluded from victory conditions)
+- **Barbarians**: camps spawn in the fog, raid civs (era-scaled units), yield
+  gold when cleared; they besiege but never capture cities
+- **Housing & amenities**: growth caps from housing, luxury-driven amenities
+  with happiness yield/growth modifiers
+- **Eurekas & Inspirations**: data-driven boost triggers grant 40% of
+  tech/civic cost (kills, improvements, districts, coastal cities, ...)
+- **Unit XP, promotions (+5 str/level), fortify (+6 defending)**
+- **City ranged strikes** once walls are built
+- **Governments** (chiefdom through merchant republic) with empire effects
+- Content through the medieval/renaissance eras: 29 techs, 14 civics,
+  knights/pikemen/musketmen, banks/universities/aqueducts, 8 district types
 - Diplomacy: war/peace; victory by **domination, science, or score**
 - Fog of war (per-player explored + visible sets in observations)
 - Full JSON serialization (save/load), deterministic given a seed
@@ -48,7 +59,18 @@ cd rust && cargo build --release
 
 Each engine is deterministic per seed (RNG formats differ between the two).
 
-## Quickstart
+## Play it (human vs AI)
+
+```bash
+pip install -e .
+civvis play --players 4            # opens the browser GUI; you are player 0
+```
+
+Zero-dependency local web GUI: click units to move/attack, found cities, set
+production, pick research/civics/governments, fortify, city strikes, fog of
+war. `--seed N` for a fixed map, `--no-open` to not launch a browser.
+
+## Headless simulation
 
 ```bash
 pip install -e .

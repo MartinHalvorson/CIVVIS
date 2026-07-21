@@ -10,5 +10,8 @@
   "horseman": {"class": "military", "cost": 80, "moves": 4, "strength": 36, "tech": "horseback_riding", "requires_resource": "horses"},
   "catapult": {"class": "military", "cost": 120, "moves": 2, "strength": 23, "ranged_strength": 35, "range": 2, "tech": "mathematics"},
   "crossbowman": {"class": "military", "cost": 180, "moves": 2, "strength": 30, "ranged_strength": 40, "range": 2, "tech": "machinery"},
+  "pikeman": {"class": "military", "cost": 200, "moves": 2, "strength": 41, "tech": "military_tactics"},
+  "knight": {"class": "military", "cost": 220, "moves": 4, "strength": 48, "tech": "stirrups", "requires_resource": "horses"},
+  "musketman": {"class": "military", "cost": 240, "moves": 2, "strength": 55, "tech": "gunpowder"},
   "galley": {"class": "military", "cost": 65, "moves": 3, "strength": 30, "domain": "sea", "tech": "sailing"}
 }
