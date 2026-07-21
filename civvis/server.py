@@ -79,6 +79,12 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/state":
             with self.session.lock:
                 self._json(self.session.state())
+        elif self.path == "/rules":
+            with self.session.lock:
+                r = self.session.game.rules
+                self._json({"techs": r.techs, "civics": r.civics,
+                            "governments": r.governments, "units": r.units,
+                            "buildings": r.buildings, "districts": r.districts})
         else:
             self._json({"error": "not found"}, 404)
 

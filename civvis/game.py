@@ -180,7 +180,7 @@ class Game:
         self.next_id += 1
         self.units[u.id] = u
         self._occ.setdefault(u.pos, []).append(u.id)
-        self._reveal(self.players[owner], u.pos)
+        self._reveal(self.players[owner], u.pos, spec.get("sight", 2))
         return u
 
     def _remove_unit(self, uid):
@@ -200,7 +200,8 @@ class Game:
             self._occ.pop(u.pos, None)
         u.pos = tuple(pos)
         self._occ.setdefault(u.pos, []).append(u.id)
-        self._reveal(self.players[u.owner], u.pos)
+        self._reveal(self.players[u.owner], u.pos,
+                     self.rules.units[u.type].get("sight", 2))
 
     def _reveal(self, player, pos, radius=2):
         for p in hexgrid.disk(tuple(pos), radius):

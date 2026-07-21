@@ -7,8 +7,11 @@
   * { box-sizing: border-box; margin: 0; }
   body { font: 13px/1.4 system-ui, sans-serif; background: #10141a; color: #dde3ea;
          display: flex; height: 100vh; overflow: hidden; }
-  #maparea { flex: 1; overflow: auto; position: relative; }
+  #maparea { flex: 1; overflow: auto; position: relative; display: grid; place-items: center; }
   canvas { display: block; cursor: pointer; }
+  #zoomctl { position: fixed; top: 10px; left: 10px; z-index: 6;
+             display: flex; flex-direction: column; gap: 4px; }
+  #zoomctl button { width: 36px; height: 36px; font-size: 18px; padding: 0; }
   #side { width: 340px; min-width: 340px; background: #171d26; padding: 10px;
           overflow-y: auto; border-left: 1px solid #2a3442; }
   h1 { font-size: 15px; margin-bottom: 6px; color: #f0c674; }
@@ -32,18 +35,44 @@
            padding: 3px; max-width: 100%; }
   .small { font-size: 11px; color: #8fa1b5; }
   .boost { color: #7fd4ff; }
+  .mini { font-size: 10px; padding: 1px 6px; margin-left: 6px; }
+  #tree { position: fixed; inset: 4% 3%; background: #141a23; border: 1px solid #40536b;
+          border-radius: 8px; z-index: 10; display: none; flex-direction: column; padding: 12px; }
+  #tree.open { display: flex; }
+  #treehead { display: flex; justify-content: space-between; margin-bottom: 8px; }
+  #treecols { display: flex; gap: 14px; overflow: auto; flex: 1; align-items: flex-start; }
+  .tcol { display: flex; flex-direction: column; gap: 8px; min-width: 160px; }
+  .tnode { background: #1e2530; border: 1px solid #40536b; border-radius: 6px;
+           padding: 6px 8px; font-size: 12px; }
+  .tnode.done { border-color: #50c878; color: #7fdc9c; }
+  .tnode.cur { border-color: #7fd4ff; box-shadow: 0 0 6px #7fd4ff60; }
+  .tnode.avail { border-color: #f0c674; cursor: pointer; }
+  .tnode.avail:hover { background: #2d3a4d; }
+  .tnode.locked { opacity: 0.45; }
+  .tnode .req { color: #8fa1b5; font-size: 10px; }
 </style>
 </head>
 <body>
 <div id="maparea">
   <canvas id="map"></canvas>
   <div id="winner"></div>
+  <div id="tree">
+    <div id="treehead"><b id="treetitle"></b>
+      <button onclick='document.getElementById("tree").classList.remove("open")'>✕ close</button>
+    </div>
+    <div id="treecols"></div>
+  </div>
+  <div id="zoomctl">
+    <button id="zin" title="zoom in">+</button>
+    <button id="zout" title="zoom out">−</button>
+    <button id="zhome" title="center on your empire">⌂</button>
+  </div>
 </div>
 <div id="side">
   <h1>Civilization VIS</h1>
   <div class="sec" id="topinfo"></div>
-  <div class="sec"><h2>Research</h2><div id="research"></div></div>
-  <div class="sec"><h2>Civics</h2><div id="civics"></div></div>
+  <div class="sec"><h2>Research <button class="mini" onclick='openTree("techs")'>tree map</button></h2><div id="research"></div></div>
+  <div class="sec"><h2>Civics <button class="mini" onclick='openTree("civics")'>tree map</button></h2><div id="civics"></div></div>
   <div class="sec" id="govsec" style="display:none"><h2>Government</h2><div id="gov"></div></div>
   <div class="sec" id="unitsec" style="display:none"><h2>Selected unit</h2><div id="unitpanel"></div></div>
   <div class="sec" id="citysec" style="display:none"><h2>City</h2><div id="citypanel"></div></div>
@@ -58,7 +87,8 @@
 </div>
 <script>
 "use strict";
-const S = 24, SQ3 = Math.sqrt(3);
+let S = 28;
+const SQ3 = Math.sqrt(3);
 const TERRAIN = { grassland:"#4c7a3f", plains:"#8a8f3f", desert:"#c9b26b", tundra:"#7d8a7d",
                   snow:"#dfe6ea", coast:"#3b6d8f", ocean:"#1f3d5c", mountain:"#6b6f76" };
 const PCOLORS = ["#ffd700","#e05050","#50a0e0","#50c878","#c878e0","#e09050","#70d0d0","#f0f080",
@@ -71,7 +101,11 @@ function pcol(id) { const p = state.players[id]; return p && p.is_barbarian ? "#
 function hexXY(q, r) { return [ox + S*SQ3*(q + r/2), oy + S*1.5*r]; }
 function key(p) { return p[0] + "," + p[1]; }
 
-async function fetchState() { render(await (await fetch("/state")).json()); }
+let firstLoad = true;
+async function fetchState() {
+  render(await (await fetch("/state")).json());
+  if (firstLoad) { firstLoad = false; centerHome(); }
+}
 async function send(action) {
   const r = await (await fetch("/action", {method:"POST", headers:{"Content-Type":"application/json"},
                    body: JSON.stringify({action})})).json();
@@ -122,6 +156,8 @@ function drawMap() {
       if (a.type === "attack" || a.type === "ranged") hl[key(a.target)] = "#ff5050";
     }
   }
+  const R = S / 24;
+  const f = n => Math.max(7, Math.round(n * R));
   for (const t of tiles) {
     const [x,y] = hexXY(t.pos[0], t.pos[1]);
     const k = key(t.pos);
@@ -129,58 +165,100 @@ function drawMap() {
     cx.fillStyle = TERRAIN[t.terrain] || "#333";
     cx.fill();
     if (t.owner !== null && t.owner !== undefined) {
-      cx.strokeStyle = pcol(t.owner); cx.lineWidth = 1.5; cx.globalAlpha = 0.8;
+      cx.strokeStyle = pcol(t.owner); cx.lineWidth = 1.5*R; cx.globalAlpha = 0.8;
       cx.stroke(); cx.globalAlpha = 1;
     } else { cx.strokeStyle = "#00000040"; cx.lineWidth = 1; cx.stroke(); }
-    cx.fillStyle = "#00000090"; cx.textAlign = "center"; cx.font = "11px sans-serif";
-    if (t.hills) { cx.fillText("◠◠", x, y - 6); }
-    if (t.feature) cx.fillText(FEAT[t.feature] || "?", x - 8, y + 12);
-    if (t.resource) { cx.fillStyle = "#ffe080"; cx.fillText("●", x + 9, y + 12);
+    cx.fillStyle = "#00000090"; cx.textAlign = "center";
+    cx.font = f(11) + "px sans-serif";
+    if (t.hills) { cx.fillText("◠◠", x, y - 6*R); }
+    if (t.feature) cx.fillText(FEAT[t.feature] || "?", x - 8*R, y + 12*R);
+    if (t.resource) { cx.fillStyle = "#ffe080"; cx.fillText("●", x + 9*R, y + 12*R);
       cx.fillStyle = "#00000090"; }
     if (t.improvement === "barbarian_camp" || campSet.has(k)) {
-      cx.fillStyle = "#ff4040"; cx.font = "bold 13px sans-serif"; cx.fillText("⛺", x, y+4);
+      cx.fillStyle = "#ff4040"; cx.font = "bold " + f(13) + "px sans-serif";
+      cx.fillText("⛺", x, y+4*R);
       cx.fillStyle = "#00000090";
-    } else if (t.improvement) { cx.fillStyle = "#5a4632"; cx.fillRect(x-3, y+6, 6, 4);
+    } else if (t.improvement) { cx.fillStyle = "#5a4632";
+      cx.fillRect(x-3*R, y+6*R, 6*R, 4*R);
       cx.fillStyle = "#00000090"; }
-    if (t.district) { cx.fillStyle = "#e8e8e8"; cx.fillRect(x-6, y-4, 12, 9);
-      cx.fillStyle = "#111"; cx.font = "bold 9px sans-serif";
-      cx.fillText(t.district[0].toUpperCase(), x, y+3); }
+    if (t.district) { cx.fillStyle = "#e8e8e8"; cx.fillRect(x-6*R, y-4*R, 12*R, 9*R);
+      cx.fillStyle = "#111"; cx.font = "bold " + f(9) + "px sans-serif";
+      cx.fillText(t.district[0].toUpperCase(), x, y+3*R); }
     if (!visSet.has(k)) { hexPath(x,y); cx.fillStyle = "rgba(5,8,14,0.45)"; cx.fill(); }
-    if (hl[k]) { hexPath(x,y); cx.strokeStyle = hl[k]; cx.lineWidth = 2.5; cx.stroke(); }
+    if (hl[k]) { hexPath(x,y); cx.strokeStyle = hl[k]; cx.lineWidth = 2.5*R; cx.stroke(); }
   }
   // cities
   for (const c of state.cities) {
     const [x,y] = hexXY(c.pos[0], c.pos[1]);
-    cx.beginPath(); cx.arc(x, y, 9, 0, 7);
+    cx.beginPath(); cx.arc(x, y, 9*R, 0, 7);
     cx.fillStyle = pcol(c.owner); cx.fill();
-    cx.strokeStyle = "#111"; cx.lineWidth = 1.5; cx.stroke();
-    cx.fillStyle = "#111"; cx.font = "bold 10px sans-serif"; cx.fillText(c.pop, x, y+3.5);
-    cx.font = "10px sans-serif"; cx.fillStyle = "#fff";
-    cx.fillText((c.is_capital ? "★ " : "") + c.name, x, y - 13);
-    if (c.hp < 200) { cx.fillStyle = "#300"; cx.fillRect(x-12, y+11, 24, 3);
-      cx.fillStyle = "#f33"; cx.fillRect(x-12, y+11, 24*c.hp/200, 3); }
+    cx.strokeStyle = "#111"; cx.lineWidth = 1.5*R; cx.stroke();
+    cx.fillStyle = "#111"; cx.font = "bold " + f(10) + "px sans-serif";
+    cx.fillText(c.pop, x, y+3.5*R);
+    cx.font = f(10) + "px sans-serif"; cx.fillStyle = "#fff";
+    cx.fillText((c.is_capital ? "★ " : "") + c.name, x, y - 13*R);
+    if (c.hp < 200) { cx.fillStyle = "#300"; cx.fillRect(x-12*R, y+11*R, 24*R, 3*R);
+      cx.fillStyle = "#f33"; cx.fillRect(x-12*R, y+11*R, 24*R*c.hp/200, 3*R); }
     if (selCity && selCity.id === c.id) { hexPath(x,y); cx.strokeStyle = "#f0c674";
-      cx.lineWidth = 2.5; cx.stroke(); }
+      cx.lineWidth = 2.5*R; cx.stroke(); }
   }
   // units (military drawn on top of civilians)
   for (const u of state.units.sort((a,b) => (a.type==="settler"||a.type==="builder") ? -1 : 1)) {
     const [x,y] = hexXY(u.pos[0], u.pos[1]);
     const civ = (u.type === "settler" || u.type === "builder");
     cx.beginPath();
-    if (civ) { cx.rect(x-6, y-6, 12, 12); } else { cx.arc(x, y, 7, 0, 7); }
+    if (civ) { cx.rect(x-6*R, y-6*R, 12*R, 12*R); } else { cx.arc(x, y, 7*R, 0, 7); }
     cx.fillStyle = pcol(u.owner); cx.fill();
-    cx.strokeStyle = u.fortified ? "#fff" : "#111"; cx.lineWidth = u.fortified ? 2.5 : 1.5;
+    cx.strokeStyle = u.fortified ? "#fff" : "#111"; cx.lineWidth = (u.fortified ? 2.5 : 1.5)*R;
     cx.stroke();
-    cx.fillStyle = "#111"; cx.font = "bold 9px sans-serif";
-    cx.fillText(u.type[0].toUpperCase(), x, y+3);
-    if (u.hp < 100) { cx.fillStyle = "#300"; cx.fillRect(x-8, y+9, 16, 3);
-      cx.fillStyle = "#3f3"; cx.fillRect(x-8, y+9, 16*u.hp/100, 3); }
-    if (u.level > 1) { cx.fillStyle = "#ffd700"; cx.font = "8px sans-serif";
-      cx.fillText("✦".repeat(u.level-1), x, y-9); }
-    if (sel && sel.id === u.id) { cx.beginPath(); cx.arc(x, y, 11, 0, 7);
-      cx.strokeStyle = "#f0c674"; cx.lineWidth = 2.5; cx.stroke(); }
+    cx.fillStyle = "#111"; cx.font = "bold " + f(9) + "px sans-serif";
+    cx.fillText(u.type[0].toUpperCase(), x, y+3*R);
+    if (u.hp < 100) { cx.fillStyle = "#300"; cx.fillRect(x-8*R, y+9*R, 16*R, 3*R);
+      cx.fillStyle = "#3f3"; cx.fillRect(x-8*R, y+9*R, 16*R*u.hp/100, 3*R); }
+    if (u.level > 1) { cx.fillStyle = "#ffd700"; cx.font = f(8) + "px sans-serif";
+      cx.fillText("✦".repeat(u.level-1), x, y-9*R); }
+    if (sel && sel.id === u.id) { cx.beginPath(); cx.arc(x, y, 11*R, 0, 7);
+      cx.strokeStyle = "#f0c674"; cx.lineWidth = 2.5*R; cx.stroke(); }
   }
 }
+
+const area = document.getElementById("maparea");
+function padL() { return Math.max(0, (area.clientWidth - cv.width) / 2); }
+function padT() { return Math.max(0, (area.clientHeight - cv.height) / 2); }
+
+function zoomAt(factor, clientX, clientY) {
+  if (!state) return;
+  const arect = area.getBoundingClientRect();
+  const vx = (clientX === undefined ? area.clientWidth / 2 : clientX - arect.left);
+  const vy = (clientY === undefined ? area.clientHeight / 2 : clientY - arect.top);
+  const wx = (vx + area.scrollLeft - padL() - ox) / S;
+  const wy = (vy + area.scrollTop - padT() - oy) / S;
+  const old = S;
+  S = Math.max(10, Math.min(64, Math.round(S * factor)));
+  if (S === old) return;
+  drawMap();
+  area.scrollLeft = padL() + wx * S + ox - vx;
+  area.scrollTop = padT() + wy * S + oy - vy;
+}
+
+function centerHome() {
+  if (!state) return;
+  const own = state.cities.find(c => c.owner === 0 && c.is_capital) ||
+              state.cities.find(c => c.owner === 0) ||
+              state.units.find(u => u.owner === 0);
+  if (!own) return;
+  const [x, y] = hexXY(own.pos[0], own.pos[1]);
+  area.scrollLeft = padL() + x - area.clientWidth / 2;
+  area.scrollTop = padT() + y - area.clientHeight / 2;
+}
+
+area.addEventListener("wheel", ev => {
+  ev.preventDefault();
+  zoomAt(ev.deltaY < 0 ? 1.2 : 1 / 1.2, ev.clientX, ev.clientY);
+}, { passive: false });
+document.getElementById("zin").onclick = () => zoomAt(1.25);
+document.getElementById("zout").onclick = () => zoomAt(0.8);
+document.getElementById("zhome").onclick = centerHome;
 
 function hexPath(x, y) {
   cx.beginPath();
@@ -333,17 +411,55 @@ function drawCityPanel() {
 function itemName(it) {
   return it.unit || it.building || (it.district + " @" + it.pos);
 }
-function itemCost(it) { return "?"; }
-function techCost(t) { return TECH_COSTS[t] || 100; }
-function civicCost(c) { return CIVIC_COSTS[c] || 100; }
-const TECH_COSTS = {agriculture:25,pottery:25,animal_husbandry:25,mining:30,sailing:50,astrology:50,
-  irrigation:50,archery:50,writing:55,masonry:80,bronze_working:80,horseback_riding:120,currency:120,
-  celestial_navigation:120,iron_working:120,shipbuilding:200,mathematics:200,construction:200,
-  engineering:200,metal_casting:240,military_tactics:275,apprenticeship:275,machinery:280,
-  education:300,stirrups:360,castles:390,banking:445,printing:540,gunpowder:540};
-const CIVIC_COSTS = {code_of_laws:20,craftsmanship:40,foreign_trade:40,military_tradition:50,
-  early_empire:60,state_workforce:60,drama_poetry:90,games_recreation:110,political_philosophy:110,
-  defensive_tactics:175,feudalism:275,civil_service:275,mercenaries:290,guilds:385};
+let RULES = null;
+async function loadRules() { RULES = await (await fetch("/rules")).json(); }
+function itemCost(it) {
+  if (!RULES) return "?";
+  if (it.unit) return RULES.units[it.unit].cost;
+  if (it.building) return RULES.buildings[it.building].cost;
+  return RULES.districts[it.district].cost;
+}
+function techCost(t) { return RULES ? RULES.techs[t].cost : 100; }
+function civicCost(c) { return RULES ? RULES.civics[c].cost : 100; }
+
+function openTree(kind) {
+  if (!RULES || !state) return;
+  const specs = kind === "techs" ? RULES.techs : RULES.civics;
+  const known = new Set(kind === "techs" ? state.me.techs : state.me.civics);
+  const boosted = kind === "techs" ? state.me.boosted_techs : state.me.boosted_civics;
+  const current = kind === "techs" ? state.me.research : state.me.civic;
+  const depth = {};
+  const d = n => depth[n] !== undefined ? depth[n] :
+    (depth[n] = specs[n].requires.length
+      ? 1 + Math.max(...specs[n].requires.map(d)) : 0);
+  Object.keys(specs).forEach(d);
+  const cols = [];
+  for (const n of Object.keys(specs)) (cols[depth[n]] = cols[depth[n]] || []).push(n);
+  document.getElementById("treetitle").textContent =
+    (kind === "techs" ? "Technology tree" : "Civics tree") +
+    (current ? ` — researching: ${current}` : " — click a gold node to research");
+  document.getElementById("treecols").innerHTML = cols.map(col =>
+    `<div class="tcol">` + col.map(n => {
+      const s = specs[n];
+      const avail = !known.has(n) && s.requires.every(r => known.has(r));
+      const cls = known.has(n) ? "done" : (n === current ? "cur" :
+                  (avail ? "avail" : "locked"));
+      const canPick = avail && !current;
+      return `<div class="tnode ${cls}"` +
+        (canPick ? ` onclick='pickTree("${kind}","${n}")'` : "") + `>` +
+        `<b>${n.replaceAll("_"," ")}</b>` +
+        (boosted.includes(n) ? ` <span class="boost">⚡</span>` : "") +
+        ` <span class="req">${s.cost}</span>` +
+        (s.requires.length ? `<div class="req">← ${s.requires.map(x =>
+          x.replaceAll("_"," ")).join(", ")}</div>` : "") +
+        `</div>`;
+    }).join("") + `</div>`).join("");
+  document.getElementById("tree").classList.add("open");
+}
+function pickTree(kind, n) {
+  document.getElementById("tree").classList.remove("open");
+  send(kind === "techs" ? {type: "research", tech: n} : {type: "civic", civic: n});
+}
 
 function prog(v, total, color) {
   const pct = Math.min(100, 100*v/Math.max(1,total));
@@ -376,7 +492,7 @@ document.getElementById("newgame").onclick = async () => {
     body: JSON.stringify({num_players: np, seed: Math.floor(Math.random()*1e9)})})).json());
 };
 
-fetchState();
+loadRules().then(fetchState);
 </script>
 </body>
 </html>

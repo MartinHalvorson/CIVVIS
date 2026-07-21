@@ -8,7 +8,7 @@ def observation(game, pid):
     p = g.players[pid]
     vis = set()
     for u in g.player_units(pid):
-        vis.update(hexgrid.disk(u.pos, 2))
+        vis.update(hexgrid.disk(u.pos, g.rules.units[u.type].get("sight", 2)))
     for c in g.player_cities(pid):
         vis.update(hexgrid.disk(c.pos, 2))
         vis.update(c.owned_tiles)

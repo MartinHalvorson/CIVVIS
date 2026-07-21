@@ -1,5 +1,5 @@
 {
-  "settler": {"class": "civilian", "cost": 80, "moves": 2},
+  "settler": {"class": "civilian", "cost": 80, "moves": 2, "sight": 3},
   "builder": {"class": "civilian", "cost": 50, "moves": 2, "charges": 3},
   "scout": {"class": "military", "cost": 30, "moves": 3, "strength": 10},
   "warrior": {"class": "military", "cost": 40, "moves": 2, "strength": 20},

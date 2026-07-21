@@ -115,3 +115,19 @@ def test_new_content_present():
     assert "gunpowder" in g.rules.techs
     assert "guilds" in g.rules.civics
     assert "monarchy" in g.rules.governments
+
+
+def test_unit_sight():
+    g = make(seed=21, barbarians=False)
+    from civvis import hexgrid
+    s = next(u for u in g.player_units(0) if u.type == "settler")
+    assert g.rules.units["settler"]["sight"] == 3
+    # move the settler; everything within sight 3 of the new tile is explored
+    for n in hexgrid.neighbors(s.pos):
+        if g.can_move(s, n):
+            g.apply(0, {"type": "move", "unit": s.id, "to": list(n)})
+            break
+    p = g.players[0]
+    for pos in hexgrid.disk(s.pos, 3):
+        if pos in g.map.tiles:
+            assert pos in p.explored

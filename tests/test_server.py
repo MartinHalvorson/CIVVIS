@@ -53,3 +53,10 @@ def test_state_and_actions(srv):
 def test_new_game(srv):
     st = post(srv + "/new", {"seed": 77})
     assert st["turn"] == 1
+
+
+def test_rules_endpoint(srv):
+    r = get(srv + "/rules")
+    assert "gunpowder" in r["techs"]
+    assert "guilds" in r["civics"]
+    assert r["units"]["settler"]["sight"] == 3
