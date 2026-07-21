@@ -130,12 +130,13 @@
 "use strict";
 // ---------------------------------------------------------------- constants
 const S = 36, SQ3 = Math.sqrt(3);
-const TERRAIN = { grassland:"#4f7f3a", plains:"#96933f", desert:"#cdb571",
-                  tundra:"#7c8a7c", snow:"#dfe7ec", coast:"#2e5f86",
-                  ocean:"#1b3a5e", mountain:"#6f747c" };
-const TERRAIN_HI = { grassland:"#639a49", plains:"#adaa4e", desert:"#e2cd8b",
-                     tundra:"#93a293", snow:"#f4fafc", coast:"#3d7aa6",
-                     ocean:"#234a75", mountain:"#8b8f97" };
+const TERRAIN = { grassland:"#6f9c4b", plains:"#b0a45c", desert:"#d5c290",
+                  tundra:"#a3a08b", snow:"#e6ebe9", coast:"#6fa3a8",
+                  ocean:"#3d6b78", mountain:"#8d8577" };
+const TERRAIN_HI = { grassland:"#85b25c", plains:"#c2b76d", desert:"#e3d3a4",
+                     tundra:"#b5b29c", snow:"#f2f7f5", coast:"#82b5ba",
+                     ocean:"#4a7d8a", mountain:"#a29a8a" };
+const PARCH = "#c7b58a", PARCH_GRID = "#8a795533", PARCH_INK = "#6d5c3a";
 const FEAT_ICON = { forest:"🌲", jungle:"🌴", marsh:"🌾", oasis:"🏝" };
 const RES_ICON = { wheat:"🌾", cattle:"🐄", sheep:"🐑", stone:"🪨", deer:"🦌",
                    fish:"🐟", bananas:"🍌", horses:"🐎", iron:"⚒️", silk:"🧵",
@@ -164,9 +165,24 @@ const mini = document.getElementById("mini"), mx2 = mini.getContext("2d");
 const area = document.getElementById("maparea");
 let DPR = window.devicePixelRatio || 1;
 
+const YS = 0.80;        // vertical squash: tilted-camera dimetric projection
+const SKIRT = 9;        // extra prism depth below each tile
 function key(p) { return p[0] + "," + p[1]; }
 function pcol(id) { const p = state.players[id]; return p && p.is_barbarian ? "#30262a" : PCOLORS[id % PCOLORS.length]; }
-function hexXY(q, r) { return [S * SQ3 * (q + r / 2), S * 1.5 * r]; }
+function hexXY(q, r) { return [S * SQ3 * (q + r / 2), S * 1.5 * r * YS]; }
+function elev(t) {
+  if (VIEW !== "beautiful") return 0;
+  if (t.terrain === "ocean") return -6;
+  if (t.terrain === "coast") return -4;
+  let e = 7;
+  if (t.hills) e += 6;
+  if (t.terrain === "mountain") e += 9;
+  return e;
+}
+function corner(x, y, s, i) {
+  const a = Math.PI / 180 * (60 * i - 30);
+  return [x + s * Math.cos(a), y + s * Math.sin(a) * YS];
+}
 function hexDist(a, b) {
   const dq = a[0]-b[0], dr = a[1]-b[1];
   return Math.max(Math.abs(dq), Math.abs(dr), Math.abs(dq+dr));
@@ -185,9 +201,8 @@ function screenToWorld(sx, sy) {
   return [ (sx - area.clientWidth/2) / cam.scale + cam.x,
            (sy - area.clientHeight/2) / cam.scale + cam.y ];
 }
-function pixelToHex(sx, sy) {
-  const [wx, wy] = screenToWorld(sx, sy);
-  const rf = wy / (1.5 * S);
+function axialRound(wx, wy) {
+  const rf = wy / (1.5 * S * YS);
   const qf = wx / (S * SQ3) - rf / 2;
   let x = qf, z = rf, y = -x - z;
   let rx = Math.round(x), ry = Math.round(y), rz = Math.round(z);
@@ -195,8 +210,21 @@ function pixelToHex(sx, sy) {
   if (dx > dy && dx > dz) rx = -ry - rz;
   else if (dy > dz) ry = -rx - rz;
   else rz = -rx - ry;
-  const pos = [rx, rz];
-  return TMAP.has(key(pos)) ? pos : null;
+  return [rx, rz];
+}
+function pixelToHex(sx, sy) {
+  const [wx, wy] = screenToWorld(sx, sy);
+  // tiles are drawn raised by their elevation: test a few offsets and accept
+  // the candidate whose actual elevation matches the offset best
+  let best = null, bd = 1e9;
+  for (const off of [0, 7, 13, 16, -5]) {
+    const pos = axialRound(wx, wy + off);
+    const t = TMAP.get(key(pos));
+    if (!t) continue;
+    const d = Math.abs(elev(t) - off);
+    if (d < bd) { bd = d; best = pos; }
+  }
+  return best;
 }
 
 // ---------------------------------------------------------------- net
@@ -238,11 +266,24 @@ function hexPath(x, y, s) {
   s = s || S;
   cx.beginPath();
   for (let i = 0; i < 6; i++) {
-    const a = Math.PI / 180 * (60 * i - 30);
-    const px = x + s * Math.cos(a), py = y + s * Math.sin(a);
+    const [px, py] = corner(x, y, s, i);
     i ? cx.lineTo(px, py) : cx.moveTo(px, py);
   }
   cx.closePath();
+}
+// prism side walls: edges (0,1)=right, (1,2)=bottom-right, (2,3)=bottom-left,
+// (3,4)=left, lit from the upper-left
+const WALL_EDGES = [[0, 1, 0.60], [1, 2, 0.48], [2, 3, 0.66], [3, 4, 0.76]];
+function drawWalls(x, ytop, baseColor, depth) {
+  for (const [a, b, f] of WALL_EDGES) {
+    const [ax, ay] = corner(x, ytop, S + 0.6, a);
+    const [bx, by] = corner(x, ytop, S + 0.6, b);
+    cx.fillStyle = shade(baseColor, f);
+    cx.beginPath();
+    cx.moveTo(ax, ay); cx.lineTo(bx, by);
+    cx.lineTo(bx, by + depth); cx.lineTo(ax, ay + depth);
+    cx.closePath(); cx.fill();
+  }
 }
 function shade(hex, f) {
   const n = parseInt(hex.slice(1), 16);
@@ -255,13 +296,46 @@ function shade(hex, f) {
 
 function draw() {
   if (!state) return;
+  const beau0 = VIEW === "beautiful";
   cx.setTransform(1, 0, 0, 1, 0, 0);
-  cx.fillStyle = "#0a0e14";
+  cx.fillStyle = beau0 ? "#a08d64" : "#0a0e14";
   cx.fillRect(0, 0, cv.width, cv.height);
   cx.setTransform(DPR * cam.scale, 0, 0, DPR * cam.scale,
     DPR * (area.clientWidth / 2 - cam.x * cam.scale),
     DPR * (area.clientHeight / 2 - cam.y * cam.scale));
-  const tiles = state.map.tiles;
+  // --- antique-map parchment for the unexplored world
+  if (beau0 && state) {
+    cx.textAlign = "center"; cx.textBaseline = "middle";
+    for (let row = 0; row < state.map.height; row++) {
+      for (let col = 0; col < state.map.width; col++) {
+        const q = col - ((row - (row & 1)) >> 1);
+        if (TMAP.has(q + "," + row)) continue;
+        const [x, y] = hexXY(q, row);
+        hexPath(x, y, S + 0.6);
+        cx.fillStyle = shade(PARCH, 0.96 + 0.08 * hash2(q, row));
+        cx.fill();
+        cx.strokeStyle = PARCH_GRID; cx.lineWidth = 1.2; cx.stroke();
+        const h = hash2(q * 7 + 3, row * 5 + 1);
+        if (h > 0.965) { // sparse hand-drawn flourishes
+          cx.strokeStyle = PARCH_INK; cx.globalAlpha = 0.28; cx.lineWidth = 1.3;
+          if (h > 0.988) { // little sea-serpent curl
+            cx.beginPath();
+            cx.arc(x, y, 7, 0.3, 4.2); cx.arc(x + 4, y - 2, 3.4, 3.6, 6.9);
+            cx.stroke();
+          } else { // hatch marks
+            cx.beginPath();
+            for (let i = -1; i <= 1; i++) {
+              cx.moveTo(x - 6 + i * 5, y + 4); cx.lineTo(x - 1 + i * 5, y - 4);
+            }
+            cx.stroke();
+          }
+          cx.globalAlpha = 1;
+        }
+      }
+    }
+  }
+  const tiles = [...state.map.tiles].sort((a, b) =>
+    a.pos[1] - b.pos[1] || a.pos[0] - b.pos[0]);
   const visSet = new Set(state.visible.map(key));
   const campSet = new Set(state.camps.map(key));
   const beau = VIEW === "beautiful", minim = VIEW === "minimal";
@@ -272,10 +346,14 @@ function draw() {
       if (a.unit === sel.id && (a.type === "attack" || a.type === "ranged"))
         hl[key(a.target)] = 2;
   }
-  // --- terrain
+  // --- terrain prisms (painted back-to-front for 3D)
   for (const t of tiles) {
-    const [x, y] = hexXY(t.pos[0], t.pos[1]);
+    const [x, y0] = hexXY(t.pos[0], t.pos[1]);
+    const e = elev(t);
+    const y = y0 - e;
     const base = TERRAIN[t.terrain] || "#333";
+    const water = (t.terrain === "coast" || t.terrain === "ocean");
+    if (beau && !water) drawWalls(x, y, base, e + SKIRT);
     hexPath(x, y, S + 0.6);
     if (beau) {
       const j = 0.94 + 0.12 * hash2(t.pos[0], t.pos[1]);
@@ -287,37 +365,29 @@ function draw() {
       cx.fillStyle = base;
     }
     cx.fill();
-    const water = (t.terrain === "coast" || t.terrain === "ocean");
     if (beau && water) { // waves
       const ph = hash2(t.pos[0], t.pos[1]);
       cx.strokeStyle = "#ffffff18"; cx.lineWidth = 1.4;
       cx.beginPath();
-      cx.arc(x - 6 + ph * 8, y - 3, 7, Math.PI * 0.15, Math.PI * 0.85);
-      cx.arc(x + 4 - ph * 6, y + 8, 6, Math.PI * 0.15, Math.PI * 0.85);
+      cx.arc(x - 6 + ph * 8, y - 3, 6, Math.PI * 0.15, Math.PI * 0.85);
+      cx.arc(x + 4 - ph * 6, y + 7, 5, Math.PI * 0.15, Math.PI * 0.85);
       cx.stroke();
-    }
-    if (beau && !water && t.terrain !== "mountain") {
-      // sandy shoreline on tiles touching water
-      const coastal = DIRS.some(d => {
-        const n = TMAP.get(key([t.pos[0]+d[0], t.pos[1]+d[1]]));
-        return n && (n.terrain === "coast" || n.terrain === "ocean");
-      });
-      if (coastal) { hexPath(x, y, S - 1.5); cx.strokeStyle = "#d9c47a66";
-        cx.lineWidth = 3; cx.stroke(); }
     }
     if (!beau) { hexPath(x, y); cx.strokeStyle = "#00000038"; cx.lineWidth = 1; cx.stroke(); }
   }
   // --- rivers (drawn tile-to-tile toward neighboring river/water)
-  cx.strokeStyle = "#4ba3d6"; cx.lineWidth = 4; cx.lineCap = "round";
-  cx.globalAlpha = 0.75;
+  cx.strokeStyle = "#5b93b8"; cx.lineWidth = 4; cx.lineCap = "round";
+  cx.globalAlpha = 0.8;
   for (const t of tiles) {
     if (!t.river) continue;
-    const [x, y] = hexXY(t.pos[0], t.pos[1]);
+    const [x, yy] = hexXY(t.pos[0], t.pos[1]);
+    const y = yy - elev(t);
     let drew = false;
     for (const d of DIRS) {
       const n = TMAP.get(key([t.pos[0]+d[0], t.pos[1]+d[1]]));
       if (!n || !(n.river || n.terrain === "coast" || n.terrain === "ocean")) continue;
-      const [nx, ny] = hexXY(n.pos[0], n.pos[1]);
+      const [nx, nyy] = hexXY(n.pos[0], n.pos[1]);
+      const ny = nyy - elev(n);
       cx.beginPath(); cx.moveTo(x, y);
       cx.lineTo((x + nx) / 2, (y + ny) / 2); cx.stroke();
       drew = true;
@@ -325,27 +395,28 @@ function draw() {
     if (!drew) { cx.beginPath(); cx.arc(x, y, 3, 0, 7); cx.stroke(); }
   }
   cx.globalAlpha = 1; cx.lineCap = "butt";
-  // --- territory borders (edges facing a different owner)
+  // --- territory borders: ribbon along edges facing a different owner
   for (const t of tiles) {
     if (t.owner === null || t.owner === undefined) continue;
-    const [x, y] = hexXY(t.pos[0], t.pos[1]);
-    cx.strokeStyle = pcol(t.owner); cx.lineWidth = 2.2; cx.globalAlpha = 0.9;
+    const [x, yy] = hexXY(t.pos[0], t.pos[1]);
+    const y = yy - elev(t);
     for (let i = 0; i < 6; i++) {
       const n = TMAP.get(key([t.pos[0]+DIRS[i][0], t.pos[1]+DIRS[i][1]]));
       if (n && n.owner === t.owner) continue;
       const [c1, c2] = EDGE_CORNERS[i];
-      const a1 = Math.PI/180*(60*c1-30), a2 = Math.PI/180*(60*c2-30);
-      cx.beginPath();
-      cx.moveTo(x + (S-1) * Math.cos(a1), y + (S-1) * Math.sin(a1));
-      cx.lineTo(x + (S-1) * Math.cos(a2), y + (S-1) * Math.sin(a2));
-      cx.stroke();
+      const [ax, ay] = corner(x, y, S - 1.5, c1);
+      const [bx, by] = corner(x, y, S - 1.5, c2);
+      cx.strokeStyle = pcol(t.owner); cx.lineWidth = 4.5; cx.globalAlpha = 0.55;
+      cx.beginPath(); cx.moveTo(ax, ay); cx.lineTo(bx, by); cx.stroke();
+      cx.lineWidth = 1.6; cx.globalAlpha = 1;
+      cx.beginPath(); cx.moveTo(ax, ay); cx.lineTo(bx, by); cx.stroke();
     }
-    cx.globalAlpha = 1;
   }
   // --- decorations
   cx.textAlign = "center"; cx.textBaseline = "middle";
   for (const t of tiles) {
-    const [x, y] = hexXY(t.pos[0], t.pos[1]);
+    const [x, yy] = hexXY(t.pos[0], t.pos[1]);
+    const y = yy - elev(t);
     const k = key(t.pos);
     if (t.terrain === "mountain") {
       // drawn peaks
@@ -420,7 +491,9 @@ function draw() {
     for (const t of tiles) if (validSettle(t)) vals.push([t.pos, settleValue(t.pos)]);
     const mxv = Math.max(1, ...vals.map(v => v[1]));
     for (const [p2, v] of vals) {
-      const [x, y] = hexXY(p2[0], p2[1]);
+      const t2 = TMAP.get(key(p2));
+      const [x, yy] = hexXY(p2[0], p2[1]);
+      const y = yy - (t2 ? elev(t2) : 0);
       hexPath(x, y);
       cx.fillStyle = `rgba(80,255,120,${(0.12 + 0.5 * v / mxv).toFixed(2)})`;
       cx.fill();
@@ -429,22 +502,30 @@ function draw() {
   // --- movement / attack highlights
   for (const k in hl) {
     const [q, r] = k.split(",").map(Number);
-    const [x, y] = hexXY(q, r);
+    const t2 = TMAP.get(k);
+    const [x, yy] = hexXY(q, r);
+    const y = yy - (t2 ? elev(t2) : 0);
     hexPath(x, y, S - 2);
-    if (hl[k] === 1) { cx.fillStyle = "#ffffff20"; cx.fill();
-      cx.strokeStyle = "#ffffffaa"; cx.lineWidth = 1.6; cx.stroke(); }
+    if (hl[k] === 1) { cx.fillStyle = "#ffffff22"; cx.fill();
+      cx.strokeStyle = "#ffffffbb"; cx.lineWidth = 1.6; cx.stroke(); }
     else { cx.strokeStyle = "#ff5050"; cx.lineWidth = 3; cx.stroke(); }
   }
-  // --- fog dim
+  // --- fog: parchment wash over explored-but-not-visible tiles
   for (const t of tiles) {
     if (visSet.has(key(t.pos))) continue;
-    const [x, y] = hexXY(t.pos[0], t.pos[1]);
-    hexPath(x, y, S + 0.6); cx.fillStyle = "rgba(6,9,15,0.45)"; cx.fill();
+    const [x, yy] = hexXY(t.pos[0], t.pos[1]);
+    const y = yy - elev(t);
+    hexPath(x, y, S + 0.6);
+    cx.fillStyle = beau ? "rgba(199,181,138,0.52)" : "rgba(6,9,15,0.45)";
+    cx.fill();
+    if (beau) { cx.strokeStyle = PARCH_GRID; cx.lineWidth = 1; cx.stroke(); }
   }
   // --- right-drag order line
   if (rdrag && rdragTo && sel) {
-    const [x1, y1] = hexXY(sel.pos[0], sel.pos[1]);
-    const [x2, y2] = hexXY(rdragTo[0], rdragTo[1]);
+    const ts = TMAP.get(key(sel.pos)), tt = TMAP.get(key(rdragTo));
+    const [x1, yy1] = hexXY(sel.pos[0], sel.pos[1]);
+    const [x2, yy2] = hexXY(rdragTo[0], rdragTo[1]);
+    const y1 = yy1 - (ts ? elev(ts) : 0), y2 = yy2 - (tt ? elev(tt) : 0);
     cx.setLineDash([7, 6]); cx.strokeStyle = "#f0c674"; cx.lineWidth = 3;
     cx.beginPath(); cx.moveTo(x1, y1); cx.lineTo(x2, y2); cx.stroke();
     cx.setLineDash([]);
@@ -453,37 +534,46 @@ function draw() {
   // --- tacks
   cx.font = "16px sans-serif";
   for (const tk of tacks) {
-    const [x, y] = hexXY(tk[0], tk[1]);
-    cx.fillText("📍", x, y - 6);
+    const tt = TMAP.get(key(tk));
+    const [x, yy] = hexXY(tk[0], tk[1]);
+    cx.fillText("📍", x, yy - (tt ? elev(tt) : 0) - 6);
   }
   // --- cities
-  for (const c of state.cities) {
-    const [x, y] = hexXY(c.pos[0], c.pos[1]);
-    // building cluster
-    cx.fillStyle = "#d8d2c4"; cx.strokeStyle = "#10151d"; cx.lineWidth = 1;
-    const bs = [[-8,-1,6,8],[-1,-5,7,12],[7,1,5,6]];
+  for (const c of [...state.cities].sort((a, b) => a.pos[1] - b.pos[1])) {
+    const ct = TMAP.get(key(c.pos));
+    const [x, yy] = hexXY(c.pos[0], c.pos[1]);
+    const y = yy - (ct ? elev(ct) : 0);
+    // ground shadow + 3D building cluster
+    if (beau) { cx.fillStyle = "#00000030";
+      cx.beginPath(); cx.ellipse(x, y + 8, 15, 5.5, 0, 0, 7); cx.fill(); }
+    const bs = [[-9,-1,6,9],[-1,-6,7,14],[7,1,5,7]];
     for (const [bx, by, bw, bh] of bs) {
-      cx.fillRect(x + bx, y + by, bw, bh); cx.strokeRect(x + bx, y + by, bw, bh);
+      cx.fillStyle = "#5c5648";
+      cx.fillRect(x + bx + bw, y + by + 1.5, 2.2, bh); // side face
+      cx.fillStyle = "#ded8ca";
+      cx.fillRect(x + bx, y + by, bw, bh);
+      cx.strokeStyle = "#10151d"; cx.lineWidth = 0.8;
+      cx.strokeRect(x + bx, y + by, bw, bh);
     }
     cx.fillStyle = "#8a2f2b";
-    cx.beginPath(); cx.moveTo(x - 2, y - 9); cx.lineTo(x + 3, y - 5);
-    cx.lineTo(x - 7, y - 5); cx.closePath(); cx.fill();
+    cx.beginPath(); cx.moveTo(x - 2, y - 10); cx.lineTo(x + 3, y - 6);
+    cx.lineTo(x - 7, y - 6); cx.closePath(); cx.fill();
     if (!minim) {
-      // banner
-      const name = (c.is_capital ? "★ " : "") + c.name;
-      cx.font = "bold 11px 'Segoe UI'";
-      const tw = Math.max(cx.measureText(name).width + 26, 46);
-      const bx = x - tw / 2, by = y - S - 4;
-      cx.fillStyle = "#10151de8";
-      cx.beginPath(); cx.roundRect(bx, by, tw, 16, 4); cx.fill();
+      // parchment-style nameplate
+      const name = (c.is_capital ? "★ " : "") + c.name.toUpperCase();
+      cx.font = "bold 10px Georgia, serif";
+      const tw = Math.max(cx.measureText(name).width + 28, 48);
+      const bx = x - tw / 2, by = y - S - 6;
+      cx.fillStyle = "#1c2418ee";
+      cx.beginPath(); cx.roundRect(bx, by, tw, 16, 8); cx.fill();
       cx.strokeStyle = pcol(c.owner); cx.lineWidth = 1.6; cx.stroke();
       cx.fillStyle = pcol(c.owner);
-      cx.beginPath(); cx.roundRect(bx + 2, by + 2, 14, 12, 3); cx.fill();
-      cx.fillStyle = "#10151d"; cx.font = "bold 10px 'Segoe UI'";
+      cx.beginPath(); cx.roundRect(bx + 2, by + 2, 14, 12, 6); cx.fill();
+      cx.fillStyle = "#10151d"; cx.font = "bold 10px Georgia, serif";
       cx.fillText(c.pop, bx + 9, by + 8.5);
-      cx.fillStyle = "#e8ecf1"; cx.font = "bold 10px 'Segoe UI'";
+      cx.fillStyle = "#f0ead8"; cx.font = "bold 9.5px Georgia, serif";
       cx.textAlign = "left";
-      cx.fillText(name, bx + 19, by + 8.5);
+      cx.fillText(name, bx + 20, by + 8.5);
       cx.textAlign = "center";
       if (c.hp < 200) {
         cx.fillStyle = "#300"; cx.fillRect(bx, by + 17, tw, 3);
@@ -501,11 +591,16 @@ function draw() {
   }
   // --- units
   const sorted = [...state.units].sort((a, b) =>
-    (a.type === "settler" || a.type === "builder") ? -1 : 1);
+    (a.pos[1] - b.pos[1]) ||
+    ((a.type === "settler" || a.type === "builder") ? -1 : 1));
   for (const u of sorted) {
-    const [x, y] = hexXY(u.pos[0], u.pos[1]);
+    const ut = TMAP.get(key(u.pos));
+    const [x, yy] = hexXY(u.pos[0], u.pos[1]);
+    const y = yy - (ut ? elev(ut) : 0);
     const civ = (u.type === "settler" || u.type === "builder");
     const rr = 10.5;
+    if (beau) { cx.fillStyle = "#00000035";
+      cx.beginPath(); cx.ellipse(x, y + rr - 1, rr * 1.05, 4, 0, 0, 7); cx.fill(); }
     cx.save();
     cx.shadowColor = "#000a"; cx.shadowBlur = 5; cx.shadowOffsetY = 2;
     cx.fillStyle = pcol(u.owner);
