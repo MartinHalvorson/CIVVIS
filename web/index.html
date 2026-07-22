@@ -926,6 +926,11 @@ setInterval(() => {
 let restartTimer = null, restartLeft = 0;
 function startRestartCountdown() {
   if (restartTimer) return;
+  // Capture the exact completed server. The supervisor may replace it while
+  // this page's timer is still alive; a guarded request must never reset that
+  // already-active successor.
+  const finishedSeed = state && state.seed;
+  const finishedInstance = state && state.server_instance;
   restartLeft = 10;
   const tick = async () => {
     const el = document.getElementById("respawn");
@@ -936,7 +941,9 @@ function startRestartCountdown() {
       render(await fetchJSON("/new", { method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({seed: Math.floor(Math.random() * 1e9),
-                              spectate: true}) }));
+                              spectate: true,
+                              replace_finished: {seed: finishedSeed,
+                                server_instance: finishedInstance}}) }));
       scheduleSpec(state);
       return;
     }
