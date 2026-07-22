@@ -861,16 +861,14 @@ async function specStep(force) {
     const pace = +document.getElementById("specspeed").value || 100;
     // The photographic renderer can cost more than one Lightning interval.
     // Advance enough simulation states per paint to preserve the selected
-    // world pace, while still recording every civilization in the Chronicle.
+    // world pace. The server returns each civilization's action trace but
+    // serializes the large world observation only once for the whole batch.
     const batch = force ? 1 : Math.max(1, Math.min(12,
       Math.round((specRenderMs + pace) / pace)));
-    let prev = state;
-    for (let i = 0; i < batch; i++) {
-      st = await fetchJSON("/step", { method: "POST" });
-      chronicle(prev, st);
-      prev = st;
-      if (st.winner !== null && st.winner !== undefined) break;
-    }
+    st = await fetchJSON("/step", { method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({count: batch}) }, 600000);
+    chronicle(state, st);
     const paintStart = performance.now();
     render(st, false);
     const measured = performance.now() - paintStart;
@@ -939,10 +937,10 @@ function addEvent(icon, text, turn) {
   worldEvents.unshift({ icon, text, turn });
   worldEvents = worldEvents.slice(0, 12);
 }
-function chronicleActions(next) {
-  const actions = next.actions_taken;
-  if (!Array.isArray(actions) || next.stepped === undefined) return;
-  const actor = next.players[next.stepped];
+function chronicleActionBatch(next, batch) {
+  const actions = batch.actions_taken;
+  if (!Array.isArray(actions) || batch.stepped === undefined) return;
+  const actor = next.players[batch.stepped];
   if (!actor) return;
   const parts = [];
   const research = actions.find(a => a.type === "research");
@@ -980,6 +978,10 @@ function chronicleActions(next) {
   const more = parts.length - shown.length;
   addEvent(actor.is_barbarian ? "☠" : actor.is_minor ? "♜" : "◈",
     `${actor.civ} ${shown.join(" · ")}${more ? ` · +${more} more` : ""}.`, next.turn);
+}
+function chronicleActions(next) {
+  const batches = Array.isArray(next.step_batches) ? next.step_batches : [next];
+  for (const batch of batches) chronicleActionBatch(next, batch);
 }
 function chronicle(prev, next) {
   if (!prev || prev.seed !== next.seed) {

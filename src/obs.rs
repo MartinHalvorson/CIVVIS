@@ -94,7 +94,11 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool) -> Value {
         })
         .map(|u| {
             let mut v = serde_json::to_value(u).unwrap();
-            if u.owner == pid {
+            // Reachability is an interactive-player affordance. Computing it
+            // for every unit of the currently observed AI can dominate late-
+            // game spectator responses even though spectate mode has no legal
+            // movement actions.
+            if u.owner == pid && !omniscient {
                 v["reachable"] = json!(g
                     .reachable(u.id)
                     .iter()

@@ -146,6 +146,20 @@ impl Session {
         (pid, actions)
     }
 
+    /// Advance a bounded batch while retaining each civilization's action
+    /// trace. The HTTP layer can then serialize the large world observation
+    /// once per browser paint instead of once per AI turn.
+    pub fn step_many(&mut self, count: usize) -> Vec<(usize, Vec<Action>)> {
+        let mut steps = Vec::new();
+        for _ in 0..count.clamp(1, 12) {
+            steps.push(self.step());
+            if self.game.winner.is_some() {
+                break;
+            }
+        }
+        steps
+    }
+
     pub fn act(&mut self, v: &Value) -> Option<String> {
         let action: Action = match serde_json::from_value(v.clone()) {
             Ok(a) => a,
@@ -320,10 +334,21 @@ fn handle(stream: &mut TcpStream, session: &mut Session) {
         ("POST", "/step") => {
             let mut out;
             if session.params.spectate {
-                let (pid, actions) = session.step();
+                let count = parsed["count"].as_u64().unwrap_or(1) as usize;
+                let steps = session.step_many(count);
                 out = session.state();
-                out["stepped"] = json!(pid);
-                out["actions_taken"] = serde_json::to_value(actions).unwrap();
+                if let Some((pid, actions)) = steps.last() {
+                    // Preserve the original single-step response fields for
+                    // existing clients and supervisor recovery nudges.
+                    out["stepped"] = json!(pid);
+                    out["actions_taken"] = serde_json::to_value(actions).unwrap();
+                }
+                out["step_batches"] = Value::Array(
+                    steps
+                        .iter()
+                        .map(|(pid, actions)| json!({"stepped": pid, "actions_taken": actions}))
+                        .collect(),
+                );
             } else {
                 out = session.state();
                 out["error"] = json!("not in spectate mode");
@@ -440,6 +465,12 @@ mod tests {
         assert!(state["quick_deals"].is_array());
         assert!(state["active_trade_deals"].is_array());
         assert!(state["me"]["resources"].is_array());
+        assert!(state["units"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|unit| unit["owner"].as_u64() == Some(0))
+            .all(|unit| unit["reachable"].is_array()));
     }
 
     #[test]
@@ -447,7 +478,28 @@ mod tests {
         let mut params = current();
         params.spectate = true;
         let session = Session::new(params);
-        assert_eq!(session.state()["spectator_paused"].as_bool(), Some(false));
+        let state = session.state();
+        assert_eq!(state["spectator_paused"].as_bool(), Some(false));
+        assert!(state["units"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|unit| unit.get("reachable").is_none()));
+    }
+
+    #[test]
+    fn spectator_can_batch_turns_without_losing_action_traces() {
+        let mut params = current();
+        params.spectate = true;
+        let mut session = Session::new(params);
+        let initial = (session.game.turn, session.game.current);
+        let steps = session.step_many(3);
+
+        assert_eq!(steps.len(), 3);
+        assert_ne!((session.game.turn, session.game.current), initial);
+        assert!(steps
+            .iter()
+            .all(|(pid, _)| *pid < session.game.players.len()));
     }
 
     #[test]

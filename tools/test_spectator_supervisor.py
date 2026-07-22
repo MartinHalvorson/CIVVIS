@@ -116,6 +116,21 @@ class SourceSnapshotTests(unittest.TestCase):
 
 
 class RecoveryTests(unittest.TestCase):
+    def test_busy_server_detection_distinguishes_compute_from_idle(self):
+        process = SimpleNamespace(pid=321)
+        with patch.object(
+            supervisor,
+            "command",
+            return_value=SimpleNamespace(returncode=0, stdout=" 99.7\n"),
+        ):
+            self.assertTrue(supervisor.process_busy(process, None))
+        with patch.object(
+            supervisor,
+            "command",
+            return_value=SimpleNamespace(returncode=0, stdout="  0.0\n"),
+        ):
+            self.assertFalse(supervisor.process_busy(process, None))
+
     def test_progress_marker_tracks_player_steps_within_a_turn(self):
         first = {"seed": 7, "turn": 12, "current": 1, "winner": None}
         stepped = {**first, "current": 2}
@@ -186,6 +201,7 @@ class RecoveryTests(unittest.TestCase):
             poll=0.5,
             build_retry=15.0,
             unresponsive_timeout=20.0,
+            busy_timeout=600.0,
             stall_timeout=30.0,
             checkpoint_interval=5.0,
             max_resume_attempts=2,

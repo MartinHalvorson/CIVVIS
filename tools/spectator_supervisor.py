@@ -353,6 +353,24 @@ def process_alive(process: subprocess.Popen[str] | None, adopted_pid: int | None
         return False
 
 
+def process_busy(
+    process: subprocess.Popen[str] | None,
+    adopted_pid: int | None,
+    threshold: float = 1.0,
+) -> bool:
+    """Best-effort check that an unavailable server is still computing."""
+    pid = process.pid if process is not None else adopted_pid
+    if pid is None:
+        return False
+    result = command("ps", "-o", "%cpu=", "-p", str(pid))
+    if result.returncode != 0:
+        return False
+    try:
+        return float(result.stdout.strip()) >= threshold
+    except ValueError:
+        return False
+
+
 def stop_server(process: subprocess.Popen[str] | None, adopted_pid: int | None) -> None:
     pid = process.pid if process is not None else adopted_pid
     if pid is None:
@@ -404,8 +422,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--unresponsive-timeout",
         type=float,
-        default=20.0,
-        help="restart a live process whose HTTP state stays unavailable this long",
+        default=60.0,
+        help="check a live process whose HTTP state stays unavailable this long",
+    )
+    parser.add_argument(
+        "--busy-timeout",
+        type=float,
+        default=600.0,
+        help="restart even a CPU-busy server after this maximum unavailable interval",
     )
     parser.add_argument(
         "--stall-timeout",
@@ -455,6 +479,8 @@ def main() -> int:
     finished_key: tuple[Any, ...] | None = None
     finished_seen_at = 0.0
     update_retry_at = 0.0
+    busy_reported = False
+    busy_check_at = 0.0
 
     def launch_recovery(open_browser: bool = False) -> dict[str, Any]:
         nonlocal process, adopted_pid
@@ -520,11 +546,35 @@ def main() -> int:
                 unavailable_since = unavailable_since or now
                 alive = process_alive(process, adopted_pid)
                 unavailable_for = now - unavailable_since
-                if not alive or unavailable_for >= max(0.1, args.unresponsive_timeout):
+                unresponsive_timeout = max(0.1, args.unresponsive_timeout)
+                busy_timeout = max(unresponsive_timeout, args.busy_timeout)
+                busy = False
+                if (
+                    alive
+                    and unavailable_for >= unresponsive_timeout
+                    and unavailable_for < busy_timeout
+                    and now >= busy_check_at
+                ):
+                    busy = process_busy(process, adopted_pid)
+                    busy_check_at = now + 5.0
+                    if busy and not busy_reported:
+                        log(
+                            "server is unavailable but actively computing; "
+                            "extending the recovery window"
+                        )
+                        busy_reported = True
+                elif alive and busy_reported and unavailable_for < busy_timeout:
+                    busy = True
+
+                if not alive or (
+                    unavailable_for >= unresponsive_timeout and not busy
+                ) or unavailable_for >= busy_timeout:
                     reason = "stopped" if not alive else "became unresponsive"
                     log(f"server {reason}; recovering from the latest safe checkpoint")
                     state = launch_recovery()
                     unavailable_since = None
+                    busy_reported = False
+                    busy_check_at = 0.0
                     last_progress = progress_marker(state)
                     progress_at = time.monotonic()
                     checkpointed_progress = None
@@ -532,6 +582,8 @@ def main() -> int:
                 continue
 
             unavailable_since = None
+            busy_reported = False
+            busy_check_at = 0.0
             settings = session_settings(state, settings)
             if state.get("winner") is None:
                 finished_key = None
