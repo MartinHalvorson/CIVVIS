@@ -539,6 +539,8 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("type:\"trade\""));
         assert!(EMBEDDED_INDEX.contains("function spectatorIdentity(player)"));
         assert!(EMBEDDED_INDEX.contains("Global lifetime carbon emissions"));
+        assert!(EMBEDDED_INDEX.contains("Alliance · Level"));
+        assert!(EMBEDDED_INDEX.contains(".diplomacy-card.allied"));
     }
 
     #[test]
