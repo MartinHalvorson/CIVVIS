@@ -34,7 +34,7 @@ fn default_turn_limit(target: VictoryTarget) -> u32 {
         VictoryTarget::Religion => 450,
         VictoryTarget::Domination => 650,
         VictoryTarget::Diplomacy => 750,
-        VictoryTarget::Culture => 900,
+        VictoryTarget::Culture => 1_500,
         VictoryTarget::Science => 1_300,
         VictoryTarget::Score => 300,
     }

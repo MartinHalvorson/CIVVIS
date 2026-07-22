@@ -48,13 +48,14 @@ batch-port these systems next.
 - Pillaging/coastal raids, terrain cliffs, and aircraft transport/combat
   (including their promotion modifiers)
 - Religious beliefs and Apostle promotions beyond the current combat roster
-- Deeper diplomacy (deals, denouncements, negotiated peace)
+- Remaining diplomacy inventory (city/Great Work trades, demands, promises,
+  emergencies, and richer leader agendas)
 
 ## v0.3 — systems breadth
 
 - Religion (pantheons, beliefs, religious combat)
 - Great people; trade routes; city-states + envoys
-- Deeper diplomacy (deals, denouncements, negotiated peace)
+- Expand diplomacy beyond the shipped economic/relationship deals
 - Per-civ unique abilities/units (data-driven, like everything else)
 - Era score / golden ages
 

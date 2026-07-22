@@ -5,7 +5,7 @@
     "religious_settlements": {"note":"border expansion 15% faster","effects":{"border_growth_pct":15}},
     "god_of_the_open_sky": {"note":"+1 culture per pasture","effects":{"pasture_culture":1}},
     "god_of_the_sea": {"note":"+1 production per fishing boats","effects":{"fishing_boats_production":1}},
-    "divine_spark": {"note":"+1 great person point per campus, holy site and theater square","effects":{"district_gpp":1}}
+    "divine_spark": {"note":"+1 Great Scientist point from Campuses with a Library, +1 Great Prophet point from Holy Sites with a Shrine, and +1 Great Writer point from Theater Squares with an Amphitheater","effects":{"district_gpp":1}}
   },
   "founder": {
     "tithe": {"note":"+1 gold per 4 followers","effects":{"gold_per_followers":0.25}},

@@ -230,9 +230,18 @@ mod tests {
             .map
             .tiles
             .values()
-            .find(|t| t.terrain == "coast" && crate::hex::distance(t.pos, g2.units[&uid].pos) == 1)
+            .find(|t| {
+                t.terrain == "coast"
+                    && crate::hex::distance(t.pos, g2.units[&uid].pos) == 1
+                    && g2.units_at(t.pos).is_empty()
+            })
             .map(|t| t.pos);
         if let Some(c) = coast {
+            // This assertion isolates embarkation. A generated cliff on the
+            // same coast is an independent, valid reason movement can fail.
+            let from = g2.units[&uid].pos;
+            g2.map.tiles.get_mut(&from).unwrap().cliff_edges = [false; 6];
+            g2.map.tiles.get_mut(&c).unwrap().cliff_edges = [false; 6];
             assert!(!g2.can_move(uid, c));
             g2.players[0].techs.insert("shipbuilding".to_string());
             assert!(g2.can_move(uid, c));
@@ -843,8 +852,13 @@ mod tests {
         assert!(!g.units.contains_key(&trader)); // trader is on the road
         let after = g.city_yields(cap);
         // domestic city-center route: +1 food +1 production at the origin
-        assert!((after.food - before.food - 1.0).abs() < 1e-9);
-        assert!(after.production > before.production);
+        let route = g.route_yields(second, true);
+        assert!((route.food - 1.0).abs() < 1e-9);
+        assert!((route.production - 1.0).abs() < 1e-9);
+        assert!(
+            after.total() > before.total(),
+            "the citizen governor may reassign tiles, but the route must increase total output"
+        );
         // capacity is enforced
         let (mut g3, t2) = conjure(&g, "trader", cpos);
         assert!(g3
@@ -871,10 +885,24 @@ mod tests {
         assert_eq!(g.envoys_at(0, minor), 1);
         let after = g.city_yields(cap);
         assert!((after.total() - before.total() - 2.0).abs() < 1e-6);
-        // suzerain needs 6+ envoys and a strict lead
+        // suzerain needs 3+ envoys and a strict lead
         assert_eq!(g.suzerain_of(minor), None);
-        g.players[0].envoys[0].1 = 6;
+        g.players[0].envoys[0].1 = 3;
         assert_eq!(g.suzerain_of(minor), Some(0));
+        g.players[1].envoys = vec![(minor, 3)];
+        assert_eq!(g.suzerain_of(minor), None, "a tie has no Suzerain");
+        g.players[0].envoys[0].1 = 4;
+        assert_eq!(g.suzerain_of(minor), Some(0));
+        g.at_war.insert((0, 1));
+        assert!(
+            g.is_at_war(minor, 1),
+            "a city-state follows its Suzerain into war"
+        );
+        g.at_war.remove(&(0, 1));
+        assert!(
+            !g.is_at_war(minor, 1),
+            "a city-state follows its Suzerain back to peace"
+        );
         // routes expire and hand the trader back
         g.routes[0].ends = g.turn + 1;
         g.apply(0, &Action::EndTurn).unwrap();
@@ -1049,8 +1077,13 @@ mod tests {
         round(&mut g);
         assert_eq!(g.players[0].gp_claimed.get("scientist"), Some(&1));
         assert!(g.players[0].boosted_techs.len() >= boosts_before + 1);
-        // next scientist costs double
-        assert_eq!(g.gp_cost(0, "scientist"), 120.0);
+        // The global market advances to the next named Scientist rather than
+        // fabricating a generic doubled threshold.
+        assert_eq!(
+            g.current_great_person("scientist").unwrap().0,
+            "isaac_newton"
+        );
+        assert_eq!(g.gp_cost(0, "scientist"), 240.0);
     }
 
     #[test]
@@ -1074,7 +1107,7 @@ mod tests {
         ] {
             g.players[0].techs.insert(t.to_string());
         }
-        g.players[0].era_score = 20;
+        g.players[0].era_score = g.players[0].golden_age_threshold;
         g.players[1].era_score = 0;
         let round = |g: &mut Game| {
             g.apply(0, &Action::EndTurn).unwrap();
@@ -1222,7 +1255,16 @@ mod tests {
         assert!(g.apply(0, &Action::AssignGovernor { city: cid }).is_err());
         // amenity bonus from the governor
         assert!(g.players[0].governors.contains(&cid));
-        // world congress: medieval era, turn multiple of 30, most envoys wins
+        let round = |g: &mut Game| {
+            let first = g.current;
+            g.apply(first, &Action::EndTurn).unwrap();
+            while g.current != first && g.winner.is_none() {
+                let current = g.current;
+                g.apply(current, &Action::EndTurn).unwrap();
+            }
+        };
+        // World Congress: a Medieval session opens on turn 30, accepts
+        // ballots for five rounds, then resolves its scored competition.
         g.world_era = 2;
         g.turn = 29; // wraps to 30 after a full round
         let minor = g
@@ -1232,19 +1274,37 @@ mod tests {
             .map(|p| p.id)
             .unwrap();
         g.players[0].envoys = vec![(minor, 3)];
-        g.apply(0, &Action::EndTurn).unwrap();
-        while g.current != 0 {
-            let cur = g.current;
-            g.apply(cur, &Action::EndTurn).unwrap();
+        round(&mut g);
+        assert!(g.congress.is_some());
+        g.apply(
+            0,
+            &Action::CongressVote {
+                resolution: "world_fair".to_string(),
+                choice: "0".to_string(),
+                votes: 1,
+            },
+        )
+        .unwrap();
+        for _ in 0..5 {
+            round(&mut g);
         }
-        assert_eq!(g.players[0].dvp, 2);
-        // 20 points = diplomatic victory at the next congress
+        assert_eq!(g.players[0].dvp, 1);
+        // At the Modern-era World Leader resolution, 20 points wins.
         g.players[0].dvp = 18;
+        g.world_era = 5;
         g.turn = 59;
-        g.apply(0, &Action::EndTurn).unwrap();
-        while g.winner.is_none() && g.current != 0 {
-            let cur = g.current;
-            g.apply(cur, &Action::EndTurn).unwrap();
+        round(&mut g);
+        g.apply(
+            0,
+            &Action::CongressVote {
+                resolution: "world_leader".to_string(),
+                choice: "0".to_string(),
+                votes: 1,
+            },
+        )
+        .unwrap();
+        for _ in 0..5 {
+            round(&mut g);
         }
         assert_eq!(g.winner, Some(0));
         assert_eq!(g.victory_type.as_deref(), Some("diplomatic"));

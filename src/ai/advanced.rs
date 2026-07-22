@@ -1059,6 +1059,48 @@ impl AdvancedAi {
     }
 
     fn advanced_diplomacy(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        while let Some(dedication) = g.available_dedications(pid).into_iter().next() {
+            if g.apply(pid, &Action::ChooseDedication { dedication })
+                .is_err()
+            {
+                break;
+            }
+        }
+        let incoming: Vec<u32> = g
+            .pending_deals
+            .iter()
+            .filter(|deal| deal.to == pid && deal.expires >= g.turn)
+            .map(|deal| deal.id)
+            .collect();
+        for deal in incoming {
+            let _ = g.apply(pid, &Action::AcceptDeal { deal });
+        }
+        if let Some(session) = g.congress.clone() {
+            for resolution in session.resolutions {
+                if resolution.ballots.contains_key(&pid) {
+                    continue;
+                }
+                let choice = pid.to_string();
+                if resolution.choices.contains(&choice) {
+                    let votes = if plan.strategy == GrandStrategy::Diplomacy
+                        && g.players[pid].diplomatic_favor >= 30.0
+                    {
+                        3
+                    } else {
+                        1
+                    };
+                    let _ = g.apply(
+                        pid,
+                        &Action::CongressVote {
+                            resolution: resolution.id,
+                            choice,
+                            votes,
+                        },
+                    );
+                }
+            }
+        }
+        self.base.bilateral_trade(g, pid);
         let my_power = g.military_power(pid);
         let rivals: Vec<usize> = g
             .players
@@ -1139,7 +1181,7 @@ impl AdvancedAi {
                         .map(|p| g.envoys_at(p.id, minor.id))
                         .max()
                         .unwrap_or(0);
-                    let needed = (6_i64.max(rival + 1) - mine).max(1);
+                    let needed = (3_i64.max(rival + 1) - mine).max(1);
                     let kind = Game::cs_type(&minor.civ);
                     let alignment = match (strategy, kind) {
                         (GrandStrategy::Science, "scientific") => 10,
@@ -3660,10 +3702,10 @@ mod tests {
     #[test]
     fn diplomatic_strategy_concentrates_envoys_into_a_suzerainty() {
         let mut g = Game::new(2, 24, 16, 77, 80, 2);
-        g.players[0].envoys_free = 6;
+        g.players[0].envoys_free = 3;
         AdvancedAi::new().advanced_envoys(&mut g, 0, GrandStrategy::Diplomacy);
         assert_eq!(g.players[0].envoys_free, 0);
-        assert!(g.players[0].envoys.iter().any(|(_, count)| *count >= 6));
+        assert!(g.players[0].envoys.iter().any(|(_, count)| *count >= 3));
     }
 
     #[test]

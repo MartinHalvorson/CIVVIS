@@ -300,7 +300,12 @@
     "housing": 1,
     "defense": 10,
     "appeal": -1,
-    "effects": {"zone_of_control": 1, "corps_army_discount_pct": 25}
+    "effects": {
+      "zone_of_control": 1,
+      "corps_army_discount_pct": 25,
+      "building_gold": 2,
+      "building_science": 1
+    }
   },
   "thanh": {
     "cost": 27,

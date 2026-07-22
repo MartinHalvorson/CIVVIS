@@ -200,9 +200,10 @@ pub fn generate(
         }
     }
 
-    // --- natural wonders: use the stock per-map-size count. The engine's
-    // wonders are single-tile simplifications, but remain unique and favor
-    // the same broad terrain families as their Civ VI counterparts.
+    // --- natural wonders: use the stock per-map-size count and the actual
+    // footprint of each modeled wonder. Multi-tile wonders are grown as a
+    // connected cluster so discovery, adjacency and yields operate on every
+    // constituent tile rather than on a single representative hex.
     let mut wonder_names = [
         "great_barrier_reef",
         "crater_lake",
@@ -218,54 +219,113 @@ pub fn generate(
         wonder_names.swap(index, other);
     }
     for wonder in wonder_names.iter().take(num_natural_wonders) {
+        let footprint = match *wonder {
+            "great_barrier_reef" | "yosemite" | "dead_sea" | "pamukkale" => 2,
+            "mount_everest" => 3,
+            "pantanal" => 4,
+            _ => 1,
+        };
+        let preferred = |t: &crate::world::Tile| {
+            if t.feature.is_some() || t.resource.is_some() {
+                return false;
+            }
+            match *wonder {
+                "great_barrier_reef" => t.terrain == "coast",
+                "crater_lake" => {
+                    matches!(t.terrain.as_str(), "grassland" | "plains" | "tundra")
+                        && !t.hills
+                        && !t.has_river()
+                }
+                "pantanal" => matches!(t.terrain.as_str(), "grassland" | "plains") && !t.hills,
+                "uluru" => t.terrain == "desert" && !t.hills,
+                "yosemite" | "mount_everest" => t.terrain == "mountain",
+                "dead_sea" => {
+                    matches!(t.terrain.as_str(), "desert" | "plains") && !t.hills && !t.has_river()
+                }
+                "pamukkale" => {
+                    matches!(t.terrain.as_str(), "desert" | "grassland" | "plains") && !t.hills
+                }
+                _ => false,
+            }
+        };
         let mut cands: Vec<Pos> = wm
             .tiles
             .iter()
-            .filter(|(_, t)| {
-                if t.feature.is_some() || t.resource.is_some() {
-                    return false;
-                }
-                match *wonder {
-                    "great_barrier_reef" => t.terrain == "coast",
-                    "crater_lake" => {
-                        matches!(t.terrain.as_str(), "grassland" | "plains" | "tundra")
-                            && !t.hills
-                            && !t.has_river()
-                    }
-                    "pantanal" => matches!(t.terrain.as_str(), "grassland" | "plains") && !t.hills,
-                    "uluru" => t.terrain == "desert" && !t.hills,
-                    "yosemite" | "mount_everest" => t.terrain == "mountain",
-                    "dead_sea" => {
-                        matches!(t.terrain.as_str(), "desert" | "plains")
-                            && !t.hills
-                            && !t.has_river()
-                    }
-                    "pamukkale" => {
-                        matches!(t.terrain.as_str(), "desert" | "grassland" | "plains") && !t.hills
-                    }
-                    _ => false,
-                }
-            })
+            .filter(|(_, t)| preferred(t))
             .map(|(p, _)| *p)
             .collect();
-        // Very unusual seeds can lack a preferred biome. Preserve the stock
-        // wonder count by falling back to an otherwise empty land tile.
-        if cands.is_empty() {
+        let cluster_from = |anchor: Pos, preferred_only: bool| {
+            let mut cluster = vec![anchor];
+            while cluster.len() < footprint {
+                let mut frontier: Vec<Pos> = cluster
+                    .iter()
+                    .flat_map(|position| hex::neighbors(*position))
+                    .map(|position| hex::canon(position, width))
+                    .filter(|position| wm.tiles.contains_key(position))
+                    .filter(|position| !cluster.contains(position))
+                    .filter(|position| {
+                        let tile = &wm.tiles[position];
+                        if preferred_only {
+                            preferred(tile)
+                        } else if *wonder == "great_barrier_reef" {
+                            tile.terrain == "coast"
+                                && tile.feature.is_none()
+                                && tile.resource.is_none()
+                        } else {
+                            !matches!(tile.terrain.as_str(), "ocean" | "coast")
+                                && tile.feature.is_none()
+                                && tile.resource.is_none()
+                        }
+                    })
+                    .collect();
+                frontier.sort();
+                frontier.dedup();
+                if frontier.is_empty() {
+                    return None;
+                }
+                cluster.push(frontier[0]);
+            }
+            Some(cluster)
+        };
+        let mut footprint_tiles = None;
+        while !cands.is_empty() && footprint_tiles.is_none() {
+            let index = rng.below(cands.len());
+            let anchor = cands.swap_remove(index);
+            footprint_tiles = cluster_from(anchor, true);
+        }
+        // Very unusual seeds can lack a large enough preferred biome. Keep
+        // the correct footprint and map-size count by shaping an otherwise
+        // empty connected region into the wonder's terrain family.
+        if footprint_tiles.is_none() {
             cands = wm
                 .tiles
                 .iter()
                 .filter(|(_, t)| {
-                    t.terrain != "ocean"
-                        && t.terrain != "coast"
+                    ((*wonder == "great_barrier_reef" && t.terrain == "coast")
+                        || (*wonder != "great_barrier_reef"
+                            && !matches!(t.terrain.as_str(), "ocean" | "coast")))
                         && t.feature.is_none()
                         && t.resource.is_none()
                 })
                 .map(|(p, _)| *p)
                 .collect();
+            while !cands.is_empty() && footprint_tiles.is_none() {
+                let index = rng.below(cands.len());
+                let anchor = cands.swap_remove(index);
+                footprint_tiles = cluster_from(anchor, false);
+            }
         }
-        if !cands.is_empty() {
-            let p = cands[rng.below(cands.len())];
-            wm.tiles.get_mut(&p).unwrap().feature = Some((*wonder).into());
+        if let Some(cluster) = footprint_tiles {
+            for position in cluster {
+                let tile = wm.tiles.get_mut(&position).unwrap();
+                if matches!(*wonder, "yosemite" | "mount_everest") {
+                    tile.terrain = "mountain".into();
+                    tile.hills = false;
+                }
+                tile.feature = Some((*wonder).into());
+                tile.resource = None;
+                tile.improvement = None;
+            }
         }
     }
 

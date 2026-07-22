@@ -183,18 +183,23 @@ mod tests {
             game.players.iter().filter(|p| p.is_minor).count(),
             size.default_city_states
         );
-        let wonders = game
+        let wonders: BTreeSet<&str> = game
             .map
             .tiles
             .values()
-            .filter(|tile| {
-                tile.feature
-                    .as_ref()
-                    .map(|feature| game.rules.features[feature].natural_wonder)
-                    .unwrap_or(false)
+            .filter_map(|tile| {
+                let feature = tile.feature.as_deref()?;
+                game.rules.features[feature]
+                    .natural_wonder
+                    .then_some(feature)
             })
-            .count();
-        assert_eq!(wonders, size.natural_wonders);
+            .collect();
+        assert_eq!(
+            wonders.len(),
+            size.natural_wonders,
+            "{} generated unexpected natural wonders: {wonders:?}",
+            size.name
+        );
         let continents: BTreeSet<usize> = game
             .map
             .tiles

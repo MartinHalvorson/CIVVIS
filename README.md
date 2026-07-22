@@ -34,6 +34,8 @@ Firaxis or 2K; no assets, art, text, or code from Civilization VI are used.
 - **Theological combat** with Missionaries, Apostles, Gurus, Inquisitors,
   religious pressure, healing, inquisition, heresy removal, and condemnation
 - **Barbarians** (camps, era-scaled raiders), **city-states**, **governments**
+- **Mutually favorable diplomacy trades**: Gold, GPT, Favor, resources, and
+  directional Open Borders, with 30-turn contracts shared by human and AI play
 - War/peace; all six Civ VI victory paths: **domination, science, culture,
   religious, diplomatic, and score**
 - Deterministic per seed; full JSON save/serialization
@@ -75,10 +77,15 @@ Player-count defaults use Civ VI's stock world rows: 2 players = Duel
 available as explicit advanced overrides.
 
 GUI: click/right-click to select and order units, drag to pan, wheel to zoom,
-**1** next action, **2** settler lens, **3** map tacks, Enter ends turn; tech
+**1** next action, **2** settler lens, **3** map tacks, **D** Quick Deals,
+Enter ends turn; tech
 and civics tree maps, production/buy panels, city strikes, fog of war. Enable
 **Show yields per tile** in View & controls (or press **Y**); gold-outlined yield
 chips identify tiles currently worked by the automatic citizen governor.
+
+Quick Deals gathers every AI's acceptable Buy/Sell quote into a sortable,
+one-click screen. It shows both sides' modeled gain before acceptance, and the
+engine rejects the action if either side no longer benefits when it is clicked.
 
 Each city's citizen governor protects its food requirement, then optimizes the
 remaining population for the city's current build/specialty and its

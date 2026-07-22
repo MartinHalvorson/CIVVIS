@@ -173,16 +173,27 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool) -> Value {
             "influence": round1(p.influence),
             "envoys_free": p.envoys_free,
             "envoys": p.envoys,
+            "diplomatic_favor": round1(p.diplomatic_favor),
             "trade_capacity": g.trade_capacity(pid),
             "gpp": p.gpp,
             "gp_claimed": p.gp_claimed,
             "great_people": p.great_people,
             "era_score": p.era_score,
+            "normal_age_threshold": p.normal_age_threshold,
+            "golden_age_threshold": p.golden_age_threshold,
+            "dedications": p.dedications,
+            "dedication_choices": p.dedication_choices,
+            "available_dedications": g.available_dedications(pid),
             "governors": p.governors,
             "governor_roster": p.governor_roster,
             "governor_titles": g.governor_titles(pid),
             "governor_titles_available": g.governor_titles_available(pid),
             "dvp": p.dvp,
+            "grievances": p.grievances,
+            "denounced_until": p.denounced_until,
+            "friends_until": p.friends_until,
+            "open_borders_until": p.open_borders_until,
+            "alliances": p.alliances,
             "age": p.age,
             "tourism": round1(p.tourism_lifetime),
             "domestic_tourists": g.domestic_tourists(pid),
@@ -196,6 +207,16 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool) -> Value {
             "prophet_pending": p.prophet_pending,
             "routes": g.routes.iter().filter(|r| r.owner == pid)
                 .map(|r| json!({"origin": r.origin, "dest": r.dest, "ends": r.ends}))
+                .collect::<Vec<_>>(),
+            "resources": g.rules.resources.iter()
+                .filter(|(_, spec)| matches!(spec.class.as_str(), "luxury" | "strategic"))
+                .filter(|(resource, _)| g.resource_visible_to(pid, resource))
+                .map(|(resource, spec)| json!({
+                    "id": resource,
+                    "class": spec.class,
+                    "native": g.connected_resource_count(pid, resource),
+                    "available": g.resource_access_count(pid, resource),
+                }))
                 .collect::<Vec<_>>(),
             "policies": p.policies,
             "policy_slots": g.gov_slots(pid),
@@ -246,8 +267,30 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool) -> Value {
                 "yields": yields_json(&output),
                 "military": military,
                 "at_war_with_me": g.is_at_war(pid, o.id),
+                "grievances_against_me": o.grievances.get(&pid).copied().unwrap_or(0.0),
+                "my_grievances": p.grievances.get(&o.id).copied().unwrap_or(0.0),
+                "friend": g.are_friends(pid, o.id),
+                "alliance": g.alliance_with(pid, o.id),
+                "open_borders_to_me": g.has_open_borders(pid, o.id),
+                "my_open_borders_to_them": g.has_open_borders(o.id, pid),
             })
         }).collect::<Vec<_>>(),
+        "quick_deals": if omniscient { Vec::new() } else { g.quick_deals(pid) },
+        "active_trade_deals": g.active_trade_deals.iter()
+            .filter(|deal| deal.from == pid || deal.to == pid)
+            .collect::<Vec<_>>(),
+        "pending_deals": g.pending_deals.iter()
+            .filter(|deal| deal.from == pid || deal.to == pid)
+            .collect::<Vec<_>>(),
+        "congress": g.congress,
+        "barbarian_alerts": g.barb_alerted_until.iter()
+            .filter(|(camp, _)| explored.contains(camp))
+            .map(|(camp, until)| json!({
+                "camp": [camp.0, camp.1],
+                "target": g.barb_camp_targets.get(camp).map(|target| [target.0, target.1]),
+                "until": until,
+            }))
+            .collect::<Vec<_>>(),
         "winner": g.winner,
         "victory_type": g.victory_type,
     })

@@ -571,6 +571,39 @@ impl BasicAi {
         counts
     }
 
+    /// One-city states need a credible local defense, not an empire-sized
+    /// standing army. Their budget grows when an actual hostile force reaches
+    /// the city, but remains bounded so mature maps do not fill every tile
+    /// with idle city-state units.
+    fn minor_military_budget(g: &Game, pid: usize) -> usize {
+        let enemies: Vec<usize> = g
+            .players
+            .iter()
+            .filter(|player| {
+                player.id != pid
+                    && player.alive
+                    && !player.is_barbarian
+                    && g.is_at_war(pid, player.id)
+            })
+            .map(|player| player.id)
+            .collect();
+        if enemies.is_empty() {
+            return 3;
+        }
+        let cities = g.player_city_ids(pid);
+        let nearby_hostiles = g
+            .units
+            .values()
+            .filter(|unit| {
+                enemies.contains(&unit.owner)
+                    && cities
+                        .iter()
+                        .any(|city| g.wdist(g.cities[city].pos, unit.pos) <= 6)
+            })
+            .count();
+        (4 + (nearby_hostiles + 1) / 2).min(7)
+    }
+
     pub(crate) fn desired_navy(g: &Game, pid: usize) -> usize {
         let coastal_cities = g
             .player_city_ids(pid)
@@ -1091,6 +1124,72 @@ impl BasicAi {
     }
 
     fn diplomacy(&self, g: &mut Game, pid: usize) {
+        while let Some(dedication) = g.available_dedications(pid).into_iter().next() {
+            if g.apply(pid, &Action::ChooseDedication { dedication })
+                .is_err()
+            {
+                break;
+            }
+        }
+        let incoming: Vec<u32> = g
+            .pending_deals
+            .iter()
+            .filter(|deal| deal.to == pid && deal.expires >= g.turn)
+            .map(|deal| deal.id)
+            .collect();
+        for deal_id in incoming {
+            let accept = g
+                .pending_deals
+                .iter()
+                .find(|deal| deal.id == deal_id)
+                .is_some_and(|deal| {
+                    let partner_power = g.military_power(deal.from);
+                    let grievance = g.players[pid]
+                        .grievances
+                        .get(&deal.from)
+                        .copied()
+                        .unwrap_or(0.0);
+                    deal.peace
+                        || deal.give_gold >= deal.request_gold
+                        || ((deal.friendship || deal.alliance.is_some() || deal.open_borders)
+                            && grievance < 75.0
+                            && partner_power < g.military_power(pid) * 1.8 + 20.0)
+                });
+            let action = if accept {
+                Action::AcceptDeal { deal: deal_id }
+            } else {
+                Action::RejectDeal { deal: deal_id }
+            };
+            let _ = g.apply(pid, &action);
+        }
+        if let Some(session) = g.congress.clone() {
+            for resolution in session.resolutions {
+                if resolution.ballots.contains_key(&pid) {
+                    continue;
+                }
+                let choice = if resolution.choices.contains(&pid.to_string()) {
+                    pid.to_string()
+                } else {
+                    resolution.choices[pid % resolution.choices.len()].clone()
+                };
+                let votes = if g.players[pid].diplomatic_favor >= 30.0 {
+                    3
+                } else if g.players[pid].diplomatic_favor >= 10.0 {
+                    2
+                } else {
+                    1
+                };
+                let _ = g.apply(
+                    pid,
+                    &Action::CongressVote {
+                        resolution: resolution.id,
+                        choice,
+                        votes,
+                    },
+                );
+            }
+        }
+        self.bilateral_trade(g, pid);
         let my_power = g.military_power(pid);
         let others: Vec<usize> = g
             .players
@@ -1105,6 +1204,35 @@ impl BasicAi {
         }
         if self.minor {
             return;
+        }
+        if g.turn % 20 == pid as u32 % 20 {
+            if let Some(partner) = others.iter().copied().find(|other| {
+                !g.players[*other].is_minor
+                    && !g.is_at_war(pid, *other)
+                    && g.players[pid].grievances.get(other).copied().unwrap_or(0.0) < 50.0
+            }) {
+                let alliance = if g.are_friends(pid, partner)
+                    && g.players[pid].civics.contains("civil_service")
+                    && g.players[partner].civics.contains("civil_service")
+                    && g.alliance_with(pid, partner).is_none()
+                {
+                    Some(["economic", "cultural", "military", "religious"][pid % 4].to_string())
+                } else {
+                    None
+                };
+                let _ = g.apply(
+                    pid,
+                    &Action::ProposeDeal {
+                        player: partner,
+                        give_gold: 0.0,
+                        request_gold: 0.0,
+                        open_borders: g.players[pid].civics.contains("early_empire"),
+                        friendship: true,
+                        peace: false,
+                        alliance,
+                    },
+                );
+            }
         }
         let at_war = others.iter().any(|o| g.is_at_war(pid, *o));
         if !at_war
@@ -1121,9 +1249,55 @@ impl BasicAi {
                 })
                 .unwrap();
             if my_power > self.w.war_ratio * g.military_power(weakest) + self.w.war_margin {
-                let _ = g.apply(pid, &Action::DeclareWar { player: weakest });
+                let formal = g.players[pid]
+                    .denounced_until
+                    .get(&weakest)
+                    .is_some_and(|until| *until > g.turn && *until <= g.turn + 25);
+                let action = if formal {
+                    Action::DeclareWarWithCasusBelli {
+                        player: weakest,
+                        casus_belli: "formal_war".to_string(),
+                    }
+                } else if !g.players[pid]
+                    .denounced_until
+                    .get(&weakest)
+                    .is_some_and(|until| *until > g.turn)
+                {
+                    Action::Denounce { player: weakest }
+                } else {
+                    return;
+                };
+                let _ = g.apply(pid, &action);
             }
         }
+    }
+
+    /// Execute at most one pre-negotiated exchange on a staggered cadence.
+    /// `Game::quick_deals` has already valued both sides, and `Action::Trade`
+    /// revalidates the contract atomically, so the AI never relies on gifts,
+    /// exploits stale quotes, or trades when either empire would lose value.
+    pub(crate) fn bilateral_trade(&self, g: &mut Game, pid: usize) {
+        if self.minor || self.barb || g.turn % 6 != (pid as u32 % 6) {
+            return;
+        }
+        let best = g.quick_deals(pid).into_iter().max_by(|left, right| {
+            left.my_value
+                .min(left.partner_value)
+                .partial_cmp(&right.my_value.min(right.partner_value))
+                .unwrap()
+        });
+        let Some(deal) = best.filter(|deal| deal.my_value >= 2.0 && deal.partner_value >= 2.0)
+        else {
+            return;
+        };
+        let _ = g.apply(
+            pid,
+            &Action::Trade {
+                player: deal.partner,
+                offer: deal.offer,
+                request: deal.request,
+            },
+        );
     }
 
     fn cities(&mut self, g: &mut Game, pid: usize) {
@@ -1671,12 +1845,13 @@ impl BasicAi {
         ranged: usize,
     ) -> Option<Item> {
         let city_pop = g.cities[&cid].pop;
-        if (military as f64) < self.w.mil_per_city * n_cities as f64 {
+        let can_add_military = !self.minor || military < Self::minor_military_budget(g, pid);
+        if can_add_military && (military as f64) < self.w.mil_per_city * n_cities as f64 {
             if let Some(m) = self.combined_arms_unit(g, pid, cid, melee, ranged) {
                 return Some(Item::Unit { unit: m });
             }
         }
-        if siege_support == 0 && melee >= 2 {
+        if can_add_military && siege_support == 0 && melee >= 2 {
             if let Some(unit) = self.siege_support_unit(g, pid, cid) {
                 return Some(Item::Unit { unit });
             }
@@ -1722,7 +1897,7 @@ impl BasicAi {
             }
         }
         let naval = Self::naval_counts(g, pid).0;
-        if naval < Self::desired_navy(g, pid) {
+        if can_add_military && naval < Self::desired_navy(g, pid) {
             if let Some(unit) = self.best_naval_unit(g, pid, cid) {
                 return Some(Item::Unit { unit });
             }
@@ -1934,7 +2109,9 @@ impl BasicAi {
                 });
             }
         }
-        self.combined_arms_unit(g, pid, cid, melee, ranged)
+        can_add_military
+            .then(|| self.combined_arms_unit(g, pid, cid, melee, ranged))
+            .flatten()
             .map(|m| Item::Unit { unit: m })
     }
 
@@ -3066,6 +3243,7 @@ mod tests {
             tile.district = None;
             tile.wonder = None;
             tile.owner_city = None;
+            tile.cliff_edges = [false; 6];
         }
         g.map.tiles.get_mut(&source).unwrap().terrain = "plains".to_string();
         g.map.tiles.get_mut(&target).unwrap().terrain = "grassland".to_string();
@@ -3169,6 +3347,49 @@ mod tests {
             .pick_item(&g, 0, cid, 1, 0, 2, 1, 0, 5, 3, 2)
             .expect("coastal city has a production choice");
         assert!(matches!(item, Item::Unit { unit } if unit == "quadrireme"));
+    }
+
+    #[test]
+    fn city_states_keep_a_bounded_force_that_scales_with_local_threat() {
+        let mut g = Game::new_full(2, 24, 16, 97, 120, 1, false);
+        let minor = g
+            .players
+            .iter()
+            .find(|player| player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .unwrap();
+        assert_eq!(BasicAi::minor_military_budget(&g, minor), 3);
+
+        let major_units = g.player_unit_ids(0);
+        for unit in major_units {
+            g.remove_unit(unit);
+        }
+        g.at_war.insert((0, minor));
+        assert_eq!(BasicAi::minor_military_budget(&g, minor), 4);
+
+        let city = g.player_city_ids(minor)[0];
+        let front = g
+            .nbrs(g.cities[&city].pos)
+            .into_iter()
+            .find(|position| {
+                g.map
+                    .get(*position)
+                    .is_some_and(|tile| !g.rules.is_water(tile))
+            })
+            .unwrap();
+        for _ in 0..8 {
+            g.spawn_test_unit("warrior", 0, front);
+        }
+        assert_eq!(BasicAi::minor_military_budget(&g, minor), 7);
+
+        g.at_war.clear();
+        let mut ai = BasicAi::new();
+        ai.minor = true;
+        let choice = ai.pick_item(&g, minor, city, 1, 0, 1, 0, 0, 3, 2, 1);
+        assert!(
+            !matches!(choice, Some(Item::Unit { ref unit }) if g.rules.units[unit].class == "military"),
+            "a peaceful city-state at its force budget must prefer infrastructure or idle"
+        );
     }
 
     #[test]
@@ -3652,6 +3873,9 @@ mod tests {
     fn raiders_and_aircraft_use_their_specialized_actions() {
         let mut g = Game::new_full(2, 24, 16, 39, 30, 0, false);
         g.at_war.insert((0, 1));
+        for unit in g.player_unit_ids(1) {
+            g.units.get_mut(&unit).unwrap().owner = 0;
+        }
         let positions: Vec<Pos> = g
             .map
             .tiles
@@ -3694,11 +3918,15 @@ mod tests {
             ai.doctrine_action(&g, 0, fighter),
             Some(Action::AirPatrol { unit }) if unit == fighter
         ));
-        assert!(matches!(
-            ai.doctrine_action(&g, 0, bomber),
-            Some(Action::AirStrike { unit, target })
-                if unit == bomber && target == air_target
-        ));
+        let bomber_action = ai.doctrine_action(&g, 0, bomber);
+        assert!(
+            matches!(
+                bomber_action,
+                Some(Action::AirStrike { unit, target })
+                    if unit == bomber && target == air_target
+            ),
+            "unexpected bomber action: {bomber_action:?}"
+        );
     }
 
     #[test]
