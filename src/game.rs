@@ -18906,6 +18906,17 @@ impl Game {
                 true
             }
             Item::Building { building } => {
+                // Older saves may contain a building both in the completed list and
+                // at the front of the production queue after purchasing it. Treat
+                // that stale queue entry as complete so it is discarded without
+                // duplicating the building or reapplying its one-time effects.
+                if self.cities[&cid]
+                    .buildings
+                    .iter()
+                    .any(|owned| owned == building)
+                {
+                    return true;
+                }
                 let spec = self.rules.buildings[building.as_str()].clone();
                 if spec.wonder && self.wonder_built(building) {
                     // wonder race lost: drop the item, keep banked production
@@ -22446,6 +22457,32 @@ mod victory_conditions {
         assert!(
             (g.cities[&cid].production - base / 2.0).abs() < 1e-9,
             "only the unused base Production survives a +100% Limes completion"
+        );
+    }
+
+    #[test]
+    fn legacy_purchased_building_queue_is_discarded_without_a_duplicate() {
+        let mut g = game_with_capitals(2, 414, 300);
+        let cid = g.player_city_ids(0)[0];
+        let granary = Item::Building {
+            building: "granary".to_string(),
+        };
+        let city = g.cities.get_mut(&cid).unwrap();
+        city.buildings.retain(|building| building != "granary");
+        city.buildings.push("granary".to_string());
+        city.queue = vec![granary.clone()];
+        city.production = g.rules.buildings["granary"].cost;
+
+        g.process_city(0, cid);
+
+        assert!(g.cities[&cid].queue.is_empty());
+        assert_eq!(
+            g.cities[&cid]
+                .buildings
+                .iter()
+                .filter(|building| building.as_str() == "granary")
+                .count(),
+            1
         );
     }
 
