@@ -427,6 +427,29 @@ impl AdvancedAi {
         })
     }
 
+    fn religious_conversion_tally(&self, g: &Game, pid: usize) -> (usize, usize) {
+        let living_majors: Vec<usize> = g
+            .players
+            .iter()
+            .filter(|player| player.alive && !player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .collect();
+        let converted = g.players[pid].religion.as_ref().map_or(0, |religion| {
+            living_majors
+                .iter()
+                .filter(|other| {
+                    let cities = g.player_city_ids(**other);
+                    let following = cities
+                        .iter()
+                        .filter(|city| g.city_religion(&g.cities[city]) == Some(religion.as_str()))
+                        .count();
+                    !cities.is_empty() && following * 2 > cities.len()
+                })
+                .count()
+        });
+        (converted, living_majors.len())
+    }
+
     fn victory_focus(&self, g: &Game, pid: usize) -> VictoryFocus {
         if let Some(target) = self.victory_target {
             return VictoryFocus {
@@ -469,21 +492,9 @@ impl AdvancedAi {
             .max(1);
         let culture = ((100 * g.foreign_tourists(pid) / culture_target).clamp(0, 100)) as i32;
 
-        let converted = player.religion.as_ref().map_or(0, |religion| {
-            living_majors
-                .iter()
-                .filter(|other| {
-                    let cities = g.player_city_ids(**other);
-                    let following = cities
-                        .iter()
-                        .filter(|cid| g.city_religion(&g.cities[cid]) == Some(religion.as_str()))
-                        .count();
-                    !cities.is_empty() && 2 * following > cities.len()
-                })
-                .count()
-        });
+        let (converted, living_religious_rivals) = self.religious_conversion_tally(g, pid);
         let religion = if player.religion.is_some() {
-            40 + (60 * converted / living_majors.len().max(1)) as i32
+            40 + (60 * converted / living_religious_rivals.max(1)) as i32
         } else if self.religious_opening_viable(g, pid) {
             42
         } else {
@@ -565,21 +576,9 @@ impl AdvancedAi {
             .max(1);
         let culture = (100 * g.foreign_tourists(pid) / culture_target).clamp(0, 100) as i32;
 
-        let converted = player.religion.as_ref().map_or(0, |religion| {
-            living_majors
-                .iter()
-                .filter(|other| {
-                    let cities = g.player_city_ids(**other);
-                    let following = cities
-                        .iter()
-                        .filter(|city| g.city_religion(&g.cities[city]) == Some(religion.as_str()))
-                        .count();
-                    !cities.is_empty() && following * 2 > cities.len()
-                })
-                .count()
-        });
+        let (converted, living_religious_rivals) = self.religious_conversion_tally(g, pid);
         let religion = if player.religion.is_some() {
-            (100 * converted / living_majors.len().max(1)) as i32
+            (100 * converted / living_religious_rivals.max(1)) as i32
         } else {
             0
         };
@@ -660,7 +659,20 @@ impl AdvancedAi {
                     .cmp(&right.1.progress)
                     .then_with(|| right.0.cmp(&left.0))
             })?;
-        if pressure.progress < 78 || pressure.progress < own_progress + 15 {
+        // Religious progress advances in whole-civilization steps.  On a
+        // four-player map the previous generic 78% threshold could never see
+        // the dangerous 3/4 state (75%); the next conversion simply ended the
+        // game.  Treat a founder controlling at least two civilizations and
+        // needing only one more as an immediate interrupt.
+        let religious_match_point = if pressure.strategy == GrandStrategy::Religion {
+            let (converted, living) = self.religious_conversion_tally(g, rival);
+            converted >= 2 && converted < living && converted + 1 >= living
+        } else {
+            false
+        };
+        if !religious_match_point
+            && (pressure.progress < 78 || pressure.progress < own_progress + 15)
+        {
             return None;
         }
         let counter = match pressure.strategy {
@@ -5512,6 +5524,58 @@ mod tests {
         let plan = ai.assess(&culture, 0);
         assert_eq!(plan.strategy, GrandStrategy::Culture);
         assert_eq!(plan.target_player, Some(1));
+    }
+
+    #[test]
+    fn religious_match_point_interrupts_before_the_winning_conversion() {
+        let mut game = Game::new_full(4, 42, 24, 7_621, 300, 0, false);
+        for pid in 0..4 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.current = pid;
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .unwrap();
+        }
+        game.current = 0;
+        game.turn = 150;
+        game.players[3].religion = Some("Runaway Faith".to_string());
+        for owner in 1..4 {
+            let city = game.player_city_ids(owner)[0];
+            game.cities
+                .get_mut(&city)
+                .unwrap()
+                .pressure
+                .insert("Runaway Faith".to_string(), 1_000.0);
+        }
+
+        let ai = AdvancedAi::new();
+        let pressure = ai.rival_victory_pressure(&game, 3);
+        assert_eq!(pressure.strategy, GrandStrategy::Religion);
+        assert_eq!(pressure.progress, 75);
+        assert_eq!(
+            ai.victory_denial(&game, 0),
+            Some((3, GrandStrategy::Conquest)),
+            "a non-founder must attack before the fourth conversion ends the game"
+        );
+        let plan = ai.assess(&game, 0);
+        assert_eq!(plan.strategy, GrandStrategy::Conquest);
+        assert_eq!(plan.target_player, Some(3));
+
+        game.players[0].religion = Some("Home Faith".to_string());
+        let home = game.player_city_ids(0)[0];
+        game.cities
+            .get_mut(&home)
+            .unwrap()
+            .pressure
+            .insert("Home Faith".to_string(), 1_000.0);
+        assert_eq!(
+            ai.victory_denial(&game, 0),
+            Some((3, GrandStrategy::Religion)),
+            "a founder should defend its cities with its own religion"
+        );
     }
 
     #[test]
