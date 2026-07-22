@@ -365,10 +365,10 @@
       </div>
       <div class="speed-row"><span>Watch pace</span>
         <select id="specspeed">
-          <option value="250">Blitz · 0.25s</option>
+          <option value="250" selected>Blitz · 0.25s</option>
           <option value="500">Fast · 0.5s</option>
           <option value="1000">Brisk · 1s</option>
-          <option value="2000" selected>Measured · 2s</option>
+          <option value="2000">Measured · 2s</option>
           <option value="4000">Cinematic · 4s</option>
         </select>
       </div>
@@ -545,10 +545,39 @@ async function specStep(force) {
     scheduleSpec(st);
   } finally { specBusy = false; }
 }
+// --- game over in spectate: 10s countdown, then a fresh game begins
+let restartTimer = null, restartLeft = 0;
+function startRestartCountdown() {
+  if (restartTimer) return;
+  restartLeft = 10;
+  const tick = async () => {
+    const el = document.getElementById("respawn");
+    if (!SPEC || specPaused) { restartTimer = null; if (el) el.textContent = ""; return; }
+    if (restartLeft <= 0) {
+      restartTimer = null;
+      sel = null; selCity = null;
+      render(await fetchJSON("/new", { method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({seed: Math.floor(Math.random() * 1e9),
+                              spectate: true}) }));
+      centerHome();
+      scheduleSpec(state);
+      return;
+    }
+    if (el) el.textContent = "next game in " + restartLeft + "s";
+    restartLeft--;
+    restartTimer = setTimeout(tick, 1000);
+  };
+  tick();
+}
+
 function scheduleSpec(st) {
   clearTimeout(specTimer);
   if (!SPEC || specPaused) return;
-  if (st && st.winner !== null && st.winner !== undefined) return;
+  if (st && st.winner !== null && st.winner !== undefined) {
+    startRestartCountdown();
+    return;
+  }
   let d = +document.getElementById("specspeed").value;
   if (st && st.stepped !== undefined) {
     const p = st.players[st.stepped];
@@ -654,7 +683,8 @@ function render(st) {
     w.style.display = "block";
     w.innerHTML = (SPEC ? "🏆 " + p.civ + " wins!" : st.winner === 0 ? "🏆 Victory!" : "💀 Defeat") +
       "<br><span class='small'>" + p.civ + " wins by " + st.victory_type +
-      " on turn " + st.turn + "</span>";
+      " on turn " + st.turn + "</span>" +
+      (SPEC ? "<br><span class='small' id='respawn'></span>" : "");
   } else w.style.display = "none";
   draw(); drawSide(); drawMini(); drawTopbar(); drawUbar();
 }

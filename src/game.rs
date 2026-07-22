@@ -33,6 +33,9 @@ pub fn growth_threshold(pop: i32) -> f64 {
     15.0 + 8.0 * (pop - 1) as f64 + ((pop - 1) as f64).powf(1.5).trunc()
 }
 
+/// A major reaching this score ends the game immediately (score victory).
+pub const SCORE_VICTORY: i64 = 500;
+
 pub fn effective_strength(base: f64, hp: i32) -> f64 {
     (base - (100 - hp) as f64 / 10.0).max(1.0)
 }
@@ -3665,6 +3668,16 @@ impl Game {
             self.process_eras();
             self.process_congress();
             self.check_culture_victory();
+            // score victory: first major to reach the score cap wins outright
+            if self.winner.is_none() {
+                for pl in &self.players {
+                    if pl.alive && !pl.is_minor && !pl.is_barbarian
+                        && self.score(pl.id) >= SCORE_VICTORY {
+                        self.set_winner(pl.id, "score");
+                        break;
+                    }
+                }
+            }
             if self.turn > self.max_turns && self.winner.is_none() {
                 let mut best: Option<(i64, i64)> = None; // (score, -pid)
                 let mut best_pid = 0;
