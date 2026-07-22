@@ -963,6 +963,30 @@ async function specStep() {
 function scheduleSpec(_st) {} // server-driven; kept for legacy call sites
 function legalFor(type) { return state.legal_actions.filter(a => a.type === type); }
 
+// The engine keeps its own per-civilization event stream (see obs "events"),
+// which knows things a client-side diff cannot: what finished researching,
+// which Great Person joined, why a city changed hands. Spectate already
+// narrates cities and wars omnisciently, so there we take only what it cannot
+// see; at the keyboard we take the lot.
+const SERVER_EVENT_ICONS = {
+  General: "✦", Cities: "🏛", War: "⚔", Science: "⌬",
+  Culture: "❦", Faith: "☥", People: "★", Diplomacy: "⚖",
+};
+let seenServerEvents = new Set();
+function chronicleServer(next) {
+  const events = Array.isArray(next.events) ? next.events : [];
+  const spectating = !!next.spectate;
+  for (const event of events) {
+    const key = `${event.turn}|${event.category}|${event.text}`;
+    if (seenServerEvents.has(key)) continue;
+    seenServerEvents.add(key);
+    if (spectating && (event.category === "Cities" || event.category === "War")) continue;
+    addEvent(SERVER_EVENT_ICONS[event.category] || "✦", event.text, event.turn,
+      event.category === "General");
+  }
+  if (seenServerEvents.size > 600) seenServerEvents = new Set();
+}
+
 function addEvent(icon, text, turn, important = false) {
   worldEvents.unshift({ icon, text, turn, important, at: performance.now() });
   worldEvents = worldEvents.slice(0, 12);
@@ -1012,8 +1036,10 @@ function chronicleActions(next) {
 function chronicle(prev, next) {
   if (!prev || prev.seed !== next.seed) {
     worldEvents = [];
+    seenServerEvents = new Set();
     lastLeader = null;
     addEvent("✦", `A new world begins with seed ${next.seed}.`, next.turn);
+    chronicleServer(next);
     return;
   }
   if (next.turn > prev.turn) addEvent("☀", `Turn ${next.turn} dawns across the world.`, next.turn);
@@ -1047,6 +1073,7 @@ function chronicle(prev, next) {
     addEvent("♛", `${majors[0].civ} has taken the score lead.`, next.turn);
   if (majors.length) lastLeader = majors[0].id;
   chronicleActions(next);
+  chronicleServer(next);
 }
 
 function render(st, recordChronicle = true) {

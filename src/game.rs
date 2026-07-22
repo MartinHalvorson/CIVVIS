@@ -5,7 +5,7 @@ use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, VecDeque};
 
 use crate::rng::Rng;
-use crate::rules::{DifficultySpec, Rules, SpeedSpec, Yields};
+use crate::rules::{DifficultySpec, Rules, SpeedSpec, Yields, ERA_NAMES};
 use crate::setup::MapSize;
 use crate::world::{DistrictFoundation, WorldMap};
 use crate::{hex, mapgen, Pos};
@@ -7401,6 +7401,43 @@ fn gold_s() -> String {
 
 // --------------------------------------------------------------------- game
 
+/// One thing that happened to one civilization, in the order it happened.
+///
+/// Unciv keeps a categorized notification list per civilization, with each
+/// entry able to point at the tile it concerns; it turns out to be the piece
+/// that makes both a spectator and an agent able to say *why* the board
+/// changed rather than only *that* it changed. Ours is the same idea reduced
+/// to data: the GUI renders it as a log, and `obs` hands it to agents.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Event {
+    pub turn: u32,
+    /// The civilization this happened to. Events are visible only to them.
+    pub player: usize,
+    /// General, Cities, War, Science, Culture, Faith, People, Diplomacy.
+    pub category: String,
+    pub text: String,
+    /// Where to look, when there is somewhere to look.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pos: Option<Pos>,
+}
+
+/// Ruleset identifiers are snake_case; event text is for people.
+fn pretty(id: &str) -> String {
+    id.split('_')
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Events older than this are dropped, oldest first. Long games are long.
+const EVENT_LIMIT: usize = 2_000;
+
 pub fn default_difficulty() -> String {
     "prince".to_string()
 }
@@ -7504,6 +7541,8 @@ pub struct Game {
     /// f(seed+params, log), so this is the replay/desync-detection record.
     /// Runtime-only (not in saves yet).
     pub log: Vec<(usize, Action)>,
+    /// Per-civilization event stream; see [`Event`].
+    pub events: Vec<Event>,
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
@@ -7523,6 +7562,8 @@ struct GameSer {
     speed: String,
     #[serde(default)]
     human_seats: BTreeSet<usize>,
+    #[serde(default)]
+    events: Vec<Event>,
     max_turns: u32,
     turn: u32,
     current: usize,
@@ -7584,6 +7625,7 @@ impl From<GameSer> for Game {
             difficulty: s.difficulty,
             speed: s.speed,
             human_seats: s.human_seats,
+            events: s.events,
             max_turns: s.max_turns,
             turn: s.turn,
             current: s.current,
@@ -7702,6 +7744,7 @@ impl From<Game> for GameSer {
             difficulty: g.difficulty,
             speed: g.speed,
             human_seats: g.human_seats,
+            events: g.events,
             max_turns: g.max_turns,
             turn: g.turn,
             current: g.current,
@@ -7846,6 +7889,7 @@ impl Game {
             occ: BTreeMap::new(),
             city_by_pos: BTreeMap::new(),
             log: Vec::new(),
+            events: Vec::new(),
         };
         for i in 0..num_players {
             g.players
@@ -8008,6 +8052,49 @@ impl Game {
     /// Culture cost of a civic at this game speed.
     pub fn civic_cost(&self, civic: &str) -> f64 {
         self.rules.civics[civic].cost * self.speed_cost_mult()
+    }
+
+    // --------------------------------------------------------------- events
+
+    /// Record something that happened to `pid`. Silently ignores minor and
+    /// barbarian seats, which nobody observes.
+    pub(crate) fn note(
+        &mut self,
+        pid: usize,
+        category: &str,
+        text: impl Into<String>,
+        pos: Option<Pos>,
+    ) {
+        if self
+            .players
+            .get(pid)
+            .is_none_or(|player| player.is_minor || player.is_barbarian)
+        {
+            return;
+        }
+        self.events.push(Event {
+            turn: self.turn,
+            player: pid,
+            category: category.to_string(),
+            text: text.into(),
+            pos,
+        });
+        if self.events.len() > EVENT_LIMIT {
+            let excess = self.events.len() - EVENT_LIMIT;
+            self.events.drain(..excess);
+        }
+    }
+
+    fn civ_name(&self, pid: usize) -> String {
+        self.players
+            .get(pid)
+            .map(|player| player.civ.clone())
+            .unwrap_or_else(|| "Someone".to_string())
+    }
+
+    /// The events one civilization can see, oldest first.
+    pub fn events_for(&self, pid: usize) -> Vec<&Event> {
+        self.events.iter().filter(|e| e.player == pid).collect()
     }
 
     /// Below Prince a human is paid more for clearing a Barbarian camp.
@@ -11196,6 +11283,7 @@ impl Game {
         }
         self.players[pid].gpp.insert(kind.to_string(), 0.0);
         self.retired_great_people.insert(id.clone());
+        self.note(pid, "People", format!("{} joined you", spec.name), None);
         self.players[pid].great_people.push(id);
         *self.players[pid]
             .gp_claimed
@@ -22627,8 +22715,10 @@ impl Game {
                 .insert("monument".to_string(), self.world_era);
         }
         self.city_by_pos.insert(pos, cid);
+        let founded = city.name.clone();
         self.cities.insert(cid, city);
         self.reveal(pid, pos, 3);
+        self.note(pid, "Cities", format!("Founded {founded}"), Some(pos));
         cid
     }
 
@@ -25093,6 +25183,9 @@ impl Game {
         }
         self.add_grievances(other, pid, grievance_cost);
         self.at_war.insert(pair(pid, other));
+        let (aggressor, defender) = (self.civ_name(pid), self.civ_name(other));
+        self.note(pid, "War", format!("You declared war on {defender}"), None);
+        self.note(other, "War", format!("{aggressor} declared war on you"), None);
         self.cancel_routes_with(pid, other);
         self.cancel_trade_deals_with(pid, other);
         self.players[pid].open_borders_until.remove(&other);
@@ -26842,6 +26935,9 @@ impl Game {
     /// onto negotiated deals later without duplicating this invariant.
     fn conclude_peace(&mut self, first: usize, second: usize) {
         self.at_war.remove(&pair(first, second));
+        let (a, b) = (self.civ_name(first), self.civ_name(second));
+        self.note(first, "Diplomacy", format!("You made peace with {b}"), None);
+        self.note(second, "Diplomacy", format!("You made peace with {a}"), None);
         for city in self.cities.values_mut() {
             if (city.owner == first && city.occupied_from == Some(second))
                 || (city.owner == second && city.occupied_from == Some(first))
@@ -28240,6 +28336,10 @@ impl Game {
             .filter(|player| !player.is_minor && !player.is_barbarian)
             .map(|player| player.id)
             .collect();
+        let era_name = ERA_NAMES.get(era).copied().unwrap_or("a new");
+        for pid in majors.clone() {
+            self.note(pid, "General", format!("The world entered the {era_name} era"), None);
+        }
         // Above Prince every AI civilization enters the new era holding a
         // handful of free Eurekas and Inspirations.
         let era_boosts = self.difficulty_spec().ai_era_boosts;
@@ -29344,6 +29444,7 @@ impl Game {
             self.players[pid].research_overflow += sci;
         }
         if let Some((node, first)) = completed_tech {
+            self.note(pid, "Science", format!("Researched {}", pretty(&node)), None);
             self.apply_tree_completion(pid, true, &node, first);
         }
         let civic = self.players[pid].civic.clone();
@@ -29363,6 +29464,7 @@ impl Game {
             self.players[pid].civic_overflow += cul;
         }
         if let Some((node, first)) = completed_civic {
+            self.note(pid, "Culture", format!("Adopted {}", pretty(&node)), None);
             self.apply_tree_completion(pid, false, &node, first);
         }
     }
@@ -30240,6 +30342,12 @@ impl Game {
                     return false;
                 }
                 let spec = self.rules.wonders[wonder.as_str()].clone();
+                self.note(
+                    pid,
+                    "Cities",
+                    format!("{} completed", pretty(wonder)),
+                    Some(*pos),
+                );
                 let tile = self.map.tiles.get_mut(pos).unwrap();
                 tile.wonder = Some(wonder.clone());
                 tile.improvement = None;
@@ -30592,6 +30700,16 @@ impl Game {
 
     fn transfer_city(&mut self, cid: u32, new_owner: usize, conquest: bool) {
         let old = self.cities[&cid].owner;
+        {
+            let (name, pos) = {
+                let city = &self.cities[&cid];
+                (city.name.clone(), city.pos)
+            };
+            let verb = if conquest { "captured" } else { "took over" };
+            let (taker, loser) = (self.civ_name(new_owner), self.civ_name(old));
+            self.note(new_owner, "War", format!("You {verb} {name} from {loser}"), Some(pos));
+            self.note(old, "War", format!("{taker} {verb} {name}"), Some(pos));
+        }
         let captured_works = self
             .housed_great_works(old)
             .remove(&cid)
@@ -31093,6 +31211,16 @@ impl Game {
         if self.winner.is_none() && self.victory_eligible(pid) {
             self.winner = Some(pid);
             self.victory_type = Some(vtype.to_string());
+            let winner = self.civ_name(pid);
+            let seats: Vec<usize> = self.players.iter().map(|player| player.id).collect();
+            for seat in seats {
+                self.note(
+                    seat,
+                    "General",
+                    format!("{winner} won a {vtype} victory"),
+                    None,
+                );
+            }
         }
     }
 }

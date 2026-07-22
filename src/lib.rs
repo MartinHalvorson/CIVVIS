@@ -163,6 +163,47 @@ mod tests {
         assert_eq!(rules.speeds["standard"].turns, 500);
     }
 
+    /// A civilization's event stream records what happened to it, is visible
+    /// only to it, and reaches the observation an agent or the GUI reads.
+    #[test]
+    fn the_event_stream_records_what_happened_to_each_civilization() {
+        let mut g = Game::new_with(GameOptions {
+            barbarians: false,
+            ..GameOptions::new(2, 20, 14, 11, 60, 0)
+        });
+        let settler = g
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|uid| g.units[uid].kind == "settler")
+            .unwrap();
+        let pos = g.units[&settler].pos;
+        g.found_city_for(0, pos, Some("Testopolis".to_string()));
+        g.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
+
+        let mine = g.events_for(0);
+        assert!(mine
+            .iter()
+            .any(|e| e.category == "Cities" && e.text.contains("Testopolis") && e.pos == Some(pos)));
+        assert!(mine
+            .iter()
+            .any(|e| e.category == "War" && e.text.contains("You declared war")));
+        // The other side hears about the war, and about nothing else of ours.
+        let theirs = g.events_for(1);
+        assert!(theirs
+            .iter()
+            .any(|e| e.category == "War" && e.text.contains("declared war on you")));
+        assert!(!theirs.iter().any(|e| e.text.contains("Testopolis")));
+
+        let observed = crate::obs::observation(&g, 0);
+        let events = observed["events"].as_array().unwrap();
+        assert!(events
+            .iter()
+            .any(|e| e["text"].as_str().unwrap().contains("Testopolis")));
+        // Events are part of the game state, so they survive a save.
+        let restored: Game = serde_json::from_str(&serde_json::to_string(&g).unwrap()).unwrap();
+        assert_eq!(restored.events_for(0).len(), mine.len());
+    }
+
     /// The setup choices are part of the game, so they survive a save.
     #[test]
     fn difficulty_and_speed_survive_a_save_round_trip() {

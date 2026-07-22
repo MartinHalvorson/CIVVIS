@@ -383,7 +383,29 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool) -> Value {
             .collect::<Vec<_>>(),
         "winner": g.winner,
         "victory_type": g.victory_type,
+        // What has happened to this civilization lately, newest last. An
+        // omniscient viewer watches whichever seat it is observing, so the
+        // spectator log follows the same seat as the rest of the frame.
+        "events": recent_events(g, pid),
     })
+}
+
+/// The tail of a civilization's event stream. Bounded because an observation
+/// is sent every frame and a long game accumulates thousands.
+fn recent_events(g: &Game, pid: usize) -> Vec<Value> {
+    const RECENT: usize = 60;
+    let events = g.events_for(pid);
+    events[events.len().saturating_sub(RECENT)..]
+        .iter()
+        .map(|event| {
+            json!({
+                "turn": event.turn,
+                "category": event.category,
+                "text": event.text,
+                "pos": event.pos.map(|pos| [pos.0, pos.1]),
+            })
+        })
+        .collect()
 }
 
 fn round1(v: f64) -> f64 {
