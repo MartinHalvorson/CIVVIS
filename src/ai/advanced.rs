@@ -898,6 +898,8 @@ impl AdvancedAi {
                     "shipbuilding" => 230.0,
                     "celestial_navigation" => 150.0,
                     "cartography" => 210.0,
+                    "square_rigging" | "steam_power" | "refining" | "electricity"
+                    | "combined_arms" | "lasers" | "telecommunications" => 185.0,
                     _ => 0.0,
                 };
             }
@@ -1971,11 +1973,14 @@ impl AdvancedAi {
             self.settler_targets.remove(&uid);
             return g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
         }
-        if g.units[&uid].linked_to.is_some_and(|peer| {
-            g.units.get(&peer).is_some_and(|escort| {
+        if let Some(escort) = g.units[&uid].linked_to.filter(|peer| {
+            g.units.get(peer).is_some_and(|escort| {
                 g.rules.units[escort.kind.as_str()].domain.as_deref() == Some("sea")
             })
         }) {
+            if g.wdist(current, target) == 1 {
+                return g.apply(pid, &Action::UnlinkUnits { unit: escort }).is_ok();
+            }
             return false;
         }
         let moved = self.base.step_toward(g, pid, uid, target);
@@ -2801,7 +2806,8 @@ impl AdvancedAi {
                     .filter(|peer| g.units.get(peer).is_some_and(|peer| peer.kind == "settler"))
                 {
                     if let Some(target) = self.settler_targets.get(&settler).copied() {
-                        if target != unit.pos && self.base.step_toward(g, pid, uid, target) {
+                        let approach = BasicAi::naval_approach(g, uid, target).unwrap_or(target);
+                        if approach != unit.pos && self.base.step_toward(g, pid, uid, approach) {
                             return true;
                         }
                     }
@@ -2898,7 +2904,8 @@ impl AdvancedAi {
         if !hostile_water_unit {
             if let Some(settler) = linked_settler {
                 if let Some(target) = self.settler_targets.get(&settler).copied() {
-                    if target != unit.pos && self.base.step_toward(g, pid, uid, target) {
+                    let approach = BasicAi::naval_approach(g, uid, target).unwrap_or(target);
+                    if approach != unit.pos && self.base.step_toward(g, pid, uid, approach) {
                         return true;
                     }
                 }
@@ -3362,6 +3369,46 @@ mod tests {
         let objective =
             AdvancedAi::new().domain_objective(&g, 0, &plan, ForceDomain::Sea, anchor, &[1]);
         assert_eq!(objective, g.units[&embarked].pos);
+    }
+
+    #[test]
+    fn fleet_uses_an_adjacent_water_approach_for_coastal_city_capture() {
+        let mut g = Game::new_full(2, 24, 16, 94, 80, 0, false);
+        for pid in 0..2 {
+            g.current = pid;
+            let settler = g
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|uid| g.units[uid].kind == "settler")
+                .unwrap();
+            g.apply(pid, &Action::FoundCity { unit: settler }).unwrap();
+        }
+        g.current = 0;
+        let target_city = g.player_city_ids(1)[0];
+        let target = g.cities[&target_city].pos;
+        let approach = g.nbrs(target)[0];
+        {
+            let tile = g.map.tiles.get_mut(&approach).unwrap();
+            tile.terrain = "coast".to_string();
+            tile.feature = None;
+            tile.hills = false;
+        }
+        g.players[0].techs.insert("sailing".to_string());
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: Some(target_city),
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: g.turn,
+        };
+        let objective =
+            AdvancedAi::new().domain_objective(&g, 0, &plan, ForceDomain::Sea, approach, &[1]);
+        assert_eq!(g.wdist(objective, target), 1);
+        assert!(g
+            .map
+            .get(objective)
+            .is_some_and(|tile| g.rules.is_water(tile)));
     }
 
     #[test]
