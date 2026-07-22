@@ -11835,7 +11835,7 @@ mod tests {
                         .all(|city| g.wdist(**position, city.pos) > 5)
                     && g.units
                         .values()
-                        .filter(|unit| unit.owner == 1)
+                        .filter(|unit| unit.owner != 0)
                         .all(|unit| g.wdist(**position, unit.pos) > 5)
             })
             .find_map(|(anchor, _)| {
@@ -11881,6 +11881,27 @@ mod tests {
             let tile = g.map.tiles.get_mut(&position).unwrap();
             tile.terrain = "plains".to_string();
             tile.feature = None;
+            tile.hills = false;
+        }
+        // The reply search extends one approach step, so an archer three or
+        // four tiles from the safe square could still move and shoot it.
+        // Moat the approach ring — water stops land approaches without
+        // blocking the archers' sight lines — so the safe capture stays
+        // unpunishable by construction, not by map luck.
+        for position in g.wdisk(safe, 2) {
+            if position == safe
+                || position == anchor
+                || position == risky
+                || !g.units_at(position).is_empty()
+                || g.city_at(position).is_some()
+            {
+                continue;
+            }
+            let tile = g.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = "coast".to_string();
+            tile.feature = None;
+            tile.resource = None;
+            tile.improvement = None;
             tile.hills = false;
         }
         let attacker = g.spawn_test_unit("swordsman", 0, anchor);
@@ -12146,6 +12167,16 @@ mod tests {
                 })
             })
             .expect("test map has a two-target engagement with a shared front");
+
+        // Level the arena: the test exercises replanning after a kill, and
+        // must not hinge on whichever defense modifiers the organic map put
+        // under the four staged tiles.
+        for position in [first_target, second_target, firing_line[0], firing_line[1]] {
+            let tile = g.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = "plains".to_string();
+            tile.feature = None;
+            tile.hills = false;
+        }
 
         let attackers = [
             g.spawn_test_unit("warrior", 0, firing_line[0]),

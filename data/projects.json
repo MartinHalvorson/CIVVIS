@@ -1,51 +1,100 @@
 {
   "campus_research_grants": {
-    "cost": 25, "district": "campus", "repeatable": true,
+    "cost": 25,
+    "district": "campus",
+    "repeatable": true,
     "cost_progression_max_pct": 1500,
-    "ongoing_yields": {"science": 15},
-    "completion_gpp": {"scientist": 10}
+    "ongoing_yields": {
+      "science": 15
+    },
+    "completion_gpp": {
+      "scientist": 10
+    }
   },
   "holy_site_prayers": {
-    "cost": 25, "district": "holy_site", "repeatable": true,
+    "cost": 25,
+    "district": "holy_site",
+    "repeatable": true,
     "cost_progression_max_pct": 1500,
-    "ongoing_yields": {"faith": 15},
-    "completion_gpp": {"prophet": 10}
+    "ongoing_yields": {
+      "faith": 15
+    },
+    "completion_gpp": {
+      "prophet": 10
+    }
   },
   "commercial_hub_investment": {
-    "cost": 25, "district": "commercial_hub", "repeatable": true,
+    "cost": 25,
+    "district": "commercial_hub",
+    "repeatable": true,
     "cost_progression_max_pct": 1500,
-    "ongoing_yields": {"gold": 30},
-    "completion_gpp": {"merchant": 10}
+    "ongoing_yields": {
+      "gold": 30
+    },
+    "completion_gpp": {
+      "merchant": 10
+    }
   },
   "harbor_shipping": {
-    "cost": 25, "district": "harbor", "repeatable": true,
+    "cost": 25,
+    "district": "harbor",
+    "repeatable": true,
     "cost_progression_max_pct": 1500,
-    "ongoing_yields": {"gold": 15},
-    "completion_gpp": {"admiral": 10}
+    "ongoing_yields": {
+      "gold": 15
+    },
+    "completion_gpp": {
+      "admiral": 10
+    }
   },
   "encampment_training": {
-    "cost": 25, "district": "encampment", "repeatable": true,
+    "cost": 25,
+    "district": "encampment",
+    "repeatable": true,
     "cost_progression_max_pct": 1500,
-    "ongoing_yields": {"gold": 15},
-    "completion_gpp": {"general": 10}
+    "ongoing_yields": {
+      "gold": 15
+    },
+    "completion_gpp": {
+      "general": 10
+    }
   },
   "industrial_zone_logistics": {
-    "cost": 25, "district": "industrial_zone", "repeatable": true,
+    "cost": 25,
+    "district": "industrial_zone",
+    "repeatable": true,
     "cost_progression_max_pct": 1500,
-    "completion_gpp": {"engineer": 10},
+    "completion_gpp": {
+      "engineer": 10
+    },
     "full_power_while_active": true
   },
   "theater_square_festival": {
-    "cost": 25, "district": "theater_square", "repeatable": true,
+    "cost": 25,
+    "district": "theater_square",
+    "repeatable": true,
     "cost_progression_max_pct": 1500,
-    "ongoing_yields": {"culture": 15},
-    "completion_gpp": {"writer": 5, "artist": 5, "musician": 5}
+    "ongoing_yields": {
+      "culture": 15
+    },
+    "completion_gpp": {
+      "writer": 5,
+      "artist": 5,
+      "musician": 5
+    }
   },
   "bread_and_circuses": {
-    "cost": 25, "district": "entertainment_complex",
-    "alternate_districts": ["water_park"], "repeatable": true,
+    "cost": 25,
+    "district": "entertainment_complex",
+    "alternate_districts": [
+      "water_park"
+    ],
+    "repeatable": true,
     "cost_progression_max_pct": 1500,
-    "effects": {"citizen_loyalty_pressure": 0.5, "completion_loyalty": 20}
+    "effects": {
+      "citizen_loyalty_pressure": 0.5,
+      "completion_loyalty": 20
+    }
   },
   "repair_outer_defenses": {
     "cost": 1,
@@ -65,74 +114,137 @@
     "cost": 1500,
     "tech": "satellites",
     "district": "spaceport",
-    "requires": ["launch_earth_satellite"]
+    "requires": [
+      "launch_earth_satellite"
+    ]
   },
   "launch_mars_colony": {
     "cost": 1800,
     "tech": "nanotechnology",
     "district": "spaceport",
-    "requires": ["launch_moon_landing"]
+    "requires": [
+      "launch_moon_landing"
+    ]
   },
   "exoplanet_expedition": {
     "cost": 2100,
     "tech": "smart_materials",
     "district": "spaceport",
-    "requires": ["launch_mars_colony"]
+    "requires": [
+      "launch_mars_colony"
+    ]
   },
   "lagrange_laser_station": {
     "cost": 600,
     "tech": "offworld_mission",
     "district": "spaceport",
-    "requires": ["exoplanet_expedition"],
+    "requires": [
+      "exoplanet_expedition"
+    ],
     "repeatable": true
   },
   "terrestrial_laser_station": {
     "cost": 600,
     "tech": "offworld_mission",
     "district": "spaceport",
-    "requires": ["exoplanet_expedition"],
+    "requires": [
+      "exoplanet_expedition"
+    ],
     "repeatable": true
   },
   "convert_reactor_to_coal": {
-    "cost": 300, "tech": "industrialization", "district": "industrial_zone",
-    "requires_buildings": ["factory"], "repeatable": true,
-    "effects": {"power_source_coal": 1}
+    "cost": 200,
+    "tech": "industrialization",
+    "district": "industrial_zone",
+    "requires_buildings": [
+      "factory"
+    ],
+    "repeatable": true,
+    "effects": {
+      "power_source_coal": 1
+    }
   },
   "convert_reactor_to_oil": {
-    "cost": 360, "tech": "electricity", "district": "industrial_zone",
-    "requires_buildings": ["factory"], "repeatable": true,
-    "effects": {"power_source_oil": 1}
+    "cost": 300,
+    "tech": "electricity",
+    "district": "industrial_zone",
+    "requires_buildings": [
+      "factory"
+    ],
+    "repeatable": true,
+    "effects": {
+      "power_source_oil": 1
+    }
   },
   "convert_reactor_to_uranium": {
-    "cost": 480, "tech": "nuclear_fission", "district": "industrial_zone",
-    "requires_buildings": ["factory"], "repeatable": true,
-    "effects": {"power_source_nuclear": 1}
+    "cost": 400,
+    "tech": "nuclear_fission",
+    "district": "industrial_zone",
+    "requires_buildings": [
+      "factory"
+    ],
+    "repeatable": true,
+    "effects": {
+      "power_source_nuclear": 1
+    }
   },
   "manhattan_project": {
-    "cost": 1000, "tech": "nuclear_fission", "district": "industrial_zone"
+    "cost": 1000,
+    "tech": "nuclear_fission",
+    "district": "industrial_zone"
   },
   "build_nuclear_device": {
-    "cost": 800, "tech": "nuclear_fission", "district": "industrial_zone",
-    "requires": ["manhattan_project"], "repeatable": true,
-    "effects": {"nuclear_devices": 1}
+    "cost": 800,
+    "tech": "nuclear_fission",
+    "district": "industrial_zone",
+    "requires": [
+      "manhattan_project"
+    ],
+    "repeatable": true,
+    "effects": {
+      "nuclear_devices": 1
+    }
   },
   "recommission_reactor": {
-    "cost": 200, "tech": "nuclear_fission", "district": "industrial_zone",
-    "requires_buildings": ["nuclear_power_plant"], "repeatable": true,
-    "effects": {"reactor_age_reset": 1}
+    "cost": 400,
+    "tech": "nuclear_fission",
+    "district": "industrial_zone",
+    "requires_buildings": [
+      "nuclear_power_plant"
+    ],
+    "repeatable": true,
+    "effects": {
+      "reactor_age_reset": 1
+    }
   },
   "operation_ivy": {
-    "cost": 1200, "tech": "nuclear_fusion", "district": "industrial_zone",
-    "requires": ["manhattan_project"]
+    "cost": 1000,
+    "tech": "nuclear_fusion",
+    "district": "industrial_zone",
+    "requires": [
+      "manhattan_project"
+    ]
   },
   "build_thermonuclear_device": {
-    "cost": 1000, "tech": "nuclear_fusion", "district": "industrial_zone",
-    "requires": ["operation_ivy"], "repeatable": true,
-    "effects": {"thermonuclear_devices": 1}
+    "cost": 1000,
+    "tech": "nuclear_fusion",
+    "district": "industrial_zone",
+    "requires": [
+      "operation_ivy"
+    ],
+    "repeatable": true,
+    "effects": {
+      "thermonuclear_devices": 1
+    }
   },
   "carbon_recapture": {
-    "cost": 400, "civic": "global_warming_mitigation", "district": "industrial_zone",
+    "cost": 400,
+    "civic": "global_warming_mitigation",
+    "district": "industrial_zone",
     "repeatable": true,
-    "effects": {"co2_recaptured": 50, "diplomatic_favor": 30}
+    "effects": {
+      "co2_recaptured": 50,
+      "diplomatic_favor": 30
+    }
   }
 }

@@ -1,190 +1,466 @@
 {
   "farm": {
-    "yields": {"food": 1},
+    "yields": {
+      "food": 1
+    },
     "housing": 0.5,
-    "terrain": ["grassland", "plains"],
+    "terrain": [
+      "grassland",
+      "plains"
+    ],
     "requires_flat": true,
-    "removes_feature": true
+    "removes_feature": true,
+    "resources": [
+      "maize",
+      "rice",
+      "wheat"
+    ],
+    "feature": [
+      "floodplains",
+      "grassland_floodplains",
+      "plains_floodplains"
+    ]
   },
   "fishery": {
-    "yields": {"food": 1},
-    "terrain": ["coast", "lake"],
+    "yields": {
+      "food": 1
+    },
+    "terrain": [
+      "coast",
+      "lake"
+    ],
     "water": true,
-    "effects": {"adjacent_sea_resource_food": 1, "liang_production": 1}
+    "effects": {
+      "adjacent_sea_resource_food": 1,
+      "liang_production": 1
+    },
+    "housing": 0.5,
+    "tech": "sailing"
   },
   "city_park": {
-    "yields": {"culture": 1},
-    "requires_flat": true,
-    "effects": {"adjacent_appeal": 2, "adjacent_water_amenity": 1, "liang_total_culture": 3}
+    "yields": {
+      "culture": 1
+    },
+    "effects": {
+      "adjacent_appeal": 2,
+      "adjacent_water_amenity": 1,
+      "liang_total_culture": 3
+    },
+    "civic": "games_recreation",
+    "terrain": [
+      "desert",
+      "grassland",
+      "plains",
+      "snow",
+      "tundra"
+    ]
   },
   "mine": {
     "tech": "mining",
-    "yields": {"production": 1},
-    "resources": ["iron", "niter", "coal", "aluminum", "uranium", "salt"],
-    "hills_or_resource": true
+    "yields": {
+      "production": 1
+    },
+    "resources": [
+      "aluminum",
+      "amber",
+      "coal",
+      "copper",
+      "diamonds",
+      "iron",
+      "jade",
+      "mercury",
+      "niter",
+      "salt",
+      "silver",
+      "uranium"
+    ],
+    "hills_or_resource": true,
+    "terrain": [
+      "desert",
+      "grassland",
+      "plains",
+      "snow",
+      "tundra"
+    ]
   },
   "quarry": {
     "tech": "mining",
-    "yields": {"production": 1},
-    "resources": ["stone"],
+    "yields": {
+      "production": 1
+    },
+    "resources": [
+      "gypsum",
+      "marble",
+      "stone"
+    ],
     "resource_only": true
   },
   "pasture": {
     "tech": "animal_husbandry",
-    "yields": {"production": 1},
+    "yields": {
+      "production": 1
+    },
     "housing": 0.5,
-    "resources": ["cattle", "sheep", "horses"],
+    "resources": [
+      "cattle",
+      "horses",
+      "sheep"
+    ],
     "resource_only": true
   },
   "plantation": {
     "tech": "irrigation",
-    "yields": {"gold": 2},
+    "yields": {
+      "gold": 2
+    },
     "housing": 0.5,
-    "resources": ["bananas", "silk", "wine"],
+    "resources": [
+      "bananas",
+      "citrus",
+      "cocoa",
+      "coffee",
+      "cotton",
+      "dyes",
+      "incense",
+      "olives",
+      "silk",
+      "spices",
+      "sugar",
+      "tea",
+      "tobacco",
+      "wine"
+    ],
     "resource_only": true
   },
   "camp": {
     "tech": "animal_husbandry",
-    "yields": {"gold": 2},
+    "yields": {
+      "gold": 2
+    },
     "housing": 0.5,
-    "resources": ["deer"],
+    "resources": [
+      "deer",
+      "furs",
+      "honey",
+      "ivory",
+      "truffles"
+    ],
     "resource_only": true
   },
   "fishing_boats": {
     "tech": "sailing",
-    "yields": {"food": 1},
+    "yields": {
+      "food": 1
+    },
     "housing": 0.5,
-    "resources": ["fish"],
+    "resources": [
+      "amber",
+      "crabs",
+      "fish",
+      "pearls",
+      "turtles",
+      "whales"
+    ],
     "resource_only": true,
     "water": true
   },
   "lumber_mill": {
     "tech": "construction",
-    "yields": {"production": 2},
-    "feature": ["forest", "jungle"]
+    "yields": {
+      "production": 2
+    },
+    "feature": [
+      "forest",
+      "jungle"
+    ]
   },
   "oil_well": {
-    "tech": "steel",
-    "yields": {"production": 2},
-    "resources": ["oil"],
-    "resource_only": true
+    "tech": "refining",
+    "yields": {
+      "production": 2
+    },
+    "resources": [
+      "oil"
+    ],
+    "resource_only": true,
+    "terrain": [
+      "desert",
+      "grassland",
+      "plains",
+      "snow",
+      "tundra"
+    ]
   },
   "offshore_oil_rig": {
     "tech": "plastics",
-    "yields": {"production": 2},
-    "resources": ["oil"],
+    "yields": {
+      "production": 2
+    },
+    "resources": [
+      "oil"
+    ],
     "resource_only": true,
-    "water": true
+    "water": true,
+    "terrain": [
+      "coast",
+      "ocean"
+    ]
   },
   "wind_farm": {
     "tech": "composites",
-    "yields": {"production": 1, "gold": 2},
+    "yields": {
+      "gold": 2,
+      "production": 1
+    },
     "requires_hills": true,
-    "effects": {"power": 2}
+    "effects": {
+      "power": 2
+    },
+    "terrain": [
+      "desert",
+      "grassland",
+      "plains",
+      "snow",
+      "tundra"
+    ]
   },
   "geothermal_plant": {
     "tech": "synthetic_materials",
-    "yields": {"production": 2, "science": 1},
-    "feature": ["geothermal_fissure"],
-    "effects": {"power": 4}
+    "yields": {
+      "production": 2,
+      "science": 1
+    },
+    "feature": [
+      "geothermal_fissure"
+    ],
+    "effects": {
+      "power": 4
+    }
   },
   "solar_farm": {
     "tech": "satellites",
-    "yields": {"production": 1, "gold": 1},
+    "yields": {
+      "production": 1,
+      "gold": 1
+    },
     "requires_flat": true,
-    "effects": {"power": 2}
+    "effects": {
+      "power": 2
+    },
+    "terrain": [
+      "desert",
+      "grassland",
+      "plains",
+      "tundra"
+    ]
   },
   "offshore_wind_farm": {
     "tech": "predictive_systems",
-    "yields": {"production": 2},
-    "terrain": ["coast", "lake"],
+    "yields": {
+      "production": 2
+    },
+    "terrain": [
+      "coast",
+      "lake"
+    ],
     "water": true,
-    "effects": {"power": 2}
+    "effects": {
+      "power": 2
+    }
   },
   "seaside_resort": {
     "tech": "radio",
     "yields": {},
-    "terrain": ["grassland", "plains", "desert"],
+    "terrain": [
+      "grassland",
+      "plains",
+      "desert"
+    ],
     "requires_flat": true,
-    "effects": {"appeal_gold": 1, "appeal_tourism": 1}
+    "effects": {
+      "appeal_gold": 1,
+      "appeal_tourism": 1
+    }
   },
   "ski_resort": {
     "civic": "professional_sports",
     "yields": {},
-    "terrain": ["mountain"],
-    "effects": {"appeal_tourism": 1, "amenity": 1, "unworkable": 1}
+    "terrain": [
+      "mountain"
+    ],
+    "effects": {
+      "appeal_tourism": 1,
+      "amenity": 1,
+      "unworkable": 1
+    }
   },
   "seastead": {
     "tech": "seasteads",
-    "yields": {"food": 2},
-    "terrain": ["coast", "lake", "ocean"],
+    "yields": {
+      "food": 2
+    },
+    "terrain": [
+      "coast",
+      "lake",
+      "ocean"
+    ],
     "water": true,
-    "effects": {"housing": 2, "adjacent_fishing_boats_production": 1, "adjacent_reef_culture": 1, "adjacent_reef_tourism": 1}
+    "effects": {
+      "adjacent_fishing_boats_production": 1,
+      "adjacent_reef_culture": 1,
+      "adjacent_reef_tourism": 1
+    },
+    "housing": 2
   },
   "fort": {
     "tech": "siege_tactics",
     "builder_buildable": false,
-    "effects": {"defense": 4}
+    "effects": {
+      "defense": 4
+    },
+    "terrain": [
+      "desert",
+      "grassland",
+      "plains",
+      "snow",
+      "tundra"
+    ]
   },
   "airstrip": {
     "tech": "flight",
     "builder_buildable": false,
     "requires_flat": true,
-    "effects": {"air_slots": 3}
+    "effects": {
+      "air_slots": 3
+    },
+    "terrain": [
+      "desert",
+      "grassland",
+      "plains",
+      "snow",
+      "tundra"
+    ]
   },
   "missile_silo": {
     "tech": "rocketry",
     "builder_buildable": false,
-    "requires_flat": true
+    "requires_flat": true,
+    "terrain": [
+      "desert",
+      "grassland",
+      "plains",
+      "snow",
+      "tundra"
+    ]
   },
   "mountain_tunnel": {
     "tech": "chemistry",
     "builder_buildable": false,
-    "terrain": ["mountain"],
-    "effects": {"passage": 1}
+    "terrain": [
+      "mountain"
+    ],
+    "effects": {
+      "passage": 1
+    }
   },
-
   "industry": {
     "tech": "currency",
-    "yields": {"food": 2, "production": 2, "gold": 1},
-    "resources": ["silk", "wine", "salt"],
+    "yields": {
+      "food": 2,
+      "production": 2,
+      "gold": 1
+    },
+    "resources": [
+      "silk",
+      "wine",
+      "salt"
+    ],
     "resource_only": true,
-    "effects": {"great_merchant_points": 1}
+    "effects": {
+      "great_merchant_points": 1
+    }
   },
   "corporation": {
     "tech": "economics",
-    "yields": {"food": 4, "production": 10, "gold": 3},
-    "resources": ["silk", "wine", "salt"],
+    "yields": {
+      "food": 4,
+      "production": 10,
+      "gold": 3
+    },
+    "resources": [
+      "silk",
+      "wine",
+      "salt"
+    ],
     "resource_only": true,
     "unbuildable": true
   },
-
   "sphinx": {
     "civic": "craftsmanship",
     "unique_to": "Egypt",
-    "yields": {"culture": 1, "faith": 1},
-    "requires_flat": true
+    "yields": {
+      "culture": 1,
+      "faith": 1
+    },
+    "feature": [
+      "floodplains",
+      "grassland_floodplains",
+      "plains_floodplains"
+    ],
+    "terrain": [
+      "desert",
+      "grassland",
+      "plains",
+      "snow",
+      "tundra"
+    ]
   },
   "great_wall": {
     "tech": "masonry",
     "unique_to": "China",
-    "yields": {"gold": 2},
-    "effects": {"defense": 4, "adjacent_great_wall_gold": 2}
+    "yields": {
+      "gold": 2
+    },
+    "effects": {
+      "defense": 4,
+      "adjacent_great_wall_gold": 2
+    },
+    "terrain": [
+      "desert",
+      "grassland",
+      "plains",
+      "snow",
+      "tundra"
+    ]
   },
   "nubian_pyramid": {
     "tech": "masonry",
     "unique_to": "Nubia",
-    "yields": {"faith": 2, "food": 2},
-    "terrain": ["desert"],
+    "yields": {
+      "faith": 2,
+      "food": 2
+    },
+    "terrain": [
+      "desert"
+    ],
     "requires_flat": true
   },
   "kurgan": {
     "tech": "animal_husbandry",
     "unique_to": "Scythia",
-    "yields": {"gold": 3, "faith": 1},
-    "requires_flat": true
+    "yields": {
+      "gold": 3,
+      "faith": 1
+    },
+    "requires_flat": true,
+    "terrain": [
+      "desert",
+      "grassland",
+      "plains",
+      "snow",
+      "tundra"
+    ]
   },
-
   "national_park": {
     "civic": "conservation",
     "builder_buildable": false,
@@ -199,26 +475,78 @@
   "archaeological_dig": {
     "civic": "natural_history",
     "builder_buildable": false,
-    "resources": ["antiquity_site"],
+    "resources": [
+      "antiquity_site"
+    ],
     "resource_only": true,
-    "yields": {"culture": 3},
-    "effects": {"tourism": 3}
+    "yields": {
+      "culture": 3
+    },
+    "effects": {
+      "tourism": 3
+    }
   },
   "shipwreck_excavation": {
     "civic": "cultural_heritage",
     "builder_buildable": false,
-    "resources": ["shipwreck"],
+    "resources": [
+      "shipwreck"
+    ],
     "resource_only": true,
     "water": true,
-    "yields": {"culture": 3},
-    "effects": {"tourism": 3}
+    "yields": {
+      "culture": 3
+    },
+    "effects": {
+      "tourism": 3
+    }
   },
   "rock_concert": {
     "civic": "cold_war",
     "builder_buildable": false,
-    "yields": {"culture": 4},
-    "effects": {"tourism": 8}
+    "yields": {
+      "culture": 4
+    },
+    "effects": {
+      "tourism": 8
+    }
   },
-  "barbarian_camp": {"yields": {}, "unbuildable": true},
-  "goody_hut": {"yields": {}, "unbuildable": true}
+  "barbarian_camp": {
+    "yields": {},
+    "unbuildable": true,
+    "feature": [
+      "floodplains",
+      "forest",
+      "grassland_floodplains",
+      "jungle",
+      "marsh",
+      "plains_floodplains"
+    ],
+    "terrain": [
+      "desert",
+      "grassland",
+      "plains",
+      "snow",
+      "tundra"
+    ]
+  },
+  "goody_hut": {
+    "yields": {},
+    "unbuildable": true,
+    "feature": [
+      "floodplains",
+      "forest",
+      "grassland_floodplains",
+      "jungle",
+      "marsh",
+      "plains_floodplains"
+    ],
+    "terrain": [
+      "desert",
+      "grassland",
+      "plains",
+      "snow",
+      "tundra"
+    ]
+  }
 }

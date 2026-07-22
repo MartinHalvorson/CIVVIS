@@ -85,12 +85,16 @@ pub struct FeatureSpec {
     /// project these yields onto each neighbouring tile instead of their own.
     #[serde(default)]
     pub adjacent_yields: Yields,
-    #[serde(default = "done")]
+    /// Movement added on top of the terrain cost, the game database's
+    /// ``MovementChange`` column: Woods on Hills costs 1 + 1 + 1 = 3 MP.
+    #[serde(default)]
     pub move_cost: f64,
     #[serde(default)]
     pub natural_wonder: bool,
     #[serde(default)]
     pub impassable: bool,
+    #[serde(default)]
+    pub effects: BTreeMap<String, f64>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -107,6 +111,9 @@ pub struct ResourceSpec {
     pub terrain: Vec<String>,
     #[serde(default)]
     pub feature: Vec<String>,
+    /// Empty for luxuries no tile improvement works (Toys, Jeans, Perfume,
+    /// Cosmetics — manufactured, never map-placed).
+    #[serde(default)]
     pub improvement: String,
 }
 
@@ -919,12 +926,15 @@ impl Rules {
     }
 
     pub fn move_cost(&self, t: &Tile) -> f64 {
+        // Civ 6 movement is additive: terrain cost, +1 for Hills (the
+        // database ships Hills as separate terrain rows costing 2), plus the
+        // feature's MovementChange.
         let mut c = self.terrains[t.terrain.as_str()].move_cost;
-        if let Some(f) = &t.feature {
-            c = c.max(self.features[f.as_str()].move_cost);
-        }
         if t.hills {
-            c = c.max(2.0);
+            c += 1.0;
+        }
+        if let Some(f) = &t.feature {
+            c += self.features[f.as_str()].move_cost;
         }
         if t.road && !self.terrains[t.terrain.as_str()].water {
             c = 1.0; // roads flatten terrain (Civ 6 ancient roads)
@@ -1060,7 +1070,7 @@ mod tests {
         assert_eq!(rules.districts.len(), 35);
         assert_eq!(rules.wonders.len(), 53);
         assert_eq!(rules.improvements.len(), 35);
-        assert_eq!(rules.resources.len(), 20);
+        assert_eq!(rules.resources.len(), 52);
         assert_eq!(rules.projects.len(), 25);
         assert_eq!(rules.policies.len(), 118);
         assert_eq!(rules.governments.len(), 13);

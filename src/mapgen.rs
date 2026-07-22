@@ -716,9 +716,14 @@ fn balanced_major_spawns(
         .map(|(score, _)| score.minimum_separation)
         .max()
         .unwrap();
-    // One hex off the theoretical maximum is a small price for substantially
-    // more even neighbors, territory and capital quality.
-    let separation_floor = best_separation.saturating_sub(1);
+    // One hex off the theoretical maximum can buy more even neighbors,
+    // territory and capital quality — but only while every seat still starts
+    // comfortably apart. Below that, distance is the fairness that matters.
+    let separation_floor = if best_separation > 10 {
+        best_separation - 1
+    } else {
+        best_separation
+    };
     layouts.retain(|(score, _)| score.minimum_separation >= separation_floor);
     let best_coverage = layouts
         .iter()
@@ -781,6 +786,9 @@ fn balanced_major_spawns(
                     trial[index] = *candidate;
                     (rank(&trial), *candidate)
                 })
+                // A balance win must not spend the separation the layout
+                // stage just guaranteed.
+                .filter(|((_, _, separation, _, _, _), _)| *separation >= separation_floor)
                 .max()
             else {
                 continue;

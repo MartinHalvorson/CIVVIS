@@ -1360,6 +1360,10 @@ mod governor_runtime_tests {
     fn liang_executes_district_fisheries_parks_and_water_works() {
         let mut game = Game::new_full(1, 24, 16, 91_781, 200, 0, false);
         let city = found_capital(&mut game, 0);
+        // Fisheries carry the shipped Sailing prerequisite on top of Liang's
+        // Aquaculture promotion, City Parks the Games and Recreation civic.
+        game.players[0].techs.insert("sailing".to_string());
+        game.players[0].civics.insert("games_recreation".to_string());
         appoint_established(
             &mut game,
             0,
@@ -4872,9 +4876,11 @@ mod government_runtime_tests {
             game.city_local_amenities(&game.cities[&city]),
             baseline.city_local_amenities(&baseline.cities[&city]) + 2
         );
-        assert_eq!(
-            game.city_yields(city).culture,
-            baseline.city_yields(city).culture
+        // The two government Amenities lift the city from Content into the
+        // Happy band, so every yield gains the band's 10% on top.
+        assert!(
+            (game.city_yields(city).culture - baseline.city_yields(city).culture * 1.1).abs()
+                < 1e-9
         );
         let warrior = game
             .player_unit_ids(0)
@@ -4891,9 +4897,11 @@ mod government_runtime_tests {
 
         install_test_district(&mut game, city, "campus");
         let baseline = without_government(&game);
-        assert_eq!(
-            game.city_yields(city).culture,
-            baseline.city_yields(city).culture + 2.0
+        assert!(
+            (game.city_yields(city).culture
+                - (baseline.city_yields(city).culture + 2.0) * 1.1)
+                .abs()
+                < 1e-9
         );
     }
 
@@ -5612,7 +5620,11 @@ mod district_building_wonder_runtime_tests {
         assert!(site.iter().all(|position| {
             game.map.tiles[position].improvement.as_deref() == Some("national_park")
         }));
-        assert_eq!(game.tourism_per_turn(0) - tourism_before, park_appeal);
+        // The park's Tourism equals its appeal, up to the empire-wide
+        // percentage modifiers (monopoly Products) the wider luxury pool can
+        // seed onto this map.
+        let park_tourism = game.tourism_per_turn(0) - tourism_before;
+        assert!((park_tourism - park_appeal).abs() <= park_appeal * 0.01);
         assert_eq!(
             game.city_local_amenities(&game.cities[&city]),
             amenities_before + 2
@@ -14011,6 +14023,28 @@ impl Game {
         if self.city_governor_active(city.owner, city.id) {
             supply += self.city_building_effect(city, "governor_city_amenity");
         }
+        for position in &city.owned_tiles {
+            let Some(feature) = self.map.tiles[position].feature.as_deref() else {
+                continue;
+            };
+            let effects = &self.rules.features[feature].effects;
+            supply += effects.get("city_amenity").copied().unwrap_or(0.0);
+            // Pamukkale grants one more Amenity while its plot is adjacent to
+            // an Entertainment Complex.
+            let adjacent = effects
+                .get("entertainment_complex_adjacent_amenity")
+                .copied()
+                .unwrap_or(0.0);
+            if adjacent != 0.0
+                && self.nbrs(*position).iter().any(|neighbour| {
+                    self.map.get(*neighbour).is_some_and(|tile| {
+                        tile.district.as_deref() == Some("entertainment_complex")
+                    })
+                })
+            {
+                supply += adjacent;
+            }
+        }
         let geothermal = self.city_building_effect(city, "geothermal_fissure_amenity");
         if geothermal != 0.0
             && city.owned_tiles.iter().any(|position| {
@@ -18723,6 +18757,26 @@ impl Game {
                 && self.nbrs(pos).iter().any(|neighbor| {
                     self.map.tiles[neighbor].improvement.as_deref() == Some("ski_resort")
                 });
+            // Civ 6 sites an improvement through any one of three routes —
+            // a valid terrain, a valid feature, or a valid resource. Farms
+            // stand on grassland OR on desert floodplains OR on wheat;
+            // Lumber Mills list no terrain at all, so only their feature
+            // route exists. An improvement listing none of the three is
+            // unrestricted (governor and appeal specials gate elsewhere).
+            let feature_route = t
+                .feature
+                .as_ref()
+                .is_some_and(|feature| spec.feature.contains(feature));
+            let resource_route = visible_resource.is_some_and(|resource| {
+                spec.resources.iter().any(|candidate| candidate == resource)
+                    || self.rules.resources[resource].improvement == *name
+            });
+            let unrestricted =
+                spec.terrain.is_empty() && spec.feature.is_empty() && spec.resources.is_empty();
+            let sited = unrestricted
+                || spec.terrain.contains(&t.terrain)
+                || feature_route
+                || resource_route;
             if spec.unbuildable
                 || !self.unlocked(pid, &spec.tech, &spec.civic)
                 || spec.unique_to.as_deref().is_some_and(|owner| owner != civ)
@@ -18735,17 +18789,11 @@ impl Game {
                     && !seaside_volcanic
                     && !(name == "farm" && self.tree_effect(pid, "hill_farms") > 0.0))
                 || (spec.removes_feature
+                    && !feature_route
                     && t.feature
                         .as_deref()
                         .is_some_and(|feature| !self.feature_removal_unlocked(pid, feature)))
-                || (!spec.terrain.is_empty()
-                    && !spec.terrain.contains(&t.terrain)
-                    && !seaside_volcanic)
-                || (!spec.feature.is_empty()
-                    && !t
-                        .feature
-                        .as_ref()
-                        .is_some_and(|feature| spec.feature.contains(feature)))
+                || (!sited && !seaside_volcanic)
                 || seaside_invalid
                 || adjacent_ski_resort
             {
@@ -21675,8 +21723,11 @@ impl Game {
             bonus += 3.0;
         }
         match t.feature.as_deref() {
-            Some("forest" | "jungle" | "great_barrier_reef") => bonus += 3.0,
-            Some("marsh") => bonus -= 2.0,
+            Some("forest" | "jungle" | "reef") => bonus += 3.0,
+            Some(
+                "marsh" | "floodplains" | "grassland_floodplains" | "plains_floodplains"
+                | "pantanal",
+            ) => bonus -= 2.0,
             _ => {}
         }
         if t.wonder.as_deref().is_some_and(|wonder| {
@@ -35182,8 +35233,8 @@ mod victory_conditions {
         surpluses.sort();
         assert_eq!(
             surpluses,
-            vec![-1, 0, 0, 0, 0, 0],
-            "one luxury serves the four neediest cities; the Palace serves the capital"
+            vec![-1, 0, 0, 0, 0, 1],
+            "one luxury serves the four neediest cities; the Palace serves the capital with two"
         );
 
         let duplicate_pos = g.cities[&capital]
@@ -35210,7 +35261,7 @@ mod victory_conditions {
         aztec_surpluses.sort();
         assert_eq!(
             aztec_surpluses,
-            vec![0, 0, 0, 0, 0, 1],
+            vec![0, 0, 0, 0, 0, 2],
             "Gifts for the Tlatoani extends each luxury from four to six cities"
         );
     }

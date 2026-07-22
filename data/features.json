@@ -3,19 +3,19 @@
     "yields": {
       "production": 1
     },
-    "move_cost": 2
+    "move_cost": 1
   },
   "jungle": {
     "yields": {
       "food": 1
     },
-    "move_cost": 2
+    "move_cost": 1
   },
   "marsh": {
     "yields": {
       "food": 1
     },
-    "move_cost": 2
+    "move_cost": 1
   },
   "floodplains": {
     "yields": {
@@ -64,7 +64,7 @@
       "culture": 2,
       "food": 2
     },
-    "move_cost": 2,
+    "move_cost": 1,
     "natural_wonder": true
   },
   "uluru": {
@@ -104,6 +104,10 @@
   "pamukkale": {
     "yields": {},
     "natural_wonder": true,
-    "impassable": true
+    "impassable": true,
+    "effects": {
+      "city_amenity": 1,
+      "entertainment_complex_adjacent_amenity": 1
+    }
   }
 }
