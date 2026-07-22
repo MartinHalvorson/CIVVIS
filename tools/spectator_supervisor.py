@@ -129,7 +129,9 @@ def runtime_inputs_dirty() -> bool:
 
 
 def write_runtime_metadata(snapshot: str) -> None:
-    revision = command("git", "rev-parse", "--short", "HEAD", check=True).stdout.strip()
+    revision = command(
+        "git", "rev-parse", "--short", "HEAD", check=True
+    ).stdout.strip()
     dirty = runtime_inputs_dirty()
     metadata = {
         "revision": revision,
@@ -138,10 +140,45 @@ def write_runtime_metadata(snapshot: str) -> None:
         "binary_sha256": hashlib.sha256(RUNTIME_BINARY.read_bytes()).hexdigest(),
         "built_at": datetime.now(timezone.utc).isoformat(),
     }
+    write_runtime_metadata_file(metadata)
+    log(f"build ready at {revision}{' + local edits' if dirty else ''}")
+
+
+def write_runtime_metadata_file(metadata: dict[str, Any]) -> None:
+    """Atomically replace the promoted runtime's provenance record."""
     staged = RUNTIME_METADATA.with_suffix(".json.new")
     staged.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
     os.replace(staged, RUNTIME_METADATA)
-    log(f"build ready at {revision}{' + local edits' if dirty else ''}")
+
+
+def refresh_runtime_metadata(snapshot: str) -> None:
+    """Refresh Git identity when an exact binary needs no recompilation.
+
+    A supervisor can promote local source and then see those identical bytes
+    committed while the match is running. The binary remains exact, but its
+    revision and dirty flag should follow the now-stable Git identity without
+    pretending that it was rebuilt.
+    """
+    try:
+        metadata = json.loads(RUNTIME_METADATA.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    revision = command("git", "rev-parse", "--short", "HEAD", check=True).stdout.strip()
+    dirty = runtime_inputs_dirty()
+    current_identity = {
+        "revision": revision,
+        "dirty": dirty,
+        "source_snapshot": snapshot,
+        "binary_sha256": hashlib.sha256(RUNTIME_BINARY.read_bytes()).hexdigest(),
+    }
+    if all(metadata.get(key) == value for key, value in current_identity.items()):
+        return
+    metadata.update(current_identity)
+    write_runtime_metadata_file(metadata)
+    log(
+        f"refreshed exact build metadata at {revision}"
+        f"{' + local edits' if dirty else ''}"
+    )
 
 
 def runtime_matches(snapshot: str) -> bool:
@@ -152,7 +189,9 @@ def runtime_matches(snapshot: str) -> bool:
         metadata = json.loads(RUNTIME_METADATA.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return False
-    return metadata.get("source_snapshot") == snapshot
+    return metadata.get("source_snapshot") == snapshot and metadata.get(
+        "binary_sha256"
+    ) == hashlib.sha256(RUNTIME_BINARY.read_bytes()).hexdigest()
 
 
 def promoted_runtime_id() -> str | None:
@@ -177,6 +216,7 @@ def build_latest(max_attempts: int = 3) -> bool:
     for attempt in range(1, max_attempts + 1):
         before = source_snapshot()
         if runtime_matches(before):
+            refresh_runtime_metadata(before)
             log("known-good spectator build already matches the latest worktree")
             return True
         log(f"building the latest worktree (attempt {attempt}/{max_attempts})")

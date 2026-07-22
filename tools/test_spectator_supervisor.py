@@ -110,12 +110,74 @@ class SourceSnapshotTests(unittest.TestCase):
         with (
             patch.object(supervisor, "source_snapshot", return_value="current"),
             patch.object(supervisor, "runtime_matches", return_value=True),
+            patch.object(supervisor, "refresh_runtime_metadata") as refresh,
             patch.object(supervisor, "command") as command,
             patch.object(supervisor, "promote_binary") as promote,
         ):
             self.assertTrue(supervisor.build_latest())
+        refresh.assert_called_once_with("current")
         command.assert_not_called()
         promote.assert_not_called()
+
+    def test_exact_runtime_refreshes_stale_git_identity_without_rebuilding(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = root / "civvis"
+            runtime.write_bytes(b"verified binary")
+            metadata_path = root / "build.json"
+            metadata_path.write_text(
+                json.dumps(
+                    {
+                        "revision": "local",
+                        "dirty": True,
+                        "source_snapshot": "same-source",
+                        "binary_sha256": "stale",
+                        "built_at": "original-build-time",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            revision = SimpleNamespace(returncode=0, stdout="published\n")
+            with (
+                patch.object(supervisor, "RUNTIME_BINARY", runtime),
+                patch.object(supervisor, "RUNTIME_METADATA", metadata_path),
+                patch.object(supervisor, "command", return_value=revision),
+                patch.object(supervisor, "runtime_inputs_dirty", return_value=False),
+            ):
+                supervisor.refresh_runtime_metadata("same-source")
+
+            refreshed = json.loads(metadata_path.read_text(encoding="utf-8"))
+            self.assertEqual(refreshed["revision"], "published")
+            self.assertFalse(refreshed["dirty"])
+            self.assertEqual(refreshed["source_snapshot"], "same-source")
+            self.assertEqual(refreshed["built_at"], "original-build-time")
+            self.assertEqual(
+                refreshed["binary_sha256"],
+                supervisor.hashlib.sha256(runtime.read_bytes()).hexdigest(),
+            )
+
+    def test_matching_source_rejects_a_tampered_promoted_binary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = root / "civvis"
+            runtime.write_bytes(b"unexpected bytes")
+            metadata_path = root / "build.json"
+            metadata_path.write_text(
+                json.dumps(
+                    {
+                        "source_snapshot": "same-source",
+                        "binary_sha256": supervisor.hashlib.sha256(
+                            b"expected bytes"
+                        ).hexdigest(),
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with (
+                patch.object(supervisor, "RUNTIME_BINARY", runtime),
+                patch.object(supervisor, "RUNTIME_METADATA", metadata_path),
+            ):
+                self.assertFalse(supervisor.runtime_matches("same-source"))
 
     def test_single_update_attempt_returns_control_after_a_failed_build(self):
         with (
