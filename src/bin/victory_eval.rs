@@ -19,6 +19,7 @@ fn main() {
     let players = number(&args, "--players", 4).max(2) as usize;
     let turns = number(&args, "--turns", 500).max(1) as u32;
     let first_seed = number(&args, "--seed", 0).max(0) as u64;
+    let details = args.iter().any(|arg| arg == "--details");
     let size = MapSize::for_players(players);
     let mut victories: BTreeMap<String, usize> = BTreeMap::new();
     let mut total_turns = 0_u64;
@@ -50,11 +51,21 @@ fn main() {
             .map(|pid| game.players[*pid].science_projects.len()).max().unwrap_or(0);
         let top_distance = majors.iter().map(|pid| game.players[*pid].exoplanet_distance)
             .fold(0.0_f64, f64::max);
-        let best_culture_margin = majors.iter().map(|pid| {
+        let best_culture = majors.iter().map(|pid| {
             let target = majors.iter().filter(|other| *other != pid)
                 .map(|other| game.domestic_tourists(*other)).max().unwrap_or(0);
-            game.foreign_tourists(*pid) - target
-        }).max().unwrap_or(0);
+            let cities: Vec<_> = game.cities.values()
+                .filter(|city| city.owner == *pid).collect();
+            let theaters = cities.iter()
+                .filter(|city| city.districts.contains_key("theater_square")).count();
+            let amphitheaters = cities.iter()
+                .filter(|city| city.buildings.iter().any(|building| building == "amphitheater"))
+                .count();
+            let wonders = cities.iter().flat_map(|city| city.buildings.iter())
+                .filter(|building| game.rules.buildings[building.as_str()].wonder).count();
+            (game.foreign_tourists(*pid) - target, *pid, theaters, amphitheaters,
+             wonders, game.foreign_tourists(*pid), target)
+        }).max().unwrap();
         let top_capitals = majors.iter().map(|pid| game.cities.values()
             .filter(|city| city.is_capital && city.owner == *pid)
             .count()).max().unwrap_or(0);
@@ -70,19 +81,53 @@ fn main() {
         }).max().unwrap_or(0);
 
         println!(
-            "seed {seed:<5} t{:<3} {:<10} {:<9} tech {:>2}/33 proj {top_projects} dist {:>2.0}/50 dvp {:>2}/20 culture {:+} caps {}/{} religion {}/{}",
+            "seed {seed:<5} t{:<3} {:<10} {:<9} tech {:>2}/33 proj {top_projects} dist {:>2.0}/50 dvp {:>2}/20 culture {:+} {} {}/{} T{} A{} W{} caps {}/{} religion {}/{}",
             game.turn,
             victory,
             game.players[game.winner.unwrap()].civ,
             top_techs,
             top_distance,
             top_dvp,
-            best_culture_margin,
+            best_culture.0,
+            game.players[best_culture.1].civ,
+            best_culture.5,
+            best_culture.6,
+            best_culture.2,
+            best_culture.3,
+            best_culture.4,
             top_capitals,
             majors.len(),
             top_religious_civs,
             majors.len(),
         );
+        if details {
+            for pid in &majors {
+                let target = majors.iter().filter(|other| *other != pid)
+                    .map(|other| game.domestic_tourists(*other)).max().unwrap_or(0);
+                let cities: Vec<_> = game.cities.values()
+                    .filter(|city| city.owner == *pid).collect();
+                let theaters = cities.iter()
+                    .filter(|city| city.districts.contains_key("theater_square")).count();
+                let amphitheaters = cities.iter()
+                    .filter(|city| city.buildings.iter()
+                        .any(|building| building == "amphitheater"))
+                    .count();
+                let wonders = cities.iter().flat_map(|city| city.buildings.iter())
+                    .filter(|building| game.rules.buildings[building.as_str()].wonder).count();
+                println!(
+                    "  culture {:<9} plan {:?} visitors {}/{} domestic {} T{} A{} W{} output {:.0}",
+                    game.players[*pid].civ,
+                    ais[*pid].current_plan().map(|plan| plan.strategy),
+                    game.foreign_tourists(*pid),
+                    target,
+                    game.domestic_tourists(*pid),
+                    theaters,
+                    amphitheaters,
+                    wonders,
+                    game.players[*pid].tourism_lifetime,
+                );
+            }
+        }
     }
 
     println!("\nVictory mix ({games} games, average {:.1} turns):", total_turns as f64 / games as f64);
