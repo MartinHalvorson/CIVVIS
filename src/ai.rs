@@ -573,8 +573,8 @@ impl BasicAi {
             return None;
         }
         // A tower helps against either wall tier. A ram is still worthwhile
-        // when construction is unavailable and at least one ancient wall is
-        // a live target.
+        // while the more advanced tower is unavailable and at least one
+        // ancient wall is a live target.
         for unit in ["siege_tower", "battering_ram"] {
             let useful = unit == "siege_tower"
                 || wall_levels.iter().any(|walls| *walls == 1);
@@ -1371,7 +1371,8 @@ mod tests {
         let ram = ai.pick_item(&g, 0, home, 1, 0, 1, 0, 0, 2, 2, 0).unwrap();
         assert_eq!(ram, Item::Unit { unit: "battering_ram".to_string() });
 
-        g.players[0].techs.insert("construction".to_string());
+        let tower_tech = g.rules.units["siege_tower"].tech.clone().unwrap();
+        g.players[0].techs.insert(tower_tech);
         let tower = ai.pick_item(&g, 0, home, 1, 0, 1, 0, 0, 2, 2, 0).unwrap();
         assert_eq!(tower, Item::Unit { unit: "siege_tower".to_string() });
 
