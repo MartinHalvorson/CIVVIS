@@ -7,7 +7,7 @@ use crate::ai::{run_game, Ai, BasicAi, RandomAi};
 use crate::game::Game;
 use crate::rng::Rng;
 
-pub const BUILTIN_AIS: [&str; 3] = ["basic", "random", "evolved"];
+pub const BUILTIN_AIS: [&str; 4] = ["basic", "random", "evolved", "neural"];
 
 pub fn expected(ra: f64, rb: f64) -> f64 {
     1.0 / (1.0 + 10f64.powf((rb - ra) / 400.0))
@@ -65,6 +65,13 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             crate::evolve::load_champion("evolved")
                 .map(BasicAi::with_weights)
                 .unwrap_or_else(BasicAi::new)),
+        "neural" => {
+            let w = crate::evolve::load_champion("evolved").unwrap_or_default();
+            match crate::valuenet::ValueNet::load("evolved") {
+                Some(n) => Box::new(crate::neural::NeuralAi::new(w, n)),
+                None => Box::new(BasicAi::with_weights(w)),
+            }
+        }
         _ => Box::new(BasicAi::new()),
     }
 }

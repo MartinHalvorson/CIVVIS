@@ -9,6 +9,7 @@ pub mod evolve;
 pub mod game;
 pub mod hex;
 pub mod mapgen;
+pub mod neural;
 pub mod obs;
 pub mod rng;
 pub mod rules;

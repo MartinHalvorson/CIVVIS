@@ -26,7 +26,7 @@ pub struct Params {
 pub struct Session {
     pub params: Params,
     pub game: Game,
-    ais: Vec<BasicAi>,
+    ais: Vec<Box<dyn Ai>>,
 }
 
 impl Session {
@@ -34,11 +34,21 @@ impl Session {
         let game = Game::new_full(params.num_players, params.width, params.height,
                                   params.seed, params.max_turns,
                                   params.num_city_states, true);
-        // majors use the latest evolved champion weights when available
-        let ais = match crate::evolve::load_champion("evolved") {
-            Some(w) => BasicAi::fleet_weighted(&game, &w),
-            None => BasicAi::fleet(&game),
-        };
+        // majors use the strongest available AI: value-net NeuralAi when a
+        // trained net exists, else evolved champion weights, else defaults
+        let champ = crate::evolve::load_champion("evolved");
+        let net = crate::valuenet::ValueNet::load("evolved");
+        let ais: Vec<Box<dyn Ai>> = game.players.iter().map(|p| -> Box<dyn Ai> {
+            if p.is_minor || p.is_barbarian {
+                return Box::new(BasicAi::new());
+            }
+            match (&champ, &net) {
+                (Some(w), Some(n)) =>
+                    Box::new(crate::neural::NeuralAi::new(w.clone(), n.clone())),
+                (Some(w), None) => Box::new(BasicAi::with_weights(w.clone())),
+                _ => Box::new(BasicAi::new()),
+            }
+        }).collect();
         Session { params, game, ais }
     }
 
