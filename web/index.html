@@ -1620,7 +1620,7 @@ function draw() {
     const [x, yy] = hexXY(t.pos[0], t.pos[1]);
     hexPath(x, yy - elev(t), S - 0.5);
     cx.fillStyle = pcol(t.owner);
-    cx.globalAlpha = 0.14;
+    cx.globalAlpha = 0.085;
     cx.fill();
   }
   cx.globalAlpha = 1;
@@ -1824,9 +1824,9 @@ function draw() {
     const [x, yy] = hexXY(q, r);
     const y = yy - (t2 ? elev(t2) : 0);
     hexPath(x, y, S - 2);
-    if (hl[k] === 1) { cx.fillStyle = "#ffffff22"; cx.fill();
-      cx.strokeStyle = "#ffffffbb"; cx.lineWidth = 1.6; cx.stroke(); }
-    else { cx.strokeStyle = "#ff5050"; cx.lineWidth = 3; cx.stroke(); }
+    if (hl[k] === 1) { cx.fillStyle = "#ffffff14"; cx.fill();
+      cx.strokeStyle = "#ffffff8c"; cx.lineWidth = 1.6; cx.stroke(); }
+    else { cx.strokeStyle = "#ff5050c4"; cx.lineWidth = 3; cx.stroke(); }
   }
   // --- fog: parchment wash over explored-but-not-visible tiles
   for (const t of tiles) {
