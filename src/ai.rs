@@ -356,6 +356,7 @@ impl BasicAi {
         let mut settlers = 0;
         let mut builders = 0;
         let mut traders = 0;
+        let mut siege_support = 0;
         let mut military = 0;
         let mut melee = 0;
         let mut ranged = 0;
@@ -365,6 +366,7 @@ impl BasicAi {
                 "settler" => settlers += 1,
                 "builder" => builders += 1,
                 "trader" => traders += 1,
+                "battering_ram" | "siege_tower" => siege_support += 1,
                 _ => {
                     let spec = &g.rules.units[kind.as_str()];
                     if spec.class == "military" {
@@ -389,6 +391,7 @@ impl BasicAi {
                     "settler" => settlers += 1,
                     "builder" => builders += 1,
                     "trader" => traders += 1,
+                    "battering_ram" | "siege_tower" => siege_support += 1,
                     _ => {
                         let spec = &g.rules.units[unit.as_str()];
                         if spec.class == "military" {
@@ -446,6 +449,9 @@ impl BasicAi {
                             Item::Unit { unit } if unit == "settler" => settlers += 1,
                             Item::Unit { unit } if unit == "builder" => builders += 1,
                             Item::Unit { unit } if unit == "trader" => traders += 1,
+                            Item::Unit { unit } if unit == "battering_ram" || unit == "siege_tower" => {
+                                siege_support += 1
+                            }
                             Item::Unit { unit } => {
                                 let spec = &g.rules.units[unit.as_str()];
                                 if spec.class == "military" {
@@ -468,13 +474,16 @@ impl BasicAi {
             }
             if let Some(item) =
                 self.pick_item(g, pid, *cid, n_cities, settlers, builders,
-                               traders, military, melee, ranged)
+                               traders, siege_support, military, melee, ranged)
             {
                 if g.apply(pid, &Action::Produce { city: *cid, item: item.clone() }).is_ok() {
                     match &item {
                         Item::Unit { unit } if unit == "settler" => settlers += 1,
                         Item::Unit { unit } if unit == "builder" => builders += 1,
                         Item::Unit { unit } if unit == "trader" => traders += 1,
+                        Item::Unit { unit } if unit == "battering_ram" || unit == "siege_tower" => {
+                            siege_support += 1
+                        }
                         Item::Unit { unit } => {
                             let spec = &g.rules.units[unit.as_str()];
                             if spec.class == "military" {
@@ -548,6 +557,29 @@ impl BasicAi {
         let want_ranged = melee > ranged;
         self.best_military(g, pid, cid, Some(want_ranged))
             .or_else(|| self.best_military(g, pid, cid, None))
+    }
+
+    fn siege_support_unit(&self, g: &Game, pid: usize, cid: u32) -> Option<String> {
+        let wall_levels: Vec<usize> = g.cities.values()
+            .filter(|c| c.owner != pid && g.is_at_war(pid, c.owner))
+            .map(|c| c.buildings.iter()
+                .filter(|b| *b == "walls" || *b == "medieval_walls").count())
+            .filter(|walls| *walls > 0)
+            .collect();
+        if wall_levels.is_empty() {
+            return None;
+        }
+        // A tower helps against either wall tier. A ram is still worthwhile
+        // when construction is unavailable and at least one ancient wall is
+        // a live target.
+        for unit in ["siege_tower", "battering_ram"] {
+            let useful = unit == "siege_tower"
+                || wall_levels.iter().any(|walls| *walls == 1);
+            if useful && g.can_produce(pid, cid, &Item::Unit { unit: unit.to_string() }) {
+                return Some(unit.to_string());
+            }
+        }
+        None
     }
 
     fn buy_gold_unit(&self, g: &mut Game, pid: usize, city_ids: &[u32],
@@ -682,12 +714,18 @@ impl BasicAi {
 
     #[allow(clippy::too_many_arguments)]
     fn pick_item(&self, g: &Game, pid: usize, cid: u32, n_cities: usize,
-                 settlers: usize, builders: usize, traders: usize, military: usize,
-                 melee: usize, ranged: usize) -> Option<Item> {
+                 settlers: usize, builders: usize, traders: usize,
+                 siege_support: usize, military: usize, melee: usize,
+                 ranged: usize) -> Option<Item> {
         let city_pop = g.cities[&cid].pop;
         if (military as f64) < self.w.mil_per_city * n_cities as f64 {
             if let Some(m) = self.combined_arms_unit(g, pid, cid, melee, ranged) {
                 return Some(Item::Unit { unit: m });
+            }
+        }
+        if siege_support == 0 && melee >= 2 {
+            if let Some(unit) = self.siege_support_unit(g, pid, cid) {
+                return Some(Item::Unit { unit });
             }
         }
         if !self.minor && !self.barb
@@ -782,6 +820,7 @@ impl BasicAi {
                     "builder" => self.builder_step(g, pid, uid),
                     "trader" => self.trader_step(g, pid, uid),
                     "missionary" => self.missionary_step(g, pid, uid),
+                    "battering_ram" | "siege_tower" => self.siege_support_step(g, pid, uid),
                     _ => self.military_step(g, pid, uid),
                 };
                 if !acted {
@@ -973,6 +1012,42 @@ impl BasicAi {
             return g.apply(pid, &Action::Spread { unit: uid }).is_ok();
         }
         self.step_toward(g, pid, uid, target)
+    }
+
+    fn siege_support_step(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
+        let upos = g.units[&uid].pos;
+        let support_kind = g.units[&uid].kind.as_str();
+        let targets: Vec<Pos> = g.cities.values()
+            .filter(|c| c.owner != pid && g.is_at_war(pid, c.owner))
+            .filter(|c| {
+                let walls = c.buildings.iter()
+                    .filter(|b| *b == "walls" || *b == "medieval_walls").count();
+                walls > 0 && (support_kind == "siege_tower" || walls == 1)
+            })
+            .map(|c| c.pos)
+            .collect();
+        if targets.is_empty() {
+            return false;
+        }
+
+        // Follow the melee unit closest to a compatible walled target. Newer
+        // support units normally act after the army, so they naturally step
+        // onto the tile their escort just vacated or currently occupies.
+        let escort = g.units.values()
+            .filter(|u| u.owner == pid && u.id != uid)
+            .filter(|u| {
+                let spec = &g.rules.units[u.kind.as_str()];
+                spec.class == "military" && spec.ranged_strength <= 0.0 && !spec.siege
+            })
+            .min_by_key(|u| {
+                let front = targets.iter().map(|t| g.wdist(u.pos, *t)).min().unwrap();
+                (2 * front + g.wdist(upos, u.pos), g.wdist(upos, u.pos), u.id)
+            })
+            .map(|u| u.pos);
+        match escort {
+            Some(pos) if pos != upos => self.step_toward(g, pid, uid, pos),
+            _ => false,
+        }
     }
 
     fn builder_step(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
@@ -1222,6 +1297,23 @@ impl BasicAi {
 mod tests {
     use super::*;
 
+    fn walled_war_game(seed: u64) -> (Game, u32, u32) {
+        let mut g = Game::new_full(2, 20, 14, seed, 40, 0, false);
+        let settler0 = g.player_unit_ids(0).into_iter()
+            .find(|id| g.units[id].kind == "settler").unwrap();
+        g.apply(0, &Action::FoundCity { unit: settler0 }).unwrap();
+        g.apply(0, &Action::EndTurn).unwrap();
+        let settler1 = g.player_unit_ids(1).into_iter()
+            .find(|id| g.units[id].kind == "settler").unwrap();
+        g.apply(1, &Action::FoundCity { unit: settler1 }).unwrap();
+        g.apply(1, &Action::EndTurn).unwrap();
+        let home = g.player_city_ids(0)[0];
+        let enemy = g.player_city_ids(1)[0];
+        g.cities.get_mut(&enemy).unwrap().buildings.push("walls".to_string());
+        g.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
+        (g, home, enemy)
+    }
+
     #[test]
     fn military_picker_preserves_city_capturing_melee() {
         let mut g = Game::new_full(1, 20, 14, 31, 30, 0, false);
@@ -1265,5 +1357,46 @@ mod tests {
         assert_eq!(g.players[0].gold, 324.0);
         assert_eq!(g.units.values()
             .filter(|u| u.owner == 0 && u.kind == "builder").count(), builders);
+    }
+
+    #[test]
+    fn production_adds_one_support_unit_for_walled_wars() {
+        let (mut g, home, _) = walled_war_game(33);
+        let ai = BasicAi::new();
+        g.players[0].techs.insert("masonry".to_string());
+
+        let ram = ai.pick_item(&g, 0, home, 1, 0, 1, 0, 0, 2, 2, 0).unwrap();
+        assert_eq!(ram, Item::Unit { unit: "battering_ram".to_string() });
+
+        g.players[0].techs.insert("construction".to_string());
+        let tower = ai.pick_item(&g, 0, home, 1, 0, 1, 0, 0, 2, 2, 0).unwrap();
+        assert_eq!(tower, Item::Unit { unit: "siege_tower".to_string() });
+
+        let next = ai.pick_item(&g, 0, home, 1, 0, 1, 0, 1, 2, 2, 0).unwrap();
+        assert!(!matches!(next, Item::Unit { unit }
+            if unit == "battering_ram" || unit == "siege_tower"));
+    }
+
+    #[test]
+    fn siege_support_catches_up_and_stacks_with_melee_escort() {
+        let (mut g, home, _) = walled_war_game(34);
+        g.players[0].techs.insert("masonry".to_string());
+        g.players[0].gold = 1_000.0;
+        g.apply(0, &Action::Buy {
+            city: home,
+            unit: "battering_ram".to_string(),
+            currency: "gold".to_string(),
+        }).unwrap();
+        let ram = g.player_unit_ids(0).into_iter()
+            .find(|id| g.units[id].kind == "battering_ram").unwrap();
+        let warrior = g.player_unit_ids(0).into_iter()
+            .find(|id| g.units[id].kind == "warrior").unwrap();
+        let next = g.nbrs(g.units[&warrior].pos).into_iter()
+            .find(|pos| g.can_move(warrior, *pos)).unwrap();
+        g.apply(0, &Action::Move { unit: warrior, to: next }).unwrap();
+        assert_ne!(g.units[&ram].pos, g.units[&warrior].pos);
+
+        assert!(BasicAi::new().siege_support_step(&mut g, 0, ram));
+        assert_eq!(g.units[&ram].pos, g.units[&warrior].pos);
     }
 }
