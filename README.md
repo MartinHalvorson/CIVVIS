@@ -1,4 +1,6 @@
-# Martin Halvorson's Civilization VIS
+# CIVVIS
+
+## Martin Halvorson's Civilization VIS (6.5)
 
 An open-source, **headless-first** 4X strategy engine inspired by the mechanics
 of Civilization VI — aiming to be to Civ 6 what [Unciv](https://github.com/yairm210/Unciv)
