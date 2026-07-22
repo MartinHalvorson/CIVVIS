@@ -16,6 +16,7 @@ pub mod rng;
 pub mod rules;
 pub mod server;
 pub mod setup;
+pub mod strategic;
 pub mod valuenet;
 pub mod world;
 

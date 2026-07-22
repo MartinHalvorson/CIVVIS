@@ -302,6 +302,14 @@ impl AdvancedAi {
         Self::configured(BasicAi::with_weights(weights), true, Some(target))
     }
 
+    /// Redirect an existing agent at a new explicit victory target without
+    /// discarding campaign memory; the strategic plan re-assesses on the
+    /// next turn. Used by the rollout-driven `StrategicAi`.
+    pub fn retarget(&mut self, target: VictoryTarget) {
+        self.victory_target = Some(target);
+        self.plan = None;
+    }
+
     pub fn fleet(g: &Game) -> Vec<AdvancedAi> {
         g.players.iter().map(|_| AdvancedAi::new()).collect()
     }
@@ -3138,17 +3146,27 @@ impl AdvancedAi {
     /// cross-strategy defense below.
     fn home_conversion_threat(&self, g: &Game, pid: usize) -> Option<String> {
         let own = g.players[pid].religion.as_deref();
+        let rival_faith = |religion: &str| {
+            g.players.iter().any(|o| {
+                o.id != pid && o.alive && !o.is_minor && o.religion.as_deref() == Some(religion)
+            })
+        };
         for cid in g.player_city_ids(pid) {
-            let Some(majority) = g.city_religion(&g.cities[&cid]) else {
-                continue;
-            };
-            if Some(majority) == own {
+            let city = &g.cities[&cid];
+            // React while the conversion is still in progress: waiting for a
+            // flipped majority loses the pressure race outright. Any rival
+            // faith at 60% of the city's strongest pressure is a live threat.
+            let top = city.pressure.values().fold(0.0f64, |a, b| a.max(*b));
+            if top <= 0.0 {
                 continue;
             }
-            if g.players.iter().any(|o| {
-                o.id != pid && o.alive && !o.is_minor && o.religion.as_deref() == Some(majority)
-            }) {
-                return Some(majority.to_string());
+            for (religion, pressure) in &city.pressure {
+                if Some(religion.as_str()) == own || *pressure + 1e-9 < top * 0.6 {
+                    continue;
+                }
+                if rival_faith(religion) {
+                    return Some(religion.clone());
+                }
             }
         }
         None
