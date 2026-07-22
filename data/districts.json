@@ -18,7 +18,8 @@
       "geothermal_fissure": {"science": 2},
       "pamukkale": {"science": 2},
       "government_plaza": {"science": 1}
-    }
+    },
+    "great_person_points": {"scientist": 1}
   },
   "holy_site": {
     "cost": 54,
@@ -32,6 +33,7 @@
       "pamukkale": {"faith": 1},
       "government_plaza": {"faith": 1}
     },
+    "great_person_points": {"prophet": 1},
     "appeal": 1
   },
   "encampment": {
@@ -39,6 +41,7 @@
     "tech": "bronze_working",
     "yields": {},
     "placement": "not_adjacent_city",
+    "great_person_points": {"general": 1},
     "defense": 10,
     "appeal": -1,
     "effects": {"zone_of_control": 1}
@@ -53,7 +56,8 @@
       "district": {"gold": 0.5},
       "pamukkale": {"gold": 2},
       "government_plaza": {"gold": 1}
-    }
+    },
+    "great_person_points": {"merchant": 1}
   },
   "harbor": {
     "cost": 54,
@@ -66,7 +70,8 @@
       "district": {"gold": 0.5},
       "city_center": {"gold": 2},
       "government_plaza": {"gold": 1}
-    }
+    },
+    "great_person_points": {"admiral": 1}
   },
   "theater_square": {
     "cost": 54,
@@ -80,6 +85,7 @@
       "pamukkale": {"culture": 2},
       "government_plaza": {"culture": 1}
     },
+    "great_person_points": {"writer": 1, "artist": 1, "musician": 1},
     "appeal": 1
   },
   "industrial_zone": {
@@ -97,6 +103,7 @@
       "dam": {"production": 2},
       "government_plaza": {"production": 1}
     },
+    "great_person_points": {"engineer": 1},
     "appeal": -1
   },
   "entertainment_complex": {
@@ -215,6 +222,7 @@
       "pamukkale": {"culture": 2},
       "government_plaza": {"culture": 1}
     },
+    "great_person_points": {"writer": 1, "artist": 1, "musician": 1},
     "appeal": 1,
     "effects": {"envoys": 1}
   },
@@ -244,7 +252,8 @@
       "farm": {"science": 0.5},
       "district": {"science": 0.5},
       "government_plaza": {"science": 1}
-    }
+    },
+    "great_person_points": {"scientist": 1}
   },
   "seowon": {
     "cost": 27,
@@ -257,7 +266,8 @@
       "self": {"science": 4},
       "district": {"science": -1},
       "government_plaza": {"science": 1}
-    }
+    },
+    "great_person_points": {"scientist": 1}
   },
   "lavra": {
     "cost": 27,
@@ -273,6 +283,7 @@
       "pamukkale": {"faith": 1},
       "government_plaza": {"faith": 1}
     },
+    "great_person_points": {"prophet": 2},
     "appeal": 1
   },
   "ikanda": {
@@ -282,6 +293,7 @@
     "replaces": "encampment",
     "placement": "not_adjacent_city",
     "yields": {},
+    "great_person_points": {"general": 1},
     "housing": 1,
     "defense": 10,
     "appeal": -1,
@@ -313,6 +325,7 @@
       "pamukkale": {"gold": 2},
       "government_plaza": {"gold": 1}
     },
+    "great_person_points": {"merchant": 1},
     "effects": {"gold_faith_purchase_discount_pct": 20}
   },
   "cothon": {
@@ -329,6 +342,7 @@
       "city_center": {"gold": 2},
       "government_plaza": {"gold": 1}
     },
+    "great_person_points": {"admiral": 1},
     "effects": {"naval_settler_production_pct": 50, "naval_heal_full": 1}
   },
   "royal_navy_dockyard": {
@@ -345,6 +359,7 @@
       "city_center": {"gold": 2},
       "government_plaza": {"gold": 1}
     },
+    "great_person_points": {"admiral": 2},
     "effects": {
       "naval_movement": 1,
       "foreign_continent_gold": 2,
@@ -366,6 +381,7 @@
       "dam": {"production": 2},
       "government_plaza": {"production": 1}
     },
+    "great_person_points": {"engineer": 1},
     "appeal": -1
   },
   "oppidum": {
@@ -379,6 +395,7 @@
       "strategic_resource": {"production": 2},
       "government_plaza": {"production": 1}
     },
+    "great_person_points": {"engineer": 1},
     "defense": 10,
     "appeal": -1,
     "effects": {"unlock_apprenticeship": 1, "zone_of_control": 1}

@@ -107,12 +107,37 @@ fn main() {
                         .map(|rival| game.domestic_tourists(rival.id))
                         .max()
                         .unwrap_or(0);
+                    let cities = game.player_city_ids(winner);
+                    let theaters = cities
+                        .iter()
+                        .filter(|city| {
+                            game.cities[city].districts.contains_key("theater_square")
+                                || game.cities[city].districts.contains_key("acropolis")
+                        })
+                        .count();
+                    let tourist_improvements = cities
+                        .iter()
+                        .flat_map(|city| game.cities[city].owned_tiles.iter())
+                        .filter_map(|position| game.map.tiles[position].improvement.as_deref())
+                        .filter(|improvement| {
+                            game.rules.improvements[*improvement]
+                                .effects
+                                .get("tourism")
+                                .copied()
+                                .unwrap_or(0.0)
+                                > 0.0
+                        })
+                        .count();
                     format!(
-                        "visiting={} target={} domestic={} tourism={:.1}/turn",
+                        "visiting={} target={} domestic={} tourism={:.1}/turn cities={} theaters={} tourist_tiles={} lifetime={:.0}",
                         game.foreign_tourists(winner),
                         target,
                         game.domestic_tourists(winner),
-                        game.tourism_per_turn(winner)
+                        game.tourism_per_turn(winner),
+                        cities.len(),
+                        theaters,
+                        tourist_improvements,
+                        player.tourism_lifetime,
                     )
                 }
                 VictoryTarget::Religion => {

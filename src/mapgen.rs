@@ -552,53 +552,78 @@ fn balanced_major_spawns(
         .iter()
         .map(|candidate| (*candidate, start_quality(rules, wm, *candidate)))
         .collect();
-    let trial_count = candidates.len().min(64);
-    let mut seeds = Vec::with_capacity(trial_count + 1);
-    for index in 0..trial_count {
-        let candidate_index = index * candidates.len() / trial_count;
-        if seeds.last() != candidates.get(candidate_index) {
-            seeds.push(candidates[candidate_index]);
-        }
-    }
-    if let Some(best_site) = candidates
+    let mut quality_values: Vec<i32> = qualities.values().copied().collect();
+    quality_values.sort_unstable();
+    let quality_floor = quality_values[quality_values.len() / 4];
+    let preferred_candidates: Vec<Pos> = candidates
         .iter()
-        .max_by_key(|candidate| (qualities[*candidate], **candidate))
+        .filter(|candidate| qualities[*candidate] >= quality_floor)
         .copied()
-    {
-        if !seeds.contains(&best_site) {
-            seeds.push(best_site);
-        }
-    }
+        .collect();
 
-    let mut layouts = Vec::with_capacity(seeds.len());
-    for seed in seeds {
-        let layout = farthest_layout(wm, candidates, &qualities, seed, count);
-        let score = spawn_layout_score(wm, landmass, &layout, &qualities);
-        layouts.push((score, layout));
+    let mut layouts = Vec::with_capacity(82);
+    for (pool, trial_limit) in [
+        (candidates, 64_usize),
+        (preferred_candidates.as_slice(), 16_usize),
+    ] {
+        if pool.len() < count {
+            continue;
+        }
+        let trial_count = pool.len().min(trial_limit);
+        let mut seeds = Vec::with_capacity(trial_count + 1);
+        for index in 0..trial_count {
+            let candidate_index = index * pool.len() / trial_count;
+            if seeds.last() != pool.get(candidate_index) {
+                seeds.push(pool[candidate_index]);
+            }
+        }
+        if let Some(best_site) = pool
+            .iter()
+            .max_by_key(|candidate| (qualities[*candidate], **candidate))
+            .copied()
+        {
+            if !seeds.contains(&best_site) {
+                seeds.push(best_site);
+            }
+        }
+        for seed in seeds {
+            let layout = farthest_layout(wm, pool, &qualities, seed, count);
+            let score = spawn_layout_score(wm, landmass, &layout, &qualities);
+            layouts.push((score, layout));
+        }
     }
     let best_separation = layouts
         .iter()
         .map(|(score, _)| score.minimum_separation)
         .max()
         .unwrap();
-    // Two hexes off the theoretical maximum is a small price for substantially
+    // One hex off the theoretical maximum is a small price for substantially
     // more even neighbors, territory and capital quality.
-    let separation_floor = best_separation.saturating_sub(2);
+    let separation_floor = best_separation.saturating_sub(1);
     layouts.retain(|(score, _)| score.minimum_separation >= separation_floor);
     let best_coverage = layouts
         .iter()
         .map(|(score, _)| score.negative_coverage_radius)
         .max()
         .unwrap();
-    layouts.retain(|(score, _)| score.negative_coverage_radius >= best_coverage - 2);
+    layouts.retain(|(score, _)| score.negative_coverage_radius >= best_coverage - 1);
     let mut layout = layouts
         .into_iter()
         .max_by_key(|(score, _)| {
+            let territory_balance =
+                score.minimum_territory * count as i32 * 100 / landmass.len().max(1) as i32;
+            let maximum_neighbor = score.minimum_separation - score.negative_neighbor_range;
+            let neighbor_balance = score.minimum_separation * 100 / maximum_neighbor.max(1);
+            let maximum_quality = score.minimum_quality - score.negative_quality_range;
+            let quality_balance = score.minimum_quality * 100 / maximum_quality.max(1);
+            let worst_balance = territory_balance.min(neighbor_balance).min(quality_balance);
             (
-                score.negative_neighbor_range,
+                worst_balance,
+                territory_balance + neighbor_balance + quality_balance,
                 score.minimum_territory,
-                score.negative_territory_range,
+                score.negative_neighbor_range,
                 score.minimum_quality,
+                score.negative_territory_range,
                 score.negative_quality_range,
                 score.total_quality,
                 score.minimum_separation,
@@ -995,7 +1020,7 @@ mod river_tests {
                 .map(|start| (*start, start_quality(&rules, &wm, *start)))
                 .collect();
             let score = spawn_layout_score(&wm, &landmass, majors, &qualities);
-            eprintln!("{}: {score:?}", size.name);
+            eprintln!("{} ({} land): {score:?}", size.name, landmass.len());
             assert!(score.minimum_separation >= 6, "{}: {score:?}", size.name);
             assert!(
                 score.negative_neighbor_range >= -10,

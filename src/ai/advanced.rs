@@ -1612,6 +1612,12 @@ impl AdvancedAi {
             }
             Item::Building { building } => {
                 let spec = &g.rules.buildings[building];
+                if self.victory_target.is_some()
+                    && self.victory_target != Some(VictoryTarget::Culture)
+                    && !spec.great_work_slots.is_empty()
+                {
+                    return -10_000.0;
+                }
                 if spec.wonder {
                     let wonder_civ = matches!(g.players[pid].civ.as_str(), "Egypt" | "China");
                     if threatened
@@ -1636,6 +1642,10 @@ impl AdvancedAi {
                     let amenity_need = (-g.city_amenity_surplus(city)).max(0) as f64;
                     let great_work_slots =
                         spec.great_work_slots.values().sum::<i32>().max(0) as f64;
+                    let cultural_gpp = ["writer", "artist", "musician"]
+                        .into_iter()
+                        .map(|kind| spec.great_person_points.get(kind).copied().unwrap_or(0.0))
+                        .sum::<f64>();
                     self.yield_value(spec.yields, plan.strategy) * 42.0
                         + spec.housing * (22.0 + housing_need * 18.0)
                         + spec.amenity * (30.0 + amenity_need * 22.0)
@@ -1644,6 +1654,12 @@ impl AdvancedAi {
                                 180.0
                             } else {
                                 25.0
+                            }
+                        + cultural_gpp
+                            * if plan.strategy == GrandStrategy::Culture {
+                                140.0
+                            } else {
+                                10.0
                             }
                         + spec.effects.get("tourism").copied().unwrap_or(0.0) * 80.0
                         + if building == "monument" && g.turn < 120 {
@@ -1685,15 +1701,26 @@ impl AdvancedAi {
                 } else {
                     0.0
                 };
+                let culture_district = district == "theater_square"
+                    || spec.replaces.as_deref() == Some("theater_square");
                 self.yield_value(g.district_yields(district, *pos), plan.strategy) * 60.0
                     + spec.defense * if threatened { 5.0 } else { 1.5 }
                     + spec.amenity * 50.0
                     + balanced_core
+                    + if plan.strategy == GrandStrategy::Culture && culture_district {
+                        // A Theater Square starts earning Great People long
+                        // before its building chain is complete, and every
+                        // city supplies another set of work slots. Establish
+                        // the network early instead of stopping at a merely
+                        // balanced half-empire coverage.
+                        850.0
+                    } else {
+                        0.0
+                    }
                     + match (plan.strategy, district.as_str()) {
                         (GrandStrategy::Science, "spaceport") if district_count == 0 => 3_000.0,
                         (GrandStrategy::Science, "spaceport") => 250.0,
                         (GrandStrategy::Science, "campus") => 170.0,
-                        (GrandStrategy::Culture, "theater_square") => 170.0,
                         (GrandStrategy::Religion, "holy_site") => 210.0,
                         (GrandStrategy::Diplomacy, "commercial_hub") => 150.0,
                         (GrandStrategy::Diplomacy, "theater_square") => 100.0,
@@ -1725,7 +1752,7 @@ impl AdvancedAi {
                     || turns > remaining_turns * 0.65
                     || (plan.strategy != GrandStrategy::Culture
                         && self.victory_target != Some(VictoryTarget::Score)
-                        && !wonder_civ)
+                        && (!wonder_civ || self.victory_target.is_some()))
                 {
                     -10_000.0
                 } else {
@@ -1943,6 +1970,13 @@ impl AdvancedAi {
         if current == target && g.can_found_city(uid) {
             self.settler_targets.remove(&uid);
             return g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
+        }
+        if g.units[&uid].linked_to.is_some_and(|peer| {
+            g.units.get(&peer).is_some_and(|escort| {
+                g.rules.units[escort.kind.as_str()].domain.as_deref() == Some("sea")
+            })
+        }) {
+            return false;
         }
         let moved = self.base.step_toward(g, pid, uid, target);
         if !moved {
@@ -3242,6 +3276,93 @@ impl Ai for AdvancedAi {
 mod tests {
     use super::*;
     use crate::ai::run_game;
+
+    fn island_colony_game() -> (Game, Pos, Pos) {
+        let mut g = Game::new_full(1, 18, 10, 92, 120, 0, false);
+        let founding_settler = g
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|uid| g.units[uid].kind == "settler")
+            .unwrap();
+        let source = g.units[&founding_settler].pos;
+        let target = g
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .max_by_key(|pos| (g.wdist(source, *pos), *pos))
+            .unwrap();
+        assert!(g.wdist(source, target) > 8);
+        for tile in g.map.tiles.values_mut() {
+            tile.terrain = "coast".to_string();
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            tile.owner_city = None;
+        }
+        g.map.tiles.get_mut(&source).unwrap().terrain = "plains".to_string();
+        g.map.tiles.get_mut(&target).unwrap().terrain = "grassland".to_string();
+        g.apply(
+            0,
+            &Action::FoundCity {
+                unit: founding_settler,
+            },
+        )
+        .unwrap();
+        (g, source, target)
+    }
+
+    #[test]
+    fn strategic_settler_routes_to_an_island_beyond_the_local_search_radius() {
+        let (mut g, source, target) = island_colony_game();
+        g.players[0]
+            .techs
+            .extend(["sailing".to_string(), "shipbuilding".to_string()]);
+        let settler = g.spawn_test_unit("settler", 0, source);
+        let mut ai = AdvancedAi::new();
+        assert!(ai.advanced_settler_step(&mut g, 0, settler));
+        assert_eq!(ai.settler_targets.get(&settler), Some(&target));
+        assert!(g
+            .map
+            .get(g.units[&settler].pos)
+            .is_some_and(|tile| g.rules.is_water(tile)));
+    }
+
+    #[test]
+    fn fleet_objective_treats_embarked_enemies_as_naval_contacts() {
+        let mut g = Game::new_full(2, 24, 16, 93, 80, 0, false);
+        let (anchor, contact) = g
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| g.rules.is_water(tile))
+            .find_map(|(pos, _)| {
+                g.nbrs(*pos)
+                    .into_iter()
+                    .find(|neighbor| {
+                        g.map
+                            .get(*neighbor)
+                            .is_some_and(|tile| g.rules.is_water(tile))
+                    })
+                    .map(|neighbor| (*pos, neighbor))
+            })
+            .expect("map has adjacent water");
+        let embarked = g.spawn_test_unit("settler", 1, contact);
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: g.turn,
+        };
+        let objective =
+            AdvancedAi::new().domain_objective(&g, 0, &plan, ForceDomain::Sea, anchor, &[1]);
+        assert_eq!(objective, g.units[&embarked].pos);
+    }
 
     #[test]
     fn every_victory_condition_can_be_forced_for_every_major() {

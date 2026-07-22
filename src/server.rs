@@ -1,5 +1,6 @@
 //! Zero-dependency local HTTP server for the human-vs-AI browser GUI.
-//! Endpoints: GET / (page), GET /state, GET /rules, POST /action, POST /new.
+//! Endpoints: GET / (page), GET /state, GET /save, GET /rules,
+//! POST /action, POST /step, POST /new.
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 
@@ -435,19 +436,19 @@ pub fn serve_with_game(port: u16, open_browser: bool, params: Params, game: Opti
         .unwrap_or_else(|e| panic!("cannot bind port {port}: {e}"));
     let actual = listener.local_addr().unwrap().port();
     let url = format!("http://127.0.0.1:{actual}/");
-    println!("Martin Halvorson's Civilization VIS — playing at {url}");
-    if params.spectate {
-        println!(
-            "Spectator mode: all {} players are AI-driven. Ctrl+C to quit.",
-            params.num_players
-        );
-    } else {
-        println!("You are player 0. Ctrl+C to quit.");
-    }
     let mut session = match game {
         Some(game) => Session::from_game(params, game),
         None => Session::new(params),
     };
+    println!("Martin Halvorson's Civilization VIS — playing at {url}");
+    if session.params.spectate {
+        println!(
+            "Spectator mode: all {} players are AI-driven. Ctrl+C to quit.",
+            session.params.num_players
+        );
+    } else {
+        println!("You are player 0. Ctrl+C to quit.");
+    }
     if open_browser {
         open_url(&url);
     }

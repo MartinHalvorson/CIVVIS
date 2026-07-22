@@ -221,6 +221,10 @@ pub struct DistrictSpec {
     pub yields: Yields,
     #[serde(default)]
     pub adjacency: BTreeMap<String, Yields>,
+    /// Great Person points produced by the completed district itself.
+    /// Buildings contribute their own points separately.
+    #[serde(default)]
+    pub great_person_points: BTreeMap<String, f64>,
     #[serde(default)]
     pub water: bool,
     #[serde(default)]
@@ -353,6 +357,11 @@ pub struct WonderSpec {
     pub housing: f64,
     #[serde(default)]
     pub amenity: f64,
+    /// Radius in which the wonder's listed yields and Amenities affect city
+    /// centers. Zero means that the values belong only to the constructing
+    /// city; Colosseum and other regional wonders set an explicit range.
+    #[serde(default)]
+    pub regional_range: i32,
     #[serde(default)]
     pub great_work_slots: BTreeMap<String, i32>,
     #[serde(default)]
@@ -400,6 +409,26 @@ pub struct GreatPersonSpec {
     pub cost: f64,
     #[serde(default)]
     pub effects: BTreeMap<String, f64>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct GovernorPromotionSpec {
+    pub tier: i32,
+    #[serde(default)]
+    pub requires: Vec<String>,
+    #[serde(default)]
+    pub effects: BTreeMap<String, f64>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct GovernorSpec {
+    pub name: String,
+    pub title: String,
+    pub establish_turns: u32,
+    #[serde(default)]
+    pub effects: BTreeMap<String, f64>,
+    #[serde(default)]
+    pub promotions: BTreeMap<String, GovernorPromotionSpec>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -565,6 +594,7 @@ pub struct Rules {
     pub buildings: BTreeMap<String, BuildingSpec>,
     pub wonders: BTreeMap<String, WonderSpec>,
     pub great_people: BTreeMap<String, GreatPersonSpec>,
+    pub governors: BTreeMap<String, GovernorSpec>,
     pub projects: BTreeMap<String, ProjectSpec>,
     pub techs: BTreeMap<String, TechSpec>,
     pub civics: BTreeMap<String, TechSpec>,
@@ -587,6 +617,7 @@ impl Rules {
             buildings: serde_json::from_str(include_str!("../data/buildings.json")).unwrap(),
             wonders: serde_json::from_str(include_str!("../data/wonders.json")).unwrap(),
             great_people: serde_json::from_str(include_str!("../data/great_people.json")).unwrap(),
+            governors: serde_json::from_str(include_str!("../data/governors.json")).unwrap(),
             projects: serde_json::from_str(include_str!("../data/projects.json")).unwrap(),
             techs: serde_json::from_str(include_str!("../data/techs.json")).unwrap(),
             civics: serde_json::from_str(include_str!("../data/civics.json")).unwrap(),
@@ -1225,14 +1256,19 @@ mod tests {
             .filter(|unit| !unit.promotion_class.is_empty())
             .map(|unit| unit.promotion_class.as_str())
             .collect();
-        assert_eq!(rules.promotions.len(), classes.len() * 7);
+        let expected_promotions = classes
+            .iter()
+            .map(|class| if *class == "religious_apostle" { 9 } else { 7 })
+            .sum::<usize>();
+        assert_eq!(rules.promotions.len(), expected_promotions);
         for class in classes {
             let nodes: Vec<_> = rules
                 .promotions
                 .iter()
                 .filter(|(_, promotion)| promotion.class == class)
                 .collect();
-            assert_eq!(nodes.len(), 7, "{class} promotion tree");
+            let expected = if class == "religious_apostle" { 9 } else { 7 };
+            assert_eq!(nodes.len(), expected, "{class} promotion tree");
             for (name, promotion) in nodes {
                 assert!((1..=4).contains(&promotion.tier), "{name} tier");
                 for prerequisite in &promotion.requires {

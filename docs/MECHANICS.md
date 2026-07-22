@@ -63,3 +63,7 @@ Religious units of different civilizations and different religions exert ZOC
 against one another regardless of war; units of the same religion never do.
 Defensible districts affect foreign religious units only while their owners
 are at war.
+
+Reference basis: the in-game [Civilopedia Zone of Control entry](https://www.civilopedia.net/en-US/standard-rules/concepts/movement_3/),
+the detailed [Civilization VI ZOC rules](https://civilization.fandom.com/wiki/Zone_of_control_%28Civ6%29),
+and the general hex-grid [zone-of-control definition](https://en.wikipedia.org/wiki/Zone_of_control).

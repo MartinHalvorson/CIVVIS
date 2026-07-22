@@ -2075,6 +2075,17 @@ impl BasicAi {
             self.settler_targets.remove(&uid);
             return g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
         }
+        // A linked settler is the follower: the naval military unit is the
+        // formation leader and must execute movement for both. Keep the
+        // destination for that leader instead of treating the follower's
+        // intentionally unavailable Move action as a failed route.
+        if g.units[&uid].linked_to.is_some_and(|peer| {
+            g.units.get(&peer).is_some_and(|escort| {
+                g.rules.units[escort.kind.as_str()].domain.as_deref() == Some("sea")
+            })
+        }) {
+            return false;
+        }
         let moved = self.step_toward(g, pid, uid, target);
         if !moved {
             self.settler_targets.remove(&uid);
@@ -2688,6 +2699,145 @@ impl BasicAi {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn island_colony_game(players: usize) -> (Game, Pos, Pos) {
+        let mut g = Game::new_full(players, 18, 10, 91, 120, 0, false);
+        let founding_settler = g
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|uid| g.units[uid].kind == "settler")
+            .unwrap();
+        let source = g.units[&founding_settler].pos;
+        let target = g
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .max_by_key(|pos| (g.wdist(source, *pos), *pos))
+            .expect("map has a tile");
+        assert!(g.wdist(source, target) > 6);
+        for tile in g.map.tiles.values_mut() {
+            tile.terrain = "coast".to_string();
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            tile.owner_city = None;
+        }
+        g.map.tiles.get_mut(&source).unwrap().terrain = "plains".to_string();
+        g.map.tiles.get_mut(&target).unwrap().terrain = "grassland".to_string();
+        g.apply(
+            0,
+            &Action::FoundCity {
+                unit: founding_settler,
+            },
+        )
+        .unwrap();
+        (g, source, target)
+    }
+
+    #[test]
+    fn coastal_empires_research_navigation_before_generic_land_unlocks() {
+        let (mut g, _, _) = island_colony_game(1);
+        g.players[0].research = None;
+        let ai = BasicAi::new();
+        ai.research(&mut g, 0);
+        assert_eq!(g.players[0].research.as_deref(), Some("sailing"));
+    }
+
+    #[test]
+    fn coastal_cities_build_a_melee_ship_for_exploration_and_capture() {
+        let (mut g, _, _) = island_colony_game(1);
+        g.players[0].techs.insert("sailing".to_string());
+        let cid = g.player_city_ids(0)[0];
+        let ai = BasicAi::new();
+        let item = ai
+            .pick_item(&g, 0, cid, 1, 0, 2, 1, 4, 2, 2)
+            .expect("coastal city has a production choice");
+        assert!(matches!(item, Item::Unit { unit } if unit == "galley"));
+    }
+
+    #[test]
+    fn settler_keeps_a_reachable_colony_target_across_water() {
+        let (mut g, source, target) = island_colony_game(1);
+        g.players[0]
+            .techs
+            .extend(["sailing".to_string(), "shipbuilding".to_string()]);
+        let settler = g.spawn_test_unit("settler", 0, source);
+        let mut ai = BasicAi::new();
+
+        assert!(ai.settler_step(&mut g, 0, settler));
+        assert_eq!(ai.settler_targets.get(&settler), Some(&target));
+        assert!(g
+            .map
+            .get(g.units[&settler].pos)
+            .is_some_and(|tile| g.rules.is_water(tile)));
+    }
+
+    #[test]
+    fn naval_escorts_link_to_embarked_settlers() {
+        let (mut g, source, _) = island_colony_game(1);
+        g.players[0]
+            .techs
+            .extend(["sailing".to_string(), "shipbuilding".to_string()]);
+        let water = g
+            .nbrs(source)
+            .into_iter()
+            .find(|pos| g.map.get(*pos).is_some_and(|tile| g.rules.is_water(tile)))
+            .unwrap();
+        let settler = g.spawn_test_unit("settler", 0, water);
+        let galley = g.spawn_test_unit("galley", 0, water);
+        BasicAi::new().prepare_unit_formations(&mut g, 0);
+        assert_eq!(g.units[&galley].linked_to, Some(settler));
+        assert_eq!(g.units[&settler].linked_to, Some(galley));
+    }
+
+    #[test]
+    fn linked_ship_leads_settler_toward_the_persistent_colony_target() {
+        let (mut g, source, target) = island_colony_game(1);
+        g.players[0]
+            .techs
+            .extend(["sailing".to_string(), "shipbuilding".to_string()]);
+        let settler = g.spawn_test_unit("settler", 0, source);
+        let galley = g.spawn_test_unit("galley", 0, source);
+        let mut ai = BasicAi::new();
+        ai.prepare_unit_formations(&mut g, 0);
+
+        assert!(!ai.settler_step(&mut g, 0, settler));
+        assert_eq!(ai.settler_targets.get(&settler), Some(&target));
+        assert!(ai.military_step(&mut g, 0, galley));
+        assert_eq!(g.units[&galley].pos, g.units[&settler].pos);
+        assert!(g
+            .map
+            .get(g.units[&galley].pos)
+            .is_some_and(|tile| g.rules.is_water(tile)));
+    }
+
+    #[test]
+    fn ships_intercept_embarked_enemies_instead_of_chasing_inland_targets() {
+        let (mut g, source, target) = island_colony_game(2);
+        g.at_war.insert((0, 1));
+        let water = g
+            .nbrs(source)
+            .into_iter()
+            .find(|pos| g.map.get(*pos).is_some_and(|tile| g.rules.is_water(tile)))
+            .unwrap();
+        let galley = g.spawn_test_unit("galley", 0, water);
+        let enemy_water = g
+            .nbrs(water)
+            .into_iter()
+            .find(|pos| g.map.get(*pos).is_some_and(|tile| g.rules.is_water(tile)))
+            .unwrap();
+        let embarked = g.spawn_test_unit("settler", 1, enemy_water);
+        g.spawn_test_unit("warrior", 1, target);
+        let ai = BasicAi::new();
+        assert_eq!(
+            ai.nearest_enemy_for_unit(&g, 0, galley, &[1]),
+            Some(g.units[&embarked].pos)
+        );
+    }
 
     #[test]
     fn wounded_units_withdraw_and_finish_recovering_before_rejoining() {
