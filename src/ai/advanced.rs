@@ -1620,6 +1620,70 @@ impl AdvancedAi {
                     return;
                 }
             }
+
+            let best = g
+                .quick_deals(pid)
+                .into_iter()
+                .filter(|deal| Some(deal.partner) != excluded_partner)
+                .filter(|deal| {
+                    deal.category == "great_work"
+                        && deal.direction == "buy"
+                        && deal.my_value >= 2.0
+                        && deal.partner_value >= 2.0
+                })
+                .max_by(|left, right| {
+                    left.my_value
+                        .min(left.partner_value)
+                        .partial_cmp(&right.my_value.min(right.partner_value))
+                        .unwrap()
+                        .then_with(|| right.partner.cmp(&left.partner))
+                        .then_with(|| right.item.cmp(&left.item))
+                });
+            if let Some(deal) = best {
+                if g.apply(
+                    pid,
+                    &Action::Trade {
+                        player: deal.partner,
+                        offer: deal.offer,
+                        request: deal.request,
+                    },
+                )
+                .is_ok()
+                {
+                    return;
+                }
+            }
+
+            // A Culture objective preserves its own Great Works. If neither
+            // the strategically useful Open Borders direction nor a housed
+            // purchase is available, it may still take the best ordinary
+            // mutually beneficial quote.
+            let best = g
+                .quick_deals(pid)
+                .into_iter()
+                .filter(|deal| Some(deal.partner) != excluded_partner)
+                .filter(|deal| {
+                    !(deal.category == "great_work" && deal.direction == "sell")
+                        && deal.my_value >= 2.0
+                        && deal.partner_value >= 2.0
+                })
+                .max_by(|left, right| {
+                    left.my_value
+                        .min(left.partner_value)
+                        .partial_cmp(&right.my_value.min(right.partner_value))
+                        .unwrap()
+                });
+            if let Some(deal) = best {
+                let _ = g.apply(
+                    pid,
+                    &Action::Trade {
+                        player: deal.partner,
+                        offer: deal.offer,
+                        request: deal.request,
+                    },
+                );
+            }
+            return;
         }
         self.base
             .bilateral_trade_excluding(g, pid, excluded_partner);
@@ -6804,6 +6868,83 @@ mod tests {
         assert!(game.has_open_borders(0, 1));
         assert!(!game.has_open_borders(1, 0));
         assert_eq!(game.international_tourism_multiplier(0, 1, false), 1.25);
+    }
+
+    #[test]
+    fn culture_quick_deals_buy_housed_great_works_and_preserve_our_own() {
+        let mut game = Game::new_full(2, 20, 12, 79_005, 200, 0, false);
+        for pid in 0..2 {
+            game.current = pid;
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .unwrap();
+            let city = game.player_city_ids(pid)[0];
+            game.cities
+                .get_mut(&city)
+                .unwrap()
+                .buildings
+                .push("amphitheater".to_string());
+            game.players[pid].gold = 1_000.0;
+        }
+        game.current = 0;
+        game.players[1]
+            .counters
+            .insert("great_work:writing".to_string(), 2);
+        game.turn = 6;
+
+        AdvancedAi::targeting(VictoryTarget::Culture).strategic_bilateral_trade(
+            &mut game,
+            0,
+            None,
+            GrandStrategy::Expansion,
+        );
+        assert_eq!(game.players[0].counters["great_work:writing"], 1);
+        assert_eq!(game.players[1].counters["great_work:writing"], 1);
+
+        let mut preserve = Game::new_full(2, 20, 12, 79_006, 200, 0, false);
+        for pid in 0..2 {
+            preserve.current = pid;
+            let settler = preserve
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| preserve.units[unit].kind == "settler")
+                .unwrap();
+            preserve
+                .apply(pid, &Action::FoundCity { unit: settler })
+                .unwrap();
+            let city = preserve.player_city_ids(pid)[0];
+            preserve
+                .cities
+                .get_mut(&city)
+                .unwrap()
+                .buildings
+                .push("amphitheater".to_string());
+            preserve.players[pid].gold = 1_000.0;
+        }
+        preserve.current = 0;
+        preserve.players[0]
+            .counters
+            .insert("great_work:writing".to_string(), 2);
+        preserve.turn = 6;
+        AdvancedAi::targeting(VictoryTarget::Culture).strategic_bilateral_trade(
+            &mut preserve,
+            0,
+            None,
+            GrandStrategy::Expansion,
+        );
+        assert_eq!(preserve.players[0].counters["great_work:writing"], 2);
+        assert_eq!(
+            preserve.players[1]
+                .counters
+                .get("great_work:writing")
+                .copied()
+                .unwrap_or(0),
+            0
+        );
     }
 
     #[test]
