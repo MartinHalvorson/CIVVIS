@@ -98,6 +98,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool) -> Value {
     json!({
         "turn": g.turn,
         "seed": g.seed,
+        "world_era": g.world_era,
         "player": pid,
         "current": g.current,
         "map": {"width": g.map.width, "height": g.map.height, "tiles": tiles},
@@ -120,6 +121,9 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool) -> Value {
             "trade_capacity": g.trade_capacity(pid),
             "gpp": p.gpp,
             "gp_claimed": p.gp_claimed,
+            "era_score": p.era_score,
+            "age": p.age,
+            "tourism": round1(p.tourism_lifetime),
             "pantheon": p.pantheon,
             "religion": p.religion,
             "religion_beliefs": p.religion_beliefs,

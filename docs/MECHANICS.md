@@ -4,7 +4,7 @@ Tracked against the [Civilization Wiki](https://civilization.fandom.com/wiki/Civ
 Status: ✅ implemented · 🟡 simplified · ❌ not yet.
 
 > **In progress** (claimed by parallel sessions — check before starting a batch):
-> - Session B: eras/era score/golden ages + culture victory (tourism). NOT touching web/index.html.
+> - (none currently claimed by session B; GUI panels for religion/GP/trade/eras are open)
 
 | System | Status | Notes |
 |---|---|---|
@@ -30,8 +30,8 @@ Status: ✅ implemented · 🟡 simplified · ❌ not yet.
 | Zone of control | ✅ | melee exerts (same domain, not over river banks), cities/encampments exert all-adjacent, cavalry ignores, civilians drop all MP |
 | Movement: MP paid up front, min-1-tile, river +2 MP | ✅ | river surcharge on entering channel tile (tile-model 🟡) |
 | Formations/corps, support units | ❌ | |
-| Victory: domination, science, score, religious | ✅ | religious = majority in >half of every civ's cities; culture/diplomatic ❌ |
-| Eras, era score, golden ages | ❌ | |
+| Victory: domination, science, score, religious, culture | ✅ | culture = tourism (wonders + 15% of culture/turn) attracting more foreign tourists than any rival's domestic (🟡 simplified); diplomatic ❌ (needs world congress) |
+| Eras, era score, golden/dark ages | 🟡 | world era from leader's tech+civic count; era score from wonders/GPs/camps/captures/religion/pantheon; golden +10% / dark -5% yields on transition (R&F-style, simplified thresholds) |
 
 Next batch: policy cards + government slots, trade routes, great people,
 city-state envoys, culture victory.

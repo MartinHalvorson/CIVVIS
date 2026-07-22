@@ -143,6 +143,10 @@ fn wall_unset() -> i32 {
     -1
 }
 
+fn normal_age() -> String {
+    "normal".to_string()
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Player {
     pub id: usize,
@@ -182,6 +186,14 @@ pub struct Player {
     pub religion_beliefs: Vec<String>,
     #[serde(default)]
     pub prophet_pending: bool,
+    #[serde(default)]
+    pub era_score: i64,
+    #[serde(default = "normal_age")]
+    pub age: String,
+    #[serde(default)]
+    pub culture_lifetime: f64,
+    #[serde(default)]
+    pub tourism_lifetime: f64,
     #[serde(default)]
     pub envoys: Vec<(usize, i64)>, // (city-state pid, envoys placed)
     #[serde(default)]
@@ -223,6 +235,10 @@ impl Player {
             religion: None,
             religion_beliefs: Vec::new(),
             prophet_pending: false,
+            era_score: 0,
+            age: "normal".to_string(),
+            culture_lifetime: 0.0,
+            tourism_lifetime: 0.0,
             envoys: Vec::new(),
             counters: BTreeMap::new(),
             boosted_techs: BTreeSet::new(),
@@ -287,6 +303,7 @@ pub struct Game {
     pub barb_pid: Option<usize>,
     pub barb_camps: BTreeMap<Pos, u32>,
     pub routes: Vec<TradeRoute>,
+    pub world_era: usize,
     occ: BTreeMap<Pos, Vec<u32>>,
     city_by_pos: BTreeMap<Pos, u32>,
 }
@@ -316,6 +333,8 @@ struct GameSer {
     barb_camps: Vec<(Pos, u32)>,
     #[serde(default)]
     routes: Vec<TradeRoute>,
+    #[serde(default)]
+    world_era: usize,
     map: WorldMap,
     players: Vec<Player>,
     units: Vec<Unit>,
@@ -342,6 +361,7 @@ impl From<GameSer> for Game {
             barb_pid: s.barb_pid,
             barb_camps: s.barb_camps.into_iter().collect(),
             routes: s.routes,
+            world_era: s.world_era,
             occ: BTreeMap::new(),
             city_by_pos: BTreeMap::new(),
         };
@@ -376,6 +396,7 @@ impl From<Game> for GameSer {
             barb_pid: g.barb_pid,
             barb_camps: g.barb_camps.into_iter().collect(),
             routes: g.routes,
+            world_era: g.world_era,
             map: g.map,
             players: g.players,
             units: g.units.into_values().collect(),
@@ -416,6 +437,7 @@ impl Game {
             barb_pid: None,
             barb_camps: BTreeMap::new(),
             routes: Vec::new(),
+            world_era: 0,
             occ: BTreeMap::new(),
             city_by_pos: BTreeMap::new(),
         };
@@ -530,6 +552,7 @@ impl Game {
                 t.improvement = None;
             }
             self.players[owner].gold += 50.0;
+            self.players[owner].era_score += 1;
             bump(&mut self.players[owner], "camps");
         }
     }
@@ -758,6 +781,7 @@ impl Game {
             return Err("belief already taken".into());
         }
         self.players[pid].pantheon = Some(belief.to_string());
+        self.players[pid].era_score += 1;
         Ok(())
     }
 
@@ -783,6 +807,7 @@ impl Game {
         let p = &mut self.players[pid];
         p.prophet_pending = false;
         p.religion = Some(name.clone());
+        p.era_score += 3;
         p.religion_beliefs = vec![follower.to_string(), founder.to_string()];
         self.cities.get_mut(&holy).unwrap().pressure.insert(name, 1000.0);
         Ok(())
@@ -959,6 +984,7 @@ impl Game {
             let p = &mut self.players[pid];
             *p.gpp.get_mut(&t).unwrap() -= cost;
             *p.gp_claimed.entry(t.clone()).or_insert(0) += 1;
+            p.era_score += 2;
             bump(p, "great_people");
             self.great_person_effect(pid, &t);
         }
@@ -2016,7 +2042,12 @@ impl Game {
         ys.production *= 1.0 + eff.production_pct / 100.0;
         ys.science *= 1.0 + eff.science_pct / 100.0;
         ys.gold *= 1.0 + eff.gold_pct / 100.0;
-        let m = self.amenity_yield_mult(city);
+        let mut m = self.amenity_yield_mult(city);
+        m *= match self.players[city.owner].age.as_str() {
+            "golden" => 1.10,
+            "dark" => 0.95,
+            _ => 1.0,
+        };
         ys.production *= m;
         ys.gold *= m;
         ys.science *= m;
@@ -3098,6 +3129,65 @@ impl Game {
         Ok(())
     }
 
+    // -------------------------------------------------- eras & tourism
+
+    /// World era from the most advanced civ's tech+civic count.
+    fn era_from_progress(&self) -> usize {
+        let best = self.players.iter()
+            .filter(|p| !p.is_minor)
+            .map(|p| p.techs.len() + p.civics.len())
+            .max().unwrap_or(0);
+        match best {
+            0..=11 => 0,  // ancient
+            12..=21 => 1, // classical
+            22..=31 => 2, // medieval
+            _ => 3,       // renaissance
+        }
+    }
+
+    /// On a world-era transition, era score decides each major's age
+    /// (R&F-style): golden = +10% yields, dark = -5%; score then resets.
+    fn process_eras(&mut self) {
+        let era = self.era_from_progress();
+        if era <= self.world_era {
+            return;
+        }
+        let need = 12 + 4 * self.world_era as i64;
+        self.world_era = era;
+        for p in self.players.iter_mut().filter(|p| !p.is_minor) {
+            p.age = if p.era_score >= need {
+                "golden".to_string()
+            } else if p.era_score * 2 < need {
+                "dark".to_string()
+            } else {
+                "normal".to_string()
+            };
+            p.era_score = 0;
+        }
+    }
+
+    /// Culture victory: your accumulated tourism attracts more foreign
+    /// tourists than any rival keeps domestic ones (Civ 6 simplified).
+    fn check_culture_victory(&mut self) {
+        if self.winner.is_some() {
+            return;
+        }
+        let stats: Vec<(usize, f64, f64)> = self.players.iter()
+            .filter(|p| p.alive && !p.is_minor)
+            .map(|p| (p.id, p.tourism_lifetime / 200.0,
+                      p.culture_lifetime / 100.0 + 1.0))
+            .collect();
+        if stats.len() < 2 {
+            return;
+        }
+        for (pid, foreign, _) in &stats {
+            if stats.iter().all(|(oid, _, dom)| oid == pid || foreign > dom) {
+                self.set_winner(*pid, "culture");
+                return;
+            }
+        }
+    }
+
     fn do_end_turn(&mut self) {
         let n = self.players.len();
         let mut nxt = None;
@@ -3117,6 +3207,8 @@ impl Game {
         if wrapped {
             self.turn += 1;
             self.barbarian_phase();
+            self.process_eras();
+            self.check_culture_victory();
             if self.turn > self.max_turns && self.winner.is_none() {
                 let mut best: Option<(i64, i64)> = None; // (score, -pid)
                 let mut best_pid = 0;
@@ -3201,6 +3293,16 @@ impl Game {
             cul += ys.culture;
             gold += ys.gold;
             faith += ys.faith;
+        }
+        if !self.players[pid].is_minor {
+            let wonders = self.cities.values()
+                .filter(|c| c.owner == pid)
+                .flat_map(|c| c.buildings.iter())
+                .filter(|b| self.rules.buildings[b.as_str()].wonder)
+                .count() as f64;
+            let p = &mut self.players[pid];
+            p.culture_lifetime += cul;
+            p.tourism_lifetime += 2.0 * wonders + 0.15 * cul;
         }
         if let Some(r) = self.players[pid].religion.clone() {
             let following = self.cities.values()
@@ -3446,6 +3548,9 @@ impl Game {
                 if building == "walls" || building == "medieval_walls" {
                     self.cities.get_mut(&cid).unwrap().wall_hp += 50;
                 }
+                if spec.wonder {
+                    self.players[pid].era_score += 3;
+                }
                 if spec.unit_levels > 0 {
                     for uid in self.player_unit_ids(pid) {
                         let mil = self.rules.units[self.units[&uid].kind.as_str()]
@@ -3562,6 +3667,7 @@ impl Game {
             }
         }
         bump(&mut self.players[new_owner], "captures");
+        self.players[new_owner].era_score += 2;
         self.routes.retain(|r| r.origin != cid && r.dest != cid);
         self.check_elimination(old);
         self.check_domination();

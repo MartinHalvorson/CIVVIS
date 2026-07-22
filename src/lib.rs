@@ -468,6 +468,37 @@ mod tests {
     }
 
     #[test]
+    fn eras_and_culture_victory() {
+        let mut g = Game::new_full(2, 20, 14, 5, 300, 0, false);
+        assert_eq!(g.world_era, 0);
+        // push the leader past the classical threshold with a big era score
+        for t in ["pottery", "mining", "sailing", "astrology", "irrigation",
+                  "archery", "writing", "masonry", "bronze_working",
+                  "animal_husbandry", "horseback_riding"] {
+            g.players[0].techs.insert(t.to_string());
+        }
+        g.players[0].era_score = 20;
+        g.players[1].era_score = 0;
+        let round = |g: &mut Game| {
+            g.apply(0, &Action::EndTurn).unwrap();
+            while g.current != 0 {
+                let cur = g.current;
+                g.apply(cur, &Action::EndTurn).unwrap();
+            }
+        };
+        round(&mut g);
+        assert_eq!(g.world_era, 1);
+        assert_eq!(g.players[0].age, "golden");
+        assert_eq!(g.players[1].age, "dark");
+        assert_eq!(g.players[0].era_score, 0);
+        // culture victory: overwhelming accumulated tourism wins at wrap
+        g.players[0].tourism_lifetime = 100000.0;
+        round(&mut g);
+        assert_eq!(g.winner, Some(0));
+        assert_eq!(g.victory_type.as_deref(), Some("culture"));
+    }
+
+    #[test]
     fn serialization_roundtrip() {
         let mut g = Game::new(2, 18, 12, 4, 25, 1);
         let mut ais = BasicAi::fleet(&g);
