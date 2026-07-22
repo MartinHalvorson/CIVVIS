@@ -259,6 +259,7 @@ fn handle(stream: &mut TcpStream, session: &mut Session) {
                     "governments": r.governments, "units": r.units,
                     "promotions": r.promotions,
                     "buildings": r.buildings, "districts": r.districts,
+                    "wonders": r.wonders,
                     "projects": r.projects,
                     "policies": r.policies, "beliefs": r.beliefs, "civs": r.civs,
                     "map_sizes": CIV6_MAP_SIZES,

@@ -3,7 +3,7 @@
 //! `BasicAi` deliberately remains the small deterministic baseline.  This
 //! agent adds a shared strategic model so research, production, diplomacy,
 //! civilian work, and military movement pursue the same medium-term goal.
-use super::{Ai, BasicAi, Weights};
+use super::{Ai, BasicAi, UnitDoctrine, Weights};
 use crate::game::{Action, Game, Item};
 use crate::rules::Yields;
 use crate::Pos;
@@ -112,10 +112,13 @@ pub enum ForcePosture {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ForceRole {
+    Recon,
     Vanguard,
+    Mobile,
     Ranged,
     Siege,
     Support,
+    AirStrike,
 }
 
 /// A deterministic, inspectable order shared by a group of nearby units.
@@ -618,25 +621,170 @@ impl AdvancedAi {
 
     fn advanced_research(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         if g.players[pid].research.is_none() {
-            let pick = g.available_techs(pid).into_iter().max_by(|a, b| {
-                self.tech_value(g, pid, a, plan.strategy)
-                    .partial_cmp(&self.tech_value(g, pid, b, plan.strategy))
-                    .unwrap()
-                    .then_with(|| b.cmp(a))
+            let available = g.available_techs(pid);
+            let forced_goal = match self.victory_target {
+                Some(VictoryTarget::Science) => [
+                    "rocketry",
+                    "satellites",
+                    "nanotechnology",
+                    "smart_materials",
+                    "offworld_mission",
+                ]
+                .into_iter()
+                .find(|tech| !g.players[pid].techs.contains(*tech)),
+                Some(VictoryTarget::Culture) => ["printing", "radio", "computers"]
+                    .into_iter()
+                    .find(|tech| !g.players[pid].techs.contains(*tech)),
+                Some(VictoryTarget::Religion) if !g.players[pid].techs.contains("astrology") => {
+                    Some("astrology")
+                }
+                _ => None,
+            };
+            let goal_pick = forced_goal.and_then(|goal| {
+                available
+                    .iter()
+                    .filter(|tech| self.tech_leads_to(g, tech, goal))
+                    .min_by(|a, b| {
+                        g.rules.techs[*a]
+                            .cost
+                            .partial_cmp(&g.rules.techs[*b].cost)
+                            .unwrap()
+                            .then(a.cmp(b))
+                    })
+                    .cloned()
+            });
+            let pick = goal_pick.or_else(|| {
+                available.into_iter().max_by(|a, b| {
+                    self.tech_value(g, pid, a, plan.strategy)
+                        .partial_cmp(&self.tech_value(g, pid, b, plan.strategy))
+                        .unwrap()
+                        .then_with(|| b.cmp(a))
+                })
             });
             if let Some(tech) = pick {
                 let _ = g.apply(pid, &Action::Research { tech });
             }
         }
         if g.players[pid].civic.is_none() {
-            let pick = g.available_civics(pid).into_iter().max_by(|a, b| {
-                self.civic_value(g, pid, a, plan.strategy)
-                    .partial_cmp(&self.civic_value(g, pid, b, plan.strategy))
-                    .unwrap()
-                    .then_with(|| b.cmp(a))
+            let available = g.available_civics(pid);
+            let forced_goal = match self.victory_target {
+                Some(VictoryTarget::Culture) => [
+                    "humanism",
+                    "cultural_heritage",
+                    "space_race",
+                    "environmentalism",
+                    "social_media",
+                ]
+                .into_iter()
+                .find(|civic| !g.players[pid].civics.contains(*civic)),
+                Some(VictoryTarget::Science) if !g.players[pid].civics.contains("space_race") => {
+                    Some("space_race")
+                }
+                Some(VictoryTarget::Religion) if !g.players[pid].civics.contains("theology") => {
+                    Some("theology")
+                }
+                _ => None,
+            };
+            let goal_pick = forced_goal.and_then(|goal| {
+                available
+                    .iter()
+                    .filter(|civic| self.civic_leads_to(g, civic, goal))
+                    .min_by(|a, b| {
+                        g.rules.civics[*a]
+                            .cost
+                            .partial_cmp(&g.rules.civics[*b].cost)
+                            .unwrap()
+                            .then(a.cmp(b))
+                    })
+                    .cloned()
+            });
+            let pick = goal_pick.or_else(|| {
+                available.into_iter().max_by(|a, b| {
+                    self.civic_value(g, pid, a, plan.strategy)
+                        .partial_cmp(&self.civic_value(g, pid, b, plan.strategy))
+                        .unwrap()
+                        .then_with(|| b.cmp(a))
+                })
             });
             if let Some(civic) = pick {
                 let _ = g.apply(pid, &Action::Civic { civic });
+            }
+        }
+    }
+
+    fn tech_leads_to(&self, g: &Game, candidate: &str, target: &str) -> bool {
+        candidate == target
+            || g.rules.techs.get(target).is_some_and(|spec| {
+                spec.requires
+                    .iter()
+                    .any(|parent| self.tech_leads_to(g, candidate, parent))
+            })
+    }
+
+    fn civic_leads_to(&self, g: &Game, candidate: &str, target: &str) -> bool {
+        candidate == target
+            || g.rules.civics.get(target).is_some_and(|spec| {
+                spec.requires
+                    .iter()
+                    .any(|parent| self.civic_leads_to(g, candidate, parent))
+            })
+    }
+
+    /// Replace generic early cards with the late-game cards that directly
+    /// advance an explicitly selected victory. Typed cards preferentially
+    /// replace cards of their own type so wildcard capacity remains useful.
+    fn strategic_policies(&self, g: &mut Game, pid: usize) {
+        let desired: &[&str] = match self.victory_target {
+            Some(VictoryTarget::Culture) => &[
+                "heritage_tourism",
+                "satellite_broadcasts",
+                "online_communities",
+            ],
+            Some(VictoryTarget::Science) => &["integrated_space_cell"],
+            _ => return,
+        };
+        for card in desired {
+            if g.players[pid].policies.contains(*card)
+                || !g
+                    .available_policies(pid)
+                    .iter()
+                    .any(|available| available == card)
+            {
+                continue;
+            }
+            if g.apply(
+                pid,
+                &Action::SlotPolicy {
+                    policy: (*card).to_string(),
+                },
+            )
+            .is_ok()
+            {
+                continue;
+            }
+
+            let slot = g.rules.policies[*card].slot.clone();
+            let mut replaceable: Vec<String> = g.players[pid]
+                .policies
+                .iter()
+                .filter(|current| !desired.contains(&current.as_str()))
+                .cloned()
+                .collect();
+            replaceable.sort_by_key(|current| {
+                usize::from(g.rules.policies[current.as_str()].slot != slot)
+            });
+            for current in replaceable {
+                let _ = g.apply(pid, &Action::UnslotPolicy { policy: current });
+                if g.apply(
+                    pid,
+                    &Action::SlotPolicy {
+                        policy: (*card).to_string(),
+                    },
+                )
+                .is_ok()
+                {
+                    break;
+                }
             }
         }
     }
@@ -714,6 +862,38 @@ impl AdvancedAi {
         }
         if strategy == GrandStrategy::Religion && tech == "astrology" {
             value += 95.0;
+        }
+        if strategy == GrandStrategy::Science {
+            let milestone = if !g.players[pid]
+                .science_projects
+                .contains("launch_earth_satellite")
+            {
+                "rocketry"
+            } else if !g.players[pid]
+                .science_projects
+                .contains("launch_moon_landing")
+            {
+                "satellites"
+            } else if !g.players[pid]
+                .science_projects
+                .contains("launch_mars_colony")
+            {
+                "nanotechnology"
+            } else if !g.players[pid]
+                .science_projects
+                .contains("exoplanet_expedition")
+            {
+                "smart_materials"
+            } else {
+                "offworld_mission"
+            };
+            if self.tech_leads_to(g, tech, milestone) {
+                value += if self.victory_target == Some(VictoryTarget::Science) {
+                    900.0
+                } else {
+                    260.0
+                };
+            }
         }
         // One-step lookahead prevents cheap prerequisites from being ignored.
         for (future, child) in &g.rules.techs {
@@ -1057,6 +1237,109 @@ impl AdvancedAi {
         }
     }
 
+    fn science_production(&self, g: &mut Game, pid: usize) {
+        let completed = &g.players[pid].science_projects;
+        let project = if !completed.contains("launch_earth_satellite") {
+            "launch_earth_satellite"
+        } else if !completed.contains("launch_moon_landing") {
+            "launch_moon_landing"
+        } else if !completed.contains("launch_mars_colony") {
+            "launch_mars_colony"
+        } else if !completed.contains("exoplanet_expedition") {
+            "exoplanet_expedition"
+        } else {
+            "lagrange_laser_station"
+        };
+        let project_item = Item::Project {
+            project: project.to_string(),
+        };
+        let already_queued = g.player_city_ids(pid).iter().any(|cid| {
+            matches!(
+                g.cities[cid].queue.first(),
+                Some(Item::Project { project: queued }) if queued == project
+            )
+        });
+        if !already_queued {
+            let project_city = g
+                .player_city_ids(pid)
+                .into_iter()
+                .filter(|cid| {
+                    g.cities[cid].districts.contains_key("spaceport")
+                        && g.can_produce(pid, *cid, &project_item)
+                        && (self.victory_target == Some(VictoryTarget::Science)
+                            || g.cities[cid].queue.is_empty())
+                })
+                .max_by(|a, b| {
+                    g.city_yields(*a)
+                        .production
+                        .partial_cmp(&g.city_yields(*b).production)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        .then_with(|| b.cmp(a))
+                });
+            if let Some(city) = project_city {
+                let _ = g.apply(
+                    pid,
+                    &Action::Produce {
+                        city,
+                        item: project_item,
+                    },
+                );
+                return;
+            }
+        }
+
+        let has_spaceport = g
+            .player_city_ids(pid)
+            .iter()
+            .any(|cid| g.cities[cid].districts.contains_key("spaceport"));
+        let spaceport_queued = g.player_city_ids(pid).iter().any(|cid| {
+            matches!(
+                g.cities[cid].queue.first(),
+                Some(Item::District { district, .. }) if district == "spaceport"
+            )
+        });
+        if has_spaceport || spaceport_queued {
+            return;
+        }
+        let mut best: Option<(f64, u32, Pos)> = None;
+        for cid in g.player_city_ids(pid) {
+            if self.victory_target != Some(VictoryTarget::Science)
+                && !g.cities[&cid].queue.is_empty()
+            {
+                continue;
+            }
+            for item in g.producible_items(pid, cid) {
+                let Item::District { district, pos } = item else {
+                    continue;
+                };
+                if district != "spaceport" {
+                    continue;
+                }
+                let production = g.city_yields(cid).production;
+                if best
+                    .map(|old| {
+                        production > old.0 || (production == old.0 && (cid, pos) < (old.1, old.2))
+                    })
+                    .unwrap_or(true)
+                {
+                    best = Some((production, cid, pos));
+                }
+            }
+        }
+        if let Some((_, city, pos)) = best {
+            let _ = g.apply(
+                pid,
+                &Action::Produce {
+                    city,
+                    item: Item::District {
+                        district: "spaceport".to_string(),
+                        pos,
+                    },
+                },
+            );
+        }
+    }
+
     #[allow(dead_code)]
     fn advanced_production(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         let mut counts = self.counts(g, pid);
@@ -1067,6 +1350,21 @@ impl AdvancedAi {
             }
             let mut best: Option<(f64, String, Item)> = None;
             for item in g.producible_items(pid, cid) {
+                if let Item::Project { project } = &item {
+                    let spec = &g.rules.projects[project];
+                    let already_queued_elsewhere = !spec.repeatable
+                        && g.cities.values().any(|city| {
+                            city.owner == pid
+                                && city.id != cid
+                                && matches!(
+                                    city.queue.first(),
+                                    Some(Item::Project { project: queued }) if queued == project
+                                )
+                        });
+                    if already_queued_elsewhere {
+                        continue;
+                    }
+                }
                 let score = self.production_value(g, pid, cid, &item, plan, &counts);
                 let key = format!("{item:?}");
                 let replace = best
@@ -1160,6 +1458,13 @@ impl AdvancedAi {
             Item::Unit { unit } => {
                 let spec = &g.rules.units[unit];
                 if spec.class == "military" {
+                    if self.victory_target.is_some()
+                        && self.victory_target != Some(VictoryTarget::Domination)
+                        && counts.military >= desired_military
+                        && !threatened
+                    {
+                        return -2_000.0;
+                    }
                     if unit == "scout" && counts.scouts >= 1 {
                         return -2_000.0;
                     }
@@ -1246,9 +1551,18 @@ impl AdvancedAi {
                 } else {
                     let housing_need = (city.pop as f64 + 1.0 - g.city_housing(city)).max(0.0);
                     let amenity_need = (-g.city_amenity_surplus(city)).max(0) as f64;
+                    let great_work_slots =
+                        spec.great_work_slots.values().sum::<i32>().max(0) as f64;
                     self.yield_value(spec.yields, plan.strategy) * 42.0
                         + spec.housing * (22.0 + housing_need * 18.0)
                         + spec.amenity * (30.0 + amenity_need * 22.0)
+                        + great_work_slots
+                            * if plan.strategy == GrandStrategy::Culture {
+                                180.0
+                            } else {
+                                25.0
+                            }
+                        + spec.effects.get("tourism").copied().unwrap_or(0.0) * 80.0
                         + if building == "monument" && g.turn < 120 {
                             240.0
                         } else {
@@ -1293,6 +1607,8 @@ impl AdvancedAi {
                     + spec.amenity * 50.0
                     + balanced_core
                     + match (plan.strategy, district.as_str()) {
+                        (GrandStrategy::Science, "spaceport") if district_count == 0 => 3_000.0,
+                        (GrandStrategy::Science, "spaceport") => 250.0,
                         (GrandStrategy::Science, "campus") => 170.0,
                         (GrandStrategy::Culture, "theater_square") => 170.0,
                         (GrandStrategy::Religion, "holy_site") => 210.0,
@@ -1303,6 +1619,47 @@ impl AdvancedAi {
                         (GrandStrategy::Expansion, "commercial_hub") => 90.0,
                         _ => 0.0,
                     }
+            }
+            Item::Repair { repair, .. } => {
+                if repair == "district" {
+                    1_500.0 + if threatened { 300.0 } else { 0.0 }
+                } else {
+                    1_050.0 + if threatened { 180.0 } else { 0.0 }
+                }
+            }
+            Item::Wonder { wonder, .. } => {
+                let spec = &g.rules.wonders[wonder];
+                let wonder_civ = matches!(g.players[pid].civ.as_str(), "Egypt" | "China");
+                let already_queued = g.cities.values().any(|other| {
+                    matches!(
+                        other.queue.first(),
+                        Some(Item::Wonder { wonder: queued, .. }) if queued == wonder
+                    )
+                });
+                if already_queued
+                    || threatened
+                    || city.buildings.len() < 2
+                    || turns > remaining_turns * 0.65
+                    || (plan.strategy != GrandStrategy::Culture
+                        && self.victory_target != Some(VictoryTarget::Score)
+                        && !wonder_civ)
+                {
+                    -10_000.0
+                } else {
+                    self.yield_value(spec.yields, plan.strategy) * 45.0
+                        + spec.housing * 30.0
+                        + spec.amenity * 50.0
+                        + spec.great_work_slots.values().sum::<i32>() as f64 * 40.0
+                        + spec.great_person_points.values().sum::<f64>() * 18.0
+                        + if plan.strategy == GrandStrategy::Culture {
+                            320.0
+                        } else if self.victory_target == Some(VictoryTarget::Score) {
+                            180.0
+                        } else {
+                            0.0
+                        }
+                        + if wonder_civ { 120.0 } else { 0.0 }
+                }
             }
             Item::Project { project } => {
                 let spec = &g.rules.projects[project];
@@ -1525,6 +1882,14 @@ impl AdvancedAi {
         uid: u32,
         strategy: GrandStrategy,
     ) -> bool {
+        if let Some(action) = g
+            .legal_actions(pid)
+            .into_iter()
+            .find(|action| matches!(action, Action::RepairImprovement { unit } if *unit == uid))
+        {
+            self.builder_targets.remove(&uid);
+            return g.apply(pid, &action).is_ok();
+        }
         let current = g.units[&uid].pos;
         let mut here = g.valid_improvements(pid, current);
         here.sort_by(|a, b| {
@@ -1751,15 +2116,14 @@ impl AdvancedAi {
     }
 
     fn force_role(g: &Game, uid: u32) -> ForceRole {
-        let spec = &g.rules.units[g.units[&uid].kind.as_str()];
-        if spec.class == "support" {
-            ForceRole::Support
-        } else if spec.siege {
-            ForceRole::Siege
-        } else if spec.has_ranged_attack() {
-            ForceRole::Ranged
-        } else {
-            ForceRole::Vanguard
+        match BasicAi::unit_doctrine(g, uid) {
+            UnitDoctrine::Recon => ForceRole::Recon,
+            UnitDoctrine::Assault => ForceRole::Vanguard,
+            UnitDoctrine::Mobile => ForceRole::Mobile,
+            UnitDoctrine::Ranged => ForceRole::Ranged,
+            UnitDoctrine::Siege => ForceRole::Siege,
+            UnitDoctrine::Support | UnitDoctrine::Carrier => ForceRole::Support,
+            UnitDoctrine::AirDefense | UnitDoctrine::AirStrike => ForceRole::AirStrike,
         }
     }
 
@@ -1949,7 +2313,13 @@ impl AdvancedAi {
         let enemies: Vec<usize> = g
             .players
             .iter()
-            .filter(|player| player.id != pid && player.alive && g.is_at_war(pid, player.id))
+            .filter(|player| {
+                player.id != pid
+                    && player.alive
+                    && !player.is_minor
+                    && !player.is_barbarian
+                    && g.is_at_war(pid, player.id)
+            })
             .map(|player| player.id)
             .collect();
         if enemies.is_empty() {
@@ -1960,10 +2330,13 @@ impl AdvancedAi {
             .player_unit_ids(pid)
             .into_iter()
             .filter(|uid| {
-                matches!(
+                let field_unit = matches!(
                     g.rules.units[g.units[uid].kind.as_str()].class.as_str(),
                     "military" | "support"
-                )
+                );
+                field_unit
+                    && !(BasicAi::unit_doctrine(g, *uid) == UnitDoctrine::Recon
+                        && self.base.has_exploration_target(g, pid, *uid))
             })
             .collect();
         let command_radius = self.base.w.command_radius.round().max(1.0) as i32;
@@ -2057,9 +2430,11 @@ impl AdvancedAi {
             _ => group.objective,
         };
         let preferred_depth = match role {
-            ForceRole::Vanguard => 1,
+            ForceRole::Recon => spec.range.max(2),
+            ForceRole::Vanguard | ForceRole::Mobile => 1,
             ForceRole::Ranged | ForceRole::Siege => spec.range.max(1),
             ForceRole::Support => 2,
+            ForceRole::AirStrike => spec.range.max(3),
         };
         let vanguard_depth = group
             .units
@@ -2067,13 +2442,25 @@ impl AdvancedAi {
             .filter(|other| {
                 **other != uid
                     && g.units.contains_key(other)
-                    && Self::force_role(g, **other) == ForceRole::Vanguard
+                    && matches!(
+                        Self::force_role(g, **other),
+                        ForceRole::Vanguard | ForceRole::Mobile
+                    )
             })
             .map(|other| g.wdist(g.units[other].pos, target))
             .min();
         let score = |g: &Game, tile: Pos| -> f64 {
             let objective_distance = g.wdist(tile, target);
-            let mut value = -self.base.w.objective_progress * objective_distance as f64;
+            let (progress, cohesion, threat_caution) = match role {
+                ForceRole::Recon => (0.55, 0.40, 1.35),
+                ForceRole::Vanguard => (1.15, 1.00, 1.00),
+                ForceRole::Mobile => (1.40, 0.65, 0.80),
+                ForceRole::Ranged => (0.90, 1.10, 1.15),
+                ForceRole::Siege => (0.80, 1.30, 1.25),
+                ForceRole::Support => (0.65, 1.50, 1.40),
+                ForceRole::AirStrike => (1.20, 0.20, 0.75),
+            };
+            let mut value = -self.base.w.objective_progress * progress * objective_distance as f64;
             let nearest_friend = group
                 .units
                 .iter()
@@ -2081,7 +2468,7 @@ impl AdvancedAi {
                 .map(|other| g.wdist(tile, g.units[other].pos))
                 .min();
             if let Some(distance) = nearest_friend {
-                value -= self.base.w.cohesion * (distance - 2).max(0) as f64;
+                value -= self.base.w.cohesion * cohesion * (distance - 2).max(0) as f64;
                 if distance == 1 {
                     value += self.base.w.mv_support;
                 }
@@ -2105,13 +2492,19 @@ impl AdvancedAi {
                         crate::game::effective_strength(g.unit_strength(enemy, false), enemy.hp);
                     let defense =
                         crate::game::effective_strength(g.unit_strength(unit, true), unit.hp);
-                    value -= self.base.w.mv_threat * 30.0 * ((attack - defense) / 25.0).exp();
+                    value -= self.base.w.mv_threat
+                        * threat_caution
+                        * 30.0
+                        * ((attack - defense) / 25.0).exp();
                 }
             }
             if g.wdist(tile, target) <= 5 {
                 value -= self.base.w.role_spacing
                     * (g.wdist(tile, target) - preferred_depth).abs() as f64;
-                if matches!(role, ForceRole::Ranged | ForceRole::Siege) {
+                if matches!(
+                    role,
+                    ForceRole::Recon | ForceRole::Ranged | ForceRole::Siege | ForceRole::AirStrike
+                ) {
                     if let Some(front_depth) = vanguard_depth {
                         value -= self.base.w.screen
                             * (front_depth - g.wdist(tile, target)).max(0) as f64;
@@ -2144,7 +2537,10 @@ impl AdvancedAi {
             }
         }
 
-        let stop_range = if matches!(role, ForceRole::Ranged | ForceRole::Siege) {
+        let stop_range = if matches!(
+            role,
+            ForceRole::Recon | ForceRole::Ranged | ForceRole::Siege | ForceRole::AirStrike
+        ) {
             preferred_depth
         } else {
             1
@@ -2171,6 +2567,7 @@ impl AdvancedAi {
     ) -> bool {
         let unit = g.units[&uid].clone();
         let spec = g.rules.units[unit.kind.as_str()].clone();
+        let doctrine = BasicAi::unit_doctrine(g, uid);
         if self.victory_planning && spec.class == "military" {
             if let Some(target_unit) = g.units_at(unit.pos).into_iter().find(|target| {
                 let target = &g.units[target];
@@ -2199,10 +2596,18 @@ impl AdvancedAi {
                 return acted;
             }
         }
+        if let Some(action) = self.base.doctrine_action(g, pid, uid) {
+            return g.apply(pid, &action).is_ok();
+        }
+        if matches!(doctrine, UnitDoctrine::AirDefense | UnitDoctrine::AirStrike) {
+            return false;
+        }
         let enemies: Vec<usize> = g
             .players
             .iter()
-            .filter(|p| p.id != pid && p.alive && g.is_at_war(pid, p.id))
+            .filter(|p| {
+                p.id != pid && p.alive && !p.is_minor && !p.is_barbarian && g.is_at_war(pid, p.id)
+            })
             .map(|p| p.id)
             .collect();
         if enemies.is_empty() {
@@ -2240,7 +2645,8 @@ impl AdvancedAi {
             if unusable_settler && g.city_at(pos).is_none() {
                 continue;
             }
-            let mut score = self.base.exchange_score(g, uid, pos, ranged);
+            let mut score = self.base.exchange_score(g, uid, pos, ranged)
+                - self.base.attack_threshold(g, uid, pos);
             if plan
                 .target_city
                 .is_some_and(|cid| g.cities.get(&cid).is_some_and(|c| c.pos == pos))
@@ -2265,8 +2671,8 @@ impl AdvancedAi {
             }
         }
         if let Some((score, pos)) = best {
-            let threshold = if unit.hp < 55 { 12.0 } else { -2.0 };
-            if score > threshold {
+            let required_margin = if unit.hp < 55 { 12.0 } else { 0.0 };
+            if score > required_margin {
                 let action = if ranged {
                     Action::Ranged {
                         unit: uid,
@@ -2282,6 +2688,13 @@ impl AdvancedAi {
                     return true;
                 }
             }
+        }
+
+        if doctrine == UnitDoctrine::Recon
+            && self.base.should_explore(g, pid, uid, true)
+            && self.base.explore_step(g, pid, uid)
+        {
+            return true;
         }
 
         let defend_target = plan.threatened_city.and_then(|cid| {
@@ -2578,6 +2991,7 @@ impl Ai for AdvancedAi {
         // Keep the mature ancillary systems: governments, policies, beliefs,
         // governors, religions, and envoys. Research is already selected.
         self.base.research(g, pid);
+        self.strategic_policies(g, pid);
         self.advanced_diplomacy(g, pid, &plan);
 
         // Preserve the proven four-build opening before switching every city
@@ -2585,17 +2999,22 @@ impl Ai for AdvancedAi {
         if self.base.book_pos < 4 {
             self.base.cities(g, pid);
         } else {
-            // The baseline city governor remains the stronger production
-            // policy in paired evaluation. Shared planning still governs
-            // research, diplomacy, civilians, recovery, and campaigns.
+            // Explicit victory-target runs use strategic production directly;
+            // otherwise the baseline governor remains the stronger general
+            // policy in paired evaluation.
             if self.victory_planning && plan.strategy == GrandStrategy::Religion {
                 self.religious_production(g, pid);
                 self.religious_spending(g, pid);
             }
+            if self.victory_planning && plan.strategy == GrandStrategy::Science {
+                self.science_production(g, pid);
+            }
             if plan.strategy == GrandStrategy::Recovery || self.victory_target.is_some() {
                 self.advanced_production(g, pid, &plan);
             }
-            self.base.cities(g, pid);
+            if self.victory_target.is_none() {
+                self.base.cities(g, pid);
+            }
         }
         if self.victory_planning {
             self.advanced_command_actions(g, pid, &plan);
@@ -2693,6 +3112,50 @@ mod tests {
             ai.victory_focus(&culture, 0).strategy,
             GrandStrategy::Culture
         );
+    }
+
+    #[test]
+    fn science_target_reserves_a_spaceport_then_queues_the_project_chain() {
+        let mut g = Game::new(2, 24, 16, 71, 200, 0);
+        let settler = g
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|uid| g.units[uid].kind == "settler")
+            .unwrap();
+        g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = g.player_city_ids(0)[0];
+        let site = g.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != g.cities[&city].pos)
+            .unwrap();
+        {
+            let tile = g.map.tiles.get_mut(&site).unwrap();
+            tile.terrain = "plains".to_string();
+            tile.feature = None;
+            tile.resource = None;
+            tile.hills = false;
+        }
+        g.players[0].techs.insert("rocketry".to_string());
+        let ai = AdvancedAi::targeting(VictoryTarget::Science);
+        ai.science_production(&mut g, 0);
+        let spaceport = match g.cities[&city].queue.first() {
+            Some(Item::District { district, pos }) if district == "spaceport" => *pos,
+            queued => panic!("expected a queued spaceport, got {queued:?}"),
+        };
+
+        g.cities.get_mut(&city).unwrap().queue.clear();
+        g.cities
+            .get_mut(&city)
+            .unwrap()
+            .districts
+            .insert("spaceport".to_string(), spaceport);
+        ai.science_production(&mut g, 0);
+        assert!(matches!(
+            g.cities[&city].queue.first(),
+            Some(Item::Project { project }) if project == "launch_earth_satellite"
+        ));
     }
 
     #[test]
@@ -2924,6 +3387,55 @@ mod tests {
             "expected most coordinated troops to advance; moved {moved}/{}",
             army.len()
         );
+    }
+
+    #[test]
+    fn recon_explores_independently_while_combat_roles_form_the_army() {
+        let mut g = Game::new_full(2, 24, 16, 81, 80, 0, false);
+        g.at_war.insert((0, 1));
+        let positions: Vec<Pos> = g
+            .map
+            .tiles
+            .iter()
+            .filter(|(pos, tile)| {
+                g.rules.is_passable(tile) && !g.rules.is_water(tile) && g.units_at(**pos).is_empty()
+            })
+            .map(|(pos, _)| *pos)
+            .take(6)
+            .collect();
+        let scout = g.spawn_test_unit("scout", 0, positions[0]);
+        let vanguard = g.spawn_test_unit("swordsman", 0, positions[1]);
+        let mobile = g.spawn_test_unit("horseman", 0, positions[2]);
+        let ranged = g.spawn_test_unit("archer", 0, positions[3]);
+        let siege = g.spawn_test_unit("catapult", 0, positions[4]);
+        let support = g.spawn_test_unit("battering_ram", 0, positions[5]);
+        assert_eq!(AdvancedAi::force_role(&g, scout), ForceRole::Recon);
+        assert_eq!(AdvancedAi::force_role(&g, vanguard), ForceRole::Vanguard);
+        assert_eq!(AdvancedAi::force_role(&g, mobile), ForceRole::Mobile);
+        assert_eq!(AdvancedAi::force_role(&g, ranged), ForceRole::Ranged);
+        assert_eq!(AdvancedAi::force_role(&g, siege), ForceRole::Siege);
+        assert_eq!(AdvancedAi::force_role(&g, support), ForceRole::Support);
+
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: g.turn,
+        };
+        let mut ai = AdvancedAi::new();
+        ai.rebuild_force_groups(&g, 0, &plan);
+        assert!(
+            ai.force_groups()
+                .iter()
+                .all(|group| !group.units.contains(&scout)),
+            "recon with unexplored terrain should not make the army wait to muster"
+        );
+        assert!(ai
+            .force_groups()
+            .iter()
+            .any(|group| group.units.contains(&vanguard)));
     }
 
     #[test]

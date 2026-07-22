@@ -42,12 +42,19 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool) -> Value {
                 .owner_city
                 .and_then(|oc| g.cities.get(&oc))
                 .map(|c| c.owner);
+            let resource = t
+                .resource
+                .as_ref()
+                .filter(|resource| omniscient || g.resource_visible_to(pid, resource));
             Some(json!({
                 "pos": [pos.0, pos.1], "terrain": t.terrain, "feature": t.feature,
-                "hills": t.hills, "resource": t.resource,
-                "improvement": t.improvement, "district": t.district,
+                "hills": t.hills, "resource": resource,
+                "improvement": t.improvement, "pillaged": t.pillaged,
+                "district": t.district,
+                "wonder": t.wonder,
                 "owner": owner, "river": t.has_river(),
                 "river_edges": t.river_edges, "road": t.road,
+                "cliff_edges": t.cliff_edges,
                 "continent": t.continent,
             }))
         })
@@ -99,11 +106,15 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool) -> Value {
                 "food": round1(c.food), "production": round1(c.production),
                 "queue": c.queue, "buildings": c.buildings,
                 "districts": c.districts,
+                "wonders": c.wonders,
                 "owned_tiles": c.owned_tiles.iter()
                     .map(|t| json!([t.0, t.1])).collect::<Vec<_>>(),
                 "yields": yields_json(&ys),
                 "housing": g.city_housing(c),
                 "amenity_surplus": g.city_amenity_surplus(c),
+                "power_demand": g.city_power_demand(c),
+                "power_supply": g.city_power_supply(c),
+                "powered": g.city_is_powered(c),
                 "growth_need": growth_threshold(c.pop),
                 "queue_cost": c.queue.first().map(|it| g.item_cost_for(c.owner, it)),
                 "can_strike": g.city_can_strike(c),

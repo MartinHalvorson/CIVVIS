@@ -237,7 +237,7 @@ mod tests {
             assert!(g2.can_move(uid, c));
         }
         // wonders are world-unique
-        assert!(g2.rules.buildings["pyramids"].wonder);
+        assert!(g2.rules.wonders.contains_key("pyramids"));
         let cid = {
             let s = g2
                 .player_unit_ids(0)
@@ -247,18 +247,21 @@ mod tests {
             g2.apply(0, &Action::FoundCity { unit: s }).unwrap();
             g2.player_city_ids(0)[0]
         };
+        let wonder_pos = g2.cities[&cid].owned_tiles[1];
         g2.cities
             .get_mut(&cid)
             .unwrap()
-            .buildings
-            .push("pyramids".to_string());
+            .wonders
+            .insert("pyramids".to_string(), wonder_pos);
+        g2.map.tiles.get_mut(&wonder_pos).unwrap().wonder = Some("pyramids".to_string());
         assert!(g2.wonder_built("pyramids"));
         g2.players[0].techs.insert("masonry".to_string());
         assert!(!g2.can_produce(
             0,
             cid,
-            &crate::game::Item::Building {
-                building: "pyramids".to_string()
+            &crate::game::Item::Wonder {
+                wonder: "pyramids".to_string(),
+                pos: wonder_pos,
             }
         ));
     }
@@ -757,8 +760,9 @@ mod tests {
             .get_mut(&cid)
             .unwrap()
             .queue
-            .push(crate::game::Item::Building {
-                building: "pyramids".to_string(),
+            .push(crate::game::Item::Wonder {
+                wonder: "pyramids".to_string(),
+                pos: ring[3],
             });
         let wonder = g.citizen_strategy(cid);
         assert_eq!(wonder.focus, "wonder");

@@ -83,5 +83,5 @@
   "smart_materials": {"cost": 2200, "era": 8, "requires": ["nanotechnology"]},
   "predictive_systems": {"cost": 2200, "era": 8, "requires": ["telecommunications"]},
   "offworld_mission": {"cost": 2500, "era": 8, "requires": ["smart_materials"]},
-  "future_tech": {"cost": 2600, "era": 8, "requires": ["offworld_mission"]}
+  "future_tech": {"cost": 2600, "era": 8, "requires": ["offworld_mission"], "repeatable": true}
 }

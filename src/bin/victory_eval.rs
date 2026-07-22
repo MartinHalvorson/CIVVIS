@@ -84,14 +84,21 @@ fn main() {
             let winner_state = game.players.get(winner);
             let progress = winner_state.map(|player| match target {
                 VictoryTarget::Science => format!(
-                    "projects={} distance={:.0}",
+                    "techs={}/{} projects={} distance={:.0} science={:.1}",
+                    player.techs.len(),
+                    game.rules.techs.len(),
                     player.science_projects.len(),
-                    player.exoplanet_distance
+                    player.exoplanet_distance,
+                    game.player_city_ids(winner)
+                        .into_iter()
+                        .map(|city| game.city_yields(city).science)
+                        .sum::<f64>()
                 ),
                 VictoryTarget::Culture => format!(
-                    "visiting={} domestic={}",
+                    "visiting={} domestic={} tourism={:.1}/turn",
                     game.foreign_tourists(winner),
-                    game.domestic_tourists(winner)
+                    game.domestic_tourists(winner),
+                    game.tourism_per_turn(winner)
                 ),
                 VictoryTarget::Religion => {
                     format!("religion={}", player.religion.as_deref().unwrap_or("none"))

@@ -1600,7 +1600,13 @@ function draw() {
       cx.fillStyle = "#10151d"; cx.font = "bold 11px sans-serif";
       cx.fillText(t.district[0].toUpperCase(), x, y + 0.5);
     }
-    if (SHOW_YIELDS && !t.district) drawTileYields(t, x, y, workedSet.has(k));
+    if (t.wonder) {
+      cx.fillStyle = "#f2d06b";
+      cx.beginPath(); cx.arc(x, y, 8, 0, Math.PI * 2); cx.fill();
+      cx.fillStyle = "#302508"; cx.font = "bold 10px serif"; cx.textAlign = "center";
+      cx.fillText("W", x, y + 3);
+    }
+    if (SHOW_YIELDS && !t.district && !t.wonder) drawTileYields(t, x, y, workedSet.has(k));
   }
   // --- settler lens
   if (lensOn) {
@@ -2035,12 +2041,13 @@ function hook(id, fn) {
   if (el) el.onchange = () => { if (el.value) fn(el.value); };
 }
 function itemName(it) {
-  return (it.unit || it.building || it.project || (it.district + " @" + it.pos)).replaceAll("_", " ");
+  return (it.unit || it.building || it.project || (it.wonder ? it.wonder + " @" + it.pos : it.district + " @" + it.pos)).replaceAll("_", " ");
 }
 function itemCost(it) {
   if (!RULES) return "?";
   if (it.unit) return RULES.units[it.unit].cost;
   if (it.building) return RULES.buildings[it.building].cost;
+  if (it.wonder) return RULES.wonders[it.wonder].cost;
   if (it.project) return RULES.projects[it.project].cost;
   return RULES.districts[it.district].cost;
 }
@@ -2497,10 +2504,11 @@ cv.addEventListener("mousemove", ev => {
     lines.push("⚒ " + t.improvement.replaceAll("_", " "));
   if (t.improvement === "barbarian_camp") lines.push("⛺ barbarian camp (+50🪙 to clear)");
   if (t.district) lines.push("🏗 " + t.district.replaceAll("_", " ") + " district");
+  if (t.wonder) lines.push("★ " + t.wonder.replaceAll("_", " ") + " wonder");
   const y = tileYieldFull(t);
   const ystr = Object.entries(y).filter(([, v]) => v > 0)
     .map(([kk, v]) => v + YICON[kk]).join(" ");
-  if (ystr && !t.district) lines.push(ystr);
+  if (ystr && !t.district && !t.wonder) lines.push(ystr);
   if (t.owner !== null && t.owner !== undefined)
     lines.push("territory: " + state.players[t.owner].civ);
   const city = state.cities.find(c => c.pos[0] === pos[0] && c.pos[1] === pos[1]);

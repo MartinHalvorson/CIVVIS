@@ -12,12 +12,23 @@ pub struct Tile {
     pub hills: bool,
     pub resource: Option<String>,
     pub improvement: Option<String>,
+    /// Improvements and ordinary districts stop producing yields while
+    /// pillaged. City/Encampment defenses keep their dedicated damage state.
+    #[serde(default)]
+    pub pillaged: bool,
     pub district: Option<String>,
+    #[serde(default)]
+    pub wonder: Option<String>,
     pub owner_city: Option<u32>,
     #[serde(default)]
     /// River segments on this hex's six edges, in `hex::DIRS` order.
     /// Shared edges are mirrored on both neighboring tiles.
     pub river_edges: [bool; 6],
+    /// Coastal cliff segments on this hex's six shared edges. Like rivers,
+    /// cliff edges are mirrored onto the neighboring tile so saves and
+    /// observations remain self-contained.
+    #[serde(default)]
+    pub cliff_edges: [bool; 6],
     #[serde(default)]
     pub road: bool,
     /// Stock Civ VI continent region, zero-based. Water has no continent.
@@ -34,9 +45,12 @@ impl Tile {
             hills: false,
             resource: None,
             improvement: None,
+            pillaged: false,
             district: None,
+            wonder: None,
             owner_city: None,
             river_edges: [false; 6],
+            cliff_edges: [false; 6],
             road: false,
             continent: None,
         }
@@ -128,6 +142,25 @@ impl WorldMap {
     pub fn has_river_edge(&self, a: Pos, b: Pos) -> bool {
         self.direction_to(a, b)
             .and_then(|direction| self.tiles.get(&a).map(|t| t.river_edges[direction]))
+            .unwrap_or(false)
+    }
+
+    /// Add or remove a coastal cliff on the shared edge between two tiles.
+    pub fn set_cliff_edge(&mut self, a: Pos, b: Pos, present: bool) -> bool {
+        let Some(direction) = self.direction_to(a, b) else {
+            return false;
+        };
+        if !self.tiles.contains_key(&a) || !self.tiles.contains_key(&b) {
+            return false;
+        }
+        self.tiles.get_mut(&a).unwrap().cliff_edges[direction] = present;
+        self.tiles.get_mut(&b).unwrap().cliff_edges[(direction + 3) % 6] = present;
+        true
+    }
+
+    pub fn has_cliff_edge(&self, a: Pos, b: Pos) -> bool {
+        self.direction_to(a, b)
+            .and_then(|direction| self.tiles.get(&a).map(|t| t.cliff_edges[direction]))
             .unwrap_or(false)
     }
 

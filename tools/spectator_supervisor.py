@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Keep a CIVVIS spectator running and update it between completed games.
+"""Keep a CIVVIS spectator running, recover it, and update between games.
 
-The supervisor deliberately never replaces code during a live match. Once a
-winner appears it captures that match's size, fetches the configured upstream,
-fast-forwards when safe, builds the newest stable worktree snapshot, and starts
-another game after the result-screen cooldown. A network failure can use newer
-local code, while a build failure pauses new games until the latest code works.
+The supervisor deliberately never replaces code during a healthy live match.
+It checkpoints active matches, revives a crashed or unresponsive server from
+the latest checkpoint, and nudges a spectator whose browser stopped stepping.
+Once a winner appears it builds the newest stable worktree while the result
+screen remains available, then replaces that finished server after the
+cooldown. A known-good runtime remains available while broken or changing
+source is repaired.
 """
 
 from __future__ import annotations
@@ -24,13 +26,14 @@ import sys
 import time
 from typing import Any
 from urllib.error import URLError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 
 ROOT = Path(__file__).resolve().parents[1]
 BINARY = ROOT / "target" / "release" / ("civvis.exe" if os.name == "nt" else "civvis")
 RUNTIME_BINARY = ROOT / "target" / "spectator" / BINARY.name
 RUNTIME_METADATA = RUNTIME_BINARY.parent / "build.json"
+CHECKPOINT_DIR = RUNTIME_BINARY.parent / "checkpoints"
 RUNTIME_INPUTS = ("Cargo.toml", "Cargo.lock", "build.rs", "src", "data", "web")
 
 

@@ -1,5 +1,5 @@
 //! Map generation (mirrors civvis/mapgen.py).
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::rng::Rng;
 use crate::rules::Rules;
@@ -10,7 +10,8 @@ pub fn generate(
     rules: &Rules,
     width: i32,
     height: i32,
-    num_spawns: usize,
+    num_major_spawns: usize,
+    num_minor_spawns: usize,
     num_natural_wonders: usize,
     num_continents: usize,
     rng: &mut Rng,
@@ -117,6 +118,32 @@ pub fn generate(
         wm.tiles.get_mut(&pos).unwrap().terrain = "coast".into();
     }
 
+    // Coastal cliffs are shared edge features rather than tile terrain.
+    // Generate from the land side and mirror the edge onto the water tile;
+    // this makes embark/disembark legality exact at bays and narrow points.
+    let mut cliff_edges = Vec::new();
+    for &pos in &land_list {
+        if wm.tiles[&pos].terrain == "mountain" {
+            continue;
+        }
+        for neighbor in hex::neighbors(pos)
+            .into_iter()
+            .map(|neighbor| hex::canon(neighbor, width))
+        {
+            if wm
+                .tiles
+                .get(&neighbor)
+                .is_some_and(|tile| matches!(tile.terrain.as_str(), "coast" | "ocean"))
+                && rng.chance(0.35)
+            {
+                cliff_edges.push((pos, neighbor));
+            }
+        }
+    }
+    for (land, water) in cliff_edges {
+        wm.set_cliff_edge(land, water, true);
+    }
+
     // --- rivers: connected chains along shared hex edges, as in Civ VI.
     // Build each river upstream from a guaranteed coastal outlet. Walking the
     // edge graph (rather than the tile-center graph) keeps every consecutive
@@ -142,7 +169,15 @@ pub fn generate(
         if t.terrain == "mountain" {
             continue;
         }
-        if t.terrain == "grassland" || t.terrain == "plains" {
+        if t.has_river() && t.terrain == "desert" && r < 0.55 {
+            t.feature = Some("floodplains".into());
+        } else if t.has_river() && t.terrain == "grassland" && r < 0.18 {
+            t.feature = Some("grassland_floodplains".into());
+        } else if t.has_river() && t.terrain == "plains" && r < 0.18 {
+            t.feature = Some("plains_floodplains".into());
+        } else if r > 0.992 {
+            t.feature = Some("geothermal_fissure".into());
+        } else if t.terrain == "grassland" || t.terrain == "plains" {
             if lat < 0.25 && r < 0.28 {
                 t.feature = Some("jungle".into());
             } else if r < 0.20 {
@@ -157,10 +192,18 @@ pub fn generate(
         }
     }
 
+    // Reefs are ordinary coastal features and supply the Campus's major
+    // Gathering Storm adjacency source.
+    for tile in wm.tiles.values_mut() {
+        if tile.terrain == "coast" && tile.feature.is_none() && rng.chance(0.08) {
+            tile.feature = Some("reef".into());
+        }
+    }
+
     // --- natural wonders: use the stock per-map-size count. The engine's
     // wonders are single-tile simplifications, but remain unique and favor
     // the same broad terrain families as their Civ VI counterparts.
-    let wonder_names = [
+    let mut wonder_names = [
         "great_barrier_reef",
         "crater_lake",
         "pantanal",
@@ -168,7 +211,12 @@ pub fn generate(
         "yosemite",
         "dead_sea",
         "mount_everest",
+        "pamukkale",
     ];
+    for index in (1..wonder_names.len()).rev() {
+        let other = rng.below(index + 1);
+        wonder_names.swap(index, other);
+    }
     for wonder in wonder_names.iter().take(num_natural_wonders) {
         let mut cands: Vec<Pos> = wm
             .tiles
@@ -191,6 +239,9 @@ pub fn generate(
                         matches!(t.terrain.as_str(), "desert" | "plains")
                             && !t.hills
                             && !t.has_river()
+                    }
+                    "pamukkale" => {
+                        matches!(t.terrain.as_str(), "desert" | "grassland" | "plains") && !t.hills
                     }
                     _ => false,
                 }
@@ -273,43 +324,302 @@ pub fn generate(
         .iter()
         .filter(|p| {
             let t = &wm.tiles[p];
-            (t.terrain == "grassland" || t.terrain == "plains") && t.feature.is_none()
+            (t.terrain == "grassland" || t.terrain == "plains")
+                && t.feature.is_none()
+                && t.improvement.is_none()
         })
         .cloned()
         .collect();
-    if cands.len() < num_spawns {
-        cands = largest.iter().cloned().collect();
-    }
-    cands.sort();
-    let mut spawns = vec![cands[rng.below(cands.len())]];
-    while spawns.len() < num_spawns {
-        let pool: Vec<Pos> = cands
+    let total_spawns = num_major_spawns + num_minor_spawns;
+    if cands.len() < total_spawns {
+        cands = largest
             .iter()
-            .filter(|c| !spawns.contains(c))
+            .filter(|pos| {
+                let tile = &wm.tiles[pos];
+                tile.improvement.is_none()
+                    && !tile
+                        .feature
+                        .as_ref()
+                        .and_then(|feature| rules.features.get(feature))
+                        .is_some_and(|feature| feature.natural_wonder)
+            })
             .cloned()
             .collect();
-        if pool.is_empty() {
-            break;
-        }
-        let best = *pool
-            .iter()
-            .max_by_key(|c| {
-                let d = spawns
-                    .iter()
-                    .map(|s| hex::wdistance(**c, *s, width))
-                    .min()
-                    .unwrap();
-                (d, **c)
-            })
-            .unwrap();
-        spawns.push(best);
     }
+    cands.sort();
+    let mut spawns = balanced_major_spawns(rules, &wm, &largest, &cands, num_major_spawns, rng);
+    add_minor_spawns(rules, &wm, &cands, &mut spawns, num_minor_spawns);
     for s in &spawns {
         let t = wm.tiles.get_mut(s).unwrap();
         t.feature = None;
         t.resource = None;
     }
     (wm, spawns)
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct SpawnLayoutScore {
+    /// No two civilizations should begin unavoidably crowded.
+    minimum_separation: i32,
+    /// Cover the complete landmass rather than leaving a large empty end.
+    negative_coverage_radius: i32,
+    /// Similar nearest-neighbor distances avoid isolated and crowded starts.
+    negative_neighbor_range: i32,
+    /// Voronoi area is a useful proxy for the land available to each start.
+    negative_territory_range: i32,
+    /// Only after spatial fairness, prefer layouts without a weak outlier.
+    minimum_quality: i32,
+    negative_quality_range: i32,
+    total_quality: i32,
+}
+
+/// A compact estimate of the capital site rather than just its center tile.
+/// Early food/production, fresh water and room to work land all matter, while
+/// only the best nearby tiles count so a large empty desert is not rewarded.
+fn start_quality(rules: &Rules, wm: &WorldMap, pos: Pos) -> i32 {
+    let center = &wm.tiles[&pos];
+    let fresh_water = center.has_river()
+        || hex::neighbors(pos)
+            .into_iter()
+            .map(|neighbor| hex::canon(neighbor, wm.width))
+            .any(|neighbor| {
+                wm.get(neighbor)
+                    .is_some_and(|tile| tile.feature.as_deref() == Some("oasis"))
+            });
+    let coastal = hex::neighbors(pos)
+        .into_iter()
+        .map(|neighbor| hex::canon(neighbor, wm.width))
+        .any(|neighbor| wm.get(neighbor).is_some_and(|tile| rules.is_water(tile)));
+
+    let mut nearby_yields = Vec::new();
+    let mut workable_land = 0;
+    let mut seen = BTreeSet::new();
+    for raw in hex::disk(pos, 3) {
+        let tile_pos = hex::canon(raw, wm.width);
+        if !seen.insert(tile_pos) {
+            continue;
+        }
+        let Some(tile) = wm.get(tile_pos) else {
+            continue;
+        };
+        if !rules.is_water(tile) && rules.is_passable(tile) {
+            workable_land += 1;
+        }
+        if tile_pos == pos || hex::wdistance(pos, tile_pos, wm.width) > 2 {
+            continue;
+        }
+        let yields = rules.tile_yields(tile);
+        nearby_yields.push(
+            (yields.food * 4.0
+                + yields.production * 5.0
+                + yields.gold
+                + yields.science * 2.0
+                + yields.culture * 2.0
+                + yields.faith) as i32,
+        );
+    }
+    nearby_yields.sort_unstable_by(|a, b| b.cmp(a));
+    let best_nearby: i32 = nearby_yields.into_iter().take(8).sum();
+    best_nearby
+        + workable_land * 2
+        + if fresh_water {
+            32
+        } else if coastal {
+            12
+        } else {
+            0
+        }
+}
+
+fn spawn_layout_score(
+    wm: &WorldMap,
+    landmass: &BTreeSet<Pos>,
+    layout: &[Pos],
+    qualities: &BTreeMap<Pos, i32>,
+) -> SpawnLayoutScore {
+    if layout.is_empty() {
+        return SpawnLayoutScore {
+            minimum_separation: 0,
+            negative_coverage_radius: 0,
+            negative_neighbor_range: 0,
+            negative_territory_range: 0,
+            minimum_quality: 0,
+            negative_quality_range: 0,
+            total_quality: 0,
+        };
+    }
+
+    let mut ordered = layout.to_vec();
+    ordered.sort();
+    let nearest: Vec<i32> = if ordered.len() == 1 {
+        vec![0]
+    } else {
+        ordered
+            .iter()
+            .map(|start| {
+                ordered
+                    .iter()
+                    .filter(|other| *other != start)
+                    .map(|other| hex::wdistance(*start, *other, wm.width))
+                    .min()
+                    .unwrap()
+            })
+            .collect()
+    };
+    let minimum_separation = nearest.iter().copied().min().unwrap_or(0);
+    let neighbor_range = nearest.iter().copied().max().unwrap_or(0) - minimum_separation;
+
+    let mut territory = vec![0_i32; ordered.len()];
+    let mut coverage_radius = 0;
+    for tile in landmass {
+        let (distance, owner) = ordered
+            .iter()
+            .enumerate()
+            .map(|(index, start)| (hex::wdistance(*tile, *start, wm.width), index))
+            .min()
+            .unwrap();
+        coverage_radius = coverage_radius.max(distance);
+        territory[owner] += 1;
+    }
+    let territory_range =
+        territory.iter().copied().max().unwrap_or(0) - territory.iter().copied().min().unwrap_or(0);
+
+    let qualities: Vec<i32> = ordered.iter().map(|start| qualities[start]).collect();
+    let minimum_quality = qualities.iter().copied().min().unwrap_or(0);
+    let maximum_quality = qualities.iter().copied().max().unwrap_or(0);
+
+    SpawnLayoutScore {
+        minimum_separation,
+        negative_coverage_radius: -coverage_radius,
+        negative_neighbor_range: -neighbor_range,
+        negative_territory_range: -territory_range,
+        minimum_quality,
+        negative_quality_range: -(maximum_quality - minimum_quality),
+        total_quality: qualities.iter().sum(),
+    }
+}
+
+fn farthest_layout(
+    wm: &WorldMap,
+    candidates: &[Pos],
+    qualities: &BTreeMap<Pos, i32>,
+    first: Pos,
+    count: usize,
+) -> Vec<Pos> {
+    let mut layout = vec![first];
+    while layout.len() < count {
+        let Some(next) = candidates
+            .iter()
+            .filter(|candidate| !layout.contains(candidate))
+            .max_by_key(|candidate| {
+                let nearest = layout
+                    .iter()
+                    .map(|start| hex::wdistance(**candidate, *start, wm.width))
+                    .min()
+                    .unwrap_or(0);
+                (nearest, qualities[*candidate], **candidate)
+            })
+            .copied()
+        else {
+            break;
+        };
+        layout.push(next);
+    }
+    layout
+}
+
+/// Try farthest-point layouts from seeds spread throughout the candidate set,
+/// then retain the layout with the best spacing, coverage, territory balance
+/// and site quality. This removes the large positional bias caused by making
+/// a single random tile the permanent anchor for every other civilization.
+fn balanced_major_spawns(
+    rules: &Rules,
+    wm: &WorldMap,
+    landmass: &BTreeSet<Pos>,
+    candidates: &[Pos],
+    count: usize,
+    rng: &mut Rng,
+) -> Vec<Pos> {
+    if count == 0 || candidates.is_empty() {
+        return Vec::new();
+    }
+    let count = count.min(candidates.len());
+    let qualities: BTreeMap<Pos, i32> = candidates
+        .iter()
+        .map(|candidate| (*candidate, start_quality(rules, wm, *candidate)))
+        .collect();
+    let trial_count = candidates.len().min(64);
+    let mut seeds = Vec::with_capacity(trial_count + 1);
+    for index in 0..trial_count {
+        let candidate_index = index * candidates.len() / trial_count;
+        if seeds.last() != candidates.get(candidate_index) {
+            seeds.push(candidates[candidate_index]);
+        }
+    }
+    if let Some(best_site) = candidates
+        .iter()
+        .max_by_key(|candidate| (qualities[*candidate], **candidate))
+        .copied()
+    {
+        if !seeds.contains(&best_site) {
+            seeds.push(best_site);
+        }
+    }
+
+    let mut best: Option<(SpawnLayoutScore, Vec<Pos>)> = None;
+    for seed in seeds {
+        let layout = farthest_layout(wm, candidates, &qualities, seed, count);
+        let score = spawn_layout_score(wm, landmass, &layout, &qualities);
+        if best
+            .as_ref()
+            .is_none_or(|(best_score, _)| score > *best_score)
+        {
+            best = Some((score, layout));
+        }
+    }
+    let mut layout = best.unwrap().1;
+
+    // Seat order should not correlate with an anchor, edge, or the order in
+    // which farthest-point sampling filled the landmass.
+    for index in (1..layout.len()).rev() {
+        let other = rng.below(index + 1);
+        layout.swap(index, other);
+    }
+    layout
+}
+
+/// City-states fill the remaining largest gaps after major civilizations are
+/// fixed, so they cannot pull a major start away from an otherwise fair grid.
+fn add_minor_spawns(
+    rules: &Rules,
+    wm: &WorldMap,
+    candidates: &[Pos],
+    spawns: &mut Vec<Pos>,
+    count: usize,
+) {
+    let qualities: BTreeMap<Pos, i32> = candidates
+        .iter()
+        .map(|candidate| (*candidate, start_quality(rules, wm, *candidate)))
+        .collect();
+    let target = spawns.len() + count;
+    while spawns.len() < target {
+        let Some(next) = candidates
+            .iter()
+            .filter(|candidate| !spawns.contains(candidate))
+            .max_by_key(|candidate| {
+                let nearest = spawns
+                    .iter()
+                    .map(|start| hex::wdistance(**candidate, *start, wm.width))
+                    .min()
+                    .unwrap_or(i32::MAX);
+                (nearest, qualities[*candidate], **candidate)
+            })
+            .copied()
+        else {
+            break;
+        };
+        spawns.push(next);
+    }
 }
 
 type RiverEdge = (Pos, Pos);
@@ -523,6 +833,7 @@ fn largest_component(cells: &BTreeSet<Pos>, width: i32) -> BTreeSet<Pos> {
 #[cfg(test)]
 mod river_tests {
     use super::*;
+    use crate::setup::CIV6_MAP_SIZES;
 
     #[test]
     fn generated_rivers_are_mirrored_connected_edge_chains_with_outlets() {
@@ -583,6 +894,84 @@ mod river_tests {
             assert!(
                 has_outlet,
                 "every generated river component needs a coastal outlet"
+            );
+        }
+    }
+
+    #[test]
+    fn balanced_layout_is_independent_of_a_random_first_anchor() {
+        let rules = Rules::embedded();
+        let mut wm = WorldMap::new(32, 18);
+        let mut landmass = BTreeSet::new();
+        for row in 2..16 {
+            for col in 3..29 {
+                let pos = hex::offset_to_axial(col, row);
+                wm.tiles.get_mut(&pos).unwrap().terrain = "plains".to_string();
+                landmass.insert(pos);
+            }
+        }
+        let candidates: Vec<Pos> = landmass.iter().copied().collect();
+        let mut first_rng = Rng::new(1);
+        let mut second_rng = Rng::new(999);
+        let first = balanced_major_spawns(&rules, &wm, &landmass, &candidates, 6, &mut first_rng);
+        let second = balanced_major_spawns(&rules, &wm, &landmass, &candidates, 6, &mut second_rng);
+
+        assert_eq!(
+            first.iter().copied().collect::<BTreeSet<_>>(),
+            second.iter().copied().collect(),
+            "RNG may randomize seats, but must not anchor the spatial layout"
+        );
+        let qualities = candidates
+            .iter()
+            .map(|candidate| (*candidate, start_quality(&rules, &wm, *candidate)))
+            .collect();
+        let score = spawn_layout_score(&wm, &landmass, &first, &qualities);
+        assert!(score.minimum_separation >= 8, "{score:?}");
+        assert!(score.negative_neighbor_range >= -2, "{score:?}");
+    }
+
+    #[test]
+    fn stock_map_profiles_produce_spread_and_complete_spawn_sets() {
+        let rules = Rules::embedded();
+        for (index, size) in CIV6_MAP_SIZES.iter().enumerate() {
+            let mut rng = Rng::new(10_001 + index as u64);
+            let (wm, spawns) = generate(
+                &rules,
+                size.width,
+                size.height,
+                size.default_players,
+                size.default_city_states,
+                size.natural_wonders,
+                size.continents,
+                &mut rng,
+            );
+            assert_eq!(
+                spawns.len(),
+                size.default_players + size.default_city_states,
+                "{} did not receive every requested spawn",
+                size.name
+            );
+
+            let passable: BTreeSet<Pos> = wm
+                .tiles
+                .iter()
+                .filter(|(_, tile)| !rules.is_water(tile) && rules.is_passable(tile))
+                .map(|(pos, _)| *pos)
+                .collect();
+            let landmass = largest_component(&passable, wm.width);
+            let majors = &spawns[..size.default_players];
+            assert!(majors.iter().all(|start| landmass.contains(start)));
+            let qualities = majors
+                .iter()
+                .map(|start| (*start, start_quality(&rules, &wm, *start)))
+                .collect();
+            let score = spawn_layout_score(&wm, &landmass, majors, &qualities);
+            eprintln!("{}: {score:?}", size.name);
+            assert!(score.minimum_separation >= 6, "{}: {score:?}", size.name);
+            assert!(
+                score.negative_neighbor_range >= -4,
+                "{}: {score:?}",
+                size.name
             );
         }
     }

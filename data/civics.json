@@ -67,5 +67,5 @@
   "cultural_hegemony": {"cost": 3200, "era": 8, "requires": ["digital_democracy"]},
   "smart_power_doctrine": {"cost": 3200, "era": 8, "requires": ["corporate_libertarianism"]},
   "exodus_imperative": {"cost": 3200, "era": 8, "requires": ["synthetic_technocracy"]},
-  "future_civic": {"cost": 3500, "era": 8, "requires": ["information_warfare", "global_warming_mitigation", "cultural_hegemony", "smart_power_doctrine", "exodus_imperative"]}
+  "future_civic": {"cost": 3500, "era": 8, "requires": ["information_warfare", "global_warming_mitigation", "cultural_hegemony", "smart_power_doctrine", "exodus_imperative"], "repeatable": true}
 }

@@ -50,6 +50,15 @@ or cases where every legal move is materially worse. At peace, troops that
 have finished exploring rotate among persistent frontier patrol posts instead
 of accumulating indefinitely at the capital.
 
+Military units also follow class-specific doctrine rather than sharing one
+generic policy. Recon units keep exploring during wars unless a clearly good
+attack is available; assault and high-strength units accept thinner combat
+advantages; mobile and naval-raider units exploit pillage opportunities;
+ranged units preserve firing depth; siege prioritizes cities and districts;
+support stays close to the line; fighters prefer interception patrols while
+bombers prefer strikes and useful rebasing. If no recon unit exists, one
+ordinary combat unit explores at peace instead of sending the whole army.
+
 ```rust
 for force in ai.force_groups() {
     println!("{:?} {:?}: {:?}", force.domain, force.posture, force.units);

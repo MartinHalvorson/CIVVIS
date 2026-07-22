@@ -89,6 +89,11 @@ pub struct FeatureSpec {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ResourceSpec {
     pub class: String,
+    /// Strategic and archaeological resources remain hidden until this node.
+    #[serde(default)]
+    pub tech: Option<String>,
+    #[serde(default)]
+    pub civic: Option<String>,
     #[serde(default)]
     pub yields: Yields,
     #[serde(default)]
@@ -103,17 +108,39 @@ pub struct ImprovementSpec {
     #[serde(default)]
     pub tech: Option<String>,
     #[serde(default)]
+    pub civic: Option<String>,
+    #[serde(default)]
     pub yields: Yields,
     #[serde(default)]
     pub housing: f64,
     #[serde(default)]
     pub terrain: Vec<String>,
     #[serde(default)]
+    pub feature: Vec<String>,
+    #[serde(default)]
+    pub resources: Vec<String>,
+    #[serde(default)]
+    pub resource_only: bool,
+    #[serde(default)]
+    pub requires_hills: bool,
+    #[serde(default)]
+    pub hills_or_resource: bool,
+    #[serde(default)]
+    pub requires_flat: bool,
+    #[serde(default)]
+    pub unique_to: Option<String>,
+    #[serde(default)]
+    pub replaces: Option<String>,
+    #[serde(default)]
     pub removes_feature: bool,
     #[serde(default)]
     pub water: bool,
     #[serde(default)]
     pub unbuildable: bool,
+    #[serde(default = "default_true")]
+    pub builder_buildable: bool,
+    #[serde(default)]
+    pub effects: BTreeMap<String, f64>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -161,6 +188,12 @@ pub struct UnitSpec {
     /// Religious units are faith-purchased in a city containing this building.
     #[serde(default)]
     pub requires_building: Option<String>,
+    #[serde(default)]
+    pub requires_district: Option<String>,
+    /// Improvements this specialist can construct (builders use the whole
+    /// ordinary improvement catalog; engineers/archaeologists are explicit).
+    #[serde(default)]
+    pub builds: Vec<String>,
 }
 
 impl UnitSpec {
@@ -289,6 +322,8 @@ pub struct BuildingSpec {
     #[serde(default)]
     pub regional_range: i32,
     #[serde(default)]
+    pub regional_group: String,
+    #[serde(default)]
     pub trade_route_capacity: i32,
     /// Free-form numeric rule primitives used by named effects that are not
     /// plain yields (production modifiers, combat strength, tourism, etc.).
@@ -302,17 +337,88 @@ pub struct BuildingSpec {
     pub purchase_only: bool,
 }
 
+/// A world wonder occupies a map tile, unlike an ordinary district building.
+/// Placement fields deliberately mirror the predicates used by stock Civ VI
+/// so requirements remain data-driven and testable.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct WonderSpec {
+    pub cost: f64,
+    #[serde(default)]
+    pub tech: Option<String>,
+    #[serde(default)]
+    pub civic: Option<String>,
+    #[serde(default)]
+    pub yields: Yields,
+    #[serde(default)]
+    pub housing: f64,
+    #[serde(default)]
+    pub amenity: f64,
+    #[serde(default)]
+    pub great_work_slots: BTreeMap<String, i32>,
+    #[serde(default)]
+    pub great_person_points: BTreeMap<String, f64>,
+    #[serde(default)]
+    pub requires_buildings: Vec<String>,
+    #[serde(default)]
+    pub requires_any_buildings: Vec<String>,
+    #[serde(default)]
+    pub adjacent_district: Option<String>,
+    #[serde(default)]
+    pub adjacent_resource: Option<String>,
+    #[serde(default)]
+    pub adjacent_improvement: Option<String>,
+    #[serde(default)]
+    pub terrain: Vec<String>,
+    #[serde(default)]
+    pub feature: Vec<String>,
+    #[serde(default)]
+    pub hills: Option<bool>,
+    #[serde(default)]
+    pub water: bool,
+    #[serde(default)]
+    pub coast: bool,
+    #[serde(default)]
+    pub river: bool,
+    #[serde(default)]
+    pub adjacent_mountain: bool,
+    #[serde(default)]
+    pub founded_religion: bool,
+    #[serde(default)]
+    pub placement: String,
+    #[serde(default)]
+    pub effects: BTreeMap<String, f64>,
+}
+
+/// A named entry in the global Great Person market. Effects deliberately use
+/// the same primitive keys as the rest of the ruleset so mods can add people
+/// without engine-side ID checks.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct GreatPersonSpec {
+    pub name: String,
+    pub kind: String,
+    pub era: usize,
+    pub cost: f64,
+    #[serde(default)]
+    pub effects: BTreeMap<String, f64>,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ProjectSpec {
     pub cost: f64,
     #[serde(default)]
     pub tech: Option<String>,
     #[serde(default)]
+    pub civic: Option<String>,
+    #[serde(default)]
     pub district: Option<String>,
     #[serde(default)]
     pub requires: Vec<String>,
     #[serde(default)]
+    pub requires_buildings: Vec<String>,
+    #[serde(default)]
     pub repeatable: bool,
+    #[serde(default)]
+    pub effects: BTreeMap<String, f64>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -323,6 +429,12 @@ pub struct BoostSpec {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
+pub struct TreeUnlock {
+    pub kind: String,
+    pub id: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
 pub struct TechSpec {
     pub cost: f64,
     /// Zero-based historical era: Ancient through Future.
@@ -330,6 +442,20 @@ pub struct TechSpec {
     pub requires: Vec<String>,
     #[serde(default)]
     pub boost: Option<BoostSpec>,
+    /// Indexed from the reverse gates in the rules catalog at load time.
+    #[serde(default)]
+    pub unlocks: Vec<TreeUnlock>,
+    /// Global abilities unlocked by the node. Every key has an engine handler.
+    #[serde(default)]
+    pub effects: BTreeMap<String, f64>,
+    #[serde(default)]
+    pub repeatable: bool,
+}
+
+#[derive(Deserialize)]
+struct TreeEffectsData {
+    techs: BTreeMap<String, BTreeMap<String, f64>>,
+    civics: BTreeMap<String, BTreeMap<String, f64>>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
@@ -342,6 +468,14 @@ pub struct GovEffects {
     pub amenity: f64,
     pub housing: f64,
     pub great_people_pct: f64,
+    pub production_per_pop: f64,
+    pub faith_per_pop: f64,
+    pub culture_per_district: f64,
+    pub trade_food: f64,
+    pub trade_production: f64,
+    pub project_production_pct: f64,
+    pub religious_strength: f64,
+    pub capital_yields: Yields,
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
@@ -395,6 +529,9 @@ pub struct PolicySpec {
     pub replaces: Option<String>, // unlocking this obsoletes the named card
     #[serde(default)]
     pub note: String,
+    /// Numeric, data-driven policy primitives consumed by the game engine.
+    #[serde(default)]
+    pub effects: BTreeMap<String, f64>,
 }
 
 /// A stock unit-promotion node. Effects are numeric flags so rules data can
@@ -420,6 +557,8 @@ pub struct Rules {
     pub units: BTreeMap<String, UnitSpec>,
     pub districts: BTreeMap<String, DistrictSpec>,
     pub buildings: BTreeMap<String, BuildingSpec>,
+    pub wonders: BTreeMap<String, WonderSpec>,
+    pub great_people: BTreeMap<String, GreatPersonSpec>,
     pub projects: BTreeMap<String, ProjectSpec>,
     pub techs: BTreeMap<String, TechSpec>,
     pub civics: BTreeMap<String, TechSpec>,
@@ -432,7 +571,7 @@ pub struct Rules {
 
 impl Rules {
     pub fn embedded() -> Rules {
-        Rules {
+        let mut rules = Rules {
             terrains: serde_json::from_str(include_str!("../data/terrains.json")).unwrap(),
             features: serde_json::from_str(include_str!("../data/features.json")).unwrap(),
             resources: serde_json::from_str(include_str!("../data/resources.json")).unwrap(),
@@ -440,6 +579,8 @@ impl Rules {
             units: serde_json::from_str(include_str!("../data/units.json")).unwrap(),
             districts: serde_json::from_str(include_str!("../data/districts.json")).unwrap(),
             buildings: serde_json::from_str(include_str!("../data/buildings.json")).unwrap(),
+            wonders: serde_json::from_str(include_str!("../data/wonders.json")).unwrap(),
+            great_people: serde_json::from_str(include_str!("../data/great_people.json")).unwrap(),
             projects: serde_json::from_str(include_str!("../data/projects.json")).unwrap(),
             techs: serde_json::from_str(include_str!("../data/techs.json")).unwrap(),
             civics: serde_json::from_str(include_str!("../data/civics.json")).unwrap(),
@@ -448,6 +589,104 @@ impl Rules {
             promotions: serde_json::from_str(include_str!("../data/promotions.json")).unwrap(),
             beliefs: serde_json::from_str(include_str!("../data/beliefs.json")).unwrap(),
             civs: serde_json::from_str(include_str!("../data/civs.json")).unwrap(),
+        };
+        let effects: TreeEffectsData =
+            serde_json::from_str(include_str!("../data/tree_effects.json")).unwrap();
+        for (node, values) in effects.techs {
+            rules
+                .techs
+                .get_mut(&node)
+                .unwrap_or_else(|| panic!("effects reference missing technology {node}"))
+                .effects = values;
+        }
+        for (node, values) in effects.civics {
+            rules
+                .civics
+                .get_mut(&node)
+                .unwrap_or_else(|| panic!("effects reference missing civic {node}"))
+                .effects = values;
+        }
+        rules.index_tree_unlocks();
+        rules
+    }
+
+    /// Build the one authoritative unlock list from each content object's
+    /// technology/civic gate. This prevents the UI, legality checks, and tree
+    /// documentation from drifting into three separate catalogs.
+    fn index_tree_unlocks(&mut self) {
+        let mut indexed: Vec<(bool, String, TreeUnlock)> = Vec::new();
+        let mut add = |kind: &str, id: &str, tech: &Option<String>, civic: &Option<String>| {
+            if let Some(node) = tech {
+                indexed.push((
+                    true,
+                    node.clone(),
+                    TreeUnlock {
+                        kind: kind.to_string(),
+                        id: id.to_string(),
+                    },
+                ));
+            }
+            if let Some(node) = civic {
+                indexed.push((
+                    false,
+                    node.clone(),
+                    TreeUnlock {
+                        kind: kind.to_string(),
+                        id: id.to_string(),
+                    },
+                ));
+            }
+        };
+        for (id, spec) in &self.units {
+            add("unit", id, &spec.tech, &spec.civic);
+        }
+        for (id, spec) in &self.buildings {
+            add("building", id, &spec.tech, &spec.civic);
+        }
+        for (id, spec) in &self.wonders {
+            add("wonder", id, &spec.tech, &spec.civic);
+        }
+        for (id, spec) in &self.districts {
+            add("district", id, &spec.tech, &spec.civic);
+        }
+        for (id, spec) in &self.improvements {
+            add("improvement", id, &spec.tech, &spec.civic);
+        }
+        for (id, spec) in &self.resources {
+            add("resource", id, &spec.tech, &spec.civic);
+        }
+        for (id, spec) in &self.projects {
+            add("project", id, &spec.tech, &spec.civic);
+        }
+        for (id, spec) in &self.policies {
+            add("policy", id, &None, &spec.civic);
+        }
+        for (id, spec) in &self.governments {
+            add("government", id, &None, &spec.civic);
+        }
+
+        for spec in self.techs.values_mut().chain(self.civics.values_mut()) {
+            spec.unlocks.clear();
+        }
+        for (technology, node, unlock) in indexed {
+            let tree = if technology {
+                &mut self.techs
+            } else {
+                &mut self.civics
+            };
+            tree.get_mut(&node)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{0} {1} is gated by missing tree node {node}",
+                        unlock.kind, unlock.id
+                    )
+                })
+                .unlocks
+                .push(unlock);
+        }
+        for spec in self.techs.values_mut().chain(self.civics.values_mut()) {
+            spec.unlocks
+                .sort_by(|a, b| (&a.kind, &a.id).cmp(&(&b.kind, &b.id)));
         }
     }
 
@@ -529,6 +768,39 @@ mod tests {
         information_warfare global_warming_mitigation cultural_hegemony smart_power_doctrine
         exodus_imperative future_civic";
 
+    const DISTRICTS: &str = "
+        city_center campus holy_site commercial_hub harbor encampment theater_square
+        industrial_zone entertainment_complex water_park aqueduct neighborhood canal dam
+        aerodrome spaceport government_plaza diplomatic_quarter preserve observatory seowon
+        acropolis lavra ikanda thanh suguba cothon royal_navy_dockyard hansa oppidum
+        street_carnival hippodrome copacabana bath mbanza";
+
+    const BUILDINGS: &str = "
+        airport alchemical_society amphitheater ancestral_hall aquarium aquatics_center
+        archaeological_museum arena armory art_museum audience_chamber bank barracks
+        basilikoi_paides broadcast_center cathedral chancery coal_power_plant consulate
+        dar_e_mehr electronics_factory factory ferris_wheel film_studio flood_barrier
+        food_market foreign_ministry gilded_vault granary grand_bazaar grand_masters_chapel
+        grove gurdwara hangar hydroelectric_dam intelligence_agency library lighthouse madrasa
+        marae market medieval_walls meeting_house military_academy monument mosque
+        national_history_museum navigation_school nuclear_power_plant oil_power_plant
+        old_god_obelisk ordu pagoda palace palgum prasat queens_bibliotheque renaissance_walls
+        research_lab royal_society sanctuary seaport sewer shipyard shopping_mall shrine stable
+        stadium stave_church stock_exchange stupa sukiennice synagogue temple thermal_bath
+        tlachtli tsikhe university walls war_department warlords_throne wat water_mill workshop zoo";
+
+    const WONDERS: &str = "
+        alhambra amundsen_scott_research_station angkor_wat apadana big_ben biosphere
+        bolshoi_theatre broadway casa_de_contratacion chichen_itza colosseum colossus
+        cristo_redentor eiffel_tower estadio_do_maracana etemenanki forbidden_city
+        golden_gate_bridge great_bath great_library great_lighthouse great_zimbabwe hagia_sophia
+        hanging_gardens hermitage huey_teocalli jebel_barkal kilwa_kisiwani kotoku_in
+        machu_picchu mahabodhi_temple mausoleum_at_halicarnassus meenakshi_temple mont_st_michel
+        oracle orszaghaz oxford_university panama_canal petra potala_palace pyramids ruhr_valley
+        st_basils_cathedral statue_of_liberty statue_of_zeus stonehenge sydney_opera_house
+        taj_mahal temple_artemis terracotta_army torre_de_belem university_of_sankore
+        venetian_arsenal";
+
     fn assert_complete_tree(
         tree: &BTreeMap<String, TechSpec>,
         expected: &str,
@@ -578,6 +850,170 @@ mod tests {
         let rules = Rules::embedded();
         assert_complete_tree(&rules.techs, TECHS, [11, 8, 8, 9, 8, 8, 8, 9, 8]);
         assert_complete_tree(&rules.civics, CIVICS, [7, 7, 7, 6, 7, 9, 5, 7, 6]);
+    }
+
+    #[test]
+    fn gathering_storm_district_building_and_wonder_rosters_are_complete_and_linked() {
+        let rules = Rules::embedded();
+        fn expected(names: &str) -> BTreeSet<&str> {
+            names.split_whitespace().collect()
+        }
+        assert_eq!(
+            rules
+                .districts
+                .keys()
+                .map(String::as_str)
+                .collect::<BTreeSet<_>>(),
+            expected(DISTRICTS)
+        );
+        assert_eq!(
+            rules
+                .buildings
+                .keys()
+                .map(String::as_str)
+                .collect::<BTreeSet<_>>(),
+            expected(BUILDINGS)
+        );
+        assert_eq!(
+            rules
+                .wonders
+                .keys()
+                .map(String::as_str)
+                .collect::<BTreeSet<_>>(),
+            expected(WONDERS)
+        );
+
+        for (name, district) in &rules.districts {
+            assert!(district.cost >= 0.0, "{name} has a negative cost");
+            if let Some(tech) = &district.tech {
+                assert!(
+                    rules.techs.contains_key(tech),
+                    "{name} has missing tech {tech}"
+                );
+            }
+            if let Some(civic) = &district.civic {
+                assert!(
+                    rules.civics.contains_key(civic),
+                    "{name} has missing civic {civic}"
+                );
+            }
+            if let Some(base) = &district.replaces {
+                assert!(
+                    rules.districts.contains_key(base),
+                    "{name} replaces missing {base}"
+                );
+                assert!(
+                    district.unique_to.is_some(),
+                    "{name} replacement is not unique"
+                );
+            }
+            for excluded in &district.excludes {
+                assert!(
+                    rules.districts.contains_key(excluded),
+                    "{name} excludes missing {excluded}"
+                );
+            }
+        }
+
+        for (name, building) in &rules.buildings {
+            assert!(building.cost > 0.0, "{name} has no cost");
+            if let Some(tech) = &building.tech {
+                assert!(
+                    rules.techs.contains_key(tech),
+                    "{name} has missing tech {tech}"
+                );
+            }
+            if let Some(civic) = &building.civic {
+                assert!(
+                    rules.civics.contains_key(civic),
+                    "{name} has missing civic {civic}"
+                );
+            }
+            if let Some(district) = &building.district {
+                assert!(
+                    rules.districts.contains_key(district),
+                    "{name} has missing district {district}"
+                );
+            }
+            for required in building.requires.iter().chain(&building.requires_any) {
+                assert!(
+                    rules.buildings.contains_key(required),
+                    "{name} requires missing {required}"
+                );
+            }
+            for excluded in &building.excludes {
+                assert!(
+                    rules.buildings.contains_key(excluded),
+                    "{name} excludes missing {excluded}"
+                );
+            }
+            if let Some(base) = &building.replaces {
+                assert!(
+                    rules.buildings.contains_key(base),
+                    "{name} replaces missing {base}"
+                );
+            }
+            assert!(
+                !building.wonder,
+                "{name} must be modeled as a map-placed wonder"
+            );
+        }
+
+        for (name, wonder) in &rules.wonders {
+            assert!(wonder.cost > 0.0, "{name} has no cost");
+            if let Some(tech) = &wonder.tech {
+                assert!(
+                    rules.techs.contains_key(tech),
+                    "{name} has missing tech {tech}"
+                );
+            }
+            if let Some(civic) = &wonder.civic {
+                assert!(
+                    rules.civics.contains_key(civic),
+                    "{name} has missing civic {civic}"
+                );
+            }
+            if let Some(district) = &wonder.adjacent_district {
+                assert!(
+                    rules.districts.contains_key(district),
+                    "{name} has missing adjacent district {district}"
+                );
+            }
+            for required in wonder
+                .requires_buildings
+                .iter()
+                .chain(&wonder.requires_any_buildings)
+            {
+                assert!(
+                    rules.buildings.contains_key(required),
+                    "{name} requires missing {required}"
+                );
+            }
+            for terrain in &wonder.terrain {
+                assert!(
+                    rules.terrains.contains_key(terrain),
+                    "{name} has missing terrain {terrain}"
+                );
+            }
+            for feature in &wonder.feature {
+                assert!(
+                    rules.features.contains_key(feature),
+                    "{name} has missing feature {feature}"
+                );
+            }
+            if let Some(resource) = &wonder.adjacent_resource {
+                assert!(
+                    rules.resources.contains_key(resource),
+                    "{name} has missing resource {resource}"
+                );
+            }
+            if let Some(improvement) = &wonder.adjacent_improvement {
+                assert!(
+                    rules.improvements.contains_key(improvement),
+                    "{name} has missing improvement {improvement}"
+                );
+            }
+        }
     }
 
     #[test]

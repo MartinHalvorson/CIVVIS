@@ -24,13 +24,12 @@
   },
   "grassland_floodplains": {
     "yields": {
-      "food": 2
+      "food": 1
     }
   },
   "plains_floodplains": {
     "yields": {
-      "food": 1,
-      "production": 1
+      "food": 1
     }
   },
   "reef": {
@@ -99,6 +98,13 @@
   "mount_everest": {
     "yields": {
       "faith": 1
+    },
+    "natural_wonder": true,
+    "impassable": true
+  },
+  "pamukkale": {
+    "yields": {
+      "culture": 2
     },
     "natural_wonder": true,
     "impassable": true

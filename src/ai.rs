@@ -378,6 +378,22 @@ impl Weights {
     }
 }
 
+/// Strategic job inferred from a unit's class and promotion line. Both AI
+/// tiers use the same doctrine so independent movement and force coordination
+/// do not disagree about what a unit is for.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum UnitDoctrine {
+    Recon,
+    Assault,
+    Mobile,
+    Ranged,
+    Siege,
+    Support,
+    AirDefense,
+    AirStrike,
+    Carrier,
+}
+
 pub struct BasicAi {
     minor: bool,
     barb: bool,
@@ -390,6 +406,10 @@ pub struct BasicAi {
     /// Persistent peacetime destinations keep surplus troops patrolling the
     /// empire's frontier instead of permanently stacking around the capital.
     patrol_targets: HashMap<u32, Pos>,
+    /// Colonies, especially overseas ones, need a fixed destination. Re-scoring
+    /// only a short local radius each step strands settlers on shorelines and
+    /// can make them reverse course after embarking.
+    settler_targets: HashMap<u32, Pos>,
 }
 
 impl Default for BasicAi {
@@ -399,6 +419,384 @@ impl Default for BasicAi {
 }
 
 impl BasicAi {
+    pub(crate) fn unit_doctrine(g: &Game, uid: u32) -> UnitDoctrine {
+        let spec = &g.rules.units[g.units[&uid].kind.as_str()];
+        if spec.class == "support" {
+            return UnitDoctrine::Support;
+        }
+        if spec.domain.as_deref() == Some("air") {
+            return if spec.siege {
+                UnitDoctrine::AirStrike
+            } else {
+                UnitDoctrine::AirDefense
+            };
+        }
+        if spec.siege {
+            return UnitDoctrine::Siege;
+        }
+        match spec.promotion_class.as_str() {
+            "recon" => UnitDoctrine::Recon,
+            "light_cavalry" | "naval_raider" | "naval_melee" => UnitDoctrine::Mobile,
+            "ranged" | "naval_ranged" => UnitDoctrine::Ranged,
+            "naval_carrier" => UnitDoctrine::Carrier,
+            _ => UnitDoctrine::Assault,
+        }
+    }
+
+    pub(crate) fn city_is_coastal(g: &Game, cid: u32) -> bool {
+        g.cities.get(&cid).is_some_and(|city| {
+            g.nbrs(city.pos)
+                .into_iter()
+                .any(|pos| g.map.get(pos).is_some_and(|tile| g.rules.is_water(tile)))
+        })
+    }
+
+    pub(crate) fn empire_is_coastal(g: &Game, pid: usize) -> bool {
+        g.player_city_ids(pid)
+            .into_iter()
+            .any(|cid| Self::city_is_coastal(g, cid))
+    }
+
+    fn tech_leads_to(g: &Game, candidate: &str, target: &str) -> bool {
+        candidate == target
+            || g.rules.techs.get(target).is_some_and(|spec| {
+                spec.requires
+                    .iter()
+                    .any(|parent| Self::tech_leads_to(g, candidate, parent))
+            })
+    }
+
+    /// Navigation is treated as a capability chain rather than an incidental
+    /// unit unlock. Coastal empires first launch ships, then unlock general
+    /// embarkation and harbors, and finally cross ocean once expansion has had
+    /// time to reach the edge of its home landmass.
+    pub(crate) fn water_research_goal(g: &Game, pid: usize) -> Option<&'static str> {
+        if !Self::empire_is_coastal(g, pid) {
+            return None;
+        }
+        let player = &g.players[pid];
+        if !player.techs.contains("sailing") {
+            return Some("sailing");
+        }
+        if !player.techs.contains("shipbuilding") {
+            return Some("shipbuilding");
+        }
+        if !player.techs.contains("celestial_navigation")
+            && (g.turn >= 30 || g.player_city_ids(pid).len() >= 2)
+        {
+            return Some("celestial_navigation");
+        }
+        let has_ocean = g.map.tiles.values().any(|tile| tile.terrain == "ocean");
+        let has_expansion_unit = g
+            .units
+            .values()
+            .any(|unit| unit.owner == pid && unit.kind == "settler");
+        if has_ocean
+            && !player.techs.contains("cartography")
+            && (g.turn >= 55 || g.player_city_ids(pid).len() >= 3 || has_expansion_unit)
+        {
+            return Some("cartography");
+        }
+        None
+    }
+
+    fn waterborne(g: &Game, uid: u32) -> bool {
+        let unit = &g.units[&uid];
+        g.rules.units[unit.kind.as_str()].domain.as_deref() == Some("sea")
+            || g.map
+                .get(unit.pos)
+                .is_some_and(|tile| g.rules.is_water(tile))
+    }
+
+    fn naval_counts(g: &Game, pid: usize) -> (usize, usize, usize, usize, usize) {
+        let mut counts = (0, 0, 0, 0, 0);
+        let mut add = |kind: &str| {
+            let spec = &g.rules.units[kind];
+            if spec.class != "military" || spec.domain.as_deref() != Some("sea") {
+                return;
+            }
+            counts.0 += 1;
+            match spec.promotion_class.as_str() {
+                "naval_melee" => counts.1 += 1,
+                "naval_ranged" => counts.2 += 1,
+                "naval_raider" => counts.3 += 1,
+                "naval_carrier" => counts.4 += 1,
+                _ => {}
+            }
+        };
+        for uid in g.player_unit_ids(pid) {
+            add(&g.units[&uid].kind);
+        }
+        for cid in g.player_city_ids(pid) {
+            if let Some(Item::Unit { unit }) = g.cities[&cid].queue.first() {
+                add(unit);
+            }
+        }
+        counts
+    }
+
+    pub(crate) fn desired_navy(g: &Game, pid: usize) -> usize {
+        let coastal_cities = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter(|cid| Self::city_is_coastal(g, *cid))
+            .count();
+        if coastal_cities == 0 || !g.players[pid].techs.contains("sailing") {
+            return 0;
+        }
+        let mut desired = 1;
+        let settlers_at_sea = g.units.values().any(|unit| {
+            unit.owner == pid
+                && unit.kind == "settler"
+                && g.map
+                    .get(unit.pos)
+                    .is_some_and(|tile| g.rules.is_water(tile))
+        });
+        if settlers_at_sea
+            || (g.players[pid].techs.contains("shipbuilding")
+                && g.units
+                    .values()
+                    .any(|unit| unit.owner == pid && unit.kind == "settler"))
+        {
+            desired = desired.max(2);
+        }
+        let naval_war = g.players.iter().any(|enemy| {
+            enemy.id != pid
+                && enemy.alive
+                && g.is_at_war(pid, enemy.id)
+                && (g.units.values().any(|unit| {
+                    unit.owner == enemy.id
+                        && g.map
+                            .get(unit.pos)
+                            .is_some_and(|tile| g.rules.is_water(tile))
+                }) || g
+                    .player_city_ids(enemy.id)
+                    .into_iter()
+                    .any(|cid| Self::city_is_coastal(g, cid)))
+        });
+        if naval_war {
+            desired = desired.max(coastal_cities.saturating_add(1).max(2));
+        } else if g.players[pid].techs.contains("cartography") && coastal_cities >= 2 {
+            desired = desired.max(2);
+        }
+        desired
+    }
+
+    fn has_exploration_target(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        g.map.tiles.iter().any(|(pos, _)| {
+            !g.players[pid].explored.contains(pos) && g.unit_can_traverse(uid, *pos)
+        })
+    }
+
+    /// Recon explores even during war. Without recon, one ordinary combat
+    /// unit per movement domain scouts at peace so the empire is not blind,
+    /// while the rest remain available for patrol and defense.
+    fn should_explore(&self, g: &Game, pid: usize, uid: u32, at_war: bool) -> bool {
+        if !self.has_exploration_target(g, pid, uid) {
+            return false;
+        }
+        let doctrine = Self::unit_doctrine(g, uid);
+        if doctrine == UnitDoctrine::Recon {
+            return true;
+        }
+        if at_war
+            || matches!(
+                doctrine,
+                UnitDoctrine::Siege
+                    | UnitDoctrine::Support
+                    | UnitDoctrine::AirDefense
+                    | UnitDoctrine::AirStrike
+                    | UnitDoctrine::Carrier
+            )
+        {
+            return false;
+        }
+        let domain = g.rules.units[g.units[&uid].kind.as_str()]
+            .domain
+            .as_deref()
+            .unwrap_or("land");
+        let candidates = g.player_unit_ids(pid).into_iter().filter(|other| {
+            let spec = &g.rules.units[g.units[other].kind.as_str()];
+            spec.class == "military"
+                && spec.domain.as_deref().unwrap_or("land") == domain
+                && !matches!(
+                    Self::unit_doctrine(g, *other),
+                    UnitDoctrine::Siege
+                        | UnitDoctrine::AirDefense
+                        | UnitDoctrine::AirStrike
+                        | UnitDoctrine::Carrier
+                )
+                && self.has_exploration_target(g, pid, *other)
+        });
+        let recon_exists = candidates
+            .clone()
+            .any(|other| Self::unit_doctrine(g, other) == UnitDoctrine::Recon);
+        !recon_exists && candidates.min() == Some(uid)
+    }
+
+    /// Required exchange value for an attack. Dedicated assault and mobile
+    /// units accept thinner advantages, high-strength units press them harder,
+    /// recon avoids routine combat, and siege strongly prefers districts.
+    pub(crate) fn attack_threshold(&self, g: &Game, uid: u32, target: Pos) -> f64 {
+        let unit = &g.units[&uid];
+        let doctrine = Self::unit_doctrine(g, uid);
+        let role = match doctrine {
+            UnitDoctrine::Recon => 14.0,
+            UnitDoctrine::Assault => -2.0,
+            UnitDoctrine::Mobile => -5.0,
+            UnitDoctrine::Ranged => 0.0,
+            UnitDoctrine::Siege => 5.0,
+            UnitDoctrine::Support | UnitDoctrine::Carrier => 1_000.0,
+            UnitDoctrine::AirDefense => -1.0,
+            UnitDoctrine::AirStrike => -4.0,
+        };
+        let attack_strength = g
+            .unit_strength(unit, false)
+            .max(g.unit_ranged_attack_strength(unit));
+        let strength_drive = ((attack_strength - 25.0) * 0.12).clamp(0.0, 8.0);
+        let target_adjustment = if g.city_at(target).is_some()
+            || g.map
+                .get(target)
+                .is_some_and(|tile| tile.district.is_some())
+        {
+            match doctrine {
+                UnitDoctrine::Siege => -22.0,
+                UnitDoctrine::Assault => -3.0,
+                UnitDoctrine::Recon => 8.0,
+                _ => 0.0,
+            }
+        } else {
+            match doctrine {
+                UnitDoctrine::Siege => 14.0,
+                UnitDoctrine::Mobile
+                    if g.units_at(target).iter().any(|other| {
+                        g.rules.units[g.units[other].kind.as_str()].class != "military"
+                            || g.units[other].hp <= 40
+                    }) =>
+                {
+                    -6.0
+                }
+                _ => 0.0,
+            }
+        };
+        self.w.attack_floor + role + target_adjustment - strength_drive
+    }
+
+    /// Non-generic actions that define a unit's strategic job. Fast raiders
+    /// exploit infrastructure, and aircraft use missions and rebasing instead
+    /// of pretending to be land units with long range.
+    pub(crate) fn doctrine_action(&self, g: &Game, pid: usize, uid: u32) -> Option<Action> {
+        let doctrine = Self::unit_doctrine(g, uid);
+        if !matches!(
+            doctrine,
+            UnitDoctrine::Mobile | UnitDoctrine::AirDefense | UnitDoctrine::AirStrike
+        ) {
+            return None;
+        }
+        let legal = g.legal_actions(pid);
+        match doctrine {
+            UnitDoctrine::Mobile => legal
+                .iter()
+                .find(|action| matches!(action, Action::CoastalRaid { unit, .. } if *unit == uid))
+                .cloned()
+                .or_else(|| {
+                    legal
+                        .iter()
+                        .find(|action| matches!(action, Action::Pillage { unit } if *unit == uid))
+                        .cloned()
+                }),
+            UnitDoctrine::AirDefense => legal
+                .iter()
+                .find(|action| match action {
+                    Action::AirStrike { unit, target } if *unit == uid => {
+                        g.units_at(*target).iter().any(|other| {
+                            let other = &g.units[other];
+                            other.owner != pid
+                                && g.rules.units[other.kind.as_str()].domain.as_deref()
+                                    == Some("air")
+                        })
+                    }
+                    _ => false,
+                })
+                .cloned()
+                .or_else(|| {
+                    legal
+                        .iter()
+                        .find(|action| matches!(action, Action::AirPatrol { unit } if *unit == uid))
+                        .cloned()
+                })
+                .or_else(|| {
+                    legal.into_iter().find(
+                        |action| matches!(action, Action::AirStrike { unit, .. } if *unit == uid),
+                    )
+                }),
+            UnitDoctrine::AirStrike => {
+                let strike = legal
+                    .iter()
+                    .filter_map(|action| match action {
+                        Action::AirStrike { unit, target } if *unit == uid => {
+                            let target_hp = g
+                                .units_at(*target)
+                                .iter()
+                                .filter_map(|other| {
+                                    let other = &g.units[other];
+                                    (other.owner != pid).then_some(other.hp)
+                                })
+                                .min()
+                                .unwrap_or(100);
+                            let city = g.city_at(*target).is_some() as i32;
+                            Some((city * 120 + 100 - target_hp, *target, action.clone()))
+                        }
+                        _ => None,
+                    })
+                    .max_by_key(|(score, target, _)| (*score, std::cmp::Reverse(*target)))
+                    .map(|(_, _, action)| action);
+                strike
+                    .or_else(|| {
+                        let enemy_positions: Vec<Pos> = g
+                            .units
+                            .values()
+                            .filter(|other| other.owner != pid && g.is_at_war(pid, other.owner))
+                            .map(|other| other.pos)
+                            .chain(
+                                g.cities
+                                    .values()
+                                    .filter(|city| {
+                                        city.owner != pid && g.is_at_war(pid, city.owner)
+                                    })
+                                    .map(|city| city.pos),
+                            )
+                            .collect();
+                        if enemy_positions.is_empty() {
+                            None
+                        } else {
+                            legal
+                                .iter()
+                                .filter_map(|action| match action {
+                                    Action::AirRebase { unit, to } if *unit == uid => {
+                                        let distance = enemy_positions
+                                            .iter()
+                                            .map(|enemy| g.wdist(*to, *enemy))
+                                            .min()
+                                            .unwrap_or(i32::MAX);
+                                        Some((distance, *to, action.clone()))
+                                    }
+                                    _ => None,
+                                })
+                                .min_by_key(|(distance, to, _)| (*distance, *to))
+                                .map(|(_, _, action)| action)
+                        }
+                    })
+                    .or_else(|| {
+                        legal.into_iter().find(
+                            |action| matches!(action, Action::AirPatrol { unit } if *unit == uid),
+                        )
+                    })
+            }
+            _ => None,
+        }
+    }
+
     pub fn new() -> BasicAi {
         BasicAi {
             minor: false,
@@ -408,6 +806,7 @@ impl BasicAi {
             book_pos: 0,
             recovering_units: HashSet::new(),
             patrol_targets: HashMap::new(),
+            settler_targets: HashMap::new(),
         }
     }
 
@@ -420,6 +819,7 @@ impl BasicAi {
             book_pos: 0,
             recovering_units: HashSet::new(),
             patrol_targets: HashMap::new(),
+            settler_targets: HashMap::new(),
         }
     }
 
@@ -463,10 +863,26 @@ impl BasicAi {
         if g.players[pid].research.is_none() {
             let avail = g.available_techs(pid);
             if !avail.is_empty() {
-                let pick = TECH_PRIORITY
-                    .iter()
-                    .find(|t| avail.iter().any(|a| a == *t))
-                    .map(|t| t.to_string())
+                let water_pick = Self::water_research_goal(g, pid).and_then(|goal| {
+                    avail
+                        .iter()
+                        .filter(|tech| Self::tech_leads_to(g, tech, goal))
+                        .min_by(|a, b| {
+                            g.rules.techs[*a]
+                                .cost
+                                .partial_cmp(&g.rules.techs[*b].cost)
+                                .unwrap()
+                                .then(a.cmp(b))
+                        })
+                        .cloned()
+                });
+                let pick = water_pick
+                    .or_else(|| {
+                        TECH_PRIORITY
+                            .iter()
+                            .find(|t| avail.iter().any(|a| a == *t))
+                            .map(|t| t.to_string())
+                    })
                     .unwrap_or_else(|| avail[0].clone());
                 let _ = g.apply(pid, &Action::Research { tech: pick });
             }
@@ -869,6 +1285,52 @@ impl BasicAi {
         best.map(|(_, n)| n)
     }
 
+    fn best_naval_unit(&self, g: &Game, pid: usize, cid: u32) -> Option<String> {
+        if !Self::city_is_coastal(g, cid) {
+            return None;
+        }
+        let (total, melee, ranged, raiders, carriers) = Self::naval_counts(g, pid);
+        let has_aircraft = g.units.values().any(|unit| {
+            unit.owner == pid && g.rules.units[unit.kind.as_str()].domain.as_deref() == Some("air")
+        });
+        g.rules
+            .units
+            .iter()
+            .filter(|(name, spec)| {
+                spec.class == "military"
+                    && spec.domain.as_deref() == Some("sea")
+                    && g.can_produce(
+                        pid,
+                        cid,
+                        &Item::Unit {
+                            unit: (*name).clone(),
+                        },
+                    )
+            })
+            .map(|(name, spec)| {
+                let power = spec.strength.max(spec.ranged_attack_strength());
+                let role = match spec.promotion_class.as_str() {
+                    // A navy without melee ships can bombard but never take a
+                    // coastal city; preserve at least half the fleet for that
+                    // capturing/screening role.
+                    "naval_melee" => 42.0 * (melee <= ranged + raiders) as i32 as f64,
+                    "naval_ranged" => 34.0 * (ranged < melee.max(1)) as i32 as f64,
+                    "naval_raider" => 22.0 * (total >= 2 && raiders == 0) as i32 as f64,
+                    "naval_carrier" => {
+                        if has_aircraft && carriers == 0 {
+                            30.0
+                        } else {
+                            -120.0
+                        }
+                    }
+                    _ => 0.0,
+                };
+                (power * 3.0 + role - spec.cost * 0.04, name.clone())
+            })
+            .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then_with(|| b.1.cmp(&a.1)))
+            .map(|(_, name)| name)
+    }
+
     fn combined_arms_unit(
         &self,
         g: &Game,
@@ -1110,6 +1572,12 @@ impl BasicAi {
                 return Some(project);
             }
         }
+        let naval = Self::naval_counts(g, pid).0;
+        if naval < Self::desired_navy(g, pid) {
+            if let Some(unit) = self.best_naval_unit(g, pid, cid) {
+                return Some(Item::Unit { unit });
+            }
+        }
         if !self.minor
             && !self.barb
             && ((n_cities + settlers) as f64) < self.w.city_target
@@ -1145,6 +1613,27 @@ impl BasicAi {
             return Some(Item::Building {
                 building: "monument".to_string(),
             });
+        }
+        // Coastal infrastructure is part of the water strategy, not an
+        // accidental fallback after every land district. A harbor also gives
+        // later naval production somewhere sensible to concentrate.
+        if Self::city_is_coastal(g, cid) && !g.cities[&cid].districts.contains_key("harbor") {
+            let sites = g.district_sites(cid, "harbor");
+            if let Some(pos) = sites.into_iter().max_by(|a, b| {
+                g.district_yields("harbor", *a)
+                    .total()
+                    .partial_cmp(&g.district_yields("harbor", *b).total())
+                    .unwrap()
+                    .then(a.cmp(b))
+            }) {
+                let item = Item::District {
+                    district: "harbor".to_string(),
+                    pos,
+                };
+                if g.can_produce(pid, cid, &item) {
+                    return Some(item);
+                }
+            }
         }
         let mut dpri: Vec<(&str, f64)> = DISTRICT_PRIORITY
             .iter()
@@ -1248,6 +1737,8 @@ impl BasicAi {
             .retain(|uid| g.units.get(uid).is_some_and(|unit| unit.owner == pid));
         self.patrol_targets
             .retain(|uid, _| g.units.get(uid).is_some_and(|unit| unit.owner == pid));
+        self.settler_targets
+            .retain(|uid, _| g.units.get(uid).is_some_and(|unit| unit.owner == pid));
         for uid in g.player_unit_ids(pid) {
             for _ in 0..8 {
                 if !g.units.contains_key(&uid) {
@@ -1329,7 +1820,12 @@ impl BasicAi {
                     Action::LinkUnits { unit, with } => {
                         let a = &g.rules.units[g.units[unit].kind.as_str()];
                         let b = &g.rules.units[g.units[with].kind.as_str()];
-                        a.class == "support" || b.class == "support"
+                        let support = a.class == "support" || b.class == "support";
+                        let naval_settler = (a.domain.as_deref() == Some("sea")
+                            && g.units[with].kind == "settler")
+                            || (b.domain.as_deref() == Some("sea")
+                                && g.units[unit].kind == "settler");
+                        support || naval_settler
                     }
                     _ => false,
                 });
@@ -1478,48 +1974,84 @@ impl BasicAi {
         total
     }
 
-    fn settler_step(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
+    fn valid_settle_site(&self, g: &Game, pid: usize, pos: Pos) -> bool {
+        let Some(tile) = g.map.get(pos) else {
+            return false;
+        };
+        !g.rules.is_water(tile)
+            && g.rules.is_passable(tile)
+            && !g
+                .cities
+                .values()
+                .any(|city| (g.wdist(city.pos, pos) as f64) < self.w.min_city_dist)
+            && tile
+                .owner_city
+                .is_none_or(|cid| g.cities[&cid].owner == pid)
+    }
+
+    fn best_reachable_settle_site(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        radius: i32,
+    ) -> Option<Pos> {
+        let from = g.units[&uid].pos;
+        let mut candidates: Vec<(f64, Pos)> = g
+            .wdisk(from, radius)
+            .into_iter()
+            .filter(|pos| self.valid_settle_site(g, pid, *pos))
+            .map(|pos| {
+                let score =
+                    self.settle_value(g, pos) - self.w.settle_dist * g.wdist(from, pos) as f64;
+                (score, pos)
+            })
+            .collect();
+        candidates.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap().then(a.1.cmp(&b.1)));
+        candidates
+            .into_iter()
+            .take(40)
+            .find(|(_, pos)| *pos == from || g.route_step(uid, *pos, 0).is_some())
+            .map(|(_, pos)| pos)
+    }
+
+    fn settler_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
         if self.minor {
             return false; // city-states and barbarians never settle
         }
         let upos = g.units[&uid].pos;
-        let mut best: Option<(f64, Pos)> = None;
-        for pos in g.wdisk(upos, 5) {
-            let t = match g.map.get(pos) {
-                Some(t) => t,
-                None => continue,
-            };
-            if g.rules.is_water(t) || !g.rules.is_passable(t) {
-                continue;
-            }
-            if g.cities
-                .values()
-                .any(|c| (g.wdist(c.pos, pos) as f64) < self.w.min_city_dist)
-            {
-                continue;
-            }
-            if let Some(oc) = t.owner_city {
-                if g.cities[&oc].owner != pid {
-                    continue;
-                }
-            }
-            let val = self.settle_value(g, pos) - self.w.settle_dist * g.wdist(upos, pos) as f64;
-            let better = match &best {
-                None => true,
-                Some((bv, bp)) => val > *bv || (val == *bv && pos > *bp),
-            };
-            if better {
-                best = Some((val, pos));
-            }
-        }
-        let target = match best {
-            Some((_, p)) => p,
-            None => return false,
+        let current_target = self.settler_targets.get(&uid).copied().filter(|target| {
+            self.valid_settle_site(g, pid, *target)
+                && (*target == upos || g.route_step(uid, *target, 0).is_some())
+        });
+        let target = current_target.or_else(|| {
+            let local_radius = if g.player_city_ids(pid).is_empty() { 2 } else { 6 };
+            self.best_reachable_settle_site(g, pid, uid, local_radius)
+                .or_else(|| {
+                    g.players[pid]
+                        .techs
+                        .contains("shipbuilding")
+                        .then(|| g.map.width + g.map.height)
+                        .and_then(|radius| self.best_reachable_settle_site(g, pid, uid, radius))
+                })
+                .map(|target| {
+                    self.settler_targets.insert(uid, target);
+                    target
+                })
+        });
+        let Some(target) = target else {
+            self.settler_targets.remove(&uid);
+            return false;
         };
         if target == upos {
+            self.settler_targets.remove(&uid);
             return g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
         }
-        self.step_toward(g, pid, uid, target)
+        let moved = self.step_toward(g, pid, uid, target);
+        if !moved {
+            self.settler_targets.remove(&uid);
+        }
+        moved
     }
 
     fn trader_step(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
@@ -1590,6 +2122,13 @@ impl BasicAi {
     }
 
     fn builder_step(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
+        if let Some(action) = g
+            .legal_actions(pid)
+            .into_iter()
+            .find(|action| matches!(action, Action::RepairImprovement { unit } if *unit == uid))
+        {
+            return g.apply(pid, &action).is_ok();
+        }
         let upos = g.units[&uid].pos;
         let imps = g.valid_improvements(pid, upos);
         if !imps.is_empty() {
@@ -1929,6 +2468,13 @@ impl BasicAi {
         }
         let upos = g.units[&uid].pos;
         let spec = g.rules.units[g.units[&uid].kind.as_str()].clone();
+        let doctrine = Self::unit_doctrine(g, uid);
+        if let Some(action) = self.doctrine_action(g, pid, uid) {
+            return g.apply(pid, &action).is_ok();
+        }
+        if matches!(doctrine, UnitDoctrine::AirDefense | UnitDoctrine::AirStrike) {
+            return false;
+        }
         let enemy_ids: Vec<usize> = g
             .players
             .iter()
@@ -1937,7 +2483,9 @@ impl BasicAi {
             .collect();
         if !enemy_ids.is_empty() {
             self.patrol_targets.remove(&uid);
-            // pick the best exchange among all attackable tiles, not the first
+            // Pick the best role-adjusted exchange among all attackable tiles.
+            // A scout needs a clear opportunity; an assault unit presses a
+            // thinner edge, and siege spends its attacks on districts.
             let ranged = spec.has_ranged_attack();
             let radius = if ranged { spec.range.max(1) } else { 1 };
             let mut best: Option<(f64, Pos)> = None;
@@ -1948,13 +2496,17 @@ impl BasicAi {
                 {
                     continue;
                 }
-                let s = self.exchange_score(g, uid, pos, ranged);
-                if best.map(|(b, bp)| (s, pos) > (b, bp)).unwrap_or(true) {
-                    best = Some((s, pos));
+                let utility =
+                    self.exchange_score(g, uid, pos, ranged) - self.attack_threshold(g, uid, pos);
+                if best
+                    .map(|(old, old_pos)| (utility, pos) > (old, old_pos))
+                    .unwrap_or(true)
+                {
+                    best = Some((utility, pos));
                 }
             }
-            if let Some((s, pos)) = best {
-                if s > self.w.attack_floor {
+            if let Some((utility, pos)) = best {
+                if utility > 0.0 {
                     let act = if ranged {
                         Action::Ranged {
                             unit: uid,
@@ -1970,6 +2522,12 @@ impl BasicAi {
                         return true;
                     }
                 }
+            }
+            if doctrine == UnitDoctrine::Recon
+                && self.should_explore(g, pid, uid, true)
+                && self.explore_step(g, pid, uid)
+            {
+                return true;
             }
             return match self.nearest_enemy(g, pid, upos, &enemy_ids) {
                 Some(t) => self.tactical_step(g, pid, uid, t, &enemy_ids, radius),
@@ -1988,7 +2546,7 @@ impl BasicAi {
             }
             return self.fortify_or_stop(g, pid, uid);
         }
-        if self.explore_step(g, pid, uid) {
+        if self.should_explore(g, pid, uid, false) && self.explore_step(g, pid, uid) {
             return true;
         }
         if self.patrol_step(g, pid, uid) {
@@ -2193,6 +2751,156 @@ mod tests {
             "expected most campaign troops to advance; moved {moved}/{}",
             army.len()
         );
+    }
+
+    #[test]
+    fn military_roster_maps_to_distinct_strategic_doctrines() {
+        let mut g = Game::new_full(1, 24, 16, 37, 30, 0, false);
+        let positions: Vec<Pos> = g
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| g.units_at(*pos).is_empty())
+            .take(9)
+            .collect();
+        let cases = [
+            ("scout", UnitDoctrine::Recon),
+            ("swordsman", UnitDoctrine::Assault),
+            ("horseman", UnitDoctrine::Mobile),
+            ("archer", UnitDoctrine::Ranged),
+            ("catapult", UnitDoctrine::Siege),
+            ("battering_ram", UnitDoctrine::Support),
+            ("biplane", UnitDoctrine::AirDefense),
+            ("bomber", UnitDoctrine::AirStrike),
+            ("aircraft_carrier", UnitDoctrine::Carrier),
+        ];
+        for ((kind, expected), pos) in cases.into_iter().zip(positions) {
+            let uid = g.spawn_test_unit(kind, 0, pos);
+            assert_eq!(BasicAi::unit_doctrine(&g, uid), expected, "{kind}");
+        }
+    }
+
+    #[test]
+    fn scout_explores_while_strong_assault_unit_attacks() {
+        let mut g = Game::new_full(2, 24, 16, 38, 30, 0, false);
+        g.at_war.insert((0, 1));
+        let (enemy_pos, scout_pos, assault_pos, hidden) = g
+            .map
+            .tiles
+            .iter()
+            .filter(|(pos, tile)| {
+                g.rules.is_passable(tile) && !g.rules.is_water(tile) && g.units_at(**pos).is_empty()
+            })
+            .find_map(|(center, _)| {
+                let ring: Vec<Pos> = g
+                    .nbrs(*center)
+                    .into_iter()
+                    .filter(|pos| {
+                        g.map.get(*pos).is_some_and(|tile| {
+                            g.rules.is_passable(tile)
+                                && !g.rules.is_water(tile)
+                                && g.units_at(*pos).is_empty()
+                        })
+                    })
+                    .collect();
+                if ring.len() < 3 {
+                    return None;
+                }
+                let scout = ring[0];
+                let hidden = ring
+                    .iter()
+                    .copied()
+                    .skip(1)
+                    .find(|pos| g.wdist(scout, *pos) == 1)?;
+                let assault = ring
+                    .iter()
+                    .copied()
+                    .find(|pos| *pos != scout && *pos != hidden)?;
+                Some((*center, scout, assault, hidden))
+            })
+            .expect("test map needs an open tactical ring");
+        let enemy = g.spawn_test_unit("modern_armor", 1, enemy_pos);
+        let scout = g.spawn_test_unit("scout", 0, scout_pos);
+        let assault = g.spawn_test_unit("giant_death_robot", 0, assault_pos);
+        g.players[0].explored.extend(g.map.tiles.keys().copied());
+        g.players[0].explored.remove(&hidden);
+
+        let mut ai = BasicAi::new();
+        assert!(ai.military_step(&mut g, 0, scout));
+        assert!(matches!(
+            g.log.last(),
+            Some((0, Action::Move { unit, to })) if *unit == scout && *to == hidden
+        ));
+        assert!(g.units.contains_key(&enemy));
+
+        assert!(
+            ai.attack_threshold(&g, assault, enemy_pos) < ai.attack_threshold(&g, scout, enemy_pos),
+            "strong assault units should have a more aggressive attack threshold"
+        );
+        assert!(ai.military_step(&mut g, 0, assault));
+        assert!(
+            matches!(
+                g.log.last(),
+                Some((0, Action::Attack { unit, target } | Action::Ranged { unit, target }))
+                    if *unit == assault && *target == enemy_pos
+            ),
+            "unexpected assault decision: {:?}",
+            g.log.last()
+        );
+    }
+
+    #[test]
+    fn raiders_and_aircraft_use_their_specialized_actions() {
+        let mut g = Game::new_full(2, 24, 16, 39, 30, 0, false);
+        g.at_war.insert((0, 1));
+        let positions: Vec<Pos> = g
+            .map
+            .tiles
+            .iter()
+            .filter(|(pos, tile)| {
+                g.rules.is_passable(tile) && !g.rules.is_water(tile) && g.units_at(**pos).is_empty()
+            })
+            .map(|(pos, _)| *pos)
+            .take(3)
+            .collect();
+        let air_target = g
+            .nbrs(positions[2])
+            .into_iter()
+            .find(|pos| {
+                !positions.contains(pos)
+                    && g.map.get(*pos).is_some_and(|tile| {
+                        g.rules.is_passable(tile)
+                            && !g.rules.is_water(tile)
+                            && g.units_at(*pos).is_empty()
+                    })
+            })
+            .expect("test map needs a land target beside the air base");
+        let raider = g.spawn_test_unit("horseman", 0, positions[0]);
+        let assault = g.spawn_test_unit("swordsman", 0, positions[1]);
+        g.map.tiles.get_mut(&positions[0]).unwrap().improvement =
+            Some("barbarian_camp".to_string());
+        g.map.tiles.get_mut(&positions[1]).unwrap().improvement =
+            Some("barbarian_camp".to_string());
+        let fighter = g.spawn_test_unit("biplane", 0, positions[2]);
+        let bomber = g.spawn_test_unit("bomber", 0, positions[2]);
+        g.spawn_test_unit("modern_armor", 1, air_target);
+        let ai = BasicAi::new();
+
+        assert!(matches!(
+            ai.doctrine_action(&g, 0, raider),
+            Some(Action::Pillage { unit }) if unit == raider
+        ));
+        assert_eq!(ai.doctrine_action(&g, 0, assault), None);
+        assert!(matches!(
+            ai.doctrine_action(&g, 0, fighter),
+            Some(Action::AirPatrol { unit }) if unit == fighter
+        ));
+        assert!(matches!(
+            ai.doctrine_action(&g, 0, bomber),
+            Some(Action::AirStrike { unit, target })
+                if unit == bomber && target == air_target
+        ));
     }
 
     #[test]
