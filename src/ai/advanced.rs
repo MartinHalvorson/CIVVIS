@@ -353,6 +353,15 @@ impl AdvancedAi {
             if !g.players.get(target).map(|p| p.alive).unwrap_or(false) {
                 return true;
             }
+            let emergency_target = g
+                .emergency_objective(pid)
+                .is_some_and(|objective| objective.target == target);
+            if !g.is_at_war(pid, target)
+                && !emergency_target
+                && !self.campaign_target_legal(g, pid, target)
+            {
+                return true;
+            }
         }
         if let Some(cid) = plan.target_city {
             if !g.cities.get(&cid).map(|c| c.owner != pid).unwrap_or(false) {
@@ -388,7 +397,9 @@ impl AdvancedAi {
             }
         }
         if let Some((rival, counter)) = self.victory_denial(g, pid) {
-            if plan.target_player != Some(rival)
+            let expects_hostile_target = self.campaign_target_legal(g, pid, rival);
+            if (expects_hostile_target && plan.target_player != Some(rival))
+                || (!expects_hostile_target && plan.target_player == Some(rival))
                 || (major_wars.is_empty() && plan.strategy != counter)
             {
                 return true;
@@ -795,28 +806,31 @@ impl AdvancedAi {
         let target_player = if let Some(emergency) = &emergency_objective {
             Some(emergency.target)
         } else if wartime_rivals.is_empty() {
-            denial.map(|(rival, _)| rival).or_else(|| {
-                let mut candidates = major_rivals.clone();
-                if strategy == GrandStrategy::Conquest {
-                    candidates.extend(
-                        g.players
-                            .iter()
-                            .filter(|player| {
-                                player.alive
-                                    && player.is_minor
-                                    && !player.is_barbarian
-                                    && g.suzerain_of(player.id) != Some(pid)
-                            })
-                            .map(|player| player.id),
-                    );
-                }
-                candidates.into_iter().min_by(|a, b| {
-                    self.campaign_target_value(g, pid, *a)
-                        .partial_cmp(&self.campaign_target_value(g, pid, *b))
-                        .unwrap()
-                        .then(a.cmp(b))
+            denial
+                .filter(|(rival, _)| self.campaign_target_legal(g, pid, *rival))
+                .map(|(rival, _)| rival)
+                .or_else(|| {
+                    let mut candidates: Vec<_> = major_rivals
+                        .iter()
+                        .copied()
+                        .filter(|rival| self.campaign_target_legal(g, pid, *rival))
+                        .collect();
+                    if strategy == GrandStrategy::Conquest {
+                        candidates.extend(
+                            g.players
+                                .iter()
+                                .filter(|player| player.is_minor)
+                                .filter(|player| self.campaign_target_legal(g, pid, player.id))
+                                .map(|player| player.id),
+                        );
+                    }
+                    candidates.into_iter().min_by(|a, b| {
+                        self.campaign_target_value(g, pid, *a)
+                            .partial_cmp(&self.campaign_target_value(g, pid, *b))
+                            .unwrap()
+                            .then(a.cmp(b))
+                    })
                 })
-            })
         } else {
             wartime_rivals.iter().copied().min_by(|a, b| {
                 self.rival_value(g, pid, *a)
@@ -877,6 +891,37 @@ impl AdvancedAi {
     /// a nearby minor should displace a major target only when it is a clearly
     /// cheaper objective. A city-state that can be secured immediately with
     /// free Envoys is treated as an ally to win, not territory to destroy.
+    fn campaign_target_legal(&self, g: &Game, pid: usize, other: usize) -> bool {
+        let Some(player) = g.players.get(other) else {
+            return false;
+        };
+        if other == pid || !player.alive || player.is_barbarian {
+            return false;
+        }
+
+        // Preserve an already active war even if a loaded legacy position has
+        // contradictory diplomacy. Outside war, relationship commitments are
+        // hard legality masks, never soft terms in the positional score.
+        if g.is_at_war(pid, other) {
+            return true;
+        }
+        if g.are_friends(pid, other) || g.alliance_with(pid, other).is_some() {
+            return false;
+        }
+        if player.is_minor {
+            let Some(suzerain) = g.suzerain_of(other) else {
+                return true;
+            };
+            if suzerain == pid
+                || g.are_friends(pid, suzerain)
+                || g.alliance_with(pid, suzerain).is_some()
+            {
+                return false;
+            }
+        }
+        true
+    }
+
     fn campaign_target_value(&self, g: &Game, pid: usize, other: usize) -> f64 {
         let mut value = self.rival_value(g, pid, other);
         if !g.players[other].is_minor {
@@ -924,6 +969,163 @@ impl AdvancedAi {
             + yields.science * science
             + yields.culture * culture
             + yields.faith * faith
+    }
+
+    /// Evaluate a repeatable district project as a bounded race move. The
+    /// ongoing conversion is valued over the actual build horizon, while the
+    /// completion award is priced against the live global Great Person race.
+    /// This is deliberately analogous to an engine's passed-pawn extension:
+    /// a project receives a large tempo bonus only when completing it crosses
+    /// a concrete threshold, rather than from a fixed name-based preference.
+    fn district_project_value(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        project: &str,
+        plan: &StrategicPlan,
+    ) -> f64 {
+        let spec = &g.rules.projects[project];
+        let city = &g.cities[&cid];
+        let production = g.city_yields(cid).production.max(1.0);
+        let item = Item::Project {
+            project: project.to_string(),
+        };
+        let turns = g.item_remaining_cost_for_city(pid, cid, &item) / production;
+        let threatened = plan.threatened_city == Some(cid)
+            || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4);
+        let denominator = 7.0 + turns.max(1.0);
+
+        let mut ongoing = Yields::default();
+        for (kind, percent) in &spec.ongoing_yields {
+            let amount = production * percent / 100.0;
+            match kind.as_str() {
+                "food" => ongoing.food += amount,
+                "production" => ongoing.production += amount,
+                "gold" => ongoing.gold += amount,
+                "science" => ongoing.science += amount,
+                "culture" => ongoing.culture += amount,
+                "faith" => ongoing.faith += amount,
+                _ => {}
+            }
+        }
+        let horizon = turns.clamp(1.0, 16.0);
+        let mut value = self.yield_value(ongoing, plan.strategy) * horizon * 4.0;
+
+        for (kind, award) in g.project_completion_gpp_awards(pid, cid, project) {
+            // Patronage outcome B can set this class's completion award to
+            // zero. Ongoing yield conversion may still justify the project,
+            // but a disabled class has no race tempo to extend.
+            if award <= f64::EPSILON {
+                continue;
+            }
+            let mut affinity: f64 = match (plan.strategy, kind.as_str()) {
+                (GrandStrategy::Science, "scientist") => 2.5,
+                (GrandStrategy::Culture, "writer" | "artist" | "musician") => 2.6,
+                (GrandStrategy::Religion, "prophet") if g.players[pid].religion.is_none() => 2.8,
+                (GrandStrategy::Diplomacy, "merchant") => 2.0,
+                (GrandStrategy::Conquest, "general" | "admiral") => 2.3,
+                (GrandStrategy::Expansion | GrandStrategy::Recovery, "engineer" | "merchant") => {
+                    1.8
+                }
+                (GrandStrategy::Science | GrandStrategy::Culture, "engineer") => 1.6,
+                (_, "prophet") if g.players[pid].religion.is_some() => 0.15,
+                _ => 0.85,
+            };
+            let work = match kind.as_str() {
+                "writer" => Some("writing"),
+                "artist" => Some("art"),
+                "musician" => Some("music"),
+                _ => None,
+            };
+            if work.is_some_and(|work| !g.can_house_additional_great_work(pid, work)) {
+                affinity *= 0.20;
+            }
+
+            let cost = g.gp_cost(pid, &kind).max(1.0);
+            let mine = g.players[pid].gpp.get(&kind).copied().unwrap_or(0.0);
+            let rival = g
+                .players
+                .iter()
+                .filter(|player| {
+                    player.id != pid && player.alive && !player.is_minor && !player.is_barbarian
+                })
+                .map(|player| player.gpp.get(&kind).copied().unwrap_or(0.0))
+                .fold(0.0_f64, f64::max);
+            let useful = award.min((cost - mine).max(0.0));
+            value += useful * (5.0 + 5.0 * affinity);
+            value += (rival / cost).clamp(0.0, 1.0) * 150.0 * affinity;
+            if mine + award + f64::EPSILON >= cost && mine < cost {
+                value += 620.0 * affinity;
+            }
+            if rival > mine && mine + award > rival {
+                value += 240.0 * affinity;
+            }
+        }
+
+        if spec.full_power_while_active {
+            let deficit = (g.city_power_demand(city) - g.city_power_supply(city)).max(0.0);
+            value += deficit * 55.0 * denominator;
+        }
+
+        if project == "bread_and_circuses" {
+            let loyalty_need = (100.0 - city.loyalty).max(0.0);
+            let nearby_foreign_pressure = g
+                .cities
+                .values()
+                .filter(|other| {
+                    other.owner != pid
+                        && !g.players[other.owner].is_barbarian
+                        && g.alliance_with(pid, other.owner)
+                            .is_none_or(|alliance| alliance.kind != "cultural")
+                })
+                .filter_map(|other| {
+                    let distance = g.wdist(city.pos, other.pos);
+                    (distance <= 9)
+                        .then_some(other.pop.max(1) as f64 * (10 - distance) as f64 / 10.0)
+                })
+                .sum::<f64>();
+            if loyalty_need < 5.0 && nearby_foreign_pressure < 2.0 {
+                value -= 260.0;
+            } else {
+                value += loyalty_need * 8.0
+                    + nearby_foreign_pressure * horizon * 7.0
+                    + spec
+                        .effects
+                        .get("completion_loyalty")
+                        .copied()
+                        .unwrap_or(0.0)
+                        * 7.0;
+            }
+        }
+
+        // A project may exploit completed infrastructure, but should not
+        // indefinitely postpone the first building in the district that
+        // enables it. This is the economic equivalent of a quiet-move pruning
+        // guard: search the forcing race only after basic development exists.
+        if let Some(district) = spec.district.as_deref() {
+            let family = g.district_family(district);
+            let has_family_building = city.buildings.iter().any(|building| {
+                g.rules.buildings[building]
+                    .district
+                    .as_deref()
+                    .is_some_and(|built| g.district_family(built) == family)
+            });
+            let family_has_building = g.rules.buildings.values().any(|building| {
+                building.buildable
+                    && building
+                        .district
+                        .as_deref()
+                        .is_some_and(|built| g.district_family(built) == family)
+            });
+            if family_has_building && !has_family_building {
+                value -= 420.0;
+            }
+        }
+        if threatened {
+            value -= 360.0;
+        }
+        value
     }
 
     fn product_layout_value(&self, g: &Game, pid: usize, strategy: GrandStrategy) -> f64 {
@@ -1703,6 +1905,138 @@ impl AdvancedAi {
             .bilateral_trade_excluding(g, pid, excluded_partner);
     }
 
+    fn propose_strategic_alliance(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        denied_partner: Option<usize>,
+    ) {
+        if g.turn % 12 != pid as u32 % 12 || !g.players[pid].civics.contains("civil_service") {
+            return;
+        }
+        let kind = match plan.strategy {
+            GrandStrategy::Science => "research",
+            GrandStrategy::Culture => "cultural",
+            GrandStrategy::Religion => "religious",
+            GrandStrategy::Conquest | GrandStrategy::Recovery => "military",
+            GrandStrategy::Expansion | GrandStrategy::Diplomacy => "economic",
+        };
+        if kind == "research" && g.tree_effect(pid, "research_agreements") <= 0.0 {
+            return;
+        }
+        if g.players[pid]
+            .alliances
+            .values()
+            .any(|alliance| alliance.ends > g.turn && alliance.kind == kind)
+        {
+            return;
+        }
+        let pending_with = |partner: usize| {
+            g.pending_deals.iter().any(|deal| {
+                deal.expires >= g.turn
+                    && ((deal.from == pid && deal.to == partner)
+                        || (deal.from == partner && deal.to == pid))
+            })
+        };
+        let partner = g
+            .players
+            .iter()
+            .filter(|other| {
+                other.id != pid
+                    && other.alive
+                    && !other.is_minor
+                    && !other.is_barbarian
+                    && Some(other.id) != denied_partner
+                    && !g.is_at_war(pid, other.id)
+                    && other.civics.contains("civil_service")
+                    && g.alliance_with(pid, other.id).is_none()
+                    && !pending_with(other.id)
+                    && (kind != "research" || g.tree_effect(other.id, "research_agreements") > 0.0)
+                    && !other
+                        .alliances
+                        .values()
+                        .any(|alliance| alliance.ends > g.turn && alliance.kind == kind)
+                    && g.players[pid]
+                        .grievances
+                        .get(&other.id)
+                        .copied()
+                        .unwrap_or(0.0)
+                        < 75.0
+                    && self.rival_victory_pressure(g, other.id).progress < 82
+            })
+            .max_by(|left, right| {
+                let score = |other: usize| {
+                    let friendship = if g.are_friends(pid, other) {
+                        180.0
+                    } else {
+                        0.0
+                    };
+                    let connected = if g.routes.iter().any(|route| {
+                        route.ends > g.turn
+                            && ((route.owner == pid
+                                && g.cities
+                                    .get(&route.dest)
+                                    .is_some_and(|destination| destination.owner == other))
+                                || (route.owner == other
+                                    && g.cities
+                                        .get(&route.dest)
+                                        .is_some_and(|destination| destination.owner == pid)))
+                    }) {
+                        70.0
+                    } else {
+                        0.0
+                    };
+                    let complement = match kind {
+                        "research" => {
+                            g.players[other]
+                                .techs
+                                .difference(&g.players[pid].techs)
+                                .count() as f64
+                                * 4.0
+                        }
+                        "cultural" => g.tourism_per_turn(other).min(300.0) * 0.15,
+                        "economic" => {
+                            g.players
+                                .iter()
+                                .filter(|minor| minor.alive && minor.is_minor)
+                                .filter(|minor| g.suzerain_of(minor.id) == Some(other))
+                                .count() as f64
+                                * 35.0
+                        }
+                        "military" => g.military_power(other).min(250.0) * 0.25,
+                        "religious" => g.players[other].religion.is_some() as usize as f64 * 45.0,
+                        _ => 0.0,
+                    };
+                    friendship + connected + complement
+                        - g.players[pid]
+                            .grievances
+                            .get(&other)
+                            .copied()
+                            .unwrap_or(0.0)
+                };
+                score(left.id)
+                    .partial_cmp(&score(right.id))
+                    .unwrap()
+                    .then_with(|| right.id.cmp(&left.id))
+            })
+            .map(|other| other.id);
+        if let Some(partner) = partner {
+            let _ = g.apply(
+                pid,
+                &Action::ProposeDeal {
+                    player: partner,
+                    give_gold: 0.0,
+                    request_gold: 0.0,
+                    open_borders: g.players[pid].civics.contains("early_empire"),
+                    friendship: true,
+                    peace: false,
+                    alliance: Some(kind.to_string()),
+                },
+            );
+        }
+    }
+
     fn congress_choice(
         &self,
         g: &Game,
@@ -2315,6 +2649,7 @@ impl AdvancedAi {
                 || self.rival_victory_pressure(g, *target).progress >= 78
         });
         self.strategic_bilateral_trade(g, pid, denied_partner, plan.strategy);
+        self.propose_strategic_alliance(g, pid, plan, denied_partner);
         let my_power = g.military_power(pid);
         let rivals: Vec<usize> = g
             .players
@@ -2355,12 +2690,16 @@ impl AdvancedAi {
         let Some(target) = plan.target_player else {
             return;
         };
+        let emergency_target = g
+            .emergency_objective(pid)
+            .is_some_and(|objective| objective.target == target);
         if plan.strategy != GrandStrategy::Conquest
             || major_wars > 0
             || g.turn < 35
             || g.turn < self.peace_until
             || g.player_city_ids(pid).len() < 2
             || g.is_at_war(pid, target)
+            || (!emergency_target && !self.campaign_target_legal(g, pid, target))
         {
             return;
         }
@@ -4100,7 +4439,17 @@ impl AdvancedAi {
                     -10_000.0
                 } else {
                     let completed = g.players[pid].science_projects.len() as f64;
+                    let spec = &g.rules.projects[project];
                     match project.as_str() {
+                        "repair_outer_defenses" => {
+                            let missing = (g.city_max_wall_hp(city) - city.wall_hp).max(0);
+                            900.0 + missing as f64 * 12.0 + if threatened { 1_500.0 } else { 0.0 }
+                        }
+                        "repair_encampment" => {
+                            let missing = (100 - city.encampment_hp).max(0)
+                                + (g.city_max_wall_hp(city) - city.encampment_wall_hp).max(0);
+                            700.0 + missing as f64 * 10.0 + if threatened { 1_150.0 } else { 0.0 }
+                        }
                         "recommission_reactor" => {
                             if city.reactor_age <= 12 {
                                 -10_000.0
@@ -4165,7 +4514,17 @@ impl AdvancedAi {
                                     0.0
                                 }
                         }
-                        _ => 700.0,
+                        _ if !spec.completion_gpp.is_empty()
+                            || !spec.ongoing_yields.is_empty()
+                            || spec.full_power_while_active
+                            || project == "bread_and_circuses" =>
+                        {
+                            self.district_project_value(g, pid, cid, project, plan)
+                        }
+                        // Scenario and future projects without an understood
+                        // economic effect remain legal, but cannot crowd out
+                        // infrastructure solely because they are repeatable.
+                        _ => 180.0,
                     }
                 }
             }
@@ -4735,6 +5094,32 @@ impl AdvancedAi {
         strategy: GrandStrategy,
     ) -> f64 {
         let mut value = self.yield_value(g.route_yields(city.id, city.owner == pid), strategy);
+        if let Some(alliance) = g.alliance_with(pid, city.owner) {
+            let mut yields = Yields::default();
+            match alliance.kind.as_str() {
+                "research" => yields.science = 2.0,
+                "cultural" => yields.culture = 2.0,
+                "economic" => yields.gold = 4.0,
+                "religious" => yields.faith = 2.0,
+                _ => {}
+            }
+            value += self.yield_value(yields, strategy);
+            let already_connected = g.routes.iter().any(|route| {
+                route.owner == pid
+                    && route.ends > g.turn
+                    && g.cities
+                        .get(&route.dest)
+                        .is_some_and(|destination| destination.owner == city.owner)
+            });
+            if !already_connected {
+                // The first route in each direction accelerates alliance XP;
+                // later duplicate routes should compete on their yields.
+                value += 45.0;
+            }
+            if alliance.kind == "cultural" && alliance.level >= 2 {
+                value += 18.0;
+            }
+        }
         let objective = self
             .victory_target
             .map(VictoryTarget::strategy)
@@ -7016,6 +7401,44 @@ mod tests {
     }
 
     #[test]
+    fn advanced_ai_proposes_the_alliance_for_its_victory_plan() {
+        let mut game = Game::new_full(3, 24, 16, 782, 300, 0, false);
+        game.turn = 12;
+        for player in &mut game.players {
+            player.civics.insert("civil_service".to_string());
+            player.techs.insert("scientific_theory".to_string());
+        }
+        game.players[1].techs.insert("radio".to_string());
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Science,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: game.turn,
+        };
+        let ai = AdvancedAi::targeting(VictoryTarget::Science);
+        assert!(game.legal_actions(0).iter().any(|action| {
+            matches!(
+                action,
+                Action::ProposeDeal {
+                    alliance: Some(kind),
+                    ..
+                } if kind == "research"
+            )
+        }));
+        assert!(ai.rival_victory_pressure(&game, 1).progress < 82);
+        ai.propose_strategic_alliance(&mut game, 0, &plan, None);
+        let proposal = game
+            .pending_deals
+            .iter()
+            .find(|deal| deal.from == 0)
+            .unwrap();
+        assert_eq!(proposal.alliance.as_deref(), Some("research"));
+        assert!(proposal.friendship);
+    }
+
+    #[test]
     fn initial_plan_coordinates_expansion() {
         let g = Game::new(2, 24, 16, 71, 80, 0);
         let ai = AdvancedAi::new();
@@ -7194,6 +7617,70 @@ mod tests {
         assert_eq!(game.suzerain_of(minor), Some(0));
         let allied = ai.assess(&game, 0);
         assert_eq!(allied.target_player, Some(1));
+    }
+
+    #[test]
+    fn campaign_masks_allied_rivals_and_their_suzerained_city_states() {
+        let mut game = Game::new_full(2, 30, 18, 7_112, 300, 1, false);
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.current = pid;
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .unwrap();
+        }
+        game.current = 0;
+        game.turn = 200;
+        let minor = game
+            .players
+            .iter()
+            .find(|player| player.is_minor && !player.is_barbarian)
+            .unwrap()
+            .id;
+        game.players[1].envoys = vec![(minor, 3)];
+        assert_eq!(game.suzerain_of(minor), Some(1));
+
+        let alliance = crate::game::AllianceState {
+            kind: "military".to_string(),
+            points: 0.0,
+            level: 1,
+            ends: game.turn + 30,
+        };
+        game.players[0].alliances.insert(1, alliance.clone());
+        game.players[1].alliances.insert(0, alliance);
+
+        let ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        assert!(!ai.campaign_target_legal(&game, 0, 1));
+        assert!(!ai.campaign_target_legal(&game, 0, minor));
+        assert_eq!(ai.assess(&game, 0).target_player, None);
+
+        let mut stale_ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        stale_ai.plan = Some(StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: game.player_city_ids(1).first().copied(),
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+        });
+        assert!(
+            stale_ai.plan_stale(&game, 0),
+            "a new alliance must interrupt a cached hostile plan immediately"
+        );
+
+        // A loaded legacy position can contain contradictory relationship
+        // state. An actual war remains a forcing objective until peace.
+        game.at_war.insert((0, 1));
+        assert!(ai.campaign_target_legal(&game, 0, 1));
+        assert!(
+            ai.assess(&game, 0)
+                .target_player
+                .is_some_and(|target| target == 1 || target == minor),
+            "the suzerain or the city-state that joined its war must remain actionable"
+        );
     }
 
     #[test]
@@ -8037,6 +8524,137 @@ mod tests {
         assert!(
             ai.production_value(&game, 0, city, &nuclear, &plan, &counts)
                 > ai.production_value(&game, 0, city, &coal, &plan, &counts)
+        );
+    }
+
+    #[test]
+    fn district_project_search_extends_only_concrete_great_person_races() {
+        let mut game = Game::new(2, 24, 16, 7_103, 200, 0);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let campus = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&city].pos)
+            .unwrap();
+        game.map.tiles.get_mut(&campus).unwrap().district = Some("campus".to_string());
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .districts
+            .insert("campus".to_string(), campus);
+        game.players[0].techs.insert("writing".to_string());
+
+        let project = Item::Project {
+            project: "campus_research_grants".to_string(),
+        };
+        let library = Item::Building {
+            building: "library".to_string(),
+        };
+        assert!(game.can_produce(0, city, &project));
+        assert!(game.can_produce(0, city, &library));
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Science,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+        };
+        let ai = AdvancedAi::targeting(VictoryTarget::Science);
+        let counts = ai.counts(&game, 0);
+        let undeveloped = ai.production_value(&game, 0, city, &project, &plan, &counts);
+        let first_building = ai.production_value(&game, 0, city, &library, &plan, &counts);
+        assert!(
+            first_building > undeveloped,
+            "the first Campus building must precede a quiet project: {first_building} <= {undeveloped}"
+        );
+
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .push("library".to_string());
+        let far = ai.production_value(&game, 0, city, &project, &plan, &counts);
+        let award =
+            game.project_completion_gpp_awards(0, city, "campus_research_grants")["scientist"];
+        let cost = game.gp_cost(0, "scientist");
+        game.players[0]
+            .gpp
+            .insert("scientist".to_string(), cost - award);
+        game.players[1]
+            .gpp
+            .insert("scientist".to_string(), cost - award * 0.5);
+        let forcing = ai.production_value(&game, 0, city, &project, &plan, &counts);
+        assert!(
+            forcing > far + 100.0,
+            "a project that claims and overtakes in the live race must receive an extension: {forcing} <= {far}"
+        );
+
+        game.active_congress_effects
+            .push(crate::game::CongressEffect {
+                resolution: "patronage".to_string(),
+                outcome: "B".to_string(),
+                target: "scientist".to_string(),
+                expires: game.turn + 30,
+            });
+        let disabled = ai.production_value(&game, 0, city, &project, &plan, &counts);
+        assert!(
+            disabled < far,
+            "a Congress-disabled class must not retain Great Person race value: {disabled} >= {far}"
+        );
+    }
+
+    #[test]
+    fn bread_and_circuses_value_tracks_real_loyalty_need() {
+        let mut game = Game::new(1, 20, 14, 7_105, 160, 0);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let district = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&city].pos)
+            .unwrap();
+        game.map.tiles.get_mut(&district).unwrap().district =
+            Some("entertainment_complex".to_string());
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .districts
+            .insert("entertainment_complex".to_string(), district);
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .push("arena".to_string());
+
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Expansion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+        };
+        let ai = AdvancedAi::new();
+        let safe = ai.district_project_value(&game, 0, city, "bread_and_circuses", &plan);
+        game.cities.get_mut(&city).unwrap().loyalty = 50.0;
+        let pressured = ai.district_project_value(&game, 0, city, "bread_and_circuses", &plan);
+        assert!(
+            pressured > safe + 700.0,
+            "loyalty recovery must transform Bread and Circuses from quiet to forcing"
         );
     }
 
