@@ -3129,15 +3129,17 @@ if (window.matchMedia("(max-width: 720px)").matches) togglePanel(true);
 resize();
 boot();
 
-// --- animation ticker: 60fps while anything animates, gentle idle cadence
-// for the character bob otherwise (cinematic only).
+// --- animation ticker: human-smooth tweens without letting a Retina canvas
+// compete with the simulation for an entire core at Lightning pace. Human
+// turns retain 60fps; spectators need no more than 30fps between 10Hz states.
 let lastIdleDraw = 0;
 function animTick(now) {
   requestAnimationFrame(animTick);
   if (!state) return;
   const active = anim.moves.size > 0 || anim.floats.length > 0 ||
     anim.sparks.length > 0 || anim.deaths.length > 0 || anim.strike;
-  if (active || (VIEW === "cinematic" && now - lastIdleDraw > 90)) {
+  const cadence = active ? (SPEC ? 32 : 16) : 90;
+  if ((active || VIEW === "cinematic") && now - lastIdleDraw > cadence) {
     lastIdleDraw = now;
     draw();
   }
