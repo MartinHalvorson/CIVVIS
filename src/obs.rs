@@ -22,18 +22,36 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool) -> Value {
     if omniscient {
         vis.extend(g.map.tiles.keys().cloned());
     } else {
-        for uid in g.player_unit_ids(pid) {
-            let u = &g.units[&uid];
-            let sight = g.unit_sight(uid);
-            vis.extend(g.wdisk(u.pos, sight));
-        }
-        for cid in g.player_city_ids(pid) {
-            let c = &g.cities[&cid];
-            vis.extend(g.wdisk(c.pos, 2));
-            vis.extend(c.owned_tiles.iter().cloned());
+        let mut viewers = vec![pid];
+        viewers.extend(p.alliances.iter().filter_map(|(partner, alliance)| {
+            (alliance.ends > g.turn && alliance.kind == "military" && alliance.level >= 2)
+                .then_some(*partner)
+        }));
+        for viewer in viewers {
+            for uid in g.player_unit_ids(viewer) {
+                let u = &g.units[&uid];
+                let sight = g.unit_sight(uid);
+                vis.extend(g.wdisk(u.pos, sight));
+            }
+            for cid in g.player_city_ids(viewer) {
+                let c = &g.cities[&cid];
+                vis.extend(g.wdisk(c.pos, 2));
+                vis.extend(c.owned_tiles.iter().cloned());
+            }
         }
     }
-    let explored: &BTreeSet<Pos> = if omniscient { &vis } else { &p.explored };
+    let mut explored = if omniscient {
+        vis.clone()
+    } else {
+        p.explored.clone()
+    };
+    if !omniscient {
+        for (partner, alliance) in &p.alliances {
+            if alliance.ends > g.turn && alliance.kind == "military" && alliance.level >= 2 {
+                explored.extend(g.players[*partner].explored.iter().copied());
+            }
+        }
+    }
     let tiles: Vec<Value> = explored
         .iter()
         .filter_map(|pos| {

@@ -353,6 +353,15 @@ impl AdvancedAi {
             if !g.players.get(target).map(|p| p.alive).unwrap_or(false) {
                 return true;
             }
+            let emergency_target = g
+                .emergency_objective(pid)
+                .is_some_and(|objective| objective.target == target);
+            if !g.is_at_war(pid, target)
+                && !emergency_target
+                && !self.campaign_target_legal(g, pid, target)
+            {
+                return true;
+            }
         }
         if let Some(cid) = plan.target_city {
             if !g.cities.get(&cid).map(|c| c.owner != pid).unwrap_or(false) {
@@ -388,7 +397,9 @@ impl AdvancedAi {
             }
         }
         if let Some((rival, counter)) = self.victory_denial(g, pid) {
-            if plan.target_player != Some(rival)
+            let expects_hostile_target = self.campaign_target_legal(g, pid, rival);
+            if (expects_hostile_target && plan.target_player != Some(rival))
+                || (!expects_hostile_target && plan.target_player == Some(rival))
                 || (major_wars.is_empty() && plan.strategy != counter)
             {
                 return true;
@@ -986,6 +997,12 @@ impl AdvancedAi {
         let mut value = self.yield_value(ongoing, plan.strategy) * horizon * 4.0;
 
         for (kind, award) in g.project_completion_gpp_awards(pid, cid, project) {
+            // Patronage outcome B can set this class's completion award to
+            // zero. Ongoing yield conversion may still justify the project,
+            // but a disabled class has no race tempo to extend.
+            if award <= f64::EPSILON {
+                continue;
+            }
             let mut affinity: f64 = match (plan.strategy, kind.as_str()) {
                 (GrandStrategy::Science, "scientist") => 2.5,
                 (GrandStrategy::Culture, "writer" | "artist" | "musician") => 2.6,
@@ -2524,12 +2541,16 @@ impl AdvancedAi {
         let Some(target) = plan.target_player else {
             return;
         };
+        let emergency_target = g
+            .emergency_objective(pid)
+            .is_some_and(|objective| objective.target == target);
         if plan.strategy != GrandStrategy::Conquest
             || major_wars > 0
             || g.turn < 35
             || g.turn < self.peace_until
             || g.player_city_ids(pid).len() < 2
             || g.is_at_war(pid, target)
+            || (!emergency_target && !self.campaign_target_legal(g, pid, target))
         {
             return;
         }
@@ -6813,11 +6834,30 @@ mod tests {
         assert!(!ai.campaign_target_legal(&game, 0, minor));
         assert_eq!(ai.assess(&game, 0).target_player, None);
 
+        let mut stale_ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        stale_ai.plan = Some(StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: game.player_city_ids(1).first().copied(),
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+        });
+        assert!(
+            stale_ai.plan_stale(&game, 0),
+            "a new alliance must interrupt a cached hostile plan immediately"
+        );
+
         // A loaded legacy position can contain contradictory relationship
         // state. An actual war remains a forcing objective until peace.
         game.at_war.insert((0, 1));
         assert!(ai.campaign_target_legal(&game, 0, 1));
-        assert_eq!(ai.assess(&game, 0).target_player, Some(1));
+        assert!(
+            ai.assess(&game, 0)
+                .target_player
+                .is_some_and(|target| target == 1 || target == minor),
+            "the suzerain or the city-state that joined its war must remain actionable"
+        );
     }
 
     #[test]
@@ -7575,6 +7615,19 @@ mod tests {
         assert!(
             forcing > far + 100.0,
             "a project that claims and overtakes in the live race must receive an extension: {forcing} <= {far}"
+        );
+
+        game.active_congress_effects
+            .push(crate::game::CongressEffect {
+                resolution: "patronage".to_string(),
+                outcome: "B".to_string(),
+                target: "scientist".to_string(),
+                expires: game.turn + 30,
+            });
+        let disabled = ai.production_value(&game, 0, city, &project, &plan, &counts);
+        assert!(
+            disabled < far,
+            "a Congress-disabled class must not retain Great Person race value: {disabled} >= {far}"
         );
     }
 

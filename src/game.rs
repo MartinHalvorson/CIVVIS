@@ -32639,7 +32639,8 @@ mod district_mechanics {
         religious_baseline.players[1].alliances.clear();
         assert_eq!(
             religion.city_yields(own_city).faith - religious_baseline.city_yields(own_city).faith,
-            4.0
+            3.2,
+            "four allied-religion followers pass through the city's 80% yield modifier"
         );
         religion.routes.push(TradeRoute {
             origin: own_city,
