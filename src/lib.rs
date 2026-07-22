@@ -19,6 +19,7 @@ pub mod server;
 pub mod setup;
 pub mod strategic;
 pub mod valuenet;
+pub mod validate;
 pub mod world;
 
 pub type Pos = (i32, i32);

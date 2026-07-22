@@ -351,9 +351,18 @@ fn main() {
                 resumed,
             );
         }
+        "validate" => {
+            let findings = civvis::validate::validate(&Rules::embedded());
+            let (text, clean) = civvis::validate::report(&findings);
+            print!("{text}");
+            let strict = args.iter().any(|a| a == "--strict");
+            if !clean || (strict && !findings.is_empty()) {
+                std::process::exit(1);
+            }
+        }
         _ => {
             println!(
-                "usage: civvis <simulate|soak|benchmark|tournament|play|evolve> \
+                "usage: civvis <simulate|soak|benchmark|tournament|play|evolve|validate> \
                       [--players N] [--seed N] [--turns N] [--width N] [--height N] \
                       [--city-states N] [--games N] [--ais a,b] [--port N] [--no-open] \
                       [--spectate] [--resume checkpoint.json]"
