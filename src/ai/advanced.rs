@@ -2910,13 +2910,7 @@ impl AdvancedAi {
             let Some((_, person)) = g.current_great_person(kind) else {
                 continue;
             };
-            let work_kind = match kind {
-                "writer" => Some("writing"),
-                "artist" => Some("art"),
-                "musician" => Some("music"),
-                _ => None,
-            };
-            if work_kind.is_some_and(|work| !g.can_house_additional_great_work(pid, work)) {
+            if !g.can_activate_current_great_person(pid, kind) {
                 continue;
             }
             let points = g.players[pid].gpp.get(kind).copied().unwrap_or(0.0);
@@ -6756,11 +6750,16 @@ impl AdvancedAi {
         plan: &StrategicPlan,
     ) -> f64 {
         let target = match action {
-            Action::Attack { unit, target } | Action::Ranged { unit, target } if *unit == uid => {
+            Action::Attack { unit, target }
+            | Action::Ranged { unit, target }
+            | Action::PriorityTarget { unit, target }
+                if *unit == uid =>
+            {
                 *target
             }
             _ => return f64::NEG_INFINITY,
         };
+        let priority_target = matches!(action, Action::PriorityTarget { .. });
         let attacker = &g.units[&uid];
         let attacker_spec = &g.rules.units[attacker.kind.as_str()];
         let defenders: Vec<(u32, i32, f64, f64, bool, bool)> = g
@@ -6771,19 +6770,24 @@ impl AdvancedAi {
                 let spec = &g.rules.units[defender.kind.as_str()];
                 (defender.owner != pid
                     && g.is_at_war(pid, defender.owner)
-                    && spec.class == "military")
-                    .then_some((
-                        unit,
-                        defender.hp,
-                        g.unit_strength(defender, true),
-                        spec.cost,
-                        spec.siege,
-                        spec.is_melee_capable(),
-                    ))
+                    && if priority_target {
+                        spec.class == "support"
+                    } else {
+                        spec.class == "military"
+                    })
+                .then_some((
+                    unit,
+                    defender.hp,
+                    g.unit_strength(defender, true),
+                    spec.cost,
+                    spec.siege,
+                    spec.is_melee_capable(),
+                ))
             })
             .collect();
-        let target_city = g
-            .city_at(target)
+        let target_city = (!priority_target)
+            .then(|| g.city_at(target))
+            .flatten()
             .filter(|city| g.cities[city].owner != pid && g.is_at_war(pid, g.cities[city].owner));
         let target_encampment = target_city
             .is_none()
@@ -7067,6 +7071,46 @@ impl AdvancedAi {
         value
     }
 
+    fn priority_target_value(&self, g: &Game, pid: usize, uid: u32, target: Pos) -> f64 {
+        let Some(defender_id) = g.priority_support_target_at(pid, target) else {
+            return f64::NEG_INFINITY;
+        };
+        let attacker = &g.units[&uid];
+        let attacker_spec = &g.rules.units[attacker.kind.as_str()];
+        let defender = &g.units[&defender_id];
+        let defender_spec = &g.rules.units[defender.kind.as_str()];
+        let mut after = g.clone();
+        if after
+            .apply(pid, &Action::PriorityTarget { unit: uid, target })
+            .is_err()
+        {
+            return f64::NEG_INFINITY;
+        }
+        let attacker_loss = match after.units.get(&uid) {
+            Some(survivor) => {
+                (attacker.hp - survivor.hp).max(0) as f64 * (1.4 + attacker_spec.cost / 700.0)
+            }
+            None => 260.0 + attacker_spec.cost * 0.7,
+        };
+        let target_value = match after.units.get(&defender_id) {
+            None => 175.0 + defender_spec.cost * 0.55,
+            Some(survivor) => {
+                (defender.hp - survivor.hp).max(0) as f64 * (1.0 + defender_spec.cost / 500.0)
+            }
+        };
+        target_value
+            + if defender_spec.anti_air_strength > 0.0 {
+                120.0
+            } else if matches!(defender.kind.as_str(), "drone" | "observation_balloon") {
+                55.0
+            } else if matches!(defender.kind.as_str(), "medic" | "supply_convoy") {
+                40.0
+            } else {
+                0.0
+            }
+            - attacker_loss
+    }
+
     /// Choose among exact air-strike or air-pillage results, a useful patrol,
     /// and a rebase
     /// that materially improves reach to the active front. Fighters preserve
@@ -7113,8 +7157,32 @@ impl AdvancedAi {
                     .total_cmp(&right.0)
                     .then_with(|| right.1.cmp(&left.1))
             });
+        let best_priority = legal
+            .iter()
+            .filter_map(|action| match action {
+                Action::PriorityTarget { unit, target } if *unit == uid => Some((
+                    self.priority_target_value(g, pid, uid, *target),
+                    *target,
+                    action.clone(),
+                )),
+                _ => None,
+            })
+            .max_by(|left, right| {
+                left.0
+                    .total_cmp(&right.0)
+                    .then_with(|| right.1.cmp(&left.1))
+            });
+        let best_attack = best_strike
+            .clone()
+            .into_iter()
+            .chain(best_priority.clone())
+            .max_by(|left, right| {
+                left.0
+                    .total_cmp(&right.0)
+                    .then_with(|| right.1.cmp(&left.1))
+            });
         let best_mission =
-            best_strike
+            best_attack
                 .clone()
                 .into_iter()
                 .chain(best_pillage)
@@ -7251,7 +7319,7 @@ impl AdvancedAi {
             } else {
                 5.0
             };
-        if let Some((value, _, action)) = best_strike {
+        if let Some((value, _, action)) = best_attack {
             if value > patrol_value {
                 return Some(action);
             }
@@ -7411,6 +7479,15 @@ impl AdvancedAi {
             let mut actions = Vec::with_capacity(2);
             if spec.has_ranged_attack() && distance <= g.unit_attack_range(uid) {
                 actions.push(Action::Ranged {
+                    unit: uid,
+                    target: pos,
+                });
+            }
+            if unit.kind == "spec_ops"
+                && distance <= g.unit_attack_range(uid)
+                && g.priority_support_target_at(pid, pos).is_some()
+            {
+                actions.push(Action::PriorityTarget {
                     unit: uid,
                     target: pos,
                 });
@@ -10576,6 +10653,55 @@ mod tests {
     }
 
     #[test]
+    fn jet_planners_priority_target_escorted_air_defenses() {
+        let mut game = Game::new_full(2, 24, 16, 71_007, 120, 0, false);
+        game.at_war.insert((0, 1));
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        let base = game
+            .map
+            .tiles
+            .iter()
+            .find(|(_, tile)| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+            .map(|(position, _)| *position)
+            .unwrap();
+        let target = game
+            .wdisk(base, game.rules.units["jet_bomber"].range)
+            .into_iter()
+            .find(|position| {
+                *position != base
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .unwrap();
+        game.found_city_for(0, base, None);
+        game.spawn_test_unit("modern_armor", 1, target);
+        game.spawn_test_unit("mobile_sam", 1, target);
+        let jet = game.spawn_test_unit("jet_bomber", 0, base);
+        let expected = Action::PriorityTarget { unit: jet, target };
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+        };
+
+        assert_eq!(
+            BasicAi::new().doctrine_action(&game, 0, jet),
+            Some(expected.clone())
+        );
+        assert_eq!(
+            AdvancedAi::targeting(VictoryTarget::Domination)
+                .advanced_air_action(&game, 0, jet, &plan),
+            Some(expected)
+        );
+    }
+
+    #[test]
     fn exact_ground_search_prefers_the_high_value_kill_over_a_static_tie() {
         let mut game = Game::new_full(2, 24, 16, 71_009, 120, 0, false);
         game.at_war.insert((0, 1));
@@ -10967,6 +11093,19 @@ mod tests {
             .find(|unit| game.units[unit].kind == "settler")
             .unwrap();
         game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let campus = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&city].pos)
+            .unwrap();
+        game.map.tiles.get_mut(&campus).unwrap().district = Some("campus".to_string());
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .districts
+            .insert("campus".to_string(), campus);
         let cost = game.gp_cost(0, "scientist");
         game.players[0]
             .gpp
