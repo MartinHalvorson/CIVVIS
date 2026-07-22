@@ -9,8 +9,10 @@ browser GUI — here, a renaissance-era war around Corinth.*
 
 An open-source, **headless-first** 4X strategy engine inspired by the mechanics
 of Civilization VI — aiming to be for Civ 6 what [Unciv](https://github.com/yairm210/Unciv)
-is for Civ 5. Designed **AI-simulator-first**: every game runs without a UI at thousands of turns per second, behind a JSON action protocol, so advanced AI
-strategies (RL, MCTS, LLM agents) can be developed against it.
+is for Civ 5. Designed **AI-simulator-first**: every game runs without a UI at
+hundreds to thousands of turns per second depending on map size and agent,
+behind a JSON action protocol, so advanced AI strategies (RL, MCTS, LLM agents)
+can be developed against it.
 
 **Pure Rust, zero runtime dependencies** (serde only). Not affiliated with
 Firaxis or 2K; no assets, art, text, or code from Civilization VI are used.
@@ -114,6 +116,10 @@ free capture is discounted when the destination permits an immediate ranged,
 melee, city, Encampment, or air counterattack. Forced strategic choices such as city
 keep/raze/liberate decisions use deterministic make-and-evaluate outcome
 search with victory-specific economy, military, Favor, and Grievance terms.
+Six explicit victory pipelines align research, civics, policies, production,
+spending, diplomacy, expansion, religion, and unit orders; the default planner
+can switch strategy when a rival approaches a victory. `advanced_v1` remains
+available as a frozen regression control.
 The genetic runner evolves those group-combat
 doctrine parameters together with expansion, production, diplomacy, and
 tactical exchange weights; archived champions and a fixed-seed validation gate

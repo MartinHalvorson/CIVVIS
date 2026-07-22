@@ -464,6 +464,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::{new_game_params, Params, Session, EMBEDDED_INDEX};
     use serde_json::json;
