@@ -4261,6 +4261,72 @@ impl AdvancedAi {
         }
     }
 
+    /// A live strategic pivot must reach city queues, not only policies and
+    /// unit orders. Pause repeatable economic projects when Conquest or
+    /// Recovery has a real land-force gap; item progress remains banked and
+    /// can resume after the emergency. One-off and victory projects are never
+    /// interrupted here.
+    fn redirect_repeatable_projects_for_force_gap(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) {
+        if !matches!(
+            plan.strategy,
+            GrandStrategy::Conquest | GrandStrategy::Recovery
+        ) {
+            return;
+        }
+        let city_ids = g.player_city_ids(pid);
+        let desired_land = 2 * city_ids.len();
+        for cid in city_ids {
+            let counts = self.counts(g, pid);
+            let land = counts
+                .military
+                .saturating_sub(counts.naval + counts.aircraft);
+            if land >= desired_land {
+                return;
+            }
+            let Some(Item::Project { project }) = g.cities[&cid].queue.first() else {
+                continue;
+            };
+            let project = project.clone();
+            let spec = &g.rules.projects[&project];
+            if !spec.repeatable
+                || (spec.completion_gpp.is_empty() && spec.ongoing_yields.is_empty())
+            {
+                continue;
+            }
+            let best = g
+                .producible_items(pid, cid)
+                .into_iter()
+                .filter(|item| {
+                    let Item::Unit { unit } = item else {
+                        return false;
+                    };
+                    let unit = &g.rules.units[unit];
+                    unit.class == "military"
+                        && unit.domain.as_deref() != Some("sea")
+                        && unit.domain.as_deref() != Some("air")
+                })
+                .map(|item| {
+                    let score = self.production_value(g, pid, cid, &item, plan, &counts);
+                    (score, std::cmp::Reverse(format!("{item:?}")), item)
+                })
+                .max_by(|left, right| {
+                    left.0
+                        .total_cmp(&right.0)
+                        .then_with(|| left.1.cmp(&right.1))
+                });
+            if let Some((score, _, item)) = best {
+                if score > 0.0 {
+                    let _ = g.apply(pid, &Action::Produce { city: cid, item });
+                }
+            }
+        }
+    }
+
     fn advanced_production(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         let mut counts = self.counts(g, pid);
         let city_ids = g.player_city_ids(pid);
@@ -7893,6 +7959,9 @@ impl Ai for AdvancedAi {
         if self.base.book_pos < 4 {
             self.base.cities(g, pid);
         } else {
+            if self.victory_planning {
+                self.redirect_repeatable_projects_for_force_gap(g, pid, &plan);
+            }
             // Explicit victory-target runs use strategic production directly;
             // otherwise the baseline governor remains the stronger general
             // policy in paired evaluation.
@@ -9762,6 +9831,53 @@ mod tests {
             ai.production_value(&game, 0, city, &defender, &plan, &counts) > 0.0,
             "a Galley cannot satisfy the empire's missing land-defense quota"
         );
+    }
+
+    #[test]
+    fn adaptive_conquest_turn_uses_the_live_plan_for_city_production() {
+        let mut game = Game::new_full(1, 20, 14, 71_006, 120, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        for unit in game.player_unit_ids(0) {
+            if game.rules.units[game.units[&unit].kind.as_str()].class == "military" {
+                game.remove_unit(unit);
+            }
+        }
+        let city = game.player_city_ids(0)[0];
+        game.cities.get_mut(&city).unwrap().queue.clear();
+        install_ai_test_district(&mut game, city, "campus");
+        game.players[0].techs.insert("writing".to_string());
+        game.apply(
+            0,
+            &Action::Produce {
+                city,
+                item: Item::Project {
+                    project: "campus_research_grants".to_string(),
+                },
+            },
+        )
+        .unwrap();
+        let mut ai = AdvancedAi::new();
+        ai.base.book_pos = 4;
+        ai.plan = Some(StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 1,
+            assessed_turn: game.turn,
+        });
+
+        ai.take_turn(&mut game, 0);
+
+        assert!(matches!(
+            game.cities[&city].queue.first(),
+            Some(Item::Unit { unit }) if game.rules.units[unit].class == "military"
+        ));
     }
 
     #[test]
