@@ -122,9 +122,15 @@ def source_snapshot() -> str:
     return digest.hexdigest()
 
 
+def runtime_inputs_dirty() -> bool:
+    """Whether files that can change the promoted binary differ from Git."""
+    status = command("git", "status", "--porcelain", "--", *RUNTIME_INPUTS)
+    return bool(status.stdout.strip())
+
+
 def write_runtime_metadata(snapshot: str) -> None:
     revision = command("git", "rev-parse", "--short", "HEAD", check=True).stdout.strip()
-    dirty = bool(command("git", "status", "--porcelain").stdout.strip())
+    dirty = runtime_inputs_dirty()
     metadata = {
         "revision": revision,
         "dirty": dirty,

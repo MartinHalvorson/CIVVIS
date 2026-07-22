@@ -64,6 +64,18 @@ class SourceSnapshotTests(unittest.TestCase):
                 source.write_text("pub fn value() -> u8 { 2 }\n", encoding="utf-8")
                 self.assertNotEqual(supervisor.source_snapshot(), original)
 
+    def test_runtime_dirtiness_is_scoped_to_compiled_inputs(self):
+        clean = SimpleNamespace(returncode=0, stdout="")
+        with patch.object(supervisor, "command", return_value=clean) as command:
+            self.assertFalse(supervisor.runtime_inputs_dirty())
+        command.assert_called_once_with(
+            "git", "status", "--porcelain", "--", *supervisor.RUNTIME_INPUTS
+        )
+
+        changed = SimpleNamespace(returncode=0, stdout=" M src/game.rs\n")
+        with patch.object(supervisor, "command", return_value=changed):
+            self.assertTrue(supervisor.runtime_inputs_dirty())
+
     def test_changed_source_discards_obsolete_build_before_promoting(self):
         builds = []
 
