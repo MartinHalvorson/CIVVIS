@@ -561,6 +561,46 @@ function addEvent(icon, text, turn) {
   worldEvents.unshift({ icon, text, turn });
   worldEvents = worldEvents.slice(0, 12);
 }
+function chronicleActions(next) {
+  const actions = next.actions_taken;
+  if (!Array.isArray(actions) || next.stepped === undefined) return;
+  const actor = next.players[next.stepped];
+  if (!actor) return;
+  const parts = [];
+  const research = actions.find(a => a.type === "research");
+  const civic = actions.find(a => a.type === "civic");
+  const productions = actions.filter(a => a.type === "produce");
+  const improvements = actions.filter(a => a.type === "improve");
+  const attacks = actions.filter(a => a.type === "attack" || a.type === "ranged" || a.type === "city_strike");
+  const moves = actions.filter(a => a.type === "move" || a.type === "move_to");
+  const war = actions.find(a => a.type === "declare_war");
+  const peace = actions.find(a => a.type === "make_peace");
+  const trade = actions.filter(a => a.type === "trade_route");
+  const envoys = actions.filter(a => a.type === "send_envoy");
+  const religion = actions.find(a => a.type === "found_religion");
+  const government = actions.find(a => a.type === "government");
+
+  if (war) parts.push(`declared war on ${(next.players[war.player] || {}).civ || "a rival"}`);
+  if (peace) parts.push(`made peace with ${(next.players[peace.player] || {}).civ || "a rival"}`);
+  if (research) parts.push(`began ${titleCase(research.tech)}`);
+  if (civic) parts.push(`pursued ${titleCase(civic.civic)}`);
+  if (government) parts.push(`adopted ${titleCase(government.government)}`);
+  if (religion) parts.push("founded a religion");
+  if (productions.length) {
+    const first = titleCase(itemName(productions[0].item));
+    parts.push(productions.length === 1 ? `ordered ${first}` : `set ${productions.length} production orders`);
+  }
+  if (improvements.length) parts.push(`built ${improvements.length} improvement${improvements.length === 1 ? "" : "s"}`);
+  if (trade.length) parts.push(`opened ${trade.length} trade route${trade.length === 1 ? "" : "s"}`);
+  if (envoys.length) parts.push(`sent ${envoys.length} envoy${envoys.length === 1 ? "" : "s"}`);
+  if (attacks.length) parts.push(`launched ${attacks.length} attack${attacks.length === 1 ? "" : "s"}`);
+  if (moves.length && parts.length < 3) parts.push(`maneuvered ${moves.length} unit${moves.length === 1 ? "" : "s"}`);
+  if (!parts.length) return;
+  const shown = parts.slice(0, 3);
+  const more = parts.length - shown.length;
+  addEvent(actor.is_barbarian ? "☠" : actor.is_minor ? "♜" : "◈",
+    `${actor.civ} ${shown.join(" · ")}${more ? ` · +${more} more` : ""}.`, next.turn);
+}
 function chronicle(prev, next) {
   if (!prev || prev.seed !== next.seed) {
     worldEvents = [];
@@ -590,6 +630,7 @@ function chronicle(prev, next) {
   if (majors.length && lastLeader !== null && majors[0].id !== lastLeader)
     addEvent("♛", `${majors[0].civ} has taken the score lead.`, next.turn);
   if (majors.length) lastLeader = majors[0].id;
+  chronicleActions(next);
 }
 
 function render(st) {

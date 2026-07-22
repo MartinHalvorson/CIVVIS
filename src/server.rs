@@ -74,18 +74,24 @@ impl Session {
     }
 
     /// Spectator mode: play out exactly one player's turn with its AI.
-    /// Returns the pid that acted.
-    pub fn step(&mut self) -> usize {
+    /// Returns the pid and successful actions so the observer UI can explain
+    /// the AI's decisions instead of showing only their eventual outcomes.
+    pub fn step(&mut self) -> (usize, Vec<Action>) {
         let g = &mut self.game;
         let pid = g.current;
+        let log_start = g.log.len();
         if g.winner.is_some() {
-            return pid;
+            return (pid, vec![]);
         }
         self.ais[pid].take_turn(g, pid);
         if g.current == pid && g.winner.is_none() {
             let _ = g.apply(pid, &Action::EndTurn);
         }
-        pid
+        let actions = g.log[log_start..]
+            .iter()
+            .map(|(_, action)| action.clone())
+            .collect();
+        (pid, actions)
     }
 
     pub fn act(&mut self, v: &Value) -> Option<String> {
@@ -189,9 +195,10 @@ fn handle(stream: &mut TcpStream, session: &mut Session) {
         ("POST", "/step") => {
             let mut out;
             if session.params.spectate {
-                let pid = session.step();
+                let (pid, actions) = session.step();
                 out = session.state();
                 out["stepped"] = json!(pid);
+                out["actions_taken"] = serde_json::to_value(actions).unwrap();
             } else {
                 out = session.state();
                 out["error"] = json!("not in spectate mode");
