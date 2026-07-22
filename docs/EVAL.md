@@ -60,3 +60,10 @@ score t301).
 score ranking can crown a passive seat in a table with no advanced player.
 The sanity floor holds, but sub-350-turn tables measure score racing as
 much as victory play.
+
+**ai_eval** (`advanced basic --pairs 25 --seed 4000`, mirrored 2p, avg
+159t): advanced wins 39/50 (78%), ahead on every economic diagnostic
+(score 194 vs 139, tech 15.3 vs 11.4, production 37 vs 25). Victory mix:
+religious 27/50 across both seats — the same religious dominance the soak
+shows at 4 players, now confirmed head-to-head (basic banks 452 faith it
+never converts, advanced converts at less than a third of that).
