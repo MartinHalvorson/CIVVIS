@@ -941,7 +941,7 @@ impl Game {
             None => return false,
         };
         let water = self.rules.is_water(t);
-        for n in hex::neighbors(pos) {
+        for n in self.nbrs(pos) {
             let nt = match self.map.get(n) {
                 Some(nt) => nt,
                 None => continue,

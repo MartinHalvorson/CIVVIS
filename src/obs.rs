@@ -7,19 +7,34 @@ use crate::game::{growth_threshold, Game};
 use crate::{hex, Pos};
 
 pub fn observation(g: &Game, pid: usize) -> Value {
+    obs_impl(g, pid, false)
+}
+
+/// Fog-free view of the whole world from `pid`'s empire perspective —
+/// feeds the spectator (watch-the-AIs) GUI mode.
+pub fn observation_spectator(g: &Game, pid: usize) -> Value {
+    obs_impl(g, pid, true)
+}
+
+fn obs_impl(g: &Game, pid: usize, omniscient: bool) -> Value {
     let p = &g.players[pid];
     let mut vis: BTreeSet<Pos> = BTreeSet::new();
-    for uid in g.player_unit_ids(pid) {
-        let u = &g.units[&uid];
-        let sight = g.rules.units[u.kind.as_str()].sight;
-        vis.extend(g.wdisk(u.pos, sight));
+    if omniscient {
+        vis.extend(g.map.tiles.keys().cloned());
+    } else {
+        for uid in g.player_unit_ids(pid) {
+            let u = &g.units[&uid];
+            let sight = g.rules.units[u.kind.as_str()].sight;
+            vis.extend(g.wdisk(u.pos, sight));
+        }
+        for cid in g.player_city_ids(pid) {
+            let c = &g.cities[&cid];
+            vis.extend(g.wdisk(c.pos, 2));
+            vis.extend(c.owned_tiles.iter().cloned());
+        }
     }
-    for cid in g.player_city_ids(pid) {
-        let c = &g.cities[&cid];
-        vis.extend(g.wdisk(c.pos, 2));
-        vis.extend(c.owned_tiles.iter().cloned());
-    }
-    let tiles: Vec<Value> = p.explored.iter().filter_map(|pos| {
+    let explored: &BTreeSet<Pos> = if omniscient { &vis } else { &p.explored };
+    let tiles: Vec<Value> = explored.iter().filter_map(|pos| {
         let t = g.map.get(*pos)?;
         let owner = t.owner_city
             .and_then(|oc| g.cities.get(&oc))
@@ -45,7 +60,7 @@ pub fn observation(g: &Game, pid: usize) -> Value {
     let mut empire = [0.0f64; 6]; // food, prod, gold, sci, cul, faith
     let mut cities: Vec<Value> = Vec::new();
     for c in g.cities.values() {
-        if !p.explored.contains(&c.pos) {
+        if !explored.contains(&c.pos) {
             continue;
         }
         let mut d = json!({
@@ -87,7 +102,7 @@ pub fn observation(g: &Game, pid: usize) -> Value {
         "map": {"width": g.map.width, "height": g.map.height, "tiles": tiles},
         "visible": vis.iter().filter(|v| g.map.tiles.contains_key(v))
             .map(|v| json!([v.0, v.1])).collect::<Vec<_>>(),
-        "camps": g.barb_camps.keys().filter(|cp| p.explored.contains(cp))
+        "camps": g.barb_camps.keys().filter(|cp| explored.contains(cp))
             .map(|cp| json!([cp.0, cp.1])).collect::<Vec<_>>(),
         "units": units,
         "cities": cities,

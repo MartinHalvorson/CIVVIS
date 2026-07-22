@@ -208,12 +208,14 @@ fn main() {
                     seed,
                     max_turns: arg(&args, "--turns", 500) as u32,
                     num_city_states: auto_cs(&args, players),
+                    spectate: args.iter().any(|a| a == "--spectate" || a == "--watch"),
                 });
         }
         _ => {
             println!("usage: civvis <simulate|soak|benchmark|tournament|play> \
                       [--players N] [--seed N] [--turns N] [--width N] [--height N] \
-                      [--city-states N] [--games N] [--ais a,b] [--port N] [--no-open]");
+                      [--city-states N] [--games N] [--ais a,b] [--port N] [--no-open] \
+                      [--spectate]");
         }
     }
 }

@@ -111,6 +111,17 @@
   <div class="sec" id="citysec" style="display:none"><h2>City</h2><div id="citypanel"></div></div>
   <div class="sec"><h2>Players</h2><div id="players"></div></div>
   <button class="primary" id="endturn">End Turn (Enter)</button>
+  <div id="specbar" style="display:none">
+    <button class="primary" id="specpause">⏸ Pause (Enter)</button>
+    <div class="sec" style="margin-top:8px"><h2>Watch speed</h2>
+      <select id="specspeed">
+        <option value="500">very fast (0.5s/turn)</option>
+        <option value="1000">fast (1s/turn)</option>
+        <option value="2000" selected>normal (2s/turn)</option>
+        <option value="4000">slow (4s/turn)</option>
+      </select>
+    </div>
+  </div>
   <div class="sec" style="margin-top:8px">
     <h2>Display</h2>
     <select id="viewsel">
@@ -124,6 +135,7 @@
     <h2>New game</h2>
     players <select id="np"><option>2</option><option selected>4</option><option>6</option></select>
     <button id="newgame">Restart</button>
+    <br><label class="small"><input type="checkbox" id="specchk"> AI-only (just watch)</label>
   </div>
 </div>
 <script>
@@ -157,6 +169,7 @@ const DIRS = [[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];
 // ---------------------------------------------------------------- state
 let state = null, sel = null, selCity = null, RULES = null;
 let lensOn = false, tackMode = false, tacks = [], lastSeed = null, cycleIdx = -1;
+let SPEC = false, specPaused = false, specTimer = null;
 let TMAP = new Map();
 let VIEW = localStorage.getItem("civvis-view") || "beautiful";
 const cam = { x: 0, y: 0, scale: 1 };
@@ -253,18 +266,47 @@ let firstLoad = true;
 async function boot() {
   RULES = await fetchJSON("/rules");
   render(await fetchJSON("/state"));
-  if (firstLoad) { firstLoad = false; centerHome(); }
+  if (firstLoad) {
+    firstLoad = false; centerHome();
+    document.getElementById("specchk").checked = SPEC;
+    scheduleSpec(state);
+  }
 }
 async function send(action) {
+  if (SPEC) return;
   render(await fetchJSON("/action", { method: "POST",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({action}) }));
+}
+
+// --- spectator auto-step: one AI player's turn per tick
+async function specStep() {
+  if (!SPEC || specPaused) return;
+  const st = await fetchJSON("/step", { method: "POST" });
+  render(st);
+  scheduleSpec(st);
+}
+function scheduleSpec(st) {
+  clearTimeout(specTimer);
+  if (!SPEC || specPaused) return;
+  if (st && st.winner !== null && st.winner !== undefined) return;
+  let d = +document.getElementById("specspeed").value;
+  if (st && st.stepped !== undefined) {
+    const p = st.players[st.stepped];
+    // minors/barbarians get a quick beat, majors the full watch delay
+    if (p && (p.is_minor || p.is_barbarian)) d = Math.max(250, d / 4);
+  }
+  specTimer = setTimeout(specStep, d);
 }
 function legalFor(type) { return state.legal_actions.filter(a => a.type === type); }
 
 function render(st) {
   state = st;
+  SPEC = !!st.spectate;
+  document.getElementById("endturn").style.display = SPEC ? "none" : "block";
+  document.getElementById("specbar").style.display = SPEC ? "block" : "none";
   if (st.seed !== undefined && st.seed !== lastSeed) { lastSeed = st.seed; loadTacks(); }
+  if (SPEC) { sel = null; selCity = null; }
   if (sel) sel = st.units.find(u => u.id === sel.id && u.owner === 0) || null;
   TMAP = new Map(st.map.tiles.map(t => [key(t.pos), t]));
   const errEl = document.getElementById("err");
@@ -274,7 +316,7 @@ function render(st) {
   if (st.winner !== null && st.winner !== undefined) {
     const p = st.players[st.winner];
     w.style.display = "block";
-    w.innerHTML = (st.winner === 0 ? "🏆 Victory!" : "💀 Defeat") +
+    w.innerHTML = (SPEC ? "🏆 " + p.civ + " wins!" : st.winner === 0 ? "🏆 Victory!" : "💀 Defeat") +
       "<br><span class='small'>" + p.civ + " wins by " + st.victory_type +
       " on turn " + st.turn + "</span>";
   } else w.style.display = "none";
@@ -762,6 +804,7 @@ function drawTopbar() {
   const me = state.me, y = me.yields;
   document.getElementById("topbar").innerHTML =
     `<b>Turn ${state.turn}</b>` +
+    (SPEC ? `<span>👁 watching <b>${state.players[state.player].civ}</b></span>` : "") +
     `<span>🔬 ${y.science}</span><span>🎭 ${y.culture}</span>` +
     `<span>🪙 ${Math.round(me.gold)} (+${y.gold})</span>` +
     `<span>✡ ${Math.round(me.faith)} (+${y.faith})</span>` +
@@ -770,7 +813,7 @@ function drawTopbar() {
 
 function drawUbar() {
   const bar = document.getElementById("ubar");
-  if (!sel) { bar.style.display = "none"; return; }
+  if (!sel || SPEC) { bar.style.display = "none"; return; }
   const u = sel;
   let h = `<b>${u.type}</b> <span class="small">hp ${u.hp} · mp ${u.moves_left}` +
     (u.level > 1 ? ` · lvl ${u.level}` : "") + (u.fortified ? " · ⛨ fortified" : "") +
@@ -825,6 +868,8 @@ function drawSide() {
   if (me.research) {
     rdiv.innerHTML = nameB(me.research, me.boosted_techs) +
       prog(me.research_progress, techCost(me.research), "#7fd4ff");
+  } else if (SPEC) {
+    rdiv.innerHTML = "<span class='small'>—</span>";
   } else {
     rdiv.innerHTML = sel1("rsel", legalFor("research").map(a => a.tech), me.boosted_techs);
     hook("rsel", v => send({type: "research", tech: v}));
@@ -833,6 +878,8 @@ function drawSide() {
   if (me.civic) {
     cdiv.innerHTML = nameB(me.civic, me.boosted_civics) +
       prog(me.civic_progress, civicCost(me.civic), "#d4a8ff");
+  } else if (SPEC) {
+    cdiv.innerHTML = "<span class='small'>—</span>";
   } else {
     cdiv.innerHTML = sel1("csel", legalFor("civic").map(a => a.civic), me.boosted_civics);
     hook("csel", v => send({type: "civic", civic: v}));
@@ -848,15 +895,16 @@ function drawSide() {
   } else gs.style.display = "none";
   document.getElementById("players").innerHTML = state.players
     .filter(p => !p.is_barbarian)
-    .map(p => `<div class="row"><span><span class="chip" style="background:${pcol(p.id)}"></span>` +
+    .map(p => `<div class="row"><span>${SPEC && p.id === state.player ? "👁 " : ""}` +
+      `<span class="chip" style="background:${pcol(p.id)}"></span>` +
       `${p.civ}${p.is_minor ? " <span class='small'>(CS)</span>" : ""}${p.alive ? "" : " ☠"}` +
-      `${p.at_war_with_me ? " ⚔" : ""}</span><span>${p.score}</span></div>`).join("");
+      `${!SPEC && p.at_war_with_me ? " ⚔" : ""}</span><span>${p.score}</span></div>`).join("");
   drawCityPanel();
 }
 
 function drawCityPanel() {
   const secEl = document.getElementById("citysec");
-  if (!selCity) { secEl.style.display = "none"; return; }
+  if (!selCity || SPEC) { secEl.style.display = "none"; return; }
   const c = state.cities.find(x => x.id === selCity.id && x.owner === 0);
   if (!c) { selCity = null; secEl.style.display = "none"; return; }
   const striking = selCity._striking;
@@ -1009,7 +1057,7 @@ cv.addEventListener("mousedown", ev => {
   if (ev.button === 0) {
     dragState = { x: ev.clientX, y: ev.clientY, cx: cam.x, cy: cam.y };
     dragMoved = false;
-  } else if (ev.button === 2 && state) {
+  } else if (ev.button === 2 && state && !SPEC) {
     const pos = pixelToHex(ev.clientX - r.left, ev.clientY - r.top);
     if (!pos) return;
     const here = state.units.filter(u => u.owner === 0 && key(u.pos) === key(pos));
@@ -1066,6 +1114,7 @@ cv.addEventListener("click", ev => {
     if (i >= 0) tacks.splice(i, 1); else tacks.push([pos[0], pos[1]]);
     saveTacks(); draw(); return;
   }
+  if (SPEC) return;
   if (sel) {
     const atk = state.legal_actions.find(a => a.unit === sel.id &&
       (a.type === "attack" || a.type === "ranged") && key(a.target) === k);
@@ -1137,7 +1186,7 @@ cv.addEventListener("mouseleave", () => { tip.style.display = "none"; });
 
 // keys
 function nextAction() {
-  if (!state) return;
+  if (!state || SPEC) return;
   const ready = state.units.filter(u => u.owner === 0 && u.moves_left > 0 && !u.fortified);
   if (!ready.length) return;
   cycleIdx = (cycleIdx + 1) % ready.length;
@@ -1148,7 +1197,10 @@ function nextAction() {
 document.addEventListener("keydown", ev => {
   const tag = (document.activeElement || {}).tagName;
   if (tag === "SELECT" || tag === "INPUT" || tag === "TEXTAREA") return;
-  if (ev.key === "Enter") { sel = null; send({type: "end_turn"}); }
+  if (ev.key === "Enter") {
+    if (SPEC) document.getElementById("specpause").click();
+    else { sel = null; send({type: "end_turn"}); }
+  }
   else if (ev.key === "Escape") {
     sel = null; selCity = null; lensOn = false; tackMode = false;
     modeline(); draw(); drawSide(); drawUbar();
@@ -1158,13 +1210,25 @@ document.addEventListener("keydown", ev => {
   else if (ev.key === "3") { tackMode = !tackMode; lensOn = false; modeline(); draw(); }
 });
 document.getElementById("endturn").onclick = () => { sel = null; send({type: "end_turn"}); };
+document.getElementById("specpause").onclick = () => {
+  specPaused = !specPaused;
+  document.getElementById("specpause").textContent =
+    specPaused ? "▶ Resume (Enter)" : "⏸ Pause (Enter)";
+  if (specPaused) clearTimeout(specTimer); else specStep();
+};
+document.getElementById("specspeed").onchange = () => {
+  if (!specPaused) scheduleSpec(state);
+};
 document.getElementById("newgame").onclick = async () => {
   const np = +document.getElementById("np").value;
   sel = null; selCity = null;
+  clearTimeout(specTimer); specPaused = false;
   render(await fetchJSON("/new", { method: "POST",
     headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({num_players: np, seed: Math.floor(Math.random() * 1e9)}) }));
+    body: JSON.stringify({num_players: np, seed: Math.floor(Math.random() * 1e9),
+                          spectate: document.getElementById("specchk").checked}) }));
   centerHome();
+  scheduleSpec(state);
 };
 {
   const vs = document.getElementById("viewsel");
