@@ -356,14 +356,22 @@ impl BasicAi {
         let mut settlers = 0;
         let mut builders = 0;
         let mut military = 0;
+        let mut melee = 0;
+        let mut ranged = 0;
         for uid in g.player_unit_ids(pid) {
             let kind = g.units[&uid].kind.clone();
             match kind.as_str() {
                 "settler" => settlers += 1,
                 "builder" => builders += 1,
                 _ => {
-                    if g.rules.units[kind.as_str()].class == "military" {
+                    let spec = &g.rules.units[kind.as_str()];
+                    if spec.class == "military" {
                         military += 1;
+                        if spec.ranged_strength > 0.0 {
+                            ranged += 1;
+                        } else {
+                            melee += 1;
+                        }
                     }
                 }
             }
@@ -412,7 +420,17 @@ impl BasicAi {
                         match &item {
                             Item::Unit { unit } if unit == "settler" => settlers += 1,
                             Item::Unit { unit } if unit == "builder" => builders += 1,
-                            Item::Unit { .. } => military += 1,
+                            Item::Unit { unit } => {
+                                let spec = &g.rules.units[unit.as_str()];
+                                if spec.class == "military" {
+                                    military += 1;
+                                    if spec.ranged_strength > 0.0 {
+                                        ranged += 1;
+                                    } else {
+                                        melee += 1;
+                                    }
+                                }
+                            }
                             _ => {}
                         }
                         played = true;
@@ -423,13 +441,24 @@ impl BasicAi {
                 }
             }
             if let Some(item) =
-                self.pick_item(g, pid, *cid, n_cities, settlers, builders, military)
+                self.pick_item(g, pid, *cid, n_cities, settlers, builders,
+                               military, melee, ranged)
             {
                 if g.apply(pid, &Action::Produce { city: *cid, item: item.clone() }).is_ok() {
                     match &item {
                         Item::Unit { unit } if unit == "settler" => settlers += 1,
                         Item::Unit { unit } if unit == "builder" => builders += 1,
-                        Item::Unit { .. } => military += 1,
+                        Item::Unit { unit } => {
+                            let spec = &g.rules.units[unit.as_str()];
+                            if spec.class == "military" {
+                                military += 1;
+                                if spec.ranged_strength > 0.0 {
+                                    ranged += 1;
+                                } else {
+                                    melee += 1;
+                                }
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -461,10 +490,14 @@ impl BasicAi {
         }
     }
 
-    fn best_military(&self, g: &Game, pid: usize, cid: u32) -> Option<String> {
+    fn best_military(&self, g: &Game, pid: usize, cid: u32,
+                     want_ranged: Option<bool>) -> Option<String> {
         let mut best: Option<(f64, String)> = None;
         for (name, spec) in &g.rules.units {
             if spec.class != "military" || spec.domain.as_deref() == Some("sea") {
+                continue;
+            }
+            if want_ranged.map(|want| want != (spec.ranged_strength > 0.0)).unwrap_or(false) {
                 continue;
             }
             if !g.can_produce(pid, cid, &Item::Unit { unit: name.clone() }) {
@@ -478,12 +511,23 @@ impl BasicAi {
         best.map(|(_, n)| n)
     }
 
+    fn combined_arms_unit(&self, g: &Game, pid: usize, cid: u32,
+                          melee: usize, ranged: usize) -> Option<String> {
+        // Ranged units trade efficiently, but only melee units can take a
+        // city. Alternate the strongest available unit in each role so an
+        // advanced army never degenerates into an uncapturing firing line.
+        let want_ranged = melee > ranged;
+        self.best_military(g, pid, cid, Some(want_ranged))
+            .or_else(|| self.best_military(g, pid, cid, None))
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn pick_item(&self, g: &Game, pid: usize, cid: u32, n_cities: usize,
-                 settlers: usize, builders: usize, military: usize) -> Option<Item> {
+                 settlers: usize, builders: usize, military: usize,
+                 melee: usize, ranged: usize) -> Option<Item> {
         let city_pop = g.cities[&cid].pop;
         if (military as f64) < self.w.mil_per_city * n_cities as f64 {
-            if let Some(m) = self.best_military(g, pid, cid) {
+            if let Some(m) = self.combined_arms_unit(g, pid, cid, melee, ranged) {
                 return Some(Item::Unit { unit: m });
             }
         }
@@ -562,7 +606,8 @@ impl BasicAi {
                 return Some(Item::Building { building: wonders[0].1.clone() });
             }
         }
-        self.best_military(g, pid, cid).map(|m| Item::Unit { unit: m })
+        self.combined_arms_unit(g, pid, cid, melee, ranged)
+            .map(|m| Item::Unit { unit: m })
     }
 
     fn units(&self, g: &mut Game, pid: usize) {
@@ -1013,5 +1058,31 @@ impl BasicAi {
             let _ = g.apply(pid, &Action::Fortify { unit: uid });
         }
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn military_picker_preserves_city_capturing_melee() {
+        let mut g = Game::new_full(1, 20, 14, 31, 30, 0, false);
+        let settler = g.player_unit_ids(0).into_iter()
+            .find(|id| g.units[id].kind == "settler").unwrap();
+        g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        g.players[0].techs.extend([
+            "archery".to_string(),
+            "iron_working".to_string(),
+            "machinery".to_string(),
+        ]);
+        let cid = g.player_city_ids(0)[0];
+        let ai = BasicAi::new();
+
+        let ranged = ai.combined_arms_unit(&g, 0, cid, 2, 0).unwrap();
+        assert!(g.rules.units[ranged.as_str()].ranged_strength > 0.0);
+
+        let melee = ai.combined_arms_unit(&g, 0, cid, 2, 2).unwrap();
+        assert_eq!(g.rules.units[melee.as_str()].ranged_strength, 0.0);
     }
 }
