@@ -4060,10 +4060,8 @@ impl BasicAi {
                 }
             }
             if let Some((utility, _, action)) = best {
-                if utility > 0.0 {
-                    if g.apply(pid, &action).is_ok() {
-                        return true;
-                    }
+                if utility > 0.0 && g.apply(pid, &action).is_ok() {
+                    return true;
                 }
             }
             let hostile_water_unit = g
