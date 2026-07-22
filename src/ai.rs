@@ -47,11 +47,19 @@ const DISTRICT_PRIORITY: [&str; 4] = ["campus", "commercial_hub", "holy_site", "
 
 pub trait Ai {
     fn take_turn(&mut self, g: &mut Game, pid: usize);
+
+    fn strategy_label(&self) -> Option<&'static str> {
+        None
+    }
 }
 
 impl<T: Ai + ?Sized> Ai for Box<T> {
     fn take_turn(&mut self, g: &mut Game, pid: usize) {
         (**self).take_turn(g, pid);
+    }
+
+    fn strategy_label(&self) -> Option<&'static str> {
+        (**self).strategy_label()
     }
 }
 

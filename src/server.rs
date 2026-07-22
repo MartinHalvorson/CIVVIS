@@ -126,6 +126,16 @@ impl Session {
                 g.current
             };
             let mut o = observation_spectator(g, pid);
+            if let Some(players) = o["players"].as_array_mut() {
+                for player in players {
+                    let Some(id) = player["id"].as_u64().map(|id| id as usize) else {
+                        continue;
+                    };
+                    if let Some(strategy) = self.ais.get(id).and_then(|ai| ai.strategy_label()) {
+                        player["ai_strategy"] = json!(strategy);
+                    }
+                }
+            }
             o["spectate"] = json!(true);
             o["spectator_paused"] = json!(self.spectator_paused);
             o["legal_actions"] = json!([]);
@@ -540,6 +550,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function spectatorIdentity(player)"));
         assert!(EMBEDDED_INDEX.contains("Global lifetime carbon emissions"));
         assert!(EMBEDDED_INDEX.contains("Alliance · Level"));
+        assert!(EMBEDDED_INDEX.contains("p.ai_strategy"));
         assert!(EMBEDDED_INDEX.contains(".diplomacy-card.allied"));
         assert!(EMBEDDED_INDEX.contains("function cameraYBounds"));
         assert!(EMBEDDED_INDEX.contains("cam.y = clampCameraY(cam.y)"));
@@ -561,8 +572,11 @@ mod tests {
     fn spectator_state_reports_the_pause_liveness_signal() {
         let mut params = current();
         params.spectate = true;
-        let session = Session::new(params);
+        let mut session = Session::new(params);
         assert_eq!(session.state()["spectator_paused"].as_bool(), Some(false));
+        assert!(session.state()["players"][0]["ai_strategy"].is_null());
+        session.step();
+        assert_eq!(session.state()["players"][0]["ai_strategy"], "expansion");
     }
 
     #[test]

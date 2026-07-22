@@ -20,6 +20,20 @@ pub enum GrandStrategy {
     Recovery,
 }
 
+impl GrandStrategy {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            GrandStrategy::Expansion => "expansion",
+            GrandStrategy::Science => "science",
+            GrandStrategy::Culture => "culture",
+            GrandStrategy::Religion => "religion",
+            GrandStrategy::Diplomacy => "diplomacy",
+            GrandStrategy::Conquest => "conquest",
+            GrandStrategy::Recovery => "recovery",
+        }
+    }
+}
+
 /// A concrete game-ending objective. Unlike `GrandStrategy`, which may
 /// temporarily become Expansion or Recovery, this remains fixed for the
 /// lifetime of a deliberately targeted AI.
@@ -7711,6 +7725,10 @@ impl AdvancedAi {
 }
 
 impl Ai for AdvancedAi {
+    fn strategy_label(&self) -> Option<&'static str> {
+        self.plan.as_ref().map(|plan| plan.strategy.as_str())
+    }
+
     fn take_turn(&mut self, g: &mut Game, pid: usize) {
         self.base.minor = g.players[pid].is_minor;
         self.base.barb = g.players[pid].is_barbarian;
