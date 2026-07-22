@@ -180,6 +180,31 @@ pub fn generate(rules: &Rules, width: i32, height: i32, num_spawns: usize,
         }
     }
 
+    // --- natural wonders: one water, up to two land, on plausible tiles
+    {
+        let reef: Vec<Pos> = wm.tiles.iter()
+            .filter(|(_, t)| t.terrain == "coast" && t.feature.is_none())
+            .map(|(p, _)| *p).collect();
+        if !reef.is_empty() {
+            let p = reef[rng.below(reef.len())];
+            wm.tiles.get_mut(&p).unwrap().feature = Some("great_barrier_reef".into());
+        }
+        for wonder in ["crater_lake", "pantanal"] {
+            let cands: Vec<Pos> = wm.tiles.iter()
+                .filter(|(_, t)| {
+                    (t.terrain == "grassland" || t.terrain == "plains"
+                        || t.terrain == "tundra")
+                        && t.feature.is_none() && !t.hills && !t.river
+                })
+                .map(|(p, _)| *p).collect();
+            if !cands.is_empty() {
+                let p = cands[rng.below(cands.len())];
+                wm.tiles.get_mut(&p).unwrap().feature = Some(wonder.into());
+            }
+        }
+    }
+
+
     // --- resources
     let all_pos: Vec<Pos> = wm.tiles.keys().cloned().collect();
     for pos in all_pos {

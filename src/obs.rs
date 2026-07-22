@@ -90,6 +90,8 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool) -> Value {
                 "growth_need": growth_threshold(c.pop),
                 "queue_cost": c.queue.first().map(|it| g.item_cost(it)),
                 "can_strike": g.city_can_strike(c),
+                "loyalty": round1(c.loyalty),
+                "governor": g.players[c.owner].governors.contains(&c.id),
             });
             merge(&mut d, ext);
         }
@@ -122,6 +124,9 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool) -> Value {
             "gpp": p.gpp,
             "gp_claimed": p.gp_claimed,
             "era_score": p.era_score,
+            "governors": p.governors,
+            "governor_titles": g.governor_titles(pid),
+            "dvp": p.dvp,
             "age": p.age,
             "tourism": round1(p.tourism_lifetime),
             "pantheon": p.pantheon,
@@ -156,6 +161,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool) -> Value {
                 None
             },
             "my_envoys": g.envoys_at(pid, o.id),
+            "dvp": o.dvp,
             "government": o.government,
             "score": g.score(o.id),
             "cities": g.player_city_ids(o.id).len(),

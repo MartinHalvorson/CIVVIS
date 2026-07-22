@@ -279,6 +279,21 @@ impl BasicAi {
                 }
             }
         }
+        while g.players[pid].governors.len() < g.governor_titles(pid) {
+            // anchor the shakiest city
+            let target = g.player_city_ids(pid).into_iter()
+                .filter(|c| !g.players[pid].governors.contains(c))
+                .min_by(|a, b| g.cities[a].loyalty.partial_cmp(&g.cities[b].loyalty)
+                    .unwrap().then(a.cmp(b)));
+            match target {
+                Some(c) => {
+                    if g.apply(pid, &Action::AssignGovernor { city: c }).is_err() {
+                        break;
+                    }
+                }
+                None => break,
+            }
+        }
         while g.players[pid].envoys_free > 0 {
             // consolidate on the city-state we already lead in (suzerain push)
             let target = g.players.iter()

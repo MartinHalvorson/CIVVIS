@@ -4,7 +4,7 @@ Tracked against the [Civilization Wiki](https://civilization.fandom.com/wiki/Civ
 Status: ✅ implemented · 🟡 simplified · ❌ not yet.
 
 > **In progress** (claimed by parallel sessions — check before starting a batch):
-> - Session B: natural wonders, support units (ram/tower), loyalty+governors, world congress diplomatic victory. NOT touching web/index.html.
+> - (none currently claimed by session B; GUI panels for the new systems are open)
 
 | System | Status | Notes |
 |---|---|---|
@@ -25,12 +25,12 @@ Status: ✅ implemented · 🟡 simplified · ❌ not yet.
 | Religion | 🟡 | pantheon at 25 faith (6 beliefs, exclusive); prophet + holy site founds (max 4, classic names); follower/founder beliefs; missionaries (faith-buy, 3 spreads, +200 pressure); passive pressure ±9 tiles; majority at 50; no theological combat/apostles |
 | Trade routes & roads | ✅ | wiki capacity (Foreign Trade +1/hub-or-harbor city, +2 merchant republic); vanilla per-district yield table; traders lay roads (cost 1, bridge rivers 🟡); 30-turn duration; war/capture cancels |
 | Diplomacy (deals, alliances, grievances) | 🟡 | war/peace only |
-| Loyalty, governors (R&F/GS) | ❌ | |
-| Goody huts (tribal villages) | 🟡 | ~1/40 land tiles; rewards: gold/faith/eureka/inspiration; natural wonders still ❌ |
+| Loyalty + governors (R&F) | 🟡 | population pressure ±9 tiles, capitals immune, defection to strongest neighbor at 0; governor titles from civic milestones (3), +8 loyalty +1 amenity; no promotions/named governors |
+| Natural wonders + goody huts | 🟡 | 3 wonders (reef/crater lake/pantanal), feature-based, impassable/crossable, tile yields, discovery era score (+3 first finder); huts ~1/40 land tiles with gold/faith/eureka/inspiration rewards |
 | Zone of control | ✅ | melee exerts (same domain, not over river banks), cities/encampments exert all-adjacent, cavalry ignores, civilians drop all MP |
 | Movement: MP paid up front, min-1-tile, river +2 MP | ✅ | river surcharge on entering channel tile (tile-model 🟡) |
-| Formations/corps, support units | ❌ | |
-| Victory: domination, science, score, religious, culture | ✅ | culture = tourism (wonders + 15% of culture/turn) attracting more foreign tourists than any rival's domestic (🟡 simplified); diplomatic ❌ (needs world congress) |
+| Support units; corps/armies | 🟡 | battering ram (full melee dmg vs ancient walls) + siege tower (melee bypasses walls thru medieval), support stacking class; corps/armies n/a — unlock at Nationalism, beyond current renaissance-era content |
+| Victory: domination, science, score, religious, culture, diplomatic | ✅ | culture = tourism vs domestic tourists (🟡); diplomatic = world congress every 30 turns from medieval era, most envoys+suzerainties gains 2 DVP, 6 wins (🟡 vs GS resolutions) |
 | Eras, era score, golden/dark ages | 🟡 | world era from leader's tech+civic count; era score from wonders/GPs/camps/captures/religion/pantheon; golden +10% / dark -5% yields on transition (R&F-style, simplified thresholds) |
 
 Next batch: policy cards + government slots, trade routes, great people,

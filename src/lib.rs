@@ -499,6 +499,101 @@ mod tests {
     }
 
     #[test]
+    fn natural_wonders_and_support_units() {
+        let g = Game::new_full(2, 26, 16, 3, 60, 0, false);
+        // wonders generate and impassable ones block movement
+        let nw: Vec<_> = g.map.tiles.values()
+            .filter(|t| t.feature.as_deref()
+                .map(|f| g.rules.features[f].natural_wonder).unwrap_or(false))
+            .collect();
+        assert!(!nw.is_empty(), "no natural wonders generated");
+        if let Some(t) = g.map.tiles.values()
+            .find(|t| t.feature.as_deref() == Some("crater_lake")) {
+            assert!(!g.rules.is_passable(t));
+        }
+        // battering ram lets melee hit ancient walls at full strength
+        let mut g = Game::new_full(2, 24, 16, 9, 60, 0, false);
+        let s = g.player_unit_ids(0).into_iter()
+            .find(|id| g.units[id].kind == "settler").unwrap();
+        g.apply(0, &Action::FoundCity { unit: s }).unwrap();
+        let cid = g.player_city_ids(0)[0];
+        let cpos = g.cities[&cid].pos;
+        g.cities.get_mut(&cid).unwrap().buildings.push("walls".to_string());
+        g.cities.get_mut(&cid).unwrap().wall_hp = 50;
+        let mine = g.player_unit_ids(0).into_iter()
+            .find(|id| g.units[id].kind == "warrior").unwrap();
+        let far = g.map.tiles.values()
+            .find(|t| g.wdist(t.pos, cpos) > 6 && !g.rules.is_water(t)
+                && g.rules.is_passable(t) && g.units_at(t.pos).is_empty())
+            .map(|t| t.pos).unwrap();
+        let g2 = teleport(&g, mine, far);
+        let adj = crate::hex::neighbors(cpos).into_iter()
+            .find(|n| g2.map.get(*n).map(|t| !g2.rules.is_water(t)
+                && g2.rules.is_passable(t)
+                && g2.units_at(*n).is_empty()).unwrap_or(false)).unwrap();
+        let foe = g2.player_unit_ids(1).into_iter()
+            .find(|id| g2.units[id].kind == "warrior").unwrap();
+        let g3 = teleport(&g2, foe, adj);
+        let (mut g4, _ram) = {
+            // conjure an enemy battering ram sharing the attacker's tile
+            let mut v = serde_json::to_value(&g3).unwrap();
+            let id = v["next_id"].as_u64().unwrap() as u32;
+            v["next_id"] = serde_json::json!(id + 1);
+            v["units"].as_array_mut().unwrap().push(serde_json::json!({
+                "id": id, "type": "battering_ram", "owner": 1,
+                "pos": [adj.0, adj.1], "hp": 100, "moves_left": 2.0, "charges": 0,
+            }));
+            (serde_json::from_value::<Game>(v).unwrap(), id)
+        };
+        g4.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
+        g4.apply(0, &Action::EndTurn).unwrap();
+        g4.apply(1, &Action::Attack { unit: foe, target: cpos }).unwrap();
+        // full-strength wall damage (>= 8) instead of the 15% trickle (<= 6)
+        assert!(50 - g4.cities[&cid].wall_hp >= 8,
+                "ram should breach: wall_hp {}", g4.cities[&cid].wall_hp);
+    }
+
+    #[test]
+    fn loyalty_governors_congress() {
+        let mut g = Game::new_full(2, 26, 16, 9, 300, 1, false);
+        let s = g.player_unit_ids(0).into_iter()
+            .find(|id| g.units[id].kind == "settler").unwrap();
+        g.apply(0, &Action::FoundCity { unit: s }).unwrap();
+        let cid = g.player_city_ids(0)[0];
+        assert_eq!(g.cities[&cid].loyalty, 100.0);
+        // governor titles come from civic milestones
+        assert_eq!(g.governor_titles(0), 0);
+        g.players[0].civics.insert("political_philosophy".to_string());
+        assert_eq!(g.governor_titles(0), 1);
+        g.apply(0, &Action::AssignGovernor { city: cid }).unwrap();
+        assert!(g.apply(0, &Action::AssignGovernor { city: cid }).is_err());
+        // amenity bonus from the governor
+        assert!(g.players[0].governors.contains(&cid));
+        // world congress: medieval era, turn multiple of 30, most envoys wins
+        g.world_era = 2;
+        g.turn = 29; // wraps to 30 after a full round
+        let minor = g.players.iter().find(|p| p.is_minor && !p.is_barbarian)
+            .map(|p| p.id).unwrap();
+        g.players[0].envoys = vec![(minor, 3)];
+        g.apply(0, &Action::EndTurn).unwrap();
+        while g.current != 0 {
+            let cur = g.current;
+            g.apply(cur, &Action::EndTurn).unwrap();
+        }
+        assert_eq!(g.players[0].dvp, 2);
+        // 6 points = diplomatic victory at the next congress
+        g.players[0].dvp = 4;
+        g.turn = 59;
+        g.apply(0, &Action::EndTurn).unwrap();
+        while g.winner.is_none() && g.current != 0 {
+            let cur = g.current;
+            g.apply(cur, &Action::EndTurn).unwrap();
+        }
+        assert_eq!(g.winner, Some(0));
+        assert_eq!(g.victory_type.as_deref(), Some("diplomatic"));
+    }
+
+    #[test]
     fn serialization_roundtrip() {
         let mut g = Game::new(2, 18, 12, 4, 25, 1);
         let mut ais = BasicAi::fleet(&g);

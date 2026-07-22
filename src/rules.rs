@@ -60,6 +60,10 @@ pub struct FeatureSpec {
     pub yields: Yields,
     #[serde(default = "done")]
     pub move_cost: f64,
+    #[serde(default)]
+    pub natural_wonder: bool,
+    #[serde(default)]
+    pub impassable: bool,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -291,6 +295,11 @@ impl Rules {
     }
 
     pub fn is_passable(&self, t: &Tile) -> bool {
+        if let Some(f) = &t.feature {
+            if self.features[f.as_str()].impassable {
+                return false;
+            }
+        }
         self.terrains[t.terrain.as_str()].passable
     }
 

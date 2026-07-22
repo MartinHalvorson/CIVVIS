@@ -1,6 +1,49 @@
 {
-  "forest": {"yields": {"production": 1}, "move_cost": 2},
-  "jungle": {"yields": {"food": 1}, "move_cost": 2},
-  "marsh": {"yields": {"food": 1}, "move_cost": 2},
-  "oasis": {"yields": {"food": 3, "gold": 1}}
+  "forest": {
+    "yields": {
+      "production": 1
+    },
+    "move_cost": 2
+  },
+  "jungle": {
+    "yields": {
+      "food": 1
+    },
+    "move_cost": 2
+  },
+  "marsh": {
+    "yields": {
+      "food": 1
+    },
+    "move_cost": 2
+  },
+  "oasis": {
+    "yields": {
+      "food": 3,
+      "gold": 1
+    }
+  },
+  "great_barrier_reef": {
+    "yields": {
+      "science": 2,
+      "food": 1
+    },
+    "natural_wonder": true
+  },
+  "crater_lake": {
+    "yields": {
+      "faith": 3,
+      "science": 1
+    },
+    "natural_wonder": true,
+    "impassable": true
+  },
+  "pantanal": {
+    "yields": {
+      "culture": 2,
+      "food": 2
+    },
+    "move_cost": 2,
+    "natural_wonder": true
+  }
 }

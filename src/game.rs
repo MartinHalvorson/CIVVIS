@@ -137,6 +137,12 @@ pub struct City {
     pub last_attacked: u32,
     #[serde(default)]
     pub pressure: BTreeMap<String, f64>, // religious pressure by religion
+    #[serde(default = "full_loyalty")]
+    pub loyalty: f64,
+}
+
+fn full_loyalty() -> f64 {
+    100.0
 }
 
 fn wall_unset() -> i32 {
@@ -188,6 +194,10 @@ pub struct Player {
     pub prophet_pending: bool,
     #[serde(default)]
     pub era_score: i64,
+    #[serde(default)]
+    pub governors: Vec<u32>, // city ids with an established governor
+    #[serde(default)]
+    pub dvp: i64, // diplomatic victory points
     #[serde(default = "normal_age")]
     pub age: String,
     #[serde(default)]
@@ -236,6 +246,8 @@ impl Player {
             religion_beliefs: Vec::new(),
             prophet_pending: false,
             era_score: 0,
+            governors: Vec::new(),
+            dvp: 0,
             age: "normal".to_string(),
             culture_lifetime: 0.0,
             tourism_lifetime: 0.0,
@@ -271,6 +283,7 @@ pub enum Action {
     TradeRoute { unit: u32, city: u32 },
     SendEnvoy { player: usize },
     ChoosePantheon { belief: String },
+    AssignGovernor { city: u32 },
     FoundReligion { follower: String, founder: String },
     Spread { unit: u32 },
     CityStrike { city: u32, target: Pos },
@@ -1408,6 +1421,9 @@ impl Game {
             supply += self.rules.buildings[b.as_str()].amenity;
         }
         supply += self.gov_effects(city.owner).amenity;
+        if self.players[city.owner].governors.contains(&city.id) {
+            supply += 1.0; // an established governor steadies the city
+        }
         if self.has_policy(city.owner, "retainers") {
             let garrison = self.units_at(city.pos).into_iter().any(|id| {
                 let o = &self.units[&id];
@@ -1442,7 +1458,8 @@ impl Game {
     /// 15%, ranged 50%, siege 100% of the roll to walls), while the city
     /// itself takes 1 damage behind healthy walls (>=80%), half through
     /// damaged walls, and full damage once breached (<20%) or bare (Civ 6).
-    fn city_take_damage(&mut self, cid: u32, dmg: i32, wall_mult: f64) {
+    fn city_take_damage(&mut self, cid: u32, dmg: i32, wall_mult: f64,
+                        bypass_walls: bool) {
         let (wall, max) = {
             let c = &self.cities[&cid];
             (c.wall_hp, self.city_max_wall_hp(c))
@@ -1451,7 +1468,9 @@ impl Game {
         c.last_attacked = self.turn;
         if wall > 0 && max > 0 {
             let frac = wall as f64 / max as f64;
-            let through = if frac >= 0.8 {
+            let through = if bypass_walls {
+                dmg // siege tower: attackers pour past the walls (Civ 6)
+            } else if frac >= 0.8 {
                 1
             } else if frac >= 0.2 {
                 dmg / 2
@@ -1597,10 +1616,26 @@ impl Game {
     }
 
     fn reveal(&mut self, pid: usize, pos: Pos, radius: i32) {
+        let mut wonders: Vec<Pos> = Vec::new();
         for p in self.wdisk(pos, radius) {
-            if self.map.tiles.contains_key(&p) {
-                self.players[pid].explored.insert(p);
+            if let Some(t) = self.map.tiles.get(&p) {
+                let new = self.players[pid].explored.insert(p);
+                if new && !self.players[pid].is_minor {
+                    let nw = t.feature.as_ref()
+                        .map(|f| self.rules.features[f.as_str()].natural_wonder)
+                        .unwrap_or(false);
+                    if nw {
+                        wonders.push(p);
+                    }
+                }
             }
+        }
+        for p in wonders {
+            // +1 era score on discovery, +2 more for the world's first finder
+            let first = !self.players.iter().any(|o| {
+                o.id != pid && !o.is_minor && o.explored.contains(&p)
+            });
+            self.players[pid].era_score += if first { 3 } else { 1 };
         }
     }
 
@@ -2440,6 +2475,13 @@ impl Game {
                     }
                 }
             }
+            if p.governors.len() < self.governor_titles(pid) {
+                for cid in self.player_city_ids(pid) {
+                    if !p.governors.contains(&cid) {
+                        acts.push(Action::AssignGovernor { city: cid });
+                    }
+                }
+            }
             if p.religion.is_some() && p.faith >= 200.0 {
                 for cid in self.player_city_ids(pid) {
                     if self.cities[&cid].districts.contains_key("holy_site") {
@@ -2506,6 +2548,7 @@ impl Game {
             Action::TradeRoute { unit, city } => self.do_trade_route(pid, *unit, *city),
             Action::SendEnvoy { player } => self.do_send_envoy(pid, *player),
             Action::ChoosePantheon { belief } => self.do_choose_pantheon(pid, belief),
+            Action::AssignGovernor { city } => self.do_assign_governor(pid, *city),
             Action::FoundReligion { follower, founder } =>
                 self.do_found_religion(pid, follower, founder),
             Action::Spread { unit } => self.do_spread(pid, *unit),
@@ -2686,8 +2729,18 @@ impl Game {
                 let cs = self.city_strength(cid);
                 let dmg_out = damage(att, cs, &mut self.rng);
                 let dmg_in = damage(cs, att, &mut self.rng);
-                let mult = if spec.siege { 1.0 } else { 0.15 };
-                self.city_take_damage(cid, dmg_out, mult);
+                let walls = self.cities[&cid].buildings.iter()
+                    .filter(|b| *b == "walls" || *b == "medieval_walls").count();
+                let support = |kind: &str| self.units_at(u.pos).iter().any(|id| {
+                    let o = &self.units[id];
+                    o.owner == pid && o.kind == kind
+                });
+                // battering ram: full melee damage vs ancient walls;
+                // siege tower: melee pours past ancient/medieval walls
+                let ram = support("battering_ram") && walls <= 1;
+                let tower = support("siege_tower") && walls <= 2;
+                let mult = if spec.siege || ram { 1.0 } else { 0.15 };
+                self.city_take_damage(cid, dmg_out, mult, tower);
                 self.units.get_mut(&uid).unwrap().hp -= dmg_in;
                 self.award_xp(uid, 3);
                 if self.units[&uid].hp <= 0 {
@@ -2815,7 +2868,7 @@ impl Game {
             let cs = self.city_strength(cid);
             let dmg = damage(att, cs, &mut self.rng);
             let mult = if spec.siege { 1.0 } else { 0.5 };
-            self.city_take_damage(cid, dmg, mult);
+            self.city_take_damage(cid, dmg, mult, false);
             let c = self.cities.get_mut(&cid).unwrap();
             c.hp = c.hp.max(1); // ranged fire cannot capture (Civ 6)
         }
@@ -2881,6 +2934,7 @@ impl Game {
             wall_hp: 0,
             last_attacked: 0,
             pressure: BTreeMap::new(),
+            loyalty: 100.0,
         };
         {
             let center = self.map.tiles.get_mut(&pos).unwrap();
@@ -3156,6 +3210,128 @@ impl Game {
         Ok(())
     }
 
+    // -------------------------------------------------- loyalty & governors
+
+    /// Governor titles come from civic milestones (R&F simplified).
+    pub fn governor_titles(&self, pid: usize) -> usize {
+        ["political_philosophy", "civil_service", "guilds"].iter()
+            .filter(|c| self.players[pid].civics.contains(**c))
+            .count()
+    }
+
+    fn do_assign_governor(&mut self, pid: usize, cid: u32) -> Result<(), String> {
+        match self.cities.get(&cid) {
+            Some(c) if c.owner == pid => {}
+            _ => return Err("not your city".into()),
+        }
+        if self.players[pid].governors.contains(&cid) {
+            return Err("governor already there".into());
+        }
+        if self.players[pid].governors.len() >= self.governor_titles(pid) {
+            return Err("no free governor titles".into());
+        }
+        self.players[pid].governors.push(cid);
+        Ok(())
+    }
+
+    /// Population-based loyalty pressure (R&F simplified): nearby own pops
+    /// pull up, foreign pops pull down; a governor anchors +8; the capital
+    /// never flips. At 0 loyalty the city defects to the strongest neighbor.
+    fn process_loyalty(&mut self, pid: usize) {
+        if self.players[pid].is_minor {
+            return;
+        }
+        let mut flips: Vec<(u32, usize)> = Vec::new();
+        for cid in self.player_city_ids(pid) {
+            let (cpos, is_cap) = {
+                let c = &self.cities[&cid];
+                (c.pos, c.is_capital)
+            };
+            let mut net = 0.0;
+            let mut best_foreign: Option<(f64, usize)> = None;
+            let mut foreign_pop: BTreeMap<usize, f64> = BTreeMap::new();
+            for o in self.cities.values() {
+                if o.id == cid {
+                    continue;
+                }
+                let d = self.wdist(o.pos, cpos);
+                if d > 9 {
+                    continue;
+                }
+                let w = o.pop as f64 * (10.0 - d as f64) / 10.0;
+                if o.owner == pid {
+                    net += w;
+                } else if !self.players[o.owner].is_barbarian
+                    && !self.players[o.owner].is_minor {
+                    net -= w;
+                    *foreign_pop.entry(o.owner).or_insert(0.0) += w;
+                }
+            }
+            net += self.cities[&cid].pop as f64; // a city anchors itself
+            for (o, w) in foreign_pop {
+                if best_foreign.map(|(bw, _)| w > bw).unwrap_or(true) {
+                    best_foreign = Some((w, o));
+                }
+            }
+            let mut delta = (net * 0.5).clamp(-6.0, 6.0);
+            if self.players[pid].governors.contains(&cid) {
+                delta += 8.0;
+            }
+            let c = self.cities.get_mut(&cid).unwrap();
+            c.loyalty = (c.loyalty + delta).clamp(0.0, 100.0);
+            if c.loyalty <= 0.0 && !is_cap {
+                if let Some((_, new_owner)) = best_foreign {
+                    flips.push((cid, new_owner));
+                }
+            }
+        }
+        for (cid, new_owner) in flips {
+            self.capture_city(cid, new_owner);
+            self.cities.get_mut(&cid).unwrap().loyalty = 100.0;
+        }
+    }
+
+    // -------------------------------------------------- world congress
+
+    /// From the medieval world era, a congress convenes every 30 turns: the
+    /// civ with the most diplomatic standing (envoys + 2 per suzerainty)
+    /// gains 2 victory points; 6 points win the game (GS much simplified).
+    fn process_congress(&mut self) {
+        if self.world_era < 2 || self.turn % 30 != 0 || self.winner.is_some() {
+            return;
+        }
+        let mut best: Option<(i64, usize)> = None;
+        let mut tied = false;
+        for p in self.players.iter().filter(|p| p.alive && !p.is_minor) {
+            let envoys: i64 = p.envoys.iter().map(|(_, n)| *n).sum();
+            let suz: i64 = self.players.iter()
+                .filter(|m| m.is_minor && !m.is_barbarian && m.alive)
+                .filter(|m| self.suzerain_of(m.id) == Some(p.id))
+                .count() as i64;
+            let favor = envoys + 2 * suz;
+            match best {
+                Some((bf, _)) if favor == bf => tied = true,
+                Some((bf, _)) if favor > bf => {
+                    best = Some((favor, p.id));
+                    tied = false;
+                }
+                None => {
+                    best = Some((favor, p.id));
+                    tied = false;
+                }
+                _ => {}
+            }
+        }
+        if let Some((favor, pid)) = best {
+            if !tied && favor > 0 {
+                self.players[pid].dvp += 2;
+                if self.players[pid].dvp >= 6 {
+                    self.set_winner(pid, "diplomatic");
+                }
+            }
+        }
+    }
+
     // -------------------------------------------------- eras & tourism
 
     /// World era from the most advanced civ's tech+civic count.
@@ -3235,6 +3411,7 @@ impl Game {
             self.turn += 1;
             self.barbarian_phase();
             self.process_eras();
+            self.process_congress();
             self.check_culture_victory();
             if self.turn > self.max_turns && self.winner.is_none() {
                 let mut best: Option<(i64, i64)> = None; // (score, -pid)
@@ -3272,6 +3449,7 @@ impl Game {
         self.process_routes(pid);
         self.process_great_people(pid);
         self.process_pressure(pid);
+        self.process_loyalty(pid);
         if !self.players[pid].is_minor {
             // influence points scale with government tier; 100 points = 1 envoy
             let tier = match self.players[pid].government.as_deref() {
@@ -3692,6 +3870,9 @@ impl Game {
             if self.units[&oid].owner == old {
                 self.units.get_mut(&oid).unwrap().owner = new_owner;
             }
+        }
+        for p in self.players.iter_mut() {
+            p.governors.retain(|g| *g != cid);
         }
         bump(&mut self.players[new_owner], "captures");
         self.players[new_owner].era_score += 2;

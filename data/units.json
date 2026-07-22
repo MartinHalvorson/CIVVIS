@@ -127,5 +127,17 @@
     "moves": 4,
     "tech": "astrology",
     "charges": 3
+  },
+  "battering_ram": {
+    "class": "support",
+    "cost": 65,
+    "moves": 2,
+    "tech": "masonry"
+  },
+  "siege_tower": {
+    "class": "support",
+    "cost": 100,
+    "moves": 2,
+    "tech": "construction"
   }
 }
