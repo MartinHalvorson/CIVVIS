@@ -2,6 +2,9 @@
 //! Endpoints: GET / (page), GET /state, GET /rules, POST /action, POST /new.
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
@@ -29,8 +32,20 @@ pub struct Params {
 pub struct Session {
     pub params: Params,
     pub game: Game,
-    ais: Vec<Box<dyn Ai>>,
+    ais: Vec<Box<dyn Ai + Send>>,
 }
+
+/// Server-side exhibition state: in spectate mode a background thread steps
+/// the game at `pace_ms` per major turn and restarts 10s after a victory, so
+/// games keep running with no browser attached.
+pub struct Shared {
+    pub session: Mutex<Session>,
+    pub pace_ms: AtomicU64,
+    pub paused: AtomicBool,
+    pub restart_in: AtomicU64, // ms until auto-restart; u64::MAX = not pending
+}
+
+const RESTART_MS: u64 = 10_000;
 
 impl Session {
     pub fn new(params: Params) -> Session {
@@ -41,7 +56,7 @@ impl Session {
         // trained net exists, else evolved champion weights, else defaults
         let champ = crate::evolve::load_champion("evolved");
         let net = crate::valuenet::ValueNet::load("evolved");
-        let ais: Vec<Box<dyn Ai>> = game.players.iter().map(|p| -> Box<dyn Ai> {
+        let ais: Vec<Box<dyn Ai + Send>> = game.players.iter().map(|p| -> Box<dyn Ai + Send> {
             if p.is_minor || p.is_barbarian {
                 return Box::new(BasicAi::new());
             }
@@ -159,7 +174,61 @@ fn respond_json(stream: &mut TcpStream, v: &Value) {
     respond(stream, "200 OK", "application/json", v.to_string().as_bytes());
 }
 
-fn handle(stream: &mut TcpStream, session: &mut Session) {
+fn auto_step_loop(sh: Arc<Shared>) {
+    let mut over_since: Option<Instant> = None;
+    loop {
+        let pace = sh.pace_ms.load(Ordering::Relaxed).clamp(20, 60_000);
+        if sh.paused.load(Ordering::Relaxed) {
+            over_since = None; // pausing resets the restart countdown
+            std::thread::sleep(Duration::from_millis(150));
+            continue;
+        }
+        let mut delay = pace;
+        {
+            let mut s = sh.session.lock().unwrap();
+            if !s.params.spectate {
+                drop(s);
+                std::thread::sleep(Duration::from_millis(300));
+                continue;
+            }
+            if s.game.winner.is_some() {
+                let t0 = *over_since.get_or_insert_with(Instant::now);
+                let left = RESTART_MS.saturating_sub(t0.elapsed().as_millis() as u64);
+                sh.restart_in.store(left, Ordering::Relaxed);
+                if left == 0 {
+                    let mut p = s.params.clone();
+                    p.seed = p.seed.wrapping_mul(6364136223846793005)
+                        .wrapping_add(1442695040888963407);
+                    *s = Session::new(p);
+                    over_since = None;
+                    sh.restart_in.store(u64::MAX, Ordering::Relaxed);
+                }
+                delay = 200;
+            } else {
+                over_since = None;
+                sh.restart_in.store(u64::MAX, Ordering::Relaxed);
+                let (pid, _) = s.step();
+                let p = &s.game.players[pid];
+                if p.is_minor || p.is_barbarian {
+                    delay = (pace / 4).max(30); // quick beat for minors
+                }
+            }
+        }
+        std::thread::sleep(Duration::from_millis(delay));
+    }
+}
+
+/// Attach exhibition metadata (restart countdown, pace, paused) to a state.
+fn decorate(o: &mut Value, sh: &Shared) {
+    let r = sh.restart_in.load(Ordering::Relaxed);
+    if r != u64::MAX {
+        o["restart_in"] = json!(r.div_ceil(1000));
+    }
+    o["pace"] = json!(sh.pace_ms.load(Ordering::Relaxed));
+    o["paused"] = json!(sh.paused.load(Ordering::Relaxed));
+}
+
+fn handle(stream: &mut TcpStream, sh: &Shared) {
     let mut reader = BufReader::new(stream.try_clone().unwrap());
     let mut line = String::new();
     if reader.read_line(&mut line).is_err() || line.is_empty() {
@@ -198,8 +267,24 @@ fn handle(stream: &mut TcpStream, session: &mut Session) {
         ("GET", "/assets/mountain-atlas.png") => {
             respond(stream, "200 OK", "image/png", &mountain_atlas());
         }
-        ("GET", "/state") => respond_json(stream, &session.state()),
+        ("GET", "/state") => {
+            let mut o = sh.session.lock().unwrap().state();
+            decorate(&mut o, sh);
+            respond_json(stream, &o);
+        }
+        ("POST", "/pace") => {
+            if let Some(v) = parsed["ms"].as_u64() {
+                sh.pace_ms.store(v.clamp(20, 60_000), Ordering::Relaxed);
+            }
+            if let Some(v) = parsed["paused"].as_bool() {
+                sh.paused.store(v, Ordering::Relaxed);
+            }
+            let mut o = sh.session.lock().unwrap().state();
+            decorate(&mut o, sh);
+            respond_json(stream, &o);
+        }
         ("GET", "/rules") => {
+            let session = sh.session.lock().unwrap();
             let r = &session.game.rules;
             respond_json(stream, &json!({
                 "techs": r.techs, "civics": r.civics,
@@ -211,6 +296,7 @@ fn handle(stream: &mut TcpStream, session: &mut Session) {
             }));
         }
         ("POST", "/action") => {
+            let mut session = sh.session.lock().unwrap();
             let err = session.act(&parsed["action"]);
             let mut out = session.state();
             out["error"] = match err {
@@ -220,6 +306,7 @@ fn handle(stream: &mut TcpStream, session: &mut Session) {
             respond_json(stream, &out);
         }
         ("POST", "/step") => {
+            let mut session = sh.session.lock().unwrap();
             let mut out;
             if session.params.spectate {
                 let (pid, actions) = session.step();
@@ -230,9 +317,12 @@ fn handle(stream: &mut TcpStream, session: &mut Session) {
                 out = session.state();
                 out["error"] = json!("not in spectate mode");
             }
+            drop(session);
+            decorate(&mut out, sh);
             respond_json(stream, &out);
         }
         ("POST", "/new") => {
+            let mut session = sh.session.lock().unwrap();
             let mut p = session.params.clone();
             if let Some(v) = parsed["num_players"].as_u64() {
                 p.num_players = v as usize;
@@ -253,7 +343,10 @@ fn handle(stream: &mut TcpStream, session: &mut Session) {
                 p.spectate = v;
             }
             *session = Session::new(p);
-            respond_json(stream, &session.state());
+            let mut o = session.state();
+            drop(session);
+            decorate(&mut o, sh);
+            respond_json(stream, &o);
         }
         _ => respond(stream, "404 Not Found", "application/json",
                      b"{\"error\":\"not found\"}"),
@@ -272,13 +365,20 @@ pub fn serve(port: u16, open_browser: bool, params: Params) {
     } else {
         println!("You are player 0. Ctrl+C to quit.");
     }
-    let mut session = Session::new(params);
+    let shared = Arc::new(Shared {
+        session: Mutex::new(Session::new(params)),
+        pace_ms: AtomicU64::new(250), // blitz by default
+        paused: AtomicBool::new(false),
+        restart_in: AtomicU64::new(u64::MAX),
+    });
+    let stepper = shared.clone();
+    std::thread::spawn(move || auto_step_loop(stepper));
     if open_browser {
         open_url(&url);
     }
     for stream in listener.incoming() {
         if let Ok(mut s) = stream {
-            handle(&mut s, &mut session);
+            handle(&mut s, &shared);
         }
     }
 }

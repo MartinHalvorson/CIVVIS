@@ -621,8 +621,10 @@ async function boot() {
     firstLoad = false;
     if (SPEC) centerMainLandmass(); else centerHome();
     document.getElementById("specchk").checked = SPEC;
-    if (SPEC) document.getElementById("specspeed").value = "100";
-    scheduleSpec(state);
+    if (SPEC) {
+      document.getElementById("specspeed").value = "100";
+      setPace({ms: 100});
+    }
   }
 }
 async function send(action) {
@@ -634,92 +636,36 @@ async function send(action) {
     body: JSON.stringify({action}) }));
 }
 
-// --- spectator auto-step: one AI player's turn per tick.
-// Self-healing: a failed step (server restart, hiccup) retries with backoff,
-// and a watchdog revives the loop if the timer chain ever dies.
-let specLast = Date.now();
-let specRenderMs = 0;
-async function specStep(force) {
-  if (!SPEC || (!force && specPaused) || specBusy) return;
+// --- spectate is SERVER-DRIVEN: a thread in the server steps the game at the
+// chosen pace and auto-restarts 10s after a victory, with or without viewers.
+// The page is a live viewer: poll /state, render, and control via /pace.
+let lastSeed2 = null;
+async function specPoll() {
+  if (!SPEC || specBusy) return;
   specBusy = true;
-  let st = null;
   try {
-    const pace = +document.getElementById("specspeed").value || 100;
-    // The photographic renderer can cost more than one Lightning interval.
-    // Advance enough simulation states per paint to preserve the selected
-    // world pace, while still recording every civilization in the Chronicle.
-    const batch = force ? 1 : Math.max(1, Math.min(12,
-      Math.round((specRenderMs + pace) / pace)));
-    let prev = state;
-    for (let i = 0; i < batch; i++) {
-      st = await fetchJSON("/step", { method: "POST" });
-      chronicle(prev, st);
-      prev = st;
-      if (st.winner !== null && st.winner !== undefined) break;
-    }
-    const paintStart = performance.now();
-    render(st, false);
-    const measured = performance.now() - paintStart;
-    specRenderMs = specRenderMs ? specRenderMs * 0.65 + measured * 0.35 : measured;
-  } catch (e) {
-    specBusy = false;
-    clearTimeout(specTimer);
-    specTimer = setTimeout(specStep, 2000); // server hiccup: retry
-    return;
-  }
-  specBusy = false;
-  scheduleSpec(st);
+    const st = await fetchJSON("/state");
+    const fresh = st.seed !== undefined && lastSeed2 !== null && st.seed !== lastSeed2;
+    lastSeed2 = st.seed;
+    render(st);
+    if (fresh) { sel = null; selCity = null; centerMainLandmass(); } // new game
+  } catch (e) { /* server hiccup: next poll retries */ }
+  finally { specBusy = false; }
 }
-setInterval(() => {
-  if (!SPEC || specPaused || specBusy || !state) return;
-  if (state.winner !== null && state.winner !== undefined) {
-    if (!restartTimer) startRestartCountdown();
-    return;
-  }
-  if (Date.now() - specLast > 10000) specStep();
-}, 4000);
-// --- game over in spectate: 10s countdown, then a fresh game begins
-let restartTimer = null, restartLeft = 0;
-function startRestartCountdown() {
-  if (restartTimer) return;
-  restartLeft = 10;
-  const tick = async () => {
-    const el = document.getElementById("respawn");
-    if (!SPEC || specPaused) { restartTimer = null; if (el) el.textContent = ""; return; }
-    if (restartLeft <= 0) {
-      restartTimer = null;
-      sel = null; selCity = null;
-      render(await fetchJSON("/new", { method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({seed: Math.floor(Math.random() * 1e9),
-                              spectate: true}) }));
-      centerMainLandmass();
-      scheduleSpec(state);
-      return;
-    }
-    if (el) el.textContent = "next game in " + restartLeft + "s";
-    restartLeft--;
-    restartTimer = setTimeout(tick, 1000);
-  };
-  tick();
+setInterval(specPoll, 200);
+async function setPace(opts) {
+  try {
+    render(await fetchJSON("/pace", { method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(opts) }));
+  } catch (e) {}
 }
-
-function scheduleSpec(st) {
-  clearTimeout(specTimer);
-  specLast = Date.now();
-  if (!SPEC || specPaused) return;
-  if (st && st.winner !== null && st.winner !== undefined) {
-    startRestartCountdown();
-    return;
-  }
-  let d = +document.getElementById("specspeed").value;
-  if (st && st.stepped !== undefined) {
-    const p = st.players[st.stepped];
-    // minors/barbarians get a quick beat, never slower than the main pace
-    if (p && (p.is_minor || p.is_barbarian)) d = Math.min(d, Math.max(60, d / 4));
-  }
-  specTimer = setTimeout(specStep, d);
+// manual single step (the › button) while paused
+async function specStep() {
+  if (!SPEC) return;
+  try { render(await fetchJSON("/step", { method: "POST" })); } catch (e) {}
 }
+function scheduleSpec(_st) {} // server-driven; kept for legacy call sites
 function legalFor(type) { return state.legal_actions.filter(a => a.type === type); }
 
 function addEvent(icon, text, turn) {
@@ -803,6 +749,11 @@ function render(st, recordChronicle = true) {
   animateDiff(state, st);
   state = st;
   SPEC = !!st.spectate;
+  if (SPEC && st.paused !== undefined && st.paused !== specPaused) {
+    specPaused = st.paused; // stay in sync with the server-side stepper
+    document.getElementById("specpause").textContent =
+      specPaused ? "▶ Resume" : "⏸ Pause";
+  }
   document.getElementById("endturn").style.display = SPEC ? "none" : "block";
   document.getElementById("specbar").style.display = SPEC ? "block" : "none";
   if (st.seed !== undefined && st.seed !== lastSeed) { lastSeed = st.seed; loadTacks(); }
@@ -819,7 +770,9 @@ function render(st, recordChronicle = true) {
     w.innerHTML = (SPEC ? "🏆 " + p.civ + " wins!" : st.winner === 0 ? "🏆 Victory!" : "💀 Defeat") +
       "<br><span class='small'>" + p.civ + " wins by " + st.victory_type +
       " on turn " + st.turn + "</span>" +
-      (SPEC ? "<br><span class='small' id='respawn'></span>" : "");
+      (SPEC ? "<br><span class='small' id='respawn'>" +
+        (st.restart_in !== undefined ? "next game in " + st.restart_in + "s" : "") +
+        "</span>" : "");
   } else w.style.display = "none";
   draw(); drawSide(); drawMini(); drawTopbar(); drawUbar();
 }
@@ -1309,6 +1262,16 @@ function draw() {
     if (!drew) { cx.beginPath(); cx.arc(x, y, 3, 0, 7); cx.stroke(); }
   }
   cx.globalAlpha = 1; cx.lineCap = "butt";
+  // --- territory wash: translucent empire tint over each owned tile
+  for (const t of tiles) {
+    if (t.owner === null || t.owner === undefined) continue;
+    const [x, yy] = hexXY(t.pos[0], t.pos[1]);
+    hexPath(x, yy - elev(t), S - 0.5);
+    cx.fillStyle = pcol(t.owner);
+    cx.globalAlpha = 0.14;
+    cx.fill();
+  }
+  cx.globalAlpha = 1;
   // --- territory borders: ribbon along edges facing a different owner
   for (const t of tiles) {
     if (t.owner === null || t.owner === undefined) continue;
@@ -1734,10 +1697,11 @@ mini.addEventListener("click", ev => {
 function drawTopbar() {
   const me = state.me, y = me.yields;
   const actor = state.players[SPEC ? state.current : 0] || state.players[state.player];
-  const eraRaw = state.world_era;
-  const era = typeof eraRaw === "number"
-    ? (["ancient", "classical", "medieval", "renaissance"][eraRaw] || `era ${eraRaw}`)
-    : String(eraRaw || "ancient").replaceAll("_", " ");
+  const ERA_NAMES = ["ancient", "classical", "medieval", "renaissance",
+                     "industrial", "modern", "atomic", "information"];
+  const we = state.world_era;
+  const era = (typeof we === "number" ? (ERA_NAMES[we] || "era " + we)
+                                      : (we || "ancient")).replaceAll("_", " ");
   document.getElementById("topbar").innerHTML =
     `<div class="hud-turn"><span>TURN</span><strong>${state.turn}</strong><i>· ${era}</i></div>` +
     (SPEC ? `<div class="hud-stat hud-watch">◉ <strong>${actor.civ}</strong><i>acting</i></div>` : "") +
@@ -2312,29 +2276,28 @@ document.getElementById("specpause").onclick = () => {
   specPaused = !specPaused;
   document.getElementById("specpause").textContent =
     specPaused ? "▶ Resume" : "⏸ Pause";
-  if (specPaused) clearTimeout(specTimer); else specStep();
+  setPace({paused: specPaused});
 };
 document.getElementById("specstep").onclick = () => {
   if (!SPEC) return;
   specPaused = true;
-  clearTimeout(specTimer);
   document.getElementById("specpause").textContent = "▶ Resume";
-  specStep(true);
+  setPace({paused: true}).then(specStep);
 };
 document.getElementById("specspeed").onchange = () => {
-  if (!specPaused) scheduleSpec(state);
+  setPace({ms: +document.getElementById("specspeed").value});
 };
 document.getElementById("newgame").onclick = async () => {
   const np = +document.getElementById("np").value;
   sel = null; selCity = null;
-  clearTimeout(specTimer); specPaused = false;
+  specPaused = false;
   document.getElementById("specpause").textContent = "⏸ Pause";
   render(await fetchJSON("/new", { method: "POST",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({num_players: np, seed: Math.floor(Math.random() * 1e9),
                           spectate: document.getElementById("specchk").checked}) }));
   if (SPEC) centerMainLandmass(); else centerHome();
-  scheduleSpec(state);
+  setPace({paused: false});
 };
 {
   const vs = document.getElementById("viewsel");
