@@ -8677,6 +8677,28 @@ impl Game {
         }
     }
 
+    /// Return the treasury cost of purchasing an ordinary city building.
+    /// Gold follows Civ VI's four-times-Production rate; the narrower Faith
+    /// purchase paths use the existing two-times rate. District purchase
+    /// discounts apply to either currency.
+    pub fn building_purchase_cost(
+        &self,
+        pid: usize,
+        cid: u32,
+        building: &str,
+        currency: &str,
+    ) -> Option<f64> {
+        let city = self.cities.get(&cid).filter(|city| city.owner == pid)?;
+        let spec = self.rules.buildings.get(building)?;
+        let multiplier = match currency {
+            "gold" => 4.0,
+            "faith" => 2.0,
+            _ => return None,
+        };
+        let discount = self.city_district_effect(city, "gold_faith_purchase_discount_pct");
+        Some(spec.cost * multiplier * (1.0 - discount / 100.0).max(0.0))
+    }
+
     fn item_progress_key(item: &Item) -> String {
         match item {
             Item::Unit { unit } => format!("unit:{unit}"),
@@ -9411,6 +9433,7 @@ impl Game {
                 > 0.0;
         let monumentality = self.dedication_active(pid, "monumentality");
         let purchasable_units: Vec<String> = self.rules.units.keys().cloned().collect();
+        let purchasable_buildings: Vec<String> = self.rules.buildings.keys().cloned().collect();
         for cid in self.player_city_ids(pid) {
             for item in self.producible_items(pid, cid) {
                 acts.push(Action::Produce { city: cid, item });
@@ -9448,6 +9471,24 @@ impl Game {
                             currency: "faith".to_string(),
                         });
                     }
+                }
+            }
+            for building in &purchasable_buildings {
+                let item = Item::Building {
+                    building: building.clone(),
+                };
+                let spec = &self.rules.buildings[building.as_str()];
+                if !spec.wonder
+                    && self.can_produce(pid, cid, &item)
+                    && self
+                        .building_purchase_cost(pid, cid, building, "gold")
+                        .is_some_and(|cost| p.gold + f64::EPSILON >= cost)
+                {
+                    acts.push(Action::BuyBuilding {
+                        city: cid,
+                        building: building.clone(),
+                        currency: "gold".to_string(),
+                    });
                 }
             }
         }
@@ -11998,49 +12039,77 @@ impl Game {
             .get(building)
             .cloned()
             .ok_or_else(|| "no such building".to_string())?;
-        if currency != "faith" || city.buildings.iter().any(|owned| owned == building) {
+        if city.buildings.iter().any(|owned| owned == building) {
             return Err("building cannot be purchased that way".into());
         }
-        let religion = self
-            .city_religion(city)
-            .ok_or_else(|| "city has no majority religion".to_string())?;
-        let worship = spec.worship_belief.as_ref().is_some_and(|belief| {
-            self.religion_founder(religion).is_some_and(|founder| {
-                self.players[founder]
-                    .religion_beliefs
-                    .iter()
-                    .any(|chosen| chosen == belief)
-            })
-        });
-        let jesuit =
-            self.religion_belief_effect(religion, "faith_purchase_science_culture_buildings") > 0.0
-                && spec
-                    .district
-                    .as_deref()
-                    .is_some_and(|district| matches!(district, "campus" | "theater_square"));
-        if (!worship && !jesuit)
-            || spec
-                .district
-                .as_ref()
-                .is_some_and(|district| !self.city_has_district_family(city, district))
-            || !spec
-                .requires
-                .iter()
-                .all(|required| self.city_has_building_family(city, required))
-        {
-            return Err("religion does not unlock this building purchase".into());
+        match currency {
+            "gold" => {
+                let item = Item::Building {
+                    building: building.to_string(),
+                };
+                if spec.wonder || !self.can_produce(pid, cid, &item) {
+                    return Err("building cannot be purchased with gold".into());
+                }
+            }
+            "faith" => {
+                let religion = self
+                    .city_religion(city)
+                    .ok_or_else(|| "city has no majority religion".to_string())?;
+                let worship = spec.worship_belief.as_ref().is_some_and(|belief| {
+                    self.religion_founder(religion).is_some_and(|founder| {
+                        self.players[founder]
+                            .religion_beliefs
+                            .iter()
+                            .any(|chosen| chosen == belief)
+                    })
+                });
+                let jesuit = self
+                    .religion_belief_effect(religion, "faith_purchase_science_culture_buildings")
+                    > 0.0
+                    && spec
+                        .district
+                        .as_deref()
+                        .is_some_and(|district| matches!(district, "campus" | "theater_square"));
+                if (!worship && !jesuit)
+                    || spec
+                        .district
+                        .as_ref()
+                        .is_some_and(|district| !self.city_has_district_family(city, district))
+                    || !spec
+                        .requires
+                        .iter()
+                        .all(|required| self.city_has_building_family(city, required))
+                {
+                    return Err("religion does not unlock this building purchase".into());
+                }
+            }
+            _ => return Err("unknown purchase currency".into()),
         }
-        let purchase_discount = self.city_district_effect(city, "gold_faith_purchase_discount_pct");
-        let cost = spec.cost * 2.0 * (1.0 - purchase_discount / 100.0).max(0.0);
-        if self.players[pid].faith < cost {
+        let cost = self
+            .building_purchase_cost(pid, cid, building, currency)
+            .ok_or_else(|| "building cannot be purchased that way".to_string())?;
+        let bank = if currency == "gold" {
+            self.players[pid].gold
+        } else {
+            self.players[pid].faith
+        };
+        if bank + f64::EPSILON < cost {
             return Err("cannot afford".into());
         }
-        self.players[pid].faith -= cost;
-        self.cities
-            .get_mut(&cid)
-            .unwrap()
-            .buildings
-            .push(building.to_string());
+        if !self.complete_item(
+            pid,
+            cid,
+            &Item::Building {
+                building: building.to_string(),
+            },
+        ) {
+            return Err("building purchase could not be completed".into());
+        }
+        if currency == "gold" {
+            self.players[pid].gold -= cost;
+        } else {
+            self.players[pid].faith -= cost;
+        }
         Ok(())
     }
 

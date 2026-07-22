@@ -3604,6 +3604,21 @@ impl Ai for AdvancedAi {
                 self.base.cities(g, pid);
             }
         }
+        if self.victory_target.is_some() {
+            let counts = self.counts(g, pid);
+            let cities = g.player_city_ids(pid);
+            self.base.spend_gold(
+                g,
+                pid,
+                &cities,
+                counts.settlers,
+                counts.builders,
+                counts.traders,
+                counts.military,
+                counts.melee,
+                counts.ranged,
+            );
+        }
         if self.victory_planning {
             self.advanced_command_actions(g, pid, &plan);
         }

@@ -1845,6 +1845,117 @@ impl BasicAi {
         .is_ok()
     }
 
+    fn buy_gold_infrastructure(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        city_ids: &[u32],
+        reserve: f64,
+        at_major_war: bool,
+    ) -> bool {
+        if self.minor || self.barb {
+            return false;
+        }
+        let budget = g.players[pid].gold - reserve;
+        if budget <= 0.0 {
+            return false;
+        }
+
+        // Prefer buildings with strong immediate value per Gold while still
+        // responding to each city's housing, amenity, and defensive needs.
+        // Only one purchase is made per turn, keeping the action workload
+        // bounded even at Lightning spectator speed.
+        let mut best: Option<(f64, f64, f64, String, u32)> = None;
+        for cid in city_ids {
+            let city = &g.cities[cid];
+            let housing_need = (city.pop as f64 + 2.0 - g.city_housing(city)).max(0.0);
+            let amenity_need = (-g.city_amenity_surplus(city)).max(0) as f64;
+            for (building, spec) in &g.rules.buildings {
+                if spec.wonder
+                    || !g.can_produce(
+                        pid,
+                        *cid,
+                        &Item::Building {
+                            building: building.clone(),
+                        },
+                    )
+                {
+                    continue;
+                }
+                let Some(price) = g.building_purchase_cost(pid, *cid, building, "gold") else {
+                    continue;
+                };
+                if price > budget + 1e-9 {
+                    continue;
+                }
+
+                let great_people = spec.great_person_points.values().sum::<f64>();
+                let work_slots = spec.great_work_slots.values().sum::<i32>().max(0) as f64;
+                let mut value = spec.yields.food * 34.0
+                    + spec.yields.production * 48.0
+                    + spec.yields.gold * 26.0
+                    + spec.yields.science * 44.0
+                    + spec.yields.culture * 42.0
+                    + spec.yields.faith * 24.0
+                    + spec.housing * (16.0 + 24.0 * housing_need)
+                    + spec.amenity * (28.0 + 28.0 * amenity_need)
+                    + great_people * 24.0
+                    + work_slots * 30.0
+                    + spec.citizen_slots.max(0) as f64 * 8.0
+                    + spec.trade_route_capacity.max(0) as f64 * 90.0
+                    + spec.growth_pct.max(0.0) * 2.0
+                    + spec.builder_charges.max(0) as f64 * 24.0
+                    + spec.unit_levels.max(0) as f64 * 18.0
+                    - spec.maintenance.max(0.0) * 10.0;
+                if building == "monument" {
+                    value += 90.0;
+                }
+                if building == "granary" && housing_need > 0.0 {
+                    value += 120.0;
+                }
+                if spec.outer_defense > 0 {
+                    if at_major_war {
+                        value += spec.outer_defense as f64;
+                    } else {
+                        value -= 80.0;
+                    }
+                }
+                if value <= 0.0 {
+                    continue;
+                }
+                let efficiency = value / price.max(1.0);
+                let replace = match &best {
+                    None => true,
+                    Some((old_efficiency, old_value, old_price, old_building, old_cid)) => {
+                        efficiency > *old_efficiency + 1e-9
+                            || ((efficiency - *old_efficiency).abs() < 1e-9
+                                && (value > *old_value + 1e-9
+                                    || ((value - *old_value).abs() < 1e-9
+                                        && (price < *old_price - 1e-9
+                                            || ((price - *old_price).abs() < 1e-9
+                                                && (building.as_str(), *cid)
+                                                    < (old_building.as_str(), *old_cid))))))
+                    }
+                };
+                if replace {
+                    best = Some((efficiency, value, price, building.clone(), *cid));
+                }
+            }
+        }
+        let Some((_, _, _, building, city)) = best else {
+            return false;
+        };
+        g.apply(
+            pid,
+            &Action::BuyBuilding {
+                city,
+                building,
+                currency: "gold".to_string(),
+            },
+        )
+        .is_ok()
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn spend_gold(
         &self,
@@ -1903,6 +2014,10 @@ impl BasicAi {
             && (g.turn as f64) < self.w.settler_stop_turn
             && self.buy_gold_unit(g, pid, city_ids, "settler", reserve)
         {
+            return true;
+        }
+
+        if self.buy_gold_infrastructure(g, pid, city_ids, reserve, at_major_war) {
             return true;
         }
 
@@ -4142,6 +4257,43 @@ mod tests {
                 .count(),
             builders
         );
+    }
+
+    #[test]
+    fn gold_spending_converts_surplus_into_city_infrastructure() {
+        let mut g = Game::new_full(1, 20, 14, 320, 30, 0, false);
+        let settler = g
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|id| g.units[id].kind == "settler")
+            .unwrap();
+        g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let cid = g.player_city_ids(0)[0];
+        g.cities
+            .get_mut(&cid)
+            .unwrap()
+            .buildings
+            .retain(|building| building != "monument");
+        let ai = BasicAi::new();
+
+        // With its unit needs already covered, the AI buys a Monument but
+        // keeps the full one-city peacetime reserve.
+        g.players[0].gold = 365.0;
+        assert!(g.legal_actions(0).iter().any(|action| matches!(
+            action,
+            Action::BuyBuilding { building, currency, .. }
+                if building == "monument" && currency == "gold"
+        )));
+        assert!(ai.spend_gold(&mut g, 0, &[cid], 1, 1, 1, 2, 1, 1));
+        assert_eq!(g.players[0].gold, 125.0);
+        assert!(g.cities[&cid].buildings.iter().any(|b| b == "monument"));
+
+        // The same purchase is exposed through the public action protocol.
+        assert!(!g.legal_actions(0).iter().any(|action| matches!(
+            action,
+            Action::BuyBuilding { building, currency, .. }
+                if building == "monument" && currency == "gold"
+        )));
     }
 
     #[test]
