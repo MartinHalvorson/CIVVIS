@@ -19,18 +19,14 @@
   },
   "floodplains": {
     "yields": {
-      "food": 3
+      "food": 2
     }
   },
   "grassland_floodplains": {
-    "yields": {
-      "food": 1
-    }
+    "yields": {}
   },
   "plains_floodplains": {
-    "yields": {
-      "food": 1
-    }
+    "yields": {}
   },
   "reef": {
     "yields": {
@@ -106,9 +102,7 @@
     "impassable": true
   },
   "pamukkale": {
-    "yields": {
-      "culture": 2
-    },
+    "yields": {},
     "natural_wonder": true,
     "impassable": true
   }

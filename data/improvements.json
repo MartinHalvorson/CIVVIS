@@ -78,7 +78,7 @@
   },
   "wind_farm": {
     "tech": "composites",
-    "yields": {"production": 1, "gold": 1},
+    "yields": {"production": 1, "gold": 2},
     "requires_hills": true,
     "effects": {"power": 2}
   },
@@ -96,7 +96,7 @@
   },
   "offshore_wind_farm": {
     "tech": "predictive_systems",
-    "yields": {"production": 1, "gold": 1},
+    "yields": {"production": 2},
     "terrain": ["coast", "lake"],
     "water": true,
     "effects": {"power": 2}

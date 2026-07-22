@@ -20,6 +20,6 @@
   "wine": {"class": "luxury", "yields": {"food": 1, "gold": 1}, "terrain": ["grassland", "plains"], "improvement": "plantation"},
   "salt": {"class": "luxury", "yields": {"food": 1, "gold": 1}, "terrain": ["desert", "plains"], "improvement": "mine"},
 
-  "antiquity_site": {"class": "artifact", "civic": "natural_history", "yields": {"culture": 2}, "terrain": ["grassland", "plains", "desert", "tundra"], "improvement": "archaeological_dig"},
-  "shipwreck": {"class": "artifact", "civic": "cultural_heritage", "yields": {"culture": 2}, "terrain": ["coast", "ocean"], "improvement": "shipwreck_excavation"}
+  "antiquity_site": {"class": "artifact", "civic": "natural_history", "yields": {}, "terrain": ["grassland", "plains", "desert", "tundra"], "improvement": "archaeological_dig"},
+  "shipwreck": {"class": "artifact", "civic": "cultural_heritage", "yields": {}, "terrain": ["coast", "ocean"], "improvement": "shipwreck_excavation"}
 }

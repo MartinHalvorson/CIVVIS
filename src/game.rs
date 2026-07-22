@@ -17380,7 +17380,6 @@ impl Game {
             Some("fishing_boats") => {
                 yields.food += self.tree_effect(pid, "fishing_boats_food");
                 yields.gold += self.tree_effect(pid, "fishing_boats_gold");
-                yields.production += self.tree_effect(pid, "fishing_boats_production");
                 // Each adjacent Seastead lifts its neighbouring Fishing Boats.
                 yields.production += self
                     .nbrs(pos)
