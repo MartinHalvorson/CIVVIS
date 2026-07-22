@@ -4,7 +4,7 @@ Tracked against the [Civilization Wiki](https://civilization.fandom.com/wiki/Civ
 Status: ✅ implemented · 🟡 simplified · ❌ not yet.
 
 > **In progress** (claimed by parallel sessions — check before starting a batch):
-> - (none currently claimed by session B; GUI wiring for policies/walls is open for the GUI session)
+> - Session B: trade routes + roads + city-state envoys/suzerain (engine + data; NOT touching web/index.html).
 
 | System | Status | Notes |
 |---|---|---|
