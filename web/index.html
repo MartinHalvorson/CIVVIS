@@ -365,6 +365,7 @@
       </div>
       <div class="speed-row"><span>Watch pace</span>
         <select id="specspeed">
+          <option value="100">Lightning · 0.1s</option>
           <option value="250" selected>Blitz · 0.25s</option>
           <option value="500">Fast · 0.5s</option>
           <option value="1000">Brisk · 1s</option>
@@ -535,16 +536,34 @@ async function send(action) {
     body: JSON.stringify({action}) }));
 }
 
-// --- spectator auto-step: one AI player's turn per tick
+// --- spectator auto-step: one AI player's turn per tick.
+// Self-healing: a failed step (server restart, hiccup) retries with backoff,
+// and a watchdog revives the loop if the timer chain ever dies.
+let specLast = Date.now();
 async function specStep(force) {
   if (!SPEC || (!force && specPaused) || specBusy) return;
   specBusy = true;
+  let st = null;
   try {
-    const st = await fetchJSON("/step", { method: "POST" });
+    st = await fetchJSON("/step", { method: "POST" });
     render(st);
-    scheduleSpec(st);
-  } finally { specBusy = false; }
+  } catch (e) {
+    specBusy = false;
+    clearTimeout(specTimer);
+    specTimer = setTimeout(specStep, 2000); // server hiccup: retry
+    return;
+  }
+  specBusy = false;
+  scheduleSpec(st);
 }
+setInterval(() => {
+  if (!SPEC || specPaused || specBusy || !state) return;
+  if (state.winner !== null && state.winner !== undefined) {
+    if (!restartTimer) startRestartCountdown();
+    return;
+  }
+  if (Date.now() - specLast > 10000) specStep();
+}, 4000);
 // --- game over in spectate: 10s countdown, then a fresh game begins
 let restartTimer = null, restartLeft = 0;
 function startRestartCountdown() {
@@ -573,6 +592,7 @@ function startRestartCountdown() {
 
 function scheduleSpec(st) {
   clearTimeout(specTimer);
+  specLast = Date.now();
   if (!SPEC || specPaused) return;
   if (st && st.winner !== null && st.winner !== undefined) {
     startRestartCountdown();
@@ -581,8 +601,8 @@ function scheduleSpec(st) {
   let d = +document.getElementById("specspeed").value;
   if (st && st.stepped !== undefined) {
     const p = st.players[st.stepped];
-    // minors/barbarians get a quick beat, majors the full watch delay
-    if (p && (p.is_minor || p.is_barbarian)) d = Math.max(250, d / 4);
+    // minors/barbarians get a quick beat, never slower than the main pace
+    if (p && (p.is_minor || p.is_barbarian)) d = Math.min(d, Math.max(60, d / 4));
   }
   specTimer = setTimeout(specStep, d);
 }
