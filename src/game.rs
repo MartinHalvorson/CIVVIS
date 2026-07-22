@@ -1040,10 +1040,34 @@ mod belief_runtime_tests {
             .buildings
             .extend(["shrine".to_string(), "temple".to_string()]);
 
+        // A belief that hands the city Food frees its citizens to leave Food
+        // tiles for specialist slots, exactly as Civ VI's citizen manager does,
+        // so total city Food is not a clean measure of what the belief granted.
+        // Measure the belief's own contribution: city yield minus the yield of
+        // whichever tiles the plan settled on.
+        let worked_food = |game: &Game| -> f64 {
+            game.city_citizen_plan(cities[0])
+                .worked_tiles
+                .iter()
+                .map(|pos| game.player_tile_yields(0, *pos, &game.map.tiles[pos]).food)
+                .sum()
+        };
+        let worked_culture = |game: &Game| -> f64 {
+            game.city_citizen_plan(cities[0])
+                .worked_tiles
+                .iter()
+                .map(|pos| game.player_tile_yields(0, *pos, &game.map.tiles[pos]).culture)
+                .sum()
+        };
         let baseline_yields = game.city_yields(cities[0]);
         let baseline_housing = game.city_housing(&game.cities[&cities[0]]);
+        let baseline_worked_food = worked_food(&game);
+        let baseline_worked_culture = worked_culture(&game);
         game.players[0].religion_beliefs = vec!["feed_the_world".to_string()];
-        assert_eq!(game.city_yields(cities[0]).food, baseline_yields.food + 6.0);
+        assert_eq!(
+            game.city_yields(cities[0]).food - worked_food(&game),
+            baseline_yields.food - baseline_worked_food + 6.0
+        );
         assert_eq!(
             game.city_housing(&game.cities[&cities[0]]),
             baseline_housing + 4.0
@@ -1051,8 +1075,8 @@ mod belief_runtime_tests {
 
         game.players[0].religion_beliefs = vec!["choral_music".to_string()];
         assert_eq!(
-            game.city_yields(cities[0]).culture,
-            baseline_yields.culture + 6.0
+            game.city_yields(cities[0]).culture - worked_culture(&game),
+            baseline_yields.culture - baseline_worked_culture + 6.0
         );
 
         game.players[0].religion_beliefs = vec!["work_ethic".to_string()];

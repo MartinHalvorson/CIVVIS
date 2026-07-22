@@ -4543,6 +4543,12 @@ mod tests {
     fn ships_intercept_embarked_enemies_instead_of_chasing_inland_targets() {
         let (mut g, source, target) = island_colony_game(2);
         g.at_war.insert((0, 1));
+        // The rival's own starting units sit wherever mapgen dropped them, so
+        // clear them: this test is about choosing between the two threats it
+        // places, not about whichever spawn happens to be nearest.
+        for uid in g.player_unit_ids(1) {
+            g.units.remove(&uid);
+        }
         let water = g
             .nbrs(source)
             .into_iter()
@@ -5477,11 +5483,18 @@ mod tests {
             .unwrap();
         g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
         let city = g.player_city_ids(0)[0];
+        // Districts have to sit on land a Builder can walk onto; picking the
+        // first owned tile can land the Spaceport on water or a mountain, and
+        // the routing under test then has no legal way to reach it.
+        let buildable = |g: &Game, position: &Pos| {
+            let tile = &g.map.tiles[position];
+            !g.rules.is_water(tile) && g.rules.is_passable(tile)
+        };
         let spaceport = g.cities[&city]
             .owned_tiles
             .iter()
             .copied()
-            .find(|position| *position != g.cities[&city].pos)
+            .find(|position| *position != g.cities[&city].pos && buildable(&g, position))
             .unwrap();
         g.map.tiles.get_mut(&spaceport).unwrap().district = Some("spaceport".to_string());
         g.cities
@@ -5497,6 +5510,7 @@ mod tests {
                 *position != g.cities[&city].pos
                     && *position != spaceport
                     && g.map.tiles[position].district.is_none()
+                    && buildable(&g, position)
             })
             .unwrap();
         g.map.tiles.get_mut(&government_plaza).unwrap().district =
@@ -5518,17 +5532,20 @@ mod tests {
         g.units.get_mut(&builder).unwrap().charges = 3;
 
         let ai = BasicAi::new();
-        assert!(ai.builder_step(&mut g, 0, builder));
-        assert_eq!(g.units[&builder].pos, spaceport);
-        if !g.can_contribute_project(0, builder, city) {
-            // Entering a wooded/hill district can spend the Builder's whole
-            // movement allowance. The project action then belongs to its next
-            // turn, just as it does during an ordinary AI game loop.
+        // Reaching the Spaceport can take more than one turn's movement, and
+        // entering a wooded or hilled district tile can spend a whole
+        // allowance on its own, so drive the Builder the way the AI game loop
+        // does — a step per turn — rather than assuming it arrives at once.
+        let mut turns = 0;
+        while g.units[&builder].pos != spaceport {
+            assert!(ai.builder_step(&mut g, 0, builder));
+            turns += 1;
+            assert!(turns < 8, "Builder never reached the Spaceport");
             let movement = g.rules.units["builder"].moves;
-            let builder = g.units.get_mut(&builder).unwrap();
-            builder.moves_left = movement;
-            builder.moved = false;
-            builder.acted = false;
+            let unit = g.units.get_mut(&builder).unwrap();
+            unit.moves_left = movement;
+            unit.moved = false;
+            unit.acted = false;
         }
         assert!(ai.builder_step(&mut g, 0, builder));
         assert!(!g.units.contains_key(&builder));
