@@ -11398,6 +11398,13 @@ impl Game {
         currency: &str,
     ) -> Option<f64> {
         let city = self.cities.get(&cid).filter(|city| city.owner == pid)?;
+        if city
+            .queue
+            .iter()
+            .any(|item| matches!(item, Item::Building { building: queued } if queued == building))
+        {
+            return None;
+        }
         let spec = self.rules.buildings.get(building)?;
         let multiplier = match currency {
             "gold" => 4.0,

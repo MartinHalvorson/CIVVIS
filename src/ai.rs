@@ -4498,6 +4498,53 @@ mod tests {
     }
 
     #[test]
+    fn a_queued_building_cannot_be_bought_as_a_duplicate() {
+        let mut g = Game::new_full(1, 20, 14, 322, 30, 0, false);
+        let settler = g
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|id| g.units[id].kind == "settler")
+            .unwrap();
+        g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let cid = g.player_city_ids(0)[0];
+        g.cities
+            .get_mut(&cid)
+            .unwrap()
+            .buildings
+            .retain(|building| building != "monument");
+        g.apply(
+            0,
+            &Action::Produce {
+                city: cid,
+                item: Item::Building {
+                    building: "monument".to_string(),
+                },
+            },
+        )
+        .unwrap();
+        g.players[0].gold = 1_000.0;
+
+        assert_eq!(g.building_purchase_cost(0, cid, "monument", "gold"), None);
+        assert!(!g.legal_actions(0).iter().any(|action| matches!(
+            action,
+            Action::BuyBuilding { city, building, .. }
+                if *city == cid && building == "monument"
+        )));
+        assert!(g
+            .apply(
+                0,
+                &Action::BuyBuilding {
+                    city: cid,
+                    building: "monument".to_string(),
+                    currency: "gold".to_string(),
+                },
+            )
+            .is_err());
+        assert_eq!(g.cities[&cid].queue.len(), 1);
+        assert!(!g.cities[&cid].buildings.iter().any(|b| b == "monument"));
+    }
+
+    #[test]
     fn city_states_invest_surplus_gold_without_abandoning_their_reserve() {
         let mut g = Game::new_full(1, 20, 14, 321, 30, 0, false);
         let settler = g
