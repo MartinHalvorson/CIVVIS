@@ -129,7 +129,7 @@
       <option value="simple">simple</option>
       <option value="minimal">minimal (fastest)</option>
     </select>
-    <div class="small">1 next unit · 2 settler lens · 3 tacks · drag pan · wheel zoom · right-drag orders</div>
+    <div class="small">1 next unit · 2 settler lens · 3 tacks · drag pan · alt+drag rotate · wheel zoom · right-drag orders</div>
   </div>
   <div class="sec">
     <h2>New game</h2>
@@ -199,8 +199,21 @@ function whexDist(a, b) {
   const w = state.map.width;
   return Math.min(hexDist(a, b), hexDist([a[0]-w, a[1]], b), hexDist([a[0]+w, a[1]], b));
 }
-// world is an east-west cylinder: x is always the copy nearest the camera
-function hexXY(q, r) { return [wrapX(S * SQ3 * (q + r / 2)), S * 1.5 * r * YS]; }
+// --- rotating 3D camera: yaw about the camera point, world-fixed sun ---
+let COSR = 1, SINR = 0, LITF = 1;
+const SUN = Math.PI * 1.25; // world azimuth of the light (upper-left)
+function setRot(r) {
+  cam.rot = r; COSR = Math.cos(r); SINR = Math.sin(r);
+  LITF = COSR >= 0 ? 1 : -1;
+  localStorage.setItem("civvis-rot", String(r));
+}
+// world is an east-west cylinder: x is always the copy nearest the camera.
+// hexXY returns camera-relative view coords (rotate, then dimetric squash).
+function hexXY(q, r) {
+  const wx = wrapX(S * SQ3 * (q + r / 2)) - cam.x;
+  const wy = S * 1.5 * r - cam.y;
+  return [COSR * wx - SINR * wy, (SINR * wx + COSR * wy) * YS];
+}
 function elev(t) {
   if (VIEW !== "beautiful") return 0;
   if (t.terrain === "ocean") return -6;
@@ -211,7 +224,7 @@ function elev(t) {
   return e;
 }
 function corner(x, y, s, i) {
-  const a = Math.PI / 180 * (60 * i - 30);
+  const a = Math.PI / 180 * (60 * i - 30) + cam.rot;
   return [x + s * Math.cos(a), y + s * Math.sin(a) * YS];
 }
 function hexDist(a, b) {
@@ -231,11 +244,12 @@ function resize() {
 window.addEventListener("resize", resize);
 
 function screenToWorld(sx, sy) {
-  return [ (sx - area.clientWidth/2) / cam.scale + cam.x,
-           (sy - area.clientHeight/2) / cam.scale + cam.y ];
+  const vx = (sx - area.clientWidth / 2) / cam.scale;
+  const vy = (sy - area.clientHeight / 2) / cam.scale / YS;
+  return [COSR * vx + SINR * vy + cam.x, -SINR * vx + COSR * vy + cam.y];
 }
 function axialRound(wx, wy) {
-  const rf = wy / (1.5 * S * YS);
+  const rf = wy / (1.5 * S);
   const qf = wx / (S * SQ3) - rf / 2;
   let x = qf, z = rf, y = -x - z;
   let rx = Math.round(x), ry = Math.round(y), rz = Math.round(z);
@@ -251,7 +265,8 @@ function pixelToHex(sx, sy) {
   // the candidate whose actual elevation matches the offset best
   let best = null, bd = 1e9;
   for (const off of [0, 7, 13, 16, -5]) {
-    const pos = canonPos(axialRound(wx, wy + off));
+    const [ox2, oy2] = screenToWorld(sx, sy + off * cam.scale);
+    const pos = canonPos(axialRound(ox2, oy2));
     const t = TMAP.get(key(pos));
     if (!t) continue;
     const d = Math.abs(elev(t) - off);
@@ -333,13 +348,16 @@ function hexPath(x, y, s) {
   }
   cx.closePath();
 }
-// prism side walls: edges (0,1)=right, (1,2)=bottom-right, (2,3)=bottom-left,
-// (3,4)=left, lit from the upper-left
-const WALL_EDGES = [[0, 1, 0.60], [1, 2, 0.48], [2, 3, 0.66], [3, 4, 0.76]];
+// prism side walls: true 3D behavior — an edge's wall is drawn only when it
+// faces the viewer, and its brightness comes from the world-fixed sun, so
+// faces light up and fall into shadow as the camera rotates.
 function drawWalls(x, ytop, baseColor, depth) {
-  for (const [a, b, f] of WALL_EDGES) {
-    const [ax, ay] = corner(x, ytop, S + 0.6, a);
-    const [bx, by] = corner(x, ytop, S + 0.6, b);
+  for (let i = 0; i < 6; i++) {
+    const aw = Math.PI / 180 * (60 * i);      // world-space outward normal
+    if (Math.sin(aw + cam.rot) <= 0.12) continue;  // back-facing this frame
+    const f = 0.46 + 0.32 * Math.max(0, Math.cos(aw - SUN));
+    const [ax, ay] = corner(x, ytop, S + 0.6, i);
+    const [bx, by] = corner(x, ytop, S + 0.6, i + 1);
     cx.fillStyle = shade(baseColor, f);
     cx.beginPath();
     cx.moveTo(ax, ay); cx.lineTo(bx, by);
@@ -379,18 +397,18 @@ function drawMountainRange(t, x, y) {
   cx.beginPath(); cx.moveTo(x + L + 4, base - 3);
   for (const [fx, h] of peaks) cx.lineTo(x + fx * 0.9 + 3, base - 3 - h * 0.7);
   cx.lineTo(x + R - 4, base - 3); cx.closePath(); cx.fill();
-  // main crests: lit west faces, shadowed east faces
+  // main crests: sunlit faces track the world-fixed sun as the view rotates
   for (const [fx, h] of peaks) {
     const px = x + fx, pw = 8 + h * 0.6;
     cx.fillStyle = "#a8916a";
-    tri(px - pw, base, px, base - h, px, base);
+    tri(px - pw * LITF, base, px, base - h, px, base);
     cx.fillStyle = "#5f5039";
-    tri(px, base - h, px + pw * 0.85, base, px, base);
+    tri(px, base - h, px + pw * 0.85 * LITF, base, px, base);
     if (h > 21) {
       const s = h * 0.32;
       cx.fillStyle = "#eef2f6";
-      tri(px - pw * s / h, base - h + s, px, base - h,
-          px + pw * 0.85 * s / h, base - h + s);
+      tri(px - pw * s / h * LITF, base - h + s, px, base - h,
+          px + pw * 0.85 * s / h * LITF, base - h + s);
     }
   }
   // rock-fall shadow at the foot
@@ -408,9 +426,9 @@ function drawConifer(tx, ty, s, hv) {
   const lit = shade(g, 1.4);
   for (const [yo, w, hh] of [[0, tw, th * 0.62], [-th * 0.42, tw * 0.72, th * 0.55]]) {
     cx.fillStyle = lit;
-    tri(tx - w, ty + yo, tx, ty + yo - hh, tx, ty + yo);
+    tri(tx - w * LITF, ty + yo, tx, ty + yo - hh, tx, ty + yo);
     cx.fillStyle = g;
-    tri(tx, ty + yo - hh, tx + w, ty + yo, tx, ty + yo);
+    tri(tx, ty + yo - hh, tx + w * LITF, ty + yo, tx, ty + yo);
   }
 }
 
@@ -427,7 +445,7 @@ function drawJungleTree(tx, ty, s, hv) {
   cx.arc(tx, ty - 3.5 * s, 3.4 * s, 0, 7);
   cx.fill();
   cx.fillStyle = shade(g, 1.32);
-  cx.beginPath(); cx.arc(tx + 1.5 * s, ty - 7 * s, 2.6 * s, 0, 7); cx.fill();
+  cx.beginPath(); cx.arc(tx - 1.5 * s * LITF, ty - 7 * s, 2.6 * s, 0, 7); cx.fill();
 }
 
 function draw() {
@@ -437,8 +455,7 @@ function draw() {
   cx.fillStyle = beau0 ? "#a08d64" : "#0a0e14";
   cx.fillRect(0, 0, cv.width, cv.height);
   cx.setTransform(DPR * cam.scale, 0, 0, DPR * cam.scale,
-    DPR * (area.clientWidth / 2 - cam.x * cam.scale),
-    DPR * (area.clientHeight / 2 - cam.y * cam.scale));
+    DPR * area.clientWidth / 2, DPR * area.clientHeight / 2);
   // --- antique-map parchment for the unexplored world
   if (beau0 && state) {
     cx.textAlign = "center"; cx.textBaseline = "middle";
@@ -470,8 +487,9 @@ function draw() {
       }
     }
   }
+  // painter's order by view depth (changes as the camera rotates)
   const tiles = [...state.map.tiles].sort((a, b) =>
-    a.pos[1] - b.pos[1] || a.pos[0] - b.pos[0]);
+    hexXY(a.pos[0], a.pos[1])[1] - hexXY(b.pos[0], b.pos[1])[1]);
   const visSet = new Set(state.visible.map(key));
   const campSet = new Set(state.camps.map(key));
   const beau = VIEW === "beautiful", minim = VIEW === "minimal";
@@ -588,8 +606,8 @@ function draw() {
         cx.beginPath(); cx.ellipse(x + hx, y + hy, hw2, hh2, 0, Math.PI, 0);
         cx.fill();
         cx.fillStyle = shade(base, 1.34);
-        cx.beginPath(); cx.ellipse(x + hx - 1.5, y + hy - 0.8, hw2 * 0.5, hh2 * 0.45,
-                                   0, Math.PI, 0);
+        cx.beginPath(); cx.ellipse(x + hx - 1.5 * LITF, y + hy - 0.8,
+                                   hw2 * 0.5, hh2 * 0.45, 0, Math.PI, 0);
         cx.fill();
       }
     } else if (t.hills) {
@@ -725,7 +743,8 @@ function draw() {
     cx.fillText("📍", x, yy - (tt ? elev(tt) : 0) - 6);
   }
   // --- cities
-  for (const c of [...state.cities].sort((a, b) => a.pos[1] - b.pos[1])) {
+  for (const c of [...state.cities].sort((a, b) =>
+      hexXY(a.pos[0], a.pos[1])[1] - hexXY(b.pos[0], b.pos[1])[1])) {
     const ct = TMAP.get(key(c.pos));
     const [x, yy] = hexXY(c.pos[0], c.pos[1]);
     const y = yy - (ct ? elev(ct) : 0);
@@ -777,7 +796,7 @@ function draw() {
   }
   // --- units
   const sorted = [...state.units].sort((a, b) =>
-    (a.pos[1] - b.pos[1]) ||
+    (hexXY(a.pos[0], a.pos[1])[1] - hexXY(b.pos[0], b.pos[1])[1]) ||
     ((a.type === "settler" || a.type === "builder") ? -1 : 1));
   for (const u of sorted) {
     const ut = TMAP.get(key(u.pos));
@@ -847,16 +866,22 @@ function drawMini() {
     mx2.fillRect(off + col * cs + (row % 2) * cs / 2 - 1, off + row * cs - 1, cs + 2, cs + 2);
   }
   // viewport rect
-  const [wx1, wy1] = screenToWorld(0, 0);
-  const [wx2, wy2] = screenToWorld(area.clientWidth, area.clientHeight);
   const toMini = (wx, wy) => {
     const rf = wy / (1.5 * S), qf = wx / (S * SQ3) - rf / 2;
-    const col = qf + (rf - 0) / 2;
+    const col = qf + rf / 2;
     return [off + col * cs, off + rf * cs];
   };
-  const [ax, ay] = toMini(wx1, wy1), [bx2, by2] = toMini(wx2, wy2);
+  // viewport quad (rotates with the camera)
+  const cs4 = [[0, 0], [area.clientWidth, 0],
+               [area.clientWidth, area.clientHeight], [0, area.clientHeight]];
   mx2.strokeStyle = "#f0c674"; mx2.lineWidth = 1;
-  mx2.strokeRect(ax, ay, bx2 - ax, by2 - ay);
+  mx2.beginPath();
+  cs4.forEach(([sx, sy], i) => {
+    const [wx, wy] = screenToWorld(sx, sy);
+    const [mxp, myp] = toMini(wx, wy);
+    i ? mx2.lineTo(mxp, myp) : mx2.moveTo(mxp, myp);
+  });
+  mx2.closePath(); mx2.stroke();
 }
 mini.addEventListener("click", ev => {
   const r = mini.getBoundingClientRect();
@@ -1091,8 +1116,15 @@ function zoomAt(f, sx, sy) {
   if (sx === undefined) { sx = area.clientWidth / 2; sy = area.clientHeight / 2; }
   const [wx, wy] = screenToWorld(sx, sy);
   cam.scale = Math.max(0.25, Math.min(3.2, cam.scale * f));
-  cam.x = wx - (sx - area.clientWidth / 2) / cam.scale;
-  cam.y = wy - (sy - area.clientHeight / 2) / cam.scale;
+  const vx = (sx - area.clientWidth / 2) / cam.scale;
+  const vy = (sy - area.clientHeight / 2) / cam.scale / YS;
+  cam.x = wx - (COSR * vx + SINR * vy);
+  cam.y = wy - (-SINR * vx + COSR * vy);
+  draw(); drawMini();
+}
+function centerWorld(pos) {
+  cam.x = S * SQ3 * (pos[0] + pos[1] / 2);
+  cam.y = S * 1.5 * pos[1];
   draw(); drawMini();
 }
 function centerHome() {
@@ -1100,15 +1132,9 @@ function centerHome() {
   const own = state.cities.find(c => c.owner === 0 && c.is_capital) ||
               state.cities.find(c => c.owner === 0) ||
               state.units.find(u => u.owner === 0);
-  if (!own) return;
-  const [x, y] = hexXY(own.pos[0], own.pos[1]);
-  cam.x = x; cam.y = y;
-  draw(); drawMini();
+  if (own) centerWorld(own.pos);
 }
-function centerOn(pos) {
-  const [x, y] = hexXY(pos[0], pos[1]);
-  cam.x = x; cam.y = y; draw(); drawMini();
-}
+function centerOn(pos) { centerWorld(pos); }
 area.addEventListener("wheel", ev => {
   ev.preventDefault();
   const r = cv.getBoundingClientRect();
@@ -1123,7 +1149,8 @@ let dragState = null, dragMoved = false, rdrag = null, rdragTo = null;
 cv.addEventListener("mousedown", ev => {
   const r = cv.getBoundingClientRect();
   if (ev.button === 0) {
-    dragState = { x: ev.clientX, y: ev.clientY, cx: cam.x, cy: cam.y };
+    dragState = { x: ev.clientX, y: ev.clientY, cx: cam.x, cy: cam.y,
+                  rotate: ev.altKey, rot0: cam.rot };
     dragMoved = false;
   } else if (ev.button === 2 && state && !SPEC) {
     const pos = pixelToHex(ev.clientX - r.left, ev.clientY - r.top);
@@ -1140,9 +1167,14 @@ window.addEventListener("mousemove", ev => {
   if (dragState) {
     const dx = ev.clientX - dragState.x, dy = ev.clientY - dragState.y;
     if (Math.abs(dx) + Math.abs(dy) > 5) dragMoved = true;
-    if (dragMoved) {
-      cam.x = dragState.cx - dx / cam.scale;
-      cam.y = dragState.cy - dy / cam.scale;
+    if (dragMoved && dragState.rotate) {
+      // alt+drag: rotate the world; the angle persists until rotated again
+      setRot(dragState.rot0 + dx * 0.008);
+      draw(); drawMini();
+    } else if (dragMoved) {
+      const dvx = dx / cam.scale, dvy = dy / cam.scale / YS;
+      cam.x = dragState.cx - (COSR * dvx + SINR * dvy);
+      cam.y = dragState.cy - (-SINR * dvx + COSR * dvy);
       draw(); drawMini();
     }
   }
@@ -1307,6 +1339,7 @@ document.getElementById("newgame").onclick = async () => {
   };
 }
 
+setRot(parseFloat(localStorage.getItem("civvis-rot") || "0"));
 resize();
 boot();
 </script>
