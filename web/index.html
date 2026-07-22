@@ -2116,6 +2116,7 @@ function drawTopbar() {
   const goldPerTurn = Number.isFinite(+me.gold_per_turn) ? +me.gold_per_turn : +y.gold;
   const goldFlow = `${goldPerTurn >= 0 ? "+" : ""}${compactStat(goldPerTurn)}`;
   const actor = state.players[SPEC ? state.current : 0] || state.players[state.player];
+  const viewer = state.players[state.player] || actor;
   const eraRaw = state.world_era;
   const era = typeof eraRaw === "number"
     ? (ERA_NAMES[eraRaw] || `era ${eraRaw}`)
@@ -2132,7 +2133,7 @@ function drawTopbar() {
       ? `<div class="hud-stat" title="Global lifetime carbon emissions">☁ <strong>${compactStat(me.global_co2)}</strong><i>CO₂</i></div>`
       : "");
 
-  const identity = SPEC ? actor : state.players[0];
+  const identity = SPEC ? viewer : state.players[0];
   const mapLabel = `${state.map.size_name || "Custom"} ${state.map.width}×${state.map.height}`;
   const profile = spectatorIdentity(identity);
   const meta = [...profile.details, mapLabel].join(" · ");
