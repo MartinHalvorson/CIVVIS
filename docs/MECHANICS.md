@@ -6,7 +6,7 @@ numeric rule.
 Status: ✅ implemented · 🟡 intentionally scoped relative to the full commercial ruleset.
 
 > **In progress** (claimed by parallel sessions — check before starting a batch):
-> - (none currently claimed)
+> - session F: rules soak/verification fixes + AI_GAPS refresh + eval calibration (`docs/EVAL.md`) + local combat solver (`src/combat_solver.rs`) — AI_GAPS items 9→4
 
 | System | Status | Notes |
 |---|---|---|
