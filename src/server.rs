@@ -269,6 +269,7 @@ fn auto_step_loop(sh: Arc<Shared>) {
             std::thread::sleep(Duration::from_millis(150));
             continue;
         }
+        let cadence_started = Instant::now();
         let mut delay = pace;
         {
             let mut s = sh.session.lock().unwrap();
@@ -302,7 +303,13 @@ fn auto_step_loop(sh: Arc<Shared>) {
                 }
             }
         }
-        std::thread::sleep(Duration::from_millis(delay));
+        // Pace is a start-to-start cadence. Sleeping the full interval after
+        // AI computation made late-game "Lightning · 0.1s" visibly slower
+        // as empires grew. Spend only the remaining frame budget instead.
+        let elapsed_ms = cadence_started.elapsed().as_millis().min(u64::MAX as u128) as u64;
+        std::thread::sleep(Duration::from_millis(
+            delay.saturating_sub(elapsed_ms).max(1),
+        ));
     }
 }
 
