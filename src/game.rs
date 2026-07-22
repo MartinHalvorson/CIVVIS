@@ -6926,6 +6926,12 @@ pub enum Action {
         unit: u32,
         target: Pos,
     },
+    /// Spec Ops and jet aircraft bypass a military escort to deal the stock
+    /// fixed 65 damage to a support unit in the target formation.
+    PriorityTarget {
+        unit: u32,
+        target: Pos,
+    },
     AirPatrol {
         unit: u32,
         to: Pos,
@@ -10599,16 +10605,49 @@ impl Game {
         Ok(())
     }
 
-    fn claim_great_person(
-        &mut self,
+    fn has_great_person_district(&self, pid: usize, family: &str) -> bool {
+        self.cities
+            .values()
+            .any(|city| city.owner == pid && self.city_has_active_district_family(city, family))
+    }
+
+    fn validate_great_person_activation(
+        &self,
         pid: usize,
         kind: &str,
-        patronage: Option<&str>,
+        spec: &crate::rules::GreatPersonSpec,
     ) -> Result<(), String> {
-        let (id, spec) = self
-            .current_great_person(kind)
-            .map(|(id, spec)| (id.to_string(), spec.clone()))
-            .ok_or_else(|| "no Great Person of that type is currently available".to_string())?;
+        if kind == "scientist" && !self.has_great_person_district(pid, "campus") {
+            return Err("this Great Scientist requires an active Campus".into());
+        }
+        if kind == "engineer"
+            && !spec.effects.contains_key("wonder_production")
+            && !self.has_great_person_district(pid, "industrial_zone")
+        {
+            return Err("this Great Engineer requires an active Industrial Zone".into());
+        }
+        if kind == "prophet" {
+            let claimed = self.religions_founded()
+                + self
+                    .players
+                    .iter()
+                    .filter(|player| player.prophet_pending)
+                    .count();
+            if self.players[pid].religion.is_some() || self.players[pid].prophet_pending {
+                return Err("this civilization has already attracted a Great Prophet".into());
+            }
+            if claimed >= self.max_religions() {
+                return Err("all available religions already have Great Prophets".into());
+            }
+            let has_site = self.has_great_person_district(pid, "holy_site")
+                || self
+                    .cities
+                    .values()
+                    .any(|city| city.owner == pid && city.wonders.contains_key("stonehenge"));
+            if !has_site {
+                return Err("this Great Prophet requires an active Holy Site or Stonehenge".into());
+            }
+        }
         if spec.effects.contains_key("wonder_production") && !self.has_queued_wonder(pid) {
             return Err("this Great Engineer requires a Wonder under construction".into());
         }
@@ -10646,6 +10685,39 @@ impl Game {
                 return Err("this Great General requires a military land unit".into());
             }
         }
+        for (effect, work) in [
+            ("great_work_writing", "writing"),
+            ("great_work_art", "art"),
+            ("great_work_music", "music"),
+        ] {
+            let count = spec.effects.get(effect).copied().unwrap_or(0.0).round() as usize;
+            if count > 0 && !self.can_house_great_works(pid, work, count) {
+                return Err(format!(
+                    "this Great Person requires {count} open {work} Great Work slots"
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn can_activate_current_great_person(&self, pid: usize, kind: &str) -> bool {
+        self.current_great_person(kind).is_some_and(|(_, spec)| {
+            self.validate_great_person_activation(pid, kind, spec)
+                .is_ok()
+        })
+    }
+
+    fn claim_great_person(
+        &mut self,
+        pid: usize,
+        kind: &str,
+        patronage: Option<&str>,
+    ) -> Result<(), String> {
+        let (id, spec) = self
+            .current_great_person(kind)
+            .map(|(id, spec)| (id.to_string(), spec.clone()))
+            .ok_or_else(|| "no Great Person of that type is currently available".to_string())?;
+        self.validate_great_person_activation(pid, kind, &spec)?;
         let points = self.players[pid].gpp.get(kind).copied().unwrap_or(0.0);
         let missing = (self.gp_cost(pid, kind) - points).max(0.0);
         match patronage {
@@ -11034,10 +11106,10 @@ impl Game {
             "prophet" => {
                 let can_found = self.players[pid].religion.is_none()
                     && self.religions_founded() < self.max_religions()
-                    && self
-                        .cities
-                        .values()
-                        .any(|c| c.owner == pid && self.city_has_district_family(c, "holy_site"));
+                    && (self.has_great_person_district(pid, "holy_site")
+                        || self.cities.values().any(|city| {
+                            city.owner == pid && city.wonders.contains_key("stonehenge")
+                        }));
                 if can_found {
                     self.players[pid].prophet_pending = true;
                 } else {
@@ -14731,7 +14803,26 @@ impl Game {
 
     pub fn unit_sight(&self, uid: u32) -> i32 {
         let unit = &self.units[&uid];
-        self.rules.units[unit.kind.as_str()].sight + self.promotion_effect(unit, "sight") as i32
+        let spec = &self.rules.units[unit.kind.as_str()];
+        let own_sight = spec.sight + self.promotion_effect(unit, "sight") as i32;
+        if spec.promotion_class != "naval_carrier" {
+            return own_sight;
+        }
+        self.units_at(unit.pos)
+            .into_iter()
+            .filter(|other| *other != uid && self.units[other].owner == unit.owner)
+            .filter(|other| {
+                self.rules.units[self.units[other].kind.as_str()]
+                    .domain
+                    .as_deref()
+                    == Some("air")
+            })
+            .map(|aircraft| {
+                let aircraft = &self.units[&aircraft];
+                self.rules.units[aircraft.kind.as_str()].sight
+                    + self.promotion_effect(aircraft, "sight") as i32
+            })
+            .fold(own_sight, i32::max)
     }
 
     /// Camouflaged recon and Naval Raider units are hidden unless an
@@ -19552,6 +19643,13 @@ impl Game {
                     {
                         actions.push(Action::AirPillage { unit: uid, target });
                     }
+                    if target != origin
+                        && u.attacks_left > 0
+                        && self.unit_has_priority_target(u)
+                        && self.priority_support_target_at(pid, target).is_some()
+                    {
+                        actions.push(Action::PriorityTarget { unit: uid, target });
+                    }
                 }
                 for base in self.wdisk(u.pos, self.air_rebase_range(uid)) {
                     if base != u.pos && self.can_air_base_at(pid, base, Some(uid)) {
@@ -19639,6 +19737,13 @@ impl Game {
                         {
                             acts.push(Action::AirPillage { unit: uid, target });
                         }
+                        if target != origin
+                            && u.attacks_left > 0
+                            && self.unit_has_priority_target(&u)
+                            && self.priority_support_target_at(pid, target).is_some()
+                        {
+                            acts.push(Action::PriorityTarget { unit: uid, target });
+                        }
                     }
                     for base in self.wdisk(u.pos, self.air_rebase_range(uid)) {
                         if base != u.pos && self.can_air_base_at(pid, base, Some(uid)) {
@@ -19686,6 +19791,15 @@ impl Game {
                                 && self.unit_has_line_of_sight(uid, pos)
                             {
                                 acts.push(Action::Ranged {
+                                    unit: uid,
+                                    target: pos,
+                                });
+                            }
+                            if self.unit_has_priority_target(&u)
+                                && self.priority_support_target_at(pid, pos).is_some()
+                                && self.unit_has_line_of_sight(uid, pos)
+                            {
+                                acts.push(Action::PriorityTarget {
                                     unit: uid,
                                     target: pos,
                                 });
@@ -20211,6 +20325,9 @@ impl Game {
                 let Some(_) = self.current_great_person(&kind) else {
                     continue;
                 };
+                if !self.can_activate_current_great_person(pid, &kind) {
+                    continue;
+                }
                 let points = p.gpp.get(&kind).copied().unwrap_or(0.0);
                 let missing = (self.gp_cost(pid, &kind) - points).max(0.0);
                 if missing <= 0.0 {
@@ -20534,6 +20651,36 @@ impl Game {
         false
     }
 
+    fn unit_has_priority_target(&self, unit: &Unit) -> bool {
+        matches!(
+            unit.kind.as_str(),
+            "spec_ops" | "jet_fighter" | "jet_bomber"
+        )
+    }
+
+    pub(crate) fn priority_support_target_at(&self, pid: usize, pos: Pos) -> Option<u32> {
+        let mut supports: Vec<u32> = self
+            .units_at(pos)
+            .into_iter()
+            .filter(|unit| {
+                let unit = &self.units[unit];
+                unit.owner != pid
+                    && self.is_at_war(pid, unit.owner)
+                    && self.rules.units[unit.kind.as_str()].class == "support"
+            })
+            .collect();
+        supports.sort_unstable();
+        supports.into_iter().find(|support| {
+            let owner = self.units[support].owner;
+            self.units_at(pos).into_iter().any(|escort| {
+                let escort = &self.units[&escort];
+                escort.owner == owner
+                    && self.rules.units[escort.kind.as_str()].class == "military"
+                    && self.rules.units[escort.kind.as_str()].domain.as_deref() != Some("air")
+            })
+        })
+    }
+
     fn enemy_air_strike_target_at(&self, pid: usize, pos: Pos) -> bool {
         if self.enemy_combat_target_at(pid, pos) {
             return true;
@@ -20541,9 +20688,10 @@ impl Game {
         self.units.values().any(|unit| {
             unit.owner != pid
                 && self.is_at_war(pid, unit.owner)
-                && unit.air_patrol
-                && unit.air_patrol_pos == Some(pos)
-                && self.rules.units[unit.kind.as_str()].promotion_class == "air_fighter"
+                && ((unit.air_patrol
+                    && unit.air_patrol_pos == Some(pos)
+                    && self.rules.units[unit.kind.as_str()].promotion_class == "air_fighter")
+                    || (unit.pos == pos && self.rules.units[unit.kind.as_str()].class == "support"))
         })
     }
 
@@ -20585,6 +20733,7 @@ impl Game {
             | Action::AirRebase { unit, .. }
             | Action::AirStrike { unit, .. }
             | Action::AirPillage { unit, .. }
+            | Action::PriorityTarget { unit, .. }
             | Action::AirPatrol { unit, .. }
             | Action::Fortify { unit }
             | Action::Promote { unit, .. }
@@ -20631,6 +20780,7 @@ impl Game {
             Action::AirRebase { unit, to } => self.do_air_rebase(pid, *unit, *to),
             Action::AirStrike { unit, target } => self.do_air_strike(pid, *unit, *target),
             Action::AirPillage { unit, target } => self.do_air_pillage(pid, *unit, *target),
+            Action::PriorityTarget { unit, target } => self.do_priority_target(pid, *unit, *target),
             Action::AirPatrol { unit, to } => self.do_air_patrol(pid, *unit, *to),
             Action::Produce { city, item } => self.do_produce(pid, *city, item),
             Action::Buy {
@@ -23201,6 +23351,19 @@ impl Game {
         (false, fighter_engaged)
     }
 
+    fn priority_damage_support(&mut self, pid: usize, uid: u32, defender_id: u32) {
+        let defender = self.units[&defender_id].clone();
+        self.units.get_mut(&defender_id).unwrap().hp -= 65;
+        let killed = self.units[&defender_id].hp <= 0;
+        self.record_emergency_combat(pid, defender.owner, killed);
+        self.award_unit_combat_xp(uid, &defender, true, true, killed);
+        if killed {
+            bump(&mut self.players[pid], "kills");
+            self.remove_unit(defender_id);
+            self.on_unit_lost(defender.owner);
+        }
+    }
+
     fn do_air_strike(&mut self, pid: usize, uid: u32, target: Pos) -> Result<(), String> {
         let attacker = self.own_unit(pid, uid)?;
         let spec = self.rules.units[attacker.kind.as_str()].clone();
@@ -23285,9 +23448,63 @@ impl Game {
                 self.remove_unit(defender_id);
                 self.on_unit_lost(defender.owner);
             }
+        } else if let Some(defender_id) = self.units_at(target).into_iter().find(|id| {
+            self.units[id].owner != pid
+                && self.is_at_war(pid, self.units[id].owner)
+                && self.rules.units[self.units[id].kind.as_str()].class == "support"
+        }) {
+            self.priority_damage_support(pid, uid, defender_id);
         }
         self.consume_unit_attack(uid);
         if let Some(aircraft) = self.units.get_mut(&uid) {
+            aircraft.air_patrol = false;
+            aircraft.air_patrol_pos = None;
+        }
+        Ok(())
+    }
+
+    fn do_priority_target(&mut self, pid: usize, uid: u32, target: Pos) -> Result<(), String> {
+        let attacker = self.own_unit(pid, uid)?;
+        let spec = &self.rules.units[attacker.kind.as_str()];
+        let air = spec.domain.as_deref() == Some("air");
+        if !self.unit_has_priority_target(&attacker)
+            || attacker.moves_left <= 0.0
+            || attacker.attacks_left <= 0
+            || (!air && self.is_embarked(&attacker))
+            || self.wdist(
+                if air {
+                    self.air_operation_origin(uid)
+                } else {
+                    attacker.pos
+                },
+                target,
+            ) > self.unit_attack_range(uid)
+            || (!air && !self.unit_has_line_of_sight(uid, target))
+        {
+            return Err("unit cannot priority target there".into());
+        }
+        let Some(defender_id) = self.priority_support_target_at(pid, target) else {
+            return Err("no escorted support unit to priority target".into());
+        };
+
+        if air {
+            let (destroyed, fighter_engaged) = self.resolve_air_interceptions(uid, target);
+            if destroyed {
+                return Ok(());
+            }
+            if fighter_engaged {
+                self.consume_unit_attack(uid);
+                if let Some(aircraft) = self.units.get_mut(&uid) {
+                    aircraft.air_patrol = false;
+                    aircraft.air_patrol_pos = None;
+                }
+                return Ok(());
+            }
+        }
+        self.priority_damage_support(pid, uid, defender_id);
+        self.consume_unit_attack(uid);
+        if air {
+            let aircraft = self.units.get_mut(&uid).unwrap();
             aircraft.air_patrol = false;
             aircraft.air_patrol_pos = None;
         }
@@ -27925,7 +28142,7 @@ impl Game {
     fn housed_great_works_with_extra(
         &self,
         pid: usize,
-        extra: Option<&str>,
+        extra: Option<(&str, usize)>,
     ) -> BTreeMap<u32, BTreeMap<String, usize>> {
         let slots = self.great_work_slots(pid);
         let mut housed = BTreeMap::<u32, BTreeMap<String, usize>>::new();
@@ -27980,7 +28197,7 @@ impl Game {
                             .then_with(|| left_index.cmp(right_index))
                     },
                 );
-                let occupied: BTreeSet<usize> = ranked_slots
+                let mut occupied: BTreeSet<usize> = ranked_slots
                     .iter()
                     .take(legacy)
                     .map(|(index, _)| *index)
@@ -27992,22 +28209,28 @@ impl Game {
                         .entry(slot_kind.clone())
                         .or_insert(0) += 1;
                 }
-                if let Some(work) = extra {
+                if let Some((work, count)) = extra {
                     let compatible = |slot: &str| {
                         work == slot
                             || (matches!(work, "art" | "religious_art")
                                 && matches!(slot, "art" | "religious_art"))
                     };
-                    let destination = slots
-                        .iter()
-                        .enumerate()
-                        .find(|(index, (_, slot))| !occupied.contains(index) && compatible(slot))
-                        .or_else(|| {
-                            slots.iter().enumerate().find(|(index, (_, slot))| {
-                                !occupied.contains(index) && slot == "any"
+                    for _ in 0..count {
+                        let destination = slots
+                            .iter()
+                            .enumerate()
+                            .find(|(index, (_, slot))| {
+                                !occupied.contains(index) && compatible(slot)
                             })
-                        });
-                    if let Some((_, (city, _))) = destination {
+                            .or_else(|| {
+                                slots.iter().enumerate().find(|(index, (_, slot))| {
+                                    !occupied.contains(index) && slot == "any"
+                                })
+                            });
+                        let Some((index, (city, _))) = destination else {
+                            break;
+                        };
+                        occupied.insert(index);
                         *housed
                             .entry(*city)
                             .or_default()
@@ -28018,8 +28241,8 @@ impl Game {
                 return housed;
             }
         }
-        if let Some(kind) = extra {
-            *available.entry(kind.to_string()).or_insert(0) += 1;
+        if let Some((kind, count)) = extra {
+            *available.entry(kind.to_string()).or_insert(0) += count;
         }
 
         let mut used = BTreeSet::<usize>::new();
@@ -28098,14 +28321,19 @@ impl Game {
     }
 
     pub(crate) fn can_house_additional_great_work(&self, pid: usize, kind: &str) -> bool {
+        self.can_house_great_works(pid, kind, 1)
+    }
+
+    pub(crate) fn can_house_great_works(&self, pid: usize, kind: &str, additional: usize) -> bool {
         let count = |allocation: &BTreeMap<u32, BTreeMap<String, usize>>| {
             allocation
                 .values()
                 .flat_map(|works| works.values())
                 .sum::<usize>()
         };
-        count(&self.housed_great_works_with_extra(pid, Some(kind)))
-            > count(&self.housed_great_works(pid))
+        let before = count(&self.housed_great_works(pid));
+        count(&self.housed_great_works_with_extra(pid, Some((kind, additional))))
+            == before + additional
     }
 
     /// Tourism generated specifically by Relics and Holy Cities. Keeping this
@@ -31854,6 +32082,84 @@ mod combat_scenarios {
             .count();
         assert_eq!(fighter_promotions, 7);
         assert_eq!(bomber_promotions, 7);
+    }
+
+    #[test]
+    fn carriers_adopt_the_highest_sight_of_aircraft_on_board() {
+        let (mut game, position, _) = controlled_game(314_391);
+        let carrier = game.spawn_unit("aircraft_carrier", 0, position);
+        assert_eq!(game.unit_sight(carrier), 2);
+        game.units
+            .get_mut(&carrier)
+            .unwrap()
+            .promotions
+            .insert("scout_planes".to_string());
+        assert_eq!(game.unit_sight(carrier), 3);
+
+        let fighter = game.spawn_unit("biplane", 0, position);
+        assert_eq!(game.unit_sight(carrier), 4);
+        let jet = game.spawn_unit("jet_fighter", 0, position);
+        assert_eq!(game.unit_sight(carrier), 5);
+        game.remove_unit(jet);
+        assert_eq!(game.unit_sight(carrier), 4);
+        game.remove_unit(fighter);
+        assert_eq!(game.unit_sight(carrier), 3);
+    }
+
+    #[test]
+    fn air_strikes_and_priority_targeting_damage_support_units_exactly() {
+        let (mut exposed, base, ring) = controlled_game(314_392);
+        exposed.found_city_for(0, base, None);
+        let medic = exposed.spawn_unit("medic", 1, ring[0]);
+        let bomber = exposed.spawn_unit("bomber", 0, base);
+        let direct = Action::AirStrike {
+            unit: bomber,
+            target: ring[0],
+        };
+        assert!(exposed.legal_actions(0).contains(&direct));
+        exposed.apply(0, &direct).unwrap();
+        assert_eq!(exposed.units[&medic].hp, 35);
+
+        let (mut stacked, base, ring) = controlled_game(314_393);
+        stacked.found_city_for(0, base, None);
+        let target = ring[0];
+        let escort = stacked.spawn_unit("modern_armor", 1, target);
+        let medic = stacked.spawn_unit("medic", 1, target);
+        let jet = stacked.spawn_unit("jet_fighter", 0, base);
+        let ordinary = Action::AirStrike { unit: jet, target };
+        let priority = Action::PriorityTarget { unit: jet, target };
+        assert!(stacked.legal_actions(0).contains(&ordinary));
+        assert!(stacked.legal_actions(0).contains(&priority));
+
+        let mut ordinary_result = stacked.clone();
+        ordinary_result.apply(0, &ordinary).unwrap();
+        assert_eq!(ordinary_result.units[&medic].hp, 100);
+        assert!(
+            !ordinary_result.units.contains_key(&escort) || ordinary_result.units[&escort].hp < 100,
+            "an ordinary strike remains on the military escort"
+        );
+
+        stacked.apply(0, &priority).unwrap();
+        assert_eq!(stacked.units[&medic].hp, 35);
+        assert_eq!(stacked.units[&escort].hp, 100);
+        let biplane = stacked.spawn_unit("biplane", 0, base);
+        assert!(!stacked.legal_actions(0).contains(&Action::PriorityTarget {
+            unit: biplane,
+            target,
+        }));
+
+        let (mut ground, base, ring) = controlled_game(314_394);
+        let target = ring[0];
+        ground.spawn_unit("warrior", 1, target);
+        let support = ground.spawn_unit("mobile_sam", 1, target);
+        let spec_ops = ground.spawn_unit("spec_ops", 0, base);
+        let priority = Action::PriorityTarget {
+            unit: spec_ops,
+            target,
+        };
+        assert!(ground.legal_actions(0).contains(&priority));
+        ground.apply(0, &priority).unwrap();
+        assert_eq!(ground.units[&support].hp, 35);
     }
 
     #[test]
@@ -35743,7 +36049,11 @@ mod district_mechanics {
             .buildings
             .extend(["hangar".to_string(), "airport".to_string()]);
         assert_eq!(game.air_capacity_at(0, center), 1);
-        assert_eq!(game.air_capacity_at(0, aerodrome), 6);
+        assert_eq!(
+            game.air_capacity_at(0, aerodrome),
+            4,
+            "Gathering Storm adds one slot from each Aerodrome building"
+        );
 
         let biplane = game.place_new_unit("biplane", 0, center).unwrap();
         assert_eq!(game.units[&biplane].pos, aerodrome);

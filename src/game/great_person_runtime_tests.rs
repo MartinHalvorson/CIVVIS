@@ -214,6 +214,114 @@ fn named_engineers_apply_exact_charges_wonder_gates_and_workshop_culture() {
 }
 
 #[test]
+fn immediate_great_people_require_stock_activation_sites_and_complete_work_capacity() {
+    let mut game = Game::new_full(1, 24, 16, 95_008, 300, 0, false);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .unwrap();
+    let city = game.found_city_for(0, game.units[&settler].pos, None);
+
+    let scientist_cost = game.gp_cost(0, "scientist");
+    game.players[0]
+        .gpp
+        .insert("scientist".to_string(), scientist_cost);
+    let scientist = Action::RecruitGreatPerson {
+        kind: "scientist".to_string(),
+    };
+    assert!(!game.can_activate_current_great_person(0, "scientist"));
+    assert!(!game.legal_actions(0).contains(&scientist));
+    assert!(game.claim_great_person(0, "scientist", None).is_err());
+    let campus = install_test_district(&mut game, city, "campus");
+    game.map.tiles.get_mut(&campus).unwrap().pillaged = true;
+    assert!(!game.can_activate_current_great_person(0, "scientist"));
+    game.map.tiles.get_mut(&campus).unwrap().pillaged = false;
+    assert!(game.can_activate_current_great_person(0, "scientist"));
+    assert!(game.legal_actions(0).contains(&scientist));
+    game.claim_great_person(0, "scientist", None).unwrap();
+
+    let wonder_site = game.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|position| {
+            *position != game.cities[&city].pos && game.map.tiles[position].district.is_none()
+        })
+        .unwrap();
+    game.cities.get_mut(&city).unwrap().queue = vec![Item::Wonder {
+        wonder: "pyramids".to_string(),
+        pos: wonder_site,
+    }];
+    let engineer_cost = game.gp_cost(0, "engineer");
+    game.players[0]
+        .gpp
+        .insert("engineer".to_string(), engineer_cost);
+    game.claim_great_person(0, "engineer", None).unwrap();
+    game.cities.get_mut(&city).unwrap().queue.clear();
+    let leonardo_cost = game.gp_cost(0, "engineer");
+    game.players[0]
+        .gpp
+        .insert("engineer".to_string(), leonardo_cost);
+    assert!(!game.can_activate_current_great_person(0, "engineer"));
+    install_test_district(&mut game, city, "industrial_zone");
+    assert!(game.can_activate_current_great_person(0, "engineer"));
+
+    let mut culture = Game::new_full(1, 24, 16, 95_009, 300, 0, false);
+    let settler = culture
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| culture.units[unit].kind == "settler")
+        .unwrap();
+    let city = culture.found_city_for(0, culture.units[&settler].pos, None);
+    let writer_cost = culture.gp_cost(0, "writer");
+    culture.players[0]
+        .gpp
+        .insert("writer".to_string(), writer_cost);
+    let writer = Action::RecruitGreatPerson {
+        kind: "writer".to_string(),
+    };
+    assert!(culture.can_house_additional_great_work(0, "writing"));
+    assert!(!culture.can_house_great_works(0, "writing", 2));
+    assert!(!culture.can_activate_current_great_person(0, "writer"));
+    assert!(!culture.legal_actions(0).contains(&writer));
+    assert!(culture.claim_great_person(0, "writer", None).is_err());
+    install_test_district(&mut culture, city, "theater_square");
+    culture
+        .cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push("amphitheater".to_string());
+    assert!(culture.can_house_great_works(0, "writing", 2));
+    assert!(culture.can_activate_current_great_person(0, "writer"));
+    assert!(culture.legal_actions(0).contains(&writer));
+    culture.claim_great_person(0, "writer", None).unwrap();
+    assert_eq!(culture.housed_great_work_count(0, "writing"), 2);
+
+    let mut religion = Game::new_full(1, 24, 16, 95_010, 300, 0, false);
+    let settler = religion
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| religion.units[unit].kind == "settler")
+        .unwrap();
+    let city = religion.found_city_for(0, religion.units[&settler].pos, None);
+    let prophet_cost = religion.gp_cost(0, "prophet");
+    religion.players[0]
+        .gpp
+        .insert("prophet".to_string(), prophet_cost);
+    assert!(!religion.can_activate_current_great_person(0, "prophet"));
+    let holy_site = install_test_district(&mut religion, city, "holy_site");
+    religion.map.tiles.get_mut(&holy_site).unwrap().pillaged = true;
+    assert!(!religion.can_activate_current_great_person(0, "prophet"));
+    religion.map.tiles.get_mut(&holy_site).unwrap().pillaged = false;
+    assert!(religion.can_activate_current_great_person(0, "prophet"));
+    religion.claim_great_person(0, "prophet", None).unwrap();
+    assert!(religion.players[0].prophet_pending);
+    assert!(!religion.can_activate_current_great_person(0, "prophet"));
+}
+
+#[test]
 fn named_merchants_annex_tiles_and_apply_exact_trade_and_oil_effects() {
     let mut game = Game::new_full(2, 28, 18, 95_004, 300, 0, false);
     let mut cities = Vec::new();
@@ -500,7 +608,7 @@ fn named_admirals_apply_exact_unit_trade_building_and_flanking_effects() {
 
 #[test]
 fn great_person_eras_offer_prices_and_patronage_follow_stock_rules() {
-    let mut game = Game::new_full(1, 24, 16, 95_007, 300, 0, false);
+    let (mut game, _, _) = scientist_game(95_007);
 
     for (id, era, cost) in [
         ("donatello", 3, 240.0),
@@ -544,7 +652,7 @@ fn great_person_eras_offer_prices_and_patronage_follow_stock_rules() {
     );
     assert_eq!(game.gp_cost(0, "scientist"), 240.0);
 
-    let mut patronage = Game::new_full(1, 24, 16, 95_008, 300, 0, false);
+    let (mut patronage, _, _) = scientist_game(95_008);
     assert_eq!(
         patronage.great_person_patronage_price(0, "scientist", "gold"),
         Some(1_370.0)

@@ -773,6 +773,25 @@ impl BasicAi {
         65
     }
 
+    fn priority_target_score(g: &Game, pid: usize, target: Pos) -> i32 {
+        let Some(support) = g.priority_support_target_at(pid, target) else {
+            return 0;
+        };
+        let unit = &g.units[&support];
+        let spec = &g.rules.units[unit.kind.as_str()];
+        105 + (100 - unit.hp)
+            + (spec.cost * 0.18) as i32
+            + if spec.anti_air_strength > 0.0 {
+                100
+            } else if matches!(unit.kind.as_str(), "drone" | "observation_balloon") {
+                45
+            } else if matches!(unit.kind.as_str(), "medic" | "supply_convoy") {
+                30
+            } else {
+                0
+            }
+    }
+
     pub(crate) fn doctrine_action(&self, g: &Game, pid: usize, uid: u32) -> Option<Action> {
         let doctrine = Self::unit_doctrine(g, uid);
         if !matches!(
@@ -807,6 +826,20 @@ impl BasicAi {
                     _ => false,
                 })
                 .cloned()
+                .or_else(|| {
+                    legal
+                        .iter()
+                        .filter_map(|action| match action {
+                            Action::PriorityTarget { unit, target } if *unit == uid => Some((
+                                Self::priority_target_score(g, pid, *target),
+                                *target,
+                                action.clone(),
+                            )),
+                            _ => None,
+                        })
+                        .max_by_key(|(score, target, _)| (*score, std::cmp::Reverse(*target)))
+                        .map(|(_, _, action)| action)
+                })
                 .or_else(|| {
                     legal
                         .iter()
@@ -862,6 +895,11 @@ impl BasicAi {
                         Action::AirPillage { unit, target } if *unit == uid => {
                             Some((Self::air_pillage_score(g, *target), *target, action.clone()))
                         }
+                        Action::PriorityTarget { unit, target } if *unit == uid => Some((
+                            Self::priority_target_score(g, pid, *target),
+                            *target,
+                            action.clone(),
+                        )),
                         _ => None,
                     })
                     .max_by_key(|(score, target, _)| (*score, std::cmp::Reverse(*target)))
@@ -3619,6 +3657,18 @@ impl BasicAi {
                         },
                     ));
                 }
+                if g.units[&uid].kind == "spec_ops"
+                    && distance <= g.unit_attack_range(uid)
+                    && g.priority_support_target_at(pid, pos).is_some()
+                {
+                    modes.push((
+                        true,
+                        Action::PriorityTarget {
+                            unit: uid,
+                            target: pos,
+                        },
+                    ));
+                }
                 if spec.is_melee_capable() && distance == 1 {
                     modes.push((
                         false,
@@ -3631,9 +3681,13 @@ impl BasicAi {
                 for (ranged, action) in modes {
                     let capture =
                         !ranged && g.city_at(pos).is_some_and(|cid| g.cities[&cid].hp <= 0);
-                    let utility = self.exchange_score(g, uid, pos, ranged)
-                        - self.attack_threshold(g, uid, pos)
-                        + if capture { 500.0 } else { 0.0 };
+                    let utility = if matches!(action, Action::PriorityTarget { .. }) {
+                        Self::priority_target_score(g, pid, pos) as f64 - 55.0
+                    } else {
+                        self.exchange_score(g, uid, pos, ranged)
+                            - self.attack_threshold(g, uid, pos)
+                            + if capture { 500.0 } else { 0.0 }
+                    };
                     if best
                         .as_ref()
                         .map(|(old, old_pos, _)| {
@@ -4359,6 +4413,7 @@ mod tests {
                     | Action::AirRebase { unit, .. }
                     | Action::AirStrike { unit, .. }
                     | Action::AirPillage { unit, .. }
+                    | Action::PriorityTarget { unit, .. }
                     | Action::AirPatrol { unit, .. }
                     | Action::CoastalRaid { unit, .. } => *unit == uid,
                     _ => false,
@@ -4386,6 +4441,44 @@ mod tests {
             ),
             "unexpected bomber action: {bomber_action:?}"
         );
+    }
+
+    #[test]
+    fn spec_ops_bypass_an_escort_to_priority_target_air_defense() {
+        let mut game = Game::new_full(2, 24, 16, 43_015, 80, 0, false);
+        game.at_war.insert((0, 1));
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        let origin = game
+            .map
+            .tiles
+            .iter()
+            .find(|(_, tile)| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+            .map(|(position, _)| *position)
+            .unwrap();
+        let target = game
+            .wdisk(origin, 2)
+            .into_iter()
+            .find(|position| {
+                game.wdist(origin, *position) == 2
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .unwrap();
+        let spec_ops = game.spawn_test_unit("spec_ops", 0, origin);
+        game.spawn_test_unit("modern_armor", 1, target);
+        let sam = game.spawn_test_unit("mobile_sam", 1, target);
+        let mut ai = BasicAi::new();
+
+        assert!(ai.military_step(&mut game, 0, spec_ops));
+        assert_eq!(game.units[&sam].hp, 35);
+        assert!(matches!(
+            game.log.last(),
+            Some((0, Action::PriorityTarget { unit, target: action_target }))
+                if *unit == spec_ops && *action_target == target
+        ));
     }
 
     #[test]
