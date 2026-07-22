@@ -3321,16 +3321,25 @@ impl BasicAi {
     }
 
     fn missionary_step(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
-        let religion = match g.players[pid].religion.clone() {
+        // Spread the unit's own faith: a purchased Missionary carries its
+        // city's majority religion, which for a civilization that never
+        // founded one is an adopted faith the player religion cannot name.
+        let religion = match g.units[&uid]
+            .religion
+            .clone()
+            .or_else(|| g.players[pid].religion.clone())
+        {
             Some(r) => r,
             None => return false,
         };
         let upos = g.units[&uid].pos;
+        // Own cities first: reconverting the homeland both consolidates
+        // pressure and is the entire job of a defensive adopted-faith unit.
         let target = g
             .cities
             .values()
             .filter(|c| g.city_religion(c) != Some(religion.as_str()) && !g.is_at_war(pid, c.owner))
-            .min_by_key(|c| (g.wdist(upos, c.pos), c.id))
+            .min_by_key(|c| (c.owner != pid, g.wdist(upos, c.pos), c.id))
             .map(|c| c.pos);
         let target = match target {
             Some(t) => t,

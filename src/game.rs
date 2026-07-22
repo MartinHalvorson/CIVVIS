@@ -234,6 +234,9 @@ mod city_trade_tests;
 mod great_person_runtime_tests;
 
 #[cfg(test)]
+mod religious_purchase_tests;
+
+#[cfg(test)]
 mod gold_building_purchase_tests {
     use super::*;
 
@@ -14572,7 +14575,18 @@ impl Game {
             }
         }
         let religion = if spec.class == "religious" {
-            self.players[owner].religion.clone()
+            // Stock rule: purchased religious units belong to the majority
+            // religion of their city, which is how civilizations that never
+            // founded a religion still field Missionaries of an adopted
+            // faith. Only the owner's own city majority applies (purchases
+            // happen at home); the founder fallback covers spawns outside a
+            // majority city (a fresh Holy City, scripted spawns).
+            self.city_at(pos)
+                .map(|city_id| &self.cities[&city_id])
+                .filter(|city| city.owner == owner)
+                .and_then(|city| self.city_religion(city))
+                .map(str::to_string)
+                .or_else(|| self.players[owner].religion.clone())
         } else if kind == "warrior_monk" {
             self.city_at(pos)
                 .and_then(|city_id| self.city_religion(&self.cities[&city_id]))

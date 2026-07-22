@@ -3132,6 +3132,67 @@ impl AdvancedAi {
         }
     }
 
+    /// A rival founder's religion holding the majority in one of our cities.
+    /// The religious victory requires every living major, so home
+    /// reconversion alone denies it — this is the trigger for the
+    /// cross-strategy defense below.
+    fn home_conversion_threat(&self, g: &Game, pid: usize) -> Option<String> {
+        let own = g.players[pid].religion.as_deref();
+        for cid in g.player_city_ids(pid) {
+            let Some(majority) = g.city_religion(&g.cities[&cid]) else {
+                continue;
+            };
+            if Some(majority) == own {
+                continue;
+            }
+            if g.players.iter().any(|o| {
+                o.id != pid && o.alive && !o.is_minor && o.religion.as_deref() == Some(majority)
+            }) {
+                return Some(majority.to_string());
+            }
+        }
+        None
+    }
+
+    /// Home religious defense for civilizations whose grand strategy is NOT
+    /// religion. Founders reuse the emergency spending path; everyone else
+    /// buys Missionaries of an adopted non-threat majority faith, which the
+    /// engine now assigns from the purchase city (stock rule).
+    fn religious_defense(&self, g: &mut Game, pid: usize, threat: &str) {
+        if g.players[pid].religion.is_some() {
+            self.religious_spending(g, pid, true);
+            return;
+        }
+        let defenders = g
+            .units
+            .values()
+            .filter(|unit| unit.owner == pid && unit.kind == "missionary")
+            .count();
+        if defenders >= 2 {
+            return;
+        }
+        for cid in g.player_city_ids(pid) {
+            let Some(majority) = g.city_religion(&g.cities[&cid]) else {
+                continue;
+            };
+            if majority == threat {
+                continue;
+            }
+            if g.apply(
+                pid,
+                &Action::Buy {
+                    city: cid,
+                    unit: "missionary".to_string(),
+                    currency: "faith".to_string(),
+                },
+            )
+            .is_ok()
+            {
+                return;
+            }
+        }
+    }
+
     fn religious_spending(&self, g: &mut Game, pid: usize, emergency: bool) {
         let Some(religion) = g.players[pid].religion.clone() else {
             return;
@@ -7971,6 +8032,14 @@ impl Ai for AdvancedAi {
                     .victory_denial(g, pid)
                     .is_some_and(|(_, counter)| counter == GrandStrategy::Religion);
                 self.religious_spending(g, pid, emergency);
+            } else if self.victory_planning {
+                // Every other strategy still defends its homeland: a rival's
+                // religious victory needs a majority in every living major,
+                // and before this pass non-religion civilizations never spent
+                // a point of Faith resisting conversion.
+                if let Some(threat) = self.home_conversion_threat(g, pid) {
+                    self.religious_defense(g, pid, &threat);
+                }
             }
             if self.victory_planning && plan.strategy == GrandStrategy::Science {
                 self.science_production(g, pid);
@@ -9364,6 +9433,56 @@ mod tests {
         assert_eq!(missionary.religion.as_deref(), Some("Home Faith"));
         assert_eq!(missionary.pos, game.cities[&faithful_city].pos);
         assert!(game.players[0].faith < 1.0);
+    }
+
+    #[test]
+    fn non_founder_buys_adopted_faith_missionaries_to_defend_home() {
+        let mut game = Game::new_full(3, 42, 24, 7_624, 300, 0, false);
+        for pid in 0..3 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.current = pid;
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .unwrap();
+        }
+        let converted_capital = game.player_city_ids(0)[0];
+        let adopted_city = found_test_city(&mut game, 0);
+        install_test_holy_site(&mut game, adopted_city);
+        game.current = 0;
+        game.turn = 150;
+        // Player 0 founded no religion; a living rival's faith holds their
+        // capital while a founderless neighbor faith holds the second city.
+        game.players[0].techs.insert("astrology".to_string());
+        game.players[0].faith = 600.0;
+        game.players[1].religion = Some("Runaway Faith".to_string());
+        game.cities
+            .get_mut(&converted_capital)
+            .unwrap()
+            .pressure
+            .insert("Runaway Faith".to_string(), 1_000.0);
+        game.cities
+            .get_mut(&adopted_city)
+            .unwrap()
+            .pressure
+            .insert("Neighbor Faith".to_string(), 1_000.0);
+
+        let ai = AdvancedAi::new();
+        let threat = ai
+            .home_conversion_threat(&game, 0)
+            .expect("a rival majority in the capital is a home threat");
+        assert_eq!(threat, "Runaway Faith");
+        ai.religious_defense(&mut game, 0, &threat);
+
+        let missionary = game
+            .units
+            .values()
+            .find(|unit| unit.owner == 0 && unit.kind == "missionary")
+            .expect("defense should buy a missionary of the adopted faith");
+        assert_eq!(missionary.religion.as_deref(), Some("Neighbor Faith"));
+        assert_eq!(missionary.pos, game.cities[&adopted_city].pos);
     }
 
     #[test]
