@@ -7,3 +7,4 @@ evolved/
 *.log
 target-tools/
 bin-run/
+exhibition-supervisor.log

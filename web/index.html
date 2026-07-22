@@ -474,6 +474,10 @@ const UNIT_ICON = { settler:"🏳", builder:"🔨", scout:"👁", warrior:"⚔",
                     slinger:"🪃", archer:"🏹", spearman:"↑", swordsman:"⚔",
                     horseman:"🐎", catapult:"☄", crossbowman:"🏹", pikeman:"↑",
                     knight:"♞", musketman:"⁋", galley:"⛵" };
+const BLDG_ICON = { monument:"🗿", granary:"🌾", walls:"🧱", medieval_walls:"🧱",
+                    shrine:"⛩", library:"📜", market:"⚖", barracks:"🛡",
+                    lighthouse:"🗼", amphitheater:"🎭", aqueduct:"⛲", arena:"🎪",
+                    workshop:"🔧", armory:"🛡", bank:"🏦", university:"🎓" };
 const DISTRICT_COLOR = { campus:"#4aa3df", holy_site:"#e8e4ef", commercial_hub:"#e2c04a",
                          harbor:"#5ec8d8", encampment:"#c0392b", theater_square:"#c678dd",
                          industrial_zone:"#e67e22", entertainment_complex:"#e75480" };
@@ -1649,6 +1653,24 @@ function draw() {
         cx.fillStyle = "#0d1117"; cx.fillRect(bx, statusY, tw, 3);
         cx.fillStyle = "#e09050";
         cx.fillRect(bx, statusY, tw * Math.min(1, c.production / c.queue_cost), 3);
+        // production medallion on the right edge of the plate (civ-style):
+        // glyph = what's being built, ring = progress toward it
+        const it = c.queue[0];
+        const mx = bx + tw + 7, my = by + 8, mr = 8.5;
+        cx.fillStyle = "#1c2418ee";
+        cx.beginPath(); cx.arc(mx, my, mr, 0, 7); cx.fill();
+        cx.strokeStyle = "#0d1117"; cx.lineWidth = 2.2;
+        cx.beginPath(); cx.arc(mx, my, mr, 0, 7); cx.stroke();
+        const frac = Math.max(0, Math.min(1, c.production / c.queue_cost));
+        if (frac > 0) {
+          cx.strokeStyle = "#e09050";
+          cx.beginPath();
+          cx.arc(mx, my, mr, -Math.PI / 2, -Math.PI / 2 + frac * 2 * Math.PI);
+          cx.stroke();
+        }
+        cx.fillStyle = it.district ? (DISTRICT_COLOR[it.district] || "#f0ead8") : "#f0ead8";
+        cx.font = "9px sans-serif";
+        cx.fillText(prodGlyph(it), mx, my + 0.5);
       }
     }
     if (selCity && selCity.id === c.id) {
@@ -1944,6 +1966,12 @@ function hook(id, fn) {
 }
 function itemName(it) {
   return (it.unit || it.building || it.project || (it.district + " @" + it.pos)).replaceAll("_", " ");
+}
+function prodGlyph(it) {
+  if (it.unit) return UNIT_ICON[it.unit] || it.unit[0].toUpperCase();
+  if (it.building) return BLDG_ICON[it.building] || "🏛"; // wonders fall through
+  if (it.project) return "🛠";
+  return "⬡"; // district
 }
 function itemCost(it) {
   if (!RULES) return "?";
