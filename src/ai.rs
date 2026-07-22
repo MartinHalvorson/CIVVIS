@@ -1951,7 +1951,7 @@ impl BasicAi {
         reserve: f64,
         at_major_war: bool,
     ) -> bool {
-        if self.minor || self.barb {
+        if self.barb {
             return false;
         }
         let budget = g.players[pid].gold - reserve;
@@ -4495,6 +4495,34 @@ mod tests {
             Action::BuyBuilding { building, currency, .. }
                 if building == "monument" && currency == "gold"
         )));
+    }
+
+    #[test]
+    fn city_states_invest_surplus_gold_without_abandoning_their_reserve() {
+        let mut g = Game::new_full(1, 20, 14, 321, 30, 0, false);
+        let settler = g
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|id| g.units[id].kind == "settler")
+            .unwrap();
+        g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let cid = g.player_city_ids(0)[0];
+        g.players[0].is_minor = true;
+        g.cities
+            .get_mut(&cid)
+            .unwrap()
+            .buildings
+            .retain(|building| building != "monument");
+        let mut ai = BasicAi::new();
+        ai.minor = true;
+
+        // Expansion and trade purchases remain major-only, but a city-state
+        // with its local worker/defense needs met should convert excess Gold
+        // into its city instead of accumulating an inert four-figure balance.
+        g.players[0].gold = 365.0;
+        assert!(ai.spend_gold(&mut g, 0, &[cid], 1, 1, 0, 3, 2, 1));
+        assert_eq!(g.players[0].gold, 125.0);
+        assert!(g.cities[&cid].buildings.iter().any(|b| b == "monument"));
     }
 
     #[test]
