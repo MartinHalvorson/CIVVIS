@@ -222,6 +222,11 @@ pub struct UnitSpec {
     pub unique_to: Option<String>, // civ that alone may build this unit
     #[serde(default)]
     pub replaces: Option<String>, // base unit this unique replaces
+    /// Direct Gathering Storm upgrade successor. Runtime replacement
+    /// resolution substitutes the owner's unique unit when it replaces this
+    /// target, keeping upgrade chains data-driven for every unit class.
+    #[serde(default)]
+    pub upgrades_to: Option<String>,
     #[serde(default)]
     pub promotion_class: String,
     #[serde(default)]
@@ -1097,6 +1102,94 @@ mod tests {
         let rules = Rules::embedded();
         assert_complete_tree(&rules.techs, TECHS, [11, 8, 8, 9, 8, 8, 8, 9, 8]);
         assert_complete_tree(&rules.civics, CIVICS, [7, 7, 7, 6, 7, 9, 5, 7, 6]);
+    }
+
+    #[test]
+    fn gathering_storm_unit_upgrade_graph_is_complete_and_acyclic() {
+        let rules = Rules::embedded();
+        let expected: BTreeSet<(&str, &str)> = [
+            ("scout", "skirmisher"),
+            ("skirmisher", "ranger"),
+            ("ranger", "spec_ops"),
+            ("warrior", "swordsman"),
+            ("swordsman", "man_at_arms"),
+            ("man_at_arms", "musketman"),
+            ("musketman", "line_infantry"),
+            ("line_infantry", "infantry"),
+            ("infantry", "mechanized_infantry"),
+            ("slinger", "archer"),
+            ("archer", "crossbowman"),
+            ("crossbowman", "field_cannon"),
+            ("field_cannon", "machine_gun"),
+            ("spearman", "pikeman"),
+            ("pikeman", "pike_and_shot"),
+            ("pike_and_shot", "at_crew"),
+            ("at_crew", "modern_at"),
+            ("horseman", "courser"),
+            ("courser", "cavalry"),
+            ("cavalry", "helicopter"),
+            ("heavy_chariot", "knight"),
+            ("knight", "cuirassier"),
+            ("cuirassier", "tank"),
+            ("tank", "modern_armor"),
+            ("catapult", "trebuchet"),
+            ("trebuchet", "bombard"),
+            ("bombard", "artillery"),
+            ("artillery", "rocket_artillery"),
+            ("battering_ram", "siege_tower"),
+            ("siege_tower", "medic"),
+            ("medic", "supply_convoy"),
+            ("observation_balloon", "drone"),
+            ("anti_air_gun", "mobile_sam"),
+            ("galley", "caravel"),
+            ("caravel", "ironclad"),
+            ("ironclad", "destroyer"),
+            ("quadrireme", "frigate"),
+            ("frigate", "battleship"),
+            ("battleship", "missile_cruiser"),
+            ("privateer", "submarine"),
+            ("submarine", "nuclear_submarine"),
+            ("biplane", "fighter"),
+            ("fighter", "jet_fighter"),
+            ("bomber", "jet_bomber"),
+            ("legion", "man_at_arms"),
+            ("hoplite", "pikeman"),
+            ("eagle_warrior", "swordsman"),
+            ("war_cart", "knight"),
+            ("pitati_archer", "crossbowman"),
+            ("maryannu_chariot_archer", "crossbowman"),
+            ("saka_horse_archer", "crossbowman"),
+            ("crouching_tiger", "field_cannon"),
+        ]
+        .into_iter()
+        .collect();
+        let actual: BTreeSet<(&str, &str)> = rules
+            .units
+            .iter()
+            .filter_map(|(unit, spec)| {
+                spec.upgrades_to
+                    .as_deref()
+                    .map(|target| (unit.as_str(), target))
+            })
+            .collect();
+        assert_eq!(actual, expected);
+
+        for (source, target) in &actual {
+            let target_spec = rules
+                .units
+                .get(*target)
+                .unwrap_or_else(|| panic!("{source} upgrades to missing unit {target}"));
+            assert!(
+                target_spec.buildable,
+                "{source} upgrades to unbuildable {target}"
+            );
+            let mut seen = BTreeSet::new();
+            let mut cursor = Some(*source);
+            while let Some(unit) = cursor {
+                assert!(seen.insert(unit), "unit upgrade cycle reaches {unit}");
+                cursor = rules.units[unit].upgrades_to.as_deref();
+            }
+        }
     }
 
     #[test]

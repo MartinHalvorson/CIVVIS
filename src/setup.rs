@@ -1,10 +1,192 @@
-//! Civilization VI's stock map-size presets.
+//! Civilization VI's stock game-setup presets.
 //!
 //! Keep these values in one place: browser games, CLI games, map generation,
 //! city-state defaults, religion limits, and observation metadata all consume
 //! the same profile instead of maintaining subtly different tables.
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MapScript {
+    #[default]
+    Pangaea,
+    Continents,
+    SmallContinents,
+    InlandSea,
+}
+
+impl MapScript {
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Pangaea => "pangaea",
+            Self::Continents => "continents",
+            Self::SmallContinents => "small_continents",
+            Self::InlandSea => "inland_sea",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        if id == "pangea" {
+            return Some(Self::Pangaea);
+        }
+        CIV6_MAP_SCRIPTS
+            .iter()
+            .find(|script| script.id == id)
+            .map(|script| script.script)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct MapScriptSpec {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub description: &'static str,
+    #[serde(skip)]
+    pub script: MapScript,
+}
+
+pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 4] = [
+    MapScriptSpec {
+        id: "pangaea",
+        name: "Pangaea",
+        description: "One connected supercontinent surrounded by ocean.",
+        script: MapScript::Pangaea,
+    },
+    MapScriptSpec {
+        id: "continents",
+        name: "Continents",
+        description: "A few large landmasses separated by open water.",
+        script: MapScript::Continents,
+    },
+    MapScriptSpec {
+        id: "small_continents",
+        name: "Small Continents",
+        description: "Several smaller landmasses with more coastline and sea lanes.",
+        script: MapScript::SmallContinents,
+    },
+    MapScriptSpec {
+        id: "inland_sea",
+        name: "Inland Sea",
+        description: "A broad connected landmass surrounding a central sea.",
+        script: MapScript::InlandSea,
+    },
+];
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GameSpeed {
+    Online,
+    Quick,
+    #[default]
+    Standard,
+    Epic,
+    Marathon,
+}
+
+impl GameSpeed {
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Online => "online",
+            Self::Quick => "quick",
+            Self::Standard => "standard",
+            Self::Epic => "epic",
+            Self::Marathon => "marathon",
+        }
+    }
+
+    /// Percentage of Standard costs and turn durations.
+    pub const fn cost_percent(self) -> u32 {
+        match self {
+            Self::Online => 50,
+            Self::Quick => 67,
+            Self::Standard => 100,
+            Self::Epic => 150,
+            Self::Marathon => 300,
+        }
+    }
+
+    pub const fn turn_limit(self) -> u32 {
+        match self {
+            Self::Online => 250,
+            Self::Quick => 330,
+            Self::Standard => 500,
+            Self::Epic => 750,
+            Self::Marathon => 1500,
+        }
+    }
+
+    pub fn scale(self, standard: f64) -> f64 {
+        standard * self.cost_percent() as f64 / 100.0
+    }
+
+    pub fn scale_turns(self, standard: u32) -> u32 {
+        ((standard as u64 * self.cost_percent() as u64 + 99) / 100).max(1) as u32
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        CIV6_GAME_SPEEDS
+            .iter()
+            .find(|speed| speed.id == id)
+            .map(|speed| speed.speed)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct GameSpeedSpec {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub cost_percent: u32,
+    pub turn_limit: u32,
+    pub description: &'static str,
+    #[serde(skip)]
+    pub speed: GameSpeed,
+}
+
+pub const CIV6_GAME_SPEEDS: [GameSpeedSpec; 5] = [
+    GameSpeedSpec {
+        id: "online",
+        name: "Online",
+        cost_percent: 50,
+        turn_limit: 250,
+        description: "Double-speed game for online play.",
+        speed: GameSpeed::Online,
+    },
+    GameSpeedSpec {
+        id: "quick",
+        name: "Quick",
+        cost_percent: 67,
+        turn_limit: 330,
+        description: "Quick game (33% faster).",
+        speed: GameSpeed::Quick,
+    },
+    GameSpeedSpec {
+        id: "standard",
+        name: "Standard",
+        cost_percent: 100,
+        turn_limit: 500,
+        description: "Normal game speed.",
+        speed: GameSpeed::Standard,
+    },
+    GameSpeedSpec {
+        id: "epic",
+        name: "Epic",
+        cost_percent: 150,
+        turn_limit: 750,
+        description: "Prolonged game (50% slower).",
+        speed: GameSpeed::Epic,
+    },
+    GameSpeedSpec {
+        id: "marathon",
+        name: "Marathon",
+        cost_percent: 300,
+        turn_limit: 1500,
+        description: "Very prolonged game (200% slower).",
+        speed: GameSpeed::Marathon,
+    },
+];
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct MapSize {
     pub id: &'static str,
     pub name: &'static str,
@@ -123,9 +305,80 @@ impl MapSize {
 mod tests {
     use std::collections::BTreeSet;
 
-    use crate::game::{Action, Game};
+    use crate::game::{Action, Game, Item};
 
-    use super::MapSize;
+    use super::{GameSpeed, MapScript, MapSize, CIV6_GAME_SPEEDS};
+
+    #[test]
+    fn stock_game_speeds_scale_costs_durations_and_turn_limits() {
+        let expected = [
+            (GameSpeed::Online, 50, 250),
+            (GameSpeed::Quick, 67, 330),
+            (GameSpeed::Standard, 100, 500),
+            (GameSpeed::Epic, 150, 750),
+            (GameSpeed::Marathon, 300, 1500),
+        ];
+        assert_eq!(CIV6_GAME_SPEEDS.len(), expected.len());
+        for (speed, percent, turns) in expected {
+            assert_eq!(speed.cost_percent(), percent);
+            assert_eq!(speed.turn_limit(), turns);
+            assert_eq!(speed.scale(100.0), percent as f64);
+            assert_eq!(speed.scale_turns(30), (30 * percent).div_ceil(100));
+            assert_eq!(GameSpeed::from_id(speed.id()), Some(speed));
+        }
+    }
+
+    #[test]
+    fn every_speed_is_applied_to_live_research_growth_and_production_costs() {
+        let size = MapSize::for_players(2);
+        let mut game = Game::new_with_setup(
+            2,
+            size.width,
+            size.height,
+            701,
+            GameSpeed::Online.turn_limit(),
+            0,
+            MapScript::Pangaea,
+            GameSpeed::Online,
+            false,
+        );
+        let settler = game
+            .units
+            .values()
+            .find(|unit| unit.owner == 0 && unit.kind == "settler")
+            .unwrap()
+            .id;
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let monument = Item::Building {
+            building: "monument".to_string(),
+        };
+        for speed in [
+            GameSpeed::Online,
+            GameSpeed::Quick,
+            GameSpeed::Standard,
+            GameSpeed::Epic,
+            GameSpeed::Marathon,
+        ] {
+            game.game_speed = speed;
+            let multiplier = speed.cost_percent() as f64 / 100.0;
+            assert_eq!(
+                game.tech_cost("pottery"),
+                game.rules.techs["pottery"].cost * multiplier
+            );
+            assert_eq!(game.growth_cost(1), 15.0 * multiplier);
+            assert_eq!(game.standard_duration(30), speed.scale_turns(30));
+            assert_eq!(
+                game.item_cost_for_city(0, city, &monument),
+                game.rules.buildings["monument"].cost * multiplier
+            );
+        }
+
+        game.map_script = MapScript::SmallContinents;
+        let restored: Game = serde_json::from_str(&serde_json::to_string(&game).unwrap()).unwrap();
+        assert_eq!(restored.game_speed, GameSpeed::Marathon);
+        assert_eq!(restored.map_script, MapScript::SmallContinents);
+    }
 
     #[test]
     fn requested_player_counts_use_civ6_dimensions_and_defaults() {

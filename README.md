@@ -19,9 +19,14 @@ Firaxis or 2K; no assets, art, text, or code from Civilization VI are used.
 
 ## What's implemented (v0.6)
 
-- Hex map, random continents, climate bands, features, resources, fog of war
+- Hex maps with Pangaea, Continents, Small Continents, and Inland Sea scripts,
+  climate bands, the complete Civ VI terrain-feature roster (including polar
+  ice, reefs, tectonic fissures, volcanoes, and volcanic soil), resources, and
+  fog of war. Cinematic terrain uses lifelike feature and Natural Wonder art;
+  the strategic map retains compact symbols and flat terrain colors
 - Stock Civ VI map-size profiles (dimensions, players/city-states, natural
   wonders, continents, and religion caps)
+- Online, Quick, Standard, Epic, and Marathon game speeds with scaled pacing
 - Cities: Civ 6 growth curve, border expansion, **housing & amenities**
 - **Districts with adjacency bonuses**, buildings, improvements, builder charges
 - Complete Gathering Storm-style **technology and civics trees** (77
@@ -37,7 +42,7 @@ Firaxis or 2K; no assets, art, text, or code from Civilization VI are used.
   religious pressure, healing, inquisition, heresy removal, and condemnation
 - **Barbarians** (camps, era-scaled raiders), **city-states**, **governments**
 - **Mutually favorable diplomacy trades**: Gold, GPT, Favor, resources, and
-  directional Open Borders, with 30-turn contracts shared by human and AI play
+  directional Open Borders, with speed-scaled contracts shared by human and AI play
 - War/peace; all six Civ VI victory paths: **domination, science, culture,
   religious, diplomatic, and score**
 - Deterministic per seed; full JSON save/serialization
@@ -48,7 +53,8 @@ Firaxis or 2K; no assets, art, text, or code from Civilization VI are used.
 
 ```bash
 cargo build --release
-./target/release/civvis play --players 4        # browser GUI; you are player 0
+./target/release/civvis play --players 4        # browser GUI; Online by default
+./target/release/civvis play --players 6 --map continents --speed epic
 ```
 
 For an unattended spectator that checks for new code only between games:

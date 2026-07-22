@@ -15,7 +15,7 @@ use crate::Pos;
 
 /// Every `Action` discriminant, in a stable order. Appending is safe;
 /// reordering invalidates trained policies.
-pub const KINDS: [&str; 72] = [
+pub const KINDS: [&str; 73] = [
     "move", "move_to", "attack", "ranged", "found_city", "improve",
     "found_corporation", "move_product", "contribute_project",
     "contribute_district", "perform_concert", "pillage", "repair_improvement",
@@ -32,7 +32,7 @@ pub const KINDS: [&str; 72] = [
     "theological_attack", "condemn_heretic", "heal_religious", "remove_heresy",
     "launch_inquisition", "evangelize_belief", "convert_barbarians",
     "city_strike", "encampment_strike", "keep_city", "raze_city",
-    "liberate_city", "end_turn", "air_pillage", "priority_target",
+    "liberate_city", "end_turn", "air_pillage", "priority_target", "upgrade",
 ];
 
 /// Width of one action's feature row: kind one-hot plus the shared
@@ -121,6 +121,7 @@ pub fn kind_name(action: &Action) -> &'static str {
         Action::EndTurn => "end_turn",
         Action::AirPillage { .. } => "air_pillage",
         Action::PriorityTarget { .. } => "priority_target",
+        Action::Upgrade { .. } => "upgrade",
     }
 }
 
@@ -146,6 +147,7 @@ pub fn target_tile(g: &Game, action: &Action) -> Option<Pos> {
         | Action::Promote { unit, .. }
         | Action::Spread { unit }
         | Action::PerformConcert { unit } => g.units.get(unit).map(|u| u.pos),
+        Action::Upgrade { unit, .. } => g.units.get(unit).map(|u| u.pos),
         Action::Produce { city, .. }
         | Action::Buy { city, .. }
         | Action::BuyBuilding { city, .. }
@@ -222,6 +224,7 @@ fn acting_unit(action: &Action) -> Option<u32> {
         | Action::AirPatrol { unit, .. }
         | Action::AirPillage { unit, .. }
         | Action::PriorityTarget { unit, .. }
+        | Action::Upgrade { unit, .. }
         | Action::Fortify { unit }
         | Action::Promote { unit, .. }
         | Action::Spread { unit }

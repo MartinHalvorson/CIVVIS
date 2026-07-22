@@ -3,8 +3,154 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::rng::Rng;
 use crate::rules::Rules;
+use crate::setup::MapScript;
 use crate::world::WorldMap;
 use crate::{hex, Pos};
+
+fn offset_region(
+    wm: &WorldMap,
+    col_start: i32,
+    col_end: i32,
+    row_start: i32,
+    row_end: i32,
+) -> BTreeSet<Pos> {
+    (row_start.max(0)..row_end.min(wm.height))
+        .flat_map(|row| {
+            (col_start.max(0)..col_end.min(wm.width)).map(move |col| hex::offset_to_axial(col, row))
+        })
+        .filter(|pos| wm.tiles.contains_key(pos))
+        .collect()
+}
+
+/// Grow a single guaranteed-connected landmass inside an allowed region.
+fn grow_blob(
+    wm: &WorldMap,
+    allowed: &BTreeSet<Pos>,
+    seed: Pos,
+    target: usize,
+    rng: &mut Rng,
+) -> BTreeSet<Pos> {
+    if !allowed.contains(&seed) || target == 0 {
+        return BTreeSet::new();
+    }
+    let mut land = BTreeSet::from([seed]);
+    let mut frontier = vec![seed];
+    for _ in 0..(50 * wm.width * wm.height) {
+        if land.len() >= target.min(allowed.len()) || frontier.is_empty() {
+            break;
+        }
+        let index = rng.below(frontier.len());
+        let current = frontier[index];
+        let candidates: Vec<Pos> = hex::neighbors(current)
+            .into_iter()
+            .map(|neighbor| hex::canon(neighbor, wm.width))
+            .filter(|neighbor| allowed.contains(neighbor) && !land.contains(neighbor))
+            .collect();
+        if candidates.is_empty() {
+            frontier.swap_remove(index);
+            continue;
+        }
+        let next = candidates[rng.below(candidates.len())];
+        land.insert(next);
+        frontier.push(next);
+        if rng.chance(0.18) {
+            frontier.swap_remove(index);
+        }
+    }
+    land
+}
+
+fn generate_land(
+    wm: &WorldMap,
+    script: MapScript,
+    num_major_spawns: usize,
+    rng: &mut Rng,
+) -> BTreeSet<Pos> {
+    let width = wm.width;
+    let height = wm.height;
+    let area = (width * height) as usize;
+    match script {
+        MapScript::Pangaea => {
+            // A compact oval gives every seat comparable hinterland while
+            // retaining a single coast-to-coast supercontinent. Later biome,
+            // mountain, river, and feature passes supply local variety.
+            let center_col = (width - 1) as f64 / 2.0;
+            let center_row = (height - 1) as f64 / 2.0;
+            let radius_col = width as f64 * 0.39;
+            let radius_row = height as f64 * 0.343;
+            let first_phase = rng.uniform(0.0, std::f64::consts::TAU);
+            let second_phase = rng.uniform(0.0, std::f64::consts::TAU);
+            let mut land = BTreeSet::new();
+            for row in 1..height - 1 {
+                for col in 0..width {
+                    let x = (col as f64 - center_col) / radius_col;
+                    let y = (row as f64 - center_row) / radius_row;
+                    let angle = y.atan2(x);
+                    let coast = 1.0
+                        + 0.08 * (3.0 * angle + first_phase).sin()
+                        + 0.05 * (5.0 * angle + second_phase).sin();
+                    if (x * x + y * y).sqrt() <= coast {
+                        land.insert(hex::offset_to_axial(col, row));
+                    }
+                }
+            }
+            land
+        }
+        MapScript::Continents => {
+            let gap = (width / 18).max(2);
+            let midpoint = width / 2;
+            let regions = [
+                (gap, midpoint - gap, 2, height - 2),
+                (midpoint + gap, width - gap, 2, height - 2),
+            ];
+            let mut land = BTreeSet::new();
+            let per_continent = (area as f64 * 0.21) as usize;
+            for (left, right, top, bottom) in regions {
+                let allowed = offset_region(wm, left, right, top, bottom);
+                let seed = hex::offset_to_axial((left + right) / 2, (top + bottom) / 2);
+                land.extend(grow_blob(wm, &allowed, seed, per_continent, rng));
+            }
+            land
+        }
+        MapScript::SmallContinents => {
+            let count = num_major_spawns.div_ceil(2).clamp(4, 8);
+            let columns = if count <= 4 { 2 } else { 3 };
+            let rows = count.div_ceil(columns);
+            let per_island = ((area as f64 * 0.36) as usize / count).max(12);
+            let mut land = BTreeSet::new();
+            for index in 0..count {
+                let column = index % columns;
+                let row = index / columns;
+                let left = (column * width as usize / columns) as i32 + 2;
+                let right = ((column + 1) * width as usize / columns) as i32 - 2;
+                let top = (row * height as usize / rows) as i32 + 2;
+                let bottom = ((row + 1) * height as usize / rows) as i32 - 2;
+                let allowed = offset_region(wm, left, right, top, bottom);
+                let seed = hex::offset_to_axial((left + right) / 2, (top + bottom) / 2);
+                land.extend(grow_blob(wm, &allowed, seed, per_island, rng));
+            }
+            land
+        }
+        MapScript::InlandSea => {
+            let center_col = (width - 1) as f64 / 2.0;
+            let center_row = (height - 1) as f64 / 2.0;
+            let radius_col = width as f64 * 0.34;
+            let radius_row = height as f64 * 0.30;
+            let mut land = BTreeSet::new();
+            for row in 0..height {
+                for col in 0..width {
+                    let edge = col < 2 || col >= width - 2 || row < 2 || row >= height - 2;
+                    let x = (col as f64 - center_col) / radius_col;
+                    let y = (row as f64 - center_row) / radius_row;
+                    if edge || x * x + y * y >= 1.0 {
+                        land.insert(hex::offset_to_axial(col, row));
+                    }
+                }
+            }
+            land
+        }
+    }
+}
 
 #[allow(clippy::too_many_arguments)]
 pub fn generate(
@@ -17,45 +163,35 @@ pub fn generate(
     num_continents: usize,
     rng: &mut Rng,
 ) -> (WorldMap, Vec<Pos>) {
+    generate_with_script(
+        rules,
+        width,
+        height,
+        num_major_spawns,
+        num_minor_spawns,
+        num_natural_wonders,
+        num_continents,
+        MapScript::Pangaea,
+        rng,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn generate_with_script(
+    rules: &Rules,
+    width: i32,
+    height: i32,
+    num_major_spawns: usize,
+    num_minor_spawns: usize,
+    num_natural_wonders: usize,
+    num_continents: usize,
+    script: MapScript,
+    rng: &mut Rng,
+) -> (WorldMap, Vec<Pos>) {
     let mut wm = WorldMap::new(width, height);
 
-    // --- landmass via random frontier growth
-    let land_target = (0.42 * (width * height) as f64) as usize;
-    let mut land: BTreeSet<Pos> = BTreeSet::new();
-    for _ in 0..2.max(num_continents * 2) {
-        let col = rng.randint(width / 5, width - 1 - width / 5);
-        let row = rng.randint(height / 5, height - 1 - height / 5);
-        land.insert(hex::offset_to_axial(col, row));
-    }
-    let mut frontier: Vec<Pos> = land.iter().cloned().collect();
-    for _ in 0..(40 * width * height) {
-        if land.len() >= land_target {
-            break;
-        }
-        if frontier.is_empty() {
-            let idx = rng.below(land.len());
-            frontier.push(*land.iter().nth(idx).unwrap());
-        }
-        let ci = rng.below(frontier.len());
-        let cur = frontier[ci];
-        let nbs: Vec<Pos> = hex::neighbors(cur)
-            .into_iter()
-            .map(|n| hex::canon(n, width))
-            .filter(|n| wm.tiles.contains_key(n) && !land.contains(n))
-            .collect();
-        if nbs.is_empty() {
-            frontier.remove(ci);
-            continue;
-        }
-        let nxt = nbs[rng.below(nbs.len())];
-        land.insert(nxt);
-        frontier.push(nxt);
-        if rng.chance(0.25) {
-            if let Some(i) = frontier.iter().position(|p| *p == cur) {
-                frontier.remove(i);
-            }
-        }
-    }
+    // --- landmass topology selected by the stock-style map script
+    let land = generate_land(&wm, script, num_major_spawns, rng);
 
     let land_list: Vec<Pos> = land.iter().cloned().collect();
     let latitude = |pos: Pos| -> f64 {
@@ -162,12 +298,131 @@ pub fn generate(
         }
     }
 
-    // --- features
+    // --- tectonic and polar features
+    // Volcanoes replace a small, well-spaced subset of mountain tiles. Every
+    // candidate needs exposed land at its foot so the volcano reads as part of
+    // the landscape and can seed the volcanic soil produced by old eruptions.
+    let mut volcano_candidates: Vec<Pos> = land_list
+        .iter()
+        .copied()
+        .filter(|position| wm.tiles[position].terrain == "mountain")
+        .filter(|position| {
+            hex::neighbors(*position)
+                .into_iter()
+                .map(|neighbor| hex::canon(neighbor, width))
+                .any(|neighbor| {
+                    wm.tiles.get(&neighbor).is_some_and(|tile| {
+                        !matches!(tile.terrain.as_str(), "mountain" | "coast" | "ocean")
+                    })
+                })
+        })
+        .collect();
+    for index in (1..volcano_candidates.len()).rev() {
+        let other = rng.below(index + 1);
+        volcano_candidates.swap(index, other);
+    }
+    let volcano_target = (land_list.len() / 180).max(1);
+    let mut volcanoes = Vec::new();
+    for position in volcano_candidates {
+        if volcanoes.len() >= volcano_target {
+            break;
+        }
+        if volcanoes
+            .iter()
+            .all(|other| hex::wdistance(position, *other, width) >= 4)
+        {
+            wm.tiles.get_mut(&position).unwrap().feature = Some("volcano".into());
+            volcanoes.push(position);
+        }
+    }
+
+    // Ancient eruption deposits make volcanoes legible even while dormant.
+    // Guarantee one deposit where geography allows, then scatter a few more
+    // without consuming the RNG differently for later per-tile feature rolls.
+    for volcano in &volcanoes {
+        let mut foothills: Vec<Pos> = hex::neighbors(*volcano)
+            .into_iter()
+            .map(|neighbor| hex::canon(neighbor, width))
+            .filter(|neighbor| {
+                wm.tiles.get(neighbor).is_some_and(|tile| {
+                    !matches!(tile.terrain.as_str(), "mountain" | "coast" | "ocean")
+                        && tile.feature.is_none()
+                })
+            })
+            .collect();
+        for index in (1..foothills.len()).rev() {
+            let other = rng.below(index + 1);
+            foothills.swap(index, other);
+        }
+        for (index, position) in foothills.into_iter().enumerate() {
+            if index == 0 || rng.chance(0.28) {
+                wm.tiles.get_mut(&position).unwrap().feature = Some("volcanic_soil".into());
+            }
+        }
+    }
+
+    // Fissures follow tectonic relief rather than appearing on arbitrary flat
+    // tiles. Spacing them preserves their value as recognizable landmarks.
+    let mut fissure_candidates: Vec<Pos> = land_list
+        .iter()
+        .copied()
+        .filter(|position| {
+            let tile = &wm.tiles[position];
+            tile.terrain != "mountain"
+                && tile.feature.is_none()
+                && hex::neighbors(*position)
+                    .into_iter()
+                    .map(|neighbor| hex::canon(neighbor, width))
+                    .any(|neighbor| {
+                        wm.tiles.get(&neighbor).is_some_and(|neighbor_tile| {
+                            neighbor_tile.terrain == "mountain"
+                                || neighbor_tile.feature.as_deref() == Some("volcano")
+                        })
+                    })
+        })
+        .collect();
+    for index in (1..fissure_candidates.len()).rev() {
+        let other = rng.below(index + 1);
+        fissure_candidates.swap(index, other);
+    }
+    let fissure_target = (land_list.len() / 140).max(1);
+    let mut fissures = Vec::new();
+    for position in fissure_candidates {
+        if fissures.len() >= fissure_target {
+            break;
+        }
+        if fissures
+            .iter()
+            .all(|other| hex::wdistance(position, *other, width) >= 3)
+        {
+            wm.tiles.get_mut(&position).unwrap().feature = Some("geothermal_fissure".into());
+            fissures.push(position);
+        }
+    }
+
+    // Polar sea ice occupies both Ocean and Coast. Latitude controls density,
+    // leaving navigable gaps instead of drawing an artificial solid wall.
+    let polar_water: Vec<Pos> = wm
+        .tiles
+        .iter()
+        .filter(|(position, tile)| {
+            matches!(tile.terrain.as_str(), "coast" | "ocean") && latitude(**position) > 0.82
+        })
+        .map(|(position, _)| *position)
+        .collect();
+    for position in polar_water {
+        let chance = ((latitude(position) - 0.82) / 0.18 * 0.72).clamp(0.0, 0.72);
+        if rng.chance(chance) {
+            wm.tiles.get_mut(&position).unwrap().feature = Some("ice".into());
+        }
+    }
+
+    // --- vegetative, wetland and river-basin features
     for pos in &land_list {
         let lat = latitude(*pos);
         let r = rng.f64();
         let t = wm.tiles.get_mut(pos).unwrap();
-        if t.terrain == "mountain" {
+        if t.terrain == "mountain" || t.feature.is_some() {
             continue;
         }
         if t.has_river() && t.terrain == "desert" && r < 0.55 {
@@ -176,8 +431,6 @@ pub fn generate(
             t.feature = Some("grassland_floodplains".into());
         } else if t.has_river() && t.terrain == "plains" && r < 0.18 {
             t.feature = Some("plains_floodplains".into());
-        } else if r > 0.992 {
-            t.feature = Some("geothermal_fissure".into());
         } else if t.terrain == "grassland" || t.terrain == "plains" {
             if lat < 0.25 && r < 0.28 {
                 t.feature = Some("jungle".into());
@@ -342,10 +595,11 @@ pub fn generate(
             .and_then(|f| rules.features.get(f))
             .map(|f| f.natural_wonder)
             .unwrap_or(false);
-        if terrain == "mountain"
+        if !rules.is_passable(&wm.tiles[&pos])
             || natural_wonder
             || feature.as_deref() == Some("oasis")
             || feature.as_deref() == Some("marsh")
+            || feature.as_deref() == Some("volcanic_soil")
         {
             continue;
         }
@@ -414,42 +668,104 @@ pub fn generate(
         }
     }
 
-    // --- spawns on the largest connected passable landmass
+    // --- spawns. Pangaea and Inland Sea share one primary landmass; the
+    // ocean-separated scripts deliberately seed majors across their viable
+    // components so their geography affects play from turn one.
     let passable: BTreeSet<Pos> = land
         .iter()
         .filter(|pos| rules.is_passable(&wm.tiles[pos]))
         .cloned()
         .collect();
-    let largest = largest_component(&passable, width);
-    let mut cands: Vec<Pos> = largest
-        .iter()
-        .filter(|p| {
-            let t = &wm.tiles[p];
-            (t.terrain == "grassland" || t.terrain == "plains")
-                && t.feature.is_none()
-                && t.improvement.is_none()
-        })
-        .cloned()
-        .collect();
     let total_spawns = num_major_spawns + num_minor_spawns;
-    if cands.len() < total_spawns {
-        cands = largest
+    let candidates_for = |component: &BTreeSet<Pos>, needed: usize| {
+        let mut candidates: Vec<Pos> = component
             .iter()
-            .filter(|pos| {
-                let tile = &wm.tiles[pos];
-                tile.improvement.is_none()
-                    && !tile
-                        .feature
-                        .as_ref()
-                        .and_then(|feature| rules.features.get(feature))
-                        .is_some_and(|feature| feature.natural_wonder)
+            .filter(|position| {
+                let tile = &wm.tiles[position];
+                matches!(tile.terrain.as_str(), "grassland" | "plains")
+                    && tile.feature.is_none()
+                    && tile.improvement.is_none()
             })
             .cloned()
             .collect();
+        if candidates.len() < needed {
+            candidates = component
+                .iter()
+                .filter(|position| {
+                    let tile = &wm.tiles[position];
+                    tile.improvement.is_none()
+                        && !tile
+                            .feature
+                            .as_ref()
+                            .and_then(|feature| rules.features.get(feature))
+                            .is_some_and(|feature| feature.natural_wonder)
+                })
+                .cloned()
+                .collect();
+        }
+        candidates.sort();
+        candidates
+    };
+    let components = connected_components(&passable, width);
+    let primary = components.first().cloned().unwrap_or_default();
+    let mut all_candidates = candidates_for(&passable, total_spawns);
+    let mut spawns = if matches!(script, MapScript::Continents | MapScript::SmallContinents) {
+        let viable: Vec<(BTreeSet<Pos>, Vec<Pos>)> = components
+            .into_iter()
+            .map(|component| {
+                let candidates = candidates_for(&component, 1);
+                (component, candidates)
+            })
+            .filter(|(_, candidates)| !candidates.is_empty())
+            .collect();
+        let mut allocations = vec![0usize; viable.len()];
+        for _ in 0..num_major_spawns {
+            let Some(index) = (0..viable.len())
+                .filter(|index| allocations[*index] < viable[*index].1.len())
+                .min_by_key(|index| {
+                    // Fill every landmass once, then distribute proportionally
+                    // to its available capital sites.
+                    (
+                        allocations[*index] > 0,
+                        allocations[*index] * 1_000_000 / viable[*index].1.len().max(1),
+                        *index,
+                    )
+                })
+            else {
+                break;
+            };
+            allocations[index] += 1;
+        }
+        let mut starts = Vec::new();
+        for ((component, candidates), count) in viable.iter().zip(allocations) {
+            starts.extend(balanced_major_spawns(
+                rules, &wm, component, candidates, count, rng,
+            ));
+        }
+        for index in (1..starts.len()).rev() {
+            let other = rng.below(index + 1);
+            starts.swap(index, other);
+        }
+        starts
+    } else {
+        let primary_candidates = candidates_for(&primary, total_spawns);
+        all_candidates = primary_candidates.clone();
+        balanced_major_spawns(
+            rules,
+            &wm,
+            &primary,
+            &primary_candidates,
+            num_major_spawns,
+            rng,
+        )
+    };
+    // Defensive completion for unusually mountain-heavy seeds, followed by
+    // city-state placement in the largest remaining gaps on eligible land.
+    if spawns.len() < num_major_spawns {
+        let missing = num_major_spawns - spawns.len();
+        add_minor_spawns(rules, &wm, &all_candidates, &mut spawns, missing);
     }
-    cands.sort();
-    let mut spawns = balanced_major_spawns(rules, &wm, &largest, &cands, num_major_spawns, rng);
-    add_minor_spawns(rules, &wm, &cands, &mut spawns, num_minor_spawns);
+    add_minor_spawns(rules, &wm, &all_candidates, &mut spawns, num_minor_spawns);
     for s in &spawns {
         let t = wm.tiles.get_mut(s).unwrap();
         t.feature = None;
@@ -1028,9 +1344,9 @@ fn assign_continents(
     }
 }
 
-fn largest_component(cells: &BTreeSet<Pos>, width: i32) -> BTreeSet<Pos> {
+fn connected_components(cells: &BTreeSet<Pos>, width: i32) -> Vec<BTreeSet<Pos>> {
     let mut seen: BTreeSet<Pos> = BTreeSet::new();
-    let mut best: BTreeSet<Pos> = BTreeSet::new();
+    let mut components = Vec::new();
     for start in cells {
         if seen.contains(start) {
             continue;
@@ -1048,17 +1364,100 @@ fn largest_component(cells: &BTreeSet<Pos>, width: i32) -> BTreeSet<Pos> {
             }
         }
         seen.extend(comp.iter().cloned());
-        if comp.len() > best.len() {
-            best = comp;
-        }
+        components.push(comp);
     }
-    best
+    components.sort_by_key(|component| std::cmp::Reverse(component.len()));
+    components
+}
+
+#[cfg(test)]
+fn largest_component(cells: &BTreeSet<Pos>, width: i32) -> BTreeSet<Pos> {
+    connected_components(cells, width)
+        .into_iter()
+        .next()
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
 mod river_tests {
     use super::*;
-    use crate::setup::CIV6_MAP_SIZES;
+    use crate::setup::{MapScript, CIV6_MAP_SIZES};
+
+    fn land_components(world: &WorldMap, rules: &Rules) -> Vec<BTreeSet<Pos>> {
+        let land = world
+            .tiles
+            .iter()
+            .filter(|(_, tile)| !rules.is_water(tile))
+            .map(|(position, _)| *position)
+            .collect();
+        connected_components(&land, world.width)
+    }
+
+    #[test]
+    fn stock_map_scripts_create_distinct_playable_topologies() {
+        let rules = Rules::embedded();
+        for (index, script) in [
+            MapScript::Pangaea,
+            MapScript::Continents,
+            MapScript::SmallContinents,
+            MapScript::InlandSea,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let mut rng = Rng::new(72_000 + index as u64);
+            let (world, spawns) =
+                generate_with_script(&rules, 60, 38, 6, 6, 0, 3, script, &mut rng);
+            assert_eq!(spawns.len(), 12, "{script:?} spawn count");
+            for (spawn_index, start) in spawns.iter().enumerate() {
+                assert!(
+                    spawns[spawn_index + 1..].iter().all(|other| hex::wdistance(
+                        *start,
+                        *other,
+                        world.width
+                    ) >= 4),
+                    "{script:?} starts must leave room for distinct cities"
+                );
+            }
+            let components = land_components(&world, &rules);
+            match script {
+                MapScript::Pangaea | MapScript::InlandSea => {
+                    assert_eq!(components.len(), 1, "{script:?} should be connected")
+                }
+                MapScript::Continents => {
+                    assert_eq!(components.len(), 2, "Continents needs two large landmasses")
+                }
+                MapScript::SmallContinents => assert!(
+                    components.len() >= 4,
+                    "Small Continents needs several separated landmasses"
+                ),
+            }
+
+            let occupied_components = components
+                .iter()
+                .filter(|component| spawns[..6].iter().any(|spawn| component.contains(spawn)))
+                .count();
+            let expected = match script {
+                MapScript::Continents => 2,
+                MapScript::SmallContinents => 4,
+                _ => 1,
+            };
+            assert!(
+                occupied_components >= expected,
+                "{script:?} should distribute majors across its landmasses"
+            );
+
+            if script == MapScript::InlandSea {
+                let center = hex::offset_to_axial(world.width / 2, world.height / 2);
+                assert!(rules.is_water(&world.tiles[&center]));
+                for col in 0..world.width {
+                    for row in [0, world.height - 1] {
+                        assert!(!rules.is_water(&world.tiles[&hex::offset_to_axial(col, row)]));
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn generated_rivers_are_mirrored_connected_edge_chains_with_outlets() {
@@ -1243,6 +1642,99 @@ mod river_tests {
                     && balance.1 >= 50
                     && balance.2 >= 50,
                 "seed {seed} has an unfair start outlier: territory/neighbor/quality balance = {balance:?}, {score:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn complete_civ6_feature_roster_is_modeled_and_generated_in_valid_biomes() {
+        let rules = Rules::embedded();
+        let modeled = [
+            "forest",
+            "jungle",
+            "marsh",
+            "floodplains",
+            "grassland_floodplains",
+            "plains_floodplains",
+            "oasis",
+            "reef",
+            "geothermal_fissure",
+            "ice",
+            "volcano",
+            "volcanic_soil",
+            "impact_zone",
+            "burning_forest",
+            "burnt_forest",
+            "burning_jungle",
+            "burnt_jungle",
+        ];
+        for feature in modeled {
+            assert!(
+                rules.features.contains_key(feature),
+                "rules are missing Civ VI feature {feature}"
+            );
+        }
+
+        let mut generated = BTreeSet::new();
+        for seed in [7_001, 7_002, 7_003] {
+            let mut rng = Rng::new(seed);
+            let (world, _) = generate(&rules, 60, 38, 4, 0, 4, 3, &mut rng);
+            for (position, tile) in &world.tiles {
+                let Some(feature) = tile.feature.as_deref() else {
+                    continue;
+                };
+                generated.insert(feature.to_string());
+                match feature {
+                    "ice" => assert!(
+                        matches!(tile.terrain.as_str(), "coast" | "ocean"),
+                        "sea ice generated on {} at {position:?}",
+                        tile.terrain
+                    ),
+                    "reef" => assert_eq!(tile.terrain, "coast", "reef at {position:?}"),
+                    "volcano" => {
+                        assert_eq!(tile.terrain, "mountain", "volcano at {position:?}")
+                    }
+                    "volcanic_soil" => assert!(
+                        hex::neighbors(*position)
+                            .into_iter()
+                            .map(|neighbor| hex::canon(neighbor, world.width))
+                            .any(|neighbor| world.tiles.get(&neighbor).is_some_and(
+                                |neighbor_tile| {
+                                    neighbor_tile.feature.as_deref() == Some("volcano")
+                                }
+                            )),
+                        "volcanic soil at {position:?} has no volcano"
+                    ),
+                    "geothermal_fissure" => assert!(
+                        hex::neighbors(*position)
+                            .into_iter()
+                            .map(|neighbor| hex::canon(neighbor, world.width))
+                            .any(|neighbor| world.tiles.get(&neighbor).is_some_and(
+                                |neighbor_tile| { neighbor_tile.terrain == "mountain" }
+                            )),
+                        "geothermal fissure at {position:?} is not tectonic"
+                    ),
+                    _ => {}
+                }
+            }
+        }
+        for feature in [
+            "forest",
+            "jungle",
+            "marsh",
+            "floodplains",
+            "grassland_floodplains",
+            "plains_floodplains",
+            "oasis",
+            "reef",
+            "geothermal_fissure",
+            "ice",
+            "volcano",
+            "volcanic_soil",
+        ] {
+            assert!(
+                generated.contains(feature),
+                "ordinary generated worlds never produced {feature}: {generated:?}"
             );
         }
     }

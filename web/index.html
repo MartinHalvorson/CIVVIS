@@ -50,12 +50,12 @@
 
   /* Command deck */
   #side {
-    width: 340px; min-width: 340px; height: 100%; position: relative; z-index: 12;
+    order: -1; width: 340px; min-width: 340px; height: 100%; position: relative; z-index: 12;
     display: flex; flex-direction: column; overflow: hidden;
     background:
       radial-gradient(circle at 80% -10%, #23483b80, transparent 34%),
       linear-gradient(180deg, #101d1b 0%, #08110f 100%);
-    border-left: 1px solid #355047; box-shadow: -16px 0 55px #0008;
+    border-right: 1px solid #355047; box-shadow: 16px 0 55px #0008;
     transition: width .25s ease, min-width .25s ease, opacity .18s ease;
   }
   body.sidebar-hidden #side { width: 0; min-width: 0; opacity: 0; pointer-events: none; }
@@ -174,22 +174,38 @@
 
   /* Floating map HUD */
   #topbar {
-    position: absolute; z-index: 5; top: 16px; left: 50%; transform: translateX(-50%);
-    display: flex; align-items: stretch; gap: 5px; max-width: calc(100% - 180px);
-    padding: 5px; border: 1px solid #4961598c; border-radius: 14px;
+    position: absolute; z-index: 5; top: 10px; left: 64px; right: 438px;
+    display: grid; grid-template-columns: 82px repeat(6, minmax(70px, 1fr)); align-items: stretch; gap: 3px;
+    min-width: 0; padding: 4px; border: 1px solid #4961598c; border-radius: 12px;
     background: #0a1512d9; box-shadow: 0 12px 34px #0008; backdrop-filter: blur(16px) saturate(130%);
-    pointer-events: none; white-space: nowrap;
+    pointer-events: none;
   }
-  .hud-turn, .hud-stat { display: flex; align-items: center; gap: 7px; min-height: 38px; padding: 7px 11px; border-radius: 9px; }
-  .hud-turn { min-width: 124px; color: var(--gold-bright); background: #d7b66a12; border: 1px solid #d7b66a26; font-weight: 800; }
-  .hud-stat { min-width: 82px; justify-content: center; color: var(--text); border-left: 1px solid #ffffff0b; }
-  .hud-stat strong, .hud-turn strong { font-variant-numeric: tabular-nums; }
-  .hud-stat i { color: var(--muted); font-size: 10px; font-style: normal; }
-  .hud-watch { min-width: 132px; max-width: 132px; color: #b4d8c4; overflow: hidden; }
-  .hud-watch strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .victory-turn, .victory-track { min-width: 0; min-height: 61px; border-radius: 8px; }
+  .victory-turn {
+    display: flex; flex-direction: column; justify-content: center; padding: 6px 7px;
+    color: var(--gold-bright); background: #d7b66a12; border: 1px solid #d7b66a26;
+  }
+  .victory-turn span, .victory-heading {
+    color: #aebdb7; font-size: 8px; font-weight: 900; letter-spacing: .1em; line-height: 1; text-transform: uppercase;
+  }
+  .victory-turn strong { margin-top: 4px; font-size: 14px; line-height: 1; font-variant-numeric: tabular-nums; }
+  .victory-turn i { margin-top: 4px; overflow: hidden; color: var(--muted); font-size: 8px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
+  .victory-meter { overflow: hidden; background: #020706b3; box-shadow: inset 0 1px 2px #000b; }
+  .victory-meter b { display: block; height: 100%; border-radius: inherit; background: currentColor; }
+  .victory-track { padding: 5px 5px 4px; color: var(--track); border-left: 1px solid #ffffff0b; }
+  .victory-heading { display: flex; align-items: center; gap: 4px; margin-bottom: 3px; color: var(--track); }
+  .victory-heading b { overflow: hidden; color: #cad4d0; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+  .victory-list { display: flex; flex-direction: column; gap: 2px; }
+  .victory-entry { min-width: 0; }
+  .victory-line { display: grid; grid-template-columns: 8px 5px minmax(0, 1fr) auto; align-items: center; gap: 2px; min-width: 0; height: 10px; }
+  .victory-rank { color: #72857e; font-size: 7px; font-weight: 850; line-height: 1; }
+  .victory-civ-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--civ); box-shadow: 0 0 5px color-mix(in srgb, var(--civ) 70%, transparent); }
+  .victory-civ { overflow: hidden; color: #dbe3df; font-size: 8px; font-weight: 750; line-height: 1; text-overflow: ellipsis; white-space: nowrap; }
+  .victory-value { color: #a9bab3; font-size: 8px; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .victory-meter { height: 2px; margin: 0 0 0 17px; border-radius: 3px; }
   #playerhud {
-    position: absolute; z-index: 7; top: 72px; right: 16px; width: min(466px, calc(100% - 86px));
-    max-height: calc(100% - 270px); overflow-y: auto; pointer-events: auto;
+    position: absolute; z-index: 7; top: 52px; right: 12px; width: min(414px, calc(100% - 82px));
+    max-height: calc(100% - 238px); overflow-y: auto; pointer-events: auto;
     scrollbar-width: none; filter: drop-shadow(0 12px 28px #0009);
   }
   #playerhud::-webkit-scrollbar { display: none; }
@@ -201,8 +217,8 @@
   .ribbon-heading span:last-child { color: #82968f; letter-spacing: .08em; }
   .diplomacy-ribbon { display: flex; flex-direction: column; gap: 3px; }
   .diplomacy-card {
-    display: grid; grid-template-columns: 42px minmax(74px, 1fr) minmax(210px, 273px); align-items: center; gap: 8px;
-    width: 100%; min-height: 56px; margin: 0; padding: 6px 7px 6px 6px; overflow: hidden; border-radius: 10px;
+    display: grid; grid-template-columns: 36px minmax(68px, .8fr) minmax(226px, 2.4fr); align-items: center; gap: 6px;
+    width: 100%; min-height: 48px; margin: 0; padding: 4px 5px; overflow: hidden; border-radius: 9px;
     color: var(--text); background: linear-gradient(100deg, #0a1512f0, #13231fe8);
     border: 1px solid #40574f; box-shadow: inset 0 1px #ffffff0b;
     text-align: left; cursor: pointer; transition: border-color .12s ease, background .12s ease;
@@ -214,15 +230,15 @@
   .diplomacy-card.at-war { border-color: #a65450; box-shadow: inset 3px 0 var(--danger), inset 0 1px #fff1; }
   .diplomacy-card.dead { opacity: .42; filter: grayscale(.75); }
   .leader-medallion {
-    width: 40px; height: 40px; display: grid; place-items: center; border-radius: 50%;
+    width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%;
     color: #fff; background: radial-gradient(circle at 35% 28%, color-mix(in srgb, var(--civ) 72%, white), var(--civ) 58%, #07110f);
     border: 2px solid var(--civ); box-shadow: 0 0 0 2px #07110f, 0 4px 12px #0008;
-    font: 700 15px/1 Georgia, serif; text-shadow: 0 1px 3px #000;
+    font: 700 13px/1 Georgia, serif; text-shadow: 0 1px 3px #000;
   }
   .diplomacy-identity { min-width: 0; }
-  .diplomacy-name { display: block; overflow: hidden; color: #f1f4ed; font-size: 14px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+  .diplomacy-name { display: block; overflow: hidden; color: #f1f4ed; font-size: 12px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
   .diplomacy-rank { margin-right: 5px; color: var(--gold-bright); font: 700 11px Georgia, serif; }
-  .diplomacy-leader { display: block; margin-top: 3px; overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+  .diplomacy-leader { display: block; margin-top: 1px; overflow: hidden; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
   .ai-plan { font-weight: 850; }
   .ai-plan.expansion { color: #89c990; }
   .ai-plan.science { color: var(--blue); }
@@ -231,26 +247,28 @@
   .ai-plan.diplomacy { color: #e8c64c; }
   .ai-plan.conquest { color: #f08a82; }
   .ai-plan.recovery { color: #e9ad74; }
-  .diplomacy-stats { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; }
-  .ribbon-stat { min-width: 0; padding: 4px 1px 3px; text-align: center; border-left: 1px solid #ffffff0b; }
-  .ribbon-stat b { display: block; overflow: hidden; font-size: 11px; line-height: 1.1; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
-  .ribbon-stat em { display: block; margin-top: 3px; color: #82958e; font-size: 7px; font-style: normal; font-weight: 850; letter-spacing: .08em; line-height: 1; }
+  .diplomacy-stats { display: grid; grid-template-columns: repeat(10, 1fr); gap: 0; }
+  .ribbon-stat { min-width: 0; padding: 3px 0 2px; text-align: center; border-left: 1px solid #ffffff0b; }
+  .ribbon-stat b { display: block; overflow: hidden; font-size: 10px; line-height: 1.1; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+  .ribbon-stat em { display: block; margin-top: 2px; color: #82958e; font-size: 7px; font-style: normal; font-weight: 850; letter-spacing: 0; line-height: 1; }
   .ribbon-stat.production b { color: #e9ad74; }
   .ribbon-stat.science b { color: var(--blue); }
   .ribbon-stat.culture b { color: var(--violet); }
   .ribbon-stat.faith b { color: #eee7cf; }
   .ribbon-stat.gold b { color: #e8c64c; }
   .ribbon-stat.military b { color: #f2a09b; }
+  .ribbon-stat.cities b { color: #d6c49b; }
+  .ribbon-stat.suzerain b { color: #8dd6b1; }
+  .ribbon-stat.wonders b { color: #e9d88e; }
   .ribbon-stat.score b { color: var(--gold-bright); }
   #zoomctl {
-    position: absolute; z-index: 6; top: 76px; left: 16px; display: flex; flex-direction: column;
+    position: absolute; z-index: 6; top: 86px; left: 16px; display: flex; flex-direction: column;
     gap: 5px; padding: 5px; border-radius: 13px; background: #0a1512cb; border: 1px solid #3c554c;
     box-shadow: 0 12px 26px #0006; backdrop-filter: blur(12px);
   }
   #zoomctl button { width: 34px; height: 34px; margin: 0; padding: 0; border: 0; background: transparent; font-size: 16px; }
   #zoomctl button + button { border-top: 1px solid #ffffff0c; border-radius: 0; }
-  #paneltoggle { position: absolute; z-index: 14; top: 17px; right: 16px; background: #0a1512df; backdrop-filter: blur(12px); }
-  body:not(.sidebar-hidden) #paneltoggle { right: 16px; }
+  #paneltoggle { position: absolute; z-index: 14; top: 17px; left: 16px; background: #0a1512df; backdrop-filter: blur(12px); }
   #ubar {
     position: absolute; z-index: 7; left: 50%; bottom: 22px; transform: translateX(-50%);
     display: none; min-width: 360px; max-width: min(680px, calc(100% - 450px)); padding: 13px 16px;
@@ -321,8 +339,9 @@
   .shortcut-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
   .shortcut-grid span { color: var(--muted); font-size: 9px; }
   kbd { display: inline-grid; min-width: 19px; height: 18px; place-items: center; margin-right: 5px; padding: 0 4px; border-radius: 5px; color: #cbd5d0; background: #091310; border: 1px solid #354c44; box-shadow: inset 0 -1px #000; font: 700 8px Inter, sans-serif; }
-  #newgame-options { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; }
+  #newgame-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: end; }
   #newgame-options button { margin: 0; height: 34px; }
+  #newgame-options #newgame { grid-column: 1 / -1; }
 
   /* Tech and civic overlay */
   #tree {
@@ -397,29 +416,42 @@
   .capture-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(125px, 1fr)); gap: 8px; }
   .capture-actions button { margin: 0; min-height: 43px; }
 
+  @media (max-width: 1360px) {
+    #topbar { right: 70px; }
+    #playerhud { top: 82px; }
+  }
   @media (max-width: 980px) {
     #side { width: 320px; min-width: 320px; }
-    #topbar { left: 14px; transform: none; max-width: calc(100% - 84px); overflow: hidden; }
-    .hud-stat i { display: none; }
     #ubar { max-width: calc(100% - 70px); }
+  }
+  @media (max-width: 940px) {
+    #topbar { grid-template-columns: 68px repeat(3, minmax(70px, 1fr)); }
+    #playerhud { top: 148px; }
+    #zoomctl { top: 152px; }
   }
   @media (max-width: 720px) {
     body { display: block; }
     #maparea { height: 100%; }
-    #side { position: fixed; inset: 72px 8px 8px auto; width: min(390px, calc(100% - 16px)); min-width: 0; height: auto; border: 1px solid #40584f; border-radius: 16px; }
-    body.sidebar-hidden #side { width: min(390px, calc(100% - 16px)); transform: translateX(calc(100% + 16px)); opacity: 0; }
-    #topbar .hud-stat:nth-of-type(n+5) { display: none; }
-    #playerhud { top: 70px; right: 12px; max-height: calc(100% - 88px); }
+    #side { position: fixed; inset: 72px auto 8px 8px; width: min(390px, calc(100% - 16px)); min-width: 0; height: auto; border: 1px solid #40584f; border-radius: 16px; }
+    body.sidebar-hidden #side { width: min(390px, calc(100% - 16px)); transform: translateX(calc(-100% - 16px)); opacity: 0; }
+    #topbar { grid-template-columns: 82px repeat(6, minmax(70px, 1fr)); }
+    #playerhud { top: 82px; right: 12px; max-height: calc(100% - 100px); }
+    #zoomctl { top: 86px; }
     .minimap-frame { display: none; }
-    #paneltoggle { right: 12px; }
+    #paneltoggle { left: 12px; }
     #ubar { min-width: 0; width: calc(100% - 28px); bottom: 18px; }
     #trade { inset: 2% 8px; }
     .trade-balance { display: none; }
     #tradelist { grid-template-columns: 1fr; padding-inline: 10px; }
   }
+  @media (max-width: 620px) {
+    #topbar { grid-template-columns: 68px repeat(3, minmax(70px, 1fr)); }
+    #playerhud { top: 148px; }
+    #zoomctl { top: 152px; }
+  }
   @media (max-width: 430px) {
     #playerhud { left: 74px; right: 8px; width: auto; }
-    .diplomacy-card { grid-template-columns: 31px minmax(52px, .7fr) minmax(140px, 1.8fr); gap: 5px; min-height: 46px; padding: 5px; }
+    .diplomacy-card { grid-template-columns: 31px minmax(45px, .65fr) minmax(150px, 2fr); gap: 4px; min-height: 44px; padding: 4px; }
     .leader-medallion { width: 29px; height: 29px; font-size: 12px; }
     .diplomacy-name { font-size: 10px; }
     .diplomacy-leader { margin-top: 1px; font-size: 8px; }
@@ -458,7 +490,7 @@
   <section id="trade" role="dialog" aria-modal="true" aria-labelledby="tradetitle">
     <div class="trade-head">
       <div><div class="trade-title" id="tradetitle">Quick Deals</div>
-        <div class="trade-subtitle">Every quote is accepted by both empires · agreements last 30 turns</div></div>
+        <div class="trade-subtitle">Every quote is accepted by both empires · agreement length scales with game speed</div></div>
       <div class="trade-balance" id="tradebalance"></div>
       <button class="ghost" onclick="closeTrade()">✕ Close · Esc</button>
     </div>
@@ -491,6 +523,11 @@
     <div class="section-label"><span>Game settings</span><span class="rule"></span></div>
     <div class="sec settings-sec" id="game-settings">
       <div id="newgame-options">
+        <label class="small">Game mode<select id="gamemode" style="margin-top:4px">
+          <option value="ai_sim" selected>AI-only simulation</option>
+          <option disabled>Single player · later</option>
+          <option disabled>Multiplayer · later</option>
+        </select></label>
         <label class="small">World size<select id="np" style="margin-top:4px">
           <option value="2">Duel · 2 civs · 3 city-states · 44×26</option>
           <option value="4" selected>Tiny · 4 civs · 6 city-states · 60×38</option>
@@ -499,8 +536,20 @@
           <option value="10">Large · 10 civs · 15 city-states · 96×60</option>
           <option value="12">Huge · 12 civs · 18 city-states · 106×66</option>
         </select></label>
-        <label class="small" style="display:flex;gap:7px;align-items:center;margin:10px 0 7px"><input type="checkbox" id="specchk"> AI-only observer game</label>
-        <button id="newgame">Create new game</button>
+        <label class="small">Map<select id="maptype" style="margin-top:4px">
+          <option value="pangaea">Pangaea</option>
+          <option value="continents">Continents</option>
+          <option value="small_continents">Small Continents</option>
+          <option value="inland_sea">Inland Sea</option>
+        </select></label>
+        <label class="small">Game speed<select id="gamespeed" style="margin-top:4px">
+          <option value="online" selected>Online · 250 turns</option>
+          <option value="quick">Quick · 330 turns</option>
+          <option value="standard">Standard · 500 turns</option>
+          <option value="epic">Epic · 750 turns</option>
+          <option value="marathon">Marathon · 1500 turns</option>
+        </select></label>
+        <button id="newgame">Start AI simulation</button>
       </div>
     </div>
 
@@ -599,12 +648,40 @@ const FEATURE_ATLAS = new Image();
 let FEATURE_ATLAS_READY = false;
 FEATURE_ATLAS.onload = () => { FEATURE_ATLAS_READY = true; if (state) draw(); };
 FEATURE_ATLAS.src = "/assets/feature-atlas.png";
+const ENVIRONMENT_FEATURE_CELL = {
+  floodplains:[0,0], grassland_floodplains:[0,0], plains_floodplains:[0,0],
+  reef:[1,0], geothermal_fissure:[2,0], ice:[3,0],
+  volcano:[0,1], volcanic_soil:[1,1], fallout:[2,1], impact_zone:[3,1]
+};
+const ENVIRONMENT_FEATURE_ATLAS = new Image();
+let ENVIRONMENT_FEATURE_ATLAS_READY = false;
+ENVIRONMENT_FEATURE_ATLAS.onload = () => { ENVIRONMENT_FEATURE_ATLAS_READY = true; if (state) draw(); };
+ENVIRONMENT_FEATURE_ATLAS.src = "/assets/environment-feature-atlas.png";
+const NATURAL_WONDER_CELL = {
+  great_barrier_reef:[0,0], crater_lake:[1,0], pantanal:[2,0], uluru:[3,0],
+  yosemite:[0,1], dead_sea:[1,1], mount_everest:[2,1], pamukkale:[3,1]
+};
+const NATURAL_WONDER_ATLAS = new Image();
+let NATURAL_WONDER_ATLAS_READY = false;
+NATURAL_WONDER_ATLAS.onload = () => { NATURAL_WONDER_ATLAS_READY = true; if (state) draw(); };
+NATURAL_WONDER_ATLAS.src = "/assets/natural-wonder-atlas.png";
 const MOUNTAIN_ATLAS = new Image();
 let MOUNTAIN_ATLAS_READY = false;
 MOUNTAIN_ATLAS.onload = () => { MOUNTAIN_ATLAS_READY = true; if (state) draw(); };
 MOUNTAIN_ATLAS.src = "/assets/mountain-atlas.png";
 const PARCH = "#c7b58a", PARCH_GRID = "#8a795533", PARCH_INK = "#6d5c3a";
-const FEAT_ICON = { forest:"🌲", jungle:"🌴", marsh:"🌾", oasis:"🏝" };
+const FEATURE_LABEL = {
+  forest:"Woods", jungle:"Rainforest", marsh:"Marsh", oasis:"Oasis",
+  floodplains:"Desert Floodplains", grassland_floodplains:"Grassland Floodplains",
+  plains_floodplains:"Plains Floodplains", reef:"Reef",
+  geothermal_fissure:"Geothermal Fissure", ice:"Sea Ice", volcano:"Volcano",
+  volcanic_soil:"Volcanic Soil", impact_zone:"Impact Zone",
+  burning_forest:"Burning Woods", burnt_forest:"Burnt Woods",
+  burning_jungle:"Burning Rainforest", burnt_jungle:"Burnt Rainforest",
+  great_barrier_reef:"Great Barrier Reef", crater_lake:"Crater Lake",
+  pantanal:"Pantanal", uluru:"Uluru", yosemite:"Yosemite",
+  dead_sea:"Dead Sea", mount_everest:"Mount Everest", pamukkale:"Pamukkale"
+};
 const RES_ICON = { wheat:"🌾", cattle:"🐄", sheep:"🐑", stone:"🪨", deer:"🦌",
                    fish:"🐟", bananas:"🍌", horses:"🐎", iron:"⚒️", silk:"🧵",
                    wine:"🍷", salt:"🧂", antiquity_site:"🏺", shipwreck:"⚓" };
@@ -634,6 +711,14 @@ const EDGE_CORNERS = [[0,1],[5,0],[4,5],[3,4],[2,3],[1,2]]; // matches DIRS orde
 const DIRS = [[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];
 const ERA_NAMES = ["ancient", "classical", "medieval", "renaissance",
                    "industrial", "modern", "atomic", "information", "future"];
+const VICTORY_TRACKS = [
+  { id:"science", label:"Science", icon:"🔬", color:"#76cde4" },
+  { id:"culture", label:"Culture", icon:"🎭", color:"#c49be8" },
+  { id:"religious", label:"Religion", icon:"✦", color:"#eee7cf" },
+  { id:"diplomatic", label:"Diplomacy", icon:"⚜", color:"#8dd6b1" },
+  { id:"domination", label:"Domination", icon:"⚔", color:"#f2a09b" },
+  { id:"score", label:"Score", icon:"♛", color:"#f0d28c" },
+];
 // ---------------------------------------------------------------- state
 let state = null, sel = null, selCity = null, RULES = null;
 let lensOn = false, tackMode = false, tacks = [], lastSeed = null, cycleIdx = -1;
@@ -885,10 +970,20 @@ async function boot() {
         `<option value="${size.default_players}">${size.name} · ${size.default_players} civs · ${size.default_city_states} city-states · ${size.width}×${size.height}</option>`
       ).join("");
     }
+    if (Array.isArray(RULES.map_scripts)) {
+      document.getElementById("maptype").innerHTML = RULES.map_scripts.map(script =>
+        `<option value="${script.id}" title="${script.description}">${script.name}</option>`
+      ).join("");
+    }
+    if (Array.isArray(RULES.game_speeds)) {
+      document.getElementById("gamespeed").innerHTML = RULES.game_speeds.map(speed =>
+        `<option value="${speed.id}" title="${speed.description}">${speed.name} · ${speed.turn_limit} turns</option>`
+      ).join("");
+      document.getElementById("gamespeed").value = "online";
+    }
     render(await fetchJSON("/state"));
     if (firstLoad) {
       firstLoad = false;
-      document.getElementById("specchk").checked = SPEC;
       if (SPEC) document.getElementById("specspeed").value = "100";
       scheduleSpec(state);
       reportSpecStatus();
@@ -1056,6 +1151,7 @@ function actionSummary(next, batch, includeMovement) {
   const civic = actions.find(a => a.type === "civic");
   const productions = actions.filter(a => a.type === "produce");
   const improvements = actions.filter(a => a.type === "improve");
+  const upgrades = actions.filter(a => a.type === "upgrade");
   const attacks = actions.filter(a => ["attack", "ranged", "city_strike", "encampment_strike", "theological_attack", "condemn_heretic"].includes(a.type));
   const moves = actions.filter(a => a.type === "move" || a.type === "move_to");
   const war = actions.find(a => a.type === "declare_war");
@@ -1078,6 +1174,7 @@ function actionSummary(next, batch, includeMovement) {
     parts.push(productions.length === 1 ? `ordered ${first}` : `set ${productions.length} production orders`);
   }
   if (improvements.length) parts.push(`built ${improvements.length} improvement${improvements.length === 1 ? "" : "s"}`);
+  if (upgrades.length) parts.push(`modernized ${upgrades.length} unit${upgrades.length === 1 ? "" : "s"}`);
   if (trade.length) parts.push(`opened ${trade.length} trade route${trade.length === 1 ? "" : "s"}`);
   if (envoys.length) parts.push(`sent ${envoys.length} envoy${envoys.length === 1 ? "" : "s"}`);
   if (attacks.length) parts.push(`launched ${attacks.length} attack${attacks.length === 1 ? "" : "s"}`);
@@ -1195,7 +1292,6 @@ function render(st, recordChronicle = true) {
   if (st.server_instance !== undefined) serverInstance = st.server_instance;
   const newWorld = !state || st.seed !== state.seed || st.turn < state.turn;
   const viewChanged = !!state && !newWorld && st.view_player !== state.view_player;
-  const spectateChanged = !!state && !!st.spectate !== !!state.spectate;
   if (recordChronicle && !viewChanged) chronicle(state, st);
   const sameWorld = state && state.seed === st.seed;
   if (!viewChanged) {
@@ -1217,8 +1313,6 @@ function render(st, recordChronicle = true) {
   document.getElementById("humanfooter").style.display = SPEC ? "none" : "grid";
   document.getElementById("specbar").style.display = SPEC ? "block" : "none";
   document.getElementById("observer-settings").style.display = SPEC ? "block" : "none";
-  if (newWorld || spectateChanged)
-    document.getElementById("specchk").checked = SPEC;
   if (SPEC) closeTrade();
   syncViewPlayer();
   if (newWorld && st.seed !== undefined) { lastSeed = st.seed; loadTacks(); }
@@ -1227,6 +1321,8 @@ function render(st, recordChronicle = true) {
     const playerSelect = document.getElementById("np");
     if ([...playerSelect.options].some(o => +o.value === majors))
       playerSelect.value = String(majors);
+    document.getElementById("maptype").value = st.map.script || "pangaea";
+    document.getElementById("gamespeed").value = st.game_speed || "standard";
   }
   if (SPEC) sel = null;
   if (sel) sel = st.units.find(u => u.id === sel.id && u.owner === 0) || null;
@@ -1358,29 +1454,136 @@ function drawTerrainTexture(t, x, y) {
   cx.restore();
 }
 
-function drawFeatureSprite(t, x, y) {
-  const col = FEATURE_CELL[t.feature];
-  if (!FEATURE_ATLAS_READY || col === undefined) return false;
-  const cw = FEATURE_ATLAS.naturalWidth / 4;
-  const ch = FEATURE_ATLAS.naturalHeight;
-  const hv = hash2(t.pos[0] * 41 + col * 7, t.pos[1] * 43 + col * 11);
-  const scale = 0.88 + hv * 0.18;
-  // The atlas includes clear padding around each cutout. Drawing the full cell
-  // preserves the foliage silhouette and keeps neighboring tiles readable.
+function drawAtlasFeatureCell(atlas, columns, rows, cell, t, x, y, options = {}) {
+  const cw = atlas.naturalWidth / columns, ch = atlas.naturalHeight / rows;
+  const hv = hash2(t.pos[0] * 41 + cell[0] * 7, t.pos[1] * 43 + cell[1] * 11);
+  const scale = (options.scale || 1) * (options.vary === false ? 1 : 0.9 + hv * 0.16);
+  const width = S * (options.width || 2.04) * scale;
+  const height = S * (options.height || 1.55) * scale;
   cx.save();
   cx.imageSmoothingEnabled = true;
   cx.imageSmoothingQuality = "high";
-  cx.globalAlpha = t.feature === "forest" || t.feature === "jungle" ? 0.96 : 0.94;
-  cx.translate(x, y - S * 0.08);
-  // The source cells are slightly portrait; 180° variation preserves their
-  // natural footprint while avoiding the thin, sideways look of quarter turns.
-  cx.rotate(Math.floor(hv * 2) * Math.PI);
-  if (hash2(t.pos[0] * 13, t.pos[1] * 17) > 0.5) cx.scale(-1, 1);
-  cx.drawImage(FEATURE_ATLAS, col * cw, 0, cw, ch,
-               -S * 1.02 * scale, -S * 0.78 * scale,
-               S * 2.04 * scale, S * 1.55 * scale);
+  cx.globalAlpha = options.alpha === undefined ? 0.95 : options.alpha;
+  cx.translate(x, y - S * (options.lift === undefined ? 0.08 : options.lift));
+  if (options.rotate !== false) cx.rotate(Math.floor(hv * 2) * Math.PI);
+  if (options.flip !== false && hash2(t.pos[0] * 13, t.pos[1] * 17) > 0.5) cx.scale(-1, 1);
+  cx.drawImage(atlas, cell[0] * cw, cell[1] * ch, cw, ch,
+               -width / 2, -height / 2, width, height);
   cx.restore();
+}
+
+function drawFeatureSprite(t, x, y) {
+  const baseFeature = ({burning_forest:"forest", burnt_forest:"forest",
+                        burning_jungle:"jungle", burnt_jungle:"jungle"})[t.feature] || t.feature;
+  const baseCol = FEATURE_CELL[baseFeature];
+  if (FEATURE_ATLAS_READY && baseCol !== undefined) {
+    const burnt = t.feature === "burnt_forest" || t.feature === "burnt_jungle";
+    drawAtlasFeatureCell(FEATURE_ATLAS, 4, 1, [baseCol, 0], t, x, y,
+      {alpha: burnt ? 0.48 : (baseFeature === "forest" || baseFeature === "jungle" ? 0.96 : 0.94)});
+    return true;
+  }
+  const cell = ENVIRONMENT_FEATURE_CELL[t.feature];
+  if (!ENVIRONMENT_FEATURE_ATLAS_READY || !cell) return false;
+  const volcano = t.feature === "volcano";
+  drawAtlasFeatureCell(ENVIRONMENT_FEATURE_ATLAS, 4, 2, cell, t, x, y, {
+    width: volcano ? 2.32 : 2.06,
+    height: volcano ? 2.08 : 1.62,
+    lift: volcano ? 0.31 : 0.08,
+    scale: volcano ? 1.05 : 1,
+    alpha: t.feature === "ice" ? 0.98 : 0.95,
+    rotate: !volcano,
+    flip: !volcano
+  });
   return true;
+}
+
+function drawNaturalWonderSprite(feature, t, x, y, clusterSize) {
+  const cell = NATURAL_WONDER_CELL[feature];
+  if (!NATURAL_WONDER_ATLAS_READY || !cell) return false;
+  const scale = 1 + Math.min(0.34, Math.max(0, clusterSize - 1) * 0.12);
+  drawAtlasFeatureCell(NATURAL_WONDER_ATLAS, 4, 2, cell, t, x, y, {
+    width: 2.62,
+    height: 2.02,
+    lift: feature === "mount_everest" || feature === "yosemite" ? 0.38 : 0.14,
+    scale,
+    alpha: 0.99,
+    rotate: false,
+    flip: false,
+    vary: false
+  });
+  return true;
+}
+
+function drawFeatureEffects(t, x, y) {
+  const burning = t.feature === "burning_forest" || t.feature === "burning_jungle";
+  const burnt = t.feature === "burnt_forest" || t.feature === "burnt_jungle";
+  if (burning) {
+    for (const [dx, dy, size] of [[-8,4,8],[1,-1,10],[9,5,7]]) {
+      cx.fillStyle = "#b8270ddd";
+      tri(x + dx - size * .45, y + dy + size * .5, x + dx, y + dy - size, x + dx + size * .45, y + dy + size * .5);
+      cx.fillStyle = "#ffd34ee8";
+      tri(x + dx - size * .22, y + dy + size * .35, x + dx, y + dy - size * .48, x + dx + size * .22, y + dy + size * .35);
+    }
+  } else if (burnt) {
+    cx.fillStyle = "#17161188";
+    cx.beginPath(); cx.ellipse(x, y + 4, 22, 11, 0, 0, 7); cx.fill();
+  }
+  if (t.fallout_until > (state?.turn || 0)) {
+    if (VIEW === "cinematic" && ENVIRONMENT_FEATURE_ATLAS_READY) {
+      drawAtlasFeatureCell(ENVIRONMENT_FEATURE_ATLAS, 4, 2,
+        ENVIRONMENT_FEATURE_CELL.fallout, t, x, y,
+        {width:1.76, height:1.36, lift:0.03, alpha:0.82, rotate:false, flip:false});
+    } else if (VIEW !== "cinematic") {
+      cx.fillStyle = "#d8c941"; cx.font = "bold 13px sans-serif";
+      cx.fillText("☢", x, y);
+    }
+  }
+  if (t.drought) {
+    cx.strokeStyle = "#4c2f18aa"; cx.lineWidth = 1.6;
+    for (let i = -1; i <= 1; i++) {
+      cx.beginPath(); cx.moveTo(x + i * 8 - 5, y - 7); cx.lineTo(x + i * 8, y);
+      cx.lineTo(x + i * 8 - 4, y + 8); cx.stroke();
+    }
+  }
+  if (t.flooded && !t.submerged) {
+    cx.fillStyle = "#2b86a16e";
+    cx.beginPath(); cx.ellipse(x, y + 5, 23, 9, 0, 0, 7); cx.fill();
+    cx.strokeStyle = "#b9eff088"; cx.lineWidth = 1;
+    cx.beginPath(); cx.arc(x - 6, y + 2, 8, .2, 2.6); cx.arc(x + 8, y + 6, 7, 3.4, 5.8); cx.stroke();
+  }
+}
+
+// Multi-tile natural wonders are one landmark, not a repeated stamp. Group
+// connected feature tiles and paint a single larger cutout at their projected
+// center; the deepest member owns the draw call for correct painter ordering.
+function buildNaturalWonderPlacements(tiles) {
+  const placements = new Map(), visited = new Set();
+  for (const tile of tiles) {
+    if (!NATURAL_WONDER_CELL[tile.feature] || visited.has(key(tile.pos))) continue;
+    const cluster = [], stack = [tile];
+    visited.add(key(tile.pos));
+    while (stack.length) {
+      const current = stack.pop();
+      cluster.push(current);
+      for (const direction of DIRS) {
+        const neighbor = nbrTile(current.pos, direction);
+        if (!neighbor || neighbor.feature !== tile.feature || visited.has(key(neighbor.pos))) continue;
+        visited.add(key(neighbor.pos));
+        stack.push(neighbor);
+      }
+    }
+    const points = cluster.map(member => {
+      const [x, yy] = hexXY(member.pos[0], member.pos[1]);
+      return {member, x, y:yy - elev(member)};
+    });
+    const centerX = points.reduce((sum, point) => sum + point.x, 0) / points.length;
+    const centerY = points.reduce((sum, point) => sum + point.y, 0) / points.length;
+    const owner = points.reduce((deepest, point) => point.y > deepest.y ? point : deepest);
+    placements.set(key(owner.member.pos), {
+      feature:tile.feature, tile:owner.member, x:centerX, y:centerY, size:cluster.length
+    });
+  }
+  return placements;
 }
 
 // Compact Civ-style yield chips. Three fit on a row; unusually rich natural
@@ -1704,6 +1907,7 @@ function draw() {
   // painter's order by view depth (changes as the camera rotates)
   const tiles = [...state.map.tiles].sort((a, b) =>
     hexXY(a.pos[0], a.pos[1])[1] - hexXY(b.pos[0], b.pos[1])[1]);
+  const naturalWonderPlacements = buildNaturalWonderPlacements(tiles);
   const visSet = new Set(state.visible.map(key));
   const campSet = new Set(state.camps.map(key));
   const workedSet = new Set(state.cities.flatMap(c =>
@@ -1864,6 +2068,33 @@ function draw() {
     const [x, yy] = hexXY(t.pos[0], t.pos[1]);
     const y = yy - elev(t);
     const k = key(t.pos);
+    if (NATURAL_WONDER_CELL[t.feature]) {
+      const placement = naturalWonderPlacements.get(k);
+      if (placement) {
+        if (beau) {
+          drawNaturalWonderSprite(placement.feature, placement.tile,
+                                  placement.x, placement.y, placement.size);
+        } else {
+          cx.fillStyle = "#f0ce62";
+          cx.beginPath(); cx.arc(placement.x, placement.y, 10, 0, Math.PI * 2); cx.fill();
+          cx.fillStyle = "#382b08"; cx.font = "bold 13px serif";
+          cx.fillText("✦", placement.x, placement.y + 0.5);
+        }
+      }
+      continue;
+    }
+    if (t.feature === "volcano") {
+      if (beau) {
+        drawFeatureSprite(t, x, y);
+      } else {
+        cx.fillStyle = "#4a4140";
+        tri(x - 14, y + 10, x, y - 14, x + 14, y + 10);
+        cx.fillStyle = "#ef6b2e";
+        cx.beginPath(); cx.ellipse(x, y - 9, 4.5, 2.2, 0, 0, 7); cx.fill();
+      }
+      drawFeatureEffects(t, x, y);
+      continue;
+    }
     if (t.terrain === "mountain") {
       if (beau) {
         if (!drawMountainSprite(t, x, y)) drawMountainRange(t, x, y);
@@ -1912,8 +2143,9 @@ function draw() {
     }
     if (beau && drawFeatureSprite(t, x, y)) {
       // Lifelike atlas sprite already painted.
-    } else if (t.feature === "forest" || t.feature === "jungle") {
-      const jungle = t.feature === "jungle";
+    } else if (["forest", "jungle", "burning_forest", "burnt_forest",
+                "burning_jungle", "burnt_jungle"].includes(t.feature)) {
+      const jungle = t.feature.includes("jungle");
       if (beau) {
         // dense cluster of small individual trees (Civ 6 woods)
         const trees = [];
@@ -1946,7 +2178,35 @@ function draw() {
       cx.fillStyle = "#3d7aa6"; cx.beginPath();
       cx.ellipse(x, y + 3, 8.5, 5.5, 0, 0, 7); cx.fill();
       cx.font = "13px sans-serif"; cx.fillText("🌴", x + 7, y - 5);
+    } else if (["floodplains", "grassland_floodplains", "plains_floodplains"].includes(t.feature)) {
+      cx.strokeStyle = "#4c83a2"; cx.lineWidth = 2;
+      for (let i = -1; i <= 1; i++) {
+        cx.beginPath(); cx.moveTo(x - 12, y + i * 5); cx.quadraticCurveTo(x, y + i * 5 - 4, x + 12, y + i * 5); cx.stroke();
+      }
+    } else if (t.feature === "reef") {
+      cx.fillStyle = "#72d3c2";
+      for (const [dx,dy,r] of [[-7,2,4],[1,-3,5],[8,5,3]]) {
+        cx.beginPath(); cx.arc(x + dx, y + dy, r, 0, 7); cx.fill();
+      }
+    } else if (t.feature === "geothermal_fissure") {
+      cx.strokeStyle = "#dcece8"; cx.lineWidth = 1.6;
+      cx.beginPath(); cx.arc(x - 4, y - 2, 5, .2, 3.4); cx.arc(x + 5, y - 7, 4, .1, 3.2); cx.stroke();
+      cx.fillStyle = "#66b6b3"; cx.beginPath(); cx.ellipse(x, y + 5, 11, 4, 0, 0, 7); cx.fill();
+    } else if (t.feature === "ice") {
+      cx.fillStyle = "#dfeff3"; cx.strokeStyle = "#7db3c5"; cx.lineWidth = 1.4;
+      cx.beginPath(); cx.moveTo(x - 15, y - 3); cx.lineTo(x - 5, y - 12);
+      cx.lineTo(x + 13, y - 8); cx.lineTo(x + 16, y + 7); cx.lineTo(x, y + 11);
+      cx.lineTo(x - 13, y + 6); cx.closePath(); cx.fill(); cx.stroke();
+    } else if (t.feature === "volcanic_soil") {
+      cx.fillStyle = "#332f2b";
+      for (const [dx,dy,r] of [[-9,3,4],[0,-4,5],[9,5,3]]) {
+        cx.beginPath(); cx.arc(x + dx, y + dy, r, 0, 7); cx.fill();
+      }
+    } else if (t.feature === "impact_zone") {
+      cx.fillStyle = "#292523"; cx.strokeStyle = "#d16a2f"; cx.lineWidth = 2;
+      cx.beginPath(); cx.arc(x, y, 11, 0, 7); cx.fill(); cx.stroke();
     }
+    drawFeatureEffects(t, x, y);
     if (t.improvement === "barbarian_camp" || campSet.has(k)) {
       cx.font = "18px sans-serif"; cx.fillText("⛺", x, y);
     } else if (t.improvement === "farm") {
@@ -2306,31 +2566,71 @@ mini.addEventListener("click", ev => {
 });
 
 // ---------------------------------------------------------------- panels
+function victoryMetric(player, victory) {
+  return player.victories?.[victory] || { progress: 0 };
+}
+
+function victoryValue(victory, metric) {
+  if (victory === "science") {
+    return metric.projects >= metric.project_target
+      ? `${compactStat(metric.distance)}/${compactStat(metric.distance_target)}ly`
+      : `${metric.projects || 0}/${metric.project_target || 4}`;
+  }
+  if (victory === "culture") return `${metric.tourists || 0}/${metric.target || 1}`;
+  if (victory === "religious") return `${metric.converted || 0}/${metric.target || 0}`;
+  if (victory === "diplomatic") return `${metric.points || 0}/${metric.target || 20}`;
+  if (victory === "domination") return `${metric.capitals || 0}/${metric.target || 0}`;
+  return compactStat(metric.points || 0);
+}
+
+function victoryDescription(victory, metric) {
+  if (victory === "science") {
+    return metric.projects >= metric.project_target
+      ? `${compactStat(metric.distance)} of ${compactStat(metric.distance_target)} light-years travelled`
+      : `${metric.projects || 0} of ${metric.project_target || 4} space-race missions completed`;
+  }
+  if (victory === "culture") return `${metric.tourists || 0} of ${metric.target || 1} visiting tourists needed`;
+  if (victory === "religious") return `${metric.converted || 0} of ${metric.target || 0} civilizations converted`;
+  if (victory === "diplomatic") return `${metric.points || 0} of ${metric.target || 20} victory points`;
+  if (victory === "domination") return `${metric.capitals || 0} of ${metric.target || 0} foreign capitals controlled`;
+  return `${compactStat(metric.points || 0)} points · meter is relative to the score leader`;
+}
+
 function drawTopbar() {
-  const me = state.me, y = me.yields;
-  const goldPerTurn = Number.isFinite(+me.gold_per_turn) ? +me.gold_per_turn : +y.gold;
-  const goldFlow = `${goldPerTurn >= 0 ? "+" : ""}${compactStat(goldPerTurn)}`;
   const actor = state.players[SPEC ? state.current : 0] || state.players[state.player];
   const viewer = state.players[state.player] || actor;
   const eraRaw = state.world_era;
   const era = typeof eraRaw === "number"
     ? (ERA_NAMES[eraRaw] || `era ${eraRaw}`)
     : String(eraRaw || "ancient").replaceAll("_", " ");
+  const contenders = state.players.filter(p => p.alive && !p.is_minor && !p.is_barbarian);
+  const victoryTracks = VICTORY_TRACKS.map(track => {
+    const ranked = [...contenders]
+      .sort((a, b) => {
+        const am = victoryMetric(a, track.id), bm = victoryMetric(b, track.id);
+        return (+bm.progress || 0) - (+am.progress || 0) || b.score - a.score || a.id - b.id;
+      })
+      .slice(0, 3);
+    return `<section class="victory-track" style="--track:${track.color}" aria-label="${track.label} victory leaders">` +
+      `<div class="victory-heading"><span>${track.icon}</span><b>${track.label}</b></div>` +
+      `<div class="victory-list">` + ranked.map((player, index) => {
+        const metric = victoryMetric(player, track.id);
+        const progress = Math.max(0, Math.min(100, +metric.progress || 0));
+        return `<div class="victory-entry" style="--civ:${pcol(player.id)}" title="${player.civ}: ${victoryDescription(track.id, metric)}">` +
+          `<div class="victory-line"><span class="victory-rank">#${index + 1}</span><span class="victory-civ-dot"></span>` +
+          `<span class="victory-civ">${player.civ}</span><span class="victory-value">${victoryValue(track.id, metric)}</span></div>` +
+          `<div class="victory-meter"><b style="width:${progress}%"></b></div></div>`;
+      }).join("") + `</div></section>`;
+  }).join("");
   document.getElementById("topbar").innerHTML =
-    `<div class="hud-turn"><span>TURN</span><strong>${state.turn}</strong><i>· ${era}</i></div>` +
-    (SPEC ? `<div class="hud-stat hud-watch">◉ <strong>${actor.civ}</strong><i>acting</i></div>` : "") +
-    `<div class="hud-stat">🔬 <strong>${y.science}</strong><i>science</i></div>` +
-    `<div class="hud-stat">🎭 <strong>${y.culture}</strong><i>culture</i></div>` +
-    `<div class="hud-stat" title="Net Gold after maintenance and active deals">🪙 <strong>${Math.round(me.gold)}</strong><i>${goldFlow}</i></div>` +
-    `<div class="hud-stat">✦ <strong>${Math.round(me.faith)}</strong><i>+${y.faith}</i></div>` +
-    `<div class="hud-stat">⚜ <strong>${Math.round(me.diplomatic_favor || 0)}</strong><i>favor</i></div>` +
-    ((Number(me.global_co2) || 0) !== 0 || Number(eraRaw) >= 4
-      ? `<div class="hud-stat" title="Global lifetime carbon emissions">☁ <strong>${compactStat(me.global_co2)}</strong><i>CO₂</i></div>`
-      : "");
+    `<section class="victory-turn" title="Turn ${state.turn}"><span>Turn</span>` +
+    `<strong>${state.turn}</strong><i>${SPEC ? `◉ ${actor.civ} · ` : ""}${era}</i></section>${victoryTracks}`;
 
   const playerView = SPEC && state.view_player !== null && state.view_player !== undefined;
   const identity = SPEC ? viewer : state.players[0];
-  const mapLabel = `${state.map.size_name || "Custom"} ${state.map.width}×${state.map.height}`;
+  const mapName = titleCase(state.map.script || "pangaea");
+  const speedName = titleCase(state.game_speed || "standard");
+  const mapLabel = `${mapName} · ${state.map.size_name || "Custom"} ${state.map.width}×${state.map.height} · ${speedName}`;
   const profile = spectatorIdentity(identity);
   const meta = [...profile.details, mapLabel].join(" · ");
   document.getElementById("gameidentity").innerHTML =
@@ -2376,7 +2676,7 @@ function drawPlayerHud() {
     .sort((a, b) => b.score - a.score || a.id - b.id);
   const rankById = new Map(majors.map((p, index) => [p.id, index + 1]));
   hud.innerHTML =
-    `<div class="ribbon-heading"><span>World leaders</span><span>output / turn · strength · score</span></div>` +
+    `<div class="ribbon-heading"><span>World leaders</span><span>output · empire · score</span></div>` +
     `<div class="diplomacy-ribbon">` + majors.map(p => {
       const y = p.yields || {};
       const color = pcol(p.id);
@@ -2406,6 +2706,9 @@ function drawPlayerHud() {
         ["faith", "FPT", y.faith, `Faith: ${compactStat(y.faith)} per turn · ${compactStat(p.faith)} banked`],
         ["gold", "GPT", goldPerTurn, `Net Gold: ${compactStat(goldPerTurn)} per turn · ${compactStat(p.gold)} banked`],
         ["military", "MIL", p.military, `Military strength: ${compactStat(p.military)}`],
+        ["cities", "CITY", p.cities, `Cities controlled: ${compactStat(p.cities)}`],
+        ["suzerain", "SUZ", p.suzerain_count, `City-states under suzerainty: ${compactStat(p.suzerain_count)}`],
+        ["wonders", "WNDR", p.wonder_count, `World wonders controlled: ${compactStat(p.wonder_count)}`],
         ["score", "SCORE", p.score, `Score: ${compactStat(p.score)} · rank ${rank}`],
       ];
       return `<button class="diplomacy-card ${stateClass}" style="--civ:${color}" onclick="spectatePlayer(${p.id})" ` +
@@ -2552,6 +2855,8 @@ function drawUbar() {
       const note = RULES.promotions && RULES.promotions[a.promotion] ? RULES.promotions[a.promotion].note : "";
       h += `<button title="${note}" onclick='send(${JSON.stringify(a)})'>⬆ Promote: ${titleCase(a.promotion)}</button>`;
     }
+    if (a.type === "upgrade")
+      h += `<button class="primary" onclick='send(${JSON.stringify(a)})'>⬆ Upgrade to ${titleCase(a.to)}</button>`;
     if (a.type === "combine_units")
       h += `<button onclick='send(${JSON.stringify(a)})'>⚔ Form ${u.formation === 1 ? "Army/Armada" : "Corps/Fleet"} with #${a.unit === u.id ? a.with : a.unit}</button>`;
     if (a.type === "link_units")
@@ -2612,14 +2917,21 @@ function prodGlyph(it) {
 }
 function itemCost(it) {
   if (!RULES) return "?";
-  if (it.unit) return RULES.units[it.unit].cost * (it.formation ? (it.formation >= 2 ? 2.25 : 1.5) : 1);
-  if (it.building) return RULES.buildings[it.building].cost;
-  if (it.wonder) return RULES.wonders[it.wonder].cost;
-  if (it.project) return RULES.projects[it.project].cost;
-  return RULES.districts[it.district].cost;
+  let standard;
+  if (it.unit) standard = RULES.units[it.unit].cost * (it.formation ? (it.formation >= 2 ? 2.25 : 1.5) : 1);
+  else if (it.building) standard = RULES.buildings[it.building].cost;
+  else if (it.wonder) standard = RULES.wonders[it.wonder].cost;
+  else if (it.project) standard = RULES.projects[it.project].cost;
+  else standard = RULES.districts[it.district].cost;
+  return standard * gameSpeedPercent() / 100;
 }
-function techCost(t) { return RULES ? RULES.techs[t].cost : 100; }
-function civicCost(c) { return RULES ? RULES.civics[c].cost : 100; }
+function gameSpeedPercent() {
+  if (!RULES || !Array.isArray(RULES.game_speeds)) return 100;
+  const speed = RULES.game_speeds.find(candidate => candidate.id === (state && state.game_speed));
+  return speed ? speed.cost_percent : 100;
+}
+function techCost(t) { return RULES ? RULES.techs[t].cost * gameSpeedPercent() / 100 : 100; }
+function civicCost(c) { return RULES ? RULES.civics[c].cost * gameSpeedPercent() / 100 : 100; }
 function titleCase(n) { return (n || "").replaceAll("_", " ").replace(/\b\w/g, c => c.toUpperCase()); }
 function researchCard(kind, name, progress, total, perTurn, boosted) {
   const eta = perTurn > 0 ? Math.max(1, Math.ceil((total - progress) / perTurn)) : "∞";
@@ -3196,10 +3508,14 @@ cv.addEventListener("mousemove", ev => {
   if (!t) { tip.style.display = "none"; return; }
   const k = key(pos);
   const lines = [];
-  let head = t.terrain + (t.hills ? " hills" : "");
-  if (t.feature) head += " · " + t.feature;
+  let head = titleCase(t.terrain) + (t.hills ? " Hills" : "");
+  if (t.feature) head += " · " + (FEATURE_LABEL[t.feature] || titleCase(t.feature));
   if (t.river) head += " · 💧river";
   lines.push("<b>" + head + "</b>");
+  if (t.fallout_until > state.turn) lines.push(`☢ Fallout · ${t.fallout_until - state.turn} turns remain`);
+  if (t.drought) lines.push("Drying drought");
+  if (t.flooded) lines.push("Flooded coastal lowland");
+  if (t.submerged) lines.push("Submerged by sea-level rise");
   if (t.resource)
     lines.push((RES_ICON[t.resource] || "●") + " " + t.resource +
       (RULES && RULES.resources ? " (" + RULES.resources[t.resource].class + ")" : ""));
@@ -3337,13 +3653,17 @@ document.getElementById("viewplayer").onchange = ev => {
 };
 document.getElementById("newgame").onclick = async () => {
   const np = +document.getElementById("np").value;
+  const gameMode = document.getElementById("gamemode").value;
+  const mapScript = document.getElementById("maptype").value;
+  const gameSpeed = document.getElementById("gamespeed").value;
   sel = null; selCity = null;
   specPaused = false;
   document.getElementById("specpause").textContent = "⏸ Pause";
   render(await fetchJSON("/new", { method: "POST",
     headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({num_players: np, seed: Math.floor(Math.random() * 1e9), force: true,
-                          spectate: document.getElementById("specchk").checked}) }));
+    body: JSON.stringify({num_players: np, map_script: mapScript, game_speed: gameSpeed,
+                          seed: Math.floor(Math.random() * 1e9), force: true,
+                          spectate: gameMode === "ai_sim"}) }));
   if (SPEC) centerMainLandmass(); else centerHome();
   setPace({paused: false});
   reportSpecStatus();

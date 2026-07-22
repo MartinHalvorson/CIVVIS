@@ -4,7 +4,7 @@ use std::time::Instant;
 use civvis::ai::{run_game, AdvancedAi};
 use civvis::game::{default_difficulty, default_speed, Game, GameOptions};
 use civvis::rules::Rules;
-use civvis::setup::MapSize;
+use civvis::setup::{GameSpeed, MapScript, MapSize};
 
 fn arg(args: &[String], key: &str, default: i64) -> i64 {
     args.iter()
@@ -68,6 +68,8 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
         speed_spec.turns as i64
     };
     GameOptions {
+        map_script: MapScript::from_id(&arg_text(args, "--map", "pangaea"))
+            .unwrap_or(MapScript::Pangaea),
         difficulty,
         speed,
         // A headless game has nobody at the keyboard, so the difficulty only
@@ -334,6 +336,8 @@ fn main() {
                 }
             };
             let play_options = game_options(&args, players, seed);
+            let map_script = play_options.map_script;
+            let game_speed = GameSpeed::from_id(&play_options.speed).unwrap_or(GameSpeed::Standard);
             civvis::server::serve_with_game(
                 arg(&args, "--port", 8765) as u16,
                 !args.iter().any(|a| a == "--no-open"),
@@ -342,11 +346,14 @@ fn main() {
                     width: auto_dimension(&args, "--width", players, true),
                     height: auto_dimension(&args, "--height", players, false),
                     seed,
+                    map_script,
+                    game_speed,
                     max_turns: play_options.max_turns,
                     num_city_states: auto_cs(&args, players),
                     spectate: args.iter().any(|a| a == "--spectate" || a == "--watch"),
                     difficulty: play_options.difficulty,
                     speed: play_options.speed,
+                    supervised: args.iter().any(|a| a == "--supervised"),
                 },
                 resumed,
             );
@@ -365,7 +372,9 @@ fn main() {
                 "usage: civvis <simulate|soak|benchmark|tournament|play|evolve|validate> \
                       [--players N] [--seed N] [--turns N] [--width N] [--height N] \
                       [--city-states N] [--games N] [--ais a,b] [--port N] [--no-open] \
-                      [--spectate] [--resume checkpoint.json]"
+                      [--map pangaea|continents|small_continents|inland_sea] \
+                      [--speed online|quick|standard|epic|marathon] \
+                      [--spectate] [--supervised] [--resume checkpoint.json]"
             );
         }
     }

@@ -23,7 +23,9 @@ class SessionSettingsTests(unittest.TestCase):
                 {"is_minor": True},
                 {"is_minor": True, "is_barbarian": True},
             ],
-            "map": {"width": 44, "height": 26},
+            "map": {"width": 44, "height": 26, "script": "continents"},
+            "game_speed": "online",
+            "max_turns": 250,
         }
         defaults = {
             "players": 4,
@@ -31,10 +33,13 @@ class SessionSettingsTests(unittest.TestCase):
             "height": 38,
             "city_states": 6,
             "turns": 500,
+            "map": "pangaea",
+            "speed": "standard",
         }
         self.assertEqual(
             supervisor.session_settings(state, defaults),
-            {"players": 2, "width": 44, "height": 26, "city_states": 1, "turns": 500},
+            {"players": 2, "width": 44, "height": 26, "city_states": 1,
+             "turns": 250, "map": "continents", "speed": "online"},
         )
 
     def test_empty_state_uses_defaults(self):
@@ -44,6 +49,8 @@ class SessionSettingsTests(unittest.TestCase):
             "height": 46,
             "city_states": 9,
             "turns": 500,
+            "map": "pangaea",
+            "speed": "standard",
         }
         self.assertEqual(supervisor.session_settings({}, defaults), defaults)
 
@@ -275,6 +282,31 @@ class RecoveryTests(unittest.TestCase):
                 successor,
             )
 
+    def test_active_compute_has_no_default_wall_clock_kill(self):
+        self.assertFalse(
+            supervisor.unavailable_recovery_due(
+                True, 3_600.0, True, 60.0, 0.0
+            )
+        )
+        self.assertTrue(
+            supervisor.unavailable_recovery_due(
+                True, 61.0, False, 60.0, 0.0
+            )
+        )
+        self.assertTrue(
+            supervisor.unavailable_recovery_due(
+                True, 601.0, True, 60.0, 600.0
+            )
+        )
+        self.assertTrue(
+            supervisor.unavailable_recovery_due(
+                False, 0.0, False, 60.0, 0.0
+            )
+        )
+
+    def test_late_game_checkpoints_allow_slow_serialization(self):
+        self.assertEqual(supervisor.capture_checkpoint.__defaults__, (30.0,))
+
     def test_progress_marker_tracks_player_steps_within_a_turn(self):
         first = {"seed": 7, "turn": 12, "current": 1, "winner": None}
         stepped = {**first, "current": 2}
@@ -310,10 +342,13 @@ class RecoveryTests(unittest.TestCase):
             "height": 38,
             "city_states": 6,
             "turns": 500,
+            "map": "pangaea",
+            "speed": "standard",
         }
         checkpoint = Path("/tmp/civvis-checkpoint.json")
         command = supervisor.server_command(8766, settings, False, checkpoint)
         self.assertEqual(command[command.index("--resume") + 1], str(checkpoint))
+        self.assertIn("--supervised", command)
         self.assertIn("--no-open", command)
 
     def test_checkpoint_write_is_atomic_and_finished_saves_are_not_resumed(self):
@@ -354,6 +389,8 @@ class RecoveryTests(unittest.TestCase):
             height=38,
             city_states=6,
             turns=500,
+            map="pangaea",
+            speed="standard",
             cooldown=10.0,
             poll=0.5,
             build_retry=15.0,
@@ -390,13 +427,15 @@ class RecoveryTests(unittest.TestCase):
                 "height": 38,
                 "city_states": 6,
                 "turns": 500,
+                "map": "pangaea",
+                "speed": "standard",
             },
             False,
             checkpoint,
         )
         self.assertGreaterEqual(stop.call_count, 2)
 
-    def test_finished_server_is_stopped_before_update_and_successor_launch(self):
+    def test_update_is_prepared_before_finished_server_handoff(self):
         args = SimpleNamespace(
             port=8766,
             players=4,
@@ -404,6 +443,8 @@ class RecoveryTests(unittest.TestCase):
             height=38,
             city_states=6,
             turns=500,
+            map="pangaea",
+            speed="standard",
             cooldown=0.0,
             poll=0.01,
             build_retry=0.01,
@@ -456,13 +497,18 @@ class RecoveryTests(unittest.TestCase):
                 patch.object(
                     supervisor,
                     "read_state",
-                    side_effect=[finished, KeyboardInterrupt],
+                    side_effect=[finished, finished, finished, KeyboardInterrupt],
                 ),
                 patch.object(supervisor, "stop_server", side_effect=stop),
                 patch.object(
                     supervisor,
-                    "prepare_boundary_runtime",
-                    side_effect=lambda _retry: events.append(("prepare", None)),
+                    "prepare_latest_once",
+                    side_effect=lambda: events.append(("prepare", None)) or True,
+                ),
+                patch.object(
+                    supervisor,
+                    "promoted_runtime_id",
+                    side_effect=["old", "new", "new"],
                 ),
             ):
                 self.assertEqual(supervisor.main(), 0)
@@ -470,8 +516,8 @@ class RecoveryTests(unittest.TestCase):
         retired = events.index(("stop", 321))
         prepared = events.index(("prepare", None))
         launched = events.index(("start", 654))
-        self.assertLess(retired, prepared)
-        self.assertLess(prepared, launched)
+        self.assertLess(prepared, retired)
+        self.assertLess(retired, launched)
 
 
 if __name__ == "__main__":

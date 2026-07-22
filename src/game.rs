@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, VecDequ
 
 use crate::rng::Rng;
 use crate::rules::{DifficultySpec, Rules, SpeedSpec, Yields, ERA_NAMES};
-use crate::setup::MapSize;
+use crate::setup::{GameSpeed, MapScript, MapSize};
 use crate::world::{DistrictFoundation, RememberedTile, TileMemory, WorldMap};
 use crate::{hex, mapgen, Pos};
 
@@ -1039,6 +1039,9 @@ mod belief_runtime_tests {
             .unwrap()
             .buildings
             .extend(["shrine".to_string(), "temple".to_string()]);
+        // Isolate the buildings' exact follower-belief yields from the
+        // governor's intentional citizen reassignment after fixed food rises.
+        game.cities.get_mut(&cities[0]).unwrap().pop = 0;
 
         // A belief that hands the city Food frees its citizens to leave Food
         // tiles for specialist slots, exactly as Civ VI's citizen manager does,
@@ -2152,22 +2155,51 @@ mod governor_runtime_tests {
             4.0
         );
 
-        set_district(&mut game, city, owned[2], "encampment");
+        let (encampment_position, strike_position) = owned
+            .iter()
+            .copied()
+            .filter(|position| {
+                *position != owned[0] && *position != owned[1] && game.wdist(center, *position) == 1
+            })
+            .find_map(|encampment| {
+                game.nbrs(center)
+                    .into_iter()
+                    .find(|target| {
+                        *target != encampment
+                            && *target != owned[0]
+                            && *target != owned[1]
+                            && game.wdist(encampment, *target) == 1
+                            && game.city_at(*target).is_none()
+                            && game.units_at(*target).is_empty()
+                            && game.map.get(*target).is_some_and(|tile| {
+                                game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                            })
+                    })
+                    .map(|target| (encampment, target))
+            })
+            .expect("test map has adjacent city and Encampment strike geometry");
+        {
+            let tile = game.map.tiles.get_mut(&strike_position).unwrap();
+            tile.terrain = "plains".to_string();
+            tile.feature = None;
+            tile.hills = false;
+        }
+        set_district(&mut game, city, encampment_position, "encampment");
         {
             let defended_city = game.cities.get_mut(&city).unwrap();
             defended_city.wall_hp = 100;
             defended_city.encampment_hp = 100;
             defended_city.encampment_wall_hp = 100;
         }
-        let strike_target = game.spawn_test_unit("modern_armor", 1, owned[3]);
-        game.do_city_strike(0, city, owned[3]).unwrap();
-        game.do_city_strike(0, city, owned[3]).unwrap();
-        assert!(game.do_city_strike(0, city, owned[3]).is_err());
+        let strike_target = game.spawn_test_unit("modern_armor", 1, strike_position);
+        game.do_city_strike(0, city, strike_position).unwrap();
+        game.do_city_strike(0, city, strike_position).unwrap();
+        assert!(game.do_city_strike(0, city, strike_position).is_err());
         assert_eq!(game.cities[&city].extra_strikes_used, 1);
         assert!(game.units.contains_key(&strike_target));
-        game.do_encampment_strike(0, city, owned[3]).unwrap();
-        game.do_encampment_strike(0, city, owned[3]).unwrap();
-        assert!(game.do_encampment_strike(0, city, owned[3]).is_err());
+        game.do_encampment_strike(0, city, strike_position).unwrap();
+        game.do_encampment_strike(0, city, strike_position).unwrap();
+        assert!(game.do_encampment_strike(0, city, strike_position).is_err());
         assert_eq!(game.cities[&city].encampment_extra_strikes_used, 1);
 
         for position in game.nbrs(center) {
@@ -2677,6 +2709,8 @@ mod strategic_resource_tests {
         // Rome replaces Swordsmen with Legions; use a civilization without a
         // unique melee replacement so this scenario isolates resource payment.
         game.players[0].civ = "Egypt".to_string();
+        game.players[0].techs.clear();
+        game.players[0].techs.insert("iron_working".to_string());
         let city = game.player_city_ids(0)[0];
         let swordsman = Item::Unit {
             unit: "swordsman".to_string(),
@@ -2693,10 +2727,10 @@ mod strategic_resource_tests {
         assert_eq!(game.strategic_stockpile(0, "iron"), 0.0);
         assert!(game.unit_resource_is_committed(city, &swordsman));
 
-        let warrior = Item::Unit {
-            unit: "warrior".to_string(),
+        let builder = Item::Unit {
+            unit: "builder".to_string(),
         };
-        game.do_produce(0, city, &warrior).unwrap();
+        game.do_produce(0, city, &builder).unwrap();
         assert!(game.can_produce(0, city, &swordsman));
         game.do_produce(0, city, &swordsman).unwrap();
         assert_eq!(game.strategic_stockpile(0, "iron"), 0.0);
@@ -6310,6 +6344,22 @@ impl Game {
         self.map_size().max_religions
     }
 
+    pub fn tech_cost(&self, technology: &str) -> f64 {
+        self.game_speed.scale(self.rules.techs[technology].cost)
+    }
+
+    pub fn civic_cost(&self, civic: &str) -> f64 {
+        self.game_speed.scale(self.rules.civics[civic].cost)
+    }
+
+    pub fn growth_cost(&self, population: i32) -> f64 {
+        self.game_speed.scale(growth_threshold(population))
+    }
+
+    pub fn standard_duration(&self, turns: u32) -> u32 {
+        self.game_speed.scale_turns(turns)
+    }
+
     /// Wrapped hex distance (the world is an east-west cylinder).
     pub fn wdist(&self, a: Pos, b: Pos) -> i32 {
         hex::wdistance(a, b, self.map.width)
@@ -7359,6 +7409,10 @@ pub enum Action {
         unit: u32,
         promotion: String,
     },
+    Upgrade {
+        unit: u32,
+        to: String,
+    },
     CombineUnits {
         unit: u32,
         with: u32,
@@ -7530,6 +7584,7 @@ pub struct GameOptions {
     pub max_turns: u32,
     pub city_states: usize,
     pub barbarians: bool,
+    pub map_script: MapScript,
     pub difficulty: String,
     pub speed: String,
     pub human_seats: BTreeSet<usize>,
@@ -7552,6 +7607,7 @@ impl GameOptions {
             max_turns,
             city_states,
             barbarians: true,
+            map_script: MapScript::Pangaea,
             difficulty: default_difficulty(),
             speed: default_speed(),
             human_seats: BTreeSet::new(),
@@ -7574,6 +7630,8 @@ pub struct Game {
     /// all-agent game leaves this empty, which is why headless simulation is
     /// unaffected by the setting unless a seat is declared human.
     pub human_seats: BTreeSet<usize>,
+    pub map_script: MapScript,
+    pub game_speed: GameSpeed,
     pub max_turns: u32,
     pub turn: u32,
     pub current: usize,
@@ -7638,6 +7696,10 @@ struct GameSer {
     human_seats: BTreeSet<usize>,
     #[serde(default)]
     events: Vec<Event>,
+    #[serde(default)]
+    map_script: MapScript,
+    #[serde(default)]
+    game_speed: GameSpeed,
     max_turns: u32,
     turn: u32,
     current: usize,
@@ -7692,14 +7754,25 @@ struct GameSer {
 
 impl From<GameSer> for Game {
     fn from(s: GameSer) -> Game {
+        // Both speed representations exist for save compatibility. Prefer an
+        // explicit ruleset speed, except when loading an older map-script save
+        // whose absent string field defaulted to Standard.
+        let (speed, game_speed) = if s.speed == "standard" && s.game_speed != GameSpeed::Standard {
+            (s.game_speed.id().to_string(), s.game_speed)
+        } else {
+            let game_speed = GameSpeed::from_id(&s.speed).unwrap_or(s.game_speed);
+            (game_speed.id().to_string(), game_speed)
+        };
         let mut g = Game {
             rules: Rules::embedded(),
             rng: s.rng,
             seed: s.seed,
             difficulty: s.difficulty,
-            speed: s.speed,
+            speed,
             human_seats: s.human_seats,
             events: s.events,
+            map_script: s.map_script,
+            game_speed,
             max_turns: s.max_turns,
             turn: s.turn,
             current: s.current,
@@ -7824,6 +7897,8 @@ impl From<Game> for GameSer {
             speed: g.speed,
             human_seats: g.human_seats,
             events: g.events,
+            map_script: g.map_script,
+            game_speed: g.game_speed,
             max_turns: g.max_turns,
             turn: g.turn,
             current: g.current,
@@ -7894,6 +7969,26 @@ impl Game {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_setup(
+        num_players: usize,
+        width: i32,
+        height: i32,
+        seed: u64,
+        max_turns: u32,
+        num_city_states: usize,
+        map_script: MapScript,
+        game_speed: GameSpeed,
+        barbarians: bool,
+    ) -> Game {
+        Game::new_with(GameOptions {
+            barbarians,
+            map_script,
+            speed: game_speed.id().to_string(),
+            ..GameOptions::new(num_players, width, height, seed, max_turns, num_city_states)
+        })
+    }
+
     /// The one real constructor. Everything the setup screen can choose lives
     /// in [`GameOptions`]; the older positional constructors delegate here.
     pub fn new_with(options: GameOptions) -> Game {
@@ -7905,6 +8000,7 @@ impl Game {
             max_turns,
             city_states: num_city_states,
             barbarians,
+            map_script,
             difficulty,
             speed,
             human_seats,
@@ -7918,7 +8014,7 @@ impl Game {
         let mut rng = Rng::new(seed);
         let map_size = MapSize::from_dimensions(width, height)
             .unwrap_or_else(|| MapSize::for_players(num_players));
-        let (map, spawns) = mapgen::generate(
+        let (map, spawns) = mapgen::generate_with_script(
             &rules,
             width,
             height,
@@ -7926,8 +8022,10 @@ impl Game {
             num_city_states,
             map_size.natural_wonders,
             map_size.continents,
+            map_script,
             &mut rng,
         );
+        let game_speed = GameSpeed::from_id(&speed).unwrap_or(GameSpeed::Standard);
         let mut g = Game {
             rules,
             rng,
@@ -7935,6 +8033,8 @@ impl Game {
             difficulty,
             speed,
             human_seats,
+            map_script,
+            game_speed,
             max_turns,
             turn: 1,
             current: 0,
@@ -8122,16 +8222,6 @@ impl Game {
     /// production, research, and civic costs alike.
     pub fn speed_cost_mult(&self) -> f64 {
         self.speed_spec().cost_pct / 100.0
-    }
-
-    /// Research cost of a technology at this game speed.
-    pub fn tech_cost(&self, tech: &str) -> f64 {
-        self.rules.techs[tech].cost * self.speed_cost_mult()
-    }
-
-    /// Culture cost of a civic at this game speed.
-    pub fn civic_cost(&self, civic: &str) -> f64 {
-        self.rules.civics[civic].cost * self.speed_cost_mult()
     }
 
     // --------------------------------------------------------------- events
@@ -9238,9 +9328,10 @@ impl Game {
             return;
         };
         let home = self.spy_home_city(owner);
+        let ready_turn = self.turn + self.standard_duration(delay);
         if let Some(spy) = self.spies.get_mut(&spy_id) {
             spy.city = home;
-            spy.ready_turn = self.turn + delay;
+            spy.ready_turn = ready_turn;
             spy.mission = None;
             spy.sources_city = None;
             spy.sources_until = 0;
@@ -9267,9 +9358,10 @@ impl Game {
         if destination.owner != pid && spy.promotions.contains("disguise") {
             travel = travel.min(1);
         }
+        let ready_turn = self.turn + self.standard_duration(travel);
         let spy = self.spies.get_mut(&spy_id).unwrap();
         spy.city = Some(cid);
-        spy.ready_turn = self.turn + travel;
+        spy.ready_turn = ready_turn;
         spy.mission = None;
         spy.sources_city = None;
         spy.sources_until = 0;
@@ -9299,8 +9391,9 @@ impl Game {
         } else {
             1.0
         };
-        let duration =
-            ((base_duration as f64 * self.spy_modifiers(pid).1 * linguist).ceil() as u32).max(1);
+        let duration = self.standard_duration(
+            ((base_duration as f64 * self.spy_modifiers(pid).1 * linguist).ceil() as u32).max(1),
+        );
         let city = spy.city.ok_or_else(|| "Spy is not in a city".to_string())?;
         self.spies.get_mut(&spy_id).unwrap().mission = Some(SpyMission {
             kind: kind.to_string(),
@@ -9417,9 +9510,10 @@ impl Game {
         let defender = city.owner;
         match mission.kind.as_str() {
             "gain_sources" => {
+                let sources_until = self.turn + self.standard_duration(24);
                 let spy = self.spies.get_mut(&spy_id).unwrap();
                 spy.sources_city = Some(city.id);
-                spy.sources_until = self.turn + 24;
+                spy.sources_until = sources_until;
             }
             "siphon_funds" => {
                 let amount = (self.city_yields(city.id).gold * 8.0)
@@ -9463,7 +9557,7 @@ impl Game {
                     (city.loyalty - 20.0 - 5.0 * spy.level.max(0) as f64).max(0.0);
             }
             "neutralize_governor" => {
-                let until = self.turn + 7 + spy.level.max(0) as u32;
+                let until = self.turn + self.standard_duration(7 + spy.level.max(0) as u32);
                 for state in self.players[defender]
                     .governor_roster
                     .values_mut()
@@ -9919,7 +10013,8 @@ impl Game {
         let distance = self
             .wdist(self.cities[&origin].pos, self.cities[&dest].pos)
             .max(1) as u32;
-        let ends = self.turn + Self::trade_route_duration(distance, self.world_era);
+        let ends = self.turn
+            + self.standard_duration(Self::trade_route_duration(distance, self.world_era));
         self.routes.push(TradeRoute {
             origin,
             dest,
@@ -10970,19 +11065,23 @@ impl Game {
     /// Standard-speed base price plus the stock ahead-of-era surcharge. Art
     /// people and Prophets use their listed price without that surcharge.
     fn great_person_market_cost(&self, person: &crate::rules::GreatPersonSpec) -> f64 {
-        if matches!(
+        let standard = if matches!(
             person.kind.as_str(),
             "writer" | "artist" | "musician" | "prophet"
         ) {
-            return person.cost;
-        }
-        let difference = person.era.saturating_sub(self.world_era);
-        if difference == 0 {
-            return person.cost;
-        }
-        (person.cost
-            * (1.0 + 0.3 * difference as f64).powi(difference.try_into().unwrap_or(i32::MAX)))
-        .floor()
+            person.cost
+        } else {
+            let difference = person.era.saturating_sub(self.world_era);
+            if difference == 0 {
+                person.cost
+            } else {
+                (person.cost
+                    * (1.0 + 0.3 * difference as f64)
+                        .powi(difference.try_into().unwrap_or(i32::MAX)))
+                .floor()
+            }
+        };
+        self.game_speed.scale(standard)
     }
 
     /// Record the price of every currently exposed class offer. Existing
@@ -11968,6 +12067,7 @@ impl Game {
     /// Eureka (techs) or Inspiration (civics) boosts on `n` random
     /// not-yet-boosted entries.
     fn grant_random_boosts(&mut self, pid: usize, n: usize, techs: bool) {
+        let game_speed = self.game_speed;
         for _ in 0..n {
             let cands: Vec<(String, f64)> = if techs {
                 self.rules
@@ -11977,7 +12077,7 @@ impl Game {
                         let p = &self.players[pid];
                         !p.techs.contains(*name) && !p.boosted_techs.contains(*name)
                     })
-                    .map(|(name, s)| (name.clone(), s.cost))
+                    .map(|(name, s)| (name.clone(), game_speed.scale(s.cost)))
                     .collect()
             } else {
                 self.rules
@@ -11987,7 +12087,7 @@ impl Game {
                         let p = &self.players[pid];
                         !p.civics.contains(*name) && !p.boosted_civics.contains(*name)
                     })
-                    .map(|(name, s)| (name.clone(), s.cost))
+                    .map(|(name, s)| (name.clone(), game_speed.scale(s.cost)))
                     .collect()
             };
             if cands.is_empty() {
@@ -12017,6 +12117,7 @@ impl Game {
         minimum_era: usize,
         maximum_era: usize,
     ) {
+        let game_speed = self.game_speed;
         for _ in 0..n {
             let candidates: Vec<(String, f64)> = self
                 .rules
@@ -12027,7 +12128,7 @@ impl Game {
                         && !self.players[pid].techs.contains(*name)
                         && !self.players[pid].boosted_techs.contains(*name)
                 })
-                .map(|(name, tech)| (name.clone(), tech.cost))
+                .map(|(name, tech)| (name.clone(), game_speed.scale(tech.cost)))
                 .collect();
             if candidates.is_empty() {
                 return;
@@ -12347,11 +12448,12 @@ impl Game {
             .map(|unit| unit.id)
             .collect();
         self.players[pid].gold -= cost;
+        let levied_until = self.turn + self.standard_duration(STANDARD_DEAL_TURNS);
         for unit_id in units {
             let unit = self.units.get_mut(&unit_id).unwrap();
             unit.owner = pid;
             unit.levied_from = Some(minor);
-            unit.levied_until = self.turn + STANDARD_DEAL_TURNS;
+            unit.levied_until = levied_until;
             unit.moves_left = 0.0;
             unit.acted = true;
         }
@@ -15582,7 +15684,9 @@ impl Game {
         {
             return 3;
         }
-        t.hills as i32 + matches!(t.feature.as_deref(), Some("forest" | "jungle")) as i32
+        t.hills as i32
+            + matches!(t.feature.as_deref(), Some("forest" | "jungle")) as i32
+            + self.district_viewpoint_bonus(pos)
     }
 
     fn blocker_height(&self, pos: Pos, see_through_woods: bool) -> i32 {
@@ -15598,6 +15702,7 @@ impl Game {
             return 3;
         }
         tile.hills as i32
+            + self.district_viewpoint_bonus(pos)
             + i32::from(
                 !see_through_woods && matches!(tile.feature.as_deref(), Some("forest" | "jungle")),
             )
@@ -15680,6 +15785,15 @@ impl Game {
         {
             return 0;
         }
+        if let Some(city) = tile.owner_city.and_then(|city| self.cities.get(&city)) {
+            return i32::from(
+                city.districts.iter().any(|(_, district)| *district == pos)
+                    && !city.encampment_pillaged,
+            );
+        }
+        // Legacy and hand-built states may omit `owner_city` on a district
+        // tile. Preserve their behavior without making the normal path scan
+        // every city for every visibility ray.
         i32::from(self.cities.values().any(|city| {
             city.districts.iter().any(|(_, district)| *district == pos) && !city.encampment_pillaged
         }))
@@ -15694,25 +15808,27 @@ impl Game {
         flying: bool,
     ) -> BTreeSet<Pos> {
         let mut visible = BTreeSet::new();
-        for target in self.wdisk(from, radius) {
-            if flying
-                || self.tile_has_visibility_line(from, target, viewer_height, see_through_woods)
-            {
-                visible.insert(target);
-            }
-        }
-        if !flying && radius > 0 {
-            // Elevated terrain one tile beyond nominal sight is itself
-            // visible when it rises above the intervening terrain.
-            for target in self
-                .wdisk(from, radius + 1)
-                .into_iter()
-                .filter(|target| self.wdist(from, *target) == radius + 1)
-                .filter(|target| self.sight_height(*target) > 0)
-            {
-                if self.tile_has_visibility_line(from, target, viewer_height, see_through_woods) {
+        let search_radius = if flying || radius <= 0 {
+            radius
+        } else {
+            radius + 1
+        };
+        for target in self.wdisk(from, search_radius) {
+            let distance = self.wdist(from, target);
+            if distance <= radius {
+                if flying
+                    || self.tile_has_visibility_line(from, target, viewer_height, see_through_woods)
+                {
                     visible.insert(target);
                 }
+            } else if !flying
+                && distance == radius + 1
+                && self.sight_height(target) > 0
+                && self.tile_has_visibility_line(from, target, viewer_height, see_through_woods)
+            {
+                // Elevated terrain one tile beyond nominal sight is itself
+                // visible when it rises above the intervening terrain.
+                visible.insert(target);
             }
         }
         visible
@@ -15726,45 +15842,21 @@ impl Game {
         if distance <= 1 || distance >= 3 {
             return true; // adjacent fire is unconditional; range 3+ lobs shots
         }
-        let mut attacker_height = self.map.tiles[&from].hills as i32;
-        if unit_in_district {
-            let t = &self.map.tiles[&from];
-            if self.city_at(from).is_some()
-                || t.district
-                    .as_deref()
-                    .is_some_and(|district| self.district_is_family(district, "encampment"))
-            {
-                attacker_height += 1;
-            }
-        }
-        let target_height = self.sight_height(to);
-        self.nbrs(from)
-            .into_iter()
-            .filter(|p| self.wdist(*p, to) == 1)
-            .any(|middle| {
-                let blocker = self.sight_height(middle);
-                blocker <= attacker_height || blocker < target_height
-            })
+        let attacker_height = self.map.tiles[&from].hills as i32
+            + if unit_in_district {
+                self.district_viewpoint_bonus(from)
+            } else {
+                0
+            };
+        self.tile_has_visibility_line(from, to, attacker_height, false)
     }
 
     fn unit_has_line_of_sight(&self, uid: u32, to: Pos) -> bool {
         let unit = &self.units[&uid];
         if self.promotion_effect(unit, "see_through_woods") > 0.0 && self.wdist(unit.pos, to) == 2 {
-            let attacker_height = self.map.tiles[&unit.pos].hills as i32;
-            let target_height = self.sight_height(to);
-            return self
-                .nbrs(unit.pos)
-                .into_iter()
-                .filter(|middle| self.wdist(*middle, to) == 1)
-                .any(|middle| {
-                    let tile = &self.map.tiles[&middle];
-                    let blocker = if tile.terrain == "mountain" {
-                        3
-                    } else {
-                        tile.hills as i32
-                    };
-                    blocker <= attacker_height || blocker < target_height
-                });
+            let attacker_height =
+                self.map.tiles[&unit.pos].hills as i32 + self.district_viewpoint_bonus(unit.pos);
+            return self.tile_has_visibility_line(unit.pos, to, attacker_height, true);
         }
         self.has_line_of_sight(unit.pos, to, true)
     }
@@ -15910,25 +16002,7 @@ impl Game {
     pub fn unit_sight(&self, uid: u32) -> i32 {
         let unit = &self.units[&uid];
         let spec = &self.rules.units[unit.kind.as_str()];
-        let own_sight = spec.sight + self.promotion_effect(unit, "sight") as i32;
-        if spec.promotion_class != "naval_carrier" {
-            return own_sight;
-        }
-        self.units_at(unit.pos)
-            .into_iter()
-            .filter(|other| *other != uid && self.units[other].owner == unit.owner)
-            .filter(|other| {
-                self.rules.units[self.units[other].kind.as_str()]
-                    .domain
-                    .as_deref()
-                    == Some("air")
-            })
-            .map(|aircraft| {
-                let aircraft = &self.units[&aircraft];
-                self.rules.units[aircraft.kind.as_str()].sight
-                    + self.promotion_effect(aircraft, "sight") as i32
-            })
-            .fold(own_sight, i32::max)
+        spec.sight + self.promotion_effect(unit, "sight") as i32
     }
 
     /// Terrain-aware tiles currently observed by one unit. Air units ignore
@@ -15964,6 +16038,19 @@ impl Game {
                 visible.extend(self.nbrs(*position));
             }
         }
+        // Suzerain diplomacy reveals exactly three tiles around the
+        // city-state itself. This is a fixed diplomatic reveal, rather than
+        // ownership of the city-state's units or their individual sight.
+        for minor in self.players.iter().filter(|minor| {
+            minor.alive
+                && minor.is_minor
+                && !minor.is_barbarian
+                && self.suzerain_of(minor.id) == Some(pid)
+        }) {
+            for city in self.cities.values().filter(|city| city.owner == minor.id) {
+                visible.extend(self.wdisk(city.pos, 3));
+            }
+        }
         // Spies are city-based rather than map Units in this engine, but have
         // the stock three-tile sight while established and uncaptured.
         for spy in self.spies.values().filter(|spy| {
@@ -15982,20 +16069,34 @@ impl Game {
         visible
     }
 
+    /// Seats whose live map vision is directly shared with `pid`. Visibility
+    /// does not relay through a partner's other relationships.
+    pub(crate) fn visibility_viewers(&self, pid: usize) -> BTreeSet<usize> {
+        let mut viewers = BTreeSet::from([pid]);
+        let Some(player) = self.players.get(pid) else {
+            return viewers;
+        };
+        viewers.extend(player.alliances.iter().filter_map(|(partner, alliance)| {
+            (alliance.ends > self.turn && alliance.kind == "military" && alliance.level >= 2)
+                .then_some(*partner)
+        }));
+        for emergency in self
+            .active_emergencies
+            .iter()
+            .filter(|emergency| emergency.ends > self.turn && emergency.members.contains(&pid))
+        {
+            viewers.extend(emergency.members.iter().copied());
+        }
+        viewers
+    }
+
     /// Authoritative current visibility for a player, including level-two
     /// Military Alliance shared vision. Explored/remembered tiles are not
     /// included here.
     pub fn player_visibility(&self, pid: usize) -> BTreeSet<Pos> {
-        let mut visible = self.base_player_visibility(pid);
-        for partner in self.players[pid]
-            .alliances
-            .iter()
-            .filter_map(|(partner, alliance)| {
-                (alliance.ends > self.turn && alliance.kind == "military" && alliance.level >= 2)
-                    .then_some(*partner)
-            })
-        {
-            visible.extend(self.base_player_visibility(partner));
+        let mut visible = BTreeSet::new();
+        for viewer in self.visibility_viewers(pid) {
+            visible.extend(self.base_player_visibility(viewer));
         }
         visible
     }
@@ -16210,10 +16311,12 @@ impl Game {
         }
         self.player_unit_ids(viewer).into_iter().any(|other_id| {
             let other = &self.units[&other_id];
-            let distance = self.wdist(other.pos, unit.pos);
+            let origin = other.air_patrol_pos.unwrap_or(other.pos);
+            let target = unit.air_patrol_pos.unwrap_or(unit.pos);
+            let distance = self.wdist(origin, target);
             distance <= 1
                 || (raider
-                    && self.unit_visible_tiles(other_id).contains(&unit.pos)
+                    && self.unit_visible_tiles(other_id).contains(&target)
                     && (other.kind == "destroyer"
                         || self.rules.units[other.kind.as_str()].promotion_class == "naval_raider"))
         })
@@ -17351,7 +17454,9 @@ impl Game {
             (top.0 - 1, top.1 + 2),
         ]
         .map(|position| hex::canon(position, self.map.width));
-        let distinct = positions.iter().copied().collect::<BTreeSet<_>>().len() == 4;
+        let mut sorted = positions;
+        sorted.sort_unstable();
+        let distinct = sorted.windows(2).all(|pair| pair[0] != pair[1]);
         (distinct
             && positions
                 .iter()
@@ -17433,22 +17538,29 @@ impl Game {
     fn established_national_parks(&self, pid: usize) -> Vec<(u32, [Pos; 4])> {
         let mut parks = Vec::new();
         let mut used = BTreeSet::new();
-        // A valid park has four owned tiles already marked as parkland. Scan
-        // that sparse set instead of testing every tile on the world map each
-        // time a city computes Amenities; the latter sits on a very hot AI
-        // yield-evaluation path even in games with no parks at all.
-        let park_tiles: Vec<Pos> = self
-            .player_city_ids(pid)
-            .into_iter()
-            .flat_map(|city_id| self.cities[&city_id].owned_tiles.iter().copied())
+        // Every established park has four owned tiles carrying the
+        // `national_park` improvement. Derive the small set of possible tops
+        // from those tiles instead of probing every tile on the map whenever
+        // a city asks for its Amenities.
+        let candidate_tops: BTreeSet<Pos> = self
+            .cities
+            .values()
+            .filter(|city| city.owner == pid)
+            .flat_map(|city| city.owned_tiles.iter().copied())
             .filter(|position| {
                 self.map.tiles[position].improvement.as_deref() == Some("national_park")
             })
+            .flat_map(|position| {
+                [
+                    position,
+                    (position.0 + 1, position.1 - 1),
+                    (position.0, position.1 - 1),
+                    (position.0 + 1, position.1 - 2),
+                ]
+                .map(|top| hex::canon(top, self.map.width))
+            })
             .collect();
-        if park_tiles.len() < 4 {
-            return parks;
-        }
-        for top in park_tiles {
+        for top in candidate_tops {
             let Some(positions) = self.national_park_diamond(top) else {
                 continue;
             };
@@ -19936,8 +20048,7 @@ impl Game {
     pub fn wonder_sites(&self, cid: u32, wname: &str) -> Vec<Pos> {
         let city = &self.cities[&cid];
         let spec = &self.rules.wonders[wname];
-        if self.wonder_built(wname)
-            || !self.unlocked(city.owner, &spec.tech, &spec.civic)
+        if !self.unlocked(city.owner, &spec.tech, &spec.civic)
             || spec
                 .requires_buildings
                 .iter()
@@ -19956,6 +20067,7 @@ impl Game {
                 > 0.0
                 && self.players[city.owner].religion.is_none()
                 && self.city_religion(city).is_none())
+            || self.wonder_built(wname)
         {
             return Vec::new();
         }
@@ -20155,7 +20267,7 @@ impl Game {
 
     pub fn item_cost_for(&self, pid: usize, item: &Item) -> f64 {
         let base = self.item_cost(item);
-        match item {
+        let standard = match item {
             Item::Unit { unit } if unit == "settler" => {
                 base + 30.0
                     * self.players[pid]
@@ -20183,7 +20295,8 @@ impl Game {
                 }
             }
             _ => base,
-        }
+        };
+        self.game_speed.scale(standard)
     }
 
     /// Return the treasury cost of purchasing an ordinary city building.
@@ -20387,7 +20500,9 @@ impl Game {
                     return foundation.cost;
                 }
             }
-            return self.district_cost_for_placement(pid, district, false);
+            return self
+                .game_speed
+                .scale(self.district_cost_for_placement(pid, district, false));
         }
         if let Item::Building { building } = item {
             let spec = &self.rules.buildings[building.as_str()];
@@ -20409,7 +20524,9 @@ impl Game {
             if per_lowland > 0.0 {
                 let count = self.coastal_lowland_tiles(&self.cities[&cid]).len().max(1);
                 let flood_level = (self.climate_phase / 2) as f64;
-                return per_lowland * count as f64 * (1.0 + flood_level);
+                return self
+                    .game_speed
+                    .scale(per_lowland * count as f64 * (1.0 + flood_level));
             }
         }
         let mut cost = self.item_cost_for(pid, item);
@@ -20530,6 +20647,132 @@ impl Game {
         true
     }
 
+    /// Resolve a generic upgrade target to this civilization's unique
+    /// replacement. For example, Nubian Slingers advance to Pitati Archers
+    /// instead of creating Archers that Nubia is not allowed to train.
+    fn player_unit_replacement(&self, pid: usize, unit: &str) -> String {
+        self.rules
+            .units
+            .iter()
+            .find(|(_, spec)| {
+                spec.replaces.as_deref() == Some(unit)
+                    && spec.unique_to.as_deref() == Some(self.players[pid].civ.as_str())
+            })
+            .map(|(name, _)| name.clone())
+            .unwrap_or_else(|| unit.to_string())
+    }
+
+    /// Direct, currently unlocked successor for one unit kind. Upgrade
+    /// actions deliberately advance one link per turn, matching Civ VI and
+    /// preserving the production-cost basis of every intermediate step.
+    pub fn unit_upgrade_target(&self, pid: usize, unit: &str) -> Option<String> {
+        let base = self.rules.units.get(unit)?.upgrades_to.as_deref()?;
+        let target = self.player_unit_replacement(pid, base);
+        let spec = self.rules.units.get(&target)?;
+        (spec.buildable && self.unlocked(pid, &spec.tech, &spec.civic)).then_some(target)
+    }
+
+    /// Unit production rules without the recursive obsolescence check. The
+    /// resource credit is used only while automatically migrating an existing
+    /// queue whose already-committed material can be refunded atomically.
+    fn can_produce_unit(
+        &self,
+        pid: usize,
+        cid: u32,
+        unit: &str,
+        check_obsolete: bool,
+        resource_credit: f64,
+    ) -> bool {
+        let Some(city) = self.cities.get(&cid).filter(|city| city.owner == pid) else {
+            return false;
+        };
+        let Some(spec) = self.rules.units.get(unit) else {
+            return false;
+        };
+        if matches!(unit, "rock_band" | "naturalist") {
+            return false; // Faith purchase only (Civ VI)
+        }
+        if !spec.buildable || !self.unlocked(pid, &spec.tech, &spec.civic) {
+            return false;
+        }
+        if check_obsolete {
+            if let Some(target) = self.unit_upgrade_target(pid, unit) {
+                if self.can_produce_unit(pid, cid, &target, false, 0.0) {
+                    return false;
+                }
+            }
+        }
+        if unit == "spy" {
+            let existing = self.spies.values().filter(|spy| spy.owner == pid).count();
+            let queued = self
+                .cities
+                .values()
+                .filter(|candidate| candidate.owner == pid)
+                .filter(|candidate| {
+                    candidate
+                        .queue
+                        .iter()
+                        .any(|queued| matches!(queued, Item::Unit { unit } if unit == "spy"))
+                })
+                .count();
+            if existing + queued >= self.spy_capacity(pid).max(0) as usize {
+                return false;
+            }
+        }
+        if unit == "settler" && city.pop < 2 {
+            return false;
+        }
+        if spec.class == "religious" {
+            return false; // faith purchase only (Civ VI)
+        }
+        if spec
+            .unique_to
+            .as_ref()
+            .is_some_and(|civilization| self.players[pid].civ != *civilization)
+        {
+            return false;
+        }
+        // A civilization with a unique replacement cannot train the base.
+        if self.player_unit_replacement(pid, unit) != unit {
+            return false;
+        }
+        let item = Item::Unit {
+            unit: unit.to_string(),
+        };
+        if let Some(resource) = &spec.requires_resource {
+            let resource_cost = self.unit_resource_cost(cid, &item);
+            if resource_cost > 0.0
+                && !self.unit_resource_is_committed(cid, &item)
+                && self.strategic_stockpile(pid, resource) + resource_credit + f64::EPSILON
+                    < resource_cost
+            {
+                return false;
+            }
+        }
+        if spec
+            .requires_building
+            .as_ref()
+            .is_some_and(|building| !self.city_has_building_family(city, building))
+            || spec
+                .requires_district
+                .as_ref()
+                .is_some_and(|district| !self.city_has_district_family(city, district))
+        {
+            return false;
+        }
+        if spec.domain.as_deref() == Some("sea") {
+            let coastal = self.nbrs(city.pos).iter().any(|position| {
+                self.map
+                    .get(*position)
+                    .is_some_and(|tile| self.rules.is_water(tile))
+            });
+            if !coastal {
+                return false;
+            }
+        }
+        true
+    }
+
     pub fn can_produce(&self, pid: usize, cid: u32, item: &Item) -> bool {
         let city = &self.cities[&cid];
         match item {
@@ -20571,85 +20814,7 @@ impl Game {
                 }
                 true
             }
-            Item::Unit { unit } => {
-                let spec = match self.rules.units.get(unit) {
-                    Some(s) => s,
-                    None => return false,
-                };
-                if matches!(unit.as_str(), "rock_band" | "naturalist") {
-                    return false; // Faith purchase only (Civ VI)
-                }
-                if !spec.buildable || !self.unlocked(pid, &spec.tech, &spec.civic) {
-                    return false;
-                }
-                if unit == "spy" {
-                    let existing = self.spies.values().filter(|spy| spy.owner == pid).count();
-                    let queued = self
-                        .cities
-                        .values()
-                        .filter(|candidate| candidate.owner == pid)
-                        .filter(|candidate| {
-                            candidate.queue.iter().any(
-                                |queued| matches!(queued, Item::Unit { unit } if unit == "spy"),
-                            )
-                        })
-                        .count();
-                    if existing + queued >= self.spy_capacity(pid).max(0) as usize {
-                        return false;
-                    }
-                }
-                if unit == "settler" && city.pop < 2 {
-                    return false;
-                }
-                if spec.class == "religious" {
-                    return false; // faith purchase only (Civ 6)
-                }
-                if let Some(civ) = &spec.unique_to {
-                    if self.players[pid].civ != *civ {
-                        return false; // another civ's unique unit
-                    }
-                }
-                // a civ with a unique replacement cannot build the base unit
-                let replaced = self.rules.units.values().any(|s| {
-                    s.replaces.as_deref() == Some(unit.as_str())
-                        && s.unique_to.as_deref() == Some(self.players[pid].civ.as_str())
-                });
-                if replaced {
-                    return false;
-                }
-                if let Some(res) = &spec.requires_resource {
-                    let resource_cost = self.unit_resource_cost(cid, item);
-                    if resource_cost > 0.0
-                        && !self.unit_resource_is_committed(cid, item)
-                        && self.strategic_stockpile(pid, res) + f64::EPSILON < resource_cost
-                    {
-                        return false;
-                    }
-                }
-                if spec
-                    .requires_building
-                    .as_ref()
-                    .is_some_and(|building| !self.city_has_building_family(city, building))
-                    || spec
-                        .requires_district
-                        .as_ref()
-                        .is_some_and(|district| !self.city_has_district_family(city, district))
-                {
-                    return false;
-                }
-                if spec.domain.as_deref() == Some("sea") {
-                    let coastal = self.nbrs(city.pos).iter().any(|n| {
-                        self.map
-                            .get(*n)
-                            .map(|t| self.rules.is_water(t))
-                            .unwrap_or(false)
-                    });
-                    if !coastal {
-                        return false;
-                    }
-                }
-                true
-            }
+            Item::Unit { unit } => self.can_produce_unit(pid, cid, unit, true, 0.0),
             Item::Building { building } => {
                 let spec = match self.rules.buildings.get(building) {
                     Some(s) => s,
@@ -20825,8 +20990,8 @@ impl Game {
                 let Some(spec) = self.rules.wonders.get(wonder) else {
                     return false;
                 };
-                !self.wonder_built(wonder)
-                    && self.unlocked(pid, &spec.tech, &spec.civic)
+                self.unlocked(pid, &spec.tech, &spec.civic)
+                    && !self.wonder_built(wonder)
                     && self.wonder_sites(cid, wonder).contains(pos)
             }
             Item::Repair { repair, pos } => {
@@ -20976,13 +21141,13 @@ impl Game {
             let mut sites = self.wonder_sites(cid, name);
             sites.sort();
             for pos in sites.into_iter().take(2) {
-                let item = Item::Wonder {
+                // `wonder_sites` already applies the complete world-unique,
+                // unlock, prerequisite, and placement validation used by the
+                // `Item::Wonder` arm of `can_produce`.
+                items.push(Item::Wonder {
                     wonder: name.clone(),
                     pos,
-                };
-                if self.can_produce(pid, cid, &item) {
-                    items.push(item);
-                }
+                });
             }
         }
         let city = &self.cities[&cid];
@@ -21027,7 +21192,17 @@ impl Game {
             }
         }
         for (name, spec) in &self.rules.districts {
-            if !spec.buildable || !self.unlocked(pid, &spec.tech, &spec.civic) {
+            if !spec.buildable
+                || !self.unlocked(pid, &spec.tech, &spec.civic)
+                || spec
+                    .unique_to
+                    .as_ref()
+                    .is_some_and(|civ| self.players[pid].civ != *civ)
+                || self.rules.districts.values().any(|candidate| {
+                    candidate.replaces.as_deref() == Some(name.as_str())
+                        && candidate.unique_to.as_deref() == Some(self.players[pid].civ.as_str())
+                })
+            {
                 continue;
             }
             let mut sites = self.district_sites(cid, name);
@@ -21047,14 +21222,13 @@ impl Game {
                 if !foundation && fresh_sites >= 2 {
                     continue;
                 }
-                let item = Item::District {
+                // The filters above and `district_sites` together are the
+                // complete `Item::District` validation from `can_produce`.
+                items.push(Item::District {
                     district: name.clone(),
                     pos: s,
-                };
-                if self.can_produce(pid, cid, &item) {
-                    items.push(item);
-                    fresh_sites += usize::from(!foundation);
-                }
+                });
+                fresh_sites += usize::from(!foundation);
             }
         }
         items
@@ -21190,6 +21364,80 @@ impl Game {
         actions
     }
 
+    fn unit_upgrade_territory_is_friendly(&self, pid: usize, position: Pos) -> bool {
+        self.map
+            .get(position)
+            .and_then(|tile| tile.owner_city)
+            .and_then(|city| self.cities.get(&city))
+            .is_some_and(|city| city.owner == pid || self.suzerain_of(city.owner) == Some(pid))
+    }
+
+    /// Return the exact target, Gold, and optional strategic-resource payment
+    /// for a legal one-step upgrade. Units and formations use the stock
+    /// 100%/150%/200% Gold and 1x/2x/3x resource scaling.
+    fn unit_upgrade_offer(
+        &self,
+        pid: usize,
+        uid: u32,
+    ) -> Option<(String, f64, Option<(String, f64)>)> {
+        let unit = self.units.get(&uid)?;
+        if unit.owner != pid
+            || unit.moves_left <= 0.0
+            || self.is_embarked(unit)
+            || self.noncombat_action_blocked_by_zoc(uid)
+            || !self.unit_upgrade_territory_is_friendly(pid, unit.pos)
+        {
+            return None;
+        }
+        let target = self.unit_upgrade_target(pid, &unit.kind)?;
+        let source_spec = &self.rules.units[unit.kind.as_str()];
+        let target_spec = &self.rules.units[target.as_str()];
+        let gold_multiplier = match unit.formation {
+            0 => 1.0,
+            1 => 1.5,
+            _ => 2.0,
+        };
+        let resource_multiplier = match unit.formation {
+            0 => 1.0,
+            1 => 2.0,
+            _ => 3.0,
+        };
+        let base_gold = self
+            .game_speed
+            .scale((10.0 + 2.0 * (target_spec.cost - source_spec.cost).max(0.0)) * gold_multiplier);
+        let base_resource = target_spec.resource_cost * resource_multiplier;
+        let (gold, resources) = self.upgrade_costs(pid, base_gold, base_resource);
+        if self.players[pid].gold + f64::EPSILON < gold {
+            return None;
+        }
+        let resource = target_spec
+            .requires_resource
+            .as_ref()
+            .map(|name| (name.clone(), resources));
+        if resource.as_ref().is_some_and(|(name, amount)| {
+            *amount > 0.0 && self.strategic_stockpile(pid, name) + f64::EPSILON < *amount
+        }) {
+            return None;
+        }
+        Some((target, gold, resource))
+    }
+
+    pub(crate) fn legal_unit_upgrade_actions(&self, pid: usize) -> Vec<Action> {
+        if self.winner.is_some()
+            || self.current != pid
+            || !self.pending_city_capture_actions(pid).is_empty()
+        {
+            return Vec::new();
+        }
+        self.player_unit_ids(pid)
+            .into_iter()
+            .filter_map(|unit| {
+                self.unit_upgrade_offer(pid, unit)
+                    .map(|(to, _, _)| Action::Upgrade { unit, to })
+            })
+            .collect()
+    }
+
     pub fn legal_actions(&self, pid: usize) -> Vec<Action> {
         if self.winner.is_some() || self.current != pid {
             return vec![];
@@ -21199,7 +21447,9 @@ impl Game {
             return capture_actions;
         }
         let p = &self.players[pid];
-        let mut acts = Vec::new();
+        let mut acts = self.legal_unit_upgrade_actions(pid);
+        let current_visibility = self.player_visibility(pid);
+        let visibility_viewers = self.visibility_viewers(pid);
         for spy_id in self
             .spies
             .values()
@@ -21229,6 +21479,12 @@ impl Game {
                         if target != origin
                             && u.attacks_left > 0
                             && self.enemy_air_strike_target_at(pid, target)
+                            && self.combat_target_visible_at(
+                                pid,
+                                target,
+                                &current_visibility,
+                                &visibility_viewers,
+                            )
                         {
                             acts.push(Action::AirStrike { unit: uid, target });
                         }
@@ -21237,6 +21493,7 @@ impl Game {
                             && u.attacks_left > 0
                             && (u.hp >= 50
                                 || self.promotion_effect(&u, "air_pillage_at_low_health") > 0.0)
+                            && current_visibility.contains(&target)
                             && self.air_pillageable_at(pid, target)
                         {
                             acts.push(Action::AirPillage { unit: uid, target });
@@ -21245,6 +21502,12 @@ impl Game {
                             && u.attacks_left > 0
                             && self.unit_has_priority_target(&u)
                             && self.priority_support_target_at(pid, target).is_some()
+                            && self.combat_target_visible_at(
+                                pid,
+                                target,
+                                &current_visibility,
+                                &visibility_viewers,
+                            )
                         {
                             acts.push(Action::PriorityTarget { unit: uid, target });
                         }
@@ -21292,6 +21555,12 @@ impl Game {
                                 continue;
                             }
                             if self.enemy_ranged_target_at(pid, pos)
+                                && self.combat_target_visible_at(
+                                    pid,
+                                    pos,
+                                    &current_visibility,
+                                    &visibility_viewers,
+                                )
                                 && self.unit_has_line_of_sight(uid, pos)
                             {
                                 acts.push(Action::Ranged {
@@ -21301,6 +21570,12 @@ impl Game {
                             }
                             if self.unit_has_priority_target(&u)
                                 && self.priority_support_target_at(pid, pos).is_some()
+                                && self.combat_target_visible_at(
+                                    pid,
+                                    pos,
+                                    &current_visibility,
+                                    &visibility_viewers,
+                                )
                                 && self.unit_has_line_of_sight(uid, pos)
                             {
                                 acts.push(Action::PriorityTarget {
@@ -21603,7 +21878,10 @@ impl Game {
                         if self.map.tiles[pos].district_foundation.is_some() {
                             continue;
                         }
-                        let cost = self.district_cost_for_placement(pid, district, true) * 4.0;
+                        let cost = self
+                            .game_speed
+                            .scale(self.district_cost_for_placement(pid, district, true))
+                            * 4.0;
                         if faith_districts && p.faith + f64::EPSILON >= cost {
                             acts.push(Action::BuyDistrict {
                                 city: cid,
@@ -21727,6 +22005,12 @@ impl Game {
                     if hit
                         && self.city_at(pos).is_none()
                         && self.encampment_at(pos).is_none()
+                        && self.combat_target_visible_at(
+                            pid,
+                            pos,
+                            &current_visibility,
+                            &visibility_viewers,
+                        )
                         && self.has_line_of_sight(cpos, pos, true)
                     {
                         acts.push(Action::CityStrike {
@@ -21751,6 +22035,12 @@ impl Game {
                     if hit
                         && self.city_at(pos).is_none()
                         && self.encampment_at(pos).is_none()
+                        && self.combat_target_visible_at(
+                            pid,
+                            pos,
+                            &current_visibility,
+                            &visibility_viewers,
+                        )
                         && self.has_line_of_sight(source, pos, true)
                     {
                         acts.push(Action::EncampmentStrike {
@@ -22211,6 +22501,57 @@ impl Game {
             })
     }
 
+    /// A ranged target must be in current shared vision, and a stealthed unit
+    /// on that tile must be detected by at least one of the direct viewers.
+    /// Range-three indirect fire ignores terrain along the shooter's ray, but
+    /// still requires a friendly spotter exactly as in Civ VI.
+    fn combat_target_visible_at(
+        &self,
+        pid: usize,
+        pos: Pos,
+        visible: &BTreeSet<Pos>,
+        viewers: &BTreeSet<usize>,
+    ) -> bool {
+        if !visible.contains(&pos) {
+            return false;
+        }
+        let hostile_city = self
+            .city_at(pos)
+            .or_else(|| self.encampment_at(pos))
+            .is_some_and(|city| {
+                let owner = self.cities[&city].owner;
+                owner != pid && self.is_at_war(pid, owner)
+            });
+        hostile_city
+            || self.units.values().any(|unit| {
+                let observed_pos = unit.air_patrol_pos.unwrap_or(unit.pos);
+                observed_pos == pos
+                    && unit.owner != pid
+                    && self.is_at_war(pid, unit.owner)
+                    && viewers
+                        .iter()
+                        .any(|viewer| self.unit_visible_to(unit.id, *viewer))
+            })
+    }
+
+    fn combat_target_visible(&self, pid: usize, pos: Pos) -> bool {
+        let visible = self.player_visibility(pid);
+        let viewers = self.visibility_viewers(pid);
+        self.combat_target_visible_at(pid, pos, &visible, &viewers)
+    }
+
+    fn unit_currently_visible_to(&self, uid: u32, pid: usize) -> bool {
+        let Some(unit) = self.units.get(&uid) else {
+            return false;
+        };
+        let pos = unit.air_patrol_pos.unwrap_or(unit.pos);
+        self.player_visibility(pid).contains(&pos)
+            && self
+                .visibility_viewers(pid)
+                .iter()
+                .any(|viewer| self.unit_visible_to(uid, *viewer))
+    }
+
     pub fn apply(&mut self, pid: usize, action: &Action) -> Result<(), String> {
         if self.winner.is_some() {
             return Err("game over".into());
@@ -22242,6 +22583,7 @@ impl Game {
             | Action::AirPatrol { unit, .. }
             | Action::Fortify { unit }
             | Action::Promote { unit, .. }
+            | Action::Upgrade { unit, .. }
             | Action::UnlinkUnits { unit }
             | Action::TradeRoute { unit, .. }
             | Action::Spread { unit }
@@ -22353,6 +22695,7 @@ impl Game {
             Action::ChooseDedication { dedication } => self.do_choose_dedication(pid, dedication),
             Action::Fortify { unit } => self.do_fortify(pid, *unit),
             Action::Promote { unit, promotion } => self.do_promote(pid, *unit, promotion),
+            Action::Upgrade { unit, to } => self.do_upgrade(pid, *unit, to),
             Action::CombineUnits { unit, with } => self.do_combine_units(pid, *unit, *with),
             Action::LinkUnits { unit, with } => self.do_link_units(pid, *unit, *with),
             Action::UnlinkUnits { unit } => self.do_unlink_units(pid, *unit),
@@ -23345,6 +23688,9 @@ impl Game {
         if self.wdist(u.pos, target) > range {
             return Err("out of range".into());
         }
+        if !self.combat_target_visible(pid, target) {
+            return Err("target is not visible".into());
+        }
         if !self.unit_has_line_of_sight(uid, target) {
             return Err("line of sight blocked".into());
         }
@@ -23359,7 +23705,9 @@ impl Game {
             .into_iter()
             .filter(|id| {
                 let owner = self.units[id].owner;
-                owner != pid && self.is_at_war(pid, owner)
+                owner != pid
+                    && self.is_at_war(pid, owner)
+                    && self.unit_currently_visible_to(*id, pid)
             })
             .collect();
         enemy_ids.extend(self.units.values().filter_map(|unit| {
@@ -23369,6 +23717,7 @@ impl Game {
                 && unit.air_patrol_pos == Some(target)
                 && self.rules.units[unit.kind.as_str()].promotion_class == "air_fighter")
                 .then_some(unit.id)
+                .filter(|unit| self.unit_currently_visible_to(*unit, pid))
         }));
         enemy_ids.sort_unstable();
         enemy_ids.dedup();
@@ -23889,7 +24238,7 @@ impl Game {
                 .copied()
                 .unwrap_or(0.0)
         });
-        let cost = self.item_cost_for(pid, &item);
+        let cost = self.item_cost_for_city(pid, cid, &item);
         self.cities.get_mut(&cid).unwrap().production += cost * percent * charges / 100.0;
         self.players[pid]
             .counters
@@ -24902,6 +25251,7 @@ impl Game {
             || attacker.attacks_left <= 0
             || self.wdist(self.air_operation_origin(uid), target) > self.unit_attack_range(uid)
             || !self.enemy_air_strike_target_at(pid, target)
+            || !self.combat_target_visible(pid, target)
         {
             return Err("invalid air strike".into());
         }
@@ -24954,6 +25304,7 @@ impl Game {
                     .domain
                     .as_deref()
                     != Some("air")
+                && self.unit_currently_visible_to(*id, pid)
         }) {
             let defender = self.units[&defender_id].clone();
             let anti_air = self.promotion_effect(&defender, "defend_air");
@@ -24983,6 +25334,7 @@ impl Game {
             self.units[id].owner != pid
                 && self.is_at_war(pid, self.units[id].owner)
                 && self.rules.units[self.units[id].kind.as_str()].class == "support"
+                && self.unit_currently_visible_to(*id, pid)
         }) {
             self.priority_damage_support(pid, uid, defender_id);
         }
@@ -25011,6 +25363,7 @@ impl Game {
                 target,
             ) > self.unit_attack_range(uid)
             || (!air && !self.unit_has_line_of_sight(uid, target))
+            || !self.combat_target_visible(pid, target)
         {
             return Err("unit cannot priority target there".into());
         }
@@ -25052,6 +25405,7 @@ impl Game {
             || (bomber.hp < 50
                 && self.promotion_effect(&bomber, "air_pillage_at_low_health") <= 0.0)
             || self.wdist(self.air_operation_origin(uid), target) > self.unit_attack_range(uid)
+            || !self.player_visibility(pid).contains(&target)
             || !self.air_pillageable_at(pid, target)
         {
             return Err("invalid air pillage".into());
@@ -25120,7 +25474,9 @@ impl Game {
         if !self.district_sites(cid, district).contains(&pos) {
             return false;
         }
-        let cost = self.district_cost_for_placement(pid, district, false);
+        let cost = self
+            .game_speed
+            .scale(self.district_cost_for_placement(pid, district, false));
         let spec = &self.rules.districts[district];
         let preserve_feature = self.players[pid].civ == "Vietnam" && spec.specialty;
         let tile = self.map.tiles.get_mut(&pos).unwrap();
@@ -25171,23 +25527,27 @@ impl Game {
     }
 
     fn rock_band_purchase_cost(&self, pid: usize) -> f64 {
-        self.rules.units["rock_band"].cost
-            + 100.0
-                * self.players[pid]
-                    .counters
-                    .get("purchased:rock_band")
-                    .copied()
-                    .unwrap_or(0) as f64
+        self.game_speed.scale(
+            self.rules.units["rock_band"].cost
+                + 100.0
+                    * self.players[pid]
+                        .counters
+                        .get("purchased:rock_band")
+                        .copied()
+                        .unwrap_or(0) as f64,
+        )
     }
 
     pub(crate) fn naturalist_purchase_cost(&self, pid: usize) -> f64 {
-        self.rules.units["naturalist"].cost
-            + 100.0
-                * self.players[pid]
-                    .counters
-                    .get("purchased:naturalist")
-                    .copied()
-                    .unwrap_or(0) as f64
+        self.game_speed.scale(
+            self.rules.units["naturalist"].cost
+                + 100.0
+                    * self.players[pid]
+                        .counters
+                        .get("purchased:naturalist")
+                        .copied()
+                        .unwrap_or(0) as f64,
+        )
     }
 
     fn do_buy(&mut self, pid: usize, cid: u32, unit: &str, currency: &str) -> Result<(), String> {
@@ -25609,7 +25969,9 @@ impl Game {
         } else {
             0.0
         };
-        let cost = self.district_cost_for_placement(pid, district, true)
+        let cost = self
+            .game_speed
+            .scale(self.district_cost_for_placement(pid, district, true))
             * 4.0
             * (1.0 - discount / 100.0).max(0.0);
         let bank = if currency == "faith" {
@@ -25729,6 +26091,51 @@ impl Game {
         unit.acted = true;
         unit.fortified = false;
         unit.fortify_turns = 0;
+        Ok(())
+    }
+
+    fn do_upgrade(&mut self, pid: usize, uid: u32, requested: &str) -> Result<(), String> {
+        let (target, gold, resource) = self
+            .unit_upgrade_offer(pid, uid)
+            .ok_or_else(|| "unit cannot upgrade here or the cost is unaffordable".to_string())?;
+        if target != requested {
+            return Err(format!("unit upgrades to {target}, not {requested}"));
+        }
+        self.players[pid].gold -= gold;
+        if let Some((name, amount)) = resource {
+            let stock = self.strategic_stockpile(pid, &name);
+            self.players[pid]
+                .strategic_resources
+                .insert(name, stock - amount);
+        }
+        let target_spec = &self.rules.units[target.as_str()];
+        let charges = target_spec.charges;
+        if target_spec.class == "military" {
+            let best = self.players[pid]
+                .counters
+                .entry("strongest_unit_built".to_string())
+                .or_insert(0);
+            *best = (*best).max(target_spec.strength.round() as i64);
+            if target_spec.ranged_strength > 0.0 {
+                let best_ranged = self.players[pid]
+                    .counters
+                    .entry("strongest_ranged_built".to_string())
+                    .or_insert(0);
+                *best_ranged = (*best_ranged).max(target_spec.ranged_strength.round() as i64);
+            }
+        }
+        let unit = self.units.get_mut(&uid).unwrap();
+        unit.kind = target;
+        unit.charges = charges;
+        unit.moves_left = 0.0;
+        unit.attacks_left = 0;
+        unit.moved = false;
+        unit.acted = true;
+        unit.fortified = false;
+        unit.fortify_turns = 0;
+        unit.zoc_stopped = false;
+        unit.air_patrol = false;
+        unit.air_patrol_pos = None;
         Ok(())
     }
 
@@ -25903,6 +26310,9 @@ impl Game {
         if self.city_at(target).is_some() || self.encampment_at(target).is_some() {
             return Err("cities cannot strike defensible districts".into());
         }
+        if !self.combat_target_visible(pid, target) {
+            return Err("target is not visible".into());
+        }
         if !self.has_line_of_sight(self.cities[&cid].pos, target, true) {
             return Err("line of sight blocked".into());
         }
@@ -25911,7 +26321,9 @@ impl Game {
             .into_iter()
             .filter(|id| {
                 let o = &self.units[id];
-                o.owner != pid && self.is_at_war(pid, o.owner)
+                o.owner != pid
+                    && self.is_at_war(pid, o.owner)
+                    && self.unit_currently_visible_to(*id, pid)
             })
             .collect();
         if enemies.is_empty() {
@@ -25991,6 +26403,9 @@ impl Game {
         if self.wdist(position, target) > 2 || !self.has_line_of_sight(position, target, true) {
             return Err("target out of range or sight".into());
         }
+        if !self.combat_target_visible(pid, target) {
+            return Err("target is not visible".into());
+        }
         if self.city_at(target).is_some() || self.encampment_at(target).is_some() {
             return Err("defensible districts cannot target each other".into());
         }
@@ -26002,6 +26417,7 @@ impl Game {
                 unit.owner != pid
                     && self.is_at_war(pid, unit.owner)
                     && self.rules.units[unit.kind.as_str()].class == "military"
+                    && self.unit_currently_visible_to(*id, pid)
             })
             .max_by(|a, b| {
                 let a_strength =
@@ -26259,7 +26675,9 @@ impl Game {
             "formal_war" => self.players[pid]
                 .denounced_until
                 .get(&other)
-                .is_some_and(|until| *until > self.turn && *until <= self.turn + 25),
+                .is_some_and(|until| {
+                    *until > self.turn && *until <= self.turn + self.standard_duration(25)
+                }),
             "holy_war" => {
                 self.players[pid].religion.is_some()
                     && self.players[other].religion.is_some()
@@ -26317,9 +26735,8 @@ impl Game {
         {
             return Err("player is already denounced".into());
         }
-        self.players[pid]
-            .denounced_until
-            .insert(other, self.turn + 30);
+        let until = self.turn + self.standard_duration(30);
+        self.players[pid].denounced_until.insert(other, until);
         self.add_grievances(other, pid, 25.0);
         Ok(())
     }
@@ -26401,7 +26818,7 @@ impl Game {
             friendship,
             peace,
             alliance: alliance.map(str::to_string),
-            expires: self.turn + 10,
+            expires: self.turn + self.standard_duration(10),
         });
         Ok(())
     }
@@ -26430,13 +26847,13 @@ impl Game {
             self.conclude_peace(deal.from, deal.to);
         }
         if deal.open_borders {
-            let until = self.turn + 30;
+            let until = self.turn + self.standard_duration(30);
             self.players[deal.from]
                 .open_borders_until
                 .insert(deal.to, until);
         }
         if deal.friendship || deal.alliance.is_some() {
-            let until = self.turn + 30;
+            let until = self.turn + self.standard_duration(30);
             self.players[deal.from].friends_until.insert(deal.to, until);
             self.players[deal.to].friends_until.insert(deal.from, until);
         }
@@ -26466,7 +26883,7 @@ impl Game {
                 } else {
                     1
                 },
-                ends: self.turn + STANDARD_DEAL_TURNS,
+                ends: self.turn + self.standard_duration(STANDARD_DEAL_TURNS),
             };
             self.players[deal.from]
                 .alliances
@@ -27327,7 +27744,7 @@ impl Game {
                 offer: timed_offer,
                 request: timed_request,
                 started: self.turn,
-                ends: self.turn + STANDARD_DEAL_TURNS,
+                ends: self.turn + self.standard_duration(STANDARD_DEAL_TURNS),
             });
         }
         *self.players[from]
@@ -27790,7 +28207,7 @@ impl Game {
             if alliance.kind == "research"
                 && alliance.level >= 2
                 && turn > 0
-                && turn.is_multiple_of(30)
+                && turn.is_multiple_of(self.standard_duration(30))
             {
                 self.share_research_alliance_boosts(pid, partner);
             }
@@ -28029,7 +28446,7 @@ impl Game {
             return false;
         };
         state.city.is_some()
-            && self.turn >= state.assigned_turn + spec.establish_turns
+            && self.turn >= state.assigned_turn + self.standard_duration(spec.establish_turns)
             && self.turn >= state.disabled_until
     }
 
@@ -28863,7 +29280,7 @@ impl Game {
                 resolution: resolution.id,
                 outcome: winning_outcome,
                 target: winning_target,
-                expires: session.convened + 30,
+                expires: session.convened + self.standard_duration(30),
             });
             if let Some(government) = world_ideology_target {
                 let affected: Vec<usize> = self
@@ -28915,7 +29332,7 @@ impl Game {
         }
         self.congress = Some(CongressSession {
             convened: self.turn,
-            closes: self.turn + 5,
+            closes: self.turn + self.standard_duration(5),
             resolutions,
         });
     }
@@ -28938,7 +29355,10 @@ impl Game {
         }
         if self.congress.is_none() && !self.pending_emergencies.is_empty() {
             self.convene_pending_emergency();
-        } else if self.world_era >= 2 && self.turn.is_multiple_of(30) && self.congress.is_none() {
+        } else if self.world_era >= 2
+            && self.turn.is_multiple_of(self.standard_duration(30))
+            && self.congress.is_none()
+        {
             self.convene_congress();
         }
     }
@@ -28972,7 +29392,7 @@ impl Game {
             };
             self.congress = Some(CongressSession {
                 convened: self.turn,
-                closes: self.turn + 5,
+                closes: self.turn + self.standard_duration(5),
                 resolutions: vec![CongressResolution {
                     id: Self::emergency_resolution_id(proposal.id),
                     title: title.to_string(),
@@ -29103,7 +29523,7 @@ impl Game {
         if members.is_empty() {
             return;
         }
-        let ends = self.turn + 30;
+        let ends = self.turn + self.standard_duration(30);
         for member in &members {
             self.players[*member].friends_until.remove(&proposal.target);
             self.players[proposal.target].friends_until.remove(member);
@@ -30547,11 +30967,16 @@ impl Game {
         if self.players[pid].is_minor {
             return;
         }
+        let game_speed = self.game_speed;
         let techs: Vec<(String, f64, crate::rules::BoostSpec)> = self
             .rules
             .techs
             .iter()
-            .filter_map(|(n, s)| s.boost.clone().map(|b| (n.clone(), s.cost, b)))
+            .filter_map(|(n, s)| {
+                s.boost
+                    .clone()
+                    .map(|b| (n.clone(), game_speed.scale(s.cost), b))
+            })
             .collect();
         for (name, cost, b) in techs {
             let p = &self.players[pid];
@@ -30571,7 +30996,11 @@ impl Game {
             .rules
             .civics
             .iter()
-            .filter_map(|(n, s)| s.boost.clone().map(|b| (n.clone(), s.cost, b)))
+            .filter_map(|(n, s)| {
+                s.boost
+                    .clone()
+                    .map(|b| (n.clone(), game_speed.scale(s.cost), b))
+            })
             .collect();
         for (name, cost, b) in civics {
             let p = &self.players[pid];
@@ -30890,7 +31319,113 @@ impl Game {
         }
     }
 
+    /// Replace an obsolete queued unit with the newest consecutively
+    /// available successor while preserving all invested Production. Any
+    /// strategic material committed to the old order is refunded before the
+    /// replacement's material is committed, so automatic modernization is
+    /// atomic and never creates a stockpile deficit.
+    fn modernize_unit_queue(&mut self, pid: usize, cid: u32) {
+        let mut seen = BTreeSet::new();
+        loop {
+            let Some(head) = self.cities[&cid].queue.first().cloned() else {
+                return;
+            };
+            let (source, formation) = match &head {
+                Item::Unit { unit } => (unit.as_str(), None),
+                Item::Formation { unit, formation } => (unit.as_str(), Some(*formation)),
+                _ => return,
+            };
+            if !seen.insert(source.to_string()) {
+                return;
+            }
+            let Some(target) = self.unit_upgrade_target(pid, source) else {
+                return;
+            };
+            let target_item = formation.map_or_else(
+                || Item::Unit {
+                    unit: target.clone(),
+                },
+                |formation| Item::Formation {
+                    unit: target.clone(),
+                    formation,
+                },
+            );
+            let old_key = Self::item_progress_key(&head);
+            let target_key = Self::item_progress_key(&target_item);
+            let old_commitment = self.cities[&cid]
+                .strategic_resource_commitments
+                .get(&old_key)
+                .copied()
+                .unwrap_or(0.0);
+            let old_resource = self.rules.units[source].requires_resource.clone();
+            let target_resource = self.rules.units[target.as_str()].requires_resource.clone();
+            let refundable_credit = if old_resource == target_resource {
+                old_commitment
+            } else {
+                0.0
+            };
+            if !self.can_produce_unit(pid, cid, &target, false, refundable_credit) {
+                return;
+            }
+            let target_cost = self.unit_resource_cost(cid, &target_item);
+            let target_already_committed = self.cities[&cid]
+                .strategic_resource_commitments
+                .get(&target_key)
+                .is_some_and(|amount| *amount + f64::EPSILON >= target_cost);
+            if let Some(resource) = target_resource.as_deref() {
+                let effective_stock = self.strategic_stockpile(pid, resource)
+                    + if old_resource.as_deref() == Some(resource) {
+                        old_commitment
+                    } else {
+                        0.0
+                    };
+                if !target_already_committed && effective_stock + f64::EPSILON < target_cost {
+                    return;
+                }
+            }
+
+            if old_commitment > 0.0 {
+                self.cities
+                    .get_mut(&cid)
+                    .unwrap()
+                    .strategic_resource_commitments
+                    .remove(&old_key);
+                if let Some(resource) = old_resource.as_deref() {
+                    let stock = self.strategic_stockpile(pid, resource);
+                    self.players[pid]
+                        .strategic_resources
+                        .insert(resource.to_string(), stock + old_commitment);
+                }
+            }
+            if target_cost > 0.0 && !target_already_committed {
+                let resource = target_resource
+                    .as_deref()
+                    .expect("resource cost has a resource");
+                let stock = self.strategic_stockpile(pid, resource);
+                self.players[pid]
+                    .strategic_resources
+                    .insert(resource.to_string(), stock - target_cost);
+                self.cities
+                    .get_mut(&cid)
+                    .unwrap()
+                    .strategic_resource_commitments
+                    .insert(target_key.clone(), target_cost);
+            }
+            let resumed = self
+                .cities
+                .get_mut(&cid)
+                .unwrap()
+                .production_progress
+                .remove(&target_key)
+                .unwrap_or(0.0);
+            let city = self.cities.get_mut(&cid).unwrap();
+            city.queue[0] = target_item;
+            city.production += resumed;
+        }
+    }
+
     fn process_city(&mut self, pid: usize, cid: u32) -> Yields {
+        self.modernize_unit_queue(pid, cid);
         // Upgrade old saves lazily: legacy queued districts predate explicit
         // foundations, so establish and lock them before producing this turn.
         if let Some(Item::District { district, pos }) = self.cities[&cid].queue.first().cloned() {
@@ -30983,7 +31518,7 @@ impl Game {
                 surplus *= hf * af * lf * (1.0 + growth_bonus / 100.0);
             }
             city.food += surplus;
-            let need = growth_threshold(city.pop);
+            let need = self.game_speed.scale(growth_threshold(city.pop));
             if city.food >= need {
                 city.pop += 1;
                 city.food -= need;
@@ -31135,6 +31670,7 @@ impl Game {
         spec: &crate::rules::WonderSpec,
     ) {
         let effect = |name: &str| spec.effects.get(name).copied().unwrap_or(0.0);
+        let game_speed = self.game_speed;
         self.players[pid].envoys_free += effect("envoys") as i64;
         self.players[pid].dvp += effect("diplomatic_victory_points") as i64;
         *self.players[pid]
@@ -31178,7 +31714,7 @@ impl Game {
                         && !self.players[pid].techs.contains(*node)
                         && !self.players[pid].boosted_techs.contains(*node)
                 })
-                .map(|(node, tech)| (node.clone(), tech.cost))
+                .map(|(node, tech)| (node.clone(), game_speed.scale(tech.cost)))
                 .collect();
             for (node, cost) in boosts {
                 let fraction = self.node_boost_frac(pid, &node, true);
@@ -31200,7 +31736,7 @@ impl Game {
                         && !self.players[pid].civics.contains(*node)
                         && !self.players[pid].boosted_civics.contains(*node)
                 })
-                .map(|(node, civic)| (node.clone(), civic.cost))
+                .map(|(node, civic)| (node.clone(), game_speed.scale(civic.cost)))
                 .collect();
             if !candidates.is_empty() {
                 let (node, cost) = candidates[self.rng.below(candidates.len())].clone();
@@ -31340,7 +31876,8 @@ impl Game {
                 self.apply_training_district_effects(cid, placed);
                 let science_pct =
                     self.city_building_effect(&self.cities[&cid], "science_per_unit_cost_pct");
-                self.players[pid].research_overflow += self.item_cost(item) * science_pct / 100.0;
+                self.players[pid].research_overflow +=
+                    self.game_speed.scale(self.item_cost(item)) * science_pct / 100.0;
                 if self.rules.units[unit.as_str()].domain.as_deref() == Some("sea")
                     && self.empire_wonder_effect(pid, "duplicate_naval_units") > 0.0
                 {
@@ -32702,6 +33239,106 @@ mod visibility_tests {
     }
 
     #[test]
+    fn suzerain_reveals_exactly_three_tiles_around_the_city_state() {
+        let (mut game, center) = controlled_game(91_005);
+        game.players[1].is_minor = true;
+        let city = game.found_city_for(1, center, Some("Sight State".to_string()));
+        game.players[0].envoys.push((1, 3));
+        assert_eq!(game.suzerain_of(1), Some(0));
+
+        let visible = game.player_visibility(0);
+        for position in game.wdisk(game.cities[&city].pos, 3) {
+            assert!(
+                visible.contains(&position),
+                "the complete three-tile suzerain radius must be visible"
+            );
+        }
+        let outside = along(&game, center, 4);
+        assert!(
+            !visible.contains(&outside),
+            "suzerainty does not copy the city-state's unrelated unit sight"
+        );
+    }
+
+    #[test]
+    fn active_emergency_members_share_live_sight_not_only_map_memory() {
+        let (mut game, center) = controlled_game(91_006);
+        let unit = game.spawn_unit("warrior", 1, center);
+        game.active_emergencies.push(Emergency {
+            id: 1,
+            kind: "military".to_string(),
+            target: 0,
+            city: 0,
+            original_owner: 0,
+            members: BTreeSet::from([0, 1]),
+            contributions: BTreeMap::new(),
+            started: game.turn,
+            ends: game.turn + 30,
+        });
+
+        assert!(game.player_visibility(0).contains(&center));
+        assert!(crate::obs::observation(&game, 0)["units"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|known| known["id"] == unit));
+
+        game.turn += 30;
+        assert!(!game.player_visibility(0).contains(&center));
+    }
+
+    #[test]
+    fn defensible_districts_have_their_stock_visibility_elevation() {
+        let (mut game, origin) = controlled_game(91_007);
+        let district = along(&game, origin, 1);
+        let target = along(&game, origin, 2);
+        game.found_city_for(1, district, Some("High Walls".to_string()));
+        let warrior = game.spawn_unit("warrior", 0, origin);
+
+        assert!(game.unit_visible_tiles(warrior).contains(&district));
+        assert!(
+            !game.unit_visible_tiles(warrior).contains(&target),
+            "a flat City Center blocks a flat viewer's sight"
+        );
+        game.map.tiles.get_mut(&origin).unwrap().hills = true;
+        assert!(
+            game.unit_visible_tiles(warrior).contains(&target),
+            "a Hill supplies the matching vantage level"
+        );
+    }
+
+    #[test]
+    fn indirect_fire_still_requires_a_current_friendly_spotter() {
+        let (mut game, origin) = controlled_game(91_008);
+        let blocker = along(&game, origin, 1);
+        let target = along(&game, origin, 3);
+        game.map.tiles.get_mut(&blocker).unwrap().terrain = "mountain".to_string();
+        let artillery = game.spawn_unit("rocket_artillery", 0, origin);
+        game.spawn_unit("warrior", 1, target);
+        game.at_war.insert(pair(0, 1));
+        let attack = Action::Ranged {
+            unit: artillery,
+            target,
+        };
+
+        assert!(!game.player_visibility(0).contains(&target));
+        assert!(!game.legal_actions(0).contains(&attack));
+        assert_eq!(
+            game.apply(0, &attack),
+            Err("target is not visible".to_string())
+        );
+
+        let spotter = game
+            .nbrs(target)
+            .into_iter()
+            .find(|position| *position != along(&game, origin, 2))
+            .unwrap();
+        game.spawn_unit("warrior", 0, spotter);
+        assert!(game.player_visibility(0).contains(&target));
+        assert!(game.legal_actions(0).contains(&attack));
+    }
+
+    #[test]
     fn shared_exploration_keeps_the_newest_memory_without_copying_units() {
         let (mut game, position) = controlled_game(91_004);
         game.turn = 1;
@@ -32859,6 +33496,169 @@ mod combat_scenarios {
         g.current = 0;
         g.at_war.insert(pair(0, 1));
         (g, center, ring)
+    }
+
+    fn found_controlled_home(game: &mut Game, center: Pos) -> (u32, Pos) {
+        let city = game.found_city_for(0, center, Some("Upgrade Test".to_string()));
+        let home = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != center)
+            .expect("new city owns a non-center tile");
+        (city, home)
+    }
+
+    #[test]
+    fn slinger_upgrade_is_legal_only_when_affordable_and_in_friendly_territory() {
+        let (mut game, center, _) = controlled_game(41_001);
+        let (city, home) = found_controlled_home(&mut game, center);
+        game.players[0].techs.insert("archery".to_string());
+        game.players[0].gold = 59.0;
+        let slinger = game.spawn_test_unit("slinger", 0, home);
+        let action = Action::Upgrade {
+            unit: slinger,
+            to: "archer".to_string(),
+        };
+
+        assert!(!game.legal_unit_upgrade_actions(0).contains(&action));
+        game.players[0].gold = 60.0;
+        game.map.tiles.get_mut(&home).unwrap().owner_city = None;
+        assert!(!game.legal_unit_upgrade_actions(0).contains(&action));
+        game.map.tiles.get_mut(&home).unwrap().owner_city = Some(city);
+        assert!(game.legal_unit_upgrade_actions(0).contains(&action));
+        assert_eq!(game.unit_upgrade_offer(0, slinger).unwrap().1, 60.0);
+        game.game_speed = GameSpeed::Online;
+        assert_eq!(game.unit_upgrade_offer(0, slinger).unwrap().1, 30.0);
+        game.game_speed = GameSpeed::Standard;
+
+        {
+            let unit = game.units.get_mut(&slinger).unwrap();
+            unit.hp = 43;
+            unit.xp = 17;
+            unit.level = 2;
+            unit.promotions.insert("volley".to_string());
+        }
+        game.apply(0, &action).unwrap();
+        let unit = &game.units[&slinger];
+        assert_eq!(unit.kind, "archer");
+        assert_eq!(unit.hp, 43);
+        assert_eq!(unit.xp, 17);
+        assert_eq!(unit.level, 2);
+        assert!(unit.promotions.contains("volley"));
+        assert_eq!(unit.moves_left, 0.0);
+        assert_eq!(unit.attacks_left, 0);
+        assert!(game.players[0].gold.abs() < 1e-9);
+    }
+
+    #[test]
+    fn formation_upgrade_applies_policy_and_resource_costs() {
+        let (mut game, center, _) = controlled_game(41_002);
+        game.players[0].civ = "Greece".to_string();
+        let (_, home) = found_controlled_home(&mut game, center);
+        game.players[0].techs.insert("iron_working".to_string());
+        game.players[0]
+            .policies
+            .extend(["professional_army".to_string(), "retinues".to_string()]);
+        game.players[0].gold = 110.0;
+        game.players[0]
+            .strategic_resources
+            .insert("iron".to_string(), 30.0);
+        let warrior = game.spawn_test_unit("warrior", 0, home);
+        game.units.get_mut(&warrior).unwrap().formation = 2;
+
+        let action = Action::Upgrade {
+            unit: warrior,
+            to: "swordsman".to_string(),
+        };
+        assert!(game.legal_unit_upgrade_actions(0).contains(&action));
+        game.apply(0, &action).unwrap();
+        assert_eq!(game.units[&warrior].kind, "swordsman");
+        assert_eq!(game.units[&warrior].formation, 2);
+        assert_eq!(game.players[0].counters["strongest_unit_built"], 35);
+        assert!(game.players[0].gold.abs() < 1e-9);
+        assert!(game.strategic_stockpile(0, "iron").abs() < 1e-9);
+    }
+
+    #[test]
+    fn upgrades_resolve_the_owners_unique_replacement() {
+        let (mut game, center, _) = controlled_game(41_003);
+        game.players[0].civ = "Nubia".to_string();
+        let (_, home) = found_controlled_home(&mut game, center);
+        game.players[0].techs.insert("archery".to_string());
+        game.players[0].gold = 80.0;
+        let slinger = game.spawn_test_unit("slinger", 0, home);
+        let action = Action::Upgrade {
+            unit: slinger,
+            to: "pitati_archer".to_string(),
+        };
+
+        assert_eq!(
+            game.unit_upgrade_target(0, "slinger").as_deref(),
+            Some("pitati_archer")
+        );
+        assert!(game.legal_unit_upgrade_actions(0).contains(&action));
+        game.apply(0, &action).unwrap();
+        assert_eq!(game.units[&slinger].kind, "pitati_archer");
+    }
+
+    #[test]
+    fn obsolete_production_modernizes_without_losing_progress_or_material() {
+        let (mut game, center, _) = controlled_game(41_004);
+        game.players[0].civ = "Greece".to_string();
+        let (city, _) = found_controlled_home(&mut game, center);
+        let slinger = Item::Unit {
+            unit: "slinger".to_string(),
+        };
+        let archer = Item::Unit {
+            unit: "archer".to_string(),
+        };
+        assert!(game.can_produce(0, city, &slinger));
+        game.cities.get_mut(&city).unwrap().queue = vec![slinger.clone()];
+        game.cities.get_mut(&city).unwrap().production = 18.0;
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .production_progress
+            .insert(Game::item_progress_key(&archer), 7.0);
+        game.players[0].techs.insert("archery".to_string());
+
+        assert!(!game.can_produce(0, city, &slinger));
+        assert!(game.can_produce(0, city, &archer));
+        game.modernize_unit_queue(0, city);
+        assert_eq!(game.cities[&city].queue, vec![archer]);
+        assert!((game.cities[&city].production - 25.0).abs() < 1e-9);
+
+        let warrior = Item::Unit {
+            unit: "warrior".to_string(),
+        };
+        let swordsman = Item::Unit {
+            unit: "swordsman".to_string(),
+        };
+        game.cities.get_mut(&city).unwrap().queue = vec![warrior.clone()];
+        game.cities.get_mut(&city).unwrap().production = 11.0;
+        game.players[0].techs.insert("iron_working".to_string());
+        assert!(
+            game.can_produce(0, city, &warrior),
+            "the old unit remains available while its successor lacks iron"
+        );
+        game.modernize_unit_queue(0, city);
+        assert_eq!(game.cities[&city].queue, vec![warrior.clone()]);
+
+        game.players[0]
+            .strategic_resources
+            .insert("iron".to_string(), 20.0);
+        assert!(!game.can_produce(0, city, &warrior));
+        game.modernize_unit_queue(0, city);
+        assert_eq!(game.cities[&city].queue, vec![swordsman.clone()]);
+        assert!((game.cities[&city].production - 11.0).abs() < 1e-9);
+        assert!(game.strategic_stockpile(0, "iron").abs() < 1e-9);
+        assert_eq!(
+            game.cities[&city]
+                .strategic_resource_commitments
+                .get(&Game::item_progress_key(&swordsman)),
+            Some(&20.0)
+        );
     }
 
     #[test]
@@ -33080,7 +33880,7 @@ mod combat_scenarios {
             })
         };
         assert!(!legal_shot(&g));
-        assert_eq!(g.apply(0, &shot).unwrap_err(), "line of sight blocked");
+        assert_eq!(g.apply(0, &shot).unwrap_err(), "target is not visible");
         assert_eq!(g.units[&defender].hp, 100);
 
         g.map.tiles.get_mut(&middles[0]).unwrap().terrain = "plains".to_string();
@@ -34256,7 +35056,7 @@ mod combat_scenarios {
     }
 
     #[test]
-    fn carriers_adopt_the_highest_sight_of_aircraft_on_board() {
+    fn carriers_keep_their_own_sight_while_embarked_aircraft_supply_theirs() {
         let (mut game, position, _) = controlled_game(314_391);
         let carrier = game.spawn_unit("aircraft_carrier", 0, position);
         assert_eq!(game.unit_sight(carrier), 2);
@@ -34268,11 +35068,19 @@ mod combat_scenarios {
         assert_eq!(game.unit_sight(carrier), 3);
 
         let fighter = game.spawn_unit("biplane", 0, position);
-        assert_eq!(game.unit_sight(carrier), 4);
+        assert_eq!(game.unit_sight(carrier), 3);
+        assert!(game
+            .player_visibility(0)
+            .iter()
+            .any(|target| game.wdist(position, *target) == 4));
         let jet = game.spawn_unit("jet_fighter", 0, position);
-        assert_eq!(game.unit_sight(carrier), 5);
+        assert_eq!(game.unit_sight(carrier), 3);
+        assert!(game
+            .player_visibility(0)
+            .iter()
+            .any(|target| game.wdist(position, *target) == 5));
         game.remove_unit(jet);
-        assert_eq!(game.unit_sight(carrier), 4);
+        assert_eq!(game.unit_sight(carrier), 3);
         game.remove_unit(fighter);
         assert_eq!(game.unit_sight(carrier), 3);
     }
@@ -34438,6 +35246,17 @@ mod combat_scenarios {
             .unwrap()
             .buildings
             .extend(["library".to_string(), "university".to_string()]);
+
+        let spotter =
+            game.nbrs(campus)
+                .into_iter()
+                .find(|position| {
+                    game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    }) && game.units_at(*position).is_empty()
+                })
+                .unwrap();
+        game.spawn_unit("warrior", 0, spotter);
 
         let bomber = game.spawn_unit("bomber", 0, base);
         game.units.get_mut(&bomber).unwrap().hp = 50;

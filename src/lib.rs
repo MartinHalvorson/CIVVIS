@@ -1,7 +1,7 @@
 //! Martin Halvorson's Civilization VIS — Rust performance core.
 //! Same ruleset JSON, action protocol, and mechanics as the Python
 //! reference engine (`civvis/`); deterministic per seed within this engine.
-#![recursion_limit = "256"]
+#![recursion_limit = "512"]
 
 pub mod action_space;
 pub mod ai;
