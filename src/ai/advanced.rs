@@ -600,6 +600,7 @@ impl AdvancedAi {
         let city_count = g.player_city_ids(pid).len();
         let production = g.city_yields(cid).production.max(1.0);
         let turns = g.item_cost(item) / production;
+        let remaining_turns = g.max_turns.saturating_sub(g.turn).max(1) as f64;
         let threatened = plan.threatened_city == Some(cid)
             || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4);
         let desired_military = match plan.strategy {
@@ -712,7 +713,11 @@ impl AdvancedAi {
                 let spec = &g.rules.buildings[building];
                 if spec.wonder {
                     let wonder_civ = matches!(g.players[pid].civ.as_str(), "Egypt" | "China");
-                    if threatened || (city.buildings.len() < 3 && !wonder_civ) {
+                    if threatened
+                        || city.buildings.len() < 3
+                        || turns > remaining_turns * 0.65
+                        || (plan.strategy != GrandStrategy::Culture && !wonder_civ)
+                    {
                         -10_000.0
                     } else {
                         self.yield_value(spec.yields, plan.strategy) * 35.0
@@ -736,6 +741,12 @@ impl AdvancedAi {
                         } else {
                             0.0
                         }
+                        + if building == "granary" && city.pop as f64 + 1.0 >= g.city_housing(city)
+                        {
+                            180.0
+                        } else {
+                            0.0
+                        }
                         + if building.contains("walls") && threatened {
                             320.0
                         } else {
@@ -745,9 +756,29 @@ impl AdvancedAi {
             }
             Item::District { district, pos } => {
                 let spec = &g.rules.districts[district];
+                let developed_capacity = ((city.pop + 1) / 2).max(2) as usize;
+                if city.districts.len() >= developed_capacity
+                    && city.buildings.len() <= city.districts.len()
+                {
+                    return -1_200.0;
+                }
+                let district_count = g
+                    .cities
+                    .values()
+                    .filter(|c| c.owner == pid && c.districts.contains_key(district))
+                    .count();
+                let balanced_core = if district_count * 2 < city_count {
+                    match district.as_str() {
+                        "campus" | "theater_square" | "commercial_hub" => 130.0,
+                        _ => 0.0,
+                    }
+                } else {
+                    0.0
+                };
                 self.yield_value(g.district_yields(district, *pos), plan.strategy) * 60.0
                     + spec.defense * if threatened { 5.0 } else { 1.5 }
                     + spec.amenity * 50.0
+                    + balanced_core
                     + match (plan.strategy, district.as_str()) {
                         (GrandStrategy::Science, "campus") => 170.0,
                         (GrandStrategy::Culture, "theater_square") => 170.0,
@@ -758,7 +789,15 @@ impl AdvancedAi {
                     }
             }
         };
-        raw / (7.0 + turns.max(1.0))
+        if turns > remaining_turns + 1.0 {
+            return -1_500.0;
+        }
+        let completion_discount = if turns > remaining_turns * 0.6 {
+            0.25
+        } else {
+            1.0
+        };
+        completion_discount * raw / (7.0 + turns.max(1.0))
     }
 
     fn settle_value(&self, g: &Game, pid: usize, pos: Pos) -> f64 {
@@ -816,8 +855,8 @@ impl AdvancedAi {
         value
     }
 
-    fn best_settle_site(&self, g: &Game, pid: usize, from: Pos, radius: i32) -> Option<(Pos, f64)> {
-        let mut best: Option<(Pos, f64)> = None;
+    fn settle_sites(&self, g: &Game, pid: usize, from: Pos, radius: i32) -> Vec<(Pos, f64)> {
+        let mut sites = Vec::new();
         for pos in g.wdisk(from, radius) {
             let Some(tile) = g.map.get(pos) else { continue };
             if g.rules.is_water(tile)
@@ -830,14 +869,30 @@ impl AdvancedAi {
                 continue;
             }
             let value = self.settle_value(g, pid, pos) - g.wdist(from, pos) as f64 * 0.9;
-            if best
-                .map(|(bp, bv)| value > bv || (value == bv && pos < bp))
-                .unwrap_or(true)
-            {
-                best = Some((pos, value));
+            if value >= 12.0 {
+                sites.push((pos, value));
             }
         }
-        best.filter(|(_, value)| *value >= 12.0)
+        sites.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
+        sites
+    }
+
+    fn best_settle_site(&self, g: &Game, pid: usize, from: Pos, radius: i32) -> Option<(Pos, f64)> {
+        self.settle_sites(g, pid, from, radius).into_iter().next()
+    }
+
+    fn best_reachable_settle_site(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        radius: i32,
+    ) -> Option<(Pos, f64)> {
+        let from = g.units[&uid].pos;
+        self.settle_sites(g, pid, from, radius)
+            .into_iter()
+            .take(16)
+            .find(|(pos, _)| *pos == from || g.route_step(uid, *pos, 0).is_some())
     }
 
     fn advanced_settler_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
@@ -849,13 +904,23 @@ impl AdvancedAi {
             return g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
         }
         let valid_target = self.settler_targets.get(&uid).copied().filter(|target| {
-            g.map.get(*target).is_some() && !g.cities.values().any(|c| g.wdist(c.pos, *target) < 4)
+            let Some(tile) = g.map.get(*target) else {
+                return false;
+            };
+            !g.rules.is_water(tile)
+                && g.rules.is_passable(tile)
+                && !g.cities.values().any(|c| g.wdist(c.pos, *target) < 4)
+                && tile
+                    .owner_city
+                    .is_none_or(|cid| g.cities[&cid].owner == pid)
+                && (*target == current || g.route_step(uid, *target, 0).is_some())
         });
         let target = valid_target.or_else(|| {
-            self.best_settle_site(g, pid, current, 8).map(|(pos, _)| {
-                self.settler_targets.insert(uid, pos);
-                pos
-            })
+            self.best_reachable_settle_site(g, pid, uid, 8)
+                .map(|(pos, _)| {
+                    self.settler_targets.insert(uid, pos);
+                    pos
+                })
         });
         let Some(target) = target else {
             return self.base.settler_step(g, pid, uid);
@@ -864,7 +929,11 @@ impl AdvancedAi {
             self.settler_targets.remove(&uid);
             return g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
         }
-        self.base.step_toward(g, pid, uid, target)
+        let moved = self.base.step_toward(g, pid, uid, target);
+        if !moved {
+            self.settler_targets.remove(&uid);
+        }
+        moved
     }
 
     fn improvement_value(

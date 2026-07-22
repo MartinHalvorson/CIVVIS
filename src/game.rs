@@ -3360,6 +3360,7 @@ impl Game {
                 let u = &self.units[id];
                 u.owner == owner
                     && self.rules.units[u.kind.as_str()].class == "military"
+                    && !self.is_embarked(u)
                     && !self.crosses_river(u.pos, target)
             })
             .count();
@@ -4818,5 +4819,154 @@ impl Game {
             self.winner = Some(pid);
             self.victory_type = Some(vtype.to_string());
         }
+    }
+}
+
+#[cfg(test)]
+mod combat_scenarios {
+    use super::*;
+
+    fn controlled_game(seed: u64) -> (Game, Pos, Vec<Pos>) {
+        let mut g = Game::new_full(2, 20, 14, seed, 40, 0, false);
+        let ids: Vec<u32> = g.units.keys().copied().collect();
+        for id in ids {
+            g.remove_unit(id);
+        }
+        for player in &mut g.players {
+            player.civ = "Rome".to_string();
+            player.government = None;
+            player.policies.clear();
+            player.techs.clear();
+            player.civics.clear();
+        }
+        for tile in g.map.tiles.values_mut() {
+            tile.terrain = "plains".to_string();
+            tile.feature = None;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.owner_city = None;
+            tile.hills = false;
+            tile.river = false;
+            tile.road = false;
+        }
+        let center = *g.map.tiles.keys()
+            .find(|p| g.wdisk(**p, 2).len() == 19)
+            .expect("controlled map has an interior tile");
+        let ring = g.nbrs(center);
+        assert_eq!(ring.len(), 6);
+        g.current = 0;
+        g.at_war.insert(pair(0, 1));
+        (g, center, ring)
+    }
+
+    #[test]
+    fn unit_class_matchups_feed_the_real_melee_damage_roll() {
+        let (mut g, target, ring) = controlled_game(301);
+        let attacker = g.spawn_unit("spearman", 0, ring[0]);
+        let defender = g.spawn_unit("horseman", 1, target);
+
+        assert_eq!(g.matchup_bonus(attacker, &g.units[&defender]), 10.0);
+        let mut expected_rng = g.rng.clone();
+        let expected_out = damage(35.0, 36.0, &mut expected_rng);
+        let expected_in = damage(36.0, 35.0, &mut expected_rng);
+        g.apply(0, &Action::Attack { unit: attacker, target }).unwrap();
+        assert_eq!(g.units[&defender].hp, 100 - expected_out);
+        assert_eq!(g.units[&attacker].hp, 100 - expected_in);
+
+        let (mut g, target, ring) = controlled_game(302);
+        let spear = g.spawn_unit("spearman", 0, ring[0]);
+        let war_cart = g.spawn_unit("war_cart", 1, target);
+        assert_eq!(g.matchup_bonus(spear, &g.units[&war_cart]), 0.0,
+                   "War-Carts are immune to the anti-cavalry modifier");
+        let maryannu = g.spawn_unit("maryannu_chariot_archer", 1, ring[1]);
+        assert_eq!(g.matchup_bonus(spear, &g.units[&maryannu]), 10.0,
+                   "ranged cavalry still receives the anti-cavalry modifier");
+    }
+
+    #[test]
+    fn military_tradition_flanking_and_support_follow_provider_rules() {
+        let (mut g, target, ring) = controlled_game(303);
+        let attacker = g.spawn_unit("warrior", 0, ring[0]);
+        let defender = g.spawn_unit("warrior", 1, target);
+        let flank_archer = g.spawn_unit("archer", 0, ring[1]);
+        let support_archer = g.spawn_unit("archer", 1, ring[2]);
+
+        assert_eq!(g.flanking_bonus(attacker, target), 0.0);
+        assert_eq!(g.support_bonus(&g.units[&defender]), 0.0);
+        g.players[0].civics.insert("military_tradition".to_string());
+        g.players[1].civics.insert("military_tradition".to_string());
+        assert_eq!(g.flanking_bonus(attacker, target), 2.0,
+                   "a ranged military unit provides one flanking stack");
+        assert_eq!(g.support_bonus(&g.units[&defender]), 2.0);
+
+        // Rivers block flanking but not support.
+        g.map.tiles.get_mut(&ring[1]).unwrap().river = true;
+        assert_eq!(g.flanking_bonus(attacker, target), 0.0);
+        g.map.tiles.get_mut(&ring[2]).unwrap().river = true;
+        assert_eq!(g.support_bonus(&g.units[&defender]), 2.0);
+
+        // Embarked land units provide Support but cannot provide Flanking.
+        g.map.tiles.get_mut(&ring[1]).unwrap().river = false;
+        g.map.tiles.get_mut(&ring[1]).unwrap().terrain = "coast".to_string();
+        assert!(g.is_embarked(&g.units[&flank_archer]));
+        assert_eq!(g.flanking_bonus(attacker, target), 0.0);
+        g.map.tiles.get_mut(&ring[2]).unwrap().terrain = "coast".to_string();
+        assert!(g.is_embarked(&g.units[&support_archer]));
+        assert_eq!(g.support_bonus(&g.units[&defender]), 2.0);
+    }
+
+    #[test]
+    fn ranged_attacks_require_an_open_range_two_sight_corridor() {
+        let (mut g, target, _) = controlled_game(304);
+        let from = g.wdisk(target, 2).into_iter()
+            .find(|p| g.wdist(*p, target) == 2).unwrap();
+        let attacker = g.spawn_unit("archer", 0, from);
+        let defender = g.spawn_unit("warrior", 1, target);
+        let middles: Vec<Pos> = g.nbrs(from).into_iter()
+            .filter(|p| g.wdist(*p, target) == 1).collect();
+        assert!(!middles.is_empty());
+        for middle in &middles {
+            g.map.tiles.get_mut(middle).unwrap().terrain = "mountain".to_string();
+        }
+        let shot = Action::Ranged { unit: attacker, target };
+        let legal_shot = |g: &Game| g.legal_actions(0).into_iter().any(|action| {
+            matches!(action, Action::Ranged { unit, target: to }
+                if unit == attacker && to == target)
+        });
+        assert!(!legal_shot(&g));
+        assert_eq!(g.apply(0, &shot).unwrap_err(), "line of sight blocked");
+        assert_eq!(g.units[&defender].hp, 100);
+
+        g.map.tiles.get_mut(&middles[0]).unwrap().terrain = "plains".to_string();
+        assert!(legal_shot(&g));
+        g.apply(0, &shot).unwrap();
+        assert!(g.units[&defender].hp < 100);
+    }
+
+    #[test]
+    fn melee_attack_requires_enough_movement_to_enter_the_target_tile() {
+        let (mut g, target, ring) = controlled_game(305);
+        let attacker = g.spawn_unit("warrior", 0, ring[0]);
+        g.spawn_unit("warrior", 1, target);
+        let tile = g.map.tiles.get_mut(&target).unwrap();
+        tile.feature = Some("forest".to_string());
+        tile.river = true;
+        let attack = Action::Attack { unit: attacker, target };
+        let legal_attack = |g: &Game| g.legal_actions(0).into_iter().any(|action| {
+            matches!(action, Action::Attack { unit, target: to }
+                if unit == attacker && to == target)
+        });
+
+        g.units.get_mut(&attacker).unwrap().moves_left = 1.0;
+        assert!(!legal_attack(&g));
+        assert_eq!(g.apply(0, &attack).unwrap_err(), "not enough movement to attack");
+
+        // The minimum-one-tile rule allows the costly forest/river entry
+        // when the unit still has all of its normal Movement.
+        g.units.get_mut(&attacker).unwrap().moves_left = 2.0;
+        assert!(legal_attack(&g));
+        g.apply(0, &attack).unwrap();
+        assert_eq!(g.units[&attacker].moves_left, 0.0);
     }
 }
