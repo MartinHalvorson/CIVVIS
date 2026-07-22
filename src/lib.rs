@@ -14,6 +14,7 @@ pub mod obs;
 pub mod obs_tensor;
 pub mod rng;
 pub mod rules;
+pub mod selfplay;
 pub mod server;
 pub mod setup;
 pub mod strategic;

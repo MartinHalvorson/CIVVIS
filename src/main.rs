@@ -264,6 +264,33 @@ fn main() {
             println!();
             print!("{}", civvis::elo::leaderboard(&pool));
         }
+        "selfplay" => {
+            let players = arg(&args, "--players", 4).max(2);
+            let options = game_options(&args, players, arg(&args, "--seed", 0) as u64);
+            let cfg = civvis::selfplay::SelfPlayCfg {
+                games: arg(&args, "--games", 20) as usize,
+                players: players as usize,
+                width: options.width,
+                height: options.height,
+                city_states: options.city_states,
+                max_turns: options.max_turns,
+                seed: arg(&args, "--seed", 0) as u64,
+                every: arg(&args, "--every", 10).max(1) as u32,
+                ai: arg_text(&args, "--ai", "advanced"),
+                out: arg_text(&args, "--out", "selfplay"),
+            };
+            match civvis::selfplay::export(&cfg) {
+                Ok(stats) => println!(
+                    "
+{} samples from {} games ({} decisive) -> {}",
+                    stats.samples, stats.games, stats.decisive, cfg.out
+                ),
+                Err(error) => {
+                    eprintln!("selfplay export failed: {error}");
+                    std::process::exit(1);
+                }
+            }
+        }
         "evolve" => {
             let players = arg(&args, "--players", 4);
             civvis::evolve::evolve(&civvis::evolve::EvoCfg {
