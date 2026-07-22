@@ -90,3 +90,36 @@ policy), 4-6 are what the learned agent must be good *at*, 7 and 10 are
 engine surface area, and 8-9 are the loop that turns compute into strength
 and proves it. Sequence the first three; the rest parallelize across
 sessions the way the rules batches did.
+
+## Sequencing
+
+Tackle in this order: **9 → 4 → 3 → 2 → 6 → 8 → 1 → 7 → 10 → 5.**
+
+Wave one — aim the compass, bank the cheap Elo:
+- **9** first: days of work with existing tools, and everything after is
+  steered by it. Closing exploit seams before any optimizer exists means
+  never training a quirk-farmer.
+- **4** second: self-contained, needs no new representation (material/HP
+  heuristics score the cluster), reuses the clone+rollout machinery
+  `consider_war` already proved. Biggest immediate strength gain and it
+  de-risks search.
+
+Wave two — the learning stack in dependency order:
+- **3** built fog-honest from day one, which absorbs the cheap half of 5
+  for free (retrofitting fog onto a trained omniscient agent wastes the
+  training).
+- **2** works with the existing 25-feature value net immediately, improves
+  as spatial nets arrive, and is the policy-improvement operator that later
+  generates 1's training data.
+- **6** lands as the top layer of 2's macro-action hierarchy, not a
+  separate project.
+- **8** before 1, because policy training is what needs it.
+- **1** is the payoff, not the starting point.
+
+Wave three — widen the game, then close the loop:
+- **7** and **10** are parallel-session rules-batch work; run them
+  concurrently with wave two in wall-clock, but land them before the final
+  expensive training runs (action-space expansions invalidate trained
+  policies).
+- **5**'s remaining half (opponent inference, scouting as information gain)
+  goes last — it only matters once there's a learned agent to consume it.
