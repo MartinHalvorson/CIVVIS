@@ -1067,16 +1067,66 @@ mod belief_runtime_tests {
         assert_eq!(game.city_yields(cities[0]).gold, baseline_route_gold + 6.0);
     }
 
+    /// Civ VI grants a majority religion only above half of a city's Citizens,
+    /// and atheist/pantheon Pressure competes for those Citizens. Without it a
+    /// trickle of passive Pressure flipped cities outright, which cascaded
+    /// into Religious victories long before missionaries had done any work.
+    #[test]
+    fn atheist_pressure_gates_the_majority_religion() {
+        let (mut game, cities) = game_with_capitals(91_764);
+        let religion = establish_religion(&mut game, cities[0], &[]);
+        let target = cities[1];
+        game.cities.get_mut(&target).unwrap().pop = 4;
+        game.cities.get_mut(&target).unwrap().pressure.clear();
+        assert_eq!(game.cities[&target].atheist_pressure, 50.0);
+
+        // Passive Pressure that merely clears the old flat threshold now buys
+        // exactly half the city, which is not a majority.
+        game.cities
+            .get_mut(&target)
+            .unwrap()
+            .pressure
+            .insert(religion.clone(), 50.0);
+        assert_eq!(game.city_religion(&game.cities[&target]), None);
+        assert_eq!(game.religious_followers_in_city(&game.cities[&target], &religion), 2.0);
+
+        // One more point of Pressure carries the majority.
+        game.cities
+            .get_mut(&target)
+            .unwrap()
+            .pressure
+            .insert(religion.clone(), 51.0);
+        assert_eq!(
+            game.city_religion(&game.cities[&target]),
+            Some(religion.as_str())
+        );
+
+        // Growth reinforces whichever side already holds the city: the new
+        // Citizen joins the majority faith, and the atheist pool otherwise.
+        let converted = game.cities[&target].atheist_pressure;
+        game.apply_growth_pressure(target);
+        assert_eq!(game.cities[&target].atheist_pressure, converted);
+        assert_eq!(game.cities[&target].pressure[&religion], 101.0);
+
+        game.cities.get_mut(&target).unwrap().pressure.clear();
+        let atheists = game.cities[&target].atheist_pressure;
+        game.apply_growth_pressure(target);
+        assert_eq!(game.cities[&target].atheist_pressure, atheists + 50.0);
+    }
+
     #[test]
     fn founder_unity_combat_and_loyalty_beliefs_use_runtime_city_state() {
         let (mut game, cities) = game_with_capitals(91_764);
         let religion = establish_religion(&mut game, cities[0], &[]);
-        game.cities.get_mut(&cities[0]).unwrap().pop = 4;
-        game.cities.get_mut(&cities[0]).unwrap().pressure =
-            BTreeMap::from([(religion.clone(), 75.0), ("Other Faith".to_string(), 25.0)]);
-        game.cities.get_mut(&cities[1]).unwrap().pop = 4;
-        game.cities.get_mut(&cities[1]).unwrap().pressure =
-            BTreeMap::from([(religion.clone(), 75.0), ("Other Faith".to_string(), 25.0)]);
+        // Both cities are fully evangelized: no atheists remain to dilute the
+        // three-of-four follower split these founder beliefs are paid on.
+        for city in [cities[0], cities[1]] {
+            let city = game.cities.get_mut(&city).unwrap();
+            city.pop = 4;
+            city.pressure =
+                BTreeMap::from([(religion.clone(), 75.0), ("Other Faith".to_string(), 25.0)]);
+            city.atheist_pressure = 0.0;
+        }
 
         game.players[0].religion_beliefs = vec!["tithe".to_string()];
         assert_eq!(game.founder_belief_yields(0).gold, 6.0);
@@ -6582,6 +6632,12 @@ pub struct City {
     pub last_attacked: u32,
     #[serde(default)]
     pub pressure: BTreeMap<String, f64>, // religious pressure by religion
+    /// Atheist/pantheon pressure. Civ VI counts it alongside the religions
+    /// when dividing Citizens, so it is the reason a city with a handful of
+    /// foreign Pressure does not immediately adopt that faith. It gains 50 per
+    /// growth while the city has no majority religion and is never removed.
+    #[serde(default = "starting_atheist_pressure")]
+    pub atheist_pressure: f64,
     #[serde(default = "full_loyalty")]
     pub loyalty: f64,
     /// The owner that lost this city in the unresolved conquest which just
@@ -6629,6 +6685,11 @@ pub struct CitizenPlan {
 
 fn full_loyalty() -> f64 {
     100.0
+}
+
+/// A city's first Citizen contributes 50 atheist/pantheon Pressure.
+fn starting_atheist_pressure() -> f64 {
+    50.0
 }
 
 fn wall_unset() -> i32 {
@@ -9419,11 +9480,39 @@ impl Game {
             .unwrap_or(0.0)
     }
 
-    /// The religion a city predominantly follows (highest pressure, min 50).
+    /// A city that has just grown gains 50 Pressure for its majority religion,
+    /// or 50 atheist/pantheon Pressure when it follows none.
+    fn apply_growth_pressure(&mut self, cid: u32) {
+        let majority = self.city_religion(&self.cities[&cid]).map(str::to_string);
+        let city = self.cities.get_mut(&cid).unwrap();
+        match majority {
+            Some(religion) => *city.pressure.entry(religion).or_insert(0.0) += 50.0,
+            None => city.atheist_pressure += 50.0,
+        }
+    }
+
+    /// Total Pressure competing for this city's Citizens, atheists included.
+    fn city_total_pressure(&self, city: &City) -> f64 {
+        city.pressure
+            .values()
+            .copied()
+            .filter(|pressure| *pressure > 0.0)
+            .sum::<f64>()
+            + city.atheist_pressure.max(0.0)
+    }
+
+    /// A city's majority religion: the faith followed by more than half of its
+    /// Citizens. Citizens are split by Pressure share, so this is the faith
+    /// holding more than half of all Pressure — atheist Pressure counted.
+    /// Below that share the city simply has no majority religion.
     pub fn city_religion<'a>(&self, city: &'a City) -> Option<&'a str> {
+        let total = self.city_total_pressure(city);
+        if total <= f64::EPSILON {
+            return None;
+        }
         city.pressure
             .iter()
-            .filter(|(_, v)| **v >= 50.0)
+            .filter(|(_, v)| **v > 0.0 && **v * 2.0 > total)
             .max_by(|a, b| a.1.partial_cmp(b.1).unwrap().then(b.0.cmp(a.0)))
             .map(|(r, _)| r.as_str())
     }
@@ -9463,15 +9552,10 @@ impl Game {
 
     /// The map stores religious pressure rather than a separate follower
     /// roster. Divide population proportionally among the represented faiths,
-    /// matching Civ VI's pressure-to-followers rule as closely as this compact
-    /// state permits (atheist pressure is outside this ruleset).
+    /// matching Civ VI's `Population * Pressure / Sum of all Religious and
+    /// Atheist Pressures`, rounded to the nearest Citizen.
     fn religious_followers_in_city(&self, city: &City, religion: &str) -> f64 {
-        let total = city
-            .pressure
-            .values()
-            .copied()
-            .filter(|pressure| *pressure > 0.0)
-            .sum::<f64>();
+        let total = self.city_total_pressure(city);
         if total <= f64::EPSILON {
             return 0.0;
         }
@@ -10156,11 +10240,20 @@ impl Game {
             .values()
             .filter_map(|c| {
                 self.city_religion(c).map(|r| {
-                    let boost = if c.pressure.get(r).copied().unwrap_or(0.0) >= 1000.0 {
-                        2.0
-                    } else {
-                        1.0
-                    };
+                    // Civ VI: 1 Pressure per source city, doubled by a Holy
+                    // Site and quadrupled again when it is that religion's
+                    // Holy City (a Holy City with a Holy Site exerts 8).
+                    let mut boost = 1.0;
+                    if c.districts.contains_key("holy_site") {
+                        boost *= 2.0;
+                    }
+                    if self
+                        .religion_founder(r)
+                        .and_then(|founder| self.players[founder].holy_city)
+                        == Some(c.id)
+                    {
+                        boost *= 4.0;
+                    }
                     let strength = boost
                         * (1.0 + self.religion_belief_effect(r, "pressure_strength_pct") / 100.0)
                         * (1.0
@@ -22133,6 +22226,7 @@ impl Game {
             products: Vec::new(),
             building_eras: BTreeMap::new(),
             pillaged_buildings: BTreeSet::new(),
+            atheist_pressure: starting_atheist_pressure(),
             districts: Districts::default(),
             wonders: BTreeMap::new(),
             owned_tiles: Vec::new(),
@@ -22774,17 +22868,22 @@ impl Game {
         let converts_religion = self.promotion_effect(&band, "rock_convert_city") > 0.0;
         if converts_religion {
             if let Some(religion) = self.players[pid].religion.clone() {
-                let strongest_other = self.cities[&host_city]
+                // The promotion converts the host city outright, so the
+                // religion must clear every rival faith and the city's
+                // atheists put together rather than only the largest rival.
+                let city = &self.cities[&host_city];
+                let competing = city
                     .pressure
                     .iter()
                     .filter(|(faith, _)| **faith != religion)
-                    .map(|(_, pressure)| *pressure)
-                    .fold(49.0, f64::max);
+                    .map(|(_, pressure)| pressure.max(0.0))
+                    .sum::<f64>()
+                    + city.atheist_pressure.max(0.0);
                 self.cities
                     .get_mut(&host_city)
                     .unwrap()
                     .pressure
-                    .insert(religion, strongest_other + 1.0);
+                    .insert(religion, competing + 1.0);
             }
         }
         if converts_religion {
@@ -29143,6 +29242,7 @@ impl Game {
         } else if self.congress_effect_active("migration_treaty", "B", &pid.to_string()) {
             growth_bonus -= 20.0;
         }
+        let mut grew = false;
         {
             let city = self.cities.get_mut(&cid).unwrap();
             let mut surplus = ys.food - 2.0 * city.pop as f64;
@@ -29158,6 +29258,7 @@ impl Game {
             if city.food >= need {
                 city.pop += 1;
                 city.food -= need;
+                grew = true;
             } else if city.food < 0.0 {
                 city.pop = (city.pop - 1).max(1);
                 city.food = 0.0;
@@ -29185,6 +29286,9 @@ impl Game {
             } else if !district_project_stalled && !self.cities[&cid].queue.is_empty() {
                 self.cities.get_mut(&cid).unwrap().production += produced;
             }
+        }
+        if grew {
+            self.apply_growth_pressure(cid);
         }
         let queue_head = self.cities[&cid].queue.first().cloned();
         if let Some(item) = queue_head {
@@ -36734,8 +36838,10 @@ mod district_mechanics {
         religion.cities.get_mut(&own_city).unwrap().pop = 10;
         religion.cities.get_mut(&own_city).unwrap().pressure =
             BTreeMap::from([("Own".to_string(), 60.0), ("Allied".to_string(), 40.0)]);
+        religion.cities.get_mut(&own_city).unwrap().atheist_pressure = 0.0;
         religion.cities.get_mut(&allied_city).unwrap().pressure =
             BTreeMap::from([("Allied".to_string(), 100.0)]);
+        religion.cities.get_mut(&allied_city).unwrap().atheist_pressure = 0.0;
         install_alliance(&mut religion, 0, 1, "religious", 3, 240.0);
         let mut religious_baseline = religion.clone();
         religious_baseline.players[0].alliances.clear();

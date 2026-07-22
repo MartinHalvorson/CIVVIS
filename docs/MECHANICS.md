@@ -13,6 +13,7 @@ change, and see [FIDELITY.md](FIDELITY.md) for what the audit covers next.
 
 > **In progress** (claimed by parallel sessions — check before starting a batch):
 > - session F: religious-victory balance batch — faith-purchased religious units adopt city majority religion (Civilopedia rule), cross-strategy religious defense in AdvancedAi, re-baseline soak/ai_eval
+> - session G: continuous-exhibition bug hunt — rules defects observed in full 8-player games, one game at a time. Owns the Pressure/majority core in `src/game.rs` (`city_religion`, `process_pressure`, atheist Pressure); session F owns the religious AI and purchase rules above it
 
 | System | Status | Notes |
 |---|---|---|
