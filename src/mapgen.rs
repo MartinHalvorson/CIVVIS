@@ -748,6 +748,54 @@ fn balanced_major_spawns(
         .unwrap()
         .1;
 
+    // Farthest-point sampling fixes the coarse grid but cannot see that one
+    // seat ends up with a thin territory wedge. Hill-climb each start over its
+    // immediate neighbourhood, keeping any single swap that lifts the balance
+    // ranking, so no seat is left an outlier the sampler simply never offered.
+    let rank = |layout: &[Pos]| {
+        let score = spawn_layout_score(wm, landmass, layout, &qualities);
+        let (territory_balance, neighbor_balance, quality_balance) =
+            layout_balance_percentages(score, count, landmass.len());
+        (
+            territory_balance.min(neighbor_balance).min(quality_balance),
+            territory_balance + neighbor_balance + quality_balance,
+            score.minimum_separation,
+            score.minimum_territory,
+            score.minimum_quality,
+            score.total_quality,
+        )
+    };
+    let mut best_rank = rank(&layout);
+    for _ in 0..4 {
+        let mut improved = false;
+        for index in 0..layout.len() {
+            let current = layout[index];
+            let Some((candidate_rank, candidate)) = candidates
+                .iter()
+                .filter(|candidate| {
+                    hex::wdistance(**candidate, current, wm.width) <= 3
+                        && !layout.contains(candidate)
+                })
+                .map(|candidate| {
+                    let mut trial = layout.clone();
+                    trial[index] = *candidate;
+                    (rank(&trial), *candidate)
+                })
+                .max()
+            else {
+                continue;
+            };
+            if candidate_rank > best_rank {
+                best_rank = candidate_rank;
+                layout[index] = candidate;
+                improved = true;
+            }
+        }
+        if !improved {
+            break;
+        }
+    }
+
     // Seat order should not correlate with an anchor, edge, or the order in
     // which farthest-point sampling filled the landmass.
     for index in (1..layout.len()).rev() {

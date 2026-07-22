@@ -81,6 +81,10 @@ pub struct TerrainSpec {
 pub struct FeatureSpec {
     #[serde(default)]
     pub yields: Yields,
+    /// Natural wonders whose Civilopedia entry reads "to adjacent tiles"
+    /// project these yields onto each neighbouring tile instead of their own.
+    #[serde(default)]
+    pub adjacent_yields: Yields,
     #[serde(default = "done")]
     pub move_cost: f64,
     #[serde(default)]

@@ -52,17 +52,16 @@
   "great_barrier_reef": {
     "yields": {
       "science": 2,
-      "food": 1
+      "food": 3
     },
     "natural_wonder": true
   },
   "crater_lake": {
     "yields": {
-      "faith": 3,
+      "faith": 5,
       "science": 1
     },
-    "natural_wonder": true,
-    "impassable": true
+    "natural_wonder": true
   },
   "pantanal": {
     "yields": {
@@ -73,7 +72,8 @@
     "natural_wonder": true
   },
   "uluru": {
-    "yields": {
+    "yields": {},
+    "adjacent_yields": {
       "culture": 2,
       "faith": 2
     },
@@ -81,8 +81,10 @@
     "impassable": true
   },
   "yosemite": {
-    "yields": {
+    "yields": {},
+    "adjacent_yields": {
       "gold": 1,
+      "food": 1,
       "science": 1
     },
     "natural_wonder": true,
@@ -96,7 +98,8 @@
     "natural_wonder": true
   },
   "mount_everest": {
-    "yields": {
+    "yields": {},
+    "adjacent_yields": {
       "faith": 1
     },
     "natural_wonder": true,

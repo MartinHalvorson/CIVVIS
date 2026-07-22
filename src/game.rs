@@ -16941,6 +16941,15 @@ impl Game {
             return Yields::default();
         }
         let mut yields = self.rules.tile_yields(tile);
+        for neighbor in self.nbrs(pos) {
+            if let Some(spec) = self.map.tiles[&neighbor]
+                .feature
+                .as_deref()
+                .and_then(|feature| self.rules.features.get(feature))
+            {
+                yields.add(spec.adjacent_yields);
+            }
+        }
         yields.faith += tile.disaster_faith;
         let drought_food_protected = tile
             .owner_city
