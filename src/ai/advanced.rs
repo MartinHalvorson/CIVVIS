@@ -682,7 +682,23 @@ impl AdvancedAi {
                     .cmp(&right.1.progress)
                     .then_with(|| right.0.cmp(&left.0))
             })?;
-        if pressure.progress < 78 || pressure.progress < own_progress + 15 {
+        // Religious progress advances in one-civilization jumps. A fixed 78%
+        // threshold misses the last actionable warning on four-player maps:
+        // three converted civilizations are 75%, and the fourth immediately
+        // ends the game. Treat one remaining holdout as imminent at every map
+        // size while retaining the stricter continuous-race threshold.
+        let denial_threshold = if pressure.strategy == GrandStrategy::Religion {
+            let living = g
+                .players
+                .iter()
+                .filter(|player| player.alive && !player.is_minor && !player.is_barbarian)
+                .count()
+                .max(1) as i32;
+            100 * living.saturating_sub(1) / living
+        } else {
+            78
+        };
+        if pressure.progress < denial_threshold || pressure.progress < own_progress + 15 {
             return None;
         }
         let counter = match pressure.strategy {
@@ -1370,6 +1386,10 @@ impl AdvancedAi {
                 ) && unlocked(government)
             });
 
+        let faith_mobilization =
+            matches!(strategy, GrandStrategy::Conquest | GrandStrategy::Recovery)
+                && g.players[pid].faith >= 600.0
+                && unlocked("theocracy");
         let priorities: &[&str] = match objective {
             GrandStrategy::Culture | GrandStrategy::Diplomacy => &[
                 "digital_democracy",
@@ -1386,6 +1406,14 @@ impl AdvancedAi {
                 "classical_republic",
                 "chiefdom",
             ],
+            GrandStrategy::Conquest if faith_mobilization => &[
+                "theocracy",
+                "corporate_libertarianism",
+                "fascism",
+                "communism",
+                "oligarchy",
+                "chiefdom",
+            ],
             GrandStrategy::Conquest => &[
                 "corporate_libertarianism",
                 "fascism",
@@ -1398,6 +1426,14 @@ impl AdvancedAi {
                 "corporate_libertarianism",
                 "communism",
                 "merchant_republic",
+                "classical_republic",
+                "chiefdom",
+            ],
+            GrandStrategy::Recovery if faith_mobilization => &[
+                "theocracy",
+                "digital_democracy",
+                "democracy",
+                "communism",
                 "classical_republic",
                 "chiefdom",
             ],
@@ -3212,6 +3248,66 @@ impl AdvancedAi {
         if let Some((_, _, action)) = best {
             let _ = g.apply(pid, &action);
         }
+    }
+
+    /// A faith-rich empire countering a military or religious victory threat
+    /// should convert that otherwise stranded treasury into defenders once
+    /// Theocracy (or another legal faith-purchase source) makes them available.
+    fn military_faith_spending(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) -> bool {
+        if !matches!(
+            plan.strategy,
+            GrandStrategy::Conquest | GrandStrategy::Recovery
+        ) || g.players[pid].faith < 600.0
+        {
+            return false;
+        }
+        let bank = g.players[pid].faith;
+        let reserve = 180.0;
+        let counts = self.counts(g, pid);
+        let mut candidates = Vec::new();
+        for action in g.legal_actions(pid) {
+            let Action::Buy {
+                city,
+                unit,
+                currency,
+            } = &action
+            else {
+                continue;
+            };
+            if currency != "faith" || g.rules.units[unit.as_str()].class != "military" {
+                continue;
+            }
+            let mut after = g.clone();
+            if after.apply(pid, &action).is_err() || after.players[pid].faith < reserve {
+                continue;
+            }
+            let cost = (bank - after.players[pid].faith).max(0.0);
+            let spec = &g.rules.units[unit.as_str()];
+            let combat = spec
+                .strength
+                .max(spec.ranged_strength)
+                .max(spec.bombard_strength);
+            let strategic = self
+                .production_value(
+                    g,
+                    pid,
+                    *city,
+                    &Item::Unit { unit: unit.clone() },
+                    plan,
+                    &counts,
+                )
+                .max(0.0);
+            let score = strategic + combat * 12.0 - cost * 0.25;
+            candidates.push((score, std::cmp::Reverse((*city, unit.clone())), action));
+        }
+        candidates
+            .into_iter()
+            .max_by(|left, right| {
+                left.0
+                    .total_cmp(&right.0)
+                    .then_with(|| left.1.cmp(&right.1))
+            })
+            .is_some_and(|(_, _, action)| g.apply(pid, &action).is_ok())
     }
 
     fn science_production(&self, g: &mut Game, pid: usize) {
@@ -7587,6 +7683,7 @@ impl Ai for AdvancedAi {
         self.advanced_products(g, pid, plan.strategy);
         self.advanced_great_people(g, pid, plan.strategy);
         self.faith_building_spending(g, pid, plan.strategy);
+        self.military_faith_spending(g, pid, &plan);
         if self.victory_target.is_some() {
             self.advanced_gold_spending(g, pid, &plan);
         }
@@ -8543,6 +8640,40 @@ mod tests {
         assert!(
             ai.plan_stale(&game, 0),
             "an imminent rival victory must replan now"
+        );
+    }
+
+    #[test]
+    fn religious_denial_triggers_with_one_unconverted_civilization() {
+        let mut game = Game::new_full(4, 30, 18, 7_215, 300, 0, false);
+        for pid in 0..4 {
+            game.current = pid;
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .unwrap();
+        }
+        game.current = 0;
+        game.players[1].religion = Some("Rival Faith".to_string());
+        for owner in [1, 2, 3] {
+            let city = game.player_city_ids(owner)[0];
+            game.cities
+                .get_mut(&city)
+                .unwrap()
+                .pressure
+                .insert("Rival Faith".to_string(), 1_000.0);
+        }
+
+        let ai = AdvancedAi::new();
+        let pressure = ai.rival_victory_pressure(&game, 1);
+        assert_eq!(pressure.strategy, GrandStrategy::Religion);
+        assert_eq!(pressure.progress, 75);
+        assert_eq!(
+            ai.victory_denial(&game, 0),
+            Some((1, GrandStrategy::Conquest))
         );
     }
 
@@ -10388,6 +10519,41 @@ mod tests {
             science.players[0].government.as_deref(),
             Some("synthetic_technocracy")
         );
+    }
+
+    #[test]
+    fn faith_stockpile_mobilizes_for_an_imminent_threat() {
+        let mut game = Game::new_full(2, 24, 16, 79_012, 200, 0, false);
+        for pid in 0..2 {
+            game.current = pid;
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .unwrap();
+        }
+        game.current = 0;
+        game.players[0].civics.insert("reformed_church".to_string());
+        game.players[0].faith = 1_500.0;
+        let target = game.player_city_ids(1)[0];
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: Some(target),
+            threatened_city: None,
+            desired_cities: 1,
+            assessed_turn: game.turn,
+        };
+        let before_units = game.player_unit_ids(0).len();
+        let ai = AdvancedAi::new();
+
+        ai.strategic_government(&mut game, 0, plan.strategy);
+        assert_eq!(game.players[0].government.as_deref(), Some("theocracy"));
+        assert!(ai.military_faith_spending(&mut game, 0, &plan));
+        assert_eq!(game.player_unit_ids(0).len(), before_units + 1);
+        assert!(game.players[0].faith < 1_500.0);
     }
 
     #[test]
