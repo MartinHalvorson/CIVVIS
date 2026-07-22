@@ -121,6 +121,33 @@ mod tests {
         }
     }
 
+    /// A crowded spawn used to drop its city-state on the floor, so a request
+    /// for twelve could seat as few as four and the game played nothing like
+    /// the one that was asked for. Every seat also needs a distinct identity:
+    /// the roster is indexed by seat, not by spawn.
+    #[test]
+    fn every_requested_city_state_is_seated_once() {
+        for seed in 7_300..7_312 {
+            let g = Game::new(8, 40, 24, seed, 5, 12);
+            let minors: Vec<&str> = g
+                .players
+                .iter()
+                .filter(|p| p.is_minor && !p.is_barbarian)
+                .map(|p| p.civ.as_str())
+                .collect();
+            assert_eq!(minors.len(), 12, "seed {seed} seated {minors:?}");
+            let distinct: std::collections::BTreeSet<&str> = minors.iter().copied().collect();
+            assert_eq!(distinct.len(), minors.len(), "seed {seed} repeats a name");
+            // Stock Civ VI keeps starts four tiles apart.
+            let capitals: Vec<crate::Pos> = g.cities.values().map(|c| c.pos).collect();
+            for (i, a) in capitals.iter().enumerate() {
+                for b in &capitals[i + 1..] {
+                    assert!(g.wdist(*a, *b) >= 4, "seed {seed} crowds {a:?} and {b:?}");
+                }
+            }
+        }
+    }
+
     #[test]
     fn city_states_stay_single() {
         let mut g = Game::new(2, 28, 18, 2, 50, 3);

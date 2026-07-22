@@ -13,7 +13,11 @@ use crate::{hex, mapgen, Pos};
 pub const CIV_NAMES: [&str; 8] = [
     "Rome", "Egypt", "Greece", "China", "Sumeria", "Aztec", "Nubia", "Scythia",
 ];
-pub const CITY_STATE_NAMES: [&str; 12] = [
+/// The city-states this ruleset can seat, in placement order. The first
+/// twelve carry bespoke Suzerain bonuses; the rest round out the Huge map's
+/// eighteen seats with their type bonuses alone. Every seat needs its own
+/// entry here — two city-states sharing a name would share an identity.
+pub const CITY_STATE_NAMES: [&str; 18] = [
     "Kabul",
     "Geneva",
     "Carthage",
@@ -26,6 +30,12 @@ pub const CITY_STATE_NAMES: [&str; 12] = [
     "Vilnius",
     "Stockholm",
     "Kandy",
+    "Jerusalem",
+    "Brussels",
+    "Preslav",
+    "Antananarivo",
+    "Seoul",
+    "Amsterdam",
 ];
 
 fn city_names(civ: &str) -> &'static [&'static str] {
@@ -7723,18 +7733,26 @@ impl Game {
             g.reveal(i, *pos, 3);
         }
         let major_spawns: Vec<Pos> = spawns.iter().take(num_players).cloned().collect();
-        for (i, pos) in spawns.iter().skip(num_players).enumerate() {
-            let crowded = major_spawns.iter().any(|s| g.wdist(*pos, *s) < 4)
-                || g.cities.values().any(|c| g.wdist(*pos, c.pos) < 4);
-            if crowded {
-                continue;
+        // Only as many city-states as the ruleset has distinct identities for:
+        // every modeled city-state carries its own unique Suzerain bonus, and
+        // two seats sharing a name would share that bonus.
+        let wanted = num_city_states.min(CITY_STATE_NAMES.len());
+        for pos in spawns.iter().skip(num_players) {
+            if g.players.len() - num_players >= wanted {
+                break;
             }
+            // A spawn the generator had to pack in beside a neighbour is
+            // relocated rather than abandoned; dropping it silently produced
+            // games with a third of the city-states that were asked for.
+            let Some(pos) = g.city_state_site(*pos, &major_spawns) else {
+                continue;
+            };
             let pid = g.players.len();
-            let name = CITY_STATE_NAMES[i % CITY_STATE_NAMES.len()];
+            let name = CITY_STATE_NAMES[pid - num_players];
             g.players.push(Player::new(pid, name, true));
-            g.found_city_for(pid, *pos, Some(name.to_string()));
-            g.place_new_unit("warrior", pid, *pos);
-            g.place_new_unit("slinger", pid, *pos);
+            g.found_city_for(pid, pos, Some(name.to_string()));
+            g.place_new_unit("warrior", pid, pos);
+            g.place_new_unit("slinger", pid, pos);
         }
         if barbarians {
             let pid = g.players.len();
@@ -7748,6 +7766,40 @@ impl Game {
         }
         g.refresh_great_person_offers();
         g
+    }
+
+    /// Where a city-state assigned to `preferred` should actually settle.
+    /// That tile is used when it clears every major start and existing city by
+    /// the stock four-tile minimum; otherwise the roomiest legal tile on the
+    /// map stands in, and `None` means the map has no room left at all.
+    fn city_state_site(&self, preferred: Pos, major_spawns: &[Pos]) -> Option<Pos> {
+        let clear = |pos: Pos| {
+            major_spawns.iter().all(|start| self.wdist(pos, *start) >= 4)
+                && self.cities.values().all(|c| self.wdist(pos, c.pos) >= 4)
+        };
+        if clear(preferred) {
+            return Some(preferred);
+        }
+        self.map
+            .tiles
+            .values()
+            .filter(|tile| {
+                !self.rules.is_water(tile)
+                    && self.rules.is_passable(tile)
+                    && tile.improvement.is_none()
+                    && tile.owner_city.is_none()
+                    && clear(tile.pos)
+            })
+            .max_by_key(|tile| {
+                let room = major_spawns
+                    .iter()
+                    .map(|start| self.wdist(tile.pos, *start))
+                    .chain(self.cities.values().map(|c| self.wdist(tile.pos, c.pos)))
+                    .min()
+                    .unwrap_or(i32::MAX);
+                (room, tile.pos)
+            })
+            .map(|tile| tile.pos)
     }
 
     fn spawn_camp(&mut self) {
@@ -11396,11 +11448,11 @@ impl Game {
 
     pub fn cs_type(civ: &str) -> &'static str {
         match civ {
-            "Geneva" | "Hattusa" | "Stockholm" => "scientific",
-            "Mohenjo-Daro" | "Vilnius" => "cultural",
-            "Yerevan" | "Kandy" => "religious",
-            "Kabul" | "Carthage" | "Valletta" => "militaristic",
-            "Auckland" => "industrial",
+            "Geneva" | "Hattusa" | "Stockholm" | "Seoul" => "scientific",
+            "Mohenjo-Daro" | "Vilnius" | "Antananarivo" => "cultural",
+            "Yerevan" | "Kandy" | "Jerusalem" => "religious",
+            "Kabul" | "Carthage" | "Valletta" | "Preslav" => "militaristic",
+            "Auckland" | "Brussels" => "industrial",
             _ => "trade", // Zanzibar and modded/extended trade city-states.
         }
     }
