@@ -491,13 +491,23 @@ impl AdvancedAi {
             .map(|p| p.id)
             .collect();
 
+        // A science race starts long before the first launch.  Treating every
+        // pre-space empire as exactly 25% complete made a strong researcher
+        // abandon science as soon as even modest tourism appeared.  The tech
+        // tree is public victory-screen information and gives the planner a
+        // smooth signal until the discrete space-race milestones take over.
+        let tech_progress =
+            25 + (30 * player.techs.len() / g.rules.techs.len().max(1)).min(30) as i32;
         let project_progress = player.science_projects.len().min(4) as i32 * 18;
         let travel_progress = if player.science_projects.contains("exoplanet_expedition") {
             (player.exoplanet_distance * 100.0 / 50.0).clamp(0.0, 100.0) as i32
         } else {
             0
         };
-        let science = project_progress.max(travel_progress).max(25);
+        let science = tech_progress
+            .max(project_progress)
+            .max(travel_progress)
+            .max((player.civ == "China") as i32 * 45);
 
         let culture_target = living_majors
             .iter()
@@ -8247,6 +8257,32 @@ mod tests {
             ai.victory_focus(&culture, 0).strategy,
             GrandStrategy::Culture
         );
+    }
+
+    #[test]
+    fn victory_focus_tracks_technology_before_the_first_space_project() {
+        let ai = AdvancedAi::new();
+        let mut game = Game::new(2, 24, 16, 761, 300, 0);
+        game.turn = 111;
+        let opening = ai.victory_focus(&game, 0);
+        assert_eq!(opening.strategy, GrandStrategy::Science);
+        assert_eq!(opening.progress, 25);
+
+        let researched: Vec<String> = game
+            .rules
+            .techs
+            .keys()
+            .take(game.rules.techs.len() * 2 / 3)
+            .cloned()
+            .collect();
+        game.players[0].techs.extend(researched);
+        let developed = ai.victory_focus(&game, 0);
+        assert_eq!(developed.strategy, GrandStrategy::Science);
+        assert!(developed.progress >= 44, "progress={}", developed.progress);
+
+        game.players[0].civ = "China".to_string();
+        game.players[0].techs.clear();
+        assert_eq!(ai.victory_focus(&game, 0).progress, 45);
     }
 
     #[test]
