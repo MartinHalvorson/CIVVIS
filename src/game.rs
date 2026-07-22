@@ -16968,6 +16968,46 @@ impl Game {
             Some("fishing_boats") => {
                 yields.food += self.tree_effect(pid, "fishing_boats_food");
                 yields.gold += self.tree_effect(pid, "fishing_boats_gold");
+                yields.production += self.tree_effect(pid, "fishing_boats_production");
+                // Each adjacent Seastead lifts its neighbouring Fishing Boats.
+                yields.production += self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].improvement.as_deref() == Some("seastead")
+                            && !self.map.tiles[neighbor].pillaged
+                    })
+                    .count() as f64
+                    * self.rules.improvements["seastead"]
+                        .effects
+                        .get("adjacent_fishing_boats_production")
+                        .copied()
+                        .unwrap_or(0.0);
+            }
+            Some("seastead") => {
+                let effects = &self.rules.improvements["seastead"].effects;
+                let adjacent_boats = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].improvement.as_deref() == Some("fishing_boats")
+                            && !self.map.tiles[neighbor].pillaged
+                    })
+                    .count() as f64;
+                yields.production += adjacent_boats
+                    * effects
+                        .get("adjacent_fishing_boats_production")
+                        .copied()
+                        .unwrap_or(0.0);
+                let adjacent_reefs = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].feature.as_deref() == Some("reef")
+                    })
+                    .count() as f64;
+                yields.culture +=
+                    adjacent_reefs * effects.get("adjacent_reef_culture").copied().unwrap_or(0.0);
             }
             Some("lumber_mill") => {
                 yields.production += self.tree_effect(pid, "lumber_mill_production");
@@ -16998,6 +17038,12 @@ impl Game {
                     })
                     .count() as f64;
                 yields.culture += adjacent * self.tree_effect(pid, "great_wall_culture_adjacency");
+                yields.gold += adjacent
+                    * self.rules.improvements["great_wall"]
+                        .effects
+                        .get("adjacent_great_wall_gold")
+                        .copied()
+                        .unwrap_or(0.0);
             }
             _ => {}
         }
@@ -28478,6 +28524,16 @@ impl Game {
                 };
                 let mut improvement_tourism = effects.get("tourism").copied().unwrap_or(0.0)
                     + effects.get("appeal_tourism").copied().unwrap_or(0.0) * tourism_appeal as f64;
+                if improvement == "seastead" {
+                    improvement_tourism += self
+                        .nbrs(*pos)
+                        .iter()
+                        .filter(|neighbor| {
+                            self.map.tiles[neighbor].feature.as_deref() == Some("reef")
+                        })
+                        .count() as f64
+                        * effects.get("adjacent_reef_tourism").copied().unwrap_or(0.0);
+                }
                 if improvement == "seaside_resort" {
                     improvement_tourism *=
                         1.0 + self.empire_wonder_effect(pid, "seaside_resort_tourism_pct") / 100.0;

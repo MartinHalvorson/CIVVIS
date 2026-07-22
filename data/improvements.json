@@ -64,7 +64,7 @@
     "feature": ["forest", "jungle"]
   },
   "oil_well": {
-    "tech": "refining",
+    "tech": "steel",
     "yields": {"production": 2},
     "resources": ["oil"],
     "resource_only": true
@@ -78,15 +78,15 @@
   },
   "wind_farm": {
     "tech": "composites",
-    "yields": {"production": 1, "gold": 2},
+    "yields": {"production": 1, "gold": 1},
     "requires_hills": true,
     "effects": {"power": 2}
   },
   "geothermal_plant": {
     "tech": "synthetic_materials",
-    "yields": {"production": 1, "science": 1},
+    "yields": {"production": 2, "science": 1},
     "feature": ["geothermal_fissure"],
-    "effects": {"power": 2}
+    "effects": {"power": 4}
   },
   "solar_farm": {
     "tech": "satellites",
@@ -96,7 +96,7 @@
   },
   "offshore_wind_farm": {
     "tech": "predictive_systems",
-    "yields": {"production": 2},
+    "yields": {"production": 1, "gold": 1},
     "terrain": ["coast", "lake"],
     "water": true,
     "effects": {"power": 2}
@@ -112,14 +112,14 @@
     "civic": "professional_sports",
     "yields": {},
     "terrain": ["mountain"],
-    "effects": {"tourism": 4, "amenity": 1, "unworkable": 1}
+    "effects": {"appeal_tourism": 1, "amenity": 1, "unworkable": 1}
   },
   "seastead": {
     "tech": "seasteads",
-    "yields": {"food": 2, "production": 1, "culture": 1},
-    "terrain": ["coast", "ocean"],
+    "yields": {"food": 2},
+    "terrain": ["coast", "lake", "ocean"],
     "water": true,
-    "effects": {"housing": 2, "tourism": 1}
+    "effects": {"housing": 2, "adjacent_fishing_boats_production": 1, "adjacent_reef_culture": 1, "adjacent_reef_tourism": 1}
   },
   "fort": {
     "tech": "siege_tactics",
@@ -169,19 +169,19 @@
     "tech": "masonry",
     "unique_to": "China",
     "yields": {"gold": 2},
-    "effects": {"defense": 4}
+    "effects": {"defense": 4, "adjacent_great_wall_gold": 2}
   },
   "nubian_pyramid": {
     "tech": "masonry",
     "unique_to": "Nubia",
-    "yields": {"faith": 1},
+    "yields": {"faith": 2, "food": 2},
     "terrain": ["desert"],
     "requires_flat": true
   },
   "kurgan": {
     "tech": "animal_husbandry",
     "unique_to": "Scythia",
-    "yields": {"gold": 1, "faith": 1},
+    "yields": {"gold": 3, "faith": 1},
     "requires_flat": true
   },
 
