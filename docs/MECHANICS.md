@@ -4,11 +4,12 @@ Tracked against the [Civilization Wiki](https://civilization.fandom.com/wiki/Civ
 Status: ✅ implemented · 🟡 simplified · ❌ not yet.
 
 > **In progress** (claimed by parallel sessions — check before starting a batch):
-> - Session B: leaders + civ unique abilities/units + full-game verification sweep. NOT touching web/index.html.
+> - (none currently claimed by session B)
 
 | System | Status | Notes |
 |---|---|---|
 | Hex map, fog of war, terrain/features/resources | ✅ | tile-based rivers (🟡 vs edge rivers) |
+| Leaders & civ uniques | ✅ | all 8 civs: Trajan, Cleopatra, Pericles, Qin Shi Huang, Gilgamesh, Montezuma, Amanitore, Tomyris — signature ability each + 8 unique units (legion, hoplite, eagle warrior, war cart, pítati archer, maryannu chariot archer, saka horse archer, crouching tiger) replacing/blocking their base units |
 | Rivers & fresh water housing (5/3/2) | ✅ | wiki values; oasis counts as fresh |
 | City growth curve, border expansion | ✅ | |
 | Housing & amenities | ✅ | luxuries global (🟡 vs 4-city rationing) |

@@ -636,6 +636,114 @@ mod tests {
     }
 
     #[test]
+    fn leaders_present_and_uniques_gated() {
+        let g = Game::new_full(8, 40, 24, 3, 60, 0, false);
+        // every playable civ has a leader and ability defined
+        for name in crate::game::CIV_NAMES {
+            let spec = g.rules.civs.get(name)
+                .unwrap_or_else(|| panic!("no leader data for {name}"));
+            assert!(!spec.leader.is_empty());
+            assert!(!spec.ability.is_empty());
+            if let Some(uu) = &spec.unique_unit {
+                let us = &g.rules.units[uu.as_str()];
+                assert_eq!(us.unique_to.as_deref(), Some(name),
+                           "{uu} unique_to mismatch");
+            }
+        }
+        // seats map to civs in order: 0 Rome .. 7 Scythia
+        for (i, name) in crate::game::CIV_NAMES.iter().enumerate() {
+            assert_eq!(&g.players[i].civ, name);
+        }
+        // unique units: only their civ builds them; the base is blocked
+        let mut g = g;
+        let greece = 2;
+        let s = g.player_unit_ids(greece).into_iter()
+            .find(|id| g.units[id].kind == "settler").unwrap();
+        // clear the current player gate for direct checks
+        g.players[greece].techs.insert("bronze_working".to_string());
+        while g.current != greece {
+            let cur = g.current;
+            g.apply(cur, &Action::EndTurn).unwrap();
+        }
+        g.apply(greece, &Action::FoundCity { unit: s }).unwrap();
+        let cid = g.player_city_ids(greece)[0];
+        use crate::game::Item;
+        assert!(g.can_produce(greece, cid,
+            &Item::Unit { unit: "hoplite".to_string() }));
+        assert!(!g.can_produce(greece, cid,
+            &Item::Unit { unit: "spearman".to_string() }));
+        assert!(!g.can_produce(greece, cid,
+            &Item::Unit { unit: "legion".to_string() }));
+        // Greece: Plato's Republic grants an extra wildcard slot
+        g.players[greece].civics.insert("code_of_laws".to_string());
+        g.apply(greece, &Action::Government {
+            government: "chiefdom".to_string() }).unwrap();
+        let slots = g.gov_slots(greece);
+        assert_eq!(slots.wildcard, 1); // chiefdom normally has none
+        // China: Dynastic Cycle boosts give 50%, builders +1 charge
+        let china = 3;
+        assert!(g.has_ability(china, "dynastic_cycle"));
+        g.players[china].boosted_techs.insert("pottery".to_string());
+        while g.current != china {
+            let cur = g.current;
+            g.apply(cur, &Action::EndTurn).unwrap();
+        }
+        g.apply(china, &Action::Research { tech: "pottery".to_string() }).unwrap();
+        let cost = g.rules.techs["pottery"].cost;
+        assert!((g.players[china].research_progress - 0.5 * cost).abs() < 1e-9);
+        // Rome: founded cities start with a free monument
+        let rome = 0;
+        let s = g.player_unit_ids(rome).into_iter()
+            .find(|id| g.units[id].kind == "settler").unwrap();
+        while g.current != rome {
+            let cur = g.current;
+            g.apply(cur, &Action::EndTurn).unwrap();
+        }
+        g.apply(rome, &Action::FoundCity { unit: s }).unwrap();
+        let rc = g.player_city_ids(rome)[0];
+        assert!(g.cities[&rc].buildings.iter().any(|b| b == "monument"));
+    }
+
+    #[test]
+    fn domination_victory() {
+        let mut g = Game::new_full(2, 20, 14, 5, 300, 0, false);
+        g.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
+        // eliminate player 1 in open combat: seize their last settler
+        let settler = g.player_unit_ids(1).into_iter()
+            .find(|id| g.units[id].kind == "settler").unwrap();
+        let spos = g.units[&settler].pos;
+        // park their escort far away so the capture is uncontested
+        let foe_w = g.player_unit_ids(1).into_iter()
+            .find(|id| g.units[id].kind == "warrior").unwrap();
+        let far = g.map.tiles.values()
+            .find(|t| g.wdist(t.pos, spos) > 8 && !g.rules.is_water(t)
+                && g.rules.is_passable(t) && g.units_at(t.pos).is_empty())
+            .map(|t| t.pos).unwrap();
+        let g2 = teleport(&g, foe_w, far);
+        let mine = g2.player_unit_ids(0).into_iter()
+            .find(|id| g2.units[id].kind == "warrior").unwrap();
+        let adj = crate::hex::neighbors(spos).into_iter()
+            .find(|n| g2.map.get(*n).map(|t| !g2.rules.is_water(t)
+                && g2.rules.is_passable(t)
+                && g2.units_at(*n).is_empty()).unwrap_or(false)).unwrap();
+        let mut g3 = teleport(&g2, mine, adj);
+        g3.apply(0, &Action::Move { unit: mine, to: spos }).unwrap();
+        assert!(!g3.players[1].alive);
+        assert_eq!(g3.winner, Some(0));
+        assert_eq!(g3.victory_type.as_deref(), Some("domination"));
+    }
+
+    #[test]
+    fn all_leaders_full_game() {
+        // all 8 leaders in one headless game, played to a decision
+        let mut g = Game::new(8, 40, 24, 21, 150, 2);
+        let mut ais = BasicAi::fleet(&g);
+        run_game(&mut g, &mut ais);
+        assert!(g.winner.is_some());
+        assert!(g.victory_type.is_some());
+    }
+
+    #[test]
     fn serialization_roundtrip() {
         let mut g = Game::new(2, 18, 12, 4, 25, 1);
         let mut ais = BasicAi::fleet(&g);

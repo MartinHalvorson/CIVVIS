@@ -139,5 +139,84 @@
     "cost": 100,
     "moves": 2,
     "tech": "construction"
+  },
+  "legion": {
+    "class": "military",
+    "cost": 110,
+    "moves": 2,
+    "strength": 40,
+    "tech": "iron_working",
+    "requires_resource": "iron",
+    "unique_to": "Rome",
+    "replaces": "swordsman"
+  },
+  "hoplite": {
+    "class": "military",
+    "cost": 65,
+    "moves": 2,
+    "strength": 28,
+    "tech": "bronze_working",
+    "unique_to": "Greece",
+    "replaces": "spearman"
+  },
+  "eagle_warrior": {
+    "class": "military",
+    "cost": 65,
+    "moves": 2,
+    "strength": 28,
+    "unique_to": "Aztec",
+    "replaces": "warrior"
+  },
+  "war_cart": {
+    "class": "military",
+    "cost": 55,
+    "moves": 3,
+    "strength": 30,
+    "unique_to": "Sumeria",
+    "cavalry": true
+  },
+  "pitati_archer": {
+    "class": "military",
+    "cost": 70,
+    "moves": 3,
+    "strength": 17,
+    "ranged_strength": 30,
+    "range": 2,
+    "tech": "archery",
+    "unique_to": "Nubia",
+    "replaces": "archer"
+  },
+  "maryannu_chariot_archer": {
+    "class": "military",
+    "cost": 120,
+    "moves": 2,
+    "strength": 23,
+    "ranged_strength": 33,
+    "range": 2,
+    "tech": "horseback_riding",
+    "unique_to": "Egypt",
+    "cavalry": true
+  },
+  "saka_horse_archer": {
+    "class": "military",
+    "cost": 100,
+    "moves": 4,
+    "strength": 20,
+    "ranged_strength": 25,
+    "range": 1,
+    "tech": "horseback_riding",
+    "unique_to": "Scythia",
+    "cavalry": true
+  },
+  "crouching_tiger": {
+    "class": "military",
+    "cost": 160,
+    "moves": 2,
+    "strength": 28,
+    "ranged_strength": 50,
+    "range": 1,
+    "tech": "machinery",
+    "unique_to": "China",
+    "replaces": "crossbowman"
   }
 }

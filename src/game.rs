@@ -597,6 +597,14 @@ impl Game {
             }
             self.players[owner].gold += 50.0;
             self.players[owner].era_score += 1;
+            if self.has_ability(owner, "epic_quest") {
+                match self.rng.below(4) {
+                    0 => self.players[owner].gold += 60.0,
+                    1 => self.players[owner].faith += 20.0,
+                    2 => self.grant_random_boosts(owner, 1, true),
+                    _ => self.grant_random_boosts(owner, 1, false),
+                }
+            }
             bump(&mut self.players[owner], "camps");
         }
     }
@@ -641,6 +649,22 @@ impl Game {
 
     pub fn has_policy(&self, pid: usize, name: &str) -> bool {
         self.players[pid].policies.contains(name)
+    }
+
+    /// Leader/civ ability check (data in civs.json, effects keyed by name).
+    pub fn has_ability(&self, pid: usize, ability: &str) -> bool {
+        self.rules.civs.get(&self.players[pid].civ)
+            .map(|c| c.ability == ability)
+            .unwrap_or(false)
+    }
+
+    /// Eureka/inspiration fraction (China's Dynastic Cycle: 50% vs 40%).
+    fn boost_frac(&self, pid: usize) -> f64 {
+        if self.has_ability(pid, "dynastic_cycle") {
+            0.5
+        } else {
+            0.4
+        }
     }
 
     // -------------------------------------------------- trade routes
@@ -1108,16 +1132,17 @@ impl Game {
                 return;
             }
             let (name, cost) = cands[self.rng.below(cands.len())].clone();
+            let f = self.boost_frac(pid);
             let p = &mut self.players[pid];
             if techs {
                 p.boosted_techs.insert(name.clone());
                 if p.research.as_deref() == Some(name.as_str()) {
-                    p.research_progress += 0.4 * cost;
+                    p.research_progress += f * cost;
                 }
             } else {
                 p.boosted_civics.insert(name.clone());
                 if p.civic.as_deref() == Some(name.as_str()) {
-                    p.civic_progress += 0.4 * cost;
+                    p.civic_progress += f * cost;
                 }
             }
         }
@@ -1260,7 +1285,7 @@ impl Game {
     /// +% production toward the item at the head of a city's queue from
     /// slotted policy cards (Agoge, Maneuver, Maritime Industries, Ilkum,
     /// Colonization, Feudal Contract, Limes).
-    fn item_prod_mult(&self, pid: usize, item: Option<&Item>) -> f64 {
+    fn item_prod_mult(&self, pid: usize, cid: u32, item: Option<&Item>) -> f64 {
         let mut bonus: f64 = 0.0;
         match item {
             Some(Item::Unit { unit }) => {
@@ -1274,6 +1299,10 @@ impl Game {
                     bonus += 1.0;
                 } else if spec.cavalry && self.has_policy(pid, "maneuver") {
                     bonus += 0.5;
+                }
+                if spec.ranged_strength > 0.0 && spec.class == "military"
+                    && self.has_ability(pid, "ta_seti") {
+                    bonus += 0.5; // Nubia: Ta-Seti
                 } else if spec.class == "military" && !spec.siege {
                     if self.has_policy(pid, "agoge")
                         || self.has_policy(pid, "feudal_contract") {
@@ -1289,6 +1318,11 @@ impl Game {
                     && self.has_policy(pid, "limes") {
                     bonus += 1.0;
                 }
+                if self.rules.buildings[building.as_str()].wonder
+                    && self.has_ability(pid, "iteru")
+                    && self.map.tiles[&self.cities[&cid].pos].river {
+                    bonus += 0.15; // Egypt: Iteru (river cities)
+                }
             }
             _ => {}
         }
@@ -1296,11 +1330,16 @@ impl Game {
     }
 
     pub fn gov_slots(&self, pid: usize) -> crate::rules::PolicySlots {
-        match &self.players[pid].government {
+        let mut slots = match &self.players[pid].government {
             Some(g) => self.rules.governments.get(g)
                 .map(|s| s.slots).unwrap_or_default(),
             None => Default::default(),
+        };
+        let any = slots.military + slots.economic + slots.diplomatic + slots.wildcard;
+        if any > 0 && self.has_ability(pid, "platos_republic") {
+            slots.wildcard += 1; // Greece: Plato's Republic
         }
+        slots
     }
 
     /// Can this set of cards be seated in the player's slots? Typed cards
@@ -1357,6 +1396,9 @@ impl Game {
         let mut s = self.rules.units[u.kind.as_str()].strength.max(1.0)
             + 5.0 * (u.level - 1) as f64
             + self.gov_effects(u.owner).combat_strength;
+        if self.has_ability(u.owner, "gifts_for_the_tlatoani") {
+            s += self.empire_luxuries(u.owner) as f64; // Montezuma
+        }
         if defending && u.fortified {
             s += 6.0;
         }
@@ -1569,6 +1611,9 @@ impl Game {
             charges += self.empire_building_sum(owner, |b| b.builder_charges as f64) as i32;
             if self.has_policy(owner, "serfdom") {
                 charges += 2;
+            }
+            if self.has_ability(owner, "dynastic_cycle") {
+                charges += 1; // China: First Emperor
             }
         }
         let u = Unit {
@@ -2091,6 +2136,13 @@ impl Game {
                 ys.production += 1.0;
             }
         }
+        if self.has_ability(city.owner, "platos_republic") {
+            let suz = self.players.iter()
+                .filter(|m| m.is_minor && !m.is_barbarian && m.alive)
+                .filter(|m| self.suzerain_of(m.id) == Some(city.owner))
+                .count() as f64;
+            ys.culture *= 1.0 + 0.05 * suz; // Surrounded by Glory
+        }
         match self.players[city.owner].pantheon.as_deref() {
             Some("god_of_the_open_sky") => {
                 ys.culture += city.owned_tiles.iter().filter(|p| {
@@ -2210,6 +2262,20 @@ impl Game {
                 }
                 if spec.class == "religious" {
                     return false; // faith purchase only (Civ 6)
+                }
+                if let Some(civ) = &spec.unique_to {
+                    if self.players[pid].civ != *civ {
+                        return false; // another civ's unique unit
+                    }
+                }
+                // a civ with a unique replacement cannot build the base unit
+                let replaced = self.rules.units.values().any(|s| {
+                    s.replaces.as_deref() == Some(unit.as_str())
+                        && s.unique_to.as_deref()
+                            == Some(self.players[pid].civ.as_str())
+                });
+                if replaced {
+                    return false;
                 }
                 if let Some(res) = &spec.requires_resource {
                     if !self.has_resource(pid, res) {
@@ -2588,10 +2654,15 @@ impl Game {
         if !self.can_move(uid, to) {
             return Err("invalid move".into());
         }
+        let mut captured_from: Vec<usize> = Vec::new();
         for oid in self.units_at(to) {
             if self.units[&oid].owner != pid {
+                captured_from.push(self.units[&oid].owner);
                 self.units.get_mut(&oid).unwrap().owner = pid; // capture civilian
             }
+        }
+        for old in captured_from {
+            self.on_unit_lost(old); // losing a last settler can eliminate
         }
         let cost = self.step_cost(u.pos, to);
         let spec = self.rules.units[u.kind.as_str()].clone();
@@ -2707,6 +2778,11 @@ impl Game {
             let downer = self.units[&did].owner;
             if d_dead {
                 self.award_xp(uid, 3);
+                if self.has_ability(pid, "killer_of_cyrus") {
+                    if let Some(mu) = self.units.get_mut(&uid) {
+                        mu.hp = (mu.hp + 30).min(100); // Tomyris
+                    }
+                }
                 bump(&mut self.players[pid], "kills");
                 self.remove_unit(did);
                 self.on_unit_lost(downer);
@@ -2777,10 +2853,15 @@ impl Game {
 
     fn enter_tile(&mut self, uid: u32, pos: Pos) {
         let owner = self.units[&uid].owner;
+        let mut captured_from: Vec<usize> = Vec::new();
         for oid in self.units_at(pos) {
             if self.units[&oid].owner != owner {
+                captured_from.push(self.units[&oid].owner);
                 self.units.get_mut(&oid).unwrap().owner = owner;
             }
+        }
+        for old in captured_from {
+            self.on_unit_lost(old);
         }
         self.relocate(uid, pos);
         self.maybe_clear_camp(uid);
@@ -2961,6 +3042,9 @@ impl Game {
                 }
             }
         }
+        if self.has_ability(pid, "trajans_column") && !is_minor {
+            city.buildings.push("monument".to_string()); // Trajan's Column
+        }
         self.city_by_pos.insert(pos, cid);
         self.cities.insert(cid, city);
         self.reveal(pid, pos, 3);
@@ -3071,8 +3155,9 @@ impl Game {
         p.research = Some(tech.to_string());
         p.research_progress = p.research_overflow;
         p.research_overflow = 0.0;
-        if p.boosted_techs.contains(tech) {
-            p.research_progress += 0.4 * cost;
+        let f = self.boost_frac(pid);
+        if self.players[pid].boosted_techs.contains(tech) {
+            self.players[pid].research_progress += f * cost;
         }
         Ok(())
     }
@@ -3089,8 +3174,9 @@ impl Game {
         p.civic = Some(civic.to_string());
         p.civic_progress = p.civic_overflow;
         p.civic_overflow = 0.0;
-        if p.boosted_civics.contains(civic) {
-            p.civic_progress += 0.4 * cost;
+        let f = self.boost_frac(pid);
+        if self.players[pid].boosted_civics.contains(civic) {
+            self.players[pid].civic_progress += f * cost;
         }
         Ok(())
     }
@@ -3589,10 +3675,11 @@ impl Game {
                 continue;
             }
             if self.boost_met(pid, &b) {
+                let f = self.boost_frac(pid);
                 let p = &mut self.players[pid];
                 p.boosted_techs.insert(name.clone());
                 if p.research.as_deref() == Some(name.as_str()) {
-                    p.research_progress += 0.4 * cost;
+                    p.research_progress += f * cost;
                 }
             }
         }
@@ -3605,10 +3692,11 @@ impl Game {
                 continue;
             }
             if self.boost_met(pid, &b) {
+                let f = self.boost_frac(pid);
                 let p = &mut self.players[pid];
                 p.boosted_civics.insert(name.clone());
                 if p.civic.as_deref() == Some(name.as_str()) {
-                    p.civic_progress += 0.4 * cost;
+                    p.civic_progress += f * cost;
                 }
             }
         }
@@ -3694,7 +3782,7 @@ impl Game {
             }
             let mult = {
                 let c = &self.cities[&cid];
-                self.item_prod_mult(pid, c.queue.first())
+                self.item_prod_mult(pid, cid, c.queue.first())
             };
             let city = self.cities.get_mut(&cid).unwrap();
             city.production += ys.production * mult;

@@ -1,0 +1,50 @@
+{
+  "Rome": {
+    "leader": "Trajan",
+    "ability": "trajans_column",
+    "unique_unit": "legion",
+    "note": "Trajan's Column: every founded city starts with a free monument"
+  },
+  "Egypt": {
+    "leader": "Cleopatra",
+    "ability": "iteru",
+    "unique_unit": "maryannu_chariot_archer",
+    "note": "Iteru: +15% production toward wonders in cities on a river"
+  },
+  "Greece": {
+    "leader": "Pericles",
+    "ability": "platos_republic",
+    "unique_unit": "hoplite",
+    "note": "Plato's Republic: +1 wildcard policy slot; Surrounded by Glory: +5% culture per suzerained city-state"
+  },
+  "China": {
+    "leader": "Qin Shi Huang",
+    "ability": "dynastic_cycle",
+    "unique_unit": "crouching_tiger",
+    "note": "Dynastic Cycle: eurekas and inspirations give 50% (vs 40%); First Emperor: builders get +1 charge"
+  },
+  "Sumeria": {
+    "leader": "Gilgamesh",
+    "ability": "epic_quest",
+    "unique_unit": "war_cart",
+    "note": "Epic Quest: clearing a barbarian camp also grants a tribal village reward"
+  },
+  "Aztec": {
+    "leader": "Montezuma",
+    "ability": "gifts_for_the_tlatoani",
+    "unique_unit": "eagle_warrior",
+    "note": "Gifts for the Tlatoani: +1 combat strength per distinct improved luxury"
+  },
+  "Nubia": {
+    "leader": "Amanitore",
+    "ability": "ta_seti",
+    "unique_unit": "pitati_archer",
+    "note": "Ta-Seti: +50% production toward ranged units"
+  },
+  "Scythia": {
+    "leader": "Tomyris",
+    "ability": "killer_of_cyrus",
+    "unique_unit": "saka_horse_archer",
+    "note": "Killer of Cyrus: units heal 30 HP after killing a unit"
+  }
+}

@@ -148,7 +148,9 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool) -> Value {
             },
         },
         "players": g.players.iter().map(|o| json!({
-            "id": o.id, "civ": o.civ, "alive": o.alive,
+            "id": o.id, "civ": o.civ,
+            "leader": g.rules.civs.get(&o.civ).map(|c| c.leader.clone()),
+            "alive": o.alive,
             "is_minor": o.is_minor, "is_barbarian": o.is_barbarian,
             "cs_type": if o.is_minor && !o.is_barbarian {
                 Some(Game::cs_type(&o.civ))

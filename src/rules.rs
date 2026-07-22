@@ -118,6 +118,10 @@ pub struct UnitSpec {
     #[serde(default)]
     pub civic: Option<String>,
     #[serde(default)]
+    pub unique_to: Option<String>, // civ that alone may build this unit
+    #[serde(default)]
+    pub replaces: Option<String>, // base unit this unique replaces
+    #[serde(default)]
     pub cavalry: bool, // ignores zone of control
     #[serde(default)]
     pub siege: bool, // full damage vs city walls
@@ -216,6 +220,16 @@ pub struct GovSpec {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
+pub struct CivSpec {
+    pub leader: String,
+    pub ability: String,
+    #[serde(default)]
+    pub unique_unit: Option<String>,
+    #[serde(default)]
+    pub note: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
 pub struct BeliefSpec {
     #[serde(default)]
     pub note: String,
@@ -253,6 +267,7 @@ pub struct Rules {
     pub governments: BTreeMap<String, GovSpec>,
     pub policies: BTreeMap<String, PolicySpec>,
     pub beliefs: BeliefsData,
+    pub civs: BTreeMap<String, CivSpec>,
 }
 
 impl Rules {
@@ -270,6 +285,7 @@ impl Rules {
             governments: serde_json::from_str(include_str!("../data/governments.json")).unwrap(),
             policies: serde_json::from_str(include_str!("../data/policies.json")).unwrap(),
             beliefs: serde_json::from_str(include_str!("../data/beliefs.json")).unwrap(),
+            civs: serde_json::from_str(include_str!("../data/civs.json")).unwrap(),
         }
     }
 
