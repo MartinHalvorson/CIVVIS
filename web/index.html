@@ -768,6 +768,7 @@ function resize() {
   cv.width = area.clientWidth * DPR; cv.height = area.clientHeight * DPR;
   mini.width = 200 * DPR; mini.height = 140 * DPR;
   mini.style.width = "200px"; mini.style.height = "140px";
+  if (SPEC && DIRECTOR) cam.y = clampCameraY(cam.y);
   draw(); if (state) drawMini();
 }
 window.addEventListener("resize", resize);
@@ -917,9 +918,10 @@ function queueDirectorCue(cue) {
 function advanceDirector() {
   if (!DIRECTOR || !directorGoal || !state || dragState) return;
   const gx = wrapX(S * SQ3 * (directorGoal[0] + directorGoal[1] / 2));
-  const gy = S * 1.5 * directorGoal[1];
+  const gy = clampCameraY(S * 1.5 * directorGoal[1]);
   const dx = gx - cam.x, dy = gy - cam.y;
   cam.x += dx * 0.22; cam.y += dy * 0.22;
+  cam.y = clampCameraY(cam.y);
   if (Math.abs(dx) + Math.abs(dy) < 2) directorGoal = null;
 }
 let lastSeed2 = null;
@@ -2663,6 +2665,25 @@ function modeline() {
 modeline();
 
 // ---------------------------------------------------------------- camera
+function cameraYBounds(scale = cam.scale) {
+  // The east-west cylinder has no horizontal edge, but its polar rows are
+  // finite. At the default north-up view, keep automatic framing inside those
+  // rows so a battle near a pole cannot replace a large part of the map with
+  // empty background. Rotated/manual views remain unconstrained.
+  if (!state || !area.clientHeight || Math.abs(SINR) > 0.001) return null;
+  const halfVisible = area.clientHeight / (2 * Math.max(0.25, scale) * YS);
+  const top = -S;
+  const bottom = S * 1.5 * Math.max(0, state.map.height - 1) + S + SKIRT / YS;
+  if (bottom - top <= halfVisible * 2) {
+    const middle = (top + bottom) / 2;
+    return { min: middle, max: middle };
+  }
+  return { min: top + halfVisible, max: bottom - halfVisible };
+}
+function clampCameraY(y, scale = cam.scale) {
+  const bounds = cameraYBounds(scale);
+  return bounds ? Math.max(bounds.min, Math.min(bounds.max, y)) : y;
+}
 function zoomAt(f, sx, sy) {
   if (sx === undefined) { sx = area.clientWidth / 2; sy = area.clientHeight / 2; }
   const [wx, wy] = screenToWorld(sx, sy);
@@ -2671,6 +2692,7 @@ function zoomAt(f, sx, sy) {
   const vy = (sy - area.clientHeight / 2) / cam.scale / YS;
   cam.x = wx - (COSR * vx + SINR * vy);
   cam.y = wy - (-SINR * vx + COSR * vy);
+  if (SPEC && DIRECTOR) cam.y = clampCameraY(cam.y);
   draw(); drawMini();
 }
 function centerWorld(pos) {
@@ -2780,7 +2802,7 @@ function setMainLandmassView() {
   if (!anchor) return;
   cam.scale = 0.9;
   cam.x = S * SQ3 * (anchor.pos[0] + anchor.pos[1] / 2);
-  cam.y = S * 1.5 * anchor.pos[1];
+  cam.y = clampCameraY(S * 1.5 * anchor.pos[1]);
 }
 function centerMainLandmass() {
   setMainLandmassView();

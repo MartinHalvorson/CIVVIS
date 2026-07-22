@@ -541,6 +541,8 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("Global lifetime carbon emissions"));
         assert!(EMBEDDED_INDEX.contains("Alliance · Level"));
         assert!(EMBEDDED_INDEX.contains(".diplomacy-card.allied"));
+        assert!(EMBEDDED_INDEX.contains("function cameraYBounds"));
+        assert!(EMBEDDED_INDEX.contains("cam.y = clampCameraY(cam.y)"));
     }
 
     #[test]
