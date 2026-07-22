@@ -10,8 +10,8 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::ai::{run_game, BasicAi, Weights};
-use crate::game::Game;
+use crate::ai::{run_game, Ai, BasicAi, Weights};
+use crate::game::{Action, Game};
 use crate::rng::Rng;
 
 pub struct EvoCfg {
@@ -52,22 +52,7 @@ fn eval_game(w: &Weights, champ: &Weights, seat: usize, cfg: &EvoCfg, seed: u64,
     // mix game lengths so champions aren't tuned only for short score races
     let turns = if long { cfg.max_turns * 2 } else { cfg.max_turns };
     let mut g = Game::new(cfg.players, cfg.width, cfg.height, seed, turns, 2);
-    // table: candidate + champions + ONE frozen-default seat. The anchor
-    // keeps selection tied to absolute strength — pure champion-vs-champion
-    // tables drift into intransitive cycles (beat the champ, not the game).
-    let mut anchor_left = true;
-    let mut ais: Vec<BasicAi> = g.players.iter().map(|p| {
-        if p.is_minor || p.is_barbarian {
-            BasicAi::new()
-        } else if p.id == seat {
-            BasicAi::with_weights(w.clone())
-        } else if anchor_left {
-            anchor_left = false;
-            BasicAi::new()
-        } else {
-            BasicAi::with_weights(champ.clone())
-        }
-    }).collect();
+    let mut ais = make_table(&g, w, champ, seat);
     run_game(&mut g, &mut ais);
     let total: i64 = g.players.iter().filter(|p| !p.is_minor)
         .map(|p| g.score(p.id)).sum();
@@ -84,10 +69,96 @@ fn eval_game(w: &Weights, champ: &Weights, seat: usize, cfg: &EvoCfg, seed: u64,
     (fit, won)
 }
 
+/// Table: candidate at `seat` + ONE frozen-default anchor + champions. The
+/// anchor keeps selection tied to absolute strength — pure champion-vs-champion
+/// tables drift into intransitive cycles (beat the champ, not the game).
+fn make_table(g: &Game, w: &Weights, champ: &Weights, seat: usize) -> Vec<BasicAi> {
+    let mut anchor_left = true;
+    g.players.iter().map(|p| {
+        if p.is_minor || p.is_barbarian {
+            BasicAi::new()
+        } else if p.id == seat {
+            BasicAi::with_weights(w.clone())
+        } else if anchor_left {
+            anchor_left = false;
+            BasicAi::new()
+        } else {
+            BasicAi::with_weights(champ.clone())
+        }
+    }).collect()
+}
+
+/// Per-player position features for value-net training (NNUE-style dataset).
+/// All roughly 0..1-normalized; self block, best-opponent block, then turn.
+pub fn features(g: &Game, pid: usize) -> Vec<f32> {
+    let block = |p: usize| -> Vec<f32> {
+        let cids = g.player_city_ids(p);
+        let pop: i32 = cids.iter().map(|c| g.cities[c].pop).sum();
+        let tiles: usize = cids.iter().map(|c| g.cities[c].owned_tiles.len()).sum();
+        let mut yields = [0.0f64; 3]; // sci, cul, gold
+        for c in &cids {
+            let y = g.city_yields(*c);
+            yields[0] += y.science;
+            yields[1] += y.culture;
+            yields[2] += y.gold;
+        }
+        let pl = &g.players[p];
+        vec![
+            cids.len() as f32 / 10.0,
+            pop as f32 / 60.0,
+            tiles as f32 / 80.0,
+            pl.techs.len() as f32 / 30.0,
+            pl.civics.len() as f32 / 15.0,
+            g.military_power(p) as f32 / 200.0,
+            g.player_unit_ids(p).len() as f32 / 20.0,
+            yields[0] as f32 / 50.0,
+            yields[1] as f32 / 50.0,
+            yields[2] as f32 / 80.0,
+            (pl.gold as f32 / 500.0).min(2.0),
+            g.score(p) as f32 / 400.0,
+        ]
+    };
+    let mut f = block(pid);
+    let rival = g.players.iter()
+        .filter(|p| p.id != pid && !p.is_minor && p.alive)
+        .max_by_key(|p| g.score(p.id)).map(|p| p.id);
+    f.extend(rival.map(&block).unwrap_or_else(|| vec![0.0; 12]));
+    f.push(g.turn as f32 / g.max_turns.max(1) as f32);
+    f
+}
+
+/// Play one game while sampling per-major position features every 16 turns;
+/// rows labeled with the final outcome land in `rows`. Returns candidate won.
+fn play_sampled(w: &Weights, champ: &Weights, seat: usize, cfg: &EvoCfg,
+                seed: u64, long: bool, rows: &mut Vec<(Vec<f32>, bool)>) -> bool {
+    let turns = if long { cfg.max_turns * 2 } else { cfg.max_turns };
+    let mut g = Game::new(cfg.players, cfg.width, cfg.height, seed, turns, 2);
+    let mut ais = make_table(&g, w, champ, seat);
+    let mut pending: Vec<(Vec<f32>, usize)> = Vec::new();
+    let mut last_sample = 0;
+    while g.winner.is_none() {
+        let pid = g.current;
+        ais[pid].take_turn(&mut g, pid);
+        if g.winner.is_none() && g.current == pid {
+            let _ = g.apply(pid, &Action::EndTurn);
+        }
+        if g.turn >= last_sample + 16 && g.winner.is_none() {
+            last_sample = g.turn;
+            for p in g.players.iter().filter(|p| !p.is_minor && p.alive) {
+                pending.push((features(&g, p.id), p.id));
+            }
+        }
+    }
+    let winner = g.winner.unwrap();
+    rows.extend(pending.into_iter().map(|(f, p)| (f, p == winner)));
+    winner == seat
+}
+
 /// Fishtest-style SPRT match vs the champion: H0 win rate 0.25 (parity at a
 /// 4-seat table), H1 0.40, α=β≈0.05. Returns (accepted, wins, losses).
-fn sprt_confirm(cand: &Weights, champ: &Weights, cfg: &EvoCfg, gen: u32)
-    -> (bool, u32, u32) {
+/// Side effect: a quarter of the games feed the value-net position dataset.
+fn sprt_confirm(cand: &Weights, champ: &Weights, cfg: &EvoCfg, gen: u32,
+                rows: &mut Vec<(Vec<f32>, bool)>) -> (bool, u32, u32) {
     let (p0, p1) = (1.0 / cfg.players as f64, 0.40f64.max(1.6 / cfg.players as f64));
     let (lw, ll) = ((p1 / p0).ln(), ((1.0 - p1) / (1.0 - p0)).ln());
     let bound = 2.94;
@@ -95,7 +166,11 @@ fn sprt_confirm(cand: &Weights, champ: &Weights, cfg: &EvoCfg, gen: u32)
     for i in 0..200u64 {
         let seat = (i as usize) % cfg.players;
         let seed = 7_000_000 + gen as u64 * 10_000 + i;
-        let (_, won) = eval_game(cand, champ, seat, cfg, seed, i % 3 == 2);
+        let won = if i % 4 == 0 {
+            play_sampled(cand, champ, seat, cfg, seed, i % 3 == 2, rows)
+        } else {
+            eval_game(cand, champ, seat, cfg, seed, i % 3 == 2).1
+        };
         if won { w += 1; llr += lw; } else { l += 1; llr += ll; }
         if llr >= bound {
             return (true, w, l);
@@ -188,7 +263,16 @@ pub fn evolve(cfg: &EvoCfg) {
         let mut promoted = false;
         let mut sprt_note = String::new();
         if fits[best] > 78.0 {
-            let (ok, w, l) = sprt_confirm(&pop[best], &champ, cfg, gen);
+            let mut rows: Vec<(Vec<f32>, bool)> = Vec::new();
+            let (ok, w, l) = sprt_confirm(&pop[best], &champ, cfg, gen, &mut rows);
+            if let Ok(mut f) = fs::OpenOptions::new().create(true).append(true)
+                .open(dir.join("dataset.csv")) {
+                for (feats, won) in &rows {
+                    let line: Vec<String> = feats.iter()
+                        .map(|x| format!("{x:.4}")).collect();
+                    let _ = writeln!(f, "{},{}", line.join(","), *won as u8);
+                }
+            }
             promoted = ok;
             sprt_note = format!("  SPRT {w}-{l} {}", if ok { "ACCEPT → NEW CHAMPION" }
                                                      else { "reject" });
