@@ -146,6 +146,17 @@ pub fn generate(rules: &Rules, width: i32, height: i32, num_spawns: usize,
         }
     }
 
+    // --- tribal villages (goody huts), roughly 1 per 40 land tiles
+    for pos in &land_list {
+        let t = &wm.tiles[pos];
+        if t.terrain == "mountain" || t.river {
+            continue;
+        }
+        if rng.f64() < 0.025 {
+            wm.tiles.get_mut(pos).unwrap().improvement = Some("goody_hut".into());
+        }
+    }
+
     // --- features
     for pos in &land_list {
         let lat = latitude(*pos);

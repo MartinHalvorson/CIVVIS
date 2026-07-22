@@ -26,7 +26,7 @@ Status: ✅ implemented · 🟡 simplified · ❌ not yet.
 | Trade routes & roads | ✅ | wiki capacity (Foreign Trade +1/hub-or-harbor city, +2 merchant republic); vanilla per-district yield table; traders lay roads (cost 1, bridge rivers 🟡); 30-turn duration; war/capture cancels |
 | Diplomacy (deals, alliances, grievances) | 🟡 | war/peace only |
 | Loyalty, governors (R&F/GS) | ❌ | |
-| Natural wonders, goody huts | ❌ | |
+| Goody huts (tribal villages) | 🟡 | ~1/40 land tiles; rewards: gold/faith/eureka/inspiration; natural wonders still ❌ |
 | Zone of control | ✅ | melee exerts (same domain, not over river banks), cities/encampments exert all-adjacent, cavalry ignores, civilians drop all MP |
 | Movement: MP paid up front, min-1-tile, river +2 MP | ✅ | river surcharge on entering channel tile (tile-model 🟡) |
 | Formations/corps, support units | ❌ | |

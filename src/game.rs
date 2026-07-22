@@ -539,6 +539,31 @@ impl Game {
         }
     }
 
+    /// Tribal village rewards on entering a goody-hut tile (Civ 6-style
+    /// lean table: gold, faith, a eureka, or an inspiration).
+    fn maybe_goody_hut(&mut self, uid: u32) {
+        let (pos, owner) = match self.units.get(&uid) {
+            Some(u) => (u.pos, u.owner),
+            None => return,
+        };
+        if self.players[owner].is_barbarian {
+            return;
+        }
+        let hut = self.map.get(pos)
+            .map(|t| t.improvement.as_deref() == Some("goody_hut"))
+            .unwrap_or(false);
+        if !hut {
+            return;
+        }
+        self.map.tiles.get_mut(&pos).unwrap().improvement = None;
+        match self.rng.below(4) {
+            0 => self.players[owner].gold += 60.0,
+            1 => self.players[owner].faith += 20.0,
+            2 => self.grant_random_boosts(owner, 1, true),
+            _ => self.grant_random_boosts(owner, 1, false),
+        }
+    }
+
     fn maybe_clear_camp(&mut self, uid: u32) {
         let (pos, owner, kind) = {
             let u = &self.units[&uid];
@@ -2530,6 +2555,7 @@ impl Game {
             }
         }
         self.maybe_clear_camp(uid);
+        self.maybe_goody_hut(uid);
         Ok(())
     }
 
@@ -2695,6 +2721,7 @@ impl Game {
         }
         self.relocate(uid, pos);
         self.maybe_clear_camp(uid);
+        self.maybe_goody_hut(uid);
     }
 
     fn do_ranged(&mut self, pid: usize, uid: u32, target: Pos) -> Result<(), String> {
