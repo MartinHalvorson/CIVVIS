@@ -248,12 +248,10 @@ pub struct Player {
 
 impl Player {
     fn new(id: usize, civ: &str, is_minor: bool) -> Player {
-        let mut techs = BTreeSet::new();
-        techs.insert("agriculture".to_string());
         Player {
             id,
             civ: civ.to_string(),
-            techs,
+            techs: BTreeSet::new(),
             research: None,
             research_progress: 0.0,
             research_overflow: 0.0,
@@ -2991,7 +2989,9 @@ impl Game {
                                 if pos == u.pos || !self.map.tiles.contains_key(&pos) {
                                     continue;
                                 }
-                                if self.enemy_target_at(pid, pos) {
+                                if self.enemy_target_at(pid, pos)
+                                    && self.has_line_of_sight(u.pos, pos, true)
+                                {
                                     acts.push(Action::Ranged { unit: uid, target: pos });
                                 }
                             }
@@ -3070,7 +3070,7 @@ impl Game {
                         let o = &self.units[&oid];
                         o.owner != pid && self.is_at_war(pid, o.owner)
                     });
-                    if hit {
+                    if hit && self.has_line_of_sight(cpos, pos, false) {
                         acts.push(Action::CityStrike { city: cid, target: pos });
                     }
                 }
@@ -3574,6 +3574,9 @@ impl Game {
         if self.wdist(u.pos, target) > spec.range.max(1) {
             return Err("out of range".into());
         }
+        if !self.has_line_of_sight(u.pos, target, true) {
+            return Err("line of sight blocked".into());
+        }
         let enemy_ids: Vec<u32> = self
             .units_at(target)
             .into_iter()
@@ -3963,6 +3966,9 @@ impl Game {
         }
         if self.wdist(self.cities[&cid].pos, target) > 2 {
             return Err("out of range".into());
+        }
+        if !self.has_line_of_sight(self.cities[&cid].pos, target, false) {
+            return Err("line of sight blocked".into());
         }
         let enemies: Vec<u32> = self.units_at(target).into_iter()
             .filter(|id| {

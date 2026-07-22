@@ -160,6 +160,10 @@ impl AdvancedAi {
             .iter()
             .map(|o| g.military_power(*o))
             .fold(0.0_f64, f64::max);
+        let weakest_rival = major_rivals
+            .iter()
+            .map(|o| g.military_power(*o))
+            .fold(f64::INFINITY, f64::min);
 
         let threatened_city = cities
             .iter()
@@ -208,6 +212,7 @@ impl AdvancedAi {
         {
             GrandStrategy::Recovery
         } else if at_war
+            || (g.turn >= 55 && cities.len() >= 2 && my_power > weakest_rival * 1.55 + 15.0)
             || (military_civ
                 && g.turn >= 35
                 && cities.len() >= 2
@@ -552,6 +557,31 @@ impl AdvancedAi {
         }
     }
 
+    fn strategic_spending(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        let counts = self.counts(g, pid);
+        let cities = g.player_city_ids(pid);
+        if cities.is_empty() {
+            return;
+        }
+        let reserve = 110.0 + 20.0 * cities.len() as f64;
+        let has_site = cities.iter().any(|cid| {
+            self.best_settle_site(g, pid, g.cities[cid].pos, 9)
+                .is_some()
+        });
+        if cities.len() + counts.settlers < plan.desired_cities
+            && counts.settlers == 0
+            && g.turn < 165
+            && has_site
+            && self.base.buy_gold_unit(g, pid, &cities, "settler", reserve)
+        {
+            return;
+        }
+        let desired_builders = (3 * cities.len()).div_ceil(4).max(1);
+        if counts.builders < desired_builders {
+            let _ = self.base.buy_gold_unit(g, pid, &cities, "builder", reserve);
+        }
+    }
+
     fn production_value(
         &self,
         g: &Game,
@@ -581,7 +611,7 @@ impl AdvancedAi {
                     && g.turn < 175
                     && site.is_some()
                 {
-                    660.0 + site.map(|(_, v)| v * 4.0).unwrap_or(0.0)
+                    920.0 + site.map(|(_, v)| v * 4.0).unwrap_or(0.0)
                 } else {
                     -10_000.0
                 }
@@ -668,8 +698,8 @@ impl AdvancedAi {
                     self.yield_value(spec.yields, plan.strategy) * 42.0
                         + spec.housing * (22.0 + housing_need * 18.0)
                         + spec.amenity * (30.0 + amenity_need * 22.0)
-                        + if building == "monument" && g.turn < 90 {
-                            105.0
+                        + if building == "monument" && g.turn < 120 {
+                            240.0
                         } else {
                             0.0
                         }
@@ -774,7 +804,7 @@ impl AdvancedAi {
                 best = Some((pos, value));
             }
         }
-        best.filter(|(_, value)| *value >= 18.0)
+        best.filter(|(_, value)| *value >= 12.0)
     }
 
     fn advanced_settler_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
@@ -1086,6 +1116,7 @@ impl Ai for AdvancedAi {
             self.base.cities(g, pid);
         } else {
             self.advanced_production(g, pid, &plan);
+            self.strategic_spending(g, pid, &plan);
             // Handles city strikes and strategic currency spending; filled
             // queues prevent its fallback production policy from taking over.
             self.base.cities(g, pid);

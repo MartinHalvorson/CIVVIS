@@ -17,6 +17,13 @@ struct Metrics {
     buildings: f64,
     military: f64,
     gold: f64,
+    military_units: f64,
+    civilian_units: f64,
+    food_yield: f64,
+    production_yield: f64,
+    science_yield: f64,
+    culture_yield: f64,
+    queued_cost: f64,
 }
 
 impl Metrics {
@@ -39,6 +46,23 @@ impl Metrics {
             .sum::<usize>() as f64;
         self.military += g.military_power(pid);
         self.gold += g.players[pid].gold;
+        for unit in g.units.values().filter(|u| u.owner == pid) {
+            if g.rules.units[unit.kind.as_str()].class == "military" {
+                self.military_units += 1.0;
+            } else {
+                self.civilian_units += 1.0;
+            }
+        }
+        for cid in &cities {
+            let yields = g.city_yields(*cid);
+            self.food_yield += yields.food;
+            self.production_yield += yields.production;
+            self.science_yield += yields.science;
+            self.culture_yield += yields.culture;
+            if let Some(item) = g.cities[cid].queue.first() {
+                self.queued_cost += g.item_cost(item);
+            }
+        }
     }
 }
 
@@ -117,6 +141,21 @@ fn main() {
             m.buildings / n,
             m.military / n,
             m.gold / n,
+        );
+    }
+    println!("\nAI          mil# civ#  food prod science culture queued-cost");
+    for name in [a, b] {
+        let m = &totals[name];
+        let n = m.games as f64;
+        println!(
+            "{name:<11} {:>4.1} {:>4.1} {:>5.1} {:>4.1} {:>7.1} {:>7.1} {:>11.1}",
+            m.military_units / n,
+            m.civilian_units / n,
+            m.food_yield / n,
+            m.production_yield / n,
+            m.science_yield / n,
+            m.culture_yield / n,
+            m.queued_cost / n,
         );
     }
 }

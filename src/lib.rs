@@ -205,6 +205,57 @@ mod tests {
             &crate::game::Item::Building { building: "pyramids".to_string() }));
     }
 
+    #[test]
+    fn civ6_starting_research_and_farms_need_no_agriculture_tech() {
+        let mut g = Game::new_full(1, 20, 14, 29, 40, 0, false);
+
+        // Civ VI Ancient starts know no technologies. The five first-column
+        // technologies are immediately researchable; Agriculture is not a
+        // technology in Civ VI and must not inflate score or era progress.
+        assert!(g.players[0].techs.is_empty());
+        assert!(!g.rules.techs.contains_key("agriculture"));
+        let available: std::collections::BTreeSet<_> =
+            g.available_techs(0).into_iter().collect();
+        assert_eq!(available, [
+            "animal_husbandry", "astrology", "mining", "pottery", "sailing",
+        ].into_iter().map(str::to_string).collect());
+
+        let settler = g.player_unit_ids(0).into_iter()
+            .find(|id| g.units[id].kind == "settler").unwrap();
+        g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let cid = g.player_city_ids(0)[0];
+        let city_pos = g.cities[&cid].pos;
+        let farm_pos = g.cities[&cid].owned_tiles.iter()
+            .copied().find(|p| *p != city_pos).expect("city owns a ring tile");
+        {
+            let tile = g.map.tiles.get_mut(&farm_pos).unwrap();
+            tile.terrain = "grassland".to_string();
+            tile.feature = None;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.hills = false;
+        }
+        assert!(g.valid_improvements(0, farm_pos).iter().any(|i| i == "farm"));
+
+        // Conjure a builder on the controlled owned tile, then exercise the
+        // real action path rather than only checking rules metadata.
+        let mut saved = serde_json::to_value(&g).unwrap();
+        let builder = saved["next_id"].as_u64().unwrap() as u32;
+        saved["next_id"] = serde_json::json!(builder + 1);
+        saved["units"].as_array_mut().unwrap().push(serde_json::json!({
+            "id": builder, "type": "builder", "owner": 0,
+            "pos": [farm_pos.0, farm_pos.1], "hp": 100,
+            "moves_left": 2.0, "charges": 3,
+        }));
+        let mut g: Game = serde_json::from_value(saved).unwrap();
+        g.apply(0, &Action::Improve {
+            unit: builder,
+            improvement: "farm".to_string(),
+        }).unwrap();
+        assert_eq!(g.map.tiles[&farm_pos].improvement.as_deref(), Some("farm"));
+    }
+
     /// Move a unit by id via save-edit (occ indexes rebuild on load).
     fn teleport(g: &Game, uid: u32, to: crate::Pos) -> Game {
         let mut v = serde_json::to_value(g).unwrap();
@@ -644,7 +695,7 @@ mod tests {
         // push the leader past the classical threshold with a big era score
         for t in ["pottery", "mining", "sailing", "astrology", "irrigation",
                   "archery", "writing", "masonry", "bronze_working",
-                  "animal_husbandry", "horseback_riding"] {
+                  "animal_husbandry", "horseback_riding", "currency"] {
             g.players[0].techs.insert(t.to_string());
         }
         g.players[0].era_score = 20;

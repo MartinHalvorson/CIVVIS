@@ -1,6 +1,5 @@
 {
   "farm": {
-    "tech": "agriculture",
     "yields": {
       "food": 1
     },
