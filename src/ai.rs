@@ -492,6 +492,47 @@ impl BasicAi {
     /// unit unlock. Coastal empires first launch ships, then unlock general
     /// embarkation and harbors, and finally cross ocean once expansion has had
     /// time to reach the edge of its home landmass.
+    /// Whether an empire has any use for the naval chain beyond Sailing:
+    /// ships of its own, more than one coast to join up, room to settle
+    /// overseas, or a war it may have to fight at sea.
+    fn naval_ambitions(g: &Game, pid: usize) -> bool {
+        let coastal_cities = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter(|cid| Self::city_is_coastal(g, *cid))
+            .count();
+        if coastal_cities >= 2 {
+            return true;
+        }
+        let owns_ships = g.units.values().any(|unit| {
+            unit.owner == pid && g.rules.units[unit.kind.as_str()].domain.as_deref() == Some("sea")
+        });
+        if owns_ships {
+            return true;
+        }
+        // A civilization still expanding may need to cross water to do it; a
+        // single-city minor never does.
+        if !g.players[pid].is_minor && g.player_city_ids(pid).len() >= 2 {
+            return true;
+        }
+        g.players.iter().any(|enemy| {
+            enemy.id != pid
+                && enemy.alive
+                && !enemy.is_barbarian
+                && g.is_at_war(pid, enemy.id)
+                && (g
+                    .player_city_ids(enemy.id)
+                    .into_iter()
+                    .any(|cid| Self::city_is_coastal(g, cid))
+                    || g.units.values().any(|unit| {
+                        unit.owner == enemy.id
+                            && g.map
+                                .get(unit.pos)
+                                .is_some_and(|tile| g.rules.is_water(tile))
+                    }))
+        })
+    }
+
     pub(crate) fn water_research_goal(g: &Game, pid: usize) -> Option<&'static str> {
         if !Self::empire_is_coastal(g, pid) {
             return None;
@@ -499,6 +540,15 @@ impl BasicAi {
         let player = &g.players[pid];
         if !player.techs.contains("sailing") {
             return Some("sailing");
+        }
+        // Past Sailing the naval chain gets expensive, and it overrides every
+        // other research priority while it is being pursued. An empire with
+        // nothing afloat and nowhere to sail spends those turns unable to
+        // unlock the buildings that make its cities work - which left one-city
+        // city-states grinding Shipbuilding for seventy turns on one
+        // technology. Ask for a reason before committing to the rest.
+        if !Self::naval_ambitions(g, pid) {
+            return None;
         }
         if !player.techs.contains("shipbuilding") {
             return Some("shipbuilding");
@@ -609,7 +659,11 @@ impl BasicAi {
             .map(|player| player.id)
             .collect();
         if enemies.is_empty() {
-            return 3;
+            // A city-state at peace still keeps its garrison current as the
+            // eras pass. Holding it at three for the whole game left mature
+            // city-states with nothing they were allowed to build, so their
+            // Production went nowhere and their treasury only grew.
+            return 3 + (g.world_era as usize) / 2;
         }
         let cities = g.player_city_ids(pid);
         let nearby_hostiles = g
@@ -2828,8 +2882,11 @@ impl BasicAi {
         // Repeatable district projects are a developed-city fallback. If
         // considered with mandatory projects above, their low early base cost
         // makes a basic AI loop them forever before building Monuments,
-        // districts, or district buildings.
-        if !self.minor && !self.barb {
+        // districts, or district buildings. City-states reach that developed
+        // state early - one city, a three-unit army and nothing left to build
+        // - and excluding them here left them with no fallback at all, so
+        // their Production went nowhere for the rest of the game.
+        if !self.barb {
             let mut projects: Vec<Item> = g
                 .rules
                 .projects
