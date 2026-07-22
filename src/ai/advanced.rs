@@ -2763,12 +2763,49 @@ impl AdvancedAi {
                         (_, "trade") => 4,
                         _ => 2,
                     };
+                    let unique_alignment = match (strategy, minor.civ.as_str()) {
+                        (GrandStrategy::Science, "Geneva") => 14,
+                        (GrandStrategy::Science | GrandStrategy::Conquest, "Hattusa") => 11,
+                        (GrandStrategy::Science | GrandStrategy::Culture, "Stockholm") => 10,
+                        (GrandStrategy::Conquest, "Kabul") => 14,
+                        (GrandStrategy::Conquest | GrandStrategy::Expansion, "Carthage") => 10,
+                        (GrandStrategy::Expansion | GrandStrategy::Recovery, "Mohenjo-Daro") => 11,
+                        (GrandStrategy::Religion, "Yerevan") => 15,
+                        (GrandStrategy::Religion | GrandStrategy::Culture, "Kandy") => 12,
+                        (GrandStrategy::Expansion | GrandStrategy::Recovery, "Zanzibar") => 11,
+                        (_, "Zanzibar") if g.players[pid].civ == "Aztec" => 12,
+                        (
+                            GrandStrategy::Science
+                            | GrandStrategy::Culture
+                            | GrandStrategy::Conquest
+                            | GrandStrategy::Expansion,
+                            "Auckland",
+                        ) => 9,
+                        (
+                            GrandStrategy::Religion
+                            | GrandStrategy::Conquest
+                            | GrandStrategy::Recovery,
+                            "Valletta",
+                        ) => 13,
+                        (GrandStrategy::Culture, "Vilnius") => 14,
+                        (_, "Stockholm" | "Zanzibar" | "Auckland" | "Valletta") => 5,
+                        _ => 2,
+                    };
                     let already_secure = g.suzerain_of(minor.id) == Some(pid) && mine > rival + 1;
+                    let shared_from_partner = g.suzerain_of(minor.id).is_some_and(|leader| {
+                        leader != pid
+                            && g.alliance_with(pid, leader).is_some_and(|alliance| {
+                                alliance.kind == "economic" && alliance.level >= 3
+                            })
+                    });
                     let denial = denied_rival
                         .is_some_and(|leader| g.suzerain_of(minor.id) == Some(leader))
                         as i64
                         * 140;
-                    let score = alignment * 10 + denial - needed * 7 - already_secure as i64 * 80;
+                    let score = (alignment + unique_alignment) * 10 + denial
+                        - needed * 7
+                        - already_secure as i64 * 80
+                        - shared_from_partner as i64 * 300;
                     (
                         score,
                         std::cmp::Reverse(needed),
@@ -3173,17 +3210,28 @@ impl AdvancedAi {
             .legal_actions(pid)
             .into_iter()
             .filter_map(|action| match &action {
-                Action::BuyBuilding { city, building, .. } => {
+                Action::BuyBuilding {
+                    city,
+                    building,
+                    currency,
+                } if currency == "faith" => {
                     let spec = &g.rules.buildings[building];
-                    let estimated_cost = spec.cost * 2.0;
-                    if g.players[pid].faith + f64::EPSILON < estimated_cost + reserve {
+                    let cost = g.building_faith_purchase_cost(pid, *city, building)?;
+                    if g.players[pid].faith + f64::EPSILON < cost + reserve {
                         return None;
                     }
                     let worship = spec.worship_belief.is_some() as i32;
+                    let defensive_value = match strategy {
+                        GrandStrategy::Conquest | GrandStrategy::Recovery => spec.outer_defense * 2,
+                        _ => spec.outer_defense,
+                    };
                     let score = (self.yield_value(spec.yields, strategy) * 25.0) as i32
                         + (spec.housing * 35.0 + spec.amenity * 50.0) as i32
                         + spec.great_work_slots.values().sum::<i32>() * 60
-                        + worship * 220;
+                        + spec.trade_route_capacity * 100
+                        + defensive_value
+                        + worship * 220
+                        - (cost * 0.05) as i32;
                     Some((score, std::cmp::Reverse((*city, building.clone())), action))
                 }
                 _ => None,
@@ -3534,7 +3582,7 @@ impl AdvancedAi {
     }
 
     fn science_production(&self, g: &mut Game, pid: usize) {
-        let completed = &g.players[pid].science_projects;
+        let completed = g.players[pid].science_projects.clone();
         let project = if !completed.contains("launch_earth_satellite") {
             "launch_earth_satellite"
         } else if !completed.contains("launch_moon_landing") {
@@ -3549,12 +3597,17 @@ impl AdvancedAi {
         let project_item = Item::Project {
             project: project.to_string(),
         };
-        let already_queued = g.player_city_ids(pid).iter().any(|cid| {
-            matches!(
-                g.cities[cid].queue.first(),
-                Some(Item::Project { project: queued }) if queued == project
-            )
-        });
+        let parallel_project = matches!(
+            project,
+            "lagrange_laser_station" | "terrestrial_laser_station"
+        );
+        let already_queued = !parallel_project
+            && g.player_city_ids(pid).iter().any(|cid| {
+                matches!(
+                    g.cities[cid].queue.first(),
+                    Some(Item::Project { project: queued }) if queued == project
+                )
+            });
         if !already_queued {
             let project_city = g
                 .player_city_ids(pid)
@@ -3562,6 +3615,10 @@ impl AdvancedAi {
                 .filter(|cid| {
                     g.cities[cid].districts.contains_key("spaceport")
                         && g.can_produce(pid, *cid, &project_item)
+                        && !matches!(
+                            g.cities[cid].queue.first(),
+                            Some(Item::Project { project: queued }) if queued == project
+                        )
                         && (self.victory_target == Some(VictoryTarget::Science)
                             || g.cities[cid].queue.is_empty())
                 })
@@ -3584,21 +3641,49 @@ impl AdvancedAi {
             }
         }
 
-        let has_spaceport = g
-            .player_city_ids(pid)
+        let city_ids = g.player_city_ids(pid);
+        let built_spaceports = city_ids
             .iter()
-            .any(|cid| g.cities[cid].districts.contains_key("spaceport"));
-        let spaceport_queued = g.player_city_ids(pid).iter().any(|cid| {
-            matches!(
-                g.cities[cid].queue.first(),
-                Some(Item::District { district, .. }) if district == "spaceport"
-            )
-        });
-        if has_spaceport || spaceport_queued {
+            .filter(|cid| g.cities[cid].districts.contains_key("spaceport"))
+            .count();
+        let queued_spaceports = city_ids
+            .iter()
+            .filter(|cid| {
+                matches!(
+                    g.cities[cid].queue.first(),
+                    Some(Item::District { district, .. }) if district == "spaceport"
+                )
+            })
+            .count();
+        // One launch site is enough for the sequential opening missions. A
+        // second can prepare Mars while the first launches, and up to three
+        // let the post-Exoplanet laser race run in parallel. Separate cities
+        // matter; duplicate Spaceports in one production queue do not.
+        let desired_spaceports = if self.victory_target == Some(VictoryTarget::Science) {
+            if completed.contains("launch_mars_colony") {
+                3
+            } else if completed.contains("launch_moon_landing") {
+                2
+            } else {
+                1
+            }
+        } else {
+            1
+        }
+        .min(city_ids.len());
+        if built_spaceports + queued_spaceports >= desired_spaceports {
             return;
         }
         let mut best: Option<(f64, u32, Pos)> = None;
-        for cid in g.player_city_ids(pid) {
+        for cid in city_ids {
+            if g.cities[&cid].districts.contains_key("spaceport")
+                || matches!(
+                    g.cities[&cid].queue.first(),
+                    Some(Item::District { district, .. }) if district == "spaceport"
+                )
+            {
+                continue;
+            }
             if self.victory_target != Some(VictoryTarget::Science)
                 && !g.cities[&cid].queue.is_empty()
             {
@@ -4258,6 +4343,12 @@ impl AdvancedAi {
             Item::District { district, pos } => {
                 let spec = &g.rules.districts[district];
                 let family = g.district_family(district);
+                if family == "spaceport" && city.districts.contains_key("spaceport") {
+                    // Multiple Spaceports are rules-legal, but one city can
+                    // execute only one project at a time. Put additional
+                    // launch sites in other cities for actual parallelism.
+                    return -10_000.0;
+                }
                 let district_count = g
                     .cities
                     .values()
@@ -8488,6 +8579,114 @@ mod tests {
     }
 
     #[test]
+    fn science_target_parallelizes_lasers_across_cities_without_local_spaceport_spam() {
+        let mut game = Game::new_full(1, 34, 20, 71_002, 320, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|uid| game.units[uid].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let mut cities = game.player_city_ids(0);
+        while cities.len() < 3 {
+            let center = game
+                .map
+                .tiles
+                .iter()
+                .find(|(position, tile)| {
+                    tile.owner_city.is_none()
+                        && game.rules.is_passable(tile)
+                        && !game.rules.is_water(tile)
+                        && cities
+                            .iter()
+                            .all(|city| game.wdist(**position, game.cities[city].pos) >= 7)
+                })
+                .map(|(position, _)| *position)
+                .unwrap();
+            game.found_city_for(0, center, None);
+            cities = game.player_city_ids(0);
+        }
+        game.players[0].techs = game.rules.techs.keys().cloned().collect();
+        game.players[0].civics = game.rules.civics.keys().cloned().collect();
+        game.players[0].science_projects.extend([
+            "launch_earth_satellite".to_string(),
+            "launch_moon_landing".to_string(),
+            "launch_mars_colony".to_string(),
+            "exoplanet_expedition".to_string(),
+        ]);
+        for city in &cities {
+            game.cities.get_mut(city).unwrap().pop = 12;
+            for position in game.cities[city].owned_tiles.clone() {
+                if position == game.cities[city].pos {
+                    continue;
+                }
+                let tile = game.map.tiles.get_mut(&position).unwrap();
+                tile.terrain = "plains".to_string();
+                tile.feature = None;
+                tile.hills = false;
+                tile.resource = None;
+                tile.improvement = None;
+                tile.district = None;
+                tile.district_foundation = None;
+                tile.wonder = None;
+            }
+        }
+        for city in cities.iter().take(2) {
+            let position = game.cities[city]
+                .owned_tiles
+                .iter()
+                .copied()
+                .find(|position| *position != game.cities[city].pos)
+                .unwrap();
+            game.map.tiles.get_mut(&position).unwrap().district = Some("spaceport".to_string());
+            game.cities
+                .get_mut(city)
+                .unwrap()
+                .districts
+                .insert("spaceport".to_string(), position);
+        }
+        game.cities.get_mut(&cities[0]).unwrap().queue = vec![Item::Project {
+            project: "lagrange_laser_station".to_string(),
+        }];
+
+        let ai = AdvancedAi::targeting(VictoryTarget::Science);
+        ai.science_production(&mut game, 0);
+        assert_eq!(
+            cities
+                .iter()
+                .filter(|city| matches!(
+                    game.cities[city].queue.first(),
+                    Some(Item::Project { project }) if project == "lagrange_laser_station"
+                ))
+                .count(),
+            2
+        );
+
+        ai.science_production(&mut game, 0);
+        assert!(matches!(
+            game.cities[&cities[2]].queue.first(),
+            Some(Item::District { district, .. }) if district == "spaceport"
+        ));
+
+        let duplicate = Item::District {
+            district: "spaceport".to_string(),
+            pos: game.district_sites(cities[0], "spaceport")[0],
+        };
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Science,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+        };
+        assert!(
+            ai.production_value(&game, 0, cities[0], &duplicate, &plan, &ai.counts(&game, 0))
+                <= -10_000.0
+        );
+    }
+
+    #[test]
     fn district_search_values_unique_families_and_real_housing_need() {
         let mut game = Game::new_full(1, 20, 14, 71_001, 200, 0, false);
         let settler = game
@@ -8988,6 +9187,39 @@ mod tests {
     }
 
     #[test]
+    fn faith_spending_uses_valletta_wall_price_and_ignores_gold_actions() {
+        let mut game = Game::new_full(1, 30, 18, 7_107, 160, 1, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let valletta = game
+            .players
+            .iter()
+            .find(|player| player.is_minor && !player.is_barbarian)
+            .unwrap()
+            .id;
+        game.players[valletta].civ = "Valletta".to_string();
+        game.players[0].envoys = vec![(valletta, 3)];
+        game.players[0].techs.insert("masonry".to_string());
+        game.players[0].faith = 200.0;
+        game.players[0].gold = 10_000.0;
+
+        AdvancedAi::targeting(VictoryTarget::Domination).faith_building_spending(
+            &mut game,
+            0,
+            GrandStrategy::Conquest,
+        );
+
+        assert!(game.cities[&city].buildings.contains(&"walls".to_string()));
+        assert_eq!(game.players[0].faith, 120.0);
+        assert_eq!(game.players[0].gold, 10_000.0);
+    }
+
+    #[test]
     fn strategic_gold_purchase_buys_science_tempo_but_preserves_the_reserve() {
         let mut game = Game::new_full(1, 20, 14, 7_106, 160, 0, false);
         let settler = game
@@ -9367,6 +9599,41 @@ mod tests {
         AdvancedAi::new().advanced_envoys(&mut g, 0, GrandStrategy::Diplomacy, None);
         assert_eq!(g.players[0].envoys_free, 0);
         assert!(g.players[0].envoys.iter().any(|(_, count)| *count >= 3));
+    }
+
+    #[test]
+    fn religious_envoys_prefer_yerevan_but_skip_a_bonus_shared_by_economic_alliance() {
+        let mut game = Game::new_full(2, 32, 20, 7_711, 120, 2, false);
+        let minors: Vec<usize> = game
+            .players
+            .iter()
+            .filter(|player| player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .collect();
+        assert_eq!(minors.len(), 2);
+        game.players[minors[0]].civ = "Kandy".to_string();
+        game.players[minors[1]].civ = "Yerevan".to_string();
+        game.players[0].envoys_free = 1;
+
+        AdvancedAi::new().advanced_envoys(&mut game, 0, GrandStrategy::Religion, None);
+        assert_eq!(game.envoys_at(0, minors[0]), 0);
+        assert_eq!(game.envoys_at(0, minors[1]), 1);
+
+        game.players[0].envoys.clear();
+        game.players[0].envoys_free = 1;
+        game.players[1].envoys = vec![(minors[1], 3)];
+        let alliance = crate::game::AllianceState {
+            kind: "economic".to_string(),
+            points: 240.0,
+            level: 3,
+            ends: game.turn + 30,
+        };
+        game.players[0].alliances.insert(1, alliance.clone());
+        game.players[1].alliances.insert(0, alliance);
+
+        AdvancedAi::new().advanced_envoys(&mut game, 0, GrandStrategy::Religion, None);
+        assert_eq!(game.envoys_at(0, minors[0]), 1);
+        assert_eq!(game.envoys_at(0, minors[1]), 0);
     }
 
     #[test]
