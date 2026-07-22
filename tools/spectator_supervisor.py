@@ -342,15 +342,17 @@ def main() -> int:
                 f"game finished on turn {state.get('turn')} "
                 f"({state.get('victory_type') or 'unknown'} victory); checking for updates"
             )
-            stop_server(process, adopted_pid)
-            process = None
-            adopted_pid = None
             remaining = args.cooldown - (time.monotonic() - finished_at)
             if remaining > 0:
                 time.sleep(remaining)
             # Update immediately before launch: a commit or local edit that
             # arrived during the result cooldown must make this next game too.
+            # Keep the completed game's result server available while builds
+            # retry, and only create a brief handoff gap once fresh code is ready.
             prepare_latest(args.build_retry)
+            stop_server(process, adopted_pid)
+            process = None
+            adopted_pid = None
             process = start_server(args.port, settings, False)
             wait_for_server(args.port, process)
     except KeyboardInterrupt:
