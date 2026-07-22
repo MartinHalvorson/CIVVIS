@@ -3,6 +3,7 @@
 use crate::game::{effective_strength, Action, Game, Item};
 use crate::rng::Rng;
 use crate::Pos;
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
 /// A bounded first-step initiative bonus breaks positional and formation ties
@@ -3491,6 +3492,40 @@ impl BasicAi {
         .is_ok()
     }
 
+    /// Which improvement a tile should actually get. An improvement that
+    /// matches the tile's resource comes first: it is the only way to work a
+    /// strategic resource or connect a luxury, and paving Iron or Wine over
+    /// with a Farm forfeits that permanently. Otherwise take the most
+    /// valuable yield, weighted the way the rest of this AI values output.
+    fn best_improvement(g: &Game, pos: Pos, options: &[String]) -> Option<String> {
+        let resource = g.map.get(pos).and_then(|tile| tile.resource.clone());
+        options
+            .iter()
+            .max_by(|a, b| {
+                let score = |name: &String| {
+                    let spec = &g.rules.improvements[name];
+                    let works_resource = resource
+                        .as_ref()
+                        .is_some_and(|resource| spec.resources.iter().any(|r| r == resource));
+                    let yields = spec.yields.production * 3.0
+                        + spec.yields.food * 2.0
+                        + spec.yields.science * 3.0
+                        + spec.yields.culture * 3.0
+                        + spec.yields.gold * 2.0
+                        + spec.yields.faith
+                        + spec.housing * 2.0;
+                    (works_resource, yields)
+                };
+                let (a_resource, a_yield) = score(a);
+                let (b_resource, b_yield) = score(b);
+                a_resource
+                    .cmp(&b_resource)
+                    .then(a_yield.partial_cmp(&b_yield).unwrap_or(Ordering::Equal))
+                    .then_with(|| b.cmp(a))
+            })
+            .cloned()
+    }
+
     fn builder_step(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
         let upos = g.units[&uid].pos;
         let project = g
@@ -3529,13 +3564,13 @@ impl BasicAi {
             .into_iter()
             .filter(|improvement| g.rules.improvements[improvement].builder_buildable)
             .collect();
-        if !imps.is_empty() {
+        if let Some(improvement) = Self::best_improvement(g, upos, &imps) {
             return g
                 .apply(
                     pid,
                     &Action::Improve {
                         unit: uid,
-                        improvement: imps[0].clone(),
+                        improvement,
                     },
                 )
                 .is_ok();
@@ -4319,6 +4354,45 @@ mod tests {
             grant_tech_with_prerequisites(g, pid, &prerequisite);
         }
         g.players[pid].techs.insert(tech.to_string());
+    }
+
+    /// Builders used to take whichever legal improvement sorted first by
+    /// name, so a Farm was laid over Iron, Stone and Wine - forfeiting the
+    /// strategic resource or luxury on that tile for the rest of the game.
+    #[test]
+    fn builders_improve_the_resource_rather_than_the_alphabet() {
+        let mut g = Game::new_full(1, 20, 14, 29, 40, 0, false);
+        let pos = *g.map.tiles.keys().next().unwrap();
+        {
+            let tile = g.map.tiles.get_mut(&pos).unwrap();
+            tile.terrain = "grassland".to_string();
+            tile.feature = None;
+            tile.hills = false;
+        }
+
+        for (resource, expected) in [("iron", "mine"), ("stone", "quarry"), ("wine", "plantation")] {
+            g.map.tiles.get_mut(&pos).unwrap().resource = Some(resource.to_string());
+            let options = vec![
+                "farm".to_string(),
+                expected.to_string(),
+                "camp".to_string(),
+            ];
+            assert_eq!(
+                BasicAi::best_improvement(&g, pos, &options).as_deref(),
+                Some(expected),
+                "{resource} should be worked, not farmed over"
+            );
+        }
+
+        // With nothing on the tile the choice falls back to yield, and a
+        // Lumber Mill's two Production beats a Farm's one Food.
+        g.map.tiles.get_mut(&pos).unwrap().resource = None;
+        let options = vec!["farm".to_string(), "lumber_mill".to_string()];
+        assert_eq!(
+            BasicAi::best_improvement(&g, pos, &options).as_deref(),
+            Some("lumber_mill")
+        );
+        assert_eq!(BasicAi::best_improvement(&g, pos, &[]), None);
     }
 
     #[test]
