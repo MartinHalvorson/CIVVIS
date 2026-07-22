@@ -891,7 +891,11 @@ function queueDirectorCue(cue) {
   if (!DIRECTOR || !cue) return;
   const now = performance.now();
   if (cue.priority >= 7 || now - directorLast >= 1400) {
-    directorGoal = cue.pos;
+    // Keep the event visible without making a coastal city or battle put a
+    // screenful of empty ocean in the middle of the map.  Four hexes is small
+    // enough that the action remains comfortably in frame at the spectator's
+    // deliberately gentle 0.9 zoom.
+    directorGoal = actionViewingAnchor(cue.pos);
     directorLast = now;
   }
 }
@@ -2658,6 +2662,37 @@ function centerHome() {
   const own = homeAnchor();
   if (own) centerWorld(own.pos);
 }
+function actionViewingAnchor(focus) {
+  if (!state || !Array.isArray(focus)) return focus;
+  const isLand = tile => tile.terrain !== "coast" && tile.terrain !== "ocean";
+  const candidates = state.map.tiles.filter(tile =>
+    isLand(tile) && whexDist(tile.pos, focus) <= 4);
+  if (!candidates.length) return focus;
+
+  const majorOwners = new Set(state.players
+    .filter(player => !player.is_minor && !player.is_barbarian && player.alive)
+    .map(player => player.id));
+  const activity = [
+    ...state.cities.filter(city => majorOwners.has(city.owner))
+      .map(city => ({ pos: city.pos, weight: 2.5, reach: 11 })),
+    ...state.units.filter(unit => majorOwners.has(unit.owner))
+      .map(unit => ({ pos: unit.pos, weight: 0.6, reach: 7 })),
+  ];
+  return candidates.reduce((best, tile) => {
+    // A broad land-density sample favors a useful continental view.  The
+    // distance cost caps the bias so the triggering event never leaves frame.
+    const land = state.map.tiles.reduce((score, nearby) => {
+      const distance = whexDist(tile.pos, nearby.pos);
+      return score + (isLand(nearby) && distance <= 8 ? 9 - distance : 0);
+    }, 0);
+    const settled = activity.reduce((score, item) => {
+      const distance = whexDist(tile.pos, item.pos);
+      return score + Math.max(0, item.reach - distance) * item.weight;
+    }, 0);
+    const score = land + settled - whexDist(tile.pos, focus) * 22;
+    return !best || score > best.score ? { pos: tile.pos, score } : best;
+  }, null).pos;
+}
 function mainLandmassAnchor() {
   if (!state) return null;
   const land = new Map(state.map.tiles
@@ -2684,16 +2719,28 @@ function mainLandmassAnchor() {
   if (!main.length) return homeAnchor();
 
   // Circular longitude keeps a continent crossing the map seam together.
+  // Prefer the centroid of major-civilization activity on that continent: it
+  // is the part a human wants to see at the start of a match.  Fall back to the
+  // geometric landmass centroid before anybody has spawned there.
+  const mainKeys = new Set(main.map(tile => key(tile.pos)));
+  const majorOwners = new Set(state.players
+    .filter(player => !player.is_minor && !player.is_barbarian && player.alive)
+    .map(player => player.id));
+  const activity = [
+    ...state.cities.filter(city => majorOwners.has(city.owner)),
+    ...state.units.filter(unit => majorOwners.has(unit.owner)),
+  ].filter(item => mainKeys.has(key(item.pos)));
+  const samples = activity.length ? activity : main;
   const width = state.map.width;
   let sin = 0, cos = 0, row = 0;
-  for (const tile of main) {
-    const col = tile.pos[0] + (tile.pos[1] - (tile.pos[1] & 1)) / 2;
+  for (const sample of samples) {
+    const col = sample.pos[0] + (sample.pos[1] - (sample.pos[1] & 1)) / 2;
     const angle = 2 * Math.PI * (((col % width) + width) % width) / width;
     sin += Math.sin(angle); cos += Math.cos(angle);
-    row += tile.pos[1];
+    row += sample.pos[1];
   }
   const centerCol = ((Math.atan2(sin, cos) / (2 * Math.PI) * width) + width) % width;
-  const centerRow = row / main.length;
+  const centerRow = row / samples.length;
   return main.reduce((best, tile) => {
     const col = ((tile.pos[0] + (tile.pos[1] - (tile.pos[1] & 1)) / 2) % width + width) % width;
     const dx0 = Math.abs(col - centerCol), dx = Math.min(dx0, width - dx0);
