@@ -123,7 +123,7 @@
   .progress-slot { height: 55px; min-height: 55px; display: flex; align-items: center; }
   .progress-slot > * { width: 100%; }
   #govsec { min-height: 70px; }
-  .utility-panel { margin-top: 12px; border: 1px solid var(--line); border-radius: 12px; background: #0b1614a6; overflow: hidden; }
+  .utility-panel { margin: 0 0 12px; border: 1px solid var(--line); border-radius: 12px; background: #0b1614a6; overflow: hidden; }
   .utility-panel summary {
     padding: 11px 13px; color: var(--muted); cursor: pointer; list-style: none;
     font-size: 9px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase;
@@ -397,25 +397,6 @@
     <div id="gameidentity"></div>
   </div>
   <div class="side-scroll">
-    <div class="section-label"><span>Active strategy</span><span class="rule"></span></div>
-    <div class="sec strategy-sec">
-      <div class="strategy-track">
-        <div class="strategy-heading"><span>Research</span><button class="mini" onclick='openTree("techs")'>Tree</button></div>
-        <div id="research" class="progress-slot"></div>
-      </div>
-      <div class="strategy-track culture">
-        <div class="strategy-heading"><span>Civic development</span><button class="mini" onclick='openTree("civics")'>Tree</button></div>
-        <div id="civics" class="progress-slot"></div>
-      </div>
-    </div>
-    <div class="sec" id="govsec" style="display:none"><h2>Government</h2><div id="gov"></div></div>
-    <div class="sec" id="citysec" style="display:none"><h2>City command</h2><div id="citypanel"></div></div>
-
-    <div id="eventsec">
-      <div class="section-label"><span>Latest events</span><span class="rule"></span></div>
-      <div class="sec"><div id="events" class="event-list"><div class="empty-state">The world is quiet—for now.</div></div></div>
-    </div>
-
     <details class="utility-panel">
       <summary>Simulation setup & display</summary>
       <div class="utility-body">
@@ -449,6 +430,26 @@
         </div>
       </div>
     </details>
+
+    <div class="section-label"><span>Active strategy</span><span class="rule"></span></div>
+    <div class="sec strategy-sec">
+      <div class="strategy-track">
+        <div class="strategy-heading"><span>Research</span><button class="mini" onclick='openTree("techs")'>Tree</button></div>
+        <div id="research" class="progress-slot"></div>
+      </div>
+      <div class="strategy-track culture">
+        <div class="strategy-heading"><span>Civic development</span><button class="mini" onclick='openTree("civics")'>Tree</button></div>
+        <div id="civics" class="progress-slot"></div>
+      </div>
+    </div>
+    <div class="sec" id="govsec" style="display:none"><h2>Government</h2><div id="gov"></div></div>
+    <div class="sec" id="citysec" style="display:none"><h2>City command</h2><div id="citypanel"></div></div>
+
+    <div id="eventsec">
+      <div class="section-label"><span>Latest events</span><span class="rule"></span></div>
+      <div class="sec"><div id="events" class="event-list"><div class="empty-state">The world is quiet—for now.</div></div></div>
+    </div>
+
   </div>
   <div class="side-footer">
     <button class="primary" id="endturn">End turn · Enter</button>
@@ -716,6 +717,7 @@ function pixelToHex(sx, sy) {
 // ---------------------------------------------------------------- net
 async function fetchJSON(url, opts) { return await (await fetch(url, opts)).json(); }
 let firstLoad = true;
+let serverInstance = null;
 async function boot() {
   RULES = await fetchJSON("/rules");
   if (Array.isArray(RULES.map_sizes)) {
@@ -904,6 +906,14 @@ function chronicle(prev, next) {
 }
 
 function render(st, recordChronicle = true) {
+  // The between-game supervisor may replace the server with a freshly built
+  // binary. Reload once so this tab also picks up the new HTML/JavaScript.
+  if (serverInstance !== null && st.server_instance !== undefined &&
+      st.server_instance !== serverInstance) {
+    window.location.reload();
+    return;
+  }
+  if (st.server_instance !== undefined) serverInstance = st.server_instance;
   const newWorld = !state || st.seed !== state.seed || st.turn < state.turn;
   if (recordChronicle) chronicle(state, st);
   animateDiff(state, st);

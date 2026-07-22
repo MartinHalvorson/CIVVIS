@@ -43,6 +43,17 @@ cargo build --release
 ./target/release/civvis play --players 4        # browser GUI; you are player 0
 ```
 
+For an unattended spectator that checks for new code only between games:
+
+```bash
+python3 tools/spectator_supervisor.py --players 4
+```
+
+It keeps the result visible for 10 seconds, checks the current Git upstream,
+safely fast-forwards when possible, rebuilds local edits too, and automatically
+starts the next game. A network or build failure falls back to the last working
+binary instead of ending continuous play.
+
 Player-count defaults use Civ VI's stock world rows: 2 players = Duel
 (`44×26`, 3 city-states), 4 = Tiny (`60×38`, 6 city-states), and 6 = Small
 (`74×46`, 9 city-states). `--width`, `--height`, and `--city-states` remain

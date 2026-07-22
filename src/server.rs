@@ -77,10 +77,14 @@ impl Session {
             let mut o = observation_spectator(g, pid);
             o["spectate"] = json!(true);
             o["legal_actions"] = json!([]);
+            // Lets a long-running spectator notice that its server was
+            // rebuilt/restarted between games and reload the latest UI.
+            o["server_instance"] = json!(std::process::id());
             return o;
         }
         let mut o = observation(&self.game, 0);
         o["legal_actions"] = serde_json::to_value(self.game.legal_actions(0)).unwrap();
+        o["server_instance"] = json!(std::process::id());
         o
     }
 
@@ -299,7 +303,7 @@ fn handle(stream: &mut TcpStream, session: &mut Session) {
 
 #[cfg(test)]
 mod tests {
-    use super::{new_game_params, Params};
+    use super::{new_game_params, Params, Session, EMBEDDED_INDEX};
     use serde_json::json;
 
     fn current() -> Params {
@@ -347,6 +351,35 @@ mod tests {
             }),
         );
         assert_eq!((p.width, p.height, p.num_city_states), (80, 50, 2));
+    }
+
+    #[test]
+    fn browser_exposes_every_stock_size_with_setup_first() {
+        for players in [2, 4, 6, 8, 10, 12] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("<option value=\"{players}\"")),
+                "browser setup is missing the {players}-player map size"
+            );
+        }
+        assert!(EMBEDDED_INDEX.contains("RULES.map_sizes.map(size =>"));
+        assert!(!EMBEDDED_INDEX.contains("RULES.map_sizes.filter"));
+
+        let setup = EMBEDDED_INDEX
+            .find("<details class=\"utility-panel\">")
+            .expect("simulation setup panel");
+        let strategy = EMBEDDED_INDEX
+            .find("<span>Active strategy</span>")
+            .expect("active strategy section");
+        assert!(setup < strategy, "simulation setup should be at the top");
+    }
+
+    #[test]
+    fn state_identifies_the_running_server_instance() {
+        let state = Session::new(current()).state();
+        assert_eq!(
+            state["server_instance"].as_u64(),
+            Some(std::process::id() as u64)
+        );
     }
 }
 
