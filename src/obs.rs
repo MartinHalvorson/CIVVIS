@@ -3,7 +3,7 @@
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::game::{growth_threshold, City, Game, RememberedCity};
+use crate::game::{City, Game, RememberedCity, DIPLOMATIC_VICTORY_POINTS, EXOPLANET_DESTINATION};
 use crate::world::Tile;
 use crate::Pos;
 
@@ -26,13 +26,11 @@ pub fn observation_player_view(g: &Game, pid: usize) -> Value {
 
 fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value {
     let p = &g.players[pid];
-    let mut viewers = vec![pid];
-    if !omniscient {
-        viewers.extend(p.alliances.iter().filter_map(|(partner, alliance)| {
-            (alliance.ends > g.turn && alliance.kind == "military" && alliance.level >= 2)
-                .then_some(*partner)
-        }));
-    }
+    let viewers: Vec<usize> = if omniscient {
+        vec![pid]
+    } else {
+        g.visibility_viewers(pid).into_iter().collect()
+    };
     let vis: BTreeSet<Pos> = if omniscient {
         g.map.tiles.keys().copied().collect()
     } else {
@@ -44,10 +42,8 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         p.explored.clone()
     };
     if !omniscient {
-        for (partner, alliance) in &p.alliances {
-            if alliance.ends > g.turn && alliance.kind == "military" && alliance.level >= 2 {
-                explored.extend(g.players[*partner].explored.iter().copied());
-            }
+        for viewer in &viewers {
+            explored.extend(g.players[*viewer].explored.iter().copied());
         }
     }
     let tiles: Vec<Value> = explored
@@ -74,9 +70,10 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         .units
         .values()
         .filter(|u| {
+            let observed_pos = u.air_patrol_pos.unwrap_or(u.pos);
             omniscient
                 || u.owner == pid
-                || (vis.contains(&u.pos)
+                || (vis.contains(&observed_pos)
                     && viewers
                         .iter()
                         .any(|viewer| g.unit_visible_to(u.id, *viewer)))
@@ -154,9 +151,18 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         .filter(|tile| tile["improvement"] == "barbarian_camp")
         .map(|tile| tile["pos"].clone())
         .collect();
+    let leading_score = g
+        .players
+        .iter()
+        .filter(|player| !player.is_minor && !player.is_barbarian)
+        .map(|player| g.score(player.id))
+        .max()
+        .unwrap_or(0);
     json!({
         "turn": g.turn,
+        "max_turns": g.max_turns,
         "seed": g.seed,
+        "game_speed": g.game_speed.id(),
         "world_era": g.world_era,
         "climate_phase": g.climate_phase,
         "climate_points": g.climate_points(),
@@ -165,6 +171,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         "map": {
             "size": g.map_size().id,
             "size_name": g.map_size().name,
+            "script": g.map_script.id(),
             "width": g.map.width,
             "height": g.map.height,
             "default_players": g.map_size().default_players,
@@ -308,6 +315,18 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                 "government": o.government,
                 "score": g.score(o.id),
                 "cities": g.player_city_ids(o.id).len(),
+                "suzerain_count": g.players.iter()
+                    .filter(|minor| minor.alive && minor.is_minor && !minor.is_barbarian)
+                    .filter(|minor| g.suzerain_of(minor.id) == Some(o.id))
+                    .count(),
+                "wonder_count": g.player_city_ids(o.id).iter()
+                    .map(|city| g.cities[city].wonders.len())
+                    .sum::<usize>(),
+                "victories": if !o.is_minor && !o.is_barbarian {
+                    Some(victory_progress_json(g, o.id, leading_score))
+                } else {
+                    None
+                },
                 "gold": round1(o.gold),
                 "gold_per_turn": round1(o.gold_per_turn),
                 "bankruptcy_amenity_penalty": o.bankruptcy_amenity_penalty,
@@ -344,6 +363,148 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             .collect::<Vec<_>>(),
         "winner": g.winner,
         "victory_type": g.victory_type,
+    })
+}
+
+/// Public victory-screen metrics. Each progress value is normalized to
+/// 0..100 for sorting and meter width, while the underlying counts let the UI
+/// describe the actual victory requirement instead of showing a vague percent.
+fn victory_progress_json(g: &Game, pid: usize, leading_score: i64) -> Value {
+    let player = &g.players[pid];
+    let all_majors: Vec<usize> = g
+        .players
+        .iter()
+        .filter(|candidate| !candidate.is_minor && !candidate.is_barbarian)
+        .map(|candidate| candidate.id)
+        .collect();
+    let living_majors: Vec<usize> = all_majors
+        .iter()
+        .copied()
+        .filter(|candidate| g.players[*candidate].alive)
+        .collect();
+
+    let science_projects = [
+        "launch_earth_satellite",
+        "launch_moon_landing",
+        "launch_mars_colony",
+        "exoplanet_expedition",
+    ];
+    let completed_projects = science_projects
+        .iter()
+        .filter(|project| player.science_projects.contains(**project))
+        .count();
+    let science_progress = if player.science_projects.contains("exoplanet_expedition") {
+        75.0 + 25.0 * player.exoplanet_distance / EXOPLANET_DESTINATION
+    } else {
+        match completed_projects {
+            0 => 0.0,
+            1 => 25.0,
+            2 => 45.0,
+            _ => 65.0,
+        }
+    }
+    .clamp(0.0, 100.0);
+
+    let culture_target = living_majors
+        .iter()
+        .filter(|candidate| **candidate != pid)
+        .map(|candidate| g.domestic_tourists(*candidate))
+        .max()
+        .unwrap_or(0)
+        + 1;
+    let foreign_tourists = g.foreign_tourists(pid);
+    let culture_progress = if culture_target > 0 {
+        100.0 * foreign_tourists as f64 / culture_target as f64
+    } else {
+        0.0
+    }
+    .clamp(0.0, 100.0);
+
+    let converted_civs = player.religion.as_ref().map_or(0, |religion| {
+        living_majors
+            .iter()
+            .filter(|candidate| {
+                let cities = g.player_city_ids(**candidate);
+                let following = cities
+                    .iter()
+                    .filter(|city| g.city_religion(&g.cities[city]) == Some(religion.as_str()))
+                    .count();
+                !cities.is_empty() && following * 2 > cities.len()
+            })
+            .count()
+    });
+    let religious_target = living_majors.len();
+    let religious_progress = if religious_target > 0 {
+        100.0 * converted_civs as f64 / religious_target as f64
+    } else {
+        0.0
+    };
+
+    let foreign_capitals = all_majors
+        .iter()
+        .filter(|original_owner| **original_owner != pid)
+        .count();
+    let controlled_capitals = all_majors
+        .iter()
+        .filter(|original_owner| **original_owner != pid)
+        .filter(|original_owner| {
+            g.cities
+                .values()
+                .find(|city| city.is_capital && city.original_owner == **original_owner)
+                .map_or(!g.players[**original_owner].alive, |capital| {
+                    capital.owner == pid
+                })
+        })
+        .count();
+    let domination_progress = if foreign_capitals > 0 {
+        100.0 * controlled_capitals as f64 / foreign_capitals as f64
+    } else {
+        0.0
+    };
+
+    let diplomatic_points = player.dvp.max(0);
+    let diplomatic_progress =
+        100.0 * diplomatic_points as f64 / DIPLOMATIC_VICTORY_POINTS.max(1) as f64;
+    let score = g.score(pid);
+    let score_progress = if leading_score > 0 {
+        100.0 * score.max(0) as f64 / leading_score as f64
+    } else {
+        0.0
+    };
+
+    json!({
+        "science": {
+            "progress": round1(science_progress),
+            "projects": completed_projects,
+            "project_target": science_projects.len(),
+            "distance": round1(player.exoplanet_distance),
+            "distance_target": EXOPLANET_DESTINATION,
+        },
+        "culture": {
+            "progress": round1(culture_progress),
+            "tourists": foreign_tourists,
+            "target": culture_target,
+        },
+        "religious": {
+            "progress": round1(religious_progress),
+            "converted": converted_civs,
+            "target": religious_target,
+        },
+        "diplomatic": {
+            "progress": round1(diplomatic_progress.clamp(0.0, 100.0)),
+            "points": diplomatic_points,
+            "target": DIPLOMATIC_VICTORY_POINTS,
+        },
+        "domination": {
+            "progress": round1(domination_progress),
+            "capitals": controlled_capitals,
+            "target": foreign_capitals,
+        },
+        "score": {
+            "progress": round1(score_progress.clamp(0.0, 100.0)),
+            "points": score,
+            "leader": leading_score,
+        },
     })
 }
 
@@ -479,7 +640,7 @@ fn live_city_json(g: &Game, pid: usize, city: &City) -> Value {
         "powered": g.city_is_powered(city),
         "reactor_age": city.reactor_age,
         "reactor_accident_risk": round1(100.0 * g.reactor_accident_risk(city.id)),
-        "growth_need": growth_threshold(city.pop),
+        "growth_need": g.growth_cost(city.pop),
         "queue_cost": city.queue.first()
             .map(|item| g.item_cost_for_city(city.owner, city.id, item)),
         "can_strike": g.city_can_strike(city),
@@ -514,6 +675,43 @@ fn merge(base: &mut Value, ext: Value) {
     if let (Some(b), Some(e)) = (base.as_object_mut(), ext.as_object()) {
         for (k, v) in e {
             b.insert(k.clone(), v.clone());
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn observation_exposes_compact_hud_and_victory_race_metrics() {
+        let game = Game::new_full(2, 20, 14, 81_004, 120, 1, false);
+        let observed = observation_spectator(&game, 0);
+        assert_eq!(observed["max_turns"], serde_json::json!(120));
+
+        let player = observed["players"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|player| player["id"] == serde_json::json!(0))
+            .unwrap();
+        assert_eq!(
+            player["cities"],
+            serde_json::json!(game.player_city_ids(0).len()),
+        );
+        assert!(player["suzerain_count"].is_number());
+        assert!(player["wonder_count"].is_number());
+
+        let victories = player["victories"].as_object().unwrap();
+        for victory in [
+            "science",
+            "culture",
+            "religious",
+            "diplomatic",
+            "domination",
+            "score",
+        ] {
+            assert!(victories[victory]["progress"].is_number(), "{victory}");
         }
     }
 }

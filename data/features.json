@@ -43,6 +43,40 @@
       "science": 1
     }
   },
+  "ice": {
+    "impassable": true
+  },
+  "volcano": {
+    "impassable": true
+  },
+  "volcanic_soil": {},
+  "impact_zone": {
+    "impassable": true
+  },
+  "burning_forest": {
+    "yields": {
+      "production": 1
+    },
+    "move_cost": 2
+  },
+  "burnt_forest": {
+    "yields": {
+      "production": 1
+    },
+    "move_cost": 2
+  },
+  "burning_jungle": {
+    "yields": {
+      "food": 1
+    },
+    "move_cost": 2
+  },
+  "burnt_jungle": {
+    "yields": {
+      "food": 1
+    },
+    "move_cost": 2
+  },
   "oasis": {
     "yields": {
       "food": 3,

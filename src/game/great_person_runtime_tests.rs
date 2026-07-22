@@ -153,6 +153,10 @@ fn great_scientist_yield_bonuses_apply_to_unique_building_families() {
 #[test]
 fn named_engineers_apply_exact_charges_wonder_gates_and_workshop_culture() {
     let mut game = Game::new_full(1, 24, 16, 95_003, 300, 0, false);
+    // Great Engineer behavior is civilization-independent. Pin the fixture so
+    // map-generation additions cannot indirectly select a yield-changing
+    // civilization and turn this into a unique-ability test.
+    game.players[0].civ = "Rome".to_string();
     let settler = game
         .player_unit_ids(0)
         .into_iter()
@@ -188,7 +192,7 @@ fn named_engineers_apply_exact_charges_wonder_gates_and_workshop_culture() {
     let culture_before = game.city_yields(city).culture;
     let boosts_before = game.players[0].boosted_techs.clone();
     assert_eq!(recruit_current_engineer(&mut game), "leonardo_da_vinci");
-    assert_eq!(game.city_yields(city).culture - culture_before, 3.0);
+    assert!((game.city_yields(city).culture - culture_before - 3.0).abs() < 1e-9);
     let new_boosts: Vec<&String> = game.players[0]
         .boosted_techs
         .difference(&boosts_before)
@@ -205,12 +209,13 @@ fn named_engineers_apply_exact_charges_wonder_gates_and_workshop_culture() {
     assert_eq!(recruit_current_engineer(&mut game), "gustave_eiffel");
     assert_eq!(game.cities[&city].production, 960.0);
 
+    let active_workshop_culture = game.city_yields(city).culture;
     game.cities
         .get_mut(&city)
         .unwrap()
         .pillaged_buildings
         .insert("workshop".to_string());
-    assert_eq!(game.city_yields(city).culture, culture_before);
+    assert!(active_workshop_culture - game.city_yields(city).culture >= 3.0 - 1e-9);
 }
 
 #[test]

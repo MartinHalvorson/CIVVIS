@@ -1016,6 +1016,7 @@ impl Ai for BasicAi {
         self.resolve_city_dispositions(g, pid, false, false);
         if !self.barb {
             self.research(g, pid);
+            self.upgrades(g, pid);
             self.corporations(g, pid);
             self.diplomacy(g, pid);
             self.spies(g, pid);
@@ -1030,6 +1031,64 @@ impl Ai for BasicAi {
 }
 
 impl BasicAi {
+    /// Spend the treasury on legal one-step modernizations before buying new
+    /// units. The oldest fielded equipment is handled first, preventing a rich
+    /// Renaissance empire from preserving Ancient units while purchasing
+    /// additional forces. Units outside friendly territory remain untouched
+    /// until they return, as required by the game rules.
+    pub(crate) fn upgrades(&self, g: &mut Game, pid: usize) {
+        loop {
+            let actions = g.legal_unit_upgrade_actions(pid);
+            let best = actions.into_iter().max_by(|left, right| {
+                let score = |action: &Action| {
+                    let Action::Upgrade { unit, to } = action else {
+                        unreachable!()
+                    };
+                    let source = &g.rules.units[g.units[unit].kind.as_str()];
+                    let target = &g.rules.units[to.as_str()];
+                    let source_era = source
+                        .tech
+                        .as_ref()
+                        .and_then(|tech| g.rules.techs.get(tech).map(|node| node.era))
+                        .or_else(|| {
+                            source
+                                .civic
+                                .as_ref()
+                                .and_then(|civic| g.rules.civics.get(civic).map(|node| node.era))
+                        })
+                        .unwrap_or(0);
+                    let target_power = target
+                        .strength
+                        .max(target.ranged_attack_strength())
+                        .max(target.bombard_strength);
+                    let source_power = source
+                        .strength
+                        .max(source.ranged_attack_strength())
+                        .max(source.bombard_strength);
+                    (
+                        source_era,
+                        (target_power - source_power).round() as i64,
+                        *unit,
+                    )
+                };
+                // Lower source era is more obsolete; for ties take the larger
+                // immediate power gain and then the stable lower unit id.
+                let (left_era, left_gain, left_id) = score(left);
+                let (right_era, right_gain, right_id) = score(right);
+                right_era
+                    .cmp(&left_era)
+                    .then_with(|| left_gain.cmp(&right_gain))
+                    .then_with(|| right_id.cmp(&left_id))
+            });
+            let Some(action) = best else {
+                break;
+            };
+            if g.apply(pid, &action).is_err() {
+                break;
+            }
+        }
+    }
+
     /// Run each available agent once. The baseline establishes sources before
     /// attempting the highest expected-value operation and otherwise embeds
     /// agents in the most developed non-allied foreign city.
@@ -3826,6 +3885,32 @@ mod tests {
     }
 
     #[test]
+    fn basic_ai_modernizes_affordable_obsolete_units() {
+        let mut game = Game::new_full(1, 20, 14, 41_005, 40, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let home = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| game.units_at(*position).is_empty())
+            .unwrap();
+        game.players[0].techs.insert("archery".to_string());
+        game.players[0].gold = 60.0;
+        let slinger = game.spawn_test_unit("slinger", 0, home);
+
+        BasicAi::new().upgrades(&mut game, 0);
+
+        assert_eq!(game.units[&slinger].kind, "archer");
+        assert!(game.players[0].gold.abs() < 1e-9);
+    }
+
+    #[test]
     fn coastal_empires_research_navigation_before_generic_land_unlocks() {
         let (mut g, _, _) = island_colony_game(1);
         g.players[0].research = None;
@@ -4467,11 +4552,21 @@ mod tests {
                     })
             })
             .unwrap();
+        // Keep this doctrine fixture inside the Spec Ops unit's real sight
+        // corridor. Priority Target cannot select an escorted support unit
+        // hidden behind terrain at range two.
+        for position in game.wdisk(origin, 2) {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = "plains".to_string();
+            tile.feature = None;
+            tile.hills = false;
+        }
         let spec_ops = game.spawn_test_unit("spec_ops", 0, origin);
         game.spawn_test_unit("modern_armor", 1, target);
         let sam = game.spawn_test_unit("mobile_sam", 1, target);
         let mut ai = BasicAi::new();
 
+        assert!(game.player_visibility(0).contains(&target));
         assert!(ai.military_step(&mut game, 0, spec_ops));
         assert_eq!(game.units[&sam].hp, 35);
         assert!(matches!(

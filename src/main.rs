@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use civvis::ai::{run_game, AdvancedAi};
 use civvis::game::Game;
-use civvis::setup::MapSize;
+use civvis::setup::{GameSpeed, MapScript, MapSize};
 
 fn arg(args: &[String], key: &str, default: i64) -> i64 {
     args.iter()
@@ -19,6 +19,13 @@ fn arg_text(args: &[String], key: &str, default: &str) -> String {
         .and_then(|index| args.get(index + 1))
         .cloned()
         .unwrap_or_else(|| default.to_string())
+}
+
+fn arg_optional(args: &[String], key: &str) -> Option<i64> {
+    args.iter()
+        .position(|value| value == key)
+        .and_then(|index| args.get(index + 1))
+        .and_then(|value| value.parse().ok())
 }
 
 fn auto_cs(args: &[String], players: i64) -> usize {
@@ -231,6 +238,10 @@ fn main() {
         }
         "play" => {
             let players = arg(&args, "--players", 4);
+            let map_script = MapScript::from_id(&arg_text(&args, "--map", "pangaea"))
+                .unwrap_or(MapScript::Pangaea);
+            let game_speed = GameSpeed::from_id(&arg_text(&args, "--speed", "online"))
+                .unwrap_or(GameSpeed::Online);
             let resumed: Option<Game> = args
                 .iter()
                 .position(|value| value == "--resume")
@@ -264,9 +275,14 @@ fn main() {
                     width: auto_dimension(&args, "--width", players, true),
                     height: auto_dimension(&args, "--height", players, false),
                     seed,
-                    max_turns: arg(&args, "--turns", 500) as u32,
+                    map_script,
+                    game_speed,
+                    max_turns: arg_optional(&args, "--turns")
+                        .map(|turns| turns as u32)
+                        .unwrap_or_else(|| game_speed.turn_limit()),
                     num_city_states: auto_cs(&args, players),
                     spectate: args.iter().any(|a| a == "--spectate" || a == "--watch"),
+                    supervised: args.iter().any(|a| a == "--supervised"),
                 },
                 resumed,
             );
@@ -276,7 +292,9 @@ fn main() {
                 "usage: civvis <simulate|soak|benchmark|tournament|play|evolve> \
                       [--players N] [--seed N] [--turns N] [--width N] [--height N] \
                       [--city-states N] [--games N] [--ais a,b] [--port N] [--no-open] \
-                      [--spectate] [--resume checkpoint.json]"
+                      [--map pangaea|continents|small_continents|inland_sea] \
+                      [--speed online|quick|standard|epic|marathon] \
+                      [--spectate] [--supervised] [--resume checkpoint.json]"
             );
         }
     }

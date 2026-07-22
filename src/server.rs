@@ -9,11 +9,17 @@ use serde_json::{json, Value};
 use crate::ai::{AdvancedAi, Ai, BasicAi};
 use crate::game::{Action, Game};
 use crate::obs::{observation, observation_player_view, observation_spectator};
-use crate::setup::{MapSize, CIV6_MAP_SIZES};
+use crate::setup::{
+    GameSpeed, MapScript, MapSize, CIV6_GAME_SPEEDS, CIV6_MAP_SCRIPTS, CIV6_MAP_SIZES,
+};
 
 const EMBEDDED_INDEX: &str = include_str!("../web/index.html");
 const EMBEDDED_TERRAIN_ATLAS: &[u8] = include_bytes!("../web/assets/terrain-atlas.png");
 const EMBEDDED_FEATURE_ATLAS: &[u8] = include_bytes!("../web/assets/feature-atlas.png");
+const EMBEDDED_ENVIRONMENT_FEATURE_ATLAS: &[u8] =
+    include_bytes!("../web/assets/environment-feature-atlas.png");
+const EMBEDDED_NATURAL_WONDER_ATLAS: &[u8] =
+    include_bytes!("../web/assets/natural-wonder-atlas.png");
 const EMBEDDED_MOUNTAIN_ATLAS: &[u8] = include_bytes!("../web/assets/mountain-atlas.png");
 
 #[derive(Clone)]
@@ -22,10 +28,15 @@ pub struct Params {
     pub width: i32,
     pub height: i32,
     pub seed: u64,
+    pub map_script: MapScript,
+    pub game_speed: GameSpeed,
     pub max_turns: u32,
     pub num_city_states: usize,
     /// All players AI-driven; the GUI just watches (auto-steps via /step).
     pub spectate: bool,
+    /// A lifecycle supervisor, rather than the browser countdown, owns the
+    /// transition after a completed spectator game.
+    pub supervised: bool,
 }
 
 pub struct Session {
@@ -53,13 +64,15 @@ impl Session {
     }
 
     pub fn new(params: Params) -> Session {
-        let game = Game::new_full(
+        let game = Game::new_with_setup(
             params.num_players,
             params.width,
             params.height,
             params.seed,
             params.max_turns,
             params.num_city_states,
+            params.map_script,
+            params.game_speed,
             true,
         );
         // Paired and multiplayer evaluation make the hierarchical agent the
@@ -91,6 +104,8 @@ impl Session {
         params.width = game.map.width;
         params.height = game.map.height;
         params.seed = game.seed;
+        params.map_script = game.map_script;
+        params.game_speed = game.game_speed;
         params.max_turns = game.max_turns;
         let ais = Self::ai_fleet(&game);
         Session {
@@ -126,6 +141,9 @@ impl Session {
     /// Start a requested world, rejecting a delayed result-countdown request
     /// after the supervisor has already replaced the finished server.
     fn start_new_game(&mut self, request: &Value) -> Result<(), String> {
+        if self.params.supervised {
+            return Err("the spectator supervisor owns in-process game replacement".into());
+        }
         if let Some(finished) = request.get("replace_finished") {
             let expected_seed = finished["seed"]
                 .as_u64()
@@ -187,6 +205,7 @@ impl Session {
                 None => observation_spectator(g, summary_pid),
             };
             o["spectate"] = json!(true);
+            o["supervised"] = json!(self.params.supervised);
             o["spectator_paused"] = json!(self.spectator_paused);
             o["view_player"] = json!(self.view_player);
             o["legal_actions"] = json!([]);
@@ -197,6 +216,7 @@ impl Session {
         }
         let mut o = observation(&self.game, 0);
         o["spectate"] = json!(false);
+        o["supervised"] = json!(self.params.supervised);
         o["view_player"] = json!(0);
         o["legal_actions"] = serde_json::to_value(self.game.legal_actions(0)).unwrap();
         o["server_instance"] = json!(std::process::id());
@@ -285,6 +305,16 @@ fn feature_atlas() -> Vec<u8> {
         .unwrap_or_else(|_| EMBEDDED_FEATURE_ATLAS.to_vec())
 }
 
+fn environment_feature_atlas() -> Vec<u8> {
+    std::fs::read("web/assets/environment-feature-atlas.png")
+        .unwrap_or_else(|_| EMBEDDED_ENVIRONMENT_FEATURE_ATLAS.to_vec())
+}
+
+fn natural_wonder_atlas() -> Vec<u8> {
+    std::fs::read("web/assets/natural-wonder-atlas.png")
+        .unwrap_or_else(|_| EMBEDDED_NATURAL_WONDER_ATLAS.to_vec())
+}
+
 fn mountain_atlas() -> Vec<u8> {
     std::fs::read("web/assets/mountain-atlas.png")
         .unwrap_or_else(|_| EMBEDDED_MOUNTAIN_ATLAS.to_vec())
@@ -319,6 +349,16 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     }
     if let Some(v) = request["seed"].as_u64() {
         p.seed = v;
+    }
+    if let Some(v) = request["map_script"].as_str().and_then(MapScript::from_id) {
+        p.map_script = v;
+    }
+    if let Some(v) = request["game_speed"].as_str().and_then(GameSpeed::from_id) {
+        p.game_speed = v;
+        p.max_turns = v.turn_limit();
+    }
+    if let Some(v) = request["max_turns"].as_u64() {
+        p.max_turns = v as u32;
     }
     // Advanced clients can still deliberately override individual stock
     // settings by sending them alongside num_players.
@@ -373,6 +413,12 @@ fn handle(stream: &mut TcpStream, session: &mut Session) {
         ("GET", "/assets/feature-atlas.png") => {
             respond(stream, "200 OK", "image/png", &feature_atlas());
         }
+        ("GET", "/assets/environment-feature-atlas.png") => {
+            respond(stream, "200 OK", "image/png", &environment_feature_atlas());
+        }
+        ("GET", "/assets/natural-wonder-atlas.png") => {
+            respond(stream, "200 OK", "image/png", &natural_wonder_atlas());
+        }
         ("GET", "/assets/mountain-atlas.png") => {
             respond(stream, "200 OK", "image/png", &mountain_atlas());
         }
@@ -397,6 +443,8 @@ fn handle(stream: &mut TcpStream, session: &mut Session) {
                     "policies": r.policies, "beliefs": r.beliefs, "civs": r.civs,
                     "great_people": r.great_people, "governors": r.governors,
                     "map_sizes": CIV6_MAP_SIZES,
+                    "map_scripts": CIV6_MAP_SCRIPTS,
+                    "game_speeds": CIV6_GAME_SPEEDS,
                 }),
             );
         }
@@ -514,6 +562,7 @@ fn handle(stream: &mut TcpStream, session: &mut Session) {
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::{new_game_params, Params, Session, EMBEDDED_INDEX};
+    use crate::setup::{GameSpeed, MapScript};
     use serde_json::json;
 
     fn current() -> Params {
@@ -522,9 +571,12 @@ mod tests {
             width: 20,
             height: 14,
             seed: 1,
+            map_script: MapScript::Pangaea,
+            game_speed: GameSpeed::Standard,
             max_turns: 500,
             num_city_states: 1,
             spectate: false,
+            supervised: false,
         }
     }
 
@@ -564,6 +616,24 @@ mod tests {
     }
 
     #[test]
+    fn map_and_speed_choices_update_the_complete_setup() {
+        let p = new_game_params(
+            &current(),
+            &json!({"map_script": "inland_sea", "game_speed": "online"}),
+        );
+        assert_eq!(p.map_script, MapScript::InlandSea);
+        assert_eq!(p.game_speed, GameSpeed::Online);
+        assert_eq!(p.max_turns, 250);
+
+        let custom = new_game_params(
+            &current(),
+            &json!({"game_speed": "marathon", "max_turns": 99}),
+        );
+        assert_eq!(custom.game_speed, GameSpeed::Marathon);
+        assert_eq!(custom.max_turns, 99);
+    }
+
+    #[test]
     fn browser_orders_settings_event_log_and_strategy() {
         for players in [2, 4, 6, 8, 10, 12] {
             assert!(
@@ -572,7 +642,33 @@ mod tests {
             );
         }
         assert!(EMBEDDED_INDEX.contains("RULES.map_sizes.map(size =>"));
+        assert!(EMBEDDED_INDEX.contains("RULES.map_scripts.map(script =>"));
+        assert!(EMBEDDED_INDEX.contains("RULES.game_speeds.map(speed =>"));
+        assert!(EMBEDDED_INDEX.contains("id=\"gamemode\""));
+        assert!(EMBEDDED_INDEX.contains("id=\"maptype\""));
+        assert!(EMBEDDED_INDEX.contains("id=\"gamespeed\""));
+        assert!(EMBEDDED_INDEX.contains("AI-only simulation"));
+        assert!(EMBEDDED_INDEX.contains("Single player · later"));
+        assert!(EMBEDDED_INDEX.contains("Multiplayer · later"));
+        assert!(EMBEDDED_INDEX.contains("spectate: gameMode === \"ai_sim\""));
+        assert!(!EMBEDDED_INDEX.contains("id=\"specchk\""));
         assert!(!EMBEDDED_INDEX.contains("RULES.map_sizes.filter"));
+
+        let mode_setting = EMBEDDED_INDEX
+            .find("id=\"gamemode\"")
+            .expect("game mode setting");
+        let world_setting = EMBEDDED_INDEX
+            .find("id=\"np\"")
+            .expect("world size setting");
+        let map_setting = EMBEDDED_INDEX.find("id=\"maptype\"").expect("map setting");
+        let speed_setting = EMBEDDED_INDEX
+            .find("id=\"gamespeed\"")
+            .expect("game speed setting");
+        assert!(
+            mode_setting < world_setting
+                && world_setting < map_setting
+                && map_setting < speed_setting
+        );
 
         let game_settings = EMBEDDED_INDEX
             .find("id=\"game-settings\"")
@@ -590,7 +686,7 @@ mod tests {
             game_settings < display_settings
                 && display_settings < event_log
                 && event_log < strategy,
-            "right panel should show game settings, display settings, and the event log first"
+            "left panel should show game settings, display settings, and the event log first"
         );
         assert!(EMBEDDED_INDEX.contains("<span>Display settings</span>"));
         assert!(!EMBEDDED_INDEX.contains("Simulator settings"));
@@ -607,6 +703,9 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("let eventLogs = new Map()"));
         assert!(EMBEDDED_INDEX.contains(".sort((a, b) => b.score - a.score || a.id - b.id)"));
         assert!(EMBEDDED_INDEX.contains("class=\"diplomacy-rank\">#${rank}"));
+        assert!(EMBEDDED_INDEX.contains("#side {\n    order: -1;"));
+        assert!(EMBEDDED_INDEX.contains("<strong>${state.turn}</strong>"));
+        assert!(!EMBEDDED_INDEX.contains("${state.turn}/${maxTurns}"));
     }
 
     #[test]
@@ -620,6 +719,8 @@ mod tests {
             session.params.width,
             session.params.height,
             session.params.num_city_states,
+            session.params.map_script,
+            session.params.game_speed,
             session.params.spectate,
         );
 
@@ -634,6 +735,8 @@ mod tests {
                 session.params.width,
                 session.params.height,
                 session.params.num_city_states,
+                session.params.map_script,
+                session.params.game_speed,
                 session.params.spectate,
             ),
             previous_settings
@@ -796,6 +899,14 @@ mod tests {
                 "server_instance": std::process::id()
             }
         });
+        session.params.supervised = true;
+        assert!(session.start_new_game(&guarded).is_err());
+        assert_eq!(session.game.seed, 5);
+        assert!(session
+            .start_new_game(&json!({"seed": 6, "spectate": true, "force": true}))
+            .is_err());
+        assert_eq!(session.game.seed, 5);
+        session.params.supervised = false;
         assert!(session.start_new_game(&guarded).is_ok());
         assert_eq!(session.game.seed, 2);
 

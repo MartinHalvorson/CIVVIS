@@ -252,7 +252,7 @@ def checkpoint_path(port: int) -> Path:
     return CHECKPOINT_DIR / f"spectator-{port}.json"
 
 
-def capture_checkpoint(port: int, path: Path, timeout: float = 3.0) -> bool:
+def capture_checkpoint(port: int, path: Path, timeout: float = 30.0) -> bool:
     """Atomically persist a full server save, rejecting malformed responses."""
     try:
         with urlopen(f"http://127.0.0.1:{port}/save", timeout=timeout) as response:
@@ -292,7 +292,7 @@ def quarantine_checkpoint(path: Path) -> None:
         pass
 
 
-def session_settings(state: dict[str, Any], defaults: dict[str, int]) -> dict[str, int]:
+def session_settings(state: dict[str, Any], defaults: dict[str, Any]) -> dict[str, Any]:
     """Carry the just-finished game's size forward to the next binary."""
     players = state.get("players") or []
     majors = sum(
@@ -311,7 +311,9 @@ def session_settings(state: dict[str, Any], defaults: dict[str, int]) -> dict[st
         "width": int(game_map.get("width") or defaults["width"]),
         "height": int(game_map.get("height") or defaults["height"]),
         "city_states": city_states if players else defaults["city_states"],
-        "turns": defaults["turns"],
+        "turns": int(state.get("max_turns") or defaults["turns"]),
+        "map": game_map.get("script") or defaults["map"],
+        "speed": state.get("game_speed") or defaults["speed"],
     }
 
 
@@ -347,7 +349,7 @@ def result_standings(state: dict[str, Any]) -> str | None:
 
 def server_command(
     port: int,
-    settings: dict[str, int],
+    settings: dict[str, Any],
     open_browser: bool,
     resume: Path | None = None,
 ) -> list[str]:
@@ -364,11 +366,16 @@ def server_command(
         str(settings["city_states"]),
         "--turns",
         str(settings["turns"]),
+        "--map",
+        str(settings["map"]),
+        "--speed",
+        str(settings["speed"]),
         "--seed",
         str(random.randrange(1_000_000_000)),
         "--port",
         str(port),
         "--spectate",
+        "--supervised",
     ]
     if resume is not None:
         args.extend(("--resume", str(resume)))
@@ -421,6 +428,29 @@ def process_busy(
         return False
 
 
+def unavailable_recovery_due(
+    alive: bool,
+    unavailable_for: float,
+    recently_busy: bool,
+    unresponsive_timeout: float,
+    busy_timeout: float,
+) -> bool:
+    """Decide whether an unavailable process should be replaced.
+
+    A CPU-active simulation is making useful progress even when its
+    single-threaded HTTP server cannot answer health checks. By default there
+    is no wall-clock ceiling on that work. Operators can still opt into a hard
+    ceiling with ``--busy-timeout`` when diagnosing a suspected compute loop.
+    """
+    if not alive:
+        return True
+    if unavailable_for < unresponsive_timeout:
+        return False
+    if recently_busy:
+        return busy_timeout > 0.0 and unavailable_for >= busy_timeout
+    return True
+
+
 def stop_server(process: subprocess.Popen[str] | None, adopted_pid: int | None) -> None:
     pid = process.pid if process is not None else adopted_pid
     if pid is None:
@@ -465,7 +495,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--width", type=int, default=60)
     parser.add_argument("--height", type=int, default=38)
     parser.add_argument("--city-states", type=int, default=6)
-    parser.add_argument("--turns", type=int, default=500)
+    parser.add_argument("--turns", type=int, default=250)
+    parser.add_argument(
+        "--map",
+        choices=("pangaea", "continents", "small_continents", "inland_sea"),
+        default="pangaea",
+    )
+    parser.add_argument(
+        "--speed",
+        choices=("online", "quick", "standard", "epic", "marathon"),
+        default="online",
+    )
     parser.add_argument(
         "--cooldown",
         type=float,
@@ -483,8 +523,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--busy-timeout",
         type=float,
-        default=600.0,
-        help="restart even a CPU-busy server after this maximum unavailable interval",
+        default=0.0,
+        help="optional hard ceiling for a CPU-busy request; 0 never kills active compute",
     )
     parser.add_argument(
         "--stall-timeout",
@@ -521,6 +561,8 @@ def main() -> int:
         "height": args.height,
         "city_states": args.city_states,
         "turns": args.turns,
+        "map": args.map,
+        "speed": args.speed,
     }
     process: subprocess.Popen[str] | None = None
     adopted_pid = args.adopt_pid
@@ -533,6 +575,7 @@ def main() -> int:
     resume_attempts: dict[tuple[Any, ...], int] = {}
     busy_reported = False
     busy_check_at = 0.0
+    busy_until = 0.0
 
     def launch_recovery(open_browser: bool = False) -> dict[str, Any]:
         nonlocal process, adopted_pid
@@ -599,34 +642,45 @@ def main() -> int:
                 alive = process_alive(process, adopted_pid)
                 unavailable_for = now - unavailable_since
                 unresponsive_timeout = max(0.1, args.unresponsive_timeout)
-                busy_timeout = max(unresponsive_timeout, args.busy_timeout)
-                busy = False
+                busy_timeout = (
+                    max(unresponsive_timeout, args.busy_timeout)
+                    if args.busy_timeout > 0.0
+                    else 0.0
+                )
                 if (
                     alive
                     and unavailable_for >= unresponsive_timeout
-                    and unavailable_for < busy_timeout
                     and now >= busy_check_at
                 ):
-                    busy = process_busy(process, adopted_pid)
+                    observed_busy = process_busy(process, adopted_pid)
                     busy_check_at = now + 5.0
-                    if busy and not busy_reported:
+                    if observed_busy:
+                        # A brief scheduler gap must not turn a long, valid AI
+                        # action into a crash. Require a full idle recovery
+                        # window after the last observed CPU activity.
+                        busy_until = now + unresponsive_timeout
+                    if observed_busy and not busy_reported:
                         log(
                             "server is unavailable but actively computing; "
                             "extending the recovery window"
                         )
                         busy_reported = True
-                elif alive and busy_reported and unavailable_for < busy_timeout:
-                    busy = True
+                recently_busy = alive and now < busy_until
 
-                if not alive or (
-                    unavailable_for >= unresponsive_timeout and not busy
-                ) or unavailable_for >= busy_timeout:
+                if unavailable_recovery_due(
+                    alive,
+                    unavailable_for,
+                    recently_busy,
+                    unresponsive_timeout,
+                    busy_timeout,
+                ):
                     reason = "stopped" if not alive else "became unresponsive"
                     log(f"server {reason}; recovering from the latest safe checkpoint")
                     state = launch_recovery()
                     unavailable_since = None
                     busy_reported = False
                     busy_check_at = 0.0
+                    busy_until = 0.0
                     last_progress = progress_marker(state)
                     progress_at = time.monotonic()
                     checkpointed_progress = None
@@ -636,6 +690,7 @@ def main() -> int:
             unavailable_since = None
             busy_reported = False
             busy_check_at = 0.0
+            busy_until = 0.0
             settings = session_settings(state, settings)
             if state.get("winner") is None:
                 now = time.monotonic()

@@ -7748,6 +7748,7 @@ impl Ai for AdvancedAi {
         // Keep the mature ancillary systems: governments, policies, beliefs,
         // governors, religions, and envoys. Research is already selected.
         self.base.research(g, pid);
+        self.base.upgrades(g, pid);
         self.strategic_government(g, pid, plan.strategy);
         self.base.corporations(g, pid);
         self.advanced_products(g, pid, plan.strategy);
@@ -10663,6 +10664,20 @@ mod tests {
             GrandStrategy::Expansion,
         ));
         assert!(game.units.contains_key(&trader));
+        assert_ne!(game.units[&trader].pos, start);
+        for _ in 0..20 {
+            if game.units[&trader].pos == target {
+                break;
+            }
+            game.units.get_mut(&trader).unwrap().moves_left = 4.0;
+            assert!(AdvancedAi::new().advanced_trader_step(
+                &mut game,
+                0,
+                trader,
+                GrandStrategy::Expansion,
+            ));
+        }
+        assert_eq!(game.units[&trader].pos, target);
         assert!(game.wdist(game.units[&trader].pos, target) < before);
     }
 
@@ -11366,7 +11381,12 @@ mod tests {
                             .into_iter()
                             .filter(|reply| {
                                 g.wdist(*risky, *reply) == 2
-                                    && g.wdist(*safe, *reply) > 2
+                                    // A ranged unit may move one tile before
+                                    // firing. Keep the safe capture outside
+                                    // both its current and move-then-fire reach
+                                    // so this fixture is independent of the
+                                    // generated terrain's movement costs.
+                                    && g.wdist(*safe, *reply) > 3
                                     && *reply != *anchor
                                     && g.map.get(*reply).is_some_and(|tile| {
                                         g.rules.is_passable(tile) && !g.rules.is_water(tile)
@@ -11412,11 +11432,11 @@ mod tests {
         let safe_reply = ai.forcing_reply_penalty(&g, 0, attacker, &safe_action);
         assert!(
             risky_reply > single_reply + 5.0,
-            "the reply extension must price coordinated focus fire"
+            "the reply extension must price coordinated focus fire: single={single_reply}, risky={risky_reply}, safe={safe_reply}"
         );
         assert!(
             risky_reply > safe_reply + 5.0,
-            "the ranged recapture must make the exposed kill materially worse"
+            "the ranged recapture must make the exposed kill materially worse: single={single_reply}, risky={risky_reply}, safe={safe_reply}"
         );
 
         let plan = StrategicPlan {
@@ -11660,7 +11680,8 @@ mod tests {
         ];
         let first_enemy = g.spawn_test_unit("warrior", 1, first_target);
         g.units.get_mut(&first_enemy).unwrap().hp = 1;
-        g.spawn_test_unit("warrior", 1, second_target);
+        let second_enemy = g.spawn_test_unit("warrior", 1, second_target);
+        g.units.get_mut(&second_enemy).unwrap().hp = 1;
         let plan = StrategicPlan {
             strategy: GrandStrategy::Conquest,
             target_player: Some(1),
@@ -11687,11 +11708,15 @@ mod tests {
             .find(|group| group.units.contains(&attackers[1]))
             .unwrap();
         assert_eq!(replanned.focus_target, Some(second_target));
-        assert!(matches!(
-            g.log.last(),
-            Some((0, Action::Attack { unit, target }))
-                if *unit == attackers[1] && *target == second_target
-        ));
+        assert!(
+            matches!(
+                g.log.last(),
+                Some((0, Action::Attack { unit, target }))
+                    if *unit == attackers[1] && *target == second_target
+            ),
+            "unexpected replanned action log: {:?}",
+            g.log
+        );
     }
 
     #[test]
