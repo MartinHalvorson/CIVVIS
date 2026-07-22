@@ -79,14 +79,41 @@ produced. **That file is the fidelity roadmap: shrinking it is the work.**
 Anything not listed there counts against the ratchet, which now stands at
 zero for these five tables.
 
+### Tile yields (shipped)
+
+The audit now also projects `Terrain_YieldChanges`, `Feature_YieldChanges`,
+`Resource_YieldChanges`, `Improvement_YieldChanges` and
+`Improvement_BonusYieldChanges`, the last against `data/tree_effects.json`
+(the game hangs tech- and civic-gated improvement yields off the unlocking
+node, which is exactly how CIVVIS stores them).
+
+Two projection details carry their weight here:
+
+- Each side lists **every** yield explicitly, zeros included. Comparing only
+  the yields CIVVIS names lets an invented yield through: the game grants
+  Antiquity Sites, Shipwrecks, Pamukkale and the Grassland/Plains Floodplains
+  none at all, and CIVVIS was granting five of them.
+- Both sides are seeded from the **entity** table rather than the yield table,
+  so an entry with no yield rows is still compared instead of silently
+  skipped — which is the case that hides invented yields.
+
+CIVVIS folds Hills into a flat +1 Production modifier instead of carrying a
+terrain per hills variant, so each `_HILLS` terrain is checked against its flat
+parent plus that modifier. All five agree, which is what licenses the
+simplification.
+
 ### Next inside phase 1
 
-The audit currently covers costs, maintenance, movement, sight, combat
-strengths, ranges, charges and tree prerequisites. The tables it does not yet
-project are where the remaining divergence lives: `Building_YieldChanges`,
-`District_Adjacencies`, `Improvement_YieldChanges`, `Terrains`, `Features`,
-`Resources`, `UnitPromotions`, `Governments`, `Policies`, `Beliefs`. Each is a
-mechanical extension of the same projection pattern.
+The tables still unprojected are where the remaining divergence lives:
+`Building_YieldChanges`, `District_Adjacencies`, `UnitPromotions`,
+`Governments`, `Policies`, `Beliefs`. Each is a mechanical extension of the
+same projection pattern.
+
+The "Only in Civ VI" column on the yield tables is a content backlog with one
+entry that is not scope: **Ziggurat**, Sumeria's unique improvement — CIVVIS
+models Sumeria and Gilgamesh but not their improvement. The 26 unmodelled
+resources (every luxury past Silk/Wine/Salt, plus Rice, Crabs and Whales) need
+mapgen placement before their yields mean anything.
 
 The "Only in Civ VI" column measures scope rather than error — 51 units and 62
 buildings CIVVIS does not model, almost all of them civilization uniques from

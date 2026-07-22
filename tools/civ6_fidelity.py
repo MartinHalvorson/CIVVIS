@@ -60,6 +60,15 @@ TABLE_KEYS = {
     "Districts": "DistrictType",
     "TechnologyPrereqs": ("Technology", "PrereqTech"),
     "CivicPrereqs": ("Civic", "PrereqCivic"),
+    "Terrains": "TerrainType",
+    "Features": "FeatureType",
+    "Resources": "ResourceType",
+    "Improvements": "ImprovementType",
+    "Terrain_YieldChanges": ("TerrainType", "YieldType"),
+    "Feature_YieldChanges": ("FeatureType", "YieldType"),
+    "Resource_YieldChanges": ("ResourceType", "YieldType"),
+    "Improvement_YieldChanges": ("ImprovementType", "YieldType"),
+    "Improvement_BonusYieldChanges": ("Id",),
 }
 
 # Only parse files that can carry those tables. Parsing every gameplay XML
@@ -68,7 +77,10 @@ TABLE_KEYS = {
 # latter carries the rebalance passes and is applied after it, which sorted
 # filename order already gives us ('.' sorts before '_').
 FILE_PATTERN = re.compile(
-    r"^(Expansion[12]_)?(Units|Technologies|Civics|Buildings|Districts)(_Major)?\.xml$",
+    r"^(Expansion[12]_)?"
+    r"(Units|Technologies|Civics|Buildings|Districts"
+    r"|Terrains|Features|Resources|Improvements)"
+    r"(_Major)?\.xml$",
     re.IGNORECASE,
 )
 
@@ -295,6 +307,113 @@ def project_buildings(database: Database) -> dict[str, dict]:
     return projected
 
 
+# The game names every yield table's rows with a type prefix and a YIELD_
+# column; CIVVIS stores the same numbers as a yields object per entry. One
+# helper projects all four.
+def project_yields(
+    database: Database, table: str, key: str, prefix: str, base: str
+) -> dict[str, dict]:
+    # Seed from the entity table, not the yield table: an entry the game gives
+    # no yields at all is exactly the case where CIVVIS is most likely to have
+    # invented one, and seeding from yield rows alone would hide it.
+    projected: dict[str, dict] = {
+        slug(row[key], prefix): {} for row in database.rows(base) if key in row
+    }
+    for row in database.rows(table):
+        entry = projected.setdefault(slug(row[key], prefix), {})
+        amount = number(row.get("YieldChange"))
+        if amount:
+            entry[slug(row["YieldType"], "YIELD_")] = amount
+    return {
+        name: {field: yields.get(field, 0) for field in YIELD_FIELDS}
+        for name, yields in projected.items()
+    }
+
+
+# CIVVIS folds Hills into a flat +1 Production modifier rather than carrying a
+# separate terrain per hills variant, so each variant is checked against its
+# flat parent plus that modifier instead of being looked up directly.
+HILLS_PARENT = {
+    "grass_hills": "grassland",
+    "plains_hills": "plains",
+    "desert_hills": "desert",
+    "tundra_hills": "tundra",
+    "snow_hills": "snow",
+}
+
+TERRAIN_NAMES = {"grass": "grassland"}
+
+FEATURE_NAMES = {
+    "barrier_reef": "great_barrier_reef",
+    "everest": "mount_everest",
+    "floodplains_grassland": "grassland_floodplains",
+    "floodplains_plains": "plains_floodplains",
+}
+
+
+def project_terrains(database: Database) -> dict[str, dict]:
+    raw = project_yields(database, "Terrain_YieldChanges", "TerrainType", "TERRAIN_", "Terrains")
+    projected = {}
+    for name, yields in raw.items():
+        if parent := HILLS_PARENT.get(name):
+            # Fold the variant back onto its parent: the audit compares the
+            # flat terrain, and a hills row that is not parent + 1 Production
+            # would mean CIVVIS' single modifier cannot express the ruleset.
+            flat = dict(yields)
+            flat["production"] = flat.get("production", 0) - 1
+            projected.setdefault(TERRAIN_NAMES.get(parent, parent), {})
+            expected = {k: v for k, v in flat.items() if v}
+            if projected[TERRAIN_NAMES.get(parent, parent)] not in ({}, expected):
+                continue
+            projected[TERRAIN_NAMES.get(parent, parent)] = expected
+        else:
+            projected[TERRAIN_NAMES.get(name, name)] = yields
+    return projected
+
+
+def project_features(database: Database) -> dict[str, dict]:
+    return {
+        FEATURE_NAMES.get(name, name): yields
+        for name, yields in project_yields(
+            database, "Feature_YieldChanges", "FeatureType", "FEATURE_", "Features"
+        ).items()
+    }
+
+
+def project_resources(database: Database) -> dict[str, dict]:
+    return project_yields(database, "Resource_YieldChanges", "ResourceType", "RESOURCE_", "Resources")
+
+
+def project_improvements(database: Database) -> dict[str, dict]:
+    return project_yields(
+        database, "Improvement_YieldChanges", "ImprovementType", "IMPROVEMENT_", "Improvements"
+    )
+
+
+def project_improvement_upgrades(database: Database) -> dict[str, dict]:
+    """Tech- and civic-gated improvement yields, keyed the way CIVVIS keys them.
+
+    ``data/tree_effects.json`` records these as ``<improvement>_<yield>`` grants
+    hung off the unlocking node, so the projection reshapes the game's rows into
+    the same ``node -> {effect: amount}`` form.
+    """
+    projected: dict[str, dict] = {}
+    for row in database.rows("Improvement_BonusYieldChanges"):
+        node = row.get("PrereqTech") or row.get("PrereqCivic")
+        if not node:
+            continue
+        node = slug(node, "TECH_" if row.get("PrereqTech") else "CIVIC_")
+        improvement = slug(row["ImprovementType"], "IMPROVEMENT_")
+        yield_name = slug(row["YieldType"], "YIELD_")
+        effect = f"{improvement}_{yield_name}"
+        amount = number(row.get("BonusYieldChange"))
+        # An expansion restating a grant supersedes the base row rather than
+        # stacking on top of it, so the larger value is the shipped one.
+        entry = projected.setdefault(node, {})
+        entry[effect] = max(entry.get(effect, 0), amount)
+    return projected
+
+
 def project_districts(database: Database) -> dict[str, dict]:
     projected = {}
     for row in database.rows("Districts"):
@@ -352,6 +471,42 @@ def ours_buildings() -> dict[str, dict]:
         name: {"cost": entry.get("cost", 0), "maintenance": entry.get("maintenance", 0)}
         for name, entry in load_ours("buildings").items()
     }
+
+
+YIELD_FIELDS = ("food", "production", "gold", "science", "culture", "faith")
+
+
+def ours_yields(name: str) -> dict[str, dict]:
+    # Every yield is listed, zeros included, so that a yield CIVVIS grants and
+    # the game does not shows up as a divergence rather than as a silent skip.
+    return {
+        entry_name: {
+            field: (entry.get("yields") or {}).get(field, 0) for field in YIELD_FIELDS
+        }
+        for entry_name, entry in load_ours(name).items()
+    }
+
+
+# Effects that are not improvement yield grants live in the same file; the
+# audit only claims the ones the game database can speak to.
+def ours_improvement_upgrades() -> dict[str, dict]:
+    known = set(load_ours("improvements"))
+    yields = YIELD_FIELDS
+    tree = load_ours("tree_effects")
+    out: dict[str, dict] = {}
+    for node, effects in list(tree["techs"].items()) + list(tree["civics"].items()):
+        kept = {
+            effect: amount
+            for effect, amount in effects.items()
+            if any(
+                effect == f"{improvement}_{yield_name}"
+                for improvement in known
+                for yield_name in yields
+            )
+        }
+        if kept:
+            out[node] = kept
+    return out
 
 
 def ours_districts() -> dict[str, dict]:
@@ -493,6 +648,15 @@ def main() -> int:
         ("Civics", ours_tree("civics", "civic"), project_civics(database)),
         ("Buildings", ours_buildings(), project_buildings(database)),
         ("Districts", ours_districts(), project_districts(database)),
+        ("Terrains", ours_yields("terrains"), project_terrains(database)),
+        ("Features", ours_yields("features"), project_features(database)),
+        ("Resources", ours_yields("resources"), project_resources(database)),
+        ("Improvements", ours_yields("improvements"), project_improvements(database)),
+        (
+            "ImprovementUpgrades",
+            ours_improvement_upgrades(),
+            project_improvement_upgrades(database),
+        ),
     ]
     if args.table:
         wanted = {name.lower() for name in args.table}
