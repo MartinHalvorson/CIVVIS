@@ -1208,10 +1208,18 @@ impl AdvancedAi {
     }
 
     fn advanced_research(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        // Explicit evaluator targets and the adaptive live plan must drive the
+        // same prerequisite search.  Previously only `victory_target` enabled
+        // milestone routing, so a normal spectator AI could correctly assess
+        // Science or Culture yet wander through generic unlocks indefinitely.
+        let objective = self
+            .victory_target
+            .map(VictoryTarget::strategy)
+            .unwrap_or(plan.strategy);
         if g.players[pid].research.is_none() {
             let available = g.available_techs(pid);
-            let forced_goal = match self.victory_target {
-                Some(VictoryTarget::Science) => [
+            let forced_goal = match objective {
+                GrandStrategy::Science => [
                     "rocketry",
                     "satellites",
                     "nanotechnology",
@@ -1220,10 +1228,10 @@ impl AdvancedAi {
                 ]
                 .into_iter()
                 .find(|tech| !g.players[pid].techs.contains(*tech)),
-                Some(VictoryTarget::Culture) => ["printing", "radio", "computers"]
+                GrandStrategy::Culture => ["printing", "radio", "computers"]
                     .into_iter()
                     .find(|tech| !g.players[pid].techs.contains(*tech)),
-                Some(VictoryTarget::Religion) if !g.players[pid].techs.contains("astrology") => {
+                GrandStrategy::Religion if !g.players[pid].techs.contains("astrology") => {
                     Some("astrology")
                 }
                 _ => None,
@@ -1255,8 +1263,8 @@ impl AdvancedAi {
         }
         if g.players[pid].civic.is_none() {
             let available = g.available_civics(pid);
-            let forced_goal = match self.victory_target {
-                Some(VictoryTarget::Culture) => [
+            let forced_goal = match objective {
+                GrandStrategy::Culture => [
                     "humanism",
                     "conservation",
                     "professional_sports",
@@ -1267,10 +1275,10 @@ impl AdvancedAi {
                 ]
                 .into_iter()
                 .find(|civic| !g.players[pid].civics.contains(*civic)),
-                Some(VictoryTarget::Science) if !g.players[pid].civics.contains("space_race") => {
+                GrandStrategy::Science if !g.players[pid].civics.contains("space_race") => {
                     Some("space_race")
                 }
-                Some(VictoryTarget::Religion) if !g.players[pid].civics.contains("theology") => {
+                GrandStrategy::Religion if !g.players[pid].civics.contains("theology") => {
                     Some("theology")
                 }
                 _ => None,
@@ -8941,6 +8949,35 @@ mod tests {
         game.players[0].civ = "China".to_string();
         game.players[0].techs.clear();
         assert_eq!(ai.victory_focus(&game, 0).progress, 45);
+    }
+
+    #[test]
+    fn adaptive_research_routes_to_the_live_victory_plan() {
+        let plan = |strategy| StrategicPlan {
+            strategy,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: 1,
+        };
+        let ai = AdvancedAi::new();
+
+        let mut science = Game::new_full(1, 20, 14, 762, 300, 0, false);
+        ai.advanced_research(&mut science, 0, &plan(GrandStrategy::Science));
+        assert_eq!(
+            science.players[0].research.as_deref(),
+            Some("animal_husbandry"),
+            "the cheapest available prerequisite toward Rocketry wins"
+        );
+
+        let mut culture = Game::new_full(1, 20, 14, 763, 300, 0, false);
+        ai.advanced_research(&mut culture, 0, &plan(GrandStrategy::Culture));
+        assert_eq!(
+            culture.players[0].research.as_deref(),
+            Some("mining"),
+            "the available prerequisite toward Printing wins"
+        );
     }
 
     #[test]
