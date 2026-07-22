@@ -2751,12 +2751,49 @@ impl AdvancedAi {
                         (_, "trade") => 4,
                         _ => 2,
                     };
+                    let unique_alignment = match (strategy, minor.civ.as_str()) {
+                        (GrandStrategy::Science, "Geneva") => 14,
+                        (GrandStrategy::Science | GrandStrategy::Conquest, "Hattusa") => 11,
+                        (GrandStrategy::Science | GrandStrategy::Culture, "Stockholm") => 10,
+                        (GrandStrategy::Conquest, "Kabul") => 14,
+                        (GrandStrategy::Conquest | GrandStrategy::Expansion, "Carthage") => 10,
+                        (GrandStrategy::Expansion | GrandStrategy::Recovery, "Mohenjo-Daro") => 11,
+                        (GrandStrategy::Religion, "Yerevan") => 15,
+                        (GrandStrategy::Religion | GrandStrategy::Culture, "Kandy") => 12,
+                        (GrandStrategy::Expansion | GrandStrategy::Recovery, "Zanzibar") => 11,
+                        (_, "Zanzibar") if g.players[pid].civ == "Aztec" => 12,
+                        (
+                            GrandStrategy::Science
+                            | GrandStrategy::Culture
+                            | GrandStrategy::Conquest
+                            | GrandStrategy::Expansion,
+                            "Auckland",
+                        ) => 9,
+                        (
+                            GrandStrategy::Religion
+                            | GrandStrategy::Conquest
+                            | GrandStrategy::Recovery,
+                            "Valletta",
+                        ) => 13,
+                        (GrandStrategy::Culture, "Vilnius") => 14,
+                        (_, "Stockholm" | "Zanzibar" | "Auckland" | "Valletta") => 5,
+                        _ => 2,
+                    };
                     let already_secure = g.suzerain_of(minor.id) == Some(pid) && mine > rival + 1;
+                    let shared_from_partner = g.suzerain_of(minor.id).is_some_and(|leader| {
+                        leader != pid
+                            && g.alliance_with(pid, leader).is_some_and(|alliance| {
+                                alliance.kind == "economic" && alliance.level >= 3
+                            })
+                    });
                     let denial = denied_rival
                         .is_some_and(|leader| g.suzerain_of(minor.id) == Some(leader))
                         as i64
                         * 140;
-                    let score = alignment * 10 + denial - needed * 7 - already_secure as i64 * 80;
+                    let score = (alignment + unique_alignment) * 10 + denial
+                        - needed * 7
+                        - already_secure as i64 * 80
+                        - shared_from_partner as i64 * 300;
                     (
                         score,
                         std::cmp::Reverse(needed),
@@ -3134,17 +3171,28 @@ impl AdvancedAi {
             .legal_actions(pid)
             .into_iter()
             .filter_map(|action| match &action {
-                Action::BuyBuilding { city, building, .. } => {
+                Action::BuyBuilding {
+                    city,
+                    building,
+                    currency,
+                } if currency == "faith" => {
                     let spec = &g.rules.buildings[building];
-                    let estimated_cost = spec.cost * 2.0;
-                    if g.players[pid].faith + f64::EPSILON < estimated_cost + reserve {
+                    let cost = g.building_faith_purchase_cost(pid, *city, building)?;
+                    if g.players[pid].faith + f64::EPSILON < cost + reserve {
                         return None;
                     }
                     let worship = spec.worship_belief.is_some() as i32;
+                    let defensive_value = match strategy {
+                        GrandStrategy::Conquest | GrandStrategy::Recovery => spec.outer_defense * 2,
+                        _ => spec.outer_defense,
+                    };
                     let score = (self.yield_value(spec.yields, strategy) * 25.0) as i32
                         + (spec.housing * 35.0 + spec.amenity * 50.0) as i32
                         + spec.great_work_slots.values().sum::<i32>() * 60
-                        + worship * 220;
+                        + spec.trade_route_capacity * 100
+                        + defensive_value
+                        + worship * 220
+                        - (cost * 0.05) as i32;
                     Some((score, std::cmp::Reverse((*city, building.clone())), action))
                 }
                 _ => None,
@@ -8207,6 +8255,39 @@ mod tests {
     }
 
     #[test]
+    fn faith_spending_uses_valletta_wall_price_and_ignores_gold_actions() {
+        let mut game = Game::new_full(1, 30, 18, 7_107, 160, 1, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let valletta = game
+            .players
+            .iter()
+            .find(|player| player.is_minor && !player.is_barbarian)
+            .unwrap()
+            .id;
+        game.players[valletta].civ = "Valletta".to_string();
+        game.players[0].envoys = vec![(valletta, 3)];
+        game.players[0].techs.insert("masonry".to_string());
+        game.players[0].faith = 200.0;
+        game.players[0].gold = 10_000.0;
+
+        AdvancedAi::targeting(VictoryTarget::Domination).faith_building_spending(
+            &mut game,
+            0,
+            GrandStrategy::Conquest,
+        );
+
+        assert!(game.cities[&city].buildings.contains(&"walls".to_string()));
+        assert_eq!(game.players[0].faith, 120.0);
+        assert_eq!(game.players[0].gold, 10_000.0);
+    }
+
+    #[test]
     fn strategic_gold_purchase_buys_science_tempo_but_preserves_the_reserve() {
         let mut game = Game::new_full(1, 20, 14, 7_106, 160, 0, false);
         let settler = game
@@ -8541,6 +8622,41 @@ mod tests {
         AdvancedAi::new().advanced_envoys(&mut g, 0, GrandStrategy::Diplomacy, None);
         assert_eq!(g.players[0].envoys_free, 0);
         assert!(g.players[0].envoys.iter().any(|(_, count)| *count >= 3));
+    }
+
+    #[test]
+    fn religious_envoys_prefer_yerevan_but_skip_a_bonus_shared_by_economic_alliance() {
+        let mut game = Game::new_full(2, 32, 20, 7_711, 120, 2, false);
+        let minors: Vec<usize> = game
+            .players
+            .iter()
+            .filter(|player| player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .collect();
+        assert_eq!(minors.len(), 2);
+        game.players[minors[0]].civ = "Kandy".to_string();
+        game.players[minors[1]].civ = "Yerevan".to_string();
+        game.players[0].envoys_free = 1;
+
+        AdvancedAi::new().advanced_envoys(&mut game, 0, GrandStrategy::Religion, None);
+        assert_eq!(game.envoys_at(0, minors[0]), 0);
+        assert_eq!(game.envoys_at(0, minors[1]), 1);
+
+        game.players[0].envoys.clear();
+        game.players[0].envoys_free = 1;
+        game.players[1].envoys = vec![(minors[1], 3)];
+        let alliance = crate::game::AllianceState {
+            kind: "economic".to_string(),
+            points: 240.0,
+            level: 3,
+            ends: game.turn + 30,
+        };
+        game.players[0].alliances.insert(1, alliance.clone());
+        game.players[1].alliances.insert(0, alliance);
+
+        AdvancedAi::new().advanced_envoys(&mut game, 0, GrandStrategy::Religion, None);
+        assert_eq!(game.envoys_at(0, minors[0]), 1);
+        assert_eq!(game.envoys_at(0, minors[1]), 0);
     }
 
     #[test]
