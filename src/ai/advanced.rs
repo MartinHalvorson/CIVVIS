@@ -3712,6 +3712,7 @@ impl AdvancedAi {
     }
 
     fn advanced_units(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        self.base.begin_movement_turn();
         if self.victory_planning {
             self.rebuild_force_groups(g, pid, plan);
         } else {

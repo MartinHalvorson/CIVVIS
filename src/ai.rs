@@ -407,6 +407,10 @@ pub struct BasicAi {
     /// Persistent peacetime destinations keep surplus troops patrolling the
     /// empire's frontier instead of permanently stacking around the capital.
     patrol_targets: HashMap<u32, Pos>,
+    /// Frontier posts are identical for military units in the same movement
+    /// domain. Reuse the scan for the rest of this player's turn instead of
+    /// walking the whole map once per idle unit.
+    patrol_posts: HashMap<String, Vec<Pos>>,
     /// Colonies, especially overseas ones, need a fixed destination. Re-scoring
     /// only a short local radius each step strands settlers on shorelines and
     /// can make them reverse course after embarking.
@@ -695,7 +699,6 @@ impl BasicAi {
                         | UnitDoctrine::AirStrike
                         | UnitDoctrine::Carrier
                 )
-                && self.has_exploration_target(g, pid, *other)
         });
         let recon_exists = candidates
             .clone()
@@ -876,6 +879,7 @@ impl BasicAi {
             book_pos: 0,
             recovering_units: HashSet::new(),
             patrol_targets: HashMap::new(),
+            patrol_posts: HashMap::new(),
             settler_targets: HashMap::new(),
         }
     }
@@ -890,6 +894,7 @@ impl BasicAi {
             book_pos: 0,
             recovering_units: HashSet::new(),
             patrol_targets: HashMap::new(),
+            patrol_posts: HashMap::new(),
             settler_targets: HashMap::new(),
         }
     }
@@ -932,6 +937,13 @@ impl Ai for BasicAi {
 }
 
 impl BasicAi {
+    /// Reset caches whose contents depend on the current player's borders and
+    /// movement capabilities. Persistent destinations live across turns; the
+    /// expensive all-map candidate scan does not need to.
+    pub(crate) fn begin_movement_turn(&mut self) {
+        self.patrol_posts.clear();
+    }
+
     /// Resolve mandatory conquest choices with explicit strategic tradeoffs.
     /// Capitals and developed bridgeheads are retained; diplomacy-oriented
     /// plans restore city-states, friends, and eliminated founders; only an
@@ -2393,6 +2405,7 @@ impl BasicAi {
     }
 
     fn units(&mut self, g: &mut Game, pid: usize) {
+        self.begin_movement_turn();
         self.prepare_unit_formations(g, pid);
         self.recovering_units
             .retain(|uid| g.units.get(uid).is_some_and(|unit| unit.owner == pid));
@@ -3260,12 +3273,12 @@ impl BasicAi {
         let Some(tile) = g.map.get(pos) else {
             return false;
         };
-        if !g.unit_can_traverse(uid, pos) {
-            return false;
-        }
         let sea_unit = g.rules.units[g.units[&uid].kind.as_str()].domain.as_deref() == Some("sea");
         let water = g.rules.is_water(tile);
         if sea_unit != water {
+            return false;
+        }
+        if !g.unit_can_traverse(uid, pos) {
             return false;
         }
         tile.owner_city
@@ -3299,34 +3312,49 @@ impl BasicAi {
             self.patrol_targets.remove(&uid);
         }
 
-        let mut posts: Vec<Pos> = g
-            .map
-            .tiles
-            .keys()
-            .copied()
-            .filter(|pos| self.patrol_tile(g, pid, uid, *pos))
-            .filter(|pos| {
-                // A frontier post borders land or water outside this empire.
-                // Interior city centers remain fallback destinations below.
-                g.nbrs(*pos).into_iter().any(|neighbor| {
-                    g.map.get(neighbor).is_some_and(|tile| {
-                        tile.owner_city
-                            .and_then(|cid| g.cities.get(&cid))
-                            .is_none_or(|city| city.owner != pid)
+        let domain = g.rules.units[g.units[&uid].kind.as_str()]
+            .domain
+            .as_deref()
+            .unwrap_or("land")
+            .to_string();
+        let mut posts = if let Some(posts) = self.patrol_posts.get(&domain) {
+            posts.clone()
+        } else {
+            let mut posts: Vec<Pos> = g
+                .map
+                .tiles
+                .keys()
+                .copied()
+                .filter(|pos| self.patrol_tile(g, pid, uid, *pos))
+                .filter(|pos| {
+                    // A frontier post borders land or water outside this empire.
+                    // Interior city centers remain fallback destinations below.
+                    g.nbrs(*pos).into_iter().any(|neighbor| {
+                        g.map.get(neighbor).is_some_and(|tile| {
+                            tile.owner_city
+                                .and_then(|cid| g.cities.get(&cid))
+                                .is_none_or(|city| city.owner != pid)
+                        })
                     })
                 })
-            })
-            .collect();
-        if posts.is_empty() {
-            posts = g
-                .player_city_ids(pid)
-                .into_iter()
-                .map(|cid| g.cities[&cid].pos)
-                .filter(|pos| self.patrol_tile(g, pid, uid, *pos))
                 .collect();
-        }
-        posts.sort_unstable();
-        posts.dedup();
+            if posts.is_empty() {
+                posts = g
+                    .player_city_ids(pid)
+                    .into_iter()
+                    .map(|cid| g.cities[&cid].pos)
+                    .filter(|pos| self.patrol_tile(g, pid, uid, *pos))
+                    .collect();
+            }
+            posts.sort_unstable();
+            posts.dedup();
+            self.patrol_posts.insert(domain.clone(), posts.clone());
+            posts
+        };
+        // A conquest earlier in this same unit phase may have invalidated a
+        // cached frontier tile. Keep the shared scan, but cheaply validate the
+        // relatively small candidate list before routing to it.
+        posts.retain(|pos| self.patrol_tile(g, pid, uid, *pos));
         if posts.is_empty() {
             return false;
         }
@@ -4069,6 +4097,11 @@ mod tests {
         ai.units(&mut g, 0);
         let moved = military.iter().filter(|uid| g.units[uid].moved).count();
 
+        assert_eq!(
+            ai.patrol_posts.len(),
+            1,
+            "same-domain troops should share one frontier scan per turn"
+        );
         assert!(
             moved * 2 > military.len(),
             "expected most idle troops to patrol; moved {moved}/{}",
