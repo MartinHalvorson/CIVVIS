@@ -405,6 +405,217 @@ mod strategic_resource_tests {
     }
 }
 
+#[cfg(test)]
+mod specialist_tests {
+    use super::*;
+
+    fn specialist_game() -> (Game, u32, Pos) {
+        let mut game = Game::new_full(1, 24, 16, 774_301, 120, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.found_city_for(0, game.units[&settler].pos, None);
+        let city = game.player_city_ids(0)[0];
+        let district = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&city].pos)
+            .unwrap();
+        for position in game.cities[&city].owned_tiles.clone() {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = "desert".to_string();
+            tile.hills = false;
+            tile.feature = None;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            tile.pillaged = false;
+        }
+        game.cities.get_mut(&city).unwrap().districts.clear();
+        (game, city, district)
+    }
+
+    fn install_district(game: &mut Game, city: u32, position: Pos, district: &str) {
+        game.map.tiles.get_mut(&position).unwrap().district = Some(district.to_string());
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .districts
+            .insert(district.to_string(), position);
+    }
+
+    #[test]
+    fn every_specialist_family_has_its_official_base_job_yield() {
+        let cases = [
+            (
+                "campus",
+                "library",
+                Yields {
+                    science: 2.0,
+                    ..Yields::default()
+                },
+            ),
+            (
+                "holy_site",
+                "shrine",
+                Yields {
+                    faith: 2.0,
+                    ..Yields::default()
+                },
+            ),
+            (
+                "encampment",
+                "barracks",
+                Yields {
+                    production: 1.0,
+                    gold: 2.0,
+                    ..Yields::default()
+                },
+            ),
+            (
+                "harbor",
+                "lighthouse",
+                Yields {
+                    food: 1.0,
+                    gold: 2.0,
+                    ..Yields::default()
+                },
+            ),
+            (
+                "commercial_hub",
+                "market",
+                Yields {
+                    gold: 4.0,
+                    ..Yields::default()
+                },
+            ),
+            (
+                "industrial_zone",
+                "workshop",
+                Yields {
+                    production: 2.0,
+                    ..Yields::default()
+                },
+            ),
+            (
+                "theater_square",
+                "amphitheater",
+                Yields {
+                    culture: 2.0,
+                    ..Yields::default()
+                },
+            ),
+        ];
+        for (district, building, expected) in cases {
+            let (mut game, city, position) = specialist_game();
+            install_district(&mut game, city, position, district);
+            game.cities
+                .get_mut(&city)
+                .unwrap()
+                .buildings
+                .push(building.to_string());
+            let jobs = game.city_specialist_jobs(&game.cities[&city]);
+            assert_eq!(jobs, vec![(district.to_string(), expected)], "{district}");
+        }
+    }
+
+    #[test]
+    fn campus_slots_are_worked_and_tier_three_yield_applies_to_every_scientist() {
+        let (mut game, city, position) = specialist_game();
+        install_district(&mut game, city, position, "campus");
+        game.cities.get_mut(&city).unwrap().pop = 1;
+        let before = game.city_yields(city);
+        assert!(game.city_citizen_plan(city).specialists.is_empty());
+
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .push("library".to_string());
+        assert_eq!(game.city_citizen_plan(city).specialists, vec!["campus"]);
+        let after_library = game.city_yields(city);
+        assert_eq!(after_library.science - before.science, 4.0);
+
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .push("university".to_string());
+        game.cities.get_mut(&city).unwrap().pop = 2;
+        assert_eq!(
+            game.city_citizen_plan(city).specialists,
+            vec!["campus", "campus"]
+        );
+        // Keep population constant across the yield delta so amenity scaling
+        // cannot obscure the tier-three building and specialist effects.
+        game.cities.get_mut(&city).unwrap().pop = 3;
+        assert_eq!(game.city_citizen_plan(city).specialists.len(), 2);
+        let before_lab = game.city_yields(city);
+
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .push("research_lab".to_string());
+        let jobs = game.city_specialist_jobs(&game.cities[&city]);
+        assert_eq!(jobs.len(), 3);
+        assert!(jobs.iter().all(|(_, yields)| yields.science == 3.0));
+        assert_eq!(game.city_citizen_plan(city).specialists.len(), 3);
+        let expected_delta = 8.0 * game.amenity_yield_mult(&game.cities[&city]);
+        assert!(
+            (game.city_yields(city).science - before_lab.science - expected_delta).abs() < 1e-9
+        );
+
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .pillaged_buildings
+            .insert("research_lab".to_string());
+        let jobs = game.city_specialist_jobs(&game.cities[&city]);
+        assert_eq!(jobs.len(), 2);
+        assert!(jobs.iter().all(|(_, yields)| yields.science == 2.0));
+        assert_eq!(game.city_citizen_plan(city).specialists.len(), 2);
+
+        game.map.tiles.get_mut(&position).unwrap().pillaged = true;
+        assert!(game.city_specialist_jobs(&game.cities[&city]).is_empty());
+        assert!(game.city_citizen_plan(city).specialists.is_empty());
+    }
+
+    #[test]
+    fn worship_and_each_power_plant_add_their_per_specialist_bonus() {
+        let (mut game, city, position) = specialist_game();
+        install_district(&mut game, city, position, "holy_site");
+        game.cities.get_mut(&city).unwrap().buildings = vec![
+            "shrine".to_string(),
+            "temple".to_string(),
+            "pagoda".to_string(),
+        ];
+        let jobs = game.city_specialist_jobs(&game.cities[&city]);
+        assert_eq!(jobs.len(), 3);
+        assert!(jobs.iter().all(|(_, yields)| yields.faith == 3.0));
+
+        for power_plant in ["coal_power_plant", "oil_power_plant", "nuclear_power_plant"] {
+            let (mut game, city, position) = specialist_game();
+            install_district(&mut game, city, position, "industrial_zone");
+            game.cities.get_mut(&city).unwrap().buildings = vec![
+                "workshop".to_string(),
+                "factory".to_string(),
+                power_plant.to_string(),
+            ];
+            let jobs = game.city_specialist_jobs(&game.cities[&city]);
+            assert_eq!(jobs.len(), 3, "{power_plant}");
+            assert!(
+                jobs.iter().all(|(_, yields)| yields.production == 3.0),
+                "{power_plant}"
+            );
+        }
+    }
+}
+
 pub fn growth_threshold(pop: i32) -> f64 {
     15.0 + 8.0 * (pop - 1) as f64 + ((pop - 1) as f64).powf(1.5).trunc()
 }
@@ -2484,24 +2695,33 @@ impl Game {
         if taken(follower) || taken(founder) {
             return Err("belief already taken".into());
         }
-        let holy = self
+        let can_found_here = |city: &City| {
+            self.city_has_district_family(city, "holy_site")
+                || city.wonders.keys().any(|wonder| {
+                    self.rules.wonders[wonder.as_str()]
+                        .effects
+                        .get("religion_founding_site")
+                        .copied()
+                        .unwrap_or(0.0)
+                        > 0.0
+                })
+        };
+        let holy_site_cities: Vec<u32> = self
             .cities
             .values()
-            .find(|c| c.owner == pid && self.city_has_district_family(c, "holy_site"))
-            .map(|c| c.id)
-            .ok_or_else(|| "needs a city with a holy site".to_string())?;
+            .filter(|city| city.owner == pid && can_found_here(city))
+            .map(|city| city.id)
+            .collect();
+        let holy = holy_site_cities
+            .first()
+            .copied()
+            .ok_or_else(|| "needs a city with a holy site or Stonehenge".to_string())?;
         let name = Self::RELIGION_NAMES[self.religions_founded() % 8].to_string();
         self.players[pid].prophet_pending = false;
         self.players[pid].religion = Some(name.clone());
         self.players[pid].holy_city = Some(holy);
         self.add_era_score(pid, 3);
         self.players[pid].religion_beliefs = vec![follower.to_string(), founder.to_string()];
-        let holy_site_cities: Vec<u32> = self
-            .cities
-            .values()
-            .filter(|city| city.owner == pid && self.city_has_district_family(city, "holy_site"))
-            .map(|city| city.id)
-            .collect();
         for cid in holy_site_cities {
             self.cities
                 .get_mut(&cid)
@@ -5681,7 +5901,9 @@ impl Game {
         {
             return false;
         }
-        if spec.class != "religious" {
+        let archaeologist_ignores_borders = u.kind == "archaeologist"
+            && self.empire_wonder_effect(u.owner, "archaeologist_open_borders") > 0.0;
+        if spec.class != "religious" && !archaeologist_ignores_borders {
             let territory_owner = self.map.tiles[&pos]
                 .owner_city
                 .and_then(|city| self.cities.get(&city))
@@ -6867,6 +7089,84 @@ impl Game {
             + ys.faith * weights.faith
     }
 
+    /// Return one entry for every specialist slot in an active specialty
+    /// district. The district supplies the base specialist yield; tier-three
+    /// buildings improve every citizen in that district, and every worship
+    /// building adds the standard +1 Faith specialist bonus.
+    fn city_specialist_jobs(&self, city: &City) -> Vec<(String, Yields)> {
+        let mut districts = std::collections::BTreeMap::<String, Yields>::new();
+        for (district, position) in &city.districts {
+            if self.map.tiles[position].pillaged
+                || (self.district_is_family(district, "encampment") && city.encampment_pillaged)
+            {
+                continue;
+            }
+            let family = self.district_family(district).to_string();
+            let base = self
+                .rules
+                .districts
+                .get(&family)
+                .or_else(|| self.rules.districts.get(district.as_str()))
+                .map(|spec| spec.citizen_yields)
+                .unwrap_or_default();
+            if base != Yields::default() {
+                districts.entry(family).or_insert(base);
+            }
+        }
+
+        let mut jobs = Vec::new();
+        for (family, mut yields) in districts {
+            let mut slots = 0;
+            for building_name in &city.buildings {
+                if city.pillaged_buildings.contains(building_name)
+                    || (city.encampment_pillaged
+                        && self.rules.buildings[building_name.as_str()]
+                            .district
+                            .as_deref()
+                            .is_some_and(|district| self.district_family(district) == "encampment"))
+                {
+                    continue;
+                }
+                let building = &self.rules.buildings[building_name.as_str()];
+                if building
+                    .district
+                    .as_deref()
+                    .is_none_or(|district| self.district_family(district) != family)
+                {
+                    continue;
+                }
+                slots += building.citizen_slots.max(0) as usize;
+                yields.food += building.effects.get("citizen_food").copied().unwrap_or(0.0);
+                yields.production += building
+                    .effects
+                    .get("citizen_production")
+                    .copied()
+                    .unwrap_or(0.0);
+                yields.gold += building.effects.get("citizen_gold").copied().unwrap_or(0.0);
+                yields.science += building
+                    .effects
+                    .get("citizen_science")
+                    .copied()
+                    .unwrap_or(0.0);
+                yields.culture += building
+                    .effects
+                    .get("citizen_culture")
+                    .copied()
+                    .unwrap_or(0.0);
+                yields.faith += building
+                    .effects
+                    .get("citizen_faith")
+                    .copied()
+                    .unwrap_or(0.0);
+                if building.worship_belief.is_some() {
+                    yields.faith += 1.0;
+                }
+            }
+            jobs.extend((0..slots).map(|_| (family.clone(), yields)));
+        }
+        jobs
+    }
+
     /// Choose the actual population-worked tiles. It starts with the highest
     /// strategic-value set, then performs the least-cost swaps needed to hit
     /// the food target. A final local improvement pass recovers strategic
@@ -6879,7 +7179,16 @@ impl Game {
         center.food = center.food.max(2.0);
         center.production = center.production.max(1.0);
 
-        let mut cands: Vec<(Pos, Yields, f64)> = city
+        #[derive(Clone)]
+        struct Job {
+            key: String,
+            pos: Option<Pos>,
+            specialist: Option<String>,
+            yields: Yields,
+            value: f64,
+        }
+
+        let mut cands: Vec<Job> = city
             .owned_tiles
             .iter()
             .filter(|pos| **pos != city.pos)
@@ -6889,10 +7198,30 @@ impl Game {
                     return None;
                 }
                 let ys = self.workable_tile_yields(*pos);
-                Some((*pos, ys, Self::citizen_value(ys, strategy.weights)))
+                Some(Job {
+                    key: format!("tile:{:+06}:{:+06}", pos.0, pos.1),
+                    pos: Some(*pos),
+                    specialist: None,
+                    yields: ys,
+                    value: Self::citizen_value(ys, strategy.weights),
+                })
             })
             .collect();
-        cands.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap().then(a.0.cmp(&b.0)));
+        for (index, (district, yields)) in self.city_specialist_jobs(city).into_iter().enumerate() {
+            cands.push(Job {
+                key: format!("specialist:{district}:{index:03}"),
+                pos: None,
+                specialist: Some(district),
+                yields,
+                value: Self::citizen_value(yields, strategy.weights),
+            });
+        }
+        cands.sort_by(|a, b| {
+            b.value
+                .partial_cmp(&a.value)
+                .unwrap()
+                .then(a.key.cmp(&b.key))
+        });
         let workers = (city.pop.max(0) as usize).min(cands.len());
         let mut selected = vec![false; cands.len()];
         for slot in selected.iter_mut().take(workers) {
@@ -6927,7 +7256,7 @@ impl Game {
             .iter()
             .enumerate()
             .filter(|(i, _)| selected[*i])
-            .map(|(_, c)| c.1.food)
+            .map(|(_, c)| c.yields.food)
             .sum::<f64>();
 
         // Meet nutrition through the smallest strategic-value sacrifice per
@@ -6938,17 +7267,24 @@ impl Game {
                 break;
             }
             let need = strategy.food_target - food;
-            let mut best: Option<(f64, f64, Pos, Pos, usize, usize)> = None;
+            let mut best: Option<(f64, f64, String, String, usize, usize)> = None;
             for (out, a) in cands.iter().enumerate().filter(|(i, _)| selected[*i]) {
                 for (inside, b) in cands.iter().enumerate().filter(|(i, _)| !selected[*i]) {
-                    let food_gain = b.1.food - a.1.food;
+                    let food_gain = b.yields.food - a.yields.food;
                     if food_gain <= 1e-9 {
                         continue;
                     }
-                    let value_gain = b.2 - a.2;
+                    let value_gain = b.value - a.value;
                     let useful_food = food_gain.min(need);
                     let efficiency = value_gain / useful_food;
-                    let candidate = (efficiency, value_gain, a.0, b.0, out, inside);
+                    let candidate = (
+                        efficiency,
+                        value_gain,
+                        a.key.clone(),
+                        b.key.clone(),
+                        out,
+                        inside,
+                    );
                     if best
                         .as_ref()
                         .map(|old| {
@@ -6956,7 +7292,8 @@ impl Game {
                                 || ((candidate.0 - old.0).abs() < 1e-9
                                     && (candidate.1 > old.1 + 1e-9
                                         || ((candidate.1 - old.1).abs() < 1e-9
-                                            && (candidate.2, candidate.3) < (old.2, old.3))))
+                                            && (candidate.2.as_str(), candidate.3.as_str())
+                                                < (old.2.as_str(), old.3.as_str()))))
                         })
                         .unwrap_or(true)
                     {
@@ -6968,7 +7305,7 @@ impl Game {
                 Some((_, _, _, _, out, inside)) => {
                     selected[out] = false;
                     selected[inside] = true;
-                    food += cands[inside].1.food - cands[out].1.food;
+                    food += cands[inside].yields.food - cands[out].yields.food;
                 }
                 None => break,
             }
@@ -6976,21 +7313,22 @@ impl Game {
 
         // One-swap local optimum under the nutrition constraint.
         for _ in 0..cands.len() {
-            let mut best: Option<(f64, Pos, Pos, usize, usize)> = None;
+            let mut best: Option<(f64, String, String, usize, usize)> = None;
             for (out, a) in cands.iter().enumerate().filter(|(i, _)| selected[*i]) {
                 for (inside, b) in cands.iter().enumerate().filter(|(i, _)| !selected[*i]) {
-                    let value_gain = b.2 - a.2;
-                    let next_food = food + b.1.food - a.1.food;
+                    let value_gain = b.value - a.value;
+                    let next_food = food + b.yields.food - a.yields.food;
                     if value_gain <= 1e-9 || next_food + 1e-9 < strategy.food_target {
                         continue;
                     }
-                    let candidate = (value_gain, a.0, b.0, out, inside);
+                    let candidate = (value_gain, a.key.clone(), b.key.clone(), out, inside);
                     if best
                         .as_ref()
                         .map(|old| {
                             candidate.0 > old.0 + 1e-9
                                 || ((candidate.0 - old.0).abs() < 1e-9
-                                    && (candidate.1, candidate.2) < (old.1, old.2))
+                                    && (candidate.1.as_str(), candidate.2.as_str())
+                                        < (old.1.as_str(), old.2.as_str()))
                         })
                         .unwrap_or(true)
                     {
@@ -7002,7 +7340,7 @@ impl Game {
                 Some((_, _, _, out, inside)) => {
                     selected[out] = false;
                     selected[inside] = true;
-                    food += cands[inside].1.food - cands[out].1.food;
+                    food += cands[inside].yields.food - cands[out].yields.food;
                 }
                 None => break,
             }
@@ -7012,13 +7350,20 @@ impl Game {
             .iter()
             .enumerate()
             .filter(|(i, _)| selected[*i])
-            .map(|(_, c)| c.0)
+            .filter_map(|(_, c)| c.pos)
             .collect();
         worked_tiles.sort();
+        let mut specialists: Vec<String> = cands
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| selected[*i])
+            .filter_map(|(_, c)| c.specialist.clone())
+            .collect();
+        specialists.sort();
         CitizenPlan {
             strategy,
             worked_tiles,
-            specialists: Vec::new(),
+            specialists,
         }
     }
 
@@ -7238,8 +7583,18 @@ impl Game {
         center.food = center.food.max(2.0);
         center.production = center.production.max(1.0);
         ys.add(center);
-        for pos in self.city_citizen_plan(cid).worked_tiles {
+        let citizen_plan = self.city_citizen_plan(cid);
+        for pos in citizen_plan.worked_tiles {
             ys.add(self.workable_tile_yields(pos));
+        }
+        let specialist_jobs = self.city_specialist_jobs(city);
+        for family in citizen_plan.specialists {
+            if let Some((_, specialist_yields)) = specialist_jobs
+                .iter()
+                .find(|(district, _)| district == &family)
+            {
+                ys.add(*specialist_yields);
+            }
         }
         for (dname, dpos) in &city.districts {
             if self.map.tiles[dpos].pillaged
@@ -9852,6 +10207,17 @@ impl Game {
             Some("forest" | "jungle" | "great_barrier_reef") => bonus += 3.0,
             Some("marsh") => bonus -= 2.0,
             _ => {}
+        }
+        if t.wonder.as_deref().is_some_and(|wonder| {
+            self.rules.wonders[wonder]
+                .effects
+                .get("defensive_structure")
+                .copied()
+                .unwrap_or(0.0)
+                > 0.0
+        }) {
+            // Alhambra functions as a Fort for an occupying land unit.
+            bonus += 4.0;
         }
         bonus
     }
@@ -13696,6 +14062,12 @@ impl Game {
         let mut tourism = 0.0;
         let mut work_slots: Vec<f64> = Vec::new();
         for city in self.cities.values().filter(|city| city.owner == pid) {
+            let city_tourism_start = tourism;
+            let modern_tourism_multiplier = if self.world_era >= 5 {
+                1.0 + self.city_building_effect(city, "modern_civ_tourism_pct") / 100.0
+            } else {
+                1.0
+            };
             tourism += 2.0 * city.wonders.len() as f64;
             if self.tree_effect(pid, "improvement_culture_tourism") > 0.0 {
                 for (district, position) in &city.districts {
@@ -13726,6 +14098,7 @@ impl Game {
                                 .unwrap_or(0.0)
                                 / 100.0;
                     }
+                    value *= modern_tourism_multiplier;
                     work_slots.extend(std::iter::repeat(value).take((*count).max(0) as usize));
                 }
             }
@@ -13852,6 +14225,7 @@ impl Game {
                                 .unwrap_or(0.0)
                                 / 100.0;
                     }
+                    value *= modern_tourism_multiplier;
                     work_slots.extend(std::iter::repeat(value).take((*count).max(0) as usize));
                 }
             }
@@ -13909,6 +14283,7 @@ impl Game {
                 .sum::<f64>()
                 * (1.0 + self.empire_wonder_effect(pid, "renewable_power_pct") / 100.0)
                 * self.empire_wonder_effect(pid, "renewable_power_tourism");
+            tourism += (tourism - city_tourism_start) * (modern_tourism_multiplier - 1.0);
         }
 
         work_slots.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));

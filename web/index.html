@@ -2421,8 +2421,11 @@ function drawCityPanel() {
   h += `<div class="row"><span class="small">Growth</span><span class="small">${c.amenity_surplus >= 0 ? "+" : ""}${c.amenity_surplus} amenities</span></div>` +
     prog(c.food, c.growth_need, "#76c893");
   if (c.citizens) {
+    const specialists = c.citizens.specialists || [];
+    const assigned = c.citizens.worked_tiles.length + specialists.length;
+    const jobs = specialists.length ? ` · ${specialists.map(titleCase).join(", ")}` : "";
     h += `<div class="row" style="margin-top:8px"><span class="small">Citizen focus</span>` +
-      `<b title="${c.citizens.worked_tiles.length} population-worked tiles">${titleCase(c.citizens.focus)} · ${c.citizens.worked_tiles.length}/${c.pop}</b></div>`;
+      `<b title="${c.citizens.worked_tiles.length} worked tiles · ${specialists.length} specialists${jobs}">${titleCase(c.citizens.focus)} · ${assigned}/${c.pop}</b></div>`;
   }
   if (c.queue && c.queue.length) {
     h += `<div class="row" style="margin-top:8px"><span class="small">Producing</span><b>${titleCase(itemName(c.queue[0]))}</b></div>` +

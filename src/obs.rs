@@ -128,6 +128,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool) -> Value {
                     "food_target": round1(citizens.strategy.food_target),
                     "worked_tiles": citizens.worked_tiles.iter()
                         .map(|t| json!([t.0, t.1])).collect::<Vec<_>>(),
+                    "specialists": citizens.specialists,
                 },
             });
             merge(&mut d, ext);
