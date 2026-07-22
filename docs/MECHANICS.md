@@ -10,7 +10,7 @@ Status: ✅ implemented · 🟡 simplified · ❌ not yet.
 | Rivers & fresh water housing (5/3/2) | ✅ | water values plus Palace, Aqueduct normalization, coastal Lighthouse bonus, and +0.5 from owned Farms, Pastures, Plantations, Camps, and Fishing Boats within 3 tiles |
 | City growth curve, border expansion | ✅ | exact Housing headroom bands: 100% at +2, 50% at +1, 25% through -4, and no growth at -5 |
 | Housing & amenities | ✅ | final Gathering Storm demand, satisfaction thresholds, yield/growth modifiers, Palace Amenity, connected unique luxuries allocated to the four neediest cities (six for Aztec), and local district/building/policy sources |
-| Districts + adjacency (incl. river) | ✅ | all 19 universal and 16 unique Gathering Storm districts; exact source-by-source adjacency rounding, replacement-family inheritance, placement/cap rules, adjacency policy cards, appeal Housing, and one-time district effects |
+| Districts + adjacency (incl. river) | ✅ | all 19 universal and 16 unique Gathering Storm districts; exact source-by-source adjacency rounding, replacement-family inheritance, placement/cap rules, adjacency policy cards, appeal Housing, district/unique Great Person rates, active unique bonuses, and one-time effects |
 | Wonders | 🟡 | 9 wonders, world-unique, effect engine (growth %, builder charges, unit levels); no tile placement |
 | Tech + civics trees, Eureka/Inspiration | ✅ | complete 77-tech / 61-civic Gathering Storm trees from Ancient through Future; Ancient starts have no phantom Agriculture tech |
 | Governments + policy cards | ✅ | wiki slot configs (chiefdom M1E1 … merchant republic/theocracy with six slots); 20 cards thru guilds; typed slots + wildcard overflow; obsoletion (Agoge→Feudal Contract); slot/unslot actions; effects: yields, prod-toward-item %, housing, amenities, maintenance, builder charges, city def/ranged, vs-barb CS, recon XP, Theocracy religious strength |
@@ -18,11 +18,11 @@ Status: ✅ implemented · 🟡 simplified · ❌ not yet.
 | Fortify, city/Encampment ranged strikes, walls | ✅ | Gathering Storm wall pools (100/level), explicit repair projects, melee 15% / ranged 50% / siege 100% vs walls, independent Encampment 100 HP/strike/ZOC/pillage state, ordinary ranged floors HP at 1 while Bombard may deplete but not capture, walls razed on capture |
 | Naval units and embarkation | ✅ | 12 standard ships across four classes with their stock tech/civic unlocks; Builders embark at Sailing, Traders at Celestial Navigation, other land units at Shipbuilding, Ocean at Cartography, and +1 sea Movement at Mathematics; embarked strength 10 and land units may attack back onto land with the amphibious penalty |
 | Barbarians (camps, raiders, rewards) | ✅ | no scout-alert mechanic |
-| City-states + envoys | ✅ | influence by gov tier (100 pts = envoy); type bonuses at 1/3/6 (capital +2, +2 per matching district); suzerain = 6+ & strict lead; war clears envoys |
+| City-states + envoys | ✅ | influence by gov tier (100 pts = envoy); type bonuses at 1/3/6 (capital +2, +2 per matching district); suzerain = 3+ & strict lead; city-states follow their suzerain into war and peace; direct war clears envoys |
 | Great People | 🟡 | GPP per district/building (+1 each), Classical Republic +15%, Strategos/Inspiration/Revelation wildcards; doubling thresholds (60/120/...); auto-claim generic GPs with instant effects (eurekas, production, gold+envoy, faith, unit levels) — no named individuals/patronage |
 | Religion | 🟡 | pantheon at 25 faith and map-scaled religion caps; founding converts every owned Holy Site city; building-gated Missionaries, Apostles, Gurus and Inquisitors; health-scaled spreads with 10%/25% rival-pressure eviction; theological combat without war, religious ZOC, same-faith Guru healing, Launch Inquisition, 75% Remove Heresy, Condemn Heretic, and exact kill/condemn pressure changes; Apostle promotion/belief depth remains simplified |
 | Trade routes & roads | ✅ | Foreign Trade grants the base route; Markets/Lighthouses and their unique replacements add capacity; Merchant Republic adds +2; unique districts inherit the vanilla per-district yield table; traders lay roads (cost 1, bridge rivers 🟡); 30-turn duration; war/capture cancels |
-| Diplomacy (deals, alliances, grievances) | 🟡 | war/peace only |
+| Diplomacy (deals, alliances, grievances) | 🟡 | Civ VI-style bilateral trade supports lump Gold, GPT, Diplomatic Favor, temporary luxury/strategic access, and directional Open Borders; economic deals execute only when both valuations are positive, expire after 30 turns, and cancel on war. Human play gets a Quick Deals compare-all-AIs screen; Basic and Advanced AI use the same quotes and acceptance gate. Denouncements, casus belli, friendship, five Alliance types, grievances, and Congress voting are modeled; cities/Great Works and deeper leader agendas remain simplified |
 | Loyalty + governors (R&F) | 🟡 | population pressure ±9 tiles, capitals immune, defection to strongest neighbor at 0; governor titles from civic milestones (3), +8 loyalty; no promotions/named governors |
 | Natural wonders + goody huts | 🟡 | map-scaled 2–7 unique single-tile wonders, feature-based, impassable/crossable, tile yields, discovery era score (+3 first finder); huts ~1/40 land tiles with gold/faith/eureka/inspiration rewards |
 | Zone of control | ✅ | innate from turn 1 for the modeled roster; explicit per-unit capability, native domains, river blocking, defensible districts, religious ZOC, cavalry immunity, and class-specific stop behavior |
@@ -34,6 +34,27 @@ Status: ✅ implemented · 🟡 simplified · ❌ not yet.
 Remaining fidelity work is concentrated in named content, deeper diplomacy and
 governors, full wonder placement, and promotion effects whose underlying map
 or pillage systems are not represented yet.
+
+## Trade and Quick Deals
+
+Press **D** in a human game to open Quick Deals. Sell, Buy, Luxury, and
+Strategic filters compare every living major's current offer in one list,
+sorted by the human player's net value. Each card exposes the exact terms and
+both civilizations' positive equivalent-Gold gain; accepting revalidates the
+same terms atomically, so a stale treasury, resource export, or declaration of
+war cannot force a deal through.
+
+Lump Gold and Diplomatic Favor transfer immediately. Gold per turn pays for
+30 turns; resources temporarily move usable access (including Luxury Amenity
+allocation and strategic unit prerequisites); Open Borders are directional.
+War terminates the agreement and restores exported resource access. The
+engine rejects gifts and any custom economic exchange for which either side's
+modeled gain is not positive. AI civilizations periodically choose at most one
+of those same mutually favorable offers.
+
+Reference basis: the in-game [Trade, Demand, and Discuss Civilopedia entry](https://www.civilopedia.net/en-US/standard-rules/concepts/diplo_7/),
+the directional [Open Borders Civilopedia entry](https://www.civilopedia.net/en-US/gathering-storm/concepts/diplo_9/),
+and the compare-all-offers workflow of the [Quick Deals mod](https://steamcommunity.com/sharedfiles/filedetails/?id=2460661464).
 
 ## Combat and zone of control
 

@@ -11,7 +11,8 @@
   "monument": {
     "cost": 60,
     "district": "city_center",
-    "yields": { "culture": 2 }
+    "yields": { "culture": 1 },
+    "effects": { "loyalty_per_turn": 1, "full_loyalty_culture": 1 }
   },
   "granary": {
     "cost": 65,
@@ -31,21 +32,24 @@
     "cost": 80,
     "tech": "masonry",
     "district": "city_center",
-    "outer_defense": 100
+    "outer_defense": 100,
+    "effects": { "tourism_after_conservation": 1 }
   },
   "medieval_walls": {
     "cost": 220,
     "tech": "castles",
     "district": "city_center",
     "requires": ["walls"],
-    "outer_defense": 100
+    "outer_defense": 100,
+    "effects": { "tourism_after_conservation": 2, "battering_ram_immunity": 1 }
   },
   "renaissance_walls": {
     "cost": 300,
     "tech": "siege_tactics",
     "district": "city_center",
     "requires": ["medieval_walls"],
-    "outer_defense": 100
+    "outer_defense": 100,
+    "effects": { "tourism_after_conservation": 3, "siege_support_immunity": 1 }
   },
   "sewer": {
     "cost": 200,
@@ -80,7 +84,10 @@
     "requires": ["medieval_walls"],
     "yields": { "faith": 4 },
     "outer_defense": 200,
-    "effects": { "faith_tourism_after_conservation": 1 }
+    "effects": {
+      "tourism_after_conservation": 3,
+      "golden_age_faith_tourism_pct": 100
+    }
   },
   "library": {
     "cost": 90,
@@ -144,6 +151,7 @@
     "effects": {
       "science_equal_harbor_adjacency": 1,
       "coastal_or_lake_tile_science": 0.5,
+      "naval_unit_production_pct": 25,
       "rock_concert_tourism": 500
     }
   },
@@ -207,7 +215,11 @@
     "citizen_slots": 1,
     "great_person_points": { "prophet": 1 },
     "great_work_slots": { "relic": 1 },
-    "effects": { "culture_per_population": 0.5, "relic_tourism_bonus": 10 }
+    "effects": {
+      "culture_per_population": 0.5,
+      "population_10_tourism_after_flight": 10,
+      "population_20_tourism_after_flight": 20
+    }
   },
   "cathedral": {
     "cost": 190,
@@ -335,7 +347,7 @@
     "citizen_slots": 1,
     "great_person_points": { "merchant": 1 },
     "trade_route_capacity": 1,
-    "effects": { "domestic_route_production": 4, "international_route_gold": 2 }
+    "effects": { "domestic_route_gold": 4, "international_route_production": 2 }
   },
   "grand_bazaar": {
     "cost": 220,
@@ -398,7 +410,7 @@
     "maintenance": 2,
     "citizen_slots": 1,
     "great_person_points": { "general": 1 },
-    "effects": { "unit_starting_xp": 10, "strategic_stockpile": 10 }
+    "effects": { "all_land_unit_xp_pct": 25, "strategic_stockpile": 10 }
   },
   "military_academy": {
     "cost": 330,
@@ -412,6 +424,7 @@
     "great_person_points": { "general": 1 },
     "effects": {
       "citizen_production": 1,
+      "all_land_unit_xp_pct": 25,
       "corps_army_production_pct": 25,
       "strategic_stockpile": 10
     }
@@ -456,7 +469,11 @@
     "citizen_slots": 1,
     "great_person_points": { "admiral": 1 },
     "trade_route_capacity": 1,
-    "effects": { "coast_tile_food": 1, "coastal_city_housing": 1 }
+    "effects": {
+      "coast_tile_food": 1,
+      "coastal_city_housing": 2,
+      "naval_unit_xp_pct": 25
+    }
   },
   "shipyard": {
     "cost": 290,
@@ -470,6 +487,7 @@
     "effects": {
       "production_equal_harbor_adjacency": 1,
       "unimproved_coast_production": 1,
+      "naval_unit_xp_pct": 25,
       "rock_concert_tourism": 500
     }
   },
@@ -484,6 +502,8 @@
     "great_person_points": { "admiral": 1 },
     "effects": {
       "citizen_food": 1,
+      "coast_tile_gold": 2,
+      "naval_unit_xp_pct": 25,
       "fleet_armada_production_pct": 25,
       "product_slots": 3
     }
@@ -666,7 +686,7 @@
     "yields": { "culture": 1 },
     "amenity": 2,
     "maintenance": 1,
-    "effects": { "rock_concert_tourism": 250 }
+    "effects": { "tourism_after_conservation": 1, "rock_concert_tourism": 250 }
   },
   "zoo": {
     "cost": 360,
@@ -687,7 +707,12 @@
     "maintenance": 3,
     "power": 2,
     "regional_range": 6,
-    "effects": { "powered_amenity": 2, "rock_concert_tourism": 750 }
+    "effects": {
+      "powered_amenity": 2,
+      "population_10_tourism": 2,
+      "population_20_tourism": 5,
+      "rock_concert_tourism": 750
+    }
   },
   "tlachtli": {
     "cost": 135,
@@ -699,7 +724,7 @@
     "amenity": 2,
     "maintenance": 1,
     "great_person_points": { "general": 1 },
-    "effects": { "rock_concert_tourism": 250 }
+    "effects": { "tourism_after_conservation": 1, "rock_concert_tourism": 250 }
   },
   "thermal_bath": {
     "cost": 360,
@@ -721,7 +746,7 @@
     "yields": { "culture": 3 },
     "amenity": 2,
     "maintenance": 1,
-    "effects": { "rock_concert_tourism": 250 }
+    "effects": { "tourism": 2, "rock_concert_tourism": 250 }
   },
   "aquarium": {
     "cost": 360,
@@ -742,7 +767,11 @@
     "maintenance": 3,
     "power": 2,
     "regional_range": 9,
-    "effects": { "powered_amenity": 2, "rock_concert_tourism": 750 }
+    "effects": {
+      "powered_amenity": 2,
+      "coastal_wonder_tourism": 2,
+      "rock_concert_tourism": 750
+    }
   },
   "hangar": {
     "cost": 380,
@@ -750,7 +779,7 @@
     "district": "aerodrome",
     "yields": { "production": 2 },
     "maintenance": 1,
-    "effects": { "air_unit_xp_pct": 25, "air_slots": 1 }
+    "effects": { "air_unit_xp_pct": 25, "air_slots": 2 }
   },
   "airport": {
     "cost": 480,
@@ -763,7 +792,7 @@
     "effects": {
       "powered_production": 2,
       "air_unit_xp_pct": 25,
-      "air_slots": 1,
+      "air_slots": 2,
       "airlift": 1
     }
   },
@@ -926,6 +955,10 @@
     "replaces": "monument",
     "yields": { "culture": 1, "faith": 4 },
     "great_work_slots": { "any": 1 },
-    "effects": { "requires_voidsingers": 1 }
+    "effects": {
+      "requires_voidsingers": 1,
+      "loyalty_per_turn": 1,
+      "full_loyalty_culture": 1
+    }
   }
 }

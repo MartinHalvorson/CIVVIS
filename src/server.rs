@@ -303,6 +303,7 @@ fn handle(stream: &mut TcpStream, session: &mut Session) {
                     "wonders": r.wonders,
                     "projects": r.projects,
                     "policies": r.policies, "beliefs": r.beliefs, "civs": r.civs,
+                    "great_people": r.great_people, "governors": r.governors,
                     "map_sizes": CIV6_MAP_SIZES,
                 }),
             );

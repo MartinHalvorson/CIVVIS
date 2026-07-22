@@ -328,6 +328,43 @@
   .tnode.locked { opacity: .38; }
   .tnode .req { color: var(--faint); font-size: 8px; margin-top: 3px; }
 
+  /* Quick Deals: compare every acceptable AI quote without leader-by-leader
+     haggling. The engine still revalues both sides when Accept is clicked. */
+  #trade {
+    position: absolute; z-index: 19; inset: 5% max(3%, 34px); display: none; flex-direction: column;
+    overflow: hidden; color: var(--text); border: 1px solid #6f7659; border-radius: 20px;
+    background: radial-gradient(circle at 20% 0, #26362df5, #091310fc 55%);
+    box-shadow: 0 32px 110px #000f, inset 0 1px #ffffff14; backdrop-filter: blur(22px);
+  }
+  #trade.open { display: flex; animation: rise .18s ease-out; }
+  .trade-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 20px 14px; border-bottom: 1px solid #40534b; }
+  .trade-title { color: var(--gold-bright); font: 600 23px/1 Georgia, serif; }
+  .trade-subtitle { margin-top: 5px; color: var(--muted); font-size: 9px; letter-spacing: .08em; }
+  .trade-balance { display: flex; gap: 7px; margin-left: auto; }
+  .trade-balance span { padding: 7px 10px; border-radius: 999px; color: #dbe4df; background: #0c1815; border: 1px solid #32473f; font-size: 10px; font-variant-numeric: tabular-nums; }
+  .trade-toolbar { display: flex; align-items: center; gap: 7px; padding: 11px 20px; border-bottom: 1px solid #283c35; background: #0b1714b8; }
+  .trade-filter { width: auto; margin: 0; padding: 7px 12px; border-radius: 999px; background: #12221e; border-color: #344c43; font-size: 9px; }
+  .trade-filter.active { color: #201b0e; background: var(--gold-bright); border-color: var(--gold-bright); }
+  #tradecount { margin-left: auto; color: var(--faint); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; }
+  #tradelist { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 10px; padding: 14px 20px 24px; overflow-y: auto; }
+  .quick-deal { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 11px; align-items: center; min-height: 92px; padding: 12px; border: 1px solid #344d43; border-radius: 14px; background: linear-gradient(135deg, #12241f, #0c1714); box-shadow: inset 0 1px #ffffff08; }
+  .quick-deal:hover { border-color: #7b8263; background: linear-gradient(135deg, #182d26, #101d19); }
+  .deal-icon { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 12px; background: #d7b66a12; border: 1px solid #d7b66a35; font-size: 22px; }
+  .deal-main { min-width: 0; }
+  .deal-name { color: #f4eee0; font: 600 15px Georgia, serif; text-transform: capitalize; }
+  .deal-partner { margin-top: 3px; color: var(--muted); font-size: 9px; }
+  .deal-terms { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 9px; }
+  .term { padding: 4px 7px; border-radius: 6px; color: #dce6df; background: #08120f; border: 1px solid #2c4239; font-size: 9px; }
+  .term.give { color: #ffc0b7; border-color: #603c37; }
+  .term.get { color: #aee9c0; border-color: #315b40; }
+  .term-arrow { color: var(--gold); font-size: 11px; }
+  .deal-action { min-width: 90px; text-align: right; }
+  .deal-action button { width: 100%; margin: 0; padding: 8px 10px; }
+  .mutual-gain { margin-top: 6px; color: #86b997; font-size: 8px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .trade-empty { grid-column: 1 / -1; padding: 54px 20px; color: var(--muted); text-align: center; border: 1px dashed #34493f; border-radius: 14px; }
+  .footer-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+  #tradebtn { min-width: 112px; margin: 0; }
+
   @media (max-width: 980px) {
     #side { width: 320px; min-width: 320px; }
     #topbar { left: 14px; transform: none; max-width: calc(100% - 84px); overflow: hidden; }
@@ -344,6 +381,9 @@
     .minimap-frame { display: none; }
     #paneltoggle { right: 12px; }
     #ubar { min-width: 0; width: calc(100% - 28px); bottom: 18px; }
+    #trade { inset: 2% 8px; }
+    .trade-balance { display: none; }
+    #tradelist { grid-template-columns: 1fr; padding-inline: 10px; }
   }
   @media (max-width: 430px) {
     #playerhud { left: 74px; right: 8px; width: auto; }
@@ -383,6 +423,23 @@
     </div>
     <div id="treecols"></div>
   </div>
+  <section id="trade" role="dialog" aria-modal="true" aria-labelledby="tradetitle">
+    <div class="trade-head">
+      <div><div class="trade-title" id="tradetitle">Quick Deals</div>
+        <div class="trade-subtitle">Every quote is accepted by both empires · agreements last 30 turns</div></div>
+      <div class="trade-balance" id="tradebalance"></div>
+      <button class="ghost" onclick="closeTrade()">✕ Close · Esc</button>
+    </div>
+    <div class="trade-toolbar">
+      <button class="trade-filter active" data-filter="all" onclick="setTradeFilter('all')">All offers</button>
+      <button class="trade-filter" data-filter="sell" onclick="setTradeFilter('sell')">Sell</button>
+      <button class="trade-filter" data-filter="buy" onclick="setTradeFilter('buy')">Buy</button>
+      <button class="trade-filter" data-filter="luxury" onclick="setTradeFilter('luxury')">Luxuries</button>
+      <button class="trade-filter" data-filter="strategic" onclick="setTradeFilter('strategic')">Strategic</button>
+      <span id="tradecount"></span>
+    </div>
+    <div id="tradelist"></div>
+  </section>
   <div id="tip"></div>
 </div>
 <div id="side">
@@ -426,7 +483,8 @@
         <div class="utility-group shortcut-grid">
           <span><kbd>1</kbd>Next unit</span><span><kbd>2</kbd>Settler lens</span>
           <span><kbd>3</kbd>Map tacks</span><span><kbd>F</kbd>Focus mode</span>
-          <span><kbd>Alt</kbd>Rotate map</span><span><kbd>↵</kbd>End / pause</span>
+          <span><kbd>D</kbd>Quick Deals</span><span><kbd>Alt</kbd>Rotate map</span>
+          <span><kbd>Y</kbd>Tile yields</span><span><kbd>↵</kbd>End / pause</span>
         </div>
       </div>
     </details>
@@ -452,7 +510,10 @@
 
   </div>
   <div class="side-footer">
-    <button class="primary" id="endturn">End turn · Enter</button>
+    <div class="footer-actions" id="humanfooter">
+      <button class="primary" id="endturn">End turn · Enter</button>
+      <button id="tradebtn" title="Compare all mutually acceptable offers (D)">⚖ Quick Deals · D</button>
+    </div>
     <div id="specbar" style="display:none">
       <div class="spec-controls">
         <button class="primary" id="specpause">⏸ Pause</button>
@@ -528,6 +589,7 @@ let lensOn = false, tackMode = false, tacks = [], lastSeed = null, cycleIdx = -1
 let SPEC = false, specPaused = false, specTimer = null, specBusy = false;
 let worldEvents = [], lastLeader = null, lastSidePaint = 0;
 let TMAP = new Map();
+let tradeFilter = "all", tradeBusy = false;
 let VIEW = localStorage.getItem("civvis-view") || "cinematic";
 let SHOW_YIELDS = localStorage.getItem("civvis-show-yields") === "1";
 // migrate legacy mode names (performance mode lives on as headless sims)
@@ -876,12 +938,14 @@ function chronicleActions(next) {
   const war = actions.find(a => a.type === "declare_war");
   const peace = actions.find(a => a.type === "make_peace");
   const trade = actions.filter(a => a.type === "trade_route");
+  const deals = actions.filter(a => a.type === "trade");
   const envoys = actions.filter(a => a.type === "send_envoy");
   const religion = actions.find(a => a.type === "found_religion");
   const government = actions.find(a => a.type === "government");
 
   if (war) parts.push(`declared war on ${(next.players[war.player] || {}).civ || "a rival"}`);
   if (peace) parts.push(`made peace with ${(next.players[peace.player] || {}).civ || "a rival"}`);
+  if (deals.length) parts.push(`completed ${deals.length} mutually favorable ${deals.length === 1 ? "deal" : "deals"}`);
   if (research) parts.push(`began ${titleCase(research.tech)}`);
   if (civic) parts.push(`pursued ${titleCase(civic.civic)}`);
   if (government) parts.push(`adopted ${titleCase(government.government)}`);
@@ -947,8 +1011,9 @@ function render(st, recordChronicle = true) {
   animateDiff(state, st);
   state = st;
   SPEC = !!st.spectate;
-  document.getElementById("endturn").style.display = SPEC ? "none" : "block";
+  document.getElementById("humanfooter").style.display = SPEC ? "none" : "grid";
   document.getElementById("specbar").style.display = SPEC ? "block" : "none";
+  if (SPEC) closeTrade();
   if (newWorld && st.seed !== undefined) { lastSeed = st.seed; loadTacks(); }
   if (newWorld) {
     const majors = st.players.filter(p => !p.is_minor && !p.is_barbarian).length;
@@ -974,7 +1039,7 @@ function render(st, recordChronicle = true) {
       " on turn " + st.turn + "</span>" +
       (SPEC ? "<br><span class='small' id='respawn'></span>" : "");
   } else w.style.display = "none";
-  draw(); drawSide(newWorld); drawMini(); drawTopbar(); drawPlayerHud(); drawUbar();
+  draw(); drawSide(newWorld); drawMini(); drawTopbar(); drawPlayerHud(); drawUbar(); drawQuickDeals();
 }
 
 // ---------------------------------------------------------------- renderer
@@ -1947,7 +2012,8 @@ function drawTopbar() {
     `<div class="hud-stat">🔬 <strong>${y.science}</strong><i>science</i></div>` +
     `<div class="hud-stat">🎭 <strong>${y.culture}</strong><i>culture</i></div>` +
     `<div class="hud-stat">🪙 <strong>${Math.round(me.gold)}</strong><i>+${y.gold}</i></div>` +
-    `<div class="hud-stat">✦ <strong>${Math.round(me.faith)}</strong><i>+${y.faith}</i></div>`;
+    `<div class="hud-stat">✦ <strong>${Math.round(me.faith)}</strong><i>+${y.faith}</i></div>` +
+    `<div class="hud-stat">⚜ <strong>${Math.round(me.diplomatic_favor || 0)}</strong><i>favor</i></div>`;
 
   const identity = SPEC ? actor : state.players[0];
   const mapLabel = `${state.map.size_name || "Custom"} ${state.map.width}×${state.map.height}`;
@@ -2004,6 +2070,87 @@ function drawPlayerHud() {
     }).join("") + `</div>`;
 }
 
+function tradeItemIcon(item) {
+  if (item === "diplomatic_favor") return "⚜";
+  if (item === "open_borders") return "🗺";
+  return RES_ICON[item] || ({niter:"✹", coal:"◆", oil:"◉", aluminum:"◇", uranium:"☢"}[item]) || "◈";
+}
+
+function dealTerms(items, kind) {
+  if (!items) return [];
+  const terms = [];
+  if (+items.gold > 0) terms.push(`<span class="term ${kind}">🪙 ${compactStat(items.gold)} Gold</span>`);
+  if (+items.gold_per_turn > 0) terms.push(`<span class="term ${kind}">🪙 ${compactStat(items.gold_per_turn)} / turn ×30</span>`);
+  if (+items.diplomatic_favor > 0) terms.push(`<span class="term ${kind}">⚜ ${compactStat(items.diplomatic_favor)} Favor</span>`);
+  for (const [resource, amount] of Object.entries(items.resources || {}))
+    terms.push(`<span class="term ${kind}">${tradeItemIcon(resource)} ${amount} ${titleCase(resource)} ×30</span>`);
+  if (items.open_borders) terms.push(`<span class="term ${kind}">🗺 Open Borders ×30</span>`);
+  return terms;
+}
+
+function setTradeFilter(filter) {
+  tradeFilter = filter;
+  drawQuickDeals();
+}
+
+function openTrade(filter = null) {
+  if (!state || SPEC) return;
+  if (filter) tradeFilter = filter;
+  document.getElementById("trade").classList.add("open");
+  drawQuickDeals();
+}
+
+function closeTrade() {
+  const panel = document.getElementById("trade");
+  if (panel) panel.classList.remove("open");
+}
+
+async function acceptQuickDeal(index) {
+  if (tradeBusy || !state || !Array.isArray(state.quick_deals)) return;
+  const deal = state.quick_deals[index];
+  if (!deal) return;
+  tradeBusy = true;
+  try {
+    await send({type:"trade", player:deal.partner, offer:deal.offer, request:deal.request});
+  } finally {
+    tradeBusy = false;
+    drawQuickDeals();
+  }
+}
+
+function drawQuickDeals() {
+  if (!state) return;
+  const list = document.getElementById("tradelist");
+  const balance = document.getElementById("tradebalance");
+  if (!list || !balance) return;
+  const all = Array.isArray(state.quick_deals) ? state.quick_deals : [];
+  const visible = all.map((deal, index) => ({deal, index})).filter(({deal}) =>
+    tradeFilter === "all" || deal.direction === tradeFilter || deal.category === tradeFilter);
+  document.querySelectorAll(".trade-filter").forEach(button =>
+    button.classList.toggle("active", button.dataset.filter === tradeFilter));
+  document.getElementById("tradecount").textContent = `${visible.length} mutually favorable ${visible.length === 1 ? "offer" : "offers"}`;
+  balance.innerHTML = `<span>🪙 ${compactStat(state.me.gold)} Gold</span>` +
+    `<span>⚜ ${compactStat(state.me.diplomatic_favor || 0)} Favor</span>`;
+  if (!visible.length) {
+    list.innerHTML = `<div class="trade-empty"><b>No mutually favorable ${tradeFilter === "all" ? "deals" : tradeFilter + " deals"} right now.</b><br><span class="small">Connect surplus resources, meet more civilizations, or let their treasuries recover.</span></div>`;
+    return;
+  }
+  list.innerHTML = visible.map(({deal, index}) => {
+    const partner = state.players[deal.partner] || {civ:"Unknown civilization"};
+    const give = dealTerms(deal.offer, "give");
+    const get = dealTerms(deal.request, "get");
+    const direction = deal.direction === "sell" ? "Sell" : "Buy";
+    return `<article class="quick-deal">
+      <div class="deal-icon">${tradeItemIcon(deal.item)}</div>
+      <div class="deal-main"><div class="deal-name">${direction} ${titleCase(deal.item)}</div>
+        <div class="deal-partner">${partner.civ} · ${titleCase(deal.category)} · sorted by your net value</div>
+        <div class="deal-terms">${give.join("")}<span class="term-arrow">→</span>${get.join("")}</div></div>
+      <div class="deal-action"><button class="primary" onclick="acceptQuickDeal(${index})" ${tradeBusy ? "disabled" : ""}>Accept deal</button>
+        <div class="mutual-gain">You +${compactStat(deal.my_value)} · AI +${compactStat(deal.partner_value)}</div></div>
+    </article>`;
+  }).join("");
+}
+
 function drawUbar() {
   const bar = document.getElementById("ubar");
   if (!sel || SPEC) { bar.style.display = "none"; return; }
@@ -2020,6 +2167,18 @@ function drawUbar() {
       h += `<button onclick='send({type:"found_city",unit:${u.id}})'>🏛 Found city</button>`;
     if (a.type === "improve")
       h += `<button onclick='send({type:"improve",unit:${u.id},improvement:"${a.improvement}"})'>⚒ ${a.improvement.replaceAll("_"," ")}</button>`;
+    if (a.type === "pillage")
+      h += `<button class="danger" onclick='send(${JSON.stringify(a)})'>🔥 Pillage</button>`;
+    if (a.type === "repair_improvement")
+      h += `<button onclick='send(${JSON.stringify(a)})'>⚒ Repair improvement</button>`;
+    if (a.type === "coastal_raid")
+      h += `<button class="danger" onclick='send(${JSON.stringify(a)})'>☠ Coastal raid @ ${a.target.join(",")}</button>`;
+    if (a.type === "air_rebase")
+      h += `<button onclick='send(${JSON.stringify(a)})'>✈ Rebase @ ${a.to.join(",")}</button>`;
+    if (a.type === "air_strike")
+      h += `<button class="danger" onclick='send(${JSON.stringify(a)})'>✈ Air strike @ ${a.target.join(",")}</button>`;
+    if (a.type === "air_patrol")
+      h += `<button onclick='send(${JSON.stringify(a)})'>✈ Air patrol</button>`;
     if (a.type === "fortify")
       h += `<button onclick='send({type:"fortify",unit:${u.id}})'>⛨ Fortify</button>`;
     if (a.type === "promote") {
@@ -2044,6 +2203,10 @@ function drawUbar() {
       h += `<button onclick='send(${JSON.stringify(a)})'>☼ Remove Heresy</button>`;
     if (a.type === "launch_inquisition")
       h += `<button onclick='send(${JSON.stringify(a)})'>☼ Launch Inquisition</button>`;
+    if (a.type === "evangelize_belief")
+      h += `<button onclick='send(${JSON.stringify(a)})'>☼ Evangelize ${titleCase(a.belief)}</button>`;
+    if (a.type === "convert_barbarians")
+      h += `<button onclick='send(${JSON.stringify(a)})'>☼ Convert adjacent Barbarians</button>`;
   }
   h += `<button onclick='sel=null;draw();drawUbar()'>✕</button>`;
   bar.innerHTML = h;
@@ -2153,13 +2316,31 @@ function drawSide(force = true) {
   drawResearchSlot(cdiv, "culture", me.civic, me.civic_progress,
     me.civic ? civicCost(me.civic) : 0, me.yields.culture, me.boosted_civics);
   const govs = legalFor("government");
+  const dedications = legalFor("choose_dedication");
+  const congressVotes = legalFor("congress_vote");
+  const dealReplies = state.legal_actions.filter(a => a.type === "accept_deal" || a.type === "reject_deal");
   const gs = document.getElementById("govsec");
-  if (SPEC || govs.length || me.government) {
+  if (SPEC || govs.length || me.government || dedications.length || congressVotes.length || dealReplies.length) {
     gs.style.display = "block";
-    document.getElementById("gov").innerHTML =
+    let politics =
       `<div class="row"><span class="muted">Current</span><b>${titleCase(me.government || "Unformed")}</b></div>` +
       (SPEC ? "" : govs.map(a => `<button onclick='send({type:"government",government:"${a.government}"})'>` +
         titleCase(a.government) + "</button>").join(""));
+    if (!SPEC && dedications.length) {
+      politics += `<div class="row"><span class="muted">Age dedication</span><b>${titleCase(me.age)}</b></div>` +
+        dedications.map(a => `<button onclick='send(${JSON.stringify(a)})'>✦ ${titleCase(a.dedication)}</button>`).join("");
+    }
+    if (!SPEC && congressVotes.length) {
+      const onePerResolution = congressVotes.filter((vote, index, votes) =>
+        votes.findIndex(other => other.resolution === vote.resolution && other.choice === vote.choice) === index);
+      politics += `<div class="row"><span class="muted">World Congress</span><b>${compactStat(me.diplomatic_favor)} Favor</b></div>` +
+        onePerResolution.map(a => `<button onclick='send(${JSON.stringify(a)})'>⚖ ${titleCase(a.resolution)}: ${titleCase(a.choice)} (${a.votes})</button>`).join("");
+    }
+    if (!SPEC && dealReplies.length) {
+      politics += `<div class="row"><span class="muted">Diplomatic proposals</span><b>${dealReplies.length / 2}</b></div>` +
+        dealReplies.map(a => `<button class="${a.type === "accept_deal" ? "primary" : ""}" onclick='send(${JSON.stringify(a)})'>${a.type === "accept_deal" ? "Accept" : "Reject"} #${a.deal}</button>`).join("");
+    }
+    document.getElementById("gov").innerHTML = politics;
   } else gs.style.display = "none";
   drawCityPanel();
   drawEvents();
@@ -2586,6 +2767,13 @@ document.addEventListener("keydown", ev => {
   }
   const tag = (document.activeElement || {}).tagName;
   if (tag === "SELECT" || tag === "INPUT" || tag === "TEXTAREA") return;
+  const tradeOpen = document.getElementById("trade").classList.contains("open");
+  if (ev.key === "Escape" && tradeOpen) { closeTrade(); return; }
+  if (ev.key.toLowerCase() === "d") {
+    tradeOpen ? closeTrade() : openTrade();
+    return;
+  }
+  if (tradeOpen) return;
   if (ev.key === "Enter") {
     if (SPEC) document.getElementById("specpause").click();
     else { sel = null; send({type: "end_turn"}); }
@@ -2612,6 +2800,7 @@ document.addEventListener("keyup", ev => {
   altTap = false;
 });
 document.getElementById("endturn").onclick = () => { sel = null; send({type: "end_turn"}); };
+document.getElementById("tradebtn").onclick = () => openTrade();
 document.getElementById("paneltoggle").onclick = () => togglePanel();
 document.getElementById("specpause").onclick = () => {
   specPaused = !specPaused;
