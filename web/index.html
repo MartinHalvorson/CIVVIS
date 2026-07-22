@@ -864,6 +864,9 @@ setInterval(reportSpecStatus, 4000);
 function directorCue(prev, next) {
   if (!DIRECTOR || !prev || prev.seed !== next.seed) return null;
   let best = null;
+  const majorOwners = new Set(next.players
+    .filter(player => !player.is_minor && !player.is_barbarian && player.alive)
+    .map(player => player.id));
   const offer = (pos, priority) => {
     if (!Array.isArray(pos) || pos.length !== 2) return;
     if (!best || priority >= best.priority) best = { pos: [pos[0], pos[1]], priority };
@@ -871,21 +874,30 @@ function directorCue(prev, next) {
   const oldCities = new Map(prev.cities.map(c => [c.id, c]));
   for (const city of next.cities) {
     const old = oldCities.get(city.id);
-    if (!old) offer(city.pos, 5);
-    else if (old.owner !== city.owner) offer(city.pos, 7);
-    else if (city.hp < old.hp || (city.wall_hp || 0) < (old.wall_hp || 0)) offer(city.pos, 5);
+    if (!old && majorOwners.has(city.owner)) offer(city.pos, 5);
+    else if (old && old.owner !== city.owner &&
+             (majorOwners.has(old.owner) || majorOwners.has(city.owner))) offer(city.pos, 7);
+    else if (old && majorOwners.has(city.owner) &&
+             (city.hp < old.hp || (city.wall_hp || 0) < (old.wall_hp || 0))) offer(city.pos, 5);
   }
   const oldUnits = new Map(prev.units.map(u => [u.id, u]));
   const nextUnits = new Map(next.units.map(u => [u.id, u]));
   for (const unit of next.units) {
     const old = oldUnits.get(unit.id);
-    if (old && unit.hp < old.hp) offer(unit.pos, 4);
+    if (old && majorOwners.has(unit.owner) && unit.hp < old.hp) offer(unit.pos, 4);
   }
-  for (const unit of prev.units) if (!nextUnits.has(unit.id)) offer(unit.pos, 4);
-  for (const action of Array.isArray(next.actions_taken) ? next.actions_taken : []) {
-    if (action.type === "attack" || action.type === "ranged" || action.type === "city_strike")
-      offer(action.target, 4);
+  for (const unit of prev.units) {
+    if (majorOwners.has(unit.owner) && !nextUnits.has(unit.id)) offer(unit.pos, 4);
   }
+  if (majorOwners.has(next.current)) {
+    for (const action of Array.isArray(next.actions_taken) ? next.actions_taken : []) {
+      if (action.type === "attack" || action.type === "ranged" || action.type === "city_strike")
+        offer(action.target, 4);
+    }
+  }
+  // Keep the opening survey on the main settled landmass. Only a capital or
+  // city capture is important enough to pull the camera away before turn 60.
+  if (best && next.turn < 60 && best.priority < 7) return null;
   return best;
 }
 function queueDirectorCue(cue) {
