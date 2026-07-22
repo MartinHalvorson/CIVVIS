@@ -925,6 +925,7 @@ impl Ai for BasicAi {
         self.resolve_city_dispositions(g, pid, false, false);
         if !self.barb {
             self.research(g, pid);
+            self.corporations(g, pid);
             self.diplomacy(g, pid);
             self.cities(g, pid);
         }
@@ -942,6 +943,16 @@ impl BasicAi {
     /// expensive all-map candidate scan does not need to.
     pub(crate) fn begin_movement_turn(&mut self) {
         self.patrol_posts.clear();
+    }
+
+    pub(crate) fn corporations(&self, g: &mut Game, pid: usize) {
+        if let Some(action) = g
+            .legal_actions(pid)
+            .into_iter()
+            .find(|action| matches!(action, Action::FoundCorporation { .. }))
+        {
+            let _ = g.apply(pid, &action);
+        }
     }
 
     /// Resolve mandatory conquest choices with explicit strategic tradeoffs.
@@ -2157,6 +2168,13 @@ impl BasicAi {
                         return Some(item);
                     }
                 }
+            }
+            if let Some(product) = g
+                .producible_items(pid, cid)
+                .into_iter()
+                .find(|item| matches!(item, Item::Product { .. }))
+            {
+                return Some(product);
             }
             let mut projects: Vec<Item> = g
                 .rules
