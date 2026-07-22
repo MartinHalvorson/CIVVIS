@@ -355,6 +355,7 @@ impl BasicAi {
     fn cities(&mut self, g: &mut Game, pid: usize) {
         let mut settlers = 0;
         let mut builders = 0;
+        let mut traders = 0;
         let mut military = 0;
         let mut melee = 0;
         let mut ranged = 0;
@@ -363,6 +364,7 @@ impl BasicAi {
             match kind.as_str() {
                 "settler" => settlers += 1,
                 "builder" => builders += 1,
+                "trader" => traders += 1,
                 _ => {
                     let spec = &g.rules.units[kind.as_str()];
                     if spec.class == "military" {
@@ -378,6 +380,29 @@ impl BasicAi {
         }
         let city_ids = g.player_city_ids(pid);
         let n_cities = city_ids.len();
+        // Treat queued units as part of the force plan. Without this, every
+        // occupied city forgets what it is already building and the next
+        // empty city can queue a duplicate settler, builder, or trader.
+        for cid in &city_ids {
+            if let Some(Item::Unit { unit }) = g.cities[cid].queue.first() {
+                match unit.as_str() {
+                    "settler" => settlers += 1,
+                    "builder" => builders += 1,
+                    "trader" => traders += 1,
+                    _ => {
+                        let spec = &g.rules.units[unit.as_str()];
+                        if spec.class == "military" {
+                            military += 1;
+                            if spec.ranged_strength > 0.0 {
+                                ranged += 1;
+                            } else {
+                                melee += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
         // walls fire at raiders in range
         for cid in &city_ids {
             if g.city_can_strike(&g.cities[cid]) {
@@ -420,6 +445,7 @@ impl BasicAi {
                         match &item {
                             Item::Unit { unit } if unit == "settler" => settlers += 1,
                             Item::Unit { unit } if unit == "builder" => builders += 1,
+                            Item::Unit { unit } if unit == "trader" => traders += 1,
                             Item::Unit { unit } => {
                                 let spec = &g.rules.units[unit.as_str()];
                                 if spec.class == "military" {
@@ -442,12 +468,13 @@ impl BasicAi {
             }
             if let Some(item) =
                 self.pick_item(g, pid, *cid, n_cities, settlers, builders,
-                               military, melee, ranged)
+                               traders, military, melee, ranged)
             {
                 if g.apply(pid, &Action::Produce { city: *cid, item: item.clone() }).is_ok() {
                     match &item {
                         Item::Unit { unit } if unit == "settler" => settlers += 1,
                         Item::Unit { unit } if unit == "builder" => builders += 1,
+                        Item::Unit { unit } if unit == "trader" => traders += 1,
                         Item::Unit { unit } => {
                             let spec = &g.rules.units[unit.as_str()];
                             if spec.class == "military" {
@@ -464,6 +491,8 @@ impl BasicAi {
                 }
             }
         }
+        self.spend_gold(g, pid, &city_ids, settlers, builders, traders,
+                        military, melee, ranged);
         if g.players[pid].faith >= self.w.faith_builder && builders < n_cities
             && !city_ids.is_empty() {
             let _ = g.apply(pid, &Action::Buy {
@@ -521,9 +550,139 @@ impl BasicAi {
             .or_else(|| self.best_military(g, pid, cid, None))
     }
 
+    fn buy_gold_unit(&self, g: &mut Game, pid: usize, city_ids: &[u32],
+                     unit: &str, reserve: f64) -> bool {
+        let price = match g.rules.units.get(unit) {
+            Some(spec) => spec.cost * 4.0,
+            None => return false,
+        };
+        if g.players[pid].gold + 1e-9 < price + reserve {
+            return false;
+        }
+        for cid in city_ids {
+            if !g.can_produce(pid, *cid, &Item::Unit { unit: unit.to_string() }) {
+                continue;
+            }
+            if g.apply(pid, &Action::Buy {
+                city: *cid,
+                unit: unit.to_string(),
+                currency: "gold".to_string(),
+            }).is_ok() {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn buy_gold_military(&self, g: &mut Game, pid: usize, city_ids: &[u32],
+                         reserve: f64, want_ranged: bool) -> bool {
+        let budget = g.players[pid].gold - reserve;
+        if budget <= 0.0 {
+            return false;
+        }
+        let choose = |role: Option<bool>| -> Option<(u32, String)> {
+            let mut best: Option<(f64, f64, String, u32)> = None;
+            for cid in city_ids {
+                for (name, spec) in &g.rules.units {
+                    if spec.class != "military" || spec.domain.as_deref() == Some("sea")
+                        || role.map(|r| r != (spec.ranged_strength > 0.0)).unwrap_or(false)
+                    {
+                        continue;
+                    }
+                    let price = spec.cost * 4.0;
+                    if price > budget + 1e-9
+                        || !g.can_produce(pid, *cid, &Item::Unit { unit: name.clone() })
+                    {
+                        continue;
+                    }
+                    let power = spec.strength.max(spec.ranged_strength);
+                    let replace = match &best {
+                        None => true,
+                        Some((bp, bc, bn, bid)) => {
+                            power > *bp + 1e-9
+                                || ((power - *bp).abs() < 1e-9
+                                    && (price < *bc - 1e-9
+                                        || ((price - *bc).abs() < 1e-9
+                                            && (name.as_str(), *cid) < (bn.as_str(), *bid))))
+                        }
+                    };
+                    if replace {
+                        best = Some((power, price, name.clone(), *cid));
+                    }
+                }
+            }
+            best.map(|(_, _, unit, city)| (city, unit))
+        };
+        let (city, unit) = match choose(Some(want_ranged)).or_else(|| choose(None)) {
+            Some(choice) => choice,
+            None => return false,
+        };
+        g.apply(pid, &Action::Buy {
+            city,
+            unit,
+            currency: "gold".to_string(),
+        }).is_ok()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn spend_gold(&self, g: &mut Game, pid: usize, city_ids: &[u32],
+                  settlers: usize, builders: usize, traders: usize,
+                  military: usize, melee: usize, ranged: usize) -> bool {
+        if city_ids.is_empty() {
+            return false;
+        }
+        let n_cities = city_ids.len();
+        let at_major_war = g.players.iter().any(|p| {
+            p.id != pid && p.alive && !p.is_barbarian && g.is_at_war(pid, p.id)
+        });
+        let reserve = if at_major_war {
+            40.0 + 10.0 * n_cities as f64
+        } else {
+            100.0 + 25.0 * n_cities as f64
+        };
+        let want_ranged = melee > ranged;
+
+        // A threatened empire converts cash into defenders before pursuing
+        // infrastructure. Two units per city is enough to react without
+        // draining the treasury into an endless standing army.
+        let normal_military = (self.w.mil_per_city * n_cities as f64).ceil() as usize;
+        let wartime_military = normal_military.max(2 * n_cities);
+        if at_major_war && military < wartime_military
+            && self.buy_gold_military(g, pid, city_ids, reserve, want_ranged)
+        {
+            return true;
+        }
+
+        let desired_builders = (self.w.builder_per_city * n_cities as f64).ceil() as usize;
+        if builders < desired_builders
+            && self.buy_gold_unit(g, pid, city_ids, "builder", reserve)
+        {
+            return true;
+        }
+
+        if !self.minor && g.active_routes(pid) + (traders as i64) < g.trade_capacity(pid)
+            && self.buy_gold_unit(g, pid, city_ids, "trader", reserve)
+        {
+            return true;
+        }
+
+        if !self.minor && settlers == 0
+            && (n_cities as f64) < self.w.city_target
+            && (g.turn as f64) < self.w.settler_stop_turn
+            && self.buy_gold_unit(g, pid, city_ids, "settler", reserve)
+        {
+            return true;
+        }
+
+        // At peace, retain a larger reserve but turn a deep surplus into a
+        // modest deterrent instead of hoarding gold indefinitely.
+        g.players[pid].gold >= reserve + 600.0 && military < 2 * n_cities
+            && self.buy_gold_military(g, pid, city_ids, reserve, want_ranged)
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn pick_item(&self, g: &Game, pid: usize, cid: u32, n_cities: usize,
-                 settlers: usize, builders: usize, military: usize,
+                 settlers: usize, builders: usize, traders: usize, military: usize,
                  melee: usize, ranged: usize) -> Option<Item> {
         let city_pop = g.cities[&cid].pop;
         if (military as f64) < self.w.mil_per_city * n_cities as f64 {
@@ -542,9 +701,7 @@ impl BasicAi {
             return Some(Item::Unit { unit: "builder".to_string() });
         }
         if !self.minor {
-            let traders = g.units.values()
-                .filter(|u| u.owner == pid && u.kind == "trader").count() as i64;
-            if g.active_routes(pid) + traders < g.trade_capacity(pid)
+            if g.active_routes(pid) + (traders as i64) < g.trade_capacity(pid)
                 && g.can_produce(pid, cid, &Item::Unit { unit: "trader".to_string() })
             {
                 return Some(Item::Unit { unit: "trader".to_string() });
@@ -1084,5 +1241,29 @@ mod tests {
 
         let melee = ai.combined_arms_unit(&g, 0, cid, 2, 2).unwrap();
         assert_eq!(g.rules.units[melee.as_str()].ranged_strength, 0.0);
+    }
+
+    #[test]
+    fn gold_spending_fills_worker_gap_but_keeps_reserve() {
+        let mut g = Game::new_full(1, 20, 14, 32, 30, 0, false);
+        let settler = g.player_unit_ids(0).into_iter()
+            .find(|id| g.units[id].kind == "settler").unwrap();
+        g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let cid = g.player_city_ids(0)[0];
+        let ai = BasicAi::new();
+
+        // One city keeps 125 gold and spends 200 on its missing builder.
+        g.players[0].gold = 325.0;
+        assert!(ai.spend_gold(&mut g, 0, &[cid], 0, 0, 0, 1, 1, 0));
+        assert_eq!(g.players[0].gold, 125.0);
+        assert!(g.units.values().any(|u| u.owner == 0 && u.kind == "builder"));
+
+        let builders = g.units.values()
+            .filter(|u| u.owner == 0 && u.kind == "builder").count();
+        g.players[0].gold = 324.0;
+        assert!(!ai.spend_gold(&mut g, 0, &[cid], 0, 0, 0, 1, 1, 0));
+        assert_eq!(g.players[0].gold, 324.0);
+        assert_eq!(g.units.values()
+            .filter(|u| u.owner == 0 && u.kind == "builder").count(), builders);
     }
 }
