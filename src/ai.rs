@@ -2712,17 +2712,18 @@ impl BasicAi {
         // Coastal infrastructure is part of the water strategy, not an
         // accidental fallback after every land district. A harbor also gives
         // later naval production somewhere sensible to concentrate.
-        if Self::city_is_coastal(g, cid) && !g.cities[&cid].districts.contains_key("harbor") {
-            let sites = g.district_sites(cid, "harbor");
+        if Self::city_is_coastal(g, cid) && !g.city_has_district_family(&g.cities[&cid], "harbor") {
+            let harbor = Self::civ_district(g, pid, "harbor");
+            let sites = g.district_sites(cid, &harbor);
             if let Some(pos) = sites.into_iter().max_by(|a, b| {
-                g.district_yields("harbor", *a)
+                g.district_yields(&harbor, *a)
                     .total()
-                    .partial_cmp(&g.district_yields("harbor", *b).total())
+                    .partial_cmp(&g.district_yields(&harbor, *b).total())
                     .unwrap()
                     .then(a.cmp(b))
             }) {
                 let item = Item::District {
-                    district: "harbor".to_string(),
+                    district: harbor.clone(),
                     pos,
                 };
                 if g.can_produce(pid, cid, &item) {
@@ -2741,11 +2742,16 @@ impl BasicAi {
             ])
             .collect();
         dpri.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-        for (dname, _) in dpri {
-            if g.cities[&cid].districts.contains_key(dname) {
+        for (family, _) in dpri {
+            if g.city_has_district_family(&g.cities[&cid], family) {
                 continue;
             }
-            let spec = &g.rules.districts[dname];
+            // Ask for the district this civilization actually builds. Greece
+            // builds an Acropolis, never a Theater Square, and naming the base
+            // district produced an item the engine refused - which stalled the
+            // city outright, because a rejected choice ends its turn.
+            let dname = Self::civ_district(g, pid, family);
+            let spec = &g.rules.districts[dname.as_str()];
             let unlocked = spec
                 .tech
                 .as_ref()
@@ -2759,20 +2765,25 @@ impl BasicAi {
             if !unlocked {
                 continue;
             }
-            let sites = g.district_sites(cid, dname);
+            let sites = g.district_sites(cid, &dname);
             if !sites.is_empty() {
                 let best = *sites
                     .iter()
                     .max_by(|a, b| {
-                        let ya = g.district_yields(dname, **a).total();
-                        let yb = g.district_yields(dname, **b).total();
+                        let ya = g.district_yields(&dname, **a).total();
+                        let yb = g.district_yields(&dname, **b).total();
                         ya.partial_cmp(&yb).unwrap().then(a.cmp(b))
                     })
                     .unwrap();
-                return Some(Item::District {
-                    district: dname.to_string(),
+                let item = Item::District {
+                    district: dname.clone(),
                     pos: best,
-                });
+                };
+                // Never hand back something the engine will reject: a refused
+                // item costs the city its whole turn.
+                if g.can_produce(pid, cid, &item) {
+                    return Some(item);
+                }
             }
         }
         if self.culture_focus && !g.cities[&cid].buildings.iter().any(|b| b == "amphitheater") {
@@ -3490,6 +3501,22 @@ impl BasicAi {
             },
         )
         .is_ok()
+    }
+
+    /// The district a civilization builds in place of `family`: its unique
+    /// replacement where it has one, otherwise the stock district. The engine
+    /// blocks the base district for civilizations with a replacement, exactly
+    /// as it does for unique units.
+    pub(crate) fn civ_district(g: &Game, pid: usize, family: &str) -> String {
+        let civ = g.players[pid].civ.as_str();
+        g.rules
+            .districts
+            .iter()
+            .find(|(_, spec)| {
+                spec.replaces.as_deref() == Some(family) && spec.unique_to.as_deref() == Some(civ)
+            })
+            .map(|(name, _)| name.clone())
+            .unwrap_or_else(|| family.to_string())
     }
 
     /// Which improvement a tile should actually get. An improvement that
@@ -4354,6 +4381,37 @@ mod tests {
             grant_tech_with_prerequisites(g, pid, &prerequisite);
         }
         g.players[pid].techs.insert(tech.to_string());
+    }
+
+    /// The production picker named base districts, so for a civilization with
+    /// a unique replacement it kept proposing a district the engine refuses.
+    /// A refused proposal ends the city's turn, so those cities queued nothing
+    /// at all - permanently, since the same choice came back every turn.
+    #[test]
+    fn civilizations_queue_the_unique_district_they_can_actually_build() {
+        let g = Game::new_full(8, 40, 24, 3, 60, 0, false);
+        let greece = g
+            .players
+            .iter()
+            .position(|player| player.civ == "Greece")
+            .unwrap();
+        let rome = g
+            .players
+            .iter()
+            .position(|player| player.civ == "Rome")
+            .unwrap();
+        assert_eq!(
+            BasicAi::civ_district(&g, greece, "theater_square"),
+            "acropolis"
+        );
+        assert_eq!(BasicAi::civ_district(&g, rome, "aqueduct"), "bath");
+        // Civilizations without a replacement keep the stock district, and a
+        // rival's unique district is never proposed.
+        assert_eq!(
+            BasicAi::civ_district(&g, rome, "theater_square"),
+            "theater_square"
+        );
+        assert_eq!(BasicAi::civ_district(&g, greece, "campus"), "campus");
     }
 
     /// Builders used to take whichever legal improvement sorted first by

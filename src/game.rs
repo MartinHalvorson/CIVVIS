@@ -16343,7 +16343,7 @@ impl Game {
         self.district_family(district) == self.district_family(family)
     }
 
-    fn city_has_district_family(&self, city: &City, family: &str) -> bool {
+    pub fn city_has_district_family(&self, city: &City, family: &str) -> bool {
         if family == "city_center" {
             return true;
         }
