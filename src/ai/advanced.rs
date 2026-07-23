@@ -3405,20 +3405,16 @@ impl AdvancedAi {
         }
 
         let current = unit.pos;
-        let goals: HashSet<Pos> = g
-            .wdisk(objective, 5)
-            .into_iter()
-            .filter(|position| {
-                self.campaign_staging_position(
-                    g,
-                    pid,
-                    target,
-                    uid,
-                    objective,
-                    *position,
-                ) && g.units_at(*position).is_empty()
-            })
-            .collect();
+        let goals: HashSet<Pos> = {
+            let _memo = g.query_memo();
+            g.wdisk(objective, 5)
+                .into_iter()
+                .filter(|position| {
+                    self.campaign_staging_position(g, pid, target, uid, objective, *position)
+                        && g.units_at(*position).is_empty()
+                })
+                .collect()
+        };
         let Some(next) = g
             .route_step_to_any(uid, &goals)
             .filter(|position| g.can_move(uid, *position))
