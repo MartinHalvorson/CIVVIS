@@ -120,11 +120,8 @@
     },
     "ADD_RELIGIOUS_BELIEF_YIELD": {
       "status": "implemented",
-      "verified": false,
-      "note": "Drilled but NOT settled. Four founder beliefs CIVVIS carries each have two shipped rows -- a base-game one and a Gathering Storm one -- bound to the same belief with no Delete between them: Tithe is +1 Gold per 4 followers (base) and +3 Gold per city (GS); Pilgrimage +2 Faith per foreign city (base) and +2 Faith per city (GS); World Church +1 Culture per 5 foreign followers (base) and +1 per 4 followers (GS). Church Property has only the base row. CIVVIS encodes exactly the Gathering Storm row of each, which matches how the Governor trees resolve, but beliefs have no (Level, Column) slot to prove supersession the way promotions do. Left untouched.",
-      "leads": [
-        "Two open questions, both needing an in-game observation rather than more file reading. (1) Do Tithe, Pilgrimage and World Church pay both their rows or only the Gathering Storm one? (2) Does BELIEF_YIELD_PER_CITY count the founder's own cities or every city following the religion? CIVVIS multiplies by every following city; the existence of a separate PER_FOREIGN_CITY type argues for own-only, but that reading only matters if both rows are live."
-      ]
+      "verified": true,
+      "note": "Verified, and the ambiguity is settled by the shipped text rather than the tables. Tithe, Pilgrimage and World Church each carry a base row and a Gathering Storm row with no Delete between them, but Gathering Storm also ships _EXPANSION2_DESCRIPTION wording for all three: Tithe '+3 Gold for each city following the Religion', Pilgrimage '+2 Faith for each city following this Religion', World Church '+1 Culture for every 4 followers of this Religion'. Only the Gathering Storm row is live, and 'each city following this Religion' means every such city rather than the founder's own. CIVVIS carries exactly that for all four beliefs, Church Property included. Reverting yesterday's change was correct."
     },
     "ADJUST_BUILDING_PRODUCTION": {
       "status": "implemented",

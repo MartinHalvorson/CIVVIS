@@ -1705,8 +1705,10 @@ function chronicle(prev, next) {
     oldCities.delete(city.id);
   }
   for (const city of oldCities.values()) {
-    if (viewer === null || city.owner === viewer)
-      addEvent("♜", `${city.name} was lost to history.`, next.turn, next);
+    if (viewer === null || city.owner === viewer) {
+      const owner = (prev.players[city.owner] || {}).civ || "An unknown civilization";
+      addEvent("♜", `${owner} lost ${city.name} to history.`, next.turn, next);
+    }
   }
   for (const p of next.players) {
     const old = prev.players.find(x => x.id === p.id);

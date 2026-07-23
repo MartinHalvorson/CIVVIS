@@ -217,6 +217,44 @@ mod tests {
         assert_eq!(restored.events_for(0).len(), mine.len());
     }
 
+    /// Every line of the log opens with the civilization it belongs to. A
+    /// spectator reads the seats' streams interleaved and an agent reads its
+    /// own tail out of context, so "Founded Antium" is an event without an
+    /// author. The exception the rule allows for is none: even the shared
+    /// war and diplomacy messages name their actor first.
+    #[test]
+    fn every_event_names_a_civilization_first() {
+        let mut g = Game::new_with(GameOptions::new(4, 32, 20, 77, 400, 2));
+        let mut ais: Vec<BasicAi> = g.players.iter().map(|_| BasicAi::new()).collect();
+        while g.turn < 60 && g.winner.is_none() {
+            let pid = g.current;
+            ais[pid].take_turn(&mut g, pid);
+            if g.winner.is_none() && g.current == pid {
+                let _ = g.apply(pid, &Action::EndTurn);
+            }
+        }
+        let names: Vec<&str> = g
+            .players
+            .iter()
+            .map(|player| player.civ.as_str())
+            .collect();
+        let orphans: Vec<&str> = g
+            .events
+            .iter()
+            .map(|event| event.text.as_str())
+            .filter(|text| !names.iter().any(|civ| text.starts_with(civ)))
+            .collect();
+        assert!(
+            orphans.is_empty(),
+            "{} log entries name no civilization: {:?}",
+            orphans.len(),
+            &orphans[..orphans.len().min(8)]
+        );
+        // The stream is not trivially empty: sixty turns of four civilizations
+        // found cities, finish research and meet each other.
+        assert!(g.events.len() > 20, "only {} events", g.events.len());
+    }
+
     /// Every leader carries the agenda and preference traits the shipped
     /// leader data assigns them.
     #[test]
