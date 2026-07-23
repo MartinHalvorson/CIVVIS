@@ -2118,6 +2118,41 @@ mod governor_runtime_tests {
     }
 
     #[test]
+    fn unique_improvements_pay_their_conditional_clauses() {
+        let mut game = Game::new_full(1, 24, 16, 91_977, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let centre = game.cities[&city].pos;
+        let (kurgan, pasture) = (game.nbrs(centre)[0], game.nbrs(centre)[1]);
+        for position in [kurgan, pasture] {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = "plains".to_string();
+            tile.feature = None;
+            tile.hills = false;
+            tile.improvement = None;
+            tile.pillaged = false;
+        }
+        let faith = |game: &Game, at: Pos| {
+            game.player_tile_yields(0, at, &game.map.tiles[&at]).faith
+        };
+        game.map.tiles.get_mut(&kurgan).unwrap().improvement = Some("kurgan".to_string());
+        let bare = faith(&game, kurgan);
+        game.map.tiles.get_mut(&pasture).unwrap().improvement = Some("pasture".to_string());
+        // One Faith per adjacent Pasture, doubling once Stirrups obsoletes it.
+        assert_eq!(faith(&game, kurgan), bare + 1.0);
+        game.players[0].techs.insert("stirrups".to_string());
+        assert_eq!(faith(&game, kurgan), bare + 2.0);
+
+        // The Sphinx gains Culture once Natural History is in.
+        game.map.tiles.get_mut(&kurgan).unwrap().improvement = Some("sphinx".to_string());
+        let culture = game.player_tile_yields(0, kurgan, &game.map.tiles[&kurgan]).culture;
+        game.players[0].civics.insert("natural_history".to_string());
+        assert_eq!(
+            game.player_tile_yields(0, kurgan, &game.map.tiles[&kurgan]).culture,
+            culture + 1.0
+        );
+    }
+
+    #[test]
     fn mines_and_quarries_lower_the_appeal_of_their_neighbours() {
         let mut game = Game::new_full(1, 24, 16, 91_971, 200, 0, false);
         let city = found_capital(&mut game, 0);
@@ -19841,6 +19876,45 @@ impl Game {
                 yields.food += (adjacent_farms / 2.0).floor()
                     * self.tree_effect(pid, "farm_pair_adjacency_food");
                 yields.food += adjacent_farms * self.tree_effect(pid, "farm_adjacency_food");
+            }
+            Some("sphinx") => {
+                let effects = &self.rules.improvements["sphinx"].effects;
+                yields.culture += self.tree_effect(pid, "sphinx_culture");
+                if matches!(
+                    tile.feature.as_deref(),
+                    Some("floodplains" | "grassland_floodplains" | "plains_floodplains")
+                ) {
+                    yields.culture += effects.get("floodplains_culture").copied().unwrap_or(0.0);
+                }
+                if self
+                    .nbrs(pos)
+                    .iter()
+                    .any(|neighbor| self.map.tiles[neighbor].wonder.is_some())
+                {
+                    yields.faith += effects.get("adjacent_wonder_faith").copied().unwrap_or(0.0);
+                }
+            }
+            Some("kurgan") => {
+                // +1 Faith per adjacent Pasture, which Stirrups obsoletes in
+                // favour of a +2 rule rather than stacking with it.
+                let effects = &self.rules.improvements["kurgan"].effects;
+                let per_pasture = if self.players[pid].techs.contains("stirrups") {
+                    effects
+                        .get("adjacent_pasture_faith_after_stirrups")
+                        .copied()
+                        .unwrap_or(0.0)
+                } else {
+                    effects.get("adjacent_pasture_faith").copied().unwrap_or(0.0)
+                };
+                yields.faith += per_pasture
+                    * self
+                        .nbrs(pos)
+                        .iter()
+                        .filter(|neighbor| {
+                            self.map.tiles[neighbor].improvement.as_deref() == Some("pasture")
+                                && !self.map.tiles[neighbor].pillaged
+                        })
+                        .count() as f64;
             }
             Some("great_wall") => {
                 let adjacent = self

@@ -495,7 +495,11 @@
       "plains",
       "snow",
       "tundra"
-    ]
+    ],
+    "effects": {
+      "adjacent_pasture_faith": 1,
+      "adjacent_pasture_faith_after_stirrups": 2
+    }
   },
   "national_park": {
     "civic": "conservation",
