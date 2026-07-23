@@ -3799,6 +3799,35 @@ function draw() {
     const ct = TMAP.get(key(c.pos));
     const [x, yy] = hexXY(c.pos[0], c.pos[1]);
     const y = yy - (ct ? elev(ct) : 0);
+    // A city bleeding loyalty defects — it changes hands without a shot fired,
+    // which is among the most consequential things that can happen to a border
+    // and gave no warning at all on the map. Only cities actually slipping draw
+    // anything: a ring at full loyalty would be noise on every settlement you
+    // own. Amber as it goes, red and pulsing when it is close to gone. Same
+    // vocabulary as a roused barbarian camp, because it means the same thing —
+    // trouble on this tile, now.
+    if (c.loyalty !== undefined && c.loyalty !== null && c.loyalty < 99.5) {
+      const f = Math.max(0, Math.min(1, c.loyalty / 100));
+      const col = f > 0.6 ? "#e8c64c" : f > 0.3 ? "#e0913c" : "#e0483a";
+      const beat = f < 0.35 ? 0.55 + 0.45 * Math.sin(performance.now() / 240) : 0.9;
+      const k = UI_K();
+      cx.save();
+      cx.setLineDash([6, 5]);
+      cx.strokeStyle = col; cx.lineWidth = 2.4 * k; cx.globalAlpha = beat;
+      hexPath(x, y, S * 0.84); cx.stroke();
+      cx.setLineDash([]);
+      cx.globalAlpha = 1;
+      cx.font = "bold " + (9 * k).toFixed(1) + "px sans-serif";
+      cx.textAlign = "center"; cx.textBaseline = "middle";
+      cx.strokeStyle = "#10151d"; cx.lineWidth = 3;
+      // below the ring, not above it: above is where the nameplate lives and
+      // the number simply vanished behind it
+      const ly = y + S * 0.84 + 7 * k;
+      cx.strokeText(Math.round(c.loyalty), x, ly);
+      cx.fillStyle = col;
+      cx.fillText(Math.round(c.loyalty), x, ly);
+      cx.restore();
+    }
     drawSettlement(c, x, y, beau);
     // Which faith holds this city. Religion is one of the six ways to win and
     // it spreads city by city across the map, yet the map said nothing at all —
