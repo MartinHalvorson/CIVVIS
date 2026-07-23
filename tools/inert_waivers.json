@@ -1,0 +1,13 @@
+{
+  "_doc": [
+    "Effect keys the inert audit flags that are consumed another way.",
+    "Each entry says how, so a genuine regression is not hidden behind one."
+  ],
+  "waivers": {
+    "nuclear_devices": "Recorded as the counter project_effect:nuclear_devices, which the strike and stockpile paths read.",
+    "thermonuclear_devices": "Recorded as the counter project_effect:thermonuclear_devices, read the same way.",
+    "power_source_coal": "Descriptive label. The swap is implemented in converted_power_plant, matched on the project name.",
+    "power_source_oil": "Descriptive label; see power_source_coal.",
+    "power_source_nuclear": "Descriptive label; see power_source_coal."
+  }
+}

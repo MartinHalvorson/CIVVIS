@@ -182,6 +182,20 @@ charged from data; the Cultural Heritage Inspiration now fires via a
 full-museum theming proxy; and Gilgamesh aside, the six map-size profiles
 and the alliance-leveling timeline verified exact.
 
+### Data the engine never reads
+
+`tools/civvis_inert.py` joins the other direction: every effect key in
+`data/*.json` against the engine that should consume it. Nothing enforces that
+join, so a key can sit in the data doing nothing -- mistyped, refactored away,
+or dropped by a rebase in a shared checkout. The last is not hypothetical: the
+Sphinx's Floodplains Culture and Wonder-adjacency Faith survived in data for
+fourteen iterations after their engine arm was lost, and no test noticed
+because none covered them.
+
+It reports zero unwaived keys across 629, with five waived in
+`tools/inert_waivers.json` for consumption the string join cannot see. Run it
+after any refactor that moves yield code.
+
 ### Next inside phase 1
 
 Known simplifications not yet expressed in data: civic-gated valid terrain
