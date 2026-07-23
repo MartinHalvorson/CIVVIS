@@ -1744,6 +1744,25 @@ function cinematicUnitMapPoint(unit, now = performance.now()) {
     focusX:actual.x, focusY:actual.y,
   };
 }
+function unitMoveDuration(unitId, steps) {
+  const followsSubject = cinemaActive() && !REDUCED_MOTION_QUERY.matches &&
+    cinematicSubjectUnitId() === unitId;
+  return followsSubject
+    ? 420 + 130 * Math.min(4, steps)
+    : 90 + 90 * Math.min(4, steps);
+}
+function stretchCinematicUnitMove(unitId, now = performance.now()) {
+  if (REDUCED_MOTION_QUERY.matches) return;
+  const mv = anim.moves.get(unitId);
+  if (!mv) return;
+  const elapsed = Math.min(1, Math.max(0, (now - mv.t0) / mv.dur));
+  const duration = unitMoveDuration(unitId, mv.steps);
+  if (duration <= mv.dur) return;
+  // Preserve the exact easing position while giving the remaining route time
+  // to read. The character never jumps backward when the director picks it.
+  mv.t0 = now - elapsed * duration;
+  mv.dur = duration;
+}
 function hexDistUI(a, b) {
   const dq = a[0] - b[0], dr = a[1] - b[1];
   return Math.max(Math.abs(dq), Math.abs(dr), Math.abs(dq + dr));
@@ -1788,7 +1807,7 @@ function animateDiff(prev, next) {
         const steps = Math.max(1, mapPoints.length - 1);
         anim.moves.set(nu.id, {mapX:start.x, mapY:start.y, mapLift:start.lift,
                                 mapPoints, steps,
-                                t0: now, dur: 90 + 90 * Math.min(4, steps) });
+                                t0: now, dur:unitMoveDuration(nu.id, steps) });
         unitHeadings.set(nu.id, {x:end.x - start.x, y:end.y - start.y, at:now});
         if (Math.abs(end.x - start.x) > 1)
           facing.set(nu.id, end.x > start.x ? 1 : -1);
@@ -2462,9 +2481,10 @@ function queueDirectorCue(cue) {
     if (mapWrapsX()) targetX += Math.round((cam.x - targetX) / WW()) * WW();
     const targetY = S * 1.5 * nextGoal.pos[1];
     const cutDistance = Math.max(560, area.clientWidth / Math.max(.25, cam.scale) * .62);
-    const useCut = cinemaActive() && cue.priority >= 7 &&
+    const useCut = cinemaActive() && !tracksUnit && cue.priority >= 7 &&
       Math.hypot(targetX - cam.x, targetY - cam.y) > cutDistance;
     stageDirectorGoal(nextGoal, useCut, now);
+    if (tracksUnit && cinemaActive()) stretchCinematicUnitMove(cue.unitId, now);
     directorLast = now;
     directorSeen.set(signature, now);
     if (directorSeen.size > 80) {
