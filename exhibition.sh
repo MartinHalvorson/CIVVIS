@@ -66,10 +66,14 @@ start_evolve() {
     say "evolve launched"
 }
 
+# Both launch paths are guarded on the binary being executable, so a copy that
+# arrives without its mode bit leaves the screen dark and says nothing about
+# why. Set it explicitly rather than trusting what cp carried over.
 promote_staged() {
     [ -f "$bin_run/civvis-next" ] || return 1
     cp -f "$bin_run/civvis-next" "$bin_run/civvis-gui"
     cp -f "$bin_run/civvis-next" "$bin_run/civvis-evolve"
+    chmod +x "$bin_run/civvis-gui" "$bin_run/civvis-evolve"
     rm -f "$bin_run/civvis-next"
 }
 
@@ -126,6 +130,7 @@ while true; do
             if CARGO_TARGET_DIR="$src/target" "$cargo_bin" build --release \
                 --manifest-path "$src/Cargo.toml" >/dev/null 2>&1; then
                 cp -f "$src/target/release/civvis" "$bin_run/civvis-next"
+                chmod +x "$bin_run/civvis-next"
                 printf '%s' "$head" >"$stamp"
                 say "staged $short in $(( $(date +%s) - started ))s"
             else
