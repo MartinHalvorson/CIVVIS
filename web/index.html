@@ -1546,13 +1546,19 @@ function drawUnitBase(u, x, y) {
   cx.fillStyle = g;
   cx.beginPath(); cx.arc(x, cy, 13.5, 0, 7); cx.fill();
   cx.restore();
-  cx.fillStyle = "rgba(0,0,0,.28)";                   // tight contact shadow
-  cx.beginPath(); cx.ellipse(x, cy, 8.2, 3.2, 0, 0, 7); cx.fill();
-  cx.strokeStyle = pcol(u.owner);
-  cx.globalAlpha = spent ? 0.3 : 0.92;
-  cx.lineWidth = spent ? 1.4 : 2.2;
-  cx.beginPath(); cx.ellipse(x, cy, 9.4, 3.9, 0, 0, 7); cx.stroke();
+  // A filled disc in the owner's color carries much further than a rim: at map
+  // zoom the figure itself is only a few pixels of tunic, but the plate under
+  // it stays an unmistakable blob of empire color.
+  cx.beginPath(); cx.ellipse(x, cy, 9.6, 4.1, 0, 0, 7);
+  cx.fillStyle = pcol(u.owner);
+  cx.globalAlpha = spent ? 0.5 : 0.9;
+  cx.fill();
   cx.globalAlpha = 1;
+  cx.strokeStyle = "#0d1117"; cx.lineWidth = 1.4; cx.stroke();
+  if (!spent) {   // ready units get a lit rim so they read before spent ones
+    cx.strokeStyle = "#ffffff6b"; cx.lineWidth = 1;
+    cx.beginPath(); cx.ellipse(x, cy, 7.9, 3.0, 0, 0, 7); cx.stroke();
+  }
 }
 
 function draw() {
