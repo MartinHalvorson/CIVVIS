@@ -177,3 +177,38 @@ Culture and Faith, +3 Combat Strength, four free boosts per era and seven
 extra opening units. The point is that the axis exists and moves the right
 way; the number worth tracking over time is the highest level the current
 agent still beats at `--pairs 100`.
+## 2026-07-22 — learned-policy rung and the real training loop (session F)
+
+PyTorch installed (CPU build), so the loop below was **run**, not just
+written. `civvis selfplay` now also writes `dataset.csv` (the 25 scalar
+`evolve::features` + win label), closing the chain:
+`selfplay -> dataset -> train_valuenet.py -> valuenet.json -> agents`.
+
+**Value net, 60 self-play games / 5,998 samples:** val BCE **0.336** against
+a constant-predictor baseline of 0.562 — the scalar net genuinely learns.
+(Caveat: `train_valuenet.py` still splits by sample. `train_spatial.py`
+splits by game, which is correct; the scalar trainer should follow.)
+
+**Spatial net, same pipeline:** the by-game split is the honest one and it
+changed the story completely. A per-sample split reported **98.8%**
+accuracy; splitting by game gives **75.0%**, which is exactly the
+majority-class baseline on a 4-player export (one seat per game wins), with
+a *worse* BCE than the constant predictor. The trainer now always prints
+the baseline and a `beats_baseline` verdict so this cannot be misread
+again. Conclusion: the pipeline is correct, 24-60 games is nowhere near
+enough data. This is the concrete argument for AI_GAPS item 8's scale.
+
+**PolicyAi (`policy`) vs AdvancedAi** — 6 pairs, seed 7000, mirrored 2p:
+
+| AI | wins | score | gold | military |
+|---|---|---|---|---|
+| advanced | 7/12 (58.3%) | — | — | — |
+| policy | **5/12 (41.7%)** | 169.0 | 137.8 | 158.6 |
+
+The learned policy **does not beat the scripted agent**. It plays full
+legal games with the net choosing actions (one-ply value search over the
+real action space), but it is weaker — and its Gold (137.8 vs advanced's
+typical ~325) shows why: a one-ply evaluator happily spends the treasury on
+whatever looks locally good. This is the expected first rung, and it maps
+the remaining work precisely: a policy head trained on far more self-play,
+multi-ply search, and credit assignment past one action.

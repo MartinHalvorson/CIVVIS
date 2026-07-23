@@ -8,7 +8,7 @@ use crate::game::Game;
 use crate::rng::Rng;
 use crate::setup::MapSize;
 
-pub const BUILTIN_AIS: [&str; 8] = [
+pub const BUILTIN_AIS: [&str; 9] = [
     "advanced",
     "advanced_evolved",
     "advanced_v1",
@@ -17,6 +17,7 @@ pub const BUILTIN_AIS: [&str; 8] = [
     "evolved",
     "neural",
     "strategic",
+    "policy",
 ];
 
 pub fn expected(ra: f64, rb: f64) -> f64 {
@@ -90,6 +91,9 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
                 None => Box::new(BasicAi::with_weights(w)),
             }
         }
+        "policy" => Box::new(crate::policy::PolicyAi::with_weights(
+            crate::evolve::load_champion("evolved").unwrap_or_default(),
+        )),
         "strategic" => Box::new(crate::strategic::StrategicAi::with_weights(
             crate::evolve::load_champion("evolved").unwrap_or_default(),
         )),

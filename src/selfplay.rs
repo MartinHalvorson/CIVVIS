@@ -10,6 +10,8 @@
 //! - `meta.json` — shapes, plane/global names, sample count, config
 //! - `planes.f32` — `samples × planes × height × width` little-endian f32
 //! - `globals.f32` — `samples × globals` little-endian f32
+//! - `dataset.csv` — the 25 scalar `evolve::features` + win label per
+//!   sample, the format `tools/train_valuenet.py` consumes
 //! - `labels.f32` — `samples × 3`: win label (1/0), turn fraction, and
 //!   the source game index (split train/val BY GAME, never by sample:
 //!   snapshots from one game are highly correlated)
@@ -23,6 +25,7 @@ use std::path::Path;
 use crate::ai::{Ai, VictoryTarget};
 use crate::elo::builtin_ai;
 use crate::game::{Action, Game, GameOptions};
+use crate::evolve::features as scalar_features;
 use crate::obs_tensor::{obs_tensor, PLANES};
 
 pub struct SelfPlayCfg {
@@ -53,6 +56,7 @@ pub fn export(cfg: &SelfPlayCfg) -> std::io::Result<SelfPlayStats> {
     let mut planes_out = BufWriter::new(fs::File::create(dir.join("planes.f32"))?);
     let mut globals_out = BufWriter::new(fs::File::create(dir.join("globals.f32"))?);
     let mut labels_out = BufWriter::new(fs::File::create(dir.join("labels.f32"))?);
+    let mut csv_out = BufWriter::new(fs::File::create(dir.join("dataset.csv"))?);
 
     let mut samples = 0usize;
     let mut decisive = 0usize;
@@ -76,7 +80,7 @@ pub fn export(cfg: &SelfPlayCfg) -> std::io::Result<SelfPlayStats> {
             .collect();
 
         // (features, globals, pid) held until the outcome is known.
-        let mut pending: Vec<(Vec<f32>, Vec<f32>, usize, f32)> = Vec::new();
+        let mut pending: Vec<(Vec<f32>, Vec<f32>, Vec<f32>, usize, f32)> = Vec::new();
         let mut last_sampled: Option<u32> = None;
         while g.winner.is_none() && g.turn <= cfg.max_turns {
             let pid = g.current;
@@ -95,7 +99,7 @@ pub fn export(cfg: &SelfPlayCfg) -> std::io::Result<SelfPlayStats> {
                         global_names = t.global_names.clone();
                         globals_len = t.global.len();
                     }
-                    pending.push((t.data, t.global, player, fraction));
+                    pending.push((t.data, t.global, scalar_features(&g, player), player, fraction));
                 }
             }
             ais[pid].take_turn(&mut g, pid);
@@ -107,7 +111,7 @@ pub fn export(cfg: &SelfPlayCfg) -> std::io::Result<SelfPlayStats> {
         if g.winner.is_some() {
             decisive += 1;
         }
-        for (planes, globals, pid, fraction) in pending {
+        for (planes, globals, scalars, pid, fraction) in pending {
             let won = if g.winner == Some(pid) { 1.0f32 } else { 0.0f32 };
             for value in &planes {
                 planes_out.write_all(&value.to_le_bytes())?;
@@ -118,6 +122,8 @@ pub fn export(cfg: &SelfPlayCfg) -> std::io::Result<SelfPlayStats> {
             labels_out.write_all(&won.to_le_bytes())?;
             labels_out.write_all(&fraction.to_le_bytes())?;
             labels_out.write_all(&(game_index as f32).to_le_bytes())?;
+            let row: Vec<String> = scalars.iter().map(|v| format!("{v:.4}")).collect();
+            writeln!(csv_out, "{},{}", row.join(","), won as u8)?;
             samples += 1;
         }
         println!(
@@ -132,6 +138,7 @@ pub fn export(cfg: &SelfPlayCfg) -> std::io::Result<SelfPlayStats> {
     planes_out.flush()?;
     globals_out.flush()?;
     labels_out.flush()?;
+    csv_out.flush()?;
 
     let meta = serde_json::json!({
         "samples": samples,

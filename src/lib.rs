@@ -13,6 +13,7 @@ pub mod mapgen;
 pub mod neural;
 pub mod obs;
 pub mod obs_tensor;
+pub mod policy;
 pub mod rng;
 pub mod rules;
 pub mod selfplay;
