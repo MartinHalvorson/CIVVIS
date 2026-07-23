@@ -120,6 +120,8 @@ TABLE_KEYS = {
     "Eras": "EraType",
     "GreatPersonIndividuals": "GreatPersonIndividualType",
     "GlobalParameters": "Name",
+    "GreatWorks": "GreatWorkType",
+    "GreatWork_YieldChanges": ("GreatWorkType", "YieldType"),
     "WMDs": "WeaponType",
     "Maps": "MapSizeType",
     "Happinesses": "HappinessType",
@@ -901,6 +903,53 @@ def ours_goody_huts() -> dict[str, dict]:
                 "amount": max(spec.get("reward", {}).values(), default=0),
             }
     return out
+
+
+# Per-object-type great work values (game.rs city yields and
+# great_work_tourism) against the modal shipped GreatWorks rows. CIVVIS
+# counts works per kind, which is exact while each type's works share
+# values - the audit's job is to notice if a patch ever splits them.
+ENGINE_GREAT_WORKS = {
+    "writing": {"culture": 2, "tourism": 2},
+    "sculpture": {"culture": 3, "tourism": 2},
+    "portrait": {"culture": 3, "tourism": 2},
+    "landscape": {"culture": 3, "tourism": 2},
+    "religious": {"culture": 3, "tourism": 2},
+    "artifact": {"culture": 3, "tourism": 3},
+    "music": {"culture": 4, "tourism": 4},
+    "relic": {"faith": 4, "tourism": 8},
+}
+
+
+def project_great_works(database: Database) -> dict[str, dict]:
+    """Modal per-type values across all shipped works of that type."""
+    from collections import Counter, defaultdict
+
+    kinds = {
+        row["GreatWorkType"]: slug(row.get("GreatWorkObjectType", ""), "GREATWORKOBJECT_")
+        for row in database.rows("GreatWorks")
+    }
+    yields: dict[str, Counter] = defaultdict(Counter)
+    tourisms: dict[str, Counter] = defaultdict(Counter)
+    for row in database.rows("GreatWork_YieldChanges"):
+        kind = kinds.get(row["GreatWorkType"])
+        if kind:
+            yields[kind][(slug(row["YieldType"], "YIELD_"), number(row.get("YieldChange")))] += 1
+    for work, kind in kinds.items():
+        tourisms[kind][
+            number(
+                next(
+                    (r.get("Tourism") for r in database.rows("GreatWorks") if r["GreatWorkType"] == work),
+                    0,
+                )
+            )
+        ] += 1
+    projected = {}
+    for kind in yields:
+        (yield_type, amount), _ = yields[kind].most_common(1)[0]
+        tourism, _ = tourisms[kind].most_common(1)[0]
+        projected[kind] = {yield_type: amount, "tourism": tourism}
+    return projected
 
 
 # Global parameters the engine implements, next to the value its code uses.
@@ -1852,6 +1901,7 @@ def main() -> int:
         ("GreatPeople", ours_great_people(), project_great_people(database)),
         ("GlobalParameters", ours_parameters(), project_parameters(database)),
         ("Maps", dict(ENGINE_MAP_SIZES), project_maps(database)),
+        ("GreatWorkValues", dict(ENGINE_GREAT_WORKS), project_great_works(database)),
         ("Happinesses", dict(ENGINE_HAPPINESS), project_happiness(database)),
         ("WMDs", ours_wmds(), project_wmds(database)),
         ("Terrains", ours_terrains(), project_terrains(database)),

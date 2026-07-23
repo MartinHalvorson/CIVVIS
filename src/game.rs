@@ -31951,11 +31951,14 @@ impl Game {
     }
 
     fn great_work_tourism(&self, pid: usize, kind: &str) -> f64 {
+        // Shipped per-work Tourism: writings 2, works of art 2, artifacts 3,
+        // music 4, relics 8.
         let base = match kind {
             "writing" => 2.0 * (1.0 + self.tree_effect(pid, "writing_tourism_pct") / 100.0),
-            "art" | "religious_art" | "artifact" => {
-                3.0 * (1.0 + self.policy_effect(pid, "art_artifact_tourism_pct") / 100.0)
+            "art" | "religious_art" => {
+                2.0 * (1.0 + self.policy_effect(pid, "art_artifact_tourism_pct") / 100.0)
             }
+            "artifact" => 3.0 * (1.0 + self.policy_effect(pid, "art_artifact_tourism_pct") / 100.0),
             "music" => 4.0 * (1.0 + self.policy_effect(pid, "music_tourism_pct") / 100.0),
             "any" => 4.0,
             "relic" => 8.0,
@@ -39005,8 +39008,9 @@ mod victory_conditions {
 
         g.players[0].policies.insert("heritage_tourism".to_string());
         let heritage = g.tourism_per_turn(0);
+        // Heritage Tourism doubles three works of art at their shipped 2.
         assert!(
-            (heritage - printing - 9.0).abs() < 1e-9,
+            (heritage - printing - 6.0).abs() < 1e-9,
             "printing={printing}, heritage={heritage}, policy={}, art={}, global={}, housed={:?}",
             g.policy_effect(0, "art_artifact_tourism_pct"),
             g.great_work_tourism(0, "art"),
