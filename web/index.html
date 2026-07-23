@@ -3107,21 +3107,43 @@ function draw() {
     cx.globalAlpha = 1;
     if (!beau) { hexPath(x, y); cx.strokeStyle = "#00000038"; cx.lineWidth = 1; cx.stroke(); }
   }
-  // A narrow beach/foam seam gives continents a natural readable coastline.
-  if (beau) for (const t of tiles) {
-    if (t.terrain !== "coast") continue;
-    const [x, yy] = hexXY(t.pos[0], t.pos[1]);
-    const y = yy - elev(t);
-    for (let i = 0; i < 6; i++) {
-      const n = nbrTile(t.pos, DIRS[i]);
-      if (!n || n.terrain === "coast" || n.terrain === "ocean") continue;
-      const [c1, c2] = EDGE_CORNERS[i];
-      const [ax, ay] = corner(x, y, S - 1.2, c1);
-      const [bx, by] = corner(x, y, S - 1.2, c2);
-      cx.strokeStyle = "#d7c797b8"; cx.lineWidth = 4.2;
-      cx.beginPath(); cx.moveTo(ax, ay); cx.lineTo(bx, by); cx.stroke();
-      cx.strokeStyle = "#e9fff2b8"; cx.lineWidth = 1.15;
-      cx.beginPath(); cx.moveTo(ax, ay); cx.lineTo(bx, by); cx.stroke();
+  // The beach/foam seam is the longest line on the map and it was drawn the way
+  // the borders and rivers used to be: six exact straights per hex, each one
+  // stroked on its own, so every corner between two reaches carried a notch and
+  // every shore read as a faceted polygon. Collected into one network with
+  // round joins now, and each reach bowed off its chord like a river — less
+  // than a river bows, because a coast still has to hug the land it edges.
+  if (beau) {
+    const shore = [];
+    for (const t of tiles) {
+      if (t.terrain !== "coast") continue;
+      const [x, yy] = hexXY(t.pos[0], t.pos[1]);
+      const y = yy - elev(t);
+      for (let i = 0; i < 6; i++) {
+        const n = nbrTile(t.pos, DIRS[i]);
+        if (!n || n.terrain === "coast" || n.terrain === "ocean") continue;
+        const [c1, c2] = EDGE_CORNERS[i];
+        const [ax, ay] = corner(x, y, S - 1.2, c1);
+        const [bx, by] = corner(x, y, S - 1.2, c2);
+        const hv = hash2(t.pos[0] * 53 + i * 13, t.pos[1] * 59 + i * 17);
+        const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
+        const bow = (hv - 0.5) * len * 0.3;
+        shore.push([ax, ay,
+                    (ax + bx) / 2 - (dy / len) * bow,
+                    (ay + by) / 2 + (dx / len) * bow, bx, by]);
+      }
+    }
+    if (shore.length) {
+      cx.lineCap = "round"; cx.lineJoin = "round";
+      for (const [col, w] of [["#d7c797b8", 4.2], ["#e9fff2b8", 1.15]]) {
+        cx.strokeStyle = col; cx.lineWidth = w;
+        cx.beginPath();
+        for (const [ax, ay, qx, qy, bx, by] of shore) {
+          cx.moveTo(ax, ay); cx.quadraticCurveTo(qx, qy, bx, by);
+        }
+        cx.stroke();
+      }
+      cx.lineCap = "butt"; cx.lineJoin = "miter";
     }
   }
   // --- territory wash: translucent empire tint over each owned tile
