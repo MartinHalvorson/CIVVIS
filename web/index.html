@@ -1726,6 +1726,7 @@ function draw() {
     hexXY(a.pos[0], a.pos[1])[1] - hexXY(b.pos[0], b.pos[1])[1]);
   const visSet = new Set(state.visible.map(key));
   const campSet = new Set(state.camps.map(key));
+  const cityTiles = new Set(state.cities.map(c => key(c.pos)));
   const workedSet = new Set(state.cities.flatMap(c =>
     c.citizens ? c.citizens.worked_tiles.map(key) : []));
   const beau = VIEW === "cinematic";
@@ -1832,6 +1833,44 @@ function draw() {
     }
   }
   cx.globalAlpha = 1; cx.lineCap = "butt"; cx.lineJoin = "miter";
+  // --- roads: the arteries of an empire, and until now the one piece of tile
+  // state the map never showed. Each roaded tile runs a spur to the midpoint of
+  // every shared edge with a roaded neighbor, so the spurs meet and the network
+  // reads as continuous route rather than a row of disconnected dashes.
+  const roaded = p => {
+    const t2 = TMAP.get(key(p));
+    return !!(t2 && t2.road) || cityTiles.has(key(p));
+  };
+  const roadSegs = [];
+  for (const t of tiles) {
+    if (!roaded(t.pos)) continue;
+    const [x, yy] = hexXY(t.pos[0], t.pos[1]);
+    const y = yy - elev(t);
+    let linked = false;
+    for (let i = 0; i < 6; i++) {
+      const n = nbrTile(t.pos, DIRS[i]);
+      if (!n || !roaded(n.pos)) continue;
+      // share the seam elevation the way rivers do, so a spur meets its
+      // opposite number exactly even across a height change
+      const ey = yy - (elev(t) + elev(n)) / 2;
+      const [c1, c2] = EDGE_CORNERS[i];
+      const [ax, ay] = corner(x, ey, S, c1);
+      const [bx, by] = corner(x, ey, S, c2);
+      roadSegs.push([x, y, (ax + bx) / 2, (ay + by) / 2]);
+      linked = true;
+    }
+    if (!linked) roadSegs.push([x, y, x, y]);   // a lone stretch still reads
+  }
+  if (roadSegs.length) {
+    cx.lineCap = "round"; cx.lineJoin = "round";
+    for (const [w, c, a] of [[5.6, "#2b2015", 0.4], [3.0, "#c0a67e", 0.85]]) {
+      cx.strokeStyle = c; cx.lineWidth = w; cx.globalAlpha = a;
+      cx.beginPath();
+      for (const [ax, ay, bx, by] of roadSegs) { cx.moveTo(ax, ay); cx.lineTo(bx, by); }
+      cx.stroke();
+    }
+    cx.globalAlpha = 1; cx.lineCap = "butt"; cx.lineJoin = "miter";
+  }
   // --- rivers: shared hex-edge segments, never tile-center spokes
   const riverDrawn = new Set();
   const riverSegments = [];
