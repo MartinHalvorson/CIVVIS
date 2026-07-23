@@ -7524,6 +7524,15 @@ impl VisionCache {
     }
 }
 
+/// Everything a player's luxury access is counted from, taken once rather
+/// than once per luxury: their own connected resources, those of the
+/// city-states they are suzerain of, and those of an Amani host.
+struct LuxuryHoldings<'a> {
+    own: BTreeMap<&'a str, i32>,
+    clients: Vec<BTreeMap<&'a str, i32>>,
+    amani: Option<BTreeMap<&'a str, i32>>,
+}
+
 fn bump(p: &mut Player, key: &str) {
     *p.counters.entry(key.to_string()).or_insert(0) += 1;
 }
@@ -16728,13 +16737,22 @@ impl Game {
         // ruleset; deciding them per resource meant re-deriving every
         // city-state's patron twenty-odd times over.
         let clients = self.suzerained_minors(pid);
-        let amani = self.amani_city_state_for_effect(pid, "luxury_resources");
+        let held = LuxuryHoldings {
+            own: self.connected_resource_census(pid),
+            clients: clients
+                .iter()
+                .map(|minor| self.connected_resource_census(*minor))
+                .collect(),
+            amani: self
+                .amani_city_state_for_effect(pid, "luxury_resources")
+                .map(|(_, minor)| self.connected_resource_census(minor)),
+        };
         let mut luxuries: BTreeSet<String> = self
             .rules
             .resources
             .iter()
             .filter(|(_, spec)| spec.class == "luxury")
-            .filter(|(resource, _)| self.luxury_access_count(pid, resource, &clients, amani) > 0)
+            .filter(|(resource, _)| self.luxury_access_count(pid, resource, &held) > 0)
             .map(|(resource, _)| resource.clone())
             .collect();
         if self.grants_city_state_unique_bonus(pid, "Zanzibar") {
@@ -17534,6 +17552,41 @@ impl Game {
         self.connected_resource_count_unchecked(pid, res)
     }
 
+    /// How many connected copies of every resource a player holds, in one
+    /// pass over their cities.
+    ///
+    /// [`Self::connected_resource_count_unchecked`] walks every tile of every
+    /// city the player owns to count one resource. Anything that sweeps the
+    /// whole luxury or strategic table was doing that walk twenty-odd times
+    /// over for a set of answers one walk produces.
+    fn connected_resource_census(&self, pid: usize) -> BTreeMap<&str, i32> {
+        let mut counts: BTreeMap<&str, i32> = BTreeMap::new();
+        for city in self.cities.values().filter(|city| city.owner == pid) {
+            for position in &city.owned_tiles {
+                let tile = &self.map.tiles[position];
+                let Some(resource) = tile.resource.as_deref() else {
+                    continue;
+                };
+                if tile.pillaged {
+                    continue;
+                }
+                let Some(spec) = self.rules.resources.get(resource) else {
+                    continue;
+                };
+                let connected = *position == city.pos
+                    || tile.improvement.as_deref() == Some(spec.improvement.as_str())
+                    || matches!(
+                        tile.improvement.as_deref(),
+                        Some("industry" | "corporation")
+                    );
+                if connected {
+                    *counts.entry(resource).or_insert(0) += 1;
+                }
+            }
+        }
+        counts
+    }
+
     fn connected_resource_count_unchecked(&self, pid: usize, res: &str) -> i32 {
         let Some(spec) = self.rules.resources.get(res) else {
             return 0;
@@ -17800,23 +17853,18 @@ impl Game {
     /// strategic resources instead expose the integer amount in their stockpile.
     /// [`Self::resource_access_count`] for a luxury, with the two answers
     /// that do not depend on which luxury it is passed in.
-    fn luxury_access_count(
-        &self,
-        pid: usize,
-        res: &str,
-        clients: &[usize],
-        amani: Option<(u32, usize)>,
-    ) -> i32 {
+    fn luxury_access_count(&self, pid: usize, res: &str, held: &LuxuryHoldings) -> i32 {
         let visible = self.resource_visible_to(pid, res);
+        let count = |census: &BTreeMap<&str, i32>| census.get(res).copied().unwrap_or(0);
         let ordinary = if visible {
-            self.controlled_resource_count_via(pid, res, clients)
+            count(&held.own) + held.clients.iter().map(count).sum::<i32>()
         } else {
-            self.connected_resource_count(pid, res)
+            0
         } + self.resource_trade_balance(pid, res);
-        let shared = amani
-            .filter(|(_, minor)| {
-                visible && self.connected_resource_count_unchecked(*minor, res) > 0
-            })
+        let shared = held
+            .amani
+            .as_ref()
+            .filter(|census| visible && count(census) > 0)
             .map(|_| 1)
             .unwrap_or(0);
         ordinary.max(shared).max(0)
