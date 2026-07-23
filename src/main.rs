@@ -349,6 +349,7 @@ fn main() {
                     map_script,
                     game_speed,
                     max_turns: play_options.max_turns,
+                    victory_conditions: Default::default(),
                     num_city_states: auto_cs(&args, players),
                     spectate: args.iter().any(|a| a == "--spectate" || a == "--watch"),
                     difficulty: play_options.difficulty,
