@@ -115,7 +115,7 @@ pub fn obs_tensor(g: &Game, pid: usize) -> ObsTensor {
         if cliffs > 0 {
             put(&mut data, "cliff", *pos, cliffs as f32 / 6.0);
         }
-        if tile.road {
+        if tile.road > 0 {
             put(&mut data, "road", *pos, 1.0);
         }
         if let Some(resource) = &tile.resource {

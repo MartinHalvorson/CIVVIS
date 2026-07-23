@@ -1137,8 +1137,8 @@ impl Rules {
         if let Some(f) = &t.feature {
             c += self.features[f.as_str()].move_cost;
         }
-        if t.road && !self.terrains[t.terrain.as_str()].water {
-            c = 1.0; // roads flatten terrain (Civ 6 ancient roads)
+        if t.road > 0 && !self.terrains[t.terrain.as_str()].water {
+            c = 1.0; // every route flattens terrain to at most 1 MP
         }
         c
     }

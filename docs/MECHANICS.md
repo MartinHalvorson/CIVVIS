@@ -8,11 +8,12 @@ Status: ✅ implemented · 🟡 intentionally scoped relative to the full commer
 *Numbers* are now tracked against a stronger authority than either: the rules
 database the game itself ships. `python tools/civ6_fidelity.py` diffs
 `data/*.json` against it and currently reports zero unwaived divergences
-across twenty-five tables — units, technologies, civics, buildings,
+across twenty-seven tables — units, technologies, civics, buildings,
 districts, adjacency, boosts, goody huts, eras, great people, global
-parameters, map sizes, happiness bands, WMDs, terrains, features,
-resources, improvements, tech-gated improvement upgrades, wonders,
-policies, governments, beliefs, promotions and projects. Run it after any
+parameters, map sizes, great-work values, happiness bands, WMDs, routes,
+terrains, features, resources, improvements, tech-gated improvement
+upgrades, wonders, policies, governments, beliefs, promotions and
+projects. Run it after any
 data change, and see
 [FIDELITY.md](FIDELITY.md) for what the audit covers next.
 
