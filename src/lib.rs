@@ -19,6 +19,7 @@ pub mod policy;
 pub mod rng;
 pub mod rules;
 pub mod selfplay;
+pub mod specmap;
 pub mod server;
 pub mod setup;
 pub mod strategic;

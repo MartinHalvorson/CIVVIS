@@ -1,5 +1,7 @@
 //! Ruleset loaded from the shared JSON data files (embedded at compile time).
 use serde::{Deserialize, Serialize};
+
+use crate::specmap::SpecMap;
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
@@ -837,34 +839,34 @@ fn dstandard_turns() -> u32 {
 
 #[derive(Clone)]
 pub struct Rules {
-    pub terrains: BTreeMap<String, TerrainSpec>,
-    pub features: BTreeMap<String, FeatureSpec>,
-    pub resources: BTreeMap<String, ResourceSpec>,
-    pub improvements: BTreeMap<String, ImprovementSpec>,
-    pub units: BTreeMap<String, UnitSpec>,
-    pub districts: BTreeMap<String, DistrictSpec>,
-    pub buildings: BTreeMap<String, BuildingSpec>,
-    pub wonders: BTreeMap<String, WonderSpec>,
-    pub great_people: BTreeMap<String, GreatPersonSpec>,
-    pub governors: BTreeMap<String, GovernorSpec>,
-    pub projects: BTreeMap<String, ProjectSpec>,
-    pub techs: BTreeMap<String, TechSpec>,
-    pub civics: BTreeMap<String, TechSpec>,
-    pub governments: BTreeMap<String, GovSpec>,
-    pub policies: BTreeMap<String, PolicySpec>,
-    pub promotions: BTreeMap<String, PromotionSpec>,
+    pub terrains: SpecMap<TerrainSpec>,
+    pub features: SpecMap<FeatureSpec>,
+    pub resources: SpecMap<ResourceSpec>,
+    pub improvements: SpecMap<ImprovementSpec>,
+    pub units: SpecMap<UnitSpec>,
+    pub districts: SpecMap<DistrictSpec>,
+    pub buildings: SpecMap<BuildingSpec>,
+    pub wonders: SpecMap<WonderSpec>,
+    pub great_people: SpecMap<GreatPersonSpec>,
+    pub governors: SpecMap<GovernorSpec>,
+    pub projects: SpecMap<ProjectSpec>,
+    pub techs: SpecMap<TechSpec>,
+    pub civics: SpecMap<TechSpec>,
+    pub governments: SpecMap<GovSpec>,
+    pub policies: SpecMap<PolicySpec>,
+    pub promotions: SpecMap<PromotionSpec>,
     pub beliefs: BeliefsData,
-    pub civs: BTreeMap<String, CivSpec>,
-    pub agendas: BTreeMap<String, AgendaSpec>,
-    pub difficulties: BTreeMap<String, DifficultySpec>,
-    pub speeds: BTreeMap<String, SpeedSpec>,
+    pub civs: SpecMap<CivSpec>,
+    pub agendas: SpecMap<AgendaSpec>,
+    pub difficulties: SpecMap<DifficultySpec>,
+    pub speeds: SpecMap<SpeedSpec>,
     /// Tribal village reward tables, the shipped seven categories.
-    pub goody_huts: BTreeMap<String, BTreeMap<String, GoodyRewardSpec>>,
+    pub goody_huts: SpecMap<BTreeMap<String, GoodyRewardSpec>>,
     /// Per-era constants from the shipped Eras table, keyed by ERA_NAMES.
-    pub eras: BTreeMap<String, EraSpec>,
+    pub eras: SpecMap<EraSpec>,
     /// The shipped WMDs table. Blast radius, fallout and ICBM range await a
     /// delivery mechanic; the per-turn Gold maintenance is charged today.
-    pub wmds: BTreeMap<String, WmdSpec>,
+    pub wmds: SpecMap<WmdSpec>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -1215,7 +1217,7 @@ mod tests {
         venetian_arsenal";
 
     fn assert_complete_tree(
-        tree: &BTreeMap<String, TechSpec>,
+        tree: &SpecMap<TechSpec>,
         expected: &str,
         era_counts: [usize; 9],
     ) {

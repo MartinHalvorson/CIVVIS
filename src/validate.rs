@@ -10,6 +10,7 @@
 //! for the ones an author knows about. This is that, for our data: run it with
 //! `civvis validate`, and see `docs/UNCIV_LESSONS.md` for the lineage.
 
+use crate::specmap::SpecMap;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::rules::{Rules, ERA_NAMES};
@@ -90,7 +91,7 @@ impl<'a> Check<'a> {
         subject: &str,
         field: &str,
         value: Option<&String>,
-        catalogue: &BTreeMap<String, T>,
+        catalogue: &SpecMap<T>,
         catalogue_name: &str,
     ) {
         let Some(value) = value else { return };
@@ -107,7 +108,7 @@ impl<'a> Check<'a> {
         subject: &str,
         field: &str,
         values: &[String],
-        catalogue: &BTreeMap<String, T>,
+        catalogue: &SpecMap<T>,
         catalogue_name: &str,
     ) {
         for value in values {
