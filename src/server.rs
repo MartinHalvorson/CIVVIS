@@ -1744,7 +1744,14 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("if (!fullMapSpectator && (SPEC || govs.length"));
         assert!(EMBEDDED_INDEX.contains(".sort((a, b) => b.score - a.score || a.id - b.id)"));
         assert!(EMBEDDED_INDEX.contains("class=\"diplomacy-rank\">#${rank}"));
-        assert!(EMBEDDED_INDEX.contains("#side {\n    order: -1;"));
+        // The sidebar sits left of the map. Match the declaration rather than
+        // its formatting, so restyling the block cannot fail the rule.
+        let side_rule = EMBEDDED_INDEX
+            .split_once("#side {")
+            .and_then(|(_, rest)| rest.split_once('}'))
+            .map(|(rule, _)| rule)
+            .unwrap_or_default();
+        assert!(side_rule.contains("order: -1"));
         assert!(EMBEDDED_INDEX.contains("<strong>${state.turn}</strong>"));
         assert!(!EMBEDDED_INDEX.contains("${state.turn}/${maxTurns}"));
     }
