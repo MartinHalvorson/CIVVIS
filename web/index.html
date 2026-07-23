@@ -1713,14 +1713,16 @@ function cinematicUnitMapPoint(unit, now = performance.now()) {
   const actual = mv ? sampleUnitMove(mv, now) : unitMapPoint(unit.pos);
   if (mv) unitHeadings.set(unit.id, {x:actual.headingX, y:actual.headingY, at:now});
   const heading = unitHeadings.get(unit.id);
-  let lead = 0;
+  let lead = 0, headingLength = 0;
   if (heading) {
     const age = now - heading.at;
-    lead = age <= 2400 ? .46 : .46 * Math.max(0, 1 - (age - 2400) / 3600);
+    headingLength = Math.hypot(heading.x, heading.y);
+    const fade = age <= 2400 ? 1 : Math.max(0, 1 - (age - 2400) / 3600);
+    lead = S * SQ3 * .46 * fade;
   }
   return {
-    x:actual.x + (heading?.x || 0) * lead,
-    y:actual.y + (heading?.y || 0) * lead,
+    x:actual.x + (heading?.x || 0) / (headingLength || 1) * lead,
+    y:actual.y + (heading?.y || 0) / (headingLength || 1) * lead,
     focusX:actual.x, focusY:actual.y,
   };
 }
@@ -1756,13 +1758,14 @@ function animateDiff(prev, next) {
         anim.moves.delete(nu.id);
       } else {
         const positions = hasRoute ? route : [pu.pos, nu.pos];
-        let nearX = cur?.mapX ?? cam.x;
+        const current = cur ? sampleUnitMove(cur, now) : null;
+        let nearX = current?.x ?? cam.x;
         const mapPoints = positions.map(pos => {
           const point = unitMapPoint(pos, nearX);
           nearX = point.x;
           return point;
         });
-        if (cur) mapPoints[0] = {x:cur.mapX, y:cur.mapY, lift:cur.mapLift};
+        if (current) mapPoints[0] = {x:current.x, y:current.y, lift:current.lift};
         const start = mapPoints[0], end = mapPoints[mapPoints.length - 1];
         const steps = Math.max(1, mapPoints.length - 1);
         anim.moves.set(nu.id, {mapX:start.x, mapY:start.y, mapLift:start.lift,
