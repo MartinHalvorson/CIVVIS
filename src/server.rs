@@ -1669,6 +1669,13 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("startNewSimulation(\"restart\")"));
         assert!(EMBEDDED_INDEX.contains("startNewSimulation(\"fresh_code\")"));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/supervisor-new\""));
+        assert!(EMBEDDED_INDEX.contains(
+            "function supervisedSuccessorChanged(successor, finishedInstance, finishedSeed)"
+        ));
+        assert!(
+            EMBEDDED_INDEX.contains("waitForSupervisedSuccessor(finishedInstance, finishedSeed)")
+        );
+        assert!(EMBEDDED_INDEX.contains("st.seed !== state.seed"));
         assert!(!EMBEDDED_INDEX.contains("id=\"head-newgame\""));
         assert!(EMBEDDED_INDEX.contains("spectate: gameMode === \"ai_sim\""));
         assert!(!EMBEDDED_INDEX.contains("id=\"specchk\""));
@@ -1770,6 +1777,7 @@ mod tests {
     fn instance_tagged_spectator_url_routes_to_the_embedded_page() {
         assert_eq!(request_path("/"), "/");
         assert_eq!(request_path("/?instance=9232"), "/");
+        assert_eq!(request_path("/?instance=9232&game=17"), "/");
         assert_eq!(request_path("/state?instance=9232"), "/state");
     }
 

@@ -1214,28 +1214,41 @@ let serverInstance = null;
 let bootBusy = false, bootTimer = null;
 let supervisorReconnectTimer = null;
 let supervisorReconnectBusy = false;
+let supervisorReloading = false;
 
-function reloadForServerInstance(instance) {
+function reloadForSupervisedWorld(instance, seed) {
+  if (supervisorReloading) return;
+  supervisorReloading = true;
   clearTimeout(supervisorReconnectTimer);
   supervisorReconnectTimer = null;
-  // Give each promoted process a distinct URL. This both replaces the stale
-  // instance marker and guarantees that the successor's embedded UI assets
-  // are loaded rather than restored from the previous process's page cache.
+  // Give each promoted process and same-process successor a distinct URL.
+  // This resets transition-only browser state and also guarantees that a
+  // rebuilt runtime's embedded UI assets cannot come from the page cache.
   const next = new URL(window.location.href);
-  next.searchParams.set("instance", String(instance));
+  if (instance !== undefined && instance !== null)
+    next.searchParams.set("instance", String(instance));
+  if (seed !== undefined && seed !== null)
+    next.searchParams.set("game", String(seed));
   window.location.replace(next.toString());
 }
 
-function waitForSupervisedSuccessor(finishedInstance) {
+function supervisedSuccessorChanged(successor, finishedInstance, finishedSeed) {
+  const processChanged = successor.server_instance !== undefined &&
+    successor.server_instance !== finishedInstance;
+  const worldChanged = successor.seed !== undefined && finishedSeed !== undefined &&
+    successor.seed !== finishedSeed;
+  return processChanged || worldChanged;
+}
+
+function waitForSupervisedSuccessor(finishedInstance, finishedSeed) {
   if (supervisorReconnectBusy || supervisorReconnectTimer) return;
   const poll = async () => {
     supervisorReconnectTimer = null;
     supervisorReconnectBusy = true;
     try {
       const successor = await fetchJSON("/state", {}, 3000);
-      if (successor.server_instance !== undefined &&
-          successor.server_instance !== finishedInstance) {
-        reloadForServerInstance(successor.server_instance);
+      if (supervisedSuccessorChanged(successor, finishedInstance, finishedSeed)) {
+        reloadForSupervisedWorld(successor.server_instance, successor.seed);
         return;
       }
     } catch (e) {
@@ -1575,7 +1588,15 @@ function render(st, recordChronicle = true) {
   // binary. Reload once so this tab also picks up the new HTML/JavaScript.
   if (serverInstance !== null && st.server_instance !== undefined &&
       st.server_instance !== serverInstance) {
-    reloadForServerInstance(st.server_instance);
+    reloadForSupervisedWorld(st.server_instance, st.seed);
+    return;
+  }
+  // The server can also begin its successor in-process. Treat its seed as
+  // part of the supervised runtime identity so stale transition state cannot
+  // leave the completed map painted until a person refreshes the page.
+  if (state && st.supervised && st.seed !== undefined &&
+      state.seed !== undefined && st.seed !== state.seed) {
+    reloadForSupervisedWorld(st.server_instance, st.seed);
     return;
   }
   if (st.server_instance !== undefined) serverInstance = st.server_instance;
@@ -4786,6 +4807,7 @@ async function startNewSimulation(mode) {
     clearTimeout(specTimer);
     if (supervised) {
       const finishedInstance = state.server_instance;
+      const finishedSeed = state.seed;
       specPaused = true;
       document.getElementById("specpause").textContent = "▶ Resume";
       reportSpecStatus();
@@ -4797,7 +4819,7 @@ async function startNewSimulation(mode) {
       if (respawn) respawn.textContent = mode === "fresh_code"
         ? "getting fresh code · rebuilding · starting new sim"
         : "restarting sim on existing code";
-      waitForSupervisedSuccessor(finishedInstance);
+      waitForSupervisedSuccessor(finishedInstance, finishedSeed);
       return;
     }
 
