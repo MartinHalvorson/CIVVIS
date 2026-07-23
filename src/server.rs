@@ -1438,12 +1438,15 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             respond_json(stream, &o);
         }
         ("POST", "/supervisor-new") => {
+            let mut session = sh.session.lock().unwrap();
             let result = session.request_supervised_new_game(&parsed);
             let mut out = session.state();
             out["error"] = match result {
                 Ok(()) => Value::Null,
                 Err(error) => Value::String(error),
             };
+            drop(session);
+            decorate(&mut out, sh);
             respond_json(stream, &out);
         }
         _ => respond(
