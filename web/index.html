@@ -3767,6 +3767,44 @@ function draw() {
       hexPath(x, y); cx.strokeStyle = "#f0c674"; cx.lineWidth = 3; cx.stroke();
     }
   }
+  // --- espionage in progress. A spy is the only piece on the board with no
+  // presence on it at all: it sits inside a city, runs a mission with a known
+  // target and a known end turn, and the map showed nothing whatsoever. A
+  // keyhole on the city it is working, in its owner's colour, with the turns
+  // left before the job lands.
+  // The server sends only spies the observer owns or has captured (a spectator
+  // sees every side), so drawing them reveals nothing that was hidden.
+  for (const sp of state.spies || []) {
+    const m = sp && sp.mission;
+    if (!m || !m.target) continue;
+    const mt = TMAP.get(key(m.target));
+    const [mx, myy] = hexXY(m.target[0], m.target[1]);
+    const my = myy - (mt ? elev(mt) : 0);
+    const k = UI_K();
+    // clear of the settlement, whose footprint widens with population
+    const bx = mx - 21 * k, by = my - 2;
+    const left = Math.max(0, (m.ends || 0) - state.turn);
+    cx.save();
+    cx.fillStyle = "#12161de8";
+    cx.beginPath(); cx.arc(bx, by, 7 * k, 0, 7); cx.fill();
+    cx.strokeStyle = sp.captured_by !== null && sp.captured_by !== undefined
+      ? "#8a8f98" : pcol(sp.owner);
+    cx.lineWidth = 1.6; cx.stroke();
+    cx.fillStyle = "#eae4d4";                          // keyhole
+    cx.beginPath(); cx.arc(bx, by - 1.5 * k, 2.1 * k, 0, 7); cx.fill();
+    cx.beginPath();
+    cx.moveTo(bx - 1.1 * k, by + 0.3 * k); cx.lineTo(bx + 1.1 * k, by + 0.3 * k);
+    cx.lineTo(bx + 2 * k, by + 3.8 * k); cx.lineTo(bx - 2 * k, by + 3.8 * k);
+    cx.closePath(); cx.fill();
+    if (left > 0) {
+      cx.font = "bold " + (8 * k).toFixed(1) + "px sans-serif";
+      cx.textAlign = "center"; cx.textBaseline = "middle";
+      cx.strokeStyle = "#10151d"; cx.lineWidth = 2.6;
+      cx.strokeText(left + "t", bx, by + 11 * k);
+      cx.fillStyle = "#e6dfcd"; cx.fillText(left + "t", bx, by + 11 * k);
+    }
+    cx.restore();
+  }
   // --- units
   const sorted = [...state.units].sort((a, b) =>
     (hexXY(a.pos[0], a.pos[1])[1] - hexXY(b.pos[0], b.pos[1])[1]) ||
