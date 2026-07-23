@@ -2,7 +2,7 @@
 use std::time::Instant;
 
 use civvis::ai::{run_game, AdvancedAi};
-use civvis::game::Game;
+use civvis::game::{Game, VictoryConditions};
 use civvis::setup::{GameSpeed, MapScript, MapSize};
 
 fn arg(args: &[String], key: &str, default: i64) -> i64 {
@@ -26,6 +26,25 @@ fn arg_optional(args: &[String], key: &str) -> Option<i64> {
         .position(|value| value == key)
         .and_then(|index| args.get(index + 1))
         .and_then(|value| value.parse().ok())
+}
+
+fn victory_conditions(args: &[String]) -> VictoryConditions {
+    let Some(enabled) = args
+        .iter()
+        .position(|value| value == "--victories")
+        .and_then(|index| args.get(index + 1))
+    else {
+        return VictoryConditions::default();
+    };
+    let has = |name: &str| enabled.split(',').any(|candidate| candidate == name);
+    VictoryConditions {
+        science: has("science"),
+        culture: has("culture"),
+        religious: has("religious"),
+        diplomatic: has("diplomatic"),
+        domination: has("domination"),
+        score: has("score"),
+    }
 }
 
 fn auto_cs(args: &[String], players: i64) -> usize {
@@ -280,7 +299,7 @@ fn main() {
                     max_turns: arg_optional(&args, "--turns")
                         .map(|turns| turns as u32)
                         .unwrap_or_else(|| game_speed.turn_limit()),
-                    victory_conditions: Default::default(),
+                    victory_conditions: victory_conditions(&args),
                     num_city_states: auto_cs(&args, players),
                     spectate: args.iter().any(|a| a == "--spectate" || a == "--watch"),
                     supervised: args.iter().any(|a| a == "--supervised"),
@@ -295,6 +314,7 @@ fn main() {
                       [--city-states N] [--games N] [--ais a,b] [--port N] [--no-open] \
                       [--map pangaea|continents|small_continents|inland_sea] \
                       [--speed online|quick|standard|epic|marathon] \
+                      [--victories science,culture,religious,diplomatic,domination,score] \
                       [--spectate] [--supervised] [--resume checkpoint.json]"
             );
         }

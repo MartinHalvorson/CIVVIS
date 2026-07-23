@@ -440,6 +440,37 @@ def session_settings(state: dict[str, Any], defaults: dict[str, Any]) -> dict[st
     }
 
 
+def manual_new_game_request(
+    state: dict[str, Any],
+) -> tuple[str, dict[str, Any]] | None:
+    """Return a normalized manual restart request emitted by the live server."""
+    request = state.get("supervisor_request")
+    if not isinstance(request, dict):
+        return None
+    mode = request.get("mode")
+    values = request.get("settings")
+    if (
+        mode not in ("restart", "fresh_code")
+        or request.get("server_instance") != state.get("server_instance")
+        or not isinstance(values, dict)
+    ):
+        return None
+    try:
+        settings = {
+            "players": int(values["players"]),
+            "width": int(values["width"]),
+            "height": int(values["height"]),
+            "city_states": int(values["city_states"]),
+            "turns": int(values["turns"]),
+            "map": str(values["map"]),
+            "speed": str(values["speed"]),
+            "victories": [str(value) for value in values["victories"]],
+        }
+    except (KeyError, TypeError, ValueError):
+        return None
+    return mode, settings
+
+
 def result_standings(state: dict[str, Any]) -> str | None:
     """Format a compact durable record before the result server is retired."""
     players = [
@@ -502,6 +533,8 @@ def server_command(
     ]
     if resume is not None:
         args.extend(("--resume", str(resume)))
+    if "victories" in settings:
+        args.extend(("--victories", ",".join(settings["victories"])))
     if not open_browser:
         args.append("--no-open")
     return args
@@ -836,6 +869,49 @@ def main() -> int:
             busy_reported = False
             busy_check_at = 0.0
             busy_until = 0.0
+
+            manual_request = manual_new_game_request(state)
+            if manual_request is not None:
+                mode, requested_settings = manual_request
+                if mode == "fresh_code":
+                    if prebuild_process is None:
+                        log("fresh-code sim requested; fetching and rebuilding")
+                        prebuild_process = start_background_prebuild()
+                        time.sleep(args.poll)
+                        continue
+                    build_status = prebuild_process.poll()
+                    if build_status is None:
+                        time.sleep(args.poll)
+                        continue
+                    prebuild_process = None
+                    if build_status != 0 or not runtime_matches(source_snapshot()):
+                        log("fresh-code build is not ready; preserving the current sim and retrying")
+                        time.sleep(max(0.1, args.build_retry))
+                        continue
+                    log("fresh-code build is ready; starting a new simulation")
+                else:
+                    log("restart requested; starting a new simulation on existing code")
+
+                stop_server(process, adopted_pid)
+                process = None
+                adopted_pid = None
+                try:
+                    save_path.unlink()
+                except FileNotFoundError:
+                    pass
+                settings = requested_settings
+                process = start_server(args.port, settings, False)
+                state = wait_for_server(args.port, process)
+                unavailable_since = None
+                last_progress = progress_marker(state)
+                progress_at = time.monotonic()
+                checkpointed_progress = None
+                checkpoint_at = 0.0
+                refresh_pending = False
+                refresh_at = 0.0
+                source_check_at = time.monotonic() + max(1.0, args.source_check_interval)
+                continue
+
             settings = session_settings(state, settings)
             if state.get("winner") is None:
                 now = time.monotonic()
