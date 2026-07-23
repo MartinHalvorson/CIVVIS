@@ -167,6 +167,7 @@ def census(modifiers: Modifiers) -> list[dict]:
                 "rows": rows,
                 "status": entry.get("status", "unmodelled"),
                 "note": entry.get("note", ""),
+                "verified": bool(entry.get("verified")),
                 "collections": dict(collections_by_effect[effect].most_common()),
                 "owners": dict(owners[effect].most_common(4)),
             }
@@ -198,7 +199,16 @@ def report(entries: list[dict], modifiers: Modifiers, install: Path, limit: int)
     # effects covered most rows, hardcoding them would finish the job; if the
     # tail is long, only an interpreter reaches the end of it.
     ranked = sorted((entry["rows"] for entry in entries), reverse=True)
-    lines += ["", "| Share of rows | Effects needed |", "|---|---:|"]
+    verified = sum(entry["rows"] for entry in entries if entry["verified"])
+    claimed = by_status["implemented"] + by_status["partial"]
+    lines += [
+        "",
+        f"Of the {claimed} covered rows, {verified} are verified row by row "
+        "against the shipped modifiers; the rest are inspection judgements.",
+        "",
+        "| Share of rows | Effects needed |",
+        "|---|---:|",
+    ]
     for share in (50, 80, 95, 100):
         running = 0
         needed = 0

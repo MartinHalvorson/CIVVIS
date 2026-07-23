@@ -13,7 +13,9 @@
     "Per-row verification is what turns this census into a proof, and it is the",
     "next step; until then treat 'implemented' as a claim to be checked, not a",
     "guarantee. Anything absent from this file counts as unmodelled, so newly",
-    "shipped content raises the backlog rather than hiding in it."
+    "shipped content raises the backlog rather than hiding in it.",
+    "",
+    "A 'verified' entry has had every shipped row drilled with --effect and matched against the CIVVIS path that covers it, or attributed to content CIVVIS does not model. Everything else is still an inspection judgement."
   ],
   "effects": {
     "ATTACH_MODIFIER": {
@@ -78,7 +80,8 @@
     },
     "ADJUST_CITY_FREE_POWER": {
       "status": "implemented",
-      "note": "Free Power from improvements and Industrial Zone Logistics."
+      "verified": true,
+      "note": "Verified row by row: Geothermal Plant 4, Hydroelectric Dam 6, Wind/Solar/Offshore Wind 2 each, Reyna's Renewable Subsidizer +2 on each of those five, and Aerospace Contractors' Spaceport 3 all execute with the shipped amounts. The three remaining rows are Cardiff, a city-state outside CIVVIS' modelled roster, which is content scope rather than effect scope."
     },
     "ADJUST_CITY_GREATWORK_YIELD": {
       "status": "implemented",
