@@ -20274,7 +20274,13 @@ impl Game {
         // observations, so a search that never observes leaves it be. What
         // remains — explored ground and, below, Natural-Wonder discovery —
         // does change the game and is kept either way.
-        if self.track_fog_memory {
+        // A city-state's or barbarian's remembered map is never read: no rule
+        // and no agent consults it, allies pool sight only among major
+        // civilizations, and the browser refuses to view a minor seat at all.
+        // Most seats in a game are minor, so keeping their memory was most of
+        // the memory kept.
+        let observed_seat = !self.players[pid].is_minor && !self.players[pid].is_barbarian;
+        if self.track_fog_memory && observed_seat {
             let turn = self.turn;
             let tiles: Vec<(Pos, RememberedTile)> = visible
                 .iter()
@@ -20306,9 +20312,9 @@ impl Game {
                 player.remembered_cities.insert(city.id, city);
             }
         } else {
-            // `newly_explored` is exactly `visible - explored`, so extending
-            // by it reaches the same explored set as extending by everything
-            // visible.
+            // Explored ground is kept for every seat either way: minor
+            // civilizations steer their own exploration by it, and it decides
+            // Natural-Wonder discovery.
             self.players[pid]
                 .explored
                 .extend(newly_explored.iter().copied());
