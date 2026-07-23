@@ -201,6 +201,7 @@
   }
   button:hover { transform: translateY(-1px); background: linear-gradient(180deg, #315048, #223a34); border-color: #57776d; }
   button:active { transform: translateY(0); }
+  button:disabled { opacity: .5; cursor: default; pointer-events: none; }
   button.primary {
     width: 100%; padding: 12px 14px; margin: 0; border-radius: 11px;
     color: #17160f; background: linear-gradient(135deg, #f0d58f, #c99e4e);
@@ -539,9 +540,10 @@
   .shortcut-grid span { color: var(--muted); font-size: 9px; }
   kbd { display: inline-grid; min-width: 19px; height: 18px; place-items: center; margin-right: 5px; padding: 0 4px; border-radius: 5px; color: #cbd5d0; background: #091310; border: 1px solid #354c44; box-shadow: inset 0 -1px #000; font: 700 8px Inter, sans-serif; }
   #newgame-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: end; }
-  #newgame-options button { margin: 0; height: 34px; }
+  #newgame-options button { margin: 0; }
   .sim-actions { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-  .sim-actions button { min-height: 34px; height: auto; padding-inline: 7px; }
+  .sim-actions button { min-height: 44px; padding: 6px 8px; line-height: 1.25; }
+  .sim-actions .sub { display: block; margin-top: 2px; color: var(--muted); font-size: 8px; font-weight: 600; letter-spacing: .04em; }
   .victory-options { grid-column: 1 / -1; padding: 9px 10px 10px; border: 1px solid var(--line-soft); border-radius: 9px; background: #09131080; }
   .victory-options h2 { margin-bottom: 8px; }
   .victory-option-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px 9px; }
@@ -847,9 +849,9 @@
           </div>
         </div>
         <div class="sim-actions">
-          <button id="default-settings" title="Restore the stock simulation setup">Default settings</button>
-          <button id="restart-sim">Restart sim · existing settings</button>
-          <button id="fresh-sim" title="Get the latest code, rebuild, and start a new simulation">New sim · fresh code</button>
+          <button id="default-settings" title="Restore the stock simulation setup">Defaults<span class="sub">stock setup</span></button>
+          <button id="restart-sim" title="Start a new run with the current settings">Restart sim<span class="sub">same settings</span></button>
+          <button id="fresh-sim" title="Get the latest code, rebuild, and start a new simulation">New sim<span class="sub">fresh code</span></button>
         </div>
       </div>
       </div>
@@ -880,7 +882,7 @@
         </div>
         <div class="speed-row"><span>Watch pace</span>
           <select id="specspeed" title="Wall-clock time for one full game turn">
-            <option value="0">Lightning · as fast as possible</option>
+            <option value="0">Lightning · max speed</option>
             <option value="1000" selected>Blitz · 1s / turn</option>
             <option value="2000">Fast · 2s / turn</option>
             <option value="4000">Standard · 4s / turn</option>

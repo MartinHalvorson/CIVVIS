@@ -1990,12 +1990,13 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("Multiplayer · later"));
         assert!(EMBEDDED_INDEX.contains("class=\"sim-actions\""));
         assert!(EMBEDDED_INDEX.contains("id=\"default-settings\""));
-        assert!(EMBEDDED_INDEX.contains("Default settings"));
+        assert!(EMBEDDED_INDEX.contains(">Defaults<span class=\"sub\">stock setup</span>"));
         assert!(EMBEDDED_INDEX.contains(
-            "id=\"restart-sim\">Restart sim · existing settings"
+            ">Restart sim<span class=\"sub\">same settings</span>"
         ));
+        assert!(EMBEDDED_INDEX.contains("id=\"restart-sim\""));
         assert!(EMBEDDED_INDEX.contains("id=\"fresh-sim\""));
-        assert!(EMBEDDED_INDEX.contains("New sim · fresh code"));
+        assert!(EMBEDDED_INDEX.contains(">New sim<span class=\"sub\">fresh code</span>"));
         assert!(EMBEDDED_INDEX.contains("async function startNewSimulation(mode)"));
         assert!(EMBEDDED_INDEX.contains("function restoreDefaultSimulationSettings()"));
         assert!(EMBEDDED_INDEX.contains(
