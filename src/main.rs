@@ -34,14 +34,31 @@ fn victory_conditions(args: &[String]) -> VictoryConditions {
     else {
         return VictoryConditions::default();
     };
-    let has = |name: &str| enabled.split(',').any(|candidate| candidate == name);
-    VictoryConditions {
-        science: has("science"),
-        culture: has("culture"),
-        religious: has("religious"),
-        diplomatic: has("diplomatic"),
-        domination: has("domination"),
-        score: has("score"),
+    VictoryConditions::parse(enabled).unwrap_or_else(|why| {
+        eprintln!(
+            "--victories: {why}; choose from {:?}",
+            VictoryConditions::NAMES
+        );
+        std::process::exit(2);
+    })
+}
+
+/// A lobby checkbox, spelled the several ways a preset or a script writes one.
+fn arg_toggle(args: &[String], key: &str, default: bool) -> bool {
+    let Some(value) = args
+        .iter()
+        .position(|arg| arg == key)
+        .and_then(|index| args.get(index + 1))
+    else {
+        return default;
+    };
+    match value.trim().to_ascii_lowercase().as_str() {
+        "on" | "true" | "yes" | "1" => true,
+        "off" | "false" | "no" | "0" => false,
+        other => {
+            eprintln!("{key} takes on or off, got {other:?}");
+            std::process::exit(2);
+        }
     }
 }
 
@@ -141,6 +158,9 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
             }
             intensity as u8
         },
+        // A lobby checkbox like any other: competitive team events play with
+        // barbarians off, so a preset has to be able to say so.
+        barbarians: arg_toggle(args, "--barbarians", true),
         ..GameOptions::new(
             player_count,
             auto_dimension(args, "--width", players, true),
@@ -711,7 +731,7 @@ fn main() {
                       [--map pangaea|continents|small_continents|inland_sea] \
                       [--difficulty settler|chieftain|warlord|prince|king|emperor|immortal|deity] \
                       [--speed online|quick|standard|epic|marathon] \
-                      [--disasters 0|1|2|3|4] \
+                      [--disasters 0|1|2|3|4] [--barbarians on|off] \
                       [--human-seats 0,1] [--teams 0,0,1,1] [--mods path/to/mod,path/to/other] \
                       [--victories science,culture,religious,diplomatic,domination,score] \
                       [--spectate] [--supervised] [--resume checkpoint.json] [--strict] \

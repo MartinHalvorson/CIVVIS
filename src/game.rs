@@ -9427,6 +9427,49 @@ pub struct VictoryConditions {
 }
 
 impl VictoryConditions {
+    /// The lobby's victory checkboxes, in the order the setup screen lists them.
+    pub const NAMES: [&'static str; 6] = [
+        "science",
+        "culture",
+        "religious",
+        "diplomatic",
+        "domination",
+        "score",
+    ];
+
+    /// Read a comma-separated list of the paths a lobby leaves enabled. An
+    /// unrecognised name is refused rather than quietly switching off the path
+    /// it was meant to keep: a misspelt setting that disables every victory
+    /// produces a game nobody can win, which is indistinguishable from a
+    /// correctly configured one until the turn limit.
+    pub fn parse(list: &str) -> Result<VictoryConditions, String> {
+        let mut conditions = VictoryConditions {
+            science: false,
+            culture: false,
+            religious: false,
+            diplomatic: false,
+            domination: false,
+            score: false,
+        };
+        let mut named = 0;
+        for name in list.split(',').map(str::trim).filter(|n| !n.is_empty()) {
+            match name {
+                "science" => conditions.science = true,
+                "culture" => conditions.culture = true,
+                "religious" => conditions.religious = true,
+                "diplomatic" => conditions.diplomatic = true,
+                "domination" => conditions.domination = true,
+                "score" => conditions.score = true,
+                other => return Err(format!("unknown victory {other:?}")),
+            }
+            named += 1;
+        }
+        if named == 0 {
+            return Err("no victory named".to_string());
+        }
+        Ok(conditions)
+    }
+
     pub fn is_enabled(self, victory_type: &str) -> bool {
         match victory_type {
             "science" => self.science,
@@ -42222,6 +42265,31 @@ mod victory_conditions {
             assert_eq!(game.winner, Some(0), "enabled {victory_type} did not win");
             assert_eq!(game.victory_type.as_deref(), Some(victory_type));
         }
+    }
+
+    #[test]
+    fn victory_settings_parse_the_lobby_list_and_refuse_a_misspelling() {
+        let pinned = VictoryConditions::parse("science,culture, score").unwrap();
+        assert_eq!(
+            pinned,
+            VictoryConditions {
+                science: true,
+                culture: true,
+                religious: false,
+                diplomatic: false,
+                domination: false,
+                score: true,
+            }
+        );
+        assert_eq!(
+            VictoryConditions::parse(&VictoryConditions::NAMES.join(",")).unwrap(),
+            VictoryConditions::default()
+        );
+        // A name the lobby does not know must be refused. Accepting it would
+        // leave every path switched off, and a game nobody can win looks
+        // exactly like a working one until the turn limit arrives.
+        assert!(VictoryConditions::parse("religion").is_err());
+        assert!(VictoryConditions::parse("").is_err());
     }
 
     #[test]

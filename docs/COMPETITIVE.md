@@ -30,10 +30,36 @@ CIVVIS treats "tournament rules" as two distinct layers:
   pin like any other; `--disasters 0` reproduces a no-disaster lobby
   exactly, leaving only the CO2-driven sea-level rise.
 
-For a stock 4v4 match:
+## The CPL lobby, setting by setting
+
+The league publishes the lobby it plays, and every line of it is a pre-game
+setting an engine either reproduces or does not. Where CIVVIS reproduces one,
+this is the flag that pins it:
+
+| CPL setting | CIVVIS |
+|---|---|
+| Game Speed: Online | `--speed online` |
+| Limit Turns: By Game Speed | default (`data/speeds.json`; Online is 250) |
+| Map Size: Firaxis Default for Number of Players | default (`MapSize::for_players`) |
+| City States: Firaxis Default for Map Size | default (`--city-states` overrides) |
+| All Victory Conditions: ENABLED | default (`--victories` pins a subset) |
+| Barbarians ON for FFA, OFF for Teamers | `--barbarians on\|off` |
+| Tribal Villages: ENABLED | default (`data/goody_huts.json`) |
+| Teams Share Visibility: ENABLED | implied by `--teams` |
+| Start Era: Ancient | default |
+| All Game Modes: DISABLED | default (no NFP modes) |
+| Duplicate Civs and Leaders: ALLOWED | seats past the eighth reuse the roster |
+| Start Position: Balanced | not ported — see the gaps table below |
+| World Age / Temperature / Rainfall / Sea Level | not exposed by the generator |
+| Turn Timer: MPH Dynamic · Turn Mode: Simultaneous | out of scope: sequential engine |
+| No Gold or strategic-resource trading, no military alliances | referee policy, not a rule |
+
+For a stock 4v4 match, which is a teamers lobby and so plays without
+barbarians:
 
 ```bash
-civvis play --players 8 --teams 0,0,0,0,1,1,1,1 --speed online --spectate
+civvis play --players 8 --teams 0,0,0,0,1,1,1,1 --speed online \
+  --barbarians off --spectate
 ```
 
 ## Remaining tournament-specific gaps
@@ -56,6 +82,8 @@ than silently tracking latest releases, so old matches remain reproducible.
 
 - [Civilization Players League](https://cpl.gg/) — current competitive community
   and its maintained mod stack.
+- [CPL in-game rules](https://cpl.gg/rules/in-game-rules/) — the published lobby
+  settings tabulated above.
 - [Civ VI World Cup](https://cpl.gg/civilization-world-cup/) — 4v4 format and map
   rotation.
 - [Official team overview](https://www.civilopedia.net/en-US/standard-rules/concepts/teams_1/)
