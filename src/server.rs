@@ -1043,8 +1043,9 @@ impl Session {
         if g.current == pid && g.winner.is_none() {
             let _ = g.apply(pid, &Action::EndTurn);
         }
-        let actions = g.log[log_start..]
-            .iter()
+        let actions = g
+            .log
+            .since(log_start)
             .map(|(_, action)| action.clone())
             .collect();
         (pid, actions)

@@ -4,6 +4,7 @@
 #![recursion_limit = "512"]
 
 pub mod action_space;
+pub mod actionlog;
 pub mod ai;
 pub mod belief;
 pub mod elo;

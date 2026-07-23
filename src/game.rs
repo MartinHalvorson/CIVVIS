@@ -8991,7 +8991,7 @@ pub struct Game {
     /// Every successfully applied action, in order — the game is exactly
     /// f(seed+params, log), so this is the replay/desync-detection record.
     /// Runtime-only (not in saves yet).
-    pub log: Vec<(usize, Action)>,
+    pub log: crate::actionlog::ActionLog,
     /// Per-civilization event stream; see [`Event`].
     pub events: Vec<Event>,
 }
@@ -9148,7 +9148,7 @@ impl From<GameSer> for Game {
             active_emergencies: s.active_emergencies,
             occ: BTreeMap::new(),
             city_by_pos: BTreeMap::new(),
-            log: Vec::new(),
+            log: crate::actionlog::ActionLog::new(),
         };
         for u in g.units.values() {
             g.occ.entry(u.pos).or_default().push(u.id);
@@ -9433,7 +9433,7 @@ impl Game {
             active_emergencies: Vec::new(),
             occ: BTreeMap::new(),
             city_by_pos: BTreeMap::new(),
-            log: Vec::new(),
+            log: crate::actionlog::ActionLog::new(),
             events: Vec::new(),
         };
         for i in 0..num_players {
@@ -25606,7 +25606,7 @@ impl Game {
             } else {
                 self.refresh_team_visibility(pid);
             }
-            self.log.push((pid, action.clone()));
+            self.log.push(pid, action.clone());
         }
         r
     }
