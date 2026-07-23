@@ -6109,6 +6109,16 @@ impl AdvancedAi {
             } else {
                 1.2
             };
+        // An Original Capital cannot be razed, so taking it before the
+        // surrounding population is controlled creates a forced keep/flip/
+        // recapture cycle. Make the rest of that population the campaign
+        // objective first; the cost disappears as soon as the capital can be
+        // held, or when taking it would end the war or game outright.
+        let unsupported_capture = if Self::should_defer_city_capture(g, pid, city.id) {
+            10_000.0
+        } else {
+            0.0
+        };
 
         let defenses = g.city_strength(city.id) * 1.8
             + city.hp.max(0) as f64 * 0.12
@@ -6158,6 +6168,7 @@ impl AdvancedAi {
             + local_balance
             + approach_cost
             + occupation_risk
+            + unsupported_capture
             - development
             - capital_value
             - science_denial
@@ -7701,6 +7712,9 @@ impl AdvancedAi {
                 .get(&city)
                 .is_some_and(|city| city.owner == pid);
             if captured {
+                if Self::should_defer_city_capture(g, pid, city) {
+                    return f64::NEG_INFINITY;
+                }
                 value += 520.0
                     + before.pop.max(1) as f64 * 14.0
                     + before.districts.len() as f64 * 24.0
@@ -8968,6 +8982,18 @@ impl AdvancedAi {
     /// established. Mirroring the rules engine's pressure equation here lets
     /// the mandatory keep/raze decision price that short horizon explicitly.
     fn population_loyalty_delta(g: &Game, pid: usize, city_id: u32) -> f64 {
+        Self::population_loyalty_delta_with_capture(g, pid, city_id, false)
+    }
+
+    /// Forecast the pressure immediately after a conquest without cloning the
+    /// entire world. The target changes sides and retains the ceiling of 75%
+    /// Population, exactly as `Game::transfer_city` will do.
+    fn population_loyalty_delta_with_capture(
+        g: &Game,
+        pid: usize,
+        city_id: u32,
+        project_capture: bool,
+    ) -> f64 {
         let city = &g.cities[&city_id];
         let age_factor = |owner: usize| match g.players[owner].age.as_str() {
             "golden" | "heroic" => 1.5,
@@ -8977,30 +9003,92 @@ impl AdvancedAi {
         let mut domestic = 0.0;
         let mut foreign = 0.0;
         for source in g.cities.values() {
-            if g.players[source.owner].is_minor || g.players[source.owner].is_barbarian {
+            let source_owner = if project_capture && source.id == city_id {
+                pid
+            } else {
+                source.owner
+            };
+            if g.players[source_owner].is_minor || g.players[source_owner].is_barbarian {
                 continue;
             }
             let distance = g.wdist(source.pos, city.pos);
             if distance > 9 {
                 continue;
             }
-            let mut pressure = source.pop as f64
+            let source_pop = if project_capture && source.id == city_id {
+                ((source.pop * 3 + 3) / 4).max(1)
+            } else {
+                source.pop
+            };
+            let mut pressure = source_pop as f64
                 * (10 - distance) as f64
-                * age_factor(source.owner);
-            if source.is_capital && source.original_owner == source.owner {
-                pressure += source.pop as f64;
+                * age_factor(source_owner);
+            if source.is_capital && source.original_owner == source_owner {
+                pressure += source_pop as f64;
             }
-            if source.owner == pid {
+            if source_owner == pid {
                 domestic += pressure;
-            } else if !g.same_team(pid, source.owner)
+            } else if !g.same_team(pid, source_owner)
                 && !g
-                    .alliance_with(pid, source.owner)
+                    .alliance_with(pid, source_owner)
                     .is_some_and(|alliance| alliance.kind == "cultural")
             {
                 foreign += pressure;
             }
         }
         (10.0 * (domestic - foreign) / (domestic.min(foreign) + 0.5)).clamp(-20.0, 20.0)
+    }
+
+    /// A city that cannot be razed or liberated should not be captured merely
+    /// to hand it back through Loyalty and attack it again. Wait only when the
+    /// projected revolt is imminent; eliminating the defender or completing
+    /// Domination remains decisive enough to take immediately.
+    fn should_defer_city_capture(g: &Game, pid: usize, city_id: u32) -> bool {
+        let city = &g.cities[&city_id];
+        let razable = !city.is_capital
+            && !g.players[city.original_owner].is_minor
+            && city.original_owner != pid
+            && !g.are_allied(pid, city.original_owner);
+        let liberatable = city.original_owner != pid
+            && city.owner != city.original_owner
+            && g.players
+                .get(city.original_owner)
+                .is_some_and(|founder| !founder.is_barbarian);
+        if razable || liberatable || g.player_city_ids(city.owner).len() <= 1 {
+            return false;
+        }
+
+        let completes_domination = g
+            .players
+            .iter()
+            .filter(|candidate| {
+                !candidate.is_minor
+                    && !candidate.is_barbarian
+                    && !g.same_team(pid, candidate.id)
+            })
+            .all(|original_owner| {
+                if original_owner.id == pid {
+                    return true;
+                }
+                g.cities
+                    .values()
+                    .find(|candidate| {
+                        candidate.is_capital && candidate.original_owner == original_owner.id
+                    })
+                    .is_none_or(|capital| capital.id == city_id || capital.owner == pid)
+            });
+        if completes_domination {
+            return false;
+        }
+
+        let loyalty_delta =
+            Self::population_loyalty_delta_with_capture(g, pid, city_id, true);
+        let turns_to_flip = if loyalty_delta < 0.0 {
+            50.0 / -loyalty_delta
+        } else {
+            f64::INFINITY
+        };
+        loyalty_delta <= -8.0 && turns_to_flip <= 4.0
     }
 
     fn city_disposition_value(
@@ -12894,6 +12982,133 @@ mod tests {
             Some((0, Action::Attack { unit, target: action_target }))
                 if *unit == robot && *action_target == target
         ));
+    }
+
+    #[test]
+    fn conquest_waits_to_recapture_an_unholdable_original_capital() {
+        let mut game = Game::new_full(3, 30, 18, 71_020, 120, 0, false);
+        for pid in 0..3 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            let position = game.units[&settler].pos;
+            game.found_city_for(pid, position, None);
+        }
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+
+        let target_city = game.player_city_ids(1)[0];
+        let target = game.cities[&target_city].pos;
+        let pressure_site = game
+            .wdisk(target, 6)
+            .into_iter()
+            .find(|position| {
+                (4..=6).contains(&game.wdist(*position, target))
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+                    && game.city_at(*position).is_none()
+                    && game
+                        .cities
+                        .values()
+                        .all(|city| game.wdist(city.pos, *position) >= 4)
+            })
+            .expect("test map has a nearby pressure city site");
+        let pressure_city =
+            game.found_city_for(1, pressure_site, Some("Pressure".to_string()));
+        let remote_site = game
+            .map
+            .tiles
+            .iter()
+            .find_map(|(position, tile)| {
+                (game.wdist(*position, target) > 9
+                    && game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+                    && game.city_at(*position).is_none()
+                    && game
+                        .cities
+                        .values()
+                        .all(|city| game.wdist(city.pos, *position) >= 4))
+                .then_some(*position)
+            })
+            .expect("test map has a remote surviving city site");
+        let remote_city = game.found_city_for(1, remote_site, Some("Reserve".to_string()));
+        for city in game.cities.values_mut() {
+            city.pop = 1;
+        }
+        game.cities.get_mut(&pressure_city).unwrap().pop = 40;
+        game.cities.get_mut(&remote_city).unwrap().pop = 1;
+        {
+            let city = game.cities.get_mut(&target_city).unwrap();
+            city.hp = 0;
+            city.wall_hp = 0;
+            city.loyalty = 100.0;
+        }
+        let staging = game
+            .nbrs(target)
+            .into_iter()
+            .find(|position| {
+                game.map.get(*position).is_some_and(|tile| {
+                    game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                }) && game.units_at(*position).is_empty()
+            })
+            .expect("the capital has an open melee approach");
+        let attacker = game.spawn_test_unit("giant_death_robot", 0, staging);
+        game.at_war.insert((0, 1));
+        game.current = 0;
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: Some(target_city),
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: game.turn,
+        };
+        let capture = Action::Attack {
+            unit: attacker,
+            target,
+        };
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+
+        assert!(AdvancedAi::should_defer_city_capture(&game, 0, target_city));
+        assert!(
+            ai.campaign_city_value(&game, 0, &game.cities[&target_city], GrandStrategy::Conquest)
+                > ai.campaign_city_value(
+                    &game,
+                    0,
+                    &game.cities[&pressure_city],
+                    GrandStrategy::Conquest,
+                ),
+            "the surrounding pressure city should become the campaign objective first"
+        );
+        assert_eq!(
+            ai.tactical_attack_value(&game, 0, attacker, &capture, &plan),
+            f64::NEG_INFINITY
+        );
+        let mut blocked = game.clone();
+        let _ = ai.advanced_military_step(&mut blocked, 0, attacker, &plan);
+        assert_eq!(
+            blocked.cities[&target_city].owner, 1,
+            "the army must not restart a forced capital recapture loop"
+        );
+
+        let mut supported = game;
+        supported.cities.get_mut(&pressure_city).unwrap().owner = 0;
+        assert_eq!(supported.player_city_ids(1).len(), 2);
+        assert!(!AdvancedAi::should_defer_city_capture(
+            &supported,
+            0,
+            target_city
+        ));
+        assert!(
+            ai.tactical_attack_value(&supported, 0, attacker, &capture, &plan)
+                .is_finite()
+        );
+        assert!(ai.advanced_military_step(&mut supported, 0, attacker, &plan));
+        assert_eq!(supported.cities[&target_city].owner, 0);
     }
 
     #[test]

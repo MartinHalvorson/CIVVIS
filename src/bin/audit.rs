@@ -39,6 +39,23 @@ fn negotiated_war_ended_early(war: &WarRecord) -> bool {
         && ended.saturating_sub(war.started) < WAR_MIN_TURNS
 }
 
+fn rapid_recapture_window(war: &WarRecord) -> Option<(String, u32, u32)> {
+    let mut captures: BTreeMap<String, Vec<u32>> = BTreeMap::new();
+    for highlight in &war.highlights {
+        if matches!(highlight.kind.as_str(), "city_captured" | "capital_captured") {
+            if let Some(city) = &highlight.city {
+                captures.entry(city.clone()).or_default().push(highlight.turn);
+            }
+        }
+    }
+    captures.into_iter().find_map(|(city, turns)| {
+        turns
+            .windows(3)
+            .find(|window| window[2].saturating_sub(window[0]) <= WAR_MIN_TURNS)
+            .map(|window| (city, window[0], window[2]))
+    })
+}
+
 #[derive(Default)]
 struct Findings {
     /// Rules the engine broke, keyed by a short signature so one recurring
@@ -297,6 +314,15 @@ fn audit_result(g: &Game, found: &mut Findings) {
                 );
             }
         }
+        if let Some((city, first, last)) = rapid_recapture_window(war) {
+            found.symptom(
+                "the same city is captured three times in ten turns",
+                format!(
+                    "{} repeatedly captured {city} from {} on turns {first}-{last}",
+                    sides.0, sides.1
+                ),
+            );
+        }
     }
 
     for player in &g.players {
@@ -420,7 +446,7 @@ mod tests {
 
     use civvis::game::{WarHighlight, WarRecord};
 
-    use super::negotiated_war_ended_early;
+    use super::{negotiated_war_ended_early, rapid_recapture_window};
 
     fn concluded_war(kind: &str) -> WarRecord {
         WarRecord {
@@ -452,5 +478,24 @@ mod tests {
     fn the_war_minimum_applies_to_peace_but_not_conquest() {
         assert!(negotiated_war_ended_early(&concluded_war("peace")));
         assert!(!negotiated_war_ended_early(&concluded_war("conquest")));
+    }
+
+    #[test]
+    fn rapid_loyalty_recaptures_are_visible_to_the_auditor() {
+        let mut war = concluded_war("peace");
+        war.highlights.splice(
+            1..1,
+            [20, 24, 27].map(|turn| WarHighlight {
+                turn,
+                kind: "capital_captured".to_string(),
+                actor: 0,
+                subject: 1,
+                city: Some("Loop City".to_string()),
+            }),
+        );
+        assert_eq!(
+            rapid_recapture_window(&war),
+            Some(("Loop City".to_string(), 20, 27))
+        );
     }
 }
