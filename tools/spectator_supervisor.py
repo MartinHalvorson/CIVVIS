@@ -116,6 +116,17 @@ def reexec_updated_supervisor(
     if command is None:
         return
     log("canonical supervisor advanced; adopting the live game under fresh code")
+    # Keep the deploy root stable across the hand-off. The re-exec runs the
+    # canonical script out of the private build worktree, so without pinning it
+    # the new process would recompute ROOT - and its log, runtime binary, and
+    # source paths - from that worktree instead of the deployment.
+    os.environ["CIVVIS_DEPLOY_ROOT"] = str(ROOT)
+    # Release the single-instance lock before handing off. On Windows os.execv
+    # spawns a fresh PID rather than replacing the image in place, so the
+    # re-exec'd process would otherwise find this still-exiting one holding the
+    # port lock, judge itself a duplicate, and exit - ending supervision on
+    # every self-update.
+    release_single_instance()
     os.execv(command[0], command)
 
 
@@ -1098,6 +1109,16 @@ def acquire_single_instance(port: int) -> bool:
         return False
     _INSTANCE_LOCKS[port] = handle
     return True
+
+
+def release_single_instance() -> None:
+    """Drop any held port locks so a re-exec of this process can re-acquire."""
+    for handle in _INSTANCE_LOCKS.values():
+        try:
+            handle.close()
+        except OSError:
+            pass
+    _INSTANCE_LOCKS.clear()
 
 
 def main() -> int:
