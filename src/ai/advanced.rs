@@ -551,6 +551,29 @@ impl AdvancedAi {
             .any(|(contender, _)| contender == pid)
     }
 
+    fn rocketry_readiness(&self, g: &Game, pid: usize) -> i32 {
+        let player = &g.players[pid];
+        let rocketry_path: Vec<_> = g
+            .rules
+            .techs
+            .keys()
+            .filter(|tech| self.tech_leads_to(g, tech, "rocketry"))
+            .collect();
+        let completed = rocketry_path
+            .iter()
+            .filter(|tech| player.techs.contains(tech.as_str()))
+            .count();
+        25 + (40 * completed / rocketry_path.len().max(1)) as i32
+    }
+
+    fn diplomatic_science_backup(&self, g: &Game, pid: usize, plan: &StrategicPlan) -> bool {
+        self.victory_target.is_none()
+            && g.victory_conditions.science
+            && plan.strategy == GrandStrategy::Diplomacy
+            && g.turn >= g.standard_duration(220)
+            && self.rocketry_readiness(g, pid) >= 45
+    }
+
     fn religious_conversion_tally(&self, g: &Game, pid: usize) -> (usize, usize) {
         let living_majors: Vec<usize> = g
             .players
@@ -617,17 +640,7 @@ impl AdvancedAi {
         // Spaceport. Count progress along that prerequisite path so adaptive
         // agents can make the initial commitment instead of remaining stuck
         // at the old 25% floor forever.
-        let rocketry_path: Vec<_> = g
-            .rules
-            .techs
-            .keys()
-            .filter(|tech| self.tech_leads_to(g, tech, "rocketry"))
-            .collect();
-        let completed_rocketry_path = rocketry_path
-            .iter()
-            .filter(|tech| player.techs.contains(tech.as_str()))
-            .count();
-        let readiness = 25 + (40 * completed_rocketry_path / rocketry_path.len().max(1)) as i32;
+        let readiness = self.rocketry_readiness(g, pid);
         let science = tech_progress
             .max(readiness)
             .max(project_progress)
@@ -1374,8 +1387,10 @@ impl AdvancedAi {
             .unwrap_or(plan.strategy);
         if g.players[pid].research.is_none() {
             let available = g.available_techs(pid);
+            let science_commitment = objective == GrandStrategy::Science
+                || self.diplomatic_science_backup(g, pid, plan);
             let forced_goal = match objective {
-                GrandStrategy::Science => [
+                _ if science_commitment => [
                     "rocketry",
                     "satellites",
                     "nanotechnology",
@@ -8675,7 +8690,10 @@ impl Ai for AdvancedAi {
                     self.religious_defense(g, pid, &threat);
                 }
             }
-            if self.victory_planning && plan.strategy == GrandStrategy::Science {
+            if self.victory_planning
+                && (plan.strategy == GrandStrategy::Science
+                    || self.diplomatic_science_backup(g, pid, &plan))
+            {
                 self.science_production(g, pid);
             }
             if self.victory_planning && plan.strategy == GrandStrategy::Culture {
@@ -10049,6 +10067,69 @@ mod tests {
         };
         ai.advanced_research(&mut game, 0, &plan);
         assert_eq!(game.players[0].research.as_deref(), Some("rocketry"));
+    }
+
+    #[test]
+    fn mature_diplomatic_plan_prepares_one_science_backup() {
+        let mut game = Game::new(2, 24, 16, 76_002, 500, 0);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let site = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&city].pos)
+            .unwrap();
+        {
+            let tile = game.map.tiles.get_mut(&site).unwrap();
+            tile.terrain = "plains".to_string();
+            tile.feature = None;
+            tile.resource = None;
+            tile.hills = false;
+        }
+        let ai = AdvancedAi::new();
+        let rocketry_path: Vec<String> = game
+            .rules
+            .techs
+            .keys()
+            .filter(|tech| ai.tech_leads_to(&game, tech, "rocketry"))
+            .cloned()
+            .collect();
+        for tech in rocketry_path
+            .iter()
+            .filter(|tech| tech.as_str() != "rocketry")
+        {
+            game.players[0].techs.insert(tech.clone());
+        }
+        game.turn = game.standard_duration(220);
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Diplomacy,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+        };
+
+        assert!(ai.diplomatic_science_backup(&game, 0, &plan));
+        ai.advanced_research(&mut game, 0, &plan);
+        assert_eq!(game.players[0].research.as_deref(), Some("rocketry"));
+
+        game.players[0].techs.insert("rocketry".to_string());
+        game.players[0].research = None;
+        ai.science_production(&mut game, 0);
+        assert!(matches!(
+            game.cities[&city].queue.first(),
+            Some(Item::District { district, .. }) if district == "spaceport"
+        ));
+
+        game.victory_conditions.science = false;
+        assert!(!ai.diplomatic_science_backup(&game, 0, &plan));
     }
 
     #[test]
