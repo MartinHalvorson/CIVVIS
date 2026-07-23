@@ -2029,7 +2029,7 @@ mod tests {
             .get_mut(&first_city)
             .unwrap()
             .buildings
-            .push("monument".to_string());
+            .push("granary".to_string());
         game.cities.get_mut(&first_city).unwrap().pop = 4;
         game.players[0].religion = Some("Test Faith".to_string());
         game.players[0].government = Some("classical_republic".to_string());
