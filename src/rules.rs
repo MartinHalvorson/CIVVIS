@@ -1211,14 +1211,15 @@ impl Rules {
         // Civ 6 movement is additive: terrain cost, +1 for Hills (the
         // database ships Hills as separate terrain rows costing 2), plus the
         // feature's MovementChange.
-        let mut c = self.terrains[t.terrain.as_str()].move_cost;
+        let terrain = &self.terrains[t.terrain.as_str()];
+        let mut c = terrain.move_cost;
         if t.hills {
             c += 1.0;
         }
         if let Some(f) = &t.feature {
             c += self.features[f.as_str()].move_cost;
         }
-        if t.road > 0 && !self.terrains[t.terrain.as_str()].water {
+        if t.road > 0 && !terrain.water {
             c = 1.0; // every route flattens terrain to at most 1 MP
         }
         c
