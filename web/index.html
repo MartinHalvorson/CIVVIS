@@ -350,6 +350,13 @@
     margin-top: 1px; overflow: hidden; color: var(--muted); font-size: 10px;
     line-height: 1.25; overflow-wrap: anywhere;
   }
+  /* League identity line: which rated player runs this civ and its elo. */
+  .diplomacy-elo {
+    display: block; margin-top: 1px; overflow: hidden; white-space: nowrap;
+    text-overflow: ellipsis; color: var(--gold-bright); font-size: 10px;
+    line-height: 1.25;
+  }
+  .diplomacy-elo b { font-weight: 850; }
   .agenda-mark { margin-left: 3px; font-size: 8px; vertical-align: 1px; }
   .agenda-mark.up { color: #8fd6a4; }
   .agenda-mark.down { color: #f2a09b; }
@@ -5242,6 +5249,15 @@ function drawPlayerHud() {
       const strategyLabel = strategy
         ? `<span class="ai-plan ${strategy}">${titleCase(strategy)}</span> plan · `
         : "";
+      // civ · rated player · elo, so the ribbon shows who is expected to
+      // win and the score column shows who actually is.
+      const expectPct = Number.isFinite(+p.ai_expected) ? Math.round(p.ai_expected * 100) : null;
+      const eloLine = p.ai_username
+        ? `<span class="diplomacy-elo" title="League player ${p.ai_username} (${p.ai_strat_label || "unrated"})` +
+          ` · ${p.ai_elo_civ ? `${p.civ}-specific` : "overall"} elo ${p.ai_elo} ±${p.ai_elo_rd}` +
+          `${expectPct === null ? "" : ` · expected win chance vs this table ${expectPct}%`}">` +
+          `${p.ai_username} · <b>${p.ai_elo}</b> elo${expectPct === null ? "" : ` · E ${expectPct}%`}</span>`
+        : "";
       const relationClass = alliance ? "allied" : p.friend ? "friend" : "";
       const stateClass = `${p.id === acting ? "active" : ""} ${relationClass} ${p.at_war_with_me ? "at-war" : ""} ${p.alive ? "" : "dead"}`;
       const stats = [
@@ -5265,7 +5281,7 @@ function drawPlayerHud() {
         `aria-label="${expanded ? "Close" : "Open"} dossier for ${p.civ}, rank ${rank}, ${relationSummary}">` +
         `<span class="diplomacy-name"><span class="diplomacy-rank">#${rank}</span>${p.id === acting && SPEC ? "◉ " : ""}${p.civ}` +
         `<span class="detail-caret">${expanded ? "▾" : "▸"}</span></span>` +
-        `<span class="diplomacy-leader">${leader}${agendaGlyph} · ${strategyLabel}${relation}</span></button>` +
+        `<span class="diplomacy-leader">${leader}${agendaGlyph} · ${strategyLabel}${relation}</span>${eloLine}</button>` +
         `<button class="diplomacy-stats" data-hud-action="watch" data-hud-civ="${p.id}" title="${watchTitle}" aria-label="Watch ${p.civ}">` +
         stats.map(([kind, shortLabel, value, label]) =>
           `<span class="ribbon-stat ${kind}" title="${label}"><b>${ribbonStat(value)}</b><em>${shortLabel}</em></span>`
@@ -5349,7 +5365,20 @@ function civDossier(p, rank, relation) {
     ` · objective ${force.objective?.[0]},${force.objective?.[1]} · local strength ${Math.round((force.strength_ratio || 0) * 100)}%` +
     ` of the defenders · readiness ${Math.round((force.readiness || 0) * 100)}%">` +
     `${force.domain === "sea" ? "⚓" : "⚔"} ${titleCase(force.posture)} ×${force.units}</span>`).join("");
-  const strategyBody = plan
+  // Rated-league identity: strategy handle and the elo it defends here.
+  const leagueRows = p.ai_username
+    ? row("League player", `${p.ai_username} (${p.ai_strat_label || "unrated"})`,
+        "Which league strategy is playing this civilization") +
+      row("Elo", `${p.ai_elo} ±${p.ai_elo_rd} · ${p.ai_elo_civ ? `${p.civ} table` : "overall"}`,
+        p.ai_elo_civ
+          ? `This strategy's rating specifically when playing ${p.civ}; each civ keeps its own table`
+          : `Overall league rating — not enough rated ${p.civ} games yet for a civ-specific number`) +
+      (Number.isFinite(+p.ai_expected)
+        ? row("Expected wins", `${Math.round(p.ai_expected * 100)}% vs this table`,
+            "Elo-implied mean win probability against the other rated majors — compare with actual results over time")
+        : "")
+    : "";
+  const strategyBody = leagueRows + (plan
     ? row("Doctrine", `<span class="ai-plan ${plan.strategy}">${titleCase(plan.strategy)}</span>`,
         "The medium-term plan every department of this AI is currently serving") +
       row("Victory lane", plan.victory_target ? titleCase(plan.victory_target) : "Opportunistic",
@@ -5369,7 +5398,7 @@ function civDossier(p, rank, relation) {
       (forces.length
         ? `<div class="dossier-note">${forceChips}${forces.length > 6 ? ` <span class="dossier-empty">+${forces.length - 6} more</span>` : ""}</div>`
         : `<div class="dossier-note"><span class="dossier-empty">No coordinated forces in the field</span></div>`)
-    : `<div class="dossier-empty">No published plan. The hierarchical AI reports one from its first turn of a spectated game.</div>`;
+    : `<div class="dossier-empty">No published plan. The hierarchical AI reports one from its first turn of a spectated game.</div>`);
 
   // --- the victory race, at the width the topbar cannot spare
   const tracks = VICTORY_TRACKS

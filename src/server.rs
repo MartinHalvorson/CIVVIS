@@ -48,6 +48,12 @@ pub struct Params {
     /// A lifecycle supervisor, rather than the browser countdown, owns the
     /// transition after a completed spectator game.
     pub supervised: bool,
+    /// League directory to seat major players from (`civvis play --league`):
+    /// each civ gets its best-rated strategies and the HUD shows per-player
+    /// elo. `None` still annotates elo when a `league/` dir exists, because
+    /// the default fleet below IS the league's "advanced" entrant — but the
+    /// AIs themselves are unchanged.
+    pub league_dir: Option<String>,
 }
 
 pub struct Session {
@@ -66,6 +72,11 @@ pub struct Session {
     /// Manual new-game handoff consumed by the external spectator supervisor.
     /// The current process stays available until the requested runtime is ready.
     supervisor_request: Option<Value>,
+    /// League roster used to label seats with player handles and elo (and,
+    /// with `--league`, to choose who plays each civ).
+    league: Option<crate::league::League>,
+    /// Per-seat index into `league.strategies` for rated major seats.
+    seat_strategy: Vec<Option<usize>>,
 }
 
 #[derive(Clone)]
@@ -730,16 +741,64 @@ fn blend(slot: &AtomicU64, sample: u64) {
 }
 
 impl Session {
-    fn ai_fleet(game: &Game) -> Vec<Box<dyn Ai + Send>> {
-        game.players
+    /// Seat AIs plus each seat's league identity. With a roster to seat
+    /// from, every major civ is played by its best-rated available
+    /// strategy (`league::seat_by_civ`); otherwise majors run the default
+    /// hierarchical AI, which the league rates as its "advanced" entrant,
+    /// so a loaded roster can still label those seats with an elo.
+    fn ai_fleet(
+        game: &Game,
+        league: Option<&crate::league::League>,
+        seat_from_roster: bool,
+    ) -> (Vec<Box<dyn Ai + Send>>, Vec<Option<usize>>) {
+        let mut seat_strategy: Vec<Option<usize>> = vec![None; game.players.len()];
+        if let Some(l) = league {
+            let majors: Vec<usize> = game
+                .players
+                .iter()
+                .filter(|p| !p.is_minor && !p.is_barbarian)
+                .map(|p| p.id)
+                .collect();
+            if seat_from_roster && !l.active().is_empty() {
+                let civs: Vec<String> =
+                    majors.iter().map(|id| game.players[*id].civ.clone()).collect();
+                for (id, pick) in majors.iter().zip(crate::league::seat_by_civ(l, &civs)) {
+                    seat_strategy[*id] = Some(pick);
+                }
+            } else if let Some(default_entrant) =
+                l.strategies.iter().position(|s| s.name == "advanced")
+            {
+                for id in majors {
+                    seat_strategy[id] = Some(default_entrant);
+                }
+            }
+        }
+        let ais = game
+            .players
             .iter()
             .map(|p| -> Box<dyn Ai + Send> {
                 if p.is_minor || p.is_barbarian {
                     return Box::new(BasicAi::new());
                 }
-                Box::new(AdvancedAi::new())
+                match (seat_from_roster, league, seat_strategy[p.id]) {
+                    (true, Some(l), Some(si)) => crate::league::make_send_ai(
+                        &l.strategies[si].kind,
+                        game.seed.wrapping_add(p.id as u64),
+                    ),
+                    _ => Box::new(AdvancedAi::new()),
+                }
             })
-            .collect()
+            .collect();
+        (ais, seat_strategy)
+    }
+
+    /// The roster named by `--league`, else a best-effort `league/` load
+    /// purely for elo labels.
+    fn load_params_league(params: &Params) -> (Option<crate::league::League>, bool) {
+        match &params.league_dir {
+            Some(dir) => (crate::league::load_league(dir), true),
+            None => (crate::league::load_league("league"), false),
+        }
     }
 
     pub fn new(params: Params) -> Session {
@@ -769,7 +828,8 @@ impl Session {
         // Paired and multiplayer evaluation make the hierarchical agent the
         // strongest built-in default. Minors/barbarians retain the cheaper
         // baseline because they do not need empire-level planning.
-        let ais = Self::ai_fleet(&game);
+        let (league, seat_from_roster) = Self::load_params_league(&params);
+        let (ais, seat_strategy) = Self::ai_fleet(&game, league.as_ref(), seat_from_roster);
         let chronicle = ChronicleState::from_game(&game);
         Session {
             params,
@@ -779,6 +839,8 @@ impl Session {
             view_player: None,
             chronicle,
             supervisor_request: None,
+            league,
+            seat_strategy,
         }
     }
 
@@ -810,7 +872,8 @@ impl Session {
             .filter(|player| !player.is_minor && !player.is_barbarian)
             .map(|player| player.team)
             .collect();
-        let ais = Self::ai_fleet(&game);
+        let (league, seat_from_roster) = Self::load_params_league(&params);
+        let (ais, seat_strategy) = Self::ai_fleet(&game, league.as_ref(), seat_from_roster);
         let chronicle = ChronicleState::from_game(&game);
         Session {
             params,
@@ -820,6 +883,8 @@ impl Session {
             view_player: None,
             chronicle,
             supervisor_request: None,
+            league,
+            seat_strategy,
         }
     }
 
@@ -990,6 +1055,25 @@ impl Session {
                 Some(pid) => observation_player_view(g, pid),
                 None => observation_spectator(g, summary_pid),
             };
+            // Each rated seat's display elo (civ table when settled, else
+            // global), gathered up front so a seat's expected win share can
+            // be computed against the rest of the table.
+            let seat_elo: std::collections::BTreeMap<usize, f64> = self
+                .seat_strategy
+                .iter()
+                .enumerate()
+                .filter_map(|(pid, si)| {
+                    let (si, league) = ((*si)?, self.league.as_ref()?);
+                    let p = &g.players[pid];
+                    if !p.alive || p.is_minor || p.is_barbarian {
+                        return None;
+                    }
+                    Some((
+                        pid,
+                        crate::league::display_elo(&league.strategies[si], &p.civ).0,
+                    ))
+                })
+                .collect();
             if let Some(players) = o["players"].as_array_mut() {
                 for player in players {
                     let Some(id) = player["id"].as_u64().map(|id| id as usize) else {
@@ -1003,6 +1087,34 @@ impl Session {
                     // spectator frame carries the agent's own read-out.
                     if let Some(plan) = self.ais.get(id).and_then(|ai| ai.plan_report()) {
                         player["ai_plan"] = self.plan_json(&plan);
+                    }
+                    // League identity: who is playing this seat and how
+                    // strong the league currently believes they are on this
+                    // civ. `ai_expected` is the elo-implied mean win
+                    // probability against the other rated majors — the
+                    // number to check winners against over time.
+                    if let (Some(league), Some(Some(si))) =
+                        (self.league.as_ref(), self.seat_strategy.get(id))
+                    {
+                        let s = &league.strategies[*si];
+                        let civ = &g.players[id].civ;
+                        let (elo, rd, civ_specific) = crate::league::display_elo(s, civ);
+                        player["ai_username"] = json!(s.username);
+                        player["ai_strat_label"] = json!(s.label());
+                        player["ai_elo"] = json!(elo.round() as i64);
+                        player["ai_elo_rd"] = json!(rd.round() as i64);
+                        player["ai_elo_civ"] = json!(civ_specific);
+                        if seat_elo.len() > 1 {
+                            if let Some(mine) = seat_elo.get(&id) {
+                                let expected: f64 = seat_elo
+                                    .iter()
+                                    .filter(|(other, _)| **other != id)
+                                    .map(|(_, r)| crate::elo::expected(*mine, *r))
+                                    .sum::<f64>()
+                                    / (seat_elo.len() - 1) as f64;
+                                player["ai_expected"] = json!((expected * 100.0).round() / 100.0);
+                            }
+                        }
                     }
                 }
             }
@@ -1749,6 +1861,7 @@ mod tests {
             speed: crate::game::default_speed(),
             teams: Vec::new(),
             supervised: false,
+            league_dir: None,
         }
     }
 

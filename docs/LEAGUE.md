@@ -52,6 +52,31 @@ independent of game order within a round, so `--jobs` never changes
 ratings (there is a test for byte-identical leagues at different job
 counts).
 
+## Civ-specific ratings
+
+Not every civ wants to play the same way, so besides its overall rating
+every strategy keeps a **per-civ Glicko table** (`civ_elo`): its skill
+specifically when drawing Rome, Egypt, ... (civs are fixed per seat in
+`Game::new`, so every league game feeds both tables). Opponents are
+measured by their global rating, which keeps civ numbers on the overall
+scale. Civ tables are sparse — they update only in periods actually
+played — and a table needs 5 games before it outranks the global rating
+for display and seating.
+
+- `civvis league --civ Rome` — who plays Rome best, ranked by Rome elo.
+- `civvis league --civs` — each civ's current champion strategy.
+
+## Watching players in the game HUD
+
+`civvis play --spectate --league league/` seats every major civ with its
+best-rated available strategy (distinct specialists per civ) and the
+spectator HUD lists, per player: **civ, league username + strategy, its
+elo** (civ-specific when settled, ±RD on hover) **and the elo-implied
+expected win chance** against the table — compare against who actually
+wins to audit the ratings over time. Without `--league`, a `league/` dir
+in the working directory still labels the default fleet with the
+"advanced" entrant's elo; the AIs themselves are unchanged.
+
 ## Selection
 
 Every `--evolve-every` rounds (default 4):

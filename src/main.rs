@@ -533,9 +533,18 @@ fn main() {
                 max_pop: arg(&args, "--pop", 12) as usize,
                 verbose: !args.iter().any(|a| a == "--quiet"),
             };
-            if args.iter().any(|a| a == "--standings") {
+            let civ = arg_text(&args, "--civ", "");
+            if args.iter().any(|a| a == "--standings") || !civ.is_empty() {
                 match civvis::league::load_league(&cfg.dir) {
-                    Some(league) => print!("{}", civvis::league::standings(&league)),
+                    Some(league) => {
+                        if !civ.is_empty() {
+                            print!("{}", civvis::league::civ_standings(&league, &civ));
+                        } else if args.iter().any(|a| a == "--civs") {
+                            print!("{}", civvis::league::civ_summary(&league));
+                        } else {
+                            print!("{}", civvis::league::standings(&league));
+                        }
+                    }
                     None => {
                         eprintln!("no league at {}/league.json", cfg.dir);
                         std::process::exit(1);
@@ -619,6 +628,10 @@ fn main() {
                     speed: play_options.speed,
                     teams: play_options.teams,
                     supervised: args.iter().any(|a| a == "--supervised"),
+                    league_dir: {
+                        let dir = arg_text(&args, "--league", "");
+                        (!dir.is_empty()).then_some(dir)
+                    },
                 },
                 resumed,
             );
@@ -661,7 +674,9 @@ fn main() {
                       [--speed online|quick|standard|epic|marathon] \
                       [--human-seats 0,1] [--teams 0,0,1,1] [--mods path/to/mod,path/to/other] \
                       [--victories science,culture,religious,diplomatic,domination,score] \
-                      [--spectate] [--supervised] [--resume checkpoint.json] [--strict]"
+                      [--spectate] [--supervised] [--resume checkpoint.json] [--strict] \
+                      [--league dir] [--standings [--civ Rome | --civs]] [--rounds N] \
+                      [--evolve-every N] [--pop N]"
             );
         }
     }

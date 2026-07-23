@@ -54,6 +54,36 @@ pub enum StrategyKind {
     },
 }
 
+/// Glicko state of one strategy playing one particular civilization.
+/// Opponents are measured by their *global* rating, so this answers "how
+/// strong is this strategy when it draws this civ" on the same scale as
+/// the overall table. Not every civ wants to play the same way, so the
+/// same strategy legitimately carries different numbers per civ.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct CivRating {
+    pub rating: f64,
+    pub rd: f64,
+    pub vol: f64,
+    pub games: u32,
+    pub wins: u32,
+}
+
+impl Default for CivRating {
+    fn default() -> Self {
+        CivRating {
+            rating: BASE_RATING,
+            rd: BASE_RD,
+            vol: BASE_VOL,
+            games: 0,
+            wins: 0,
+        }
+    }
+}
+
+/// A civ table needs this many games before its number outranks the
+/// global rating for display and seating decisions.
+pub const CIV_ELO_MIN_GAMES: u32 = 5;
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Strategy {
     pub name: String,
@@ -68,6 +98,12 @@ pub struct Strategy {
     pub vol: f64,
     pub games: u32,
     pub wins: u32,
+    /// Per-civ rating tables (civ name -> Glicko state). Sparse: pairs only
+    /// update in periods where they actually played — with a handful of
+    /// games per round spread over many civs, growing every idle pair's
+    /// deviation each round would pin them all at maximum uncertainty.
+    #[serde(default)]
+    pub civ_elo: BTreeMap<String, CivRating>,
     pub born_round: u32,
     #[serde(default)]
     pub parents: Vec<String>,
@@ -90,6 +126,7 @@ impl Strategy {
             vol: BASE_VOL,
             games: 0,
             wins: 0,
+            civ_elo: BTreeMap::new(),
             born_round,
             parents: Vec::new(),
             retired: false,
@@ -511,6 +548,8 @@ fn schedule(active: &[usize], cfg: &LeagueCfg, rng: &mut Rng) -> Vec<Vec<usize>>
 struct Outcome {
     /// Strategy indices, winner first then by score.
     placements: Vec<usize>,
+    /// Civ each placement played, aligned with `placements`.
+    civs: Vec<String>,
     seed: u64,
     turn: u32,
     victory: String,
@@ -554,6 +593,10 @@ fn play_round(league: &League, tables: &[Vec<usize>], cfg: &LeagueCfg, round: u3
             ranked.sort_by_key(|pid| (*pid != winner, -game.score(*pid), *pid));
             Outcome {
                 placements: ranked.iter().map(|pid| tables[gi][*pid]).collect(),
+                civs: ranked
+                    .iter()
+                    .map(|pid| game.players[*pid].civ.clone())
+                    .collect(),
                 seed,
                 turn: game.turn,
                 victory: game.victory_type.clone().unwrap_or_default(),
@@ -567,6 +610,7 @@ fn play_round(league: &League, tables: &[Vec<usize>], cfg: &LeagueCfg, round: u3
 fn apply_round(league: &mut League, outcomes: &[Outcome]) {
     let pre: Vec<Glicko> = league.strategies.iter().map(to_internal).collect();
     let mut results: BTreeMap<usize, Vec<(Glicko, f64)>> = BTreeMap::new();
+    let mut civ_results: BTreeMap<(usize, &str), Vec<(Glicko, f64)>> = BTreeMap::new();
     for outcome in outcomes {
         let p = &outcome.placements;
         for i in 0..p.len() {
@@ -576,14 +620,49 @@ fn apply_round(league: &mut League, outcomes: &[Outcome]) {
                 }
                 results.entry(p[i]).or_default().push((pre[p[j]], 1.0));
                 results.entry(p[j]).or_default().push((pre[p[i]], 0.0));
+                civ_results
+                    .entry((p[i], outcome.civs[i].as_str()))
+                    .or_default()
+                    .push((pre[p[j]], 1.0));
+                civ_results
+                    .entry((p[j], outcome.civs[j].as_str()))
+                    .or_default()
+                    .push((pre[p[i]], 0.0));
             }
         }
         for (rank, s) in p.iter().enumerate() {
-            league.strategies[*s].games += 1;
+            let strategy = &mut league.strategies[*s];
+            strategy.games += 1;
             if rank == 0 {
-                league.strategies[*s].wins += 1;
+                strategy.wins += 1;
+            }
+            let on_civ = strategy
+                .civ_elo
+                .entry(outcome.civs[rank].clone())
+                .or_default();
+            on_civ.games += 1;
+            if rank == 0 {
+                on_civ.wins += 1;
             }
         }
+    }
+    let civ_updates: Vec<((usize, String), Glicko)> = civ_results
+        .into_iter()
+        .map(|((si, civ), res)| {
+            let cur = &league.strategies[si].civ_elo[civ];
+            let state = Glicko {
+                mu: (cur.rating - BASE_RATING) / SCALE,
+                phi: cur.rd / SCALE,
+                sigma: cur.vol,
+            };
+            ((si, civ.to_string()), rate(state, &res))
+        })
+        .collect();
+    for ((si, civ), updated) in civ_updates {
+        let on_civ = league.strategies[si].civ_elo.get_mut(&civ).unwrap();
+        on_civ.rating = BASE_RATING + SCALE * updated.mu;
+        on_civ.rd = SCALE * updated.phi;
+        on_civ.vol = updated.sigma;
     }
     let empty = Vec::new();
     for i in 0..league.strategies.len() {
@@ -691,6 +770,143 @@ fn evolve_league(league: &mut League, cfg: &LeagueCfg, rng: &mut Rng) -> (Vec<St
     (born, retired)
 }
 
+/// The rating to show (and seat by) for a strategy on a given civ: the
+/// civ table once it has evidence, else the global one.
+/// Returns (rating, rd, is_civ_specific).
+pub fn display_elo(s: &Strategy, civ: &str) -> (f64, f64, bool) {
+    match s.civ_elo.get(civ) {
+        Some(c) if c.games >= CIV_ELO_MIN_GAMES => (c.rating, c.rd, true),
+        _ => (s.rating, s.rd, false),
+    }
+}
+
+/// Seat a table whose civs are already known (civs are fixed per seat in
+/// `Game::new`): each seat takes the strongest still-unused active strategy
+/// *for its civ*, so different civs field different specialists. Reuses
+/// strategies only when the roster is smaller than the table.
+pub fn seat_by_civ(league: &League, civs: &[String]) -> Vec<usize> {
+    let active = league.active();
+    assert!(!active.is_empty(), "league has no active strategies");
+    let mut used: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
+    civs.iter()
+        .map(|civ| {
+            let fresh = active.iter().copied().filter(|i| !used.contains(i));
+            let pool: Vec<usize> = if used.len() < active.len() {
+                fresh.collect()
+            } else {
+                active.clone()
+            };
+            let pick = pool
+                .into_iter()
+                .max_by(|a, b| {
+                    let ea = display_elo(&league.strategies[*a], civ).0;
+                    let eb = display_elo(&league.strategies[*b], civ).0;
+                    ea.partial_cmp(&eb).unwrap().then(b.cmp(a))
+                })
+                .unwrap();
+            used.insert(pick);
+            pick
+        })
+        .collect()
+}
+
+/// Materialize a strategy as a `Send` AI for the game server's fleet.
+pub fn make_send_ai(kind: &StrategyKind, seed: u64) -> Box<dyn Ai + Send> {
+    match kind {
+        StrategyKind::Builtin { ai } => match ai.as_str() {
+            "basic" => Box::new(crate::ai::BasicAi::new()),
+            "advanced_v1" => Box::new(AdvancedAi::legacy()),
+            "random" => Box::new(crate::ai::RandomAi::new(seed)),
+            "advanced_evolved" | "evolved" => Box::new(
+                crate::evolve::load_champion("evolved")
+                    .map(AdvancedAi::with_weights)
+                    .unwrap_or_else(AdvancedAi::new),
+            ),
+            _ => Box::new(AdvancedAi::new()),
+        },
+        StrategyKind::Advanced { weights, target } => {
+            match target.as_deref().and_then(|t| t.parse::<VictoryTarget>().ok()) {
+                Some(t) => Box::new(AdvancedAi::with_weights_and_target(weights.clone(), t)),
+                None => Box::new(AdvancedAi::with_weights(weights.clone())),
+            }
+        }
+    }
+}
+
+/// One civ's leaderboard: who plays this civ best, by its civ table.
+pub fn civ_standings(league: &League, civ: &str) -> String {
+    let mut rows: Vec<(&Strategy, &CivRating)> = league
+        .strategies
+        .iter()
+        .filter_map(|s| s.civ_elo.get(civ).map(|c| (s, c)))
+        .filter(|(_, c)| c.games > 0)
+        .collect();
+    if rows.is_empty() {
+        return format!("no rated games for {civ} yet\n");
+    }
+    rows.sort_by(|a, b| b.1.rating.partial_cmp(&a.1.rating).unwrap());
+    let mut out = format!("{civ} leaderboard (round {}):\n", league.round);
+    for (rank, (s, c)) in rows.iter().enumerate() {
+        out.push_str(&format!(
+            "  {:>2}. {:<18} {:6.0} elo ±{:<4.0} games={:<4} wins={:<3} winrate={:3.0}%  {:<14}{}{}\n",
+            rank + 1,
+            s.username,
+            c.rating,
+            c.rd,
+            c.games,
+            c.wins,
+            100.0 * c.wins as f64 / c.games.max(1) as f64,
+            s.label(),
+            if c.games < CIV_ELO_MIN_GAMES {
+                "  provisional"
+            } else {
+                ""
+            },
+            if s.retired { "  (retired)" } else { "" },
+        ));
+    }
+    out
+}
+
+/// Every civ's current champion strategy, one line per civ.
+pub fn civ_summary(league: &League) -> String {
+    let mut civs: std::collections::BTreeSet<&String> = std::collections::BTreeSet::new();
+    for s in &league.strategies {
+        civs.extend(s.civ_elo.keys());
+    }
+    if civs.is_empty() {
+        return "no per-civ ratings yet (play some rounds first)\n".to_string();
+    }
+    let mut out = format!("Best player per civ (round {}):\n", league.round);
+    for civ in civs {
+        let best = league
+            .strategies
+            .iter()
+            .filter(|s| !s.retired)
+            .filter_map(|s| {
+                s.civ_elo
+                    .get(civ)
+                    .filter(|c| c.games >= CIV_ELO_MIN_GAMES)
+                    .map(|c| (s, c))
+            })
+            .max_by(|a, b| a.1.rating.partial_cmp(&b.1.rating).unwrap());
+        match best {
+            Some((s, c)) => out.push_str(&format!(
+                "  {:<10} {:<18} {:6.0} elo ±{:<4.0} ({} games, {:.0}% wins, {})\n",
+                civ,
+                s.username,
+                c.rating,
+                c.rd,
+                c.games,
+                100.0 * c.wins as f64 / c.games.max(1) as f64,
+                s.label(),
+            )),
+            None => out.push_str(&format!("  {civ:<10} (no settled rating yet)\n")),
+        }
+    }
+    out
+}
+
 fn append_csv(dir: &str, file: &str, header: &str, lines: &[String]) {
     let path = Path::new(dir).join(file);
     let fresh = !path.exists();
@@ -749,10 +965,11 @@ pub fn run_league(cfg: &LeagueCfg) -> League {
         let match_lines: Vec<String> = outcomes
             .iter()
             .map(|o| {
-                let names: Vec<&str> = o
+                let names: Vec<String> = o
                     .placements
                     .iter()
-                    .map(|s| league.strategies[*s].name.as_str())
+                    .zip(&o.civs)
+                    .map(|(s, civ)| format!("{}@{civ}", league.strategies[*s].name))
                     .collect();
                 format!(
                     "{round},{},{},{},{}",
@@ -887,6 +1104,7 @@ mod tests {
         };
         let outcomes = vec![Outcome {
             placements: vec![0, 1],
+            civs: vec!["Rome".into(), "Egypt".into()],
             seed: 0,
             turn: 10,
             victory: "score".into(),
@@ -896,6 +1114,49 @@ mod tests {
         assert!(league.strategies[1].rating < BASE_RATING);
         assert_eq!(league.strategies[0].wins, 1);
         assert_eq!(league.strategies[0].games, 1);
+        // the same result also lands on each side's civ table
+        let rome = &league.strategies[0].civ_elo["Rome"];
+        let egypt = &league.strategies[1].civ_elo["Egypt"];
+        assert!(rome.rating > BASE_RATING && rome.games == 1 && rome.wins == 1);
+        assert!(egypt.rating < BASE_RATING && egypt.games == 1 && egypt.wins == 0);
+        assert!(league.strategies[0].civ_elo.get("Egypt").is_none());
+    }
+
+    /// Seating by civ prefers each civ's settled specialist and never
+    /// doubles a strategy up while unused ones remain.
+    #[test]
+    fn seat_by_civ_prefers_civ_specialists() {
+        let mut league = League {
+            round: 0,
+            strategies: vec![
+                Strategy::new("gen", StrategyKind::Builtin { ai: "advanced".into() }, 0),
+                Strategy::new(
+                    "rome-expert",
+                    StrategyKind::Advanced {
+                        weights: Weights::default(),
+                        target: Some("domination".into()),
+                    },
+                    0,
+                ),
+            ],
+        };
+        league.strategies[0].rating = 1650.0; // globally stronger
+        league.strategies[1].rating = 1450.0;
+        league.strategies[1].civ_elo.insert(
+            "Rome".into(),
+            CivRating {
+                rating: 1750.0,
+                games: CIV_ELO_MIN_GAMES,
+                ..CivRating::default()
+            },
+        );
+        let seats = seat_by_civ(&league, &["Rome".into(), "Egypt".into()]);
+        assert_eq!(seats, vec![1, 0], "Rome goes to its specialist");
+        let (elo, _, civ_specific) = display_elo(&league.strategies[1], "Rome");
+        assert!(civ_specific && (elo - 1750.0).abs() < 1e-9);
+        // below the evidence bar the global rating stands in
+        let (elo, _, civ_specific) = display_elo(&league.strategies[1], "Egypt");
+        assert!(!civ_specific && (elo - 1450.0).abs() < 1e-9);
     }
 
     #[test]
