@@ -2940,6 +2940,17 @@ function drawImprovement(t, x, y) {
 // place growth showed. A settlement is built from its population now: more
 // houses, taller ones, packed wider. Watching a city thicken over a game is
 // one of the few places the map can show the clock running.
+// A stable colour per faith, so the same religion is the same colour in every
+// city on the map and across a whole game. Derived from the name rather than a
+// fixed table, because a mod can add religions the table would not know.
+const FAITH_COLORS = ["#e8c64c", "#7fb8e8", "#c88ce0", "#7fd8a0",
+                      "#e8907f", "#dcd4c2", "#7fd8d8", "#e0a55c"];
+function faithColor(name) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (Math.imul(h, 31) + name.charCodeAt(i)) | 0;
+  return FAITH_COLORS[Math.abs(h) % FAITH_COLORS.length];
+}
+
 // How wide a town of this size sprawls. Anything that has to stand clear of a
 // settlement asks this rather than guessing a constant — a guess sized against
 // a small city grazes a large one, which is exactly what happened to the spy
@@ -3778,6 +3789,26 @@ function draw() {
     const [x, yy] = hexXY(c.pos[0], c.pos[1]);
     const y = yy - (ct ? elev(ct) : 0);
     drawSettlement(c, x, y, beau);
+    // Which faith holds this city. Religion is one of the six ways to win and
+    // it spreads city by city across the map, yet the map said nothing at all —
+    // a religious conquest rolling through your neighbours was visible only as
+    // lines in the event log. Mirrors the spy keyhole on the opposite flank,
+    // and takes its clearance from the same settlementSpread.
+    if (c.religion) {
+      const k = UI_K();
+      const fx = x + (settlementSpread(c.pop) + 8.5) * k, fy = y - 2;
+      cx.save();
+      cx.fillStyle = faithColor(c.religion);
+      cx.beginPath(); cx.arc(fx, fy, 6.6 * k, 0, 7); cx.fill();
+      cx.strokeStyle = "#12161d"; cx.lineWidth = 1.5; cx.stroke();
+      // the initial rather than a glyph: symbol fonts are not guaranteed here,
+      // and an empty disc says less than a letter does
+      cx.fillStyle = "#12161d";
+      cx.font = "bold " + (8.4 * k).toFixed(1) + "px sans-serif";
+      cx.textAlign = "center"; cx.textBaseline = "middle";
+      cx.fillText(c.religion[0].toUpperCase(), fx, fy + 0.4 * k);
+      cx.restore();
+    }
     {
       // parchment-style nameplate
       const name = (c.is_capital ? "★ " : "") + c.name.toUpperCase();
