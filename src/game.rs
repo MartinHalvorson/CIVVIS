@@ -6345,6 +6345,59 @@ mod district_building_wonder_runtime_tests {
     }
 
     #[test]
+    fn a_returning_levy_never_shares_a_tile_with_its_own_class() {
+        let (mut game, _city, _position) = one_city(774_407);
+        let minor = game.players.len();
+        game.players.push(Player::new(minor, "Valletta", true));
+        game.players[0].envoys.push((minor, 3));
+        let position = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| game.city_at(*position).is_none())
+            .unwrap();
+        let levied = game.spawn_unit("warrior", minor, position);
+        game.players[0].gold = 100.0;
+        game.do_levy_military(0, minor).unwrap();
+        assert_eq!(game.units[&levied].owner, 0);
+
+        // While the levy serves, the city-state fields another unit of the same
+        // class on the tile the levy will come home to. Every legal
+        // destination is taken, so relocation cannot succeed.
+        let resident = game.spawn_unit("warrior", minor, position);
+        let reachable: Vec<Pos> = game.wdisk(position, 4);
+        for spot in reachable {
+            if spot != position && game.units_at(spot).is_empty() && game.city_at(spot).is_none() {
+                game.spawn_unit("warrior", minor, spot);
+            }
+        }
+
+        game.turn += STANDARD_DEAL_TURNS;
+        game.process_levies(0);
+
+        // A tile may hold one unit of a class per owner: zone of control,
+        // combat and stacking all assume it. The returning levy must not be
+        // parked on top of the resident.
+        let here: Vec<u32> = game
+            .units_at(position)
+            .into_iter()
+            .filter(|uid| {
+                game.units[uid].owner == minor
+                    && game.rules.units[game.units[uid].kind.as_str()].class == "military"
+            })
+            .collect();
+        assert!(
+            here.len() <= 1,
+            "two military units of {} share {:?}: {:?}",
+            "Valletta",
+            position,
+            here
+        );
+        assert!(game.units.contains_key(&resident), "the resident stays put");
+    }
+
+    #[test]
     fn a_levy_outliving_its_city_state_disbands_instead_of_stranding() {
         let (mut game, _city, _position) = one_city(774_406);
         let minor = game.players.len();
@@ -15057,19 +15110,37 @@ impl Game {
                     && self.rules.units[self.units[&other].kind.as_str()].class == class
             });
             if occupied {
+                // Look outward from where the operative actually stands before
+                // falling back to the city-state's first city: a levy can
+                // expire far from home, and searching only around that city
+                // can miss every reachable tile near the unit.
                 let origin = self
                     .player_city_ids(minor)
                     .first()
                     .map(|city| self.cities[city].pos)
                     .unwrap_or(current_pos);
-                if let Some(position) = self.wdisk(origin, 4).into_iter().find(|position| {
+                let mut candidates = self.wdisk(current_pos, 4);
+                candidates.extend(self.wdisk(origin, 4));
+                candidates.dedup();
+                let free = candidates.into_iter().find(|position| {
                     self.unit_can_traverse(unit_id, *position)
                         && !self.units_at(*position).into_iter().any(|other| {
                             self.units[&other].owner == minor
                                 && self.rules.units[self.units[&other].kind.as_str()].class == class
                         })
-                }) {
-                    self.relocate(unit_id, position);
+                });
+                match free {
+                    Some(position) => self.relocate(unit_id, position),
+                    // One unit of a class per tile is an invariant the rest of
+                    // the engine relies on -- zone of control, combat and
+                    // stacking all assume it. A returning levy with nowhere
+                    // legal to stand used to simply stay where it was, leaving
+                    // two of the same class on one tile for the rest of the
+                    // match (seen in a finished game: two Coursers of Valletta
+                    // sharing its own city centre). A unit that cannot be
+                    // placed does not exist, which is what `place_new_unit`
+                    // already decides for the same situation.
+                    None => self.remove_unit(unit_id),
                 }
             }
         }
