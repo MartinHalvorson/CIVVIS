@@ -77,6 +77,13 @@ wins to audit the ratings over time. Without `--league`, a `league/` dir
 in the working directory still labels the default fleet with the
 "advanced" entrant's elo; the AIs themselves are unchanged.
 
+A snapshot of a finished league lives in the repo at `data/league/`
+(see its README for provenance), so any checkout — including other
+machines — can show rated, named players out of the box. The spectator
+supervisor (`tools/spectator_supervisor.py`) defaults to `--league auto`,
+which uses that snapshot; pass `--league off` to run the exhibition
+unrated, or `--league <dir>` to use a live local league instead.
+
 ## Selection
 
 Every `--evolve-every` rounds (default 4):

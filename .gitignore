@@ -4,7 +4,8 @@ target/
 .pytest_cache/
 civvis-play*.log
 evolved/
-league/
+# Runtime league state at the repo root only; data/league/ is a committed snapshot.
+/league/
 *.log
 target-tools/
 bin-run/

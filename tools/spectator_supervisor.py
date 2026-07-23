@@ -683,6 +683,23 @@ def result_standings(state: dict[str, Any]) -> str | None:
     return "; ".join(entries)
 
 
+def league_dir(spec: str) -> Path | None:
+    """Resolve the --league setting to a directory holding league.json.
+
+    Resolved at every spawn, not at startup, because in 'auto' mode the
+    canonical source worktree may only gain data/league once it syncs a
+    commit that ships the snapshot.
+    """
+    if spec == "off":
+        return None
+    candidate = (
+        SOURCE_ROOT / "data" / "league"
+        if spec == "auto"
+        else Path(spec).expanduser().resolve()
+    )
+    return candidate if (candidate / "league.json").exists() else None
+
+
 def server_command(
     port: int,
     settings: dict[str, Any],
@@ -719,6 +736,10 @@ def server_command(
     ]
     if resume is not None:
         args.extend(("--resume", str(resume)))
+    roster = league_dir(settings.get("league", "off"))
+    if roster is not None:
+        # Absolute path: the server runs from the runtime directory, not ROOT.
+        args.extend(("--league", str(roster)))
     if "victories" in settings:
         args.extend(("--victories", ",".join(settings["victories"])))
     if not open_browser:
@@ -854,6 +875,15 @@ def parse_args() -> argparse.Namespace:
         default="online",
     )
     parser.add_argument(
+        "--league",
+        default="auto",
+        help=(
+            "league directory for rated seating and the elo HUD: 'auto' uses "
+            "the canonical source's data/league when present, 'off' disables, "
+            "anything else is a directory containing league.json"
+        ),
+    )
+    parser.add_argument(
         "--cooldown",
         type=float,
         default=5.0,
@@ -919,6 +949,7 @@ def main() -> int:
         "turns": args.turns,
         "map": args.map,
         "speed": args.speed,
+        "league": args.league,
     }
     process: subprocess.Popen[str] | None = None
     adopted_pid = args.adopt_pid

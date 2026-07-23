@@ -1,0 +1,4439 @@
+{
+  "round": 60,
+  "strategies": [
+    {
+      "name": "advanced",
+      "username": "JackOfAllTrades",
+      "kind": {
+        "Builtin": {
+          "ai": "advanced"
+        }
+      },
+      "rating": 1702.6556614094036,
+      "rd": 30.5455573320255,
+      "vol": 0.061412522456544084,
+      "games": 331,
+      "wins": 91,
+      "civ_elo": {
+        "China": {
+          "rating": 1685.7578944193108,
+          "rd": 40.53941136957956,
+          "vol": 0.06013073482842568,
+          "games": 63,
+          "wins": 17
+        },
+        "Egypt": {
+          "rating": 1501.342813219653,
+          "rd": 46.727519498516045,
+          "vol": 0.060514591882115464,
+          "games": 48,
+          "wins": 7
+        },
+        "Greece": {
+          "rating": 1712.960593096247,
+          "rd": 42.209670746738546,
+          "vol": 0.06019341464833016,
+          "games": 60,
+          "wins": 13
+        },
+        "Rome": {
+          "rating": 1779.0500459537889,
+          "rd": 40.30315208482569,
+          "vol": 0.06005497041280193,
+          "games": 48,
+          "wins": 15
+        }
+      },
+      "born_round": 0,
+      "parents": [],
+      "retired": false,
+      "anchor": true
+    },
+    {
+      "name": "basic",
+      "username": "TrainingWheels",
+      "kind": {
+        "Builtin": {
+          "ai": "basic"
+        }
+      },
+      "rating": 1490.15880955117,
+      "rd": 34.15912090903861,
+      "vol": 0.060289041709987806,
+      "games": 323,
+      "wins": 24,
+      "civ_elo": {
+        "China": {
+          "rating": 1356.2237353482258,
+          "rd": 54.51393057422406,
+          "vol": 0.05996611047090313,
+          "games": 53,
+          "wins": 1
+        },
+        "Egypt": {
+          "rating": 1211.065870601666,
+          "rd": 60.35506700217949,
+          "vol": 0.0599381708863845,
+          "games": 60,
+          "wins": 0
+        },
+        "Greece": {
+          "rating": 1539.5512332874287,
+          "rd": 44.81097839224196,
+          "vol": 0.060040108518943286,
+          "games": 58,
+          "wins": 0
+        },
+        "Rome": {
+          "rating": 1681.4326712954214,
+          "rd": 44.52999665644614,
+          "vol": 0.06022177562254714,
+          "games": 41,
+          "wins": 7
+        }
+      },
+      "born_round": 0,
+      "parents": [],
+      "retired": false,
+      "anchor": true
+    },
+    {
+      "name": "advanced_v1",
+      "username": "OldGuard",
+      "kind": {
+        "Builtin": {
+          "ai": "advanced_v1"
+        }
+      },
+      "rating": 1754.6172748502536,
+      "rd": 30.318492415071397,
+      "vol": 0.06055057323762299,
+      "games": 331,
+      "wins": 111,
+      "civ_elo": {
+        "China": {
+          "rating": 1843.0716412428037,
+          "rd": 42.559458325833354,
+          "vol": 0.06023370971654645,
+          "games": 54,
+          "wins": 24
+        },
+        "Egypt": {
+          "rating": 1680.3347363383039,
+          "rd": 41.743175108193455,
+          "vol": 0.06034084788583122,
+          "games": 54,
+          "wins": 15
+        },
+        "Greece": {
+          "rating": 1719.94744582162,
+          "rd": 41.21700362034403,
+          "vol": 0.06001763955787718,
+          "games": 49,
+          "wins": 9
+        },
+        "Rome": {
+          "rating": 1769.5704766994043,
+          "rd": 39.530431631832876,
+          "vol": 0.060261310230063196,
+          "games": 60,
+          "wins": 20
+        }
+      },
+      "born_round": 0,
+      "parents": [],
+      "retired": false,
+      "anchor": false
+    },
+    {
+      "name": "adv-science",
+      "username": "TechPriest",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.0,
+            "settler_min_pop": 2.0,
+            "settler_stop_turn": 150.0,
+            "mil_per_city": 1.0,
+            "builder_per_city": 0.5,
+            "war_ratio": 1.8,
+            "war_margin": 20.0,
+            "peace_ratio": 0.6,
+            "war_min_turn": 40.0,
+            "attack_floor": 0.0,
+            "kill_bonus": 25.0,
+            "trade_caution": 1.0,
+            "settle_food": 1.2,
+            "settle_prod": 1.0,
+            "settle_gold": 0.3,
+            "settle_dist": 0.4,
+            "min_city_dist": 4.0,
+            "wonder_min_bld": 3.0,
+            "faith_builder": 120.0,
+            "d_campus": 4.0,
+            "d_commercial": 3.0,
+            "d_holy": 2.0,
+            "d_theater": 1.0,
+            "open0": 1.0,
+            "open1": 3.0,
+            "open2": 2.0,
+            "open3": 5.0,
+            "mv_support": 2.0,
+            "mv_threat": 0.5,
+            "command_radius": 6.0,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.67,
+            "cohesion": 3.0,
+            "focus_fire": 2.5,
+            "screen": 4.0,
+            "role_spacing": 2.0,
+            "objective_progress": 2.5,
+            "local_superiority": 6.0,
+            "withdraw_hp": 45.0,
+            "rejoin_hp": 80.0
+          },
+          "target": "science"
+        }
+      },
+      "rating": 1216.805298576075,
+      "rd": 46.72321776139633,
+      "vol": 0.06013331177111176,
+      "games": 49,
+      "wins": 1,
+      "civ_elo": {},
+      "born_round": 0,
+      "parents": [],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "adv-culture",
+      "username": "CultureVulture",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.0,
+            "settler_min_pop": 2.0,
+            "settler_stop_turn": 150.0,
+            "mil_per_city": 1.0,
+            "builder_per_city": 0.5,
+            "war_ratio": 1.8,
+            "war_margin": 20.0,
+            "peace_ratio": 0.6,
+            "war_min_turn": 40.0,
+            "attack_floor": 0.0,
+            "kill_bonus": 25.0,
+            "trade_caution": 1.0,
+            "settle_food": 1.2,
+            "settle_prod": 1.0,
+            "settle_gold": 0.3,
+            "settle_dist": 0.4,
+            "min_city_dist": 4.0,
+            "wonder_min_bld": 3.0,
+            "faith_builder": 120.0,
+            "d_campus": 4.0,
+            "d_commercial": 3.0,
+            "d_holy": 2.0,
+            "d_theater": 1.0,
+            "open0": 1.0,
+            "open1": 3.0,
+            "open2": 2.0,
+            "open3": 5.0,
+            "mv_support": 2.0,
+            "mv_threat": 0.5,
+            "command_radius": 6.0,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.67,
+            "cohesion": 3.0,
+            "focus_fire": 2.5,
+            "screen": 4.0,
+            "role_spacing": 2.0,
+            "objective_progress": 2.5,
+            "local_superiority": 6.0,
+            "withdraw_hp": 45.0,
+            "rejoin_hp": 80.0
+          },
+          "target": "culture"
+        }
+      },
+      "rating": 1183.391489710365,
+      "rd": 42.80664748022704,
+      "vol": 0.06025971538873812,
+      "games": 51,
+      "wins": 1,
+      "civ_elo": {},
+      "born_round": 0,
+      "parents": [],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "adv-religious",
+      "username": "ProphetMotive",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.0,
+            "settler_min_pop": 2.0,
+            "settler_stop_turn": 150.0,
+            "mil_per_city": 1.0,
+            "builder_per_city": 0.5,
+            "war_ratio": 1.8,
+            "war_margin": 20.0,
+            "peace_ratio": 0.6,
+            "war_min_turn": 40.0,
+            "attack_floor": 0.0,
+            "kill_bonus": 25.0,
+            "trade_caution": 1.0,
+            "settle_food": 1.2,
+            "settle_prod": 1.0,
+            "settle_gold": 0.3,
+            "settle_dist": 0.4,
+            "min_city_dist": 4.0,
+            "wonder_min_bld": 3.0,
+            "faith_builder": 120.0,
+            "d_campus": 4.0,
+            "d_commercial": 3.0,
+            "d_holy": 2.0,
+            "d_theater": 1.0,
+            "open0": 1.0,
+            "open1": 3.0,
+            "open2": 2.0,
+            "open3": 5.0,
+            "mv_support": 2.0,
+            "mv_threat": 0.5,
+            "command_radius": 6.0,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.67,
+            "cohesion": 3.0,
+            "focus_fire": 2.5,
+            "screen": 4.0,
+            "role_spacing": 2.0,
+            "objective_progress": 2.5,
+            "local_superiority": 6.0,
+            "withdraw_hp": 45.0,
+            "rejoin_hp": 80.0
+          },
+          "target": "religious"
+        }
+      },
+      "rating": 1600.6014566782817,
+      "rd": 30.820680712343957,
+      "vol": 0.0606537772483896,
+      "games": 116,
+      "wins": 58,
+      "civ_elo": {},
+      "born_round": 0,
+      "parents": [],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "adv-diplomatic",
+      "username": "SilverTongue",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.0,
+            "settler_min_pop": 2.0,
+            "settler_stop_turn": 150.0,
+            "mil_per_city": 1.0,
+            "builder_per_city": 0.5,
+            "war_ratio": 1.8,
+            "war_margin": 20.0,
+            "peace_ratio": 0.6,
+            "war_min_turn": 40.0,
+            "attack_floor": 0.0,
+            "kill_bonus": 25.0,
+            "trade_caution": 1.0,
+            "settle_food": 1.2,
+            "settle_prod": 1.0,
+            "settle_gold": 0.3,
+            "settle_dist": 0.4,
+            "min_city_dist": 4.0,
+            "wonder_min_bld": 3.0,
+            "faith_builder": 120.0,
+            "d_campus": 4.0,
+            "d_commercial": 3.0,
+            "d_holy": 2.0,
+            "d_theater": 1.0,
+            "open0": 1.0,
+            "open1": 3.0,
+            "open2": 2.0,
+            "open3": 5.0,
+            "mv_support": 2.0,
+            "mv_threat": 0.5,
+            "command_radius": 6.0,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.67,
+            "cohesion": 3.0,
+            "focus_fire": 2.5,
+            "screen": 4.0,
+            "role_spacing": 2.0,
+            "objective_progress": 2.5,
+            "local_superiority": 6.0,
+            "withdraw_hp": 45.0,
+            "rejoin_hp": 80.0
+          },
+          "target": "diplomatic"
+        }
+      },
+      "rating": 1285.9264092091173,
+      "rd": 39.32572466916021,
+      "vol": 0.06020234716652741,
+      "games": 71,
+      "wins": 5,
+      "civ_elo": {},
+      "born_round": 0,
+      "parents": [],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "adv-domination",
+      "username": "Warmonger",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.0,
+            "settler_min_pop": 2.0,
+            "settler_stop_turn": 150.0,
+            "mil_per_city": 1.0,
+            "builder_per_city": 0.5,
+            "war_ratio": 1.8,
+            "war_margin": 20.0,
+            "peace_ratio": 0.6,
+            "war_min_turn": 40.0,
+            "attack_floor": 0.0,
+            "kill_bonus": 25.0,
+            "trade_caution": 1.0,
+            "settle_food": 1.2,
+            "settle_prod": 1.0,
+            "settle_gold": 0.3,
+            "settle_dist": 0.4,
+            "min_city_dist": 4.0,
+            "wonder_min_bld": 3.0,
+            "faith_builder": 120.0,
+            "d_campus": 4.0,
+            "d_commercial": 3.0,
+            "d_holy": 2.0,
+            "d_theater": 1.0,
+            "open0": 1.0,
+            "open1": 3.0,
+            "open2": 2.0,
+            "open3": 5.0,
+            "mv_support": 2.0,
+            "mv_threat": 0.5,
+            "command_radius": 6.0,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.67,
+            "cohesion": 3.0,
+            "focus_fire": 2.5,
+            "screen": 4.0,
+            "role_spacing": 2.0,
+            "objective_progress": 2.5,
+            "local_superiority": 6.0,
+            "withdraw_hp": 45.0,
+            "rejoin_hp": 80.0
+          },
+          "target": "domination"
+        }
+      },
+      "rating": 1466.1047157942528,
+      "rd": 34.250591352050385,
+      "vol": 0.059903541349691614,
+      "games": 73,
+      "wins": 5,
+      "civ_elo": {},
+      "born_round": 0,
+      "parents": [],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "adv-score",
+      "username": "PointHoarder",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.0,
+            "settler_min_pop": 2.0,
+            "settler_stop_turn": 150.0,
+            "mil_per_city": 1.0,
+            "builder_per_city": 0.5,
+            "war_ratio": 1.8,
+            "war_margin": 20.0,
+            "peace_ratio": 0.6,
+            "war_min_turn": 40.0,
+            "attack_floor": 0.0,
+            "kill_bonus": 25.0,
+            "trade_caution": 1.0,
+            "settle_food": 1.2,
+            "settle_prod": 1.0,
+            "settle_gold": 0.3,
+            "settle_dist": 0.4,
+            "min_city_dist": 4.0,
+            "wonder_min_bld": 3.0,
+            "faith_builder": 120.0,
+            "d_campus": 4.0,
+            "d_commercial": 3.0,
+            "d_holy": 2.0,
+            "d_theater": 1.0,
+            "open0": 1.0,
+            "open1": 3.0,
+            "open2": 2.0,
+            "open3": 5.0,
+            "mv_support": 2.0,
+            "mv_threat": 0.5,
+            "command_radius": 6.0,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.67,
+            "cohesion": 3.0,
+            "focus_fire": 2.5,
+            "screen": 4.0,
+            "role_spacing": 2.0,
+            "objective_progress": 2.5,
+            "local_superiority": 6.0,
+            "withdraw_hp": 45.0,
+            "rejoin_hp": 80.0
+          },
+          "target": "score"
+        }
+      },
+      "rating": 1620.53083373686,
+      "rd": 30.646460491114965,
+      "vol": 0.060452628325662304,
+      "games": 115,
+      "wins": 24,
+      "civ_elo": {},
+      "born_round": 0,
+      "parents": [],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g4-9",
+      "username": "Eureka",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.0,
+            "settler_min_pop": 2.4682417224469515,
+            "settler_stop_turn": 109.3039359216522,
+            "mil_per_city": 0.8097251125574088,
+            "builder_per_city": 0.5,
+            "war_ratio": 1.8,
+            "war_margin": 20.0,
+            "peace_ratio": 0.6,
+            "war_min_turn": 40.0,
+            "attack_floor": 22.035919234970297,
+            "kill_bonus": 25.0,
+            "trade_caution": 1.2293732428416753,
+            "settle_food": 1.2,
+            "settle_prod": 0.727575499843589,
+            "settle_gold": 0.08920152765768674,
+            "settle_dist": 0.4,
+            "min_city_dist": 4.0,
+            "wonder_min_bld": 3.0,
+            "faith_builder": 113.1120518670145,
+            "d_campus": 4.447449555689996,
+            "d_commercial": 3.0,
+            "d_holy": 2.563830442399217,
+            "d_theater": 1.0,
+            "open0": 1.0,
+            "open1": 3.0,
+            "open2": 2.0,
+            "open3": 5.0,
+            "mv_support": 2.594326242449654,
+            "mv_threat": 0.3986242962380775,
+            "command_radius": 6.0,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.67,
+            "cohesion": 4.006739419578507,
+            "focus_fire": 2.5,
+            "screen": 4.0,
+            "role_spacing": 2.0,
+            "objective_progress": 2.5,
+            "local_superiority": 6.0,
+            "withdraw_hp": 45.0,
+            "rejoin_hp": 82.3615015287991
+          },
+          "target": "science"
+        }
+      },
+      "rating": 1139.697756072111,
+      "rd": 62.56181192642824,
+      "vol": 0.06014245217309623,
+      "games": 23,
+      "wins": 0,
+      "civ_elo": {},
+      "born_round": 4,
+      "parents": [
+        "adv-religious",
+        "adv-religious"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g4-10",
+      "username": "DarkHorse",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.0,
+            "settler_min_pop": 1.9370389927124605,
+            "settler_stop_turn": 150.0,
+            "mil_per_city": 1.0,
+            "builder_per_city": 0.41381870943006493,
+            "war_ratio": 1.8,
+            "war_margin": 20.0,
+            "peace_ratio": 0.6,
+            "war_min_turn": 54.545499081775134,
+            "attack_floor": 0.0,
+            "kill_bonus": 28.05990950366896,
+            "trade_caution": 1.0,
+            "settle_food": 1.0835018869262614,
+            "settle_prod": 1.0,
+            "settle_gold": 0.3,
+            "settle_dist": 0.5586141840196144,
+            "min_city_dist": 4.0,
+            "wonder_min_bld": 3.0,
+            "faith_builder": 120.0,
+            "d_campus": 3.3452215081707335,
+            "d_commercial": 2.259070237779306,
+            "d_holy": 2.0,
+            "d_theater": 1.398025024089976,
+            "open0": 0.7659622041302123,
+            "open1": 3.0,
+            "open2": 2.0,
+            "open3": 5.0,
+            "mv_support": 2.0,
+            "mv_threat": 0.5,
+            "command_radius": 6.0,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.67,
+            "cohesion": 4.068374883421683,
+            "focus_fire": 2.5,
+            "screen": 4.0,
+            "role_spacing": 2.0,
+            "objective_progress": 2.5,
+            "local_superiority": 7.672414271220169,
+            "withdraw_hp": 45.0,
+            "rejoin_hp": 80.0
+          },
+          "target": null
+        }
+      },
+      "rating": 1712.4905604597207,
+      "rd": 30.48202921397355,
+      "vol": 0.061247687674882076,
+      "games": 235,
+      "wins": 84,
+      "civ_elo": {
+        "China": {
+          "rating": 1772.8032314660895,
+          "rd": 42.54322747237651,
+          "vol": 0.06028560675674836,
+          "games": 47,
+          "wins": 22
+        },
+        "Egypt": {
+          "rating": 1652.252696240981,
+          "rd": 46.00075854459986,
+          "vol": 0.06022419184397141,
+          "games": 31,
+          "wins": 7
+        },
+        "Greece": {
+          "rating": 1703.0862528590617,
+          "rd": 46.99651880440792,
+          "vol": 0.06010308670768247,
+          "games": 31,
+          "wins": 5
+        },
+        "Rome": {
+          "rating": 1803.9875052920302,
+          "rd": 43.76980611515778,
+          "vol": 0.06034349994024833,
+          "games": 43,
+          "wins": 21
+        }
+      },
+      "born_round": 4,
+      "parents": [
+        "advanced",
+        "adv-score"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g4-11",
+      "username": "FaithHealer",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.0,
+            "settler_min_pop": 1.8191902444665669,
+            "settler_stop_turn": 125.93825555374669,
+            "mil_per_city": 0.7051073512339394,
+            "builder_per_city": 0.5,
+            "war_ratio": 1.6223773933735837,
+            "war_margin": 20.0,
+            "peace_ratio": 0.6,
+            "war_min_turn": 26.02427434937776,
+            "attack_floor": 0.0,
+            "kill_bonus": 25.0,
+            "trade_caution": 1.088752144365177,
+            "settle_food": 1.304634209163237,
+            "settle_prod": 1.0,
+            "settle_gold": 0.11077909669328372,
+            "settle_dist": 0.5912501081679365,
+            "min_city_dist": 4.0170331333789004,
+            "wonder_min_bld": 3.0,
+            "faith_builder": 120.0,
+            "d_campus": 4.0,
+            "d_commercial": 3.0,
+            "d_holy": 2.0,
+            "d_theater": 1.0,
+            "open0": 1.0,
+            "open1": 2.553881131436579,
+            "open2": 2.0,
+            "open3": 4.764510211284911,
+            "mv_support": 3.653546424578632,
+            "mv_threat": 0.5,
+            "command_radius": 6.788520226756249,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.684944700257859,
+            "cohesion": 3.5305073818798727,
+            "focus_fire": 2.5,
+            "screen": 4.0,
+            "role_spacing": 2.0,
+            "objective_progress": 2.55706143200985,
+            "local_superiority": 6.836365819010323,
+            "withdraw_hp": 46.89872042820268,
+            "rejoin_hp": 80.0
+          },
+          "target": "religious"
+        }
+      },
+      "rating": 1512.0591406944493,
+      "rd": 32.752782908321265,
+      "vol": 0.06059670022549971,
+      "games": 68,
+      "wins": 17,
+      "civ_elo": {},
+      "born_round": 4,
+      "parents": [
+        "adv-score",
+        "adv-religious"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g8-12",
+      "username": "BloodAndIron",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 11.560378270952468,
+            "settler_min_pop": 1.550128220398306,
+            "settler_stop_turn": 150.0,
+            "mil_per_city": 1.0,
+            "builder_per_city": 0.41381870943006493,
+            "war_ratio": 1.5072825098055225,
+            "war_margin": 20.0,
+            "peace_ratio": 0.6,
+            "war_min_turn": 26.317392103113136,
+            "attack_floor": -3.89228531259539,
+            "kill_bonus": 27.988430974984546,
+            "trade_caution": 1.0,
+            "settle_food": 1.0835018869262614,
+            "settle_prod": 1.2821212776189324,
+            "settle_gold": 0.45558685385093345,
+            "settle_dist": 0.4,
+            "min_city_dist": 4.0,
+            "wonder_min_bld": 3.0,
+            "faith_builder": 120.0,
+            "d_campus": 3.3452215081707335,
+            "d_commercial": 2.0800396810403647,
+            "d_holy": 2.0,
+            "d_theater": 1.398025024089976,
+            "open0": 0.1651113143613976,
+            "open1": 3.1260840310231157,
+            "open2": 2.1379423079972257,
+            "open3": 4.356425405661118,
+            "mv_support": 2.0,
+            "mv_threat": 0.4437460908593258,
+            "command_radius": 6.3237017178202395,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.67,
+            "cohesion": 4.068374883421683,
+            "focus_fire": 2.5,
+            "screen": 4.274063794026516,
+            "role_spacing": 2.0,
+            "objective_progress": 2.5,
+            "local_superiority": 5.932341871221754,
+            "withdraw_hp": 25.1104870035571,
+            "rejoin_hp": 80.0
+          },
+          "target": "domination"
+        }
+      },
+      "rating": 1441.8590700924071,
+      "rd": 52.754181865396255,
+      "vol": 0.05997226722507702,
+      "games": 20,
+      "wins": 2,
+      "civ_elo": {},
+      "born_round": 8,
+      "parents": [
+        "advanced_v1",
+        "g4-10"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g8-13",
+      "username": "ApostlePaula",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.81995372894324,
+            "settler_min_pop": 1.8191902444665669,
+            "settler_stop_turn": 125.93825555374669,
+            "mil_per_city": 0.7051073512339394,
+            "builder_per_city": 0.4640649572203524,
+            "war_ratio": 1.8,
+            "war_margin": 10.145836956589545,
+            "peace_ratio": 0.5228592776247598,
+            "war_min_turn": 40.0,
+            "attack_floor": 0.0,
+            "kill_bonus": 25.0,
+            "trade_caution": 1.0386650398275874,
+            "settle_food": 2.658184116331841,
+            "settle_prod": 1.2067249482136115,
+            "settle_gold": 0.11077909669328372,
+            "settle_dist": 1.6503413541082932,
+            "min_city_dist": 4.0,
+            "wonder_min_bld": 2.3375278815202556,
+            "faith_builder": 115.79362279062896,
+            "d_campus": 3.71789259408087,
+            "d_commercial": 3.0,
+            "d_holy": 2.0,
+            "d_theater": 0.6984617930572068,
+            "open0": 1.0,
+            "open1": 0.040700823165675686,
+            "open2": 2.0,
+            "open3": 5.0,
+            "mv_support": 2.0,
+            "mv_threat": 1.6886807119506253,
+            "command_radius": 6.758453974502377,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.7466463645112905,
+            "cohesion": 3.5305073818798727,
+            "focus_fire": 2.2254279070075573,
+            "screen": 4.0,
+            "role_spacing": 2.0,
+            "objective_progress": 2.55706143200985,
+            "local_superiority": 6.0,
+            "withdraw_hp": 46.89872042820268,
+            "rejoin_hp": 95.53280550771782
+          },
+          "target": "religious"
+        }
+      },
+      "rating": 1645.7978559631763,
+      "rd": 32.84130300303401,
+      "vol": 0.06021679209666342,
+      "games": 61,
+      "wins": 22,
+      "civ_elo": {},
+      "born_round": 8,
+      "parents": [
+        "g4-11",
+        "adv-religious"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g8-14",
+      "username": "ScoreKeeper",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.0,
+            "settler_min_pop": 2.0,
+            "settler_stop_turn": 170.45054837615493,
+            "mil_per_city": 1.255202743370047,
+            "builder_per_city": 0.6661468988101814,
+            "war_ratio": 1.8,
+            "war_margin": 51.027333544744266,
+            "peace_ratio": 0.6,
+            "war_min_turn": 40.0,
+            "attack_floor": 0.0,
+            "kill_bonus": 25.0,
+            "trade_caution": 1.0887449427419935,
+            "settle_food": 0.957531922737602,
+            "settle_prod": 0.9000164767941018,
+            "settle_gold": 0.12664980747915933,
+            "settle_dist": 0.34831207060375224,
+            "min_city_dist": 4.0,
+            "wonder_min_bld": 3.0,
+            "faith_builder": 103.27857396111932,
+            "d_campus": 4.241895095194781,
+            "d_commercial": 4.8473948833383504,
+            "d_holy": 1.697291830992821,
+            "d_theater": 1.0,
+            "open0": 0.46454760013117824,
+            "open1": 2.7595336697073294,
+            "open2": 1.5268273859317585,
+            "open3": 5.0,
+            "mv_support": 2.4406229362778,
+            "mv_threat": 0.5,
+            "command_radius": 2.6446466374652795,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.67,
+            "cohesion": 4.915807132764526,
+            "focus_fire": 2.125524462194896,
+            "screen": 4.0,
+            "role_spacing": 1.3017635879994036,
+            "objective_progress": 2.675603826277815,
+            "local_superiority": 7.561563519642206,
+            "withdraw_hp": 42.30222234518082,
+            "rejoin_hp": 80.0
+          },
+          "target": "score"
+        }
+      },
+      "rating": 1591.2605970309685,
+      "rd": 30.687868728060458,
+      "vol": 0.060559064011306146,
+      "games": 107,
+      "wins": 18,
+      "civ_elo": {
+        "China": {
+          "rating": 1475.1991978812055,
+          "rd": 70.85269337457459,
+          "vol": 0.05997665821782588,
+          "games": 10,
+          "wins": 0
+        },
+        "Egypt": {
+          "rating": 1526.0312462142515,
+          "rd": 69.70870547182359,
+          "vol": 0.05999495376366791,
+          "games": 11,
+          "wins": 0
+        },
+        "Greece": {
+          "rating": 1533.5198006253836,
+          "rd": 70.60627160562363,
+          "vol": 0.060103715661837996,
+          "games": 11,
+          "wins": 1
+        },
+        "Rome": {
+          "rating": 1642.7507715704487,
+          "rd": 69.41014979250768,
+          "vol": 0.05998582230450187,
+          "games": 9,
+          "wins": 0
+        }
+      },
+      "born_round": 8,
+      "parents": [
+        "advanced",
+        "adv-score"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g12-15",
+      "username": "HolyRoller",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 3.755400955171971,
+            "settler_min_pop": 2.0,
+            "settler_stop_turn": 146.1925484510768,
+            "mil_per_city": 1.0,
+            "builder_per_city": 0.41381870943006493,
+            "war_ratio": 1.4468484968929134,
+            "war_margin": 31.436438508567473,
+            "peace_ratio": 0.6,
+            "war_min_turn": 45.19594913884629,
+            "attack_floor": 0.24025543504114855,
+            "kill_bonus": 25.0,
+            "trade_caution": 1.1591902266516605,
+            "settle_food": 1.0835018869262614,
+            "settle_prod": 1.0,
+            "settle_gold": 0.9473803805609182,
+            "settle_dist": 0.5169183098990834,
+            "min_city_dist": 4.0,
+            "wonder_min_bld": 3.0,
+            "faith_builder": 68.92304392276509,
+            "d_campus": 4.0,
+            "d_commercial": 3.498170734676796,
+            "d_holy": 2.0,
+            "d_theater": 1.398025024089976,
+            "open0": 0.7659622041302123,
+            "open1": 3.0,
+            "open2": 1.2958447702807523,
+            "open3": 5.0,
+            "mv_support": 2.0,
+            "mv_threat": 0.5,
+            "command_radius": 4.969001233337187,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.67,
+            "cohesion": 3.695829162367786,
+            "focus_fire": 2.824946732572614,
+            "screen": 0.7633785118612488,
+            "role_spacing": 2.6181540736261324,
+            "objective_progress": 2.5,
+            "local_superiority": 4.608534850515315,
+            "withdraw_hp": 48.764518333204045,
+            "rejoin_hp": 80.0
+          },
+          "target": "religious"
+        }
+      },
+      "rating": 1612.597407769077,
+      "rd": 32.98171306389574,
+      "vol": 0.060521580451376816,
+      "games": 60,
+      "wins": 22,
+      "civ_elo": {
+        "China": {
+          "rating": 1414.219938354822,
+          "rd": 102.4935945967077,
+          "vol": 0.059989987236763576,
+          "games": 5,
+          "wins": 0
+        },
+        "Egypt": {
+          "rating": 1221.1247073349937,
+          "rd": 108.71816614867619,
+          "vol": 0.0599938333694364,
+          "games": 6,
+          "wins": 0
+        },
+        "Greece": {
+          "rating": 1686.2541091635617,
+          "rd": 114.58333414079148,
+          "vol": 0.060026151925520264,
+          "games": 4,
+          "wins": 2
+        },
+        "Rome": {
+          "rating": 1780.3300171287924,
+          "rd": 94.03267713908416,
+          "vol": 0.06004706940912198,
+          "games": 5,
+          "wins": 3
+        }
+      },
+      "born_round": 12,
+      "parents": [
+        "adv-score",
+        "g4-10"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g12-16",
+      "username": "Opportunist",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 3.9279283000465166,
+            "settler_min_pop": 4.50938277861156,
+            "settler_stop_turn": 144.97829696529598,
+            "mil_per_city": 1.0,
+            "builder_per_city": 0.5,
+            "war_ratio": 1.3614081255413517,
+            "war_margin": 12.20675263468618,
+            "peace_ratio": 0.49033538932739207,
+            "war_min_turn": 40.0,
+            "attack_floor": 0.0,
+            "kill_bonus": 15.442890527529393,
+            "trade_caution": 1.0,
+            "settle_food": 1.2,
+            "settle_prod": 1.0,
+            "settle_gold": 0.30012804642788016,
+            "settle_dist": 0.4,
+            "min_city_dist": 4.0,
+            "wonder_min_bld": 2.611680000859266,
+            "faith_builder": 159.95044845299896,
+            "d_campus": 4.0,
+            "d_commercial": 3.0,
+            "d_holy": 1.8026533857093696,
+            "d_theater": 1.0,
+            "open0": 2.799747409723699,
+            "open1": 3.0,
+            "open2": 2.0,
+            "open3": 5.0,
+            "mv_support": 1.622672681752526,
+            "mv_threat": 0.4447163019296804,
+            "command_radius": 6.0,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.67,
+            "cohesion": 3.0,
+            "focus_fire": 1.7286090867009445,
+            "screen": 4.0,
+            "role_spacing": 2.1577064202214418,
+            "objective_progress": 2.5,
+            "local_superiority": 4.222679384839369,
+            "withdraw_hp": 55.41836591524996,
+            "rejoin_hp": 81.85597991424044
+          },
+          "target": null
+        }
+      },
+      "rating": 1576.3477595635964,
+      "rd": 45.184295741965656,
+      "vol": 0.06010098662901109,
+      "games": 23,
+      "wins": 3,
+      "civ_elo": {},
+      "born_round": 12,
+      "parents": [
+        "advanced_v1",
+        "advanced"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g12-17",
+      "username": "Maverick",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.0,
+            "settler_min_pop": 1.4323054115152214,
+            "settler_stop_turn": 125.93825555374669,
+            "mil_per_city": 0.971860217888735,
+            "builder_per_city": 0.5,
+            "war_ratio": 1.8,
+            "war_margin": 10.145836956589545,
+            "peace_ratio": 0.5228592776247598,
+            "war_min_turn": 40.0,
+            "attack_floor": 5.450890297656241,
+            "kill_bonus": 25.0,
+            "trade_caution": 1.0386650398275874,
+            "settle_food": 1.2,
+            "settle_prod": 1.0381073880570797,
+            "settle_gold": 0.11077909669328372,
+            "settle_dist": 0.4,
+            "min_city_dist": 4.456456718347528,
+            "wonder_min_bld": 2.34966039710741,
+            "faith_builder": 115.79362279062896,
+            "d_campus": 3.71789259408087,
+            "d_commercial": 2.7835430811388564,
+            "d_holy": 2.7600324352806527,
+            "d_theater": 1.8291615147285296,
+            "open0": 1.0,
+            "open1": 0.040700823165675686,
+            "open2": 2.0,
+            "open3": 5.21145636754262,
+            "mv_support": 2.3792002918659083,
+            "mv_threat": 1.4706515595005325,
+            "command_radius": 6.00747488236532,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.67,
+            "cohesion": 3.0,
+            "focus_fire": 2.2254279070075573,
+            "screen": 4.0,
+            "role_spacing": 2.0,
+            "objective_progress": 2.4262504374826266,
+            "local_superiority": 6.131045518071863,
+            "withdraw_hp": 43.67387051011391,
+            "rejoin_hp": 80.0
+          },
+          "target": null
+        }
+      },
+      "rating": 1591.3344840238904,
+      "rd": 50.466362639816346,
+      "vol": 0.06007577156268903,
+      "games": 20,
+      "wins": 3,
+      "civ_elo": {},
+      "born_round": 12,
+      "parents": [
+        "g8-13",
+        "advanced"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g16-18",
+      "username": "FreeSpirit",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.4444393944093665,
+            "settler_min_pop": 2.0,
+            "settler_stop_turn": 170.45054837615493,
+            "mil_per_city": 1.0,
+            "builder_per_city": 0.6661468988101814,
+            "war_ratio": 1.8,
+            "war_margin": 20.0,
+            "peace_ratio": 0.6,
+            "war_min_turn": 40.0,
+            "attack_floor": 0.0,
+            "kill_bonus": 22.876726586111417,
+            "trade_caution": 1.0,
+            "settle_food": 0.9705932673386626,
+            "settle_prod": 0.9000164767941018,
+            "settle_gold": 0.3,
+            "settle_dist": 0.4,
+            "min_city_dist": 4.0,
+            "wonder_min_bld": 3.0,
+            "faith_builder": 103.27857396111932,
+            "d_campus": 4.750912235221074,
+            "d_commercial": 4.8473948833383504,
+            "d_holy": 2.09642743683066,
+            "d_theater": 1.0,
+            "open0": 1.0,
+            "open1": 3.4005100768287044,
+            "open2": 2.101344169511159,
+            "open3": 4.284629259509875,
+            "mv_support": 6.219479178655747,
+            "mv_threat": 0.32755254853741467,
+            "command_radius": 2.6446466374652795,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.67,
+            "cohesion": 9.439424476171649,
+            "focus_fire": 3.13563555156916,
+            "screen": 3.633003046605347,
+            "role_spacing": 1.3017635879994036,
+            "objective_progress": 2.5,
+            "local_superiority": 6.0,
+            "withdraw_hp": 39.89209844474403,
+            "rejoin_hp": 80.0
+          },
+          "target": null
+        }
+      },
+      "rating": 1662.3331738597694,
+      "rd": 31.48761942379074,
+      "vol": 0.06137203974971048,
+      "games": 84,
+      "wins": 19,
+      "civ_elo": {
+        "China": {
+          "rating": 1740.31488515257,
+          "rd": 65.23282799837236,
+          "vol": 0.06017080081321617,
+          "games": 12,
+          "wins": 4
+        },
+        "Egypt": {
+          "rating": 1620.2554321611199,
+          "rd": 52.43565787394925,
+          "vol": 0.06013436816618774,
+          "games": 20,
+          "wins": 4
+        },
+        "Greece": {
+          "rating": 1613.8218681327783,
+          "rd": 50.78177640062787,
+          "vol": 0.06006528681170459,
+          "games": 20,
+          "wins": 2
+        },
+        "Rome": {
+          "rating": 1749.1172503616137,
+          "rd": 68.28658174568923,
+          "vol": 0.06007030199345004,
+          "games": 11,
+          "wins": 5
+        }
+      },
+      "born_round": 16,
+      "parents": [
+        "advanced_v1",
+        "g8-14"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g16-19",
+      "username": "FreeSpirit2",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.0,
+            "settler_min_pop": 1.976044013076368,
+            "settler_stop_turn": 150.0,
+            "mil_per_city": 1.0,
+            "builder_per_city": 0.5,
+            "war_ratio": 1.8,
+            "war_margin": 20.0,
+            "peace_ratio": 0.6496421669109604,
+            "war_min_turn": 40.0,
+            "attack_floor": 3.356715902948064,
+            "kill_bonus": 25.0,
+            "trade_caution": 0.9074002935672248,
+            "settle_food": 1.350919224362388,
+            "settle_prod": 1.0,
+            "settle_gold": 0.3,
+            "settle_dist": 0.4,
+            "min_city_dist": 4.309273521771584,
+            "wonder_min_bld": 3.1967611294298948,
+            "faith_builder": 120.0,
+            "d_campus": 4.0,
+            "d_commercial": 3.0,
+            "d_holy": 2.0,
+            "d_theater": 1.2894123372922384,
+            "open0": 0.4265238517262463,
+            "open1": 3.018894082290236,
+            "open2": 1.2226983246837824,
+            "open3": 5.0,
+            "mv_support": 2.0,
+            "mv_threat": 0.5,
+            "command_radius": 6.0,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.67,
+            "cohesion": 3.9805189390014646,
+            "focus_fire": 2.5,
+            "screen": 6.791457418156982,
+            "role_spacing": 2.0,
+            "objective_progress": 2.5,
+            "local_superiority": 6.0,
+            "withdraw_hp": 45.06700986190141,
+            "rejoin_hp": 82.92163090645144
+          },
+          "target": null
+        }
+      },
+      "rating": 1709.1247069739825,
+      "rd": 30.090127290574706,
+      "vol": 0.06024663981259654,
+      "games": 126,
+      "wins": 32,
+      "civ_elo": {
+        "China": {
+          "rating": 1745.4143100602146,
+          "rd": 45.92712571337538,
+          "vol": 0.06013305390629315,
+          "games": 30,
+          "wins": 10
+        },
+        "Egypt": {
+          "rating": 1575.4509872047558,
+          "rd": 47.97255026631008,
+          "vol": 0.060078287409908636,
+          "games": 29,
+          "wins": 2
+        },
+        "Greece": {
+          "rating": 1749.6871851527285,
+          "rd": 55.70117348554634,
+          "vol": 0.06004994648240946,
+          "games": 16,
+          "wins": 4
+        },
+        "Rome": {
+          "rating": 1764.5506617486403,
+          "rd": 45.48423580370251,
+          "vol": 0.060052574813626504,
+          "games": 30,
+          "wins": 10
+        }
+      },
+      "born_round": 16,
+      "parents": [
+        "advanced_v1",
+        "adv-religious"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g16-20",
+      "username": "DarkHorse2",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.394448311178792,
+            "settler_min_pop": 2.0,
+            "settler_stop_turn": 176.69262015808897,
+            "mil_per_city": 1.255202743370047,
+            "builder_per_city": 0.6661468988101814,
+            "war_ratio": 1.8,
+            "war_margin": 51.027333544744266,
+            "peace_ratio": 0.6,
+            "war_min_turn": 37.40245237243147,
+            "attack_floor": -1.5219587110874713,
+            "kill_bonus": 23.97403146161852,
+            "trade_caution": 1.0887449427419935,
+            "settle_food": 2.2591875519807134,
+            "settle_prod": 0.9000164767941018,
+            "settle_gold": 0.12664980747915933,
+            "settle_dist": 0.21807088814499664,
+            "min_city_dist": 4.2531002392022605,
+            "wonder_min_bld": 3.0,
+            "faith_builder": 289.9109076855009,
+            "d_campus": 4.241895095194781,
+            "d_commercial": 4.8473948833383504,
+            "d_holy": 5.760043779544282,
+            "d_theater": 1.0,
+            "open0": 0.012593424815013687,
+            "open1": 2.7595336697073294,
+            "open2": 1.7277413122382863,
+            "open3": 5.0,
+            "mv_support": 2.4406229362778,
+            "mv_threat": 0.424626515699307,
+            "command_radius": 2.6446466374652795,
+            "muster_radius": 2.735849029143772,
+            "muster_readiness": 0.67,
+            "cohesion": 4.915807132764526,
+            "focus_fire": 2.125524462194896,
+            "screen": 11.060109015109616,
+            "role_spacing": 0.4974778035129725,
+            "objective_progress": 2.675603826277815,
+            "local_superiority": 5.243832466896642,
+            "withdraw_hp": 42.18066807968271,
+            "rejoin_hp": 80.0
+          },
+          "target": null
+        }
+      },
+      "rating": 1666.934812863991,
+      "rd": 30.359386770232465,
+      "vol": 0.06030063483470103,
+      "games": 125,
+      "wins": 31,
+      "civ_elo": {
+        "China": {
+          "rating": 1719.2759411591167,
+          "rd": 47.81081863425069,
+          "vol": 0.060215910762449656,
+          "games": 25,
+          "wins": 7
+        },
+        "Egypt": {
+          "rating": 1620.359201985194,
+          "rd": 48.070047117193084,
+          "vol": 0.060181735166611246,
+          "games": 27,
+          "wins": 7
+        },
+        "Greece": {
+          "rating": 1654.090831750935,
+          "rd": 47.18794309177493,
+          "vol": 0.06008594560911288,
+          "games": 25,
+          "wins": 4
+        },
+        "Rome": {
+          "rating": 1704.272296084669,
+          "rd": 47.73677972092612,
+          "vol": 0.059953858458108716,
+          "games": 26,
+          "wins": 5
+        }
+      },
+      "born_round": 16,
+      "parents": [
+        "g8-14",
+        "g8-14"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g20-21",
+      "username": "Maverick2",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.394448311178792,
+            "settler_min_pop": 2.0,
+            "settler_stop_turn": 176.69262015808897,
+            "mil_per_city": 0.8768615988074432,
+            "builder_per_city": 0.5,
+            "war_ratio": 1.7496348368488723,
+            "war_margin": 51.027333544744266,
+            "peace_ratio": 0.6,
+            "war_min_turn": 40.0,
+            "attack_floor": 0.0,
+            "kill_bonus": 25.0,
+            "trade_caution": 1.3329711973837433,
+            "settle_food": 1.063548156042481,
+            "settle_prod": 0.9000164767941018,
+            "settle_gold": 0.12664980747915933,
+            "settle_dist": 0.21807088814499664,
+            "min_city_dist": 4.2531002392022605,
+            "wonder_min_bld": 3.0,
+            "faith_builder": 289.9109076855009,
+            "d_campus": 4.755135527469157,
+            "d_commercial": 7.114443256896378,
+            "d_holy": 5.760043779544282,
+            "d_theater": 0.10149477389055528,
+            "open0": 0.012593424815013687,
+            "open1": 3.1910966768173075,
+            "open2": 1.7277413122382863,
+            "open3": 5.0,
+            "mv_support": 2.4406229362778,
+            "mv_threat": 0.5,
+            "command_radius": 2.6446466374652795,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.6049307629415004,
+            "cohesion": 4.915807132764526,
+            "focus_fire": 2.125524462194896,
+            "screen": 11.060109015109616,
+            "role_spacing": 0.4974778035129725,
+            "objective_progress": 2.675603826277815,
+            "local_superiority": 6.0,
+            "withdraw_hp": 41.52347596448905,
+            "rejoin_hp": 80.0
+          },
+          "target": null
+        }
+      },
+      "rating": 1790.8002405230168,
+      "rd": 30.96036270006197,
+      "vol": 0.061391984605990386,
+      "games": 216,
+      "wins": 82,
+      "civ_elo": {
+        "China": {
+          "rating": 1793.1256206557878,
+          "rd": 40.089799419194385,
+          "vol": 0.06087994075429214,
+          "games": 70,
+          "wins": 32
+        },
+        "Egypt": {
+          "rating": 1699.885988790652,
+          "rd": 42.269499806646834,
+          "vol": 0.060535617702945056,
+          "games": 51,
+          "wins": 16
+        },
+        "Greece": {
+          "rating": 1692.66354810688,
+          "rd": 43.90467652584686,
+          "vol": 0.060057119076081016,
+          "games": 49,
+          "wins": 10
+        },
+        "Rome": {
+          "rating": 1914.3324571915925,
+          "rd": 45.087515936341894,
+          "vol": 0.060216841517329936,
+          "games": 46,
+          "wins": 24
+        }
+      },
+      "born_round": 20,
+      "parents": [
+        "advanced_v1",
+        "g16-20"
+      ],
+      "retired": false,
+      "anchor": false
+    },
+    {
+      "name": "g20-22",
+      "username": "DarkHorse3",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.0,
+            "settler_min_pop": 2.0,
+            "settler_stop_turn": 170.45054837615493,
+            "mil_per_city": 1.255202743370047,
+            "builder_per_city": 0.5,
+            "war_ratio": 1.8,
+            "war_margin": 20.0,
+            "peace_ratio": 0.6496421669109604,
+            "war_min_turn": 17.55675896652059,
+            "attack_floor": 3.356715902948064,
+            "kill_bonus": 29.724457397231618,
+            "trade_caution": 0.9074002935672248,
+            "settle_food": 0.957531922737602,
+            "settle_prod": 0.9000164767941018,
+            "settle_gold": 0.3522922537342119,
+            "settle_dist": 0.34831207060375224,
+            "min_city_dist": 4.095121212872027,
+            "wonder_min_bld": 3.0,
+            "faith_builder": 120.0,
+            "d_campus": 4.241895095194781,
+            "d_commercial": 3.0,
+            "d_holy": 1.169210230221575,
+            "d_theater": 1.0,
+            "open0": 4.126138310285741,
+            "open1": 3.018894082290236,
+            "open2": 1.5268273859317585,
+            "open3": 5.608089161265233,
+            "mv_support": 2.366888682760206,
+            "mv_threat": 2.5234960786318275,
+            "command_radius": 6.030786518790406,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.6885930046663169,
+            "cohesion": 4.915807132764526,
+            "focus_fire": 1.8105073517922592,
+            "screen": 3.3369343756653125,
+            "role_spacing": 2.0,
+            "objective_progress": 2.5,
+            "local_superiority": 7.266929127297871,
+            "withdraw_hp": 45.06700986190141,
+            "rejoin_hp": 82.92163090645144
+          },
+          "target": null
+        }
+      },
+      "rating": 1600.4883432343383,
+      "rd": 46.94489894490231,
+      "vol": 0.06013148707587338,
+      "games": 21,
+      "wins": 5,
+      "civ_elo": {
+        "China": {
+          "rating": 1726.9503958452126,
+          "rd": 102.5125821520776,
+          "vol": 0.0600629447582022,
+          "games": 5,
+          "wins": 3
+        },
+        "Egypt": {
+          "rating": 1315.941634045029,
+          "rd": 134.8326978292439,
+          "vol": 0.05999290333264051,
+          "games": 3,
+          "wins": 0
+        },
+        "Greece": {
+          "rating": 1706.2144301916896,
+          "rd": 108.80510635271192,
+          "vol": 0.060040014661488415,
+          "games": 4,
+          "wins": 1
+        },
+        "Rome": {
+          "rating": 1563.9666559908208,
+          "rd": 71.997310482132,
+          "vol": 0.06002124959311172,
+          "games": 9,
+          "wins": 1
+        }
+      },
+      "born_round": 20,
+      "parents": [
+        "g8-14",
+        "g16-19"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g20-23",
+      "username": "Opportunist2",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.0,
+            "settler_min_pop": 3.552967225833695,
+            "settler_stop_turn": 205.20931445334256,
+            "mil_per_city": 0.757875975073647,
+            "builder_per_city": 0.6661468988101814,
+            "war_ratio": 4.342797129486034,
+            "war_margin": 24.229823958961376,
+            "peace_ratio": 0.5210356518263076,
+            "war_min_turn": 40.0,
+            "attack_floor": 0.0,
+            "kill_bonus": 20.941620920306725,
+            "trade_caution": 0.6652463221329119,
+            "settle_food": 1.087950475348151,
+            "settle_prod": 0.7076951530669198,
+            "settle_gold": 0.14738043715520638,
+            "settle_dist": 0.4,
+            "min_city_dist": 4.0,
+            "wonder_min_bld": 3.7132077193492767,
+            "faith_builder": 120.0,
+            "d_campus": 4.2604422348200455,
+            "d_commercial": 4.8473948833383504,
+            "d_holy": 3.912099981760858,
+            "d_theater": 1.8136188935189477,
+            "open0": 0.441888816411708,
+            "open1": 2.7595336697073294,
+            "open2": 1.5268273859317585,
+            "open3": 5.0,
+            "mv_support": 2.0869208769605434,
+            "mv_threat": 1.675002988755939,
+            "command_radius": 6.0,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.67,
+            "cohesion": 4.915807132764526,
+            "focus_fire": 2.5,
+            "screen": 4.0,
+            "role_spacing": 2.0,
+            "objective_progress": 1.9811798554607776,
+            "local_superiority": 7.561563519642206,
+            "withdraw_hp": 42.30222234518082,
+            "rejoin_hp": 80.0
+          },
+          "target": null
+        }
+      },
+      "rating": 1600.4838490331103,
+      "rd": 49.33941296405972,
+      "vol": 0.06029611224525206,
+      "games": 22,
+      "wins": 2,
+      "civ_elo": {
+        "China": {
+          "rating": 1673.3609670513074,
+          "rd": 98.75950985993845,
+          "vol": 0.060042019793494,
+          "games": 5,
+          "wins": 1
+        },
+        "Egypt": {
+          "rating": 1596.6786456720984,
+          "rd": 119.42435313468194,
+          "vol": 0.05999459913313037,
+          "games": 3,
+          "wins": 0
+        },
+        "Greece": {
+          "rating": 1635.5749899727957,
+          "rd": 80.58765569760179,
+          "vol": 0.06006110172267723,
+          "games": 8,
+          "wins": 1
+        },
+        "Rome": {
+          "rating": 1466.9699665419782,
+          "rd": 95.50970674044765,
+          "vol": 0.059987808802082,
+          "games": 6,
+          "wins": 0
+        }
+      },
+      "born_round": 20,
+      "parents": [
+        "advanced_v1",
+        "g8-14"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g24-24",
+      "username": "WildCard",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.394448311178792,
+            "settler_min_pop": 2.0,
+            "settler_stop_turn": 176.69262015808897,
+            "mil_per_city": 1.0,
+            "builder_per_city": 1.3332379844803697,
+            "war_ratio": 1.8,
+            "war_margin": 51.027333544744266,
+            "peace_ratio": 0.6,
+            "war_min_turn": 35.86045891051346,
+            "attack_floor": -5.831906123259352,
+            "kill_bonus": 25.0,
+            "trade_caution": 1.3329711973837433,
+            "settle_food": 0.9705932673386626,
+            "settle_prod": 0.9000164767941018,
+            "settle_gold": 0.12664980747915933,
+            "settle_dist": 0.4,
+            "min_city_dist": 3.707620984249745,
+            "wonder_min_bld": 3.0,
+            "faith_builder": 289.9109076855009,
+            "d_campus": 4.755135527469157,
+            "d_commercial": 6.416749906978733,
+            "d_holy": 1.2418262683684143,
+            "d_theater": 0.2640389154105248,
+            "open0": 1.6063600603113888,
+            "open1": 3.1910966768173075,
+            "open2": 2.101344169511159,
+            "open3": 4.284629259509875,
+            "mv_support": 2.4406229362778,
+            "mv_threat": 0.32755254853741467,
+            "command_radius": 2.6446466374652795,
+            "muster_radius": 3.0999677139163553,
+            "muster_readiness": 0.6282997599589771,
+            "cohesion": 9.002614802182098,
+            "focus_fire": 2.125524462194896,
+            "screen": 11.060109015109616,
+            "role_spacing": 0.5421580240916887,
+            "objective_progress": 2.675603826277815,
+            "local_superiority": 6.0,
+            "withdraw_hp": 41.52347596448905,
+            "rejoin_hp": 78.5228442501537
+          },
+          "target": null
+        }
+      },
+      "rating": 1645.797831606008,
+      "rd": 46.425911211013826,
+      "vol": 0.05997916934808843,
+      "games": 22,
+      "wins": 6,
+      "civ_elo": {
+        "China": {
+          "rating": 1783.6724530694346,
+          "rd": 95.75537530400854,
+          "vol": 0.06003384044492957,
+          "games": 5,
+          "wins": 2
+        },
+        "Egypt": {
+          "rating": 1517.2264843594025,
+          "rd": 101.89726347997343,
+          "vol": 0.06005979105286968,
+          "games": 5,
+          "wins": 1
+        },
+        "Greece": {
+          "rating": 1559.3319105302328,
+          "rd": 71.65504280198597,
+          "vol": 0.06003402446614524,
+          "games": 9,
+          "wins": 2
+        },
+        "Rome": {
+          "rating": 1826.2623149887477,
+          "rd": 114.45636884623113,
+          "vol": 0.05999768885583983,
+          "games": 3,
+          "wins": 1
+        }
+      },
+      "born_round": 24,
+      "parents": [
+        "g16-18",
+        "g20-21"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g24-25",
+      "username": "Maverick3",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.2275002240977155,
+            "settler_min_pop": 1.9370389927124605,
+            "settler_stop_turn": 118.1770080684469,
+            "mil_per_city": 1.0,
+            "builder_per_city": 0.41381870943006493,
+            "war_ratio": 1.8,
+            "war_margin": 20.0,
+            "peace_ratio": 0.613667848929412,
+            "war_min_turn": 54.545499081775134,
+            "attack_floor": 0.0,
+            "kill_bonus": 28.05990950366896,
+            "trade_caution": 1.2557482517989011,
+            "settle_food": 1.2,
+            "settle_prod": 0.9995226142095474,
+            "settle_gold": 0.3,
+            "settle_dist": 0.6397276387860532,
+            "min_city_dist": 3.5791726446677576,
+            "wonder_min_bld": 2.7006113743008746,
+            "faith_builder": 120.0,
+            "d_campus": 3.3452215081707335,
+            "d_commercial": 1.4867389192428495,
+            "d_holy": 2.0,
+            "d_theater": 1.398025024089976,
+            "open0": 0.7940025063864415,
+            "open1": 3.0,
+            "open2": 1.2599784715517512,
+            "open3": 5.0,
+            "mv_support": 1.3046984781205015,
+            "mv_threat": 0.5,
+            "command_radius": 6.895066341785864,
+            "muster_radius": 2.538834300121912,
+            "muster_readiness": 0.67,
+            "cohesion": 8.717992548579943,
+            "focus_fire": 3.0642503957148897,
+            "screen": 4.0,
+            "role_spacing": 2.0,
+            "objective_progress": 2.5,
+            "local_superiority": 7.672414271220169,
+            "withdraw_hp": 41.14609383682639,
+            "rejoin_hp": 80.0
+          },
+          "target": null
+        }
+      },
+      "rating": 1640.3613834329617,
+      "rd": 36.073747758635484,
+      "vol": 0.060025544911593925,
+      "games": 42,
+      "wins": 8,
+      "civ_elo": {
+        "China": {
+          "rating": 1696.117991477986,
+          "rd": 81.9557645595388,
+          "vol": 0.06006545873358567,
+          "games": 7,
+          "wins": 2
+        },
+        "Egypt": {
+          "rating": 1603.3949390843625,
+          "rd": 60.66451923108386,
+          "vol": 0.060080422642491735,
+          "games": 14,
+          "wins": 1
+        },
+        "Greece": {
+          "rating": 1517.3917026272152,
+          "rd": 67.93250044834433,
+          "vol": 0.05998228781257983,
+          "games": 11,
+          "wins": 0
+        },
+        "Rome": {
+          "rating": 1766.2169338562994,
+          "rd": 67.93292412462904,
+          "vol": 0.06009210962257227,
+          "games": 10,
+          "wins": 5
+        }
+      },
+      "born_round": 24,
+      "parents": [
+        "advanced_v1",
+        "g4-10"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g24-26",
+      "username": "DarkHorse4",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.394448311178792,
+            "settler_min_pop": 2.1951608945976666,
+            "settler_stop_turn": 178.3127031631219,
+            "mil_per_city": 0.6172237946087322,
+            "builder_per_city": 0.5,
+            "war_ratio": 2.4831459827304547,
+            "war_margin": 20.0,
+            "peace_ratio": 0.6,
+            "war_min_turn": 40.0,
+            "attack_floor": 0.6362023695679481,
+            "kill_bonus": 25.56606880766358,
+            "trade_caution": 1.3329711973837433,
+            "settle_food": 1.063548156042481,
+            "settle_prod": 0.9000164767941018,
+            "settle_gold": 0.3,
+            "settle_dist": 0.43475686805400066,
+            "min_city_dist": 3.5346461094848665,
+            "wonder_min_bld": 3.0,
+            "faith_builder": 120.0,
+            "d_campus": 4.0,
+            "d_commercial": 3.6373608726547895,
+            "d_holy": 5.760043779544282,
+            "d_theater": 1.0,
+            "open0": 0.5269738518967851,
+            "open1": 3.1910966768173075,
+            "open2": 2.0,
+            "open3": 5.0,
+            "mv_support": 2.4406229362778,
+            "mv_threat": 0.5,
+            "command_radius": 2.6446466374652795,
+            "muster_radius": 2.9304524272975945,
+            "muster_readiness": 0.6049307629415004,
+            "cohesion": 4.915807132764526,
+            "focus_fire": 2.5,
+            "screen": 5.241039008404503,
+            "role_spacing": 2.0,
+            "objective_progress": 2.5,
+            "local_superiority": 4.153316800797693,
+            "withdraw_hp": 45.0,
+            "rejoin_hp": 82.88337997778723
+          },
+          "target": null
+        }
+      },
+      "rating": 1643.8569661086158,
+      "rd": 48.325273346257745,
+      "vol": 0.06002005354829389,
+      "games": 21,
+      "wins": 4,
+      "civ_elo": {
+        "China": {
+          "rating": 1508.1118614155203,
+          "rd": 110.76061825227252,
+          "vol": 0.0599860597440973,
+          "games": 4,
+          "wins": 0
+        },
+        "Egypt": {
+          "rating": 1649.654076781163,
+          "rd": 93.43827668061833,
+          "vol": 0.05999821034069239,
+          "games": 5,
+          "wins": 1
+        },
+        "Greece": {
+          "rating": 1613.5216688407434,
+          "rd": 69.55385222369748,
+          "vol": 0.05998642933647425,
+          "games": 9,
+          "wins": 1
+        },
+        "Rome": {
+          "rating": 1918.2530839698363,
+          "rd": 143.86582624728308,
+          "vol": 0.05999981703372549,
+          "games": 3,
+          "wins": 2
+        }
+      },
+      "born_round": 24,
+      "parents": [
+        "advanced_v1",
+        "g20-21"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g28-27",
+      "username": "WildCard2",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.977417388002806,
+            "settler_min_pop": 1.9370389927124605,
+            "settler_stop_turn": 117.24531179984331,
+            "mil_per_city": 1.0,
+            "builder_per_city": 0.5,
+            "war_ratio": 1.8,
+            "war_margin": 20.0,
+            "peace_ratio": 0.5130040073630837,
+            "war_min_turn": 40.0,
+            "attack_floor": 3.356715902948064,
+            "kill_bonus": 28.05990950366896,
+            "trade_caution": 0.9074002935672248,
+            "settle_food": 1.3181074877246945,
+            "settle_prod": 0.7632364434581703,
+            "settle_gold": 0.14215534026481064,
+            "settle_dist": 0.5586141840196144,
+            "min_city_dist": 3.5684516212864157,
+            "wonder_min_bld": 3.1967611294298948,
+            "faith_builder": 350.3356310684301,
+            "d_campus": 3.3452215081707335,
+            "d_commercial": 2.155900614335157,
+            "d_holy": 2.0,
+            "d_theater": 1.398025024089976,
+            "open0": 0.4265238517262463,
+            "open1": 3.749148791670554,
+            "open2": 1.7650809148384996,
+            "open3": 5.0,
+            "mv_support": 2.0,
+            "mv_threat": 0.5,
+            "command_radius": 6.0,
+            "muster_radius": 2.7247211367617563,
+            "muster_readiness": 0.6838078070115052,
+            "cohesion": 4.068374883421683,
+            "focus_fire": 2.5,
+            "screen": 6.791457418156982,
+            "role_spacing": 2.0,
+            "objective_progress": 2.5,
+            "local_superiority": 6.064886527704149,
+            "withdraw_hp": 45.06700986190141,
+            "rejoin_hp": 82.05888900190527
+          },
+          "target": null
+        }
+      },
+      "rating": 1715.1546371101656,
+      "rd": 30.64997707574648,
+      "vol": 0.06072046838895615,
+      "games": 126,
+      "wins": 33,
+      "civ_elo": {
+        "China": {
+          "rating": 1819.9504984898608,
+          "rd": 54.26475403136421,
+          "vol": 0.06020850511961431,
+          "games": 23,
+          "wins": 9
+        },
+        "Egypt": {
+          "rating": 1642.6674717578085,
+          "rd": 43.18265473095128,
+          "vol": 0.06005446380401312,
+          "games": 37,
+          "wins": 5
+        },
+        "Greece": {
+          "rating": 1765.058997176971,
+          "rd": 46.98043853238997,
+          "vol": 0.06009188235814777,
+          "games": 30,
+          "wins": 7
+        },
+        "Rome": {
+          "rating": 1730.1127416591162,
+          "rd": 43.576994242315656,
+          "vol": 0.060158151568365216,
+          "games": 36,
+          "wins": 12
+        }
+      },
+      "born_round": 28,
+      "parents": [
+        "g16-19",
+        "g4-10"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g28-28",
+      "username": "Opportunist3",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 9.6805081708184,
+            "settler_min_pop": 2.0,
+            "settler_stop_turn": 145.21207009875727,
+            "mil_per_city": 1.0803395701297425,
+            "builder_per_city": 0.7035526467258159,
+            "war_ratio": 1.3047688787819456,
+            "war_margin": 51.027333544744266,
+            "peace_ratio": 0.6,
+            "war_min_turn": 37.40245237243147,
+            "attack_floor": -7.238519534073282,
+            "kill_bonus": 32.66747357863939,
+            "trade_caution": 1.0887449427419935,
+            "settle_food": 0.3476655384344157,
+            "settle_prod": 0.9000164767941018,
+            "settle_gold": 0.12664980747915933,
+            "settle_dist": 0.4081858445177581,
+            "min_city_dist": 4.2531002392022605,
+            "wonder_min_bld": 3.0,
+            "faith_builder": 289.9109076855009,
+            "d_campus": 4.839532425475503,
+            "d_commercial": 4.8473948833383504,
+            "d_holy": 5.760043779544282,
+            "d_theater": 0.6461876136698144,
+            "open0": 1.0,
+            "open1": 3.8442330185476843,
+            "open2": 1.7277413122382863,
+            "open3": 4.082876560785131,
+            "mv_support": 2.4406229362778,
+            "mv_threat": 0.424626515699307,
+            "command_radius": 3.595896998027349,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.67,
+            "cohesion": 9.682981623581584,
+            "focus_fire": 1.6931404973740598,
+            "screen": 11.060109015109616,
+            "role_spacing": 0.4974778035129725,
+            "objective_progress": 3.3341499603853615,
+            "local_superiority": 6.0,
+            "withdraw_hp": 38.85619466254704,
+            "rejoin_hp": 74.90494840643609
+          },
+          "target": null
+        }
+      },
+      "rating": 1765.9511450134623,
+      "rd": 30.23986053391027,
+      "vol": 0.060710072782186805,
+      "games": 170,
+      "wins": 61,
+      "civ_elo": {
+        "China": {
+          "rating": 1828.3144312952784,
+          "rd": 46.79626106560015,
+          "vol": 0.06031696723129514,
+          "games": 31,
+          "wins": 14
+        },
+        "Egypt": {
+          "rating": 1737.8477985524391,
+          "rd": 42.99063755841005,
+          "vol": 0.0604208776141234,
+          "games": 43,
+          "wins": 16
+        },
+        "Greece": {
+          "rating": 1739.4349964001747,
+          "rd": 43.07739021630461,
+          "vol": 0.06019010749718731,
+          "games": 43,
+          "wins": 12
+        },
+        "Rome": {
+          "rating": 1780.023621440756,
+          "rd": 40.73825193133914,
+          "vol": 0.06020840281648155,
+          "games": 53,
+          "wins": 19
+        }
+      },
+      "born_round": 28,
+      "parents": [
+        "g16-20",
+        "g16-18"
+      ],
+      "retired": false,
+      "anchor": false
+    },
+    {
+      "name": "g28-29",
+      "username": "Opportunist4",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.0,
+            "settler_min_pop": 1.9835858616042201,
+            "settler_stop_turn": 195.91681628923328,
+            "mil_per_city": 1.255202743370047,
+            "builder_per_city": 0.545582988738109,
+            "war_ratio": 2.1707911863673086,
+            "war_margin": 51.027333544744266,
+            "peace_ratio": 0.6,
+            "war_min_turn": 64.0095259619921,
+            "attack_floor": -1.5219587110874713,
+            "kill_bonus": 23.97403146161852,
+            "trade_caution": 1.0016470149384982,
+            "settle_food": 1.1880341374400678,
+            "settle_prod": 1.3324194321089682,
+            "settle_gold": 0.3,
+            "settle_dist": 0.21807088814499664,
+            "min_city_dist": 4.2531002392022605,
+            "wonder_min_bld": 3.535609791658822,
+            "faith_builder": 120.0,
+            "d_campus": 5.143154611884893,
+            "d_commercial": 3.9581120594474384,
+            "d_holy": 2.0892758359905494,
+            "d_theater": 4.807569132593834,
+            "open0": 0.012593424815013687,
+            "open1": 3.0,
+            "open2": 2.0,
+            "open3": 4.205310454457681,
+            "mv_support": 2.4406229362778,
+            "mv_threat": 0.36522158297576535,
+            "command_radius": 9.61549203664477,
+            "muster_radius": 2.5657789401253575,
+            "muster_readiness": 0.6001356057007458,
+            "cohesion": 3.0489853275084675,
+            "focus_fire": 2.125524462194896,
+            "screen": 5.7457454484966695,
+            "role_spacing": 2.0,
+            "objective_progress": 2.675603826277815,
+            "local_superiority": 7.672414271220169,
+            "withdraw_hp": 46.22153104297324,
+            "rejoin_hp": 79.78018878308204
+          },
+          "target": null
+        }
+      },
+      "rating": 1663.421553850399,
+      "rd": 47.18646748389042,
+      "vol": 0.06005433778888052,
+      "games": 22,
+      "wins": 5,
+      "civ_elo": {
+        "China": {
+          "rating": 1631.5673423444387,
+          "rd": 107.84412655302991,
+          "vol": 0.060023533638550876,
+          "games": 4,
+          "wins": 0
+        },
+        "Egypt": {
+          "rating": 1540.4614858523798,
+          "rd": 99.79631700927953,
+          "vol": 0.06003690567693282,
+          "games": 5,
+          "wins": 1
+        },
+        "Greece": {
+          "rating": 1859.2452819032603,
+          "rd": 110.06208425337313,
+          "vol": 0.059997063465304076,
+          "games": 4,
+          "wins": 1
+        },
+        "Rome": {
+          "rating": 1652.6829018874853,
+          "rd": 73.61080627536738,
+          "vol": 0.05999310085265934,
+          "games": 9,
+          "wins": 3
+        }
+      },
+      "born_round": 28,
+      "parents": [
+        "g4-10",
+        "g16-20"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g32-30",
+      "username": "FreeSpirit3",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.394448311178792,
+            "settler_min_pop": 3.3021542720566286,
+            "settler_stop_turn": 176.69262015808897,
+            "mil_per_city": 1.2329544462265933,
+            "builder_per_city": 0.5,
+            "war_ratio": 1.8,
+            "war_margin": 18.035023658565212,
+            "peace_ratio": 0.6,
+            "war_min_turn": 40.0,
+            "attack_floor": -3.77976615712536,
+            "kill_bonus": 25.0,
+            "trade_caution": 1.3329711973837433,
+            "settle_food": 1.396385165940266,
+            "settle_prod": 0.6239666774537826,
+            "settle_gold": 0.3,
+            "settle_dist": 0.04450148108633281,
+            "min_city_dist": 4.0,
+            "wonder_min_bld": 3.0,
+            "faith_builder": 120.0,
+            "d_campus": 4.755135527469157,
+            "d_commercial": 7.747053864254589,
+            "d_holy": 6.066836252010175,
+            "d_theater": 1.0,
+            "open0": 6.430750915104197,
+            "open1": 3.0,
+            "open2": 2.0,
+            "open3": 4.909999649354313,
+            "mv_support": 2.0,
+            "mv_threat": 0.5,
+            "command_radius": 6.0,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.67,
+            "cohesion": 4.915807132764526,
+            "focus_fire": 2.5,
+            "screen": 12.0,
+            "role_spacing": 2.0,
+            "objective_progress": 4.691742585408089,
+            "local_superiority": 7.91249990458445,
+            "withdraw_hp": 45.0,
+            "rejoin_hp": 81.35353780403739
+          },
+          "target": null
+        }
+      },
+      "rating": 1626.78161070169,
+      "rd": 45.89318545955381,
+      "vol": 0.06019674717477653,
+      "games": 23,
+      "wins": 4,
+      "civ_elo": {
+        "China": {
+          "rating": 1699.4979536885892,
+          "rd": 96.45031685681435,
+          "vol": 0.06007398543601467,
+          "games": 6,
+          "wins": 2
+        },
+        "Egypt": {
+          "rating": 1512.9031025113436,
+          "rd": 97.66286068784464,
+          "vol": 0.060001269147321,
+          "games": 5,
+          "wins": 0
+        },
+        "Greece": {
+          "rating": 1570.4722584697565,
+          "rd": 109.68638945820904,
+          "vol": 0.05998900850772747,
+          "games": 4,
+          "wins": 0
+        },
+        "Rome": {
+          "rating": 1673.6615714198508,
+          "rd": 76.97748455215726,
+          "vol": 0.060051441812148186,
+          "games": 8,
+          "wins": 2
+        }
+      },
+      "born_round": 32,
+      "parents": [
+        "advanced_v1",
+        "g20-21"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g32-31",
+      "username": "WildCard3",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.394448311178792,
+            "settler_min_pop": 2.0,
+            "settler_stop_turn": 138.19258326978633,
+            "mil_per_city": 0.4932137391714234,
+            "builder_per_city": 1.0449923158857093,
+            "war_ratio": 2.1224380085272627,
+            "war_margin": 51.027333544744266,
+            "peace_ratio": 0.5457890187733975,
+            "war_min_turn": 40.0,
+            "attack_floor": 0.0,
+            "kill_bonus": 25.0,
+            "trade_caution": 1.3329711973837433,
+            "settle_food": 1.2,
+            "settle_prod": 0.9000164767941018,
+            "settle_gold": 0.12664980747915933,
+            "settle_dist": 0.3278560345834449,
+            "min_city_dist": 4.0,
+            "wonder_min_bld": 2.099460720536699,
+            "faith_builder": 97.69758405765214,
+            "d_campus": 4.585928797331648,
+            "d_commercial": 6.756627320499844,
+            "d_holy": 2.0,
+            "d_theater": 1.0,
+            "open0": 4.077688912140125,
+            "open1": 3.0,
+            "open2": 1.7277413122382863,
+            "open3": 5.0,
+            "mv_support": 2.0,
+            "mv_threat": 0.5,
+            "command_radius": 6.93487536730472,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.6142286802754845,
+            "cohesion": 3.0,
+            "focus_fire": 2.125524462194896,
+            "screen": 11.060109015109616,
+            "role_spacing": 2.0,
+            "objective_progress": 2.675603826277815,
+            "local_superiority": 6.0,
+            "withdraw_hp": 45.0,
+            "rejoin_hp": 82.7050274267796
+          },
+          "target": null
+        }
+      },
+      "rating": 1641.9884924270928,
+      "rd": 48.18031267225215,
+      "vol": 0.059946078512511686,
+      "games": 20,
+      "wins": 0,
+      "civ_elo": {
+        "China": {
+          "rating": 1652.7910240225456,
+          "rd": 121.92724111445382,
+          "vol": 0.06001659216827287,
+          "games": 3,
+          "wins": 0
+        },
+        "Egypt": {
+          "rating": 1594.701560918416,
+          "rd": 87.82208316424669,
+          "vol": 0.059973462053045996,
+          "games": 6,
+          "wins": 0
+        },
+        "Greece": {
+          "rating": 1740.0605515830855,
+          "rd": 98.49811634581393,
+          "vol": 0.059992588849694696,
+          "games": 5,
+          "wins": 0
+        },
+        "Rome": {
+          "rating": 1590.8720815343113,
+          "rd": 87.24375619448202,
+          "vol": 0.059983021327379434,
+          "games": 6,
+          "wins": 0
+        }
+      },
+      "born_round": 32,
+      "parents": [
+        "g20-21",
+        "advanced_v1"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g32-32",
+      "username": "Opportunist5",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.5604941762382705,
+            "settler_min_pop": 2.0,
+            "settler_stop_turn": 204.1133734543241,
+            "mil_per_city": 1.6598033321289294,
+            "builder_per_city": 0.7940236950550529,
+            "war_ratio": 1.7496348368488723,
+            "war_margin": 51.027333544744266,
+            "peace_ratio": 0.6,
+            "war_min_turn": 37.40245237243147,
+            "attack_floor": 12.837087894378335,
+            "kill_bonus": 23.97403146161852,
+            "trade_caution": 1.3329711973837433,
+            "settle_food": 2.2591875519807134,
+            "settle_prod": 1.230129764123652,
+            "settle_gold": 0.12664980747915933,
+            "settle_dist": 0.21807088814499664,
+            "min_city_dist": 4.231638152297008,
+            "wonder_min_bld": 2.7737644646559083,
+            "faith_builder": 258.8340005064567,
+            "d_campus": 5.181707323827239,
+            "d_commercial": 5.638181189569719,
+            "d_holy": 6.476564822049121,
+            "d_theater": 5.545183846630604,
+            "open0": 0.0,
+            "open1": 3.1910966768173075,
+            "open2": 1.7277413122382863,
+            "open3": 5.0,
+            "mv_support": 2.4406229362778,
+            "mv_threat": 1.4846686831338187,
+            "command_radius": 2.6446466374652795,
+            "muster_radius": 2.735849029143772,
+            "muster_readiness": 0.7083977565429517,
+            "cohesion": 4.915807132764526,
+            "focus_fire": 2.9819780958884547,
+            "screen": 10.804681776238157,
+            "role_spacing": 0.4974778035129725,
+            "objective_progress": 2.9678436175226484,
+            "local_superiority": 7.000606263137366,
+            "withdraw_hp": 41.52347596448905,
+            "rejoin_hp": 80.0
+          },
+          "target": null
+        }
+      },
+      "rating": 1635.0278977252901,
+      "rd": 46.954180374693806,
+      "vol": 0.0599743524006711,
+      "games": 22,
+      "wins": 4,
+      "civ_elo": {
+        "China": {
+          "rating": 1541.2803140750607,
+          "rd": 108.4111772384631,
+          "vol": 0.060056346339215416,
+          "games": 5,
+          "wins": 1
+        },
+        "Egypt": {
+          "rating": 1625.0798348814437,
+          "rd": 104.23761899334968,
+          "vol": 0.0599904041276501,
+          "games": 4,
+          "wins": 0
+        },
+        "Greece": {
+          "rating": 1690.8760022625177,
+          "rd": 81.39291519297676,
+          "vol": 0.060014346438948304,
+          "games": 7,
+          "wins": 2
+        },
+        "Rome": {
+          "rating": 1636.2301059761735,
+          "rd": 87.11936152525368,
+          "vol": 0.059997967658036104,
+          "games": 6,
+          "wins": 1
+        }
+      },
+      "born_round": 32,
+      "parents": [
+        "g20-21",
+        "g16-20"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g36-33",
+      "username": "FreeSpirit4",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.0,
+            "settler_min_pop": 1.7773229641819528,
+            "settler_stop_turn": 150.0,
+            "mil_per_city": 0.97674120909493,
+            "builder_per_city": 0.8790559399895502,
+            "war_ratio": 1.690604400034821,
+            "war_margin": 20.0,
+            "peace_ratio": 0.6,
+            "war_min_turn": 40.0,
+            "attack_floor": 20.531250081757328,
+            "kill_bonus": 32.66747357863939,
+            "trade_caution": 0.9074002935672248,
+            "settle_food": 0.3476655384344157,
+            "settle_prod": 1.0,
+            "settle_gold": 0.2858959468912164,
+            "settle_dist": 0.4,
+            "min_city_dist": 4.309273521771584,
+            "wonder_min_bld": 3.1967611294298948,
+            "faith_builder": 289.9109076855009,
+            "d_campus": 4.0,
+            "d_commercial": 4.8473948833383504,
+            "d_holy": 2.0,
+            "d_theater": 0.3317256823163106,
+            "open0": 1.0,
+            "open1": 3.0532616668286905,
+            "open2": 1.2226983246837824,
+            "open3": 5.0,
+            "mv_support": 2.0,
+            "mv_threat": 0.424626515699307,
+            "command_radius": 3.595896998027349,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.5975490600888843,
+            "cohesion": 6.909374348855671,
+            "focus_fire": 1.6931404973740598,
+            "screen": 6.94596849920578,
+            "role_spacing": 7.539391738892651,
+            "objective_progress": 2.5,
+            "local_superiority": 6.0,
+            "withdraw_hp": 40.66979996407045,
+            "rejoin_hp": 79.68764550807109
+          },
+          "target": null
+        }
+      },
+      "rating": 1692.228825491055,
+      "rd": 36.383759391275525,
+      "vol": 0.06010635002410326,
+      "games": 44,
+      "wins": 9,
+      "civ_elo": {
+        "China": {
+          "rating": 1720.5948104609572,
+          "rd": 78.38785188510818,
+          "vol": 0.06009396848301118,
+          "games": 9,
+          "wins": 3
+        },
+        "Egypt": {
+          "rating": 1568.4987532514265,
+          "rd": 66.5953649899872,
+          "vol": 0.060008655929861765,
+          "games": 12,
+          "wins": 1
+        },
+        "Greece": {
+          "rating": 1659.0794088310831,
+          "rd": 69.52276689489722,
+          "vol": 0.060019970950357264,
+          "games": 13,
+          "wins": 0
+        },
+        "Rome": {
+          "rating": 1894.557846403111,
+          "rd": 82.70888328508016,
+          "vol": 0.06002025704024382,
+          "games": 10,
+          "wins": 5
+        }
+      },
+      "born_round": 36,
+      "parents": [
+        "g28-28",
+        "g16-19"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g36-34",
+      "username": "FreeSpirit5",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.852481509394112,
+            "settler_min_pop": 2.001166342362971,
+            "settler_stop_turn": 176.69262015808897,
+            "mil_per_city": 0.9308091014760452,
+            "builder_per_city": 0.37439229106032423,
+            "war_ratio": 1.7496348368488723,
+            "war_margin": 51.027333544744266,
+            "peace_ratio": 0.6,
+            "war_min_turn": 45.563037379249934,
+            "attack_floor": 0.0,
+            "kill_bonus": 15.562264047310745,
+            "trade_caution": 1.3329711973837433,
+            "settle_food": 0.9390507690894729,
+            "settle_prod": 0.9000164767941018,
+            "settle_gold": 0.25999871836039185,
+            "settle_dist": 0.21807088814499664,
+            "min_city_dist": 4.561370430602635,
+            "wonder_min_bld": 3.0,
+            "faith_builder": 272.90398055557307,
+            "d_campus": 4.755135527469157,
+            "d_commercial": 7.114443256896378,
+            "d_holy": 4.8957530186384925,
+            "d_theater": 0.10149477389055528,
+            "open0": 0.012593424815013687,
+            "open1": 3.549219257028541,
+            "open2": 1.7277413122382863,
+            "open3": 4.215828353113693,
+            "mv_support": 2.177816443537626,
+            "mv_threat": 0.3666700299916045,
+            "command_radius": 2.6446466374652795,
+            "muster_radius": 3.1590176376295473,
+            "muster_readiness": 0.6049307629415004,
+            "cohesion": 4.915807132764526,
+            "focus_fire": 2.125524462194896,
+            "screen": 11.060109015109616,
+            "role_spacing": 0.5083438206298025,
+            "objective_progress": 2.7558196779654405,
+            "local_superiority": 7.552391103690499,
+            "withdraw_hp": 41.52347596448905,
+            "rejoin_hp": 78.53795389070305
+          },
+          "target": null
+        }
+      },
+      "rating": 1701.7445549950503,
+      "rd": 36.15386247553025,
+      "vol": 0.06009774596448245,
+      "games": 42,
+      "wins": 10,
+      "civ_elo": {
+        "China": {
+          "rating": 1587.687902020537,
+          "rd": 80.62438394968892,
+          "vol": 0.06025137686810426,
+          "games": 10,
+          "wins": 2
+        },
+        "Egypt": {
+          "rating": 1722.5307639475764,
+          "rd": 75.40480624106905,
+          "vol": 0.05999498431944047,
+          "games": 8,
+          "wins": 2
+        },
+        "Greece": {
+          "rating": 1777.4091382330764,
+          "rd": 69.57555328976372,
+          "vol": 0.05999923027634172,
+          "games": 10,
+          "wins": 3
+        },
+        "Rome": {
+          "rating": 1703.6801452611733,
+          "rd": 60.35277867854298,
+          "vol": 0.06004638756867392,
+          "games": 14,
+          "wins": 3
+        }
+      },
+      "born_round": 36,
+      "parents": [
+        "g20-21",
+        "g20-21"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g36-35",
+      "username": "Maverick4",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.977417388002806,
+            "settler_min_pop": 2.310855606005252,
+            "settler_stop_turn": 90.4863185702135,
+            "mil_per_city": 1.0,
+            "builder_per_city": 0.41381870943006493,
+            "war_ratio": 1.392384210842106,
+            "war_margin": 20.0,
+            "peace_ratio": 0.4037762089441409,
+            "war_min_turn": 54.545499081775134,
+            "attack_floor": 3.356715902948064,
+            "kill_bonus": 31.71831458050512,
+            "trade_caution": 0.9074002935672248,
+            "settle_food": 1.0835018869262614,
+            "settle_prod": 1.0,
+            "settle_gold": 0.4994715359482582,
+            "settle_dist": 0.5586141840196144,
+            "min_city_dist": 3.5684516212864157,
+            "wonder_min_bld": 7.5361586657164725,
+            "faith_builder": 120.0,
+            "d_campus": 2.764084190167581,
+            "d_commercial": 3.0795255092577456,
+            "d_holy": 1.107116241073862,
+            "d_theater": 1.8274263594587072,
+            "open0": 0.7735054570252214,
+            "open1": 3.0,
+            "open2": 2.9586944902834484,
+            "open3": 5.672010699494354,
+            "mv_support": 1.7803770586288383,
+            "mv_threat": 0.5,
+            "command_radius": 6.0,
+            "muster_radius": 2.7247211367617563,
+            "muster_readiness": 0.7285687583650254,
+            "cohesion": 4.068374883421683,
+            "focus_fire": 4.64244891392979,
+            "screen": 4.0,
+            "role_spacing": 2.0,
+            "objective_progress": 2.5,
+            "local_superiority": 6.233662943286941,
+            "withdraw_hp": 49.38064366684853,
+            "rejoin_hp": 80.0
+          },
+          "target": null
+        }
+      },
+      "rating": 1668.3187202087959,
+      "rd": 48.4323850017886,
+      "vol": 0.06004958229028357,
+      "games": 21,
+      "wins": 4,
+      "civ_elo": {
+        "China": {
+          "rating": 1670.583551242024,
+          "rd": 109.29187041533595,
+          "vol": 0.05999151806838172,
+          "games": 4,
+          "wins": 1
+        },
+        "Egypt": {
+          "rating": 1624.9509124302774,
+          "rd": 110.72331553851717,
+          "vol": 0.060022184776301,
+          "games": 4,
+          "wins": 1
+        },
+        "Greece": {
+          "rating": 1657.7128635060012,
+          "rd": 67.06750839994046,
+          "vol": 0.059987776787503236,
+          "games": 11,
+          "wins": 2
+        },
+        "Rome": {
+          "rating": 1746.3069961311583,
+          "rd": 146.32800151374556,
+          "vol": 0.05999759405782898,
+          "games": 2,
+          "wins": 0
+        }
+      },
+      "born_round": 36,
+      "parents": [
+        "g28-27",
+        "g4-10"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g40-36",
+      "username": "WildCard4",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.0,
+            "settler_min_pop": 1.8068610060906414,
+            "settler_stop_turn": 150.0,
+            "mil_per_city": 1.4184340368427422,
+            "builder_per_city": 0.41381870943006493,
+            "war_ratio": 1.8,
+            "war_margin": 20.0,
+            "peace_ratio": 0.6,
+            "war_min_turn": 54.545499081775134,
+            "attack_floor": 0.0,
+            "kill_bonus": 28.05990950366896,
+            "trade_caution": 0.9622442053143331,
+            "settle_food": 1.0835018869262614,
+            "settle_prod": 1.3227963809693186,
+            "settle_gold": 0.3,
+            "settle_dist": 0.7751404912420451,
+            "min_city_dist": 4.0,
+            "wonder_min_bld": 3.6339476088393114,
+            "faith_builder": 150.13510255160833,
+            "d_campus": 4.0,
+            "d_commercial": 3.0,
+            "d_holy": 2.0,
+            "d_theater": 1.544824270698498,
+            "open0": 5.931361033156458,
+            "open1": 3.0,
+            "open2": 2.0,
+            "open3": 5.2183193680638835,
+            "mv_support": 2.0,
+            "mv_threat": 0.5,
+            "command_radius": 6.0,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.67,
+            "cohesion": 0.00012888880152828186,
+            "focus_fire": 2.5,
+            "screen": 7.404702927358443,
+            "role_spacing": 2.0,
+            "objective_progress": 3.062270175356173,
+            "local_superiority": 7.672414271220169,
+            "withdraw_hp": 45.0,
+            "rejoin_hp": 82.50772727377567
+          },
+          "target": null
+        }
+      },
+      "rating": 1724.5657732038128,
+      "rd": 32.759409240545125,
+      "vol": 0.06015623604446537,
+      "games": 63,
+      "wins": 13,
+      "civ_elo": {
+        "China": {
+          "rating": 1737.5560105692662,
+          "rd": 51.9279417124483,
+          "vol": 0.06005262233387128,
+          "games": 21,
+          "wins": 2
+        },
+        "Egypt": {
+          "rating": 1665.4073468844645,
+          "rd": 64.76492644901704,
+          "vol": 0.06008726769315891,
+          "games": 13,
+          "wins": 3
+        },
+        "Greece": {
+          "rating": 1726.7502850431342,
+          "rd": 60.944475385603184,
+          "vol": 0.06000458585127818,
+          "games": 14,
+          "wins": 4
+        },
+        "Rome": {
+          "rating": 1779.704978481656,
+          "rd": 61.18036775954764,
+          "vol": 0.060004605187321376,
+          "games": 15,
+          "wins": 4
+        }
+      },
+      "born_round": 40,
+      "parents": [
+        "g4-10",
+        "advanced_v1"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g40-37",
+      "username": "Opportunist6",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 9.94463023302228,
+            "settler_min_pop": 1.5940010934810196,
+            "settler_stop_turn": 88.21568799270267,
+            "mil_per_city": 1.098450061348442,
+            "builder_per_city": 0.5,
+            "war_ratio": 1.8,
+            "war_margin": 20.0,
+            "peace_ratio": 0.6,
+            "war_min_turn": 40.0,
+            "attack_floor": 0.0,
+            "kill_bonus": 25.0,
+            "trade_caution": 1.3329711973837433,
+            "settle_food": 1.2039181502646656,
+            "settle_prod": 0.9000164767941018,
+            "settle_gold": 0.12664980747915933,
+            "settle_dist": 0.4,
+            "min_city_dist": 4.057780903433392,
+            "wonder_min_bld": 3.0,
+            "faith_builder": 120.0,
+            "d_campus": 4.755135527469157,
+            "d_commercial": 6.372692603683133,
+            "d_holy": 2.0,
+            "d_theater": 0.09410857285712704,
+            "open0": 1.0,
+            "open1": 3.7064980562283827,
+            "open2": 1.8266939748294644,
+            "open3": 5.0,
+            "mv_support": 2.088336954516711,
+            "mv_threat": 0.6938087491942229,
+            "command_radius": 2.6446466374652795,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.67,
+            "cohesion": 5.310081132522473,
+            "focus_fire": 2.5,
+            "screen": 4.0,
+            "role_spacing": 0.4974778035129725,
+            "objective_progress": 2.5,
+            "local_superiority": 6.0,
+            "withdraw_hp": 45.438224268564056,
+            "rejoin_hp": 80.0
+          },
+          "target": null
+        }
+      },
+      "rating": 1723.364373506449,
+      "rd": 33.00048562354732,
+      "vol": 0.06032057021774893,
+      "games": 64,
+      "wins": 22,
+      "civ_elo": {
+        "China": {
+          "rating": 1781.2956839113422,
+          "rd": 54.40535777190303,
+          "vol": 0.06016968407385842,
+          "games": 19,
+          "wins": 7
+        },
+        "Egypt": {
+          "rating": 1615.7431517874102,
+          "rd": 68.81358991851575,
+          "vol": 0.0601095125188054,
+          "games": 11,
+          "wins": 3
+        },
+        "Greece": {
+          "rating": 1618.9166525377623,
+          "rd": 57.865672519151516,
+          "vol": 0.060230306057255524,
+          "games": 16,
+          "wins": 3
+        },
+        "Rome": {
+          "rating": 1833.8777509871397,
+          "rd": 59.12438471310143,
+          "vol": 0.060162074969006156,
+          "games": 18,
+          "wins": 9
+        }
+      },
+      "born_round": 40,
+      "parents": [
+        "advanced_v1",
+        "g20-21"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g40-38",
+      "username": "DarkHorse5",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 9.6805081708184,
+            "settler_min_pop": 2.0,
+            "settler_stop_turn": 150.0,
+            "mil_per_city": 1.0803395701297425,
+            "builder_per_city": 0.5,
+            "war_ratio": 1.7403511420050783,
+            "war_margin": 58.52762503748769,
+            "peace_ratio": 0.6,
+            "war_min_turn": 40.0,
+            "attack_floor": -2.8626295083837405,
+            "kill_bonus": 32.66747357863939,
+            "trade_caution": 1.0887449427419935,
+            "settle_food": 0.2,
+            "settle_prod": 0.9000164767941018,
+            "settle_gold": 0.3,
+            "settle_dist": 0.4,
+            "min_city_dist": 4.0,
+            "wonder_min_bld": 2.3264270262282922,
+            "faith_builder": 280.06008308742565,
+            "d_campus": 0.5745728319719463,
+            "d_commercial": 3.0,
+            "d_holy": 2.0,
+            "d_theater": 0.6461876136698144,
+            "open0": 1.0,
+            "open1": 2.4125630797544955,
+            "open2": 0.9627312758190392,
+            "open3": 4.082876560785131,
+            "mv_support": 2.0,
+            "mv_threat": 0.5,
+            "command_radius": 6.0,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.67,
+            "cohesion": 8.777100560986682,
+            "focus_fire": 2.5,
+            "screen": 12.0,
+            "role_spacing": 2.0,
+            "objective_progress": 3.3498411386070903,
+            "local_superiority": 6.0,
+            "withdraw_hp": 45.0,
+            "rejoin_hp": 74.90494840643609
+          },
+          "target": null
+        }
+      },
+      "rating": 1568.1151016515169,
+      "rd": 50.456260881570834,
+      "vol": 0.06000194550802578,
+      "games": 21,
+      "wins": 4,
+      "civ_elo": {
+        "China": {
+          "rating": 1431.4877955333982,
+          "rd": 142.93027830322995,
+          "vol": 0.05999756670975129,
+          "games": 4,
+          "wins": 0
+        },
+        "Egypt": {
+          "rating": 1468.7000736293885,
+          "rd": 113.08899337935173,
+          "vol": 0.060023780865073324,
+          "games": 5,
+          "wins": 1
+        },
+        "Greece": {
+          "rating": 1396.3944442306774,
+          "rd": 98.73993378041241,
+          "vol": 0.05999613789611487,
+          "games": 6,
+          "wins": 0
+        },
+        "Rome": {
+          "rating": 1817.9031366275387,
+          "rd": 92.50524472073448,
+          "vol": 0.060033679759113,
+          "games": 6,
+          "wins": 3
+        }
+      },
+      "born_round": 40,
+      "parents": [
+        "g28-28",
+        "advanced_v1"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g44-39",
+      "username": "DarkHorse6",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 3.5925347101670315,
+            "settler_min_pop": 1.9370389927124605,
+            "settler_stop_turn": 145.40349260675913,
+            "mil_per_city": 1.0,
+            "builder_per_city": 0.5,
+            "war_ratio": 2.280383754512508,
+            "war_margin": 13.725557597872646,
+            "peace_ratio": 0.5130040073630837,
+            "war_min_turn": 20.765900878067733,
+            "attack_floor": 3.356715902948064,
+            "kill_bonus": 19.057264399478534,
+            "trade_caution": 1.1700651861630516,
+            "settle_food": 1.0835018869262614,
+            "settle_prod": 0.6961971989524469,
+            "settle_gold": 0.14215534026481064,
+            "settle_dist": 0.5586141840196144,
+            "min_city_dist": 3.3547517141966763,
+            "wonder_min_bld": 2.0781940961646024,
+            "faith_builder": 120.0,
+            "d_campus": 3.625145427278281,
+            "d_commercial": 2.670806306747872,
+            "d_holy": 2.0,
+            "d_theater": 1.398025024089976,
+            "open0": 0.7659622041302123,
+            "open1": 3.6781214479307742,
+            "open2": 1.7650809148384996,
+            "open3": 4.356945841668773,
+            "mv_support": 2.275770398313038,
+            "mv_threat": 0.5,
+            "command_radius": 6.0,
+            "muster_radius": 2.84173278636628,
+            "muster_readiness": 0.6838078070115052,
+            "cohesion": 4.6991538718795365,
+            "focus_fire": 2.5,
+            "screen": 6.791457418156982,
+            "role_spacing": 2.040416629282558,
+            "objective_progress": 2.5,
+            "local_superiority": 5.763111402221439,
+            "withdraw_hp": 45.7299600521896,
+            "rejoin_hp": 81.44409686166723
+          },
+          "target": null
+        }
+      },
+      "rating": 1586.424821268639,
+      "rd": 58.12581570627756,
+      "vol": 0.06007993790715795,
+      "games": 20,
+      "wins": 2,
+      "civ_elo": {
+        "China": {
+          "rating": 1846.1873028927234,
+          "rd": 99.64205972839937,
+          "vol": 0.0601211928390959,
+          "games": 6,
+          "wins": 2
+        },
+        "Egypt": {
+          "rating": 1556.9524680669726,
+          "rd": 89.74937917182538,
+          "vol": 0.05999430544393568,
+          "games": 6,
+          "wins": 0
+        },
+        "Greece": {
+          "rating": 1540.5945184441684,
+          "rd": 149.2045094520746,
+          "vol": 0.059994149828780735,
+          "games": 2,
+          "wins": 0
+        },
+        "Rome": {
+          "rating": 1312.3954862800197,
+          "rd": 123.86516862480455,
+          "vol": 0.05999257435687626,
+          "games": 6,
+          "wins": 0
+        }
+      },
+      "born_round": 44,
+      "parents": [
+        "g28-27",
+        "g4-10"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g44-40",
+      "username": "WildCard5",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.0,
+            "settler_min_pop": 3.670097579929828,
+            "settler_stop_turn": 150.0,
+            "mil_per_city": 1.3734565766862699,
+            "builder_per_city": 0.3431052996501725,
+            "war_ratio": 1.8,
+            "war_margin": 20.0,
+            "peace_ratio": 0.6559526998007137,
+            "war_min_turn": 54.545499081775134,
+            "attack_floor": 0.0,
+            "kill_bonus": 28.05990950366896,
+            "trade_caution": 0.7068002145103837,
+            "settle_food": 1.0835018869262614,
+            "settle_prod": 1.3227963809693186,
+            "settle_gold": 0.3,
+            "settle_dist": 0.4,
+            "min_city_dist": 4.159731305230048,
+            "wonder_min_bld": 3.832736454400937,
+            "faith_builder": 174.95162500225663,
+            "d_campus": 3.121530045092023,
+            "d_commercial": 3.0,
+            "d_holy": 2.0,
+            "d_theater": 1.6795346342963446,
+            "open0": 0.8115912868299405,
+            "open1": 3.0,
+            "open2": 2.0,
+            "open3": 5.2183193680638835,
+            "mv_support": 2.989472878360928,
+            "mv_threat": 0.5,
+            "command_radius": 7.007465362975362,
+            "muster_radius": 2.7461953963418746,
+            "muster_readiness": 0.67,
+            "cohesion": 6.055775969315032,
+            "focus_fire": 2.4466367211656315,
+            "screen": 3.080107459495293,
+            "role_spacing": 2.0,
+            "objective_progress": 2.738429109231997,
+            "local_superiority": 7.672414271220169,
+            "withdraw_hp": 48.296771625201345,
+            "rejoin_hp": 79.88827413847106
+          },
+          "target": null
+        }
+      },
+      "rating": 1716.7941241959397,
+      "rd": 48.323974163109206,
+      "vol": 0.05996316869598758,
+      "games": 21,
+      "wins": 5,
+      "civ_elo": {
+        "China": {
+          "rating": 1673.8176367136775,
+          "rd": 84.95594571603704,
+          "vol": 0.0600068217684543,
+          "games": 6,
+          "wins": 1
+        },
+        "Egypt": {
+          "rating": 1638.3499444978659,
+          "rd": 119.45576647487404,
+          "vol": 0.05999815394384645,
+          "games": 4,
+          "wins": 0
+        },
+        "Greece": {
+          "rating": 1760.230924883221,
+          "rd": 104.51556394283905,
+          "vol": 0.06002538860385403,
+          "games": 5,
+          "wins": 1
+        },
+        "Rome": {
+          "rating": 1744.0005151200185,
+          "rd": 90.60672608551931,
+          "vol": 0.05999366520329281,
+          "games": 6,
+          "wins": 3
+        }
+      },
+      "born_round": 44,
+      "parents": [
+        "g40-36",
+        "advanced_v1"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g44-41",
+      "username": "JackKnife",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.0,
+            "settler_min_pop": 2.3647668554672383,
+            "settler_stop_turn": 150.0,
+            "mil_per_city": 1.1373881661735443,
+            "builder_per_city": 0.41381870943006493,
+            "war_ratio": 1.8,
+            "war_margin": 20.0,
+            "peace_ratio": 0.6,
+            "war_min_turn": 40.0,
+            "attack_floor": 0.0,
+            "kill_bonus": 33.53574890242609,
+            "trade_caution": 1.0,
+            "settle_food": 0.9789239312642544,
+            "settle_prod": 1.0136078815568623,
+            "settle_gold": 0.3,
+            "settle_dist": 0.24025351750123414,
+            "min_city_dist": 4.0,
+            "wonder_min_bld": 2.6639058856462823,
+            "faith_builder": 150.47931796005292,
+            "d_campus": 4.0,
+            "d_commercial": 2.259070237779306,
+            "d_holy": 2.0,
+            "d_theater": 1.0,
+            "open0": 0.39097033996941594,
+            "open1": 3.0,
+            "open2": 2.0,
+            "open3": 5.419861557268516,
+            "mv_support": 2.0,
+            "mv_threat": 0.5,
+            "command_radius": 6.0,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.67,
+            "cohesion": 4.068374883421683,
+            "focus_fire": 2.033660471906209,
+            "screen": 4.0,
+            "role_spacing": 6.887213859680184,
+            "objective_progress": 2.898715156070449,
+            "local_superiority": 7.672414271220169,
+            "withdraw_hp": 45.0,
+            "rejoin_hp": 80.0
+          },
+          "target": null
+        }
+      },
+      "rating": 1753.242734135802,
+      "rd": 31.74195629720303,
+      "vol": 0.05983336303551235,
+      "games": 84,
+      "wins": 26,
+      "civ_elo": {
+        "China": {
+          "rating": 1847.026972591631,
+          "rd": 51.00322519692837,
+          "vol": 0.06015699962147205,
+          "games": 24,
+          "wins": 10
+        },
+        "Egypt": {
+          "rating": 1670.8900763436664,
+          "rd": 52.510121845548035,
+          "vol": 0.06015579439767224,
+          "games": 22,
+          "wins": 5
+        },
+        "Greece": {
+          "rating": 1651.397630313629,
+          "rd": 56.16054018762094,
+          "vol": 0.06010024890601749,
+          "games": 18,
+          "wins": 2
+        },
+        "Rome": {
+          "rating": 1819.3606578050308,
+          "rd": 55.85415541857274,
+          "vol": 0.060044675856721165,
+          "games": 20,
+          "wins": 9
+        }
+      },
+      "born_round": 44,
+      "parents": [
+        "g4-10",
+        "advanced_v1"
+      ],
+      "retired": false,
+      "anchor": false
+    },
+    {
+      "name": "g48-42",
+      "username": "Maverick5",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.148332889026332,
+            "settler_min_pop": 1.9270637841750884,
+            "settler_stop_turn": 140.6727858657786,
+            "mil_per_city": 0.6997932343001307,
+            "builder_per_city": 0.5,
+            "war_ratio": 1.3723625577476308,
+            "war_margin": 51.027333544744266,
+            "peace_ratio": 0.6,
+            "war_min_turn": 40.0,
+            "attack_floor": 0.0,
+            "kill_bonus": 25.0,
+            "trade_caution": 1.3329711973837433,
+            "settle_food": 0.2,
+            "settle_prod": 0.644383500854509,
+            "settle_gold": 0.12664980747915933,
+            "settle_dist": 0.3747582271936383,
+            "min_city_dist": 4.475914286232388,
+            "wonder_min_bld": 3.7739380573111188,
+            "faith_builder": 287.27190267439016,
+            "d_campus": 4.5861377774216034,
+            "d_commercial": 4.8473948833383504,
+            "d_holy": 5.760043779544282,
+            "d_theater": 0.10149477389055528,
+            "open0": 0.20762949487572618,
+            "open1": 3.768648428033551,
+            "open2": 1.7277413122382863,
+            "open3": 4.852997942869833,
+            "mv_support": 2.4406229362778,
+            "mv_threat": 0.424626515699307,
+            "command_radius": 3.595896998027349,
+            "muster_radius": 2.4925291643199765,
+            "muster_readiness": 0.6049307629415004,
+            "cohesion": 9.742560456130478,
+            "focus_fire": 2.125524462194896,
+            "screen": 10.625742227079652,
+            "role_spacing": 1.19057169643683,
+            "objective_progress": 3.3341499603853615,
+            "local_superiority": 4.729372731987313,
+            "withdraw_hp": 41.52347596448905,
+            "rejoin_hp": 80.1633576360756
+          },
+          "target": null
+        }
+      },
+      "rating": 1699.1620710516397,
+      "rd": 37.96714543529884,
+      "vol": 0.0603772070227319,
+      "games": 42,
+      "wins": 10,
+      "civ_elo": {
+        "China": {
+          "rating": 1759.8254743407272,
+          "rd": 74.13012118224216,
+          "vol": 0.06006332873537374,
+          "games": 9,
+          "wins": 4
+        },
+        "Egypt": {
+          "rating": 1469.7917987040066,
+          "rd": 98.44613630087485,
+          "vol": 0.059977378435616305,
+          "games": 6,
+          "wins": 0
+        },
+        "Greece": {
+          "rating": 1769.2149766841578,
+          "rd": 61.81130375722626,
+          "vol": 0.06005683071907675,
+          "games": 15,
+          "wins": 2
+        },
+        "Rome": {
+          "rating": 1690.6567671034175,
+          "rd": 65.09876140126131,
+          "vol": 0.06010455302567168,
+          "games": 12,
+          "wins": 4
+        }
+      },
+      "born_round": 48,
+      "parents": [
+        "g28-28",
+        "g20-21"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g48-43",
+      "username": "WildCard6",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.0,
+            "settler_min_pop": 2.0,
+            "settler_stop_turn": 132.34500787294814,
+            "mil_per_city": 1.1373881661735443,
+            "builder_per_city": 0.5000452278597076,
+            "war_ratio": 1.8,
+            "war_margin": 30.07770410557668,
+            "peace_ratio": 0.6,
+            "war_min_turn": 18.702297686336646,
+            "attack_floor": -2.872387087734609,
+            "kill_bonus": 33.53574890242609,
+            "trade_caution": 1.0,
+            "settle_food": 0.9789239312642544,
+            "settle_prod": 1.0,
+            "settle_gold": 0.2975483440187494,
+            "settle_dist": 0.4,
+            "min_city_dist": 4.0,
+            "wonder_min_bld": 3.529309502874775,
+            "faith_builder": 132.0822963994711,
+            "d_campus": 4.0,
+            "d_commercial": 2.930869199095721,
+            "d_holy": 2.0,
+            "d_theater": 1.0,
+            "open0": 0.39097033996941594,
+            "open1": 3.0,
+            "open2": 2.4296503324409215,
+            "open3": 4.561826301914727,
+            "mv_support": 2.1012082194014843,
+            "mv_threat": 0.5,
+            "command_radius": 6.0,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.67,
+            "cohesion": 8.791347701936944,
+            "focus_fire": 2.5,
+            "screen": 4.0,
+            "role_spacing": 2.0,
+            "objective_progress": 2.898715156070449,
+            "local_superiority": 7.672414271220169,
+            "withdraw_hp": 45.0,
+            "rejoin_hp": 81.12779718374597
+          },
+          "target": null
+        }
+      },
+      "rating": 1733.946446537448,
+      "rd": 32.71451215455394,
+      "vol": 0.06115915268364247,
+      "games": 67,
+      "wins": 21,
+      "civ_elo": {
+        "China": {
+          "rating": 1830.7273757036846,
+          "rd": 60.22093402920515,
+          "vol": 0.06010588986485364,
+          "games": 14,
+          "wins": 6
+        },
+        "Egypt": {
+          "rating": 1498.9897391719317,
+          "rd": 58.69699336459426,
+          "vol": 0.060190005705302606,
+          "games": 19,
+          "wins": 1
+        },
+        "Greece": {
+          "rating": 1819.151539302893,
+          "rd": 65.89122246303735,
+          "vol": 0.060048369725470216,
+          "games": 13,
+          "wins": 5
+        },
+        "Rome": {
+          "rating": 1795.4959788870597,
+          "rd": 49.904243326890494,
+          "vol": 0.060106050678786584,
+          "games": 21,
+          "wins": 9
+        }
+      },
+      "born_round": 48,
+      "parents": [
+        "advanced_v1",
+        "g44-41"
+      ],
+      "retired": false,
+      "anchor": false
+    },
+    {
+      "name": "g48-44",
+      "username": "FreeSpirit6",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 3.915906011402608,
+            "settler_min_pop": 2.0,
+            "settler_stop_turn": 129.32179147041268,
+            "mil_per_city": 0.6850813890150944,
+            "builder_per_city": 0.32058051324417935,
+            "war_ratio": 1.8,
+            "war_margin": 19.73978972012239,
+            "peace_ratio": 0.6,
+            "war_min_turn": 40.0,
+            "attack_floor": 0.0,
+            "kill_bonus": 25.0,
+            "trade_caution": 1.9884833211032702,
+            "settle_food": 1.2,
+            "settle_prod": 1.0,
+            "settle_gold": 0.3,
+            "settle_dist": 0.4,
+            "min_city_dist": 4.0,
+            "wonder_min_bld": 3.0,
+            "faith_builder": 233.8921908045509,
+            "d_campus": 4.848935231609312,
+            "d_commercial": 3.0,
+            "d_holy": 2.0,
+            "d_theater": 1.0,
+            "open0": 1.0,
+            "open1": 3.0,
+            "open2": 2.0,
+            "open3": 4.982693479327925,
+            "mv_support": 2.0,
+            "mv_threat": 0.5,
+            "command_radius": 6.0,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.6826299334768818,
+            "cohesion": 3.0,
+            "focus_fire": 2.12646479873675,
+            "screen": 4.0,
+            "role_spacing": 2.0,
+            "objective_progress": 2.7577476697377215,
+            "local_superiority": 7.530654301675835,
+            "withdraw_hp": 45.0,
+            "rejoin_hp": 77.3489661969064
+          },
+          "target": null
+        }
+      },
+      "rating": 1743.43363953704,
+      "rd": 33.329099553726245,
+      "vol": 0.06022394062984797,
+      "games": 63,
+      "wins": 18,
+      "civ_elo": {
+        "China": {
+          "rating": 1658.6784331516888,
+          "rd": 55.87386382579322,
+          "vol": 0.06002156585918639,
+          "games": 16,
+          "wins": 3
+        },
+        "Egypt": {
+          "rating": 1715.80587228028,
+          "rd": 54.440434652390756,
+          "vol": 0.06000564852535238,
+          "games": 18,
+          "wins": 4
+        },
+        "Greece": {
+          "rating": 1835.6633347383665,
+          "rd": 61.588098217523566,
+          "vol": 0.06006068288257155,
+          "games": 17,
+          "wins": 8
+        },
+        "Rome": {
+          "rating": 1761.4280213977165,
+          "rd": 66.82468847373359,
+          "vol": 0.06009448348549142,
+          "games": 12,
+          "wins": 3
+        }
+      },
+      "born_round": 48,
+      "parents": [
+        "advanced_v1",
+        "advanced_v1"
+      ],
+      "retired": false,
+      "anchor": false
+    },
+    {
+      "name": "g52-45",
+      "username": "WildCard7",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.0,
+            "settler_min_pop": 2.445491755646961,
+            "settler_stop_turn": 150.0,
+            "mil_per_city": 0.8948955210269882,
+            "builder_per_city": 0.5786849932412137,
+            "war_ratio": 1.8,
+            "war_margin": 20.0,
+            "peace_ratio": 0.6,
+            "war_min_turn": 10.0,
+            "attack_floor": -2.872387087734609,
+            "kill_bonus": 33.53574890242609,
+            "trade_caution": 1.0,
+            "settle_food": 1.2,
+            "settle_prod": 1.0,
+            "settle_gold": 0.08919282708140286,
+            "settle_dist": 0.3052335813816698,
+            "min_city_dist": 4.0,
+            "wonder_min_bld": 2.565144709751946,
+            "faith_builder": 120.0,
+            "d_campus": 4.0,
+            "d_commercial": 2.930869199095721,
+            "d_holy": 2.0,
+            "d_theater": 1.0,
+            "open0": 0.0,
+            "open1": 3.0,
+            "open2": 2.4296503324409215,
+            "open3": 4.561826301914727,
+            "mv_support": 2.1012082194014843,
+            "mv_threat": 0.5,
+            "command_radius": 6.0,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.67,
+            "cohesion": 3.0,
+            "focus_fire": 2.5,
+            "screen": 4.542136084835998,
+            "role_spacing": 1.7871184178337547,
+            "objective_progress": 2.5,
+            "local_superiority": 6.0,
+            "withdraw_hp": 45.0,
+            "rejoin_hp": 81.12779718374597
+          },
+          "target": null
+        }
+      },
+      "rating": 1702.9837171847594,
+      "rd": 50.59234973131979,
+      "vol": 0.06000605542401045,
+      "games": 21,
+      "wins": 7,
+      "civ_elo": {
+        "China": {
+          "rating": 1645.0974455173177,
+          "rd": 130.80215547633176,
+          "vol": 0.06001768322500601,
+          "games": 3,
+          "wins": 1
+        },
+        "Egypt": {
+          "rating": 1767.5080638016582,
+          "rd": 87.87113306349332,
+          "vol": 0.060002007987660685,
+          "games": 7,
+          "wins": 2
+        },
+        "Greece": {
+          "rating": 1555.5319428985786,
+          "rd": 86.03709114501568,
+          "vol": 0.06001760820739694,
+          "games": 7,
+          "wins": 2
+        },
+        "Rome": {
+          "rating": 1907.8686450211517,
+          "rd": 125.77479739057776,
+          "vol": 0.059993765075903725,
+          "games": 4,
+          "wins": 2
+        }
+      },
+      "born_round": 52,
+      "parents": [
+        "advanced_v1",
+        "g48-43"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g52-46",
+      "username": "WildCard8",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.214761102003931,
+            "settler_min_pop": 2.0,
+            "settler_stop_turn": 150.0,
+            "mil_per_city": 1.1373881661735443,
+            "builder_per_city": 0.41381870943006493,
+            "war_ratio": 1.8,
+            "war_margin": 20.0,
+            "peace_ratio": 0.6110953139674643,
+            "war_min_turn": 40.0,
+            "attack_floor": 0.0,
+            "kill_bonus": 25.0,
+            "trade_caution": 1.0,
+            "settle_food": 0.9789239312642544,
+            "settle_prod": 1.0,
+            "settle_gold": 0.3,
+            "settle_dist": 0.4,
+            "min_city_dist": 3.8396827438691443,
+            "wonder_min_bld": 3.0,
+            "faith_builder": 150.47931796005292,
+            "d_campus": 3.9828035559843245,
+            "d_commercial": 2.259070237779306,
+            "d_holy": 4.7581881373454635,
+            "d_theater": 1.0,
+            "open0": 0.39097033996941594,
+            "open1": 3.894019622223105,
+            "open2": 1.4821045560118695,
+            "open3": 4.395355395882263,
+            "mv_support": 2.699702748567617,
+            "mv_threat": 0.3522214467429131,
+            "command_radius": 6.0,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.67,
+            "cohesion": 4.068374883421683,
+            "focus_fire": 1.3263810420930056,
+            "screen": 4.0,
+            "role_spacing": 6.81157633196516,
+            "objective_progress": 2.898715156070449,
+            "local_superiority": 6.0,
+            "withdraw_hp": 45.0,
+            "rejoin_hp": 65.96191324805203
+          },
+          "target": null
+        }
+      },
+      "rating": 1688.3355733562255,
+      "rd": 36.269794409295905,
+      "vol": 0.06029006676237201,
+      "games": 43,
+      "wins": 9,
+      "civ_elo": {
+        "China": {
+          "rating": 1617.5005844270443,
+          "rd": 74.31010217975121,
+          "vol": 0.06000576155126319,
+          "games": 10,
+          "wins": 2
+        },
+        "Egypt": {
+          "rating": 1624.3073182988458,
+          "rd": 68.75541991223713,
+          "vol": 0.06006323752240579,
+          "games": 12,
+          "wins": 2
+        },
+        "Greece": {
+          "rating": 1744.233176442282,
+          "rd": 66.5802243884458,
+          "vol": 0.060056374232705156,
+          "games": 12,
+          "wins": 2
+        },
+        "Rome": {
+          "rating": 1777.5089731499797,
+          "rd": 72.76735838362038,
+          "vol": 0.05998587307022648,
+          "games": 9,
+          "wins": 3
+        }
+      },
+      "born_round": 52,
+      "parents": [
+        "advanced_v1",
+        "g44-41"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g52-47",
+      "username": "SilverTongue2",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.394448311178792,
+            "settler_min_pop": 4.388560848494926,
+            "settler_stop_turn": 115.38726146555774,
+            "mil_per_city": 0.8768615988074432,
+            "builder_per_city": 0.5,
+            "war_ratio": 1.8093651719003097,
+            "war_margin": 28.05279059696181,
+            "peace_ratio": 0.6,
+            "war_min_turn": 40.0,
+            "attack_floor": 0.0,
+            "kill_bonus": 25.0,
+            "trade_caution": 1.3329711973837433,
+            "settle_food": 0.7369423525733124,
+            "settle_prod": 0.9000164767941018,
+            "settle_gold": 0.3459201027847769,
+            "settle_dist": 0.4,
+            "min_city_dist": 4.2531002392022605,
+            "wonder_min_bld": 3.0,
+            "faith_builder": 250.48677143196,
+            "d_campus": 5.482712070648699,
+            "d_commercial": 7.114443256896378,
+            "d_holy": 2.0,
+            "d_theater": 0.0,
+            "open0": 1.258361652873926,
+            "open1": 3.0,
+            "open2": 1.7277413122382863,
+            "open3": 5.0,
+            "mv_support": 2.4406229362778,
+            "mv_threat": 0.6996343386711744,
+            "command_radius": 2.6446466374652795,
+            "muster_radius": 3.1496219170830733,
+            "muster_readiness": 0.6049307629415004,
+            "cohesion": 3.0,
+            "focus_fire": 2.12646479873675,
+            "screen": 4.0,
+            "role_spacing": 0.4974778035129725,
+            "objective_progress": 2.675603826277815,
+            "local_superiority": 6.0,
+            "withdraw_hp": 45.0,
+            "rejoin_hp": 73.73822942487422
+          },
+          "target": "diplomatic"
+        }
+      },
+      "rating": 1207.1698905378382,
+      "rd": 75.34894861899676,
+      "vol": 0.05997665327401827,
+      "games": 21,
+      "wins": 0,
+      "civ_elo": {
+        "China": {
+          "rating": 1269.3080072001007,
+          "rd": 118.57442047601324,
+          "vol": 0.05999523659966833,
+          "games": 7,
+          "wins": 0
+        },
+        "Egypt": {
+          "rating": 1246.4915204062072,
+          "rd": 132.67239807325126,
+          "vol": 0.059994450720984555,
+          "games": 4,
+          "wins": 0
+        },
+        "Greece": {
+          "rating": 1300.260363968549,
+          "rd": 112.84775950936643,
+          "vol": 0.05999061574103771,
+          "games": 6,
+          "wins": 0
+        },
+        "Rome": {
+          "rating": 1166.23511666066,
+          "rd": 158.88757580239718,
+          "vol": 0.05999578166407655,
+          "games": 4,
+          "wins": 0
+        }
+      },
+      "born_round": 52,
+      "parents": [
+        "g48-44",
+        "g20-21"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g56-48",
+      "username": "WildCard9",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 7.76259628797172,
+            "settler_min_pop": 2.456063397711315,
+            "settler_stop_turn": 151.76408913408534,
+            "mil_per_city": 1.4068219287617114,
+            "builder_per_city": 0.46578839245013487,
+            "war_ratio": 1.8,
+            "war_margin": 30.07770410557668,
+            "peace_ratio": 0.6169270679585668,
+            "war_min_turn": 10.0,
+            "attack_floor": -2.872387087734609,
+            "kill_bonus": 33.53574890242609,
+            "trade_caution": 1.0,
+            "settle_food": 0.9789239312642544,
+            "settle_prod": 1.0,
+            "settle_gold": 0.9054403714783712,
+            "settle_dist": 0.4,
+            "min_city_dist": 4.0,
+            "wonder_min_bld": 3.529309502874775,
+            "faith_builder": 132.0822963994711,
+            "d_campus": 4.0,
+            "d_commercial": 3.549718296608317,
+            "d_holy": 1.224443699898587,
+            "d_theater": 1.429691707478741,
+            "open0": 0.39097033996941594,
+            "open1": 3.0,
+            "open2": 2.4296503324409215,
+            "open3": 4.561826301914727,
+            "mv_support": 2.1012082194014843,
+            "mv_threat": 0.5,
+            "command_radius": 6.0,
+            "muster_radius": 2.219474167997044,
+            "muster_readiness": 0.6606827118508489,
+            "cohesion": 8.791347701936944,
+            "focus_fire": 2.5,
+            "screen": 5.184874509912306,
+            "role_spacing": 2.0,
+            "objective_progress": 2.898715156070449,
+            "local_superiority": 7.672414271220169,
+            "withdraw_hp": 45.0,
+            "rejoin_hp": 81.12779718374597
+          },
+          "target": null
+        }
+      },
+      "rating": 1687.217443638722,
+      "rd": 48.758613377475605,
+      "vol": 0.05998181565425682,
+      "games": 20,
+      "wins": 6,
+      "civ_elo": {
+        "China": {
+          "rating": 1370.2734164779363,
+          "rd": 216.5208513609036,
+          "vol": 0.05999840390182136,
+          "games": 1,
+          "wins": 0
+        },
+        "Egypt": {
+          "rating": 1661.40642608377,
+          "rd": 65.58301661703055,
+          "vol": 0.05996863564420029,
+          "games": 11,
+          "wins": 2
+        },
+        "Greece": {
+          "rating": 1373.8019113773257,
+          "rd": 147.1281806299155,
+          "vol": 0.05999949349366211,
+          "games": 4,
+          "wins": 0
+        },
+        "Rome": {
+          "rating": 2157.800521490205,
+          "rd": 131.91912041962772,
+          "vol": 0.06000465656777393,
+          "games": 4,
+          "wins": 4
+        }
+      },
+      "born_round": 56,
+      "parents": [
+        "g48-43",
+        "g48-43"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g56-49",
+      "username": "Maverick6",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.331339529585773,
+            "settler_min_pop": 2.0,
+            "settler_stop_turn": 150.0,
+            "mil_per_city": 1.1373881661735443,
+            "builder_per_city": 0.41381870943006493,
+            "war_ratio": 2.1448001205199674,
+            "war_margin": 53.472546246061995,
+            "peace_ratio": 0.6,
+            "war_min_turn": 47.13792546946978,
+            "attack_floor": 0.5985762700777247,
+            "kill_bonus": 32.66747357863939,
+            "trade_caution": 0.8040683175760666,
+            "settle_food": 0.42252721588746145,
+            "settle_prod": 1.0136078815568623,
+            "settle_gold": 0.12664980747915933,
+            "settle_dist": 0.4081858445177581,
+            "min_city_dist": 4.0,
+            "wonder_min_bld": 3.0,
+            "faith_builder": 371.15761937234674,
+            "d_campus": 4.050303878721133,
+            "d_commercial": 2.259070237779306,
+            "d_holy": 2.0,
+            "d_theater": 0.6461876136698144,
+            "open0": 1.0,
+            "open1": 3.0,
+            "open2": 2.508158830014586,
+            "open3": 4.082876560785131,
+            "mv_support": 2.0678848351642394,
+            "mv_threat": 0.5,
+            "command_radius": 3.595896998027349,
+            "muster_radius": 1.649482850214775,
+            "muster_readiness": 0.67,
+            "cohesion": 3.870853363750062,
+            "focus_fire": 2.033660471906209,
+            "screen": 4.0,
+            "role_spacing": 0.0,
+            "objective_progress": 3.7780048441750216,
+            "local_superiority": 7.393989210851398,
+            "withdraw_hp": 45.0,
+            "rejoin_hp": 70.1125870327568
+          },
+          "target": null
+        }
+      },
+      "rating": 1706.607630660767,
+      "rd": 45.64755057982774,
+      "vol": 0.05998537200288977,
+      "games": 23,
+      "wins": 3,
+      "civ_elo": {
+        "China": {
+          "rating": 1625.5518204249017,
+          "rd": 87.9810072526316,
+          "vol": 0.06003213789805206,
+          "games": 7,
+          "wins": 0
+        },
+        "Egypt": {
+          "rating": 1793.4652851446338,
+          "rd": 115.93145536503359,
+          "vol": 0.0600319268646609,
+          "games": 5,
+          "wins": 0
+        },
+        "Greece": {
+          "rating": 1770.6166710713526,
+          "rd": 95.47218842493793,
+          "vol": 0.060002221054335975,
+          "games": 5,
+          "wins": 2
+        },
+        "Rome": {
+          "rating": 1750.431146122925,
+          "rd": 89.80643117167985,
+          "vol": 0.06001381245987094,
+          "games": 6,
+          "wins": 1
+        }
+      },
+      "born_round": 56,
+      "parents": [
+        "g28-28",
+        "g44-41"
+      ],
+      "retired": true,
+      "anchor": false
+    },
+    {
+      "name": "g56-50",
+      "username": "WildCard10",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 9.6805081708184,
+            "settler_min_pop": 2.0,
+            "settler_stop_turn": 183.72326901425348,
+            "mil_per_city": 1.0803395701297425,
+            "builder_per_city": 0.5000452278597076,
+            "war_ratio": 1.8,
+            "war_margin": 30.07770410557668,
+            "peace_ratio": 0.6380390721982874,
+            "war_min_turn": 26.25922273312093,
+            "attack_floor": -2.872387087734609,
+            "kill_bonus": 33.53574890242609,
+            "trade_caution": 0.7794527713406072,
+            "settle_food": 1.7341011204010748,
+            "settle_prod": 0.9000164767941018,
+            "settle_gold": 0.12664980747915933,
+            "settle_dist": 0.7671153793308385,
+            "min_city_dist": 6.187389689411761,
+            "wonder_min_bld": 3.0,
+            "faith_builder": 307.0804603590154,
+            "d_campus": 4.0,
+            "d_commercial": 4.8473948833383504,
+            "d_holy": 2.0,
+            "d_theater": 4.45523329594185,
+            "open0": 0.25822641266363333,
+            "open1": 3.8442330185476843,
+            "open2": 1.7277413122382863,
+            "open3": 5.377456248962869,
+            "mv_support": 2.613004659520981,
+            "mv_threat": 0.5557181368351034,
+            "command_radius": 3.788536176000349,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.6448057421685134,
+            "cohesion": 9.682981623581584,
+            "focus_fire": 1.9982146513838204,
+            "screen": 11.178061161268301,
+            "role_spacing": 0.4974778035129725,
+            "objective_progress": 3.3341499603853615,
+            "local_superiority": 7.672414271220169,
+            "withdraw_hp": 45.0,
+            "rejoin_hp": 85.39847270734882
+          },
+          "target": null
+        }
+      },
+      "rating": 1823.2764770270096,
+      "rd": 50.347707960404676,
+      "vol": 0.060013576076222964,
+      "games": 21,
+      "wins": 4,
+      "civ_elo": {
+        "China": {
+          "rating": 1751.7733232398698,
+          "rd": 119.99799022784082,
+          "vol": 0.059993788401283596,
+          "games": 3,
+          "wins": 0
+        },
+        "Egypt": {
+          "rating": 1865.3231323872187,
+          "rd": 84.89634415174034,
+          "vol": 0.060002671146909894,
+          "games": 6,
+          "wins": 2
+        },
+        "Greece": {
+          "rating": 1759.4094483375645,
+          "rd": 70.69214665268584,
+          "vol": 0.05999365472163624,
+          "games": 9,
+          "wins": 1
+        },
+        "Rome": {
+          "rating": 1920.5510585532238,
+          "rd": 137.63498472516574,
+          "vol": 0.05999914389339499,
+          "games": 3,
+          "wins": 1
+        }
+      },
+      "born_round": 56,
+      "parents": [
+        "g28-28",
+        "g48-43"
+      ],
+      "retired": false,
+      "anchor": false
+    },
+    {
+      "name": "g60-51",
+      "username": "WildCard11",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 9.6805081708184,
+            "settler_min_pop": 2.0,
+            "settler_stop_turn": 145.21207009875727,
+            "mil_per_city": 1.0752462590635685,
+            "builder_per_city": 0.9137736341901689,
+            "war_ratio": 1.2572495786094489,
+            "war_margin": 7.751390617092163,
+            "peace_ratio": 0.6,
+            "war_min_turn": 37.40245237243147,
+            "attack_floor": -7.238519534073282,
+            "kill_bonus": 35.907065395842594,
+            "trade_caution": 1.0887449427419935,
+            "settle_food": 0.5531115023651053,
+            "settle_prod": 0.8479888612575968,
+            "settle_gold": 0.011177390609061144,
+            "settle_dist": 0.4081858445177581,
+            "min_city_dist": 4.2531002392022605,
+            "wonder_min_bld": 3.0,
+            "faith_builder": 289.9109076855009,
+            "d_campus": 4.839532425475503,
+            "d_commercial": 4.649649755499534,
+            "d_holy": 5.760043779544282,
+            "d_theater": 2.9807579400024835,
+            "open0": 1.0,
+            "open1": 3.8442330185476843,
+            "open2": 1.7277413122382863,
+            "open3": 4.082876560785131,
+            "mv_support": 2.4406229362778,
+            "mv_threat": 0.424626515699307,
+            "command_radius": 3.595896998027349,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.67,
+            "cohesion": 9.682981623581584,
+            "focus_fire": 1.6931404973740598,
+            "screen": 11.060109015109616,
+            "role_spacing": 0.4974778035129725,
+            "objective_progress": 3.3341499603853615,
+            "local_superiority": 4.941342628738843,
+            "withdraw_hp": 38.85619466254704,
+            "rejoin_hp": 78.66614122005369
+          },
+          "target": null
+        }
+      },
+      "rating": 1500.0,
+      "rd": 350.0,
+      "vol": 0.06,
+      "games": 0,
+      "wins": 0,
+      "civ_elo": {},
+      "born_round": 60,
+      "parents": [
+        "g28-28",
+        "g28-28"
+      ],
+      "retired": false,
+      "anchor": false
+    },
+    {
+      "name": "g60-52",
+      "username": "JackKnife2",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 4.917083191389544,
+            "settler_min_pop": 1.5383654215093596,
+            "settler_stop_turn": 176.69262015808897,
+            "mil_per_city": 1.1373881661735443,
+            "builder_per_city": 0.3122652754392765,
+            "war_ratio": 0.8707345935335841,
+            "war_margin": 40.26755712135567,
+            "peace_ratio": 0.5032911284873027,
+            "war_min_turn": 40.0,
+            "attack_floor": 0.0,
+            "kill_bonus": 25.0,
+            "trade_caution": 2.5066862491584407,
+            "settle_food": 1.224768273130474,
+            "settle_prod": 1.161185054277121,
+            "settle_gold": 0.12664980747915933,
+            "settle_dist": 0.21807088814499664,
+            "min_city_dist": 4.0,
+            "wonder_min_bld": 3.202176206134765,
+            "faith_builder": 289.9109076855009,
+            "d_campus": 4.0,
+            "d_commercial": 7.114443256896378,
+            "d_holy": 2.0,
+            "d_theater": 0.10149477389055528,
+            "open0": 0.012593424815013687,
+            "open1": 3.0,
+            "open2": 2.0,
+            "open3": 3.497031872007213,
+            "mv_support": 1.4390034181644353,
+            "mv_threat": 0.2156396940647114,
+            "command_radius": 6.0,
+            "muster_radius": 3.0,
+            "muster_readiness": 0.67,
+            "cohesion": 4.915807132764526,
+            "focus_fire": 2.033660471906209,
+            "screen": 11.060109015109616,
+            "role_spacing": 6.887213859680184,
+            "objective_progress": 2.898715156070449,
+            "local_superiority": 6.0,
+            "withdraw_hp": 37.30466982966465,
+            "rejoin_hp": 80.0
+          },
+          "target": null
+        }
+      },
+      "rating": 1500.0,
+      "rd": 350.0,
+      "vol": 0.06,
+      "games": 0,
+      "wins": 0,
+      "civ_elo": {},
+      "born_round": 60,
+      "parents": [
+        "g44-41",
+        "g20-21"
+      ],
+      "retired": false,
+      "anchor": false
+    },
+    {
+      "name": "g60-53",
+      "username": "DarkHorse7",
+      "kind": {
+        "Advanced": {
+          "weights": {
+            "city_target": 9.6805081708184,
+            "settler_min_pop": 3.3343128105678215,
+            "settler_stop_turn": 72.3011595606371,
+            "mil_per_city": 1.0803395701297425,
+            "builder_per_city": 0.5000452278597076,
+            "war_ratio": 2.171899550590234,
+            "war_margin": 18.02424572083173,
+            "peace_ratio": 0.6,
+            "war_min_turn": 26.25922273312093,
+            "attack_floor": -2.872387087734609,
+            "kill_bonus": 41.239519101988044,
+            "trade_caution": 0.7794527713406072,
+            "settle_food": 1.4017970949073861,
+            "settle_prod": 0.9000164767941018,
+            "settle_gold": 0.03609960192811912,
+            "settle_dist": 0.4081858445177581,
+            "min_city_dist": 4.2531002392022605,
+            "wonder_min_bld": 3.0,
+            "faith_builder": 307.0804603590154,
+            "d_campus": 4.839532425475503,
+            "d_commercial": 3.3038817738804527,
+            "d_holy": 5.711969049657613,
+            "d_theater": 0.6461876136698144,
+            "open0": 1.0,
+            "open1": 3.8442330185476843,
+            "open2": 2.413563002672949,
+            "open3": 4.843421033978445,
+            "mv_support": 6.8125732488291675,
+            "mv_threat": 0.5557181368351034,
+            "command_radius": 3.595896998027349,
+            "muster_radius": 3.1228562870671857,
+            "muster_readiness": 0.6448057421685134,
+            "cohesion": 9.850711603821608,
+            "focus_fire": 1.9982146513838204,
+            "screen": 11.206716120008354,
+            "role_spacing": 0.4974778035129725,
+            "objective_progress": 3.3341499603853615,
+            "local_superiority": 6.0,
+            "withdraw_hp": 42.62065091770865,
+            "rejoin_hp": 74.90494840643609
+          },
+          "target": null
+        }
+      },
+      "rating": 1500.0,
+      "rd": 350.0,
+      "vol": 0.06,
+      "games": 0,
+      "wins": 0,
+      "civ_elo": {},
+      "born_round": 60,
+      "parents": [
+        "g28-28",
+        "g56-50"
+      ],
+      "retired": false,
+      "anchor": false
+    }
+  ]
+}
