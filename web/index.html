@@ -3898,10 +3898,32 @@ function drawMini() {
     mx2.fillStyle = visible.has(key(t.pos)) ? terrainColor : shade(terrainColor, 0.42);
     mx2.fillRect(off + col * cs + (row % 2) * cs / 2, off + row * cs, cs, cs);
   }
+  // Territory. A minimap that cannot show who holds what is a terrain
+  // thumbnail, and empire shapes are the thing anyone actually opens a minimap
+  // for — where a rival is thick, where your own land is thin, which way a
+  // frontier is moving. The main map keeps its territory wash deliberately
+  // faint so the ground shows through; here ownership is the point and terrain
+  // is the backdrop, so it goes on heavier.
+  mx2.globalAlpha = 0.7;
+  for (const t of tiles) {
+    if (t.owner === null || t.owner === undefined) continue;
+    const col = t.pos[0] + (t.pos[1] - (t.pos[1] & 1)) / 2, row = t.pos[1];
+    // cityBannerColor, not pcol: pcol gives every city-state the same near-black
+    // tint, which is invisible at the main map's faint wash but reads as burned
+    // ground at minimap strength. The banner colour carries their TYPE instead,
+    // and matches the square already drawn for their capital.
+    mx2.fillStyle = cityBannerColor(t.owner);
+    mx2.fillRect(off + col * cs + (row % 2) * cs / 2, off + row * cs, cs, cs);
+  }
+  mx2.globalAlpha = 1;
   for (const c of state.cities) {
     const col = c.pos[0] + (c.pos[1] - (c.pos[1] & 1)) / 2, row = c.pos[1];
+    const px = off + col * cs + (row % 2) * cs / 2 - 1, py = off + row * cs - 1;
     mx2.fillStyle = cityBannerColor(c.owner);
-    mx2.fillRect(off + col * cs + (row % 2) * cs / 2 - 1, off + row * cs - 1, cs + 2, cs + 2);
+    mx2.fillRect(px, py, cs + 2, cs + 2);
+    // a dark keyline keeps a city legible now that it sits on its own colour
+    mx2.strokeStyle = "#0b0e13"; mx2.lineWidth = 0.7;
+    mx2.strokeRect(px + 0.35, py + 0.35, cs + 1.3, cs + 1.3);
   }
   // viewport rect
   const toMini = (wx, wy) => {
