@@ -175,7 +175,10 @@ pub struct TileGrid {
     /// conclusion drawn from the map — what a unit can see, say — records the
     /// epoch it was drawn under and recomputes when the map has moved on.
     epoch: u64,
-    tiles: Vec<Tile>,
+    /// Shared until written to. A game cloned to look ahead usually never
+    /// touches the map at all — units move, tiles do not — so the hexes are
+    /// copied only when something actually changes one.
+    tiles: std::sync::Arc<Vec<Tile>>,
     /// `row * width + col` -> index into `tiles`, or `u32::MAX` when a save
     /// omitted that hex.
     slot: Vec<u32>,
@@ -189,7 +192,7 @@ impl TileGrid {
             width,
             height,
             epoch: 0,
-            tiles: Vec::new(),
+            tiles: std::sync::Arc::new(Vec::new()),
             slot: Vec::new(),
         };
         let mut tiles = Vec::with_capacity((width.max(0) * height.max(0)) as usize);
@@ -207,7 +210,7 @@ impl TileGrid {
             width,
             height,
             epoch: 0,
-            tiles: Vec::new(),
+            tiles: std::sync::Arc::new(Vec::new()),
             slot: Vec::new(),
         };
         grid.rebuild(tiles);
@@ -225,7 +228,7 @@ impl TileGrid {
                 self.slot[cell] = index as u32;
             }
         }
-        self.tiles = tiles;
+        self.tiles = std::sync::Arc::new(tiles);
     }
 
     #[inline]
@@ -258,7 +261,8 @@ impl TileGrid {
     #[inline]
     pub fn get_mut(&mut self, pos: &Pos) -> Option<&mut Tile> {
         self.epoch += 1;
-        self.index_of(*pos).map(|index| &mut self.tiles[index])
+        let index = self.index_of(*pos)?;
+        Some(&mut std::sync::Arc::make_mut(&mut self.tiles)[index])
     }
 
     /// How many times the map has been opened for writing. Two reads of the
@@ -291,7 +295,7 @@ impl TileGrid {
 
     pub fn values_mut(&mut self) -> std::slice::IterMut<'_, Tile> {
         self.epoch += 1;
-        self.tiles.iter_mut()
+        std::sync::Arc::make_mut(&mut self.tiles).iter_mut()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&Pos, &Tile)> + '_ {
@@ -299,7 +303,10 @@ impl TileGrid {
     }
 
     pub fn into_values(self) -> std::vec::IntoIter<Tile> {
-        self.tiles.into_iter()
+        match std::sync::Arc::try_unwrap(self.tiles) {
+            Ok(tiles) => tiles.into_iter(),
+            Err(shared) => shared.as_slice().to_vec().into_iter(),
+        }
     }
 }
 
@@ -322,7 +329,9 @@ impl<'a> IntoIterator for &'a mut TileGrid {
 
     fn into_iter(self) -> Self::IntoIter {
         self.epoch += 1;
-        self.tiles.iter_mut().map(|tile| (tile.pos, tile))
+        std::sync::Arc::make_mut(&mut self.tiles)
+            .iter_mut()
+            .map(|tile| (tile.pos, tile))
     }
 }
 
