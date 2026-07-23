@@ -3401,17 +3401,23 @@ impl BasicAi {
             .filter(|p| g.can_move(uid, *p))
             .collect();
         local.sort_by_key(|p| (g.wdist(*p, target), *p));
-        if let Some(next) = local.first().copied() {
-            if g.wdist(next, target) < g.wdist(cur, target) {
-                return g
-                    .apply(
-                        pid,
-                        &Action::Move {
-                            unit: uid,
-                            to: next,
-                        },
-                    )
-                    .is_ok();
+        for next in local {
+            if g.wdist(next, target) >= g.wdist(cur, target) {
+                break; // sorted: no remaining neighbor makes progress
+            }
+            // A neighbor can still be refused (stacking, ZOC); try the next
+            // improving tile before paying for A*.
+            if g
+                .apply(
+                    pid,
+                    &Action::Move {
+                        unit: uid,
+                        to: next,
+                    },
+                )
+                .is_ok()
+            {
+                return true;
             }
         }
 
@@ -3421,14 +3427,29 @@ impl BasicAi {
             Some(p) if g.can_move(uid, p) => p,
             _ => return false,
         };
-        g.apply(
-            pid,
-            &Action::Move {
-                unit: uid,
-                to: next,
-            },
-        )
-        .is_ok()
+        if g
+            .apply(
+                pid,
+                &Action::Move {
+                    unit: uid,
+                    to: next,
+                },
+            )
+            .is_ok()
+        {
+            return true;
+        }
+        // A peer can take the A* tile first; sidestep at equal distance so
+        // a marching column keeps flowing around the blockage.
+        for p in g.nbrs(cur) {
+            if g.wdist(p, target) == g.wdist(cur, target)
+                && g.can_move(uid, p)
+                && g.apply(pid, &Action::Move { unit: uid, to: p }).is_ok()
+            {
+                return true;
+            }
+        }
+        false
     }
 
     fn settle_value(&self, g: &Game, pos: Pos) -> f64 {
@@ -5461,7 +5482,12 @@ mod tests {
             .tiles
             .iter()
             .filter(|(pos, tile)| {
-                g.rules.is_passable(tile) && !g.rules.is_water(tile) && g.units_at(**pos).is_empty()
+                g.rules.is_passable(tile)
+                    && !g.rules.is_water(tile)
+                    && g.units_at(**pos).is_empty()
+                    // The campaign must march, not brawl: keep the arena away
+                    // from everyone's starting units.
+                    && g.units.values().all(|unit| g.wdist(unit.pos, **pos) > 8)
             })
             .find_map(|(target, _)| {
                 let staging: Vec<Pos> = g
@@ -5474,6 +5500,16 @@ mod tests {
                                     && !g.rules.is_water(tile)
                                     && g.units_at(*pos).is_empty()
                             })
+                            // Troops staged here must be able to march out.
+                            && g.nbrs(*pos)
+                                .iter()
+                                .filter(|neighbour| {
+                                    g.map.get(**neighbour).is_some_and(|tile| {
+                                        g.rules.is_passable(tile) && !g.rules.is_water(tile)
+                                    })
+                                })
+                                .count()
+                                >= 4
                     })
                     .take(6)
                     .collect();

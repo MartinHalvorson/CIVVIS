@@ -8833,6 +8833,18 @@ mod tests {
                         .cities
                         .values()
                         .all(|city| game.wdist(city.pos, *position) >= 4)
+                    // Units staged here must be able to walk out: skip sites
+                    // ringed by water and mountains.
+                    && game
+                        .nbrs(*position)
+                        .iter()
+                        .filter(|neighbour| {
+                            game.map.get(**neighbour).is_some_and(|tile| {
+                                game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                            })
+                        })
+                        .count()
+                        >= 3
             })
             .expect("test map has a nearby city site");
         game.found_city_for(owner, position, None)
@@ -12531,7 +12543,7 @@ mod tests {
 
     #[test]
     fn advanced_trader_uses_an_unreserved_destination_empire_wide() {
-        let mut game = Game::new_full(1, 30, 18, 79_002, 200, 0, false);
+        let mut game = Game::new_full(1, 30, 18, 79_003, 200, 0, false);
         let settler = game
             .player_unit_ids(0)
             .into_iter()
