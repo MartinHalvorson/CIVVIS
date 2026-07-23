@@ -297,6 +297,13 @@
     text-overflow: ellipsis; white-space: nowrap;
   }
   .victory-turn i small { color: #71857e; text-transform: capitalize; }
+  .code-age {
+    display: block; margin-top: 5px; padding-top: 4px; overflow: hidden;
+    color: #baa66f; border-top: 1px solid #d7b66a20;
+    font-size: 7px; font-weight: 850; font-variant-numeric: tabular-nums;
+    letter-spacing: .07em; line-height: 1; text-transform: uppercase;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
   .victory-meter { overflow: hidden; background: #020706b3; box-shadow: inset 0 1px 2px #000b; }
   .victory-meter b { display: block; height: 100%; border-radius: inherit; background: currentColor; }
   /* Two of the races are really two races at once — the technology tree and
@@ -5857,6 +5864,32 @@ function victoryDescription(victory, metric) {
   return `${compactStat(metric.points || 0)} points · meter is relative to the score leader`;
 }
 
+function compactCodeAge(timestamp) {
+  const fetched = Date.parse(timestamp || "");
+  if (!Number.isFinite(fetched)) return "—";
+  const minutes = Math.max(0, Math.floor((Date.now() - fetched) / 60000));
+  if (minutes < 1) return "<1m";
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  if (days < 60) return `${days}d`;
+  return `${Math.floor(days / 30)}mo`;
+}
+
+function codeAgeIdentity() {
+  const age = compactCodeAge(state.code_fetched_at);
+  const revision = state.commit && state.commit !== "unknown" ? state.commit : "unknown revision";
+  const fetched = Date.parse(state.code_fetched_at || "");
+  const when = Number.isFinite(fetched)
+    ? new Date(fetched).toLocaleString()
+    : "unknown time";
+  return {
+    label: `Code ${age}`,
+    title: `Running ${revision} · grabbed from HEAD ${when}`,
+  };
+}
+
 function playerHudOverview() {
   const actor = state.players[SPEC ? state.current : 0] || state.players[state.player];
   const viewer = state.players[state.player] || actor;
@@ -5902,9 +5935,11 @@ function playerHudOverview() {
   }).join("");
   const victoryCount = Math.max(1, enabledVictoryTracks.length);
   const victoryMinWidth = victoryCount * 84 + Math.max(0, victoryCount - 1) * 2;
+  const codeAge = codeAgeIdentity();
   const overview =
-    `<section class="victory-turn" title="Turn ${state.turn}" aria-label="Turn ${state.turn}, ${era}"><span>Turn</span>` +
-    `<strong>${state.turn}</strong><i>${SPEC ? `<em>◉ ${actor.civ}</em>` : ""}<small>${era}</small></i></section>` +
+    `<section class="victory-turn" title="Turn ${state.turn}" aria-label="Turn ${state.turn}, ${era}; ${codeAge.label}"><span>Turn</span>` +
+    `<strong>${state.turn}</strong><i>${SPEC ? `<em>◉ ${actor.civ}</em>` : ""}<small>${era}</small></i>` +
+    `<small class="code-age" title="${codeAge.title}">${codeAge.label}</small></section>` +
     `<section class="hud-region victory-region" aria-labelledby="victory-race-title">` +
     `<div class="hud-section-heading"><span id="victory-race-title">Victory race</span><span>Top 3 by path</span></div>` +
     `<div class="hud-rail" tabindex="0" aria-label="Victory paths; scroll horizontally for every path">` +

@@ -3,4 +3,5 @@ fn main() {
     // supervisor. Make Cargo notice when only that identity changes, even if
     // the compiled source bytes are otherwise unchanged.
     println!("cargo:rerun-if-env-changed=CIVVIS_COMMIT");
+    println!("cargo:rerun-if-env-changed=CIVVIS_CODE_FETCHED_AT");
 }

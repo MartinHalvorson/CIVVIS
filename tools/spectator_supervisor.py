@@ -291,6 +291,13 @@ def build_latest(max_attempts: int = 3) -> bool:
         revision = source_revision()
         build_environment = os.environ.copy()
         build_environment["CIVVIS_COMMIT"] = revision
+        # Stamp the moment this immutable runtime took its source from HEAD.
+        # It remains unchanged when the verified binary is reused, letting the
+        # browser report the age of the code that is actually playing rather
+        # than the age of the browser tab or supervisor process.
+        build_environment["CIVVIS_CODE_FETCHED_AT"] = datetime.now(
+            timezone.utc
+        ).isoformat()
         # The visible game does not need to wait for unrelated evaluation
         # binaries to link before its known-good runtime can be promoted.
         result = command(

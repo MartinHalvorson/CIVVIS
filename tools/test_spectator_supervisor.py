@@ -1,4 +1,5 @@
 import importlib.util
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import tempfile
@@ -330,6 +331,8 @@ class SourceSnapshotTests(unittest.TestCase):
             if Path(args[0]).name in ("cargo", "cargo.exe")
         )
         self.assertEqual(cargo_call["environment"]["CIVVIS_COMMIT"], "abc1234")
+        fetched_at = cargo_call["environment"]["CIVVIS_CODE_FETCHED_AT"]
+        self.assertEqual(datetime.fromisoformat(fetched_at).tzinfo, timezone.utc)
 
     def test_failed_latest_build_never_promotes_stale_binary(self):
         failed = SimpleNamespace(returncode=1, stdout="compile error")

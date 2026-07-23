@@ -1417,6 +1417,11 @@ fn decorate(o: &mut Value, sh: &Shared) {
     if compute > 0 {
         o["turn_compute_ms"] = json!(compute as f64 / 1000.0);
     }
+    // Compile-time provenance follows the binary through checkpoint restores
+    // and process replacement. The browser can therefore show the age of the
+    // code actually running instead of inferring it from page or file times.
+    o["commit"] = json!(option_env!("CIVVIS_COMMIT").unwrap_or("unknown"));
+    o["code_fetched_at"] = json!(option_env!("CIVVIS_CODE_FETCHED_AT").unwrap_or("unknown"));
 }
 
 fn handle(stream: &mut TcpStream, sh: &Shared) {
@@ -1496,6 +1501,8 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     // guessed at from file timestamps. The build stamps this
                     // in; an unstamped build reports unknown.
                     "commit": option_env!("CIVVIS_COMMIT").unwrap_or("unknown"),
+                    "code_fetched_at": option_env!("CIVVIS_CODE_FETCHED_AT")
+                        .unwrap_or("unknown"),
                 }),
             );
         }
@@ -1605,6 +1612,8 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 Some(e) => Value::String(e),
                 None => Value::Null,
             };
+            drop(session);
+            decorate(&mut out, sh);
             respond_json(stream, &out);
         }
         ("POST", "/step") => {
@@ -1671,6 +1680,8 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 Ok(()) => Value::Null,
                 Err(error) => Value::String(error),
             };
+            drop(session);
+            decorate(&mut out, sh);
             respond_json(stream, &out);
         }
         ("POST", "/spectator-status") => {
@@ -2146,6 +2157,14 @@ mod tests {
         assert!(side_rule.contains("order: -1"));
         assert!(EMBEDDED_INDEX.contains("<strong>${state.turn}</strong>"));
         assert!(!EMBEDDED_INDEX.contains("${state.turn}/${maxTurns}"));
+    }
+
+    #[test]
+    fn browser_shows_the_running_code_age_in_the_top_hud() {
+        assert!(EMBEDDED_INDEX.contains("class=\"code-age\""));
+        assert!(EMBEDDED_INDEX.contains("function compactCodeAge(timestamp)"));
+        assert!(EMBEDDED_INDEX.contains("state.code_fetched_at"));
+        assert!(EMBEDDED_INDEX.contains("grabbed from HEAD"));
     }
 
     #[test]
