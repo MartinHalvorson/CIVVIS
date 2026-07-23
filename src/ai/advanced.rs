@@ -2061,15 +2061,17 @@ impl AdvancedAi {
 
         let mut value = deal.give_gold - deal.request_gold;
         if deal.peace {
-            value += if plan.strategy == GrandStrategy::Recovery
-                || my_power < partner_power * 0.85
-                || fatigued
-            {
+            value += if my_power < partner_power * 0.85 || fatigued {
                 320.0
-            } else if plan.strategy == GrandStrategy::Conquest
-                && plan.target_player == Some(partner)
-            {
+            } else if denied_partner {
+                // Recovery is a temporary battlefield posture, not an order
+                // to abandon the campaign. A locally threatened city can put
+                // an overwhelmingly stronger attacker into Recovery for one
+                // assessment window; keep refusing its active target's white
+                // peace until the army is actually outmatched or fatigued.
                 -260.0
+            } else if plan.strategy == GrandStrategy::Recovery {
+                320.0
             } else {
                 35.0
             };
@@ -9814,6 +9816,11 @@ mod tests {
 
         game.at_war.insert((0, 1));
         plan.strategy = GrandStrategy::Recovery;
+        assert!(
+            ai.incoming_deal_value(&game, 0, &deal(0.0, 100.0, false, true), &plan) < 0.0,
+            "a strong Recovery posture must not abandon its active campaign target"
+        );
+        plan.target_player = None;
         assert!(ai.incoming_deal_value(&game, 0, &deal(0.0, 100.0, false, true), &plan) > 0.0);
     }
 
@@ -9863,8 +9870,11 @@ mod tests {
             deal.from == 1 && deal.to == 0 && deal.peace
         }));
 
-        let conquest = StrategicPlan {
-            strategy: GrandStrategy::Conquest,
+        let winning_campaign = StrategicPlan {
+            // A threatened home city can temporarily classify even a much
+            // stronger attacker as Recovery. Its active campaign target must
+            // still be able to refuse the defender's immediate white peace.
+            strategy: GrandStrategy::Recovery,
             target_player: Some(1),
             target_city: game.player_city_ids(1).into_iter().next(),
             threatened_city: None,
@@ -9875,7 +9885,7 @@ mod tests {
         let mut conqueror = AdvancedAi::new();
         conqueror.major_war_since = Some(60);
         refused.current = 0;
-        conqueror.advanced_diplomacy(&mut refused, 0, &conquest);
+        conqueror.advanced_diplomacy(&mut refused, 0, &winning_campaign);
         assert!(refused.is_at_war(0, 1));
         assert!(
             refused.pending_deals.iter().all(|deal| !deal.peace),
