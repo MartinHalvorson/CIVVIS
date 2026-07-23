@@ -3152,46 +3152,10 @@ impl BasicAi {
                 .cities
                 .values()
                 .filter(|city| city.owner == pid)
-                .flat_map(|city| city.buildings.iter())
-                .filter(|building| g.rules.buildings[building.as_str()].wonder)
-                .count();
+                .map(|city| city.wonders.len())
+                .sum::<usize>();
             if empire_wonders < 3 {
-                let queued: HashSet<&str> = g
-                    .cities
-                    .values()
-                    .filter_map(|city| match city.queue.first() {
-                        Some(Item::Building { building })
-                            if g.rules.buildings[building.as_str()].wonder =>
-                        {
-                            Some(building.as_str())
-                        }
-                        _ => None,
-                    })
-                    .collect();
-                let wonder = g
-                    .rules
-                    .buildings
-                    .iter()
-                    .filter(|(building, spec)| {
-                        spec.wonder
-                            && !queued.contains(building.as_str())
-                            && g.can_produce(
-                                pid,
-                                cid,
-                                &Item::Building {
-                                    building: (*building).clone(),
-                                },
-                            )
-                    })
-                    .min_by(|(an, a), (bn, b)| {
-                        a.cost
-                            .partial_cmp(&b.cost)
-                            .unwrap()
-                            .then_with(|| an.cmp(bn))
-                    })
-                    .map(|(building, _)| Item::Building {
-                        building: building.clone(),
-                    });
+                let wonder = Self::cheapest_available_wonder(g, pid, cid);
                 if wonder.is_some() {
                     return wonder;
                 }
@@ -3221,37 +3185,16 @@ impl BasicAi {
         }
         // developed cities turn to wonders
         if g.cities[&cid].buildings.len() as f64 >= self.w.wonder_min_bld {
-            let mut wonders: Vec<(i64, String)> = g
-                .rules
-                .buildings
-                .iter()
-                .filter(|(b, s)| {
-                    s.wonder
-                        && g.can_produce(
-                            pid,
-                            cid,
-                            &Item::Building {
-                                building: (*b).clone(),
-                            },
-                        )
-                })
-                .map(|(b, s)| (s.cost as i64, b.clone()))
-                .collect();
-            if !wonders.is_empty() {
-                wonders.sort();
-                return Some(Item::Building {
-                    building: wonders[0].1.clone(),
-                });
+            if let Some(wonder) = Self::cheapest_available_wonder(g, pid, cid) {
+                return Some(wonder);
             }
         }
-        // Repeatable district projects are a developed-city fallback. If
+        // Repeatable district projects are a major-civilization fallback. If
         // considered with mandatory projects above, their low early base cost
         // makes a basic AI loop them forever before building Monuments,
-        // districts, or district buildings. City-states reach that developed
-        // state early - one city, a three-unit army and nothing left to build
-        // - and excluding them here left them with no fallback at all, so
-        // their Production went nowhere for the rest of the game.
-        if !self.barb {
+        // districts, or district buildings. The rules disallow these projects
+        // for city-states; their developed-city fallback is a placed wonder.
+        if !self.barb && !self.minor {
             let mut projects: Vec<Item> = g
                 .rules
                 .projects
@@ -3282,6 +3225,30 @@ impl BasicAi {
             .then(|| self.combined_arms_unit(g, pid, cid, melee, ranged))
             .flatten()
             .map(|m| Item::Unit { unit: m })
+    }
+
+    /// Pick a real placed wonder rather than treating it as an ordinary
+    /// building. `producible_items` supplies fully validated sites; filtering
+    /// globally queued names keeps two cities from entering the same race.
+    fn cheapest_available_wonder(g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        let queued: HashSet<String> = g
+            .cities
+            .values()
+            .filter_map(|city| match city.queue.first() {
+                Some(Item::Wonder { wonder, .. }) => Some(wonder.clone()),
+                _ => None,
+            })
+            .collect();
+        g.producible_items(pid, cid)
+            .into_iter()
+            .filter(|item| {
+                matches!(item, Item::Wonder { wonder, .. } if !queued.contains(wonder))
+            })
+            .min_by(|left, right| {
+                g.item_cost_for_city(pid, cid, left)
+                    .total_cmp(&g.item_cost_for_city(pid, cid, right))
+                    .then_with(|| format!("{left:?}").cmp(&format!("{right:?}")))
+            })
     }
 
     fn project_matches_focus(&self, g: &Game, project: &str) -> bool {
@@ -5289,6 +5256,43 @@ mod tests {
             matches!(item, Item::Building { ref building } if building == "monument"),
             "repeatable project displaced {item:?}"
         );
+    }
+
+    #[test]
+    fn developed_city_wonder_fallback_uses_a_legal_placed_item() {
+        let mut game = Game::new_full(1, 24, 16, 91_772, 120, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let techs: Vec<String> = game.rules.techs.keys().cloned().collect();
+        let civics: Vec<String> = game.rules.civics.keys().cloned().collect();
+        game.players[0].techs.extend(techs);
+        game.players[0].civics.extend(civics);
+        for position in game.cities[&city].owned_tiles.clone() {
+            if position == game.cities[&city].pos {
+                continue;
+            }
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = "desert".to_string();
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+        }
+        assert!(game.producible_items(0, city).iter().any(
+            |item| matches!(item, Item::Wonder { wonder, .. } if wonder == "pyramids")
+        ));
+
+        let wonder = BasicAi::cheapest_available_wonder(&game, 0, city)
+            .expect("the developed city has a placed wonder fallback");
+        assert!(matches!(wonder, Item::Wonder { .. }));
+        assert!(game.can_produce(0, city, &wonder));
     }
 
     #[test]
