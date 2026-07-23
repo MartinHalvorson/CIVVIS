@@ -153,6 +153,14 @@ class CanonicalSyncTests(unittest.TestCase):
 
 
 class SessionSettingsTests(unittest.TestCase):
+    def test_launch_victories_are_validated_and_keep_score_disabled(self):
+        self.assertEqual(
+            supervisor.parse_victories("science,culture,domination"),
+            ["science", "culture", "domination"],
+        )
+        with self.assertRaises(supervisor.argparse.ArgumentTypeError):
+            supervisor.parse_victories("science,spaceship")
+
     def test_preserves_live_map_and_player_settings(self):
         state = {
             "players": [

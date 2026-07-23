@@ -926,6 +926,14 @@ def parse_args() -> argparse.Namespace:
         default="online",
     )
     parser.add_argument(
+        "--victories",
+        type=parse_victories,
+        help=(
+            "comma-separated enabled victories: science, culture, religious, "
+            "diplomatic, domination, score"
+        ),
+    )
+    parser.add_argument(
         "--league",
         default="auto",
         help=(
@@ -988,6 +996,27 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def parse_victories(value: str) -> list[str]:
+    allowed = {
+        "science",
+        "culture",
+        "religious",
+        "diplomatic",
+        "domination",
+        "score",
+    }
+    victories = [name.strip() for name in value.split(",") if name.strip()]
+    unknown = sorted(set(victories) - allowed)
+    if not victories or unknown:
+        detail = (
+            "at least one victory is required"
+            if not victories
+            else f"unknown: {', '.join(unknown)}"
+        )
+        raise argparse.ArgumentTypeError(detail)
+    return victories
+
+
 def main() -> int:
     args = parse_args()
     if getattr(args, "prepare_once", False):
@@ -1001,6 +1030,8 @@ def main() -> int:
         "map": args.map,
         "speed": args.speed,
     }
+    if getattr(args, "victories", None):
+        settings["victories"] = list(args.victories)
     global LEAGUE_SPEC
     LEAGUE_SPEC = getattr(args, "league", "auto")
     process: subprocess.Popen[str] | None = None
