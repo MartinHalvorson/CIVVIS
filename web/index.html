@@ -1128,6 +1128,15 @@ function animateDiff(prev, next) {
       }
       anim.sparks.push({ x, y, t0: now });
     }
+    // A city gaining a citizen is the slowest important thing that happens on
+    // this map and it passed silently: the settlement quietly gains a house and
+    // the nameplate ticks up, both too small to catch mid-turn. Damage has
+    // announced itself for a while; growth deserves the same courtesy.
+    if (nc.pop > pc.pop) {
+      const [x, y] = worldXY(nc.pos);
+      anim.floats.push({ x, y: y + 20, txt: `+${nc.pop - pc.pop} pop`,
+                         col: "#8fe0a0", t0: now });
+    }
   }
   // Territory changing hands is the clearest sign a strategy map is moving —
   // borders creep as a city grows and flip wholesale on conquest — and it was
@@ -2176,7 +2185,12 @@ function drawMountainSprite(t, x, y) {
   const cw = MOUNTAIN_ATLAS.naturalWidth / 3;
   const ch = MOUNTAIN_ATLAS.naturalHeight;
   const polar = state && (t.pos[1] < state.map.height * 0.2 || t.pos[1] > state.map.height * 0.8);
-  const hv = hash2(t.pos[0] * 47, t.pos[1] * 53);
+  // Rock is chosen per REGION, not per tile. Rolling it independently for each
+  // hex stood grey and sandstone massifs shoulder to shoulder inside a single
+  // ridge, which broke the range back into its tiles even though the sprites
+  // overlap generously enough to hide the seams. A range is one geology; only
+  // the height jitter below still varies hex to hex.
+  const hv = hash2(Math.floor(t.pos[0] / 3) * 31, Math.floor(t.pos[1] / 3) * 37);
   const col = polar ? (hv > 0.3 ? 1 : 0) : (hv > 0.62 ? 2 : 0);
   const scale = 0.92 + hash2(t.pos[0] * 7, t.pos[1] * 5) * 0.14;
   const w = S * 2.55 * scale, h = S * 2.0 * scale;
