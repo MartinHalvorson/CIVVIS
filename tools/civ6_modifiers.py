@@ -30,13 +30,14 @@ from __future__ import annotations
 import argparse
 import collections
 import json
+import re
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from civ6_fidelity import LOAD_ORDER, PACK_EXCLUDE, find_install, truthy  # noqa: E402
+from civ6_fidelity import LOAD_ORDER, PACK_EXCLUDE, REPO, find_install, truthy  # noqa: E402
 
 # Every gameplay file can carry modifiers, so unlike the rules-data audit there
 # is no useful filename filter; a full parse of the three load-order
@@ -354,6 +355,10 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=40, help="rows in the backlog table")
     parser.add_argument("--effect", help="print every modifier using this effect and stop")
     parser.add_argument(
+        "--sweep",
+        help="print every entry of a data file beside the game's own wording",
+    )
+    parser.add_argument(
         "--describe",
         help="print the shipped descriptions matching this tag fragment, "
         "Gathering Storm wording first, and stop",
@@ -368,6 +373,40 @@ def main() -> int:
 
     install = find_install(args.civ6)
     modifiers = load(install)
+
+    if args.sweep:
+        # Every entry of one CIVVIS data file beside the wording the game
+        # shows for it. Descriptions state clauses the effect rows only imply,
+        # which is how the Lumber Mill's Mercantilism gate and four wrong
+        # policy cards turned up; the rows remain the authority on magnitude.
+        prefixes = {
+            "improvements": "LOC_IMPROVEMENT_",
+            "buildings": "LOC_BUILDING_",
+            "policies": "LOC_POLICY_",
+            "districts": "LOC_DISTRICT_",
+            "units": "LOC_UNIT_",
+            "wonders": "LOC_BUILDING_",
+        }
+        prefix = prefixes.get(args.sweep)
+        if prefix is None:
+            print(f"unknown sweep {args.sweep}; try {sorted(prefixes)}", file=sys.stderr)
+            return 1
+        ours = json.loads(
+            (REPO / "data" / f"{args.sweep}.json").read_text(encoding="utf-8")
+        )
+        described = {tag: text for tag, text in shipped_text(install, prefix)}
+        for name in sorted(ours):
+            tag = f"{prefix}{name.upper()}"
+            text = described.get(f"{tag}_EXPANSION2_DESCRIPTION") or described.get(
+                f"{tag}_DESCRIPTION"
+            )
+            if not text:
+                continue
+            text = re.sub(r"\[ICON_\w+\]", "", text).replace("[NEWLINE]", " ")
+            print(f"### {name}")
+            print(f"    {' '.join(text.split())}")
+            print(f"    civvis: {json.dumps(ours[name])[:300]}")
+        return 0
 
     if args.describe:
         for tag, text in shipped_text(install, args.describe):

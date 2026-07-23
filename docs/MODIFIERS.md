@@ -95,6 +95,23 @@ expressed without building the interpreter.
    the seeded statuses were inspection judgements, and inspection is not
    finding these.
 
+   **Sweep a whole class against its own wording.** `--sweep improvements`
+   and its siblings print every entry of a CIVVIS data file beside the
+   description the game shows. Effect rows say what a number is; descriptions
+   say what clauses exist, and a missing clause is invisible to a row-by-row
+   diff because the row simply is not there. Sweeps so far: improvements found
+   the Lumber Mill's Mercantilism gate, the Solar Farm's Snow exclusion and a
+   hardcoded Appeal list that did not match the shipped table; policies found
+   four wrong cards; buildings and districts came back clean.
+
+   Two cautions the sweeps taught. A description can be stale where a table is
+   not -- the Ski Resort reads "+4 Tourism" but ships TOURISMSOURCE_APPEAL, so
+   **tables win on magnitude and mechanism, descriptions on the existence of a
+   clause**. And a card whose effects look nothing like its description is
+   usually half-implemented rather than wrong: Finest Hour and Public
+   Transport each had one of their two modifiers, and the description named
+   the other.
+
    **When two rows disagree, ask the shipped text.** Gathering Storm restates
    beliefs, promotions and city-state bonuses without deleting the base rows,
    so the tables alone often admit two readings. `--describe <tag fragment>`
