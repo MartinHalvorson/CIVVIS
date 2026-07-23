@@ -292,7 +292,13 @@ Multiplayer games score as pairwise Elo results by final placement
 
 `civvis play --no-open --port 8765` exposes the JSON protocol:
 
-- `GET /state` — observation for player 0 (fog applied) + `legal_actions`
+- `GET /state` — observation for player 0 (fog applied) + `legal_actions`.
+  A currently visible district tile also carries `district_yields` and an
+  `adjacency` ledger (one entry per source: `source`, `count`, `percent`,
+  `yields`, and the pre-rounding `raw`), and a tile where one of your own
+  cities is building a district carries the same figures under
+  `planned_district`. Both read the live neighborhood, so they are absent
+  under fog
 - `POST /action` body `{"action": {"type": "end_turn"}}` — applies, runs the
   AI opponents, returns the new state (+`error` string on illegal actions)
 - `GET /rules` — the full ruleset (techs, units, costs, ...)

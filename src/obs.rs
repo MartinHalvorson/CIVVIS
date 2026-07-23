@@ -3,7 +3,9 @@
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::game::{City, Game, RememberedCity, DIPLOMATIC_VICTORY_POINTS, EXOPLANET_DESTINATION};
+use crate::game::{
+    City, Game, Item, RememberedCity, DIPLOMATIC_VICTORY_POINTS, EXOPLANET_DESTINATION,
+};
 use crate::world::Tile;
 use crate::Pos;
 
@@ -62,10 +64,26 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             explored.extend(g.players[*viewer].explored.iter().copied());
         }
     }
+    // Where this player's cities are currently building districts. Adjacency
+    // matters most before the district exists, so a site under construction
+    // reports what it will be worth.
+    let planned: BTreeMap<Pos, &str> = g
+        .cities
+        .values()
+        // Build queues are private, and this is read off one: the same rule
+        // `live_city_json` applies to `queue` applies here.
+        .filter(|city| omniscient || city.owner == pid)
+        .flat_map(|city| city.queue.iter())
+        .filter_map(|item| match item {
+            Item::District { district, pos } => Some((*pos, district.as_str())),
+            _ => None,
+        })
+        .collect();
     let tiles: Vec<Value> = explored
         .iter()
         .filter_map(|pos| {
-            let (tile, owner) = if omniscient || vis.contains(pos) {
+            let live = omniscient || vis.contains(pos);
+            let (tile, owner) = if live {
                 let tile = g.map.get(*pos)?;
                 let owner = tile
                     .owner_city
@@ -79,7 +97,15 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                     .max_by_key(|memory| memory.seen_turn)?;
                 (&memory.tile, memory.owner)
             };
-            Some(tile_json(g, pid, tile, owner, omniscient))
+            Some(tile_json(
+                g,
+                pid,
+                tile,
+                owner,
+                omniscient,
+                live,
+                planned.get(pos).copied().filter(|_| live),
+            ))
         })
         .collect();
     let units: Vec<Value> = g
@@ -686,11 +712,48 @@ fn victory_progress_json(g: &Game, pid: usize, leading_score: i64) -> Value {
     })
 }
 
-fn tile_json(g: &Game, pid: usize, tile: &Tile, owner: Option<usize>, omniscient: bool) -> Value {
+fn tile_json(
+    g: &Game,
+    pid: usize,
+    tile: &Tile,
+    owner: Option<usize>,
+    omniscient: bool,
+    live: bool,
+    planned: Option<&str>,
+) -> Value {
     let resource = tile
         .resource
         .as_ref()
         .filter(|resource| omniscient || g.resource_visible_to(pid, resource));
+    // Adjacency is read off the *current* neighbors, so it may only be sent
+    // for a tile being looked at right now. A remembered district would
+    // otherwise report yields from tiles the player cannot see.
+    let district_yields = tile
+        .district
+        .as_deref()
+        .filter(|district| live && g.rules.districts.contains_key(*district))
+        .map(|district| {
+            (
+                g.district_yields(district, tile.pos),
+                g.district_adjacency_sources(district, tile.pos),
+            )
+        });
+    let (district_yields, adjacency) = match district_yields {
+        Some((yields, sources)) => (json!(yields), json!(sources)),
+        None => (Value::Null, Value::Null),
+    };
+    // A district still in the production queue reports what its site would pay
+    // today — the figure a player is actually deciding on.
+    let planned = planned
+        .filter(|district| tile.district.is_none() && g.rules.districts.contains_key(*district))
+        .map(|district| {
+            json!({
+                "district": district,
+                "yields": g.district_yields(district, tile.pos),
+                "adjacency": g.district_adjacency_sources(district, tile.pos),
+            })
+        })
+        .unwrap_or(Value::Null);
     json!({
         "pos": [tile.pos.0, tile.pos.1],
         "terrain": tile.terrain,
@@ -700,6 +763,9 @@ fn tile_json(g: &Game, pid: usize, tile: &Tile, owner: Option<usize>, omniscient
         "improvement": tile.improvement,
         "pillaged": tile.pillaged,
         "district": tile.district,
+        "district_yields": district_yields,
+        "adjacency": adjacency,
+        "planned_district": planned,
         "wonder": tile.wonder,
         "owner": owner,
         "river": tile.has_river(),

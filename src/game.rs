@@ -1497,6 +1497,90 @@ mod governor_runtime_tests {
             .insert(district.to_string(), position);
     }
 
+    /// The interface shows a district's adjacency as a ledger, so every point
+    /// a district earns has to be attributable to a named source — and the
+    /// lines have to add up to what `district_yields` actually pays.
+    #[test]
+    fn adjacency_sources_account_for_every_point_a_district_earns() {
+        let mut game = Game::new_full(2, 28, 18, 91_779, 200, 0, false);
+        let capital = found_capital(&mut game, 0);
+        let center = game.cities[&capital].pos;
+        let site = game
+            .nbrs(center)
+            .into_iter()
+            .find(|position| game.map.get(*position).is_some())
+            .unwrap();
+        // Flatten the ring around the site so the only sources left are the
+        // ones this test puts there.
+        let ring: Vec<Pos> = game
+            .nbrs(site)
+            .into_iter()
+            .filter(|position| *position != center && game.map.get(*position).is_some())
+            .collect();
+        for position in &ring {
+            let tile = game.map.tiles.get_mut(position).unwrap();
+            tile.terrain = "plains".to_string();
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+        }
+        for position in ring.iter().take(2) {
+            game.map.tiles.get_mut(position).unwrap().terrain = "mountain".to_string();
+        }
+        set_district(&mut game, capital, site, "campus");
+
+        let sources = game.district_adjacency_sources("campus", site);
+        let mountain = sources
+            .iter()
+            .find(|source| source.source == "mountain")
+            .expect("mountains pay the Campus and say so");
+        assert_eq!(mountain.count, 2);
+        assert_eq!(mountain.yields.science, 2.0);
+        // The city center is a district, and one district is only half a
+        // point. The ledger reports the banked half, which is what tells a
+        // player the next adjacent district is worth a whole one.
+        let district = sources
+            .iter()
+            .find(|source| source.source == "district")
+            .expect("the city center counts as an adjacent district");
+        assert_eq!(district.count, 1);
+        assert_eq!(district.yields.science, 0.0);
+        assert_eq!(district.raw.science, 0.5);
+
+        let sum = |sources: &[AdjacencySource]| {
+            let mut total = Yields::default();
+            for source in sources {
+                total.add(source.yields);
+            }
+            total
+        };
+        let base = game.rules.districts["campus"].yields;
+        assert_eq!(
+            sum(&sources).science,
+            game.district_yields("campus", site).science - base.science
+        );
+
+        // A doubling policy card is a line of its own rather than a silent
+        // change to the tiles' figures.
+        game.players[0]
+            .policies
+            .insert("natural_philosophy".to_string());
+        let carded = game.district_adjacency_sources("campus", site);
+        let bonus = carded
+            .iter()
+            .find(|source| source.source == "adjacency_bonus")
+            .expect("the policy card is itemized");
+        assert_eq!(bonus.percent, 100.0);
+        assert_eq!(bonus.yields.science, 2.0);
+        assert_eq!(
+            sum(&carded).science,
+            game.district_yields("campus", site).science - base.science
+        );
+    }
+
     #[test]
     fn losing_a_governors_city_clears_live_and_legacy_assignments() {
         let mut game = Game::new_full(2, 28, 18, 91_779, 200, 0, false);
@@ -7973,6 +8057,26 @@ pub struct CitizenPlan {
     pub worked_tiles: Vec<Pos>,
     /// One district-family ID per citizen assigned to a specialist slot.
     pub specialists: Vec<String>,
+}
+
+/// One line of a district's adjacency ledger.  A district's total is the sum
+/// of these, so the interface can show a player *why* a Campus is worth four
+/// science instead of only that it is.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct AdjacencySource {
+    /// The ruleset key that paid — `mountain`, `district`, `government_plaza`
+    /// — or a modifier's own name (`gaul_mine`, `adjacency_bonus`).
+    pub source: String,
+    /// Neighboring tiles of this kind.  Zero for a percentage modifier, which
+    /// scales the rest rather than counting anything.
+    pub count: usize,
+    /// Percentage a modifier line adds to everything above it; 0 otherwise.
+    pub percent: f64,
+    /// What the line pays after Civ VI's per-source rounding.
+    pub yields: Yields,
+    /// The same figure before rounding.  Half-point sources bank their
+    /// remainder, and a player deciding where to build wants to see it.
+    pub raw: Yields,
 }
 
 fn full_loyalty() -> f64 {
@@ -20445,6 +20549,46 @@ impl Game {
     pub fn district_yields(&self, dname: &str, dpos: Pos) -> Yields {
         let spec = &self.rules.districts[dname];
         let mut ys = spec.yields;
+        ys.add(self.district_adjacency(dname, dpos, None));
+        if let Some(owner) = self
+            .map
+            .get(dpos)
+            .and_then(|tile| tile.owner_city)
+            .and_then(|city_id| self.cities.get(&city_id))
+            .map(|city| city.owner)
+        {
+            if self.on_foreign_continent(owner, dpos) {
+                ys.gold += spec
+                    .effects
+                    .get("foreign_continent_gold")
+                    .copied()
+                    .unwrap_or(0.0);
+            }
+        }
+        ys
+    }
+
+    /// Every line of a district's adjacency ledger, in ruleset order, so the
+    /// interface can show a player where each point came from instead of only
+    /// the total.  Modifiers (Gaul's mines, a doubling policy card) are lines
+    /// of their own.
+    pub fn district_adjacency_sources(&self, dname: &str, dpos: Pos) -> Vec<AdjacencySource> {
+        let mut detail = Vec::new();
+        self.district_adjacency(dname, dpos, Some(&mut detail));
+        detail
+    }
+
+    /// The adjacency half of [`Game::district_yields`].  `detail` is `None` on
+    /// every hot path, so recording the breakdown costs one branch per source
+    /// and nothing else.
+    fn district_adjacency(
+        &self,
+        dname: &str,
+        dpos: Pos,
+        mut detail: Option<&mut Vec<AdjacencySource>>,
+    ) -> Yields {
+        let spec = &self.rules.districts[dname];
+        let mut adj = Yields::default();
         if !spec.adjacency.is_empty() {
             let tile = &self.map.tiles[&dpos];
             let neighbors: Vec<&crate::world::Tile> = self
@@ -20562,40 +20706,93 @@ impl Game {
                     _ => 0,
                 }
             };
-            let mut adj = Yields::default();
             for (key, bonus) in &spec.adjacency {
-                let n = count(key) as f64;
+                let tiles = count(key);
+                let n = tiles as f64;
                 // Every source has its own TilesRequired bucket in Civ VI.
                 // Fractions from different sources therefore never combine.
-                adj.food += (n * bonus.food).trunc();
-                adj.production += (n * bonus.production).trunc();
-                adj.gold += (n * bonus.gold).trunc();
-                adj.science += (n * bonus.science).trunc();
-                adj.culture += (n * bonus.culture).trunc();
-                adj.faith += (n * bonus.faith).trunc();
+                let paid = Yields {
+                    food: (n * bonus.food).trunc(),
+                    production: (n * bonus.production).trunc(),
+                    gold: (n * bonus.gold).trunc(),
+                    science: (n * bonus.science).trunc(),
+                    culture: (n * bonus.culture).trunc(),
+                    faith: (n * bonus.faith).trunc(),
+                };
+                adj.add(paid);
+                if let Some(detail) = detail.as_deref_mut() {
+                    // A source counting no tiles is still worth listing when
+                    // it is the reason a site was chosen — but an empty line
+                    // for every unmet source would bury the ones that pay.
+                    if tiles > 0 {
+                        detail.push(AdjacencySource {
+                            source: key.clone(),
+                            count: tiles,
+                            percent: 0.0,
+                            yields: paid,
+                            // Half-point sources bank their remainder, so show
+                            // the unrounded figure too: a Campus beside three
+                            // districts has 1.5 science and the next one pays.
+                            raw: Yields {
+                                food: n * bonus.food,
+                                production: n * bonus.production,
+                                gold: n * bonus.gold,
+                                science: n * bonus.science,
+                                culture: n * bonus.culture,
+                                faith: n * bonus.faith,
+                            },
+                        });
+                    }
+                }
             }
             if gaul && spec.specialty {
-                let mines = count("mine") as f64;
-                let minor = (mines * 0.5).trunc();
+                let mines = count("mine");
+                let minor = (mines as f64 * 0.5).trunc();
+                let mut paid = Yields::default();
                 match self.district_family(dname) {
-                    "campus" => adj.science += minor,
-                    "holy_site" => adj.faith += minor,
-                    "commercial_hub" | "harbor" => adj.gold += minor,
-                    "theater_square" => adj.culture += minor,
-                    "industrial_zone" => adj.production += minor,
+                    "campus" => paid.science = minor,
+                    "holy_site" => paid.faith = minor,
+                    "commercial_hub" | "harbor" => paid.gold = minor,
+                    "theater_square" => paid.culture = minor,
+                    "industrial_zone" => paid.production = minor,
                     _ => {}
+                }
+                adj.add(paid);
+                if let Some(detail) = detail.as_deref_mut() {
+                    if mines > 0 && paid != Yields::default() {
+                        detail.push(AdjacencySource {
+                            source: "gaul_mine".to_string(),
+                            count: mines,
+                            percent: 0.0,
+                            yields: paid,
+                            raw: paid,
+                        });
+                    }
                 }
             }
             if owner.is_some_and(|pid| {
                 self.empire_wonder_effect(pid, "mountain_commercial_industrial_theater_adjacency")
                     > 0.0
             }) {
-                let mountains = count("mountain") as f64;
+                let mountains = count("mountain");
+                let mut paid = Yields::default();
                 match self.district_family(dname) {
-                    "commercial_hub" => adj.gold += mountains,
-                    "industrial_zone" => adj.production += mountains,
-                    "theater_square" => adj.culture += mountains,
+                    "commercial_hub" => paid.gold = mountains as f64,
+                    "industrial_zone" => paid.production = mountains as f64,
+                    "theater_square" => paid.culture = mountains as f64,
                     _ => {}
+                }
+                adj.add(paid);
+                if let Some(detail) = detail.as_deref_mut() {
+                    if mountains > 0 && paid != Yields::default() {
+                        detail.push(AdjacencySource {
+                            source: "wonder_mountain".to_string(),
+                            count: mountains,
+                            percent: 0.0,
+                            yields: paid,
+                            raw: paid,
+                        });
+                    }
                 }
             }
             if self.district_is_family(dname, "holy_site") {
@@ -20605,8 +20802,24 @@ impl Game {
                     .and_then(|tile| tile.owner_city)
                     .and_then(|city_id| self.cities.get(&city_id))
                 {
-                    adj.faith += count("forest") as f64
-                        * self.city_building_effect(city, "holy_site_woods_adjacency");
+                    let woods = count("forest");
+                    let paid = Yields {
+                        faith: woods as f64
+                            * self.city_building_effect(city, "holy_site_woods_adjacency"),
+                        ..Yields::default()
+                    };
+                    adj.add(paid);
+                    if let Some(detail) = detail.as_deref_mut() {
+                        if paid.faith != 0.0 {
+                            detail.push(AdjacencySource {
+                                source: "building_woods".to_string(),
+                                count: woods,
+                                percent: 0.0,
+                                yields: paid,
+                                raw: paid,
+                            });
+                        }
+                    }
                 }
             }
             // The six adjacency-card families include unique replacements.
@@ -20638,33 +20851,29 @@ impl Game {
                     percent += 50.0 * self.highest_active_alliance_level(pid) as f64;
                 }
                 let scale = percent / 100.0;
-                adj.add(Yields {
+                let bonus = Yields {
                     food: adj.food * scale,
                     production: adj.production * scale,
                     gold: adj.gold * scale,
                     science: adj.science * scale,
                     culture: adj.culture * scale,
                     faith: adj.faith * scale,
-                });
-            }
-            ys.add(adj);
-        }
-        if let Some(owner) = self
-            .map
-            .get(dpos)
-            .and_then(|tile| tile.owner_city)
-            .and_then(|city_id| self.cities.get(&city_id))
-            .map(|city| city.owner)
-        {
-            if self.on_foreign_continent(owner, dpos) {
-                ys.gold += spec
-                    .effects
-                    .get("foreign_continent_gold")
-                    .copied()
-                    .unwrap_or(0.0);
+                };
+                adj.add(bonus);
+                if let Some(detail) = detail.as_deref_mut() {
+                    if bonus != Yields::default() {
+                        detail.push(AdjacencySource {
+                            source: "adjacency_bonus".to_string(),
+                            count: 0,
+                            percent,
+                            yields: bonus,
+                            raw: bonus,
+                        });
+                    }
+                }
             }
         }
-        ys
+        adj
     }
 
     /// Build the automatic citizen governor's priorities from three layers:

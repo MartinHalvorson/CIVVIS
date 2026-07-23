@@ -441,6 +441,12 @@
     background: #091310f2; box-shadow: var(--shadow); pointer-events: none;
     font-size: 11px; line-height: 1.6; backdrop-filter: blur(14px);
   }
+  /* The adjacency ledger is a list under the district line: a heading in the
+     yield's own voice, then one indented row per source that pays. */
+  .tip-adj-head { color: var(--muted); font-size: 9px; font-weight: 850; letter-spacing: .1em; text-transform: uppercase; }
+  .tip-adj { color: #c6d6cf; }
+  .tip-adj-count { display: inline-block; min-width: 20px; color: var(--muted); }
+  .tip-adj-part { color: var(--muted); }
   .minimap-frame {
     position: absolute; z-index: 6; right: 16px; bottom: 20px; padding: 6px; border-radius: 12px;
     background: #091310e6; border: 1px solid #40584f; box-shadow: 0 14px 35px #0008;
@@ -5800,6 +5806,117 @@ cv.addEventListener("click", ev => {
   draw(); drawSide(); drawUbar();
 });
 
+// Adjacency decides where districts go, but the map only ever said "campus
+// here" — never that the campus was worth four science, and never which
+// neighbors were paying it. The server ships the ledger per visible district
+// tile; these turn it into the lines under the district's name.
+const ADJ_LABEL = {
+  self: "the district itself",
+  river: "💧 river",
+  mountain: "⛰ mountain",
+  forest: "🌲 woods",
+  woods: "🌲 woods",
+  rainforest: "🌴 rainforest",
+  jungle: "🌴 rainforest",
+  natural_wonder: "✦ natural wonder",
+  reef: "🐠 reef",
+  great_barrier_reef: "🐠 Great Barrier Reef",
+  geothermal_fissure: "♨ geothermal fissure",
+  pamukkale: "♨ Pamukkale",
+  district: "⬡ district",
+  city_center: "🏛 city center",
+  wonder: "★ wonder",
+  coast_resource: "🐟 sea resource",
+  sea_resource: "🐟 sea resource",
+  strategic_resource: "⚔ strategic resource",
+  luxury_resource: "💎 luxury resource",
+  resource: "● resource",
+  mine: "⛏ mine",
+  quarry: "🪨 quarry",
+  lumber_mill: "🪵 lumber mill",
+  plantation: "🌱 plantation",
+  farm: "🌾 farm",
+  // Modifiers the engine reports as sources of their own.
+  gaul_mine: "⛏ mine (Gaul)",
+  wonder_mountain: "⛰ mountain (wonder)",
+  building_woods: "🌲 woods (building)",
+};
+function adjLabel(source) {
+  if (ADJ_LABEL[source]) return ADJ_LABEL[source];
+  // Anything else is a district family — a Campus next to a Government Plaza.
+  if (RULES && RULES.districts && RULES.districts[source]) return "⬡ " + source.replaceAll("_", " ");
+  return source.replaceAll("_", " ");
+}
+// Yields arrive as floats and adjacency deals in halves, so print one decimal
+// but never a trailing ".0".
+function fmtYield(v) {
+  const rounded = Math.round(v * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+function yieldStr(y, sign) {
+  if (!y) return "";
+  const parts = [];
+  for (const kk in YICON) {
+    const v = y[kk] || 0;
+    if (Math.abs(v) < 0.05) continue;
+    parts.push((sign && v > 0 ? "+" : "") + fmtYield(v) + YICON[kk]);
+  }
+  return parts.join(" ");
+}
+// Whether the ruleset gives this district anything to earn from its neighbors.
+// A Campus with nothing next to it should say "nothing adjacent" rather than
+// go silent, which reads like missing information.
+function hasAdjacency(district) {
+  const spec = RULES && RULES.districts && RULES.districts[district];
+  return !!(spec && spec.adjacency && Object.keys(spec.adjacency).length);
+}
+function adjacencyLines(sources, label, district) {
+  if (!sources || !sources.length) {
+    return hasAdjacency(district)
+      ? [`<span class="tip-adj-head">${label} <span class="tip-adj-part">nothing adjacent</span></span>`]
+      : [];
+  }
+  const sum = {};
+  for (const s of sources)
+    for (const kk in YICON) sum[kk] = (sum[kk] || 0) + ((s.yields || {})[kk] || 0);
+  const lines = [`<span class="tip-adj-head">${label} ${yieldStr(sum, true) || "none"}</span>`];
+  for (const s of sources) {
+    const paid = yieldStr(s.yields, true) || "—";
+    if (s.percent) {
+      lines.push(`<span class="tip-adj"><span class="tip-adj-count">↑</span>` +
+        `+${fmtYield(s.percent)}% adjacency bonus <b>${paid}</b></span>`);
+      continue;
+    }
+    // A half-point source banks its remainder: three adjacent districts are
+    // 1.5 science paid as 1, and the fourth is what turns it into 2. Showing
+    // the unrounded figure is what tells a player the next tile is free.
+    const raw = yieldStr(s.raw);
+    const banked = raw && raw !== yieldStr(s.yields) ? ` <span class="tip-adj-part">(${raw})</span>` : "";
+    const count = s.source === "self" ? "•" : s.count + "×";
+    lines.push(`<span class="tip-adj"><span class="tip-adj-count">${count}</span>` +
+      `${adjLabel(s.source)} <b>${paid}</b>${banked}</span>`);
+  }
+  return lines;
+}
+function districtTipLines(t) {
+  const total = yieldStr(t.district_yields);
+  const lines = ["🏗 " + t.district.replaceAll("_", " ") + " district" +
+    (total ? " — " + total : "")];
+  // A pillaged district keeps its adjacency on paper and pays none of it, so
+  // the figure above is what repairing the tile buys back.
+  if (t.pillaged) lines.push(`<span class="tip-adj-part">🔥 pillaged — yields suspended until repaired</span>`);
+  return lines.concat(adjacencyLines(t.adjacency, "adjacency", t.district));
+}
+// A district being built is where adjacency actually gets decided, so the site
+// shows what it would pay if it finished today.
+function plannedTipLines(t) {
+  const p = t.planned_district;
+  const total = yieldStr(p.yields);
+  const lines = ["⬡ " + p.district.replaceAll("_", " ") + " under construction" +
+    (total ? " — " + total : "")];
+  return lines.concat(adjacencyLines(p.adjacency, "projected adjacency", p.district));
+}
+
 // tooltip
 const tip = document.getElementById("tip");
 cv.addEventListener("mousemove", ev => {
@@ -5824,7 +5941,8 @@ cv.addEventListener("mousemove", ev => {
   if (t.improvement && t.improvement !== "barbarian_camp")
     lines.push("⚒ " + t.improvement.replaceAll("_", " "));
   if (t.improvement === "barbarian_camp") lines.push("⛺ barbarian camp (+50🪙 to clear)");
-  if (t.district) lines.push("🏗 " + t.district.replaceAll("_", " ") + " district");
+  if (t.district) lines.push(...districtTipLines(t));
+  else if (t.planned_district) lines.push(...plannedTipLines(t));
   if (t.wonder) lines.push("★ " + t.wonder.replaceAll("_", " ") + " wonder");
   const y = tileYieldFull(t);
   const ystr = Object.entries(y).filter(([, v]) => v > 0)
