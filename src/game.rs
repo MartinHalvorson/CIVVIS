@@ -5816,6 +5816,76 @@ mod district_building_wonder_runtime_tests {
     }
 
     #[test]
+    fn meteors_pepper_open_land_and_grant_advanced_heavy_cavalry() {
+        let (mut game, city, _) = one_city(90_4441);
+        // At the turn limit every remaining strike is forced in, and the
+        // budget never exceeds the shipped six per game.
+        game.turn = game.max_turns;
+        for expected in 1..=6u32 {
+            game.process_meteors();
+            assert_eq!(game.meteor_strikes, expected);
+        }
+        game.process_meteors();
+        assert_eq!(game.meteor_strikes, 6);
+        let sites: Vec<Pos> = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| tile.improvement.as_deref() == Some("meteor_goody"))
+            .map(|(position, _)| *position)
+            .collect();
+        assert_eq!(sites.len(), 6);
+        for position in &sites {
+            let tile = &game.map.tiles[position];
+            assert!(matches!(
+                tile.terrain.as_str(),
+                "plains" | "grassland" | "snow" | "desert"
+            ));
+            assert!(tile.owner_city.is_none() && tile.district.is_none());
+        }
+
+        // The first unit in pops the meteor's own table: the most advanced
+        // Heavy Cavalry the finder can field, in the nearest owned city,
+        // exempt from resource upkeep.
+        game.players[0].techs.insert("wheel".to_string());
+        game.players[0].techs.insert("stirrups".to_string());
+        let site = sites[0];
+        let scout = game.spawn_unit("scout", 0, site);
+        game.maybe_goody_hut(scout);
+        assert!(game.map.tiles[&site].improvement.is_none());
+        let knight = game
+            .units
+            .values()
+            .find(|unit| unit.owner == 0 && unit.kind == "knight")
+            .expect("the meteor grants the best heavy cavalry, not a chariot");
+        assert!(knight.free_upkeep);
+        assert!(game.wdist(knight.pos, game.cities[&city].pos) <= 2);
+
+        // The refund modifier is real upkeep relief: an exempt fuel unit
+        // stops counting against the oil ledger.
+        let tank = game.spawn_unit("tank", 0, game.cities[&city].pos);
+        game.process_strategic_resources(0);
+        assert!(
+            game.players[0]
+                .strategic_resource_shortages
+                .get("oil")
+                .copied()
+                .unwrap_or(0)
+                > 0
+        );
+        game.units.get_mut(&tank).unwrap().free_upkeep = true;
+        game.process_strategic_resources(0);
+        assert_eq!(
+            game.players[0]
+                .strategic_resource_shortages
+                .get("oil")
+                .copied()
+                .unwrap_or(0),
+            0
+        );
+    }
+
+    #[test]
     fn routes_level_per_tile_and_engineers_lay_railroads() {
         let (mut game, _city, _) = one_city(88_2071);
         let (a, b) = game
@@ -7171,6 +7241,10 @@ pub struct Unit {
     /// Patron Saint grants a second choice after this unit's first promotion.
     #[serde(default)]
     pub extra_first_promotion: bool,
+    /// Exempt from strategic-resource maintenance (the meteor goody's
+    /// GOODY_METEOR_UNIT_REFUND_COST travels with the granted unit).
+    #[serde(default)]
+    pub free_upkeep: bool,
     /// 0 = unit, 1 = Corps/Fleet, 2 = Army/Armada.
     #[serde(default)]
     pub formation: u8,
@@ -8558,6 +8632,10 @@ pub struct Game {
     pub world_era: usize,
     /// Irreversible Gathering Storm climate phase, from 0 (pre-warming) to 7.
     pub climate_phase: u8,
+    /// Meteor showers landed so far - the Apocalypse pack budgets a fixed
+    /// number per game.
+    #[serde(default)]
+    pub meteor_strikes: u32,
     /// Retired named Great People leave the global market permanently.
     pub retired_great_people: BTreeSet<String>,
     /// Recruitment price fixed when each named person enters the market.
@@ -8643,6 +8721,8 @@ struct GameSer {
     #[serde(default)]
     climate_phase: u8,
     #[serde(default)]
+    meteor_strikes: u32,
+    #[serde(default)]
     retired_great_people: BTreeSet<String>,
     #[serde(default)]
     great_person_offer_costs: BTreeMap<String, f64>,
@@ -8715,6 +8795,7 @@ impl From<GameSer> for Game {
             routes: s.routes,
             world_era: s.world_era,
             climate_phase: s.climate_phase,
+            meteor_strikes: s.meteor_strikes,
             retired_great_people: s.retired_great_people,
             great_person_offer_costs: s.great_person_offer_costs,
             pending_deals: s.pending_deals,
@@ -8846,6 +8927,7 @@ impl From<Game> for GameSer {
             routes: g.routes,
             world_era: g.world_era,
             climate_phase: g.climate_phase,
+            meteor_strikes: g.meteor_strikes,
             retired_great_people: g.retired_great_people,
             great_person_offer_costs: g.great_person_offer_costs,
             pending_deals: g.pending_deals,
@@ -8995,6 +9077,7 @@ impl Game {
             routes: Vec::new(),
             world_era: 0,
             climate_phase: 0,
+            meteor_strikes: 0,
             retired_great_people: BTreeSet::new(),
             great_person_offer_costs: BTreeMap::new(),
             pending_deals: Vec::new(),
@@ -9687,49 +9770,79 @@ impl Game {
         if self.players[owner].is_barbarian {
             return;
         }
-        let hut = self
-            .map
-            .get(pos)
-            .map(|t| t.improvement.as_deref() == Some("goody_hut"))
-            .unwrap_or(false);
-        if !hut {
-            return;
+        let hut = self.map.get(pos).and_then(|t| t.improvement.clone());
+        match hut.as_deref() {
+            Some("goody_hut") => {
+                self.map.tiles.get_mut(&pos).unwrap().improvement = None;
+                self.roll_goody_reward(owner, uid, pos);
+            }
+            Some("meteor_goody") => {
+                // The crashed meteor is its own goody type with its own
+                // one-entry table (METEOR_GOODIES).
+                self.map.tiles.get_mut(&pos).unwrap().improvement = None;
+                self.roll_category_reward(owner, uid, pos, "meteor_goodies");
+            }
+            _ => {}
         }
-        self.map.tiles.get_mut(&pos).unwrap().improvement = None;
-        self.roll_goody_reward(owner, uid, pos);
     }
 
     fn roll_goody_reward(&mut self, owner: usize, uid: u32, pos: Pos) {
-        let has_city = self.cities.values().any(|c| c.owner == owner);
-        let categories: Vec<String> = self.rules.goody_huts.keys().cloned().collect();
+        // The village spins over the tribal categories only; the meteor's
+        // table is a separate goody type popped by its own site.
+        let categories: Vec<String> = self
+            .rules
+            .goody_huts
+            .keys()
+            .filter(|category| category.as_str() != "meteor_goodies")
+            .cloned()
+            .collect();
         let mut order: Vec<usize> = (0..categories.len()).collect();
         let first = self.rng.below(order.len());
         order.rotate_left(first);
         for index in order {
-            let eligible: Vec<(String, i64)> = self.rules.goody_huts[&categories[index]]
-                .iter()
-                .filter(|(_, reward)| {
-                    reward.weight > 0
-                        && self.turn >= reward.min_turn
-                        && (!reward.requires_city || has_city)
-                })
-                .map(|(name, reward)| (name.clone(), reward.weight))
-                .collect();
-            let total: i64 = eligible.iter().map(|(_, weight)| weight).sum();
-            if total == 0 {
-                continue; // a city-gated category before the first city
-            }
-            let mut roll = self.rng.below(total as usize) as i64;
-            for (name, weight) in eligible {
-                roll -= weight;
-                if roll < 0 {
-                    let reward =
-                        self.rules.goody_huts[&categories[index]][&name].reward.clone();
-                    self.grant_goody_reward(owner, uid, pos, &reward);
-                    return;
-                }
+            if self.roll_category_reward(owner, uid, pos, &categories[index]) {
+                return;
             }
         }
+    }
+
+    /// One weighted roll inside a single goody category; false when
+    /// nothing is currently eligible (a city-gated category before the
+    /// first city).
+    fn roll_category_reward(
+        &mut self,
+        owner: usize,
+        uid: u32,
+        pos: Pos,
+        category: &str,
+    ) -> bool {
+        let has_city = self.cities.values().any(|c| c.owner == owner);
+        let Some(rewards) = self.rules.goody_huts.get(category) else {
+            return false;
+        };
+        let eligible: Vec<(String, i64)> = rewards
+            .iter()
+            .filter(|(_, reward)| {
+                reward.weight > 0
+                    && self.turn >= reward.min_turn
+                    && (!reward.requires_city || has_city)
+            })
+            .map(|(name, reward)| (name.clone(), reward.weight))
+            .collect();
+        let total: i64 = eligible.iter().map(|(_, weight)| weight).sum();
+        if total == 0 {
+            return false;
+        }
+        let mut roll = self.rng.below(total as usize) as i64;
+        for (name, weight) in eligible {
+            roll -= weight;
+            if roll < 0 {
+                let reward = self.rules.goody_huts[category][&name].reward.clone();
+                self.grant_goody_reward(owner, uid, pos, &reward);
+                return true;
+            }
+        }
+        false
     }
 
     fn grant_goody_reward(
@@ -9805,6 +9918,48 @@ impl Game {
                         *stock = (*stock + amount).min(capacity);
                     }
                 }
+                "advanced_heavy_cavalry" => {
+                    // MODIFIER_PLAYER_GRANT_ADVANCED_UNIT_OF_CLASS_IN_
+                    // NEAREST_OWNER_CITY: the best Heavy Cavalry the finder
+                    // can field arrives in the closest owned city, and the
+                    // refund modifier keeps it free of resource upkeep.
+                    let best = self
+                        .rules
+                        .units
+                        .iter()
+                        .filter(|(_, spec)| {
+                            spec.promotion_class == "heavy_cavalry"
+                                && spec.buildable
+                                && spec.unique_to.is_none()
+                                && spec.civic.is_none()
+                                && spec.tech.as_deref().is_none_or(|tech| {
+                                    self.players[owner].techs.contains(tech)
+                                })
+                        })
+                        .max_by_key(|(name, spec)| {
+                            let era = spec
+                                .tech
+                                .as_deref()
+                                .and_then(|tech| self.rules.techs.get(tech))
+                                .map(|tech| tech.era)
+                                .unwrap_or(0);
+                            (era, spec.cost as i64, name.clone())
+                        })
+                        .map(|(name, _)| name.clone());
+                    let home = self
+                        .cities
+                        .values()
+                        .filter(|city| city.owner == owner)
+                        .min_by_key(|city| (self.wdist(city.pos, pos), city.id))
+                        .map(|city| city.pos);
+                    if let (Some(kind), Some(home)) = (best, home) {
+                        for _ in 0..*amount as usize {
+                            if let Some(id) = self.place_new_unit(&kind, owner, home) {
+                                self.units.get_mut(&id).unwrap().free_upkeep = true;
+                            }
+                        }
+                    }
+                }
                 unit if unit.starts_with("unit:") => {
                     let kind = &unit["unit:".len()..];
                     for _ in 0..*amount as usize {
@@ -9814,6 +9969,63 @@ impl Game {
                 _ => {}
             }
         }
+    }
+
+    /// The Apocalypse pack's meteor showers: about six strikes per game
+    /// (the shipped Moderate frequency; Minimal 3 / Light 4 / Heavy 10 /
+    /// Hyperreal 15), each hitting one open hex of the shipped strike
+    /// terrains outside anyone's territory (Severity 1, Hexes 1,
+    /// AvoidTerritory) and leaving the meteor goody site for the first
+    /// unit in. Strikes draw from a turn-keyed stream so they never
+    /// perturb the main RNG sequence, and any shortfall is forced in
+    /// before the turn limit.
+    fn process_meteors(&mut self) {
+        const PER_GAME: u32 = 6;
+        if self.meteor_strikes >= PER_GAME || self.max_turns == 0 {
+            return;
+        }
+        let mut rng = Rng::new(
+            self.seed
+                ^ 0x4D45_5445_4F52u64
+                    .wrapping_add((self.turn as u64) << 8)
+                    .wrapping_add(self.meteor_strikes as u64),
+        );
+        let remaining = (PER_GAME - self.meteor_strikes) as u64;
+        let due = u64::from(self.max_turns.saturating_sub(self.turn)) <= remaining
+            || (rng.below(self.max_turns as usize) as u32) < PER_GAME;
+        if !due {
+            return;
+        }
+        // Open land on the shipped strike list, kept clear of anything
+        // already standing so camp and hut bookkeeping stays whole.
+        let candidates: Vec<Pos> = self
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| {
+                matches!(
+                    tile.terrain.as_str(),
+                    "plains" | "grassland" | "snow" | "desert"
+                ) && tile.owner_city.is_none()
+                    && tile.district.is_none()
+                    && tile.wonder.is_none()
+                    && tile.improvement.is_none()
+                    && tile
+                        .feature
+                        .as_deref()
+                        .is_none_or(|feature| {
+                            matches!(feature, "forest" | "jungle" | "marsh")
+                        })
+            })
+            .map(|(position, _)| *position)
+            .collect();
+        if candidates.is_empty() {
+            return;
+        }
+        let position = candidates[rng.below(candidates.len())];
+        self.map.tiles.get_mut(&position).unwrap().improvement =
+            Some("meteor_goody".to_string());
+        self.meteor_strikes += 1;
     }
 
     fn maybe_clear_camp(&mut self, uid: u32) {
@@ -16794,7 +17006,7 @@ impl Game {
                 let demand = self
                     .units
                     .values()
-                    .filter(|unit| unit.owner == pid)
+                    .filter(|unit| unit.owner == pid && !unit.free_upkeep)
                     .filter_map(|unit| {
                         let spec = &self.rules.units[unit.kind.as_str()];
                         (spec.requires_resource.as_deref() == Some(resource.as_str()))
@@ -17163,6 +17375,7 @@ impl Game {
             level: 1,
             promotions: BTreeSet::new(),
             extra_first_promotion: false,
+            free_upkeep: false,
             formation: 0,
             linked_to: None,
             religion,
@@ -32948,6 +33161,7 @@ impl Game {
         if wrapped {
             self.turn += 1;
             self.process_climate();
+            self.process_meteors();
             self.barbarian_phase();
             self.process_eras();
             self.process_agendas();

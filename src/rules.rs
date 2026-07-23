@@ -1358,7 +1358,7 @@ mod tests {
         assert_eq!(rules.buildings.len(), 85);
         assert_eq!(rules.districts.len(), 35);
         assert_eq!(rules.wonders.len(), 53);
-        assert_eq!(rules.improvements.len(), 35);
+        assert_eq!(rules.improvements.len(), 36);
         assert_eq!(rules.resources.len(), 52);
         assert_eq!(rules.projects.len(), 25);
         assert_eq!(rules.policies.len(), 118);

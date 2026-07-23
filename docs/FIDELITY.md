@@ -207,6 +207,15 @@ It reports zero unwaived keys across 629, with five waived in
 `tools/inert_waivers.json` for consumption the string join cannot see. Run it
 after any refactor that moves yield code.
 
+**Eighth wave (the meteor):** the Apocalypse pack's meteor shower lands in
+the engine — about six strikes per game (the shipped Moderate frequency)
+on the shipped strike terrains outside anyone's territory, each leaving
+the `METEOR_GOODIES` site whose one-entry table grants the most advanced
+Heavy Cavalry the finder can field, in their nearest city, exempt from
+resource upkeep (the shipped refund modifier). The tribal-village roll
+keeps its seven categories — the meteor's table is its own goody type,
+popped only by its own site.
+
 ### Next inside phase 1
 
 Known simplifications not yet expressed in data: civic-gated valid terrain
@@ -218,8 +227,7 @@ artists for art, three origin civilizations for artifacts — with the
 +100% bonus), barbarian camp spawn cadence (the odds/boldness
 model is DLL-side; placement floors and distances are exact), WMD delivery detail
 (the `WmdStrike` action launches on the shipped ranges, radii and fallout;
-the per-ring unit damage is the one number the database does not carry),
-and the meteor-strike goody site.
+and the per-ring unit damage is the one number the database does not carry).
 
 ## Phase 2 (measured): the modifier engine
 
