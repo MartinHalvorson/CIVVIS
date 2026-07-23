@@ -869,6 +869,10 @@ let ATLAS_READY = false;
 TERRAIN_ATLAS.onload = () => { ATLAS_READY = true; if (state) draw(); };
 TERRAIN_ATLAS.src = "/assets/terrain-atlas.png";
 const FEATURE_CELL = { forest:0, jungle:1, marsh:2, oasis:3 };
+// Anything that reads as canopy from above. Forest and jungle knit into each
+// other on purpose: where they meet, it is still unbroken tree cover.
+const WOODLAND = new Set(["forest", "jungle", "burning_forest", "burnt_forest",
+                          "burning_jungle", "burnt_jungle"]);
 const FEATURE_ATLAS = new Image();
 let FEATURE_ATLAS_READY = false;
 FEATURE_ATLAS.onload = () => { FEATURE_ATLAS_READY = true; if (state) draw(); };
@@ -1969,8 +1973,26 @@ function drawFeatureSprite(t, x, y) {
   const baseCol = FEATURE_CELL[baseFeature];
   if (FEATURE_ATLAS_READY && baseCol !== undefined) {
     const burnt = t.feature === "burnt_forest" || t.feature === "burnt_jungle";
+    // A wood drew one clump per hex, and the clump stopped short of its own
+    // edges — so a forest read as a row of separate bushes with bare ground
+    // ringing each one, the same way the sea read as hexagons before its
+    // stamps were made to overlap. Canopy now grows with how much woodland
+    // surrounds the tile: a lone stand stays a stand, while a tile deep inside
+    // a forest pushes its crowns past the boundary until they interlock with
+    // the neighbours' and the hex edge stops existing. Natural wonders already
+    // scale by cluster size for the same reason.
+    let knit = 1;
+    if (WOODLAND.has(t.feature)) {
+      let n = 0;
+      for (let i = 0; i < 6; i++) {
+        const q = nbrTile(t.pos, DIRS[i]);
+        if (q && WOODLAND.has(q.feature)) n++;
+      }
+      knit = 1 + 0.075 * n;   // full knit only when every neighbour is trees
+    }
     drawAtlasFeatureCell(FEATURE_ATLAS, 4, 1, [baseCol, 0], t, x, y,
-      {alpha: burnt ? 0.48 : (baseFeature === "forest" || baseFeature === "jungle" ? 0.96 : 0.94)});
+      {scale: knit,
+       alpha: burnt ? 0.48 : (baseFeature === "forest" || baseFeature === "jungle" ? 0.96 : 0.94)});
     return true;
   }
   const cell = ENVIRONMENT_FEATURE_CELL[t.feature];
