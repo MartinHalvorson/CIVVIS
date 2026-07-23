@@ -963,7 +963,12 @@ impl AdvancedAi {
     fn campaign_target_value(&self, g: &Game, pid: usize, other: usize) -> f64 {
         let mut value = self.rival_value(g, pid, other);
         if !g.players[other].is_minor {
-            return value;
+            // A leader marches on the civilizations their agenda disdains
+            // before the ones it respects. Lower is a more attractive target,
+            // so approval raises the bar and contempt lowers it. The weight
+            // is deliberately smaller than distance, which still decides most
+            // campaigns: an agenda colours the choice, it does not make it.
+            return value + g.agenda_opinion(pid, other) * 2.0;
         }
 
         let mine = g.envoys_at(pid, other);

@@ -1,0 +1,50 @@
+{
+  "optimus_princeps": {
+    "name": "Optimus Princeps",
+    "description": "Tries to include as much territory as possible in their empire. Does not like civilizations who control little territory.",
+    "measure": "territory",
+    "approves_of": "more"
+  },
+  "queen_of_the_nile": {
+    "name": "Queen of the Nile",
+    "description": "Likes civilizations with powerful armies. Dislikes civilizations with weak ones.",
+    "measure": "military",
+    "approves_of": "more"
+  },
+  "delian_league": {
+    "name": "Delian League",
+    "description": "Likes civilizations that aren't competing for the same city-state allegiance. Dislikes civilizations that are directly competing for city-state allegiance.",
+    "measure": "city_state_rivalry",
+    "approves_of": "less"
+  },
+  "wonder_obsessed": {
+    "name": "Wonder Obsessed",
+    "description": "Likes civilizations not competing for wonders, and builds wonders whenever possible. Dislikes losing a wonder to another civilization.",
+    "measure": "wonders",
+    "approves_of": "less"
+  },
+  "ally_of_enkidu": {
+    "name": "Ally of Enkidu",
+    "description": "Likes civilizations who are willing to form a long-term alliance. Dislikes anyone denouncing or attacking his friends and allies.",
+    "measure": "loyalty_to_friends",
+    "approves_of": "more"
+  },
+  "tlatoani": {
+    "name": "Tlatoani",
+    "description": "Likes civilizations who have the same Luxury resources as he does, and will try to collect every Luxury resource available. Dislikes civilizations who have a new Luxury resource he has not yet collected.",
+    "measure": "shared_luxuries",
+    "approves_of": "more"
+  },
+  "city_planner": {
+    "name": "City Planner",
+    "description": "Always tries to keep the maximum number of districts in each city. Respects other civilizations who also develop their cities in this fashion.",
+    "measure": "districts_per_city",
+    "approves_of": "more"
+  },
+  "backstab_averse": {
+    "name": "Backstab Averse",
+    "description": "Likes civilizations who are their declared friend. Hates civilizations who backstab and declare surprise wars.",
+    "measure": "trustworthiness",
+    "approves_of": "more"
+  }
+}

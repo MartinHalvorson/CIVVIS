@@ -644,6 +644,13 @@ pub struct GovSpec {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct CivSpec {
     pub leader: String,
+    /// Key into `Rules::agendas`.
+    #[serde(default)]
+    pub agenda: Option<String>,
+    /// The leader's preference traits, as the shipped data names them —
+    /// `expansionist`, `science_major_civ`, `aggressive_military` and so on.
+    #[serde(default)]
+    pub traits: Vec<String>,
     pub ability: String,
     #[serde(default)]
     pub unique_unit: Option<String>,
@@ -696,6 +703,26 @@ pub struct PromotionSpec {
     pub effects: BTreeMap<String, f64>,
     #[serde(default)]
     pub note: String,
+}
+
+/// A leader's historical agenda: the standing opinion they hold about how
+/// other civilizations ought to behave.
+///
+/// Unciv gives each leader a personality vector and weights its AI by it,
+/// which is what stops every AI civ from playing the same game. Civ VI ships
+/// the content for the same idea — `Leaders.xml` assigns each leader an
+/// agenda and a set of preference traits — so we take Unciv's shape and the
+/// game's own assignments. See `docs/UNCIV_LESSONS.md`.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(default)]
+pub struct AgendaSpec {
+    pub name: String,
+    pub description: String,
+    /// What the leader measures other civilizations by. Each value has an
+    /// engine handler in `Game::agenda_measure`.
+    pub measure: String,
+    /// `more` to approve of a high measure, `less` to approve of a low one.
+    pub approves_of: String,
 }
 
 /// A difficulty level, in the Civ VI sense: a bag of handicaps applied to the
@@ -776,6 +803,7 @@ pub struct Rules {
     pub promotions: BTreeMap<String, PromotionSpec>,
     pub beliefs: BeliefsData,
     pub civs: BTreeMap<String, CivSpec>,
+    pub agendas: BTreeMap<String, AgendaSpec>,
     pub difficulties: BTreeMap<String, DifficultySpec>,
     pub speeds: BTreeMap<String, SpeedSpec>,
     /// Tribal village reward tables, the shipped seven categories.
@@ -829,6 +857,7 @@ impl Rules {
             promotions: serde_json::from_str(include_str!("../data/promotions.json")).unwrap(),
             beliefs: serde_json::from_str(include_str!("../data/beliefs.json")).unwrap(),
             civs: serde_json::from_str(include_str!("../data/civs.json")).unwrap(),
+            agendas: serde_json::from_str(include_str!("../data/agendas.json")).unwrap(),
             difficulties: serde_json::from_str(include_str!("../data/difficulties.json")).unwrap(),
             speeds: serde_json::from_str(include_str!("../data/speeds.json")).unwrap(),
             goody_huts: serde_json::from_str(include_str!("../data/goody_huts.json")).unwrap(),

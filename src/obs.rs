@@ -326,6 +326,13 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool) -> Value {
             json!({
                 "id": o.id, "civ": o.civ,
                 "leader": g.rules.civs.get(&o.civ).map(|c| c.leader.clone()),
+                // A leader's agenda is public knowledge in Civ VI once you
+                // have met them, and so is roughly how they feel about you.
+                "agenda": g.agenda_of(o.id).map(|agenda| json!({
+                    "name": agenda.name,
+                    "description": agenda.description,
+                })),
+                "opinion_of_me": round1(g.agenda_opinion(o.id, pid)),
                 "alive": o.alive,
                 "is_minor": o.is_minor, "is_barbarian": o.is_barbarian,
                 "cs_type": if o.is_minor && !o.is_barbarian {

@@ -5,7 +5,7 @@ use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, VecDeque};
 
 use crate::rng::Rng;
-use crate::rules::{DifficultySpec, Rules, SpeedSpec, Yields, ERA_NAMES};
+use crate::rules::{AgendaSpec, DifficultySpec, Rules, SpeedSpec, Yields, ERA_NAMES};
 use crate::setup::MapSize;
 use crate::world::{DistrictFoundation, WorldMap};
 use crate::{hex, mapgen, Pos};
@@ -7070,6 +7070,10 @@ pub struct Player {
     pub governor_titles_spent: usize,
     #[serde(default)]
     pub grievances: BTreeMap<usize, f64>,
+    /// Last agenda stance this leader announced about each rival: -1 disdain,
+    /// 0 indifference, 1 approval. Only changes are worth reporting.
+    #[serde(default)]
+    pub agenda_view: BTreeMap<usize, i8>,
     #[serde(default)]
     pub denounced_until: BTreeMap<usize, u32>,
     #[serde(default)]
@@ -7169,6 +7173,7 @@ impl Player {
             governor_roster: BTreeMap::new(),
             governor_titles_spent: 0,
             grievances: BTreeMap::new(),
+            agenda_view: BTreeMap::new(),
             denounced_until: BTreeMap::new(),
             friends_until: BTreeMap::new(),
             open_borders_until: BTreeMap::new(),
@@ -8128,6 +8133,264 @@ impl Game {
     /// Culture cost of a civic at this game speed.
     pub fn civic_cost(&self, civic: &str) -> f64 {
         self.rules.civics[civic].cost * self.speed_cost_mult()
+    }
+
+    // -------------------------------------------------------------- agendas
+
+    /// The historical agenda this civilization's leader follows, if any.
+    pub fn agenda_of(&self, pid: usize) -> Option<&AgendaSpec> {
+        let player = self.players.get(pid)?;
+        if player.is_minor || player.is_barbarian {
+            return None;
+        }
+        let civ = self.rules.civs.get(player.civ.as_str())?;
+        self.rules.agendas.get(civ.agenda.as_ref()?)
+    }
+
+    /// Whether this leader carries a named preference trait, as the shipped
+    /// leader data names them (`expansionist`, `aggressive_military`, …).
+    pub fn leader_trait(&self, pid: usize, name: &str) -> bool {
+        self.players
+            .get(pid)
+            .and_then(|player| self.rules.civs.get(player.civ.as_str()))
+            .is_some_and(|civ| civ.traits.iter().any(|trait_name| trait_name == name))
+    }
+
+    /// What `observer`'s agenda makes of `subject`, from -30 (this leader
+    /// holds them in contempt) to +30 (this leader approves).
+    ///
+    /// Agendas come in two shapes. Most weigh the subject against how the
+    /// rest of the world is doing — Trajan compares your territory to
+    /// everyone's, so being the smallest empire among giants reads worse than
+    /// being small in a small world. The rest are inherently relational:
+    /// Pericles cares about your envoys against his, and nothing about
+    /// anyone else's.
+    pub fn agenda_opinion(&self, observer: usize, subject: usize) -> f64 {
+        if observer == subject {
+            return 0.0;
+        }
+        let Some(agenda) = self.agenda_of(observer) else {
+            return 0.0;
+        };
+        if self
+            .players
+            .get(subject)
+            .is_none_or(|player| player.is_minor || player.is_barbarian || !player.alive)
+        {
+            return 0.0;
+        }
+        let direction = if agenda.approves_of == "less" { -1.0 } else { 1.0 };
+        let raw = match agenda.measure.as_str() {
+            // Relational measures already carry their own sign and scale.
+            "city_state_rivalry" => self.city_state_rivalry(observer, subject),
+            "loyalty_to_friends" => self.loyalty_to_friends(observer, subject),
+            "shared_luxuries" => self.shared_luxuries(observer, subject),
+            "trustworthiness" => self.trustworthiness(observer, subject),
+            // Comparative measures are scored against the rest of the world.
+            other => {
+                let value = self.agenda_measure(subject, other);
+                let peers: Vec<f64> = self
+                    .players
+                    .iter()
+                    .filter(|player| {
+                        player.alive
+                            && !player.is_minor
+                            && !player.is_barbarian
+                            && player.id != subject
+                    })
+                    .map(|player| self.agenda_measure(player.id, other))
+                    .collect();
+                if peers.is_empty() {
+                    return 0.0;
+                }
+                let reference = peers.iter().sum::<f64>() / peers.len() as f64;
+                (value - reference) / reference.max(1.0)
+            }
+        };
+        (direction * raw * 30.0).clamp(-30.0, 30.0)
+    }
+
+    /// The comparative measures, each a plain count for one civilization.
+    fn agenda_measure(&self, pid: usize, measure: &str) -> f64 {
+        match measure {
+            "territory" => self
+                .player_city_ids(pid)
+                .iter()
+                .map(|cid| self.cities[cid].owned_tiles.len() as f64)
+                .sum(),
+            "military" => self.military_power(pid),
+            "wonders" => self
+                .player_city_ids(pid)
+                .iter()
+                .map(|cid| self.cities[cid].wonders.len() as f64)
+                .sum(),
+            "districts_per_city" => {
+                let cities = self.player_city_ids(pid);
+                if cities.is_empty() {
+                    return 0.0;
+                }
+                cities
+                    .iter()
+                    .map(|cid| self.cities[cid].districts.len() as f64)
+                    .sum::<f64>()
+                    / cities.len() as f64
+            }
+            _ => 0.0,
+        }
+    }
+
+    /// Pericles: how directly this civilization contests the city-states he
+    /// courts. Only city-states he has actually invested in count.
+    fn city_state_rivalry(&self, observer: usize, subject: usize) -> f64 {
+        let minors: Vec<usize> = self
+            .players
+            .iter()
+            .filter(|player| player.is_minor && !player.is_barbarian && player.alive)
+            .map(|player| player.id)
+            .collect();
+        let mut contested: f64 = 0.0;
+        let mut courted: f64 = 0.0;
+        for minor in minors {
+            if self.envoys_at(observer, minor) <= 0 {
+                continue;
+            }
+            courted += 1.0;
+            if self.envoys_at(subject, minor) > 0 {
+                contested += 1.0;
+            }
+            if self.suzerain_of(minor) == Some(subject) {
+                contested += 1.0;
+            }
+        }
+        if courted == 0.0 {
+            return 0.0;
+        }
+        (contested / courted).min(1.0)
+    }
+
+    /// Gilgamesh: standing beside him, and beside the people he stands with.
+    fn loyalty_to_friends(&self, observer: usize, subject: usize) -> f64 {
+        let mut score: f64 = 0.0;
+        if self.alliance_with(observer, subject).is_some() {
+            score += 1.0;
+        } else if self.are_friends(observer, subject) {
+            score += 0.6;
+        }
+        if self.is_at_war(observer, subject) {
+            score -= 1.0;
+        }
+        // Attacking his friends is the same offence as attacking him.
+        for player in &self.players {
+            if player.id == observer || player.id == subject || player.is_barbarian {
+                continue;
+            }
+            let befriended = self.are_friends(observer, player.id)
+                || self.alliance_with(observer, player.id).is_some();
+            if befriended && self.is_at_war(subject, player.id) {
+                score -= 0.5;
+            }
+        }
+        score.clamp(-1.0, 1.0)
+    }
+
+    /// Montezuma: he approves of luxuries he already enjoys, and covets the
+    /// ones he does not.
+    fn shared_luxuries(&self, observer: usize, subject: usize) -> f64 {
+        let mine = self.empire_luxury_names(observer);
+        let theirs = self.empire_luxury_names(subject);
+        if theirs.is_empty() {
+            return 0.0;
+        }
+        let shared = theirs.iter().filter(|name| mine.contains(*name)).count() as f64;
+        // Half the range rewards overlap, half punishes what he is missing.
+        (2.0 * shared / theirs.len() as f64) - 1.0
+    }
+
+    /// Tomyris: friendship counts for a great deal, and a reputation for
+    /// treachery — grievances held against them by anyone at all — counts
+    /// heavily against.
+    fn trustworthiness(&self, observer: usize, subject: usize) -> f64 {
+        let mut score: f64 = 0.0;
+        if self.are_friends(observer, subject) || self.alliance_with(observer, subject).is_some() {
+            score += 1.0;
+        }
+        let held_against_them: f64 = self
+            .players
+            .iter()
+            .filter(|player| !player.is_barbarian && player.id != subject)
+            .map(|player| player.grievances.get(&subject).copied().unwrap_or(0.0))
+            .sum();
+        score -= (held_against_them / 200.0).min(2.0);
+        score.clamp(-1.0, 1.0)
+    }
+
+    /// Announce agenda stances that have changed since last turn. A leader
+    /// says nothing while merely indifferent, which keeps the log to the
+    /// moments a relationship actually turned.
+    fn process_agendas(&mut self) {
+        const THRESHOLD: f64 = 15.0;
+        let majors: Vec<usize> = self
+            .players
+            .iter()
+            .filter(|player| player.alive && !player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .collect();
+        for observer in majors.clone() {
+            if self.agenda_of(observer).is_none() {
+                continue;
+            }
+            for subject in majors.clone() {
+                if subject == observer {
+                    continue;
+                }
+                let opinion = self.agenda_opinion(observer, subject);
+                let stance = if opinion >= THRESHOLD {
+                    1_i8
+                } else if opinion <= -THRESHOLD {
+                    -1
+                } else {
+                    0
+                };
+                let previous = self.players[observer]
+                    .agenda_view
+                    .get(&subject)
+                    .copied()
+                    .unwrap_or(0);
+                if stance == previous {
+                    continue;
+                }
+                self.players[observer].agenda_view.insert(subject, stance);
+                let leader = self.leader_name(observer);
+                let agenda = self
+                    .agenda_of(observer)
+                    .map(|spec| spec.name.clone())
+                    .unwrap_or_default();
+                let (theirs, mine) = match stance {
+                    1 => (
+                        format!("{leader} approves of you ({agenda})"),
+                        format!("You approve of {} ({agenda})", self.civ_name(subject)),
+                    ),
+                    -1 => (
+                        format!("{leader} disapproves of you ({agenda})"),
+                        format!("You disapprove of {} ({agenda})", self.civ_name(subject)),
+                    ),
+                    _ => (
+                        format!("{leader} no longer holds a strong view of you"),
+                        format!("Your view of {} has cooled", self.civ_name(subject)),
+                    ),
+                };
+                self.note(subject, "Diplomacy", theirs, None);
+                self.note(observer, "Diplomacy", mine, None);
+            }
+        }
+    }
+
+    fn leader_name(&self, pid: usize) -> String {
+        self.players
+            .get(pid)
+            .and_then(|player| self.rules.civs.get(player.civ.as_str()))
+            .map(|civ| civ.leader.clone())
+            .unwrap_or_else(|| self.civ_name(pid))
     }
 
     // --------------------------------------------------------------- events
@@ -29579,6 +29842,7 @@ impl Game {
             self.process_climate();
             self.barbarian_phase();
             self.process_eras();
+            self.process_agendas();
             self.process_emergencies();
             self.process_congress();
             self.check_culture_victory();
