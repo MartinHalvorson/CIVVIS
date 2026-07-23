@@ -8,16 +8,17 @@ Status: ✅ implemented · 🟡 intentionally scoped relative to the full commer
 *Numbers* are now tracked against a stronger authority than either: the rules
 database the game itself ships. `python tools/civ6_fidelity.py` diffs
 `data/*.json` against it and currently reports zero unwaived divergences
-across seventeen tables — units, technologies, civics, buildings, districts, adjacency,
-terrains, features, resources, improvements, tech-gated improvement
-upgrades, wonders, policies, governments, beliefs, promotions and projects.
-Run it after any data change, and see
+across twenty-two tables — units, technologies, civics, buildings,
+districts, adjacency, boosts, goody huts, eras, great people, global
+parameters, terrains, features, resources, improvements, tech-gated
+improvement upgrades, wonders, policies, governments, beliefs, promotions
+and projects. Run it after any data change, and see
 [FIDELITY.md](FIDELITY.md) for what the audit covers next.
 
 > **In progress** (claimed by parallel sessions — check before starting a batch):
 > - (none currently claimed)
 > - session G: continuous-exhibition bug hunt — rules defects observed in full 8-player games, one game at a time. Owns the Pressure/majority core in `src/game.rs` (`city_religion`, `process_pressure`, atheist Pressure); session F owns the religious AI and purchase rules above it
-> - session FID: fidelity expansion — remaining shipped tables: `GlobalParameters` vs engine constants, `Boosts` (Eureka/Inspiration triggers), `GoodyHuts`, `Eras`, `GreatPersonIndividuals`. Terrains/features/resources/improvements/wonders/policies/governments/beliefs/promotions/projects shipped 2026-07-22 at zero divergence. Owns `tools/civ6_fidelity.py`, `tools/fidelity_waivers.json`, `docs/FIDELITY.md`
+> - session FID: fidelity expansion COMPLETE 2026-07-22 — all 22 tracked tables at zero divergence (boosts, goody huts, eras, great people, global parameters landed last). Claim released; remaining depth items are listed under "Next inside phase 1" in [FIDELITY.md](FIDELITY.md)
 
 | System | Status | Notes |
 |---|---|---|

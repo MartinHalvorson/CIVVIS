@@ -135,16 +135,27 @@ were already exact; the rest surfaced 62 divergences, all resolved:
 | Estádio do Maracanã was local | The game gives its 6 Culture and 2 Amenities to every city in the empire (regional range 100000) |
 | Improvement siting was intersection-based | Civ 6 sites improvements through any of three routes — valid terrain OR valid feature OR valid resource. Farms on desert Floodplains and flat resource mines now place exactly as shipped |
 
+**Fourth wave (triggers, villages, eras, constants):** `Boosts`, `GoodyHuts`,
+`Eras`, `GreatPersonIndividuals` and a curated `GlobalParameters` mirror are
+audited — 22 tables at zero unwaived divergences. The finds this wave:
+
+| Fixed | Detail |
+|---|---|
+| Nearly every Eureka/Inspiration was wrong | 109 of ~110 boost entries corrected to the shipped trigger, count and target; the engine trigger vocabulary grew from 16 to 45 forms (meet a civilization, improve a specific resource, government slot counts, continents, alliances, promotions-class kills…), several data triggers that silently never fired now do, and the boost grant is per-row data (40%, Near Future Governance 90%, +10 points for China) |
+| Tribal villages used a lean 4-outcome table | The shipped seven-category, 22-reward table with exact weights, turn gates, city gates and amounts now drives rewards (`data/goody_huts.json`); Gilgamesh's Epic Quest rolls the same table |
+| Embarked strength was flat 10 | It climbs the shipped era ladder (10/15/15/30/35/50/55/55) via `data/eras.json` |
+| Border growth used a homebrew curve | Borders now grow on the city's Culture against the shipped cost curve, 10 + 6 × plots^1.3 (was 15 + 8 × plots fed by 1 + Culture/2) |
+| Great Person costs | Recruit costs follow the shipped per-era ladder (30…1320); two prophets carried invented prices |
+| Constants verified | Growth curve/thresholds, housing bands, fresh-water housing, amenity demand (GS zeroes the free Amenity), city spacing, corps/army bonuses, amphibious/river combat modifiers, barbarian XP caps — and the damage roll: CIVVIS' 30·e^(Δ/25)·U(0.8, 1.2) is the same distribution as the shipped 24 base with its 1.0–1.5 spread |
+
 ### Next inside phase 1
 
-Remaining tables on the same projection pattern: `District_Adjacencies` /
-`Adjacency_YieldChanges` (the adjacency formulas themselves), `Boosts`
-(Eureka/Inspiration triggers), `GoodyHuts`, `GreatPersonIndividuals`, and
-`GlobalParameters` against the engine's hardcoded constants. Known
-placement simplifications not yet expressed in data: hills-only resource
-spawns (Sheep), civic-gated valid terrain (farms on Hills at Civil
-Engineering), feature-based map placement of resources (Fish on Reef rows),
-and wonders' widening `Building_ValidFeatures` rows (Petra on Floodplains).
+Known simplifications not yet expressed in data: hills-only resource spawns
+(Sheep), civic-gated valid terrain (farms on Hills at Civil Engineering),
+feature-based map placement of resources (Fish on Reef rows), wonders'
+widening `Building_ValidFeatures` rows (Petra on Floodplains), theming (the
+Cultural Heritage Inspiration trigger is data-correct but inert), barbarian
+camp spawn cadence (odds/boldness model), and the meteor-strike goody site.
 
 ## Phase 2 (next): the modifier engine
 

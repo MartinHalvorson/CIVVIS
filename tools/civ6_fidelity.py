@@ -110,6 +110,13 @@ TABLE_KEYS = {
     "Improvement_BonusYieldChanges": ("Id",),
     "District_Adjacencies": ("DistrictType", "YieldChangeId"),
     "Adjacency_YieldChanges": "ID",
+    "Boosts": ("TechnologyType", "CivicType"),
+    "GoodyHuts": "GoodyHutType",
+    "GoodyHutSubTypes": "SubTypeGoodyHut",
+    "ModifierArguments": ("ModifierId", "Name"),
+    "Eras": "EraType",
+    "GreatPersonIndividuals": "GreatPersonIndividualType",
+    "GlobalParameters": "Name",
     "Building_YieldChanges": ("BuildingType", "YieldType"),
     "Building_GreatPersonPoints": ("BuildingType", "GreatPersonClassType"),
     "Building_GreatWorks": ("BuildingType", "GreatWorkSlotType"),
@@ -136,7 +143,8 @@ TABLE_KEYS = {
 FILE_PATTERN = re.compile(
     r"^(Expansion[12]_)?"
     r"(Units|Technologies|Civics|Buildings|Districts|Terrains|Features|Resources"
-    r"|Improvements|Policies|Governments|Beliefs|UnitPromotions|Projects|GreatWorks)"
+    r"|Improvements|Policies|Governments|Beliefs|UnitPromotions|Projects|GreatWorks"
+    r"|GoodyHuts|Eras|GreatPeople(?:_[A-Za-z]+)?|GlobalParameters)"
     r"(_Major)?\.xml$",
     re.IGNORECASE,
 )
@@ -185,6 +193,11 @@ class Database:
 
     def _key(self, table: str, row: dict) -> tuple | None:
         spec = TABLE_KEYS[table]
+        if table == "Boosts":
+            # A boost row names the technology OR the civic it boosts,
+            # never both.
+            node = row.get("TechnologyType") or row.get("CivicType")
+            return (node,) if node else None
         columns = spec if isinstance(spec, tuple) else (spec,)
         if not all(column in row for column in columns):
             return None
@@ -663,6 +676,293 @@ def project_improvement_upgrades(database: Database) -> dict[str, dict]:
     return projected
 
 
+BUILDING_ALIASES = {
+    "museum_art": "art_museum",
+    "museum_artifact": "archaeological_museum",
+    # Gathering Storm added Coal and Oil ("fossil fuel") plants and reused
+    # the vanilla type for the Nuclear Power Plant.
+    "fossil_fuel_power_plant": "oil_power_plant",
+    "power_plant": "nuclear_power_plant",
+}
+
+
+# Eureka/Inspiration triggers: the game's BoostClass rows spelled in the
+# trigger vocabulary CIVVIS' engine evaluates (game.rs boost_met).
+def boost_spec(row) -> dict | None:
+    def named(game_type, prefix, aliases=None):
+        entry = slug(game_type, prefix)
+        return (aliases or {}).get(entry, entry)
+
+    cls = (row.get("BoostClass") or "").replace("BOOST_TRIGGER_", "")
+    n = number(row.get("NumItems"), 1)
+    simple = {
+        "DISCOVER_CONTINENT": "discover_continent",
+        "CLEAR_CAMP": "camps",
+        "CREATE_PANTHEON": "pantheon",
+        "RECEIVE_DOW": "received_dow",
+        "FOUND_RELIGION": "religion",
+        "HAVE_AN_ALLIANCE": "alliances",
+        "DOW_CASUS_BELLI": "casus_belli",
+        "AIRBASE_FOREIGN_CONTINENT": "airbase_foreign_continent",
+        "SETTLE_COAST": "coastal_city",
+        "FIND_NATURAL_WONDER": "natural_wonder",
+        "MEET_CIV": "met_civ",
+        "CREATED_NATIONAL_PARK": "national_park",
+        "ARTIFACT_EXTRACTED": "artifacts",
+    }
+    counted = {
+        "HAVE_X_UNIQUE_SPECIALTY_DISTRICTS": "specialty_districts",
+        "CITY_POPULATION": "pop",
+        "EMPIRE_POPULATION": "total_pop",
+        "MAINTAIN_X_TRADE_ROUTES": "trade_routes",
+        "HAVE_WONDER_PAST_X_ERA": "wonder_era",
+        "NUM_IMPROVED_TILES": "improvements",
+        "MEET_X_CITY_STATES": "met_city_states",
+        "HAVE_X_WONDERS": "wonders",
+        "HAVE_X_LAND_UNITS": "land_units",
+        "HAVE_ALLIANCE_LEVEL_X": "alliance_level",
+        "HAVE_X_CITIES_FOLLOWING_YOUR_RELIGION": "religion_cities",
+        "HAVE_X_GREAT_PEOPLE": "great_people",
+        "HAVE_X_CORPS": "corps",
+        "HAVE_X_ARMIES": "armies",
+        "HAVE_X_THEMED_BUILDINGS": "themed_buildings",
+        "NUM_BARBS_KILLED": "barbs_killed",
+    }
+    if cls == "NONE_LATE_GAME_CRITICAL_TECH":
+        return None  # boostable only through espionage, never a trigger
+    if cls in simple:
+        return {"trigger": simple[cls]}
+    if cls in counted:
+        return {"trigger": counted[cls], "count": n}
+    if cls == "HAVE_X_BUILDINGS":
+        return {
+            "trigger": f"building:{named(row['BuildingType'], 'BUILDING_', BUILDING_ALIASES)}",
+            "count": n,
+        }
+    if cls == "CONSTRUCT_BUILDING":
+        return {"trigger": f"building:{named(row['BuildingType'], 'BUILDING_', BUILDING_ALIASES)}"}
+    if cls == "OWN_X_UNITS_OF_TYPE":
+        return {"trigger": f"units_of:{named(row['Unit1Type'], 'UNIT_')}", "count": n}
+    if cls == "HAVE_X_IMPROVEMENTS":
+        key = "improvement_on_resource" if truthy(row.get("RequiresResource")) else "improvement"
+        return {"trigger": f"{key}:{named(row['ImprovementType'], 'IMPROVEMENT_')}", "count": n}
+    if cls == "HAVE_X_DISTRICTS":
+        return {
+            "trigger": f"district:{named(row['DistrictType'], 'DISTRICT_', DISTRICT_ALIASES)}",
+            "count": n,
+        }
+    if cls == "RESEARCH_TECH":
+        return {"trigger": f"tech:{named(row['BoostingTechType'], 'TECH_')}"}
+    if cls == "CULTURVATE_CIVIC":
+        return {"trigger": f"civic:{named(row['BoostingCivicType'], 'CIVIC_')}"}
+    if cls == "KILL_WITH":
+        return {"trigger": f"kill_with:{named(row['Unit1Type'], 'UNIT_')}"}
+    if cls == "KILL_SPECIFIC_UNIT":
+        return {"trigger": f"kill_kind:{named(row['Unit1Type'], 'UNIT_')}"}
+    if cls == "IMPROVE_SPECIFIC_RESOURCE":
+        return {"trigger": f"improve_resource:{named(row['ResourceType'], 'RESOURCE_')}"}
+    if cls == "TRAIN_UNIT":
+        unit = slug(row["Unit1Type"], "UNIT_")
+        if unit.startswith("great_"):
+            return {"trigger": f"great_person_of:{unit[len('great_'):]}"}
+        return {"trigger": f"trained:{unit}"}
+    if cls == "HAVE_GOVERNMENT_TIER":
+        # NumItems is total policy slots (Tier 2 = 6, Tier 3 = 8); the
+        # tierless Near Future Governance row means Tier 4 = 10.
+        return {"trigger": "government_slots", "count": n if row.get("NumItems") else 10}
+    if cls == "DISTRICT_APPEAL_LEVEL_MINIMUM_X":
+        return {
+            "trigger": f"district_appeal:{named(row['DistrictType'], 'DISTRICT_', DISTRICT_ALIASES)}",
+            "count": n,
+        }
+    if cls == "HAVE_BUILDING_MOUNTAIN":
+        return {
+            "trigger": "building_near_mountain:"
+            + named(row["BuildingType"], "BUILDING_", BUILDING_ALIASES)
+        }
+    if cls == "HAVE_UNIT_AND_IMPROVEMENT":
+        return {
+            "trigger": f"unit_and_improve:{named(row['Unit1Type'], 'UNIT_')}"
+            f":{named(row['ResourceType'], 'RESOURCE_')}"
+        }
+    return {"trigger": f"?{cls.lower()}"}
+
+
+def project_boosts(database: Database) -> dict[str, dict]:
+    projected = {}
+    for row in database.rows("Boosts"):
+        node = slug(
+            row.get("TechnologyType") or row.get("CivicType"),
+            "TECH_" if row.get("TechnologyType") else "CIVIC_",
+        )
+        spec = boost_spec(row)
+        if spec is None:
+            continue
+        entry = {"trigger": spec["trigger"], "count": spec.get("count", 1)}
+        percent = number(row.get("Boost"), 40)
+        if percent != 40:
+            entry["percent"] = percent
+        projected[node] = entry
+    return projected
+
+
+def ours_boosts() -> dict[str, dict]:
+    out = {}
+    for name in ("techs", "civics"):
+        for node, entry in load_ours(name).items():
+            boost = entry.get("boost")
+            if boost:
+                row = {"trigger": boost.get("trigger", "?"), "count": boost.get("count", 1)}
+                if boost.get("percent"):
+                    row["percent"] = boost["percent"]
+                out[node] = row
+    return out
+
+
+def project_goody_huts(database: Database) -> dict[str, dict]:
+    """Tribal village rewards: weights, turn gates, city gates and amounts.
+
+    The reward amounts live in each subtype's modifier arguments; ``Amount``
+    (or the governor title's ``Delta``) is the number CIVVIS stores in its
+    reward map. Weight-0 rows are rewards the shipped game has disabled.
+    """
+    arguments: dict[tuple, str] = {}
+    for row in database.rows("ModifierArguments"):
+        arguments[(row.get("ModifierId"), row.get("Name"))] = row.get("Value")
+    projected = {}
+    for row in database.rows("GoodyHutSubTypes"):
+        weight = number(row.get("Weight"))
+        if weight <= 0:
+            continue
+        category = slug(row.get("GoodyHut", ""), "GOODYHUT_")
+        subtype = slug(row["SubTypeGoodyHut"], "GOODYHUT_")
+        modifier = row.get("ModifierID")
+        amount = number(
+            arguments.get((modifier, "Amount")) or arguments.get((modifier, "Delta")), 1
+        )
+        projected[f"{category}/{subtype}"] = {
+            "weight": weight,
+            "min_turn": number(row.get("Turn")),
+            "requires_city": truthy(row.get("MinOneCity")),
+            "amount": amount,
+        }
+    return projected
+
+
+def ours_goody_huts() -> dict[str, dict]:
+    out = {}
+    for category, rewards in load_ours("goody_huts").items():
+        for subtype, spec in rewards.items():
+            out[f"{category}/{subtype}"] = {
+                "weight": spec.get("weight", 0),
+                "min_turn": spec.get("min_turn", 0),
+                "requires_city": spec.get("requires_city", False),
+                "amount": max(spec.get("reward", {}).values(), default=0),
+            }
+    return out
+
+
+# Global parameters the engine implements, next to the value its code uses.
+# Each mirrors a specific site in src/ — change one side, change the other.
+ENGINE_PARAMETERS = {
+    "CITY_FOOD_CONSUMPTION_PER_POPULATION": 2,  # game.rs process_city
+    "CITY_GROWTH_THRESHOLD": 15,  # game.rs growth_threshold
+    "CITY_GROWTH_MULTIPLIER": 8,
+    "CITY_GROWTH_EXPONENT": 1.5,
+    "CITY_HOUSING_LEFT_25PCT_GROWTH": 0,  # game.rs housing_growth_mult
+    "CITY_HOUSING_LEFT_50PCT_GROWTH": 1,
+    "CITY_HOUSING_LEFT_ZERO_GROWTH": -4,
+    "CITY_POPULATION_RIVER_LAKE": 5,  # fresh-water Housing
+    "CITY_POPULATION_COAST": 3,
+    "CITY_POPULATION_NO_WATER": 2,
+    "CITY_POP_PER_AMENITY": 2,  # game.rs city_amenities_required
+    "CITY_AMENITIES_FOR_FREE": 0,  # ceil(pop/2), no free Amenity in GS
+    "CITY_MIN_RANGE": 3,  # game.rs can_found_city (wdist < 4)
+    "COMBAT_BASE_DAMAGE": 24,  # game.rs damage: 30 * U(0.8,1.2) == 24 * U(1.0,1.5)
+    "COMBAT_CORPS_STRENGTH_MODIFIER": 10,  # game.rs unit_formation_bonus
+    "COMBAT_ARMY_STRENGTH_MODIFIER": 17,
+    "COMBAT_AMPHIBIOUS_ATTACK_PENALTY": -10,  # attacks while embarked
+    "COMBAT_RIVER_DEFENSE": 5,  # melee and encampment river crossings
+    "EXPERIENCE_MAX_BARB_LEVEL": 2,  # award_unit_combat_xp
+    "EXPERIENCE_BARB_SOFT_CAP": 1,
+    "EXPERIENCE_MAXIMUM_ONE_COMBAT": 8,
+    "CULTURE_COST_FIRST_PLOT": 10,  # border growth: 10 + 6 * plots^1.3
+    "CULTURE_COST_LATER_PLOT_MULTIPLIER": 6,
+    "CULTURE_COST_LATER_PLOT_EXPONENT": 1.3,
+    "BARBARIAN_CAMP_MAX_PER_MAJOR_CIV": 3,  # spawn cadence differs; camp count comparable
+}
+
+
+def project_parameters(database: Database) -> dict[str, dict]:
+    rows = {row["Name"]: row.get("Value") for row in database.rows("GlobalParameters")}
+    return {
+        name: {"value": number(rows[name])}
+        for name in ENGINE_PARAMETERS
+        if name in rows
+    }
+
+
+def ours_parameters() -> dict[str, dict]:
+    return {name: {"value": value} for name, value in ENGINE_PARAMETERS.items()}
+
+
+def project_eras(database: Database) -> dict[str, dict]:
+    projected = {}
+    for row in database.rows("Eras"):
+        projected[slug(row["EraType"], "ERA_")] = {
+            "great_person_base_cost": number(row.get("GreatPersonBaseCost")),
+            "embarked_strength": number(row.get("EmbarkedUnitStrength")),
+            "warmonger_points": number(row.get("WarmongerPoints")),
+        }
+    return projected
+
+
+def ours_eras() -> dict[str, dict]:
+    return {
+        name: {
+            "great_person_base_cost": entry.get("great_person_base_cost", 0),
+            "embarked_strength": entry.get("embarked_strength", 0),
+            "warmonger_points": entry.get("warmonger_points", 0),
+        }
+        for name, entry in load_ours("eras").items()
+        # The future era has no shipped row; CIVVIS carries the Information
+        # values forward for its extended tree.
+        if name != "future"
+    }
+
+
+def project_great_people(database: Database) -> dict[str, dict]:
+    era_costs = {
+        slug(row["EraType"], "ERA_"): number(row.get("GreatPersonBaseCost"))
+        for row in database.rows("Eras")
+    }
+    projected = {}
+    for row in database.rows("GreatPersonIndividuals"):
+        era = slug(row.get("EraType", ""), "ERA_")
+        projected[slug(row["GreatPersonIndividualType"], "GREAT_PERSON_INDIVIDUAL_")] = {
+            "kind": slug(row.get("GreatPersonClassType", ""), "GREAT_PERSON_CLASS_"),
+            "era": ERAS.index("ERA_" + era.upper()) if "ERA_" + era.upper() in ERAS else -1,
+            "cost": era_costs.get(era, 0),
+            # Writers, artists, musicians and prophets carry ActionCharges 0:
+            # their one activation creates works rather than a map action.
+            # CIVVIS spells every activation as a charge.
+            "charges": max(number(row.get("ActionCharges"), 1), 1),
+        }
+    return projected
+
+
+def ours_great_people() -> dict[str, dict]:
+    return {
+        name: {
+            "kind": entry.get("kind", "?"),
+            "era": entry.get("era", -1),
+            "cost": entry.get("cost", 0),
+            "charges": entry.get("charges", 1),
+        }
+        for name, entry in load_ours("great_people").items()
+    }
+
+
 # CIVVIS names the adjacency source; the game names the column that matched.
 ADJACENCY_FEATURES = {
     "jungle": "rainforest",
@@ -797,7 +1097,7 @@ def project_buildings(database: Database) -> dict[str, dict]:
             entry["great_person_points"] = gpp[name]
         if works.get(name):
             entry["great_work_slots"] = works[name]
-        projected[name] = entry
+        projected[BUILDING_ALIASES.get(name, name)] = entry
     return projected
 
 
@@ -1423,6 +1723,11 @@ def main() -> int:
         ("Buildings", ours_buildings(), project_buildings(database)),
         ("Districts", ours_districts(), project_districts(database)),
         ("Adjacency", ours_adjacency(), project_adjacency(database)),
+        ("Boosts", ours_boosts(), project_boosts(database)),
+        ("GoodyHuts", ours_goody_huts(), project_goody_huts(database)),
+        ("Eras", ours_eras(), project_eras(database)),
+        ("GreatPeople", ours_great_people(), project_great_people(database)),
+        ("GlobalParameters", ours_parameters(), project_parameters(database)),
         ("Terrains", ours_terrains(), project_terrains(database)),
         ("Features", ours_features(), project_features(database)),
         ("Resources", ours_resources(), project_resources(database)),
