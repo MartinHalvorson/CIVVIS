@@ -5,6 +5,7 @@
 
 pub mod action_space;
 pub mod ai;
+pub mod belief;
 pub mod elo;
 pub mod evolve;
 pub mod game;
