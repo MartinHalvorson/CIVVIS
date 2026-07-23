@@ -18953,9 +18953,20 @@ impl Game {
         let turn = self.turn;
         {
             let player = &mut self.players[pid];
-            for position in visible.iter() {
-                if let Some(remembered) = player.remembered_tiles.get_mut(position) {
-                    remembered.seen_turn = turn;
+            // Only reach for the memory mutably when a stamp actually has to
+            // move: taking it mutably is what copies it, and after the first
+            // refresh of a turn every visible tile already carries this turn.
+            let restamp = visible.iter().any(|position| {
+                player
+                    .remembered_tiles
+                    .get(position)
+                    .is_some_and(|remembered| remembered.seen_turn != turn)
+            });
+            if restamp {
+                for position in visible.iter() {
+                    if let Some(remembered) = player.remembered_tiles.get_mut(position) {
+                        remembered.seen_turn = turn;
+                    }
                 }
             }
             player.explored.extend(visible.iter().copied());

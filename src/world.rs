@@ -85,7 +85,7 @@ pub struct RememberedTile {
 /// runtime while serializing player map memory as a stable list of snapshots.
 #[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(from = "Vec<RememberedTile>", into = "Vec<RememberedTile>")]
-pub struct TileMemory(BTreeMap<Pos, RememberedTile>);
+pub struct TileMemory(std::sync::Arc<BTreeMap<Pos, RememberedTile>>);
 
 impl Deref for TileMemory {
     type Target = BTreeMap<Pos, RememberedTile>;
@@ -95,26 +95,36 @@ impl Deref for TileMemory {
     }
 }
 
+/// Taking a mutable borrow is what copies the memory, so a player's
+/// last-known map is shared until somebody writes to it.
+///
+/// A game is cloned to look ahead — that is what this engine exists for — and
+/// a player's remembered map is the largest thing in it: a tile for every hex
+/// they have ever seen, each with its own strings. Copying fifteen of those
+/// per branch was about half the cost of cloning a game.
 impl DerefMut for TileMemory {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+        std::sync::Arc::make_mut(&mut self.0)
     }
 }
 
 impl From<Vec<RememberedTile>> for TileMemory {
     fn from(tiles: Vec<RememberedTile>) -> Self {
-        Self(
+        Self(std::sync::Arc::new(
             tiles
                 .into_iter()
                 .map(|remembered| (remembered.tile.pos, remembered))
                 .collect(),
-        )
+        ))
     }
 }
 
 impl From<TileMemory> for Vec<RememberedTile> {
     fn from(memory: TileMemory) -> Self {
-        memory.0.into_values().collect()
+        match std::sync::Arc::try_unwrap(memory.0) {
+            Ok(tiles) => tiles.into_values().collect(),
+            Err(shared) => shared.values().cloned().collect(),
+        }
     }
 }
 
