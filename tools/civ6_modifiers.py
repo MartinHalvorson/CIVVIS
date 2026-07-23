@@ -90,6 +90,16 @@ class Modifiers:
                     if "ModifierId" in row and "Name" in row:
                         self.arguments[row["ModifierId"]][row["Name"]] = row.get("Value", "")
             elif table.tag.endswith("Modifiers"):
+                # An expansion can detach a modifier it no longer wants. Not
+                # honouring that reports rules the shipped ruleset removed.
+                for node in table:
+                    if node.tag != "Delete":
+                        continue
+                    where = fields(node)
+                    doomed = where.get("ModifierId")
+                    if doomed and doomed in self.attachments:
+                        del self.attachments[doomed]
+                        self.owners.pop(doomed, None)
                 # BuildingModifiers, TraitModifiers, BeliefModifiers, ... —
                 # the tables that bind a modifier to the object that owns it.
                 for node in table:

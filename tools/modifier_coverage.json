@@ -145,7 +145,11 @@
     },
     "ADJUST_PLOT_YIELD": {
       "status": "partial",
-      "note": "Improvement tech and civic upgrades execute through tree_effects, and named wonder and belief plot effects execute; arbitrary plot-yield grants do not."
+      "verified": false,
+      "note": "Partly checked. Liang's City Park Culture and Fishery Production match. Egypt's Sphinx was missing both of its conditional yields -- +1 Culture on Floodplains and +2 Faith next to a Wonder -- now added. Still partial: arbitrary plot-yield grants have no general path.",
+      "leads": [
+        "LUMBER_MILL_RIVERADJACENCY_PRODUCTION is still attached in the Gathering Storm load order, which would make a riverside Lumber Mill 3 Production against CIVVIS' 2. The wiki calls the river clause vanilla/R&F only. Unresolved until its requirement set is read -- do not change on the strength of the attachment alone."
+      ]
     },
     "GRANT_ABILITY": {
       "status": "partial",
