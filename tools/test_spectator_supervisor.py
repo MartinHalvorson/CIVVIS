@@ -1,6 +1,8 @@
-import importlib.util
+﻿import importlib.util
 import json
+import os
 from pathlib import Path
+import socket
 import subprocess
 import sys
 import tempfile
@@ -363,7 +365,8 @@ class SourceSnapshotTests(unittest.TestCase):
         builds = []
 
         def fake_command(*args, **_kwargs):
-            if Path(args[0]).name in ("cargo", "cargo.exe") and args[1:3] == (
+            # PATHEXT can hand back "cargo.EXE", so compare case-insensitively.
+            if Path(args[0]).name.lower() in ("cargo", "cargo.exe") and args[1:3] == (
                 "build",
                 "--release",
             ):
@@ -403,7 +406,7 @@ class SourceSnapshotTests(unittest.TestCase):
         cargo_call = next(
             kwargs
             for args, kwargs in calls
-            if Path(args[0]).name in ("cargo", "cargo.exe")
+            if Path(args[0]).name.lower() in ("cargo", "cargo.exe")
         )
         self.assertEqual(cargo_call["environment"]["CIVVIS_COMMIT"], "abc1234")
 
@@ -416,6 +419,35 @@ class SourceSnapshotTests(unittest.TestCase):
         ):
             self.assertFalse(supervisor.build_latest())
         promote.assert_not_called()
+
+    def test_promotion_replaces_a_runtime_a_game_is_still_executing(self):
+        real_replace = os.replace
+        targets = []
+
+        def fake_replace(source, destination):
+            targets.append(Path(destination).name)
+            if len(targets) == 1:
+                # Windows denies overwriting the image of a running process.
+                raise PermissionError(5, "Access is denied")
+            return real_replace(source, destination)
+
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = Path(directory) / "spectator" / supervisor.BINARY_NAME
+            runtime.parent.mkdir()
+            runtime.write_bytes(b"the build a game is playing on")
+            source = Path(directory) / "source"
+            (source / "target" / "release").mkdir(parents=True)
+            (source / "target" / "release" / supervisor.BINARY_NAME).write_bytes(b"newer")
+            with (
+                patch.object(supervisor, "RUNTIME_BINARY", runtime),
+                patch.object(supervisor, "SOURCE_ROOT", source),
+                patch.object(supervisor.os, "replace", side_effect=fake_replace),
+            ):
+                supervisor.promote_binary()
+
+            self.assertEqual(runtime.read_bytes(), b"newer")
+            self.assertTrue(any(name.endswith(".retired1") for name in targets))
+            self.assertEqual(list(runtime.parent.glob(runtime.name + ".retired*")), [])
 
     def test_matching_runtime_skips_redundant_cargo_build(self):
         with (
@@ -796,6 +828,32 @@ class RecoveryTests(unittest.TestCase):
             process.wait()
         self.assertFalse(supervisor.pid_alive(process.pid))
         self.assertFalse(supervisor.process_alive(None, process.pid))
+
+    def test_port_owner_lookup_identifies_the_live_listener(self):
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            listener.listen(1)
+            port = listener.getsockname()[1]
+            self.assertEqual(supervisor.pid_listening_on(port), os.getpid())
+        self.assertIsNone(supervisor.pid_listening_on(port))
+
+    def test_cold_start_adopts_the_game_already_serving_the_port(self):
+        active = {"seed": 3, "turn": 88, "current": 1, "winner": None}
+        with (
+            patch.object(supervisor, "parse_args", return_value=self.supervisor_args()),
+            patch.object(supervisor, "pid_listening_on", return_value=4242),
+            patch.object(supervisor, "process_alive", return_value=True),
+            patch.object(supervisor, "source_snapshot", return_value="current"),
+            patch.object(supervisor, "runtime_matches", return_value=True),
+            patch.object(
+                supervisor, "read_state", side_effect=[active, KeyboardInterrupt]
+            ),
+            patch.object(supervisor, "start_server") as start,
+            patch.object(supervisor, "start_background_prebuild"),
+            patch.object(supervisor, "stop_server"),
+        ):
+            self.assertEqual(supervisor.main(), 0)
+        start.assert_not_called()
 
     def test_stop_server_retires_a_server_it_did_not_spawn(self):
         process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
@@ -1444,3 +1502,4 @@ class LeagueRosterTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

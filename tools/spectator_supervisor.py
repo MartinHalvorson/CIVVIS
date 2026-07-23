@@ -28,6 +28,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import traceback
 from typing import Any
 from urllib.error import URLError
 from urllib.request import Request, urlopen
@@ -230,13 +231,49 @@ def sync_canonical_source() -> bool:
     return True
 
 
+def discard_retired_binaries() -> None:
+    """Delete superseded runtimes once no game is still executing them."""
+    for stale in RUNTIME_BINARY.parent.glob(RUNTIME_BINARY.name + ".retired*"):
+        try:
+            stale.unlink()
+        except OSError:
+            continue  # a game launched from it is still on screen
+
+
+def retire_running_binary() -> Path:
+    """Move the in-use runtime aside so its replacement can take the name."""
+    for index in range(1, 100):
+        candidate = RUNTIME_BINARY.with_name(f"{RUNTIME_BINARY.name}.retired{index}")
+        if candidate.exists():
+            continue
+        os.replace(RUNTIME_BINARY, candidate)
+        return candidate
+    raise OSError(f"no free retirement slot beside {RUNTIME_BINARY}")
+
+
 def promote_binary() -> None:
     """Atomically preserve a known-good build outside Cargo's output path."""
     RUNTIME_BINARY.parent.mkdir(parents=True, exist_ok=True)
     staged = RUNTIME_BINARY.with_suffix(RUNTIME_BINARY.suffix + ".new")
     build_binary = SOURCE_ROOT / "target" / "release" / BINARY_NAME
     shutil.copy2(build_binary, staged)
-    os.replace(staged, RUNTIME_BINARY)
+    try:
+        os.replace(staged, RUNTIME_BINARY)
+    except PermissionError:
+        # Windows refuses to overwrite the image a running process was launched
+        # from, but it does allow renaming that image: the live game keeps
+        # executing the bytes it already opened and the next one starts on the
+        # new build. Without this, promotion could only ever land while no game
+        # was on screen - which, by design, is never, so every build compiled
+        # during play was discarded and the display stayed on old code.
+        discard_retired_binaries()
+        retired = retire_running_binary()
+        try:
+            os.replace(staged, RUNTIME_BINARY)
+        except OSError:
+            os.replace(retired, RUNTIME_BINARY)
+            raise
+    discard_retired_binaries()
 
 
 def source_snapshot() -> str:
@@ -986,6 +1023,34 @@ def process_cpu_percent(pid: int, window: float = 0.25) -> float | None:
     return max(0.0, (after - before) / window * 100.0)
 
 
+def pid_listening_on(port: int) -> int | None:
+    """PID of the process already serving a port, when one can be identified."""
+    if os.name == "nt":
+        result = command("netstat", "-ano", "-p", "tcp")
+        if result.returncode != 0:
+            return None
+        for line in result.stdout.splitlines():
+            fields = line.split()
+            if len(fields) < 5 or fields[3].upper() != "LISTENING":
+                continue
+            if fields[1].rsplit(":", 1)[-1] != str(port):
+                continue
+            try:
+                return int(fields[4])
+            except ValueError:
+                return None
+        return None
+    result = command("lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t")
+    if result.returncode != 0:
+        return None
+    for line in result.stdout.split():
+        try:
+            return int(line)
+        except ValueError:
+            return None
+    return None
+
+
 def process_alive(process: subprocess.Popen[str] | None, adopted_pid: int | None) -> bool:
     if process is not None:
         return process.poll() is None
@@ -1252,7 +1317,14 @@ def release_single_instance() -> None:
 def main() -> int:
     args = parse_args()
     if getattr(args, "prepare_once", False):
-        return 0 if prepare_latest_once() else 1
+        try:
+            return 0 if prepare_latest_once() else 1
+        except Exception:
+            # This worker runs under pythonw, which discards stderr, so an
+            # unhandled failure here used to end the build with no trace at all
+            # while the supervisor kept restarting it.
+            log("background build worker failed:\n" + traceback.format_exc())
+            return 1
     if not acquire_single_instance(args.port):
         log(f"another supervisor already owns port {args.port}; exiting")
         return 0
@@ -1272,6 +1344,18 @@ def main() -> int:
     LEAGUE_RECORD = getattr(args, "league_record", True)
     process: subprocess.Popen[str] | None = None
     adopted_pid = args.adopt_pid
+    if adopted_pid is None:
+        # A service manager can start a supervisor while an earlier game is
+        # still serving the port - after a supervisor crash, or on a scheduled
+        # recovery sweep. Starting a rival server there only loses the bind and
+        # leaves the game on screen unmanaged, so take that game over instead.
+        listener = pid_listening_on(args.port)
+        if listener is not None:
+            if read_state(args.port) is not None:
+                adopted_pid = listener
+                log(f"a game already owns port {args.port}; taking it over")
+            else:
+                log(f"port {args.port} is held by PID {listener}, which is not a game")
     # An adopted binary cannot be proven current, so replace it at the first
     # natural victory boundary after a verified runtime is available.
     running_runtime_id: str | None = None
@@ -1485,6 +1569,12 @@ def main() -> int:
                 finished_key = None
                 now = time.monotonic()
                 if prebuild_process is not None and prebuild_process.poll() is not None:
+                    build_failed = prebuild_process.returncode != 0
+                    if build_failed:
+                        log(
+                            "background build worker exited with "
+                            f"{prebuild_process.returncode}; retrying later"
+                        )
                     prebuild_process = None
                     reexec_updated_supervisor(
                         process.pid if process is not None else adopted_pid
@@ -1493,7 +1583,12 @@ def main() -> int:
                         running_runtime_id, promoted_runtime_id()
                     ):
                         refresh_pending = True
-                        refresh_at = now
+                        # A worker that cannot produce a runtime must not be
+                        # restarted on the next poll: that spins a build attempt
+                        # several times a second for as long as it keeps failing.
+                        refresh_at = now + (
+                            max(0.1, args.build_retry) if build_failed else 0.0
+                        )
                         log(
                             "canonical source advanced; scheduling a safe live refresh"
                         )
