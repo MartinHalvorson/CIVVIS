@@ -1673,6 +1673,8 @@ mod tests {
             })
             .collect();
         assert!(!nw.is_empty(), "no natural wonders generated");
+        // Crater Lake is a one-tile passable wonder that acts as a Lake; the
+        // impassable ones are Uluru, Yosemite, Everest and Pamukkale.
         if let Some(t) = g
             .map
             .tiles
@@ -1681,6 +1683,14 @@ mod tests {
         {
             assert!(g.rules.is_passable(t));
             assert_eq!(g.rules.tile_yields(t).faith, 5.0);
+        }
+        if let Some(t) = g
+            .map
+            .tiles
+            .values()
+            .find(|t| t.feature.as_deref() == Some("uluru"))
+        {
+            assert!(!g.rules.is_passable(t));
         }
         // battering ram lets melee hit ancient walls at full strength
         let mut g = Game::new_full(2, 24, 16, 9, 60, 0, false);
