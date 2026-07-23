@@ -13220,6 +13220,22 @@ impl Game {
         }
     }
 
+    /// Kabul doubles experience from every battle the unit initiates,
+    /// including attacks on City Centers and Encampments. Unit-vs-unit
+    /// combat applies its strength-sensitive award separately below.
+    fn award_initiated_combat_xp(&mut self, uid: u32, amount: f64) {
+        let multiplier = if self
+            .units
+            .get(&uid)
+            .is_some_and(|unit| self.grants_city_state_unique_bonus(unit.owner, "Kabul"))
+        {
+            2.0
+        } else {
+            1.0
+        };
+        self.award_xp(uid, amount * multiplier);
+    }
+
     /// Unit-vs-unit XP is based on relative base Combat Strength. Kills
     /// double that component. The final, modified award is capped at 8 XP.
     fn award_unit_combat_xp(
@@ -15106,11 +15122,6 @@ impl Game {
                 )
             })
             .collect();
-        let reach = if self.has_ability(pid, "gifts_for_the_tlatoani") {
-            6
-        } else {
-            4
-        };
         let mut supplied_luxuries = Vec::new();
         for luxury in self.empire_luxury_names(pid) {
             if self.congress_effect_active("luxury_policy", "B", &luxury) {
@@ -15123,7 +15134,17 @@ impl Game {
             };
             supplied_luxuries.extend(std::iter::repeat_n(luxury, copies));
         }
-        for _ in supplied_luxuries {
+        for luxury in supplied_luxuries {
+            // Cinnamon and Cloves each provide six Amenities. The Aztec
+            // ability independently raises every ordinary Luxury to the same
+            // six-city reach.
+            let reach = if matches!(luxury.as_str(), "cinnamon" | "cloves")
+                || self.has_ability(pid, "gifts_for_the_tlatoani")
+            {
+                6
+            } else {
+                4
+            };
             let mut neediest: Vec<u32> = cities.iter().map(|city| city.id).collect();
             neediest.sort_by_key(|cid| (surplus[cid], *cid));
             for cid in neediest.into_iter().take(reach) {
@@ -15456,6 +15477,17 @@ impl Game {
             "coal" | "oil" | "uranium" => 3.0,
             _ => 0.0,
         };
+        let suzerain_city_states = self
+            .players
+            .iter()
+            .filter(|player| {
+                player.alive
+                    && player.is_minor
+                    && !player.is_barbarian
+                    && self.suzerain_of(player.id) == Some(pid)
+            })
+            .map(|minor| self.connected_resource_count_unchecked(minor.id, res) as f64 * base)
+            .sum::<f64>();
         let amani = self
             .amani_city_state_for_effect(pid, "city_state_resource_access")
             .map(|(_, minor)| {
@@ -15477,12 +15509,11 @@ impl Game {
                                 || tile.improvement.as_deref() == Some(expected))
                     })
                     .count() as f64;
-                let suzerain_multiplier = if self.suzerain_of(minor) == Some(pid) {
-                    2.0
-                } else {
-                    1.0
-                };
-                sources * base * suzerain_multiplier
+                // Foreign Investor supplies the assigned state's resources
+                // without Suzerainty. If Amani also makes us Suzerain, this
+                // becomes the second copy; the ordinary Suzerain copy is
+                // accounted for above.
+                sources * base
             })
             .unwrap_or(0.0);
         let hattusa = if self.grants_city_state_unique_bonus(pid, "Hattusa")
@@ -15507,6 +15538,7 @@ impl Game {
             + spaceport
             + wonder
             + building
+            + suzerain_city_states
             + amani
             + hattusa
             + great_person
@@ -20045,6 +20077,15 @@ impl Game {
         self.controlled_resource_count(pid, resource) >= 2
     }
 
+    fn builder_may_improve_territory(&self, pid: usize, territory_owner: usize) -> bool {
+        territory_owner == pid
+            || (self
+                .players
+                .get(territory_owner)
+                .is_some_and(|owner| owner.is_minor && !owner.is_barbarian)
+                && self.suzerain_of(territory_owner) == Some(pid))
+    }
+
     pub fn valid_improvements(&self, pid: usize, pos: Pos) -> Vec<String> {
         let t = match self.map.get(pos) {
             Some(t) => t,
@@ -20066,7 +20107,8 @@ impl Game {
             Some(oc) => oc,
             None => return vec![],
         };
-        if self.cities[&oc].owner != pid {
+        let territory_owner = self.cities[&oc].owner;
+        if !self.builder_may_improve_territory(pid, territory_owner) {
             return vec![];
         }
         let visible_resource = t
@@ -22143,7 +22185,7 @@ impl Game {
                 && self.map.tiles[&u.pos]
                     .owner_city
                     .and_then(|cid| self.cities.get(&cid))
-                    .is_some_and(|city| city.owner == pid)
+                    .is_some_and(|city| self.builder_may_improve_territory(pid, city.owner))
             {
                 acts.push(Action::RepairImprovement { unit: uid });
             }
@@ -23818,10 +23860,10 @@ impl Game {
             return Ok(());
         }
         if self.cities[&cid].encampment_hp <= 0 {
-            self.award_xp(uid, 10.0);
+            self.award_initiated_combat_xp(uid, 10.0);
             self.pillage_encampment(uid, cid, target);
         } else {
-            self.award_xp(uid, 3.0);
+            self.award_initiated_combat_xp(uid, 3.0);
         }
         Ok(())
     }
@@ -23884,13 +23926,13 @@ impl Game {
         if self.cities[&cid].encampment_hp <= 0 {
             if spec.siege {
                 self.cities.get_mut(&cid).unwrap().encampment_hp = 0;
-                self.award_xp(uid, 10.0);
+                self.award_initiated_combat_xp(uid, 10.0);
             } else {
                 self.cities.get_mut(&cid).unwrap().encampment_hp = 1;
-                self.award_xp(uid, 3.0);
+                self.award_initiated_combat_xp(uid, 3.0);
             }
         } else {
-            self.award_xp(uid, 3.0);
+            self.award_initiated_combat_xp(uid, 3.0);
         }
         Ok(())
     }
@@ -24093,15 +24135,15 @@ impl Game {
                 }
                 if self.cities[&cid].hp <= 0 {
                     if self.players[pid].is_barbarian {
-                        self.award_xp(uid, 3.0);
+                        self.award_initiated_combat_xp(uid, 3.0);
                         self.cities.get_mut(&cid).unwrap().hp = 1;
                     } else {
-                        self.award_xp(uid, 10.0);
+                        self.award_initiated_combat_xp(uid, 10.0);
                         self.capture_city(cid, pid);
                         self.enter_tile(uid, target);
                     }
                 } else {
-                    self.award_xp(uid, 3.0);
+                    self.award_initiated_combat_xp(uid, 3.0);
                 }
             } else if self.players[pid].is_barbarian {
                 self.cities.get_mut(&cid).unwrap().hp = 1;
@@ -24349,12 +24391,12 @@ impl Game {
                 // Bombard-class shots may deplete a city, but still cannot
                 // capture it. The depleting shot earns the city final-blow XP.
                 self.cities.get_mut(&cid).unwrap().hp = 0;
-                self.award_xp(uid, 10.0);
+                self.award_initiated_combat_xp(uid, 10.0);
             } else {
                 // Ordinary ranged attacks cannot reduce Garrison Health
                 // below 1 and earn the normal city-attack XP.
                 self.cities.get_mut(&cid).unwrap().hp = self.cities[&cid].hp.max(1);
-                self.award_xp(uid, 3.0);
+                self.award_initiated_combat_xp(uid, 3.0);
             }
         }
         Ok(())
@@ -25329,7 +25371,7 @@ impl Game {
             || tile
                 .owner_city
                 .and_then(|cid| self.cities.get(&cid))
-                .is_none_or(|city| city.owner != pid)
+                .is_none_or(|city| !self.builder_may_improve_territory(pid, city.owner))
         {
             return Err("builder cannot repair this improvement".into());
         }

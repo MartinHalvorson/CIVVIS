@@ -2,7 +2,9 @@
 use std::time::Instant;
 
 use civvis::ai::{run_game, AdvancedAi};
-use civvis::game::{default_difficulty, default_speed, Game, GameOptions};
+use civvis::game::{
+    default_difficulty, default_speed, Game, GameOptions, VictoryConditions,
+};
 use civvis::rules::Rules;
 use civvis::setup::{GameSpeed, MapScript, MapSize};
 
@@ -20,6 +22,25 @@ fn arg_text(args: &[String], key: &str, default: &str) -> String {
         .and_then(|index| args.get(index + 1))
         .cloned()
         .unwrap_or_else(|| default.to_string())
+}
+
+fn victory_conditions(args: &[String]) -> VictoryConditions {
+    let Some(enabled) = args
+        .iter()
+        .position(|value| value == "--victories")
+        .and_then(|index| args.get(index + 1))
+    else {
+        return VictoryConditions::default();
+    };
+    let has = |name: &str| enabled.split(',').any(|candidate| candidate == name);
+    VictoryConditions {
+        science: has("science"),
+        culture: has("culture"),
+        religious: has("religious"),
+        diplomatic: has("diplomatic"),
+        domination: has("domination"),
+        score: has("score"),
+    }
 }
 
 fn auto_cs(args: &[String], players: i64) -> usize {
@@ -381,7 +402,7 @@ fn main() {
                     map_script,
                     game_speed,
                     max_turns: play_options.max_turns,
-                    victory_conditions: Default::default(),
+                    victory_conditions: victory_conditions(&args),
                     num_city_states: auto_cs(&args, players),
                     spectate: args.iter().any(|a| a == "--spectate" || a == "--watch"),
                     difficulty: play_options.difficulty,
@@ -428,6 +449,7 @@ fn main() {
                       [--difficulty settler|chieftain|warlord|prince|king|emperor|immortal|deity] \
                       [--speed online|quick|standard|epic|marathon] \
                       [--human-seats 0,1] [--mods path/to/mod,path/to/other] \
+                      [--victories science,culture,religious,diplomatic,domination,score] \
                       [--spectate] [--supervised] [--resume checkpoint.json] [--strict]"
             );
         }

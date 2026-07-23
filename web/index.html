@@ -63,7 +63,6 @@
     flex: 0 0 auto; min-height: 110px; padding: 16px 18px 13px; border-bottom: 1px solid var(--line-soft);
     background: linear-gradient(180deg, #172825e8, #101d1be8);
   }
-  .side-head-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .brand { display: flex; align-items: center; gap: 10px; }
   .brand-mark {
     width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%;
@@ -77,7 +76,6 @@
     letter-spacing: .12em; text-transform: uppercase;
   }
   .tagline { color: var(--muted); font-size: 9px; letter-spacing: .16em; text-transform: uppercase; margin-top: 4px; }
-  #head-newgame { flex: 0 0 auto; margin: 0; padding: 6px 8px; font-size: 9px; white-space: nowrap; }
   #gameidentity { min-height: 34px; margin-top: 11px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; }
   .identity-copy { min-width: 0; }
   #gameidentity .civ-name { font: 600 15px/1.2 Georgia, serif; color: var(--text); }
@@ -346,7 +344,7 @@
   kbd { display: inline-grid; min-width: 19px; height: 18px; place-items: center; margin-right: 5px; padding: 0 4px; border-radius: 5px; color: #cbd5d0; background: #091310; border: 1px solid #354c44; box-shadow: inset 0 -1px #000; font: 700 8px Inter, sans-serif; }
   #newgame-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: end; }
   #newgame-options button { margin: 0; height: 34px; }
-  #newgame-options #newgame { grid-column: 1 / -1; }
+  .sim-actions { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .victory-options { grid-column: 1 / -1; padding: 9px 10px 10px; border: 1px solid var(--line-soft); border-radius: 9px; background: #09131080; }
   .victory-options h2 { margin-bottom: 8px; }
   .victory-option-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px 9px; }
@@ -564,15 +562,12 @@
 </div>
 <div id="side">
   <div class="side-head">
-    <div class="side-head-top">
-      <div class="brand">
-        <div class="brand-mark">VI</div>
-        <div class="brand-copy">
-          <h1>Civilization VIS</h1>
-          <div class="tagline">Strategy simulator</div>
-        </div>
+    <div class="brand">
+      <div class="brand-mark">VI</div>
+      <div class="brand-copy">
+        <h1>Civilization VIS</h1>
+        <div class="tagline">Strategy simulator</div>
       </div>
-      <button id="head-newgame" class="ghost" title="Start a new simulation" aria-label="Start a new simulation">＋ New sim</button>
     </div>
     <div id="gameidentity"></div>
   </div>
@@ -617,7 +612,10 @@
             <label class="victory-option"><input type="checkbox" id="victory-score" checked>Score</label>
           </div>
         </div>
-        <button id="newgame">Start new sim</button>
+        <div class="sim-actions">
+          <button id="restart-sim">Restart sim</button>
+          <button id="fresh-sim" title="Get the latest code, rebuild, and start a new simulation">New sim · fresh code</button>
+        </div>
       </div>
     </div>
 
@@ -818,6 +816,11 @@ const YCOLOR = { food:"#76c893", production:"#d7b66a", gold:"#e8c64c",
                  science:"#76cde4", culture:"#c49be8", faith:"#eee7cf" };
 const PCOLORS = ["#ffd700","#e05050","#50a0e0","#50c878","#c878e0","#e09050",
                  "#70d0d0","#f0f080","#a0a0ff","#ffa0c0","#80e080","#d0b080"];
+const CITY_STATE_TINT = "#202225";
+const CITY_STATE_TYPE_COLORS = {
+  scientific:"#4aa3df", cultural:"#a46bd4", religious:"#eee7cf",
+  militaristic:"#c94b45", industrial:"#e67e22", trade:"#e2c04a"
+};
 const EDGE_CORNERS = [[0,1],[5,0],[4,5],[3,4],[2,3],[1,2]]; // matches DIRS order
 const DIRS = [[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];
 const ERA_NAMES = ["ancient", "classical", "medieval", "renaissance",
@@ -947,7 +950,18 @@ let DPR = window.devicePixelRatio || 1;
 const YS = 0.80;        // vertical squash: tilted-camera dimetric projection
 const SKIRT = 9;        // extra prism depth below each tile
 function key(p) { return p[0] + "," + p[1]; }
-function pcol(id) { const p = state.players[id]; return p && p.is_barbarian ? "#30262a" : PCOLORS[id % PCOLORS.length]; }
+function pcol(id) {
+  const p = state.players[id];
+  if (p && p.is_barbarian) return "#30262a";
+  if (p && p.is_minor) return CITY_STATE_TINT;
+  return PCOLORS[id % PCOLORS.length];
+}
+function cityBannerColor(owner) {
+  const p = state.players[owner];
+  return p && p.is_minor
+    ? (CITY_STATE_TYPE_COLORS[p.cs_type] || CITY_STATE_TYPE_COLORS.trade)
+    : pcol(owner);
+}
 function WW() { return state ? S * SQ3 * state.map.width : 1e12; }
 function wrapX(x) { const w = WW(); return x + Math.round((cam.x - x) / w) * w; }
 function canonPos(p) {
@@ -2739,10 +2753,13 @@ function draw() {
       cx.font = "bold 10px Georgia, serif";
       const tw = Math.max(cx.measureText(name).width + 28, 48);
       const bx = x - tw / 2, by = y - S - 6;
-      cx.fillStyle = "#1c2418ee";
+      const bannerColor = cityBannerColor(c.owner);
+      const cityOwner = state.players[c.owner];
+      cx.fillStyle = cityOwner && cityOwner.is_minor
+        ? shade(bannerColor, 0.48) : "#1c2418ee";
       cx.beginPath(); cx.roundRect(bx, by, tw, 16, 8); cx.fill();
-      cx.strokeStyle = pcol(c.owner); cx.lineWidth = 1.6; cx.stroke();
-      cx.fillStyle = pcol(c.owner);
+      cx.strokeStyle = bannerColor; cx.lineWidth = 1.6; cx.stroke();
+      cx.fillStyle = bannerColor;
       cx.beginPath(); cx.roundRect(bx + 2, by + 2, 14, 12, 6); cx.fill();
       cx.fillStyle = "#10151d"; cx.font = "bold 10px Georgia, serif";
       cx.fillText(c.pop, bx + 9, by + 8.5);
@@ -2988,7 +3005,7 @@ function drawMini() {
   }
   for (const c of state.cities) {
     const col = c.pos[0] + (c.pos[1] - (c.pos[1] & 1)) / 2, row = c.pos[1];
-    mx2.fillStyle = pcol(c.owner);
+    mx2.fillStyle = cityBannerColor(c.owner);
     mx2.fillRect(off + col * cs + (row % 2) * cs / 2 - 1, off + row * cs - 1, cs + 2, cs + 2);
   }
   // viewport rect
@@ -4182,29 +4199,83 @@ document.getElementById("viewplayer").onchange = ev => {
   const player = select.value === "spectator" ? null : +select.value;
   spectatePlayer(player);
 };
-async function startNewSimulation() {
+let newSimulationBusy = false;
+function newSimulationPayload() {
   const np = +document.getElementById("np").value;
   const gameMode = document.getElementById("gamemode").value;
   const mapScript = document.getElementById("maptype").value;
   const gameSpeed = document.getElementById("gamespeed").value;
   const victoryConditions = Object.fromEntries(VICTORY_TRACKS.map(track =>
     [track.id, document.getElementById(`victory-${track.id}`).checked]));
-  sel = null; selCity = null;
-  specPaused = false;
-  document.getElementById("specpause").textContent = "⏸ Pause";
-  render(await fetchJSON("/new", { method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({num_players: np, map_script: mapScript, game_speed: gameSpeed,
-                          victory_conditions: victoryConditions,
-                          seed: Math.floor(Math.random() * 1e9), force: true,
-                          spectate: gameMode === "ai_sim"}) }));
-  if (SPEC) centerMainLandmass(); else centerHome();
-  setPace({paused: false});
-  reportSpecStatus();
-  scheduleSpec(state);
+  return {num_players: np, map_script: mapScript, game_speed: gameSpeed,
+          victory_conditions: victoryConditions,
+          seed: Math.floor(Math.random() * 1e9), force: true,
+          spectate: gameMode === "ai_sim"};
 }
-document.getElementById("newgame").onclick = startNewSimulation;
-document.getElementById("head-newgame").onclick = startNewSimulation;
+function setNewSimulationBusy(busy) {
+  newSimulationBusy = busy;
+  document.getElementById("restart-sim").disabled = busy;
+  document.getElementById("fresh-sim").disabled = busy;
+}
+function showNewSimulationError(error) {
+  const errEl = document.getElementById("err");
+  errEl.textContent = `Could not start simulation: ${error.message || error}`;
+  errEl.style.display = "block";
+  setTimeout(() => errEl.style.display = "none", 4000);
+}
+async function startNewSimulation(mode) {
+  if (newSimulationBusy) return;
+  const supervised = !!(state && state.supervised);
+  if (mode === "fresh_code" && !supervised) {
+    showNewSimulationError("fresh code requires the spectator supervisor");
+    return;
+  }
+  const wasPaused = specPaused;
+  setNewSimulationBusy(true);
+  try {
+    const payload = newSimulationPayload();
+    sel = null; selCity = null;
+    clearTimeout(specTimer);
+    if (supervised) {
+      const finishedInstance = state.server_instance;
+      specPaused = true;
+      document.getElementById("specpause").textContent = "▶ Resume";
+      reportSpecStatus();
+      const requested = await fetchJSON("/supervisor-new", { method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({...payload, mode}) });
+      if (requested.error) throw new Error(requested.error);
+      const respawn = document.getElementById("respawn");
+      if (respawn) respawn.textContent = mode === "fresh_code"
+        ? "getting fresh code · rebuilding · starting new sim"
+        : "restarting sim on existing code";
+      waitForSupervisedSuccessor(finishedInstance);
+      return;
+    }
+
+    specPaused = false;
+    document.getElementById("specpause").textContent = "⏸ Pause";
+    const next = await fetchJSON("/new", { method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload) });
+    if (next.error) throw new Error(next.error);
+    render(next);
+    if (SPEC) centerMainLandmass(); else centerHome();
+    setPace({paused: false});
+    reportSpecStatus();
+    scheduleSpec(state);
+    setNewSimulationBusy(false);
+  } catch (error) {
+    specPaused = wasPaused;
+    document.getElementById("specpause").textContent = specPaused ? "▶ Resume" : "⏸ Pause";
+    reportSpecStatus();
+    scheduleSpec(state);
+    setNewSimulationBusy(false);
+    showNewSimulationError(error);
+  }
+}
+document.getElementById("restart-sim").onclick = () => startNewSimulation("restart");
+document.getElementById("fresh-sim").onclick = () => startNewSimulation("fresh_code");
 {
   const vs = document.getElementById("viewsel");
   vs.value = VIEW;
