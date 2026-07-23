@@ -145,6 +145,31 @@ class SourceSnapshotTests(unittest.TestCase):
         command.assert_not_called()
         promote.assert_not_called()
 
+    def test_runtime_metadata_rejects_a_replaced_or_corrupt_binary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = root / "civvis"
+            metadata = root / "build.json"
+            runtime.write_bytes(b"verified")
+            metadata.write_text(
+                json.dumps(
+                    {
+                        "source_snapshot": "current",
+                        "binary_sha256": "not-the-binary-hash",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with (
+                patch.object(supervisor, "RUNTIME_BINARY", runtime),
+                patch.object(supervisor, "RUNTIME_METADATA", metadata),
+            ):
+                self.assertFalse(supervisor.runtime_matches("current"))
+                value = json.loads(metadata.read_text(encoding="utf-8"))
+                value["binary_sha256"] = supervisor.hashlib.sha256(b"verified").hexdigest()
+                metadata.write_text(json.dumps(value), encoding="utf-8")
+                self.assertTrue(supervisor.runtime_matches("current"))
+
     def test_single_update_attempt_returns_control_after_a_failed_build(self):
         with (
             patch.object(supervisor, "sync_current_branch") as sync,
@@ -199,6 +224,23 @@ class SourceSnapshotTests(unittest.TestCase):
         ):
             self.assertTrue(supervisor.prepare_live_refresh(8766, checkpoint))
         capture.assert_called_once_with(8766, checkpoint)
+
+    def test_active_prebuild_skips_current_runtime_and_retries_changed_source(self):
+        with (
+            patch.object(supervisor, "source_snapshot", return_value="current"),
+            patch.object(supervisor, "runtime_matches", return_value=True),
+            patch.object(supervisor, "prepare_latest_once") as prepare,
+        ):
+            self.assertTrue(supervisor.prebuild_latest_once())
+        prepare.assert_not_called()
+
+        with (
+            patch.object(supervisor, "source_snapshot", return_value="changed"),
+            patch.object(supervisor, "runtime_matches", return_value=False),
+            patch.object(supervisor, "prepare_latest_once", return_value=True) as prepare,
+        ):
+            self.assertTrue(supervisor.prebuild_latest_once())
+        prepare.assert_called_once_with()
 
 
 class RecoveryTests(unittest.TestCase):
@@ -316,6 +358,7 @@ class RecoveryTests(unittest.TestCase):
             cooldown=10.0,
             poll=0.5,
             build_retry=15.0,
+            source_check_interval=30.0,
             unresponsive_timeout=20.0,
             busy_timeout=600.0,
             stall_timeout=30.0,
@@ -371,6 +414,7 @@ class RecoveryTests(unittest.TestCase):
             cooldown=0.0,
             poll=0.01,
             build_retry=0.01,
+            source_check_interval=30.0,
             unresponsive_timeout=20.0,
             busy_timeout=0.0,
             stall_timeout=30.0,
@@ -420,7 +464,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertLess(events.index(("prepare", None)), events.index(("stop", 321)))
         self.assertIn(("start", checkpoint), events)
 
-    def test_finished_server_is_stopped_before_update_and_successor_launch(self):
+    def test_finished_server_starts_successor_without_waiting_for_a_build(self):
         args = SimpleNamespace(
             port=8766,
             players=4,
@@ -433,6 +477,7 @@ class RecoveryTests(unittest.TestCase):
             cooldown=0.0,
             poll=0.01,
             build_retry=0.01,
+            source_check_interval=30.0,
             unresponsive_timeout=20.0,
             busy_timeout=600.0,
             stall_timeout=30.0,
@@ -477,6 +522,7 @@ class RecoveryTests(unittest.TestCase):
                 patch.object(supervisor, "parse_args", return_value=args),
                 patch.object(supervisor, "RUNTIME_BINARY", runtime),
                 patch.object(supervisor, "checkpoint_path", return_value=checkpoint),
+                patch.object(supervisor, "runtime_matches", return_value=False),
                 patch.object(supervisor, "start_server", side_effect=start),
                 patch.object(supervisor, "wait_for_server", side_effect=wait),
                 patch.object(
@@ -485,19 +531,13 @@ class RecoveryTests(unittest.TestCase):
                     side_effect=[finished, KeyboardInterrupt],
                 ),
                 patch.object(supervisor, "stop_server", side_effect=stop),
-                patch.object(
-                    supervisor,
-                    "prepare_boundary_runtime",
-                    side_effect=lambda _retry: events.append(("prepare", None)),
-                ),
             ):
                 self.assertEqual(supervisor.main(), 0)
 
         retired = events.index(("stop", 321))
-        prepared = events.index(("prepare", None))
         launched = events.index(("start", 654))
-        self.assertLess(retired, prepared)
-        self.assertLess(prepared, launched)
+        self.assertLess(retired, launched)
+        self.assertNotIn(("prepare", None), events)
 
 
 if __name__ == "__main__":

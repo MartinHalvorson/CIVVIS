@@ -146,9 +146,13 @@ def runtime_matches(snapshot: str) -> bool:
         return False
     try:
         metadata = json.loads(RUNTIME_METADATA.read_text(encoding="utf-8"))
+        binary_hash = hashlib.sha256(RUNTIME_BINARY.read_bytes()).hexdigest()
     except (OSError, ValueError):
         return False
-    return metadata.get("source_snapshot") == snapshot
+    return (
+        metadata.get("source_snapshot") == snapshot
+        and metadata.get("binary_sha256") == binary_hash
+    )
 
 
 def build_latest(max_attempts: int = 3) -> bool:
@@ -219,6 +223,15 @@ def prepare_live_refresh(port: int, path: Path) -> bool:
         log("fresh build is ready but no safe checkpoint was captured; retrying")
         return False
     return True
+
+
+def prebuild_latest_once() -> bool:
+    """Keep the promoted fallback current without interrupting the live server."""
+    snapshot = source_snapshot()
+    if runtime_matches(snapshot):
+        return True
+    log("source changed during the active game; prebuilding the next runtime")
+    return prepare_latest_once()
 
 
 def read_json(
@@ -520,11 +533,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--cooldown",
         type=float,
-        default=15.0,
-        help="keep the rendered result visible and outlive its 10-second browser countdown",
+        default=5.0,
+        help="seconds to keep the rendered result visible before the immediate successor",
     )
     parser.add_argument("--poll", type=float, default=0.5)
     parser.add_argument("--build-retry", type=float, default=15.0)
+    parser.add_argument(
+        "--source-check-interval",
+        type=float,
+        default=30.0,
+        help="prebuild changed source during live play so game boundaries stay instant",
+    )
     parser.add_argument(
         "--unresponsive-timeout",
         type=float,
@@ -589,6 +608,7 @@ def main() -> int:
     busy_until = 0.0
     refresh_pending = False
     refresh_at = 0.0
+    source_check_at = 0.0
 
     def launch_recovery(open_browser: bool = False) -> dict[str, Any]:
         nonlocal process, adopted_pid
@@ -764,6 +784,9 @@ def main() -> int:
                         checkpointed_progress = last_progress
                         checkpoint_at = progress_at
                         continue
+                elif not refresh_pending and now >= source_check_at:
+                    source_check_at = now + max(1.0, args.source_check_interval)
+                    prebuild_latest_once()
                 time.sleep(args.poll)
                 continue
 
@@ -776,25 +799,38 @@ def main() -> int:
             if standings:
                 log(f"standings: {standings}")
 
-            # Stop before compiling. The browser retains its rendered result,
-            # but its countdown can no longer create a successor on the old
-            # process while the source snapshot is being made ready.
-            stop_server(process, adopted_pid)
-            process = None
-            adopted_pid = None
-            latest_ready = prepare_boundary_runtime(args.build_retry)
-
+            # The supervised server rejects every in-process /new request, so
+            # it is safe to leave the result reachable during the short
+            # cooldown. Builds happen during active play; the boundary itself
+            # never waits on Cargo.
             remaining = args.cooldown - (time.monotonic() - finished_seen_at)
             if remaining > 0:
                 time.sleep(remaining)
+            stop_server(process, adopted_pid)
+            process = None
+            adopted_pid = None
             try:
                 save_path.unlink()
             except FileNotFoundError:
                 pass
+
+            snapshot = source_snapshot()
+            latest_ready = runtime_matches(snapshot)
+            if latest_ready:
+                # A commit changes repository identity without changing the
+                # compiled input snapshot. Reconcile metadata so the promoted
+                # binary records the clean synced revision it exactly matches.
+                write_runtime_metadata(snapshot)
+            else:
+                log(
+                    "latest source is not prebuilt; starting the verified "
+                    "fallback immediately and refreshing it during play"
+                )
             process = start_server(args.port, settings, False)
             state = wait_for_server(args.port, process)
             refresh_pending = not latest_ready
-            refresh_at = time.monotonic() + max(0.1, args.build_retry)
+            refresh_at = time.monotonic()
+            source_check_at = time.monotonic() + max(1.0, args.source_check_interval)
             last_progress = progress_marker(state)
             progress_at = time.monotonic()
             checkpointed_progress = None
