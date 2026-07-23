@@ -31162,20 +31162,27 @@ impl Game {
             .filter(|(_, spec)| matches!(spec.class.as_str(), "luxury" | "strategic"))
             .map(|(name, spec)| (name.clone(), spec.class.clone()))
             .collect();
+        // How much of each resource the asking player holds does not depend on
+        // who they are asking, and counting it walks every tile of every city
+        // they own — so it is counted once for the whole round of offers
+        // rather than four times per counterparty per resource.
+        let viewer_holds: Vec<i32> = resources
+            .iter()
+            .map(|(resource, _)| self.resource_access_count(viewer, resource))
+            .collect();
         let mut deals = Vec::new();
         for partner in partners {
-            for (resource, class) in &resources {
+            for ((resource, class), held) in resources.iter().zip(&viewer_holds) {
                 if !self.resource_visible_to(viewer, resource)
                     || !self.resource_visible_to(partner, resource)
                 {
                     continue;
                 }
                 let quantity = if class == "strategic" { 10 } else { 1 };
+                let partner_holds = self.resource_access_count(partner, resource);
                 let mut asset = DealItems::default();
                 asset.resources.insert(resource.clone(), quantity);
-                if self.resource_access_count(viewer, resource) > quantity
-                    && self.resource_access_count(partner, resource) == 0
-                {
+                if *held > quantity && partner_holds == 0 {
                     if let Some(deal) = self.quote_asset_trade(
                         viewer,
                         partner,
@@ -31187,9 +31194,7 @@ impl Game {
                         deals.push(deal);
                     }
                 }
-                if self.resource_access_count(partner, resource) > quantity
-                    && self.resource_access_count(viewer, resource) == 0
-                {
+                if partner_holds > quantity && *held == 0 {
                     if let Some(deal) =
                         self.quote_asset_trade(viewer, partner, class, resource, "buy", asset)
                     {
