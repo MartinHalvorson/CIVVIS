@@ -31365,10 +31365,18 @@ impl Game {
                 if spec.outer_defense > 0 {
                     let has_encampment =
                         self.city_has_district_family(&self.cities[&cid], "encampment");
+                    // The new tier is already in `buildings`, so this pool
+                    // includes it. Top the defences up to it rather than
+                    // adding blind: Urban Defenses floors the pool at 400
+                    // regardless of what is built, and a city repaired up to
+                    // that floor and then finishing another set of Walls
+                    // ended up holding more wall than the pool allows.
+                    let pool = self.city_max_wall_hp(&self.cities[&cid]);
                     let city = self.cities.get_mut(&cid).unwrap();
-                    city.wall_hp += spec.outer_defense;
+                    city.wall_hp = (city.wall_hp + spec.outer_defense).min(pool);
                     if has_encampment && !city.encampment_pillaged {
-                        city.encampment_wall_hp += spec.outer_defense;
+                        city.encampment_wall_hp =
+                            (city.encampment_wall_hp + spec.outer_defense).min(pool);
                     }
                 }
                 if spec.wonder {
@@ -35235,6 +35243,61 @@ mod victory_conditions {
             .legal_actions(0)
             .contains(&Action::RazeCity { city: capital }));
         assert!(g.do_raze_city(0, capital).is_err());
+    }
+
+    /// Urban Defenses floors the wall pool at 400 whatever is built, and
+    /// repair fills to that floor. Finishing another set of Walls then added
+    /// its rating on top of a pool that was already full, leaving the city
+    /// holding more wall than the pool allows - 500 against 400.
+    #[test]
+    fn finishing_walls_tops_up_the_pool_without_overfilling_it() {
+        let mut g = game_with_capitals(2, 4_216, 300);
+        let cid = g.player_city_ids(0)[0];
+        g.players[0].techs.insert("steel".to_string());
+        assert!(g.tree_effect(0, "urban_defenses") > 0.0);
+
+        // Walls and Medieval Walls built, then repaired up to the Steel floor.
+        {
+            let city = g.cities.get_mut(&cid).unwrap();
+            city.buildings.push("walls".to_string());
+            city.buildings.push("medieval_walls".to_string());
+            city.wall_hp = 400;
+        }
+        let pool = g.city_max_wall_hp(&g.cities[&cid]);
+        assert_eq!(pool, 400, "Urban Defenses floors the pool at 400");
+
+        g.complete_item(
+            0,
+            cid,
+            &Item::Building {
+                building: "renaissance_walls".to_string(),
+            },
+        );
+        let city = &g.cities[&cid];
+        assert!(city.buildings.iter().any(|b| b == "renaissance_walls"));
+        assert_eq!(city.wall_hp, 400, "the pool was already full");
+        assert!(city.wall_hp <= g.city_max_wall_hp(city));
+
+        // A city short of its pool still gains the full rating it just built.
+        g.cities.get_mut(&cid).unwrap().wall_hp = 150;
+        g.complete_item(
+            0,
+            cid,
+            &Item::Building {
+                building: "walls".to_string(),
+            },
+        );
+        assert_eq!(g.cities[&cid].wall_hp, 150);
+        let mut fresh = game_with_capitals(2, 4_216, 300);
+        let other = fresh.player_city_ids(0)[0];
+        fresh.complete_item(
+            0,
+            other,
+            &Item::Building {
+                building: "walls".to_string(),
+            },
+        );
+        assert_eq!(fresh.cities[&other].wall_hp, 100);
     }
 
     /// Changing owner always strips a city's constructed Walls, but only a
