@@ -4718,6 +4718,27 @@ impl BasicAi {
         let upos = g.units[&uid].pos;
         let spec = g.rules.units[g.units[&uid].kind.as_str()].clone();
         let doctrine = Self::unit_doctrine(g, uid);
+        let adjacent_enemy_settler = g.nbrs(upos).into_iter().any(|position| {
+            g.units_at(position).into_iter().any(|other| {
+                g.units[&other].owner != pid
+                    && g.is_at_war(pid, g.units[&other].owner)
+                    && g.units[&other].kind == "settler"
+            })
+        });
+        let decline_settlers = adjacent_enemy_settler
+            && (self.minor
+                || g.units
+                    .values()
+                    .any(|unit| unit.owner == pid && unit.kind == "settler")
+                || !self.has_practical_settle_site(g, pid));
+        if self.capture_adjacent_civilian(g, pid, uid, decline_settlers) {
+            return true;
+        }
+        if decline_settlers {
+            // Do not let generic tactical movement bypass the same guard and
+            // walk onto a Settler this civilization cannot use.
+            return self.fortify_or_stop(g, pid, uid);
+        }
         if let Some(action) = self.doctrine_action(g, pid, uid) {
             return g.apply(pid, &action).is_ok();
         }
@@ -4836,6 +4857,52 @@ impl BasicAi {
             };
         }
         self.peacetime_step(g, pid, uid)
+    }
+
+    /// Civilian capture is movement, not combat. Feeding an undefended
+    /// Settler or Builder into `Action::Attack` is rejected by the engine and
+    /// used to leave entire armies surrounding it forever. Take the free unit
+    /// with a legal move, while declining a duplicate/unusable Settler.
+    pub(crate) fn capture_adjacent_civilian(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        decline_settlers: bool,
+    ) -> bool {
+        if g.rules.units[g.units[&uid].kind.as_str()].class != "military" {
+            return false;
+        }
+        let origin = g.units[&uid].pos;
+        let target = g
+            .nbrs(origin)
+            .into_iter()
+            .filter_map(|position| {
+                let value = g
+                    .units_at(position)
+                    .into_iter()
+                    .filter_map(|other| {
+                        let other = &g.units[&other];
+                        if other.owner == pid || !g.is_at_war(pid, other.owner) {
+                            return None;
+                        }
+                        match other.kind.as_str() {
+                            "settler" if !decline_settlers => Some(3),
+                            "settler" => None,
+                            "builder" => Some(2),
+                            _ if matches!(
+                                g.rules.units[other.kind.as_str()].class.as_str(),
+                                "civilian" | "support"
+                            ) => Some(1),
+                            _ => None,
+                        }
+                    })
+                    .max()?;
+                g.can_move(uid, position).then_some((value, position))
+            })
+            .max_by_key(|(value, position)| (*value, std::cmp::Reverse(*position)))
+            .map(|(_, position)| position);
+        target.is_some_and(|to| g.apply(pid, &Action::Move { unit: uid, to }).is_ok())
     }
 
     /// Minors guard home; majors explore, then garrison the nearest city.
@@ -6583,6 +6650,81 @@ mod tests {
 
         let melee = ai.combined_arms_unit(&g, 0, cid, 2, 2).unwrap();
         assert!(!g.rules.units[melee.as_str()].has_ranged_attack());
+    }
+
+    #[test]
+    fn military_units_capture_adjacent_enemy_civilians_by_moving() {
+        let mut game = Game::new_full(2, 20, 14, 91_769, 120, 0, false);
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.found_city_for(pid, game.units[&settler].pos, None);
+        }
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        let origin = game.cities[&game.player_city_ids(0)[0]].pos;
+        let target = game
+            .nbrs(origin)
+            .into_iter()
+            .find(|position| {
+                game.city_at(*position).is_none()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .unwrap();
+        game.at_war.insert((0, 1));
+        let warrior = game.spawn_test_unit("warrior", 0, origin);
+        let builder = game.spawn_test_unit("builder", 1, target);
+        let mut ai = BasicAi::new();
+
+        assert!(ai.military_step(&mut game, 0, warrior));
+        assert_eq!(game.units[&builder].owner, 0);
+        assert!(matches!(
+            game.log.last(),
+            Some((0, Action::Move { unit, to })) if *unit == warrior && *to == target
+        ));
+    }
+
+    #[test]
+    fn city_state_armies_decline_settlers_they_cannot_use() {
+        let mut game = Game::new_full(2, 20, 14, 91_768, 120, 0, false);
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.found_city_for(pid, game.units[&settler].pos, None);
+        }
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        let origin = game.cities[&game.player_city_ids(0)[0]].pos;
+        let target = game
+            .nbrs(origin)
+            .into_iter()
+            .find(|position| {
+                game.city_at(*position).is_none()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .unwrap();
+        game.players[0].is_minor = true;
+        game.at_war.insert((0, 1));
+        let warrior = game.spawn_test_unit("warrior", 0, origin);
+        let settler = game.spawn_test_unit("settler", 1, target);
+        let mut ai = BasicAi::new();
+        ai.minor = true;
+
+        let _ = ai.military_step(&mut game, 0, warrior);
+        assert_eq!(game.units[&settler].owner, 1);
+        assert_ne!(game.units[&warrior].pos, target);
     }
 
     #[test]

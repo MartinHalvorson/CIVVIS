@@ -8,7 +8,7 @@
 //!
 //! Usage: audit [--games N] [--start-seed N] [--players N] [--turns N]
 //!              [--width N] [--height N] [--city-states N] [--quiet]
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use civvis::ai::{AdvancedAi, Ai};
 use civvis::game::{Action, Game, WarRecord};
@@ -117,12 +117,15 @@ fn stalled_settler_context(g: &Game, id: u32) -> String {
         .iter()
         .filter(|position| **position == unit.pos || g.route_step(id, **position, 0).is_some())
         .count();
+    let goals: HashSet<_> = legal_sites.iter().copied().collect();
+    let exhaustive_step = g.route_step_to_any(id, &goals);
     format!(
-        "; at {:?}, cities={}, legal_sites={}, reachable={}, shipbuilding={}, linked={:?}",
+        "; at {:?}, cities={}, legal_sites={}, reachable={}, exhaustive_step={:?}, shipbuilding={}, linked={:?}",
         unit.pos,
         g.player_city_ids(pid).len(),
         legal_sites.len(),
         reachable,
+        exhaustive_step,
         g.players[pid].techs.contains("shipbuilding"),
         unit.linked_to,
     )

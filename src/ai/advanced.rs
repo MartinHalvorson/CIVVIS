@@ -8289,7 +8289,6 @@ impl AdvancedAi {
         let spec = g.rules.units[unit.kind.as_str()].clone();
         let doctrine = BasicAi::unit_doctrine(g, uid);
         let decline_settlers = self.counts(g, pid).settlers > 0
-            || g.player_city_ids(pid).len() >= plan.desired_cities
             || !self.base.has_practical_settle_site(g, pid);
         let unwanted_settler_adjacent = decline_settlers
             && g.nbrs(unit.pos).into_iter().any(|position| {
@@ -8316,6 +8315,12 @@ impl AdvancedAi {
             if let Some(acted) = self.base.healing_step(g, pid, uid) {
                 return acted;
             }
+        }
+        if self
+            .base
+            .capture_adjacent_civilian(g, pid, uid, decline_settlers)
+        {
+            return true;
         }
         if matches!(doctrine, UnitDoctrine::AirDefense | UnitDoctrine::AirStrike) {
             return self
@@ -12961,6 +12966,53 @@ mod tests {
             Some(1),
             "a recon fallback must not bypass the unwanted-settler guard"
         );
+    }
+
+    #[test]
+    fn army_takes_a_free_settler_after_reaching_its_planned_city_count() {
+        let mut game = Game::new_full(2, 20, 14, 71_020, 120, 0, false);
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.found_city_for(pid, game.units[&settler].pos, None);
+        }
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        let origin = game.cities[&game.player_city_ids(0)[0]].pos;
+        let target = game
+            .nbrs(origin)
+            .into_iter()
+            .find(|position| {
+                game.city_at(*position).is_none()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .unwrap();
+        game.at_war.insert((0, 1));
+        let warrior = game.spawn_test_unit("warrior", 0, origin);
+        let settler = game.spawn_test_unit("settler", 1, target);
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: game.player_city_ids(1).first().copied(),
+            threatened_city: None,
+            desired_cities: 1,
+            assessed_turn: game.turn,
+        };
+        let mut ai = AdvancedAi::new();
+        assert!(ai.base.has_practical_settle_site(&game, 0));
+
+        assert!(ai.advanced_military_step(&mut game, 0, warrior, &plan));
+        assert_eq!(game.units[&settler].owner, 0);
+        assert!(matches!(
+            game.log.last(),
+            Some((0, Action::Move { unit, to })) if *unit == warrior && *to == target
+        ));
     }
 
     #[test]
