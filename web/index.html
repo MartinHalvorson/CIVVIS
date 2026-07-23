@@ -3533,6 +3533,45 @@ function draw() {
       cx.fill();
     }
   }
+  // --- raids in the making. A barbarian camp that finds a city goes on alert
+  // and starts throwing raiders at it, and the wire has said so all along —
+  // which camp, which city, and for how long — while the map drew a tent
+  // identical to every other tent. This is the one threat on the board that
+  // arrives with no declaration and no border to watch, so it is exactly the
+  // thing a glance should catch.
+  for (const al of state.barbarian_alerts || []) {
+    if (!al || !al.camp) continue;
+    const ct = TMAP.get(key(al.camp));
+    const [ax, ayy] = hexXY(al.camp[0], al.camp[1]);
+    const ay = ayy - (ct ? elev(ct) : 0);
+    const left = Math.max(0, (al.until || 0) - state.turn);
+    const beat = 0.5 + 0.5 * Math.sin(performance.now() / 260);
+    cx.save();
+    if (al.target) {          // the axis the raiders will come down
+      const tt = TMAP.get(key(al.target));
+      const [tx, tyy] = hexXY(al.target[0], al.target[1]);
+      const ty = tyy - (tt ? elev(tt) : 0);
+      cx.setLineDash([7, 7]);
+      cx.lineDashOffset = -(performance.now() / 42) % 14;   // crawls toward it
+      cx.strokeStyle = "#d8443a"; cx.lineWidth = 2.2;
+      cx.globalAlpha = 0.5 + 0.28 * beat;
+      cx.beginPath(); cx.moveTo(ax, ay); cx.lineTo(tx, ty); cx.stroke();
+      cx.setLineDash([]); cx.lineDashOffset = 0;
+    }
+    cx.strokeStyle = "#e2544a"; cx.lineWidth = 2.6;
+    cx.globalAlpha = 0.55 + 0.35 * beat;
+    hexPath(ax, ay, S * (0.66 + 0.06 * beat)); cx.stroke();
+    cx.restore();
+    if (left > 0) {           // how long the camp stays roused
+      cx.save();
+      cx.fillStyle = "#ffd9d2"; cx.strokeStyle = "#10151d"; cx.lineWidth = 3;
+      cx.font = "bold 11px sans-serif";
+      cx.textAlign = "center"; cx.textBaseline = "middle";
+      cx.strokeText(left + "t", ax, ay - S * 0.72);
+      cx.fillText(left + "t", ax, ay - S * 0.72);
+      cx.restore();
+    }
+  }
   // --- land changing hands: a ring in the claiming empire's color, opening out
   // of the tile and fading. A city growing sends up one; a conquest sends up a
   // wave of them, which is exactly the difference the eye should register.
