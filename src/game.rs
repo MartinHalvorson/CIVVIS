@@ -2,6 +2,7 @@
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
+use std::sync::Arc;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, VecDeque};
 
 use crate::rng::Rng;
@@ -2201,7 +2202,7 @@ mod governor_runtime_tests {
         let half = with_card - without;
         assert!(half > 0.0, "15 Population earns one half of the card");
 
-        game.rules
+        std::sync::Arc::make_mut(&mut game.rules)
             .policies
             .get_mut("rationalism")
             .unwrap()
@@ -8732,7 +8733,9 @@ impl Default for VictoryConditions {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(from = "GameSer", into = "GameSer")]
 pub struct Game {
-    pub rules: Rules,
+    /// Shared with every other game in the process: nothing plays a game by
+    /// rewriting its own rules, and copying them per search branch is not free.
+    pub rules: Arc<Rules>,
     pub rng: Rng,
     pub seed: u64,
     /// Key into `rules.difficulties`. Prince is the unhandicapped reference.
@@ -8912,7 +8915,7 @@ impl From<GameSer> for Game {
             (game_speed.id().to_string(), game_speed)
         };
         let mut g = Game {
-            rules: Rules::embedded(),
+            rules: Rules::shared(),
             rng: s.rng,
             seed: s.seed,
             difficulty: s.difficulty,
@@ -9175,7 +9178,7 @@ impl Game {
             teams.is_empty() || teams.len() == num_players,
             "team assignments must be empty or contain one entry per major player"
         );
-        let rules = Rules::embedded();
+        let rules = Rules::shared();
         assert!(
             rules.difficulties.contains_key(&difficulty),
             "unknown difficulty {difficulty}"
@@ -39720,7 +39723,11 @@ mod combat_scenarios {
 
         let mut land = base;
         land.map.tiles.get_mut(&center).unwrap().terrain = "coast".to_string();
-        land.rules.units.get_mut("archer").unwrap().ranged_strength = 25.0;
+        std::sync::Arc::make_mut(&mut land.rules)
+            .units
+            .get_mut("archer")
+            .unwrap()
+            .ranged_strength = 25.0;
         let land_attacker = land.spawn_unit("archer", 0, attacker_pos);
         let land_target = land.spawn_unit("galley", 1, center);
         land.apply(

@@ -1317,7 +1317,11 @@ mod tests {
 
         // A Civ VI Granary supplies exactly +1 Food. That frees one citizen
         // for a strategic job, while the other still covers food consumption.
-        g.rules.buildings.get_mut("granary").unwrap().housing = 0.0;
+        std::sync::Arc::make_mut(&mut g.rules)
+            .buildings
+            .get_mut("granary")
+            .unwrap()
+            .housing = 0.0;
         g.cities
             .get_mut(&cid)
             .unwrap()

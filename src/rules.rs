@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::specmap::SpecMap;
 use std::collections::BTreeMap;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 fn default_true() -> bool {
     true
@@ -936,10 +936,25 @@ pub const DATA_FILES: [(&str, &str); 25] = [
 /// call site is what lets a save deserialize without knowing about mods.
 static ACTIVE: OnceLock<Rules> = OnceLock::new();
 
+/// The same ruleset behind a handle, so games can share one copy.
+static SHARED: OnceLock<Arc<Rules>> = OnceLock::new();
+
 impl Rules {
     /// The active ruleset — shipped data unless mods were installed.
     pub fn embedded() -> Rules {
         ACTIVE.get_or_init(Rules::shipped).clone()
+    }
+
+    /// The active ruleset, shared rather than copied.
+    ///
+    /// A game holds the whole ruleset, and the AI's tactical search clones a
+    /// game for every branch it examines. Copying several hundred specs —
+    /// each with its own strings and lists — for a search that never writes
+    /// to any of them was the largest single cost in a simulated turn.
+    pub fn shared() -> Arc<Rules> {
+        SHARED
+            .get_or_init(|| Arc::new(ACTIVE.get_or_init(Rules::shipped).clone()))
+            .clone()
     }
 
     /// The shipped ruleset, ignoring any installed mods.
