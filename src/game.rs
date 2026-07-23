@@ -36884,6 +36884,13 @@ impl Game {
             city.captured_from = None;
             city.occupied_from = None;
             city.loyalty = 100.0;
+            // Capture can grant a Steel-equipped conqueror a temporary
+            // minimum outer defense even after the constructed Walls were
+            // stripped. Liberation is a non-conquest ownership change, so
+            // that defense must not follow the liberator to a founder who
+            // may have no wall pool at all.
+            city.wall_hp = 0;
+            city.encampment_wall_hp = 0;
         }
         self.players[original_owner].alive = true;
         self.players[original_owner].grievances.remove(&pid);
@@ -41576,13 +41583,18 @@ mod victory_conditions {
         assert!(!g.players[minor].alive);
         assert_eq!(g.players[1].grievances.get(&0), Some(&50.0));
 
+        g.players[1].techs.insert("steel".to_string());
+        assert!(!g.players[minor].techs.contains("steel"));
         g.capture_city(city, 1);
+        assert_eq!(g.cities[&city].wall_hp, 100);
         assert!(g
             .pending_city_capture_actions(1)
             .contains(&Action::LiberateCity { city }));
         g.do_liberate_city(1, city).unwrap();
         assert!(g.players[minor].alive);
         assert_eq!(g.cities[&city].owner, minor);
+        assert_eq!(g.city_max_wall_hp(&g.cities[&city]), 0);
+        assert_eq!(g.cities[&city].wall_hp, 0);
         assert_eq!(g.players[1].diplomatic_favor, 100.0);
         assert_eq!(g.envoys_at(1, minor), 3);
         assert_eq!(g.suzerain_of(minor), Some(1));
