@@ -127,7 +127,7 @@
       "verified": true,
       "note": "Verified row by row. Limes doubles Castle and Star Fort Production, matching CIVVIS' wall card. Three Governor promotions each pair a headline effect with a Production bonus for one district's buildings, and CIVVIS implemented only the headline: Connoisseur adds 20% to Theater Square buildings alongside its Culture per Population, Divine Architect 20% to Holy Site buildings alongside Faith purchase, and Provision 20% to Industrial Zone buildings alongside settlers not consuming Population. All three now apply.",
       "leads": [
-        "Liang's Architect (+30% Entertainment Complex and Water Park buildings) and Infrastructure (+30% Government Plaza buildings, Granary, Monument, Sewer, Water Mill) are shipped promotions CIVVIS' Liang tree does not carry under any name."
+        "Governor promotion-tree membership cannot be settled from the files alone. GovernorPromotionSets is keyed on governor plus promotion, Gathering Storm restates each governor's set without deleting the Rise and Fall rows, and no Delete rows exist -- so the union gives Reyna eight promotions and puts Curator on both Reyna and Pingala, which the game does not show. Amani's Prestige and Promoter, Victor's Security Expert, Pingala's Arms Race Proponent and Reyna's Foreign Exchange are all in that ambiguous set and were left alone. Liang's Architect and Infrastructure are attributed to her alone in both rulesets, so they were added."
       ]
     },
     "ADJUST_PROJECT_PRODUCTION": {

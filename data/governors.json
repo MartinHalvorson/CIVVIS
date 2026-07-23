@@ -14,6 +14,8 @@
     "name":"Liang", "title":"The Surveyor", "establish_turns":5,
     "effects":{"loyalty":8,"builder_charges":1},
     "promotions":{
+      "infrastructure":{"tier":1,"effects":{"government_plaza_building_production_pct":30,"granary_production_pct":30,"monument_production_pct":30,"sewer_production_pct":30,"water_mill_production_pct":30},"note":"Government Plaza buildings, Granary, Monument, Sewer and Water Mill build 30% faster."},
+      "architect":{"tier":2,"requires":["zoning_commissioner"],"effects":{"entertainment_complex_building_production_pct":30,"water_park_building_production_pct":30},"note":"Entertainment Complex and Water Park buildings build 30% faster."},
       "zoning_commissioner":{"tier":1,"effects":{"district_production_pct":20}},
       "aquaculture":{"tier":1,"effects":{"fishery":1}},
       "reinforced_materials":{"tier":2,"requires":["zoning_commissioner"],"effects":{"disaster_immunity":1}},

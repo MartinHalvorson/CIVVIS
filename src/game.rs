@@ -2025,6 +2025,10 @@ mod governor_runtime_tests {
         appoint_established(&mut game, 0, "moksha", city, &["divine_architect"]);
         appoint_established(&mut game, 0, "magnus", city, &["provision"]);
         assert_eq!(speed(&game, "amphitheater"), before[0] + 0.2);
+        // Liang's Infrastructure names four City Center buildings directly.
+        let monument_before = speed(&game, "monument");
+        appoint_established(&mut game, 0, "liang", city, &["infrastructure"]);
+        assert_eq!(speed(&game, "monument"), monument_before + 0.3);
         assert_eq!(speed(&game, "shrine"), before[1] + 0.2);
         assert_eq!(speed(&game, "workshop"), before[2] + 0.2);
     }
@@ -14020,6 +14024,10 @@ impl Game {
                     cid,
                     &format!("{district}_building_production_pct"),
                 ) / 100.0;
+                // Liang's Infrastructure also names four buildings directly.
+                bonus += self
+                    .governor_effect(pid, cid, &format!("{building}_production_pct"))
+                    / 100.0;
             }
             Some(Item::District { district, .. }) => {
                 bonus += self.governor_effect(pid, cid, "district_production_pct") / 100.0;
