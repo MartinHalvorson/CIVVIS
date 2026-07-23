@@ -36,7 +36,7 @@ baseline with optional game modes excluded.
 
 `tools/modifier_coverage.json` holds those judgements with a reason each.
 They are seeded by reading the engine for each effect family and are mostly
-**not** yet verified row by row (207 rows are, so far) — an `implemented` entry is a claim to be checked, and
+**not** yet verified row by row (453 rows are, so far) — an `implemented` entry is a claim to be checked, and
 checking them is the next step. Anything absent from the file counts as
 unmodelled, so newly shipped content raises the backlog rather than hiding.
 
@@ -73,7 +73,7 @@ expressed without building the interpreter.
    the entry `verified`, and demote whatever does not hold. The report prints
    verified rows against covered rows, so the ratchet is visible.
 
-   Six are done so far (207 of 1,165 covered rows), and five of them found
+   Eight are done so far (453 of 1,165 covered rows), and seven of them found
    real divergences:
 
    - a city's Commercial Hub or Harbor granted no Trade Route at all, and
@@ -83,9 +83,15 @@ expressed without building the interpreter.
    - Laissez-Faire and Nobel Prize each paid one flat number per building tier
      instead of the shipped 2/4 split, and Military Organization was missing
      its flat +4 Great General;
-   - Colonial Taxes applied its +25% Gold but not its +10% Production.
+   - Colonial Taxes applied its +25% Gold but not its +10% Production;
+   - the Giant Death Robot's tech upgrades hung off the wrong nodes, with an
+     invented healing upgrade on Cybernetics and the Particle Beam Siege
+     Cannon missing entirely;
+   - every unit-Production policy card ignored its era window, so Agoge
+     boosted a Modern Infantry as readily as a Warrior.
 
-   Five errors in six effects is the argument for running the pass to the end:
+   Seven errors in eight effects is the argument for running the pass to the
+   end:
    the seeded statuses were inspection judgements, and inspection is not
    finding these.
 
