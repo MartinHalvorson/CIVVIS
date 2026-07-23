@@ -61,7 +61,7 @@
   "free_market": {"slot":"economic","civic":"the_enlightenment","note":"+100% Gold from Commercial Hub buildings.","effects":{"commercial_building_gold_pct":100}},
   "liberalism": {"slot":"economic","civic":"the_enlightenment","note":"+1 Amenity in cities with at least 2 specialty districts.","effects":{"amenity_at_2_districts":1}},
   "rationalism": {"slot":"economic","civic":"the_enlightenment","note":"+100% Science from Campus buildings.","effects":{"campus_building_science_pct":100}},
-  "colonial_taxes": {"slot":"diplomatic","civic":"colonialism","note":"+25% Gold in cities outside the capital continent.","effects":{"foreign_continent_gold_pct":25}},
+  "colonial_taxes": {"slot":"diplomatic","civic":"colonialism","note":"+25% Gold in cities outside the capital continent.","effects":{"foreign_continent_gold_pct":25,"foreign_continent_production_pct":10}},
   "native_conquest": {"slot":"military","civic":"colonialism","note":"Earlier-era unit kills yield Gold.","effects":{"earlier_era_kill_gold_pct":50}},
   "raj": {"slot":"diplomatic","civic":"colonialism","note":"Suzerain city-states provide +2 Science, Culture, Faith, and Gold.","effects":{"suzerain_all_yields":2,"city_state_route_gold":2}},
   "grand_opera": {"slot":"economic","civic":"opera_ballet","note":"+100% Culture from Theater Square buildings.","effects":{"theater_building_culture_pct":100}},

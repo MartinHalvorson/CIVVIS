@@ -18807,6 +18807,8 @@ impl Game {
         }
         if self.on_foreign_continent(city.owner, city.pos) {
             ys.gold *= 1.0 + self.policy_effect(city.owner, "foreign_continent_gold_pct") / 100.0;
+            ys.production *=
+                1.0 + self.policy_effect(city.owner, "foreign_continent_production_pct") / 100.0;
         }
         let suzerains = self
             .players

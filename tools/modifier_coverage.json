@@ -124,7 +124,8 @@
     },
     "ADJUST_CITY_YIELD_MODIFIER": {
       "status": "implemented",
-      "note": "Percentage city yield modifiers from buildings, policies and governments."
+      "verified": true,
+      "note": "Verified row by row for the wonders, policies and governments CIVVIS models. Amundsen-Scott, Broadway, Casa de Contratacion and Kilwa Kisiwani carry their shipped percentages; Colonial Taxes was missing the +10% Production that accompanies its +25% Gold on foreign continents, now applied. Communism and Corporate Libertarianism yields, Disinformation Campaign and the Great Work rows remain content or systems CIVVIS scopes differently; POLICY_INQUISITION belongs to a game mode outside the baseline."
     },
     "GRANT_UNIT_IN_CITY": {
       "status": "implemented",
