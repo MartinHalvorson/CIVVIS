@@ -865,8 +865,13 @@ impl AdvancedAi {
         let map_capacity = (2 + land / 55).clamp(3, 9);
         // Expansion must compound before it pays back. Add roughly one city
         // per era instead of continuously raising the target and starving a
-        // young empire of districts, buildings, and population growth.
-        let desired_cities = (3 + g.turn as usize / 90).min(map_capacity).min(5);
+        // young empire of districts, buildings, and population growth. Scale
+        // the cadence with game speed; the old fixed turn-175 cutoff expired
+        // before the five-city target even became active on Standard speed.
+        let city_cadence = g.standard_duration(90).max(1) as usize;
+        let desired_cities = (3 + g.turn as usize / city_cadence)
+            .min(map_capacity)
+            .min(6);
         let mut expansion_origins: Vec<Pos> = cities.iter().map(|cid| g.cities[cid].pos).collect();
         if expansion_origins.is_empty() {
             expansion_origins.extend(
@@ -899,7 +904,8 @@ impl AdvancedAi {
         } else if let Some(target) = self.victory_target {
             if target == VictoryTarget::Religion && g.players[pid].religion.is_none() {
                 GrandStrategy::Religion
-            } else if cities.len() < desired_cities && has_site && g.turn < 175 {
+            } else if cities.len() < desired_cities && has_site && g.turn < g.standard_duration(175)
+            {
                 GrandStrategy::Expansion
             } else {
                 target.strategy()
@@ -924,7 +930,7 @@ impl AdvancedAi {
             GrandStrategy::Religion
         } else if victory.progress >= 65 {
             victory.strategy
-        } else if cities.len() < desired_cities && has_site && g.turn < 175 {
+        } else if cities.len() < desired_cities && has_site && Self::expansion_window_open(g) {
             GrandStrategy::Expansion
         } else {
             victory.strategy
@@ -993,6 +999,13 @@ impl AdvancedAi {
             desired_cities,
             assessed_turn: g.turn,
         }
+    }
+
+    fn expansion_window_open(g: &Game) -> bool {
+        let payback_window = g.standard_duration(300);
+        let endgame_reserve = g.standard_duration(50);
+        let deadline = payback_window.min(g.max_turns.saturating_sub(endgame_reserve));
+        g.turn < deadline
     }
 
     /// Lower is a more attractive rival: nearby, weak empires with valuable
@@ -4796,10 +4809,15 @@ impl AdvancedAi {
                         })
                         .flatten()
                 });
+                let expansion_open = if self.victory_target.is_some() {
+                    g.turn < g.standard_duration(175)
+                } else {
+                    Self::expansion_window_open(g)
+                };
                 if city_count + counts.settlers < plan.desired_cities
                     && counts.settlers == 0
                     && city.pop >= 2
-                    && g.turn < 175
+                    && expansion_open
                     && site.is_some()
                 {
                     920.0 + site.map(|(_, v)| v * 4.0).unwrap_or(0.0)
@@ -9489,6 +9507,38 @@ mod tests {
     }
 
     #[test]
+    fn expansion_window_reaches_its_six_city_target_before_endgame() {
+        let mut game = Game::new_full(1, 30, 18, 7_113, 500, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = "grassland".to_string();
+            tile.feature = None;
+        }
+        let city = game.player_city_ids(0)[0];
+        game.cities.get_mut(&city).unwrap().pop = 6;
+        game.turn = 270;
+
+        let ai = AdvancedAi::new();
+        let plan = ai.assess(&game, 0);
+        assert_eq!(plan.desired_cities, 6);
+        assert_eq!(plan.strategy, GrandStrategy::Expansion);
+        let item = Item::Unit {
+            unit: "settler".to_string(),
+        };
+        let counts = ai.counts(&game, 0);
+        assert!(ai.production_value(&game, 0, city, &item, &plan, &counts) > -9_000.0);
+
+        game.turn = 300;
+        assert!(!AdvancedAi::expansion_window_open(&game));
+        assert!(ai.production_value(&game, 0, city, &item, &plan, &counts) < -9_000.0);
+    }
+
+    #[test]
     fn conquest_can_target_an_exposed_city_state_but_preserves_its_suzerain() {
         let mut game = Game::new_full(2, 30, 18, 711, 300, 1, false);
         for pid in 0..2 {
@@ -10405,7 +10455,7 @@ mod tests {
         let apostle = game.spawn_test_unit("apostle", 0, game.cities[&holy_city].pos);
         game.units.get_mut(&apostle).unwrap().religion = Some("Home Faith".to_string());
 
-        assert!(AdvancedAi::new().advanced_religious_step(&mut game, 0, apostle));
+        assert!(AdvancedAi::new().advanced_religious_step(&mut game, 0, apostle, false));
         assert!(!game.units.contains_key(&apostle));
         assert_eq!(
             game.players[0]
