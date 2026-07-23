@@ -215,14 +215,27 @@ fn speeds(rules: &Rules) -> Vec<&str> {
 }
 
 fn standings(g: &Game) {
-    let w = &g.players[g.winner.unwrap()];
-    println!(
-        "Winner: {} (player {}) by {} on turn {}",
-        w.civ,
-        w.id,
-        g.victory_type.clone().unwrap_or_default(),
-        g.turn
-    );
+    // A game can legitimately end with nobody having won: a lobby that pins
+    // `--victories` without `score` has no turn-limit tiebreak, so the limit
+    // arrives and no enabled path has been achieved. That is a result to
+    // report, not a reason to abort before printing the standings that say
+    // what actually happened.
+    match g.winner {
+        Some(winner) => {
+            let w = &g.players[winner];
+            println!(
+                "Winner: {} (player {}) by {} on turn {}",
+                w.civ,
+                w.id,
+                g.victory_type.clone().unwrap_or_default(),
+                g.turn
+            );
+        }
+        None => println!(
+            "No winner: turn {} of {}, and no enabled victory was achieved",
+            g.turn, g.max_turns
+        ),
+    }
     let mut majors: Vec<usize> = g
         .players
         .iter()
@@ -348,13 +361,20 @@ fn main() {
                             .iter()
                             .filter(|p| p.is_minor && !p.is_barbarian)
                             .collect();
-                        let w = &g.players[g.winner.unwrap()];
+                        // A soak line describes a finished game, and a game
+                        // whose turn limit arrived with no enabled victory
+                        // achieved is finished too. Report it as one rather
+                        // than taking the whole run down.
+                        let w = g.winner.map(|winner| &g.players[winner]);
                         let mut flags = String::new();
                         if majors.iter().all(|p| p.techs.len() <= 2) {
                             flags.push_str(" NO-TECH-PROGRESS");
                         }
-                        if w.is_minor {
+                        if w.is_some_and(|w| w.is_minor) {
                             flags.push_str(" MINOR-WINNER");
+                        }
+                        if w.is_none() {
+                            flags.push_str(" NO-WINNER");
                         }
                         // An army nobody ever modernizes is invisible in the
                         // standings and obvious on the map. Count the units
@@ -399,7 +419,7 @@ fn main() {
                             seed,
                             g.turn,
                             g.victory_type.clone().unwrap_or_default(),
-                            w.civ,
+                            w.map_or("-", |w| w.civ.as_str()),
                             majors.iter().filter(|p| p.alive).count(),
                             majors.len(),
                             g.cities.len(),
