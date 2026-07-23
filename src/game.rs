@@ -7606,6 +7606,9 @@ pub struct QuickDeal {
 pub struct Player {
     pub id: usize,
     pub civ: String,
+    /// Pre-game multiplayer team. Missing in old saves means free-for-all.
+    #[serde(default)]
+    pub team: Option<usize>,
     pub techs: BTreeSet<String>,
     pub research: Option<String>,
     pub research_progress: f64,
@@ -7780,6 +7783,7 @@ impl Player {
         Player {
             id,
             civ: civ.to_string(),
+            team: None,
             techs: BTreeSet::new(),
             research: None,
             research_progress: 0.0,
@@ -8228,6 +8232,10 @@ pub struct GameOptions {
     pub difficulty: String,
     pub speed: String,
     pub human_seats: BTreeSet<usize>,
+    /// Optional pre-game team assignment for each major seat. An empty vector
+    /// means free-for-all; otherwise it must contain exactly `players`
+    /// entries. Equal non-`None` values place those seats on one team.
+    pub teams: Vec<Option<usize>>,
 }
 
 impl GameOptions {
@@ -8251,6 +8259,7 @@ impl GameOptions {
             difficulty: default_difficulty(),
             speed: default_speed(),
             human_seats: BTreeSet::new(),
+            teams: Vec::new(),
         }
     }
 }
@@ -8720,7 +8729,12 @@ impl Game {
             difficulty,
             speed,
             human_seats,
+            teams,
         } = options;
+        assert!(
+            teams.is_empty() || teams.len() == num_players,
+            "team assignments must be empty or contain one entry per major player"
+        );
         let rules = Rules::embedded();
         assert!(
             rules.difficulties.contains_key(&difficulty),
@@ -8791,8 +8805,9 @@ impl Game {
             events: Vec::new(),
         };
         for i in 0..num_players {
-            g.players
-                .push(Player::new(i, CIV_NAMES[i % CIV_NAMES.len()], false));
+            let mut player = Player::new(i, CIV_NAMES[i % CIV_NAMES.len()], false);
+            player.team = teams.get(i).copied().flatten();
+            g.players.push(player);
         }
         for (i, pos) in spawns.iter().take(num_players).enumerate() {
             g.spawn_unit("settler", i, *pos);
@@ -9080,7 +9095,7 @@ impl Game {
     /// Gilgamesh: standing beside him, and beside the people he stands with.
     fn loyalty_to_friends(&self, observer: usize, subject: usize) -> f64 {
         let mut score: f64 = 0.0;
-        if self.alliance_with(observer, subject).is_some() {
+        if self.are_allied(observer, subject) {
             score += 1.0;
         } else if self.are_friends(observer, subject) {
             score += 0.6;
@@ -9094,7 +9109,7 @@ impl Game {
                 continue;
             }
             let befriended = self.are_friends(observer, player.id)
-                || self.alliance_with(observer, player.id).is_some();
+                || self.are_allied(observer, player.id);
             if befriended && self.is_at_war(subject, player.id) {
                 score -= 0.5;
             }
@@ -9120,7 +9135,7 @@ impl Game {
     /// heavily against.
     fn trustworthiness(&self, observer: usize, subject: usize) -> f64 {
         let mut score: f64 = 0.0;
-        if self.are_friends(observer, subject) || self.alliance_with(observer, subject).is_some() {
+        if self.are_friends(observer, subject) || self.are_allied(observer, subject) {
             score += 1.0;
         }
         let held_against_them: f64 = self
@@ -9649,8 +9664,49 @@ impl Game {
             .collect()
     }
 
+    /// Pre-game teams are permanent. `None` means an ordinary free-for-all
+    /// seat, not an implicit one-player team.
+    pub fn same_team(&self, first: usize, second: usize) -> bool {
+        first != second
+            && self
+                .players
+                .get(first)
+                .and_then(|player| player.team)
+                .is_some_and(|team| {
+                    self.players
+                        .get(second)
+                        .is_some_and(|player| player.team == Some(team))
+                })
+    }
+
+    /// Every major seat which shares `pid`'s explicit team. Free-for-all
+    /// players form a singleton for calculations that aggregate by side.
+    pub fn team_members(&self, pid: usize) -> Vec<usize> {
+        let Some(player) = self.players.get(pid) else {
+            return Vec::new();
+        };
+        let Some(team) = player.team else {
+            return vec![pid];
+        };
+        self.players
+            .iter()
+            .filter(|member| {
+                !member.is_minor && !member.is_barbarian && member.team == Some(team)
+            })
+            .map(|member| member.id)
+            .collect()
+    }
+
+    /// All seats credited with the terminal result. The triggering
+    /// civilization remains `winner` for save compatibility and narration.
+    pub fn winning_players(&self) -> Vec<usize> {
+        self.winner
+            .map(|winner| self.team_members(winner))
+            .unwrap_or_default()
+    }
+
     pub fn is_at_war(&self, a: usize, b: usize) -> bool {
-        if a == b {
+        if a == b || self.same_team(a, b) {
             return false;
         }
         if let Some(bp) = self.barb_pid {
@@ -10446,7 +10502,7 @@ impl Game {
             }
             return actions;
         }
-        if self.alliance_with(spy.owner, city.owner).is_some() {
+        if self.are_allied(spy.owner, city.owner) {
             return actions;
         }
         if self.players[city.owner].is_minor {
@@ -10517,7 +10573,7 @@ impl Game {
             self.players[city.owner].alive
                 && !self.players[city.owner].is_barbarian
                 && Some(city.id) != spy.city
-                && (city.owner == pid || self.alliance_with(pid, city.owner).is_none())
+                && (city.owner == pid || !self.are_allied(pid, city.owner))
                 && (city.owner == pid || self.players[pid].explored.contains(&city.pos))
         }) {
             actions.push(Action::AssignSpy {
@@ -11617,9 +11673,7 @@ impl Game {
         };
         let friendly = city.owner == owner
             || self.suzerain_of(city.owner) == Some(owner)
-            || self
-                .alliance_with(owner, city.owner)
-                .is_some_and(|alliance| alliance.ends > self.turn)
+            || self.are_allied(owner, city.owner)
             || self.players[owner]
                 .friends_until
                 .get(&city.owner)
@@ -12333,6 +12387,49 @@ impl Game {
         }
         for p in 0..self.players.len() {
             if !self.victory_eligible(p) {
+                continue;
+            }
+            if self.players[p].team.is_some() {
+                let team_religions: BTreeSet<String> = self
+                    .team_members(p)
+                    .into_iter()
+                    .filter_map(|member| self.players[member].religion.clone())
+                    .collect();
+                if team_religions.is_empty() {
+                    continue;
+                }
+                let all_opponents_converted = self
+                    .players
+                    .iter()
+                    .filter(|other| {
+                        other.alive
+                            && !other.is_minor
+                            && !other.is_barbarian
+                            && other.id != p
+                            && !self.same_team(p, other.id)
+                    })
+                    .all(|other| {
+                        let cities: Vec<&City> = self
+                            .cities
+                            .values()
+                            .filter(|city| city.owner == other.id)
+                            .collect();
+                        !cities.is_empty()
+                            && team_religions.iter().any(|religion| {
+                                cities
+                                    .iter()
+                                    .filter(|city| {
+                                        self.city_religion(city) == Some(religion.as_str())
+                                    })
+                                    .count()
+                                    * 2
+                                    > cities.len()
+                            })
+                    });
+                if all_opponents_converted {
+                    self.set_winner(p, "religious");
+                    return;
+                }
                 continue;
             }
             let religion = match &self.players[p].religion {
@@ -16244,6 +16341,20 @@ impl Game {
         (parts.iter().sum(), parts)
     }
 
+    /// The stock team score is the sum of every member civilization's score;
+    /// the category vector is summed as well so the ordinary tiebreak chain
+    /// remains deterministic between tied teams.
+    pub fn team_score_rank_key(&self, pid: usize) -> (i64, [i64; 9]) {
+        let mut parts = [0_i64; 9];
+        for member in self.team_members(pid) {
+            let member_parts = self.score_parts(member);
+            for (total, value) in parts.iter_mut().zip(member_parts) {
+                *total += value;
+            }
+        }
+        (parts.iter().sum(), parts)
+    }
+
     pub fn military_power(&self, pid: usize) -> f64 {
         self.units
             .values()
@@ -17476,6 +17587,11 @@ impl Game {
         let Some(player) = self.players.get(pid) else {
             return viewers;
         };
+        viewers.extend(
+            self.team_members(pid)
+                .into_iter()
+                .filter(|member| self.players[*member].alive),
+        );
         viewers.extend(player.alliances.iter().filter_map(|(partner, alliance)| {
             (alliance.ends > self.turn && alliance.kind == "military" && alliance.level >= 2)
                 .then_some(*partner)
@@ -17614,6 +17730,15 @@ impl Game {
     fn refresh_all_visibility(&mut self) {
         for pid in 0..self.players.len() {
             self.refresh_player_visibility(pid);
+        }
+    }
+
+    fn refresh_team_visibility(&mut self, pid: usize) {
+        let members = self.team_members(pid);
+        for member in members {
+            if self.players[member].alive {
+                self.refresh_player_visibility(member);
+            }
         }
     }
 
@@ -22746,7 +22871,7 @@ impl Game {
         !city.is_capital
             && !self.players[city.original_owner].is_minor
             && city.original_owner != pid
-            && self.alliance_with(pid, city.original_owner).is_none()
+            && !self.are_allied(pid, city.original_owner)
     }
 
     /// Captured-city decisions are mandatory and exclusive, so callers that
@@ -23793,7 +23918,7 @@ impl Game {
                             acts.push(Action::MakePeace { player: o.id });
                         }
                     } else if !p.is_minor && !o.is_minor {
-                        if !self.are_friends(pid, o.id) && self.alliance_with(pid, o.id).is_none() {
+                        if !self.are_friends(pid, o.id) && !self.are_allied(pid, o.id) {
                             acts.push(Action::DeclareWar { player: o.id });
                             if p.denounced_until
                                 .get(&o.id)
@@ -23841,7 +23966,7 @@ impl Game {
                         }
                         if p.civics.contains("civil_service")
                             && o.civics.contains("civil_service")
-                            && self.alliance_with(pid, o.id).is_none()
+                            && !self.are_allied(pid, o.id)
                         {
                             for kind in
                                 ["research", "cultural", "economic", "military", "religious"]
@@ -23864,7 +23989,7 @@ impl Game {
                             }
                         }
                     } else if !self.are_friends(pid, o.id)
-                        && self.alliance_with(pid, o.id).is_none()
+                        && !self.are_allied(pid, o.id)
                     {
                         acts.push(Action::DeclareWar { player: o.id });
                     }
@@ -24213,7 +24338,7 @@ impl Game {
             if matches!(action, Action::EndTurn) {
                 self.refresh_all_visibility();
             } else {
-                self.refresh_player_visibility(pid);
+                self.refresh_team_visibility(pid);
             }
             self.log.push((pid, action.clone()));
         }
@@ -28122,12 +28247,13 @@ impl Game {
     }
 
     pub fn are_friends(&self, first: usize, second: usize) -> bool {
-        first < self.players.len()
+        self.same_team(first, second)
+            || (first < self.players.len()
             && second < self.players.len()
             && self.players[first]
                 .friends_until
                 .get(&second)
-                .is_some_and(|until| *until > self.turn)
+                .is_some_and(|until| *until > self.turn))
     }
 
     pub fn alliance_with(&self, first: usize, second: usize) -> Option<&AllianceState> {
@@ -28138,11 +28264,18 @@ impl Game {
             .filter(|alliance| alliance.ends > self.turn)
     }
 
+    /// Typed diplomatic alliances expire and level; a pre-game team is an
+    /// untyped permanent alliance. Callers that only need allied/not-allied
+    /// semantics should use this predicate.
+    pub fn are_allied(&self, first: usize, second: usize) -> bool {
+        self.same_team(first, second) || self.alliance_with(first, second).is_some()
+    }
+
     /// Democracy's route package is limited to allied civilizations and
     /// city-states whose Suzerain owns the route. Both endpoint cities use
     /// this same predicate so their yields cannot drift apart.
     fn government_trade_partner(&self, route_owner: usize, destination_owner: usize) -> bool {
-        self.alliance_with(route_owner, destination_owner).is_some()
+        self.are_allied(route_owner, destination_owner)
             || self.players.get(destination_owner).is_some_and(|player| {
                 player.is_minor
                     && !player.is_barbarian
@@ -28277,15 +28410,46 @@ impl Game {
         if self.is_at_war(pid, other) {
             return Err("already at war".into());
         }
-        if self.are_friends(pid, other) || self.alliance_with(pid, other).is_some() {
+        if self.are_allied(pid, other) || self.are_friends(pid, other) {
             return Err("friendship and alliance declarations must expire before war".into());
         }
         self.add_grievances(other, pid, grievance_cost);
-        self.at_war.insert(pair(pid, other));
+        let attackers: Vec<usize> = self
+            .team_members(pid)
+            .into_iter()
+            .filter(|member| self.players[*member].alive)
+            .collect();
+        let mut defenders: BTreeSet<usize> = self
+            .team_members(other)
+            .into_iter()
+            .filter(|member| self.players[*member].alive)
+            .collect();
+        // Every active diplomatic ally of every defender honors its pact.
+        // If that ally is itself on a pre-game team, its whole team shares
+        // the resulting war as well.
+        let defensive_allies: Vec<usize> = defenders
+            .iter()
+            .flat_map(|defender| {
+                self.players[*defender]
+                    .alliances
+                    .iter()
+                    .filter(|(_, alliance)| alliance.ends > self.turn)
+                    .map(|(ally, _)| *ally)
+            })
+            .collect();
+        for ally in defensive_allies {
+            defenders.extend(
+                self.team_members(ally)
+                    .into_iter()
+                    .filter(|member| self.players[*member].alive),
+            );
+        }
         // Eureka bookkeeping: Defensive Tactics wants a war declared on you,
         // Nationalism a war declared with justification (a formal war on
         // someone you had denounced).
-        bump(&mut self.players[other], "received_dow");
+        for defender in &defenders {
+            bump(&mut self.players[*defender], "received_dow");
+        }
         if self.players[pid]
             .denounced_until
             .get(&other)
@@ -28295,35 +28459,36 @@ impl Game {
         }
         let (aggressor, defender) = (self.civ_name(pid), self.civ_name(other));
         let message = format!("{aggressor} declared war on {defender}");
-        self.note(pid, "War", message.clone(), None);
-        self.note(other, "War", message, None);
-        self.cancel_routes_with(pid, other);
-        self.cancel_trade_deals_with(pid, other);
-        self.players[pid].open_borders_until.remove(&other);
-        self.players[other].open_borders_until.remove(&pid);
-        self.players[pid].alliances.remove(&other);
-        self.players[other].alliances.remove(&pid);
-        if self.players[other].is_minor {
-            self.players[pid].envoys.retain(|(m, _)| *m != other);
-        }
-        // Every active ally of the defender honors its defensive pact.
-        let allies: Vec<usize> = self.players[other]
-            .alliances
+        for participant in attackers
             .iter()
-            .filter(|(_, alliance)| alliance.ends > self.turn)
-            .map(|(ally, _)| *ally)
-            .collect();
-        for ally in allies {
-            if ally != pid && !self.is_at_war(ally, pid) {
-                self.at_war.insert(pair(ally, pid));
-                self.cancel_routes_with(ally, pid);
-                self.cancel_trade_deals_with(ally, pid);
-                self.open_war_record(pid, ally);
+            .copied()
+            .chain(defenders.iter().copied())
+        {
+            self.note(participant, "War", message.clone(), None);
+        }
+        for attacker in attackers {
+            for defender in defenders.iter().copied() {
+                if attacker == defender || self.same_team(attacker, defender) {
+                    continue;
+                }
+                let front = pair(attacker, defender);
+                let opened = self.at_war.insert(front);
+                self.cancel_routes_with(attacker, defender);
+                self.cancel_trade_deals_with(attacker, defender);
+                self.players[attacker].open_borders_until.remove(&defender);
+                self.players[defender].open_borders_until.remove(&attacker);
+                self.players[attacker].alliances.remove(&defender);
+                self.players[defender].alliances.remove(&attacker);
+                if self.players[defender].is_minor {
+                    self.players[attacker]
+                        .envoys
+                        .retain(|(minor, _)| *minor != defender);
+                }
+                if opened {
+                    self.open_war_record(attacker, defender);
+                }
             }
         }
-        // The declarer is the aggressor here and on every front its
-        // declaration opened, including the allies it pulled in.
-        self.open_war_record(pid, other);
         self.sync_war_log();
         Ok(())
     }
@@ -30004,6 +30169,7 @@ impl Game {
     /// grants also qualify.
     pub fn has_open_borders(&self, mover: usize, territory_owner: usize) -> bool {
         if mover == territory_owner
+            || self.same_team(mover, territory_owner)
             || self.tree_effect(territory_owner, "open_borders") <= 0.0
             || (self.players[territory_owner].is_minor
                 && (self.suzerain_of(territory_owner) == Some(mover)
@@ -30031,7 +30197,13 @@ impl Game {
     }
 
     fn do_make_peace(&mut self, pid: usize, other: usize) -> Result<(), String> {
-        if self.emergency_war_pair(pid, other) {
+        let first_side = self.team_members(pid);
+        let second_side = self.team_members(other);
+        if first_side.iter().any(|first| {
+            second_side
+                .iter()
+                .any(|second| self.emergency_war_pair(*first, *second))
+        }) {
             return Err("active Emergency members cannot make peace with its target".into());
         }
         if !self.is_at_war(pid, other) {
@@ -30046,15 +30218,32 @@ impl Game {
     /// ungarrisoned -5 Loyalty pressure. Explicit city return can be layered
     /// onto negotiated deals later without duplicating this invariant.
     fn conclude_peace(&mut self, first: usize, second: usize) {
-        self.at_war.remove(&pair(first, second));
+        let first_side = self.team_members(first);
+        let second_side = self.team_members(second);
+        for first_member in &first_side {
+            for second_member in &second_side {
+                self.at_war.remove(&pair(*first_member, *second_member));
+            }
+        }
         let (a, b) = (self.civ_name(first), self.civ_name(second));
         let message = format!("{a} made peace with {b}");
-        self.note(first, "Diplomacy", message.clone(), None);
-        self.note(second, "Diplomacy", message, None);
+        for participant in first_side
+            .iter()
+            .copied()
+            .chain(second_side.iter().copied())
+        {
+            self.note(participant, "Diplomacy", message.clone(), None);
+        }
         for city in self.cities.values_mut() {
-            if (city.owner == first && city.occupied_from == Some(second))
-                || (city.owner == second && city.occupied_from == Some(first))
-            {
+            let cross_team_occupation = (first_side.contains(&city.owner)
+                && city
+                    .occupied_from
+                    .is_some_and(|former| second_side.contains(&former)))
+                || (second_side.contains(&city.owner)
+                    && city
+                        .occupied_from
+                        .is_some_and(|former| first_side.contains(&former)));
+            if cross_team_occupation {
                 city.occupied_from = None;
             }
         }
@@ -30339,6 +30528,11 @@ impl Game {
                 }
                 if o.owner == pid {
                     domestic_pressure += w;
+                } else if self.same_team(pid, o.owner) {
+                    // Team cities neither support nor attack one another's
+                    // Loyalty. They are a permanent alliance, not one
+                    // population-pressure empire.
+                    continue;
                 } else if !self.players[o.owner].is_barbarian
                     && !self.players[o.owner].is_minor
                     && !self
@@ -31134,7 +31328,7 @@ impl Game {
                     && !player.is_minor
                     && !player.is_barbarian
                     && !self.are_friends(player.id, target)
-                    && self.alliance_with(player.id, target).is_none()
+                    && !self.are_allied(player.id, target)
             })
             .filter(|player| {
                 !city_state
@@ -31561,6 +31755,7 @@ impl Game {
 
     fn visiting_tourists_from(&self, source: usize, target: usize) -> i64 {
         if source == target
+            || self.same_team(source, target)
             || !self.players[source].alive
             || !self.players[target].alive
             || self.players[source].is_minor
@@ -31603,7 +31798,7 @@ impl Game {
     }
 
     fn tourism_open_borders(&self, source: usize, target: usize) -> bool {
-        self.alliance_with(source, target).is_some()
+        self.are_allied(source, target)
             || self.players[target]
                 .open_borders_until
                 .get(&source)
@@ -31701,7 +31896,11 @@ impl Game {
             .players
             .iter()
             .filter(|target| {
-                target.id != pid && target.alive && !target.is_minor && !target.is_barbarian
+                target.id != pid
+                    && !self.same_team(pid, target.id)
+                    && target.alive
+                    && !target.is_minor
+                    && !target.is_barbarian
             })
             .map(|target| {
                 let modern_target = self.player_era(target.id) >= 5;
@@ -31746,7 +31945,7 @@ impl Game {
         // removes both its contributed visitors and future Tourism market.
         self.players
             .iter()
-            .filter(|rival| rival.id != pid)
+            .filter(|rival| rival.id != pid && !self.same_team(pid, rival.id))
             .map(|rival| self.visiting_tourists_from(pid, rival.id))
             .sum()
     }
@@ -32394,11 +32593,10 @@ impl Game {
             let foreign = self.foreign_tourists(*pid);
             let target = majors
                 .iter()
-                .filter(|oid| *oid != pid)
+                .filter(|oid| *oid != pid && !self.same_team(*pid, **oid))
                 .map(|oid| self.domestic_tourists(*oid))
-                .max()
-                .unwrap_or(0);
-            if foreign > target {
+                .max();
+            if target.is_some_and(|target| foreign > target) {
                 self.set_winner(*pid, "culture");
                 return;
             }
@@ -32442,12 +32640,25 @@ impl Game {
                 // technologies, wonders) before falling back to seat order.
                 let mut best: Option<((i64, [i64; 9]), i64)> = None;
                 let mut best_pid = 0;
+                let mut seen_teams = BTreeSet::new();
                 for pl in &self.players {
-                    if pl.alive && !pl.is_minor {
-                        let key = (self.score_rank_key(pl.id), -(pl.id as i64));
+                    if pl.alive && !pl.is_minor && !pl.is_barbarian {
+                        if pl.team.is_some_and(|team| !seen_teams.insert(team)) {
+                            continue;
+                        }
+                        let representative = self
+                            .team_members(pl.id)
+                            .into_iter()
+                            .filter(|member| self.players[*member].alive)
+                            .min()
+                            .unwrap_or(pl.id);
+                        let key = (
+                            self.team_score_rank_key(representative),
+                            -(representative as i64),
+                        );
                         if best.is_none() || key > best.clone().unwrap() {
                             best = Some(key);
-                            best_pid = pl.id;
+                            best_pid = representative;
                         }
                     }
                 }
@@ -32621,6 +32832,9 @@ impl Game {
         if let Some((node, first)) = completed_tech {
             self.note(pid, "Science", format!("researched {}", pretty(&node)), None);
             self.apply_tree_completion(pid, true, &node, first);
+            if first {
+                self.share_team_technology_boost(pid, &node);
+            }
             for city in self.player_city_ids(pid) {
                 self.modernize_unit_queue(pid, city);
             }
@@ -32645,6 +32859,42 @@ impl Game {
         if let Some((node, first)) = completed_civic {
             self.note(pid, "Culture", format!("adopted {}", pretty(&node)), None);
             self.apply_tree_completion(pid, false, &node, first);
+        }
+    }
+
+    /// Civ VI teams do not pool Science. Completing a technology instead
+    /// grants its normal Eureka to every teammate who neither owns nor has
+    /// already boosted it; an actively researched node receives the progress
+    /// immediately.
+    fn share_team_technology_boost(&mut self, source: usize, technology: &str) {
+        let recipients: Vec<usize> = self
+            .team_members(source)
+            .into_iter()
+            .filter(|recipient| {
+                *recipient != source
+                    && self.players[*recipient].alive
+                    && !self.players[*recipient].techs.contains(technology)
+                    && !self.players[*recipient].boosted_techs.contains(technology)
+            })
+            .collect();
+        let cost = self.tech_cost(technology);
+        for recipient in recipients {
+            let fraction = self.node_boost_frac(recipient, technology, true);
+            let player = &mut self.players[recipient];
+            player.boosted_techs.insert(technology.to_string());
+            if player.research.as_deref() == Some(technology) {
+                player.research_progress += fraction * cost;
+            }
+            self.note(
+                recipient,
+                "Science",
+                format!(
+                    "received the {} Eureka from teammate {}",
+                    pretty(technology),
+                    self.civ_name(source)
+                ),
+                None,
+            );
         }
     }
 
@@ -33502,6 +33752,9 @@ impl Game {
                     self.players[pid].research_progress = 0.0;
                 }
                 self.apply_tree_completion(pid, true, &node, first);
+                if first {
+                    self.share_team_technology_boost(pid, &node);
+                }
             } else {
                 let first = self.players[pid].civics.insert(node.clone());
                 self.players[pid].boosted_civics.remove(&node);
@@ -33974,11 +34227,18 @@ impl Game {
                     .unwrap_or(0.0)
                     > 0.0
                 {
-                    let player = &mut self.players[pid];
-                    player.techs.insert("apprenticeship".to_string());
-                    if player.research.as_deref() == Some("apprenticeship") {
-                        player.research = None;
-                        player.research_progress = 0.0;
+                    let first = {
+                        let player = &mut self.players[pid];
+                        let first = player.techs.insert("apprenticeship".to_string());
+                        if player.research.as_deref() == Some("apprenticeship") {
+                            player.research = None;
+                            player.research_progress = 0.0;
+                        }
+                        first
+                    };
+                    if first {
+                        self.apply_tree_completion(pid, true, "apprenticeship", true);
+                        self.share_team_technology_boost(pid, "apprenticeship");
                     }
                 }
                 if spec.effects.get("culture_bomb").copied().unwrap_or(0.0) > 0.0
@@ -34855,6 +35115,36 @@ impl Game {
             return;
         }
         for candidate in majors.iter().copied().filter(|p| self.victory_eligible(*p)) {
+            if self.players[candidate].team.is_some() {
+                let team = self.team_members(candidate);
+                let team_holds_its_capitals = team.iter().all(|member| {
+                    self.cities.values().any(|capital| {
+                        capital.is_capital
+                            && capital.original_owner == *member
+                            && capital.owner == *member
+                    })
+                });
+                let every_opponent_lost_their_capital = majors
+                    .iter()
+                    .copied()
+                    .filter(|original_owner| {
+                        *original_owner != candidate
+                            && !self.same_team(candidate, *original_owner)
+                    })
+                    .all(|original_owner| {
+                        self.cities
+                            .values()
+                            .find(|capital| {
+                                capital.is_capital && capital.original_owner == original_owner
+                            })
+                            .is_none_or(|capital| capital.owner != original_owner)
+                    });
+                if team_holds_its_capitals && every_opponent_lost_their_capital {
+                    self.set_winner(candidate, "domination");
+                    return;
+                }
+                continue;
+            }
             let controls_every_foreign_capital = majors.iter().copied().all(|original_owner| {
                 if original_owner == candidate {
                     return true;
@@ -34890,7 +35180,17 @@ impl Game {
         {
             self.winner = Some(pid);
             self.victory_type = Some(vtype.to_string());
-            let winner = self.civ_name(pid);
+            let winners = self.team_members(pid);
+            let winner = if winners.len() > 1 {
+                let names = winners
+                    .iter()
+                    .map(|winner| self.civ_name(*winner))
+                    .collect::<Vec<_>>()
+                    .join(" and ");
+                format!("Team {names}")
+            } else {
+                self.civ_name(pid)
+            };
             let seats: Vec<usize> = self.players.iter().map(|player| player.id).collect();
             for seat in seats {
                 self.note(
@@ -34901,6 +35201,159 @@ impl Game {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod team_tests {
+    use super::*;
+
+    fn team_game(players: usize, teams: Vec<Option<usize>>, seed: u64) -> Game {
+        Game::new_with(GameOptions {
+            barbarians: false,
+            teams,
+            ..GameOptions::new(players, 24, 16, seed, 80, 0)
+        })
+    }
+
+    fn found_capitals(game: &mut Game) -> Vec<u32> {
+        let players: Vec<usize> = (0..game.players.len())
+            .filter(|pid| !game.players[*pid].is_minor && !game.players[*pid].is_barbarian)
+            .collect();
+        let mut capitals = Vec::with_capacity(players.len());
+        for pid in players {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            let city = game.found_city_for(pid, game.units[&settler].pos, None);
+            game.remove_unit(settler);
+            capitals.push(city);
+        }
+        capitals
+    }
+
+    #[test]
+    fn teams_persist_share_sight_and_grant_completed_technology_eurekas() {
+        let mut game = team_game(4, vec![Some(0), Some(0), Some(1), Some(1)], 88_001);
+        assert!(game.same_team(0, 1));
+        assert!(!game.same_team(0, 2));
+        assert!(game.are_allied(0, 1));
+        assert!(game.are_friends(0, 1));
+        assert!(game.has_open_borders(0, 1));
+        assert!(game.do_declare_war(0, 1).is_err());
+
+        let scout = game.player_unit_ids(0)[0];
+        let seen = game.units[&scout].pos;
+        for unit in game
+            .units
+            .keys()
+            .copied()
+            .filter(|unit| *unit != scout)
+            .collect::<Vec<_>>()
+        {
+            game.remove_unit(unit);
+        }
+        assert!(game.player_visibility(1).contains(&seen));
+        assert!(!game.player_visibility(2).contains(&seen));
+
+        game.players[1].research = Some("pottery".to_string());
+        game.players[1].research_progress = 0.0;
+        game.share_team_technology_boost(0, "pottery");
+        assert!(game.players[1].boosted_techs.contains("pottery"));
+        assert_eq!(
+            game.players[1].research_progress,
+            0.4 * game.tech_cost("pottery")
+        );
+        assert!(!game.players[2].boosted_techs.contains("pottery"));
+
+        let restored: Game = serde_json::from_str(&serde_json::to_string(&game).unwrap()).unwrap();
+        assert_eq!(restored.team_members(0), vec![0, 1]);
+        assert_eq!(restored.players[2].team, Some(1));
+    }
+
+    #[test]
+    fn declaring_and_ending_war_moves_both_complete_teams() {
+        let mut game = team_game(4, vec![Some(0), Some(0), Some(1), Some(1)], 88_002);
+        game.do_declare_war(0, 2).unwrap();
+        for attacker in [0, 1] {
+            for defender in [2, 3] {
+                assert!(game.is_at_war(attacker, defender));
+            }
+        }
+        assert!(!game.is_at_war(0, 1));
+        assert!(!game.is_at_war(2, 3));
+        assert_eq!(game.at_war.len(), 4);
+
+        game.do_make_peace(1, 3).unwrap();
+        for attacker in [0, 1] {
+            for defender in [2, 3] {
+                assert!(!game.is_at_war(attacker, defender));
+            }
+        }
+        assert!(game.at_war.is_empty());
+    }
+
+    #[test]
+    fn teammate_population_is_neutral_to_loyalty_pressure() {
+        let mut teamed = team_game(2, vec![Some(0), Some(0)], 88_003);
+        let cities = found_capitals(&mut teamed);
+        let own = cities[0];
+        let teammate = cities[1];
+        // Place the teammate inside the pressure radius and make its
+        // population overwhelming. Only the relationship differs below.
+        let own_pos = teamed.cities[&own].pos;
+        let near = teamed
+            .wdisk(own_pos, 2)
+            .into_iter()
+            .find(|position| *position != own_pos)
+            .unwrap();
+        let old = teamed.cities[&teammate].pos;
+        teamed.city_by_pos.remove(&old);
+        teamed.city_by_pos.insert(near, teammate);
+        teamed.cities.get_mut(&teammate).unwrap().pos = near;
+        teamed.cities.get_mut(&teammate).unwrap().pop = 20;
+        teamed.cities.get_mut(&own).unwrap().loyalty = 50.0;
+        let mut rival = teamed.clone();
+        rival.players[1].team = Some(1);
+
+        teamed.process_loyalty(0);
+        rival.process_loyalty(0);
+        assert!(teamed.cities[&own].loyalty > rival.cities[&own].loyalty);
+        assert_eq!(teamed.cities[&own].owner, 0);
+    }
+
+    #[test]
+    fn team_domination_religion_score_and_terminal_credit_follow_stock_rules() {
+        let mut domination =
+            team_game(4, vec![Some(0), Some(0), Some(1), Some(1)], 88_004);
+        let capitals = found_capitals(&mut domination);
+        // A team victory needs both friendly capitals retained and every
+        // opponent to lose its own; teammates need not personally hold them.
+        domination.cities.get_mut(&capitals[2]).unwrap().owner = 3;
+        domination.cities.get_mut(&capitals[3]).unwrap().owner = 2;
+        domination.check_domination();
+        assert_eq!(domination.winner, Some(0));
+        assert_eq!(domination.winning_players(), vec![0, 1]);
+
+        let mut religion = team_game(4, vec![Some(0), Some(0), Some(1), Some(1)], 88_005);
+        let capitals = found_capitals(&mut religion);
+        religion.players[0].religion = Some("First Faith".to_string());
+        religion.players[1].religion = Some("Second Faith".to_string());
+        for (city, faith) in [
+            (capitals[2], "First Faith"),
+            (capitals[3], "Second Faith"),
+        ] {
+            let city = religion.cities.get_mut(&city).unwrap();
+            city.atheist_pressure = 0.0;
+            city.pressure = BTreeMap::from([(faith.to_string(), 1_000.0)]);
+        }
+        religion.check_religious_victory();
+        assert_eq!(religion.winning_players(), vec![0, 1]);
+
+        let team_score = religion.team_score_rank_key(0).0;
+        assert_eq!(team_score, religion.score(0) + religion.score(1));
     }
 }
 

@@ -44,6 +44,9 @@ Firaxis or 2K; no assets, art, text, or code from Civilization VI are used.
 - **Barbarians** (camps, era-scaled raiders), **city-states**, **governments**
 - **Mutually favorable diplomacy trades**: Gold, GPT, Favor, resources, and
   directional Open Borders, with speed-scaled contracts shared by human and AI play
+- **Pre-game teams** with permanent alliance/Open Borders, shared live vision,
+  team-wide war and peace, teammate-completion Eurekas, neutral Loyalty pressure,
+  and stock team victory accounting
 - War/peace; all six Civ VI victory paths: **domination, science, culture,
   religious, diplomatic, and score**
 - Deterministic per seed; full JSON save/serialization
@@ -56,6 +59,7 @@ Firaxis or 2K; no assets, art, text, or code from Civilization VI are used.
 cargo build --release
 ./target/release/civvis play --players 4        # browser GUI; Online by default
 ./target/release/civvis play --players 6 --map continents --speed epic
+./target/release/civvis play --players 4 --teams 0,0,1,1 # stock 2v2 teams
 ```
 
 For an unattended spectator that checks for new code only between games:
@@ -173,6 +177,7 @@ docs/       architecture, AI guide, roadmap
 
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md) — design, action protocol, turn lifecycle
 - [AI_GUIDE.md](docs/AI_GUIDE.md) — building and rating agents
+- [COMPETITIVE.md](docs/COMPETITIVE.md) — tournament baseline and remaining gaps
 - [MODS.md](docs/MODS.md) — writing a mod, which is a folder of JSON
 - [UNCIV_LESSONS.md](docs/UNCIV_LESSONS.md) — what this engine takes from Unciv
 - [ROADMAP.md](docs/ROADMAP.md) — path to full Civ 6 parity

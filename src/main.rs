@@ -89,6 +89,35 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
     } else {
         speed_spec.turns as i64
     };
+    let player_count = players.max(1) as usize;
+    let teams_arg = arg_text(args, "--teams", "");
+    let teams = if teams_arg.trim().is_empty() {
+        Vec::new()
+    } else {
+        let parsed: Result<Vec<Option<usize>>, _> = teams_arg
+            .split(',')
+            .map(|team| {
+                let team = team.trim();
+                if team.is_empty() || team == "-" {
+                    Ok(None)
+                } else {
+                    team.parse::<usize>().map(Some)
+                }
+            })
+            .collect();
+        let teams = parsed.unwrap_or_else(|_| {
+            eprintln!("invalid --teams value {teams_arg:?}; use comma-separated team numbers or -");
+            std::process::exit(2);
+        });
+        if teams.len() != player_count {
+            eprintln!(
+                "--teams needs exactly {player_count} entries (one per major player), got {}",
+                teams.len()
+            );
+            std::process::exit(2);
+        }
+        teams
+    };
     GameOptions {
         map_script: MapScript::from_id(&arg_text(args, "--map", "pangaea"))
             .unwrap_or(MapScript::Pangaea),
@@ -100,8 +129,9 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
             .split(',')
             .filter_map(|seat| seat.trim().parse().ok())
             .collect(),
+        teams,
         ..GameOptions::new(
-            players.max(1) as usize,
+            player_count,
             auto_dimension(args, "--width", players, true),
             auto_dimension(args, "--height", players, false),
             seed,
@@ -466,6 +496,7 @@ fn main() {
                     spectate: args.iter().any(|a| a == "--spectate" || a == "--watch"),
                     difficulty: play_options.difficulty,
                     speed: play_options.speed,
+                    teams: play_options.teams,
                     supervised: args.iter().any(|a| a == "--supervised"),
                 },
                 resumed,
@@ -507,7 +538,7 @@ fn main() {
                       [--map pangaea|continents|small_continents|inland_sea] \
                       [--difficulty settler|chieftain|warlord|prince|king|emperor|immortal|deity] \
                       [--speed online|quick|standard|epic|marathon] \
-                      [--human-seats 0,1] [--mods path/to/mod,path/to/other] \
+                      [--human-seats 0,1] [--teams 0,0,1,1] [--mods path/to/mod,path/to/other] \
                       [--victories science,culture,religious,diplomatic,domination,score] \
                       [--spectate] [--supervised] [--resume checkpoint.json] [--strict]"
             );

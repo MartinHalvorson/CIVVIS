@@ -179,7 +179,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         .players
         .iter()
         .filter(|player| !player.is_minor && !player.is_barbarian)
-        .map(|player| g.score(player.id))
+        .map(|player| g.team_score_rank_key(player.id).0)
         .max()
         .unwrap_or(0);
     json!({
@@ -214,6 +214,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         "spies": spies,
         "cities": cities,
         "me": {
+            "team": p.team,
             "gold": round1(p.gold), "faith": round1(p.faith),
             "gold_per_turn": round1(p.gold_per_turn),
             "bankruptcy_amenity_penalty": p.bankruptcy_amenity_penalty,
@@ -368,10 +369,13 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                 "faith": round1(o.faith),
                 "yields": yields_json(&output),
                 "military": military,
+                "team": o.team,
+                "teammate": g.same_team(pid, o.id),
                 "at_war_with_me": g.is_at_war(pid, o.id),
                 "grievances_against_me": o.grievances.get(&pid).copied().unwrap_or(0.0),
                 "my_grievances": p.grievances.get(&o.id).copied().unwrap_or(0.0),
                 "friend": g.are_friends(pid, o.id),
+                "allied": g.are_allied(pid, o.id),
                 "alliance": g.alliance_with(pid, o.id),
                 "open_borders_to_me": g.has_open_borders(pid, o.id),
                 "my_open_borders_to_them": g.has_open_borders(o.id, pid),
@@ -402,6 +406,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         // shown whole rather than through the viewer's fog.
         "wars": wars_json(g),
         "winner": g.winner,
+        "winners": g.winning_players(),
         "victory_type": g.victory_type,
         // What has happened to this civilization lately, newest last. An
         // omniscient viewer watches whichever seat it is observing, so the
@@ -523,7 +528,7 @@ fn victory_progress_json(g: &Game, pid: usize, leading_score: i64) -> Value {
 
     let rival_domestic = living_majors
         .iter()
-        .filter(|candidate| **candidate != pid)
+        .filter(|candidate| **candidate != pid && !g.same_team(pid, **candidate))
         .map(|candidate| g.domestic_tourists(*candidate))
         .max()
         .unwrap_or(0);
@@ -544,20 +549,32 @@ fn victory_progress_json(g: &Game, pid: usize, leading_score: i64) -> Value {
     }
     .clamp(0.0, 100.0);
 
-    let converted_civs = player.religion.as_ref().map_or(0, |religion| {
-        living_majors
-            .iter()
-            .filter(|candidate| {
-                let cities = g.player_city_ids(**candidate);
-                let following = cities
-                    .iter()
-                    .filter(|city| g.city_religion(&g.cities[city]) == Some(religion.as_str()))
-                    .count();
-                !cities.is_empty() && following * 2 > cities.len()
-            })
-            .count()
-    });
-    let religious_target = living_majors.len();
+    let team_religions = g
+        .team_members(pid)
+        .into_iter()
+        .filter_map(|member| g.players[member].religion.as_deref())
+        .collect::<Vec<_>>();
+    let religious_rivals = living_majors
+        .iter()
+        .copied()
+        .filter(|candidate| player.team.is_none() || !g.same_team(pid, *candidate))
+        .collect::<Vec<_>>();
+    let converted_civs = religious_rivals
+        .iter()
+        .filter(|candidate| {
+            let cities = g.player_city_ids(**candidate);
+            !cities.is_empty()
+                && team_religions.iter().any(|religion| {
+                    cities
+                        .iter()
+                        .filter(|city| g.city_religion(&g.cities[city]) == Some(*religion))
+                        .count()
+                        * 2
+                        > cities.len()
+                })
+        })
+        .count();
+    let religious_target = religious_rivals.len();
     let religious_progress = if religious_target > 0 {
         100.0 * converted_civs as f64 / religious_target as f64
     } else {
@@ -569,18 +586,36 @@ fn victory_progress_json(g: &Game, pid: usize, leading_score: i64) -> Value {
     // satisfied, so in a six-player game everybody starts the race at one of
     // six rather than at nothing.
     let capital_target = all_majors.len();
-    let controlled_capitals = all_majors
-        .iter()
-        .filter(|original_owner| {
-            **original_owner == pid
-                || g.cities
+    let controlled_capitals = if player.team.is_some() {
+        all_majors
+            .iter()
+            .filter(|original_owner| {
+                let capital = g
+                    .cities
                     .values()
-                    .find(|city| city.is_capital && city.original_owner == **original_owner)
-                    .map_or(!g.players[**original_owner].alive, |capital| {
-                        capital.owner == pid
-                    })
-        })
-        .count();
+                    .find(|city| city.is_capital && city.original_owner == **original_owner);
+                if **original_owner == pid || g.same_team(pid, **original_owner) {
+                    capital.is_some_and(|capital| capital.owner == **original_owner)
+                } else {
+                    capital.is_none_or(|capital| capital.owner != **original_owner)
+                }
+            })
+            .count()
+    } else {
+        all_majors
+            .iter()
+            .filter(|original_owner| {
+                **original_owner == pid
+                    || g
+                        .cities
+                        .values()
+                        .find(|city| city.is_capital && city.original_owner == **original_owner)
+                        .map_or(!g.players[**original_owner].alive, |capital| {
+                            capital.owner == pid
+                        })
+            })
+            .count()
+    };
     let domination_progress = if capital_target > 0 {
         100.0 * controlled_capitals as f64 / capital_target as f64
     } else {
@@ -590,7 +625,7 @@ fn victory_progress_json(g: &Game, pid: usize, leading_score: i64) -> Value {
     let diplomatic_points = player.dvp.max(0);
     let diplomatic_progress =
         100.0 * diplomatic_points as f64 / DIPLOMATIC_VICTORY_POINTS.max(1) as f64;
-    let score = g.score(pid);
+    let score = g.team_score_rank_key(pid).0;
     let score_progress = if leading_score > 0 {
         100.0 * score.max(0) as f64 / leading_score as f64
     } else {

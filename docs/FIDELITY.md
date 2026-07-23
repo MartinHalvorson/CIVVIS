@@ -282,6 +282,8 @@ phase; cheap snapshots so search stays affordable.
 ## Baseline configuration
 
 Gathering Storm ruleset, standard DLC civilizations, NFP game modes off,
-sequential turns. Simultaneous-turn multiplayer changes action interleaving
-rather than transition rules, so the competitive ruleset layers on after the
-sequential clone is exact.
+sequential turns. Free-for-all and official pre-game team relations and victory
+rules are both supported. Simultaneous-turn multiplayer changes action
+interleaving rather than transition rules, so the rest of the competitive
+ruleset layers on after the sequential clone is exact. See
+[COMPETITIVE.md](COMPETITIVE.md) for the tournament-specific boundary.

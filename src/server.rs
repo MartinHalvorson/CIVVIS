@@ -44,6 +44,7 @@ pub struct Params {
     pub spectate: bool,
     pub difficulty: String,
     pub speed: String,
+    pub teams: Vec<Option<usize>>,
     /// A lifecycle supervisor, rather than the browser countdown, owns the
     /// transition after a completed spectator game.
     pub supervised: bool,
@@ -753,6 +754,7 @@ impl Session {
             difficulty: params.difficulty.clone(),
             speed: params.speed.clone(),
             human_seats,
+            teams: params.teams.clone(),
             ..GameOptions::new(
                 params.num_players,
                 params.width,
@@ -801,6 +803,12 @@ impl Session {
         params.difficulty = game.difficulty.clone();
         params.speed = game.speed.clone();
         params.victory_conditions = game.victory_conditions;
+        params.teams = game
+            .players
+            .iter()
+            .filter(|player| !player.is_minor && !player.is_barbarian)
+            .map(|player| player.team)
+            .collect();
         let ais = Self::ai_fleet(&game);
         let chronicle = ChronicleState::from_game(&game);
         Session {
@@ -1155,6 +1163,7 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     let mut p = current.clone();
     if let Some(v) = request["num_players"].as_u64() {
         p.num_players = v as usize;
+        p.teams.clear();
         let size = MapSize::for_players(p.num_players);
         p.width = size.width;
         p.height = size.height;
@@ -1203,6 +1212,15 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     }
     if let Some(v) = request["spectate"].as_bool() {
         p.spectate = v;
+    }
+    if let Some(teams) = request["teams"].as_array() {
+        let parsed = teams
+            .iter()
+            .map(|team| team.as_u64().map(|team| team as usize))
+            .collect::<Vec<_>>();
+        if parsed.len() == p.num_players {
+            p.teams = parsed;
+        }
     }
     let rules = Rules::embedded();
     if let Some(v) = request["difficulty"].as_str() {
@@ -1675,6 +1693,7 @@ mod tests {
             spectate: false,
             difficulty: crate::game::default_difficulty(),
             speed: crate::game::default_speed(),
+            teams: Vec::new(),
             supervised: false,
         }
     }
