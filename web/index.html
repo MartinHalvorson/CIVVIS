@@ -426,8 +426,8 @@
      the existing terrain renderer remains authoritative while the broadcast
      furniture yields to it. The race stays readable across the room; the
      dense leader table and command deck remain one C/F key away. */
-  #cinema-atmosphere, #cinema-transition, #cinema-prologue, #cinema-matte, #cinema-story,
-  #cinema-follow, #cinema-chrome { display: none; }
+  #cinema-atmosphere, #cinema-lighting, #cinema-transition, #cinema-prologue,
+  #cinema-matte, #cinema-frame, #cinema-story, #cinema-follow, #cinema-chrome { display: none; }
   body.cinema-mode #cinema-atmosphere {
     position: absolute; inset: -8%; z-index: 2; display: block; overflow: hidden;
     pointer-events: none; opacity: .3;
@@ -447,6 +447,56 @@
   body.cinema-mode #cinema-atmosphere::after {
     content: ""; position: absolute; inset: 0;
     background: linear-gradient(128deg, #ffe6a014 0%, transparent 32%, transparent 69%, #24443d12 100%);
+  }
+  /* A screen-space lighting pass gives the same world a changing hour and a
+     photographic focal plane without repainting or filtering the expensive
+     map canvas. The hot spot follows the director's subject; the broad color
+     field changes slowly enough to feel like weather and light, not a filter
+     carousel. All three pieces are compositor-only while the camera moves. */
+  body.cinema-mode #cinema-lighting {
+    --cinema-focus-x: 50%; --cinema-focus-y: 54%;
+    position: absolute; inset: 0; z-index: 4; display: block; overflow: hidden;
+    pointer-events: none; isolation: isolate;
+    transition: background 2.8s ease, opacity 2.8s ease;
+  }
+  body.cinema-mode #cinema-lighting::before {
+    content: ""; position: absolute; inset: -12%; opacity: .72;
+    background:
+      radial-gradient(ellipse 32% 38% at var(--cinema-focus-x) var(--cinema-focus-y),
+        #ffe8a91e 0%, #c8fff30c 28%, transparent 72%),
+      linear-gradient(116deg, #ffe3a014 0%, transparent 22%, transparent 69%, #84c6bd0a 100%);
+    mix-blend-mode: screen; will-change: opacity;
+    animation: cinema-light-breathe 12s ease-in-out infinite alternate;
+  }
+  body.cinema-mode #cinema-lighting::after {
+    content: ""; position: absolute; inset: 0;
+    background:
+      radial-gradient(ellipse 74% 68% at var(--cinema-focus-x) var(--cinema-focus-y),
+        transparent 0 34%, #02070616 72%, #01030266 118%),
+      linear-gradient(180deg, #03100c20 0%, transparent 24%, transparent 72%, #01030242 100%);
+    transition: background 1.2s ease;
+  }
+  body.cinema-tone-dawn #cinema-lighting {
+    background: linear-gradient(112deg, #d27b3b22 0%, #e5bc7710 26%, transparent 57%, #39746d18 100%);
+  }
+  body.cinema-tone-day #cinema-lighting {
+    background: linear-gradient(132deg, #dff6df0b, transparent 42%, #2c716d0d 100%);
+  }
+  body.cinema-tone-dusk #cinema-lighting {
+    background: linear-gradient(118deg, #b6532a2a 0%, #d39a4920 30%, transparent 64%, #253d4b28 100%);
+  }
+  body.cinema-tone-night #cinema-lighting {
+    opacity: .94;
+    background:
+      radial-gradient(ellipse at 72% 18%, #83b9c013 0%, transparent 34%),
+      linear-gradient(145deg, #04122230, #05131b18 45%, #01060b50 100%);
+  }
+  body.cinema-storm #cinema-lighting {
+    background: linear-gradient(150deg, #07121135, #1b252142 48%, #07100f52);
+  }
+  @keyframes cinema-light-breathe {
+    from { opacity: .55; }
+    to { opacity: .86; }
   }
   body.cinema-mode #cinema-transition {
     position: absolute; inset: 0; z-index: 16; display: block; pointer-events: none;
@@ -514,18 +564,58 @@
   body.cinema-mode #cinema-matte { display: block; position: absolute; inset: 0; z-index: 8; pointer-events: none; }
   body.cinema-mode #cinema-matte::before,
   body.cinema-mode #cinema-matte::after {
-    content: ""; position: absolute; left: 0; right: 0; height: 18px;
-    background: #020504f7; box-shadow: 0 0 32px #000b;
+    content: ""; position: absolute; left: 0; right: 0; height: clamp(20px, 2.4vh, 29px);
+    background: linear-gradient(180deg, #010202, #020504fa);
+    box-shadow: 0 0 42px #000d;
   }
   body.cinema-mode #cinema-matte::before { top: 0; }
-  body.cinema-mode #cinema-matte::after { bottom: 0; }
+  body.cinema-mode #cinema-matte::after { bottom: 0; transform: rotate(180deg); }
+  body.cinema-mode #cinema-frame {
+    --cinema-civ: #d7b66a;
+    position: absolute; inset: 0; z-index: 9; display: block; pointer-events: none;
+    color: #dfe7e1; text-shadow: 0 1px 5px #000;
+  }
+  body.cinema-mode #cinema-frame::before {
+    content: ""; position: absolute; inset: clamp(34px, 4.4vh, 52px) clamp(20px, 2.1vw, 42px);
+    opacity: .34;
+    background:
+      linear-gradient(90deg, #ddc681, transparent) left top / 72px 1px no-repeat,
+      linear-gradient(180deg, #ddc681, transparent) left top / 1px 52px no-repeat,
+      linear-gradient(270deg, #ddc681, transparent) right top / 72px 1px no-repeat,
+      linear-gradient(180deg, #ddc681, transparent) right top / 1px 52px no-repeat,
+      linear-gradient(90deg, #ddc681, transparent) left bottom / 72px 1px no-repeat,
+      linear-gradient(0deg, #ddc681, transparent) left bottom / 1px 52px no-repeat,
+      linear-gradient(270deg, #ddc681, transparent) right bottom / 72px 1px no-repeat,
+      linear-gradient(0deg, #ddc681, transparent) right bottom / 1px 52px no-repeat;
+    filter: drop-shadow(0 0 5px #d7b66a45);
+  }
+  .cinema-frame-brand, .cinema-frame-era, .cinema-frame-shot {
+    position: absolute; display: flex; align-items: center; gap: 9px;
+    font-size: 7px; font-weight: 900; letter-spacing: .2em; line-height: 1;
+    text-transform: uppercase; white-space: nowrap;
+  }
+  .cinema-frame-brand { top: 8px; left: clamp(22px, 2.2vw, 44px); }
+  .cinema-frame-brand b { color: #f0d28c; font: 700 10px/1 Georgia, serif; letter-spacing: .22em; }
+  .cinema-frame-brand span, .cinema-frame-era span, .cinema-frame-shot span { color: #73867f; }
+  .cinema-frame-brand i {
+    width: 5px; height: 5px; border-radius: 50%; background: #79dc9b;
+    box-shadow: 0 0 8px #79dc9b; animation: cinema-live-pulse 2.4s ease-in-out infinite;
+  }
+  .cinema-frame-era { top: 8px; right: clamp(22px, 2.2vw, 44px); }
+  .cinema-frame-era b { color: #d8c797; }
+  .cinema-frame-shot { right: clamp(22px, 2.2vw, 44px); bottom: 8px; }
+  .cinema-frame-shot b { color: var(--cinema-civ); }
+  @keyframes cinema-live-pulse { 50% { opacity: .45; box-shadow: 0 0 3px #79dc9b; } }
   body.cinema-mode #playerhud {
-    top: 30px; left: 50%; right: auto; width: min(900px, calc(100% - 132px)); height: 88px;
+    top: clamp(37px, 4.6vh, 54px); left: 50%; right: auto; width: min(960px, calc(100% - 168px)); height: 82px;
     grid-template-columns: 86px minmax(0, 1fr); transform: translateX(-50%);
-    border-color: #d8bd7952; border-radius: 12px;
-    background: linear-gradient(105deg, #07100edb, #0d1815cc 60%, #07100edb);
-    box-shadow: 0 16px 46px #0009, inset 0 1px #ffffff0b;
-    opacity: .82; transition: opacity .35s ease, transform .35s ease;
+    border-color: #d8bd7948; border-radius: 3px 3px 14px 14px;
+    background:
+      linear-gradient(90deg, #d8bd7928, transparent 15%, transparent 85%, #d8bd7920) top / 100% 1px no-repeat,
+      linear-gradient(105deg, #050b09e8, #0b1713d4 52%, #050b09e8);
+    box-shadow: 0 20px 58px #000a, inset 0 1px #ffffff0b;
+    backdrop-filter: blur(22px) saturate(125%);
+    opacity: .88; transition: opacity .35s ease, transform .35s ease;
   }
   body.cinema-mode.cinema-idle #playerhud { opacity: .62; transform: translate(-50%, -4px); }
   body.cinema-mode #playerhud .leader-region { display: none; }
@@ -534,10 +624,22 @@
   body.cinema-mode .minimap-frame { display: none !important; }
   body.cinema-mode #cinema-story {
     position: absolute; z-index: 10; left: clamp(34px, 4.5vw, 82px); bottom: clamp(68px, 7vh, 96px);
-    display: block; width: min(620px, calc(100% - 110px)); padding: 0 0 0 18px;
+    display: block; width: min(680px, calc(100% - 110px)); padding: 3px 0 4px 22px;
     opacity: 0; transform: translateY(14px); pointer-events: none;
-    border-left: 2px solid #e5c776; filter: drop-shadow(0 8px 18px #000d);
+    border-left: 1px solid #e5c776; filter: drop-shadow(0 8px 18px #000d);
+    isolation: isolate;
     transition: opacity .45s ease, transform .55s cubic-bezier(.2,.8,.2,1);
+  }
+  body.cinema-mode #cinema-story::before {
+    content: ""; position: absolute; z-index: -1; inset: -21px -44px -19px -32px;
+    background: linear-gradient(90deg, #020504e8 0%, #03100dbe 54%, transparent 100%);
+    clip-path: polygon(0 0, 92% 0, 100% 50%, 92% 100%, 0 100%);
+    filter: blur(.2px);
+  }
+  body.cinema-mode #cinema-story::after {
+    content: ""; position: absolute; left: -4px; top: 7px; width: 7px; height: 7px;
+    border-radius: 50%; background: #f2d98f;
+    box-shadow: 0 0 0 4px #d7b66a1f, 0 0 18px #e5c7768c;
   }
   body.cinema-mode #cinema-story.visible { opacity: 1; transform: translateY(0); }
   .cinema-kicker {
@@ -593,6 +695,7 @@
     body.cinema-mode #cinema-story, body.cinema-mode #playerhud,
     body.cinema-mode #cinema-follow, body.cinema-mode #cinema-chrome { transition-duration: .01ms; }
     body.cinema-mode #cinema-transition.active { animation: none; opacity: 0; }
+    body.cinema-mode #cinema-lighting::before, .cinema-frame-brand i { animation: none; }
   }
   #zoomctl {
     position: absolute; z-index: 14; bottom: 16px; left: 16px; display: flex; flex-direction: row;
@@ -953,6 +1056,7 @@
 <div id="maparea">
   <canvas id="map"></canvas>
   <div id="cinema-atmosphere" aria-hidden="true"></div>
+  <div id="cinema-lighting" aria-hidden="true"></div>
   <div id="cinema-transition" aria-hidden="true"></div>
   <section id="cinema-prologue" aria-live="polite" aria-atomic="true">
     <div class="cinema-prologue-content">
@@ -963,6 +1067,11 @@
     </div>
   </section>
   <div id="cinema-matte" aria-hidden="true"></div>
+  <div id="cinema-frame" aria-hidden="true">
+    <div class="cinema-frame-brand"><b>CIVVIS</b><i></i><span>Live world</span></div>
+    <div class="cinema-frame-era"><span>World chronicle</span><b>Ancient era · Dawn</b></div>
+    <div class="cinema-frame-shot"><span>Director</span><b>Establishing</b></div>
+  </div>
   <section id="cinema-story" aria-live="polite" aria-atomic="true">
     <div class="cinema-kicker"></div>
     <div class="cinema-headline"></div>
@@ -1428,7 +1537,7 @@ let CINEMA = localStorage.getItem("civvis-cinema-v1") !== "0";
 let CINEMA_AUDIO = localStorage.getItem("civvis-cinema-audio-v1") === "1";
 const REDUCED_MOTION_QUERY = window.matchMedia("(prefers-reduced-motion: reduce)");
 let cinemaIdleTimer = null, cinemaIntertitleTimer = null, cinemaIntertitleSignature = null;
-let DIRECTOR = localStorage.getItem("civvis-director-v2") === "1";
+let DIRECTOR = localStorage.getItem("civvis-director-v2") !== "0";
 let directorGoal = null, directorLast = 0, directorMotionLast = 0;
 let directorTransition = null;
 let directorStoryUntil = 0, directorAmbientLast = performance.now();
@@ -1443,6 +1552,61 @@ if (VIEW === "simple" || VIEW === "minimal") VIEW = "strategic";
 
 function cinemaActive() {
   return !!(SPEC && CINEMA && VIEW === "cinematic");
+}
+const CINEMA_TONE_CLASSES = ["cinema-tone-dawn", "cinema-tone-day",
+                              "cinema-tone-dusk", "cinema-tone-night"];
+const CINEMA_TONE_NAMES = ["Dawn", "High sun", "Golden hour", "Night watch"];
+function cinemaEraName(st) {
+  const era = st?.world_era;
+  return typeof era === "number"
+    ? titleCase(ERA_NAMES[era] || `era ${era}`)
+    : titleCase(String(era || "ancient"));
+}
+function syncCinemaPresentation(st) {
+  if (!st) return;
+  const phase = ((Math.floor(((st.turn || 0) + (Number(st.seed) || 0) % 17) / 18) % 4) + 4) % 4;
+  document.body.classList.remove(...CINEMA_TONE_CLASSES);
+  document.body.classList.add(CINEMA_TONE_CLASSES[phase]);
+  const storm = (st.active_disasters || []).some(disaster =>
+    ["blizzard", "dust_storm", "tornado", "hurricane"].includes(disaster.kind));
+  document.body.classList.toggle("cinema-storm", storm);
+  const frame = document.getElementById("cinema-frame");
+  if (!frame) return;
+  const era = cinemaEraName(st);
+  frame.querySelector(".cinema-frame-era b").textContent = `${era} era · ${CINEMA_TONE_NAMES[phase]}`;
+  const current = st.players?.[st.current];
+  if (current && !current.is_barbarian) frame.style.setProperty("--cinema-civ", pcol(current.id));
+}
+function syncCinemaFocusLighting() {
+  if (!cinemaActive() || !state) return;
+  const lighting = document.getElementById("cinema-lighting");
+  const shotLabel = document.querySelector(".cinema-frame-shot b");
+  let focus = null, kind = "establishing";
+  if (cameraFollowManual && cameraFollowUnitId !== null) {
+    const unit = state.units.find(candidate => candidate.id === cameraFollowUnitId);
+    if (unit) { focus = unitMapPoint(unit.pos); kind = "tracking"; }
+  } else if (DIRECTOR && directorGoal) {
+    kind = ({survey:"establishing", event:"event tableau", character:"tracking",
+             portrait:"empire portrait"})[directorGoal.kind] || "world chronicle";
+    const unit = directorGoal.subjectUnitId !== undefined && directorGoal.subjectUnitId !== null
+      ? state.units.find(candidate => candidate.id === directorGoal.subjectUnitId) : null;
+    if (unit) {
+      const point = cinematicUnitMapPoint(unit);
+      focus = {x:point.focusX, y:point.focusY, lift:point.focusLift};
+    } else if (directorGoal.focus) focus = unitMapPoint(directorGoal.focus);
+  }
+  if (shotLabel) shotLabel.textContent = titleCase(kind);
+  if (!lighting) return;
+  if (!focus) {
+    lighting.style.setProperty("--cinema-focus-x", "50%");
+    lighting.style.setProperty("--cinema-focus-y", "54%");
+    return;
+  }
+  const [vx, vy] = mapPointToView(focus);
+  const x = Math.max(0, Math.min(area.clientWidth, area.clientWidth / 2 + vx * cam.scale));
+  const y = Math.max(0, Math.min(area.clientHeight, area.clientHeight / 2 + vy * cam.scale));
+  lighting.style.setProperty("--cinema-focus-x", `${x.toFixed(1)}px`);
+  lighting.style.setProperty("--cinema-focus-y", `${y.toFixed(1)}px`);
 }
 function wakeCinema() {
   if (!document.body.classList.contains("cinema-mode")) return;
@@ -1922,9 +2086,9 @@ let DPR = window.devicePixelRatio || 1;
 // overhead and smaller values lower the camera toward the horizon. Keep the
 // default close to the natural hex proportions while allowing an Option/Alt
 // drag upward to flatten the board into a more cinematic angle.
-const DEFAULT_YS = 0.92, MIN_YS = 0.35, MAX_YS = 1;
-let cinematicYS = DEFAULT_YS, YS = DEFAULT_YS;
-const SKIRT = 6;        // restrained prism depth keeps the hex face dominant
+const DEFAULT_YS = 0.92, DEFAULT_CINEMA_YS = 0.64, MIN_YS = 0.35, MAX_YS = 1;
+let cinematicYS = DEFAULT_CINEMA_YS, YS = DEFAULT_YS;
+const SKIRT = 8.5;      // cinema's lower camera needs a readable terrain silhouette
 function key(p) { return p[0] + "," + p[1]; }
 function pcol(id) {
   const p = state.players[id];
@@ -1968,15 +2132,15 @@ function whexDist(a, b) {
 // --- rotating 3D camera: yaw about the camera point, world-fixed sun ---
 let COSR = 1, SINR = 0, LITF = 1;
 const SUN = Math.PI * 1.25; // world azimuth of the light (upper-left)
-function setRot(r) {
+function setRot(r, persist = true) {
   cam.rot = r; COSR = Math.cos(r); SINR = Math.sin(r);
   LITF = COSR >= 0 ? 1 : -1;
-  localStorage.setItem("civvis-rot", String(r));
+  if (persist) localStorage.setItem("civvis-rot", String(r));
 }
-function setTilt(ys) {
-  cinematicYS = Math.max(MIN_YS, Math.min(MAX_YS, Number.isFinite(ys) ? ys : DEFAULT_YS));
+function setTilt(ys, persist = true) {
+  cinematicYS = Math.max(MIN_YS, Math.min(MAX_YS, Number.isFinite(ys) ? ys : DEFAULT_CINEMA_YS));
   if (VIEW === "cinematic") YS = cinematicYS;
-  localStorage.setItem("civvis-tilt", String(cinematicYS));
+  if (persist) localStorage.setItem("civvis-tilt", String(cinematicYS));
 }
 function syncTiltForView() {
   YS = VIEW === "cinematic" ? cinematicYS : DEFAULT_YS;
@@ -1993,9 +2157,9 @@ function elev(t) {
   if (VIEW !== "cinematic") return 0;
   if (t.terrain === "ocean") return -6;
   if (t.terrain === "coast") return -4;
-  let e = 7;
-  if (t.hills) e += 6;
-  if (t.terrain === "mountain") e += 9;
+  let e = 8;
+  if (t.hills) e += 7;
+  if (t.terrain === "mountain") e += 12;
   return e;
 }
 function corner(x, y, s, i) {
@@ -2493,13 +2657,13 @@ function queueDirectorCue(cue) {
     // enough that the action remains comfortably in frame at the spectator's
     // deliberately gentle 0.9 zoom.
     const tracksUnit = cue.unitId !== undefined && cue.unitId !== null;
-    const nextGoal = {
+    const nextGoal = cinematicShotGoal({
       pos: tracksUnit ? [...cue.pos] : actionViewingAnchor(cue.pos),
       focus:[...cue.pos],
       scale:Math.max(.78, Math.min(1.42, cue.zoom || 1.08)),
       kind:tracksUnit ? "character" : "event", subjectUnitId:cue.unitId,
       holdMs:cue.silent ? 3600 : (cue.priority >= 7 ? 6200 : 4300), arrivedAt:0
-    };
+    }, state?.turn || 0);
     let targetX = S * SQ3 * (nextGoal.pos[0] + nextGoal.pos[1] / 2);
     if (mapWrapsX()) targetX += Math.round((cam.x - targetX) / WW()) * WW();
     const targetY = S * 1.5 * nextGoal.pos[1];
@@ -2521,6 +2685,29 @@ function queueDirectorCue(cue) {
 function clearDirectorTransition() {
   directorTransition = null;
   document.getElementById("cinema-transition")?.classList.remove("active");
+}
+// Every directed scene gets a lens, horizon and composition — not merely a
+// destination. Angles are restrained and deterministic, so cuts feel authored
+// while the hex geography remains easy to follow from one shot to the next.
+function cinematicShotGoal(goal, variation = 0) {
+  if (!goal?.pos) return goal;
+  const kind = goal.kind || "event";
+  const h = hash2(Math.round(goal.pos[0] * 17 + variation * 3),
+                  Math.round(goal.pos[1] * 23 + variation * 5));
+  const side = h < .5 ? -1 : 1;
+  const profiles = {
+    survey:    {tilt:.59 + h * .035, yaw:.13, frameX:.50, frameY:.52},
+    event:     {tilt:.61 + h * .055, yaw:.25, frameX:.63, frameY:.52},
+    character: {tilt:.67 + h * .045, yaw:.31, frameX:.61, frameY:.55},
+    portrait:  {tilt:.55 + h * .045, yaw:.21, frameX:.64, frameY:.53},
+  }[kind] || {tilt:.63, yaw:.18, frameX:.58, frameY:.53};
+  return Object.assign(goal, {
+    tilt:profiles.tilt,
+    rot:side * profiles.yaw * (.58 + h * .42),
+    frameX:profiles.frameX,
+    frameY:profiles.frameY,
+    shotSeed:h,
+  });
 }
 function stageDirectorGoal(goal, useCut = false, now = performance.now()) {
   clearDirectorTransition();
@@ -2546,8 +2733,9 @@ function stageDirectorGoal(goal, useCut = false, now = performance.now()) {
 // visit one capital or completed wonder before returning to the atlas view.
 function directorSurveyGoal() {
   const anchor = mainLandmassAnchor();
-  return anchor ? {pos:[...anchor.pos], scale:.9, kind:"survey",
-                   holdMs:6800, arrivedAt:0} : null;
+  return anchor ? cinematicShotGoal({pos:[...anchor.pos], focus:[...anchor.pos],
+                   scale:.82, kind:"survey", holdMs:7200, arrivedAt:0},
+                   state?.turn || 0) : null;
 }
 function directorAmbientCue() {
   if (!state) return null;
@@ -2581,8 +2769,9 @@ function directorAmbientCue() {
 function beginDirectorAmbientShot(now) {
   const cue = directorAmbientCue();
   if (!cue) { directorAmbientLast = now; return false; }
-  directorGoal = {pos:actionViewingAnchor(cue.pos), focus:[...cue.pos], scale:cue.zoom,
-                  kind:"portrait", holdMs:5200, arrivedAt:0};
+  directorGoal = cinematicShotGoal({pos:actionViewingAnchor(cue.pos), focus:[...cue.pos],
+                  scale:cue.zoom, kind:"portrait", holdMs:5600, arrivedAt:0},
+                  directorPortraitIndex + (state?.turn || 0));
   updateCameraFollowChip();
   directorAmbientLast = now;
   showDirectorStory(cue);
@@ -2605,6 +2794,8 @@ function advanceDirector(now = performance.now()) {
       cam.x = targetX;
       cam.y = clampCameraY(S * 1.5 * directorGoal.pos[1], directorGoal.scale);
       cam.scale = directorGoal.scale;
+      if (directorGoal.rot !== undefined) setRot(directorGoal.rot, false);
+      if (directorGoal.tilt !== undefined && VIEW === "cinematic") setTilt(directorGoal.tilt, false);
       directorTransition.switched = true;
       directorMotionLast = now;
       updateCameraFollowChip();
@@ -2966,6 +3157,7 @@ function render(st, recordChronicle = true) {
   }
   state = st;
   SPEC = !!st.spectate;
+  syncCinemaPresentation(st);
   if (SPEC && st.paused !== undefined && st.paused !== specPaused) {
     specPaused = st.paused; // stay in sync with the server-side stepper
     document.getElementById("specpause").textContent =
@@ -7598,7 +7790,7 @@ document.addEventListener("keydown", ev => {
   }
   else if (ev.key.toLowerCase() === "q") orbitCamera(-Math.PI / 12, 0);
   else if (ev.key.toLowerCase() === "e") orbitCamera(Math.PI / 12, 0);
-  else if (ev.key.toLowerCase() === "r") orbitCamera(-cam.rot, DEFAULT_YS - cinematicYS);
+  else if (ev.key.toLowerCase() === "r") orbitCamera(-cam.rot, DEFAULT_CINEMA_YS - cinematicYS);
   else if (ev.key.toLowerCase() === "f") togglePanel();
 });
 document.addEventListener("keyup", ev => {
@@ -7606,7 +7798,7 @@ document.addEventListener("keyup", ev => {
   ev.preventDefault();
   if (altTap) {
     setRot(0);
-    if (VIEW === "cinematic") setTilt(DEFAULT_YS);
+    if (VIEW === "cinematic") setTilt(DEFAULT_CINEMA_YS);
     draw(); drawMini();
   }
   altTap = false;
@@ -7805,7 +7997,16 @@ document.getElementById("restart-sim").onclick = restartSimulationWithSelectedSe
 }
 
 setRot(parseFloat(localStorage.getItem("civvis-rot") || "0"));
-setTilt(parseFloat(localStorage.getItem("civvis-tilt") || String(DEFAULT_YS)));
+{
+  const stored = parseFloat(localStorage.getItem("civvis-tilt") || String(DEFAULT_CINEMA_YS));
+  // Earlier cinema builds stored the near-overhead general-map default. Move
+  // that untouched value to the new authored angle once, while preserving any
+  // tilt the viewer actually chose with Option/Alt-drag.
+  const migrated = !localStorage.getItem("civvis-cinema-camera-v3") &&
+    Math.abs(stored - DEFAULT_YS) < .025 ? DEFAULT_CINEMA_YS : stored;
+  setTilt(migrated);
+  localStorage.setItem("civvis-cinema-camera-v3", "1");
+}
 if (window.matchMedia("(max-width: 720px)").matches) togglePanel(true);
 resize();
 boot();
