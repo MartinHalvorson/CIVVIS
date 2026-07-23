@@ -8030,6 +8030,10 @@ impl From<EventLog> for Vec<Event> {
     }
 }
 
+fn yes() -> bool {
+    true
+}
+
 fn bump(p: &mut Player, key: &str) {
     *p.counters.entry(key.to_string()).or_insert(0) += 1;
 }
@@ -9463,6 +9467,17 @@ pub struct Game {
     /// under, and the tiles it was taken over. Empty means "assume nothing".
     #[serde(skip)]
     remembered_under: Vec<(u64, TileBits)>,
+    /// Whether to keep each player's remembered map of fogged tiles and
+    /// cities up to date.
+    ///
+    /// That memory feeds observations and the shared sight allies pool; no
+    /// rule and no built-in agent reads it, so a search rolling positions
+    /// forward can leave it untouched and reach the same outcome. Explored
+    /// ground and Natural-Wonder discovery are kept regardless, because those
+    /// do change the game. On by default; a caller that never reads fogged
+    /// memory turns it off for a faster clone-and-step.
+    #[serde(skip, default = "yes")]
+    track_fog_memory: bool,
     pub rng: Rng,
     pub seed: u64,
     /// Key into `rules.difficulties`. Prince is the unhandicapped reference.
@@ -9712,6 +9727,7 @@ impl From<GameSer> for Game {
             vision: std::cell::RefCell::new(VisionCache::default()),
             routing: std::cell::RefCell::new(RoutingCache::default()),
             remembered_under: Vec::new(),
+            track_fog_memory: true,
             rng: s.rng,
             seed: s.seed,
             difficulty: s.difficulty,
@@ -10007,6 +10023,7 @@ impl Game {
             vision: std::cell::RefCell::new(VisionCache::default()),
             routing: std::cell::RefCell::new(RoutingCache::default()),
             remembered_under: Vec::new(),
+            track_fog_memory: true,
             rng,
             seed,
             difficulty,
@@ -20211,6 +20228,12 @@ impl Game {
         key
     }
 
+    /// Stop (or resume) maintaining the remembered map of fogged tiles and
+    /// cities. Outcomes are unchanged either way; only observations are.
+    pub fn set_fog_memory(&mut self, track: bool) {
+        self.track_fog_memory = track;
+    }
+
     fn refresh_visibility_snapshot(&mut self, pid: usize, visible: &TileBits) {
         if self.remembered_under.len() < self.players.len() {
             self.remembered_under
@@ -20242,20 +20265,24 @@ impl Game {
             .difference(&self.players[pid].explored)
             .copied()
             .collect();
-        let tiles: Vec<(Pos, RememberedTile)> = visible
-            .iter()
-            .filter(|position| !self.remembered_tile_is_current(pid, **position))
-            .filter_map(|position| self.snapshot_tile(*position).map(|tile| (*position, tile)))
-            .collect();
-        let cities: Vec<RememberedCity> = self
-            .cities
-            .values()
-            .filter(|city| visible.contains(&city.pos))
-            .map(|city| self.remember_city(city))
-            .collect();
-        let live_city_ids: BTreeSet<u32> = self.cities.keys().copied().collect();
-        let turn = self.turn;
-        {
+        // The fogged-tile and remembered-city memory is only for
+        // observations, so a search that never observes leaves it be. What
+        // remains — explored ground and, below, Natural-Wonder discovery —
+        // does change the game and is kept either way.
+        if self.track_fog_memory {
+            let turn = self.turn;
+            let tiles: Vec<(Pos, RememberedTile)> = visible
+                .iter()
+                .filter(|position| !self.remembered_tile_is_current(pid, **position))
+                .filter_map(|position| self.snapshot_tile(*position).map(|tile| (*position, tile)))
+                .collect();
+            let cities: Vec<RememberedCity> = self
+                .cities
+                .values()
+                .filter(|city| visible.contains(&city.pos))
+                .map(|city| self.remember_city(city))
+                .collect();
+            let live_city_ids: BTreeSet<u32> = self.cities.keys().copied().collect();
             let player = &mut self.players[pid];
             // Only reach for the memory mutably when a stamp actually has to
             // move: taking it mutably is what copies it, and after the first
@@ -20263,10 +20290,6 @@ impl Game {
             for position in visible.iter() {
                 player.remembered_tiles.mark_seen(*position, turn);
             }
-            // `newly_explored` is exactly `visible - explored`, so extending
-            // by it reaches the same set as extending by everything visible
-            // while inserting only the hexes actually new to this player —
-            // most of what a unit sees on any given step, it has seen before.
             player.explored.extend(newly_explored.iter().copied());
             for (position, tile) in tiles {
                 player.remembered_tiles.remember(position, tile, turn);
@@ -20277,6 +20300,13 @@ impl Game {
             for city in cities {
                 player.remembered_cities.insert(city.id, city);
             }
+        } else {
+            // `newly_explored` is exactly `visible - explored`, so extending
+            // by it reaches the same explored set as extending by everything
+            // visible.
+            self.players[pid]
+                .explored
+                .extend(newly_explored.iter().copied());
         }
 
         if self.players[pid].is_minor || self.players[pid].is_barbarian {

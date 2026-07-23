@@ -309,6 +309,13 @@ Multiplayer games score as pairwise Elo results by final placement
   `width`, `height`, or `num_city_states` fields override individual profile
   values.
 
+A searching agent does not read fogged-tile memory between the root and the
+leaf, so `game.set_fog_memory(false)` stops maintaining it: explored ground and
+Natural-Wonder discovery are kept (they change the game), while the remembered
+map of fogged tiles and cities — which only feeds observations — is left alone.
+Outcomes are identical; a clone-and-move drops about a fifth. Turn it back on
+at a node you intend to observe. `civvis rollouts` reports both.
+
 An agent that searches spends its time cloning a position and stepping it
 forward, not playing whole games, so `civvis rollouts` times that directly:
 cloning, cloning plus an ordinary move, and cloning plus ending a turn. Ending

@@ -451,6 +451,19 @@ fn main() {
                 sink += branch.units.len();
             }
             let end_us = end_start.elapsed().as_secs_f64() / samples as f64 * 1e6;
+            // The same move on a position that is not maintaining fogged
+            // memory — what a search that never observes mid-rollout pays.
+            let mut fast = g.clone();
+            fast.set_fog_memory(false);
+            let fast_us = mover.as_ref().map(|action| {
+                let start = Instant::now();
+                for _ in 0..samples {
+                    let mut branch = fast.clone();
+                    let _ = branch.apply(seat, action);
+                    sink += branch.units.len();
+                }
+                start.elapsed().as_secs_f64() / samples as f64 * 1e6
+            });
             println!(
                 "turn {} · {} seats · {} cities · {} units",
                 g.turn,
@@ -464,6 +477,12 @@ fn main() {
                 None => println!("clone + move          n/a  (no legal move for this seat)"),
             }
             println!("clone + end turn {end_us:8.1} us  = {:.0}/sec", 1e6 / end_us);
+            if let Some(us) = fast_us {
+                println!(
+                    "clone + move (no fog){us:6.1} us  = {:.0} rollouts/sec",
+                    1e6 / us
+                );
+            }
             let _ = sink;
         }
         "tournament" => {
