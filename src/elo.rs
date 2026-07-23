@@ -608,7 +608,10 @@ fn acquire_ledger_lock(path: &Path) -> io::Result<LedgerLock> {
             .open(&lock_path)
         {
             Ok(mut file) => {
-                writeln!(file, "{}", std::process::id())?;
+                if let Err(error) = writeln!(file, "{}", std::process::id()) {
+                    let _ = fs::remove_file(&lock_path);
+                    return Err(error);
+                }
                 return Ok(LedgerLock { path: lock_path });
             }
             Err(error) if error.kind() == ErrorKind::AlreadyExists => {
@@ -689,6 +692,7 @@ mod tests {
     use crate::rng::Rng;
     use std::collections::BTreeMap;
     use std::fs;
+    use std::sync::{Arc, Barrier};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn player(civ: &str, strategy: &str, agent: &str, score: i64, won: bool) -> RatedPlayer {
@@ -844,6 +848,57 @@ mod tests {
         let raw = fs::read_to_string(&path).unwrap();
         assert!(raw.contains(&format!("\"schema_version\": {ELO_SCHEMA_VERSION}")));
         assert!(raw.contains("\"civilization\": \"Rome\""));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn locked_ledger_updates_from_concurrent_workers_are_merged() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "civvis-elo-concurrent-{}-{nonce}",
+            std::process::id()
+        ));
+        let path = dir.join("ratings.json");
+        let barrier = Arc::new(Barrier::new(2));
+        let workers: Vec<_> = [
+            (
+                player("Rome", "science", "advanced", 2, true),
+                player("Egypt", "science", "advanced", 1, false),
+            ),
+            (
+                player("Greece", "culture", "advanced", 2, true),
+                player("China", "culture", "advanced", 1, false),
+            ),
+        ]
+        .into_iter()
+        .map(|results| {
+            let path = path.clone();
+            let barrier = Arc::clone(&barrier);
+            std::thread::spawn(move || {
+                barrier.wait();
+                super::update_ledger(&path, |pool| {
+                    pool.record_game(&[results.0, results.1], 24.0)
+                })
+                .unwrap();
+            })
+        })
+        .collect();
+        for worker in workers {
+            worker.join().unwrap();
+        }
+        let pool = EloPool::load(&path).unwrap();
+        assert_eq!(pool.ratings.len(), 4);
+        assert_eq!(
+            pool.ratings
+                .values()
+                .map(|rating| rating.games)
+                .sum::<u32>(),
+            4
+        );
+        assert!(!dir.join(".ratings.json.lock").exists());
         fs::remove_dir_all(dir).unwrap();
     }
 }

@@ -67,7 +67,6 @@
       radial-gradient(circle at 80% -10%, #23483b80, transparent 34%),
       linear-gradient(180deg, #101d1b 0%, #08110f 100%);
     border-right: 1px solid #355047; box-shadow: 16px 0 55px #0008;
-    transition: width .25s ease, min-width .25s ease, opacity .18s ease;
   }
   body.sidebar-hidden #side { width: 0; min-width: 0; opacity: 0; pointer-events: none; }
   body.cinema-mode #side { width: 0; min-width: 0; opacity: 0; pointer-events: none; }
@@ -615,9 +614,9 @@
       linear-gradient(105deg, #050b09e8, #0b1713d4 52%, #050b09e8);
     box-shadow: 0 20px 58px #000a, inset 0 1px #ffffff0b;
     backdrop-filter: blur(22px) saturate(125%);
-    opacity: .88; transition: opacity .35s ease, transform .35s ease;
+    opacity: .88; transition: opacity .35s ease;
   }
-  body.cinema-mode.cinema-idle #playerhud { opacity: .62; transform: translate(-50%, -4px); }
+  body.cinema-mode.cinema-idle #playerhud { opacity: .62; }
   body.cinema-mode #playerhud .leader-region { display: none; }
   body.cinema-mode #playerhud .victory-track { min-height: 60px; padding-top: 4px; }
   body.cinema-mode #zoomctl, body.cinema-mode #ubar, body.cinema-mode #modeline,
@@ -1542,7 +1541,12 @@ let CINEMA = localStorage.getItem("civvis-cinema-v1") !== "0";
 let CINEMA_AUDIO = localStorage.getItem("civvis-cinema-audio-v1") === "1";
 const REDUCED_MOTION_QUERY = window.matchMedia("(prefers-reduced-motion: reduce)");
 let cinemaIdleTimer = null, cinemaIntertitleTimer = null, cinemaIntertitleSignature = null;
-let DIRECTOR = localStorage.getItem("civvis-director-v2") !== "0";
+// Automatic camera movement is strictly opt-in. A spectator may still ask the
+// director to find the action, but loading or entering Cinema must never start
+// moving a viewport that the viewer left still. Use a fresh preference key so
+// browsers where Cinema previously forced v2 on also return to a steady view.
+const DIRECTOR_STORAGE_KEY = "civvis-director-v3";
+let DIRECTOR = localStorage.getItem(DIRECTOR_STORAGE_KEY) === "1";
 let directorGoal = null, directorLast = 0, directorMotionLast = 0;
 let directorTransition = null;
 let directorStoryUntil = 0, directorAmbientLast = performance.now();
@@ -1676,8 +1680,7 @@ function applyCinemaMode() {
   const footerButton = document.getElementById("speccinema");
   if (footerButton) footerButton.classList.toggle("active", active);
   if (active && !wasActive) {
-    if (!DIRECTOR) setDirector(true);
-    else if (!directorGoal && state) directorGoal = directorSurveyGoal();
+    if (DIRECTOR && !directorGoal && state) directorGoal = directorSurveyGoal();
     wakeCinema();
     if (state && !showCinemaPrologue(state)) {
       const civilizations = state.players.filter(player =>
@@ -1699,7 +1702,7 @@ function applyCinemaMode() {
   }
   updateCinemaAudioButton();
   if (cinemaAudioContext) syncCinemaAudioState();
-  if (active !== wasActive) setTimeout(resize, 270);
+  if (active !== wasActive) resize();
 }
 function setCinemaMode(on) {
   CINEMA = !!on;
@@ -7089,7 +7092,8 @@ function cameraYBounds(scale = cam.scale) {
   if (!state || !area.clientHeight || Math.abs(SINR) > 0.001) return null;
   const halfVisible = area.clientHeight / (2 * Math.max(0.25, scale) * YS);
   const top = -S;
-  const bottom = S * 1.5 * Math.max(0, state.map.height - 1) + S + SKIRT / YS;
+  const skirt = VIEW === "cinematic" ? SKIRT : 6;
+  const bottom = S * 1.5 * Math.max(0, state.map.height - 1) + S + skirt / YS;
   if (bottom - top <= halfVisible * 2) {
     const middle = (top + bottom) / 2;
     return { min: middle, max: middle };
@@ -7403,7 +7407,7 @@ function updateDirectorButton() {
 }
 function setDirector(on) {
   DIRECTOR = !!on;
-  localStorage.setItem("civvis-director-v2", DIRECTOR ? "1" : "0");
+  localStorage.setItem(DIRECTOR_STORAGE_KEY, DIRECTOR ? "1" : "0");
   clearDirectorTransition();
   directorGoal = null;
   directorAmbientLast = performance.now();
@@ -7770,7 +7774,10 @@ function togglePanel(force) {
   document.body.classList.toggle("sidebar-hidden", hide);
   document.getElementById("paneltoggle").textContent = hide ? "☷" : "☰";
   document.getElementById("paneltoggle").title = hide ? "Show command deck" : "Hide command deck";
-  setTimeout(resize, 260);
+  // The deck changes the map's layout width. Resize its backing canvas in the
+  // same frame so the browser never stretches an old bitmap and then snaps it
+  // to a different size a quarter-second later.
+  resize();
 }
 document.addEventListener("keydown", ev => {
   if (ev.key === "Alt") {
