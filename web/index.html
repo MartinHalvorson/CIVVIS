@@ -3978,6 +3978,22 @@ function drawCinematicSubjectMarker(u, x, y, now) {
   cx.beginPath(); cx.ellipse(x, cy, r, r * .4, 0, 0, 7); cx.stroke();
   cx.restore();
 }
+function drawCinematicSubjectBrackets(u, x, y, now) {
+  if (!cinemaActive() || cinematicSubjectUnitId() !== u.id) return;
+  const k = Math.min(UI_K(), 1.7);
+  const pulse = REDUCED_MOTION_QUERY.matches ? .5 : .5 + .5 * Math.sin(now / 520);
+  const r = (16 + pulse * 1.4) * k, cy = y - 1.5 * k;
+  cx.save();
+  cx.globalAlpha = .72 + pulse * .18;
+  cx.strokeStyle = "#f4dda0"; cx.lineWidth = 1.25 * k;
+  cx.shadowColor = "#e5c66f"; cx.shadowBlur = 5 * k;
+  cx.beginPath();
+  cx.arc(x, cy, r, Math.PI - .66, Math.PI + .66);
+  cx.moveTo(x + r * Math.cos(-.66), cy + r * Math.sin(-.66));
+  cx.arc(x, cy, r, -.66, .66);
+  cx.stroke();
+  cx.restore();
+}
 function drawUnitBase(u, x, y) {
   const spent = u.moves_left !== undefined && u.moves_left <= 0;
   const cy = y + 8.5;
@@ -5548,6 +5564,7 @@ function draw() {
       drawCinematicSubjectMarker(u, x, y, now);
       drawUnitBase(u, x, y);
       drawUnitChar(u, x, y, now, moving);
+      drawCinematicSubjectBrackets(u, x, y, now);
       if (u.survey_count > 1) drawUnitFormationBadge(u, x, y);
       else if (!cinemaSurvey) drawUnitBadge(u, x, y);
       if (u.fortified && !cinemaSurvey) {

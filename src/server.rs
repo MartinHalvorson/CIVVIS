@@ -2096,6 +2096,7 @@ mod tests {
             .contains("function cinematicUnitMapPoint(unit, now = performance.now())"));
         assert!(EMBEDDED_INDEX.contains("function unitMoveDuration(unitId, steps)"));
         assert!(EMBEDDED_INDEX.contains("function drawCinematicSubjectMarker(u, x, y, now)"));
+        assert!(EMBEDDED_INDEX.contains("function drawCinematicSubjectBrackets(u, x, y, now)"));
         assert!(EMBEDDED_INDEX.contains("function beginTouchTransform()"));
         assert!(EMBEDDED_INDEX.contains("touch-action: none"));
         assert!(EMBEDDED_INDEX.contains("id=\"cinema-follow\""));
