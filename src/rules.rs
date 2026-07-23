@@ -605,6 +605,7 @@ pub struct GovEffects {
     pub allied_suzerain_trade_production: f64,
     pub project_production_pct: f64,
     pub religious_strength: f64,
+    pub trade_route_capacity: f64,
     pub capital_yields: Yields,
     pub government_building_yields: Yields,
 }

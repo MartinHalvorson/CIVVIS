@@ -60,7 +60,8 @@
     },
     "ADJUST_TRADE_ROUTE_CAPACITY": {
       "status": "implemented",
-      "note": "Route capacity from Foreign Trade, Markets, Lighthouses, Great Merchants and districts."
+      "verified": true,
+      "note": "Verified row by row, and it found two gaps now fixed. A city earns up to two routes from its own infrastructure and each is an either/or: the Commercial Hub grants one and a Harbor grants it only where there is no Commercial Hub (REQUIRES_NO_COMMERCIAL_HUB), with England's Royal Navy Dockyard unconditional; separately a Market grants one and a Lighthouse only where there is no Market (REQUIRES_NO_MARKET). CIVVIS had only the building tier. Merchant Republic's two routes were also missing. Foreign Trade, Colossus, Great Zimbabwe, Carthage and the Great Merchants already executed. Alliance-level routes remain unmodelled."
     },
     "ADJUST_GREAT_PERSON_POINTS": {
       "status": "implemented",

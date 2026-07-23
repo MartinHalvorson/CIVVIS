@@ -9619,8 +9619,22 @@ impl Game {
         }
         let mut cap = tree_capacity;
         for city in self.cities.values().filter(|city| city.owner == pid) {
-            // Market and Lighthouse are alternative ways to earn this city's
-            // one infrastructure route; owning both never grants two.
+            // A city earns up to two routes from its own infrastructure, and
+            // each is an either/or. The Commercial Hub grants one; a Harbor
+            // grants it only where there is no Commercial Hub, except that
+            // England's Royal Navy Dockyard carries its own unconditionally.
+            let dockyard = city.districts.iter().any(|(district, position)| {
+                district == "royal_navy_dockyard" && self.district_is_active(city, district, *position)
+            });
+            if self.city_has_active_district_family(city, "commercial_hub") {
+                cap += 1;
+                if dockyard {
+                    cap += 1;
+                }
+            } else if self.city_has_active_district_family(city, "harbor") {
+                cap += 1;
+            }
+            // Market and Lighthouse are the same either/or one tier down.
             if self.city_has_active_building_family(city, "market")
                 || self.city_has_active_building_family(city, "lighthouse")
             {
@@ -9642,6 +9656,7 @@ impl Game {
             }
         }
         cap += self.empire_wonder_effect(pid, "trade_route_capacity") as i64;
+        cap += self.gov_effects(pid).trade_route_capacity as i64;
         cap += p
             .counters
             .get("great_person_trade_capacity")
@@ -36740,7 +36755,8 @@ mod district_mechanics {
             .buildings
             .push("market".to_string());
         game.players[0].civics.insert("foreign_trade".to_string());
-        assert_eq!(game.trade_capacity(0), 2);
+        // Foreign Trade, the Commercial Hub itself, and the Market it hosts.
+        assert_eq!(game.trade_capacity(0), 3);
         assert_eq!(game.route_yields(city, false).gold, 6.0);
         game.map.tiles.get_mut(&commercial).unwrap().pillaged = true;
         assert_eq!(game.trade_capacity(0), 1);

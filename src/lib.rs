@@ -1177,9 +1177,10 @@ mod tests {
             .iter()
             .find(|city| **city != cap && **city != second)
             .unwrap();
-        let gathering_storm_capacity = g4.trade_capacity(0);
+        let before_government = g4.trade_capacity(0);
         g4.players[0].government = Some("merchant_republic".to_string());
-        assert_eq!(g4.trade_capacity(0), gathering_storm_capacity);
+        // Merchant Republic carries two Trade Routes of its own.
+        assert_eq!(g4.trade_capacity(0), before_government + 2);
         g4.players[0]
             .counters
             .insert("great_person_trade_capacity".to_string(), 1);
