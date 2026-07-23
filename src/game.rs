@@ -9103,17 +9103,36 @@ impl Game {
         {
             return;
         }
+        let text = self.attributed(pid, text.into());
         self.events.push(Event {
             turn: self.turn,
             player: pid,
             category: category.to_string(),
-            text: text.into(),
+            text,
             pos,
         });
         if self.events.len() > EVENT_LIMIT {
             let excess = self.events.len() - EVENT_LIMIT;
             self.events.drain(..excess);
         }
+    }
+
+    /// A log entry names its civilization first. Read on its own — in a
+    /// spectator's mixed stream, or by an agent reasoning over its tail — an
+    /// entry that opens with a verb is an event without an author, and the
+    /// spectate view rotates the observed seat between frames, so "Founded
+    /// Antium" belongs to nobody in particular. Messages a call site already
+    /// wrote from the actor's side (war, peace, diplomacy, a captured city)
+    /// name a civilization themselves and reach both parties unchanged.
+    fn attributed(&self, pid: usize, text: String) -> String {
+        if self
+            .players
+            .iter()
+            .any(|player| !player.civ.is_empty() && text.starts_with(&player.civ))
+        {
+            return text;
+        }
+        format!("{} {}", self.civ_name(pid), text)
     }
 
     fn civ_name(&self, pid: usize) -> String {
@@ -9994,7 +10013,7 @@ impl Game {
         self.note(
             pid,
             "War",
-            format!("{} upgraded to {}", pretty(&from), pretty(&target)),
+            format!("upgraded {} to {}", pretty(&from), pretty(&target)),
             Some(pos),
         );
         Ok(())
@@ -12856,8 +12875,7 @@ impl Game {
         }
         self.players[pid].gpp.insert(kind.to_string(), 0.0);
         self.retired_great_people.insert(id.clone());
-        let civ = self.civ_name(pid);
-        self.note(pid, "People", format!("{} joined {civ}", spec.name), None);
+        self.note(pid, "People", format!("recruited {}", spec.name), None);
         self.players[pid].great_people.push(id);
         *self.players[pid]
             .gp_claimed
@@ -25286,7 +25304,7 @@ impl Game {
         let founded = city.name.clone();
         self.cities.insert(cid, city);
         self.reveal(pid, pos, 3);
-        self.note(pid, "Cities", format!("Founded {founded}"), Some(pos));
+        self.note(pid, "Cities", format!("founded {founded}"), Some(pos));
         cid
     }
 
@@ -27722,7 +27740,7 @@ impl Game {
         self.note(
             pid,
             "War",
-            format!("You detonated a {weapon}"),
+            format!("detonated a {weapon}"),
             Some(target),
         );
         Ok(())
@@ -31243,7 +31261,7 @@ impl Game {
             .collect();
         let era_name = ERA_NAMES.get(era).copied().unwrap_or("a new");
         for pid in majors.clone() {
-            self.note(pid, "General", format!("The world entered the {era_name} era"), None);
+            self.note(pid, "General", format!("entered the {era_name} era"), None);
         }
         // Above Prince every AI civilization enters the new era holding a
         // handful of free Eurekas and Inspirations.
@@ -32378,7 +32396,7 @@ impl Game {
             self.players[pid].research_overflow += sci;
         }
         if let Some((node, first)) = completed_tech {
-            self.note(pid, "Science", format!("Researched {}", pretty(&node)), None);
+            self.note(pid, "Science", format!("researched {}", pretty(&node)), None);
             self.apply_tree_completion(pid, true, &node, first);
             for city in self.player_city_ids(pid) {
                 self.modernize_unit_queue(pid, city);
@@ -32402,7 +32420,7 @@ impl Game {
             self.players[pid].civic_overflow += cul;
         }
         if let Some((node, first)) = completed_civic {
-            self.note(pid, "Culture", format!("Adopted {}", pretty(&node)), None);
+            self.note(pid, "Culture", format!("adopted {}", pretty(&node)), None);
             self.apply_tree_completion(pid, false, &node, first);
         }
     }
@@ -33767,7 +33785,7 @@ impl Game {
                 self.note(
                     pid,
                     "Cities",
-                    format!("{} completed", pretty(wonder)),
+                    format!("completed {}", pretty(wonder)),
                     Some(*pos),
                 );
                 let tile = self.map.tiles.get_mut(pos).unwrap();
