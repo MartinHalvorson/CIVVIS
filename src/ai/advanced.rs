@@ -2896,6 +2896,160 @@ impl AdvancedAi {
         }
     }
 
+    /// A peacetime tile from which a ground force can begin the selected
+    /// campaign without trespassing through the target's borders. Keeping the
+    /// ring several tiles outside the city leaves room for different combat
+    /// roles to assemble while still putting the army within one operational
+    /// move of the front once war begins.
+    fn campaign_staging_position(
+        &self,
+        g: &Game,
+        pid: usize,
+        target: usize,
+        uid: u32,
+        objective: Pos,
+        position: Pos,
+    ) -> bool {
+        let Some(tile) = g.map.get(position) else {
+            return false;
+        };
+        let distance = g.wdist(position, objective);
+        if !(3..=7).contains(&distance)
+            || g.rules.is_water(tile)
+            || g.city_at(position).is_some()
+            || !g.unit_can_traverse(uid, position)
+        {
+            return false;
+        }
+        let territory = tile
+            .owner_city
+            .and_then(|city| g.cities.get(&city))
+            .map(|city| city.owner);
+        territory != Some(target)
+            && territory.is_none_or(|owner| {
+                owner == pid || g.has_open_borders(pid, owner)
+            })
+    }
+
+    fn staged_campaign_units(
+        &self,
+        g: &Game,
+        pid: usize,
+        target: usize,
+        objective: Pos,
+    ) -> Vec<u32> {
+        g.player_unit_ids(pid)
+            .into_iter()
+            .filter(|uid| {
+                let unit = &g.units[uid];
+                let spec = &g.rules.units[unit.kind.as_str()];
+                spec.class == "military"
+                    && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                    && (spec.is_melee_capable() || spec.has_ranged_attack())
+                    && unit.hp as f64 > self.base.w.withdraw_hp
+                    && self.campaign_staging_position(
+                        g,
+                        pid,
+                        target,
+                        *uid,
+                        objective,
+                        unit.pos,
+                    )
+            })
+            .collect()
+    }
+
+    /// Global power answers whether a war is affordable; this answers whether
+    /// the army is actually in position to prosecute it. At least one melee
+    /// unit is mandatory because ranged and siege units cannot capture a city.
+    fn campaign_staged_for_war(
+        &self,
+        g: &Game,
+        pid: usize,
+        target: usize,
+        objective: Pos,
+        committed_domination: bool,
+    ) -> bool {
+        let units = self.staged_campaign_units(g, pid, target, objective);
+        let has_capturer = units.iter().any(|uid| {
+            g.rules.units[g.units[uid].kind.as_str()].is_melee_capable()
+        });
+        let ratio = self.local_strength_ratio(g, &units, &[target], objective);
+        let formation_ready = units.len() >= 3 || (units.len() >= 2 && ratio >= 1.60);
+        let minimum_ratio = if committed_domination { 0.90 } else { 1.05 };
+        formation_ready && has_capturer && ratio + 1e-9 >= minimum_ratio
+    }
+
+    /// Redirect an otherwise idle field unit to the active conquest front.
+    /// Returning `Some` means the campaign owns this unit's peacetime order,
+    /// including holding a completed staging position; `None` leaves ordinary
+    /// patrol, exploration, and naval-escort behavior unchanged.
+    fn campaign_staging_step(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        plan: &StrategicPlan,
+    ) -> Option<bool> {
+        if plan.strategy != GrandStrategy::Conquest {
+            return None;
+        }
+        let target = plan.target_player?;
+        let objective = plan
+            .target_city
+            .and_then(|city| g.cities.get(&city))
+            .filter(|city| city.owner == target)
+            .map(|city| city.pos)?;
+        if !self.campaign_target_legal(g, pid, target) || g.is_at_war(pid, target) {
+            return None;
+        }
+        let unit = &g.units[&uid];
+        let spec = &g.rules.units[unit.kind.as_str()];
+        if !matches!(spec.class.as_str(), "military" | "support")
+            || matches!(spec.domain.as_deref(), Some("sea" | "air"))
+            || (BasicAi::unit_doctrine(g, uid) == UnitDoctrine::Recon
+                && self.base.has_exploration_target(g, pid, uid))
+        {
+            return None;
+        }
+        if self.campaign_staging_position(g, pid, target, uid, objective, unit.pos) {
+            return Some(self.base.fortify_or_stop(g, pid, uid));
+        }
+
+        let current = unit.pos;
+        let goals: HashSet<Pos> = g
+            .wdisk(objective, 7)
+            .into_iter()
+            .filter(|position| {
+                self.campaign_staging_position(
+                    g,
+                    pid,
+                    target,
+                    uid,
+                    objective,
+                    *position,
+                ) && g.units_at(*position).is_empty()
+            })
+            .collect();
+        let Some(next) = g
+            .route_step_to_any(uid, &goals)
+            .filter(|position| g.can_move(uid, *position))
+        else {
+            return None;
+        };
+        // Do not use an Open Borders shortcut through the intended victim.
+        // The next turn's route search will find a lawful way around it.
+        let next_territory = g.map.tiles[&next]
+            .owner_city
+            .and_then(|city| g.cities.get(&city))
+            .map(|city| city.owner);
+        if next_territory == Some(target) {
+            return Some(self.base.fortify_or_stop(g, pid, uid));
+        }
+        debug_assert_ne!(next, current);
+        Some(g.apply(pid, &Action::Move { unit: uid, to: next }).is_ok())
+    }
+
     fn advanced_diplomacy(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         while let Some(dedication) = g.available_dedications(pid).into_iter().next() {
             if g.apply(pid, &Action::ChooseDedication { dedication })
@@ -3070,7 +3224,19 @@ impl AdvancedAi {
         } else {
             my_power > target_power * 1.32 + 12.0
         };
-        if close_enough && ready {
+        let staged = plan
+            .target_city
+            .and_then(|city| g.cities.get(&city))
+            .is_some_and(|city| {
+                self.campaign_staged_for_war(
+                    g,
+                    pid,
+                    target,
+                    city.pos,
+                    committed_domination,
+                )
+            });
+        if close_enough && ready && staged {
             if let Some(action) = self.preferred_war_opening(g, pid, target) {
                 let _ = g.apply(pid, &action);
             }
@@ -8122,6 +8288,9 @@ impl AdvancedAi {
                     return self.base.fortify_or_stop(g, pid, uid);
                 }
             }
+            if let Some(acted) = self.campaign_staging_step(g, pid, uid, plan) {
+                return acted;
+            }
             return self.base.military_step(g, pid, uid);
         }
         // Combat can change occupancy, local power, line of sight, and the
@@ -10336,6 +10505,129 @@ mod tests {
                 GrandStrategy::Conquest,
             ),
             "once both geometry and defenses favor it, Domination must order the original capital first"
+        );
+    }
+
+    #[test]
+    fn conquest_army_stages_before_diplomacy_opens_the_war() {
+        let mut game = Game::new_full(2, 30, 18, 7_114, 300, 0, false);
+        for pid in 0..2 {
+            game.current = pid;
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .unwrap();
+        }
+        game.current = 0;
+        game.turn = 60;
+        let target_city = game.player_city_ids(1)[0];
+        let objective = game.cities[&target_city].pos;
+
+        // The declaration rule also requires a two-city operating base. Put
+        // the second city close enough that this test isolates army staging.
+        let second_site = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(position, tile)| {
+                game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+                    && tile.owner_city.is_none()
+                    && game.wdist(**position, objective) <= 18
+                    && game
+                        .cities
+                        .values()
+                        .all(|city| game.wdist(city.pos, **position) >= 4)
+            })
+            .map(|(position, _)| *position)
+            .next()
+            .expect("test map has a legal second-city site");
+        let settler = game.spawn_test_unit("settler", 0, second_site);
+        game.apply(0, &Action::FoundCity { unit: settler })
+            .unwrap();
+
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = "grassland".to_string();
+            tile.feature = None;
+            tile.hills = false;
+        }
+        let remote = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| {
+                game.wdist(*position, objective) >= 10
+                    && game.city_at(*position).is_none()
+                    && game.map.tiles[position]
+                        .owner_city
+                        .and_then(|city| game.cities.get(&city))
+                        .is_none_or(|city| city.owner != 1)
+            })
+            .expect("test map has a remote muster position");
+        let army: Vec<u32> = (0..4)
+            .map(|_| game.spawn_test_unit("swordsman", 0, remote))
+            .collect();
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: Some(target_city),
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+        };
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+
+        assert!(!ai.campaign_staged_for_war(&game, 0, 1, objective, true));
+        let before = game.wdist(game.units[&army[0]].pos, objective);
+        assert_eq!(
+            ai.campaign_staging_step(&mut game, 0, army[0], &plan),
+            Some(true)
+        );
+        assert!(game.wdist(game.units[&army[0]].pos, objective) < before);
+
+        ai.advanced_diplomacy(&mut game, 0, &plan);
+        assert!(
+            !game.players[0]
+                .denounced_until
+                .get(&1)
+                .is_some_and(|until| *until > game.turn),
+            "remote global power must not begin the diplomatic war countdown"
+        );
+
+        let staging: Vec<Pos> = game
+            .wdisk(objective, 7)
+            .into_iter()
+            .filter(|position| {
+                (3..=7).contains(&game.wdist(*position, objective))
+                    && game.city_at(*position).is_none()
+            })
+            .take(army.len())
+            .collect();
+        assert_eq!(staging.len(), army.len());
+        for (unit, position) in army.iter().zip(staging) {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = "grassland".to_string();
+            tile.feature = None;
+            tile.hills = false;
+            tile.owner_city = None;
+            game.units.get_mut(unit).unwrap().pos = position;
+        }
+        assert!(ai.campaign_staged_for_war(&game, 0, 1, objective, true));
+
+        ai.advanced_diplomacy(&mut game, 0, &plan);
+        assert!(
+            game.players[0]
+                .denounced_until
+                .get(&1)
+                .is_some_and(|until| *until > game.turn),
+            "the staged capture force should begin the formal-war countdown"
         );
     }
 
