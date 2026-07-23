@@ -16720,12 +16720,18 @@ impl Game {
     /// unimproved copy does not unlock its Amenities or Aztec combat bonus.
     /// Zanzibar's two synthetic luxuries participate in those same systems.
     fn empire_luxury_names(&self, pid: usize) -> BTreeSet<String> {
+        // Which city-states this player is suzerain of, and whether an Amani
+        // is sharing their luxuries, are the same for every luxury in the
+        // ruleset; deciding them per resource meant re-deriving every
+        // city-state's patron twenty-odd times over.
+        let clients = self.suzerained_minors(pid);
+        let amani = self.amani_city_state_for_effect(pid, "luxury_resources");
         let mut luxuries: BTreeSet<String> = self
             .rules
             .resources
             .iter()
             .filter(|(_, spec)| spec.class == "luxury")
-            .filter(|(resource, _)| self.resource_access_count(pid, resource) > 0)
+            .filter(|(resource, _)| self.luxury_access_count(pid, resource, &clients, amani) > 0)
             .map(|(resource, _)| resource.clone())
             .collect();
         if self.grants_city_state_unique_bonus(pid, "Zanzibar") {
@@ -17789,6 +17795,30 @@ impl Game {
 
     /// Luxuries use connected and temporarily traded copies. Gathering Storm
     /// strategic resources instead expose the integer amount in their stockpile.
+    /// [`Self::resource_access_count`] for a luxury, with the two answers
+    /// that do not depend on which luxury it is passed in.
+    fn luxury_access_count(
+        &self,
+        pid: usize,
+        res: &str,
+        clients: &[usize],
+        amani: Option<(u32, usize)>,
+    ) -> i32 {
+        let visible = self.resource_visible_to(pid, res);
+        let ordinary = if visible {
+            self.controlled_resource_count_via(pid, res, clients)
+        } else {
+            self.connected_resource_count(pid, res)
+        } + self.resource_trade_balance(pid, res);
+        let shared = amani
+            .filter(|(_, minor)| {
+                visible && self.connected_resource_count_unchecked(*minor, res) > 0
+            })
+            .map(|_| 1)
+            .unwrap_or(0);
+        ordinary.max(shared).max(0)
+    }
+
     pub fn resource_access_count(&self, pid: usize, res: &str) -> i32 {
         match self
             .rules
