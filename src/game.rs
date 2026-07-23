@@ -2118,6 +2118,41 @@ mod governor_runtime_tests {
     }
 
     #[test]
+    fn unique_improvements_pay_their_conditional_clauses() {
+        let mut game = Game::new_full(1, 24, 16, 91_977, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let centre = game.cities[&city].pos;
+        let (kurgan, pasture) = (game.nbrs(centre)[0], game.nbrs(centre)[1]);
+        for position in [kurgan, pasture] {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = "plains".to_string();
+            tile.feature = None;
+            tile.hills = false;
+            tile.improvement = None;
+            tile.pillaged = false;
+        }
+        let faith = |game: &Game, at: Pos| {
+            game.player_tile_yields(0, at, &game.map.tiles[&at]).faith
+        };
+        game.map.tiles.get_mut(&kurgan).unwrap().improvement = Some("kurgan".to_string());
+        let bare = faith(&game, kurgan);
+        game.map.tiles.get_mut(&pasture).unwrap().improvement = Some("pasture".to_string());
+        // One Faith per adjacent Pasture, doubling once Stirrups obsoletes it.
+        assert_eq!(faith(&game, kurgan), bare + 1.0);
+        game.players[0].techs.insert("stirrups".to_string());
+        assert_eq!(faith(&game, kurgan), bare + 2.0);
+
+        // The Sphinx gains Culture once Natural History is in.
+        game.map.tiles.get_mut(&kurgan).unwrap().improvement = Some("sphinx".to_string());
+        let culture = game.player_tile_yields(0, kurgan, &game.map.tiles[&kurgan]).culture;
+        game.players[0].civics.insert("natural_history".to_string());
+        assert_eq!(
+            game.player_tile_yields(0, kurgan, &game.map.tiles[&kurgan]).culture,
+            culture + 1.0
+        );
+    }
+
+    #[test]
     fn mines_and_quarries_lower_the_appeal_of_their_neighbours() {
         let mut game = Game::new_full(1, 24, 16, 91_971, 200, 0, false);
         let city = found_capital(&mut game, 0);
@@ -5704,6 +5739,93 @@ mod district_building_wonder_runtime_tests {
     }
 
     #[test]
+    fn routes_level_per_tile_and_engineers_lay_railroads() {
+        let (mut game, _city, _) = one_city(88_2071);
+        let (a, b) = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| !game.rules.is_water(tile) && game.rules.is_passable(tile))
+            .find_map(|(position, _)| {
+                game.nbrs(*position).into_iter().find_map(|neighbor| {
+                    let ok = game.map.get(neighbor).is_some_and(|tile| {
+                        !game.rules.is_water(tile) && game.rules.is_passable(tile)
+                    }) && !game.crosses_river(*position, neighbor)
+                        && game.units_at(*position).is_empty()
+                        && game.units_at(neighbor).is_empty()
+                        && game.map.tiles[position].district.is_none()
+                        && game.map.tiles[&neighbor].district.is_none();
+                    ok.then_some((*position, neighbor))
+                })
+            })
+            .expect("test map has an adjacent riverless land pair");
+        // Hills on the destination so the base step costs 2 MP and each
+        // route level's discount is visible.
+        for (position, hills) in [(a, false), (b, true)] {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = "plains".to_string();
+            tile.feature = None;
+            tile.hills = hills;
+            tile.road = 0;
+        }
+        let warrior = game.spawn_unit("warrior", 0, a);
+        assert!((game.unit_step_cost(warrior, a, b) - 2.0).abs() < 1e-9);
+        // The shipped ladder, per tile: Ancient/Medieval 1 MP, Industrial
+        // 0.75, Modern 0.5, Railroad 0.25.
+        for (level, expected) in [(1, 1.0), (2, 1.0), (3, 0.75), (4, 0.5), (5, 0.25)] {
+            game.map.tiles.get_mut(&a).unwrap().road = level;
+            game.map.tiles.get_mut(&b).unwrap().road = level;
+            assert!((game.unit_step_cost(warrior, a, b) - expected).abs() < 1e-9);
+        }
+        // The destination tile's route sets the step's price.
+        game.map.tiles.get_mut(&a).unwrap().road = 1;
+        game.map.tiles.get_mut(&b).unwrap().road = 5;
+        assert!((game.unit_step_cost(warrior, a, b) - 0.25).abs() < 1e-9);
+        game.map.tiles.get_mut(&a).unwrap().road = 5;
+        game.map.tiles.get_mut(&b).unwrap().road = 1;
+        assert!((game.unit_step_cost(warrior, a, b) - 1.0).abs() < 1e-9);
+
+        // Traders lay the best route their civilization's era allows.
+        game.players[0].techs.clear();
+        game.players[0].civics.clear();
+        assert_eq!(game.road_level_for(0), 1);
+        let classical = game
+            .rules
+            .techs
+            .iter()
+            .find(|(_, spec)| spec.era == 1)
+            .map(|(name, _)| name.clone())
+            .unwrap();
+        game.players[0].techs.insert(classical);
+        assert_eq!(game.road_level_for(0), 2);
+        game.players[0].techs.insert("steam_power".to_string());
+        assert_eq!(game.road_level_for(0), 3);
+        game.players[0].techs.insert("flight".to_string());
+        assert_eq!(game.road_level_for(0), 4);
+
+        // Railroads: engineer-built only, Steam Power, 1 Iron + 1 Coal,
+        // no build charge.
+        game.map.tiles.get_mut(&b).unwrap().road = 0;
+        let engineer = game.spawn_unit("military_engineer", 0, b);
+        let charges = game.units[&engineer].charges;
+        assert!(!game.can_build_railroad(0, engineer));
+        game.players[0]
+            .strategic_resources
+            .insert("iron".to_string(), 2.0);
+        game.players[0]
+            .strategic_resources
+            .insert("coal".to_string(), 1.0);
+        assert!(game.can_build_railroad(0, engineer));
+        game.apply(0, &Action::BuildRailroad { unit: engineer }).unwrap();
+        assert_eq!(game.map.tiles[&b].road, 5);
+        assert!((game.strategic_stockpile(0, "iron") - 1.0).abs() < 1e-9);
+        assert!(game.strategic_stockpile(0, "coal").abs() < 1e-9);
+        assert_eq!(game.units[&engineer].charges, charges);
+        assert_eq!(game.units[&engineer].moves_left, 0.0);
+        assert!(!game.can_build_railroad(0, engineer));
+    }
+
+    #[test]
     fn golden_gate_is_a_modern_road_without_embarking_land_units() {
         let (mut game, city, _) = one_city(774_4031);
         let (bridge, left, right) = game
@@ -5741,9 +5863,9 @@ mod district_building_wonder_runtime_tests {
         game.map.tiles.get_mut(&bridge).unwrap().owner_city = Some(city);
         let spec = game.rules.wonders["golden_gate_bridge"].clone();
         game.apply_wonder_completion_effects(0, city, "golden_gate_bridge", bridge, &spec);
-        assert!(game.map.tiles[&bridge].road);
-        assert!(game.map.tiles[&left].road);
-        assert!(game.map.tiles[&right].road);
+        assert_eq!(game.map.tiles[&bridge].road, 4);
+        assert_eq!(game.map.tiles[&left].road, 4);
+        assert_eq!(game.map.tiles[&right].road, 4);
 
         game.players[0].techs.remove("shipbuilding");
         for technology in ["mathematics", "square_rigging", "steam_power", "combustion"] {
@@ -8150,6 +8272,12 @@ pub enum Action {
         city: u32,
         target: Pos,
         thermonuclear: bool,
+    },
+    /// A Military Engineer lays a Railroad on its tile: engineer-built
+    /// only, no build charge, 1 Iron and 1 Coal from the stockpile per
+    /// tile (Routes_XP2 and Route_ResourceCosts).
+    BuildRailroad {
+        unit: u32,
     },
     EncampmentStrike {
         city: u32,
@@ -11383,7 +11511,8 @@ impl Game {
         if self.active_routes(pid) >= self.trade_capacity(pid) {
             return Err("no trading capacity".into());
         }
-        self.build_road(self.cities[&origin].pos, self.cities[&dest].pos);
+        let level = self.road_level_for(pid);
+        self.build_road(self.cities[&origin].pos, self.cities[&dest].pos, level);
         let distance = self
             .wdist(self.cities[&origin].pos, self.cities[&dest].pos)
             .max(1) as u32;
@@ -11399,14 +11528,28 @@ impl Game {
         Ok(())
     }
 
-    /// Lay an ancient road along a greedy shortest walk between two cities
-    /// (traders build roads as they go in Civ 6).
-    fn build_road(&mut self, from: Pos, to: Pos) {
+    /// The best route the shipped Routes table lets this civilization's
+    /// traders lay: Medieval from the Classical era, Industrial and Modern
+    /// from their namesake eras (each route's PrereqEra). Railroads are
+    /// never trader-laid - they are engineer-built only.
+    fn road_level_for(&self, pid: usize) -> u8 {
+        match self.player_era(pid) {
+            era if era >= 5 => 4,
+            era if era >= 4 => 3,
+            era if era >= 1 => 2,
+            _ => 1,
+        }
+    }
+
+    /// Lay a road of the given route level along a greedy shortest walk
+    /// between two cities (traders build roads as they go in Civ 6, and a
+    /// later-era route upgrades whatever it passes over, never downgrades).
+    fn build_road(&mut self, from: Pos, to: Pos, level: u8) {
         let mut cur = from;
         for _ in 0..40 {
             if let Some(t) = self.map.tiles.get_mut(&cur) {
                 if !self.rules.terrains[t.terrain.as_str()].water {
-                    t.road = true;
+                    t.road = t.road.max(level);
                 }
             }
             if cur == to {
@@ -15599,7 +15742,7 @@ impl Game {
             tile.pillaged = false;
             tile.district = None;
             tile.wonder = None;
-            tile.road = false;
+            tile.road = 0;
             tile.continent = None;
             tile.coastal_lowland = 0;
             tile.flooded = false;
@@ -17069,21 +17212,22 @@ impl Game {
         let unit = &self.units[&uid];
         let tile = &self.map.tiles[&to];
         let mut cost = self.step_cost(from, to);
-        if self.map.tiles[&from].road && tile.road {
+        if self.map.tiles[&from].road > 0 && tile.road > 0 {
             let modern_bridge = self.map.tiles[&from].wonder.as_deref()
                 == Some("golden_gate_bridge")
                 || tile.wonder.as_deref() == Some("golden_gate_bridge");
-            // The shipped route ladder: roads cost 1 MP until Industrial-era
-            // routes (0.75), then Modern (0.5). CIVVIS roads are unleveled,
-            // so the world era stands in for the route the era's traders lay.
-            let route = if self.world_era >= 5 {
-                0.5
-            } else if self.world_era >= 4 {
-                0.75
-            } else {
-                1.0
+            // The shipped route ladder, per tile: Ancient and Medieval roads
+            // cost 1 MP, Industrial 0.75, Modern 0.5, Railroads 0.25.
+            let mut route: f64 = match tile.road {
+                5 => 0.25,
+                4 => 0.5,
+                3 => 0.75,
+                _ => 1.0,
             };
-            cost = cost.min(if modern_bridge { 0.5 } else { route });
+            if modern_bridge {
+                route = route.min(0.5);
+            }
+            cost = cost.min(route);
         }
         if self.rules.units[unit.kind.as_str()].class == "religious"
             && unit.religion.as_deref().is_some_and(|religion| {
@@ -17093,12 +17237,11 @@ impl Game {
             cost = 1.0;
         }
         if self.crosses_river(from, to)
-            && self.map.tiles[&from].road
-            && tile.road
-            && self.world_era >= 1
+            && self.map.tiles[&from].road >= 2
+            && tile.road >= 2
         {
-            // Medieval roads bridge rivers, and traders lay them from the
-            // Classical era on (the shipped route's PrereqEra).
+            // Medieval and later routes bridge rivers (SupportsBridges);
+            // Ancient roads leave the crossing penalty in place.
             cost -= 2.0;
         }
         if self.promotion_effect(unit, "woods_move_cost") > 0.0
@@ -19966,6 +20109,45 @@ impl Game {
                 yields.food += (adjacent_farms / 2.0).floor()
                     * self.tree_effect(pid, "farm_pair_adjacency_food");
                 yields.food += adjacent_farms * self.tree_effect(pid, "farm_adjacency_food");
+            }
+            Some("sphinx") => {
+                let effects = &self.rules.improvements["sphinx"].effects;
+                yields.culture += self.tree_effect(pid, "sphinx_culture");
+                if matches!(
+                    tile.feature.as_deref(),
+                    Some("floodplains" | "grassland_floodplains" | "plains_floodplains")
+                ) {
+                    yields.culture += effects.get("floodplains_culture").copied().unwrap_or(0.0);
+                }
+                if self
+                    .nbrs(pos)
+                    .iter()
+                    .any(|neighbor| self.map.tiles[neighbor].wonder.is_some())
+                {
+                    yields.faith += effects.get("adjacent_wonder_faith").copied().unwrap_or(0.0);
+                }
+            }
+            Some("kurgan") => {
+                // +1 Faith per adjacent Pasture, which Stirrups obsoletes in
+                // favour of a +2 rule rather than stacking with it.
+                let effects = &self.rules.improvements["kurgan"].effects;
+                let per_pasture = if self.players[pid].techs.contains("stirrups") {
+                    effects
+                        .get("adjacent_pasture_faith_after_stirrups")
+                        .copied()
+                        .unwrap_or(0.0)
+                } else {
+                    effects.get("adjacent_pasture_faith").copied().unwrap_or(0.0)
+                };
+                yields.faith += per_pasture
+                    * self
+                        .nbrs(pos)
+                        .iter()
+                        .filter(|neighbor| {
+                            self.map.tiles[neighbor].improvement.as_deref() == Some("pasture")
+                                && !self.map.tiles[neighbor].pillaged
+                        })
+                        .count() as f64;
             }
             Some("great_wall") => {
                 let adjacent = self
@@ -23185,6 +23367,9 @@ impl Game {
                     }
                 }
             }
+            if self.can_build_railroad(pid, uid) {
+                acts.push(Action::BuildRailroad { unit: uid });
+            }
             if self.rock_concert_tourism(pid, uid).is_some() {
                 acts.push(Action::PerformConcert { unit: uid });
             }
@@ -24323,6 +24508,7 @@ impl Game {
                 target,
                 thermonuclear,
             } => self.do_wmd_strike(pid, *city, *target, *thermonuclear),
+            Action::BuildRailroad { unit } => self.do_build_railroad(pid, *unit),
             Action::EncampmentStrike { city, target } => {
                 self.do_encampment_strike(pid, *city, *target)
             }
@@ -25903,6 +26089,40 @@ impl Game {
             return None;
         };
         matches!(self.district_family(district), "aqueduct" | "canal" | "dam").then_some(*pos)
+    }
+
+    pub(crate) fn can_build_railroad(&self, pid: usize, uid: u32) -> bool {
+        let Some(unit) = self.units.get(&uid) else {
+            return false;
+        };
+        let tile = &self.map.tiles[&unit.pos];
+        unit.owner == pid
+            && unit.kind == "military_engineer"
+            && unit.moves_left > 0.0
+            && self.players[pid].techs.contains("steam_power")
+            && !self.rules.is_water(tile)
+            && tile.road < 5
+            && self.strategic_stockpile(pid, "iron") >= 1.0
+            && self.strategic_stockpile(pid, "coal") >= 1.0
+    }
+
+    /// Gathering Storm Railroads: engineer-built only (BuildOnlyWithUnit),
+    /// gated on Steam Power (Routes_XP2 PrereqTech), free of build charges
+    /// (BuildWithUnitChargeCost 0), and costing 1 Iron and 1 Coal per tile
+    /// (Route_ResourceCosts).
+    fn do_build_railroad(&mut self, pid: usize, uid: u32) -> Result<(), String> {
+        if !self.can_build_railroad(pid, uid) {
+            return Err("cannot lay a railroad here".to_string());
+        }
+        for resource in ["iron", "coal"] {
+            if let Some(stock) = self.players[pid].strategic_resources.get_mut(resource) {
+                *stock -= 1.0;
+            }
+        }
+        let pos = self.units[&uid].pos;
+        self.map.tiles.get_mut(&pos).unwrap().road = 5;
+        self.units.get_mut(&uid).unwrap().moves_left = 0.0;
+        Ok(())
     }
 
     pub(crate) fn can_contribute_district(&self, pid: usize, uid: u32, cid: u32) -> bool {
@@ -33894,7 +34114,7 @@ impl Game {
         }
 
         if effect("bridge_passage") > 0.0 {
-            self.map.tiles.get_mut(&position).unwrap().road = true;
+            self.map.tiles.get_mut(&position).unwrap().road = 4;
             let neighbors = self.nbrs(position);
             let land_sides: Vec<usize> = neighbors
                 .iter()
@@ -33912,8 +34132,8 @@ impl Game {
                     .find(|right| (*left as i32 - **right as i32).abs() == 3)
                     .map(|right| (*left, *right))
             }) {
-                self.map.tiles.get_mut(&neighbors[left]).unwrap().road = true;
-                self.map.tiles.get_mut(&neighbors[right]).unwrap().road = true;
+                self.map.tiles.get_mut(&neighbors[left]).unwrap().road = 4;
+                self.map.tiles.get_mut(&neighbors[right]).unwrap().road = 4;
             }
         }
 
@@ -35381,7 +35601,7 @@ mod visibility_tests {
             tile.district = None;
             tile.owner_city = None;
             tile.hills = false;
-            tile.road = false;
+            tile.road = 0;
         }
         let center = *game
             .map
@@ -35805,7 +36025,7 @@ mod combat_scenarios {
             tile.district = None;
             tile.owner_city = None;
             tile.hills = false;
-            tile.road = false;
+            tile.road = 0;
         }
         let center = *g
             .map

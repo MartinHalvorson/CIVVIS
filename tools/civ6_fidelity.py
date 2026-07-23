@@ -125,6 +125,7 @@ TABLE_KEYS = {
     "WMDs": "WeaponType",
     "Maps": "MapSizeType",
     "Happinesses": "HappinessType",
+    "Routes": "RouteType",
     "Building_YieldChanges": ("BuildingType", "YieldType"),
     "Building_GreatPersonPoints": ("BuildingType", "GreatPersonClassType"),
     "Building_GreatWorks": ("BuildingType", "GreatWorkSlotType"),
@@ -153,7 +154,7 @@ FILE_PATTERN = re.compile(
     r"(Units|Technologies|Civics|Buildings|Districts|Terrains|Features|Resources"
     r"|Improvements|Policies|Governments|Beliefs|UnitPromotions|Projects|GreatWorks"
     r"|GoodyHuts|Eras|GreatPeople(?:_[A-Za-z]+)?|GlobalParameters|WMDs|Maps"
-    r"|Happinesses|Alliances)"
+    r"|Happinesses|Routes|Alliances)"
     r"(_Major)?\.xml$",
     re.IGNORECASE,
 )
@@ -1038,6 +1039,31 @@ def project_maps(database: Database) -> dict[str, dict]:
     return projected
 
 
+# The engine's per-tile route ladder (world.rs Tile::road levels 1-5;
+# game.rs unit_step_cost / road_level_for / do_build_railroad) next to the
+# shipped Routes rows. The Railroad's Steam Power gate and its 1 Iron +
+# 1 Coal price live in Routes_XP2/Route_ResourceCosts and are enforced by
+# can_build_railroad.
+ENGINE_ROUTES = {
+    "ancient_road": {"movement_cost": 1, "supports_bridges": False, "prereq_era": None},
+    "medieval_road": {"movement_cost": 1, "supports_bridges": True, "prereq_era": "classical"},
+    "industrial_road": {"movement_cost": 0.75, "supports_bridges": True, "prereq_era": "industrial"},
+    "modern_road": {"movement_cost": 0.5, "supports_bridges": True, "prereq_era": "modern"},
+    "railroad": {"movement_cost": 0.25, "supports_bridges": True, "prereq_era": None},
+}
+
+
+def project_routes(database: Database) -> dict[str, dict]:
+    projected = {}
+    for row in database.rows("Routes"):
+        projected[slug(row["RouteType"], "ROUTE_")] = {
+            "movement_cost": number(row.get("MovementCost")),
+            "supports_bridges": truthy(row.get("SupportsBridges")),
+            "prereq_era": slug(row["PrereqEra"], "ERA_") if row.get("PrereqEra") else None,
+        }
+    return projected
+
+
 def project_happiness(database: Database) -> dict[str, dict]:
     projected = {}
     for row in database.rows("Happinesses"):
@@ -1598,7 +1624,11 @@ def ours_improvements() -> dict[str, dict]:
             "yields": {k: v for k, v in entry.get("yields", {}).items() if v},
             "housing": entry.get("housing", 0) * 2,
             "terrain": lakes_are_coast(set(entry.get("terrain", []))),
-            "feature": set(entry.get("feature", [])),
+            # Civic-gated features (Lumber Mills on Rainforest behind
+            # Mercantilism) are plain Improvement_ValidFeatures rows in the
+            # shipped table; the gate itself is modifier-side.
+            "feature": set(entry.get("feature", []))
+            | set(entry.get("feature_after_civic", {})),
             "resources": set(entry.get("resources", [])),
             "builder_buildable": entry.get("builder_buildable", True)
             and not entry.get("unbuildable", False),
@@ -1906,6 +1936,7 @@ def main() -> int:
         ("Maps", dict(ENGINE_MAP_SIZES), project_maps(database)),
         ("GreatWorkValues", dict(ENGINE_GREAT_WORKS), project_great_works(database)),
         ("Happinesses", dict(ENGINE_HAPPINESS), project_happiness(database)),
+        ("Routes", dict(ENGINE_ROUTES), project_routes(database)),
         ("WMDs", ours_wmds(), project_wmds(database)),
         ("Terrains", ours_terrains(), project_terrains(database)),
         ("Features", ours_features(), project_features(database)),

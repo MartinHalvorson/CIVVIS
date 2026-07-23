@@ -43,7 +43,9 @@ pub struct Tile {
     #[serde(default)]
     pub cliff_edges: [bool; 6],
     #[serde(default)]
-    pub road: bool,
+    // Route level, the shipped PlacementValue ladder: 0 none, 1 Ancient,
+    // 2 Medieval, 3 Industrial, 4 Modern, 5 Railroad.
+    pub road: u8,
     /// Stock Civ VI continent region, zero-based. Water has no continent.
     #[serde(default)]
     pub continent: Option<usize>,
@@ -132,7 +134,7 @@ impl Tile {
             owner_city: None,
             river_edges: [false; 6],
             cliff_edges: [false; 6],
-            road: false,
+            road: 0,
             continent: None,
             disaster_faith: 0.0,
             drought: false,

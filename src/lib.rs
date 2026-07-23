@@ -1516,7 +1516,7 @@ mod tests {
             )
             .is_err());
         // a road was laid toward the destination
-        assert!(g.map.tiles.values().any(|t| t.road));
+        assert!(g.map.tiles.values().any(|t| t.road > 0));
         // Final-patch envoys: +1 of a non-trade type yield in the Capital at
         // 1 envoy (trade city-states grant +2 Gold instead).
         let minor = g

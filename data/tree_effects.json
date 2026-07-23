@@ -49,6 +49,7 @@
     "colonialism": {"free_envoys": 2},
     "civil_engineering": {"hill_farms": 1},
     "nationalism": {"spy_capacity": 1, "corps_fleets": 1},
+    "natural_history": {"sphinx_culture": 1},
     "conservation": {"free_envoys": 3, "plant_woods": 1, "national_parks": 1, "wall_tourism": 1},
     "ideology": {"spy_capacity": 1},
     "mobilization": {"armies_armadas": 1},

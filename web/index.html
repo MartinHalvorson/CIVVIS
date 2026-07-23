@@ -806,13 +806,11 @@
         </div>
         <div class="speed-row"><span>Watch pace</span>
           <select id="specspeed" title="Wall-clock time for one full game turn">
-            <option value="0">Unlimited · as fast as possible</option>
-            <option value="100">Lightning · 0.1s / turn</option>
-            <option value="500">Blitz · 0.5s / turn</option>
-            <option value="1000" selected>Brisk · 1s / turn</option>
-            <option value="2000">Measured · 2s / turn</option>
-            <option value="4000">Cinematic · 4s / turn</option>
-            <option value="10000">Contemplative · 10s / turn</option>
+            <option value="0">Lightning · as fast as possible</option>
+            <option value="1000" selected>Blitz · 1s / turn</option>
+            <option value="2000">Fast · 2s / turn</option>
+            <option value="4000">Standard · 4s / turn</option>
+            <option value="10000">Slow · 10s / turn</option>
           </select>
         </div>
         <div class="speed-note" id="specpacenote">Measuring turn time…</div>
@@ -1570,16 +1568,17 @@ async function specPoll() {
   finally { specBusy = false; }
 }
 // Polling costs the server real work — a spectator state is the whole world —
-// and at the unlimited pace that work competes with the simulation for the
+// and at the Lightning pace that work competes with the simulation for the
 // machine. Ask less often when the turns are already arriving faster than a
 // viewer can read them.
 (function pollSpec() {
   specPoll().finally(() => setTimeout(pollSpec, specPace() === 0 ? 300 : 100));
 })();
 // Watch pace is a whole-turn budget: "1s / turn" means every seat has moved
-// one second later, whatever the player count. Zero is the unlimited pace —
-// the server takes no wait at all — so its cost is measured, not chosen, and
-// the option carries the machine's own estimate.
+// one second later, whatever the player count. Lightning is zero — the server
+// takes no wait at all — so its cost is measured, not chosen, and the option
+// carries the machine's own estimate.
+let paceRealigned = false;
 function formatTurnTime(ms) {
   if (!(ms > 0)) return "—";
   if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`;
@@ -1593,13 +1592,15 @@ function specPace() {
 function updatePaceReadout(st) {
   const select = document.getElementById("specspeed");
   if (!select) return;
-  if (st && st.pace !== undefined && +select.value !== st.pace &&
-      [...select.options].some(o => +o.value === st.pace))
-    select.value = String(st.pace);
-  const unlimited = [...select.options].find(o => o.value === "0");
+  if (st && st.pace !== undefined && +select.value !== st.pace) {
+    // A server left on a pace this page no longer offers gets the picked one.
+    if ([...select.options].some(o => +o.value === st.pace)) select.value = String(st.pace);
+    else if (!paceRealigned) { paceRealigned = true; setPace({ms: specPace()}); }
+  }
+  const lightning = [...select.options].find(o => o.value === "0");
   const estimate = st && st.turn_compute_ms;
-  if (unlimited && estimate > 0)
-    unlimited.textContent = `Unlimited · ~${formatTurnTime(estimate)} / turn`;
+  if (lightning && estimate > 0)
+    lightning.textContent = `Lightning · ~${formatTurnTime(estimate)} / turn`;
   const note = document.getElementById("specpacenote");
   if (!note) return;
   const actual = st && st.turn_ms;
@@ -2944,10 +2945,28 @@ function drawImprovement(t, x, y) {
 // place growth showed. A settlement is built from its population now: more
 // houses, taller ones, packed wider. Watching a city thicken over a game is
 // one of the few places the map can show the clock running.
+// A stable colour per faith, so the same religion is the same colour in every
+// city on the map and across a whole game. Derived from the name rather than a
+// fixed table, because a mod can add religions the table would not know.
+const FAITH_COLORS = ["#e8c64c", "#7fb8e8", "#c88ce0", "#7fd8a0",
+                      "#e8907f", "#dcd4c2", "#7fd8d8", "#e0a55c"];
+function faithColor(name) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (Math.imul(h, 31) + name.charCodeAt(i)) | 0;
+  return FAITH_COLORS[Math.abs(h) % FAITH_COLORS.length];
+}
+
+// How wide a town of this size sprawls. Anything that has to stand clear of a
+// settlement asks this rather than guessing a constant — a guess sized against
+// a small city grazes a large one, which is exactly what happened to the spy
+// marker once cities started growing.
+function settlementSpread(pop) {
+  return 8.5 + Math.min(7, Math.sqrt(Math.max(1, pop || 1)) * 1.9);
+}
 function drawSettlement(c, x, y, beau) {
   const pop = Math.max(1, c.pop || 1);
   const n = Math.max(3, Math.min(11, 2 + Math.round(Math.sqrt(pop) * 2)));
-  const spread = 8.5 + Math.min(7, Math.sqrt(pop) * 1.9);
+  const spread = settlementSpread(pop);
   const rise = 0.82 + 0.36 * Math.min(1, pop / 14);
   const roof = cityBannerColor(c.owner);
   if (beau) {
@@ -3276,8 +3295,14 @@ function draw() {
       for (const [ax, ay, bx, by] of frontSegs) { cx.moveTo(ax, ay); cx.lineTo(bx, by); }
       cx.stroke();
     };
-    strokeFront(8.5, "#e0402f", 0.24, []);
-    strokeFront(2.6, "#ff8452", 0.92, [5, 4]);
+    // A front holds its on-screen weight as the map zooms out, the way unit
+    // plates and status badges do. Ordinary borders deliberately do not — there
+    // are hundreds of them and scaling every one would smother the map — but
+    // there are only ever a few fronts, and survey zoom is exactly the range
+    // where you want to see the shape of a war rather than hunt for it.
+    const fk = UI_K();
+    strokeFront(8.5 * fk, "#e0402f", 0.24, []);
+    strokeFront(2.6 * fk, "#ff8452", 0.92, [5 * fk, 4 * fk]);
     cx.setLineDash([]);
   }
   cx.globalAlpha = 1; cx.lineCap = "butt"; cx.lineJoin = "miter";
@@ -3773,6 +3798,26 @@ function draw() {
     const [x, yy] = hexXY(c.pos[0], c.pos[1]);
     const y = yy - (ct ? elev(ct) : 0);
     drawSettlement(c, x, y, beau);
+    // Which faith holds this city. Religion is one of the six ways to win and
+    // it spreads city by city across the map, yet the map said nothing at all —
+    // a religious conquest rolling through your neighbours was visible only as
+    // lines in the event log. Mirrors the spy keyhole on the opposite flank,
+    // and takes its clearance from the same settlementSpread.
+    if (c.religion) {
+      const k = UI_K();
+      const fx = x + (settlementSpread(c.pop) + 8.5) * k, fy = y - 2;
+      cx.save();
+      cx.fillStyle = faithColor(c.religion);
+      cx.beginPath(); cx.arc(fx, fy, 6.6 * k, 0, 7); cx.fill();
+      cx.strokeStyle = "#12161d"; cx.lineWidth = 1.5; cx.stroke();
+      // the initial rather than a glyph: symbol fonts are not guaranteed here,
+      // and an empty disc says less than a letter does
+      cx.fillStyle = "#12161d";
+      cx.font = "bold " + (8.4 * k).toFixed(1) + "px sans-serif";
+      cx.textAlign = "center"; cx.textBaseline = "middle";
+      cx.fillText(c.religion[0].toUpperCase(), fx, fy + 0.4 * k);
+      cx.restore();
+    }
     {
       // parchment-style nameplate
       const name = (c.is_capital ? "★ " : "") + c.name.toUpperCase();
@@ -3853,8 +3898,11 @@ function draw() {
     const [mx, myy] = hexXY(m.target[0], m.target[1]);
     const my = myy - (mt ? elev(mt) : 0);
     const k = UI_K();
-    // clear of the settlement, whose footprint widens with population
-    const bx = mx - 21 * k, by = my - 2;
+    // Clear of the settlement, measured from the town's own sprawl rather than
+    // a fixed guess: a constant sized against a small city grazes a capital.
+    const host = (state.cities || []).find(c => c.id === sp.city)
+      || (state.cities || []).find(c => key(c.pos) === key(m.target));
+    const bx = mx - (settlementSpread(host && host.pop) + 8.5) * k, by = my - 2;
     const left = Math.max(0, (m.ends || 0) - state.turn);
     cx.save();
     cx.fillStyle = "#12161de8";
@@ -3928,6 +3976,12 @@ function draw() {
       y += (st2.ty - st2.sy) * out;
       if (e >= 1) anim.strike = null;
     }
+    // A garrison stood dead centre on its own city and buried the town under
+    // its plate. On a large capital that town is most of what the tile has to
+    // say — seventeen citizens' worth of houses reduced to a couple of roofs
+    // poking past a shield. Standing the garrison at the front edge of the tile
+    // lets both read: the city behind it, the troops holding it in front.
+    if (cityTiles.has(key(u.pos))) y += 12;
     const rr = 10.5;
     if (beau) {
       drawUnitBase(u, x, y);
@@ -4750,7 +4804,7 @@ function drawSide(force = true) {
   const now = performance.now();
   const pace = specPace();
   // Below a second per turn the panels change faster than they can be read;
-  // repaint them on a human cadence instead. Unlimited (0) is the fastest.
+  // repaint them on a human cadence instead. Lightning (0) is the fastest.
   if (!force && SPEC && pace < 1000 && now - lastSidePaint < 250) return;
   lastSidePaint = now;
   const scroller = document.querySelector(".side-scroll");

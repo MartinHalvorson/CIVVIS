@@ -182,6 +182,31 @@ charged from data; the Cultural Heritage Inspiration now fires via a
 full-museum theming proxy; and Gilgamesh aside, the six map-size profiles
 and the alliance-leveling timeline verified exact.
 
+**Seventh wave (routes per tile):** `Routes` joins the audit — 27 tables
+at zero unwaived divergences. Roads are leveled per tile on the shipped
+PlacementValue ladder: traders lay the best route their civilization's
+era allows (Medieval from Classical, Industrial and Modern from their
+namesake eras), each step is priced by the destination tile's route
+(1 / 0.75 / 0.5 / 0.25 MP), river bridging is a route property (Medieval
+and later, `SupportsBridges`) instead of a world-era check, and Military
+Engineers lay Railroads for 1 Iron and 1 Coal once Steam Power is in —
+no build charge, exactly as `Routes_XP2` and `Route_ResourceCosts`
+price them.
+
+### Data the engine never reads
+
+`tools/civvis_inert.py` joins the other direction: every effect key in
+`data/*.json` against the engine that should consume it. Nothing enforces that
+join, so a key can sit in the data doing nothing -- mistyped, refactored away,
+or dropped by a rebase in a shared checkout. The last is not hypothetical: the
+Sphinx's Floodplains Culture and Wonder-adjacency Faith survived in data for
+fourteen iterations after their engine arm was lost, and no test noticed
+because none covered them.
+
+It reports zero unwaived keys across 629, with five waived in
+`tools/inert_waivers.json` for consumption the string join cannot see. Run it
+after any refactor that moves yield code.
+
 ### Next inside phase 1
 
 Known simplifications not yet expressed in data: civic-gated valid terrain
@@ -193,9 +218,8 @@ artists for art, three origin civilizations for artifacts — with the
 +100% bonus), barbarian camp spawn cadence (the odds/boldness
 model is DLL-side; placement floors and distances are exact), WMD delivery detail
 (the `WmdStrike` action launches on the shipped ranges, radii and fallout;
-the per-ring unit damage is the one number the database does not carry), the meteor-strike goody site,
-and roads staying unleveled per tile (the world era stands in for the route
-its traders lay).
+the per-ring unit damage is the one number the database does not carry),
+and the meteor-strike goody site.
 
 ## Phase 2 (measured): the modifier engine
 
