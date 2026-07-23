@@ -2704,10 +2704,8 @@ impl BasicAi {
                 unit: "trader".to_string(),
             });
         }
-        if !g.cities[&cid].buildings.iter().any(|b| b == "monument") {
-            return Some(Item::Building {
-                building: "monument".to_string(),
-            });
+        if let Some(monument) = Self::civ_building(g, pid, cid, "monument") {
+            return Some(monument);
         }
         // Coastal infrastructure is part of the water strategy, not an
         // accidental fallback after every land district. A harbor also gives
@@ -2786,11 +2784,8 @@ impl BasicAi {
                 }
             }
         }
-        if self.culture_focus && !g.cities[&cid].buildings.iter().any(|b| b == "amphitheater") {
-            let amphitheater = Item::Building {
-                building: "amphitheater".to_string(),
-            };
-            if g.can_produce(pid, cid, &amphitheater) {
+        if self.culture_focus {
+            if let Some(amphitheater) = Self::civ_building(g, pid, cid, "amphitheater") {
                 return Some(amphitheater);
             }
         }
@@ -3517,6 +3512,28 @@ impl BasicAi {
             })
             .map(|(name, _)| name.clone())
             .unwrap_or_else(|| family.to_string())
+    }
+
+    /// The building this city should start in place of `family`: the stock
+    /// building where it is available, otherwise whichever replacement this
+    /// civilization or its secret society builds instead. `None` means the
+    /// city already has one or cannot have it, so the caller moves on rather
+    /// than proposing something the engine will refuse.
+    fn civ_building(g: &Game, pid: usize, cid: u32, family: &str) -> Option<Item> {
+        let base = Item::Building {
+            building: family.to_string(),
+        };
+        if g.can_produce(pid, cid, &base) {
+            return Some(base);
+        }
+        g.rules
+            .buildings
+            .iter()
+            .filter(|(_, spec)| spec.replaces.as_deref() == Some(family))
+            .map(|(name, _)| Item::Building {
+                building: name.clone(),
+            })
+            .find(|item| g.can_produce(pid, cid, item))
     }
 
     /// Which improvement a tile should actually get. An improvement that
@@ -4412,6 +4429,42 @@ mod tests {
             "theater_square"
         );
         assert_eq!(BasicAi::civ_district(&g, greece, "campus"), "campus");
+    }
+
+    /// Buildings carry replacements too - a secret society swaps the Monument
+    /// for an Old God Obelisk - and the Monument is the first thing every city
+    /// considers, so proposing a blocked one would strand it from turn one.
+    /// Whatever comes back must always be something the engine accepts.
+    #[test]
+    fn building_choices_are_always_producible() {
+        let mut g = Game::new_full(8, 40, 24, 3, 60, 0, false);
+        for pid in 0..8 {
+            let settler = g
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|id| g.units[id].kind == "settler")
+                .unwrap();
+            while g.current != pid {
+                let current = g.current;
+                g.apply(current, &Action::EndTurn).unwrap();
+            }
+            g.apply(pid, &Action::FoundCity { unit: settler }).unwrap();
+            let cid = g.player_city_ids(pid)[0];
+            for family in ["monument", "amphitheater", "arena"] {
+                if let Some(item) = BasicAi::civ_building(&g, pid, cid, family) {
+                    assert!(
+                        g.can_produce(pid, cid, &item),
+                        "{} was offered {item:?} for {family} and cannot build it",
+                        g.players[pid].civ
+                    );
+                }
+            }
+            // Rome starts every city with a free Monument, so it must fall
+            // through rather than proposing one it already has.
+            if g.players[pid].civ == "Rome" {
+                assert!(BasicAi::civ_building(&g, pid, cid, "monument").is_none());
+            }
+        }
     }
 
     /// Builders used to take whichever legal improvement sorted first by
