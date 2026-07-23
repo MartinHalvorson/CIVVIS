@@ -5,6 +5,7 @@ use std::time::Instant;
 use civvis::ai::{run_game, AdvancedAi, Ai};
 use civvis::game::{
     default_difficulty, default_speed, Game, GameOptions, VictoryConditions,
+    DEFAULT_DISASTER_INTENSITY,
 };
 use civvis::rules::Rules;
 use civvis::setup::{GameSpeed, MapScript, MapSize};
@@ -130,6 +131,16 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
             .filter_map(|seat| seat.trim().parse().ok())
             .collect(),
         teams,
+        // Gathering Storm's lobby slider: 0 turns random disasters off,
+        // 4 is Hyperreal. Sea-level rise follows CO2 either way.
+        disaster_intensity: {
+            let intensity = arg(args, "--disasters", i64::from(DEFAULT_DISASTER_INTENSITY));
+            if !(0..=4).contains(&intensity) {
+                eprintln!("--disasters takes 0 (none) to 4 (hyperreal), got {intensity}");
+                std::process::exit(2);
+            }
+            intensity as u8
+        },
         ..GameOptions::new(
             player_count,
             auto_dimension(args, "--width", players, true),
@@ -672,6 +683,7 @@ fn main() {
                       [--map pangaea|continents|small_continents|inland_sea] \
                       [--difficulty settler|chieftain|warlord|prince|king|emperor|immortal|deity] \
                       [--speed online|quick|standard|epic|marathon] \
+                      [--disasters 0|1|2|3|4] \
                       [--human-seats 0,1] [--teams 0,0,1,1] [--mods path/to/mod,path/to/other] \
                       [--victories science,culture,religious,diplomatic,domination,score] \
                       [--spectate] [--supervised] [--resume checkpoint.json] [--strict] \

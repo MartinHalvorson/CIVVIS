@@ -223,6 +223,34 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         "world_era": g.world_era,
         "climate_phase": g.climate_phase,
         "climate_points": g.climate_points(),
+        "disaster_intensity": g.disaster_intensity(),
+        "storms": g
+            .storms
+            .iter()
+            .map(|storm| {
+                json!({
+                    "kind": storm.kind,
+                    "pos": [storm.pos.0, storm.pos.1],
+                    "severity": storm.severity,
+                    "ends": storm.ends,
+                })
+            })
+            .collect::<Vec<_>>(),
+        "droughts": g
+            .droughts
+            .iter()
+            .map(|drought| {
+                json!({
+                    "tiles": drought
+                        .tiles
+                        .iter()
+                        .map(|pos| [pos.0, pos.1])
+                        .collect::<Vec<_>>(),
+                    "severity": drought.severity,
+                    "ends": drought.ends,
+                })
+            })
+            .collect::<Vec<_>>(),
         "player": pid,
         "current": g.current,
         "map": {
@@ -793,6 +821,14 @@ fn tile_json(
         "coastal_lowland": tile.coastal_lowland,
         "flooded": tile.flooded,
         "submerged": tile.submerged,
+        "drought": tile.drought,
+        "storm": tile.storm,
+        "fallout": tile.fallout_until,
+        "disaster_yields": {
+            "food": tile.disaster_food,
+            "production": tile.disaster_production,
+            "faith": tile.disaster_faith,
+        },
     })
 }
 

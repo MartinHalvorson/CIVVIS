@@ -6,7 +6,9 @@ use std::sync::Arc;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, VecDeque};
 
 use crate::rng::Rng;
-use crate::rules::{AgendaSpec, DifficultySpec, Rules, SpeedSpec, Yields, ERA_NAMES};
+use crate::rules::{
+    AgendaSpec, BuildingSpec, DifficultySpec, DisasterSpec, Rules, SpeedSpec, Yields, ERA_NAMES,
+};
 use crate::specmap::SpecMap;
 use crate::setup::{GameSpeed, MapScript, MapSize};
 use crate::world::{DistrictFoundation, RememberedTile, Tile, TileBits, TileMemory, WorldMap};
@@ -238,6 +240,12 @@ fn install_test_district(game: &mut Game, city: u32, district: &str) -> Pos {
 
 #[cfg(test)]
 mod city_state_unique_tests;
+
+#[cfg(test)]
+mod age_tests;
+
+#[cfg(test)]
+mod disaster_tests;
 
 #[cfg(test)]
 mod city_trade_tests;
@@ -8622,6 +8630,10 @@ pub struct Player {
     pub dedications: BTreeSet<String>,
     #[serde(default)]
     pub dedication_choices: usize,
+    /// Cities this civilization's religion has taken at least once, so
+    /// Exodus of the Evangelists pays only for the first conversion of each.
+    #[serde(default)]
+    pub converted_cities: BTreeSet<u32>,
     #[serde(default)]
     pub discovered_natural_wonders: BTreeSet<String>,
     #[serde(default)]
@@ -8740,6 +8752,7 @@ impl Player {
             golden_age_threshold: 24,
             dedications: BTreeSet::new(),
             dedication_choices: 0,
+            converted_cities: BTreeSet::new(),
             discovered_natural_wonders: BTreeSet::new(),
             governors: Vec::new(),
             governor_roster: SpecMap::new(),
@@ -9153,6 +9166,8 @@ pub struct GameOptions {
     /// means free-for-all; otherwise it must contain exactly `players`
     /// entries. Equal non-`None` values place those seats on one team.
     pub teams: Vec<Option<usize>>,
+    /// Gathering Storm's disaster intensity, 0 (none) to 4 (hyperreal).
+    pub disaster_intensity: u8,
 }
 
 impl GameOptions {
@@ -9177,6 +9192,7 @@ impl GameOptions {
             speed: default_speed(),
             human_seats: BTreeSet::new(),
             teams: Vec::new(),
+            disaster_intensity: DEFAULT_DISASTER_INTENSITY,
         }
     }
 }
@@ -9293,6 +9309,15 @@ pub struct Game {
     /// number per game.
     #[serde(default)]
     pub meteor_strikes: u32,
+    /// The lobby's disaster-intensity setting, 0 (none) to 4 (hyperreal).
+    #[serde(default = "default_disaster_intensity")]
+    pub disaster_intensity: u8,
+    /// Storm systems currently crossing the map.
+    #[serde(default)]
+    pub storms: Vec<Storm>,
+    /// Droughts in progress, with the tiles they hold and when they lift.
+    #[serde(default)]
+    pub droughts: Vec<Drought>,
     /// Retired named Great People leave the global market permanently.
     pub retired_great_people: BTreeSet<String>,
     /// Recruitment price fixed when each named person enters the market.
@@ -9322,6 +9347,57 @@ pub struct TradeRoute {
     pub dest: u32,
     pub owner: usize,
     pub ends: u32,
+}
+
+/// One of Gathering Storm's four terrain-bound storm systems. Unlike every
+/// other disaster a storm is not over when it lands: it drifts across the map
+/// for three turns, so it is state rather than an event.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Storm {
+    /// The disaster class, and so the key into `rules.disasters`.
+    pub kind: String,
+    pub pos: Pos,
+    /// Index into [`hex::DIRS`]; a storm holds its course.
+    pub heading: usize,
+    pub severity: u8,
+    /// The turn the system dissipates.
+    pub ends: u32,
+}
+
+/// A drought in progress. Droughts are the longest-lived disaster, so the
+/// tiles they cover are remembered until the rain returns.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Drought {
+    pub tiles: Vec<Pos>,
+    pub severity: u8,
+    pub ends: u32,
+}
+
+/// The five Gathering Storm disaster-intensity settings, as a multiplier on
+/// every class's per-game rate. Zero is the lobby's "no disasters"; the rest
+/// climb the way the shipped intensity ladder does.
+const DISASTER_INTENSITY_SCALE: [f64; 5] = [0.0, 0.5, 1.0, 1.75, 2.75];
+
+/// The share of the map's volcanoes that are active at each intensity — the
+/// shipped 45%-to-95% band.
+const ACTIVE_VOLCANO_SHARE: [f64; 5] = [0.0, 0.45, 0.62, 0.79, 0.95];
+
+/// How much each irreversible climate phase raises disaster frequency, and how
+/// much it pushes severity toward the top tier.
+const CLIMATE_DISASTER_SCALE: f64 = 0.125;
+const CLIMATE_SEVERITY_BIAS: f64 = 0.15;
+
+/// The most permanent Food repeated disasters can leave on one tile.
+const DISASTER_FERTILITY_CAP: f64 = 3.0;
+
+/// The world era Heartbeat of Steam starts paying for buildings in.
+const INDUSTRIAL_ERA: usize = 4;
+
+/// Gathering Storm's default disaster intensity: the middle of the five.
+pub const DEFAULT_DISASTER_INTENSITY: u8 = 2;
+
+fn default_disaster_intensity() -> u8 {
+    DEFAULT_DISASTER_INTENSITY
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -9381,6 +9457,12 @@ struct GameSer {
     climate_phase: u8,
     #[serde(default)]
     meteor_strikes: u32,
+    #[serde(default = "default_disaster_intensity")]
+    disaster_intensity: u8,
+    #[serde(default)]
+    storms: Vec<Storm>,
+    #[serde(default)]
+    droughts: Vec<Drought>,
     #[serde(default)]
     retired_great_people: BTreeSet<String>,
     #[serde(default)]
@@ -9459,6 +9541,9 @@ impl From<GameSer> for Game {
             world_era: s.world_era,
             climate_phase: s.climate_phase,
             meteor_strikes: s.meteor_strikes,
+            disaster_intensity: s.disaster_intensity,
+            storms: s.storms,
+            droughts: s.droughts,
             retired_great_people: s.retired_great_people,
             great_person_offer_costs: s.great_person_offer_costs,
             pending_deals: s.pending_deals,
@@ -9592,6 +9677,9 @@ impl From<Game> for GameSer {
             world_era: g.world_era,
             climate_phase: g.climate_phase,
             meteor_strikes: g.meteor_strikes,
+            disaster_intensity: g.disaster_intensity,
+            storms: g.storms,
+            droughts: g.droughts,
             retired_great_people: g.retired_great_people,
             great_person_offer_costs: g.great_person_offer_costs,
             pending_deals: g.pending_deals,
@@ -9681,6 +9769,7 @@ impl Game {
             speed,
             human_seats,
             teams,
+            disaster_intensity,
         } = options;
         assert!(
             teams.is_empty() || teams.len() == num_players,
@@ -9746,6 +9835,9 @@ impl Game {
             world_era: 0,
             climate_phase: 0,
             meteor_strikes: 0,
+            disaster_intensity,
+            storms: Vec::new(),
+            droughts: Vec::new(),
             retired_great_people: BTreeSet::new(),
             great_person_offer_costs: BTreeMap::new(),
             pending_deals: Vec::new(),
@@ -12230,6 +12322,11 @@ impl Game {
         if success {
             self.apply_spy_mission_effect(spy_id, &mission, !detected);
             self.level_up_spy(spy_id);
+            // Bodyguard of Lies pays for offensive work only — a counterspy
+            // succeeding at home is not a Historic Moment.
+            if defender != spy.owner {
+                self.dedication_trigger(spy.owner, "spy_success", 1);
+            }
         }
         if !detected {
             if let Some(spy) = self.spies.get_mut(&spy_id) {
@@ -12672,7 +12769,11 @@ impl Game {
             .filter(|r| r.owner == pid && turn >= r.ends)
             .cloned()
             .collect();
+        // Only a route that ran its course counts as completed; the other
+        // paths into `recall_trade_routes` are war, embargo and city transfer.
+        let completed = expired.len() as i64;
         self.recall_trade_routes(expired);
+        self.dedication_trigger(pid, "trade_route", completed);
     }
 
     /// Cancel routes without destroying their Traders. Normal completion,
@@ -13489,6 +13590,19 @@ impl Game {
     /// Passive spread: cities pressure other cities within ten tiles, while
     /// active Trade Routes exchange an additional 0.5 pressure per turn.
     fn process_pressure(&mut self, pid: usize) {
+        // Exodus of the Evangelists pays for the first time each city takes
+        // the founder's religion, so the majorities are read before pressure
+        // moves and compared afterwards.
+        let before: Vec<(u32, Option<String>)> = self
+            .cities
+            .values()
+            .map(|city| {
+                (
+                    city.id,
+                    self.city_religion(city).map(str::to_string),
+                )
+            })
+            .collect();
         let sources: Vec<(Pos, String, f64, i32)> = self
             .cities
             .values()
@@ -13580,7 +13694,37 @@ impl Game {
                     .or_insert(0.0) += amount;
             }
         }
+        self.award_conversion_era_score(&before);
         self.check_religious_victory();
+    }
+
+    /// Pay Exodus of the Evangelists for every city that has just taken its
+    /// founder's religion for the first time. The founder is credited, not the
+    /// city's owner: converting somebody else's city is the historic moment.
+    fn award_conversion_era_score(&mut self, before: &[(u32, Option<String>)]) {
+        for (cid, was) in before {
+            let Some(now) = self
+                .cities
+                .get(cid)
+                .and_then(|city| self.city_religion(city))
+                .map(str::to_string)
+            else {
+                continue;
+            };
+            if was.as_deref() == Some(now.as_str()) {
+                continue;
+            }
+            let Some(founder) = self.religion_founder(&now) else {
+                continue;
+            };
+            if !self.players[founder]
+                .converted_cities
+                .insert(*cid)
+            {
+                continue;
+            }
+            self.dedication_trigger(founder, "city_converted", 1);
+        }
     }
 
     /// Religious victory: your religion is the majority in over half the
@@ -14114,6 +14258,7 @@ impl Game {
             .entry("merchant".to_string())
             .or_insert(0) += 1;
         self.add_era_score(pid, 2);
+        self.dedication_trigger(pid, "great_person", 1);
         bump(&mut self.players[pid], "great_people");
         self.apply_great_person_district_effects(pid);
         self.refresh_great_person_offers();
@@ -14333,6 +14478,7 @@ impl Game {
             .entry(kind.to_string())
             .or_insert(0) += 1;
         self.add_era_score(pid, 2);
+        self.dedication_trigger(pid, "great_person", 1);
         bump(&mut self.players[pid], "great_people");
         let activations = spec.charges
             + if kind == "engineer" {
@@ -16603,6 +16749,20 @@ impl Game {
         self.damage_tile_area(position, unit_damage, None);
     }
 
+    /// Hurt every unit standing on a tile without touching the tile itself. A
+    /// storm that spares a city's infrastructure still catches whoever is out
+    /// in it.
+    fn damage_disaster_units(&mut self, position: Pos, unit_damage: i32) {
+        for unit_id in self.units_at(position) {
+            let hp = self.units[&unit_id].hp - unit_damage;
+            if hp <= 0 {
+                self.remove_unit(unit_id);
+            } else {
+                self.units.get_mut(&unit_id).unwrap().hp = hp;
+            }
+        }
+    }
+
     /// Blast damage over one tile. `culprit` is the civilization that caused
     /// it where somebody did — a nuclear strike kills through the same path a
     /// volcano does, and those casualties belong in its war's ledger.
@@ -16725,6 +16885,450 @@ impl Game {
         for position in positions {
             if let Some(tile) = self.map.tiles.get_mut(position) {
                 tile.drought = false;
+            }
+        }
+    }
+
+    // ------------------------------------------------- random disasters
+
+    /// The disaster-intensity setting, clamped to the five Gathering Storm
+    /// values. Zero leaves the map's volcanoes dormant and stops every random
+    /// disaster; sea-level rise still follows CO2, because that is climate
+    /// change rather than a random event.
+    pub fn disaster_intensity(&self) -> u8 {
+        self.disaster_intensity.min(4)
+    }
+
+    /// Expected occurrences of one disaster class over a whole game, after the
+    /// intensity setting and the warming already banked. Gathering Storm makes
+    /// a hotter world a stormier one, so every phase adds to the rate.
+    fn disaster_rate(&self, class: &str) -> f64 {
+        let Some(spec) = self.rules.disasters.get(class) else {
+            return 0.0;
+        };
+        let intensity = DISASTER_INTENSITY_SCALE[self.disaster_intensity() as usize];
+        let climate = 1.0 + CLIMATE_DISASTER_SCALE * f64::from(self.climate_phase);
+        spec.per_game * intensity * climate
+    }
+
+    /// Disasters draw from a turn-keyed stream of their own so that adding or
+    /// removing one never shifts the main RNG sequence — the same discipline
+    /// the meteor shower uses.
+    fn disaster_rng(&self, class: &str, salt: u64) -> Rng {
+        let mut key = 0xD15A_5732_0000_0000u64;
+        for byte in class.as_bytes() {
+            key = key.rotate_left(7) ^ u64::from(*byte);
+        }
+        Rng::new(self.seed ^ key ^ ((self.turn as u64) << 17) ^ salt)
+    }
+
+    /// Severity is weighted toward the mild end, and each climate phase moves
+    /// weight toward the severe one.
+    fn roll_severity(&self, spec: &DisasterSpec, rng: &mut Rng) -> u8 {
+        let tiers = spec.severities.max(1);
+        if tiers == 1 {
+            return 1;
+        }
+        let bias = CLIMATE_SEVERITY_BIAS * f64::from(self.climate_phase);
+        let weights: Vec<f64> = (0..tiers)
+            .map(|tier| f64::from(tiers - tier) * (1.0 + bias * f64::from(tier)))
+            .collect();
+        let total: f64 = weights.iter().sum();
+        let mut roll = rng.f64() * total;
+        for (tier, weight) in weights.iter().enumerate() {
+            roll -= weight;
+            if roll <= 0.0 {
+                return tier as u8 + 1;
+            }
+        }
+        tiers
+    }
+
+    /// Whether this volcano is one of the map's active cones. Gathering Storm
+    /// activates between 45% and 95% of them depending on disaster intensity;
+    /// the answer is derived from the seed and the tile so it survives a save
+    /// without being stored.
+    pub fn volcano_active(&self, position: Pos) -> bool {
+        if self
+            .map
+            .get(position)
+            .and_then(|tile| tile.feature.as_deref())
+            != Some("volcano")
+        {
+            return false;
+        }
+        let share = ACTIVE_VOLCANO_SHARE[self.disaster_intensity() as usize];
+        let key = (u64::from(position.0 as u32) << 32) | u64::from(position.1 as u32);
+        Rng::new(self.seed ^ 0x564F_4C43_414E_4F00 ^ key).f64() < share
+    }
+
+    /// Whether a tile's city, if it has one, shrugs a disaster off. Governors'
+    /// Reinforced Materials is the blanket immunity; the district families are
+    /// each disaster's own protection.
+    fn disaster_immune(&self, position: Pos, district_effect: Option<&str>) -> bool {
+        let Some(city) = self
+            .map
+            .get(position)
+            .and_then(|tile| tile.owner_city)
+            .and_then(|city_id| self.cities.get(&city_id))
+        else {
+            return false;
+        };
+        if self.governor_effect(city.owner, city.id, "disaster_immunity") > 0.0 {
+            return true;
+        }
+        district_effect.is_some_and(|effect| self.city_district_effect(city, effect) > 0.0)
+    }
+
+    /// Apply one disaster class to one tile: damage whoever is standing there,
+    /// maybe pillage what is built there, and maybe leave the ground better
+    /// than it was.
+    fn strike_disaster_tile(
+        &mut self,
+        position: Pos,
+        spec: &DisasterSpec,
+        severity: u8,
+        protection: Option<&str>,
+        rng: &mut Rng,
+    ) {
+        if self.disaster_immune(position, protection) {
+            return;
+        }
+        let damage = spec.unit_damage.round() as i32;
+        if rng.chance(spec.pillage_chance(severity)) {
+            self.damage_disaster_tile(position, damage);
+        } else if damage > 0 {
+            self.damage_disaster_units(position, damage);
+        }
+        if rng.chance(spec.fertility_chance(severity)) {
+            self.fertilize_tile(position);
+        }
+    }
+
+    /// Permanent fertility left behind by a disaster. Land keeps the Food a
+    /// storm's silt leaves; the sea keeps nothing.
+    fn fertilize_tile(&mut self, position: Pos) {
+        if self
+            .map
+            .get(position)
+            .is_none_or(|tile| self.rules.is_water(tile))
+        {
+            return;
+        }
+        let tile = self.map.tiles.get_mut(&position).unwrap();
+        if tile.disaster_food >= DISASTER_FERTILITY_CAP {
+            return;
+        }
+        tile.disaster_food += 1.0;
+    }
+
+    /// Kill citizens in a city a disaster reached, never below one.
+    fn disaster_population_loss(&mut self, position: Pos, loss: i32) {
+        if loss <= 0 {
+            return;
+        }
+        let Some(city_id) = self.city_at(position) else {
+            return;
+        };
+        if self.governor_effect(self.cities[&city_id].owner, city_id, "disaster_immunity") > 0.0 {
+            return;
+        }
+        let city = self.cities.get_mut(&city_id).unwrap();
+        city.pop = (city.pop - loss).max(1);
+    }
+
+    /// Tell whoever has something at stake on the tile what just happened to
+    /// it: the civilization that owns it, and anyone with a unit standing
+    /// there when it hit.
+    fn note_disaster(&mut self, position: Pos, text: String) {
+        let mut told: BTreeSet<usize> = BTreeSet::new();
+        let owner = self
+            .map
+            .get(position)
+            .and_then(|tile| tile.owner_city)
+            .and_then(|city_id| self.cities.get(&city_id))
+            .map(|city| city.owner);
+        told.extend(owner);
+        for unit_id in self.units_at(position) {
+            told.insert(self.units[&unit_id].owner);
+        }
+        for pid in told {
+            self.note(pid, "World", text.clone(), Some(position));
+        }
+    }
+
+    /// A volcano erupts. Everything inside the eruption radius is damaged, the
+    /// features there are burned away, and the surviving land is fertilised
+    /// into Volcanic Soil — which is why people keep farming next to volcanoes.
+    pub fn resolve_eruption(&mut self, volcano: Pos, severity: u8) {
+        let Some(spec) = self.rules.disasters.get("volcanic_eruption").cloned() else {
+            return;
+        };
+        let severity = severity.max(1);
+        // The shipped eruption reaches one ring, or two on the top two
+        // disaster-intensity settings.
+        let radius = if self.disaster_intensity() >= 3 {
+            spec.radius(severity).max(2)
+        } else {
+            spec.radius(severity)
+        };
+        let mut rng = self.disaster_rng("volcanic_eruption", 0x455255_5054);
+        for position in self.wdisk(volcano, radius) {
+            if position == volcano {
+                continue;
+            }
+            let Some(tile) = self.map.get(position) else {
+                continue;
+            };
+            if self.rules.is_water(tile) || tile.feature.as_deref() == Some("volcano") {
+                continue;
+            }
+            let natural_wonder = tile
+                .feature
+                .as_deref()
+                .is_some_and(|feature| self.rules.features[feature].natural_wonder);
+            if natural_wonder {
+                continue;
+            }
+            let immune = self.disaster_immune(position, None);
+            self.strike_disaster_tile(position, &spec, severity, None, &mut rng);
+            self.disaster_population_loss(position, spec.population_loss(severity));
+            if immune {
+                continue;
+            }
+            // Ash buries whatever was growing and leaves Volcanic Soil.
+            if rng.chance(spec.fertility_chance(severity)) {
+                let tile = self.map.tiles.get_mut(&position).unwrap();
+                if tile.wonder.is_none() && tile.district.is_none() {
+                    tile.feature = Some("volcanic_soil".to_string());
+                }
+            }
+        }
+        self.note_disaster(volcano, "a volcano erupted".to_string());
+    }
+
+    /// Pick an active volcano and erupt it.
+    fn trigger_eruption(&mut self, severity: u8, rng: &mut Rng) {
+        let volcanoes: Vec<Pos> = self
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| tile.feature.as_deref() == Some("volcano"))
+            .map(|(position, _)| *position)
+            .filter(|position| self.volcano_active(*position))
+            .collect();
+        if volcanoes.is_empty() {
+            return;
+        }
+        let volcano = volcanoes[rng.below(volcanoes.len())];
+        self.resolve_eruption(volcano, severity);
+    }
+
+    /// A river bursts its banks. Gathering Storm floods the Floodplains along
+    /// one stretch of river; Dams, the Great Bath and Egypt's Iteru hold.
+    fn trigger_river_flood(&mut self, severity: u8, rng: &mut Rng) {
+        let Some(spec) = self.rules.disasters.get("river_flood").cloned() else {
+            return;
+        };
+        let sources: Vec<Pos> = self
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| {
+                matches!(
+                    tile.feature.as_deref(),
+                    Some("floodplains" | "grassland_floodplains" | "plains_floodplains")
+                )
+            })
+            .map(|(position, _)| *position)
+            .collect();
+        if sources.is_empty() {
+            return;
+        }
+        let source = sources[rng.below(sources.len())];
+        let reach: Vec<Pos> = self
+            .wdisk(source, spec.radius(severity))
+            .into_iter()
+            .filter(|position| {
+                matches!(
+                    self.map.tiles[position].feature.as_deref(),
+                    Some("floodplains" | "grassland_floodplains" | "plains_floodplains")
+                )
+            })
+            .collect();
+        self.resolve_flood(&reach);
+        for position in &reach {
+            self.disaster_population_loss(*position, spec.population_loss(severity));
+        }
+        self.note_disaster(source, "a river flooded".to_string());
+    }
+
+    /// A drought settles over featureless land and stays for several turns.
+    fn trigger_drought(&mut self, severity: u8, rng: &mut Rng) {
+        let Some(spec) = self.rules.disasters.get("drought").cloned() else {
+            return;
+        };
+        // The shipped drought targets open ground: terrain without a feature.
+        let sources: Vec<Pos> = self
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| {
+                !self.rules.is_water(tile) && tile.feature.is_none() && !tile.drought
+            })
+            .map(|(position, _)| *position)
+            .collect();
+        if sources.is_empty() {
+            return;
+        }
+        let source = sources[rng.below(sources.len())];
+        let tiles: Vec<Pos> = self
+            .wdisk(source, spec.radius(severity))
+            .into_iter()
+            .filter(|position| {
+                let tile = &self.map.tiles[position];
+                !self.rules.is_water(tile) && tile.feature.is_none()
+            })
+            .collect();
+        if tiles.is_empty() {
+            return;
+        }
+        self.resolve_drought(&tiles);
+        self.droughts.push(Drought {
+            tiles,
+            severity,
+            ends: self.turn + spec.duration(severity).max(1),
+        });
+        self.note_disaster(source, "a drought set in".to_string());
+    }
+
+    /// Lift every drought whose turn has come and give the land its Food back.
+    fn lift_expired_droughts(&mut self) {
+        let expired: Vec<Drought> = self
+            .droughts
+            .iter()
+            .filter(|drought| drought.ends <= self.turn)
+            .cloned()
+            .collect();
+        self.droughts.retain(|drought| drought.ends > self.turn);
+        for drought in expired {
+            self.clear_drought(&drought.tiles);
+            if let Some(position) = drought.tiles.first().copied() {
+                self.note_disaster(position, "a drought broke".to_string());
+            }
+        }
+    }
+
+    /// Spawn one of the four terrain-bound storm systems.
+    fn trigger_storm(&mut self, class: &str, severity: u8, rng: &mut Rng) {
+        let Some(spec) = self.rules.disasters.get(class).cloned() else {
+            return;
+        };
+        let sources: Vec<Pos> = self
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| spec.terrains.iter().any(|terrain| *terrain == tile.terrain))
+            .map(|(position, _)| *position)
+            .collect();
+        if sources.is_empty() {
+            return;
+        }
+        let storm = Storm {
+            kind: class.to_string(),
+            pos: sources[rng.below(sources.len())],
+            heading: rng.below(6),
+            severity,
+            ends: self.turn + spec.duration(severity).max(1),
+        };
+        self.note_disaster(storm.pos, format!("{} formed", pretty(class)));
+        self.strike_storm(&storm, &spec);
+        self.storms.push(storm);
+    }
+
+    /// Damage everything under a storm's footprint and leave the marker the
+    /// clients draw.
+    fn strike_storm(&mut self, storm: &Storm, spec: &DisasterSpec) {
+        let mut rng = self.disaster_rng(&storm.kind, storm.pos.0 as u64 ^ (storm.pos.1 as u64) << 8);
+        for position in self.wdisk(storm.pos, spec.radius(storm.severity)) {
+            self.map.tiles.get_mut(&position).unwrap().storm = Some(storm.kind.clone());
+            self.strike_disaster_tile(position, spec, storm.severity, None, &mut rng);
+            self.disaster_population_loss(position, spec.population_loss(storm.severity));
+        }
+    }
+
+    /// Move every live storm one tile along its heading and dissipate the ones
+    /// whose three turns are up.
+    fn advance_storms(&mut self) {
+        // Only last turn's footprints need clearing; sweeping the whole map to
+        // erase a handful of markers is work proportional to the wrong thing.
+        let footprints: Vec<(Pos, i32)> = self
+            .storms
+            .iter()
+            .map(|storm| {
+                let radius = self
+                    .rules
+                    .disasters
+                    .get(&storm.kind)
+                    .map_or(1, |spec| spec.radius(storm.severity));
+                (storm.pos, radius)
+            })
+            .collect();
+        for (center, radius) in footprints {
+            for position in self.wdisk(center, radius) {
+                self.map.tiles.get_mut(&position).unwrap().storm = None;
+            }
+        }
+        let mut storms = std::mem::take(&mut self.storms);
+        storms.retain(|storm| storm.ends > self.turn);
+        for storm in &mut storms {
+            let Some(spec) = self.rules.disasters.get(&storm.kind).cloned() else {
+                continue;
+            };
+            let step = hex::DIRS[storm.heading % 6];
+            let next = hex::canon(
+                (storm.pos.0 + step.0, storm.pos.1 + step.1),
+                self.map.width,
+            );
+            if self.map.tiles.contains_key(&next) {
+                storm.pos = next;
+            }
+            let moved = storm.clone();
+            self.strike_storm(&moved, &spec);
+        }
+        self.storms = storms;
+    }
+
+    /// One turn of Gathering Storm's random disasters: drift the storms
+    /// already on the map, lift the droughts whose time is up, then roll each
+    /// class for a new event.
+    fn process_disasters(&mut self) {
+        self.advance_storms();
+        self.lift_expired_droughts();
+        if self.disaster_intensity() == 0 || self.max_turns == 0 {
+            return;
+        }
+        let classes: Vec<String> = self
+            .rules
+            .disasters
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect();
+        for class in classes {
+            let chance = self.disaster_rate(&class) / f64::from(self.max_turns);
+            let mut rng = self.disaster_rng(&class, 0);
+            if !rng.chance(chance) {
+                continue;
+            }
+            let Some(spec) = self.rules.disasters.get(&class).cloned() else {
+                continue;
+            };
+            let severity = self.roll_severity(&spec, &mut rng);
+            match class.as_str() {
+                "volcanic_eruption" => self.trigger_eruption(severity, &mut rng),
+                "river_flood" => self.trigger_river_flood(severity, &mut rng),
+                "drought" => self.trigger_drought(severity, &mut rng),
+                _ => self.trigger_storm(&class, severity, &mut rng),
             }
         }
     }
@@ -19439,6 +20043,7 @@ impl Game {
                 .iter()
                 .any(|other| other.id != pid && other.discovered_natural_wonders.contains(&wonder));
             self.add_era_score(pid, if first { 3 } else { 1 });
+            self.dedication_trigger(pid, "continent_or_wonder", 1);
             if self.grants_city_state_unique_bonus(pid, "Kandy") {
                 let era = self.world_era;
                 self.grant_great_work(pid, "relic", era, "kandy");
@@ -21822,6 +22427,10 @@ impl Game {
             }
         }
         yields.faith += tile.disaster_faith;
+        // What a storm's silt left behind. Gathering Storm's disasters are a
+        // trade, not a pure loss: the ground they wreck comes back richer.
+        yields.food += tile.disaster_food;
+        yields.production += tile.disaster_production;
         let drought_food_protected = tile
             .owner_city
             .and_then(|city| self.cities.get(&city))
@@ -27843,6 +28452,7 @@ impl Game {
                 .collect();
             let origin = civs[self.rng.below(civs.len().max(1))].clone();
             self.grant_great_work(pid, "artifact", era, &origin);
+            self.dedication_trigger(pid, "artifact", 1);
         }
         if self.units[&uid].charges <= 0 {
             self.remove_unit(uid);
@@ -33801,43 +34411,74 @@ impl Game {
             return Vec::new();
         }
         let era = self.world_era;
-        let pool: &[&str] = if era <= 2 {
-            &[
-                "monumentality",
-                "pen_brush_and_voice",
-                "free_inquiry",
-                "exodus_of_the_evangelists",
-            ]
-        } else if era <= 4 {
-            &[
-                "monumentality",
-                "pen_brush_and_voice",
-                "free_inquiry",
-                "exodus_of_the_evangelists",
-                "hic_sunt_dracones",
-                "reform_the_coinage",
-                "heartbeat_of_steam",
-                "to_arms",
-            ]
-        } else {
-            &[
-                "hic_sunt_dracones",
-                "reform_the_coinage",
-                "heartbeat_of_steam",
-                "to_arms",
-                "sky_and_stars",
-                "automaton_warfare",
-            ]
-        };
-        pool.iter()
-            .filter(|dedication| !self.players[pid].dedications.contains(**dedication))
-            .map(|dedication| (*dedication).to_string())
+        self.rules
+            .dedications
+            .iter()
+            .filter(|(name, spec)| {
+                spec.available_in(era) && !self.players[pid].dedications.contains(name.as_str())
+            })
+            .map(|(name, _)| name.clone())
             .collect()
     }
 
+    /// A Dedication's Golden-Age half, which only a Golden or Heroic Age turns
+    /// on.
     fn dedication_active(&self, pid: usize, dedication: &str) -> bool {
         matches!(self.players[pid].age.as_str(), "golden" | "heroic")
             && self.players[pid].dedications.contains(dedication)
+    }
+
+    /// Which Normal-Age Dedication triggers a finished building pays out.
+    /// Civ VI names three building shapes: one with a Great Work slot, one
+    /// that yields Science, and any building of the Industrial era or later.
+    fn note_dedicated_building(&mut self, pid: usize, building: &str, spec: &BuildingSpec) {
+        if spec.wonder {
+            return;
+        }
+        if spec.great_work_slots.values().any(|slots| *slots > 0) {
+            self.dedication_trigger(pid, "great_work_building", 1);
+        }
+        if spec.yields.science > 0.0 {
+            self.dedication_trigger(pid, "science_building", 1);
+        }
+        let era = spec
+            .tech
+            .as_deref()
+            .and_then(|tech| self.rules.techs.get(tech))
+            .map(|tech| tech.era)
+            .or_else(|| {
+                spec.civic
+                    .as_deref()
+                    .and_then(|civic| self.rules.civics.get(civic))
+                    .map(|civic| civic.era)
+            })
+            .unwrap_or(0);
+        if era >= INDUSTRIAL_ERA {
+            self.dedication_trigger(pid, "industrial_building", 1);
+        }
+        let _ = building;
+    }
+
+    /// A Dedication's Normal-Age half. Every Dedication pays Era Score for the
+    /// behaviour it names whatever age chose it — which is the whole point of
+    /// dedicating a Normal or Dark Age, since that score is what buys the next
+    /// Golden one.
+    ///
+    /// `count` is how many times the trigger just happened, so a kill that
+    /// resolves several units at once pays for all of them.
+    fn dedication_trigger(&mut self, pid: usize, trigger: &str, count: i64) {
+        if count <= 0 || pid >= self.players.len() {
+            return;
+        }
+        let earned: i64 = self.players[pid]
+            .dedications
+            .iter()
+            .filter_map(|dedication| self.rules.dedications.get(dedication.as_str()))
+            .filter_map(|spec| spec.triggers.get(trigger))
+            .sum();
+        if earned > 0 {
+            self.add_era_score(pid, earned * count);
+        }
     }
 
     fn do_choose_dedication(&mut self, pid: usize, dedication: &str) -> Result<(), String> {
@@ -34827,6 +35468,7 @@ impl Game {
         if wrapped {
             self.turn += 1;
             self.process_climate();
+            self.process_disasters();
             self.process_meteors();
             self.barbarian_phase();
             self.process_eras();
@@ -35174,6 +35816,7 @@ impl Game {
                 if p.research.as_deref() == Some(name.as_str()) {
                     p.research_progress += f * cost;
                 }
+                self.dedication_trigger(pid, "eureka", 1);
             }
         }
         let civics: Vec<(String, f64, crate::rules::BoostSpec)> = self
@@ -35198,6 +35841,7 @@ impl Game {
                 if p.civic.as_deref() == Some(name.as_str()) {
                     p.civic_progress += f * cost;
                 }
+                self.dedication_trigger(pid, "inspiration", 1);
             }
         }
     }
@@ -35339,6 +35983,19 @@ impl Game {
             .or_insert(0) += 1;
         if self.players[victim.owner].is_barbarian {
             bump(&mut self.players[pid], "barbs_killed");
+        } else {
+            // Every Dedication that pays for kills excludes Barbarians.
+            if self.rules.units[victim.kind.as_str()].class == "naval" {
+                self.dedication_trigger(pid, "naval_kill", 1);
+            }
+            match victim.formation {
+                1 => self.dedication_trigger(pid, "corps_kill", 1),
+                2 => self.dedication_trigger(pid, "army_kill", 1),
+                _ => {}
+            }
+            if weapon == Some("giant_death_robot") {
+                self.dedication_trigger(pid, "robot_kill", 1);
+            }
         }
         self.record_war_unit_loss(pid, victim.owner);
     }
@@ -36297,6 +36954,7 @@ impl Game {
                 {
                     city.reactor_age = 0;
                 }
+                self.note_dedicated_building(pid, building, &spec);
                 if spec
                     .district
                     .as_deref()
@@ -36405,6 +37063,12 @@ impl Game {
                     .unwrap()
                     .districts
                     .insert(district.clone(), *pos);
+                if spec.specialty {
+                    self.dedication_trigger(pid, "specialty_district", 1);
+                }
+                if self.district_is_family(district, "aerodrome") {
+                    self.dedication_trigger(pid, "aerodrome", 1);
+                }
                 if self.district_is_family(district, "encampment") {
                     let max_wall = self.city_max_wall_hp(&self.cities[&cid]);
                     let city = self.cities.get_mut(&cid).unwrap();

@@ -177,6 +177,7 @@ pub fn validate(rules: &Rules) -> Vec<Finding> {
     people(&mut check);
     agendas(&mut check);
     setup(&mut check);
+    world_events(&mut check);
 
     let waivers = waivers();
     let mut findings: Vec<Finding> = check
@@ -186,6 +187,76 @@ pub fn validate(rules: &Rules) -> Vec<Finding> {
         .collect();
     findings.sort_by(|a, b| a.severity.cmp(&b.severity).then(a.subject.cmp(&b.subject)));
     findings
+}
+
+/// Gathering Storm's random disasters and Rise & Fall's Dedications: the
+/// per-severity tables have to be as long as the severities the class rolls,
+/// storms have to have somewhere to form, and every Dedication has to be
+/// reachable in some era and pay for something.
+fn world_events(check: &mut Check) {
+    let storm_classes = ["hurricane", "tornado", "blizzard", "dust_storm"];
+    let terrains = check.rules.terrains.clone();
+    for (id, spec) in check.rules.disasters.clone().iter() {
+        let subject = format!("disasters/{id}");
+        if spec.per_game <= 0.0 {
+            check.warn(subject.clone(), "never occurs: its per-game rate is zero");
+        }
+        if spec.severities == 0 {
+            check.error(subject.clone(), "rolls no severity tiers");
+        }
+        for (name, len) in [
+            ("pillage_chance", spec.pillage_chance.len()),
+            ("fertility_chance", spec.fertility_chance.len()),
+            ("population_loss", spec.population_loss.len()),
+            ("radius", spec.radius.len()),
+        ] {
+            if len != 0 && len != spec.severities as usize {
+                check.error(
+                    subject.clone(),
+                    format!(
+                        "{name} has {len} entries for {} severity tiers",
+                        spec.severities
+                    ),
+                );
+            }
+        }
+        if storm_classes.contains(&id.as_str()) {
+            if spec.terrains.is_empty() {
+                check.error(subject.clone(), "is a storm with no terrain to form over");
+            }
+            for terrain in &spec.terrains {
+                if !terrains.contains_key(terrain) {
+                    check.error(
+                        subject.clone(),
+                        format!("forms over {terrain:?}, which is not a terrain"),
+                    );
+                }
+            }
+            if spec.duration.is_empty() {
+                check.error(subject.clone(), "is a storm that never dissipates");
+            }
+        }
+    }
+
+    let eras = crate::rules::ERA_NAMES.len();
+    for (id, spec) in check.rules.dedications.clone().iter() {
+        let subject = format!("dedications/{id}");
+        if spec.eras.0 > spec.eras.1 || spec.eras.1 >= eras {
+            check.error(
+                subject.clone(),
+                format!("spans eras {:?}, which is not a run of real eras", spec.eras),
+            );
+        }
+        if spec.triggers.is_empty() {
+            check.warn(
+                subject.clone(),
+                "pays no Era Score, so choosing it in a Normal or Dark Age does nothing",
+            );
+        }
+        if spec.triggers.values().any(|score| *score <= 0) {
+            check.error(subject.clone(), "pays a non-positive Era Score");
+        }
+    }
 }
 
 /// Technology and civic trees: prerequisites resolve, nothing is its own

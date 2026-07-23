@@ -867,6 +867,10 @@ pub struct Rules {
     /// The shipped WMDs table. Blast radius, fallout and ICBM range await a
     /// delivery mechanic; the per-turn Gold maintenance is charged today.
     pub wmds: SpecMap<WmdSpec>,
+    /// Gathering Storm's random-disaster classes and their tuning.
+    pub disasters: SpecMap<DisasterSpec>,
+    /// Rise & Fall's Dedications, both halves.
+    pub dedications: SpecMap<DedicationSpec>,
     /// Which technologies grant each global effect, and which civics do.
     ///
     /// Asking what a player's trees add up to used to walk every node they
@@ -953,8 +957,104 @@ pub struct GoodyRewardSpec {
     pub reward: BTreeMap<String, f64>,
 }
 
+/// One Gathering Storm random-disaster class.
+///
+/// The shipped `Expansion2_RandomEvents.xml` rates are not published outside an
+/// installation, so the tuning lives here as data rather than in the engine:
+/// `per_game` is the expected number of occurrences over a full Standard-speed
+/// game at Moderate disaster intensity, and every per-severity list is indexed
+/// by severity tier minus one. Civ VI rolls three tiers for floods, droughts and
+/// eruptions and two for storms.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct DisasterSpec {
+    pub per_game: f64,
+    #[serde(default = "one_u8")]
+    pub severities: u8,
+    /// HP removed from every unit caught in the affected area.
+    #[serde(default)]
+    pub unit_damage: f64,
+    /// Chance an improvement or district in the area is pillaged.
+    #[serde(default)]
+    pub pillage_chance: Vec<f64>,
+    /// Chance an affected tile gains permanent fertility.
+    #[serde(default)]
+    pub fertility_chance: Vec<f64>,
+    /// Citizens a city in the area loses.
+    #[serde(default)]
+    pub population_loss: Vec<i32>,
+    /// Turns the effect persists — droughts linger, storms drift.
+    #[serde(default)]
+    pub duration: Vec<u32>,
+    /// Tile radius of the affected area.
+    #[serde(default)]
+    pub radius: Vec<i32>,
+    /// Terrains a storm of this class forms over.
+    #[serde(default)]
+    pub terrains: Vec<String>,
+}
+
+impl DisasterSpec {
+    /// A per-severity entry, clamped to the list the ruleset supplies so a
+    /// short or absent list degrades to its last value rather than panicking.
+    fn tier<T: Copy + Default>(list: &[T], severity: u8) -> T {
+        if list.is_empty() {
+            return T::default();
+        }
+        list[(severity.max(1) as usize - 1).min(list.len() - 1)]
+    }
+
+    pub fn pillage_chance(&self, severity: u8) -> f64 {
+        Self::tier(&self.pillage_chance, severity)
+    }
+
+    pub fn fertility_chance(&self, severity: u8) -> f64 {
+        Self::tier(&self.fertility_chance, severity)
+    }
+
+    pub fn population_loss(&self, severity: u8) -> i32 {
+        Self::tier(&self.population_loss, severity)
+    }
+
+    pub fn duration(&self, severity: u8) -> u32 {
+        Self::tier(&self.duration, severity)
+    }
+
+    pub fn radius(&self, severity: u8) -> i32 {
+        Self::tier(&self.radius, severity)
+    }
+}
+
+fn one_u8() -> u8 {
+    1
+}
+
+/// One Rise & Fall Dedication. Every Dedication has two halves: the Normal-Age
+/// one, which turns the behaviour it names into Era Score whatever age chose
+/// it, and the Golden-Age one, which only a Golden or Heroic Age turns on.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct DedicationSpec {
+    /// Inclusive world-era span the Dedication can be chosen in, as indices
+    /// into [`ERA_NAMES`].
+    pub eras: (usize, usize),
+    /// Era Score this Dedication pays for each named trigger.
+    #[serde(default)]
+    pub triggers: BTreeMap<String, i64>,
+    /// The Normal-Age text, for clients and the Civilopedia.
+    #[serde(default)]
+    pub normal: String,
+    /// The Golden-Age text. Its effects live in the engine.
+    #[serde(default)]
+    pub golden: String,
+}
+
+impl DedicationSpec {
+    pub fn available_in(&self, era: usize) -> bool {
+        era >= self.eras.0 && era <= self.eras.1
+    }
+}
+
 /// Every ruleset file the engine ships, by the name a mod overlay uses.
-pub const DATA_FILES: [(&str, &str); 25] = [
+pub const DATA_FILES: [(&str, &str); 27] = [
     ("terrains", include_str!("../data/terrains.json")),
     ("features", include_str!("../data/features.json")),
     ("resources", include_str!("../data/resources.json")),
@@ -980,6 +1080,8 @@ pub const DATA_FILES: [(&str, &str); 25] = [
     ("eras", include_str!("../data/eras.json")),
     ("wmds", include_str!("../data/wmds.json")),
     ("tree_effects", include_str!("../data/tree_effects.json")),
+    ("disasters", include_str!("../data/disasters.json")),
+    ("dedications", include_str!("../data/dedications.json")),
 ];
 
 /// The ruleset every `Rules::embedded()` call sees. It is the shipped data
@@ -1071,6 +1173,8 @@ impl Rules {
             goody_huts: take(&mut files, "goody_huts")?,
             eras: take(&mut files, "eras")?,
             wmds: take(&mut files, "wmds")?,
+            disasters: take(&mut files, "disasters")?,
+            dedications: take(&mut files, "dedications")?,
             tech_effects: SpecMap::default(),
             civic_effects: SpecMap::default(),
             tech_ancestors: SpecMap::default(),

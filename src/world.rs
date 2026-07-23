@@ -52,6 +52,13 @@ pub struct Tile {
     /// Permanent Faith added by Great Bath flood mitigation.
     #[serde(default)]
     pub disaster_faith: f64,
+    /// Permanent Food and Production a disaster left behind. Gathering Storm
+    /// pays for the damage its storms do with fertility, so a tile that keeps
+    /// being hit ends up better than it started.
+    #[serde(default)]
+    pub disaster_food: f64,
+    #[serde(default)]
+    pub disaster_production: f64,
     /// Whether this tile is currently suffering a drought's -1 Food effect.
     #[serde(default)]
     pub drought: bool,
@@ -68,6 +75,11 @@ pub struct Tile {
     /// Turn through which a nuclear accident's fallout makes the tile yieldless.
     #[serde(default)]
     pub fallout_until: u32,
+    /// The storm class currently passing over this tile, if any. Storms drift
+    /// for three turns, so the marker moves with the system rather than
+    /// belonging to the tile.
+    #[serde(default)]
+    pub storm: Option<String>,
 }
 
 /// Last tile state actually observed by one player. `owner` is snapshotted
@@ -199,11 +211,14 @@ impl Tile {
             road: 0,
             continent: None,
             disaster_faith: 0.0,
+            disaster_food: 0.0,
+            disaster_production: 0.0,
             drought: false,
             coastal_lowland: 0,
             flooded: false,
             submerged: false,
             fallout_until: 0,
+            storm: None,
         }
     }
 }

@@ -1,0 +1,74 @@
+{
+  "monumentality": {
+    "eras": [1, 3],
+    "triggers": { "specialty_district": 1 },
+    "normal": "+1 Era Score each time you construct a new specialty District.",
+    "golden": "+2 Movement for Builders. Civilian units may be purchased with Faith, and Builders and Settlers are 30% cheaper."
+  },
+  "pen_brush_and_voice": {
+    "eras": [1, 4],
+    "triggers": { "inspiration": 1, "great_work_building": 1 },
+    "normal": "+1 Era Score each time you trigger an Inspiration, and for constructing a building with a Great Work slot.",
+    "golden": "Inspirations provide an additional 10% of civic costs. Each city receives +1 Culture for each specialty district."
+  },
+  "free_inquiry": {
+    "eras": [1, 4],
+    "triggers": { "eureka": 1, "science_building": 1 },
+    "normal": "+1 Era Score each time you trigger a Eureka, and for constructing a building that yields Science.",
+    "golden": "Eurekas provide an additional 10% of technology costs. Commercial Hub and Harbor Gold adjacency also provides Science."
+  },
+  "exodus_of_the_evangelists": {
+    "eras": [1, 3],
+    "triggers": { "city_converted": 2 },
+    "normal": "+2 Era Score each time you convert a city to your founded Religion for the first time.",
+    "golden": "+2 Movement and +2 Charges for Missionaries, Apostles and Inquisitors. +4 Great Prophet points per turn."
+  },
+  "hic_sunt_dracones": {
+    "eras": [2, 4],
+    "triggers": { "continent_or_wonder": 3, "naval_kill": 1 },
+    "normal": "+3 Era Score for each new Continent or Natural Wonder discovered, +1 for each non-Barbarian naval unit killed.",
+    "golden": "+3 starting Population for cities on other continents. +2 Movement for naval and embarked units. +2 Loyalty per turn off the Capital's continent."
+  },
+  "reform_the_coinage": {
+    "eras": [2, 4],
+    "triggers": { "trade_route": 1 },
+    "normal": "+1 Era Score each time you complete a Trade Route.",
+    "golden": "Traders cannot be plundered. International Trade Routes provide +3 Gold per specialty district in the destination city."
+  },
+  "to_arms": {
+    "eras": [3, 6],
+    "triggers": { "corps_kill": 1, "army_kill": 2 },
+    "normal": "+1 Era Score per Corps kill and +2 per Army kill, against non-Barbarians.",
+    "golden": "A special Casus Belli with 75% less warmongering penalty, usable immediately after denouncing. +15% Production toward military units."
+  },
+  "heartbeat_of_steam": {
+    "eras": [4, 5],
+    "triggers": { "industrial_building": 2 },
+    "normal": "+2 Era Score for each Industrial or later building constructed.",
+    "golden": "+10% Production toward Industrial-era and later wonders. Campus Science adjacency also provides Production."
+  },
+  "bodyguard_of_lies": {
+    "eras": [5, 8],
+    "triggers": { "spy_success": 1 },
+    "normal": "+1 Era Score for each successful offensive Spy operation.",
+    "golden": "Spies establish presence instantly, and all offensive missions take 25% less time."
+  },
+  "sky_and_stars": {
+    "eras": [6, 8],
+    "triggers": { "aerodrome": 1, "great_person": 1 },
+    "normal": "+1 Era Score per Aerodrome built, and each time a Great Person is earned or purchased.",
+    "golden": "Unlocks the era's flight and rocketry Eurekas. +100% experience for all air units."
+  },
+  "wish_you_were_here": {
+    "eras": [7, 8],
+    "triggers": { "artifact": 1 },
+    "normal": "+1 Era Score for each Artifact extracted.",
+    "golden": "Cities with Governors receive +50% Tourism from World Wonders, and all National Parks +100% Tourism."
+  },
+  "automaton_warfare": {
+    "eras": [7, 8],
+    "triggers": { "robot_kill": 1 },
+    "normal": "+1 Era Score each time a Giant Death Robot kills a non-Barbarian unit.",
+    "golden": "A Giant Death Robot in the Capital, 3 Uranium per turn, and Uranium mines accumulate +1 more per turn."
+  }
+}

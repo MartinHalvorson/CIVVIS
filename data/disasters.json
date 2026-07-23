@@ -1,0 +1,74 @@
+{
+  "volcanic_eruption": {
+    "per_game": 3.0,
+    "severities": 3,
+    "unit_damage": 25.0,
+    "pillage_chance": [0.4, 0.7, 1.0],
+    "fertility_chance": [0.35, 0.55, 0.75],
+    "population_loss": [0, 1, 2],
+    "radius": [1, 1, 1]
+  },
+  "river_flood": {
+    "per_game": 12.0,
+    "severities": 3,
+    "unit_damage": 20.0,
+    "pillage_chance": [0.5, 0.8, 1.0],
+    "fertility_chance": [0.0, 0.0, 0.0],
+    "population_loss": [0, 0, 1],
+    "radius": [2, 3, 4]
+  },
+  "drought": {
+    "per_game": 5.0,
+    "severities": 3,
+    "unit_damage": 0.0,
+    "pillage_chance": [1.0, 1.0, 1.0],
+    "fertility_chance": [0.0, 0.0, 0.0],
+    "population_loss": [0, 0, 0],
+    "duration": [8, 12, 16],
+    "radius": [1, 2, 3]
+  },
+  "hurricane": {
+    "per_game": 8.0,
+    "severities": 2,
+    "unit_damage": 30.0,
+    "pillage_chance": [0.5, 0.9],
+    "fertility_chance": [0.2, 0.4],
+    "population_loss": [0, 1],
+    "duration": [3, 3],
+    "radius": [1, 2],
+    "terrains": ["coast", "ocean"]
+  },
+  "tornado": {
+    "per_game": 6.0,
+    "severities": 2,
+    "unit_damage": 30.0,
+    "pillage_chance": [0.5, 0.9],
+    "fertility_chance": [0.0, 0.0],
+    "population_loss": [0, 1],
+    "duration": [3, 3],
+    "radius": [1, 1],
+    "terrains": ["plains", "grassland"]
+  },
+  "blizzard": {
+    "per_game": 6.0,
+    "severities": 2,
+    "unit_damage": 20.0,
+    "pillage_chance": [0.3, 0.6],
+    "fertility_chance": [0.0, 0.0],
+    "population_loss": [0, 0],
+    "duration": [3, 3],
+    "radius": [1, 2],
+    "terrains": ["tundra", "snow"]
+  },
+  "dust_storm": {
+    "per_game": 6.0,
+    "severities": 2,
+    "unit_damage": 20.0,
+    "pillage_chance": [0.3, 0.6],
+    "fertility_chance": [0.25, 0.45],
+    "population_loss": [0, 0],
+    "duration": [3, 3],
+    "radius": [1, 2],
+    "terrains": ["desert"]
+  }
+}
