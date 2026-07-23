@@ -173,6 +173,12 @@ fn geneva_kabul_and_yerevan_apply_yields_experience_and_promotion_choice() {
     game.players[minor].civ = "Kabul".to_string();
     game.award_unit_combat_xp(attacker, &opponent, false, true, false);
     assert_eq!(game.units[&attacker].xp, 8);
+    game.units.get_mut(&attacker).unwrap().xp = 0;
+    game.award_initiated_combat_xp(attacker, 3.0);
+    assert_eq!(
+        game.units[&attacker].xp, 6,
+        "Kabul also doubles fixed XP from initiated district combat"
+    );
 
     game.players[minor].civ = "Kandy".to_string();
     let apostle = game.spawn_test_unit("apostle", 0, game.cities[&cities[0]].pos);
@@ -297,6 +303,123 @@ fn zanzibar_and_kandy_supply_luxuries_relics_and_relic_faith() {
         game.players[0].counters["great_work:relic"],
         relics_before + 1
     );
+}
+
+#[test]
+fn zanzibar_luxuries_each_supply_six_cities() {
+    let (mut game, _) = game_with_capitals(1, 89_012);
+    while game.player_city_ids(0).len() < 7 {
+        let existing: Vec<Pos> = game
+            .player_city_ids(0)
+            .into_iter()
+            .map(|city| game.cities[&city].pos)
+            .collect();
+        let position = game
+            .map
+            .tiles
+            .iter()
+            .find_map(|(position, tile)| {
+                (tile.owner_city.is_none()
+                    && game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+                    && existing
+                        .iter()
+                        .all(|city| game.wdist(*city, *position) >= 3))
+                .then_some(*position)
+            })
+            .expect("map has room for the Zanzibar allocation test");
+        game.found_city_for(0, position, None);
+    }
+    let before: i64 = game.luxury_amenity_allocations(0).values().sum();
+    let zanzibar = add_city_state(&mut game, "Zanzibar");
+    make_suzerain(&mut game, 0, zanzibar);
+    let after: i64 = game.luxury_amenity_allocations(0).values().sum();
+    assert_eq!(
+        after - before,
+        12,
+        "Cinnamon and Cloves provide six Amenities each"
+    );
+}
+
+#[test]
+fn suzerains_improve_repair_and_accumulate_city_state_resources() {
+    let (mut game, _) = game_with_capitals(1, 89_013);
+    let minor = add_city_state(&mut game, "Geneva");
+    let position = game
+        .map
+        .tiles
+        .iter()
+        .find_map(|(position, tile)| {
+            (tile.owner_city.is_none()
+                && game.rules.is_passable(tile)
+                && !game.rules.is_water(tile))
+            .then_some(*position)
+        })
+        .unwrap();
+    let city = game.found_city_for(minor, position, None);
+    let resource = game.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|tile| *tile != position)
+        .unwrap();
+    {
+        let tile = game.map.tiles.get_mut(&resource).unwrap();
+        tile.terrain = "plains".to_string();
+        tile.feature = None;
+        tile.resource = Some("iron".to_string());
+        tile.improvement = None;
+        tile.pillaged = false;
+    }
+    game.players[0]
+        .techs
+        .extend(["mining", "bronze_working"].into_iter().map(str::to_string));
+    let builder = game.spawn_test_unit("builder", 0, resource);
+
+    assert!(!game
+        .valid_improvements(0, resource)
+        .contains(&"mine".to_string()));
+    make_suzerain(&mut game, 0, minor);
+    assert!(game
+        .valid_improvements(0, resource)
+        .contains(&"mine".to_string()));
+    game.apply(
+        0,
+        &Action::Improve {
+            unit: builder,
+            improvement: "mine".to_string(),
+        },
+    )
+    .unwrap();
+    assert_close(game.strategic_resource_rate(0, "iron"), 2.0);
+
+    game.map.tiles.get_mut(&resource).unwrap().pillaged = true;
+    game.units.get_mut(&builder).unwrap().moves_left = 2.0;
+    let repair = Action::RepairImprovement { unit: builder };
+    assert!(game.legal_actions(0).contains(&repair));
+    game.apply(0, &repair).unwrap();
+    assert!(!game.map.tiles[&resource].pillaged);
+}
+
+#[test]
+fn every_roster_city_state_has_the_expected_type() {
+    let expected = [
+        ("Kabul", "militaristic"),
+        ("Geneva", "scientific"),
+        ("Carthage", "militaristic"),
+        ("Hattusa", "scientific"),
+        ("Mohenjo-Daro", "cultural"),
+        ("Yerevan", "religious"),
+        ("Zanzibar", "trade"),
+        ("Auckland", "industrial"),
+        ("Valletta", "militaristic"),
+        ("Vilnius", "cultural"),
+        ("Stockholm", "scientific"),
+        ("Kandy", "religious"),
+    ];
+    for (city_state, kind) in expected {
+        assert_eq!(Game::cs_type(city_state), kind);
+    }
 }
 
 #[test]

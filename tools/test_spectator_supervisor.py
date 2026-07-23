@@ -83,6 +83,45 @@ class SessionSettingsTests(unittest.TestCase):
         }
         self.assertEqual(supervisor.session_settings({}, defaults), defaults)
 
+    def test_manual_new_game_request_keeps_normalized_settings_and_rejects_stale_instances(self):
+        request = {
+            "mode": "fresh_code",
+            "server_instance": 4321,
+            "settings": {
+                "players": 4,
+                "width": 60,
+                "height": 38,
+                "city_states": 6,
+                "turns": 330,
+                "map": "continents",
+                "speed": "quick",
+                "victories": ["science", "culture", "domination"],
+            },
+        }
+        self.assertEqual(
+            supervisor.manual_new_game_request(
+                {"server_instance": 4321, "supervisor_request": request}
+            ),
+            (
+                "fresh_code",
+                {
+                    "players": 4,
+                    "width": 60,
+                    "height": 38,
+                    "city_states": 6,
+                    "turns": 330,
+                    "map": "continents",
+                    "speed": "quick",
+                    "victories": ["science", "culture", "domination"],
+                },
+            ),
+        )
+        self.assertIsNone(
+            supervisor.manual_new_game_request(
+                {"server_instance": 9999, "supervisor_request": request}
+            )
+        )
+
     def test_result_standings_preserves_winner_and_excludes_non_major_players(self):
         state = {
             "winner": 2,
@@ -328,6 +367,32 @@ class SourceSnapshotTests(unittest.TestCase):
 
 
 class RecoveryTests(unittest.TestCase):
+    @staticmethod
+    def supervisor_args(**overrides):
+        values = {
+            "port": 8766,
+            "players": 4,
+            "width": 60,
+            "height": 38,
+            "city_states": 6,
+            "turns": 500,
+            "map": "pangaea",
+            "speed": "standard",
+            "cooldown": 0.0,
+            "poll": 0.01,
+            "build_retry": 0.01,
+            "source_check_interval": 30.0,
+            "unresponsive_timeout": 20.0,
+            "busy_timeout": 0.0,
+            "stall_timeout": 30.0,
+            "checkpoint_interval": 5.0,
+            "max_resume_attempts": 2,
+            "no_open": True,
+            "adopt_pid": 321,
+        }
+        values.update(overrides)
+        return SimpleNamespace(**values)
+
     def test_successor_detection_closes_the_cooldown_restart_race(self):
         finished = {"server_instance": 7, "seed": 11, "winner": 2}
         self.assertFalse(supervisor.successor_started(None, 7, 11))
@@ -349,6 +414,123 @@ class RecoveryTests(unittest.TestCase):
                 supervisor.wait_for_successor(8766, 7, 11, timeout=0.2),
                 successor,
             )
+
+    def test_manual_restart_uses_existing_runtime_without_building(self):
+        requested = {
+            "players": 2,
+            "width": 44,
+            "height": 26,
+            "city_states": 3,
+            "turns": 250,
+            "map": "pangaea",
+            "speed": "online",
+            "victories": ["science", "score"],
+        }
+        active = {
+            "seed": 9,
+            "turn": 42,
+            "current": 2,
+            "winner": None,
+            "server_instance": 321,
+            "supervisor_request": {
+                "mode": "restart",
+                "server_instance": 321,
+                "settings": requested,
+            },
+        }
+        replacement = {"seed": 10, "turn": 1, "current": 0, "winner": None}
+        process = SimpleNamespace(pid=654)
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Path(directory) / "save.json"
+            checkpoint.write_text("old checkpoint", encoding="utf-8")
+            with (
+                patch.object(supervisor, "parse_args", return_value=self.supervisor_args()),
+                patch.object(supervisor, "checkpoint_path", return_value=checkpoint),
+                patch.object(supervisor, "process_alive", return_value=True),
+                patch.object(supervisor, "source_snapshot", return_value="current"),
+                patch.object(supervisor, "runtime_matches", return_value=True),
+                patch.object(
+                    supervisor,
+                    "read_state",
+                    side_effect=[active, active, KeyboardInterrupt],
+                ),
+                patch.object(supervisor, "start_server", return_value=process) as start,
+                patch.object(supervisor, "wait_for_server", return_value=replacement),
+                patch.object(supervisor, "start_background_prebuild") as build,
+                patch.object(supervisor, "stop_server"),
+            ):
+                self.assertEqual(supervisor.main(), 0)
+
+        start.assert_called_once_with(8766, requested, False)
+        build.assert_not_called()
+        self.assertFalse(checkpoint.exists())
+
+    def test_fresh_code_request_waits_for_successful_build_before_restarting(self):
+        requested = {
+            "players": 4,
+            "width": 60,
+            "height": 38,
+            "city_states": 6,
+            "turns": 330,
+            "map": "continents",
+            "speed": "quick",
+            "victories": ["science", "culture", "domination"],
+        }
+        active = {
+            "seed": 9,
+            "turn": 42,
+            "current": 2,
+            "winner": None,
+            "server_instance": 321,
+            "supervisor_request": {
+                "mode": "fresh_code",
+                "server_instance": 321,
+                "settings": requested,
+            },
+        }
+        replacement = {"seed": 10, "turn": 1, "current": 0, "winner": None}
+        process = SimpleNamespace(pid=654)
+        worker = SimpleNamespace(pid=777, poll=lambda: 0)
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Path(directory) / "save.json"
+            with (
+                patch.object(supervisor, "parse_args", return_value=self.supervisor_args()),
+                patch.object(supervisor, "checkpoint_path", return_value=checkpoint),
+                patch.object(supervisor, "process_alive", return_value=True),
+                patch.object(supervisor, "source_snapshot", return_value="current"),
+                patch.object(supervisor, "runtime_matches", return_value=True),
+                patch.object(
+                    supervisor,
+                    "read_state",
+                    side_effect=[active, active, active, KeyboardInterrupt],
+                ),
+                patch.object(
+                    supervisor, "start_background_prebuild", return_value=worker
+                ) as build,
+                patch.object(supervisor, "start_server", return_value=process) as start,
+                patch.object(supervisor, "wait_for_server", return_value=replacement),
+                patch.object(supervisor, "stop_server"),
+                patch.object(supervisor.time, "sleep"),
+            ):
+                self.assertEqual(supervisor.main(), 0)
+
+        build.assert_called_once_with()
+        start.assert_called_once_with(8766, requested, False)
+
+    def test_busy_server_detection_distinguishes_compute_from_idle(self):
+        process = SimpleNamespace(pid=321)
+        with patch.object(
+            supervisor,
+            "command",
+            return_value=SimpleNamespace(returncode=0, stdout=" 99.7\n"),
+        ):
+            self.assertTrue(supervisor.process_busy(process, None))
+        with patch.object(
+            supervisor,
+            "command",
+            return_value=SimpleNamespace(returncode=0, stdout="  0.0\n"),
+        ):
+            self.assertFalse(supervisor.process_busy(process, None))
 
     def test_active_compute_has_no_default_wall_clock_kill(self):
         self.assertFalse(
@@ -418,6 +600,23 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(command[command.index("--resume") + 1], str(checkpoint))
         self.assertIn("--supervised", command)
         self.assertIn("--no-open", command)
+
+    def test_server_command_carries_manual_victory_settings(self):
+        settings = {
+            "players": 4,
+            "width": 60,
+            "height": 38,
+            "city_states": 6,
+            "turns": 330,
+            "map": "continents",
+            "speed": "quick",
+            "victories": ["science", "culture", "domination"],
+        }
+        command = supervisor.server_command(8766, settings, False)
+        self.assertEqual(
+            command[command.index("--victories") + 1],
+            "science,culture,domination",
+        )
 
     def test_checkpoint_write_is_atomic_and_finished_saves_are_not_resumed(self):
         class Response:

@@ -1,6 +1,7 @@
 //! Zero-dependency local HTTP server for the human-vs-AI browser GUI.
 //! Endpoints: GET / (page), GET /state, GET /save, GET /rules, GET /pedia,
-//! POST /action, POST /step, POST /view, POST /spectator-status, POST /new.
+//! POST /action, POST /step, POST /view, POST /spectator-status, POST /new,
+//! POST /supervisor-new.
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -57,16 +58,21 @@ pub struct Session {
     /// civilization's fog-of-war perspective. Only meaningful in spectate
     /// mode—the AI still controls every seat either way.
     view_player: Option<usize>,
-    /// District families that have completed at least once in this match.
-    /// Keeping this at session scope prevents a destroyed district from later
-    /// being announced as the world's first copy a second time.
-    chronicle_districts: BTreeSet<String>,
+    /// Irreversible event-log history and the running totals for active wars.
+    /// Session scope prevents destroyed infrastructure or a temporarily lost
+    /// high-population city from being announced as a first a second time.
+    chronicle: ChronicleState,
+    /// Manual new-game handoff consumed by the external spectator supervisor.
+    /// The current process stays available until the requested runtime is ready.
+    supervisor_request: Option<Value>,
 }
 
 #[derive(Clone)]
 struct ChronicleCity {
     name: String,
     owner: usize,
+    pop: i32,
+    pos: Pos,
     occupied_from: Option<usize>,
 }
 
@@ -81,6 +87,7 @@ struct ChronicleSnapshot {
     turn: u32,
     cities: BTreeMap<u32, ChronicleCity>,
     districts: BTreeMap<Pos, ChronicleDistrict>,
+    buildings: BTreeMap<(u32, String), usize>,
     wonders: BTreeMap<String, usize>,
     religions: Vec<Option<String>>,
     governments: Vec<Option<String>>,
@@ -88,6 +95,43 @@ struct ChronicleSnapshot {
     tech_eras: Vec<usize>,
     civic_eras: Vec<usize>,
     majors: Vec<bool>,
+    wars: BTreeSet<(usize, usize)>,
+    military_units: BTreeMap<u32, usize>,
+    combat_owners: BTreeMap<Pos, BTreeSet<usize>>,
+}
+
+#[derive(Clone, Default)]
+struct WarLosses {
+    units: u32,
+    cities: u32,
+}
+
+#[derive(Clone)]
+struct ChronicleWar {
+    aggressor: usize,
+    defender: usize,
+    losses: BTreeMap<usize, WarLosses>,
+}
+
+impl ChronicleWar {
+    fn new(aggressor: usize, defender: usize) -> Self {
+        Self {
+            aggressor,
+            defender,
+            losses: BTreeMap::new(),
+        }
+    }
+
+    fn losses_for(&self, player: usize) -> WarLosses {
+        self.losses.get(&player).cloned().unwrap_or_default()
+    }
+}
+
+struct ChronicleState {
+    districts: BTreeSet<String>,
+    buildings: BTreeSet<String>,
+    population_milestones: Vec<i32>,
+    wars: BTreeMap<(usize, usize), ChronicleWar>,
 }
 
 pub struct SpectatorStep {
@@ -99,22 +143,47 @@ pub struct SpectatorStep {
 impl ChronicleSnapshot {
     fn capture(game: &Game) -> Self {
         let mut districts = BTreeMap::new();
+        let mut buildings = BTreeMap::new();
         let mut wonders = BTreeMap::new();
+        let mut combat_owners: BTreeMap<Pos, BTreeSet<usize>> = BTreeMap::new();
         for city in game.cities.values() {
             for (district, position) in &city.districts {
                 districts.insert(
                     *position,
                     ChronicleDistrict {
                         city: city.id,
-                        district: game.district_family(district).to_string(),
+                        district: district.clone(),
                         owner: city.owner,
                     },
                 );
             }
+            for building in &city.buildings {
+                if game
+                    .rules
+                    .buildings
+                    .get(building)
+                    .is_some_and(|spec| spec.buildable)
+                {
+                    buildings.insert((city.id, building.clone()), city.owner);
+                }
+            }
             for wonder in city.wonders.keys() {
                 wonders.insert(wonder.clone(), city.owner);
             }
+            combat_owners
+                .entry(city.pos)
+                .or_default()
+                .insert(city.owner);
         }
+        let military_units = game
+            .units
+            .values()
+            .filter(|unit| game.rules.units[unit.kind.as_str()].class == "military")
+            .map(|unit| {
+                combat_owners.entry(unit.pos).or_default().insert(unit.owner);
+                (unit.id, unit.owner)
+            })
+            .collect();
         let tree_era = |nodes: &BTreeSet<String>, technology: bool| {
             nodes
                 .iter()
@@ -139,12 +208,15 @@ impl ChronicleSnapshot {
                         ChronicleCity {
                             name: city.name.clone(),
                             owner: city.owner,
+                            pop: city.pop,
+                            pos: city.pos,
                             occupied_from: city.occupied_from,
                         },
                     )
                 })
                 .collect(),
             districts,
+            buildings,
             wonders,
             religions: game
                 .players
@@ -177,6 +249,9 @@ impl ChronicleSnapshot {
                 .iter()
                 .map(|player| !player.is_minor && !player.is_barbarian)
                 .collect(),
+            wars: game.at_war.clone(),
+            military_units,
+            combat_owners,
         }
     }
 }
@@ -185,8 +260,87 @@ fn completed_districts(game: &Game) -> BTreeSet<String> {
     game.cities
         .values()
         .flat_map(|city| city.districts.keys())
-        .map(|district| game.district_family(district).to_string())
+        .cloned()
         .collect()
+}
+
+fn completed_buildings(game: &Game) -> BTreeSet<String> {
+    game.cities
+        .values()
+        .flat_map(|city| city.buildings.iter())
+        .filter(|building| {
+            game.rules
+                .buildings
+                .get(*building)
+                .is_some_and(|spec| spec.buildable)
+        })
+        .cloned()
+        .collect()
+}
+
+fn population_milestone(population: i32) -> i32 {
+    if population < 4 {
+        0
+    } else {
+        4 + ((population - 4) / 3) * 3
+    }
+}
+
+impl ChronicleState {
+    fn from_game(game: &Game) -> Self {
+        let population_milestones = game
+            .players
+            .iter()
+            .map(|player| {
+                game.cities
+                    .values()
+                    .filter(|city| city.owner == player.id)
+                    .map(|city| city.pop)
+                    .max()
+                    .map(population_milestone)
+                    .unwrap_or(0)
+            })
+            .collect();
+        let wars = game
+            .at_war
+            .iter()
+            .map(|&(first, second)| {
+                (
+                    (first, second),
+                    ChronicleWar::new(first, second),
+                )
+            })
+            .collect();
+        Self {
+            districts: completed_districts(game),
+            buildings: completed_buildings(game),
+            population_milestones,
+            wars,
+        }
+    }
+}
+
+fn chronicle_war_pair(first: usize, second: usize) -> (usize, usize) {
+    if first < second {
+        (first, second)
+    } else {
+        (second, first)
+    }
+}
+
+fn war_totals_event(event_type: &str, war: &ChronicleWar, turn: u32) -> Value {
+    let aggressor = war.losses_for(war.aggressor);
+    let defender = war.losses_for(war.defender);
+    json!({
+        "type": event_type,
+        "aggressor": war.aggressor,
+        "defender": war.defender,
+        "aggressor_units_lost": aggressor.units,
+        "aggressor_cities_lost": aggressor.cities,
+        "defender_units_lost": defender.units,
+        "defender_cities_lost": defender.cities,
+        "turn": turn,
+    })
 }
 
 fn chronicle_world_events(
@@ -194,7 +348,7 @@ fn chronicle_world_events(
     after: &ChronicleSnapshot,
     actor: usize,
     actions: &[Action],
-    seen_districts: &mut BTreeSet<String>,
+    chronicle: &mut ChronicleState,
 ) -> Vec<Value> {
     let mut events = Vec::new();
     let turn = after.turn;
@@ -227,10 +381,61 @@ fn chronicle_world_events(
         .collect();
     new_districts.sort_by_key(|district| district.city);
     for district in new_districts {
-        if seen_districts.insert(district.district.clone()) {
+        if chronicle.districts.insert(district.district.clone()) {
+            let city = after
+                .cities
+                .get(&district.city)
+                .map(|city| city.name.as_str());
             events.push(json!({
                 "type": "district_first", "player": district.owner,
-                "district": district.district, "turn": turn,
+                "district": district.district, "city": city, "turn": turn,
+            }));
+        }
+    }
+
+    let mut new_buildings: Vec<_> = after
+        .buildings
+        .iter()
+        .filter(|(key, _)| !before.buildings.contains_key(*key))
+        .collect();
+    new_buildings.sort_by_key(|((city, building), _)| (*city, building.as_str()));
+    for ((city_id, building), owner) in new_buildings {
+        if chronicle.buildings.insert(building.clone()) {
+            let city = after
+                .cities
+                .get(city_id)
+                .map(|city| city.name.as_str());
+            events.push(json!({
+                "type": "building_first", "player": owner,
+                "building": building, "city": city, "turn": turn,
+            }));
+        }
+    }
+
+    for (player, major) in after.majors.iter().copied().enumerate() {
+        if !major {
+            continue;
+        }
+        let Some(city) = after
+            .cities
+            .values()
+            .filter(|city| city.owner == player)
+            .max_by_key(|city| (city.pop, std::cmp::Reverse(city.name.as_str())))
+        else {
+            continue;
+        };
+        let milestone = population_milestone(city.pop);
+        let seen = chronicle
+            .population_milestones
+            .get_mut(player)
+            .expect("chronicle population ledger matches players");
+        if milestone > *seen {
+            // If conquest jumps over several thresholds, announce the current
+            // one and retire the lower thresholds instead of flooding the log.
+            *seen = milestone;
+            events.push(json!({
+                "type": "population_milestone", "player": player,
+                "population": milestone, "city": city.name, "turn": turn,
             }));
         }
     }
@@ -272,6 +477,148 @@ fn chronicle_world_events(
                 "former": previous.owner, "city": previous.name,
                 "turn": turn,
             }));
+        }
+    }
+
+    let active_wars: BTreeSet<_> = before.wars.union(&after.wars).copied().collect();
+    for &(first, second) in after.wars.difference(&before.wars) {
+        let (aggressor, defender) = if actor == first {
+            (first, second)
+        } else if actor == second {
+            (second, first)
+        } else {
+            (first, second)
+        };
+        chronicle
+            .wars
+            .insert((first, second), ChronicleWar::new(aggressor, defender));
+        events.push(json!({
+            "type": "war_started", "aggressor": aggressor,
+            "defender": defender, "turn": turn,
+        }));
+    }
+    for &(first, second) in &active_wars {
+        chronicle
+            .wars
+            .entry((first, second))
+            .or_insert_with(|| ChronicleWar::new(first, second));
+    }
+
+    // Only vanished military units count as war losses. Corps/Army formation
+    // consumes one constituent without a battle, so exclude both participants
+    // and let the still-present one identify the survivor.
+    let combined_units: BTreeSet<u32> = actions
+        .iter()
+        .flat_map(|action| match action {
+            Action::CombineUnits { unit, with } => vec![*unit, *with],
+            _ => Vec::new(),
+        })
+        .collect();
+    let mut lost_units: BTreeMap<usize, u32> = BTreeMap::new();
+    for (unit, owner) in &before.military_units {
+        if !after.military_units.contains_key(unit) && !combined_units.contains(unit) {
+            *lost_units.entry(*owner).or_default() += 1;
+        }
+    }
+
+    let mut targeted_opponents = BTreeSet::new();
+    for target in actions.iter().filter_map(|action| match action {
+        Action::Attack { target, .. }
+        | Action::Ranged { target, .. }
+        | Action::AirStrike { target, .. }
+        | Action::CityStrike { target, .. }
+        | Action::EncampmentStrike { target, .. } => Some(*target),
+        _ => None,
+    }) {
+        if let Some(owners) = before.combat_owners.get(&target) {
+            targeted_opponents.extend(owners.iter().copied().filter(|owner| {
+                *owner != actor
+                    && active_wars.contains(&chronicle_war_pair(actor, *owner))
+            }));
+        }
+    }
+    let enemy_losers: BTreeSet<_> = lost_units
+        .keys()
+        .copied()
+        .filter(|owner| {
+            *owner != actor && active_wars.contains(&chronicle_war_pair(actor, *owner))
+        })
+        .collect();
+    let actor_opponent = if targeted_opponents.len() == 1 {
+        targeted_opponents.first().copied()
+    } else if enemy_losers.len() == 1 {
+        enemy_losers.first().copied()
+    } else {
+        let opponents: BTreeSet<_> = active_wars
+            .iter()
+            .filter_map(|&(first, second)| {
+                if first == actor {
+                    Some(second)
+                } else if second == actor {
+                    Some(first)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        (opponents.len() == 1).then(|| *opponents.first().unwrap())
+    };
+
+    let mut changed_wars = BTreeSet::new();
+    for (owner, losses) in lost_units {
+        let opponent = if owner == actor {
+            actor_opponent
+        } else if active_wars.contains(&chronicle_war_pair(actor, owner)) {
+            Some(actor)
+        } else {
+            None
+        };
+        let Some(opponent) = opponent else { continue };
+        let pair = chronicle_war_pair(owner, opponent);
+        let war = chronicle
+            .wars
+            .entry(pair)
+            .or_insert_with(|| ChronicleWar::new(actor, opponent));
+        war.losses.entry(owner).or_default().units += losses;
+        changed_wars.insert(pair);
+    }
+
+    let mut lost_cities = BTreeSet::new();
+    for (city_id, previous) in &before.cities {
+        let conqueror = match after.cities.get(city_id) {
+            Some(current) if current.owner != previous.owner => Some(current.owner),
+            None if captured.contains(city_id) => Some(actor),
+            _ => None,
+        };
+        let Some(conqueror) = conqueror else {
+            continue;
+        };
+        let pair = chronicle_war_pair(previous.owner, conqueror);
+        if previous.owner == conqueror
+            || !active_wars.contains(&pair)
+            || !lost_cities.insert(*city_id)
+        {
+            continue;
+        }
+        let war = chronicle
+            .wars
+            .entry(pair)
+            .or_insert_with(|| ChronicleWar::new(conqueror, previous.owner));
+        war.losses.entry(previous.owner).or_default().cities += 1;
+        changed_wars.insert(pair);
+    }
+
+    for pair in changed_wars {
+        if after.wars.contains(&pair) {
+            if let Some(war) = chronicle.wars.get(&pair) {
+                events.push(war_totals_event("war_progress", war, turn));
+            }
+        }
+    }
+    let ended_wars: Vec<_> = before.wars.difference(&after.wars).copied().collect();
+    for pair in ended_wars {
+        if let Some(war) = chronicle.wars.remove(&pair) {
+            events.push(war_totals_event("war_ended", &war, turn));
         }
     }
 
@@ -396,14 +743,15 @@ impl Session {
         // strongest built-in default. Minors/barbarians retain the cheaper
         // baseline because they do not need empire-level planning.
         let ais = Self::ai_fleet(&game);
-        let chronicle_districts = completed_districts(&game);
+        let chronicle = ChronicleState::from_game(&game);
         Session {
             params,
             game,
             ais,
             spectator_paused: false,
             view_player: None,
-            chronicle_districts,
+            chronicle,
+            supervisor_request: None,
         }
     }
 
@@ -430,14 +778,15 @@ impl Session {
         params.speed = game.speed.clone();
         params.victory_conditions = game.victory_conditions;
         let ais = Self::ai_fleet(&game);
-        let chronicle_districts = completed_districts(&game);
+        let chronicle = ChronicleState::from_game(&game);
         Session {
             params,
             game,
             ais,
             spectator_paused: false,
             view_player: None,
-            chronicle_districts,
+            chronicle,
+            supervisor_request: None,
         }
     }
 
@@ -508,6 +857,48 @@ impl Session {
         Ok(())
     }
 
+    fn request_supervised_new_game(&mut self, request: &Value) -> Result<(), String> {
+        if !self.params.supervised {
+            return Err("fresh-code launches require the spectator supervisor".into());
+        }
+        let mode = request["mode"]
+            .as_str()
+            .ok_or_else(|| "mode must be restart or fresh_code".to_string())?;
+        if mode != "restart" && mode != "fresh_code" {
+            return Err("mode must be restart or fresh_code".into());
+        }
+
+        let mut params = new_game_params(&self.params, request);
+        params.spectate = true;
+        let victories = [
+            (params.victory_conditions.science, "science"),
+            (params.victory_conditions.culture, "culture"),
+            (params.victory_conditions.religious, "religious"),
+            (params.victory_conditions.diplomatic, "diplomatic"),
+            (params.victory_conditions.domination, "domination"),
+            (params.victory_conditions.score, "score"),
+        ]
+        .into_iter()
+        .filter_map(|(enabled, name)| enabled.then_some(name))
+        .collect::<Vec<_>>();
+        self.supervisor_request = Some(json!({
+            "mode": mode,
+            "server_instance": std::process::id(),
+            "settings": {
+                "players": params.num_players,
+                "width": params.width,
+                "height": params.height,
+                "city_states": params.num_city_states,
+                "turns": params.max_turns,
+                "map": params.map_script.id(),
+                "speed": params.game_speed.id(),
+                "victories": victories,
+            }
+        }));
+        self.spectator_paused = true;
+        Ok(())
+    }
+
     pub fn state(&self) -> Value {
         if self.params.spectate {
             let g = &self.game;
@@ -543,6 +934,7 @@ impl Session {
             o["spectator_paused"] = json!(self.spectator_paused);
             o["view_player"] = json!(self.view_player);
             o["victory_conditions"] = json!(self.game.victory_conditions);
+            o["supervisor_request"] = json!(self.supervisor_request);
             o["legal_actions"] = json!([]);
             // Lets a long-running spectator notice that its server was
             // rebuilt/restarted between games and reload the latest UI.
@@ -554,6 +946,7 @@ impl Session {
         o["supervised"] = json!(self.params.supervised);
         o["view_player"] = json!(0);
         o["victory_conditions"] = json!(self.game.victory_conditions);
+        o["supervisor_request"] = json!(self.supervisor_request);
         o["legal_actions"] = serde_json::to_value(self.game.legal_actions(0)).unwrap();
         o["server_instance"] = json!(std::process::id());
         o
@@ -592,7 +985,7 @@ impl Session {
             &after,
             player,
             &actions,
-            &mut self.chronicle_districts,
+            &mut self.chronicle,
         );
         SpectatorStep {
             player,
@@ -1059,6 +1452,16 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             decorate(&mut o, sh);
             respond_json(stream, &o);
         }
+        ("POST", "/supervisor-new") => {
+            let mut session = sh.session.lock().unwrap();
+            let result = session.request_supervised_new_game(&parsed);
+            let mut out = session.state();
+            out["error"] = match result {
+                Ok(()) => Value::Null,
+                Err(error) => Value::String(error),
+            };
+            respond_json(stream, &out);
+        }
         _ => respond(
             stream,
             "404 Not Found",
@@ -1072,13 +1475,12 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::{
-        chronicle_world_events, new_game_params, request_path, ChronicleSnapshot, Params, Session,
-        EMBEDDED_INDEX,
+        chronicle_world_events, new_game_params, request_path, ChronicleSnapshot, ChronicleState,
+        Params, Session, EMBEDDED_INDEX,
     };
     use crate::game::{Action, VictoryConditions};
     use crate::setup::{GameSpeed, MapScript};
     use serde_json::json;
-    use std::collections::BTreeSet;
 
     fn current() -> Params {
         Params {
@@ -1221,11 +1623,15 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("AI-only simulation"));
         assert!(EMBEDDED_INDEX.contains("Single player · later"));
         assert!(EMBEDDED_INDEX.contains("Multiplayer · later"));
-        assert!(EMBEDDED_INDEX.contains("id=\"head-newgame\""));
-        assert!(EMBEDDED_INDEX.contains("Start new sim"));
-        assert!(EMBEDDED_INDEX.contains("function startNewSimulation()"));
-        assert!(EMBEDDED_INDEX
-            .contains("document.getElementById(\"head-newgame\").onclick = startNewSimulation"));
+        assert!(EMBEDDED_INDEX.contains("class=\"sim-actions\""));
+        assert!(EMBEDDED_INDEX.contains("id=\"restart-sim\">Restart sim"));
+        assert!(EMBEDDED_INDEX.contains("id=\"fresh-sim\""));
+        assert!(EMBEDDED_INDEX.contains("New sim · fresh code"));
+        assert!(EMBEDDED_INDEX.contains("async function startNewSimulation(mode)"));
+        assert!(EMBEDDED_INDEX.contains("startNewSimulation(\"restart\")"));
+        assert!(EMBEDDED_INDEX.contains("startNewSimulation(\"fresh_code\")"));
+        assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/supervisor-new\""));
+        assert!(!EMBEDDED_INDEX.contains("id=\"head-newgame\""));
         assert!(EMBEDDED_INDEX.contains("spectate: gameMode === \"ai_sim\""));
         assert!(!EMBEDDED_INDEX.contains("id=\"specchk\""));
         assert!(!EMBEDDED_INDEX.contains("RULES.map_sizes.filter"));
@@ -1346,6 +1752,56 @@ mod tests {
             previous_settings
         );
         assert_eq!(session.state()["view_player"].as_u64(), Some(1));
+    }
+
+    #[test]
+    fn supervised_new_game_request_normalizes_settings_without_replacing_the_live_game() {
+        let mut params = current();
+        params.spectate = true;
+        params.supervised = true;
+        let mut session = Session::new(params);
+        let original_seed = session.game.seed;
+
+        session
+            .request_supervised_new_game(&json!({
+                "mode": "fresh_code",
+                "num_players": 4,
+                "map_script": "continents",
+                "game_speed": "quick",
+                "victory_conditions": {"culture": false, "score": false},
+            }))
+            .unwrap();
+
+        let state = session.state();
+        assert_eq!(session.game.seed, original_seed);
+        assert!(session.spectator_paused);
+        assert_eq!(state["supervisor_request"]["mode"], "fresh_code");
+        assert_eq!(
+            state["supervisor_request"]["server_instance"].as_u64(),
+            Some(std::process::id() as u64)
+        );
+        assert_eq!(
+            state["supervisor_request"]["settings"],
+            json!({
+                "players": 4,
+                "width": 60,
+                "height": 38,
+                "city_states": 6,
+                "turns": 330,
+                "map": "continents",
+                "speed": "quick",
+                "victories": ["science", "religious", "diplomatic", "domination"],
+            })
+        );
+    }
+
+    #[test]
+    fn unsupervised_server_rejects_supervisor_new_game_requests() {
+        let mut session = Session::new(current());
+        assert!(session
+            .request_supervised_new_game(&json!({"mode": "fresh_code"}))
+            .is_err());
+        assert!(session.state()["supervisor_request"].is_null());
     }
 
     #[test]
@@ -1566,6 +2022,7 @@ mod tests {
         let first_city = game.found_city_for(0, first_pos, Some("Alpha".to_string()));
         let captured_city = game.found_city_for(1, second_pos, Some("Beta".to_string()));
         let before = ChronicleSnapshot::capture(game);
+        let mut chronicle = ChronicleState::from_game(game);
 
         let district_pos = game.cities[&first_city]
             .owned_tiles
@@ -1583,6 +2040,12 @@ mod tests {
             .unwrap()
             .wonders
             .insert("pyramids".to_string(), district_pos);
+        game.cities
+            .get_mut(&first_city)
+            .unwrap()
+            .buildings
+            .push("monument".to_string());
+        game.cities.get_mut(&first_city).unwrap().pop = 4;
         game.players[0].religion = Some("Test Faith".to_string());
         game.players[0].government = Some("classical_republic".to_string());
         game.players[0].techs.insert("horseback_riding".to_string());
@@ -1601,7 +2064,6 @@ mod tests {
         }
 
         let after = ChronicleSnapshot::capture(game);
-        let mut seen_districts = BTreeSet::new();
         let events = chronicle_world_events(
             &before,
             &after,
@@ -1609,7 +2071,7 @@ mod tests {
             &[Action::KeepCity {
                 city: captured_city,
             }],
-            &mut seen_districts,
+            &mut chronicle,
         );
         let event_types: Vec<_> = events
             .iter()
@@ -1619,6 +2081,8 @@ mod tests {
             "wonder_built",
             "religion_founded",
             "district_first",
+            "building_first",
+            "population_milestone",
             "city_captured",
             "suzerain_changed",
             "government_changed",
@@ -1638,11 +2102,59 @@ mod tests {
         );
 
         let later = ChronicleSnapshot::capture(game);
-        let repeat = chronicle_world_events(&after, &later, 0, &[], &mut seen_districts);
+        let repeat = chronicle_world_events(&after, &later, 0, &[], &mut chronicle);
         assert!(
             repeat.is_empty(),
             "unchanged milestones repeated: {repeat:?}"
         );
+    }
+
+    #[test]
+    fn spectator_chronicle_tracks_war_declarations_losses_and_peace() {
+        let mut game = Session::new(current()).game;
+        let defeated = game
+            .units
+            .values()
+            .find(|unit| {
+                unit.owner == 1 && game.rules.units[unit.kind.as_str()].class == "military"
+            })
+            .map(|unit| unit.id)
+            .expect("player two starts with a military unit");
+        let before = ChronicleSnapshot::capture(&game);
+        let mut chronicle = ChronicleState::from_game(&game);
+
+        game.at_war.insert((0, 1));
+        game.remove_unit(defeated);
+        let after_battle = ChronicleSnapshot::capture(&game);
+        let events = chronicle_world_events(
+            &before,
+            &after_battle,
+            0,
+            &[Action::DeclareWar { player: 1 }],
+            &mut chronicle,
+        );
+        assert!(events.iter().any(|event| event["type"] == "war_started"));
+        let progress = events
+            .iter()
+            .find(|event| event["type"] == "war_progress")
+            .expect("a destroyed military unit advances the war chronicle");
+        assert_eq!(progress["defender_units_lost"], 1);
+        assert_eq!(progress["aggressor_units_lost"], 0);
+
+        game.at_war.remove(&(0, 1));
+        let after_peace = ChronicleSnapshot::capture(&game);
+        let peace = chronicle_world_events(
+            &after_battle,
+            &after_peace,
+            0,
+            &[Action::MakePeace { player: 1 }],
+            &mut chronicle,
+        );
+        let ended = peace
+            .iter()
+            .find(|event| event["type"] == "war_ended")
+            .expect("peace concludes the running war chronicle");
+        assert_eq!(ended["defender_units_lost"], 1);
     }
 
     #[test]
