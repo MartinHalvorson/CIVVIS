@@ -4153,7 +4153,9 @@ function spectatorIdentity(player) {
   }
   return {
     role: player.leader || "Leader unknown",
-    details: player.government ? [titleCase(player.government)] : ["Unformed government"],
+    details: [player.anarchy_turns
+      ? `Anarchy (${player.anarchy_turns} turn${player.anarchy_turns === 1 ? "" : "s"})`
+      : player.government ? titleCase(player.government) : "Unformed government"],
   };
 }
 
@@ -4640,10 +4642,19 @@ function drawSide(force = true) {
   const fullMapSpectator = SPEC && (state.view_player === null || state.view_player === undefined);
   if (!fullMapSpectator && (SPEC || govs.length || me.government || dedications.length || societies.length || congressVotes.length || levies.length || dealReplies.length)) {
     gs.style.display = "block";
+    // Anarchy is a government of sorts: no slots, no yields, and no second
+    // change until the waiting government takes power.
+    const anarchy = me.anarchy_turns || 0;
+    const current = anarchy
+      ? `Anarchy — ${titleCase(me.pending_government || "")} in ${anarchy} turn${anarchy === 1 ? "" : "s"}`
+      : titleCase(me.government || "Unformed");
+    const tried = new Set(me.past_governments || []);
     let politics =
-      `<div class="row"><span class="muted">Current</span><b>${titleCase(me.government || "Unformed")}</b></div>` +
-      (SPEC ? "" : govs.map(a => `<button onclick='send({type:"government",government:"${a.government}"})'>` +
-        titleCase(a.government) + "</button>").join(""));
+      `<div class="row"><span class="muted">Current</span><b>${current}</b></div>` +
+      (SPEC ? "" : govs.map(a => `<button title='${tried.has(a.government)
+        ? "Already tried: this change causes 2 turns of Anarchy" : "A new form of government: free to adopt"}' ` +
+        `onclick='send({type:"government",government:"${a.government}"})'>` +
+        titleCase(a.government) + (tried.has(a.government) ? " ⚠ Anarchy" : "") + "</button>").join(""));
     if (!SPEC && dedications.length) {
       politics += `<div class="row"><span class="muted">Age dedication</span><b>${titleCase(me.age)}</b></div>` +
         dedications.map(a => `<button onclick='send(${JSON.stringify(a)})'>✦ ${titleCase(a.dedication)}</button>`).join("");

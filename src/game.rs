@@ -6805,6 +6805,9 @@ pub const DIPLOMATIC_VICTORY_POINTS: i64 = 20;
 pub const EXOPLANET_DESTINATION: f64 = 50.0;
 pub const TOURISM_PER_VISITOR: f64 = 200.0;
 const STANDARD_DEAL_TURNS: u32 = 30;
+/// Shipped `GOVERNMENT_BASE_ANARCHY_TURNS`: returning to a government the
+/// civilization has already run costs this many turns of Anarchy.
+pub const GOVERNMENT_BASE_ANARCHY_TURNS: u32 = 2;
 
 pub fn effective_strength(base: f64, hp: i32) -> f64 {
     let wounded_penalty = (10.0 - hp.clamp(0, 100) as f64 / 10.0).round();
@@ -7633,6 +7636,17 @@ pub struct Player {
     pub is_barbarian: bool,
     #[serde(default)]
     pub government: Option<String>,
+    /// Every form of government this civilization has already run. Trying one
+    /// for the first time is free; the people remember the rest, and going
+    /// back to one of them costs Anarchy.
+    #[serde(default)]
+    pub past_governments: BTreeSet<String>,
+    /// The government that takes power when Anarchy ends.
+    #[serde(default)]
+    pub pending_government: Option<String>,
+    /// Turns of Anarchy still to serve. Zero when the empire is governed.
+    #[serde(default)]
+    pub anarchy_turns: u32,
     #[serde(default)]
     pub policies: BTreeSet<String>,
     #[serde(default)]
@@ -7768,6 +7782,9 @@ impl Player {
             is_minor,
             is_barbarian: false,
             government: None,
+            past_governments: BTreeSet::new(),
+            pending_government: None,
+            anarchy_turns: 0,
             policies: BTreeSet::new(),
             influence: 0.0,
             envoys_free: 0,
@@ -9910,13 +9927,16 @@ impl Game {
     }
 
     pub fn has_policy(&self, pid: usize, name: &str) -> bool {
-        self.players[pid].policies.contains(name)
+        !self.in_anarchy(pid) && self.players[pid].policies.contains(name)
     }
 
     /// Sum a numeric primitive across all currently slotted policy cards.
     /// Policy rules remain data-driven while callers provide the game context
     /// (unit class, district family, city state, and so on).
     pub fn policy_effect(&self, pid: usize, effect: &str) -> f64 {
+        if self.in_anarchy(pid) {
+            return 0.0; // the cards come out of their slots in Anarchy
+        }
         self.players[pid]
             .policies
             .iter()
@@ -9940,6 +9960,9 @@ impl Game {
 
     /// Sums a policy effect over the cards whose era window admits `era`.
     fn policy_effect_for_unit(&self, pid: usize, effect: &str, unit: &str) -> f64 {
+        if self.in_anarchy(pid) {
+            return 0.0;
+        }
         let era = self.unit_era(unit);
         self.players[pid]
             .policies
@@ -14331,6 +14354,10 @@ impl Game {
     }
 
     pub fn gov_slots(&self, pid: usize) -> crate::rules::PolicySlots {
+        // Anarchy has no slots of its own, and none a wonder can lend it.
+        if self.in_anarchy(pid) {
+            return Default::default();
+        }
         let mut slots = match &self.players[pid].government {
             Some(g) => self
                 .rules
@@ -23434,7 +23461,9 @@ impl Game {
                     .as_ref()
                     .map(|c| p.civics.contains(c))
                     .unwrap_or(true);
-                if ok && p.government.as_deref() != Some(g.as_str()) {
+                // A second change has to wait out the Anarchy the first one
+                // caused.
+                if ok && p.government.as_deref() != Some(g.as_str()) && p.anarchy_turns == 0 {
                     acts.push(Action::Government {
                         government: g.clone(),
                     });
@@ -27669,6 +27698,12 @@ impl Game {
         Ok(())
     }
 
+    /// Adopt a form of government. Civ 6 charges nothing for a form the
+    /// civilization has never run — "your people are enthusiastic to try this
+    /// new form of government" — and charges Anarchy for going back to one
+    /// they have already lived under. Anarchy is `GOVERNMENT_BASE_ANARCHY_TURNS`
+    /// turns without a government at all: no Science, Culture, Gold or Faith,
+    /// no policy slots, and no second change until it ends.
     fn do_government(&mut self, pid: usize, g: &str) -> Result<(), String> {
         let spec = self
             .rules
@@ -27681,10 +27716,34 @@ impl Game {
                 return Err("government unavailable".into());
             }
         }
+        if p.anarchy_turns > 0 {
+            return Err("the empire is in Anarchy".into());
+        }
         if p.government.as_deref() == Some(g) {
             return Err("already that government".into());
         }
+        if p.past_governments.contains(g) {
+            self.players[pid].anarchy_turns = GOVERNMENT_BASE_ANARCHY_TURNS;
+            self.players[pid].pending_government = Some(g.to_string());
+            self.players[pid].government = None;
+            self.note(
+                pid,
+                "General",
+                format!("fell into Anarchy on the way back to {}", pretty(g)),
+                None,
+            );
+            return Ok(());
+        }
+        self.install_government(pid, g);
+        Ok(())
+    }
+
+    /// Seat a government and reseat the cards under its slot layout.
+    fn install_government(&mut self, pid: usize, g: &str) {
         self.players[pid].government = Some(g.to_string());
+        self.players[pid].past_governments.insert(g.to_string());
+        self.players[pid].pending_government = None;
+        self.players[pid].anarchy_turns = 0;
         // new slot layout: drop slotted cards until they fit again
         while !self.policies_fit(pid, &self.players[pid].policies)
             && !self.players[pid].policies.is_empty()
@@ -27697,7 +27756,31 @@ impl Game {
                 .clone();
             self.players[pid].policies.remove(&drop);
         }
-        Ok(())
+        self.note(pid, "General", format!("adopted {}", pretty(g)), None);
+    }
+
+    /// Is this civilization between governments? Anarchy suspends the
+    /// government's own bonus, its policy slots and the empire's Science,
+    /// Culture, Gold and Faith until the new government takes power.
+    pub fn in_anarchy(&self, pid: usize) -> bool {
+        self.players
+            .get(pid)
+            .is_some_and(|player| player.anarchy_turns > 0)
+    }
+
+    /// Serve a turn of Anarchy, seating the waiting government when the last
+    /// one is served.
+    fn process_anarchy(&mut self, pid: usize) {
+        if self.players[pid].anarchy_turns == 0 {
+            return;
+        }
+        self.players[pid].anarchy_turns -= 1;
+        if self.players[pid].anarchy_turns > 0 {
+            return;
+        }
+        if let Some(government) = self.players[pid].pending_government.clone() {
+            self.install_government(pid, &government);
+        }
     }
 
     fn do_slot_policy(&mut self, pid: usize, policy: &str) -> Result<(), String> {
@@ -32362,6 +32445,7 @@ impl Game {
     // ------------------------------------------------------- turn engine
 
     fn begin_turn(&mut self, pid: usize) {
+        self.process_anarchy(pid);
         self.process_levies(pid);
         self.process_spies(pid);
         self.advance_exoplanet(pid);
@@ -32459,6 +32543,15 @@ impl Game {
                 .sum::<f64>()
                 * 0.10;
         }
+        // Anarchy: an empire between governments collects no Science,
+        // Culture, Gold or Faith. Its upkeep still falls due below.
+        let anarchy = self.in_anarchy(pid);
+        if anarchy {
+            sci = 0.0;
+            cul = 0.0;
+            gold = 0.0;
+            faith = 0.0;
+        }
         if !self.players[pid].is_minor {
             let (mut tourism, film_studio_tourism) = self.tourism_components_per_turn(pid);
             if let Some(partner) = cultural_alliance_partner {
@@ -32475,7 +32568,9 @@ impl Game {
                 film_studio_religious,
             );
         }
-        gold += self.monopoly_bonuses(pid).0;
+        if !anarchy {
+            gold += self.monopoly_bonuses(pid).0;
+        }
         gold -= self.unit_gold_maintenance(pid);
         gold -= self.infrastructure_gold_maintenance(pid);
         gold -= self.nuclear_gold_maintenance(pid);

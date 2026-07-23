@@ -222,6 +222,9 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             "civics": p.civics, "civic": p.civic,
             "civic_progress": round1(p.civic_progress),
             "government": p.government,
+            "anarchy_turns": p.anarchy_turns,
+            "pending_government": p.pending_government,
+            "past_governments": p.past_governments,
             "influence": round1(p.influence),
             "envoys_free": p.envoys_free,
             "envoys": p.envoys,
@@ -344,6 +347,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                 "science_projects": o.science_projects,
                 "exoplanet_distance": round1(o.exoplanet_distance),
                 "government": o.government,
+                "anarchy_turns": o.anarchy_turns,
                 "score": g.score(o.id),
                 "cities": g.player_city_ids(o.id).len(),
                 "suzerain_count": g.players.iter()
