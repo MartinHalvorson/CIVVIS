@@ -14,8 +14,6 @@
     "name":"Liang", "title":"The Surveyor", "establish_turns":5,
     "effects":{"loyalty":8,"builder_charges":1},
     "promotions":{
-      "infrastructure":{"tier":1,"effects":{"government_plaza_building_production_pct":30,"granary_production_pct":30,"monument_production_pct":30,"sewer_production_pct":30,"water_mill_production_pct":30},"note":"Government Plaza buildings, Granary, Monument, Sewer and Water Mill build 30% faster."},
-      "architect":{"tier":2,"requires":["zoning_commissioner"],"effects":{"entertainment_complex_building_production_pct":30,"water_park_building_production_pct":30},"note":"Entertainment Complex and Water Park buildings build 30% faster."},
       "zoning_commissioner":{"tier":1,"effects":{"district_production_pct":20}},
       "aquaculture":{"tier":1,"effects":{"fishery":1}},
       "reinforced_materials":{"tier":2,"requires":["zoning_commissioner"],"effects":{"disaster_immunity":1}},
@@ -75,6 +73,7 @@
     "promotions":{
       "garrison_commander":{"tier":1,"effects":{"nearby_city_loyalty":4,"city_unit_defense":5}},
       "defense_logistics":{"tier":1,"effects":{"city_siege_immunity":1,"strategic_resource_accumulation":1}},
+      "security_expert":{"tier":2,"requires":["garrison_commander"],"effects":{"city_spy_defense":2},"note":"+2 Spy defence in this city."},
       "embrasure":{"tier":2,"requires":["garrison_commander","defense_logistics"],"effects":{"city_extra_strike":1,"military_free_promotion":1}},
       "air_defense_initiative":{"tier":3,"requires":["embrasure"],"effects":{"air_defense":25}},
       "arms_race_proponent":{"tier":3,"requires":["embrasure"],"effects":{"nuclear_armament_production_pct":30}}

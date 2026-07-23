@@ -1990,6 +1990,16 @@ mod governor_runtime_tests {
     }
 
     #[test]
+    fn security_expert_defends_the_city_victor_governs() {
+        let mut game = Game::new_full(1, 24, 16, 91_957, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let center = game.cities[&city].pos;
+        let before = game.spy_defense_level(city, center);
+        appoint_established(&mut game, 0, "victor", city, &["security_expert"]);
+        assert_eq!(game.spy_defense_level(city, center), before + 2);
+    }
+
+    #[test]
     fn governor_promotions_speed_their_district_buildings() {
         // Connoisseur, Divine Architect and Provision each pair a headline
         // effect with a Production bonus for one district's buildings.
@@ -2025,10 +2035,6 @@ mod governor_runtime_tests {
         appoint_established(&mut game, 0, "moksha", city, &["divine_architect"]);
         appoint_established(&mut game, 0, "magnus", city, &["provision"]);
         assert_eq!(speed(&game, "amphitheater"), before[0] + 0.2);
-        // Liang's Infrastructure names four City Center buildings directly.
-        let monument_before = speed(&game, "monument");
-        appoint_established(&mut game, 0, "liang", city, &["infrastructure"]);
-        assert_eq!(speed(&game, "monument"), monument_before + 0.3);
         assert_eq!(speed(&game, "shrine"), before[1] + 0.2);
         assert_eq!(speed(&game, "workshop"), before[2] + 0.2);
     }
@@ -10000,6 +10006,8 @@ impl Game {
             .map(|source| self.city_building_effect(source, "enemy_spy_level_reduction"))
             .sum::<f64>();
         levels += protected_by_consulate;
+        // Victor's Security Expert defends the city he governs.
+        levels += self.governor_effect(city.owner, city.id, "city_spy_defense");
         levels as i64
     }
 
@@ -14024,10 +14032,6 @@ impl Game {
                     cid,
                     &format!("{district}_building_production_pct"),
                 ) / 100.0;
-                // Liang's Infrastructure also names four buildings directly.
-                bonus += self
-                    .governor_effect(pid, cid, &format!("{building}_production_pct"))
-                    / 100.0;
             }
             Some(Item::District { district, .. }) => {
                 bonus += self.governor_effect(pid, cid, "district_production_pct") / 100.0;
