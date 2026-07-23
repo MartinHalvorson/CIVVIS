@@ -2690,6 +2690,32 @@ function drawFeatureEffects(t, x, y) {
       cx.lineTo(x + i * 8 - 4, y + 8); cx.stroke();
     }
   }
+  if (t.storm) {
+    // A storm is weather, not a state of the ground: a bank of cloud over the
+    // hex with the marks the four systems actually leave.
+    cx.fillStyle = t.storm === "blizzard" ? "#dfefff5c"
+      : t.storm === "dust_storm" ? "#c9a1585c"
+      : t.storm === "hurricane" ? "#8fc9e05c" : "#9aa7b85c";
+    hexPath(x, y, S + 0.4); cx.fill();
+    cx.strokeStyle = t.storm === "dust_storm" ? "#e6c48fcc" : "#eaf4ffcc";
+    cx.lineWidth = 1.3;
+    if (t.storm === "hurricane") {
+      cx.beginPath();
+      cx.arc(x, y, 9, 0.4, 3.6); cx.arc(x, y, 4.5, 3.6, 6.6);
+      cx.stroke();
+    } else if (t.storm === "tornado") {
+      cx.beginPath();
+      cx.moveTo(x - 9, y - 9); cx.lineTo(x + 9, y - 7);
+      cx.lineTo(x - 4, y + 1); cx.lineTo(x + 4, y + 9);
+      cx.stroke();
+    } else {
+      for (let i = -1; i <= 1; i++) {
+        cx.beginPath();
+        cx.moveTo(x - 10, y + i * 6); cx.lineTo(x + 10, y + i * 6 - 2);
+        cx.stroke();
+      }
+    }
+  }
   if (t.flooded && !t.submerged) {
     cx.fillStyle = "#2b86a16e";
     cx.beginPath(); cx.ellipse(x, y + 5, 23, 9, 0, 0, 7); cx.fill();
@@ -6704,6 +6730,9 @@ cv.addEventListener("mousemove", ev => {
   lines.push("<b>" + head + "</b>");
   if (t.fallout_until > state.turn) lines.push(`☢ Fallout · ${t.fallout_until - state.turn} turns remain`);
   if (t.drought) lines.push("Drying drought");
+  if (t.storm) lines.push("🌀 " + titleCase(t.storm.replaceAll("_", " ")) + " passing over");
+  if (t.disaster_yields && t.disaster_yields.food > 0)
+    lines.push("Fertile ground left by disaster · +" + t.disaster_yields.food + "🍞");
   if (t.flooded) lines.push("Flooded coastal lowland");
   if (t.submerged) lines.push("Submerged by sea-level rise");
   if (t.resource)

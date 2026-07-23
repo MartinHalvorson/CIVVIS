@@ -830,7 +830,7 @@ fn tile_json(
         "submerged": tile.submerged,
         "drought": tile.drought,
         "storm": tile.storm,
-        "fallout": tile.fallout_until,
+        "fallout_until": tile.fallout_until,
         "disaster_yields": {
             "food": tile.disaster_food,
             "production": tile.disaster_production,
