@@ -2201,7 +2201,7 @@ impl BasicAi {
         loop {
             let mut best: Option<(f64, f64, u32)> = None;
             for uid in g.player_unit_ids(pid) {
-                let Some((target, gold, _)) = g.unit_upgrade_offer(pid, uid) else {
+                let Some((target, gold, _)) = g.unit_gold_upgrade_offer(pid, uid) else {
                     continue;
                 };
                 if g.players[pid].gold - gold < floor {

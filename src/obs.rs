@@ -107,7 +107,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                     .iter()
                     .map(|p| json!([p.0, p.1]))
                     .collect::<Vec<_>>());
-                if let Some((target, gold, _)) = g.unit_upgrade_offer(pid, u.id) {
+                if let Some((target, gold, _)) = g.unit_gold_upgrade_offer(pid, u.id) {
                     v["upgrade"] = json!({ "to": target, "gold": gold });
                 }
             }

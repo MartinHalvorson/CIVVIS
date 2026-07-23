@@ -9338,20 +9338,6 @@ impl Game {
         )
     }
 
-    /// The unit a civilization actually fields wherever the ruleset names
-    /// `base`. Rome trains and upgrades into Legions, never Swordsmen.
-    pub fn civ_unit_variant(&self, pid: usize, base: &str) -> String {
-        let civ = self.players[pid].civ.as_str();
-        self.rules
-            .units
-            .iter()
-            .find(|(_, spec)| {
-                spec.replaces.as_deref() == Some(base) && spec.unique_to.as_deref() == Some(civ)
-            })
-            .map(|(name, _)| name.clone())
-            .unwrap_or_else(|| base.to_string())
-    }
-
     /// Whether `pid` has researched the technology that retires `kind`. The
     /// unit stays on the map; it simply leaves every production menu.
     pub fn unit_is_obsolete(&self, pid: usize, kind: &str) -> bool {
@@ -9360,18 +9346,6 @@ impl Game {
             .get(kind)
             .and_then(|spec| spec.obsolete_tech.as_deref())
             .is_some_and(|tech| self.players[pid].techs.contains(tech))
-    }
-
-    /// The Gold-upgrade successor of `kind` for this player, if the ruleset
-    /// gives it one and the player has unlocked it.
-    pub fn unit_upgrade_target(&self, pid: usize, kind: &str) -> Option<String> {
-        let next = self.rules.units.get(kind)?.upgrade_to.as_deref()?;
-        let target = self.civ_unit_variant(pid, next);
-        let spec = self.rules.units.get(&target)?;
-        if !spec.buildable || !self.unlocked(pid, &spec.tech, &spec.civic) {
-            return None;
-        }
-        Some(target)
     }
 
     /// Gold and strategic material to upgrade one `kind` into its successor.
@@ -9394,7 +9368,7 @@ impl Game {
     /// Civ VI upgrades happen in friendly territory, before the unit has done
     /// anything else that turn, and cost Gold plus the successor's strategic
     /// material.
-    pub fn unit_upgrade_offer(&self, pid: usize, uid: u32) -> Option<(String, f64, f64)> {
+    pub fn unit_gold_upgrade_offer(&self, pid: usize, uid: u32) -> Option<(String, f64, f64)> {
         let unit = self.units.get(&uid)?;
         if unit.owner != pid
             || unit.acted
@@ -9454,7 +9428,7 @@ impl Game {
             return Err("unit has already acted this turn".into());
         }
         let (target, gold, resources) = self
-            .unit_upgrade_offer(pid, uid)
+            .unit_gold_upgrade_offer(pid, uid)
             .ok_or("this unit cannot be upgraded here")?;
         let class = self.rules.units[target.as_str()].promotion_class.clone();
         let charges = self.rules.units[target.as_str()].charges;
@@ -21483,6 +21457,15 @@ impl Game {
             .unwrap_or_else(|| unit.to_string())
     }
 
+    /// Direct, currently unlocked successor for one unit kind. Upgrade
+    /// actions deliberately advance one link per turn, matching Civ VI and
+    /// preserving the production-cost basis of every intermediate step.
+    pub fn unit_upgrade_target(&self, pid: usize, unit: &str) -> Option<String> {
+        let base = self.rules.units.get(unit)?.upgrade_to.as_deref()?;
+        let target = self.player_unit_replacement(pid, base);
+        let spec = self.rules.units.get(&target)?;
+        (spec.buildable && self.unlocked(pid, &spec.tech, &spec.civic)).then_some(target)
+    }
     /// Unit production rules without the recursive obsolescence check. The
     /// resource credit is used only while automatically migrating an existing
     /// queue whose already-committed material can be refunded atomically.
@@ -22181,7 +22164,7 @@ impl Game {
         self.player_unit_ids(pid)
             .into_iter()
             .filter_map(|unit| {
-                self.unit_upgrade_offer(pid, unit)
+                self.unit_gold_upgrade_offer(pid, unit)
                     .map(|_| Action::UpgradeUnit { unit })
             })
             .collect()
@@ -26874,7 +26857,7 @@ impl Game {
 
     fn do_upgrade(&mut self, pid: usize, uid: u32, requested: &str) -> Result<(), String> {
         let (target, _, _) = self
-            .unit_upgrade_offer(pid, uid)
+            .unit_gold_upgrade_offer(pid, uid)
             .ok_or_else(|| "unit cannot upgrade here or the cost is unaffordable".to_string())?;
         if target != requested {
             return Err(format!("unit upgrades to {target}, not {requested}"));
@@ -34287,9 +34270,15 @@ mod combat_scenarios {
         assert!(!game.legal_unit_upgrade_actions(0).contains(&action));
         game.map.tiles.get_mut(&home).unwrap().owner_city = Some(city);
         assert!(game.legal_unit_upgrade_actions(0).contains(&action));
-        assert_eq!(game.unit_upgrade_offer(0, slinger).unwrap().1, 60.0);
+        assert_eq!(
+            game.unit_gold_upgrade_offer(0, slinger).unwrap().1,
+            60.0
+        );
         game.game_speed = GameSpeed::Online;
-        assert_eq!(game.unit_upgrade_offer(0, slinger).unwrap().1, 30.0);
+        assert_eq!(
+            game.unit_gold_upgrade_offer(0, slinger).unwrap().1,
+            30.0
+        );
         game.game_speed = GameSpeed::Standard;
 
         {
@@ -34393,17 +34382,20 @@ mod combat_scenarios {
         };
         game.cities.get_mut(&city).unwrap().queue = vec![warrior.clone()];
         game.cities.get_mut(&city).unwrap().production = 11.0;
-        game.players[0]
-            .techs
-            .extend(["iron_working".to_string(), "gunpowder".to_string()]);
-        assert!(!game.can_produce(0, city, &warrior));
+        game.players[0].techs.insert("iron_working".to_string());
+        assert!(
+            game.can_produce(0, city, &warrior),
+            "the old unit remains available before its mandatory obsolete technology"
+        );
         game.modernize_unit_queue(0, city);
-        // The retired queue waits intact until its replacement can be paid.
         assert_eq!(game.cities[&city].queue, vec![warrior.clone()]);
 
         game.players[0]
             .strategic_resources
             .insert("iron".to_string(), 20.0);
+        assert!(game.can_produce(0, city, &warrior));
+        game.players[0].techs.insert("gunpowder".to_string());
+        assert!(!game.can_produce(0, city, &warrior));
         game.modernize_unit_queue(0, city);
         assert_eq!(game.cities[&city].queue, vec![swordsman.clone()]);
         assert!((game.cities[&city].production - 11.0).abs() < 1e-9);
@@ -41571,18 +41563,18 @@ mod district_mechanics {
 
         let stray = game.place_new_unit("warrior", 0, wild).unwrap();
         game.players[0].gold = 500.0;
-        assert!(game.unit_upgrade_offer(0, stray).is_none()); // no friendly land
+        assert!(game.unit_gold_upgrade_offer(0, stray).is_none()); // no friendly land
 
         let garrison = game.place_new_unit("warrior", 0, home).unwrap();
         game.players[0].gold = 100.0;
-        assert!(game.unit_upgrade_offer(0, garrison).is_none()); // too poor
+        assert!(game.unit_gold_upgrade_offer(0, garrison).is_none()); // too poor
 
         game.players[0].gold = 500.0;
         game.units.get_mut(&garrison).unwrap().acted = true;
-        assert!(game.unit_upgrade_offer(0, garrison).is_none()); // already moved
+        assert!(game.unit_gold_upgrade_offer(0, garrison).is_none()); // already moved
 
         game.units.get_mut(&garrison).unwrap().acted = false;
-        assert!(game.unit_upgrade_offer(0, garrison).is_some());
+        assert!(game.unit_gold_upgrade_offer(0, garrison).is_some());
     }
 
     #[test]

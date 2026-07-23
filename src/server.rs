@@ -1496,6 +1496,8 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 Ok(()) => Value::Null,
                 Err(error) => Value::String(error),
             };
+            drop(session);
+            decorate(&mut out, sh);
             respond_json(stream, &out);
         }
         _ => respond(
