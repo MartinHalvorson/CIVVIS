@@ -8,3 +8,4 @@ evolved/
 target-tools/
 bin-run/
 exhibition-supervisor.log
+tools/__pycache__/
