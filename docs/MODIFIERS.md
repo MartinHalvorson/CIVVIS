@@ -95,6 +95,14 @@ expressed without building the interpreter.
    the seeded statuses were inspection judgements, and inspection is not
    finding these.
 
+   **When two rows disagree, ask the shipped text.** Gathering Storm restates
+   beliefs, promotions and city-state bonuses without deleting the base rows,
+   so the tables alone often admit two readings. `--describe <tag fragment>`
+   prints the localised descriptions with the Gathering Storm wording first: a
+   `_EXPANSION2_DESCRIPTION` tag is what the player is actually shown, and the
+   plain tag is superseded. That settled the founder beliefs after the tables
+   could not, and it is faster than the two structural tells below.
+
    **Read the condition, not just the amount.** The database ships more than
    one ruleset. City-state Envoy bonuses exist twice over: base-game rows that
    pay the Capital at 1 Envoy and the tier-1 building at 3, and Ethiopia-pack

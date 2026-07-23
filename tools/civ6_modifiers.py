@@ -211,6 +211,35 @@ def load(install: Path) -> Modifiers:
     return modifiers
 
 
+def shipped_text(install: Path, tag_fragment: str) -> list[tuple[str, str]]:
+    """Localised descriptions matching a tag fragment, Gathering Storm first.
+
+    The rules tables cannot always say which of two rows a ruleset actually
+    uses: Gathering Storm restates a belief or a promotion without deleting the
+    base row. The text the game shows the player can. Gathering Storm ships its
+    replacements as ``_EXPANSION2_DESCRIPTION`` tags, so a description carrying
+    that suffix is the live wording and the plain tag is superseded.
+    """
+    import xml.etree.ElementTree as Tree
+
+    out: list[tuple[str, str]] = []
+    for path in sorted(install.rglob("en_US/*.xml")):
+        try:
+            root = Tree.parse(path).getroot()
+        except Tree.ParseError:
+            continue
+        for node in root.iter():
+            tag = node.attrib.get("Tag", "")
+            if tag_fragment.upper() not in tag.upper():
+                continue
+            text = "".join(node.itertext()).strip()
+            if text:
+                out.append((tag, " ".join(text.split())))
+    # Gathering Storm wording first, then the base game's.
+    out.sort(key=lambda row: ("EXPANSION2" not in row[0], row[0]))
+    return out
+
+
 def load_coverage() -> dict[str, dict]:
     if not COVERAGE.exists():
         return {}
@@ -325,6 +354,11 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=40, help="rows in the backlog table")
     parser.add_argument("--effect", help="print every modifier using this effect and stop")
     parser.add_argument(
+        "--describe",
+        help="print the shipped descriptions matching this tag fragment, "
+        "Gathering Storm wording first, and stop",
+    )
+    parser.add_argument(
         "--max-unmodelled",
         type=int,
         default=None,
@@ -334,6 +368,13 @@ def main() -> int:
 
     install = find_install(args.civ6)
     modifiers = load(install)
+
+    if args.describe:
+        for tag, text in shipped_text(install, args.describe):
+            marker = "GS  " if "EXPANSION2" in tag else "base"
+            print(f"{marker} {tag}")
+            print(f"     {text}")
+        return 0
 
     if args.effect:
         wanted = args.effect if args.effect.startswith("EFFECT_") else f"EFFECT_{args.effect}"
