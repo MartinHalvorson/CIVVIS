@@ -100,6 +100,7 @@
       "culture": 2
     },
     "amenity": 2,
+    "regional_loyalty": 2,
     "regional_range": 6,
     "hills": false,
     "requires_buildings": [

@@ -443,6 +443,9 @@ pub struct WonderSpec {
     /// city; Colosseum and other regional wonders set an explicit range.
     #[serde(default)]
     pub regional_range: i32,
+    /// Loyalty per turn granted to every city inside `regional_range`.
+    #[serde(default)]
+    pub regional_loyalty: f64,
     #[serde(default)]
     pub great_work_slots: BTreeMap<String, i32>,
     #[serde(default)]

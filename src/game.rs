@@ -4567,6 +4567,33 @@ mod maintenance_tests {
     }
 
     #[test]
+    fn colosseum_and_colonial_offices_pay_the_loyalty_they_ship_with() {
+        let (mut game, city) = one_city();
+        let loyalty = |game: &mut Game| {
+            game.cities.get_mut(&city).unwrap().loyalty = 50.0;
+            game.process_loyalty(0);
+            game.cities[&city].loyalty - 50.0
+        };
+        let baseline = loyalty(&mut game);
+
+        // The Colosseum keeps every city within six tiles loyal, including
+        // the one that built it.
+        let center = game.cities[&city].pos;
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .wonders
+            .insert("colosseum".to_string(), center);
+        assert_eq!(loyalty(&mut game), baseline + 2.0);
+
+        // Martial Law pays 2 for a garrison, not 4.
+        game.cities.get_mut(&city).unwrap().wonders.clear();
+        game.spawn_unit("warrior", 0, game.cities[&city].pos);
+        game.players[0].policies = ["martial_law".to_string()].into_iter().collect();
+        assert_eq!(loyalty(&mut game), baseline + 2.0);
+    }
+
+    #[test]
     fn giant_death_robot_upgrades_hang_off_the_technologies_that_ship_them() {
         // Advanced Power Cells fits the Particle Beam Siege Cannon, Cybernetics
         // grants Enhanced Mobility, Smart Materials the armour plating and
@@ -29534,6 +29561,27 @@ impl Game {
                 })
                 .sum::<f64>();
             delta += self.city_building_effect(&self.cities[&cid], "loyalty_per_turn");
+            if self.on_foreign_continent(pid, cpos) {
+                delta += self.policy_effect(pid, "foreign_continent_city_loyalty");
+            }
+            // The Colosseum keeps every city in range loyal, not just its own.
+            delta += self
+                .cities
+                .values()
+                .filter(|source| source.owner == pid)
+                .flat_map(|source| source.wonders.iter().map(move |(wonder, _)| (source, wonder)))
+                .map(|(source, wonder)| {
+                    let spec = &self.rules.wonders[wonder.as_str()];
+                    if spec.regional_loyalty > 0.0
+                        && spec.regional_range > 0
+                        && self.wdist(source.pos, cpos) <= spec.regional_range
+                    {
+                        spec.regional_loyalty
+                    } else {
+                        0.0
+                    }
+                })
+                .sum::<f64>();
             if self.congress_effect_active("migration_treaty", "A", &pid.to_string()) {
                 delta -= 5.0;
             } else if self.congress_effect_active("migration_treaty", "B", &pid.to_string()) {

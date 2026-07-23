@@ -82,7 +82,8 @@
     },
     "ADJUST_CITY_IDENTITY_PER_TURN": {
       "status": "implemented",
-      "note": "Loyalty per turn from buildings, policies, governors and Great People."
+      "verified": true,
+      "note": "Verified row by row. Monument +1, Limitanei +2 with a garrison and Praetorium +2 with a Governor all match. Three did not: Martial Law pays 2 for a garrison and CIVVIS paid 4; Colonial Offices grants +3 Loyalty in cities off the Capital's continent, which CIVVIS omitted entirely while keeping the growth half; and the Colosseum's +2 Loyalty to every city within six tiles was missing, though its Culture, Amenities and range were present. Automated Workforce, Police State and the Government Plaza debuff belong to content CIVVIS does not carry."
     },
     "ADJUST_CITY_FREE_POWER": {
       "status": "implemented",
