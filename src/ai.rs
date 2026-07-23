@@ -3189,12 +3189,13 @@ impl BasicAi {
                 return Some(wonder);
             }
         }
-        // Repeatable district projects are a major-civilization fallback. If
+        // Repeatable district projects are a developed-city fallback. If
         // considered with mandatory projects above, their low early base cost
         // makes a basic AI loop them forever before building Monuments,
-        // districts, or district buildings. The rules disallow these projects
-        // for city-states; their developed-city fallback is a placed wonder.
-        if !self.barb && !self.minor {
+        // districts, or district buildings. The engine limits city-states to
+        // ordinary yield/GPP investments, giving their bounded one-city
+        // economies useful work after finite infrastructure and wonders end.
+        if !self.barb {
             let mut projects: Vec<Item> = g
                 .rules
                 .projects
@@ -5212,6 +5213,61 @@ mod tests {
             !matches!(choice, Some(Item::Unit { ref unit }) if g.rules.units[unit].class == "military"),
             "a peaceful city-state at its force budget must prefer infrastructure or idle"
         );
+    }
+
+    #[test]
+    fn developed_city_states_run_district_projects_instead_of_idling() {
+        let mut g = Game::new_full(1, 24, 16, 91_770, 120, 0, false);
+        let settler = g
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| g.units[unit].kind == "settler")
+            .unwrap();
+        g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = g.player_city_ids(0)[0];
+        let project_pos = g.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != g.cities[&city].pos)
+            .unwrap();
+        let techs = g.rules.techs.keys().cloned().collect();
+        let civics = g.rules.civics.keys().cloned().collect();
+        let buildings = g.rules.buildings.keys().cloned().collect();
+        let districts: Vec<String> = g.rules.districts.keys().cloned().collect();
+        let wonders: Vec<String> = g.rules.wonders.keys().cloned().collect();
+        g.players[0].is_minor = true;
+        g.players[0].techs = techs;
+        g.players[0].civics = civics;
+        {
+            let tile = g.map.tiles.get_mut(&project_pos).unwrap();
+            tile.district = Some("campus".to_string());
+            tile.pillaged = false;
+        }
+        {
+            let developed = g.cities.get_mut(&city).unwrap();
+            developed.buildings = buildings;
+            for district in districts {
+                developed.districts.insert(district, project_pos);
+            }
+            for wonder in wonders {
+                developed.wonders.insert(wonder, project_pos);
+            }
+        }
+        let mut ai = BasicAi::new();
+        ai.minor = true;
+
+        let item = ai
+            .pick_item(&g, 0, city, 1, 0, 10, 10, 10, 99, 99, 99)
+            .expect("a developed city-state has a repeatable production sink");
+        assert!(
+            matches!(item, Item::Project { ref project }
+                if g.rules.projects[project].repeatable
+                    && (!g.rules.projects[project].ongoing_yields.is_empty()
+                        || !g.rules.projects[project].completion_gpp.is_empty())),
+            "city-state selected {item:?}"
+        );
+        assert!(g.can_produce(0, city, &item));
     }
 
     #[test]

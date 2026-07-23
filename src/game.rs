@@ -3606,6 +3606,25 @@ mod project_runtime_tests {
     }
 
     #[test]
+    fn city_states_can_run_only_ordinary_repeatable_district_investments() {
+        let (mut game, city, positions) = project_game();
+        install_district(&mut game, city, positions[0], "campus");
+        install_district(&mut game, city, positions[1], "entertainment_complex");
+        game.players[0].is_minor = true;
+        let grants = Item::Project {
+            project: "campus_research_grants".to_string(),
+        };
+        let loyalty = Item::Project {
+            project: "bread_and_circuses".to_string(),
+        };
+
+        assert!(game.can_produce(0, city, &grants));
+        assert!(!game.can_produce(0, city, &loyalty));
+        game.players[0].is_barbarian = true;
+        assert!(!game.can_produce(0, city, &grants));
+    }
+
+    #[test]
     fn industrial_zone_logistics_supplies_full_power_without_burning_fuel() {
         let (mut game, city, positions) = project_game();
         install_district(&mut game, city, positions[0], "industrial_zone");
@@ -24301,7 +24320,19 @@ impl Game {
                     Some(s) => s,
                     None => return false,
                 };
-                if self.players[pid].is_minor || self.players[pid].is_barbarian {
+                if self.players[pid].is_barbarian {
+                    return false;
+                }
+                // City-states need a durable production sink after their
+                // single city and bounded army are developed. Permit only the
+                // ordinary repeatable district investments that convert
+                // Production into yields or Great Person points. This keeps
+                // one-off, loyalty, space-race, reactor, nuclear, and climate
+                // projects reserved for major civilizations.
+                if self.players[pid].is_minor
+                    && (!spec.repeatable
+                        || (spec.ongoing_yields.is_empty() && spec.completion_gpp.is_empty()))
+                {
                     return false;
                 }
                 if spec
