@@ -1797,6 +1797,10 @@ impl BasicAi {
             .collect();
         for o in &others {
             if g.is_at_war(pid, *o)
+                // A city-state follows its Suzerain into a derived war. It
+                // cannot settle that principal conflict itself, so only ask
+                // for peace when this pair is present in the declared set.
+                && g.at_war.contains(&(pid.min(*o), pid.max(*o)))
                 && !g.emergency_war_pair(pid, *o)
                 && my_power < self.w.peace_ratio * g.military_power(*o)
             {

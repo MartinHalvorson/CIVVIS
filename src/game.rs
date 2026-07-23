@@ -31323,6 +31323,20 @@ impl Game {
         if !self.is_at_war(pid, other) {
             return Err("not at war".into());
         }
+        // `is_at_war` also includes a city-state's derived participation in
+        // its Suzerain's wars.  A bilateral peace with that city-state cannot
+        // remove the principals' declared relation, so accepting it would do
+        // nothing except emit another "made peace" event every turn.  Only a
+        // pair that belongs to the explicit war may conclude it; derived
+        // participants follow their controller back to peace automatically.
+        let declared_war = first_side.iter().any(|first| {
+            second_side
+                .iter()
+                .any(|second| self.at_war.contains(&pair(*first, *second)))
+        });
+        if !declared_war {
+            return Err("a city-state's derived war must be settled by its Suzerain".into());
+        }
         if let Some(until) = self.peace_available_at(pid, other) {
             return Err(format!("this war cannot be settled before turn {until}"));
         }
@@ -44526,6 +44540,16 @@ mod district_mechanics {
             "one declaration is one war, however many city-states it drags in"
         );
         assert!(!game.wars.contains_key(&pair(0, 2)));
+
+        // The city-state cannot repeatedly sign a no-op bilateral peace. Its
+        // war is derived from its Suzerain, and will end with that principal
+        // relation. This used to add a fresh diplomacy event every AI turn
+        // while leaving the city-state at war.
+        game.turn = 25;
+        let notes_before = game.events.len();
+        assert!(game.do_make_peace(2, 0).is_err());
+        assert!(game.is_at_war(2, 0));
+        assert_eq!(game.events.len(), notes_before);
 
         // What the city-state loses is a cost of the war its patron declared,
         // and it is scored against the patron's side of that ledger.
