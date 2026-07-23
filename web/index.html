@@ -1180,6 +1180,7 @@ function animateDiff(prev, next) {
   const prevU = new Map(prev.units.map(u => [u.id, u]));
   const nextU = new Map(next.units.map(u => [u.id, u]));
   TMAP = new Map(next.map.tiles.map(t => [key(t.pos), t])); // for worldXY
+  const cityKeys = new Set((next.cities || []).map(c => key(c.pos)));
   for (const nu of next.units) {
     const pu = prevU.get(nu.id);
     if (!pu) continue;
@@ -1198,7 +1199,16 @@ function animateDiff(prev, next) {
         let points = hasRoute ? route.map(worldXY) : [[sx, sy], [tx, ty]];
         if (cur) points[0] = [sx, sy];
         const steps = Math.max(1, points.length - 1);
+        // Remember whether each end of the step is a city tile. A garrison is
+        // drawn shifted to the front of its hex so the town reads behind it,
+        // and that shift keys off the unit's CURRENT position — which during a
+        // move is already the destination. So a unit walking into a city
+        // dropped the full shift the instant it set off, and one walking out
+        // snapped up by the same amount: a visible jolt at both ends of the
+        // step. Carrying both endpoints lets the shift ease across the move.
         anim.moves.set(nu.id, { sx, sy, tx, ty, x: sx, y: sy, points, steps,
+                                fromCity: cityKeys.has(key(pu.pos)),
+                                toCity: cityKeys.has(key(nu.pos)),
                                 t0: now, dur: 90 + 90 * Math.min(4, steps) });
         if (Math.abs(tx - sx) > 1) facing.set(nu.id, tx > sx ? 1 : -1);
       }
@@ -4083,7 +4093,14 @@ function draw() {
     // say — seventeen citizens' worth of houses reduced to a couple of roofs
     // poking past a shield. Standing the garrison at the front edge of the tile
     // lets both read: the city behind it, the troops holding it in front.
-    if (cityTiles.has(key(u.pos))) y += 12;
+    // Ease the garrison shift across a step instead of snapping it on arrival
+    // or departure — mid-move the unit belongs to neither hex yet.
+    let inTown = cityTiles.has(key(u.pos)) ? 1 : 0;
+    if (moving && mv) {
+      const a = mv.fromCity ? 1 : 0, b = mv.toCity ? 1 : 0;
+      inTown = a + (b - a) * Math.min(1, Math.max(0, mv.e || 0));
+    }
+    y += 12 * inTown;
     const rr = 10.5;
     if (beau) {
       drawUnitBase(u, x, y);
