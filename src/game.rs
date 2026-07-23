@@ -8006,6 +8006,41 @@ pub struct VisionCache {
     built_wonders: Option<BTreeSet<String>>,
 }
 
+/// Memoized `city_yields` answers, live only while a [`YieldMemo`] guard is
+/// held.
+///
+/// The guard borrows the game immutably, so the borrow checker — not a
+/// hand-written stamp over the citizen plan, worked tiles, districts,
+/// buildings, techs, policies, religion and wonders — is what guarantees the
+/// cache cannot go stale. Nothing can reach a `&mut Game` while an entry is
+/// live, so every cached answer is still the answer.
+#[derive(Default)]
+pub struct YieldCache(std::cell::RefCell<Option<BTreeMap<u32, Yields>>>);
+
+impl Clone for YieldCache {
+    /// A clone starts with no memo: a search branch is about to be played
+    /// forward, and inheriting a parent's answers would be exactly the
+    /// staleness this design rules out.
+    fn clone(&self) -> Self {
+        YieldCache::default()
+    }
+}
+
+/// Scope over which `Game::city_yields` answers from a cache. Dropping the
+/// outermost guard clears it.
+pub struct YieldMemo<'a> {
+    game: &'a Game,
+    outermost: bool,
+}
+
+impl Drop for YieldMemo<'_> {
+    fn drop(&mut self) {
+        if self.outermost {
+            *self.game.city_yield_memo.0.borrow_mut() = None;
+        }
+    }
+}
+
 impl VisionCache {
     fn reset(&mut self, stamp: u64) {
         self.stamp = stamp;
@@ -9706,6 +9741,10 @@ pub struct Game {
     /// rebuilt on demand whenever the world moves under it.
     #[serde(skip)]
     routing: std::cell::RefCell<RoutingCache>,
+    /// Memoized city yields; see [`YieldCache`]. Never saved, cleared by the
+    /// guard that opened it, and empty in any clone.
+    #[serde(skip)]
+    city_yield_memo: YieldCache,
     /// The state of the world each seat's remembered map was last taken
     /// under, and the tiles it was taken over. Empty means "assume nothing".
     #[serde(skip)]
@@ -9975,6 +10014,7 @@ impl From<GameSer> for Game {
             rules: Rules::shared(),
             vision: std::cell::RefCell::new(VisionCache::default()),
             routing: std::cell::RefCell::new(RoutingCache::default()),
+            city_yield_memo: YieldCache::default(),
             remembered_under: Vec::new(),
             track_fog_memory: true,
             rng: s.rng,
@@ -10274,6 +10314,7 @@ impl Game {
             rules,
             vision: std::cell::RefCell::new(VisionCache::default()),
             routing: std::cell::RefCell::new(RoutingCache::default()),
+            city_yield_memo: YieldCache::default(),
             remembered_under: Vec::new(),
             track_fog_memory: true,
             rng,
@@ -23410,7 +23451,39 @@ impl Game {
             .unwrap_or_else(|| self.rules.tile_yields(&unworked))
     }
 
+    /// Open a memo scope for [`Game::city_yields`].
+    ///
+    /// A candidate loop that scores dozens of purchases or productions asks
+    /// the same handful of cities for their yields over and over; one call
+    /// costs about forty microseconds. While the returned guard is alive the
+    /// game cannot be mutated, so those answers can simply be reused.
+    pub fn yield_memo(&self) -> YieldMemo<'_> {
+        let mut slot = self.city_yield_memo.0.borrow_mut();
+        let outermost = slot.is_none();
+        if outermost {
+            *slot = Some(BTreeMap::new());
+        }
+        drop(slot);
+        YieldMemo {
+            game: self,
+            outermost,
+        }
+    }
+
     pub fn city_yields(&self, cid: u32) -> Yields {
+        if let Some(memo) = self.city_yield_memo.0.borrow().as_ref() {
+            if let Some(yields) = memo.get(&cid) {
+                return *yields;
+            }
+        }
+        let yields = self.city_yields_uncached(cid);
+        if let Some(memo) = self.city_yield_memo.0.borrow_mut().as_mut() {
+            memo.insert(cid, yields);
+        }
+        yields
+    }
+
+    fn city_yields_uncached(&self, cid: u32) -> Yields {
         let city = &self.cities[&cid];
         let mut ys = Yields::default();
         let mut center = self.workable_tile_yields(city.pos);
@@ -34782,9 +34855,16 @@ impl Game {
         }
         if self.congress.is_none() && !self.pending_emergencies.is_empty() {
             self.convene_pending_emergency();
-        } else if self.world_era >= 2
+        }
+        // Whether the regular session is displaced turns on what actually
+        // opened, not on what was queued: `convene_pending_emergency` drops
+        // proposals whose target, city or membership has since gone, and a
+        // queue that emptied without seating anybody has displaced nothing.
+        // Testing the queue instead cost the world its Congress for a full
+        // thirty turns over an emergency that never happened.
+        if self.congress.is_none()
+            && self.world_era >= 2
             && self.turn.is_multiple_of(self.standard_duration(30))
-            && self.congress.is_none()
         {
             self.convene_congress();
         }
@@ -38799,22 +38879,26 @@ impl Game {
                 }
                 continue;
             }
-            let controls_every_foreign_capital = majors.iter().copied().all(|original_owner| {
-                if original_owner == candidate {
-                    return true;
-                }
+            // "To win a Domination victory, you must capture all original
+            // civilization Capitals" — all of them, the candidate's own
+            // included. A civilization that has lost its own Capital cannot
+            // win this way until it takes it back, which is exactly the rule
+            // the team branch above spells out for a whole side.
+            let controls_every_original_capital = majors.iter().copied().all(|original_owner| {
                 match self
                     .cities
                     .values()
                     .find(|c| c.is_capital && c.original_owner == original_owner)
                 {
                     Some(capital) => capital.owner == candidate,
-                    // The engine begins with settlers. Defeating a civ before
-                    // it founds its original capital satisfies that opponent.
-                    None => !self.players[original_owner].alive,
+                    // The engine begins with settlers, so a Capital can be
+                    // missing rather than lost. Defeating a civ before it
+                    // founds one satisfies that seat, and a candidate that
+                    // has never founded its own has none to have lost.
+                    None => original_owner == candidate || !self.players[original_owner].alive,
                 }
             });
-            if controls_every_foreign_capital {
+            if controls_every_original_capital {
                 self.set_winner(candidate, "domination");
                 return;
             }
@@ -42926,8 +43010,7 @@ mod victory_conditions {
     }
 
     #[test]
-    fn domination_requires_every_foreign_original_capital() {
-        let mut g = game_with_capitals(3, 402, 300);
+    fn domination_requires_every_original_capital_including_your_own() {
         let capital = |g: &Game, original_owner: usize| {
             g.cities
                 .values()
@@ -42935,6 +43018,8 @@ mod victory_conditions {
                 .unwrap()
                 .id
         };
+
+        let mut g = game_with_capitals(3, 402, 300);
         let second = capital(&g, 1);
         let third = capital(&g, 2);
         g.capture_city(second, 0);
@@ -42942,6 +43027,30 @@ mod victory_conditions {
         assert_eq!(g.winner, None);
         g.capture_city(third, 0);
         g.do_keep_city(0, third).unwrap();
+        assert_eq!(g.winner, Some(0));
+        assert_eq!(g.victory_type.as_deref(), Some("domination"));
+
+        // "You must capture all original civilization Capitals" — a conqueror
+        // holding both rivals' Capitals but not its own has not, and cannot
+        // win until it takes its own back.
+        let mut g = game_with_capitals(3, 402, 300);
+        let own = capital(&g, 0);
+        let second = capital(&g, 1);
+        let third = capital(&g, 2);
+        g.capture_city(second, 0);
+        g.do_keep_city(0, second).unwrap();
+        g.capture_city(third, 0);
+        g.do_keep_city(0, third).unwrap();
+        g.winner = None;
+        g.victory_type = None;
+        g.capture_city(own, 1);
+        g.do_keep_city(1, own).unwrap();
+        assert_eq!(g.cities[&own].owner, 1);
+        g.check_domination();
+        assert_eq!(g.winner, None, "its own Capital is in rival hands");
+
+        g.capture_city(own, 0);
+        g.do_keep_city(0, own).unwrap();
         assert_eq!(g.winner, Some(0));
         assert_eq!(g.victory_type.as_deref(), Some("domination"));
     }
@@ -43813,6 +43922,35 @@ mod victory_conditions {
                 && resolution.choices.contains(&"A:0".to_string())
                 && resolution.choices.contains(&"B:0".to_string())
         }));
+    }
+
+    #[test]
+    fn a_stale_emergency_queue_does_not_cost_the_world_its_regular_session() {
+        let mut g = game_with_capitals(3, 4_133, 300);
+        g.world_era = 2;
+        g.turn = 30;
+        // Queued against a city that no longer exists, so the proposal is
+        // dropped rather than seated. Nothing displaces the regular session.
+        g.pending_emergencies.push(EmergencyProposal {
+            id: 1,
+            kind: "military".to_string(),
+            target: 1,
+            city: u32::MAX,
+            original_owner: 2,
+            eligible: BTreeSet::from([0, 2]),
+            requested: 30,
+        });
+        g.process_congress();
+        assert!(g.pending_emergencies.is_empty(), "the stale proposal is dropped");
+        let session = g
+            .congress
+            .as_ref()
+            .expect("the regular session is still due");
+        assert_eq!(session.resolutions.len(), 2);
+        assert!(session
+            .resolutions
+            .iter()
+            .all(|resolution| !resolution.title.contains("Emergency")));
     }
 
     #[test]
