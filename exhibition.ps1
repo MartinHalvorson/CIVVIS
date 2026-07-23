@@ -129,13 +129,20 @@ if (-not (Test-Path "$src\Cargo.toml")) {
 # real exit code once the compiler is genuinely done, and that file is the
 # verdict. It lives in a file rather than a cmd /c string because cmd strips
 # the outer quotes off a command that both begins and ends with one.
+# CIVVIS_COMMIT is read at compile time and reported by /status, so the
+# running server can say which code it is rather than leaving it to be
+# guessed from file timestamps. It is written per build, below.
 $buildScript = "$binRun\build-once.cmd"
-Set-Content -Path $buildScript -Encoding ascii -Value @(
-    '@echo off',
-    "set CARGO_TARGET_DIR=$src\target",
-    "`"$cargo`" build --release --manifest-path `"$src\Cargo.toml`" > `"$binRun\build.log`" 2>&1",
-    "echo %ERRORLEVEL% > `"$binRun\build.code`""
-)
+function Write-BuildScript($commit) {
+    Set-Content -Path $buildScript -Encoding ascii -Value @(
+        '@echo off',
+        "set CARGO_TARGET_DIR=$src\target",
+        "set CIVVIS_COMMIT=$commit",
+        "`"$cargo`" build --release --manifest-path `"$src\Cargo.toml`" > `"$binRun\build.log`" 2>&1",
+        "echo %ERRORLEVEL% > `"$binRun\build.code`""
+    )
+}
+Write-BuildScript "unknown"
 
 # Anything still compiling belongs to a supervisor that is gone: this one holds
 # the mutex, so no other supervisor is alive to own it. Clear it out rather
@@ -238,6 +245,7 @@ while ($true) {
                 # or the server sat dead, until the compiler finished. That is
                 # where a twenty-one second changeover came from.
                 Remove-Item "$binRun\build.code" -Force -ErrorAction SilentlyContinue
+                Write-BuildScript $short
                 $build = Start-Process -FilePath $buildScript -PassThru -WindowStyle Hidden
             }
 
