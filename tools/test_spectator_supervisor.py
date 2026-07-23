@@ -15,6 +15,46 @@ SPEC.loader.exec_module(supervisor)
 
 
 class CanonicalSyncTests(unittest.TestCase):
+    def test_supervisor_update_reexecs_canonical_code_and_adopts_the_live_game(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "canonical"
+            script = source / "tools" / "spectator_supervisor.py"
+            script.parent.mkdir(parents=True)
+            script.write_text("print('new supervisor')\n", encoding="utf-8")
+            with (
+                patch.object(supervisor, "SOURCE_ROOT", source),
+                patch.object(supervisor, "RUNNING_SUPERVISOR_SHA256", "old"),
+            ):
+                command = supervisor.updated_supervisor_command(
+                    4321,
+                    ["--port", "8766", "--adopt-pid", "99", "--no-open"],
+                )
+
+        self.assertEqual(
+            command,
+            [
+                supervisor.sys.executable,
+                str(script),
+                "--port",
+                "8766",
+                "--no-open",
+                "--adopt-pid",
+                "4321",
+            ],
+        )
+
+    def test_supervisor_update_rejects_invalid_python(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "canonical"
+            script = source / "tools" / "spectator_supervisor.py"
+            script.parent.mkdir(parents=True)
+            script.write_text("def broken(:\n", encoding="utf-8")
+            with (
+                patch.object(supervisor, "SOURCE_ROOT", source),
+                patch.object(supervisor, "RUNNING_SUPERVISOR_SHA256", "old"),
+            ):
+                self.assertIsNone(supervisor.updated_supervisor_command(4321, []))
+
     def test_cargo_resolution_survives_a_minimal_service_environment(self):
         configured = "/opt/rust/bin/cargo"
         with patch.dict(supervisor.os.environ, {"CARGO": configured}):

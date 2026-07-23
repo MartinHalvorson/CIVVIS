@@ -31,7 +31,9 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 
-SCRIPT_ROOT = Path(__file__).resolve().parents[1]
+SCRIPT_PATH = Path(__file__).resolve()
+SCRIPT_ROOT = SCRIPT_PATH.parents[1]
+RUNNING_SUPERVISOR_SHA256 = hashlib.sha256(SCRIPT_PATH.read_bytes()).hexdigest()
 ROOT = Path(os.environ.get("CIVVIS_DEPLOY_ROOT", str(SCRIPT_ROOT))).expanduser().resolve()
 SOURCE_ROOT = Path(
     os.environ.get(
@@ -51,6 +53,48 @@ SYNC_BRANCH = os.environ.get("CIVVIS_SYNC_BRANCH", "main")
 
 def log(message: str) -> None:
     print(f"[spectator] {message}", flush=True)
+
+
+def updated_supervisor_command(
+    server_pid: int | None, argv: list[str] | None = None
+) -> list[str] | None:
+    """Return an exec command when canonical source contains newer supervision.
+
+    The game binary is promoted atomically, but Python keeps executing the code
+    it imported at process start.  Re-exec the canonical script after a source
+    sync and hand it the live server PID so supervision upgrades without
+    stopping or replacing the visible match.
+    """
+    candidate = SOURCE_ROOT / "tools" / "spectator_supervisor.py"
+    try:
+        payload = candidate.read_bytes()
+    except OSError:
+        return None
+    if hashlib.sha256(payload).hexdigest() == RUNNING_SUPERVISOR_SHA256:
+        return None
+    try:
+        compile(payload, str(candidate), "exec")
+    except (SyntaxError, ValueError) as error:
+        log(f"canonical supervisor update is invalid; keeping current process: {error}")
+        return None
+
+    inherited = list(sys.argv[1:] if argv is None else argv)
+    while "--adopt-pid" in inherited:
+        index = inherited.index("--adopt-pid")
+        del inherited[index : index + 2]
+    if server_pid is not None:
+        inherited.extend(("--adopt-pid", str(server_pid)))
+    return [sys.executable, str(candidate), *inherited]
+
+
+def reexec_updated_supervisor(
+    server_pid: int | None, argv: list[str] | None = None
+) -> None:
+    command = updated_supervisor_command(server_pid, argv)
+    if command is None:
+        return
+    log("canonical supervisor advanced; adopting the live game under fresh code")
+    os.execv(command[0], command)
 
 
 def cargo_executable() -> str:
@@ -958,7 +1002,7 @@ def main() -> int:
         "speed": args.speed,
     }
     global LEAGUE_SPEC
-    LEAGUE_SPEC = args.league
+    LEAGUE_SPEC = getattr(args, "league", "auto")
     process: subprocess.Popen[str] | None = None
     adopted_pid = args.adopt_pid
     # An adopted binary cannot be proven current, so replace it at the first
@@ -1035,6 +1079,7 @@ def main() -> int:
             # are compiled while a completed result screen remains reachable.
             if not RUNTIME_BINARY.exists():
                 prepare_latest(args.build_retry)
+                reexec_updated_supervisor(None)
             state = launch_recovery(not args.no_open)
         else:
             if not process_alive(None, adopted_pid):
@@ -1120,6 +1165,9 @@ def main() -> int:
                     latest_ready = runtime_matches(snapshot)
                     if prebuild_process is not None and prebuild_process.poll() is not None:
                         prebuild_process = None
+                        reexec_updated_supervisor(
+                            process.pid if process is not None else adopted_pid
+                        )
                         snapshot = source_snapshot()
                         latest_ready = runtime_matches(snapshot)
                     if latest_ready:
@@ -1163,6 +1211,9 @@ def main() -> int:
                 now = time.monotonic()
                 if prebuild_process is not None and prebuild_process.poll() is not None:
                     prebuild_process = None
+                    reexec_updated_supervisor(
+                        process.pid if process is not None else adopted_pid
+                    )
                     if runtime_replacement_pending(
                         running_runtime_id, promoted_runtime_id()
                     ):
