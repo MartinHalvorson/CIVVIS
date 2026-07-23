@@ -22,6 +22,7 @@ pub mod server;
 pub mod setup;
 pub mod strategic;
 pub mod valuenet;
+pub mod mods;
 pub mod validate;
 pub mod world;
 
@@ -204,6 +205,154 @@ mod tests {
         // Events are part of the game state, so they survive a save.
         let restored: Game = serde_json::from_str(&serde_json::to_string(&g).unwrap()).unwrap();
         assert_eq!(restored.events_for(0).len(), mine.len());
+    }
+
+    /// Every leader carries the agenda and preference traits the shipped
+    /// leader data assigns them.
+    #[test]
+    fn every_leader_has_their_historical_agenda() {
+        let rules = Rules::embedded();
+        let expected = [
+            ("Rome", "optimus_princeps", "expansionist"),
+            ("Egypt", "queen_of_the_nile", "mediterranean"),
+            ("Greece", "delian_league", "pursue_diplomatic_victory"),
+            ("China", "wonder_obsessed", "cultural_major_civ"),
+            ("Sumeria", "ally_of_enkidu", "science_major_civ"),
+            ("Aztec", "tlatoani", "aggressive_military"),
+            ("Nubia", "city_planner", "science_major_civ"),
+            ("Scythia", "backstab_averse", "killer_of_cyrus"),
+        ];
+        for (civ, agenda, leader_trait) in expected {
+            let spec = &rules.civs[civ];
+            assert_eq!(spec.agenda.as_deref(), Some(agenda), "{civ}");
+            assert!(spec.traits.iter().any(|t| t == leader_trait), "{civ}");
+            assert!(rules.agendas.contains_key(agenda), "{agenda}");
+        }
+    }
+
+    /// A comparative agenda weighs a rival against the rest of the world:
+    /// Trajan thinks well of a sprawling empire and poorly of a small one.
+    #[test]
+    fn a_comparative_agenda_scores_rivals_against_the_world() {
+        let mut g = Game::new_with(GameOptions {
+            barbarians: false,
+            ..GameOptions::new(3, 26, 18, 21, 60, 0)
+        });
+        assert_eq!(g.players[0].civ, "Rome");
+        for pid in 0..3 {
+            let settler = g
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|uid| g.units[uid].kind == "settler")
+                .unwrap();
+            let pos = g.units[&settler].pos;
+            g.found_city_for(pid, pos, None);
+        }
+        // Give seat 1 a second city; seat 2 keeps one. Trajan should now
+        // prefer the larger realm to the smaller.
+        let spare = g.map.tiles.keys().copied().find(|pos| {
+            g.map.tiles[pos].owner_city.is_none()
+                && !g.rules.is_water(&g.map.tiles[pos])
+                && g.cities.values().all(|c| g.wdist(*pos, c.pos) > 4)
+        });
+        g.found_city_for(1, spare.expect("an empty tile"), None);
+        let big = g.agenda_opinion(0, 1);
+        let small = g.agenda_opinion(0, 2);
+        assert!(big > small, "Trajan preferred {small} to {big}");
+        assert!(big > 0.0 && small < 0.0);
+        assert!((-30.0..=30.0).contains(&big));
+        // A leader has no opinion of themselves, of minors, or of barbarians.
+        assert_eq!(g.agenda_opinion(0, 0), 0.0);
+    }
+
+    /// A relational agenda ignores the rest of the world: Tomyris judges a
+    /// rival by their conduct towards her and their reputation elsewhere.
+    #[test]
+    fn a_relational_agenda_scores_conduct_not_size() {
+        let mut g = Game::new_with(GameOptions {
+            barbarians: false,
+            ..GameOptions::new(8, 44, 26, 31, 60, 0)
+        });
+        let tomyris = g
+            .players
+            .iter()
+            .position(|player| player.civ == "Scythia")
+            .expect("Scythia is one of the eight");
+        // Seat 0 opens the game, and declaring war is only legal on your own
+        // turn, so the aggressor has to be the seat holding it.
+        let treacherous = g.current;
+        assert_ne!(treacherous, tomyris);
+        let honest = (0..8).find(|pid| *pid != tomyris && *pid != treacherous).unwrap();
+        assert_eq!(g.agenda_opinion(tomyris, honest), 0.0, "no reason to judge");
+        // Declaring war piles grievances on the aggressor, which is exactly
+        // the reputation her agenda punishes.
+        g.apply(treacherous, &Action::DeclareWar { player: honest })
+            .unwrap();
+        assert!(
+            g.agenda_opinion(tomyris, treacherous) < -10.0,
+            "Tomyris shrugged at a surprise war"
+        );
+        assert_eq!(g.agenda_opinion(tomyris, honest), 0.0);
+    }
+
+    /// Stances reach the players through the event stream, once each, when
+    /// they change — and reach the observation an agent reads.
+    #[test]
+    fn agenda_stances_are_announced_when_they_change() {
+        let mut g = Game::new_with(GameOptions {
+            barbarians: false,
+            ..GameOptions::new(8, 44, 26, 32, 60, 0)
+        });
+        let tomyris = g
+            .players
+            .iter()
+            .position(|player| player.civ == "Scythia")
+            .unwrap();
+        let (a, b) = (
+            (0..8).find(|pid| *pid != tomyris).unwrap(),
+            (0..8)
+                .filter(|pid| *pid != tomyris)
+                .nth(1)
+                .unwrap(),
+        );
+        g.apply(a, &Action::DeclareWar { player: b }).unwrap();
+        // Run a full world turn so the upkeep pass sees the new stance.
+        for _ in 0..(g.players.len() + 1) {
+            let current = g.current;
+            let _ = g.apply(current, &Action::EndTurn);
+        }
+        let disapproval: Vec<&str> = g
+            .events_for(a)
+            .iter()
+            .filter(|event| event.category == "Diplomacy")
+            .map(|event| event.text.as_str())
+            .collect();
+        assert!(
+            disapproval.iter().any(|text| text.contains("disapproves of you")),
+            "no disapproval reached the aggressor: {disapproval:?}"
+        );
+        // Repeating the pass says nothing new.
+        let before = g.events_for(a).len();
+        for _ in 0..(g.players.len() + 1) {
+            let current = g.current;
+            let _ = g.apply(current, &Action::EndTurn);
+        }
+        let repeats = g
+            .events_for(a)
+            .iter()
+            .filter(|event| event.text.contains("disapproves of you"))
+            .count();
+        assert_eq!(repeats, 1, "a settled stance was announced twice");
+        assert!(g.events_for(a).len() >= before);
+
+        let observed = crate::obs::observation(&g, a);
+        let seats = observed["players"].as_array().unwrap();
+        let scythia = seats
+            .iter()
+            .find(|seat| seat["civ"] == "Scythia")
+            .expect("Scythia is visible in the ribbon");
+        assert_eq!(scythia["agenda"]["name"], "Backstab Averse");
+        assert!(scythia["opinion_of_me"].as_f64().unwrap() < 0.0);
     }
 
     /// The setup choices are part of the game, so they survive a save.

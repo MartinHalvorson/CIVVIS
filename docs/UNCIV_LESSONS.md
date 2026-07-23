@@ -51,13 +51,13 @@ runtime. The text surface belongs in the mod loader, not in the hot path.
 |---|---|---|---|
 | 1 | Uniques: effects as parameterized data with conditionals | **Adopt (typed)** | FIDELITY.md phase 2 modifier interpreter |
 | 2 | Countables — expression language for numeric parameters | Adopt subset | with (1) |
-| 3 | Ruleset validation with severities + author-controlled suppression | **Adopted** | `civvis validate` |
+| 3 | Ruleset validation with severities + author-controlled suppression | **Adopted** | `civvis validate`, and the gate every mod passes |
 | 4 | Difficulty levels as data, with AI/human handicaps | **Adopted** | `data/difficulties.json` |
 | 5 | Game speeds as data | **Adopted** | `data/speeds.json` |
-| 6 | Leader personalities driving AI weighting | Adopt next | Civ VI ships `Agendas.xml` — real content for it |
+| 6 | Leader personalities driving AI weighting | **Adopted** | `data/agendas.json`, sourced from `Leaders.xml` |
 | 7 | Notifications: categorized, located, per-player event stream | **Adopted** | `events` in `obs`, GUI log |
 | 8 | Victories as data with ordered milestones | Adopt next | `data/victories.json` |
-| 9 | Mod folders overlaid on the base ruleset at load | Adopt next | `--mods` overlay for `data/*.json` |
+| 9 | Mod folders overlaid on the base ruleset at load | **Adopted** | `--mods`, see [MODS.md](MODS.md) |
 | 10 | Dev console for state inspection/mutation | Adopt next | GUI console + `civvis console` |
 | 11 | Civilopedia generated from the ruleset | Adopt next | `/pedia` endpoint |
 | 12 | Unit automation + autoplay for the human seat | Adopt next | reuse `AdvancedAi` per-unit |
@@ -105,20 +105,41 @@ Civ VI ships its own handicap scaling in `Leaders.xml`
 Prince). See `data/difficulties.json` for the resulting table and
 [MECHANICS.md](MECHANICS.md) for coverage.
 
-### 6. Personalities — the next batch
+### 6. Personalities — adopted
 
-Unciv gives every leader a personality vector (culture/faith/gold/military/aggressive/
-declareWar/loyal/expansion…) plus branch priorities, and `NextTurnAutomation` weights its
-decisions by it. The effect is that AI civs feel like *someone* rather than like the same
-bot in different colours.
+Unciv gives every leader a personality vector (culture/faith/gold/military/
+aggressive/declareWar/loyal/expansion…) plus branch priorities, and
+`NextTurnAutomation` weights its decisions by it. The effect is that AI civs
+feel like *someone* rather than like the same bot in different colours.
 
-Civ VIS has the machinery for this already — `BasicAi` carries 29 GA-tuned weights and
-`AdvancedAi` picks grand strategies — but every major civ runs identical weights, so
-Trajan and Cleopatra play the same game. Civ VI also ships the content Unciv had to
-invent: `Agendas.xml` has each leader's historical agenda, and the AI's own
-`BehaviorTrees.xml` and bias tables sit next to it. Per-leader personalities sourced
-from that XML are the natural next batch, and they pay into AI_GAPS gap 7 (diplomacy
-depth) at the same time.
+Civ VIS had the machinery — `BasicAi` carries 29 GA-tuned weights, `AdvancedAi`
+picks grand strategies — but every major civ ran identical weights, so Trajan
+and Cleopatra played the same game. Civ VI also ships the content Unciv had to
+invent: `Leaders.xml` assigns each leader a historical agenda and a set of
+preference traits, and all eight of ours now carry theirs.
+
+An **agenda** is an opinion, from -30 to +30, about how another civilization is
+behaving, and they come in two shapes:
+
+- **Comparative** — the rival is weighed against the rest of the world. Trajan
+  (*Optimus Princeps*) compares your territory to everyone's, so being the
+  smallest empire among giants reads worse than being small in a small world.
+  Cleopatra weighs armies, Qin counts wonders, Amanitore counts districts per
+  city.
+- **Relational** — the world is irrelevant and only the relationship counts.
+  Pericles measures your envoys against his, Gilgamesh who you stand beside,
+  Montezuma which of his luxuries you share, Tomyris your reputation for
+  treachery.
+
+The opinion reaches the diplomacy ribbon in `obs` and the GUI, the event log
+when a stance changes, and `AdvancedAi`'s choice of campaign target — weighted
+deliberately below distance, because an agenda should colour the choice of
+enemy rather than make it. Paired evaluation is unmoved.
+
+What we did *not* take is Unciv's hand-authored numbers. Its personality values
+are one modder's reading of civdata.com, openly acknowledged in the file's own
+comment block; ours come from the game's shipped assignments, the same
+authority [FIDELITY.md](FIDELITY.md) holds the rest of the ruleset to.
 
 ### 7. Notifications — adopted
 
@@ -144,6 +165,33 @@ it for free.
 Our six victory types are hardcoded, which is fine for fidelity and bad for mods, and it
 means the GUI cannot show "you are 2 of 3 milestones into Science". `data/victories.json`
 with ordered milestones is the fix; the enum of milestone kinds stays typed in Rust.
+
+### 9. Mods — adopted
+
+The reason Unciv's ruleset lives in data is that a mod is a folder of the same
+JSON, dropped in beside it. We had the data and not the loading, which is a
+strange place to stop: `data/*.json` was moddable only by editing the engine's
+own copy and rebuilding.
+
+`--mods` now merges a folder of overlays onto the shipped ruleset, with three
+rules — add, merge field by field, remove on `null` — documented in
+[MODS.md](MODS.md). Two decisions are worth recording:
+
+- **Merging, not replacing.** Unciv replaces whole objects; a mod that wants a
+  cheaper Warrior restates the Warrior. Ours merges recursively, so it writes
+  `{"warrior": {"cost": 20}}`. That makes small mods small, and it makes them
+  survive a base-ruleset change that Unciv-style replacement would silently
+  revert.
+- **Validation is a gate, not a report.** The merged ruleset goes through the
+  checker from idea 3 and is refused if it has errors. Unciv's mod checker is a
+  screen you can choose to look at; ours is the load path. A mod with a
+  dangling technology fails immediately with the file and entry named, rather
+  than crashing a game twenty turns in.
+
+What a mod still cannot do is invent behaviour. Effect keys work because the
+engine has handlers for them, so a mod can move existing effects around and not
+create new kinds — which is exactly the ceiling that idea 1, the typed effect
+interpreter, exists to lift.
 
 ### 14 & 15. What we are not taking
 

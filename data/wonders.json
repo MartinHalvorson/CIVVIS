@@ -644,7 +644,8 @@
     "adjacent_district": "harbor",
     "effects": {
       "diplomatic_victory_points": 4,
-      "regional_full_loyalty_range": 6
+      "regional_full_loyalty_range": 6,
+      "free_settlers": 2
     }
   },
   "biosphere": {

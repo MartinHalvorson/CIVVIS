@@ -145,6 +145,27 @@ fn standings(g: &Game) {
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let cmd = args.first().map(|s| s.as_str()).unwrap_or("help");
+    // Mods replace the ruleset for the whole process, so they have to be
+    // installed before anything reads it.
+    let mod_paths = civvis::mods::parse_arg(&arg_text(&args, "--mods", ""));
+    if !mod_paths.is_empty() {
+        match civvis::mods::activate(&mod_paths) {
+            Ok(loaded) => {
+                for info in loaded {
+                    let about = if info.description.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" — {}", info.description)
+                    };
+                    println!("mod: {} ({}){about}", info.name, info.files.join(", "));
+                }
+            }
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(2);
+            }
+        }
+    }
     match cmd {
         "simulate" => {
             let players = arg(&args, "--players", 4);
@@ -319,10 +340,21 @@ fn main() {
                         eprintln!("cannot read checkpoint {path}: {error}");
                         std::process::exit(2);
                     });
-                    serde_json::from_str(&raw).unwrap_or_else(|error| {
+                    let game: Game = serde_json::from_str(&raw).unwrap_or_else(|error| {
                         eprintln!("cannot load checkpoint {path}: {error}");
                         std::process::exit(2);
-                    })
+                    });
+                    // A save records the mods it was played under. Resuming
+                    // under a different set silently changes the rules
+                    // mid-game, so say so rather than pretend otherwise.
+                    let active = civvis::mods::active_names();
+                    if game.mods != active {
+                        eprintln!(
+                            "warning: {path} was played with mods {:?} but this process has {:?}",
+                            game.mods, active
+                        );
+                    }
+                    game
                 });
             let seed = {
                 let s = arg(&args, "--seed", -1);
@@ -374,8 +406,10 @@ fn main() {
                       [--players N] [--seed N] [--turns N] [--width N] [--height N] \
                       [--city-states N] [--games N] [--ais a,b] [--port N] [--no-open] \
                       [--map pangaea|continents|small_continents|inland_sea] \
+                      [--difficulty settler|chieftain|warlord|prince|king|emperor|immortal|deity] \
                       [--speed online|quick|standard|epic|marathon] \
-                      [--spectate] [--supervised] [--resume checkpoint.json]"
+                      [--human-seats 0,1] [--mods path/to/mod,path/to/other] \
+                      [--spectate] [--supervised] [--resume checkpoint.json] [--strict]"
             );
         }
     }

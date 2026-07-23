@@ -241,6 +241,9 @@
   .diplomacy-name { display: block; overflow: hidden; color: #f1f4ed; font-size: 12px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
   .diplomacy-rank { margin-right: 5px; color: var(--gold-bright); font: 700 11px Georgia, serif; }
   .diplomacy-leader { display: block; margin-top: 1px; overflow: hidden; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+  .agenda-mark { margin-left: 3px; font-size: 8px; vertical-align: 1px; }
+  .agenda-mark.up { color: #8fd6a4; }
+  .agenda-mark.down { color: #f2a09b; }
   .ai-plan { font-weight: 850; }
   .ai-plan.expansion { color: #89c990; }
   .ai-plan.science { color: var(--blue); }
@@ -709,14 +712,49 @@ const RES_ICON = { wheat:"🌾", cattle:"🐄", sheep:"🐑", stone:"🪨", deer
                    fish:"🐟", bananas:"🍌", horses:"🐎", iron:"⚒️", silk:"🧵",
                    wine:"🍷", salt:"🧂", antiquity_site:"🏺", shipwreck:"⚓" };
 const ARTIFACT_RESOURCES = new Set(["antiquity_site", "shipwreck"]);
-const UNIT_ICON = { settler:"🏳", builder:"🔨", scout:"👁", warrior:"⚔",
-                    slinger:"🪃", archer:"🏹", spearman:"↑", swordsman:"⚔",
-                    horseman:"🐎", catapult:"☄", crossbowman:"🏹", pikeman:"↑",
-                    knight:"♞", musketman:"⁋", galley:"⛵", quadrireme:"⛵",
-                    caravel:"⛵", frigate:"⛵", privateer:"☠", ironclad:"🚢",
-                    battleship:"🚢", submarine:"◆", destroyer:"🚢",
-                    aircraft_carrier:"▰", missile_cruiser:"🚢",
-                    nuclear_submarine:"◆" };
+// One symbol per unit in data/units.json — the production medallion and the
+// strategic-view discs both read from here, and a unit without an entry falls
+// back to its first letter, which tells you nothing. Grouped by promotion
+// class so a line reads as a family at a glance.
+const UNIT_ICON = {
+  // civilians & specialists
+  settler:"🏕", builder:"🔨", trader:"🐫", naturalist:"🏞", archaeologist:"🏺",
+  rock_band:"🎸", spy:"🕵",
+  // religious
+  missionary:"🕊", apostle:"✝", guru:"☯", inquisitor:"🔥", warrior_monk:"🥋",
+  // support
+  battering_ram:"🪵", siege_tower:"🏗", military_engineer:"🛠",
+  observation_balloon:"🎈", medic:"✚", supply_convoy:"📦", anti_air_gun:"🔺",
+  mobile_sam:"📡", drone:"🛰",
+  // recon
+  scout:"👁", skirmisher:"🪃", ranger:"🌿", spec_ops:"🥷",
+  // melee
+  warrior:"⚔", swordsman:"🗡", man_at_arms:"🛡", musketman:"💂",
+  line_infantry:"🎖", infantry:"🪖", mechanized_infantry:"🚚",
+  // anti-cavalry
+  spearman:"🔱", pikeman:"🚧", pike_and_shot:"⚜", at_crew:"🧨", modern_at:"⛔",
+  // light cavalry
+  horseman:"🐎", courser:"🐴", cavalry:"🏇", helicopter:"🚁",
+  // heavy cavalry
+  heavy_chariot:"☸", knight:"♞", cuirassier:"♘", tank:"🚜", modern_armor:"🚙",
+  // ranged
+  slinger:"🪨", archer:"🏹", crossbowman:"🎯", field_cannon:"💣",
+  machine_gun:"🔫",
+  // siege
+  catapult:"☄", trebuchet:"🌠", bombard:"💥", artillery:"🎆",
+  rocket_artillery:"🚀",
+  // air & orbital
+  biplane:"🪁", fighter:"✈", jet_fighter:"🛫", bomber:"🛩", jet_bomber:"🛬",
+  giant_death_robot:"🤖",
+  // naval melee / ranged / raider / carrier
+  galley:"🛶", caravel:"🧭", ironclad:"🚢", destroyer:"⚓",
+  quadrireme:"⛵", frigate:"⛴", battleship:"🛳", missile_cruiser:"⚡",
+  privateer:"☠", submarine:"🐋", nuclear_submarine:"☢",
+  aircraft_carrier:"🛥",
+  // civilization uniques
+  legion:"🎺", hoplite:"Ω", eagle_warrior:"🦅", war_cart:"🐂",
+  pitati_archer:"🪶", maryannu_chariot_archer:"☥", saka_horse_archer:"🎠",
+  crouching_tiger:"🐅" };
 const BLDG_ICON = { monument:"🗿", granary:"🌾", walls:"🧱", medieval_walls:"🧱",
                     shrine:"⛩", library:"📜", market:"⚖", barracks:"🛡",
                     lighthouse:"🗼", amphitheater:"🎭", aqueduct:"⛲", arena:"🎪",
@@ -1522,8 +1560,80 @@ function shade(hex, f) {
 // Paint an AI-authored, photographic material sample onto the world plane.
 // Each tile takes a deterministic crop from its biome swatch, so neighboring
 // tiles share a visual language without producing an obvious repeated stamp.
+// A continuous biome should read as one surface, not a field of hexagons. Each
+// sprite is built once with a soft radial edge, so the stamps overlap and
+// cross-fade into their neighbors instead of butting at a hard seam. A few
+// variants keep the material from looking obviously repeated.
+const BIOME_STAMPS = {};
+function biomeStamp(terrain, variant) {
+  const id = terrain + variant;
+  if (BIOME_STAMPS[id]) return BIOME_STAMPS[id];
+  if (!ATLAS_READY) return null;
+  const [col, row] = ATLAS_CELL[terrain];
+  const cw = TERRAIN_ATLAS.naturalWidth / 4;
+  const ch = TERRAIN_ATLAS.naturalHeight / 2;
+  const crop = Math.min(cw, ch) * 0.72;
+  const sx = col * cw + 1 + ((variant * 0.37) % 1) * Math.max(2, cw - crop - 2);
+  const sy = row * ch + 1 + ((variant * 0.61) % 1) * Math.max(2, ch - crop - 2);
+  const D = 112;
+  const c = document.createElement("canvas");
+  c.width = c.height = D;
+  const g = c.getContext("2d");
+  g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
+  if (variant & 1) { g.translate(D, 0); g.scale(-1, 1); }
+  g.drawImage(TERRAIN_ATLAS, sx, sy, crop, crop, 0, 0, D, D);
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.globalCompositeOperation = "destination-in";
+  const rg = g.createRadialGradient(D / 2, D / 2, D * 0.16, D / 2, D / 2, D * 0.5);
+  rg.addColorStop(0, "rgba(0,0,0,1)");
+  rg.addColorStop(0.62, "rgba(0,0,0,.94)");
+  rg.addColorStop(1, "rgba(0,0,0,0)");
+  g.fillStyle = rg; g.fillRect(0, 0, D, D);
+  BIOME_STAMPS[id] = c;
+  return c;
+}
+
+// Paint a feathered sprite that overlaps its neighbors. 1.5·S is the smallest
+// overlap that still carries full alpha past every hex corner, so neighbors
+// cover each other with no seam and no wasted fill; the sprite's own alpha
+// already reaches zero inside its corners, so a blended tile needs no clip at
+// all. A tile on the edge of its biome stays fenced inside its own hex.
+function drawFeathered(t, x, y, blended, alpha) {
+  const st = biomeStamp(t.terrain,
+    Math.floor(hash2(t.pos[0] * 7 + 1, t.pos[1] * 13 + 5) * 4));
+  if (!st) return;
+  const R = blended ? S * 1.5 : S + 2.4;
+  cx.save();
+  if (!blended) { hexPath(x, y, R); cx.clip(); }
+  cx.globalAlpha = alpha;
+  cx.translate(x, y);
+  cx.transform(COSR, SINR * YS, -SINR, COSR * YS, 0, 0);
+  cx.drawImage(st, -R, -R, R * 2, R * 2);
+  cx.restore();
+}
+
+const isWater = t => t.terrain === "coast" || t.terrain === "ocean";
+
+// Only open sea is blended. Feathering was tried for land too — same terrain,
+// same relief, so terrain and hill boundaries would have stayed crisp — but on
+// a generated map barely five land tiles in a thousand have six matching
+// neighbors, so it bought nothing and cost a branch. Land seams are also far
+// milder than water ones were: grass and sand are visually uniform, so a
+// mismatched crop reads as texture, while the sea's directional swell made
+// every seam obvious.
+function openSea(t) {
+  if (!isWater(t)) return false;
+  for (let i = 0; i < 6; i++) {
+    const n = nbrTile(t.pos, DIRS[i]);
+    if (!n || !isWater(n)) return false;
+  }
+  return true;
+}
+
 function drawTerrainTexture(t, x, y) {
   if (!ATLAS_READY || !ATLAS_CELL[t.terrain]) return;
+  const water = isWater(t);
+  if (water) return drawFeathered(t, x, y, openSea(t), 0.95);
   const [col, row] = ATLAS_CELL[t.terrain];
   const cw = TERRAIN_ATLAS.naturalWidth / 4;
   const ch = TERRAIN_ATLAS.naturalHeight / 2;
@@ -1534,7 +1644,6 @@ function drawTerrainTexture(t, x, y) {
   const hy = hash2(t.pos[0] * 29 + col * 13, t.pos[1] * 11 + row * 37);
   const sx = col * cw + 1 + hx * marginX;
   const sy = row * ch + 1 + hy * marginY;
-  const water = t.terrain === "coast" || t.terrain === "ocean";
 
   cx.save();
   hexPath(x, y, S + 0.25); cx.clip();
@@ -1970,6 +2079,64 @@ function drawUnitChar(u, x, y, now, moving) {
   cx.restore();
 }
 
+// Civ-style ground base. Photographic terrain is busy, so a soft dark pad
+// separates the figure from whatever it is standing on, and an owner-colored
+// ring answers "whose is that?" without reading the tunic. Units with movement
+// left keep a bright ring; spent ones fade back, so a glance across the map
+// shows who can still act this turn.
+function drawUnitBase(u, x, y) {
+  const spent = u.moves_left !== undefined && u.moves_left <= 0;
+  const cy = y + 8.5;
+  cx.save();
+  cx.translate(x, cy); cx.scale(1, 0.42); cx.translate(-x, -cy);
+  const g = cx.createRadialGradient(x, cy, 1, x, cy, 13.5);
+  g.addColorStop(0, "rgba(0,0,0,.40)");
+  g.addColorStop(0.6, "rgba(0,0,0,.20)");
+  g.addColorStop(1, "rgba(0,0,0,0)");
+  cx.fillStyle = g;
+  cx.beginPath(); cx.arc(x, cy, 13.5, 0, 7); cx.fill();
+  cx.restore();
+  // A filled disc in the owner's color carries much further than a rim: at map
+  // zoom the figure itself is only a few pixels of tunic, but the plate under
+  // it stays an unmistakable blob of empire color.
+  cx.beginPath(); cx.ellipse(x, cy, 9.6, 4.1, 0, 0, 7);
+  cx.fillStyle = pcol(u.owner);
+  cx.globalAlpha = spent ? 0.5 : 0.9;
+  cx.fill();
+  cx.globalAlpha = 1;
+  // Barbarian black-on-shadow disappears against dark terrain, and a raider is
+  // exactly the thing the eye needs to catch first — so their plate is rimmed
+  // in hazard red rather than the usual near-black outline.
+  const barb = (state.players[u.owner] || {}).is_barbarian;
+  cx.strokeStyle = barb ? "#cc4a3e" : "#0d1117";
+  cx.lineWidth = barb ? 1.9 : 1.4;
+  cx.stroke();
+  if (!spent) {   // ready units get a lit rim so they read before spent ones
+    cx.strokeStyle = "#ffffff6b"; cx.lineWidth = 1;
+    cx.beginPath(); cx.ellipse(x, cy, 7.9, 3.0, 0, 0, 7); cx.stroke();
+  }
+}
+
+// Civ 6 hangs a small flag off each unit carrying its icon, because a drawn
+// figure at map scale reads as "somebody's soldier" and nothing more. Same
+// badge glyph the production medallion uses, so a unit looks the same coming
+// off the queue as it does standing on the map.
+function drawUnitBadge(u, x, y) {
+  const k = 1 / Math.min(1, Math.max(cam.scale, 0.5));  // as the HP bar does:
+  const br = 6.4 * k;                                   // stays legible far out
+  const bx = x + 9.5 * k, by = y + 1;
+  cx.save();                                   // ambient text state is shared
+  cx.fillStyle = "#10151de8";
+  cx.beginPath(); cx.arc(bx, by, br, 0, 7); cx.fill();
+  cx.strokeStyle = pcol(u.owner); cx.lineWidth = 1.5;
+  cx.beginPath(); cx.arc(bx, by, br, 0, 7); cx.stroke();
+  cx.fillStyle = "#f0ead8";
+  cx.font = (8 * k).toFixed(1) + "px 'Segoe UI Symbol', 'Segoe UI Emoji', sans-serif";
+  cx.textAlign = "center"; cx.textBaseline = "middle";
+  cx.fillText(UNIT_ICON[u.type] || u.type[0].toUpperCase(), bx, by + 0.3);
+  cx.restore();
+}
+
 function draw() {
   if (!state) return;
   const beau0 = VIEW === "cinematic";
@@ -2015,6 +2182,7 @@ function draw() {
   const naturalWonderPlacements = buildNaturalWonderPlacements(tiles);
   const visSet = new Set(state.visible.map(key));
   const campSet = new Set(state.camps.map(key));
+  const cityTiles = new Set(state.cities.map(c => key(c.pos)));
   const workedSet = new Set(state.cities.flatMap(c =>
     c.citizens ? c.citizens.worked_tiles.map(key) : []));
   const unitOwnerByTile = new Map(state.units.map(u => [key(u.pos), u.owner]));
@@ -2048,16 +2216,13 @@ function draw() {
     if (beau) {
       drawTerrainTexture(t, x, y);
       hexPath(x, y, S + 0.15);
-      cx.strokeStyle = water ? "#a8e4ef18" : "#fff8dc12";
+      // Water keeps only a whisper of grid — enough to aim a ship at a hex,
+      // not enough to chop the open sea back into tiles.
+      cx.strokeStyle = water ? "#a8e4ef0e" : "#fff8dc12";
       cx.lineWidth = 0.85; cx.stroke();
     }
-    if (beau && water) { // waves + specular glints (deep OLED water)
+    if (beau && water) { // specular glints over the photographic swell
       const ph = hash2(t.pos[0], t.pos[1]);
-      cx.strokeStyle = "#9fd8ef22"; cx.lineWidth = 1.4;
-      cx.beginPath();
-      cx.arc(x - 6 + ph * 8, y - 3, 6, Math.PI * 0.15, Math.PI * 0.85);
-      cx.arc(x + 4 - ph * 6, y + 7, 5, Math.PI * 0.15, Math.PI * 0.85);
-      cx.stroke();
       if (ph > 0.6) {
         cx.fillStyle = "#bfe8ff2e";
         cx.beginPath();
@@ -2111,7 +2276,11 @@ function draw() {
     cx.fill();
   }
   cx.globalAlpha = 1;
-  // --- territory borders: ribbon along edges facing a different owner
+  // --- territory borders: ribbon along edges facing a different owner.
+  // Collected per empire and stroked as one network with round joins, the way
+  // the river layer is: a frontier then reads as a single flowing outline
+  // rather than six separately-capped hex edges with notches at every corner.
+  const borderSegs = new Map();
   for (const t of tiles) {
     if (t.owner === null || t.owner === undefined) continue;
     const [x, yy] = hexXY(t.pos[0], t.pos[1]);
@@ -2122,11 +2291,59 @@ function draw() {
       const [c1, c2] = EDGE_CORNERS[i];
       const [ax, ay] = corner(x, y, S - 1.5, c1);
       const [bx, by] = corner(x, y, S - 1.5, c2);
-      cx.strokeStyle = pcol(t.owner); cx.lineWidth = 4.5; cx.globalAlpha = 0.55;
-      cx.beginPath(); cx.moveTo(ax, ay); cx.lineTo(bx, by); cx.stroke();
-      cx.lineWidth = 1.6; cx.globalAlpha = 1;
-      cx.beginPath(); cx.moveTo(ax, ay); cx.lineTo(bx, by); cx.stroke();
+      let segs = borderSegs.get(t.owner);
+      if (!segs) { segs = []; borderSegs.set(t.owner, segs); }
+      segs.push([ax, ay, bx, by]);
     }
+  }
+  cx.lineCap = "round"; cx.lineJoin = "round";
+  for (const [owner, segs] of borderSegs) {
+    const c = pcol(owner);
+    for (const [w, a] of [[5.4, 0.3], [1.8, 0.95]]) {  // soft glow, then crisp core
+      cx.strokeStyle = c; cx.lineWidth = w; cx.globalAlpha = a;
+      cx.beginPath();
+      for (const [ax, ay, bx, by] of segs) { cx.moveTo(ax, ay); cx.lineTo(bx, by); }
+      cx.stroke();
+    }
+  }
+  cx.globalAlpha = 1; cx.lineCap = "butt"; cx.lineJoin = "miter";
+  // --- roads: the arteries of an empire, and until now the one piece of tile
+  // state the map never showed. Each roaded tile runs a spur to the midpoint of
+  // every shared edge with a roaded neighbor, so the spurs meet and the network
+  // reads as continuous route rather than a row of disconnected dashes.
+  const roaded = p => {
+    const t2 = TMAP.get(key(p));
+    return !!(t2 && t2.road) || cityTiles.has(key(p));
+  };
+  const roadSegs = [];
+  for (const t of tiles) {
+    if (!roaded(t.pos)) continue;
+    const [x, yy] = hexXY(t.pos[0], t.pos[1]);
+    const y = yy - elev(t);
+    let linked = false;
+    for (let i = 0; i < 6; i++) {
+      const n = nbrTile(t.pos, DIRS[i]);
+      if (!n || !roaded(n.pos)) continue;
+      // share the seam elevation the way rivers do, so a spur meets its
+      // opposite number exactly even across a height change
+      const ey = yy - (elev(t) + elev(n)) / 2;
+      const [c1, c2] = EDGE_CORNERS[i];
+      const [ax, ay] = corner(x, ey, S, c1);
+      const [bx, by] = corner(x, ey, S, c2);
+      roadSegs.push([x, y, (ax + bx) / 2, (ay + by) / 2]);
+      linked = true;
+    }
+    if (!linked) roadSegs.push([x, y, x, y]);   // a lone stretch still reads
+  }
+  if (roadSegs.length) {
+    cx.lineCap = "round"; cx.lineJoin = "round";
+    for (const [w, c, a] of [[5.6, "#2b2015", 0.4], [3.0, "#c0a67e", 0.85]]) {
+      cx.strokeStyle = c; cx.lineWidth = w; cx.globalAlpha = a;
+      cx.beginPath();
+      for (const [ax, ay, bx, by] of roadSegs) { cx.moveTo(ax, ay); cx.lineTo(bx, by); }
+      cx.stroke();
+    }
+    cx.globalAlpha = 1; cx.lineCap = "butt"; cx.lineJoin = "miter";
   }
   // --- rivers: shared hex-edge segments, never tile-center spokes
   const riverDrawn = new Set();
@@ -2212,9 +2429,17 @@ function draw() {
       continue;
     }
     if (t.hills && beau) {
-      // soft rolling rises in the terrain's own color (Civ 6 style)
+      // Soft rolling rises in the terrain's own color (Civ 6 style). Their
+      // placement comes from the tile hash: the same three mounds at the same
+      // three offsets in every hex read as a stamped pattern and put the grid
+      // straight back into a run of hill country.
       const base = TERRAIN[t.terrain] || "#888";
-      for (const [hx, hy, hw2, hh2] of [[-8, -3, 13, 8], [7, -7, 11.5, 7], [1, 4, 14.5, 8.5]]) {
+      const hh = hash2(t.pos[0] * 31 + 5, t.pos[1] * 23 + 9);
+      const jit = i => (hash2(t.pos[0] * 7 + i * 13, t.pos[1] * 11 + i * 5) - 0.5);
+      for (const [hx, hy, hw2, hh2] of [
+        [-8 + jit(1) * 7, -3 + jit(2) * 5, 12 + hh * 3, 7.5 + jit(3) * 1.6],
+        [7 + jit(4) * 6, -7 + jit(5) * 4, 11 + hh * 2.5, 6.8 + jit(6) * 1.4],
+        [1 + jit(7) * 7, 4 + jit(8) * 3, 13.5 + hh * 3, 8.2 + jit(9) * 1.5]]) {
         cx.fillStyle = shade(base, 0.72); // deep shadow base
         cx.beginPath(); cx.ellipse(x + hx, y + hy + 2.4, hw2, hh2, 0, Math.PI, 0);
         cx.fill();
@@ -2235,15 +2460,18 @@ function draw() {
       cx.arc(x + 6, y - 7, 6.5, Math.PI, 0); cx.stroke();
     }
     if (t.terrain === "desert" && !t.feature && beau) {
-      // dune ridges: light crest over shadow
+      // Dune ridges: light crest over shadow, placed and swept from the tile
+      // hash so a sand sea drifts instead of repeating one stamp per hex.
       cx.lineWidth = 1.6;
-      for (const [dx2, dy2, r2] of [[-5, 3, 9], [7, -4, 7]]) {
+      for (let d = 0; d < 2; d++) {
+        const h1 = hash2(t.pos[0] * 17 + d * 29, t.pos[1] * 19 + d * 7);
+        const h2 = hash2(t.pos[0] * 11 + d * 3, t.pos[1] * 13 + d * 23);
+        const dx2 = -9 + h1 * 18, dy2 = -6 + h2 * 12, r2 = 6.5 + h1 * 3.5;
+        const a0 = Math.PI * (1.06 + h2 * 0.22), a1 = a0 + Math.PI * (0.6 + h1 * 0.2);
         cx.strokeStyle = "#00000022";
-        cx.beginPath(); cx.arc(x + dx2, y + dy2 + 1.2, r2, Math.PI * 1.15, Math.PI * 1.85);
-        cx.stroke();
+        cx.beginPath(); cx.arc(x + dx2, y + dy2 + 1.2, r2, a0, a1); cx.stroke();
         cx.strokeStyle = "#fff3d455";
-        cx.beginPath(); cx.arc(x + dx2, y + dy2, r2, Math.PI * 1.15, Math.PI * 1.85);
-        cx.stroke();
+        cx.beginPath(); cx.arc(x + dx2, y + dy2, r2, a0, a1); cx.stroke();
       }
     }
     if (beau && drawFeatureSprite(t, x, y)) {
@@ -2324,10 +2552,17 @@ function draw() {
       cx.fillStyle = "#5a4632"; cx.fillRect(x - 4, y + 5, 8, 5);
     }
     if (t.resource && (SHOW_ARTIFACT_SITES || !ARTIFACT_RESOURCES.has(t.resource))) {
-      // Civ 6-style white-ringed resource badge
-      cx.fillStyle = "#1d2418d2";
-      cx.beginPath(); cx.arc(x + 10, y + 9, 9.5, 0, 7); cx.fill();
-      cx.strokeStyle = "#f6f2e4e8"; cx.lineWidth = 2; cx.stroke();
+      // Resource badges are terrain information, not actors, so they sit a
+      // step quieter than the unit plates instead of ringing the map in bright
+      // white discs of the same weight. The rim carries the resource class, so
+      // strategics and luxuries separate from ordinary bonuses at a glance.
+      const rc = RULES && RULES.resources && RULES.resources[t.resource]
+        ? RULES.resources[t.resource].class : "bonus";
+      cx.fillStyle = "#161c14cc";
+      cx.beginPath(); cx.arc(x + 10, y + 9, 8.2, 0, 7); cx.fill();
+      cx.strokeStyle = rc === "strategic" ? "#ff9d5cdd"
+        : rc === "luxury" ? "#d9a0f0dd" : "#e6ddbdbb";
+      cx.lineWidth = 1.5; cx.stroke();
       cx.font = "12px sans-serif";
       cx.fillText(RES_ICON[t.resource] || "●", x + 10, y + 9.5);
     }
@@ -2451,29 +2686,29 @@ function draw() {
         cx.fillStyle = "#59aee1"; cx.fillRect(bx, statusY, tw * wallFraction, 3);
         statusY += 4;
       }
-      // keyed off data presence, not seat 0 — spectate frames rotate the
-      // observed seat, and an owner gate makes the bar blink with it
+      // Production lives in the medallion alone — one circle on the plate's
+      // right edge carries both what is being built (glyph) and how far along
+      // it is (ring). The old bar under the plate said the same thing a second
+      // time and crowded the health/wall bars, which are the only strips left.
+      // Keyed off data presence, not seat 0 — spectate frames rotate the
+      // observed seat, and an owner gate makes it blink with them.
       if (c.queue && c.queue.length && c.queue_cost) {
-        cx.fillStyle = "#0d1117"; cx.fillRect(bx, statusY, tw, 3);
-        cx.fillStyle = "#e09050";
-        cx.fillRect(bx, statusY, tw * Math.min(1, c.production / c.queue_cost), 3);
-        // production medallion on the right edge of the plate (civ-style):
-        // glyph = what's being built, ring = progress toward it
         const it = c.queue[0];
-        const mx = bx + tw + 7, my = by + 8, mr = 8.5;
-        cx.fillStyle = "#1c2418ee";
+        const mx = bx + tw + 8, my = by + 8, mr = 9.5;
+        cx.fillStyle = "#1c2418f2";
         cx.beginPath(); cx.arc(mx, my, mr, 0, 7); cx.fill();
-        cx.strokeStyle = "#0d1117"; cx.lineWidth = 2.2;
+        cx.strokeStyle = "#0d1117"; cx.lineWidth = 2.6;   // unfilled track
         cx.beginPath(); cx.arc(mx, my, mr, 0, 7); cx.stroke();
         const frac = Math.max(0, Math.min(1, c.production / c.queue_cost));
         if (frac > 0) {
-          cx.strokeStyle = "#e09050";
+          cx.strokeStyle = "#e09050"; cx.lineCap = "round";
           cx.beginPath();
           cx.arc(mx, my, mr, -Math.PI / 2, -Math.PI / 2 + frac * 2 * Math.PI);
           cx.stroke();
+          cx.lineCap = "butt";
         }
         cx.fillStyle = it.district ? (DISTRICT_COLOR[it.district] || "#f0ead8") : "#f0ead8";
-        cx.font = "9px sans-serif";
+        cx.font = "10px 'Segoe UI Symbol', 'Segoe UI Emoji', sans-serif";
         cx.fillText(prodGlyph(it), mx, my + 0.5);
       }
     }
@@ -2499,9 +2734,30 @@ function draw() {
       x = from[0] + (to[0] - from[0]) * local;
       y = from[1] + (to[1] - from[1]) * local
         - Math.abs(Math.sin(local * Math.PI)) * 2.4; // little hops
-      mv.x = x; mv.y = y;
+      mv.x = x; mv.y = y; mv.e = e;
       moving = true;
       if (e >= 1) anim.moves.delete(u.id);
+    }
+    // A comet tail behind anything on the move. Watching a turn resolve, the
+    // eye can otherwise only catch whichever unit it happened to be pointed
+    // at; a trail in the owner's color says who went where after the fact, and
+    // swells then fades over the step so it never becomes permanent clutter.
+    if (moving) {
+      const c = pcol(u.owner);
+      const g2 = cx.createLinearGradient(mv.sx, mv.sy, x, y);
+      g2.addColorStop(0, c + "00");
+      g2.addColorStop(1, c + "e0");
+      const gk = cx.createLinearGradient(mv.sx, mv.sy, x, y);
+      gk.addColorStop(0, "#0d111700");
+      gk.addColorStop(1, "#0d1117b0");
+      cx.save();
+      cx.globalAlpha = 0.75 * Math.sin(mv.e * Math.PI);
+      cx.lineCap = "round";
+      cx.strokeStyle = gk; cx.lineWidth = 5.4;   // casing, so it reads on sand
+      cx.beginPath(); cx.moveTo(mv.sx, mv.sy + 7); cx.lineTo(x, y + 7); cx.stroke();
+      cx.strokeStyle = g2; cx.lineWidth = 3;
+      cx.beginPath(); cx.moveTo(mv.sx, mv.sy + 7); cx.lineTo(x, y + 7); cx.stroke();
+      cx.restore();
     }
     if (anim.strike && anim.strike.id === u.id) {
       const st2 = anim.strike;
@@ -2513,16 +2769,25 @@ function draw() {
     }
     const rr = 10.5;
     if (beau) {
-      cx.fillStyle = "#00000035";
-      cx.beginPath(); cx.ellipse(x, y + 8.5, 9, 3.6, 0, 0, 7); cx.fill();
+      drawUnitBase(u, x, y);
       drawUnitChar(u, x, y, now, moving);
+      drawUnitBadge(u, x, y);
       if (u.fortified) {
-        cx.strokeStyle = "#f4f8ffbb"; cx.lineWidth = 2;
-        cx.beginPath(); cx.arc(x, y - 1, rr + 2, Math.PI * 0.75, Math.PI * 0.25);
-        cx.stroke();
+        // A compact shield at the shoulder. The old ring was wider than the
+        // unit itself and read as a selection highlight rather than a state.
+        const sx = x + 8.6, sy = y - 6.5;
+        cx.beginPath();
+        cx.moveTo(sx - 3.5, sy - 4.2); cx.lineTo(sx + 3.5, sy - 4.2);
+        cx.lineTo(sx + 3.5, sy + 0.5);
+        cx.quadraticCurveTo(sx, sy + 5.2, sx - 3.5, sy + 0.5);
+        cx.closePath();
+        cx.fillStyle = "#dee7f4ee"; cx.fill();
+        cx.strokeStyle = "#10151d"; cx.lineWidth = 1.2; cx.stroke();
       }
     } else {
       const civ = (u.type === "settler" || u.type === "builder");
+      // spent units recede so the ones that can still act carry the eye
+      cx.globalAlpha = (u.moves_left !== undefined && u.moves_left <= 0) ? 0.62 : 1;
       cx.save();
       cx.shadowColor = "#000a"; cx.shadowBlur = 5; cx.shadowOffsetY = 2;
       cx.fillStyle = pcol(u.owner);
@@ -2537,9 +2802,11 @@ function draw() {
       if (civ) cx.roundRect(x - rr, y - rr, rr * 2, rr * 2, 5);
       else cx.arc(x, y, rr, 0, 7);
       cx.stroke();
-      cx.fillStyle = "#10151d"; cx.font = "11px 'Segoe UI Symbol', sans-serif";
+      cx.fillStyle = "#10151d";
+      cx.font = "11px 'Segoe UI Symbol', 'Segoe UI Emoji', sans-serif";
       cx.fillText(u.embarked ? "⛵" : (UNIT_ICON[u.type] || u.type[0].toUpperCase()),
                   x, y + 0.5);
+      cx.globalAlpha = 1;
     }
     // chunky health bar — sized against zoom so it stays readable far out
     if (u.hp < 100) {
@@ -2804,6 +3071,18 @@ function drawPlayerHud() {
         : p.friend ? "Declared Friend"
         : "Neutral standing";
       const relationSummary = strategyText ? `${strategyText} · ${relation}` : relation;
+      // A leader's agenda is public once you have met them, and so is roughly
+      // how they feel about you. The glyph is the quick read; the tooltip
+      // says which agenda is doing the judging.
+      const opinion = +p.opinion_of_me || 0;
+      const stance = opinion >= 15 ? "approves" : opinion <= -15 ? "disapproves" : "";
+      const agendaGlyph = p.id === acting && !SPEC ? ""
+        : stance === "approves" ? `<span class="agenda-mark up" title="Approves of you">▲</span>`
+        : stance === "disapproves" ? `<span class="agenda-mark down" title="Disapproves of you">▼</span>`
+        : "";
+      const agendaText = p.agenda
+        ? ` · ${p.agenda.name}${stance ? ` (${stance} of you)` : ""}: ${p.agenda.description}`
+        : "";
       const strategyLabel = strategy
         ? `<span class="ai-plan ${strategy}">${titleCase(strategy)}</span> plan · `
         : "";
@@ -2822,10 +3101,10 @@ function drawPlayerHud() {
         ["score", "SCORE", p.score, `Score: ${compactStat(p.score)} · rank ${rank}`],
       ];
       return `<button class="diplomacy-card ${stateClass}" style="--civ:${color}" onclick="spectatePlayer(${p.id})" ` +
-        `title="Watch ${p.civ} through its fog of war · ${relationSummary}" aria-label="Watch ${p.civ}, rank ${rank}, ${relationSummary}">` +
+        `title="Watch ${p.civ} through its fog of war · ${relationSummary}${agendaText}" aria-label="Watch ${p.civ}, rank ${rank}, ${relationSummary}">` +
         `<span class="leader-medallion">${initial}</span>` +
         `<span class="diplomacy-identity"><span class="diplomacy-name"><span class="diplomacy-rank">#${rank}</span>${p.id === acting && SPEC ? "◉ " : ""}${p.civ}</span>` +
-        `<span class="diplomacy-leader">${leader} · ${strategyLabel}${relation}</span></span>` +
+        `<span class="diplomacy-leader">${leader}${agendaGlyph} · ${strategyLabel}${relation}</span></span>` +
         `<span class="diplomacy-stats">` + stats.map(([kind, shortLabel, value, label]) =>
           `<span class="ribbon-stat ${kind}" title="${label}"><b>${compactStat(value)}</b><em>${shortLabel}</em></span>`
         ).join("") + `</span></button>`;

@@ -174,6 +174,7 @@ pub fn validate(rules: &Rules) -> Vec<Finding> {
     terrain_and_improvements(&mut check);
     politics(&mut check);
     people(&mut check);
+    agendas(&mut check);
     setup(&mut check);
 
     let waivers = waivers();
@@ -571,6 +572,14 @@ fn people(check: &mut Check) {
         if spec.ability.is_empty() {
             check.warn(&subject, "has no signature ability");
         }
+        match &spec.agenda {
+            None => check.warn(&subject, "has no historical agenda"),
+            Some(agenda) if !check.rules.agendas.contains_key(agenda) => check.error(
+                &subject,
+                format!("agenda names {agenda:?}, which is not a known agenda"),
+            ),
+            Some(_) => {}
+        }
         if let Some(unit) = &spec.unique_unit {
             match units.get(unit) {
                 None => check.error(
@@ -583,6 +592,42 @@ fn people(check: &mut Check) {
                 ),
                 Some(_) => {}
             }
+        }
+    }
+}
+
+/// Agendas: every measure needs an engine handler, or the leader silently
+/// holds no opinion at all.
+fn agendas(check: &mut Check) {
+    const MEASURES: [&str; 8] = [
+        "territory",
+        "military",
+        "wonders",
+        "districts_per_city",
+        "city_state_rivalry",
+        "loyalty_to_friends",
+        "shared_luxuries",
+        "trustworthiness",
+    ];
+    for (id, spec) in &check.rules.agendas.clone() {
+        let subject = format!("agendas/{id}");
+        if spec.name.is_empty() {
+            check.error(&subject, "has no display name");
+        }
+        if !MEASURES.contains(&spec.measure.as_str()) {
+            check.error(
+                &subject,
+                format!("measure {:?} has no engine handler", spec.measure),
+            );
+        }
+        if !matches!(spec.approves_of.as_str(), "more" | "less") {
+            check.error(
+                &subject,
+                format!("approves_of {:?} is not more or less", spec.approves_of),
+            );
+        }
+        if spec.description.is_empty() {
+            check.warn(&subject, "has no description for the player to read");
         }
     }
 }

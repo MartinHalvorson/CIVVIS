@@ -32,7 +32,8 @@
     },
     "ADJUST_PLAYER_STRENGTH_MODIFIER": {
       "status": "implemented",
-      "note": "Combat Strength modifiers execute from promotions, policy cards, governments, city-state Envoys and wonders (game.rs combat_strength)."
+      "verified": true,
+      "note": "Verified row by row. All 48 promotion Combat Strength amounts CIVVIS models match the shipped values exactly, under CIVVIS' own semantic effect names. The Giant Death Robot's four tech upgrades were attached to the wrong nodes: Advanced Power Cells ships the Particle Beam Siege Cannon and Cybernetics Enhanced Mobility, while CIVVIS had the movement on Advanced Power Cells and invented a healing upgrade on Cybernetics that no shipped row grants. Now corrected. The remaining rows are unit abilities for leaders and city-states outside CIVVIS' roster."
     },
     "ADJUST_UNIT_MOVEMENT": {
       "status": "implemented",
@@ -66,7 +67,8 @@
     },
     "ADJUST_GREAT_PERSON_POINTS": {
       "status": "implemented",
-      "note": "GPP from districts, buildings, policies and wonders; audited at zero divergence by the GreatPeople table."
+      "verified": true,
+      "note": "Verified row by row, and it found three wrong policy cards. Laissez-Faire is +4 Great Merchant empire-wide plus 2 per Bank, 4 per Stock Exchange, 4 Great Admiral per Seaport and 2 per Shipyard; Nobel Prize is +4 Great Scientist plus 2 per University, 4 per Research Lab, 2 Great Engineer per Factory and 4 per Power Plant; Military Organization was missing its flat +4 Great General. CIVVIS had collapsed the first two into one flat number per building tier. Strategos, Inspiration, Revelation, Literary Tradition, Navigation, Traveling Merchants, Frescoes, Invention and Symphonies were already exact. Divine Spark and the Commemoration/Zhangye Danxia rows are pantheon and content scope."
     },
     "ADJUST_CITY_TOURISM": {
       "status": "implemented",
@@ -119,15 +121,18 @@
     },
     "ADJUST_UNIT_TAG_ERA_PRODUCTION": {
       "status": "implemented",
-      "note": "Policy cards granting Production toward a unit class of an era; the dominant policy-card shape."
+      "verified": true,
+      "note": "Verified row by row. The amounts and class groupings were already right, but the effect's whole point is the era window and CIVVIS ignored it: Agoge boosted a Modern Infantry as readily as a Warrior, and every one of the nine cards stacked across all nine eras. Each card now carries its shipped window -- Agoge 0-1, Feudal Contract 2-3, Grande Armee 4-5, Military First 6-7, Chivalry 0-4, Lightning Warfare 5-7, Defense of the Motherland 5-7, Strategic Air Force 6-7, International Waters 0-7 -- checked against the era of the node that unlocks the unit. Letters of Marque, Patriotic War and Finest Hour are cards CIVVIS does not carry."
     },
     "ADJUST_CITY_YIELD_MODIFIER": {
       "status": "implemented",
-      "note": "Percentage city yield modifiers from buildings, policies and governments."
+      "verified": true,
+      "note": "Verified row by row for the wonders, policies and governments CIVVIS models. Amundsen-Scott, Broadway, Casa de Contratacion and Kilwa Kisiwani carry their shipped percentages; Colonial Taxes was missing the +10% Production that accompanies its +25% Gold on foreign continents, now applied. Communism and Corporate Libertarianism yields, Disinformation Campaign and the Great Work rows remain content or systems CIVVIS scopes differently; POLICY_INQUISITION belongs to a game mode outside the baseline."
     },
     "GRANT_UNIT_IN_CITY": {
       "status": "implemented",
-      "note": "Free units from wonders, buildings and pantheons."
+      "verified": true,
+      "note": "Verified row by row against the wonders, beliefs and buildings CIVVIS models. Colossus, Pyramids, Statue of Zeus, Kotoku-in, Mahabodhi Temple, Meenakshi Temple, Fertility Rites, Religious Settlements and the tribal-village grants all execute with the shipped counts. The Statue of Liberty's two free Settlers were missing and are now granted. Remaining rows are leader traits, Government Plaza Spy/Builder grants and a Commemoration Giant Death Robot -- content CIVVIS does not model."
     },
     "GRANT_YIELD": {
       "status": "implemented",
