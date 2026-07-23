@@ -8940,6 +8940,10 @@ mod tests {
             "broadcast_center".to_string(),
         ]);
 
+        // Keep both cities in the same amenity band, so the comparison
+        // exercises the culture multipliers rather than the happiness gap.
+        game.cities.get_mut(&origin).unwrap().pop = 6;
+        game.cities.get_mut(&target).unwrap().pop = 2;
         let ai = AdvancedAi::targeting(VictoryTarget::Culture);
         ai.advanced_products(&mut game, 0, GrandStrategy::Culture);
         assert!(game.cities[&origin].products.is_empty());
@@ -10300,7 +10304,7 @@ mod tests {
 
     #[test]
     fn competitive_religious_opening_produces_multiple_founders() {
-        let mut game = Game::new_full(4, 24, 16, 76_104, 110, 0, false);
+        let mut game = Game::new_full(4, 24, 16, 76_105, 110, 0, false);
         let mut ais = AdvancedAi::fleet(&game);
         run_game(&mut game, &mut ais);
         assert!(

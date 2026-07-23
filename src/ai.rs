@@ -5371,7 +5371,27 @@ mod tests {
         barb.pos = open;
         let bid = barb.id;
         g.units.insert(bid, barb);
-        // Round-trip to rebuild occupancy after the manual insert.
+        // The staged raider must be the only Barbarian in reach: organic
+        // camp garrisons on the generated map would steal the target pick.
+        let strays: Vec<u32> = g
+            .units
+            .values()
+            .filter(|unit| unit.owner == g.barb_pid.unwrap() && unit.id != bid)
+            .map(|unit| unit.id)
+            .collect();
+        for stray in strays {
+            g.units.remove(&stray);
+        }
+        // Camps are pursuit targets too; the staged fight must be the only one.
+        let camps: Vec<Pos> = g.barb_camps.keys().copied().collect();
+        for camp in camps {
+            g.barb_camps.remove(&camp);
+            let tile = g.map.tiles.get_mut(&camp).unwrap();
+            if tile.improvement.as_deref() == Some("barbarian_camp") {
+                tile.improvement = None;
+            }
+        }
+        // Round-trip to rebuild occupancy after the manual inserts.
         let snapshot = serde_json::to_value(&g).unwrap();
         let g: Game = serde_json::from_value(snapshot).unwrap();
         (g, warrior, bid)
