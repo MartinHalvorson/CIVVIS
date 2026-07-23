@@ -827,26 +827,28 @@ impl AdvancedAi {
                     .cmp(&right.1.progress)
                     .then_with(|| right.0.cmp(&left.0))
             })?;
-        // Religious progress advances in whole-civilization steps.  On a
-        // four-player map the previous generic 78% threshold could never see
-        // the dangerous 3/4 state (75%); the next conversion simply ended the
-        // game.  Treat a founder controlling at least two civilizations and
-        // needing only one more as an immediate interrupt.
-        let (religious_warning, religious_match_point) = if pressure.strategy
-            == GrandStrategy::Religion
-        {
-            let (converted, living) = self.religious_conversion_tally(g, rival);
-            (
-                converted >= 2 && converted < living,
-                converted >= 2 && converted < living && converted + 1 >= living,
-            )
-        } else {
-            (false, false)
-        };
-        if !religious_match_point
-            && ((!religious_warning && pressure.progress < 78)
-                || pressure.progress < own_progress + 15)
-        {
+        // Religious progress advances in whole-civilization jumps, and a
+        // defender needs time to produce and route religious counters. Start
+        // reacting with two holdouts left when the rival also leads our own
+        // race, then treat one remaining holdout as an unconditional match
+        // point: a slower "close" victory must not suppress that interrupt.
+        if pressure.strategy == GrandStrategy::Religion {
+            let living = g
+                .players
+                .iter()
+                .filter(|player| player.alive && !player.is_minor && !player.is_barbarian)
+                .count()
+                .max(1) as i32;
+            let match_point = 100 * living.saturating_sub(1) / living;
+            let early_warning = (100 * living.saturating_sub(2) / living)
+                .max(50)
+                .min(match_point);
+            if pressure.progress < early_warning
+                || (pressure.progress < match_point && pressure.progress < own_progress + 15)
+            {
+                return None;
+            }
+        } else if pressure.progress < 78 || pressure.progress < own_progress + 15 {
             return None;
         }
         let counter = match pressure.strategy {
@@ -3553,8 +3555,16 @@ impl AdvancedAi {
                 continue;
             };
             let price = spec.cost * 2.0;
-            let reserve = if match_point_defense { 0.0 } else { 80.0 };
-            if g.players[pid].faith < price + reserve {
+            // The ordinary buffer is useful while safely building toward a
+            // victory, but it must not block the last affordable defender at
+            // match point or when one of our cities is already losing its
+            // religious majority.
+            let reserve = if match_point_defense || home_under_pressure {
+                0.0
+            } else {
+                80.0
+            };
+            if g.players[pid].faith + f64::EPSILON < price + reserve {
                 continue;
             }
             let cities = g.player_city_ids(pid);
