@@ -72,7 +72,6 @@ struct ChronicleCity {
     name: String,
     owner: usize,
     pop: i32,
-    pos: Pos,
     occupied_from: Option<usize>,
 }
 
@@ -180,7 +179,10 @@ impl ChronicleSnapshot {
             .values()
             .filter(|unit| game.rules.units[unit.kind.as_str()].class == "military")
             .map(|unit| {
-                combat_owners.entry(unit.pos).or_default().insert(unit.owner);
+                combat_owners
+                    .entry(unit.pos)
+                    .or_default()
+                    .insert(unit.owner);
                 (unit.id, unit.owner)
             })
             .collect();
@@ -209,7 +211,6 @@ impl ChronicleSnapshot {
                             name: city.name.clone(),
                             owner: city.owner,
                             pop: city.pop,
-                            pos: city.pos,
                             occupied_from: city.occupied_from,
                         },
                     )
@@ -304,12 +305,7 @@ impl ChronicleState {
         let wars = game
             .at_war
             .iter()
-            .map(|&(first, second)| {
-                (
-                    (first, second),
-                    ChronicleWar::new(first, second),
-                )
-            })
+            .map(|&(first, second)| ((first, second), ChronicleWar::new(first, second)))
             .collect();
         Self {
             districts: completed_districts(game),
@@ -401,10 +397,7 @@ fn chronicle_world_events(
     new_buildings.sort_by_key(|((city, building), _)| (*city, building.as_str()));
     for ((city_id, building), owner) in new_buildings {
         if chronicle.buildings.insert(building.clone()) {
-            let city = after
-                .cities
-                .get(city_id)
-                .map(|city| city.name.as_str());
+            let city = after.cities.get(city_id).map(|city| city.name.as_str());
             events.push(json!({
                 "type": "building_first", "player": owner,
                 "building": building, "city": city, "turn": turn,
@@ -532,17 +525,14 @@ fn chronicle_world_events(
     }) {
         if let Some(owners) = before.combat_owners.get(&target) {
             targeted_opponents.extend(owners.iter().copied().filter(|owner| {
-                *owner != actor
-                    && active_wars.contains(&chronicle_war_pair(actor, *owner))
+                *owner != actor && active_wars.contains(&chronicle_war_pair(actor, *owner))
             }));
         }
     }
     let enemy_losers: BTreeSet<_> = lost_units
         .keys()
         .copied()
-        .filter(|owner| {
-            *owner != actor && active_wars.contains(&chronicle_war_pair(actor, *owner))
-        })
+        .filter(|owner| *owner != actor && active_wars.contains(&chronicle_war_pair(actor, *owner)))
         .collect();
     let actor_opponent = if targeted_opponents.len() == 1 {
         targeted_opponents.first().copied()
@@ -980,13 +970,8 @@ impl Session {
         let before = ChronicleSnapshot::capture(&self.game);
         let (player, actions) = self.step();
         let after = ChronicleSnapshot::capture(&self.game);
-        let world_events = chronicle_world_events(
-            &before,
-            &after,
-            player,
-            &actions,
-            &mut self.chronicle,
-        );
+        let world_events =
+            chronicle_world_events(&before, &after, player, &actions, &mut self.chronicle);
         SpectatorStep {
             player,
             actions,
