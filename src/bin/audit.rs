@@ -39,6 +39,31 @@ fn negotiated_war_ended_early(war: &WarRecord) -> bool {
         && ended.saturating_sub(war.started) < WAR_MIN_TURNS
 }
 
+/// Only negotiated peace creates the treaty whose cooldown this audit checks.
+/// Emergency coalitions can compel two members to stop fighting, and conquest
+/// can close a ledger record too; neither is a peace agreement between the
+/// pair, so a later war must not be reported as violating a treaty that never
+/// existed.
+fn redeclared_inside_peace_treaty(previous: &WarRecord, next: &WarRecord) -> bool {
+    let previous_pair = (
+        previous.aggressor.min(previous.defender),
+        previous.aggressor.max(previous.defender),
+    );
+    let next_pair = (
+        next.aggressor.min(next.defender),
+        next.aggressor.max(next.defender),
+    );
+    let Some(ended) = previous.ended else {
+        return false;
+    };
+    previous_pair == next_pair
+        && previous
+            .highlights
+            .last()
+            .is_some_and(|highlight| highlight.kind == "peace")
+        && next.started.saturating_sub(ended) < WAR_MIN_TURNS
+}
+
 fn rapid_recapture_window(war: &WarRecord) -> Option<(String, u32, u32)> {
     let mut captures: BTreeMap<String, Vec<u32>> = BTreeMap::new();
     for highlight in &war.highlights {
@@ -133,11 +158,14 @@ fn stalled_settler_context(g: &Game, id: u32) -> String {
 
 fn idle_city_context(g: &Game, id: u32) -> String {
     let city = &g.cities[&id];
+    let player = &g.players[city.owner];
     let producible = g.producible_items(city.owner, id);
     let districts: Vec<_> = city.districts.keys().cloned().collect();
     format!(
-        "; pop={}, districts={districts:?}, buildings={}, producible={} {producible:?}",
+        "; pop={}, Gold={:.0}, GPT={:.1}, districts={districts:?}, buildings={}, producible={} {producible:?}",
         city.pop,
+        player.gold,
+        player.gold_per_turn,
         city.buildings.len(),
         producible.len(),
     )
@@ -333,7 +361,7 @@ fn audit_result(g: &Game, found: &mut Findings) {
     // hold that: a war runs ten turns before it can be settled, and the peace
     // binds for ten more. A record that breaks either means the log is filling
     // with fragments of the same war again.
-    let mut previous: BTreeMap<(usize, usize), u32> = BTreeMap::new();
+    let mut previous: BTreeMap<(usize, usize), &WarRecord> = BTreeMap::new();
     for war in &g.concluded_wars {
         let key = (war.aggressor.min(war.defender), war.aggressor.max(war.defender));
         let Some(ended) = war.ended else { continue };
@@ -350,8 +378,9 @@ fn audit_result(g: &Game, found: &mut Findings) {
                 ),
             );
         }
-        if let Some(last) = previous.insert(key, ended) {
-            if war.started.saturating_sub(last) < 10 {
+        if let Some(previous_war) = previous.insert(key, war) {
+            if redeclared_inside_peace_treaty(previous_war, war) {
+                let last = previous_war.ended.unwrap_or_default();
                 found.violation(
                     "the same pair re-declared inside the peace treaty",
                     format!(
@@ -493,7 +522,10 @@ mod tests {
 
     use civvis::game::{Item, WarHighlight, WarRecord};
 
-    use super::{bounded_minor_idle, negotiated_war_ended_early, rapid_recapture_window};
+    use super::{
+        bounded_minor_idle, negotiated_war_ended_early, rapid_recapture_window,
+        redeclared_inside_peace_treaty,
+    };
 
     fn concluded_war(kind: &str) -> WarRecord {
         WarRecord {
@@ -526,6 +558,27 @@ mod tests {
         assert!(negotiated_war_ended_early(&concluded_war("peace")));
         assert!(!negotiated_war_ended_early(&concluded_war("conquest")));
         assert!(!negotiated_war_ended_early(&concluded_war("coalition")));
+    }
+
+    #[test]
+    fn the_treaty_cooldown_applies_only_after_negotiated_peace() {
+        let mut next = concluded_war("peace");
+        next.started = 25;
+        next.ended = Some(35);
+        next.highlights[0].turn = 25;
+
+        assert!(redeclared_inside_peace_treaty(
+            &concluded_war("peace"),
+            &next
+        ));
+        assert!(!redeclared_inside_peace_treaty(
+            &concluded_war("coalition"),
+            &next
+        ));
+        assert!(!redeclared_inside_peace_treaty(
+            &concluded_war("conquest"),
+            &next
+        ));
     }
 
     #[test]

@@ -31514,6 +31514,13 @@ impl Game {
                 if attacker == defender || self.same_team(attacker, defender) {
                     continue;
                 }
+                // A defensive pact can widen the declared war, but it cannot
+                // make one of those derived fronts violate a peace treaty.
+                // The principal declaration was checked above; every expanded
+                // attacker/ally pair needs the same protection independently.
+                if self.peace_treaty_until(attacker, defender).is_some() {
+                    continue;
+                }
                 let front = pair(attacker, defender);
                 let opened = self.at_war.insert(front);
                 self.cancel_routes_with(attacker, defender);
@@ -46600,6 +46607,37 @@ mod district_mechanics {
         );
         assert_eq!(game.wars.len(), 1);
         assert_eq!(game.wars[&pair(0, 1)].started, 40);
+    }
+
+    #[test]
+    fn defensive_alliances_do_not_reopen_a_front_inside_its_peace_treaty() {
+        let mut game = emergency_game_with_capitals(3, 5_506, 300);
+        game.turn = 20;
+        game.do_declare_war(0, 1).unwrap();
+        game.turn = 30;
+        game.do_make_peace(0, 1).unwrap();
+
+        let alliance = AllianceState {
+            kind: "military".to_string(),
+            points: 0.0,
+            level: 1,
+            ends: 80,
+        };
+        game.players[1].alliances.insert(2, alliance.clone());
+        game.players[2].alliances.insert(1, alliance);
+
+        game.turn = 31;
+        game.do_declare_war(0, 2).unwrap();
+        assert!(game.is_at_war(0, 2));
+        assert!(game.peace_treaty_until(0, 1).is_some());
+        assert!(
+            !game.is_at_war(0, 1),
+            "honoring an ally cannot break the treaty it signed last turn"
+        );
+        assert!(
+            !game.wars.contains_key(&pair(0, 1)),
+            "the protected pair must not open a second war record"
+        );
     }
 
     /// A war can end without anyone signing anything. The ledger has to say so

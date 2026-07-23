@@ -2998,6 +2998,72 @@ impl BasicAi {
             .map(|(_, _, _, item)| item)
     }
 
+    /// A deficit city that cannot build direct Gold infrastructure must still
+    /// use its Production without making the deficit worse. The recovery pass
+    /// used to return `None` in that case and bypass every ordinary fallback,
+    /// leaving otherwise productive cities idle for dozens of turns. Prefer a
+    /// useful zero-maintenance building, then a repeatable district project;
+    /// both convert the turn into value without adding unit/building upkeep.
+    fn upkeep_free_recovery_item(&self, g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        let building = g
+            .rules
+            .buildings
+            .iter()
+            .filter(|(_, spec)| !spec.wonder && spec.maintenance <= f64::EPSILON)
+            .filter_map(|(name, spec)| {
+                let item = Item::Building {
+                    building: name.clone(),
+                };
+                if !g.can_produce(pid, cid, &item) {
+                    return None;
+                }
+                let value = spec.yields.production * 5.0
+                    + spec.yields.food * 3.0
+                    + spec.yields.gold * 3.0
+                    + spec.yields.science * 2.0
+                    + spec.yields.culture * 2.0
+                    + spec.yields.faith
+                    + spec.housing * 3.0
+                    + spec.amenity.max(0.0) * 4.0;
+                (value > 0.0).then_some((
+                    value / spec.cost.max(1.0),
+                    value,
+                    std::cmp::Reverse(name.clone()),
+                    item,
+                ))
+            })
+            .max_by(|left, right| {
+                left.0
+                    .total_cmp(&right.0)
+                    .then_with(|| left.1.total_cmp(&right.1))
+                    .then(left.2.cmp(&right.2))
+            })
+            .map(|(_, _, _, item)| item);
+        if building.is_some() {
+            return building;
+        }
+
+        g.rules
+            .projects
+            .iter()
+            .filter(|(project, spec)| {
+                spec.repeatable
+                    && !matches!(
+                        project.as_str(),
+                        "lagrange_laser_station" | "terrestrial_laser_station"
+                    )
+            })
+            .map(|(project, _)| Item::Project {
+                project: project.clone(),
+            })
+            .filter(|item| g.can_produce(pid, cid, item))
+            .min_by(|left, right| {
+                g.item_cost_for_city(pid, cid, left)
+                    .total_cmp(&g.item_cost_for_city(pid, cid, right))
+                    .then_with(|| format!("{left:?}").cmp(&format!("{right:?}")))
+            })
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn pick_item(
         &self,
@@ -3013,6 +3079,32 @@ impl BasicAi {
         melee: usize,
         ranged: usize,
     ) -> Option<Item> {
+        // Repairs restore yields and unlock every building/project in the
+        // damaged district, so they outrank adding new infrastructure. Basic
+        // and city-state governors previously ignored `Item::Repair`
+        // entirely: Mohenjo-Daro left three districts and their buildings
+        // pillaged while its queue remained empty for the rest of the game.
+        let repair_rank = |item: &Item| match item {
+            Item::Repair { repair, .. } if repair == "district" => 0,
+            Item::Repair { .. } => 1,
+            _ => 2,
+        };
+        if let Some(repair) = g
+            .producible_items(pid, cid)
+            .into_iter()
+            .filter(|item| matches!(item, Item::Repair { .. }))
+            .min_by(|left, right| {
+                repair_rank(left)
+                    .cmp(&repair_rank(right))
+                    .then_with(|| {
+                        g.item_cost_for_city(pid, cid, left)
+                            .total_cmp(&g.item_cost_for_city(pid, cid, right))
+                    })
+                    .then_with(|| format!("{left:?}").cmp(&format!("{right:?}")))
+            })
+        {
+            return Some(repair);
+        }
         let city_pop = g.cities[&cid].pop;
         let at_major_war = g.players.iter().any(|player| {
             player.id != pid
@@ -3028,7 +3120,9 @@ impl BasicAi {
             && g.players[pid].gold < recovery_reserve;
         let emergency_defense = at_major_war && military < n_cities.max(1);
         if economic_recovery && !emergency_defense {
-            return self.economic_recovery_item(g, pid, cid, traders);
+            return self
+                .economic_recovery_item(g, pid, cid, traders)
+                .or_else(|| self.upkeep_free_recovery_item(g, pid, cid));
         }
         let can_add_military = !self.minor || military < Self::minor_military_budget(g, pid);
         if can_add_military && (military as f64) < self.w.mil_per_city * n_cities as f64 {
@@ -5597,6 +5691,50 @@ mod tests {
     }
 
     #[test]
+    fn city_state_governors_repair_pillaged_districts_before_new_production() {
+        let mut g = Game::new_full(1, 24, 16, 91_769, 120, 0, false);
+        let settler = g
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| g.units[unit].kind == "settler")
+            .unwrap();
+        g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        g.players[0].is_minor = true;
+        g.players[0].techs.insert("writing".to_string());
+        let city = g.player_city_ids(0)[0];
+        let center = g.cities[&city].pos;
+        let campus = g.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != center)
+            .unwrap();
+        {
+            let tile = g.map.tiles.get_mut(&campus).unwrap();
+            tile.district = Some("campus".to_string());
+            tile.pillaged = true;
+        }
+        let developed = g.cities.get_mut(&city).unwrap();
+        developed
+            .districts
+            .insert("campus".to_string(), campus);
+        developed.buildings.push("library".to_string());
+        developed
+            .pillaged_buildings
+            .insert("library".to_string());
+
+        let mut ai = BasicAi::new();
+        ai.minor = true;
+        let choice = ai
+            .pick_item(&g, 0, city, 1, 0, 1, 0, 0, 3, 2, 1)
+            .expect("a damaged city-state has a repair to queue");
+        assert!(matches!(
+            choice,
+            Item::Repair { repair, pos } if repair == "district" && pos == campus
+        ));
+    }
+
+    #[test]
     fn developed_city_states_run_district_projects_instead_of_idling() {
         let mut g = Game::new_full(1, 24, 16, 91_770, 120, 0, false);
         let settler = g
@@ -7110,7 +7248,7 @@ mod tests {
     }
 
     #[test]
-    fn deficit_empire_without_a_recovery_build_does_not_add_upkeep() {
+    fn deficit_empire_without_a_gold_build_keeps_producing_without_new_upkeep() {
         let mut g = Game::new_full(1, 20, 14, 324, 60, 0, false);
         let settler = g
             .player_unit_ids(0)
@@ -7118,14 +7256,23 @@ mod tests {
             .find(|id| g.units[id].kind == "settler")
             .unwrap();
         g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        g.players[0].techs.insert("pottery".to_string());
         g.players[0].gold = 0.0;
         g.players[0].gold_per_turn = -4.0;
         let cid = g.player_city_ids(0)[0];
 
-        assert_eq!(
-            BasicAi::new().pick_item(&g, 0, cid, 1, 0, 0, 0, 0, 6, 3, 3),
-            None
-        );
+        let item = BasicAi::new()
+            .pick_item(&g, 0, cid, 1, 0, 0, 0, 0, 6, 3, 3)
+            .expect("a deficit city must not leave its Production idle");
+        match &item {
+            Item::Building { building } => {
+                assert!(g.rules.buildings[building].maintenance <= f64::EPSILON)
+            }
+            Item::Project { project } => assert!(g.rules.projects[project].repeatable),
+            other => panic!("recovery fallback added upkeep: {other:?}"),
+        }
+        g.apply(0, &Action::Produce { city: cid, item }).unwrap();
+        assert!(!g.cities[&cid].queue.is_empty());
     }
 
     #[test]
