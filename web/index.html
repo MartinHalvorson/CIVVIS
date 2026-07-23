@@ -3049,14 +3049,26 @@ function draw() {
       const [c1, c2] = EDGE_CORNERS[i];
       const [ax, ay] = corner(x, y, S - 0.7, c1);
       const [bx, by] = corner(x, y, S - 0.7, c2);
-      riverSegments.push([ax, ay, bx, by]);
+      // Bow each reach off its chord. Rivers are the one thing on the map that
+      // is literally flow, and they were the most rigid line on it — six exact
+      // straights per hex, welded end to end, reading as pipework rather than
+      // water. Endpoints stay exact so reaches still meet at shared corners;
+      // only the middle wanders, and which way it wanders comes off the tile
+      // hash, so a long river meanders instead of bulging the same way twice.
+      const hv = hash2(t.pos[0] * 41 + i * 7, t.pos[1] * 47 + i * 11);
+      const dx = bx - ax, dy = by - ay;
+      const len = Math.hypot(dx, dy) || 1;
+      const bow = (hv - 0.5) * len * 0.45;
+      riverSegments.push([ax, ay,
+                          (ax + bx) / 2 - (dy / len) * bow,
+                          (ay + by) / 2 + (dx / len) * bow, bx, by]);
     }
   }
   const strokeRivers = (color, width, alpha) => {
     cx.strokeStyle = color; cx.lineWidth = width; cx.globalAlpha = alpha;
     cx.beginPath();
-    for (const [ax, ay, bx, by] of riverSegments) {
-      cx.moveTo(ax, ay); cx.lineTo(bx, by);
+    for (const [ax, ay, cxp, cyp, bx, by] of riverSegments) {
+      cx.moveTo(ax, ay); cx.quadraticCurveTo(cxp, cyp, bx, by);
     }
     cx.stroke();
   };
