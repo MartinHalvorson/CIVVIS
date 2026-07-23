@@ -1120,12 +1120,18 @@ impl Ai for BasicAi {
         self.resolve_city_dispositions(g, pid, false, false);
         if !self.barb {
             self.research(g, pid);
+            // Modernizing the army is the first claim on discretionary Gold.
+            // When this ran after `cities`, the purchase pass repeatedly spent
+            // an affordable upgrade on a Builder, Trader, or building and left
+            // the same Warriors and Slingers behind the treasury floor.
+            Self::upgrade_units(g, pid);
             self.corporations(g, pid);
             self.diplomacy(g, pid);
             self.spies(g, pid);
             self.cities(g, pid);
+        } else {
+            Self::upgrade_units(g, pid);
         }
-        Self::upgrade_units(g, pid);
         self.units(g, pid);
         self.resolve_city_dispositions(g, pid, false, false);
         if g.winner.is_none() && g.current == pid {
@@ -1630,10 +1636,19 @@ impl BasicAi {
                 let emergency_choice = g
                     .emergency_proposal_for_resolution(&resolution.id)
                     .and_then(|proposal| {
-                        if proposal.target == pid {
+                        if Game::emergency_proposal_opposer(proposal) == pid {
                             Some("B:oppose".to_string())
                         } else if proposal.eligible.contains(&pid) {
-                            Some("A:support".to_string())
+                            Some(
+                                if Game::emergency_is_scored_aid(&proposal.kind)
+                                    && g.is_at_war(pid, proposal.target)
+                                {
+                                    "B:oppose"
+                                } else {
+                                    "A:support"
+                                }
+                                .to_string(),
+                            )
                         } else {
                             None
                         }
@@ -1731,6 +1746,43 @@ impl BasicAi {
                         votes,
                     },
                 );
+            }
+        }
+        if g.turn % 5 == pid as u32 % 5 {
+            let reserve = 100.0 + 30.0 * g.player_city_ids(pid).len() as f64;
+            let mut budget = (g.players[pid].gold - reserve).max(0.0).min(25.0);
+            let mut emergencies: Vec<u32> = g
+                .active_emergencies
+                .iter()
+                .filter(|emergency| {
+                    Game::emergency_is_scored_aid(&emergency.kind)
+                        && emergency.ends > g.turn
+                        && emergency.members.contains(&pid)
+                })
+                .map(|emergency| emergency.id)
+                .collect();
+            emergencies.sort_unstable();
+            emergencies.dedup();
+            for emergency in emergencies {
+                let action = g
+                    .legal_actions(pid)
+                    .into_iter()
+                    .filter_map(|action| match action {
+                        Action::SendAid {
+                            emergency: candidate,
+                            gold,
+                        } if candidate == emergency && gold <= budget + f64::EPSILON => {
+                            Some((gold, action))
+                        }
+                        _ => None,
+                    })
+                    .max_by(|left, right| left.0.total_cmp(&right.0));
+                let Some((gold, action)) = action else {
+                    continue;
+                };
+                if g.apply(pid, &action).is_ok() {
+                    budget -= gold;
+                }
             }
         }
         self.bilateral_trade(g, pid);
@@ -2018,15 +2070,14 @@ impl BasicAi {
                     committed_settlers += 1;
                     continue;
                 };
-                if g
-                    .apply(
-                        pid,
-                        &Action::Produce {
-                            city: *cid,
-                            item: item.clone(),
-                        },
-                    )
-                    .is_err()
+                if g.apply(
+                    pid,
+                    &Action::Produce {
+                        city: *cid,
+                        item: item.clone(),
+                    },
+                )
+                .is_err()
                 {
                     committed_settlers += 1;
                     continue;
@@ -2035,9 +2086,7 @@ impl BasicAi {
                 match &item {
                     Item::Unit { unit } if unit == "builder" => builders += 1,
                     Item::Unit { unit } if unit == "trader" => traders += 1,
-                    Item::Unit { unit }
-                        if unit == "battering_ram" || unit == "siege_tower" =>
-                    {
+                    Item::Unit { unit } if unit == "battering_ram" || unit == "siege_tower" => {
                         siege_support += 1
                     }
                     Item::Unit { unit } => {
@@ -2260,6 +2309,107 @@ impl BasicAi {
         }
     }
 
+    fn upgrade_treasury_floor(g: &Game, pid: usize) -> f64 {
+        let at_war = g
+            .players
+            .iter()
+            .any(|p| p.id != pid && p.alive && !p.is_barbarian && g.is_at_war(pid, p.id));
+        if at_war {
+            30.0
+        } else {
+            120.0
+        }
+    }
+
+    /// Price an unlocked upgrade for one formation without requiring it to
+    /// be standing in friendly territory yet. This lets deployed troops know
+    /// whether returning to refit would produce a real upgrade.
+    fn upgrade_quote(g: &Game, pid: usize, uid: u32) -> Option<(String, f64, f64)> {
+        g.unit_upgrade_quote(pid, uid)
+    }
+
+    fn affordable_upgrade(g: &Game, pid: usize, uid: u32) -> Option<(String, f64, f64)> {
+        let quote = Self::upgrade_quote(g, pid, uid)?;
+        (g.players[pid].gold - quote.1 + f64::EPSILON >= Self::upgrade_treasury_floor(g, pid))
+            .then_some(quote)
+    }
+
+    /// Cash protected from ordinary shopping while the next upgrade is being
+    /// saved for, or while its veteran is walking home to refit. Without this
+    /// target, a purchase pass can spend every turn's surplus and make an
+    /// expensive late-game upgrade permanently unaffordable.
+    fn upgrade_savings_reserve(g: &Game, pid: usize) -> f64 {
+        let next = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter_map(|uid| Self::upgrade_quote(g, pid, uid).map(|(_, gold, _)| gold))
+            .min_by(|left, right| left.total_cmp(right));
+        Self::upgrade_treasury_floor(g, pid) + next.unwrap_or(0.0)
+    }
+
+    fn upgrade_territory(g: &Game, pid: usize, position: Pos) -> bool {
+        g.map
+            .get(position)
+            .and_then(|tile| tile.owner_city)
+            .and_then(|city| g.cities.get(&city))
+            .is_some_and(|city| {
+                city.owner == pid
+                    || g.suzerain_of(city.owner) == Some(pid)
+                    || g.are_allied(pid, city.owner)
+            })
+    }
+
+    /// Bring an affordable, upgrade-ready unit back inside friendly borders.
+    /// Gold upgrades are intentionally territorial, but without this refit
+    /// movement a veteran deployed one tile beyond the border could remain an
+    /// Ancient unit for the rest of an otherwise modern game.
+    fn modernization_step(&self, g: &mut Game, pid: usize, uid: u32) -> Option<bool> {
+        let unit = g.units.get(&uid)?;
+        let spec = g.rules.units.get(unit.kind.as_str())?;
+        if spec.class != "military" || Self::affordable_upgrade(g, pid, uid).is_none() {
+            return None;
+        }
+
+        // Normally the turn-start pass catches this case. Keeping it here
+        // makes the invariant robust if another command creates liquidity or
+        // moves a unit into friendly territory during the same AI turn.
+        if g.unit_gold_upgrade_offer(pid, uid).is_some() {
+            return Some(g.apply(pid, &Action::UpgradeUnit { unit: uid }).is_ok());
+        }
+
+        let current = unit.pos;
+        let sea = spec.domain.as_deref() == Some("sea");
+        let air = spec.domain.as_deref() == Some("air");
+        if air {
+            return None;
+        }
+        let refit_tiles: HashSet<Pos> = g
+            .map
+            .tiles
+            .iter()
+            .filter(|(position, tile)| {
+                **position != current
+                    && Self::upgrade_territory(g, pid, **position)
+                    && g.rules.is_water(tile) == sea
+                    && g.unit_can_traverse(uid, **position)
+            })
+            .map(|(position, _)| *position)
+            .collect();
+        let next = g
+            .route_step_to_any(uid, &refit_tiles)
+            .filter(|position| g.can_move(uid, *position))?;
+        Some(
+            g.apply(
+                pid,
+                &Action::Move {
+                    unit: uid,
+                    to: next,
+                },
+            )
+            .is_ok(),
+        )
+    }
+
     /// Modernize the standing army before it moves. An empire that never
     /// spends Gold here fights the Information era with Slingers: production
     /// only ever replaces losses, so the units already on the map are exactly
@@ -2270,11 +2420,7 @@ impl BasicAi {
         if g.players[pid].is_barbarian {
             return;
         }
-        let at_war = g
-            .players
-            .iter()
-            .any(|p| p.id != pid && p.alive && !p.is_barbarian && g.is_at_war(pid, p.id));
-        let floor = if at_war { 30.0 } else { 120.0 };
+        let floor = Self::upgrade_treasury_floor(g, pid);
         loop {
             let mut best: Option<(f64, f64, u32)> = None;
             for uid in g.player_unit_ids(pid) {
@@ -2687,11 +2833,12 @@ impl BasicAi {
             .players
             .iter()
             .any(|p| p.id != pid && p.alive && !p.is_barbarian && g.is_at_war(pid, p.id));
-        let reserve = if at_major_war {
+        let ordinary_reserve = if at_major_war {
             40.0 + 10.0 * n_cities as f64
         } else {
             100.0 + 25.0 * n_cities as f64
         };
+        let reserve = ordinary_reserve.max(Self::upgrade_savings_reserve(g, pid));
         let want_ranged = melee > ranged;
 
         // A threatened empire converts cash into defenders before pursuing
@@ -3303,7 +3450,17 @@ impl BasicAi {
                 let action = g
                     .legal_actions(pid)
                     .into_iter()
-                    .find(|action| matches!(action, Action::CombineUnits { .. }));
+                    .find(|action| match action {
+                        Action::CombineUnits { unit, with } => [unit, with].iter().all(|unit| {
+                            // Consolidating obsolete units first multiplies their
+                            // Gold and strategic-resource refit costs. In the late
+                            // game that can exceed the empire's stockpile cap and
+                            // strand a Warrior Army forever. Modernize both
+                            // constituents before forming the Corps/Army.
+                            g.unit_upgrade_target(pid, &g.units[unit].kind).is_none()
+                        }),
+                        _ => false,
+                    });
                 let Some(action) = action else { break };
                 if g.apply(pid, &action).is_err() {
                     break;
@@ -3498,15 +3655,14 @@ impl BasicAi {
             }
             // A neighbor can still be refused (stacking, ZOC); try the next
             // improving tile before paying for A*.
-            if g
-                .apply(
-                    pid,
-                    &Action::Move {
-                        unit: uid,
-                        to: next,
-                    },
-                )
-                .is_ok()
+            if g.apply(
+                pid,
+                &Action::Move {
+                    unit: uid,
+                    to: next,
+                },
+            )
+            .is_ok()
             {
                 return true;
             }
@@ -3518,15 +3674,14 @@ impl BasicAi {
             Some(p) if g.can_move(uid, p) => p,
             _ => return false,
         };
-        if g
-            .apply(
-                pid,
-                &Action::Move {
-                    unit: uid,
-                    to: next,
-                },
-            )
-            .is_ok()
+        if g.apply(
+            pid,
+            &Action::Move {
+                unit: uid,
+                to: next,
+            },
+        )
+        .is_ok()
         {
             return true;
         }
@@ -3603,12 +3758,13 @@ impl BasicAi {
                 if seen.contains(&next) {
                     continue;
                 }
-                let Some(tile) = g.map.get(next) else { continue };
+                let Some(tile) = g.map.get(next) else {
+                    continue;
+                };
                 if !g.rules.is_passable(tile)
                     || (g.rules.is_water(tile) && !shipbuilding)
                     || (tile.terrain == "ocean" && !cartography)
-                    || g
-                        .city_at(next)
+                    || g.city_at(next)
                         .is_some_and(|city| g.cities[&city].owner != pid)
                 {
                     continue;
@@ -3666,12 +3822,7 @@ impl BasicAi {
             // itself rejects disconnected islands; tying the wider search to
             // Shipbuilding stranded settlers whose only site was farther than
             // the local radius on the same landmass.
-            let global = self.best_reachable_settle_site(
-                g,
-                pid,
-                uid,
-                g.map.width + g.map.height,
-            );
+            let global = self.best_reachable_settle_site(g, pid, uid, g.map.width + g.map.height);
             match (local, global) {
                 (Some(local), Some(global)) if global.1 > local.1 + 4.0 => Some(global),
                 (Some(local), _) => Some(local),
@@ -3779,16 +3930,25 @@ impl BasicAi {
             None => return false,
         };
         let upos = g.units[&uid].pos;
+        let emergency_city = g.religious_emergency_city(pid);
         // Own cities first: reconverting the homeland both consolidates
         // pressure and is the entire job of a defensive adopted-faith unit.
-        let mut targets: Vec<(bool, i32, u32, Pos)> = g
+        let mut targets: Vec<(bool, bool, i32, u32, Pos)> = g
             .cities
             .values()
             .filter(|c| g.city_religion(c) != Some(religion.as_str()) && !g.is_at_war(pid, c.owner))
-            .map(|city| (city.owner != pid, g.wdist(upos, city.pos), city.id, city.pos))
+            .map(|city| {
+                (
+                    Some(city.id) != emergency_city,
+                    city.owner != pid,
+                    g.wdist(upos, city.pos),
+                    city.id,
+                    city.pos,
+                )
+            })
             .collect();
         targets.sort();
-        for (_, _, _, target) in targets {
+        for (_, _, _, _, target) in targets {
             if g.wdist(upos, target) <= 1 {
                 return g.apply(pid, &Action::Spread { unit: uid }).is_ok();
             }
@@ -4574,6 +4734,9 @@ impl BasicAi {
     }
 
     fn military_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
+        if let Some(acted) = self.modernization_step(g, pid, uid) {
+            return acted;
+        }
         if let Some(acted) = self.healing_step(g, pid, uid) {
             return acted;
         }
@@ -4938,13 +5101,13 @@ mod tests {
             tile.hills = false;
         }
 
-        for (resource, expected) in [("iron", "mine"), ("stone", "quarry"), ("wine", "plantation")] {
+        for (resource, expected) in [
+            ("iron", "mine"),
+            ("stone", "quarry"),
+            ("wine", "plantation"),
+        ] {
             g.map.tiles.get_mut(&pos).unwrap().resource = Some(resource.to_string());
-            let options = vec![
-                "farm".to_string(),
-                expected.to_string(),
-                "camp".to_string(),
-            ];
+            let options = vec!["farm".to_string(), expected.to_string(), "camp".to_string()];
             assert_eq!(
                 BasicAi::best_improvement(&g, pos, &options).as_deref(),
                 Some(expected),
@@ -5032,6 +5195,102 @@ mod tests {
 
         assert_eq!(game.units[&slinger].kind, "archer");
         assert_eq!(game.players[0].gold, 120.0);
+    }
+
+    #[test]
+    fn upgrades_spend_the_turns_opening_gold_before_city_purchases() {
+        let mut game = Game::new_full(1, 20, 14, 41_006, 40, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let home = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| game.units_at(*position).is_empty())
+            .unwrap();
+        game.players[0].techs.insert("archery".to_string());
+        // A missing Builder costs 200 Gold and the one-city purchase reserve
+        // is 125. Before the priority fix, that purchase spent this treasury
+        // down to 175 and the 60-Gold Slinger upgrade then missed its 120
+        // reserve by five Gold every turn.
+        game.players[0].gold = 375.0;
+        let slinger = game.spawn_test_unit("slinger", 0, home);
+
+        BasicAi::new().take_turn(&mut game, 0);
+
+        assert_eq!(game.units[&slinger].kind, "archer");
+    }
+
+    #[test]
+    fn deployed_upgrade_ready_units_return_home_and_refit() {
+        let mut game = Game::new_full(1, 20, 14, 41_007, 40, 0, false);
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = "plains".to_string();
+            tile.feature = None;
+            tile.hills = false;
+        }
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let center = game.cities[&city].pos;
+        let deployed = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(position, tile)| {
+                tile.owner_city.is_none()
+                    && game.wdist(center, **position) >= 3
+                    && game.units_at(**position).is_empty()
+            })
+            .min_by_key(|(position, _)| (game.wdist(center, **position), **position))
+            .map(|(position, _)| *position)
+            .unwrap();
+        game.players[0].techs.insert("archery".to_string());
+        game.players[0].gold = 325.0;
+        let slinger = game.spawn_test_unit("slinger", 0, deployed);
+        let ai = BasicAi::new();
+
+        assert!(BasicAi::upgrade_savings_reserve(&game, 0) >= 180.0);
+        assert!(
+            !ai.spend_gold(&mut game, 0, &[city], 0, 0, 0, 2, 1, 1),
+            "ordinary shopping must preserve the cash while this Slinger returns to refit"
+        );
+        assert_eq!(game.players[0].gold, 325.0);
+
+        for _ in 0..8 {
+            BasicAi::upgrade_units(&mut game, 0);
+            if game.units[&slinger].kind == "archer" {
+                break;
+            }
+            while game.units[&slinger].moves_left > 0.0 {
+                if !ai
+                    .modernization_step(&mut game, 0, slinger)
+                    .is_some_and(|acted| acted)
+                {
+                    break;
+                }
+            }
+            let unit = game.units.get_mut(&slinger).unwrap();
+            unit.moves_left = game.rules.units[unit.kind.as_str()].moves as f64;
+            unit.acted = false;
+            unit.moved = false;
+        }
+
+        assert_eq!(game.units[&slinger].kind, "archer");
+        assert!(BasicAi::upgrade_territory(
+            &game,
+            0,
+            game.units[&slinger].pos
+        ));
     }
 
     #[test]
@@ -5285,8 +5544,7 @@ mod tests {
             .into_iter()
             .find(|unit| game.units[unit].kind == "settler")
             .unwrap();
-        game.apply(0, &Action::FoundCity { unit: settler })
-            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
         let city = game.player_city_ids(0)[0];
         game.players[0].techs.insert("astrology".to_string());
         game.cities
@@ -6275,9 +6533,7 @@ mod tests {
             Some(Item::Unit { unit }) if unit == "settler"
         ));
         assert_eq!(
-            game.cities[&city]
-                .production_progress
-                .get("unit:settler"),
+            game.cities[&city].production_progress.get("unit:settler"),
             Some(&42.0),
             "the invested Production should remain banked when the queue is redirected"
         );
@@ -6425,9 +6681,13 @@ mod tests {
             .into_iter()
             .find(|unit| game.units[unit].kind == "settler")
             .unwrap();
-        game
-            .apply(0, &Action::FoundCity { unit: first_settler })
-            .unwrap();
+        game.apply(
+            0,
+            &Action::FoundCity {
+                unit: first_settler,
+            },
+        )
+        .unwrap();
         let first_center = game.cities[&game.player_city_ids(0)[0]].pos;
         let second_center = game
             .map
@@ -6443,9 +6703,13 @@ mod tests {
             .next()
             .expect("map has a second legal city site");
         let second_settler = game.spawn_test_unit("settler", 0, second_center);
-        game
-            .apply(0, &Action::FoundCity { unit: second_settler })
-            .unwrap();
+        game.apply(
+            0,
+            &Action::FoundCity {
+                unit: second_settler,
+            },
+        )
+        .unwrap();
         game.players[0].techs.insert("rocketry".to_string());
         let cities = game.player_city_ids(0);
         for city in &cities {
@@ -6465,15 +6729,14 @@ mod tests {
             &first,
             Item::District { district, .. } if district == "spaceport"
         ));
-        game
-            .apply(
-                0,
-                &Action::Produce {
-                    city: launch_city,
-                    item: first,
-                },
-            )
-            .unwrap();
+        game.apply(
+            0,
+            &Action::Produce {
+                city: launch_city,
+                item: first,
+            },
+        )
+        .unwrap();
 
         let other = cities[1];
         let next = ai.pick_item(&game, 0, other, 2, 2, 2, 2, 1, 10, 5, 5);
@@ -6610,6 +6873,35 @@ mod tests {
             warriors.iter().any(|unit| unit.promotions.len() == 1),
             "the veteran remains in the force"
         );
+    }
+
+    #[test]
+    fn headless_ai_modernizes_obsolete_units_before_forming_corps() {
+        let mut game = Game::new_full(1, 20, 14, 33_001, 30, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let position = game.cities[&game.player_city_ids(0)[0]].pos;
+        for _ in 0..6 {
+            game.spawn_test_unit("warrior", 0, position);
+        }
+        game.players[0].civics.insert("nationalism".to_string());
+        game.players[0].techs.extend([
+            "iron_working".to_string(),
+            "apprenticeship".to_string(),
+            "gunpowder".to_string(),
+        ]);
+
+        BasicAi::new().prepare_unit_formations(&mut game, 0);
+
+        assert!(game
+            .units
+            .values()
+            .filter(|unit| unit.owner == 0 && unit.kind == "warrior")
+            .all(|unit| unit.formation == 0));
     }
 
     #[test]
@@ -6809,7 +7101,12 @@ mod tests {
             .map(|unit| 3 - unit.charges)
             .unwrap_or(3);
         assert!(
-            charges_spent > 0 || visited.iter().collect::<std::collections::BTreeSet<_>>().len() == visited.len(),
+            charges_spent > 0
+                || visited
+                    .iter()
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .len()
+                    == visited.len(),
             "Builder paced without working: {visited:?}"
         );
     }

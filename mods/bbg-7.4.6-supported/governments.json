@@ -1,0 +1,12 @@
+{
+  "communism": {
+    "effects": {
+      "science_pct": null,
+      "governor_production_per_pop": 1
+    },
+    "slots": {
+      "military": 2,
+      "wildcard": 2
+    }
+  }
+}

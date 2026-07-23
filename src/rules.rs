@@ -48,6 +48,26 @@ impl Yields {
     pub fn total(&self) -> f64 {
         self.food + self.production + self.gold + self.science + self.culture + self.faith
     }
+
+    /// Add one named Civ VI yield. Modifier data uses `YIELD_FOOD` while the
+    /// rest of CIVVIS uses `food`; accepting both keeps importers mechanical.
+    pub fn add_named(&mut self, name: &str, amount: f64) -> bool {
+        let name = name
+            .strip_prefix("YIELD_")
+            .or_else(|| name.strip_prefix("yield_"))
+            .unwrap_or(name)
+            .to_ascii_lowercase();
+        match name.as_str() {
+            "food" => self.food += amount,
+            "production" => self.production += amount,
+            "gold" => self.gold += amount,
+            "science" => self.science += amount,
+            "culture" => self.culture += amount,
+            "faith" => self.faith += amount,
+            _ => return false,
+        }
+        true
+    }
 }
 
 fn dtrue() -> bool {
@@ -694,6 +714,11 @@ pub struct CivSpec {
     /// `expansionist`, `science_major_civ`, `aggressive_military` and so on.
     #[serde(default)]
     pub traits: Vec<String>,
+    /// Stable behavior attachment ids such as
+    /// `TRAIT_CIVILIZATION_FIRST_CIVILIZATION`. These are separate from the
+    /// leader preference traits above, which only guide diplomacy and AI.
+    #[serde(default)]
+    pub gameplay_traits: Vec<String>,
     pub ability: String,
     #[serde(default)]
     pub unique_unit: Option<String>,
@@ -727,6 +752,15 @@ pub struct PolicySpec {
     pub civic: Option<String>,
     #[serde(default)]
     pub replaces: Option<String>, // unlocking this obsoletes the named card
+    /// Additional cards obsoleted by this one. Civ VI's ObsoletePolicies
+    /// table is one-to-many (Five Year Plan replaces two separate cards), so
+    /// the legacy singular field alone cannot represent tournament mods.
+    #[serde(default)]
+    pub obsoletes: Vec<String>,
+    /// Empty means the card is usable under every government. BBG uses this
+    /// for ideology-exclusive cards such as Scientific Vanguard and Kolkhoz.
+    #[serde(default)]
+    pub governments: Vec<String>,
     #[serde(default)]
     pub note: String,
     /// Numeric, data-driven policy primitives consumed by the game engine.
@@ -831,6 +865,111 @@ fn dstandard_turns() -> u32 {
     500
 }
 
+/// The object that owns a root modifier. A modifier without an owner is a
+/// child reached through `ATTACH_MODIFIER`; it never executes on its own.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ModifierOwnerSpec {
+    pub kind: String,
+    pub id: String,
+}
+
+/// One predicate inside an owner or subject requirement set. `kind` accepts
+/// both compact CIVVIS names and Civ VI database names.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ModifierRequirementSpec {
+    pub kind: String,
+    pub arguments: BTreeMap<String, serde_json::Value>,
+    pub inverse: bool,
+}
+
+impl ModifierRequirementSpec {
+    pub fn argument_string(&self, name: &str) -> Option<String> {
+        let value = self
+            .arguments
+            .iter()
+            .find(|(candidate, _)| candidate.eq_ignore_ascii_case(name))?
+            .1;
+        value
+            .as_str()
+            .map(str::to_string)
+            .or_else(|| value.as_f64().map(|number| number.to_string()))
+    }
+
+    pub fn argument_f64(&self, name: &str) -> Option<f64> {
+        let value = self
+            .arguments
+            .iter()
+            .find(|(candidate, _)| candidate.eq_ignore_ascii_case(name))?
+            .1;
+        value
+            .as_f64()
+            .or_else(|| value.as_str().and_then(|text| text.parse().ok()))
+    }
+}
+
+fn requirement_mode_all() -> String {
+    "all".to_string()
+}
+
+/// Civ VI requirement sets test every predicate or any predicate. An empty
+/// `all` set is true, matching an unqualified database modifier.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ModifierRequirementSetSpec {
+    #[serde(default = "requirement_mode_all")]
+    pub mode: String,
+    pub requirements: Vec<ModifierRequirementSpec>,
+}
+
+impl Default for ModifierRequirementSetSpec {
+    fn default() -> Self {
+        Self {
+            mode: requirement_mode_all(),
+            requirements: Vec::new(),
+        }
+    }
+}
+
+/// A lossless JSON representation of the Civ VI modifier columns needed by
+/// the runtime. Names retain the game's vocabulary so BBG SQL can be
+/// translated mechanically rather than rewritten as bespoke Rust effects.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ModifierSpec {
+    pub owner: Option<ModifierOwnerSpec>,
+    pub collection: String,
+    pub effect: String,
+    pub arguments: BTreeMap<String, serde_json::Value>,
+    pub owner_requirements: ModifierRequirementSetSpec,
+    pub subject_requirements: ModifierRequirementSetSpec,
+}
+
+impl ModifierSpec {
+    pub fn argument(&self, name: &str) -> Option<&serde_json::Value> {
+        self.arguments
+            .iter()
+            .find(|(candidate, _)| candidate.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value)
+    }
+
+    pub fn argument_string(&self, name: &str) -> Option<String> {
+        let value = self.argument(name)?;
+        value
+            .as_str()
+            .map(str::to_string)
+            .or_else(|| value.as_f64().map(|number| number.to_string()))
+    }
+
+    pub fn argument_f64(&self, name: &str) -> Option<f64> {
+        let value = self.argument(name)?;
+        value
+            .as_f64()
+            .or_else(|| value.as_str().and_then(|text| text.parse().ok()))
+    }
+}
+
 #[derive(Clone)]
 pub struct Rules {
     pub terrains: BTreeMap<String, TerrainSpec>,
@@ -861,6 +1000,8 @@ pub struct Rules {
     /// The shipped WMDs table. Blast radius, fallout and ICBM range await a
     /// delivery mechanic; the per-turn Gold maintenance is charged today.
     pub wmds: BTreeMap<String, WmdSpec>,
+    /// Generic behavior rows from the base ruleset and installed mods.
+    pub modifiers: BTreeMap<String, ModifierSpec>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -896,7 +1037,7 @@ pub struct GoodyRewardSpec {
 }
 
 /// Every ruleset file the engine ships, by the name a mod overlay uses.
-pub const DATA_FILES: [(&str, &str); 25] = [
+pub const DATA_FILES: [(&str, &str); 26] = [
     ("terrains", include_str!("../data/terrains.json")),
     ("features", include_str!("../data/features.json")),
     ("resources", include_str!("../data/resources.json")),
@@ -922,6 +1063,7 @@ pub const DATA_FILES: [(&str, &str); 25] = [
     ("eras", include_str!("../data/eras.json")),
     ("wmds", include_str!("../data/wmds.json")),
     ("tree_effects", include_str!("../data/tree_effects.json")),
+    ("modifiers", include_str!("../data/modifiers.json")),
 ];
 
 /// The ruleset every `Rules::embedded()` call sees. It is the shipped data
@@ -998,6 +1140,7 @@ impl Rules {
             goody_huts: take(&mut files, "goody_huts")?,
             eras: take(&mut files, "eras")?,
             wmds: take(&mut files, "wmds")?,
+            modifiers: take(&mut files, "modifiers")?,
         };
         let effects: TreeEffectsData = take(&mut files, "tree_effects")?;
         for (node, values) in effects.techs {
@@ -1360,7 +1503,9 @@ mod tests {
         assert_eq!(rules.wonders.len(), 53);
         assert_eq!(rules.improvements.len(), 35);
         assert_eq!(rules.resources.len(), 52);
-        assert_eq!(rules.projects.len(), 25);
+        // Twenty-five projects are unlocked from the tech/civic trees; Send Aid
+        // is the stock event-gated project exposed only during an Aid Request.
+        assert_eq!(rules.projects.len(), 26);
         assert_eq!(rules.policies.len(), 118);
         assert_eq!(rules.governments.len(), 13);
 
@@ -1506,14 +1651,36 @@ mod tests {
                 "{id} has invalid slot {}",
                 spec.slot
             );
+            let has_generic_modifier = rules.modifiers.values().any(|modifier| {
+                modifier.owner.as_ref().is_some_and(|owner| {
+                    owner.kind.eq_ignore_ascii_case("policy")
+                        && owner
+                            .id
+                            .strip_prefix("POLICY_")
+                            .unwrap_or(&owner.id)
+                            .eq_ignore_ascii_case(id)
+                })
+            });
             assert!(
-                !spec.effects.is_empty(),
+                !spec.effects.is_empty() || has_generic_modifier,
                 "policy {id} has no runtime effect"
             );
             if let Some(replaced) = &spec.replaces {
                 assert!(
                     rules.policies.contains_key(replaced),
                     "{id} replaces missing policy {replaced}"
+                );
+            }
+            for replaced in &spec.obsoletes {
+                assert!(
+                    rules.policies.contains_key(replaced),
+                    "{id} obsoletes missing policy {replaced}"
+                );
+            }
+            for government in &spec.governments {
+                assert!(
+                    rules.governments.contains_key(government),
+                    "{id} requires missing government {government}"
                 );
             }
         }

@@ -42,9 +42,9 @@ fn grow_blob(
         }
         let index = rng.below(frontier.len());
         let current = frontier[index];
-        let candidates: Vec<Pos> = hex::neighbors(current)
+        let candidates: Vec<Pos> = wm
+            .neighbors(current)
             .into_iter()
-            .map(|neighbor| hex::canon(neighbor, wm.width))
             .filter(|neighbor| allowed.contains(neighbor) && !land.contains(neighbor))
             .collect();
         if candidates.is_empty() {
@@ -191,7 +191,7 @@ pub fn generate_with_script(
     script: MapScript,
     rng: &mut Rng,
 ) -> (WorldMap, Vec<Pos>) {
-    let mut wm = WorldMap::new(width, height);
+    let mut wm = WorldMap::new_with_wrap(width, height, script.wraps_x());
 
     // --- landmass topology selected by the stock-style map script
     let land = generate_land(&wm, script, num_major_spawns, rng);
@@ -218,9 +218,10 @@ pub fn generate_with_script(
         .iter()
         .filter(|(pos, t)| {
             t.terrain == "ocean"
-                && hex::neighbors(**pos)
+                && wm
+                    .neighbors(**pos)
                     .iter()
-                    .any(|n| land.contains(&hex::canon(*n, width)))
+                    .any(|neighbor| land.contains(neighbor))
         })
         .map(|(pos, _)| *pos)
         .collect();
@@ -233,9 +234,9 @@ pub fn generate_with_script(
             .iter()
             .filter(|(pos, tile)| {
                 tile.terrain == "ocean"
-                    && hex::neighbors(**pos)
+                    && wm
+                        .neighbors(**pos)
                         .into_iter()
-                        .map(|neighbor| hex::canon(neighbor, width))
                         .any(|neighbor| {
                             wm.tiles
                                 .get(&neighbor)
@@ -259,10 +260,7 @@ pub fn generate_with_script(
         if wm.tiles[&pos].terrain == "mountain" {
             continue;
         }
-        for neighbor in hex::neighbors(pos)
-            .into_iter()
-            .map(|neighbor| hex::canon(neighbor, width))
-        {
+        for neighbor in wm.neighbors(pos) {
             if wm
                 .tiles
                 .get(&neighbor)
@@ -303,9 +301,8 @@ pub fn generate_with_script(
         .copied()
         .filter(|position| wm.tiles[position].terrain == "mountain")
         .filter(|position| {
-            hex::neighbors(*position)
+            wm.neighbors(*position)
                 .into_iter()
-                .map(|neighbor| hex::canon(neighbor, width))
                 .any(|neighbor| {
                     wm.tiles.get(&neighbor).is_some_and(|tile| {
                         !matches!(tile.terrain.as_str(), "mountain" | "coast" | "ocean")
@@ -325,7 +322,7 @@ pub fn generate_with_script(
         }
         if volcanoes
             .iter()
-            .all(|other| hex::wdistance(position, *other, width) >= 4)
+            .all(|other| wm.distance(position, *other) >= 4)
         {
             wm.tiles.get_mut(&position).unwrap().feature = Some("volcano".into());
             volcanoes.push(position);
@@ -336,9 +333,9 @@ pub fn generate_with_script(
     // Guarantee one deposit where geography allows, then scatter a few more
     // without consuming the RNG differently for later per-tile feature rolls.
     for volcano in &volcanoes {
-        let mut foothills: Vec<Pos> = hex::neighbors(*volcano)
+        let mut foothills: Vec<Pos> = wm
+            .neighbors(*volcano)
             .into_iter()
-            .map(|neighbor| hex::canon(neighbor, width))
             .filter(|neighbor| {
                 wm.tiles.get(neighbor).is_some_and(|tile| {
                     !matches!(tile.terrain.as_str(), "mountain" | "coast" | "ocean")
@@ -366,9 +363,9 @@ pub fn generate_with_script(
             let tile = &wm.tiles[position];
             tile.terrain != "mountain"
                 && tile.feature.is_none()
-                && hex::neighbors(*position)
+                && wm
+                    .neighbors(*position)
                     .into_iter()
-                    .map(|neighbor| hex::canon(neighbor, width))
                     .any(|neighbor| {
                         wm.tiles.get(&neighbor).is_some_and(|neighbor_tile| {
                             neighbor_tile.terrain == "mountain"
@@ -389,7 +386,7 @@ pub fn generate_with_script(
         }
         if fissures
             .iter()
-            .all(|other| hex::wdistance(position, *other, width) >= 3)
+            .all(|other| wm.distance(position, *other) >= 3)
         {
             wm.tiles.get_mut(&position).unwrap().feature = Some("geothermal_fissure".into());
             fissures.push(position);
@@ -476,8 +473,7 @@ pub fn generate_with_script(
             while cluster.len() < footprint {
                 let mut frontier: Vec<Pos> = cluster
                     .iter()
-                    .flat_map(|position| hex::neighbors(*position))
-                    .map(|position| hex::canon(position, width))
+                    .flat_map(|position| wm.neighbors(*position))
                     .filter(|position| wm.tiles.contains_key(position))
                     .filter(|position| !cluster.contains(position))
                     .filter(|position| {
@@ -591,7 +587,7 @@ pub fn generate_with_script(
         }
     }
 
-    assign_continents(&mut wm, &land, width, num_continents, rng);
+    assign_continents(&mut wm, &land, num_continents, rng);
 
     // Gathering Storm marks only a subset of flat coastal land as vulnerable
     // 1 m, 2 m, or 3 m Coastal Lowland. The stock generator derives these
@@ -612,9 +608,8 @@ pub fn generate_with_script(
                     .is_none_or(|feature| !feature.natural_wonder)
         })
         .filter(|(position, _)| {
-            hex::neighbors(**position)
+            wm.neighbors(**position)
                 .into_iter()
-                .map(|neighbor| hex::canon(neighbor, width))
                 .any(|neighbor| {
                     wm.tiles
                         .get(&neighbor)
@@ -671,7 +666,7 @@ pub fn generate_with_script(
         candidates.sort();
         candidates
     };
-    let components = connected_components(&passable, width);
+    let components = connected_components(&passable, &wm);
     let primary = components.first().cloned().unwrap_or_default();
     let mut all_candidates = candidates_for(&passable, total_spawns);
     let mut spawns = if matches!(script, MapScript::Continents | MapScript::SmallContinents) {
@@ -816,9 +811,8 @@ fn apply_tectonics(wm: &mut WorldMap, land: &BTreeSet<Pos>, rng: &mut Rng) {
         .copied()
         .filter(|pos| wm.tiles[pos].terrain == "mountain")
         .filter(|pos| {
-            hex::neighbors(*pos)
+            wm.neighbors(*pos)
                 .into_iter()
-                .map(|neighbor| hex::canon(neighbor, width))
                 .any(|neighbor| !land.contains(&neighbor))
         })
         .collect();
@@ -897,9 +891,8 @@ fn cluster_score(adjacent: usize) -> i32 {
 }
 
 fn adjacent_feature_count(wm: &WorldMap, pos: Pos, feature: &str) -> usize {
-    hex::neighbors(pos)
+    wm.neighbors(pos)
         .into_iter()
-        .map(|neighbor| hex::canon(neighbor, wm.width))
         .filter(|neighbor| {
             wm.get(*neighbor)
                 .is_some_and(|tile| tile.feature.as_deref() == Some(feature))
@@ -1066,23 +1059,22 @@ struct SpawnLayoutScore {
 fn start_quality(rules: &Rules, wm: &WorldMap, pos: Pos) -> i32 {
     let center = &wm.tiles[&pos];
     let fresh_water = center.has_river()
-        || hex::neighbors(pos)
+        || wm
+            .neighbors(pos)
             .into_iter()
-            .map(|neighbor| hex::canon(neighbor, wm.width))
             .any(|neighbor| {
                 wm.get(neighbor)
                     .is_some_and(|tile| tile.feature.as_deref() == Some("oasis"))
             });
-    let coastal = hex::neighbors(pos)
+    let coastal = wm
+        .neighbors(pos)
         .into_iter()
-        .map(|neighbor| hex::canon(neighbor, wm.width))
         .any(|neighbor| wm.get(neighbor).is_some_and(|tile| rules.is_water(tile)));
 
     let mut nearby_yields = Vec::new();
     let mut workable_land = 0;
     let mut seen = BTreeSet::new();
-    for raw in hex::disk(pos, 3) {
-        let tile_pos = hex::canon(raw, wm.width);
+    for tile_pos in wm.disk(pos, 3) {
         if !seen.insert(tile_pos) {
             continue;
         }
@@ -1092,7 +1084,7 @@ fn start_quality(rules: &Rules, wm: &WorldMap, pos: Pos) -> i32 {
         if !rules.is_water(tile) && rules.is_passable(tile) {
             workable_land += 1;
         }
-        if tile_pos == pos || hex::wdistance(pos, tile_pos, wm.width) > 2 {
+        if tile_pos == pos || wm.distance(pos, tile_pos) > 2 {
             continue;
         }
         let yields = rules.tile_yields(tile);
@@ -1148,7 +1140,7 @@ fn spawn_layout_score(
                 ordered
                     .iter()
                     .filter(|other| *other != start)
-                    .map(|other| hex::wdistance(*start, *other, wm.width))
+                    .map(|other| wm.distance(*start, *other))
                     .min()
                     .unwrap()
             })
@@ -1163,7 +1155,7 @@ fn spawn_layout_score(
         let (distance, owner) = ordered
             .iter()
             .enumerate()
-            .map(|(index, start)| (hex::wdistance(*tile, *start, wm.width), index))
+            .map(|(index, start)| (wm.distance(*tile, *start), index))
             .min()
             .unwrap();
         coverage_radius = coverage_radius.max(distance);
@@ -1222,7 +1214,7 @@ fn farthest_layout(
             .max_by_key(|candidate| {
                 let nearest = layout
                     .iter()
-                    .map(|start| hex::wdistance(**candidate, *start, wm.width))
+                    .map(|start| wm.distance(**candidate, *start))
                     .min()
                     .unwrap_or(0);
                 (nearest, qualities[*candidate], **candidate)
@@ -1363,7 +1355,7 @@ fn balanced_major_spawns(
             let Some((candidate_rank, candidate)) = candidates
                 .iter()
                 .filter(|candidate| {
-                    hex::wdistance(**candidate, current, wm.width) <= 3
+                    wm.distance(**candidate, current) <= 3
                         && !layout.contains(candidate)
                 })
                 .map(|candidate| {
@@ -1419,7 +1411,7 @@ fn add_minor_spawns(
             .max_by_key(|candidate| {
                 let nearest = spawns
                     .iter()
-                    .map(|start| hex::wdistance(**candidate, *start, wm.width))
+                    .map(|start| wm.distance(**candidate, *start))
                     .min()
                     .unwrap_or(i32::MAX);
                 (nearest, qualities[*candidate], **candidate)
@@ -1445,11 +1437,7 @@ fn canonical_river_edge(a: Pos, b: Pos) -> RiverEdge {
 fn all_shared_edges(wm: &WorldMap) -> BTreeSet<RiverEdge> {
     let mut edges = BTreeSet::new();
     for pos in wm.tiles.keys().copied() {
-        for neighbor in hex::neighbors(pos)
-            .into_iter()
-            .map(|p| hex::canon(p, wm.width))
-            .filter(|p| wm.tiles.contains_key(p))
-        {
+        for neighbor in wm.neighbors(pos) {
             edges.insert(canonical_river_edge(pos, neighbor));
         }
     }
@@ -1461,14 +1449,11 @@ fn all_shared_edges(wm: &WorldMap) -> BTreeSet<RiverEdge> {
 /// four possible continuations are A/C and B/C at those two vertices.
 fn connected_river_edges(wm: &WorldMap, edge: RiverEdge) -> Vec<RiverEdge> {
     let (a, b) = edge;
-    let b_neighbors: BTreeSet<Pos> = hex::neighbors(b)
-        .into_iter()
-        .map(|p| hex::canon(p, wm.width))
-        .collect();
+    let b_neighbors: BTreeSet<Pos> = wm.neighbors(b).into_iter().collect();
     let mut connected = BTreeSet::new();
-    for common in hex::neighbors(a)
+    for common in wm
+        .neighbors(a)
         .into_iter()
-        .map(|p| hex::canon(p, wm.width))
         .filter(|p| *p != b && wm.tiles.contains_key(p) && b_neighbors.contains(p))
     {
         connected.insert(canonical_river_edge(a, common));
@@ -1502,7 +1487,6 @@ fn generate_rivers(wm: &mut WorldMap, land: &[Pos], rng: &mut Rng) {
         return;
     }
 
-    let width = wm.width;
     let is_water = |pos: Pos| {
         wm.tiles
             .get(&pos)
@@ -1511,7 +1495,7 @@ fn generate_rivers(wm: &mut WorldMap, land: &[Pos], rng: &mut Rng) {
     let distance_to_water = |pos: Pos| {
         water_tiles
             .iter()
-            .map(|water| hex::wdistance(pos, *water, width))
+            .map(|water| wm.distance(pos, *water))
             .min()
             .unwrap_or(0)
     };
@@ -1578,7 +1562,6 @@ fn generate_rivers(wm: &mut WorldMap, land: &[Pos], rng: &mut Rng) {
 fn assign_continents(
     wm: &mut WorldMap,
     land: &BTreeSet<Pos>,
-    width: i32,
     requested: usize,
     rng: &mut Rng,
 ) {
@@ -1595,7 +1578,7 @@ fn assign_continents(
             .max_by_key(|p| {
                 let nearest = centers
                     .iter()
-                    .map(|c| hex::wdistance(**p, *c, width))
+                    .map(|center| wm.distance(**p, *center))
                     .min()
                     .unwrap_or(0);
                 (nearest, **p)
@@ -1607,13 +1590,13 @@ fn assign_continents(
         let continent = centers
             .iter()
             .enumerate()
-            .min_by_key(|(id, center)| (hex::wdistance(*pos, **center, width), *id))
+            .min_by_key(|(id, center)| (wm.distance(*pos, **center), *id))
             .map(|(id, _)| id);
         wm.tiles.get_mut(pos).unwrap().continent = continent;
     }
 }
 
-fn connected_components(cells: &BTreeSet<Pos>, width: i32) -> Vec<BTreeSet<Pos>> {
+fn connected_components(cells: &BTreeSet<Pos>, wm: &WorldMap) -> Vec<BTreeSet<Pos>> {
     let mut seen: BTreeSet<Pos> = BTreeSet::new();
     let mut components = Vec::new();
     for start in cells {
@@ -1624,8 +1607,7 @@ fn connected_components(cells: &BTreeSet<Pos>, width: i32) -> Vec<BTreeSet<Pos>>
         comp.insert(*start);
         let mut stack = vec![*start];
         while let Some(cur) = stack.pop() {
-            for n0 in hex::neighbors(cur) {
-                let n = hex::canon(n0, width);
+            for n in wm.neighbors(cur) {
                 if cells.contains(&n) && !comp.contains(&n) {
                     comp.insert(n);
                     stack.push(n);
@@ -1640,8 +1622,8 @@ fn connected_components(cells: &BTreeSet<Pos>, width: i32) -> Vec<BTreeSet<Pos>>
 }
 
 #[cfg(test)]
-fn largest_component(cells: &BTreeSet<Pos>, width: i32) -> BTreeSet<Pos> {
-    connected_components(cells, width)
+fn largest_component(cells: &BTreeSet<Pos>, wm: &WorldMap) -> BTreeSet<Pos> {
+    connected_components(cells, wm)
         .into_iter()
         .next()
         .unwrap_or_default()
@@ -1659,7 +1641,7 @@ mod river_tests {
             .filter(|(_, tile)| !rules.is_water(tile))
             .map(|(position, _)| *position)
             .collect();
-        connected_components(&land, world.width)
+        connected_components(&land, world)
     }
 
     #[test]
@@ -1678,13 +1660,22 @@ mod river_tests {
             let (world, spawns) =
                 generate_with_script(&rules, 60, 38, 6, 6, 0, 3, script, &mut rng);
             assert_eq!(spawns.len(), 12, "{script:?} spawn count");
+            assert_eq!(world.wrap_x, script.wraps_x(), "{script:?} topology");
+            let seam_row = world.height / 2;
+            let west = hex::offset_to_axial(0, seam_row);
+            let east = hex::offset_to_axial(world.width - 1, seam_row);
+            if script.wraps_x() {
+                assert!(world.neighbors(east).contains(&west));
+                assert_eq!(world.distance(east, west), 1);
+            } else {
+                assert!(!world.neighbors(east).contains(&west));
+                assert_eq!(world.distance(east, west), world.width - 1);
+            }
             for (spawn_index, start) in spawns.iter().enumerate() {
                 assert!(
-                    spawns[spawn_index + 1..].iter().all(|other| hex::wdistance(
-                        *start,
-                        *other,
-                        world.width
-                    ) >= 4),
+                    spawns[spawn_index + 1..]
+                        .iter()
+                        .all(|other| world.distance(*start, *other) >= 4),
                     "{script:?} starts must leave room for distinct cities"
                 );
             }
@@ -1693,12 +1684,14 @@ mod river_tests {
             // hold rather than by an exact component count.
             let components = land_components(&world, &rules);
             let total: usize = components.iter().map(|component| component.len()).sum();
-            let share = |count: usize| components[..count.min(components.len())]
-                .iter()
-                .map(|component| component.len())
-                .sum::<usize>()
-                * 100
-                / total.max(1);
+            let share = |count: usize| {
+                components[..count.min(components.len())]
+                    .iter()
+                    .map(|component| component.len())
+                    .sum::<usize>()
+                    * 100
+                    / total.max(1)
+            };
             match script {
                 MapScript::Pangaea | MapScript::InlandSea => assert!(
                     share(1) >= 80,
@@ -1773,7 +1766,7 @@ mod river_tests {
         // Every serialized tile mask agrees with the neighbor's opposite edge.
         for (pos, tile) in &wm.tiles {
             for (direction, present) in tile.river_edges.iter().copied().enumerate() {
-                let neighbor = hex::canon(hex::neighbors(*pos)[direction], wm.width);
+                let neighbor = wm.canon(hex::neighbors(*pos)[direction]);
                 if let Some(other) = wm.get(neighbor) {
                     assert_eq!(
                         present,
@@ -1868,7 +1861,7 @@ mod river_tests {
                 .filter(|(_, tile)| !rules.is_water(tile) && rules.is_passable(tile))
                 .map(|(pos, _)| *pos)
                 .collect();
-            let landmass = largest_component(&passable, wm.width);
+            let landmass = largest_component(&passable, &wm);
             let majors = &spawns[..size.default_players];
             assert!(majors.iter().all(|start| landmass.contains(start)));
             assert_eq!(
@@ -1881,7 +1874,7 @@ mod river_tests {
                 assert!(
                     spawns[spawn_index + 1..]
                         .iter()
-                        .all(|other| hex::wdistance(*start, *other, wm.width) >= 4),
+                        .all(|other| wm.distance(*start, *other) >= 4),
                     "{} produced starts too close to found distinct cities",
                     size.name
                 );
@@ -1914,7 +1907,7 @@ mod river_tests {
                 .filter(|(_, tile)| !rules.is_water(tile) && rules.is_passable(tile))
                 .map(|(pos, _)| *pos)
                 .collect();
-            let landmass = largest_component(&passable, wm.width);
+            let landmass = largest_component(&passable, &wm);
             let majors = &spawns[..4];
             let qualities = majors
                 .iter()
@@ -1981,9 +1974,9 @@ mod river_tests {
                         assert_eq!(tile.terrain, "mountain", "volcano at {position:?}")
                     }
                     "volcanic_soil" => assert!(
-                        hex::neighbors(*position)
+                        world
+                            .neighbors(*position)
                             .into_iter()
-                            .map(|neighbor| hex::canon(neighbor, world.width))
                             .any(|neighbor| world.tiles.get(&neighbor).is_some_and(
                                 |neighbor_tile| {
                                     neighbor_tile.feature.as_deref() == Some("volcano")
@@ -1992,9 +1985,9 @@ mod river_tests {
                         "volcanic soil at {position:?} has no volcano"
                     ),
                     "geothermal_fissure" => assert!(
-                        hex::neighbors(*position)
+                        world
+                            .neighbors(*position)
                             .into_iter()
-                            .map(|neighbor| hex::canon(neighbor, world.width))
                             .any(|neighbor| world.tiles.get(&neighbor).is_some_and(
                                 |neighbor_tile| { neighbor_tile.terrain == "mountain" }
                             )),
@@ -2055,9 +2048,9 @@ mod river_tests {
                     continue;
                 }
                 frontier.extend(
-                    hex::neighbors(position)
+                    world
+                        .neighbors(position)
                         .into_iter()
-                        .map(|neighbor| hex::canon(neighbor, world.width))
                         .filter(|neighbor| tiles.contains(neighbor)),
                 );
             }

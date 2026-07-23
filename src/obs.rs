@@ -186,10 +186,18 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         "turn": g.turn,
         "max_turns": g.max_turns,
         "seed": g.seed,
+        "game_profile": g.game_profile_id(),
         "game_speed": g.game_speed.id(),
         "world_era": g.world_era,
         "climate_phase": g.climate_phase,
         "climate_points": g.climate_points(),
+        "disaster_intensity": g.disaster_intensity,
+        "tournament_preset": g.tournament_preset_id(),
+        "tournament_city_state_tokens": g.tournament_city_state_tokens,
+        "tournament_city_state_claims": g.tournament_city_state_claims,
+        "active_disasters": g.active_disasters.iter()
+            .filter(|event| omniscient || event.tiles.iter().any(|tile| vis.contains(tile)))
+            .collect::<Vec<_>>(),
         "player": pid,
         "current": g.current,
         "map": {
@@ -198,6 +206,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             "script": g.map_script.id(),
             "width": g.map.width,
             "height": g.map.height,
+            "wrap_x": g.map.wrap_x,
             "default_players": g.map_size().default_players,
             "max_players": g.map_size().max_players,
             "default_city_states": g.map_size().default_city_states,
@@ -557,7 +566,9 @@ fn victory_progress_json(g: &Game, pid: usize, leading_score: i64) -> Value {
     let religious_rivals = living_majors
         .iter()
         .copied()
-        .filter(|candidate| player.team.is_none() || !g.same_team(pid, *candidate))
+        .filter(|candidate| {
+            player.team.is_none() || (*candidate != pid && !g.same_team(pid, *candidate))
+        })
         .collect::<Vec<_>>();
     let converted_civs = religious_rivals
         .iter()
@@ -606,8 +617,7 @@ fn victory_progress_json(g: &Game, pid: usize, leading_score: i64) -> Value {
             .iter()
             .filter(|original_owner| {
                 **original_owner == pid
-                    || g
-                        .cities
+                    || g.cities
                         .values()
                         .find(|city| city.is_capital && city.original_owner == **original_owner)
                         .map_or(!g.players[**original_owner].alive, |capital| {
@@ -694,6 +704,16 @@ fn tile_json(g: &Game, pid: usize, tile: &Tile, owner: Option<usize>, omniscient
         "road": tile.road,
         "cliff_edges": tile.cliff_edges,
         "continent": tile.continent,
+        "disaster_yields": {
+            "food": tile.disaster_food,
+            "production": tile.disaster_production,
+            "science": tile.disaster_science,
+            "culture": tile.disaster_culture,
+            "faith": tile.disaster_faith,
+        },
+        "volcano_state": tile.volcano_state,
+        "drought": tile.drought,
+        "fallout_until": tile.fallout_until,
         "coastal_lowland": tile.coastal_lowland,
         "flooded": tile.flooded,
         "submerged": tile.submerged,

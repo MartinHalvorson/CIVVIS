@@ -4,10 +4,10 @@ use std::time::Instant;
 
 use civvis::ai::{run_game, AdvancedAi};
 use civvis::game::{
-    default_difficulty, default_speed, Game, GameOptions, VictoryConditions,
+    default_difficulty, default_speed, Game, GameOptions, TournamentPreset, VictoryConditions,
 };
 use civvis::rules::Rules;
-use civvis::setup::{GameSpeed, MapScript, MapSize};
+use civvis::setup::{GameProfile, GameSpeed, MapScript, MapSize};
 
 fn arg(args: &[String], key: &str, default: i64) -> i64 {
     args.iter()
@@ -44,6 +44,38 @@ fn victory_conditions(args: &[String]) -> VictoryConditions {
     }
 }
 
+fn game_profile(args: &[String]) -> GameProfile {
+    let id = arg_text(args, "--game-profile", GameProfile::Civ6Tournament.id());
+    GameProfile::from_id(&id).unwrap_or_else(|| {
+        eprintln!("unknown game profile {id:?}; choose civ6-tournament or civ65");
+        std::process::exit(2);
+    })
+}
+
+fn tournament_preset(args: &[String], profile: GameProfile) -> Option<TournamentPreset> {
+    let id = args
+        .iter()
+        .position(|arg| arg == "--tournament-preset")
+        .and_then(|index| args.get(index + 1))
+        .cloned()
+        .unwrap_or_else(|| {
+            if profile.is_tournament() {
+                TournamentPreset::CplFfa202607.id().to_string()
+            } else {
+                String::new()
+            }
+        });
+    if id.is_empty() || id == "none" {
+        return None;
+    }
+    TournamentPreset::from_id(&id).or_else(|| {
+        eprintln!(
+            "unknown tournament preset {id:?}; choose cpl-ffa-2026-07 or cpl-teamers-2026-07"
+        );
+        std::process::exit(2);
+    })
+}
+
 fn auto_cs(args: &[String], players: i64) -> usize {
     let cs = arg(args, "--city-states", -1);
     if cs >= 0 {
@@ -66,6 +98,8 @@ fn auto_dimension(args: &[String], key: &str, players: i64, width: bool) -> i32 
 /// the shipped ruleset, with the stock levels as defaults.
 fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
     let rules = Rules::embedded();
+    let game_profile = game_profile(args);
+    let tournament_preset = tournament_preset(args, game_profile);
     let difficulty = arg_text(args, "--difficulty", &default_difficulty());
     if !rules.difficulties.contains_key(&difficulty) {
         eprintln!(
@@ -74,9 +108,17 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
         );
         std::process::exit(2);
     }
-    let speed = arg_text(args, "--speed", &default_speed());
+    let default_game_speed = if tournament_preset.is_some() {
+        "online".to_string()
+    } else {
+        default_speed()
+    };
+    let speed = arg_text(args, "--speed", &default_game_speed);
     let Some(speed_spec) = rules.speeds.get(&speed) else {
-        eprintln!("unknown game speed {speed:?}; choose one of {:?}", speeds(&rules));
+        eprintln!(
+            "unknown game speed {speed:?}; choose one of {:?}",
+            speeds(&rules)
+        );
         std::process::exit(2);
     };
     // An explicit --turns wins; otherwise every speed brings its own stock
@@ -90,6 +132,11 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
         speed_spec.turns as i64
     };
     let player_count = players.max(1) as usize;
+    let disaster_intensity = arg(args, "--disaster-intensity", 2);
+    if !(0..=4).contains(&disaster_intensity) {
+        eprintln!("--disaster-intensity must be between 0 (Minimal) and 4 (Hyperreal)");
+        std::process::exit(2);
+    }
     let teams_arg = arg_text(args, "--teams", "");
     let teams = if teams_arg.trim().is_empty() {
         Vec::new()
@@ -118,18 +165,26 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
         }
         teams
     };
+    if tournament_preset.is_some_and(TournamentPreset::is_teamers) && teams.is_empty() {
+        eprintln!("the CPL teamers preset requires explicit --teams assignments");
+        std::process::exit(2);
+    }
     GameOptions {
         map_script: MapScript::from_id(&arg_text(args, "--map", "pangaea"))
             .unwrap_or(MapScript::Pangaea),
         difficulty,
         speed,
+        game_profile,
         // A headless game has nobody at the keyboard, so the difficulty only
         // reaches the AI side of the ladder unless a seat is named human.
         human_seats: arg_text(args, "--human-seats", "")
             .split(',')
             .filter_map(|seat| seat.trim().parse().ok())
             .collect(),
+        disaster_intensity: disaster_intensity as u8,
         teams,
+        tournament_preset,
+        barbarians: !tournament_preset.is_some_and(TournamentPreset::is_teamers),
         ..GameOptions::new(
             player_count,
             auto_dimension(args, "--width", players, true),
@@ -155,10 +210,27 @@ fn speeds(rules: &Rules) -> Vec<&str> {
 
 fn standings(g: &Game) {
     let w = &g.players[g.winner.unwrap()];
+    let winners = g.winning_players();
+    let winner_name = if winners.len() > 1 {
+        format!(
+            "Team {}",
+            winners
+                .iter()
+                .map(|winner| g.players[*winner].civ.as_str())
+                .collect::<Vec<_>>()
+                .join(" + ")
+        )
+    } else {
+        w.civ.clone()
+    };
     println!(
-        "Winner: {} (player {}) by {} on turn {}",
-        w.civ,
-        w.id,
+        "Winner: {} (players {}) by {} on turn {}",
+        winner_name,
+        winners
+            .iter()
+            .map(usize::to_string)
+            .collect::<Vec<_>>()
+            .join(","),
         g.victory_type.clone().unwrap_or_default(),
         g.turn
     );
@@ -186,7 +258,11 @@ fn standings(g: &Game) {
         let army: Vec<String> = army
             .iter()
             .map(|(kind, count)| {
-                let stale = if g.unit_is_obsolete(pid, kind) { "*" } else { "" };
+                let stale = if g.unit_is_obsolete(pid, kind) {
+                    "*"
+                } else {
+                    ""
+                };
                 format!("{count}x{kind}{stale}")
             })
             .collect();
@@ -242,11 +318,8 @@ fn main() {
         "simulate" => {
             let players = arg(&args, "--players", 4);
             let g0 = Instant::now();
-            let mut g = Game::new_with(game_options(
-                &args,
-                players,
-                arg(&args, "--seed", 0) as u64,
-            ));
+            let mut g =
+                Game::new_with(game_options(&args, players, arg(&args, "--seed", 0) as u64));
             let mut ais = AdvancedAi::fleet(&g);
             run_game(&mut g, &mut ais);
             println!("[{:.3}s]", g0.elapsed().as_secs_f64());
@@ -302,9 +375,7 @@ fn main() {
                         let (obsolete, ancient, army) = majors
                             .iter()
                             .filter(|p| p.alive)
-                            .flat_map(|p| {
-                                g.units.values().filter(move |unit| unit.owner == p.id)
-                            })
+                            .flat_map(|p| g.units.values().filter(move |unit| unit.owner == p.id))
                             .filter(|unit| g.rules.units[unit.kind.as_str()].class == "military")
                             .fold((0, 0, 0), |(obsolete, ancient, army), unit| {
                                 (
@@ -366,6 +437,14 @@ fn main() {
             );
         }
         "tournament" => {
+            let game_profile = game_profile(&args);
+            let tournament_preset = tournament_preset(&args, game_profile);
+            if tournament_preset.is_some_and(TournamentPreset::is_teamers) {
+                eprintln!(
+                    "the Elo tournament command ranks individual entrants; use play or simulate for CPL teamers"
+                );
+                std::process::exit(2);
+            }
             let names: Vec<String> = args
                 .iter()
                 .position(|a| a == "--ais")
@@ -387,11 +466,21 @@ fn main() {
                 players_per_game: arg(&args, "--players", 4) as usize,
                 width: auto_dimension(&args, "--width", arg(&args, "--players", 4), true),
                 height: auto_dimension(&args, "--height", arg(&args, "--players", 4), false),
-                max_turns: arg(&args, "--turns", 150) as u32,
+                max_turns: arg(
+                    &args,
+                    "--turns",
+                    if tournament_preset.is_some() {
+                        250
+                    } else {
+                        150
+                    },
+                ) as u32,
                 num_city_states: auto_cs(&args, arg(&args, "--players", 4)),
                 seed: arg(&args, "--seed", 0) as u64,
                 k: arg(&args, "--k", 24) as f64,
                 verbose: !args.iter().any(|a| a == "--quiet"),
+                game_profile,
+                tournament_preset,
             };
             let pool = civvis::elo::run_tournament(&names, civvis::elo::builtin_ai, &cfg);
             println!();
@@ -411,6 +500,7 @@ fn main() {
                 every: arg(&args, "--every", 10).max(1) as u32,
                 ai: arg_text(&args, "--ai", "advanced"),
                 out: arg_text(&args, "--out", "selfplay"),
+                options: Some(options),
             };
             match civvis::selfplay::export(&cfg) {
                 Ok(stats) => println!(
@@ -488,15 +578,18 @@ fn main() {
                     width: auto_dimension(&args, "--width", players, true),
                     height: auto_dimension(&args, "--height", players, false),
                     seed,
+                    game_profile: play_options.game_profile,
                     map_script,
                     game_speed,
                     max_turns: play_options.max_turns,
                     victory_conditions: victory_conditions(&args),
+                    disaster_intensity: play_options.disaster_intensity,
                     num_city_states: auto_cs(&args, players),
                     spectate: args.iter().any(|a| a == "--spectate" || a == "--watch"),
                     difficulty: play_options.difficulty,
                     speed: play_options.speed,
                     teams: play_options.teams,
+                    tournament_preset: play_options.tournament_preset,
                     supervised: args.iter().any(|a| a == "--supervised"),
                 },
                 resumed,
@@ -518,8 +611,11 @@ fn main() {
                 std::process::exit(1);
             }
             print!("{}", civvis::pedia::render(&found));
-            println!("
-{} entries", found.len());
+            println!(
+                "
+{} entries",
+                found.len()
+            );
         }
         "validate" => {
             let findings = civvis::validate::validate(&Rules::embedded());
@@ -536,12 +632,45 @@ fn main() {
                       [--players N] [--seed N] [--turns N] [--width N] [--height N] \
                       [--city-states N] [--games N] [--ais a,b] [--port N] [--no-open] \
                       [--map pangaea|continents|small_continents|inland_sea] \
+                      [--game-profile civ6-tournament|civ65] \
                       [--difficulty settler|chieftain|warlord|prince|king|emperor|immortal|deity] \
                       [--speed online|quick|standard|epic|marathon] \
+                      [--disaster-intensity 0|1|2|3|4] \
                       [--human-seats 0,1] [--teams 0,0,1,1] [--mods path/to/mod,path/to/other] \
+                      [--tournament-preset cpl-ffa-2026-07|cpl-teamers-2026-07] \
                       [--victories science,culture,religious,diplomatic,domination,score] \
                       [--spectate] [--supervised] [--resume checkpoint.json] [--strict]"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{game_profile, tournament_preset};
+    use civvis::game::TournamentPreset;
+    use civvis::setup::GameProfile;
+
+    #[test]
+    fn cli_defaults_to_the_tournament_profile_and_dated_policy() {
+        let args = vec!["play".to_string()];
+        let profile = game_profile(&args);
+        assert_eq!(profile, GameProfile::Civ6Tournament);
+        assert_eq!(
+            tournament_preset(&args, profile),
+            Some(TournamentPreset::CplFfa202607)
+        );
+    }
+
+    #[test]
+    fn cli_civ65_profile_drops_the_tournament_policy() {
+        let args = vec![
+            "play".to_string(),
+            "--game-profile".to_string(),
+            "civ65".to_string(),
+        ];
+        let profile = game_profile(&args);
+        assert_eq!(profile, GameProfile::Civ65);
+        assert_eq!(tournament_preset(&args, profile), None);
     }
 }

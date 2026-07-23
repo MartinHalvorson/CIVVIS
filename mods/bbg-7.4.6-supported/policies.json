@@ -1,0 +1,66 @@
+{
+  "natural_philosophy": {
+    "note": "+50% Campus adjacency and +1 Science in cities with a Campus.",
+    "effects": {
+      "campus_adjacency_pct": 50
+    }
+  },
+  "craftsmen": {
+    "note": "+50% Industrial Zone adjacency and +2 Production in cities with an Industrial Zone.",
+    "effects": {
+      "industrial_zone_adjacency_pct": 50
+    }
+  },
+  "town_charters": {
+    "note": "+50% Commercial Hub adjacency and +2 Gold in cities with a Commercial Hub.",
+    "effects": {
+      "commercial_hub_adjacency_pct": 50
+    }
+  },
+  "naval_infrastructure": {
+    "note": "+50% Harbor adjacency and +2 Gold in cities with a Harbor.",
+    "effects": {
+      "harbor_adjacency_pct": 50
+    }
+  },
+  "empirical_method": {
+    "slot": "economic",
+    "civic": "civil_engineering",
+    "replaces": "natural_philosophy",
+    "note": "+100% Campus adjacency. Obsolete at Ideology."
+  },
+  "master_artisans": {
+    "slot": "military",
+    "civic": "civil_engineering",
+    "replaces": "craftsmen",
+    "note": "+100% Industrial Zone adjacency. Obsolete at Ideology."
+  },
+  "economic_union": {
+    "civic": "civil_engineering",
+    "obsoletes": [
+      "naval_infrastructure"
+    ]
+  },
+  "five_year_plan": {
+    "replaces": "empirical_method",
+    "obsoletes": [
+      "master_artisans"
+    ]
+  },
+  "scientific_vanguard": {
+    "slot": "wildcard",
+    "civic": "class_struggle",
+    "governments": [
+      "communism"
+    ],
+    "note": "Communism only: cities with an established Governor receive +10% Science and Production."
+  },
+  "kolkhoz": {
+    "slot": "military",
+    "civic": "class_struggle",
+    "governments": [
+      "communism"
+    ],
+    "note": "Communism only: Campuses and Industrial Zones receive +2 Food and +2 Production."
+  }
+}

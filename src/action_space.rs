@@ -15,26 +15,84 @@ use crate::Pos;
 
 /// Every `Action` discriminant, in a stable order. Appending is safe;
 /// reordering invalidates trained policies.
-pub const KINDS: [&str; 76] = [
-    "move", "move_to", "attack", "ranged", "found_city", "improve",
-    "found_corporation", "move_product", "contribute_project",
-    "contribute_district", "perform_concert", "pillage", "repair_improvement",
-    "coastal_raid", "air_rebase", "air_strike", "air_patrol", "produce", "buy",
-    "buy_building", "buy_district", "research", "civic", "declare_war",
-    "declare_war_with_casus_belli", "make_peace", "denounce", "propose_deal",
-    "accept_deal", "reject_deal", "trade", "congress_vote", "assign_spy",
-    "spy_mission", "promote_spy", "choose_dedication", "fortify", "upgrade_unit",
+pub const KINDS: [&str; 77] = [
+    "move",
+    "move_to",
+    "attack",
+    "ranged",
+    "found_city",
+    "improve",
+    "found_corporation",
+    "move_product",
+    "contribute_project",
+    "contribute_district",
+    "perform_concert",
+    "pillage",
+    "repair_improvement",
+    "coastal_raid",
+    "air_rebase",
+    "air_strike",
+    "air_patrol",
+    "produce",
+    "buy",
+    "buy_building",
+    "buy_district",
+    "research",
+    "civic",
+    "declare_war",
+    "declare_war_with_casus_belli",
+    "make_peace",
+    "denounce",
+    "propose_deal",
+    "accept_deal",
+    "reject_deal",
+    "trade",
+    "congress_vote",
+    "assign_spy",
+    "spy_mission",
+    "promote_spy",
+    "choose_dedication",
+    "fortify",
+    "upgrade_unit",
     "promote",
-    "combine_units", "link_units", "unlink_units", "government", "slot_policy",
-    "unslot_policy", "trade_route", "send_envoy", "levy_military",
-    "recruit_great_person", "patronize_great_person", "choose_pantheon",
-    "choose_secret_society", "assign_governor", "appoint_governor",
-    "reassign_governor", "promote_governor", "found_religion", "spread",
-    "theological_attack", "condemn_heretic", "heal_religious", "remove_heresy",
-    "launch_inquisition", "evangelize_belief", "convert_barbarians",
-    "city_strike", "wmd_strike", "encampment_strike", "keep_city", "raze_city",
-    "liberate_city", "end_turn", "air_pillage", "priority_target", "upgrade",
+    "combine_units",
+    "link_units",
+    "unlink_units",
+    "government",
+    "slot_policy",
+    "unslot_policy",
+    "trade_route",
+    "send_envoy",
+    "levy_military",
+    "recruit_great_person",
+    "patronize_great_person",
+    "choose_pantheon",
+    "choose_secret_society",
+    "assign_governor",
+    "appoint_governor",
+    "reassign_governor",
+    "promote_governor",
+    "found_religion",
+    "spread",
+    "theological_attack",
+    "condemn_heretic",
+    "heal_religious",
+    "remove_heresy",
+    "launch_inquisition",
+    "evangelize_belief",
+    "convert_barbarians",
+    "city_strike",
+    "wmd_strike",
+    "encampment_strike",
+    "keep_city",
+    "raze_city",
+    "liberate_city",
+    "end_turn",
+    "air_pillage",
+    "priority_target",
+    "upgrade",
     "build_railroad",
+    "send_aid",
 ];
 
 /// Width of one action's feature row: kind one-hot plus the shared
@@ -82,6 +140,7 @@ pub fn kind_name(action: &Action) -> &'static str {
         Action::AcceptDeal { .. } => "accept_deal",
         Action::RejectDeal { .. } => "reject_deal",
         Action::Trade { .. } => "trade",
+        Action::SendAid { .. } => "send_aid",
         Action::CongressVote { .. } => "congress_vote",
         Action::AssignSpy { .. } => "assign_spy",
         Action::SpyMission { .. } => "spy_mission",
@@ -201,8 +260,7 @@ pub fn features(g: &Game, pid: usize, action: &Action) -> Vec<f32> {
     if let Some(uid) = acting_unit(action) {
         if let Some(unit) = g.units.get(&uid) {
             row[base + 6] = (unit.hp as f32 / 100.0).clamp(0.0, 1.0);
-            row[base + 7] =
-                (g.unit_strength(unit, false) as f32 / 100.0).clamp(0.0, 1.0);
+            row[base + 7] = (g.unit_strength(unit, false) as f32 / 100.0).clamp(0.0, 1.0);
             row[base + 8] = (unit.moves_left as f32 / 6.0).clamp(0.0, 1.0);
             if let Some(pos) = tile {
                 row[base + 9] = (g.wdist(unit.pos, pos) as f32 / 10.0).clamp(0.0, 1.0);
@@ -277,7 +335,7 @@ fn features_row(g: &Game, pid: usize, action: &Action) -> Vec<f32> {
 #[cfg(test)]
 mod tests {
     use super::{kind_index, legal_encoded, FEATURE_WIDTH, KINDS};
-    use crate::ai::{Ai, AdvancedAi};
+    use crate::ai::{AdvancedAi, Ai};
     use crate::game::{Action, Game};
 
     #[test]
@@ -318,7 +376,11 @@ mod tests {
         assert!(e.features.iter().all(|v| v.is_finite()));
         // The mask must agree with the encoded kinds exactly.
         for (index, present) in e.kind_mask.iter().enumerate() {
-            assert_eq!(*present, e.kinds.contains(&index), "mask disagrees at {index}");
+            assert_eq!(
+                *present,
+                e.kinds.contains(&index),
+                "mask disagrees at {index}"
+            );
         }
         // Each row's one-hot names that row's kind.
         for (row, kind) in e.kinds.iter().enumerate() {

@@ -9,7 +9,10 @@ policy card, a governor promotion and a wonder's effect are the same
 construction: a row in `Modifiers` naming a `ModifierType`, which
 `DynamicModifiers` resolves into an `EffectType` (what happens) and a
 `CollectionType` (who it happens to), plus `ModifierArguments` and an optional
-`RequirementSet`. CIVVIS instead hardcodes each effect in Rust.
+`RequirementSet`. CIVVIS historically hardcoded each effect in Rust. The first
+generic runtime slice now reads the same shape from `modifiers.json` and
+executes attachment graphs for plot, building, city, and district yield
+subjects.
 
 `tools/civ6_modifiers.py` measures what that costs:
 
@@ -24,8 +27,9 @@ same baseline exclusions, so the two tools describe the same ruleset.
 
 ## What the census says
 
-3,405 modifier rows across **698 distinct effects**, in the Gathering Storm
-baseline with optional game modes excluded.
+The last full local-database census before that runtime landed found 3,405
+modifier rows across **698 distinct effects**, in the Gathering Storm baseline
+with optional game modes excluded.
 
 | Status | Effects | Rows |
 |---|---:|---:|
@@ -33,6 +37,12 @@ baseline with optional game modes excluded.
 | partial | 3 | 340 |
 | unmodelled | 669 | 2,085 |
 | out-of-scope | 1 | 155 |
+
+Those table counts are a historical baseline and should not be read as the
+post-interpreter report on a machine without a Civ VI install. The live
+`tools/modifier_coverage.json` now marks `ATTACH_MODIFIER` partial alongside
+the two generic yield effects; rerunning the census against the game database
+produces the current row totals.
 
 `tools/modifier_coverage.json` holds those judgements with a reason each.
 They are seeded by reading the engine for each effect family and are mostly
@@ -61,8 +71,10 @@ there is no batch large enough to be worth a bespoke implementation.
 The single largest entry says the same thing from the other direction:
 `ATTACH_MODIFIER` (336 rows) is the primitive that lets one modifier attach
 another to a collection. It is not a game rule at all — it is the
-interpreter's own composition operator, and nothing built out of it can be
-expressed without building the interpreter.
+interpreter's own composition operator. CIVVIS now validates and executes
+that graph for the implemented plot/building/city/district yield subjects, including cycle
+and dangling-child rejection; other attached effect and collection families
+keep its coverage status partial.
 
 ## Order of work
 
@@ -120,14 +132,18 @@ expressed without building the interpreter.
    adding 2 to each, Aerospace Contractors' Spaceport 3) and three belong to
    Cardiff, a city-state CIVVIS does not model — content scope, not effect
    scope. Distinguishing those two failure modes is the point of the exercise.
-2. **Close the three `partial` entries.** `ADJUST_PLOT_YIELD`,
-   `ADJUST_BUILDING_YIELD_CHANGE` and `GRANT_ABILITY` are 340 rows between
-   them, and each is partial for the same reason: a fixed set of named sources
-   executes where the game takes an arbitrary one. They are the cheapest
-   rehearsal for a general effect table.
-3. **Then the interpreter**, in the shape phase 2 of FIDELITY.md describes:
-   collections, effects, requirement sets, and a loader that reads the shipped
-   `Modifiers` rows rather than transcribing them.
+2. **Expand the interpreter slice.** `ADJUST_PLOT_YIELD` and
+   `ADJUST_BUILDING_YIELD_CHANGE` now accept arbitrary owners, yield/building
+   arguments, all/any/inverse requirements, and `ATTACH_MODIFIER` composition.
+   City/district flat and percentage yield effects now use the same runtime.
+   The checked-in `mods/bbg-7.4.6-supported` overlay exercises the path with
+   15 current BBG rows. Close their remaining shipped collection and
+   requirement variants, then complete `GRANT_ABILITY` and
+   `CITY_GRANT_RANDOM_RESOURCE_PRODUCT`.
+3. **Import rather than transcribe.** Extend the runtime subject/effect table
+   in frequency × impact order and have the data tool emit `modifiers.json`
+   from the shipped database and pinned BBG SQL. Validation already rejects
+   unknown effects, requirements, owners, dangling attachments, and cycles.
 
 Content scope — the civilizations, units and buildings CIVVIS does not model
 at all — is measured separately by the "Only in Civ VI" columns of

@@ -104,8 +104,9 @@ resolved. The largest:
 
 The "Only in Civ VI" column measures scope rather than error — the units and
 buildings CIVVIS does not model are almost all civilization uniques from DLC
-packs, and the missing features are natural wonders plus the volcano system.
-That column is the content backlog.
+packs. Natural Wonders and the Gathering Storm volcano/disaster system have
+since moved into the implemented baseline; the remaining column is primarily
+the civilization-content backlog.
 
 **District adjacency (parallel session):** `District_Adjacencies` joined to
 `Adjacency_YieldChanges` against each district's per-source `adjacency` map,
@@ -224,8 +225,9 @@ and the meteor-strike goody site.
 ## Phase 2 (measured): the modifier engine
 
 The size of this phase is no longer a guess. `tools/civ6_modifiers.py`
-censuses the shipped `Modifiers` tables and reports 3,405 rows across 698
-distinct effects, of which CIVVIS covers 825 rows. Crucially the tail is long:
+censuses the shipped `Modifiers` tables; the last full local-database run
+reported 3,405 rows across 698 distinct effects, of which CIVVIS covered 825
+rows. Crucially the tail is long:
 32 effects reach half the rows, and the other half needs 666 more. See
 [MODIFIERS.md](MODIFIERS.md) for the ranked backlog and the order of work.
 
@@ -246,6 +248,14 @@ Implementing the interpreter instead of the content inverts that:
   order instead of guessing.
 - Balance mods become a database swap. The competitive-multiplayer ruleset
   (BBG) is mostly SQL edits, so a modifier-driven CIVVIS gets it nearly free.
+
+The first executable slice has landed: `modifiers.json` models owners,
+collections, arguments, all/any/inverse owner and subject requirements, and
+`ATTACH_MODIFIER`; plot, building, city, and district yield changes plus
+city/district percentages execute in the live yield paths.
+`mods/bbg-7.4.6-supported` is the initial pinned consumer. The
+remaining work is to expand effect/subject/requirement handlers and generate
+the full base/BBG data, not to redesign the format.
 
 ## Phase 3: the ground-truth bridge
 

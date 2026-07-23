@@ -25,8 +25,8 @@ use std::path::Path;
 
 use crate::ai::{Ai, VictoryTarget};
 use crate::elo::builtin_ai;
-use crate::game::{Action, Game, GameOptions};
 use crate::evolve::features as scalar_features;
+use crate::game::{Action, Game, GameOptions};
 use crate::obs_tensor::{obs_tensor, PLANES};
 
 pub struct SelfPlayCfg {
@@ -41,6 +41,9 @@ pub struct SelfPlayCfg {
     pub every: u32,
     pub ai: String,
     pub out: String,
+    /// Complete setup used for generated games. `None` preserves the original
+    /// stock constructor behavior for library callers.
+    pub options: Option<GameOptions>,
 }
 
 pub struct SelfPlayStats {
@@ -66,14 +69,18 @@ pub fn export(cfg: &SelfPlayCfg) -> std::io::Result<SelfPlayStats> {
 
     for game_index in 0..cfg.games {
         let seed = cfg.seed.wrapping_add(game_index as u64);
-        let mut g = Game::new_with(GameOptions::new(
-            cfg.players,
-            cfg.width,
-            cfg.height,
-            seed,
-            cfg.max_turns,
-            cfg.city_states,
-        ));
+        let mut options = cfg.options.clone().unwrap_or_else(|| {
+            GameOptions::new(
+                cfg.players,
+                cfg.width,
+                cfg.height,
+                seed,
+                cfg.max_turns,
+                cfg.city_states,
+            )
+        });
+        options.seed = seed;
+        let mut g = Game::new_with(options);
         let mut ais: Vec<Box<dyn Ai>> = g
             .players
             .iter()
@@ -100,7 +107,13 @@ pub fn export(cfg: &SelfPlayCfg) -> std::io::Result<SelfPlayStats> {
                         global_names = t.global_names.clone();
                         globals_len = t.global.len();
                     }
-                    pending.push((t.data, t.global, scalar_features(&g, player), player, fraction));
+                    pending.push((
+                        t.data,
+                        t.global,
+                        scalar_features(&g, player),
+                        player,
+                        fraction,
+                    ));
                 }
             }
             ais[pid].take_turn(&mut g, pid);
@@ -113,7 +126,11 @@ pub fn export(cfg: &SelfPlayCfg) -> std::io::Result<SelfPlayStats> {
             decisive += 1;
         }
         for (planes, globals, scalars, pid, fraction) in pending {
-            let won = if g.winner == Some(pid) { 1.0f32 } else { 0.0f32 };
+            let won = if g.winner == Some(pid) {
+                1.0f32
+            } else {
+                0.0f32
+            };
             for value in &planes {
                 planes_out.write_all(&value.to_le_bytes())?;
             }
@@ -161,6 +178,9 @@ pub fn export(cfg: &SelfPlayCfg) -> std::io::Result<SelfPlayStats> {
             "seed": cfg.seed,
             "every": cfg.every,
             "ai": cfg.ai,
+            "tournament_preset": cfg.options.as_ref()
+                .and_then(|options| options.tournament_preset)
+                .map(|preset| preset.id()),
         },
         "victory_targets": VictoryTarget::ALL.map(|t| t.as_str()),
     });
@@ -194,6 +214,7 @@ mod tests {
             every: 2,
             ai: "basic".to_string(),
             out: dir.to_string_lossy().to_string(),
+            options: None,
         };
         let stats = export(&cfg).expect("export");
         assert!(stats.samples > 0);

@@ -6,6 +6,99 @@
 
 use serde::{Deserialize, Serialize};
 
+/// A versioned bundle of lobby defaults and gameplay rules.  This sits above
+/// individual setup controls such as map and speed: choosing a profile applies
+/// its defaults, after which those ordinary controls may still be adjusted.
+///
+/// `Civ65` is the compatibility default for programmatic constructors and old
+/// saves. User-facing entry points deliberately select `Civ6Tournament` when
+/// no profile was requested, so existing serialized games never acquire CPL
+/// restrictions merely because this field was added.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub enum GameProfile {
+    #[serde(rename = "civ6-tournament")]
+    Civ6Tournament,
+    #[default]
+    #[serde(rename = "civ65")]
+    Civ65,
+}
+
+impl GameProfile {
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Civ6Tournament => "civ6-tournament",
+            Self::Civ65 => "civ65",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        match id {
+            "civ6" | "civ6-tournament" | "tournament" => Some(Self::Civ6Tournament),
+            "civ65" | "civ-6.5" | "6.5" => Some(Self::Civ65),
+            _ => None,
+        }
+    }
+
+    pub const fn is_tournament(self) -> bool {
+        matches!(self, Self::Civ6Tournament)
+    }
+
+    /// JNR Climate Balance's complete pack makes warming progress 50% more
+    /// slowly. The broader Civ 6.5 profile carries that pacing; the tournament
+    /// profile retains stock Gathering Storm thresholds.
+    pub const fn climate_threshold_multiplier(self) -> f64 {
+        match self {
+            Self::Civ6Tournament => 1.0,
+            Self::Civ65 => 1.5,
+        }
+    }
+
+    /// Climate Balance reduces uranium-derived CO2 by 75%.
+    pub const fn nuclear_emissions_multiplier(self) -> f64 {
+        match self {
+            Self::Civ6Tournament => 1.0,
+            Self::Civ65 => 0.25,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct GameProfileSpec {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub description: &'static str,
+    pub components: &'static [&'static str],
+    #[serde(skip)]
+    pub profile: GameProfile,
+}
+
+pub const CIVVIS_GAME_PROFILES: [GameProfileSpec; 2] = [
+    GameProfileSpec {
+        id: "civ6-tournament",
+        name: "Civ VI · tournament",
+        description: "Current CPL FFA setup and enforceable policy rules on Gathering Storm.",
+        components: &[
+            "CPL FFA · July 2026",
+            "Online speed",
+            "Balanced starts",
+            "All victories",
+        ],
+        profile: GameProfile::Civ6Tournament,
+    },
+    GameProfileSpec {
+        id: "civ65",
+        name: "Civ 6.5 · Gathering Storm+",
+        description: "CIVVIS' expanded rules with Climate Balance and the built-in UI/QoL suite.",
+        components: &[
+            "Gathering Storm climate and disasters",
+            "Climate Balance core",
+            "Quick Deals and policy-card details",
+            "Detailed map tacks and spectator tools",
+        ],
+        profile: GameProfile::Civ65,
+    },
+];
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MapScript {
@@ -34,6 +127,12 @@ impl MapScript {
             .iter()
             .find(|script| script.id == id)
             .map(|script| script.script)
+    }
+
+    /// Whether the map's east and west edges meet. Civ VI's Inland Sea
+    /// script is bounded; the other shipped scripts use a cylindrical world.
+    pub const fn wraps_x(self) -> bool {
+        !matches!(self, Self::InlandSea)
     }
 }
 
@@ -68,7 +167,7 @@ pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 4] = [
     MapScriptSpec {
         id: "inland_sea",
         name: "Inland Sea",
-        description: "A broad connected landmass surrounding a central sea.",
+        description: "A bounded connected landmass surrounding a central sea.",
         script: MapScript::InlandSea,
     },
 ];
@@ -378,6 +477,54 @@ mod tests {
         let restored: Game = serde_json::from_str(&serde_json::to_string(&game).unwrap()).unwrap();
         assert_eq!(restored.game_speed, GameSpeed::Marathon);
         assert_eq!(restored.map_script, MapScript::SmallContinents);
+    }
+
+    #[test]
+    fn inland_sea_is_bounded_in_the_engine_observation_and_legacy_saves() {
+        let mut game = Game::new_with_setup(
+            2,
+            24,
+            16,
+            702,
+            80,
+            0,
+            MapScript::InlandSea,
+            GameSpeed::Online,
+            false,
+        );
+        let row = game.map.height / 2;
+        let west = crate::hex::offset_to_axial(0, row);
+        let east = crate::hex::offset_to_axial(game.map.width - 1, row);
+
+        assert!(!game.map.wrap_x);
+        assert!(!game.nbrs(east).contains(&west));
+        assert_eq!(game.wdist(east, west), game.map.width - 1);
+        assert!(!game.wdisk(east, 1).contains(&west));
+        assert_eq!(crate::obs::observation(&game, 0)["map"]["wrap_x"], false);
+        let tensor = crate::obs_tensor::obs_tensor(&game, 0);
+        assert!(!tensor.wrap_x);
+        assert_eq!(tensor.at(0, (east.0 + 1, east.1)), 0.0);
+
+        for position in [west, east] {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = "grassland".to_string();
+            tile.feature = None;
+            tile.hills = false;
+        }
+        let warrior = game.spawn_test_unit("warrior", 0, east);
+        assert!(!game.can_move(warrior, west));
+        assert!(!game
+            .legal_actions(0)
+            .contains(&Action::Move { unit: warrior, to: west }));
+
+        // An old save has no topology field. Loading it must derive bounded
+        // Inland Sea behavior from the serialized map script.
+        let mut legacy = serde_json::to_value(&game).unwrap();
+        legacy["map"].as_object_mut().unwrap().remove("wrap_x");
+        let restored: Game = serde_json::from_value(legacy).unwrap();
+        assert!(!restored.map.wrap_x);
+        assert!(!restored.nbrs(east).contains(&west));
+        assert_eq!(restored.wdist(east, west), restored.map.width - 1);
     }
 
     #[test]

@@ -314,7 +314,7 @@ tens-of-thousands figures describe a much smaller historical rules workload.
 ## Machine-learning surfaces
 
 - `civvis::obs_tensor::obs_tensor(&game, pid)` renders a fog-honest spatial
-  observation: 25 named `f32` feature planes over the full wrapped map plus
+  observation: 25 named `f32` feature planes over the full map plus
   a named global scalar vector (own empire exact, per-rival public facts).
   Same visibility contract as the JSON protocol (`obs::visibility`), so a
   net trained on it never sees hidden state.

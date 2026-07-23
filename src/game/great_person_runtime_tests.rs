@@ -64,7 +64,8 @@ fn named_scientists_grant_exact_buildings_science_and_era_boosts() {
         .contains(&"library".to_string()));
     assert_eq!(game.players[0].boosted_techs, initial_boosts);
     assert!(
-        (game.city_yields(city).science - initial_science
+        (game.city_yields(city).science
+            - initial_science
             - (game.rules.buildings["library"].yields.science + 1.0) * 1.1)
             .abs()
             < 1e-9
@@ -77,7 +78,8 @@ fn named_scientists_grant_exact_buildings_science_and_era_boosts() {
         .contains(&"university".to_string()));
     assert_eq!(game.players[0].boosted_techs, initial_boosts);
     assert!(
-        (game.city_yields(city).science - before_newton
+        (game.city_yields(city).science
+            - before_newton
             - (game.rules.buildings["university"].yields.science + 2.0) * 1.1)
             .abs()
             < 1e-9
@@ -396,12 +398,9 @@ fn named_merchants_annex_tiles_and_apply_exact_trade_and_oil_effects() {
         free_trader.pos, game.cities[&merchant_city].pos,
         "the free Trader must obey civilian stacking around the activation city"
     );
+    assert!((game.city_yields(foreign_city).gold - foreign_origin_gold - 2.0 * 1.1).abs() < 1e-9);
     assert!(
-        (game.city_yields(foreign_city).gold - foreign_origin_gold - 2.0 * 1.1).abs() < 1e-9
-    );
-    assert!(
-        (game.city_yields(merchant_city).gold - merchant_destination_gold - 2.0 * 1.1).abs()
-            < 1e-9
+        (game.city_yields(merchant_city).gold - merchant_destination_gold - 2.0 * 1.1).abs() < 1e-9
     );
 
     for position in game.cities[&foreign_city].owned_tiles.clone() {

@@ -20,6 +20,7 @@ exists, and a save records which mods it was played under.
 my-mod/
   mod.json          # optional: {"name": ..., "description": ...}
   units.json        # any subset of the files in data/
+  modifiers.json    # generic Civ VI-style behavior rows
   difficulties.json
 ```
 
@@ -89,16 +90,57 @@ Everything the ruleset holds: terrain, features, resources, improvements,
 units, districts, buildings, wonders, Great People, governors, projects, the
 technology and civic trees and their effects, governments, policies,
 promotions, beliefs, civilizations, leader agendas, difficulty levels, game
-speeds, goody huts and eras.
+speeds, goody huts, eras, and generic modifiers.
 
-What you cannot change is behaviour that has no data behind it. An effect key
-on a building does something because the engine has a handler for that key, so
-a mod can move existing effects around freely and cannot invent a new kind of
-effect. Lifting that ceiling is what
-[FIDELITY.md](FIDELITY.md)'s modifier interpreter is for; see
-[UNCIV_LESSONS.md](UNCIV_LESSONS.md) for why we think it is the right shape.
+`modifiers.json` is the first slice of the general modifier interpreter. A
+root row names its owner, collection, effect, arguments, and optional owner or
+subject requirement sets. A row without an owner is inert until another row
+reaches it through `ATTACH_MODIFIER`:
+
+```json
+{
+  "river_farm_food": {
+    "owner": {"kind": "civilization", "id": "CIVILIZATION_SUMERIA"},
+    "collection": "COLLECTION_PLAYER_PLOT_YIELDS",
+    "effect": "MODIFIER_PLAYER_ADJUST_PLOT_YIELD",
+    "arguments": {"YieldType": "YIELD_FOOD", "Amount": 1},
+    "subject_requirements": {
+      "mode": "REQUIREMENTSET_TEST_ALL",
+      "requirements": [
+        {
+          "kind": "REQUIREMENT_PLOT_IMPROVEMENT_TYPE_MATCHES",
+          "arguments": {"ImprovementType": "IMPROVEMENT_FARM"}
+        },
+        {"kind": "REQUIREMENT_PLOT_ADJACENT_TO_RIVER"}
+      ]
+    }
+  }
+}
+```
+
+Argument values may be strings or numbers. Identifiers may use Civ VI names
+(`YIELD_FOOD`, `IMPROVEMENT_FARM`) or native CIVVIS ids (`food`, `farm`). Sets
+accept `all`/`any` or `REQUIREMENTSET_TEST_ALL`/`_ANY`; each predicate may set
+`"inverse": true`. The current subject handlers are arbitrary plot, building,
+city, and district yield changes, plus city/district yield percentages. Owners
+cover civilizations, leaders, gameplay traits,
+policies, governments, technologies, civics, beliefs, improvements,
+buildings, wonders, districts, governors, and governor promotions. Unknown
+effects, predicates, owners, dangling children, and attachment cycles fail
+validation by modifier id instead of silently doing nothing.
+
+Other effect and collection families still need runtime handlers. Existing
+numeric `effects` maps continue to work, so a mod may rearrange those named
+primitives while the interpreter expands. See [MODIFIERS.md](MODIFIERS.md).
+
+Policy overlays may also declare `"governments": ["communism"]` for
+government-exclusive cards and `"obsoletes": [...]` when one unlocked card
+replaces several predecessors. Changing governments automatically removes
+exclusive cards that no longer qualify.
 
 ## Example
 
-`mods/swift-legions/` in this repository is a complete two-file mod, and the
-tests in `src/mods.rs` are the specification for everything above.
+`mods/swift-legions/` is a complete two-file scalar overlay.
+`mods/bbg-7.4.6-supported/` is the pinned, deliberately partial example for
+generic modifiers. The tests in `src/mods.rs` specify the loader and
+validation behavior.

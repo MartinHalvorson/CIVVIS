@@ -61,7 +61,13 @@ fn yields_summary(yields: Yields) -> Option<String> {
     ]
     .into_iter()
     .filter(|(_, value)| *value != 0.0)
-    .map(|(name, value)| format!("{}{} {name}", if value > 0.0 { "+" } else { "" }, number(value)))
+    .map(|(name, value)| {
+        format!(
+            "{}{} {name}",
+            if value > 0.0 { "+" } else { "" },
+            number(value)
+        )
+    })
     .collect();
     (!parts.is_empty()).then(|| parts.join(", "))
 }
@@ -137,7 +143,13 @@ pub fn entries(rules: &Rules) -> Vec<Entry> {
 
     for (id, spec) in &rules.units {
         let (mut facts, mut links) = gates(&spec.tech, &spec.civic);
-        facts.insert(0, ("Cost".to_string(), format!("{} Production", number(spec.cost))));
+        facts.insert(
+            0,
+            (
+                "Cost".to_string(),
+                format!("{} Production", number(spec.cost)),
+            ),
+        );
         facts.push(("Movement".to_string(), number(spec.moves)));
         if spec.strength > 0.0 {
             facts.push(("Combat Strength".to_string(), number(spec.strength)));
@@ -147,10 +159,16 @@ pub fn entries(rules: &Rules) -> Vec<Entry> {
             facts.push(("Range".to_string(), spec.range.to_string()));
         }
         if spec.bombard_strength > 0.0 {
-            facts.push(("Bombard Strength".to_string(), number(spec.bombard_strength)));
+            facts.push((
+                "Bombard Strength".to_string(),
+                number(spec.bombard_strength),
+            ));
         }
         if spec.maintenance > 0.0 {
-            facts.push(("Maintenance".to_string(), format!("{} Gold", number(spec.maintenance))));
+            facts.push((
+                "Maintenance".to_string(),
+                format!("{} Gold", number(spec.maintenance)),
+            ));
         }
         facts.push(("Sight".to_string(), spec.sight.to_string()));
         if let Some(resource) = &spec.requires_resource {
@@ -180,7 +198,13 @@ pub fn entries(rules: &Rules) -> Vec<Entry> {
 
     for (id, spec) in &rules.buildings {
         let (mut facts, mut links) = gates(&spec.tech, &spec.civic);
-        facts.insert(0, ("Cost".to_string(), format!("{} Production", number(spec.cost))));
+        facts.insert(
+            0,
+            (
+                "Cost".to_string(),
+                format!("{} Production", number(spec.cost)),
+            ),
+        );
         if let Some(district) = &spec.district {
             facts.push(("District".to_string(), title(district)));
             links.push(format!("districts/{district}"));
@@ -215,7 +239,13 @@ pub fn entries(rules: &Rules) -> Vec<Entry> {
 
     for (id, spec) in &rules.districts {
         let (mut facts, mut links) = gates(&spec.tech, &spec.civic);
-        facts.insert(0, ("Cost".to_string(), format!("{} Production", number(spec.cost))));
+        facts.insert(
+            0,
+            (
+                "Cost".to_string(),
+                format!("{} Production", number(spec.cost)),
+            ),
+        );
         if let Some(yields) = yields_summary(spec.yields) {
             facts.push(("Yields".to_string(), yields));
         }
@@ -223,11 +253,9 @@ pub fn entries(rules: &Rules) -> Vec<Entry> {
             let mut sources: Vec<String> = spec
                 .adjacency
                 .iter()
-                .map(|(source, yields)| {
-                    match yields_summary(*yields) {
-                        Some(summary) => format!("{} → {summary}", title(source)),
-                        None => title(source),
-                    }
+                .map(|(source, yields)| match yields_summary(*yields) {
+                    Some(summary) => format!("{} → {summary}", title(source)),
+                    None => title(source),
                 })
                 .collect();
             sources.sort();
@@ -261,7 +289,13 @@ pub fn entries(rules: &Rules) -> Vec<Entry> {
 
     for (id, spec) in &rules.wonders {
         let (mut facts, links) = gates(&spec.tech, &spec.civic);
-        facts.insert(0, ("Cost".to_string(), format!("{} Production", number(spec.cost))));
+        facts.insert(
+            0,
+            (
+                "Cost".to_string(),
+                format!("{} Production", number(spec.cost)),
+            ),
+        );
         if let Some(yields) = yields_summary(spec.yields) {
             facts.push(("Yields".to_string(), yields));
         }
@@ -281,13 +315,23 @@ pub fn entries(rules: &Rules) -> Vec<Entry> {
         if !spec.terrain.is_empty() {
             placement.push(format!(
                 "on {}",
-                spec.terrain.iter().map(|t| title(t)).collect::<Vec<_>>().join(" or ")
+                spec.terrain
+                    .iter()
+                    .map(|t| title(t))
+                    .collect::<Vec<_>>()
+                    .join(" or ")
             ));
         }
         if !placement.is_empty() {
             facts.push(("Placement".to_string(), placement.join(", ")));
         }
-        b.push("wonders", id, "World wonder — only one may exist", facts, links);
+        b.push(
+            "wonders",
+            id,
+            "World wonder — only one may exist",
+            facts,
+            links,
+        );
     }
 
     for (tree, catalogue) in [("techs", &rules.techs), ("civics", &rules.civics)] {
@@ -298,7 +342,11 @@ pub fn entries(rules: &Rules) -> Vec<Entry> {
                     format!(
                         "{} {}",
                         number(spec.cost),
-                        if tree == "techs" { "Science" } else { "Culture" }
+                        if tree == "techs" {
+                            "Science"
+                        } else {
+                            "Culture"
+                        }
                     ),
                 ),
                 ("Era".to_string(), era_name(spec.era)),
@@ -307,13 +355,22 @@ pub fn entries(rules: &Rules) -> Vec<Entry> {
             if !spec.requires.is_empty() {
                 facts.push((
                     "Requires".to_string(),
-                    spec.requires.iter().map(|r| title(r)).collect::<Vec<_>>().join(", "),
+                    spec.requires
+                        .iter()
+                        .map(|r| title(r))
+                        .collect::<Vec<_>>()
+                        .join(", "),
                 ));
                 links.extend(spec.requires.iter().map(|r| format!("{tree}/{r}")));
             }
             if let Some(boost) = &spec.boost {
                 facts.push((
-                    if tree == "techs" { "Eureka" } else { "Inspiration" }.to_string(),
+                    if tree == "techs" {
+                        "Eureka"
+                    } else {
+                        "Inspiration"
+                    }
+                    .to_string(),
                     format!("{} × {}", title(&boost.trigger), boost.count),
                 ));
             }
@@ -400,7 +457,11 @@ pub fn entries(rules: &Rules) -> Vec<Entry> {
         if !spec.requires.is_empty() {
             facts.push((
                 "Requires".to_string(),
-                spec.requires.iter().map(|r| title(r)).collect::<Vec<_>>().join(", "),
+                spec.requires
+                    .iter()
+                    .map(|r| title(r))
+                    .collect::<Vec<_>>()
+                    .join(", "),
             ));
             links.extend(spec.requires.iter().map(|r| format!("promotions/{r}")));
         }
@@ -413,6 +474,36 @@ pub fn entries(rules: &Rules) -> Vec<Entry> {
         if let Some(replaced) = &spec.replaces {
             facts.push(("Replaces".to_string(), title(replaced)));
             links.push(format!("policies/{replaced}"));
+        }
+        if !spec.obsoletes.is_empty() {
+            facts.push((
+                "Also obsoletes".to_string(),
+                spec.obsoletes
+                    .iter()
+                    .map(|policy| title(policy))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            ));
+            links.extend(
+                spec.obsoletes
+                    .iter()
+                    .map(|policy| format!("policies/{policy}")),
+            );
+        }
+        if !spec.governments.is_empty() {
+            facts.push((
+                "Government".to_string(),
+                spec.governments
+                    .iter()
+                    .map(|government| title(government))
+                    .collect::<Vec<_>>()
+                    .join(" or "),
+            ));
+            links.extend(
+                spec.governments
+                    .iter()
+                    .map(|government| format!("governments/{government}")),
+            );
         }
         b.push("policies", id, spec.note.clone(), facts, links);
     }
@@ -445,13 +536,21 @@ pub fn entries(rules: &Rules) -> Vec<Entry> {
         if !spec.terrain.is_empty() {
             facts.push((
                 "Terrain".to_string(),
-                spec.terrain.iter().map(|t| title(t)).collect::<Vec<_>>().join(", "),
+                spec.terrain
+                    .iter()
+                    .map(|t| title(t))
+                    .collect::<Vec<_>>()
+                    .join(", "),
             ));
         }
         if !spec.resources.is_empty() {
             facts.push((
                 "Resources".to_string(),
-                spec.resources.iter().map(|r| title(r)).collect::<Vec<_>>().join(", "),
+                spec.resources
+                    .iter()
+                    .map(|r| title(r))
+                    .collect::<Vec<_>>()
+                    .join(", "),
             ));
             links.extend(spec.resources.iter().map(|r| format!("resources/{r}")));
         }
@@ -468,7 +567,13 @@ pub fn entries(rules: &Rules) -> Vec<Entry> {
             facts.push(("Improved by".to_string(), title(&spec.improvement)));
             links.push(format!("improvements/{}", spec.improvement));
         }
-        b.push("resources", id, format!("{} resource", title(&spec.class)), facts, links);
+        b.push(
+            "resources",
+            id,
+            format!("{} resource", title(&spec.class)),
+            facts,
+            links,
+        );
     }
 
     for (id, spec) in &rules.terrains {
@@ -552,7 +657,10 @@ pub fn entries(rules: &Rules) -> Vec<Entry> {
             id,
             "Game speed",
             vec![
-                ("Costs".to_string(), format!("{}% of standard", number(spec.cost_pct))),
+                (
+                    "Costs".to_string(),
+                    format!("{}% of standard", number(spec.cost_pct)),
+                ),
                 ("Length".to_string(), format!("{} turns", spec.turns)),
             ],
             Vec::new(),
@@ -607,7 +715,15 @@ mod tests {
         let rules = Rules::shipped();
         let all = entries(&rules);
         // Every catalogue that has entries is represented.
-        for category in ["units", "buildings", "districts", "wonders", "techs", "civics", "civs"] {
+        for category in [
+            "units",
+            "buildings",
+            "districts",
+            "wonders",
+            "techs",
+            "civics",
+            "civs",
+        ] {
             assert!(
                 all.iter().any(|entry| entry.category == category),
                 "{category} is missing from the pedia"
@@ -623,13 +739,20 @@ mod tests {
             .expect("the Warrior is documented");
         assert_eq!(warrior.name, "Warrior");
         let cost = format!("{} Production", rules.units["warrior"].cost.round() as i64);
-        assert!(warrior.facts.iter().any(|(label, value)| label == "Cost" && *value == cost));
+        assert!(warrior
+            .facts
+            .iter()
+            .any(|(label, value)| label == "Cost" && *value == cost));
         // Links point at entries that exist.
         let keys: std::collections::BTreeSet<&str> =
             all.iter().map(|entry| entry.key.as_str()).collect();
         for entry in &all {
             for link in &entry.links {
-                assert!(keys.contains(link.as_str()), "{} links to missing {link}", entry.key);
+                assert!(
+                    keys.contains(link.as_str()),
+                    "{} links to missing {link}",
+                    entry.key
+                );
             }
         }
     }

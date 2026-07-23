@@ -121,12 +121,18 @@ impl<'a> Check<'a> {
         let civics = &self.rules.civics;
         if let Some(tech) = tech {
             if !techs.contains_key(tech) {
-                self.error(subject, format!("tech names {tech:?}, which is not a known technology"));
+                self.error(
+                    subject,
+                    format!("tech names {tech:?}, which is not a known technology"),
+                );
             }
         }
         if let Some(civic) = civic {
             if !civics.contains_key(civic) {
-                self.error(subject, format!("civic names {civic:?}, which is not a known civic"));
+                self.error(
+                    subject,
+                    format!("civic names {civic:?}, which is not a known civic"),
+                );
             }
         }
     }
@@ -174,6 +180,7 @@ pub fn validate(rules: &Rules) -> Vec<Finding> {
     terrain_and_improvements(&mut check);
     politics(&mut check);
     people(&mut check);
+    modifiers(&mut check);
     agendas(&mut check);
     setup(&mut check);
 
@@ -190,7 +197,10 @@ pub fn validate(rules: &Rules) -> Vec<Finding> {
 /// Technology and civic trees: prerequisites resolve, nothing is its own
 /// ancestor, and everything a node claims to unlock exists.
 fn trees(check: &mut Check) {
-    for (tree_name, tree) in [("techs", &check.rules.techs), ("civics", &check.rules.civics)] {
+    for (tree_name, tree) in [
+        ("techs", &check.rules.techs),
+        ("civics", &check.rules.civics),
+    ] {
         let tree = tree.clone();
         for (id, spec) in &tree {
             let subject = format!("{tree_name}/{id}");
@@ -235,7 +245,10 @@ fn trees(check: &mut Check) {
                 if !known {
                     check.error(
                         &subject,
-                        format!("unlocks {} {:?}, which does not exist", unlock.kind, unlock.id),
+                        format!(
+                            "unlocks {} {:?}, which does not exist",
+                            unlock.kind, unlock.id
+                        ),
                     );
                 }
             }
@@ -245,7 +258,9 @@ fn trees(check: &mut Check) {
             let mut seen = BTreeSet::new();
             let mut frontier = vec![id.clone()];
             while let Some(node) = frontier.pop() {
-                let Some(spec) = tree.get(&node) else { continue };
+                let Some(spec) = tree.get(&node) else {
+                    continue;
+                };
                 for prerequisite in &spec.requires {
                     if prerequisite == id {
                         check.error(
@@ -271,7 +286,13 @@ fn units(check: &mut Check) {
         check.gates(&subject, spec.tech.as_ref(), spec.civic.as_ref());
         check.civ(&subject, "unique_to", spec.unique_to.as_ref());
         check.reference(&subject, "replaces", spec.replaces.as_ref(), &units, "unit");
-        check.reference(&subject, "upgrade_to", spec.upgrade_to.as_ref(), &units, "unit");
+        check.reference(
+            &subject,
+            "upgrade_to",
+            spec.upgrade_to.as_ref(),
+            &units,
+            "unit",
+        );
         let techs = check.rules.techs.clone();
         check.reference(
             &subject,
@@ -308,9 +329,18 @@ fn units(check: &mut Check) {
             "district",
         );
         let improvements = check.rules.improvements.clone();
-        check.references(&subject, "builds", &spec.builds, &improvements, "improvement");
+        check.references(
+            &subject,
+            "builds",
+            &spec.builds,
+            &improvements,
+            "improvement",
+        );
         if spec.replaces.is_some() && spec.unique_to.is_none() {
-            check.error(&subject, "replaces another unit but belongs to no civilization");
+            check.error(
+                &subject,
+                "replaces another unit but belongs to no civilization",
+            );
         }
         if spec.buildable && spec.cost <= 0.0 {
             check.warn(&subject, "is buildable but free");
@@ -336,7 +366,13 @@ fn districts_and_buildings(check: &mut Check) {
         let subject = format!("districts/{id}");
         check.gates(&subject, spec.tech.as_ref(), spec.civic.as_ref());
         check.civ(&subject, "unique_to", spec.unique_to.as_ref());
-        check.reference(&subject, "replaces", spec.replaces.as_ref(), &districts, "district");
+        check.reference(
+            &subject,
+            "replaces",
+            spec.replaces.as_ref(),
+            &districts,
+            "district",
+        );
         check.references(&subject, "excludes", &spec.excludes, &districts, "district");
         for kind in spec.great_person_points.keys() {
             if !check.great_person_kinds.contains(kind) {
@@ -356,8 +392,20 @@ fn districts_and_buildings(check: &mut Check) {
         let subject = format!("buildings/{id}");
         check.gates(&subject, spec.tech.as_ref(), spec.civic.as_ref());
         check.civ(&subject, "unique_to", spec.unique_to.as_ref());
-        check.reference(&subject, "district", spec.district.as_ref(), &districts, "district");
-        check.reference(&subject, "replaces", spec.replaces.as_ref(), &buildings, "building");
+        check.reference(
+            &subject,
+            "district",
+            spec.district.as_ref(),
+            &districts,
+            "district",
+        );
+        check.reference(
+            &subject,
+            "replaces",
+            spec.replaces.as_ref(),
+            &buildings,
+            "building",
+        );
         check.references(&subject, "requires", &spec.requires, &buildings, "building");
         check.references(
             &subject,
@@ -459,7 +507,13 @@ fn terrain_and_improvements(check: &mut Check) {
         );
         check.references(&subject, "terrain", &spec.terrain, &terrains, "terrain");
         check.references(&subject, "feature", &spec.feature, &features, "feature");
-        check.references(&subject, "resources", &spec.resources, &resources, "resource");
+        check.references(
+            &subject,
+            "resources",
+            &spec.resources,
+            &resources,
+            "resource",
+        );
         if spec.resource_only && spec.resources.is_empty() {
             check.error(&subject, "is resource_only but names no resources");
         }
@@ -492,7 +546,10 @@ fn terrain_and_improvements(check: &mut Check) {
             );
         }
         if spec.terrain.is_empty() && spec.feature.is_empty() {
-            check.warn(&subject, "can appear on no terrain or feature, so it never spawns");
+            check.warn(
+                &subject,
+                "can appear on no terrain or feature, so it never spawns",
+            );
         }
     }
 }
@@ -503,11 +560,33 @@ fn politics(check: &mut Check) {
     for (id, spec) in &policies {
         let subject = format!("policies/{id}");
         check.gates(&subject, None, spec.civic.as_ref());
-        check.reference(&subject, "replaces", spec.replaces.as_ref(), &policies, "policy");
+        check.reference(
+            &subject,
+            "replaces",
+            spec.replaces.as_ref(),
+            &policies,
+            "policy",
+        );
+        check.references(&subject, "obsoletes", &spec.obsoletes, &policies, "policy");
+        check.references(
+            &subject,
+            "governments",
+            &spec.governments,
+            &check.rules.governments.clone(),
+            "government",
+        );
         if !SLOTS.contains(&spec.slot.as_str()) {
-            check.error(&subject, format!("slot {:?} is not a policy slot type", spec.slot));
+            check.error(
+                &subject,
+                format!("slot {:?} is not a policy slot type", spec.slot),
+            );
         }
-        if spec.effects.is_empty() {
+        let has_generic_modifier = check.rules.modifiers.values().any(|modifier| {
+            modifier.owner.as_ref().is_some_and(|owner| {
+                modifier_id(&owner.kind) == "policy" && modifier_id(&owner.id) == modifier_id(id)
+            })
+        });
+        if spec.effects.is_empty() && !has_generic_modifier {
             check.warn(&subject, "has no effects, so slotting it does nothing");
         }
     }
@@ -534,7 +613,13 @@ fn politics(check: &mut Check) {
         .collect();
     for (id, spec) in &promotions {
         let subject = format!("promotions/{id}");
-        check.references(&subject, "requires", &spec.requires, &promotions, "promotion");
+        check.references(
+            &subject,
+            "requires",
+            &spec.requires,
+            &promotions,
+            "promotion",
+        );
         if !classes.contains(&spec.class) {
             check.error(
                 &subject,
@@ -604,6 +689,261 @@ fn people(check: &mut Check) {
                 ),
                 Some(_) => {}
             }
+        }
+    }
+}
+
+fn modifier_id(raw: &str) -> String {
+    let mut value: String = raw
+        .trim()
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() {
+                character.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    while value.contains("__") {
+        value = value.replace("__", "_");
+    }
+    value = value.trim_matches('_').to_string();
+    for prefix in [
+        "civilization_",
+        "technology_",
+        "improvement_",
+        "government_",
+        "requirement_",
+        "building_",
+        "district_",
+        "resource_",
+        "terrain_",
+        "feature_",
+        "leader_",
+        "policy_",
+        "civic_",
+        "trait_",
+        "yield_",
+    ] {
+        if let Some(stripped) = value.strip_prefix(prefix) {
+            value = stripped.to_string();
+            break;
+        }
+    }
+    value
+}
+
+fn modifier_catalog_has<T>(catalogue: &BTreeMap<String, T>, wanted: &str) -> bool {
+    let wanted = modifier_id(wanted);
+    catalogue.keys().any(|id| modifier_id(id) == wanted)
+}
+
+/// Validate the generic behavior graph before a mod can install it. Unknown
+/// effects and predicates are errors: silently accepting a BBG row that can
+/// never execute would be worse than rejecting the overlay by modifier id.
+fn modifiers(check: &mut Check) {
+    const REQUIREMENTS: [&str; 31] = [
+        "plot_terrain_type_matches",
+        "plot_has_terrain",
+        "plot_feature_type_matches",
+        "plot_has_feature",
+        "plot_resource_type_matches",
+        "plot_has_resource",
+        "plot_improvement_type_matches",
+        "plot_has_improvement",
+        "plot_district_type_matches",
+        "plot_has_district",
+        "plot_wonder_type_matches",
+        "plot_has_wonder",
+        "plot_adjacent_improvement_type_matches",
+        "plot_adjacent_district_type_matches",
+        "plot_adjacent_feature_type_matches",
+        "plot_adjacent_wonder",
+        "plot_adjacent_to_wonder",
+        "plot_has_hills",
+        "plot_is_hills",
+        "plot_adjacent_to_river",
+        "plot_has_no_floodplains",
+        "city_has_building",
+        "city_has_district",
+        "city_population_at_least",
+        "city_has_governor",
+        "district_type_matches",
+        "subject_is_district",
+        "player_has_technology",
+        "player_has_tech",
+        "player_has_civic",
+        "player_has_policy",
+    ];
+    const EXTRA_REQUIREMENTS: [&str; 4] = [
+        "player_government_type_matches",
+        "player_civilization_type_matches",
+        "player_leader_type_matches",
+        "subject_is_building",
+    ];
+    let rules = check.rules;
+    let entries = rules.modifiers.clone();
+    let mut attached = BTreeSet::new();
+    for (id, spec) in &entries {
+        let subject = format!("modifiers/{id}");
+        let effect = spec.effect.to_ascii_uppercase();
+        let attach = effect.ends_with("ATTACH_MODIFIER");
+        let plot = effect.ends_with("ADJUST_PLOT_YIELD") || effect.ends_with("ADJUST_PLOT_YIELDS");
+        let building = effect.ends_with("ADJUST_BUILDING_YIELD_CHANGE");
+        let city = effect.ends_with("ADJUST_CITY_YIELD_CHANGE")
+            || effect.ends_with("ADJUST_CITY_YIELD_MODIFIER");
+        let district = effect.ends_with("ADJUST_DISTRICT_YIELD_CHANGE")
+            || effect.ends_with("ADJUST_DISTRICT_YIELD_MODIFIER")
+            || effect.ends_with("DISTRICTS_ADJUST_YIELD_CHANGE")
+            || effect.ends_with("DISTRICTS_ADJUST_YIELD_MODIFIER");
+        if !attach && !plot && !building && !city && !district {
+            check.error(
+                &subject,
+                format!("effect {:?} has no generic runtime handler", spec.effect),
+            );
+        }
+        if plot || building || city || district {
+            let yield_type = spec.argument_string("YieldType");
+            if !yield_type.as_deref().is_some_and(|value| {
+                matches!(
+                    modifier_id(value).as_str(),
+                    "food" | "production" | "gold" | "science" | "culture" | "faith"
+                )
+            }) {
+                check.error(&subject, "YieldType must name a supported yield");
+            }
+            if spec.argument_f64("Amount").is_none() {
+                check.error(&subject, "Amount must be numeric");
+            }
+        }
+        if attach {
+            match spec.argument_string("ModifierId") {
+                Some(child) if entries.contains_key(&child) => {
+                    attached.insert(child);
+                }
+                Some(child) => check.error(
+                    &subject,
+                    format!("ModifierId names {child:?}, which is not in modifiers.json"),
+                ),
+                None => check.error(&subject, "ATTACH_MODIFIER has no ModifierId argument"),
+            }
+        }
+        if let Some(owner) = &spec.owner {
+            let owner_exists = match modifier_id(&owner.kind).as_str() {
+                "civilization" | "civ" => modifier_catalog_has(&rules.civs, &owner.id),
+                "leader" => rules
+                    .civs
+                    .values()
+                    .any(|civ| modifier_id(&civ.leader) == modifier_id(&owner.id)),
+                "gameplay_trait" | "trait" => rules.civs.values().any(|civ| {
+                    civ.gameplay_traits
+                        .iter()
+                        .any(|trait_id| modifier_id(trait_id) == modifier_id(&owner.id))
+                }),
+                "policy" => modifier_catalog_has(&rules.policies, &owner.id),
+                "government" => modifier_catalog_has(&rules.governments, &owner.id),
+                "technology" | "tech" => modifier_catalog_has(&rules.techs, &owner.id),
+                "civic" => modifier_catalog_has(&rules.civics, &owner.id),
+                "pantheon" => modifier_catalog_has(&rules.beliefs.pantheon, &owner.id),
+                "belief" => [
+                    &rules.beliefs.pantheon,
+                    &rules.beliefs.founder,
+                    &rules.beliefs.follower,
+                    &rules.beliefs.enhancer,
+                    &rules.beliefs.worship,
+                ]
+                .iter()
+                .any(|catalogue| modifier_catalog_has(catalogue, &owner.id)),
+                "improvement" => modifier_catalog_has(&rules.improvements, &owner.id),
+                "building" => modifier_catalog_has(&rules.buildings, &owner.id),
+                "wonder" => modifier_catalog_has(&rules.wonders, &owner.id),
+                "district" => modifier_catalog_has(&rules.districts, &owner.id),
+                "governor" => modifier_catalog_has(&rules.governors, &owner.id),
+                "governor_promotion" => rules
+                    .governors
+                    .values()
+                    .any(|governor| modifier_catalog_has(&governor.promotions, &owner.id)),
+                other => {
+                    check.error(&subject, format!("owner kind {other:?} is not supported"));
+                    true
+                }
+            };
+            if !owner_exists {
+                check.error(
+                    &subject,
+                    format!(
+                        "owner {:?} {:?} does not exist in this ruleset",
+                        owner.kind, owner.id
+                    ),
+                );
+            }
+        }
+        for (label, set) in [
+            ("owner_requirements", &spec.owner_requirements),
+            ("subject_requirements", &spec.subject_requirements),
+        ] {
+            let mode = set.mode.to_ascii_uppercase();
+            if !mode.ends_with("ALL") && !mode.ends_with("ANY") {
+                check.error(
+                    &subject,
+                    format!("{label} mode {:?} is not all or any", set.mode),
+                );
+            }
+            for requirement in &set.requirements {
+                let mut kind = modifier_id(&requirement.kind);
+                if let Some(stripped) = kind.strip_prefix("requires_") {
+                    kind = stripped.to_string();
+                }
+                if !REQUIREMENTS.contains(&kind.as_str())
+                    && !EXTRA_REQUIREMENTS.contains(&kind.as_str())
+                {
+                    check.error(
+                        &subject,
+                        format!(
+                            "{label} predicate {:?} has no generic runtime handler",
+                            requirement.kind
+                        ),
+                    );
+                }
+            }
+        }
+    }
+
+    for id in attached {
+        if entries[&id].owner.is_some() {
+            check.warn(
+                format!("modifiers/{id}"),
+                "is both a root modifier and an ATTACH_MODIFIER child",
+            );
+        }
+    }
+
+    fn reaches_cycle(
+        id: &str,
+        entries: &BTreeMap<String, crate::rules::ModifierSpec>,
+        path: &mut BTreeSet<String>,
+    ) -> bool {
+        if !path.insert(id.to_string()) {
+            return true;
+        }
+        let cycle = entries.get(id).is_some_and(|spec| {
+            spec.effect
+                .to_ascii_uppercase()
+                .ends_with("ATTACH_MODIFIER")
+                && spec
+                    .argument_string("ModifierId")
+                    .is_some_and(|child| reaches_cycle(&child, entries, path))
+        });
+        path.remove(id);
+        cycle
+    }
+    for id in entries.keys() {
+        if reaches_cycle(id, &entries, &mut BTreeSet::new()) {
+            check.error(
+                format!("modifiers/{id}"),
+                "ATTACH_MODIFIER graph contains a cycle",
+            );
         }
     }
 }
@@ -754,15 +1094,13 @@ mod tests {
     #[test]
     fn a_dangling_reference_is_an_error() {
         let mut rules = Rules::embedded();
-        rules
-            .units
-            .get_mut("warrior")
-            .unwrap()
-            .tech = Some("nonexistent_tech".to_string());
+        rules.units.get_mut("warrior").unwrap().tech = Some("nonexistent_tech".to_string());
         let findings = validate(&rules);
-        assert!(findings.iter().any(|finding| finding.severity == Severity::Error
-            && finding.subject == "units/warrior"
-            && finding.message.contains("nonexistent_tech")));
+        assert!(findings
+            .iter()
+            .any(|finding| finding.severity == Severity::Error
+                && finding.subject == "units/warrior"
+                && finding.message.contains("nonexistent_tech")));
     }
 
     /// Difficulty and speed are validated like any other catalogue.
@@ -777,10 +1115,12 @@ mod tests {
             .ai_bonus_units
             .insert("trebuchet_of_theseus".to_string(), 1);
         let findings = validate(&rules);
+        assert!(findings.iter().any(
+            |finding| finding.subject == "difficulties" && finding.severity == Severity::Error
+        ));
         assert!(findings
             .iter()
-            .any(|finding| finding.subject == "difficulties" && finding.severity == Severity::Error));
-        assert!(findings.iter().any(|finding| finding.subject == "difficulties/king"
-            && finding.message.contains("trebuchet_of_theseus")));
+            .any(|finding| finding.subject == "difficulties/king"
+                && finding.message.contains("trebuchet_of_theseus")));
     }
 }

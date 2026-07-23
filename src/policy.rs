@@ -36,8 +36,17 @@ pub struct PolicyAi {
 /// Action kinds whose whole effect lands this turn, so the resulting
 /// position honestly reflects the choice.
 pub const TACTICAL_KINDS: [&str; 12] = [
-    "move", "move_to", "attack", "ranged", "air_strike", "air_patrol",
-    "air_rebase", "fortify", "pillage", "city_strike", "encampment_strike",
+    "move",
+    "move_to",
+    "attack",
+    "ranged",
+    "air_strike",
+    "air_patrol",
+    "air_rebase",
+    "fortify",
+    "pillage",
+    "city_strike",
+    "encampment_strike",
     "condemn_heretic",
 ];
 
@@ -111,9 +120,7 @@ impl PolicyAi {
             };
             let better = best
                 .as_ref()
-                .map(|(ba, bg)| {
-                    gain > *bg || (gain == *bg && kind_name(&action) < kind_name(ba))
-                })
+                .map(|(ba, bg)| gain > *bg || (gain == *bg && kind_name(&action) < kind_name(ba)))
                 .unwrap_or(true);
             if better {
                 best = Some((action, gain));

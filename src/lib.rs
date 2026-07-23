@@ -12,9 +12,11 @@ pub mod fractal;
 pub mod game;
 pub mod hex;
 pub mod mapgen;
+pub mod mods;
 pub mod neural;
 pub mod obs;
 pub mod obs_tensor;
+pub mod pedia;
 pub mod policy;
 pub mod rng;
 pub mod rules;
@@ -22,10 +24,8 @@ pub mod selfplay;
 pub mod server;
 pub mod setup;
 pub mod strategic;
-pub mod valuenet;
-pub mod mods;
-pub mod pedia;
 pub mod validate;
+pub mod valuenet;
 pub mod world;
 
 pub type Pos = (i32, i32);
@@ -154,11 +154,11 @@ mod tests {
         let item = crate::game::Item::Unit {
             unit: "warrior".to_string(),
         };
+        assert_eq!(marathon.item_cost(&item), standard.item_cost(&item) * 3.0);
         assert_eq!(
-            marathon.item_cost(&item),
-            standard.item_cost(&item) * 3.0
+            marathon.tech_cost("mining"),
+            standard.tech_cost("mining") * 3.0
         );
-        assert_eq!(marathon.tech_cost("mining"), standard.tech_cost("mining") * 3.0);
         assert_eq!(
             marathon.civic_cost("code_of_laws"),
             standard.civic_cost("code_of_laws") * 3.0
@@ -186,9 +186,9 @@ mod tests {
         g.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
 
         let mine = g.events_for(0);
-        assert!(mine
-            .iter()
-            .any(|e| e.category == "Cities" && e.text.contains("Testopolis") && e.pos == Some(pos)));
+        assert!(mine.iter().any(|e| e.category == "Cities"
+            && e.text.contains("Testopolis")
+            && e.pos == Some(pos)));
         let (aggressor, defender) = (g.players[0].civ.clone(), g.players[1].civ.clone());
         let declaration = format!("{aggressor} declared war on {defender}");
         assert!(mine
@@ -269,7 +269,10 @@ mod tests {
         )
         .unwrap();
         assert!(g.in_anarchy(0));
-        assert_eq!(g.players[0].anarchy_turns, crate::game::GOVERNMENT_BASE_ANARCHY_TURNS);
+        assert_eq!(
+            g.players[0].anarchy_turns,
+            crate::game::GOVERNMENT_BASE_ANARCHY_TURNS
+        );
         assert!(g.players[0].government.is_none());
         let slots = g.gov_slots(0);
         assert_eq!(
@@ -288,10 +291,10 @@ mod tests {
                 },
             )
             .is_err());
-        assert!(!g.legal_actions(0).iter().any(|action| matches!(
-            action,
-            Action::Government { .. }
-        )));
+        assert!(!g
+            .legal_actions(0)
+            .iter()
+            .any(|action| matches!(action, Action::Government { .. })));
 
         // A turn of Anarchy earns the empire nothing.
         let (gold, science) = (g.players[0].gold, g.players[0].research_progress);
@@ -337,11 +340,7 @@ mod tests {
                 let _ = g.apply(pid, &Action::EndTurn);
             }
         }
-        let names: Vec<&str> = g
-            .players
-            .iter()
-            .map(|player| player.civ.as_str())
-            .collect();
+        let names: Vec<&str> = g.players.iter().map(|player| player.civ.as_str()).collect();
         let orphans: Vec<&str> = g
             .events
             .iter()
@@ -434,7 +433,9 @@ mod tests {
         // turn, so the aggressor has to be the seat holding it.
         let treacherous = g.current;
         assert_ne!(treacherous, tomyris);
-        let honest = (0..8).find(|pid| *pid != tomyris && *pid != treacherous).unwrap();
+        let honest = (0..8)
+            .find(|pid| *pid != tomyris && *pid != treacherous)
+            .unwrap();
         assert_eq!(g.agenda_opinion(tomyris, honest), 0.0, "no reason to judge");
         // Declaring war piles grievances on the aggressor, which is exactly
         // the reputation her agenda punishes.
@@ -462,10 +463,7 @@ mod tests {
             .unwrap();
         let (a, b) = (
             (0..8).find(|pid| *pid != tomyris).unwrap(),
-            (0..8)
-                .filter(|pid| *pid != tomyris)
-                .nth(1)
-                .unwrap(),
+            (0..8).filter(|pid| *pid != tomyris).nth(1).unwrap(),
         );
         g.apply(a, &Action::DeclareWar { player: b }).unwrap();
         // Run a full world turn so the upkeep pass sees the new stance.

@@ -766,6 +766,44 @@ class RecoveryTests(unittest.TestCase):
             "science,culture,domination",
         )
 
+    def test_tournament_preset_survives_state_and_server_handoffs(self):
+        defaults = {
+            "players": 4,
+            "width": 60,
+            "height": 38,
+            "city_states": 6,
+            "turns": 250,
+            "map": "pangaea",
+            "speed": "online",
+        }
+        settings = supervisor.session_settings(
+            {"tournament_preset": "cpl-ffa-2026-07"}, defaults
+        )
+        self.assertEqual(settings["tournament_preset"], "cpl-ffa-2026-07")
+        command = supervisor.server_command(8766, settings, False)
+        self.assertEqual(
+            command[command.index("--tournament-preset") + 1],
+            "cpl-ffa-2026-07",
+        )
+
+    def test_game_profile_survives_state_and_server_handoffs(self):
+        defaults = {
+            "players": 4,
+            "width": 60,
+            "height": 38,
+            "city_states": 6,
+            "turns": 250,
+            "map": "pangaea",
+            "speed": "online",
+            "game_profile": "civ6-tournament",
+        }
+        settings = supervisor.session_settings(
+            {"game_profile": "civ65"}, defaults
+        )
+        self.assertEqual(settings["game_profile"], "civ65")
+        command = supervisor.server_command(8766, settings, False)
+        self.assertEqual(command[command.index("--game-profile") + 1], "civ65")
+
     def test_server_starts_beside_the_promoted_binary_not_the_shared_web_tree(self):
         settings = {
             "players": 4,
@@ -941,6 +979,7 @@ class RecoveryTests(unittest.TestCase):
                 "width": 60,
                 "height": 38,
                 "city_states": 6,
+                "disaster_intensity": 2,
                 "turns": 500,
                 "map": "pangaea",
                 "speed": "standard",

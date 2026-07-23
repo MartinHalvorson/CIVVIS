@@ -28,6 +28,19 @@ Firaxis or 2K; no assets, art, text, or code from Civilization VI are used.
 - Stock Civ VI map-size profiles (dimensions, players/city-states, natural
   wonders, continents, and religion caps)
 - Online, Quick, Standard, Epic, and Marathon game speeds with scaled pacing
+- Gathering Storm natural disasters at all five intensity levels: river
+  floods, volcanic eruptions, moving blizzards/dust storms/tornadoes/hurricanes,
+  5/10-turn droughts, and the full burn–regrow forest-fire lifecycle with
+  damage, mitigation, climate scaling, permanent fertility, and disaster-
+  triggered Aid Request competitions with Gold and Send Aid contributions
+- All seven Gathering Storm Special Session families: Military, City-State,
+  Religious, Nuclear, and Betrayal Emergencies plus disaster and Military Aid
+  Requests, including their coalition/competition objectives and rewards
+- Versioned CPL FFA/teamer policy presets with enforceable trade, alliance,
+  city-state-token, liberation, team relic, Amani-cooldown, and Barbarian rules
+- Persisted game profiles: the user-facing default is **Civ VI tournament**
+  (current CPL FFA setup/policy); **Civ 6.5 · Gathering Storm+** selects the
+  expanded climate rules and built-in QoL suite
 - Cities: Civ 6 growth curve, border expansion, **housing & amenities**
 - **Districts with adjacency bonuses**, buildings, improvements, builder charges
 - Complete Gathering Storm-style **technology and civics trees** (77
@@ -58,9 +71,17 @@ Firaxis or 2K; no assets, art, text, or code from Civilization VI are used.
 ```bash
 cargo build --release
 ./target/release/civvis play --players 4        # browser GUI; Online by default
+./target/release/civvis play --players 4 --game-profile civ65
 ./target/release/civvis play --players 6 --map continents --speed epic
 ./target/release/civvis play --players 4 --teams 0,0,1,1 # stock 2v2 teams
+./target/release/civvis play --players 8 --disaster-intensity 2 # Moderate
+./target/release/civvis play --players 8 --tournament-preset cpl-ffa-2026-07
 ```
+
+The profile is a bundle, not a lock: selecting one establishes its defaults,
+then map, world size, speed, disaster intensity, and victories remain
+individually configurable. See [docs/PROFILES.md](docs/PROFILES.md) for the
+versioned contents and the simulator boundary.
 
 For an unattended spectator that checks for new code only between games:
 
@@ -92,8 +113,10 @@ Player-count defaults use Civ VI's stock world rows: 2 players = Duel
 advanced overrides.
 
 GUI: click/right-click to select and order units, drag to pan, wheel to zoom,
-**1** next action, **2** settler lens, **3** map tacks, **D** Quick Deals,
-Enter ends turn; tech
+and Option/Alt-drag to rotate horizontally. In Cinematic terrain, the same
+gesture also tilts vertically (drag up for a flatter view); Strategic keeps its
+standard projection. **1** selects the next action, **2** toggles the settler lens,
+**3** toggles map tacks, **D** opens Quick Deals, and Enter ends the turn; tech
 and civics tree maps, production/buy panels, city strikes, fog of war. Enable
 **Show yields per tile** in View & controls (or press **Y**); gold-outlined yield
 chips identify tiles currently worked by the automatic citizen governor.

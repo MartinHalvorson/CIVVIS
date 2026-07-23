@@ -96,6 +96,14 @@
       "completion_loyalty": 20
     }
   },
+  "send_aid": {
+    "cost": 100,
+    "repeatable": true,
+    "effects": {
+      "aid_gold": 200,
+      "aid_score": 200
+    }
+  },
   "repair_outer_defenses": {
     "cost": 1,
     "repeatable": true

@@ -122,9 +122,13 @@ fn apply(values: &mut BTreeMap<String, Value>, path: &Path) -> Result<ModInfo, S
         .map_err(|error| format!("cannot read mod {}: {error}", path.display()))?;
     let mut overlays: Vec<(String, PathBuf)> = Vec::new();
     for entry in entries {
-        let entry = entry.map_err(|error| format!("cannot read mod {}: {error}", path.display()))?;
+        let entry =
+            entry.map_err(|error| format!("cannot read mod {}: {error}", path.display()))?;
         let file = entry.path();
-        let Some(stem) = file.file_stem().map(|stem| stem.to_string_lossy().to_string()) else {
+        let Some(stem) = file
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().to_string())
+        else {
             continue;
         };
         if file.extension().is_none_or(|ext| ext != "json") || stem == "mod" {
@@ -144,8 +148,8 @@ fn apply(values: &mut BTreeMap<String, Value>, path: &Path) -> Result<ModInfo, S
     for (name, file) in overlays {
         let text = std::fs::read_to_string(&file)
             .map_err(|error| format!("cannot read {}: {error}", file.display()))?;
-        let overlay: Value = serde_json::from_str(&text)
-            .map_err(|error| format!("{}: {error}", file.display()))?;
+        let overlay: Value =
+            serde_json::from_str(&text).map_err(|error| format!("{}: {error}", file.display()))?;
         let base = values
             .get_mut(&name)
             .ok_or_else(|| format!("mod {} overlays unknown file {name}.json", info.name))?;
@@ -192,7 +196,11 @@ mod tests {
     }
 
     fn write(dir: &PathBuf, file: &str, value: serde_json::Value) {
-        std::fs::write(dir.join(file), serde_json::to_string_pretty(&value).unwrap()).unwrap();
+        std::fs::write(
+            dir.join(file),
+            serde_json::to_string_pretty(&value).unwrap(),
+        )
+        .unwrap();
     }
 
     /// The three merge rules: add, field-wise override, and removal.
@@ -230,7 +238,10 @@ mod tests {
 
         assert_eq!(rules.units["warrior"].cost, 10.0);
         // The fields the mod did not mention survived the merge.
-        assert_eq!(rules.units["warrior"].strength, shipped.units["warrior"].strength);
+        assert_eq!(
+            rules.units["warrior"].strength,
+            shipped.units["warrior"].strength
+        );
         assert_eq!(rules.units["test_skirmisher"].strength, 22.0);
         assert!(!rules.agendas.contains_key("tlatoani"));
         assert_eq!(rules.civs["Aztec"].agenda, None);
@@ -244,8 +255,14 @@ mod tests {
     #[test]
     fn a_mod_that_breaks_the_ruleset_is_refused() {
         let dir = scratch("broken");
-        write(&dir, "units.json", json!({"warrior": {"tech": "phlogiston"}}));
-        let error = load(&[dir.clone()]).map(|_| ()).expect_err("a dangling tech is refused");
+        write(
+            &dir,
+            "units.json",
+            json!({"warrior": {"tech": "phlogiston"}}),
+        );
+        let error = load(&[dir.clone()])
+            .map(|_| ())
+            .expect_err("a dangling tech is refused");
         assert!(error.contains("does not validate"), "{error}");
         assert!(error.contains("phlogiston"), "{error}");
         let _ = std::fs::remove_dir_all(&dir);
@@ -256,7 +273,9 @@ mod tests {
     fn an_unknown_ruleset_file_is_refused() {
         let dir = scratch("typo");
         write(&dir, "unit.json", json!({}));
-        let error = load(&[dir.clone()]).map(|_| ()).expect_err("units.json was misspelled");
+        let error = load(&[dir.clone()])
+            .map(|_| ())
+            .expect_err("units.json was misspelled");
         assert!(error.contains("not a ruleset file"), "{error}");
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -278,6 +297,59 @@ mod tests {
     fn merging_replaces_scalars_and_recurses_into_objects() {
         let mut base = json!({"a": {"x": 1, "y": 2}, "b": 3});
         merge(&mut base, json!({"a": {"y": 9, "z": 10}, "b": 4, "c": 5})).unwrap();
-        assert_eq!(base, json!({"a": {"x": 1, "y": 9, "z": 10}, "b": 4, "c": 5}));
+        assert_eq!(
+            base,
+            json!({"a": {"x": 1, "y": 9, "z": 10}, "b": 4, "c": 5})
+        );
+    }
+
+    #[test]
+    fn a_mod_can_add_valid_civ_vi_style_modifiers() {
+        let dir = scratch("modifiers");
+        write(
+            &dir,
+            "modifiers.json",
+            json!({
+                "roman_farm_food": {
+                    "owner": {"kind": "civilization", "id": "CIVILIZATION_ROME"},
+                    "collection": "COLLECTION_PLAYER_PLOT_YIELDS",
+                    "effect": "MODIFIER_PLAYER_ADJUST_PLOT_YIELD",
+                    "arguments": {"YieldType": "YIELD_FOOD", "Amount": "1"},
+                    "subject_requirements": {
+                        "mode": "REQUIREMENTSET_TEST_ALL",
+                        "requirements": [{
+                            "kind": "REQUIREMENT_PLOT_IMPROVEMENT_TYPE_MATCHES",
+                            "arguments": {"ImprovementType": "IMPROVEMENT_FARM"}
+                        }]
+                    }
+                }
+            }),
+        );
+        let (rules, loaded) = load(&[dir.clone()]).expect("the modifier overlay loads");
+        assert!(rules.modifiers.contains_key("roman_farm_food"));
+        assert_eq!(loaded[0].files, vec!["modifiers"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_dangling_attached_modifier_is_refused_by_name() {
+        let dir = scratch("dangling-modifier");
+        write(
+            &dir,
+            "modifiers.json",
+            json!({
+                "roman_attach": {
+                    "owner": {"kind": "civilization", "id": "Rome"},
+                    "effect": "ATTACH_MODIFIER",
+                    "arguments": {"ModifierId": "missing_child"}
+                }
+            }),
+        );
+        let error = load(&[dir.clone()])
+            .map(|_| ())
+            .expect_err("a missing modifier child is invalid");
+        assert!(error.contains("missing_child"), "{error}");
+        assert!(error.contains("modifiers/roman_attach"), "{error}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

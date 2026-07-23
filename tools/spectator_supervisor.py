@@ -603,6 +603,14 @@ def session_settings(state: dict[str, Any], defaults: dict[str, Any]) -> dict[st
         "map": game_map.get("script") or defaults["map"],
         "speed": state.get("game_speed") or defaults["speed"],
     }
+    if state.get("game_profile") or defaults.get("game_profile"):
+        settings["game_profile"] = str(
+            state.get("game_profile") or defaults["game_profile"]
+        )
+    if "disaster_intensity" in state or "disaster_intensity" in defaults:
+        settings["disaster_intensity"] = int(
+            state.get("disaster_intensity", defaults.get("disaster_intensity", 2))
+        )
     victory_conditions = state.get("victory_conditions")
     if isinstance(victory_conditions, dict):
         settings["victories"] = [
@@ -619,6 +627,10 @@ def session_settings(state: dict[str, Any], defaults: dict[str, Any]) -> dict[st
         ]
     elif "victories" in defaults:
         settings["victories"] = list(defaults["victories"])
+    if state.get("tournament_preset"):
+        settings["tournament_preset"] = str(state["tournament_preset"])
+    elif defaults.get("tournament_preset"):
+        settings["tournament_preset"] = str(defaults["tournament_preset"])
     return settings
 
 
@@ -650,6 +662,15 @@ def manual_new_game_request(
         }
     except (KeyError, TypeError, ValueError):
         return None
+    if "disaster_intensity" in values:
+        try:
+            settings["disaster_intensity"] = int(values["disaster_intensity"])
+        except (TypeError, ValueError):
+            return None
+    if values.get("tournament_preset"):
+        settings["tournament_preset"] = str(values["tournament_preset"])
+    if values.get("game_profile"):
+        settings["game_profile"] = str(values["game_profile"])
     return mode, settings
 
 
@@ -696,6 +717,8 @@ def server_command(
             else SOURCE_ROOT / "target" / "release" / BINARY_NAME
         ),
         "play",
+        "--game-profile",
+        str(settings.get("game_profile", "civ6-tournament")),
         "--players",
         str(settings["players"]),
         "--width",
@@ -704,6 +727,8 @@ def server_command(
         str(settings["height"]),
         "--city-states",
         str(settings["city_states"]),
+        "--disaster-intensity",
+        str(settings.get("disaster_intensity", 2)),
         "--turns",
         str(settings["turns"]),
         "--map",
@@ -721,6 +746,8 @@ def server_command(
         args.extend(("--resume", str(resume)))
     if "victories" in settings:
         args.extend(("--victories", ",".join(settings["victories"])))
+    if settings.get("tournament_preset"):
+        args.extend(("--tournament-preset", str(settings["tournament_preset"])))
     if not open_browser:
         args.append("--no-open")
     return args
@@ -839,9 +866,22 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=8766)
     parser.add_argument("--players", type=int, default=4)
+    parser.add_argument(
+        "--game-profile",
+        choices=("civ6-tournament", "civ65"),
+        default="civ6-tournament",
+        help="versioned tournament or Gathering Storm+ rules bundle",
+    )
     parser.add_argument("--width", type=int, default=60)
     parser.add_argument("--height", type=int, default=38)
     parser.add_argument("--city-states", type=int, default=6)
+    parser.add_argument(
+        "--disaster-intensity",
+        type=int,
+        choices=range(5),
+        default=2,
+        help="Gathering Storm realism setting, 0 (Minimal) through 4 (Hyperreal)",
+    )
     parser.add_argument("--turns", type=int, default=250)
     parser.add_argument(
         "--map",
@@ -852,6 +892,11 @@ def parse_args() -> argparse.Namespace:
         "--speed",
         choices=("online", "quick", "standard", "epic", "marathon"),
         default="online",
+    )
+    parser.add_argument(
+        "--tournament-preset",
+        choices=("cpl-ffa-2026-07", "cpl-teamers-2026-07"),
+        help="versioned community tournament-policy preset",
     )
     parser.add_argument(
         "--cooldown",
@@ -916,10 +961,15 @@ def main() -> int:
         "width": args.width,
         "height": args.height,
         "city_states": args.city_states,
+        "disaster_intensity": getattr(args, "disaster_intensity", 2),
         "turns": args.turns,
         "map": args.map,
         "speed": args.speed,
     }
+    if getattr(args, "game_profile", None):
+        settings["game_profile"] = args.game_profile
+    if getattr(args, "tournament_preset", None):
+        settings["tournament_preset"] = args.tournament_preset
     process: subprocess.Popen[str] | None = None
     adopted_pid = args.adopt_pid
     # An adopted binary cannot be proven current, so replace it at the first

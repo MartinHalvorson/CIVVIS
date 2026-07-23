@@ -1,0 +1,216 @@
+{
+  "BBG_QINSHI_WALL_GOLD_ADJACENT": {
+    "owner": {
+      "kind": "civilization",
+      "id": "CIVILIZATION_CHINA"
+    },
+    "collection": "COLLECTION_PLAYER_PLOT_YIELDS",
+    "effect": "MODIFIER_PLAYER_ADJUST_PLOT_YIELD",
+    "arguments": {
+      "YieldType": "YIELD_GOLD",
+      "Amount": 1
+    },
+    "subject_requirements": {
+      "mode": "REQUIREMENTSET_TEST_ALL",
+      "requirements": [
+        {
+          "kind": "REQUIREMENT_PLOT_IMPROVEMENT_TYPE_MATCHES",
+          "arguments": {
+            "ImprovementType": "IMPROVEMENT_GREAT_WALL"
+          }
+        },
+        {
+          "kind": "REQUIREMENT_PLOT_ADJACENT_IMPROVEMENT_TYPE_MATCHES",
+          "arguments": {
+            "ImprovementType": "IMPROVEMENT_GREAT_WALL"
+          }
+        }
+      ]
+    }
+  },
+  "BBG_QINSHI_WALL_FAITH_ADJACENT": {
+    "owner": {
+      "kind": "civilization",
+      "id": "CIVILIZATION_CHINA"
+    },
+    "collection": "COLLECTION_PLAYER_PLOT_YIELDS",
+    "effect": "MODIFIER_PLAYER_ADJUST_PLOT_YIELD",
+    "arguments": {
+      "YieldType": "YIELD_FAITH",
+      "Amount": 1
+    },
+    "subject_requirements": {
+      "mode": "REQUIREMENTSET_TEST_ALL",
+      "requirements": [
+        {
+          "kind": "REQUIREMENT_PLOT_IMPROVEMENT_TYPE_MATCHES",
+          "arguments": {
+            "ImprovementType": "IMPROVEMENT_GREAT_WALL"
+          }
+        },
+        {
+          "kind": "REQUIREMENT_PLOT_ADJACENT_IMPROVEMENT_TYPE_MATCHES",
+          "arguments": {
+            "ImprovementType": "IMPROVEMENT_GREAT_WALL"
+          }
+        }
+      ]
+    }
+  },
+  "FIRST_CIVILIZATION_FARM_FOOD": {
+    "owner": {
+      "kind": "civilization",
+      "id": "CIVILIZATION_SUMERIA"
+    },
+    "collection": "COLLECTION_PLAYER_PLOT_YIELDS",
+    "effect": "MODIFIER_PLAYER_ADJUST_PLOT_YIELD",
+    "arguments": {
+      "YieldType": "YIELD_FOOD",
+      "Amount": 1
+    },
+    "subject_requirements": {
+      "mode": "REQUIREMENTSET_TEST_ALL",
+      "requirements": [
+        {
+          "kind": "REQUIREMENT_PLOT_IMPROVEMENT_TYPE_MATCHES",
+          "arguments": {
+            "ImprovementType": "IMPROVEMENT_FARM"
+          }
+        },
+        {
+          "kind": "REQUIREMENT_PLOT_ADJACENT_TO_RIVER"
+        }
+      ]
+    }
+  },
+  "BBG_NATURAL_PHILOSOPHY_FLAT_SCIENCE": {
+    "owner": {"kind": "policy", "id": "POLICY_NATURAL_PHILOSOPHY"},
+    "collection": "COLLECTION_PLAYER_CITIES",
+    "effect": "MODIFIER_PLAYER_CITIES_ADJUST_CITY_YIELD_CHANGE",
+    "arguments": {"YieldType": "YIELD_SCIENCE", "Amount": 1},
+    "subject_requirements": {
+      "requirements": [{
+        "kind": "REQUIREMENT_CITY_HAS_DISTRICT",
+        "arguments": {"DistrictType": "DISTRICT_CAMPUS"}
+      }]
+    }
+  },
+  "BBG_CRAFTSMEN_FLAT_PROD": {
+    "owner": {"kind": "policy", "id": "POLICY_CRAFTSMEN"},
+    "collection": "COLLECTION_PLAYER_CITIES",
+    "effect": "MODIFIER_PLAYER_CITIES_ADJUST_CITY_YIELD_CHANGE",
+    "arguments": {"YieldType": "YIELD_PRODUCTION", "Amount": 2},
+    "subject_requirements": {
+      "requirements": [{
+        "kind": "REQUIREMENT_CITY_HAS_DISTRICT",
+        "arguments": {"DistrictType": "DISTRICT_INDUSTRIAL_ZONE"}
+      }]
+    }
+  },
+  "BBG_TOWNCHARTERS_FLAT_GOLD": {
+    "owner": {"kind": "policy", "id": "POLICY_TOWN_CHARTERS"},
+    "collection": "COLLECTION_PLAYER_CITIES",
+    "effect": "MODIFIER_PLAYER_CITIES_ADJUST_CITY_YIELD_CHANGE",
+    "arguments": {"YieldType": "YIELD_GOLD", "Amount": 2},
+    "subject_requirements": {
+      "requirements": [{
+        "kind": "REQUIREMENT_CITY_HAS_DISTRICT",
+        "arguments": {"DistrictType": "DISTRICT_COMMERCIAL_HUB"}
+      }]
+    }
+  },
+  "BBG_NAVAL_INFRASTRUCTURE_FLAT_GOLD": {
+    "owner": {"kind": "policy", "id": "POLICY_NAVAL_INFRASTRUCTURE"},
+    "collection": "COLLECTION_PLAYER_CITIES",
+    "effect": "MODIFIER_PLAYER_CITIES_ADJUST_CITY_YIELD_CHANGE",
+    "arguments": {"YieldType": "YIELD_GOLD", "Amount": 2},
+    "subject_requirements": {
+      "requirements": [{
+        "kind": "REQUIREMENT_CITY_HAS_DISTRICT",
+        "arguments": {"DistrictType": "DISTRICT_HARBOR"}
+      }]
+    }
+  },
+  "BBG_EMPIRICAL_METHOD_SCIENCE": {
+    "owner": {"kind": "policy", "id": "POLICY_EMPIRICAL_METHOD"},
+    "collection": "COLLECTION_PLAYER_DISTRICTS",
+    "effect": "MODIFIER_PLAYER_DISTRICTS_ADJUST_YIELD_MODIFIER",
+    "arguments": {"YieldType": "YIELD_SCIENCE", "Amount": 100},
+    "subject_requirements": {
+      "requirements": [{
+        "kind": "REQUIREMENT_DISTRICT_TYPE_MATCHES",
+        "arguments": {"DistrictType": "DISTRICT_CAMPUS"}
+      }]
+    }
+  },
+  "BBG_MASTER_ARTISANS_PROD": {
+    "owner": {"kind": "policy", "id": "POLICY_MASTER_ARTISANS"},
+    "collection": "COLLECTION_PLAYER_DISTRICTS",
+    "effect": "MODIFIER_PLAYER_DISTRICTS_ADJUST_YIELD_MODIFIER",
+    "arguments": {"YieldType": "YIELD_PRODUCTION", "Amount": 100},
+    "subject_requirements": {
+      "requirements": [{
+        "kind": "REQUIREMENT_DISTRICT_TYPE_MATCHES",
+        "arguments": {"DistrictType": "DISTRICT_INDUSTRIAL_ZONE"}
+      }]
+    }
+  },
+  "BBG_COMMUNISM_SCIENCE_BONUS": {
+    "owner": {"kind": "policy", "id": "POLICY_SCIENTIFIC_VANGUARD"},
+    "collection": "COLLECTION_PLAYER_CITIES",
+    "effect": "MODIFIER_PLAYER_CITIES_ADJUST_CITY_YIELD_MODIFIER",
+    "arguments": {"YieldType": "YIELD_SCIENCE", "Amount": 10},
+    "subject_requirements": {
+      "requirements": [{"kind": "city_has_governor"}]
+    }
+  },
+  "BBG_COMMUNISM_PRODUCTION_BONUS": {
+    "owner": {"kind": "policy", "id": "POLICY_SCIENTIFIC_VANGUARD"},
+    "collection": "COLLECTION_PLAYER_CITIES",
+    "effect": "MODIFIER_PLAYER_CITIES_ADJUST_CITY_YIELD_MODIFIER",
+    "arguments": {"YieldType": "YIELD_PRODUCTION", "Amount": 10},
+    "subject_requirements": {
+      "requirements": [{"kind": "city_has_governor"}]
+    }
+  },
+  "BBG_KOLKHOZ_FOOD_IZ": {
+    "owner": {"kind": "policy", "id": "POLICY_KOLKHOZ"},
+    "collection": "COLLECTION_PLAYER_DISTRICTS",
+    "effect": "MODIFIER_PLAYER_DISTRICTS_ADJUST_YIELD_CHANGE",
+    "arguments": {"YieldType": "YIELD_FOOD", "Amount": 2},
+    "subject_requirements": {"requirements": [{
+      "kind": "REQUIREMENT_DISTRICT_TYPE_MATCHES",
+      "arguments": {"DistrictType": "DISTRICT_INDUSTRIAL_ZONE"}
+    }]}
+  },
+  "BBG_KOLKHOZ_PROD_IZ": {
+    "owner": {"kind": "policy", "id": "POLICY_KOLKHOZ"},
+    "collection": "COLLECTION_PLAYER_DISTRICTS",
+    "effect": "MODIFIER_PLAYER_DISTRICTS_ADJUST_YIELD_CHANGE",
+    "arguments": {"YieldType": "YIELD_PRODUCTION", "Amount": 2},
+    "subject_requirements": {"requirements": [{
+      "kind": "REQUIREMENT_DISTRICT_TYPE_MATCHES",
+      "arguments": {"DistrictType": "DISTRICT_INDUSTRIAL_ZONE"}
+    }]}
+  },
+  "BBG_KOLKHOZ_FOOD_CAMPUS": {
+    "owner": {"kind": "policy", "id": "POLICY_KOLKHOZ"},
+    "collection": "COLLECTION_PLAYER_DISTRICTS",
+    "effect": "MODIFIER_PLAYER_DISTRICTS_ADJUST_YIELD_CHANGE",
+    "arguments": {"YieldType": "YIELD_FOOD", "Amount": 2},
+    "subject_requirements": {"requirements": [{
+      "kind": "REQUIREMENT_DISTRICT_TYPE_MATCHES",
+      "arguments": {"DistrictType": "DISTRICT_CAMPUS"}
+    }]}
+  },
+  "BBG_KOLKHOZ_PROD_CAMPUS": {
+    "owner": {"kind": "policy", "id": "POLICY_KOLKHOZ"},
+    "collection": "COLLECTION_PLAYER_DISTRICTS",
+    "effect": "MODIFIER_PLAYER_DISTRICTS_ADJUST_YIELD_CHANGE",
+    "arguments": {"YieldType": "YIELD_PRODUCTION", "Amount": 2},
+    "subject_requirements": {"requirements": [{
+      "kind": "REQUIREMENT_DISTRICT_TYPE_MATCHES",
+      "arguments": {"DistrictType": "DISTRICT_CAMPUS"}
+    }]}
+  }
+}

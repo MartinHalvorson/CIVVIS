@@ -19,8 +19,9 @@
   ],
   "effects": {
     "ATTACH_MODIFIER": {
-      "status": "unmodelled",
-      "note": "The interpreter primitive: attach another modifier to a collection. CIVVIS hardcodes effects per object, so it has no general way to express this. Implementing it is phase 2 itself, and it gates the long tail behind it."
+      "status": "partial",
+      "verified": false,
+      "note": "A generic modifier graph now composes ATTACH_MODIFIER children with cycle and dangling-reference validation. The executed collection/subject surface currently covers plot-yield and building-yield subjects; other attached effect and collection families remain unmodelled."
     },
     "ATTACH_MODIFIER_TO_PLAYERTYPE": {
       "status": "unmodelled",
@@ -108,11 +109,11 @@
     "ADJUST_DISTRICT_YIELD_MODIFIER": {
       "status": "implemented",
       "verified": true,
-      "note": "Verified row by row. Every adjacency-doubling card CIVVIS carries matches at +100%: Aesthetics and Sports Media on the Theater Square, Natural Philosophy and Five Year Plan on the Campus, Five Year Plan and Craftsmen on the Industrial Zone, Town Charters and Economic Union on the Commercial Hub, Economic Union and Naval Infrastructure on the Harbor, Scripture on the Holy Site, and Reyna's Harbormaster on both Commercial Hub and Harbor. Collectivism is a card CIVVIS does not carry."
+      "note": "Verified stock rows still match. Generic district subjects now apply arbitrary YieldType/Amount percentages; the BBG overlay uses them for Empirical Method and Master Artisans while its early adjacency cards use their current 50% values. Five Year Plan, Economic Union, Scripture, Aesthetics, Sports Media, and Reyna remain covered."
     },
     "ADJUST_DISTRICT_YIELD_CHANGE": {
       "status": "implemented",
-      "note": "Flat district yield changes."
+      "note": "Generic district subjects apply flat YieldType/Amount changes and district requirements. The BBG 7.4.6 Kolkhoz rows execute for Campus and Industrial Zone Food/Production."
     },
     "TERRAIN_ADJACENCY": {
       "status": "implemented",
@@ -144,7 +145,12 @@
     "ADJUST_CITY_YIELD_MODIFIER": {
       "status": "implemented",
       "verified": true,
-      "note": "Verified row by row for the wonders, policies and governments CIVVIS models. Amundsen-Scott, Broadway, Casa de Contratacion and Kilwa Kisiwani carry their shipped percentages; Colonial Taxes was missing the +10% Production that accompanies its +25% Gold on foreign continents, now applied. Communism and Corporate Libertarianism yields, Disinformation Campaign and the Great Work rows remain content or systems CIVVIS scopes differently; POLICY_INQUISITION belongs to a game mode outside the baseline."
+      "note": "Verified stock rows still match. A generic city subject now applies arbitrary YieldType/Amount percentages behind owner and subject requirements; the BBG 7.4.6 overlay uses it for Scientific Vanguard's Governor-gated Science and Production. Existing wonder, government, policy, Kilwa, and Colonial Taxes paths remain active."
+    },
+    "ADJUST_CITY_YIELD_CHANGE": {
+      "status": "partial",
+      "verified": false,
+      "note": "Generic city subjects apply arbitrary flat YieldType/Amount changes with owner and subject requirements. The BBG 7.4.6 overlay exercises the four reworked early adjacency cards. Remaining shipped collection and requirement variants need row-by-row verification."
     },
     "GRANT_UNIT_IN_CITY": {
       "status": "implemented",
@@ -158,12 +164,12 @@
     "ADJUST_BUILDING_YIELD_CHANGE": {
       "status": "partial",
       "verified": true,
-      "note": "Verified row by row. Third Alternative, Military Research, the Electronics Factory Culture, the Tsikhe Faith, Choral Music, Feed the World and Isaac Newton's University Science all match. City-state Envoy bonuses also match, and are the trap in this effect: the database ships TWO ladders. The base rows pay the Capital at 1 Envoy, the tier-1 building at 3 and the tier-2 building at 6, all at a flat 2. The Ethiopia-pack rows -- the final-patch structure CIVVIS implements, and the one a Gathering Storm game actually runs -- pay Capital and tier-1 at 1 Envoy, tier-2 plus the Consulate at 3, and tier-3 plus the Chancery at 6, with amounts 1/2/3 doubled for Trade. Reading the base rows and 'correcting' CIVVIS to them is wrong; the two are distinguished only by the _ETHIOPIA suffix on the attaching modifier. Still partial for the structural reason: an arbitrary modifier cannot adjust an arbitrary building's yield, only the named sources here."
+      "note": "Verified named rows still match, including the Ethiopia-pack Envoy ladder. A generic path can now adjust any loaded building and yield by BuildingType/YieldType/Amount, behind owner and subject requirement sets and ATTACH_MODIFIER composition. Status remains partial until every shipped collection and requirement used by this effect is imported and verified."
     },
     "ADJUST_PLOT_YIELD": {
       "status": "partial",
       "verified": false,
-      "note": "Partly checked. Liang's City Park Culture and Fishery Production match. Egypt's Sphinx was missing both of its conditional yields -- +1 Culture on Floodplains and +2 Faith next to a Wonder -- now added. Still partial: arbitrary plot-yield grants have no general path.",
+      "note": "A generic path now grants any YieldType/Amount to owned plots, with all/any/inverse owner and subject requirements and ATTACH_MODIFIER composition. Existing bespoke rows still execute. Status remains partial until every shipped plot collection and requirement kind is imported and verified; the included BBG 7.4.6 slice exercises Qin's Great Walls and Sumerian river Farms.",
       "leads": [
         "Resolved: the Lumber Mill's river bonus is superseded. Gathering Storm's shipped text reads '+2 Production. Can only be built on Woods. Once Mercantilism is unlocked it can also be built on Rainforest', with no river clause -- the base game's +1 base and +1 on rivers were folded into the flat 2, and the river modifier is left attached as dead data. CIVVIS' flat 2 was right. The same sentence turned up a real gap: CIVVIS allowed Lumber Mills on Rainforest from Construction, with no Mercantilism gate."
       ]

@@ -155,7 +155,10 @@ fn audit_turn(g: &Game, history: &mut History, found: &mut Findings) {
 
     for (id, city) in &g.cities {
         if city.pop < 1 {
-            found.violation("city below one Citizen", format!("city {id} ({})", city.name));
+            found.violation(
+                "city below one Citizen",
+                format!("city {id} ({})", city.name),
+            );
         }
         if !g.players[city.owner].alive {
             found.violation(
@@ -324,8 +327,14 @@ fn main() {
                 "seed {seed:<5} t{:<4} {:<10} {:<10} violations={} symptoms={}",
                 g.turn,
                 g.victory_type.clone().unwrap_or_default(),
-                g.winner.map(|w| g.players[w].civ.clone()).unwrap_or_default(),
-                found.violations.values().map(|entry| entry.0).sum::<usize>(),
+                g.winner
+                    .map(|w| g.players[w].civ.clone())
+                    .unwrap_or_default(),
+                found
+                    .violations
+                    .values()
+                    .map(|entry| entry.0)
+                    .sum::<usize>(),
                 found.symptoms.values().map(|entry| entry.0).sum::<usize>(),
             );
             for (key, (count, detail)) in &found.violations {

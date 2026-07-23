@@ -12,11 +12,12 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Value};
 
 use crate::ai::{AdvancedAi, Ai, BasicAi};
-use crate::game::{Action, Game, GameOptions, VictoryConditions};
-use crate::rules::Rules;
+use crate::game::{Action, Game, GameOptions, TournamentPreset, VictoryConditions};
 use crate::obs::{observation, observation_player_view, observation_spectator};
+use crate::rules::Rules;
 use crate::setup::{
-    GameSpeed, MapScript, MapSize, CIV6_GAME_SPEEDS, CIV6_MAP_SCRIPTS, CIV6_MAP_SIZES,
+    GameProfile, GameSpeed, MapScript, MapSize, CIV6_GAME_SPEEDS, CIV6_MAP_SCRIPTS, CIV6_MAP_SIZES,
+    CIVVIS_GAME_PROFILES,
 };
 use crate::Pos;
 
@@ -35,16 +36,19 @@ pub struct Params {
     pub width: i32,
     pub height: i32,
     pub seed: u64,
+    pub game_profile: GameProfile,
     pub map_script: MapScript,
     pub game_speed: GameSpeed,
     pub max_turns: u32,
     pub victory_conditions: VictoryConditions,
+    pub disaster_intensity: u8,
     pub num_city_states: usize,
     /// All players AI-driven; the GUI just watches (auto-steps via /step).
     pub spectate: bool,
     pub difficulty: String,
     pub speed: String,
     pub teams: Vec<Option<usize>>,
+    pub tournament_preset: Option<TournamentPreset>,
     /// A lifecycle supervisor, rather than the browser countdown, owns the
     /// transition after a completed spectator game.
     pub supervised: bool,
@@ -754,8 +758,14 @@ impl Session {
             map_script: params.map_script,
             difficulty: params.difficulty.clone(),
             speed: params.speed.clone(),
+            game_profile: params.game_profile,
             human_seats,
             teams: params.teams.clone(),
+            disaster_intensity: params.disaster_intensity,
+            tournament_preset: params.tournament_preset,
+            barbarians: !params
+                .tournament_preset
+                .is_some_and(TournamentPreset::is_teamers),
             ..GameOptions::new(
                 params.num_players,
                 params.width,
@@ -798,18 +808,21 @@ impl Session {
         params.width = game.map.width;
         params.height = game.map.height;
         params.seed = game.seed;
+        params.game_profile = game.game_profile;
         params.map_script = game.map_script;
         params.game_speed = game.game_speed;
         params.max_turns = game.max_turns;
         params.difficulty = game.difficulty.clone();
         params.speed = game.speed.clone();
         params.victory_conditions = game.victory_conditions;
+        params.disaster_intensity = game.disaster_intensity;
         params.teams = game
             .players
             .iter()
             .filter(|player| !player.is_minor && !player.is_barbarian)
             .map(|player| player.team)
             .collect();
+        params.tournament_preset = game.tournament_preset;
         let ais = Self::ai_fleet(&game);
         let chronicle = ChronicleState::from_game(&game);
         Session {
@@ -914,19 +927,25 @@ impl Session {
         .into_iter()
         .filter_map(|(enabled, name)| enabled.then_some(name))
         .collect::<Vec<_>>();
+        let mut settings = json!({
+            "players": params.num_players,
+            "width": params.width,
+            "height": params.height,
+            "city_states": params.num_city_states,
+            "game_profile": params.game_profile.id(),
+            "disaster_intensity": params.disaster_intensity,
+            "turns": params.max_turns,
+            "map": params.map_script.id(),
+            "speed": params.game_speed.id(),
+            "victories": victories,
+        });
+        if let Some(preset) = params.tournament_preset {
+            settings["tournament_preset"] = json!(preset.id());
+        }
         self.supervisor_request = Some(json!({
             "mode": mode,
             "server_instance": std::process::id(),
-            "settings": {
-                "players": params.num_players,
-                "width": params.width,
-                "height": params.height,
-                "city_states": params.num_city_states,
-                "turns": params.max_turns,
-                "map": params.map_script.id(),
-                "speed": params.game_speed.id(),
-                "victories": victories,
-            }
+            "settings": settings,
         }));
         self.spectator_paused = true;
         Ok(())
@@ -967,6 +986,8 @@ impl Session {
             o["spectator_paused"] = json!(self.spectator_paused);
             o["view_player"] = json!(self.view_player);
             o["victory_conditions"] = json!(self.game.victory_conditions);
+            o["game_profile"] = json!(self.game.game_profile_id());
+            o["tournament_preset"] = json!(self.game.tournament_preset_id());
             o["supervisor_request"] = json!(self.supervisor_request);
             o["legal_actions"] = json!([]);
             // Lets a long-running spectator notice that its server was
@@ -979,6 +1000,8 @@ impl Session {
         o["supervised"] = json!(self.params.supervised);
         o["view_player"] = json!(0);
         o["victory_conditions"] = json!(self.game.victory_conditions);
+        o["game_profile"] = json!(self.game.game_profile_id());
+        o["tournament_preset"] = json!(self.game.tournament_preset_id());
         o["supervisor_request"] = json!(self.supervisor_request);
         o["legal_actions"] = serde_json::to_value(self.game.legal_actions(0)).unwrap();
         o["server_instance"] = json!(std::process::id());
@@ -1141,7 +1164,8 @@ fn respond(stream: &mut TcpStream, code: &str, ctype: &str, body: &[u8]) {
         "HTTP/1.1 {code}\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\n\
          Cache-Control: no-store, must-revalidate\r\nPragma: no-cache\r\n\
          Connection: close\r\n\r\n",
-        body.len());
+        body.len()
+    );
     let _ = stream.write_all(head.as_bytes());
     let _ = stream.write_all(body);
     let _ = stream.flush();
@@ -1172,6 +1196,33 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     }
     if let Some(v) = request["seed"].as_u64() {
         p.seed = v;
+    }
+    if let Some(profile) = request["game_profile"]
+        .as_str()
+        .and_then(GameProfile::from_id)
+    {
+        p.game_profile = profile;
+        p.game_speed = GameSpeed::Online;
+        p.speed = GameSpeed::Online.id().to_string();
+        p.max_turns = GameSpeed::Online.turn_limit();
+        p.disaster_intensity = 2;
+        p.victory_conditions = VictoryConditions::default();
+        p.tournament_preset = if profile.is_tournament() {
+            Some(TournamentPreset::CplFfa202607)
+        } else {
+            None
+        };
+    }
+    if request.get("tournament_preset").is_some() {
+        p.tournament_preset = request["tournament_preset"]
+            .as_str()
+            .filter(|id| *id != "none" && !id.is_empty())
+            .and_then(TournamentPreset::from_id);
+        if p.tournament_preset.is_some() {
+            p.game_speed = GameSpeed::Online;
+            p.speed = GameSpeed::Online.id().to_string();
+            p.max_turns = GameSpeed::Online.turn_limit();
+        }
     }
     if let Some(v) = request["map_script"].as_str().and_then(MapScript::from_id) {
         p.map_script = v;
@@ -1210,6 +1261,11 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     }
     if let Some(v) = request["num_city_states"].as_u64() {
         p.num_city_states = v as usize;
+    }
+    if let Some(v) = request["disaster_intensity"].as_u64() {
+        if v <= 4 {
+            p.disaster_intensity = v as u8;
+        }
     }
     if let Some(v) = request["spectate"].as_bool() {
         p.spectate = v;
@@ -1300,7 +1356,10 @@ fn auto_step_loop(sh: Arc<Shared>) {
                 // Only the living take a step: counting the eliminated made a
                 // late game outrun its own pace as the city-states fell.
                 let living = s.game.players.iter().filter(|p| p.alive);
-                let minors = living.clone().filter(|p| p.is_minor || p.is_barbarian).count();
+                let minors = living
+                    .clone()
+                    .filter(|p| p.is_minor || p.is_barbarian)
+                    .count();
                 let majors = living.count() - minors;
                 let p = &s.game.players[pid];
                 delay = seat_delay_ms(pace, majors, minors, p.is_minor || p.is_barbarian);
@@ -1334,7 +1393,9 @@ fn auto_step_loop(sh: Arc<Shared>) {
         // AI computation made the fast paces visibly slower as empires grew.
         // Spend only the remaining frame budget instead.
         let elapsed_ms = cadence_started.elapsed().as_millis().min(u64::MAX as u128) as u64;
-        std::thread::sleep(Duration::from_millis(delay.saturating_sub(elapsed_ms).max(1)));
+        std::thread::sleep(Duration::from_millis(
+            delay.saturating_sub(elapsed_ms).max(1),
+        ));
     }
 }
 
@@ -1425,6 +1486,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 &json!({
                     "turn": game.turn,
                     "winner": game.winner,
+                    "winners": game.winning_players(),
                     "victory_type": game.victory_type,
                     "spectate": session.params.spectate,
                     // Which code is actually playing. A binary swap only
@@ -1477,6 +1539,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "policies": r.policies, "beliefs": r.beliefs, "civs": r.civs,
                     "great_people": r.great_people, "governors": r.governors,
                     "map_sizes": CIV6_MAP_SIZES,
+                    "game_profiles": CIVVIS_GAME_PROFILES,
                     "difficulties": r.difficulties, "speeds": r.speeds,
                     "map_scripts": CIV6_MAP_SCRIPTS,
                     "game_speeds": CIV6_GAME_SPEEDS,
@@ -1487,7 +1550,10 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             let mut session = sh.session.lock().unwrap();
             if session.params.spectate {
                 drop(session);
-                respond_json(stream, &json!({"error": "a spectated game is already playing itself"}));
+                respond_json(
+                    stream,
+                    &json!({"error": "a spectated game is already playing itself"}),
+                );
                 return;
             }
             let turns = parsed["turns"].as_u64().unwrap_or(1).clamp(1, 500) as u32;
@@ -1658,8 +1724,8 @@ mod tests {
         chronicle_world_events, new_game_params, request_path, seat_delay_ms, ChronicleSnapshot,
         ChronicleState, Params, Session, EMBEDDED_INDEX,
     };
-    use crate::game::{Action, VictoryConditions};
-    use crate::setup::{GameSpeed, MapScript};
+    use crate::game::{Action, TournamentPreset, VictoryConditions};
+    use crate::setup::{GameProfile, GameSpeed, MapScript};
     use serde_json::json;
 
     /// The pace a viewer picks is what a turn costs, so the seats' waits have
@@ -1681,7 +1747,10 @@ mod tests {
             }
         }
         // Minors take a quarter of a major's slice, and unlimited never waits.
-        assert_eq!(seat_delay_ms(1_000, 4, 4, false) / 4, seat_delay_ms(1_000, 4, 4, true));
+        assert_eq!(
+            seat_delay_ms(1_000, 4, 4, false) / 4,
+            seat_delay_ms(1_000, 4, 4, true)
+        );
         assert_eq!(seat_delay_ms(0, 8, 12, false), 0);
     }
 
@@ -1691,15 +1760,18 @@ mod tests {
             width: 20,
             height: 14,
             seed: 1,
+            game_profile: GameProfile::Civ65,
             map_script: MapScript::Pangaea,
             game_speed: GameSpeed::Standard,
             max_turns: 500,
             victory_conditions: VictoryConditions::default(),
+            disaster_intensity: 2,
             num_city_states: 1,
             spectate: false,
             difficulty: crate::game::default_difficulty(),
             speed: crate::game::default_speed(),
             teams: Vec::new(),
+            tournament_preset: None,
             supervised: false,
         }
     }
@@ -1733,10 +1805,12 @@ mod tests {
                 "num_players": 6,
                 "width": 80,
                 "height": 50,
-                "num_city_states": 2
+                "num_city_states": 2,
+                "disaster_intensity": 4
             }),
         );
         assert_eq!((p.width, p.height, p.num_city_states), (80, 50, 2));
+        assert_eq!(p.disaster_intensity, 4);
     }
 
     #[test]
@@ -1755,6 +1829,40 @@ mod tests {
         );
         assert_eq!(custom.game_speed, GameSpeed::Marathon);
         assert_eq!(custom.max_turns, 99);
+    }
+
+    #[test]
+    fn dated_cpl_preset_applies_online_defaults_and_reaches_state() {
+        let params = new_game_params(&current(), &json!({"tournament_preset": "cpl-ffa-2026-07"}));
+        assert_eq!(params.game_speed, GameSpeed::Online);
+        assert_eq!(params.max_turns, 250);
+        assert_eq!(
+            params.tournament_preset,
+            Some(TournamentPreset::CplFfa202607)
+        );
+        let session = Session::new(params);
+        assert_eq!(session.state()["tournament_preset"], "cpl-ffa-2026-07");
+    }
+
+    #[test]
+    fn game_profiles_apply_their_rules_and_reach_runtime_state() {
+        let tournament = new_game_params(&current(), &json!({"game_profile": "civ6-tournament"}));
+        assert_eq!(tournament.game_profile, GameProfile::Civ6Tournament);
+        assert_eq!(tournament.game_speed, GameSpeed::Online);
+        assert_eq!(tournament.max_turns, 250);
+        assert_eq!(tournament.disaster_intensity, 2);
+        assert_eq!(
+            tournament.tournament_preset,
+            Some(TournamentPreset::CplFfa202607)
+        );
+        let session = Session::new(tournament.clone());
+        assert_eq!(session.game.game_profile, GameProfile::Civ6Tournament);
+        assert_eq!(session.state()["game_profile"], "civ6-tournament");
+
+        let expanded = new_game_params(&tournament, &json!({"game_profile": "civ65"}));
+        assert_eq!(expanded.game_profile, GameProfile::Civ65);
+        assert_eq!(expanded.tournament_preset, None);
+        assert_eq!(expanded.game_speed, GameSpeed::Online);
     }
 
     #[test]
@@ -1807,9 +1915,22 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("RULES.map_sizes.map(size =>"));
         assert!(EMBEDDED_INDEX.contains("RULES.map_scripts.map(script =>"));
         assert!(EMBEDDED_INDEX.contains("RULES.game_speeds.map(speed =>"));
+        assert!(EMBEDDED_INDEX.contains("function mapWrapsX()"));
+        assert!(EMBEDDED_INDEX.contains("state.map.wrap_x"));
         assert!(EMBEDDED_INDEX.contains("id=\"gamemode\""));
+        assert!(EMBEDDED_INDEX.contains("id=\"game-profile\""));
         assert!(EMBEDDED_INDEX.contains("id=\"maptype\""));
         assert!(EMBEDDED_INDEX.contains("id=\"gamespeed\""));
+        assert!(EMBEDDED_INDEX.contains("class=\"game-speed-options\""));
+        assert!(EMBEDDED_INDEX.contains("function selectedGameSpeed()"));
+        assert!(EMBEDDED_INDEX.contains("const gameSpeed = selectedGameSpeed()"));
+        assert!(EMBEDDED_INDEX.contains("id=\"disaster-intensity\""));
+        assert!(!EMBEDDED_INDEX.contains("id=\"tournament-preset\""));
+        assert!(EMBEDDED_INDEX.contains("civ6-tournament"));
+        assert!(EMBEDDED_INDEX.contains("Civ 6.5 · Gathering Storm+"));
+        assert!(EMBEDDED_INDEX.contains("RULES.game_profiles.map(profile =>"));
+        assert!(EMBEDDED_INDEX
+            .contains("function mapTacksAllowed() { return state?.game_profile === \"civ65\"; }"));
         for victory in [
             "science",
             "culture",
@@ -1824,21 +1945,26 @@ mod tests {
             );
         }
         assert!(EMBEDDED_INDEX.contains("victory_conditions: victoryConditions"));
+        assert!(EMBEDDED_INDEX.contains("game_profile: gameProfile"));
         assert!(EMBEDDED_INDEX.contains("AI-only simulation"));
         assert!(EMBEDDED_INDEX.contains("Single player · later"));
         assert!(EMBEDDED_INDEX.contains("Multiplayer · later"));
         assert!(EMBEDDED_INDEX.contains("class=\"sim-actions\""));
-        assert!(EMBEDDED_INDEX.contains("id=\"default-settings\""));
-        assert!(EMBEDDED_INDEX.contains("Default settings"));
         assert!(EMBEDDED_INDEX.contains(
-            "id=\"restart-sim\">Restart sim · existing settings"
+            "id=\"restart-sim\" title=\"Restart with the same settings and build\">Restart sim<span class=\"sub\">same settings<br>same build</span>"
         ));
-        assert!(EMBEDDED_INDEX.contains("id=\"fresh-sim\""));
-        assert!(EMBEDDED_INDEX.contains("New sim · fresh code"));
-        assert!(EMBEDDED_INDEX.contains("async function startNewSimulation(mode)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "id=\"fresh-sim\" title=\"Start with the same settings on the most recent build\">New sim<span class=\"sub\">same settings<br>most recent build</span>"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "id=\"default-settings\" title=\"Start with default settings on the most recent build\">New sim<span class=\"sub\">default settings<br>most recent build</span>"
+        ));
+        assert!(
+            EMBEDDED_INDEX.contains("async function startNewSimulation(mode, useDefaults = false)")
+        );
         assert!(EMBEDDED_INDEX.contains("function restoreDefaultSimulationSettings()"));
         assert!(EMBEDDED_INDEX.contains(
-            "document.getElementById(\"default-settings\").onclick = restoreDefaultSimulationSettings"
+            "document.getElementById(\"default-settings\").onclick = () => startNewSimulation(\"fresh_code\", true)"
         ));
         assert!(EMBEDDED_INDEX.contains("startNewSimulation(\"restart\")"));
         assert!(EMBEDDED_INDEX.contains("startNewSimulation(\"fresh_code\")"));
@@ -1849,9 +1975,7 @@ mod tests {
         assert!(
             EMBEDDED_INDEX.contains("waitForSupervisedSuccessor(finishedInstance, finishedSeed)")
         );
-        assert!(EMBEDDED_INDEX.contains(
-            "waitForSupervisedSuccessor(st.server_instance, st.seed)"
-        ));
+        assert!(EMBEDDED_INDEX.contains("waitForSupervisedSuccessor(st.server_instance, st.seed)"));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/state\", {cache: \"no-store\"}, 3000)"));
         assert!(EMBEDDED_INDEX.contains("st.seed !== state.seed"));
         assert!(!EMBEDDED_INDEX.contains("id=\"head-newgame\""));
@@ -1862,6 +1986,9 @@ mod tests {
         let mode_setting = EMBEDDED_INDEX
             .find("id=\"gamemode\"")
             .expect("game mode setting");
+        let profile_setting = EMBEDDED_INDEX
+            .find("id=\"game-profile\"")
+            .expect("ruleset profile setting");
         let world_setting = EMBEDDED_INDEX
             .find("id=\"np\"")
             .expect("world size setting");
@@ -1870,7 +1997,8 @@ mod tests {
             .find("id=\"gamespeed\"")
             .expect("game speed setting");
         assert!(
-            mode_setting < world_setting
+            mode_setting < profile_setting
+                && profile_setting < world_setting
                 && world_setting < map_setting
                 && map_setting < speed_setting
         );
@@ -1898,10 +2026,18 @@ mod tests {
             "left panel should show game settings, display settings, and the two logs first"
         );
         assert!(EMBEDDED_INDEX.contains("<span>Display settings</span>"));
+        let observation_setting = EMBEDDED_INDEX
+            .find("<h2>Observation</h2>")
+            .expect("observation settings group");
+        let map_display_setting = EMBEDDED_INDEX
+            .find("<h2>Display</h2>")
+            .expect("map display settings group");
+        assert!(
+            observation_setting < map_display_setting,
+            "observation settings should appear above display settings"
+        );
         assert_eq!(
-            EMBEDDED_INDEX
-                .matches("class=\"sidebar-section\"")
-                .count(),
+            EMBEDDED_INDEX.matches("class=\"sidebar-section\"").count(),
             7,
             "every top-level left-panel section should be collapsible"
         );
@@ -1926,6 +2062,49 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("View as"));
         assert!(EMBEDDED_INDEX.contains("id=\"viewplayer\""));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/view\""));
+        assert!(EMBEDDED_INDEX.contains("id=\"cinemachk\""));
+        assert!(EMBEDDED_INDEX.contains("id=\"cinema-atmosphere\""));
+        assert!(EMBEDDED_INDEX.contains("id=\"cinema-prologue\""));
+        assert!(EMBEDDED_INDEX.contains("id=\"cinema-story\""));
+        assert!(EMBEDDED_INDEX.contains("id=\"cinema-audio\""));
+        assert!(EMBEDDED_INDEX.contains("function applyCinemaMode()"));
+        assert!(EMBEDDED_INDEX.contains("function showCinemaPrologue(st)"));
+        assert!(EMBEDDED_INDEX.contains("function showCinemaChapter(cue)"));
+        assert!(EMBEDDED_INDEX.contains("A new world awakens"));
+        assert!(EMBEDDED_INDEX.contains("function createCinemaAudioGraph()"));
+        assert!(EMBEDDED_INDEX.contains("function playCinemaCue(cue = {})"));
+        assert!(EMBEDDED_INDEX.contains("civvis-cinema-audio-v1"));
+        assert!(EMBEDDED_INDEX.contains("function showDirectorStory(cue)"));
+        assert!(EMBEDDED_INDEX.contains("function cinematicDisasterStory(disaster, next)"));
+        assert!(EMBEDDED_INDEX.contains("function drawCinematicDisasterField(sceneTime)"));
+        assert!(EMBEDDED_INDEX.contains("Nature unleashed"));
+        assert!(EMBEDDED_INDEX.contains("REDUCED_MOTION_QUERY.matches"));
+        assert!(EMBEDDED_INDEX.contains("function directorCue(prev, next)"));
+        assert!(EMBEDDED_INDEX.contains("function directorSurveyGoal()"));
+        assert!(EMBEDDED_INDEX.contains("function directorAmbientCue()"));
+        assert!(EMBEDDED_INDEX.contains("function advanceDirector(now = performance.now())"));
+        assert!(
+            EMBEDDED_INDEX.contains("function advanceUserCameraMotion(now = performance.now())")
+        );
+        assert!(EMBEDDED_INDEX.contains("function advanceCameraFollow(now = performance.now())"));
+        assert!(EMBEDDED_INDEX.contains("function startCameraFollow(unitId)"));
+        assert!(EMBEDDED_INDEX.contains("function beginTouchTransform()"));
+        assert!(EMBEDDED_INDEX.contains("touch-action: none"));
+        assert!(EMBEDDED_INDEX.contains("id=\"cinema-follow\""));
+        assert!(EMBEDDED_INDEX.contains("kind:tracksUnit ? \"character\" : \"event\""));
+        assert!(EMBEDDED_INDEX.contains("const safeTop = Math.max(180"));
+        assert!(EMBEDDED_INDEX.contains("The world enters the ${eraName} Era"));
+        assert!(EMBEDDED_INDEX.contains("A civilization falls"));
+        assert!(EMBEDDED_INDEX.contains("History has a victor"));
+        assert!(EMBEDDED_INDEX.contains("class=\"winner-content\""));
+        assert!(EMBEDDED_INDEX.contains("cinema-finale"));
+        assert!(EMBEDDED_INDEX.contains("function cinematicSurveyUnits(units)"));
+        assert!(EMBEDDED_INDEX.contains("function drawUnitFormationBadge"));
+        assert!(EMBEDDED_INDEX.contains("specular glints travel"));
+        assert!(EMBEDDED_INDEX.contains("cx.lineDashOffset = dash.length"));
+        assert!(EMBEDDED_INDEX.contains("City captured"));
+        assert!(EMBEDDED_INDEX.contains("War declared"));
+        assert!(EMBEDDED_INDEX.contains("Wonder completed"));
         assert!(EMBEDDED_INDEX.contains("onclick=\"spectatePlayer(${p.id})\""));
         assert!(EMBEDDED_INDEX.contains("async function spectatePlayer(player)"));
         assert!(EMBEDDED_INDEX.contains("player log"));
@@ -1958,6 +2137,36 @@ mod tests {
         assert!(side_rule.contains("order: -1"));
         assert!(EMBEDDED_INDEX.contains("<strong>${state.turn}</strong>"));
         assert!(!EMBEDDED_INDEX.contains("${state.turn}/${maxTurns}"));
+    }
+
+    #[test]
+    fn browser_keeps_atlas_art_on_its_owning_tile_footprint() {
+        let atlas_drawer = EMBEDDED_INDEX
+            .split("function drawAtlasFeatureCell")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawFeatureSprite").next())
+            .expect("shared atlas feature renderer");
+        assert!(atlas_drawer.contains("tileArtPath(footprint"));
+        assert!(atlas_drawer.contains("cx.clip()"));
+
+        let mountain_drawer = EMBEDDED_INDEX
+            .split("function drawMountainSprite")
+            .nth(1)
+            .and_then(|tail| tail.split("function tri(").next())
+            .expect("mountain sprite renderer");
+        assert!(mountain_drawer.contains("tileArtPath([{x, y}], true"));
+        assert!(mountain_drawer.contains("cx.clip()"));
+
+        let wonder_placement = EMBEDDED_INDEX
+            .split("function buildNaturalWonderPlacements")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawTileYields").next())
+            .expect("natural wonder footprint builder");
+        assert!(wonder_placement.contains("footprint:points.map"));
+        assert!(EMBEDDED_INDEX.contains("placement.footprint"));
+
+        assert!(!EMBEDDED_INDEX.contains("const w = S * 2.55"));
+        assert!(!EMBEDDED_INDEX.contains("width: volcano ? 2.32"));
     }
 
     #[test]
@@ -2037,6 +2246,8 @@ mod tests {
                 "width": 60,
                 "height": 38,
                 "city_states": 6,
+                "game_profile": "civ65",
+                "disaster_intensity": 2,
                 "turns": 330,
                 "map": "continents",
                 "speed": "quick",

@@ -52,6 +52,20 @@ pub struct Tile {
     /// Permanent Faith added by Great Bath flood mitigation.
     #[serde(default)]
     pub disaster_faith: f64,
+    /// Permanent fertility left by floods, eruptions, storms, and fires.
+    /// These stay separate from the underlying terrain/feature so repeated
+    /// events can accumulate exactly as they do in Gathering Storm.
+    #[serde(default)]
+    pub disaster_food: f64,
+    #[serde(default)]
+    pub disaster_production: f64,
+    #[serde(default)]
+    pub disaster_science: f64,
+    #[serde(default)]
+    pub disaster_culture: f64,
+    /// Ordinary volcano lifecycle: 0 dormant, 1 active, 2 erupting.
+    #[serde(default)]
+    pub volcano_state: u8,
     /// Whether this tile is currently suffering a drought's -1 Food effect.
     #[serde(default)]
     pub drought: bool,
@@ -137,6 +151,11 @@ impl Tile {
             road: 0,
             continent: None,
             disaster_faith: 0.0,
+            disaster_food: 0.0,
+            disaster_production: 0.0,
+            disaster_science: 0.0,
+            disaster_culture: 0.0,
+            volcano_state: 0,
             drought: false,
             coastal_lowland: 0,
             flooded: false,
@@ -151,6 +170,9 @@ impl Tile {
 pub struct WorldMap {
     pub width: i32,
     pub height: i32,
+    /// Whether the east and west edges are adjacent. Legacy maps default to
+    /// the original cylindrical topology when this field is absent.
+    pub wrap_x: bool,
     pub tiles: BTreeMap<Pos, Tile>,
 }
 
@@ -158,7 +180,13 @@ pub struct WorldMap {
 struct WorldMapSer {
     width: i32,
     height: i32,
+    #[serde(default = "default_wrap_x")]
+    wrap_x: bool,
     tiles: Vec<Tile>,
+}
+
+const fn default_wrap_x() -> bool {
+    true
 }
 
 impl From<WorldMapSer> for WorldMap {
@@ -167,6 +195,7 @@ impl From<WorldMapSer> for WorldMap {
         WorldMap {
             width: s.width,
             height: s.height,
+            wrap_x: s.wrap_x,
             tiles,
         }
     }
@@ -177,6 +206,7 @@ impl From<WorldMap> for WorldMapSer {
         WorldMapSer {
             width: m.width,
             height: m.height,
+            wrap_x: m.wrap_x,
             tiles: m.tiles.into_values().collect(),
         }
     }
@@ -184,6 +214,10 @@ impl From<WorldMap> for WorldMapSer {
 
 impl WorldMap {
     pub fn new(width: i32, height: i32) -> WorldMap {
+        Self::new_with_wrap(width, height, true)
+    }
+
+    pub fn new_with_wrap(width: i32, height: i32, wrap_x: bool) -> WorldMap {
         let mut tiles = BTreeMap::new();
         for row in 0..height {
             for col in 0..width {
@@ -194,6 +228,7 @@ impl WorldMap {
         WorldMap {
             width,
             height,
+            wrap_x,
             tiles,
         }
     }
@@ -202,12 +237,49 @@ impl WorldMap {
         self.tiles.get(&pos)
     }
 
-    /// Direction index from one adjacent tile to another, accounting for the
-    /// east-west cylindrical seam.
+    /// Normalize a coordinate only on cylindrical maps. On bounded maps an
+    /// off-map coordinate stays off-map and will fail ordinary tile lookup.
+    pub fn canon(&self, pos: Pos) -> Pos {
+        if self.wrap_x {
+            hex::canon(pos, self.width)
+        } else {
+            pos
+        }
+    }
+
+    pub fn distance(&self, a: Pos, b: Pos) -> i32 {
+        if self.wrap_x {
+            hex::wdistance(a, b, self.width)
+        } else {
+            hex::distance(a, b)
+        }
+    }
+
+    pub fn neighbors(&self, pos: Pos) -> Vec<Pos> {
+        hex::neighbors(pos)
+            .into_iter()
+            .map(|neighbor| self.canon(neighbor))
+            .filter(|neighbor| self.tiles.contains_key(neighbor))
+            .collect()
+    }
+
+    pub fn disk(&self, center: Pos, radius: i32) -> Vec<Pos> {
+        let mut positions: Vec<Pos> = hex::disk(center, radius)
+            .into_iter()
+            .map(|position| self.canon(position))
+            .filter(|position| self.tiles.contains_key(position))
+            .collect();
+        positions.sort();
+        positions.dedup();
+        positions
+    }
+
+    /// Direction index from one adjacent tile to another under this map's
+    /// bounded or cylindrical topology.
     pub fn direction_to(&self, from: Pos, to: Pos) -> Option<usize> {
         hex::neighbors(from)
             .into_iter()
-            .map(|p| hex::canon(p, self.width))
+            .map(|position| self.canon(position))
             .position(|p| p == to)
     }
 

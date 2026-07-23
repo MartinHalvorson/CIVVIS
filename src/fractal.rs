@@ -283,8 +283,7 @@ mod tests {
                     .into_iter()
                     .filter(|(dcol, drow)| {
                         let (ncol, nrow) = (col + dcol, row + drow);
-                        (0..38).contains(&nrow)
-                            && field.at((ncol + 60) % 60, nrow) >= threshold
+                        (0..38).contains(&nrow) && field.at((ncol + 60) % 60, nrow) >= threshold
                     })
                     .count();
                 if neighbors >= 2 {

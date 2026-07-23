@@ -40,12 +40,22 @@
   button, select, input { font: inherit; }
   button { -webkit-tap-highlight-color: transparent; }
   #maparea { flex: 1; min-width: 0; position: relative; overflow: hidden; background: #07110f; }
+  #maparea::before {
+    content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+    opacity: 0; transition: opacity .6s ease;
+    background:
+      radial-gradient(ellipse at 50% 46%, transparent 38%, #06100d26 70%, #020605a8 112%),
+      linear-gradient(180deg, #07110f45 0%, transparent 19%, transparent 72%, #02060573 100%);
+  }
   #maparea::after {
     content: ""; position: absolute; inset: 0; z-index: 3; pointer-events: none;
     box-shadow: inset 0 0 100px #0208079c;
   }
   canvas { display: block; }
-  #map { cursor: grab; width: 100%; height: 100%; position: relative; z-index: 1; }
+  #map {
+    cursor: grab; width: 100%; height: 100%; position: relative; z-index: 1;
+    touch-action: none; user-select: none; -webkit-user-select: none;
+  }
   #map:active { cursor: grabbing; }
 
   /* Command deck */
@@ -59,6 +69,8 @@
     transition: width .25s ease, min-width .25s ease, opacity .18s ease;
   }
   body.sidebar-hidden #side { width: 0; min-width: 0; opacity: 0; pointer-events: none; }
+  body.cinema-mode #side { width: 0; min-width: 0; opacity: 0; pointer-events: none; }
+  body.cinema-mode #maparea::before { opacity: 1; }
   .side-head {
     flex: 0 0 auto; min-height: 110px; padding: 16px 18px 13px; border-bottom: 1px solid var(--line-soft);
     background: linear-gradient(180deg, #172825e8, #101d1be8);
@@ -191,6 +203,8 @@
   .utility-panel[open] summary { border-bottom: 1px solid var(--line-soft); }
   .utility-body { padding: 12px 13px 13px; }
   .utility-group + .utility-group { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--line-soft); }
+  .observer-settings { margin-bottom: 14px; padding-bottom: 13px; border-bottom: 1px solid var(--line-soft); }
+  .observer-settings + .utility-group { margin-top: 0; padding-top: 0; border-top: 0; }
   .event-scope { overflow: hidden; color: var(--gold); font-size: 8px; letter-spacing: .04em; text-overflow: ellipsis; white-space: nowrap; text-transform: none; }
 
   button {
@@ -227,18 +241,43 @@
   .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 3px 0; }
   .chip { display: inline-block; width: 8px; height: 8px; margin-right: 7px; border-radius: 50%; box-shadow: 0 0 0 3px #ffffff09; }
 
-  /* Floating map HUD */
-  #topbar {
-    position: absolute; z-index: 5; top: 10px; left: 64px; right: 753px;
-    display: grid; grid-template-columns: 96px repeat(6, minmax(74px, 1fr)); align-items: stretch; gap: 4px;
-    min-width: 0; padding: 5px; border: 1px solid #4961598c; border-radius: 13px;
-    background: #0a1512e0; box-shadow: 0 12px 34px #0008; backdrop-filter: blur(16px) saturate(130%);
-    pointer-events: none;
+  /* Unified player HUD: turn, victory race, and every civilization now share
+     one top-edge instrument instead of competing floating panels. Each of the
+     two information rails scrolls in place on a narrow map, keeping the bar a
+     constant height and the world visible. */
+  #playerhud {
+    position: absolute; z-index: 7; top: 10px; left: 12px; right: 12px; height: 112px;
+    display: grid; grid-template-columns: 70px minmax(0, 1fr) clamp(340px, 30%, 520px);
+    align-items: stretch; gap: 5px; min-width: 0; padding: 5px; overflow: hidden;
+    border: 1px solid #526a618f; border-radius: 14px;
+    background: linear-gradient(105deg, #091411ed, #0d1a17e6 54%, #0a1512ed);
+    box-shadow: 0 15px 42px #000a, inset 0 1px #ffffff0a;
+    backdrop-filter: blur(18px) saturate(135%); pointer-events: auto;
   }
-  .victory-turn, .victory-track { min-width: 0; min-height: 80px; border-radius: 9px; }
+  .hud-region {
+    min-width: 0; display: flex; flex-direction: column; padding: 4px 4px 3px;
+    overflow: hidden; border: 1px solid #ffffff0b; border-radius: 9px;
+    background: #07110f52;
+  }
+  .hud-section-heading {
+    min-height: 13px; display: flex; align-items: center; justify-content: space-between;
+    gap: 8px; margin: 0 3px 3px; overflow: hidden; color: #b9c8c2;
+    font-size: 8px; font-weight: 900; letter-spacing: .15em; line-height: 1;
+    text-transform: uppercase; white-space: nowrap;
+  }
+  .hud-section-heading span:last-child { overflow: hidden; color: #71857e; letter-spacing: .08em; text-overflow: ellipsis; }
+  .hud-rail {
+    min-width: 0; min-height: 0; flex: 1; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain;
+    scrollbar-color: #476057 transparent; scrollbar-width: thin;
+  }
+  .hud-rail::-webkit-scrollbar { height: 3px; }
+  .hud-rail::-webkit-scrollbar-thumb { background: #476057; border-radius: 4px; }
+  .hud-rail:focus-visible { outline: 1px solid #d7b66a70; outline-offset: -1px; border-radius: 6px; }
+  .victory-turn, .victory-track { min-width: 0; border-radius: 8px; }
   .victory-turn {
-    display: flex; flex-direction: column; justify-content: center; padding: 7px 9px;
-    color: var(--gold-bright); background: #d7b66a12; border: 1px solid #d7b66a26;
+    display: flex; flex-direction: column; justify-content: center; padding: 8px 9px;
+    color: var(--gold-bright); background: linear-gradient(155deg, #d7b66a19, #d7b66a08);
+    border: 1px solid #d7b66a30;
   }
   .victory-turn span, .victory-heading {
     color: #b9c8c2; font-size: 9px; font-weight: 900; letter-spacing: .1em; line-height: 1; text-transform: uppercase;
@@ -249,10 +288,14 @@
      cell is tall enough for two lines, so let it wrap and clamp there instead
      of truncating the era away every turn. */
   .victory-turn i {
-    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
-    margin-top: 5px; overflow: hidden; color: #9aaba5; font-size: 9px; font-style: normal;
-    line-height: 1.25; overflow-wrap: anywhere;
+    display: block; margin-top: 5px; overflow: hidden; color: #9aaba5;
+    font-size: 9px; font-style: normal; line-height: 1.25;
   }
+  .victory-turn i em, .victory-turn i small {
+    display: block; overflow: hidden; color: inherit; font: inherit;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  .victory-turn i small { color: #71857e; text-transform: capitalize; }
   .victory-meter { overflow: hidden; background: #020706b3; box-shadow: inset 0 1px 2px #000b; }
   .victory-meter b { display: block; height: 100%; border-radius: inherit; background: currentColor; }
   /* Two of the races are really two races at once — the technology tree and
@@ -272,12 +315,22 @@
     box-shadow: inset 0 0 0 1px #ffffff2b;
   }
   .victory-dots i.on { background: currentColor; box-shadow: 0 0 4px currentColor; }
-  .victory-track {
-    container-type: inline-size; padding: 6px 4px 5px; color: var(--track);
-    border-left: 1px solid #ffffff0b;
+  /* The set of enabled victory paths is a game option. Build one equal grid
+     column per enabled path, so removing a path hands its share to the paths
+     that remain. The computed minimum keeps every path readable when the
+     viewport is too narrow; only then does the rail scroll. */
+  .victory-ribbon {
+    width: max(100%, var(--victory-min-width, 514px)); display: grid;
+    grid-template-columns: repeat(var(--victory-columns, 6), minmax(84px, 1fr));
+    align-items: stretch; gap: 2px;
   }
+  .victory-track {
+    container-type: inline-size; min-height: 76px; padding: 5px 5px 4px;
+    color: var(--track); background: #ffffff03; border-left: 1px solid #ffffff0b;
+  }
+  .victory-track:first-child { border-left-color: transparent; }
   .victory-heading { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; color: var(--track); }
-  .victory-heading b { overflow: hidden; color: #dde5e1; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+  .victory-heading b { overflow: hidden; color: #dde5e1; font-size: 9px; letter-spacing: .03em; text-overflow: ellipsis; white-space: nowrap; }
   /* Score is decided at the turn limit, so the limit belongs in its heading. */
   .victory-heading em {
     margin-left: auto; color: #9aaba5; font-size: 9px; font-style: normal;
@@ -291,30 +344,20 @@
   .victory-list { display: flex; flex-direction: column; gap: 3px; }
   .victory-entry { min-width: 0; }
   /* The rows are already printed in rank order, so the leading "#1/#2/#3"
-     spent 13px per line restating the order. In a narrower topbar that width
+     spent 13px per line restating the order. In a narrower victory rail that width
      is worth more as civilization name, which is what actually truncates. */
   .victory-line { display: grid; grid-template-columns: 6px minmax(0, 1fr) auto; align-items: center; gap: 3px; min-width: 0; height: 13px; }
   .victory-civ-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--civ); box-shadow: 0 0 5px color-mix(in srgb, var(--civ) 70%, transparent); }
   .victory-civ { overflow: hidden; color: #e6ede9; font-size: 10px; font-weight: 750; line-height: 1; text-overflow: ellipsis; white-space: nowrap; }
   .victory-value { color: #c2d0ca; font-size: 10px; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .victory-meter { height: 3px; margin: 0 0 0 9px; border-radius: 3px; }
-  #playerhud {
-    position: absolute; z-index: 7; top: 10px; right: 12px; width: min(729px, calc(100% - 82px));
-    max-height: calc(100% - 238px); overflow-y: auto; pointer-events: auto;
-    scrollbar-width: none; filter: drop-shadow(0 12px 28px #0009);
-  }
-  #playerhud::-webkit-scrollbar { display: none; }
-  .ribbon-heading {
-    display: flex; align-items: center; justify-content: space-between; margin: 0 4px 5px;
-    color: #bdcbc5; font-size: 8px; font-weight: 850; letter-spacing: .16em; text-transform: uppercase;
-    text-shadow: 0 2px 5px #000;
-  }
-  .ribbon-heading span:last-child { color: #82968f; letter-spacing: .08em; }
-  .diplomacy-ribbon { display: flex; flex-direction: column; gap: 3px; }
+  .diplomacy-ribbon { min-width: max-content; display: flex; align-items: stretch; gap: 4px; padding-bottom: 1px; }
   .diplomacy-card {
-    display: grid; grid-template-columns: 42px minmax(150px, 1.6fr) minmax(380px, 2.3fr); align-items: center; gap: 6px;
-    width: 100%; min-height: 56px; margin: 0; padding: 4px 5px; overflow: hidden; border-radius: 9px;
-    color: var(--text); background: linear-gradient(100deg, #0a1512f0, #13231fe8);
+    flex: 0 0 clamp(282px, 19vw, 315px); display: grid;
+    grid-template-columns: 31px minmax(74px, .75fr) minmax(148px, 1.35fr);
+    align-items: center; gap: 5px; height: 78px; margin: 0; padding: 4px 5px;
+    overflow: hidden; border-radius: 8px; color: var(--text);
+    background: linear-gradient(105deg, #0b1714f5, #142720ee);
     border: 1px solid #40574f; box-shadow: inset 0 1px #ffffff0b;
     text-align: left; cursor: pointer; transition: border-color .12s ease, background .12s ease;
   }
@@ -325,20 +368,20 @@
   .diplomacy-card.at-war { border-color: #a65450; box-shadow: inset 3px 0 var(--danger), inset 0 1px #fff1; }
   .diplomacy-card.dead { opacity: .42; filter: grayscale(.75); }
   .leader-medallion {
-    width: 38px; height: 38px; display: grid; place-items: center; border-radius: 50%;
+    width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%;
     color: #fff; background: radial-gradient(circle at 35% 28%, color-mix(in srgb, var(--civ) 72%, white), var(--civ) 58%, #07110f);
     border: 2px solid var(--civ); box-shadow: 0 0 0 2px #07110f, 0 4px 12px #0008;
-    font: 700 15px/1 Georgia, serif; text-shadow: 0 1px 3px #000;
+    font: 700 13px/1 Georgia, serif; text-shadow: 0 1px 3px #000;
   }
   .diplomacy-identity { min-width: 0; }
-  .diplomacy-name { display: block; overflow: hidden; color: #f1f4ed; font-size: 13px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
-  .diplomacy-rank { margin-right: 5px; color: var(--gold-bright); font: 700 11px Georgia, serif; }
+  .diplomacy-name { display: block; overflow: hidden; color: #f1f4ed; font-size: 11px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+  .diplomacy-rank { margin-right: 4px; color: var(--gold-bright); font: 700 10px Georgia, serif; }
   /* Leader, war plan and standing all share this line, which as a single
      nowrap row was an ellipsis on nearly every card. The card is tall enough
      for two lines of it, so spend the height rather than cut the sentence. */
   .diplomacy-leader {
     display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
-    margin-top: 1px; overflow: hidden; color: var(--muted); font-size: 10px;
+    margin-top: 2px; overflow: hidden; color: var(--muted); font-size: 8px;
     line-height: 1.25; overflow-wrap: anywhere;
   }
   .agenda-mark { margin-left: 3px; font-size: 8px; vertical-align: 1px; }
@@ -352,10 +395,11 @@
   .ai-plan.diplomacy { color: #e8c64c; }
   .ai-plan.conquest { color: #f08a82; }
   .ai-plan.recovery { color: #e9ad74; }
-  .diplomacy-stats { display: grid; grid-template-columns: repeat(10, 1fr); gap: 0; }
-  .ribbon-stat { min-width: 0; padding: 3px 0 2px; text-align: center; border-left: 1px solid #ffffff0b; }
-  .ribbon-stat b { display: block; overflow: hidden; font-size: 12px; line-height: 1.1; text-overflow: ellipsis; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .ribbon-stat em { display: block; margin-top: 2px; color: #82958e; font-size: 8px; font-style: normal; font-weight: 850; letter-spacing: 0; line-height: 1; }
+  .diplomacy-stats { align-self: stretch; display: grid; grid-template-columns: repeat(5, minmax(27px, 1fr)); grid-template-rows: repeat(2, 1fr); gap: 0; }
+  .ribbon-stat { min-width: 0; display: grid; place-content: center; padding: 2px 0 1px; text-align: center; border-left: 1px solid #ffffff0b; border-top: 1px solid #ffffff0b; }
+  .ribbon-stat:nth-child(-n+5) { border-top-color: transparent; }
+  .ribbon-stat b { display: block; overflow: hidden; font-size: 10px; line-height: 1.05; text-overflow: ellipsis; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .ribbon-stat em { display: block; margin-top: 2px; color: #82958e; font-size: 6px; font-style: normal; font-weight: 850; letter-spacing: .02em; line-height: 1; }
   .ribbon-stat.production b { color: #e9ad74; }
   .ribbon-stat.science b { color: var(--blue); }
   .ribbon-stat.culture b { color: var(--violet); }
@@ -366,6 +410,164 @@
   .ribbon-stat.suzerain b { color: #8dd6b1; }
   .ribbon-stat.wonders b { color: #e9d88e; }
   .ribbon-stat.score b { color: var(--gold-bright); }
+
+  /* Cinema presentation is a spectator composition, not another map style:
+     the existing terrain renderer remains authoritative while the broadcast
+     furniture yields to it. The race stays readable across the room; the
+     dense leader table and command deck remain one C/F key away. */
+  #cinema-atmosphere, #cinema-prologue, #cinema-matte, #cinema-story,
+  #cinema-follow, #cinema-chrome { display: none; }
+  body.cinema-mode #cinema-atmosphere {
+    position: absolute; inset: -8%; z-index: 2; display: block; overflow: hidden;
+    pointer-events: none; opacity: .3;
+  }
+  body.cinema-mode #cinema-atmosphere::before {
+    content: ""; position: absolute; inset: -8%;
+    background:
+      radial-gradient(ellipse at 18% 31%, #07110f66 0 7%, #07110f2c 15%, transparent 30%),
+      radial-gradient(ellipse at 63% 57%, #07110f52 0 8%, #07110f24 17%, transparent 33%),
+      radial-gradient(ellipse at 86% 22%, #07110f46 0 6%, #07110f1f 14%, transparent 28%),
+      radial-gradient(ellipse at 39% 88%, #07110f3d 0 5%, #07110f1c 13%, transparent 27%);
+    /* Keep the full-frame cloud grade static. Animating a blended viewport-sized
+       layer halves composition throughput on mature maps; the canvas carries
+       motion in its water and surf without taxing camera movement. */
+    transform: translate3d(-1%, 0, 0) scale(1.03);
+  }
+  body.cinema-mode #cinema-atmosphere::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(128deg, #ffe6a014 0%, transparent 32%, transparent 69%, #24443d12 100%);
+  }
+  body.cinema-mode #cinema-prologue.active {
+    position: absolute; inset: 0; z-index: 17; display: grid; place-items: center;
+    padding: 54px; pointer-events: none; text-align: center;
+    background:
+      radial-gradient(circle at 50% 48%, #28413678 0%, transparent 32%),
+      linear-gradient(145deg, #010403f5, #07100ff0 52%, #010302f8);
+    animation: cinema-prologue-curtain 5.8s cubic-bezier(.3,.05,.2,1) both;
+  }
+  body.cinema-mode #cinema-prologue.active.chapter {
+    background:
+      radial-gradient(circle at 50% 48%, #7f6a3438 0%, transparent 30%),
+      linear-gradient(145deg, #010403e9, #07100ee0 52%, #010302ee);
+    animation-duration: 4.6s;
+  }
+  body.cinema-mode.cinema-intertitle #playerhud,
+  body.cinema-mode.cinema-intertitle #cinema-story,
+  body.cinema-mode.cinema-intertitle #cinema-follow,
+  body.cinema-mode.cinema-intertitle #cinema-chrome { opacity: 0 !important; pointer-events: none; }
+  .cinema-prologue-content {
+    width: min(900px, calc(100vw - 80px));
+    animation: cinema-prologue-title 5.1s cubic-bezier(.16,.8,.24,1) both;
+    text-shadow: 0 4px 28px #000, 0 1px 2px #000;
+  }
+  #cinema-prologue.chapter .cinema-prologue-content { animation-duration: 4s; }
+  .cinema-prologue-rule {
+    width: min(420px, 62vw); height: 1px; margin: 0 auto 25px;
+    background: linear-gradient(90deg, transparent, #d9bd75, transparent);
+    box-shadow: 0 0 18px #d9bd7566;
+  }
+  .cinema-prologue-kicker {
+    color: #ead9a7; font-size: 10px; font-weight: 900; letter-spacing: .4em; text-transform: uppercase;
+  }
+  .cinema-prologue-title {
+    margin-top: 18px; color: #fffaf0;
+    font: 600 clamp(48px, 6.2vw, 96px)/1.03 Georgia, "Times New Roman", serif;
+    letter-spacing: .015em; text-wrap: balance;
+  }
+  #cinema-prologue.chapter .cinema-prologue-title { font-size: clamp(40px, 5vw, 76px); }
+  .cinema-prologue-detail {
+    margin-top: 22px; color: #cbd4ce; font-size: 9px; font-weight: 800;
+    letter-spacing: .2em; line-height: 1.6; text-transform: uppercase;
+  }
+  @keyframes cinema-prologue-curtain {
+    0%, 62% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+  @keyframes cinema-prologue-title {
+    0%, 7% { opacity: 0; transform: translateY(12px) scale(.99); filter: blur(5px); }
+    18%, 70% { opacity: 1; transform: none; filter: none; }
+    100% { opacity: 0; transform: translateY(-5px); filter: blur(2px); }
+  }
+  body.cinema-mode #cinema-matte { display: block; position: absolute; inset: 0; z-index: 8; pointer-events: none; }
+  body.cinema-mode #cinema-matte::before,
+  body.cinema-mode #cinema-matte::after {
+    content: ""; position: absolute; left: 0; right: 0; height: 18px;
+    background: #020504f7; box-shadow: 0 0 32px #000b;
+  }
+  body.cinema-mode #cinema-matte::before { top: 0; }
+  body.cinema-mode #cinema-matte::after { bottom: 0; }
+  body.cinema-mode #playerhud {
+    top: 30px; left: 50%; right: auto; width: min(900px, calc(100% - 132px)); height: 88px;
+    grid-template-columns: 70px minmax(0, 1fr); transform: translateX(-50%);
+    border-color: #d8bd7952; border-radius: 12px;
+    background: linear-gradient(105deg, #07100edb, #0d1815cc 60%, #07100edb);
+    box-shadow: 0 16px 46px #0009, inset 0 1px #ffffff0b;
+    opacity: .82; transition: opacity .35s ease, transform .35s ease;
+  }
+  body.cinema-mode.cinema-idle #playerhud { opacity: .62; transform: translate(-50%, -4px); }
+  body.cinema-mode #playerhud .leader-region { display: none; }
+  body.cinema-mode #playerhud .victory-track { min-height: 60px; padding-top: 4px; }
+  body.cinema-mode #zoomctl, body.cinema-mode #ubar, body.cinema-mode #modeline,
+  body.cinema-mode .minimap-frame { display: none !important; }
+  body.cinema-mode #cinema-story {
+    position: absolute; z-index: 10; left: clamp(34px, 4.5vw, 82px); bottom: clamp(44px, 6vh, 88px);
+    display: block; width: min(620px, calc(100% - 110px)); padding: 0 0 0 18px;
+    opacity: 0; transform: translateY(14px); pointer-events: none;
+    border-left: 2px solid #e5c776; filter: drop-shadow(0 8px 18px #000d);
+    transition: opacity .45s ease, transform .55s cubic-bezier(.2,.8,.2,1);
+  }
+  body.cinema-mode #cinema-story.visible { opacity: 1; transform: translateY(0); }
+  .cinema-kicker {
+    color: #ead18b; font-size: 9px; font-weight: 900; letter-spacing: .28em;
+    text-transform: uppercase; text-shadow: 0 2px 10px #000;
+  }
+  .cinema-headline {
+    margin-top: 5px; color: #fffaf0; font: 600 clamp(24px, 2.2vw, 39px)/1.08 Georgia, "Times New Roman", serif;
+    letter-spacing: .015em; text-wrap: balance; text-shadow: 0 3px 20px #000, 0 1px 2px #000;
+  }
+  .cinema-detail {
+    max-width: 540px; margin-top: 7px; overflow: hidden; color: #d0d8d3;
+    font-size: 10px; font-weight: 700; letter-spacing: .12em; line-height: 1.45;
+    text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap;
+    text-shadow: 0 2px 8px #000;
+  }
+  body.cinema-mode #cinema-follow.active {
+    position: absolute; z-index: 11; left: 50%; bottom: 31px;
+    display: flex; align-items: center; gap: 8px; max-width: min(430px, calc(100% - 48px));
+    margin: 0; padding: 7px 12px 7px 10px; overflow: hidden;
+    color: #e7eee9; background: #06100dd6; border: 1px solid #d8bd7948;
+    border-radius: 999px; box-shadow: 0 9px 28px #000a; backdrop-filter: blur(14px);
+    font-size: 9px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
+  }
+  #cinema-follow::before {
+    content: ""; width: 7px; height: 7px; flex: 0 0 auto; border: 1px solid #f1d58d;
+    border-radius: 50%; box-shadow: 0 0 0 3px #d7b66a20, 0 0 10px #e4c6757a;
+  }
+  #cinema-follow b { overflow: hidden; color: #f6e4ac; text-overflow: ellipsis; white-space: nowrap; }
+  #cinema-follow em { color: #9fb0aa; font-style: normal; letter-spacing: .03em; }
+  body.cinema-mode #cinema-chrome {
+    position: absolute; z-index: 15; top: 31px; right: 30px; display: flex; align-items: center; gap: 5px;
+    padding: 4px; border: 1px solid #d8bd7938; border-radius: 999px;
+    background: #06100dc4; box-shadow: 0 10px 28px #0009; backdrop-filter: blur(16px);
+    opacity: .12; transform: translateY(-5px); transition: opacity .25s ease, transform .25s ease;
+  }
+  body.cinema-mode.cinema-idle #cinema-chrome { opacity: 0; pointer-events: none; }
+  body.cinema-mode:not(.cinema-idle) #cinema-chrome,
+  body.cinema-mode #cinema-chrome:focus-within,
+  body.cinema-mode #cinema-chrome:hover { opacity: .94; transform: translateY(0); }
+  #cinema-chrome button { width: 34px; height: 30px; margin: 0; padding: 0; border: 0; background: transparent; }
+  #cinema-chrome button + button { border-left: 1px solid #ffffff12; border-radius: 0; }
+  #cinema-chrome button:last-child { border-radius: 0 999px 999px 0; }
+  #cinema-chrome .director-on, #cinema-chrome .audio-on {
+    color: var(--gold-bright); text-shadow: 0 0 10px #e6c87699;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    body.cinema-mode #cinema-prologue.active,
+    body.cinema-mode #cinema-prologue .cinema-prologue-content { animation: none !important; opacity: 1; }
+    body.cinema-mode #winner .winner-content { animation: none !important; }
+    body.cinema-mode #cinema-story, body.cinema-mode #playerhud,
+    body.cinema-mode #cinema-follow, body.cinema-mode #cinema-chrome { transition-duration: .01ms; }
+  }
   #zoomctl {
     position: absolute; z-index: 14; bottom: 16px; left: 16px; display: flex; flex-direction: row;
     gap: 5px; padding: 5px; border-radius: 13px; background: #0a1512cb; border: 1px solid #3c554c;
@@ -410,7 +612,53 @@
     background: radial-gradient(circle at top, #2c3524, #0c1714f7 65%); border: 1px solid var(--gold);
     border-radius: 20px; box-shadow: 0 24px 90px #000e, 0 0 60px #d7b66a22;
   }
-  #winner .small { display: inline-block; margin-top: 10px; font: 11px/1.5 Inter, sans-serif; letter-spacing: .08em; text-transform: uppercase; }
+  #winner.visible { display: block; }
+  .winner-content > * { display: block; }
+  .winner-kicker, .winner-meta, .winner-countdown {
+    color: #cbd3ce; font: 800 9px/1.5 Inter, sans-serif; letter-spacing: .2em; text-transform: uppercase;
+  }
+  .winner-mark { margin: 10px 0 4px; color: var(--winner-color, var(--gold-bright)); font-size: 22px; }
+  .winner-title { color: var(--gold-bright); font: 600 32px/1.05 Georgia, serif; }
+  .winner-verdict { margin-top: 8px; color: #f3e5bd; font: 600 17px/1.2 Georgia, serif; }
+  .winner-meta { margin-top: 13px; }
+  .winner-countdown { margin-top: 8px; color: #94a49e; letter-spacing: .12em; }
+  body.cinema-mode.cinema-finale #playerhud,
+  body.cinema-mode.cinema-finale #cinema-story,
+  body.cinema-mode.cinema-finale #cinema-follow,
+  body.cinema-mode.cinema-finale #cinema-chrome { opacity: 0 !important; pointer-events: none; }
+  body.cinema-mode #winner {
+    position: absolute; inset: 0; min-width: 0; padding: 0; transform: none;
+    border: 0; border-radius: 0; box-shadow: none; text-align: center;
+    background:
+      radial-gradient(circle at 50% 46%, color-mix(in srgb, var(--winner-color, #d7b66a) 22%, transparent) 0%, transparent 28%),
+      radial-gradient(circle at 50% 47%, #07100ea8 0 18%, #020504d8 58%, #010202f2 100%);
+    backdrop-filter: saturate(.72) brightness(.76) blur(1.5px);
+  }
+  body.cinema-mode #winner.visible { display: grid; place-items: center; }
+  body.cinema-mode #winner .winner-content {
+    width: min(820px, calc(100% - 80px)); padding: 80px 30px;
+    animation: cinema-finale-reveal 1.8s cubic-bezier(.16,.8,.24,1) both;
+    text-shadow: 0 3px 22px #000, 0 1px 2px #000;
+  }
+  body.cinema-mode #winner .winner-content::before,
+  body.cinema-mode #winner .winner-content::after {
+    content: ""; display: block; width: min(430px, 70vw); height: 1px; margin: 0 auto 22px;
+    background: linear-gradient(90deg, transparent, var(--winner-color, #d7b66a), transparent);
+    box-shadow: 0 0 16px color-mix(in srgb, var(--winner-color, #d7b66a) 55%, transparent);
+  }
+  body.cinema-mode #winner .winner-content::after { margin: 24px auto 0; opacity: .65; }
+  body.cinema-mode #winner .winner-kicker { color: #e7d7aa; font-size: 10px; letter-spacing: .38em; }
+  body.cinema-mode #winner .winner-mark { margin: 18px 0 8px; font-size: 34px; text-shadow: 0 0 28px var(--winner-color, #d7b66a); }
+  body.cinema-mode #winner .winner-title {
+    color: #fffaf0; font-size: clamp(56px, 7vw, 108px); letter-spacing: .025em;
+  }
+  body.cinema-mode #winner .winner-verdict { margin-top: 12px; color: #f0d99c; font-size: clamp(21px, 2.1vw, 34px); }
+  body.cinema-mode #winner .winner-meta { margin-top: 26px; color: #d1d8d3; font-size: 10px; }
+  body.cinema-mode #winner .winner-countdown { margin-top: 12px; font-size: 8px; }
+  @keyframes cinema-finale-reveal {
+    from { opacity: 0; transform: translateY(14px) scale(.985); filter: blur(5px); }
+    to { opacity: 1; transform: none; filter: none; }
+  }
 
   /* Rich panel content */
   .research-card { width: 100%; height: 55px; min-height: 55px; display: grid; grid-template-columns: 32px minmax(0, 1fr) 36px; align-items: center; gap: 10px; }
@@ -472,9 +720,44 @@
   .shortcut-grid span { color: var(--muted); font-size: 9px; }
   kbd { display: inline-grid; min-width: 19px; height: 18px; place-items: center; margin-right: 5px; padding: 0 4px; border-radius: 5px; color: #cbd5d0; background: #091310; border: 1px solid #354c44; box-shadow: inset 0 -1px #000; font: 700 8px Inter, sans-serif; }
   #newgame-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: end; }
-  #newgame-options button { margin: 0; height: 34px; }
+  #newgame-options button { margin: 0; }
+  .profile-note { grid-column: 1 / -1; margin-top: -2px; padding: 7px 9px; border-left: 2px solid #aa874a; color: var(--faint); background: #d7b66a09; font-size: 9px; line-height: 1.45; }
+  .game-speed-setting { grid-column: 1 / -1; min-width: 0; padding: 0; border: 0; }
+  .game-speed-setting legend { margin-bottom: 4px; color: var(--muted); font-size: 10px; line-height: 1.45; }
+  .game-speed-options { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+  .game-speed-option { min-width: 0; cursor: pointer; }
+  .game-speed-option input {
+    position: absolute; width: 1px; height: 1px; overflow: hidden;
+    opacity: 0; pointer-events: none;
+  }
+  .game-speed-option span {
+    min-height: 43px; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 2px; min-width: 0; padding: 5px 2px;
+    color: var(--muted); border: 1px solid #385149; border-radius: 8px;
+    background: #0d1816; text-align: center;
+    transition: color .12s ease, border-color .12s ease, background .12s ease, box-shadow .12s ease;
+  }
+  .game-speed-option strong {
+    max-width: 100%; overflow: hidden; font-size: 8px; line-height: 1.1;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  .game-speed-option small { color: var(--faint); font-size: 7px; line-height: 1; white-space: nowrap; }
+  .game-speed-option:hover span { color: var(--text); border-color: #57776d; background: #152520; }
+  .game-speed-option input:focus-visible + span { outline: 2px solid var(--gold); outline-offset: 2px; }
+  .game-speed-option input:checked + span {
+    color: #17160f; border-color: #efd184;
+    background: linear-gradient(135deg, #f0d58f, #c99e4e);
+    box-shadow: inset 0 1px #fff7, 0 4px 12px #0004;
+  }
+  .game-speed-option input:checked + span small { color: #4e421f; }
+  .game-speed-note {
+    min-height: 14px; display: flex; justify-content: space-between; gap: 8px;
+    margin-top: 5px; color: var(--faint); font-size: 8px; font-variant-numeric: tabular-nums;
+  }
+  .game-speed-note span:last-child { white-space: nowrap; }
   .sim-actions { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-  .sim-actions button { min-height: 34px; height: auto; padding-inline: 7px; }
+  #newgame-options .sim-actions button { min-height: 52px; height: auto; padding: 6px 8px; line-height: 1.2; }
+  .sim-actions .sub { display: block; margin-top: 3px; color: var(--muted); font-size: 8px; font-weight: 600; letter-spacing: .04em; }
   .victory-options { grid-column: 1 / -1; padding: 9px 10px 10px; border: 1px solid var(--line-soft); border-radius: 9px; background: #09131080; }
   .victory-options h2 { margin-bottom: 8px; }
   .victory-option-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px 9px; }
@@ -587,86 +870,86 @@
   .capture-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(125px, 1fr)); gap: 8px; }
   .capture-actions button { margin: 0; min-height: 43px; }
 
-  /* A wide desktop has room to read the ribbon from across the room. */
+  /* A wide desktop can show more civilizations without changing the HUD's
+     hierarchy or pushing it farther down the map. */
   @media (min-width: 2200px) {
-    #topbar { right: 864px; }
-    #playerhud { width: min(840px, calc(100% - 82px)); }
-    .diplomacy-card { grid-template-columns: 46px minmax(170px, 1.6fr) minmax(440px, 2.3fr); min-height: 60px; }
-    .leader-medallion { width: 42px; height: 42px; font-size: 16px; }
-    .diplomacy-name { font-size: 14px; }
-    .diplomacy-leader { font-size: 11px; }
-    .ribbon-stat b { font-size: 13px; }
-    .ribbon-stat em { font-size: 9px; }
-  }
-  /* Each step down keeps the six victory tracks inside the topbar's own box:
-     at full size they need 576px, and if the box is narrower than its columns
-     the tracks spill out of it and slide under the leader ribbon. The ribbon
-     is what gives way first — it hands its extra width back a step at a time
-     until, below 1580px, both are back at the sizes they had before the
-     ribbon was widened. */
-  @media (max-width: 1770px) {
-    #topbar { right: 664px; grid-template-columns: 92px repeat(6, minmax(62px, 1fr)); }
-    #playerhud { width: min(640px, calc(100% - 82px)); }
-  }
-  @media (max-width: 1580px) {
-    #topbar { right: 510px; grid-template-columns: 68px repeat(6, minmax(50px, 1fr)); }
-    #playerhud { width: min(486px, calc(100% - 82px)); }
-    .diplomacy-card { grid-template-columns: 38px minmax(74px, .72fr) minmax(300px, 2.7fr); min-height: 50px; }
-    .leader-medallion { width: 34px; height: 34px; font-size: 13px; }
+    #playerhud { grid-template-columns: 76px minmax(0, 1fr) 520px; }
+    .diplomacy-card { flex-basis: 330px; grid-template-columns: 36px minmax(88px, .75fr) minmax(164px, 1.35fr); }
+    .leader-medallion { width: 36px; height: 36px; font-size: 15px; }
     .diplomacy-name { font-size: 12px; }
     .diplomacy-leader { font-size: 9px; }
     .ribbon-stat b { font-size: 11px; }
     .ribbon-stat em { font-size: 7px; }
   }
-  @media (max-width: 1320px) {
-    #topbar { right: 70px; }
-    /* The topbar now runs the full width, so the ribbon hangs below it. */
-    #playerhud { top: 104px; max-height: calc(100% - 300px); }
+  @media (max-width: 1580px) {
+    #playerhud { grid-template-columns: 64px minmax(0, 1fr) clamp(300px, 32%, 380px); }
   }
   @media (max-width: 980px) {
     #side { width: 320px; min-width: 320px; }
     #ubar { max-width: calc(100% - 70px); }
   }
-  @media (max-width: 940px) {
-    #topbar { grid-template-columns: 92px repeat(3, minmax(70px, 1fr)); }
-    #playerhud { top: 190px; }
-  }
   @media (max-width: 720px) {
     body { display: block; }
     #maparea { height: 100%; }
-    #side { position: fixed; inset: 72px auto 8px 8px; width: min(390px, calc(100% - 16px)); min-width: 0; height: auto; border: 1px solid #40584f; border-radius: 16px; }
+    #side { position: fixed; inset: 132px auto 8px 8px; width: min(390px, calc(100% - 16px)); min-width: 0; height: auto; border: 1px solid #40584f; border-radius: 16px; }
     body.sidebar-hidden #side { width: min(390px, calc(100% - 16px)); transform: translateX(calc(-100% - 16px)); opacity: 0; }
-    #topbar { grid-template-columns: 104px repeat(6, minmax(80px, 1fr)); }
-    #playerhud { top: 104px; right: 12px; max-height: calc(100% - 122px); }
+    #playerhud { grid-template-columns: 64px minmax(0, .9fr) minmax(0, 1.1fr); }
     .minimap-frame { display: none; }
     #zoomctl { left: 12px; bottom: 12px; }
     #ubar { min-width: 0; width: calc(100% - 28px); bottom: 18px; }
     #trade { inset: 2% 8px; }
     .trade-balance { display: none; }
     #tradelist { grid-template-columns: 1fr; padding-inline: 10px; }
+    body.cinema-mode #playerhud { top: 24px; width: calc(100% - 24px); grid-template-columns: 58px minmax(0, 1fr); }
+    body.cinema-mode #cinema-chrome { top: auto; right: 12px; bottom: 24px; }
+    body.cinema-mode #cinema-story { left: 24px; bottom: 74px; width: calc(100% - 48px); }
   }
   @media (max-width: 620px) {
-    #topbar { grid-template-columns: 92px repeat(3, minmax(70px, 1fr)); }
-    #playerhud { top: 190px; }
+    #playerhud { grid-template-columns: 58px minmax(0, .78fr) minmax(0, 1.22fr); gap: 3px; }
+    .hud-section-heading span:last-child { display: none; }
+    .victory-turn { padding-inline: 6px; }
+    .victory-turn i { font-size: 8px; }
   }
   @media (max-width: 430px) {
-    #playerhud { left: 74px; right: 8px; width: auto; }
-    .diplomacy-card { grid-template-columns: 31px minmax(45px, .65fr) minmax(150px, 2fr); gap: 4px; min-height: 44px; padding: 4px; }
+    #playerhud { top: 8px; left: 8px; right: 8px; grid-template-columns: 54px minmax(0, .68fr) minmax(0, 1.32fr); padding: 4px; }
+    .hud-region { padding-inline: 2px; }
+    .diplomacy-card { flex-basis: 286px; grid-template-columns: 31px minmax(76px, .7fr) minmax(155px, 1.45fr); gap: 4px; padding: 4px; }
     .leader-medallion { width: 29px; height: 29px; font-size: 12px; }
     .diplomacy-name { font-size: 10px; }
     .diplomacy-leader { margin-top: 1px; font-size: 8px; }
-    .diplomacy-stats { gap: 0; }
     .ribbon-stat { padding-inline: 0; }
-    .ribbon-stat b { font-size: 8px; }
-    .ribbon-stat em { font-size: 6px; letter-spacing: 0; }
+    .ribbon-stat b { font-size: 9px; }
   }
 </style>
 </head>
 <body>
 <div id="maparea">
   <canvas id="map"></canvas>
-  <div id="topbar"></div>
-  <aside id="playerhud" aria-label="Civilization yield ribbon"></aside>
+  <div id="cinema-atmosphere" aria-hidden="true"></div>
+  <section id="cinema-prologue" aria-live="polite" aria-atomic="true">
+    <div class="cinema-prologue-content">
+      <div class="cinema-prologue-rule"></div>
+      <div class="cinema-prologue-kicker"></div>
+      <div class="cinema-prologue-title"></div>
+      <div class="cinema-prologue-detail"></div>
+    </div>
+  </section>
+  <div id="cinema-matte" aria-hidden="true"></div>
+  <section id="cinema-story" aria-live="polite" aria-atomic="true">
+    <div class="cinema-kicker"></div>
+    <div class="cinema-headline"></div>
+    <div class="cinema-detail"></div>
+  </section>
+  <button id="cinema-follow" type="button" aria-live="polite" title="Stop following this unit">
+    <span>Following</span><b></b><em>click to release</em>
+  </button>
+  <div id="cinema-chrome" aria-label="Cinema controls">
+    <button id="cinema-director" title="Toggle automatic camera" aria-label="Toggle automatic camera">◉</button>
+    <button id="cinema-audio" title="Enable cinema soundscape (M)" aria-label="Enable cinema soundscape" aria-pressed="false">♩</button>
+    <button id="cinema-fullscreen" title="Enter fullscreen" aria-label="Enter fullscreen">⛶</button>
+    <button id="cinema-exit" title="Exit cinema mode (C)" aria-label="Exit cinema mode">✕</button>
+  </div>
+  <aside id="playerhud" aria-label="Player standings and victory race"></aside>
   <div id="zoomctl">
     <button id="paneltoggle" class="icon" title="Toggle command deck" aria-label="Toggle command deck">☰</button>
     <button id="zin" title="Zoom in" aria-label="Zoom in">＋</button>
@@ -676,7 +959,7 @@
   <div id="ubar"></div>
   <div id="modeline"></div>
   <div id="err"></div>
-  <div id="winner"></div>
+  <div id="winner" role="status" aria-live="assertive"></div>
   <div class="minimap-frame">
     <div class="minimap-label"><span>World map</span><span>click to travel</span></div>
     <canvas id="mini" width="200" height="140"></canvas>
@@ -743,6 +1026,11 @@
           <option disabled>Single player · later</option>
           <option disabled>Multiplayer · later</option>
         </select></label>
+        <label class="small">Ruleset<select id="game-profile" style="margin-top:4px">
+          <option value="civ6-tournament" selected>Civ VI · tournament</option>
+          <option value="civ65">Civ 6.5 · Gathering Storm+</option>
+        </select></label>
+        <div class="profile-note" id="game-profile-note"></div>
         <label class="small">World size<select id="np" style="margin-top:4px">
           <option value="2">Duel · 2 civs · 3 city-states · 44×26</option>
           <option value="4" selected>Tiny · 4 civs · 6 city-states · 60×38</option>
@@ -757,12 +1045,23 @@
           <option value="small_continents">Small Continents</option>
           <option value="inland_sea">Inland Sea</option>
         </select></label>
-        <label class="small">Game speed<select id="gamespeed" style="margin-top:4px">
-          <option value="online" selected>Online · 250 turns</option>
-          <option value="quick">Quick · 330 turns</option>
-          <option value="standard">Standard · 500 turns</option>
-          <option value="epic">Epic · 750 turns</option>
-          <option value="marathon">Marathon · 1500 turns</option>
+        <fieldset class="game-speed-setting">
+          <legend>Game speed</legend>
+          <div id="gamespeed" class="game-speed-options">
+            <label class="game-speed-option"><input type="radio" name="game-speed" value="online" checked><span><strong>Online</strong><small>250 turns</small></span></label>
+            <label class="game-speed-option"><input type="radio" name="game-speed" value="quick"><span><strong>Quick</strong><small>330 turns</small></span></label>
+            <label class="game-speed-option"><input type="radio" name="game-speed" value="standard"><span><strong>Standard</strong><small>500 turns</small></span></label>
+            <label class="game-speed-option"><input type="radio" name="game-speed" value="epic"><span><strong>Epic</strong><small>750 turns</small></span></label>
+            <label class="game-speed-option"><input type="radio" name="game-speed" value="marathon"><span><strong>Marathon</strong><small>1500 turns</small></span></label>
+          </div>
+          <div class="game-speed-note"><span id="gamespeed-details">50% pacing · 250-turn limit</span><span>Applies on restart</span></div>
+        </fieldset>
+        <label class="small">Disasters<select id="disaster-intensity" style="margin-top:4px">
+          <option value="0">Minimal</option>
+          <option value="1">Light</option>
+          <option value="2" selected>Moderate · stock default</option>
+          <option value="3">Heavy</option>
+          <option value="4">Hyperreal</option>
         </select></label>
         <div class="victory-options" role="group" aria-labelledby="victory-options-title">
           <h2 id="victory-options-title">Victory conditions</h2>
@@ -776,9 +1075,9 @@
           </div>
         </div>
         <div class="sim-actions">
-          <button id="default-settings" title="Restore the stock simulation setup">Default settings</button>
-          <button id="restart-sim">Restart sim · existing settings</button>
-          <button id="fresh-sim" title="Get the latest code, rebuild, and start a new simulation">New sim · fresh code</button>
+          <button class="primary" id="restart-sim" title="Restart with the same settings and build">Restart sim<span class="sub">same settings<br>same build</span></button>
+          <button id="fresh-sim" title="Start with the same settings on the most recent build">New sim<span class="sub">same settings<br>most recent build</span></button>
+          <button id="default-settings" title="Start with default settings on the most recent build">New sim<span class="sub">default settings<br>most recent build</span></button>
         </div>
       </div>
       </div>
@@ -790,15 +1089,6 @@
         <span class="section-meta"><span class="rule"></span><span class="section-chevron" aria-hidden="true"></span></span>
       </summary>
       <div class="sec settings-sec" id="display-settings">
-      <div class="utility-group">
-        <h2>Display</h2>
-        <select id="viewsel" aria-label="Map style">
-          <option value="cinematic">Cinematic terrain</option>
-          <option value="strategic">Strategic map</option>
-        </select>
-        <label class="setting-row"><span><input type="checkbox" id="yieldchk"> Show yields per tile</span><kbd>Y</kbd></label>
-        <label class="setting-row"><span><input type="checkbox" id="artifactchk"> Show artifact sites &amp; shipwrecks</span></label>
-      </div>
       <div class="utility-group observer-settings" id="observer-settings">
         <h2>Observation</h2>
         <div class="view-row"><span>View as</span>
@@ -816,14 +1106,27 @@
           </select>
         </div>
         <div class="speed-note" id="specpacenote">Measuring turn time…</div>
+        <label class="setting-row"><span><input type="checkbox" id="cinemachk" checked> Cinema presentation</span><kbd>C</kbd></label>
+      </div>
+      <div class="utility-group">
+        <h2>Display</h2>
+        <select id="viewsel" aria-label="Map style">
+          <option value="cinematic">Cinematic terrain</option>
+          <option value="strategic">Strategic map</option>
+        </select>
+        <label class="setting-row"><span><input type="checkbox" id="yieldchk"> Show yields per tile</span><kbd>Y</kbd></label>
+        <label class="setting-row"><span><input type="checkbox" id="artifactchk"> Show artifact sites &amp; shipwrecks</span></label>
       </div>
       <details class="utility-panel">
         <summary>Keyboard shortcuts</summary>
         <div class="utility-body shortcut-grid">
           <span><kbd>1</kbd>Next unit</span><span><kbd>2</kbd>Settler lens</span>
-          <span><kbd>3</kbd>Map tacks</span><span><kbd>F</kbd>Focus mode</span>
-          <span><kbd>D</kbd>Quick Deals</span><span><kbd>Alt</kbd>Rotate map</span>
-          <span><kbd>Y</kbd>Tile yields</span><span><kbd>↵</kbd>End / pause</span>
+          <span><kbd>3</kbd>Map tacks · 6.5</span><span><kbd>F</kbd>Focus mode</span>
+          <span><kbd>D</kbd>Quick Deals</span><span><kbd>Alt/⌥ drag</kbd>Rotate · cinematic tilt</span>
+          <span><kbd>Q / E</kbd>Rotate map</span><span><kbd>Shift scroll</kbd>Rotate · <kbd>⌥ scroll</kbd>tilt</span>
+          <span><kbd>Arrows</kbd>Pan map</span><span><kbd>+ / −</kbd>Zoom · double-click to dive</span>
+          <span><kbd>Y</kbd>Tile yields</span><span><kbd>C</kbd>Cinema mode</span>
+          <span><kbd>↵</kbd>End / pause</span>
         </div>
       </details>
       </div>
@@ -887,6 +1190,7 @@
       <div class="spec-controls">
         <button class="primary" id="specpause">⏸ Pause</button>
         <button class="icon" id="specdirector" title="Camera locked (click for auto-focus)" aria-label="Toggle camera auto-focus">○</button>
+        <button class="icon" id="speccinema" title="Enter cinema presentation" aria-label="Enter cinema presentation">▰</button>
         <button class="icon" id="specstep" title="Advance one civilization" aria-label="Step once">›</button>
       </div>
     </div>
@@ -1088,13 +1392,284 @@ let tradeFilter = "all", tradeBusy = false;
 let VIEW = localStorage.getItem("civvis-view") || "cinematic";
 let SHOW_YIELDS = localStorage.getItem("civvis-show-yields") === "1";
 let SHOW_ARTIFACT_SITES = localStorage.getItem("civvis-show-artifact-sites") === "1";
-// A stable map is easier to watch at Lightning speed. Action-following remains
-// available as an explicit spectator option, but every browser starts locked.
+// Cinema is the default spectator composition. It never changes the strategic
+// map or player UI: it only enters after the server identifies this page as a
+// spectator, and every control returns on C/Escape.
+let CINEMA = localStorage.getItem("civvis-cinema-v1") !== "0";
+let CINEMA_AUDIO = localStorage.getItem("civvis-cinema-audio-v1") === "1";
+const REDUCED_MOTION_QUERY = window.matchMedia("(prefers-reduced-motion: reduce)");
+let cinemaIdleTimer = null, cinemaIntertitleTimer = null, cinemaIntertitleSignature = null;
 let DIRECTOR = localStorage.getItem("civvis-director-v2") === "1";
-let directorGoal = null, directorLast = 0;
+let directorGoal = null, directorLast = 0, directorMotionLast = 0;
+let directorStoryUntil = 0, directorAmbientLast = performance.now();
+let directorPortraitIndex = 0;
+let cinemaAudioContext = null, cinemaAudioMaster = null, cinemaAudioAnalyser = null;
+let cinemaAudioBed = null, cinemaAudioLastCue = 0, cinemaAudioSuspendTimer = null;
+let cinemaAudioAudible = false, cinemaAudioRootValue = null;
+const directorSeen = new Map();
 // migrate legacy mode names (performance mode lives on as headless sims)
 if (VIEW === "beautiful") VIEW = "cinematic";
 if (VIEW === "simple" || VIEW === "minimal") VIEW = "strategic";
+
+function cinemaActive() {
+  return !!(SPEC && CINEMA && VIEW === "cinematic");
+}
+function wakeCinema() {
+  if (!document.body.classList.contains("cinema-mode")) return;
+  document.body.classList.remove("cinema-idle");
+  clearTimeout(cinemaIdleTimer);
+  cinemaIdleTimer = setTimeout(() => document.body.classList.add("cinema-idle"), 3200);
+}
+function hideCinemaIntertitle() {
+  clearTimeout(cinemaIntertitleTimer); cinemaIntertitleTimer = null;
+  document.getElementById("cinema-prologue")?.classList.remove("active", "chapter");
+  document.body.classList.remove("cinema-intertitle");
+}
+function showCinemaIntertitle({signature, kicker, title, detail, chapter = false, duration = 5800}) {
+  if (!cinemaActive() || !title || signature === cinemaIntertitleSignature) return false;
+  const panel = document.getElementById("cinema-prologue");
+  cinemaIntertitleSignature = signature;
+  clearTimeout(cinemaIntertitleTimer);
+  panel.querySelector(".cinema-prologue-kicker").textContent = kicker || "Civilization VI · live world";
+  panel.querySelector(".cinema-prologue-title").textContent = title;
+  panel.querySelector(".cinema-prologue-detail").textContent = detail || "";
+  panel.classList.remove("active", "chapter");
+  void panel.offsetWidth;
+  if (chapter) panel.classList.add("chapter");
+  panel.classList.add("active");
+  document.body.classList.add("cinema-intertitle");
+  document.getElementById("cinema-story").classList.remove("visible");
+  directorStoryUntil = 0;
+  cinemaIntertitleTimer = setTimeout(() => {
+    panel.classList.remove("active", "chapter");
+    document.body.classList.remove("cinema-intertitle");
+  }, duration);
+  return true;
+}
+function showCinemaPrologue(st) {
+  if (!st || st.turn > 2) return false;
+  const civilizations = st.players.filter(player =>
+    !player.is_minor && !player.is_barbarian && player.alive).length;
+  const eraRaw = st.world_era;
+  const era = typeof eraRaw === "number"
+    ? titleCase(ERA_NAMES[eraRaw] || `era ${eraRaw}`)
+    : titleCase(String(eraRaw || "ancient"));
+  const shown = showCinemaIntertitle({signature:`world:${st.seed}`,
+    kicker:"Civilization VI · a live chronicle", title:"A new world awakens",
+    detail:`${civilizations} civilization${civilizations === 1 ? "" : "s"} · ${titleCase(st.map.script || "world map")} · ${era} Era`});
+  if (shown) playCinemaCue({priority:7, kicker:"A civilization begins", title:"A new world awakens"});
+  return shown;
+}
+function showCinemaChapter(cue) {
+  const title = String(cue.title || "A new era").replace(/^The world enters the /, "");
+  const shown = showCinemaIntertitle({signature:`chapter:${state?.seed}:${state?.turn}:${title}`,
+    kicker:cue.kicker || "A new age dawns", title, detail:cue.detail,
+    chapter:true, duration:4600});
+  if (shown) playCinemaCue(cue);
+  return shown;
+}
+function applyCinemaMode() {
+  const active = cinemaActive();
+  const wasActive = document.body.classList.contains("cinema-mode");
+  document.body.classList.toggle("cinema-mode", active);
+  if (!active || !wasActive) document.body.classList.remove("cinema-idle");
+  const checkbox = document.getElementById("cinemachk");
+  if (checkbox) checkbox.checked = CINEMA;
+  const footerButton = document.getElementById("speccinema");
+  if (footerButton) footerButton.classList.toggle("active", active);
+  if (active && !wasActive) {
+    if (!DIRECTOR) setDirector(true);
+    wakeCinema();
+    if (state && !showCinemaPrologue(state)) {
+      const civilizations = state.players.filter(player =>
+        !player.is_minor && !player.is_barbarian && player.alive).length;
+      const eraRaw = state.world_era;
+      const era = typeof eraRaw === "number"
+        ? titleCase(ERA_NAMES[eraRaw] || `era ${eraRaw}`)
+        : titleCase(String(eraRaw || "ancient"));
+      showDirectorStory({priority:5, kicker:"Civilization VI · live world",
+        title:`${civilizations} civilizations. One history.`,
+        detail:`Turn ${state.turn} · ${era} Era · ${titleCase(state.map.script || "world map")}`});
+    }
+  } else if (!active) {
+    clearTimeout(cinemaIdleTimer);
+    cinemaIdleTimer = null;
+    hideCinemaIntertitle();
+  }
+  updateCinemaAudioButton();
+  if (cinemaAudioContext) syncCinemaAudioState();
+  if (active !== wasActive) setTimeout(resize, 270);
+}
+function setCinemaMode(on) {
+  CINEMA = !!on;
+  localStorage.setItem("civvis-cinema-v1", CINEMA ? "1" : "0");
+  applyCinemaMode();
+  clearTimeout(cinemaAudioSuspendTimer);
+  if (CINEMA_AUDIO && cinemaActive()) ensureCinemaAudio();
+  else if (cinemaAudioContext?.state === "running") {
+    cinemaAudioSuspendTimer = setTimeout(() => {
+      if (!cinemaActive() && cinemaAudioContext?.state === "running")
+        cinemaAudioContext.suspend().catch(() => {});
+    }, 650);
+  }
+}
+function toggleCinemaMode() { setCinemaMode(!CINEMA); }
+async function toggleCinemaFullscreen() {
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await area.requestFullscreen({navigationUI:"hide"});
+  } catch (_) { /* fullscreen is optional and can be denied by the browser */ }
+}
+
+// Browsers quite correctly require a gesture before audio can begin. Cinema
+// therefore ships silent and remembers an explicit choice; the graph is not
+// even created until the viewer asks for it. The score is synthesized locally
+// so a long-running exhibition needs no network stream or looping asset.
+function cinemaAudioRoot() {
+  const era = typeof state?.world_era === "number" ? state.world_era : 0;
+  return [49, 52, 55, 58.27, 61.74, 65.41, 69.3, 73.42, 77.78][Math.max(0, Math.min(8, era))];
+}
+function updateCinemaAudioButton() {
+  const button = document.getElementById("cinema-audio");
+  if (!button) return;
+  const supported = !!(window.AudioContext || window.webkitAudioContext);
+  button.disabled = !supported;
+  button.classList.toggle("audio-on", supported && CINEMA_AUDIO);
+  button.textContent = CINEMA_AUDIO ? "♫" : "♩";
+  button.setAttribute("aria-pressed", CINEMA_AUDIO ? "true" : "false");
+  button.setAttribute("aria-label", CINEMA_AUDIO ? "Disable cinema soundscape" : "Enable cinema soundscape");
+  button.title = supported
+    ? `${CINEMA_AUDIO ? "Disable" : "Enable"} cinema soundscape (M)`
+    : "Cinema soundscape is unavailable in this browser";
+}
+function createCinemaAudioGraph() {
+  if (cinemaAudioContext) return cinemaAudioContext;
+  const AudioCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtor) return null;
+  const ctx = new AudioCtor({latencyHint:"playback"});
+  const master = ctx.createGain(); master.gain.value = 0;
+  const analyser = ctx.createAnalyser(); analyser.fftSize = 512;
+  master.connect(analyser); analyser.connect(ctx.destination);
+
+  const bedGain = ctx.createGain(); bedGain.gain.value = .038; bedGain.connect(master);
+  const voices = [
+    {ratio:1, gain:.68, type:"sine"},
+    {ratio:1.5, gain:.32, type:"sine"},
+  ].map(spec => {
+    const oscillator = ctx.createOscillator(), gain = ctx.createGain();
+    oscillator.type = spec.type; oscillator.frequency.value = cinemaAudioRoot() * spec.ratio;
+    gain.gain.value = spec.gain; oscillator.connect(gain); gain.connect(bedGain); oscillator.start();
+    return {oscillator, ratio:spec.ratio};
+  });
+  const lfo = ctx.createOscillator(), lfoDepth = ctx.createGain();
+  lfo.frequency.value = .055; lfoDepth.gain.value = .006;
+  lfo.connect(lfoDepth); lfoDepth.connect(bedGain.gain); lfo.start();
+
+  // A deterministic, heavily filtered noise floor reads as distant air rather
+  // than hiss and prevents the two-tone bed from feeling electronically bare.
+  const noiseBuffer = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+  const noiseData = noiseBuffer.getChannelData(0); let noiseSeed = 0x51f15e;
+  for (let i = 0; i < noiseData.length; i++) {
+    noiseSeed = (noiseSeed * 1664525 + 1013904223) >>> 0;
+    noiseData[i] = (noiseSeed / 0xffffffff) * 2 - 1;
+  }
+  const noise = ctx.createBufferSource(), noiseFilter = ctx.createBiquadFilter(), noiseGain = ctx.createGain();
+  noise.buffer = noiseBuffer; noise.loop = true;
+  noiseFilter.type = "lowpass"; noiseFilter.frequency.value = 360; noiseFilter.Q.value = .45;
+  noiseGain.gain.value = .011;
+  noise.connect(noiseFilter); noiseFilter.connect(noiseGain); noiseGain.connect(master); noise.start();
+
+  cinemaAudioContext = ctx; cinemaAudioMaster = master; cinemaAudioAnalyser = analyser;
+  cinemaAudioBed = {bedGain, voices, lfo, noise};
+  return ctx;
+}
+function syncCinemaAudioState() {
+  updateCinemaAudioButton();
+  if (!cinemaAudioContext || !cinemaAudioMaster) return;
+  const ctx = cinemaAudioContext, now = ctx.currentTime;
+  const audible = CINEMA_AUDIO && cinemaActive() && !document.hidden && ctx.state === "running";
+  if (audible !== cinemaAudioAudible) {
+    if (cinemaAudioMaster.gain.cancelAndHoldAtTime)
+      cinemaAudioMaster.gain.cancelAndHoldAtTime(now);
+    else {
+      const current = Math.max(0, cinemaAudioMaster.gain.value);
+      cinemaAudioMaster.gain.cancelScheduledValues(now);
+      cinemaAudioMaster.gain.setValueAtTime(current, now);
+    }
+    cinemaAudioMaster.gain.linearRampToValueAtTime(audible ? .24 : 0, now + (audible ? 1.4 : .45));
+    cinemaAudioAudible = audible;
+  }
+  const root = cinemaAudioRoot();
+  if (root !== cinemaAudioRootValue) {
+    for (const voice of cinemaAudioBed?.voices || [])
+      voice.oscillator.frequency.setTargetAtTime(root * voice.ratio, now, .9);
+    cinemaAudioRootValue = root;
+  }
+}
+async function ensureCinemaAudio() {
+  if (!CINEMA_AUDIO || !cinemaActive()) return false;
+  const ctx = createCinemaAudioGraph();
+  if (!ctx) { CINEMA_AUDIO = false; updateCinemaAudioButton(); return false; }
+  clearTimeout(cinemaAudioSuspendTimer);
+  try { if (ctx.state === "suspended") await ctx.resume(); } catch (_) { /* next gesture retries */ }
+  syncCinemaAudioState();
+  return ctx.state === "running";
+}
+async function setCinemaAudio(on) {
+  CINEMA_AUDIO = !!on;
+  localStorage.setItem("civvis-cinema-audio-v1", CINEMA_AUDIO ? "1" : "0");
+  updateCinemaAudioButton(); wakeCinema();
+  if (CINEMA_AUDIO) {
+    if (await ensureCinemaAudio()) {
+      if (state?.winner !== null && state?.winner !== undefined)
+        setTimeout(() => playCinemaCue({priority:10, kicker:"History has a victor"}), 180);
+      else playCinemaCue({priority:3, kicker:"The world awakens"});
+    }
+  } else if (cinemaAudioContext) {
+    syncCinemaAudioState();
+    cinemaAudioSuspendTimer = setTimeout(() => {
+      if (!CINEMA_AUDIO && cinemaAudioContext?.state === "running") cinemaAudioContext.suspend().catch(() => {});
+    }, 650);
+  }
+}
+function playCinemaTone(frequency, delay, duration, peak, type = "sine") {
+  const ctx = cinemaAudioContext;
+  if (!ctx || ctx.state !== "running" || !CINEMA_AUDIO || !cinemaActive()) return;
+  const at = ctx.currentTime + Math.max(.01, delay), oscillator = ctx.createOscillator(), gain = ctx.createGain();
+  oscillator.type = type; oscillator.frequency.setValueAtTime(frequency, at);
+  gain.gain.setValueAtTime(.0001, at);
+  gain.gain.exponentialRampToValueAtTime(Math.max(.0002, peak), at + Math.min(.16, duration * .12));
+  gain.gain.exponentialRampToValueAtTime(.0001, at + duration);
+  oscillator.connect(gain); gain.connect(cinemaAudioMaster);
+  oscillator.start(at); oscillator.stop(at + duration + .08);
+  oscillator.onended = () => { oscillator.disconnect(); gain.disconnect(); };
+}
+function playCinemaCue(cue = {}) {
+  if (!CINEMA_AUDIO || !cinemaActive() || cinemaAudioContext?.state !== "running") return;
+  const now = performance.now();
+  if (now - cinemaAudioLastCue < 650) return;
+  cinemaAudioLastCue = now;
+  const root = cinemaAudioRoot(), label = `${cue.kicker || ""} ${cue.title || ""}`.toLowerCase();
+  if ((cue.priority || 0) >= 10 || label.includes("victor")) {
+    [1, 1.25, 1.5, 2].forEach((ratio, i) => playCinemaTone(root * 2 * ratio, i * .32, 5.2 - i * .25, .105 - i * .012));
+  } else if (/war|captur|siege|battle|casualty|falls|fire|front/.test(label)) {
+    playCinemaTone(root * .5, 0, 2.8, .14, "triangle");
+    playCinemaTone(root * .75, .16, 2.3, .075, "sine");
+  } else if (/peace|wonder|new age|begins|rises|awakens/.test(label)) {
+    [1, 1.25, 1.5].forEach((ratio, i) => playCinemaTone(root * 2 * ratio, i * .22, 3.8, .07 - i * .009));
+  } else {
+    playCinemaTone(root * 2, 0, 2.6, cue.priority >= 5 ? .052 : .032);
+    if (cue.priority >= 5) playCinemaTone(root * 3, .2, 2.9, .038);
+  }
+}
+document.addEventListener("pointerdown", event => {
+  if (event.target?.closest?.("#cinema-audio")) return;
+  if (CINEMA_AUDIO && cinemaActive() && cinemaAudioContext?.state !== "running") ensureCinemaAudio();
+}, {capture:true, passive:true});
+document.addEventListener("visibilitychange", syncCinemaAudioState);
+window.addEventListener("pointermove", wakeCinema, {passive:true});
+window.addEventListener("pointerdown", wakeCinema, {passive:true});
+document.addEventListener("fullscreenchange", () => { wakeCinema(); resize(); });
 
 // ---------------------------------------------------- unit animation layer
 // moves: id -> tween; floats: damage numbers; sparks: hit flashes;
@@ -1231,15 +1806,21 @@ function animateDiff(prev, next) {
 }
 const easeIO = e => e < 0.5 ? 2 * e * e : 1 - (1 - e) * (2 - 2 * e);
 const cam = { x: 0, y: 0, scale: 1 };
+let cameraFlight = null, cameraZoom = null;
+let cameraInertia = {vx:0, vy:0, vrot:0, vtilt:0};
+let cameraMotionLast = performance.now();
+let cameraFollowUnitId = null, cameraFollowManual = false, cameraFollowScale = 1.18;
 const cv = document.getElementById("map"), cx = cv.getContext("2d");
 const mini = document.getElementById("mini"), mx2 = mini.getContext("2d");
 const area = document.getElementById("maparea");
 let DPR = window.devicePixelRatio || 1;
 
-// Keep enough vertical squash for the raised-board perspective, but leave the
-// six-sided top face close to its natural proportions. At 0.80 the shoulders
-// collapsed and isolated terrain read more like a short rectangular block.
-const YS = 0.92;
+// The map tilt is represented by its vertical projection: 1 is directly
+// overhead and smaller values lower the camera toward the horizon. Keep the
+// default close to the natural hex proportions while allowing an Option/Alt
+// drag upward to flatten the board into a more cinematic angle.
+const DEFAULT_YS = 0.92, MIN_YS = 0.35, MAX_YS = 1;
+let cinematicYS = DEFAULT_YS, YS = DEFAULT_YS;
 const SKIRT = 6;        // restrained prism depth keeps the hex face dominant
 function key(p) { return p[0] + "," + p[1]; }
 function pcol(id) {
@@ -1255,9 +1836,19 @@ function cityBannerColor(owner) {
     : pcol(owner);
 }
 function WW() { return state ? S * SQ3 * state.map.width : 1e12; }
-function wrapX(x) { const w = WW(); return x + Math.round((cam.x - x) / w) * w; }
+function mapWrapsX() {
+  if (!state) return true;
+  if (typeof state.map.wrap_x === "boolean") return state.map.wrap_x;
+  return state.map.script !== "inland_sea";
+}
+function wrapX(x) {
+  if (!mapWrapsX()) return x;
+  const w = WW();
+  return x + Math.round((cam.x - x) / w) * w;
+}
 function canonPos(p) {
   if (!state) return p;
+  if (!mapWrapsX()) return p;
   const w = state.map.width;
   const col = p[0] + ((p[1] - (p[1] & 1)) >> 1);
   const m = ((col % w) + w) % w;
@@ -1267,7 +1858,7 @@ function nbrTile(pos, d) {
   return TMAP.get(key(canonPos([pos[0] + d[0], pos[1] + d[1]])));
 }
 function whexDist(a, b) {
-  if (!state) return hexDist(a, b);
+  if (!state || !mapWrapsX()) return hexDist(a, b);
   const w = state.map.width;
   return Math.min(hexDist(a, b), hexDist([a[0]-w, a[1]], b), hexDist([a[0]+w, a[1]], b));
 }
@@ -1279,7 +1870,16 @@ function setRot(r) {
   LITF = COSR >= 0 ? 1 : -1;
   localStorage.setItem("civvis-rot", String(r));
 }
-// world is an east-west cylinder: x is always the copy nearest the camera.
+function setTilt(ys) {
+  cinematicYS = Math.max(MIN_YS, Math.min(MAX_YS, Number.isFinite(ys) ? ys : DEFAULT_YS));
+  if (VIEW === "cinematic") YS = cinematicYS;
+  localStorage.setItem("civvis-tilt", String(cinematicYS));
+}
+function syncTiltForView() {
+  YS = VIEW === "cinematic" ? cinematicYS : DEFAULT_YS;
+}
+// Cylindrical scripts use the copy nearest the camera; bounded scripts retain
+// their literal east and west edges.
 // hexXY returns camera-relative view coords (rotate, then dimetric squash).
 function hexXY(q, r) {
   const wx = wrapX(S * SQ3 * (q + r / 2)) - cam.x;
@@ -1442,11 +2042,75 @@ function syncViewPlayer() {
     ? "spectator" : String(state.view_player);
   select.disabled = viewChanging;
 }
+function syncGameProfileNote() {
+  const select = document.getElementById("game-profile");
+  const note = document.getElementById("game-profile-note");
+  if (!select || !note) return;
+  const profile = Array.isArray(RULES?.game_profiles)
+    ? RULES.game_profiles.find(candidate => candidate.id === select.value)
+    : null;
+  if (!profile) {
+    note.textContent = select.value === "civ65"
+      ? "Gathering Storm climate and disasters with the Climate Balance core and built-in UI/QoL tools."
+      : "Current CPL FFA setup and enforceable tournament policy rules.";
+    return;
+  }
+  const components = Array.isArray(profile.components) && profile.components.length
+    ? ` Includes ${profile.components.join(" · ")}.` : "";
+  note.textContent = `${profile.description}${components}`;
+}
+function gameSpeedInputs() {
+  return [...document.querySelectorAll('#gamespeed input[name="game-speed"]')];
+}
+function selectedGameSpeed() {
+  return gameSpeedInputs().find(input => input.checked)?.value || "online";
+}
+function syncGameSpeedNote() {
+  const speedId = selectedGameSpeed();
+  const speed = Array.isArray(RULES?.game_speeds)
+    ? RULES.game_speeds.find(candidate => candidate.id === speedId)
+    : null;
+  const details = document.getElementById("gamespeed-details");
+  if (!details) return;
+  const fallback = {
+    online:[50,250], quick:[67,330], standard:[100,500], epic:[150,750], marathon:[300,1500]
+  }[speedId] || [100,500];
+  details.textContent = `${speed?.cost_percent ?? fallback[0]}% pacing · ` +
+    `${speed?.turn_limit ?? fallback[1]}-turn limit`;
+}
+function setGameSpeed(speedId) {
+  const input = gameSpeedInputs().find(candidate => candidate.value === speedId);
+  if (input) input.checked = true;
+  syncGameSpeedNote();
+}
+function renderGameSpeedOptions(speeds) {
+  const current = selectedGameSpeed();
+  document.getElementById("gamespeed").innerHTML = RULES.game_speeds.map(speed =>
+    `<label class="game-speed-option" title="${speed.description}">` +
+    `<input type="radio" name="game-speed" value="${speed.id}">` +
+    `<span><strong>${speed.name}</strong><small>${speed.turn_limit} turns</small></span></label>`
+  ).join("");
+  setGameSpeed(speeds.some(speed => speed.id === current) ? current : "online");
+}
+function applyGameProfileDefaults() {
+  setGameSpeed("online");
+  document.getElementById("disaster-intensity").value = "2";
+  for (const track of VICTORY_TRACKS)
+    document.getElementById(`victory-${track.id}`).checked = true;
+  syncGameProfileNote();
+}
 async function boot() {
   if (bootBusy) return;
   bootBusy = true;
   try {
     RULES = await fetchJSON("/rules");
+    if (Array.isArray(RULES.game_profiles)) {
+      document.getElementById("game-profile").innerHTML = RULES.game_profiles.map(profile =>
+        `<option value="${profile.id}" title="${profile.description}">${profile.name}</option>`
+      ).join("");
+      document.getElementById("game-profile").value = "civ6-tournament";
+      syncGameProfileNote();
+    }
     if (Array.isArray(RULES.map_sizes)) {
       document.getElementById("np").innerHTML = RULES.map_sizes.map(size =>
         `<option value="${size.default_players}">${size.name} · ${size.default_players} civs · ${size.default_city_states} city-states · ${size.width}×${size.height}</option>`
@@ -1458,10 +2122,8 @@ async function boot() {
       ).join("");
     }
     if (Array.isArray(RULES.game_speeds)) {
-      document.getElementById("gamespeed").innerHTML = RULES.game_speeds.map(speed =>
-        `<option value="${speed.id}" title="${speed.description}">${speed.name} · ${speed.turn_limit} turns</option>`
-      ).join("");
-      document.getElementById("gamespeed").value = "online";
+      renderGameSpeedOptions(RULES.game_speeds);
+      setGameSpeed("online");
     }
     render(await fetchJSON("/state"));
     if (firstLoad) {
@@ -1496,65 +2158,357 @@ function reportSpecStatus() {
     body: JSON.stringify({paused: specPaused})}, 3000).catch(() => {});
 }
 setInterval(reportSpecStatus, 4000);
+function cuePlace(st, pos) {
+  if (!st || !Array.isArray(pos)) return "Across the known world";
+  const nearby = (st.cities || []).map(city => ({city, distance:hexDistUI(city.pos, pos)}))
+    .sort((a, b) => a.distance - b.distance)[0];
+  if (nearby && nearby.distance <= 5) return `Near ${nearby.city.name}`;
+  const tile = st.map?.tiles?.find(candidate => key(candidate.pos) === key(pos));
+  if (!tile) return "Across the known world";
+  const feature = tile.feature ? titleCase(tile.feature) : titleCase(tile.terrain);
+  const owner = Number.isInteger(tile.owner) ? st.players[tile.owner] : null;
+  return owner ? `${feature} · ${owner.civ} territory` : feature;
+}
+function showDirectorStory(cue) {
+  if (!cinemaActive() || !cue?.title) return;
+  const panel = document.getElementById("cinema-story");
+  panel.querySelector(".cinema-kicker").textContent = cue.kicker || "World in motion";
+  panel.querySelector(".cinema-headline").textContent = cue.title;
+  panel.querySelector(".cinema-detail").textContent = cue.detail || "";
+  panel.classList.remove("visible");
+  // Restart the entrance even when two important beats arrive close together.
+  void panel.offsetWidth;
+  panel.classList.add("visible");
+  directorStoryUntil = performance.now() + (cue.priority >= 7 ? 6200 : 4800);
+  playCinemaCue(cue);
+}
+function updateDirectorStory(now) {
+  if (directorStoryUntil && now >= directorStoryUntil) {
+    document.getElementById("cinema-story").classList.remove("visible");
+    directorStoryUntil = 0;
+  }
+}
+function cinematicDisasterStory(disaster, next) {
+  const severe = (disaster.severity || 0) >= 2;
+  const affected = disaster.tiles?.length || 1;
+  const titles = {
+    active_volcano: severe ? "A volcano threatens catastrophe" : "A volcano awakens",
+    blizzard: severe ? "A crippling blizzard descends" : "A blizzard closes in",
+    dust_storm: severe ? "A haboob swallows the horizon" : "A dust storm sweeps the land",
+    tornado: severe ? "A tornado outbreak tears across the land" : "A tornado family forms",
+    hurricane: severe ? "A Category 5 hurricane makes landfall" : "A hurricane bears down",
+    drought: severe ? "An extreme drought grips the land" : "The rains fail",
+    forest_fire: "Wildfire consumes the forests",
+    jungle_fire: "The jungle burns",
+  };
+  return {kicker:"Nature unleashed", title:titles[disaster.kind] || titleCase(disaster.kind),
+    detail:`Turn ${next.turn} · ${cuePlace(next, disaster.center)} · ${affected} affected hex${affected === 1 ? "" : "es"}`,
+    zoom:severe ? 1.18 : 1.1, opening:true};
+}
 function directorCue(prev, next) {
   if (!DIRECTOR || !prev || prev.seed !== next.seed) return null;
   let best = null;
   const majorOwners = new Set(next.players
     .filter(player => !player.is_minor && !player.is_barbarian && player.alive)
     .map(player => player.id));
-  const offer = (pos, priority) => {
+  const offer = (pos, priority, story = {}) => {
     if (!Array.isArray(pos) || pos.length !== 2) return;
-    if (!best || priority >= best.priority) best = { pos: [pos[0], pos[1]], priority };
+    if (!best || priority > best.priority) {
+      best = { pos: [pos[0], pos[1]], priority, zoom:story.zoom || 1.08,
+               kicker:story.kicker, title:story.title,
+               detail:story.detail || `Turn ${next.turn} · ${cuePlace(next, pos)}`,
+               opening:!!story.opening, unitId:story.unitId,
+               silent:!!story.silent };
+    }
   };
+  const oldDisasters = new Set((prev.active_disasters || []).map(disaster => disaster.id));
+  for (const disaster of next.active_disasters || []) {
+    if (oldDisasters.has(disaster.id) || !Array.isArray(disaster.center)) continue;
+    const priority = (disaster.severity || 0) >= 2 || disaster.kind === "active_volcano" ? 7 : 6;
+    offer(disaster.center, priority, cinematicDisasterStory(disaster, next));
+  }
+  // Floods and resolved eruptions are instantaneous rather than members of
+  // active_disasters. Their categorized notifications retain both the human
+  // descriptor and the exact tile, so the director can still witness them.
+  const noteKey = note => `${note.turn}|${note.text}|${key(note.pos || [])}`;
+  const oldNotes = new Set((prev.events || []).map(noteKey));
+  for (const note of next.events || []) {
+    if (!Array.isArray(note.pos) || oldNotes.has(noteKey(note)) ||
+        !/Flood|Eruption|Hurricane|Blizzard|Tornado|Drought|Fire/.test(note.text || "")) continue;
+    const civ = next.players[note.player]?.civ || "";
+    let headline = String(note.text);
+    if (civ && headline.startsWith(civ + " ")) headline = headline.slice(civ.length + 1);
+    headline = headline.replace(/\s+struck near.*$/i, "");
+    const severe = /1,000-Year|Catastrophic|Megacolossal|Category 5|Crippling|Haboob|Outbreak|Extreme/.test(headline);
+    offer(note.pos, severe ? 7 : 6, {kicker:"Nature unleashed", title:headline,
+      detail:`Turn ${next.turn} · ${cuePlace(next, note.pos)}`, zoom:severe ? 1.2 : 1.1, opening:true});
+  }
   const oldCities = new Map(prev.cities.map(c => [c.id, c]));
   for (const city of next.cities) {
     const old = oldCities.get(city.id);
-    if (!old && majorOwners.has(city.owner)) offer(city.pos, 5);
+    const owner = next.players[city.owner];
+    if (!old && majorOwners.has(city.owner)) offer(city.pos, 5, {
+      kicker: city.is_capital ? "A civilization begins" : "A new city rises",
+      title:`${owner.civ} founds ${city.name}`,
+      detail:`Turn ${next.turn} · Population ${city.pop} · ${cuePlace(next, city.pos)}`,
+      zoom:1.02, opening:true
+    });
     else if (old && old.owner !== city.owner &&
-             (majorOwners.has(old.owner) || majorOwners.has(city.owner))) offer(city.pos, 7);
+             (majorOwners.has(old.owner) || majorOwners.has(city.owner))) offer(city.pos, 8, {
+      kicker:"City captured",
+      title:`${owner.civ} takes ${city.name}`,
+      detail:`Turn ${next.turn} · From ${prev.players[old.owner]?.civ || "its former ruler"} · Population ${city.pop}`,
+      zoom:1.24, opening:true
+    });
     else if (old && majorOwners.has(city.owner) &&
-             (city.hp < old.hp || (city.wall_hp || 0) < (old.wall_hp || 0))) offer(city.pos, 5);
+             (city.hp < old.hp || (city.wall_hp || 0) < (old.wall_hp || 0))) offer(city.pos, 5, {
+      kicker:"Under siege",
+      title:`The battle for ${city.name}`,
+      detail:`Turn ${next.turn} · ${owner.civ} · ${Math.max(0, Math.round(city.hp))} city strength remains`,
+      zoom:1.3
+    });
+    if (old) {
+      for (const wonder of Object.keys(city.wonders || {})) {
+        if (Object.prototype.hasOwnProperty.call(old.wonders || {}, wonder)) continue;
+        offer(city.pos, 6, {kicker:"Wonder completed", title:titleCase(wonder),
+          detail:`${owner.civ} · ${city.name} · Turn ${next.turn}`, zoom:1.12, opening:true});
+      }
+    }
+  }
+  const warKey = war => `${Math.min(war.aggressor, war.defender)}:${Math.max(war.aggressor, war.defender)}`;
+  const oldWars = new Map((prev.wars || []).map(war => [warKey(war), war]));
+  for (const war of next.wars || []) {
+    const old = oldWars.get(warKey(war));
+    const aggressor = next.players[war.aggressor], defender = next.players[war.defender];
+    const anchor = next.cities.find(city => city.owner === war.defender && city.is_capital) ||
+                   next.cities.find(city => city.owner === war.defender) ||
+                   next.units.find(unit => unit.owner === war.defender);
+    if (!old && (majorOwners.has(war.aggressor) || majorOwners.has(war.defender)) && anchor) {
+      offer(anchor.pos, 7, {kicker:"War declared",
+        title:`${aggressor?.civ || "An empire"} marches on ${defender?.civ || "a rival"}`,
+        detail:`Turn ${next.turn} · A new front opens`, zoom:1.0, opening:true});
+    } else if (old && (old.ended === null || old.ended === undefined) &&
+               war.ended !== null && war.ended !== undefined && anchor) {
+      offer(anchor.pos, 6, {kicker:"Peace restored",
+        title:`${aggressor?.civ || "The rivals"} and ${defender?.civ || "their enemy"} lay down arms`,
+        detail:`Turn ${next.turn} · The war lasted ${Math.max(1, next.turn - (war.started || next.turn))} turns`,
+        zoom:.94});
+    }
   }
   const oldUnits = new Map(prev.units.map(u => [u.id, u]));
   const nextUnits = new Map(next.units.map(u => [u.id, u]));
   for (const unit of next.units) {
     const old = oldUnits.get(unit.id);
-    if (old && majorOwners.has(unit.owner) && unit.hp < old.hp) offer(unit.pos, 4);
+    if (old && majorOwners.has(unit.owner) && key(old.pos) !== key(unit.pos)) offer(unit.pos, 2, {
+      unitId:unit.id, silent:true, zoom:1.18
+    });
+    if (old && majorOwners.has(unit.owner) && unit.hp < old.hp) offer(unit.pos, 4, {
+      kicker:"Battle joined", title:`${next.players[unit.owner].civ} takes fire`,
+      detail:`Turn ${next.turn} · ${titleCase(unit.type)} · ${cuePlace(next, unit.pos)}`,
+      zoom:1.28, unitId:unit.id
+    });
   }
   for (const unit of prev.units) {
-    if (majorOwners.has(unit.owner) && !nextUnits.has(unit.id)) offer(unit.pos, 4);
+    if (majorOwners.has(unit.owner) && !nextUnits.has(unit.id)) offer(unit.pos, 5, {
+      kicker:"Casualty of war", title:`${prev.players[unit.owner].civ} loses a ${titleCase(unit.type)}`,
+      detail:`Turn ${next.turn} · ${cuePlace(next, unit.pos)}`, zoom:1.3
+    });
   }
   if (majorOwners.has(next.current)) {
     for (const action of Array.isArray(next.actions_taken) ? next.actions_taken : []) {
       if (action.type === "attack" || action.type === "ranged" || action.type === "city_strike")
-        offer(action.target, 4);
+        offer(action.target, 4, {kicker:"On the front", title:`${next.players[next.current].civ} strikes`,
+          detail:`Turn ${next.turn} · ${cuePlace(next, action.target)}`, zoom:1.3,
+          unitId:action.unit});
     }
   }
-  // Keep the opening survey on the main settled landmass. Only a capital or
-  // city capture is important enough to pull the camera away before turn 60.
-  if (best && next.turn < 60 && best.priority < 7) return null;
+  if (prev.world_era !== next.world_era && next.world_era !== null && next.world_era !== undefined) {
+    const eraAnchor = next.cities.find(city => city.is_capital && majorOwners.has(city.owner)) ||
+                      next.cities.find(city => majorOwners.has(city.owner));
+    const eraName = typeof next.world_era === "number"
+      ? titleCase(ERA_NAMES[next.world_era] || `era ${next.world_era}`)
+      : titleCase(String(next.world_era));
+    if (eraAnchor) offer(eraAnchor.pos, 7, {kicker:"A new age dawns",
+      title:`The world enters the ${eraName} Era`,
+      detail:`Turn ${next.turn} · History moves forward`, zoom:.94, opening:true});
+  }
+  for (const player of next.players) {
+    const old = prev.players.find(candidate => candidate.id === player.id);
+    if (!old?.alive || player.alive || player.is_minor || player.is_barbarian) continue;
+    const fallen = prev.cities.find(city => city.owner === player.id && city.is_capital) ||
+                   prev.cities.find(city => city.owner === player.id) ||
+                   prev.units.find(unit => unit.owner === player.id);
+    if (fallen) offer(fallen.pos, 8, {kicker:"A civilization falls",
+      title:`${player.civ} passes into history`,
+      detail:`Turn ${next.turn} · An empire's story ends`, zoom:1.02, opening:true});
+  }
+  const newVictory = next.winner !== null && next.winner !== undefined &&
+    (prev.winner === null || prev.winner === undefined);
+  if (newVictory) {
+    const winnerIds = Array.isArray(next.winners) && next.winners.length
+      ? next.winners : [next.winner];
+    const winnerCivs = winnerIds.map(id => next.players[id]).filter(Boolean)
+      .map(player => player.civ);
+    const winnerName = winnerCivs.length > 1 ? `Team ${winnerCivs.join(" + ")}`
+      : winnerCivs[0] || "A civilization";
+    const victor = next.cities.find(city => winnerIds.includes(city.owner) && city.is_capital) ||
+                   next.cities.find(city => winnerIds.includes(city.owner)) ||
+                   next.units.find(unit => winnerIds.includes(unit.owner));
+    if (victor) offer(victor.pos, 10, {kicker:"History has a victor",
+      title:`${winnerName} wins`,
+      detail:`${titleCase(next.victory_type || "score")} victory · Turn ${next.turn}`,
+      zoom:1.08, opening:true});
+  }
+  // Keep the opening survey on the main settled landmass. Foundations,
+  // wonders, captures, and declarations of war still deserve a cut; routine
+  // skirmishes wait until the audience has learned the shape of the world.
+  if (best && next.turn < 60 && best.priority < 7 && !best.opening && best.unitId === undefined) return null;
   return best;
 }
 function queueDirectorCue(cue) {
   if (!DIRECTOR || !cue) return;
   const now = performance.now();
-  if (cue.priority >= 7 || now - directorLast >= 1400) {
+  const signature = cue.unitId !== undefined
+    ? `unit:${cue.unitId}|${cue.kicker || "movement"}`
+    : `${cue.kicker || ""}|${cue.title || ""}|${key(cue.pos)}`;
+  const repeatWindow = cue.priority >= 7 ? 12000 : 8000;
+  if (now - (directorSeen.get(signature) || -Infinity) < repeatWindow) return;
+  if (cue.priority >= 7 || now - directorLast >= 3200) {
     // Keep the event visible without making a coastal city or battle put a
     // screenful of empty ocean in the middle of the map.  Four hexes is small
     // enough that the action remains comfortably in frame at the spectator's
     // deliberately gentle 0.9 zoom.
-    directorGoal = actionViewingAnchor(cue.pos);
+    const tracksUnit = cue.unitId !== undefined && cue.unitId !== null;
+    directorGoal = {
+      pos: tracksUnit ? [...cue.pos] : actionViewingAnchor(cue.pos),
+      focus:[...cue.pos],
+      scale:Math.max(.78, Math.min(1.42, cue.zoom || 1.08)),
+      kind:tracksUnit ? "character" : "event", subjectUnitId:cue.unitId,
+      holdMs:cue.silent ? 3600 : (cue.priority >= 7 ? 6200 : 4300), arrivedAt:0
+    };
     directorLast = now;
+    directorSeen.set(signature, now);
+    if (directorSeen.size > 80) {
+      for (const [seenCue, at] of directorSeen) if (now - at > 30000) directorSeen.delete(seenCue);
+    }
+    if (!cue.silent && (cue.kicker !== "A new age dawns" || !showCinemaChapter(cue)))
+      showDirectorStory(cue);
   }
 }
-function advanceDirector() {
-  if (!DIRECTOR || !directorGoal || !state || dragState) return;
-  const gx = wrapX(S * SQ3 * (directorGoal[0] + directorGoal[1] / 2));
-  const gy = clampCameraY(S * 1.5 * directorGoal[1]);
+
+// A directed watch needs shot rhythm, not a succession of permanent close-ups.
+// Event holds begin only after the camera arrives. Each then releases into the
+// broad world composition; during genuinely quiet stretches the director may
+// visit one capital or completed wonder before returning to the atlas view.
+function directorSurveyGoal() {
+  const anchor = mainLandmassAnchor();
+  return anchor ? {pos:[...anchor.pos], scale:.9, kind:"survey",
+                   holdMs:6800, arrivedAt:0} : null;
+}
+function directorAmbientCue() {
+  if (!state) return null;
+  const majors = new Set(state.players
+    .filter(player => !player.is_minor && !player.is_barbarian && player.alive)
+    .map(player => player.id));
+  const wonders = [];
+  for (const city of state.cities || []) {
+    if (!majors.has(city.owner)) continue;
+    for (const wonder of Object.keys(city.wonders || {})) wonders.push({city, wonder});
+  }
+  const capitals = (state.cities || []).filter(city =>
+    city.is_capital && majors.has(city.owner));
+  const useWonder = wonders.length && directorPortraitIndex % 3 === 2;
+  const subjects = useWonder ? wonders : capitals;
+  if (!subjects.length) return null;
+  const subject = subjects[(state.turn + directorPortraitIndex++) % subjects.length];
+  const city = subject.city || subject;
+  const owner = state.players[city.owner] || {};
+  if (subject.wonder) return {
+    pos:city.pos, priority:3, zoom:1.08, kicker:"A wonder of the world",
+    title:titleCase(subject.wonder),
+    detail:`${city.name} · ${owner.civ || "A great civilization"} · Turn ${state.turn}`
+  };
+  return {
+    pos:city.pos, priority:3, zoom:1.04, kicker:"Portrait of an empire",
+    title:city.name,
+    detail:`${owner.civ || "A civilization"} · Population ${city.pop} · Turn ${state.turn}`
+  };
+}
+function beginDirectorAmbientShot(now) {
+  const cue = directorAmbientCue();
+  if (!cue) { directorAmbientLast = now; return false; }
+  directorGoal = {pos:actionViewingAnchor(cue.pos), focus:[...cue.pos], scale:cue.zoom,
+                  kind:"portrait", holdMs:5200, arrivedAt:0};
+  directorAmbientLast = now;
+  showDirectorStory(cue);
+  return true;
+}
+function advanceDirector(now = performance.now()) {
+  if (!DIRECTOR || !state || dragState || touchGesture) {
+    directorMotionLast = now;
+    return false;
+  }
+  if (!directorGoal) {
+    const quietLongEnough = cinemaActive() && now - directorLast >= 9000 &&
+      now - directorAmbientLast >= 14000 && !directorStoryUntil;
+    if (!quietLongEnough || !beginDirectorAmbientShot(now)) {
+      directorMotionLast = now;
+      return false;
+    }
+  }
+  if (directorGoal.subjectUnitId !== undefined && directorGoal.subjectUnitId !== null) {
+    const subject = state.units.find(unit => unit.id === directorGoal.subjectUnitId);
+    if (subject) {
+      directorGoal.pos = [...subject.pos];
+      directorGoal.focus = [...subject.pos];
+    } else {
+      directorGoal.subjectUnitId = null;
+    }
+  }
+  const dt = Math.max(1, Math.min(80, now - (directorMotionLast || now - 16)));
+  directorMotionLast = now;
+  let gx = wrapX(S * SQ3 * (directorGoal.pos[0] + directorGoal.pos[1] / 2));
+  let gy = S * 1.5 * directorGoal.pos[1];
+  if (cinemaActive() && directorGoal.focus) {
+    // The land-biased viewing anchor may sit a few tiles away from the event.
+    // Preserve that richer background, but keep the actual subject clear of
+    // the top victory ribbon and the lower-third on every viewport height.
+    let focusX = S * SQ3 * (directorGoal.focus[0] + directorGoal.focus[1] / 2);
+    if (mapWrapsX()) focusX += Math.round((gx - focusX) / WW()) * WW();
+    const focusY = S * 1.5 * directorGoal.focus[1];
+    const screenY = area.clientHeight / 2 +
+      (SINR * (focusX - gx) + COSR * (focusY - gy)) * YS * directorGoal.scale;
+    // City nameplates rise roughly forty pixels above their tile center, so
+    // reserve more than the ribbon's literal height instead of merely keeping
+    // the hex center out from underneath it.
+    const safeTop = Math.max(180, area.clientHeight * .17);
+    const safeBottom = area.clientHeight - Math.max(155, area.clientHeight * .18);
+    const framedY = Math.max(safeTop, Math.min(safeBottom, screenY));
+    const correction = (screenY - framedY) / (YS * directorGoal.scale);
+    // Move along the camera's projected vertical axis. This remains correct
+    // after the viewer rotates the world instead of assuming north-up.
+    gx += SINR * correction; gy += COSR * correction;
+  }
+  gy = clampCameraY(gy, directorGoal.scale);
   const dx = gx - cam.x, dy = gy - cam.y;
-  cam.x += dx * 0.22; cam.y += dy * 0.22;
+  const travelEase = 1 - Math.pow(0.075, dt / 1000);
+  const zoomEase = 1 - Math.pow(0.12, dt / 1000);
+  cam.x += dx * travelEase; cam.y += dy * travelEase;
+  cam.scale += (directorGoal.scale - cam.scale) * zoomEase;
   cam.y = clampCameraY(cam.y);
-  if (Math.abs(dx) + Math.abs(dy) < 2) directorGoal = null;
+  const moving = Math.abs(dx) + Math.abs(dy) > .7 || Math.abs(directorGoal.scale - cam.scale) > .002;
+  if (moving && directorGoal.subjectUnitId !== undefined && directorGoal.subjectUnitId !== null)
+    directorGoal.arrivedAt = 0;
+  if (!moving) {
+    if (!directorGoal.arrivedAt) directorGoal.arrivedAt = now;
+    if (now - directorGoal.arrivedAt >= directorGoal.holdMs) {
+      directorGoal = cinemaActive() && directorGoal.kind !== "survey"
+        ? directorSurveyGoal() : null;
+    }
+  } else {
+    directorGoal.arrivedAt = 0;
+  }
+  return moving;
 }
 let lastSeed2 = null;
 async function specPoll() {
@@ -1815,8 +2769,9 @@ function render(st, recordChronicle = true) {
   const viewChanged = !!state && !newWorld && st.view_player !== state.view_player;
   if (recordChronicle && !viewChanged) chronicle(state, st);
   const sameWorld = state && state.seed === st.seed;
+  let cinematicCue = null;
   if (!viewChanged) {
-    queueDirectorCue(directorCue(state, st));
+    cinematicCue = directorCue(state, st);
     animateDiff(sameWorld ? state : null, st);
   } else {
     anim.moves.clear(); anim.floats.length = 0; anim.sparks.length = 0;
@@ -1824,7 +2779,12 @@ function render(st, recordChronicle = true) {
     anim.strike = null; pendingStrike = null;
     sel = null; selCity = null;
   }
-  if (!sameWorld) directorGoal = null;
+  if (!sameWorld) {
+    directorGoal = null; directorSeen.clear();
+    directorAmbientLast = performance.now(); directorPortraitIndex = 0;
+    cameraFollowUnitId = null; cameraFollowManual = false;
+    cameraFlight = null; cameraZoom = null; clearCameraInertia();
+  }
   state = st;
   SPEC = !!st.spectate;
   if (SPEC && st.paused !== undefined && st.paused !== specPaused) {
@@ -1840,14 +2800,21 @@ function render(st, recordChronicle = true) {
   document.getElementById("strategysec").style.display = fullMapSpectator ? "none" : "block";
   if (SPEC) closeTrade();
   syncViewPlayer();
-  if (newWorld && st.seed !== undefined) { lastSeed = st.seed; loadTacks(); }
+  if (newWorld && st.seed !== undefined) {
+    lastSeed = st.seed;
+    if (st.game_profile === "civ65") loadTacks();
+    else { tacks = []; tackMode = false; }
+  }
   if (newWorld) {
     const majors = st.players.filter(p => !p.is_minor && !p.is_barbarian).length;
     const playerSelect = document.getElementById("np");
     if ([...playerSelect.options].some(o => +o.value === majors))
       playerSelect.value = String(majors);
+    document.getElementById("game-profile").value = st.game_profile || "civ65";
+    syncGameProfileNote();
     document.getElementById("maptype").value = st.map.script || "pangaea";
-    document.getElementById("gamespeed").value = st.game_speed || "standard";
+    setGameSpeed(st.game_speed || "standard");
+    document.getElementById("disaster-intensity").value = String(st.disaster_intensity ?? 2);
     for (const track of VICTORY_TRACKS) {
       const checkbox = document.getElementById(`victory-${track.id}`);
       if (checkbox) checkbox.checked = st.victory_conditions?.[track.id] !== false;
@@ -1856,6 +2823,10 @@ function render(st, recordChronicle = true) {
   if (SPEC) sel = null;
   if (sel) sel = st.units.find(u => u.id === sel.id && u.owner === 0) || null;
   TMAP = new Map(st.map.tiles.map(t => [key(t.pos), t]));
+  updateCameraFollowChip();
+  applyCinemaMode();
+  if (newWorld) showCinemaPrologue(st);
+  queueDirectorCue(cinematicCue);
   // Establish the view once per world, before its first paint. Subsequent
   // simulation states never alter the camera; only explicit user input does.
   if (newWorld || (viewChanged && st.view_player === null)) setMainLandmassView();
@@ -1865,23 +2836,48 @@ function render(st, recordChronicle = true) {
     setTimeout(() => errEl.style.display = "none", 2500); }
   advanceDirector();
   const w = document.getElementById("winner");
-  if (st.winner !== null && st.winner !== undefined) {
+  const hasWinner = st.winner !== null && st.winner !== undefined;
+  document.body.classList.toggle("cinema-finale", cinemaActive() && hasWinner);
+  if (hasWinner) {
     const p = st.players[st.winner];
+    const winnerIds = Array.isArray(st.winners) && st.winners.length ? st.winners : [st.winner];
+    const winnerCivs = winnerIds.map(id => st.players[id]).filter(Boolean).map(player => player.civ);
+    const winnerName = winnerCivs.length > 1 ? "Team " + winnerCivs.join(" + ") : p.civ;
     // A normal supervised victory needs the same resilient handoff watcher as
     // the explicit restart buttons. The regular viewer poll can be caught in
     // a request to the process that is being replaced, leaving the completed
     // map visible until that request times out (or the page is refreshed).
     if (SPEC && st.supervised)
       waitForSupervisedSuccessor(st.server_instance, st.seed);
-    w.style.display = "block";
-    w.innerHTML = (SPEC ? "🏆 " + p.civ + " wins!" : st.winner === 0 ? "🏆 Victory!" : "💀 Defeat") +
-      "<br><span class='small'>" + p.civ + " wins by " + st.victory_type +
-      " on turn " + st.turn + "</span>" +
-      (SPEC ? "<br><span class='small' id='respawn'>" +
-        (st.restart_in !== undefined ? "next game in " + st.restart_in + "s" : "") +
-        "</span>" : "");
-  } else w.style.display = "none";
-  draw(); drawSide(newWorld); drawMini(); drawTopbar(); drawPlayerHud(); drawUbar(); drawQuickDeals(); drawCaptureChoice();
+    const verdict = titleCase(st.victory_type || "score") + " victory";
+    const signature = `${st.seed}|${winnerIds.join(",")}|${verdict}|${st.turn}`;
+    w.style.setProperty("--winner-color", pcol(st.winner));
+    w.classList.add("visible");
+    if (w.dataset.signature !== signature) {
+      w.dataset.signature = signature;
+      const kicker = SPEC ? "A civilization ascendant"
+        : winnerIds.includes(0) ? "Victory" : "Defeat";
+      w.innerHTML = `<div class="winner-content">
+        <span class="winner-kicker">${kicker}</span>
+        <span class="winner-mark" aria-hidden="true">✦</span>
+        <strong class="winner-title">${winnerName}</strong>
+        <span class="winner-verdict">${verdict}</span>
+        <span class="winner-meta">Turn ${st.turn} · History remembers</span>
+        ${SPEC ? `<span class="winner-countdown" id="respawn"></span>` : ""}
+      </div>`;
+      playCinemaCue({priority:10, kicker:"History has a victor", title:winnerName});
+    }
+    const respawn = document.getElementById("respawn");
+    if (respawn) respawn.textContent = st.paused
+      ? "Final frame · exhibition paused"
+      : st.restart_in !== undefined ? `The next world begins in ${st.restart_in}s`
+      : "Preparing the next world";
+  } else {
+    w.classList.remove("visible");
+    w.style.removeProperty("--winner-color");
+    if (w.dataset.signature) { delete w.dataset.signature; w.replaceChildren(); }
+  }
+  draw(); drawSide(newWorld); drawMini(); drawPlayerHud(); drawUbar(); drawQuickDeals(); drawCaptureChoice();
 }
 
 function drawCaptureChoice() {
@@ -1914,14 +2910,44 @@ function drawCaptureChoice() {
 }
 
 // ---------------------------------------------------------------- renderer
-function hexPath(x, y, s) {
-  s = s || S;
-  cx.beginPath();
+function appendHexPath(x, y, s) {
   for (let i = 0; i < 6; i++) {
     const [px, py] = corner(x, y, s, i);
     i ? cx.lineTo(px, py) : cx.moveTo(px, py);
   }
   cx.closePath();
+}
+function hexPath(x, y, s) {
+  s = s || S;
+  cx.beginPath();
+  appendHexPath(x, y, s);
+}
+
+// Atlas art has one geometric contract with the board. Ground art is clipped
+// to the exact top face (or the union of faces for a multi-tile landmark).
+// Upright art gets only the vertical screen-space extrusion above that same
+// footprint, so a peak may stand tall without its base wandering sideways
+// across an unrelated tile. Keeping this in one path builder prevents each
+// atlas from inventing a slightly different, screen-aligned approximation.
+function tileArtPath(footprint, upright = false, headroom = 2.8) {
+  cx.beginPath();
+  for (const point of footprint) {
+    appendHexPath(point.x, point.y, S + 0.25);
+    if (!upright) continue;
+    const corners = Array.from({length:6}, (_, i) => corner(point.x, point.y, S + 0.25, i));
+    const minX = Math.min(...corners.map(p => p[0]));
+    const maxX = Math.max(...corners.map(p => p[0]));
+    cx.rect(minX, point.y - S * headroom, maxX - minX, S * headroom);
+  }
+}
+
+function tileArtBounds(footprint) {
+  const corners = footprint.flatMap(point =>
+    Array.from({length:6}, (_, i) => corner(point.x, point.y, S + 0.25, i)));
+  return {
+    minX:Math.min(...corners.map(p => p[0])), maxX:Math.max(...corners.map(p => p[0])),
+    minY:Math.min(...corners.map(p => p[1])), maxY:Math.max(...corners.map(p => p[1]))
+  };
 }
 // prism side walls: true 3D behavior — an edge's wall is drawn only when it
 // faces the viewer, and its brightness comes from the world-fixed sun, so
@@ -1985,18 +3011,17 @@ function biomeStamp(terrain, variant) {
   return c;
 }
 
-// Paint a feathered sprite that overlaps its neighbors. 1.5·S is the smallest
-// overlap that still carries full alpha past every hex corner, so neighbors
-// cover each other with no seam and no wasted fill; the sprite's own alpha
-// already reaches zero inside its corners, so a blended tile needs no clip at
-// all. A tile on the edge of its biome stays fenced inside its own hex.
-function drawFeathered(t, x, y, blended, alpha) {
+// Water uses the same material stamps as land, but remains fenced to its own
+// face. The former open-sea overlap made directional wave crops look smooth at
+// the cost of putting one cell's art visibly onto the next cell; the bevel can
+// hide a crop seam, while it cannot explain a texture that misses its tile.
+function drawFeathered(t, x, y, alpha) {
   const st = biomeStamp(t.terrain,
     Math.floor(hash2(t.pos[0] * 7 + 1, t.pos[1] * 13 + 5) * 4));
   if (!st) return;
-  const R = blended ? S * 1.5 : S + 2.4;
+  const R = S + 2.4;
   cx.save();
-  if (!blended) { hexPath(x, y, R); cx.clip(); }
+  hexPath(x, y, S + 0.25); cx.clip();
   cx.globalAlpha = alpha;
   cx.translate(x, y);
   cx.transform(COSR, SINR * YS, -SINR, COSR * YS, 0, 0);
@@ -2006,26 +3031,10 @@ function drawFeathered(t, x, y, blended, alpha) {
 
 const isWater = t => t.terrain === "coast" || t.terrain === "ocean";
 
-// Only open sea is blended. Feathering was tried for land too — same terrain,
-// same relief, so terrain and hill boundaries would have stayed crisp — but on
-// a generated map barely five land tiles in a thousand have six matching
-// neighbors, so it bought nothing and cost a branch. Land seams are also far
-// milder than water ones were: grass and sand are visually uniform, so a
-// mismatched crop reads as texture, while the sea's directional swell made
-// every seam obvious.
-function openSea(t) {
-  if (!isWater(t)) return false;
-  for (let i = 0; i < 6; i++) {
-    const n = nbrTile(t.pos, DIRS[i]);
-    if (!n || !isWater(n)) return false;
-  }
-  return true;
-}
-
 function drawTerrainTexture(t, x, y) {
   if (!ATLAS_READY || !ATLAS_CELL[t.terrain]) return;
   const water = isWater(t);
-  if (water) return drawFeathered(t, x, y, openSea(t), 0.95);
+  if (water) return drawFeathered(t, x, y, 0.95);
   const [col, row] = ATLAS_CELL[t.terrain];
   const cw = TERRAIN_ATLAS.naturalWidth / 4;
   const ch = TERRAIN_ATLAS.naturalHeight / 2;
@@ -2064,16 +3073,28 @@ function drawAtlasFeatureCell(atlas, columns, rows, cell, t, x, y, options = {})
   const cw = atlas.naturalWidth / columns, ch = atlas.naturalHeight / rows;
   const hv = hash2(t.pos[0] * 41 + cell[0] * 7, t.pos[1] * 43 + cell[1] * 11);
   const scale = (options.scale || 1) * (options.vary === false ? 1 : 0.9 + hv * 0.16);
-  const width = S * (options.width || 2.04) * scale;
-  const height = S * (options.height || 1.55) * scale;
+  const width = (options.widthPx || S * (options.width || 2.04)) * scale;
+  const height = (options.heightPx || S * (options.height || 1.9)) * scale;
+  const footprint = options.footprint || [{x, y}];
+  let sx = cell[0] * cw, sy = cell[1] * ch, sw = cw, sh = ch;
+  // Generated atlas cells reserve generous top/bottom transparency. Cropping
+  // the tall cell to its square working area keeps the cutout's original
+  // proportions instead of stretching it sideways to fill a hex.
+  if (options.squareCrop !== false && ch > cw) {
+    const cropY = Math.max(0, Math.min(1, options.cropY === undefined ? 0.5 : options.cropY));
+    sy += (ch - cw) * cropY;
+    sh = cw;
+  }
   cx.save();
+  tileArtPath(footprint, !!options.upright, options.headroom || 2.8);
+  cx.clip();
   cx.imageSmoothingEnabled = true;
   cx.imageSmoothingQuality = "high";
   cx.globalAlpha = options.alpha === undefined ? 0.95 : options.alpha;
   cx.translate(x, y - S * (options.lift === undefined ? 0.08 : options.lift));
   if (options.rotate !== false) cx.rotate(Math.floor(hv * 2) * Math.PI);
   if (options.flip !== false && hash2(t.pos[0] * 13, t.pos[1] * 17) > 0.5) cx.scale(-1, 1);
-  cx.drawImage(atlas, cell[0] * cw, cell[1] * ch, cw, ch,
+  cx.drawImage(atlas, sx, sy, sw, sh,
                -width / 2, -height / 2, width, height);
   cx.restore();
 }
@@ -2084,14 +3105,10 @@ function drawFeatureSprite(t, x, y) {
   const baseCol = FEATURE_CELL[baseFeature];
   if (FEATURE_ATLAS_READY && baseCol !== undefined) {
     const burnt = t.feature === "burnt_forest" || t.feature === "burnt_jungle";
-    // A wood drew one clump per hex, and the clump stopped short of its own
-    // edges — so a forest read as a row of separate bushes with bare ground
-    // ringing each one, the same way the sea read as hexagons before its
-    // stamps were made to overlap. Canopy now grows with how much woodland
-    // surrounds the tile: a lone stand stays a stand, while a tile deep inside
-    // a forest pushes its crowns past the boundary until they interlock with
-    // the neighbours' and the hex edge stops existing. Natural wonders already
-    // scale by cluster size for the same reason.
+    // Dense neighboring woods still receive a fuller canopy, but every crown
+    // is clipped back to the owning top face. That preserves the visual mass
+    // of a forest without making the edge trees appear to belong to the next
+    // terrain or resource tile.
     let knit = 1;
     if (WOODLAND.has(t.feature)) {
       let n = 0;
@@ -2099,41 +3116,53 @@ function drawFeatureSprite(t, x, y) {
         const q = nbrTile(t.pos, DIRS[i]);
         if (q && WOODLAND.has(q.feature)) n++;
       }
-      knit = 1 + 0.075 * n;   // full knit only when every neighbour is trees
+      knit = 1 + 0.035 * n;
     }
     drawAtlasFeatureCell(FEATURE_ATLAS, 4, 1, [baseCol, 0], t, x, y,
-      {scale: knit,
+      {scale: knit, width:2.08, height:2.0, cropY:0.5,
        alpha: burnt ? 0.48 : (baseFeature === "forest" || baseFeature === "jungle" ? 0.96 : 0.94)});
     return true;
   }
   const cell = ENVIRONMENT_FEATURE_CELL[t.feature];
   if (!ENVIRONMENT_FEATURE_ATLAS_READY || !cell) return false;
   const volcano = t.feature === "volcano";
+  const cropY = cell[1] ? 0.35 : (t.feature === "geothermal_fissure" ? 0.48 : 0.84);
   drawAtlasFeatureCell(ENVIRONMENT_FEATURE_ATLAS, 4, 2, cell, t, x, y, {
-    width: volcano ? 2.32 : 2.06,
-    height: volcano ? 2.08 : 1.62,
-    lift: volcano ? 0.31 : 0.08,
-    scale: volcano ? 1.05 : 1,
+    width: volcano ? 2.02 : 2.08,
+    height: volcano ? 2.18 : 2.0,
+    lift: volcano ? 0.34 : 0.02,
+    scale: 1,
     alpha: t.feature === "ice" ? 0.98 : 0.95,
     rotate: !volcano,
-    flip: !volcano
+    flip: !volcano,
+    upright: volcano,
+    squareCrop: !volcano,
+    cropY
   });
   return true;
 }
 
-function drawNaturalWonderSprite(feature, t, x, y, clusterSize) {
+function drawNaturalWonderSprite(feature, t, x, y, footprint) {
   const cell = NATURAL_WONDER_CELL[feature];
   if (!NATURAL_WONDER_ATLAS_READY || !cell) return false;
-  const scale = 1 + Math.min(0.34, Math.max(0, clusterSize - 1) * 0.12);
+  const tall = feature === "mount_everest" || feature === "yosemite" || feature === "pamukkale";
+  const bounds = tileArtBounds(footprint);
+  const footprintWidth = bounds.maxX - bounds.minX;
+  const footprintHeight = bounds.maxY - bounds.minY;
   drawAtlasFeatureCell(NATURAL_WONDER_ATLAS, 4, 2, cell, t, x, y, {
-    width: 2.62,
-    height: 2.02,
-    lift: feature === "mount_everest" || feature === "yosemite" ? 0.38 : 0.14,
-    scale,
+    widthPx: footprintWidth * (tall ? 1.04 : 1.12),
+    heightPx: tall ? Math.max(footprintHeight * 1.45, S * 2.45) : footprintHeight * 1.12,
+    lift: tall ? 0.38 : 0,
+    scale: 1,
     alpha: 0.99,
     rotate: false,
     flip: false,
-    vary: false
+    vary: false,
+    footprint,
+    upright: tall,
+    squareCrop: !tall,
+    cropY: cell[1] ? 0.45 : 0.8,
+    headroom: 3.2
   });
   return true;
 }
@@ -2151,6 +3180,22 @@ function drawFeatureEffects(t, x, y) {
   } else if (burnt) {
     cx.fillStyle = "#17161188";
     cx.beginPath(); cx.ellipse(x, y + 4, 22, 11, 0, 0, 7); cx.fill();
+  }
+  if (t.feature === "volcano" && t.volcano_state > 0) {
+    cx.fillStyle = t.volcano_state === 2 ? "#ff6b2ac8" : "#aeb7b4a8";
+    for (const [dx, dy, radius] of [[-5,-18,5],[2,-27,7],[9,-38,8]]) {
+      cx.beginPath(); cx.arc(x + dx, y + dy, radius, 0, Math.PI * 2); cx.fill();
+    }
+  }
+  const movingDisaster = (state?.active_disasters || []).find(event =>
+    ["blizzard", "dust_storm", "tornado", "hurricane"].includes(event.kind) &&
+    event.tiles.some(pos => pos[0] === t.pos[0] && pos[1] === t.pos[1]));
+  if (movingDisaster && VIEW !== "cinematic") {
+    const colors = {blizzard:"#dceef0aa", dust_storm:"#d59c52aa",
+                    tornado:"#aeb9b6aa", hurricane:"#76b9d6aa"};
+    cx.strokeStyle = colors[movingDisaster.kind]; cx.lineWidth = 2;
+    cx.beginPath(); cx.arc(x, y, 10, -.7, 4.5); cx.stroke();
+    cx.beginPath(); cx.arc(x + 2, y, 5, 2.4, 6.0); cx.stroke();
   }
   if (t.fallout_until > (state?.turn || 0)) {
     if (VIEW === "cinematic" && ENVIRONMENT_FEATURE_ATLAS_READY) {
@@ -2191,9 +3236,240 @@ function drawFeatureEffects(t, x, y) {
   }
 }
 
+// A disaster is a regional event, not a decal repeated once per affected hex.
+// The small tile marks above preserve exact mechanical state; this layer gives
+// cinema view the scale and motion of the thing itself. It stays below cities
+// and formations so the world remains legible even at the heart of a storm.
+function drawCinematicDisasterField(sceneTime) {
+  if (VIEW !== "cinematic" || !state?.active_disasters?.length) return;
+  const motionTime = REDUCED_MOTION_QUERY.matches ? 0 : sceneTime / 1000;
+  const stormKinds = new Set(["blizzard", "dust_storm", "tornado", "hurricane"]);
+  for (const disaster of state.active_disasters) {
+    if (!Array.isArray(disaster.center)) continue;
+    const [x, y] = worldXY(disaster.center);
+    const severity = Math.max(0, disaster.severity || 0);
+    const count = Math.max(1, disaster.tiles?.length || 1);
+    const seed = Number(disaster.id) || disaster.kind.length * 97;
+    const radius = S * (1.45 + severity * .42 + Math.min(1.25, Math.sqrt(count) * .2));
+    const phase = motionTime * (.22 + severity * .035) + hash2(seed, 19) * Math.PI * 2;
+    cx.save();
+    cx.translate(x, y);
+
+    if (stormKinds.has(disaster.kind)) {
+      const palette = {
+        blizzard:["rgba(224,243,247,.25)", "rgba(178,213,222,.03)", "#e8f6f5"],
+        dust_storm:["rgba(178,119,58,.28)", "rgba(116,72,31,.02)", "#e0aa68"],
+        tornado:["rgba(113,125,123,.25)", "rgba(49,57,56,.03)", "#c4cfcc"],
+        hurricane:["rgba(109,174,199,.24)", "rgba(37,92,119,.025)", "#c8edf2"],
+      }[disaster.kind];
+      const stormRadius = radius * (disaster.kind === "hurricane" ? 1.32 : 1);
+      cx.save();
+      cx.scale(1, .62);
+      const veil = cx.createRadialGradient(0, 0, stormRadius * .08, 0, 0, stormRadius);
+      veil.addColorStop(0, palette[0]);
+      veil.addColorStop(.55, palette[0]);
+      veil.addColorStop(1, palette[1]);
+      cx.fillStyle = veil;
+      cx.beginPath(); cx.arc(0, 0, stormRadius, 0, Math.PI * 2); cx.fill();
+      cx.lineCap = "round";
+      cx.strokeStyle = palette[2];
+      // Wide translucent banks establish one continuous weather system before
+      // the finer spiral filaments are laid over it. At cinema distance this
+      // is the difference between a storm front and a collection of symbols.
+      for (let band = 0; band < 4; band++) {
+        cx.globalAlpha = .08 + severity * .012;
+        cx.lineWidth = stormRadius * (.13 - band * .017);
+        cx.beginPath();
+        cx.arc(0, 0, stormRadius * (.3 + band * .17),
+               phase + band * 1.38, phase + band * 1.38 + 1.85 + band * .12);
+        cx.stroke();
+      }
+      for (let arm = 0; arm < 5; arm++) {
+        const armRadius = stormRadius * (.28 + arm * .13);
+        cx.globalAlpha = .19 + severity * .028 + (4 - arm) * .018;
+        cx.lineWidth = Math.max(1.4, 4.1 - arm * .42);
+        cx.beginPath();
+        cx.arc(0, 0, armRadius, phase + arm * 1.22, phase + arm * 1.22 + 2.55);
+        cx.stroke();
+      }
+      // A hurricane's quiet eye makes the rotating mass immediately distinct
+      // from an ordinary storm, even when the camera is at survey distance.
+      if (disaster.kind === "hurricane") {
+        cx.globalAlpha = .55;
+        cx.fillStyle = "rgba(22,57,73,.62)";
+        cx.beginPath(); cx.arc(0, 0, stormRadius * .105, 0, Math.PI * 2); cx.fill();
+        cx.strokeStyle = "#e8f7f3"; cx.lineWidth = 2.2;
+        cx.beginPath(); cx.arc(0, 0, stormRadius * .15, 0, Math.PI * 2); cx.stroke();
+      }
+      cx.restore();
+
+      if (disaster.kind === "dust_storm") {
+        // A haboob advances as a wall, not a cyclone. Its irregular leading
+        // edge cuts across the underlying spiral and pushes the whole field in
+        // one direction, while retaining enough transparency to read the map.
+        cx.save();
+        cx.rotate(-.16 + Math.sin(phase) * .025);
+        const front = cx.createLinearGradient(-radius, 0, radius, 0);
+        front.addColorStop(0, "rgba(111,66,29,0)");
+        front.addColorStop(.28, "rgba(133,78,33,.19)");
+        front.addColorStop(.68, "rgba(219,159,87,.31)");
+        front.addColorStop(1, "rgba(230,182,119,0)");
+        cx.fillStyle = front;
+        cx.beginPath();
+        cx.moveTo(-radius, -radius * .34);
+        cx.bezierCurveTo(-radius * .4, -radius * .48, radius * .16, -radius * .19, radius, -radius * .31);
+        cx.lineTo(radius, radius * .31);
+        cx.bezierCurveTo(radius * .22, radius * .14, -radius * .38, radius * .45, -radius, radius * .26);
+        cx.closePath(); cx.fill();
+        cx.restore();
+      }
+
+      if (disaster.kind === "tornado") {
+        // The rotating weather above supplies the wall cloud; this narrowing
+        // funnel grounds the event on its center hex.
+        cx.save();
+        cx.rotate(Math.sin(phase) * .05);
+        const funnel = cx.createLinearGradient(0, -radius * .58, 0, radius * .32);
+        funnel.addColorStop(0, "rgba(32,39,38,.78)");
+        funnel.addColorStop(.7, "rgba(91,101,98,.5)");
+        funnel.addColorStop(1, "rgba(202,211,207,.22)");
+        cx.fillStyle = funnel;
+        cx.beginPath();
+        cx.moveTo(-radius * .28, -radius * .48);
+        cx.bezierCurveTo(-radius * .12, -radius * .1, -radius * .08, radius * .1, 0, radius * .32);
+        cx.bezierCurveTo(radius * .08, radius * .1, radius * .12, -radius * .1, radius * .28, -radius * .48);
+        cx.closePath(); cx.fill();
+        cx.strokeStyle = "rgba(224,232,228,.36)"; cx.lineWidth = 1.5; cx.stroke();
+        for (let ring = 0; ring < 3; ring++) {
+          const ry = -radius * .34 + ring * radius * .23;
+          const rw = radius * (.24 - ring * .055);
+          cx.strokeStyle = `rgba(225,232,228,${.5 - ring * .09})`;
+          cx.lineWidth = 1.8;
+          cx.beginPath(); cx.ellipse(0, ry, rw, rw * .19, phase + ring, 0, Math.PI * 2); cx.stroke();
+        }
+        cx.fillStyle = "rgba(42,48,46,.34)";
+        cx.beginPath(); cx.ellipse(0, radius * .32, radius * .3, radius * .09,
+                                   phase * .3, 0, Math.PI * 2); cx.fill();
+        cx.restore();
+      }
+
+      cx.strokeStyle = palette[2];
+      cx.fillStyle = palette[2];
+      for (let i = 0; i < 18; i++) {
+        const h1 = hash2(seed + i * 13, i * 29 + 5);
+        const h2 = hash2(seed * 3 + i * 7, i * 17 + 11);
+        const a = h1 * Math.PI * 2 + phase * (i % 2 ? 1 : -.72);
+        const d = radius * (.22 + .78 * h2);
+        const px = Math.cos(a) * d, py = Math.sin(a) * d * .58;
+        cx.globalAlpha = .18 + h1 * .28;
+        if (disaster.kind === "blizzard") {
+          cx.lineWidth = 1.1 + h2;
+          cx.globalAlpha = .27 + h1 * .38;
+          cx.beginPath(); cx.moveTo(px - 10 - h2 * 5, py - 3);
+          cx.lineTo(px + 10 + h2 * 5, py + 3); cx.stroke();
+        } else if (disaster.kind === "dust_storm") {
+          cx.beginPath(); cx.arc(px, py, 1.3 + h2 * 2.4, 0, Math.PI * 2); cx.fill();
+        } else {
+          cx.lineWidth = 1 + h2;
+          cx.beginPath(); cx.arc(px, py, 4 + h2 * 7, a, a + 1.35); cx.stroke();
+        }
+      }
+    } else if (disaster.kind === "active_volcano") {
+      const pulse = REDUCED_MOTION_QUERY.matches ? .5 : .5 + .5 * Math.sin(phase * 4);
+      const glow = cx.createRadialGradient(0, 0, 0, 0, 0, radius * .72);
+      glow.addColorStop(0, `rgba(255,83,24,${.2 + pulse * .13})`);
+      glow.addColorStop(.45, "rgba(154,39,17,.13)");
+      glow.addColorStop(1, "rgba(70,24,14,0)");
+      cx.fillStyle = glow;
+      cx.beginPath(); cx.ellipse(0, 4, radius * .76, radius * .34, 0, 0, Math.PI * 2); cx.fill();
+      for (let i = 0; i < 8; i++) {
+        const h = hash2(seed + i * 31, i * 11 + 3);
+        const rise = (motionTime * (10 + h * 9) + i * 14) % (radius * 1.2);
+        cx.globalAlpha = .12 + h * .2;
+        cx.fillStyle = i < 3 ? "#f4d0aa" : "#424341";
+        cx.beginPath();
+        cx.arc((h - .5) * (18 + rise * .22), -18 - rise, 5 + h * 9 + rise * .05, 0, Math.PI * 2);
+        cx.fill();
+      }
+      cx.fillStyle = "#ff9a45";
+      for (let i = 0; i < 9; i++) {
+        const h = hash2(seed + i * 19, 41 + i);
+        const life = (motionTime * (.45 + h * .3) + h * 4) % 1;
+        cx.globalAlpha = (1 - life) * .7;
+        cx.beginPath();
+        cx.arc((h - .5) * radius * .55, -16 - life * radius, 1.2 + h * 1.5, 0, Math.PI * 2);
+        cx.fill();
+      }
+    } else if (disaster.kind === "forest_fire" || disaster.kind === "jungle_fire") {
+      const glow = cx.createRadialGradient(0, 0, 4, 0, 0, radius);
+      glow.addColorStop(0, "rgba(229,65,14,.34)");
+      glow.addColorStop(.48, "rgba(101,49,26,.2)");
+      glow.addColorStop(1, "rgba(45,39,29,0)");
+      cx.fillStyle = glow;
+      cx.beginPath(); cx.ellipse(0, 0, radius, radius * .56, 0, 0, Math.PI * 2); cx.fill();
+      // Smoke travels farther than the flame front. Large, soft lobes make a
+      // burning region visible even when its individual woodland sprites are
+      // hidden behind units, borders, or a settlement.
+      for (let i = 0; i < 7; i++) {
+        const h1 = hash2(seed + i * 37, 71 + i * 5);
+        const h2 = hash2(seed * 7 + i * 11, 83 + i);
+        cx.globalAlpha = .15 + h2 * .16;
+        cx.fillStyle = i % 2 ? "#3c3933" : "#645044";
+        cx.beginPath();
+        cx.arc((h1 - .5) * radius * 1.05,
+               -radius * (.08 + h2 * .42), 10 + h1 * 17, 0, Math.PI * 2);
+        cx.fill();
+      }
+      for (let i = 0; i < 10; i++) {
+        const h1 = hash2(seed + i * 17, 101 + i * 3);
+        const h2 = hash2(seed * 3 + i * 29, 113 + i);
+        const fx = (h1 - .5) * radius * 1.25, fy = (h2 - .5) * radius * .38 + 7;
+        const flame = 6 + h2 * 9;
+        cx.globalAlpha = .48 + h1 * .34;
+        cx.fillStyle = i % 3 ? "#f07820" : "#ffd061";
+        cx.beginPath(); cx.moveTo(fx, fy - flame);
+        cx.bezierCurveTo(fx - flame * .12, fy - flame * .35,
+                         fx - flame * .52, fy - flame * .05,
+                         fx - flame * .34, fy + flame * .42);
+        cx.quadraticCurveTo(fx, fy + flame * .64, fx + flame * .34, fy + flame * .42);
+        cx.bezierCurveTo(fx + flame * .48, fy,
+                         fx + flame * .12, fy - flame * .34, fx, fy - flame);
+        cx.fill();
+      }
+      for (let i = 0; i < 16; i++) {
+        const h1 = hash2(seed + i * 23, i * 13 + 7);
+        const h2 = hash2(seed * 5 + i, i * 31 + 9);
+        const life = (motionTime * (.28 + h2 * .25) + h1 * 3) % 1;
+        const px = (h1 - .5) * radius * 1.35 + Math.sin(phase + i) * 4;
+        const py = (h2 - .5) * radius * .5 - life * radius * .52;
+        cx.globalAlpha = (1 - life) * (.22 + h2 * .42);
+        cx.fillStyle = i % 3 ? "#ff8d31" : "#3d3931";
+        cx.beginPath(); cx.arc(px, py, 1.5 + h2 * 4.5, 0, Math.PI * 2); cx.fill();
+      }
+    } else if (disaster.kind === "drought") {
+      const heat = cx.createRadialGradient(0, 0, 0, 0, 0, radius);
+      heat.addColorStop(0, "rgba(190,121,43,.2)");
+      heat.addColorStop(.58, "rgba(143,86,30,.1)");
+      heat.addColorStop(1, "rgba(110,69,27,0)");
+      cx.fillStyle = heat;
+      cx.beginPath(); cx.ellipse(0, 0, radius, radius * .5, 0, 0, Math.PI * 2); cx.fill();
+      cx.strokeStyle = "rgba(91,52,24,.42)";
+      cx.lineWidth = 1.35; cx.setLineDash([5, 8]);
+      cx.lineDashOffset = -motionTime * 6;
+      for (let ring = 1; ring <= 3; ring++) {
+        cx.beginPath();
+        cx.ellipse(0, 0, radius * ring / 3, radius * .16 * ring, phase * .08, 0, Math.PI * 2);
+        cx.stroke();
+      }
+    }
+    cx.restore();
+  }
+}
+
 // Multi-tile natural wonders are one landmark, not a repeated stamp. Group
-// connected feature tiles and paint a single larger cutout at their projected
-// center; the deepest member owns the draw call for correct painter ordering.
+// connected feature tiles and paint one cutout at their projected center,
+// clipped to the exact union of the member faces. The deepest member owns the
+// draw call for correct painter ordering.
 function buildNaturalWonderPlacements(tiles) {
   const placements = new Map(), visited = new Set();
   for (const tile of tiles) {
@@ -2218,7 +3494,8 @@ function buildNaturalWonderPlacements(tiles) {
     const centerY = points.reduce((sum, point) => sum + point.y, 0) / points.length;
     const owner = points.reduce((deepest, point) => point.y > deepest.y ? point : deepest);
     placements.set(key(owner.member.pos), {
-      feature:tile.feature, tile:owner.member, x:centerX, y:centerY, size:cluster.length
+      feature:tile.feature, tile:owner.member, x:centerX, y:centerY,
+      footprint:points.map(point => ({x:point.x, y:point.y}))
     });
   }
   return placements;
@@ -2266,15 +3543,23 @@ function drawMountainSprite(t, x, y) {
   // the height jitter below still varies hex to hex.
   const hv = hash2(Math.floor(t.pos[0] / 3) * 31, Math.floor(t.pos[1] / 3) * 37);
   const col = polar ? (hv > 0.3 ? 1 : 0) : (hv > 0.62 ? 2 : 0);
-  const scale = 0.92 + hash2(t.pos[0] * 7, t.pos[1] * 5) * 0.14;
-  const w = S * 2.55 * scale, h = S * 2.0 * scale;
+  // Geology stays regional, but silhouette does not. Mirroring and independent
+  // width/height variation break the telltale row of identical peaks without
+  // mixing snow, granite, and sandstone inside one connected massif.
+  const shapeX = hash2(t.pos[0] * 7 + 3, t.pos[1] * 5 + 11);
+  const shapeY = hash2(t.pos[0] * 17 + 5, t.pos[1] * 13 + 7);
+  const w = S * (1.9 + shapeX * 0.18), h = S * (1.92 + shapeY * 0.24);
+  const flip = hash2(t.pos[0] * 29 + 1, t.pos[1] * 31 + 9) > 0.5;
   cx.save();
+  tileArtPath([{x, y}], true, 3.0); cx.clip();
   cx.fillStyle = "#00000042";
   cx.beginPath(); cx.ellipse(x + 2, y + S * 0.22, w * 0.4, S * 0.18, 0, 0, 7); cx.fill();
   cx.imageSmoothingEnabled = true;
   cx.imageSmoothingQuality = "high";
+  cx.translate(x, y);
+  if (flip) cx.scale(-1, 1);
   cx.drawImage(MOUNTAIN_ATLAS, col * cw, 0, cw, ch,
-               x - w / 2, y - h + S * 0.34, w, h);
+               -w / 2, -h + S * 0.34, w, h);
   cx.restore();
   return true;
 }
@@ -3073,8 +4358,78 @@ function drawUnitBadge(u, x, y) {
   cx.restore();
 }
 
+// A continent-scale cinema shot should read armies, not an inventory screen.
+// Adjacent fighting units of one empire become one formation token until the
+// director moves in; civilians, quiet neutral garrisons, and ordinary camp
+// traffic recede altogether. Anything moving, striking, fighting a live war,
+// or pouring out of an alerted barbarian camp remains present immediately.
+function cinematicSurveyUnits(units) {
+  if (!cinemaActive() || cam.scale >= 1.08) return units;
+  const warOwners = new Set();
+  for (const war of state.wars || []) {
+    if (war.ended !== null && war.ended !== undefined) continue;
+    warOwners.add(war.aggressor); warOwners.add(war.defender);
+  }
+  const alertedBarbarian = unit => (state.barbarian_alerts || []).some(alert =>
+    alert?.camp && whexDist(alert.camp, unit.pos) <= 3);
+  const urgent = [], field = [];
+  for (const unit of units) {
+    const player = state.players[unit.owner] || {};
+    const animated = anim.moves.has(unit.id) || anim.strike?.id === unit.id;
+    const inWar = warOwners.has(unit.owner);
+    if (animated || (player.is_barbarian && alertedBarbarian(unit))) {
+      urgent.push(unit); continue;
+    }
+    if (CIVILIAN_UNITS.has(unit.type)) continue;
+    if ((player.is_minor || player.is_barbarian) && !inWar) continue;
+    field.push(unit);
+  }
+
+  const remaining = new Set(field.map(unit => unit.id));
+  const formations = [];
+  for (const seed of field) {
+    if (!remaining.delete(seed.id)) continue;
+    const group = [seed], stack = [seed];
+    while (stack.length) {
+      const current = stack.pop();
+      for (const candidate of field) {
+        if (candidate.owner !== seed.owner || !remaining.has(candidate.id)) continue;
+        if (whexDist(current.pos, candidate.pos) > 1) continue;
+        remaining.delete(candidate.id); group.push(candidate); stack.push(candidate);
+      }
+    }
+    // Use the medoid, not an invented midpoint, so the token always remains on
+    // a legal occupied hex and keeps its terrain contact shadow believable.
+    const representative = group.reduce((best, candidate) => {
+      const distance = group.reduce((sum, member) => sum + whexDist(candidate.pos, member.pos), 0);
+      return !best || distance < best.distance ? {unit:candidate, distance} : best;
+    }, null).unit;
+    formations.push(group.length > 1
+      ? {...representative, survey_count:group.length}
+      : representative);
+  }
+  return [...formations, ...urgent];
+}
+
+function drawUnitFormationBadge(u, x, y) {
+  const count = u.survey_count || 1;
+  if (count <= 1) return;
+  const k = UI_K(), bx = x + 9.5 * k, by = y + 1;
+  const label = `×${count}`;
+  cx.save();
+  cx.font = `bold ${(7.6 * k).toFixed(1)}px Inter, sans-serif`;
+  const w = Math.max(15 * k, cx.measureText(label).width + 7 * k), h = 11.5 * k;
+  cx.fillStyle = "#0b1210eb";
+  cx.beginPath(); cx.roundRect(bx - w / 2, by - h / 2, w, h, h / 2); cx.fill();
+  cx.strokeStyle = pcol(u.owner); cx.lineWidth = 1.6; cx.stroke();
+  cx.fillStyle = "#fff2ca"; cx.textAlign = "center"; cx.textBaseline = "middle";
+  cx.fillText(label, bx, by + .3 * k);
+  cx.restore();
+}
+
 function draw() {
   if (!state) return;
+  const sceneTime = performance.now();
   const beau0 = VIEW === "cinematic";
   cx.setTransform(1, 0, 0, 1, 0, 0);
   cx.fillStyle = beau0 ? "#a08d64" : "#0a0e14";
@@ -3161,13 +4516,18 @@ function draw() {
       cx.strokeStyle = water ? "#d9f8ff16" : "#fff3cc24";
       cx.lineWidth = 0.65; cx.stroke();
     }
-    if (beau && water) { // specular glints over the photographic swell
+    if (beau && water) { // specular glints travel over the photographic swell
       const ph = hash2(t.pos[0], t.pos[1]);
-      if (ph > 0.6) {
-        cx.fillStyle = "#bfe8ff2e";
+      if (ph > 0.55) {
+        const shimmer = 0.5 + 0.5 * Math.sin(sceneTime / 1450 + ph * 18 + t.pos[0] * .7);
+        cx.globalAlpha = 0.12 + shimmer * 0.18;
+        cx.fillStyle = "#d3f4ff";
         cx.beginPath();
-        cx.ellipse(x - 10 + ph * 16, y - 8 + ph * 6, 2.4, 0.9, 0, 0, 7);
+        cx.ellipse(x - 10 + ph * 16 + Math.sin(sceneTime / 1900 + ph * 9) * 2.4,
+                   y - 8 + ph * 6 + Math.cos(sceneTime / 2200 + ph * 7),
+                   2.1 + shimmer * 1.4, 0.7 + shimmer * .35, 0, 0, 7);
         cx.fill();
+        cx.globalAlpha = 1;
       }
     }
     // Translucent civ-color washes make control and unit positions readable
@@ -3217,7 +4577,9 @@ function draw() {
     }
     if (shore.length) {
       cx.lineCap = "round"; cx.lineJoin = "round";
-      for (const [col, w] of [["#d7c797b8", 4.2], ["#e9fff2b8", 1.15]]) {
+      for (const [col, w, dash] of [["#d7c797b8", 4.2, []], ["#e9fff2c8", 1.15, [10, 7]]]) {
+        cx.setLineDash(dash);
+        cx.lineDashOffset = dash.length ? -(sceneTime / 180) % 17 : 0;
         cx.strokeStyle = col; cx.lineWidth = w;
         cx.beginPath();
         for (const [ax, ay, qx, qy, bx, by] of shore) {
@@ -3225,6 +4587,7 @@ function draw() {
         }
         cx.stroke();
       }
+      cx.setLineDash([]); cx.lineDashOffset = 0;
       cx.lineCap = "butt"; cx.lineJoin = "miter";
     }
   }
@@ -3451,7 +4814,7 @@ function draw() {
       if (placement) {
         if (beau) {
           drawNaturalWonderSprite(placement.feature, placement.tile,
-                                  placement.x, placement.y, placement.size);
+                                  placement.x, placement.y, placement.footprint);
         } else {
           cx.fillStyle = "#f0ce62";
           cx.beginPath(); cx.arc(placement.x, placement.y, 10, 0, Math.PI * 2); cx.fill();
@@ -3616,7 +4979,13 @@ function draw() {
         ? RULES.resources[t.resource].class : "bonus";
       const rim = rc === "strategic" ? "#ff9d5c"
         : rc === "luxury" ? "#d9a0f0" : "#e6ddbd";
-      if (FINE()) {
+      // A cinema establishing shot covers a continent: rendering every deposit
+      // as a full dark badge there freckles the landscape with hundreds of
+      // holes. Detail resolves with the camera instead. Manual/player views
+      // keep the established threshold, while a directed close shot crosses
+      // 1.12 and reveals every resource symbol naturally.
+      const detailedResource = FINE() && (!cinemaActive() || cam.scale >= 1.12);
+      if (detailedResource) {
         cx.fillStyle = "#161c14cc";
         cx.beginPath(); cx.arc(x + 10, y + 9, 8.2, 0, 7); cx.fill();
         cx.strokeStyle = rim + "dd"; cx.lineWidth = 1.5; cx.stroke();
@@ -3786,9 +5155,10 @@ function draw() {
     cx.setLineDash([]);
     hexPath(x2, y2); cx.stroke();
   }
+  drawCinematicDisasterField(sceneTime);
   // --- tacks
   cx.font = "16px sans-serif";
-  for (const tk of tacks) {
+  for (const tk of (state.game_profile === "civ65" ? tacks : [])) {
     const tt = TMAP.get(key(tk));
     const [x, yy] = hexXY(tk[0], tk[1]);
     cx.fillText("📍", x, yy - (tt ? elev(tt) : 0) - 6);
@@ -3928,7 +5298,8 @@ function draw() {
     cx.restore();
   }
   // --- units
-  const sorted = [...state.units].sort((a, b) =>
+  const cinemaSurvey = cinemaActive() && cam.scale < 1.08;
+  const sorted = [...cinematicSurveyUnits(state.units)].sort((a, b) =>
     (hexXY(a.pos[0], a.pos[1])[1] - hexXY(b.pos[0], b.pos[1])[1]) ||
     (CIVILIAN_UNITS.has(a.type) ? -1 : 1));
   const now = performance.now();
@@ -3988,8 +5359,9 @@ function draw() {
     if (beau) {
       drawUnitBase(u, x, y);
       drawUnitChar(u, x, y, now, moving);
-      drawUnitBadge(u, x, y);
-      if (u.fortified) {
+      if (u.survey_count > 1) drawUnitFormationBadge(u, x, y);
+      else if (!cinemaSurvey) drawUnitBadge(u, x, y);
+      if (u.fortified && !cinemaSurvey) {
         // A compact shield, mirrored opposite the type badge so the two status
         // marks stop crowding one shoulder, and scaled with them so it does not
         // shrink away at survey zoom. The old ring was wider than the unit
@@ -4225,7 +5597,7 @@ function victoryValue(victory, metric) {
       ? `${compactStat(metric.distance)}/${compactStat(metric.distance_target)}ly`
       : `${metric.techs || 0}/${metric.tech_total || 0}`;
   }
-  // Tourist counts run into four digits, and at the topbar's width that value
+  // Tourist counts run into four digits, and at the victory rail's width that value
   // is wide enough to squeeze the civilization name beside it down to an
   // ellipsis. Compact it the way the science distance already is; the hover
   // description still carries the exact figures.
@@ -4259,7 +5631,7 @@ function victoryDescription(victory, metric) {
   return `${compactStat(metric.points || 0)} points · meter is relative to the score leader`;
 }
 
-function drawTopbar() {
+function playerHudOverview() {
   const actor = state.players[SPEC ? state.current : 0] || state.players[state.player];
   const viewer = state.players[state.player] || actor;
   const eraRaw = state.world_era;
@@ -4267,9 +5639,9 @@ function drawTopbar() {
     ? (ERA_NAMES[eraRaw] || `era ${eraRaw}`)
     : String(eraRaw || "ancient").replaceAll("_", " ");
   const contenders = state.players.filter(p => p.alive && !p.is_minor && !p.is_barbarian);
-  const victoryTracks = VICTORY_TRACKS
-    .filter(track => state.victory_conditions?.[track.id] !== false)
-    .map(track => {
+  const enabledVictoryTracks = VICTORY_TRACKS
+    .filter(track => state.victory_conditions?.[track.id] !== false);
+  const victoryTracks = enabledVictoryTracks.map(track => {
     const ranked = [...contenders]
       .sort((a, b) => {
         const am = victoryMetric(a, track.id), bm = victoryMetric(b, track.id);
@@ -4302,15 +5674,27 @@ function drawTopbar() {
           victoryMeter(track.id, metric, progress) + `</div>`;
       }).join("") + `</div></section>`;
   }).join("");
-  document.getElementById("topbar").innerHTML =
-    `<section class="victory-turn" title="Turn ${state.turn}"><span>Turn</span>` +
-    `<strong>${state.turn}</strong><i>${SPEC ? `◉ ${actor.civ} · ` : ""}${era}</i></section>${victoryTracks}`;
+  const victoryCount = Math.max(1, enabledVictoryTracks.length);
+  const victoryMinWidth = victoryCount * 84 + Math.max(0, victoryCount - 1) * 2;
+  const overview =
+    `<section class="victory-turn" title="Turn ${state.turn}" aria-label="Turn ${state.turn}, ${era}"><span>Turn</span>` +
+    `<strong>${state.turn}</strong><i>${SPEC ? `<em>◉ ${actor.civ}</em>` : ""}<small>${era}</small></i></section>` +
+    `<section class="hud-region victory-region" aria-labelledby="victory-race-title">` +
+    `<div class="hud-section-heading"><span id="victory-race-title">Victory race</span><span>Top 3 by path</span></div>` +
+    `<div class="hud-rail" tabindex="0" aria-label="Victory paths; scroll horizontally for every path">` +
+    `<div class="victory-ribbon" style="--victory-columns:${victoryCount};--victory-min-width:${victoryMinWidth}px">` +
+    `${victoryTracks}</div></div></section>`;
 
   const playerView = SPEC && state.view_player !== null && state.view_player !== undefined;
   const identity = SPEC ? viewer : state.players[0];
   const mapName = titleCase(state.map.script || "pangaea");
   const speedName = titleCase(state.game_speed || "standard");
-  const mapLabel = `${mapName} · ${state.map.size_name || "Custom"} ${state.map.width}×${state.map.height} · ${speedName}`;
+  const ruleset = Array.isArray(RULES?.game_profiles)
+    ? RULES.game_profiles.find(candidate => candidate.id === state.game_profile)
+    : null;
+  const rulesetName = ruleset?.name || (state.game_profile === "civ6-tournament"
+    ? "Civ VI · tournament" : "Civ 6.5 · Gathering Storm+");
+  const mapLabel = `${rulesetName} · ${mapName} · ${state.map.size_name || "Custom"} ${state.map.width}×${state.map.height} · ${speedName}`;
   const profile = spectatorIdentity(identity);
   const climateLabel = (Number(state.me.global_co2) || 0) !== 0 || Number(eraRaw) >= 4
     ? `Global lifetime carbon emissions: ${compactStat(state.me.global_co2)} CO₂`
@@ -4321,6 +5705,7 @@ function drawTopbar() {
     `<div class="identity-meta" title="${profile.role} · ${meta}">` +
     `${profile.role} · ${meta}</div></div>` +
     `<span class="live-badge">${playerView ? "Player view" : SPEC ? "Observing" : "Your empire"}</span>`;
+  return overview;
 }
 
 function spectatorIdentity(player) {
@@ -4382,13 +5767,21 @@ function exactStat(value) {
 
 function drawPlayerHud() {
   const hud = document.getElementById("playerhud");
+  // State updates are frequent in spectator mode. Preserve each rail's exact
+  // reading position so a person can browse an off-screen path or player
+  // without the next simulation frame snapping the HUD back to the leader.
+  const railScroll = [...hud.querySelectorAll(".hud-rail")].map(rail => rail.scrollLeft);
+  const overview = playerHudOverview();
   const acting = SPEC ? state.current : 0;
   const majors = state.players
     .filter(p => !p.is_minor && !p.is_barbarian)
     .sort((a, b) => b.score - a.score || a.id - b.id);
   const rankById = new Map(majors.map((p, index) => [p.id, index + 1]));
-  hud.innerHTML =
-    `<div class="ribbon-heading"><span>World leaders</span><span>output · empire · score</span></div>` +
+  hud.innerHTML = overview +
+    `<section class="hud-region leader-region" aria-labelledby="world-leaders-title">` +
+    `<div class="hud-section-heading"><span id="world-leaders-title">World leaders</span>` +
+    `<span>${majors.length} civilizations · output · empire · score</span></div>` +
+    `<div class="hud-rail" tabindex="0" aria-label="Civilizations; scroll horizontally for every leader">` +
     `<div class="diplomacy-ribbon">` + majors.map(p => {
       const y = p.yields || {};
       const color = pcol(p.id);
@@ -4443,8 +5836,21 @@ function drawPlayerHud() {
         `<span class="diplomacy-stats">` + stats.map(([kind, shortLabel, value, label]) =>
           `<span class="ribbon-stat ${kind}" title="${label}"><b>${ribbonStat(value)}</b><em>${shortLabel}</em></span>`
         ).join("") + `</span></button>`;
-    }).join("") + `</div>`;
+    }).join("") + `</div></div></section>`;
+  [...hud.querySelectorAll(".hud-rail")].forEach((rail, index) => {
+    rail.scrollLeft = railScroll[index] || 0;
+  });
 }
+
+// A vertical wheel gesture over a one-row rail should browse that rail, not
+// disappear into a page that cannot scroll. Native horizontal trackpad input
+// is left untouched, and touch users retain normal swipe scrolling.
+document.getElementById("playerhud").addEventListener("wheel", event => {
+  const rail = event.target.closest(".hud-rail");
+  if (!rail || rail.scrollWidth <= rail.clientWidth || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+  rail.scrollLeft += event.deltaY;
+  event.preventDefault();
+}, {passive:false});
 
 function tradeItemIcon(item) {
   if (item === "diplomatic_favor") return "⚜";
@@ -4769,15 +6175,20 @@ function warMomentText(moment) {
 }
 
 // The engine deliberately accounts for every pair of belligerents as its own
-// front. For presentation, fold the fronts created by a Suzerain and its
-// city-states into a single conflict while retaining every participant's
-// losses and captured-city moments.
+// front. For presentation, fold the fronts created by a team and any
+// city-states following its members into a single conflict while retaining
+// every participant's losses and captured-city moments.
 function warsForLog(wars) {
   const players = state.players || [];
   const controller = id => {
     const player = players[id];
-    return player && player.is_minor && Number.isInteger(player.suzerain)
+    const majorId = player && player.is_minor && Number.isInteger(player.suzerain)
       ? player.suzerain : id;
+    const major = players[majorId];
+    if (!major || !Number.isInteger(major.team)) return majorId;
+    return players.find(candidate =>
+      !candidate.is_minor && !candidate.is_barbarian && candidate.team === major.team
+    )?.id ?? majorId;
   };
   const buckets = new Map();
   wars.forEach((war, index) => {
@@ -4901,11 +6312,13 @@ function drawSide(force = true) {
   const dedications = legalFor("choose_dedication");
   const societies = legalFor("choose_secret_society");
   const congressVotes = legalFor("congress_vote");
+  const aidActions = legalFor("send_aid");
+  const activeEmergencies = state.active_emergencies || [];
   const levies = legalFor("levy_military");
   const dealReplies = state.legal_actions.filter(a => a.type === "accept_deal" || a.type === "reject_deal");
   const gs = document.getElementById("govsec");
   const fullMapSpectator = SPEC && (state.view_player === null || state.view_player === undefined);
-  if (!fullMapSpectator && (SPEC || govs.length || me.government || dedications.length || societies.length || congressVotes.length || levies.length || dealReplies.length)) {
+  if (!fullMapSpectator && (SPEC || govs.length || me.government || dedications.length || societies.length || congressVotes.length || aidActions.length || activeEmergencies.length || levies.length || dealReplies.length)) {
     gs.style.display = "block";
     // Anarchy is a government of sorts: no slots, no yields, and no second
     // change until the waiting government takes power.
@@ -4920,6 +6333,19 @@ function drawSide(force = true) {
         ? "Already tried: this change causes 2 turns of Anarchy" : "A new form of government: free to adopt"}' ` +
         `onclick='send({type:"government",government:"${a.government}"})'>` +
         titleCase(a.government) + (tried.has(a.government) ? " ⚠ Anarchy" : "") + "</button>").join(""));
+    if (activeEmergencies.length) {
+      politics += activeEmergencies.map(emergency => {
+        const target = state.players[emergency.target]?.civ || `player ${emergency.target}`;
+        const turns = Math.max(0, emergency.ends - state.turn);
+        const contribution = emergency.contributions?.[me.id] ?? 0;
+        const progress = emergency.kind === "religious"
+          ? ` · ${emergency.member_progress || 0}/16 vs ${emergency.target_progress || 0}/16 turns`
+          : ((emergency.kind === "aid" || emergency.kind === "military_aid")
+            ? ` · your score ${compactStat(contribution)}` : "");
+        return `<div class="row"><span class="muted">${titleCase(emergency.kind)}</span>` +
+          `<b>${target} · ${turns}t${progress}</b></div>`;
+      }).join("");
+    }
     if (!SPEC && dedications.length) {
       politics += `<div class="row"><span class="muted">Age dedication</span><b>${titleCase(me.age)}</b></div>` +
         dedications.map(a => `<button onclick='send(${JSON.stringify(a)})'>✦ ${titleCase(a.dedication)}</button>`).join("");
@@ -4933,6 +6359,17 @@ function drawSide(force = true) {
         votes.findIndex(other => other.resolution === vote.resolution && other.choice === vote.choice) === index);
       politics += `<div class="row"><span class="muted">World Congress</span><b>${compactStat(me.diplomatic_favor)} Favor</b></div>` +
         onePerResolution.map(a => `<button onclick='send(${JSON.stringify(a)})'>⚖ ${titleCase(a.resolution)}: ${titleCase(a.choice)} (${a.votes})</button>`).join("");
+    }
+    if (!SPEC && aidActions.length) {
+      const requests = new Map((state.active_emergencies || [])
+        .filter(emergency => emergency.kind === "aid" || emergency.kind === "military_aid")
+        .map(emergency => [emergency.id, emergency]));
+      politics += `<div class="row"><span class="muted">Aid Requests</span><b>${aidActions.length} options</b></div>` +
+        aidActions.map(a => {
+          const target = requests.get(a.emergency)?.target;
+          const civilization = target === undefined ? "recipient" : (state.players[target]?.civ || `player ${target}`);
+          return `<button onclick='send(${JSON.stringify(a)})'>◈ Send ${a.gold} Gold to ${civilization}</button>`;
+        }).join("");
     }
     if (!SPEC && levies.length) {
       politics += `<div class="row"><span class="muted">Suzerain militaries</span><b>${levies.length} available</b></div>` +
@@ -5133,6 +6570,7 @@ function validSettle(t) {
   return true;
 }
 function tackStoreKey() { return "civvis-tacks-" + (lastSeed === null ? "x" : lastSeed); }
+function mapTacksAllowed() { return state?.game_profile === "civ65"; }
 function loadTacks() {
   try { tacks = JSON.parse(localStorage.getItem(tackStoreKey())) || []; }
   catch { tacks = []; }
@@ -5150,8 +6588,8 @@ modeline();
 
 // ---------------------------------------------------------------- camera
 function cameraYBounds(scale = cam.scale) {
-  // The east-west cylinder has no horizontal edge, but its polar rows are
-  // finite. At the default north-up view, keep automatic framing inside those
+  // Every script has finite polar rows. At the default north-up view, keep
+  // automatic framing inside those
   // rows so a battle near a pole cannot replace a large part of the map with
   // empty background. Rotated/manual views remain unconstrained.
   if (!state || !area.clientHeight || Math.abs(SINR) > 0.001) return null;
@@ -5168,21 +6606,166 @@ function clampCameraY(y, scale = cam.scale) {
   const bounds = cameraYBounds(scale);
   return bounds ? Math.max(bounds.min, Math.min(bounds.max, y)) : y;
 }
-function zoomAt(f, sx, sy) {
-  if (sx === undefined) { sx = area.clientWidth / 2; sy = area.clientHeight / 2; }
-  const [wx, wy] = screenToWorld(sx, sy);
-  cam.scale = Math.max(0.25, Math.min(3.2, cam.scale * f));
+function clearCameraInertia() {
+  cameraInertia = {vx:0, vy:0, vrot:0, vtilt:0};
+}
+function updateCameraFollowChip() {
+  const chip = document.getElementById("cinema-follow");
+  if (!chip) return;
+  const unit = state?.units?.find(candidate => candidate.id === cameraFollowUnitId);
+  chip.classList.toggle("active", !!unit && cameraFollowManual);
+  if (!unit) return;
+  const owner = state.players[unit.owner];
+  chip.querySelector("b").textContent = `${owner?.civ || "Unknown"} · ${titleCase(unit.type)}`;
+}
+function stopCameraFollow() {
+  cameraFollowUnitId = null; cameraFollowManual = false;
+  updateCameraFollowChip();
+}
+function takeCameraControl(preserveZoom = false) {
+  cameraFlight = null;
+  if (!preserveZoom) cameraZoom = null;
+  clearCameraInertia();
+  stopCameraFollow();
+  if (SPEC && DIRECTOR) setDirector(false);
+}
+function startCameraFollow(unitId) {
+  const unit = state?.units?.find(candidate => candidate.id === unitId);
+  if (!unit) return false;
+  if (SPEC && DIRECTOR) setDirector(false);
+  cameraFlight = null; cameraZoom = null; clearCameraInertia();
+  cameraFollowUnitId = unit.id; cameraFollowManual = true;
+  cameraFollowScale = Math.max(cam.scale, cinemaActive() ? 1.18 : 1.05);
+  updateCameraFollowChip(); wakeCinema();
+  return true;
+}
+document.getElementById("cinema-follow").onclick = () => stopCameraFollow();
+
+function cameraTargetFor(pos) {
+  let x = S * SQ3 * (pos[0] + pos[1] / 2);
+  if (mapWrapsX()) x += Math.round((cam.x - x) / WW()) * WW();
+  return [x, S * 1.5 * pos[1]];
+}
+function applyCameraAnchor(wx, wy, sx, sy, scale = cam.scale) {
+  cam.scale = Math.max(.25, Math.min(3.2, scale));
   const vx = (sx - area.clientWidth / 2) / cam.scale;
   const vy = (sy - area.clientHeight / 2) / cam.scale / YS;
   cam.x = wx - (COSR * vx + SINR * vy);
-  cam.y = wy - (-SINR * vx + COSR * vy);
-  if (SPEC && DIRECTOR) cam.y = clampCameraY(cam.y);
-  draw(); drawMini();
+  cam.y = clampCameraY(wy - (-SINR * vx + COSR * vy));
 }
-function centerWorld(pos) {
-  cam.x = S * SQ3 * (pos[0] + pos[1] / 2);
-  cam.y = S * 1.5 * pos[1];
-  draw(); drawMini();
+function flyCameraTo(pos, scale = cam.scale) {
+  if (!Array.isArray(pos)) return;
+  const [x, y] = cameraTargetFor(pos);
+  cameraZoom = null; clearCameraInertia();
+  if (REDUCED_MOTION_QUERY.matches) {
+    cam.x = x; cam.y = clampCameraY(y, scale); cam.scale = scale;
+    cameraFlight = null; draw(); drawMini(); return;
+  }
+  cameraFlight = {x, y:clampCameraY(y, scale), scale:Math.max(.25, Math.min(3.2, scale))};
+}
+function orbitCamera(deltaRot = 0, deltaTilt = 0) {
+  takeCameraControl();
+  const tilt = Math.max(MIN_YS, Math.min(MAX_YS, cinematicYS + deltaTilt));
+  if (REDUCED_MOTION_QUERY.matches) {
+    setRot(cam.rot + deltaRot); if (VIEW === "cinematic") setTilt(tilt);
+    draw(); drawMini(); return;
+  }
+  cameraFlight = {x:cam.x, y:cam.y, scale:cam.scale,
+                  rot:cam.rot + deltaRot, tilt};
+}
+function nudgeCamera(screenX, screenY) {
+  takeCameraControl();
+  const vx = screenX / cam.scale, vy = screenY / cam.scale / YS;
+  const dx = COSR * vx + SINR * vy, dy = -SINR * vx + COSR * vy;
+  cameraFlight = {x:cam.x + dx, y:clampCameraY(cam.y + dy), scale:cam.scale};
+}
+function zoomAt(f, sx, sy) {
+  if (sx === undefined) { sx = area.clientWidth / 2; sy = area.clientHeight / 2; }
+  const [wx, wy] = screenToWorld(sx, sy);
+  const base = cameraZoom?.scale || cam.scale;
+  cameraFlight = null; clearCameraInertia();
+  cameraZoom = {wx, wy, sx, sy, scale:Math.max(.25, Math.min(3.2, base * f))};
+  if (REDUCED_MOTION_QUERY.matches) {
+    applyCameraAnchor(wx, wy, sx, sy, cameraZoom.scale);
+    cameraZoom = null; draw(); drawMini();
+  }
+}
+function advanceUserCameraMotion(now = performance.now()) {
+  const dt = Math.max(1, Math.min(50, now - (cameraMotionLast || now - 16)));
+  cameraMotionLast = now;
+  let active = false;
+  if (cameraZoom) {
+    const ease = 1 - Math.pow(.012, dt / 1000);
+    const nextScale = cam.scale + (cameraZoom.scale - cam.scale) * ease;
+    applyCameraAnchor(cameraZoom.wx, cameraZoom.wy, cameraZoom.sx, cameraZoom.sy, nextScale);
+    active = true;
+    if (Math.abs(cameraZoom.scale - cam.scale) < .001) {
+      applyCameraAnchor(cameraZoom.wx, cameraZoom.wy, cameraZoom.sx, cameraZoom.sy, cameraZoom.scale);
+      cameraZoom = null;
+    }
+  } else if (cameraFlight) {
+    const ease = 1 - Math.pow(.018, dt / 1000);
+    cam.x += (cameraFlight.x - cam.x) * ease;
+    cam.y += (cameraFlight.y - cam.y) * ease;
+    cam.scale += (cameraFlight.scale - cam.scale) * ease;
+    let rotLeft = 0, tiltLeft = 0;
+    if (cameraFlight.rot !== undefined) {
+      rotLeft = Math.atan2(Math.sin(cameraFlight.rot - cam.rot), Math.cos(cameraFlight.rot - cam.rot));
+      setRot(cam.rot + rotLeft * ease);
+    }
+    if (cameraFlight.tilt !== undefined && VIEW === "cinematic") {
+      tiltLeft = cameraFlight.tilt - cinematicYS;
+      setTilt(cinematicYS + tiltLeft * ease);
+    }
+    cam.y = clampCameraY(cam.y);
+    active = true;
+    if (Math.abs(cameraFlight.x - cam.x) + Math.abs(cameraFlight.y - cam.y) < .35 &&
+        Math.abs(cameraFlight.scale - cam.scale) < .001 && Math.abs(rotLeft) < .001 &&
+        Math.abs(tiltLeft) < .001) {
+      cam.x = cameraFlight.x; cam.y = cameraFlight.y; cam.scale = cameraFlight.scale;
+      if (cameraFlight.rot !== undefined) setRot(cameraFlight.rot);
+      if (cameraFlight.tilt !== undefined && VIEW === "cinematic") setTilt(cameraFlight.tilt);
+      cameraFlight = null;
+    }
+  }
+  if (!dragState && !cameraFlight && !cameraZoom) {
+    const speed = Math.abs(cameraInertia.vx) + Math.abs(cameraInertia.vy) +
+      Math.abs(cameraInertia.vrot) * 80 + Math.abs(cameraInertia.vtilt) * 80;
+    if (speed > .002) {
+      cam.x += cameraInertia.vx * dt; cam.y += cameraInertia.vy * dt;
+      if (Math.abs(cameraInertia.vrot) > .00001) setRot(cam.rot + cameraInertia.vrot * dt);
+      if (Math.abs(cameraInertia.vtilt) > .00001) setTilt(cinematicYS + cameraInertia.vtilt * dt);
+      cam.y = clampCameraY(cam.y);
+      const decay = Math.pow(.003, dt / 1000);
+      cameraInertia.vx *= decay; cameraInertia.vy *= decay;
+      cameraInertia.vrot *= decay; cameraInertia.vtilt *= decay;
+      active = true;
+    } else clearCameraInertia();
+  }
+  return active;
+}
+function advanceCameraFollow(now = performance.now()) {
+  if (!cameraFollowManual || cameraFollowUnitId === null || dragState) return false;
+  const unit = state?.units?.find(candidate => candidate.id === cameraFollowUnitId);
+  if (!unit) { stopCameraFollow(); return false; }
+  const [ux, uy] = cameraTargetFor(unit.pos);
+  const desiredScreenY = area.clientHeight * .55;
+  const projectedY = (desiredScreenY - area.clientHeight / 2) /
+    (Math.max(.25, cameraFollowScale) * YS);
+  const gx = ux - SINR * projectedY;
+  const gy = clampCameraY(uy - COSR * projectedY, cameraFollowScale);
+  const dt = Math.max(1, Math.min(80, now - (directorMotionLast || now - 16)));
+  const ease = 1 - Math.pow(.025, dt / 1000);
+  const dx = gx - cam.x, dy = gy - cam.y;
+  cam.x += dx * ease; cam.y += dy * ease;
+  cam.scale += (cameraFollowScale - cam.scale) * ease;
+  return Math.abs(dx) + Math.abs(dy) > .35 || Math.abs(cameraFollowScale - cam.scale) > .001;
+}
+function centerWorld(pos, immediate = false) {
+  if (!immediate) { flyCameraTo(pos); return; }
+  const [x, y] = cameraTargetFor(pos);
+  cam.x = x; cam.y = clampCameraY(y);
+  cameraFlight = null; draw(); drawMini();
 }
 function homeAnchor() {
   if (!state) return null;
@@ -5198,8 +6781,8 @@ function setHomeView() {
   cam.y = S * 1.5 * own.pos[1];
 }
 function centerHome() {
-  setHomeView();
-  draw(); drawMini();
+  const own = homeAnchor();
+  if (own) flyCameraTo(own.pos, Math.max(.9, Math.min(1.35, cam.scale)));
 }
 function actionViewingAnchor(focus) {
   if (!state || !Array.isArray(focus)) return focus;
@@ -5304,17 +6887,29 @@ function updateDirectorButton() {
   button.classList.toggle("active", DIRECTOR);
   button.textContent = DIRECTOR ? "◉" : "○";
   button.title = DIRECTOR ? "Auto-focus camera on" : "Camera locked (click for auto-focus)";
+  const cinemaButton = document.getElementById("cinema-director");
+  cinemaButton.classList.toggle("director-on", DIRECTOR);
+  cinemaButton.textContent = DIRECTOR ? "◉" : "○";
+  cinemaButton.title = DIRECTOR ? "Automatic camera on" : "Automatic camera off";
 }
 function setDirector(on) {
   DIRECTOR = !!on;
   localStorage.setItem("civvis-director-v2", DIRECTOR ? "1" : "0");
   directorGoal = null;
+  directorAmbientLast = performance.now();
+  if (DIRECTOR) {
+    cameraFlight = null; cameraZoom = null; clearCameraInertia(); stopCameraFollow();
+  }
+  if (!DIRECTOR) {
+    directorStoryUntil = 0;
+    document.getElementById("cinema-story").classList.remove("visible");
+  }
   updateDirectorButton();
   if (DIRECTOR && SPEC) centerMainLandmass();
 }
 function focusPlayer(pid) {
   if (!state) return;
-  if (SPEC) setDirector(false);
+  takeCameraControl();
   const anchor = state.cities.find(c => c.owner === pid && c.is_capital) ||
                  state.cities.find(c => c.owner === pid) ||
                  state.units.find(u => u.owner === pid);
@@ -5323,25 +6918,41 @@ function focusPlayer(pid) {
   if (SPEC && anchor.pop !== undefined) { selCity = anchor; drawSide(); }
 }
 area.addEventListener("wheel", ev => {
+  if (ev.target !== cv) return;
   ev.preventDefault();
+  if (ev.altKey) {
+    orbitCamera(0, Math.max(-.14, Math.min(.14, ev.deltaY * .0015)));
+    return;
+  }
+  if (ev.shiftKey) {
+    orbitCamera(Math.max(-.32, Math.min(.32, ev.deltaY * .0032)), 0);
+    return;
+  }
+  takeCameraControl(true);
   const r = cv.getBoundingClientRect();
-  zoomAt(ev.deltaY < 0 ? 1.10 : 1 / 1.10, ev.clientX - r.left, ev.clientY - r.top);
+  const sensitivity = ev.ctrlKey ? .01 : .0017;
+  const factor = Math.max(.72, Math.min(1.4, Math.exp(-ev.deltaY * sensitivity)));
+  zoomAt(factor, ev.clientX - r.left, ev.clientY - r.top);
 }, { passive: false });
-document.getElementById("zin").onclick = () => zoomAt(1.15);
-document.getElementById("zout").onclick = () => zoomAt(1 / 1.15);
+document.getElementById("zin").onclick = () => { takeCameraControl(true); zoomAt(1.35); };
+document.getElementById("zout").onclick = () => { takeCameraControl(true); zoomAt(1 / 1.35); };
 document.getElementById("zhome").onclick = () => {
-  if (SPEC) setDirector(false);
+  takeCameraControl();
   centerHome();
 };
 
 // ---------------------------------------------------------------- input
 let dragState = null, dragMoved = false, rdrag = null, rdragTo = null;
-let altTap = false; // tapping Alt (no drag) resets the map to north-up
+let altTap = false; // tapping Alt (no drag) resets the map's viewing angles
 cv.addEventListener("mousedown", ev => {
   const r = cv.getBoundingClientRect();
   if (ev.button === 0) {
+    cameraFlight = null; cameraZoom = null; clearCameraInertia();
     dragState = { x: ev.clientX, y: ev.clientY, cx: cam.x, cy: cam.y,
-                  rotate: ev.altKey, rot0: cam.rot };
+                  rotate: ev.altKey, rot0: cam.rot, tilt0: cinematicYS,
+                  lastX:cam.x, lastY:cam.y, lastRot:cam.rot, lastTilt:cinematicYS,
+                  lastT:performance.now(), vx:0, vy:0, vrot:0, vtilt:0,
+                  controlled:false };
     dragMoved = false;
   } else if (ev.button === 2 && state && !SPEC) {
     const pos = pixelToHex(ev.clientX - r.left, ev.clientY - r.top);
@@ -5358,16 +6969,31 @@ window.addEventListener("mousemove", ev => {
   if (dragState) {
     const dx = ev.clientX - dragState.x, dy = ev.clientY - dragState.y;
     if (Math.abs(dx) + Math.abs(dy) > 5) dragMoved = true;
-    if (dragMoved && SPEC && DIRECTOR) setDirector(false);
+    if (dragMoved && !dragState.controlled) {
+      takeCameraControl(); dragState.controlled = true;
+    }
     if (dragMoved && dragState.rotate) {
-      // alt+drag: rotate the world; the angle persists until rotated again
+      // Option/Alt-drag uses the familiar map-camera gesture: horizontal
+      // motion rotates, while dragging upward lowers and flattens the view.
       altTap = false;
       setRot(dragState.rot0 - dx * 0.008);
+      if (VIEW === "cinematic") setTilt(dragState.tilt0 + dy * 0.0028);
+      const now = performance.now(), dt = Math.max(1, now - dragState.lastT);
+      const vr = (cam.rot - dragState.lastRot) / dt;
+      const vt = (cinematicYS - dragState.lastTilt) / dt;
+      dragState.vrot = dragState.vrot * .55 + vr * .45;
+      dragState.vtilt = dragState.vtilt * .55 + vt * .45;
+      dragState.lastRot = cam.rot; dragState.lastTilt = cinematicYS; dragState.lastT = now;
       draw(); drawMini();
     } else if (dragMoved) {
       const dvx = dx / cam.scale, dvy = dy / cam.scale / YS;
       cam.x = dragState.cx - (COSR * dvx + SINR * dvy);
       cam.y = dragState.cy - (-SINR * dvx + COSR * dvy);
+      const now = performance.now(), dt = Math.max(1, now - dragState.lastT);
+      const vx = (cam.x - dragState.lastX) / dt, vy = (cam.y - dragState.lastY) / dt;
+      dragState.vx = dragState.vx * .55 + vx * .45;
+      dragState.vy = dragState.vy * .55 + vy * .45;
+      dragState.lastX = cam.x; dragState.lastY = cam.y; dragState.lastT = now;
       draw(); drawMini();
     }
   }
@@ -5378,7 +7004,17 @@ window.addEventListener("mousemove", ev => {
   }
 });
 window.addEventListener("mouseup", ev => {
-  if (ev.button === 0) { dragState = null; return; }
+  if (ev.button === 0) {
+    const released = dragState;
+    dragState = null;
+    if (released && dragMoved && performance.now() - released.lastT < 90 &&
+        !REDUCED_MOTION_QUERY.matches) {
+      cameraInertia = released.rotate
+        ? {vx:0, vy:0, vrot:released.vrot, vtilt:released.vtilt}
+        : {vx:released.vx, vy:released.vy, vrot:0, vtilt:0};
+    }
+    return;
+  }
   if (ev.button !== 2 || !rdrag) return;
   const r = cv.getBoundingClientRect();
   const pos = pixelToHex(ev.clientX - r.left, ev.clientY - r.top);
@@ -5395,7 +7031,108 @@ window.addEventListener("mouseup", ev => {
   }
   draw();
 });
+
+// Touch follows the same slippy-map contract as mouse input: one finger pans;
+// two fingers pan, pinch, and rotate around the point between them. Pointer
+// events keep this path independent from right-drag orders on desktop.
+const mapTouches = new Map();
+let touchGesture = null;
+function touchPair() { return [...mapTouches.values()].slice(0, 2); }
+function beginTouchTransform() {
+  const points = touchPair();
+  if (points.length < 2) return;
+  const rect = cv.getBoundingClientRect();
+  const mx = (points[0].x + points[1].x) / 2 - rect.left;
+  const my = (points[0].y + points[1].y) / 2 - rect.top;
+  const dx = points[1].x - points[0].x, dy = points[1].y - points[0].y;
+  const [wx, wy] = screenToWorld(mx, my);
+  touchGesture = {mode:"transform", mx, my, wx, wy, distance:Math.hypot(dx, dy),
+                  angle:Math.atan2(dy, dx), scale:cam.scale, rot:cam.rot,
+                  controlled:false};
+  clearCameraInertia(); cameraFlight = null; cameraZoom = null;
+}
+cv.addEventListener("pointerdown", ev => {
+  if (ev.pointerType !== "touch") return;
+  mapTouches.set(ev.pointerId, {x:ev.clientX, y:ev.clientY});
+  try { cv.setPointerCapture?.(ev.pointerId); } catch (_) {}
+  if (mapTouches.size === 1) {
+    touchGesture = {mode:"pan", x:ev.clientX, y:ev.clientY, cx:cam.x, cy:cam.y,
+                    lastX:cam.x, lastY:cam.y, lastT:performance.now(), vx:0, vy:0,
+                    controlled:false, moved:false};
+    clearCameraInertia(); cameraFlight = null; cameraZoom = null;
+  } else beginTouchTransform();
+});
+cv.addEventListener("pointermove", ev => {
+  if (ev.pointerType !== "touch" || !mapTouches.has(ev.pointerId)) return;
+  mapTouches.set(ev.pointerId, {x:ev.clientX, y:ev.clientY});
+  if (!touchGesture) return;
+  if (ev.cancelable) ev.preventDefault();
+  if (mapTouches.size >= 2) {
+    if (touchGesture.mode !== "transform") beginTouchTransform();
+    const points = touchPair(), rect = cv.getBoundingClientRect();
+    const mx = (points[0].x + points[1].x) / 2 - rect.left;
+    const my = (points[0].y + points[1].y) / 2 - rect.top;
+    const dx = points[1].x - points[0].x, dy = points[1].y - points[0].y;
+    const distance = Math.max(12, Math.hypot(dx, dy));
+    const angle = Math.atan2(dy, dx);
+    if (!touchGesture.controlled &&
+        (Math.abs(distance - touchGesture.distance) > 3 ||
+         Math.abs(angle - touchGesture.angle) > .025 ||
+         Math.abs(mx - touchGesture.mx) + Math.abs(my - touchGesture.my) > 4)) {
+      takeCameraControl(); touchGesture.controlled = true; dragMoved = true;
+    }
+    if (touchGesture.controlled) {
+      const turn = Math.atan2(Math.sin(angle - touchGesture.angle), Math.cos(angle - touchGesture.angle));
+      setRot(touchGesture.rot + turn);
+      const scale = Math.max(.25, Math.min(3.2,
+        touchGesture.scale * distance / Math.max(12, touchGesture.distance)));
+      applyCameraAnchor(touchGesture.wx, touchGesture.wy, mx, my, scale);
+      draw(); drawMini();
+    }
+  } else if (touchGesture.mode === "pan") {
+    const point = touchPair()[0];
+    const dx = point.x - touchGesture.x, dy = point.y - touchGesture.y;
+    if (!touchGesture.controlled && Math.abs(dx) + Math.abs(dy) > 5) {
+      takeCameraControl(); touchGesture.controlled = true;
+      touchGesture.moved = true; dragMoved = true;
+    }
+    if (touchGesture.controlled) {
+      const dvx = dx / cam.scale, dvy = dy / cam.scale / YS;
+      cam.x = touchGesture.cx - (COSR * dvx + SINR * dvy);
+      cam.y = touchGesture.cy - (-SINR * dvx + COSR * dvy);
+      const now = performance.now(), dt = Math.max(1, now - touchGesture.lastT);
+      const vx = (cam.x - touchGesture.lastX) / dt, vy = (cam.y - touchGesture.lastY) / dt;
+      touchGesture.vx = touchGesture.vx * .55 + vx * .45;
+      touchGesture.vy = touchGesture.vy * .55 + vy * .45;
+      touchGesture.lastX = cam.x; touchGesture.lastY = cam.y; touchGesture.lastT = now;
+      draw(); drawMini();
+    }
+  }
+}, {passive:false});
+function endMapTouch(ev) {
+  if (ev.pointerType !== "touch" || !mapTouches.has(ev.pointerId)) return;
+  const released = touchGesture;
+  mapTouches.delete(ev.pointerId);
+  if (!mapTouches.size) {
+    if (released?.mode === "pan" && released.controlled && !REDUCED_MOTION_QUERY.matches)
+      cameraInertia = {vx:released.vx, vy:released.vy, vrot:0, vtilt:0};
+    touchGesture = null;
+    setTimeout(() => { if (!mapTouches.size) dragMoved = false; }, 60);
+  } else if (mapTouches.size === 1) {
+    const point = touchPair()[0];
+    touchGesture = {mode:"pan", x:point.x, y:point.y, cx:cam.x, cy:cam.y,
+                    lastX:cam.x, lastY:cam.y, lastT:performance.now(), vx:0, vy:0,
+                    controlled:true, moved:true};
+  } else beginTouchTransform();
+}
+cv.addEventListener("pointerup", endMapTouch);
+cv.addEventListener("pointercancel", endMapTouch);
 cv.addEventListener("contextmenu", ev => ev.preventDefault());
+cv.addEventListener("dblclick", ev => {
+  ev.preventDefault(); takeCameraControl();
+  const r = cv.getBoundingClientRect();
+  zoomAt(ev.shiftKey ? 1 / 1.8 : 1.8, ev.clientX - r.left, ev.clientY - r.top);
+});
 cv.addEventListener("click", ev => {
   if (dragMoved) { dragMoved = false; return; }
   const r = cv.getBoundingClientRect();
@@ -5408,6 +7145,9 @@ cv.addEventListener("click", ev => {
     saveTacks(); draw(); return;
   }
   if (SPEC) {
+    const unit = state.units.find(candidate => key(candidate.pos) === k);
+    if (unit) { startCameraFollow(unit.id); return; }
+    if (cameraFollowManual) stopCameraFollow();
     const city = state.cities.find(c => c.pos[0] === pos[0] && c.pos[1] === pos[1]);
     selCity = city || null;
     drawSide();
@@ -5460,6 +7200,13 @@ cv.addEventListener("mousemove", ev => {
   lines.push("<b>" + head + "</b>");
   if (t.fallout_until > state.turn) lines.push(`☢ Fallout · ${t.fallout_until - state.turn} turns remain`);
   if (t.drought) lines.push("Drying drought");
+  if (t.feature === "volcano" && t.volcano_state)
+    lines.push(t.volcano_state === 2 ? "Erupting volcano" : "Active volcano · eruption warning");
+  for (const event of state.active_disasters || []) {
+    if (["blizzard", "dust_storm", "tornado", "hurricane"].includes(event.kind) &&
+        event.tiles.some(pos => pos[0] === t.pos[0] && pos[1] === t.pos[1]))
+      lines.push(`${titleCase(event.kind)} · phase ${event.age + 1} of ${event.duration}`);
+  }
   if (t.flooded) lines.push("Flooded coastal lowland");
   if (t.submerged) lines.push("Submerged by sea-level rise");
   if (t.resource)
@@ -5504,6 +7251,7 @@ function nextAction() {
   drawSide(); drawUbar();
 }
 function togglePanel(force) {
+  if (force === undefined && cinemaActive()) { setCinemaMode(false); return; }
   const hide = force === undefined ? !document.body.classList.contains("sidebar-hidden") : force;
   document.body.classList.toggle("sidebar-hidden", hide);
   document.getElementById("paneltoggle").textContent = hide ? "☷" : "☰";
@@ -5532,30 +7280,55 @@ document.addEventListener("keydown", ev => {
     return;
   }
   if (tradeOpen) return;
+  if (ev.key.toLowerCase() === "m" && cinemaActive()) { setCinemaAudio(!CINEMA_AUDIO); return; }
+  if (ev.key.toLowerCase() === "c" && SPEC) { toggleCinemaMode(); return; }
   if (ev.key === "Enter") {
     if (SPEC) document.getElementById("specpause").click();
     else { sel = null; send({type: "end_turn"}); }
   }
   else if (ev.key === "Escape") {
+    if (cameraFollowManual) { stopCameraFollow(); return; }
+    if (cinemaActive()) { setCinemaMode(false); return; }
     sel = null; selCity = null; lensOn = false; tackMode = false;
     modeline(); draw(); drawSide(); drawUbar();
   }
   else if (ev.key.toLowerCase() === "a" && !SPEC) autoplay(ev.shiftKey ? 10 : 1);
   else if (ev.key === "1") nextAction();
   else if (ev.key === "2") { lensOn = !lensOn; tackMode = false; modeline(); draw(); }
-  else if (ev.key === "3") { tackMode = !tackMode; lensOn = false; modeline(); draw(); }
+  else if (ev.key === "3" && mapTacksAllowed()) {
+    tackMode = !tackMode; lensOn = false; modeline(); draw();
+  }
   else if (ev.key.toLowerCase() === "y") {
     SHOW_YIELDS = !SHOW_YIELDS;
     document.getElementById("yieldchk").checked = SHOW_YIELDS;
     localStorage.setItem("civvis-show-yields", SHOW_YIELDS ? "1" : "0");
     draw();
   }
+  else if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(ev.key)) {
+    ev.preventDefault();
+    const distance = ev.shiftKey ? 240 : 120;
+    nudgeCamera(ev.key === "ArrowLeft" ? -distance : ev.key === "ArrowRight" ? distance : 0,
+                ev.key === "ArrowUp" ? -distance : ev.key === "ArrowDown" ? distance : 0);
+  }
+  else if (ev.key === "+" || ev.key === "=") {
+    takeCameraControl(true); zoomAt(1.35);
+  }
+  else if (ev.key === "-" || ev.key === "_") {
+    takeCameraControl(true); zoomAt(1 / 1.35);
+  }
+  else if (ev.key.toLowerCase() === "q") orbitCamera(-Math.PI / 12, 0);
+  else if (ev.key.toLowerCase() === "e") orbitCamera(Math.PI / 12, 0);
+  else if (ev.key.toLowerCase() === "r") orbitCamera(-cam.rot, DEFAULT_YS - cinematicYS);
   else if (ev.key.toLowerCase() === "f") togglePanel();
 });
 document.addEventListener("keyup", ev => {
   if (ev.key !== "Alt") return;
   ev.preventDefault();
-  if (altTap) { setRot(0); draw(); drawMini(); }  // tap = back to north-up
+  if (altTap) {
+    setRot(0);
+    if (VIEW === "cinematic") setTilt(DEFAULT_YS);
+    draw(); drawMini();
+  }
   altTap = false;
 });
 document.getElementById("endturn").onclick = () => { sel = null; send({type: "end_turn"}); };
@@ -5592,7 +7365,13 @@ document.getElementById("autoplaybtn").onclick = ev => autoplay(ev.shiftKey ? 10
 document.getElementById("tradebtn").onclick = () => openTrade();
 document.getElementById("paneltoggle").onclick = () => togglePanel();
 document.getElementById("specdirector").onclick = () => setDirector(!DIRECTOR);
+document.getElementById("cinema-director").onclick = () => setDirector(!DIRECTOR);
+document.getElementById("cinema-audio").onclick = () => setCinemaAudio(!CINEMA_AUDIO);
+document.getElementById("cinema-fullscreen").onclick = toggleCinemaFullscreen;
+document.getElementById("cinema-exit").onclick = () => setCinemaMode(false);
+document.getElementById("speccinema").onclick = toggleCinemaMode;
 updateDirectorButton();
+updateCinemaAudioButton();
 document.getElementById("specpause").onclick = () => {
   specPaused = !specPaused;
   document.getElementById("specpause").textContent =
@@ -5639,22 +7418,29 @@ let newSimulationBusy = false;
 function newSimulationPayload() {
   const np = +document.getElementById("np").value;
   const gameMode = document.getElementById("gamemode").value;
+  const gameProfile = document.getElementById("game-profile").value;
   const mapScript = document.getElementById("maptype").value;
-  const gameSpeed = document.getElementById("gamespeed").value;
+  const gameSpeed = selectedGameSpeed();
+  const disasterIntensity = +document.getElementById("disaster-intensity").value;
   const victoryConditions = Object.fromEntries(VICTORY_TRACKS.map(track =>
     [track.id, document.getElementById(`victory-${track.id}`).checked]));
-  return {num_players: np, map_script: mapScript, game_speed: gameSpeed,
+  return {num_players: np, game_profile: gameProfile,
+          map_script: mapScript, game_speed: gameSpeed,
+          disaster_intensity: disasterIntensity,
           victory_conditions: victoryConditions,
           seed: Math.floor(Math.random() * 1e9), force: true,
           spectate: gameMode === "ai_sim"};
 }
 function restoreDefaultSimulationSettings() {
   document.getElementById("gamemode").value = "ai_sim";
+  document.getElementById("game-profile").value = "civ6-tournament";
   document.getElementById("np").value = "4";
   document.getElementById("maptype").value = "pangaea";
-  document.getElementById("gamespeed").value = "online";
+  setGameSpeed("online");
+  document.getElementById("disaster-intensity").value = "2";
   for (const track of VICTORY_TRACKS)
     document.getElementById(`victory-${track.id}`).checked = true;
+  syncGameProfileNote();
 }
 function setNewSimulationBusy(busy) {
   newSimulationBusy = busy;
@@ -5668,7 +7454,7 @@ function showNewSimulationError(error) {
   errEl.style.display = "block";
   setTimeout(() => errEl.style.display = "none", 4000);
 }
-async function startNewSimulation(mode) {
+async function startNewSimulation(mode, useDefaults = false) {
   if (newSimulationBusy) return;
   const supervised = !!(state && state.supervised);
   if (mode === "fresh_code" && !supervised) {
@@ -5678,6 +7464,7 @@ async function startNewSimulation(mode) {
   const wasPaused = specPaused;
   setNewSimulationBusy(true);
   try {
+    if (useDefaults) restoreDefaultSimulationSettings();
     const payload = newSimulationPayload();
     sel = null; selCity = null;
     clearTimeout(specTimer);
@@ -5693,7 +7480,7 @@ async function startNewSimulation(mode) {
       if (requested.error) throw new Error(requested.error);
       const respawn = document.getElementById("respawn");
       if (respawn) respawn.textContent = mode === "fresh_code"
-        ? "getting fresh code · rebuilding · starting new sim"
+        ? `getting most recent build · starting new sim · ${useDefaults ? "default" : "same"} settings`
         : "restarting sim on existing code";
       waitForSupervisedSuccessor(finishedInstance, finishedSeed);
       return;
@@ -5720,16 +7507,25 @@ async function startNewSimulation(mode) {
     showNewSimulationError(error);
   }
 }
-document.getElementById("default-settings").onclick = restoreDefaultSimulationSettings;
+document.getElementById("game-profile").onchange = applyGameProfileDefaults;
+document.getElementById("gamespeed").onchange = syncGameSpeedNote;
 document.getElementById("restart-sim").onclick = () => startNewSimulation("restart");
 document.getElementById("fresh-sim").onclick = () => startNewSimulation("fresh_code");
+document.getElementById("default-settings").onclick = () => startNewSimulation("fresh_code", true);
 {
   const vs = document.getElementById("viewsel");
   vs.value = VIEW;
   vs.onchange = () => {
     VIEW = vs.value; localStorage.setItem("civvis-view", VIEW);
-    if (state) draw();
+    syncTiltForView();
+    applyCinemaMode();
+    if (state) { draw(); drawMini(); }
   };
+}
+{
+  const cinema = document.getElementById("cinemachk");
+  cinema.checked = CINEMA;
+  cinema.onchange = () => setCinemaMode(cinema.checked);
 }
 {
   const ys = document.getElementById("yieldchk");
@@ -5751,6 +7547,7 @@ document.getElementById("fresh-sim").onclick = () => startNewSimulation("fresh_c
 }
 
 setRot(parseFloat(localStorage.getItem("civvis-rot") || "0"));
+setTilt(parseFloat(localStorage.getItem("civvis-tilt") || String(DEFAULT_YS)));
 if (window.matchMedia("(max-width: 720px)").matches) togglePanel(true);
 resize();
 boot();
@@ -5762,12 +7559,18 @@ let lastIdleDraw = 0;
 function animTick(now) {
   requestAnimationFrame(animTick);
   if (!state) return;
-  const active = anim.moves.size > 0 || anim.floats.length > 0 ||
+  updateDirectorStory(now);
+  const userCameraMoving = advanceUserCameraMotion(now);
+  const followCameraMoving = advanceCameraFollow(now);
+  const directorCameraMoving = advanceDirector(now);
+  const cameraMoving = userCameraMoving || followCameraMoving || directorCameraMoving;
+  const active = cameraMoving || anim.moves.size > 0 || anim.floats.length > 0 ||
     anim.sparks.length > 0 || anim.deaths.length > 0 || anim.strike;
   const cadence = active ? (SPEC ? 32 : 16) : 90;
   if ((active || VIEW === "cinematic") && now - lastIdleDraw > cadence) {
     lastIdleDraw = now;
     draw();
+    if (cameraMoving && !cinemaActive()) drawMini();
   }
 }
 requestAnimationFrame(animTick);

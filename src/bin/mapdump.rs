@@ -108,7 +108,7 @@ fn main() {
                     .iter()
                     .enumerate()
                     .filter(|(other, _)| *other != index)
-                    .map(|(_, other)| hex::wdistance(*start, *other, world.width))
+                    .map(|(_, other)| world.distance(*start, *other))
                     .min()
                     .unwrap_or(0)
             })
@@ -174,16 +174,19 @@ fn main() {
                     continue;
                 }
                 total += 1;
-                let neighbors = hex::neighbors(*pos)
+                let neighbors = world
+                    .neighbors(*pos)
                     .into_iter()
-                    .map(|neighbor| hex::canon(neighbor, world.width))
                     .filter(|neighbor| world.get(*neighbor).is_some_and(matches))
                     .count();
                 if neighbors >= 2 {
                     clustered += 1;
                 }
             }
-            println!("{kind}: {total} tiles, {}% in clusters", share(clustered, total));
+            println!(
+                "{kind}: {total} tiles, {}% in clusters",
+                share(clustered, total)
+            );
         }
     }
 }

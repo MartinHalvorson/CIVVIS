@@ -164,7 +164,11 @@ mod tests {
         strategic.horizon = 4;
         strategic.next_review = 0;
         let first = strategic.review(&g, 0);
-        assert_eq!(first, strategic.review(&g, 0), "review must be deterministic");
+        assert_eq!(
+            first,
+            strategic.review(&g, 0),
+            "review must be deterministic"
+        );
         assert_eq!(strategic.current_target(), None);
         strategic.take_turn(&mut g, 0);
         assert_eq!(strategic.current_target(), Some(first));

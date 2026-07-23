@@ -4,9 +4,9 @@
 use std::collections::BTreeMap;
 
 use crate::ai::{run_game, AdvancedAi, Ai, BasicAi, RandomAi};
-use crate::game::Game;
+use crate::game::{Game, GameOptions, TournamentPreset};
 use crate::rng::Rng;
-use crate::setup::MapSize;
+use crate::setup::{GameProfile, MapSize};
 
 pub const BUILTIN_AIS: [&str; 9] = [
     "advanced",
@@ -111,6 +111,8 @@ pub struct TourneyCfg {
     pub seed: u64,
     pub k: f64,
     pub verbose: bool,
+    pub game_profile: GameProfile,
+    pub tournament_preset: Option<TournamentPreset>,
 }
 
 impl Default for TourneyCfg {
@@ -126,6 +128,8 @@ impl Default for TourneyCfg {
             seed: 0,
             k: 24.0,
             verbose: true,
+            game_profile: GameProfile::Civ65,
+            tournament_preset: None,
         }
     }
 }
@@ -147,14 +151,23 @@ where
             let i = rng.below(cfg.players_per_game);
             seats[i] = others[rng.below(others.len())].clone();
         }
-        let mut game = Game::new(
-            cfg.players_per_game,
-            cfg.width,
-            cfg.height,
-            gseed,
-            cfg.max_turns,
-            cfg.num_city_states,
-        );
+        let mut game = Game::new_with(GameOptions {
+            game_profile: cfg.game_profile,
+            tournament_preset: cfg.tournament_preset,
+            speed: if cfg.tournament_preset.is_some() {
+                "online".to_string()
+            } else {
+                crate::game::default_speed()
+            },
+            ..GameOptions::new(
+                cfg.players_per_game,
+                cfg.width,
+                cfg.height,
+                gseed,
+                cfg.max_turns,
+                cfg.num_city_states,
+            )
+        });
         let mut ais: Vec<Box<dyn Ai>> = game
             .players
             .iter()

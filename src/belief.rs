@@ -78,9 +78,8 @@ impl BeliefState {
             !vis.contains(&sighting.pos)
         });
         // Dead units stay remembered only until their last tile is seen.
-        self.units.retain(|id, sighting| {
-            g.units.contains_key(id) || !vis.contains(&sighting.pos)
-        });
+        self.units
+            .retain(|id, sighting| g.units.contains_key(id) || !vis.contains(&sighting.pos));
 
         for city in g.cities.values() {
             if city.owner == pid || !vis.contains(&city.pos) {
@@ -98,7 +97,14 @@ impl BeliefState {
     /// Remembered enemy strength near a tile, discounted by staleness so a
     /// twenty-turn-old sighting counts for little. `horizon` is the number
     /// of turns after which a memory is worthless.
-    pub fn remembered_threat(&self, g: &Game, pid: usize, at: Pos, radius: i32, horizon: u32) -> f64 {
+    pub fn remembered_threat(
+        &self,
+        g: &Game,
+        pid: usize,
+        at: Pos,
+        radius: i32,
+        horizon: u32,
+    ) -> f64 {
         self.units
             .values()
             .filter(|s| s.owner != pid && g.is_at_war(pid, s.owner))
@@ -158,7 +164,9 @@ mod tests {
             .copied()
             .find(|p| {
                 g.wdist(*p, home) > 10
-                    && g.map.get(*p).is_some_and(|t| g.rules.is_passable(t) && !g.rules.is_water(t))
+                    && g.map
+                        .get(*p)
+                        .is_some_and(|t| g.rules.is_passable(t) && !g.rules.is_water(t))
             })
             .expect("a frontier tile");
         let scout = g.spawn_test_unit("scout", 0, frontier);
@@ -188,7 +196,10 @@ mod tests {
         belief.observe(&g, 0);
 
         let remembered = belief.units.get(&enemy).expect("memory survives the fog");
-        assert_eq!(remembered.pos, enemy_tile, "memory holds the LAST KNOWN tile");
+        assert_eq!(
+            remembered.pos, enemy_tile,
+            "memory holds the LAST KNOWN tile"
+        );
         assert_eq!(belief.staleness(remembered), 5);
         assert_eq!(belief.unseen_sightings(&g, 0).len(), 1);
     }
