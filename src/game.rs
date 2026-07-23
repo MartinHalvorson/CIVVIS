@@ -938,6 +938,48 @@ mod belief_runtime_tests {
     }
 
     #[test]
+    fn great_work_pieces_track_counters_through_grants_moves_and_deals() {
+        let (mut game, _cities) = game_with_capitals(91_803);
+        let tally = |game: &Game, pid: usize, kind: &str| {
+            let counted = game.players[pid]
+                .counters
+                .get(&format!("great_work:{kind}"))
+                .copied()
+                .unwrap_or(0);
+            let pieces = game.players[pid]
+                .great_work_pieces
+                .iter()
+                .filter(|piece| piece.kind == kind)
+                .count() as i64;
+            (counted, pieces)
+        };
+
+        // A named writer leaves two signed, era-stamped works.
+        let homer = game.rules.great_people["homer"].clone();
+        game.named_great_person_effect(0, &homer);
+        assert_eq!(tally(&game, 0, "writing"), (2, 2));
+        assert!(game.players[0]
+            .great_work_pieces
+            .iter()
+            .all(|piece| piece.creator == "Homer" && piece.era == homer.era));
+
+        // A dig raises an artifact from a past era.
+        game.world_era = 3;
+        game.grant_great_work(0, "artifact", 1, "antiquity");
+        assert_eq!(tally(&game, 0, "artifact"), (1, 1));
+
+        // Deals and thefts move the piece with the counter.
+        let items = DealItems {
+            great_works: BTreeMap::from([("writing".to_string(), 1)]),
+            ..Default::default()
+        };
+        game.transfer_great_work_items(0, 1, &items);
+        assert_eq!(tally(&game, 0, "writing"), (1, 1));
+        assert_eq!(tally(&game, 1, "writing"), (1, 1));
+        assert_eq!(game.players[1].great_work_pieces[0].creator, "Homer");
+    }
+
+    #[test]
     fn wmd_strikes_launch_from_range_consume_devices_and_leave_fallout() {
         let (mut game, cities) = game_with_capitals(91_802);
         let (launch, struck) = (cities[0], cities[1]);
@@ -6659,6 +6701,15 @@ pub fn damage(att: f64, def: f64, rng: &mut Rng) -> i32 {
     (d.round() as i32).clamp(1, 100)
 }
 
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+pub struct GreatWorkPiece {
+    pub kind: String,
+    /// The era the work was created in (for artifacts, the era dug up).
+    pub era: usize,
+    /// The creating Great Person, or a source tag for relics and artifacts.
+    pub creator: String,
+}
+
 fn pair(a: usize, b: usize) -> (usize, usize) {
     (a.min(b), a.max(b))
 }
@@ -7563,6 +7614,10 @@ pub struct Player {
     pub envoys: Vec<(usize, i64)>, // (city-state pid, envoys placed)
     #[serde(default)]
     pub counters: BTreeMap<String, i64>,
+    /// Every great work as an object with its creating era and creator, kept
+    /// in lockstep with the ``great_work:*`` counters. Theming reads these.
+    #[serde(default)]
+    pub great_work_pieces: Vec<GreatWorkPiece>,
     #[serde(default)]
     pub boosted_techs: BTreeSet<String>,
     #[serde(default)]
@@ -7638,6 +7693,7 @@ impl Player {
             exoplanet_distance: 0.0,
             envoys: Vec::new(),
             counters: BTreeMap::new(),
+            great_work_pieces: Vec::new(),
             boosted_techs: BTreeSet::new(),
             boosted_civics: BTreeSet::new(),
         }
@@ -9261,10 +9317,10 @@ impl Game {
                 "tech_boosts" => self.grant_random_boosts(owner, *amount as usize, true),
                 "techs" => self.complete_random_nodes(owner, *amount as usize, true),
                 "relic" => {
-                    *self.players[owner]
-                        .counters
-                        .entry("great_work:relic".to_string())
-                        .or_insert(0) += *amount as i64;
+                    for _ in 0..*amount as usize {
+                        let era = self.world_era;
+                        self.grant_great_work(owner, "relic", era, "tribal_village");
+                    }
                 }
                 "experience" => self.award_xp(uid, *amount),
                 "heal" => {
@@ -10509,12 +10565,7 @@ impl Game {
         let Some(kind) = kind else {
             return;
         };
-        let key = format!("great_work:{kind}");
-        *self.players[defender]
-            .counters
-            .entry(key.clone())
-            .or_insert(0) -= 1;
-        *self.players[attacker].counters.entry(key).or_insert(0) += 1;
+        self.move_great_work(defender, attacker, kind);
     }
 
     fn spawn_partisans(&mut self, cid: u32) {
@@ -11729,10 +11780,8 @@ impl Game {
         let defender_dead = self.units[&defender_id].hp <= 0;
         if defender_dead {
             if self.promotion_effect(&defender, "relic_on_death") > 0.0 {
-                *self.players[defender.owner]
-                    .counters
-                    .entry("great_work:relic".to_string())
-                    .or_insert(0) += 1;
+                let (owner, era) = (defender.owner, self.world_era);
+                self.grant_great_work(owner, "relic", era, "martyr");
             }
             self.remove_unit(defender_id);
             self.religious_combat_pressure(
@@ -11745,10 +11794,8 @@ impl Game {
         }
         if attacker_dead {
             if self.promotion_effect(&attacker, "relic_on_death") > 0.0 {
-                *self.players[attacker.owner]
-                    .counters
-                    .entry("great_work:relic".to_string())
-                    .or_insert(0) += 1;
+                let (owner, era) = (attacker.owner, self.world_era);
+                self.grant_great_work(owner, "relic", era, "martyr");
             }
             self.remove_unit(uid);
             self.religious_combat_pressure(
@@ -12980,16 +13027,15 @@ impl Game {
                 self.cities.get_mut(&city).unwrap().production += amount * multiplier;
             }
         }
-        for (effect, counter) in [
-            ("great_work_writing", "great_work:writing"),
-            ("great_work_art", "great_work:art"),
-            ("great_work_music", "great_work:music"),
+        for (effect, kind) in [
+            ("great_work_writing", "writing"),
+            ("great_work_art", "art"),
+            ("great_work_music", "music"),
         ] {
-            if let Some(amount) = spec.effects.get(effect) {
-                *self.players[pid]
-                    .counters
-                    .entry(counter.to_string())
-                    .or_insert(0) += *amount as i64;
+            if let Some(amount) = spec.effects.get(effect).copied() {
+                for _ in 0..amount as usize {
+                    self.grant_great_work(pid, kind, spec.era, &spec.name);
+                }
             }
         }
         // The existing class effects cover Prophets and military people and
@@ -17340,10 +17386,8 @@ impl Game {
                 .any(|other| other.id != pid && other.discovered_natural_wonders.contains(&wonder));
             self.add_era_score(pid, if first { 3 } else { 1 });
             if self.grants_city_state_unique_bonus(pid, "Kandy") {
-                *self.players[pid]
-                    .counters
-                    .entry("great_work:relic".to_string())
-                    .or_insert(0) += 1;
+                let era = self.world_era;
+                self.grant_great_work(pid, "relic", era, "kandy");
             }
         }
     }
@@ -25397,10 +25441,9 @@ impl Game {
         mu.acted = true;
         bump(&mut self.players[pid], "improvements");
         if excavates_artifact {
-            *self.players[pid]
-                .counters
-                .entry("great_work:artifact".to_string())
-                .or_insert(0) += 1;
+            // A dig raises something from a past era.
+            let era = self.rng.below(self.world_era.max(1));
+            self.grant_great_work(pid, "artifact", era, "antiquity");
         }
         if self.units[&uid].charges <= 0 {
             self.remove_unit(uid);
@@ -28894,9 +28937,9 @@ impl Game {
 
     fn transfer_great_work_items(&mut self, payer: usize, receiver: usize, items: &DealItems) {
         for (kind, amount) in &items.great_works {
-            let key = format!("great_work:{kind}");
-            *self.players[payer].counters.entry(key.clone()).or_insert(0) -= *amount as i64;
-            *self.players[receiver].counters.entry(key).or_insert(0) += *amount as i64;
+            for _ in 0..*amount {
+                self.move_great_work(payer, receiver, kind);
+            }
         }
     }
 
@@ -32404,6 +32447,36 @@ impl Game {
                     .is_some_and(|tile| !tile.pillaged && want(tile))
             })
             .count() as i64
+    }
+
+    /// Create a great work: the counter the yield model reads and the piece
+    /// object theming reads move together.
+    pub(crate) fn grant_great_work(&mut self, pid: usize, kind: &str, era: usize, creator: &str) {
+        *self.players[pid]
+            .counters
+            .entry(format!("great_work:{kind}"))
+            .or_insert(0) += 1;
+        self.players[pid].great_work_pieces.push(GreatWorkPiece {
+            kind: kind.to_string(),
+            era,
+            creator: creator.to_string(),
+        });
+    }
+
+    /// Move one work of a kind between players (spy theft, trade deals),
+    /// newest piece first, counters and pieces in lockstep.
+    fn move_great_work(&mut self, from: usize, to: usize, kind: &str) {
+        let key = format!("great_work:{kind}");
+        *self.players[from].counters.entry(key.clone()).or_insert(0) -= 1;
+        *self.players[to].counters.entry(key).or_insert(0) += 1;
+        if let Some(index) = self.players[from]
+            .great_work_pieces
+            .iter()
+            .rposition(|piece| piece.kind == kind)
+        {
+            let piece = self.players[from].great_work_pieces.remove(index);
+            self.players[to].great_work_pieces.push(piece);
+        }
     }
 
     /// Record a combat kill with the detail the Eureka triggers ask about:
