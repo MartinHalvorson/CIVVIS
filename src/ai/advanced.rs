@@ -1572,20 +1572,18 @@ impl AdvancedAi {
 
     fn tech_leads_to(&self, g: &Game, candidate: &str, target: &str) -> bool {
         candidate == target
-            || g.rules.techs.get(target).is_some_and(|spec| {
-                spec.requires
-                    .iter()
-                    .any(|parent| self.tech_leads_to(g, candidate, parent))
-            })
+            || g.rules
+                .tech_ancestors
+                .get(target)
+                .is_some_and(|ancestors| ancestors.contains(candidate))
     }
 
     fn civic_leads_to(&self, g: &Game, candidate: &str, target: &str) -> bool {
         candidate == target
-            || g.rules.civics.get(target).is_some_and(|spec| {
-                spec.requires
-                    .iter()
-                    .any(|parent| self.civic_leads_to(g, candidate, parent))
-            })
+            || g.rules
+                .civic_ancestors
+                .get(target)
+                .is_some_and(|ancestors| ancestors.contains(candidate))
     }
 
     fn advanced_secret_society(&self, g: &mut Game, pid: usize, strategy: GrandStrategy) {

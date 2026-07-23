@@ -2,7 +2,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::specmap::SpecMap;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, OnceLock};
 
 fn default_true() -> bool {
@@ -877,6 +877,34 @@ pub struct Rules {
     /// the order it always was.
     pub tech_effects: SpecMap<Vec<(String, f64)>>,
     pub civic_effects: SpecMap<Vec<(String, f64)>>,
+    /// Every node a given node depends on, however far back.
+    ///
+    /// Asking whether one technology leads to another used to walk the
+    /// prerequisite graph from the target every time, re-exploring nodes that
+    /// several paths reach. The closure is taken once instead.
+    pub tech_ancestors: SpecMap<BTreeSet<String>>,
+    pub civic_ancestors: SpecMap<BTreeSet<String>>,
+}
+
+/// The transitive prerequisites of every node in a tree.
+fn ancestry(nodes: &SpecMap<TechSpec>) -> SpecMap<BTreeSet<String>> {
+    let mut ancestry: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for (name, spec) in nodes.iter() {
+        let mut reached: BTreeSet<String> = BTreeSet::new();
+        let mut pending: Vec<&str> = spec.requires.iter().map(String::as_str).collect();
+        while let Some(node) = pending.pop() {
+            // A node several paths reach is only followed once, which is also
+            // what keeps a malformed cyclic tree from spinning here.
+            if !reached.insert(node.to_string()) {
+                continue;
+            }
+            if let Some(parent) = nodes.get(node) {
+                pending.extend(parent.requires.iter().map(String::as_str));
+            }
+        }
+        ancestry.insert(name.clone(), reached);
+    }
+    SpecMap::from(ancestry)
 }
 
 /// Invert a tree's per-node effect tables into per-effect node lists.
@@ -1045,6 +1073,8 @@ impl Rules {
             wmds: take(&mut files, "wmds")?,
             tech_effects: SpecMap::default(),
             civic_effects: SpecMap::default(),
+            tech_ancestors: SpecMap::default(),
+            civic_ancestors: SpecMap::default(),
         };
         let effects: TreeEffectsData = take(&mut files, "tree_effects")?;
         for (node, values) in effects.techs {
@@ -1064,6 +1094,8 @@ impl Rules {
         rules.index_tree_unlocks();
         rules.tech_effects = effect_sources(&rules.techs);
         rules.civic_effects = effect_sources(&rules.civics);
+        rules.tech_ancestors = ancestry(&rules.techs);
+        rules.civic_ancestors = ancestry(&rules.civics);
         Ok(rules)
     }
 

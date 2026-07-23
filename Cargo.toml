@@ -20,4 +20,6 @@ serde_json = "1"
 
 [profile.release]
 lto = "thin"
-codegen-units = 16
+# One codegen unit is worth about four percent of simulation throughput.
+# Full LTO on top of it measured no further gain and only cost build time.
+codegen-units = 1
