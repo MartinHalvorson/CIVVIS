@@ -471,7 +471,8 @@
   kbd { display: inline-grid; min-width: 19px; height: 18px; place-items: center; margin-right: 5px; padding: 0 4px; border-radius: 5px; color: #cbd5d0; background: #091310; border: 1px solid #354c44; box-shadow: inset 0 -1px #000; font: 700 8px Inter, sans-serif; }
   #newgame-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: end; }
   #newgame-options button { margin: 0; height: 34px; }
-  .sim-actions { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .sim-actions { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .sim-actions button { min-height: 34px; height: auto; padding-inline: 7px; }
   .victory-options { grid-column: 1 / -1; padding: 9px 10px 10px; border: 1px solid var(--line-soft); border-radius: 9px; background: #09131080; }
   .victory-options h2 { margin-bottom: 8px; }
   .victory-option-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px 9px; }
@@ -773,7 +774,8 @@
           </div>
         </div>
         <div class="sim-actions">
-          <button id="restart-sim">Restart sim</button>
+          <button id="default-settings" title="Restore the stock simulation setup">Default settings</button>
+          <button id="restart-sim">Restart sim · existing settings</button>
           <button id="fresh-sim" title="Get the latest code, rebuild, and start a new simulation">New sim · fresh code</button>
         </div>
       </div>
@@ -1234,8 +1236,11 @@ const mini = document.getElementById("mini"), mx2 = mini.getContext("2d");
 const area = document.getElementById("maparea");
 let DPR = window.devicePixelRatio || 1;
 
-const YS = 0.80;        // vertical squash: tilted-camera dimetric projection
-const SKIRT = 9;        // extra prism depth below each tile
+// Keep enough vertical squash for the raised-board perspective, but leave the
+// six-sided top face close to its natural proportions. At 0.80 the shoulders
+// collapsed and isolated terrain read more like a short rectangular block.
+const YS = 0.92;
+const SKIRT = 6;        // restrained prism depth keeps the hex face dominant
 function key(p) { return p[0] + "," + p[1]; }
 function pcol(id) {
   const p = state.players[id];
@@ -3125,11 +3130,15 @@ function draw() {
     cx.fill();
     if (beau) {
       drawTerrainTexture(t, x, y);
+      // A fine two-tone rim keeps all six shoulders readable over photographic
+      // materials. The inset highlight suggests a bevel without turning the
+      // terrain into a heavy board-game grid.
       hexPath(x, y, S + 0.15);
-      // Water keeps only a whisper of grid — enough to aim a ship at a hex,
-      // not enough to chop the open sea back into tiles.
-      cx.strokeStyle = water ? "#a8e4ef0e" : "#fff8dc12";
-      cx.lineWidth = 0.85; cx.stroke();
+      cx.strokeStyle = water ? "#bdefff28" : "#241d1245";
+      cx.lineWidth = 1.05; cx.stroke();
+      hexPath(x, y, S - 1.15);
+      cx.strokeStyle = water ? "#d9f8ff16" : "#fff3cc24";
+      cx.lineWidth = 0.65; cx.stroke();
     }
     if (beau && water) { // specular glints over the photographic swell
       const ph = hash2(t.pos[0], t.pos[1]);
@@ -5504,8 +5513,17 @@ function newSimulationPayload() {
           seed: Math.floor(Math.random() * 1e9), force: true,
           spectate: gameMode === "ai_sim"};
 }
+function restoreDefaultSimulationSettings() {
+  document.getElementById("gamemode").value = "ai_sim";
+  document.getElementById("np").value = "4";
+  document.getElementById("maptype").value = "pangaea";
+  document.getElementById("gamespeed").value = "online";
+  for (const track of VICTORY_TRACKS)
+    document.getElementById(`victory-${track.id}`).checked = true;
+}
 function setNewSimulationBusy(busy) {
   newSimulationBusy = busy;
+  document.getElementById("default-settings").disabled = busy;
   document.getElementById("restart-sim").disabled = busy;
   document.getElementById("fresh-sim").disabled = busy;
 }
@@ -5567,6 +5585,7 @@ async function startNewSimulation(mode) {
     showNewSimulationError(error);
   }
 }
+document.getElementById("default-settings").onclick = restoreDefaultSimulationSettings;
 document.getElementById("restart-sim").onclick = () => startNewSimulation("restart");
 document.getElementById("fresh-sim").onclick = () => startNewSimulation("fresh_code");
 {

@@ -569,7 +569,7 @@ def quarantine_checkpoint(path: Path) -> None:
 
 
 def session_settings(state: dict[str, Any], defaults: dict[str, Any]) -> dict[str, Any]:
-    """Carry the just-finished game's size forward to the next binary."""
+    """Carry the just-finished game's setup forward to the next binary."""
     players = state.get("players") or []
     majors = sum(
         1
@@ -582,7 +582,7 @@ def session_settings(state: dict[str, Any], defaults: dict[str, Any]) -> dict[st
         if player.get("is_minor", False) and not player.get("is_barbarian", False)
     )
     game_map = state.get("map") or {}
-    return {
+    settings = {
         "players": majors or defaults["players"],
         "width": int(game_map.get("width") or defaults["width"]),
         "height": int(game_map.get("height") or defaults["height"]),
@@ -591,6 +591,23 @@ def session_settings(state: dict[str, Any], defaults: dict[str, Any]) -> dict[st
         "map": game_map.get("script") or defaults["map"],
         "speed": state.get("game_speed") or defaults["speed"],
     }
+    victory_conditions = state.get("victory_conditions")
+    if isinstance(victory_conditions, dict):
+        settings["victories"] = [
+            name
+            for name in (
+                "science",
+                "culture",
+                "religious",
+                "diplomatic",
+                "domination",
+                "score",
+            )
+            if victory_conditions.get(name) is True
+        ]
+    elif "victories" in defaults:
+        settings["victories"] = list(defaults["victories"])
+    return settings
 
 
 def manual_new_game_request(

@@ -1803,10 +1803,18 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("Single player · later"));
         assert!(EMBEDDED_INDEX.contains("Multiplayer · later"));
         assert!(EMBEDDED_INDEX.contains("class=\"sim-actions\""));
-        assert!(EMBEDDED_INDEX.contains("id=\"restart-sim\">Restart sim"));
+        assert!(EMBEDDED_INDEX.contains("id=\"default-settings\""));
+        assert!(EMBEDDED_INDEX.contains("Default settings"));
+        assert!(EMBEDDED_INDEX.contains(
+            "id=\"restart-sim\">Restart sim · existing settings"
+        ));
         assert!(EMBEDDED_INDEX.contains("id=\"fresh-sim\""));
         assert!(EMBEDDED_INDEX.contains("New sim · fresh code"));
         assert!(EMBEDDED_INDEX.contains("async function startNewSimulation(mode)"));
+        assert!(EMBEDDED_INDEX.contains("function restoreDefaultSimulationSettings()"));
+        assert!(EMBEDDED_INDEX.contains(
+            "document.getElementById(\"default-settings\").onclick = restoreDefaultSimulationSettings"
+        ));
         assert!(EMBEDDED_INDEX.contains("startNewSimulation(\"restart\")"));
         assert!(EMBEDDED_INDEX.contains("startNewSimulation(\"fresh_code\")"));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/supervisor-new\""));

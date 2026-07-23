@@ -124,6 +124,14 @@ class SessionSettingsTests(unittest.TestCase):
             "map": {"width": 44, "height": 26, "script": "continents"},
             "game_speed": "online",
             "max_turns": 250,
+            "victory_conditions": {
+                "science": True,
+                "culture": True,
+                "religious": False,
+                "diplomatic": False,
+                "domination": True,
+                "score": True,
+            },
         }
         defaults = {
             "players": 4,
@@ -137,7 +145,8 @@ class SessionSettingsTests(unittest.TestCase):
         self.assertEqual(
             supervisor.session_settings(state, defaults),
             {"players": 2, "width": 44, "height": 26, "city_states": 1,
-             "turns": 250, "map": "continents", "speed": "online"},
+             "turns": 250, "map": "continents", "speed": "online",
+             "victories": ["science", "culture", "domination", "score"]},
         )
 
     def test_empty_state_uses_defaults(self):
@@ -151,6 +160,22 @@ class SessionSettingsTests(unittest.TestCase):
             "speed": "standard",
         }
         self.assertEqual(supervisor.session_settings({}, defaults), defaults)
+
+    def test_missing_live_victory_settings_keep_previous_selection(self):
+        defaults = {
+            "players": 4,
+            "width": 60,
+            "height": 38,
+            "city_states": 6,
+            "turns": 250,
+            "map": "pangaea",
+            "speed": "online",
+            "victories": ["science", "culture", "domination", "score"],
+        }
+        self.assertEqual(
+            supervisor.session_settings({}, defaults)["victories"],
+            ["science", "culture", "domination", "score"],
+        )
 
     def test_manual_new_game_request_keeps_normalized_settings_and_rejects_stale_instances(self):
         request = {
