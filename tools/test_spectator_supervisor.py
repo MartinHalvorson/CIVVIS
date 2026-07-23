@@ -753,6 +753,25 @@ class RecoveryTests(unittest.TestCase):
     def test_late_game_checkpoints_allow_slow_serialization(self):
         self.assertEqual(supervisor.capture_checkpoint.__defaults__, (30.0,))
 
+    def test_pause_restoration_posts_the_explicit_state(self):
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return b'{"paused":true,"spectator_paused":true}'
+
+        with patch.object(supervisor, "urlopen", return_value=Response()) as request:
+            state = supervisor.set_spectator_pause(8766, True)
+
+        self.assertTrue(state["spectator_paused"])
+        posted = request.call_args.args[0]
+        self.assertEqual(posted.full_url, "http://127.0.0.1:8766/pace")
+        self.assertEqual(json.loads(posted.data), {"paused": True})
+
     def test_progress_marker_tracks_player_steps_within_a_turn(self):
         first = {"seed": 7, "turn": 12, "current": 1, "winner": None}
         stepped = {**first, "current": 2}

@@ -460,6 +460,24 @@ def read_state(port: int, timeout: float = 1.0) -> dict[str, Any] | None:
     return read_json(port, "/state", timeout)
 
 
+def set_spectator_pause(
+    port: int, paused: bool, timeout: float = 5.0
+) -> dict[str, Any] | None:
+    """Restore the viewer's explicit pause after replacing a server process."""
+    try:
+        request = Request(
+            f"http://127.0.0.1:{port}/pace",
+            data=json.dumps({"paused": paused}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(request, timeout=timeout) as response:
+            value = json.load(response)
+            return value if isinstance(value, dict) else None
+    except (OSError, URLError, ValueError):
+        return None
+
+
 def step_spectator(port: int, timeout: float = 5.0) -> dict[str, Any] | None:
     return read_json(port, "/step", timeout, "POST")
 
@@ -1057,7 +1075,9 @@ def main() -> int:
     source_check_at = 0.0
     prebuild_process: subprocess.Popen[str] | None = None
 
-    def launch_recovery(open_browser: bool = False) -> dict[str, Any]:
+    def launch_recovery(
+        open_browser: bool = False, preserve_pause: bool = False
+    ) -> dict[str, Any]:
         nonlocal process, adopted_pid, running_runtime_id
         stop_server(process, adopted_pid)
         process = None
@@ -1092,6 +1112,9 @@ def main() -> int:
             running_runtime_id = launch_runtime_id
             recovered = wait_for_server(args.port, process)
             marker = None
+
+        if preserve_pause:
+            recovered = set_spectator_pause(args.port, True) or recovered
 
         if resumed_checkpoint(recovered, marker):
             log(
@@ -1214,6 +1237,7 @@ def main() -> int:
                 else:
                     log("restart requested; starting a new simulation on existing code")
 
+                preserve_pause = bool(state.get("spectator_paused"))
                 stop_server(process, adopted_pid)
                 process = None
                 adopted_pid = None
@@ -1226,6 +1250,8 @@ def main() -> int:
                 process = start_server(args.port, settings, False)
                 running_runtime_id = launch_runtime_id
                 state = wait_for_server(args.port, process)
+                if preserve_pause:
+                    state = set_spectator_pause(args.port, True) or state
                 unavailable_since = None
                 last_progress = progress_marker(state)
                 progress_at = time.monotonic()
@@ -1295,7 +1321,9 @@ def main() -> int:
                         checkpoint_ready = False
                     if checkpoint_ready:
                         log("fresh runtime is ready; resuming the active game from checkpoint")
-                        state = launch_recovery()
+                        state = launch_recovery(
+                            preserve_pause=bool(state.get("spectator_paused"))
+                        )
                         refresh_pending = False
                         unavailable_since = None
                         busy_reported = False
@@ -1370,7 +1398,10 @@ def main() -> int:
             launch_runtime_id = promoted_runtime_id()
             process = start_server(args.port, settings, False)
             running_runtime_id = launch_runtime_id
+            preserve_pause = bool(state.get("spectator_paused"))
             state = wait_for_server(args.port, process)
+            if preserve_pause:
+                state = set_spectator_pause(args.port, True) or state
             refresh_pending = not latest_ready
             refresh_at = time.monotonic()
             source_check_at = time.monotonic() + max(1.0, args.source_check_interval)
