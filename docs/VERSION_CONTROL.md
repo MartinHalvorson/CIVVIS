@@ -244,8 +244,11 @@ python3 tools/civvis_collab.py enforce-github
 
 For a migration or incident window, run recurring audits into a durable JSONL
 log. The monitor audits every five minutes and prints a heartbeat at least once
-per minute while waiting. It classifies every new `main` commit against
-GitHub's merged-PR record, rejects new legacy branch names, and records a direct
+per minute. It also verifies that every new `main` commit came from a merged PR
+and that both required checks had completed successfully before that merge,
+and that the PR head contained the exact prior `main` tip. This catches both a
+merge that races a still-pending check and one that becomes stale while another
+integration finishes. It rejects new legacy branch names and records a direct
 push or force-push as an error:
 
 ```bash
