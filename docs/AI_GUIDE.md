@@ -309,6 +309,13 @@ Multiplayer games score as pairwise Elo results by final placement
   `width`, `height`, or `num_city_states` fields override individual profile
   values.
 
+An agent that searches spends its time cloning a position and stepping it
+forward, not playing whole games, so `civvis rollouts` times that directly:
+cloning, cloning plus an ordinary move, and cloning plus ending a turn. Ending
+a turn is roughly eight times the cost of a move — it settles every city's
+yields and refreshes every seat's map — so a search that ends turns deep in a
+line costs far more per node than one that does not.
+
 Actions are plain JSON dicts identical to what `legal_actions` returns —
 feed them straight into LLM tool-calling or an RL policy. One process per
 concurrent game; in-process Rust agents remain the fast path for self-play at

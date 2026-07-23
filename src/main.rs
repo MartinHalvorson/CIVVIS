@@ -2,7 +2,7 @@
 use std::collections::BTreeMap;
 use std::time::Instant;
 
-use civvis::ai::{run_game, AdvancedAi};
+use civvis::ai::{run_game, AdvancedAi, Ai};
 use civvis::game::{
     default_difficulty, default_speed, Game, GameOptions, VictoryConditions,
 };
@@ -387,6 +387,73 @@ fn main() {
                 dt,
                 total_turns as f64 / dt
             );
+        }
+        // What an agent that searches actually does: take a position and roll
+        // it forward, over and over. Cloning a position dominates that, and
+        // nothing else here measured it.
+        "rollouts" => {
+            let players = arg(&args, "--players", 6);
+            let warmup = arg(&args, "--turns", 150) as u32;
+            let samples = arg(&args, "--samples", 5000) as usize;
+            let mut g = Game::new_with(game_options(&args, players, arg(&args, "--seed", 0) as u64));
+            let mut ais = AdvancedAi::fleet(&g);
+            // Play in to the requested turn first: an empty map clones far
+            // faster than a settled one, and a settled one is what an agent
+            // searches from.
+            while g.turn < warmup && g.winner.is_none() {
+                let pid = g.current;
+                ais[pid].take_turn(&mut g, pid);
+                if g.winner.is_none() && g.current == pid {
+                    let _ = g.apply(pid, &civvis::game::Action::EndTurn);
+                }
+            }
+            let clone_start = Instant::now();
+            let mut sink = 0usize;
+            for _ in 0..samples {
+                sink += g.clone().units.len();
+            }
+            let clone_us = clone_start.elapsed().as_secs_f64() / samples as f64 * 1e6;
+            // A searching agent mostly applies ordinary moves and only
+            // occasionally ends a turn, and the two cost wildly different
+            // amounts, so both are reported.
+            let seat = g.current;
+            let mut mover = None;
+            for action in g.legal_actions(seat) {
+                if let civvis::game::Action::Move { .. } = action {
+                    mover = Some(action);
+                    break;
+                }
+            }
+            let move_us = mover.as_ref().map(|action| {
+                let start = Instant::now();
+                for _ in 0..samples {
+                    let mut branch = g.clone();
+                    let _ = branch.apply(seat, action);
+                    sink += branch.units.len();
+                }
+                start.elapsed().as_secs_f64() / samples as f64 * 1e6
+            });
+            let end_start = Instant::now();
+            for _ in 0..samples {
+                let mut branch = g.clone();
+                let _ = branch.apply(seat, &civvis::game::Action::EndTurn);
+                sink += branch.units.len();
+            }
+            let end_us = end_start.elapsed().as_secs_f64() / samples as f64 * 1e6;
+            println!(
+                "turn {} · {} seats · {} cities · {} units",
+                g.turn,
+                g.players.len(),
+                g.cities.len(),
+                g.units.len(),
+            );
+            println!("clone            {clone_us:8.1} us  = {:.0}/sec", 1e6 / clone_us);
+            match move_us {
+                Some(us) => println!("clone + move     {us:8.1} us  = {:.0} rollouts/sec", 1e6 / us),
+                None => println!("clone + move          n/a  (no legal move for this seat)"),
+            }
+            println!("clone + end turn {end_us:8.1} us  = {:.0}/sec", 1e6 / end_us);
+            let _ = sink;
         }
         "tournament" => {
             let names: Vec<String> = args

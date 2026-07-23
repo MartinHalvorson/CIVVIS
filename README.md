@@ -130,6 +130,7 @@ at a time.
 ./target/release/civvis simulate --players 4 --seed 42   # AI self-play
 ./target/release/civvis soak --games 20 --turns 150      # many games, flag anomalies
 ./target/release/civvis benchmark --games 100            # turns/sec
+./target/release/civvis rollouts --players 6 --turns 150 # clone+step, for search agents
 ./target/release/civvis tournament --ais advanced,basic --games 40 # Elo ratings
 cargo run --release --bin ai_eval -- advanced basic --pairs 100   # paired seats
 ./target/release/civvis evolve --generations 100 --pop 24 --games 12 \
