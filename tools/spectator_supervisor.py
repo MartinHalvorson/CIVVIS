@@ -25,6 +25,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from typing import Any
 from urllib.error import URLError
@@ -49,10 +50,31 @@ RESULTS_DIR = RUNTIME_BINARY.parent / "results"
 RUNTIME_INPUTS = ("Cargo.toml", "Cargo.lock", "build.rs", "src", "data", "web")
 SYNC_REMOTE = os.environ.get("CIVVIS_SYNC_REMOTE", "origin")
 SYNC_BRANCH = os.environ.get("CIVVIS_SYNC_BRANCH", "main")
+LOG_FILE = Path(
+    os.environ.get("CIVVIS_SPECTATOR_LOG", str(ROOT / "spectator-supervisor.log"))
+).expanduser()
+# A console child - the game server, cargo, git - launched from a windowless
+# parent (pythonw, or a hidden scheduled task) pops its own console window on
+# Windows. CREATE_NO_WINDOW suppresses it so an unattended supervisor never
+# flashes a terminal. Empty, and so a no-op, on every other platform.
+_NO_WINDOW = {"creationflags": 0x08000000} if os.name == "nt" else {}
 
 
 def log(message: str) -> None:
-    print(f"[spectator] {message}", flush=True)
+    line = f"[spectator] {message}"
+    # An unattended supervisor has no console to print to - pythonw discards
+    # stdout, a detached task never had one - so the durable record is a file
+    # keyed off the deploy root. Printing stays best-effort on top of it.
+    try:
+        stamp = datetime.now(timezone.utc).strftime("%m-%d %H:%M:%S")
+        with open(LOG_FILE, "a", encoding="utf-8") as handle:
+            handle.write(f"{stamp} {line}\n")
+    except OSError:
+        pass
+    try:
+        print(line, flush=True)
+    except (OSError, ValueError, AttributeError):
+        pass
 
 
 def updated_supervisor_command(
@@ -124,6 +146,7 @@ def command(
             stderr=subprocess.STDOUT,
             check=check,
             env=environment,
+            **_NO_WINDOW,
         )
     except OSError as error:
         # A missing build tool must fail this build attempt, not terminate the
@@ -418,6 +441,7 @@ def start_background_prebuild() -> subprocess.Popen[str]:
         cwd=ROOT,
         text=True,
         start_new_session=os.name != "nt",
+        **_NO_WINDOW,
     )
 
 
@@ -830,6 +854,7 @@ def start_server(
         server_command(port, settings, open_browser, resume),
         cwd=RUNTIME_BINARY.parent,
         text=True,
+        **_NO_WINDOW,
     )
     detail = f", resuming {resume.name}" if resume is not None else ""
     log(f"started PID {process.pid} on port {port} ({settings['players']} players{detail})")
@@ -1035,10 +1060,52 @@ def parse_victories(value: str) -> list[str]:
     return victories
 
 
+# Lock handles kept open for the process lifetime, one per owned port.
+_INSTANCE_LOCKS: dict[int, Any] = {}
+
+
+def acquire_single_instance(port: int) -> bool:
+    """Best-effort guard: at most one supervisor process per port per machine.
+
+    A scheduled relaunch, or a repeat trigger firing during the brief window
+    when a self-updating supervisor re-execs itself (on Windows os.execv spawns
+    a fresh PID rather than replacing the image, so the launcher can believe the
+    task has ended), must not start a second supervisor that would fight over
+    the same port. Returns False only when a *different* live process already
+    holds it; re-acquiring a port this process already owns is idempotent.
+    """
+    if port in _INSTANCE_LOCKS:
+        return True
+    lock_path = Path(tempfile.gettempdir()) / f"civvis-spectator-{port}.lock"
+    try:
+        handle = open(lock_path, "a+")
+    except OSError:
+        # If the lock file cannot even be created, do not block startup - the
+        # visible game matters more than a theoretical double-launch.
+        return True
+    try:
+        if os.name == "nt":
+            import msvcrt
+
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        return False
+    _INSTANCE_LOCKS[port] = handle
+    return True
+
+
 def main() -> int:
     args = parse_args()
     if getattr(args, "prepare_once", False):
         return 0 if prepare_latest_once() else 1
+    if not acquire_single_instance(args.port):
+        log(f"another supervisor already owns port {args.port}; exiting")
+        return 0
     settings = {
         "players": args.players,
         "width": args.width,

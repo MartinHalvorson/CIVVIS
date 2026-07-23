@@ -858,7 +858,10 @@ class RecoveryTests(unittest.TestCase):
                 self.assertIs(supervisor.start_server(8766, settings, False), process)
 
         popen.assert_called_once_with(
-            [str(runtime), "play"], cwd=runtime.parent, text=True
+            [str(runtime), "play"],
+            cwd=runtime.parent,
+            text=True,
+            **supervisor._NO_WINDOW,
         )
 
     def test_checkpoint_write_is_atomic_and_finished_saves_are_not_resumed(self):
