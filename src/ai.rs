@@ -5370,6 +5370,14 @@ mod tests {
             .find(|id| g.units[id].kind == "settler")
             .unwrap();
         g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        // `new_full` may seed additional roaming barbarians. Remove those so
+        // this helper's fabricated adjacent unit is the only possible target
+        // and the test measures combat judgment rather than map generation.
+        let barbarian = g.barb_pid.unwrap();
+        for unit in g.player_unit_ids(barbarian) {
+            g.remove_unit(unit);
+        }
+        g.barb_camps.clear();
         let warrior = g
             .player_unit_ids(0)
             .into_iter()
@@ -5390,7 +5398,7 @@ mod tests {
         let mut barb = g.units[&warrior].clone();
         barb.id = g.next_id;
         g.next_id += 1;
-        barb.owner = g.barb_pid.unwrap();
+        barb.owner = barbarian;
         barb.pos = open;
         let bid = barb.id;
         g.units.insert(bid, barb);
