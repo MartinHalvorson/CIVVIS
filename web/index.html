@@ -1026,9 +1026,10 @@
     #trade { inset: 2% 8px; }
     .trade-balance { display: none; }
     #tradelist { grid-template-columns: 1fr; padding-inline: 10px; }
-    body.cinema-mode #playerhud { top: 24px; width: calc(100% - 24px); grid-template-columns: 82px minmax(0, 1fr); }
-    body.cinema-mode #cinema-chrome { top: auto; right: 12px; bottom: 24px; }
+    body.cinema-mode #playerhud { top: 36px; width: calc(100% - 32px); grid-template-columns: 82px minmax(0, 1fr); }
+    body.cinema-mode #cinema-chrome { top: auto; right: 12px; bottom: 31px; }
     body.cinema-mode #cinema-story { left: 24px; bottom: 84px; width: calc(100% - 48px); }
+    body.cinema-mode #cinema-frame::before { inset-inline: 16px; }
     body.cinema-mode #cinema-story .cinema-detail {
       display: -webkit-box; overflow: hidden; white-space: normal;
       -webkit-box-orient: vertical; -webkit-line-clamp: 2;
@@ -1049,6 +1050,10 @@
     .diplomacy-leader { margin-top: 1px; font-size: 8px; }
     .ribbon-stat { padding-inline: 0; }
     .ribbon-stat b { font-size: 9px; }
+    body.cinema-mode #cinema-frame .cinema-frame-brand span,
+    body.cinema-mode #cinema-frame .cinema-frame-era span,
+    body.cinema-mode #cinema-frame .cinema-frame-shot span { display: none; }
+    body.cinema-mode #cinema-story { left: 18px; width: calc(100% - 36px); }
   }
 </style>
 </head>
@@ -1672,6 +1677,7 @@ function applyCinemaMode() {
   if (footerButton) footerButton.classList.toggle("active", active);
   if (active && !wasActive) {
     if (!DIRECTOR) setDirector(true);
+    else if (!directorGoal && state) directorGoal = directorSurveyGoal();
     wakeCinema();
     if (state && !showCinemaPrologue(state)) {
       const civilizations = state.players.filter(player =>
@@ -2400,6 +2406,7 @@ async function boot() {
       reportSpecStatus();
     }
   } catch (e) {
+    console.error("CIVVIS boot failed", e);
     clearTimeout(bootTimer);
     bootTimer = setTimeout(boot, 2000);
   } finally {
@@ -2664,6 +2671,8 @@ function queueDirectorCue(cue) {
       kind:tracksUnit ? "character" : "event", subjectUnitId:cue.unitId,
       holdMs:cue.silent ? 3600 : (cue.priority >= 7 ? 6200 : 4300), arrivedAt:0
     }, state?.turn || 0);
+    const chapterShown = !cue.silent && cue.kicker === "A new age dawns" && showCinemaChapter(cue);
+    if (!cue.silent && !chapterShown) nextGoal.story = cue;
     let targetX = S * SQ3 * (nextGoal.pos[0] + nextGoal.pos[1] / 2);
     if (mapWrapsX()) targetX += Math.round((cam.x - targetX) / WW()) * WW();
     const targetY = S * 1.5 * nextGoal.pos[1];
@@ -2677,8 +2686,6 @@ function queueDirectorCue(cue) {
     if (directorSeen.size > 80) {
       for (const [seenCue, at] of directorSeen) if (now - at > 30000) directorSeen.delete(seenCue);
     }
-    if (!cue.silent && (cue.kicker !== "A new age dawns" || !showCinemaChapter(cue)))
-      showDirectorStory(cue);
   }
 }
 
@@ -2690,7 +2697,7 @@ function clearDirectorTransition() {
 // destination. Angles are restrained and deterministic, so cuts feel authored
 // while the hex geography remains easy to follow from one shot to the next.
 function cinematicShotGoal(goal, variation = 0) {
-  if (!goal?.pos) return goal;
+  if (!goal?.pos || !cinemaActive()) return goal;
   const kind = goal.kind || "event";
   const h = hash2(Math.round(goal.pos[0] * 17 + variation * 3),
                   Math.round(goal.pos[1] * 23 + variation * 5));
@@ -2770,11 +2777,10 @@ function beginDirectorAmbientShot(now) {
   const cue = directorAmbientCue();
   if (!cue) { directorAmbientLast = now; return false; }
   directorGoal = cinematicShotGoal({pos:actionViewingAnchor(cue.pos), focus:[...cue.pos],
-                  scale:cue.zoom, kind:"portrait", holdMs:5600, arrivedAt:0},
+                  scale:cue.zoom, kind:"portrait", holdMs:5600, arrivedAt:0, story:cue},
                   directorPortraitIndex + (state?.turn || 0));
   updateCameraFollowChip();
   directorAmbientLast = now;
-  showDirectorStory(cue);
   return true;
 }
 function advanceDirector(now = performance.now()) {
@@ -2836,6 +2842,8 @@ function advanceDirector(now = performance.now()) {
     if (!trackedSubject && mapWrapsX()) focusX += Math.round((gx - focusX) / WW()) * WW();
     const focusY = trackedSubject
       ? trackedSubject.focusY : S * 1.5 * directorGoal.focus[1];
+    const screenX = area.clientWidth / 2 +
+      (COSR * (focusX - gx) - SINR * (focusY - gy)) * directorGoal.scale;
     const screenY = area.clientHeight / 2 +
       ((SINR * (focusX - gx) + COSR * (focusY - gy)) * YS -
        (trackedSubject?.focusLift || 0)) * directorGoal.scale;
@@ -2844,12 +2852,18 @@ function advanceDirector(now = performance.now()) {
     // the hex center out from underneath it.
     const safeTop = Math.max(180, area.clientHeight * .17);
     const safeBottom = area.clientHeight - Math.max(155, area.clientHeight * .18);
-    const desiredY = trackedSubject ? area.clientHeight * .54 : screenY;
+    const wideComposition = area.clientWidth >= 820;
+    const desiredX = area.clientWidth * (wideComposition ? (directorGoal.frameX || .5) : .5);
+    const desiredY = area.clientHeight * (directorGoal.frameY || (trackedSubject ? .54 : .52));
+    const framedX = Math.max(84, Math.min(area.clientWidth - 84, desiredX));
     const framedY = Math.max(safeTop, Math.min(safeBottom, desiredY));
-    const correction = (screenY - framedY) / (YS * directorGoal.scale);
-    // Move along the camera's projected vertical axis. This remains correct
-    // after the viewer rotates the world instead of assuming north-up.
-    gx += SINR * correction; gy += COSR * correction;
+    const correctionX = (screenX - framedX) / directorGoal.scale;
+    const correctionY = (screenY - framedY) / (YS * directorGoal.scale);
+    // Move along both camera axes. Narrated scenes live on the right third so
+    // the lower-third has darkness to breathe in; small screens fall back to
+    // center framing, and rotation never changes the math.
+    gx += COSR * correctionX + SINR * correctionY;
+    gy += -SINR * correctionX + COSR * correctionY;
   }
   gy = clampCameraY(gy, directorGoal.scale);
   const dx = gx - cam.x, dy = gy - cam.y;
@@ -2861,8 +2875,26 @@ function advanceDirector(now = performance.now()) {
   const zoomEase = 1 - Math.pow(characterShot ? .025 : .12, dt / 1000);
   cam.x += dx * travelEase; cam.y += dy * travelEase;
   cam.scale += (directorGoal.scale - cam.scale) * zoomEase;
+  let rotLeft = 0, tiltLeft = 0;
+  if (cinemaActive() && directorGoal.rot !== undefined) {
+    rotLeft = Math.atan2(Math.sin(directorGoal.rot - cam.rot),
+                         Math.cos(directorGoal.rot - cam.rot));
+    const orbitEase = 1 - Math.pow(characterShot ? .055 : .18, dt / 1000);
+    setRot(cam.rot + rotLeft * orbitEase, false);
+  }
+  if (cinemaActive() && directorGoal.tilt !== undefined) {
+    tiltLeft = directorGoal.tilt - cinematicYS;
+    const tiltEase = 1 - Math.pow(characterShot ? .07 : .2, dt / 1000);
+    setTilt(cinematicYS + tiltLeft * tiltEase, false);
+  }
   cam.y = clampCameraY(cam.y);
-  const moving = Math.abs(dx) + Math.abs(dy) > .7 || Math.abs(directorGoal.scale - cam.scale) > .002;
+  const moving = Math.abs(dx) + Math.abs(dy) > .7 ||
+    Math.abs(directorGoal.scale - cam.scale) > .002 ||
+    Math.abs(rotLeft) > .0012 || Math.abs(tiltLeft) > .0012;
+  const subjectIsReadable = Math.abs(dx) + Math.abs(dy) < S * 3.2 &&
+    Math.abs(directorGoal.scale - cam.scale) < .12 &&
+    Math.abs(rotLeft) < .13 && Math.abs(tiltLeft) < .08;
+  if (subjectIsReadable) revealDirectorGoalStory(directorGoal, now);
   if (moving && directorGoal.subjectUnitId !== undefined && directorGoal.subjectUnitId !== null)
     directorGoal.arrivedAt = 0;
   if (!moving) {
@@ -7343,7 +7375,7 @@ function mainLandmassAnchor() {
 function setMainLandmassView() {
   const anchor = mainLandmassAnchor();
   if (!anchor) return;
-  cam.scale = 0.9;
+  cam.scale = cinemaActive() ? .82 : .9;
   cam.x = S * SQ3 * (anchor.pos[0] + anchor.pos[1] / 2);
   cam.y = clampCameraY(S * 1.5 * anchor.pos[1]);
 }
@@ -7377,7 +7409,10 @@ function setDirector(on) {
   }
   updateDirectorButton();
   updateCameraFollowChip();
-  if (DIRECTOR && SPEC) centerMainLandmass();
+  if (DIRECTOR && SPEC) {
+    centerMainLandmass();
+    if (cinemaActive()) directorGoal = directorSurveyGoal();
+  }
 }
 function focusPlayer(pid) {
   if (!state) return;
@@ -8022,6 +8057,7 @@ function animTick(now) {
   const userCameraMoving = advanceUserCameraMotion(now);
   const followCameraMoving = advanceCameraFollow(now);
   const directorCameraMoving = advanceDirector(now);
+  syncCinemaFocusLighting();
   const cameraMoving = userCameraMoving || followCameraMoving || directorCameraMoving;
   const active = cameraMoving || anim.moves.size > 0 || anim.floats.length > 0 ||
     anim.sparks.length > 0 || anim.deaths.length > 0 || anim.strike;
