@@ -1,6 +1,7 @@
 //! Map generation (mirrors civvis/mapgen.py).
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::fractal::Fractal;
 use crate::rng::Rng;
 use crate::rules::Rules;
 use crate::setup::MapScript;
@@ -72,24 +73,22 @@ fn generate_land(
     match script {
         MapScript::Pangaea => {
             // A compact oval gives every seat comparable hinterland while
-            // retaining a single coast-to-coast supercontinent. Later biome,
-            // mountain, river, and feature passes supply local variety.
+            // retaining a single coast-to-coast supercontinent. The stock
+            // scripts cut their coastline out of a fractal rather than a
+            // curve, which is what produces bays, peninsulas and the odd
+            // offshore island; the oval only decides where the sea level sits.
             let center_col = (width - 1) as f64 / 2.0;
             let center_row = (height - 1) as f64 / 2.0;
             let radius_col = width as f64 * 0.39;
             let radius_row = height as f64 * 0.343;
-            let first_phase = rng.uniform(0.0, std::f64::consts::TAU);
-            let second_phase = rng.uniform(0.0, std::f64::consts::TAU);
+            let shore = Fractal::new(rng, width, height, 4);
             let mut land = BTreeSet::new();
             for row in 1..height - 1 {
                 for col in 0..width {
                     let x = (col as f64 - center_col) / radius_col;
                     let y = (row as f64 - center_row) / radius_row;
-                    let angle = y.atan2(x);
-                    let coast = 1.0
-                        + 0.08 * (3.0 * angle + first_phase).sin()
-                        + 0.05 * (5.0 * angle + second_phase).sin();
-                    if (x * x + y * y).sqrt() <= coast {
+                    let ragged = 1.0 + 0.30 * (shore.at(col, row) as f64 / 255.0 - 0.5) * 2.0;
+                    if (x * x + y * y).sqrt() <= ragged {
                         land.insert(hex::offset_to_axial(col, row));
                     }
                 }
@@ -136,13 +135,17 @@ fn generate_land(
             let center_row = (height - 1) as f64 / 2.0;
             let radius_col = width as f64 * 0.34;
             let radius_row = height as f64 * 0.30;
+            let shore = Fractal::new(rng, width, height, 4);
             let mut land = BTreeSet::new();
             for row in 0..height {
                 for col in 0..width {
                     let edge = col < 2 || col >= width - 2 || row < 2 || row >= height - 2;
                     let x = (col as f64 - center_col) / radius_col;
                     let y = (row as f64 - center_row) / radius_row;
-                    if edge || x * x + y * y >= 1.0 {
+                    // The same fractal shore, applied to the sea's edge, gives
+                    // the basin gulfs and headlands instead of a drawn ellipse.
+                    let ragged = 1.0 + 0.26 * (shore.at(col, row) as f64 / 255.0 - 0.5) * 2.0;
+                    if edge || (x * x + y * y).sqrt() >= ragged {
                         land.insert(hex::offset_to_axial(col, row));
                     }
                 }
@@ -199,47 +202,17 @@ pub fn generate_with_script(
         (2.0 * row as f64 / (height - 1).max(1) as f64 - 1.0).abs()
     };
 
-    // --- climate bands
-    for pos in &land_list {
-        let v = latitude(*pos) + rng.uniform(-0.15, 0.15);
-        let t = wm.tiles.get_mut(pos).unwrap();
-        t.terrain = if v > 0.85 {
-            "snow".into()
-        } else if v > 0.62 {
-            "tundra".into()
-        } else if v < 0.30 {
-            ["desert", "plains", "grassland"][rng.weighted(&[0.25, 0.40, 0.35])].into()
-        } else {
-            ["grassland", "plains", "desert"][rng.weighted(&[0.50, 0.42, 0.08])].into()
-        };
-    }
+    // --- relief, then climate. The stock generator settles elevation first
+    // (MountainsCliffs.lua) and only then paints biomes over it, because the
+    // mountain fractal has to be free of the latitude bands to run across them.
+    apply_tectonics(&mut wm, &land, rng);
+    assign_biomes(&mut wm, &land_list, rng);
 
-    // --- mountain chains, hills
-    for _ in 0..2.max(land_list.len() / 40) {
-        let mut cur = land_list[rng.below(land_list.len())];
-        let steps = rng.randint(2, 5);
-        for _ in 0..steps {
-            wm.tiles.get_mut(&cur).unwrap().terrain = "mountain".into();
-            let nbs: Vec<Pos> = hex::neighbors(cur)
-                .into_iter()
-                .map(|n| hex::canon(n, width))
-                .filter(|n| land.contains(n))
-                .collect();
-            if nbs.is_empty() {
-                break;
-            }
-            cur = nbs[rng.below(nbs.len())];
-        }
-    }
-    for pos in &land_list {
-        let roll = rng.chance(0.16);
-        let t = wm.tiles.get_mut(pos).unwrap();
-        if t.terrain != "mountain" && roll {
-            t.hills = true;
-        }
-    }
-
-    // --- coast
+    // --- coast. A shelf is one tile of shallow water plus the stock's three
+    // expansion passes, each giving a quarter of the Ocean tiles that already
+    // touch shallow water their own turn to become Coast. Shelves therefore
+    // vary from one tile in the open sea to five or more in a broad bay,
+    // instead of a uniform outline traced around every landmass.
     let coastal: Vec<Pos> = wm
         .tiles
         .iter()
@@ -253,6 +226,29 @@ pub fn generate_with_script(
         .collect();
     for pos in coastal {
         wm.tiles.get_mut(&pos).unwrap().terrain = "coast".into();
+    }
+    for _ in 0..3 {
+        let expansion: Vec<Pos> = wm
+            .tiles
+            .iter()
+            .filter(|(pos, tile)| {
+                tile.terrain == "ocean"
+                    && hex::neighbors(**pos)
+                        .into_iter()
+                        .map(|neighbor| hex::canon(neighbor, width))
+                        .any(|neighbor| {
+                            wm.tiles
+                                .get(&neighbor)
+                                .is_some_and(|tile| tile.terrain == "coast")
+                        })
+            })
+            .map(|(pos, _)| *pos)
+            .collect();
+        for pos in expansion {
+            if rng.below(4) == 0 {
+                wm.tiles.get_mut(&pos).unwrap().terrain = "coast".into();
+            }
+        }
     }
 
     // Coastal cliffs are shared edge features rather than tile terrain.
@@ -417,42 +413,9 @@ pub fn generate_with_script(
         }
     }
 
-    // --- vegetative, wetland and river-basin features
-    for pos in &land_list {
-        let lat = latitude(*pos);
-        let r = rng.f64();
-        let t = wm.tiles.get_mut(pos).unwrap();
-        if t.terrain == "mountain" || t.feature.is_some() {
-            continue;
-        }
-        if t.has_river() && t.terrain == "desert" && r < 0.55 {
-            t.feature = Some("floodplains".into());
-        } else if t.has_river() && t.terrain == "grassland" && r < 0.18 {
-            t.feature = Some("grassland_floodplains".into());
-        } else if t.has_river() && t.terrain == "plains" && r < 0.18 {
-            t.feature = Some("plains_floodplains".into());
-        } else if t.terrain == "grassland" || t.terrain == "plains" {
-            if lat < 0.25 && r < 0.28 {
-                t.feature = Some("jungle".into());
-            } else if r < 0.20 {
-                t.feature = Some("forest".into());
-            } else if t.terrain == "grassland" && r > 0.97 {
-                t.feature = Some("marsh".into());
-            }
-        } else if t.terrain == "tundra" && r < 0.22 {
-            t.feature = Some("forest".into());
-        } else if t.terrain == "desert" && r < 0.05 {
-            t.feature = Some("oasis".into());
-        }
-    }
-
-    // Reefs are ordinary coastal features and supply the Campus's major
-    // Gathering Storm adjacency source.
-    for tile in wm.tiles.values_mut() {
-        if tile.terrain == "coast" && tile.feature.is_none() && rng.chance(0.08) {
-            tile.feature = Some("reef".into());
-        }
-    }
+    // --- vegetative, wetland and river-basin features, and the reefs that
+    // supply the Campus's major Gathering Storm adjacency source.
+    add_features(&mut wm, &land, rng);
 
     // --- natural wonders: use the stock per-map-size count and the actual
     // footprint of each modeled wonder. Multi-tile wonders are grown as a
@@ -774,6 +737,310 @@ pub fn generate_with_script(
         t.resource = None;
     }
     (wm, spawns)
+}
+
+/// World Age, which the stock scripts pass to every elevation percentile.
+/// Continents.lua's "normal" is 3; a younger world raises more mountains.
+const WORLD_AGE: i32 = 3;
+
+/// Terrain band shares from `TerrainGenerator.lua` at Temperate: the driest
+/// quarter of the desert field becomes Desert where the latitude allows it,
+/// and the wetter half of the plains field becomes Plains.
+const DESERT_PERCENT: u32 = 25;
+const PLAINS_PERCENT: u32 = 50;
+const SNOW_LATITUDE: f64 = 0.8;
+const TUNDRA_LATITUDE: f64 = 0.65;
+const GRASS_LATITUDE: f64 = 0.1;
+const DESERT_BOTTOM_LATITUDE: f64 = 0.2;
+const DESERT_TOP_LATITUDE: f64 = 0.5;
+
+/// Elevation, the way `MountainsCliffs.lua` builds it: two fractal fields,
+/// the mountain one with tectonic plate boundaries woven through it, cut at
+/// percentiles. Mountains therefore arrive as ranges following a collision
+/// line, ringed by their own foothills, rather than as short random walks;
+/// hills additionally come in clumps wherever the hills field sits inside one
+/// of its two bands.
+fn apply_tectonics(wm: &mut WorldMap, land: &BTreeSet<Pos>, rng: &mut Rng) {
+    let (width, height) = (wm.width, wm.height);
+    // `MountainsCliffs.lua` weaves nine tectonic plates through the field
+    // whatever the map size; the ridges they collide along are the ranges.
+    const PLATES: usize = 9;
+    let mut mountains = Fractal::new(rng, width, height, 3);
+    mountains.build_ridges(rng, PLATES, 5.0, 5.0);
+    let hills = Fractal::new(rng, width, height, 3);
+
+    let cells: Vec<(i32, i32)> = land
+        .iter()
+        .map(|pos| hex::axial_to_offset(pos.0, pos.1))
+        .collect();
+    let mountain_threshold =
+        mountains.percentile_within(cells.iter().copied(), (97 - WORLD_AGE) as u32);
+    let foothills_threshold =
+        mountains.percentile_within(cells.iter().copied(), (91 - 2 * WORLD_AGE) as u32);
+    let pass_threshold =
+        hills.percentile_within(cells.iter().copied(), (91 - 2 * WORLD_AGE) as u32);
+    let low_band = (
+        hills.percentile_within(cells.iter().copied(), (28 - WORLD_AGE) as u32),
+        hills.percentile_within(cells.iter().copied(), (28 + WORLD_AGE) as u32),
+    );
+    let high_band = (
+        hills.percentile_within(cells.iter().copied(), (72 - WORLD_AGE) as u32),
+        hills.percentile_within(cells.iter().copied(), (72 + WORLD_AGE) as u32),
+    );
+
+    for pos in land {
+        let (col, row) = hex::axial_to_offset(pos.0, pos.1);
+        let mountain_value = mountains.at(col, row);
+        let hill_value = hills.at(col, row);
+        let tile = wm.tiles.get_mut(pos).unwrap();
+        if mountain_value >= mountain_threshold {
+            if hill_value >= pass_threshold {
+                // A pass through the ridgeline, so a range is crossable.
+                tile.hills = true;
+            } else {
+                tile.terrain = "mountain".into();
+            }
+        } else if mountain_value >= foothills_threshold {
+            tile.hills = true;
+        } else if (hill_value >= low_band.0 && hill_value <= low_band.1)
+            || (hill_value >= high_band.0 && hill_value <= high_band.1)
+        {
+            tile.hills = true;
+        }
+    }
+
+    // The stock generator demotes nine in ten mountains that reach the water,
+    // which is what keeps coastlines workable and leaves the ranges inland.
+    let coastal_peaks: Vec<Pos> = land
+        .iter()
+        .copied()
+        .filter(|pos| wm.tiles[pos].terrain == "mountain")
+        .filter(|pos| {
+            hex::neighbors(*pos)
+                .into_iter()
+                .map(|neighbor| hex::canon(neighbor, width))
+                .any(|neighbor| !land.contains(&neighbor))
+        })
+        .collect();
+    for pos in coastal_peaks {
+        if rng.below(10) < 9 {
+            let tile = wm.tiles.get_mut(&pos).unwrap();
+            // The climate pass, which runs next, repaints every tile that is
+            // no longer a mountain, so only the elevation matters here.
+            tile.terrain = "grassland".into();
+            tile.hills = true;
+        }
+    }
+}
+
+/// Climate, the way `TerrainGenerator.lua` paints it: latitude bands whose
+/// borders are roughened by a variation fractal, with Desert and Plains cut
+/// out of two further fractals so that both arrive as regions. Desert is
+/// additionally confined to the subtropics, which is why Civ VI worlds have
+/// desert belts either side of a green equator rather than desert everywhere.
+fn assign_biomes(wm: &mut WorldMap, land: &[Pos], rng: &mut Rng) {
+    let (width, height) = (wm.width, wm.height);
+    let deserts = Fractal::new(rng, width, height, 3);
+    let plains = Fractal::new(rng, width, height, 3);
+    let variation = Fractal::new(rng, width, height, 3);
+    let desert_bottom = deserts.percentile(100 - DESERT_PERCENT);
+    let plains_bottom = plains.percentile(100 - PLAINS_PERCENT);
+
+    for pos in land {
+        let (col, row) = hex::axial_to_offset(pos.0, pos.1);
+        if wm.tiles[pos].terrain == "mountain" {
+            continue;
+        }
+        let base = (2.0 * row as f64 / (height - 1).max(1) as f64 - 1.0).abs();
+        let latitude =
+            (base + (128.0 - variation.at(col, row) as f64) / (255.0 * 5.0)).clamp(0.0, 1.0);
+        let terrain = if latitude >= SNOW_LATITUDE {
+            "snow"
+        } else if latitude >= TUNDRA_LATITUDE {
+            "tundra"
+        } else if latitude < GRASS_LATITUDE {
+            "grassland"
+        } else if deserts.at(col, row) >= desert_bottom
+            && (DESERT_BOTTOM_LATITUDE..DESERT_TOP_LATITUDE).contains(&latitude)
+        {
+            "desert"
+        } else if plains.at(col, row) >= plains_bottom {
+            "plains"
+        } else {
+            "grassland"
+        };
+        wm.tiles.get_mut(pos).unwrap().terrain = terrain.into();
+    }
+}
+
+/// Feature shares from the Gathering Storm `FeatureGenerator.lua` at Normal
+/// rainfall: Rainforest fills 40% of the tropical band it is allowed in,
+/// Woods 18% of land, Marsh 3%, Oasis 1%, and Reef 9% of eligible water.
+const JUNGLE_PERCENT: usize = 40;
+const FOREST_PERCENT: usize = 18;
+const MARSH_PERCENT: usize = 3;
+const OASIS_PERCENT: usize = 1;
+const REEF_PERCENT: usize = 9;
+
+/// The shipped clustering weight. A tile with two or three neighbours already
+/// carrying the feature is the most likely to take it, and one ringed by five
+/// is the least, so vegetation grows as forests and rainforests instead of
+/// speckling every eligible tile independently.
+fn cluster_score(adjacent: usize) -> i32 {
+    match adjacent {
+        0 => 300,
+        1 => 350,
+        2 | 3 => 450,
+        4 => 250,
+        _ => 100,
+    }
+}
+
+fn adjacent_feature_count(wm: &WorldMap, pos: Pos, feature: &str) -> usize {
+    hex::neighbors(pos)
+        .into_iter()
+        .map(|neighbor| hex::canon(neighbor, wm.width))
+        .filter(|neighbor| {
+            wm.get(*neighbor)
+                .is_some_and(|tile| tile.feature.as_deref() == Some(feature))
+        })
+        .count()
+}
+
+/// Running-share cap: a feature stops being placed once it holds its quota of
+/// the tiles considered so far, exactly as the stock generator's counters work.
+fn within_share(count: usize, considered: usize, percent: usize) -> bool {
+    considered == 0 || (count * 100).div_ceil(considered) <= percent
+}
+
+fn add_features(wm: &mut WorldMap, land: &BTreeSet<Pos>, rng: &mut Rng) {
+    let (width, height) = (wm.width, wm.height);
+    let equator = (height + 1) / 2;
+    // Rainforest keeps to twenty degrees either side of the equator.
+    let tropics = (20 * height / 180).max(2);
+
+    let mut considered_land = 0;
+    let mut jungle_candidates = 0;
+    let (mut jungles, mut forests, mut marshes, mut oases) = (0, 0, 0, 0);
+
+    for row in 0..height {
+        for col in 0..width {
+            let pos = hex::offset_to_axial(col, row);
+            if !land.contains(&pos) {
+                continue;
+            }
+            let (terrain, hills, river, has_feature) = {
+                let tile = &wm.tiles[&pos];
+                (
+                    tile.terrain.clone(),
+                    tile.hills,
+                    tile.has_river(),
+                    tile.feature.is_some(),
+                )
+            };
+            if terrain == "mountain" {
+                continue;
+            }
+            considered_land += 1;
+            if has_feature {
+                continue;
+            }
+
+            // Every desert tile on a river floods, as in the stock generator.
+            // 🟡 The Grassland and Plains variants stand in for river size,
+            // which this generator does not model.
+            if river {
+                let floodplain = match terrain.as_str() {
+                    "desert" => Some("floodplains"),
+                    "grassland" if rng.chance(0.18) => Some("grassland_floodplains"),
+                    "plains" if rng.chance(0.18) => Some("plains_floodplains"),
+                    _ => None,
+                };
+                if let Some(feature) = floodplain {
+                    wm.tiles.get_mut(&pos).unwrap().feature = Some(feature.into());
+                    continue;
+                }
+            }
+
+            if terrain == "desert" && !hills && !river {
+                if within_share(oases, considered_land, OASIS_PERCENT) && rng.below(4) == 1 {
+                    wm.tiles.get_mut(&pos).unwrap().feature = Some("oasis".into());
+                    oases += 1;
+                }
+                continue;
+            }
+
+            // Marsh, then Rainforest, then Woods — the shipped precedence.
+            if terrain == "grassland"
+                && !hills
+                && within_share(marshes, considered_land, MARSH_PERCENT)
+                && (rng.below(300) as i32)
+                    <= cluster_score(adjacent_feature_count(wm, pos, "marsh"))
+            {
+                wm.tiles.get_mut(&pos).unwrap().feature = Some("marsh".into());
+                marshes += 1;
+                continue;
+            }
+
+            let tropical = (row - equator).abs() <= tropics;
+            if tropical && matches!(terrain.as_str(), "grassland" | "plains") {
+                jungle_candidates += 1;
+                if within_share(jungles, jungle_candidates, JUNGLE_PERCENT)
+                    && (rng.below(450) as i32)
+                        <= cluster_score(adjacent_feature_count(wm, pos, "jungle"))
+                {
+                    let tile = wm.tiles.get_mut(&pos).unwrap();
+                    // Rainforest leaves the ground beneath it Plains.
+                    tile.terrain = "plains".into();
+                    tile.feature = Some("jungle".into());
+                    jungles += 1;
+                    continue;
+                }
+            }
+
+            if matches!(terrain.as_str(), "grassland" | "plains" | "tundra")
+                && within_share(forests, considered_land, FOREST_PERCENT)
+                && (rng.below(300) as i32)
+                    <= cluster_score(adjacent_feature_count(wm, pos, "forest"))
+            {
+                wm.tiles.get_mut(&pos).unwrap().feature = Some("forest".into());
+                forests += 1;
+            }
+        }
+    }
+
+    // Reefs favour warm water and thin out where they are already dense, so
+    // they form scattered banks rather than a border around every continent.
+    let mut reefable = 0;
+    let mut reefs = 0;
+    for row in 0..height {
+        for col in 0..width {
+            let pos = hex::offset_to_axial(col, row);
+            let latitude = (2.0 * row as f64 / (height - 1).max(1) as f64 - 1.0).abs();
+            let eligible = wm
+                .get(pos)
+                .is_some_and(|tile| tile.terrain == "coast" && tile.feature.is_none());
+            if !eligible || latitude >= 0.78 * 0.9 {
+                continue;
+            }
+            reefable += 1;
+            if !within_share(reefs, reefable, REEF_PERCENT) {
+                continue;
+            }
+            let crowding = match adjacent_feature_count(wm, pos, "reef") {
+                0 => 100,
+                1 => 125,
+                2 => 150,
+                3 | 4 => 175,
+                _ => 10_000,
+            };
+            let score = 3 * (row - equator).abs() + crowding;
+            if (rng.below(200) as i32) >= score {
+                wm.tiles.get_mut(&pos).unwrap().feature = Some("reef".into());
+                reefs += 1;
+            }
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -1421,17 +1688,34 @@ mod river_tests {
                     "{script:?} starts must leave room for distinct cities"
                 );
             }
+            // A fractal coastline sheds islands, exactly as the stock scripts
+            // do, so a topology is judged by how much land its main bodies
+            // hold rather than by an exact component count.
             let components = land_components(&world, &rules);
+            let total: usize = components.iter().map(|component| component.len()).sum();
+            let share = |count: usize| components[..count.min(components.len())]
+                .iter()
+                .map(|component| component.len())
+                .sum::<usize>()
+                * 100
+                / total.max(1);
             match script {
-                MapScript::Pangaea | MapScript::InlandSea => {
-                    assert_eq!(components.len(), 1, "{script:?} should be connected")
-                }
+                MapScript::Pangaea | MapScript::InlandSea => assert!(
+                    share(1) >= 80,
+                    "{script:?} should be one continent with at most a few islets, \n                     largest holds {}%",
+                    share(1)
+                ),
                 MapScript::Continents => {
-                    assert_eq!(components.len(), 2, "Continents needs two large landmasses")
+                    assert!(
+                        share(2) >= 80 && components[1].len() * 3 >= components[0].len(),
+                        "Continents needs two comparable landmasses, got {:?}",
+                        components.iter().map(|c| c.len()).collect::<Vec<_>>()
+                    )
                 }
                 MapScript::SmallContinents => assert!(
-                    components.len() >= 4,
-                    "Small Continents needs several separated landmasses"
+                    components.iter().filter(|component| component.len() >= 20).count() >= 4,
+                    "Small Continents needs several separated landmasses, got {:?}",
+                    components.iter().map(|c| c.len()).collect::<Vec<_>>()
                 ),
             }
 

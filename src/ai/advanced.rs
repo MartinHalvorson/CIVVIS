@@ -10817,19 +10817,42 @@ mod tests {
         game.current = 0;
         game.at_war.insert((0, 1));
         let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        // Both staged tiles must be free: the capital's own starting units
+        // stand in this ring, and a friendly unit already there blocks the
+        // step onto the intruder.
         let soldier_tile = game
             .nbrs(home)
             .into_iter()
-            .find(|p| game.map.get(*p).is_some_and(|t| game.rules.is_passable(t) && !game.rules.is_water(t)))
+            .find(|p| {
+                game.units_at(*p).is_empty()
+                    && game.map.get(*p).is_some_and(|t| {
+                        game.rules.is_passable(t) && !game.rules.is_water(t)
+                    })
+            })
             .unwrap();
+        // Condemning is a defense of our own territory, so the intruder has
+        // to stand on a tile the capital actually owns - one that borders
+        // both the soldier and the city centre.
         let intruder_tile = game
             .nbrs(soldier_tile)
             .into_iter()
             .find(|p| {
                 *p != home
-                    && game.map.get(*p).is_some_and(|t| game.rules.is_passable(t) && !game.rules.is_water(t))
+                    && game.nbrs(home).contains(p)
+                    && game.units_at(*p).is_empty()
+                    && game.map.get(*p).is_some_and(|t| {
+                        game.rules.is_passable(t) && !game.rules.is_water(t)
+                    })
             })
             .unwrap();
+        for position in [soldier_tile, intruder_tile] {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = "plains".to_string();
+            tile.feature = None;
+            tile.improvement = None;
+            tile.hills = false;
+        }
+        game.map.set_river_edge(soldier_tile, intruder_tile, false);
         let soldier = game.spawn_test_unit("warrior", 0, soldier_tile);
         let missionary = game.spawn_test_unit("missionary", 1, intruder_tile);
         game.units.get_mut(&missionary).unwrap().religion = Some("Rival Faith".to_string());
@@ -13480,21 +13503,49 @@ mod tests {
         assert!(military.iter().any(|uid| g.units[uid].formation == 1));
     }
 
+
+    /// A staged battle only tests the code under test if the organic map is
+    /// not also fighting one nearby: units and cities the generator placed
+    /// give the planner closer targets and quietly rewrite the expected order.
+    /// Arenas are therefore ranked by how far they sit from everything the
+    /// generator put down, so the quietest corner of any map wins.
+    fn organic_clearance(g: &Game, pos: Pos) -> i32 {
+        g.units
+            .values()
+            .map(|unit| g.wdist(unit.pos, pos))
+            .chain(g.cities.values().map(|city| g.wdist(city.pos, pos)))
+            .min()
+            .unwrap_or(i32::MAX)
+    }
+
+    fn quietest_first(g: &Game, mut candidates: Vec<Pos>) -> Vec<Pos> {
+        candidates.sort_by_key(|pos| (std::cmp::Reverse(organic_clearance(g, *pos)), *pos));
+        candidates
+    }
+
     #[test]
     fn armies_and_fleets_receive_domain_specific_shared_orders() {
         let mut g = Game::new_full(2, 24, 16, 78, 80, 0, false);
         g.at_war.insert((0, 1));
 
-        let land_target = g
-            .map
-            .tiles
-            .iter()
-            .filter(|(pos, tile)| {
-                g.rules.is_passable(tile) && !g.rules.is_water(tile) && g.units_at(**pos).is_empty()
-            })
-            .find_map(|(pos, _)| {
+        let land_candidates = quietest_first(
+            &g,
+            g.map
+                .tiles
+                .iter()
+                .filter(|(pos, tile)| {
+                    g.rules.is_passable(tile)
+                        && !g.rules.is_water(tile)
+                        && g.units_at(**pos).is_empty()
+                })
+                .map(|(pos, _)| *pos)
+                .collect(),
+        );
+        let land_target = land_candidates
+            .into_iter()
+            .find_map(|pos| {
                 let ring: Vec<Pos> = g
-                    .nbrs(*pos)
+                    .nbrs(pos)
                     .into_iter()
                     .filter(|neighbor| {
                         g.map.get(*neighbor).is_some_and(|tile| {
@@ -13504,24 +13555,44 @@ mod tests {
                         })
                     })
                     .collect();
-                (ring.len() >= 3).then_some((*pos, ring))
+                (ring.len() >= 3).then_some((pos, ring))
             })
             .expect("test map has an open land engagement");
+        for position in [land_target.0, land_target.1[0], land_target.1[1], land_target.1[2]] {
+            let tile = g.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = "plains".to_string();
+            tile.feature = None;
+            tile.improvement = None;
+            tile.hills = false;
+        }
+        for ring_tile in land_target.1.iter().copied() {
+            g.map.set_river_edge(land_target.0, ring_tile, false);
+        }
         let army = [
             g.spawn_test_unit("warrior", 0, land_target.1[0]),
             g.spawn_test_unit("archer", 0, land_target.1[1]),
             g.spawn_test_unit("catapult", 0, land_target.1[2]),
         ];
-        g.spawn_test_unit("warrior", 1, land_target.0);
+        // A mirror matchup on level ground is an even trade, which the
+        // planner is right to decline; this test is about which unit
+        // receives the order, so leave the defender plainly worth striking.
+        let defender = g.spawn_test_unit("warrior", 1, land_target.0);
+        g.units.get_mut(&defender).unwrap().hp = 20;
 
-        let sea_target = g
-            .map
-            .tiles
-            .iter()
-            .filter(|(pos, tile)| g.rules.is_water(tile) && g.units_at(**pos).is_empty())
-            .find_map(|(pos, _)| {
+        let sea_candidates = quietest_first(
+            &g,
+            g.map
+                .tiles
+                .iter()
+                .filter(|(pos, tile)| g.rules.is_water(tile) && g.units_at(**pos).is_empty())
+                .map(|(pos, _)| *pos)
+                .collect(),
+        );
+        let sea_target = sea_candidates
+            .into_iter()
+            .find_map(|pos| {
                 let ring: Vec<Pos> = g
-                    .nbrs(*pos)
+                    .nbrs(pos)
                     .into_iter()
                     .filter(|neighbor| {
                         g.map.get(*neighbor).is_some_and(|tile| {
@@ -13529,7 +13600,7 @@ mod tests {
                         })
                     })
                     .collect();
-                (ring.len() >= 2).then_some((*pos, ring))
+                (ring.len() >= 2).then_some((pos, ring))
             })
             .expect("test map has an open naval engagement");
         let fleet = [
@@ -13568,12 +13639,16 @@ mod tests {
         assert_eq!(fleet_orders.focus_target, Some(sea_target.0));
         assert_eq!(fleet_orders.posture, ForcePosture::Engage);
 
-        ai.advanced_military_step(&mut g, 0, army[0], &plan);
-        assert!(matches!(
-            g.log.last(),
-            Some((0, Action::Attack { unit, target }))
-                if *unit == army[0] && *target == land_target.0
-        ));
+        let acted = ai.advanced_military_step(&mut g, 0, army[0], &plan);
+        let last = g.log.last().cloned();
+        assert!(
+            matches!(
+                last,
+                Some((0, Action::Attack { unit, target }))
+                    if unit == army[0] && target == land_target.0
+            ),
+            "the army's lead unit should strike the focus target: acted={acted}, log={last:?}"
+        );
     }
 
     #[test]
@@ -14058,15 +14133,23 @@ mod tests {
     fn force_replans_focus_after_each_battlefield_action() {
         let mut g = Game::new_full(2, 24, 16, 79, 80, 0, false);
         g.at_war.insert((0, 1));
-        let (first_target, second_target, firing_line) = g
-            .map
-            .tiles
-            .iter()
-            .filter(|(pos, tile)| {
-                g.rules.is_passable(tile) && !g.rules.is_water(tile) && g.units_at(**pos).is_empty()
-            })
-            .find_map(|(first, _)| {
-                g.nbrs(*first).into_iter().find_map(|second| {
+        let front_candidates = quietest_first(
+            &g,
+            g.map
+                .tiles
+                .iter()
+                .filter(|(pos, tile)| {
+                    g.rules.is_passable(tile)
+                        && !g.rules.is_water(tile)
+                        && g.units_at(**pos).is_empty()
+                })
+                .map(|(pos, _)| *pos)
+                .collect(),
+        );
+        let (first_target, second_target, firing_line) = front_candidates
+            .into_iter()
+            .find_map(|first| {
+                g.nbrs(first).into_iter().find_map(|second| {
                     let second_tile = g.map.get(second)?;
                     if !g.rules.is_passable(second_tile)
                         || g.rules.is_water(second_tile)
@@ -14076,7 +14159,7 @@ mod tests {
                     }
                     let second_neighbors = g.nbrs(second);
                     let common: Vec<Pos> = g
-                        .nbrs(*first)
+                        .nbrs(first)
                         .into_iter()
                         .filter(|pos| second_neighbors.contains(pos))
                         .filter(|pos| {
@@ -14087,7 +14170,7 @@ mod tests {
                             })
                         })
                         .collect();
-                    (common.len() >= 2).then_some((*first, second, common))
+                    (common.len() >= 2).then_some((first, second, common))
                 })
             })
             .expect("test map has a two-target engagement with a shared front");

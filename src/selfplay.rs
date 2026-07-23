@@ -189,7 +189,9 @@ mod tests {
             city_states: 0,
             max_turns: 24,
             seed: 77,
-            every: 8,
+            // Sample often: a two-player duel map can be decided in a handful
+            // of turns, and the shapes under test are the same either way.
+            every: 2,
             ai: "basic".to_string(),
             out: dir.to_string_lossy().to_string(),
         };

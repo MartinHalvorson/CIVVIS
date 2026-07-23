@@ -8,6 +8,7 @@ pub mod ai;
 pub mod belief;
 pub mod elo;
 pub mod evolve;
+pub mod fractal;
 pub mod game;
 pub mod hex;
 pub mod mapgen;

@@ -5717,6 +5717,22 @@ mod tests {
             .filter(|(pos, tile)| {
                 g.rules.is_passable(tile) && !g.rules.is_water(tile) && g.units_at(**pos).is_empty()
             })
+            // Demand elbow room rather than taking whichever tiles the map
+            // lists first: the air base needs a free land tile beside it that
+            // the other two staged units are not already standing on.
+            .filter(|(pos, _)| {
+                g.nbrs(**pos)
+                    .into_iter()
+                    .filter(|neighbor| {
+                        g.map.get(*neighbor).is_some_and(|tile| {
+                            g.rules.is_passable(tile)
+                                && !g.rules.is_water(tile)
+                                && g.units_at(*neighbor).is_empty()
+                        })
+                    })
+                    .count()
+                    >= 3
+            })
             .map(|(pos, _)| *pos)
             .take(3)
             .collect();
@@ -5983,6 +5999,22 @@ mod tests {
         g.players[0].gold = 0.0;
         g.players[0].gold_per_turn = -9.2;
         let cid = g.player_city_ids(0)[0];
+        // The assertion is about what a broke empire chooses to build, not
+        // about whether the map left it anywhere to build: level the ring.
+        let center = g.cities[&cid].pos;
+        let ring: Vec<Pos> = g.cities[&cid]
+            .owned_tiles
+            .iter()
+            .copied()
+            .filter(|position| *position != center)
+            .collect();
+        for position in ring {
+            let tile = g.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = "plains".to_string();
+            tile.feature = None;
+            tile.resource = None;
+            tile.hills = false;
+        }
         let ai = BasicAi::new();
 
         let district = ai
@@ -6420,7 +6452,10 @@ mod tests {
                 break;
             }
             let movement = g.rules.units["builder"].moves;
-            let unit = g.units.get_mut(&builder).unwrap();
+            // Spending the last charge consumes the Builder mid-loop.
+            let Some(unit) = g.units.get_mut(&builder) else {
+                break;
+            };
             unit.moves_left = movement;
             unit.moved = false;
             unit.acted = false;
