@@ -683,6 +683,13 @@ def result_standings(state: dict[str, Any]) -> str | None:
     return "; ".join(entries)
 
 
+# Supervisor-level policy, set once from --league in main(). Deliberately NOT
+# part of the per-game settings dict: session_settings() and manual restart
+# requests rebuild that dict from the finished game's state, which silently
+# dropped the key and unrated every game after the first victory boundary.
+LEAGUE_SPEC = "auto"
+
+
 def league_dir(spec: str) -> Path | None:
     """Resolve the --league setting to a directory holding league.json.
 
@@ -736,7 +743,7 @@ def server_command(
     ]
     if resume is not None:
         args.extend(("--resume", str(resume)))
-    roster = league_dir(settings.get("league", "off"))
+    roster = league_dir(LEAGUE_SPEC)
     if roster is not None:
         # Absolute path: the server runs from the runtime directory, not ROOT.
         args.extend(("--league", str(roster)))
@@ -949,8 +956,9 @@ def main() -> int:
         "turns": args.turns,
         "map": args.map,
         "speed": args.speed,
-        "league": args.league,
     }
+    global LEAGUE_SPEC
+    LEAGUE_SPEC = args.league
     process: subprocess.Popen[str] | None = None
     adopted_pid = args.adopt_pid
     # An adopted binary cannot be proven current, so replace it at the first
