@@ -1529,6 +1529,32 @@ function drawUnitChar(u, x, y, now, moving) {
   cx.restore();
 }
 
+// Civ-style ground base. Photographic terrain is busy, so a soft dark pad
+// separates the figure from whatever it is standing on, and an owner-colored
+// ring answers "whose is that?" without reading the tunic. Units with movement
+// left keep a bright ring; spent ones fade back, so a glance across the map
+// shows who can still act this turn.
+function drawUnitBase(u, x, y) {
+  const spent = u.moves_left !== undefined && u.moves_left <= 0;
+  const cy = y + 8.5;
+  cx.save();
+  cx.translate(x, cy); cx.scale(1, 0.42); cx.translate(-x, -cy);
+  const g = cx.createRadialGradient(x, cy, 1, x, cy, 13.5);
+  g.addColorStop(0, "rgba(0,0,0,.40)");
+  g.addColorStop(0.6, "rgba(0,0,0,.20)");
+  g.addColorStop(1, "rgba(0,0,0,0)");
+  cx.fillStyle = g;
+  cx.beginPath(); cx.arc(x, cy, 13.5, 0, 7); cx.fill();
+  cx.restore();
+  cx.fillStyle = "rgba(0,0,0,.28)";                   // tight contact shadow
+  cx.beginPath(); cx.ellipse(x, cy, 8.2, 3.2, 0, 0, 7); cx.fill();
+  cx.strokeStyle = pcol(u.owner);
+  cx.globalAlpha = spent ? 0.3 : 0.92;
+  cx.lineWidth = spent ? 1.4 : 2.2;
+  cx.beginPath(); cx.ellipse(x, cy, 9.4, 3.9, 0, 0, 7); cx.stroke();
+  cx.globalAlpha = 1;
+}
+
 function draw() {
   if (!state) return;
   const beau0 = VIEW === "cinematic";
@@ -1651,7 +1677,11 @@ function draw() {
     cx.fill();
   }
   cx.globalAlpha = 1;
-  // --- territory borders: ribbon along edges facing a different owner
+  // --- territory borders: ribbon along edges facing a different owner.
+  // Collected per empire and stroked as one network with round joins, the way
+  // the river layer is: a frontier then reads as a single flowing outline
+  // rather than six separately-capped hex edges with notches at every corner.
+  const borderSegs = new Map();
   for (const t of tiles) {
     if (t.owner === null || t.owner === undefined) continue;
     const [x, yy] = hexXY(t.pos[0], t.pos[1]);
@@ -1662,12 +1692,22 @@ function draw() {
       const [c1, c2] = EDGE_CORNERS[i];
       const [ax, ay] = corner(x, y, S - 1.5, c1);
       const [bx, by] = corner(x, y, S - 1.5, c2);
-      cx.strokeStyle = pcol(t.owner); cx.lineWidth = 4.5; cx.globalAlpha = 0.55;
-      cx.beginPath(); cx.moveTo(ax, ay); cx.lineTo(bx, by); cx.stroke();
-      cx.lineWidth = 1.6; cx.globalAlpha = 1;
-      cx.beginPath(); cx.moveTo(ax, ay); cx.lineTo(bx, by); cx.stroke();
+      let segs = borderSegs.get(t.owner);
+      if (!segs) { segs = []; borderSegs.set(t.owner, segs); }
+      segs.push([ax, ay, bx, by]);
     }
   }
+  cx.lineCap = "round"; cx.lineJoin = "round";
+  for (const [owner, segs] of borderSegs) {
+    const c = pcol(owner);
+    for (const [w, a] of [[5.4, 0.3], [1.8, 0.95]]) {  // soft glow, then crisp core
+      cx.strokeStyle = c; cx.lineWidth = w; cx.globalAlpha = a;
+      cx.beginPath();
+      for (const [ax, ay, bx, by] of segs) { cx.moveTo(ax, ay); cx.lineTo(bx, by); }
+      cx.stroke();
+    }
+  }
+  cx.globalAlpha = 1; cx.lineCap = "butt"; cx.lineJoin = "miter";
   // --- rivers: shared hex-edge segments, never tile-center spokes
   const riverDrawn = new Set();
   const riverSegments = [];
@@ -1994,8 +2034,7 @@ function draw() {
     }
     const rr = 10.5;
     if (beau) {
-      cx.fillStyle = "#00000035";
-      cx.beginPath(); cx.ellipse(x, y + 8.5, 9, 3.6, 0, 0, 7); cx.fill();
+      drawUnitBase(u, x, y);
       drawUnitChar(u, x, y, now, moving);
       if (u.fortified) {
         cx.strokeStyle = "#f4f8ffbb"; cx.lineWidth = 2;
@@ -2004,6 +2043,8 @@ function draw() {
       }
     } else {
       const civ = (u.type === "settler" || u.type === "builder");
+      // spent units recede so the ones that can still act carry the eye
+      cx.globalAlpha = (u.moves_left !== undefined && u.moves_left <= 0) ? 0.62 : 1;
       cx.save();
       cx.shadowColor = "#000a"; cx.shadowBlur = 5; cx.shadowOffsetY = 2;
       cx.fillStyle = pcol(u.owner);
@@ -2020,6 +2061,7 @@ function draw() {
       cx.stroke();
       cx.fillStyle = "#10151d"; cx.font = "11px 'Segoe UI Symbol', sans-serif";
       cx.fillText(UNIT_ICON[u.type] || u.type[0].toUpperCase(), x, y + 0.5);
+      cx.globalAlpha = 1;
     }
     // chunky health bar — sized against zoom so it stays readable far out
     if (u.hp < 100) {

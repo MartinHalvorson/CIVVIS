@@ -127,7 +127,8 @@
     },
     "GRANT_UNIT_IN_CITY": {
       "status": "implemented",
-      "note": "Free units from wonders, buildings and pantheons."
+      "verified": true,
+      "note": "Verified row by row against the wonders, beliefs and buildings CIVVIS models. Colossus, Pyramids, Statue of Zeus, Kotoku-in, Mahabodhi Temple, Meenakshi Temple, Fertility Rites, Religious Settlements and the tribal-village grants all execute with the shipped counts. The Statue of Liberty's two free Settlers were missing and are now granted. Remaining rows are leader traits, Government Plaza Spy/Builder grants and a Commemoration Giant Death Robot -- content CIVVIS does not model."
     },
     "GRANT_YIELD": {
       "status": "implemented",

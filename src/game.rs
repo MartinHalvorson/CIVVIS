@@ -30406,6 +30406,7 @@ impl Game {
             ("spearman", "free_spearmen"),
             ("battering_ram", "free_battering_rams"),
             ("warrior_monk", "free_warrior_monks"),
+            ("settler", "free_settlers"),
         ] {
             for _ in 0..effect(key) as usize {
                 self.place_new_unit(unit, pid, city_pos);
