@@ -523,7 +523,7 @@
   body.cinema-mode #zoomctl, body.cinema-mode #ubar, body.cinema-mode #modeline,
   body.cinema-mode .minimap-frame { display: none !important; }
   body.cinema-mode #cinema-story {
-    position: absolute; z-index: 10; left: clamp(34px, 4.5vw, 82px); bottom: clamp(44px, 6vh, 88px);
+    position: absolute; z-index: 10; left: clamp(34px, 4.5vw, 82px); bottom: clamp(68px, 7vh, 96px);
     display: block; width: min(620px, calc(100% - 110px)); padding: 0 0 0 18px;
     opacity: 0; transform: translateY(14px); pointer-events: none;
     border-left: 2px solid #e5c776; filter: drop-shadow(0 8px 18px #000d);
@@ -918,7 +918,11 @@
     #tradelist { grid-template-columns: 1fr; padding-inline: 10px; }
     body.cinema-mode #playerhud { top: 24px; width: calc(100% - 24px); grid-template-columns: 58px minmax(0, 1fr); }
     body.cinema-mode #cinema-chrome { top: auto; right: 12px; bottom: 24px; }
-    body.cinema-mode #cinema-story { left: 24px; bottom: 74px; width: calc(100% - 48px); }
+    body.cinema-mode #cinema-story { left: 24px; bottom: 84px; width: calc(100% - 48px); }
+    body.cinema-mode #cinema-story .cinema-detail {
+      display: -webkit-box; overflow: hidden; white-space: normal;
+      -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+    }
   }
   @media (max-width: 620px) {
     #playerhud { grid-template-columns: 58px minmax(0, .78fr) minmax(0, 1.22fr); gap: 3px; }
@@ -1456,8 +1460,7 @@ function showCinemaIntertitle({signature, kicker, title, detail, chapter = false
   if (chapter) panel.classList.add("chapter");
   panel.classList.add("active");
   document.body.classList.add("cinema-intertitle");
-  document.getElementById("cinema-story").classList.remove("visible");
-  directorStoryUntil = 0;
+  hideDirectorStory();
   cinemaIntertitleTimer = setTimeout(() => {
     panel.classList.remove("active", "chapter");
     document.body.classList.remove("cinema-intertitle");
@@ -1513,6 +1516,7 @@ function applyCinemaMode() {
     clearTimeout(cinemaIdleTimer);
     cinemaIdleTimer = null;
     clearDirectorTransition();
+    hideDirectorStory();
     hideCinemaIntertitle();
   }
   updateCinemaAudioButton();
@@ -2260,23 +2264,34 @@ function cuePlace(st, pos) {
   const owner = Number.isInteger(tile.owner) ? st.players[tile.owner] : null;
   return owner ? `${feature} · ${owner.civ} territory` : feature;
 }
-function showDirectorStory(cue) {
+function hideDirectorStory() {
+  const panel = document.getElementById("cinema-story");
+  panel?.classList.remove("visible", "subject-story");
+  directorStoryUntil = 0;
+}
+function showDirectorStory(cue, now = performance.now()) {
   if (!cinemaActive() || !cue?.title) return;
   const panel = document.getElementById("cinema-story");
   panel.querySelector(".cinema-kicker").textContent = cue.kicker || "World in motion";
   panel.querySelector(".cinema-headline").textContent = cue.title;
   panel.querySelector(".cinema-detail").textContent = cue.detail || "";
-  panel.classList.remove("visible");
+  panel.classList.remove("visible", "subject-story");
+  panel.classList.toggle("subject-story", cue.unitId !== undefined && cue.unitId !== null);
   // Restart the entrance even when two important beats arrive close together.
   void panel.offsetWidth;
   panel.classList.add("visible");
-  directorStoryUntil = performance.now() + (cue.priority >= 7 ? 6200 : 4800);
+  directorStoryUntil = now + (cue.priority >= 7 ? 6200 : 4800);
   playCinemaCue(cue);
+}
+function revealDirectorGoalStory(goal, now = performance.now()) {
+  if (!goal?.story || goal.storyShown) return false;
+  goal.storyShown = true;
+  showDirectorStory(goal.story, now);
+  return true;
 }
 function updateDirectorStory(now) {
   if (directorStoryUntil && now >= directorStoryUntil) {
-    document.getElementById("cinema-story").classList.remove("visible");
-    directorStoryUntil = 0;
+    hideDirectorStory();
   }
 }
 function cinematicDisasterStory(disaster, next) {
