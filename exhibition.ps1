@@ -92,9 +92,15 @@ if (-not (Test-Path "$src\Cargo.toml")) {
 Log "supervisor started (port $Port, poll ${PollSec}s)"
 while ($true) {
     try {
-        # 1. revive anything that died
+        # 1. revive anything that died. A gui process that is alive but no
+        #    longer listening still holds a lock on its exe, and the promote
+        #    below then throws every round: the copy fails, Start-Gui is never
+        #    reached, and the exhibition stays dark for good. Clear the corpse
+        #    first so reviving cannot get stuck behind it.
         $guiUp = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
         if (-not $guiUp) {
+            Get-Process civvis-gui -ErrorAction SilentlyContinue | Stop-Process -Force
+            Start-Sleep -Milliseconds 300
             if (Test-Path "$binRun\civvis-next.exe") { Promote-Staged }
             if (Test-Path "$binRun\civvis-gui.exe") { Start-Gui }
         }
