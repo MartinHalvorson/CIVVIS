@@ -15453,7 +15453,12 @@ mod tests {
                 })
             })
             .expect("city-state needs an open attack front");
+        // Three units, not two. The posture this case asserts turns on the
+        // attackers being locally superior, and two of them cleared the 0.72
+        // threshold by 0.009 against a city and its two defenders - close
+        // enough that any change to the generated map decided the outcome.
         let attackers = [
+            g.spawn_test_unit("warrior", 0, staging),
             g.spawn_test_unit("warrior", 0, staging),
             g.spawn_test_unit("archer", 0, staging),
         ];
