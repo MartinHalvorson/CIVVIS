@@ -61,8 +61,10 @@
 
   /* Command deck */
   #side {
-    order: -1; width: 340px; min-width: 340px; height: 100%; position: relative; z-index: 12;
-    display: flex; flex-direction: column; overflow: hidden;
+    order: -1; width: 340px; min-width: 340px; height: 100%; max-height: 100vh; max-height: 100dvh;
+    min-height: 0; position: relative; z-index: 12;
+    display: flex; flex-direction: column; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain;
+    scrollbar-color: #385148 transparent; scrollbar-width: thin;
     background:
       radial-gradient(circle at 80% -10%, #23483b80, transparent 34%),
       linear-gradient(180deg, #101d1b 0%, #08110f 100%);
@@ -146,11 +148,12 @@
   .side-scroll {
     flex: 1; min-height: 0; padding: 12px 11px 22px; overflow-y: auto; overflow-anchor: none;
     display: flex; flex-direction: column;
+    -webkit-overflow-scrolling: touch;
     scrollbar-color: #385148 transparent; scrollbar-width: thin; scrollbar-gutter: stable;
     background: linear-gradient(90deg, #ffffff02, transparent 14%, transparent 86%, #0002);
   }
-  .side-scroll::-webkit-scrollbar { width: 7px; }
-  .side-scroll::-webkit-scrollbar-thumb { background: #385148; border-radius: 9px; }
+  #side::-webkit-scrollbar, .side-scroll::-webkit-scrollbar { width: 7px; }
+  #side::-webkit-scrollbar-thumb, .side-scroll::-webkit-scrollbar-thumb { background: #385148; border-radius: 9px; }
   .side-actions {
     flex: 0 0 auto; margin-bottom: 10px; padding: 7px; border: 1px solid #334c43;
     border-radius: 13px; background: linear-gradient(135deg, #14241f, #0c1714);
@@ -1134,7 +1137,7 @@
   @media (max-width: 720px) {
     body { display: block; }
     #maparea { height: 100%; }
-    #side { position: fixed; inset: 132px auto 8px 8px; width: min(390px, calc(100% - 16px)); min-width: 0; height: auto; border: 1px solid #40584f; border-radius: 16px; }
+    #side { position: fixed; inset: 132px auto 8px 8px; width: min(390px, calc(100% - 16px)); min-width: 0; height: auto; max-height: calc(100dvh - 140px); border: 1px solid #40584f; border-radius: 16px; }
     body.sidebar-hidden #side { width: min(390px, calc(100% - 16px)); transform: translateX(calc(-100% - 16px)); opacity: 0; }
     #playerhud { grid-template-columns: 82px minmax(0, .9fr) minmax(0, 1.1fr); }
     .minimap-frame { right: 8px; bottom: 62px; width: 174px; height: 138px; }
