@@ -689,6 +689,13 @@ class RecoveryTests(unittest.TestCase):
         )
         instance_guard.start()
         self.addCleanup(instance_guard.stop)
+        countdown = patch.object(
+            supervisor,
+            "FINAL_COUNTDOWN_SECONDS",
+            supervisor.MIN_FINAL_COUNTDOWN_SECONDS,
+        )
+        countdown.start()
+        self.addCleanup(countdown.stop)
 
     @staticmethod
     def supervisor_args(**overrides):
@@ -1014,7 +1021,29 @@ class RecoveryTests(unittest.TestCase):
         command = supervisor.server_command(8766, settings, False, checkpoint)
         self.assertEqual(command[command.index("--resume") + 1], str(checkpoint))
         self.assertIn("--supervised", command)
+        self.assertEqual(command[command.index("--restart-ms") + 1], "5000")
         self.assertIn("--no-open", command)
+
+    def test_final_countdown_has_a_five_second_floor_and_allows_longer_holds(self):
+        self.assertEqual(supervisor.final_countdown_seconds(0.0), 5.0)
+        self.assertEqual(supervisor.final_countdown_seconds(4.999), 5.0)
+        self.assertEqual(supervisor.final_countdown_seconds(5.0), 5.0)
+        self.assertEqual(supervisor.final_countdown_seconds(12.5), 12.5)
+        with patch.object(supervisor, "FINAL_COUNTDOWN_SECONDS", 12.5):
+            command = supervisor.server_command(
+                8766,
+                {
+                    "players": 4,
+                    "width": 60,
+                    "height": 38,
+                    "city_states": 6,
+                    "turns": 500,
+                    "map": "pangaea",
+                    "speed": "standard",
+                },
+                False,
+            )
+        self.assertEqual(command[command.index("--restart-ms") + 1], "12500")
 
     def test_server_command_carries_manual_victory_settings(self):
         settings = {
@@ -1458,6 +1487,7 @@ class RecoveryTests(unittest.TestCase):
                 patch.object(supervisor, "parse_args", return_value=args),
                 patch.object(supervisor, "RUNTIME_BINARY", runtime),
                 patch.object(supervisor, "checkpoint_path", return_value=checkpoint),
+                patch.object(supervisor, "pid_listening_on", return_value=None),
                 patch.object(supervisor, "runtime_matches", return_value=False),
                 patch.object(supervisor, "start_server", side_effect=start),
                 patch.object(supervisor, "wait_for_server", side_effect=wait),
@@ -1468,6 +1498,7 @@ class RecoveryTests(unittest.TestCase):
                 ),
                 patch.object(supervisor, "archive_result") as archive,
                 patch.object(supervisor, "stop_server", side_effect=stop),
+                patch.object(supervisor.time, "sleep"),
             ):
                 self.assertEqual(supervisor.main(), 0)
 
