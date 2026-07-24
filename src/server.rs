@@ -2253,6 +2253,20 @@ mod tests {
         );
         assert!(EMBEDDED_INDEX.contains("function initSidebarSections()"));
         assert!(EMBEDDED_INDEX.contains("civvis-sidebar-sections-v1"));
+        for overlay in [
+            "#playerhud",
+            "#victoryhud",
+            ".minimap-frame",
+            "#zoomctl > :not(#paneltoggle)",
+            "#ubar",
+            "#modeline",
+            "#tip",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("body.sidebar-hidden {overlay}")),
+                "focus mode should hide the {overlay} map overlay"
+            );
+        }
         assert!(EMBEDDED_INDEX.contains("function civilizationEventText(text, next)"));
         assert!(!EMBEDDED_INDEX.contains("Simulator settings"));
         assert!(EMBEDDED_INDEX.contains("Quick Deals"));
