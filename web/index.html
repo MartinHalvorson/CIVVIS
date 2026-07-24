@@ -1927,6 +1927,44 @@ const PCOLORS = ["#ffd700","#e05050","#50a0e0","#50c878","#c878e0","#e09050",
 // the green core carries it across snow. Indexed in PCOLORS order.
 const PCOLORS2 = ["#4a2a8a","#f8eed6","#0e2f5e","#f4f7e8","#e8c25a","#1d3a6e",
                   "#5c2140","#7a2020","#4e1e30","#123c3c","#3d2070","#7a1f2e"];
+// Civ VI's PlayerColors tables give every leader a canonical pair plus three
+// alternates. Keep those pairs together: when two primaries collide, the
+// later player takes the first free backup exactly as the base game does.
+// PCOLORS/PCOLORS2 remain the last resort for custom or future civilizations.
+const CIV6_JERSEYS = {
+  Rome: [
+    ["#6d00cd", "#f7d801"], ["#780001", "#f7d801"],
+    ["#f7d801", "#370065"], ["#6d00cd", "#f9f9f9"],
+  ],
+  Egypt: [
+    ["#014f51", "#eae19d"], ["#eae19d", "#6d00cd"],
+    ["#eae19d", "#014f51"], ["#6d00cd", "#eae19d"],
+  ],
+  Greece: [
+    ["#74a3f3", "#f9f9f9"], ["#f9f9f9", "#74a3f3"],
+    ["#74a3f3", "#012a6c"], ["#012a6c", "#74a3f3"],
+  ],
+  China: [
+    ["#156c30", "#f9f9f9"], ["#ca1415", "#f7d801"],
+    ["#f7d801", "#ca1415"], ["#f7d801", "#012a6c"],
+  ],
+  Sumeria: [
+    ["#012a6c", "#ff8112"], ["#012a6c", "#7dece3"],
+    ["#ff8112", "#012a6c"], ["#012a6c", "#b780e6"],
+  ],
+  Aztec: [
+    ["#7dece3", "#780001"], ["#780001", "#7dece3"],
+    ["#ff8112", "#014f51"], ["#014f51", "#ff8112"],
+  ],
+  Nubia: [
+    ["#eae19d", "#783d02"], ["#783d02", "#eae19d"],
+    ["#f9f9f9", "#783d02"], ["#783d02", "#f9f9f9"],
+  ],
+  Scythia: [
+    ["#ffb23c", "#780001"], ["#783d02", "#f9f9f9"],
+    ["#780001", "#eae19d"], ["#783d02", "#eae19d"],
+  ],
+};
 const CITY_STATE_TINT = "#202225";
 const CITY_STATE_TYPE_COLORS = {
   scientific:"#4aa3df", cultural:"#a46bd4", religious:"#eee7cf",
@@ -3164,11 +3202,33 @@ const MIN_YS = 0.35, MAX_YS = 1;
 let cinematicYS = DEFAULT_CINEMA_YS;
 let YS = VIEW === "cinematic" ? cinematicYS : MODE.projection;
 function key(p) { return p[0] + "," + p[1]; }
+let jerseyCacheState = null, jerseyCache = [];
+function playerJerseys() {
+  if (jerseyCacheState === state) return jerseyCache;
+  const assigned = [], usedPrimaries = new Set();
+  const majors = state ? state.players
+    .filter(p => !p.is_minor && !p.is_barbarian)
+    .sort((a, b) => a.id - b.id) : [];
+  for (const p of majors) {
+    const canonical = CIV6_JERSEYS[p.civ] || [];
+    const generic = PCOLORS.map((primary, offset) => {
+      const index = (p.id + offset) % PCOLORS.length;
+      return [PCOLORS[index], PCOLORS2[index]];
+    });
+    const options = [...canonical, ...generic];
+    const jersey = options.find(pair => !usedPrimaries.has(pair[0])) || options[0];
+    assigned[p.id] = jersey;
+    if (jersey) usedPrimaries.add(jersey[0]);
+  }
+  jerseyCacheState = state;
+  jerseyCache = assigned;
+  return assigned;
+}
 function pcol(id) {
   const p = state.players[id];
   if (p && p.is_barbarian) return "#30262a";
   if (p && p.is_minor) return CITY_STATE_TINT;
-  return PCOLORS[id % PCOLORS.length];
+  return playerJerseys()[id]?.[0] || PCOLORS[id % PCOLORS.length];
 }
 // The jersey partner. City-states get their type colour — black-on-type is
 // exactly how Civ 6 dresses them, and their near-black primary needs the help.
@@ -3177,7 +3237,7 @@ function pcol2(id) {
   if (p && p.is_barbarian) return "#8a3a34";
   if (p && p.is_minor)
     return CITY_STATE_TYPE_COLORS[p.cs_type] || CITY_STATE_TYPE_COLORS.trade;
-  return PCOLORS2[id % PCOLORS2.length];
+  return playerJerseys()[id]?.[1] || PCOLORS2[id % PCOLORS2.length];
 }
 function cityBannerColor(owner) {
   const p = state.players[owner];
