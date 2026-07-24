@@ -2186,6 +2186,10 @@ mod tests {
         assert!(EMBEDDED_INDEX
             .contains("const payload = {...newSimulationPayload(), paused: wasPaused}"));
         assert!(EMBEDDED_INDEX.contains("setPace({paused: wasPaused})"));
+        assert!(EMBEDDED_INDEX.contains(
+            "sessionStorage.setItem(\"civvis-restart-paused-v1\", wasPaused ? \"1\" : \"0\")"
+        ));
+        assert!(EMBEDDED_INDEX.contains("specPaused = restartPaused === \"1\""));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/next-game-settings\""));
         assert!(EMBEDDED_INDEX.contains("with selected settings"));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/supervisor-new\""));

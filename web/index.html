@@ -1516,6 +1516,17 @@
           <button class="primary" id="specpause">⏸ Pause</button>
           <button id="restart-sim" title="Restart with the same settings">Restart sim<span class="sub">same settings</span></button>
         </div>
+        <script>
+          // A supervised restart replaces this whole page. Restore the label
+          // beside the button so the default Pause text is never painted while
+          // a paused simulation is coming back as paused.
+          try {
+            const paused = sessionStorage.getItem("civvis-restart-paused-v1");
+            if (paused !== null)
+              document.getElementById("specpause").textContent =
+                paused === "1" ? "▶ Resume" : "⏸ Pause";
+          } catch (e) {}
+        </script>
       </div>
     </div>
     <details class="sidebar-section" data-section="game-settings">
@@ -1902,7 +1913,12 @@ const VICTORY_TRACKS = [
 // ---------------------------------------------------------------- state
 let state = null, sel = null, selCity = null, RULES = null;
 let lensOn = false, tackMode = false, tacks = [], lastSeed = null, cycleIdx = -1;
-let SPEC = false, specPaused = false, specTimer = null, specBusy = false;
+let restartPaused = null;
+try {
+  restartPaused = sessionStorage.getItem("civvis-restart-paused-v1");
+  sessionStorage.removeItem("civvis-restart-paused-v1");
+} catch (e) {}
+let SPEC = false, specPaused = restartPaused === "1", specTimer = null, specBusy = false;
 let viewChanging = false;
 let eventLogs = new Map(), lastLeaderByView = new Map(), lastSidePaint = 0;
 let TMAP = new Map();
@@ -10778,6 +10794,9 @@ async function startNewSimulation() {
       if (requested.error) throw new Error(requested.error);
       const respawn = document.getElementById("respawn");
       if (respawn) respawn.textContent = "restarting sim on existing code";
+      try {
+        sessionStorage.setItem("civvis-restart-paused-v1", wasPaused ? "1" : "0");
+      } catch (e) {}
       waitForSupervisedSuccessor(finishedInstance, finishedSeed);
       return;
     }
