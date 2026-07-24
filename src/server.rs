@@ -709,7 +709,7 @@ fn chronicle_world_events(
 }
 
 /// Server-side exhibition state: in spectate mode a background thread steps
-/// the game at `pace_ms` per game turn and restarts 10s after a victory, so
+/// the game at `pace_ms` per game turn and restarts 5s after a victory, so
 /// games keep running with no browser attached.
 ///
 /// `pace_ms` is the budget for a whole turn — every seat taking one step —
@@ -727,7 +727,7 @@ pub struct Shared {
     pub turn_compute_us: AtomicU64,
 }
 
-const RESTART_MS: u64 = 10_000;
+const RESTART_MS: u64 = 5_000;
 /// The unlimited pace still hands the accept loop a slot this often, so the
 /// page keeps loading state while the stepper saturates a core.
 const UNLIMITED_BREATH_MS: u64 = 100;
@@ -1987,7 +1987,7 @@ mod tests {
     use super::{
         chronicle_world_events, new_game_params, request_path, seat_delay_ms, ChronicleSnapshot,
         ChronicleState, Params, Session, EMBEDDED_CINEMATIC_3D, EMBEDDED_INDEX,
-        EMBEDDED_WORLD_WONDER_ATLAS,
+        EMBEDDED_WORLD_WONDER_ATLAS, RESTART_MS,
     };
     use crate::game::{Action, VictoryConditions};
     use crate::setup::{GameSpeed, MapScript};
@@ -2014,6 +2014,11 @@ mod tests {
         // Minors take a quarter of a major's slice, and unlimited never waits.
         assert_eq!(seat_delay_ms(1_000, 4, 4, false) / 4, seat_delay_ms(1_000, 4, 4, true));
         assert_eq!(seat_delay_ms(0, 8, 12, false), 0);
+    }
+
+    #[test]
+    fn server_owned_final_countdown_is_five_seconds() {
+        assert_eq!(RESTART_MS, 5_000);
     }
 
     fn current() -> Params {
@@ -2278,12 +2283,53 @@ mod tests {
             );
         }
         assert!(EMBEDDED_INDEX.contains("const VIEW_MODES = {"));
+        assert!(EMBEDDED_INDEX.contains(
+            "const VIEW_LEVELS = [\"strategic\", \"balanced\", \"cinematic\"]"
+        ));
+        let strategic_option = EMBEDDED_INDEX
+            .find("<option value=\"strategic\">Strategic")
+            .unwrap();
+        let painted_option = EMBEDDED_INDEX
+            .find("<option value=\"balanced\">Painted")
+            .unwrap();
+        let cinematic_option = EMBEDDED_INDEX
+            .find("<option value=\"cinematic\">Cinematic")
+            .unwrap();
+        assert!(strategic_option < painted_option && painted_option < cinematic_option);
+        assert!(EMBEDDED_INDEX.contains("if (old === \"cinematic\") return \"balanced\";"));
+        assert!(EMBEDDED_INDEX.contains("return \"strategic\";"));
+        // Painted and Cinematic are different geometries, not the same raised
+        // board with a post-process pass: the former is a top-down painted
+        // plane, while the latter lowers the camera and extrudes the terrain.
+        assert!(
+            EMBEDDED_INDEX.contains("balanced:  { relief:0,   projection:1.00, skirt:0")
+        );
+        assert!(
+            EMBEDDED_INDEX.contains("cinematic: { relief:1.8, projection:0.70, skirt:9")
+        );
+        assert!(EMBEDDED_INDEX.contains(
+            "YS = VIEW === \"cinematic\" ? cinematicYS : MODE.projection"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "else setRot(cam.rot, false);  // recompute screen-space light"
+        ));
+        // Reducing visual complexity is a deliberate return to the atlas, not
+        // merely a material swap on whatever close-up the cinematic director
+        // happened to leave behind.
+        assert!(EMBEDDED_INDEX.contains(
+            "const movingDown = VIEW_LEVELS.indexOf(v) < VIEW_LEVELS.indexOf(VIEW);"
+        ));
+        assert!(EMBEDDED_INDEX.contains("if (movingDown) setFullWorldView();"));
+        assert!(EMBEDDED_INDEX.contains("function setFullWorldView()"));
+        assert!(EMBEDDED_INDEX.contains("takeCameraControl();\n  setRot(0);"));
+        assert!(EMBEDDED_INDEX.contains("const centers = state.map.tiles.map"));
+        assert!(
+            EMBEDDED_INDEX.contains("if (beau && MODE.relief > 0 && !water) drawWalls(")
+        );
         assert!(EMBEDDED_INDEX.contains("localStorage.setItem(\"civvis-view-v3\", v)"));
-        // The style that used to be called cinematic is the one now called
-        // balanced, so a returning browser must land there and not be silently
-        // upgraded into the expensive one.
+        // Preserve the old Cinematic-to-Painted rename for returning browsers;
+        // a browser with no saved preference starts in Strategic instead.
         assert!(EMBEDDED_INDEX.contains("localStorage.getItem(\"civvis-view\")"));
-        assert!(EMBEDDED_INDEX.contains("? \"strategic\" : \"balanced\""));
         // Ground is baked once per style/terrain/relief/variant and blitted
         // through the world plane; the per-frame clip-and-gradient path it
         // replaced is what made a full-size map cost eighty milliseconds a
@@ -2448,7 +2494,9 @@ mod tests {
         assert!(!EMBEDDED_INDEX.contains("kicker:\"Casualty of war\""));
         assert!(EMBEDDED_INDEX.contains("class=\"winner-content\""));
         assert!(EMBEDDED_INDEX.contains("cinema-finale"));
-        assert!(EMBEDDED_INDEX.contains("DEFAULT_CINEMA_YS = 0.64"));
+        assert!(
+            EMBEDDED_INDEX.contains("DEFAULT_CINEMA_YS = VIEW_MODES.cinematic.projection")
+        );
         assert!(EMBEDDED_INDEX.contains("function drawUnitFormationBadge"));
         assert!(EMBEDDED_INDEX.contains("<script src=\"/cinematic3d.js\"></script>"));
         assert!(EMBEDDED_INDEX.contains("globalThis.Cinematic3D?.supports(family)"));
