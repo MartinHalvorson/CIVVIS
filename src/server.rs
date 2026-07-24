@@ -2238,9 +2238,9 @@ mod tests {
             .expect("active strategy section");
         assert!(
             game_settings < display_settings
-                && display_settings < event_log
-                && event_log < war_log
-                && war_log < strategy,
+                && display_settings < war_log
+                && war_log < event_log
+                && event_log < strategy,
             "left panel should show game settings, display settings, and the two logs first"
         );
         assert!(EMBEDDED_INDEX.contains("<span>Display settings</span>"));
