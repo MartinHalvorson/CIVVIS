@@ -61,6 +61,211 @@ fn grow_blob(
     land
 }
 
+fn point_in_polygon(longitude: f64, latitude: f64, polygon: &[(f64, f64)]) -> bool {
+    let mut inside = false;
+    let mut previous = polygon.len() - 1;
+    for current in 0..polygon.len() {
+        let (xi, yi) = polygon[current];
+        let (xj, yj) = polygon[previous];
+        if ((yi > latitude) != (yj > latitude))
+            && longitude < (xj - xi) * (latitude - yi) / (yj - yi) + xi
+        {
+            inside = !inside;
+        }
+        previous = current;
+    }
+    inside
+}
+
+/// A deliberately low-frequency Earth silhouette. The generator samples these
+/// coastlines through the same equal-area latitude bands used by both browser
+/// projections: each row spans an equal amount of spherical surface, while its
+/// rendered circumference naturally shrinks toward either pole.
+fn generate_earth_land(wm: &WorldMap) -> BTreeSet<Pos> {
+    const NORTH_AMERICA: &[(f64, f64)] = &[
+        (-168.0, 71.0),
+        (-142.0, 72.0),
+        (-126.0, 59.0),
+        (-123.0, 49.0),
+        (-105.0, 48.0),
+        (-82.0, 25.0),
+        (-97.0, 16.0),
+        (-112.0, 28.0),
+        (-126.0, 43.0),
+        (-151.0, 58.0),
+        (-168.0, 60.0),
+    ];
+    const SOUTH_AMERICA: &[(f64, f64)] = &[
+        (-81.0, 12.0),
+        (-61.0, 11.0),
+        (-49.0, 2.0),
+        (-35.0, -7.0),
+        (-52.0, -35.0),
+        (-68.0, -55.0),
+        (-76.0, -38.0),
+        (-81.0, -5.0),
+    ];
+    const EURASIA: &[(f64, f64)] = &[
+        (-11.0, 36.0),
+        (-10.0, 59.0),
+        (5.0, 71.0),
+        (44.0, 72.0),
+        (82.0, 75.0),
+        (126.0, 70.0),
+        (169.0, 64.0),
+        (179.0, 52.0),
+        (145.0, 43.0),
+        (128.0, 31.0),
+        (121.0, 19.0),
+        (105.0, 7.0),
+        (93.0, 21.0),
+        (78.0, 8.0),
+        (66.0, 25.0),
+        (49.0, 29.0),
+        (35.0, 36.0),
+        (20.0, 35.0),
+        (8.0, 43.0),
+    ];
+    const AFRICA: &[(f64, f64)] = &[
+        (-17.0, 36.0),
+        (12.0, 37.0),
+        (34.0, 31.0),
+        (51.0, 12.0),
+        (42.0, -12.0),
+        (31.0, -35.0),
+        (17.0, -35.0),
+        (8.0, -18.0),
+        (-10.0, 5.0),
+    ];
+    const ARABIA_INDIA: &[(f64, f64)] = &[
+        (34.0, 31.0),
+        (67.0, 29.0),
+        (91.0, 24.0),
+        (83.0, 7.0),
+        (73.0, 8.0),
+        (61.0, 25.0),
+        (52.0, 13.0),
+        (42.0, 14.0),
+    ];
+    const SOUTHEAST_ASIA: &[(f64, f64)] = &[
+        (91.0, 25.0),
+        (121.0, 21.0),
+        (132.0, 4.0),
+        (118.0, -9.0),
+        (103.0, -7.0),
+        (97.0, 9.0),
+    ];
+    const AUSTRALIA: &[(f64, f64)] = &[
+        (112.0, -11.0),
+        (154.0, -10.0),
+        (153.0, -39.0),
+        (132.0, -44.0),
+        (113.0, -34.0),
+    ];
+    const GREENLAND: &[(f64, f64)] = &[(-73.0, 59.0), (-18.0, 60.0), (-14.0, 82.0), (-54.0, 84.0)];
+    const ISLANDS: &[&[(f64, f64)]] = &[
+        &[(-10.0, 50.0), (2.0, 51.0), (1.0, 59.0), (-8.0, 58.0)],
+        &[(129.0, 31.0), (145.0, 33.0), (146.0, 46.0), (137.0, 43.0)],
+        &[(43.0, -12.0), (51.0, -13.0), (50.0, -26.0), (44.0, -25.0)],
+        &[
+            (166.0, -34.0),
+            (179.0, -37.0),
+            (178.0, -48.0),
+            (168.0, -47.0),
+        ],
+    ];
+    let continents = [
+        NORTH_AMERICA,
+        SOUTH_AMERICA,
+        EURASIA,
+        AFRICA,
+        ARABIA_INDIA,
+        SOUTHEAST_ASIA,
+        AUSTRALIA,
+        GREENLAND,
+    ];
+    let mut land = BTreeSet::new();
+    for row in 0..wm.height {
+        let surface_y = 1.0 - 2.0 * (row as f64 + 0.5) / wm.height as f64;
+        let latitude = surface_y.clamp(-1.0, 1.0).asin().to_degrees();
+        for col in 0..wm.width {
+            let longitude = 360.0 * (col as f64 + 0.5) / wm.width as f64 - 180.0;
+            if continents
+                .iter()
+                .chain(ISLANDS.iter())
+                .any(|polygon| point_in_polygon(longitude, latitude, polygon))
+            {
+                land.insert(hex::offset_to_axial(col, row));
+            }
+        }
+    }
+    land
+}
+
+fn earth_position(width: i32, height: i32, longitude: f64, latitude: f64) -> Pos {
+    let col = (((longitude + 180.0) / 360.0 * width as f64).floor() as i32).clamp(0, width - 1);
+    let surface_y = latitude.to_radians().sin();
+    let row = (((1.0 - surface_y) * 0.5 * height as f64).floor() as i32).clamp(0, height - 1);
+    hex::offset_to_axial(col, row)
+}
+
+fn normalized_latitude(row: i32, height: i32, equal_area: bool) -> f64 {
+    if equal_area {
+        let surface_y = 1.0 - 2.0 * (row as f64 + 0.5) / height.max(1) as f64;
+        surface_y.clamp(-1.0, 1.0).asin().abs() / std::f64::consts::FRAC_PI_2
+    } else {
+        (2.0 * row as f64 / (height - 1).max(1) as f64 - 1.0).abs()
+    }
+}
+
+/// CIV_NAMES is ordered Rome, Egypt, Greece, China, Sumeria, Aztec, Nubia,
+/// Scythia. Preserve that order here so a True Start script is true in play,
+/// not only shaped like Earth in the setup preview.
+fn true_start_major_spawns(wm: &WorldMap, candidates: &[Pos], count: usize) -> Vec<Pos> {
+    const HOMELANDS: [(f64, f64); 8] = [
+        (12.5, 41.9),
+        (31.2, 30.0),
+        (23.7, 38.0),
+        (116.4, 39.9),
+        (44.4, 32.5),
+        (-99.1, 19.4),
+        (32.5, 19.6),
+        (64.0, 48.0),
+    ];
+    let mut available = candidates.to_vec();
+    let mut starts = Vec::new();
+    for index in 0..count {
+        if available.is_empty() {
+            break;
+        }
+        let (longitude, latitude) = HOMELANDS[index % HOMELANDS.len()];
+        let target = earth_position(wm.width, wm.height, longitude, latitude);
+        let minimum_separation = (0..=4)
+            .rev()
+            .find(|separation| {
+                available.iter().any(|candidate| {
+                    starts
+                        .iter()
+                        .all(|start| hex::wdistance(*candidate, *start, wm.width) >= *separation)
+                })
+            })
+            .unwrap_or(0);
+        let selected = available
+            .iter()
+            .enumerate()
+            .filter(|(_, candidate)| {
+                starts.iter().all(|start| {
+                    hex::wdistance(**candidate, *start, wm.width) >= minimum_separation
+                })
+            })
+            .min_by_key(|(_, candidate)| hex::wdistance(**candidate, target, wm.width))
+            .map(|(candidate_index, _)| candidate_index)
+            .unwrap_or(0);
+        starts.push(available.swap_remove(selected));
+    }
+    starts
+}
+
 fn generate_land(
     wm: &WorldMap,
     script: MapScript,
@@ -152,6 +357,7 @@ fn generate_land(
             }
             land
         }
+        MapScript::TrueStartEarth | MapScript::TrueStartTrueEarth => generate_earth_land(wm),
     }
 }
 
@@ -197,16 +403,20 @@ pub fn generate_with_script(
     let land = generate_land(&wm, script, num_major_spawns, rng);
 
     let land_list: Vec<Pos> = land.iter().cloned().collect();
+    let equal_area = matches!(
+        script,
+        MapScript::TrueStartEarth | MapScript::TrueStartTrueEarth
+    );
     let latitude = |pos: Pos| -> f64 {
         let (_, row) = hex::axial_to_offset(pos.0, pos.1);
-        (2.0 * row as f64 / (height - 1).max(1) as f64 - 1.0).abs()
+        normalized_latitude(row, height, equal_area)
     };
 
     // --- relief, then climate. The stock generator settles elevation first
     // (MountainsCliffs.lua) and only then paints biomes over it, because the
     // mountain fractal has to be free of the latitude bands to run across them.
     apply_tectonics(&mut wm, &land, rng);
-    assign_biomes(&mut wm, &land_list, rng);
+    assign_biomes(&mut wm, &land_list, equal_area, rng);
 
     // --- coast. A shelf is one tile of shallow water plus the stock's three
     // expansion passes, each giving a quarter of the Ocean tiles that already
@@ -415,7 +625,7 @@ pub fn generate_with_script(
 
     // --- vegetative, wetland and river-basin features, and the reefs that
     // supply the Campus's major Gathering Storm adjacency source.
-    add_features(&mut wm, &land, rng);
+    add_features(&mut wm, &land, equal_area, rng);
 
     // --- natural wonders: use the stock per-map-size count and the actual
     // footprint of each modeled wonder. Multi-tile wonders are grown as a
@@ -718,7 +928,12 @@ pub fn generate_with_script(
     let components = connected_components(&passable, width);
     let primary = components.first().cloned().unwrap_or_default();
     let mut all_candidates = candidates_for(&passable, total_spawns);
-    let mut spawns = if matches!(script, MapScript::Continents | MapScript::SmallContinents) {
+    let mut spawns = if matches!(
+        script,
+        MapScript::TrueStartEarth | MapScript::TrueStartTrueEarth
+    ) {
+        true_start_major_spawns(&wm, &all_candidates, num_major_spawns)
+    } else if matches!(script, MapScript::Continents | MapScript::SmallContinents) {
         let viable: Vec<(BTreeSet<Pos>, Vec<Pos>)> = components
             .into_iter()
             .map(|component| {
@@ -891,7 +1106,7 @@ fn apply_tectonics(wm: &mut WorldMap, land: &BTreeSet<Pos>, rng: &mut Rng) {
 /// out of two further fractals so that both arrive as regions. Desert is
 /// additionally confined to the subtropics, which is why Civ VI worlds have
 /// desert belts either side of a green equator rather than desert everywhere.
-fn assign_biomes(wm: &mut WorldMap, land: &[Pos], rng: &mut Rng) {
+fn assign_biomes(wm: &mut WorldMap, land: &[Pos], equal_area: bool, rng: &mut Rng) {
     let (width, height) = (wm.width, wm.height);
     let deserts = Fractal::new(rng, width, height, 3);
     let plains = Fractal::new(rng, width, height, 3);
@@ -904,7 +1119,7 @@ fn assign_biomes(wm: &mut WorldMap, land: &[Pos], rng: &mut Rng) {
         if wm.tiles[pos].terrain == "mountain" {
             continue;
         }
-        let base = (2.0 * row as f64 / (height - 1).max(1) as f64 - 1.0).abs();
+        let base = normalized_latitude(row, height, equal_area);
         let latitude =
             (base + (128.0 - variation.at(col, row) as f64) / (255.0 * 5.0)).clamp(0.0, 1.0);
         let terrain = if latitude >= SNOW_LATITUDE {
@@ -966,11 +1181,9 @@ fn within_share(count: usize, considered: usize, percent: usize) -> bool {
     considered == 0 || (count * 100).div_ceil(considered) <= percent
 }
 
-fn add_features(wm: &mut WorldMap, land: &BTreeSet<Pos>, rng: &mut Rng) {
+fn add_features(wm: &mut WorldMap, land: &BTreeSet<Pos>, equal_area: bool, rng: &mut Rng) {
     let (width, height) = (wm.width, wm.height);
     let equator = (height + 1) / 2;
-    // Rainforest keeps to twenty degrees either side of the equator.
-    let tropics = (20 * height / 180).max(2);
 
     let mut considered_land = 0;
     let mut jungle_candidates = 0;
@@ -1035,7 +1248,9 @@ fn add_features(wm: &mut WorldMap, land: &BTreeSet<Pos>, rng: &mut Rng) {
                 continue;
             }
 
-            let tropical = (row - equator).abs() <= tropics;
+            // Rainforest keeps to twenty degrees either side of the equator,
+            // whether rows are linear latitude or equal spherical area.
+            let tropical = normalized_latitude(row, height, equal_area) <= 20.0 / 90.0;
             if tropical && matches!(terrain.as_str(), "grassland" | "plains") {
                 jungle_candidates += 1;
                 if within_share(jungles, jungle_candidates, JUNGLE_PERCENT)
@@ -1069,7 +1284,7 @@ fn add_features(wm: &mut WorldMap, land: &BTreeSet<Pos>, rng: &mut Rng) {
     for row in 0..height {
         for col in 0..width {
             let pos = hex::offset_to_axial(col, row);
-            let latitude = (2.0 * row as f64 / (height - 1).max(1) as f64 - 1.0).abs();
+            let latitude = normalized_latitude(row, height, equal_area);
             let eligible = wm
                 .get(pos)
                 .is_some_and(|tile| tile.terrain == "coast" && tile.feature.is_none());
@@ -1846,6 +2061,7 @@ mod river_tests {
                     "Small Continents needs several separated landmasses, got {:?}",
                     components.iter().map(|c| c.len()).collect::<Vec<_>>()
                 ),
+                MapScript::TrueStartEarth | MapScript::TrueStartTrueEarth => unreachable!(),
             }
 
             let occupied_components = components
@@ -1874,6 +2090,72 @@ mod river_tests {
         }
     }
 
+    #[test]
+    fn true_earth_scripts_share_geography_and_use_historic_major_starts() {
+        let rules = Rules::embedded();
+        let mut flat_rng = Rng::new(93_011);
+        let mut globe_rng = Rng::new(93_011);
+        let (flat, flat_spawns) = generate_with_script(
+            &rules,
+            60,
+            38,
+            8,
+            6,
+            0,
+            3,
+            MapScript::TrueStartEarth,
+            &mut flat_rng,
+        );
+        let (globe, globe_spawns) = generate_with_script(
+            &rules,
+            60,
+            38,
+            8,
+            6,
+            0,
+            3,
+            MapScript::TrueStartTrueEarth,
+            &mut globe_rng,
+        );
+        assert!(flat.tiles == globe.tiles);
+        assert_eq!(flat_spawns, globe_spawns);
+        assert_eq!(flat_spawns.len(), 14);
+
+        let homelands = [
+            (12.5, 41.9),
+            (31.2, 30.0),
+            (23.7, 38.0),
+            (116.4, 39.9),
+            (44.4, 32.5),
+            (-99.1, 19.4),
+            (32.5, 19.6),
+            (64.0, 48.0),
+        ];
+        for (spawn, (longitude, latitude)) in flat_spawns.iter().zip(homelands) {
+            let target = earth_position(flat.width, flat.height, longitude, latitude);
+            assert!(
+                hex::wdistance(*spawn, target, flat.width) <= 7,
+                "historic start {longitude},{latitude} moved too far: {spawn:?}"
+            );
+            assert!(!rules.is_water(&flat.tiles[spawn]));
+        }
+        // Equal-area rows converge onto ocean at both poles; the recognized
+        // continents occupy both hemispheres and leave both great oceans open.
+        for (longitude, latitude, land) in [
+            (-110.0, 40.0, true),
+            (-60.0, -20.0, true),
+            (20.0, 5.0, true),
+            (100.0, 50.0, true),
+            (135.0, -25.0, true),
+            (-150.0, 0.0, false),
+            (-25.0, 0.0, false),
+            (0.0, 88.0, false),
+        ] {
+            let tile = &flat.tiles[&earth_position(flat.width, flat.height, longitude, latitude)];
+            assert_eq!(!rules.is_water(tile), land, "at {longitude},{latitude}");
+        }
+    }
+
     /// Rolling strategic resources against the whole 52-entry catalog, one
     /// 13% chance per tile, put a single Iron and a single Horses deposit on a
     /// six-player Pangaea. With no Iron nobody can train or upgrade into a
@@ -1895,6 +2177,8 @@ mod river_tests {
             MapScript::Continents,
             MapScript::SmallContinents,
             MapScript::InlandSea,
+            MapScript::TrueStartEarth,
+            MapScript::TrueStartTrueEarth,
         ]
         .into_iter()
         .enumerate()
