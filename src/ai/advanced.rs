@@ -3314,7 +3314,13 @@ impl AdvancedAi {
             return surprise;
         }
 
-        let urgent = self.rival_victory_pressure(g, target).progress >= 90;
+        let pressure = self.rival_victory_pressure(g, target);
+        // A final exoplanet launch is an irreversible victory clock. It
+        // already interrupts the strategic planner at 78%, so waiting five
+        // turns for a Formal War here would make its counter-campaign start
+        // too late even when the expedition has not yet traveled a light-year.
+        let urgent = pressure.progress >= 90
+            || (pressure.strategy == GrandStrategy::Science && pressure.progress >= 78);
         let denounced = g.players[pid]
             .denounced_until
             .get(&target)
@@ -11326,13 +11332,9 @@ mod tests {
         let mut emergency = Game::new_full(2, 24, 16, 713, 300, 0, false);
         emergency.current = 0;
         emergency.turn = 60;
-        emergency.players[1].science_projects.extend([
-            "launch_earth_satellite".to_string(),
-            "launch_moon_landing".to_string(),
-            "launch_mars_colony".to_string(),
-            "exoplanet_expedition".to_string(),
-        ]);
-        emergency.players[1].exoplanet_distance = 49.0;
+        emergency.players[1]
+            .science_projects
+            .insert("exoplanet_expedition".to_string());
         assert_eq!(
             ai.preferred_war_opening(&emergency, 0, 1),
             Some(Action::DeclareWar { player: 1 })
