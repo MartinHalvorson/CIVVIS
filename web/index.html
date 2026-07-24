@@ -2003,7 +2003,8 @@ function setOverlayVisibility(name, visible) {
   applyOverlayVisibility();
   const checkbox = document.querySelector(`[data-overlay="${name}"]`);
   if (checkbox) checkbox.checked = visible;
-  localStorage.setItem(OVERLAY_STORAGE_KEY, JSON.stringify(OVERLAY_VISIBILITY));
+  try { localStorage.setItem(OVERLAY_STORAGE_KEY, JSON.stringify(OVERLAY_VISIBILITY)); }
+  catch (_) {}
 }
 const OVERLAY_LABELS = {
   players:"Player standings", victory:"Victory tracker",
