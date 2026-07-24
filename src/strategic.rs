@@ -536,9 +536,10 @@ impl Ai for StrategicAi {
     fn take_turn(&mut self, g: &mut Game, pid: usize) {
         let major = !g.players[pid].is_minor && !g.players[pid].is_barbarian;
         let counter = major.then(|| self.urgent_counter(g, pid)).flatten();
-        let interrupted = counter
-            .as_ref()
-            .is_some_and(|(_, target)| self.inner.victory_target() != Some(*target));
+        let interrupted = counter.as_ref().is_some_and(|(rival, target)| {
+            self.inner.victory_target() != Some(*target)
+                || self.inner.forced_target_player() != Some(*rival)
+        });
         if major && g.winner.is_none() && (g.turn >= self.next_review || interrupted) {
             self.next_review = g.turn + self.review_every;
             // Public victory threats are cheap to inspect every turn and may
@@ -547,15 +548,17 @@ impl Ai for StrategicAi {
             let target = counter
                 .map(|(_, target)| Some(target))
                 .unwrap_or_else(|| self.review(g, pid));
-            match target {
-                Some(target) if self.inner.victory_target() != Some(target) => {
-                    if let Some((rival, _)) = counter {
-                        self.inner.retarget_against(target, rival)
-                    } else {
-                        self.inner.retarget(target)
-                    }
+            match (target, counter) {
+                (Some(target), Some((rival, _)))
+                    if self.inner.victory_target() != Some(target)
+                        || self.inner.forced_target_player() != Some(rival) =>
+                {
+                    self.inner.retarget_against(target, rival);
                 }
-                None if self.inner.victory_target().is_some() => self.inner.adapt(),
+                (Some(target), None) if self.inner.victory_target() != Some(target) => {
+                    self.inner.retarget(target);
+                }
+                (None, _) if self.inner.victory_target().is_some() => self.inner.adapt(),
                 _ => {}
             }
         }
@@ -797,6 +800,42 @@ mod tests {
             strategic.inner.current_plan().and_then(|plan| plan.target_player),
             Some(2),
             "an urgent counter-campaign must pursue the civilization about to win"
+        );
+    }
+
+    #[test]
+    fn urgent_denial_retargets_when_a_different_rival_takes_the_lead() {
+        let mut game = Game::new_full(3, 24, 16, 24, 300, 0, false);
+        found_capitals(&mut game, 3);
+        for rival in [1, 2] {
+            game.players[rival]
+                .science_projects
+                .insert("exoplanet_expedition".to_string());
+        }
+        game.players[1].exoplanet_distance = 40.0;
+        game.players[2].exoplanet_distance = 45.0;
+
+        let mut strategic = StrategicAi::new();
+        strategic.next_review = game.turn + 100;
+        strategic.take_turn(&mut game, 0);
+        assert_eq!(strategic.inner.forced_target_player(), Some(2));
+
+        // The counter-lane remains Domination, but player 1 is now closer to
+        // the science victory. Refreshing only on lane changes would leave
+        // the campaign pinned to player 2.
+        game.players[1].exoplanet_distance = 50.0;
+        assert_eq!(
+            strategic.urgent_counter(&game, 0),
+            Some((1, VictoryTarget::Domination))
+        );
+        game.current = 0;
+        strategic.take_turn(&mut game, 0);
+
+        assert_eq!(strategic.current_target(), Some(VictoryTarget::Domination));
+        assert_eq!(strategic.inner.forced_target_player(), Some(1));
+        assert_eq!(
+            strategic.inner.current_plan().and_then(|plan| plan.target_player),
+            Some(1)
         );
     }
 

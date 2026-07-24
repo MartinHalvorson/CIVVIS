@@ -385,6 +385,13 @@ impl AdvancedAi {
         self.victory_target
     }
 
+    /// Rival explicitly pinned by an urgent counter-campaign, if any.
+    /// StrategicAi uses this to refresh the objective when a different
+    /// civilization becomes the immediate victory threat in the same lane.
+    pub fn forced_target_player(&self) -> Option<usize> {
+        self.forced_target_player
+    }
+
     fn active_victory_target(&self, g: &Game) -> Option<VictoryTarget> {
         self.victory_target
             .filter(|target| g.victory_conditions.is_enabled(target.as_str()))
