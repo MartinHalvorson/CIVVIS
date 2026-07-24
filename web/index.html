@@ -1899,6 +1899,7 @@ const VIEW_MODES = {
   balanced:  { relief:0,   projection:1.00, skirt:0, painted:true,  atmosphere:false, fx:1, idle:90 },
   cinematic: { relief:1.8, projection:0.70, skirt:9, painted:true,  atmosphere:true,  fx:2, idle:33 },
 };
+const VIEW_LEVELS = ["strategic", "balanced", "cinematic"];
 // The style used to be stored under `civvis-view`, where "cinematic" meant what
 // is now called balanced. Read the old key once through that rename so nobody
 // is silently upgraded into the expensive style by opening the page.
@@ -1914,11 +1915,13 @@ let VIEW = (() => {
 let MODE = VIEW_MODES[VIEW];
 function setView(v) {
   if (!VIEW_MODES[v]) return;
+  const movingDown = VIEW_LEVELS.indexOf(v) < VIEW_LEVELS.indexOf(VIEW);
   VIEW = v; MODE = VIEW_MODES[v];
   localStorage.setItem("civvis-view-v3", v);
   syncTiltForView();
-  setRot(cam.rot, false);       // recompute screen-space light for the new pitch
   applyCinemaMode();
+  if (movingDown) setFullWorldView();
+  else setRot(cam.rot, false);  // recompute screen-space light for the new pitch
   TILE_ART.clear();            // relief and grading are baked into the sprites
   if (state) { draw(); drawMini(); }
 }
@@ -9823,6 +9826,40 @@ function observedPlayerIds() {
 }
 function observedPlayerAnchors() {
   return observedPlayerIds().map(playerAnchor).filter(Boolean);
+}
+
+// Moving to a simpler display mode is also an explicit return to the atlas:
+// cancel close-up tracking, put north back at the top, and fit one complete
+// copy of the world inside the unobstructed map stage. Deriving the bounds from
+// the tiles keeps this correct for both cylindrical and bounded scripts.
+function setFullWorldView() {
+  takeCameraControl();
+  setRot(0);
+  if (!state?.map?.tiles?.length) return;
+
+  const centers = state.map.tiles.map(tile => ({
+    x:S * SQ3 * (tile.pos[0] + tile.pos[1] / 2),
+    y:S * 1.5 * tile.pos[1],
+  }));
+  const halfWidth = S * SQ3 / 2, halfHeight = S;
+  const minX = Math.min(...centers.map(point => point.x)) - halfWidth;
+  const maxX = Math.max(...centers.map(point => point.x)) + halfWidth;
+  const minY = Math.min(...centers.map(point => point.y)) - halfHeight;
+  const maxY = Math.max(...centers.map(point => point.y)) + halfHeight;
+  const frame = observedFrameRect();
+  const padding = Math.min(32, (frame.right - frame.left) * .06,
+                           (frame.bottom - frame.top) * .08);
+  const usableWidth = Math.max(1, frame.right - frame.left - padding * 2);
+  const usableHeight = Math.max(1, frame.bottom - frame.top - padding * 2);
+  const scale = Math.min(3.2, usableWidth / (maxX - minX),
+                         usableHeight / ((maxY - minY) * YS));
+  const desiredX = (frame.left + frame.right) / 2;
+  const desiredY = (frame.top + frame.bottom) / 2;
+
+  cameraFlight = null; cameraZoom = null; clearCameraInertia();
+  cam.scale = Math.max(.01, scale);
+  cam.x = (minX + maxX) / 2 - (desiredX - area.clientWidth / 2) / cam.scale;
+  cam.y = (minY + maxY) / 2 - (desiredY - area.clientHeight / 2) / (cam.scale * YS);
 }
 
 // Put the initial subjects in a central stage that clears the fixed HUD. On a

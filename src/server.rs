@@ -2278,6 +2278,9 @@ mod tests {
             );
         }
         assert!(EMBEDDED_INDEX.contains("const VIEW_MODES = {"));
+        assert!(EMBEDDED_INDEX.contains(
+            "const VIEW_LEVELS = [\"strategic\", \"balanced\", \"cinematic\"]"
+        ));
         let strategic_option = EMBEDDED_INDEX
             .find("<option value=\"strategic\">Strategic")
             .unwrap();
@@ -2303,8 +2306,18 @@ mod tests {
             "YS = VIEW === \"cinematic\" ? cinematicYS : MODE.projection"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "setRot(cam.rot, false);       // recompute screen-space light"
+            "else setRot(cam.rot, false);  // recompute screen-space light"
         ));
+        // Reducing visual complexity is a deliberate return to the atlas, not
+        // merely a material swap on whatever close-up the cinematic director
+        // happened to leave behind.
+        assert!(EMBEDDED_INDEX.contains(
+            "const movingDown = VIEW_LEVELS.indexOf(v) < VIEW_LEVELS.indexOf(VIEW);"
+        ));
+        assert!(EMBEDDED_INDEX.contains("if (movingDown) setFullWorldView();"));
+        assert!(EMBEDDED_INDEX.contains("function setFullWorldView()"));
+        assert!(EMBEDDED_INDEX.contains("takeCameraControl();\n  setRot(0);"));
+        assert!(EMBEDDED_INDEX.contains("const centers = state.map.tiles.map"));
         assert!(
             EMBEDDED_INDEX.contains("if (beau && MODE.relief > 0 && !water) drawWalls(")
         );
