@@ -771,6 +771,7 @@ fn main() {
                     speed: play_options.speed,
                     teams: play_options.teams,
                     supervised: args.iter().any(|a| a == "--supervised"),
+                    restart_ms: arg(&args, "--restart-ms", 5_000).max(5_000) as u64,
                     league_dir: {
                         let dir = arg_text(&args, "--league", "");
                         (!dir.is_empty()).then_some(dir)
@@ -821,7 +822,7 @@ fn main() {
                       [--game-modes apocalypse,secret_societies] \
                       [--human-seats 0,1] [--teams 0,0,1,1] [--mods path/to/mod,path/to/other] \
                       [--victories science,culture,religious,diplomatic,domination,score] \
-                      [--spectate] [--supervised] [--resume checkpoint.json] [--strict] \
+                      [--spectate] [--supervised] [--restart-ms N] [--resume checkpoint.json] [--strict] \
                       [--league dir] [--league-record] [--standings [--civ Rome | --civs]] [--rounds N] \
                       [--evolve-every N] [--pop N] [--worker ID] [--lease-seconds N]"
             );

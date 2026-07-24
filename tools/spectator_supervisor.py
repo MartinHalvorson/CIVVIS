@@ -19,6 +19,7 @@ import ctypes
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import random
@@ -36,6 +37,17 @@ from urllib.request import Request, urlopen
 if os.name == "nt":
     # ctypes.wintypes only imports on Windows.
     from ctypes import wintypes
+
+
+MIN_FINAL_COUNTDOWN_SECONDS = 5.0
+FINAL_COUNTDOWN_SECONDS = MIN_FINAL_COUNTDOWN_SECONDS
+
+
+def final_countdown_seconds(requested: float) -> float:
+    """Use five seconds by default while allowing a deliberate longer hold."""
+    if not math.isfinite(requested):
+        return MIN_FINAL_COUNTDOWN_SECONDS
+    return max(MIN_FINAL_COUNTDOWN_SECONDS, requested)
 
 
 SCRIPT_PATH = Path(__file__).resolve()
@@ -926,6 +938,8 @@ def server_command(
         str(port),
         "--spectate",
         "--supervised",
+        "--restart-ms",
+        str(math.ceil(FINAL_COUNTDOWN_SECONDS * 1000)),
     ]
     if resume is not None:
         args.extend(("--resume", str(resume)))
@@ -1223,7 +1237,7 @@ def parse_args() -> argparse.Namespace:
         "--cooldown",
         type=float,
         default=5.0,
-        help="seconds to keep the rendered result visible before the immediate successor",
+        help="seconds to keep the result visible (minimum 5; larger values are honored)",
     )
     parser.add_argument("--poll", type=float, default=0.5)
     parser.add_argument("--build-retry", type=float, default=15.0)
@@ -1345,6 +1359,8 @@ def release_single_instance() -> None:
 
 def main() -> int:
     args = parse_args()
+    global FINAL_COUNTDOWN_SECONDS
+    FINAL_COUNTDOWN_SECONDS = final_countdown_seconds(args.cooldown)
     if getattr(args, "prepare_once", False):
         try:
             return 0 if prepare_latest_once() else 1
@@ -1716,7 +1732,7 @@ def main() -> int:
             # it is safe to leave the result reachable during the short
             # cooldown. Builds happen during active play; the boundary itself
             # never waits on Cargo.
-            remaining = args.cooldown - (time.monotonic() - finished_seen_at)
+            remaining = FINAL_COUNTDOWN_SECONDS - (time.monotonic() - finished_seen_at)
             if remaining > 0:
                 time.sleep(remaining)
             stop_server(process, adopted_pid)
