@@ -416,7 +416,6 @@
     text-align: left; transition: border-color .12s ease, background .12s ease;
   }
   .diplomacy-card:hover { transform: none; border-color: #718b81; background: linear-gradient(100deg, #0e1b17f7, #1a302af2); }
-  .diplomacy-card.active { border-color: #e3c777; box-shadow: inset 3px 0 var(--gold), inset 0 1px #fff2, 0 0 18px #d7b66a17; }
   .diplomacy-card.allied { border-color: #4f9488; box-shadow: inset 3px 0 #6bc0ae, inset 0 1px #fff1; }
   .diplomacy-card.friend { border-color: #708d62; box-shadow: inset 3px 0 #9dbb7d, inset 0 1px #fff1; }
   .diplomacy-card.at-war { border-color: #a65450; box-shadow: inset 3px 0 var(--danger), inset 0 1px #fff1; }
@@ -477,16 +476,23 @@
   .ribbon-stat:nth-child(-n+5) { border-top-color: transparent; }
   .ribbon-stat b { display: block; overflow: hidden; font-size: 10px; line-height: 1.05; text-overflow: ellipsis; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .ribbon-stat em { display: block; margin-top: 2px; color: #82958e; font-size: 6px; font-style: normal; font-weight: 850; letter-spacing: .02em; line-height: 1; }
-  .ribbon-stat.production b { color: #e9ad74; }
-  .ribbon-stat.science b { color: var(--blue); }
-  .ribbon-stat.culture b { color: var(--violet); }
-  .ribbon-stat.faith b { color: #eee7cf; }
-  .ribbon-stat.gold b { color: #e8c64c; }
-  .ribbon-stat.military b { color: #f2a09b; }
-  .ribbon-stat.cities b { color: #d6c49b; }
-  .ribbon-stat.suzerain b { color: #8dd6b1; }
-  .ribbon-stat.wonders b { color: #e9d88e; }
-  .ribbon-stat.score b { color: var(--gold-bright); }
+  .ribbon-stat.production { --stat-color: #e9ad74; }
+  .ribbon-stat.science { --stat-color: var(--blue); }
+  .ribbon-stat.culture { --stat-color: var(--violet); }
+  .ribbon-stat.faith { --stat-color: #eee7cf; }
+  .ribbon-stat.gold { --stat-color: #e8c64c; }
+  .ribbon-stat.military { --stat-color: #f2a09b; }
+  .ribbon-stat.cities { --stat-color: #d6c49b; }
+  .ribbon-stat.suzerain { --stat-color: #8dd6b1; }
+  .ribbon-stat.wonders { --stat-color: #e9d88e; }
+  .ribbon-stat.score { --stat-color: var(--gold-bright); }
+  .ribbon-stat b { color: var(--stat-color); }
+  .ribbon-stat.category-leader {
+    border: 1px solid color-mix(in srgb, var(--stat-color) 70%, transparent);
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--stat-color) 17%, transparent);
+    box-shadow: inset 0 0 6px color-mix(in srgb, var(--stat-color) 10%, transparent);
+  }
   /* The dossier is one card opened up — about three cards tall, one
      civilization at a time. It hangs off the bottom of its own card so the
      ribbon still reads as a single ranked column. */
@@ -942,22 +948,27 @@
   .war-infobox-row:first-of-type { border-top: 0; }
   .war-row-label { padding: 3px 7px; background: #ffffff06; color: #8fa098; font-size: 7px; font-weight: 850; letter-spacing: .14em; text-align: center; text-transform: uppercase; }
   .war-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .war-side { min-width: 0; padding: 6px 7px; border-right: 1px solid #ffffff10; }
+  .war-side { min-width: 0; padding: 5px 0 6px; border-right: 1px solid #ffffff10; }
   .war-side:last-child { border-right: 0; text-align: right; }
-  .war-party { min-width: 0; display: grid; grid-template-columns: 9px minmax(0, 1fr); align-items: start; gap: 5px; margin: 2px 0; color: #e7ece7; font-size: 9px; font-weight: 750; }
-  .war-side.defender .war-party { grid-template-columns: minmax(0, 1fr) 9px; }
-  .war-side.defender .war-party .war-flag { grid-column: 2; }
-  .war-side.defender .war-party .war-party-copy { grid-column: 1; grid-row: 1; }
-  .war-party.city-state { margin-left: 12px; color: #b9c8c1; font-size: 8px; font-weight: 650; }
-  .war-side.defender .war-party.city-state { margin-right: 12px; margin-left: 0; }
+  .war-strength-head, .war-strength-values { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; padding: 0 7px; text-align: center; }
+  .war-strength-head { margin-bottom: 3px; color: #81948c; font-size: 6px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
+  .war-belligerent { min-width: 0; padding: 4px 7px; }
+  .war-belligerent + .war-belligerent { border-top: 1px solid #ffffff0a; }
+  .war-belligerent.city-state { margin-left: 7px; padding-left: 5px; border-left: 1px solid #62756d66; }
+  .war-side.defender .war-belligerent.city-state { margin-right: 7px; margin-left: 0; padding-right: 5px; padding-left: 7px; border-right: 1px solid #62756d66; border-left: 0; }
+  .war-belligerent-bar { display: block; width: 100%; height: 2px; margin-bottom: 4px; border-radius: 2px; box-shadow: 0 0 4px #0008; }
+  .war-belligerent.city-state .war-belligerent-bar { width: 70%; }
+  .war-side.defender .war-belligerent.city-state .war-belligerent-bar { margin-left: auto; }
+  .war-party { min-width: 0; margin: 2px 0; color: #e7ece7; font-size: 9px; font-weight: 750; }
+  .war-belligerent.city-state .war-party { color: #b9c8c1; font-size: 8px; font-weight: 650; }
   .war-party-copy { min-width: 0; }
-  .war-party-name { overflow-wrap: anywhere; }
+  .war-party-name { display: block; overflow-wrap: break-word; word-break: normal; hyphens: auto; line-height: 1.25; }
   .war-party-note { display: block; color: #a8948c; font-size: 7px; font-style: italic; font-weight: 600; }
-  .war-flag { width: 9px; height: 9px; flex: 0 0 9px; border-radius: 2px; box-shadow: inset 0 0 0 1px #0008; }
-  .war-strength-party, .war-loss-party { margin: 3px 0 5px; color: #c7d1cc; font-size: 8px; }
-  .war-strength-party.city-state, .war-loss-party.city-state { margin-left: 12px; }
-  .war-side.defender .war-strength-party.city-state, .war-side.defender .war-loss-party.city-state { margin-right: 12px; margin-left: 0; }
-  .war-strength-party b { color: #f1d9ad; font-size: 10px; font-variant-numeric: tabular-nums; }
+  .war-strength-values { margin-top: 3px; color: #f1d9ad; font-size: 10px; font-variant-numeric: tabular-nums; }
+  .war-strength-values b { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .war-loss-party { margin: 3px 7px 5px; color: #c7d1cc; font-size: 8px; }
+  .war-loss-party.city-state { margin-left: 14px; }
+  .war-side.defender .war-loss-party.city-state { margin-right: 14px; margin-left: 7px; }
   .war-loss-detail { display: block; margin-top: 1px; color: #c6aaa4; line-height: 1.35; }
   .war-loss-none { color: var(--faint); font-style: italic; }
   .war-moments { padding: 6px 8px 7px; display: flex; flex-direction: column; gap: 3px; }
@@ -8673,6 +8684,23 @@ function exactStat(value) {
   return Math.round(n).toLocaleString();
 }
 
+function playerHudStats(player, rank) {
+  const y = player.yields || {};
+  const goldPerTurn = Number.isFinite(+player.gold_per_turn) ? +player.gold_per_turn : +(y.gold || 0);
+  return [
+    ["production", "PROD", y.production, `Production: ${exactStat(y.production)} per turn`],
+    ["science", "SCI", y.science, `Science: ${exactStat(y.science)} per turn`],
+    ["culture", "CUL", y.culture, `Culture: ${exactStat(y.culture)} per turn`],
+    ["faith", "FPT", y.faith, `Faith: ${exactStat(y.faith)} per turn · ${exactStat(player.faith)} banked`],
+    ["gold", "GPT", goldPerTurn, `Net Gold: ${exactStat(goldPerTurn)} per turn · ${exactStat(player.gold)} banked`],
+    ["military", "MIL", player.military, `Military strength: ${exactStat(player.military)}`],
+    ["cities", "CITY", player.cities, `Cities controlled: ${exactStat(player.cities)}`],
+    ["suzerain", "SUZ", player.suzerain_count, `City-states under suzerainty: ${exactStat(player.suzerain_count)}`],
+    ["wonders", "WNDR", player.wonder_count, `World wonders controlled: ${exactStat(player.wonder_count)}`],
+    ["score", "SCORE", player.score, `Score: ${exactStat(player.score)} · rank ${rank}`],
+  ];
+}
+
 // Rebuilding the ribbon's markup on a frame where nothing in it changed
 // replaced every card mid-click: a press that lands between mousedown and
 // mouseup on a detached button never becomes a click at all. Painting only on
@@ -8706,6 +8734,12 @@ function drawPlayerHud() {
     mapArea.style.setProperty("--player-hud-height", `${requestedHeight}px`);
   }
   const rankById = new Map(majors.map((p, index) => [p.id, index + 1]));
+  const statsByPlayer = new Map(majors.map(p => [p.id, playerHudStats(p, rankById.get(p.id))]));
+  const highestByStat = new Map();
+  statsByPlayer.forEach(stats => stats.forEach(([kind, , value]) => {
+    const numericValue = Number(value) || 0;
+    highestByStat.set(kind, Math.max(highestByStat.get(kind) ?? -Infinity, numericValue));
+  }));
   const html =
     `<div class="ribbon-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
     `aria-label="Move player standings; use arrow keys or drag" title="Drag to move · arrow keys also move" id="world-leaders-title">` +
@@ -8713,11 +8747,9 @@ function drawPlayerHud() {
     `<button class="overlay-close" type="button" data-overlay-close="players" aria-label="Hide player standings; restore them in Display settings" title="Hide player standings · restore in Display settings">✕</button>` +
     `<div class="diplomacy-ribbon" role="list" aria-labelledby="world-leaders-title" ` +
     `style="--hud-rows:${rows}">` + majors.map(p => {
-      const y = p.yields || {};
       const color = pcol(p.id);
       const leader = p.leader || "Unknown leader";
       const rank = rankById.get(p.id);
-      const goldPerTurn = Number.isFinite(+p.gold_per_turn) ? +p.gold_per_turn : +(y.gold || 0);
       const initial = (leader === "Unknown leader" ? p.civ : leader).trim().charAt(0).toUpperCase();
       const alliance = p.alliance;
       const strategy = p.ai_strategy || "";
@@ -8755,19 +8787,8 @@ function drawPlayerHud() {
           `${expectPct === null ? "" : ` · expected win chance vs this table ${expectPct}%`}`
         : `Unrated AI player · ${strategy ? `${titleCase(strategy)} active strategy` : "no active strategy"}`;
       const relationClass = alliance ? "allied" : p.friend ? "friend" : "";
-      const stateClass = `${p.id === acting ? "active" : ""} ${relationClass} ${p.at_war_with_me ? "at-war" : ""} ${p.alive ? "" : "dead"}`;
-      const stats = [
-        ["production", "PROD", y.production, `Production: ${exactStat(y.production)} per turn`],
-        ["science", "SCI", y.science, `Science: ${exactStat(y.science)} per turn`],
-        ["culture", "CUL", y.culture, `Culture: ${exactStat(y.culture)} per turn`],
-        ["faith", "FPT", y.faith, `Faith: ${exactStat(y.faith)} per turn · ${exactStat(p.faith)} banked`],
-        ["gold", "GPT", goldPerTurn, `Net Gold: ${exactStat(goldPerTurn)} per turn · ${exactStat(p.gold)} banked`],
-        ["military", "MIL", p.military, `Military strength: ${exactStat(p.military)}`],
-        ["cities", "CITY", p.cities, `Cities controlled: ${exactStat(p.cities)}`],
-        ["suzerain", "SUZ", p.suzerain_count, `City-states under suzerainty: ${exactStat(p.suzerain_count)}`],
-        ["wonders", "WNDR", p.wonder_count, `World wonders controlled: ${exactStat(p.wonder_count)}`],
-        ["score", "SCORE", p.score, `Score: ${exactStat(p.score)} · rank ${rank}`],
-      ];
+      const stateClass = `${relationClass} ${p.at_war_with_me ? "at-war" : ""} ${p.alive ? "" : "dead"}`;
+      const stats = statsByPlayer.get(p.id);
       const watchTitle = `Watch ${p.civ} through its fog of war · ${relationSummary}${agendaText}`;
       const expanded = hudExpanded === p.id;
       return `<div class="diplomacy-card ${stateClass} ${expanded ? "expanded" : ""}" style="--civ:${color}" role="listitem">` +
@@ -8785,9 +8806,11 @@ function drawPlayerHud() {
         `<span class="diplomacy-player">${playerName}</span><span class="identity-separator" aria-hidden="true">·</span>` +
         `${activeStrategy}</span></button>` +
         `<button class="diplomacy-stats" data-hud-action="watch" data-hud-civ="${p.id}" title="${watchTitle}" aria-label="Watch ${p.civ}">` +
-        stats.map(([kind, shortLabel, value, label]) =>
-          `<span class="ribbon-stat ${kind}" title="${label}"><b>${ribbonStat(value)}</b><em>${shortLabel}</em></span>`
-        ).join("") + `</button></div>` +
+        stats.map(([kind, shortLabel, value, label]) => {
+          const isLeader = highestByStat.get(kind) !== 0 && Number(value || 0) === highestByStat.get(kind);
+          return `<span class="ribbon-stat ${kind}${isLeader ? " category-leader" : ""}" ` +
+            `title="${label}${isLeader ? " · Category leader" : ""}"><b>${ribbonStat(value)}</b><em>${shortLabel}</em></span>`;
+        }).join("") + `</button></div>` +
         (expanded ? civDossier(p, rank, relation) : "");
     }).join("") + `</div>` + hudResizeHandles("player standings");
   if (html === hudHtml || hudLayoutGesture?.name === "players") return;
@@ -9333,17 +9356,38 @@ function warParties(war, declarerSide) {
     .sort((a, b) => a.entered - b.entered || a.player - b.player));
   return ordered;
 }
-function warPartyRows(war, declarerSide, role, mode) {
-  return `<div class="war-side ${role}">` + warParties(war, declarerSide).map(party => {
-    const minor = party.suzerain !== null && party.suzerain !== undefined;
+function warStrengthValue(value) {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return "—";
+  return Math.round(Number(value));
+}
+function warPartyIsCityState(party) {
+  const player = (state.players || [])[party.player];
+  return player ? Boolean(player.is_minor && !player.is_barbarian) :
+    (party.suzerain !== null && party.suzerain !== undefined);
+}
+function warBelligerentRows(war, declarerSide, role) {
+  const rows = warParties(war, declarerSide).map(party => {
+    const minor = warPartyIsCityState(party);
     const note = warParticipationNote(party, war);
     const name = `${warPartyName(party.player)}${minor ? " ⌂" : ""}`;
-    if (mode === "strength") {
-      const strength = Number(party.strength) > 0 ? Math.round(party.strength) : "—";
-      return `<div class="war-strength-party${minor ? " city-state" : ""}">` +
-        `<span>${name}</span> · <b>${strength}</b>${note ? `<span class="war-party-note">${note}</span>` : ""}</div>`;
-    }
-    if (mode === "losses") {
+    const start = party.strength_start ?? party.strength;
+    const peak = party.strength_peak ?? start;
+    const total = party.strength_total;
+    return `<div class="war-belligerent${minor ? " city-state" : ""}">` +
+      `<i class="war-belligerent-bar" style="background:${cityBannerColor(party.player)}"></i>` +
+      `<div class="war-party"><span class="war-party-copy"><span class="war-party-name">${name}</span>` +
+      `${note ? `<span class="war-party-note">${note}</span>` : ""}</span></div>` +
+      `<div class="war-strength-values"><b title="Military strength on entry">${warStrengthValue(start)}</b>` +
+      `<b title="Highest combined unit and engaged-district strength">${warStrengthValue(peak)}</b>` +
+      `<b title="Latest unit strength plus engaged city and Encampment defense">${warStrengthValue(total)}</b></div></div>`;
+  }).join("");
+  return `<div class="war-side ${role}"><div class="war-strength-head">` +
+    `<span>Start</span><span>Peak</span><span>Total</span></div>${rows}</div>`;
+}
+function warLossRows(war, declarerSide, role) {
+  return `<div class="war-side ${role}">` + warParties(war, declarerSide).map(party => {
+      const minor = warPartyIsCityState(party);
+      const name = `${warPartyName(party.player)}${minor ? " ⌂" : ""}`;
       const units = Object.entries(party.unit_kinds || {}).map(([kind, count]) =>
         `${titleCase(kind)}${count > 1 ? ` ×${count}` : ""}`);
       const cities = (party.city_names || []).map(city => city);
@@ -9354,11 +9398,6 @@ function warPartyRows(war, declarerSide, role, mode) {
         (details.length
           ? details.map(detail => `<span class="war-loss-detail">${detail}</span>`).join("")
           : `<span class="war-loss-detail war-loss-none">No recorded losses</span>`) + `</div>`;
-    }
-    return `<div class="war-party${minor ? " city-state" : ""}>` +
-      `<i class="war-flag" style="background:${cityBannerColor(party.player)}"></i>` +
-      `<span class="war-party-copy"><span class="war-party-name">${name}</span>` +
-      `${note ? `<span class="war-party-note">${note}</span>` : ""}</span></div>`;
   }).join("") + `</div>`;
 }
 function warMomentText(moment) {
@@ -9435,18 +9474,15 @@ function drawWarLog() {
       `<div class="war-period"><span>Started<b>Turn ${war.started}</b></span>` +
       `<span>${over ? "Ended" : "Status"}<b>${over ? `Turn ${war.ended}` : `Ongoing · ${length} turn${length === 1 ? "" : "s"}`}</b></span></div>` +
       `<div class="war-infobox-row"><div class="war-row-label">Belligerents</div>` +
-      `<div class="war-columns">${warPartyRows(war, true, "aggressor", "names")}` +
-      `${warPartyRows(war, false, "defender", "names")}</div></div>` +
-      `<div class="war-infobox-row"><div class="war-row-label">Military strength at entry</div>` +
-      `<div class="war-columns">${warPartyRows(war, true, "aggressor", "strength")}` +
-      `${warPartyRows(war, false, "defender", "strength")}</div></div>` +
-      `<div class="war-infobox-row"><div class="war-row-label">Chronology</div>` +
-      `<div class="war-moments">${moments || `<span class="war-loss-none">No recorded events</span>`}</div></div>` +
+      `<div class="war-columns">${warBelligerentRows(war, true, "aggressor")}` +
+      `${warBelligerentRows(war, false, "defender")}</div></div>` +
       `<div class="war-infobox-row"><div class="war-row-label">Losses</div>` +
-      `<div class="war-columns">${warPartyRows(war, true, "aggressor", "losses")}` +
-      `${warPartyRows(war, false, "defender", "losses")}</div></div>` +
+      `<div class="war-columns">${warLossRows(war, true, "aggressor")}` +
+      `${warLossRows(war, false, "defender")}</div></div>` +
       `${outcome ? `<div class="war-infobox-row"><div class="war-row-label">Peace deal terms</div>` +
-        `<div class="war-terms">${outcome}</div></div>` : ""}</div>`;
+        `<div class="war-terms">${outcome}</div></div>` : ""}` +
+      `<div class="war-infobox-row"><div class="war-row-label">Chronology</div>` +
+      `<div class="war-moments">${moments || `<span class="war-loss-none">No recorded events</span>`}</div></div></div>`;
   }).join("");
 }
 
