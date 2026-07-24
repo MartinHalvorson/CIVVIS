@@ -977,21 +977,25 @@
   .war-settlement b { color: #9fd9bd; }
   .war-settlement ul { margin: 2px 0 0 14px; padding: 0; }
   .war-card.ended.conquest { border-color: #8a4740; background: #150d0c; }
-  .spec-controls { display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px; }
-  .spec-controls button { margin: 0; }
+  .spec-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+  .spec-controls button { width: 100%; min-width: 0; min-height: 50px; margin: 0; }
   .spec-controls #restart-sim {
     width: 100%; min-height: 46px; padding: 8px 12px; line-height: 1.15;
     color: #c2cec8; background: linear-gradient(180deg, #243530, #192823);
-    border-color: #3b5049; font-size: 11px; font-weight: 750;
+    border-color: #3b5049; font-size: 11px; font-weight: 800;
+    letter-spacing: .08em; text-transform: uppercase;
   }
+  .spec-controls #restart-sim::before { content: "↻"; margin-right: 5px; font-size: 13px; }
   .spec-controls #restart-sim .sub {
     display: block; margin-top: 3px; color: var(--muted); font-size: 8px;
-    font-weight: 650; letter-spacing: .05em;
+    font-weight: 700; letter-spacing: .07em;
   }
+  .spec-controls #restart-sim .sub::before { content: "with "; }
   .spec-controls #restart-sim.primary {
     color: #17160f; background: linear-gradient(135deg, #f0d58f, #c99e4e);
     border-color: #efd184; box-shadow: 0 7px 22px #0005, inset 0 1px #fff7;
   }
+  .spec-controls #restart-sim.primary .sub::before { content: ""; }
   .spec-controls #restart-sim.primary .sub { color: #51401f; }
   .speed-row, .view-row { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 10px; margin-top: 9px; }
   .speed-row span, .view-row span { color: var(--muted); font-size: 9px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
@@ -1331,10 +1335,22 @@
   body.hud-layout-active.layout-resizing,
   body.hud-layout-active.layout-resizing * { cursor: var(--layout-resize-cursor, nwse-resize) !important; }
 
+  /* Collapsing the command deck is also the map's focus mode. Apply that
+     temporary state to every map overlay without changing saved widget
+     preferences, so expanding the deck restores exactly the chosen layout.
+     The deck toggle itself remains as the one visible way back on touch-only
+     displays. */
+  body.sidebar-hidden #playerhud,
   body.overlay-players-hidden #playerhud,
+  body.sidebar-hidden #victoryhud,
   body.overlay-victory-hidden #victoryhud,
+  body.sidebar-hidden .minimap-frame,
   body.overlay-minimap-hidden .minimap-frame,
-  body.overlay-controls-hidden #zoomctl { display: none !important; }
+  body.overlay-controls-hidden #zoomctl,
+  body.sidebar-hidden #zoomctl > :not(#paneltoggle),
+  body.sidebar-hidden #ubar,
+  body.sidebar-hidden #modeline,
+  body.sidebar-hidden #tip { display: none !important; }
 
   @media (max-width: 720px) {
     #side { inset-block-start: 132px; }
