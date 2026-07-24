@@ -366,11 +366,13 @@ def ref_contains(repo: Path, ancestor: str, descendant: str = "HEAD") -> bool:
 
 
 def current_pr(repo: Path) -> Dict[str, Any]:
+    branch = git(repo, "symbolic-ref", "--quiet", "--short", "HEAD")
     return dict(
         gh_json(
             (
                 "pr",
                 "view",
+                branch,
                 "--repo",
                 REPOSITORY,
                 "--json",

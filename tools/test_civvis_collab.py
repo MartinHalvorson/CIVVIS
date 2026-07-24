@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -246,6 +247,15 @@ class PolicyTests(unittest.TestCase):
 
 
 class ShipTests(unittest.TestCase):
+    def test_current_pr_names_the_branch_for_repo_scoped_gh(self):
+        branch = "agent/m/a/task-20260723T210500Z-a31f"
+        with (
+            patch.object(collab, "git", return_value=branch),
+            patch.object(collab, "gh_json", return_value={"number": 9}) as gh,
+        ):
+            self.assertEqual(collab.current_pr(Path.cwd()), {"number": 9})
+        self.assertEqual(gh.call_args.args[0][2], branch)
+
     def test_ship_requires_a_finished_summary_and_every_checkbox(self):
         draft = {
             "state": "OPEN",
