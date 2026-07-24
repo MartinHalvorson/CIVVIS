@@ -942,22 +942,27 @@
   .war-infobox-row:first-of-type { border-top: 0; }
   .war-row-label { padding: 3px 7px; background: #ffffff06; color: #8fa098; font-size: 7px; font-weight: 850; letter-spacing: .14em; text-align: center; text-transform: uppercase; }
   .war-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .war-side { min-width: 0; padding: 6px 7px; border-right: 1px solid #ffffff10; }
+  .war-side { min-width: 0; padding: 5px 0 6px; border-right: 1px solid #ffffff10; }
   .war-side:last-child { border-right: 0; text-align: right; }
-  .war-party { min-width: 0; display: grid; grid-template-columns: 9px minmax(0, 1fr); align-items: start; gap: 5px; margin: 2px 0; color: #e7ece7; font-size: 9px; font-weight: 750; }
-  .war-side.defender .war-party { grid-template-columns: minmax(0, 1fr) 9px; }
-  .war-side.defender .war-party .war-flag { grid-column: 2; }
-  .war-side.defender .war-party .war-party-copy { grid-column: 1; grid-row: 1; }
-  .war-party.city-state { margin-left: 12px; color: #b9c8c1; font-size: 8px; font-weight: 650; }
-  .war-side.defender .war-party.city-state { margin-right: 12px; margin-left: 0; }
+  .war-strength-head, .war-strength-values { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; padding: 0 7px; text-align: center; }
+  .war-strength-head { margin-bottom: 3px; color: #81948c; font-size: 6px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
+  .war-belligerent { min-width: 0; padding: 4px 7px; }
+  .war-belligerent + .war-belligerent { border-top: 1px solid #ffffff0a; }
+  .war-belligerent.city-state { margin-left: 7px; padding-left: 5px; border-left: 1px solid #62756d66; }
+  .war-side.defender .war-belligerent.city-state { margin-right: 7px; margin-left: 0; padding-right: 5px; padding-left: 7px; border-right: 1px solid #62756d66; border-left: 0; }
+  .war-belligerent-bar { display: block; width: 100%; height: 2px; margin-bottom: 4px; border-radius: 2px; box-shadow: 0 0 4px #0008; }
+  .war-belligerent.city-state .war-belligerent-bar { width: 70%; }
+  .war-side.defender .war-belligerent.city-state .war-belligerent-bar { margin-left: auto; }
+  .war-party { min-width: 0; margin: 2px 0; color: #e7ece7; font-size: 9px; font-weight: 750; }
+  .war-belligerent.city-state .war-party { color: #b9c8c1; font-size: 8px; font-weight: 650; }
   .war-party-copy { min-width: 0; }
-  .war-party-name { overflow-wrap: anywhere; }
+  .war-party-name { display: block; overflow-wrap: break-word; word-break: normal; hyphens: auto; line-height: 1.25; }
   .war-party-note { display: block; color: #a8948c; font-size: 7px; font-style: italic; font-weight: 600; }
-  .war-flag { width: 9px; height: 9px; flex: 0 0 9px; border-radius: 2px; box-shadow: inset 0 0 0 1px #0008; }
-  .war-strength-party, .war-loss-party { margin: 3px 0 5px; color: #c7d1cc; font-size: 8px; }
-  .war-strength-party.city-state, .war-loss-party.city-state { margin-left: 12px; }
-  .war-side.defender .war-strength-party.city-state, .war-side.defender .war-loss-party.city-state { margin-right: 12px; margin-left: 0; }
-  .war-strength-party b { color: #f1d9ad; font-size: 10px; font-variant-numeric: tabular-nums; }
+  .war-strength-values { margin-top: 3px; color: #f1d9ad; font-size: 10px; font-variant-numeric: tabular-nums; }
+  .war-strength-values b { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .war-loss-party { margin: 3px 7px 5px; color: #c7d1cc; font-size: 8px; }
+  .war-loss-party.city-state { margin-left: 14px; }
+  .war-side.defender .war-loss-party.city-state { margin-right: 14px; margin-left: 7px; }
   .war-loss-detail { display: block; margin-top: 1px; color: #c6aaa4; line-height: 1.35; }
   .war-loss-none { color: var(--faint); font-style: italic; }
   .war-moments { padding: 6px 8px 7px; display: flex; flex-direction: column; gap: 3px; }
@@ -1291,6 +1296,46 @@
   .overlay-layout-help { margin-top: 9px; }
   .overlay-layout-reset { width: 100%; margin: 9px 0 0; }
 
+  /* Every map instrument can be dismissed in place. The tiny corner control
+     stays outside the draggable title-bar hit area, so closing a widget never
+     accidentally starts moving it. */
+  .overlay-close {
+    position: absolute; z-index: 8; top: 3px; right: 3px;
+    width: 20px; height: 20px; display: grid; place-items: center;
+    margin: 0; padding: 0; border: 1px solid #5b6f67; border-radius: 7px;
+    color: #c9d5d0; background: #091310dc; box-shadow: 0 3px 10px #0007;
+    font-size: 11px; font-weight: 700; line-height: 1;
+  }
+  .overlay-close:hover { color: #fff; border-color: #9b6c66; background: #35201e; }
+  #playerhud > .ribbon-heading, #victoryhud > .hud-section-heading,
+  .minimap-frame > .minimap-label { padding-right: 25px; }
+  #zoomctl .overlay-close {
+    position: static; order: 20; width: 28px; height: 34px; flex: 0 0 28px;
+    border: 0; border-left: 1px solid #ffffff0c; border-radius: 0;
+    background: transparent; box-shadow: none; font-size: 13px;
+  }
+  #zoomctl .overlay-close:hover { color: #fff; background: #6b302b66; }
+  .overlay-collapsing { opacity: 0 !important; pointer-events: none !important; }
+  .overlay-collapse-ghost {
+    position: fixed; z-index: 90; display: flex; align-items: flex-start;
+    padding: 9px 12px; overflow: hidden; pointer-events: none;
+    color: var(--gold-bright); border: 1px solid #d7b66a9c; border-radius: 12px;
+    background: linear-gradient(135deg, #172a25f2, #091310e8);
+    box-shadow: 0 16px 42px #000b, inset 0 1px #ffffff12;
+    font-size: 8px; font-weight: 900; letter-spacing: .14em;
+    text-transform: uppercase; white-space: nowrap;
+  }
+  .section-label.overlay-return-flash {
+    animation: overlay-return-flash .24s ease-in-out 3;
+  }
+  @keyframes overlay-return-flash {
+    50% {
+      color: #fff7dd; border-color: var(--gold-bright);
+      background: linear-gradient(135deg, #5a4927, #1b3028);
+      box-shadow: 0 0 0 2px #d7b66a55, 0 0 22px #d7b66a88, inset 0 1px #fff4;
+    }
+  }
+
   /* The three map overlays are work surfaces, not fixed decoration. Their
      complete title bars move them, while the edges and corners resize them as
      ordinary windows do. Authored handles keep that behavior available to
@@ -1373,6 +1418,9 @@
     #playerhud .ribbon-stat em { display: none; }
     #playerhud .leader-medallion { width: 20px; height: 20px; }
   }
+  @media (prefers-reduced-motion: reduce) {
+    .section-label.overlay-return-flash { animation-duration: .01ms; }
+  }
 </style>
 </head>
 <body>
@@ -1415,6 +1463,7 @@
     <button id="paneltoggle" class="icon" title="Toggle command deck" aria-label="Toggle command deck">☰</button>
     <button id="zin" title="Zoom in" aria-label="Zoom in">＋</button>
     <button id="zout" title="Zoom out" aria-label="Zoom out">−</button>
+    <button class="overlay-close" type="button" data-overlay-close="controls" aria-label="Hide map controls; restore them in Display settings" title="Hide map controls · restore in Display settings">✕</button>
   </div>
   <div id="ubar"></div>
   <div id="modeline"></div>
@@ -1422,6 +1471,7 @@
   <div id="winner" role="status" aria-live="assertive"></div>
   <div class="minimap-frame" data-layout-widget="minimap">
     <div class="minimap-label widget-drag-handle" data-widget-drag tabindex="0" role="button" aria-label="Move world map; use arrow keys or drag" title="Drag to move · arrow keys also move"><span>World map</span><span>click to travel</span></div>
+    <button class="overlay-close" type="button" data-overlay-close="minimap" aria-label="Hide world minimap; restore it in Display settings" title="Hide world minimap · restore in Display settings">✕</button>
     <canvas id="mini" width="200" height="140"></canvas>
   </div>
   <div id="pedia" role="dialog" aria-modal="true" aria-labelledby="pediatitle">
@@ -1567,7 +1617,7 @@
     </details>
 
     <details class="sidebar-section" data-section="display-settings">
-      <summary class="section-label">
+      <summary class="section-label" id="display-settings-header">
         <span class="section-title"><span class="section-icon" aria-hidden="true">◈</span><span>Display settings</span></span>
         <span class="section-meta"><span class="rule"></span><span class="section-chevron" aria-hidden="true"></span></span>
       </summary>
@@ -1972,8 +2022,84 @@ function setOverlayVisibility(name, visible) {
   if (!OVERLAY_NAMES.includes(name)) return;
   OVERLAY_VISIBILITY[name] = visible;
   applyOverlayVisibility();
-  localStorage.setItem(OVERLAY_STORAGE_KEY, JSON.stringify(OVERLAY_VISIBILITY));
+  const checkbox = document.querySelector(`[data-overlay="${name}"]`);
+  if (checkbox) checkbox.checked = visible;
+  try { localStorage.setItem(OVERLAY_STORAGE_KEY, JSON.stringify(OVERLAY_VISIBILITY)); }
+  catch (_) {}
 }
+const OVERLAY_LABELS = {
+  players:"Player standings", victory:"Victory tracker",
+  minimap:"World minimap", controls:"Map controls",
+};
+function flashDisplaySettingsHeader() {
+  const header = document.getElementById("display-settings-header");
+  if (!header) return;
+  header.scrollIntoView({block:"nearest", inline:"nearest"});
+  header.classList.remove("overlay-return-flash");
+  void header.offsetWidth;
+  header.classList.add("overlay-return-flash");
+  header.addEventListener("animationend", () =>
+    header.classList.remove("overlay-return-flash"), {once:true});
+}
+function dismissOverlay(name, source) {
+  if (!OVERLAY_NAMES.includes(name) || source?.classList.contains("overlay-collapsing")) return;
+  const target = document.getElementById("display-settings-header");
+  if (!source || !target) { setOverlayVisibility(name, false); return; }
+  target.scrollIntoView({block:"nearest", inline:"nearest"});
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const from = source.getBoundingClientRect();
+    const to = target.getBoundingClientRect();
+    if (!from.width || !from.height || !to.width || !to.height) {
+      setOverlayVisibility(name, false);
+      flashDisplaySettingsHeader();
+      return;
+    }
+    const ghost = document.createElement("div");
+    ghost.className = "overlay-collapse-ghost";
+    ghost.textContent = OVERLAY_LABELS[name] || "Map overlay";
+    Object.assign(ghost.style, {
+      left:`${from.left}px`, top:`${from.top}px`,
+      width:`${from.width}px`, height:`${from.height}px`,
+    });
+    document.body.appendChild(ghost);
+    source.classList.add("overlay-collapsing");
+    const reduced = REDUCED_MOTION_QUERY.matches;
+    const finish = () => {
+      ghost.remove();
+      source.classList.remove("overlay-collapsing");
+      setOverlayVisibility(name, false);
+      flashDisplaySettingsHeader();
+    };
+    if (typeof ghost.animate !== "function") { finish(); return; }
+    const animation = ghost.animate([
+      {left:`${from.left}px`, top:`${from.top}px`, width:`${from.width}px`, height:`${from.height}px`, opacity:.96},
+      {offset:.76, left:`${to.left}px`, top:`${to.top}px`, width:`${to.width}px`, height:`${to.height}px`, opacity:.72},
+      {left:`${to.left + to.width / 2}px`, top:`${to.top + to.height / 2}px`, width:"2px", height:"2px", opacity:0},
+    ], {duration:reduced ? 1 : 460, easing:"cubic-bezier(.4,0,.2,1)", fill:"forwards"});
+    animation.finished.catch(() => {}).then(finish);
+  }));
+}
+function runOverlayDismiss(event) {
+  const close = event.target.closest?.("[data-overlay-close]");
+  if (!close) return false;
+  event.preventDefault();
+  event.stopPropagation();
+  const name = close.dataset.overlayClose;
+  const source = name === "minimap" ? close.closest(".minimap-frame")
+    : name === "controls" ? close.closest("#zoomctl")
+    : document.getElementById(name === "players" ? "playerhud" : "victoryhud");
+  dismissOverlay(name, source);
+  return true;
+}
+// The two live HUDs can redraw between press and release. Dismiss on the
+// pointer press so their close controls cannot be replaced before a click is
+// born; retain zero-detail click for keyboard and scripted activation.
+document.getElementById("maparea").addEventListener("pointerdown", event => {
+  if (event.button === 0 || event.pointerType === "touch") runOverlayDismiss(event);
+});
+document.getElementById("maparea").addEventListener("click", event => {
+  if (event.detail === 0) runOverlayDismiss(event);
+});
 applyOverlayVisibility();
 // Cinema is the default spectator composition. It never changes the strategic
 // map or player UI: it only enters after the server identifies this page as a
@@ -8523,6 +8649,7 @@ function playerHudOverview() {
     `<div class="hud-section-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
     `aria-label="Move victory tracker; use arrow keys or drag" title="Drag to move · arrow keys also move" id="victory-tracker-title">` +
     `<span>Victory tracker</span></div>` +
+    `<button class="overlay-close" type="button" data-overlay-close="victory" aria-label="Hide victory tracker; restore it in Display settings" title="Hide victory tracker · restore in Display settings">✕</button>` +
     `<section class="victory-turn" title="${identityContext}" aria-label="${identityContext}; turn ${state.turn} of ${turnCapLabel()}; ${ageLabel}">` +
     `<span class="turn-label">Turn</span><div class="turn-count"><strong>${state.turn}</strong>` +
     `<small class="turn-total">of ${turnCapLabel()}</small></div><span class="turn-era">${ageLabel}</span></section>` +
@@ -8621,6 +8748,7 @@ function drawPlayerHud() {
     `<div class="ribbon-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
     `aria-label="Move player standings; use arrow keys or drag" title="Drag to move · arrow keys also move" id="world-leaders-title">` +
     `<span>World leaders</span><span class="ribbon-heading-context">${majors.length} civilizations · score order</span></div>` +
+    `<button class="overlay-close" type="button" data-overlay-close="players" aria-label="Hide player standings; restore them in Display settings" title="Hide player standings · restore in Display settings">✕</button>` +
     `<div class="diplomacy-ribbon" role="list" aria-labelledby="world-leaders-title" ` +
     `style="--hud-rows:${rows}">` + majors.map(p => {
       const y = p.yields || {};
@@ -9225,17 +9353,38 @@ function warParties(war, declarerSide) {
     .sort((a, b) => a.entered - b.entered || a.player - b.player));
   return ordered;
 }
-function warPartyRows(war, declarerSide, role, mode) {
-  return `<div class="war-side ${role}">` + warParties(war, declarerSide).map(party => {
-    const minor = party.suzerain !== null && party.suzerain !== undefined;
+function warStrengthValue(value) {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return "—";
+  return Math.round(Number(value));
+}
+function warPartyIsCityState(party) {
+  const player = (state.players || [])[party.player];
+  return player ? Boolean(player.is_minor && !player.is_barbarian) :
+    (party.suzerain !== null && party.suzerain !== undefined);
+}
+function warBelligerentRows(war, declarerSide, role) {
+  const rows = warParties(war, declarerSide).map(party => {
+    const minor = warPartyIsCityState(party);
     const note = warParticipationNote(party, war);
     const name = `${warPartyName(party.player)}${minor ? " ⌂" : ""}`;
-    if (mode === "strength") {
-      const strength = Number(party.strength) > 0 ? Math.round(party.strength) : "—";
-      return `<div class="war-strength-party${minor ? " city-state" : ""}">` +
-        `<span>${name}</span> · <b>${strength}</b>${note ? `<span class="war-party-note">${note}</span>` : ""}</div>`;
-    }
-    if (mode === "losses") {
+    const start = party.strength_start ?? party.strength;
+    const peak = party.strength_peak ?? start;
+    const total = party.strength_total;
+    return `<div class="war-belligerent${minor ? " city-state" : ""}">` +
+      `<i class="war-belligerent-bar" style="background:${cityBannerColor(party.player)}"></i>` +
+      `<div class="war-party"><span class="war-party-copy"><span class="war-party-name">${name}</span>` +
+      `${note ? `<span class="war-party-note">${note}</span>` : ""}</span></div>` +
+      `<div class="war-strength-values"><b title="Military strength on entry">${warStrengthValue(start)}</b>` +
+      `<b title="Highest combined unit and engaged-district strength">${warStrengthValue(peak)}</b>` +
+      `<b title="Latest unit strength plus engaged city and Encampment defense">${warStrengthValue(total)}</b></div></div>`;
+  }).join("");
+  return `<div class="war-side ${role}"><div class="war-strength-head">` +
+    `<span>Start</span><span>Peak</span><span>Total</span></div>${rows}</div>`;
+}
+function warLossRows(war, declarerSide, role) {
+  return `<div class="war-side ${role}">` + warParties(war, declarerSide).map(party => {
+      const minor = warPartyIsCityState(party);
+      const name = `${warPartyName(party.player)}${minor ? " ⌂" : ""}`;
       const units = Object.entries(party.unit_kinds || {}).map(([kind, count]) =>
         `${titleCase(kind)}${count > 1 ? ` ×${count}` : ""}`);
       const cities = (party.city_names || []).map(city => city);
@@ -9246,11 +9395,6 @@ function warPartyRows(war, declarerSide, role, mode) {
         (details.length
           ? details.map(detail => `<span class="war-loss-detail">${detail}</span>`).join("")
           : `<span class="war-loss-detail war-loss-none">No recorded losses</span>`) + `</div>`;
-    }
-    return `<div class="war-party${minor ? " city-state" : ""}>` +
-      `<i class="war-flag" style="background:${cityBannerColor(party.player)}"></i>` +
-      `<span class="war-party-copy"><span class="war-party-name">${name}</span>` +
-      `${note ? `<span class="war-party-note">${note}</span>` : ""}</span></div>`;
   }).join("") + `</div>`;
 }
 function warMomentText(moment) {
@@ -9327,18 +9471,15 @@ function drawWarLog() {
       `<div class="war-period"><span>Started<b>Turn ${war.started}</b></span>` +
       `<span>${over ? "Ended" : "Status"}<b>${over ? `Turn ${war.ended}` : `Ongoing · ${length} turn${length === 1 ? "" : "s"}`}</b></span></div>` +
       `<div class="war-infobox-row"><div class="war-row-label">Belligerents</div>` +
-      `<div class="war-columns">${warPartyRows(war, true, "aggressor", "names")}` +
-      `${warPartyRows(war, false, "defender", "names")}</div></div>` +
-      `<div class="war-infobox-row"><div class="war-row-label">Military strength at entry</div>` +
-      `<div class="war-columns">${warPartyRows(war, true, "aggressor", "strength")}` +
-      `${warPartyRows(war, false, "defender", "strength")}</div></div>` +
-      `<div class="war-infobox-row"><div class="war-row-label">Chronology</div>` +
-      `<div class="war-moments">${moments || `<span class="war-loss-none">No recorded events</span>`}</div></div>` +
+      `<div class="war-columns">${warBelligerentRows(war, true, "aggressor")}` +
+      `${warBelligerentRows(war, false, "defender")}</div></div>` +
       `<div class="war-infobox-row"><div class="war-row-label">Losses</div>` +
-      `<div class="war-columns">${warPartyRows(war, true, "aggressor", "losses")}` +
-      `${warPartyRows(war, false, "defender", "losses")}</div></div>` +
+      `<div class="war-columns">${warLossRows(war, true, "aggressor")}` +
+      `${warLossRows(war, false, "defender")}</div></div>` +
       `${outcome ? `<div class="war-infobox-row"><div class="war-row-label">Peace deal terms</div>` +
-        `<div class="war-terms">${outcome}</div></div>` : ""}</div>`;
+        `<div class="war-terms">${outcome}</div></div>` : ""}` +
+      `<div class="war-infobox-row"><div class="war-row-label">Chronology</div>` +
+      `<div class="war-moments">${moments || `<span class="war-loss-none">No recorded events</span>`}</div></div></div>`;
   }).join("");
 }
 
