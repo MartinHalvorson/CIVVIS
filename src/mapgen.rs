@@ -1250,7 +1250,11 @@ fn add_features(wm: &mut WorldMap, land: &BTreeSet<Pos>, equal_area: bool, rng: 
 
             // Rainforest keeps to twenty degrees either side of the equator,
             // whether rows are linear latitude or equal spherical area.
-            let tropical = normalized_latitude(row, height, equal_area) <= 20.0 / 90.0;
+            let tropical = if equal_area {
+                normalized_latitude(row, height, true) <= 20.0 / 90.0
+            } else {
+                (row - equator).abs() <= (20 * height / 180).max(2)
+            };
             if tropical && matches!(terrain.as_str(), "grassland" | "plains") {
                 jungle_candidates += 1;
                 if within_share(jungles, jungle_candidates, JUNGLE_PERCENT)
