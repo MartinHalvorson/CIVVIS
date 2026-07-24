@@ -271,6 +271,7 @@ pub struct AdvancedAi {
     peace_until: u32,
     victory_planning: bool,
     victory_target: Option<VictoryTarget>,
+    forced_target_player: Option<usize>,
     force_groups: Vec<ForceGroup>,
 }
 
@@ -311,6 +312,7 @@ impl AdvancedAi {
             peace_until: 0,
             victory_planning,
             victory_target,
+            forced_target_player: None,
             force_groups: Vec::new(),
         }
     }
@@ -328,6 +330,17 @@ impl AdvancedAi {
     /// next turn. Used by the rollout-driven `StrategicAi`.
     pub fn retarget(&mut self, target: VictoryTarget) {
         self.victory_target = Some(target);
+        self.forced_target_player = None;
+        self.plan = None;
+    }
+
+    /// Commit to a victory lane while preserving the rival that made an
+    /// urgent counter-campaign necessary.  Generic explicit targets remain
+    /// free to choose their best opponent; this narrow form is for planners
+    /// that have already identified the civilization about to end the game.
+    pub fn retarget_against(&mut self, target: VictoryTarget, rival: usize) {
+        self.victory_target = Some(target);
+        self.forced_target_player = Some(rival);
         self.plan = None;
     }
 
@@ -336,6 +349,7 @@ impl AdvancedAi {
     /// when an explicit lane no longer beats the parent policy in rollout.
     pub fn adapt(&mut self) {
         self.victory_target = None;
+        self.forced_target_player = None;
         self.plan = None;
     }
 
@@ -445,6 +459,14 @@ impl AdvancedAi {
             if !g.is_at_war(pid, target)
                 && !emergency_target
                 && !self.campaign_target_legal(g, pid, target)
+            {
+                return true;
+            }
+        }
+        if let Some(forced) = self.forced_target_player {
+            if !g.players.get(forced).map(|player| player.alive).unwrap_or(false)
+                || (plan.target_player != Some(forced)
+                    && self.campaign_target_legal(g, pid, forced))
             {
                 return true;
             }
@@ -1126,10 +1148,15 @@ impl AdvancedAi {
         // Finish wars already in progress before selecting the next major
         // rival. In particular, this gives hostile city-states an explicit
         // city objective that the force-group planner can actually consume.
+        let forced_target = self.forced_target_player.filter(|target| {
+            g.players.get(*target).map(|player| player.alive).unwrap_or(false)
+                && self.campaign_target_legal(g, pid, *target)
+        });
         let target_player = if let Some(emergency) = &emergency_objective {
             Some(emergency.target)
         } else if wartime_rivals.is_empty() {
-            denial
+            forced_target.or_else(|| {
+                denial
                 .filter(|(rival, _)| self.campaign_target_legal(g, pid, *rival))
                 .map(|(rival, _)| rival)
                 .or_else(|| {
@@ -1152,8 +1179,9 @@ impl AdvancedAi {
                             .partial_cmp(&self.campaign_target_value(g, pid, *b))
                             .unwrap()
                             .then(a.cmp(b))
-                    })
+                        })
                 })
+            })
         } else {
             wartime_rivals.iter().copied().min_by(|a, b| {
                 self.rival_value(g, pid, *a)
