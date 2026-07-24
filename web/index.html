@@ -1135,7 +1135,7 @@
      requested height is calculated from the player count in drawPlayerHud(),
      then capped so a large table does not consume the map. */
   #playerhud {
-    top: 10px; right: 12px; left: auto; width: min(var(--player-hud-width, 330px), 56%);
+    top: 10px; right: 12px; left: auto; width: min(var(--player-hud-width, 450px), 56%);
     height: min(var(--player-hud-height, 200px), calc(33.333vh - 12px));
     display: flex; flex-direction: column; gap: 3px; min-width: 0; padding: 5px;
     overflow: visible; transform: none;
@@ -1161,7 +1161,7 @@
   }
   #playerhud .diplomacy-card {
     width: auto; height: auto; min-height: 0; display: grid;
-    grid-template-columns: 25px minmax(58px, .45fr) minmax(180px, 1.55fr);
+    grid-template-columns: 25px minmax(72px, 96px) minmax(0, 1fr);
     align-items: center; gap: 4px; margin: 0; padding: 2px 4px 2px 3px;
     overflow: hidden; border-radius: 7px;
   }
@@ -1180,15 +1180,14 @@
   }
   #playerhud .diplomacy-elo { display: none; }
   #playerhud .diplomacy-stats {
-    align-self: stretch; display: grid; grid-template-columns: repeat(5, minmax(31px, 1fr));
-    grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 0;
+    align-self: stretch; display: grid; grid-template-columns: repeat(10, minmax(0, 1fr));
+    grid-template-rows: minmax(0, 1fr); gap: 0;
   }
   #playerhud .ribbon-stat {
-    min-height: 0; display: flex; align-items: baseline; justify-content: center;
-    gap: 2px; padding: 0;
+    min-height: 0; display: grid; place-content: center; padding: 0;
   }
   #playerhud .ribbon-stat b { font-size: 11px; font-weight: 850; line-height: 1; }
-  #playerhud .ribbon-stat em { margin-top: 0; font-size: 5.5px; line-height: 1; }
+  #playerhud .ribbon-stat em { margin-top: 1px; font-size: 5.5px; line-height: 1; }
   #playerhud .civ-dossier {
     position: absolute; z-index: 2; top: calc(100% + 6px); right: 0;
     width: min(760px, calc(100vw - 28px)); max-height: calc(66.667vh - 24px);
@@ -1201,7 +1200,7 @@
      Its right edge reserves exactly the space occupied by the standings. */
   #victoryhud {
     position: absolute; z-index: 7; top: 10px; left: 12px;
-    right: min(calc(var(--player-hud-width, 330px) + 20px), calc(56% + 20px));
+    right: min(calc(var(--player-hud-width, 450px) + 20px), calc(56% + 20px));
     height: 112px; display: grid; grid-template-columns: 88px minmax(0, 1fr);
     align-items: stretch; gap: 5px; min-width: 0; max-width: 1000px; padding: 5px;
     overflow: hidden; border: 1px solid #526a618f; border-radius: 12px;
@@ -2732,7 +2731,9 @@ const mini = document.getElementById("mini"), mx2 = mini.getContext("2d");
 const area = document.getElementById("maparea");
 const HUD_LAYOUT_STORAGE_KEY = "civvis-hud-layout-v1";
 const HUD_WIDGETS = {
-  players: {element:document.getElementById("playerhud"), minWidth:180, minHeight:96},
+  // Ten fixed metric columns share every player row, so the standings keep
+  // enough width for their values and short labels whenever the map allows.
+  players: {element:document.getElementById("playerhud"), minWidth:420, minHeight:96},
   victory: {element:document.getElementById("victoryhud"), minWidth:150, minHeight:88},
   minimap: {element:document.querySelector(".minimap-frame"), minWidth:130, minHeight:96},
 };
@@ -8452,10 +8453,10 @@ function drawPlayerHud() {
     .filter(p => !p.is_minor && !p.is_barbarian)
     .sort((a, b) => b.score - a.score || a.id - b.id);
   const rows = Math.max(1, majors.length);
-  const requestedHeight = 20 + rows * 40;
+  const requestedHeight = 20 + rows * 36;
   const mapArea = document.getElementById("maparea");
   if (!HUD_LAYOUT.players) {
-    mapArea.style.setProperty("--player-hud-width", "330px");
+    mapArea.style.setProperty("--player-hud-width", "450px");
     mapArea.style.setProperty("--player-hud-height", `${requestedHeight}px`);
   }
   const rankById = new Map(majors.map((p, index) => [p.id, index + 1]));
