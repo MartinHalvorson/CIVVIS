@@ -485,65 +485,188 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
     })
 }
 
-/// Every war in progress, longest-running first, followed by the wars that
-/// have concluded, newest first. Highlights are trimmed to the last dozen per
-/// war — with `hidden_highlights` counting what was left out — because the
-/// full account of a fifty-turn conquest would cost more bandwidth every
-/// frame than the rest of the observation together.
+/// Every conflict in progress, longest-running first, followed by the most
+/// recently concluded conflicts. A declaration can open several bilateral
+/// fronts through teams and defensive alliances; `WarRecord::conflict` folds
+/// those fronts into one durable, Wikipedia-style account here rather than
+/// asking each browser to guess which records belong together.
 fn wars_json(g: &Game) -> Vec<Value> {
-    const RECENT_PEACES: usize = 12;
-    const HIGHLIGHTS: usize = 12;
-    let war_json = |war: &crate::game::WarRecord| {
-        let side = |player: usize| {
-            let losses = war.losses_for(player);
-            json!({
-                "player": player,
-                "units_lost": losses.units,
-                "cities_lost": losses.cities,
-            })
-        };
-        // How it ended, and who came out of it standing — the closing moment
-        // carries both, so a client never has to infer a result from the
-        // player list.
-        let closing = war.ended.and(war.highlights.last());
-        json!({
-            "aggressor": war.aggressor,
-            "defender": war.defender,
-            "started": war.started,
-            "ended": war.ended,
-            "turns": war.ended.unwrap_or(g.turn).saturating_sub(war.started),
-            "outcome": closing.map(|moment| moment.kind.clone()),
-            "truce_until": war
-                .ended
-                .and_then(|_| g.peace_treaty_until(war.aggressor, war.defender)),
-            "victor": closing
-                .filter(|moment| moment.kind == "conquest")
-                .map(|moment| moment.actor),
-            "hidden_highlights": war.highlights.len().saturating_sub(HIGHLIGHTS),
-            "sides": [side(war.aggressor), side(war.defender)],
-            "highlights": war.highlights[war.highlights.len().saturating_sub(HIGHLIGHTS)..]
+    const RECENT_CONFLICTS: usize = 12;
+    let mut grouped: BTreeMap<u32, Vec<&crate::game::WarRecord>> = BTreeMap::new();
+    for war in g.wars.values().chain(g.concluded_wars.iter()) {
+        grouped.entry(war.conflict).or_default().push(war);
+    }
+    let mut conflicts: Vec<Vec<&crate::game::WarRecord>> = grouped.into_values().collect();
+    conflicts.sort_by_key(|records| {
+        let ongoing = records.iter().any(|war| war.ended.is_none());
+        let started = records.iter().map(|war| war.started).min().unwrap_or(0);
+        let ended = records.iter().filter_map(|war| war.ended).max().unwrap_or(0);
+        (!ongoing, if ongoing { started } else { u32::MAX - ended })
+    });
+
+    let mut concluded_seen = 0;
+    conflicts
+        .into_iter()
+        .filter(|records| {
+            if records.iter().any(|war| war.ended.is_none()) {
+                true
+            } else if concluded_seen < RECENT_CONFLICTS {
+                concluded_seen += 1;
+                true
+            } else {
+                false
+            }
+        })
+        .map(|records| {
+            let anchor = records
                 .iter()
-                .map(|highlight| json!({
+                .copied()
+                .find(|war| war.aggressor == war.declarer && war.defender == war.target)
+                .unwrap_or(records[0]);
+            let started = records.iter().map(|war| war.started).min().unwrap_or(0);
+            let ongoing = records.iter().any(|war| war.ended.is_none());
+            let ended = (!ongoing)
+                .then(|| records.iter().filter_map(|war| war.ended).max())
+                .flatten();
+
+            let mut losses: BTreeMap<usize, crate::game::WarLosses> = BTreeMap::new();
+            for war in &records {
+                for (player, toll) in &war.losses {
+                    let total = losses.entry(*player).or_default();
+                    total.units += toll.units;
+                    total.cities += toll.cities;
+                    total.city_names.extend(toll.city_names.iter().cloned());
+                    for (kind, count) in &toll.unit_kinds {
+                        *total.unit_kinds.entry(kind.clone()).or_insert(0) += count;
+                    }
+                }
+            }
+
+            // A participant may appear in several fronts at once. Merge those
+            // copies into one interval, but keep a genuine later re-entry as a
+            // separate row by including its entry turn in the key.
+            let mut participation: BTreeMap<
+                (usize, bool, Option<usize>, u32),
+                (Option<u32>, i64),
+            > = BTreeMap::new();
+            for participant in records.iter().flat_map(|war| &war.participants) {
+                participation
+                    .entry((
+                        participant.player,
+                        participant.declarer_side,
+                        participant.suzerain,
+                        participant.entered,
+                    ))
+                    .and_modify(|(exited, strength)| {
+                        *exited = match (*exited, participant.exited) {
+                            (Some(first), Some(second)) => Some(first.max(second)),
+                            _ => None,
+                        };
+                        *strength = (*strength).max(participant.strength);
+                    })
+                    .or_insert((participant.exited, participant.strength));
+            }
+            let mut side_losses = [
+                crate::game::WarLosses::default(),
+                crate::game::WarLosses::default(),
+            ];
+            for (player, toll) in &losses {
+                let declarer_side = participation
+                    .keys()
+                    .find(|(participant, _, _, _)| participant == player)
+                    .map(|(_, side, _, _)| *side)
+                    .unwrap_or(*player == anchor.declarer);
+                let total = &mut side_losses[if declarer_side { 0 } else { 1 }];
+                total.units += toll.units;
+                total.cities += toll.cities;
+            }
+            let parties = participation
+                .into_iter()
+                .map(|((player, declarer_side, suzerain, entered), (exited, strength))| {
+                    let toll = losses.get(&player).cloned().unwrap_or_default();
+                    json!({
+                        "player": player,
+                        "declarer_side": declarer_side,
+                        "suzerain": suzerain,
+                        "entered": entered,
+                        "exited": exited,
+                        "strength": strength,
+                        "units_lost": toll.units,
+                        "cities_lost": toll.cities,
+                        "unit_kinds": toll.unit_kinds,
+                        "city_names": toll.city_names,
+                    })
+                })
+                .collect::<Vec<_>>();
+
+            let mut highlights = records
+                .iter()
+                .flat_map(|war| war.highlights.iter())
+                .collect::<Vec<_>>();
+            highlights.sort_by_key(|moment| {
+                (moment.turn, moment.kind.as_str(), moment.actor, moment.subject)
+            });
+            highlights.dedup_by(|a, b| {
+                a.turn == b.turn
+                    && a.kind == b.kind
+                    && a.actor == b.actor
+                    && a.subject == b.subject
+                    && a.city == b.city
+            });
+            let victor = highlights
+                .iter()
+                .rev()
+                .find(|moment| moment.kind == "conquest")
+                .map(|moment| moment.actor);
+            let outcome = ended.and_then(|_| {
+                if victor.is_some() {
+                    Some("conquest".to_string())
+                } else {
+                    highlights
+                        .iter()
+                        .rev()
+                        .find(|moment| matches!(moment.kind.as_str(), "peace" | "coalition"))
+                        .map(|moment| moment.kind.clone())
+                }
+            });
+
+            let mut settlements = BTreeMap::new();
+            for peace in records.iter().flat_map(|war| &war.peace_terms) {
+                settlements
+                    .entry((peace.turn, peace.first, peace.second, peace.terms.join("\u{1f}")))
+                    .or_insert(peace);
+            }
+            json!({
+                "conflict": anchor.conflict,
+                "aggressor": anchor.declarer,
+                "defender": anchor.target,
+                "started": started,
+                "ended": ended,
+                "turns": ended.unwrap_or(g.turn).saturating_sub(started),
+                "outcome": outcome,
+                "victor": victor,
+                "sides": [
+                    {"player": anchor.declarer, "units_lost": side_losses[0].units,
+                     "cities_lost": side_losses[0].cities},
+                    {"player": anchor.target, "units_lost": side_losses[1].units,
+                     "cities_lost": side_losses[1].cities},
+                ],
+                "parties": parties,
+                "highlights": highlights.into_iter().map(|highlight| json!({
                     "turn": highlight.turn,
                     "kind": highlight.kind,
                     "actor": highlight.actor,
                     "subject": highlight.subject,
                     "city": highlight.city,
-                }))
-                .collect::<Vec<_>>(),
+                })).collect::<Vec<_>>(),
+                "peace_terms": settlements.into_values().map(|peace| json!({
+                    "turn": peace.turn,
+                    "first": peace.first,
+                    "second": peace.second,
+                    "terms": peace.terms,
+                })).collect::<Vec<_>>(),
+            })
         })
-    };
-    let mut wars: Vec<&crate::game::WarRecord> = g.wars.values().collect();
-    wars.sort_by_key(|war| (war.started, war.aggressor, war.defender));
-    wars.iter()
-        .map(|war| war_json(war))
-        .chain(
-            g.concluded_wars
-                .iter()
-                .rev()
-                .take(RECENT_PEACES)
-                .map(war_json),
-        )
         .collect()
 }
 
