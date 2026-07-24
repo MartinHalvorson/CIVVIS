@@ -164,3 +164,28 @@ city, which add fortification rules this formula does not model.
 - **Micro-scenarios.** WorldBuilder plus the debug menu construct an exact
   state on demand, which is what a deterministic-transition test needs: same
   state, same action, compare the numbers.
+
+## First pacing comparison (indicative, not yet controlled)
+
+A 31-turn Civilization VI autoplay game (6 major players, default settings)
+against `civvis simulate --players 6 --turns 31 --difficulty prince
+--speed standard`:
+
+| At turn 31 | Civilization VI | CIVVIS |
+|---|---|---|
+| cities | 1–2 | 1–2 |
+| techs | 3 | 1–3 |
+| units | 2–4 | 1–3 |
+| score | 25–42 | 16–27 |
+
+Expansion, tech pace and army size land in the same place. Score does not:
+CIVVIS' leader scores 27 where the real game's leads 42, and the whole band
+sits low.
+
+This is one game a side, on different maps with different civilizations, so it
+is a lead rather than a result. It is a *cheap* lead to chase, because
+`Game_PlayerScores.csv` decomposes every player's score, every turn, into the
+categories that produced it — civics, empire, tech, great people, religion,
+wonders, trade — so the gap can be attributed to a category rather than
+guessed at. That decomposition against CIVVIS' own score model is the next
+measurement.
