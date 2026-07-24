@@ -2261,6 +2261,27 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function drawQuickDeals()"));
         assert!(EMBEDDED_INDEX.contains("type:\"trade\""));
         assert!(EMBEDDED_INDEX.contains("function spectatorIdentity(player)"));
+        assert!(EMBEDDED_INDEX.contains("function warLossLedger(war)"));
+        let loss_categories = [
+            "[\"civilian\", \"Civilian\"]",
+            "[\"light_cavalry\", \"Light cavalry\"]",
+            "[\"heavy_cavalry\", \"Heavy cavalry\"]",
+            "[\"melee\", \"Melee\"]",
+            "[\"anti_cavalry\", \"Anti-cavalry\"]",
+            "[\"ranged\", \"Ranged\"]",
+            "[\"siege\", \"Siege\"]",
+            "[\"support\", \"Support\"]",
+        ];
+        for pair in loss_categories.windows(2) {
+            assert!(
+                EMBEDDED_INDEX.find(pair[0]).unwrap() < EMBEDDED_INDEX.find(pair[1]).unwrap(),
+                "war-loss categories should preserve the requested order"
+            );
+        }
+        assert!(EMBEDDED_INDEX.contains("WAR_LOSS_CIVILIAN_ORDER"));
+        assert!(EMBEDDED_INDEX.contains("return a.unique ? -1 : 1"));
+        assert!(EMBEDDED_INDEX.contains("${loss.total} x ${titleCase(info.kind)}"));
+        assert!(EMBEDDED_INDEX.contains("onclick=\"spectatePlayer(${id})\""));
         assert!(EMBEDDED_INDEX.contains("state.players[state.player] || actor"));
         assert!(EMBEDDED_INDEX.contains("Global lifetime carbon emissions"));
         assert!(EMBEDDED_INDEX.contains("Alliance · Level"));

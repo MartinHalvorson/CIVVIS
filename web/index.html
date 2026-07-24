@@ -952,13 +952,42 @@
   .war-side.defender .war-party.city-state { margin-right: 12px; margin-left: 0; }
   .war-party-copy { min-width: 0; }
   .war-party-name { overflow-wrap: anywhere; }
+  .war-entity-link {
+    max-width: 100%; margin: 0; padding: 0; border: 0; border-radius: 0;
+    color: inherit; background: none; box-shadow: none; font: inherit; font-weight: inherit;
+    line-height: inherit; text-align: inherit; text-decoration: underline; text-decoration-color: #d7b66a55;
+    text-decoration-thickness: 1px; text-underline-offset: 2px; cursor: pointer;
+  }
+  .war-entity-link:hover, .war-entity-link:focus-visible {
+    color: var(--gold-bright); background: none; border-color: transparent; box-shadow: none;
+    transform: none; text-decoration-color: currentColor;
+  }
+  .war-entity-link:active { transform: none; }
   .war-party-note { display: block; color: #a8948c; font-size: 7px; font-style: italic; font-weight: 600; }
   .war-flag { width: 9px; height: 9px; flex: 0 0 9px; border-radius: 2px; box-shadow: inset 0 0 0 1px #0008; }
-  .war-strength-party, .war-loss-party { margin: 3px 0 5px; color: #c7d1cc; font-size: 8px; }
-  .war-strength-party.city-state, .war-loss-party.city-state { margin-left: 12px; }
-  .war-side.defender .war-strength-party.city-state, .war-side.defender .war-loss-party.city-state { margin-right: 12px; margin-left: 0; }
+  .war-strength-party { margin: 3px 0 5px; color: #c7d1cc; font-size: 8px; }
+  .war-strength-party.city-state { margin-left: 12px; }
+  .war-side.defender .war-strength-party.city-state { margin-right: 12px; margin-left: 0; }
   .war-strength-party b { color: #f1d9ad; font-size: 10px; font-variant-numeric: tabular-nums; }
-  .war-loss-detail { display: block; margin-top: 1px; color: #c6aaa4; line-height: 1.35; }
+  .war-loss-ledger { font-size: 8px; }
+  .war-loss-sides, .war-loss-unit-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .war-loss-side-head, .war-loss-unit-cell { min-width: 0; padding: 5px 7px; border-right: 1px solid #ffffff10; }
+  .war-loss-side-head:last-child, .war-loss-unit-cell:last-child { border-right: 0; text-align: right; }
+  .war-loss-side-head { color: #c7d1cc; }
+  .war-loss-side-head .war-entity-link { display: block; width: 100%; overflow-wrap: anywhere; font-size: 8px; font-weight: 750; }
+  .war-loss-side-head:last-child .war-entity-link { text-align: right; }
+  .war-loss-side-head .city-state { color: #b9c8c1; font-size: 7px; }
+  .war-loss-cities { display: block; margin-top: 3px; color: #c6aaa4; line-height: 1.35; }
+  .war-loss-category { padding: 3px 7px; border-top: 1px solid #ffffff0d; border-bottom: 1px solid #ffffff08; background: #ffffff05; color: #8fa098; font-size: 6px; font-weight: 850; letter-spacing: .12em; text-align: center; text-transform: uppercase; }
+  .war-loss-unit-row { min-height: 21px; }
+  .war-loss-unit-row + .war-loss-unit-row { border-top: 1px solid #ffffff08; }
+  .war-loss-unit-cell { display: flex; align-items: center; color: #c6aaa4; line-height: 1.3; }
+  .war-loss-unit-cell:last-child { justify-content: flex-end; }
+  .war-loss-unit-cell.empty { color: transparent; user-select: none; }
+  .war-loss-unit-cell.specialty { color: #f1d38c; background: linear-gradient(90deg, #d7b66a17, transparent); font-weight: 800; }
+  .war-loss-unit-cell.specialty:last-child { background: linear-gradient(270deg, #d7b66a17, transparent); }
+  .war-loss-specialty-mark { margin-right: 3px; color: var(--gold-bright); text-shadow: 0 0 6px #d7b66a88; }
+  .war-loss-unit-cell:last-child .war-loss-specialty-mark { order: 2; margin-right: 0; margin-left: 3px; }
   .war-loss-none { color: var(--faint); font-style: italic; }
   .war-moments { padding: 6px 8px 7px; display: flex; flex-direction: column; gap: 3px; }
   .war-moment { display: grid; grid-template-columns: 34px 1fr; gap: 6px; color: #cad5cf; font-size: 8px; }
@@ -9156,6 +9185,19 @@ function warPartyName(id) {
   if (!player) return `Player ${id}`;
   return player.is_minor ? `${player.civ}` : player.civ;
 }
+function warEntityLink(id, suffix = "") {
+  const player = (state.players || [])[id];
+  if (!player) return `${warPartyName(id)}${suffix}`;
+  const minor = player.is_minor && !player.is_barbarian;
+  const label = `${player.civ}${suffix}`;
+  return `<button type="button" class="war-entity-link${minor ? " city-state" : ""}" ` +
+    `onclick="spectatePlayer(${id})" title="View ${player.civ}" aria-label="View ${player.civ}">${label}</button>`;
+}
+function warPartyIsCityState(party) {
+  const player = (state.players || [])[party.player];
+  return player ? Boolean(player.is_minor && !player.is_barbarian) :
+    (party.suzerain !== null && party.suzerain !== undefined);
+}
 function warParticipationNote(party, war) {
   const notes = [];
   if ((party.entered || 0) > war.started) notes.push(`entered Turn ${party.entered}`);
@@ -9186,36 +9228,169 @@ function warParties(war, declarerSide) {
     .sort((a, b) => a.entered - b.entered || a.player - b.player));
   return ordered;
 }
+
+// The loss ledger follows the land-unit order used by the production tree.
+// Classes outside the requested core sequence come afterwards so an air or
+// naval casualty is still accounted for rather than silently disappearing.
+const WAR_LOSS_CATEGORIES = [
+  ["civilian", "Civilian"],
+  ["light_cavalry", "Light cavalry"],
+  ["heavy_cavalry", "Heavy cavalry"],
+  ["melee", "Melee"],
+  ["anti_cavalry", "Anti-cavalry"],
+  ["ranged", "Ranged"],
+  ["siege", "Siege"],
+  ["support", "Support"],
+  ["recon", "Recon"],
+  ["naval_melee", "Naval melee"],
+  ["naval_ranged", "Naval ranged"],
+  ["naval_raider", "Naval raider"],
+  ["naval_carrier", "Naval carrier"],
+  ["air_fighter", "Air fighter"],
+  ["air_bomber", "Air bomber"],
+  ["warrior_monk", "Warrior monk"],
+  ["other", "Other"],
+];
+const WAR_LOSS_CATEGORY_INDEX = new Map(WAR_LOSS_CATEGORIES.map(([kind], index) => [kind, index]));
+const WAR_LOSS_CIVILIAN_ORDER = new Map([["settler", 0], ["builder", 1], ["trader", 2]]);
+
+function warLossUnitInfo(kind) {
+  const formationMatch = kind.match(/ (corps\/fleet|army\/armada)$/);
+  const formation = formationMatch ? formationMatch[1] : "";
+  const unit = formationMatch ? kind.slice(0, -formationMatch[0].length) : kind;
+  const rule = RULES?.units?.[unit] || {};
+  const unique = Boolean(rule.unique_to);
+  const anchor = rule.replaces || unit;
+  const anchorRule = RULES?.units?.[anchor] || rule;
+  let category = rule.promotion_class || rule.class || "other";
+  // Religious and espionage pieces are non-combatants in this ledger, just
+  // like the named civilian units that precede them.
+  if (["civilian", "religious", "espionage"].includes(rule.class)) category = "civilian";
+  if (!WAR_LOSS_CATEGORY_INDEX.has(category)) category = "other";
+  const rulesOrder = Object.keys(RULES?.units || {});
+  const anchorIndex = Math.max(0, rulesOrder.indexOf(anchor));
+  const power = Math.max(Number(anchorRule.strength) || 0,
+    Number(anchorRule.ranged_strength) || 0, Number(anchorRule.bombard_strength) || 0);
+  return {
+    kind, unit, rule, unique, anchor, formation, category, anchorIndex, power,
+    formationRank: formation === "army/armada" ? 2 : formation === "corps/fleet" ? 1 : 0,
+  };
+}
+
+function compareWarLossUnits(firstKind, secondKind) {
+  const a = warLossUnitInfo(firstKind), b = warLossUnitInfo(secondKind);
+  const category = WAR_LOSS_CATEGORY_INDEX.get(a.category) - WAR_LOSS_CATEGORY_INDEX.get(b.category);
+  if (category) return category;
+  if (a.category === "civilian") {
+    const civilian = (WAR_LOSS_CIVILIAN_ORDER.get(a.anchor) ?? 3) -
+      (WAR_LOSS_CIVILIAN_ORDER.get(b.anchor) ?? 3);
+    if (civilian) return civilian;
+  } else {
+    if (a.power !== b.power) return b.power - a.power;
+    if (a.anchorIndex !== b.anchorIndex) return b.anchorIndex - a.anchorIndex;
+  }
+  // Treat a unique replacement and its standard counterpart as one slot.
+  // Within that slot the highlighted unique appears immediately above the
+  // unit it replaces, including like-for-like Corps and Army formations.
+  if (a.anchor === b.anchor) {
+    if (a.formationRank !== b.formationRank) return b.formationRank - a.formationRank;
+    if (a.unique !== b.unique) return a.unique ? -1 : 1;
+  }
+  return a.kind.localeCompare(b.kind);
+}
+
+function warLossSide(war, declarerSide) {
+  const parties = warParties(war, declarerSide);
+  const units = new Map(), cities = [];
+  for (const party of parties) {
+    let itemized = 0;
+    for (const [kind, rawCount] of Object.entries(party.unit_kinds || {})) {
+      const count = Number(rawCount) || 0;
+      if (count <= 0) continue;
+      itemized += count;
+      if (!units.has(kind)) units.set(kind, {total: 0, owners: []});
+      const loss = units.get(kind);
+      loss.total += count;
+      loss.owners.push([party.player, count]);
+    }
+    // Older checkpoints may have the total without its newer itemization.
+    // Keep those casualties visible and honest instead of pretending the
+    // side lost nothing merely because their exact kind was not preserved.
+    const unitemized = Math.max(0, (Number(party.units_lost) || 0) - itemized);
+    if (unitemized) {
+      if (!units.has("unknown_unit")) units.set("unknown_unit", {total: 0, owners: []});
+      const loss = units.get("unknown_unit");
+      loss.total += unitemized;
+      loss.owners.push([party.player, unitemized]);
+    }
+    for (const city of party.city_names || []) cities.push([party.player, city]);
+  }
+  return {parties, units, cities};
+}
+
+function warLossUnitCell(loss, info) {
+  if (!loss) return `<div class="war-loss-unit-cell empty" aria-hidden="true">&nbsp;</div>`;
+  const owners = loss.owners.map(([player, count]) => `${warPartyName(player)}: ${count}`).join(" · ");
+  const uniqueTitle = info.unique
+    ? `${info.rule.unique_to} unique unit${info.rule.replaces ? ` · replaces ${titleCase(info.rule.replaces)}` : ""}`
+    : "";
+  const title = [owners, uniqueTitle].filter(Boolean).join(" · ");
+  return `<div class="war-loss-unit-cell${info.unique ? " specialty" : ""}" title="${title}">` +
+    `${info.unique ? `<span class="war-loss-specialty-mark" aria-label="Unique unit">★</span>` : ""}` +
+    `<span>${loss.total} x ${titleCase(info.kind)}</span></div>`;
+}
+
+function warLossSideHead(side) {
+  const parties = side.parties.map(party =>
+    warEntityLink(party.player, warPartyIsCityState(party) ? " ⌂" : "")
+  ).join("");
+  const groupedCities = new Map();
+  for (const [, city] of side.cities) groupedCities.set(city, (groupedCities.get(city) || 0) + 1);
+  const cities = [...groupedCities].map(([city, count]) => `${count} x ${city}`).join(", ");
+  return `<div class="war-loss-side-head">${parties}` +
+    `${cities ? `<span class="war-loss-cities">Cities: ${cities}</span>` : ""}</div>`;
+}
+
+function warLossLedger(war) {
+  const sides = [warLossSide(war, true), warLossSide(war, false)];
+  const kinds = [...new Set(sides.flatMap(side => [...side.units.keys()]))].sort(compareWarLossUnits);
+  let rows = "", lastCategory = null;
+  for (const kind of kinds) {
+    const info = warLossUnitInfo(kind);
+    if (info.category !== lastCategory) {
+      const label = WAR_LOSS_CATEGORIES.find(([category]) => category === info.category)?.[1] || "Other";
+      rows += `<div class="war-loss-category">${label}</div>`;
+      lastCategory = info.category;
+    }
+    rows += `<div class="war-loss-unit-row" data-loss-unit="${kind}">` +
+      warLossUnitCell(sides[0].units.get(kind), info) +
+      warLossUnitCell(sides[1].units.get(kind), info) + `</div>`;
+  }
+  const hasCities = sides.some(side => side.cities.length);
+  const none = !kinds.length && !hasCities
+    ? `<div class="war-loss-none" style="padding:6px 8px;text-align:center">No recorded losses</div>` : "";
+  return `<div class="war-loss-ledger"><div class="war-loss-sides">` +
+    warLossSideHead(sides[0]) + warLossSideHead(sides[1]) + `</div>${rows}${none}</div>`;
+}
+
 function warPartyRows(war, declarerSide, role, mode) {
   return `<div class="war-side ${role}">` + warParties(war, declarerSide).map(party => {
-    const minor = party.suzerain !== null && party.suzerain !== undefined;
+    const minor = warPartyIsCityState(party);
     const note = warParticipationNote(party, war);
-    const name = `${warPartyName(party.player)}${minor ? " ⌂" : ""}`;
     if (mode === "strength") {
       const strength = Number(party.strength) > 0 ? Math.round(party.strength) : "—";
       return `<div class="war-strength-party${minor ? " city-state" : ""}">` +
-        `<span>${name}</span> · <b>${strength}</b>${note ? `<span class="war-party-note">${note}</span>` : ""}</div>`;
-    }
-    if (mode === "losses") {
-      const units = Object.entries(party.unit_kinds || {}).map(([kind, count]) =>
-        `${titleCase(kind)}${count > 1 ? ` ×${count}` : ""}`);
-      const cities = (party.city_names || []).map(city => city);
-      const details = [];
-      if (cities.length) details.push(`Cities: ${cities.join(", ")}`);
-      if (units.length) details.push(`Units: ${units.join(", ")}`);
-      return `<div class="war-loss-party${minor ? " city-state" : ""}"><span>${name}</span>` +
-        (details.length
-          ? details.map(detail => `<span class="war-loss-detail">${detail}</span>`).join("")
-          : `<span class="war-loss-detail war-loss-none">No recorded losses</span>`) + `</div>`;
+        `${warEntityLink(party.player, minor ? " ⌂" : "")} · <b>${strength}</b>` +
+        `${note ? `<span class="war-party-note">${note}</span>` : ""}</div>`;
     }
     return `<div class="war-party${minor ? " city-state" : ""}>` +
       `<i class="war-flag" style="background:${cityBannerColor(party.player)}"></i>` +
-      `<span class="war-party-copy"><span class="war-party-name">${name}</span>` +
+      `<span class="war-party-copy"><span class="war-party-name">${warEntityLink(party.player, minor ? " ⌂" : "")}</span>` +
       `${note ? `<span class="war-party-note">${note}</span>` : ""}</span></div>`;
   }).join("") + `</div>`;
 }
 function warMomentText(moment) {
-  const actor = warPartyName(moment.actor), subject = warPartyName(moment.subject);
+  const actor = warEntityLink(moment.actor), subject = warEntityLink(moment.subject);
   switch (moment.kind) {
     case "declared": return `${actor} declared war on ${subject}.`;
     case "city_captured": return `${actor} took ${moment.city} from ${subject}.`;
@@ -9275,13 +9450,13 @@ function drawWarLog() {
       `<div class="war-moment ${WAR_MOMENT_TONE[moment.kind] || ""}">` +
       `<em>Turn ${moment.turn}</em><span>${warMomentText(moment)}</span></div>`).join("");
     const settlements = (war.peace_terms || []).map(peace =>
-      `<div class="war-settlement"><b>Turn ${peace.turn} · ${warPartyName(peace.first)}–${warPartyName(peace.second)}</b>` +
+      `<div class="war-settlement"><b>Turn ${peace.turn} · ${warEntityLink(peace.first)}–${warEntityLink(peace.second)}</b>` +
       `<ul>${(peace.terms || []).map(term => `<li>${term}</li>`).join("")}</ul></div>`
     ).join("");
     const outcome = settlements
       ? settlements
       : (!over ? "" : `<div class="war-settlement"><b>${conquest
-          ? `${warPartyName(war.victor)} won by conquest — no peace deal`
+          ? `${warEntityLink(war.victor)} won by conquest — no peace deal`
           : (war.outcome === "coalition" ? "Emergency coalition ceasefire" : "No recorded peace terms")
         }</b></div>`);
     return `<div class="war-card${over ? " ended" : ""}${conquest ? " conquest" : ""}">` +
@@ -9296,8 +9471,7 @@ function drawWarLog() {
       `<div class="war-infobox-row"><div class="war-row-label">Chronology</div>` +
       `<div class="war-moments">${moments || `<span class="war-loss-none">No recorded events</span>`}</div></div>` +
       `<div class="war-infobox-row"><div class="war-row-label">Losses</div>` +
-      `<div class="war-columns">${warPartyRows(war, true, "aggressor", "losses")}` +
-      `${warPartyRows(war, false, "defender", "losses")}</div></div>` +
+      `${warLossLedger(war)}</div>` +
       `${outcome ? `<div class="war-infobox-row"><div class="war-row-label">Peace deal terms</div>` +
         `<div class="war-terms">${outcome}</div></div>` : ""}</div>`;
   }).join("");
