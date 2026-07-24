@@ -995,11 +995,13 @@ impl Session {
             return Err("mode must be restart or fresh_code".into());
         }
 
+        let paused = request["paused"].as_bool().unwrap_or(self.spectator_paused);
         let mut params = new_game_params(&self.params, request);
         params.spectate = true;
         self.supervisor_request = Some(json!({
             "mode": mode,
             "server_instance": std::process::id(),
+            "paused": paused,
             "settings": simulation_settings(&params),
         }));
         self.spectator_paused = true;
@@ -1951,6 +1953,13 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         ("POST", "/new") => {
             let mut session = sh.session.lock().unwrap();
             let result = session.start_new_game(&parsed);
+            if result.is_ok() {
+                let paused = parsed["paused"]
+                    .as_bool()
+                    .unwrap_or_else(|| sh.paused.load(Ordering::Relaxed));
+                sh.paused.store(paused, Ordering::Relaxed);
+                session.spectator_paused = paused;
+            }
             let mut o = session.state();
             o["error"] = match result {
                 Ok(()) => Value::Null,
@@ -2174,6 +2183,9 @@ mod tests {
         assert!(!EMBEDDED_INDEX.contains("id=\"specdirector\""));
         assert!(!EMBEDDED_INDEX.contains("id=\"speccinema\""));
         assert!(EMBEDDED_INDEX.contains("async function startNewSimulation()"));
+        assert!(EMBEDDED_INDEX
+            .contains("const payload = {...newSimulationPayload(), paused: wasPaused}"));
+        assert!(EMBEDDED_INDEX.contains("setPace({paused: wasPaused})"));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/next-game-settings\""));
         assert!(EMBEDDED_INDEX.contains("with selected settings"));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/supervisor-new\""));
@@ -2687,6 +2699,7 @@ mod tests {
         session
             .request_supervised_new_game(&json!({
                 "mode": "fresh_code",
+                "paused": false,
                 "num_players": 4,
                 "map_script": "continents",
                 "game_speed": "quick",
@@ -2698,6 +2711,7 @@ mod tests {
         assert_eq!(session.game.seed, original_seed);
         assert!(session.spectator_paused);
         assert_eq!(state["supervisor_request"]["mode"], "fresh_code");
+        assert_eq!(state["supervisor_request"]["paused"], false);
         assert_eq!(
             state["supervisor_request"]["server_instance"].as_u64(),
             Some(std::process::id() as u64)
@@ -3106,15 +3120,22 @@ mod tests {
     }
 }
 
-pub fn serve_with_game(port: u16, open_browser: bool, params: Params, game: Option<Game>) {
+pub fn serve_with_game(
+    port: u16,
+    open_browser: bool,
+    params: Params,
+    game: Option<Game>,
+    initially_paused: bool,
+) {
     let listener = TcpListener::bind(("127.0.0.1", port))
         .unwrap_or_else(|e| panic!("cannot bind port {port}: {e}"));
     let actual = listener.local_addr().unwrap().port();
     let url = format!("http://127.0.0.1:{actual}/");
-    let session = match game {
+    let mut session = match game {
         Some(game) => Session::from_game(params, game),
         None => Session::new(params),
     };
+    session.spectator_paused = initially_paused;
     println!("Martin Halvorson's Civilization VIS — playing at {url}");
     if session.params.spectate {
         println!(
@@ -3127,7 +3148,7 @@ pub fn serve_with_game(port: u16, open_browser: bool, params: Params, game: Opti
     let shared = Arc::new(Shared {
         session: Mutex::new(session),
         pace_ms: AtomicU64::new(1_000), // one second per turn by default
-        paused: AtomicBool::new(false),
+        paused: AtomicBool::new(initially_paused),
         restart_in: AtomicU64::new(u64::MAX),
         turn_us: AtomicU64::new(0),
         turn_compute_us: AtomicU64::new(0),
@@ -3154,7 +3175,7 @@ pub fn serve_with_game(port: u16, open_browser: bool, params: Params, game: Opti
 }
 
 pub fn serve(port: u16, open_browser: bool, params: Params) {
-    serve_with_game(port, open_browser, params, None);
+    serve_with_game(port, open_browser, params, None, false);
 }
 
 fn open_url(url: &str) {

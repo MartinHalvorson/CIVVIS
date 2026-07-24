@@ -10687,15 +10687,12 @@ async function startNewSimulation() {
   const wasPaused = specPaused;
   setNewSimulationBusy(true);
   try {
-    const payload = newSimulationPayload();
+    const payload = {...newSimulationPayload(), paused: wasPaused};
     sel = null; selCity = null;
     clearTimeout(specTimer);
     if (supervised) {
       const finishedInstance = state.server_instance;
       const finishedSeed = state.seed;
-      specPaused = true;
-      document.getElementById("specpause").textContent = "▶ Resume";
-      reportSpecStatus();
       const requested = await fetchJSON("/supervisor-new", { method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({...payload, mode: "restart"}) });
@@ -10706,14 +10703,14 @@ async function startNewSimulation() {
       return;
     }
 
-    specPaused = false;
-    document.getElementById("specpause").textContent = "⏸ Pause";
+    specPaused = wasPaused;
+    document.getElementById("specpause").textContent = specPaused ? "▶ Resume" : "⏸ Pause";
     const next = await fetchJSON("/new", { method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify(payload) });
     if (next.error) throw new Error(next.error);
     render(next);
-    setPace({paused: false});
+    setPace({paused: wasPaused});
     reportSpecStatus();
     scheduleSpec(state);
     setNewSimulationBusy(false);

@@ -289,6 +289,7 @@ class SessionSettingsTests(unittest.TestCase):
         request = {
             "mode": "fresh_code",
             "server_instance": 4321,
+            "paused": False,
             "settings": {
                 "players": 4,
                 "width": 60,
@@ -316,6 +317,7 @@ class SessionSettingsTests(unittest.TestCase):
                     "speed": "quick",
                     "victories": ["science", "culture", "domination"],
                 },
+                False,
             ),
         )
         self.assertIsNone(
@@ -767,6 +769,7 @@ class RecoveryTests(unittest.TestCase):
             "supervisor_request": {
                 "mode": "restart",
                 "server_instance": 321,
+                "paused": True,
                 "settings": requested,
             },
         }
@@ -793,7 +796,9 @@ class RecoveryTests(unittest.TestCase):
             ):
                 self.assertEqual(supervisor.main(), 0)
 
-        start.assert_called_once_with(8766, requested, False)
+        start.assert_called_once_with(
+            8766, requested, False, initially_paused=True
+        )
         build.assert_not_called()
         self.assertFalse(checkpoint.exists())
 
@@ -817,6 +822,7 @@ class RecoveryTests(unittest.TestCase):
             "supervisor_request": {
                 "mode": "fresh_code",
                 "server_instance": 321,
+                "paused": False,
                 "settings": requested,
             },
         }
@@ -853,7 +859,9 @@ class RecoveryTests(unittest.TestCase):
                 self.assertEqual(supervisor.main(), 0)
 
         build.assert_called_once_with()
-        start.assert_called_once_with(8766, requested, False)
+        start.assert_called_once_with(
+            8766, requested, False, initially_paused=False
+        )
 
     def test_busy_server_detection_distinguishes_compute_from_idle(self):
         process = SimpleNamespace(pid=321)
@@ -1032,6 +1040,23 @@ class RecoveryTests(unittest.TestCase):
             command[command.index("--victories") + 1],
             "science,culture,domination",
         )
+
+    def test_server_command_can_pause_before_the_stepper_starts(self):
+        settings = {
+            "players": 4,
+            "width": 60,
+            "height": 38,
+            "city_states": 6,
+            "turns": 250,
+            "map": "pangaea",
+            "speed": "online",
+        }
+        paused = supervisor.server_command(
+            8766, settings, False, initially_paused=True
+        )
+        running = supervisor.server_command(8766, settings, False)
+        self.assertIn("--paused", paused)
+        self.assertNotIn("--paused", running)
 
     def test_server_starts_beside_the_promoted_binary_not_the_shared_web_tree(self):
         settings = {
