@@ -3315,12 +3315,21 @@ impl AdvancedAi {
         }
 
         let pressure = self.rival_victory_pressure(g, target);
-        // A final exoplanet launch is an irreversible victory clock. It
-        // already interrupts the strategic planner at 78%, so waiting five
-        // turns for a Formal War here would make its counter-campaign start
-        // too late even when the expedition has not yet traveled a light-year.
+        // A final exoplanet launch and a religious match point are both
+        // irreversible victory clocks. They already interrupt strategic
+        // planning before 90%, so waiting five turns for a Formal War here
+        // would make the counter-campaign start after the game can end.
+        let living_majors = g
+            .players
+            .iter()
+            .filter(|player| player.alive && !player.is_minor && !player.is_barbarian)
+            .count()
+            .max(1) as i32;
+        let religious_match_point = 100 * living_majors.saturating_sub(1) / living_majors;
         let urgent = pressure.progress >= 90
-            || (pressure.strategy == GrandStrategy::Science && pressure.progress >= 78);
+            || (pressure.strategy == GrandStrategy::Science && pressure.progress >= 78)
+            || (pressure.strategy == GrandStrategy::Religion
+                && pressure.progress >= religious_match_point);
         let denounced = g.players[pid]
             .denounced_until
             .get(&target)
@@ -11338,6 +11347,34 @@ mod tests {
         assert_eq!(
             ai.preferred_war_opening(&emergency, 0, 1),
             Some(Action::DeclareWar { player: 1 })
+        );
+
+        let mut religious = Game::new_full(4, 24, 16, 714, 300, 0, false);
+        for pid in 0..4 {
+            religious.current = pid;
+            let settler = religious
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| religious.units[unit].kind == "settler")
+                .unwrap();
+            religious.apply(pid, &Action::FoundCity { unit: settler }).unwrap();
+        }
+        religious.current = 0;
+        religious.turn = 60;
+        religious.players[1].religion = Some("Runaway Faith".to_string());
+        for owner in [1, 2, 3] {
+            let city = religious.player_city_ids(owner)[0];
+            religious
+                .cities
+                .get_mut(&city)
+                .unwrap()
+                .pressure
+                .insert("Runaway Faith".to_string(), 1_000.0);
+        }
+        assert_eq!(
+            ai.preferred_war_opening(&religious, 0, 1),
+            Some(Action::DeclareWar { player: 1 }),
+            "a religious match point cannot spend five turns preparing a formal war"
         );
     }
 
