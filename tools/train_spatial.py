@@ -34,6 +34,19 @@ def load(dir_path):
     labels = labels.reshape(meta["labels_shape"])
     if not len(planes):
         raise SystemExit(f"{dir_path}: no samples; run civvis selfplay first")
+    if labels.ndim != 2 or labels.shape[1] < 3:
+        raise SystemExit(f"{dir_path}: labels must include win, turn fraction, and source game")
+    if not (
+        np.isfinite(planes).all()
+        and np.isfinite(globals_).all()
+        and np.isfinite(labels).all()
+    ):
+        raise SystemExit(f"{dir_path}: non-finite spatial training input")
+    if not np.isin(labels[:, 0], (0.0, 1.0)).all():
+        raise SystemExit(f"{dir_path}: labels must be binary wins")
+    games = labels[:, 2]
+    if not np.equal(games, np.floor(games)).all() or (games < 0).any():
+        raise SystemExit(f"{dir_path}: source-game ids must be non-negative integers")
     return meta, planes, globals_, labels
 
 
