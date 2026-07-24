@@ -189,3 +189,67 @@ categories that produced it — civics, empire, tech, great people, religion,
 wonders, trade — so the gap can be attributed to a category rather than
 guessed at. That decomposition against CIVVIS' own score model is the next
 measurement.
+
+## Playing league genomes in the real game
+
+`tools/civ6_strategy.py` exports a league strategy's economic policy — the
+scripted opening (`open0..open3`), `city_target`, `settler_stop_turn`,
+`builder_per_city`, `mil_per_city`, and the district priorities — and the mod
+plays it for one player while the shipped AI handles everything else. That
+scopes the test to the part of the genome that can transfer: in Civilization VI
+the game's AI moves the units, so the tactical two-thirds of the genome has
+nothing to drive.
+
+Orders are verified against the game's own `City_BuildQueue.csv`, not against
+the agent's own claims. Driving Maverick2, the capital built builder, monument,
+settler, settler — matching the orders issued, each taking effect as the
+previous item completed.
+
+### First A/B: the league's top two
+
+60 turns each, six major players, default settings, the genome driving
+player 0:
+
+| genome | league elo | league games | score | field mean | margin | cities |
+|---|---:|---:|---:|---:|---:|---:|
+| Maverick2 | 1791 ± 31 | 216 | 112 | 66.0 | **+46.0** | 2 |
+| WildCard10 | 1823 ± 50 | 21 | 40 | 62.2 | **−22.2** | 1 |
+
+The league's **top-rated** strategy lost to its own field. The
+second-rated one beat its field by a wide margin.
+
+One game each, on different maps, is an anecdote — Civilization's variance
+across starts is larger than these gaps. What makes it worth acting on is that
+the league's own data says the same thing independently.
+
+### What that points at: ratings the results do not support
+
+| player | elo | rd | games | wins | winrate |
+|---|---:|---:|---:|---:|---:|
+| WildCard10 | 1823 | 50 | 21 | 4 | **19.0%** |
+| Maverick2 | 1791 | 31 | 216 | 82 | 38.0% |
+| Opportunist3 | 1766 | 30 | 170 | 61 | 35.9% |
+| OldGuard | 1755 | 30 | 331 | 111 | 33.5% |
+| … | | | | | |
+| Maverick6 | 1707 | 46 | 23 | 3 | **13.0%** |
+
+Six players to a game, so random is 16.7%. **WildCard10 tops the table on a
+19% winrate, and Maverick6 sits at 1707 on 13% — below random.** Among the 23
+strategies with 60+ games, Spearman correlation between rating and winrate is
+only **0.53**.
+
+The common factor is games played: every strategy rated above its results has
+fewer than 40 of them. Bred offspring enter with a rating their record has not
+earned, and the retirement gate (≥20 games and RD ≤ 110) is loose enough to let
+them reach the top of the standings before the rating converges.
+
+This matters beyond the leaderboard. `civvis play --league` seats each civ with
+its *best-rated* strategy, and the exhibition HUD reports those ratings as win
+chances — so an inflated newcomer is not a display quirk, it changes which
+strategies get played and what the spectator is told.
+
+Worth stressing what is and is not established: the winrate/rating gap is a
+fact about the committed league snapshot. The real-game runs are consistent
+with it and are what prompted the check, but two games do not by themselves
+establish that WildCard10 is weak. The next step is a fixed map seed and
+several games per genome, which the harness now supports.
