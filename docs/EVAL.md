@@ -343,3 +343,30 @@ Advanced sweep. The paired estimate is **64%, 95% CI 44.5–79.8%**, equivalent
 to **+100 Elo, CI -38 to +238**. That is strong directional evidence and a large
 point improvement over the old router, but it correctly remains
 `INCONCLUSIVE` at 25 maps because the confidence interval overlaps parity.
+
+## 2026-07-24 — adaptive control inside Strategic rollouts
+
+The multiplayer router compared six forced victory targets but omitted its own
+`AdvancedAi` parent as a candidate. It therefore had to commit at every review,
+even when all explicit lanes were worse than remaining adaptive. On 20 mirrored
+four-player maps (`--seed 13000`), the old router finished 35 of 80 seats on
+Domination but produced one domination win; it scored **18/40 (45%)** overall.
+
+`StrategicAi` now rolls out the adaptive parent beside every enabled explicit
+lane. A target must beat adaptive by more than one score-share point before it
+can take control, and a later review can return to adaptive without discarding
+campaign or unit-role memory. Prophet commitments, duel religious geometry, and
+urgent counter-routing still override the economic comparison.
+
+On the same 20 maps the new router scored **21/40 (52.5%)**, converting three of
+four Advanced sweeps into splits. On a disjoint holdout (`--seed 15000`) it
+scored **17/40 (42.5%)** versus the old router's **16/40 (40%)**. Combined, the
+change raises multiplayer results from **34/80 (42.5%, -53 Elo)** to **38/80
+(47.5%, -17 Elo; paired-map 95% CI 32.9–62.5%)** and reduces forced targets from
+75/80 final seats to 53/80. This is a replicated five-point improvement, not a
+promotion over Advanced: the combined interval still overlaps parity.
+
+The duel specialization is unchanged on its exact 25-map regression set:
+**32/50 (64%, +100 Elo)** with 30 religious wins. Two broader value-shaping
+experiments were rejected before this design: a victory-progress blend fell to
+11/40, and generic commitment hysteresis fell to 15/40 on the first seed block.
