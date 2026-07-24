@@ -654,11 +654,16 @@ mod tests {
 
     fn concluded_war(kind: &str) -> WarRecord {
         WarRecord {
+            conflict: 1,
+            declarer: 0,
+            target: 1,
             aggressor: 0,
             defender: 1,
             started: 20,
             ended: Some(24),
             losses: BTreeMap::new(),
+            participants: Vec::new(),
+            peace_terms: Vec::new(),
             highlights: vec![
                 WarHighlight {
                     turn: 20,

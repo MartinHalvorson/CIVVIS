@@ -2362,6 +2362,13 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function drawWarLog()"));
         assert!(EMBEDDED_INDEX.contains("function warsForLog(wars)"));
         assert!(EMBEDDED_INDEX.contains("id=\"warsec\""));
+        assert!(EMBEDDED_INDEX.contains("Military strength at entry"));
+        assert!(EMBEDDED_INDEX.contains("war-row-label\">Chronology"));
+        assert!(EMBEDDED_INDEX.contains("war-row-label\">Losses"));
+        assert!(EMBEDDED_INDEX.contains("Peace deal terms"));
+        assert!(EMBEDDED_INDEX.contains("entered Turn ${party.entered}"));
+        assert!(EMBEDDED_INDEX.contains("peaced out Turn ${party.exited}"));
+        assert!(EMBEDDED_INDEX.contains("sort((a, b) => a.turn - b.turn)"));
         assert!(EMBEDDED_INDEX.contains("built the world's first"));
         assert!(EMBEDDED_INDEX.contains("changed government from"));
         assert!(!EMBEDDED_INDEX.contains("completed its turn"));
