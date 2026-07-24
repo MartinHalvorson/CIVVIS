@@ -2244,6 +2244,16 @@ mod tests {
             "left panel should show game settings, display settings, and the two logs first"
         );
         assert!(EMBEDDED_INDEX.contains("<span>Display settings</span>"));
+        for overlay in ["players", "victory", "minimap", "controls"] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("data-overlay-close=\"{overlay}\"")),
+                "map overlay {overlay} should have a close control"
+            );
+        }
+        assert!(EMBEDDED_INDEX.contains("function dismissOverlay(name, source)"));
+        assert!(EMBEDDED_INDEX.contains("addEventListener(\"pointerdown\", event =>"));
+        assert!(EMBEDDED_INDEX.contains("overlay-return-flash .24s ease-in-out 3"));
+        assert!(EMBEDDED_INDEX.contains("restore in Display settings"));
         assert_eq!(
             EMBEDDED_INDEX
                 .matches("class=\"sidebar-section\"")
