@@ -651,21 +651,27 @@ fn main() {
             }
         }
         "league" => {
-            let players = arg(&args, "--players", 4);
+            let players = arg(&args, "--players", 4).max(2);
+            let defaults = civvis::league::LeagueCfg::default();
+            let shared_dir =
+                std::env::var("CIVVIS_LEAGUE_DIR").unwrap_or_else(|_| defaults.dir.clone());
             let cfg = civvis::league::LeagueCfg {
-                rounds: arg(&args, "--rounds", 10) as u32,
-                games_per_round: arg(&args, "--games", 16) as u32,
+                rounds: arg(&args, "--rounds", 10).max(0) as u32,
+                games_per_round: arg(&args, "--games", 16).max(1) as u32,
                 players_per_game: players as usize,
                 width: auto_dimension(&args, "--width", players, true),
                 height: auto_dimension(&args, "--height", players, false),
-                max_turns: arg(&args, "--turns", 250) as u32,
+                max_turns: arg(&args, "--turns", 250).max(1) as u32,
                 num_city_states: auto_cs(&args, players),
                 seed: arg(&args, "--seed", 1) as u64,
                 jobs: jobs_arg(&args),
-                dir: arg_text(&args, "--dir", "league"),
-                evolve_every: arg(&args, "--evolve-every", 4) as u32,
-                max_pop: arg(&args, "--pop", 12) as usize,
+                dir: arg_text(&args, "--dir", &shared_dir),
+                evolve_every: arg(&args, "--evolve-every", 4).max(0) as u32,
+                max_pop: arg(&args, "--pop", 12).max(1) as usize,
                 verbose: !args.iter().any(|a| a == "--quiet"),
+                worker_id: arg_text(&args, "--worker", &defaults.worker_id),
+                lease_seconds: arg(&args, "--lease-seconds", defaults.lease_seconds as i64).max(1)
+                    as u64,
             };
             let civ = arg_text(&args, "--civ", "");
             if args.iter().any(|a| a == "--standings") || !civ.is_empty() {
@@ -685,7 +691,10 @@ fn main() {
                     }
                 }
             } else {
-                civvis::league::run_league(&cfg);
+                if let Err(error) = civvis::league::try_run_league(&cfg) {
+                    eprintln!("league failed: {error}");
+                    std::process::exit(1);
+                }
             }
         }
         "evolve" => {
@@ -813,7 +822,7 @@ fn main() {
                       [--victories science,culture,religious,diplomatic,domination,score] \
                       [--spectate] [--supervised] [--resume checkpoint.json] [--strict] \
                       [--league dir] [--league-record] [--standings [--civ Rome | --civs]] [--rounds N] \
-                      [--evolve-every N] [--pop N]"
+                      [--evolve-every N] [--pop N] [--worker ID] [--lease-seconds N]"
             );
         }
     }
