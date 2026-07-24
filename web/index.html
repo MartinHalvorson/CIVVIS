@@ -942,22 +942,27 @@
   .war-infobox-row:first-of-type { border-top: 0; }
   .war-row-label { padding: 3px 7px; background: #ffffff06; color: #8fa098; font-size: 7px; font-weight: 850; letter-spacing: .14em; text-align: center; text-transform: uppercase; }
   .war-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .war-side { min-width: 0; padding: 6px 7px; border-right: 1px solid #ffffff10; }
+  .war-side { min-width: 0; padding: 5px 0 6px; border-right: 1px solid #ffffff10; }
   .war-side:last-child { border-right: 0; text-align: right; }
-  .war-party { min-width: 0; display: grid; grid-template-columns: 9px minmax(0, 1fr); align-items: start; gap: 5px; margin: 2px 0; color: #e7ece7; font-size: 9px; font-weight: 750; }
-  .war-side.defender .war-party { grid-template-columns: minmax(0, 1fr) 9px; }
-  .war-side.defender .war-party .war-flag { grid-column: 2; }
-  .war-side.defender .war-party .war-party-copy { grid-column: 1; grid-row: 1; }
-  .war-party.city-state { margin-left: 12px; color: #b9c8c1; font-size: 8px; font-weight: 650; }
-  .war-side.defender .war-party.city-state { margin-right: 12px; margin-left: 0; }
+  .war-strength-head, .war-strength-values { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; padding: 0 7px; text-align: center; }
+  .war-strength-head { margin-bottom: 3px; color: #81948c; font-size: 6px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
+  .war-belligerent { min-width: 0; padding: 4px 7px; }
+  .war-belligerent + .war-belligerent { border-top: 1px solid #ffffff0a; }
+  .war-belligerent.city-state { margin-left: 7px; padding-left: 5px; border-left: 1px solid #62756d66; }
+  .war-side.defender .war-belligerent.city-state { margin-right: 7px; margin-left: 0; padding-right: 5px; padding-left: 7px; border-right: 1px solid #62756d66; border-left: 0; }
+  .war-belligerent-bar { display: block; width: 100%; height: 2px; margin-bottom: 4px; border-radius: 2px; box-shadow: 0 0 4px #0008; }
+  .war-belligerent.city-state .war-belligerent-bar { width: 70%; }
+  .war-side.defender .war-belligerent.city-state .war-belligerent-bar { margin-left: auto; }
+  .war-party { min-width: 0; margin: 2px 0; color: #e7ece7; font-size: 9px; font-weight: 750; }
+  .war-belligerent.city-state .war-party { color: #b9c8c1; font-size: 8px; font-weight: 650; }
   .war-party-copy { min-width: 0; }
-  .war-party-name { overflow-wrap: anywhere; }
+  .war-party-name { display: block; overflow-wrap: break-word; word-break: normal; hyphens: auto; line-height: 1.25; }
   .war-party-note { display: block; color: #a8948c; font-size: 7px; font-style: italic; font-weight: 600; }
-  .war-flag { width: 9px; height: 9px; flex: 0 0 9px; border-radius: 2px; box-shadow: inset 0 0 0 1px #0008; }
-  .war-strength-party, .war-loss-party { margin: 3px 0 5px; color: #c7d1cc; font-size: 8px; }
-  .war-strength-party.city-state, .war-loss-party.city-state { margin-left: 12px; }
-  .war-side.defender .war-strength-party.city-state, .war-side.defender .war-loss-party.city-state { margin-right: 12px; margin-left: 0; }
-  .war-strength-party b { color: #f1d9ad; font-size: 10px; font-variant-numeric: tabular-nums; }
+  .war-strength-values { margin-top: 3px; color: #f1d9ad; font-size: 10px; font-variant-numeric: tabular-nums; }
+  .war-strength-values b { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .war-loss-party { margin: 3px 7px 5px; color: #c7d1cc; font-size: 8px; }
+  .war-loss-party.city-state { margin-left: 14px; }
+  .war-side.defender .war-loss-party.city-state { margin-right: 14px; margin-left: 7px; }
   .war-loss-detail { display: block; margin-top: 1px; color: #c6aaa4; line-height: 1.35; }
   .war-loss-none { color: var(--faint); font-style: italic; }
   .war-moments { padding: 6px 8px 7px; display: flex; flex-direction: column; gap: 3px; }
@@ -9340,17 +9345,38 @@ function warParties(war, declarerSide) {
     .sort((a, b) => a.entered - b.entered || a.player - b.player));
   return ordered;
 }
-function warPartyRows(war, declarerSide, role, mode) {
-  return `<div class="war-side ${role}">` + warParties(war, declarerSide).map(party => {
-    const minor = party.suzerain !== null && party.suzerain !== undefined;
+function warStrengthValue(value) {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return "—";
+  return Math.round(Number(value));
+}
+function warPartyIsCityState(party) {
+  const player = (state.players || [])[party.player];
+  return player ? Boolean(player.is_minor && !player.is_barbarian) :
+    (party.suzerain !== null && party.suzerain !== undefined);
+}
+function warBelligerentRows(war, declarerSide, role) {
+  const rows = warParties(war, declarerSide).map(party => {
+    const minor = warPartyIsCityState(party);
     const note = warParticipationNote(party, war);
     const name = `${warPartyName(party.player)}${minor ? " ⌂" : ""}`;
-    if (mode === "strength") {
-      const strength = Number(party.strength) > 0 ? Math.round(party.strength) : "—";
-      return `<div class="war-strength-party${minor ? " city-state" : ""}">` +
-        `<span>${name}</span> · <b>${strength}</b>${note ? `<span class="war-party-note">${note}</span>` : ""}</div>`;
-    }
-    if (mode === "losses") {
+    const start = party.strength_start ?? party.strength;
+    const peak = party.strength_peak ?? start;
+    const total = party.strength_total;
+    return `<div class="war-belligerent${minor ? " city-state" : ""}">` +
+      `<i class="war-belligerent-bar" style="background:${cityBannerColor(party.player)}"></i>` +
+      `<div class="war-party"><span class="war-party-copy"><span class="war-party-name">${name}</span>` +
+      `${note ? `<span class="war-party-note">${note}</span>` : ""}</span></div>` +
+      `<div class="war-strength-values"><b title="Military strength on entry">${warStrengthValue(start)}</b>` +
+      `<b title="Highest combined unit and engaged-district strength">${warStrengthValue(peak)}</b>` +
+      `<b title="Latest unit strength plus engaged city and Encampment defense">${warStrengthValue(total)}</b></div></div>`;
+  }).join("");
+  return `<div class="war-side ${role}"><div class="war-strength-head">` +
+    `<span>Start</span><span>Peak</span><span>Total</span></div>${rows}</div>`;
+}
+function warLossRows(war, declarerSide, role) {
+  return `<div class="war-side ${role}">` + warParties(war, declarerSide).map(party => {
+      const minor = warPartyIsCityState(party);
+      const name = `${warPartyName(party.player)}${minor ? " ⌂" : ""}`;
       const units = Object.entries(party.unit_kinds || {}).map(([kind, count]) =>
         `${titleCase(kind)}${count > 1 ? ` ×${count}` : ""}`);
       const cities = (party.city_names || []).map(city => city);
@@ -9361,11 +9387,6 @@ function warPartyRows(war, declarerSide, role, mode) {
         (details.length
           ? details.map(detail => `<span class="war-loss-detail">${detail}</span>`).join("")
           : `<span class="war-loss-detail war-loss-none">No recorded losses</span>`) + `</div>`;
-    }
-    return `<div class="war-party${minor ? " city-state" : ""}>` +
-      `<i class="war-flag" style="background:${cityBannerColor(party.player)}"></i>` +
-      `<span class="war-party-copy"><span class="war-party-name">${name}</span>` +
-      `${note ? `<span class="war-party-note">${note}</span>` : ""}</span></div>`;
   }).join("") + `</div>`;
 }
 function warMomentText(moment) {
@@ -9442,18 +9463,15 @@ function drawWarLog() {
       `<div class="war-period"><span>Started<b>Turn ${war.started}</b></span>` +
       `<span>${over ? "Ended" : "Status"}<b>${over ? `Turn ${war.ended}` : `Ongoing · ${length} turn${length === 1 ? "" : "s"}`}</b></span></div>` +
       `<div class="war-infobox-row"><div class="war-row-label">Belligerents</div>` +
-      `<div class="war-columns">${warPartyRows(war, true, "aggressor", "names")}` +
-      `${warPartyRows(war, false, "defender", "names")}</div></div>` +
-      `<div class="war-infobox-row"><div class="war-row-label">Military strength at entry</div>` +
-      `<div class="war-columns">${warPartyRows(war, true, "aggressor", "strength")}` +
-      `${warPartyRows(war, false, "defender", "strength")}</div></div>` +
-      `<div class="war-infobox-row"><div class="war-row-label">Chronology</div>` +
-      `<div class="war-moments">${moments || `<span class="war-loss-none">No recorded events</span>`}</div></div>` +
+      `<div class="war-columns">${warBelligerentRows(war, true, "aggressor")}` +
+      `${warBelligerentRows(war, false, "defender")}</div></div>` +
       `<div class="war-infobox-row"><div class="war-row-label">Losses</div>` +
-      `<div class="war-columns">${warPartyRows(war, true, "aggressor", "losses")}` +
-      `${warPartyRows(war, false, "defender", "losses")}</div></div>` +
+      `<div class="war-columns">${warLossRows(war, true, "aggressor")}` +
+      `${warLossRows(war, false, "defender")}</div></div>` +
       `${outcome ? `<div class="war-infobox-row"><div class="war-row-label">Peace deal terms</div>` +
-        `<div class="war-terms">${outcome}</div></div>` : ""}</div>`;
+        `<div class="war-terms">${outcome}</div></div>` : ""}` +
+      `<div class="war-infobox-row"><div class="war-row-label">Chronology</div>` +
+      `<div class="war-moments">${moments || `<span class="war-loss-none">No recorded events</span>`}</div></div></div>`;
   }).join("");
 }
 
