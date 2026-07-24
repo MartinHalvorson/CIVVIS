@@ -15,6 +15,7 @@
 use crate::ai::{run_game, AdvancedAi, Ai, PlanReport, VictoryTarget, Weights};
 use crate::evolve::features;
 use crate::game::{Action, Game, Item};
+use crate::obs_tensor::obs_tensor;
 use crate::valuenet::ValueNet;
 
 const TARGET_COMMITMENT_MARGIN: f64 = 0.01;
@@ -26,6 +27,12 @@ pub const FIRST_REVIEW_TURN: u32 = 30;
 #[derive(Clone, Debug, PartialEq)]
 pub struct CounterfactualValueSample {
     pub features: Vec<f32>,
+    /// Fog-honest endpoint tensor, populated only when the exporter asks for
+    /// a spatial sample. It is captured before the branch is continued to
+    /// its terminal label, exactly where Strategic evaluates the rollout.
+    pub planes: Vec<f32>,
+    pub globals: Vec<f32>,
+    pub global_names: Vec<String>,
     pub won: bool,
     pub turn_fraction: f32,
     /// `None` is the adaptive parent; `Some` is a committed victory lane.
@@ -449,6 +456,20 @@ impl StrategicAi {
         g: &Game,
         pid: usize,
     ) -> Vec<CounterfactualValueSample> {
+        self.counterfactual_value_samples_with_observation(g, pid, false)
+    }
+
+    /// Like [`Self::counterfactual_value_samples`], with an optional
+    /// fog-honest board/global observation of every rollout endpoint. Keeping
+    /// this opt-in preserves the inexpensive scalar export used for broad
+    /// calibration runs while allowing a contextual evaluator to train on the
+    /// exact distribution Strategic actually ranks.
+    pub fn counterfactual_value_samples_with_observation(
+        &self,
+        g: &Game,
+        pid: usize,
+        include_observation: bool,
+    ) -> Vec<CounterfactualValueSample> {
         if Self::duel_religious_race(g, pid)
             || self.urgent_counter_target(g, pid).is_some()
             || Self::viable_religious_commitment(g, pid)
@@ -471,12 +492,22 @@ impl StrategicAi {
             }
             let endpoint_features = features(&endpoint, pid);
             let turn_fraction = endpoint.turn as f32 / endpoint.max_turns.max(1) as f32;
+            let observation = include_observation.then(|| obs_tensor(&endpoint, pid));
             run_game(&mut endpoint, &mut ais);
             let Some(winner) = endpoint.winner else {
                 continue;
             };
             samples.push(CounterfactualValueSample {
                 features: endpoint_features,
+                planes: observation
+                    .as_ref()
+                    .map_or_else(Vec::new, |tensor| tensor.data.clone()),
+                globals: observation
+                    .as_ref()
+                    .map_or_else(Vec::new, |tensor| tensor.global.clone()),
+                global_names: observation
+                    .as_ref()
+                    .map_or_else(Vec::new, |tensor| tensor.global_names.clone()),
                 won: winner == pid,
                 turn_fraction,
                 target,
@@ -616,13 +647,18 @@ mod tests {
         let mut strategic = StrategicAi::score_only_with_weights(Default::default());
         strategic.horizon = 1;
 
-        let samples = strategic.counterfactual_value_samples(&game, 0);
+        let samples = strategic.counterfactual_value_samples_with_observation(&game, 0, true);
         assert_eq!(samples.len(), 1 + VictoryTarget::ALL.len());
         assert_eq!(
             samples,
-            strategic.counterfactual_value_samples(&game, 0),
+            strategic.counterfactual_value_samples_with_observation(&game, 0, true),
             "branch endpoints and their terminal labels must be deterministic"
         );
+        assert!(samples.iter().all(|sample| {
+            sample.planes.len() == 25 * 20 * 14
+                && sample.globals.len() == sample.global_names.len()
+                && !sample.global_names.is_empty()
+        }));
         assert_eq!(samples[0].target, None);
         assert_eq!(
             samples
