@@ -3,7 +3,7 @@ use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::sync::Arc;
-use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashSet, VecDeque};
 
 use crate::rng::Rng;
 use crate::rules::{
@@ -21458,10 +21458,19 @@ impl Game {
         // targets, so the consistent hex-distance heuristic bounds the search
         // to roughly the corridor of the route itself, however long the
         // detour. Tuple ordering gives deterministic tie-breaking.
+        // Same A*, same tie-breaking, but the frontier's bookkeeping is two
+        // dense vectors indexed by the map's own tile numbering rather than
+        // hash maps keyed by a hex coordinate; and the whole search asks the
+        // unit how it moves once instead of at every neighbour it considers.
+        const UNREACHED: i32 = i32::MAX;
+        const NO_PARENT: u32 = u32::MAX;
+        let _memo = self.query_memo();
+        let tile_count = self.map.tiles.len();
+        let start_index = self.map.tiles.index_of(start)?;
         let mut frontier = BinaryHeap::with_capacity(128);
-        let mut distance: HashMap<Pos, i32> = HashMap::with_capacity(128);
-        let mut parent: HashMap<Pos, Pos> = HashMap::with_capacity(128);
-        distance.insert(start, 0);
+        let mut distance: Vec<i32> = vec![UNREACHED; tile_count];
+        let mut parent: Vec<u32> = vec![NO_PARENT; tile_count];
+        distance[start_index] = 0;
         // On equal f-scores, prefer the node furthest along the route. This
         // avoids breadth-first expansion of an entire open plain/ocean before
         // following one of several equally short paths to the destination.
@@ -21469,11 +21478,14 @@ impl Game {
 
         let mut goal = None;
         while let Some(Reverse((_, Reverse(traveled), cur))) = frontier.pop() {
-            if traveled != distance[&cur] {
+            let Some(cur_index) = self.map.tiles.index_of(cur) else {
+                continue;
+            };
+            if traveled != distance[cur_index] {
                 continue;
             }
             if self.wdist(cur, to) <= range {
-                goal = Some(cur);
+                goal = Some(cur_index);
                 break;
             }
             for n in self.nbrs(cur) {
@@ -21485,21 +21497,28 @@ impl Game {
                 if !enterable {
                     continue;
                 }
+                let Some(index) = self.map.tiles.index_of(n) else {
+                    continue;
+                };
                 let next_distance = traveled + 1;
-                if distance
-                    .get(&n)
-                    .map(|d| next_distance >= *d)
-                    .unwrap_or(false)
-                {
+                if next_distance >= distance[index] {
                     continue;
                 }
-                distance.insert(n, next_distance);
-                parent.insert(n, cur);
+                distance[index] = next_distance;
+                parent[index] = cur_index as u32;
                 let estimate = next_distance + (self.wdist(n, to) - range).max(0);
                 frontier.push(Reverse((estimate, Reverse(next_distance), n)));
             }
         }
-        Self::unwind_route(start, goal?, &parent)
+        let mut step = goal?;
+        while parent[step] != start_index as u32 {
+            let previous = parent[step];
+            if previous == NO_PARENT {
+                return None;
+            }
+            step = previous as usize;
+        }
+        Some(self.map.tiles.values().as_slice()[step].pos)
     }
 
     /// Terrain/domain legality for future route segments. Dynamic unit
@@ -21692,14 +21711,6 @@ impl Game {
             step = previous as usize;
         }
         Some(self.map.tiles.values().as_slice()[step].pos)
-    }
-
-    fn unwind_route(start: Pos, goal: Pos, parent: &HashMap<Pos, Pos>) -> Option<Pos> {
-        let mut step = goal;
-        while parent.get(&step).copied()? != start {
-            step = parent.get(&step).copied()?;
-        }
-        Some(step)
     }
 
     fn flow(&self, uid: u32, start: Pos, moves: f64) -> BTreeMap<Pos, f64> {
@@ -26643,7 +26654,7 @@ impl Game {
         };
         for uid in unit_order_ids {
             let u = self.units[&uid].clone();
-            let spec = self.rules.units[u.kind.as_str()].clone();
+            let spec = &self.rules.units[u.kind.as_str()];
             let embarked = self.is_embarked(&u);
             if self.noncombat_action_blocked_by_zoc(uid) {
                 continue;
@@ -42906,6 +42917,73 @@ mod victory_conditions {
             game.set_winner(0, victory_type);
             assert_eq!(game.winner, Some(0), "enabled {victory_type} did not win");
             assert_eq!(game.victory_type.as_deref(), Some(victory_type));
+        }
+    }
+
+    /// The Civilization Players League publishes the lobby it plays
+    /// (https://cpl.gg/rules/in-game-rules/), and `docs/COMPETITIVE.md` maps
+    /// every line of it onto the setting that pins it here. This asserts the
+    /// mapping still holds, because the failure mode of a tournament preset is
+    /// silence: a setting the engine stops honouring produces a game that runs
+    /// perfectly and is not the game that was set up. Two of these assertions
+    /// are regressions — barbarians were unreachable from any lobby, and the
+    /// New Frontier game modes ran in every game whatever the lobby said.
+    #[test]
+    fn the_published_tournament_lobby_still_sets_up_the_game_it_describes() {
+        let rules = Rules::embedded();
+        // Game Speed: Online, Limit Turns: By Game Speed.
+        let online = &rules.speeds["online"];
+        assert_eq!(online.turns, 250);
+        assert_eq!(online.cost_pct, 50.0);
+
+        // Map Size and City States: Firaxis default for the player count.
+        let size = crate::setup::MapSize::for_players(8);
+        assert_eq!((size.id, size.width, size.height), ("standard", 84, 54));
+        assert_eq!(size.default_city_states, 12);
+
+        // A 4v4 teamers lobby: barbarians off, no game modes, every victory on.
+        let mut options = GameOptions::new(
+            8,
+            size.width,
+            size.height,
+            90_311,
+            online.turns as u32,
+            size.default_city_states,
+        );
+        options.speed = "online".to_string();
+        options.teams = vec![Some(0), Some(0), Some(0), Some(0), Some(1), Some(1), Some(1), Some(1)];
+        options.barbarians = false;
+        let game = Game::new_with(options);
+
+        assert_eq!(game.max_turns, 250);
+        assert_eq!(game.map_size().id, "standard");
+        assert_eq!(game.max_religions(), 5);
+        assert_eq!(
+            game.players
+                .iter()
+                .filter(|player| player.is_minor && !player.is_barbarian)
+                .count(),
+            12
+        );
+
+        // Barbarians ON for FFA and OFF for Teamers.
+        assert!(game.barb_pid.is_none());
+        assert!(!game.players.iter().any(|player| player.is_barbarian));
+
+        // All Game Modes: DISABLED.
+        for mode in GAME_MODES {
+            assert!(!game.game_mode(mode), "{mode} is not a stock lobby rule");
+        }
+
+        // Teams Share Visibility, and pre-game teams as assigned.
+        assert!(game.same_team(0, 3));
+        assert!(!game.same_team(0, 4));
+        assert_eq!(game.team_members(0), vec![0, 1, 2, 3]);
+        assert_eq!(game.team_members(7), vec![4, 5, 6, 7]);
+
+        // All Victory Conditions: ENABLED.
+        for victory in VictoryConditions::NAMES {
+            assert!(game.victory_conditions.is_enabled(victory), "{victory}");
         }
     }
 

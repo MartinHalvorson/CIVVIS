@@ -4937,27 +4937,62 @@ impl BasicAi {
 
     fn explore_step(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
         let upos = g.units[&uid].pos;
-        let goals: HashSet<Pos> = g
-            .map
-            .tiles
-            .iter()
-            .filter(|(pos, _)| {
-                !g.players[pid].explored.contains(pos) && g.unit_can_traverse(uid, **pos)
-            })
-            .map(|(pos, _)| *pos)
-            .collect();
-        let nearest = goals
-            .iter()
-            .min_by_key(|pos| (g.wdist(upos, **pos), **pos))
-            .copied();
+        // The nearest hidden tile is almost always a few hexes away, so walk
+        // outward in rings and stop at the first one that holds a candidate
+        // instead of testing all nine hundred tiles. The rings partition the
+        // map and each is examined in position order, so this picks exactly
+        // the tile a full `min_by_key` on `(distance, position)` would.
+        // The memo answers `unit_can_traverse` without re-deriving how this
+        // unit moves at every tile, and cannot go stale while it holds the
+        // game immutably.
+        let nearest = {
+            let _memo = g.query_memo();
+            let mut found = None;
+            let mut radius = 1;
+            let mut examined = 0;
+            while found.is_none() && examined < g.map.tiles.len() {
+                let ring: Vec<Pos> = g
+                    .wdisk(upos, radius)
+                    .into_iter()
+                    .filter(|pos| g.wdist(upos, *pos) == radius)
+                    .collect();
+                if ring.is_empty() {
+                    break;
+                }
+                examined += ring.len();
+                found = ring
+                    .into_iter()
+                    .filter(|pos| {
+                        !g.players[pid].explored.contains(pos) && g.unit_can_traverse(uid, *pos)
+                    })
+                    .min();
+                radius += 1;
+            }
+            found
+        };
         if let Some(target) = nearest {
             if self.step_toward(g, pid, uid, target) {
                 return true;
             }
+        } else {
+            // Nothing hidden is reachable, and the route search below would
+            // only flood the unit's whole region to prove the same thing.
+            return false;
         }
 
         // If the geometrically nearest hidden tile was unreachable, search
         // for the nearest hidden tile by actual traversable route instead.
+        let goals: HashSet<Pos> = {
+            let _memo = g.query_memo();
+            g.map
+                .tiles
+                .iter()
+                .filter(|(pos, _)| {
+                    !g.players[pid].explored.contains(pos) && g.unit_can_traverse(uid, **pos)
+                })
+                .map(|(pos, _)| *pos)
+                .collect()
+        };
         let next = match g.route_step_to_any(uid, &goals) {
             Some(p) if g.can_move(uid, p) => p,
             _ => return false,
@@ -5020,6 +5055,7 @@ impl BasicAi {
             .as_deref()
             .unwrap_or("land")
             .to_string();
+        let post_memo = g.query_memo();
         let mut posts = if let Some(posts) = self.patrol_posts.get(&domain) {
             posts.clone()
         } else {
@@ -5058,6 +5094,7 @@ impl BasicAi {
         // cached frontier tile. Keep the shared scan, but cheaply validate the
         // relatively small candidate list before routing to it.
         posts.retain(|pos| self.patrol_tile(g, pid, uid, *pos));
+        drop(post_memo);
         if posts.is_empty() {
             return false;
         }
@@ -5152,7 +5189,8 @@ impl BasicAi {
             return acted;
         }
         let upos = g.units[&uid].pos;
-        let spec = g.rules.units[g.units[&uid].kind.as_str()].clone();
+        let rules = std::sync::Arc::clone(&g.rules);
+        let spec = &rules.units[g.units[&uid].kind.as_str()];
         let doctrine = Self::unit_doctrine(g, uid);
         let adjacent_enemy_settler = g.nbrs(upos).into_iter().any(|position| {
             g.units_at(position).into_iter().any(|other| {
