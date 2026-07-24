@@ -2401,6 +2401,25 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(".diplomacy-card.allied"));
         assert!(EMBEDDED_INDEX.contains("function cameraYBounds"));
         assert!(EMBEDDED_INDEX.contains("cam.y = clampCameraY(cam.y)"));
+        // Default camera moves use the center of the map canvas horizontally.
+        // The command deck narrows that canvas and therefore shifts the focus
+        // right on the full screen. Top HUDs move it 42% up from the bottom;
+        // focus mode hides them and restores the exact 50/50 center.
+        assert!(EMBEDDED_INDEX.contains("const DEFAULT_MAP_FOCUS_FROM_BOTTOM = .42;"));
+        assert!(EMBEDDED_INDEX.contains("function mapOverlayVisible(name)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "document.body.classList.contains(\"sidebar-hidden\")"
+        ));
+        assert!(EMBEDDED_INDEX.contains("function mapFocusPoint()"));
+        assert!(EMBEDDED_INDEX.contains(
+            "topHudVisible ? 1 - DEFAULT_MAP_FOCUS_FROM_BOTTOM : .5"
+        ));
+        assert!(EMBEDDED_INDEX.contains("function cameraCenterForWorld("));
+        assert!(EMBEDDED_INDEX.contains("function currentMapFocusWorld()"));
+        assert!(EMBEDDED_INDEX.contains("function reframeCurrentMapFocus(world)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "const {x:desiredX, y:desiredY} = mapFocusPoint();"
+        ));
         assert!(EMBEDDED_INDEX.contains("View as"));
         assert!(EMBEDDED_INDEX.contains("id=\"viewplayer\""));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/view\""));
