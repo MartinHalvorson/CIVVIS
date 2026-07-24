@@ -924,35 +924,48 @@
   .event-turn { color: var(--faint); font-size: 8px; letter-spacing: .1em; text-transform: uppercase; }
   .empty-state { padding: 10px 0 2px; color: var(--faint); font-size: 10px; text-align: center; }
 
-  /* War log — one card per conflict, ongoing wars first */
+  /* War log — compact conflict infoboxes, one per declaration */
   .war-list { flex: 1 1 auto; min-height: 132px; display: flex; flex-direction: column; gap: 7px; overflow-y: auto; overflow-anchor: none; scrollbar-gutter: stable; }
   .war-list > * { flex: 0 0 auto; }
-  .war-card { padding: 8px 9px 7px; border-left: 2px solid var(--danger); border-radius: 4px 9px 9px 4px; background: linear-gradient(100deg, #1d1211, #0b1613 68%); }
-  .war-card.ended { border-left-color: #4f7a68; background: #0b1613; opacity: .78; }
-  .war-belligerents { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 6px; }
-  .war-side { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; color: #e7ece7; font-size: 10px; font-weight: 750; }
-  .war-side.defender { align-items: flex-end; text-align: right; }
-  .war-party { max-width: 100%; display: flex; align-items: center; gap: 5px; }
-  .war-side.defender .war-party { flex-direction: row-reverse; }
-  .war-party span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .war-card { overflow: hidden; border: 1px solid #6c514b; border-radius: 5px; background: #0b1613; box-shadow: inset 0 0 0 1px #0007; }
+  .war-card.ended { border-color: #435e54; }
+  .war-period { display: grid; grid-template-columns: 1fr 1fr; padding: 6px 8px; background: linear-gradient(90deg, #3a1917, #261817 50%, #16251f); border-bottom: 1px solid #79594f; color: #d6c5bd; font-size: 8px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+  .war-period span:last-child { text-align: right; }
+  .war-period b { display: block; color: #fff0e9; font: 700 11px Georgia, serif; letter-spacing: 0; text-transform: none; }
+  .war-card.ended .war-period { background: linear-gradient(90deg, #1c2924, #14211c); border-bottom-color: #435e54; }
+  .war-infobox-row { border-top: 1px solid #ffffff0d; }
+  .war-infobox-row:first-of-type { border-top: 0; }
+  .war-row-label { padding: 3px 7px; background: #ffffff06; color: #8fa098; font-size: 7px; font-weight: 850; letter-spacing: .14em; text-align: center; text-transform: uppercase; }
+  .war-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .war-side { min-width: 0; padding: 6px 7px; border-right: 1px solid #ffffff10; }
+  .war-side:last-child { border-right: 0; text-align: right; }
+  .war-party { min-width: 0; display: grid; grid-template-columns: 9px minmax(0, 1fr); align-items: start; gap: 5px; margin: 2px 0; color: #e7ece7; font-size: 9px; font-weight: 750; }
+  .war-side.defender .war-party { grid-template-columns: minmax(0, 1fr) 9px; }
+  .war-side.defender .war-party .war-flag { grid-column: 2; }
+  .war-side.defender .war-party .war-party-copy { grid-column: 1; grid-row: 1; }
+  .war-party.city-state { margin-left: 12px; color: #b9c8c1; font-size: 8px; font-weight: 650; }
+  .war-side.defender .war-party.city-state { margin-right: 12px; margin-left: 0; }
+  .war-party-copy { min-width: 0; }
+  .war-party-name { overflow-wrap: anywhere; }
+  .war-party-note { display: block; color: #a8948c; font-size: 7px; font-style: italic; font-weight: 600; }
   .war-flag { width: 9px; height: 9px; flex: 0 0 9px; border-radius: 2px; box-shadow: inset 0 0 0 1px #0008; }
-  .war-clash { color: var(--danger); font-size: 11px; }
-  .war-card.ended .war-clash { color: #8dd6b1; }
-  .war-since { margin-top: 4px; color: var(--faint); font-size: 8px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; text-align: center; }
-  .war-tally { display: grid; grid-template-columns: 1fr auto 1fr; gap: 6px; margin-top: 6px; }
-  .war-toll { display: flex; gap: 8px; color: #b9c6c0; font-size: 9px; font-variant-numeric: tabular-nums; }
-  .war-toll.defender { justify-content: flex-end; }
-  .war-toll b { color: #f2d7d3; font-weight: 800; }
-  .war-toll.quiet { color: var(--faint); }
-  .war-moments { margin-top: 6px; display: flex; flex-direction: column; gap: 3px; border-top: 1px solid #ffffff0d; padding-top: 5px; }
-  .war-moment { display: grid; grid-template-columns: 30px 1fr; gap: 6px; color: #cad5cf; font-size: 9px; }
+  .war-strength-party, .war-loss-party { margin: 3px 0 5px; color: #c7d1cc; font-size: 8px; }
+  .war-strength-party.city-state, .war-loss-party.city-state { margin-left: 12px; }
+  .war-side.defender .war-strength-party.city-state, .war-side.defender .war-loss-party.city-state { margin-right: 12px; margin-left: 0; }
+  .war-strength-party b { color: #f1d9ad; font-size: 10px; font-variant-numeric: tabular-nums; }
+  .war-loss-detail { display: block; margin-top: 1px; color: #c6aaa4; line-height: 1.35; }
+  .war-loss-none { color: var(--faint); font-style: italic; }
+  .war-moments { padding: 6px 8px 7px; display: flex; flex-direction: column; gap: 3px; }
+  .war-moment { display: grid; grid-template-columns: 34px 1fr; gap: 6px; color: #cad5cf; font-size: 8px; }
   .war-moment em { color: var(--faint); font-style: normal; font-weight: 800; letter-spacing: .06em; }
   .war-moment.capture { color: #f2c0b8; }
   .war-moment.conquest { color: #ffb4a6; font-weight: 750; }
   .war-moment.peace { color: #9fd9bd; }
-  .war-moment.earlier { color: var(--faint); font-style: italic; }
-  .war-card.ended.conquest { border-left-color: #8a4740; background: #150d0c; }
-  .war-card.ended.conquest .war-clash { color: #e08b7d; }
+  .war-terms { padding: 6px 8px 7px; color: #b9c7c0; font-size: 8px; }
+  .war-settlement + .war-settlement { margin-top: 5px; padding-top: 5px; border-top: 1px solid #ffffff0d; }
+  .war-settlement b { color: #9fd9bd; }
+  .war-settlement ul { margin: 2px 0 0 14px; padding: 0; }
+  .war-card.ended.conquest { border-color: #8a4740; background: #150d0c; }
   .spec-controls { display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, 36px); gap: 7px; }
   .spec-controls button { margin: 0; }
   #specdirector.active { color: var(--gold-bright); border-color: #b88f45; box-shadow: 0 0 16px #d7b66a24; }
@@ -9114,26 +9127,63 @@ function warPartyName(id) {
   if (!player) return `Player ${id}`;
   return player.is_minor ? `${player.civ}` : player.civ;
 }
-function warPartyMarkup(ids, role) {
-  const parties = ids.map(id => {
-    const player = (state.players || [])[id] || {};
-    return `<div class="war-party"><i class="war-flag" style="background:${cityBannerColor(id)}"></i>` +
-      `<span>${warPartyName(id)}${player.is_minor ? " ⌂" : ""}</span></div>`;
-  }).join("");
-  const title = ids.map(id => {
-    const player = (state.players || [])[id] || {};
-    return player.is_minor ? `${warPartyName(id)} · city-state` : warPartyName(id);
-  }).join(" + ");
-  return `<div class="war-side ${role}" title="${title}">${parties}</div>`;
+function warParticipationNote(party, war) {
+  const notes = [];
+  if ((party.entered || 0) > war.started) notes.push(`entered Turn ${party.entered}`);
+  if (party.exited !== null && party.exited !== undefined &&
+      (war.ended === null || war.ended === undefined || party.exited < war.ended)) {
+    notes.push(`peaced out Turn ${party.exited}`);
+  }
+  return notes.join(" · ");
 }
-function warTollMarkup(side, role) {
-  const units = side.units_lost || 0, cities = side.cities_lost || 0;
-  if (!units && !cities)
-    return `<div class="war-toll ${role} quiet">no losses</div>`;
-  const parts = [];
-  if (units) parts.push(`<b>${units}</b> unit${units === 1 ? "" : "s"}`);
-  if (cities) parts.push(`<b>${cities}</b> cit${cities === 1 ? "y" : "ies"}`);
-  return `<div class="war-toll ${role}">${parts.join(" · ")}</div>`;
+function warParties(war, declarerSide) {
+  let parties = (war.parties || []).filter(p => Boolean(p.declarer_side) === declarerSide);
+  if (!parties.length) {
+    const player = declarerSide ? war.aggressor : war.defender;
+    parties = [{player, declarer_side: declarerSide, suzerain: null,
+      entered: war.started, exited: war.ended, strength: 0,
+      unit_kinds: {}, city_names: [], units_lost: 0, cities_lost: 0}];
+  }
+  const majors = parties.filter(p => p.suzerain === null || p.suzerain === undefined)
+    .sort((a, b) => a.entered - b.entered || a.player - b.player);
+  const ordered = [];
+  majors.forEach(major => {
+    ordered.push(major);
+    ordered.push(...parties.filter(p => p.suzerain === major.player)
+      .sort((a, b) => a.entered - b.entered || a.player - b.player));
+  });
+  ordered.push(...parties.filter(p => p.suzerain !== null && p.suzerain !== undefined &&
+    !majors.some(major => major.player === p.suzerain))
+    .sort((a, b) => a.entered - b.entered || a.player - b.player));
+  return ordered;
+}
+function warPartyRows(war, declarerSide, role, mode) {
+  return `<div class="war-side ${role}">` + warParties(war, declarerSide).map(party => {
+    const minor = party.suzerain !== null && party.suzerain !== undefined;
+    const note = warParticipationNote(party, war);
+    const name = `${warPartyName(party.player)}${minor ? " ⌂" : ""}`;
+    if (mode === "strength") {
+      const strength = Number(party.strength) > 0 ? Math.round(party.strength) : "—";
+      return `<div class="war-strength-party${minor ? " city-state" : ""}">` +
+        `<span>${name}</span> · <b>${strength}</b>${note ? `<span class="war-party-note">${note}</span>` : ""}</div>`;
+    }
+    if (mode === "losses") {
+      const units = Object.entries(party.unit_kinds || {}).map(([kind, count]) =>
+        `${titleCase(kind)}${count > 1 ? ` ×${count}` : ""}`);
+      const cities = (party.city_names || []).map(city => city);
+      const details = [];
+      if (cities.length) details.push(`Cities: ${cities.join(", ")}`);
+      if (units.length) details.push(`Units: ${units.join(", ")}`);
+      return `<div class="war-loss-party${minor ? " city-state" : ""}"><span>${name}</span>` +
+        (details.length
+          ? details.map(detail => `<span class="war-loss-detail">${detail}</span>`).join("")
+          : `<span class="war-loss-detail war-loss-none">No recorded losses</span>`) + `</div>`;
+    }
+    return `<div class="war-party${minor ? " city-state" : ""}>` +
+      `<i class="war-flag" style="background:${cityBannerColor(party.player)}"></i>` +
+      `<span class="war-party-copy"><span class="war-party-name">${name}</span>` +
+      `${note ? `<span class="war-party-note">${note}</span>` : ""}</span></div>`;
+  }).join("") + `</div>`;
 }
 function warMomentText(moment) {
   const actor = warPartyName(moment.actor), subject = warPartyName(moment.subject);
@@ -9152,95 +9202,11 @@ function warMomentText(moment) {
   }
 }
 
-// The engine keeps one record per declared war, but a Suzerain's city-states
-// can still be listed as belligerents of it. For presentation, fold the fronts created by a Suzerain and its
-// city-states into a single conflict while retaining every participant's
-// losses and captured-city moments.
-// The engine deliberately accounts for every pair of belligerents as its own
-// front. For presentation, fold the fronts created by a team and any
-// city-states following its members into a single conflict while retaining
-// every participant's losses and captured-city moments.
+// The observation already supplies one durable object per declaration. Keep a
+// named seam here for the browser contract and for future display-only filters;
+// coalition membership and history must never be guessed from current state.
 function warsForLog(wars) {
-  const players = state.players || [];
-  const controller = id => {
-    const player = players[id];
-    const majorId = player && player.is_minor && Number.isInteger(player.suzerain)
-      ? player.suzerain : id;
-    const major = players[majorId];
-    if (!major || !Number.isInteger(major.team)) return majorId;
-    return players.find(candidate =>
-      !candidate.is_minor && !candidate.is_barbarian && candidate.team === major.team
-    )?.id ?? majorId;
-  };
-  const buckets = new Map();
-  wars.forEach((war, index) => {
-    const a = controller(war.aggressor), b = controller(war.defender);
-    const over = war.ended !== null && war.ended !== undefined;
-    // The end turn separates successive wars between the same rivals. Active
-    // fronts share a bucket even when a city-state joined after the declaration.
-    const rivals = a === b
-      ? `front:${war.aggressor}:${war.defender}`
-      : `${Math.min(a, b)}:${Math.max(a, b)}`;
-    const key = `${over ? `ended:${war.ended}` : "ongoing"}:${rivals}`;
-    if (!buckets.has(key)) buckets.set(key, {records: [], index});
-    buckets.get(key).records.push(war);
-  });
-
-  return [...buckets.values()].sort((a, b) => a.index - b.index).map(bucket => {
-    const records = bucket.records;
-    // A major-vs-major declaration supplies the conflict's direction and its
-    // one declaration/peace moment. Derived fronts have seat-order direction.
-    const anchor = records.find(war =>
-      !players[war.aggressor]?.is_minor && !players[war.defender]?.is_minor
-    ) || records[0];
-    const aggressorController = controller(anchor.aggressor);
-    const defenderController = controller(anchor.defender);
-    const aggressors = new Set(), defenders = new Set();
-    const losses = [
-      {units_lost: 0, cities_lost: 0},
-      {units_lost: 0, cities_lost: 0},
-    ];
-    const sideFor = id => controller(id) === aggressorController ? 0 : 1;
-
-    records.forEach(war => {
-      for (const id of [war.aggressor, war.defender]) {
-        (sideFor(id) === 0 ? aggressors : defenders).add(id);
-      }
-      for (const side of war.sides || []) {
-        const total = losses[sideFor(side.player)];
-        total.units_lost += side.units_lost || 0;
-        total.cities_lost += side.cities_lost || 0;
-      }
-    });
-    const orderParties = ids => [...ids].sort((a, b) =>
-      Number(Boolean(players[a]?.is_minor)) - Number(Boolean(players[b]?.is_minor)) || a - b
-    );
-    const anchorMoments = anchor.highlights || [];
-    const highlights = [
-      ...anchorMoments.filter(moment => moment.kind === "declared"),
-      ...records.flatMap(war => (war.highlights || [])
-        .filter(moment => moment.kind !== "declared" && moment.kind !== "peace")),
-      ...anchorMoments.filter(moment => moment.kind === "peace"),
-    ].sort((a, b) => a.turn - b.turn);
-    const ended = records.every(war => war.ended !== null && war.ended !== undefined)
-      ? Math.max(...records.map(war => war.ended)) : null;
-    return {
-      aggressors: orderParties(aggressors),
-      defenders: orderParties(defenders),
-      started: Math.min(...records.map(war => war.started)),
-      ended,
-      // How the war ended, and how much of it the observation left out, are
-      // the engine's to say — carry them through the fold rather than
-      // re-deriving them here.
-      outcome: anchor.outcome,
-      victor: anchor.victor,
-      truce_until: anchor.truce_until,
-      hidden_highlights: records.reduce(
-        (total, war) => total + (war.hidden_highlights || 0), 0),
-      sides: losses,
-      highlights,
-    };
-  });
+  return wars;
 }
 // The moments that read as blows rather than notices, tinted so a war's shape
 // is legible without reading every line.
@@ -9273,35 +9239,38 @@ function drawWarLog() {
   el.innerHTML = wars.map(war => {
     const over = war.ended !== null && war.ended !== undefined;
     const conquest = war.outcome === "conquest";
-    const coalition = war.outcome === "coalition";
-    const [attacker, defender] = war.sides;
     const length = Math.max(0, (over ? war.ended : state.turn) - war.started);
-    const result = conquest
-      ? `${warPartyName(war.victor)} conquest`
-      : (coalition ? "Emergency coalition ceasefire" : "peace");
-    const truce = over && war.truce_until ? ` · truce to T${war.truce_until}` : "";
-    const since = over
-      ? `Turn ${war.started}–${war.ended} · ${length} turn${length === 1 ? "" : "s"} · ${result}${truce}`
-      : `Since turn ${war.started} · ${length} turn${length === 1 ? "" : "s"}`;
-    // Newest moment first, and never so many that a long war pushes the
-    // other fronts off the panel — but say how much of the war is not shown,
-    // so a long campaign never reads as a short one.
-    const SHOWN = 6;
-    const shown = [...war.highlights].reverse().slice(0, SHOWN);
-    const untold = (war.hidden_highlights || 0) + Math.max(0, war.highlights.length - shown.length);
-    const moments = shown.map(moment =>
+    // A chronology reads like a chronology: earliest turn at the top. The
+    // engine has already combined and deduplicated all fronts in the conflict.
+    const moments = [...(war.highlights || [])].sort((a, b) => a.turn - b.turn).map(moment =>
       `<div class="war-moment ${WAR_MOMENT_TONE[moment.kind] || ""}">` +
-      `<em>T${moment.turn}</em><span>${warMomentText(moment)}</span></div>`).join("") +
-      (untold ? `<div class="war-moment earlier"><em></em><span>+${untold} earlier moment${
-        untold === 1 ? "" : "s"}</span></div>` : "");
+      `<em>Turn ${moment.turn}</em><span>${warMomentText(moment)}</span></div>`).join("");
+    const settlements = (war.peace_terms || []).map(peace =>
+      `<div class="war-settlement"><b>Turn ${peace.turn} · ${warPartyName(peace.first)}–${warPartyName(peace.second)}</b>` +
+      `<ul>${(peace.terms || []).map(term => `<li>${term}</li>`).join("")}</ul></div>`
+    ).join("");
+    const outcome = settlements
+      ? settlements
+      : (!over ? "" : `<div class="war-settlement"><b>${conquest
+          ? `${warPartyName(war.victor)} won by conquest — no peace deal`
+          : (war.outcome === "coalition" ? "Emergency coalition ceasefire" : "No recorded peace terms")
+        }</b></div>`);
     return `<div class="war-card${over ? " ended" : ""}${conquest ? " conquest" : ""}">` +
-      `<div class="war-belligerents">${warPartyMarkup(war.aggressors, "aggressor")}` +
-      `<div class="war-clash">${over ? (conquest ? "☠" : "☮") : "⚔"}</div>` +
-      `${warPartyMarkup(war.defenders, "defender")}</div>` +
-      `<div class="war-since">${since}</div>` +
-      `<div class="war-tally">${warTollMarkup(attacker, "aggressor")}` +
-      `<div></div>${warTollMarkup(defender, "defender")}</div>` +
-      `<div class="war-moments">${moments}</div></div>`;
+      `<div class="war-period"><span>Started<b>Turn ${war.started}</b></span>` +
+      `<span>${over ? "Ended" : "Status"}<b>${over ? `Turn ${war.ended}` : `Ongoing · ${length} turn${length === 1 ? "" : "s"}`}</b></span></div>` +
+      `<div class="war-infobox-row"><div class="war-row-label">Belligerents</div>` +
+      `<div class="war-columns">${warPartyRows(war, true, "aggressor", "names")}` +
+      `${warPartyRows(war, false, "defender", "names")}</div></div>` +
+      `<div class="war-infobox-row"><div class="war-row-label">Military strength at entry</div>` +
+      `<div class="war-columns">${warPartyRows(war, true, "aggressor", "strength")}` +
+      `${warPartyRows(war, false, "defender", "strength")}</div></div>` +
+      `<div class="war-infobox-row"><div class="war-row-label">Chronology</div>` +
+      `<div class="war-moments">${moments || `<span class="war-loss-none">No recorded events</span>`}</div></div>` +
+      `<div class="war-infobox-row"><div class="war-row-label">Losses</div>` +
+      `<div class="war-columns">${warPartyRows(war, true, "aggressor", "losses")}` +
+      `${warPartyRows(war, false, "defender", "losses")}</div></div>` +
+      `${outcome ? `<div class="war-infobox-row"><div class="war-row-label">Peace deal terms</div>` +
+        `<div class="war-terms">${outcome}</div></div>` : ""}</div>`;
   }).join("");
 }
 
