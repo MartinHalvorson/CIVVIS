@@ -54,6 +54,7 @@ CivvisGroundingConfig = {{
 \tReturnAsPlayer = {return_as},
 \tDumpState = {dump},
 \tRunTag = "{tag}",
+\tStrategyPlayer = {strategy_player},
 }}
 
 """
@@ -71,7 +72,8 @@ def install_dir() -> Path:
     return env.assets_dir() / "DLC" / MOD_NAME
 
 
-def install(turns: int, observe: int, return_as: int, dump: bool, tag: str) -> Path:
+def install(turns: int, observe: int, return_as: int, dump: bool, tag: str,
+            strategy: str | None = None, strategy_player: int = -1) -> Path:
     target = install_dir()
     target.mkdir(parents=True, exist_ok=True)
     for src in sorted(MOD_SOURCE.iterdir()):
@@ -84,7 +86,16 @@ def install(turns: int, observe: int, return_as: int, dump: bool, tag: str) -> P
         return_as=return_as,
         dump="true" if dump else "false",
         tag=tag,
+        strategy_player=strategy_player,
     )
+    # The genome is prepended too, for the same reason the config is: there is
+    # no include path a mod file can be reached on.
+    if strategy:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import civ6_strategy  # noqa: PLC0415
+
+        entry = civ6_strategy.find(civ6_strategy.load_league(), strategy)
+        prelude += civ6_strategy.as_lua(entry) + "\n"
     (target / SCRIPT_FILE).write_text(prelude + (MOD_SOURCE / SCRIPT_FILE).read_text())
     # Kept so the .modinfo's <Files> list resolves, and so the settings are
     # readable in the install without reading the whole script.
@@ -133,6 +144,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--return-as", type=int, default=0, help="player to return control to")
     ap.add_argument("--no-dump", action="store_true", help="skip the per-turn state record")
     ap.add_argument("--tag", default="run", help="tag stamped into every logged line")
+    ap.add_argument("--strategy", help="league strategy whose genome plays (e.g. Maverick2)")
+    ap.add_argument("--strategy-player", type=int, default=-1,
+                    help="player the genome drives (-1 = none)")
     ap.add_argument("--launch", action="store_true", help="restart the game afterwards")
     args = ap.parse_args(argv)
 
@@ -155,7 +169,8 @@ def main(argv: list[str] | None = None) -> int:
         if env.game_pids():
             print("quitting the game so the mod is rescanned...")
             env.quit_game()
-        target = install(args.turns, args.observe, args.return_as, not args.no_dump, args.tag)
+        target = install(args.turns, args.observe, args.return_as, not args.no_dump,
+                         args.tag, args.strategy, args.strategy_player)
         # The modding database indexes scanned files by path and mtime, so a
         # newly created mod folder is not noticed until the index is rebuilt.
         # Dropping it costs one slower startup and is the difference between
@@ -167,6 +182,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"installed {MOD_NAME} -> {target}")
         print(f"  autoplay turns : {args.turns}")
         print(f"  run tag        : {args.tag}")
+        print(f"  strategy       : {args.strategy or '(none)'}"
+              f" driving player {args.strategy_player}")
 
     if args.status:
         status()

@@ -295,6 +295,242 @@ local function dumpTurn()
 	emit("turn", { turn = turn, players = players });
 end
 
+-- ------------------------------------------------------- the strategy agent
+
+-- Play a CIVVIS league genome in the real game.
+--
+-- The genome is ~40 weights, but most of them are tactical -- how a force
+-- groups, when it withdraws -- and cannot transfer, because here the shipped
+-- AI moves the units. What transfers is the economic policy, and that is also
+-- what separates the top strategies from each other: Maverick2 targets 4.4
+-- cities, WildCard10 targets 9.7, off the same opening.
+--
+-- So this drives production, which is where those weights become visible
+-- decisions: the scripted opening, then settlers until `city_target`, then
+-- builders and military to their per-city targets, then districts in the
+-- genome's priority order. Everything else stays with the game's own AI, so a
+-- comparison measures the policy rather than a half-finished reimplementation
+-- of Civilization.
+--
+-- Every decision is logged with the reason that produced it. A genome that
+-- silently fails to apply looks exactly like a genome that does not matter.
+
+local genome = CivvisGenome;
+local bookPos = 0;
+local decisions = 0;
+
+local function infoHash(kind, typeName)
+	local row = kind[typeName];
+	return row and row.Hash or nil;
+end
+
+local function canProduce(city, hash)
+	if hash == nil then return false; end
+	local ok, result = pcall(function()
+		return city:GetBuildQueue():CanProduce(hash, true);
+	end);
+	return ok and result == true;
+end
+
+-- Issue the build. Districts additionally need a plot, and picking one is its
+-- own problem, so they are attempted and allowed to fail rather than faked.
+local function requestBuild(city, typeName)
+	local row = GameInfo.Types[typeName];
+	if row == nil then return false; end
+	local params = {};
+	local kind = row.Kind;
+	local hash = row.Hash;
+	if kind == "KIND_UNIT" then
+		params[CityOperationTypes.PARAM_UNIT_TYPE] = hash;
+	elseif kind == "KIND_BUILDING" then
+		params[CityOperationTypes.PARAM_BUILDING_TYPE] = hash;
+	elseif kind == "KIND_DISTRICT" then
+		params[CityOperationTypes.PARAM_DISTRICT_TYPE] = hash;
+	else
+		return false;
+	end
+	local ok = pcall(function()
+		CityManager.RequestOperation(city, CityOperationTypes.BUILD, params);
+	end);
+	return ok;
+end
+
+local function unitCounts(player)
+	local counts = { settler = 0, builder = 0, military = 0, total = 0 };
+	local ok = pcall(function()
+		for _, unit in player:GetUnits():Members() do
+			local row = GameInfo.Units[unit:GetUnitType()];
+			local name = row and row.UnitType or "";
+			counts.total = counts.total + 1;
+			if name == "UNIT_SETTLER" then
+				counts.settler = counts.settler + 1;
+			elseif name == "UNIT_BUILDER" then
+				counts.builder = counts.builder + 1;
+			elseif row ~= nil and (row.Combat or 0) > 0 then
+				counts.military = counts.military + 1;
+			end
+		end
+	end);
+	if not ok then return counts; end
+	return counts;
+end
+
+-- Military units this ruleset lets the city build, cheapest-first fallbacks.
+local MILITARY_LADDER = { "UNIT_SWORDSMAN", "UNIT_ARCHER", "UNIT_SPEARMAN",
+                          "UNIT_SLINGER", "UNIT_WARRIOR" };
+
+local DISTRICT_WEIGHTS = {
+	{ "d_campus", "DISTRICT_CAMPUS" },
+	{ "d_commercial", "DISTRICT_COMMERCIAL_HUB" },
+	{ "d_holy", "DISTRICT_HOLY_SITE" },
+	{ "d_theater", "DISTRICT_THEATER" },
+};
+
+local function chooseDistrict(city)
+	-- Highest genome weight first; the genome's whole point is this ordering.
+	local ranked = {};
+	for _, pair in ipairs(DISTRICT_WEIGHTS) do
+		ranked[#ranked + 1] = { weight = tonumber(genome[pair[1]]) or 0, type = pair[2] };
+	end
+	table.sort(ranked, function(a, b) return a.weight > b.weight; end);
+	for _, entry in ipairs(ranked) do
+		local row = GameInfo.Districts[entry.type];
+		if row ~= nil and canProduce(city, row.Hash) then
+			return entry.type, string.format("district w=%.2f", entry.weight);
+		end
+	end
+	return nil, nil;
+end
+
+local function chooseItem(player, city, turn, counts, nCities)
+	-- 1. The scripted opening, in the capital, exactly as CIVVIS plays it.
+	-- The book advances when a build *completes*, never when a decision is
+	-- merely reconsidered. Advancing per call consumed all four entries on
+	-- turn 1 -- the agent is asked for a decision many times a turn -- so the
+	-- scripted opening was skipped and the city built whatever rule 2 onward
+	-- asked for. The opening is the most legible part of a genome; playing it
+	-- out of order quietly invalidates the comparison.
+	local isCapital = try(function() return city:IsCapital(); end, false);
+	if isCapital and bookPos < 4 then
+		local genes = { genome.open0, genome.open1, genome.open2, genome.open3 };
+		-- Skip past "pass" genes (an index past the menu means "evaluate
+		-- normally"), but stop on the first entry that is actually playable.
+		while bookPos < 4 do
+			local gene = tonumber(genes[bookPos + 1]);
+			local name = nil;
+			if gene ~= nil then
+				local index = math.floor(math.max(0, gene));
+				name = genome.OpeningMenu and genome.OpeningMenu[index + 1] or nil;
+			end
+			if name == nil then
+				bookPos = bookPos + 1;  -- a pass gene: it is consumed, not played
+			else
+				local typeName = (name == "monument") and "BUILDING_MONUMENT"
+					or ("UNIT_" .. string.upper(name));
+				local row = GameInfo.Types[typeName];
+				if row ~= nil and canProduce(city, row.Hash) then
+					return typeName, "opening[" .. bookPos .. "]=" .. name;
+				end
+				-- Not buildable yet (no settle site, missing tech): leave the
+				-- entry in place and let a later turn play it.
+				break;
+			end
+		end
+	end
+
+	-- 2. Expansion, which is the lever that most separates these genomes.
+	local target = tonumber(genome.city_target) or 4;
+	local stopTurn = tonumber(genome.settler_stop_turn) or 150;
+	local minPop = tonumber(genome.settler_min_pop) or 2;
+	local pop = try(function() return city:GetPopulation(); end, 0);
+	if (nCities + counts.settler) < target and turn < stopTurn and pop >= minPop then
+		if canProduce(city, infoHash(GameInfo.Units, "UNIT_SETTLER")) then
+			return "UNIT_SETTLER", string.format(
+				"expand %d+%d<%.1f", nCities, counts.settler, target);
+		end
+	end
+
+	-- 3. Standing builder and army targets.
+	local builderTarget = (tonumber(genome.builder_per_city) or 0.5) * nCities;
+	if counts.builder < builderTarget then
+		if canProduce(city, infoHash(GameInfo.Units, "UNIT_BUILDER")) then
+			return "UNIT_BUILDER", string.format(
+				"builders %d<%.1f", counts.builder, builderTarget);
+		end
+	end
+	local milTarget = (tonumber(genome.mil_per_city) or 1.0) * nCities;
+	if counts.military < milTarget then
+		for _, name in ipairs(MILITARY_LADDER) do
+			if canProduce(city, infoHash(GameInfo.Units, name)) then
+				return name, string.format("army %d<%.1f", counts.military, milTarget);
+			end
+		end
+	end
+
+	-- 4. Districts, in the genome's priority order.
+	local district, why = chooseDistrict(city);
+	if district ~= nil then return district, why; end
+
+	return nil, nil;
+end
+
+local function driveProduction()
+	if genome == nil then return; end
+	local pid = tonumber(cfg.StrategyPlayer);
+	if pid == nil or pid < 0 then return; end
+	local player = Players[pid];
+	if player == nil or not try(function() return player:IsAlive(); end, false) then return; end
+
+	local turn = try(function() return Game.GetCurrentGameTurn(); end, 0);
+	local counts = unitCounts(player);
+	local cities = {};
+	pcall(function()
+		for _, city in player:GetCities():Members() do cities[#cities + 1] = city; end
+	end);
+	local nCities = #cities;
+
+	for _, city in ipairs(cities) do
+		-- Replace whatever the shipped AI queued, not merely fill an empty
+		-- queue. Under autoplay the AI picks a build the instant one finishes,
+		-- so a queue is never observed empty and a fill-only agent issues zero
+		-- orders while looking perfectly healthy.
+		--
+		-- Civ 6 banks partial production per item, so switching away and back
+		-- does not burn what was already invested; and the order is only sent
+		-- when the genome actually disagrees, so a city already building the
+		-- right thing is left alone.
+		local current = try(function()
+			local queue = city:GetBuildQueue();
+			return queue and queue:GetCurrentProductionTypeHash() or 0;
+		end, 0);
+		local typeName, why = chooseItem(player, city, turn, counts, nCities);
+		if typeName ~= nil then
+			local wanted = GameInfo.Types[typeName];
+			local wantedHash = wanted and wanted.Hash or nil;
+			if wantedHash ~= nil and wantedHash ~= current then
+				local applied = requestBuild(city, typeName);
+				decisions = decisions + 1;
+				emit("decision", {
+					turn = turn,
+					player = pid,
+					city = try(function() return Locale.Lookup(city:GetName()); end, "?"),
+					item = typeName,
+					reason = why,
+					applied = applied,
+					replaced = try(function()
+						local row = GameInfo.Types[current];
+						return row and row.Type or "";
+					end, ""),
+					cities = nCities,
+					settlers = counts.settler,
+					builders = counts.builder,
+					military = counts.military,
+				});
+			end
+		end
+	end
+end
+
 -- ---------------------------------------------------------------- autoplay
 
 local function startAutoplay()
@@ -344,6 +580,24 @@ local function onTurnBegin()
 		emit("error", { where = "dumpTurn", error = tostring(err) });
 	end
 	ensureStarted();
+	local droveOk, droveErr = pcall(driveProduction);
+	if not droveOk then
+		emit("error", { where = "driveProduction", error = tostring(droveErr) });
+	end
+end
+
+-- A city that just finished something is idle until someone fills the queue,
+-- and waiting for the next turn boundary would waste a turn of production on
+-- every completion. Choosing immediately is also what the genome describes.
+local function onProductionCompleted(playerId)
+	-- A completed build is what retires an opening-book entry.
+	if playerId == nil or playerId == tonumber(cfg.StrategyPlayer) then
+		if bookPos < 4 then bookPos = bookPos + 1; end
+	end
+	local ok, err = pcall(driveProduction);
+	if not ok then
+		emit("error", { where = "onProductionCompleted", error = tostring(err) });
+	end
 end
 
 local function onLoadDone()
@@ -357,9 +611,16 @@ local function onAutoPlayEnd()
 end
 
 function Initialize()
-	emit("loaded", { version = 1 });
+	emit("loaded", {
+		version = 2,
+		genome = genome and genome.Name or nil,
+		strategy_player = cfg.StrategyPlayer,
+	});
 	Events.LoadGameViewStateDone.Add(onLoadDone);
 	Events.TurnBegin.Add(onTurnBegin);
+	if Events.CityProductionCompleted ~= nil then
+		Events.CityProductionCompleted.Add(onProductionCompleted);
+	end
 	if LuaEvents ~= nil and LuaEvents.AutoPlayEnd ~= nil then
 		LuaEvents.AutoPlayEnd.Add(onAutoPlayEnd);
 	end
