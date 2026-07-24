@@ -104,12 +104,12 @@
     stroke-linejoin: round;
   }
   .brand-mark .globe-shine { fill: none; stroke: #fff9df; stroke-opacity: .14; stroke-width: 1.1; }
-  .brand-copy { min-width: 0; padding-top: 1px; }
+  .brand-copy { min-width: 0; padding: 1px 32px 0 0; }
   .brand-title-row { display: flex; align-items: center; gap: 10px; }
   h1 {
     width: max-content; color: var(--gold-bright);
-    font: 650 24px/.95 "Iowan Old Style", "Palatino Linotype", Georgia, serif;
-    letter-spacing: .12em; text-transform: uppercase;
+    font: 650 30px/.95 "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    letter-spacing: .105em; text-transform: uppercase;
     background: linear-gradient(100deg, #f6dfaa 8%, #d7b66a 66%, #a9823b);
     -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
     text-shadow: 0 4px 16px #0008;
@@ -117,7 +117,10 @@
   h1 .brand-suffix {
     font-size: .56em; letter-spacing: .025em; text-transform: lowercase;
   }
-  .brand-links { display: flex; align-items: center; gap: 5px; }
+  .brand-links {
+    position: absolute; right: 18px; bottom: 13px;
+    display: flex; flex-direction: column; align-items: center; gap: 5px;
+  }
   .brand-links a {
     width: 22px; height: 22px; display: grid; place-items: center; border-radius: 6px;
     color: var(--gold); border: 1px solid #d7b66a38; background: #d7b66a0b;
@@ -1458,7 +1461,7 @@
             </a>
           </nav>
         </div>
-        <div class="tagline"><span>A Civilization VI simulator</span><span>for AI strategy development</span></div>
+        <div class="tagline"><span>A Civilization VI Simulator</span><span>for AI strategy development</span></div>
       </div>
     </div>
   </div>
