@@ -451,14 +451,15 @@
   .diplomacy-leader {
     flex: 1 1 auto; color: var(--muted); font-size: .82em; font-weight: 650;
   }
-  /* Competitive identity reads in one stable order: rating, themed player
-     handle, then the strategy that player is using right now. */
+  /* Competitive identity reads in one stable order: rating, Elo-implied win
+     estimate, themed player handle, then the strategy in use right now. */
   .diplomacy-player-line {
     min-width: 0; display: flex; align-items: baseline; gap: 3px; margin-top: 2px;
     overflow: hidden; color: #9fb0a9; font-size: 9px; line-height: 1.15;
     white-space: nowrap;
   }
   .diplomacy-elo { flex: 0 0 auto; color: var(--gold-bright); font-weight: 850; }
+  .diplomacy-expected { flex: 0 0 auto; color: #8fd6a4; font-weight: 850; }
   .diplomacy-player { flex: 1 1 auto; color: #d9e1dc; font-weight: 750; }
   .identity-separator { flex: 0 0 auto; color: #667a72; font-weight: 500; }
   .agenda-mark { margin-left: 3px; font-size: 8px; vertical-align: 1px; }
@@ -8776,6 +8777,8 @@ function drawPlayerHud() {
         `<span class="detail-caret">${expanded ? "▾" : "▸"}</span></span>` +
         `<span class="diplomacy-player-line" title="${leagueTitle}">` +
         `<span class="diplomacy-elo">${playerElo}</span><span class="identity-separator" aria-hidden="true">·</span>` +
+        `${expectPct === null ? "" : `<span class="diplomacy-expected" title="Elo-implied win estimate">${expectPct}%</span>` +
+          `<span class="identity-separator" aria-hidden="true">·</span>`}` +
         `<span class="diplomacy-player">${playerName}</span><span class="identity-separator" aria-hidden="true">·</span>` +
         `${activeStrategy}</span></button>` +
         `<button class="diplomacy-stats" data-hud-action="watch" data-hud-civ="${p.id}" title="${watchTitle}" aria-label="Watch ${p.civ}">` +
