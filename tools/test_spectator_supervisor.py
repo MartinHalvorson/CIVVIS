@@ -227,6 +227,36 @@ class SessionSettingsTests(unittest.TestCase):
         self.assertEqual(carried["players"], 6)
         self.assertEqual(carried["city_states"], 9)
 
+    def test_selected_settings_override_the_live_game_at_the_next_boundary(self):
+        selected = {
+            "players": 6,
+            "width": 74,
+            "height": 46,
+            "city_states": 9,
+            "turns": 330,
+            "map": "continents",
+            "speed": "quick",
+            "victories": ["science", "domination"],
+        }
+        state = {
+            "players": [{"is_minor": False}] * 4,
+            "map": {"width": 60, "height": 38, "script": "pangaea"},
+            "game_speed": "online",
+            "max_turns": 250,
+            "next_game_settings": selected,
+        }
+        defaults = {
+            "players": 4,
+            "width": 60,
+            "height": 38,
+            "city_states": 6,
+            "turns": 250,
+            "map": "pangaea",
+            "speed": "online",
+        }
+
+        self.assertEqual(supervisor.session_settings(state, defaults), selected)
+
     def test_empty_state_uses_defaults(self):
         defaults = {
             "players": 6,
