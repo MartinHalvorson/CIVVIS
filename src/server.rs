@@ -52,6 +52,9 @@ pub struct Params {
     /// A lifecycle supervisor, rather than the browser countdown, owns the
     /// transition after a completed spectator game.
     pub supervised: bool,
+    /// Requested result-screen duration. Five seconds is the minimum; a
+    /// supervisor may ask for longer when its handoff needs more time.
+    pub restart_ms: u64,
     /// League directory to seat major players from (`civvis play --league`):
     /// each civ gets its best-rated strategies and the HUD shows per-player
     /// elo. `None` still annotates elo when a `league/` dir exists, because
@@ -727,12 +730,16 @@ pub struct Shared {
     pub turn_compute_us: AtomicU64,
 }
 
-const RESTART_MS: u64 = 5_000;
+const MIN_RESTART_MS: u64 = 5_000;
 /// The unlimited pace still hands the accept loop a slot this often, so the
 /// page keeps loading state while the stepper saturates a core.
 const UNLIMITED_BREATH_MS: u64 = 100;
 /// Minor civilizations and barbarians take a quarter of a major's slice.
 const MINOR_SHARE: f64 = 0.25;
+
+fn final_countdown_ms(requested: u64) -> u64 {
+    requested.max(MIN_RESTART_MS)
+}
 
 /// One seat's slice of the turn budget. Seats divide it in proportion to the
 /// beat they are given, so a whole turn costs `pace_ms` whether it is two
@@ -1580,7 +1587,8 @@ fn auto_step_loop(sh: Arc<Shared>) {
             }
             if s.game.winner.is_some() {
                 let t0 = *over_since.get_or_insert_with(Instant::now);
-                let left = RESTART_MS.saturating_sub(t0.elapsed().as_millis() as u64);
+                let left = final_countdown_ms(s.params.restart_ms)
+                    .saturating_sub(t0.elapsed().as_millis() as u64);
                 sh.restart_in.store(left, Ordering::Relaxed);
                 if left == 0 {
                     s.start_automatic_next_game();
@@ -1985,9 +1993,9 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::{
-        chronicle_world_events, new_game_params, request_path, seat_delay_ms, ChronicleSnapshot,
-        ChronicleState, Params, Session, EMBEDDED_CINEMATIC_3D, EMBEDDED_INDEX,
-        EMBEDDED_WORLD_WONDER_ATLAS, RESTART_MS,
+        chronicle_world_events, final_countdown_ms, new_game_params, request_path, seat_delay_ms,
+        ChronicleSnapshot, ChronicleState, Params, Session, EMBEDDED_CINEMATIC_3D,
+        EMBEDDED_INDEX, EMBEDDED_WORLD_WONDER_ATLAS,
     };
     use crate::game::{Action, VictoryConditions};
     use crate::setup::{GameSpeed, MapScript};
@@ -2017,8 +2025,11 @@ mod tests {
     }
 
     #[test]
-    fn server_owned_final_countdown_is_five_seconds() {
-        assert_eq!(RESTART_MS, 5_000);
+    fn final_countdown_is_five_seconds_unless_longer_is_requested() {
+        assert_eq!(final_countdown_ms(0), 5_000);
+        assert_eq!(final_countdown_ms(4_999), 5_000);
+        assert_eq!(final_countdown_ms(5_000), 5_000);
+        assert_eq!(final_countdown_ms(12_500), 12_500);
     }
 
     fn current() -> Params {
@@ -2037,6 +2048,7 @@ mod tests {
             speed: crate::game::default_speed(),
             teams: Vec::new(),
             supervised: false,
+            restart_ms: 5_000,
             league_dir: None,
             league_record: false,
         }
@@ -2232,6 +2244,16 @@ mod tests {
             "left panel should show game settings, display settings, and the two logs first"
         );
         assert!(EMBEDDED_INDEX.contains("<span>Display settings</span>"));
+        for overlay in ["players", "victory", "minimap", "controls"] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("data-overlay-close=\"{overlay}\"")),
+                "map overlay {overlay} should have a close control"
+            );
+        }
+        assert!(EMBEDDED_INDEX.contains("function dismissOverlay(name, source)"));
+        assert!(EMBEDDED_INDEX.contains("addEventListener(\"pointerdown\", event =>"));
+        assert!(EMBEDDED_INDEX.contains("overlay-return-flash .24s ease-in-out 3"));
+        assert!(EMBEDDED_INDEX.contains("restore in Display settings"));
         assert_eq!(
             EMBEDDED_INDEX
                 .matches("class=\"sidebar-section\"")
