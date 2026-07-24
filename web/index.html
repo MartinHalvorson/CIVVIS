@@ -1315,12 +1315,6 @@
   .overlay-close:hover { color: #fff; border-color: #9b6c66; background: #35201e; }
   #playerhud > .ribbon-heading, #victoryhud > .hud-section-heading,
   .minimap-frame > .minimap-label { padding-right: 25px; }
-  #zoomctl .overlay-close {
-    position: static; order: 20; width: 28px; height: 34px; flex: 0 0 28px;
-    border: 0; border-left: 1px solid #ffffff0c; border-radius: 0;
-    background: transparent; box-shadow: none; font-size: 13px;
-  }
-  #zoomctl .overlay-close:hover { color: #fff; background: #6b302b66; }
   .overlay-collapsing { opacity: 0 !important; pointer-events: none !important; }
   .overlay-collapse-ghost {
     position: fixed; z-index: 90; display: flex; align-items: flex-start;
@@ -1469,7 +1463,6 @@
     <button id="paneltoggle" class="icon" title="Toggle command deck" aria-label="Toggle command deck">☰</button>
     <button id="zin" title="Zoom in" aria-label="Zoom in">＋</button>
     <button id="zout" title="Zoom out" aria-label="Zoom out">−</button>
-    <button class="overlay-close" type="button" data-overlay-close="controls" aria-label="Hide map controls; restore them in Display settings" title="Hide map controls · restore in Display settings">✕</button>
   </div>
   <div id="ubar"></div>
   <div id="modeline"></div>
@@ -1734,6 +1727,7 @@
 <script>
 "use strict";
 const SIDEBAR_SECTION_STATE_KEY = "civvis-sidebar-sections-v1";
+const SIDEBAR_COLLAPSED_STATE_KEY = "civvis-sidebar-collapsed-v1";
 function initSidebarSections() {
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem(SIDEBAR_SECTION_STATE_KEY) || "{}"); }
@@ -10753,13 +10747,17 @@ function nextAction() {
   centerOn(sel.pos);
   drawSide(); drawUbar();
 }
-function togglePanel(force) {
+function togglePanel(force, persist = true) {
   if (force === undefined && cinemaActive()) { setCinemaMode(false); return; }
   const priorFocus = currentMapFocusWorld();
   const hide = force === undefined ? !document.body.classList.contains("sidebar-hidden") : force;
   document.body.classList.toggle("sidebar-hidden", hide);
   document.getElementById("paneltoggle").textContent = hide ? "☷" : "☰";
   document.getElementById("paneltoggle").title = hide ? "Show command deck" : "Hide command deck";
+  if (persist) {
+    try { localStorage.setItem(SIDEBAR_COLLAPSED_STATE_KEY, hide ? "1" : "0"); }
+    catch (_) {}
+  }
   // The deck changes the map's layout width. Resize its backing canvas in the
   // same frame so the browser never stretches an old bitmap and then snaps it
   // to a different size a quarter-second later.
@@ -11073,7 +11071,12 @@ setRot(parseFloat(localStorage.getItem("civvis-rot") || "0"));
   setTilt(migrated);
   localStorage.setItem("civvis-cinema-camera-v3", "1");
 }
-if (window.matchMedia("(max-width: 720px)").matches) togglePanel(true);
+let savedSidebarCollapsed = null;
+try { savedSidebarCollapsed = localStorage.getItem(SIDEBAR_COLLAPSED_STATE_KEY); }
+catch (_) {}
+if (savedSidebarCollapsed === "1") togglePanel(true, false);
+else if (savedSidebarCollapsed === "0") togglePanel(false, false);
+else if (window.matchMedia("(max-width: 720px)").matches) togglePanel(true, false);
 resize();
 boot();
 
