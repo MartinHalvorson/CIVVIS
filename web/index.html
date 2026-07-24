@@ -322,23 +322,14 @@
     color: var(--gold-bright); background: linear-gradient(155deg, #d7b66a19, #d7b66a08);
     border: 1px solid #d7b66a30;
   }
-  .victory-turn > span, .victory-turn .turn-line > span, .victory-heading {
+  .victory-turn .turn-line > span, .victory-heading {
     color: #b9c8c2; font-size: 9px; font-weight: 900; letter-spacing: .1em; line-height: 1; text-transform: uppercase;
   }
-  .victory-turn .view-state {
-    display: flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden;
-    color: #a9dcbc; font-size: 7.5px; letter-spacing: .06em; text-overflow: ellipsis; white-space: nowrap;
-  }
-  .view-state b {
-    width: 5px; height: 5px; flex: 0 0 5px; border-radius: 50%; background: #66d38b;
-    box-shadow: 0 0 0 3px #66d38b1c;
-  }
-  .turn-line { display: flex; align-items: baseline; gap: 5px; margin-top: 4px; }
+  .turn-line { display: flex; align-items: baseline; gap: 5px; }
   .victory-turn strong { font-size: 19px; line-height: 1; font-variant-numeric: tabular-nums; }
-  /* The spectator line carries the acting civilization and the era, which on
-     one line is always wider than the cell and so was always an ellipsis. The
-     cell is tall enough for two lines, so let it wrap and clamp there instead
-     of truncating the era away every turn. */
+  .victory-turn .turn-total {
+    margin-left: -3px; color: #9aaba5; font-size: 10px; font-variant-numeric: tabular-nums;
+  }
   .victory-turn i {
     display: block; margin-top: 4px; overflow: hidden; color: #9aaba5;
     font-size: 9px; font-style: normal; line-height: 1.25;
@@ -347,7 +338,7 @@
     display: block; overflow: hidden; color: inherit; font: inherit;
     text-overflow: ellipsis; white-space: nowrap;
   }
-  .victory-turn i small { color: #71857e; text-transform: capitalize; }
+  .victory-turn i small { color: #71857e; font-size: 8px; }
   .victory-meter { overflow: hidden; background: #020706b3; box-shadow: inset 0 1px 2px #000b; }
   .victory-meter b { display: block; height: 100%; border-radius: inherit; background: currentColor; }
   /* Two of the races are really two races at once — the technology tree and
@@ -1136,7 +1127,7 @@
     #maparea { height: 100%; }
     #side { position: fixed; inset: 132px auto 8px 8px; width: min(390px, calc(100% - 16px)); min-width: 0; height: auto; border: 1px solid #40584f; border-radius: 16px; }
     body.sidebar-hidden #side { width: min(390px, calc(100% - 16px)); transform: translateX(calc(-100% - 16px)); opacity: 0; }
-    #playerhud { grid-template-columns: 82px minmax(0, .9fr) minmax(0, 1.1fr); }
+    #playerhud { grid-template-columns: 86px minmax(0, .9fr) minmax(0, 1.1fr); }
     .minimap-frame { right: 8px; bottom: 62px; width: 174px; height: 138px; }
     #zoomctl { left: 12px; bottom: 12px; }
     #ubar { min-width: 0; width: calc(100% - 28px); bottom: 18px; }
@@ -1153,7 +1144,7 @@
     }
   }
   @media (max-width: 620px) {
-    #playerhud { grid-template-columns: 78px minmax(0, .78fr) minmax(0, 1.22fr); gap: 3px; }
+    #playerhud { grid-template-columns: 86px minmax(0, .78fr) minmax(0, 1.22fr); gap: 3px; }
     .hud-section-heading span:last-child { display: none; }
     .victory-turn { padding-inline: 6px; }
     .victory-turn i { font-size: 8px; }
@@ -1162,7 +1153,7 @@
     body.cinema-mode #cinema-frame .cinema-frame-shot span { display: none; }
   }
   @media (max-width: 430px) {
-    #playerhud { top: 8px; left: 8px; right: 8px; grid-template-columns: 74px minmax(0, .68fr) minmax(0, 1.32fr); padding: 4px; }
+    #playerhud { top: 8px; left: 8px; right: 8px; grid-template-columns: 86px minmax(0, .68fr) minmax(0, 1.32fr); padding: 4px; }
     .hud-region { padding-inline: 2px; }
     .diplomacy-card { flex-basis: 286px; grid-template-columns: 31px minmax(76px, .7fr) minmax(155px, 1.45fr); gap: 4px; padding: 4px; }
     .leader-medallion { width: 29px; height: 29px; font-size: 12px; }
@@ -8400,7 +8391,6 @@ function playerHudOverview() {
     ? `Global lifetime carbon emissions: ${compactStat(state.me.global_co2)} CO₂`
     : null;
   const meta = [...profile.details, mapLabel, climateLabel].filter(Boolean).join(" · ");
-  const actingLabel = SPEC && actor.id !== identity.id ? `Acting: ${actor.civ}` : era;
   const identityContext = `${viewLabel}: ${identity.civ} · ${profile.role} · ${meta}` +
     (actor.id !== identity.id ? ` · Acting civilization: ${actor.civ}` : "");
   const contenders = state.players.filter(p => p.alive && !p.is_minor && !p.is_barbarian);
@@ -8440,11 +8430,12 @@ function playerHudOverview() {
   }).join("");
   const victoryCount = Math.max(1, enabledVictoryTracks.length);
   const victoryMinWidth = victoryCount * 84 + Math.max(0, victoryCount - 1) * 2;
+  const ageLabel = `${titleCase(era)} Age`;
+  const observedLabel = `${SPEC ? "Observing" : "Playing"}: ${identity.civ}`;
   const overview =
-    `<section class="victory-turn" title="${identityContext}" aria-label="${identityContext}; turn ${state.turn}, ${era}">` +
-    `<span class="view-state"><b></b>${viewLabel}</span>` +
-    `<div class="turn-line"><span>Turn</span><strong>${state.turn}</strong></div>` +
-    `<i><em>${identity.civ}</em><small>${actingLabel}</small></i></section>` +
+    `<section class="victory-turn" title="${identityContext}" aria-label="${identityContext}; turn ${state.turn} of ${turnCapLabel()}; ${ageLabel}">` +
+    `<div class="turn-line"><span>Turn</span><strong>${state.turn}</strong><small class="turn-total">/${turnCapLabel()}</small></div>` +
+    `<i><em>${ageLabel}</em><small>${observedLabel}</small></i></section>` +
     `<section class="hud-region victory-region" aria-labelledby="victory-race-title">` +
     `<div class="hud-section-heading"><span class="widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
     `aria-label="Move victory race; use arrow keys or drag" title="Drag to move · arrow keys also move" id="victory-race-title">Victory race</span>` +
