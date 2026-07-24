@@ -709,7 +709,7 @@ fn chronicle_world_events(
 }
 
 /// Server-side exhibition state: in spectate mode a background thread steps
-/// the game at `pace_ms` per game turn and restarts 10s after a victory, so
+/// the game at `pace_ms` per game turn and restarts 5s after a victory, so
 /// games keep running with no browser attached.
 ///
 /// `pace_ms` is the budget for a whole turn — every seat taking one step —
@@ -727,7 +727,7 @@ pub struct Shared {
     pub turn_compute_us: AtomicU64,
 }
 
-const RESTART_MS: u64 = 10_000;
+const RESTART_MS: u64 = 5_000;
 /// The unlimited pace still hands the accept loop a slot this often, so the
 /// page keeps loading state while the stepper saturates a core.
 const UNLIMITED_BREATH_MS: u64 = 100;
@@ -1987,7 +1987,7 @@ mod tests {
     use super::{
         chronicle_world_events, new_game_params, request_path, seat_delay_ms, ChronicleSnapshot,
         ChronicleState, Params, Session, EMBEDDED_CINEMATIC_3D, EMBEDDED_INDEX,
-        EMBEDDED_WORLD_WONDER_ATLAS,
+        EMBEDDED_WORLD_WONDER_ATLAS, RESTART_MS,
     };
     use crate::game::{Action, VictoryConditions};
     use crate::setup::{GameSpeed, MapScript};
@@ -2014,6 +2014,11 @@ mod tests {
         // Minors take a quarter of a major's slice, and unlimited never waits.
         assert_eq!(seat_delay_ms(1_000, 4, 4, false) / 4, seat_delay_ms(1_000, 4, 4, true));
         assert_eq!(seat_delay_ms(0, 8, 12, false), 0);
+    }
+
+    #[test]
+    fn server_owned_final_countdown_is_five_seconds() {
+        assert_eq!(RESTART_MS, 5_000);
     }
 
     fn current() -> Params {
