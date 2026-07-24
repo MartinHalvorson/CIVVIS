@@ -27,6 +27,8 @@ const EMBEDDED_ENVIRONMENT_FEATURE_ATLAS: &[u8] =
     include_bytes!("../web/assets/environment-feature-atlas.png");
 const EMBEDDED_NATURAL_WONDER_ATLAS: &[u8] =
     include_bytes!("../web/assets/natural-wonder-atlas.png");
+const EMBEDDED_WORLD_WONDER_ATLAS: &[u8] =
+    include_bytes!("../web/assets/world-wonder-atlas.png");
 const EMBEDDED_MOUNTAIN_ATLAS: &[u8] = include_bytes!("../web/assets/mountain-atlas.png");
 
 #[derive(Clone)]
@@ -1370,6 +1372,11 @@ fn natural_wonder_atlas() -> Vec<u8> {
         .unwrap_or_else(|_| EMBEDDED_NATURAL_WONDER_ATLAS.to_vec())
 }
 
+fn world_wonder_atlas() -> Vec<u8> {
+    std::fs::read("web/assets/world-wonder-atlas.png")
+        .unwrap_or_else(|_| EMBEDDED_WORLD_WONDER_ATLAS.to_vec())
+}
+
 fn mountain_atlas() -> Vec<u8> {
     std::fs::read("web/assets/mountain-atlas.png")
         .unwrap_or_else(|_| EMBEDDED_MOUNTAIN_ATLAS.to_vec())
@@ -1652,6 +1659,9 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         ("GET", "/assets/natural-wonder-atlas.png") => {
             respond(stream, "200 OK", "image/png", &natural_wonder_atlas());
         }
+        ("GET", "/assets/world-wonder-atlas.png") => {
+            respond(stream, "200 OK", "image/png", &world_wonder_atlas());
+        }
         ("GET", "/assets/mountain-atlas.png") => {
             respond(stream, "200 OK", "image/png", &mountain_atlas());
         }
@@ -1904,7 +1914,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
 mod tests {
     use super::{
         chronicle_world_events, new_game_params, request_path, seat_delay_ms, ChronicleSnapshot,
-        ChronicleState, Params, Session, EMBEDDED_INDEX,
+        ChronicleState, Params, Session, EMBEDDED_INDEX, EMBEDDED_WORLD_WONDER_ATLAS,
     };
     use crate::game::{Action, VictoryConditions};
     use crate::setup::{GameSpeed, MapScript};
@@ -2344,6 +2354,38 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function drawUnitFormationBadge"));
         assert!(EMBEDDED_INDEX.contains("specular glints travel"));
         assert!(EMBEDDED_INDEX.contains("cx.lineDashOffset = dash.length"));
+    }
+
+    #[test]
+    fn cinematic_world_wonders_use_a_complete_sprite_atlas() {
+        assert!(EMBEDDED_WORLD_WONDER_ATLAS.starts_with(b"\x89PNG\r\n\x1a\n"));
+        assert!(EMBEDDED_WORLD_WONDER_ATLAS.len() > 1_000_000);
+        assert!(
+            EMBEDDED_INDEX.contains("WORLD_WONDER_ATLAS.src = \"/assets/world-wonder-atlas.png\"")
+        );
+
+        let ids = EMBEDDED_INDEX
+            .split("const WORLD_WONDER_IDS = [")
+            .nth(1)
+            .and_then(|tail| tail.split("];\nconst WORLD_WONDER_CELL").next())
+            .expect("ordered World Wonder sprite IDs");
+        let rules = crate::rules::Rules::embedded();
+        assert_eq!(ids.matches('"').count() / 2, rules.wonders.len());
+        for wonder in rules.wonders.keys() {
+            assert!(
+                ids.contains(&format!("\"{wonder}\"")),
+                "World Wonder {wonder} has no sprite cell"
+            );
+        }
+
+        let renderer = EMBEDDED_INDEX
+            .split("function drawWorldWonderSprite")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawWonder").next())
+            .expect("World Wonder sprite renderer");
+        assert!(renderer.contains("!MODE.atmosphere"));
+        assert!(renderer.contains("SHX * S * .42"));
+        assert!(EMBEDDED_INDEX.contains("t.wonder && !drawWorldWonderSprite(t.wonder, x, y)"));
     }
 
     #[test]
