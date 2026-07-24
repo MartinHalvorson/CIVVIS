@@ -42909,6 +42909,73 @@ mod victory_conditions {
         }
     }
 
+    /// The Civilization Players League publishes the lobby it plays
+    /// (https://cpl.gg/rules/in-game-rules/), and `docs/COMPETITIVE.md` maps
+    /// every line of it onto the setting that pins it here. This asserts the
+    /// mapping still holds, because the failure mode of a tournament preset is
+    /// silence: a setting the engine stops honouring produces a game that runs
+    /// perfectly and is not the game that was set up. Two of these assertions
+    /// are regressions — barbarians were unreachable from any lobby, and the
+    /// New Frontier game modes ran in every game whatever the lobby said.
+    #[test]
+    fn the_published_tournament_lobby_still_sets_up_the_game_it_describes() {
+        let rules = Rules::embedded();
+        // Game Speed: Online, Limit Turns: By Game Speed.
+        let online = &rules.speeds["online"];
+        assert_eq!(online.turns, 250);
+        assert_eq!(online.cost_pct, 50.0);
+
+        // Map Size and City States: Firaxis default for the player count.
+        let size = crate::setup::MapSize::for_players(8);
+        assert_eq!((size.id, size.width, size.height), ("standard", 84, 54));
+        assert_eq!(size.default_city_states, 12);
+
+        // A 4v4 teamers lobby: barbarians off, no game modes, every victory on.
+        let mut options = GameOptions::new(
+            8,
+            size.width,
+            size.height,
+            90_311,
+            online.turns as u32,
+            size.default_city_states,
+        );
+        options.speed = "online".to_string();
+        options.teams = vec![Some(0), Some(0), Some(0), Some(0), Some(1), Some(1), Some(1), Some(1)];
+        options.barbarians = false;
+        let game = Game::new_with(options);
+
+        assert_eq!(game.max_turns, 250);
+        assert_eq!(game.map_size().id, "standard");
+        assert_eq!(game.max_religions(), 5);
+        assert_eq!(
+            game.players
+                .iter()
+                .filter(|player| player.is_minor && !player.is_barbarian)
+                .count(),
+            12
+        );
+
+        // Barbarians ON for FFA and OFF for Teamers.
+        assert!(game.barb_pid.is_none());
+        assert!(!game.players.iter().any(|player| player.is_barbarian));
+
+        // All Game Modes: DISABLED.
+        for mode in GAME_MODES {
+            assert!(!game.game_mode(mode), "{mode} is not a stock lobby rule");
+        }
+
+        // Teams Share Visibility, and pre-game teams as assigned.
+        assert!(game.same_team(0, 3));
+        assert!(!game.same_team(0, 4));
+        assert_eq!(game.team_members(0), vec![0, 1, 2, 3]);
+        assert_eq!(game.team_members(7), vec![4, 5, 6, 7]);
+
+        // All Victory Conditions: ENABLED.
+        for victory in VictoryConditions::NAMES {
+            assert!(game.victory_conditions.is_enabled(victory), "{victory}");
+        }
+    }
+
     #[test]
     fn victory_settings_parse_the_lobby_list_and_refuse_a_misspelling() {
         let pinned = VictoryConditions::parse("science,culture, score").unwrap();
