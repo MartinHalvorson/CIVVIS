@@ -14,11 +14,13 @@
 //!
 //! Artifacts in the league dir: league.json (full roster + ratings, the one
 //! source of truth), ratings.csv (per-round rating history), matches.csv
-//! (every game played).
-use std::collections::BTreeMap;
-use std::fs;
-use std::io::Write;
-use std::path::Path;
+//! (every game played), and work/ (immutable distributed manifests/results).
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs::{self, OpenOptions};
+use std::io::{self, ErrorKind, Write};
+use std::path::{Path, PathBuf};
+use std::thread;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
@@ -46,9 +48,20 @@ const CIV_EFFECT_RD: f64 = 200.0;
 /// bound, so an unlucky newcomer is never culled on noise.
 const MIN_GAMES_TO_RETIRE: u32 = 20;
 const MAX_RD_TO_RETIRE: f64 = 110.0;
+/// Immutable work/result protocol. Bump this whenever a binary can no longer
+/// execute a pending round exactly as an older binary would.
+const WORK_SCHEMA_VERSION: u32 = 1;
+/// A dead simulator's game becomes available again after this lease. Duplicate
+/// execution is harmless because results have deterministic IDs and publish
+/// with create-if-absent semantics.
+const DEFAULT_LEASE_SECONDS: u64 = 60 * 60;
+const LOCK_LEASE_SECONDS: u64 = 5 * 60;
+const LOCK_RETRIES: usize = 2_400;
+const WORKER_ACTIVE_SECONDS: u64 = 2 * 60;
+const WORKER_DISCOVERY_MILLIS: u64 = 250;
 
 /// How a seat materializes an `Ai`.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum StrategyKind {
     /// One of `elo::BUILTIN_AIS`.
     Builtin { ai: String },
@@ -65,7 +78,7 @@ pub enum StrategyKind {
 /// strong is this strategy when it draws this civ" on the same scale as
 /// the overall table. Not every civ wants to play the same way, so the
 /// same strategy legitimately carries different numbers per civ.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CivRating {
     pub rating: f64,
     pub rd: f64,
@@ -92,7 +105,7 @@ pub const CIV_ELO_MIN_GAMES: u32 = 5;
 
 /// Online calibration audit for the rating system's pairwise predictions.
 /// Sums, rather than rounded averages, keep the checkpoint lossless.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Calibration {
     pub comparisons: u64,
     pub brier_sum: f64,
@@ -124,7 +137,7 @@ impl Calibration {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Strategy {
     pub name: String,
     /// Player handle shown on leaderboards, themed after the strategy it
@@ -187,7 +200,7 @@ impl Strategy {
 
 /// Retired strategies stay in the roster (their history and lineage matter);
 /// only active ones are scheduled.
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct League {
     pub round: u32,
     pub strategies: Vec<Strategy>,
@@ -205,6 +218,7 @@ impl League {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct LeagueCfg {
     /// Rating periods to play this invocation (state persists between runs).
     pub rounds: u32,
@@ -222,6 +236,20 @@ pub struct LeagueCfg {
     /// Active-roster cap that retirement trims back down to.
     pub max_pop: usize,
     pub verbose: bool,
+    /// Stable name written into work leases. Set `CIVVIS_WORKER_ID` to a
+    /// machine-unique value on a shared league; the process ID keeps two
+    /// simulators on one machine distinct.
+    pub worker_id: String,
+    /// Abandoned game claims are automatically reclaimed after this long.
+    pub lease_seconds: u64,
+}
+
+fn default_worker_id() -> String {
+    let machine = std::env::var("CIVVIS_WORKER_ID")
+        .or_else(|_| std::env::var("HOSTNAME"))
+        .or_else(|_| std::env::var("COMPUTERNAME"))
+        .unwrap_or_else(|_| "civvis-worker".to_string());
+    format!("{machine}:{}", std::process::id())
 }
 
 impl Default for LeagueCfg {
@@ -244,8 +272,104 @@ impl Default for LeagueCfg {
             evolve_every: 4,
             max_pop: 12,
             verbose: true,
+            worker_id: default_worker_id(),
+            lease_seconds: DEFAULT_LEASE_SECONDS,
         }
     }
+}
+
+/// The simulation settings travel with a round manifest. A worker always
+/// executes these settings, not whatever flags happened to be supplied on
+/// that machine, so every result in a rating period belongs to one experiment.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+struct WorkConfig {
+    league_seed: u64,
+    players_per_game: usize,
+    width: i32,
+    height: i32,
+    max_turns: u32,
+    num_city_states: usize,
+    evolve_every: u32,
+    max_pop: usize,
+}
+
+impl From<&LeagueCfg> for WorkConfig {
+    fn from(cfg: &LeagueCfg) -> Self {
+        Self {
+            league_seed: cfg.seed,
+            players_per_game: cfg.players_per_game,
+            width: cfg.width,
+            height: cfg.height,
+            max_turns: cfg.max_turns,
+            num_city_states: cfg.num_city_states,
+            evolve_every: cfg.evolve_every,
+            max_pop: cfg.max_pop,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+struct WorkJob {
+    id: String,
+    seed: u64,
+    /// Strategy names by starting seat. Names, rather than mutable roster
+    /// indices, make result validation and audit files stable across evolution.
+    table: Vec<String>,
+    mirror_series: u32,
+    rotation: u32,
+}
+
+/// Immutable description of one Glicko rating period. It snapshots both the
+/// genomes and the schedule, allowing any compatible binary on any machine to
+/// execute a job without touching mutable league state.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+struct RoundManifest {
+    schema_version: u32,
+    engine: String,
+    round: u32,
+    created_unix: u64,
+    config: WorkConfig,
+    strategies: Vec<Strategy>,
+    jobs: Vec<WorkJob>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+struct StoredOutcome {
+    schema_version: u32,
+    engine: String,
+    worker: String,
+    round: u32,
+    job_id: String,
+    /// Strategy names in finish order.
+    placements: Vec<String>,
+    civs: Vec<String>,
+    ranks: Vec<u32>,
+    won: Vec<bool>,
+    seed: u64,
+    turn: u32,
+    victory: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+struct LeaseRecord {
+    worker: String,
+    process: u32,
+    created_unix: u64,
+}
+
+fn unix_now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+fn work_engine() -> String {
+    format!(
+        "civvis-{}-{}-league-work-{WORK_SCHEMA_VERSION}",
+        env!("CARGO_PKG_VERSION"),
+        option_env!("CIVVIS_COMMIT").unwrap_or("development")
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -301,11 +425,14 @@ fn upper_confidence(s: &Strategy) -> f64 {
     s.rating + SELECTION_Z * s.rd
 }
 
-/// One rating period for one player. `results` are (opponent, score) with
-/// opponents at their PRE-period values, score 1/0.5/0. Empty results = the
-/// player sat out: rating stays, uncertainty grows (capped at the base RD so
-/// a long-idle strategy never looks more unknown than a newborn).
-fn rate(p: Glicko, results: &[(Glicko, f64)]) -> Glicko {
+/// One rating period for one player. `results` are (opponent, score, weight)
+/// with opponents at their PRE-period values, score 1/0.5/0. Pairwise results
+/// from one multiplayer game sum to one effective observation instead of
+/// pretending its correlated `n-1` comparisons were independent games.
+/// Empty results = the player sat out: rating stays, uncertainty grows (capped
+/// at the base RD so a long-idle strategy never looks more unknown than a
+/// newborn).
+fn rate(p: Glicko, results: &[(Glicko, f64, f64)]) -> Glicko {
     if results.is_empty() {
         let phi = (p.phi * p.phi + p.sigma * p.sigma).sqrt();
         return Glicko {
@@ -315,11 +442,11 @@ fn rate(p: Glicko, results: &[(Glicko, f64)]) -> Glicko {
     }
     let mut v_inv = 0.0;
     let mut d_sum = 0.0;
-    for (o, score) in results {
+    for (o, score, weight) in results {
         let gj = g(o.phi);
         let ej = expect(p.mu, o.mu, o.phi);
-        v_inv += gj * gj * ej * (1.0 - ej);
-        d_sum += gj * (score - ej);
+        v_inv += weight * gj * gj * ej * (1.0 - ej);
+        d_sum += weight * gj * (score - ej);
     }
     let v = 1.0 / v_inv;
     let delta = v * d_sum;
@@ -593,6 +720,498 @@ fn ensure_usernames(league: &mut League) {
 }
 
 // ---------------------------------------------------------------------------
+// Crash-safe shared-filesystem coordination.
+
+fn serde_error(error: serde_json::Error) -> io::Error {
+    io::Error::new(ErrorKind::InvalidData, error)
+}
+
+fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> io::Result<T> {
+    let raw = fs::read(path)?;
+    serde_json::from_slice(&raw).map_err(serde_error)
+}
+
+fn unique_suffix() -> String {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    format!("{}-{nanos}", std::process::id())
+}
+
+fn atomic_write_json<T: Serialize>(path: &Path, value: &T) -> io::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("state.json");
+    let tmp = path.with_file_name(format!(".{name}.{}.tmp", unique_suffix()));
+    let result = (|| {
+        let mut file = OpenOptions::new().write(true).create_new(true).open(&tmp)?;
+        serde_json::to_writer_pretty(&mut file, value).map_err(serde_error)?;
+        file.write_all(b"\n")?;
+        file.sync_all()?;
+        match fs::rename(&tmp, path) {
+            Ok(()) => Ok(()),
+            // Windows does not replace an existing destination with rename.
+            // The state lock protects writers while a recoverable backup
+            // preserves the previous checkpoint until the new one lands.
+            Err(error)
+                if path.exists()
+                    && matches!(
+                        error.kind(),
+                        ErrorKind::AlreadyExists | ErrorKind::PermissionDenied
+                    ) =>
+            {
+                let backup = path.with_file_name(format!(".{name}.{}.backup", unique_suffix()));
+                fs::rename(path, &backup)?;
+                match fs::rename(&tmp, path) {
+                    Ok(()) => {
+                        let _ = fs::remove_file(backup);
+                        Ok(())
+                    }
+                    Err(error) => {
+                        let _ = fs::rename(&backup, path);
+                        Err(error)
+                    }
+                }
+            }
+            Err(error) => Err(error),
+        }
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    result
+}
+
+/// Publish immutable evidence exactly once. Hard-linking a complete temporary
+/// file gives create-if-absent semantics; the fallback retains compatibility
+/// with shared filesystems that do not support hard links.
+fn publish_json_once<T: Serialize>(path: &Path, value: &T) -> io::Result<bool> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    if path.exists() {
+        return Ok(false);
+    }
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("result.json");
+    let tmp = path.with_file_name(format!(".{name}.{}.tmp", unique_suffix()));
+    let mut bytes = serde_json::to_vec_pretty(value).map_err(serde_error)?;
+    bytes.push(b'\n');
+    let mut temp = OpenOptions::new().write(true).create_new(true).open(&tmp)?;
+    temp.write_all(&bytes)?;
+    temp.sync_all()?;
+    drop(temp);
+    let published = match fs::hard_link(&tmp, path) {
+        Ok(()) => true,
+        Err(error) if error.kind() == ErrorKind::AlreadyExists => false,
+        // Claims normally guarantee one publisher. On filesystems without
+        // hard links, rename the already-synced file only while the immutable
+        // destination is absent; duplicate execution is deterministic.
+        Err(_) if !path.exists() => {
+            fs::rename(&tmp, path)?;
+            true
+        }
+        Err(_) => false,
+    };
+    let _ = fs::remove_file(&tmp);
+    Ok(published)
+}
+
+fn safe_fragment(value: &str) -> String {
+    let mut out: String = value
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+        .take(48)
+        .collect();
+    if out.is_empty() {
+        out.push_str("worker");
+    }
+    out
+}
+
+fn lease_is_stale(path: &Path, lease_seconds: u64) -> bool {
+    path.metadata()
+        .and_then(|metadata| metadata.modified())
+        .ok()
+        .and_then(|modified| SystemTime::now().duration_since(modified).ok())
+        .is_some_and(|age| age.as_secs() >= lease_seconds.max(1))
+}
+
+fn displace_stale_lease(path: &Path, worker: &str, lease_seconds: u64) -> io::Result<bool> {
+    if !lease_is_stale(path, lease_seconds) {
+        return Ok(false);
+    }
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("lease");
+    let stale = path.with_file_name(format!(
+        ".{name}.stale-{}-{}",
+        safe_fragment(worker),
+        unique_suffix()
+    ));
+    match fs::rename(path, stale) {
+        Ok(()) => Ok(true),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+struct LeagueLock {
+    path: PathBuf,
+    lease: LeaseRecord,
+}
+
+impl Drop for LeagueLock {
+    fn drop(&mut self) {
+        // Never delete a successor's lock after stale-lease recovery.
+        if read_json::<LeaseRecord>(&self.path).ok().as_ref() == Some(&self.lease) {
+            let _ = fs::remove_file(&self.path);
+        }
+    }
+}
+
+fn acquire_league_lock(dir: &str, worker: &str) -> io::Result<LeagueLock> {
+    let root = Path::new(dir);
+    fs::create_dir_all(root)?;
+    let path = root.join(".league.lock");
+    let lease = LeaseRecord {
+        worker: worker.to_string(),
+        process: std::process::id(),
+        created_unix: unix_now(),
+    };
+    for _ in 0..LOCK_RETRIES {
+        match OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(mut file) => {
+                serde_json::to_writer(&mut file, &lease).map_err(serde_error)?;
+                file.write_all(b"\n")?;
+                file.sync_all()?;
+                return Ok(LeagueLock {
+                    path,
+                    lease: lease.clone(),
+                });
+            }
+            Err(error) if error.kind() == ErrorKind::AlreadyExists => {
+                if displace_stale_lease(&path, worker, LOCK_LEASE_SECONDS)? {
+                    continue;
+                }
+                thread::sleep(Duration::from_millis(25));
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Err(io::Error::new(
+        ErrorKind::WouldBlock,
+        format!("timed out waiting for league lock {}", path.display()),
+    ))
+}
+
+fn round_dir(dir: &str, round: u32) -> PathBuf {
+    Path::new(dir)
+        .join("work")
+        .join(format!("round-{round:08}"))
+}
+
+fn manifest_path(dir: &str, round: u32) -> PathBuf {
+    round_dir(dir, round).join("manifest.json")
+}
+
+fn claim_path(dir: &str, round: u32, job: &str) -> PathBuf {
+    round_dir(dir, round)
+        .join("claims")
+        .join(format!("{job}.json"))
+}
+
+fn result_path(dir: &str, round: u32, job: &str) -> PathBuf {
+    round_dir(dir, round)
+        .join("results")
+        .join(format!("{job}.json"))
+}
+
+fn worker_path(dir: &str, worker: &str) -> PathBuf {
+    Path::new(dir)
+        .join("work")
+        .join("workers")
+        .join(format!("{}.json", safe_fragment(worker)))
+}
+
+struct WorkerPresence {
+    path: PathBuf,
+    lease: LeaseRecord,
+}
+
+impl Drop for WorkerPresence {
+    fn drop(&mut self) {
+        if read_json::<LeaseRecord>(&self.path).ok().as_ref() == Some(&self.lease) {
+            let _ = fs::remove_file(&self.path);
+        }
+    }
+}
+
+impl WorkerPresence {
+    fn refresh(&mut self) -> io::Result<()> {
+        let now = unix_now();
+        if now.saturating_sub(self.lease.created_unix) < 5 {
+            return Ok(());
+        }
+        self.lease.created_unix = now;
+        atomic_write_json(&self.path, &self.lease)
+    }
+}
+
+fn register_worker(cfg: &LeagueCfg) -> io::Result<WorkerPresence> {
+    let lease = LeaseRecord {
+        worker: cfg.worker_id.clone(),
+        process: std::process::id(),
+        created_unix: unix_now(),
+    };
+    let path = worker_path(&cfg.dir, &cfg.worker_id);
+    atomic_write_json(&path, &lease)?;
+    Ok(WorkerPresence { path, lease })
+}
+
+fn active_worker_count(dir: &str) -> usize {
+    let path = Path::new(dir).join("work").join("workers");
+    let Ok(entries) = fs::read_dir(path) else {
+        return 1;
+    };
+    let workers: BTreeSet<String> = entries
+        .flatten()
+        .filter(|entry| !lease_is_stale(&entry.path(), WORKER_ACTIVE_SECONDS))
+        .filter_map(|entry| read_json::<LeaseRecord>(&entry.path()).ok())
+        .map(|lease| lease.worker)
+        .collect();
+    workers.len().max(1)
+}
+
+fn worker_round_contributions(cfg: &LeagueCfg, manifest: &RoundManifest) -> usize {
+    let published = manifest
+        .jobs
+        .iter()
+        .filter_map(|job| {
+            read_json::<StoredOutcome>(&result_path(&cfg.dir, manifest.round, &job.id)).ok()
+        })
+        .filter(|result| result.worker == cfg.worker_id)
+        .count();
+    let leased = manifest
+        .jobs
+        .iter()
+        .filter_map(|job| {
+            read_json::<LeaseRecord>(&claim_path(&cfg.dir, manifest.round, &job.id)).ok()
+        })
+        .filter(|lease| lease.worker == cfg.worker_id)
+        .count();
+    published + leased
+}
+
+fn validate_manifest(manifest: &RoundManifest, league: &League) -> io::Result<()> {
+    if manifest.schema_version != WORK_SCHEMA_VERSION
+        || manifest.engine != work_engine()
+        || manifest.round != league.round
+        || manifest.strategies != league.strategies
+        || manifest.config.players_per_game < 2
+        || manifest.config.width <= 0
+        || manifest.config.height <= 0
+        || manifest.config.max_turns == 0
+    {
+        return Err(io::Error::new(
+            ErrorKind::InvalidData,
+            format!("incompatible round {} manifest", league.round),
+        ));
+    }
+    let names: BTreeSet<&str> = manifest
+        .strategies
+        .iter()
+        .map(|strategy| strategy.name.as_str())
+        .collect();
+    if names.len() != manifest.strategies.len() || manifest.jobs.is_empty() {
+        return Err(io::Error::new(
+            ErrorKind::InvalidData,
+            "manifest has duplicate strategies or no jobs",
+        ));
+    }
+    let mut ids = BTreeSet::new();
+    for job in &manifest.jobs {
+        if !ids.insert(&job.id)
+            || safe_fragment(&job.id) != job.id
+            || job.table.len() != manifest.config.players_per_game
+            || job.table.iter().any(|name| !names.contains(name.as_str()))
+        {
+            return Err(io::Error::new(
+                ErrorKind::InvalidData,
+                format!("invalid manifest job {}", job.id),
+            ));
+        }
+    }
+    let players = manifest.config.players_per_game;
+    if manifest.jobs.len() % players != 0 {
+        return Err(io::Error::new(
+            ErrorKind::InvalidData,
+            "manifest ends with a partial mirror series",
+        ));
+    }
+    for (series_index, series) in manifest.jobs.chunks(players).enumerate() {
+        let base = &series[0];
+        for (rotation, job) in series.iter().enumerate() {
+            let rotated_correctly = (0..players)
+                .all(|seat| job.table[seat] == base.table[(seat + rotation) % players]);
+            if job.mirror_series != series_index as u32
+                || job.rotation != rotation as u32
+                || job.seed != base.seed
+                || !rotated_correctly
+            {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidData,
+                    format!("broken mirrored series {series_index}"),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Must be called with the league lock held.
+fn load_or_create_manifest(league: &League, cfg: &LeagueCfg) -> io::Result<RoundManifest> {
+    let path = manifest_path(&cfg.dir, league.round);
+    let manifest = match read_json(&path) {
+        Ok(manifest) => manifest,
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            let manifest = build_manifest(league, cfg);
+            atomic_write_json(&path, &manifest)?;
+            manifest
+        }
+        Err(error) => return Err(error),
+    };
+    validate_manifest(&manifest, league)?;
+    Ok(manifest)
+}
+
+#[derive(Clone)]
+struct ClaimedJob {
+    job: WorkJob,
+    lease: LeaseRecord,
+}
+
+fn try_claim_job(
+    cfg: &LeagueCfg,
+    manifest: &RoundManifest,
+    job: &WorkJob,
+) -> io::Result<Option<ClaimedJob>> {
+    if result_path(&cfg.dir, manifest.round, &job.id).exists() {
+        return Ok(None);
+    }
+    let path = claim_path(&cfg.dir, manifest.round, &job.id);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    for _ in 0..2 {
+        let lease = LeaseRecord {
+            worker: cfg.worker_id.clone(),
+            process: std::process::id(),
+            created_unix: unix_now(),
+        };
+        match OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(mut file) => {
+                serde_json::to_writer(&mut file, &lease).map_err(serde_error)?;
+                file.write_all(b"\n")?;
+                file.sync_all()?;
+                return Ok(Some(ClaimedJob {
+                    job: job.clone(),
+                    lease,
+                }));
+            }
+            Err(error) if error.kind() == ErrorKind::AlreadyExists => {
+                if !displace_stale_lease(&path, &cfg.worker_id, cfg.lease_seconds)? {
+                    return Ok(None);
+                }
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(None)
+}
+
+fn claim_jobs(cfg: &LeagueCfg, manifest: &RoundManifest) -> io::Result<Vec<ClaimedJob>> {
+    let workers = active_worker_count(&cfg.dir);
+    let fair_share = manifest.jobs.len().div_ceil(workers);
+    let already_contributing = worker_round_contributions(cfg, manifest);
+    let claim_limit = fair_share
+        .saturating_sub(already_contributing)
+        .min(cfg.jobs.max(1));
+    if claim_limit == 0 {
+        return Ok(Vec::new());
+    }
+    let mut claimed = Vec::new();
+    for job in &manifest.jobs {
+        if let Some(job) = try_claim_job(cfg, manifest, job)? {
+            claimed.push(job);
+            if claimed.len() >= claim_limit {
+                break;
+            }
+        }
+    }
+    Ok(claimed)
+}
+
+fn release_claim(cfg: &LeagueCfg, round: u32, claimed: &ClaimedJob) {
+    let path = claim_path(&cfg.dir, round, &claimed.job.id);
+    if read_json::<LeaseRecord>(&path).ok().as_ref() == Some(&claimed.lease) {
+        let _ = fs::remove_file(path);
+    }
+}
+
+fn validate_result(
+    manifest: &RoundManifest,
+    job: &WorkJob,
+    result: &StoredOutcome,
+) -> io::Result<()> {
+    let count = manifest.config.players_per_game;
+    let mut expected = job.table.clone();
+    let mut actual = result.placements.clone();
+    expected.sort();
+    actual.sort();
+    let valid_ranks = result.ranks.first() == Some(&0)
+        && result.ranks.iter().all(|rank| *rank < count as u32)
+        && result
+            .ranks
+            .iter()
+            .enumerate()
+            .skip(1)
+            .all(|(place, rank)| *rank == result.ranks[place - 1] || *rank == place as u32);
+    let winners = result.won.iter().filter(|won| **won).count();
+    if result.schema_version != manifest.schema_version
+        || result.engine != manifest.engine
+        || result.worker.trim().is_empty()
+        || result.round != manifest.round
+        || result.job_id != job.id
+        || result.seed != job.seed
+        || result.placements.len() != count
+        || result.civs.len() != count
+        || result.ranks.len() != count
+        || result.won.len() != count
+        || result.civs.iter().any(|civ| civ.trim().is_empty())
+        || expected != actual
+        || !valid_ranks
+        || winners > 1
+        || (winners == 1 && !result.won[0])
+        || (winners == 1 && result.ranks.iter().skip(1).any(|rank| *rank == 0))
+    {
+        return Err(io::Error::new(
+            ErrorKind::InvalidData,
+            format!("invalid result for job {}", job.id),
+        ));
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // League lifecycle.
 
 /// Founding roster: anchor reference agents, the six fixed victory lanes
@@ -651,12 +1270,11 @@ pub fn load_league(dir: &str) -> Option<League> {
 
 /// Write via a temp file + rename so a crash mid-write cannot lose the roster.
 pub fn save_league(dir: &str, league: &League) {
-    let path = Path::new(dir);
-    let _ = fs::create_dir_all(path);
-    let tmp = path.join("league.json.tmp");
-    if fs::write(&tmp, serde_json::to_string_pretty(league).unwrap()).is_ok() {
-        let _ = fs::rename(&tmp, path.join("league.json"));
-    }
+    let _ = save_league_checked(dir, league);
+}
+
+fn save_league_checked(dir: &str, league: &League) -> io::Result<()> {
+    atomic_write_json(&Path::new(dir).join("league.json"), league)
 }
 
 /// Per-round RNG derived from (seed, round) so a resumed league plays the
@@ -669,21 +1287,26 @@ fn round_rng(seed: u64, round: u32) -> Rng {
 /// `players_per_game`, repeating passes until `games_per_round` tables exist.
 /// Everyone plays a near-equal amount and mixing is uniform; with rosters
 /// this small (<=~16) proximity matchmaking would only slow convergence.
-fn schedule(active: &[usize], cfg: &LeagueCfg, rng: &mut Rng) -> Vec<Vec<usize>> {
+fn schedule_tables(
+    active: &[usize],
+    games: usize,
+    players_per_game: usize,
+    rng: &mut Rng,
+) -> Vec<Vec<usize>> {
     assert!(!active.is_empty());
     let mut tables = Vec::new();
     let mut order: Vec<usize> = Vec::new();
-    while tables.len() < cfg.games_per_round as usize {
-        if order.len() < cfg.players_per_game {
+    while tables.len() < games {
+        if order.len() < players_per_game {
             let mut pass = active.to_vec();
             for i in (1..pass.len()).rev() {
                 pass.swap(i, rng.below(i + 1));
             }
             order.extend(pass);
         }
-        let take = cfg.players_per_game.min(order.len());
+        let take = players_per_game.min(order.len());
         let mut table: Vec<usize> = order.drain(..take).collect();
-        while table.len() < cfg.players_per_game {
+        while table.len() < players_per_game {
             table.push(active[rng.below(active.len())]);
         }
         // A table of clones rates nobody; force a second strategy in.
@@ -697,6 +1320,60 @@ fn schedule(active: &[usize], cfg: &LeagueCfg, rng: &mut Rng) -> Vec<Vec<usize>>
     tables
 }
 
+#[cfg(test)]
+fn schedule(active: &[usize], cfg: &LeagueCfg, rng: &mut Rng) -> Vec<Vec<usize>> {
+    schedule_tables(
+        active,
+        cfg.games_per_round as usize,
+        cfg.players_per_game,
+        rng,
+    )
+}
+
+/// Construct complete mirrored series. A base matchup repeats on the exact
+/// same map while its strategies rotate through every starting seat/civ. This
+/// removes much of the civilization, spawn, and first-move noise from strategy
+/// comparisons. The requested game count rounds up to a complete series.
+fn build_manifest(league: &League, cfg: &LeagueCfg) -> RoundManifest {
+    let players = cfg.players_per_game;
+    let series = (cfg.games_per_round as usize).div_ceil(players).max(1);
+    let mut rng = round_rng(cfg.seed, league.round);
+    let bases = schedule_tables(&league.active(), series, players, &mut rng);
+    let mut jobs = Vec::with_capacity(series * players);
+    for (series_index, table) in bases.into_iter().enumerate() {
+        let seed = cfg
+            .seed
+            .wrapping_mul(1_000_003)
+            .wrapping_add(league.round as u64 * 4096 + series_index as u64);
+        for rotation in 0..players {
+            let rotated = (0..players)
+                .map(|seat| {
+                    league.strategies[table[(seat + rotation) % players]]
+                        .name
+                        .clone()
+                })
+                .collect();
+            jobs.push(WorkJob {
+                id: format!("r{:08}-s{:06}-p{:03}", league.round, series_index, rotation),
+                seed,
+                table: rotated,
+                mirror_series: series_index as u32,
+                rotation: rotation as u32,
+            });
+        }
+    }
+    RoundManifest {
+        schema_version: WORK_SCHEMA_VERSION,
+        engine: work_engine(),
+        round: league.round,
+        created_unix: unix_now(),
+        config: WorkConfig::from(cfg),
+        strategies: league.strategies.clone(),
+        jobs,
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 struct Outcome {
     /// Strategy indices, winner first then by score.
     placements: Vec<usize>,
@@ -713,73 +1390,65 @@ struct Outcome {
     victory: String,
 }
 
-fn play_round(league: &League, tables: &[Vec<usize>], cfg: &LeagueCfg, round: u32) -> Vec<Outcome> {
-    let games = crate::parallel::map(tables.len(), cfg.jobs.max(1), |gi| {
-        let table = &tables[gi];
-        let seed = cfg
-            .seed
-            .wrapping_mul(1_000_003)
-            .wrapping_add(round as u64 * 4096 + gi as u64);
-        let mut game = Game::new(
-            cfg.players_per_game,
-            cfg.width,
-            cfg.height,
-            seed,
-            cfg.max_turns,
-            cfg.num_city_states,
-        );
-        let mut ais: Vec<Box<dyn Ai>> = game
-            .players
-            .iter()
-            .map(|p| {
-                if p.id < cfg.players_per_game {
-                    make_ai(&league.strategies[table[p.id]].kind, seed + p.id as u64)
-                } else {
-                    crate::elo::builtin_ai("basic", seed + p.id as u64)
-                }
-            })
-            .collect();
-        run_game(&mut game, &mut ais);
-        (seed, game)
-    });
-    games
-        .into_iter()
-        .enumerate()
-        .map(|(gi, (seed, game))| {
-            // A game can end with nobody having won: a lobby that pins
-            // victories without `score` has no turn-limit tiebreak. Ordering
-            // then falls through to score, which is the tiebreak the winner
-            // would have been chosen on anyway.
-            let mut ranked: Vec<usize> = (0..cfg.players_per_game).collect();
-            ranked.sort_by_key(|pid| (game.winner != Some(*pid), -game.score(*pid), *pid));
-            let mut ranks = Vec::with_capacity(ranked.len());
-            for (place, pid) in ranked.iter().copied().enumerate() {
-                let same_as_previous = place > 0
-                    && (game.winner == Some(pid)) == (game.winner == Some(ranked[place - 1]))
-                    && game.score(pid) == game.score(ranked[place - 1]);
-                ranks.push(if same_as_previous {
-                    ranks[place - 1]
-                } else {
-                    place as u32
-                });
-            }
-            Outcome {
-                placements: ranked.iter().map(|pid| tables[gi][*pid]).collect(),
-                civs: ranked
+fn play_job(manifest: &RoundManifest, job: &WorkJob, worker: &str) -> StoredOutcome {
+    let cfg = &manifest.config;
+    let mut game = Game::new(
+        cfg.players_per_game,
+        cfg.width,
+        cfg.height,
+        job.seed,
+        cfg.max_turns,
+        cfg.num_city_states,
+    );
+    let mut ais: Vec<Box<dyn Ai>> = game
+        .players
+        .iter()
+        .map(|player| {
+            if player.id < cfg.players_per_game {
+                let name = &job.table[player.id];
+                let strategy = manifest
+                    .strategies
                     .iter()
-                    .map(|pid| game.players[*pid].civ.clone())
-                    .collect(),
-                ranks,
-                won: ranked
-                    .iter()
-                    .map(|pid| game.winner == Some(*pid))
-                    .collect(),
-                seed,
-                turn: game.turn,
-                victory: game.victory_type.clone().unwrap_or_default(),
+                    .find(|strategy| &strategy.name == name)
+                    .expect("manifest job references a missing strategy");
+                make_ai(&strategy.kind, job.seed.wrapping_add(player.id as u64))
+            } else {
+                crate::elo::builtin_ai("basic", job.seed.wrapping_add(player.id as u64))
             }
         })
-        .collect()
+        .collect();
+    run_game(&mut game, &mut ais);
+
+    let mut ranked: Vec<usize> = (0..cfg.players_per_game).collect();
+    ranked.sort_by_key(|pid| (game.winner != Some(*pid), -game.score(*pid), *pid));
+    let mut ranks = Vec::with_capacity(ranked.len());
+    for (place, pid) in ranked.iter().copied().enumerate() {
+        let same_as_previous = place > 0
+            && (game.winner == Some(pid)) == (game.winner == Some(ranked[place - 1]))
+            && game.score(pid) == game.score(ranked[place - 1]);
+        ranks.push(if same_as_previous {
+            ranks[place - 1]
+        } else {
+            place as u32
+        });
+    }
+    StoredOutcome {
+        schema_version: WORK_SCHEMA_VERSION,
+        engine: manifest.engine.clone(),
+        worker: worker.to_string(),
+        round: manifest.round,
+        job_id: job.id.clone(),
+        placements: ranked.iter().map(|pid| job.table[*pid].clone()).collect(),
+        civs: ranked
+            .iter()
+            .map(|pid| game.players[*pid].civ.clone())
+            .collect(),
+        ranks,
+        won: ranked.iter().map(|pid| game.winner == Some(*pid)).collect(),
+        seed: job.seed,
+        turn: game.turn,
+        victory: game.victory_type.clone().unwrap_or_default(),
+    }
 }
 
 /// One Glicko-2 rating period: every game becomes pairwise results against
@@ -792,10 +1461,11 @@ fn play_round(league: &League, tables: &[Vec<usize>], cfg: &LeagueCfg, round: u3
 /// uncertainty within an afternoon — the same reason civ tables are sparse.
 fn apply_round(league: &mut League, outcomes: &[Outcome], age_idle: bool) {
     let pre: Vec<Glicko> = league.strategies.iter().map(to_internal).collect();
-    let mut results: BTreeMap<usize, Vec<(Glicko, f64)>> = BTreeMap::new();
-    let mut civ_results: BTreeMap<(usize, &str), Vec<(Glicko, f64)>> = BTreeMap::new();
+    let mut results: BTreeMap<usize, Vec<(Glicko, f64, f64)>> = BTreeMap::new();
+    let mut civ_results: BTreeMap<(usize, &str), Vec<(Glicko, f64, f64)>> = BTreeMap::new();
     for outcome in outcomes {
         let p = &outcome.placements;
+        let comparison_weight = 1.0 / p.len().saturating_sub(1).max(1) as f64;
         for i in 0..p.len() {
             for j in (i + 1)..p.len() {
                 if p[i] == p[j] {
@@ -806,19 +1476,19 @@ fn apply_round(league: &mut League, outcomes: &[Outcome], age_idle: bool) {
                     std::cmp::Ordering::Equal => 0.5,
                     std::cmp::Ordering::Greater => 0.0,
                 };
-                results.entry(p[i]).or_default().push((pre[p[j]], score_i));
+                results.entry(p[i]).or_default().push((pre[p[j]], score_i, comparison_weight));
                 results
                     .entry(p[j])
                     .or_default()
-                    .push((pre[p[i]], 1.0 - score_i));
+                    .push((pre[p[i]], 1.0 - score_i, comparison_weight));
                 civ_results
                     .entry((p[i], outcome.civs[i].as_str()))
                     .or_default()
-                    .push((pre[p[j]], score_i));
+                    .push((pre[p[j]], score_i, comparison_weight));
                 civ_results
                     .entry((p[j], outcome.civs[j].as_str()))
                     .or_default()
-                    .push((pre[p[i]], 1.0 - score_i));
+                    .push((pre[p[i]], 1.0 - score_i, comparison_weight));
                 league
                     .calibration
                     .record(matchup_expectation(pre[p[i]], pre[p[j]]), score_i);
@@ -895,7 +1565,15 @@ pub fn record_game(
     if placements.len() < 2 {
         return None;
     }
+    let worker = default_worker_id();
+    let _lock = acquire_league_lock(dir, &worker).ok()?;
     let mut league = load_league(dir)?;
+    // A distributed round snapshots this exact roster and rating period.
+    // Mixing an ad-hoc exhibition into it would invalidate already-running
+    // jobs, so leave that game unrated and let the batch finish intact.
+    if manifest_path(dir, league.round).exists() {
+        return None;
+    }
     let seats: Option<Vec<usize>> = placements
         .iter()
         .map(|(name, _)| league.strategies.iter().position(|s| &s.name == name))
@@ -920,6 +1598,9 @@ pub fn record_game(
     apply_round(&mut league, &[outcome], false);
     let period_calibration = league.calibration.since(&calibration_before);
     league.round += 1;
+    // league.json is authoritative. Derived CSV views may lag after a crash,
+    // but a crash can never apply the rating period twice.
+    save_league_checked(dir, &league).ok()?;
     append_csv(
         dir,
         "matches.csv",
@@ -946,7 +1627,6 @@ pub fn record_game(
         &rating_lines,
     );
     append_calibration(dir, league.round, &period_calibration, &league.calibration);
-    save_league(dir, &league);
     Some(league)
 }
 
@@ -1223,6 +1903,201 @@ fn append_calibration(dir: &str, round: u32, period: &Calibration, cumulative: &
     );
 }
 
+fn resolve_outcome(league: &League, stored: &StoredOutcome) -> io::Result<Outcome> {
+    let placements: Option<Vec<usize>> = stored
+        .placements
+        .iter()
+        .map(|name| {
+            league
+                .strategies
+                .iter()
+                .position(|strategy| &strategy.name == name)
+        })
+        .collect();
+    Ok(Outcome {
+        placements: placements.ok_or_else(|| {
+            io::Error::new(
+                ErrorKind::InvalidData,
+                format!("result {} references an unknown strategy", stored.job_id),
+            )
+        })?,
+        civs: stored.civs.clone(),
+        ranks: stored.ranks.clone(),
+        won: stored.won.clone(),
+        seed: stored.seed,
+        turn: stored.turn,
+        victory: stored.victory.clone(),
+    })
+}
+
+struct FinalizedRound {
+    league: League,
+    round: u32,
+    games: usize,
+    born: Vec<String>,
+    retired: Vec<String>,
+}
+
+/// Apply a complete immutable result set once. The short state lock covers
+/// validation, one simultaneous Glicko update, selection, and checkpointing;
+/// expensive simulation never runs while this lock is held.
+fn try_finalize_round(
+    cfg: &LeagueCfg,
+    expected_manifest: &RoundManifest,
+) -> io::Result<Option<FinalizedRound>> {
+    let _lock = acquire_league_lock(&cfg.dir, &cfg.worker_id)?;
+    let mut league = load_league(&cfg.dir).ok_or_else(|| {
+        io::Error::new(
+            ErrorKind::NotFound,
+            format!("missing {}/league.json", cfg.dir),
+        )
+    })?;
+    if league.round > expected_manifest.round {
+        return Ok(None); // another worker already committed it
+    }
+    if league.round != expected_manifest.round {
+        return Err(io::Error::new(
+            ErrorKind::InvalidData,
+            "league round moved behind its work manifest",
+        ));
+    }
+    let manifest: RoundManifest = read_json(&manifest_path(&cfg.dir, league.round))?;
+    validate_manifest(&manifest, &league)?;
+    if &manifest != expected_manifest {
+        return Err(io::Error::new(
+            ErrorKind::InvalidData,
+            "round manifest changed after work was claimed",
+        ));
+    }
+
+    let mut stored = Vec::with_capacity(manifest.jobs.len());
+    for job in &manifest.jobs {
+        let result = match read_json::<StoredOutcome>(&result_path(&cfg.dir, league.round, &job.id))
+        {
+            Ok(result) => result,
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        validate_result(&manifest, job, &result)?;
+        stored.push(result);
+    }
+    let outcomes: Vec<Outcome> = stored
+        .iter()
+        .map(|result| resolve_outcome(&league, result))
+        .collect::<io::Result<_>>()?;
+    let round = league.round;
+    let calibration_before = league.calibration.clone();
+    apply_round(&mut league, &outcomes, true);
+    let period_calibration = league.calibration.since(&calibration_before);
+    league.round += 1;
+
+    let mut effective_cfg = cfg.clone();
+    effective_cfg.seed = manifest.config.league_seed;
+    effective_cfg.evolve_every = manifest.config.evolve_every;
+    effective_cfg.max_pop = manifest.config.max_pop;
+    let mut rng = round_rng(effective_cfg.seed, round);
+    let (born, retired) =
+        if effective_cfg.evolve_every > 0 && league.round % effective_cfg.evolve_every == 0 {
+            evolve_league(&mut league, &effective_cfg, &mut rng)
+        } else {
+            (Vec::new(), Vec::new())
+        };
+
+    // Commit the source of truth before derived human-readable logs. If the
+    // process dies below, ratings still cannot be applied twice.
+    save_league_checked(&cfg.dir, &league)?;
+    let match_lines: Vec<String> = stored
+        .iter()
+        .map(|outcome| {
+            let names: Vec<String> = outcome
+                .placements
+                .iter()
+                .zip(&outcome.civs)
+                .map(|(name, civ)| format!("{name}@{civ}"))
+                .collect();
+            format!(
+                "{round},{},{},{},{}",
+                outcome.seed,
+                outcome.turn,
+                outcome.victory,
+                names.join("|")
+            )
+        })
+        .collect();
+    let rating_lines: Vec<String> = league
+        .active()
+        .into_iter()
+        .map(|index| {
+            let strategy = &league.strategies[index];
+            format!(
+                "{},{},{:.1},{:.1},{:.4},{},{}",
+                league.round,
+                strategy.name,
+                strategy.rating,
+                strategy.rd,
+                strategy.vol,
+                strategy.games,
+                strategy.wins
+            )
+        })
+        .collect();
+    append_csv(
+        &cfg.dir,
+        "matches.csv",
+        "round,seed,turns,victory,placements",
+        &match_lines,
+    );
+    append_csv(
+        &cfg.dir,
+        "ratings.csv",
+        "round,name,rating,rd,vol,games,wins",
+        &rating_lines,
+    );
+    append_calibration(
+        &cfg.dir,
+        league.round,
+        &period_calibration,
+        &league.calibration,
+    );
+    let _ = atomic_write_json(
+        &round_dir(&cfg.dir, round).join("finalized.json"),
+        &serde_json::json!({
+            "round": round,
+            "next_round": league.round,
+            "games": stored.len(),
+            "born": born,
+            "retired": retired,
+            "calibration": period_calibration,
+        }),
+    );
+    Ok(Some(FinalizedRound {
+        league,
+        round,
+        games: stored.len(),
+        born,
+        retired,
+    }))
+}
+
+fn execute_claims(
+    cfg: &LeagueCfg,
+    manifest: &RoundManifest,
+    claimed: &[ClaimedJob],
+) -> io::Result<()> {
+    let results = crate::parallel::map(claimed.len(), cfg.jobs.max(1), |index| {
+        play_job(manifest, &claimed[index].job, &cfg.worker_id)
+    });
+    for (claim, result) in claimed.iter().zip(results) {
+        validate_result(manifest, &claim.job, &result)?;
+        publish_json_once(
+            &result_path(&cfg.dir, manifest.round, &claim.job.id),
+            &result,
+        )?;
+        release_claim(cfg, manifest.round, claim);
+    }
+    Ok(())
+}
+
 pub fn standings(league: &League) -> String {
     let mut order: Vec<&Strategy> = league.strategies.iter().collect();
     order.sort_by(|a, b| {
@@ -1265,106 +2140,130 @@ pub fn standings(league: &League) -> String {
     out
 }
 
-pub fn run_league(cfg: &LeagueCfg) -> League {
-    let mut league = load_league(&cfg.dir).unwrap_or_else(|| seed_league(&cfg.dir));
-    for _ in 0..cfg.rounds {
-        let round = league.round;
-        let mut rng = round_rng(cfg.seed, round);
-        let active = league.active();
-        let tables = schedule(&active, cfg, &mut rng);
-        let outcomes = play_round(&league, &tables, cfg, round);
-        let match_lines: Vec<String> = outcomes
-            .iter()
-            .map(|o| {
-                let names: Vec<String> = o
-                    .placements
-                    .iter()
-                    .zip(&o.civs)
-                    .map(|(s, civ)| format!("{}@{civ}", league.strategies[*s].name))
-                    .collect();
-                format!(
-                    "{round},{},{},{},{}",
-                    o.seed,
-                    o.turn,
-                    o.victory,
-                    names.join("|")
-                )
-            })
-            .collect();
-        let calibration_before = league.calibration.clone();
-        apply_round(&mut league, &outcomes, true);
-        let period_calibration = league.calibration.since(&calibration_before);
-        league.round += 1;
-        let mut news = (Vec::new(), Vec::new());
-        if cfg.evolve_every > 0 && league.round % cfg.evolve_every == 0 {
-            news = evolve_league(&mut league, cfg, &mut rng);
+pub fn try_run_league(cfg: &LeagueCfg) -> io::Result<League> {
+    if cfg.players_per_game < 2
+        || cfg.games_per_round == 0
+        || cfg.max_pop == 0
+        || cfg.worker_id.trim().is_empty()
+    {
+        return Err(io::Error::new(
+            ErrorKind::InvalidInput,
+            "league needs at least two players, one game, one strategy slot, and a worker ID",
+        ));
+    }
+    let initial = {
+        let _lock = acquire_league_lock(&cfg.dir, &cfg.worker_id)?;
+        match load_league(&cfg.dir) {
+            Some(league) => league,
+            None => {
+                let league = seed_league(&cfg.dir);
+                save_league_checked(&cfg.dir, &league)?;
+                league
+            }
         }
-        let rating_lines: Vec<String> = league
-            .active()
-            .into_iter()
-            .map(|i| {
-                let s = &league.strategies[i];
-                format!(
-                    "{},{},{:.1},{:.1},{:.4},{},{}",
-                    league.round, s.name, s.rating, s.rd, s.vol, s.games, s.wins
-                )
-            })
-            .collect();
-        append_csv(
-            &cfg.dir,
-            "matches.csv",
-            "round,seed,turns,victory,placements",
-            &match_lines,
-        );
-        append_csv(
-            &cfg.dir,
-            "ratings.csv",
-            "round,name,rating,rd,vol,games,wins",
-            &rating_lines,
-        );
-        append_calibration(
-            &cfg.dir,
-            league.round,
-            &period_calibration,
-            &league.calibration,
-        );
-        save_league(&cfg.dir, &league);
-        if cfg.verbose {
-            let leader = league
-                .active()
-                .into_iter()
-                .max_by(|a, b| {
-                    league.strategies[*a]
-                        .rating
-                        .partial_cmp(&league.strategies[*b].rating)
-                        .unwrap()
-                })
-                .unwrap();
-            println!(
-                "round {:>3}: {} games; leader {} {:.1} ±{:.1}{}{}",
-                round,
-                outcomes.len(),
-                league.strategies[leader].username,
-                league.strategies[leader].rating,
-                league.strategies[leader].rd,
-                if news.0.is_empty() {
-                    String::new()
-                } else {
-                    format!("; born {:?}", news.0)
-                },
-                if news.1.is_empty() {
-                    String::new()
-                } else {
-                    format!("; retired {:?}", news.1)
-                },
-            );
+    };
+    let target_round = initial.round.saturating_add(cfg.rounds);
+    let mut presence = if initial.round < target_round {
+        let presence = register_worker(cfg)?;
+        // Give concurrently launched machines a short window to register so
+        // the first process does not reserve the entire rating period.
+        thread::sleep(Duration::from_millis(WORKER_DISCOVERY_MILLIS));
+        Some(presence)
+    } else {
+        None
+    };
+    let mut latest = initial;
+    while latest.round < target_round {
+        let manifest = {
+            let _lock = acquire_league_lock(&cfg.dir, &cfg.worker_id)?;
+            latest = load_league(&cfg.dir).ok_or_else(|| {
+                io::Error::new(ErrorKind::NotFound, "league disappeared while working")
+            })?;
+            if latest.round >= target_round {
+                break;
+            }
+            load_or_create_manifest(&latest, cfg)?
+        };
+
+        if let Some(presence) = &mut presence {
+            presence.refresh()?;
+        }
+        let claimed = claim_jobs(cfg, &manifest)?;
+        if !claimed.is_empty() {
+            if cfg.verbose {
+                println!(
+                    "worker {}: round {} claimed {} of {} mirrored games",
+                    cfg.worker_id,
+                    manifest.round,
+                    claimed.len(),
+                    manifest.jobs.len()
+                );
+            }
+            execute_claims(cfg, &manifest, &claimed)?;
+        }
+
+        let all_results_present = manifest
+            .jobs
+            .iter()
+            .all(|job| result_path(&cfg.dir, manifest.round, &job.id).exists());
+        let finalized = if all_results_present {
+            try_finalize_round(cfg, &manifest)?
+        } else {
+            None
+        };
+        match finalized {
+            Some(done) => {
+                latest = done.league;
+                if cfg.verbose {
+                    let leader = latest
+                        .active()
+                        .into_iter()
+                        .max_by(|a, b| {
+                            latest.strategies[*a]
+                                .rating
+                                .total_cmp(&latest.strategies[*b].rating)
+                        })
+                        .unwrap();
+                    println!(
+                        "round {:>3}: {} mirrored games; leader {} {:.1} ±{:.1}{}{}",
+                        done.round,
+                        done.games,
+                        latest.strategies[leader].username,
+                        latest.strategies[leader].rating,
+                        latest.strategies[leader].rd,
+                        if done.born.is_empty() {
+                            String::new()
+                        } else {
+                            format!("; born {:?}", done.born)
+                        },
+                        if done.retired.is_empty() {
+                            String::new()
+                        } else {
+                            format!("; retired {:?}", done.retired)
+                        },
+                    );
+                }
+            }
+            None => {
+                latest = load_league(&cfg.dir).unwrap_or(latest);
+                if claimed.is_empty() && latest.round < target_round {
+                    // Other workers own the remaining leases. Poll cheaply;
+                    // a crashed owner is reclaimed automatically at expiry.
+                    thread::sleep(Duration::from_millis(500));
+                }
+            }
         }
     }
+    latest = load_league(&cfg.dir).unwrap_or(latest);
     if cfg.verbose {
         println!();
-        print!("{}", standings(&league));
+        print!("{}", standings(&latest));
     }
-    league
+    Ok(latest)
+}
+
+pub fn run_league(cfg: &LeagueCfg) -> League {
+    try_run_league(cfg).unwrap_or_else(|error| panic!("league failed: {error}"))
 }
 
 #[cfg(test)]
@@ -1387,9 +2286,9 @@ mod tests {
             sigma: 0.06,
         };
         let results = vec![
-            (opponent(1400.0, 30.0), 1.0),
-            (opponent(1550.0, 100.0), 0.0),
-            (opponent(1700.0, 300.0), 0.0),
+            (opponent(1400.0, 30.0), 1.0, 1.0),
+            (opponent(1550.0, 100.0), 0.0, 1.0),
+            (opponent(1700.0, 300.0), 0.0, 1.0),
         ];
         let out = rate(player, &results);
         let rating = 1500.0 + SCALE * out.mu;
@@ -1397,6 +2296,43 @@ mod tests {
         assert!((rating - 1464.06).abs() < 0.1, "rating {rating}");
         assert!((rd - 151.52).abs() < 0.1, "rd {rd}");
         assert!((out.sigma - 0.05999).abs() < 0.0002, "vol {}", out.sigma);
+    }
+
+    /// One four-player finish provides three correlated pairwise comparisons,
+    /// not three independent games. Weighting them to one effective result
+    /// prevents multiplayer tables from manufacturing false precision.
+    #[test]
+    fn multiplayer_pairwise_results_have_one_games_worth_of_information() {
+        let player = Glicko {
+            mu: 0.0,
+            phi: BASE_RD / SCALE,
+            sigma: BASE_VOL,
+        };
+        let opponent = Glicko {
+            mu: 0.0,
+            phi: BASE_RD / SCALE,
+            sigma: BASE_VOL,
+        };
+        let single = rate(player, &[(opponent, 1.0, 1.0)]);
+        let multiplayer = rate(
+            player,
+            &[
+                (opponent, 1.0, 1.0 / 3.0),
+                (opponent, 1.0, 1.0 / 3.0),
+                (opponent, 1.0, 1.0 / 3.0),
+            ],
+        );
+        let falsely_independent = rate(
+            player,
+            &[
+                (opponent, 1.0, 1.0),
+                (opponent, 1.0, 1.0),
+                (opponent, 1.0, 1.0),
+            ],
+        );
+        assert!((single.mu - multiplayer.mu).abs() < 1e-12);
+        assert!((single.phi - multiplayer.phi).abs() < 1e-12);
+        assert!(falsely_independent.phi < multiplayer.phi);
     }
 
     #[test]
@@ -1665,6 +2601,108 @@ mod tests {
         }
         // two dealt passes over 9 strategies fill 24 seats: everyone plays
         assert_eq!(seen.len(), 9);
+    }
+
+    #[test]
+    fn manifests_rotate_each_matchup_through_every_starting_seat() {
+        let strategies = (0..4)
+            .map(|index| {
+                Strategy::new(
+                    &format!("strategy-{index}"),
+                    StrategyKind::Builtin {
+                        ai: "advanced".into(),
+                    },
+                    0,
+                )
+            })
+            .collect();
+        let league = League {
+            round: 7,
+            strategies,
+            calibration: Calibration::default(),
+        };
+        let cfg = LeagueCfg {
+            games_per_round: 4,
+            players_per_game: 4,
+            ..LeagueCfg::default()
+        };
+        let manifest = build_manifest(&league, &cfg);
+        assert_eq!(manifest.jobs.len(), 4);
+        assert!(manifest
+            .jobs
+            .iter()
+            .all(|job| job.seed == manifest.jobs[0].seed));
+        for strategy in &league.strategies {
+            for seat in 0..4 {
+                assert_eq!(
+                    manifest
+                        .jobs
+                        .iter()
+                        .filter(|job| job.table[seat] == strategy.name)
+                        .count(),
+                    1,
+                    "{} did not play seat {seat} exactly once",
+                    strategy.name,
+                );
+            }
+        }
+
+        let rounded = build_manifest(
+            &league,
+            &LeagueCfg {
+                games_per_round: 5,
+                players_per_game: 4,
+                ..cfg
+            },
+        );
+        assert_eq!(rounded.jobs.len(), 8, "partial mirror series must round up");
+    }
+
+    #[test]
+    fn result_validation_rejects_wrong_workers_rosters_and_ranks() {
+        let league = League {
+            round: 0,
+            strategies: (0..2)
+                .map(|index| {
+                    Strategy::new(
+                        &format!("strategy-{index}"),
+                        StrategyKind::Builtin { ai: "advanced".into() },
+                        0,
+                    )
+                })
+                .collect(),
+            calibration: Calibration::default(),
+        };
+        let cfg = LeagueCfg {
+            games_per_round: 2,
+            players_per_game: 2,
+            ..LeagueCfg::default()
+        };
+        let manifest = build_manifest(&league, &cfg);
+        let job = &manifest.jobs[0];
+        let mut result = StoredOutcome {
+            schema_version: WORK_SCHEMA_VERSION,
+            engine: manifest.engine.clone(),
+            worker: "machine-a".into(),
+            round: manifest.round,
+            job_id: job.id.clone(),
+            placements: job.table.clone(),
+            civs: vec!["Rome".into(), "Egypt".into()],
+            ranks: vec![0, 1],
+            won: vec![true, false],
+            seed: job.seed,
+            turn: 80,
+            victory: "science".into(),
+        };
+        assert!(validate_result(&manifest, job, &result).is_ok());
+        result.worker.clear();
+        assert!(validate_result(&manifest, job, &result).is_err());
+        result.worker = "machine-a".into();
+        result.placements[0] = "ghost".into();
+        assert!(validate_result(&manifest, job, &result).is_err());
+        result.placements = job.table.clone();
+        result.ranks = vec![0, 0];
+        assert!(validate_result(&manifest, job, &result).is_err());
     }
 
     #[test]
@@ -2017,6 +3055,8 @@ mod tests {
                 evolve_every: 2,
                 max_pop: 6,
                 verbose: false,
+                worker_id: "determinism-test".to_string(),
+                lease_seconds: 5,
             };
             let league = run_league(&cfg);
             serde_json::to_string(&league).unwrap()
@@ -2025,5 +3065,97 @@ mod tests {
         let b = run("b", 4);
         assert_eq!(a, b);
         let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn shared_workers_publish_each_job_and_finalize_the_round_once() {
+        let dir = std::env::temp_dir().join(format!(
+            "civvis-shared-league-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        let cfg = LeagueCfg {
+            rounds: 1,
+            games_per_round: 4,
+            players_per_game: 2,
+            width: 20,
+            height: 14,
+            max_turns: 20,
+            num_city_states: 1,
+            seed: 91,
+            jobs: 1,
+            dir: dir.to_string_lossy().into_owned(),
+            evolve_every: 0,
+            max_pop: 12,
+            verbose: false,
+            worker_id: "coordinator".into(),
+            lease_seconds: 5,
+        };
+        let manifest = {
+            let _lock = acquire_league_lock(&cfg.dir, &cfg.worker_id).unwrap();
+            let league = seed_league(&cfg.dir);
+            load_or_create_manifest(&league, &cfg).unwrap()
+        };
+        let rendezvous = std::sync::Arc::new(std::sync::Barrier::new(3));
+        let run_worker = |worker: &str| {
+            let mut worker_cfg = cfg.clone();
+            worker_cfg.worker_id = worker.to_string();
+            let worker_manifest = manifest.clone();
+            let rendezvous = rendezvous.clone();
+            std::thread::spawn(move || {
+                let _presence = register_worker(&worker_cfg).unwrap();
+                rendezvous.wait();
+                loop {
+                    let claimed = claim_jobs(&worker_cfg, &worker_manifest).unwrap();
+                    if claimed.is_empty() {
+                        break;
+                    }
+                    execute_claims(&worker_cfg, &worker_manifest, &claimed).unwrap();
+                }
+                rendezvous.wait();
+            })
+        };
+        let first = run_worker("machine-a");
+        let second = run_worker("machine-b");
+        rendezvous.wait();
+        rendezvous.wait();
+        first.join().unwrap();
+        second.join().unwrap();
+
+        let finalized = try_finalize_round(&cfg, &manifest).unwrap().unwrap();
+        assert_eq!(finalized.league.round, 1);
+        assert_eq!(
+            finalized
+                .league
+                .strategies
+                .iter()
+                .map(|strategy| strategy.games)
+                .sum::<u32>(),
+            (manifest.jobs.len() * manifest.config.players_per_game) as u32,
+        );
+        assert!(try_finalize_round(&cfg, &manifest).unwrap().is_none());
+        let result_count = fs::read_dir(round_dir(&cfg.dir, 0).join("results"))
+            .unwrap()
+            .count();
+        assert_eq!(result_count, manifest.jobs.len());
+        let contributors: BTreeSet<String> = manifest
+            .jobs
+            .iter()
+            .map(|job| {
+                read_json::<StoredOutcome>(&result_path(&cfg.dir, 0, &job.id))
+                    .unwrap()
+                    .worker
+            })
+            .collect();
+        assert_eq!(
+            contributors,
+            BTreeSet::from(["machine-a".into(), "machine-b".into()])
+        );
+        let remaining_claims = fs::read_dir(round_dir(&cfg.dir, 0).join("claims"))
+            .unwrap()
+            .count();
+        assert_eq!(remaining_claims, 0);
+        let _ = fs::remove_dir_all(&dir);
     }
 }
