@@ -2027,12 +2027,14 @@ function applyOverlayVisibility() {
 }
 function setOverlayVisibility(name, visible) {
   if (!OVERLAY_NAMES.includes(name)) return;
+  const priorFocus = currentMapFocusWorld();
   OVERLAY_VISIBILITY[name] = visible;
   applyOverlayVisibility();
   const checkbox = document.querySelector(`[data-overlay="${name}"]`);
   if (checkbox) checkbox.checked = visible;
   try { localStorage.setItem(OVERLAY_STORAGE_KEY, JSON.stringify(OVERLAY_VISIBILITY)); }
   catch (_) {}
+  reframeCurrentMapFocus(priorFocus);
 }
 const OVERLAY_LABELS = {
   players:"Player standings", victory:"Victory tracker",
@@ -8407,7 +8409,9 @@ mini.addEventListener("click", ev => {
   takeCameraControl();
   let x = S * SQ3 * col;
   if (mapWrapsX()) x += Math.round((cam.x - x) / WW()) * WW();
-  const y = clampCameraY(S * 1.5 * row);
+  let y = S * 1.5 * row;
+  [x, y] = cameraCenterForWorld(x, y);
+  y = clampCameraY(y);
   if (REDUCED_MOTION_QUERY.matches) {
     cam.x = x; cam.y = y; draw(); drawMini();
   } else cameraFlight = {x, y, scale:cam.scale};
@@ -9824,10 +9828,58 @@ document.getElementById("cinema-follow").onclick = () => {
   else if (DIRECTOR && directorGoal?.kind === "character") setDirector(false);
 };
 
-function cameraTargetFor(pos) {
+// The tracker and standings usually occupy the top of the map, so the useful
+// visual center sits 42% of the screen height up from the bottom. The command
+// deck already takes layout width away from `area`, making its midpoint land
+// to the right of the full-window midpoint without another hard-coded offset.
+// Focus mode removes every map overlay and expands `area`, at which point the
+// map returns to the exact geometric center in both axes.
+const DEFAULT_MAP_FOCUS_FROM_BOTTOM = .42;
+function mapOverlayVisible(name) {
+  if (document.body.classList.contains("sidebar-hidden") ||
+      OVERLAY_VISIBILITY[name] === false) return false;
+  if (cinemaActive() && ["players", "minimap", "controls"].includes(name)) return false;
+  return true;
+}
+function mapFocusPoint() {
+  const topHudVisible = mapOverlayVisible("players") || mapOverlayVisible("victory");
+  let x = area.clientWidth / 2;
+  // On compact layouts the command deck floats over the canvas instead of
+  // shrinking it. Center in the uncovered strip there, just as flex layout
+  // naturally centers the desktop canvas to the right of the deck.
+  if (!document.body.classList.contains("sidebar-hidden") && !cinemaActive()) {
+    const areaRect = area.getBoundingClientRect();
+    const sideRect = document.getElementById("side").getBoundingClientRect();
+    const coveredLeft = Math.max(0, Math.min(area.clientWidth, sideRect.right - areaRect.left));
+    if (coveredLeft > 0) x = (coveredLeft + area.clientWidth) / 2;
+  }
+  return {
+    x,
+    y:area.clientHeight * (topHudVisible ? 1 - DEFAULT_MAP_FOCUS_FROM_BOTTOM : .5),
+  };
+}
+function cameraCenterForWorld(wx, wy, scale = cam.scale, focus = mapFocusPoint()) {
+  const vx = (focus.x - area.clientWidth / 2) / Math.max(.25, scale);
+  const vy = (focus.y - area.clientHeight / 2) / Math.max(.25, scale) / YS;
+  return [wx - (COSR * vx + SINR * vy),
+          wy - (-SINR * vx + COSR * vy)];
+}
+function currentMapFocusWorld() {
+  if (!state || cameraFlight || cameraZoom || !area.clientWidth || !area.clientHeight) return null;
+  const focus = mapFocusPoint();
+  return screenToWorld(focus.x, focus.y);
+}
+function reframeCurrentMapFocus(world) {
+  if (!world || cameraFlight || cameraZoom) return;
+  const [x, y] = cameraCenterForWorld(world[0], world[1]);
+  cam.x = x;
+  cam.y = clampCameraY(y);
+  draw(); drawMini();
+}
+function cameraTargetFor(pos, scale = cam.scale) {
   let x = S * SQ3 * (pos[0] + pos[1] / 2);
   if (mapWrapsX()) x += Math.round((cam.x - x) / WW()) * WW();
-  return [x, S * 1.5 * pos[1]];
+  return cameraCenterForWorld(x, S * 1.5 * pos[1], scale);
 }
 function applyCameraAnchor(wx, wy, sx, sy, scale = cam.scale) {
   cam.scale = Math.max(.25, Math.min(3.2, scale));
@@ -9838,7 +9890,7 @@ function applyCameraAnchor(wx, wy, sx, sy, scale = cam.scale) {
 }
 function flyCameraTo(pos, scale = cam.scale) {
   if (!Array.isArray(pos)) return;
-  const [x, y] = cameraTargetFor(pos);
+  const [x, y] = cameraTargetFor(pos, scale);
   cameraZoom = null; clearCameraInertia();
   if (REDUCED_MOTION_QUERY.matches) {
     cam.x = x; cam.y = clampCameraY(y, scale); cam.scale = scale;
@@ -9932,7 +9984,7 @@ function advanceCameraFollow(now = performance.now()) {
   const unit = state?.units?.find(candidate => candidate.id === cameraFollowUnitId);
   if (!unit) { stopCameraFollow(); return false; }
   const subject = cinematicUnitMapPoint(unit, now);
-  const desiredScreenY = area.clientHeight * .55;
+  const desiredScreenY = mapFocusPoint().y;
   let gx = subject.x, gy = subject.y;
   const screenY = area.clientHeight / 2 +
     ((SINR * (subject.focusX - gx) + COSR * (subject.focusY - gy)) * YS -
@@ -9996,8 +10048,7 @@ function setFullWorldView() {
   const usableHeight = Math.max(1, frame.bottom - frame.top - padding * 2);
   const scale = Math.min(3.2, usableWidth / (maxX - minX),
                          usableHeight / ((maxY - minY) * YS));
-  const desiredX = (frame.left + frame.right) / 2;
-  const desiredY = (frame.top + frame.bottom) / 2;
+  const {x:desiredX, y:desiredY} = mapFocusPoint();
 
   cameraFlight = null; cameraZoom = null; clearCameraInertia();
   cam.scale = Math.max(.01, scale);
@@ -10005,20 +10056,29 @@ function setFullWorldView() {
   cam.y = (minY + maxY) / 2 - (desiredY - area.clientHeight / 2) / (cam.scale * YS);
 }
 
-// Put the initial subjects in a central stage that clears the fixed HUD. On a
-// desktop the minimap owns the lower-right corner, so the stage leans left; on
-// a phone it sits between the stacked top ribbons and the minimap below.
+// Reserve enough room to fit the initial subjects around the visible widgets.
+// This rectangle controls scale only; mapFocusPoint controls the composition,
+// so a corner minimap cannot pull the world's focal point away from center.
 function observedFrameRect() {
   const width = Math.max(1, area.clientWidth), height = Math.max(1, area.clientHeight);
   const narrow = width <= 720;
+  const topHudVisible = mapOverlayVisible("players") || mapOverlayVisible("victory");
+  const minimapVisible = mapOverlayVisible("minimap");
+  const controlsVisible = mapOverlayVisible("controls");
+  if (!topHudVisible && !minimapVisible && !controlsVisible)
+    return {left:0, right:width, top:0, bottom:height};
   let left = narrow ? 28 : 40;
-  let right = width - (narrow || cinemaActive() || OVERLAY_VISIBILITY.minimap === false ? 28 : 242);
-  let top = cinemaActive()
-    ? Math.min(height * .36, Math.max(150, height * .18))
-    : (narrow
-      ? Math.min(height * .4, Math.max(222, height * .29))
-      : Math.min(height * .32, 148));
-  let bottom = height - (cinemaActive() ? Math.max(90, height * .1) : (narrow ? 218 : 72));
+  let right = width - (narrow || !minimapVisible ? 28 : 242);
+  let top = topHudVisible
+    ? (cinemaActive()
+      ? Math.min(height * .36, Math.max(150, height * .18))
+      : (narrow
+        ? Math.min(height * .4, Math.max(222, height * .29))
+        : Math.min(height * .32, 148)))
+    : 28;
+  let bottom = height - (minimapVisible
+    ? (cinemaActive() ? Math.max(90, height * .1) : (narrow ? 218 : 72))
+    : (controlsVisible ? 72 : 28));
   // Extremely small embedded viewers cannot honor every overlay reservation.
   // Retain a useful stage around the center rather than returning an inverted
   // rectangle and throwing the subjects off-screen.
@@ -10083,8 +10143,7 @@ function setObservedPlayersView() {
   const maximum = anchors.length === 1 ? (cinemaActive() ? 1 : 1.12)
                                        : (cinemaActive() ? .76 : .82);
   const scale = Math.max(.2, Math.min(maximum, fitX, fitY));
-  const desiredX = (frame.left + frame.right) / 2;
-  const desiredY = (frame.top + frame.bottom) / 2;
+  const {x:desiredX, y:desiredY} = mapFocusPoint();
   const desiredViewX = (desiredX - area.clientWidth / 2) / scale;
   const desiredViewY = (desiredY - area.clientHeight / 2) / (scale * YS);
   const cameraViewX = (minX + maxX) / 2 - desiredViewX;
@@ -10185,8 +10244,9 @@ function setMainLandmassView() {
   const anchor = mainLandmassAnchor();
   if (!anchor) return;
   cam.scale = cinemaActive() ? .82 : .9;
-  cam.x = S * SQ3 * (anchor.pos[0] + anchor.pos[1] / 2);
-  cam.y = clampCameraY(S * 1.5 * anchor.pos[1]);
+  const [x, y] = cameraTargetFor(anchor.pos, cam.scale);
+  cam.x = x;
+  cam.y = clampCameraY(y, cam.scale);
 }
 function centerMainLandmass() {
   setMainLandmassView();
@@ -10698,6 +10758,7 @@ function nextAction() {
 }
 function togglePanel(force) {
   if (force === undefined && cinemaActive()) { setCinemaMode(false); return; }
+  const priorFocus = currentMapFocusWorld();
   const hide = force === undefined ? !document.body.classList.contains("sidebar-hidden") : force;
   document.body.classList.toggle("sidebar-hidden", hide);
   document.getElementById("paneltoggle").textContent = hide ? "☷" : "☰";
@@ -10706,6 +10767,7 @@ function togglePanel(force) {
   // same frame so the browser never stretches an old bitmap and then snaps it
   // to a different size a quarter-second later.
   resize();
+  reframeCurrentMapFocus(priorFocus);
 }
 document.addEventListener("keydown", ev => {
   if (ev.key === "Alt") {
