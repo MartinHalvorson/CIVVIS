@@ -131,7 +131,7 @@ at a time.
 ./target/release/civvis soak --games 20 --turns 150      # many games, flag anomalies
 ./target/release/civvis benchmark --games 100            # turns/sec
 ./target/release/civvis rollouts --players 6 --turns 150 # clone+step, for search agents
-./target/release/civvis tournament --ais advanced,basic --games 40 # persistent civ × strategy Elo
+./target/release/civvis tournament --ais advanced,basic --games 40 # player × leader × civ Elo
 cargo run --release --bin ai_eval -- advanced basic --pairs 100   # paired seats
 ./target/release/civvis evolve --generations 100 --pop 24 --games 12 \
   --threads 8 --dir evolved                              # evolve full strategy + doctrine
@@ -172,7 +172,7 @@ impl Ai for MyBot {
 ```
 
 Rate it in memory with `civvis::elo::run_tournament`, or checkpoint each game
-to the shared `data/elo_ratings.json` civilization × strategy ledger with
+to the shared `data/elo_ratings.json` player × leader × civilization ledger with
 `civvis::elo::run_persistent_tournament` (the CLI uses the persistent form).
 
 External agents (any language, incl. Python) drive the same JSON protocol over
