@@ -1325,10 +1325,22 @@
   body.hud-layout-active.layout-resizing,
   body.hud-layout-active.layout-resizing * { cursor: var(--layout-resize-cursor, nwse-resize) !important; }
 
+  /* Collapsing the command deck is also the map's focus mode. Apply that
+     temporary state to every map overlay without changing saved widget
+     preferences, so expanding the deck restores exactly the chosen layout.
+     The deck toggle itself remains as the one visible way back on touch-only
+     displays. */
+  body.sidebar-hidden #playerhud,
   body.overlay-players-hidden #playerhud,
+  body.sidebar-hidden #victoryhud,
   body.overlay-victory-hidden #victoryhud,
+  body.sidebar-hidden .minimap-frame,
   body.overlay-minimap-hidden .minimap-frame,
-  body.overlay-controls-hidden #zoomctl { display: none !important; }
+  body.overlay-controls-hidden #zoomctl,
+  body.sidebar-hidden #zoomctl > :not(#paneltoggle),
+  body.sidebar-hidden #ubar,
+  body.sidebar-hidden #modeline,
+  body.sidebar-hidden #tip { display: none !important; }
 
   @media (max-width: 720px) {
     #side { inset-block-start: 132px; }
