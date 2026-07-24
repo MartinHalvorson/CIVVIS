@@ -1,7 +1,8 @@
 //! Zero-dependency local HTTP server for the human-vs-AI browser GUI.
 //! Endpoints: GET / (page), GET /cinematic3d.js, GET /state, GET /save, GET /rules, GET /pedia,
 //! POST /action, POST /step, POST /autoplay, POST /view,
-//! POST /spectator-status, POST /new, POST /supervisor-new.
+//! POST /spectator-status, POST /next-game-settings, POST /new,
+//! POST /supervisor-new.
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -80,6 +81,9 @@ pub struct Session {
     /// Manual new-game handoff consumed by the external spectator supervisor.
     /// The current process stays available until the requested runtime is ready.
     supervisor_request: Option<Value>,
+    /// Setup selected while this world is running. It is inert until the next
+    /// automatic or explicitly requested simulation boundary.
+    next_game_params: Option<Params>,
     /// League roster used to label seats with player handles and elo (and,
     /// with `--league`, to choose who plays each civ).
     league: Option<crate::league::League>,
@@ -850,6 +854,7 @@ impl Session {
             view_player: None,
             chronicle,
             supervisor_request: None,
+            next_game_params: None,
             league,
             seat_strategy,
             league_recorded: false,
@@ -859,6 +864,10 @@ impl Session {
     /// Restore an interrupted match and rebuild only the AIs' transient plans.
     /// The serialized game retains the authoritative RNG and world state.
     pub fn from_game(mut params: Params, game: Game) -> Session {
+        // Launch flags may already carry setup selected for the next world.
+        // Preserve that intent while the checkpoint below restores the active
+        // world's authoritative parameters.
+        let requested_next = params.clone();
         params.num_players = game
             .players
             .iter()
@@ -884,6 +893,9 @@ impl Session {
             .filter(|player| !player.is_minor && !player.is_barbarian)
             .map(|player| player.team)
             .collect();
+        let next_game_params = (simulation_settings(&requested_next)
+            != simulation_settings(&params))
+        .then_some(requested_next);
         let (league, seat_from_roster) = Self::load_params_league(&params);
         let (ais, seat_strategy) = Self::ai_fleet(&game, league.as_ref(), seat_from_roster);
         let chronicle = ChronicleState::from_game(&game);
@@ -898,6 +910,7 @@ impl Session {
             view_player: None,
             chronicle,
             supervisor_request: None,
+            next_game_params,
             league,
             seat_strategy,
             league_recorded,
@@ -984,33 +997,34 @@ impl Session {
 
         let mut params = new_game_params(&self.params, request);
         params.spectate = true;
-        let victories = [
-            (params.victory_conditions.science, "science"),
-            (params.victory_conditions.culture, "culture"),
-            (params.victory_conditions.religious, "religious"),
-            (params.victory_conditions.diplomatic, "diplomatic"),
-            (params.victory_conditions.domination, "domination"),
-            (params.victory_conditions.score, "score"),
-        ]
-        .into_iter()
-        .filter_map(|(enabled, name)| enabled.then_some(name))
-        .collect::<Vec<_>>();
         self.supervisor_request = Some(json!({
             "mode": mode,
             "server_instance": std::process::id(),
-            "settings": {
-                "players": params.num_players,
-                "width": params.width,
-                "height": params.height,
-                "city_states": params.num_city_states,
-                "turns": params.max_turns,
-                "map": params.map_script.id(),
-                "speed": params.game_speed.id(),
-                "victories": victories,
-            }
+            "settings": simulation_settings(&params),
         }));
         self.spectator_paused = true;
         Ok(())
+    }
+
+    /// Queue setup controls for the next world without changing this one.
+    fn stage_next_game_settings(&mut self, request: &Value) {
+        let mut params = new_game_params(&self.params, request);
+        params.spectate = self.params.spectate;
+        self.next_game_params = Some(params);
+    }
+
+    fn start_automatic_next_game(&mut self) {
+        let next_seed = self
+            .params
+            .seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        let mut params = self
+            .next_game_params
+            .take()
+            .unwrap_or_else(|| self.params.clone());
+        params.seed = next_seed;
+        *self = Session::new(params);
     }
 
     /// An agent's plan as the spectator sees it. City ids mean nothing to a
@@ -1144,6 +1158,11 @@ impl Session {
             o["view_player"] = json!(self.view_player);
             o["victory_conditions"] = json!(self.game.victory_conditions);
             o["supervisor_request"] = json!(self.supervisor_request);
+            o["next_game_settings"] = self
+                .next_game_params
+                .as_ref()
+                .map(simulation_settings)
+                .unwrap_or(Value::Null);
             o["legal_actions"] = json!([]);
             // Lets a long-running spectator notice that its server was
             // rebuilt/restarted between games and reload the latest UI.
@@ -1156,6 +1175,11 @@ impl Session {
         o["view_player"] = json!(0);
         o["victory_conditions"] = json!(self.game.victory_conditions);
         o["supervisor_request"] = json!(self.supervisor_request);
+        o["next_game_settings"] = self
+            .next_game_params
+            .as_ref()
+            .map(simulation_settings)
+            .unwrap_or(Value::Null);
         o["legal_actions"] = serde_json::to_value(self.game.legal_actions(0)).unwrap();
         o["server_instance"] = json!(std::process::id());
         o
@@ -1418,6 +1442,30 @@ fn request_path(target: &str) -> &str {
     target.split_once('?').map_or(target, |(path, _)| path)
 }
 
+fn simulation_settings(params: &Params) -> Value {
+    let victories = [
+        (params.victory_conditions.science, "science"),
+        (params.victory_conditions.culture, "culture"),
+        (params.victory_conditions.religious, "religious"),
+        (params.victory_conditions.diplomatic, "diplomatic"),
+        (params.victory_conditions.domination, "domination"),
+        (params.victory_conditions.score, "score"),
+    ]
+    .into_iter()
+    .filter_map(|(enabled, name)| enabled.then_some(name))
+    .collect::<Vec<_>>();
+    json!({
+        "players": params.num_players,
+        "width": params.width,
+        "height": params.height,
+        "city_states": params.num_city_states,
+        "turns": params.max_turns,
+        "map": params.map_script.id(),
+        "speed": params.game_speed.id(),
+        "victories": victories,
+    })
+}
+
 fn new_game_params(current: &Params, request: &Value) -> Params {
     let mut p = current.clone();
     if let Some(v) = request["num_players"].as_u64() {
@@ -1535,12 +1583,7 @@ fn auto_step_loop(sh: Arc<Shared>) {
                 let left = RESTART_MS.saturating_sub(t0.elapsed().as_millis() as u64);
                 sh.restart_in.store(left, Ordering::Relaxed);
                 if left == 0 {
-                    let mut p = s.params.clone();
-                    p.seed = p
-                        .seed
-                        .wrapping_mul(6364136223846793005)
-                        .wrapping_add(1442695040888963407);
-                    *s = Session::new(p);
+                    s.start_automatic_next_game();
                     over_since = None;
                     watched_turn = None;
                     sh.restart_in.store(u64::MAX, Ordering::Relaxed);
@@ -1890,6 +1933,21 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 respond_json(stream, &json!({"error": "not in spectate mode"}));
             }
         }
+        ("POST", "/next-game-settings") => {
+            let mut session = sh.session.lock().unwrap();
+            session.stage_next_game_settings(&parsed);
+            respond_json(
+                stream,
+                &json!({
+                    "ok": true,
+                    "next_game_settings": session
+                        .next_game_params
+                        .as_ref()
+                        .map(simulation_settings)
+                        .unwrap_or(Value::Null),
+                }),
+            );
+        }
         ("POST", "/new") => {
             let mut session = sh.session.lock().unwrap();
             let result = session.start_new_game(&parsed);
@@ -2102,25 +2160,17 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("AI-only simulation"));
         assert!(EMBEDDED_INDEX.contains("Single player · later"));
         assert!(EMBEDDED_INDEX.contains("Multiplayer · later"));
-        assert!(EMBEDDED_INDEX.contains("class=\"sim-actions\""));
         assert!(EMBEDDED_INDEX.contains(
-            "id=\"restart-sim\" title=\"Restart with the same settings and build\">Restart sim<span class=\"sub\">same settings<br>same build</span>"
+            "id=\"restart-sim\" title=\"Restart with the same settings\">Restart sim<span class=\"sub\">same settings</span>"
         ));
-        assert!(EMBEDDED_INDEX.contains(
-            "id=\"fresh-sim\" title=\"Start with the same settings on the most recent build\">New sim<span class=\"sub\">same settings<br>most recent build</span>"
-        ));
-        assert!(EMBEDDED_INDEX.contains(
-            "id=\"default-settings\" title=\"Start with default settings on the most recent build\">New sim<span class=\"sub\">default settings<br>most recent build</span>"
-        ));
-        assert!(
-            EMBEDDED_INDEX.contains("async function startNewSimulation(mode, useDefaults = false)")
-        );
-        assert!(EMBEDDED_INDEX.contains("function restoreDefaultSimulationSettings()"));
-        assert!(EMBEDDED_INDEX.contains(
-            "document.getElementById(\"default-settings\").onclick = () => startNewSimulation(\"fresh_code\", true)"
-        ));
-        assert!(EMBEDDED_INDEX.contains("startNewSimulation(\"restart\")"));
-        assert!(EMBEDDED_INDEX.contains("startNewSimulation(\"fresh_code\")"));
+        assert!(!EMBEDDED_INDEX.contains("id=\"fresh-sim\""));
+        assert!(!EMBEDDED_INDEX.contains("id=\"default-settings\""));
+        assert!(!EMBEDDED_INDEX.contains("id=\"specstep\""));
+        assert!(!EMBEDDED_INDEX.contains("id=\"specdirector\""));
+        assert!(!EMBEDDED_INDEX.contains("id=\"speccinema\""));
+        assert!(EMBEDDED_INDEX.contains("async function startNewSimulation()"));
+        assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/next-game-settings\""));
+        assert!(EMBEDDED_INDEX.contains("with selected settings"));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/supervisor-new\""));
         assert!(EMBEDDED_INDEX.contains(
             "function supervisedSuccessorChanged(successor, finishedInstance, finishedSeed)"
@@ -2598,6 +2648,50 @@ mod tests {
             previous_settings
         );
         assert_eq!(session.state()["view_player"].as_u64(), Some(1));
+    }
+
+    #[test]
+    fn selected_settings_wait_for_the_next_automatic_game() {
+        let mut params = current();
+        params.spectate = true;
+        let mut session = Session::new(params);
+        let original_seed = session.game.seed;
+        let original_script = session.game.map_script;
+        let original_speed = session.game.game_speed;
+
+        session.stage_next_game_settings(&json!({
+            "num_players": 6,
+            "map_script": "continents",
+            "game_speed": "quick",
+            "victory_conditions": {"culture": false, "score": false},
+        }));
+
+        assert_eq!(session.game.seed, original_seed);
+        assert_eq!(session.game.map_script, original_script);
+        assert_eq!(session.game.game_speed, original_speed);
+        assert_eq!(
+            session.state()["next_game_settings"],
+            json!({
+                "players": 6,
+                "width": 74,
+                "height": 46,
+                "city_states": 9,
+                "turns": 330,
+                "map": "continents",
+                "speed": "quick",
+                "victories": ["science", "religious", "diplomatic", "domination"],
+            })
+        );
+
+        session.start_automatic_next_game();
+
+        assert_ne!(session.game.seed, original_seed);
+        assert_eq!(session.params.num_players, 6);
+        assert_eq!(session.params.map_script, MapScript::Continents);
+        assert_eq!(session.params.game_speed, GameSpeed::Quick);
+        assert!(!session.game.victory_conditions.culture);
+        assert!(!session.game.victory_conditions.score);
+        assert!(session.state()["next_game_settings"].is_null());
     }
 
     #[test]

@@ -271,6 +271,7 @@ pub struct AdvancedAi {
     peace_until: u32,
     victory_planning: bool,
     victory_target: Option<VictoryTarget>,
+    forced_target_player: Option<usize>,
     force_groups: Vec<ForceGroup>,
 }
 
@@ -311,6 +312,7 @@ impl AdvancedAi {
             peace_until: 0,
             victory_planning,
             victory_target,
+            forced_target_player: None,
             force_groups: Vec::new(),
         }
     }
@@ -328,6 +330,17 @@ impl AdvancedAi {
     /// next turn. Used by the rollout-driven `StrategicAi`.
     pub fn retarget(&mut self, target: VictoryTarget) {
         self.victory_target = Some(target);
+        self.forced_target_player = None;
+        self.plan = None;
+    }
+
+    /// Commit to a victory lane while preserving the rival that made an
+    /// urgent counter-campaign necessary.  Generic explicit targets remain
+    /// free to choose their best opponent; this narrow form is for planners
+    /// that have already identified the civilization about to end the game.
+    pub fn retarget_against(&mut self, target: VictoryTarget, rival: usize) {
+        self.victory_target = Some(target);
+        self.forced_target_player = Some(rival);
         self.plan = None;
     }
 
@@ -336,6 +349,7 @@ impl AdvancedAi {
     /// when an explicit lane no longer beats the parent policy in rollout.
     pub fn adapt(&mut self) {
         self.victory_target = None;
+        self.forced_target_player = None;
         self.plan = None;
     }
 
@@ -369,6 +383,13 @@ impl AdvancedAi {
 
     pub fn victory_target(&self) -> Option<VictoryTarget> {
         self.victory_target
+    }
+
+    /// Rival explicitly pinned by an urgent counter-campaign, if any.
+    /// StrategicAi uses this to refresh the objective when a different
+    /// civilization becomes the immediate victory threat in the same lane.
+    pub fn forced_target_player(&self) -> Option<usize> {
+        self.forced_target_player
     }
 
     fn active_victory_target(&self, g: &Game) -> Option<VictoryTarget> {
@@ -445,6 +466,14 @@ impl AdvancedAi {
             if !g.is_at_war(pid, target)
                 && !emergency_target
                 && !self.campaign_target_legal(g, pid, target)
+            {
+                return true;
+            }
+        }
+        if let Some(forced) = self.forced_target_player {
+            if !g.players.get(forced).map(|player| player.alive).unwrap_or(false)
+                || (plan.target_player != Some(forced)
+                    && self.campaign_target_legal(g, pid, forced))
             {
                 return true;
             }
@@ -863,7 +892,12 @@ impl AdvancedAi {
             .collect();
 
         let science = if player.science_projects.contains("exoplanet_expedition") {
-            75 + (25.0 * player.exoplanet_distance / 50.0).clamp(0.0, 25.0) as i32
+            // The final expedition is an irreversible endgame commitment.  A
+            // defender needs time to raise, route, and deploy a counterforce,
+            // so its launch itself must cross the generic denial threshold;
+            // waiting for the first six light-years discarded that reaction
+            // window while the rival was already on the victory clock.
+            78 + (22.0 * player.exoplanet_distance / 50.0).clamp(0.0, 22.0) as i32
         } else if player.science_projects.contains("launch_mars_colony") {
             65
         } else if player.science_projects.contains("launch_moon_landing") {
@@ -1121,34 +1155,42 @@ impl AdvancedAi {
         // Finish wars already in progress before selecting the next major
         // rival. In particular, this gives hostile city-states an explicit
         // city objective that the force-group planner can actually consume.
+        let forced_target = self.forced_target_player.filter(|target| {
+            g.players.get(*target).map(|player| player.alive).unwrap_or(false)
+                && self.campaign_target_legal(g, pid, *target)
+        });
         let target_player = if let Some(emergency) = &emergency_objective {
             Some(emergency.target)
         } else if wartime_rivals.is_empty() {
-            denial
-                .filter(|(rival, _)| self.campaign_target_legal(g, pid, *rival))
-                .map(|(rival, _)| rival)
-                .or_else(|| {
-                    let mut candidates: Vec<_> = major_rivals
-                        .iter()
-                        .copied()
-                        .filter(|rival| self.campaign_target_legal(g, pid, *rival))
-                        .collect();
-                    if strategy == GrandStrategy::Conquest {
-                        candidates.extend(
-                            g.players
-                                .iter()
-                                .filter(|player| player.is_minor)
-                                .filter(|player| self.campaign_target_legal(g, pid, player.id))
-                                .map(|player| player.id),
-                        );
-                    }
-                    candidates.into_iter().min_by(|a, b| {
-                        self.campaign_target_value(g, pid, *a)
-                            .partial_cmp(&self.campaign_target_value(g, pid, *b))
-                            .unwrap()
-                            .then(a.cmp(b))
+            forced_target.or_else(|| {
+                denial
+                    .filter(|(rival, _)| self.campaign_target_legal(g, pid, *rival))
+                    .map(|(rival, _)| rival)
+                    .or_else(|| {
+                        let mut candidates: Vec<_> = major_rivals
+                            .iter()
+                            .copied()
+                            .filter(|rival| self.campaign_target_legal(g, pid, *rival))
+                            .collect();
+                        if strategy == GrandStrategy::Conquest {
+                            candidates.extend(
+                                g.players
+                                    .iter()
+                                    .filter(|player| player.is_minor)
+                                    .filter(|player| {
+                                        self.campaign_target_legal(g, pid, player.id)
+                                    })
+                                    .map(|player| player.id),
+                            );
+                        }
+                        candidates.into_iter().min_by(|a, b| {
+                            self.campaign_target_value(g, pid, *a)
+                                .partial_cmp(&self.campaign_target_value(g, pid, *b))
+                                .unwrap()
+                                .then(a.cmp(b))
+                        })
                     })
-                })
+            })
         } else {
             wartime_rivals.iter().copied().min_by(|a, b| {
                 self.rival_value(g, pid, *a)
@@ -3272,7 +3314,13 @@ impl AdvancedAi {
             return surprise;
         }
 
-        let urgent = self.rival_victory_pressure(g, target).progress >= 90;
+        let pressure = self.rival_victory_pressure(g, target);
+        // A final exoplanet launch is an irreversible victory clock. It
+        // already interrupts the strategic planner at 78%, so waiting five
+        // turns for a Formal War here would make its counter-campaign start
+        // too late even when the expedition has not yet traveled a light-year.
+        let urgent = pressure.progress >= 90
+            || (pressure.strategy == GrandStrategy::Science && pressure.progress >= 78);
         let denounced = g.players[pid]
             .denounced_until
             .get(&target)
@@ -11284,13 +11332,9 @@ mod tests {
         let mut emergency = Game::new_full(2, 24, 16, 713, 300, 0, false);
         emergency.current = 0;
         emergency.turn = 60;
-        emergency.players[1].science_projects.extend([
-            "launch_earth_satellite".to_string(),
-            "launch_moon_landing".to_string(),
-            "launch_mars_colony".to_string(),
-            "exoplanet_expedition".to_string(),
-        ]);
-        emergency.players[1].exoplanet_distance = 49.0;
+        emergency.players[1]
+            .science_projects
+            .insert("exoplanet_expedition".to_string());
         assert_eq!(
             ai.preferred_war_opening(&emergency, 0, 1),
             Some(Action::DeclareWar { player: 1 })
@@ -12005,6 +12049,39 @@ mod tests {
         let plan = ai.assess(&culture, 0);
         assert_eq!(plan.strategy, GrandStrategy::Culture);
         assert_eq!(plan.target_player, Some(1));
+    }
+
+    #[test]
+    fn science_denial_starts_when_the_final_expedition_launches() {
+        let mut game = Game::new_full(3, 36, 22, 76_120, 300, 0, false);
+        for pid in 0..3 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.current = pid;
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .unwrap();
+        }
+        game.current = 0;
+        game.turn = 190;
+        game.players[2]
+            .science_projects
+            .insert("exoplanet_expedition".to_string());
+
+        let ai = AdvancedAi::new();
+        let pressure = ai.rival_victory_pressure(&game, 2);
+        assert_eq!(pressure.strategy, GrandStrategy::Science);
+        assert_eq!(pressure.progress, 78);
+        assert_eq!(
+            ai.victory_denial(&game, 0),
+            Some((2, GrandStrategy::Conquest)),
+            "the final launch must leave the defender time to begin its counter-campaign"
+        );
+        let plan = ai.assess(&game, 0);
+        assert_eq!(plan.strategy, GrandStrategy::Conquest);
+        assert_eq!(plan.target_player, Some(2));
     }
 
     #[test]
