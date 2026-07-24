@@ -416,7 +416,6 @@
     text-align: left; transition: border-color .12s ease, background .12s ease;
   }
   .diplomacy-card:hover { transform: none; border-color: #718b81; background: linear-gradient(100deg, #0e1b17f7, #1a302af2); }
-  .diplomacy-card.active { border-color: #e3c777; box-shadow: inset 3px 0 var(--gold), inset 0 1px #fff2, 0 0 18px #d7b66a17; }
   .diplomacy-card.allied { border-color: #4f9488; box-shadow: inset 3px 0 #6bc0ae, inset 0 1px #fff1; }
   .diplomacy-card.friend { border-color: #708d62; box-shadow: inset 3px 0 #9dbb7d, inset 0 1px #fff1; }
   .diplomacy-card.at-war { border-color: #a65450; box-shadow: inset 3px 0 var(--danger), inset 0 1px #fff1; }
@@ -477,16 +476,23 @@
   .ribbon-stat:nth-child(-n+5) { border-top-color: transparent; }
   .ribbon-stat b { display: block; overflow: hidden; font-size: 10px; line-height: 1.05; text-overflow: ellipsis; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .ribbon-stat em { display: block; margin-top: 2px; color: #82958e; font-size: 6px; font-style: normal; font-weight: 850; letter-spacing: .02em; line-height: 1; }
-  .ribbon-stat.production b { color: #e9ad74; }
-  .ribbon-stat.science b { color: var(--blue); }
-  .ribbon-stat.culture b { color: var(--violet); }
-  .ribbon-stat.faith b { color: #eee7cf; }
-  .ribbon-stat.gold b { color: #e8c64c; }
-  .ribbon-stat.military b { color: #f2a09b; }
-  .ribbon-stat.cities b { color: #d6c49b; }
-  .ribbon-stat.suzerain b { color: #8dd6b1; }
-  .ribbon-stat.wonders b { color: #e9d88e; }
-  .ribbon-stat.score b { color: var(--gold-bright); }
+  .ribbon-stat.production { --stat-color: #e9ad74; }
+  .ribbon-stat.science { --stat-color: var(--blue); }
+  .ribbon-stat.culture { --stat-color: var(--violet); }
+  .ribbon-stat.faith { --stat-color: #eee7cf; }
+  .ribbon-stat.gold { --stat-color: #e8c64c; }
+  .ribbon-stat.military { --stat-color: #f2a09b; }
+  .ribbon-stat.cities { --stat-color: #d6c49b; }
+  .ribbon-stat.suzerain { --stat-color: #8dd6b1; }
+  .ribbon-stat.wonders { --stat-color: #e9d88e; }
+  .ribbon-stat.score { --stat-color: var(--gold-bright); }
+  .ribbon-stat b { color: var(--stat-color); }
+  .ribbon-stat.category-leader {
+    border: 1px solid color-mix(in srgb, var(--stat-color) 70%, transparent);
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--stat-color) 17%, transparent);
+    box-shadow: inset 0 0 6px color-mix(in srgb, var(--stat-color) 10%, transparent);
+  }
   /* The dossier is one card opened up — about three cards tall, one
      civilization at a time. It hangs off the bottom of its own card so the
      ribbon still reads as a single ranked column. */
@@ -8672,6 +8678,23 @@ function exactStat(value) {
   return Math.round(n).toLocaleString();
 }
 
+function playerHudStats(player, rank) {
+  const y = player.yields || {};
+  const goldPerTurn = Number.isFinite(+player.gold_per_turn) ? +player.gold_per_turn : +(y.gold || 0);
+  return [
+    ["production", "PROD", y.production, `Production: ${exactStat(y.production)} per turn`],
+    ["science", "SCI", y.science, `Science: ${exactStat(y.science)} per turn`],
+    ["culture", "CUL", y.culture, `Culture: ${exactStat(y.culture)} per turn`],
+    ["faith", "FPT", y.faith, `Faith: ${exactStat(y.faith)} per turn · ${exactStat(player.faith)} banked`],
+    ["gold", "GPT", goldPerTurn, `Net Gold: ${exactStat(goldPerTurn)} per turn · ${exactStat(player.gold)} banked`],
+    ["military", "MIL", player.military, `Military strength: ${exactStat(player.military)}`],
+    ["cities", "CITY", player.cities, `Cities controlled: ${exactStat(player.cities)}`],
+    ["suzerain", "SUZ", player.suzerain_count, `City-states under suzerainty: ${exactStat(player.suzerain_count)}`],
+    ["wonders", "WNDR", player.wonder_count, `World wonders controlled: ${exactStat(player.wonder_count)}`],
+    ["score", "SCORE", player.score, `Score: ${exactStat(player.score)} · rank ${rank}`],
+  ];
+}
+
 // Rebuilding the ribbon's markup on a frame where nothing in it changed
 // replaced every card mid-click: a press that lands between mousedown and
 // mouseup on a detached button never becomes a click at all. Painting only on
@@ -8705,6 +8728,12 @@ function drawPlayerHud() {
     mapArea.style.setProperty("--player-hud-height", `${requestedHeight}px`);
   }
   const rankById = new Map(majors.map((p, index) => [p.id, index + 1]));
+  const statsByPlayer = new Map(majors.map(p => [p.id, playerHudStats(p, rankById.get(p.id))]));
+  const highestByStat = new Map();
+  statsByPlayer.forEach(stats => stats.forEach(([kind, , value]) => {
+    const numericValue = Number(value) || 0;
+    highestByStat.set(kind, Math.max(highestByStat.get(kind) ?? -Infinity, numericValue));
+  }));
   const html =
     `<div class="ribbon-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
     `aria-label="Move player standings; use arrow keys or drag" title="Drag to move · arrow keys also move" id="world-leaders-title">` +
@@ -8712,11 +8741,9 @@ function drawPlayerHud() {
     `<button class="overlay-close" type="button" data-overlay-close="players" aria-label="Hide player standings; restore them in Display settings" title="Hide player standings · restore in Display settings">✕</button>` +
     `<div class="diplomacy-ribbon" role="list" aria-labelledby="world-leaders-title" ` +
     `style="--hud-rows:${rows}">` + majors.map(p => {
-      const y = p.yields || {};
       const color = pcol(p.id);
       const leader = p.leader || "Unknown leader";
       const rank = rankById.get(p.id);
-      const goldPerTurn = Number.isFinite(+p.gold_per_turn) ? +p.gold_per_turn : +(y.gold || 0);
       const initial = (leader === "Unknown leader" ? p.civ : leader).trim().charAt(0).toUpperCase();
       const alliance = p.alliance;
       const strategy = p.ai_strategy || "";
@@ -8754,19 +8781,8 @@ function drawPlayerHud() {
           `${expectPct === null ? "" : ` · expected win chance vs this table ${expectPct}%`}`
         : `Unrated AI player · ${strategy ? `${titleCase(strategy)} active strategy` : "no active strategy"}`;
       const relationClass = alliance ? "allied" : p.friend ? "friend" : "";
-      const stateClass = `${p.id === acting ? "active" : ""} ${relationClass} ${p.at_war_with_me ? "at-war" : ""} ${p.alive ? "" : "dead"}`;
-      const stats = [
-        ["production", "PROD", y.production, `Production: ${exactStat(y.production)} per turn`],
-        ["science", "SCI", y.science, `Science: ${exactStat(y.science)} per turn`],
-        ["culture", "CUL", y.culture, `Culture: ${exactStat(y.culture)} per turn`],
-        ["faith", "FPT", y.faith, `Faith: ${exactStat(y.faith)} per turn · ${exactStat(p.faith)} banked`],
-        ["gold", "GPT", goldPerTurn, `Net Gold: ${exactStat(goldPerTurn)} per turn · ${exactStat(p.gold)} banked`],
-        ["military", "MIL", p.military, `Military strength: ${exactStat(p.military)}`],
-        ["cities", "CITY", p.cities, `Cities controlled: ${exactStat(p.cities)}`],
-        ["suzerain", "SUZ", p.suzerain_count, `City-states under suzerainty: ${exactStat(p.suzerain_count)}`],
-        ["wonders", "WNDR", p.wonder_count, `World wonders controlled: ${exactStat(p.wonder_count)}`],
-        ["score", "SCORE", p.score, `Score: ${exactStat(p.score)} · rank ${rank}`],
-      ];
+      const stateClass = `${relationClass} ${p.at_war_with_me ? "at-war" : ""} ${p.alive ? "" : "dead"}`;
+      const stats = statsByPlayer.get(p.id);
       const watchTitle = `Watch ${p.civ} through its fog of war · ${relationSummary}${agendaText}`;
       const expanded = hudExpanded === p.id;
       return `<div class="diplomacy-card ${stateClass} ${expanded ? "expanded" : ""}" style="--civ:${color}" role="listitem">` +
@@ -8784,9 +8800,11 @@ function drawPlayerHud() {
         `<span class="diplomacy-player">${playerName}</span><span class="identity-separator" aria-hidden="true">·</span>` +
         `${activeStrategy}</span></button>` +
         `<button class="diplomacy-stats" data-hud-action="watch" data-hud-civ="${p.id}" title="${watchTitle}" aria-label="Watch ${p.civ}">` +
-        stats.map(([kind, shortLabel, value, label]) =>
-          `<span class="ribbon-stat ${kind}" title="${label}"><b>${ribbonStat(value)}</b><em>${shortLabel}</em></span>`
-        ).join("") + `</button></div>` +
+        stats.map(([kind, shortLabel, value, label]) => {
+          const isLeader = highestByStat.get(kind) !== 0 && Number(value || 0) === highestByStat.get(kind);
+          return `<span class="ribbon-stat ${kind}${isLeader ? " category-leader" : ""}" ` +
+            `title="${label}${isLeader ? " · Category leader" : ""}"><b>${ribbonStat(value)}</b><em>${shortLabel}</em></span>`;
+        }).join("") + `</button></div>` +
         (expanded ? civDossier(p, rank, relation) : "");
     }).join("") + `</div>` + hudResizeHandles("player standings");
   if (html === hudHtml || hudLayoutGesture?.name === "players") return;
