@@ -2385,6 +2385,25 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(".diplomacy-card.allied"));
         assert!(EMBEDDED_INDEX.contains("function cameraYBounds"));
         assert!(EMBEDDED_INDEX.contains("cam.y = clampCameraY(cam.y)"));
+        // Default camera moves use the center of the map canvas horizontally.
+        // The command deck narrows that canvas and therefore shifts the focus
+        // right on the full screen. Top HUDs move it 42% up from the bottom;
+        // focus mode hides them and restores the exact 50/50 center.
+        assert!(EMBEDDED_INDEX.contains("const DEFAULT_MAP_FOCUS_FROM_BOTTOM = .42;"));
+        assert!(EMBEDDED_INDEX.contains("function mapOverlayVisible(name)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "document.body.classList.contains(\"sidebar-hidden\")"
+        ));
+        assert!(EMBEDDED_INDEX.contains("function mapFocusPoint()"));
+        assert!(EMBEDDED_INDEX.contains(
+            "topHudVisible ? 1 - DEFAULT_MAP_FOCUS_FROM_BOTTOM : .5"
+        ));
+        assert!(EMBEDDED_INDEX.contains("function cameraCenterForWorld("));
+        assert!(EMBEDDED_INDEX.contains("function currentMapFocusWorld()"));
+        assert!(EMBEDDED_INDEX.contains("function reframeCurrentMapFocus(world)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "const {x:desiredX, y:desiredY} = mapFocusPoint();"
+        ));
         assert!(EMBEDDED_INDEX.contains("View as"));
         assert!(EMBEDDED_INDEX.contains("id=\"viewplayer\""));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/view\""));
@@ -2403,10 +2422,22 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function drawWarLog()"));
         assert!(EMBEDDED_INDEX.contains("function warsForLog(wars)"));
         assert!(EMBEDDED_INDEX.contains("id=\"warsec\""));
-        assert!(EMBEDDED_INDEX.contains("Military strength at entry"));
+        assert!(EMBEDDED_INDEX.contains("function warBelligerentRows("));
+        assert!(EMBEDDED_INDEX.contains("function warPartyIsCityState("));
+        assert!(EMBEDDED_INDEX.contains("war-row-label\">Belligerents"));
+        assert!(EMBEDDED_INDEX.contains("<span>Start</span><span>Peak</span><span>Total</span>"));
+        assert!(EMBEDDED_INDEX.contains("overflow-wrap: break-word"));
+        assert!(EMBEDDED_INDEX.contains(
+            ".war-belligerent.city-state .war-belligerent-bar { width: 70%; }"
+        ));
+        assert!(!EMBEDDED_INDEX.contains("Military strength at entry"));
         assert!(EMBEDDED_INDEX.contains("war-row-label\">Chronology"));
         assert!(EMBEDDED_INDEX.contains("war-row-label\">Losses"));
         assert!(EMBEDDED_INDEX.contains("Peace deal terms"));
+        let belligerents = EMBEDDED_INDEX.find("war-row-label\">Belligerents").unwrap();
+        let losses = EMBEDDED_INDEX.find("war-row-label\">Losses").unwrap();
+        let chronology = EMBEDDED_INDEX.find("war-row-label\">Chronology").unwrap();
+        assert!(belligerents < losses && losses < chronology);
         assert!(EMBEDDED_INDEX.contains("entered Turn ${party.entered}"));
         assert!(EMBEDDED_INDEX.contains("peaced out Turn ${party.exited}"));
         assert!(EMBEDDED_INDEX.contains("sort((a, b) => a.turn - b.turn)"));
