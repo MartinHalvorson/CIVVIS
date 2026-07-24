@@ -744,6 +744,10 @@ def session_settings(state: dict[str, Any], defaults: dict[str, Any]) -> dict[st
     smaller count. Board *shape* may follow the finished game; how many seats
     it has may not.
     """
+    selected = normalized_simulation_settings(state.get("next_game_settings"))
+    if selected is not None:
+        return selected
+
     players = state.get("players") or []
     game_map = state.get("map") or {}
     settings = {
@@ -775,23 +779,12 @@ def session_settings(state: dict[str, Any], defaults: dict[str, Any]) -> dict[st
     return settings
 
 
-def manual_new_game_request(
-    state: dict[str, Any],
-) -> tuple[str, dict[str, Any]] | None:
-    """Return a normalized manual restart request emitted by the live server."""
-    request = state.get("supervisor_request")
-    if not isinstance(request, dict):
-        return None
-    mode = request.get("mode")
-    values = request.get("settings")
-    if (
-        mode not in ("restart", "fresh_code")
-        or request.get("server_instance") != state.get("server_instance")
-        or not isinstance(values, dict)
-    ):
+def normalized_simulation_settings(values: Any) -> dict[str, Any] | None:
+    """Validate the server's complete setup handoff for a future process."""
+    if not isinstance(values, dict):
         return None
     try:
-        settings = {
+        return {
             "players": int(values["players"]),
             "width": int(values["width"]),
             "height": int(values["height"]),
@@ -802,6 +795,23 @@ def manual_new_game_request(
             "victories": [str(value) for value in values["victories"]],
         }
     except (KeyError, TypeError, ValueError):
+        return None
+
+
+def manual_new_game_request(
+    state: dict[str, Any],
+) -> tuple[str, dict[str, Any]] | None:
+    """Return a normalized manual restart request emitted by the live server."""
+    request = state.get("supervisor_request")
+    if not isinstance(request, dict):
+        return None
+    mode = request.get("mode")
+    settings = normalized_simulation_settings(request.get("settings"))
+    if (
+        mode not in ("restart", "fresh_code")
+        or request.get("server_instance") != state.get("server_instance")
+        or settings is None
+    ):
         return None
     return mode, settings
 
