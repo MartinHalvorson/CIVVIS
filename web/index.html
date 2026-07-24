@@ -440,27 +440,30 @@
     font: 700 13px/1 Georgia, serif; text-shadow: 0 1px 3px #000;
   }
   .diplomacy-identity { min-width: 0; }
-  .diplomacy-identity:hover .diplomacy-name, .diplomacy-identity:focus-visible .diplomacy-name { color: #fff; }
-  .detail-caret { margin-left: 5px; color: #93aca1; font-size: 9px; vertical-align: 1px; }
-  .diplomacy-name { display: block; overflow: hidden; color: #f1f4ed; font-size: 13px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
-  .diplomacy-rank { margin-right: 5px; color: var(--gold-bright); font: 700 11px Georgia, serif; }
-  .diplomacy-name { display: block; overflow: hidden; color: #f1f4ed; font-size: 11px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+  .diplomacy-identity:hover .diplomacy-civ, .diplomacy-identity:focus-visible .diplomacy-civ { color: #fff; }
+  .detail-caret { flex: 0 0 auto; margin-left: 2px; color: #93aca1; font-size: 9px; vertical-align: 1px; }
+  .diplomacy-name {
+    min-width: 0; display: flex; align-items: baseline; gap: 3px; overflow: hidden;
+    color: #f1f4ed; font-size: 11px; font-weight: 800; white-space: nowrap;
+  }
+  .diplomacy-civ, .diplomacy-leader, .diplomacy-player {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .diplomacy-civ { color: #f1f4ed; }
   .diplomacy-rank { margin-right: 4px; color: var(--gold-bright); font: 700 10px Georgia, serif; }
-  /* Leader, war plan and standing all share this line, which as a single
-     nowrap row was an ellipsis on nearly every card. The card is tall enough
-     for two lines of it, so spend the height rather than cut the sentence. */
   .diplomacy-leader {
-    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
-    margin-top: 2px; overflow: hidden; color: var(--muted); font-size: 8px;
-    line-height: 1.25; overflow-wrap: anywhere;
+    flex: 1 1 auto; color: var(--muted); font-size: .82em; font-weight: 650;
   }
-  /* League identity line: which rated player runs this civ and its elo. */
-  .diplomacy-elo {
-    display: block; margin-top: 1px; overflow: hidden; white-space: nowrap;
-    text-overflow: ellipsis; color: var(--gold-bright); font-size: 10px;
-    line-height: 1.25;
+  /* Competitive identity reads in one stable order: rating, themed player
+     handle, then the strategy that player is using right now. */
+  .diplomacy-player-line {
+    min-width: 0; display: flex; align-items: baseline; gap: 3px; margin-top: 2px;
+    overflow: hidden; color: #9fb0a9; font-size: 9px; line-height: 1.15;
+    white-space: nowrap;
   }
-  .diplomacy-elo b { font-weight: 850; }
+  .diplomacy-elo { flex: 0 0 auto; color: var(--gold-bright); font-weight: 850; }
+  .diplomacy-player { flex: 1 1 auto; color: #d9e1dc; font-weight: 750; }
+  .identity-separator { flex: 0 0 auto; color: #667a72; font-weight: 500; }
   .agenda-mark { margin-left: 3px; font-size: 8px; vertical-align: 1px; }
   .agenda-mark.up { color: #8fd6a4; }
   .agenda-mark.down { color: #f2a09b; }
@@ -1204,7 +1207,7 @@
   }
   #playerhud .diplomacy-card {
     width: auto; height: auto; min-height: 0; display: grid;
-    grid-template-columns: 25px minmax(72px, 96px) minmax(0, 1fr);
+    grid-template-columns: 25px minmax(124px, 152px) minmax(0, 1fr);
     align-items: center; gap: 4px; margin: 0; padding: 2px 4px 2px 3px;
     overflow: hidden; border-radius: 7px;
   }
@@ -1214,14 +1217,13 @@
     border-width: 1px; box-shadow: 0 0 0 1px #07110f, 0 3px 8px #0008;
     font-size: 10px;
   }
-  #playerhud .diplomacy-name { font-size: 9px; line-height: 1.05; }
-  #playerhud .diplomacy-rank { margin-right: 3px; font-size: 8px; }
+  #playerhud .diplomacy-name { gap: 2px; font-size: 9px; line-height: 1.05; }
+  #playerhud .diplomacy-rank { margin-right: 0; font-size: 8px; }
   #playerhud .detail-caret { margin-left: 2px; font-size: 7px; }
   #playerhud .diplomacy-leader {
-    display: block; margin-top: 1px; overflow: hidden; font-size: 6.5px;
-    line-height: 1.05; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 7px; line-height: 1.05;
   }
-  #playerhud .diplomacy-elo { display: none; }
+  #playerhud .diplomacy-player-line { gap: 2px; margin-top: 2px; font-size: 6.5px; line-height: 1.05; }
   #playerhud .diplomacy-stats {
     align-self: stretch; display: grid; grid-template-columns: repeat(10, minmax(0, 1fr));
     grid-template-rows: minmax(0, 1fr); gap: 0;
@@ -1326,7 +1328,7 @@
   @media (max-width: 720px) {
     #side { inset-block-start: 132px; }
     #playerhud .diplomacy-card {
-      grid-template-columns: 23px minmax(48px, .8fr) minmax(88px, 1.2fr); gap: 3px;
+      grid-template-columns: 23px minmax(112px, 142px) minmax(88px, 1fr); gap: 3px;
     }
   }
   @media (max-width: 620px) {
@@ -1341,13 +1343,12 @@
       grid-template-columns: 82px minmax(0, 1fr);
     }
     #playerhud .diplomacy-card {
-      grid-template-columns: 21px minmax(43px, .8fr) minmax(72px, 1.2fr); padding-inline: 2px;
+      grid-template-columns: 21px minmax(102px, 132px) minmax(72px, 1fr); padding-inline: 2px;
     }
     #playerhud .ribbon-stat em { display: none; }
     #playerhud .diplomacy-name { font-size: 8px; }
   }
   @media (max-height: 650px) {
-    #playerhud .diplomacy-leader, #playerhud .diplomacy-elo,
     #playerhud .ribbon-stat em { display: none; }
     #playerhud .leader-medallion { width: 20px; height: 20px; }
   }
@@ -8574,18 +8575,19 @@ function drawPlayerHud() {
       const agendaText = p.agenda
         ? ` · ${p.agenda.name}${stance ? ` (${stance} of you)` : ""}: ${p.agenda.description}`
         : "";
-      const strategyLabel = strategy
-        ? `<span class="ai-plan ${strategy}">${titleCase(strategy)}</span> plan · `
-        : "";
-      // civ · rated player · elo, so the ribbon shows who is expected to
-      // win and the score column shows who actually is.
+      const activeStrategy = strategy
+        ? `<span class="ai-plan ${strategy}">${titleCase(strategy)}</span>`
+        : `<span class="ai-plan">No active strategy</span>`;
+      // The themed league handle names the player, while `ai_strategy` is the
+      // live grand strategy selected inside this particular match.
       const expectPct = Number.isFinite(+p.ai_expected) ? Math.round(p.ai_expected * 100) : null;
-      const eloLine = p.ai_username
-        ? `<span class="diplomacy-elo" title="League player ${p.ai_username} (${p.ai_strat_label || "unrated"})` +
-          ` · ${p.ai_elo_civ ? `${p.civ}-specific` : "overall"} elo ${p.ai_elo} ±${p.ai_elo_rd}` +
-          `${expectPct === null ? "" : ` · expected win chance vs this table ${expectPct}%`}">` +
-          `${p.ai_username} · <b>${p.ai_elo}</b> elo${expectPct === null ? "" : ` · E ${expectPct}%`}</span>`
-        : "";
+      const playerName = p.ai_username || "AI player";
+      const playerElo = Number.isFinite(+p.ai_elo) ? `${p.ai_elo} ELO` : "Unrated";
+      const leagueTitle = p.ai_username
+        ? `League player ${p.ai_username} (${p.ai_strat_label || "unrated"})` +
+          ` · ${p.ai_elo_civ ? `${p.civ}-specific` : "overall"} ELO ${p.ai_elo} ±${p.ai_elo_rd}` +
+          `${expectPct === null ? "" : ` · expected win chance vs this table ${expectPct}%`}`
+        : `Unrated AI player · ${strategy ? `${titleCase(strategy)} active strategy` : "no active strategy"}`;
       const relationClass = alliance ? "allied" : p.friend ? "friend" : "";
       const stateClass = `${p.id === acting ? "active" : ""} ${relationClass} ${p.at_war_with_me ? "at-war" : ""} ${p.alive ? "" : "dead"}`;
       const stats = [
@@ -8607,9 +8609,15 @@ function drawPlayerHud() {
         `<button class="diplomacy-identity" data-hud-action="dossier" data-hud-civ="${p.id}" aria-expanded="${expanded}" ` +
         `title="${expanded ? "Close" : "Open"} the ${p.civ} dossier · ${relationSummary}${agendaText}" ` +
         `aria-label="${expanded ? "Close" : "Open"} dossier for ${p.civ}, rank ${rank}, ${relationSummary}">` +
-        `<span class="diplomacy-name"><span class="diplomacy-rank">#${rank}</span>${p.id === acting && SPEC ? "◉ " : ""}${p.civ}` +
+        `<span class="diplomacy-name"><span class="diplomacy-rank">#${rank}</span>` +
+        `<span class="diplomacy-civ">${p.id === acting && SPEC ? "◉ " : ""}${p.civ}</span>` +
+        `<span class="identity-separator" aria-hidden="true">·</span>` +
+        `<span class="diplomacy-leader">${leader}${agendaGlyph}</span>` +
         `<span class="detail-caret">${expanded ? "▾" : "▸"}</span></span>` +
-        `<span class="diplomacy-leader">${leader}${agendaGlyph} · ${strategyLabel}${relation}</span>${eloLine}</button>` +
+        `<span class="diplomacy-player-line" title="${leagueTitle}">` +
+        `<span class="diplomacy-elo">${playerElo}</span><span class="identity-separator" aria-hidden="true">·</span>` +
+        `<span class="diplomacy-player">${playerName}</span><span class="identity-separator" aria-hidden="true">·</span>` +
+        `${activeStrategy}</span></button>` +
         `<button class="diplomacy-stats" data-hud-action="watch" data-hud-civ="${p.id}" title="${watchTitle}" aria-label="Watch ${p.civ}">` +
         stats.map(([kind, shortLabel, value, label]) =>
           `<span class="ribbon-stat ${kind}" title="${label}"><b>${ribbonStat(value)}</b><em>${shortLabel}</em></span>`
