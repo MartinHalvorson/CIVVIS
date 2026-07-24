@@ -104,15 +104,34 @@
     stroke-linejoin: round;
   }
   .brand-mark .globe-shine { fill: none; stroke: #fff9df; stroke-opacity: .14; stroke-width: 1.1; }
-  .brand-copy { min-width: 0; padding-top: 1px; }
+  .brand-copy { min-width: 0; padding: 1px 32px 0 0; }
+  .brand-title-row { display: flex; align-items: center; gap: 10px; }
   h1 {
     width: max-content; color: var(--gold-bright);
-    font: 650 24px/.95 "Iowan Old Style", "Palatino Linotype", Georgia, serif;
-    letter-spacing: .12em; text-transform: uppercase;
+    font: 650 30px/.95 "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    letter-spacing: .105em; text-transform: uppercase;
     background: linear-gradient(100deg, #f6dfaa 8%, #d7b66a 66%, #a9823b);
     -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
     text-shadow: 0 4px 16px #0008;
   }
+  h1 .brand-suffix {
+    font-size: .56em; letter-spacing: .025em; text-transform: lowercase;
+  }
+  .brand-links {
+    position: absolute; right: 18px; bottom: 13px;
+    display: flex; flex-direction: column; align-items: center; gap: 5px;
+  }
+  .brand-links a {
+    width: 22px; height: 22px; display: grid; place-items: center; border-radius: 6px;
+    color: var(--gold); border: 1px solid #d7b66a38; background: #d7b66a0b;
+    transition: color .15s ease, border-color .15s ease, background .15s ease, transform .15s ease;
+  }
+  .brand-links a:hover {
+    color: var(--gold-bright); border-color: #d7b66a80; background: #d7b66a18;
+    transform: translateY(-1px);
+  }
+  .brand-links a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  .brand-links svg { width: 13px; height: 13px; fill: currentColor; }
   .tagline {
     max-width: 220px; margin-top: 8px; color: #d3ddd8; font-size: 10px;
     font-weight: 650; letter-spacing: .025em; line-height: 1.38;
@@ -228,8 +247,6 @@
   .utility-panel[open] summary { border-bottom: 1px solid var(--line-soft); }
   .utility-body { padding: 12px 13px 13px; }
   .utility-group + .utility-group { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--line-soft); }
-  .observer-settings { margin-bottom: 14px; padding-bottom: 13px; border-bottom: 1px solid var(--line-soft); }
-  .observer-settings + .utility-group { margin-top: 0; padding-top: 0; border-top: 0; }
   .event-scope { overflow: hidden; color: var(--gold); font-size: 8px; letter-spacing: .04em; text-overflow: ellipsis; white-space: nowrap; text-transform: none; }
 
   button {
@@ -928,12 +945,24 @@
   .war-moment.earlier { color: var(--faint); font-style: italic; }
   .war-card.ended.conquest { border-left-color: #8a4740; background: #150d0c; }
   .war-card.ended.conquest .war-clash { color: #e08b7d; }
-  .spec-controls { display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, 36px); gap: 7px; }
+  .spec-controls { display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px; }
   .spec-controls button { margin: 0; }
-  #specdirector.active { color: var(--gold-bright); border-color: #b88f45; box-shadow: 0 0 16px #d7b66a24; }
+  .spec-controls #restart-sim {
+    width: 100%; min-height: 46px; padding: 8px 12px; line-height: 1.15;
+    color: #c2cec8; background: linear-gradient(180deg, #243530, #192823);
+    border-color: #3b5049; font-size: 11px; font-weight: 750;
+  }
+  .spec-controls #restart-sim .sub {
+    display: block; margin-top: 3px; color: var(--muted); font-size: 8px;
+    font-weight: 650; letter-spacing: .05em;
+  }
+  .spec-controls #restart-sim.primary {
+    color: #17160f; background: linear-gradient(135deg, #f0d58f, #c99e4e);
+    border-color: #efd184; box-shadow: 0 7px 22px #0005, inset 0 1px #fff7;
+  }
+  .spec-controls #restart-sim.primary .sub { color: #51401f; }
   .speed-row, .view-row { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 10px; margin-top: 9px; }
   .speed-row span, .view-row span { color: var(--muted); font-size: 9px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
-  .speed-note { margin-top: 5px; color: var(--faint); font-size: 9px; font-variant-numeric: tabular-nums; }
   .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; color: var(--muted); font-size: 10px; cursor: pointer; }
   .setting-row span { display: flex; align-items: center; gap: 7px; }
   .setting-row kbd { margin: 0; }
@@ -942,11 +971,6 @@
   kbd { display: inline-grid; min-width: 19px; height: 18px; place-items: center; margin-right: 5px; padding: 0 4px; border-radius: 5px; color: #cbd5d0; background: #091310; border: 1px solid #354c44; box-shadow: inset 0 -1px #000; font: 700 8px Inter, sans-serif; }
   #newgame-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: end; }
   #newgame-options button { margin: 0; }
-  .sim-actions { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-  .sim-actions button { min-height: 52px; padding: 6px 8px; line-height: 1.2; }
-  .sim-actions #restart-sim { font-weight: 700; }
-  .sim-actions #restart-sim .sub { display: none; }
-  .sim-actions .sub { display: block; margin-top: 3px; color: var(--muted); font-size: 8px; font-weight: 600; letter-spacing: .04em; }
   .victory-options { grid-column: 1 / -1; padding: 9px 10px 10px; border: 1px solid var(--line-soft); border-radius: 9px; background: #09131080; }
   .victory-options h2 { margin-bottom: 8px; }
   .victory-option-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px 9px; }
@@ -1422,8 +1446,18 @@
         </svg>
       </div>
       <div class="brand-copy">
-        <h1>CIVVIS</h1>
-        <div class="tagline"><span>A Civilization VI simulator</span><span>for AI strategy development</span></div>
+        <div class="brand-title-row">
+          <h1>CIVVIS<span class="brand-suffix">.ai</span></h1>
+          <nav class="brand-links" aria-label="CIVVIS links">
+            <a href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noopener noreferrer" aria-label="CIVVIS on GitHub" title="CIVVIS on GitHub">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .7a11.5 11.5 0 0 0-3.64 22.41c.58.11.79-.25.79-.56v-2.23c-3.22.7-3.9-1.37-3.9-1.37-.52-1.34-1.28-1.69-1.28-1.69-1.05-.72.08-.71.08-.71 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.57-.29-5.27-1.28-5.27-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.16 1.18A10.94 10.94 0 0 1 12 6.12c.98 0 1.95.13 2.87.39 2.2-1.49 3.16-1.18 3.16-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.71 5.38-5.29 5.67.42.36.79 1.07.79 2.16v3.25c0 .31.21.68.8.56A11.5 11.5 0 0 0 12 .7Z"/></svg>
+            </a>
+            <a href="https://www.youtube.com/@MartinHalvorson" target="_blank" rel="noopener noreferrer" aria-label="Martin Halvorson on YouTube" title="CIVVIS on YouTube">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M23.5 6.19a3.02 3.02 0 0 0-2.12-2.14C19.5 3.54 12 3.54 12 3.54s-7.5 0-9.38.51A3.02 3.02 0 0 0 .5 6.19C0 8.08 0 12 0 12s0 3.92.5 5.81a3.02 3.02 0 0 0 2.12 2.14c1.88.51 9.38.51 9.38.51s7.5 0 9.38-.51a3.02 3.02 0 0 0 2.12-2.14C24 15.92 24 12 24 12s0-3.92-.5-5.81ZM9.55 15.57V8.43L15.82 12l-6.27 3.57Z"/></svg>
+            </a>
+          </nav>
+        </div>
+        <div class="tagline"><span>A Civilization VI Simulator</span><span>for AI strategy development</span></div>
       </div>
     </div>
   </div>
@@ -1437,9 +1471,7 @@
       <div id="specbar" style="display:none">
         <div class="spec-controls">
           <button class="primary" id="specpause">⏸ Pause</button>
-          <button class="icon" id="specdirector" title="Camera locked (click for auto-focus)" aria-label="Toggle camera auto-focus">○</button>
-          <button class="icon" id="speccinema" title="Enter cinema presentation" aria-label="Enter cinema presentation">▰</button>
-          <button class="icon" id="specstep" title="Advance one civilization" aria-label="Step once">›</button>
+          <button id="restart-sim" title="Restart with the same settings">Restart sim<span class="sub">same settings</span></button>
         </div>
       </div>
     </div>
@@ -1487,11 +1519,6 @@
             <label class="victory-option"><input type="checkbox" id="victory-score" checked>Score</label>
           </div>
         </div>
-        <div class="sim-actions">
-          <button id="restart-sim" title="Restart with the same settings and build">Restart sim<span class="sub">same settings<br>same build</span></button>
-          <button id="fresh-sim" title="Start with the same settings on the most recent build">New sim<span class="sub">same settings<br>most recent build</span></button>
-          <button id="default-settings" title="Start with default settings on the most recent build">New sim<span class="sub">default settings<br>most recent build</span></button>
-        </div>
       </div>
       </div>
     </details>
@@ -1503,16 +1530,33 @@
       </summary>
       <div class="sec settings-sec" id="display-settings">
       <div class="utility-group">
-        <h2>Display</h2>
-        <select id="viewsel" aria-label="Map style">
-          <option value="cinematic">Cinematic · lit, graded, alive</option>
-          <option value="balanced">Balanced · painted terrain</option>
-          <option value="strategic">Strategic · flat and fast</option>
-        </select>
-        <label class="setting-row"><span><input type="checkbox" id="yieldchk"> Show yields per tile</span><kbd>Y</kbd></label>
-        <label class="setting-row"><span><input type="checkbox" id="artifactchk"> Show artifact sites &amp; shipwrecks</span></label>
+        <div class="view-row"><span>Display</span>
+          <select id="viewsel" aria-label="Map style">
+            <option value="cinematic">Cinematic · lit, graded, alive</option>
+            <option value="balanced">Balanced · painted terrain</option>
+            <option value="strategic">Strategic · flat and fast</option>
+          </select>
+        </div>
+        <div class="observer-settings" id="observer-settings">
+          <div class="view-row"><span>View as</span>
+            <select id="viewplayer" aria-label="Observation perspective">
+              <option value="spectator">Spectator · full map</option>
+            </select>
+          </div>
+          <div class="speed-row"><span>Watch pace</span>
+            <select id="specspeed" title="Simulation watch pace">
+              <option value="0">Lightning</option>
+              <option value="1000" selected>Blitz</option>
+              <option value="2000">Fast</option>
+              <option value="4000">Standard</option>
+              <option value="10000">Slow</option>
+            </select>
+          </div>
+          <label class="setting-row"><span><input type="checkbox" id="cinemachk" checked> Cinema presentation</span><kbd>C</kbd></label>
+        </div>
         <div class="overlay-options" role="group" aria-labelledby="overlay-options-title">
           <h2 id="overlay-options-title">Map overlays</h2>
+          <div class="small overlay-layout-help">Drag a ⋮ heading to move an overlay; drag its gold corner to resize. Your layout saves automatically.</div>
           <div class="overlay-option-grid">
             <label class="overlay-option"><input type="checkbox" data-overlay="players" checked>Player standings</label>
             <label class="overlay-option"><input type="checkbox" data-overlay="victory" checked>Victory race</label>
@@ -1522,28 +1566,10 @@
             <label class="overlay-option"><input type="checkbox" data-overlay="mode" checked>Map mode status</label>
             <label class="overlay-option"><input type="checkbox" data-overlay="tooltips" checked>Tile tooltips</label>
           </div>
-          <div class="small overlay-layout-help">Drag a ⋮ heading to move an overlay; drag its gold corner to resize. Your layout saves automatically.</div>
           <button class="ghost overlay-layout-reset" id="reset-overlay-layout" type="button">Reset overlay positions &amp; sizes</button>
         </div>
-      </div>
-      <div class="utility-group observer-settings" id="observer-settings">
-        <h2>Observation</h2>
-        <div class="view-row"><span>View as</span>
-          <select id="viewplayer" aria-label="Observation perspective">
-            <option value="spectator">Spectator · full map</option>
-          </select>
-        </div>
-        <div class="speed-row"><span>Watch pace</span>
-          <select id="specspeed" title="Wall-clock time for one full game turn">
-            <option value="0">Lightning · max speed</option>
-            <option value="1000" selected>Blitz · 1s / turn</option>
-            <option value="2000">Fast · 2s / turn</option>
-            <option value="4000">Standard · 4s / turn</option>
-            <option value="10000">Slow · 10s / turn</option>
-          </select>
-        </div>
-        <div class="speed-note" id="specpacenote">Measuring turn time…</div>
-        <label class="setting-row"><span><input type="checkbox" id="cinemachk" checked> Cinema presentation</span><kbd>C</kbd></label>
+        <label class="setting-row"><span><input type="checkbox" id="yieldchk"> Show yields per tile</span><kbd>Y</kbd></label>
+        <label class="setting-row"><span><input type="checkbox" id="artifactchk"> Show artifact sites &amp; shipwrecks</span></label>
       </div>
       <details class="utility-panel">
         <summary>Keyboard shortcuts</summary>
@@ -3225,7 +3251,7 @@ async function boot() {
     render(await fetchJSON("/state"));
     if (firstLoad) {
       firstLoad = false;
-      if (SPEC) updatePaceReadout(state); // adopt the pace the server is keeping
+      if (SPEC) updatePaceControl(state); // adopt the pace the server is keeping
       scheduleSpec(state);
       reportSpecStatus();
     }
@@ -3935,17 +3961,12 @@ async function specPoll() {
 (function pollSpec() {
   specPoll().finally(() => setTimeout(pollSpec, specPace() === 0 ? 300 : 100));
 })();
-// Watch pace is a whole-turn budget: "1s / turn" means every seat has moved
-// one second later, whatever the player count. Lightning is zero — the server
-// takes no wait at all — so its cost is measured, not chosen, and the option
-// carries the machine's own estimate.
-// That estimate is reported below the picker rather than inside it. Writing it
-// into the option made the control unpickable — see updatePaceReadout.
-// A pick also has to outlive the server that received it. Every game is a new
-// process starting at the default second per turn, and the exhibition cycles
-// games all day, so a viewer who chose Lightning was quietly returned to Blitz
-// at the next world. A chosen pace is remembered and handed to whatever server
-// the page finds itself talking to.
+// Watch pace is a whole-turn budget. Lightning is zero, so the server takes no
+// wait at all. A pick also has to outlive the server that received it. Every
+// game is a new process starting at the default second per turn, and the
+// exhibition cycles games all day. A viewer who chose Lightning was quietly
+// returned to Blitz at the next world. A chosen pace is remembered and handed
+// to whatever server the page finds itself talking to.
 const PACE_KEY = "civvis-watch-pace";
 let paceRealigned = false;
 let paceDisagreed = 0;
@@ -3975,17 +3996,11 @@ function restorePace() {
   paceChoice = ms;
   select.value = String(ms);
 }
-function formatTurnTime(ms) {
-  if (!(ms > 0)) return "—";
-  if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`;
-  if (ms >= 100) return `${(ms / 1000).toFixed(2)}s`;
-  return `${(ms / 1000).toFixed(3)}s`;
-}
 function specPace() {
   const select = document.getElementById("specspeed");
   return select ? +select.value : 1000;
 }
-function updatePaceReadout(st) {
+function updatePaceControl(st) {
   const select = document.getElementById("specspeed");
   if (!select) return;
   if (st && st.pace !== undefined) {
@@ -4006,23 +4021,6 @@ function updatePaceReadout(st) {
       else if (!paceRealigned) { paceRealigned = true; setPace({ms: specPace()}); }
     }
   }
-  // Lightning's cost is measured rather than chosen, and it used to be written
-  // into the option itself. Nothing may be written into the option: a browser
-  // dismisses its open dropdown when the options change, and a menu that shuts
-  // ten times a second cannot be picked from. Guarding on focus is not enough,
-  // because the native popup takes focus off the page while it is up. The
-  // estimate belongs on the note below, which is not part of the control.
-  const note = document.getElementById("specpacenote");
-  if (!note) return;
-  const estimate = st && st.turn_compute_ms;
-  const unlimited = estimate > 0 ? `Lightning ≈ ${formatTurnTime(estimate)} / turn` : "";
-  const actual = st && st.turn_ms;
-  const now = actual > 0
-    ? `Now ${formatTurnTime(actual)} per turn · ` +
-      `${1000 / actual >= 10 ? Math.round(1000 / actual) : (1000 / actual).toFixed(1)} turns/sec`
-    : "Measuring turn time…";
-  const text = unlimited && +select.value !== 0 ? `${now} · ${unlimited}` : now;
-  if (note.textContent !== text) note.textContent = text;
 }
 async function setPace(opts) {
   try {
@@ -4279,7 +4277,7 @@ function render(st, recordChronicle = true) {
     document.getElementById("specpause").textContent =
       specPaused ? "▶ Resume" : "⏸ Pause";
   }
-  if (SPEC) updatePaceReadout(st);
+  if (SPEC) updatePaceControl(st);
   const fullMapSpectator = SPEC && (st.view_player === null || st.view_player === undefined);
   document.getElementById("humanfooter").style.display = SPEC ? "none" : "grid";
   document.getElementById("specbar").style.display = SPEC ? "block" : "none";
@@ -4299,6 +4297,9 @@ function render(st, recordChronicle = true) {
       const checkbox = document.getElementById(`victory-${track.id}`);
       if (checkbox) checkbox.checked = st.victory_conditions?.[track.id] !== false;
     }
+    activeSimulationSettingsKey = simulationSettingsKey(selectedSimulationSettings());
+    applyQueuedSimulationSettings(st.next_game_settings);
+    updateRestartSimulationButton();
   }
   if (SPEC) sel = null;
   if (sel) sel = st.units.find(u => u.id === sel.id && u.owner === 0) || null;
@@ -9967,9 +9968,11 @@ function centerMainLandmass() {
 function centerOn(pos) { centerWorld(pos); }
 function updateDirectorButton() {
   const button = document.getElementById("specdirector");
-  button.classList.toggle("active", DIRECTOR);
-  button.textContent = DIRECTOR ? "◉" : "○";
-  button.title = DIRECTOR ? "Auto-focus camera on" : "Camera locked (click for auto-focus)";
+  if (button) {
+    button.classList.toggle("active", DIRECTOR);
+    button.textContent = DIRECTOR ? "◉" : "○";
+    button.title = DIRECTOR ? "Auto-focus camera on" : "Camera locked (click for auto-focus)";
+  }
   const cinemaButton = document.getElementById("cinema-director");
   cinemaButton.classList.toggle("director-on", DIRECTOR);
   cinemaButton.textContent = DIRECTOR ? "◉" : "○";
@@ -10585,12 +10588,10 @@ async function autoplay(turns) {
 document.getElementById("autoplaybtn").onclick = ev => autoplay(ev.shiftKey ? 10 : 1);
 document.getElementById("tradebtn").onclick = () => openTrade();
 document.getElementById("paneltoggle").onclick = () => togglePanel();
-document.getElementById("specdirector").onclick = () => setDirector(!DIRECTOR);
 document.getElementById("cinema-director").onclick = () => setDirector(!DIRECTOR);
 document.getElementById("cinema-audio").onclick = () => setCinemaAudio(!CINEMA_AUDIO);
 document.getElementById("cinema-fullscreen").onclick = toggleCinemaFullscreen;
 document.getElementById("cinema-exit").onclick = () => setCinemaMode(false);
-document.getElementById("speccinema").onclick = toggleCinemaMode;
 updateDirectorButton();
 updateCinemaAudioButton();
 document.getElementById("specpause").onclick = () => {
@@ -10599,13 +10600,6 @@ document.getElementById("specpause").onclick = () => {
     specPaused ? "▶ Resume" : "⏸ Pause";
   reportSpecStatus();
   setPace({paused: specPaused});
-};
-document.getElementById("specstep").onclick = () => {
-  if (!SPEC) return;
-  specPaused = true;
-  reportSpecStatus();
-  document.getElementById("specpause").textContent = "▶ Resume";
-  setPace({paused: true}).then(specStep);
 };
 document.getElementById("specspeed").onchange = () => {
   rememberPace(specPace()); // the pick outranks any state already in flight
@@ -10638,7 +10632,9 @@ document.getElementById("viewplayer").onchange = ev => {
   spectatePlayer(player);
 };
 let newSimulationBusy = false;
-function newSimulationPayload() {
+let activeSimulationSettingsKey = null;
+let settingsStageChain = Promise.resolve();
+function selectedSimulationSettings() {
   const np = +document.getElementById("np").value;
   const gameMode = document.getElementById("gamemode").value;
   const mapScript = document.getElementById("maptype").value;
@@ -10647,40 +10643,64 @@ function newSimulationPayload() {
     [track.id, document.getElementById(`victory-${track.id}`).checked]));
   return {num_players: np, map_script: mapScript, game_speed: gameSpeed,
           victory_conditions: victoryConditions,
-          seed: Math.floor(Math.random() * 1e9), force: true,
           spectate: gameMode === "ai_sim"};
 }
-function restoreDefaultSimulationSettings() {
+function simulationSettingsKey(settings) {
+  return JSON.stringify(settings);
+}
+function applyQueuedSimulationSettings(settings) {
+  if (!settings) return;
   document.getElementById("gamemode").value = "ai_sim";
-  document.getElementById("np").value = "4";
-  document.getElementById("maptype").value = "pangaea";
-  document.getElementById("gamespeed").value = "online";
+  document.getElementById("np").value = String(settings.players);
+  document.getElementById("maptype").value = settings.map;
+  document.getElementById("gamespeed").value = settings.speed;
+  const victories = new Set(settings.victories || []);
   for (const track of VICTORY_TRACKS)
-    document.getElementById(`victory-${track.id}`).checked = true;
+    document.getElementById(`victory-${track.id}`).checked = victories.has(track.id);
+}
+function updateRestartSimulationButton() {
+  const button = document.getElementById("restart-sim");
+  const changed = activeSimulationSettingsKey !== null &&
+    simulationSettingsKey(selectedSimulationSettings()) !== activeSimulationSettingsKey;
+  button.classList.toggle("primary", changed);
+  button.title = changed
+    ? "Restart with the selected settings"
+    : "Restart with the same settings";
+  button.querySelector(".sub").textContent = changed
+    ? "with selected settings"
+    : "same settings";
+}
+function stageSelectedSimulationSettings() {
+  const payload = selectedSimulationSettings();
+  updateRestartSimulationButton();
+  settingsStageChain = settingsStageChain.catch(() => {}).then(async () => {
+    const queued = await fetchJSON("/next-game-settings", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload)});
+    if (queued.error) throw new Error(queued.error);
+  });
+  settingsStageChain.catch(error => showNewSimulationError(error, "save settings"));
+}
+function newSimulationPayload() {
+  return {...selectedSimulationSettings(),
+          seed: Math.floor(Math.random() * 1e9), force: true};
 }
 function setNewSimulationBusy(busy) {
   newSimulationBusy = busy;
-  document.getElementById("default-settings").disabled = busy;
   document.getElementById("restart-sim").disabled = busy;
-  document.getElementById("fresh-sim").disabled = busy;
 }
-function showNewSimulationError(error) {
+function showNewSimulationError(error, action = "start simulation") {
   const errEl = document.getElementById("err");
-  errEl.textContent = `Could not start simulation: ${error.message || error}`;
+  errEl.textContent = `Could not ${action}: ${error.message || error}`;
   errEl.style.display = "block";
   setTimeout(() => errEl.style.display = "none", 4000);
 }
-async function startNewSimulation(mode, useDefaults = false) {
+async function startNewSimulation() {
   if (newSimulationBusy) return;
   const supervised = !!(state && state.supervised);
-  if (mode === "fresh_code" && !supervised) {
-    showNewSimulationError("fresh code requires the spectator supervisor");
-    return;
-  }
   const wasPaused = specPaused;
   setNewSimulationBusy(true);
   try {
-    if (useDefaults) restoreDefaultSimulationSettings();
     const payload = newSimulationPayload();
     sel = null; selCity = null;
     clearTimeout(specTimer);
@@ -10692,12 +10712,10 @@ async function startNewSimulation(mode, useDefaults = false) {
       reportSpecStatus();
       const requested = await fetchJSON("/supervisor-new", { method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({...payload, mode}) });
+        body: JSON.stringify({...payload, mode: "restart"}) });
       if (requested.error) throw new Error(requested.error);
       const respawn = document.getElementById("respawn");
-      if (respawn) respawn.textContent = mode === "fresh_code"
-        ? `getting most recent build · starting new sim · ${useDefaults ? "default" : "same"} settings`
-        : "restarting sim on existing code";
+      if (respawn) respawn.textContent = "restarting sim on existing code";
       waitForSupervisedSuccessor(finishedInstance, finishedSeed);
       return;
     }
@@ -10722,9 +10740,8 @@ async function startNewSimulation(mode, useDefaults = false) {
     showNewSimulationError(error);
   }
 }
-document.getElementById("restart-sim").onclick = () => startNewSimulation("restart");
-document.getElementById("fresh-sim").onclick = () => startNewSimulation("fresh_code");
-document.getElementById("default-settings").onclick = () => startNewSimulation("fresh_code", true);
+document.getElementById("restart-sim").onclick = startNewSimulation;
+document.getElementById("newgame-options").addEventListener("change", stageSelectedSimulationSettings);
 {
   const vs = document.getElementById("viewsel");
   vs.value = VIEW;

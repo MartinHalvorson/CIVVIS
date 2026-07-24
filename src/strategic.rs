@@ -229,7 +229,11 @@ impl StrategicAi {
         match target {
             VictoryTarget::Science => {
                 if player.science_projects.contains("exoplanet_expedition") {
-                    75 + (25.0 * player.exoplanet_distance / 50.0).clamp(0.0, 25.0) as i32
+                    // Match AdvancedAi's urgency model: the final launch is
+                    // an irreversible victory-clock commitment, so macro
+                    // search must interrupt immediately instead of spending
+                    // another review window on ordinary economic rollouts.
+                    78 + (22.0 * player.exoplanet_distance / 50.0).clamp(0.0, 22.0) as i32
                 } else if player.science_projects.contains("launch_mars_colony") {
                     65
                 } else if player.science_projects.contains("launch_moon_landing") {
@@ -306,7 +310,7 @@ impl StrategicAi {
     /// so it warns with two holdouts left and becomes unconditional at match
     /// point; continuous races use the same 78% / 15-point urgency margin as
     /// AdvancedAi's adaptive planner.
-    fn urgent_counter_target(&self, g: &Game, pid: usize) -> Option<VictoryTarget> {
+    fn urgent_counter(&self, g: &Game, pid: usize) -> Option<(usize, VictoryTarget)> {
         let own_progress = VictoryTarget::ALL
             .into_iter()
             .filter(|target| Self::target_enabled(g, *target))
@@ -330,7 +334,8 @@ impl StrategicAi {
                 }
             }
         }
-        let (progress, _, target) = threat?;
+        let (progress, inverted_rival, target) = threat?;
+        let rival = usize::MAX - inverted_rival;
         if target == VictoryTarget::Religion {
             let living = g
                 .players
@@ -346,7 +351,7 @@ impl StrategicAi {
             {
                 return None;
             }
-            return Some(if g.players[pid].religion.is_some() {
+            let counter = if g.players[pid].religion.is_some() {
                 VictoryTarget::Religion
             } else if Self::viable_religious_commitment(g, pid)
                 || Self::religious_option_open(g, pid)
@@ -354,19 +359,25 @@ impl StrategicAi {
                 VictoryTarget::Religion
             } else {
                 VictoryTarget::Domination
-            });
+            };
+            return Some((rival, counter));
         }
         if progress < 78 || progress < own_progress + 15 {
             return None;
         }
-        Some(match target {
+        let counter = match target {
             VictoryTarget::Culture => VictoryTarget::Culture,
             VictoryTarget::Diplomacy => VictoryTarget::Diplomacy,
             VictoryTarget::Science | VictoryTarget::Domination | VictoryTarget::Score => {
                 VictoryTarget::Domination
             }
             VictoryTarget::Religion => unreachable!(),
-        })
+        };
+        Some((rival, counter))
+    }
+
+    fn urgent_counter_target(&self, g: &Game, pid: usize) -> Option<VictoryTarget> {
+        self.urgent_counter(g, pid).map(|(_, target)| target)
     }
 
     /// Advance the exact branch policy used by the macro planner and retain
@@ -524,19 +535,30 @@ impl StrategicAi {
 impl Ai for StrategicAi {
     fn take_turn(&mut self, g: &mut Game, pid: usize) {
         let major = !g.players[pid].is_minor && !g.players[pid].is_barbarian;
-        let counter = major.then(|| self.urgent_counter_target(g, pid)).flatten();
-        let interrupted = counter.is_some_and(|target| self.inner.victory_target() != Some(target));
+        let counter = major.then(|| self.urgent_counter(g, pid)).flatten();
+        let interrupted = counter.as_ref().is_some_and(|(rival, target)| {
+            self.inner.victory_target() != Some(*target)
+                || self.inner.forced_target_player() != Some(*rival)
+        });
         if major && g.winner.is_none() && (g.turn >= self.next_review || interrupted) {
             self.next_review = g.turn + self.review_every;
             // Public victory threats are cheap to inspect every turn and may
             // end the game before the next expensive six-lane review. Reuse
             // the already-computed counter rather than running rollouts.
-            let target = counter.map(Some).unwrap_or_else(|| self.review(g, pid));
-            match target {
-                Some(target) if self.inner.victory_target() != Some(target) => {
-                    self.inner.retarget(target)
+            let target = counter
+                .map(|(_, target)| Some(target))
+                .unwrap_or_else(|| self.review(g, pid));
+            match (target, counter) {
+                (Some(target), Some((rival, _)))
+                    if self.inner.victory_target() != Some(target)
+                        || self.inner.forced_target_player() != Some(rival) =>
+                {
+                    self.inner.retarget_against(target, rival);
                 }
-                None if self.inner.victory_target().is_some() => self.inner.adapt(),
+                (Some(target), None) if self.inner.victory_target() != Some(target) => {
+                    self.inner.retarget(target);
+                }
+                (None, _) if self.inner.victory_target().is_some() => self.inner.adapt(),
                 _ => {}
             }
         }
@@ -766,9 +788,73 @@ mod tests {
         ]);
         game.players[2].exoplanet_distance = 42.0;
 
+        let mut strategic = StrategicAi::new();
+        assert_eq!(
+            strategic.urgent_counter(&game, 0),
+            Some((2, VictoryTarget::Domination))
+        );
+        strategic.next_review = game.turn + 100;
+        strategic.take_turn(&mut game, 0);
+        assert_eq!(strategic.current_target(), Some(VictoryTarget::Domination));
+        assert_eq!(
+            strategic.inner.current_plan().and_then(|plan| plan.target_player),
+            Some(2),
+            "an urgent counter-campaign must pursue the civilization about to win"
+        );
+    }
+
+    #[test]
+    fn urgent_denial_retargets_when_a_different_rival_takes_the_lead() {
+        let mut game = Game::new_full(3, 24, 16, 24, 300, 0, false);
+        found_capitals(&mut game, 3);
+        for rival in [1, 2] {
+            game.players[rival]
+                .science_projects
+                .insert("exoplanet_expedition".to_string());
+        }
+        game.players[1].exoplanet_distance = 40.0;
+        game.players[2].exoplanet_distance = 45.0;
+
+        let mut strategic = StrategicAi::new();
+        strategic.next_review = game.turn + 100;
+        strategic.take_turn(&mut game, 0);
+        assert_eq!(strategic.inner.forced_target_player(), Some(2));
+
+        // The counter-lane remains Domination, but player 1 is now closer to
+        // the science victory. Refreshing only on lane changes would leave
+        // the campaign pinned to player 2.
+        game.players[1].exoplanet_distance = 50.0;
+        assert_eq!(
+            strategic.urgent_counter(&game, 0),
+            Some((1, VictoryTarget::Domination))
+        );
+        game.current = 0;
+        strategic.take_turn(&mut game, 0);
+
+        assert_eq!(strategic.current_target(), Some(VictoryTarget::Domination));
+        assert_eq!(strategic.inner.forced_target_player(), Some(1));
+        assert_eq!(
+            strategic.inner.current_plan().and_then(|plan| plan.target_player),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn final_space_launch_interrupts_before_the_first_light_year() {
+        let mut game = Game::new_full(3, 24, 16, 23_001, 300, 0, false);
+        found_capitals(&mut game, 3);
+        game.players[2]
+            .science_projects
+            .insert("exoplanet_expedition".to_string());
+
+        assert_eq!(
+            StrategicAi::victory_progress(&game, 2, VictoryTarget::Science),
+            78
+        );
         assert_eq!(
             StrategicAi::new().urgent_counter_target(&game, 0),
-            Some(VictoryTarget::Domination)
+            Some(VictoryTarget::Domination),
+            "the macro planner must interrupt before its next expensive review"
         );
     }
 
