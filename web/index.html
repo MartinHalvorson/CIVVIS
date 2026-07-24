@@ -244,8 +244,6 @@
   .utility-panel[open] summary { border-bottom: 1px solid var(--line-soft); }
   .utility-body { padding: 12px 13px 13px; }
   .utility-group + .utility-group { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--line-soft); }
-  .observer-settings { margin-bottom: 14px; padding-bottom: 13px; border-bottom: 1px solid var(--line-soft); }
-  .observer-settings + .utility-group { margin-top: 0; padding-top: 0; border-top: 0; }
   .event-scope { overflow: hidden; color: var(--gold); font-size: 8px; letter-spacing: .04em; text-overflow: ellipsis; white-space: nowrap; text-transform: none; }
 
   button {
@@ -958,7 +956,6 @@
   #specdirector.active { color: var(--gold-bright); border-color: #b88f45; box-shadow: 0 0 16px #d7b66a24; }
   .speed-row, .view-row { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 10px; margin-top: 9px; }
   .speed-row span, .view-row span { color: var(--muted); font-size: 9px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
-  .speed-note { margin-top: 5px; color: var(--faint); font-size: 9px; font-variant-numeric: tabular-nums; }
   .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; color: var(--muted); font-size: 10px; cursor: pointer; }
   .setting-row span { display: flex; align-items: center; gap: 7px; }
   .setting-row kbd { margin: 0; }
@@ -1538,16 +1535,33 @@
       </summary>
       <div class="sec settings-sec" id="display-settings">
       <div class="utility-group">
-        <h2>Display</h2>
-        <select id="viewsel" aria-label="Map style">
-          <option value="cinematic">Cinematic · lit, graded, alive</option>
-          <option value="balanced">Balanced · painted terrain</option>
-          <option value="strategic">Strategic · flat and fast</option>
-        </select>
-        <label class="setting-row"><span><input type="checkbox" id="yieldchk"> Show yields per tile</span><kbd>Y</kbd></label>
-        <label class="setting-row"><span><input type="checkbox" id="artifactchk"> Show artifact sites &amp; shipwrecks</span></label>
+        <div class="view-row"><span>Display</span>
+          <select id="viewsel" aria-label="Map style">
+            <option value="cinematic">Cinematic · lit, graded, alive</option>
+            <option value="balanced">Balanced · painted terrain</option>
+            <option value="strategic">Strategic · flat and fast</option>
+          </select>
+        </div>
+        <div class="observer-settings" id="observer-settings">
+          <div class="view-row"><span>View as</span>
+            <select id="viewplayer" aria-label="Observation perspective">
+              <option value="spectator">Spectator · full map</option>
+            </select>
+          </div>
+          <div class="speed-row"><span>Watch pace</span>
+            <select id="specspeed" title="Simulation watch pace">
+              <option value="0">Lightning</option>
+              <option value="1000" selected>Blitz</option>
+              <option value="2000">Fast</option>
+              <option value="4000">Standard</option>
+              <option value="10000">Slow</option>
+            </select>
+          </div>
+          <label class="setting-row"><span><input type="checkbox" id="cinemachk" checked> Cinema presentation</span><kbd>C</kbd></label>
+        </div>
         <div class="overlay-options" role="group" aria-labelledby="overlay-options-title">
           <h2 id="overlay-options-title">Map overlays</h2>
+          <div class="small overlay-layout-help">Drag a ⋮ heading to move an overlay; drag its gold corner to resize. Your layout saves automatically.</div>
           <div class="overlay-option-grid">
             <label class="overlay-option"><input type="checkbox" data-overlay="players" checked>Player standings</label>
             <label class="overlay-option"><input type="checkbox" data-overlay="victory" checked>Victory race</label>
@@ -1557,28 +1571,10 @@
             <label class="overlay-option"><input type="checkbox" data-overlay="mode" checked>Map mode status</label>
             <label class="overlay-option"><input type="checkbox" data-overlay="tooltips" checked>Tile tooltips</label>
           </div>
-          <div class="small overlay-layout-help">Drag a ⋮ heading to move an overlay; drag its gold corner to resize. Your layout saves automatically.</div>
           <button class="ghost overlay-layout-reset" id="reset-overlay-layout" type="button">Reset overlay positions &amp; sizes</button>
         </div>
-      </div>
-      <div class="utility-group observer-settings" id="observer-settings">
-        <h2>Observation</h2>
-        <div class="view-row"><span>View as</span>
-          <select id="viewplayer" aria-label="Observation perspective">
-            <option value="spectator">Spectator · full map</option>
-          </select>
-        </div>
-        <div class="speed-row"><span>Watch pace</span>
-          <select id="specspeed" title="Wall-clock time for one full game turn">
-            <option value="0">Lightning · max speed</option>
-            <option value="1000" selected>Blitz · 1s / turn</option>
-            <option value="2000">Fast · 2s / turn</option>
-            <option value="4000">Standard · 4s / turn</option>
-            <option value="10000">Slow · 10s / turn</option>
-          </select>
-        </div>
-        <div class="speed-note" id="specpacenote">Measuring turn time…</div>
-        <label class="setting-row"><span><input type="checkbox" id="cinemachk" checked> Cinema presentation</span><kbd>C</kbd></label>
+        <label class="setting-row"><span><input type="checkbox" id="yieldchk"> Show yields per tile</span><kbd>Y</kbd></label>
+        <label class="setting-row"><span><input type="checkbox" id="artifactchk"> Show artifact sites &amp; shipwrecks</span></label>
       </div>
       <details class="utility-panel">
         <summary>Keyboard shortcuts</summary>
@@ -3260,7 +3256,7 @@ async function boot() {
     render(await fetchJSON("/state"));
     if (firstLoad) {
       firstLoad = false;
-      if (SPEC) updatePaceReadout(state); // adopt the pace the server is keeping
+      if (SPEC) updatePaceControl(state); // adopt the pace the server is keeping
       scheduleSpec(state);
       reportSpecStatus();
     }
@@ -3970,17 +3966,12 @@ async function specPoll() {
 (function pollSpec() {
   specPoll().finally(() => setTimeout(pollSpec, specPace() === 0 ? 300 : 100));
 })();
-// Watch pace is a whole-turn budget: "1s / turn" means every seat has moved
-// one second later, whatever the player count. Lightning is zero — the server
-// takes no wait at all — so its cost is measured, not chosen, and the option
-// carries the machine's own estimate.
-// That estimate is reported below the picker rather than inside it. Writing it
-// into the option made the control unpickable — see updatePaceReadout.
-// A pick also has to outlive the server that received it. Every game is a new
-// process starting at the default second per turn, and the exhibition cycles
-// games all day, so a viewer who chose Lightning was quietly returned to Blitz
-// at the next world. A chosen pace is remembered and handed to whatever server
-// the page finds itself talking to.
+// Watch pace is a whole-turn budget. Lightning is zero, so the server takes no
+// wait at all. A pick also has to outlive the server that received it. Every
+// game is a new process starting at the default second per turn, and the
+// exhibition cycles games all day. A viewer who chose Lightning was quietly
+// returned to Blitz at the next world. A chosen pace is remembered and handed
+// to whatever server the page finds itself talking to.
 const PACE_KEY = "civvis-watch-pace";
 let paceRealigned = false;
 let paceDisagreed = 0;
@@ -4010,17 +4001,11 @@ function restorePace() {
   paceChoice = ms;
   select.value = String(ms);
 }
-function formatTurnTime(ms) {
-  if (!(ms > 0)) return "—";
-  if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`;
-  if (ms >= 100) return `${(ms / 1000).toFixed(2)}s`;
-  return `${(ms / 1000).toFixed(3)}s`;
-}
 function specPace() {
   const select = document.getElementById("specspeed");
   return select ? +select.value : 1000;
 }
-function updatePaceReadout(st) {
+function updatePaceControl(st) {
   const select = document.getElementById("specspeed");
   if (!select) return;
   if (st && st.pace !== undefined) {
@@ -4041,23 +4026,6 @@ function updatePaceReadout(st) {
       else if (!paceRealigned) { paceRealigned = true; setPace({ms: specPace()}); }
     }
   }
-  // Lightning's cost is measured rather than chosen, and it used to be written
-  // into the option itself. Nothing may be written into the option: a browser
-  // dismisses its open dropdown when the options change, and a menu that shuts
-  // ten times a second cannot be picked from. Guarding on focus is not enough,
-  // because the native popup takes focus off the page while it is up. The
-  // estimate belongs on the note below, which is not part of the control.
-  const note = document.getElementById("specpacenote");
-  if (!note) return;
-  const estimate = st && st.turn_compute_ms;
-  const unlimited = estimate > 0 ? `Lightning ≈ ${formatTurnTime(estimate)} / turn` : "";
-  const actual = st && st.turn_ms;
-  const now = actual > 0
-    ? `Now ${formatTurnTime(actual)} per turn · ` +
-      `${1000 / actual >= 10 ? Math.round(1000 / actual) : (1000 / actual).toFixed(1)} turns/sec`
-    : "Measuring turn time…";
-  const text = unlimited && +select.value !== 0 ? `${now} · ${unlimited}` : now;
-  if (note.textContent !== text) note.textContent = text;
 }
 async function setPace(opts) {
   try {
@@ -4314,7 +4282,7 @@ function render(st, recordChronicle = true) {
     document.getElementById("specpause").textContent =
       specPaused ? "▶ Resume" : "⏸ Pause";
   }
-  if (SPEC) updatePaceReadout(st);
+  if (SPEC) updatePaceControl(st);
   const fullMapSpectator = SPEC && (st.view_player === null || st.view_player === undefined);
   document.getElementById("humanfooter").style.display = SPEC ? "none" : "grid";
   document.getElementById("specbar").style.display = SPEC ? "block" : "none";
