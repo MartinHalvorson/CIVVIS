@@ -1548,6 +1548,7 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
 }
 
 fn auto_step_loop(sh: Arc<Shared>) {
+    // TODO(lightning-frame): hand each completed turn to an active viewer.
     let mut over_since: Option<Instant> = None;
     let mut watched_turn: Option<u32> = None;
     let mut turn_mark = Instant::now();
