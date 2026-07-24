@@ -1041,6 +1041,25 @@ impl AdvancedAi {
         Some((rival, counter))
     }
 
+    /// Terminal clocks require action before an ordinary Formal War countdown
+    /// or a comfortable force ratio is available. Keep this predicate shared
+    /// between declaration timing and campaign readiness so either response
+    /// cannot silently become more permissive than the other.
+    fn urgent_victory_threat(&self, g: &Game, target: usize) -> bool {
+        let pressure = self.rival_victory_pressure(g, target);
+        let living_majors = g
+            .players
+            .iter()
+            .filter(|player| player.alive && !player.is_minor && !player.is_barbarian)
+            .count()
+            .max(1) as i32;
+        let religious_match_point = 100 * living_majors.saturating_sub(1) / living_majors;
+        pressure.progress >= 90
+            || (pressure.strategy == GrandStrategy::Science && pressure.progress >= 78)
+            || (pressure.strategy == GrandStrategy::Religion
+                && pressure.progress >= religious_match_point)
+    }
+
     fn assess(&self, g: &Game, pid: usize) -> StrategicPlan {
         let cities = g.player_city_ids(pid);
         let my_power = g.military_power(pid);
@@ -3314,13 +3333,11 @@ impl AdvancedAi {
             return surprise;
         }
 
-        let pressure = self.rival_victory_pressure(g, target);
-        // A final exoplanet launch is an irreversible victory clock. It
-        // already interrupts the strategic planner at 78%, so waiting five
-        // turns for a Formal War here would make its counter-campaign start
-        // too late even when the expedition has not yet traveled a light-year.
-        let urgent = pressure.progress >= 90
-            || (pressure.strategy == GrandStrategy::Science && pressure.progress >= 78);
+        // A final exoplanet launch and a religious match point are both
+        // irreversible victory clocks. They already interrupt strategic
+        // planning before 90%, so waiting five turns for a Formal War here
+        // would make the counter-campaign start after the game can end.
+        let urgent = self.urgent_victory_threat(g, target);
         let denounced = g.players[pid]
             .denounced_until
             .get(&target)
@@ -3659,7 +3676,14 @@ impl AdvancedAi {
                     .any(|cid| g.wdist(g.cities[cid].pos, target_city.pos) <= 18)
             });
         let committed_domination = self.victory_target == Some(VictoryTarget::Domination);
-        let ready = if committed_domination {
+        // An army that has reached the enemy border is the only practical
+        // answer to a rival's terminal clock.  Keep the normal power margin
+        // for elective wars, but do not discard a staged denial force merely
+        // because it is outnumbered: when the threat is already at the same
+        // threshold that authorizes a Surprise War, waiting for superiority
+        // guarantees that the rival gets the final uncontested turns.
+        let urgent_denial = self.urgent_victory_threat(g, target);
+        let ready = urgent_denial || if committed_domination {
             my_power >= target_power * 0.85 && my_power >= 30.0
         } else {
             my_power > target_power * 1.32 + 12.0
@@ -11304,6 +11328,40 @@ mod tests {
                 .is_some_and(|until| *until > game.turn),
             "the staged capture force should begin the formal-war countdown"
         );
+
+        // A terminal threat must use the already-staged force even when the
+        // rival's total military is too large for an elective war. Keep the
+        // reinforcements away from the objective so this isolates the global
+        // readiness gate from the local staging test above.
+        game.players[0].denounced_until.remove(&1);
+        game.players[1].science_projects.extend([
+            "launch_earth_satellite".to_string(),
+            "launch_moon_landing".to_string(),
+            "launch_mars_colony".to_string(),
+            "exoplanet_expedition".to_string(),
+        ]);
+        let rival_muster = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| {
+                game.wdist(*position, objective) >= 10 && game.city_at(*position).is_none()
+            })
+            .expect("test map has a remote rival muster position");
+        for _ in 0..12 {
+            game.spawn_test_unit("swordsman", 1, rival_muster);
+        }
+        assert!(
+            game.military_power(0) <= game.military_power(1) * 1.32 + 12.0,
+            "the usual elective-war margin must reject this outnumbered army"
+        );
+
+        ai.advanced_diplomacy(&mut game, 0, &plan);
+        assert!(
+            game.is_at_war(0, 1),
+            "a staged counterforce must immediately deny a terminal science threat"
+        );
     }
 
     #[test]
@@ -11338,6 +11396,34 @@ mod tests {
         assert_eq!(
             ai.preferred_war_opening(&emergency, 0, 1),
             Some(Action::DeclareWar { player: 1 })
+        );
+
+        let mut religious = Game::new_full(4, 24, 16, 714, 300, 0, false);
+        for pid in 0..4 {
+            religious.current = pid;
+            let settler = religious
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| religious.units[unit].kind == "settler")
+                .unwrap();
+            religious.apply(pid, &Action::FoundCity { unit: settler }).unwrap();
+        }
+        religious.current = 0;
+        religious.turn = 60;
+        religious.players[1].religion = Some("Runaway Faith".to_string());
+        for owner in [1, 2, 3] {
+            let city = religious.player_city_ids(owner)[0];
+            religious
+                .cities
+                .get_mut(&city)
+                .unwrap()
+                .pressure
+                .insert("Runaway Faith".to_string(), 1_000.0);
+        }
+        assert_eq!(
+            ai.preferred_war_opening(&religious, 0, 1),
+            Some(Action::DeclareWar { player: 1 }),
+            "a religious match point cannot spend five turns preparing a formal war"
         );
     }
 
