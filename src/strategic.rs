@@ -229,7 +229,11 @@ impl StrategicAi {
         match target {
             VictoryTarget::Science => {
                 if player.science_projects.contains("exoplanet_expedition") {
-                    75 + (25.0 * player.exoplanet_distance / 50.0).clamp(0.0, 25.0) as i32
+                    // Match AdvancedAi's urgency model: the final launch is
+                    // an irreversible victory-clock commitment, so macro
+                    // search must interrupt immediately instead of spending
+                    // another review window on ordinary economic rollouts.
+                    78 + (22.0 * player.exoplanet_distance / 50.0).clamp(0.0, 22.0) as i32
                 } else if player.science_projects.contains("launch_mars_colony") {
                     65
                 } else if player.science_projects.contains("launch_moon_landing") {
@@ -769,6 +773,25 @@ mod tests {
         assert_eq!(
             StrategicAi::new().urgent_counter_target(&game, 0),
             Some(VictoryTarget::Domination)
+        );
+    }
+
+    #[test]
+    fn final_space_launch_interrupts_before_the_first_light_year() {
+        let mut game = Game::new_full(3, 24, 16, 23_001, 300, 0, false);
+        found_capitals(&mut game, 3);
+        game.players[2]
+            .science_projects
+            .insert("exoplanet_expedition".to_string());
+
+        assert_eq!(
+            StrategicAi::victory_progress(&game, 2, VictoryTarget::Science),
+            78
+        );
+        assert_eq!(
+            StrategicAi::new().urgent_counter_target(&game, 0),
+            Some(VictoryTarget::Domination),
+            "the macro planner must interrupt before its next expensive review"
         );
     }
 
