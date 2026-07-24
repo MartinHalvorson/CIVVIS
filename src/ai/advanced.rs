@@ -863,7 +863,12 @@ impl AdvancedAi {
             .collect();
 
         let science = if player.science_projects.contains("exoplanet_expedition") {
-            75 + (25.0 * player.exoplanet_distance / 50.0).clamp(0.0, 25.0) as i32
+            // The final expedition is an irreversible endgame commitment.  A
+            // defender needs time to raise, route, and deploy a counterforce,
+            // so its launch itself must cross the generic denial threshold;
+            // waiting for the first six light-years discarded that reaction
+            // window while the rival was already on the victory clock.
+            78 + (22.0 * player.exoplanet_distance / 50.0).clamp(0.0, 22.0) as i32
         } else if player.science_projects.contains("launch_mars_colony") {
             65
         } else if player.science_projects.contains("launch_moon_landing") {
@@ -12005,6 +12010,39 @@ mod tests {
         let plan = ai.assess(&culture, 0);
         assert_eq!(plan.strategy, GrandStrategy::Culture);
         assert_eq!(plan.target_player, Some(1));
+    }
+
+    #[test]
+    fn science_denial_starts_when_the_final_expedition_launches() {
+        let mut game = Game::new_full(3, 36, 22, 76_120, 300, 0, false);
+        for pid in 0..3 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.current = pid;
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .unwrap();
+        }
+        game.current = 0;
+        game.turn = 190;
+        game.players[2]
+            .science_projects
+            .insert("exoplanet_expedition".to_string());
+
+        let ai = AdvancedAi::new();
+        let pressure = ai.rival_victory_pressure(&game, 2);
+        assert_eq!(pressure.strategy, GrandStrategy::Science);
+        assert_eq!(pressure.progress, 78);
+        assert_eq!(
+            ai.victory_denial(&game, 0),
+            Some((2, GrandStrategy::Conquest)),
+            "the final launch must leave the defender time to begin its counter-campaign"
+        );
+        let plan = ai.assess(&game, 0);
+        assert_eq!(plan.strategy, GrandStrategy::Conquest);
+        assert_eq!(plan.target_player, Some(2));
     }
 
     #[test]
