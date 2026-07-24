@@ -1,9 +1,11 @@
 # Strategy league (Glicko-2 ratings + selection)
 
-`civvis league` maintains a **persistent rated pool of high-level AI
-strategies** and improves it over time: strategies earn Glicko-2 ratings by
-playing multiplayer games, strong ones breed refined offspring, and
-confidently weak ones retire. It answers two questions the one-shot
+`civvis league` maintains a **persistent, distributed rated pool of high-level
+AI strategies** and improves it for as long as simulators keep running:
+strategies earn uncertainty-aware Glicko-2 ratings on mirrored games, strong
+ones breed refined offspring, and confidently weak ones retire. Multiple
+machines can safely contribute to the same league without a separate
+coordinator. It answers two questions the one-shot
 `tournament` command cannot: *how strong is each strategy, with an
 uncertainty bar, accumulated across runs* — and *what does an even stronger
 strategy look like*.
@@ -13,6 +15,42 @@ civvis league                      # play 10 rounds (resumes league/ if present)
 civvis league --rounds 50 --games 16 --players 4 --seed 1
 civvis league --standings          # print the table without playing
 ```
+
+Each invocation continues from the current checkpoint. More invocations, CPU
+cores, or machines mean more claimed games and therefore faster rating and
+selection—not independent leagues that must be reconciled later.
+
+## Continuous multi-machine workers
+
+Put the league directory on a shared filesystem with atomic exclusive file
+creation and rename (a local disk, NFS, or SMB share), then give every machine
+a stable worker name. The mount path may differ on each machine:
+
+```bash
+export CIVVIS_LEAGUE_DIR=/mnt/civvis/league
+export CIVVIS_WORKER_ID=render-01
+civvis league --rounds 100
+```
+
+Run the same command as `render-02`, `render-03`, and so on. `--dir` and
+`--worker` are equivalent one-shot overrides. All workers should use the same
+simulation/selection flags and league-work protocol/build; an incompatible
+binary refuses a pending manifest instead of contaminating its evidence. The
+first worker to reach a new round
+writes an immutable manifest containing the exact roster, genomes, settings,
+maps, seats, and job IDs. Workers then:
+
+1. atomically claim unplayed games, up to their local `--jobs` capacity;
+2. simulate without holding the league lock;
+3. publish immutable, validated result JSON under that job ID;
+4. let any worker atomically finalize the complete rating period and breed the
+   next generation.
+
+A killed worker cannot wedge the league: its leases are reclaimed after one
+hour by default (`--lease-seconds` changes this). A late duplicate is harmless
+because a job ID can publish only one result, and a completed round can update
+`league.json` only once. Do not use consumer cloud-sync folders whose clients
+do not provide shared-filesystem exclusive-create semantics.
 
 ## Entrants
 
@@ -38,11 +76,18 @@ record, birth round, status.
 
 ## Rating: Glicko-2, rounds as rating periods
 
-Each round schedules `--games` tables of `--players` by dealing shuffled
-passes over the active roster, so everyone plays a near-equal amount. A batch
-league game decomposes into pairwise results by placement: equal engine scores
-are draws, while a declared victory always outranks score. The whole round
-updates at once as one
+Each round deals shuffled passes over the active roster, so everyone plays a
+near-equal amount. Every matchup is a mirrored series on one identical map:
+the strategies rotate through every starting seat and civilization. This
+paired design removes much of the spawn, civ, and first-move variance. A
+requested `--games` count is rounded up to finish the final `--players`-game
+mirror series.
+
+A batch game decomposes into pairwise results by placement: equal engine
+scores are draws, while a declared victory always outranks score. Those
+correlated comparisons receive total weight one per player per game; a
+four-player finish no longer masquerades as three independent observations
+and make RD falsely precise. The whole round updates at once as one
 Glicko-2 rating period (start 1500, RD 350, vol 0.06, tau 0.5; the
 implementation reproduces the worked example in Glickman's paper — see
 `league::tests`). Glicko-2 rather than Elo because the roster churns:
@@ -105,7 +150,9 @@ not have entered it, and ageing them per game would pin the roster at
 maximum uncertainty within an afternoon. The roster is re-read from disk
 at the moment of recording and seats are matched by strategy *name*, so
 a game long enough to outlive a concurrent update writes its result on
-top rather than reverting it. Results also append to `matches.csv`,
+top rather than reverting it. A live exhibition is deliberately left unrated
+while a distributed manifest is pending, because injecting a one-game period
+would invalidate the in-flight roster snapshot. Results also append to `matches.csv`,
 `ratings.csv`, and `calibration.csv` beside `league.json`. The live-server API
 supplies a strict placement list, so only batch rounds can retain score ties.
 
@@ -169,9 +216,16 @@ hundreds of rounds even after every founder has been replaced.
   Brier score, and log loss.
 - `matches.csv` — every game: round, seed, end turn, victory type,
   placements.
+- `work/round-N/manifest.json` — immutable roster, settings, mirrored schedule,
+  and job IDs for one rating period.
+- `work/round-N/results/*.json` — immutable, validated match evidence. These
+  files make rating changes auditable and safely deduplicate late workers.
+- `work/round-N/finalized.json` — the period's commit summary, births, and
+  retirements. Temporary `claims/` entries disappear as games finish.
 
 Everything is deterministic for a given `--seed` and build, including
-across resumed invocations (round RNGs derive from `(seed, round)`).
+across resumed invocations and worker counts (round RNGs derive from
+`(seed, round)`, results are applied together, and selection runs once).
 
 ## Reading results honestly
 
