@@ -758,7 +758,9 @@ impl FrameDelivery {
         if self.delivered == Some(frame) {
             return None;
         }
-        VIEWER_ACTIVE.checked_sub(now.saturating_duration_since(self.last_request?))
+        VIEWER_ACTIVE
+            .checked_sub(now.saturating_duration_since(self.last_request?))
+            .filter(|remaining| !remaining.is_zero())
     }
 }
 
@@ -2146,6 +2148,10 @@ mod tests {
         assert!(delivery.wait_remaining(turn_8, now).is_some());
         assert!(delivery.wait_remaining(next_world, now).is_some());
 
+        assert_eq!(
+            delivery.wait_remaining(turn_8, now + Duration::from_millis(20) + VIEWER_ACTIVE),
+            None
+        );
         assert_eq!(
             delivery.wait_remaining(turn_8, now + VIEWER_ACTIVE + Duration::from_millis(21)),
             None
