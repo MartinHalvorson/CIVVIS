@@ -1157,30 +1157,32 @@ impl AdvancedAi {
         } else if wartime_rivals.is_empty() {
             forced_target.or_else(|| {
                 denial
-                .filter(|(rival, _)| self.campaign_target_legal(g, pid, *rival))
-                .map(|(rival, _)| rival)
-                .or_else(|| {
-                    let mut candidates: Vec<_> = major_rivals
-                        .iter()
-                        .copied()
-                        .filter(|rival| self.campaign_target_legal(g, pid, *rival))
-                        .collect();
-                    if strategy == GrandStrategy::Conquest {
-                        candidates.extend(
-                            g.players
-                                .iter()
-                                .filter(|player| player.is_minor)
-                                .filter(|player| self.campaign_target_legal(g, pid, player.id))
-                                .map(|player| player.id),
-                        );
-                    }
-                    candidates.into_iter().min_by(|a, b| {
-                        self.campaign_target_value(g, pid, *a)
-                            .partial_cmp(&self.campaign_target_value(g, pid, *b))
-                            .unwrap()
-                            .then(a.cmp(b))
+                    .filter(|(rival, _)| self.campaign_target_legal(g, pid, *rival))
+                    .map(|(rival, _)| rival)
+                    .or_else(|| {
+                        let mut candidates: Vec<_> = major_rivals
+                            .iter()
+                            .copied()
+                            .filter(|rival| self.campaign_target_legal(g, pid, *rival))
+                            .collect();
+                        if strategy == GrandStrategy::Conquest {
+                            candidates.extend(
+                                g.players
+                                    .iter()
+                                    .filter(|player| player.is_minor)
+                                    .filter(|player| {
+                                        self.campaign_target_legal(g, pid, player.id)
+                                    })
+                                    .map(|player| player.id),
+                            );
+                        }
+                        candidates.into_iter().min_by(|a, b| {
+                            self.campaign_target_value(g, pid, *a)
+                                .partial_cmp(&self.campaign_target_value(g, pid, *b))
+                                .unwrap()
+                                .then(a.cmp(b))
                         })
-                })
+                    })
             })
         } else {
             wartime_rivals.iter().copied().min_by(|a, b| {
