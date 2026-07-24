@@ -1311,10 +1311,7 @@
   body.overlay-players-hidden #playerhud,
   body.overlay-victory-hidden #victoryhud,
   body.overlay-minimap-hidden .minimap-frame,
-  body.overlay-controls-hidden #zoomctl,
-  body.overlay-actions-hidden #ubar,
-  body.overlay-mode-hidden #modeline,
-  body.overlay-tooltips-hidden #tip { display: none !important; }
+  body.overlay-controls-hidden #zoomctl { display: none !important; }
 
   @media (max-width: 720px) {
     #side { inset-block-start: 132px; }
@@ -1576,9 +1573,6 @@
             <label class="overlay-option"><input type="checkbox" data-overlay="victory" checked>Victory race</label>
             <label class="overlay-option"><input type="checkbox" data-overlay="minimap" checked>World minimap</label>
             <label class="overlay-option"><input type="checkbox" data-overlay="controls" checked>Map controls</label>
-            <label class="overlay-option"><input type="checkbox" data-overlay="actions" checked>Unit action bar</label>
-            <label class="overlay-option"><input type="checkbox" data-overlay="mode" checked>Map mode status</label>
-            <label class="overlay-option"><input type="checkbox" data-overlay="tooltips" checked>Tile tooltips</label>
           </div>
           <button class="ghost overlay-layout-reset" id="reset-overlay-layout" type="button">Reset overlay positions &amp; sizes</button>
         </div>
@@ -1929,7 +1923,7 @@ function setView(v) {
 let SHOW_YIELDS = localStorage.getItem("civvis-show-yields") === "1";
 let SHOW_ARTIFACT_SITES = localStorage.getItem("civvis-show-artifact-sites") === "1";
 const OVERLAY_STORAGE_KEY = "civvis-map-overlays-v1";
-const OVERLAY_NAMES = ["players", "victory", "minimap", "controls", "actions", "mode", "tooltips"];
+const OVERLAY_NAMES = ["players", "victory", "minimap", "controls"];
 let OVERLAY_VISIBILITY = Object.fromEntries(OVERLAY_NAMES.map(name => [name, true]));
 try {
   const savedOverlays = JSON.parse(localStorage.getItem(OVERLAY_STORAGE_KEY) || "{}");
