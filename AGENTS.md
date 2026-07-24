@@ -3,6 +3,24 @@
 These rules apply to every human and automated coding agent in this repository.
 Read [docs/VERSION_CONTROL.md](docs/VERSION_CONTROL.md) before changing files.
 
+## Operating mandate
+
+- Operate using your best judgment. Once a user authorizes a task, standing
+  approval covers the routine, safe, and reversible work needed to finish it:
+  investigation, implementation, validation, overlap coordination, PR metadata,
+  straightforward conflict resolution, CI repair or retry, and shipping.
+- Do not pause for confirmation merely because a generic workflow recommends
+  approval. When the user's intent is clear and the action stays within task
+  scope, make the best supported decision, verify it, and continue.
+- Favor prompt integration. As soon as the change is sound, the branch is
+  current, validations are accurate, and required checks are green, run `ship`
+  and stay with it through merge. Fix routine CI or policy failures and retry
+  without waiting for the user.
+- Best judgment does not override genuine stop conditions: destructive or
+  difficult-to-recover actions, new credentials or permissions, a material
+  expansion beyond the requested outcome, an unresolved product choice, or a
+  semantic conflict whose intended resolution is unclear.
+
 After cloning on every computer, install the repository guard once:
 
 ```bash
