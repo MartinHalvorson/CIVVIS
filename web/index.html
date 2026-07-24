@@ -284,7 +284,7 @@
   .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 3px 0; }
   .chip { display: inline-block; width: 8px; height: 8px; margin-right: 7px; border-radius: 50%; box-shadow: 0 0 0 3px #ffffff09; }
 
-  /* Unified player HUD: turn, victory race, and every civilization now share
+  /* Unified player HUD: turn, victory tracker, and every civilization now share
      one top-edge instrument instead of competing floating panels. Each of the
      two information rails scrolls in place on a narrow map, keeping the bar a
      constant height and the world visible. */
@@ -308,7 +308,6 @@
     font-size: 8px; font-weight: 900; letter-spacing: .15em; line-height: 1;
     text-transform: uppercase; white-space: nowrap;
   }
-  .hud-section-heading .hud-heading-context { overflow: hidden; color: #71857e; letter-spacing: .08em; text-overflow: ellipsis; }
   .hud-rail {
     min-width: 0; min-height: 0; flex: 1; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain;
     scrollbar-color: #476057 transparent; scrollbar-width: thin;
@@ -318,27 +317,32 @@
   .hud-rail:focus-visible { outline: 1px solid #d7b66a70; outline-offset: -1px; border-radius: 6px; }
   .victory-turn, .victory-track { min-width: 0; border-radius: 8px; }
   .victory-turn {
-    display: flex; flex-direction: column; justify-content: center; padding: 6px 8px;
-    color: var(--gold-bright); background: linear-gradient(155deg, #d7b66a19, #d7b66a08);
-    border: 1px solid #d7b66a30;
+    display: grid; grid-template-rows: auto 1fr auto; align-items: center;
+    padding: 6px 8px 7px; overflow: hidden; color: var(--gold-bright);
+    background: linear-gradient(155deg, #d7b66a1c, #d7b66a08);
+    border: 1px solid #d7b66a30; text-align: center;
   }
-  .victory-turn .turn-line > span, .victory-heading {
-    color: #b9c8c2; font-size: 9px; font-weight: 900; letter-spacing: .1em; line-height: 1; text-transform: uppercase;
+  .turn-label, .victory-heading {
+    color: #aebeb7; font-size: 9px; font-weight: 900; letter-spacing: .14em;
+    line-height: 1; text-transform: uppercase;
   }
-  .turn-line { display: flex; align-items: baseline; gap: 5px; }
-  .victory-turn strong { font-size: 19px; line-height: 1; font-variant-numeric: tabular-nums; }
+  .turn-label { font-size: 10px; }
+  .turn-count {
+    min-width: 0; display: grid; place-content: center; gap: 2px; margin: 2px 0;
+  }
+  .victory-turn strong {
+    color: #f4d892; font: 700 31px/.9 "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    font-variant-numeric: tabular-nums; text-shadow: 0 2px 10px #0009;
+  }
   .victory-turn .turn-total {
-    margin-left: -3px; color: #9aaba5; font-size: 10px; font-variant-numeric: tabular-nums;
+    color: #8fa29a; font-size: 10px; font-weight: 800; font-variant-numeric: tabular-nums;
+    line-height: 1; white-space: nowrap;
   }
-  .victory-turn i {
-    display: block; margin-top: 4px; overflow: hidden; color: #9aaba5;
-    font-size: 9px; font-style: normal; line-height: 1.25;
+  .turn-era {
+    padding-top: 5px; color: #d4ddd9; border-top: 1px solid #d7b66a1c;
+    font-size: 10px; font-weight: 800; letter-spacing: .015em; line-height: 1;
+    white-space: nowrap;
   }
-  .victory-turn i em, .victory-turn i small {
-    display: block; overflow: hidden; color: inherit; font: inherit;
-    text-overflow: ellipsis; white-space: nowrap;
-  }
-  .victory-turn i small { color: #71857e; font-size: 8px; }
   .victory-meter { overflow: hidden; background: #020706b3; box-shadow: inset 0 1px 2px #000b; }
   .victory-meter b { display: block; height: 100%; border-radius: inherit; background: currentColor; }
   /* Two of the races are really two races at once — the technology tree and
@@ -368,22 +372,19 @@
     align-items: stretch; gap: 2px;
   }
   .victory-track {
-    container-type: inline-size; min-height: 76px; padding: 5px 5px 4px;
+    container-type: inline-size; min-height: 88px; padding: 5px 5px 4px;
     color: var(--track); background: #ffffff03; border-left: 1px solid #ffffff0b;
   }
   .victory-track:first-child { border-left-color: transparent; }
-  .victory-heading { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; color: var(--track); }
+  .victory-heading { display: flex; align-items: center; gap: 4px; margin-bottom: 2px; color: var(--track); }
   .victory-heading b { overflow: hidden; color: #dde5e1; font-size: 9px; letter-spacing: .03em; text-overflow: ellipsis; white-space: nowrap; }
-  /* Score is decided at the turn limit, so the limit belongs in its heading. */
-  .victory-heading em {
-    margin-left: auto; color: #9aaba5; font-size: 9px; font-style: normal;
-    font-variant-numeric: tabular-nums; letter-spacing: 0; white-space: nowrap;
+  .victory-subheading {
+    min-height: 9px; display: grid; grid-template-columns: 30px 42px; justify-content: end; gap: 6px;
+    margin: 0 0 3px 9px; color: #80938b; font-size: 6.5px; font-weight: 900;
+    letter-spacing: .04em; line-height: 1; text-transform: uppercase; white-space: nowrap;
   }
-  /* In a narrow window the tracks are barely wider than their own headings,
-     and the word and the count together left "S. 31/500". The crown and the
-     last place in the ribbon name this track well enough on their own, so
-     below that width the count keeps the room and the word steps out. */
-  @container (max-width: 96px) { .victory-heading.with-cap b { display: none; } }
+  .victory-subheading span { text-align: right; }
+  .victory-subheading.score { display: block; margin-left: 0; text-align: center; }
   .victory-list { display: flex; flex-direction: column; gap: 3px; }
   .victory-entry { min-width: 0; }
   .victory-entry[hidden] { display: none; }
@@ -393,11 +394,12 @@
   .victory-line { display: grid; grid-template-columns: 6px minmax(0, 1fr) auto; align-items: center; gap: 3px; min-width: 0; height: 13px; }
   .victory-civ-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--civ); box-shadow: 0 0 5px color-mix(in srgb, var(--civ) 70%, transparent); }
   .victory-civ { overflow: hidden; color: #e6ede9; font-size: 10px; font-weight: 750; line-height: 1; text-overflow: ellipsis; white-space: nowrap; }
-  .victory-value { color: #c2d0ca; font-size: 10px; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .victory-value small {
-    margin-right: 1px; color: #81948c; font-size: 6.5px; font-weight: 900;
-    letter-spacing: .04em; text-transform: uppercase;
+  .victory-value {
+    min-width: 0; display: grid; grid-template-columns: 30px 42px; justify-content: end;
+    gap: 6px; color: #c2d0ca; font-size: 9px; line-height: 1; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap;
   }
+  .victory-value.single { display: block; font-size: 10px; }
   .victory-meter { height: 3px; margin: 0 0 0 9px; border-radius: 3px; }
   .diplomacy-ribbon { min-width: max-content; display: flex; align-items: stretch; gap: 4px; padding-bottom: 1px; }
   .diplomacy-card {
@@ -835,7 +837,17 @@
     display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 6px; border-radius: 12px;
     background: #091310e6; border: 1px solid #40584f; box-shadow: 0 14px 35px #0008;
   }
-  .minimap-label { display: flex; justify-content: space-between; padding: 1px 3px 5px; color: var(--muted); font-size: 8px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+  .minimap-label {
+    position: relative; display: flex; justify-content: center; padding: 1px 3px 5px;
+    color: #b9c8c2; font-size: 10px; font-weight: 900; letter-spacing: .15em;
+    text-transform: uppercase;
+  }
+  .minimap-label.widget-drag-handle::before { position: absolute; left: 3px; }
+  .minimap-hint {
+    position: absolute; z-index: 1; right: 10px; bottom: 9px; padding: 2px 4px;
+    color: #9aac9f; background: #07110fb8; border-radius: 4px; pointer-events: none;
+    font-size: 7px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase;
+  }
   #mini { width: 100%; height: 100%; min-height: 0; flex: 1; border-radius: 7px; background: #07110f; cursor: pointer; }
   #err {
     position: absolute; z-index: 20; left: 50%; bottom: 85px; transform: translateX(-50%);
@@ -1146,9 +1158,7 @@
   }
   @media (max-width: 620px) {
     #playerhud { grid-template-columns: 86px minmax(0, .78fr) minmax(0, 1.22fr); gap: 3px; }
-    .hud-section-heading span:last-child { display: none; }
     .victory-turn { padding-inline: 6px; }
-    .victory-turn i { font-size: 8px; }
     body.cinema-mode #cinema-frame .cinema-frame-brand span,
     body.cinema-mode #cinema-frame .cinema-frame-era span,
     body.cinema-mode #cinema-frame .cinema-frame-shot span { display: none; }
@@ -1184,31 +1194,26 @@
     backdrop-filter: blur(16px) saturate(130%);
   }
   .ribbon-heading {
-    min-height: 13px; display: grid;
-    grid-template-columns: var(--hud-medallion-column) var(--hud-identity-column) minmax(0, 1fr);
-    align-items: center; gap: var(--hud-column-gap); padding: 0 4px 0 3px;
-    overflow: hidden; color: #bdcbc5;
-    font-size: 7px; font-weight: 900; letter-spacing: .15em; line-height: 1;
+    position: relative; min-height: 17px; display: flex; align-items: center;
+    justify-content: center; padding: 0 4px; overflow: hidden; color: #c7d3ce;
+    font-size: 10px; font-weight: 900; letter-spacing: .15em; line-height: 1;
     text-transform: uppercase; white-space: nowrap; text-shadow: 0 2px 5px #000;
   }
-  .ribbon-heading-copy {
-    min-width: 0; display: flex; grid-column: 1 / 3; align-items: center; gap: 7px;
-    overflow: hidden;
-  }
-  .ribbon-heading-copy .widget-drag-handle { flex: 0 1 auto; }
-  .ribbon-heading .ribbon-heading-context {
-    overflow: hidden; color: #71857e; letter-spacing: .07em; text-overflow: ellipsis;
+  .ribbon-heading.widget-drag-handle::before { position: absolute; left: 4px; }
+  .ribbon-stat-heading {
+    min-height: 9px; display: grid;
+    grid-template-columns: var(--hud-medallion-column) var(--hud-identity-column) minmax(0, 1fr);
+    align-items: stretch; gap: var(--hud-column-gap); padding: 0 4px 0 3px;
   }
   .diplomacy-stat-head {
     min-width: 0; display: grid; grid-column: 3;
-    grid-template-columns: repeat(10, minmax(0, 1fr)); align-self: stretch;
+    grid-template-columns: repeat(10, minmax(0, 1fr));
     color: #a9bbb4; font-size: 6px; font-weight: 950; letter-spacing: .015em;
   }
   .diplomacy-stat-head span {
     min-width: 0; display: grid; place-items: center; overflow: hidden;
     border-left: 1px solid #ffffff10; text-overflow: clip;
   }
-  .ribbon-heading .widget-reset { margin-left: auto; }
   #playerhud .diplomacy-ribbon {
     flex: 1; min-width: 0; min-height: 0; display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -1258,18 +1263,26 @@
   #victoryhud {
     position: absolute; z-index: 7; top: 10px; left: 12px;
     right: min(calc(var(--player-hud-width, 540px) + 20px), calc(56% + 20px));
-    height: 112px; display: grid; grid-template-columns: 88px minmax(0, 1fr);
+    height: 132px; display: grid; grid-template-columns: 104px minmax(0, 1fr);
+    grid-template-rows: 18px minmax(0, 1fr);
     align-items: stretch; gap: 5px; min-width: 0; max-width: 1000px; padding: 5px;
     overflow: hidden; border: 1px solid #526a618f; border-radius: 12px;
     background: linear-gradient(105deg, #091411ed, #0d1a17e6 54%, #0a1512ed);
     box-shadow: 0 14px 38px #000a, inset 0 1px #ffffff0a;
     backdrop-filter: blur(16px) saturate(130%); pointer-events: auto;
   }
+  #victoryhud > .hud-section-heading {
+    position: relative; grid-column: 2; grid-row: 1; min-height: 18px;
+    justify-content: center; margin: 0 3px; color: #c7d3ce; font-size: 10px;
+  }
+  #victoryhud > .hud-section-heading.widget-drag-handle::before { position: absolute; left: 3px; }
+  #victoryhud > .victory-turn { grid-column: 1; grid-row: 1 / -1; }
+  #victoryhud > .victory-region { grid-column: 2; grid-row: 2; min-height: 0; }
 
   body.cinema-mode #playerhud { display: none !important; }
   body.cinema-mode #victoryhud {
     top: clamp(37px, 4.6vh, 54px); left: 50%; right: auto;
-    width: min(960px, calc(100% - 168px)); height: 82px;
+    width: min(960px, calc(100% - 168px)); height: 112px;
     grid-template-columns: 86px minmax(0, 1fr); transform: translateX(-50%);
     border-color: #d8bd7948; border-radius: 3px 3px 14px 14px;
     background:
@@ -1296,46 +1309,47 @@
   .overlay-layout-reset { width: 100%; margin: 9px 0 0; }
 
   /* The three map overlays are work surfaces, not fixed decoration. Their
-     compact grips leave the useful controls alone while making mouse, pen,
-     touch, and keyboard placement explicit. The corner handle is authored
-     instead of relying on CSS resize so it works on touch screens and so both
-     position and size can be restored on the next visit. */
+     complete title bars move them, while the edges and corners resize them as
+     ordinary windows do. Authored handles keep that behavior available to
+     mouse, pen, touch, and keyboard input and let us persist both dimensions. */
   .widget-drag-handle {
-    min-width: 0; display: inline-flex; align-items: center; gap: 4px; overflow: hidden;
+    min-width: 0; display: flex; align-items: center; gap: 4px; overflow: hidden;
     color: inherit; cursor: grab; touch-action: none; user-select: none;
   }
+  .hud-section-heading.widget-drag-handle,
+  .ribbon-heading.widget-drag-handle,
+  .minimap-label.widget-drag-handle { width: 100%; }
   .widget-drag-handle:active { cursor: grabbing; }
   .widget-drag-handle::before {
     content: "\22ee"; flex: 0 0 auto; color: #d7b66aa6; font-size: 11px;
     letter-spacing: 0; line-height: .7;
   }
-  .widget-drag-handle:focus-visible, .widget-resize-handle:focus-visible,
-  .widget-reset:focus-visible { outline: 1px solid var(--gold); outline-offset: 1px; }
-  .widget-reset {
-    width: 17px; height: 17px; flex: 0 0 17px; display: grid; place-items: center;
-    margin: 0; padding: 0; border: 0; border-radius: 5px; color: #8fa39b;
-    background: transparent; box-shadow: none; font-size: 11px; line-height: 1;
+  .widget-drag-handle:focus-visible, .widget-resize-handle:focus-visible {
+    outline: 1px solid var(--gold); outline-offset: -1px;
   }
-  .widget-reset:hover { color: var(--gold-bright); background: #ffffff0b; transform: none; box-shadow: none; }
   .widget-resize-handle {
-    position: absolute; z-index: 5; right: 1px; bottom: 1px; width: 19px; height: 19px;
-    margin: 0; padding: 0; border: 0; border-radius: 0 0 9px 0; cursor: nwse-resize;
-    touch-action: none; background:
-      linear-gradient(135deg, transparent 0 48%, #d7b66a00 48% 56%, #d7b66a99 57% 62%, transparent 63% 70%, #d7b66a66 71% 76%, transparent 77%);
-    box-shadow: none; opacity: .72;
+    position: absolute; z-index: 5; margin: 0; padding: 0; border: 0;
+    border-radius: 0; touch-action: none; background: transparent;
+    box-shadow: none; opacity: 0;
   }
   .widget-resize-handle:hover { transform: none; box-shadow: none; opacity: 1; }
+  .widget-resize-handle[data-widget-resize="n"] { top: -1px; left: 12px; right: 12px; height: 8px; cursor: ns-resize; }
+  .widget-resize-handle[data-widget-resize="s"] { bottom: -1px; left: 12px; right: 12px; height: 8px; cursor: ns-resize; }
+  .widget-resize-handle[data-widget-resize="e"] { top: 12px; right: -1px; bottom: 12px; width: 8px; cursor: ew-resize; }
+  .widget-resize-handle[data-widget-resize="w"] { top: 12px; bottom: 12px; left: -1px; width: 8px; cursor: ew-resize; }
+  .widget-resize-handle[data-widget-resize="ne"] { z-index: 6; top: -1px; right: -1px; width: 14px; height: 14px; cursor: nesw-resize; }
+  .widget-resize-handle[data-widget-resize="nw"] { z-index: 6; top: -1px; left: -1px; width: 14px; height: 14px; cursor: nwse-resize; }
+  .widget-resize-handle[data-widget-resize="se"] { z-index: 6; right: -1px; bottom: -1px; width: 14px; height: 14px; cursor: nwse-resize; }
+  .widget-resize-handle[data-widget-resize="sw"] { z-index: 6; bottom: -1px; left: -1px; width: 14px; height: 14px; cursor: nesw-resize; }
   .layout-widget-active { z-index: 17 !important; }
-  body.hud-layout-active { cursor: grabbing; user-select: none; }
-  body.hud-layout-active.layout-resizing { cursor: nwse-resize; }
+  body.hud-layout-active, body.hud-layout-active * { cursor: grabbing !important; user-select: none; }
+  body.hud-layout-active.layout-resizing,
+  body.hud-layout-active.layout-resizing * { cursor: var(--layout-resize-cursor, nwse-resize) !important; }
 
   body.overlay-players-hidden #playerhud,
   body.overlay-victory-hidden #victoryhud,
   body.overlay-minimap-hidden .minimap-frame,
-  body.overlay-controls-hidden #zoomctl,
-  body.overlay-actions-hidden #ubar,
-  body.overlay-mode-hidden #modeline,
-  body.overlay-tooltips-hidden #tip { display: none !important; }
+  body.overlay-controls-hidden #zoomctl { display: none !important; }
 
   @media (max-width: 720px) {
     #side { inset-block-start: 132px; }
@@ -1350,8 +1364,8 @@
     }
     #victoryhud {
       top: calc(min(var(--player-hud-height, 200px), calc(33.333vh - 12px)) + 14px);
-      left: 8px; right: 8px; width: auto; height: 104px;
-      grid-template-columns: 78px minmax(0, 1fr); padding: 4px;
+      left: 8px; right: 8px; width: auto; height: 132px;
+      grid-template-columns: 100px minmax(0, 1fr); padding: 4px;
     }
     body.cinema-mode #victoryhud {
       top: 36px; left: 16px; right: auto; width: calc(100% - 32px);
@@ -1402,8 +1416,8 @@
     <button id="cinema-fullscreen" title="Enter fullscreen" aria-label="Enter fullscreen">⛶</button>
     <button id="cinema-exit" title="Exit cinema mode (C)" aria-label="Exit cinema mode">✕</button>
   </div>
-  <aside id="victoryhud" data-layout-widget="victory" aria-label="Turn and victory race"></aside>
-  <aside id="playerhud" data-layout-widget="players" aria-label="Player standings"></aside>
+  <aside id="victoryhud" data-layout-widget="victory" aria-label="Turn and victory tracker"></aside>
+  <aside id="playerhud" data-layout-widget="players" aria-label="Player stats"></aside>
   <div id="zoomctl">
     <button id="paneltoggle" class="icon" title="Toggle command deck" aria-label="Toggle command deck">☰</button>
     <button id="zin" title="Zoom in" aria-label="Zoom in">＋</button>
@@ -1414,9 +1428,9 @@
   <div id="err"></div>
   <div id="winner" role="status" aria-live="assertive"></div>
   <div class="minimap-frame" data-layout-widget="minimap">
-    <div class="minimap-label"><span class="widget-drag-handle" data-widget-drag tabindex="0" role="button" aria-label="Move world map; use arrow keys or drag" title="Drag to move · arrow keys also move">World map</span><span>click to travel</span><button class="widget-reset" data-widget-reset type="button" aria-label="Reset world map position and size" title="Reset position and size">↺</button></div>
+    <div class="minimap-label widget-drag-handle" data-widget-drag tabindex="0" role="button" aria-label="Move world map; use arrow keys or drag" title="Drag to move · arrow keys also move"><span>World map</span></div>
     <canvas id="mini" width="200" height="140"></canvas>
-    <button class="widget-resize-handle" data-widget-resize type="button" aria-label="Resize world map; use arrow keys or drag" title="Drag to resize · arrow keys also resize"></button>
+    <span class="minimap-hint">Click to travel</span>
   </div>
   <div id="pedia" role="dialog" aria-modal="true" aria-labelledby="pediatitle">
     <div id="pediahead">
@@ -1593,15 +1607,12 @@
         </div>
         <div class="overlay-options" role="group" aria-labelledby="overlay-options-title">
           <h2 id="overlay-options-title">Map overlays</h2>
-          <div class="small overlay-layout-help">Drag a ⋮ heading to move an overlay; drag its gold corner to resize. Your layout saves automatically.</div>
+          <div class="small overlay-layout-help">Drag a title bar to move an overlay; drag any edge or corner to resize. Your layout saves automatically.</div>
           <div class="overlay-option-grid">
             <label class="overlay-option"><input type="checkbox" data-overlay="players" checked>Player standings</label>
-            <label class="overlay-option"><input type="checkbox" data-overlay="victory" checked>Victory race</label>
+            <label class="overlay-option"><input type="checkbox" data-overlay="victory" checked>Victory tracker</label>
             <label class="overlay-option"><input type="checkbox" data-overlay="minimap" checked>World minimap</label>
             <label class="overlay-option"><input type="checkbox" data-overlay="controls" checked>Map controls</label>
-            <label class="overlay-option"><input type="checkbox" data-overlay="actions" checked>Unit action bar</label>
-            <label class="overlay-option"><input type="checkbox" data-overlay="mode" checked>Map mode status</label>
-            <label class="overlay-option"><input type="checkbox" data-overlay="tooltips" checked>Tile tooltips</label>
           </div>
           <button class="ghost overlay-layout-reset" id="reset-overlay-layout" type="button">Reset overlay positions &amp; sizes</button>
         </div>
@@ -1952,7 +1963,7 @@ function setView(v) {
 let SHOW_YIELDS = localStorage.getItem("civvis-show-yields") === "1";
 let SHOW_ARTIFACT_SITES = localStorage.getItem("civvis-show-artifact-sites") === "1";
 const OVERLAY_STORAGE_KEY = "civvis-map-overlays-v1";
-const OVERLAY_NAMES = ["players", "victory", "minimap", "controls", "actions", "mode", "tooltips"];
+const OVERLAY_NAMES = ["players", "victory", "minimap", "controls"];
 let OVERLAY_VISIBILITY = Object.fromEntries(OVERLAY_NAMES.map(name => [name, true]));
 try {
   const savedOverlays = JSON.parse(localStorage.getItem(OVERLAY_STORAGE_KEY) || "{}");
@@ -2798,6 +2809,21 @@ const HUD_WIDGETS = {
   victory: {element:document.getElementById("victoryhud"), minWidth:150, minHeight:88},
   minimap: {element:document.querySelector(".minimap-frame"), minWidth:130, minHeight:96},
 };
+const HUD_RESIZE_EDGES = [
+  ["n", "top edge"], ["e", "right edge"], ["s", "bottom edge"], ["w", "left edge"],
+  ["ne", "top-right corner"], ["se", "bottom-right corner"],
+  ["sw", "bottom-left corner"], ["nw", "top-left corner"],
+];
+
+function hudResizeHandles(label) {
+  return HUD_RESIZE_EDGES.map(([edge, description]) =>
+    `<button class="widget-resize-handle" data-widget-resize="${edge}" type="button" ` +
+    `aria-label="Resize ${label} from the ${description}; use arrow keys or drag" ` +
+    `title="Drag the ${description} to resize · arrow keys also resize"></button>`
+  ).join("");
+}
+
+HUD_WIDGETS.minimap.element?.insertAdjacentHTML("beforeend", hudResizeHandles("world map"));
 let HUD_LAYOUT = {};
 let hudLayoutGesture = null;
 let miniLayoutFrame = 0;
@@ -2918,7 +2944,20 @@ function resetAllHudWidgets() {
   saveHudLayout();
 }
 
-function beginHudLayoutGesture(event, name, mode) {
+function resizeHudWidget(config, start, edge, dx, dy) {
+  const margin = 4;
+  const minWidth = Math.min(config.minWidth, Math.max(1, area.clientWidth - margin * 2));
+  const minHeight = Math.min(config.minHeight, Math.max(1, area.clientHeight - margin * 2));
+  let left = start.x, right = start.x + start.width;
+  let top = start.y, bottom = start.y + start.height;
+  if (edge.includes("w")) left = Math.max(margin, Math.min(right - minWidth, left + dx));
+  if (edge.includes("e")) right = Math.min(area.clientWidth - margin, Math.max(left + minWidth, right + dx));
+  if (edge.includes("n")) top = Math.max(margin, Math.min(bottom - minHeight, top + dy));
+  if (edge.includes("s")) bottom = Math.min(area.clientHeight - margin, Math.max(top + minHeight, bottom + dy));
+  return {x:left, y:top, width:right - left, height:bottom - top};
+}
+
+function beginHudLayoutGesture(event, name, mode, edge = "") {
   if (event.button !== 0 && event.pointerType !== "touch") return;
   const config = HUD_WIDGETS[name];
   if (!config?.element) return;
@@ -2926,13 +2965,15 @@ function beginHudLayoutGesture(event, name, mode) {
   event.stopPropagation();
   const start = hudWidgetMetrics(config.element);
   hudLayoutGesture = {
-    name, mode, pointerId:event.pointerId, startX:event.clientX, startY:event.clientY,
+    name, mode, edge, pointerId:event.pointerId, startX:event.clientX, startY:event.clientY,
     start, moved:false,
   };
   try { event.target.setPointerCapture?.(event.pointerId); } catch (_) {}
   config.element.classList.add("layout-widget-active");
   document.body.classList.add("hud-layout-active");
   document.body.classList.toggle("layout-resizing", mode === "resize");
+  if (mode === "resize")
+    document.body.style.setProperty("--layout-resize-cursor", getComputedStyle(event.target).cursor);
 }
 
 function finishHudLayoutGesture(event) {
@@ -2941,6 +2982,7 @@ function finishHudLayoutGesture(event) {
   hudLayoutGesture = null;
   HUD_WIDGETS[gesture.name].element.classList.remove("layout-widget-active");
   document.body.classList.remove("hud-layout-active", "layout-resizing");
+  document.body.style.removeProperty("--layout-resize-cursor");
   if (gesture.moved) saveHudLayout();
   // Live spectator updates can arrive several times during one gesture. The
   // renderer leaves the active handle attached until release, then catches the
@@ -2957,7 +2999,8 @@ window.addEventListener("pointermove", event => {
   if (!gesture.moved) return;
   const next = {...gesture.start};
   if (gesture.mode === "move") { next.x += dx; next.y += dy; }
-  else { next.width += dx; next.height += dy; }
+  else Object.assign(next, resizeHudWidget(HUD_WIDGETS[gesture.name], gesture.start,
+                                           gesture.edge, dx, dy));
   applyHudWidgetMetrics(gesture.name, next);
 }, {passive:false});
 window.addEventListener("pointerup", finishHudLayoutGesture);
@@ -2967,14 +3010,11 @@ for (const [name, config] of Object.entries(HUD_WIDGETS)) {
   const element = config.element;
   if (!element) continue;
   element.addEventListener("pointerdown", event => {
-    if (event.target.closest?.("[data-widget-resize]"))
-      beginHudLayoutGesture(event, name, "resize");
+    const resizeHandle = event.target.closest?.("[data-widget-resize]");
+    if (resizeHandle)
+      beginHudLayoutGesture(event, name, "resize", resizeHandle.dataset.widgetResize);
     else if (event.target.closest?.("[data-widget-drag]"))
       beginHudLayoutGesture(event, name, "move");
-  });
-  element.addEventListener("click", event => {
-    if (!event.target.closest?.("[data-widget-reset]")) return;
-    event.preventDefault(); event.stopPropagation(); resetHudWidget(name);
   });
   element.addEventListener("keydown", event => {
     if (!event.key.startsWith("Arrow")) return;
@@ -2985,10 +3025,9 @@ for (const [name, config] of Object.entries(HUD_WIDGETS)) {
     const step = event.shiftKey ? 10 : 2;
     const next = hudWidgetMetrics(element);
     if (resizeHandle) {
-      if (event.key === "ArrowLeft") next.width -= step;
-      if (event.key === "ArrowRight") next.width += step;
-      if (event.key === "ArrowUp") next.height -= step;
-      if (event.key === "ArrowDown") next.height += step;
+      const dx = event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0;
+      const dy = event.key === "ArrowUp" ? -step : event.key === "ArrowDown" ? step : 0;
+      Object.assign(next, resizeHudWidget(config, next, resizeHandle.dataset.widgetResize, dx, dy));
     } else {
       if (event.key === "ArrowLeft") next.x -= step;
       if (event.key === "ArrowRight") next.x += step;
@@ -8308,23 +8347,30 @@ function victoryValue(victory, metric) {
   return compactStat(metric.points || 0);
 }
 
-// Science and culture split their meters into two ideas. Name the number in
-// the top tracker so a bare fraction does not leave the viewer guessing which
-// half it describes. Culture's target is already the actual victory threshold:
-// one more visiting tourist than the largest rival domestic-tourist total.
-function victoryTrackerValue(victory, metric) {
-  const labelled = (label, value) => `<small>${label}</small> ${value}`;
+function victoryTrackerSubheading(victory) {
+  if (victory === "science") return `<span>Science</span><span>Launches</span>`;
+  if (victory === "culture") return `<span>Culture</span><span>Tourism</span>`;
+  if (victory === "religious") return `<span>Cities</span><span>Civs</span>`;
+  if (victory === "diplomatic") return `<span>Suz</span><span>Diplo score</span>`;
+  if (victory === "domination") return `<span>Cities</span><span>HQs</span>`;
+  return `Turns: ${state.turn}/${turnCapLabel()}`;
+}
+
+function victoryTrackerStats(player, victory, metric) {
+  const pair = (first, second) => `<span>${first}</span><span>${second}</span>`;
   if (victory === "science") {
-    const launches = +metric.project_target || 4;
-    const done = +metric.projects || 0;
-    return done >= launches
-      ? labelled("Travel", `${compactStat(metric.distance)}/${compactStat(metric.distance_target)}ly`)
-      : labelled("Launches", `${done}/${launches}`);
+    const target = +metric.project_target || 4;
+    const second = +metric.projects >= target
+      ? `${compactStat(metric.distance)}/${compactStat(metric.distance_target)}ly`
+      : `${metric.projects || 0}/${target}`;
+    return pair(compactStat(player.yields?.science || 0), second);
   }
   if (victory === "culture") {
-    return labelled("Tourism",
-      `${compactStat(metric.tourists || 0)}/${compactStat(metric.target || 1)}`);
+    return pair(compactStat(player.yields?.culture || 0), compactStat(metric.tourists || 0));
   }
+  if (victory === "religious") return pair(player.cities || 0, `${metric.converted || 0}/${metric.target || 0}`);
+  if (victory === "diplomatic") return pair(player.suzerain_count || 0, `${metric.points || 0}/${metric.target || 20}`);
+  if (victory === "domination") return pair(player.cities || 0, `${metric.capitals || 0}/${metric.target || 0}`);
   return victoryValue(victory, metric);
 }
 
@@ -8385,15 +8431,10 @@ function syncVictoryLeaderCapacity(victoryHud = document.getElementById("victory
   const tracks = [...(victoryHud?.querySelectorAll(".victory-track") || [])];
   if (!tracks.length) return;
   const capacity = victoryLeaderCapacity(victoryHud);
-  const total = tracks[0].querySelectorAll(".victory-entry").length;
   for (const track of tracks) {
     for (const [index, entry] of [...track.querySelectorAll(".victory-entry")].entries())
       entry.hidden = index >= capacity;
   }
-  const context = victoryHud.querySelector("[data-victory-capacity]");
-  if (context) context.textContent = capacity >= total
-    ? `All ${total} by path`
-    : `Top ${capacity} of ${total}`;
 }
 
 function playerHudOverview() {
@@ -8431,42 +8472,32 @@ function playerHudOverview() {
           || (+bm.techs || 0) - (+am.techs || 0)
           || b.score - a.score || a.id - b.id;
       });
-    // Score is settled when the turns run out, so its heading says how many
-    // of them are left to play.
-    const cap = track.id === "score"
-      ? `<em>${state.turn}/${turnCapLabel()}</em>`
-      : "";
-    const headTitle = cap
-      ? ` title="Score · turn ${state.turn} of ${turnCapLabel()}, when the score decides it"`
-      : "";
     return `<section class="victory-track" style="--track:${track.color}" aria-label="${track.label} victory leaders">` +
-      `<div class="victory-heading${cap ? " with-cap" : ""}"${headTitle}>` +
-      `<span>${track.icon}</span><b>${track.label}</b>${cap}</div>` +
+      `<div class="victory-heading"><span>${track.icon}</span><b>${track.label}</b></div>` +
+      `<div class="victory-subheading${track.id === "score" ? " score" : ""}">${victoryTrackerSubheading(track.id)}</div>` +
       `<div class="victory-list">` + ranked.map((player, index) => {
         const metric = victoryMetric(player, track.id);
         const progress = Math.max(0, Math.min(100, +metric.progress || 0));
         return `<div class="victory-entry" style="--civ:${pcol(player.id)}" title="#${index + 1} ${player.civ}: ${victoryDescription(track.id, metric)}">` +
           `<div class="victory-line"><span class="victory-civ-dot"></span>` +
-          `<span class="victory-civ">${player.civ}</span><span class="victory-value">${victoryTrackerValue(track.id, metric)}</span></div>` +
+          `<span class="victory-civ">${player.civ}</span><span class="victory-value${track.id === "score" ? " single" : ""}">${victoryTrackerStats(player, track.id, metric)}</span></div>` +
           victoryMeter(track.id, metric, progress) + `</div>`;
       }).join("") + `</div></section>`;
   }).join("");
   const victoryCount = Math.max(1, enabledVictoryTracks.length);
-  const victoryMinWidth = victoryCount * 84 + Math.max(0, victoryCount - 1) * 2;
+  const victoryMinWidth = victoryCount * 116 + Math.max(0, victoryCount - 1) * 2;
   const ageLabel = `${titleCase(era)} Age`;
-  const observedLabel = `${SPEC ? "Observing" : "Playing"}: ${identity.civ}`;
   const overview =
+    `<div class="hud-section-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
+    `aria-label="Move victory tracker; use arrow keys or drag" title="Drag to move · arrow keys also move" id="victory-tracker-title">` +
+    `<span>Victory tracker</span></div>` +
     `<section class="victory-turn" title="${identityContext}" aria-label="${identityContext}; turn ${state.turn} of ${turnCapLabel()}; ${ageLabel}">` +
-    `<div class="turn-line"><span>Turn</span><strong>${state.turn}</strong><small class="turn-total">/${turnCapLabel()}</small></div>` +
-    `<i><em>${ageLabel}</em><small>${observedLabel}</small></i></section>` +
-    `<section class="hud-region victory-region" aria-labelledby="victory-race-title">` +
-    `<div class="hud-section-heading"><span class="widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
-    `aria-label="Move victory race; use arrow keys or drag" title="Drag to move · arrow keys also move" id="victory-race-title">Victory race</span>` +
-    `<span class="hud-heading-context" data-victory-capacity>Leaders by path</span><button class="widget-reset" data-widget-reset type="button" aria-label="Reset victory race position and size" title="Reset position and size">↺</button></div>` +
+    `<span class="turn-label">Turn</span><div class="turn-count"><strong>${state.turn}</strong>` +
+    `<small class="turn-total">of ${turnCapLabel()}</small></div><span class="turn-era">${ageLabel}</span></section>` +
+    `<section class="hud-region victory-region" aria-labelledby="victory-tracker-title">` +
     `<div class="hud-rail" tabindex="0" aria-label="Victory paths; scroll horizontally for every path">` +
     `<div class="victory-ribbon" style="--victory-columns:${victoryCount};--victory-min-width:${victoryMinWidth}px">` +
-    `${victoryTracks}</div></div></section>` +
-    `<button class="widget-resize-handle" data-widget-resize type="button" aria-label="Resize victory race; use arrow keys or drag" title="Drag to resize · arrow keys also resize"></button>`;
+    `${victoryTracks}</div></div></section>` + hudResizeHandles("victory tracker");
 
   return overview;
 }
@@ -8547,7 +8578,7 @@ function drawPlayerHud() {
     .filter(p => !p.is_minor && !p.is_barbarian)
     .sort((a, b) => b.score - a.score || a.id - b.id);
   const rows = Math.max(1, majors.length);
-  const requestedHeight = 20 + rows * 36;
+  const requestedHeight = 32 + rows * 36;
   const mapArea = document.getElementById("maparea");
   if (!HUD_LAYOUT.players) {
     mapArea.style.setProperty("--player-hud-width", "540px");
@@ -8555,15 +8586,14 @@ function drawPlayerHud() {
   }
   const rankById = new Map(majors.map((p, index) => [p.id, index + 1]));
   const html =
-    `<div class="ribbon-heading"><span class="ribbon-heading-copy"><span class="widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
-    `aria-label="Move player standings; use arrow keys or drag" title="Drag to move · arrow keys also move" id="world-leaders-title">World leaders</span>` +
-    `<span class="ribbon-heading-context">${majors.length} civs</span>` +
-    `<button class="widget-reset" data-widget-reset type="button" aria-label="Reset player standings position and size" title="Reset position and size">↺</button></span>` +
-    `<span class="diplomacy-stat-head" aria-hidden="true">` +
+    `<div class="ribbon-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
+    `aria-label="Move player stats; use arrow keys or drag" title="Drag to move · arrow keys also move" id="player-stats-title">` +
+    `<span>Player stats</span></div>` +
+    `<div class="ribbon-stat-heading" aria-hidden="true"><span class="diplomacy-stat-head">` +
     [["production", "PROD"], ["science", "SCI"], ["culture", "CUL"], ["faith", "FPT"], ["gold", "GPT"],
       ["military", "MIL"], ["cities", "CITY"], ["suzerain", "SUZ"], ["wonders", "WNDR"], ["score", "SCORE"]]
       .map(([kind, label]) => `<span class="${kind}">${label}</span>`).join("") + `</span></div>` +
-    `<div class="diplomacy-ribbon" role="list" aria-labelledby="world-leaders-title" ` +
+    `<div class="diplomacy-ribbon" role="list" aria-labelledby="player-stats-title" ` +
     `style="--hud-rows:${rows}">` + majors.map(p => {
       const y = p.yields || {};
       const color = pcol(p.id);
@@ -8643,8 +8673,7 @@ function drawPlayerHud() {
           `<span class="ribbon-stat ${kind}" title="${label}"><b>${ribbonStat(value)}</b></span>`
         ).join("") + `</button></div>` +
         (expanded ? civDossier(p, rank, relation) : "");
-    }).join("") + `</div>` +
-    `<button class="widget-resize-handle" data-widget-resize type="button" aria-label="Resize player standings; use arrow keys or drag" title="Drag to resize · arrow keys also resize"></button>`;
+    }).join("") + `</div>` + hudResizeHandles("player standings");
   if (html === hudHtml || hudLayoutGesture?.name === "players") return;
   hudHtml = html;
   hud.innerHTML = html;
@@ -8766,7 +8795,7 @@ function civDossier(p, rank, relation) {
         : `<div class="dossier-note"><span class="dossier-empty">No coordinated forces in the field</span></div>`)
     : `<div class="dossier-empty">No published plan. The hierarchical AI reports one from its first turn of a spectated game.</div>`);
 
-  // --- the victory race, at the width the topbar cannot spare
+  // --- the victory tracker, at the width the topbar cannot spare
   const tracks = VICTORY_TRACKS
     .filter(track => state.victory_conditions?.[track.id] !== false)
     .map(track => {
@@ -8833,7 +8862,7 @@ function civDossier(p, rank, relation) {
     `<button class="dossier-btn" data-hud-action="dossier" data-hud-civ="${p.id}" aria-label="Close dossier">✕</button></div>` +
     `<div class="dossier-grid">` +
     `<section class="dossier-section"><h4>Grand strategy</h4>${strategyBody}</section>` +
-    `<section class="dossier-section"><h4>Victory race</h4>${tracks}</section>` +
+    `<section class="dossier-section"><h4>Victory tracker</h4>${tracks}</section>` +
     `<section class="dossier-section"><h4>Diplomacy</h4>${diplomacy}</section>` +
     `<section class="dossier-section"><h4>Empire ledger</h4>${ledger}</section>` +
     `</div></div>`;
