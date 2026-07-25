@@ -1378,15 +1378,22 @@
   /* Choosing single player turns this one control into the way into that game,
      so it says which game it starts instead of leaving "Restart sim" over a
      single-player subtitle. A start is not a restart: the glyph changes too.
-     The name is long enough that sharing a row with Pause would break it over
-     three lines, so the pair stacks while it is showing. */
-  .spec-controls:has(#restart-sim.human-start) { grid-template-columns: 1fr; }
+     It stays on the same row as Pause/Resume — the two controls are the same
+     decision (keep watching, or leave for your own game) and reading them as a
+     pair is worth more than one long line. The name does not fit two equal
+     columns, so the row stops being equal: Pause shrinks to its own label and
+     the start takes everything left, which is enough for two lines. */
+  .spec-controls:has(#restart-sim.human-start) { grid-template-columns: 96px minmax(0, 1fr); }
+  .spec-controls #restart-sim.human-start { text-wrap: balance; }
   .spec-controls #restart-sim.human-start::before { content: "▶"; font-size: 11px; }
-  /* Stacked, the two would be gold together and neither would read as the one
-     to press. Pausing the simulation you are about to leave is not the point,
-     so Pause steps back to the plain treatment while the start is staged. */
+  /* Side by side the two would be gold together and neither would read as the
+     one to press. Pausing the simulation you are about to leave is not the
+     point, so Pause steps back to the plain treatment while the start is
+     staged — and to a narrow column, which its label only survives at the
+     smaller type the plain buttons already use. */
   .spec-controls:has(#restart-sim.human-start) #specpause.primary {
-    color: #c2cec8; background: linear-gradient(180deg, #243530, #192823);
+    padding: 12px 6px; color: #c2cec8; font-size: 11px; letter-spacing: .04em;
+    background: linear-gradient(180deg, #243530, #192823);
     border-color: #3b5049; box-shadow: none;
   }
   .spec-controls:has(#restart-sim.human-start) #specpause.primary:hover {
