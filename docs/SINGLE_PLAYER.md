@@ -71,6 +71,21 @@ patrol) nor a client-side one. Two client-side orders exist, matching Civ 6:
 - **Skip** (`Space`) — done for this turn only. Cleared when the turn advances.
 - **Sleep** (`Z`) — done until something changes: an enemy comes within two
   tiles, the unit takes damage, or the player selects it again.
+- **Travel** — clicking a tile outside this turn's movement is an order to go
+  there, and the unit walks it over as many turns as it takes.
+
+Travel cannot be built on `move_to`: `path_to` seeds its search with the
+unit's *remaining* movement, so anything further is `"unreachable"`. `/route`
+exposes `Game::route_step`, the long-range router the AI has always used —
+it plans across future turns around mountains and choke points and returns the
+first step, and the client sends a normal Move for that step, so the engine
+stays the authority on whether the move is legal now.
+
+A refused step does not end a journey. A unit with one movement point left
+cannot enter a two-cost forest, and next turn it can; giving up on the first
+refusal stranded units one tile short of where they were sent. The order ends
+when the router has nothing to offer — arrival, or no route at all — or after
+three turns with no progress at all.
 
 Fortify (`F`) is an engine action and outlives both. The client never invents
 engine state: a skipped unit is simply one the client stops asking about.
@@ -105,10 +120,8 @@ the action from the UI without a debugger.
 | Setup | difficulty, leader choice, save and load | yes — Game settings ▸ Single player, with a leader, a difficulty and the server's saves |
 
 Rows marked "no" or "partial" are the remaining work, in roughly that order of
-value to a player. What is left is multi-turn unit travel — clicking a tile
-outside a unit's movement is still not an order to go there — and a production
-*queue*, which is an engine gap rather than a client one: `do_produce` sets
-`city.queue = vec![item]`.
+value to a player. What is left is a production *queue*, which is an engine
+gap rather than a client one: `do_produce` sets `city.queue = vec![item]`.
 
 ## The Empire panel
 
@@ -197,6 +210,7 @@ camera and spectator keys alone.
 | `F` | Fortify the selected unit — with nothing selected, toggle the command deck |
 | `Tab` | Select the next unit needing orders |
 | `Escape` | Clear the selection |
+| Click a far tile | Travel there over as many turns as it takes |
 | `P` | Civilopedia |
 | `D` | Quick Deals |
 | `A` | Hand the seat to the agent for a turn (`Shift` for ten) |
