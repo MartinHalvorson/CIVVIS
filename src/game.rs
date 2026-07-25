@@ -4137,6 +4137,9 @@ mod trade_deal_tests {
 
     fn trade_game() -> Game {
         let mut game = Game::new_full(2, 24, 16, 7711, 120, 0, false);
+        // Two capitals dropped on opposite ends of a map have not met, and
+        // there is nothing to trade until they have.
+        game.record_contact(0, 1);
         for pid in 0..2 {
             let settler = game
                 .player_unit_ids(pid)
@@ -4877,6 +4880,9 @@ mod espionage_runtime_tests {
 
     fn game_with_spy_cities(seed: u64) -> (Game, u32, u32, Pos) {
         let mut game = Game::new_full(2, 24, 16, seed, 250, 0, false);
+        // Nobody spies on, or ransoms an operative back from, an empire they
+        // have never met.
+        game.record_contact(0, 1);
         let mut cities = Vec::new();
         for pid in 0..2 {
             let settler = game
@@ -10019,6 +10025,13 @@ pub struct Player {
     /// Last public City Center state observed by this player.
     #[serde(default)]
     pub remembered_cities: BTreeMap<u32, RememberedCity>,
+    /// Every seat this civilization has made contact with, and never forgets.
+    /// A world is full of empires nobody has met yet; until a unit or a city
+    /// of theirs has actually been seen, they are not on anybody's ledger,
+    /// which is why this is knowledge held per seat rather than a fact about
+    /// the world. Barbarians are nobody's acquaintance and are left out.
+    #[serde(default)]
+    pub met: BTreeSet<usize>,
     pub alive: bool,
     pub is_minor: bool,
     #[serde(default)]
@@ -10189,6 +10202,7 @@ impl Player {
             explored: BTreeSet::new(),
             remembered_tiles: TileMemory::default(),
             remembered_cities: BTreeMap::new(),
+            met: BTreeSet::new(),
             alive: true,
             is_minor,
             is_barbarian: false,
@@ -12642,6 +12656,52 @@ impl Game {
             .filter(|c| c.owner == pid)
             .map(|c| c.id)
             .collect()
+    }
+
+    /// Whether `viewer` has made contact with `other` and may therefore be
+    /// told anything at all about them.
+    ///
+    /// Civilization VI keeps an unmet empire off every panel it would
+    /// otherwise appear on — the diplomacy ribbon, the victory tracker, the
+    /// score list — and this is the one question all of those ask. A seat
+    /// always knows itself and its pre-game team; barbarians and Free Cities
+    /// are not diplomatic powers and are never withheld.
+    pub fn has_met(&self, viewer: usize, other: usize) -> bool {
+        if viewer == other || self.same_team(viewer, other) {
+            return true;
+        }
+        match self.players.get(other) {
+            None => true,
+            Some(player) if player.is_barbarian || player.is_free_city => true,
+            Some(_) => self
+                .players
+                .get(viewer)
+                .is_some_and(|player| player.met.contains(&other)),
+        }
+    }
+
+    /// Introduce two seats to each other, permanently and in both directions.
+    ///
+    /// Meeting is mutual: a scout that walks into sight of a border city has
+    /// been seen doing it. Recording both halves here means contact does not
+    /// depend on whose visibility happens to be refreshed first.
+    pub(crate) fn record_contact(&mut self, first: usize, second: usize) {
+        if first == second {
+            return;
+        }
+        let diplomatic = |player: Option<&Player>| {
+            player.is_some_and(|player| !player.is_barbarian && !player.is_free_city)
+        };
+        if !diplomatic(self.players.get(first)) || !diplomatic(self.players.get(second)) {
+            return;
+        }
+        // Reaching for a seat mutably copies it, so ask before taking.
+        if !self.players[first].met.contains(&second) {
+            self.players[first].met.insert(second);
+        }
+        if !self.players[second].met.contains(&first) {
+            self.players[second].met.insert(first);
+        }
     }
 
     /// Pre-game teams are permanent. `None` means an ordinary free-for-all
@@ -22460,6 +22520,10 @@ impl Game {
             return;
         }
         let visible = self.player_vision(&mut self.height_field(), pid);
+        // Ahead of the snapshot's early-out rather than inside it: that guard
+        // is keyed on the seat's own memory and the world's cities, so a rival
+        // unit walking into a standing scout's sight would not disturb it.
+        self.record_contacts_in_sight(pid, &visible);
         self.refresh_visibility_snapshot(pid, &visible);
     }
 
@@ -22558,6 +22622,53 @@ impl Game {
         let settled = self.memory_stamp(pid);
         if let Some(slot) = self.remembered_under.get_mut(pid) {
             *slot = (settled, taken);
+        }
+    }
+
+    /// Meet everyone standing in `pid`'s sight.
+    ///
+    /// A city or a unit is what makes an empire meetable; territory alone is
+    /// not, which is why a border can be drawn on the map before its owner is
+    /// anybody you have heard of. The unmet list is built first and the whole
+    /// pass is skipped once it is empty, so a table that has already been
+    /// introduced pays one loop over the seats and nothing else — the common
+    /// case, since this runs behind every action a player takes.
+    fn record_contacts_in_sight(&mut self, pid: usize, visible: &TileBits) {
+        if self
+            .players
+            .get(pid)
+            .is_none_or(|seat| seat.is_barbarian || seat.is_free_city)
+        {
+            return;
+        }
+        let unmet: BTreeSet<usize> = self
+            .players
+            .iter()
+            .filter(|other| other.id != pid && !other.is_barbarian && !other.is_free_city)
+            .filter(|other| !self.players[pid].met.contains(&other.id))
+            .map(|other| other.id)
+            .collect();
+        if unmet.is_empty() {
+            return;
+        }
+        // Cities first: there are two orders of magnitude fewer of them than
+        // units, and a civilization with a city in sight needs no second look.
+        let mut found: BTreeSet<usize> = self
+            .cities
+            .values()
+            .filter(|city| unmet.contains(&city.owner) && self.sees(visible, city.pos))
+            .map(|city| city.owner)
+            .collect();
+        if found.len() < unmet.len() {
+            found.extend(
+                self.units
+                    .values()
+                    .filter(|unit| unmet.contains(&unit.owner) && self.sees(visible, unit.pos))
+                    .map(|unit| unit.owner),
+            );
+        }
+        for other in found {
+            self.record_contact(pid, other);
         }
     }
 
@@ -29139,7 +29250,14 @@ impl Game {
             }
             if p.envoys_free > 0 {
                 for m in &self.players {
-                    if m.is_minor && !m.is_barbarian && m.alive && !self.is_at_war(pid, m.id) {
+                    // An envoy needs somewhere to be sent. A city-state
+                    // nobody has found yet has no court to receive one.
+                    if m.is_minor
+                        && !m.is_barbarian
+                        && m.alive
+                        && self.has_met(pid, m.id)
+                        && !self.is_at_war(pid, m.id)
+                    {
                         acts.push(Action::SendEnvoy { player: m.id });
                     }
                 }
@@ -29450,7 +29568,11 @@ impl Game {
         }
         if !p.is_barbarian {
             for o in &self.players {
-                if o.id != pid && o.alive && !o.is_barbarian {
+                // Diplomacy needs a counterpart. Until the two civilizations
+                // have met there is no embassy to send a demand to, no peace
+                // to sign and nobody to denounce, so none of the acts below
+                // exist against an empire this one has never heard of.
+                if o.id != pid && o.alive && !o.is_barbarian && self.has_met(pid, o.id) {
                     if self.is_at_war(pid, o.id) {
                         // A city-state can be at war only because its
                         // Suzerain is. That derived war must be ended with the
@@ -34432,6 +34554,11 @@ impl Game {
                     continue;
                 }
                 let front = pair(attacker, defender);
+                // Nobody learns who they are fighting from the battlefield.
+                // A war widened by a pact introduces its new belligerents, so
+                // an ally dragged in is on the ledger of everyone it now
+                // fights whether or not it has seen them.
+                self.record_contact(attacker, defender);
                 let opened = self.at_war.insert(front);
                 self.cancel_routes_with(attacker, defender);
                 self.cancel_trade_deals_with(attacker, defender);
@@ -35702,6 +35829,9 @@ impl Game {
                     && player.alive
                     && !player.is_minor
                     && !player.is_barbarian
+                    // There is nobody to negotiate with until the two
+                    // civilizations have found each other.
+                    && self.has_met(viewer, player.id)
                     && !self.is_at_war(viewer, player.id)
             })
             .map(|player| player.id)
@@ -37676,6 +37806,8 @@ impl Game {
                 .remove(member);
             self.cancel_routes_with(*member, proposal.target);
             self.cancel_trade_deals_with(*member, proposal.target);
+            // A congress that names a target names it to everyone it enlists.
+            self.record_contact(*member, proposal.target);
             self.at_war.insert(pair(*member, proposal.target));
             self.open_war_front(
                 *member,
@@ -42166,6 +42298,71 @@ mod visibility_tests {
             .iter()
             .find(|tile| tile["pos"] == json!([position.0, position.1]))
             .expect("tile is in the observation")
+    }
+
+    /// Civilization VI does not put a rival on your diplomacy screen because
+    /// the map generator dealt them in. Somebody has to walk far enough to
+    /// find them, and until they do, that empire is not on the ledger.
+    #[test]
+    fn a_civilization_is_met_only_when_something_of_theirs_is_seen() {
+        let (mut game, center) = controlled_game(63_101);
+        let scout = game.spawn_unit("scout", 0, center);
+        let far = along(&game, center, 9);
+        game.spawn_unit("warrior", 1, far);
+        game.refresh_all_visibility();
+        assert!(
+            !game.has_met(0, 1),
+            "a warrior nine tiles away has not been found"
+        );
+        assert!(!game.has_met(1, 0), "and has found nobody either");
+
+        // Walk the scout to within sight of it, the long way round: contact is
+        // read off the same visibility the observation is.
+        let doorstep = along(&game, center, 7);
+        game.units.get_mut(&scout).unwrap().pos = doorstep;
+        game.refresh_all_visibility();
+        assert!(game.has_met(0, 1), "a warrior two tiles away is in sight");
+        assert!(
+            game.has_met(1, 0),
+            "meeting is mutual — a scout that sees is a scout that was seen"
+        );
+
+        // And it stays met once the scout walks home again.
+        game.units.get_mut(&scout).unwrap().pos = center;
+        game.refresh_all_visibility();
+        assert!(game.has_met(0, 1), "an empire once found is never forgotten");
+    }
+
+    /// Diplomacy needs somebody to conduct it with. Every act on the panel is
+    /// withheld until contact, and a war is contact by itself.
+    #[test]
+    fn diplomacy_waits_for_contact_and_a_declaration_supplies_it() {
+        let (mut game, center) = controlled_game(63_102);
+        game.spawn_unit("warrior", 0, center);
+        game.spawn_unit("warrior", 1, along(&game, center, 9));
+        game.refresh_all_visibility();
+        assert!(!game.has_met(0, 1));
+        assert!(
+            !game
+                .legal_actions(0)
+                .iter()
+                .any(|action| matches!(action, Action::DeclareWar { player: 1 })),
+            "there is no embassy to declare war on"
+        );
+
+        game.record_contact(0, 1);
+        assert!(
+            game.legal_actions(0)
+                .iter()
+                .any(|action| matches!(action, Action::DeclareWar { player: 1 })),
+            "once met, the whole panel opens"
+        );
+        assert_eq!(game.apply(0, &Action::DeclareWar { player: 1 }), Ok(()));
+        assert!(game.is_at_war(0, 1));
+        assert!(
+            game.has_met(1, 0),
+            "nobody learns who they are fighting from the battlefield"
+        );
     }
 
     #[test]

@@ -510,6 +510,29 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             },
         },
         "players": g.players.iter().map(|o| {
+            // An empire nobody has met is not on anybody's ledger. Civ VI
+            // keeps an unmet civilization off the diplomacy ribbon, the
+            // victory tracker and the score list alike, so the whole
+            // dashboard below is withheld until contact rather than merely
+            // hidden by the client — an agent reading this protocol is owed
+            // the same fog a browser is. What survives is the seat's
+            // identity: its id and civ decide the jersey its cities fly, and
+            // whether it is still standing is already told by `wars`, which
+            // is deliberately reported whole. An omniscient spectator sees
+            // everyone, as it always has.
+            if !omniscient && !g.has_met(pid, o.id) {
+                return json!({
+                    "id": o.id,
+                    "civ": o.civ,
+                    "met": false,
+                    "alive": o.alive,
+                    "is_minor": o.is_minor,
+                    "is_barbarian": o.is_barbarian,
+                    "is_free_city": o.is_free_city,
+                    "team": o.team,
+                    "teammate": false,
+                });
+            }
             // Civ VI's diplomacy ribbon keeps every major's broad empire
             // output visible.  These are aggregate public indicators rather
             // than hidden city details, and make spectator comparisons useful.
@@ -520,6 +543,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             let military = g.military_power(o.id).round() as i64;
             json!({
                 "id": o.id, "civ": o.civ,
+                "met": true,
                 "leader": g.rules.civs.get(&o.civ).map(|c| c.leader.clone()),
                 // A leader's agenda is public knowledge in Civ VI once you
                 // have met them, and so is roughly how they feel about you.
@@ -1326,6 +1350,56 @@ fn merge(base: &mut Value, ext: Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The player HUD and the victory tracker are drawn from `players`, so an
+    /// empire nobody has met has to be missing from it rather than merely
+    /// skipped by the browser. What is left is the seat's identity — the id
+    /// and civ its cities fly on the map — and nothing anyone could rank it by.
+    #[test]
+    fn an_unmet_civilization_reaches_the_wire_as_identity_and_nothing_else() {
+        let mut game = Game::new(2, 18, 12, 74_115, 25, 0);
+        for pid in 0..2 {
+            game.players[pid].met.clear();
+        }
+        let hidden = &observation(&game, 0)["players"][1];
+        assert_eq!(hidden["met"], json!(false));
+        assert_eq!(hidden["civ"], json!(game.players[1].civ));
+        for withheld in [
+            "score",
+            "victories",
+            "yields",
+            "military",
+            "cities",
+            "gold",
+            "leader",
+            "agenda",
+            "government",
+            "wonder_count",
+            "opinion_of_me",
+        ] {
+            assert!(
+                hidden[withheld].is_null(),
+                "an unmet civilization must not report {withheld}"
+            );
+        }
+        // The viewer is always on its own ledger, and so is the omniscient
+        // spectator's whole table.
+        assert_eq!(observation(&game, 0)["players"][0]["met"], json!(true));
+        let spectated = observation_spectator(&game, 0);
+        assert_eq!(spectated["players"][1]["met"], json!(true));
+        assert!(spectated["players"][1]["score"].is_number());
+
+        game.record_contact(0, 1);
+        let found = &observation(&game, 0)["players"][1];
+        assert_eq!(found["met"], json!(true));
+        assert!(found["score"].is_number(), "the dashboard arrives on contact");
+        assert!(!found["victories"].is_null());
+        assert_eq!(
+            observation(&game, 1)["players"][0]["met"],
+            json!(true),
+            "and the meeting was mutual"
+        );
+    }
 
     /// The viewer starts a world facing wherever it was found and only puts
     /// north at the top once the civilization it is watching can find north, so

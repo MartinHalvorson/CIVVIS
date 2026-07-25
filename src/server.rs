@@ -1533,6 +1533,12 @@ impl Session {
                     let Some(id) = player["id"].as_u64().map(|id| id as usize) else {
                         continue;
                     };
+                    // A perspective the observation has already withheld does
+                    // not get its plan, its handle or its rating pinned back
+                    // on here. Only the omniscient view annotates everyone.
+                    if player["met"] == json!(false) {
+                        continue;
+                    }
                     if let Some(strategy) = self.ais.get(id).and_then(|ai| ai.strategy_label()) {
                         player["ai_strategy"] = json!(strategy);
                     }
