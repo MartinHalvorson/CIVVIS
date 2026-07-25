@@ -816,7 +816,8 @@
   }
   #zoomctl button { width: 34px; height: 34px; margin: 0; padding: 0; border: 0; background: transparent; font-size: 16px; }
   #zoomctl button + button { border-left: 1px solid #ffffff0c; border-radius: 0; }
-  #paneltoggle { background: transparent; }
+  #paneltoggle, #collapsepause { background: transparent; }
+  #collapsepause { display: none; }
   #ubar {
     position: absolute; z-index: 7; left: 50%; bottom: 22px; transform: translateX(-50%);
     display: none; min-width: 360px; max-width: min(680px, calc(100% - 450px)); padding: 13px 16px;
@@ -1386,10 +1387,12 @@
   body.sidebar-hidden .minimap-frame,
   body.overlay-minimap-hidden .minimap-frame,
   body.overlay-controls-hidden #zoomctl,
-  body.sidebar-hidden #zoomctl > :not(#paneltoggle),
+  body.sidebar-hidden #zoomctl > :not(#paneltoggle):not(#collapsepause),
   body.sidebar-hidden #ubar,
   body.sidebar-hidden #modeline,
   body.sidebar-hidden #tip { display: none !important; }
+  body.sidebar-hidden #collapsepause:not([hidden]) { display: block; }
+  #collapsepause[hidden] { display: none; }
 
   @media (max-width: 720px) {
     #side { inset-block-start: 132px; }
@@ -1461,6 +1464,7 @@
   <aside id="playerhud" data-layout-widget="players" aria-label="Player standings"></aside>
   <div id="zoomctl">
     <button id="paneltoggle" class="icon" title="Toggle command deck" aria-label="Toggle command deck">☰</button>
+    <button id="collapsepause" hidden title="Pause simulation" aria-label="Pause simulation">⏸</button>
     <button id="zin" title="Zoom in" aria-label="Zoom in">＋</button>
     <button id="zout" title="Zoom out" aria-label="Zoom out">−</button>
   </div>
@@ -3487,6 +3491,25 @@ function reportSpecStatus() {
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({paused: specPaused})}, 3000).catch(() => {});
 }
+function updateSpecPauseButtons() {
+  const action = specPaused ? "Resume" : "Pause";
+  const main = document.getElementById("specpause");
+  const collapsed = document.getElementById("collapsepause");
+  main.textContent = specPaused ? "▶ Resume" : "⏸ Pause";
+  main.setAttribute("aria-pressed", String(specPaused));
+  collapsed.textContent = specPaused ? "▶" : "⏸";
+  collapsed.title = `${action} simulation`;
+  collapsed.setAttribute("aria-label", `${action} simulation`);
+  collapsed.setAttribute("aria-pressed", String(specPaused));
+  collapsed.hidden = !SPEC;
+}
+function toggleSpecPause() {
+  if (!SPEC) return;
+  specPaused = !specPaused;
+  updateSpecPauseButtons();
+  reportSpecStatus();
+  setPace({paused: specPaused});
+}
 setInterval(reportSpecStatus, 4000);
 function cuePlace(st, pos) {
   if (!st || !Array.isArray(pos)) return "Across the known world";
@@ -4480,9 +4503,8 @@ function render(st, recordChronicle = true) {
   syncCinemaPresentation(st);
   if (SPEC && st.paused !== undefined && st.paused !== specPaused) {
     specPaused = st.paused; // stay in sync with the server-side stepper
-    document.getElementById("specpause").textContent =
-      specPaused ? "▶ Resume" : "⏸ Pause";
   }
+  updateSpecPauseButtons();
   if (SPEC) updatePaceControl(st);
   const fullMapSpectator = SPEC && (st.view_player === null || st.view_player === undefined);
   document.getElementById("humanfooter").style.display = SPEC ? "none" : "grid";
@@ -10872,19 +10894,14 @@ async function autoplay(turns) {
 document.getElementById("autoplaybtn").onclick = ev => autoplay(ev.shiftKey ? 10 : 1);
 document.getElementById("tradebtn").onclick = () => openTrade();
 document.getElementById("paneltoggle").onclick = () => togglePanel();
+document.getElementById("collapsepause").onclick = toggleSpecPause;
 document.getElementById("cinema-director").onclick = () => setDirector(!DIRECTOR);
 document.getElementById("cinema-audio").onclick = () => setCinemaAudio(!CINEMA_AUDIO);
 document.getElementById("cinema-fullscreen").onclick = toggleCinemaFullscreen;
 document.getElementById("cinema-exit").onclick = () => setCinemaMode(false);
 updateDirectorButton();
 updateCinemaAudioButton();
-document.getElementById("specpause").onclick = () => {
-  specPaused = !specPaused;
-  document.getElementById("specpause").textContent =
-    specPaused ? "▶ Resume" : "⏸ Pause";
-  reportSpecStatus();
-  setPace({paused: specPaused});
-};
+document.getElementById("specpause").onclick = toggleSpecPause;
 document.getElementById("specspeed").onchange = () => {
   rememberPace(specPace()); // the pick outranks any state already in flight
   setPace({ms: paceChoice});
@@ -10992,7 +11009,7 @@ async function startNewSimulation() {
       const finishedInstance = state.server_instance;
       const finishedSeed = state.seed;
       specPaused = true;
-      document.getElementById("specpause").textContent = "▶ Resume";
+      updateSpecPauseButtons();
       reportSpecStatus();
       const requested = await fetchJSON("/supervisor-new", { method: "POST",
         headers: {"Content-Type": "application/json"},
@@ -11005,7 +11022,7 @@ async function startNewSimulation() {
     }
 
     specPaused = false;
-    document.getElementById("specpause").textContent = "⏸ Pause";
+    updateSpecPauseButtons();
     const next = await fetchJSON("/new", { method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify(payload) });
@@ -11017,7 +11034,7 @@ async function startNewSimulation() {
     setNewSimulationBusy(false);
   } catch (error) {
     specPaused = wasPaused;
-    document.getElementById("specpause").textContent = specPaused ? "▶ Resume" : "⏸ Pause";
+    updateSpecPauseButtons();
     reportSpecStatus();
     scheduleSpec(state);
     setNewSimulationBusy(false);
