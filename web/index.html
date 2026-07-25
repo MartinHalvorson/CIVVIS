@@ -202,8 +202,15 @@
      of scrolling. The basis is zero rather than auto so that a long log
      inside cannot inflate its own section: each list scrolls within the
      height it was given, floored by the min-height below. */
-  #eventsec[open] { flex: 3 0 0; }
-  #warsec[open] { flex: 2 0 0; }
+  /* That floor has to be stated on the section, not only on the list inside
+     it. `min-height: 0` above lets flexbox squeeze a section to nothing when
+     the sidebar is crowded — a short window, or a player's game where the
+     strategy and government panels join the column — while the list inside
+     keeps its own min-height and `.sec` does not clip, so the log paints
+     straight over the panels below it. Header 39px + the body's 13px padding
+     and 1px border either side + the list's floor. */
+  #eventsec[open] { flex: 3 0 0; min-height: 234px; }
+  #warsec[open] { flex: 2 0 0; min-height: 198px; }
   /* A <details> hands its children to an internal content box, so the panel
      inside it only inherits the extra height if that box is told to grow
      too. Browsers without ::details-content simply keep the log at its
@@ -13446,10 +13453,29 @@ function drawPlanetMini() {
 }
 
 function miniLayout(width, height) {
-  const mapWidth = Math.max(1, state.map.width), mapHeight = Math.max(1, state.map.height);
   const pad = 4;
-  const unitWidth = SQ3 * (mapWidth + (mapHeight - 1) / 2);
-  const unitHeight = 1.5 * mapHeight + 0.5;
+  // Measured off the tiles, the way the map itself is fitted, because the
+  // world is stored in axial coordinates: every row starts half a column left
+  // of the one above it, so a row's q runs from -floor(r/2) to
+  // mapWidth-1-floor(r/2) and the hexes fill a *rectangle* on screen. Sizing
+  // the chart to SQ3 * (mapWidth + (mapHeight - 1) / 2) measured the sheared
+  // parallelogram those coordinates suggest instead — a quarter wider than the
+  // world on a standard map — so the chart was drawn three-quarter size and
+  // parked left of centre, with the slack showing as a black band down the
+  // right of the minimap.
+  let minColumn = Infinity, maxColumn = -Infinity, minRow = Infinity, maxRow = -Infinity;
+  for (const tile of state.map.tiles) {
+    const column = tile.pos[0] + tile.pos[1] / 2, row = tile.pos[1];
+    if (column < minColumn) minColumn = column;
+    if (column > maxColumn) maxColumn = column;
+    if (row < minRow) minRow = row;
+    if (row > maxRow) maxRow = row;
+  }
+  if (!Number.isFinite(minColumn)) { minColumn = maxColumn = 0; minRow = maxRow = 0; }
+  // A hex reaches half its width past the outermost centre, and a full size
+  // above and below the outermost row.
+  const unitWidth = SQ3 * (maxColumn - minColumn + 1);
+  const unitHeight = 1.5 * (maxRow - minRow) + 2;
   // The chart is drawn turned, so it is fitted turned: the sides of a rotated
   // rectangle need the room its own corners take, or a chart at any bearing
   // but north loses them off the edge of the canvas.
@@ -13462,8 +13488,8 @@ function miniLayout(width, height) {
   const contentHeight = size * unitHeight;
   return {
     size,
-    originX:(width - contentWidth) / 2 + SQ3 * size / 2,
-    originY:(height - contentHeight) / 2 + size,
+    originX:(width - contentWidth) / 2 + SQ3 * size * (0.5 - minColumn),
+    originY:(height - contentHeight) / 2 + size - 1.5 * size * minRow,
   };
 }
 function miniHexCenter(pos, layout) {
