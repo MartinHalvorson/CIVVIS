@@ -3769,6 +3769,8 @@ mod river_tests {
             size.natural_wonders,
             size.continents,
             MapScript::TrueStartEarth,
+            FLAT,
+            POLED,
             &mut rng,
         );
         let sphere = world.sphere().unwrap();
