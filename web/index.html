@@ -1334,7 +1334,13 @@
   .war-side { min-width: 0; padding: 5px 0 6px; border-right: 1px solid #ffffff10; }
   .war-side:last-child { border-right: 0; text-align: right; }
   .war-strength-head, .war-strength-values { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; padding: 0 7px; text-align: center; }
-  .war-strength-head { margin-bottom: 3px; color: #81948c; font-size: 6px; font-weight: 850; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+  /* These headings wrap rather than run on. The columns are three equal
+     `minmax(0, 1fr)` tracks about 41px wide in the sidebar, "Saw action" needs
+     46px, and a nowrap cell with nothing clipping it paints the overrun into
+     its neighbour — on the defender side, where that heading comes first, it
+     read as SAW ACTIONPEAK MIL with no gap at all. */
+  .war-strength-head { margin-bottom: 3px; color: #81948c; font-size: 6px; font-weight: 850; letter-spacing: .06em; line-height: 1.25; text-transform: uppercase; }
+  .war-strength-head span { min-width: 0; overflow-wrap: break-word; }
   .war-belligerent { min-width: 0; padding: 4px 0; }
   .war-belligerent + .war-belligerent { border-top: 1px solid #ffffff0a; }
   .war-belligerent-bar { display: block; width: var(--war-effort, 0%); height: 4px; margin-bottom: 4px; border-radius: 2px; box-shadow: 0 0 4px #0008; }
