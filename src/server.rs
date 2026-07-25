@@ -4026,9 +4026,11 @@ mod tests {
     /// finale offers the one thing still useful instead: another game.
     #[test]
     fn browser_stops_asking_for_turns_once_somebody_has_won() {
+        // The winner test's `over` became `won`, because elimination now
+        // disables the button on the same path — same contract, wider reason.
         assert!(EMBEDDED_INDEX
-            .contains("const over = state.winner !== null && state.winner !== undefined;"));
-        assert!(EMBEDDED_INDEX.contains("button.disabled = over;"));
+            .contains("const won = state.winner !== null && state.winner !== undefined;"));
+        assert!(EMBEDDED_INDEX.contains("button.disabled = won || eliminated;"));
         assert!(EMBEDDED_INDEX.contains("The game is over<span class=\"endturn-hint\">"));
         // The keys agree with the button.
         assert!(EMBEDDED_INDEX
@@ -4088,6 +4090,29 @@ mod tests {
         // Each row goes somewhere: the city screen, or the city itself.
         assert!(EMBEDDED_INDEX.contains("closeEmpire();openCityScreen("));
         assert!(EMBEDDED_INDEX.contains("closeEmpire();centerOn("));
+    }
+
+    /// Losing your last city ends the game for the person at the keyboard
+    /// even though the world plays on, and the engine answers their
+    /// `end_turn` with "not your turn". Before this, an eliminated player
+    /// kept a live End Turn button on a map they could not touch, and Enter
+    /// earned them a red error toast. Same shape as the winner case, found
+    /// by losing an Emperor game rather than winning one.
+    #[test]
+    fn browser_tells_the_player_when_they_have_been_eliminated() {
+        assert!(EMBEDDED_INDEX
+            .contains("const eliminated = state.players[0] && state.players[0].alive === false;"));
+        assert!(EMBEDDED_INDEX.contains("button.disabled = won || eliminated;"));
+        assert!(EMBEDDED_INDEX.contains("Your civilization has fallen<span class=\"endturn-hint\">"));
+        // The keys agree with the button.
+        assert!(EMBEDDED_INDEX
+            .contains("if (state.players[0] && state.players[0].alive === false) return;"));
+        // A defeat draws the finale card, and the victory path must not wipe
+        // a card it did not draw.
+        assert!(EMBEDDED_INDEX.contains("st.players[0].alive === false;"));
+        assert!(EMBEDDED_INDEX.contains("} else if (!fallen) {"));
+        // A spectated world has nobody to eliminate.
+        assert!(EMBEDDED_INDEX.contains("const fallen = !SPEC && !hasWinner"));
     }
 
     #[test]
