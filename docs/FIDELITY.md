@@ -101,6 +101,17 @@ feature list alone. The Biosphere's shipped effect is Culture on Rainforest,
 Marsh and Woods rather than a flat yield; zeroing its Science without modelling
 that effect would delete the wonder's value instead of correcting it.
 
+**Three of the fifteen were the tool's fault, not CIVVIS'.** The
+resource-to-improvement projection prefers a land improvement over a sea one, so
+that Oil keys on Oil Wells rather than Oil Rigs — and the Industry and
+Corporation of Monopolies & Corporations are *land* improvements that sit on top
+of an already-improved luxury. That preference reported Pearls, Turtles and
+Whales as improved by `industry` instead of Fishing Boats. `Improvements_MODE`
+names the game-mode improvements, so the projection skips them and the rule stays
+data-driven; their own luxury lists are waived, because CPL's lobby disables all
+game modes. **A divergence is a claim about two sides, and the projection is one
+of them** — check what the tool did before changing what CIVVIS says.
+
 **The Cartography pair contradicts this document's own history.** The first-wave
 install audit lists "Cartography and Mass Production both require Shipbuilding"
 as a *fix it applied*, and the cache says the opposite. One of the two reads is
