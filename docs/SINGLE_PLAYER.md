@@ -118,6 +118,7 @@ the action from the UI without a debugger.
 | Ages | `choose_dedication`, `choose_secret_society` | yes — Government panel |
 | Conquest | `keep_city`, `raze_city`, `liberate_city` | yes — modal |
 | Setup | difficulty, leader choice, save and load | yes — Game settings ▸ Single player, with a leader, a difficulty and the server's saves |
+| Auto-play | `POST /autoplay` | yes — a league strategy and a turn count under the End Turn button |
 
 Rows marked "no" or "partial" are the remaining work, in roughly that order of
 value to a player. What is left is a production *queue*, which is an engine
@@ -159,16 +160,73 @@ Great Work slots".
 
 The browser's Game settings panel used to offer one mode — an AI-only
 simulation — with "Single player · later" greyed out beside it. Single player
-is now the default mode there, and it asks the two things a Civ 6 lobby asks
-that this one could not: which leader you are, and how hard the rivals play.
-Both selects are filled from the live ruleset, so a mod that adds a
-civilization or a difficulty appears in them without a client change. Neither
-is offered for an AI-only world, because there is nobody to hand them to.
+is no longer "later", and the modes are listed in the order this project
+values them:
+
+1. **AI-only simulation**, the default. It is what the engine exists for and
+   what the exhibition deployment runs, so it is what the panel opens on.
+2. **Single player**, a person in seat 0 against the agents.
+3. **Multiplayer · later**, still greyed out.
+
+A world already on screen overrides that default: open the page on a running
+`civvis play` and the select reads Single player, because a person playing a
+game should not have to notice that the button beside their empire has quietly
+started offering to replace it with a simulation.
+
+Single player asks the two things a Civ 6 lobby asks that this one could not:
+which leader you are, and how hard the rivals play. Both selects are filled
+from the live ruleset, so a mod that adds a civilization or a difficulty
+appears in them without a client change. Neither is offered for an AI-only
+world, because there is nobody to hand them to.
 
 Below them sit the saves this server is holding — every autosave and every
 named one, newest turn first, each with the turn, leader and difficulty it
 was written at. A build whose server has no save endpoints hides the group
 rather than showing one that cannot work.
+
+## Auto-play
+
+Unciv has an AutoPlay button and it earns its keep in two places: skipping a
+stretch of a game that has already been decided, and watching how an agent
+would play the position you are in. CIVVIS has a third, because CIVVIS is a
+strategy laboratory before it is a game — you can hand your seat to a *named*
+strategy off the league leaderboard and watch that one play it.
+
+So auto-play is two choices rather than a modifier key, and both sit under the
+button:
+
+- **Agent** — every entrant still competing in the league roster, strongest
+  first, by the handle the leaderboards give it and the rating it is
+  defending. An entrant that has not finished a rated game is marked unrated
+  rather than shown as an authoritative 1500. The seat's current agent is
+  preselected, so pressing the button without touching this changes nothing
+  about who plays; a choice is remembered for the next game.
+- **Turns** — 1, 2, 3, 4, 5, 10, 20, 30, 40, 50, 100, 150, 200, 250, or All.
+  "All" is the turns this game has left, not an unbounded loop.
+
+`POST /autoplay` takes `{turns, strategy}`; `turns` may be the string `"all"`,
+and the server bounds any count by the turns remaining. The roster comes from
+`GET /rules` as `strategies`, alongside `seat_strategy`, the name of whoever
+holds seat 0 now. A name the roster does not have is an error rather than a
+quiet fallback — a player who picked a strategy and got a different one has
+been lied to.
+
+Two things the client does deliberately:
+
+- **It plays in batches, not in one request.** A full game is over a minute of
+  engine work. Somebody who asked for 250 turns still wants to watch them
+  happen and still wants to be able to stop, so the loop posts a batch, renders
+  it, and goes again; the batch grows only while batches keep coming back
+  quickly, which leaves a handful of turns turn-by-turn. Pressing the button
+  again stops between batches.
+- **It says the seat is on loan.** While an agent plays, End Turn is disabled
+  and reads "An agent is playing", and both selects lock. A lit control that
+  quietly does nothing is worse than a disabled one that explains itself.
+
+The roster is the committed league snapshot under `data/league` unless this
+game is already being rated against another one, in which case it is that one
+and the ratings shown are the ratings in play. Reading it is a labelling
+concern only: nothing about auto-play seats a rival differently.
 
 ## Diplomacy
 
@@ -242,7 +300,7 @@ camera and spectator keys alone.
 | Click a far tile | Travel there over as many turns as it takes |
 | `P` | Civilopedia |
 | `D` | Quick Deals |
-| `A` | Hand the seat to the agent for a turn (`Shift` for ten) |
+| `A` | Auto-play the selected agent for the selected turns — again to stop |
 | `Y` | Tile yields |
 | `1` `2` `3` | Next unit · appeal lens · tack a marker |
 

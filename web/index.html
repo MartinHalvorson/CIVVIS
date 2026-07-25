@@ -1438,8 +1438,24 @@
   .trade-empty { grid-column: 1 / -1; padding: 54px 20px; color: var(--muted); text-align: center; border: 1px dashed #34493f; border-radius: 14px; }
   .footer-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
   .footer-actions button { margin: 0; }
-  #autoplaybtn { grid-column: 1 / -1; }
   #tradebtn { min-width: 112px; margin: 0; }
+  /* Auto-play: who plays your seat, and for how long. Both are decisions, so
+     both sit beside the button rather than behind a modifier key. */
+  .autoplay-bar {
+    grid-column: 1 / -1; display: grid; gap: 5px; padding: 8px 9px 9px;
+    border: 1px solid #2c4239; border-radius: 11px; background: #0a1512b8;
+  }
+  .autoplay-fields { display: grid; grid-template-columns: minmax(0, 1fr) 92px; gap: 5px; }
+  .autoplay-field { display: grid; gap: 3px; min-width: 0; }
+  .autoplay-field > span {
+    color: var(--muted); font-size: 8px; letter-spacing: .1em; text-transform: uppercase;
+  }
+  .autoplay-bar select { width: 100%; margin: 0; }
+  .autoplay-bar button { width: 100%; margin: 0; }
+  .autoplay-bar.running button { border-color: #9f8050; color: var(--gold); }
+  .autoplay-note {
+    color: var(--muted); font-size: 9px; text-align: center; font-variant-numeric: tabular-nums;
+  }
 
   #capture-choice {
     position: absolute; z-index: 24; left: 50%; top: 50%; width: min(520px, calc(100% - 36px));
@@ -1949,7 +1965,32 @@
         <button class="primary" id="endturn">End turn · Enter</button>
         <button id="tradebtn" title="Compare all mutually acceptable offers (D)">⚖ Quick Deals · D</button>
       <button id="diplomacybtn" title="Leaders, agendas, war and peace (L)">🕊 Diplomacy · L</button>
-        <button id="autoplaybtn" title="Let the agent play your seat (A · hold Shift for ten turns)">▶▶ Auto-play · A</button>
+        <div class="autoplay-bar" id="autoplaybar">
+          <div class="autoplay-fields">
+            <label class="autoplay-field"><span>Agent</span>
+              <select id="autoplaystrategy" title="Which of our strategies plays your seat"></select></label>
+            <label class="autoplay-field"><span>Turns</span>
+              <select id="autoplayturns" title="How many turns it plays before handing the seat back">
+                <option value="1" selected>1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+                <option value="10">10</option>
+                <option value="20">20</option>
+                <option value="30">30</option>
+                <option value="40">40</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="150">150</option>
+                <option value="200">200</option>
+                <option value="250">250</option>
+                <option value="all">All</option>
+              </select></label>
+          </div>
+          <button id="autoplaybtn" title="Hand your seat to the selected strategy (A · press again to stop)">▶▶ Auto-play · A</button>
+          <div class="autoplay-note" id="autoplaynote"></div>
+        </div>
       </div>
       <div id="specbar" style="display:none">
         <div class="spec-controls">
@@ -1977,8 +2018,8 @@
       <div class="sec settings-sec" id="game-settings">
       <div id="newgame-options">
         <label class="small">Game mode<select id="gamemode" style="margin-top:4px">
-          <option value="single" selected>Single player</option>
-          <option value="ai_sim">AI-only simulation</option>
+          <option value="ai_sim" selected>AI-only simulation</option>
+          <option value="single">Single player</option>
           <option disabled>Multiplayer · later</option>
         </select></label>
         <label class="small human-setting">Leader<select id="leader" style="margin-top:4px">
@@ -4069,9 +4110,11 @@ async function boot() {
       ).join("");
       document.getElementById("gamespeed").value = "online";
     }
+    fillStrategies(RULES);
     render(await fetchJSON("/state"));
     if (firstLoad) {
       firstLoad = false;
+      adoptRunningMode();
       if (SPEC) updatePaceControl(state); // adopt the pace the server is keeping
       scheduleSpec(state);
       reportSpecStatus();
@@ -15042,7 +15085,15 @@ function drawTurnLoop() {
   // toast for the crime of pressing the only lit control on the screen.
   const won = state.winner !== null && state.winner !== undefined;
   const eliminated = state.players[0] && state.players[0].alive === false;
-  button.disabled = won || eliminated;
+  button.disabled = won || eliminated || autoplaying;
+  // Auto-play holds the seat. Say so on the button rather than leaving a lit
+  // control that quietly does nothing while an agent plays.
+  if (autoplaying && !won && !eliminated) {
+    button.classList.remove("blocked");
+    button.innerHTML = `An agent is playing<span class="endturn-hint">Stop auto-play to take the seat back</span>`;
+    button.title = "Your seat is on loan until auto-play finishes or is stopped.";
+    return;
+  }
   if (won || eliminated) {
     button.classList.remove("blocked");
     button.innerHTML = eliminated && !won
@@ -15066,6 +15117,9 @@ function drawTurnLoop() {
 // Enter walks the blockers and then ends the turn; Shift overrides.
 function advanceTurn(force = false) {
   if (!state || SPEC) return;
+  // The seat is on loan while auto-play runs; taking it back mid-turn would
+  // race a batch the agent is already playing.
+  if (autoplaying) return;
   if (state.winner !== null && state.winner !== undefined) return;
   if (state.players[0] && state.players[0].alive === false) return;
   const blockers = turnBlockers();
@@ -15171,7 +15225,7 @@ document.addEventListener("keydown", ev => {
     sel = null; selCity = null; lensOn = false; tackMode = false;
     modeline(); draw(); drawSide(); drawUbar();
   }
-  else if (ev.key.toLowerCase() === "a" && !SPEC) autoplay(ev.shiftKey ? 10 : 1);
+  else if (ev.key.toLowerCase() === "a" && !SPEC) autoplay(autoplayRequest());
   else if (ev.key === "1") nextAction();
   else if (ev.key === "2") { lensOn = !lensOn; tackMode = false; modeline(); draw(); }
   else if (ev.key === "3") {
@@ -15213,36 +15267,104 @@ document.addEventListener("keyup", ev => {
   altTap = false;
 });
 document.getElementById("endturn").onclick = ev => advanceTurn(ev.shiftKey);
-// Hand your own seat to the agent for a turn or ten. Useful for skipping a
-// decided game, and for seeing how the agent would play the position you are
-// in — which is most of why Unciv has it.
-let autoplaying = false;
+// Hand your own seat to one of our strategies for a stretch of turns. Useful
+// for skipping a decided game, and for seeing how a rated agent would play the
+// position you are in — which is most of why Unciv has it. Which agent and how
+// many turns are both choices, so both are selects rather than modifier keys.
+let autoplaying = false, autoplayStop = false;
+const AUTOPLAY_STRATEGY_KEY = "civvis-autoplay-strategy-v1";
+// Fill the agent picker from the roster the server offers. Every entrant is
+// one of ours, named by the handle its leaderboard uses and carrying the
+// rating it is defending, so the choice is between strategies and not between
+// adjectives. The seat's current agent is preselected, so pressing Auto-play
+// without touching this changes nothing about who plays.
+function fillStrategies(rules) {
+  const select = document.getElementById("autoplaystrategy");
+  const roster = Array.isArray(rules.strategies) ? rules.strategies : [];
+  if (!select || !roster.length) return;
+  select.innerHTML = roster.map(entry => {
+    const rating = entry.provisional ? "unrated"
+      : entry.rating ? `${Math.round(entry.rating)} elo` : "";
+    const played = entry.games ? ` · ${entry.games} games` : "";
+    return `<option value="${escapeAttr(entry.name)}" title="${escapeAttr(entry.label || entry.name)}` +
+      `${played}">${escapeAttr(entry.username || entry.name)}${rating ? ` · ${rating}` : ""}</option>`;
+  }).join("");
+  let remembered = null;
+  try { remembered = localStorage.getItem(AUTOPLAY_STRATEGY_KEY); } catch (e) {}
+  const wanted = [remembered, rules.seat_strategy]
+    .find(name => name && roster.some(entry => entry.name === name));
+  select.value = wanted || roster[0].name;
+}
+// "All" is the turns this game has left, and the server bounds it the same
+// way, so a stopped or finished game cannot leave the loop below spinning.
+function autoplayRequest() {
+  const pick = (document.getElementById("autoplayturns") || {}).value || "1";
+  const left = Math.max(1, (+(state || {}).max_turns || 0) - (+(state || {}).turn || 0) + 1);
+  return pick === "all" ? left : Math.min(+pick, left);
+}
+function setAutoplayNote(text) {
+  const note = document.getElementById("autoplaynote");
+  if (note) note.textContent = text || "";
+}
+// Played in batches rather than in one request: a full game is over a minute
+// of engine work, and a person who asked for 250 turns still wants to watch
+// them happen and still wants to be able to stop. The batch grows only while
+// batches come back quickly, so a handful of turns stays turn-by-turn.
 async function autoplay(turns) {
-  if (SPEC || autoplaying) return;
-  autoplaying = true;
+  if (SPEC) return;
+  if (autoplaying) { autoplayStop = true; return; }
   const button = document.getElementById("autoplaybtn");
+  const bar = document.getElementById("autoplaybar");
   const label = button.textContent;
-  button.textContent = `▶▶ Playing ${turns} turn${turns === 1 ? "" : "s"}…`;
-  button.disabled = true;
+  const strategy = (document.getElementById("autoplaystrategy") || {}).value || "";
+  try { if (strategy) localStorage.setItem(AUTOPLAY_STRATEGY_KEY, strategy); } catch (e) {}
+  autoplaying = true; autoplayStop = false;
+  if (bar) bar.classList.add("running");
+  setAutoplayNote("");
+  // Both choices are locked in for the length of the run, so the control says
+  // what the agent playing is actually doing.
+  for (const field of ["autoplaystrategy", "autoplayturns"])
+    document.getElementById(field).disabled = true;
+  let left = Math.max(1, turns | 0), batch = 1;
   try {
-    sel = null;
-    render(await fetchJSON("/autoplay", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({turns}),
-    }));
+    while (left > 0 && !autoplayStop) {
+      const ask = Math.min(batch, left);
+      button.textContent = `⏹ Stop · ${left} turn${left === 1 ? "" : "s"} left`;
+      const started = performance.now();
+      sel = null;
+      const next = await fetchJSON("/autoplay", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({turns: ask, strategy}),
+      });
+      if (next.error) throw new Error(next.error);
+      const played = +next.autoplayed || 0;
+      render(next);
+      left -= played;
+      // Fewer turns played than asked for means the game ran out: somebody
+      // won, or this seat is no longer in it.
+      if (played < ask) break;
+      const elapsed = performance.now() - started;
+      batch = elapsed < 250 ? Math.min(batch * 2, 10)
+        : elapsed > 900 ? Math.max(1, batch >> 1) : batch;
+      await new Promise(resume => setTimeout(resume, 0));
+    }
+    setAutoplayNote(autoplayStop && left > 0 ? `Stopped · ${left} turns unplayed` : "");
   } catch (e) {
     const errEl = document.getElementById("err");
-    errEl.textContent = `auto-play failed: ${e}`;
+    errEl.textContent = `auto-play failed: ${e.message || e}`;
     errEl.style.display = "block";
     setTimeout(() => errEl.style.display = "none", 2500);
   } finally {
     button.textContent = label;
-    button.disabled = false;
-    autoplaying = false;
+    if (bar) bar.classList.remove("running");
+    for (const field of ["autoplaystrategy", "autoplayturns"])
+      document.getElementById(field).disabled = false;
+    autoplaying = false; autoplayStop = false;
+    drawTurnLoop();
   }
 }
-document.getElementById("autoplaybtn").onclick = ev => autoplay(ev.shiftKey ? 10 : 1);
+document.getElementById("autoplaybtn").onclick = () => autoplay(autoplayRequest());
 document.getElementById("tradebtn").onclick = () => openTrade();
 document.getElementById("gamemode").addEventListener("change", syncSetupMode);
 document.getElementById("startgame").onclick = () => startNewSimulation();
@@ -15357,10 +15479,20 @@ function showNewSimulationError(error, action = "start simulation") {
   errEl.style.display = "block";
   setTimeout(() => errEl.style.display = "none", 4000);
 }
+// The mode select says what the *next* game will be, and it opens on the
+// AI-only simulation. Once a world is on screen it opens on that world's mode
+// instead: a person playing a game should not have to notice that the button
+// beside their empire now says "Start new simulation".
+function adoptRunningMode() {
+  const select = document.getElementById("gamemode");
+  if (!select || !state) return;
+  select.value = SPEC ? "ai_sim" : "single";
+  syncSetupMode();
+}
 // Leader and difficulty are meaningless in a spectated world, and the start
 // button says what it will actually do.
 function syncSetupMode() {
-  const mode = (document.getElementById("gamemode") || {}).value || "single";
+  const mode = (document.getElementById("gamemode") || {}).value || "ai_sim";
   document.body.classList.toggle("spectating", mode === "ai_sim");
   const start = document.getElementById("startgame");
   if (start) {
