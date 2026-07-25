@@ -2191,8 +2191,12 @@ mod tests {
                 );
             }
         }
-        // seats map to civs in order: 0 Rome .. 7 Scythia
-        for (i, name) in crate::game::CIV_NAMES.iter().enumerate() {
+        // this game's eight majors take the head of the roster in order:
+        // 0 Rome .. 7 Scythia. The seats past them are city-states, which are
+        // not seated from the roster at all.
+        let majors = g.players.iter().filter(|p| !p.is_minor).count();
+        assert_eq!(majors, 8);
+        for (i, name) in crate::game::CIV_NAMES.iter().take(majors).enumerate() {
             assert_eq!(&g.players[i].civ, name);
         }
         // unique units: only their civ builds them; the base is blocked
