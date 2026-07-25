@@ -82,6 +82,11 @@ def watch(port: int, seconds: float, interval: float) -> int:
     elif missed:
         report["verdict"] = f"{missed} turns were simulated that no viewer drew"
         ok = False
+    elif report["turns_played"] == 0:
+        # Nothing was played, so nothing was skipped, so this says nothing.
+        # Worth naming: a paused exhibition and a healthy one both read zero.
+        report["verdict"] = "no turns were played in this window — nothing was tested"
+        ok = False
     else:
         report["verdict"] = "every turn reached the viewer"
         ok = True
