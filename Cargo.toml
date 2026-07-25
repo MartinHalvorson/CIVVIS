@@ -23,3 +23,12 @@ lto = "thin"
 # One codegen unit is worth about four percent of simulation throughput.
 # Full LTO on top of it measured no further gain and only cost build time.
 codegen-units = 1
+
+# The CI gate compiles this 100k-line crate on every push. `codegen-units = 1`
+# serialises the whole backend and `lto` adds a link-time pass; together they
+# buy about four percent simulation throughput, which the gate does not need
+# and which the production spectator build still gets from `release`.
+[profile.ci]
+inherits = "release"
+lto = false
+codegen-units = 16
