@@ -552,13 +552,9 @@ fn wars_json(g: &Game) -> Vec<Value> {
             // separate row by including its entry turn in the key.
             let mut participation: BTreeMap<
                 (usize, bool, Option<usize>, u32),
-                (Option<u32>, i64, Option<i64>, Option<i64>, u32),
+                (Option<u32>, i64, Option<i64>, BTreeMap<u32, i64>),
             > = BTreeMap::new();
-            for (war, participant) in records
-                .iter()
-                .flat_map(|war| war.participants.iter().map(|participant| (*war, participant)))
-            {
-                let snapshot_turn = participant.exited.or(war.ended).unwrap_or(g.turn);
+            for participant in records.iter().flat_map(|war| &war.participants) {
                 participation
                     .entry((
                         participant.player,
@@ -566,7 +562,7 @@ fn wars_json(g: &Game) -> Vec<Value> {
                         participant.suzerain,
                         participant.entered,
                     ))
-                    .and_modify(|(exited, strength, peak, total, total_turn)| {
+                    .and_modify(|(exited, strength, peak, saw_action_units)| {
                         *exited = match (*exited, participant.exited) {
                             (Some(first), Some(second)) => Some(first.max(second)),
                             _ => None,
@@ -576,17 +572,18 @@ fn wars_json(g: &Game) -> Vec<Value> {
                             (Some(first), Some(second)) => Some(first.max(second)),
                             (known, None) | (None, known) => known,
                         };
-                        if snapshot_turn >= *total_turn {
-                            *total = participant.total_strength;
-                            *total_turn = snapshot_turn;
+                        for (unit, value) in &participant.saw_action_units {
+                            saw_action_units
+                                .entry(*unit)
+                                .and_modify(|known| *known = (*known).max(*value))
+                                .or_insert(*value);
                         }
                     })
                     .or_insert((
                         participant.exited,
                         participant.strength,
                         participant.peak_strength,
-                        participant.total_strength,
-                        snapshot_turn,
+                        participant.saw_action_units.clone(),
                     ));
             }
             let mut side_losses = [
@@ -607,9 +604,10 @@ fn wars_json(g: &Game) -> Vec<Value> {
                 .into_iter()
                 .map(|(
                     (player, declarer_side, suzerain, entered),
-                    (exited, strength, peak_strength, total_strength, _),
+                    (exited, strength, peak_strength, saw_action_units),
                 )| {
                     let toll = losses.get(&player).cloned().unwrap_or_default();
+                    let saw_action_strength = saw_action_units.values().sum::<i64>();
                     json!({
                         "player": player,
                         "declarer_side": declarer_side,
@@ -619,7 +617,7 @@ fn wars_json(g: &Game) -> Vec<Value> {
                         "strength": strength,
                         "strength_start": strength,
                         "strength_peak": peak_strength,
-                        "strength_total": total_strength,
+                        "strength_saw_action": saw_action_strength,
                         "units_lost": toll.units,
                         "cities_lost": toll.cities,
                         "unit_kinds": toll.unit_kinds,
