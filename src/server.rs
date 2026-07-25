@@ -799,10 +799,10 @@ impl FrameDelivery {
     fn viewer_request(&mut self, painted: Option<SpectatorFrame>, now: Instant) {
         let attached = self.attached(now);
         self.last_request = Some(now);
-        // A viewer with nothing to report has painted nothing *since*: a page
-        // still booting, or one that stopped claiming frames while its tab was
-        // hidden. Either way the turn it eventually draws does not follow the
-        // one before it, so drop the baseline rather than score the gap.
+        // A viewer with nothing to report has painted nothing *yet*: a page
+        // still booting, or one that just reloaded onto a swapped binary. The
+        // turn it eventually draws does not follow whatever the last page
+        // drew, so drop the baseline rather than score the gap between them.
         let Some(frame) = painted else {
             self.painted = None;
             return;

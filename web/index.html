@@ -13700,10 +13700,11 @@ function drawSide(force = true) {
   const turn = state ? `${state.seed}|${state.turn}` : null;
   // Below a second per turn the panels change faster than they can be read, so
   // repeated repaints within one turn go on a human cadence instead. A turn's
-  // own frame is never one of them. Lightning runs several turns a second
-  // against that 250ms budget, so keying the throttle on the clock alone left
-  // turns on screen whose research, civics and government still belonged to
-  // the turn before — a stale corner of a frame that is supposed to be whole.
+  // own frame is never one of them. On the clock alone this budget swallowed
+  // whole turns whenever two draws landed close together — the boot frame and
+  // the first poll behind it, or a spectator opening a city, which repaints
+  // the panel directly and restarts the 250ms — leaving research, civics and
+  // government showing the previous turn inside a frame meant to be whole.
   if (!force && SPEC && pace < 1000 && turn === lastSideTurn &&
       now - lastSidePaint < 250) return;
   lastSidePaint = now;
