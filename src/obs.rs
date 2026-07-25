@@ -13,6 +13,51 @@ pub fn observation(g: &Game, pid: usize) -> Value {
     obs_impl(g, pid, false, true)
 }
 
+/// The shape of a Planet world, for a client that has to draw it.
+///
+/// A globe cannot be drawn from tile coordinates the way a flat map can: the
+/// storage rectangle is not a picture of anything. This hands over the real
+/// thing — where each tile sits on the sphere and what its outline is — once,
+/// keyed by the subdivision frequency it belongs to, so a client asks for it
+/// when it first sees a Planet game and never again. It is left out of the
+/// ordinary observation, which is already close to a megabyte and is polled
+/// every turn.
+///
+/// Corners are shared by the three tiles that meet at them and are sent once
+/// each, as thousandths, with every tile naming its own by index. The order of
+/// a tile's corners is the order of its neighbours, counter-clockwise seen
+/// from outside the globe.
+pub fn planet_geometry(g: &Game) -> Option<Value> {
+    const SCALE: f64 = 10_000.0;
+    let sphere = g.map.sphere()?;
+    let mut corners: Vec<i64> = Vec::new();
+    let mut seen: BTreeMap<[i64; 3], usize> = BTreeMap::new();
+    let mut cells: Vec<Vec<i64>> = Vec::with_capacity(sphere.len());
+    for cell in sphere.cells() {
+        let mut entry = vec![cell.pos.0 as i64, cell.pos.1 as i64];
+        for corner in &cell.corners {
+            let key = [
+                (corner[0] * SCALE).round() as i64,
+                (corner[1] * SCALE).round() as i64,
+                (corner[2] * SCALE).round() as i64,
+            ];
+            let next = seen.len();
+            let index = *seen.entry(key).or_insert_with(|| {
+                corners.extend_from_slice(&key);
+                next
+            });
+            entry.push(index as i64);
+        }
+        cells.push(entry);
+    }
+    Some(json!({
+        "frequency": sphere.frequency(),
+        "scale": SCALE,
+        "corners": corners,
+        "cells": cells,
+    }))
+}
+
 /// Fog-free view of the whole world from `pid`'s empire perspective —
 /// feeds the spectator (watch-the-AIs) GUI mode.
 pub fn observation_spectator(g: &Game, pid: usize) -> Value {

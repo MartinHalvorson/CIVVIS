@@ -15,8 +15,7 @@ pub enum MapScript {
     SmallContinents,
     InlandSea,
     Lakes,
-    TrueStartEarth,
-    TrueStartTrueEarth,
+    Planet,
 }
 
 impl MapScript {
@@ -27,9 +26,14 @@ impl MapScript {
             Self::SmallContinents => "small_continents",
             Self::InlandSea => "inland_sea",
             Self::Lakes => "lakes",
-            Self::TrueStartEarth => "true_start_earth",
-            Self::TrueStartTrueEarth => "true_start_true_earth",
+            Self::Planet => "planet",
         }
+    }
+
+    /// Whether the script lays its world out on a globe rather than on the
+    /// east-west cylinder every other script uses.
+    pub const fn is_globe(self) -> bool {
+        matches!(self, Self::Planet)
     }
 
     pub fn from_id(id: &str) -> Option<Self> {
@@ -52,7 +56,7 @@ pub struct MapScriptSpec {
     pub script: MapScript,
 }
 
-pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 7] = [
+pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 6] = [
     MapScriptSpec {
         id: "pangaea",
         name: "Pangaea",
@@ -84,16 +88,10 @@ pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 7] = [
         script: MapScript::Lakes,
     },
     MapScriptSpec {
-        id: "true_start_earth",
-        name: "True Start Earth",
-        description: "Earth's continents with civilizations starting near their historic homelands, shown on a pole-tapered equal-area world.",
-        script: MapScript::TrueStartEarth,
-    },
-    MapScriptSpec {
-        id: "true_start_true_earth",
-        name: "True Start True Earth",
-        description: "The same true-start Earth geography wrapped onto an interactive three-dimensional globe.",
-        script: MapScript::TrueStartTrueEarth,
+        id: "planet",
+        name: "Planet",
+        description: "A whole world: hexagons and twelve pentagons closing into a globe you can sail all the way around, in any direction.",
+        script: MapScript::Planet,
     },
 ];
 
@@ -216,6 +214,10 @@ pub struct MapSize {
     pub name: &'static str,
     pub width: i32,
     pub height: i32,
+    /// Subdivision frequency Planet builds this size's globe at, chosen so the
+    /// globe holds within a few percent of the tiles the rectangle does. A
+    /// frequency-`n` globe has `10n² + 2` tiles.
+    pub globe_frequency: i32,
     pub default_players: usize,
     pub max_players: usize,
     pub default_city_states: usize,
@@ -233,6 +235,7 @@ pub const CIV6_MAP_SIZES: [MapSize; 6] = [
         name: "Duel",
         width: 44,
         height: 26,
+        globe_frequency: 11,
         default_players: 2,
         max_players: 4,
         default_city_states: 3,
@@ -246,6 +249,7 @@ pub const CIV6_MAP_SIZES: [MapSize; 6] = [
         name: "Tiny",
         width: 60,
         height: 38,
+        globe_frequency: 15,
         default_players: 4,
         max_players: 6,
         default_city_states: 6,
@@ -259,6 +263,7 @@ pub const CIV6_MAP_SIZES: [MapSize; 6] = [
         name: "Small",
         width: 74,
         height: 46,
+        globe_frequency: 18,
         default_players: 6,
         max_players: 10,
         default_city_states: 9,
@@ -272,6 +277,7 @@ pub const CIV6_MAP_SIZES: [MapSize; 6] = [
         name: "Standard",
         width: 84,
         height: 54,
+        globe_frequency: 21,
         default_players: 8,
         max_players: 14,
         default_city_states: 12,
@@ -285,6 +291,7 @@ pub const CIV6_MAP_SIZES: [MapSize; 6] = [
         name: "Large",
         width: 96,
         height: 60,
+        globe_frequency: 24,
         default_players: 10,
         max_players: 16,
         default_city_states: 15,
@@ -298,6 +305,7 @@ pub const CIV6_MAP_SIZES: [MapSize; 6] = [
         name: "Huge",
         width: 106,
         height: 66,
+        globe_frequency: 26,
         default_players: 12,
         max_players: 20,
         default_city_states: 18,
@@ -319,9 +327,30 @@ impl MapSize {
     }
 
     pub fn from_dimensions(width: i32, height: i32) -> Option<&'static MapSize> {
-        CIV6_MAP_SIZES
-            .iter()
-            .find(|size| size.width == width && size.height == height)
+        CIV6_MAP_SIZES.iter().find(|size| {
+            (size.width == width && size.height == height)
+                || (size.globe_width() == width && size.globe_height() == height)
+        })
+    }
+
+    /// Columns in the rectangle Planet stores this size's globe in.
+    pub const fn globe_width(&self) -> i32 {
+        5 * self.globe_frequency
+    }
+
+    /// Rows in that rectangle, including the two single-tile pole rows.
+    pub const fn globe_height(&self) -> i32 {
+        2 * self.globe_frequency + 2
+    }
+
+    /// The rectangle a size uses under a given script: a globe is stored in a
+    /// different shape from the cylinder the other scripts lay out.
+    pub const fn dimensions(&self, script: MapScript) -> (i32, i32) {
+        if script.is_globe() {
+            (self.globe_width(), self.globe_height())
+        } else {
+            (self.width, self.height)
+        }
     }
 }
 
@@ -331,29 +360,45 @@ mod tests {
 
     use crate::game::{Action, Game, Item};
 
-    use super::{GameSpeed, MapScript, MapSize, CIV6_GAME_SPEEDS, CIV6_MAP_SCRIPTS};
+    use super::{
+        GameSpeed, MapScript, MapSize, CIV6_GAME_SPEEDS, CIV6_MAP_SCRIPTS, CIV6_MAP_SIZES,
+    };
 
     #[test]
-    fn true_earth_setup_choices_have_stable_names_and_ids() {
-        for (id, name, script) in [
-            (
-                "true_start_earth",
-                "True Start Earth",
-                MapScript::TrueStartEarth,
-            ),
-            (
-                "true_start_true_earth",
-                "True Start True Earth",
-                MapScript::TrueStartTrueEarth,
-            ),
-        ] {
-            assert_eq!(MapScript::from_id(id), Some(script));
-            let spec = CIV6_MAP_SCRIPTS
-                .iter()
-                .find(|candidate| candidate.id == id)
-                .unwrap();
-            assert_eq!(spec.name, name);
-            assert_eq!(spec.script, script);
+    fn planet_is_the_one_script_laid_out_on_a_globe() {
+        assert_eq!(MapScript::from_id("planet"), Some(MapScript::Planet));
+        let spec = CIV6_MAP_SCRIPTS
+            .iter()
+            .find(|candidate| candidate.id == "planet")
+            .unwrap();
+        assert_eq!(spec.name, "Planet");
+        assert_eq!(spec.script, MapScript::Planet);
+        for candidate in CIV6_MAP_SCRIPTS {
+            assert_eq!(
+                candidate.script.is_globe(),
+                candidate.script == MapScript::Planet
+            );
+        }
+        // Every size resolves from either shape of rectangle, and the two
+        // shapes never collide across sizes.
+        for size in CIV6_MAP_SIZES {
+            assert_eq!(
+                MapSize::from_dimensions(size.width, size.height).map(|found| found.id),
+                Some(size.id)
+            );
+            assert_eq!(
+                MapSize::from_dimensions(size.globe_width(), size.globe_height())
+                    .map(|found| found.id),
+                Some(size.id)
+            );
+            assert_eq!(
+                size.dimensions(MapScript::Planet),
+                (size.globe_width(), size.globe_height())
+            );
+            assert_eq!(
+                size.dimensions(MapScript::Pangaea),
+                (size.width, size.height)
+            );
         }
     }
 
