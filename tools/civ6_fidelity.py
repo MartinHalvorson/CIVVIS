@@ -373,6 +373,19 @@ ALIASES = {
     "scythian_horse_archer": "saka_horse_archer",
     "chinese_crouching_tiger": "crouching_tiger",
     "antiair_gun": "anti_air_gun",
+    # Warrior Monk promotions carry a MONK_ prefix in the shipped table, and
+    # three more differ by a word. Same blind spot as the unique units.
+    "monk_shadow_strike": "shadow_strike",
+    "monk_twilight_veil": "twilight_veil",
+    "monk_exploding_palms": "exploding_palms",
+    "monk_disciples": "disciples",
+    "monk_sweeping_wind": "sweeping_wind",
+    "monk_dancing_crane": "dancing_crane",
+    "monk_cobra_strike": "cobra_strike",
+    "surf_rock": "surf_band",
+    "goes_to": "goes_to_11",
+    "pop": "pop_star",
+    "super_carrier": "supercarrier",
 }
 
 
