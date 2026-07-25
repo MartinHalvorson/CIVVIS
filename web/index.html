@@ -1832,6 +1832,8 @@
           <option value="continents">Continents</option>
           <option value="small_continents">Small Continents</option>
           <option value="inland_sea">Inland Sea</option>
+          <option value="true_start_earth">True Start Earth</option>
+          <option value="true_start_true_earth">True Start True Earth</option>
         </select></label>
         <label class="small">Game speed<select id="gamespeed" style="margin-top:4px">
           <option value="online" selected>Online · 250 turns</option>
@@ -3662,6 +3664,16 @@ function axialRound(wx, wy) {
   return [rx, rz];
 }
 function pixelToHex(sx, sy) {
+  if (trueEarthMap()) {
+    // Cells are already clipped at the globe limb and stored in painter order.
+    // Search front-to-back so a polar wedge at the horizon never steals a
+    // click from the face visibly above it.
+    for (let index = EARTH_HIT_CELLS.length - 1; index >= 0; index--) {
+      const cell = EARTH_HIT_CELLS[index];
+      if (pointInsideEarthCell(sx, sy, cell.points)) return cell.pos;
+    }
+    return null;
+  }
   const [wx, wy] = screenToWorld(sx, sy);
   // tiles are drawn raised by their elevation: test a few offsets and accept
   // the candidate whose actual elevation matches the offset best
@@ -8535,8 +8547,257 @@ function drawUnitFormationBadge(u, x, y) {
   cx.restore();
 }
 
+// ---------------------------------------------------------------- true Earth projections
+// The simulation remains one wrapped hex graph. Its Earth presentations use
+// equal-area latitude bands: row boundaries are equally spaced in sin(latitude),
+// then split into longitude wedges. Every cell therefore owns the same surface
+// area on the sphere, while ring circumference tends continuously to zero at
+// the poles and reaches its maximum at the equator.
+let EARTH_HIT_CELLS = [];
+function trueEarthMap() {
+  return state && (state.map.script === "true_start_earth" ||
+                   state.map.script === "true_start_true_earth");
+}
+function trueEarthGlobe() {
+  return state?.map?.script === "true_start_true_earth";
+}
+function earthOffsetCell(pos) {
+  return [pos[0] + ((pos[1] - (pos[1] & 1)) >> 1), pos[1]];
+}
+function earthLatitude(edge) {
+  const surfaceY = 1 - 2 * edge / Math.max(1, state.map.height);
+  return Math.asin(Math.max(-1, Math.min(1, surfaceY)));
+}
+function earthCamera() {
+  const width = state.map.width, height = state.map.height;
+  const cameraCol = cam.x / (S * SQ3);
+  const cameraRow = cam.y / (S * 1.5);
+  return {
+    longitude:2 * Math.PI * cameraCol / width - Math.PI + cam.rot,
+    latitude:earthLatitude(Math.max(0, Math.min(height, cameraRow + .5))),
+    radius:WW() / (2 * Math.PI),
+  };
+}
+function earthStageCenter() {
+  const frame = observedFrameRect();
+  return [(frame.left + frame.right) / 2, (frame.top + frame.bottom) / 2];
+}
+function wrapRadians(value) {
+  return Math.atan2(Math.sin(value), Math.cos(value));
+}
+function earthProject(longitude, latitude, camera, globe, scale, centerX, centerY,
+                      unwrappedDelta = null) {
+  const delta = unwrappedDelta === null
+    ? wrapRadians(longitude - camera.longitude)
+    : unwrappedDelta;
+  const cosLat = Math.cos(latitude), sinLat = Math.sin(latitude);
+  let x, y, z = 1;
+  if (globe) {
+    const cosCam = Math.cos(camera.latitude), sinCam = Math.sin(camera.latitude);
+    x = camera.radius * cosLat * Math.sin(delta);
+    y = camera.radius * (sinCam * cosLat * Math.cos(delta) - cosCam * sinLat);
+    z = cosCam * cosLat * Math.cos(delta) + sinCam * sinLat;
+  } else {
+    // Sinusoidal is equal-area and keeps every parallel true to scale.
+    x = camera.radius * delta * cosLat;
+    y = camera.radius * (camera.latitude - latitude);
+  }
+  return {x:centerX + x * scale, y:centerY + y * scale, z};
+}
+function earthCellGeometry(tile, camera, globe, scale, centerX, centerY) {
+  const [col, row] = earthOffsetCell(tile.pos);
+  const half = Math.PI / state.map.width;
+  const centerLongitude = 2 * Math.PI * (col + .5) / state.map.width - Math.PI;
+  const centerDelta = wrapRadians(centerLongitude - camera.longitude);
+  const longitude = camera.longitude + centerDelta;
+  const top = earthLatitude(row), bottom = earthLatitude(row + 1);
+  // At the antimeridian, floating-point +π can normalize to −π. Preserve the
+  // chosen side of the seam for all four corners so its last cell stays a
+  // narrow wedge instead of drawing one full-width stripe across the world.
+  const leftDelta = Math.max(-Math.PI, centerDelta - half);
+  const rightDelta = Math.min(Math.PI, centerDelta + half);
+  const points = [
+    earthProject(longitude - half, top, camera, globe, scale, centerX, centerY, leftDelta),
+    earthProject(longitude + half, top, camera, globe, scale, centerX, centerY, rightDelta),
+    earthProject(longitude + half, bottom, camera, globe, scale, centerX, centerY, rightDelta),
+    earthProject(longitude - half, bottom, camera, globe, scale, centerX, centerY, leftDelta),
+  ];
+  const center = earthProject(longitude, earthLatitude(row + .5), camera,
+                              globe, scale, centerX, centerY, centerDelta);
+  if (globe) {
+    const radius = camera.radius * scale;
+    for (const point of points) {
+      if (point.z >= 0) continue;
+      const dx = point.x - centerX, dy = point.y - centerY;
+      const length = Math.hypot(dx, dy) || 1;
+      point.x = centerX + dx * radius / length;
+      point.y = centerY + dy * radius / length;
+    }
+  }
+  return {points, center};
+}
+function earthPath(context, points) {
+  context.beginPath();
+  points.forEach((point, index) => index ? context.lineTo(point.x, point.y)
+                                         : context.moveTo(point.x, point.y));
+  context.closePath();
+}
+function pointInsideEarthCell(x, y, points) {
+  let inside = false;
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+    const a = points[i], b = points[j];
+    if (((a.y > y) !== (b.y > y)) &&
+        x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+function earthFeatureGlyph(tile) {
+  if (tile.terrain === "mountain") return "▲";
+  if (tile.feature === "forest") return "♠";
+  if (tile.feature === "jungle") return "♣";
+  if (tile.feature === "ice") return "◇";
+  if (tile.feature === "volcano") return "△";
+  return tile.resource ? (RES_ICON[tile.resource] || "•") : "";
+}
+function drawTrueEarthMap() {
+  if (!trueEarthMap()) return false;
+  const globe = trueEarthGlobe();
+  const camera = earthCamera();
+  const [centerX, centerY] = earthStageCenter();
+  const scale = cam.scale;
+  const radius = camera.radius * scale;
+  const visible = new Set(state.visible.map(key));
+  const spectator = !Number.isInteger(state.view_player);
+  EARTH_HIT_CELLS = [];
+
+  cx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const backdrop = cx.createRadialGradient(centerX, centerY, 0, centerX, centerY,
+                                            Math.max(area.clientWidth, area.clientHeight));
+  backdrop.addColorStop(0, globe ? "#132a38" : "#17323a");
+  backdrop.addColorStop(.58, globe ? "#071018" : "#101c1d");
+  backdrop.addColorStop(1, "#03070c");
+  cx.fillStyle = backdrop;
+  cx.fillRect(0, 0, area.clientWidth, area.clientHeight);
+
+  if (globe) {
+    cx.save();
+    cx.shadowColor = "#000d"; cx.shadowBlur = Math.max(18, radius * .12);
+    cx.shadowOffsetY = Math.max(8, radius * .05);
+    const ocean = cx.createRadialGradient(centerX - radius * .32, centerY - radius * .36,
+                                          radius * .05, centerX, centerY, radius);
+    ocean.addColorStop(0, "#477f9b"); ocean.addColorStop(.52, "#163f57");
+    ocean.addColorStop(.88, "#082437"); ocean.addColorStop(1, "#020b13");
+    cx.fillStyle = ocean; cx.beginPath(); cx.arc(centerX, centerY, radius, 0, 7); cx.fill();
+    cx.restore();
+  }
+
+  const cells = state.map.tiles.map(tile => {
+    const geometry = earthCellGeometry(tile, camera, globe, scale, centerX, centerY);
+    return {tile, ...geometry};
+  }).filter(cell => !globe || cell.center.z > -.025)
+    .sort((a, b) => a.center.z - b.center.z);
+
+  for (const cell of cells) {
+    const {tile, points, center} = cell;
+    earthPath(cx, points);
+    const base = TERRAIN[tile.terrain] || "#4b5960";
+    const light = globe ? .72 + .32 * Math.max(0, center.z) : .94;
+    cx.fillStyle = spectator || visible.has(key(tile.pos))
+      ? shade(base, light)
+      : shade(base, .30);
+    cx.fill();
+    if (tile.owner !== null && tile.owner !== undefined) {
+      cx.globalAlpha = globe ? .28 : .22;
+      cx.fillStyle = pcol(tile.owner); cx.fill(); cx.globalAlpha = 1;
+    }
+    cx.strokeStyle = globe ? "rgba(214,235,231,.075)" : "rgba(18,28,27,.28)";
+    cx.lineWidth = Math.max(.3, Math.min(1, scale * .75)); cx.stroke();
+    EARTH_HIT_CELLS.push({pos:tile.pos, points, z:center.z});
+  }
+
+  const highlighted = new Map();
+  if (sel) {
+    for (const pos of sel.reachable || []) highlighted.set(key(pos), "#74d7ff");
+    for (const action of state.legal_actions || [])
+      if (action.unit === sel.id && ["attack", "ranged", "theological_attack"].includes(action.type))
+        highlighted.set(key(action.target), "#ff685e");
+  }
+  for (const cell of cells) {
+    const color = highlighted.get(key(cell.tile.pos));
+    if (!color) continue;
+    earthPath(cx, cell.points); cx.strokeStyle = color; cx.lineWidth = 2.2; cx.stroke();
+  }
+
+  // Features remain restrained at survey scale; cities and armies carry the
+  // strategic layer and grow only enough to stay clickable while zoomed out.
+  if (scale > .42) {
+    cx.textAlign = "center"; cx.textBaseline = "middle";
+    cx.font = `${Math.max(7, Math.min(13, 8 * scale))}px serif`;
+    for (const cell of cells) {
+      const glyph = earthFeatureGlyph(cell.tile);
+      if (!glyph || (globe && cell.center.z < .08)) continue;
+      cx.globalAlpha = .58; cx.fillStyle = "#111b17";
+      cx.fillText(glyph, cell.center.x, cell.center.y); cx.globalAlpha = 1;
+    }
+  }
+  const cellByKey = new Map(cells.map(cell => [key(cell.tile.pos), cell]));
+  for (const city of state.cities) {
+    const cell = cellByKey.get(key(city.pos));
+    if (!cell || (globe && cell.center.z < .02)) continue;
+    const r = Math.max(4, Math.min(8, 5 * Math.sqrt(scale)));
+    cx.fillStyle = cityBannerColor(city.owner); cx.strokeStyle = "#f7e5b1"; cx.lineWidth = 1.2;
+    cx.beginPath(); cx.arc(cell.center.x, cell.center.y, r, 0, 7); cx.fill(); cx.stroke();
+    if (scale > .65) {
+      cx.font = `700 ${Math.max(8, Math.min(12, 8 * scale))}px Inter,sans-serif`;
+      cx.textAlign = "center"; cx.fillStyle = "#fff4d4"; cx.strokeStyle = "#07100f"; cx.lineWidth = 3;
+      cx.strokeText(city.name, cell.center.x, cell.center.y - r - 5);
+      cx.fillText(city.name, cell.center.x, cell.center.y - r - 5);
+    }
+  }
+  for (const unit of state.units) {
+    const cell = cellByKey.get(key(unit.pos));
+    if (!cell || (globe && cell.center.z < .025)) continue;
+    const r = Math.max(3.5, Math.min(7, 4.5 * Math.sqrt(scale)));
+    cx.fillStyle = pcol(unit.owner); cx.strokeStyle = sel?.id === unit.id ? "#fff2a8" : "#10151d";
+    cx.lineWidth = sel?.id === unit.id ? 2.3 : 1.2;
+    cx.beginPath(); cx.arc(cell.center.x + r * .7, cell.center.y + r * .6, r, 0, 7); cx.fill(); cx.stroke();
+  }
+  for (const tack of tacks) {
+    const cell = cellByKey.get(key(tack));
+    if (!cell) continue;
+    cx.fillStyle = "#ffd86b"; cx.font = "bold 13px serif"; cx.fillText("◆", cell.center.x, cell.center.y);
+  }
+
+  if (globe) {
+    const rim = cx.createRadialGradient(centerX, centerY, radius * .82,
+                                        centerX, centerY, radius * 1.08);
+    rim.addColorStop(0, "rgba(110,201,255,0)");
+    rim.addColorStop(.7, "rgba(110,201,255,.06)");
+    rim.addColorStop(.92, "rgba(133,216,255,.42)");
+    rim.addColorStop(1, "rgba(133,216,255,0)");
+    cx.fillStyle = rim; cx.beginPath(); cx.arc(centerX, centerY, radius * 1.1, 0, 7); cx.fill();
+    cx.strokeStyle = "rgba(196,235,255,.48)"; cx.lineWidth = 1.4;
+    cx.beginPath(); cx.arc(centerX, centerY, radius, 0, 7); cx.stroke();
+  } else {
+    // The curved outline makes the vanishing polar circumference explicit.
+    const outline = [];
+    for (let row = 0; row <= state.map.height; row++) {
+      outline.push(earthProject(camera.longitude + Math.PI, earthLatitude(row), camera,
+                                false, scale, centerX, centerY));
+    }
+    for (let row = state.map.height; row >= 0; row--) {
+      outline.push(earthProject(camera.longitude - Math.PI, earthLatitude(row), camera,
+                                false, scale, centerX, centerY));
+    }
+    earthPath(cx, outline); cx.strokeStyle = "rgba(210,231,220,.55)"; cx.lineWidth = 1.3; cx.stroke();
+  }
+  cx.setTransform(1, 0, 0, 1, 0, 0);
+  return true;
+}
+
 function draw() {
   if (!state) return;
+  if (drawTrueEarthMap()) return;
   const beau0 = MODE.painted;
   const now0 = performance.now();
   const sceneTime = performance.now();
@@ -10010,6 +10271,55 @@ function drawAtmosphere(now) {
 }
 
 // ---------------------------------------------------------------- minimap
+// Keep Earth minimap cells in the same projection as the main view so their
+// shapes, visible hemisphere, and click targets always agree.
+function drawTrueEarthMini() {
+  if (!trueEarthMap()) return false;
+  const {width, height} = syncMiniCanvas();
+  const globe = trueEarthGlobe();
+  const worldCamera = earthCamera();
+  const camera = {...worldCamera, radius:1};
+  const centerX = width / 2, centerY = height / 2;
+  const scale = globe ? Math.min(width, height) * .44
+                      : Math.min((width - 8) / (2 * Math.PI), (height - 8) / Math.PI);
+  mx2.setTransform(DPR, 0, 0, DPR, 0, 0);
+  mx2.fillStyle = "#03080c"; mx2.fillRect(0, 0, width, height);
+  if (globe) {
+    mx2.fillStyle = "#123b55"; mx2.beginPath(); mx2.arc(centerX, centerY, scale, 0, 7); mx2.fill();
+  }
+  const visible = new Set(state.visible.map(key));
+  const spectator = !Number.isInteger(state.view_player);
+  const cells = state.map.tiles.map(tile => ({
+    tile,
+    ...earthCellGeometry(tile, camera, globe, scale, centerX, centerY),
+  })).filter(cell => !globe || cell.center.z > -.025)
+     .sort((a, b) => a.center.z - b.center.z);
+  for (const cell of cells) {
+    earthPath(mx2, cell.points);
+    const base = TERRAIN[cell.tile.terrain] || "#44545a";
+    mx2.fillStyle = spectator || visible.has(key(cell.tile.pos)) ? base : shade(base, .35);
+    mx2.fill();
+    if (cell.tile.owner !== null && cell.tile.owner !== undefined) {
+      mx2.globalAlpha = .68; mx2.fillStyle = cityBannerColor(cell.tile.owner); mx2.fill();
+      mx2.globalAlpha = 1;
+    }
+  }
+  if (globe) {
+    mx2.strokeStyle = "#b9e3f388"; mx2.lineWidth = 1;
+    mx2.beginPath(); mx2.arc(centerX, centerY, scale, 0, 7); mx2.stroke();
+  }
+  for (const city of state.cities) {
+    const tile = TMAP.get(key(city.pos));
+    if (!tile) continue;
+    const cell = earthCellGeometry(tile, camera, globe, scale, centerX, centerY);
+    if (globe && cell.center.z <= 0) continue;
+    mx2.fillStyle = cityBannerColor(city.owner);
+    mx2.fillRect(cell.center.x - 1.5, cell.center.y - 1.5, 3, 3);
+  }
+  mx2.setTransform(1, 0, 0, 1, 0, 0);
+  return true;
+}
+
 function miniLayout(width, height) {
   const mapWidth = Math.max(1, state.map.width), mapHeight = Math.max(1, state.map.height);
   const pad = 4;
@@ -10040,6 +10350,7 @@ function miniHexPath(x, y, size) {
 }
 function drawMini() {
   if (!state) return;
+  if (drawTrueEarthMini()) return;
   const tiles = state.map.tiles;
   const {width:miniWidth, height:miniHeight} = syncMiniCanvas();
   mx2.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -10098,6 +10409,21 @@ function drawMini() {
 }
 mini.addEventListener("click", ev => {
   const r = mini.getBoundingClientRect();
+  if (trueEarthMap()) {
+    const globe = trueEarthGlobe();
+    const camera = {...earthCamera(), radius:1};
+    const centerX = r.width / 2, centerY = r.height / 2;
+    const scale = globe ? Math.min(r.width, r.height) * .44
+                        : Math.min((r.width - 8) / (2 * Math.PI), (r.height - 8) / Math.PI);
+    const x = ev.clientX - r.left, y = ev.clientY - r.top;
+    const target = state.map.tiles.map(tile => ({
+      tile, ...earthCellGeometry(tile, camera, globe, scale, centerX, centerY),
+    })).filter(cell => !globe || cell.center.z > 0)
+      .filter(cell => pointInsideEarthCell(x, y, cell.points))
+      .sort((a, b) => b.center.z - a.center.z)[0];
+    if (target) { takeCameraControl(); centerWorld(target.tile.pos); }
+    return;
+  }
   const layout = miniLayout(r.width, r.height);
   takeCameraControl();
   let x = S * (ev.clientX - r.left - layout.originX) / layout.size;
@@ -12154,6 +12480,13 @@ function nudgeCamera(screenX, screenY) {
   cameraFlight = {x:cam.x + dx, y:clampCameraY(cam.y + dy), scale:cam.scale};
 }
 function zoomAt(f, sx, sy) {
+  if (trueEarthMap()) {
+    const base = cameraZoom?.scale || cam.scale;
+    cameraFlight = null; cameraZoom = null; clearCameraInertia();
+    cam.scale = Math.max(.08, Math.min(3.2, base * f));
+    draw(); drawMini();
+    return;
+  }
   if (sx === undefined) { sx = area.clientWidth / 2; sy = area.clientHeight / 2; }
   const [wx, wy] = screenToWorld(sx, sy);
   const base = cameraZoom?.scale || cam.scale;
@@ -12326,10 +12659,31 @@ function watchedEmpireSubjects(player) {
 // cancel close-up tracking, put north back at the top, and fit one complete
 // copy of the world inside the unobstructed map stage. Deriving the bounds from
 // the tiles keeps this correct for both cylindrical and bounded scripts.
+function fitTrueEarthView() {
+  const frame = observedFrameRect();
+  const padding = Math.min(32, (frame.right - frame.left) * .06,
+                           (frame.bottom - frame.top) * .08);
+  const usableWidth = Math.max(1, frame.right - frame.left - padding * 2);
+  const usableHeight = Math.max(1, frame.bottom - frame.top - padding * 2);
+  const radius = WW() / (2 * Math.PI);
+  const projectedWidth = trueEarthGlobe() ? radius * 2 : radius * 2 * Math.PI;
+  const projectedHeight = trueEarthGlobe() ? radius * 2 : radius * Math.PI;
+  cameraFlight = null; cameraZoom = null; clearCameraInertia();
+  cam.scale = Math.max(.01, Math.min(3.2, usableWidth / projectedWidth,
+                                    usableHeight / projectedHeight));
+  cam.x = S * SQ3 * state.map.width / 2;
+  cam.y = S * 1.5 * (state.map.height - 1) / 2;
+}
+
 function setFullWorldView() {
   takeCameraControl();
   setRot(0);
   if (!state?.map?.tiles?.length) return;
+
+  if (trueEarthMap()) {
+    fitTrueEarthView();
+    return;
+  }
 
   const centers = state.map.tiles.map(tile => ({
     x:S * SQ3 * (tile.pos[0] + tile.pos[1] / 2),
@@ -12456,6 +12810,7 @@ function observedViewGoal(anchors) {
 }
 
 function setObservedPlayersView(smooth = false) {
+  if (trueEarthMap()) { fitTrueEarthView(); return; }
   const watched = Number.isInteger(state?.view_player);
   const anchors = watched
     ? watchedEmpireSubjects(state.view_player) : observedPlayerAnchors();
@@ -12559,6 +12914,7 @@ function mainLandmassAnchor() {
   }, null).tile;
 }
 function setMainLandmassView() {
+  if (trueEarthMap()) { setFullWorldView(); return; }
   const anchor = mainLandmassAnchor();
   if (!anchor) return;
   cam.scale = cinemaActive() ? .82 : .9;
