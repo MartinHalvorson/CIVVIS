@@ -1454,6 +1454,10 @@
   .setting-row kbd { margin: 0; }
   .shortcut-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
   .shortcut-grid span { color: var(--muted); font-size: 9px; }
+  /* A four-group legend needs its groups named, and a heading is the one row
+     that spans both columns. */
+  .shortcut-grid .shortcut-head { grid-column: 1 / -1; margin-top: 7px; color: var(--gold); font: 700 9px Inter, sans-serif; letter-spacing: .07em; text-transform: uppercase; }
+  .shortcut-grid .shortcut-head:first-child { margin-top: 0; }
   kbd { display: inline-grid; min-width: 19px; height: 18px; place-items: center; margin-right: 5px; padding: 0 4px; border-radius: 5px; color: #cbd5d0; background: #091310; border: 1px solid #354c44; box-shadow: inset 0 -1px #000; font: 700 8px Inter, sans-serif; }
   #newgame-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: end; }
   #newgame-options button { margin: 0; }
@@ -2105,11 +2109,11 @@
     <div id="launchtabs"></div>
     <div class="launch-rule" aria-hidden="true"></div>
     <button class="launch" id="diplomacybtn"
-      title="Diplomacy — leaders, agendas, war and peace (L)" aria-label="Diplomacy">⚭<span
-      class="launch-badge" hidden></span><span class="launch-key" aria-hidden="true">L</span></button>
+      title="Diplomacy — leaders, agendas, war and peace (F8)" aria-label="Diplomacy">⚭<span
+      class="launch-badge" hidden></span><span class="launch-key" aria-hidden="true">F8</span></button>
     <button class="launch" id="tradebtn"
-      title="Quick Deals — every mutually acceptable offer (D)" aria-label="Quick Deals">⚖<span
-      class="launch-badge" hidden></span><span class="launch-key" aria-hidden="true">D</span></button>
+      title="Quick Deals — every mutually acceptable offer (Ctrl+D)" aria-label="Quick Deals">⚖<span
+      class="launch-badge" hidden></span><span class="launch-key" aria-hidden="true">^D</span></button>
   </div>
   <div id="modeline"></div>
   <div id="err"></div>
@@ -2254,7 +2258,7 @@
                 <option value="all">All</option>
               </select></label>
           </div>
-          <button id="autoplaybtn" title="Hand your seat to the selected strategy (A · press again to stop)">▶▶ Auto-play · A</button>
+          <button id="autoplaybtn" title="Hand your seat to the selected strategy (Ctrl+A · press again to stop)">▶▶ Auto-play · ^A</button>
           <div class="autoplay-note" id="autoplaynote"></div>
         </div>
       </div>
@@ -2276,7 +2280,7 @@
         </script>
       </div>
     </div>
-    <details class="sidebar-section" data-section="game-settings">
+    <details class="sidebar-section" id="setupsec" data-section="game-settings">
       <summary class="section-label">
         <span class="section-title"><span class="section-icon" aria-hidden="true">⚙</span><span>Game settings</span></span>
         <span class="section-meta"><span class="rule"></span><span class="section-chevron" aria-hidden="true"></span></span>
@@ -2397,6 +2401,9 @@
           <button class="ghost overlay-layout-reset" id="reset-overlay-layout" type="button">Reset overlay positions &amp; sizes</button>
         </div>
         <label class="setting-row"><span><input type="checkbox" id="yieldchk"> Show yields per tile</span><kbd>Y</kbd></label>
+        <label class="setting-row"><span><input type="checkbox" id="gridchk"> Show the hex grid</span><kbd>G</kbd></label>
+        <label class="setting-row"><span><input type="checkbox" id="reschk"> Show resource icons</span><kbd>Q</kbd></label>
+        <label class="setting-row"><span><input type="checkbox" id="edgepanchk"> Pan when the pointer reaches a map edge</span></label>
         <label class="setting-row"><span><input type="checkbox" id="artifactchk"> Show artifact sites &amp; shipwrecks</span></label>
       </div>
       </div>
@@ -2452,19 +2459,39 @@
   <details class="shortcut-panel">
     <summary>Keyboard shortcuts</summary>
     <div class="utility-body shortcut-grid">
+      <span class="shortcut-head">Units — Civilization VI keys</span>
+      <span><kbd>Space</kbd>Skip this unit</span><span><kbd>F</kbd>Fortify</span>
+      <span><kbd>Z</kbd>Sleep</span><span><kbd>V</kbd>Alert · wake on an enemy</span>
+      <span><kbd>H</kbd>Fortify until healed</span><span><kbd>E</kbd>Auto-explore</span>
+      <span><kbd>B</kbd>Found city</span><span><kbd>M</kbd>Move to · click the tile</span>
+      <span><kbd>A</kbd>Attack · click the target</span><span><kbd>R</kbd>Ranged attack</span>
+      <span><kbd>,</kbd>Previous unit</span><span><kbd>.</kbd>Next unit</span>
+      <span class="shortcut-head">Empire and screens</span>
       <span><kbd>↵</kbd>Next blocker · end turn</span><span><kbd>⇧ ↵</kbd>End turn anyway</span>
-      <span><kbd>Tab</kbd>Next unit needing orders</span><span><kbd>Space</kbd>Skip this unit</span>
-      <span><kbd>F</kbd>Fortify · hide the deck</span><span><kbd>Z</kbd>Sleep this unit</span>
-      <span><kbd>1</kbd>Next unit</span><span><kbd>2</kbd>Settler lens</span>
-      <span><kbd>3</kbd>Map tacks · 6.5</span><span><kbd>P</kbd>Civilopedia</span>
-      <span><kbd>D</kbd>Quick Deals</span><span><kbd>G</kbd>Empire screens</span>
-      <span><kbd>Alt/⌥ drag</kbd>Rotate · cinematic tilt</span>
-      <span><kbd>D</kbd>Quick Deals</span><span><kbd>L</kbd>Diplomacy</span>
-      <span><kbd>P</kbd>Civilopedia</span><span><kbd>Alt/⌥ drag</kbd>Rotate · cinematic tilt</span>
-      <span><kbd>Q / E</kbd>Rotate map</span><span><kbd>Shift scroll</kbd>Rotate · <kbd>⌥ scroll</kbd>tilt</span>
-      <span><kbd>R</kbd>Face north · reset the view</span>
-      <span><kbd>Arrows</kbd>Pan map</span><span><kbd>+ / −</kbd>Zoom · double-click to dive</span>
-      <span><kbd>Y</kbd>Tile yields</span><span><kbd>C</kbd>Cinema mode</span>
+      <span><kbd>T</kbd>Technology tree</span><span><kbd>C</kbd>Civics tree</span>
+      <span><kbd>L</kbd>Religion</span><span><kbd>O</kbd>Great People</span>
+      <span><kbd>F7</kbd>Government</span><span><kbd>F10</kbd>Governors</span>
+      <span><kbd>F2</kbd>City-states</span><span><kbd>F3</kbd>Espionage</span>
+      <span><kbd>F4</kbd>Trade routes</span><span><kbd>F9</kbd>Civilopedia</span>
+      <span><kbd>^ ,</kbd>Pedia back</span><span><kbd>^ .</kbd>Pedia forward</span>
+      <span><kbd>[</kbd>Previous city</span><span><kbd>]</kbd>Next city</span>
+      <span><kbd>\</kbd>Go to the capital</span><span><kbd>Home</kbd>Game settings</span>
+      <span><kbd>F5</kbd>Quicksave</span><span><kbd>F6</kbd>Quickload</span>
+      <span class="shortcut-head">The map</span>
+      <span><kbd>Arrows</kbd>Pan · <kbd>⇧</kbd> for faster</span><span><kbd>Num + / −</kbd>Zoom</span>
+      <span><kbd>Y</kbd>Tile yields</span><span><kbd>G</kbd>Hex grid</span>
+      <span><kbd>Q</kbd>Resource icons</span><span><kbd>+</kbd>Flat 2D view</span>
+      <span><kbd>End</kbd>Full-screen map</span><span><kbd>Esc</kbd>Close · cancel</span>
+      <span><kbd>Drag</kbd>Pan</span><span><kbd>Right-drag</kbd>Move the selected unit</span>
+      <span><kbd>Middle-click</kbd>Centre on that tile</span><span><kbd>Scroll</kbd>Zoom · double-click to dive</span>
+      <span class="shortcut-head">CIVVIS additions</span>
+      <span><kbd>1</kbd>Next action</span><span><kbd>2</kbd>Settler lens</span>
+      <span><kbd>3</kbd>Map tacks</span><span><kbd>Esc</kbd>Close · cancel</span>
+      <span><kbd>F8</kbd>Diplomacy</span><span><kbd>^ D</kbd>Quick Deals</span>
+      <span><kbd>^ A</kbd>Auto-play</span><span><kbd>^ U</kbd>Hide the command deck</span>
+      <span><kbd>= / −</kbd>Zoom without a keypad</span><span><kbd>Tab</kbd>Next unit needing orders</span>
+      <span><kbd>Alt/⌥ drag</kbd>Rotate · cinematic tilt</span><span><kbd>^ ← →</kbd>Rotate · <kbd>^ ↑ ↓</kbd>tilt</span>
+      <span><kbd>^ R</kbd>Face north · reset the view</span><span><kbd>⇧ scroll</kbd>Rotate · <kbd>⌥ scroll</kbd>tilt</span>
     </div>
   </details>
 </div>
@@ -2775,6 +2802,15 @@ const VICTORY_TRACKS = [
 // ---------------------------------------------------------------- state
 let state = null, sel = null, selCity = null, RULES = null;
 let lensOn = false, tackMode = false, tacks = [], lastSeed = null, cycleIdx = -1;
+// Civ 6's M, A and R arm the next click rather than acting on the spot. The
+// flag lives up here with the other map modes because `modeline()` reads it
+// and runs long before the key bindings further down are defined.
+let interfaceMode = null;
+const INTERFACE_MODE_NOTE = {
+  move_to: "MOVE TO — click where this unit should go (Esc to cancel)",
+  attack: "ATTACK — click the unit or city to strike (Esc to cancel)",
+  ranged: "RANGED ATTACK — click a target in range (Esc to cancel)",
+};
 let restartPaused = null;
 try {
   restartPaused = sessionStorage.getItem("civvis-restart-paused-v1");
@@ -2938,6 +2974,17 @@ function setView(v) {
 }
 let SHOW_YIELDS = localStorage.getItem("civvis-show-yields") === "1";
 let SHOW_ARTIFACT_SITES = localStorage.getItem("civvis-show-artifact-sites") === "1";
+// Civ 6 binds G to the hex grid and Q to the resource icons, so both have to
+// be things a player can actually turn off here. The grid is off by default
+// because the painted views deliberately dissolve it; resources are on,
+// because that is the state Civ 6 starts in.
+let SHOW_GRID = localStorage.getItem("civvis-show-grid") === "1";
+let SHOW_RESOURCES = localStorage.getItem("civvis-show-resources") !== "0";
+// Civ 6's Gameplay > Edge Pan, which ships on: the camera walks when the
+// pointer reaches the edge of the map. It is a setting there and a setting
+// here, because a windowed browser map is a different proposition from a
+// fullscreen game and some players will want it off.
+let EDGE_PAN = localStorage.getItem("civvis-edge-pan") !== "0";
 const OVERLAY_STORAGE_KEY = "civvis-map-overlays-v1";
 const OVERLAY_NAMES = ["players", "victory", "minimap", "controls"];
 let OVERLAY_VISIBILITY = Object.fromEntries(OVERLAY_NAMES.map(name => [name, true]));
@@ -11766,6 +11813,19 @@ function draw() {
     cx.fill();
     if (!beau) { hexPath(x, y); cx.strokeStyle = "#00000038"; cx.lineWidth = 1; cx.stroke(); }
   }
+  // --- hex grid (G)
+  // The painted views spend real effort dissolving the grid, so this is not
+  // the strategic outline turned up: it is a separate deliberate overlay a
+  // player asks for when they are counting tiles rather than looking at a map.
+  if (SHOW_GRID) {
+    cx.strokeStyle = beau ? "rgba(20,16,10,.34)" : "rgba(255,246,222,.30)";
+    cx.lineWidth = beau ? 1.1 : 1;
+    for (const t of tiles) {
+      const [x, y0] = hexXY(t.pos[0], t.pos[1]);
+      hexPath(x, y0 - elev(t));
+      cx.stroke();
+    }
+  }
   // Atlas material is a map-wide layer. Paint every coherent material first,
   // then all of the transition dabs; a later tile's hard-clipped material can
   // no longer erase a neighbor's soft contribution at their shared boundary.
@@ -12333,7 +12393,7 @@ function draw() {
     } else if (t.improvement) {
       drawImprovement(t, x, y);
     }
-    if (t.resource && (SHOW_ARTIFACT_SITES || !ARTIFACT_RESOURCES.has(t.resource))) {
+    if (SHOW_RESOURCES && t.resource && (SHOW_ARTIFACT_SITES || !ARTIFACT_RESOURCES.has(t.resource))) {
       // Resource badges are terrain information, not actors, so they sit a
       // step quieter than the unit plates instead of ringing the map in bright
       // white discs of the same weight. The rim carries the resource class, so
@@ -14595,6 +14655,12 @@ function drawQuickDeals() {
 // routes, espionage. Each is a screen you open, decide in, and close. The
 // engine has offered every one of these to seat 0 since v0.6; this is the
 // bar and the screens, built over the same legal actions the agents use.
+// Which of these screens Civ 6 gives a key of its own. Cities has none there,
+// so it has none here either.
+const EMPIRE_TAB_KEYS = {
+  government: "F7", religion: "L", people: "O",
+  governors: "F10", states: "F2", trade: "F4", spies: "F3",
+};
 const EMPIRE_TABS = [
   {id: "cities", icon: "⌂", name: "Cities"},
   {id: "government", icon: "♜", name: "Government"},
@@ -14663,16 +14729,20 @@ function drawLaunchBar() {
   const tabs = document.getElementById("launchtabs");
   if (tabs) tabs.innerHTML = EMPIRE_TABS.map(tab => {
     const badge = empireBadge(tab.id);
+    // Every screen Civ 6 puts on a key says which one, on the button itself.
+    const hot = EMPIRE_TAB_KEYS[tab.id];
     return `<button class="launch" onclick="openEmpire('${tab.id}')" ` +
-      `title="${tab.name}${badge ? ` — ${badge} waiting` : ""}" aria-label="${tab.name}">${tab.icon}` +
-      (badge ? `<span class="launch-badge">${badge}</span>` : "") + `</button>`;
+      `title="${tab.name}${hot ? ` (${hot})` : ""}${badge ? ` — ${badge} waiting` : ""}" ` +
+      `aria-label="${tab.name}">${tab.icon}` +
+      (badge ? `<span class="launch-badge">${badge}</span>` : "") +
+      (hot ? `<span class="launch-key" aria-hidden="true">${hot}</span>` : "") + `</button>`;
   }).join("");
   // Same "waiting for you" count the empire tabs carry: a proposal nobody has
   // answered, and every offer another table would sign right now.
   setLaunchBadge("diplomacybtn", legalFor("accept_deal").length,
-    "Diplomacy — leaders, agendas, war and peace", "L");
+    "Diplomacy — leaders, agendas, war and peace", "F8");
   setLaunchBadge("tradebtn", Array.isArray(state.quick_deals) ? state.quick_deals.length : 0,
-    "Quick Deals — every mutually acceptable offer", "D");
+    "Quick Deals — every mutually acceptable offer", "Ctrl+D");
 }
 function openEmpire(tab) {
   if (SPEC) return;
@@ -15566,15 +15636,24 @@ function drawUbar() {
   if (standing !== "skip")
     h += `<button title="Done for this turn (Space)" onclick='orderUnit("skip")'>⏭ Skip</button>`;
   if (standing !== "sleep")
-    h += `<button title="Rest until an enemy comes near or the unit is struck (Z)" onclick='orderUnit("sleep")'>☾ Sleep</button>`;
+    h += `<button title="Rest until this unit is struck (Z)" onclick='orderUnit("sleep")'>☾ Sleep</button>`;
+  if (standing !== "alert")
+    h += `<button title="Stand watch until an enemy comes near (V)" onclick='orderUnit("alert")'>👁 Alert</button>`;
+  if (standing !== "heal")
+    h += `<button title="Fortify and wait out the damage (H)" onclick='healHere()'>✚ Heal</button>`;
+  if (standing !== "explore")
+    h += `<button title="Walk toward the edge of the known world (E)" onclick='exploreHere()'>🧭 Explore</button>`;
   if (standing)
-    h += `<button title="Take this unit off standing orders" onclick='unitOrders.delete(${u.id});drawUbar();drawTurnLoop()'>⏻ ${standing === "goto" ? "Halt" : "Wake"}</button>`;
+    h += `<button title="Take this unit off standing orders" onclick='unitOrders.delete(${u.id});drawUbar();drawTurnLoop()'>⏻ ${standing === "goto" || standing === "explore" ? "Halt" : "Wake"}</button>`;
   h += `<button onclick='sel=null;draw();drawUbar();drawTurnLoop()'>✕</button>`;
   if (standing) {
     const travel = unitTravelOrder(u);
     h += `<div class="small" style="margin-top:6px">${
       standing === "skip" ? "Skipping this turn"
       : travel ? `Travelling to ${travel.to.join(",")}`
+      : standing === "explore" ? "Exploring"
+      : standing === "alert" ? "On watch until an enemy comes near"
+      : standing === "heal" ? "Healing until whole again"
       : "Sleeping until disturbed"}</div>`;
   }
   bar.innerHTML = h;
@@ -16237,13 +16316,36 @@ function drawCityPanel() {
 // The Civilopedia is generated by the engine from the ruleset in play, mods
 // included, so it can never disagree with the game it is attached to.
 let PEDIA = null, pediaKey = null;
+// Civ 6 walks the Civilopedia's own trail with Ctrl+, and Ctrl+. — every entry
+// you followed, in the order you followed it. `pediaAt` is where on that trail
+// the reader currently stands, so stepping back and then following a new link
+// truncates the forward half the way a browser does.
+let pediaTrail = [], pediaAt = -1;
+function pediaVisit(key) {
+  if (!key || pediaTrail[pediaAt] === key) return;
+  pediaTrail = pediaTrail.slice(0, pediaAt + 1);
+  pediaTrail.push(key);
+  pediaAt = pediaTrail.length - 1;
+}
+function pediaStep(delta) {
+  const to = pediaAt + delta;
+  if (to < 0 || to >= pediaTrail.length) return;
+  pediaAt = to;
+  pediaKey = pediaTrail[to];
+  const box = document.getElementById("pediaq");
+  if (box) box.value = "";
+  if (!document.getElementById("pedia").classList.contains("open")) openPedia();
+  else drawPedia();
+}
+function pediaBack() { pediaStep(-1); }
+function pediaForward() { pediaStep(1); }
 async function openPedia(key) {
   if (!PEDIA) {
     try { PEDIA = (await fetchJSON("/pedia")).entries || []; }
     catch (e) { PEDIA = []; }
   }
   document.getElementById("pedia").classList.add("open");
-  if (key) pediaKey = key;
+  if (key) { pediaKey = key; pediaVisit(key); }
   drawPedia();
   const box = document.getElementById("pediaq");
   if (!key) { box.focus(); box.select(); }
@@ -16252,7 +16354,7 @@ function closePedia() { document.getElementById("pedia").classList.remove("open"
 document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("pediaq").addEventListener("input", () => { pediaKey = null; drawPedia(); });
 });
-function pediaShow(key) { pediaKey = key; drawPedia(); }
+function pediaShow(key) { pediaKey = key; pediaVisit(key); drawPedia(); }
 function drawPedia() {
   const needle = (document.getElementById("pediaq").value || "").trim().toLowerCase();
   const shown = (PEDIA || []).filter(e => !needle ||
@@ -16287,8 +16389,10 @@ function drawPedia() {
       : "");
 }
 
+let treeKind = null;
 function openTree(kind) {
   if (!RULES || !state) return;
+  treeKind = kind;
   const specs = kind === "techs" ? RULES.techs : RULES.civics;
   const known = new Set(kind === "techs" ? state.me.techs : state.me.civics);
   const boosted = kind === "techs" ? state.me.boosted_techs : state.me.boosted_civics;
@@ -16435,6 +16539,7 @@ function modeline() {
   const m = [];
   if (lensOn) m.push("SETTLER LENS — greener is better (2 to exit)");
   if (tackMode) m.push("TACK MODE — click to place/remove a 📍 (3 to exit)");
+  if (interfaceMode && INTERFACE_MODE_NOTE[interfaceMode]) m.push(INTERFACE_MODE_NOTE[interfaceMode]);
   const el = document.getElementById("modeline");
   el.textContent = m.join("   ");
   el.style.display = m.length ? "block" : "none";
@@ -16697,6 +16802,18 @@ function advanceUserCameraMotion(now = performance.now()) {
   const dt = Math.max(1, Math.min(50, now - (cameraMotionLast || now - 16)));
   cameraMotionLast = now;
   let active = false;
+  // Edge pan — Civ 6's Gameplay > Edge Pan. While the pointer rests against a
+  // side of the map the camera walks that way for as long as it stays there.
+  // It is a velocity and not a flight, so it does not fight the eased camera
+  // moves the rest of the client asks for; it just cancels one that is running.
+  if (edgePanVector && !dragState && !cameraZoom) {
+    cameraFlight = null;
+    const step = EDGE_PAN_SPEED * dt / 1000 / Math.max(.25, cam.scale);
+    const vx = edgePanVector.x * step, vy = edgePanVector.y * step / YS;
+    cam.x += COSR * vx + SINR * vy;
+    cam.y = clampCameraY(cam.y - SINR * vx + COSR * vy);
+    active = true;
+  }
   if (cameraZoom) {
     const ease = 1 - Math.pow(.012, dt / 1000);
     const nextScale = cam.scale + (cameraZoom.scale - cam.scale) * ease;
@@ -17216,6 +17333,26 @@ document.getElementById("zout").onclick = () => { takeCameraControl(true); zoomA
 // ---------------------------------------------------------------- input
 let dragState = null, dragMoved = false, rdrag = null, rdragTo = null;
 let altTap = false; // tapping Alt (no drag) resets the map's viewing angles
+// How near the pointer has to come to a side of the map before the camera
+// starts walking, and how fast it walks there in screen pixels a second.
+const EDGE_PAN_BAND = 28, EDGE_PAN_SPEED = 760;
+let edgePanVector = null;
+// Nothing pans under a pointer that is over an open screen, mid-drag, or on a
+// board the player is not driving.
+function updateEdgePan(clientX, clientY) {
+  if (!EDGE_PAN || SPEC || dragState || cinemaActive() || anyScreenOpen()) {
+    edgePanVector = null; return;
+  }
+  const r = cv.getBoundingClientRect();
+  const left = clientX - r.left, right = r.right - clientX;
+  const top = clientY - r.top, bottom = r.bottom - clientY;
+  if (left < 0 || right < 0 || top < 0 || bottom < 0) { edgePanVector = null; return; }
+  const x = left < EDGE_PAN_BAND ? -1 : right < EDGE_PAN_BAND ? 1 : 0;
+  const y = top < EDGE_PAN_BAND ? -1 : bottom < EDGE_PAN_BAND ? 1 : 0;
+  if (!x && !y) { edgePanVector = null; return; }
+  if (!edgePanVector) takeCameraControl(true);
+  edgePanVector = {x, y};
+}
 cv.addEventListener("pointerdown", ev => {
   // Touch has its own one/two-finger path below. Mouse and pen share this
   // captured pointer path so a drag does not depend on compatibility mouse
@@ -17247,10 +17384,18 @@ cv.addEventListener("pointerdown", ev => {
     }
     if (sel) { rdrag = true; rdragTo = pos; draw(); }
   }
+  // Civ 6's middle button snaps the camera to whatever plot the cursor is on.
+  else if (ev.button === 1) {
+    ev.preventDefault();
+    const pos = pixelToHex(ev.clientX - r.left, ev.clientY - r.top);
+    if (pos) { takeCameraControl(true); centerOn(pos); }
+  }
   if (ev.button === 0 || ev.button === 2) {
     try { cv.setPointerCapture?.(ev.pointerId); } catch (_) {}
   }
 });
+// Middle-click is "paste"/autoscroll on some platforms; the map asked first.
+cv.addEventListener("auxclick", ev => { if (ev.button === 1) ev.preventDefault(); });
 window.addEventListener("pointermove", ev => {
   if (ev.pointerType === "touch") return;
   if (dragState && ev.pointerId === dragState.pointerId) {
@@ -17489,6 +17634,8 @@ cv.addEventListener("click", ev => {
     if (i >= 0) tacks.splice(i, 1); else tacks.push([pos[0], pos[1]]);
     saveTacks(); draw(); return;
   }
+  // M, A and R armed this click before it happened.
+  if (applyInterfaceMode(pos)) return;
   if (SPEC) {
     const unit = state.units.find(candidate => key(candidate.pos) === k);
     if (unit) { startCameraFollow(unit.id); return; }
@@ -17649,6 +17796,11 @@ function plannedTipLines(t) {
 
 // tooltip
 const tip = document.getElementById("tip");
+// The overlays — player standings across the top, the victory rail, the
+// minimap — sit *on* the map, so the canvas never sees a pointer parked at the
+// edges that matter. Watch the window and measure against the map's own box.
+window.addEventListener("mousemove", ev => updateEdgePan(ev.clientX, ev.clientY), {passive: true});
+window.addEventListener("mouseout", ev => { if (!ev.relatedTarget) edgePanVector = null; });
 cv.addEventListener("mousemove", ev => {
   // `dragMoved` outlives the drag: it is cleared by the click that follows, and
   // a drag released off the canvas never gets one. Hovering must ask whether a
@@ -17729,6 +17881,7 @@ cv.addEventListener("mousemove", ev => {
   tip.style.top = (ev.clientY + 16) + "px";
 });
 cv.addEventListener("mouseleave", () => { tip.style.display = "none"; });
+window.addEventListener("blur", () => { edgePanVector = null; });
 
 // ----------------------------------------------------------- the turn loop
 // A Civ 6 turn is a loop around one button: the game names what it is waiting
@@ -17752,19 +17905,25 @@ function unitOrder(unit) {
   const held = unitOrders.get(unit.id);
   if (!held) return null;
   if (held.order === "skip") return held.turn === state.turn ? "skip" : null;
-  return held.order === "goto" ? "goto" : "sleep";
+  return held.order;
 }
-// Sleeping units wake for the same reasons Civ 6 wakes them: a hostile unit
-// close enough to matter, or damage taken while they were not looking.
+// Civ 6 separates the two standing orders that look alike, and so does this.
+// Sleep is a unit put down for as long as you leave it, and only its own
+// wounds wake it. Alert is a sentry: it also wakes when something hostile
+// comes close enough to matter. Heal is a fortified unit waiting out its
+// damage, so full health is what ends it.
 function wakeSleepers() {
   if (!state || SPEC) return;
   const hostile = state.units.filter(u => u.owner !== 0 &&
     (state.players[u.owner]?.at_war_with_me || state.players[u.owner]?.is_barbarian));
   for (const unit of myUnits()) {
     const held = unitOrders.get(unit.id);
-    if (!held || held.order !== "sleep") continue;
-    const threatened = hostile.some(enemy => hexDistUI(enemy.pos, unit.pos) <= 2);
-    if (threatened || unit.hp < (held.hp ?? unit.hp)) unitOrders.delete(unit.id);
+    if (!held || !["sleep", "alert", "heal"].includes(held.order)) continue;
+    const hurt = unit.hp < (held.hp ?? unit.hp);
+    const threatened = held.order === "alert" &&
+      hostile.some(enemy => hexDistUI(enemy.pos, unit.pos) <= 2);
+    const mended = held.order === "heal" && unit.hp >= 100;
+    if (hurt || threatened || mended) unitOrders.delete(unit.id);
     else held.hp = unit.hp;
   }
   // Orders outlive nothing: a spent skip is dropped with the turn that set it,
@@ -17783,7 +17942,7 @@ function unitsNeedingOrders() {
 function orderUnit(order) {
   if (!sel || SPEC) return;
   // Fortify is the engine's, and only the engine can say whether this unit may
-  // take it. The two client-side orders are always available.
+  // take it. The client-side orders are always available.
   if (order === "fortify") {
     const act = state.legal_actions.find(a => a.type === "fortify" && a.unit === sel.id);
     if (act) send(act);
@@ -17881,6 +18040,14 @@ async function resumeAllTravel() {
     .map(([id]) => id)
     .sort((first, second) => first - second);
   for (const id of travelling) await resumeTravel(id);
+  // Explorers re-aim before they walk, so they take their step after the
+  // travellers rather than sharing the loop: this turn's frontier is only
+  // known once the units already under orders have finished revealing it.
+  const exploring = [...unitOrders.entries()]
+    .filter(([, held]) => held.order === "explore")
+    .map(([id]) => id)
+    .sort((first, second) => first - second);
+  for (const id of exploring) await resumeExplore(id);
   drawTurnLoop();
 }
 
@@ -18145,6 +18312,386 @@ function togglePanel(force, persist = true) {
   resize();
   reframeCurrentMapFocus(priorFocus);
 }
+
+// ===================================================================
+//                       Civ 6 key bindings
+//
+// Every key below is Civ 6's own default. They were read out of the shipped
+// `Assets/Configuration/Data/InputConfiguration.xml` — the
+// `InputActionDefaultGestures` table, plus the rows Expansion1/Expansion2 add
+// — rather than remembered, so a player who knows Civ 6 already knows this
+// board. `docs/CIV6_KEYBINDINGS.md` carries the whole table, the Civ 6 actions
+// CIVVIS has nothing to bind to, and the CIVVIS-only extras, which live only
+// on keys and chords Civ 6 leaves free.
+//
+// Three keys are deliberate overrides that keep their CIVVIS meaning: 1 is
+// next action, 2 is the settler lens and 3 places a tack. Civ 6 spends 1, 2
+// and 3 on the religion, continent and appeal lenses, none of which exist here.
+// ===================================================================
+
+// ---- map overlays. Each setter is the one place that writes the flag, the
+// stored preference and the checkbox, so a key and a click cannot disagree.
+function setShowYields(on) {
+  SHOW_YIELDS = !!on;
+  localStorage.setItem("civvis-show-yields", SHOW_YIELDS ? "1" : "0");
+  const box = document.getElementById("yieldchk");
+  if (box) box.checked = SHOW_YIELDS;
+  if (state) draw();
+}
+function setShowGrid(on) {
+  SHOW_GRID = !!on;
+  localStorage.setItem("civvis-show-grid", SHOW_GRID ? "1" : "0");
+  const box = document.getElementById("gridchk");
+  if (box) box.checked = SHOW_GRID;
+  if (state) draw();
+}
+function setShowResources(on) {
+  SHOW_RESOURCES = !!on;
+  localStorage.setItem("civvis-show-resources", SHOW_RESOURCES ? "1" : "0");
+  const box = document.getElementById("reschk");
+  if (box) box.checked = SHOW_RESOURCES;
+  if (state) draw();
+}
+function setEdgePan(on) {
+  EDGE_PAN = !!on;
+  localStorage.setItem("civvis-edge-pan", EDGE_PAN ? "1" : "0");
+  const box = document.getElementById("edgepanchk");
+  if (box) box.checked = EDGE_PAN;
+  if (!EDGE_PAN) edgePanVector = null;
+}
+
+// ---- interface modes.
+// Civ 6's M, A and R do not act: they arm the next click. Clicking a tile
+// already moves and already attacks here, so these are what make the board
+// playable from the keyboard — pick the unit, press the verb, click the tile.
+function setInterfaceMode(mode) {
+  if (SPEC) return;
+  // Every one of these verbs is about a unit; with nothing selected the key
+  // would arm a mode that the next click could only cancel.
+  if (mode && !sel) return;
+  interfaceMode = interfaceMode === mode ? null : mode;
+  modeline(); draw();
+}
+function clearInterfaceMode() {
+  if (interfaceMode === null) return false;
+  interfaceMode = null; modeline(); draw();
+  return true;
+}
+// The click that an armed mode was waiting for. Returns true when it consumed
+// the click, so the ordinary select-and-move path never sees it.
+function applyInterfaceMode(pos) {
+  if (!interfaceMode || !sel || SPEC) return false;
+  const mode = interfaceMode;
+  const k = key(pos);
+  interfaceMode = null; modeline();
+  if (mode === "attack" || mode === "ranged") {
+    const wanted = mode === "attack"
+      ? ["attack"] : ["ranged", "theological_attack"];
+    const act = state.legal_actions.find(a => a.unit === sel.id &&
+      wanted.includes(a.type) && key(a.target) === k);
+    if (act) { send(act); return true; }
+    draw(); return true;
+  }
+  if (key(sel.pos) === k) { draw(); return true; }
+  if ((sel.reachable || []).some(p => key(p) === k)) {
+    send({type: "move_to", unit: sel.id, to: [pos[0], pos[1]]});
+    return true;
+  }
+  if (sel.moves_left > 0) { orderTravel(sel.id, [pos[0], pos[1]]); return true; }
+  draw(); return true;
+}
+
+// ---- unit commands that were only ever buttons.
+function foundCityHere() {
+  if (!sel || SPEC || !state) return;
+  const act = state.legal_actions.find(a => a.type === "found_city" && a.unit === sel.id);
+  if (act) send({type: "found_city", unit: sel.id});
+}
+// Civ 6's H: fortify, and stay out of the unit cycle until the damage is gone.
+// The fortify itself is the engine's to allow; the waiting is the client's.
+function healHere() {
+  if (!sel || SPEC || !state) return;
+  const act = state.legal_actions.find(a => a.type === "fortify" && a.unit === sel.id);
+  if (act) send(act);
+  // A unit at full health has nothing to wait out, so H is a plain fortify —
+  // holding it out of the cycle for damage it does not have would be a unit
+  // the player has to remember to wake.
+  if (sel.hp < 100) unitOrders.set(sel.id, {order: "heal", turn: state.turn, hp: sel.hp});
+  advanceToNextUnit(true);
+}
+// Auto-explore. The engine has no explore order, but it does have the
+// long-range router the travel orders already use, so exploring is a standing
+// order that re-aims at the nearest edge of the known world each turn and
+// walks there. It ends when there is no frontier left it can reach.
+function exploreFrontier(from) {
+  if (!state) return null;
+  let best = null, bestDist = Infinity;
+  for (const t of state.map.tiles) {
+    if (t.terrain === "mountain") continue;
+    let frontier = false;
+    for (const d of DIRS) if (!nbrTile(t.pos, d)) { frontier = true; break; }
+    if (!frontier) continue;
+    const dist = whexDist(from, t.pos);
+    if (dist > 0 && dist < bestDist) { bestDist = dist; best = t.pos; }
+  }
+  return best;
+}
+async function resumeExplore(unitId) {
+  const held = unitOrders.get(unitId);
+  if (!held || held.order !== "explore" || SPEC) return false;
+  const unit = state.units.find(candidate => candidate.id === unitId);
+  if (!unit) { unitOrders.delete(unitId); return false; }
+  const target = exploreFrontier(unit.pos);
+  if (!target) { unitOrders.delete(unitId); return false; }
+  // Borrow the travel order for one leg, then restore the standing explore
+  // order so the next turn re-aims rather than walking to a stale frontier.
+  unitOrders.set(unitId, {order: "goto", to: target, turn: state.turn});
+  const alive = await resumeTravel(unitId);
+  const after = state.units.find(candidate => candidate.id === unitId);
+  if (!after) { unitOrders.delete(unitId); return false; }
+  // A journey that ends with no ground gained is a unit that has run out of
+  // world it can reach; anything else keeps exploring next turn.
+  if (!alive && key(after.pos) === key(unit.pos)) { unitOrders.delete(unitId); return false; }
+  unitOrders.set(unitId, {order: "explore", turn: state.turn, hp: after.hp});
+  return true;
+}
+function exploreHere() {
+  if (!sel || SPEC || !state) return;
+  const id = sel.id;
+  unitOrders.set(id, {order: "explore", turn: state.turn, hp: sel.hp});
+  drawUbar(); drawTurnLoop();
+  // The first leg walks before the seat moves on. Handing the player the next
+  // unit while this one is still posting its moves would hand them a board
+  // that is about to change under them.
+  resumeExplore(id).then(() => advanceToNextUnit(true));
+}
+
+// ---- screens. Civ 6 gives each panel one key that opens it and closes it.
+function toggleTree(kind) {
+  if (SPEC) return;
+  const panel = document.getElementById("tree");
+  const showing = panel.classList.contains("open") && treeKind === kind;
+  if (showing) { panel.classList.remove("open"); return; }
+  openTree(kind);
+}
+function toggleEmpire(tab) {
+  if (SPEC) return;
+  if (empireOpen() && empireTab === tab) { closeEmpire(); return; }
+  openEmpire(tab);
+}
+function toggleTrade() {
+  if (SPEC) return;
+  document.getElementById("trade").classList.contains("open") ? closeTrade() : openTrade();
+}
+function togglePedia() {
+  document.getElementById("pedia").classList.contains("open") ? closePedia() : openPedia();
+}
+function toggleDiplomacy() {
+  if (SPEC) return;
+  diplomacyOpen() ? closeDiplomacy() : openDiplomacy();
+}
+// Civ 6's End: the map with nothing else on it. The command deck folds away
+// and the camera frames the whole world; pressing it again puts both back.
+let fullscreenMapRestore = null;
+function toggleFullscreenMap() {
+  if (fullscreenMapRestore) {
+    const restore = fullscreenMapRestore;
+    fullscreenMapRestore = null;
+    togglePanel(restore.hidden, false);
+    takeCameraControl(true);
+    cam.x = restore.x; cam.y = restore.y; cam.scale = restore.scale;
+    draw(); drawMini();
+    return;
+  }
+  fullscreenMapRestore = {
+    hidden: document.body.classList.contains("sidebar-hidden"),
+    x: cam.x, y: cam.y, scale: cam.scale,
+  };
+  togglePanel(true, false);
+  takeCameraControl(true);
+  setFullWorldView();
+  draw(); drawMini();
+}
+// Civ 6's Home opens the menu that holds saving, loading and the options.
+// Here that is the game-settings section of the command deck.
+function openGameMenu() {
+  if (document.body.classList.contains("sidebar-hidden")) togglePanel(false, false);
+  focusSection("setupsec");
+}
+
+// ---- getting about the empire.
+function myCities() {
+  return state ? state.cities.filter(city => city.owner === 0) : [];
+}
+function cycleCity(step) {
+  if (SPEC || !state) return;
+  const cities = myCities();
+  if (!cities.length) return;
+  const from = selCity ? cities.findIndex(city => city.id === selCity.id) : -1;
+  const next = cities[((from + step) % cities.length + cities.length) % cities.length];
+  selCity = next; sel = null;
+  centerOn(next.pos);
+  draw(); drawSide(); drawUbar();
+}
+function goToCapital() {
+  if (!state) return;
+  const capital = myCities().find(city => city.is_capital) || myCities()[0];
+  if (!capital) return;
+  selCity = capital; sel = null;
+  centerOn(capital.pos);
+  draw(); drawSide(); drawUbar();
+}
+// Civ 6's comma steps backwards through the same list the period steps
+// forwards through, so both share `advanceToNextUnit`'s ordering.
+function cycleUnit(step) {
+  if (SPEC || !state) return;
+  if (step > 0) { advanceToNextUnit(true); return; }
+  const waiting = unitsNeedingOrders();
+  if (!waiting.length) { advanceToNextUnit(true); return; }
+  const from = sel ? waiting.findIndex(u => u.id === sel.id) : 0;
+  sel = waiting[((from - 1) % waiting.length + waiting.length) % waiting.length];
+  selCity = null;
+  centerOn(sel.pos);
+  draw(); drawSide(); drawUbar(); drawTurnLoop();
+}
+// Civ 6's + drops the board to its flat, unlit reading of the world and puts
+// it back. Here that is the strategic view against whatever the player was in.
+let painterlyViewBefore2D = null;
+function toggle2DView() {
+  if (VIEW === "strategic") {
+    setView(painterlyViewBefore2D || "balanced");
+    painterlyViewBefore2D = null;
+  } else {
+    painterlyViewBefore2D = VIEW;
+    setView("strategic");
+  }
+  const picker = document.getElementById("viewsel");
+  if (picker) picker.value = VIEW;
+}
+
+// ---- quick save and quick load, on Civ 6's F5 and F6.
+async function quickSave() {
+  if (SPEC || !state) return;
+  try {
+    const done = await fetchJSON("/save", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({name: "quicksave"})});
+    if (done.error) throw new Error(done.error);
+    await refreshSaves();
+  } catch (error) {
+    showNewSimulationError(error, "write a quicksave");
+  }
+}
+async function quickLoad() {
+  if (SPEC) return;
+  if (savesKnown === null) await refreshSaves();
+  const saves = savesKnown || [];
+  const quick = saves.find(save => save.name === "quicksave") || saves[0];
+  if (quick) await loadSave(quick.name);
+}
+
+// ---- the table itself. `id` is Civ 6's own ActionId, so the mapping can be
+// checked against the game's file directly; `key` is what Civ 6 binds it to.
+// A binding with `spectator: true` also runs on the spectator board; every
+// other one belongs to the person holding a seat.
+const CIV6_BINDINGS = [
+  // Category UI
+  {id: "ToggleTechTree", key: "t", run: () => toggleTree("techs")},
+  {id: "ToggleCivicsTree", key: "c", run: () => toggleTree("civics")},
+  {id: "ToggleGovernment", key: "F7", run: () => toggleEmpire("government")},
+  {id: "ToggleReligion", key: "l", run: () => toggleEmpire("religion")},
+  {id: "ToggleGreatPeople", key: "o", run: () => toggleEmpire("people")},
+  {id: "ToggleCityStates", key: "F2", run: () => toggleEmpire("states")},
+  {id: "ToggleEspionage", key: "F3", run: () => toggleEmpire("spies")},
+  {id: "ToggleTradeRoutes", key: "F4", run: () => toggleEmpire("trade")},
+  {id: "ToggleGovernors", key: "F10", run: () => toggleEmpire("governors")},
+  {id: "OpenCivilopedia", key: "F9", spectator: true, run: () => togglePedia()},
+  {id: "CivilopediaBack", key: ",", ctrl: true, spectator: true, run: () => pediaBack()},
+  {id: "CivilopediaForward", key: ".", ctrl: true, spectator: true, run: () => pediaForward()},
+  {id: "ToggleFSMap", key: "End", spectator: true, run: () => toggleFullscreenMap()},
+  // Category UNIT
+  {id: "FoundCity", key: "b", run: () => foundCityHere()},
+  {id: "MoveTo", key: "m", run: () => setInterfaceMode("move_to")},
+  {id: "Fortify", key: "f", run: () => orderUnit("fortify")},
+  {id: "FortifyUntilHeal", key: "h", run: () => healHere()},
+  {id: "Attack", key: "a", run: () => setInterfaceMode("attack")},
+  {id: "RangedAttack", key: "r", run: () => setInterfaceMode("ranged")},
+  {id: "AutoExplore", key: "e", run: () => exploreHere()},
+  {id: "SkipTurn", key: " ", run: ev => { if (sel) orderUnit("skip"); else advanceTurn(ev.shiftKey); }},
+  {id: "Sleep", key: "z", run: () => orderUnit("sleep")},
+  {id: "Alert", key: "v", run: () => orderUnit("alert")},
+  // Category GLOBAL
+  {id: "EndTurn", key: "Enter", spectator: true, run: ev => {
+    if (SPEC) document.getElementById("specpause").click();
+    else advanceTurn(ev.shiftKey);
+  }},
+  {id: "ToggleGrid", key: "g", spectator: true, run: () => setShowGrid(!SHOW_GRID)},
+  {id: "ToggleResources", key: "q", spectator: true, run: () => setShowResources(!SHOW_RESOURCES)},
+  {id: "ToggleYield", key: "y", spectator: true, run: () => setShowYields(!SHOW_YIELDS)},
+  {id: "Toggle2DView", key: "+", spectator: true, run: () => toggle2DView()},
+  {id: "PauseMenu", key: "Home", run: () => openGameMenu()},
+  {id: "QuickSave", key: "F5", run: () => quickSave()},
+  {id: "QuickLoad", key: "F6", run: () => quickLoad()},
+  {id: "OnlinePause", key: "p", spectator: true, run: () => {
+    if (SPEC) document.getElementById("specpause").click();
+  }},
+  {id: "PrevUnit", key: ",", run: () => cycleUnit(-1)},
+  {id: "NextUnit", key: ".", run: () => cycleUnit(1)},
+  {id: "PrevCity", key: "[", run: () => cycleCity(-1)},
+  {id: "NextCity", key: "]", run: () => cycleCity(1)},
+  {id: "CapitalCity", key: "\\", run: () => goToCapital()},
+  // Category CAMERA. Civ 6 pans with the arrow keys and zooms on the numeric
+  // keypad; the main-row +/- are its 2D view toggle and nothing, so the row
+  // keys here are CIVVIS aliases on a laptop that has no keypad at all.
+  {id: "CameraPanLeft", key: "ArrowLeft", spectator: true, run: ev => panCamera(ev, -1, 0)},
+  {id: "CameraPanRight", key: "ArrowRight", spectator: true, run: ev => panCamera(ev, 1, 0)},
+  {id: "CameraPanUp", key: "ArrowUp", spectator: true, run: ev => panCamera(ev, 0, -1)},
+  {id: "CameraPanDown", key: "ArrowDown", spectator: true, run: ev => panCamera(ev, 0, 1)},
+  {id: "ZoomIn", key: "NumpadAdd", spectator: true, run: () => { takeCameraControl(true); zoomAt(1.35); }},
+  {id: "ZoomOut", key: "NumpadSubtract", spectator: true, run: () => { takeCameraControl(true); zoomAt(1 / 1.35); }},
+];
+// CIVVIS's own controls. The three numbers are the overrides the operator
+// asked for; the rest sit on keys and chords Civ 6 leaves unbound, so nothing
+// here can shadow a binding somebody arrived with.
+const CIVVIS_BINDINGS = [
+  {id: "NextAction", key: "1", run: () => nextAction()},
+  {id: "SettlerLens", key: "2", run: () => { lensOn = !lensOn; tackMode = false; modeline(); draw(); }},
+  {id: "PlaceTack", key: "3", spectator: true, run: () => { tackMode = !tackMode; lensOn = false; modeline(); draw(); }},
+  {id: "Diplomacy", key: "F8", run: () => toggleDiplomacy()},
+  {id: "QuickDeals", key: "d", ctrl: true, run: () => toggleTrade()},
+  {id: "NextUnitTab", key: "Tab", run: () => advanceToNextUnit(true)},
+  {id: "ZoomInRow", key: "=", spectator: true, run: () => { takeCameraControl(true); zoomAt(1.35); }},
+  {id: "ZoomOutRow", key: "-", spectator: true, run: () => { takeCameraControl(true); zoomAt(1 / 1.35); }},
+  {id: "AutoPlay", key: "a", ctrl: true, run: () => autoplay(autoplayRequest())},
+  {id: "ResetFacing", key: "r", ctrl: true, spectator: true, run: () => resetMapFacing(DEFAULT_CINEMA_YS - cinematicYS)},
+  {id: "HidePanel", key: "u", ctrl: true, spectator: true, run: () => togglePanel()},
+  {id: "OrbitLeft", key: "ArrowLeft", ctrl: true, spectator: true, run: () => orbitCamera(-Math.PI / 12, 0)},
+  {id: "OrbitRight", key: "ArrowRight", ctrl: true, spectator: true, run: () => orbitCamera(Math.PI / 12, 0)},
+  {id: "TiltUp", key: "ArrowUp", ctrl: true, spectator: true, run: () => orbitCamera(0, -0.08)},
+  {id: "TiltDown", key: "ArrowDown", ctrl: true, spectator: true, run: () => orbitCamera(0, 0.08)},
+];
+function panCamera(ev, dx, dy) {
+  const distance = ev.shiftKey ? 240 : 120;
+  nudgeCamera(dx * distance, dy * distance);
+}
+// One lookup per (key, chord). `code` catches the two keypad keys, whose
+// `key` is a bare "+"/"-" indistinguishable from the main row.
+const KEY_ACTIONS = new Map();
+for (const binding of [...CIV6_BINDINGS, ...CIVVIS_BINDINGS]) {
+  const name = binding.key.length === 1 ? binding.key.toLowerCase() : binding.key;
+  KEY_ACTIONS.set(`${binding.ctrl ? "^" : ""}${name}`, binding);
+}
+function bindingFor(ev) {
+  // Command is the browser's modifier on this platform — reload, select all,
+  // the tab keys. Only Control chords belong to the board.
+  if (ev.metaKey) return undefined;
+  const chord = ev.ctrlKey ? "^" : "";
+  if (ev.code === "NumpadAdd" || ev.code === "NumpadSubtract")
+    return KEY_ACTIONS.get(ev.code);
+  const literal = KEY_ACTIONS.get(chord + ev.key);
+  if (literal) return literal;
+  return KEY_ACTIONS.get(chord + ev.key.toLowerCase());
+}
 document.addEventListener("keydown", ev => {
   if (ev.key === "Alt") {
     if (!ev.repeat) altTap = true;
@@ -18152,88 +18699,75 @@ document.addEventListener("keydown", ev => {
     return;
   }
   const tag = (document.activeElement || {}).tagName;
-  if (tag === "SELECT" || tag === "INPUT" || tag === "TEXTAREA") return;
-  const pediaOpen = document.getElementById("pedia").classList.contains("open");
-  if (ev.key === "Escape" && pediaOpen) { closePedia(); return; }
-  if (ev.key.toLowerCase() === "p") {
-    pediaOpen ? closePedia() : openPedia();
-    return;
-  }
-  if (pediaOpen) return;
-  const tradeOpen = document.getElementById("trade").classList.contains("open");
-  if (ev.key === "Escape" && tradeOpen) { closeTrade(); return; }
-  if (ev.key.toLowerCase() === "d") {
-    tradeOpen ? closeTrade() : openTrade();
-    return;
-  }
-  if (tradeOpen) return;
-  if (ev.key === "Escape" && cityScreenOpen()) { closeCityScreen(); return; }
-  if (cityScreenOpen()) return;
-  if (ev.key === "Escape" && empireOpen()) { closeEmpire(); return; }
-  if (ev.key.toLowerCase() === "g" && !SPEC) {
-    empireOpen() ? closeEmpire() : openEmpire();
-    return;
-  }
-  if (empireOpen()) return;
-  if (ev.key === "Escape" && diplomacyOpen()) { closeDiplomacy(); return; }
-  if (ev.key.toLowerCase() === "l" && !SPEC) {
-    diplomacyOpen() ? closeDiplomacy() : openDiplomacy();
-    return;
-  }
-  if (diplomacyOpen()) return;
+  // A screen that opens with its search box focused — the Civilopedia does —
+  // would otherwise swallow every key including the one that closes it. Escape
+  // leaves the field first and then means what it means everywhere else.
+  if (ev.key === "Escape" && (tag === "INPUT" || tag === "TEXTAREA")) {
+    document.activeElement.blur();
+  } else if (tag === "SELECT" || tag === "INPUT" || tag === "TEXTAREA") return;
+  // A modal screen owns the keyboard while it is up: Civ 6's world bindings do
+  // not reach through an open panel, and neither do these. Escape closes the
+  // topmost one, and the pedia's own key still closes the pedia.
+  if (ev.key === "Escape" && closeTopmostScreen()) { ev.preventDefault(); return; }
+  if (screenHoldsKeyboard(ev)) return;
+
+  // The spectator's cinema keys go first. They are live only while a cinema is
+  // running — a board no seated player is ever looking at — so they cannot
+  // shadow Civ 6's M and C, but they do have to be reached before the table
+  // sees an M or a C and stops on a binding the spectator may not run.
   if (ev.key.toLowerCase() === "m" && cinemaActive()) { setCinemaAudio(!CINEMA_AUDIO); return; }
   if (ev.key.toLowerCase() === "c" && SPEC && VIEW === "cinematic") { toggleCinemaMode(); return; }
-  if (ev.key === "Enter") {
-    if (SPEC) document.getElementById("specpause").click();
-    else advanceTurn(ev.shiftKey);
-  }
-  // Civ 6's unit keys. With nothing selected they fall through to the turn,
-  // which is what a player pressing space at the end of a turn expects.
-  else if (ev.key === " " && !SPEC) {
+
+  const binding = bindingFor(ev);
+  if (binding) {
+    if (SPEC && !binding.spectator) return;
+    // Space, Tab, the arrows and the keypad all mean something to the browser
+    // as well; the board asked for them first.
     ev.preventDefault();
-    if (sel) orderUnit("skip"); else advanceTurn(ev.shiftKey);
+    binding.run(ev);
+    return;
   }
-  else if (ev.key.toLowerCase() === "z" && !SPEC && sel) orderUnit("sleep");
-  else if (ev.key === "Tab" && !SPEC) { ev.preventDefault(); advanceToNextUnit(true); }
-  else if (ev.key === "Escape") {
+  if (ev.key === "Escape") {
     // The dossier is the topmost thing Escape can close, so it goes first.
     if (hudExpanded !== null) { hudExpanded = null; drawPlayerHud(); return; }
+    if (clearInterfaceMode()) return;
     if (cameraFollowManual) { stopCameraFollow(); return; }
+    if (fullscreenMapRestore) { toggleFullscreenMap(); return; }
     if (cinemaActive()) { setCinemaMode(false); return; }
     sel = null; selCity = null; lensOn = false; tackMode = false;
     modeline(); draw(); drawSide(); drawUbar();
   }
-  else if (ev.key.toLowerCase() === "a" && !SPEC) autoplay(autoplayRequest());
-  else if (ev.key === "1") nextAction();
-  else if (ev.key === "2") { lensOn = !lensOn; tackMode = false; modeline(); draw(); }
-  else if (ev.key === "3") {
-    tackMode = !tackMode; lensOn = false; modeline(); draw();
-  }
-  else if (ev.key.toLowerCase() === "y") {
-    SHOW_YIELDS = !SHOW_YIELDS;
-    document.getElementById("yieldchk").checked = SHOW_YIELDS;
-    localStorage.setItem("civvis-show-yields", SHOW_YIELDS ? "1" : "0");
-    draw();
-  }
-  else if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(ev.key)) {
-    ev.preventDefault();
-    const distance = ev.shiftKey ? 240 : 120;
-    nudgeCamera(ev.key === "ArrowLeft" ? -distance : ev.key === "ArrowRight" ? distance : 0,
-                ev.key === "ArrowUp" ? -distance : ev.key === "ArrowDown" ? distance : 0);
-  }
-  else if (ev.key === "+" || ev.key === "=") {
-    takeCameraControl(true); zoomAt(1.35);
-  }
-  else if (ev.key === "-" || ev.key === "_") {
-    takeCameraControl(true); zoomAt(1 / 1.35);
-  }
-  else if (ev.key.toLowerCase() === "q") orbitCamera(-Math.PI / 12, 0);
-  else if (ev.key.toLowerCase() === "e") orbitCamera(Math.PI / 12, 0);
-  else if (ev.key.toLowerCase() === "r") resetMapFacing(DEFAULT_CINEMA_YS - cinematicYS);
-  else if (ev.key.toLowerCase() === "f") {
-    if (sel && !SPEC) orderUnit("fortify"); else togglePanel();
-  }
 });
+function anyScreenOpen() {
+  return document.getElementById("pedia").classList.contains("open") ||
+    document.getElementById("trade").classList.contains("open") ||
+    document.getElementById("tree").classList.contains("open") ||
+    cityScreenOpen() || empireOpen() || diplomacyOpen();
+}
+// Escape unwinds the open screens one at a time, topmost first.
+function closeTopmostScreen() {
+  if (document.getElementById("pedia").classList.contains("open")) { closePedia(); return true; }
+  if (document.getElementById("trade").classList.contains("open")) { closeTrade(); return true; }
+  if (document.getElementById("tree").classList.contains("open")) {
+    document.getElementById("tree").classList.remove("open");
+    return true;
+  }
+  if (cityScreenOpen()) { closeCityScreen(); return true; }
+  if (empireOpen()) { closeEmpire(); return true; }
+  if (diplomacyOpen()) { closeDiplomacy(); return true; }
+  return false;
+}
+// While a screen is up only the key that opened it, and the pedia's history
+// chords, still carry — exactly the set Civ 6 keeps live over its own panels.
+function screenHoldsKeyboard(ev) {
+  if (!anyScreenOpen()) return false;
+  const binding = bindingFor(ev);
+  return !(binding && SCREEN_KEYS.has(binding.id));
+}
+const SCREEN_KEYS = new Set(["ToggleTechTree", "ToggleCivicsTree", "ToggleGovernment",
+  "ToggleReligion", "ToggleGreatPeople", "ToggleCityStates", "ToggleEspionage",
+  "ToggleTradeRoutes", "ToggleGovernors", "OpenCivilopedia", "CivilopediaBack",
+  "CivilopediaForward", "Diplomacy", "QuickDeals"]);
 document.addEventListener("keyup", ev => {
   if (ev.key !== "Alt") return;
   ev.preventDefault();
@@ -18623,14 +19157,28 @@ document.getElementById("newgame-options").addEventListener("change", stageSelec
   cinema.onchange = () => setCinemaMode(cinema.checked);
   syncCinemaPresentationControl();
 }
+// The three map overlays Civ 6 puts on a key each have a checkbox as well, so
+// the key and the box must agree whichever one the player used. Each setter is
+// the single place that writes the flag, the storage and the box.
 {
   const ys = document.getElementById("yieldchk");
   ys.checked = SHOW_YIELDS;
-  ys.onchange = () => {
-    SHOW_YIELDS = ys.checked;
-    localStorage.setItem("civvis-show-yields", SHOW_YIELDS ? "1" : "0");
-    if (state) draw();
-  };
+  ys.onchange = () => setShowYields(ys.checked);
+}
+{
+  const grid = document.getElementById("gridchk");
+  grid.checked = SHOW_GRID;
+  grid.onchange = () => setShowGrid(grid.checked);
+}
+{
+  const res = document.getElementById("reschk");
+  res.checked = SHOW_RESOURCES;
+  res.onchange = () => setShowResources(res.checked);
+}
+{
+  const edge = document.getElementById("edgepanchk");
+  edge.checked = EDGE_PAN;
+  edge.onchange = () => setEdgePan(edge.checked);
 }
 {
   const artifacts = document.getElementById("artifactchk");
