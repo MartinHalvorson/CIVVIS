@@ -16,6 +16,7 @@ pub enum MapScript {
     InlandSea,
     Lakes,
     Planet,
+    TrueStartEarth,
 }
 
 impl MapScript {
@@ -27,13 +28,21 @@ impl MapScript {
             Self::InlandSea => "inland_sea",
             Self::Lakes => "lakes",
             Self::Planet => "planet",
+            Self::TrueStartEarth => "true_start_earth",
         }
     }
 
     /// Whether the script lays its world out on a globe rather than on the
     /// east-west cylinder every other script uses.
     pub const fn is_globe(self) -> bool {
-        matches!(self, Self::Planet)
+        matches!(self, Self::Planet | Self::TrueStartEarth)
+    }
+
+    /// Whether the script draws a fixed world instead of rolling a new one.
+    /// Earth is the same Earth every game, so the seed moves its resources and
+    /// its rivers around but never its coastlines.
+    pub const fn is_fixed_geography(self) -> bool {
+        matches!(self, Self::TrueStartEarth)
     }
 
     pub fn from_id(id: &str) -> Option<Self> {
@@ -56,7 +65,7 @@ pub struct MapScriptSpec {
     pub script: MapScript,
 }
 
-pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 6] = [
+pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 7] = [
     MapScriptSpec {
         id: "pangaea",
         name: "Pangaea",
@@ -92,6 +101,12 @@ pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 6] = [
         name: "Planet",
         description: "A whole world: hexagons and twelve pentagons closing into a globe you can sail all the way around, in any direction.",
         script: MapScript::Planet,
+    },
+    MapScriptSpec {
+        id: "true_start_earth",
+        name: "True Start Earth",
+        description: "Earth itself on that globe, with every civilization founded in its own historic homeland.",
+        script: MapScript::TrueStartEarth,
     },
 ];
 
@@ -365,18 +380,31 @@ mod tests {
     };
 
     #[test]
-    fn planet_is_the_one_script_laid_out_on_a_globe() {
-        assert_eq!(MapScript::from_id("planet"), Some(MapScript::Planet));
-        let spec = CIV6_MAP_SCRIPTS
-            .iter()
-            .find(|candidate| candidate.id == "planet")
-            .unwrap();
-        assert_eq!(spec.name, "Planet");
-        assert_eq!(spec.script, MapScript::Planet);
+    fn the_two_globe_scripts_are_the_ones_laid_out_on_a_sphere() {
+        for (id, name, script) in [
+            ("planet", "Planet", MapScript::Planet),
+            ("true_start_earth", "True Start Earth", MapScript::TrueStartEarth),
+        ] {
+            assert_eq!(MapScript::from_id(id), Some(script));
+            let spec = CIV6_MAP_SCRIPTS
+                .iter()
+                .find(|candidate| candidate.id == id)
+                .unwrap();
+            assert_eq!(spec.name, name);
+            assert_eq!(spec.script, script);
+        }
         for candidate in CIV6_MAP_SCRIPTS {
             assert_eq!(
                 candidate.script.is_globe(),
-                candidate.script == MapScript::Planet
+                matches!(
+                    candidate.script,
+                    MapScript::Planet | MapScript::TrueStartEarth
+                )
+            );
+            // Only Earth is the same world every game.
+            assert_eq!(
+                candidate.script.is_fixed_geography(),
+                candidate.script == MapScript::TrueStartEarth
             );
         }
         // Every size resolves from either shape of rectangle, and the two
@@ -393,6 +421,10 @@ mod tests {
             );
             assert_eq!(
                 size.dimensions(MapScript::Planet),
+                (size.globe_width(), size.globe_height())
+            );
+            assert_eq!(
+                size.dimensions(MapScript::TrueStartEarth),
                 (size.globe_width(), size.globe_height())
             );
             assert_eq!(

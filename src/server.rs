@@ -3316,8 +3316,8 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("RULES.game_speeds.map(speed =>"));
         assert!(EMBEDDED_INDEX.contains("id=\"gamemode\""));
         assert!(EMBEDDED_INDEX.contains("id=\"maptype\""));
-        // The globe has its own renderer, and it is the only one now: the
-        // retired true-start Earth scripts must not linger in the client.
+        // The globe has its own renderer, and it is the only one: both globe
+        // scripts are drawn by it, so neither needs a projection of its own.
         assert!(EMBEDDED_INDEX.contains("function drawPlanetMap()"));
         // A world faces the way it was found until north is discovered, so
         // nothing in the viewer may go back to a bare north-up reset: the
@@ -3333,7 +3333,9 @@ mod tests {
         // The globe's yaw is a bearing, not a second way to spin it eastward.
         assert!(EMBEDDED_INDEX.contains("roll:cam.rot"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"planet\">Planet</option>"));
-        assert!(!EMBEDDED_INDEX.contains("true_start"));
+        assert!(EMBEDDED_INDEX
+            .contains("<option value=\"true_start_earth\">True Start Earth</option>"));
+        assert!(EMBEDDED_INDEX.contains("const GLOBE_SCRIPTS = "));
         assert!(EMBEDDED_INDEX.contains("id=\"gamespeed\""));
         for victory in [
             "science",
@@ -3404,17 +3406,17 @@ mod tests {
         let mode_setting = EMBEDDED_INDEX
             .find("id=\"gamemode\"")
             .expect("game mode setting");
+        let map_setting = EMBEDDED_INDEX.find("id=\"maptype\"").expect("map setting");
         let world_setting = EMBEDDED_INDEX
             .find("id=\"np\"")
             .expect("world size setting");
-        let map_setting = EMBEDDED_INDEX.find("id=\"maptype\"").expect("map setting");
         let speed_setting = EMBEDDED_INDEX
             .find("id=\"gamespeed\"")
             .expect("game speed setting");
         assert!(
-            mode_setting < world_setting
-                && world_setting < map_setting
-                && map_setting < speed_setting
+            mode_setting < map_setting
+                && map_setting < world_setting
+                && world_setting < speed_setting
         );
 
         let game_settings = EMBEDDED_INDEX
@@ -3516,24 +3518,32 @@ mod tests {
         // needs both offsets, staggered by one row per row held above it.
         assert!(EMBEDDED_INDEX.contains("top: calc(var(--pin-head, 0) * var(--hud-row-pitch));"));
         assert!(EMBEDDED_INDEX.contains("bottom: calc(var(--pin-tail, 0) * var(--hud-row-pitch));"));
-        // The standings never take more than their share of the rail they head;
+        // The standings never take more than their share of the map they head;
         // rows past that scroll at a fixed height rather than being squeezed to
-        // fit, which is what leaves the victory tracker a readable share of the
-        // same column.
-        assert!(EMBEDDED_INDEX.contains("--player-hud-max-height: 42vh;"));
-        assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.42"));
-        // The three instruments stand in one right-hand column: the standings
-        // at the top with their close control in the corner, the tracker below
-        // them, and the world minimap at the foot. Each seam is the
-        // neighbour's own height, so a table of twelve pushes the tracker down
-        // instead of anything sliding underneath.
+        // fit, which is what keeps the world underneath them visible.
+        assert!(EMBEDDED_INDEX.contains("--player-hud-max-height: 34vh;"));
+        assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.34"));
+        // Two edges, not one column: the standings are the masthead across the
+        // whole top, and the right rail is the victory tracker from the top
+        // corner down to the world minimap in the bottom one. The masthead
+        // stops at the rail's width, and the tracker stops at the minimap's
+        // height, so neither seam can slide underneath its neighbour.
         assert!(EMBEDDED_INDEX.contains("--hud-rail-width:"));
-        assert!(EMBEDDED_INDEX
-            .contains("bottom: calc(var(--minimap-height) + 22px);"));
         assert!(EMBEDDED_INDEX.contains(
-            "top: calc(min(var(--player-hud-height, 220px), var(--player-hud-max-height)) + 16px);"
+            "top: 10px; left: 12px; right: calc(min(var(--hud-rail-width), \
+             var(--hud-rail-share)) + 20px); width: auto;"
         ));
+        assert!(EMBEDDED_INDEX
+            .contains("top: 10px; bottom: calc(var(--minimap-height) + 22px);"));
         assert!(EMBEDDED_INDEX.contains("grid-auto-rows: var(--hud-row-height);"));
+        // A masthead row is one line: identity and the ten values side by side,
+        // under one set of column heads. Stacking them was what the rail needed
+        // and it costs the map 12px of height per civilization here.
+        assert!(EMBEDDED_INDEX.contains(
+            "grid-template-columns: var(--hud-lock-column, 0px) var(--hud-medallion-column) \
+             var(--hud-identity-column) minmax(0, 1fr);"
+        ));
+        assert!(EMBEDDED_INDEX.contains("--hud-row-height: 23px;"));
         assert!(EMBEDDED_INDEX.contains("function dismissOverlay(name, source)"));
         assert!(EMBEDDED_INDEX.contains("addEventListener(\"pointerdown\", event =>"));
         assert!(EMBEDDED_INDEX.contains("overlay-return-flash .24s ease-in-out 3"));
