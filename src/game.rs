@@ -19444,7 +19444,16 @@ impl Game {
         }
     }
 
-    /// Rise & Fall / Gathering Storm loyalty-state yield bands.
+    /// Rise & Fall / Gathering Storm loyalty yield band, taken from the
+    /// shipped `LoyaltyLevels` table (`YieldChange` per level, one step per
+    /// display band): Loyal 76-100 pays 0, Wavering 51-75 pays -0.25,
+    /// Disloyal 26-50 pays -0.5, and Unrest 0-25 pays -1.0 — a city in
+    /// Unrest really does produce nothing.
+    ///
+    /// The Civilopedia prose ("below 75 … penalized 25%; below 25 … 50%
+    /// yields and 75% growth") describes two steps and disagrees with the
+    /// table the game actually runs on. The table wins; do not "fix" this
+    /// back from the prose.
     fn loyalty_yield_mult(loyalty: f64) -> f64 {
         if loyalty > 75.0 {
             1.0
@@ -19457,8 +19466,8 @@ impl Game {
         }
     }
 
-    /// Loyalty applies a separate population-growth multiplier in addition
-    /// to its yield modifier: Wavering 75%, Disloyal 25%, Unrest 0%.
+    /// `LoyaltyLevels.GrowthChange` is the multiplier outright: Loyal 1.0,
+    /// Wavering 0.75, Disloyal 0.25, Unrest 0.0.
     fn loyalty_growth_mult(loyalty: f64) -> f64 {
         if loyalty > 75.0 {
             1.0
@@ -35090,13 +35099,16 @@ impl Game {
             if distance > 9 {
                 continue;
             }
-            let pressure_per_citizen = age_factor(source.owner)
+            // "Each Citizen exerts a base pressure of 1, but it can be
+            // modified. For example, Citizens in a Capital city exert an
+            // additional 1 pressure." Every per-citizen modifier stacks onto
+            // that base before the distance falloff is applied to the total.
+            let mut pressure_per_citizen = age_factor(source.owner)
                 + self.city_active_project_effect(source, "citizen_loyalty_pressure");
-            let mut pressure =
-                source.pop as f64 * (10.0 - distance as f64) * pressure_per_citizen;
             if source.is_capital && source.original_owner == source.owner {
-                pressure += source.pop as f64;
+                pressure_per_citizen += 1.0;
             }
+            let pressure = source.pop as f64 * (10.0 - distance as f64) * pressure_per_citizen;
             if source.owner == pid {
                 domestic_pressure += pressure;
             } else if self.same_team(pid, source.owner) {
@@ -44776,15 +44788,62 @@ mod victory_conditions {
 
     #[test]
     fn loyalty_states_apply_stock_yield_and_growth_bands() {
+        // One step per display band, straight off the shipped LoyaltyLevels
+        // rows (YieldChange 0/-0.25/-0.5/-1.0, GrowthChange 1/0.75/0.25/0)
+        // for LoyaltyMin..LoyaltyMax of 76-100, 51-75, 26-50 and 0-25.
         for (loyalty, yields, growth) in [
             (100.0, 1.0, 1.0),
+            (76.0, 1.0, 1.0),
             (75.0, 0.75, 0.75),
+            (51.0, 0.75, 0.75),
             (50.0, 0.50, 0.25),
+            (26.0, 0.50, 0.25),
             (25.0, 0.0, 0.0),
+            (0.0, 0.0, 0.0),
         ] {
             assert_eq!(Game::loyalty_yield_mult(loyalty), yields);
             assert_eq!(Game::loyalty_growth_mult(loyalty), growth);
         }
+        // The display bands themselves keep Civ VI's four names.
+        assert_eq!(Game::loyalty_state(76.0), "loyal");
+        assert_eq!(Game::loyalty_state(75.0), "wavering");
+        assert_eq!(Game::loyalty_state(50.0), "disloyal");
+        assert_eq!(Game::loyalty_state(25.0), "unrest");
+    }
+
+    #[test]
+    fn capital_citizens_double_their_loyalty_pressure_and_still_decay() {
+        let mut game = game_with_capitals(2, 9_311, 300);
+        let rival_capital = game.player_city_ids(1)[0];
+        let source = game.cities[&rival_capital].pos;
+        assert!(game.cities[&rival_capital].is_capital);
+        let target_position = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|position| game.map.tiles[position].owner_city.is_none())
+            .filter(|position| {
+                game.rules.is_passable(&game.map.tiles[position])
+                    && !game.rules.is_water(&game.map.tiles[position])
+            })
+            .filter(|position| (3..=9).contains(&game.wdist(source, *position)))
+            .min_by_key(|position| (game.wdist(source, *position), *position))
+            .unwrap();
+        let distance = game.wdist(source, target_position);
+        let target = game.found_city_for(0, target_position, Some("Pressured".to_string()));
+
+        let with_capital = game.loyalty_change_for_city(0, target).foreign_pressure[&1];
+        let mut plain = game.clone();
+        plain.cities.get_mut(&rival_capital).unwrap().is_capital = false;
+        let without_capital = plain.loyalty_change_for_city(0, target).foreign_pressure[&1];
+
+        // A Citizen exerts a base pressure of 1 and a Capital Citizen 2, and
+        // the Capital half falls off with distance exactly like the base half
+        // rather than arriving undiminished at a tenth of the scale.
+        let pop = game.cities[&rival_capital].pop as f64;
+        assert_eq!(without_capital, pop * (10.0 - distance as f64));
+        assert_eq!(with_capital, 2.0 * without_capital);
     }
 
     #[test]
