@@ -74,6 +74,45 @@ launchctl load -w ~/Library/LaunchAgents/com.civvis.spectator.plist
 On a bare Linux host, `nohup python3 tools/spectator_supervisor.py … &` under a
 systemd unit or a `while` wrapper works the same way.
 
+## One complete frame per turn
+
+Every turn the exhibition plays is owed at least one frame, and that frame has
+to carry the whole turn: player stats, victory tracker, map and units, all out
+of the same snapshot. The server keeps the first half by holding a finished
+turn until an active viewer has been handed it — at **every** pace, not only at
+Lightning. A turn budget says how long a turn lasts; it never promised that
+anybody managed to read it, and a page that paints slower than the budget used
+to lose turns silently.
+
+Only a page that paints holds the simulation to a turn. The browser reports the
+turn it last drew on each `/state` poll (`?painted=<turn>&world=<seed>`), so the
+keeper's refresh check and any `curl` read the same state without dragging the
+exhibition down to their own cadence. A viewer that stops asking is dropped
+after a few seconds and costs the unattended exhibition exactly one turn's
+delay.
+
+That report is also what makes the promise auditable while it runs. `/status`
+carries:
+
+- `frames_missed` — turns simulated that no attached viewer ever drew. **Zero**
+  on a healthy exhibition.
+- `frames_painted` — the last turn a viewer reported drawing, or `null` when
+  nobody is watching. Zero misses with nothing painted means nobody was there,
+  which is not the same as the promise being kept.
+
+```bash
+python3 tools/civvis_frames.py watch --port 8766          # read a live exhibition
+python3 tools/civvis_frames.py probe --port 8766 --render-ms 400   # be a slow viewer
+```
+
+`probe` polls the way the page does and names every turn that never arrived.
+Give `--render-ms` a cost a loaded machine would really spend on a repaint: a
+fast synthetic viewer proves much less than the browser it stands in for.
+
+A viewer slower than the pace now sets the pace, by design — the alternative is
+turns nobody sees. A full-size map costs the page about 55ms a frame, well
+inside the 1s Blitz budget, so a foreground tab does not slow the exhibition.
+
 ## Tuning
 
 `--players --width --height --city-states --turns --map --speed` size the game;
