@@ -268,6 +268,107 @@ staged + civ context                1.8054     18.8%     -0.0137      0.6907    
         self.assertFalse(health.learning)
 
 
+SRC_AI_RS = """
+impl Default for Weights {
+    fn default() -> Weights {
+        Weights {
+            city_target: 4.0,
+            war_ratio: 1.8,
+            cohesion: 3.0,
+        }
+    }
+}
+
+impl Weights {
+    pub fn bounds() -> [(f64, f64); 3] {
+        [
+            (2.0, 12.0),
+            (0.8, 5.0),
+            (0.0, 10.0),
+        ]
+    }
+}
+"""
+
+
+class ExperimentTests(unittest.TestCase):
+    def genome(self, text=SRC_AI_RS):
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "src").mkdir()
+            Path(tmp, "src", "ai.rs").write_text(text)
+            return fleet.read_genome_defaults(tmp)
+
+    def test_the_genome_is_read_from_source_not_duplicated(self):
+        defaults, bounds = self.genome()
+        self.assertEqual(defaults["city_target"], 4.0)
+        self.assertEqual(bounds["war_ratio"], (0.8, 5.0))
+        self.assertEqual(list(defaults), list(bounds))
+
+    def test_a_genome_whose_bounds_do_not_line_up_is_refused_not_guessed(self):
+        broken = SRC_AI_RS.replace("            (0.0, 10.0),\n", "")
+        with self.assertRaises(fleet.FleetError):
+            self.genome(broken)
+
+    def test_a_sweep_varies_one_gene_at_a_time_around_the_shipped_default(self):
+        defaults, bounds = self.genome()
+        roster = fleet.gene_sweep_roster(defaults, bounds, ["city_target", "war_ratio"])
+        names = [r["name"] for r in roster]
+        self.assertEqual(names[:3], ["advanced", "basic", "control"])
+        self.assertIn("city_target_lo", names)
+        self.assertIn("war_ratio_hi", names)
+        control = next(r for r in roster if r["name"] == "control")
+        self.assertEqual(control["kind"]["Advanced"]["weights"], defaults)
+        low = next(r for r in roster if r["name"] == "city_target_lo")
+        self.assertEqual(low["kind"]["Advanced"]["weights"]["city_target"], 2.0)
+        # every other gene must be untouched, or the sweep measures a mixture
+        self.assertEqual(low["kind"]["Advanced"]["weights"]["war_ratio"], 1.8)
+
+    def test_a_default_already_on_a_bound_does_not_produce_a_duplicate_control(self):
+        defaults, bounds = self.genome()
+        defaults["cohesion"] = 0.0  # sits exactly on its lower bound
+        roster = fleet.gene_sweep_roster(defaults, bounds, ["cohesion"])
+        self.assertNotIn("cohesion_lo", [r["name"] for r in roster])
+        self.assertIn("cohesion_hi", [r["name"] for r in roster])
+
+    def test_an_unknown_gene_is_an_error_rather_than_a_silent_no_op(self):
+        defaults, bounds = self.genome()
+        with self.assertRaises(fleet.FleetError):
+            fleet.gene_sweep_roster(defaults, bounds, ["telepathy"])
+
+    def test_seeding_refuses_to_overwrite_a_running_experiment(self):
+        defaults, bounds = self.genome()
+        roster = fleet.gene_sweep_roster(defaults, bounds, ["city_target"])
+        with tempfile.TemporaryDirectory() as tmp:
+            fleet.seed_experiment(tmp, roster)
+            self.assertTrue(Path(tmp, "league.json").exists())
+            with self.assertRaises(fleet.FleetError):
+                fleet.seed_experiment(tmp, roster)
+
+    def test_a_gap_inside_the_confidence_interval_is_reported_as_noise(self):
+        variants = [
+            fleet.Variant("control", 1500.0, 40.0, 200, 40),
+            fleet.Variant("close", 1530.0, 40.0, 200, 42),
+            fleet.Variant("clear", 1800.0, 40.0, 200, 90),
+            fleet.Variant("weak", 1200.0, 40.0, 200, 5),
+        ]
+        rows = {v.name: verdict for v, _, verdict in fleet.separation(variants)}
+        self.assertTrue(rows["close"].startswith("noise"))
+        self.assertEqual(rows["clear"], "stronger")
+        self.assertEqual(rows["weak"], "weaker")
+
+    def test_a_variant_with_too_few_games_is_never_called_a_result(self):
+        variants = [
+            fleet.Variant("control", 1500.0, 40.0, 200, 40),
+            fleet.Variant("fresh", 1900.0, 300.0, 4, 3),
+        ]
+        rows = {v.name: verdict for v, _, verdict in fleet.separation(variants)}
+        self.assertEqual(rows["fresh"], "too few games")
+
+    def test_a_missing_control_yields_no_claims_at_all(self):
+        variants = [fleet.Variant("a", 1700.0, 30.0, 100, 30)]
+        self.assertEqual(fleet.separation(variants), [])
+
+
 class RosterTests(unittest.TestCase):
     def test_the_active_roster_excludes_retired_strategies(self):
         with tempfile.TemporaryDirectory() as tmp:

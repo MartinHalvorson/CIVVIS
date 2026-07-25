@@ -50,6 +50,7 @@ import dataclasses
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 import subprocess
 import sys
@@ -554,6 +555,159 @@ def parse_health(report: str) -> Health:
     return health
 
 
+# ---------------------------------------------------------------------------
+# Experiments: does this change to a strategy actually make it stronger?
+# ---------------------------------------------------------------------------
+
+DEFAULT_WEIGHTS_RE = re.compile(r"impl Default for Weights \{(.*?)\n\}\n", re.S)
+GENE_RE = re.compile(r"^\s*(\w+): ([-\d.]+),", re.M)
+BOUNDS_RE = re.compile(r"pub fn bounds\(\) -> \[\(f64, f64\); \d+\] \{\s*\[(.*?)\]\s*\}", re.S)
+PAIR_RE = re.compile(r"\(\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*\)")
+
+
+def read_genome_defaults(src_root: str) -> Tuple[Dict[str, float], Dict[str, Tuple[float, float]]]:
+    """The shipped `Weights` defaults and their legal ranges, read from source.
+
+    Parsed rather than duplicated so an experiment can never quietly test a
+    genome the engine would refuse, and so adding a gene does not silently
+    leave this behind.
+    """
+    text = Path(src_root, "src", "ai.rs").read_text()
+    body = DEFAULT_WEIGHTS_RE.search(text)
+    if not body:
+        raise FleetError(f"cannot find Weights defaults in {src_root}/src/ai.rs")
+    defaults = {name: float(value) for name, value in GENE_RE.findall(body.group(1))}
+    bounds_body = BOUNDS_RE.search(text)
+    if not bounds_body:
+        raise FleetError(f"cannot find Weights::bounds in {src_root}/src/ai.rs")
+    pairs = [(float(lo), float(hi)) for lo, hi in PAIR_RE.findall(bounds_body.group(1))]
+    if len(pairs) != len(defaults):
+        raise FleetError(
+            f"{len(defaults)} genes but {len(pairs)} bounds — refusing to guess the order"
+        )
+    return defaults, dict(zip(defaults.keys(), pairs))
+
+
+def entrant(name: str, username: str, kind: Dict, anchor: bool = False) -> Dict:
+    return {
+        "name": name,
+        "username": username,
+        "kind": kind,
+        "rating": 1500.0,
+        "rd": 350.0,
+        "vol": 0.06,
+        "games": 0,
+        "wins": 0,
+        "civ_elo": {},
+        "born_round": 0,
+        "parents": [],
+        "retired": False,
+        "anchor": anchor,
+    }
+
+
+def gene_sweep_roster(
+    defaults: Dict[str, float], bounds: Dict[str, Tuple[float, float]], genes: Sequence[str]
+) -> List[Dict]:
+    """A roster that varies one gene at a time around the shipped default.
+
+    Two anchors pin the scale and a `control` carrying the exact shipped
+    genome sits beside the built-in `advanced` that uses it — if those two do
+    not converge to the same rating, the experiment is measuring noise and
+    nothing it says about a gene should be believed.
+    """
+    roster = [
+        entrant("advanced", "JackOfAllTrades", {"Builtin": {"ai": "advanced"}}, anchor=True),
+        entrant("basic", "TrainingWheels", {"Builtin": {"ai": "basic"}}, anchor=True),
+        entrant("control", "Control", {"Advanced": {"weights": dict(defaults), "target": None}}),
+    ]
+    for gene in genes:
+        if gene not in defaults:
+            raise FleetError(f"unknown gene {gene!r}")
+        lo, hi = bounds[gene]
+        for label, value in (("lo", lo), ("hi", hi)):
+            if abs(value - defaults[gene]) < 1e-9:
+                continue  # the default already sits on this bound
+            weights = dict(defaults)
+            weights[gene] = value
+            name = f"{gene}_{label}"
+            roster.append(
+                entrant(name, name[:22], {"Advanced": {"weights": weights, "target": None}})
+            )
+    return roster
+
+
+def seed_experiment(league_dir: str, roster: Sequence[Dict]) -> None:
+    Path(league_dir).mkdir(parents=True, exist_ok=True)
+    path = Path(league_dir, "league.json")
+    if path.exists():
+        raise FleetError(f"{path} already exists; delete it to start a new experiment")
+    path.write_text(
+        json.dumps(
+            {
+                "round": 0,
+                "strategies": list(roster),
+                "calibration": {"comparisons": 0, "brier_sum": 0.0, "log_loss_sum": 0.0},
+            },
+            indent=1,
+        )
+    )
+
+
+@dataclasses.dataclass
+class Variant:
+    name: str
+    rating: float
+    rd: float
+    games: int
+    wins: int
+
+
+def read_variants(league_dir: str) -> List[Variant]:
+    try:
+        data = json.loads(Path(league_dir, "league.json").read_text())
+    except (OSError, ValueError):
+        return []
+    return [
+        Variant(
+            name=s.get("name", "?"),
+            rating=float(s.get("rating", 1500.0)),
+            rd=float(s.get("rd", 350.0)),
+            games=int(s.get("games", 0)),
+            wins=int(s.get("wins", 0)),
+        )
+        for s in data.get("strategies", [])
+    ]
+
+
+def separation(variants: Sequence[Variant], control: str = "control") -> List[Tuple[Variant, float, str]]:
+    """Each variant's gap from the control, and whether it is real.
+
+    A gap is only reported as real when it clears the combined 95% interval of
+    both ratings. Anything else is `noise` however suggestive it looks, which
+    is the whole point of running the experiment instead of eyeballing a
+    leaderboard.
+    """
+    base = next((v for v in variants if v.name == control), None)
+    if base is None:
+        return []
+    out = []
+    for v in variants:
+        if v.name == control:
+            continue
+        gap = v.rating - base.rating
+        margin = 1.96 * (v.rd * v.rd + base.rd * base.rd) ** 0.5
+        if v.games < 30:
+            verdict = "too few games"
+        elif abs(gap) > margin:
+            verdict = "stronger" if gap > 0 else "weaker"
+        else:
+            verdict = f"noise (±{margin:.0f})"
+        out.append((v, gap, verdict))
+    out.sort(key=lambda row: -row[1])
+    return out
+
+
 def league_roster(league_dir: str) -> Tuple[int, int]:
     """(active strategies, round) from a league checkpoint, or (0, 0)."""
     path = Path(league_dir) / "league.json"
@@ -672,6 +826,55 @@ def cmd_run(cfg: FleetConfig, args: argparse.Namespace) -> int:
         time.sleep(max(10, args.interval))
 
 
+def cmd_experiment(cfg: FleetConfig, args: argparse.Namespace) -> int:
+    """Seed, or read, an experiment that varies one gene at a time.
+
+    Evolution can only find strength in the directions its genome can express.
+    Before spending more rounds searching, it is worth knowing which genes move
+    a rating at all — the ones that do not are where a self-improving loop
+    burns its budget for nothing.
+    """
+    league_dir = args.dir or str(Path(cfg.league_dir).parent / "experiment")
+    if args.report:
+        variants = read_variants(league_dir)
+        if not variants:
+            print(f"no experiment at {league_dir}/league.json", file=sys.stderr)
+            return 1
+        rows = separation(variants, args.control)
+        control = next((v for v in variants if v.name == args.control), None)
+        print(f"experiment {league_dir}")
+        if control:
+            print(
+                f"  control {control.rating:.0f} ±{control.rd:.0f} "
+                f"over {control.games} games\n"
+            )
+        print(f"{'variant':<24}{'elo':>8}{'±rd':>6}{'gap':>8}{'games':>7}  verdict")
+        real = 0
+        for v, gap, verdict in rows:
+            if verdict in ("stronger", "weaker"):
+                real += 1
+            print(
+                f"{v.name:<24}{v.rating:>8.0f}{v.rd:>6.0f}{gap:>+8.0f}{v.games:>7}  {verdict}"
+            )
+        print(f"\n{real} of {len(rows)} variants separate from the control")
+        return 0
+
+    src_root = args.src or f"{cfg.home_host.root}/src"
+    defaults, bounds = read_genome_defaults(src_root)
+    genes = [g.strip() for g in args.genes.split(",") if g.strip()] if args.genes else list(defaults)
+    roster = gene_sweep_roster(defaults, bounds, genes)
+    seed_experiment(league_dir, roster)
+    print(f"seeded {len(roster)} entrants at {league_dir}")
+    print(f"  {len(genes)} genes varied to each bound, plus 2 anchors and 1 control")
+    print(f"\nrun it with:\n  {cfg.home_host.root}/src/target/release/civvis league \\")
+    print(
+        f"    --dir {league_dir} --rounds {args.rounds} --games {cfg.games} "
+        f"--players {cfg.players} \\\n    --turns {cfg.turns} --evolve-every 0 --quiet"
+    )
+    print(f"\nthen read it with:\n  civvis_fleet.py experiment --dir {league_dir} --report")
+    return 0
+
+
 def cmd_stop(cfg: FleetConfig, args: argparse.Namespace) -> int:
     for host in cfg.hosts:
         ok, detail = stop_workers(host)
@@ -699,6 +902,16 @@ def build_parser() -> argparse.ArgumentParser:
     status = sub.add_parser("status", help="is the league still learning anything?")
     status.add_argument("--binary", default="", help="civvis binary to audit with")
     status.add_argument("--seats", type=int, default=0, help="only games of this size")
+
+    exp = sub.add_parser(
+        "experiment", help="vary one gene at a time and see which ones move a rating"
+    )
+    exp.add_argument("--dir", default="", help="experiment league directory")
+    exp.add_argument("--genes", default="", help="comma-separated genes (default: all)")
+    exp.add_argument("--rounds", type=int, default=40)
+    exp.add_argument("--src", default="", help="repo root to read the genome from")
+    exp.add_argument("--report", action="store_true", help="read an experiment instead")
+    exp.add_argument("--control", default="control")
     return parser
 
 
@@ -714,6 +927,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "deploy": cmd_deploy,
         "run": cmd_run,
         "status": cmd_status,
+        "experiment": cmd_experiment,
         "stop": cmd_stop,
     }
     try:
