@@ -2155,6 +2155,44 @@ mod tests {
         assert!(next.victory_conditions.science);
     }
 
+    /// The client is one top-level script, so a single lookup of an element
+    /// that no longer exists does not fail locally — it throws, and every
+    /// statement after it, including `boot()`, never runs. The page then loads
+    /// as an empty map with dead buttons. That is exactly what happened when a
+    /// button was removed from the markup and its `onclick` binding was left
+    /// behind, and it takes the spectator down with the human game.
+    ///
+    /// A lookup that is immediately used (`.onclick`, `.value`, `[0]`) must
+    /// therefore name an id the page actually declares. Lookups stored first
+    /// and guarded with `if (element)` are deliberately optional and exempt.
+    #[test]
+    fn browser_never_binds_an_element_that_does_not_exist() {
+        let declared: std::collections::HashSet<&str> = EMBEDDED_INDEX
+            .match_indices("id=\"")
+            .filter_map(|(at, marker)| {
+                let rest = &EMBEDDED_INDEX[at + marker.len()..];
+                rest.find('"').map(|end| &rest[..end])
+            })
+            .collect();
+        let lookup = "getElementById(\"";
+        for (at, marker) in EMBEDDED_INDEX.match_indices(lookup) {
+            let rest = &EMBEDDED_INDEX[at + marker.len()..];
+            let Some(end) = rest.find('"') else { continue };
+            let id = &rest[..end];
+            // `")` closes the call; what follows decides whether the result is
+            // used on the spot or bound to a name that can be checked first.
+            let used_now = rest[end..]
+                .strip_prefix("\")")
+                .map(|after| after.starts_with('.') || after.starts_with('['))
+                .unwrap_or(false);
+            assert!(
+                !used_now || declared.contains(id),
+                "the browser binds #{id} directly, but no element declares that id — \
+                 the whole client script dies at that line"
+            );
+        }
+    }
+
     #[test]
     fn browser_orders_settings_event_log_and_strategy() {
         for players in [2, 4, 6, 8, 10, 12] {
