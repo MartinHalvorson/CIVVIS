@@ -9390,25 +9390,17 @@ pub struct WarParticipation {
     /// Public military score at entry, which is the start-of-war strength for
     /// original belligerents and the entry strength for a late participant.
     pub strength: i64,
-    /// City centers which have actually attacked or come under attack during
-    /// this participation interval. Uninvolved cities do not inflate the
-    /// war-specific military total.
-    #[serde(default)]
-    pub cities: BTreeSet<u32>,
-    /// Encampments which have actually attacked or come under attack. These
-    /// are separate from their parent city centers because the two defensible
-    /// districts have independent strength and can both participate.
-    #[serde(default)]
-    pub encampments: BTreeSet<u32>,
-    /// Highest total military score observed while this interval was active.
+    /// Highest unit-only military score observed while this interval was active.
     /// `None` identifies a save written before war-strength history existed.
     #[serde(default)]
     pub peak_strength: Option<i64>,
-    /// Latest total military score observed before the participant left or
-    /// the war ended. Active wars refresh after strength-changing actions and
-    /// every civilization turn.
+    /// Each unit that attacked, defended, intercepted, or pillaged during this
+    /// participation interval, valued with the same health-adjusted base
+    /// strength used by `military_power`. Keeping the per-unit high-water mark
+    /// makes the total durable after casualties and prevents repeat attacks
+    /// from inflating a belligerent's effort.
     #[serde(default)]
-    pub total_strength: Option<i64>,
+    pub saw_action_units: BTreeMap<u32, i64>,
 }
 
 /// Terms attached to one bilateral exit from a potentially larger conflict.
@@ -12321,10 +12313,8 @@ impl Game {
                         entered: war.started,
                         exited,
                         strength: 0,
-                        cities: BTreeSet::new(),
-                        encampments: BTreeSet::new(),
                         peak_strength: None,
-                        total_strength: None,
+                        saw_action_units: BTreeMap::new(),
                     },
                     WarParticipation {
                         player: war.defender,
@@ -12333,10 +12323,8 @@ impl Game {
                         entered: war.started,
                         exited,
                         strength: 0,
-                        cities: BTreeSet::new(),
-                        encampments: BTreeSet::new(),
                         peak_strength: None,
-                        total_strength: None,
+                        saw_action_units: BTreeMap::new(),
                     },
                 ];
             }
@@ -12442,7 +12430,7 @@ impl Game {
             .map(|entry| {
                 (
                     (entry.player, entry.entered),
-                    self.war_participant_strength(entry),
+                    self.military_power(entry.player).round() as i64,
                 )
             })
             .collect::<BTreeMap<_, _>>();
@@ -12473,7 +12461,6 @@ impl Game {
                     .unwrap_or(participant.strength)
                     .max(total),
             );
-            participant.total_strength = Some(total);
             if !desired_players.contains(&participant.player) {
                 participant.exited = Some(turn);
             }
@@ -12486,90 +12473,71 @@ impl Game {
                 entered: turn,
                 exited: None,
                 strength,
-                cities: BTreeSet::new(),
-                encampments: BTreeSet::new(),
                 peak_strength: Some(strength),
-                total_strength: Some(strength),
+                saw_action_units: BTreeMap::new(),
             },
         ));
     }
 
-    /// The war-log total starts with the ordinary health-adjusted unit score,
-    /// then adds the current defense of city centers and Encampments that have
-    /// actually fought in this participation interval. Captured or razed
-    /// districts stop contributing to their former owner; the interval's
-    /// high-water mark remains in `peak_strength`.
-    fn war_participant_strength(&self, participant: &WarParticipation) -> i64 {
-        let city_strength = participant
-            .cities
-            .iter()
-            .filter_map(|city| {
-                self.cities
-                    .get(city)
-                    .filter(|city| city.owner == participant.player)
-                    .map(|city| self.city_strength(city.id))
-            })
-            .sum::<f64>();
-        let encampment_strength = participant
-            .encampments
-            .iter()
-            .filter_map(|city| {
-                self.cities
-                    .get(city)
-                    .filter(|city| city.owner == participant.player)
-                    .map(|city| self.encampment_strength(city.id))
-            })
-            .sum::<f64>();
-        (self.military_power(participant.player) + city_strength + encampment_strength).round()
-            as i64
-    }
-
-    /// Mark one defensible district as a real belligerent on the front where
-    /// this blow lands. Recording before damage preserves its pre-combat
-    /// defense as a possible peak, while the normal turn refresh records its
-    /// damaged or captured state as the latest total.
-    fn record_war_city_participation(&mut self, owner: usize, enemy: usize, city: u32) {
-        self.record_war_defense_participation(owner, enemy, city, false);
-    }
-
-    fn record_war_encampment_participation(&mut self, owner: usize, enemy: usize, city: u32) {
-        self.record_war_defense_participation(owner, enemy, city, true);
-    }
-
-    fn record_war_defense_participation(
-        &mut self,
-        owner: usize,
-        enemy: usize,
-        city: u32,
-        encampment: bool,
-    ) {
+    /// Count one unit once in the war where it saw action. If the same unit
+    /// fights again after healing or upgrading, retain its greatest observed
+    /// unit-only military value rather than turning activity into double count.
+    fn record_war_unit_participation(&mut self, unit: &Unit, enemy: usize) {
+        let owner = unit.owner;
         let Some((first, second)) = self.war_sides(owner, enemy) else {
             return;
         };
+        let value = (self.rules.units[unit.kind.as_str()].strength * unit.hp.max(0) as f64 / 100.0)
+            .round() as i64;
+        let current_strength = self.military_power(owner).round() as i64;
         let key = pair(first, second);
         self.open_war_record(first, second);
-        let Some(index) = self.wars[&key]
-            .participants
-            .iter()
-            .position(|participant| participant.player == owner && participant.exited.is_none())
-        else {
-            return;
-        };
-        let participant = &mut self.wars.get_mut(&key).unwrap().participants[index];
-        if encampment {
-            participant.encampments.insert(city);
-        } else {
-            participant.cities.insert(city);
-        }
-        let total = self.war_participant_strength(&self.wars[&key].participants[index]);
-        let participant = &mut self.wars.get_mut(&key).unwrap().participants[index];
-        participant.peak_strength = Some(
+        if let Some(participant) = self
+            .wars
+            .get_mut(&key)
+            .and_then(|war| {
+                war.participants
+                    .iter_mut()
+                    .find(|participant| participant.player == owner && participant.exited.is_none())
+            })
+        {
+            participant.peak_strength = Some(
+                participant
+                    .peak_strength
+                    .unwrap_or(participant.strength)
+                    .max(current_strength),
+            );
             participant
-                .peak_strength
-                .unwrap_or(participant.strength)
-                .max(total),
-        );
-        participant.total_strength = Some(total);
+                .saw_action_units
+                .entry(unit.id)
+                .and_modify(|known| *known = (*known).max(value))
+                .or_insert(value);
+        }
+    }
+
+    /// A City Center's strongest military garrison is the unit that actually
+    /// supplies its garrison defense. Count that unit, while still excluding
+    /// the city's own defense value from every war-log military measure.
+    fn record_war_city_garrison_participation(&mut self, city: u32, enemy: usize) {
+        let owner = self.cities[&city].owner;
+        let position = self.cities[&city].pos;
+        let garrison = self
+            .units_at(position)
+            .into_iter()
+            .filter_map(|unit| {
+                let candidate = &self.units[&unit];
+                (candidate.owner == owner
+                    && self.rules.units[candidate.kind.as_str()].class == "military")
+                    .then_some(candidate)
+            })
+            .max_by(|first, second| {
+                self.unit_unembarked_strength(first)
+                    .total_cmp(&self.unit_unembarked_strength(second))
+            })
+            .cloned();
+        if let Some(garrison) = garrison {
+            self.record_war_unit_participation(&garrison, enemy);
+        }
     }
 
     /// Retire one declared war with either the state-derived result or a
@@ -12591,7 +12559,7 @@ impl Game {
                         participant
                             .exited
                             .is_none()
-                            .then(|| self.war_participant_strength(participant))
+                            .then(|| self.military_power(participant.player).round() as i64)
                     })
                     .collect::<Vec<_>>()
             })
@@ -12613,7 +12581,6 @@ impl Game {
                     .unwrap_or(participant.strength)
                     .max(total),
             );
-            participant.total_strength = Some(total);
             participant.exited = Some(self.turn);
         }
         let (kind, actor, subject) = outcome.unwrap_or_else(|| {
@@ -20045,14 +20012,12 @@ impl Game {
     /// damaged walls, and full damage once breached (<20%) or bare (Civ 6).
     fn city_take_damage(
         &mut self,
-        attacker: usize,
+        _attacker: usize,
         cid: u32,
         dmg: i32,
         wall_mult: f64,
         bypass_walls: bool,
     ) {
-        let defender = self.cities[&cid].owner;
-        self.record_war_city_participation(defender, attacker, cid);
         let (wall, max) = {
             let c = &self.cities[&cid];
             (c.wall_hp, self.city_max_wall_hp(c))
@@ -23071,14 +23036,12 @@ impl Game {
 
     fn encampment_take_damage(
         &mut self,
-        attacker: usize,
+        _attacker: usize,
         cid: u32,
         damage: i32,
         wall_mult: f64,
         bypass_walls: bool,
     ) {
-        let defender = self.cities[&cid].owner;
-        self.record_war_encampment_participation(defender, attacker, cid);
         let (wall, max) = {
             let city = &self.cities[&cid];
             (city.encampment_wall_hp, self.city_max_wall_hp(city))
@@ -29172,7 +29135,7 @@ impl Game {
         if r.is_ok() {
             // The war infobox is live during a turn, not only after End Turn.
             // Refresh after actions that can damage, create, transfer, upgrade,
-            // or otherwise change units and participating district defense.
+            // or otherwise change the unit-only military total.
             if matches!(
                 action,
                 Action::Attack { .. }
@@ -29750,6 +29713,9 @@ impl Game {
         target: Pos,
         embarked: bool,
     ) -> Result<(), String> {
+        let defender = self.cities[&cid].owner;
+        let participant = self.units[&uid].clone();
+        self.record_war_unit_participation(&participant, defender);
         if self.cities[&cid].encampment_hp <= 0 {
             self.consume_melee_attack(uid, target);
             self.pillage_encampment(uid, cid, target);
@@ -29828,6 +29794,9 @@ impl Game {
         cid: u32,
         _target: Pos,
     ) -> Result<(), String> {
+        let defender = self.cities[&cid].owner;
+        let participant = self.units[&uid].clone();
+        self.record_war_unit_participation(&participant, defender);
         if self.cities[&cid].encampment_hp <= 0 {
             self.consume_unit_attack(uid);
             self.cities.get_mut(&cid).unwrap().encampment_hp = 0;
@@ -29949,6 +29918,8 @@ impl Game {
                 .unwrap();
             let d = self.units[&did].clone();
             let attacker = self.units[&uid].clone();
+            self.record_war_unit_participation(&attacker, d.owner);
+            self.record_war_unit_participation(&d, attacker.owner);
             let mut att_base = self.unit_unembarked_strength(&attacker)
                 + self.matchup_bonus(uid, &d, true)
                 + self.flanking_bonus(uid, target)
@@ -30033,6 +30004,9 @@ impl Game {
         } else if let Some(cid) = city_id {
             if self.cities[&cid].hp > 0 {
                 let attacker = self.units[&uid].clone();
+                let defender = self.cities[&cid].owner;
+                self.record_war_unit_participation(&attacker, defender);
+                self.record_war_city_garrison_participation(cid, attacker.owner);
                 let mut att_base = self.unit_unembarked_strength(&attacker)
                     + self.vs_bonus(pid, self.cities[&cid].owner)
                     + self.melee_attack_bonus(&attacker);
@@ -30244,6 +30218,8 @@ impl Game {
             let defender = self.units[&did].clone();
             let attacker = self.units[&uid].clone();
             let downer = defender.owner;
+            self.record_war_unit_participation(&attacker, downer);
+            self.record_war_unit_participation(&defender, attacker.owner);
             let defender_spec = &self.rules.units[defender.kind.as_str()];
             let mut att_base = self.unit_ranged_attack_strength(&self.units[&uid])
                 + self.matchup_bonus(uid, &defender, true)
@@ -30298,6 +30274,10 @@ impl Game {
             }
         } else if let Some(cid) = city_id {
             let starting_hp = self.cities[&cid].hp;
+            let defender = self.cities[&cid].owner;
+            let attacker = self.units[&uid].clone();
+            self.record_war_unit_participation(&attacker, defender);
+            self.record_war_city_garrison_participation(cid, attacker.owner);
             let mut att_base = self.unit_ranged_attack_strength(&self.units[&uid])
                 + self.promotion_effect(&self.units[&uid], "ranged_vs_district")
                 + self.gdr_siege_bonus(&self.units[&uid])
@@ -31282,6 +31262,14 @@ impl Game {
         if !self.pillageable_at(pid, pos) {
             return Err("nothing pillageable there".into());
         }
+        let enemy = self.map.tiles[&pos]
+            .owner_city
+            .and_then(|city| self.cities.get(&city))
+            .map(|city| city.owner);
+        if let Some(enemy) = enemy {
+            let participant = self.units[&uid].clone();
+            self.record_war_unit_participation(&participant, enemy);
+        }
         if self.map.tiles[&pos].improvement.as_deref() == Some("barbarian_camp") {
             self.barb_camps.remove(&pos);
             self.map.tiles.get_mut(&pos).unwrap().improvement = None;
@@ -31737,6 +31725,9 @@ impl Game {
                 return (true, fighter_engaged);
             }
             let current_attacker = self.units[&attacker_id].clone();
+            let interceptor = self.units[&interceptor_id].clone();
+            self.record_war_unit_participation(&current_attacker, interceptor.owner);
+            self.record_war_unit_participation(&interceptor, current_attacker.owner);
             let mut defense = self.unit_unembarked_strength(&current_attacker);
             if air_interceptor {
                 defense += self.promotion_effect(&current_attacker, "defend_air_fighter")
@@ -31758,7 +31749,6 @@ impl Game {
                 && self.rules.units[current_attacker.kind.as_str()].promotion_class == "air_fighter"
             {
                 fighter_engaged = true;
-                let interceptor = self.units[&interceptor_id].clone();
                 let counter_strength = self.unit_unembarked_strength(&current_attacker)
                     + self.air_matchup_bonus(&current_attacker, &interceptor);
                 let interceptor_defense = self.unit_unembarked_strength(&interceptor)
@@ -31787,7 +31777,10 @@ impl Game {
     }
 
     fn priority_damage_support(&mut self, pid: usize, uid: u32, defender_id: u32) {
+        let attacker = self.units[&uid].clone();
         let defender = self.units[&defender_id].clone();
+        self.record_war_unit_participation(&attacker, defender.owner);
+        self.record_war_unit_participation(&defender, attacker.owner);
         self.units.get_mut(&defender_id).unwrap().hp -= 65;
         let killed = self.units[&defender_id].hp <= 0;
         self.record_emergency_combat(pid, defender.owner, killed);
@@ -31834,6 +31827,8 @@ impl Game {
         );
         if let Some(cid) = self.city_at(target) {
             if self.cities[&cid].owner != pid && self.is_at_war(pid, self.cities[&cid].owner) {
+                self.record_war_unit_participation(&attacker, self.cities[&cid].owner);
+                self.record_war_city_garrison_participation(cid, attacker.owner);
                 let dealt = damage(district_attack, self.city_strength(cid), &mut self.rng);
                 self.city_take_damage(
                     pid,
@@ -31848,6 +31843,7 @@ impl Game {
             }
         } else if let Some(cid) = self.encampment_at(target) {
             if self.cities[&cid].owner != pid && self.is_at_war(pid, self.cities[&cid].owner) {
+                self.record_war_unit_participation(&attacker, self.cities[&cid].owner);
                 let dealt = damage(
                     district_attack,
                     self.encampment_strength(cid),
@@ -31874,6 +31870,8 @@ impl Game {
                 && self.unit_currently_visible_to(*id, pid)
         }) {
             let defender = self.units[&defender_id].clone();
+            self.record_war_unit_participation(&attacker, defender.owner);
+            self.record_war_unit_participation(&defender, attacker.owner);
             let anti_air = self.promotion_effect(&defender, "defend_air");
             let defender_spec = &self.rules.units[defender.kind.as_str()];
             let defense_base = if defender_spec.anti_air_strength > 0.0 {
@@ -33013,27 +33011,36 @@ impl Game {
             .filter(|(_, city)| city.owner != pid)
             .map(|(cid, city)| (cid, city.owner, city.name.clone()))
             .collect();
-        for (struck, owner, _) in &struck_cities {
-            self.record_war_city_participation(*owner, pid, *struck);
-        }
-        let struck_encampments = blast
-            .iter()
-            .filter_map(|position| self.encampment_at(*position))
-            .filter(|struck| self.cities[struck].owner != pid)
-            .map(|struck| (struck, self.cities[&struck].owner))
-            .collect::<BTreeSet<_>>();
-        for (struck, owner) in struck_encampments {
-            self.record_war_encampment_participation(owner, pid, struck);
-        }
-        for owner in &targeted_owners {
-            self.record_war_city_participation(pid, *owner, cid);
-        }
         // Everything standing in the radius before the blast, so the record can
         // report what the device actually killed rather than what it aimed at.
         let exposed: Vec<u32> = blast
             .iter()
             .flat_map(|position| self.units_at(*position))
             .collect();
+        let exposed_military = exposed
+            .iter()
+            .filter_map(|unit| self.units.get(unit))
+            .filter(|unit| {
+                unit.owner != pid
+                    && self.rules.units[unit.kind.as_str()].class == "military"
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        for defender in &exposed_military {
+            self.record_war_unit_participation(defender, pid);
+        }
+        let launch_unit = if platform == "nuclear_submarine" {
+            self.units
+                .values()
+                .find(|unit| {
+                    unit.owner == pid
+                        && unit.kind == "nuclear_submarine"
+                        && unit.pos == launched_from
+                })
+                .cloned()
+        } else {
+            None
+        };
         for position in blast.iter().copied() {
             if let Some(tile) = self.map.tiles.get_mut(&position) {
                 tile.fallout_until = tile.fallout_until.max(fallout_until);
@@ -33093,6 +33100,11 @@ impl Game {
             .copied()
             .filter(|owner| *owner != pid)
             .collect();
+        if let Some(launcher) = &launch_unit {
+            for owner in &victims {
+                self.record_war_unit_participation(launcher, *owner);
+            }
+        }
         let strike = NuclearStrike {
             id: self.allocate_conflict_id(),
             turn: self.turn,
@@ -33255,7 +33267,7 @@ impl Game {
             })
             .unwrap();
         let d = self.units[&did].clone();
-        self.record_war_city_participation(pid, d.owner, cid);
+        self.record_war_unit_participation(&d, pid);
         let ds = effective_strength(
             self.unit_strength(&d, true) + self.ranged_defense_bonus(&d, true),
             d.hp,
@@ -33332,7 +33344,7 @@ impl Game {
             })
             .ok_or_else(|| "no enemy military target".to_string())?;
         let defender = self.units[&defender_id].clone();
-        self.record_war_encampment_participation(pid, defender.owner, cid);
+        self.record_war_unit_participation(&defender, pid);
         let defense = effective_strength(
             self.unit_strength(&defender, true) + self.ranged_defense_bonus(&defender, false),
             defender.hp,
@@ -42846,6 +42858,13 @@ mod combat_scenarios {
         .unwrap();
         assert!(g.cities[&cid].hp < before);
         assert_eq!(g.units[&garrison].hp, 100);
+        assert!(g.wars[&pair(0, 1)]
+            .participants
+            .iter()
+            .find(|participant| participant.player == 1)
+            .unwrap()
+            .saw_action_units
+            .contains_key(&garrison));
 
         g.cities.get_mut(&cid).unwrap().hp = 100;
         for pos in ring {
@@ -43570,6 +43589,22 @@ mod combat_scenarios {
 
         game.do_air_strike(0, attacker, target).unwrap();
         assert_eq!(game.units[&victim].hp, 100);
+        let war = &game.wars[&pair(0, 1)];
+        assert!(war
+            .participants
+            .iter()
+            .find(|participant| participant.player == 0)
+            .unwrap()
+            .saw_action_units
+            .contains_key(&attacker));
+        let defenders = &war
+            .participants
+            .iter()
+            .find(|participant| participant.player == 1)
+            .unwrap()
+            .saw_action_units;
+        assert!(defenders.contains_key(&interceptor));
+        assert!(!defenders.contains_key(&victim));
         assert!(
             !game.units.contains_key(&attacker) || game.units[&attacker].hp < 100,
             "the dogfight must affect the attacking fighter"
@@ -43774,6 +43809,12 @@ mod combat_scenarios {
         assert_eq!(game.units[&aircraft].pos, aerodrome);
         game.apply(1, &Action::Pillage { unit: raider }).unwrap();
         assert!(game.map.tiles[&aerodrome].pillaged);
+        let raider_party = game.wars[&pair(0, 1)]
+            .participants
+            .iter()
+            .find(|participant| participant.player == 1)
+            .unwrap();
+        assert!(raider_party.saw_action_units.contains_key(&raider));
         assert_eq!(game.units[&aircraft].pos, city_pos);
         assert_eq!(game.units[&aircraft].moves_left, 0.0);
         assert!(game.units[&aircraft].acted);
@@ -43817,6 +43858,15 @@ mod combat_scenarios {
         );
         game.apply(0, &mission).unwrap();
         assert!(game.map.tiles[&target].pillaged);
+        let attacker = game.wars[&pair(0, 1)]
+            .participants
+            .iter()
+            .find(|participant| participant.player == 0)
+            .unwrap();
+        assert_eq!(
+            attacker.saw_action_units[&bomber],
+            (game.rules.units["bomber"].strength * 0.5).round() as i64
+        );
         assert_eq!(
             (
                 game.players[0].gold,
@@ -44197,7 +44247,7 @@ mod combat_scenarios {
                     && g.wdist(*pos, city_pos) > 1
             })
             .unwrap();
-        g.spawn_unit("warrior", 1, target);
+        let target_unit = g.spawn_unit("warrior", 1, target);
         assert!(g.legal_actions(0).into_iter().any(|action| {
             matches!(action, Action::EncampmentStrike { city, target: to }
                 if city == cid && to == target)
@@ -44210,12 +44260,13 @@ mod combat_scenarios {
             .iter()
             .find(|participant| participant.player == 0)
             .unwrap();
-        assert!(participant.cities.is_empty());
-        assert_eq!(participant.encampments, BTreeSet::from([cid]));
-        assert_eq!(
-            participant.total_strength,
-            Some((g.military_power(0) + g.encampment_strength(cid)).round() as i64)
-        );
+        assert!(participant.saw_action_units.is_empty());
+        let defender = g.wars[&pair(0, 1)]
+            .participants
+            .iter()
+            .find(|participant| participant.player == 1)
+            .unwrap();
+        assert!(defender.saw_action_units.contains_key(&target_unit));
         assert!(g
             .apply(0, &Action::EncampmentStrike { city: cid, target },)
             .is_err());
@@ -49776,7 +49827,7 @@ mod district_mechanics {
     }
 
     #[test]
-    fn war_strength_tracks_entry_peak_and_latest_unit_plus_city_total() {
+    fn war_strength_is_unit_only_and_saw_action_counts_distinct_units() {
         let mut game = emergency_game_with_capitals(2, 5_510, 300);
         game.turn = 40;
         let start = game.military_power(0).round() as i64;
@@ -49789,30 +49840,24 @@ mod district_mechanics {
             .unwrap();
         assert_eq!(participant.strength, start);
         assert_eq!(participant.peak_strength, Some(start));
-        assert_eq!(participant.total_strength, Some(start));
+        assert!(participant.saw_action_units.is_empty());
 
-        // A city that comes under attack joins this war's score at its current
-        // defense strength. No other city is counted merely because its owner
-        // is a belligerent.
+        // District defense never enters any of the three military measures.
         let capital = game.player_city_ids(0)[0];
-        let full_city_total =
-            (game.military_power(0) + game.city_strength(capital)).round() as i64;
         game.city_take_damage(1, capital, 20, 0.5, false);
+        game.sync_war_log();
         let participant = game.wars[&pair(0, 1)]
             .participants
             .iter()
             .find(|participant| participant.player == 0)
             .unwrap();
-        assert_eq!(participant.cities, BTreeSet::from([capital]));
-        assert!(participant.encampments.is_empty());
-        assert_eq!(participant.peak_strength, Some(full_city_total));
+        assert_eq!(participant.peak_strength, Some(start));
+        assert!(participant.saw_action_units.is_empty());
 
-        // A damaged reinforcement proves that unit strength remains the
-        // health-adjusted HUD sum, while the engaged city's damaged defense
-        // and the unit total continue to update independently.
+        // Peak uses the same health-adjusted unit sum as the HUD.
         let reinforcement = game.spawn_unit("warrior", 0, game.cities[&capital].pos);
         game.units.get_mut(&reinforcement).unwrap().hp = 50;
-        let peak = (game.military_power(0) + game.city_strength(capital)).round() as i64;
+        let peak = game.military_power(0).round() as i64;
         assert!(peak > start);
         game.do_end_turn();
 
@@ -49822,11 +49867,70 @@ mod district_mechanics {
             .find(|participant| participant.player == 0)
             .unwrap();
         assert_eq!(participant.peak_strength, Some(peak));
-        assert_eq!(participant.total_strength, Some(peak));
 
         game.remove_unit(reinforcement);
         game.do_end_turn();
-        let latest = (game.military_power(0) + game.city_strength(capital)).round() as i64;
+
+        // Both sides of a real combat saw action. Their pre-combat military
+        // values survive casualties and are keyed by unit, so a later action
+        // by the same unit can raise but never duplicate its contribution.
+        let (attacker_pos, defender_pos) = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(position, tile)| {
+                game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+                    && game.city_at(**position).is_none()
+                    && game.units_at(**position).is_empty()
+            })
+            .find_map(|(position, _)| {
+                game.nbrs(*position).into_iter().find_map(|neighbor| {
+                    game.map.get(neighbor).and_then(|tile| {
+                        (game.rules.is_passable(tile)
+                            && !game.rules.is_water(tile)
+                            && game.city_at(neighbor).is_none()
+                            && game.units_at(neighbor).is_empty())
+                        .then_some((*position, neighbor))
+                    })
+                })
+            })
+            .expect("test map has an open land skirmish");
+        let attacker = game.spawn_test_unit("warrior", 0, attacker_pos);
+        let defender = game.spawn_test_unit("warrior", 1, defender_pos);
+        let attacker_before = game.units[&attacker].clone();
+        let defender_before = game.units[&defender].clone();
+        let attacker_value = game.rules.units["warrior"].strength.round() as i64;
+        let action_peak = peak.max(game.military_power(0).round() as i64);
+        game.do_attack(0, attacker, defender_pos).unwrap();
+
+        let war = &game.wars[&pair(0, 1)];
+        let attacker_party = war
+            .participants
+            .iter()
+            .find(|participant| participant.player == 0)
+            .unwrap();
+        let defender_party = war
+            .participants
+            .iter()
+            .find(|participant| participant.player == 1)
+            .unwrap();
+        assert_eq!(attacker_party.saw_action_units[&attacker], attacker_value);
+        assert_eq!(defender_party.saw_action_units[&defender], attacker_value);
+        game.record_war_unit_participation(&attacker_before, 1);
+        game.record_war_unit_participation(&defender_before, 0);
+        assert_eq!(
+            game.wars[&pair(0, 1)]
+                .participants
+                .iter()
+                .find(|participant| participant.player == 0)
+                .unwrap()
+                .saw_action_units
+                .len(),
+            1,
+            "repeat action by one unit is not double-counted"
+        );
+
         let observed = crate::obs::observation(&game, 0);
         let party = observed["wars"][0]["parties"]
             .as_array()
@@ -49835,21 +49939,20 @@ mod district_mechanics {
             .find(|party| party["player"] == 0)
             .unwrap();
         assert_eq!(party["strength_start"], start);
-        assert_eq!(party["strength_peak"], peak);
-        assert_eq!(party["strength_total"], latest);
+        assert_eq!(party["strength_peak"], action_peak);
+        assert_eq!(party["strength_saw_action"], attacker_value);
+        assert!(party.get("strength_total").is_none());
 
         game.turn = 50;
         game.do_make_peace(0, 1).unwrap();
-        let final_latest =
-            (game.military_power(0) + game.city_strength(capital)).round() as i64;
         let concluded = game.concluded_wars.last().unwrap();
         let participant = concluded
             .participants
             .iter()
             .find(|participant| participant.player == 0)
             .unwrap();
-        assert_eq!(participant.peak_strength, Some(peak));
-        assert_eq!(participant.total_strength, Some(final_latest));
+        assert!(participant.peak_strength.unwrap() >= action_peak);
+        assert_eq!(participant.saw_action_units[&attacker], attacker_value);
         let observed = crate::obs::observation(&game, 0);
         let party = observed["wars"][0]["parties"]
             .as_array()
@@ -49857,12 +49960,11 @@ mod district_mechanics {
             .iter()
             .find(|party| party["player"] == 0)
             .unwrap();
-        assert_eq!(party["strength_peak"], peak);
-        assert_eq!(party["strength_total"], final_latest);
+        assert_eq!(party["strength_saw_action"], attacker_value);
     }
 
     #[test]
-    fn a_city_strike_adds_the_attacking_city_to_war_strength() {
+    fn a_city_strike_counts_the_defending_unit_but_not_city_defense() {
         let mut game = emergency_game_with_capitals(2, 5_511, 300);
         let capital = game.player_city_ids(0)[0];
         game.cities
@@ -49881,7 +49983,8 @@ mod district_mechanics {
                     && game.units_at(*position).is_empty()
             })
             .unwrap();
-        game.spawn_unit("warrior", 1, target);
+        let defender_id = game.spawn_unit("warrior", 1, target);
+        let defender_value = game.rules.units["warrior"].strength.round() as i64;
         game.reveal(0, target, 2);
         game.do_declare_war(0, 1).unwrap();
 
@@ -49899,21 +50002,18 @@ mod district_mechanics {
             .iter()
             .find(|participant| participant.player == 0)
             .unwrap();
-        assert_eq!(participant.cities, BTreeSet::from([capital]));
+        assert!(participant.saw_action_units.is_empty());
         assert_eq!(
-            participant.total_strength,
-            Some((game.military_power(0) + game.city_strength(capital)).round() as i64)
+            participant.peak_strength,
+            Some(game.military_power(0).round() as i64),
+            "the striking city's defense is never military strength"
         );
         let defender = game.wars[&pair(0, 1)]
             .participants
             .iter()
             .find(|participant| participant.player == 1)
             .unwrap();
-        assert_eq!(
-            defender.total_strength,
-            Some(game.military_power(1).round() as i64),
-            "damage refreshes the opposing total before the action returns"
-        );
+        assert_eq!(defender.saw_action_units[&defender_id], defender_value);
     }
 
     #[test]
