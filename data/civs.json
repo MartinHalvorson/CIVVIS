@@ -19,7 +19,15 @@
     "traits": [
       "mediterranean"
     ],
-    "start_bias": {"feature": ["floodplains", "grassland_floodplains", "plains_floodplains"], "feature_tier": 2, "river_tier": 5}
+    "start_bias": {
+      "feature": [
+        "floodplains",
+        "grassland_floodplains",
+        "plains_floodplains"
+      ],
+      "feature_tier": 2,
+      "river_tier": 5
+    }
   },
   "Greece": {
     "leader": "Pericles",
@@ -33,7 +41,16 @@
       "pursue_diplomatic_victory",
       "surrounded_by_glory"
     ],
-    "start_bias": {"terrain": ["desert", "grassland", "plains", "tundra"], "terrain_hills": true, "terrain_tier": 3}
+    "start_bias": {
+      "terrain": [
+        "desert",
+        "grassland",
+        "plains",
+        "tundra"
+      ],
+      "terrain_hills": true,
+      "terrain_tier": 3
+    }
   },
   "China": {
     "leader": "Qin Shi Huang",
@@ -57,7 +74,9 @@
       "low_city_state_preference_war",
       "low_religious_preference"
     ],
-    "start_bias": {"river_tier": 3}
+    "start_bias": {
+      "river_tier": 3
+    }
   },
   "Aztec": {
     "leader": "Montezuma",
@@ -78,7 +97,26 @@
     "traits": [
       "science_major_civ"
     ],
-    "start_bias": {"terrain": ["desert"], "terrain_tier": 2, "resource": ["aluminum", "coal", "copper", "diamonds", "iron", "jade", "mercury", "niter", "salt", "silver", "uranium"], "resource_tier": 5}
+    "start_bias": {
+      "terrain": [
+        "desert"
+      ],
+      "terrain_tier": 2,
+      "resource": [
+        "aluminum",
+        "coal",
+        "copper",
+        "diamonds",
+        "iron",
+        "jade",
+        "mercury",
+        "niter",
+        "salt",
+        "silver",
+        "uranium"
+      ],
+      "resource_tier": 5
+    }
   },
   "Scythia": {
     "leader": "Tomyris",
@@ -89,7 +127,17 @@
     "traits": [
       "killer_of_cyrus"
     ],
-    "start_bias": {"terrain": ["grassland", "plains"], "terrain_tier": 5, "resource": ["horses"], "resource_tier": 2}
+    "start_bias": {
+      "terrain": [
+        "grassland",
+        "plains"
+      ],
+      "terrain_tier": 5,
+      "resource": [
+        "horses"
+      ],
+      "resource_tier": 2
+    }
   },
   "England": {
     "leader": "Victoria",
@@ -99,7 +147,10 @@
     "traits": [
       "expansionist"
     ],
-    "effects": {"building_production_pct": 20, "city_gold": 1}
+    "effects": {
+      "building_production_pct": 20,
+      "city_gold": 1
+    }
   },
   "Germany": {
     "leader": "Frederick Barbarossa",
@@ -110,7 +161,10 @@
       "expansionist",
       "low_religious_preference"
     ],
-    "effects": {"district_production_pct": 20, "city_production": 1}
+    "effects": {
+      "district_production_pct": 20,
+      "city_production": 1
+    }
   },
   "Russia": {
     "leader": "Peter",
@@ -120,8 +174,16 @@
     "traits": [
       "expansionist"
     ],
-    "effects": {"city_faith": 1, "city_production": 1},
-    "start_bias": {"terrain": ["tundra"], "terrain_tier": 3}
+    "effects": {
+      "city_faith": 1,
+      "city_production": 1
+    },
+    "start_bias": {
+      "terrain": [
+        "tundra"
+      ],
+      "terrain_tier": 3
+    }
   },
   "Korea": {
     "leader": "Seondeok",
@@ -131,8 +193,18 @@
     "traits": [
       "science_major_civ"
     ],
-    "effects": {"city_science": 1, "city_food": 1},
-    "start_bias": {"terrain": ["grassland", "plains"], "terrain_hills": true, "terrain_tier": 2}
+    "effects": {
+      "city_science": 1,
+      "city_food": 1
+    },
+    "start_bias": {
+      "terrain": [
+        "grassland",
+        "plains"
+      ],
+      "terrain_hills": true,
+      "terrain_tier": 2
+    }
   },
   "Maya": {
     "leader": "Lady Six Sky",
@@ -142,8 +214,21 @@
     "traits": [
       "science_major_civ"
     ],
-    "effects": {"city_food": 1, "city_science": 1},
-    "start_bias": {"feature": ["jungle"], "feature_tier": 4, "resource": ["cocoa", "maize"], "resource_tier": 3}
+    "effects": {
+      "city_food": 1,
+      "city_science": 1
+    },
+    "start_bias": {
+      "feature": [
+        "jungle"
+      ],
+      "feature_tier": 4,
+      "resource": [
+        "cocoa",
+        "maize"
+      ],
+      "resource_tier": 3
+    }
   },
   "Mali": {
     "leader": "Mansa Musa",
@@ -153,8 +238,21 @@
     "traits": [
       "pursue_diplomatic_victory"
     ],
-    "effects": {"city_gold": 1, "city_faith": 1},
-    "start_bias": {"terrain": ["desert"], "terrain_tier": 3, "resource": ["salt", "silver"], "resource_tier": 3}
+    "effects": {
+      "city_gold": 1,
+      "city_faith": 1
+    },
+    "start_bias": {
+      "terrain": [
+        "desert"
+      ],
+      "terrain_tier": 3,
+      "resource": [
+        "salt",
+        "silver"
+      ],
+      "resource_tier": 3
+    }
   },
   "Phoenicia": {
     "leader": "Dido",
@@ -165,7 +263,10 @@
       "expansionist",
       "mediterranean"
     ],
-    "effects": {"settler_production_pct": 50, "city_gold": 1}
+    "effects": {
+      "settler_production_pct": 50,
+      "city_gold": 1
+    }
   },
   "Byzantium": {
     "leader": "Basil II",
@@ -176,7 +277,9 @@
       "aggressive_military",
       "low_city_state_preference_war"
     ],
-    "effects": {"combat_strength": 2}
+    "effects": {
+      "combat_strength": 2
+    }
   },
   "Zulu": {
     "leader": "Shaka",
@@ -187,7 +290,10 @@
       "aggressive_military",
       "expansionist"
     ],
-    "effects": {"unit_xp_pct": 25, "unit_production_pct": 20}
+    "effects": {
+      "unit_xp_pct": 25,
+      "unit_production_pct": 20
+    }
   },
   "Gaul": {
     "leader": "Ambiorix",
@@ -197,8 +303,17 @@
     "traits": [
       "aggressive_military"
     ],
-    "effects": {"city_production": 1, "city_culture": 1},
-    "start_bias": {"resource": ["copper", "iron"], "resource_tier": 3}
+    "effects": {
+      "city_production": 1,
+      "city_culture": 1
+    },
+    "start_bias": {
+      "resource": [
+        "copper",
+        "iron"
+      ],
+      "resource_tier": 3
+    }
   },
   "Kongo": {
     "leader": "Mvemba a Nzinga",
@@ -209,8 +324,17 @@
       "cultural_major_civ",
       "low_religious_preference"
     ],
-    "effects": {"city_gold": 1, "city_culture": 1},
-    "start_bias": {"feature": ["forest", "jungle"], "feature_tier": 3}
+    "effects": {
+      "city_gold": 1,
+      "city_culture": 1
+    },
+    "start_bias": {
+      "feature": [
+        "forest",
+        "jungle"
+      ],
+      "feature_tier": 3
+    }
   },
   "Vietnam": {
     "leader": "Ba Trieu",
@@ -221,8 +345,18 @@
       "cultural_major_civ",
       "science_major_civ"
     ],
-    "effects": {"city_culture": 1, "city_food": 1},
-    "start_bias": {"feature": ["jungle", "marsh", "forest"], "feature_tier": 2}
+    "effects": {
+      "city_culture": 1,
+      "city_food": 1
+    },
+    "start_bias": {
+      "feature": [
+        "jungle",
+        "marsh",
+        "forest"
+      ],
+      "feature_tier": 2
+    }
   },
   "Brazil": {
     "leader": "Pedro II",
@@ -232,7 +366,1028 @@
     "traits": [
       "cultural_major_civ"
     ],
-    "effects": {"city_culture": 1, "city_gold": 1},
-    "start_bias": {"feature": ["jungle"], "feature_tier": 2}
+    "effects": {
+      "city_culture": 1,
+      "city_gold": 1
+    },
+    "start_bias": {
+      "feature": [
+        "jungle"
+      ],
+      "feature_tier": 2
+    }
+  },
+  "France": {
+    "leader": "Catherine de Medici",
+    "ability": "grand_tour",
+    "agenda": "black_queen",
+    "effects": {
+      "city_culture": 1,
+      "city_gold": 1
+    },
+    "note": "Grand Tour: +1 culture and +1 gold in every city",
+    "traits": [
+      "cultural_major_civ"
+    ]
+  },
+  "Spain": {
+    "leader": "Philip II",
+    "ability": "treasure_fleet",
+    "agenda": "counter_reformation",
+    "effects": {
+      "city_gold": 1,
+      "city_faith": 1
+    },
+    "note": "Treasure Fleet: +1 gold and +1 faith in every city",
+    "traits": [
+      "religious_major_civ"
+    ]
+  },
+  "Portugal": {
+    "leader": "John II",
+    "ability": "casa_da_india",
+    "agenda": "navigators_school",
+    "effects": {
+      "city_gold": 1,
+      "city_science": 1
+    },
+    "note": "Casa da India: +1 gold and +1 science in every city",
+    "traits": [
+      "pursue_diplomatic_victory"
+    ]
+  },
+  "Netherlands": {
+    "leader": "Wilhelmina",
+    "ability": "grootscheepsvaart",
+    "agenda": "billboard",
+    "effects": {
+      "city_gold": 1,
+      "city_production": 1
+    },
+    "note": "Grootscheepsvaart: +1 gold and +1 production in every city",
+    "traits": [
+      "pursue_diplomatic_victory"
+    ]
+  },
+  "Sweden": {
+    "leader": "Kristina",
+    "ability": "nobelinstitution",
+    "agenda": "queens_bibliotheque",
+    "effects": {
+      "city_science": 1,
+      "city_culture": 1
+    },
+    "note": "Nobel Institution: +1 science and +1 culture in every city",
+    "traits": [
+      "science_major_civ"
+    ]
+  },
+  "Norway": {
+    "leader": "Harald Hardrada",
+    "ability": "knarr",
+    "agenda": "last_viking_king",
+    "effects": {
+      "city_production": 1,
+      "combat_strength": 2
+    },
+    "note": "Knarr: +1 production and +2 combat strength",
+    "traits": [
+      "aggressive_military"
+    ]
+  },
+  "Denmark": {
+    "leader": "Margrete I",
+    "ability": "kalmar_union",
+    "agenda": "union_of_crowns",
+    "effects": {
+      "city_gold": 1,
+      "city_food": 1
+    },
+    "note": "Kalmar Union: +1 gold and +1 food in every city",
+    "traits": [
+      "pursue_diplomatic_victory"
+    ]
+  },
+  "Poland": {
+    "leader": "Jadwiga",
+    "ability": "golden_liberty",
+    "agenda": "lithuanian_union",
+    "effects": {
+      "city_faith": 1,
+      "city_production": 1
+    },
+    "note": "Golden Liberty: +1 faith and +1 production in every city",
+    "traits": [
+      "religious_major_civ"
+    ]
+  },
+  "Hungary": {
+    "leader": "Matthias Corvinus",
+    "ability": "pearl_of_the_danube",
+    "agenda": "raven_king",
+    "effects": {
+      "building_production_pct": 15
+    },
+    "note": "Pearl of the Danube: +15% production toward buildings",
+    "traits": [
+      "aggressive_military"
+    ]
+  },
+  "Austria": {
+    "leader": "Maria Theresa",
+    "ability": "habsburg_court",
+    "agenda": "diplomatic_marriage",
+    "effects": {
+      "city_culture": 1,
+      "city_faith": 1
+    },
+    "note": "Habsburg Court: +1 culture and +1 faith in every city",
+    "traits": [
+      "cultural_major_civ"
+    ]
+  },
+  "Bohemia": {
+    "leader": "Charles IV",
+    "ability": "golden_bull",
+    "agenda": "father_of_the_country",
+    "effects": {
+      "city_science": 1,
+      "city_production": 1
+    },
+    "note": "Golden Bull: +1 science and +1 production in every city",
+    "traits": [
+      "science_major_civ"
+    ]
+  },
+  "Scotland": {
+    "leader": "Robert the Bruce",
+    "ability": "scottish_enlightenment",
+    "agenda": "bannockburn",
+    "effects": {
+      "city_science": 1,
+      "city_production": 1
+    },
+    "note": "Scottish Enlightenment: +1 science and +1 production in every city",
+    "traits": [
+      "science_major_civ"
+    ]
+  },
+  "Ireland": {
+    "leader": "Brian Boru",
+    "ability": "island_of_saints",
+    "agenda": "high_king",
+    "effects": {
+      "city_faith": 1,
+      "city_science": 1
+    },
+    "note": "Island of Saints and Scholars: +1 faith and +1 science in every city",
+    "traits": [
+      "religious_major_civ"
+    ]
+  },
+  "Switzerland": {
+    "leader": "Henri Dunant",
+    "ability": "perpetual_neutrality",
+    "agenda": "red_cross",
+    "effects": {
+      "city_gold": 1,
+      "city_science": 1
+    },
+    "note": "Perpetual Neutrality: +1 gold and +1 science in every city",
+    "traits": [
+      "pursue_diplomatic_victory"
+    ]
+  },
+  "Venice": {
+    "leader": "Enrico Dandolo",
+    "ability": "arsenale",
+    "agenda": "serenissima",
+    "effects": {
+      "city_gold": 1,
+      "building_production_pct": 15
+    },
+    "note": "Arsenale: +1 gold and +15% production toward buildings",
+    "traits": [
+      "pursue_diplomatic_victory"
+    ]
+  },
+  "Serbia": {
+    "leader": "Stefan Dusan",
+    "ability": "dusans_code",
+    "agenda": "emperor_of_the_serbs",
+    "effects": {
+      "city_faith": 1,
+      "combat_strength": 2
+    },
+    "note": "Dusan's Code: +1 faith and +2 combat strength",
+    "traits": [
+      "aggressive_military"
+    ]
+  },
+  "Bulgaria": {
+    "leader": "Simeon I",
+    "ability": "golden_age_of_letters",
+    "agenda": "tsar_of_the_bulgars",
+    "effects": {
+      "city_culture": 1,
+      "city_faith": 1
+    },
+    "note": "Golden Age of Letters: +1 culture and +1 faith in every city",
+    "traits": [
+      "cultural_major_civ"
+    ]
+  },
+  "Lithuania": {
+    "leader": "Vytautas",
+    "ability": "grand_duchy",
+    "agenda": "from_sea_to_sea",
+    "effects": {
+      "city_production": 1,
+      "combat_strength": 2
+    },
+    "note": "Grand Duchy: +1 production and +2 combat strength",
+    "traits": [
+      "expansionist"
+    ]
+  },
+  "Ukraine": {
+    "leader": "Bohdan Khmelnytsky",
+    "ability": "black_earth",
+    "agenda": "cossack_hetman",
+    "effects": {
+      "city_food": 1,
+      "city_production": 1
+    },
+    "note": "Black Earth: +1 food and +1 production in every city",
+    "traits": [
+      "aggressive_military"
+    ]
+  },
+  "Finland": {
+    "leader": "Mannerheim",
+    "ability": "sisu",
+    "agenda": "winter_war",
+    "effects": {
+      "city_production": 1,
+      "combat_strength": 2
+    },
+    "note": "Sisu: +1 production and +2 combat strength",
+    "traits": [
+      "aggressive_military"
+    ]
+  },
+  "Romania": {
+    "leader": "Vlad III",
+    "ability": "carpathian_marches",
+    "agenda": "impaler",
+    "effects": {
+      "city_production": 1,
+      "combat_strength": 3
+    },
+    "note": "Carpathian Marches: +1 production and +3 combat strength",
+    "traits": [
+      "aggressive_military"
+    ]
+  },
+  "Novgorod": {
+    "leader": "Alexander Nevsky",
+    "ability": "veche",
+    "agenda": "lord_novgorod_the_great",
+    "effects": {
+      "city_gold": 1,
+      "city_faith": 1
+    },
+    "note": "Veche: +1 gold and +1 faith in every city",
+    "traits": [
+      "pursue_diplomatic_victory"
+    ]
+  },
+  "Prussia": {
+    "leader": "Frederick the Great",
+    "ability": "general_staff",
+    "agenda": "drill_and_discipline",
+    "effects": {
+      "unit_production_pct": 15,
+      "combat_strength": 2
+    },
+    "note": "General Staff: +15% production toward units and +2 combat strength",
+    "traits": [
+      "aggressive_military"
+    ]
+  },
+  "Catalonia": {
+    "leader": "James I",
+    "ability": "consulate_of_the_sea",
+    "agenda": "llibre_del_consolat",
+    "effects": {
+      "city_gold": 1,
+      "city_culture": 1
+    },
+    "note": "Consulate of the Sea: +1 gold and +1 culture in every city",
+    "traits": [
+      "cultural_major_civ"
+    ]
+  },
+  "Gujarat": {
+    "leader": "Kumarapala",
+    "ability": "ports_of_lothal",
+    "agenda": "shore_of_traders",
+    "effects": {
+      "city_gold": 1,
+      "city_production": 1
+    },
+    "note": "Ports of Lothal: +1 gold and +1 production in every city",
+    "traits": [
+      "pursue_diplomatic_victory"
+    ]
+  },
+  "Assyria": {
+    "leader": "Ashurbanipal",
+    "ability": "library_of_nineveh",
+    "agenda": "siege_engines",
+    "effects": {
+      "city_science": 1,
+      "combat_strength": 2
+    },
+    "note": "Library of Nineveh: +1 science and +2 combat strength",
+    "traits": [
+      "aggressive_military"
+    ]
+  },
+  "Persia": {
+    "leader": "Cyrus",
+    "ability": "royal_road",
+    "agenda": "king_of_kings",
+    "effects": {
+      "city_gold": 1,
+      "combat_strength": 2
+    },
+    "note": "Royal Road: +1 gold and +2 combat strength",
+    "traits": [
+      "expansionist"
+    ]
+  },
+  "Media": {
+    "leader": "Cyaxares",
+    "ability": "horse_lands",
+    "agenda": "mountain_confederacy",
+    "effects": {
+      "unit_production_pct": 15
+    },
+    "note": "Horse Lands: +15% production toward units",
+    "traits": [
+      "aggressive_military"
+    ]
+  },
+  "Manchuria": {
+    "leader": "Nurhaci",
+    "ability": "banner_system",
+    "agenda": "eight_banners",
+    "effects": {
+      "unit_production_pct": 15,
+      "combat_strength": 2
+    },
+    "note": "Banner System: +15% production toward units and +2 combat strength",
+    "traits": [
+      "aggressive_military"
+    ]
+  },
+  "Lydia": {
+    "leader": "Croesus",
+    "ability": "first_coinage",
+    "agenda": "golden_treasury",
+    "effects": {
+      "city_gold": 2
+    },
+    "note": "First Coinage: +2 gold in every city",
+    "traits": [
+      "pursue_diplomatic_victory"
+    ]
+  },
+  "Parthia": {
+    "leader": "Mithridates I",
+    "ability": "parthian_shot",
+    "agenda": "horse_archers",
+    "effects": {
+      "unit_production_pct": 15,
+      "combat_strength": 2
+    },
+    "note": "Parthian Shot: +15% production toward units and +2 combat strength",
+    "traits": [
+      "aggressive_military"
+    ]
+  },
+  "Sogdiana": {
+    "leader": "Spitamenes",
+    "ability": "silk_brokers",
+    "agenda": "caravan_cities",
+    "effects": {
+      "city_gold": 2
+    },
+    "note": "Silk Brokers: +2 gold in every city",
+    "traits": [
+      "pursue_diplomatic_victory"
+    ]
+  },
+  "Ottomans": {
+    "leader": "Suleiman",
+    "ability": "great_bombard",
+    "agenda": "lawgiver",
+    "effects": {
+      "unit_production_pct": 15,
+      "combat_strength": 2
+    },
+    "note": "Great Bombard: +15% production toward units and +2 combat strength",
+    "traits": [
+      "aggressive_military"
+    ]
+  },
+  "Arabia": {
+    "leader": "Saladin",
+    "ability": "house_of_wisdom",
+    "agenda": "ayyubid_dynasty",
+    "effects": {
+      "city_science": 1,
+      "city_faith": 1
+    },
+    "note": "House of Wisdom: +1 science and +1 faith in every city",
+    "traits": [
+      "religious_major_civ"
+    ]
+  },
+  "Israel": {
+    "leader": "Solomon",
+    "ability": "first_temple",
+    "agenda": "wisdom_of_solomon",
+    "effects": {
+      "city_faith": 2
+    },
+    "note": "First Temple: +2 faith in every city",
+    "traits": [
+      "religious_major_civ"
+    ]
+  },
+  "Armenia": {
+    "leader": "Tigranes",
+    "ability": "stone_chronicles",
+    "agenda": "king_of_kings_armenia",
+    "effects": {
+      "city_faith": 1,
+      "city_culture": 1
+    },
+    "note": "Stone Chronicles: +1 faith and +1 culture in every city",
+    "traits": [
+      "religious_major_civ"
+    ]
+  },
+  "Georgia": {
+    "leader": "Tamar",
+    "ability": "strength_is_in_unity",
+    "agenda": "golden_age_georgia",
+    "effects": {
+      "city_faith": 1,
+      "combat_strength": 2
+    },
+    "note": "Strength is in Unity: +1 faith and +2 combat strength",
+    "traits": [
+      "religious_major_civ"
+    ]
+  },
+  "Timurids": {
+    "leader": "Timur",
+    "ability": "registan",
+    "agenda": "scourge_of_kings",
+    "effects": {
+      "city_culture": 1,
+      "combat_strength": 2
+    },
+    "note": "Registan: +1 culture and +2 combat strength",
+    "traits": [
+      "aggressive_military"
+    ]
+  },
+  "Kazakh": {
+    "leader": "Ablai Khan",
+    "ability": "steppe_horde",
+    "agenda": "great_jute",
+    "effects": {
+      "unit_production_pct": 15
+    },
+    "note": "Steppe Horde: +15% production toward units",
+    "traits": [
+      "expansionist"
+    ]
+  },
+  "Bactria": {
+    "leader": "Euthydemus",
+    "ability": "thousand_cities",
+    "agenda": "hellenic_east",
+    "effects": {
+      "city_gold": 1,
+      "city_culture": 1
+    },
+    "note": "Land of a Thousand Cities: +1 gold and +1 culture in every city",
+    "traits": [
+      "cultural_major_civ"
+    ]
+  },
+  "Ethiopia": {
+    "leader": "Menelik II",
+    "ability": "ark_of_the_covenant",
+    "agenda": "lion_of_judah",
+    "effects": {
+      "city_faith": 1,
+      "combat_strength": 2
+    },
+    "note": "Ark of the Covenant: +1 faith and +2 combat strength",
+    "traits": [
+      "religious_major_civ"
+    ]
+  },
+  "Axum": {
+    "leader": "Ezana",
+    "ability": "stelae_of_axum",
+    "agenda": "red_sea_trade",
+    "effects": {
+      "city_faith": 1,
+      "city_gold": 1
+    },
+    "note": "Stelae of Axum: +1 faith and +1 gold in every city",
+    "traits": [
+      "pursue_diplomatic_victory"
+    ]
+  },
+  "Morocco": {
+    "leader": "Ahmad al-Mansur",
+    "ability": "trans_saharan_gold",
+    "agenda": "golden_one",
+    "effects": {
+      "city_gold": 2
+    },
+    "note": "Trans-Saharan Gold: +2 gold in every city",
+    "traits": [
+      "pursue_diplomatic_victory"
+    ]
+  },
+  "Numidia": {
+    "leader": "Masinissa",
+    "ability": "cavalry_kingdom",
+    "agenda": "first_among_kings",
+    "effects": {
+      "unit_production_pct": 15
+    },
+    "note": "Cavalry Kingdom: +15% production toward units",
+    "traits": [
+      "aggressive_military"
+    ]
+  },
+  "Songhai": {
+    "leader": "Askia Muhammad",
+    "ability": "river_of_gold",
+    "agenda": "sankore",
+    "effects": {
+      "city_gold": 1,
+      "city_faith": 1
+    },
+    "note": "River of Gold: +1 gold and +1 faith in every city",
+    "traits": [
+      "religious_major_civ"
+    ]
+  },
+  "Ghana": {
+    "leader": "Tunka Manin",
+    "ability": "land_of_gold",
+    "agenda": "salt_and_gold",
+    "effects": {
+      "city_gold": 2
+    },
+    "note": "Land of Gold: +2 gold in every city",
+    "traits": [
+      "pursue_diplomatic_victory"
+    ]
+  },
+  "Benin": {
+    "leader": "Ewuare",
+    "ability": "bronze_casters",
+    "agenda": "walls_of_benin",
+    "effects": {
+      "city_culture": 1,
+      "city_production": 1
+    },
+    "note": "Bronze Casters: +1 culture and +1 production in every city",
+    "traits": [
+      "cultural_major_civ"
+    ]
+  },
+  "Ashanti": {
+    "leader": "Osei Tutu",
+    "ability": "golden_stool",
+    "agenda": "asantehene",
+    "effects": {
+      "city_gold": 1,
+      "combat_strength": 2
+    },
+    "note": "Golden Stool: +1 gold and +2 combat strength",
+    "traits": [
+      "aggressive_military"
+    ]
+  },
+  "Swahili": {
+    "leader": "Fumo Liyongo",
+    "ability": "stone_towns",
+    "agenda": "monsoon_trade",
+    "effects": {
+      "city_gold": 1,
+      "city_culture": 1
+    },
+    "note": "Stone Towns: +1 gold and +1 culture in every city",
+    "traits": [
+      "pursue_diplomatic_victory"
+    ]
+  },
+  "Great Zimbabwe": {
+    "leader": "Nyatsimba Mutota",
+    "ability": "dry_stone_walls",
+    "agenda": "great_enclosure",
+    "effects": {
+      "city_production": 1,
+      "city_gold": 1
+    },
+    "note": "Dry Stone Walls: +1 production and +1 gold in every city",
+    "traits": [
+      "expansionist"
+    ]
+  },
+  "Buganda": {
+    "leader": "Mutesa I",
+    "ability": "royal_drums",
+    "agenda": "kabaka",
+    "effects": {
+      "city_food": 1,
+      "city_culture": 1
+    },
+    "note": "Royal Drums: +1 food and +1 culture in every city",
+    "traits": [
+      "cultural_major_civ"
+    ]
+  },
+  "Oyo": {
+    "leader": "Alaafin Abiodun",
+    "ability": "cavalry_of_the_savanna",
+    "agenda": "alaafin",
+    "effects": {
+      "unit_production_pct": 15
+    },
+    "note": "Cavalry of the Savanna: +15% production toward units",
+    "traits": [
+      "aggressive_military"
+    ]
+  },
+  "Tuareg": {
+    "leader": "Tin Hinan",
+    "ability": "salt_roads",
+    "agenda": "veiled_men",
+    "effects": {
+      "city_gold": 2
+    },
+    "note": "Salt Roads: +2 gold in every city",
+    "traits": [
+      "expansionist"
+    ]
+  },
+  "Madagascar": {
+    "leader": "Andrianampoinimerina",
+    "ability": "highland_terraces",
+    "agenda": "merina_unifier",
+    "effects": {
+      "city_food": 1,
+      "city_production": 1
+    },
+    "note": "Highland Terraces: +1 food and +1 production in every city",
+    "traits": [
+      "expansionist"
+    ]
+  },
+  "India": {
+    "leader": "Ashoka",
+    "ability": "edicts_of_dharma",
+    "agenda": "pillars_of_ashoka",
+    "effects": {
+      "city_faith": 1,
+      "city_food": 1
+    },
+    "note": "Edicts of Dharma: +1 faith and +1 food in every city",
+    "traits": [
+      "religious_major_civ"
+    ]
+  },
+  "Japan": {
+    "leader": "Hojo Tokimune",
+    "ability": "divine_wind",
+    "agenda": "bushido",
+    "effects": {
+      "city_production": 1,
+      "combat_strength": 2
+    },
+    "note": "Divine Wind: +1 production and +2 combat strength",
+    "traits": [
+      "aggressive_military"
+    ]
+  },
+  "Mongolia": {
+    "leader": "Genghis Khan",
+    "ability": "yam_riders",
+    "agenda": "horde",
+    "effects": {
+      "unit_production_pct": 15,
+      "combat_strength": 3
+    },
+    "note": "Yam Riders: +15% production toward units and +3 combat strength",
+    "traits": [
+      "aggressive_military"
+    ]
+  },
+  "Tibet": {
+    "leader": "Songtsen Gampo",
+    "ability": "roof_of_the_world",
+    "agenda": "dharma_king",
+    "effects": {
+      "city_faith": 2
+    },
+    "note": "Roof of the World: +2 faith in every city",
+    "traits": [
+      "religious_major_civ"
+    ]
+  },
+  "Nepal": {
+    "leader": "Prithvi Narayan Shah",
+    "ability": "gorkha_hills",
+    "agenda": "unifier_of_the_hills",
+    "effects": {
+      "city_production": 1,
+      "combat_strength": 2
+    },
+    "note": "Gorkha Hills: +1 production and +2 combat strength",
+    "traits": [
+      "aggressive_military"
+    ]
+  },
+  "Kalinga": {
+    "leader": "Kharavela",
+    "ability": "edict_of_remorse",
+    "agenda": "hathigumpha",
+    "effects": {
+      "city_faith": 1,
+      "city_food": 1
+    },
+    "note": "Edict of Remorse: +1 faith and +1 food in every city",
+    "traits": [
+      "religious_major_civ"
+    ]
+  },
+  "Chola": {
+    "leader": "Rajaraja I",
+    "ability": "ocean_fleet",
+    "agenda": "sea_empire",
+    "effects": {
+      "city_gold": 1,
+      "combat_strength": 2
+    },
+    "note": "Ocean Fleet: +1 gold and +2 combat strength",
+    "traits": [
+      "expansionist"
+    ]
+  },
+  "Bengal": {
+    "leader": "Shashanka",
+    "ability": "delta_harvest",
+    "agenda": "rivers_of_gold",
+    "effects": {
+      "city_food": 2
+    },
+    "note": "Delta Harvest: +2 food in every city",
+    "traits": [
+      "expansionist"
+    ]
+  },
+  "Maratha": {
+    "leader": "Shivaji",
+    "ability": "fort_country",
+    "agenda": "ganimi_kava",
+    "effects": {
+      "city_production": 1,
+      "combat_strength": 3
+    },
+    "note": "Fort Country: +1 production and +3 combat strength",
+    "traits": [
+      "aggressive_military"
+    ]
+  },
+  "Khmer": {
+    "leader": "Jayavarman VII",
+    "ability": "baray",
+    "agenda": "temple_builder",
+    "effects": {
+      "city_food": 1,
+      "city_faith": 1
+    },
+    "note": "Baray: +1 food and +1 faith in every city",
+    "traits": [
+      "religious_major_civ"
+    ]
+  },
+  "Siam": {
+    "leader": "Ramkhamhaeng",
+    "ability": "rice_and_fish",
+    "agenda": "father_governs_children",
+    "effects": {
+      "city_food": 1,
+      "city_gold": 1
+    },
+    "note": "Rice and Fish: +1 food and +1 gold in every city",
+    "traits": [
+      "pursue_diplomatic_victory"
+    ]
+  },
+  "Burma": {
+    "leader": "Anawrahta",
+    "ability": "pagoda_plain",
+    "agenda": "builder_of_pagodas",
+    "effects": {
+      "city_faith": 2
+    },
+    "note": "Pagoda Plain: +2 faith in every city",
+    "traits": [
+      "religious_major_civ"
+    ]
+  },
+  "Majapahit": {
+    "leader": "Hayam Wuruk",
+    "ability": "nusantara",
+    "agenda": "palapa_oath",
+    "effects": {
+      "city_gold": 1,
+      "city_food": 1
+    },
+    "note": "Nusantara: +1 gold and +1 food in every city",
+    "traits": [
+      "expansionist"
+    ]
+  },
+  "Champa": {
+    "leader": "Che Bong Nga",
+    "ability": "coastal_towers",
+    "agenda": "sea_raiders",
+    "effects": {
+      "city_gold": 1,
+      "combat_strength": 2
+    },
+    "note": "Coastal Towers: +1 gold and +2 combat strength",
+    "traits": [
+      "aggressive_military"
+    ]
+  },
+  "America": {
+    "leader": "Abraham Lincoln",
+    "ability": "frontier_spirit",
+    "agenda": "manifest_destiny",
+    "effects": {
+      "city_production": 1,
+      "settler_production_pct": 15
+    },
+    "note": "Frontier Spirit: +1 production and +15% production toward settlers",
+    "traits": [
+      "expansionist"
+    ]
+  },
+  "Canada": {
+    "leader": "Wilfrid Laurier",
+    "ability": "last_best_west",
+    "agenda": "honest_broker",
+    "effects": {
+      "city_food": 1,
+      "city_gold": 1
+    },
+    "note": "Last Best West: +1 food and +1 gold in every city",
+    "traits": [
+      "pursue_diplomatic_victory"
+    ]
+  },
+  "Pueblo": {
+    "leader": "Popay",
+    "ability": "cliff_dwellings",
+    "agenda": "kiva_council",
+    "effects": {
+      "city_production": 1,
+      "city_faith": 1
+    },
+    "note": "Cliff Dwellings: +1 production and +1 faith in every city",
+    "traits": [
+      "religious_major_civ"
+    ]
+  },
+  "Comanche": {
+    "leader": "Quanah Parker",
+    "ability": "lords_of_the_plains",
+    "agenda": "horse_lords",
+    "effects": {
+      "unit_production_pct": 15,
+      "combat_strength": 2
+    },
+    "note": "Lords of the Plains: +15% production toward units and +2 combat strength",
+    "traits": [
+      "aggressive_military"
+    ]
+  },
+  "Sioux": {
+    "leader": "Sitting Bull",
+    "ability": "buffalo_nation",
+    "agenda": "black_hills",
+    "effects": {
+      "city_food": 1,
+      "combat_strength": 2
+    },
+    "note": "Buffalo Nation: +1 food and +2 combat strength",
+    "traits": [
+      "aggressive_military"
+    ]
+  },
+  "Inca": {
+    "leader": "Pachacuti",
+    "ability": "terrace_farms",
+    "agenda": "qhapaq_nan",
+    "effects": {
+      "city_food": 1,
+      "city_production": 1
+    },
+    "note": "Terrace Farms: +1 food and +1 production in every city",
+    "traits": [
+      "expansionist"
+    ]
+  },
+  "Muisca": {
+    "leader": "Nemequene",
+    "ability": "salt_and_emerald",
+    "agenda": "el_dorado",
+    "effects": {
+      "city_gold": 1,
+      "city_faith": 1
+    },
+    "note": "Salt and Emerald: +1 gold and +1 faith in every city",
+    "traits": [
+      "pursue_diplomatic_victory"
+    ]
+  },
+  "Mapuche": {
+    "leader": "Lautaro",
+    "ability": "malon",
+    "agenda": "never_conquered",
+    "effects": {
+      "city_production": 1,
+      "combat_strength": 3
+    },
+    "note": "Malon: +1 production and +3 combat strength",
+    "traits": [
+      "aggressive_military"
+    ]
+  },
+  "Argentina": {
+    "leader": "Jose de San Martin",
+    "ability": "pampas_herds",
+    "agenda": "liberator",
+    "effects": {
+      "city_food": 1,
+      "city_gold": 1
+    },
+    "note": "Pampas Herds: +1 food and +1 gold in every city",
+    "traits": [
+      "expansionist"
+    ]
+  },
+  "Australia": {
+    "leader": "John Curtin",
+    "ability": "outback_stations",
+    "agenda": "citadel_of_civilisation",
+    "effects": {
+      "city_production": 1,
+      "city_food": 1
+    },
+    "note": "Outback Stations: +1 production and +1 food in every city",
+    "traits": [
+      "expansionist"
+    ]
+  },
+  "Maori": {
+    "leader": "Kupe",
+    "ability": "mana",
+    "agenda": "kaitiakitanga",
+    "effects": {
+      "city_culture": 1,
+      "city_food": 1
+    },
+    "note": "Mana: +1 culture and +1 food in every city",
+    "traits": [
+      "cultural_major_civ"
+    ]
   }
 }
