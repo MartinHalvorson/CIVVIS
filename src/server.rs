@@ -3391,17 +3391,17 @@ mod tests {
         let mode_setting = EMBEDDED_INDEX
             .find("id=\"gamemode\"")
             .expect("game mode setting");
+        let map_setting = EMBEDDED_INDEX.find("id=\"maptype\"").expect("map setting");
         let world_setting = EMBEDDED_INDEX
             .find("id=\"np\"")
             .expect("world size setting");
-        let map_setting = EMBEDDED_INDEX.find("id=\"maptype\"").expect("map setting");
         let speed_setting = EMBEDDED_INDEX
             .find("id=\"gamespeed\"")
             .expect("game speed setting");
         assert!(
-            mode_setting < world_setting
-                && world_setting < map_setting
-                && map_setting < speed_setting
+            mode_setting < map_setting
+                && map_setting < world_setting
+                && world_setting < speed_setting
         );
 
         let game_settings = EMBEDDED_INDEX
