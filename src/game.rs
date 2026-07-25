@@ -8869,6 +8869,20 @@ pub struct QueryCache {
     lux_alloc: std::cell::RefCell<Option<BTreeMap<usize, BTreeMap<u32, i64>>>>,
     lux_names: std::cell::RefCell<Option<BTreeMap<usize, BTreeSet<String>>>>,
     housed_works: std::cell::RefCell<Option<BTreeMap<usize, BTreeMap<u32, BTreeMap<String, usize>>>>>,
+    // A city-state's patron, which is a poll of every major's effective envoy
+    // count. Deciding whether a step crosses a hostile border asks it, so a
+    // route search asks it of the same city-state at every tile it considers.
+    suzerain: std::cell::RefCell<Option<BTreeMap<usize, Option<usize>>>>,
+    // Every Great Work slot the empire owns, and whether one more work of a
+    // kind would find a home. Deciding what a Builder or an Archaeologist may
+    // do on a tile asks the second of these, and the answer is the same at
+    // every tile.
+    gw_slots: std::cell::RefCell<Option<BTreeMap<usize, Vec<(u32, String)>>>>,
+    gw_housing: std::cell::RefCell<Option<BTreeMap<(usize, String, usize), bool>>>,
+    // What every regional building in the empire sends this city. Both its
+    // yields and its Amenities are read through it, so a single valuation of
+    // one city walks the whole empire's buildings twice.
+    regional: std::cell::RefCell<Option<BTreeMap<u32, (Yields, f64)>>>,
 }
 
 impl Clone for QueryCache {
@@ -8896,6 +8910,10 @@ impl Drop for QueryMemo<'_> {
             *self.game.query_memo.lux_alloc.borrow_mut() = None;
             *self.game.query_memo.lux_names.borrow_mut() = None;
             *self.game.query_memo.housed_works.borrow_mut() = None;
+            *self.game.query_memo.suzerain.borrow_mut() = None;
+            *self.game.query_memo.gw_slots.borrow_mut() = None;
+            *self.game.query_memo.gw_housing.borrow_mut() = None;
+            *self.game.query_memo.regional.borrow_mut() = None;
         }
     }
 }
@@ -17354,6 +17372,19 @@ impl Game {
 
     /// Suzerain: at least 3 envoys and strictly more than every other major.
     pub fn suzerain_of(&self, minor: usize) -> Option<usize> {
+        if let Some(memo) = self.query_memo.suzerain.borrow().as_ref() {
+            if let Some(suzerain) = memo.get(&minor) {
+                return *suzerain;
+            }
+        }
+        let suzerain = self.suzerain_of_uncached(minor);
+        if let Some(memo) = self.query_memo.suzerain.borrow_mut().as_mut() {
+            memo.insert(minor, suzerain);
+        }
+        suzerain
+    }
+
+    fn suzerain_of_uncached(&self, minor: usize) -> Option<usize> {
         let mut best: Option<(i64, usize)> = None;
         let mut tied = false;
         for p in self.players.iter().filter(|p| !p.is_minor && p.alive) {
@@ -19913,6 +19944,19 @@ impl Game {
 
     /// Non-stacking regional building yields and Amenities reaching a city.
     fn regional_building_effects(&self, city: &City) -> (Yields, f64) {
+        if let Some(memo) = self.query_memo.regional.borrow().as_ref() {
+            if let Some(value) = memo.get(&city.id) {
+                return *value;
+            }
+        }
+        let value = self.regional_building_effects_uncached(city);
+        if let Some(memo) = self.query_memo.regional.borrow_mut().as_mut() {
+            memo.insert(city.id, value);
+        }
+        value
+    }
+
+    fn regional_building_effects_uncached(&self, city: &City) -> (Yields, f64) {
         let mut groups: BTreeMap<String, (Yields, f64)> = BTreeMap::new();
         let integrate_industry =
             self.governor_effect(city.owner, city.id, "regional_industry_all") > 0.0;
@@ -23009,11 +23053,17 @@ impl Game {
         if !self.unit_can_traverse(uid, pos) {
             return false;
         }
+        // Ask the two field reads that almost always settle it before asking
+        // diplomacy: this walks every unit in the world, once per neighbour a
+        // route search considers, and only a fighter actually flying a patrol
+        // over this very tile can block the step. Deciding a war is far from
+        // free — a city-state's belligerence follows its Suzerain, which is
+        // derived from every major's envoys.
         if self.units.values().any(|other| {
-            other.owner != u.owner
-                && self.is_at_war(u.owner, other.owner)
-                && other.air_patrol
+            other.air_patrol
                 && other.air_patrol_pos == Some(pos)
+                && other.owner != u.owner
+                && self.is_at_war(u.owner, other.owner)
         }) {
             return false;
         }
@@ -25434,6 +25484,10 @@ impl Game {
             *self.query_memo.lux_alloc.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.lux_names.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.housed_works.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.suzerain.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.gw_slots.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.gw_housing.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.regional.borrow_mut() = Some(BTreeMap::new());
         }
         QueryMemo {
             game: self,
@@ -26574,6 +26628,16 @@ impl Game {
     }
 
     fn valid_excavation(&self, pid: usize, pos: Pos) -> Option<String> {
+        self.excavation_at(pid, pos)
+            .filter(|_| self.can_house_additional_great_work(pid, "artifact"))
+    }
+
+    /// The excavation this hex offers, leaving aside whether the empire has
+    /// anywhere to put another Artifact. That last question is about the
+    /// empire, not the hex — it assigns every Great Work the player owns
+    /// across every slot in every city, twice — so a caller sweeping the map
+    /// asks it once rather than at every tile.
+    fn excavation_at(&self, pid: usize, pos: Pos) -> Option<String> {
         let tile = self.map.get(pos)?;
         if tile.flooded
             || tile.submerged
@@ -26582,7 +26646,6 @@ impl Game {
             || tile.district_foundation.is_some()
             || tile.wonder.is_some()
             || self.city_at(pos).is_some()
-            || !self.can_house_additional_great_work(pid, "artifact")
         {
             return None;
         }
@@ -26614,12 +26677,15 @@ impl Game {
     }
 
     pub(crate) fn excavation_sites(&self, pid: usize) -> Vec<(Pos, String)> {
+        if !self.can_house_additional_great_work(pid, "artifact") {
+            return Vec::new();
+        }
         self.map
             .tiles
             .keys()
             .copied()
             .filter_map(|position| {
-                self.valid_excavation(pid, position)
+                self.excavation_at(pid, position)
                     .map(|improvement| (position, improvement))
             })
             .collect()
@@ -28077,6 +28143,10 @@ impl Game {
     }
 
     pub fn producible_items(&self, pid: usize, cid: u32) -> Vec<Item> {
+        // Every unit, building, district and wonder in the ruleset is offered
+        // to the same city in turn, and each offer re-asks that city the same
+        // things.
+        let _memo = self.query_memo();
         let mut items = Vec::new();
         for name in self.rules.units.keys() {
             let it = Item::Unit { unit: name.clone() };
@@ -28172,17 +28242,27 @@ impl Game {
             {
                 continue;
             }
-            let mut sites = self.district_sites(cid, name);
-            sites.sort_by(|a, b| {
-                let foundation_a = self.map.tiles[a].district_foundation.is_some();
-                let foundation_b = self.map.tiles[b].district_foundation.is_some();
-                let ya = self.district_yields(name, *a).total();
-                let yb = self.district_yields(name, *b).total();
-                foundation_b
-                    .cmp(&foundation_a)
-                    .then_with(|| yb.partial_cmp(&ya).unwrap())
-                    .then(a.cmp(b))
+            // Rank the sites on values taken once each. Deriving a site's
+            // yields means walking its neighbours for adjacency, and a
+            // comparator that re-derives both sides pays that for every
+            // comparison in the sort rather than for every site.
+            let mut ranked: Vec<(bool, f64, Pos)> = self
+                .district_sites(cid, name)
+                .into_iter()
+                .map(|site| {
+                    (
+                        self.map.tiles[&site].district_foundation.is_some(),
+                        self.district_yields(name, site).total(),
+                        site,
+                    )
+                })
+                .collect();
+            ranked.sort_by(|a, b| {
+                b.0.cmp(&a.0)
+                    .then_with(|| b.1.partial_cmp(&a.1).unwrap())
+                    .then(a.2.cmp(&b.2))
             });
+            let sites: Vec<Pos> = ranked.into_iter().map(|(_, _, site)| site).collect();
             let mut fresh_sites = 0usize;
             for s in sites {
                 let foundation = self.map.tiles[&s].district_foundation.is_some();
@@ -28370,6 +28450,11 @@ impl Game {
         if self.winner.is_some() || self.current != pid {
             return vec![];
         }
+        // Enumerating what a civilization may do asks the same questions of
+        // the same cities many times over — what each produces, what each is
+        // worth, how content each is. One memo scope over the whole
+        // enumeration answers each of them once.
+        let _memo = self.query_memo();
         let capture_actions = self.pending_city_capture_actions(pid);
         if !capture_actions.is_empty() {
             return capture_actions;
@@ -29528,7 +29613,11 @@ impl Game {
             return true;
         }
         self.units.values().any(|unit| {
-            unit.owner != pid
+            // Standing over the tile is the necessary condition, and it is two
+            // field reads; deciding a war is not. Ask it first, of a scan that
+            // covers every unit in the world.
+            (unit.pos == pos || (unit.air_patrol && unit.air_patrol_pos == Some(pos)))
+                && unit.owner != pid
                 && self.is_at_war(pid, unit.owner)
                 && ((unit.air_patrol
                     && unit.air_patrol_pos == Some(pos)
@@ -29540,10 +29629,10 @@ impl Game {
     fn enemy_ranged_target_at(&self, pid: usize, pos: Pos) -> bool {
         self.enemy_combat_target_at(pid, pos)
             || self.units.values().any(|unit| {
-                unit.owner != pid
-                    && self.is_at_war(pid, unit.owner)
-                    && unit.air_patrol
+                unit.air_patrol
                     && unit.air_patrol_pos == Some(pos)
+                    && unit.owner != pid
+                    && self.is_at_war(pid, unit.owner)
                     && self.rules.units[unit.kind.as_str()].promotion_class == "air_fighter"
             })
     }
@@ -30854,10 +30943,10 @@ impl Game {
             })
             .collect();
         enemy_ids.extend(self.units.values().filter_map(|unit| {
-            (unit.owner != pid
-                && self.is_at_war(pid, unit.owner)
-                && unit.air_patrol
+            (unit.air_patrol
                 && unit.air_patrol_pos == Some(target)
+                && unit.owner != pid
+                && self.is_at_war(pid, unit.owner)
                 && self.rules.units[unit.kind.as_str()].promotion_class == "air_fighter")
                 .then_some(unit.id)
                 .filter(|unit| self.unit_currently_visible_to(*unit, pid))
@@ -36487,6 +36576,9 @@ impl Game {
     /// read-only makes the exact value available to clients and AI without
     /// duplicating (and eventually drifting from) the turn processor.
     fn loyalty_change_for_city(&self, pid: usize, cid: u32) -> LoyaltyChange {
+        // Loyalty weighs this city against every other within range, and asks
+        // several of them the same empire-wide questions.
+        let _memo = self.query_memo();
         let city = &self.cities[&cid];
         let cpos = city.pos;
         let protected = self
@@ -38219,6 +38311,19 @@ impl Game {
     }
 
     fn great_work_slots(&self, pid: usize) -> Vec<(u32, String)> {
+        if let Some(memo) = self.query_memo.gw_slots.borrow().as_ref() {
+            if let Some(slots) = memo.get(&pid) {
+                return slots.clone();
+            }
+        }
+        let slots = self.great_work_slots_uncached(pid);
+        if let Some(memo) = self.query_memo.gw_slots.borrow_mut().as_mut() {
+            memo.insert(pid, slots.clone());
+        }
+        slots
+    }
+
+    fn great_work_slots_uncached(&self, pid: usize) -> Vec<(u32, String)> {
         let mut slots = Vec::new();
         for city in self.cities.values().filter(|city| city.owner == pid) {
             if self.city_has_palace(city) {
@@ -38453,6 +38558,19 @@ impl Game {
     }
 
     pub(crate) fn can_house_great_works(&self, pid: usize, kind: &str, additional: usize) -> bool {
+        if let Some(memo) = self.query_memo.gw_housing.borrow().as_ref() {
+            if let Some(answer) = memo.get(&(pid, kind.to_string(), additional)) {
+                return *answer;
+            }
+        }
+        let answer = self.can_house_great_works_uncached(pid, kind, additional);
+        if let Some(memo) = self.query_memo.gw_housing.borrow_mut().as_mut() {
+            memo.insert((pid, kind.to_string(), additional), answer);
+        }
+        answer
+    }
+
+    fn can_house_great_works_uncached(&self, pid: usize, kind: &str, additional: usize) -> bool {
         let count = |allocation: &BTreeMap<u32, BTreeMap<String, usize>>| {
             allocation
                 .values()
@@ -38520,6 +38638,9 @@ impl Game {
     /// Named Great Works occupy compatible active building/wonder slots;
     /// legacy generic-Artist saves retain their former three-work fallback.
     fn tourism_components_per_turn(&self, pid: usize) -> (f64, f64) {
+        // A sweep of every city the empire owns, each of which is asked for
+        // its full yields to read one figure out of them.
+        let _memo = self.query_memo();
         let mut tourism = 0.0;
         let mut film_studio_bonus = 0.0;
         let housed_works = self.housed_great_works(pid);
