@@ -168,6 +168,27 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
             .filter_map(|seat| seat.trim().parse().ok())
             .collect(),
         teams,
+        // Who the player is. `--civ Egypt` seats Egypt at seat 0; `--civs
+        // Egypt,Rome` names the leading seats in order. Anything unnamed
+        // falls back to the stock roster, and a name the ruleset does not
+        // know is refused here rather than silently ignored downstream.
+        civs: {
+            let named = arg_text(args, "--civs", &arg_text(args, "--civ", ""));
+            let chosen: Vec<String> = named
+                .split(',')
+                .map(|civ| civ.trim().to_string())
+                .filter(|civ| !civ.is_empty())
+                .collect();
+            for civ in &chosen {
+                if !rules.civs.contains_key(civ) {
+                    let mut known: Vec<&str> = rules.civs.keys().map(String::as_str).collect();
+                    known.sort_unstable();
+                    eprintln!("unknown civilization {civ:?}; choose one of {known:?}");
+                    std::process::exit(2);
+                }
+            }
+            chosen
+        },
         // Gathering Storm's lobby slider: 0 turns random disasters off,
         // 4 is Hyperreal. Sea-level rise follows CO2 either way.
         disaster_intensity: {
@@ -778,6 +799,7 @@ fn main() {
                     difficulty: play_options.difficulty,
                     speed: play_options.speed,
                     teams: play_options.teams,
+                    civs: play_options.civs,
                     supervised: args.iter().any(|a| a == "--supervised"),
                     restart_ms: arg(&args, "--restart-ms", 5_000).max(5_000) as u64,
                     league_dir: {

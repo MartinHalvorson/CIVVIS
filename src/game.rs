@@ -214,6 +214,60 @@ mod city_name_tests {
 }
 
 #[cfg(test)]
+mod seating_tests {
+    use super::*;
+
+    /// Determinism is sacred and every existing seed depends on this: with no
+    /// civilization chosen, the seats must come out exactly as the old
+    /// `CIV_NAMES[i % CIV_NAMES.len()]` produced them.
+    #[test]
+    fn stock_seating_is_untouched_when_nobody_is_chosen() {
+        let known: BTreeSet<String> = Rules::shared().civs.keys().cloned().collect();
+        for players in [1usize, 2, 4, 6, 8, 12] {
+            let seated = seat_civs(players, &[], &known);
+            let stock: Vec<String> = (0..players)
+                .map(|i| CIV_NAMES[i % CIV_NAMES.len()].to_string())
+                .collect();
+            assert_eq!(seated, stock, "stock seating changed at {players} players");
+        }
+    }
+
+    /// A chosen civilization takes its seat, and nobody else is handed the
+    /// same one — two majors sharing a civilization would share its unique
+    /// unit, ability and agenda.
+    #[test]
+    fn a_chosen_civilization_takes_its_seat_and_is_not_duplicated() {
+        let known: BTreeSet<String> = Rules::shared().civs.keys().cloned().collect();
+        let seated = seat_civs(4, &["Egypt".to_string()], &known);
+        assert_eq!(seated[0], "Egypt");
+        assert_eq!(
+            seated.iter().collect::<BTreeSet<_>>().len(),
+            4,
+            "duplicate civilization in {seated:?}"
+        );
+
+        let two = seat_civs(4, &["Nubia".to_string(), "Rome".to_string()], &known);
+        assert_eq!(&two[..2], ["Nubia".to_string(), "Rome".to_string()]);
+        assert_eq!(two.iter().collect::<BTreeSet<_>>().len(), 4);
+    }
+
+    /// A name from another ruleset seats a stock civilization rather than
+    /// taking the process down: saves and clients outlive rulesets.
+    #[test]
+    fn an_unknown_civilization_falls_back_to_the_stock_roster() {
+        let known: BTreeSet<String> = Rules::shared().civs.keys().cloned().collect();
+        let seated = seat_civs(3, &["Atlantis".to_string()], &known);
+        assert_eq!(seated[0], CIV_NAMES[0]);
+        assert_eq!(seated.iter().collect::<BTreeSet<_>>().len(), 3);
+
+        // And asking twice for the same civilization only seats it once.
+        let twice = seat_civs(3, &["Egypt".to_string(), "Egypt".to_string()], &known);
+        assert_eq!(twice[0], "Egypt");
+        assert_eq!(twice.iter().collect::<BTreeSet<_>>().len(), 3);
+    }
+}
+
+#[cfg(test)]
 fn install_test_district(game: &mut Game, city: u32, district: &str) -> Pos {
     let center = game.cities[&city].pos;
     let position = game.cities[&city]
@@ -10178,6 +10232,11 @@ pub struct GameOptions {
     /// New Frontier game modes to switch on. Empty — the stock Gathering
     /// Storm ruleset every tournament lobby plays — is the default.
     pub game_modes: BTreeSet<String>,
+    /// Civilizations for the leading major seats, in seat order. A setup
+    /// screen picks the person's own civilization here; every seat it does
+    /// not name is filled from [`CIV_NAMES`], skipping anything already
+    /// chosen so no two majors share an identity. Empty is the stock order.
+    pub civs: Vec<String>,
 }
 
 impl GameOptions {
@@ -10204,8 +10263,35 @@ impl GameOptions {
             teams: Vec::new(),
             disaster_intensity: DEFAULT_DISASTER_INTENSITY,
             game_modes: BTreeSet::new(),
+            civs: Vec::new(),
         }
     }
+}
+
+/// Seat the majors: the civilizations a setup screen named, in seat order,
+/// then the stock roster for everything it left open — skipping any name
+/// already spoken for, because two majors sharing a civilization would share
+/// its unique unit, ability and agenda.
+///
+/// A name the ruleset does not know is ignored rather than fatal: a save or a
+/// client from another ruleset should seat a stock civilization, not panic.
+pub fn seat_civs(num_players: usize, chosen: &[String], known: &BTreeSet<String>) -> Vec<String> {
+    let mut seats: Vec<Option<String>> = vec![None; num_players];
+    let mut taken: BTreeSet<String> = BTreeSet::new();
+    for (seat, civ) in chosen.iter().enumerate().take(num_players) {
+        if known.contains(civ) && taken.insert(civ.clone()) {
+            seats[seat] = Some(civ.clone());
+        }
+    }
+    let mut stock = CIV_NAMES
+        .iter()
+        .filter(|civ| !taken.contains(**civ))
+        .cycle()
+        .copied();
+    seats
+        .into_iter()
+        .map(|seat| seat.unwrap_or_else(|| stock.next().unwrap_or(CIV_NAMES[0]).to_string()))
+        .collect()
 }
 
 /// Which of the expensive families of legal action to enumerate.
@@ -10920,6 +11006,7 @@ impl Game {
             teams,
             disaster_intensity,
             game_modes,
+            civs,
         } = options;
         assert!(
             teams.is_empty() || teams.len() == num_players,
@@ -11007,8 +11094,13 @@ impl Game {
             log: crate::actionlog::ActionLog::new(),
             events: EventLog::default(),
         };
+        let seated = seat_civs(
+            num_players,
+            &civs,
+            &g.rules.civs.keys().cloned().collect::<BTreeSet<_>>(),
+        );
         for i in 0..num_players {
-            let mut player = Player::new(i, CIV_NAMES[i % CIV_NAMES.len()], false);
+            let mut player = Player::new(i, &seated[i], false);
             player.team = teams.get(i).copied().flatten();
             g.players.push(player);
         }
