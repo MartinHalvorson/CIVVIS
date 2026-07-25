@@ -2133,6 +2133,7 @@
       <button class="ghost" onclick="closeEmpire()">✕ Close</button>
     </div>
     <div class="empire-body" id="empire-body"></div>
+  </section>
   <section id="diplomacy" role="dialog" aria-modal="true" aria-labelledby="diplomacy-title">
     <div class="diplo-head">
       <div><div class="diplo-title" id="diplomacy-title">Diplomacy</div>
@@ -16283,6 +16284,74 @@ function tileYieldFull(t) {
     add(RULES.improvements[t.improvement]);
   return y;
 }
+// The three tile facts Civ 6 prints under the yields. Each mirrors the engine
+// rule of the same name so the tooltip cannot quietly disagree with the game:
+// `Rules::move_cost`, `Game::tile_defense_bonus`, and the shipped
+// `SightModifier`/`SightThroughModifier` columns behind `Game::sight_height`.
+const SOFT_FEATURES = ["marsh", "floodplains", "grassland_floodplains",
+                       "plains_floodplains", "pantanal"];
+const COVER_FEATURES = ["forest", "jungle", "reef", "burning_forest",
+                        "burning_jungle", "burnt_forest", "burnt_jungle"];
+function ruleSpec(kind, name) {
+  return (name && RULES && RULES[kind] && RULES[kind][name]) || null;
+}
+function tileImpassable(t) {
+  const terrain = ruleSpec("terrains", t.terrain);
+  return Boolean((terrain && terrain.passable === false) ||
+                 (ruleSpec("features", t.feature) || {}).impassable);
+}
+// Movement is additive: terrain cost, +1 for Hills, plus the feature's
+// MovementChange — and any route flattens the lot to 1.
+function tileMoveCost(t) {
+  const terrain = ruleSpec("terrains", t.terrain);
+  if (!terrain || tileImpassable(t)) return null;
+  let cost = terrain.move_cost === undefined ? 1 : terrain.move_cost;
+  if (t.hills) cost += 1;
+  cost += (ruleSpec("features", t.feature) || {}).move_cost || 0;
+  if (t.road > 0 && !terrain.water) cost = 1;
+  return cost;
+}
+function tileDefense(t) {
+  let bonus = t.hills ? 3 : 0;
+  if (COVER_FEATURES.includes(t.feature)) bonus += 3;
+  else if (SOFT_FEATURES.includes(t.feature)) bonus -= 2;
+  if (((ruleSpec("wonders", t.wonder) || {}).effects || {}).defensive_structure > 0) bonus += 4;
+  if (!t.pillaged)
+    bonus += ((ruleSpec("improvements", t.improvement) || {}).effects || {}).defense || 0;
+  return bonus;
+}
+// How high this tile stands for line of sight. Terrain alone decides what a
+// unit standing here looks out from; the feature on top adds only to what the
+// tile hides from everyone else.
+function tileGroundLevel(t) { return t.terrain === "mountain" ? 2 : (t.hills ? 1 : 0); }
+function tileCoverLevel(t) {
+  return tileGroundLevel(t) + ((ruleSpec("features", t.feature) || {}).sight_through || 0);
+}
+function sightTipLine(t) {
+  const ground = tileGroundLevel(t), cover = tileCoverLevel(t);
+  const vantage = ground > 0 ? " · vantage " + ground : "";
+  if (cover === 0) return "👁 open to sight" + vantage;
+  return "👁 cover " + cover + " — hides anything no taller behind it" + vantage;
+}
+// Civ 6's appeal bands. The engine already reads Breathtaking at 4 and Charming
+// at 2 for the Preserve; these are the rest of the same ladder.
+function appealBand(appeal) {
+  if (appeal >= 4) return "Breathtaking";
+  if (appeal >= 2) return "Charming";
+  if (appeal >= -1) return "Average";
+  if (appeal >= -3) return "Uninviting";
+  return "Disgusting";
+}
+// Continents are numbered by the generator; Civ 6 names them by taking its
+// shipped `Continents` table in order, which is what this list is.
+const CONTINENT_NAMES = ["Africa", "Amasia", "America", "Antarctica", "Arctica",
+  "Asia", "Asiamerica", "Atlantica", "Atlantis", "Australia", "Avalonia",
+  "Azania", "Baltica", "Cimmeria", "Columbia", "Congo Craton", "Euramerica",
+  "Europe", "Gondwana", "Kalaharia", "Kazakhstania", "Kernorland",
+  "Kumari Kandam", "Laurasia", "Laurentia", "Lemuria", "Mu", "Nena",
+  "North America", "Novopangaea", "Nuna", "Oceania", "Pangaea",
+  "Pangaea Ultima", "Pannotia", "Rodinia", "Siberia", "South America",
+  "Terra Australis", "Ur"];
 function settleValue(pos) {
   let v = 0;
   const D = [[0,0],[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];
@@ -17525,7 +17594,14 @@ function plannedTipLines(t) {
 // tooltip
 const tip = document.getElementById("tip");
 cv.addEventListener("mousemove", ev => {
-  if (!state || dragMoved || rdrag) { tip.style.display = "none"; return; }
+  // `dragMoved` outlives the drag: it is cleared by the click that follows, and
+  // a drag released off the canvas never gets one. Hovering must ask whether a
+  // gesture is happening *now*, or the first pan of the game kills the tooltip
+  // for good.
+  if (!state || dragState || mapTouches.size || rdrag) {
+    tip.style.display = "none";
+    return;
+  }
   const r = cv.getBoundingClientRect();
   const pos = pixelToHex(ev.clientX - r.left, ev.clientY - r.top);
   const t = pos && TMAP.get(key(pos));
@@ -17563,8 +17639,24 @@ cv.addEventListener("mousemove", ev => {
   const ystr = Object.entries(y).filter(([, v]) => v > 0)
     .map(([kk, v]) => v + YICON[kk]).join(" ");
   if (ystr && !t.district && !t.wonder) lines.push(ystr);
+  // The Civ 6 tile panel's own footing: what it costs to cross, what it is
+  // worth to defend, how it looks, and — the whole point of a sight range —
+  // what it lets you see past.
+  const terrain = [];
+  const mp = tileMoveCost(t);
+  if (mp !== null) terrain.push("🥾 " + (mp % 1 ? mp.toFixed(1) : mp) + " MP");
+  else if (tileImpassable(t)) terrain.push("🥾 impassable");
+  const defense = tileDefense(t);
+  if (defense) terrain.push("🛡 " + (defense > 0 ? "+" : "") + defense + " defense");
+  if (t.appeal !== null && t.appeal !== undefined)
+    terrain.push("🌸 appeal " + (t.appeal > 0 ? "+" : "") + t.appeal +
+      " · " + appealBand(t.appeal));
+  if (terrain.length) lines.push(terrain.join(" · "));
+  lines.push(sightTipLine(t));
   if (t.owner !== null && t.owner !== undefined)
     lines.push("territory: " + state.players[t.owner].civ);
+  if (t.continent !== null && t.continent !== undefined)
+    lines.push("🗺 " + (CONTINENT_NAMES[t.continent] || "continent " + (t.continent + 1)));
   const city = state.cities.find(c => c.pos[0] === pos[0] && c.pos[1] === pos[1]);
   if (city) lines.push("🏛 <b>" + city.name + "</b> pop " + city.pop +
     " (" + state.players[city.owner].civ + ")");
