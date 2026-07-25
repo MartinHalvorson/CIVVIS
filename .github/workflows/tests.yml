@@ -14,35 +14,34 @@ concurrency:
 
 jobs:
   cargo-test:
-    # GitHub-hosted minutes are billed on a private repository, and this
-    # account is not paying for them: every hosted job dies in about three
-    # seconds on "recent account payments have failed", which fails a required
-    # check and blocks every merge. Self-hosted runners are not metered, so the
-    # gate runs on the fleet's own machine and stays honest. The `civvis` label
-    # picks the one runner allowed to build, so two cargo jobs never share a
-    # machine — concurrent builds here have faked failures before.
-    runs-on: [self-hosted, civvis]
+    # Hosted runners are free and unmetered on a public repository, which this
+    # now is. They were briefly self-hosted because metered minutes on the
+    # private repo went unpaid and every job died in three seconds on a billing
+    # message; that is not a reason to keep running strangers' pull requests on
+    # somebody's laptop.
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
       CARGO_INCREMENTAL: 0
     steps:
       - uses: actions/checkout@v4
-      - name: Point the toolchain and the build cache at this machine
-        # A launchd-started runner inherits a minimal PATH, and rustup and
-        # Homebrew are installed for the user, not the system.
-        #
-        # The build cache must live outside the workspace: `actions/checkout`
-        # cleans with `git clean -ffdx`, which takes ignored files like
-        # `target/` with it. This one directory is shared by every branch and
-        # is the reason a warm run costs a fraction of the cold one this gate
-        # used to pay on every push — no `actions/cache`, no quota to thrash.
-        # It is set here rather than in `env:` because only a step can expand
-        # `$HOME`.
-        run: |
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-          echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
-          echo "CARGO_TARGET_DIR=$HOME/.cache/civvis-ci-target" >> "$GITHUB_ENV"
-      - run: cargo --version && rustc --version
+      - uses: dtolnay/rust-toolchain@stable
+      # This gate has never had a cache, and a cold build of a 100k-line crate
+      # at release optimisation is what makes the merge race in
+      # docs/VERSION_CONTROL.md hurt. The key is the lockfile, NOT the commit
+      # SHA: a SHA in the key means every push writes a new entry, nothing ever
+      # hits, and the 10 GB quota evicts itself. `restore-keys` still gives a
+      # near-miss the previous build to start from when dependencies change.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-ci-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-ci-${{ runner.os }}-
       # The `ci` profile inherits `release`, so tests run at the same
       # optimisation level; it only drops the single-codegen-unit and LTO
       # settings that exist to buy the production spectator about four percent

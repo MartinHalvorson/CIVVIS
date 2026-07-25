@@ -3409,13 +3409,15 @@ impl BasicAi {
                     self.project_matches_focus(g, project) && g.can_produce(pid, cid, item)
                 })
                 .collect();
-            projects.sort_by(|a, b| {
-                g.item_cost_for(pid, a)
-                    .partial_cmp(&g.item_cost_for(pid, b))
-                    .unwrap()
-                    .then_with(|| format!("{a:?}").cmp(&format!("{b:?}")))
-            });
-            if let Some(project) = projects.into_iter().next() {
+            // Cost and label taken once per candidate: the comparator used to
+            // re-derive both, and its tiebreak built two Debug strings for
+            // every comparison the sort made.
+            let mut ranked: Vec<(f64, String, Item)> = projects
+                .into_iter()
+                .map(|item| (g.item_cost_for(pid, &item), format!("{item:?}"), item))
+                .collect();
+            ranked.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then_with(|| a.1.cmp(&b.1)));
+            if let Some((_, _, project)) = ranked.into_iter().next() {
                 return Some(project);
             }
         }
@@ -3643,13 +3645,15 @@ impl BasicAi {
                 })
                 .filter(|item| g.can_produce(pid, cid, item))
                 .collect();
-            projects.sort_by(|a, b| {
-                g.item_cost_for(pid, a)
-                    .partial_cmp(&g.item_cost_for(pid, b))
-                    .unwrap()
-                    .then_with(|| format!("{a:?}").cmp(&format!("{b:?}")))
-            });
-            if let Some(project) = projects.into_iter().next() {
+            // Cost and label taken once per candidate: the comparator used to
+            // re-derive both, and its tiebreak built two Debug strings for
+            // every comparison the sort made.
+            let mut ranked: Vec<(f64, String, Item)> = projects
+                .into_iter()
+                .map(|item| (g.item_cost_for(pid, &item), format!("{item:?}"), item))
+                .collect();
+            ranked.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then_with(|| a.1.cmp(&b.1)));
+            if let Some((_, _, project)) = ranked.into_iter().next() {
                 return Some(project);
             }
         }
@@ -4419,6 +4423,9 @@ impl BasicAi {
     /// for the rest of the game - the audit counted nearly two hundred of
     /// them across six games, some idle from turn 25 to the end.
     fn has_builder_work(g: &Game, pid: usize) -> bool {
+        // Every owned tile asks the same empire-wide questions of the same
+        // empire; hold a memo scope over the whole sweep.
+        let _memo = g.query_memo();
         g.player_city_ids(pid).into_iter().any(|cid| {
             g.cities[&cid].owned_tiles.iter().any(|pos| {
                 let repairable = g
@@ -4560,17 +4567,24 @@ impl BasicAi {
         // unit costs to train and to upgrade into, so those tiles are taken
         // before anything else regardless of distance.
         let mut best: Option<(bool, i32, Pos)> = None;
-        for cid in g.player_city_ids(pid) {
-            for pos in g.cities[&cid].owned_tiles.clone() {
-                if g.valid_improvements(pid, pos)
-                    .iter()
-                    .any(|improvement| g.rules.improvements[improvement].builder_buildable)
-                {
-                    let urgent = Self::unopened_strategic_source(g, pos);
-                    let d = g.wdist(upos, pos);
-                    let candidate = (!urgent, d, pos);
-                    if best.map(|b| candidate < b).unwrap_or(true) {
-                        best = Some(candidate);
+        {
+            // Read-only sweep of the whole empire's tiles: a memo scope makes
+            // the empire-wide questions each tile asks cost one answer, not one
+            // per tile. The borrow checker rejects the guard if anything in
+            // here starts mutating.
+            let _memo = g.query_memo();
+            for cid in g.player_city_ids(pid) {
+                for pos in g.cities[&cid].owned_tiles.clone() {
+                    if g.valid_improvements(pid, pos)
+                        .iter()
+                        .any(|improvement| g.rules.improvements[improvement].builder_buildable)
+                    {
+                        let urgent = Self::unopened_strategic_source(g, pos);
+                        let d = g.wdist(upos, pos);
+                        let candidate = (!urgent, d, pos);
+                        if best.map(|b| candidate < b).unwrap_or(true) {
+                            best = Some(candidate);
+                        }
                     }
                 }
             }
@@ -4678,18 +4692,20 @@ impl BasicAi {
                 )
                 .is_ok();
         }
-        let target = g
-            .excavation_sites(pid)
-            .into_iter()
-            .filter(|(position, _)| g.route_step(uid, *position, 0).is_some())
-            .min_by_key(|(position, improvement)| {
-                (
-                    g.wdist(current, *position),
-                    improvement == "shipwreck_excavation",
-                    *position,
-                )
-            })
-            .map(|(position, _)| position);
+        let target = {
+            let _memo = g.query_memo();
+            g.excavation_sites(pid)
+                .into_iter()
+                .filter(|(position, _)| g.route_step(uid, *position, 0).is_some())
+                .min_by_key(|(position, improvement)| {
+                    (
+                        g.wdist(current, *position),
+                        improvement == "shipwreck_excavation",
+                        *position,
+                    )
+                })
+                .map(|(position, _)| position)
+        };
         target.is_some_and(|position| self.step_toward(g, pid, uid, position))
     }
 
