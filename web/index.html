@@ -1491,7 +1491,6 @@
   /* A wide desktop can show more civilizations without changing the HUD's
      hierarchy or pushing it farther down the map. */
   @media (min-width: 2200px) {
-    #playerhud { grid-template-columns: 128px minmax(0, 1fr); }
     .diplomacy-card { flex-basis: 330px; grid-template-columns: 36px minmax(88px, .75fr) minmax(164px, 1.35fr); }
     .leader-medallion { width: 36px; height: 36px; font-size: 15px; }
     .diplomacy-name { font-size: 12px; }
@@ -1501,10 +1500,6 @@
     /* Four dossier columns need about 480px to stay readable; below that they
        stack two by two rather than shedding sections. */
     .dossier-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  }
-  @media (max-width: 1580px) {
-    #playerhud { grid-template-columns: 98px minmax(0, 1fr); --hud-identity-column: minmax(258px, 46%); }
-    #maparea { --victory-hud-width: 240px; }
   }
   @media (max-width: 980px) {
     #side { width: 320px; min-width: 320px; }
@@ -1691,9 +1686,12 @@
   #playerhud .ribbon-stat {
     min-height: 0; display: grid; place-content: center; padding: 0;
   }
+  /* A truncated name still reads; a truncated number lies. The identity column
+     is allowed to ellipsize, so the values scale with the width available to
+     them instead, and keep four digits whole down to a narrow desktop. */
   #playerhud .ribbon-stat b {
-    font-size: 14px; font-weight: 950; letter-spacing: -.025em; line-height: 1;
-    text-shadow: 0 1px 2px #000, 0 0 8px currentColor;
+    font-size: clamp(9px, .85vw, 14px); font-weight: 950; letter-spacing: -.025em;
+    line-height: 1; text-shadow: 0 1px 2px #000, 0 0 8px currentColor;
   }
   #playerhud .civ-dossier {
     position: absolute; z-index: 2; top: calc(100% + 6px); right: 0;
@@ -1855,6 +1853,31 @@
   body.sidebar-hidden #collapsepause:not([hidden]) { display: block; }
   #collapsepause[hidden] { display: none; }
 
+  /* Width breakpoints for the masthead. These have to sit below the base
+     #playerhud rule: they carry the same specificity, so above it they would
+     simply lose — which is exactly how the identity column once kept its full
+     300px on a 1100px screen and squeezed the ten value columns into 64px. */
+  @media (min-width: 2200px) {
+    #playerhud { grid-template-columns: 128px minmax(0, 1fr); --hud-identity-column: minmax(340px, 40%); }
+  }
+  @media (max-width: 1580px) {
+    #playerhud { grid-template-columns: 98px minmax(0, 1fr); --hud-identity-column: minmax(150px, 30%); }
+    #maparea { --victory-hud-width: 240px; }
+  }
+  /* Ten value columns, a turn plate and a standing rail stop fitting side by
+     side around here. The identity gives way first — it ellipsizes and keeps
+     its tooltip — so that every value stays whole. */
+  @media (max-width: 1300px) {
+    #playerhud { grid-template-columns: 84px minmax(0, 1fr); --hud-identity-column: minmax(118px, 26%); }
+    #maparea { --victory-hud-width: 204px; }
+  }
+  @media (max-width: 1180px) {
+    #playerhud {
+      grid-template-columns: 74px minmax(0, 1fr);
+      --hud-identity-column: minmax(92px, 22%); --hud-column-gap: 4px;
+    }
+    #maparea { --victory-hud-width: 178px; }
+  }
   @media (max-width: 720px) {
     #side { inset-block-start: 132px; }
     #playerhud {
