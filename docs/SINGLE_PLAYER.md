@@ -130,6 +130,14 @@ icons down the map's inner edge, mirroring the notification rail on the other
 side, each badged with the number of decisions waiting behind it. `G` opens
 and closes it; `Escape` closes it.
 
+It opens on **Cities**, because that is what a wide empire needs first: one
+row per city with its six yields, what it is building and how long that has
+left, when it next grows, and anything wrong with it — under attack, short of
+amenities, out of housing, loyalty slipping. Cities waiting on an order sort
+to the top and badge the tab, so the screen says how much is waiting without
+being opened. Past three or four cities, clicking each one on the map to learn
+the same things stops being navigation and becomes a chore.
+
 Every screen behind that bar is a labelling layer and nothing more. It reads
 `legal_actions`, names what it finds using `/rules`, and posts the action back
 byte-for-byte. No screen constructs an action of its own, so no screen can
@@ -200,6 +208,22 @@ Two things it does deliberately:
 There is no production queue, and that is an engine fact rather than a client
 gap: `do_produce` sets `city.queue = vec![item]`. Adding a real queue is engine
 work.
+
+## Endings
+
+A game can end two ways for the person at the keyboard, and both used to
+leave them on a live-looking map with an End Turn button that earned a red
+error toast when pressed.
+
+- **Somebody wins.** The button says the game is over and is disabled; the
+  finale names the victor and the victory.
+- **You are eliminated.** The world plays on without you — the engine answers
+  your `end_turn` with "not your turn" — so the button says your civilization
+  has fallen and the finale says so too.
+
+Both offer the one thing still useful: another game, started from the setup
+panel. A spectated finale keeps its countdown instead, because the supervisor
+owns that handoff.
 
 ## Keys
 
