@@ -145,6 +145,47 @@ fn main() {
                 best - worst,
                 100.0 * (best - worst) / mean.max(1.0)
             );
+
+            // Minor placement against the shipped START_DISTANCE_MINOR_*
+            // targets: 6 from a major, 5 from another city-state.
+            let majors: Vec<_> = spawns.iter().take(players).copied().collect();
+            let minors: Vec<_> = spawns.iter().skip(players).copied().collect();
+            let mut to_major = Vec::new();
+            let mut to_minor = Vec::new();
+            for (index, minor) in minors.iter().enumerate() {
+                if let Some(d) = majors
+                    .iter()
+                    .map(|m| hex::wdistance(*minor, *m, world.width))
+                    .min()
+                {
+                    to_major.push(d);
+                }
+                if let Some(d) = minors
+                    .iter()
+                    .enumerate()
+                    .filter(|(other, _)| *other != index)
+                    .map(|(_, m)| hex::wdistance(*minor, *m, world.width))
+                    .min()
+                {
+                    to_minor.push(d);
+                }
+            }
+            let mean_of = |v: &Vec<i32>| {
+                if v.is_empty() {
+                    0.0
+                } else {
+                    v.iter().sum::<i32>() as f64 / v.len() as f64
+                }
+            };
+            println!(
+                "minor distance to nearest major mean {:.1} min {} max {} | to nearest minor mean {:.1} min {} max {}",
+                mean_of(&to_major),
+                to_major.iter().min().copied().unwrap_or(0),
+                to_major.iter().max().copied().unwrap_or(0),
+                mean_of(&to_minor),
+                to_minor.iter().min().copied().unwrap_or(0),
+                to_minor.iter().max().copied().unwrap_or(0)
+            );
         }
 
         println!(

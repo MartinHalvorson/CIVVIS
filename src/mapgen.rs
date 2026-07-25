@@ -1397,6 +1397,114 @@ fn start_quality(rules: &Rules, wm: &WorldMap, pos: Pos) -> i32 {
         }
 }
 
+/// How well a start site satisfies a civilization's shipped `StartBias*` rows.
+/// Each satisfied bias scores `6 - Tier`, so a Tier 2 pull outweighs a Tier 5
+/// one, and a site that matches nothing scores zero.
+///
+/// Terrain, feature and resource biases are looked for across the tiles a city
+/// actually works — radius 3 — because the game places a civilization *near*
+/// what it wants rather than exactly on it. A river bias asks the start tile
+/// itself, which is what "starts on a river" means.
+pub fn start_bias_score(rules: &Rules, wm: &WorldMap, pos: Pos, civ: &str) -> i32 {
+    let Some(bias) = rules.civs.get(civ).and_then(|spec| spec.start_bias.as_ref()) else {
+        return 0;
+    };
+    let mut score = 0;
+    let nearby: Vec<&crate::world::Tile> = hex::disk(pos, 3)
+        .into_iter()
+        .map(|raw| hex::canon(raw, wm.width))
+        .filter_map(|tile| wm.get(tile))
+        .collect();
+
+    if !bias.terrain.is_empty() {
+        let matched = nearby.iter().any(|tile| {
+            bias.terrain.iter().any(|wanted| tile.terrain == *wanted)
+                && (!bias.terrain_hills || tile.hills)
+        });
+        if matched {
+            score += crate::rules::StartBias::weight(bias.terrain_tier);
+        }
+    }
+    if !bias.feature.is_empty() {
+        let matched = nearby.iter().any(|tile| {
+            tile.feature
+                .as_deref()
+                .is_some_and(|feature| bias.feature.iter().any(|wanted| wanted == feature))
+        });
+        if matched {
+            score += crate::rules::StartBias::weight(bias.feature_tier);
+        }
+    }
+    if !bias.resource.is_empty() {
+        let matched = nearby.iter().any(|tile| {
+            tile.resource
+                .as_deref()
+                .is_some_and(|resource| bias.resource.iter().any(|wanted| wanted == resource))
+        });
+        if matched {
+            score += crate::rules::StartBias::weight(bias.resource_tier);
+        }
+    }
+    if bias.river_tier > 0 && wm.get(pos).is_some_and(|tile| tile.has_river()) {
+        score += crate::rules::StartBias::weight(bias.river_tier);
+    }
+    score
+}
+
+/// Hand each seat the start its civilization is biased toward. Civilization VI
+/// decides *which* start a civilization gets from its `StartBias*` rows; CIVVIS
+/// generated the layout well and then handed seat `i` `spawns[i]`, so an Egypt
+/// on a river was luck.
+///
+/// Greedy over the strongest (seat, site) pull first, which is deterministic
+/// and cheap; an optimal assignment is not worth the cost at eight to twelve
+/// seats, and the strong Tier 2 pulls are what actually matter.
+pub fn assign_starts_by_bias(rules: &Rules, wm: &WorldMap, sites: &mut [Pos], civs: &[String]) {
+    let seats = sites.len().min(civs.len());
+    if seats < 2 {
+        return;
+    }
+    let mut pairs: Vec<(i32, usize, usize)> = Vec::new();
+    for (seat, civ) in civs.iter().enumerate().take(seats) {
+        for (site, pos) in sites.iter().enumerate().take(seats) {
+            let score = start_bias_score(rules, wm, *pos, civ);
+            if score > 0 {
+                pairs.push((score, seat, site));
+            }
+        }
+    }
+    // Strongest pull first; ties resolve by seat then site so a given map and
+    // roster always produce the same assignment.
+    pairs.sort_by(|left, right| {
+        right
+            .0
+            .cmp(&left.0)
+            .then_with(|| left.1.cmp(&right.1))
+            .then_with(|| left.2.cmp(&right.2))
+    });
+    let mut seat_site: Vec<Option<usize>> = vec![None; seats];
+    let mut taken = vec![false; seats];
+    for (_, seat, site) in pairs {
+        if seat_site[seat].is_none() && !taken[site] {
+            seat_site[seat] = Some(site);
+            taken[site] = true;
+        }
+    }
+    // Seats with no satisfied bias keep whatever is left, in order.
+    let mut spare = (0..seats).filter(|site| !taken[*site]);
+    for slot in seat_site.iter_mut() {
+        if slot.is_none() {
+            *slot = spare.next();
+        }
+    }
+    let original: Vec<Pos> = sites[..seats].to_vec();
+    for (seat, slot) in seat_site.iter().enumerate() {
+        if let Some(site) = slot {
+            sites[seat] = original[*site];
+        }
+    }
+}
+
 fn spawn_layout_score(
     wm: &WorldMap,
     landmass: &BTreeSet<Pos>,
