@@ -778,6 +778,12 @@ pub struct Shared {
     pub turn_compute_us: AtomicU64,
     frame_delivery: Mutex<FrameDelivery>,
     frame_painted: Condvar,
+    /// Serializes a displayed-state handoff with the start of an automatic AI
+    /// step. If a new viewer arrives between the old frame check and the step,
+    /// its first snapshot could otherwise be replaced before it paints. The
+    /// request either wins and installs the paint obligation first, or the
+    /// in-flight step wins and the viewer's first snapshot is the result.
+    simulation_frame_gate: Mutex<()>,
     /// The most recent turn the stepper finished, and a bell rung when it
     /// changes. A page asks for whatever comes *after* the frame it is
     /// holding, and waits here until there is one.
@@ -2483,6 +2489,21 @@ fn auto_step_loop(sh: Arc<Shared>) {
             std::thread::sleep(Duration::from_millis(150));
             continue;
         }
+        // Close the first-viewer race as well as the steady-state one. A page
+        // attaching to the current turn must either finish registering and
+        // receive that snapshot before this step begins, or wait until the
+        // step completes and receive the next snapshot as its first frame.
+        // Once registered, its current frame must be painted before any more
+        // simulation work starts.
+        let simulation_frame_gate = sh.simulation_frame_gate.lock().unwrap();
+        let current_frame = {
+            let s = sh.session.lock().unwrap();
+            SpectatorFrame {
+                seed: s.game.seed,
+                turn: s.game.turn,
+            }
+        };
+        sh.wait_for_turn_frame(current_frame);
         let cadence_started = Instant::now();
         let delay; // this seat's slice of the turn budget
         let mut waiting = false; // between games nothing is being simulated
@@ -2574,6 +2595,7 @@ fn auto_step_loop(sh: Arc<Shared>) {
             sh.note_turn_ready(frame);
             sh.wait_for_turn_frame(frame);
         }
+        drop(simulation_frame_gate);
         if pace == 0 && !waiting {
             // Unlimited: no wait between steps. Yield anyway, and give the
             // single-threaded accept loop a real slot a few times a second,
@@ -2699,6 +2721,16 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             // page holding turn 5 of the world before this one must not be
             // handed a patch against turn 5 of this one.
             let have = query_value(&request_target, "have").and_then(held_frame);
+            // A first snapshot and the start of an automatic step are atomic
+            // with respect to one another. Holding this only for a page that
+            // reports it has painted nothing yet avoids blocking ordinary
+            // long polls and full-map resyncs: those must reach the server
+            // carrying the painted acknowledgement that releases it.
+            let _first_frame = if painting_viewer == Some("") && have.is_none() {
+                Some(sh.simulation_frame_gate.lock().unwrap())
+            } else {
+                None
+            };
             if let Some(reported) = painting_viewer {
                 let painted = match (
                     reported.parse::<u32>(),
@@ -3243,11 +3275,11 @@ mod tests {
         assert!(delivery.wait_remaining(next_world, now).is_some());
 
         assert_eq!(
-            delivery.wait_remaining(turn_8, now + Duration::from_millis(20) + VIEWER_ACTIVE),
+            delivery.wait_remaining(turn_8, now + Duration::from_millis(40) + VIEWER_ACTIVE),
             None
         );
         assert_eq!(
-            delivery.wait_remaining(turn_8, now + VIEWER_ACTIVE + Duration::from_millis(21)),
+            delivery.wait_remaining(turn_8, now + VIEWER_ACTIVE + Duration::from_millis(41)),
             None
         );
     }
@@ -3511,7 +3543,8 @@ mod tests {
     #[test]
     fn simulation_cannot_advance_from_delivery_without_a_paint_acknowledgement() {
         let port = exhibition(20_260_729);
-        http_post(port, "/pace", "{\"ms\":0}").expect("set unlimited pace");
+        http_post(port, "/pace", "{\"paused\":true}").expect("pause before attaching");
+        std::thread::sleep(Duration::from_millis(300));
 
         let first: Value = serde_json::from_str(
             &http_get(port, "/state?painted=&viewer=paint-gate").expect("a state to draw"),
@@ -3519,6 +3552,7 @@ mod tests {
         .expect("state is JSON");
         let seed = first["seed"].as_u64().expect("a world");
         let turn = first["turn"].as_u64().expect("a turn") as u32;
+        http_post(port, "/pace", "{\"ms\":0,\"paused\":false}").expect("set unlimited pace");
 
         // The response has been delivered, but the test viewer deliberately
         // has not claimed to paint it. Unlimited pace must still stay put.
@@ -6523,6 +6557,7 @@ pub fn serve_with_game(
         turn_compute_us: AtomicU64::new(0),
         frame_delivery: Mutex::new(FrameDelivery::default()),
         frame_painted: Condvar::new(),
+        simulation_frame_gate: Mutex::new(()),
         latest: Mutex::new(None),
         turn_ready: Condvar::new(),
     });
