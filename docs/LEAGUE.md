@@ -75,6 +75,18 @@ usernames existed are backfilled on load. `civvis league --standings`
 prints the ranked player table — username, current Elo ± RD, strategy,
 record, birth round, status.
 
+People are players in exactly the same table. Starting a single player game
+against a rated league registers a **new** player for the seat
+(`league::register_player`, handles `Player`, `Player2`, ...), and the finished
+game rates them by the same arithmetic that rates the agents — a person is
+never handed an entrant's identity, and no entrant is ever credited with a
+game a person played. The one thing a person is not is an entrant: they carry
+`human: true`, and `League::active` — everything that schedules, breeds,
+retires or seats — leaves them out, because nothing may play a game in a
+player's name that they never sat down for. `--standings` lists them with the
+status `person`. See [docs/SINGLE_PLAYER.md](SINGLE_PLAYER.md) for what the
+person sees on their side of it.
+
 ## Rating: Glicko-2, rounds as rating periods
 
 Each round deals shuffled passes over the active roster, so everyone plays a

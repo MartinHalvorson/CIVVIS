@@ -6880,21 +6880,27 @@ impl AdvancedAi {
             .as_deref()
             .map(|improvement| self.improvement_value(g, pos, improvement, strategy))
             .unwrap_or(0.0);
-        let mut choices: Vec<String> = g
+        // Score each candidate once and sort the scores. The comparator used
+        // to re-derive both sides of every comparison, so ranking eight
+        // improvements valued a tile's appeal and resource close to sixty
+        // times instead of eight. Same order, same ties.
+        let mut choices: Vec<(f64, String)> = g
             .valid_improvements(pid, pos)
             .into_iter()
-            .filter(|improvement| {
-                g.rules.improvements[improvement].builder_buildable
-                    && self.improvement_value(g, pos, improvement, strategy) > current_value + 0.5
+            .filter(|improvement| g.rules.improvements[improvement].builder_buildable)
+            .map(|improvement| {
+                let value = self.improvement_value(g, pos, &improvement, strategy);
+                (value, improvement)
             })
+            .filter(|(value, _)| *value > current_value + 0.5)
             .collect();
-        choices.sort_by(|a, b| {
-            self.improvement_value(g, pos, b, strategy)
-                .partial_cmp(&self.improvement_value(g, pos, a, strategy))
-                .unwrap()
-                .then(a.cmp(b))
+        choices.sort_by(|(a_value, a), (b_value, b)| {
+            b_value.partial_cmp(a_value).unwrap().then(a.cmp(b))
         });
         choices
+            .into_iter()
+            .map(|(_, improvement)| improvement)
+            .collect()
     }
 
     fn advanced_builder_step(
@@ -6957,36 +6963,51 @@ impl AdvancedAi {
             .filter(|(other, _)| **other != uid && g.units.contains_key(other))
             .map(|(_, pos)| *pos)
             .collect();
-        let current_target = self.builder_targets.get(&uid).copied().filter(|pos| {
-            !reserved.contains(pos)
-                && !self
-                    .worthwhile_improvements(g, pid, *pos, strategy)
-                    .is_empty()
-        });
-        let target = current_target.or_else(|| {
-            let mut best: Option<(f64, Pos)> = None;
-            for cid in g.player_city_ids(pid) {
-                for pos in &g.cities[&cid].owned_tiles {
-                    if reserved.contains(pos) {
-                        continue;
-                    }
-                    for improvement in self.worthwhile_improvements(g, pid, *pos, strategy) {
-                        let score = self.improvement_value(g, *pos, &improvement, strategy)
-                            - g.wdist(current, *pos) as f64 * 0.7;
-                        if best
-                            .map(|(old, bp)| score > old || (score == old && *pos < bp))
-                            .unwrap_or(true)
-                        {
-                            best = Some((score, *pos));
+        // Reading every tile the empire owns: one memo scope so the
+        // empire-wide questions each tile asks are answered once for the whole
+        // sweep rather than once per tile. The borrow checker rejects the
+        // guard the moment anything in here starts mutating the game.
+        let best = {
+            let _memo = g.query_memo();
+            let current_target = self.builder_targets.get(&uid).copied().filter(|pos| {
+                !reserved.contains(pos)
+                    && !self
+                        .worthwhile_improvements(g, pid, *pos, strategy)
+                        .is_empty()
+            });
+            match current_target {
+                Some(pos) => Ok(pos),
+                None => {
+                    let mut best: Option<(f64, Pos)> = None;
+                    for cid in g.player_city_ids(pid) {
+                        for pos in &g.cities[&cid].owned_tiles {
+                            if reserved.contains(pos) {
+                                continue;
+                            }
+                            for improvement in self.worthwhile_improvements(g, pid, *pos, strategy)
+                            {
+                                let score = self.improvement_value(g, *pos, &improvement, strategy)
+                                    - g.wdist(current, *pos) as f64 * 0.7;
+                                if best
+                                    .map(|(old, bp)| score > old || (score == old && *pos < bp))
+                                    .unwrap_or(true)
+                                {
+                                    best = Some((score, *pos));
+                                }
+                            }
                         }
                     }
+                    Err(best.map(|(_, pos)| pos))
                 }
             }
-            best.map(|(_, pos)| {
+        };
+        let target = match best {
+            Ok(pos) => Some(pos),
+            Err(found) => found.map(|pos| {
                 self.builder_targets.insert(uid, pos);
                 pos
-            })
-        });
+            }),
+        };
         target.is_some_and(|pos| self.base.step_toward(g, pid, uid, pos))
     }
 
@@ -10773,6 +10794,12 @@ mod tests {
     fn advanced_ai_proposes_the_alliance_for_its_victory_plan() {
         let mut game = Game::new_full(3, 24, 16, 782, 300, 0, false);
         game.turn = 12;
+        // There is nobody to ally with until the table has been introduced.
+        for pid in 0..3 {
+            for other in pid + 1..3 {
+                game.record_contact(pid, other);
+            }
+        }
         for player in game.players.iter_mut() {
             player.civics.insert("civil_service".to_string());
             player.techs.insert("scientific_theory".to_string());
@@ -11210,6 +11237,8 @@ mod tests {
     #[test]
     fn conquest_army_stages_before_diplomacy_opens_the_war() {
         let mut game = Game::new_full(2, 30, 18, 7_114, 300, 0, false);
+        // A war has to be declarable, which means the two have met.
+        game.record_contact(0, 1);
         for pid in 0..2 {
             game.current = pid;
             let settler = game
@@ -11367,6 +11396,8 @@ mod tests {
     #[test]
     fn war_opening_waits_for_formal_war_but_interrupts_for_imminent_victory() {
         let mut game = Game::new_full(2, 24, 16, 712, 300, 0, false);
+        // A denunciation needs somebody to denounce.
+        game.record_contact(0, 1);
         game.current = 0;
         game.turn = 60;
         let ai = AdvancedAi::new();
@@ -11388,6 +11419,7 @@ mod tests {
         );
 
         let mut emergency = Game::new_full(2, 24, 16, 713, 300, 0, false);
+        emergency.record_contact(0, 1);
         emergency.current = 0;
         emergency.turn = 60;
         emergency.players[1]
@@ -11399,6 +11431,11 @@ mod tests {
         );
 
         let mut religious = Game::new_full(4, 24, 16, 714, 300, 0, false);
+        for pid in 0..4 {
+            for other in pid + 1..4 {
+                religious.record_contact(pid, other);
+            }
+        }
         for pid in 0..4 {
             religious.current = pid;
             let settler = religious
@@ -15174,6 +15211,8 @@ mod tests {
     #[test]
     fn culture_quick_deals_buy_the_direction_that_increases_our_tourism() {
         let mut game = Game::new_full(2, 18, 10, 79_004, 200, 0, false);
+        // A quick deal is offered to a counterparty, so there has to be one.
+        game.record_contact(0, 1);
         game.turn = 6;
         game.players[0].gold = 1_000.0;
         game.players[1].gold = 1_000.0;
@@ -15195,6 +15234,8 @@ mod tests {
     #[test]
     fn culture_quick_deals_buy_housed_great_works_and_preserve_our_own() {
         let mut game = Game::new_full(2, 20, 12, 79_005, 200, 0, false);
+        // A quick deal is offered to a counterparty, so there has to be one.
+        game.record_contact(0, 1);
         for pid in 0..2 {
             game.current = pid;
             let settler = game

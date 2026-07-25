@@ -6,36 +6,42 @@
 
 use serde::{Deserialize, Serialize};
 
+/// What the world is made of, ordered from all land to all water.
+///
+/// The list is a spectrum rather than a menu: each entry down it leaves less
+/// land than the one above, and breaks what land is left into more pieces.
+/// Land Only and Water World are its two ends, at 95% of one and 95% of the
+/// other, and the four Civ VI shapes everybody knows fill the middle. True
+/// Start Earth sits outside the ordering because its coastlines are read
+/// rather than rolled — Earth is whatever ratio Earth is.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MapScript {
+    LandOnly,
+    Lakes,
+    InlandSea,
     #[default]
     Pangaea,
     Continents,
     SmallContinents,
-    InlandSea,
-    Lakes,
-    Planet,
+    Islands,
+    WaterWorld,
     TrueStartEarth,
 }
 
 impl MapScript {
     pub const fn id(self) -> &'static str {
         match self {
+            Self::LandOnly => "land_only",
+            Self::Lakes => "lakes",
+            Self::InlandSea => "inland_sea",
             Self::Pangaea => "pangaea",
             Self::Continents => "continents",
             Self::SmallContinents => "small_continents",
-            Self::InlandSea => "inland_sea",
-            Self::Lakes => "lakes",
-            Self::Planet => "planet",
+            Self::Islands => "islands",
+            Self::WaterWorld => "water_world",
             Self::TrueStartEarth => "true_start_earth",
         }
-    }
-
-    /// Whether the script lays its world out on a globe rather than on the
-    /// east-west cylinder every other script uses.
-    pub const fn is_globe(self) -> bool {
-        matches!(self, Self::Planet | Self::TrueStartEarth)
     }
 
     /// Whether the script draws a fixed world instead of rolling a new one.
@@ -45,9 +51,35 @@ impl MapScript {
         matches!(self, Self::TrueStartEarth)
     }
 
+    /// Roughly what share of the world this script leaves as land, as the
+    /// generator aims for it. This is the order the list above is in, and the
+    /// lobby prints it, so the two can never drift apart.
+    pub const fn land_percent(self) -> u32 {
+        match self {
+            Self::LandOnly => 95,
+            Self::Lakes => 81,
+            Self::InlandSea => 68,
+            Self::Pangaea => 42,
+            Self::Continents => 42,
+            Self::SmallContinents => 36,
+            Self::Islands => 22,
+            Self::WaterWorld => 5,
+            // Earth's own land share, which is the one number here that was
+            // measured rather than chosen.
+            Self::TrueStartEarth => 29,
+        }
+    }
+
     pub fn from_id(id: &str) -> Option<Self> {
-        if id == "pangea" {
-            return Some(Self::Pangaea);
+        // Spellings the protocol has carried at one time or another. `planet`
+        // named a script before the globe became a shape of its own; it now
+        // means the world type that script generated, and the shape travels
+        // separately in `map_topology`.
+        match id {
+            "pangea" => return Some(Self::Pangaea),
+            "planet" => return Some(Self::SmallContinents),
+            "archipelago" => return Some(Self::Islands),
+            _ => {}
         }
         CIV6_MAP_SCRIPTS
             .iter()
@@ -55,6 +87,133 @@ impl MapScript {
             .map(|script| script.script)
     }
 }
+
+/// What shape the world is, chosen independently of what fills it.
+///
+/// This is the setting; [`crate::world::Topology`] is the shape the generator
+/// actually builds from it, which additionally carries the globe's subdivision
+/// frequency. Every world type can be laid out either way, so "Continents" is
+/// a question about land and "Planet" a question about the world's shape, and
+/// answering one no longer answers the other.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MapTopology {
+    /// A rectangle that wraps east to west and ends at a northern and a
+    /// southern edge.
+    #[default]
+    Flat,
+    /// A closed geodesic globe: hexagons and twelve pentagons, sailable all
+    /// the way around in every direction.
+    Planet,
+}
+
+impl MapTopology {
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Flat => "flat",
+            Self::Planet => "planet",
+        }
+    }
+
+    pub const fn is_globe(self) -> bool {
+        matches!(self, Self::Planet)
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        // `globe` and `sphere` are what callers reach for first; `cylinder` is
+        // what the engine calls a flat map internally.
+        match id {
+            "flat" | "cylinder" | "rectangle" => Some(Self::Flat),
+            "planet" | "globe" | "sphere" => Some(Self::Planet),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct MapTopologySpec {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub description: &'static str,
+    #[serde(skip)]
+    pub topology: MapTopology,
+}
+
+pub const MAP_TOPOLOGIES: [MapTopologySpec; 2] = [
+    MapTopologySpec {
+        id: "flat",
+        name: "Flat",
+        description: "A rectangle that wraps east to west, with a northern and a southern edge.",
+        topology: MapTopology::Flat,
+    },
+    MapTopologySpec {
+        id: "planet",
+        name: "Planet",
+        description:
+            "A whole world: hexagons and twelve pentagons closing into a globe you can sail all the way around, in any direction.",
+        topology: MapTopology::Planet,
+    },
+];
+
+/// Whether the world has cold ends.
+///
+/// With poles, latitude runs the climate: the middle of the world is its
+/// hottest ground and every step towards an extreme is colder, ending in
+/// tundra, snow and sea ice. Without them the world has no cold end at all —
+/// no ice, no snow, no tundra — and what terrain a tile gets is decided by
+/// rainfall alone, so jungle and desert reach the top and bottom rows.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MapPoles {
+    #[default]
+    Poles,
+    NoPoles,
+}
+
+impl MapPoles {
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Poles => "poles",
+            Self::NoPoles => "no_poles",
+        }
+    }
+
+    pub const fn has_poles(self) -> bool {
+        matches!(self, Self::Poles)
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        match id {
+            "poles" | "on" | "true" => Some(Self::Poles),
+            "no_poles" | "none" | "off" | "false" => Some(Self::NoPoles),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct MapPolesSpec {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub description: &'static str,
+    #[serde(skip)]
+    pub poles: MapPoles,
+}
+
+pub const MAP_POLES: [MapPolesSpec; 2] = [
+    MapPolesSpec {
+        id: "poles",
+        name: "Poles",
+        description: "Hottest across the middle of the world, colder towards each extreme, ending in tundra, snow and sea ice.",
+        poles: MapPoles::Poles,
+    },
+    MapPolesSpec {
+        id: "no_poles",
+        name: "No poles",
+        description: "No cold ends: one warm climate from edge to edge, with no snow, tundra or ice anywhere.",
+        poles: MapPoles::NoPoles,
+    },
+];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct MapScriptSpec {
@@ -65,7 +224,27 @@ pub struct MapScriptSpec {
     pub script: MapScript,
 }
 
-pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 7] = [
+/// The world types in the order [`MapScript`] declares them: all land at the
+/// top, all water at the bottom, Earth on the end.
+pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 9] = [
+    MapScriptSpec {
+        id: "land_only",
+        name: "Land Only",
+        description: "Almost nothing but land — one unbroken world with a scatter of inland seas for its water.",
+        script: MapScript::LandOnly,
+    },
+    MapScriptSpec {
+        id: "lakes",
+        name: "Lakes",
+        description: "A world of land, broken up by lakes and inland seas instead of oceans.",
+        script: MapScript::Lakes,
+    },
+    MapScriptSpec {
+        id: "inland_sea",
+        name: "Inland Sea",
+        description: "A broad connected landmass surrounding a central sea.",
+        script: MapScript::InlandSea,
+    },
     MapScriptSpec {
         id: "pangaea",
         name: "Pangaea",
@@ -85,27 +264,21 @@ pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 7] = [
         script: MapScript::SmallContinents,
     },
     MapScriptSpec {
-        id: "inland_sea",
-        name: "Inland Sea",
-        description: "A broad connected landmass surrounding a central sea.",
-        script: MapScript::InlandSea,
+        id: "islands",
+        name: "Islands",
+        description: "An archipelago: many small islands, none of them a continent, every one of them its own shore.",
+        script: MapScript::Islands,
     },
     MapScriptSpec {
-        id: "lakes",
-        name: "Lakes",
-        description: "A world of land, broken up by lakes and inland seas instead of oceans.",
-        script: MapScript::Lakes,
-    },
-    MapScriptSpec {
-        id: "planet",
-        name: "Planet",
-        description: "A whole world: hexagons and twelve pentagons closing into a globe you can sail all the way around, in any direction.",
-        script: MapScript::Planet,
+        id: "water_world",
+        name: "Water World",
+        description: "Almost nothing but ocean — scattered specks of land, and the sea lanes between them are the map.",
+        script: MapScript::WaterWorld,
     },
     MapScriptSpec {
         id: "true_start_earth",
         name: "True Start Earth",
-        description: "Earth itself on that globe, with every civilization founded in its own historic homeland.",
+        description: "Earth itself, with every civilization founded in its own historic homeland.",
         script: MapScript::TrueStartEarth,
     },
 ];
@@ -358,10 +531,10 @@ impl MapSize {
         2 * self.globe_frequency + 2
     }
 
-    /// The rectangle a size uses under a given script: a globe is stored in a
-    /// different shape from the cylinder the other scripts lay out.
-    pub const fn dimensions(&self, script: MapScript) -> (i32, i32) {
-        if script.is_globe() {
+    /// The rectangle a size uses under a given world shape: a globe is stored
+    /// in a different shape from the cylinder a flat map lays out.
+    pub const fn dimensions(&self, topology: MapTopology) -> (i32, i32) {
+        if topology.is_globe() {
             (self.globe_width(), self.globe_height())
         } else {
             (self.width, self.height)
@@ -376,37 +549,93 @@ mod tests {
     use crate::game::{Action, Game, Item};
 
     use super::{
-        GameSpeed, MapScript, MapSize, CIV6_GAME_SPEEDS, CIV6_MAP_SCRIPTS, CIV6_MAP_SIZES,
+        GameSpeed, MapPoles, MapScript, MapSize, MapTopology, CIV6_GAME_SPEEDS, CIV6_MAP_SCRIPTS,
+        CIV6_MAP_SIZES, MAP_POLES, MAP_TOPOLOGIES,
     };
 
+    /// The world types are a spectrum, and the lobby lists them along it: the
+    /// first entry is the one with the most land and the last rolled entry the
+    /// one with the least. Nothing else in the setup screen orders itself, so
+    /// this is the one list whose order is a claim, and the claim is checked
+    /// here rather than trusted to whoever edits the table next.
     #[test]
-    fn the_two_globe_scripts_are_the_ones_laid_out_on_a_sphere() {
-        for (id, name, script) in [
-            ("planet", "Planet", MapScript::Planet),
-            ("true_start_earth", "True Start Earth", MapScript::TrueStartEarth),
-        ] {
-            assert_eq!(MapScript::from_id(id), Some(script));
-            let spec = CIV6_MAP_SCRIPTS
-                .iter()
-                .find(|candidate| candidate.id == id)
-                .unwrap();
-            assert_eq!(spec.name, name);
-            assert_eq!(spec.script, script);
-        }
-        for candidate in CIV6_MAP_SCRIPTS {
-            assert_eq!(
-                candidate.script.is_globe(),
-                matches!(
-                    candidate.script,
-                    MapScript::Planet | MapScript::TrueStartEarth
-                )
-            );
-            // Only Earth is the same world every game.
-            assert_eq!(
-                candidate.script.is_fixed_geography(),
-                candidate.script == MapScript::TrueStartEarth
+    fn the_world_types_are_listed_from_all_land_to_all_water() {
+        let rolled: Vec<&super::MapScriptSpec> = CIV6_MAP_SCRIPTS
+            .iter()
+            .filter(|spec| !spec.script.is_fixed_geography())
+            .collect();
+        for pair in rolled.windows(2) {
+            let (above, below) = (pair[0], pair[1]);
+            assert!(
+                above.script.land_percent() >= below.script.land_percent(),
+                "{} ({}% land) is listed above {} ({}% land)",
+                above.name,
+                above.script.land_percent(),
+                below.name,
+                below.script.land_percent()
             );
         }
+        // The two ends are the ones the ordering is anchored on.
+        assert_eq!(rolled.first().map(|spec| spec.script), Some(MapScript::LandOnly));
+        assert_eq!(rolled.last().map(|spec| spec.script), Some(MapScript::WaterWorld));
+        assert_eq!(MapScript::LandOnly.land_percent(), 95);
+        assert_eq!(MapScript::WaterWorld.land_percent(), 5);
+        // Earth is outside the ordering, and is listed after all of it.
+        assert_eq!(
+            CIV6_MAP_SCRIPTS.last().map(|spec| spec.script),
+            Some(MapScript::TrueStartEarth)
+        );
+        // Every type is reachable by the id the protocol carries, and the list
+        // holds each of them exactly once.
+        let mut seen = BTreeSet::new();
+        for spec in CIV6_MAP_SCRIPTS {
+            assert_eq!(MapScript::from_id(spec.id), Some(spec.script), "{}", spec.id);
+            assert_eq!(spec.script.id(), spec.id);
+            assert!(seen.insert(spec.id), "{} is listed twice", spec.id);
+        }
+    }
+
+    /// The world's shape and its poles are settings of their own, orthogonal to
+    /// what fills the world. Only Earth overrules the shape, because Earth is
+    /// drawn from real longitudes and latitudes and closes on itself.
+    #[test]
+    fn the_world_shape_and_its_poles_are_asked_for_separately_from_the_world_type() {
+        for spec in MAP_TOPOLOGIES {
+            assert_eq!(MapTopology::from_id(spec.id), Some(spec.topology));
+            assert_eq!(spec.topology.id(), spec.id);
+        }
+        for spec in MAP_POLES {
+            assert_eq!(MapPoles::from_id(spec.id), Some(spec.poles));
+            assert_eq!(spec.poles.id(), spec.id);
+        }
+        assert!(MapTopology::Planet.is_globe());
+        assert!(!MapTopology::Flat.is_globe());
+        assert!(MapPoles::Poles.has_poles());
+        assert!(!MapPoles::NoPoles.has_poles());
+        // A flat world is what a lobby gets if it says nothing, and a world
+        // with poles is: both are what CIVVIS shipped before either was a
+        // choice, so a client that has not been taught about them is unmoved.
+        assert_eq!(MapTopology::default(), MapTopology::Flat);
+        assert_eq!(MapPoles::default(), MapPoles::Poles);
+        assert_eq!(MapScript::default(), MapScript::Pangaea);
+
+        // Only Earth is the same world every game, and it is the only type
+        // whose shape is not the lobby's to choose.
+        for spec in CIV6_MAP_SCRIPTS {
+            assert_eq!(
+                spec.script.is_fixed_geography(),
+                spec.script == MapScript::TrueStartEarth,
+                "{}",
+                spec.id
+            );
+        }
+
+        // `planet` named a world type before the globe became a shape of its
+        // own. The old name still resolves, to the type that script generated.
+        assert_eq!(MapScript::from_id("planet"), Some(MapScript::SmallContinents));
+        assert_eq!(MapTopology::from_id("planet"), Some(MapTopology::Planet));
+        assert_eq!(MapScript::from_id("pangea"), Some(MapScript::Pangaea));
+
         // Every size resolves from either shape of rectangle, and the two
         // shapes never collide across sizes.
         for size in CIV6_MAP_SIZES {
@@ -420,17 +649,10 @@ mod tests {
                 Some(size.id)
             );
             assert_eq!(
-                size.dimensions(MapScript::Planet),
+                size.dimensions(MapTopology::Planet),
                 (size.globe_width(), size.globe_height())
             );
-            assert_eq!(
-                size.dimensions(MapScript::TrueStartEarth),
-                (size.globe_width(), size.globe_height())
-            );
-            assert_eq!(
-                size.dimensions(MapScript::Pangaea),
-                (size.width, size.height)
-            );
+            assert_eq!(size.dimensions(MapTopology::Flat), (size.width, size.height));
         }
     }
 

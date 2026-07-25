@@ -94,6 +94,12 @@ pub struct FeatureSpec {
     pub move_cost: f64,
     #[serde(default)]
     pub natural_wonder: bool,
+    /// How much this feature adds to the height of the terrain under it for
+    /// line of sight, the game database's ``SightThroughModifier``: Woods and
+    /// Rainforest 1 — burnt over as well as standing — Everest and Yosemite 2,
+    /// and every other Natural Wonder 0.
+    #[serde(default)]
+    pub sight_through: i32,
     #[serde(default)]
     pub impassable: bool,
     /// The shipped Feature_Removes yields a Builder collects for clearing
@@ -731,6 +737,20 @@ pub struct CivSpec {
     #[serde(default)]
     pub traits: Vec<String>,
     pub ability: String,
+    /// What the signature ability is worth, for the abilities whose whole
+    /// effect is a modifier the engine already applies from somewhere else.
+    /// The vocabulary is small and deliberately so — `city_food`,
+    /// `city_production`, `city_gold`, `city_science`, `city_culture` and
+    /// `city_faith` are flat yields every city of this civilization earns;
+    /// `unit_production_pct`, `settler_production_pct`,
+    /// `building_production_pct`, `district_production_pct` and
+    /// `wonder_production_pct` speed what a city is building;
+    /// `combat_strength` and `unit_xp_pct` belong to its units. An ability
+    /// that does something the engine cannot express this way — Rome's free
+    /// monument, Scythia's healing — stays keyed by name in `has_ability`
+    /// instead.
+    #[serde(default)]
+    pub effects: BTreeMap<String, f64>,
     #[serde(default)]
     pub unique_unit: Option<String>,
     #[serde(default)]
