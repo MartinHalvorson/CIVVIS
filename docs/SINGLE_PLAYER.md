@@ -91,13 +91,13 @@ the action from the UI without a debugger.
 | Unit orders | `move`, `move_to`, `attack`, `ranged`, `fortify`, `promote`, `upgrade`, `improve`, `pillage`, `repair_improvement`, air ops, religious ops | yes — contextual unit bar |
 | Research | `research`, `civic` | yes — cards and both trees |
 | Cities | `produce`, `buy` | partial — production and unit purchase; no queue, no building/district purchase, no district siting |
-| Government | `government`, `slot_policy`, `unslot_policy` | partial — government only |
-| Religion | `choose_pantheon`, `found_religion`, `evangelize_belief` | no (unit-level religious combat: yes) |
-| Great People | `recruit_great_person`, `patronize_great_person` | no |
-| Governors | `appoint_governor`, `assign_governor`, `reassign_governor`, `promote_governor` | no |
-| City-states | `send_envoy`, `levy_military` | partial — levy only |
-| Trade | `trade_route`, `found_corporation`, `move_product` | no |
-| Espionage | `assign_spy`, `spy_mission`, `promote_spy` | no |
+| Government | `government`, `slot_policy`, `unslot_policy` | yes — Empire ▸ Government |
+| Religion | `choose_pantheon`, `found_religion`, `evangelize_belief` | yes — Empire ▸ Religion |
+| Great People | `recruit_great_person`, `patronize_great_person` | yes — Empire ▸ Great People, though it cannot name the person on offer |
+| Governors | `appoint_governor`, `assign_governor`, `reassign_governor`, `promote_governor` | yes — Empire ▸ Governors |
+| City-states | `send_envoy`, `levy_military` | yes — Empire ▸ City-States |
+| Trade | `trade_route`, `found_corporation`, `move_product` | partial — routes and corporations; `move_product` is still a unit order |
+| Espionage | `assign_spy`, `spy_mission`, `promote_spy` | yes — Empire ▸ Espionage |
 | Diplomacy | `declare_war`, `declare_war_with_casus_belli`, `make_peace`, `denounce`, `propose_deal`, `trade` | partial — Quick Deals and deal replies; no leader screen |
 | World Congress | `congress_vote` | yes — Government panel |
 | Ages | `choose_dedication`, `choose_secret_society` | yes — Government panel |
@@ -105,7 +105,28 @@ the action from the UI without a debugger.
 | Setup | difficulty, leader choice | no — CLI flags only |
 
 Rows marked "no" or "partial" are the remaining work, in roughly that order of
-value to a player.
+value to a player. The largest of them is diplomacy: a person still cannot
+declare war, sue for peace or denounce anyone, so a whole victory path is
+closed to them by the client rather than by the rules.
+
+## The Empire panel
+
+Civ 6 keeps its standing decisions on a launch bar. So does this: a rail of
+icons down the map's inner edge, mirroring the notification rail on the other
+side, each badged with the number of decisions waiting behind it. `G` opens
+and closes it; `Escape` closes it.
+
+Every screen behind that bar is a labelling layer and nothing more. It reads
+`legal_actions`, names what it finds using `/rules`, and posts the action back
+byte-for-byte. No screen constructs an action of its own, so no screen can
+disagree with the engine about what is legal — which is also what keeps the
+client inside the JSON-protocol rule in `CONTRIBUTING.md`.
+
+The one thing a screen must never do is guess. The Great People screen does
+not name the person each kind is currently offering, because that is a world
+fact — it depends on which people every civilization has retired — and the
+observation does not carry it. It shows the kind, the points and the count,
+and names only the Great People already in your service.
 
 ## Keys
 
