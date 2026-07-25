@@ -393,11 +393,13 @@
   .victory-heading { display: flex; align-items: center; gap: 4px; margin-bottom: 2px; color: var(--track); }
   .victory-heading b { overflow: hidden; color: #dde5e1; font-size: 9px; letter-spacing: .03em; text-overflow: ellipsis; white-space: nowrap; }
   .victory-subheading {
-    min-height: 9px; display: grid; grid-template-columns: 30px 42px; justify-content: end; gap: 6px;
+    min-height: 9px; display: grid; grid-template-columns: minmax(0, 1fr) 42px; gap: 6px;
     margin: 0 0 3px 9px; color: #80938b; font-size: 6.5px; font-weight: 900;
     letter-spacing: .04em; line-height: 1; text-transform: uppercase; white-space: nowrap;
   }
-  .victory-subheading span { text-align: right; }
+  .victory-subheading span { overflow: hidden; text-overflow: ellipsis; }
+  .victory-subheading span:first-child { text-align: left; }
+  .victory-subheading span:last-child { text-align: right; }
   .victory-subheading.score { display: block; margin-left: 0; text-align: center; }
   .victory-list { display: flex; flex-direction: column; gap: 3px; }
   .victory-entry { min-width: 0; }
@@ -409,11 +411,10 @@
   .victory-civ-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--civ); box-shadow: 0 0 5px color-mix(in srgb, var(--civ) 70%, transparent); }
   .victory-civ { overflow: hidden; color: #e6ede9; font-size: 10px; font-weight: 750; line-height: 1; text-overflow: ellipsis; white-space: nowrap; }
   .victory-value {
-    min-width: 0; display: grid; grid-template-columns: 30px 42px; justify-content: end;
-    gap: 6px; color: #c2d0ca; font-size: 9px; line-height: 1; text-align: right;
+    width: 42px; color: #c2d0ca; font-size: 9px; line-height: 1; text-align: right;
     font-variant-numeric: tabular-nums; white-space: nowrap;
   }
-  .victory-value.single { display: block; font-size: 10px; }
+  .victory-value.single { font-size: 10px; }
   .victory-meter { height: 3px; margin: 0 0 0 9px; border-radius: 3px; }
   .diplomacy-ribbon { min-width: max-content; display: flex; align-items: stretch; gap: 4px; padding-bottom: 1px; }
   .diplomacy-card {
@@ -9261,24 +9262,25 @@ function turnCapLabel() {
 
 // The meter under each civilization. Most races are one number against one
 // target; science and culture are two, and are drawn as two half-width
-// meters — the technology tree beside the four space-race launches, the
-// culture a civilization keeps at home beside the tourism it sends abroad.
-function victoryMeter(victory, metric, progress) {
+// meters. Their researched trees are relative comparisons: the civilization
+// with the most discoveries fills the left half and every rival shows its
+// fraction of that leader. The right halves remain the actual victory races.
+function victoryMeter(victory, metric, progress, researchLeader = 0) {
   const bar = pct => `<b style="width:${Math.max(0, Math.min(100, pct))}%"></b>`;
   if (victory === "science") {
-    const total = Math.max(1, +metric.tech_total || 1);
+    const leader = Math.max(1, +researchLeader || 0);
     const launches = +metric.project_target || 4;
     const done = +metric.projects || 0;
     const dots = Array.from({ length: launches },
       (_, i) => `<i${i < done ? ' class="on"' : ""}></i>`).join("");
     return `<div class="victory-meter split"><span class="victory-half">` +
-      `${bar(100 * (+metric.techs || 0) / total)}</span>` +
+      `${bar(100 * (+metric.techs || 0) / leader)}</span>` +
       `<span class="victory-dots">${dots}</span></div>`;
   }
   if (victory === "culture") {
-    const leader = Math.max(1, +metric.leading_domestic || 0);
+    const leader = Math.max(1, +researchLeader || 0);
     return `<div class="victory-meter split">` +
-      `<span class="victory-half">${bar(100 * (+metric.domestic || 0) / leader)}</span>` +
+      `<span class="victory-half">${bar(100 * (+metric.civics || 0) / leader)}</span>` +
       `<span class="victory-half">${bar(progress)}</span></div>`;
   }
   return `<div class="victory-meter">${bar(progress)}</div>`;
@@ -9307,29 +9309,25 @@ function victoryValue(victory, metric) {
 }
 
 function victoryTrackerSubheading(victory) {
-  if (victory === "science") return `<span>Science</span><span>Launches</span>`;
-  if (victory === "culture") return `<span>Culture</span><span>Tourism</span>`;
-  if (victory === "religious") return `<span>Cities</span><span>Civs</span>`;
-  if (victory === "diplomatic") return `<span>Suz</span><span>Diplo score</span>`;
-  if (victory === "domination") return `<span>Cities</span><span>HQs</span>`;
+  if (victory === "science") return `<span>Techs</span><span>Launches</span>`;
+  if (victory === "culture") return `<span>Civics</span><span>Tourism</span>`;
+  if (victory === "religious") return `<span></span><span>Civs</span>`;
+  if (victory === "diplomatic") return `<span></span><span>Diplo score</span>`;
+  if (victory === "domination") return `<span></span><span>HQs</span>`;
   return `Turns: ${state.turn}/${turnCapLabel()}`;
 }
 
-function victoryTrackerStats(player, victory, metric) {
-  const pair = (first, second) => `<span>${first}</span><span>${second}</span>`;
+function victoryTrackerStats(victory, metric) {
   if (victory === "science") {
     const target = +metric.project_target || 4;
-    const second = +metric.projects >= target
+    return +metric.projects >= target
       ? `${compactStat(metric.distance)}/${compactStat(metric.distance_target)}ly`
       : `${metric.projects || 0}/${target}`;
-    return pair(compactStat(player.yields?.science || 0), second);
   }
-  if (victory === "culture") {
-    return pair(compactStat(player.yields?.culture || 0), compactStat(metric.tourists || 0));
-  }
-  if (victory === "religious") return pair(player.cities || 0, `${metric.converted || 0}/${metric.target || 0}`);
-  if (victory === "diplomatic") return pair(player.suzerain_count || 0, `${metric.points || 0}/${metric.target || 20}`);
-  if (victory === "domination") return pair(player.cities || 0, `${metric.capitals || 0}/${metric.target || 0}`);
+  if (victory === "culture") return compactStat(metric.tourists || 0);
+  if (victory === "religious") return `${metric.converted || 0}/${metric.target || 0}`;
+  if (victory === "diplomatic") return `${metric.points || 0}/${metric.target || 20}`;
+  if (victory === "domination") return `${metric.capitals || 0}/${metric.target || 0}`;
   return victoryValue(victory, metric);
 }
 
@@ -9342,7 +9340,7 @@ function victoryDescription(victory, metric) {
       : `${tree} · ${launches}`;
   }
   if (victory === "culture") {
-    return `${metric.domestic || 0} domestic tourists of their own culture · ` +
+    return `${metric.civics || 0} of ${metric.civic_total || 0} civics researched · ` +
       `${metric.tourists || 0} of ${metric.target || 1} visiting tourists needed`;
   }
   if (victory === "religious") return `${metric.converted || 0} of ${metric.target || 0} civilizations converted`;
@@ -9420,17 +9418,20 @@ function playerHudOverview() {
   const enabledVictoryTracks = VICTORY_TRACKS
     .filter(track => state.victory_conditions?.[track.id] !== false);
   const victoryTracks = enabledVictoryTracks.map(track => {
+    const researchField = track.id === "science" ? "techs"
+      : track.id === "culture" ? "civics" : null;
     const ranked = [...contenders]
       .sort((a, b) => {
         const am = victoryMetric(a, track.id), bm = victoryMetric(b, track.id);
-        // Science progress only moves once the launches start, so for the
-        // whole first half of a game the names shown were the score
-        // leaders. The tree the meter draws breaks that tie instead; no
-        // other race carries a technology count.
+        // Before launches or tourism move, researched-tree counts keep these
+        // columns ordered by the same comparison their left meters draw.
         return (+bm.progress || 0) - (+am.progress || 0)
-          || (+bm.techs || 0) - (+am.techs || 0)
+          || (researchField ? (+bm[researchField] || 0) - (+am[researchField] || 0) : 0)
           || b.score - a.score || a.id - b.id;
       });
+    const researchLeader = researchField
+      ? Math.max(0, ...ranked.map(player => +victoryMetric(player, track.id)[researchField] || 0))
+      : 0;
     return `<section class="victory-track" style="--track:${track.color}" aria-label="${track.label} victory leaders">` +
       `<div class="victory-heading"><span>${track.icon}</span><b>${track.label}</b></div>` +
       `<div class="victory-subheading${track.id === "score" ? " score" : ""}">${victoryTrackerSubheading(track.id)}</div>` +
@@ -9439,8 +9440,8 @@ function playerHudOverview() {
         const progress = Math.max(0, Math.min(100, +metric.progress || 0));
         return `<div class="victory-entry" style="--civ:${pcol(player.id)}" title="#${index + 1} ${player.civ}: ${victoryDescription(track.id, metric)}">` +
           `<div class="victory-line"><span class="victory-civ-dot"></span>` +
-          `<span class="victory-civ">${player.civ}</span><span class="victory-value${track.id === "score" ? " single" : ""}">${victoryTrackerStats(player, track.id, metric)}</span></div>` +
-          victoryMeter(track.id, metric, progress) + `</div>`;
+          `<span class="victory-civ">${player.civ}</span><span class="victory-value${track.id === "score" ? " single" : ""}">${victoryTrackerStats(track.id, metric)}</span></div>` +
+          victoryMeter(track.id, metric, progress, researchLeader) + `</div>`;
       }).join("") + `</div></section>`;
   }).join("");
   const victoryCount = Math.max(1, enabledVictoryTracks.length);
