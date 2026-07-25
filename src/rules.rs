@@ -998,6 +998,10 @@ pub struct EraSpec {
     pub embarked_strength: f64,
     #[serde(default)]
     pub warmonger_points: f64,
+    /// Shipped `Eras_XP1.LiberatedEnvoys`: how many Envoys liberating a
+    /// city-state in this era grants its liberator.
+    #[serde(default)]
+    pub liberated_envoys: u32,
 }
 
 /// One tribal village reward: its selection weight within the rolled

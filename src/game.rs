@@ -40802,11 +40802,14 @@ impl Game {
             .or_insert(1);
         self.add_era_score(pid, if restored_to_game { 4 } else { 2 });
         if self.players[original_owner].is_minor {
-            let liberation_envoys = match self.world_era {
-                0..=2 => 3,
-                3 | 4 => 6,
-                _ => 9,
-            };
+            // Shipped `Eras_XP1.LiberatedEnvoys`, which is 2 in the Ancient
+            // era rather than 3 and then climbs 3/3/6/6/9 through the rest.
+            let liberation_envoys = ERA_NAMES
+                .get(self.world_era)
+                .and_then(|era| self.rules.eras.get(*era))
+                .map(|era| era.liberated_envoys as i64)
+                .filter(|envoys| *envoys > 0)
+                .unwrap_or(9);
             for player in self.players.iter_mut() {
                 player.envoys.retain(|(minor, _)| *minor != original_owner);
             }
@@ -46047,13 +46050,19 @@ mod victory_conditions {
         assert_eq!(g.city_max_wall_hp(&g.cities[&city]), 0);
         assert_eq!(g.cities[&city].wall_hp, 0);
         assert_eq!(g.players[1].diplomatic_favor, 100.0);
-        assert_eq!(g.envoys_at(1, minor), 3);
-        assert_eq!(g.suzerain_of(minor), Some(1));
+        // Ancient-era liberation grants the shipped two Envoys, and two is
+        // below the three a Suzerain needs -- so an early liberation buys
+        // influence but not control. Both numbers are shipped values, so the
+        // outcome is their conjunction rather than a choice made here; from
+        // the Renaissance on, the six Envoys do carry suzerainty.
+        assert_eq!(g.envoys_at(1, minor), 2);
+        assert_eq!(g.suzerain_of(minor), None);
     }
 
     #[test]
     fn city_state_liberation_envoys_and_border_growth_scale_by_world_era() {
-        for (era, expected) in [(0, 3), (1, 3), (2, 3), (3, 6), (4, 6), (5, 9), (8, 9)] {
+        // Shipped Eras_XP1.LiberatedEnvoys: the Ancient era grants 2, not 3.
+        for (era, expected) in [(0, 2), (1, 3), (2, 3), (3, 6), (4, 6), (5, 9), (8, 9)] {
             let mut game = Game::new_full(2, 26, 16, 42_500 + era as u64, 300, 1, false);
             let minor = game
                 .players
