@@ -8500,6 +8500,13 @@ pub struct VisionCache {
 pub struct QueryCache {
     yields: std::cell::RefCell<Option<BTreeMap<u32, Yields>>>,
     traversal: std::cell::RefCell<Option<BTreeMap<u32, TraversalClass>>>,
+    amenities: std::cell::RefCell<Option<BTreeMap<u32, i64>>>,
+    // Three empire-wide derivations that callers reach for one city at a
+    // time. Each is keyed by player, because that is the scope it is
+    // computed over, not the scope it is read at.
+    lux_alloc: std::cell::RefCell<Option<BTreeMap<usize, BTreeMap<u32, i64>>>>,
+    lux_names: std::cell::RefCell<Option<BTreeMap<usize, BTreeSet<String>>>>,
+    housed_works: std::cell::RefCell<Option<BTreeMap<usize, BTreeMap<u32, BTreeMap<String, usize>>>>>,
 }
 
 impl Clone for QueryCache {
@@ -8523,6 +8530,10 @@ impl Drop for QueryMemo<'_> {
         if self.outermost {
             *self.game.query_memo.yields.borrow_mut() = None;
             *self.game.query_memo.traversal.borrow_mut() = None;
+            *self.game.query_memo.amenities.borrow_mut() = None;
+            *self.game.query_memo.lux_alloc.borrow_mut() = None;
+            *self.game.query_memo.lux_names.borrow_mut() = None;
+            *self.game.query_memo.housed_works.borrow_mut() = None;
         }
     }
 }
@@ -19569,7 +19580,22 @@ impl Game {
     /// must be improved (or lie under a City Center); merely owning an
     /// unimproved copy does not unlock its Amenities or Aztec combat bonus.
     /// Zanzibar's two synthetic luxuries participate in those same systems.
+    /// Asked once per luxury allocation, which is itself asked once per city,
+    /// so a six-city empire re-derived its own luxuries dozens of times a turn.
     fn empire_luxury_names(&self, pid: usize) -> BTreeSet<String> {
+        if let Some(memo) = self.query_memo.lux_names.borrow().as_ref() {
+            if let Some(value) = memo.get(&pid) {
+                return value.clone();
+            }
+        }
+        let value = self.empire_luxury_names_uncached(pid);
+        if let Some(memo) = self.query_memo.lux_names.borrow_mut().as_mut() {
+            memo.insert(pid, value.clone());
+        }
+        value
+    }
+
+    fn empire_luxury_names_uncached(&self, pid: usize) -> BTreeSet<String> {
         // Which city-states this player is suzerain of, and whether an Amani
         // is sharing their luxuries, are the same for every luxury in the
         // ruleset; deciding them per resource meant re-deriving every
@@ -19607,7 +19633,23 @@ impl Game {
         (city.pop.max(1) as i64 + 1) / 2
     }
 
+    /// `luxury_amenity_allocations` values every city in the empire, so asking
+    /// each of N cities for its Amenities cost N * N of these. Under a memo
+    /// scope each city is valued once.
     pub fn city_local_amenities(&self, city: &City) -> i64 {
+        if let Some(memo) = self.query_memo.amenities.borrow().as_ref() {
+            if let Some(value) = memo.get(&city.id) {
+                return *value;
+            }
+        }
+        let value = self.city_local_amenities_uncached(city);
+        if let Some(memo) = self.query_memo.amenities.borrow_mut().as_mut() {
+            memo.insert(city.id, value);
+        }
+        value
+    }
+
+    fn city_local_amenities_uncached(&self, city: &City) -> i64 {
         let mut supply = self.policy_effect(city.owner, "city_amenities");
         supply += if self.city_has_palace(city) {
             self.rules.buildings["palace"].amenity
@@ -19836,7 +19878,23 @@ impl Game {
 
     /// Each distinct luxury gives +1 Amenity to the four cities that need it
     /// most. Gifts for the Tlatoani raises that reach to six for the Aztecs.
+    /// Allocating luxuries is an empire-wide decision, but every caller wants
+    /// one city's share of it. Deriving it per city was the single largest
+    /// redundancy in the city layer.
     fn luxury_amenity_allocations(&self, pid: usize) -> BTreeMap<u32, i64> {
+        if let Some(memo) = self.query_memo.lux_alloc.borrow().as_ref() {
+            if let Some(value) = memo.get(&pid) {
+                return value.clone();
+            }
+        }
+        let value = self.luxury_amenity_allocations_uncached(pid);
+        if let Some(memo) = self.query_memo.lux_alloc.borrow_mut().as_mut() {
+            memo.insert(pid, value.clone());
+        }
+        value
+    }
+
+    fn luxury_amenity_allocations_uncached(&self, pid: usize) -> BTreeMap<u32, i64> {
         let cities: Vec<&City> = self
             .cities
             .values()
@@ -24810,6 +24868,10 @@ impl Game {
         if outermost {
             *self.query_memo.yields.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.traversal.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.amenities.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.lux_alloc.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.lux_names.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.housed_works.borrow_mut() = Some(BTreeMap::new());
         }
         QueryMemo {
             game: self,
@@ -24831,6 +24893,11 @@ impl Game {
     }
 
     fn city_yields_uncached(&self, cid: u32) -> Yields {
+        // A city's yields reach for two empire-wide derivations — its Amenity
+        // band and its housed Great Works. Opening a scope here means they are
+        // taken once per city rather than once per lookup, and nests harmlessly
+        // inside a caller that already holds one.
+        let _amenity_memo = self.query_memo();
         let city = &self.cities[&cid];
         let mut ys = Yields::default();
         let mut center = self.workable_tile_yields(city.pos);
@@ -37784,7 +37851,22 @@ impl Game {
         housed
     }
 
+    /// Housing Great Works assigns them across every city the player owns, and
+    /// `city_yields` runs the whole assignment to read one city's entry.
     fn housed_great_works(&self, pid: usize) -> BTreeMap<u32, BTreeMap<String, usize>> {
+        if let Some(memo) = self.query_memo.housed_works.borrow().as_ref() {
+            if let Some(value) = memo.get(&pid) {
+                return value.clone();
+            }
+        }
+        let value = self.housed_great_works_uncached(pid);
+        if let Some(memo) = self.query_memo.housed_works.borrow_mut().as_mut() {
+            memo.insert(pid, value.clone());
+        }
+        value
+    }
+
+    fn housed_great_works_uncached(&self, pid: usize) -> BTreeMap<u32, BTreeMap<String, usize>> {
         self.housed_great_works_with_extra(pid, None)
     }
 
