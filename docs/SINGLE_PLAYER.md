@@ -294,6 +294,32 @@ Both offer the one thing still useful: another game, started from the setup
 panel. A spectated finale keeps its countdown instead, because the supervisor
 owns that handoff.
 
+### One more turn
+
+A finale with a victor also offers to keep the world. **One more turn** puts
+the same map back into play for another 25 turns — the same seed, the same
+empires, from the turn the victory was declared on.
+
+- The result is not thrown away. It is recorded as the game's verdict, the
+  turn readout gains a *Playing on* line, and the league rating that was
+  written when the victory landed is never written again.
+- No victory can be declared during borrowed turns, including the one that was
+  just won. A science victory is still won on the turn after it was won, so a
+  game that only cleared its winner would re-declare the same result
+  immediately and the button would do nothing.
+- When the extension runs out the original verdict is restored — not a fresh
+  score count, which would be free to name somebody else — and the finale
+  comes back with the offer again.
+
+The offer is real on the exhibition too. Every result a browser can see is held
+for at least five seconds (`--restart-ms` may ask for longer, never shorter),
+the countdown is published on the same state that first carries the winner, and
+the supervisor re-reads the world after its cooldown: a world that was asked
+for more turns is left running instead of being retired. Borrowed turns are not
+a setting, so the raised turn limit is never carried into the next game.
+Headless simulation — `civvis sim`, soaks, the league — has no result screen and
+no viewer, and waits for nothing.
+
 ## Keys
 
 Chosen to match Civ 6 where Civ 6 has an opinion, and to leave the existing

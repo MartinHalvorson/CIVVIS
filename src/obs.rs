@@ -572,6 +572,16 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         "winner": g.winner,
         "winners": g.winning_players(),
         "victory_type": g.victory_type,
+        // The result this world was already given, if it was asked for one
+        // more turn. The game is live again, so `winner` is empty; this is how
+        // a viewer is still told whose victory the extra turns are borrowed
+        // from, and how long they run.
+        "decided": g.decided.as_ref().map(|decided| json!({
+            "winner": decided.winner,
+            "civ": g.players.get(decided.winner).map(|player| player.civ.clone()),
+            "victory_type": decided.victory_type,
+            "turn": decided.turn,
+        })),
         // What has happened to this civilization lately, newest last. An
         // omniscient viewer watches whichever seat it is observing, so the
         // spectator log follows the same seat as the rest of the frame.
