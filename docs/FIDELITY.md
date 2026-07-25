@@ -120,7 +120,7 @@ alone. The `pearls`/`turtles`/`whales` rows look like a projection artifact
 (harvest improvement versus Corporation improvement) rather than a CIVVIS defect,
 and should be checked before being treated as one.
 
-## Open measured divergence: major start spacing
+## Closed: major start spacing
 
 `START_DISTANCE_MAJOR_CIVILIZATION` is **12** with `START_DISTANCE_RANGE_MAJOR`
 **2**, so Civilization VI aims major civilizations 10-14 tiles apart (minors use
@@ -146,9 +146,25 @@ nearest-neighbour separations are major-only when no minors are requested
 (minors are appended after majors are placed, so major placement is identical
 either way).
 
-Fixing this means giving `balanced_major_spawns` a target distance instead of a
-maximization objective, and it changes every generated map — so it invalidates
-saved layouts and any league snapshot measured before it.
+**Fixed.** `targeted_layout` now picks each start by how well its
+nearest-neighbour distance fits the shipped band rather than by how far away it
+can get, scoring the miss with `start_distance_miss` — zero inside 10..=14,
+growing outside it, and counting crowding double, because two civilizations on
+top of each other is a worse start than two a little too far apart. Measured the
+same way afterwards:
+
+    n = 160  min 10  max 15  mean 11.83  median 12
+    within the shipped 10..14 band:  153 / 160  (96%)
+    below 10: 0     above 14: 7
+
+Zero crowded starts, a median of exactly the shipped target, and the seven
+strays one tile over. `stock_map_profiles_produce_spread_and_complete_spawn_sets`
+now asserts the band per start rather than a floor of six, and was confirmed to
+bite by restoring the old maximizing rule (`Duel places a start 27 from its
+neighbour`).
+
+This changed every generated map, so layouts and league snapshots from before it
+are not comparable.
 
 **Where the Civilopedia and the database disagree, the database wins.** The
 prose goes stale across rebalances and has been observed to be flatly wrong:

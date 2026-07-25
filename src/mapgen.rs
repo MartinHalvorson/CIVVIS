@@ -1479,7 +1479,35 @@ fn layout_balance_percentages(
     (territory, neighbor, quality)
 }
 
-fn farthest_layout(
+/// Shipped `START_DISTANCE_MAJOR_CIVILIZATION`: major civilizations are aimed
+/// this far apart, not as far apart as the landmass allows.
+pub(crate) const START_DISTANCE_MAJOR: i32 = 12;
+/// Shipped `START_DISTANCE_RANGE_MAJOR`: how far either side of the target a
+/// start may sit before the placement counts as a compromise.
+pub(crate) const START_RANGE_MAJOR: i32 = 2;
+
+/// How badly one nearest-neighbour distance misses the shipped band. Zero
+/// inside 10..=14, growing outside it, and counting crowding double — two
+/// civilizations on top of each other is a worse start than two a little too
+/// far apart.
+pub(crate) fn start_distance_miss(distance: i32) -> i32 {
+    let low = START_DISTANCE_MAJOR - START_RANGE_MAJOR;
+    let high = START_DISTANCE_MAJOR + START_RANGE_MAJOR;
+    if distance < low {
+        2 * (low - distance)
+    } else if distance > high {
+        distance - high
+    } else {
+        0
+    }
+}
+
+/// Place each start at the shipped distance from its nearest neighbour rather
+/// than at the greatest distance available. The old farthest-point rule put
+/// every civilization on the tournament map 17-23 tiles from its neighbour
+/// where Civilization VI aims for 10-14, which moves settling races, border
+/// friction, and the Loyalty and religious pressure that depend on proximity.
+fn targeted_layout(
     wm: &WorldMap,
     candidates: &[Pos],
     qualities: &BTreeMap<Pos, i32>,
@@ -1491,13 +1519,17 @@ fn farthest_layout(
         let Some(next) = candidates
             .iter()
             .filter(|candidate| !layout.contains(candidate))
-            .max_by_key(|candidate| {
+            .min_by_key(|candidate| {
                 let nearest = layout
                     .iter()
                     .map(|start| hex::wdistance(**candidate, *start, wm.width))
                     .min()
                     .unwrap_or(0);
-                (nearest, qualities[*candidate], **candidate)
+                (
+                    start_distance_miss(nearest),
+                    -qualities[*candidate],
+                    **candidate,
+                )
             })
             .copied()
         else {
@@ -1563,7 +1595,7 @@ fn balanced_major_spawns(
             }
         }
         for seed in seeds {
-            let layout = farthest_layout(wm, pool, &qualities, seed, count);
+            let layout = targeted_layout(wm, pool, &qualities, seed, count);
             let score = spawn_layout_score(wm, landmass, &layout, &qualities);
             layouts.push((score, layout));
         }
@@ -2352,7 +2384,25 @@ mod river_tests {
                 .collect();
             let score = spawn_layout_score(&wm, &landmass, majors, &qualities);
             let balance = layout_balance_percentages(score, size.default_players, landmass.len());
-            assert!(score.minimum_separation >= 6, "{}: {score:?}", size.name);
+            // Every start sits inside the shipped band, not merely apart.
+            assert!(
+                score.minimum_separation >= START_DISTANCE_MAJOR - START_RANGE_MAJOR,
+                "{} crowds a start inside the shipped band: {score:?}",
+                size.name
+            );
+            for start in majors {
+                let nearest = majors
+                    .iter()
+                    .filter(|other| *other != start)
+                    .map(|other| hex::wdistance(*start, *other, wm.width))
+                    .min()
+                    .unwrap_or(START_DISTANCE_MAJOR);
+                assert!(
+                    start_distance_miss(nearest) <= START_RANGE_MAJOR,
+                    "{} places a start {nearest} from its neighbour, far outside 10..=14",
+                    size.name
+                );
+            }
             assert!(
                 balance.0 >= 50 && balance.1 >= 50 && balance.2 >= 50,
                 "{} has an unfair start outlier: territory/neighbor/quality balance = {balance:?}, {score:?}",
