@@ -3134,7 +3134,14 @@ let cameraFollowUnitId = null, cameraFollowManual = false, cameraFollowScale = 1
 let watchedEmpireAutoFrame = false;
 let watchedEmpireUnitUntil = new Map();
 let watchedEmpireSubjectsCache = {state:null, player:null, subjects:[]};
-const cv = document.getElementById("map"), cx = cv.getContext("2d");
+const cv = document.getElementById("map");
+// A binding rather than a constant: baking a unit sprite points `cx` at the
+// sprite's own canvas for the duration of one synchronous paint and puts it
+// straight back. Nothing else in the page ever writes it, and no frame can
+// observe the swap, so every other line here can go on treating it as the
+// screen. The alternative was threading a context parameter through six
+// hundred call sites in the sprite code.
+let cx = cv.getContext("2d");
 const mini = document.getElementById("mini"), mx2 = mini.getContext("2d");
 const area = document.getElementById("maparea");
 const HUD_LAYOUT_STORAGE_KEY = "civvis-hud-layout-v1";
@@ -5071,6 +5078,12 @@ function litBase(col) {
   const t = Math.min(.62, (.3 - lum) * 2.4);
   return `rgb(${clamp255(r + (96 - r) * t)},${clamp255(g + (104 - g) * t)},${clamp255(b + (116 - b) * t)})`;
 }
+// The surface that goes with the material most recently asked for. `volume`
+// reads it rather than taking a fortieth argument at every call site: the
+// material call is evaluated immediately before the volume is filled, so the
+// two are always in step.
+let MAT_KIND = "hide";
+const WOOD = /^#(7a5a38|6b4a2f|6d4f30|8a6840|5c4227|4a3826|8a6033|79542f|8a6b3f|9a7448|82704f|8a5f33|b08a55|8a6a44|7d5c3a|a8813f|8e6c33|7d5c38)$/i;
 const PAINT = new Map();
 function painted(key, make) {
   let g = PAINT.get(key);
@@ -5094,6 +5107,7 @@ const FIG = 6;
 // both faithful to what that style is for and why it stays the cheap one: no
 // gradients, no rim pass, no cast shadows.
 function clothMat(col, dir, span = FIG) {
+  MAT_KIND = "weave";
   if (!MODE.painted) return col;
   return painted(`cloth|${col}|${dir}|${span}`, () => {
     col = litBase(col);
@@ -5110,6 +5124,7 @@ function clothMat(col, dir, span = FIG) {
 // light back up. Those three stops are the whole difference between painted
 // steel and grey plastic.
 function metalMat(col, dir, span = FIG) {
+  MAT_KIND = "brush";
   if (!MODE.painted) return col;
   return painted(`metal|${col}|${dir}|${span}`, () => {
     col = litBase(col);
@@ -5126,6 +5141,7 @@ function metalMat(col, dir, span = FIG) {
 // Hide, leather, canvas, timber: matte, so the light side never blows out and
 // the shadow keeps some of the colour rather than going to soot.
 function matteMat(col, dir, span = FIG) {
+  MAT_KIND = WOOD.test(col) ? "grain" : "hide";
   if (!MODE.painted) return col;
   return painted(`matte|${col}|${dir}|${span}`, () => {
     col = litBase(col);
@@ -5140,6 +5156,7 @@ function matteMat(col, dir, span = FIG) {
 // terminator and the bounce stay in proportion because they are fractions of
 // the same unit circle.
 function ballMat(col, dir) {
+  MAT_KIND = "hide";
   if (!MODE.painted) return col;
   return painted(`ball|${col}|${dir}`, () => {
     col = litBase(col);
@@ -5175,7 +5192,48 @@ function volume(p, fill, dir, rim, edge = "rgba(11,15,21,.68)", lw = 1.05) {
     cx.restore();
   }
   cx.fillStyle = fill; cx.fill(p);
+  modelling(p, dir);
+  surface(p, MAT_KIND, .55);
   if (edge) { cx.strokeStyle = edge; cx.lineWidth = lw; cx.stroke(p); }
+}
+// The pass that does the most work of any single thing here, and the one the
+// first attempt was missing. A material ramp gives a volume one direction of
+// light — bright on that side, dark on this one — and that is all it gives.
+// A painted volume also has a *form*: the light pools where the surface turns
+// to face the sun and the shadow gathers where it turns away and where it
+// tucks under. Two soft fills inside the shape, one warm and one cool, and a
+// flat gradient becomes something with a belly to it.
+//
+// It goes through `volume`, so every family gets it — a ship's hull, a tank's
+// skirt, a horse's barrel and a tunic all at once — which is why it moved the
+// measured value range where a dozen hand-placed highlights had not.
+function modelling(p, dir) {
+  if (!PAINT_RICH) return;
+  cx.save();
+  cx.clip(p);
+  const hi = painted("model-hi", () => {
+    const g = cx.createRadialGradient(0, 0, 0, 0, 0, 1);
+    g.addColorStop(0, "rgba(255,248,228,.42)");
+    g.addColorStop(.45, "rgba(255,246,222,.18)");
+    g.addColorStop(1, "rgba(255,244,218,0)");
+    return g;
+  });
+  const lo = painted("model-lo", () => {
+    const g = cx.createRadialGradient(0, 0, 0, 0, 0, 1);
+    g.addColorStop(0, "rgba(10,16,30,.44)");
+    g.addColorStop(.5, "rgba(10,16,30,.2)");
+    g.addColorStop(1, "rgba(10,16,30,0)");
+    return g;
+  });
+  cx.save();
+  cx.translate(dir * 3.6, -4.2); cx.scale(7.5, 7.5);
+  cx.fillStyle = hi; cx.beginPath(); cx.arc(0, 0, 1, 0, 7); cx.fill();
+  cx.restore();
+  cx.save();
+  cx.translate(-dir * 3.8, 4.6); cx.scale(8.5, 8.5);
+  cx.fillStyle = lo; cx.beginPath(); cx.arc(0, 0, 1, 0, 7); cx.fill();
+  cx.restore();
+  cx.restore();
 }
 function ball(x, y, r, col, dir, edge = "#0f141c", lw = 1.1) {
   cx.save();
@@ -5183,6 +5241,12 @@ function ball(x, y, r, col, dir, edge = "#0f141c", lw = 1.1) {
   cx.fillStyle = ballMat(col, dir);
   cx.beginPath(); cx.arc(0, 0, 1, 0, 7); cx.fill();
   cx.restore();
+  if (PAINT_RICH) {
+    const p = new Path2D();
+    p.arc(x, y, r, 0, 7);
+    modelling(p, dir);
+    surface(p, MAT_KIND, .5);
+  }
   if (edge) {
     cx.strokeStyle = edge; cx.lineWidth = lw;
     cx.beginPath(); cx.arc(x, y, r, 0, 7); cx.stroke();
@@ -5263,10 +5327,11 @@ function castShadow(x, y, r, h, a = .34) {
 // A round shield: struck metal in the owner's colour with a boss that takes a
 // specular. Infantry carry one on the far shoulder, where it doubles as the
 // largest patch of empire colour a foot soldier has.
-function shieldPart(sx, sy, r, col, dir) {
+function shieldPart(sx, sy, r, col, dir, type) {
   const p = new Path2D();
   p.arc(sx, sy, r, 0, 7);
   volume(p, metalMat(tone(col, 1.12), dir, r), dir, skyRim(col));
+  shieldDevice(sx, sy, r, col, type || "", dir);
   cx.fillStyle = "rgba(255,248,224,.5)";
   cx.beginPath(); cx.arc(sx + dir * r * .3, sy - r * .3, r * .27, 0, 7); cx.fill();
 }
@@ -6273,6 +6338,427 @@ function cinematicDepthSubject(u, now) {
     now >= battle.t0 - 520 && now <= battle.endsAt &&
     (battle.attackerId === u.id || key(battle.target) === key(u.pos)));
 }
+
+// --- painterly surface ---------------------------------------------------
+//
+// Gradients give a volume its light. What they cannot give it is a *surface*.
+// A smooth ramp is exactly as smooth at twenty pixels as at two hundred, and
+// that evenness is the tell that separates vector art from paint — a painted
+// tunic has weave in it, a painted helmet has brush marks and a chipped crown,
+// a painted cart has grain running along the plank.
+//
+// Each material gets a tile: woven cloth, brushed metal, timber grain, hide
+// speckle, plus one common grit that goes over everything the way a ground
+// shows through thin paint. Tiles are generated once into small canvases and
+// used as patterns, so a surface costs a fill rather than a few hundred
+// strokes.
+//
+// Applying them is only affordable because idle figures are *baked* (see
+// `unitArt`): the texture is laid down once per unit type per jersey and then
+// blitted every frame. `PAINT_RICH` is true exactly while a bake is running,
+// so the live path — units mid-move, mid-swing — skips the surface work it
+// could not pay for anyway, and nobody is looking that closely at a sprite
+// that is halfway through a lunge.
+let PAINT_RICH = false;
+const TEX_TILES = new Map();
+// A tile is generated at bake resolution, so the weave on a sprite baked for a
+// zoomed-in camera is finer rather than merely bigger.
+function texTile(kind, res) {
+  const key = `${kind}|${res}`;
+  const had = TEX_TILES.get(key);
+  if (had) return had;
+  const D = Math.round(16 * res);
+  const c = document.createElement("canvas");
+  c.width = c.height = D;
+  const g = c.getContext("2d");
+  const rnd = (a, b) => hash2(a * 31 + 7, b * 17 + 3);
+  if (kind === "weave") {
+    // Two crossed sets of threads. Cloth reads as cloth because the light
+    // catches one direction and not the other.
+    g.lineWidth = Math.max(.6, res * .5);
+    for (let i = -D; i < D * 2; i += Math.max(2, res * 2.2)) {
+      g.strokeStyle = "rgba(255,255,255,.15)";
+      g.beginPath(); g.moveTo(i, 0); g.lineTo(i + D, D); g.stroke();
+      g.strokeStyle = "rgba(0,0,0,.14)";
+      g.beginPath(); g.moveTo(i, D); g.lineTo(i + D, 0); g.stroke();
+    }
+  } else if (kind === "brush") {
+    // Rolled and brushed metal: long streaks, none of them the same value.
+    for (let i = 0; i < D * 1.4; i++) {
+      const y = rnd(i, 1) * D, len = (.25 + rnd(i, 2) * .75) * D;
+      const light = rnd(i, 3) > .5;
+      g.strokeStyle = light
+        ? `rgba(255,255,255,${(.07 + rnd(i, 4) * .22).toFixed(3)})`
+        : `rgba(0,0,0,${(.06 + rnd(i, 5) * .19).toFixed(3)})`;
+      g.lineWidth = Math.max(.5, res * (.35 + rnd(i, 6) * .5));
+      g.beginPath(); g.moveTo(rnd(i, 7) * D - len / 2, y);
+      g.lineTo(rnd(i, 7) * D + len / 2, y + (rnd(i, 8) - .5) * res); g.stroke();
+    }
+  } else if (kind === "grain") {
+    // Timber: long fibres with the occasional knot pulling them around it.
+    g.lineWidth = Math.max(.6, res * .55);
+    for (let i = 0; i < 14; i++) {
+      const x = (i / 14) * D + rnd(i, 9) * res;
+      g.strokeStyle = rnd(i, 10) > .5
+        ? `rgba(255,236,200,${(.13 + rnd(i, 11) * .26).toFixed(3)})`
+        : `rgba(40,22,6,${(.15 + rnd(i, 12) * .28).toFixed(3)})`;
+      g.beginPath();
+      g.moveTo(x, 0);
+      g.bezierCurveTo(x + (rnd(i, 13) - .5) * res * 3, D * .35,
+                      x + (rnd(i, 14) - .5) * res * 3, D * .7, x, D);
+      g.stroke();
+    }
+  } else if (kind === "hide") {
+    // Hide, thatch, canvas sacking: speckle rather than line.
+    for (let i = 0; i < D * D * .12; i++) {
+      const x = rnd(i, 15) * D, y = rnd(i, 16) * D;
+      g.fillStyle = rnd(i, 17) > .55
+        ? `rgba(255,244,224,${(.07 + rnd(i, 18) * .18).toFixed(3)})`
+        : `rgba(24,14,4,${(.08 + rnd(i, 19) * .19).toFixed(3)})`;
+      g.beginPath();
+      g.arc(x, y, Math.max(.4, res * (.2 + rnd(i, 20) * .45)), 0, 7);
+      g.fill();
+    }
+  } else {                                   // grit: the tooth of the ground
+    for (let i = 0; i < D * D * .3; i++) {
+      const x = rnd(i, 21) * D, y = rnd(i, 22) * D, v = rnd(i, 23);
+      g.fillStyle = v > .5
+        ? `rgba(255,250,236,${(v * .1).toFixed(3)})`
+        : `rgba(12,10,8,${((1 - v) * .1).toFixed(3)})`;
+      g.fillRect(x, y, Math.max(.5, res * .4), Math.max(.5, res * .4));
+    }
+  }
+  const pattern = cx.createPattern(c, "repeat");
+  TEX_TILES.set(key, pattern);
+  return pattern;
+}
+// Lay a material's surface inside the volume that was just filled. The clip is
+// the volume's own path, so weave stops at the hem and brushing stops at the
+// pauldron. `alpha` is deliberately low: at sprite scale the tile should read
+// as a material, never as a pattern.
+function surface(p, kind, alpha = .5) {
+  if (!PAINT_RICH) return;
+  cx.save();
+  cx.clip(p);
+  cx.globalAlpha = alpha;
+  // Patterns resolve in the current transform, and a bake is drawn in sprite
+  // units, so scale down to put the tile at roughly a pixel's pitch.
+  cx.scale(1 / BAKE_RES, 1 / BAKE_RES);
+  cx.fillStyle = texTile(kind, BAKE_RES);
+  cx.fillRect(-40 * BAKE_RES, -40 * BAKE_RES, 80 * BAKE_RES, 80 * BAKE_RES);
+  cx.restore();
+}
+
+// --- baked unit sprites ---------------------------------------------------
+//
+// A figure on this board is about twenty pixels tall, and two hundred of them
+// are redrawn every frame. Live, that budget buys a handful of filled paths,
+// which is the ceiling the painted materials were already pressing against —
+// there was no room left for a surface, a cloak, a scabbard or a quiver.
+//
+// Baked, the arithmetic inverts. The same figure is painted once per unit type
+// per jersey per orientation into its own small canvas, with every bit of
+// detail it can carry, and from then on it costs one `drawImage` a frame. The
+// per-frame cost goes *down* while the amount of paint goes up by an order of
+// magnitude, which is the whole trade.
+//
+// Only families whose idle pose is genuinely still are baked. A balloon sways,
+// a rotor spins, a hull rides its own wake, an aircraft banks — those keep the
+// live path, because freezing them into a sprite would stop the animation the
+// style is built on.
+const BAKED_FAMILIES = new Set(["infantry", "civilian", "religious", "mounted",
+                                "siege", "gun", "armor", "robot", "embarked"]);
+const ART_BOX = 20;                 // half-extent of a baked sprite, sprite units
+const UNIT_ART = new Map();
+const UNIT_ART_WARNED = new Set();
+const UNIT_ART_CAP = 192;           // ~24 types x 8 jerseys live on screen at once
+let UNIT_ART_RES = 0;
+let BAKE_RES = 2;
+// Bake resolution follows the zoom in whole steps — the same rule `artRes`
+// uses for terrain, so a pinch does not thrash the cache — but it *rounds up*.
+// A baked sprite that has to be magnified to fit is worse than the live vector
+// it replaced: the whole point is more detail, and a 2x upscale is less. Above
+// the top step the live path takes over, which is the same place close battle
+// shots already hand off to the projected models anyway.
+const ART_MAX_RES = 3;
+function unitArtRes() {
+  return Math.min(ART_MAX_RES, Math.max(1, Math.ceil(cam.scale * DPR)));
+}
+function unitArtUsable() {
+  return cam.scale * DPR <= ART_MAX_RES + .05;
+}
+function unitArt(type, col, family, fc, skin) {
+  const res = unitArtRes();
+  if (res !== UNIT_ART_RES) { UNIT_ART.clear(); UNIT_ART_RES = res; }
+  // Orientation is baked in rather than mirrored at blit time: a mirrored blit
+  // would carry the highlight round with the figure and light it from the
+  // wrong side, which is the thing the whole `dir` convention exists to avoid.
+  const key = `${type}|${col}|${fc}|${LITF}`;
+  const had = UNIT_ART.get(key);
+  if (had !== undefined) return had;
+  const D = Math.ceil(ART_BOX * 2 * res);
+  let art = null;
+  try {
+    const c = document.createElement("canvas");
+    c.width = c.height = D;
+    const g = c.getContext("2d");
+    const screen = cx;
+    try {
+      cx = g;                       // one synchronous paint; put back below
+      BAKE_RES = res;
+      PAINT_RICH = true;
+      g.setTransform(res, 0, 0, res, ART_BOX * res, ART_BOX * res);
+      g.lineJoin = "round";
+      g.lineWidth = 1.15;
+      g.scale(fc, 1);
+      paintUnitFigure({id: 7, type, owner: 0}, type, col, family, fc,
+                      0, false, 0, 0, 0, skin);
+    } finally {
+      cx = screen;
+      PAINT_RICH = false;
+    }
+    art = c;
+  } catch (err) {
+    // A bake that throws must not throw every frame, so the failure is cached
+    // as a null and the unit falls back to the live path — but it is reported
+    // once, because a silently empty cache looks exactly like a cache that is
+    // working and is the reason this went unnoticed for a whole measurement.
+    art = null;
+    if (!UNIT_ART_WARNED.has(type)) {
+      UNIT_ART_WARNED.add(type);
+      console.error("CIVVIS unit bake failed", type, err);
+    }
+  }
+  if (UNIT_ART.size >= UNIT_ART_CAP) UNIT_ART.delete(UNIT_ART.keys().next().value);
+  UNIT_ART.set(key, art);
+  return art;
+}
+
+// Level of detail, not just resolution. The figures were drawn to read at
+// twenty pixels and then simply scaled up when baked, which is why a baked
+// sprite was smoother than the vector it replaced rather than richer — more
+// pixels carrying the same amount of information. These passes only exist
+// inside a bake, and the finer ones only above the first resolution step, so
+// what a zoomed-in viewer gets is genuinely more drawing rather than a bigger
+// version of the same drawing.
+const RICH_FINE = () => PAINT_RICH && BAKE_RES >= 2;
+// A hull rides its own wake, an aircraft banks, a rotor spins: those poses are
+// different every frame, so they cannot be baked. They should still not be the
+// only things on a close board still wearing the flat treatment, so the live
+// path turns the rich passes on for itself once the camera is near enough for
+// them to resolve. Zoomed out — where the sprite is twenty pixels and the
+// detail would be invisible — it pays nothing.
+const richLive = () => cam.scale * DPR >= 2;
+// Mail is rows of rings; scale is rows of overlapping plates. Either one turns
+// a coloured torso into a soldier wearing something.
+function armourWeave(p, dir, era) {
+  if (!RICH_FINE()) return;
+  cx.save(); cx.clip(p);
+  const scale = era >= 2;
+  cx.lineWidth = .3;
+  for (let y = -7.4; y < 5; y += scale ? 1.5 : 1.05) {
+    const off = (Math.round(y * 10) % 21 === 0) ? .5 : 0;
+    cx.strokeStyle = "rgba(236,244,252,.17)";
+    cx.beginPath();
+    for (let x = -5.4; x < 5.4; x += scale ? 1.6 : 1.05) {
+      if (scale) { cx.moveTo(x + off, y + .9); cx.lineTo(x + off + .8, y); cx.lineTo(x + off + 1.6, y + .9); }
+      else cx.arc(x + off, y, .46, Math.PI, 0);
+    }
+    cx.stroke();
+    cx.strokeStyle = "rgba(10,14,20,.2)";
+    cx.beginPath();
+    for (let x = -5.4; x < 5.4; x += scale ? 1.6 : 1.05) {
+      if (scale) { cx.moveTo(x + off, y + 1.1); cx.lineTo(x + off + .8, y + .25); cx.lineTo(x + off + 1.6, y + 1.1); }
+      else cx.arc(x + off, y + .3, .46, Math.PI, 0);
+    }
+    cx.stroke();
+  }
+  cx.restore();
+}
+// A face. Two shadows and a mouth line, which at bake resolution is the
+// difference between a head and a bead.
+function faceDetail(x, y, r, dir) {
+  if (!RICH_FINE()) return;
+  cx.fillStyle = "rgba(58,38,26,.5)";
+  cx.beginPath(); cx.ellipse(x - r * .34, y - r * .1, r * .16, r * .12, 0, 0, 7); cx.fill();
+  cx.beginPath(); cx.ellipse(x + r * .34, y - r * .1, r * .16, r * .12, 0, 0, 7); cx.fill();
+  cx.strokeStyle = "rgba(58,38,26,.34)"; cx.lineWidth = .3;
+  cx.beginPath(); cx.moveTo(x - r * .22, y + r * .42); cx.lineTo(x + r * .22, y + r * .42); cx.stroke();
+  cx.fillStyle = "rgba(255,240,224,.28)";       // the light down the nose
+  cx.beginPath(); cx.ellipse(x + dir * r * .12, y + r * .12, r * .1, r * .3, 0, 0, 7); cx.fill();
+}
+// A charge on the shield. Heraldry is the oldest solution to exactly the
+// problem this map has — telling two similar men apart at distance — and it
+// costs three paths. The charge is chosen from the unit type, so every
+// swordsman on the board carries the same device and a swordsman never carries
+// a spearman's.
+function shieldDevice(sx, sy, r, col, type, dir) {
+  if (!RICH_FINE()) return;
+  let h = 0;
+  for (let i = 0; i < type.length; i++) h = (Math.imul(h, 31) + type.charCodeAt(i)) | 0;
+  const pick = Math.abs(h) % 5;
+  const ink = tone(col, Math.abs(h >> 3) % 2 ? 1.9 : .34);
+  cx.save();
+  cx.beginPath(); cx.arc(sx, sy, r * .92, 0, 7); cx.clip();
+  cx.fillStyle = ink;
+  if (pick === 0) {                              // a bend
+    cx.beginPath();
+    cx.moveTo(sx - r, sy - r * .3); cx.lineTo(sx + r * .3, sy + r);
+    cx.lineTo(sx + r, sy + r * .3); cx.lineTo(sx - r * .3, sy - r);
+    cx.closePath(); cx.fill();
+  } else if (pick === 1) {                       // a fess
+    cx.fillRect(sx - r, sy - r * .26, r * 2, r * .52);
+  } else if (pick === 2) {                       // a cross
+    cx.fillRect(sx - r, sy - r * .22, r * 2, r * .44);
+    cx.fillRect(sx - r * .22, sy - r, r * .44, r * 2);
+  } else if (pick === 3) {                       // a chevron
+    cx.beginPath();
+    cx.moveTo(sx - r, sy + r * .5); cx.lineTo(sx, sy - r * .5);
+    cx.lineTo(sx + r, sy + r * .5); cx.lineTo(sx + r, sy + r);
+    cx.lineTo(sx, sy); cx.lineTo(sx - r, sy + r); cx.closePath(); cx.fill();
+  } else {                                       // a roundel
+    cx.beginPath(); cx.arc(sx, sy, r * .44, 0, 7); cx.fill();
+  }
+  cx.restore();
+  cx.strokeStyle = "rgba(255,250,238,.4)"; cx.lineWidth = .35;
+  cx.beginPath(); cx.arc(sx, sy, r * .92, 0, 7); cx.stroke();
+}
+// Rivets, panel joins and a hatch. A vehicle hull is a manufactured thing and
+// manufactured things have seams.
+function panelling(p, dir, w, h) {
+  if (!RICH_FINE()) return;
+  cx.save(); cx.clip(p);
+  cx.strokeStyle = "rgba(12,18,24,.34)"; cx.lineWidth = .35;
+  for (let x = -w + 2.4; x < w; x += 3.6) {
+    cx.beginPath(); cx.moveTo(x, -h); cx.lineTo(x, h); cx.stroke();
+  }
+  cx.fillStyle = "rgba(226,238,248,.3)";
+  for (let x = -w + 1.6; x < w; x += 2.2) {
+    for (let y = -h + 1.2; y < h; y += 2.4) {
+      cx.beginPath(); cx.arc(x, y, .22, 0, 7); cx.fill();
+    }
+  }
+  cx.restore();
+}
+// Build. Every foot soldier on this board was the same rectangle with a
+// different stick, which is why a pikeman and a musketman measured as nearly
+// the same picture — the silhouette, which is what the eye actually sorts on
+// at map scale, carried no information at all. A heavy melee rank stands wider
+// and taller, a shooter is slighter, a civilian is shorter and rounder. It is
+// a few percent each way, which is all a silhouette needs.
+function unitBuild(k, family) {
+  const promo = RULES?.units?.[k]?.promotion_class || "";
+  if (family === "civilian" || family === "religious") return {w: .94, h: .9, sh: .88};
+  if (promo === "anti_cavalry" || SPEAR_UNITS.has(k)) return {w: 1.02, h: 1.05, sh: 1.0};
+  if (promo === "melee" || promo === "heavy_cavalry") return {w: 1.14, h: 1.03, sh: 1.16};
+  if (promo === "ranged" || BOW_UNITS.has(k)) return {w: .93, h: .99, sh: .9};
+  if (promo === "siege" || promo === "support") return {w: 1.0, h: .95, sh: .95};
+  return {w: 1, h: 1, sh: 1};
+}
+// A charge derived from the unit type, small enough to be trim and consistent
+// enough to be information: every archer on the board wears the same mark and
+// never an arbalest's. Shield-carriers get theirs on the shield; everyone else
+// wears it where a real force would paint it — the hull, the fuselage, the
+// horse's caparison.
+function typeCharge(type) {
+  let h = 0;
+  for (let i = 0; i < type.length; i++) h = (Math.imul(h, 31) + type.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+function unitInsignia(x, y, r, col, type, dir) {
+  if (!RICH_FINE()) return;
+  const h = typeCharge(type), pick = h % 5;
+  const field = tone(col, 1.5), ink = tone(col, .3);
+  const disc = new Path2D();
+  disc.arc(x, y, r, 0, 7);
+  cx.fillStyle = field; cx.fill(disc);
+  cx.save(); cx.clip(disc);
+  cx.fillStyle = ink;
+  if (pick === 0) cx.fillRect(x - r, y - r * .26, r * 2, r * .52);
+  else if (pick === 1) {
+    cx.beginPath(); cx.moveTo(x - r, y - r); cx.lineTo(x + r, y + r);
+    cx.lineTo(x + r, y + r * .3); cx.lineTo(x - r, y - r * .7); cx.closePath(); cx.fill();
+  } else if (pick === 2) {
+    cx.fillRect(x - r, y - r * .22, r * 2, r * .44);
+    cx.fillRect(x - r * .22, y - r, r * .44, r * 2);
+  } else if (pick === 3) {
+    cx.beginPath(); cx.moveTo(x - r, y + r * .5); cx.lineTo(x, y - r * .4);
+    cx.lineTo(x + r, y + r * .5); cx.lineTo(x, y + r * .1); cx.closePath(); cx.fill();
+  } else {
+    cx.beginPath(); cx.arc(x, y, r * .45, 0, 7); cx.fill();
+  }
+  cx.restore();
+  cx.strokeStyle = "rgba(14,18,26,.6)"; cx.lineWidth = .35;
+  cx.stroke(disc);
+}
+// Kit. None of this survives a live redraw budget — it is six extra volumes on
+// a figure twenty pixels tall — but a baked sprite pays for it once and it is
+// what turns a coloured shape into somebody equipped for a particular war.
+function cloak(col, dir, era) {
+  const p = new Path2D();
+  const back = -dir * 4.2;                      // hangs off the shoulder away from us
+  p.moveTo(back * .5, -7.2);
+  p.quadraticCurveTo(back * 2.1, -2, back * 1.9, 4.4);
+  p.quadraticCurveTo(back * 1.2, 6.4, back * .3, 5.2);
+  p.lineTo(-back * .2, -6.6);
+  p.closePath();
+  volume(p, clothMat(tone(col, era <= 1 ? .74 : .62), dir, 4.4), dir,
+         skyRim(col), "rgba(11,15,21,.5)", .8);
+  cx.strokeStyle = tone(col, .42, .7); cx.lineWidth = .7;   // two folds
+  for (const f of [.45, .72]) {
+    cx.beginPath();
+    cx.moveTo(back * .5 * (1 + f), -6.4 + f * 2);
+    cx.quadraticCurveTo(back * 1.7, 0, back * (1.2 + f * .5), 4.6);
+    cx.stroke();
+  }
+}
+function scabbard(dir) {
+  const p = new Path2D();
+  p.moveTo(-dir * 3.4, -1.4);
+  p.lineTo(-dir * 6.2, 5.6);
+  p.lineTo(-dir * 4.6, 6.2);
+  p.lineTo(-dir * 2.2, -.8);
+  p.closePath();
+  volume(p, matteMat("#4a3826", dir, 3), dir, "#9c7d54", "rgba(11,15,21,.6)", .7);
+  cx.strokeStyle = "#c9b183"; cx.lineWidth = .6;            // throat and chape
+  cx.beginPath(); cx.moveTo(-dir * 3.3, -.6); cx.lineTo(-dir * 2.4, -.3); cx.stroke();
+}
+function quiver(col, dir) {
+  const p = new Path2D();
+  p.moveTo(-dir * 3.2, -6.6);
+  p.lineTo(-dir * 6.4, -1.2);
+  p.lineTo(-dir * 4.6, -.2);
+  p.lineTo(-dir * 1.8, -5.6);
+  p.closePath();
+  volume(p, matteMat("#7a5a38", dir, 3), dir, "#c7a271", "rgba(11,15,21,.6)", .7);
+  cx.strokeStyle = "#e6dcc0"; cx.lineWidth = .7;            // fletching
+  for (const o of [-.6, 0, .6]) {
+    cx.beginPath();
+    cx.moveTo(-dir * (3.4 + o), -7);
+    cx.lineTo(-dir * (4.2 + o), -9.2);
+    cx.stroke();
+  }
+}
+function pauldrons(col, dir) {
+  for (const side of [-1, 1]) {
+    const p = new Path2D();
+    p.moveTo(side * 2.4, -7.2);
+    p.quadraticCurveTo(side * 6.2, -7.4, side * 5.6, -4.2);
+    p.quadraticCurveTo(side * 3.6, -4.8, side * 2.2, -5.4);
+    p.closePath();
+    volume(p, metalMat(tone(col, 1.06), dir, 3), dir, skyRim(col),
+           "rgba(11,15,21,.62)", .8);
+  }
+}
+// Struck metal is never clean. One bright chip on the crown and a scuff along
+// the brow, both on the sun side, and a helmet stops looking moulded.
+function edgeWear(x, y, r, dir) {
+  cx.strokeStyle = "rgba(255,252,240,.55)"; cx.lineWidth = .7;
+  cx.beginPath(); cx.arc(x, y, r * .82, Math.PI * (dir > 0 ? 1.15 : 1.55),
+                         Math.PI * (dir > 0 ? 1.45 : 1.85)); cx.stroke();
+  cx.strokeStyle = "rgba(24,20,14,.4)"; cx.lineWidth = .6;
+  cx.beginPath(); cx.arc(x, y, r * .55, Math.PI * .25, Math.PI * .55); cx.stroke();
+}
 // A unit's era, taken from the tech that unlocks it. Anything with no tech is
 // ancient. This is what lets headgear date itself across all eighty-odd units
 // without an eighty-row table to maintain — and it is the reason a bronze-age
@@ -6327,6 +6813,7 @@ function helmet(era, col, dir, fine) {
     volume(p, shell, dir, rim, edge, 1);
   }
   jointAO(0, -8.4, 3.2, 1.3, .3);                // brow, thrown onto the face
+  if (PAINT_RICH) edgeWear(0, -10.2, 3.7, dir);
 }
 // The figure itself. Everything here is assembled out of the painted-material
 // vocabulary above, which is what separates this from the flat token it
@@ -6373,7 +6860,39 @@ function drawUnitChar(u, x, y, now, moving) {
     cx.restore();
     return;
   }
+  // An idle figure comes off the bake. Everything a painted sprite wants —
+  // weave in the tunic, brushing on the helm, grain in the cart, a cloak with
+  // folds, a quiver over the shoulder — costs far more than a live redraw can
+  // pay for two hundred times a frame; baked once per unit type per jersey and
+  // blitted, it costs one drawImage. Units that are walking or swinging take
+  // the live path below, where the pose is different every frame and nobody is
+  // studying the weave anyway.
+  if (BAKED_FAMILIES.has(family) && MODE.painted && unitArtUsable() &&
+      !moving && !action && !u.survey_count) {
+    const art = unitArt(k, col, family, fc, skin);
+    if (art) {
+      cx.drawImage(art, -ART_BOX, -ART_BOX, ART_BOX * 2, ART_BOX * 2);
+      cx.restore();
+      return;
+    }
+  }
   cx.scale(fc, 1);
+  const wasRich = PAINT_RICH;
+  PAINT_RICH = richLive();
+  BAKE_RES = Math.min(ART_MAX_RES, Math.max(1, Math.ceil(cam.scale * DPR)));
+  try {
+    paintUnitFigure(u, k, col, family, fc, now, moving, step, action, phase, skin);
+  } finally {
+    PAINT_RICH = wasRich;
+  }
+  cx.restore();
+}
+
+// The figure itself, drawn at the origin in sprite space with the facing flip
+// already applied. Split out of `drawUnitChar` so a bake can call it with `cx`
+// pointed at a sprite canvas.
+function paintUnitFigure(u, k, col, family, fc, now, moving, step, action, phase, skin) {
+  const dark = "rgba(11,15,21,.68)";
   const dir = -LITF * fc;
   const rim = skyRim(col);
   // Detail that is smaller than a pixel at survey zoom costs the same to draw
@@ -6394,6 +6913,17 @@ function drawUnitChar(u, x, y, now, moving) {
     volume(sail, clothMat(col, dir, 5), dir, rim);
     shaft(0, -1, 0, -14, 1.5, dir);
     ball(-4, -5, 2.2, skin, dir);
+    if (RICH_FINE()) {
+      ball(-7, -4.4, 1.9, skin, dir);                              // a second aboard
+      cx.strokeStyle = "rgba(122,90,56,.85)"; cx.lineWidth = .7;    // oars
+      for (const ox of [-6, -2.4]) {
+        cx.beginPath(); cx.moveTo(ox, -1.4); cx.lineTo(ox - 4.4, 3.4); cx.stroke();
+      }
+      const cargo = new Path2D();
+      cargo.rect(3.4, -3.4, 3.6, 3);
+      volume(cargo, matteMat("#8a6033", dir, 1.8), dir, "#c9a06a", "rgba(11,15,21,.55)", .5);
+      unitInsignia(4.4, -8.4, 1.4, col, k, dir);
+    }
   } else if (family === "air") {
     const jet = k === "fighter" || k === "jet_fighter" || k === "jet_bomber";
     const bomber = k === "bomber" || k === "jet_bomber";
@@ -6410,6 +6940,16 @@ function drawUnitChar(u, x, y, now, moving) {
     air.lineTo(-13, 0); air.lineTo(-3.5, 2.2); air.lineTo(-7, 7.5);
     air.lineTo(-3.2, 8.5); air.lineTo(3, 2.7); air.closePath();
     volume(air, metalMat(col, dir, 12), dir, rim);
+    if (RICH_FINE()) {
+      cx.strokeStyle = "rgba(14,20,28,.42)"; cx.lineWidth = .4;   // control surfaces
+      cx.beginPath();
+      cx.moveTo(-4.4, -9.4); cx.lineTo(-5.4, -2.2);
+      cx.moveTo(-4.6, 7.6); cx.lineTo(-3.8, 2.4);
+      cx.moveTo(-8.6, -.2); cx.lineTo(-12.4, -.2); cx.stroke();
+      cx.strokeStyle = "rgba(228,240,250,.34)";                   // panel joins
+      cx.beginPath(); cx.moveTo(1.4, -2.4); cx.lineTo(1.4, 2); cx.stroke();
+    }
+    unitInsignia(-2.6, -5.4, 1.5, col, k, dir);
     const spine = new Path2D();
     spine.moveTo(13, 0); spine.lineTo(-8, -1.1); spine.lineTo(-12, 0);
     spine.lineTo(-3, .9); spine.closePath();
@@ -6447,6 +6987,21 @@ function drawUnitChar(u, x, y, now, moving) {
     cx.globalAlpha = 1;
     cx.strokeStyle = dark; cx.lineWidth = 1.15;
     cx.beginPath(); cx.moveTo(-16, -6); cx.lineTo(-16, 2); cx.stroke();
+    if (RICH_FINE()) {
+      cx.strokeStyle = "rgba(16,24,32,.5)"; cx.lineWidth = .4;     // canopy frame
+      cx.beginPath(); cx.moveTo(4.4, -3.2); cx.lineTo(4.4, 1.4);
+      cx.moveTo(2.2, -2.2); cx.lineTo(8, -1); cx.stroke();
+      cx.strokeStyle = "rgba(196,212,224,.7)"; cx.lineWidth = .8;  // skids
+      cx.beginPath(); cx.moveTo(-5, 5.4); cx.lineTo(7, 5.4);
+      cx.moveTo(-2, 4.4); cx.lineTo(-3, 5.4); cx.moveTo(4, 4.4); cx.lineTo(5, 5.4);
+      cx.stroke();
+      const tail = phase * 30;                                     // tail rotor
+      cx.strokeStyle = "rgba(224,236,232,.7)"; cx.lineWidth = .7;
+      cx.beginPath();
+      cx.moveTo(-16 + Math.cos(tail) * 3.4, -2 + Math.sin(tail) * 3.4);
+      cx.lineTo(-16 - Math.cos(tail) * 3.4, -2 - Math.sin(tail) * 3.4); cx.stroke();
+      unitInsignia(-3, 0, 1.5, col, k, dir);
+    }
   } else if (family === "balloon") {
     const sway = Math.sin(phase * 1.5) * .9;
     cx.translate(sway, -5);
@@ -6466,6 +7021,24 @@ function drawUnitChar(u, x, y, now, moving) {
     const basket = new Path2D();
     basket.rect(-3, 5, 6, 4);
     volume(basket, matteMat("#79542f", dir, 3), dir, "#c0a074");
+    if (RICH_FINE()) {
+      cx.strokeStyle = "rgba(48,32,16,.55)"; cx.lineWidth = .3;   // wicker
+      for (let wy = 5.8; wy < 9; wy += .9) {
+        cx.beginPath(); cx.moveTo(-3, wy); cx.lineTo(3, wy); cx.stroke();
+      }
+      for (let wx = -2.2; wx < 3; wx += 1.1) {
+        cx.beginPath(); cx.moveTo(wx, 5); cx.lineTo(wx, 9); cx.stroke();
+      }
+      cx.strokeStyle = "rgba(122,98,69,.8)"; cx.lineWidth = .45;  // more rigging
+      for (const rx of [-6.4, -2, 2, 6.4]) {
+        cx.beginPath(); cx.moveTo(rx * .55, 1.6); cx.lineTo(rx * .28, 5); cx.stroke();
+      }
+      cx.fillStyle = "#6b5436";                                    // ballast
+      for (const bx of [-3.4, 3.4]) {
+        cx.beginPath(); cx.ellipse(bx, 8.4, 1.1, 1.5, 0, 0, 7); cx.fill();
+      }
+      unitInsignia(0, -9, 2.4, col, k, dir);
+    }
   } else if (family === "drone") {
     cx.translate(0, -7 + Math.sin(phase * 3) * .7);
     const shell = new Path2D();
@@ -6478,6 +7051,13 @@ function drawUnitChar(u, x, y, now, moving) {
       cx.beginPath(); cx.ellipse(side * 10, -4, 5, 1 + Math.abs(Math.sin(spin)), spin, 0, 7); cx.stroke();
     }
     cx.fillStyle = "#6eeaff"; cx.beginPath(); cx.arc(2.5, 2, 1.2, 0, 7); cx.fill();
+    if (RICH_FINE()) {
+      ball(2.5, 2.6, 1.9, "#38424c", dir, "rgba(11,15,21,.6)", .5);
+      cx.fillStyle = "#8ff4ff"; cx.beginPath(); cx.arc(3.1, 2.2, .7, 0, 7); cx.fill();
+      cx.strokeStyle = "rgba(200,214,224,.75)"; cx.lineWidth = .4;  // aerial
+      cx.beginPath(); cx.moveTo(-4, -3); cx.lineTo(-5.4, -7.4); cx.stroke();
+      unitInsignia(-1, -.2, 1.3, col, k, dir);
+    }
   } else if (family === "robot") {
     const stride = moving ? step * .5 : Math.sin(phase * 1.2) * .3;
     limb(-5, 2, -6 - stride, 10, 3.4, "#3c4c58", dir);
@@ -6487,6 +7067,14 @@ function drawUnitChar(u, x, y, now, moving) {
     volume(chassis, metalMat(col, dir, 7), dir, rim);
     cx.fillStyle = tone(col, 1.44); cx.fillRect(-5, -9, 10, 3);
     cx.fillStyle = "#8ff8ff"; cx.fillRect(-3, -8.5, 6, 1.4);
+    if (RICH_FINE()) {
+      cx.strokeStyle = "rgba(14,20,28,.5)"; cx.lineWidth = .4;      // vents
+      for (const vy of [-4.4, -3.2, -2]) {
+        cx.beginPath(); cx.moveTo(-4.4, vy); cx.lineTo(4.4, vy); cx.stroke();
+      }
+      for (const side of [-1, 1]) ball(side * 5.6, -6, 1.5, "#4a5a66", dir, "rgba(11,15,21,.6)", .4);
+      unitInsignia(0, .2, 1.7, col, k, dir);
+    }
     for (const side of [-1, 1]) {
       limb(side * 6, -6, side * (11 + action * 2), -1 - action * 4, 3.2, "#3c4c58", dir);
       cx.fillStyle = "#80efff";
@@ -6512,6 +7100,8 @@ function drawUnitChar(u, x, y, now, moving) {
     skirt.moveTo(-9, 0); skirt.lineTo(-5, -7); skirt.lineTo(7, -7);
     skirt.lineTo(10, 0); skirt.closePath();
     volume(skirt, metalMat(col, dir, 9.5), dir, rim);
+    panelling(skirt, dir, 9, 4);
+    unitInsignia(-4.6, -3.4, 1.6, col, k, dir);
     const turret = new Path2D();
     turret.ellipse(1, -7.4, 5.5, 3.4, 0, 0, 7);
     volume(turret, metalMat(col, dir, 5.5), dir, rim);
@@ -6535,6 +7125,7 @@ function drawUnitChar(u, x, y, now, moving) {
     carriage.moveTo(-8, 3); carriage.lineTo(-3, -4); carriage.lineTo(8, -2);
     carriage.lineTo(9, 3); carriage.closePath();
     volume(carriage, metalMat(tone(col, .9), dir, 8.5), dir, rim);
+    unitInsignia(2.4, .4, 1.5, col, k, dir);
     const trail = new Path2D();                    // the spade that stops recoil
     trail.moveTo(-7, -1); trail.lineTo(-14, 5); trail.lineTo(-12.6, 6.4);
     trail.lineTo(-6, 1.6); trail.closePath();
@@ -6579,6 +7170,22 @@ function drawUnitChar(u, x, y, now, moving) {
       hull.lineTo(9, -3); hull.lineTo(-9, -3); hull.closePath();
       volume(hull, modern ? metalMat("#4a5b68", dir, 12) : matteMat("#6b4a2f", dir, 12),
              dir, modern ? "#a6bccb" : "#bb9668");
+      if (modern) panelling(hull, dir, 11, 4);
+      else if (RICH_FINE()) {                  // strakes, and the wale over them
+        cx.save(); cx.clip(hull);
+        cx.strokeStyle = "rgba(48,32,16,.5)"; cx.lineWidth = .35;
+        for (let y = -2.4; y < 6; y += 1.5) {
+          cx.beginPath(); cx.moveTo(-12, y); cx.quadraticCurveTo(0, y + 2.2, 12, y); cx.stroke();
+        }
+        cx.strokeStyle = "rgba(240,226,196,.4)";
+        cx.beginPath(); cx.moveTo(-11, -2.2); cx.lineTo(11, -2.2); cx.stroke();
+        cx.restore();
+      }
+      if (RICH_FINE()) {
+        cx.strokeStyle = "rgba(232,242,248,.42)"; cx.lineWidth = .4;   // rail
+        cx.beginPath(); cx.moveTo(-9, -3.4); cx.lineTo(9, -3.4); cx.stroke();
+      }
+      unitInsignia(-6.4, -.6, 1.7, col, k, dir);
       if (modern) {
         const deck = k === "aircraft_carrier" ? 16 : 11;
         const house = new Path2D();
@@ -6608,6 +7215,7 @@ function drawUnitChar(u, x, y, now, moving) {
       const frame = new Path2D();
       frame.rect(-9, 1, 18, 4);
       volume(frame, matteMat("#7a5a38", dir, 9), dir, "#c3a273");
+      unitInsignia(-5.4, 3, 1.5, col, k, dir);
       const throwArm = action * .55;
       cx.save(); cx.translate(-4, 2); cx.rotate(-.76 - throwArm);
       shaft(0, 0, 15, -3, 2, dir, "#6d4f30");
@@ -6700,6 +7308,14 @@ function drawUnitChar(u, x, y, now, moving) {
     const rider = new Path2D();
     rider.roundRect(-4.2, -10.4, 6.4, 7.4, 2.2);
     jointAO(-1, -3.4, 4.4, 2.2, .42);              // seat, sitting into the saddle
+    if (RICH_FINE()) {                             // caparison over the barrel
+      const cap = new Path2D();
+      cap.moveTo(-6.4, -2.4); cap.lineTo(3.6, -2.8);
+      cap.lineTo(3, 3.6); cap.lineTo(-6.8, 3.4); cap.closePath();
+      volume(cap, clothMat(tone(col, .88), dir, 5), dir, skyRim(col),
+             "rgba(11,15,21,.45)", .6);
+      unitInsignia(-2, .4, 1.6, col, k, dir);
+    }
     volume(rider, clothMat(col, dir, 3.4), dir, rim);
     ball(-1, -12.6, 2.7, skin, dir);
     cx.save(); cx.translate(-1, -2.8);            // the rider's head sits high
@@ -6717,6 +7333,9 @@ function drawUnitChar(u, x, y, now, moving) {
     }
   } else {
     const civil = family === "civilian" || family === "religious";
+    const era = unitEra(k);
+    const bd = unitBuild(k, family);
+    if (PAINT_RICH && !civil && era <= 3) cloak(col, dir, era);
     // Legs, then boots. A walking figure that is two grey sticks reads as a
     // pictogram no matter what is above it, so the legs get the same lit/shadow
     // treatment as everything else and end in something heavier than a line.
@@ -6728,17 +7347,32 @@ function drawUnitChar(u, x, y, now, moving) {
     // Torso: shoulders wider than the waist, which is the whole reason a
     // rounded rectangle never looked like a person.
     const torso = new Path2D();
-    torso.moveTo(-4.6, -5.4);
-    torso.quadraticCurveTo(-4.9, -7.2, -2.6, -7.4);
-    torso.lineTo(2.6, -7.4);
-    torso.quadraticCurveTo(4.9, -7.2, 4.6, -5.4);
-    torso.lineTo(3.7, 2.6);
-    torso.quadraticCurveTo(3.5, 4.3, 1.6, 4.3);
-    torso.lineTo(-1.6, 4.3);
-    torso.quadraticCurveTo(-3.5, 4.3, -3.7, 2.6);
+    const sw = 4.6 * bd.sh, sn = 2.6 * bd.sh, wl = 3.7 * bd.w, hp = 1.6 * bd.w;
+    const sy = -7.4 * bd.h, sy2 = -5.4 * bd.h;
+    torso.moveTo(-sw, sy2);
+    torso.quadraticCurveTo(-sw - .3, sy + .2, -sn, sy);
+    torso.lineTo(sn, sy);
+    torso.quadraticCurveTo(sw + .3, sy + .2, sw, sy2);
+    torso.lineTo(wl, 2.6);
+    torso.quadraticCurveTo(wl - .2, 4.3, hp, 4.3);
+    torso.lineTo(-hp, 4.3);
+    torso.quadraticCurveTo(-wl + .2, 4.3, -wl, 2.6);
     torso.closePath();
     jointAO(0, 4.1, 4.6, 2, .4);                   // hip, sitting into the legs
     volume(torso, clothMat(col, dir, 4.7), dir, rim);
+    if (!civil) armourWeave(torso, dir, era);
+    if (PAINT_RICH) {
+      if (!civil && era >= 2) pauldrons(col, dir);
+      if (!civil && SPEAR_UNITS.has(k) === false && BOW_UNITS.has(k) === false &&
+          era <= 3) scabbard(dir);
+      if (BOW_UNITS.has(k)) quiver(col, dir);
+      if (!["warrior", "eagle_warrior", "swordsman", "legion", "man_at_arms",
+            "hoplite"].includes(k)) unitInsignia(-dir * 2, -5, 1.4, col, k, dir);
+      cx.fillStyle = "rgba(58,42,22,.85)";        // belt pouch
+      cx.beginPath(); cx.roundRect(dir * 1.6, -.4, 2.4, 2.2, .7); cx.fill();
+      cx.strokeStyle = "rgba(226,214,182,.5)"; cx.lineWidth = .6;
+      cx.beginPath(); cx.moveTo(dir * 1.6, .3); cx.lineTo(dir * 1.6 + 2.4, .3); cx.stroke();
+    }
     if (fine) {                                    // belt, and a fold beside it
       cx.fillStyle = "rgba(24,18,10,.46)"; cx.fillRect(-4.1, -.7, 8.2, 1.5);
       cx.strokeStyle = tone(col, .58, .7); cx.lineWidth = .8;
@@ -6746,15 +7380,21 @@ function drawUnitChar(u, x, y, now, moving) {
     }
     // Head. It is the first thing the eye lands on even at twelve pixels, so
     // it is a painted sphere with a jaw shadow rather than a flat disc.
-    ball(0, -9.8, 3.3, skin, dir);
+    const hy = -9.8 * bd.h;
+    ball(0, hy, 3.3, skin, dir);
+    faceDetail(0, hy + .2, 3.3, dir);
     cx.fillStyle = "rgba(30,20,14,.30)";
-    cx.beginPath(); cx.ellipse(0, -7.4, 2.7, 1.1, 0, 0, 7); cx.fill();
-    if (!civil) helmet(unitEra(k), col, dir, fine);
+    cx.beginPath(); cx.ellipse(0, hy + 2.4, 2.7, 1.1, 0, 0, 7); cx.fill();
+    if (!civil) {
+      cx.save(); cx.translate(0, hy + 9.8);
+      helmet(era, col, dir, fine);
+      cx.restore();
+    }
     // Gear is part of the rig and moves through the attack pose. A sword arcs,
     // a bow draws, a rifle recoils, and a holy staff casts; the body no longer
     // slides toward its target while its weapon remains frozen at attention.
     if (["warrior", "eagle_warrior", "swordsman", "legion", "man_at_arms"].includes(k)) {
-      shieldPart(-5.6, -2, 3.5, col, dir);
+      shieldPart(-5.6, -2, 3.5, col, dir, k);
       const swordX = 8.5 + action * 4, swordY = -11 + action * 8;
       blade(4, -3, swordX, swordY, 2.1, dir);
     } else if (FIREARM_UNITS.has(k)) {
@@ -6777,7 +7417,7 @@ function drawUnitChar(u, x, y, now, moving) {
       head.lineTo(6.6 + thrust, -11.4 + action * 8);
       head.closePath();
       volume(head, metalMat("#b9c6d0", dir, 1.7), dir, "#f2f8fc", dark, .9);
-      if (k === "hoplite") shieldPart(-5.6, -2, 3.9, col, dir);
+      if (k === "hoplite") shieldPart(-5.6, -2, 3.9, col, dir, k);
     } else if (BOW_UNITS.has(k)) {
       if (k === "slinger") {
         cx.strokeStyle = "#8a6744"; cx.lineWidth = 1.3;
@@ -6826,9 +7466,23 @@ function drawUnitChar(u, x, y, now, moving) {
       const pack = new Path2D();
       pack.roundRect(-10.4, -4.4, 8.4, 6.4, 2.4);
       volume(pack, matteMat("#cdbfa0", dir, 4.2), dir, "#f2e9d4");
-      cx.fillStyle = "#3f2f1e";
-      cx.beginPath(); cx.arc(-8, 3.6, 1.9, 0, 7); cx.fill();
-      cx.beginPath(); cx.arc(-4, 3.6, 1.9, 0, 7); cx.fill();
+      for (const wx of [-8, -4]) {
+        ball(wx, 3.6, 1.9, "#3f2f1e", dir, "rgba(11,15,21,.6)", .5);
+        if (RICH_FINE()) {                        // spokes
+          cx.strokeStyle = "rgba(206,186,150,.5)"; cx.lineWidth = .3;
+          for (let a = 0; a < 3; a++) {
+            const t = a * 1.05;
+            cx.beginPath();
+            cx.moveTo(wx - Math.cos(t) * 1.5, 3.6 - Math.sin(t) * 1.5);
+            cx.lineTo(wx + Math.cos(t) * 1.5, 3.6 + Math.sin(t) * 1.5); cx.stroke();
+          }
+        }
+      }
+      if (RICH_FINE()) {
+        const roll = new Path2D();               // bedroll lashed on top
+        roll.roundRect(-10.6, -6.6, 8.8, 2.4, 1.2);
+        volume(roll, matteMat("#9a8256", dir, 4.4), dir, "#ded0aa", "rgba(11,15,21,.55)", .5);
+      }
     } else if (k === "trader") {
       const bale = new Path2D();
       bale.ellipse(-7, 0, 4.6, 3.1, 0, 0, 7);
@@ -6853,9 +7507,14 @@ function drawUnitChar(u, x, y, now, moving) {
       const crate = new Path2D();
       crate.rect(-10.2, -4.2, 7.2, 7.2);
       volume(crate, matteMat("#82704f", dir, 3.6), dir, "#c0ab7e");
-      cx.fillStyle = "#2a323a";
-      cx.beginPath(); cx.arc(-8, 4, 2, 0, 7); cx.fill();
-      cx.beginPath(); cx.arc(-3, 4, 2, 0, 7); cx.fill();
+      if (RICH_FINE()) {
+        const top = new Path2D();
+        top.rect(-8.8, -7.4, 4.6, 3.2);
+        volume(top, matteMat("#9a8560", dir, 2.3), dir, "#d8c79a", "rgba(11,15,21,.55)", .5);
+        cx.strokeStyle = "rgba(48,36,18,.6)"; cx.lineWidth = .35;   // lashings
+        cx.beginPath(); cx.moveTo(-6.6, -7.4); cx.lineTo(-6.6, 3); cx.stroke();
+      }
+      for (const wx of [-8, -3]) ball(wx, 4, 2, "#2a323a", dir, "rgba(11,15,21,.6)", .5);
     } else if (k === "spy") {
       const coat = new Path2D();
       coat.moveTo(-5, 4); coat.lineTo(0, -7); coat.lineTo(5, 4); coat.closePath();
@@ -6885,7 +7544,6 @@ function drawUnitChar(u, x, y, now, moving) {
       cx.beginPath(); cx.moveTo(4, -5); cx.lineTo(10, -12); cx.stroke();
     }
   }
-  cx.restore();
 }
 
 // At a battle-shot scale, a military unit reads as a small company instead of
