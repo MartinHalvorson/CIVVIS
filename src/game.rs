@@ -1302,6 +1302,33 @@ mod belief_runtime_tests {
     }
 
     #[test]
+    fn the_world_aims_for_three_barbarian_camps_per_major_civilization() {
+        // BARBARIAN_CAMP_MAX_PER_MAJOR_CIV is 3, and
+        // BARBARIAN_CAMP_FIRST_TURN_PERCENT_OF_TARGET_TO_ADD puts a third of
+        // that on the map before the first turn is played. The tournament
+        // lobby's eight majors therefore open against a handful of camps and
+        // grow toward twenty-four, not toward nine.
+        for players in [2_usize, 6, 8] {
+            let g = Game::new_full(players, 44, 30, 4_170 + players as u64, 200, 0, true);
+            assert_eq!(
+                g.barbarian_camp_target(),
+                3 * players,
+                "{players} majors should aim for three camps each"
+            );
+            let opening = g.barb_camps.len();
+            assert_eq!(
+                opening,
+                (3 * players * 33 / 100).max(1),
+                "{players} majors should open against a third of the target"
+            );
+            assert!(
+                opening < g.barbarian_camp_target(),
+                "the opening placement must leave room to grow"
+            );
+        }
+    }
+
+    #[test]
     fn barbarian_camps_field_half_the_leaders_technology() {
         let mut game = Game::new_full(2, 24, 16, 91_805, 200, 0, true);
         // Ancient leaders: the camps make do with tech-free units.
@@ -10761,7 +10788,11 @@ impl Game {
             barb.is_barbarian = true;
             g.players.push(barb);
             g.barb_pid = Some(pid);
-            for _ in 0..2 {
+            // BARBARIAN_CAMP_FIRST_TURN_PERCENT_OF_TARGET_TO_ADD: a third of
+            // the world's camp target is already on the map when the game
+            // opens, rather than a flat pair regardless of player count.
+            let opening = g.barbarian_camp_target() * 33 / 100;
+            for _ in 0..opening.max(1) {
                 g.spawn_camp();
             }
         }
@@ -11220,6 +11251,13 @@ impl Game {
         }
     }
 
+    /// Shipped `BARBARIAN_CAMP_MAX_PER_MAJOR_CIV` is 3, so the world aims for
+    /// three camps per major civilization — twenty-four on the tournament
+    /// lobby's eight-player map, not nine.
+    fn barbarian_camp_target(&self) -> usize {
+        3 * self.players.iter().filter(|p| !p.is_minor).count()
+    }
+
     fn spawn_camp(&mut self) {
         let mut cands: Vec<Pos> = Vec::new();
         for (pos, t) in &self.map.tiles {
@@ -11370,8 +11408,7 @@ impl Game {
         self.barb_camp_targets
             .retain(|camp, _| self.barb_camps.contains_key(camp));
         self.barbarian_scout_phase(bpid);
-        let n_majors = self.players.iter().filter(|p| !p.is_minor).count();
-        if self.turn.is_multiple_of(10) && self.barb_camps.len() < n_majors + 1 {
+        if self.turn.is_multiple_of(10) && self.barb_camps.len() < self.barbarian_camp_target() {
             self.spawn_camp();
         }
         let alerted = self.barb_alerted_until.len();
