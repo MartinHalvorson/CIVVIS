@@ -5840,6 +5840,83 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function wakeSleepers()"));
     }
 
+    /// Hovering a tile reports it, the way Civ 6's plot tooltip does — and it
+    /// keeps doing so after the map has been panned.
+    ///
+    /// `dragMoved` outlives its gesture: the click that follows clears it, and
+    /// a drag released off the canvas never produces one. A hover guard that
+    /// reads it therefore goes permanently quiet after the first pan, which is
+    /// exactly how the tooltip died. The guard has to ask whether a gesture is
+    /// in flight *now*.
+    #[test]
+    fn hovering_a_tile_reports_it_and_survives_a_pan() {
+        assert!(
+            EMBEDDED_INDEX.contains("if (!state || dragState || mapTouches.size || rdrag) {"),
+            "the hover guard must test a live gesture, never the stale dragMoved flag"
+        );
+        for piece in [
+            "function tileMoveCost(t)",
+            "function tileDefense(t)",
+            "function tileGroundLevel(t)",
+            "function tileCoverLevel(t)",
+            "function sightTipLine(t)",
+            "function appealBand(appeal)",
+            // The four lines the panel gains: cost to cross, worth defending,
+            // how it looks, and what it lets a unit see past.
+            "🥾 \" + (mp % 1 ? mp.toFixed(1) : mp) + \" MP\"",
+            "\" defense\"",
+            "\"🌸 appeal \"",
+            "lines.push(sightTipLine(t));",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(piece),
+                "the tile tooltip is missing {piece}"
+            );
+        }
+        // Ground level is terrain alone; only the cover a tile offers others
+        // picks up the feature on top of it.
+        assert!(EMBEDDED_INDEX
+            .contains("t.terrain === \"mountain\" ? 2 : (t.hills ? 1 : 0)"));
+        assert!(EMBEDDED_INDEX.contains("sight_through"));
+    }
+
+    /// The map's own overlays must be siblings, not each other's children.
+    ///
+    /// `<section>` does not self-close on a nested `<section>`, so one missing
+    /// `</section>` silently reparents everything after it. That is how the
+    /// tooltip, Diplomacy, the city screen, Quick Deals and the capture choice
+    /// all ended up inside `#empire`, which is `display: none` until the
+    /// Government screen is open — every one of them invisible, with no error
+    /// anywhere. Nothing in the CSS or the script can find this; only the
+    /// markup can.
+    #[test]
+    fn the_map_overlays_are_siblings_and_not_nested_dialogs() {
+        let start = EMBEDDED_INDEX
+            .find("<div id=\"maparea\">")
+            .expect("the map area is declared");
+        let end = EMBEDDED_INDEX
+            .find("<div id=\"side\">")
+            .expect("the side panel follows it");
+        // Pure markup: the inline script is far below this window.
+        let markup = &EMBEDDED_INDEX[start..end];
+        let mut depth = 0i32;
+        let mut at = 0usize;
+        while let Some(next) = markup[at..].find("<section") {
+            let open = at + next;
+            let close = markup[at..open].matches("</section>").count() as i32;
+            depth -= close;
+            assert!(depth >= 0, "a stray </section> closes past the map area");
+            depth += 1;
+            at = open + "<section".len();
+        }
+        depth -= markup[at..].matches("</section>").count() as i32;
+        assert_eq!(
+            depth, 0,
+            "every map overlay must close its own <section>; an unclosed one \
+             hides the tooltip and every dialog after it inside #empire"
+        );
+    }
+
     /// Every empire decision the engine offers seat 0 has a screen behind the
     /// launch bar, and each screen speaks only the JSON protocol: it labels
     /// the legal actions it was given and posts them back unchanged. The

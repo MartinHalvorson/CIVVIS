@@ -1130,9 +1130,19 @@ fn tile_json(
             })
         })
         .unwrap_or(Value::Null);
+    // Appeal is read off the *current* neighbours, exactly like adjacency
+    // above, so a remembered tile does not report a figure its owner has since
+    // changed — and the walk is paid for the tiles in sight, not for the whole
+    // explored map.
+    let appeal = if live {
+        json!(g.tile_appeal(tile.pos))
+    } else {
+        Value::Null
+    };
     json!({
         "pos": [tile.pos.0, tile.pos.1],
         "terrain": tile.terrain,
+        "appeal": appeal,
         "feature": tile.feature,
         "hills": tile.hills,
         "resource": resource,

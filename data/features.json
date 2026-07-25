@@ -6,7 +6,8 @@
     "move_cost": 1,
     "chop": {
       "production": 20
-    }
+    },
+    "sight_through": 1
   },
   "jungle": {
     "yields": {
@@ -16,7 +17,8 @@
     "chop": {
       "production": 10,
       "food": 10
-    }
+    },
+    "sight_through": 1
   },
   "marsh": {
     "yields": {
@@ -61,19 +63,23 @@
   },
   "burning_forest": {
     "yields": {},
-    "move_cost": 1
+    "move_cost": 1,
+    "sight_through": 1
   },
   "burnt_forest": {
     "yields": {},
-    "move_cost": 1
+    "move_cost": 1,
+    "sight_through": 1
   },
   "burning_jungle": {
     "yields": {},
-    "move_cost": 1
+    "move_cost": 1,
+    "sight_through": 1
   },
   "burnt_jungle": {
     "yields": {},
-    "move_cost": 1
+    "move_cost": 1,
+    "sight_through": 1
   },
   "oasis": {
     "yields": {
@@ -110,7 +116,8 @@
       "faith": 2
     },
     "natural_wonder": true,
-    "impassable": true
+    "impassable": true,
+    "sight_through": 1
   },
   "yosemite": {
     "yields": {},
@@ -120,7 +127,8 @@
       "science": 1
     },
     "natural_wonder": true,
-    "impassable": true
+    "impassable": true,
+    "sight_through": 2
   },
   "dead_sea": {
     "yields": {
@@ -135,7 +143,8 @@
       "faith": 1
     },
     "natural_wonder": true,
-    "impassable": true
+    "impassable": true,
+    "sight_through": 2
   },
   "pamukkale": {
     "yields": {},
@@ -144,6 +153,7 @@
     "effects": {
       "city_amenity": 1,
       "entertainment_complex_adjacent_amenity": 1
-    }
+    },
+    "sight_through": 1
   }
 }

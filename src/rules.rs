@@ -94,6 +94,12 @@ pub struct FeatureSpec {
     pub move_cost: f64,
     #[serde(default)]
     pub natural_wonder: bool,
+    /// How much this feature adds to the height of the terrain under it for
+    /// line of sight, the game database's ``SightThroughModifier``: Woods and
+    /// Rainforest 1 — burnt over as well as standing — Everest and Yosemite 2,
+    /// and every other Natural Wonder 0.
+    #[serde(default)]
+    pub sight_through: i32,
     #[serde(default)]
     pub impassable: bool,
     /// The shipped Feature_Removes yields a Builder collects for clearing
