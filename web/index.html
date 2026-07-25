@@ -7224,18 +7224,9 @@ function draw() {
   // Collected per empire and stroked as one network with round joins, the way
   // the river layer is: a frontier then reads as a single flowing outline
   // rather than six separately-capped hex edges with notches at every corner.
-  // Which frontiers are fronts. The war log names who is fighting whom, but the
-  // map drew the border between two empires at war exactly like the border
-  // between two at peace — so the SHAPE of a war, the thing you actually want
-  // to look at, existed only as text in a side panel.
-  const atWar = new Set();
-  for (const w of state.wars || []) {
-    if (w.ended !== null && w.ended !== undefined) continue;
-    atWar.add(Math.min(w.aggressor, w.defender) + ":" + Math.max(w.aggressor, w.defender));
-  }
-  const contested = (a, b) =>
-    a !== b && a !== null && a !== undefined && b !== null && b !== undefined &&
-    atWar.has(Math.min(a, b) + ":" + Math.max(a, b));
+  // War state must not change the border's geometry. The former dashed
+  // war-front overlay covered only some edges of an empire and made one
+  // continuous outline look like unrelated chunks.
   // Strategic view is explicitly the empire-reading view. Keep its frontier
   // close to one useful screen-space weight at survey zoom, where an ordinary
   // world-space stroke otherwise shrinks into the tile grid and route network.
@@ -7244,7 +7235,6 @@ function draw() {
   const borderK = beau ? 1 : UI_K();
   const borderInset = beau ? 1.5 : 2.4 * borderK;
   const borderSegs = new Map();
-  const frontSegs = [];
   for (const t of tiles) {
     if (t.owner === null || t.owner === undefined) continue;
     const [x, yy] = hexXY(t.pos[0], t.pos[1]);
@@ -7258,11 +7248,6 @@ function draw() {
       let segs = borderSegs.get(t.owner);
       if (!segs) { segs = []; borderSegs.set(t.owner, segs); }
       segs.push([ax, ay, bx, by]);
-      // one side is enough: the opposing tile pushes the same edge itself, and
-      // drawing it twice only doubles the alpha along the same line
-      if (n && t.owner < n.owner && contested(t.owner, n.owner)) {
-        frontSegs.push([ax, ay, bx, by]);
-      }
     }
   }
   cx.lineCap = "round"; cx.lineJoin = "round";
@@ -7289,28 +7274,6 @@ function draw() {
       for (const [ax, ay, bx, by] of segs) { cx.moveTo(ax, ay); cx.lineTo(bx, by); }
       cx.stroke();
     }
-  }
-  // A front burns on top of the ordinary ribbon: a hot wash under a broken
-  // line, so a contested border reads as contested from across the map without
-  // hiding whose land is whose underneath it.
-  if (frontSegs.length) {
-    const strokeFront = (w, col, a, dash) => {
-      cx.setLineDash(dash);
-      cx.strokeStyle = col; cx.lineWidth = w; cx.globalAlpha = a;
-      cx.beginPath();
-      for (const [ax, ay, bx, by] of frontSegs) { cx.moveTo(ax, ay); cx.lineTo(bx, by); }
-      cx.stroke();
-    };
-    // A front holds its on-screen weight as the map zooms out, the way unit
-    // plates and status badges do. Painted-view borders deliberately do not —
-    // there are hundreds of them and scaling every one would smother the
-    // landscape — but there are only ever a few fronts, and survey zoom is
-    // exactly the range where you want to see the shape of a war rather than
-    // hunt for it. Strategic borders use their own bounded treatment above.
-    const fk = UI_K();
-    strokeFront(8.5 * fk, "#e0402f", 0.24, []);
-    strokeFront(2.6 * fk, "#ff8452", 0.92, [5 * fk, 4 * fk]);
-    cx.setLineDash([]);
   }
   cx.globalAlpha = 1; cx.lineCap = "butt"; cx.lineJoin = "miter";
   // --- roads: the arteries of an empire, and until now the one piece of tile
