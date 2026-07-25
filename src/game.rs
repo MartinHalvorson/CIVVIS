@@ -10021,7 +10021,10 @@ pub struct Event {
     pub turn: u32,
     /// The civilization this happened to. Events are visible only to them.
     pub player: usize,
-    /// General, Cities, War, Science, Culture, Faith, People, Diplomacy.
+    /// General, Cities, War, Nuclear, Science, Culture, Faith, People,
+    /// Diplomacy. `Nuclear` is deliberately its own category rather than a
+    /// flavour of `War`: it is the only one a client is expected to give a
+    /// distinct icon and a place at the top of the log.
     pub category: String,
     pub text: String,
     /// Where to look, when there is somewhere to look.
@@ -32883,7 +32886,7 @@ impl Game {
         };
         self.note_important(
             attacker,
-            "War",
+            "Nuclear",
             format!("detonated a {weapon}{where_it_landed}{from}{toll}"),
             Some(strike.target),
         );
@@ -32895,7 +32898,7 @@ impl Game {
             };
             self.note_important(
                 victim,
-                "War",
+                "Nuclear",
                 format!("{aggressor} detonated a {weapon}: {hit}{toll}"),
                 Some(strike.target),
             );
@@ -32916,7 +32919,7 @@ impl Game {
         for bystander in bystanders {
             self.note_important(
                 bystander,
-                "General",
+                "Nuclear",
                 format!("{aggressor} detonated a {weapon}{where_it_landed}"),
                 Some(strike.target),
             );
@@ -37936,7 +37939,7 @@ impl Game {
                 self.remove_unit(uid);
                 self.note_important(
                     pid,
-                    "War",
+                    "Nuclear",
                     format!("lost a {kind} to nuclear fallout"),
                     Some(position),
                 );

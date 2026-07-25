@@ -957,6 +957,18 @@
   .event-item { min-height: 42px; display: grid; grid-template-columns: 25px 1fr; gap: 8px; padding: 8px; border-left: 2px solid #49645a; background: #0b1613; border-radius: 4px 9px 9px 4px; }
   .event-item.important { border-left-color: var(--gold); background: linear-gradient(90deg, #302713, #0b1613 72%); box-shadow: inset 0 0 0 1px #d7b66a18; }
   .event-item.important .event-icon { color: var(--gold-bright); background: #d7b66a14; }
+  /* A detonation is not a gold milestone. It gets the only red entry in the log,
+     and the only one that pulses — an empire using the atom should be the thing
+     a glance at this panel lands on. */
+  .event-item.nuclear { border-left-color: #ff6a3c; background: linear-gradient(90deg, #38150c, #0b1613 76%); box-shadow: inset 0 0 0 1px #ff6a3c2e; animation: nuclear-alarm 1.9s ease-out 3; }
+  .event-item.nuclear .event-icon { color: #ffd06a; background: #ff6a3c1f; }
+  .event-item.nuclear .event-text { color: #ffddc8; font-weight: 600; }
+  @keyframes nuclear-alarm {
+    0%   { box-shadow: inset 0 0 0 1px #ff6a3c2e, 0 0 0 0 #ff6a3c66; }
+    35%  { box-shadow: inset 0 0 0 1px #ff6a3c88, 0 0 9px 0 #ff6a3c4d; }
+    100% { box-shadow: inset 0 0 0 1px #ff6a3c2e, 0 0 0 0 #ff6a3c00; }
+  }
+  @media (prefers-reduced-motion: reduce) { .event-item.nuclear { animation: none; } }
   .event-icon { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 7px; background: #ffffff08; }
   .event-text { color: #cad5cf; font-size: 10px; }
   .event-turn { color: var(--faint); font-size: 8px; letter-spacing: .1em; text-transform: uppercase; }
@@ -1028,6 +1040,11 @@
   .war-moment { display: grid; grid-template-columns: 34px 1fr; gap: 6px; color: #cad5cf; font-size: 8px; }
   .war-moment em { color: var(--faint); font-style: normal; font-weight: 800; letter-spacing: .06em; }
   .war-moment.capture { color: #f2c0b8; }
+  .war-moment.nuclear { color: #ffc9a8; font-weight: 800; }
+  .war-moment.nuclear span::before { content: "☢ "; color: #ffb04a; }
+  /* A war that used the atom says so at the top of its own card. */
+  .war-nuclear-badge { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; padding: 0 4px; border-radius: 3px; border: 1px solid #ff6a3c66; background: #ff6a3c1f; color: #ffc06a; font-size: 7px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
+  .war-card.nuclear { border-color: #a2543c; }
   .war-moment.conquest { color: #ffb4a6; font-weight: 750; }
   .war-moment.peace { color: #9fd9bd; }
   .war-terms { padding: 6px 8px 7px; color: #b9c7c0; font-size: 8px; }
@@ -2590,9 +2607,17 @@ document.addEventListener("fullscreenchange", () => { wakeCinema(); resize(); })
 // impact/aftermath the third. Outside Cinema the same effects stay terse.
 // shots: projectiles in flight; bursts: impact flashes and shockwaves;
 // motes: debris, embers and ash; scars: scorch marks that outlive the blast.
+// blasts: nuclear detonations, which get their own layer rather than a bigger
+// burst — a device is the only event on this board that deserves several
+// seconds, the whole frame, and a different picture in every map style.
 const anim = { moves: new Map(), floats: [], sparks: [], deaths: [],
                claims: [], strike: null, shots: [], bursts: [], motes: [],
-               scars: [], battles: [], lunges: new Map() };
+               scars: [], battles: [], lunges: new Map(), blasts: [] };
+// Detonations already shown. The engine gives every strike a unique id
+// precisely so a client can answer this without comparing fields: two devices
+// can land on one tile on one turn, and a re-poll of the same state must not
+// replay either of them.
+let seenBlasts = new Set();
 const facing = new Map(); // unit id -> -1|1 (last horizontal direction)
 const unitHeadings = new Map(); // id -> last world-space direction for camera lead
 let pendingStrike = null;
@@ -2692,6 +2717,8 @@ function resetAnim() {
   anim.motes.length = 0;
   anim.scars.length = 0;
   anim.battles.length = 0;
+  anim.blasts.length = 0;
+  seenBlasts = new Set();
   anim.strike = null;
   pendingStrike = null;
   shakeUntil = 0;
@@ -2702,6 +2729,42 @@ function claimPulse(c) {
   const at = anim.claims.findIndex(p => key(p.pos) === k);
   if (at >= 0) anim.claims.splice(at, 1);   // restart it, never double it
   anim.claims.push(c);
+}
+// How long a detonation owns the frame. Everything else on this board is a
+// tenth of a second; a device is allowed three, because the map is supposed to
+// stop and look at it.
+const BLAST_MS = 3000;
+// Start a detonation for every strike the engine has recorded and this page has
+// not shown yet.
+//
+// Read from the strike ledger rather than from the board, because the board
+// cannot answer the questions the picture needs: a halved city and a ring of
+// fallout do not say which tile was ground zero, how wide the blast was, or
+// whether it was a nuclear or a thermonuclear device. On the first frame after
+// a reload every strike is unseen, so the ledger is only banked, never
+// replayed — nobody wants a nuclear war re-enacted because a tab was refreshed.
+function detonate(next) {
+  const strikes = Array.isArray(next.nuclear_strikes) ? next.nuclear_strikes : [];
+  const cold = seenBlasts.size === 0 && strikes.length > 0 && !anim.blasts.length;
+  for (const strike of strikes) {
+    if (seenBlasts.has(strike.id)) continue;
+    seenBlasts.add(strike.id);
+    // A strike from before this page was watching, or one already several turns
+    // old, is history rather than news.
+    if (cold || (next.turn - strike.turn) > 1) continue;
+    anim.blasts.push({
+      pos: strike.target,
+      t0: performance.now(),
+      dur: BLAST_MS,
+      thermo: !!strike.thermonuclear,
+      radius: Math.max(1, strike.blast_radius || 1),
+      attacker: strike.attacker,
+      kicked: false,
+      seeded: false,
+    });
+  }
+  // Two devices at once is a fine thing to render; twenty is a slideshow.
+  if (anim.blasts.length > 4) anim.blasts.splice(0, anim.blasts.length - 4);
 }
 // What a unit throws. A wire diff says only that somebody lost hit points, so
 // the viewer has to reconstruct the exchange: who was close enough to have
@@ -2884,6 +2947,7 @@ function animateDiff(prev, next) {
   const nextU = new Map(next.units.map(u => [u.id, u]));
   TMAP = new Map(next.map.tiles.map(t => [key(t.pos), t])); // for worldXY
   const cityKeys = new Set((next.cities || []).map(c => key(c.pos)));
+  detonate(next);
   for (const nu of next.units) {
     const pu = prevU.get(nu.id);
     if (!pu) continue;
@@ -4459,10 +4523,11 @@ function eventViewPlayer(st) {
 function eventsFor(st) {
   return eventLogs.get(eventViewKey(st)) || [];
 }
-function addEvent(icon, text, turn, st, important = false, value = 2) {
+function addEvent(icon, text, turn, st, important = false, value = 2, tone = "") {
   const viewKey = eventViewKey(st);
   const events = eventLogs.get(viewKey) || [];
-  events.unshift({ id: nextEventId++, icon, text, turn, important, value, at: performance.now() });
+  events.unshift({ id: nextEventId++, icon, text, turn, important, value, tone,
+                   at: performance.now() });
   // The panel is as tall as the deck allows now, so the log keeps enough
   // history to fill a large screen. When it overflows, retire the least
   // valuable entry — oldest among ties — instead of simply the oldest, so
@@ -4478,11 +4543,13 @@ function addEvent(icon, text, turn, st, important = false, value = 2) {
   eventLogs.set(viewKey, events);
 }
 const SERVER_EVENT_ICONS = {
-  General: "✦", Cities: "🏛", War: "⚔", Science: "⌬",
+  General: "✦", Cities: "🏛", War: "⚔", Nuclear: "☢", Science: "⌬",
   Culture: "❦", Faith: "☥", People: "★", Diplomacy: "⚖",
 };
+// A detonation outranks everything: it is the one entry that must still be in
+// the panel when a viewer looks back at it, so it is never the one evicted.
 const SERVER_EVENT_VALUES = {
-  General: 4, War: 3, Cities: 3, Faith: 3, People: 2, Diplomacy: 2,
+  Nuclear: 6, General: 4, War: 3, Cities: 3, Faith: 3, People: 2, Diplomacy: 2,
   Science: 1, Culture: 1,
 };
 let seenServerEvents = new Set();
@@ -4511,8 +4578,12 @@ function chronicleServer(next) {
     if (seenServerEvents.has(key)) continue;
     seenServerEvents.add(key);
     if (!includeServerEventInGameLog(event, text)) continue;
+    // The engine marks the handful of events that must not scroll past, which
+    // category alone cannot say: a detonation and a unit upgrade were both War.
+    const important = !!event.important || event.category === "General";
     addEvent(SERVER_EVENT_ICONS[event.category] || "✦", text, event.turn,
-      next, event.category === "General", SERVER_EVENT_VALUES[event.category] ?? 2);
+      next, important, SERVER_EVENT_VALUES[event.category] ?? 2,
+      event.category === "Nuclear" ? "nuclear" : "");
   }
   if (seenServerEvents.size > 1200) seenServerEvents = new Set();
 }
@@ -9070,8 +9141,256 @@ function draw() {
     cx.fillStyle = f.col; cx.fillText(f.txt, f.x, fy);
     cx.globalAlpha = 1;
   }
+  drawNuclearBlasts(now0);
   lastSmokeBucket = smokeBucket;
   if (MODE.atmosphere) drawAtmosphere(now0);
+  // Last of all, and outside the world transform: a detonation is bright enough
+  // to wash out the frame itself, and nothing — not even the era grade — gets
+  // to tint that.
+  drawNuclearFlash(now0);
+}
+
+// ------------------------------------------------------- nuclear detonation
+//
+// The one event that gets its own renderer. Three map styles want three
+// genuinely different pictures of the same explosion rather than one picture at
+// three opacities: Cinematic is a photograph of a mushroom cloud, Painted is an
+// illustration of one, and Strategic is a diagram — because on a flat command
+// map the question is not what it looked like, it is how far the blast reached.
+// All three share the geometry, so the fireball sits on the same tile in each.
+//
+// Fallout, the scorched ring and the halved city are the engine's business and
+// outlive this animation; everything here is the three seconds of the event.
+function blastGeometry(b, e) {
+  const [x, y] = worldXY(b.pos);
+  // The radius the engine actually irradiated, in world units, plus a little:
+  // the wave is the edge of the damage, not a decoration sized by eye.
+  const reach = S * SQ3 * (b.radius + 0.5);
+  const ee = 1 - (1 - e) * (1 - e);
+  return { x, y, reach, ee };
+}
+function drawNuclearBlasts(now) {
+  for (let i = anim.blasts.length - 1; i >= 0; i--) {
+    const b = anim.blasts[i];
+    const e = (now - b.t0) / b.dur;
+    if (e < 0) continue;
+    if (e >= 1) { anim.blasts.splice(i, 1); continue; }
+    const { x, y, reach, ee } = blastGeometry(b, e);
+    if (!b.kicked) {
+      b.kicked = true;
+      // Nothing else on this board is allowed to shake the camera this hard.
+      kick(b.thermo ? 7 : 5.5);
+    }
+    if (!b.seeded) {
+      b.seeded = true;
+      if (MODE.fx >= 1) seedBlastDebris(b, x, y, reach, now);
+    }
+    cx.save();
+    if (MODE.fx === 0) drawStrategicBlast(b, x, y, reach, e, ee);
+    else drawPaintedBlast(b, x, y, reach, e, ee);
+    cx.restore();
+  }
+}
+// Ash and thrown earth, once per detonation. The ordinary mote layer draws it;
+// this only decides how much of it there is and how long it hangs.
+function seedBlastDebris(b, x, y, reach, now) {
+  const heavy = MODE.fx >= 2;
+  const count = (b.thermo ? 34 : 24) * (heavy ? 1 : 0.55);
+  for (let n = 0; n < count; n++) {
+    const angle = (n / count) * 6.2832 + (n % 3) * 0.4;
+    const speed = 0.45 + (n % 5) / 5;
+    anim.motes.push({
+      x, y,
+      vx: Math.cos(angle) * speed * reach * 0.75,
+      vy: Math.sin(angle) * speed * reach * 0.4 - 26,
+      grav: 46, r: 1.5 + (n % 4) * 0.7,
+      col: n % 4 ? "#5b5348" : "#d9c9a8",
+      t0: now, dur: 1500 + (n % 6) * 260,
+    });
+  }
+  // The column itself: ash going straight up, slowly, long after the flash.
+  for (let n = 0; n < (heavy ? 22 : 10); n++) {
+    anim.motes.push({
+      x: x + ((n % 5) - 2) * reach * 0.1, y: y - 4,
+      vx: ((n % 3) - 1) * 5, vy: -34 - (n % 4) * 9, grav: 0,
+      r: 3 + (n % 5), col: "#9d9384", rise: true,
+      t0: now + n * 40, dur: 2400 + (n % 5) * 420,
+    });
+  }
+  // Scorched ground that outlives the cloud, so the tile still reads as struck
+  // once the animation is over and before the fallout hatch is all that is left.
+  anim.scars.push({ x, y, t0: now, dur: 5200, col: "#c8722c" });
+}
+// Cinematic and Painted. A fireball, a wave travelling out along the board
+// plane, and a mushroom column — drawn as stacked ellipses in world space, so
+// it leans with the board and sits behind nothing.
+function drawPaintedBlast(b, x, y, reach, e, ee) {
+  const volumetric = MODE.fx >= 2;
+  // 1. The wave. Two rings a beat apart read as a front with depth rather than
+  //    a circle being scaled.
+  for (const [delay, width, alpha] of [[0, 3.4, 0.9], [0.07, 1.8, 0.5]]) {
+    const re = (e - delay) / (0.55 - delay);
+    if (re <= 0 || re >= 1) continue;
+    const rr = reach * (0.18 + (1 - (1 - re) * (1 - re)) * 1.55);
+    cx.globalAlpha = alpha * (1 - re);
+    cx.strokeStyle = "#ffe6b0";
+    cx.lineWidth = width * (1 - re) + 0.6;
+    cx.beginPath(); cx.ellipse(x, y, rr, rr * YS * 0.8, 0, 0, 7); cx.stroke();
+    // Dust kicked up along the front, only where the board has depth to show it.
+    if (volumetric) {
+      cx.globalAlpha = 0.22 * (1 - re);
+      cx.fillStyle = "#b5a58a";
+      cx.beginPath();
+      cx.ellipse(x, y, rr * 0.98, rr * YS * 0.78, 0, 0, 7);
+      cx.ellipse(x, y, rr * 0.82, rr * YS * 0.66, 0, 0, 7);
+      cx.fill("evenodd");
+    }
+  }
+  // 2. The fireball: white-hot, then orange, then gone. It overshoots the blast
+  //    radius briefly — the flash is bigger than the damage.
+  const fe = e / 0.34;
+  if (fe < 1) {
+    const r = reach * (0.3 + (1 - (1 - fe) * (1 - fe)) * 0.95);
+    const fade = 1 - fe;
+    const core = cx.createRadialGradient(x, y - r * 0.12, 0, x, y, r);
+    core.addColorStop(0, `rgba(255,255,250,${(0.98 * fade).toFixed(3)})`);
+    core.addColorStop(0.3, `rgba(255,236,160,${(0.92 * fade).toFixed(3)})`);
+    core.addColorStop(0.62, `rgba(255,138,42,${(0.72 * fade).toFixed(3)})`);
+    core.addColorStop(1, "rgba(120,40,10,0)");
+    cx.globalAlpha = 1;
+    cx.fillStyle = core;
+    cx.beginPath(); cx.ellipse(x, y, r, r * (0.62 + YS * 0.3), 0, 0, 7); cx.fill();
+  }
+  // 3. The column. Stem first, then a cap that climbs, widens and thins out.
+  const ce = Math.max(0, (e - 0.09) / 0.91);
+  if (ce > 0) {
+    const rise = reach * (b.thermo ? 2.5 : 1.9) * (1 - (1 - ce) * (1 - ce));
+    const fade = ce < 0.55 ? 1 : 1 - (ce - 0.55) / 0.45;
+    const stemW = reach * (0.2 + ce * 0.16);
+    cx.globalAlpha = 0.5 * fade;
+    const stem = cx.createLinearGradient(x, y, x, y - rise);
+    stem.addColorStop(0, "rgba(196,120,52,0.85)");
+    stem.addColorStop(0.5, "rgba(150,132,106,0.7)");
+    stem.addColorStop(1, "rgba(176,168,152,0.25)");
+    cx.fillStyle = stem;
+    cx.beginPath();
+    cx.moveTo(x - stemW * 0.5, y);
+    cx.quadraticCurveTo(x - stemW * 0.34, y - rise * 0.6, x - stemW * 0.42, y - rise);
+    cx.lineTo(x + stemW * 0.42, y - rise);
+    cx.quadraticCurveTo(x + stemW * 0.34, y - rise * 0.6, x + stemW * 0.5, y);
+    cx.closePath(); cx.fill();
+    // The cap: one billow in Painted, a stack of them in Cinematic. Painted is
+    // an illustration and reads better as a clean silhouette.
+    const capY = y - rise;
+    const capW = reach * (0.5 + ce * 1.15) * (b.thermo ? 1.3 : 1);
+    const billows = volumetric ? 5 : 1;
+    for (let n = 0; n < billows; n++) {
+      const t = billows === 1 ? 0.5 : n / (billows - 1);
+      const bx = x + (t - 0.5) * capW * 1.1;
+      const by = capY + Math.sin(t * 3.14) * -capW * 0.16 + capW * 0.06;
+      const br = capW * (0.42 - Math.abs(t - 0.5) * 0.3);
+      const cap = cx.createRadialGradient(bx, by - br * 0.3, 0, bx, by, br);
+      cap.addColorStop(0, `rgba(232,214,184,${(0.62 * fade).toFixed(3)})`);
+      cap.addColorStop(0.6, `rgba(150,138,118,${(0.5 * fade).toFixed(3)})`);
+      cap.addColorStop(1, "rgba(110,102,90,0)");
+      cx.globalAlpha = 1;
+      cx.fillStyle = cap;
+      cx.beginPath(); cx.ellipse(bx, by, br, br * 0.78, 0, 0, 7); cx.fill();
+    }
+    // Heat still glowing under the cap while it is young.
+    if (ce < 0.4) {
+      cx.globalAlpha = (1 - ce / 0.4) * 0.5;
+      cx.fillStyle = "#ff9b3c";
+      cx.beginPath();
+      cx.ellipse(x, capY + capW * 0.1, capW * 0.3, capW * 0.16, 0, 0, 7);
+      cx.fill();
+    }
+  }
+  cx.globalAlpha = 1;
+}
+// Strategic. No fireball and no cloud: a flat command map should answer "how
+// far did it reach and whose ground is gone", so the blast is drawn as the
+// measurement it is — the irradiated disk, the wave front, and the symbol.
+function drawStrategicBlast(b, x, y, reach, e, ee) {
+  const fade = 1 - e;
+  // The disk the device denied, hatched rather than filled so the terrain and
+  // the borders under it stay readable.
+  cx.globalAlpha = 0.3 * fade + 0.08;
+  cx.strokeStyle = "#ff8b3d";
+  cx.lineWidth = 1.1;
+  cx.beginPath();
+  cx.ellipse(x, y, reach, reach * YS, 0, 0, 7);
+  cx.stroke();
+  cx.save();
+  cx.beginPath(); cx.ellipse(x, y, reach, reach * YS, 0, 0, 7); cx.clip();
+  cx.globalAlpha = 0.22 * fade + 0.06;
+  for (let h = -reach; h <= reach; h += 7) {
+    cx.beginPath();
+    cx.moveTo(x + h - reach, y - reach * YS);
+    cx.lineTo(x + h + reach, y + reach * YS);
+    cx.stroke();
+  }
+  cx.restore();
+  // Two hard wave fronts. A diagram wants edges, not gradients.
+  for (const [delay, alpha] of [[0, 1], [0.12, 0.55]]) {
+    const re = (e - delay) / (0.6 - delay);
+    if (re <= 0 || re >= 1) continue;
+    const rr = reach * (0.1 + (1 - (1 - re) * (1 - re)) * 1.7);
+    cx.globalAlpha = alpha * (1 - re);
+    cx.strokeStyle = "#ffd35e";
+    cx.lineWidth = 2.2 * (1 - re) + 0.8;
+    cx.beginPath(); cx.ellipse(x, y, rr, rr * YS, 0, 0, 7); cx.stroke();
+  }
+  // A hot pip at ground zero for the first beat, so the tile itself is not
+  // ambiguous once the rings have travelled off it.
+  if (e < 0.3) {
+    cx.globalAlpha = 1 - e / 0.3;
+    cx.fillStyle = "#fff6e2";
+    cx.beginPath(); cx.ellipse(x, y, reach * 0.2, reach * 0.2 * YS, 0, 0, 7); cx.fill();
+  }
+  // The symbol, rising clear of the disk and holding for most of the animation:
+  // on a flat map this is what says "nuclear" rather than "a big battle".
+  const lift = 10 + ee * 24;
+  cx.globalAlpha = e < 0.75 ? 1 : Math.max(0, (1 - e) / 0.25);
+  cx.font = `bold ${Math.round(15 + reach * 0.16)}px sans-serif`;
+  cx.textAlign = "center";
+  cx.lineWidth = 3.4;
+  cx.strokeStyle = "#170d05";
+  cx.strokeText("☢", x, y - lift);
+  cx.fillStyle = b.thermo ? "#ff7a4a" : "#ffcf5a";
+  cx.fillText("☢", x, y - lift);
+  cx.globalAlpha = 1;
+}
+// Screen space. A device is the only thing that can white out the whole frame,
+// and the frame coming back through an amber haze is what sells the scale of it.
+// Strategic gets a fraction of it: a command map should not be blinded.
+function drawNuclearFlash(now) {
+  if (!anim.blasts.length) return;
+  let veil = 0, haze = 0;
+  for (const b of anim.blasts) {
+    const e = (now - b.t0) / b.dur;
+    if (e < 0 || e >= 1) continue;
+    const punch = b.thermo ? 1 : 0.8;
+    if (e < 0.16) veil = Math.max(veil, (1 - e / 0.16) * punch);
+    if (e < 0.7) haze = Math.max(haze, (1 - e / 0.7) * punch);
+  }
+  const scale = MODE.fx === 0 ? 0.22 : 1;
+  if (veil <= 0.001 && haze <= 0.001) return;
+  const W = cv.width, H = cv.height;
+  cx.save();
+  cx.setTransform(1, 0, 0, 1, 0, 0);
+  if (haze > 0) {
+    cx.globalAlpha = 0.2 * haze * scale;
+    cx.fillStyle = "#ff9a3c";
+    cx.fillRect(0, 0, W, H);
+  }
+  if (veil > 0) {
+    cx.globalAlpha = Math.min(1, 0.82 * veil * veil * scale);
+    cx.fillStyle = "#fffaf0";
+    cx.fillRect(0, 0, W, H);
+  }
+  cx.restore();
+  cx.globalAlpha = 1;
 }
 
 // The era a civilization has reached is the largest fact about the world and
@@ -9209,6 +9528,30 @@ function drawMini() {
     // a dark keyline keeps a city legible now that it sits on its own colour
     mx2.strokeStyle = "#0b0e13"; mx2.lineWidth = 0.7;
     miniHexPath(x, y, citySize - 0.35); mx2.stroke();
+  }
+  // Detonations. The minimap is the only view that always holds the whole
+  // world, so it is the only place a strike on the far side of the map is
+  // visible at all — and the one place a viewer can see that two empires are
+  // trading them. Kept to a flash and a ring: at this size anything else is mud.
+  const miniNow = performance.now();
+  for (const b of anim.blasts) {
+    const e = (miniNow - b.t0) / b.dur;
+    if (e < 0 || e >= 1) continue;
+    const [bx, by] = miniHexCenter(b.pos, layout);
+    const reach = layout.size * (b.radius + 1) * (b.thermo ? 1.4 : 1);
+    const ee = 1 - (1 - e) * (1 - e);
+    mx2.globalAlpha = Math.max(0, 1 - e);
+    mx2.strokeStyle = "#ffd35e";
+    mx2.lineWidth = 1.4 * (1 - e) + 0.4;
+    mx2.beginPath();
+    mx2.arc(bx, by, reach * (0.4 + ee * 2.4), 0, 7);
+    mx2.stroke();
+    if (e < 0.4) {
+      mx2.globalAlpha = 1 - e / 0.4;
+      mx2.fillStyle = "#fff4dc";
+      mx2.beginPath(); mx2.arc(bx, by, reach * (0.5 + e), 0, 7); mx2.fill();
+    }
+    mx2.globalAlpha = 1;
   }
   // viewport rect
   const toMini = (wx, wy) => {
@@ -10131,7 +10474,7 @@ function drawEvents() {
     return;
   }
   el.innerHTML = events.map(e =>
-    `<div class="event-item${e.important ? " important" : ""}" data-event-id="${e.id}"><div class="event-icon">${e.icon}</div>` +
+    `<div class="event-item${e.important ? " important" : ""}${e.tone ? " " + e.tone : ""}" data-event-id="${e.id}"><div class="event-icon">${e.icon}</div>` +
     `<div><div class="event-text">${e.text}</div><div class="event-turn">Turn ${e.turn}</div></div></div>`
   ).join("");
   if (keepViewport) {
@@ -10364,6 +10707,22 @@ function warBelligerentRows(war, declarerSide, role) {
   return `<div class="war-side ${role}"><div class="war-strength-head">` +
     `<span>Start</span><span>Peak</span><span>Total</span></div>${rows}</div>`;
 }
+// The war highlight and the strike ledger are two views of one detonation. Join
+// them on turn and attacker, then on the city if the blast hit one and on the
+// victim list otherwise — a single turn can contain more than one launch.
+function nuclearStrikeFor(moment) {
+  const strikes = Array.isArray(state.nuclear_strikes) ? state.nuclear_strikes : [];
+  const candidates = strikes.filter(strike =>
+    strike.turn === moment.turn && strike.attacker === moment.actor);
+  if (!candidates.length) return null;
+  if (moment.city) {
+    const named = candidates.find(strike =>
+      (strike.cities || []).includes(moment.city));
+    if (named) return named;
+  }
+  return candidates.find(strike => (strike.victims || []).includes(moment.subject)) ||
+    candidates[0];
+}
 function warMomentText(moment) {
   const actor = warEntityLink(moment.actor), subject = warEntityLink(moment.subject);
   switch (moment.kind) {
@@ -10371,9 +10730,20 @@ function warMomentText(moment) {
     case "city_captured": return `${actor} took ${moment.city} from ${subject}.`;
     case "capital_captured": return `${actor} took the ${subject} capital, ${moment.city}.`;
     case "city_razed": return `${actor} razed ${moment.city}.`;
-    case "nuclear_strike": return moment.city
-      ? `${actor} detonated a device on ${moment.city}.`
-      : `${actor} detonated a device in ${subject} territory.`;
+    case "nuclear_strike": {
+      // The ledger knows which device it was and what it killed; the war
+      // highlight only carries the city. Name the weapon — a thermonuclear
+      // device is a different sentence in a war's history than a fission one.
+      const strike = nuclearStrikeFor(moment);
+      const weapon = !strike ? "a device"
+        : (strike.thermonuclear ? "a thermonuclear device" : "a nuclear device");
+      const toll = strike && strike.units_destroyed
+        ? ` ${strike.units_destroyed} unit${strike.units_destroyed === 1 ? "" : "s"} were lost.`
+        : "";
+      return moment.city
+        ? `${actor} detonated ${weapon} on ${moment.city}.${toll}`
+        : `${actor} detonated ${weapon} in ${subject} territory.${toll}`;
+    }
     case "peace": return `${actor} and ${subject} made peace.`;
     case "coalition": return `${actor} and ${subject} entered an Emergency coalition ceasefire.`;
     case "conquest": return `${subject} was wiped from the map by ${actor}.`;
@@ -10393,7 +10763,9 @@ const WAR_MOMENT_TONE = {
   city_captured: "capture",
   capital_captured: "capture",
   city_razed: "capture",
-  nuclear_strike: "capture",
+  // Not "capture". A war that went nuclear is a different kind of war, and
+  // reading its chronology should not require noticing the word "detonated".
+  nuclear_strike: "nuclear",
   conquest: "conquest",
   peace: "peace",
   coalition: "peace",
@@ -10434,9 +10806,18 @@ function drawWarLog() {
           ? `${warEntityLink(war.victor)} won by conquest — no peace deal`
           : (war.outcome === "coalition" ? "Emergency coalition ceasefire" : "No recorded peace terms")
         }</b></div>`);
-    return `<div class="war-card${over ? " ended" : ""}${conquest ? " conquest" : ""}">` +
+    // Whether the atom was used is the largest single fact about a war, and it
+    // was previously buried in a chronology line a reader had to scroll to.
+    const detonations = (war.highlights || [])
+      .filter(moment => moment.kind === "nuclear_strike").length;
+    const nuclearBadge = detonations
+      ? `<span class="war-nuclear-badge" title="Nuclear devices detonated in this war">` +
+        `☢ ${detonations} nuclear</span>`
+      : "";
+    return `<div class="war-card${over ? " ended" : ""}${conquest ? " conquest" : ""}` +
+      `${detonations ? " nuclear" : ""}">` +
       `<div class="war-period"><span>Started<b>Turn ${war.started}</b></span>` +
-      `<span>${over ? "Ended" : "Status"}<b>${over ? `Turn ${war.ended}` : `Ongoing · ${length} turn${length === 1 ? "" : "s"}`}</b></span></div>` +
+      `<span>${over ? "Ended" : "Status"}<b>${over ? `Turn ${war.ended}` : `Ongoing · ${length} turn${length === 1 ? "" : "s"}`}</b>${nuclearBadge}</span></div>` +
       `<div class="war-infobox-row"><div class="war-row-label">Belligerents</div>` +
       `<div class="war-columns">${warBelligerentRows(war, true, "aggressor")}` +
       `${warBelligerentRows(war, false, "defender")}</div></div>` +
@@ -12172,7 +12553,8 @@ function animTick(now) {
   const active = cameraMoving || anim.moves.size > 0 || anim.floats.length > 0 ||
     anim.sparks.length > 0 || anim.deaths.length > 0 || anim.strike ||
     anim.shots.length > 0 || anim.bursts.length > 0 || anim.motes.length > 0 ||
-    anim.scars.length > 0 || anim.battles.length > 0 || shakeUntil > now;
+    anim.scars.length > 0 || anim.battles.length > 0 || shakeUntil > now ||
+    anim.blasts.length > 0;
   // Never spend more than about half the wall clock painting. Cinematic asks
   // for a repaint thirty times a second so its weather and water keep moving,
   // which is right on a machine that can afford it and ruinous on one that
@@ -12187,7 +12569,10 @@ function animTick(now) {
     const t0 = performance.now();
     draw();
     drawCost = drawCost * 0.85 + (performance.now() - t0) * 0.15;
-    if (cameraMoving && !cinemaActive()) drawMini();
+    // A detonation animates on the minimap too, and unlike a camera move it can
+    // happen while the camera sits perfectly still — so it has to ask for the
+    // repaint itself or the world map would show nothing at all.
+    if ((cameraMoving && !cinemaActive()) || anim.blasts.length > 0) drawMini();
   }
 }
 requestAnimationFrame(animTick);
