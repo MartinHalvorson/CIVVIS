@@ -851,6 +851,28 @@
   }
   #zoomctl button { width: 34px; height: 34px; margin: 0; padding: 0; border: 0; background: transparent; font-size: 16px; }
   #zoomctl button + button { border-left: 1px solid #ffffff0c; border-radius: 0; }
+  /* The compass reads the map's bearing, so it is an instrument rather than a
+     label: the needle turns with the world and the dial stays put. A
+     civilization that cannot yet find north has the dial and no needle. */
+  #compass { position: relative; cursor: pointer; }
+  #compass::before {
+    content: ""; position: absolute; inset: 5px; border-radius: 50%;
+    border: 1px solid #ffffff2e; background: #04100c8c;
+  }
+  #compass-needle {
+    position: absolute; left: 50%; top: 50%; width: 7px; height: 21px;
+    margin: -10.5px 0 0 -3.5px; transform-origin: 50% 50%;
+    clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+    background: linear-gradient(#e6eefb 0 50%, #47606f 50% 100%);
+  }
+  #compass:disabled { cursor: default; }
+  #compass:disabled #compass-needle { display: none; }
+  /* An unread dial still turns freely; the pip says the instrument is there
+     and says nothing about where north is. */
+  #compass:disabled::after {
+    content: ""; position: absolute; left: 50%; top: 50%; width: 4px; height: 4px;
+    margin: -2px 0 0 -2px; border-radius: 50%; background: #ffffff38;
+  }
   #paneltoggle, #collapsepause { background: transparent; }
   #collapsepause { display: none; }
   #ubar {
@@ -1989,6 +2011,7 @@
     <button id="collapsepause" hidden title="Pause simulation" aria-label="Pause simulation">⏸</button>
     <button id="zin" title="Zoom in" aria-label="Zoom in">＋</button>
     <button id="zout" title="Zoom out" aria-label="Zoom out">−</button>
+    <button id="compass" type="button" title="Face north · R" aria-label="Face north"><span id="compass-needle"></span></button>
     <button class="overlay-close" type="button" data-overlay-close="controls" aria-label="Hide map controls; restore them in Display settings" title="Hide map controls · restore in Display settings">✕</button>
   </div>
   <div id="ubar"></div>
@@ -2334,6 +2357,7 @@
       <span><kbd>D</kbd>Quick Deals</span><span><kbd>L</kbd>Diplomacy</span>
       <span><kbd>P</kbd>Civilopedia</span><span><kbd>Alt/⌥ drag</kbd>Rotate · cinematic tilt</span>
       <span><kbd>Q / E</kbd>Rotate map</span><span><kbd>Shift scroll</kbd>Rotate · <kbd>⌥ scroll</kbd>tilt</span>
+      <span><kbd>R</kbd>Face north · reset the view</span>
       <span><kbd>Arrows</kbd>Pan map</span><span><kbd>+ / −</kbd>Zoom · double-click to dive</span>
       <span><kbd>Y</kbd>Tile yields</span><span><kbd>C</kbd>Cinema mode</span>
     </div>
@@ -4152,7 +4176,15 @@ function setRot(r, persist = true) {
   cam.rot = r; COSR = Math.cos(r); SINR = Math.sin(r);
   LITF = Math.cos(SUN + r) <= 0 ? 1 : -1;
   SHX = -Math.cos(SUN + r); SHY = -Math.sin(SUN + r) * YS;
-  if (persist) localStorage.setItem("civvis-rot", String(r));
+  // The needle answers to the same yaw the board does, so it stays honest
+  // through the director's orbits and the drag inertia as well as Q and E.
+  if (compassNeedle) compassNeedle.style.transform = `rotate(${r}rad)`;
+  if (persist) {
+    // Stored against the world it belongs to. A remembered bearing is the one
+    // you left this map at, not one inherited from the last map you watched.
+    localStorage.setItem("civvis-rot", String(r));
+    if (HOME_ROT_WORLD !== null) localStorage.setItem("civvis-rot-world", String(HOME_ROT_WORLD));
+  }
 }
 function setTilt(ys, persist = true) {
   cinematicYS = Math.max(MIN_YS, Math.min(MAX_YS, Number.isFinite(ys) ? ys : DEFAULT_CINEMA_YS));
@@ -4165,6 +4197,92 @@ function setTilt(ys, persist = true) {
 function syncTiltForView() {
   YS = VIEW === "cinematic" ? cinematicYS : MODE.projection;
 }
+
+// ------------------------------------------------------------ which way is up
+// A world does not arrive with north at the top. Each map is first seen from
+// whatever direction the people living on it happened to face, and it keeps
+// that bearing until they can read one off the sky — the server says when,
+// which is why this is not a local preference. So the half-dozen camera paths
+// that used to put north back at the top go through restingRot() instead: true
+// north for anyone who can find it, and the world's own facing for everyone
+// else. A spectator is not a civilization and always has north.
+let HOME_ROT = 0;             // the bearing this world was first shown at
+let HOME_ROT_WORLD = null;    // the world that bearing belongs to
+let FOUND_NORTH = true;       // whether the observed civilization can find north
+const compassButton = document.getElementById("compass");
+const compassNeedle = document.getElementById("compass-needle");
+
+// One of the eleven thirty-degree bearings that is not north itself, so a fresh
+// world is always visibly turned — and always a whole number of Q/E steps away,
+// so the viewer can come back to the angle they started at exactly rather than
+// hunting for it.
+function worldFacing(seed) {
+  const text = String(seed ?? "");
+  let a = text.length | 0, b = 0;
+  for (let i = 0; i < text.length; i++) {
+    a = (Math.imul(a, 31) + text.charCodeAt(i)) | 0;
+    b = (Math.imul(b, 17) ^ a) | 0;
+  }
+  return (1 + Math.floor(hash2(a, b) * 11)) * Math.PI / 6;
+}
+function foundNorth(st = state) {
+  // Read from the observation rather than the global SPEC, so this answers the
+  // same during render — before the flag is refreshed — as it does after.
+  return !st || !!st.spectate || st.me?.found_north !== false;
+}
+function restingRot() {
+  return foundNorth() ? 0 : HOME_ROT;
+}
+// Your own charts are drawn the way your own world faces, so the minimap
+// cannot hand you a north the map itself is withholding. Once north is known
+// this is zero and the minimap is the north-up thumbnail it has always been.
+function chartRot() {
+  return restingRot();
+}
+function northTechLabel() {
+  const tech = state?.me?.north_tech;
+  return tech ? titleCase(tech) : "the right discovery";
+}
+function updateCompass() {
+  if (!compassButton) return;
+  const found = foundNorth();
+  compassButton.disabled = !found;
+  const title = found ? "Face north · R"
+    : `Bearing unknown · ${northTechLabel()} finds north`;
+  if (compassButton.title === title) return;
+  compassButton.title = title;
+  compassButton.setAttribute("aria-label", title);
+}
+// Turn the map back to whatever "up" means here.
+function resetMapFacing(deltaTilt = 0) {
+  orbitCamera(restingRot() - cam.rot, deltaTilt);
+}
+// A world's facing is settled the first time it is seen and then belongs to
+// it: reloading the page returns to the bearing you left off at, while the
+// next world starts from its own instead of inheriting this one's.
+function adoptWorldFacing(st) {
+  HOME_ROT_WORLD = st?.seed ?? null;
+  FOUND_NORTH = foundNorth(st);
+  HOME_ROT = FOUND_NORTH ? 0 : worldFacing(HOME_ROT_WORLD);
+  let kept = NaN;
+  try {
+    if (localStorage.getItem("civvis-rot-world") === String(HOME_ROT_WORLD))
+      kept = parseFloat(localStorage.getItem("civvis-rot"));
+  } catch (error) {}
+  setRot(Number.isFinite(kept) ? kept : HOME_ROT);
+}
+// Finding north is otherwise invisible — nothing about the board itself
+// changes — so the map settles onto it once, the way a chart is redrawn when a
+// survey finally comes in.
+function syncFoundNorth(st) {
+  const found = foundNorth(st);
+  if (found !== FOUND_NORTH) {
+    FOUND_NORTH = found;
+    if (found && Math.abs(cam.rot) > .001) resetMapFacing();
+  }
+  updateCompass();
+}
+if (compassButton) compassButton.onclick = () => resetMapFacing();
 // Cylindrical scripts use the copy nearest the camera; bounded scripts retain
 // their literal east and west edges.
 // hexXY returns camera-relative view coords (rotate, then dimetric squash).
@@ -5522,6 +5640,9 @@ function render(st, recordChronicle = true) {
   // spark bursts and territory pulses kept drawing over a brand new map, at
   // coordinates that meant nothing there, until they timed out.
   if (newWorld) resetAnim();
+  // Settled before anything is drawn: a new map must not be painted north-up
+  // for a frame and then swing away from it.
+  if (newWorld) adoptWorldFacing(st);
   let cinematicCue = null;
   if (!viewChanged) {
     cinematicCue = directorCue(state, st);
@@ -5544,6 +5665,7 @@ function render(st, recordChronicle = true) {
   }
   state = st;
   SPEC = !!st.spectate;
+  syncFoundNorth(st);
   syncCinemaPresentation(st);
   if (SPEC && st.paused !== undefined && st.paused !== specPaused) {
     specPaused = st.paused; // stay in sync with the server-side stepper
@@ -9587,8 +9709,14 @@ function planetCamera() {
   const span = Math.max(1, S * 1.5 * (state.map.height - 1));
   const north = Math.min(1, Math.max(0, cam.y / span));
   return {
-    longitude:2 * Math.PI * (cam.x / Math.max(1, WW())) - Math.PI + cam.rot,
+    longitude:2 * Math.PI * (cam.x / Math.max(1, WW())) - Math.PI,
     latitude:Math.PI / 2 - Math.PI * north,
+    // On a globe the yaw is the viewer's bearing, not another way to spin the
+    // world: turning east is what panning east already does, and a sphere whose
+    // poles are pinned to the top of the screen can never face any direction
+    // but north. So cam.rot rolls the hemisphere, exactly as it turns the board
+    // on a flat map, and Q/E mean the same thing in both topologies.
+    roll:cam.rot,
     radius:WW() / (2 * Math.PI),
   };
 }
@@ -9601,7 +9729,7 @@ function planetCameraTargetFor(pos) {
   const longitude = Math.atan2(y, x);
   const latitude = Math.asin(Math.max(-1, Math.min(1, z)));
   const span = Math.max(1, S * 1.5 * (state.map.height - 1));
-  let column = (longitude + Math.PI - cam.rot) / (2 * Math.PI) * WW();
+  let column = (longitude + Math.PI) / (2 * Math.PI) * WW();
   const width = WW();
   column += Math.round((cam.x - column) / width) * width;
   return [column, (Math.PI / 2 - latitude) / Math.PI * span];
@@ -9620,7 +9748,15 @@ function planetProject(point, camera, scale, centerX, centerY) {
   const north = -sinLat * along + cosLat * point[2];
   const toward = cosLat * along + sinLat * point[2];
   const radius = camera.radius * scale;
-  return {x:centerX + east * radius, y:centerY - north * radius, z:toward};
+  // Roll the hemisphere in the picture plane, which leaves what is in front of
+  // the camera alone: the same rigid turn a flat board gets, so world north
+  // lands in the same screen direction at the same yaw in either topology.
+  const cosRoll = Math.cos(camera.roll || 0), sinRoll = Math.sin(camera.roll || 0);
+  return {
+    x:centerX + (east * cosRoll + north * sinRoll) * radius,
+    y:centerY - (north * cosRoll - east * sinRoll) * radius,
+    z:toward,
+  };
 }
 function planetCellGeometry(tile, camera, scale, centerX, centerY) {
   const cell = PLANET?.cells.get(key(tile.pos));
@@ -11713,12 +11849,18 @@ function drawPlanetMini() {
 function miniLayout(width, height) {
   const mapWidth = Math.max(1, state.map.width), mapHeight = Math.max(1, state.map.height);
   const pad = 4;
+  const unitWidth = SQ3 * (mapWidth + (mapHeight - 1) / 2);
+  const unitHeight = 1.5 * mapHeight + 0.5;
+  // The chart is drawn turned, so it is fitted turned: the sides of a rotated
+  // rectangle need the room its own corners take, or a chart at any bearing
+  // but north loses them off the edge of the canvas.
+  const cos = Math.abs(Math.cos(chartRot())), sin = Math.abs(Math.sin(chartRot()));
   const size = Math.max(0.1, Math.min(
-    Math.max(1, width - pad * 2) / (SQ3 * (mapWidth + (mapHeight - 1) / 2)),
-    Math.max(1, height - pad * 2) / (1.5 * mapHeight + 0.5)
+    Math.max(1, width - pad * 2) / (unitWidth * cos + unitHeight * sin),
+    Math.max(1, height - pad * 2) / (unitWidth * sin + unitHeight * cos)
   ));
-  const contentWidth = SQ3 * size * (mapWidth + (mapHeight - 1) / 2);
-  const contentHeight = size * (1.5 * mapHeight + 0.5);
+  const contentWidth = size * unitWidth;
+  const contentHeight = size * unitHeight;
   return {
     size,
     originX:(width - contentWidth) / 2 + SQ3 * size / 2,
@@ -11745,6 +11887,16 @@ function drawMini() {
   const {width:miniWidth, height:miniHeight} = syncMiniCanvas();
   mx2.setTransform(DPR, 0, 0, DPR, 0, 0);
   mx2.fillStyle = "#000"; mx2.fillRect(0, 0, miniWidth, miniHeight);
+  // Turned to the bearing this world is charted at, so the minimap agrees with
+  // the map it belongs to instead of quietly reporting a north the map is
+  // withholding. Everything below, the viewport quad included, is drawn in the
+  // unturned frame and comes along.
+  const chart = chartRot();
+  if (chart) {
+    mx2.translate(miniWidth / 2, miniHeight / 2);
+    mx2.rotate(chart);
+    mx2.translate(-miniWidth / 2, -miniHeight / 2);
+  }
   const layout = miniLayout(miniWidth, miniHeight);
   const visible = new Set(state.visible.map(key));
   for (const t of tiles) {
@@ -11837,9 +11989,19 @@ mini.addEventListener("click", ev => {
   }
   const layout = miniLayout(r.width, r.height);
   takeCameraControl();
-  let x = S * (ev.clientX - r.left - layout.originX) / layout.size;
+  // Undo the chart's own bearing before reading a tile off it, so a click lands
+  // where it was aimed on a turned minimap.
+  let clickX = ev.clientX - r.left, clickY = ev.clientY - r.top;
+  const chart = chartRot();
+  if (chart) {
+    const dx = clickX - r.width / 2, dy = clickY - r.height / 2;
+    const cos = Math.cos(chart), sin = Math.sin(chart);
+    clickX = r.width / 2 + cos * dx + sin * dy;
+    clickY = r.height / 2 - sin * dx + cos * dy;
+  }
+  let x = S * (clickX - layout.originX) / layout.size;
   if (mapWrapsX()) x += Math.round((cam.x - x) / WW()) * WW();
-  let y = S * (ev.clientY - r.top - layout.originY) / layout.size;
+  let y = S * (clickY - layout.originY) / layout.size;
   [x, y] = cameraCenterForWorld(x, y);
   y = clampCameraY(y);
   if (REDUCED_MOTION_QUERY.matches) {
@@ -14428,10 +14590,11 @@ modeline();
 
 // ---------------------------------------------------------------- camera
 function cameraYBounds(scale = cam.scale) {
-  // Every script has finite polar rows. At the default north-up view, keep
-  // automatic framing inside those
-  // rows so a battle near a pole cannot replace a large part of the map with
-  // empty background. Rotated/manual views remain unconstrained.
+  // Every script has finite polar rows. Facing north, keep automatic framing
+  // inside those rows so a battle near a pole cannot replace a large part of the
+  // map with empty background. At any other bearing the map's rows are not the
+  // screen's, so there is no vertical span to clamp against and the view is left
+  // alone — including a world still facing the way it was found.
   if (!state || !area.clientHeight) return null;
   // A globe turns to any latitude — that is what a globe is for — so the only
   // limit is the poles themselves. The framing rule below is about keeping a
@@ -14816,13 +14979,13 @@ function fitPlanetView() {
 
 function setFullWorldView() {
   takeCameraControl();
-  setRot(0);
+  setRot(restingRot());
   return fitFullWorldView(false);
 }
 function fitFullWorldView(preservePresentation = false) {
   if (preservePresentation) {
     cameraFlight = null; cameraZoom = null; clearCameraInertia(); stopCameraFollow();
-    setRot(0, false);
+    setRot(restingRot(), false);
     if (VIEW === "cinematic") setTilt(DEFAULT_CINEMA_YS, false);
   }
   if (!state?.map?.tiles?.length) return;
@@ -14836,11 +14999,19 @@ function fitFullWorldView(preservePresentation = false) {
     x:S * SQ3 * (tile.pos[0] + tile.pos[1] / 2),
     y:S * 1.5 * tile.pos[1],
   }));
+  // Fit in the frame the map is actually seen in. A world at any bearing then
+  // lands inside the stage instead of having its corners cut off, and a hex
+  // turns with the board, so hex extents in that frame are the same at every
+  // bearing — at north-up this is the axis-aligned fit it has always been.
+  const rotated = centers.map(point => ({
+    x:COSR * point.x - SINR * point.y,
+    y:SINR * point.x + COSR * point.y,
+  }));
   const halfWidth = S * SQ3 / 2, halfHeight = S;
-  const minX = Math.min(...centers.map(point => point.x)) - halfWidth;
-  const maxX = Math.max(...centers.map(point => point.x)) + halfWidth;
-  const minY = Math.min(...centers.map(point => point.y)) - halfHeight;
-  const maxY = Math.max(...centers.map(point => point.y)) + halfHeight;
+  const minX = Math.min(...rotated.map(point => point.x)) - halfWidth;
+  const maxX = Math.max(...rotated.map(point => point.x)) + halfWidth;
+  const minY = Math.min(...rotated.map(point => point.y)) - halfHeight;
+  const maxY = Math.max(...rotated.map(point => point.y)) + halfHeight;
   const frame = observedFrameRect();
   const padding = Math.min(32, (frame.right - frame.left) * .06,
                            (frame.bottom - frame.top) * .08);
@@ -14852,9 +15023,12 @@ function fitFullWorldView(preservePresentation = false) {
 
   cameraFlight = null; cameraZoom = null; clearCameraInertia();
   cam.scale = Math.max(.01, scale);
-  cam.x = (minX + maxX) / 2 - (desiredX - area.clientWidth / 2) / cam.scale;
-  cam.y = clampCameraY((minY + maxY) / 2 -
-    (desiredY - area.clientHeight / 2) / (cam.scale * YS), cam.scale);
+  // The composition offset is a screen measurement, so it is taken off along
+  // the camera's own axes before the centre is carried back into world space.
+  const focusX = (minX + maxX) / 2 - (desiredX - area.clientWidth / 2) / cam.scale;
+  const focusY = (minY + maxY) / 2 - (desiredY - area.clientHeight / 2) / (cam.scale * YS);
+  cam.x = COSR * focusX + SINR * focusY;
+  cam.y = clampCameraY(-SINR * focusX + COSR * focusY, cam.scale);
   return {x:cam.x, y:cam.y, scale:cam.scale};
 }
 
@@ -16071,7 +16245,7 @@ document.addEventListener("keydown", ev => {
   }
   else if (ev.key.toLowerCase() === "q") orbitCamera(-Math.PI / 12, 0);
   else if (ev.key.toLowerCase() === "e") orbitCamera(Math.PI / 12, 0);
-  else if (ev.key.toLowerCase() === "r") orbitCamera(-cam.rot, DEFAULT_CINEMA_YS - cinematicYS);
+  else if (ev.key.toLowerCase() === "r") resetMapFacing(DEFAULT_CINEMA_YS - cinematicYS);
   else if (ev.key.toLowerCase() === "f") {
     if (sel && !SPEC) orderUnit("fortify"); else togglePanel();
   }
@@ -16080,7 +16254,7 @@ document.addEventListener("keyup", ev => {
   if (ev.key !== "Alt") return;
   ev.preventDefault();
   if (altTap) {
-    setRot(0);
+    setRot(restingRot());
     if (VIEW === "cinematic") setTilt(DEFAULT_CINEMA_YS);
     draw(); drawMini();
   }
@@ -16448,7 +16622,9 @@ for (const checkbox of document.querySelectorAll("[data-overlay]")) {
   checkbox.onchange = () => setOverlayVisibility(name, checkbox.checked);
 }
 
-setRot(parseFloat(localStorage.getItem("civvis-rot") || "0"));
+// The bearing is not set here: it belongs to a world, and no world is known
+// until the first observation arrives. adoptWorldFacing() applies it then.
+setRot(0, false);
 {
   const stored = parseFloat(localStorage.getItem("civvis-tilt") || String(DEFAULT_CINEMA_YS));
   // Earlier cinema builds stored the near-overhead general-map default. Move
