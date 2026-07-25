@@ -613,6 +613,28 @@ def played_by_hand(state: dict[str, Any]) -> bool:
     return state.get("spectate") is False
 
 
+def takes_over_the_seat(
+    latest: dict[str, Any] | None, finished_key: tuple[Any, Any]
+) -> bool:
+    """Whether `latest` is a *new* single-player game holding this process.
+
+    The exhibition offers the seat from the result screen of the game that has
+    just ended, so the handoff has to tell "somebody took it during the
+    cooldown" from "nothing happened". `played_by_hand` alone cannot: a
+    finished game stays reachable and, if a person played it, keeps answering
+    `spectate: false` forever. Asking only that question hands the process back
+    to the game that already ended, on every poll — the loop re-detects the
+    same finish, re-archives the same save every few seconds, and no newer
+    build is ever promoted. Only a different game, and one still in play, is
+    somebody's seat to protect.
+    """
+    if latest is None or not played_by_hand(latest):
+        return False
+    if latest.get("winner") is not None:
+        return False
+    return (latest.get("server_instance"), latest.get("seed")) != finished_key
+
+
 def should_nudge(state: dict[str, Any], stalled_for: float, timeout: float) -> bool:
     """Distinguish a dead spectator loop from an intentional GUI pause.
 
@@ -1763,9 +1785,11 @@ def main() -> int:
                 time.sleep(remaining)
             # It does accept a single-player game, which is exactly what the
             # result screen offers. Somebody who takes the seat during the
-            # cooldown keeps it; the exhibition resumes when that game ends.
+            # cooldown keeps it; the exhibition resumes when that game ends,
+            # which is why the takeover has to be a *different* game from the
+            # one whose finish brought us here.
             latest = read_state(args.port)
-            if latest is not None and played_by_hand(latest):
+            if takes_over_the_seat(latest, current_finished_key):
                 log("a single-player game took this process; leaving it to the player")
                 state = latest
                 finished_key = None
