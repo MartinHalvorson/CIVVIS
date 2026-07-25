@@ -3335,10 +3335,16 @@ function kick(amount) {
   shakeAmp = Math.min(7, Math.max(shakeUntil > now ? shakeAmp : 0, amount));
   shakeUntil = now + SHAKE_MS;
 }
-function unitMapPoint(p, nearX = cam.x) {
+// A caller passing nearX is chaining a path together and wants each leg drawn
+// beside the last; everyone else wants the copy the map itself drew, which on
+// an open chart is not the one nearest the camera.
+function unitMapPoint(p, nearX = null) {
   const t = TMAP.get(key(p));
   let x = S * SQ3 * (p[0] + p[1] / 2);
-  if (mapWrapsX()) x += Math.round((nearX - x) / WW()) * WW();
+  if (mapWrapsX()) {
+    const about = nearX === null ? (wentAround() ? cam.x : chartAnchorX()) : nearX;
+    x += Math.round((about - x) / WW()) * WW();
+  }
   return {x, y:S * 1.5 * p[1], lift:t ? elev(t) : 0};
 }
 function mapPointToView(point) {
@@ -4187,10 +4193,65 @@ function mapWrapsX() {
   if (typeof state.map.wrap_x === "boolean") return state.map.wrap_x;
   return state.map.script !== "inland_sea";
 }
+// Where the chart is unrolled about: the camera once the world is known to
+// come back on itself, and one fixed place until then.
+//
+// Taking the copy nearest the camera is what makes a cylinder seamless — pan
+// east far enough and the same coasts come round again, and the shape of the
+// world has been handed over for the price of a drag. Nobody sailed anywhere
+// to learn that. So until a people have been the whole way round, every tile
+// is drawn in the one copy nearest their own ground: an open sheet a world
+// wide, ending in the quarter they have never reached, with nothing at all
+// beyond it. Pan past that and the map runs out, which is what a chart of an
+// unmeasured world does.
+let CHART_ANCHOR = null;       // world x the open chart is unrolled about
+let CHART_ANCHOR_WORLD = null; // the world that anchor belongs to
+let CHART_ANCHOR_SETTLED = false;
+function chartAnchorX() {
+  const world = state?.seed ?? null;
+  if (world !== CHART_ANCHOR_WORLD) {
+    CHART_ANCHOR_WORLD = world;
+    CHART_ANCHOR = null;
+    CHART_ANCHOR_SETTLED = false;
+  }
+  // A capital is the one place a civilization charts everything else from, and
+  // it does not move, so the sheet stops drifting the moment one is founded.
+  // Before that the first settler's own tile will do: the far end of the chart
+  // is half a world away and nobody is near it on turn one.
+  if (!CHART_ANCHOR_SETTLED) {
+    const home = chartHomePos();
+    if (home) {
+      CHART_ANCHOR = S * SQ3 * (home.pos[0] + home.pos[1] / 2);
+      CHART_ANCHOR_SETTLED = home.settled;
+    }
+  }
+  return CHART_ANCHOR === null ? cam.x : CHART_ANCHOR;
+}
+function chartHomePos() {
+  if (!state) return null;
+  const me = state.player;
+  let capital = null;
+  for (const city of state.cities || []) {
+    if (city.owner !== me) continue;
+    if (!capital || (city.id ?? 0) < (capital.id ?? 0)) capital = city;
+  }
+  if (capital) return { pos:capital.pos, settled:true };
+  for (const unit of state.units || [])
+    if (unit.owner === me) return { pos:unit.pos, settled:false };
+  const tiles = state.map?.tiles;
+  return tiles?.length ? { pos:tiles[0].pos, settled:false } : null;
+}
+// Whether the open chart reaches this far. Past its ends the world does go on,
+// but this civilization has no sheet to draw it on.
+function chartCovers(worldX) {
+  if (!state || !mapWrapsX() || wentAround()) return true;
+  return Math.abs(worldX - chartAnchorX()) <= WW() / 2 + S * SQ3;
+}
 function wrapX(x) {
   if (!mapWrapsX()) return x;
   const w = WW();
-  return x + Math.round((cam.x - x) / w) * w;
+  const about = wentAround() ? cam.x : chartAnchorX();
+  return x + Math.round((about - x) / w) * w;
 }
 function canonPos(p) {
   if (!state) return p;
@@ -4250,22 +4311,34 @@ function syncTiltForView() {
 
 // ------------------------------------------------------------ which way is up
 // A world does not arrive with north at the top. Each map is first seen from
-// whatever direction the people living on it happened to face, and it keeps
-// that bearing until they can read one off the sky — the server says when,
-// which is why this is not a local preference. So the half-dozen camera paths
-// that used to put north back at the top go through restingRot() instead: true
-// north for anyone who can find it, and the world's own facing for everyone
-// else. A spectator is not a civilization and always has north.
+// whatever direction the people living on it happened to face, and the bearing
+// comes to them in two pieces, neither of which the client is the judge of.
+// Going the whole way round squares the chart to the world's own axis: the
+// direction the world repeats in is the one direction a people can establish
+// by walking it, and once they have, half a turn is all the doubt that is
+// left. Reading a bearing off the sky settles which half. So the camera paths
+// that used to put north back at the top go through restingRot() instead:
+// north for anyone who has found it, the world's axis for anyone who has been
+// round it, and the facing it was first seen at for everyone else. A spectator
+// is not a civilization and always has north.
 let HOME_ROT = 0;             // the bearing this world was first shown at
 let HOME_ROT_WORLD = null;    // the world that bearing belongs to
 let FOUND_NORTH = true;       // whether the observed civilization can find north
+let WENT_AROUND = true;       // whether it has been the whole way round the world
 const compassButton = document.getElementById("compass");
 const compassNeedle = document.getElementById("compass-needle");
 
-// One of the eleven thirty-degree bearings that is not north itself, so a fresh
-// world is always visibly turned — and always a whole number of Q/E steps away,
-// so the viewer can come back to the angle they started at exactly rather than
-// hunting for it.
+// One of the five sixty-degree bearings that is not north itself, so a fresh
+// world is always visibly turned.
+//
+// Sixty degrees is the hexagon's own symmetry: at each of them a flat edge is
+// still horizontal and the grid is laid out exactly as it always was, so the
+// picture itself gives nothing away about how far it has been turned. All that
+// is unknown is which of the six edges is up. A thirty-degree bearing would
+// stand the lattice on its point, which announces that the map has been turned
+// and by roughly how much. It is also a whole number of Q/E steps from north,
+// so a viewer can come back to the angle they started at rather than hunt for
+// it, and it is derived from the seed, so a world always opens the same way.
 function worldFacing(seed) {
   const text = String(seed ?? "");
   let a = text.length | 0, b = 0;
@@ -4273,15 +4346,30 @@ function worldFacing(seed) {
     a = (Math.imul(a, 31) + text.charCodeAt(i)) | 0;
     b = (Math.imul(b, 17) ^ a) | 0;
   }
-  return (1 + Math.floor(hash2(a, b) * 11)) * Math.PI / 6;
+  return (1 + Math.floor(hash2(a, b) * 5)) * Math.PI / 3;
 }
 function foundNorth(st = state) {
   // Read from the observation rather than the global SPEC, so this answers the
   // same during render — before the flag is refreshed — as it does after.
   return !st || !!st.spectate || st.me?.found_north !== false;
 }
+// Whether the observed civilization has been the whole way round its world and
+// so knows that it comes back on itself, and how far round it is. The server
+// decides this from the ground they have actually seen; the client only draws
+// the difference.
+function wentAround(st = state) {
+  return !st || !!st.spectate || st.me?.went_around !== false;
+}
+// The two bearings at which the direction the world repeats in lies across the
+// screen. Having been round is knowing that axis, and nothing more: north is
+// still either end of it.
+function axisRot() {
+  const half = Math.PI;
+  return (Math.round(HOME_ROT / half) * half) % (2 * Math.PI);
+}
 function restingRot() {
-  return foundNorth() ? 0 : HOME_ROT;
+  if (foundNorth()) return 0;
+  return wentAround() ? axisRot() : HOME_ROT;
 }
 // Your own charts are drawn the way your own world faces, so the minimap
 // cannot hand you a north the map itself is withholding. Once north is known
@@ -4295,10 +4383,14 @@ function northTechLabel() {
 }
 function updateCompass() {
   if (!compassButton) return;
-  const found = foundNorth();
-  compassButton.disabled = !found;
+  const found = foundNorth(), around = wentAround();
+  // Having been round the world is worth a button even without north: it
+  // squares the chart to the axis the world repeats in, which is a real thing
+  // to put the map back to.
+  compassButton.disabled = !found && !around;
   const title = found ? "Face north · R"
-    : `Bearing unknown · ${northTechLabel()} finds north`;
+    : around ? `Square the chart to the world's axis · R · ${northTechLabel()} finds north`
+    : `Bearing unknown · a way round the world squares the chart · ${northTechLabel()} finds north`;
   if (compassButton.title === title) return;
   compassButton.title = title;
   compassButton.setAttribute("aria-label", title);
@@ -4313,33 +4405,81 @@ function resetMapFacing(deltaTilt = 0) {
 function adoptWorldFacing(st) {
   HOME_ROT_WORLD = st?.seed ?? null;
   FOUND_NORTH = foundNorth(st);
+  WENT_AROUND = wentAround(st);
   HOME_ROT = FOUND_NORTH ? 0 : worldFacing(HOME_ROT_WORLD);
   let kept = NaN;
   try {
     if (localStorage.getItem("civvis-rot-world") === String(HOME_ROT_WORLD))
       kept = parseFloat(localStorage.getItem("civvis-rot"));
   } catch (error) {}
-  setRot(Number.isFinite(kept) ? kept : HOME_ROT);
+  // Not restingRot(): the observation being adopted is not the global state
+  // yet, so the rung is read off `st` here the way FOUND_NORTH above is.
+  const resting = FOUND_NORTH ? 0 : WENT_AROUND ? axisRot() : HOME_ROT;
+  setRot(Number.isFinite(kept) ? kept : resting);
 }
-// Finding north is otherwise invisible — nothing about the board itself
-// changes — so the map settles onto it once, the way a chart is redrawn when a
-// survey finally comes in.
+// Neither rung changes anything about the board itself, so the map settles
+// onto the new one once, the way a chart is redrawn when a survey finally
+// comes in: square to the world's axis when a fleet gets the whole way round,
+// and onto north when the sky is finally read.
 function syncFoundNorth(st) {
-  const found = foundNorth(st);
-  if (found !== FOUND_NORTH) {
+  const found = foundNorth(st), around = wentAround(st);
+  if (found !== FOUND_NORTH || around !== WENT_AROUND) {
+    const learned = (found && !FOUND_NORTH) || (around && !WENT_AROUND);
     FOUND_NORTH = found;
-    if (found && Math.abs(cam.rot) > .001) resetMapFacing();
+    WENT_AROUND = around;
+    const resting = found ? 0 : around ? axisRot() : HOME_ROT;
+    if (learned && Math.abs(cam.rot - resting) > .001) orbitCamera(resting - cam.rot);
+    if (learned) drawMini();
   }
   updateCompass();
 }
 if (compassButton) compassButton.onclick = () => resetMapFacing();
-// Cylindrical scripts use the copy nearest the camera; bounded scripts retain
-// their literal east and west edges.
+// Cylindrical scripts use one copy — nearest the camera once the world is
+// known to come back on itself, nearest the chart's anchor before that;
+// bounded scripts retain their literal east and west edges.
 // hexXY returns camera-relative view coords (rotate, then dimetric squash).
 function hexXY(q, r) {
   const wx = wrapX(S * SQ3 * (q + r / 2)) - cam.x;
   const wy = S * 1.5 * r - cam.y;
   return [COSR * wx - SINR * wy, (SINR * wx + COSR * wy) * YS];
+}
+// The same, for a column that means itself rather than a tile of the world:
+// the parchment beyond an open chart is drawn past the world's own rectangle
+// and must not be folded back into it.
+function hexXYRaw(q, r) {
+  const wx = S * SQ3 * (q + r / 2) - cam.x;
+  const wy = S * 1.5 * r - cam.y;
+  return [COSR * wx - SINR * wy, (SINR * wx + COSR * wy) * YS];
+}
+// Whether the world is still an open sheet: it comes back on itself and this
+// civilization has not been round to find that out.
+function chartIsOpen() {
+  return !!state && mapWrapsX() && !wentAround();
+}
+// Whether real ground is drawn at this exact copy of a wrapping world. Every
+// tile is drawn once, in the copy the open chart folds it into; the rest of
+// the plane is parchment even where the world does continue.
+function chartDrawsGroundAt(q, r) {
+  const u = q + r / 2;
+  if (Math.abs(chartUnrolledU(u) - u) > 1e-9) return false;
+  const canon = canonPos([q, r]);
+  return TMAP.has(canon[0] + "," + canon[1]);
+}
+// The offset columns and rows the frame can reach. World coordinates are an
+// affine function of column and row, so the corners of the frame bound it.
+function framedHexBounds(margin = 2) {
+  let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
+  for (const [sx, sy] of [[0, 0], [area.clientWidth, 0],
+                          [area.clientWidth, area.clientHeight], [0, area.clientHeight]]) {
+    const [wx, wy] = screenToWorld(sx, sy);
+    const col = wx / (S * SQ3), row = wy / (S * 1.5);
+    left = Math.min(left, col); right = Math.max(right, col);
+    top = Math.min(top, row); bottom = Math.max(bottom, row);
+  }
+  return {
+    left:Math.floor(left) - margin, right:Math.ceil(right) + margin,
+    top:Math.floor(top) - margin, bottom:Math.ceil(bottom) + margin,
+  };
 }
 // Relief is a numeric capability: zero gives Painted its uninterrupted 2D
 // illustration plane, while Cinematic's authored multiplier raises the same
@@ -4434,6 +4574,9 @@ function pixelToHex(sx, sy) {
     return null;
   }
   const [wx, wy] = screenToWorld(sx, sy);
+  // Off the end of an open chart there is ground in the world but none on the
+  // sheet, and the copy the arithmetic below would find was never drawn.
+  if (!chartCovers(wx)) return null;
   // tiles are drawn raised by their elevation: test a few offsets and accept
   // the candidate whose actual elevation matches the offset best
   let best = null, bd = 1e9;
@@ -11361,11 +11504,20 @@ function draw() {
   // --- antique-map parchment for the unexplored world
   if (beau0 && state) {
     cx.textAlign = "center"; cx.textBaseline = "middle";
-    for (let row = 0; row < state.map.height; row++) {
-      for (let col = 0; col < state.map.width; col++) {
+    // Parchment is what the world is made of where nobody has been, so on an
+    // open chart it does not stop at the rectangle the world happens to be
+    // stored in: it is laid over whatever the frame can reach, and the sheet
+    // keeps going in every direction the way an unmeasured world does. Once a
+    // people have been round, the parchment ends where their world does.
+    const open = chartIsOpen();
+    const span = open
+      ? framedHexBounds()
+      : {left:0, right:state.map.width - 1, top:0, bottom:state.map.height - 1};
+    for (let row = span.top; row <= span.bottom; row++) {
+      for (let col = span.left; col <= span.right; col++) {
         const q = col - ((row - (row & 1)) >> 1);
-        if (TMAP.has(q + "," + row)) continue;
-        const [x, y] = hexXY(q, row);
+        if (open ? chartDrawsGroundAt(q, row) : TMAP.has(q + "," + row)) continue;
+        const [x, y] = open ? hexXYRaw(q, row) : hexXY(q, row);
         if (x < -halfW || x > halfW || y < topY || y > botY) continue;
         hexPath(x, y, S + 0.6);
         cx.fillStyle = shade(PARCH, 0.96 + 0.08 * hash2(q, row));
@@ -13209,11 +13361,46 @@ function drawPlanetMini() {
   return true;
 }
 
-function miniLayout(width, height) {
+// A column measure unrolled onto the open chart — the same fold the main map
+// draws with, in the minimap's own units.
+function chartUnrolledU(u) {
+  if (!state || !mapWrapsX() || wentAround()) return u;
+  const w = Math.max(1, state.map.width);
+  return u + Math.round((chartAnchorX() / (S * SQ3) - u) / w) * w;
+}
+// What the thumbnail has to hold. Once a people have been round their world
+// that is the world, all of it, at a scale that never changes again. Until
+// then it is the ground they know, and the thumbnail grows and rescales as
+// they find more — which is the honest thing for it to do, because a frame
+// drawn around the whole rectangle from turn one is a statement about how big
+// the world is and how much of it is left, made before anyone went to look.
+function miniBounds() {
   const mapWidth = Math.max(1, state.map.width), mapHeight = Math.max(1, state.map.height);
+  const whole = {
+    minU:0, maxU:(mapWidth - 1) + (mapHeight - 1) / 2,
+    minR:0, maxR:mapHeight - 1,
+  };
+  const tiles = state.map?.tiles;
+  if (wentAround() || !mapWrapsX() || !tiles?.length) return whole;
+  let minU = Infinity, maxU = -Infinity, minR = Infinity, maxR = -Infinity;
+  for (const tile of tiles) {
+    const u = chartUnrolledU(tile.pos[0] + tile.pos[1] / 2);
+    if (u < minU) minU = u;
+    if (u > maxU) maxU = u;
+    if (tile.pos[1] < minR) minR = tile.pos[1];
+    if (tile.pos[1] > maxR) maxR = tile.pos[1];
+  }
+  // Known ground never fills the thumbnail edge to edge: a chart drawn right up
+  // against its own frame is a chart claiming the frame is the world.
+  const room = span => Math.max(2, span * .15);
+  const padU = room(maxU - minU), padR = room(maxR - minR);
+  return { minU:minU - padU, maxU:maxU + padU, minR:minR - padR, maxR:maxR + padR };
+}
+function miniLayout(width, height) {
+  const bounds = miniBounds();
   const pad = 4;
-  const unitWidth = SQ3 * (mapWidth + (mapHeight - 1) / 2);
-  const unitHeight = 1.5 * mapHeight + 0.5;
+  const unitWidth = SQ3 * (bounds.maxU - bounds.minU + 1);
+  const unitHeight = 1.5 * (bounds.maxR - bounds.minR) + 2;
   // The chart is drawn turned, so it is fitted turned: the sides of a rotated
   // rectangle need the room its own corners take, or a chart at any bearing
   // but north loses them off the edge of the canvas.
@@ -13226,12 +13413,12 @@ function miniLayout(width, height) {
   const contentHeight = size * unitHeight;
   return {
     size,
-    originX:(width - contentWidth) / 2 + SQ3 * size / 2,
-    originY:(height - contentHeight) / 2 + size,
+    originX:(width - contentWidth) / 2 + SQ3 * size * (0.5 - bounds.minU),
+    originY:(height - contentHeight) / 2 + size - 1.5 * size * bounds.minR,
   };
 }
 function miniHexCenter(pos, layout) {
-  return [layout.originX + SQ3 * layout.size * (pos[0] + pos[1] / 2),
+  return [layout.originX + SQ3 * layout.size * chartUnrolledU(pos[0] + pos[1] / 2),
           layout.originY + 1.5 * layout.size * pos[1]];
 }
 function miniHexPath(x, y, size) {
@@ -13362,8 +13549,7 @@ mini.addEventListener("click", ev => {
     clickX = r.width / 2 + cos * dx + sin * dy;
     clickY = r.height / 2 - sin * dx + cos * dy;
   }
-  let x = S * (clickX - layout.originX) / layout.size;
-  if (mapWrapsX()) x += Math.round((cam.x - x) / WW()) * WW();
+  let x = wrapX(S * (clickX - layout.originX) / layout.size);
   let y = S * (clickY - layout.originY) / layout.size;
   [x, y] = cameraCenterForWorld(x, y);
   y = clampCameraY(y);
@@ -13550,7 +13736,12 @@ function hudTurnPlate() {
   // the ones a world arrives with by default.
   const shapeNote = planetMap() ? " · Planet" : "";
   const polesNote = state.map.poles === "no_poles" ? " · No poles" : "";
-  const mapLabel = `${mapName}${shapeNote}${polesNote} · ${state.map.size_name || "Custom"} ${state.map.width}×${state.map.height} · ${speedName}`;
+  // How far round a world goes is something a people find out by going round
+  // it, so its dimensions are not part of the identity line until they have.
+  const extent = wentAround()
+    ? ` ${state.map.width}×${state.map.height}`
+    : ", extent uncharted";
+  const mapLabel = `${mapName}${shapeNote}${polesNote} · ${state.map.size_name || "Custom"}${extent} · ${speedName}`;
   const profile = spectatorIdentity(identity);
   const climateLabel = (Number(state.me.global_co2) || 0) !== 0 || Number(eraRaw) >= 4
     ? `Global lifetime carbon emissions: ${compactStat(state.me.global_co2)} CO₂`
@@ -16109,8 +16300,9 @@ function cameraTargetFor(pos, scale = cam.scale) {
     const target = planetCameraTargetFor(pos);
     return target || [cam.x, cam.y];
   }
-  let x = S * SQ3 * (pos[0] + pos[1] / 2);
-  if (mapWrapsX()) x += Math.round((cam.x - x) / WW()) * WW();
+  // The copy the map actually drew, which on an open chart is not the one
+  // nearest the camera.
+  const x = wrapX(S * SQ3 * (pos[0] + pos[1] / 2));
   return cameraCenterForWorld(x, S * 1.5 * pos[1], scale);
 }
 function applyCameraAnchor(wx, wy, sx, sy, scale = cam.scale) {
@@ -16399,7 +16591,7 @@ function fitFullWorldView(preservePresentation = false) {
   }
 
   const centers = state.map.tiles.map(tile => ({
-    x:S * SQ3 * (tile.pos[0] + tile.pos[1] / 2),
+    x:wrapX(S * SQ3 * (tile.pos[0] + tile.pos[1] / 2)),
     y:S * 1.5 * tile.pos[1],
   }));
   // Fit in the frame the map is actually seen in. A world at any bearing then

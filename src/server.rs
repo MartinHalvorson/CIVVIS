@@ -4025,6 +4025,18 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function worldFacing(seed)"));
         assert!(EMBEDDED_INDEX.contains("function adoptWorldFacing(st)"));
         assert!(EMBEDDED_INDEX.contains("found_north !== false"));
+        // A world's shape and its bearing are earned by going round it: until
+        // then the chart is unrolled about one fixed place instead of about the
+        // camera, so panning east does not hand back the coasts you started
+        // from, and the thumbnail frames the ground that is known rather than
+        // the whole rectangle.
+        assert!(EMBEDDED_INDEX.contains("function wentAround(st = state)"));
+        assert!(EMBEDDED_INDEX.contains("went_around !== false"));
+        assert!(EMBEDDED_INDEX.contains("function chartAnchorX()"));
+        assert!(EMBEDDED_INDEX.contains("function chartCovers(worldX)"));
+        assert!(EMBEDDED_INDEX.contains("function miniBounds()"));
+        assert!(EMBEDDED_INDEX.contains("function axisRot()"));
+        assert!(!EMBEDDED_INDEX.contains("Math.round((cam.x - x) / WW()) * WW()"));
         assert!(EMBEDDED_INDEX.contains("id=\"compass\""));
         assert!(EMBEDDED_INDEX.contains("id=\"compass-needle\""));
         assert!(EMBEDDED_INDEX.contains("resetMapFacing(DEFAULT_CINEMA_YS - cinematicYS)"));

@@ -353,6 +353,13 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             // so it is never the party that has to find north.
             "found_north": omniscient || p.techs.contains(NORTH_TECH),
             "north_tech": NORTH_TECH,
+            // Whether this people's knowledge has ever run the whole way round
+            // the world, which is how a civilization finds out that it does
+            // come back on itself and how far round it is. Until then their
+            // chart is an open sheet that stops where they have stopped, and
+            // the world does not helpfully repeat past the edge of it. A
+            // spectator is not living in the world and is told at once.
+            "went_around": omniscient || p.went_around,
             "civics": p.civics, "civic": p.civic,
             "civic_progress": round1(p.civic_progress),
             "government": p.government,
@@ -1305,6 +1312,33 @@ mod tests {
         assert_eq!(observation(&game, 0)["me"]["found_north"], json!(true));
         assert_eq!(
             observation_player_view(&game, 0)["me"]["found_north"],
+            json!(true),
+        );
+    }
+
+    /// The other half of a world's bearing, and all of its extent: a people
+    /// know their world comes back on itself once their own knowledge has run
+    /// the whole way round it. A spectator is above the world and is told at
+    /// once; a civilization has to go.
+    #[test]
+    fn going_the_whole_way_round_is_earned_by_a_civilization_and_free_for_a_spectator() {
+        let mut game = Game::new(2, 18, 12, 11, 25, 0);
+
+        let own = observation(&game, 0);
+        assert_eq!(own["me"]["went_around"], json!(false));
+        assert_eq!(
+            observation_player_view(&game, 0)["me"]["went_around"],
+            json!(false),
+        );
+        assert_eq!(
+            observation_spectator(&game, 0)["me"]["went_around"],
+            json!(true),
+        );
+
+        game.players[0].went_around = true;
+        assert_eq!(observation(&game, 0)["me"]["went_around"], json!(true));
+        assert_eq!(
+            observation_player_view(&game, 0)["me"]["went_around"],
             json!(true),
         );
     }
