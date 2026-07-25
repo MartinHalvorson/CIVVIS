@@ -1,11 +1,12 @@
-/* CIVVIS cinematic unit models.
+/* CIVVIS cinematic 3D models.
  *
  * This is deliberately dependency-free: the strategic map remains one
  * Canvas2D scene, while close cinematic shots can ask this module to project
- * small real 3D meshes into that canvas.  Geometry is depth-sorted per face,
- * lit from a fixed world key, and articulated from the same movement/attack
- * phase as the simulation renderer.  The ordinary vector figures remain the
- * low-zoom and compatibility fallback.
+ * small real 3D meshes into that canvas. Units use a compact perspective
+ * camera; terrain features use the map's orthographic yaw and tilt. Geometry
+ * is depth-sorted per face and lit from a fixed world key, so models remain
+ * solid while the board rotates and zooms. The ordinary vector figures and
+ * painted sprites remain compatibility fallbacks.
  */
 (function installCinematic3D(global) {
   "use strict";
@@ -25,6 +26,15 @@
   const MODERN_SHIPS = new Set(["ironclad", "battleship", "destroyer", "aircraft_carrier",
     "missile_cruiser"]);
   const SUBMARINES = new Set(["submarine", "nuclear_submarine"]);
+  const ENVIRONMENTS = Object.freeze([
+    "hills", "mountain", "forest", "jungle", "burning_forest", "burnt_forest",
+    "burning_jungle", "burnt_jungle", "marsh", "oasis", "floodplains",
+    "grassland_floodplains", "plains_floodplains", "reef", "geothermal_fissure",
+    "ice", "volcano", "volcanic_soil", "impact_zone", "great_barrier_reef",
+    "crater_lake", "pantanal", "uluru", "yosemite", "dead_sea",
+    "mount_everest", "pamukkale",
+  ]);
+  const ENVIRONMENT_SET = new Set(ENVIRONMENTS);
 
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
   const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
@@ -73,23 +83,31 @@
       this.scale = options.scale || 1;
       this.facing = options.facing < 0 ? -1 : 1;
       this.bank = options.bank || 0;
+      this.yaw = options.yaw || 0;
+      this.tilt = options.tilt || .38;
+      this.orthographic = !!options.orthographic;
       this.items = [];
-      this.light = norm([-0.55 * this.facing, -0.72, 1.1]);
-      this.stroke = options.stroke || "rgba(8,12,16,.78)";
+      this.light = Number.isFinite(options.sunAngle)
+        ? norm([Math.cos(options.sunAngle + this.yaw),
+          Math.sin(options.sunAngle + this.yaw), 1.12])
+        : norm([-0.55 * this.facing, -0.72, 1.1]);
+      this.stroke = options.stroke === undefined ? "rgba(8,12,16,.78)" : options.stroke;
     }
 
     world(p) {
       let q = [p[0] * this.facing, p[1], p[2]];
       if (this.bank) q = rotatePoint(q, 0, this.bank * .22, this.bank * .12);
+      if (this.yaw) q = rotatePoint(q, 0, 0, this.yaw);
       return q;
     }
 
     project(p) {
       const q = this.world(p);
-      const perspective = 88 / (88 + q[1]);
+      const perspective = this.orthographic ? 1 : 88 / (88 + q[1]);
       return {
         x: q[0] * this.scale * perspective,
-        y: (q[1] * .38 - q[2]) * this.scale * perspective,
+        y: (q[1] * (this.orthographic ? this.tilt : .38) - q[2]) *
+          this.scale * perspective,
         depth: q[1] + q[2] * .012,
         perspective,
       };
@@ -154,7 +172,7 @@
       this.mesh(points, faces, color);
     }
 
-    ellipsoid(center, radii, color, segments = 8, rings = 4) {
+    ellipsoid(center, radii, color, segments = 8, rings = 4, alpha = 1) {
       const points = [];
       for (let r = 0; r <= rings; r++) {
         const lat = -Math.PI / 2 + r * Math.PI / rings;
@@ -171,16 +189,35 @@
         faces.push([r * segments + i, r * segments + next,
           (r + 1) * segments + next, (r + 1) * segments + i]);
       }
-      this.mesh(points, faces, color);
+      this.mesh(points, faces, color, alpha);
     }
 
-    polygon(points, color, thickness = .45) {
+    polygon(points, color, thickness = .45, alpha = 1) {
       const top = points.map(p => [p[0], p[1], p[2] + thickness / 2]);
       const bottom = points.map(p => [p[0], p[1], p[2] - thickness / 2]);
       const vertices = [...bottom, ...top], n = points.length;
       const faces = [[...Array(n).keys()].reverse(), [...Array(n).keys()].map(i => n + i)];
       for (let i = 0; i < n; i++) faces.push([i, (i + 1) % n, n + (i + 1) % n, n + i]);
-      this.mesh(vertices, faces, color);
+      this.mesh(vertices, faces, color, alpha);
+    }
+
+    cone(center, radius, height, color, sides = 8, topRadius = 0,
+         rotation = 0, alpha = 1) {
+      const [cx, cy, cz] = center;
+      const points = [];
+      for (const [z, r] of [[cz, radius], [cz + height, topRadius]]) {
+        for (let i = 0; i < sides; i++) {
+          const angle = rotation + i * Math.PI * 2 / sides;
+          points.push([cx + Math.cos(angle) * r, cy + Math.sin(angle) * r, z]);
+        }
+      }
+      const faces = [];
+      for (let i = 0; i < sides; i++) faces.push([
+        i, (i + 1) % sides, sides + (i + 1) % sides, sides + i,
+      ]);
+      faces.push([...Array(sides).keys()].reverse());
+      if (topRadius > 0) faces.push([...Array(sides).keys()].map(i => sides + i));
+      this.mesh(points, faces, color, alpha);
     }
 
     glow(point, radius, color, alpha = .7) {
@@ -207,8 +244,10 @@
           for (let i = 1; i < item.vertices.length; i++)
             ctx.lineTo(item.vertices[i].x, item.vertices[i].y);
           ctx.closePath(); ctx.fillStyle = item.fill; ctx.fill();
-          ctx.strokeStyle = this.stroke; ctx.lineWidth = .72; ctx.stroke();
-          if (item.shine) {
+          if (this.stroke) {
+            ctx.strokeStyle = this.stroke; ctx.lineWidth = .72; ctx.stroke();
+          }
+          if (item.shine && this.stroke) {
             ctx.globalAlpha = (item.shine - .7) * .34;
             ctx.strokeStyle = "#fff"; ctx.lineWidth = .45; ctx.stroke();
             ctx.globalAlpha = 1;
@@ -551,6 +590,330 @@
     scene.glow([2, -3.2, 11], 2.3, "#64ecff", .7);
   }
 
+  // ---------------------------------------------------------------- map environment
+  // These are intentionally low-poly models rather than camera-facing image
+  // cutouts. Every vertex is expressed in the same world plane as a hex, then
+  // yawed and tilted by Scene.project. Deterministic seeds keep a forest or
+  // ridge stable between frames while still avoiding a repeated tile stamp.
+  function seeded(seed) {
+    let value = (Math.floor(Number(seed) || 1) ^ 0x9e3779b9) >>> 0;
+    return () => {
+      value ^= value << 13; value ^= value >>> 17; value ^= value << 5;
+      return (value >>> 0) / 4294967296;
+    };
+  }
+
+  function groundShadow(scene, radius, alpha = .2) {
+    scene.ellipsoid([1.5, 2, .08], [radius, radius * .68, .14],
+      "#10140f", 10, 2, alpha);
+  }
+
+  function crag(scene, x, y, radius, height, color, snow, random) {
+    const sides = 7 + Math.floor(random() * 3);
+    const turn = random() * Math.PI * 2;
+    scene.cone([x, y, 0], radius, height, color, sides, .3, turn);
+    if (snow && height > 16) {
+      const snowLine = height * (.66 + random() * .08);
+      scene.cone([x, y, snowLine], radius * .37, height - snowLine + .2,
+        "#e8edf0", sides, .2, turn, .96);
+    }
+  }
+
+  function mountains(scene, o, monument = false) {
+    const random = seeded(o.seed + 71);
+    const span = o.span || 1;
+    const snowy = monument || o.terrain === "snow" || o.polar;
+    const sandstone = o.terrain === "desert" && !snowy;
+    const base = sandstone ? "#a66e45" : "#746f66";
+    groundShadow(scene, 24 * span, .25);
+    const peaks = monument
+      ? [[0, 0, 20, 55], [-18, 3, 13, 36], [17, 4, 14, 40]]
+      : [[-13, 2, 15, 32], [1, -2, 20, 44], [15, 5, 13, 28]];
+    for (const [x, y, radius, height] of peaks) {
+      crag(scene, x * span, y * span, radius * span * (.9 + random() * .18),
+        height * span * (.9 + random() * .2), base, snowy, random);
+    }
+  }
+
+  function hills(scene, o) {
+    const random = seeded(o.seed + 43);
+    groundShadow(scene, 18, .12);
+    const color = o.terrain === "desert" ? "#b78955"
+      : o.terrain === "snow" ? "#cbd3cf" : "#738153";
+    for (const [x, y] of [[-9, 2], [5, -4], [11, 6]])
+      scene.ellipsoid([x, y, 1.8], [10 + random() * 3, 8 + random() * 2,
+        4.4 + random() * 2], color, o.detail ? 8 : 6, o.detail ? 3 : 2, .82);
+  }
+
+  function woodland(scene, o, jungle) {
+    const random = seeded(o.seed + (jungle ? 173 : 113));
+    const burnt = o.kind.startsWith("burnt_");
+    const burning = o.kind.startsWith("burning_");
+    const count = o.detail ? 7 : 3;
+    const crownSegments = o.detail ? 8 : 6;
+    const crownRings = o.detail ? 3 : 2;
+    groundShadow(scene, 20, burnt ? .28 : .2);
+    const trees = [];
+    for (let i = 0; i < count; i++) {
+      const angle = random() * Math.PI * 2;
+      const radius = Math.sqrt(random()) * 15;
+      trees.push({x:Math.cos(angle) * radius, y:Math.sin(angle) * radius,
+        h:(jungle ? 12 : 15) * (.72 + random() * .48), v:random()});
+    }
+    trees.sort((a, b) => a.y - b.y);
+    for (const tree of trees) {
+      const trunkTop = tree.h * (jungle ? .7 : .55);
+      scene.tube([tree.x, tree.y, 0], [tree.x + (tree.v - .5) * 1.2,
+        tree.y, trunkTop], jungle ? .85 : .68, burnt ? "#332b25" : "#5b3d24", 6);
+      if (burnt) {
+        scene.tube([tree.x, tree.y, trunkTop * .72],
+          [tree.x - 3, tree.y + 1, tree.h * .83], .32, "#282521", 5);
+        continue;
+      }
+      if (jungle) {
+        const green = tree.v > .66 ? "#17613b" : tree.v > .33 ? "#237447" : "#145433";
+        if (o.detail) {
+          scene.ellipsoid([tree.x, tree.y, tree.h], [5.7, 5.1, 4.2], green,
+            crownSegments, crownRings);
+          scene.ellipsoid([tree.x - 2.6, tree.y + .8, tree.h + 1.1],
+            [4.2, 3.8, 3.2], tint(green, 1.12), crownSegments, crownRings);
+        }
+      } else {
+        const green = tree.v > .66 ? "#2d6636" : tree.v > .33 ? "#24562d" : "#1b4825";
+        scene.cone([tree.x, tree.y, tree.h * .32], 5.3, tree.h * .68,
+          green, 7, .15, tree.v * 6.28);
+        scene.cone([tree.x, tree.y, tree.h * .54], 4.2, tree.h * .55,
+          tint(green, 1.08), 7, .08, tree.v * 6.28 + .25);
+      }
+      if (burning && tree.v > .28) {
+        scene.cone([tree.x + 1, tree.y - .5, 1], 2.5, 8 + tree.v * 5,
+          "#e34c1c", 6, .1, tree.v * 5, .88);
+        scene.cone([tree.x + 1, tree.y - .5, 2], 1.25, 5 + tree.v * 3,
+          "#ffd34d", 6, .05, tree.v * 5, .92);
+        scene.glow([tree.x + 1, tree.y, 5], 7, "#ff6a24", .34);
+      }
+    }
+    if (jungle && !o.detail && !burnt) {
+      scene.ellipsoid([-2, 0, 12], [13, 10, 5.2], "#17613b", 7, 2);
+      scene.ellipsoid([7, 2, 13.2], [8.5, 7, 4.4], "#237447", 7, 2);
+    }
+  }
+
+  function waterPatch(scene, color, scale = 1, alpha = .88) {
+    const points = [];
+    for (let i = 0; i < 10; i++) {
+      const a = i * Math.PI * 2 / 10;
+      const r = (i & 1 ? 13 : 16) * scale;
+      points.push([Math.cos(a) * r, Math.sin(a) * r, .3]);
+    }
+    scene.polygon(points, color, .45, alpha);
+  }
+
+  function wetlands(scene, o, dense = false) {
+    const random = seeded(o.seed + 211);
+    waterPatch(scene, dense ? "#47775f" : "#467968", 1, .58);
+    const count = dense ? (o.detail ? 14 : 8) : (o.detail ? 10 : 5);
+    for (let i = 0; i < count; i++) {
+      const x = (random() - .5) * 29, y = (random() - .5) * 21;
+      const h = 4 + random() * 5;
+      scene.tube([x, y, .5], [x + (random() - .5), y, h], .22,
+        i % 3 ? "#51743d" : "#9a7a43", 5);
+    }
+  }
+
+  function palm(scene, x, y, size, turn) {
+    const bend = [x + Math.cos(turn) * 2.2 * size, y + Math.sin(turn) * 2.2 * size,
+      8.5 * size];
+    const crown = [bend[0] + Math.cos(turn) * 1.2 * size,
+      bend[1] + Math.sin(turn) * 1.2 * size, 14 * size];
+    scene.tube([x, y, 0], bend, .72 * size, "#76502d", 7);
+    scene.tube(bend, crown, .55 * size, "#8a6035", 7);
+    for (let i = 0; i < 7; i++) {
+      const a = turn + i * Math.PI * 2 / 7;
+      const reach = (6 + (i & 1) * 1.5) * size;
+      const side = [-Math.sin(a) * 1.25 * size, Math.cos(a) * 1.25 * size, 0];
+      const tip = [crown[0] + Math.cos(a) * reach, crown[1] + Math.sin(a) * reach,
+        crown[2] - 1.7 * size];
+      scene.polygon([crown, add(tip, side), tip, sub(tip, side)],
+        i & 1 ? "#28713c" : "#1d5e32", .18);
+    }
+  }
+
+  function oasis(scene, o) {
+    waterPatch(scene, "#358bab", .72, .9);
+    groundShadow(scene, 17, .1);
+    palm(scene, -7, 2, .92, .3);
+    palm(scene, 8, 5, .75, 2.2);
+  }
+
+  function floodplain(scene, o) {
+    const random = seeded(o.seed + 251);
+    for (let row = -1; row <= 1; row++) {
+      const points = [];
+      for (let i = -3; i <= 3; i++)
+        points.push([i * 5, row * 5 + Math.sin(i * 1.7 + row) * 1.4, .28]);
+      for (let i = 0; i < points.length - 1; i++)
+        scene.tube(points[i], points[i + 1], .42, "#8e7344", 5);
+    }
+    for (let i = 0; i < 5; i++) {
+      const x = (random() - .5) * 28, y = (random() - .5) * 17;
+      scene.tube([x, y, .3], [x, y, 3.5 + random() * 2], .18, "#68783b", 5);
+    }
+  }
+
+  function reef(scene, o, grand = false) {
+    const random = seeded(o.seed + 307);
+    waterPatch(scene, "#2c91a2", grand ? 1.25 : .9, .42);
+    const count = grand ? (o.detail ? 14 : 8) : (o.detail ? 9 : 4);
+    const colors = ["#dc765d", "#e7b45c", "#6dc2a6", "#9b6ab3"];
+    for (let i = 0; i < count; i++) {
+      const a = random() * Math.PI * 2, r = Math.sqrt(random()) * (grand ? 20 : 14);
+      const x = Math.cos(a) * r, y = Math.sin(a) * r, h = 2 + random() * 5;
+      const color = colors[i % colors.length];
+      scene.tube([x, y, .5], [x, y, h], .45 + random() * .4, color, 6);
+      if (i & 1) {
+        scene.tube([x, y, h * .58], [x + (random() - .5) * 4,
+          y + (random() - .5) * 4, h + 1], .32, color, 5);
+      }
+    }
+  }
+
+  function geothermal(scene, o) {
+    const random = seeded(o.seed + 331);
+    for (let i = 0; i < 8; i++) {
+      const a = i * Math.PI / 4, r = 8 + random() * 4;
+      crag(scene, Math.cos(a) * r, Math.sin(a) * r, 2.6 + random() * 2,
+        2 + random() * 4, "#625c50", false, random);
+    }
+    waterPatch(scene, "#58aaa5", .5, .78);
+    for (const [x, y, h] of [[-4, 0, 12], [3, -3, 16], [7, 3, 10]]) {
+      scene.tube([x, y, 2], [x + 1.5, y, h], .5, "#dcebea", 6);
+      scene.glow([x + 1.5, y, h], 3.2, "#edf8f6", .22);
+    }
+  }
+
+  function ice(scene, o) {
+    const random = seeded(o.seed + 367);
+    const points = [];
+    for (let i = 0; i < 9; i++) {
+      const a = i * Math.PI * 2 / 9, r = 13 + random() * 5;
+      points.push([Math.cos(a) * r, Math.sin(a) * r, .8]);
+    }
+    scene.polygon(points, "#cfe1e5", 2.2, .94);
+    crag(scene, -4, 1, 7, 12, "#b9d4dc", true, random);
+    crag(scene, 7, 4, 4.8, 7, "#d7e8ea", false, random);
+  }
+
+  function crater(scene, o, lake = false) {
+    const random = seeded(o.seed + 401);
+    groundShadow(scene, 17, .17);
+    if (lake) waterPatch(scene, "#337e9d", .7, .9);
+    else scene.ellipsoid([0, 0, .35], [10, 8, .45], "#2b2927", 10, 2);
+    for (let i = 0; i < 10; i++) {
+      const a = i * Math.PI * 2 / 10, r = 12 + random() * 3;
+      crag(scene, Math.cos(a) * r, Math.sin(a) * r, 3 + random() * 2,
+        2.5 + random() * 4, lake ? "#746b5b" : "#574c42", false, random);
+    }
+  }
+
+  function volcanicSoil(scene, o) {
+    const random = seeded(o.seed + 419);
+    for (let i = 0; i < 10; i++) {
+      const a = random() * Math.PI * 2, r = Math.sqrt(random()) * 16;
+      const size = 1.8 + random() * 3.2;
+      scene.ellipsoid([Math.cos(a) * r, Math.sin(a) * r, size * .22],
+        [size, size * (.65 + random() * .3), size * .45],
+        i % 3 ? "#403934" : "#5b4538", 7, 3);
+    }
+  }
+
+  function volcano(scene, o) {
+    const random = seeded(o.seed + 439);
+    groundShadow(scene, 20, .27);
+    scene.cone([0, 0, 0], 19, 29, "#5c5148", 10, 5.8, random() * 6.28);
+    scene.ellipsoid([0, 0, 29.2], [5.4, 5.4, .7], "#211d1c", 10, 2);
+    if (o.active) {
+      scene.ellipsoid([0, 0, 29.8], [3.8, 3.8, .5], "#ef5b25", 9, 2);
+      scene.glow([0, 0, 31], 9, "#ff6a25", .52);
+      const sway = Math.sin(o.time * .7 + o.seed) * 2.5;
+      scene.ellipsoid([sway * .2, 0, 35], [4.3, 3.8, 3.2],
+        "#696863", 8, 3, .7);
+      scene.ellipsoid([sway, 1, 42], [6.2, 5.4, 4.5],
+        "#858680", 8, 3, .52);
+      scene.ellipsoid([sway * 1.7, 2, 50], [8, 6.5, 5.2],
+        "#a1a49e", 8, 3, .34);
+    }
+  }
+
+  function uluru(scene, o) {
+    groundShadow(scene, 23 * (o.span || 1), .22);
+    scene.cone([0, 0, 0], 23 * (o.span || 1), 13 * (o.span || 1),
+      "#b85e35", 10, 13 * (o.span || 1), .25);
+  }
+
+  function yosemite(scene, o) {
+    const random = seeded(o.seed + 487);
+    groundShadow(scene, 24 * (o.span || 1), .24);
+    for (const [x, y, r, h] of [[-10, 1, 11, 34], [8, 3, 9, 27]])
+      scene.cone([x, y, 0], r * (o.span || 1), h * (o.span || 1),
+        "#85817a", 8, r * .62, random() * 6.28);
+  }
+
+  function pamukkale(scene, o) {
+    const span = o.span || 1;
+    groundShadow(scene, 20 * span, .16);
+    for (let i = 0; i < 5; i++)
+      scene.cone([0, i * 1.5, i * 3 * span], (18 - i * 2.4) * span,
+        2.2 * span, i & 1 ? "#dce7df" : "#edf0e7", 10,
+        (16 - i * 2.3) * span, i * .17);
+    waterPatch(scene, "#79c7cf", .55 * span, .72);
+  }
+
+  function drawEnvironment(options) {
+    if (!options || !options.ctx || !ENVIRONMENT_SET.has(options.kind)) return false;
+    const o = {
+      ...options,
+      seed:Number(options.seed || 1),
+      time:Number(options.time || 0) / 1000,
+      detail:options.detail !== false,
+      span:clamp(Number(options.span || 1), 1, 2.2),
+    };
+    const scene = new Scene(o.ctx, {scale:o.scale || 1, orthographic:true,
+      yaw:Number(o.yaw || 0), tilt:clamp(Number(o.tilt || .64), .28, 1),
+      sunAngle:Number.isFinite(o.sunAngle) ? o.sunAngle : Math.PI * 1.25,
+      stroke:o.detail ? "rgba(10,15,13,.38)" : null});
+    if (o.kind === "hills") hills(scene, o);
+    else if (o.kind === "mountain") mountains(scene, o);
+    else if (o.kind === "mount_everest") mountains(scene, o, true);
+    else if (["forest", "burning_forest", "burnt_forest"].includes(o.kind))
+      woodland(scene, o, false);
+    else if (["jungle", "burning_jungle", "burnt_jungle"].includes(o.kind))
+      woodland(scene, o, true);
+    else if (o.kind === "marsh") wetlands(scene, o);
+    else if (o.kind === "pantanal") wetlands(scene, o, true);
+    else if (o.kind === "oasis") oasis(scene, o);
+    else if (["floodplains", "grassland_floodplains", "plains_floodplains"].includes(o.kind))
+      floodplain(scene, o);
+    else if (o.kind === "reef") reef(scene, o);
+    else if (o.kind === "great_barrier_reef") reef(scene, o, true);
+    else if (o.kind === "geothermal_fissure") geothermal(scene, o);
+    else if (o.kind === "ice") ice(scene, o);
+    else if (o.kind === "volcano") volcano(scene, o);
+    else if (o.kind === "impact_zone") crater(scene, o);
+    else if (o.kind === "crater_lake") crater(scene, o, true);
+    else if (o.kind === "volcanic_soil") volcanicSoil(scene, o);
+    else if (o.kind === "uluru") uluru(scene, o);
+    else if (o.kind === "yosemite") yosemite(scene, o);
+    else if (o.kind === "pamukkale") pamukkale(scene, o);
+    else if (o.kind === "dead_sea") {
+      waterPatch(scene, "#3f8295", 1.25 * o.span, .88);
+      scene.cone([-12, 4, .3], 4, 5, "#d6d1bb", 7, .4, .2);
+      scene.cone([11, 1, .3], 3.5, 4, "#e3ddc8", 7, .3, .8);
+    }
+    scene.flush();
+    return true;
+  }
+
   function draw(options) {
     if (!options || !FAMILY_SET.has(options.family) || !options.ctx) return false;
     const o = {
@@ -581,5 +944,12 @@
     return true;
   }
 
-  global.Cinematic3D = Object.freeze({families:FAMILIES, supports:family => FAMILY_SET.has(family), draw});
+  global.Cinematic3D = Object.freeze({
+    families:FAMILIES,
+    environments:ENVIRONMENTS,
+    supports:family => FAMILY_SET.has(family),
+    supportsEnvironment:kind => ENVIRONMENT_SET.has(kind),
+    draw,
+    drawEnvironment,
+  });
 })(globalThis);
