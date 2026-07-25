@@ -130,6 +130,14 @@ icons down the map's inner edge, mirroring the notification rail on the other
 side, each badged with the number of decisions waiting behind it. `G` opens
 and closes it; `Escape` closes it.
 
+It opens on **Cities**, because that is what a wide empire needs first: one
+row per city with its six yields, what it is building and how long that has
+left, when it next grows, and anything wrong with it — under attack, short of
+amenities, out of housing, loyalty slipping. Cities waiting on an order sort
+to the top and badge the tab, so the screen says how much is waiting without
+being opened. Past three or four cities, clicking each one on the map to learn
+the same things stops being navigation and becomes a chore.
+
 Every screen behind that bar is a labelling layer and nothing more. It reads
 `legal_actions`, names what it finds using `/rules`, and posts the action back
 byte-for-byte. No screen constructs an action of its own, so no screen can

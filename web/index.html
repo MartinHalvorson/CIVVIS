@@ -11803,6 +11803,7 @@ function drawQuickDeals() {
 // engine has offered every one of these to seat 0 since v0.6; this is the
 // bar and the screens, built over the same legal actions the agents use.
 const EMPIRE_TABS = [
+  {id: "cities", icon: "⌂", name: "Cities"},
   {id: "government", icon: "♜", name: "Government"},
   {id: "religion", icon: "☼", name: "Religion"},
   {id: "people", icon: "★", name: "Great People"},
@@ -11811,7 +11812,7 @@ const EMPIRE_TABS = [
   {id: "trade", icon: "⇄", name: "Trade"},
   {id: "spies", icon: "◐", name: "Espionage"},
 ];
-let empireTab = "government";
+let empireTab = "cities";
 
 function policySpec(id) { return (RULES && RULES.policies && RULES.policies[id]) || {}; }
 function policySlotOf(id) { return policySpec(id).slot || "wildcard"; }
@@ -11826,6 +11827,10 @@ function empireBadge(tab) {
   if (!state || SPEC) return 0;
   const me = state.me;
   switch (tab) {
+    case "cities":
+      return state.cities.filter(city => city.owner === 0 &&
+        !(city.queue && city.queue.length) &&
+        state.legal_actions.some(a => a.type === "produce" && a.city === city.id)).length;
     case "government":
       return emptyPolicySlots() + legalFor("government").length;
     case "religion":
@@ -11888,6 +11893,67 @@ function empireGroup(heading, note, body) {
 function empireGrid(cards, empty) {
   return cards.length ? `<div class="empire-grid">${cards.join("")}</div>`
     : `<div class="empty-state">${empty}</div>`;
+}
+
+// Civ 6 has a report for this, and for the same reason: past three or four
+// cities, clicking each one on the map to see whether it is building anything
+// stops being navigation and starts being a chore. One row per city, ordered
+// by what needs attention.
+function empireCities() {
+  const mine = state.cities.filter(city => city.owner === 0);
+  const produce = new Map();
+  for (const action of legalFor("produce")) {
+    if (!produce.has(action.city)) produce.set(action.city, action);
+  }
+  const idle = city => !(city.queue && city.queue.length) && produce.has(city.id);
+  const cards = mine
+    .slice()
+    .sort((first, second) => Number(idle(second)) - Number(idle(first)) ||
+      Number(second.is_capital) - Number(first.is_capital) ||
+      second.pop - first.pop)
+    .map(city => {
+      const yields = city.yields || {};
+      const perTurn = yields.production || 0;
+      const current = (city.queue || [])[0];
+      const cost = city.queue_cost || (current ? itemCost(current) : 0);
+      const left = current && perTurn > 0
+        ? Math.max(1, Math.ceil((cost - (city.production || 0)) / perTurn)) : null;
+      const growth = yields.food > 0
+        ? Math.max(1, Math.ceil((city.growth_need - city.food) / yields.food)) : null;
+      const trouble = [];
+      if (city.hp !== undefined && city.hp < 200) trouble.push("under attack");
+      if (city.amenity_surplus < 0) trouble.push(`${-city.amenity_surplus} amenities short`);
+      if (city.housing !== undefined && city.pop >= city.housing) trouble.push("out of housing");
+      if (city.loyalty_state && city.loyalty_state !== "loyal") trouble.push(titleCase(city.loyalty_state));
+      return empireCard({
+        title: `${city.name}${city.is_capital ? " ♛" : ""}`,
+        kind: `Population ${city.pop}${city.governor ? " · Governor" : ""}`,
+        cls: idle(city) ? "empty" : "filled",
+        note: `<div class="empire-meter"><b>${Math.round(yields.food)}</b> 🌾 ` +
+          `<b>${Math.round(yields.production)}</b> ⚙ <b>${Math.round(yields.gold)}</b> 💰 ` +
+          `<b>${Math.round(yields.science)}</b> ⌬ <b>${Math.round(yields.culture)}</b> ❦ ` +
+          `<b>${Math.round(yields.faith)}</b> ☼</div>` +
+          (current
+            ? `Building ${titleCase(itemName(current))}${left ? ` · ${left} turn${left === 1 ? "" : "s"}` : ""}`
+            : `<b>Building nothing</b>`) +
+          (growth ? ` · grows in ${growth}` : "") +
+          (trouble.length
+            ? `<div class="empire-meter" style="color:var(--danger)">${trouble.join(" · ")}</div>` : ""),
+        actions: [`<button class="${idle(city) ? "primary" : ""}" ` +
+          `onclick='closeEmpire();openCityScreen(${city.id})'>⌂ Manage</button>`,
+          `<button onclick='closeEmpire();centerOn(${JSON.stringify(city.pos)});draw()'>⌖ Show</button>`],
+      });
+    });
+  const totals = mine.reduce((sum, city) => {
+    for (const kind of Object.keys(sum)) sum[kind] += (city.yields || {})[kind] || 0;
+    return sum;
+  }, {food: 0, production: 0, gold: 0, science: 0, culture: 0, faith: 0});
+  const idleCount = mine.filter(idle).length;
+  return empireGroup("Cities",
+    `${mine.length} · ` + Object.entries(totals)
+      .map(([kind, amount]) => `${Math.round(amount)} ${YIELD_MARKS[kind] || titleCase(kind)}`)
+      .join(" ") + (idleCount ? ` · ${idleCount} idle` : ""),
+    empireGrid(cards, "You have founded no cities yet."));
 }
 
 function empireGovernment() {
@@ -12170,6 +12236,7 @@ function empireSpies() {
 }
 
 const EMPIRE_BUILDERS = {
+  cities: empireCities,
   government: empireGovernment, religion: empireReligion, people: empireGreatPeople,
   governors: empireGovernors, states: empireCityStates, trade: empireTrade, spies: empireSpies,
 };

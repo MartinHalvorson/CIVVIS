@@ -4069,6 +4069,27 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("offer && offer.blocked"));
     }
 
+    /// Past three or four cities, clicking each one on the map to find out
+    /// whether it is building anything stops being navigation and becomes a
+    /// chore — which is why Civ 6 has a report for it. The Cities screen is
+    /// that report: one row per city, the ones waiting on an order first,
+    /// because that is the only reason to open it in a hurry.
+    #[test]
+    fn browser_lists_the_whole_empire() {
+        assert!(EMBEDDED_INDEX.contains("function empireCities()"));
+        assert!(EMBEDDED_INDEX.contains("{id: \"cities\", icon: \"⌂\", name: \"Cities\"},"));
+        assert!(EMBEDDED_INDEX.contains("cities: empireCities,"));
+        // It opens on Cities: a wide empire wants the list before the panels.
+        assert!(EMBEDDED_INDEX.contains("let empireTab = \"cities\";"));
+        // Idle cities sort first and badge the tab, so the screen says how
+        // much is waiting without being opened.
+        assert!(EMBEDDED_INDEX.contains("Number(idle(second)) - Number(idle(first))"));
+        assert!(EMBEDDED_INDEX.contains("case \"cities\":"));
+        // Each row goes somewhere: the city screen, or the city itself.
+        assert!(EMBEDDED_INDEX.contains("closeEmpire();openCityScreen("));
+        assert!(EMBEDDED_INDEX.contains("closeEmpire();centerOn("));
+    }
+
     #[test]
     fn browser_runs_a_civ_six_turn_loop() {
         for piece in [
