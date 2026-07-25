@@ -14137,9 +14137,22 @@ function drawPlayerHud() {
       // The themed league handle names the player, while `ai_strategy` is the
       // live grand strategy selected inside this particular match.
       const expectPct = Number.isFinite(+p.ai_expected) ? Math.round(p.ai_expected * 100) : null;
-      const playerName = p.ai_username || "AI player";
-      const playerElo = Number.isFinite(+p.ai_elo) ? `${p.ai_elo} ELO` : "Unrated";
-      const leagueTitle = p.ai_username
+      // A seat somebody is playing is a player of its own: this game
+      // registered a new one for it rather than lending it an agent's name,
+      // so the row says who you are and what you are defending.
+      const playerName = p.player_username || p.ai_username || "AI player";
+      const playedGames = +p.player_games || 0;
+      // A new player has no record to show yet, and 1500 is the number every
+      // unrated player would wear. Say unrated until they have finished one.
+      const playerElo = p.player_username
+        ? (playedGames ? `${p.player_elo} ELO` : "Unrated")
+        : Number.isFinite(+p.ai_elo) ? `${p.ai_elo} ELO` : "Unrated";
+      const humanTitle = `You · new league player ${p.player_username}` +
+        ` · ${playedGames ? `${p.player_elo} ±${p.player_elo_rd} over ${playedGames} rated ` +
+          `${playedGames === 1 ? "game" : "games"}` : "unrated until this game is decided"}` +
+        `${p.player_rated ? "" : " · this game is not being rated"}`;
+      const leagueTitle = p.player_username ? humanTitle
+        : p.ai_username
         ? `League player ${p.ai_username} (${p.ai_strat_label || "unrated"})` +
           ` · ${p.ai_elo_civ ? `${p.civ}-specific` : "overall"} ELO ${p.ai_elo} ±${p.ai_elo_rd}` +
           `${expectPct === null ? "" : ` · expected win chance vs this table ${expectPct}%`}`
@@ -14341,8 +14354,19 @@ function civDossier(p, rank, relation) {
     ` · objective ${force.objective?.[0]},${force.objective?.[1]} · local strength ${Math.round((force.strength_ratio || 0) * 100)}%` +
     ` of the defenders · readiness ${Math.round((force.readiness || 0) * 100)}%">` +
     `${force.domain === "sea" ? "⚓" : "⚔"} ${titleCase(force.posture)} ×${force.units}</span>`).join("");
-  // Rated-league identity: strategy handle and the elo it defends here.
-  const leagueRows = p.ai_username
+  // Rated-league identity: strategy handle and the elo it defends here. A
+  // seat a person plays carries their own registration instead — a new player
+  // every game, never one of the agents already on the leaderboard.
+  const leagueRows = p.player_username
+    ? row("League player", `${p.player_username} (you)`,
+        p.player_rated
+          ? "Registered in the rated roster when this game began — the result is filed under this name"
+          : "Registered for this game only: nothing is being rated, so the handle goes no further") +
+      row("Elo", +p.player_games
+        ? `${p.player_elo} ±${p.player_elo_rd} · ${p.player_elo_civ ? `${p.civ} table` : "overall"}`
+        : "Unrated · no finished games",
+        "A new player is provisional until they finish a rated game")
+    : p.ai_username
     ? row("League player", `${p.ai_username} (${p.ai_strat_label || "unrated"})`,
         "Which league strategy is playing this civilization") +
       row("Elo", `${p.ai_elo} ±${p.ai_elo_rd} · ${p.ai_elo_civ ? `${p.civ} table` : "overall"}`,
