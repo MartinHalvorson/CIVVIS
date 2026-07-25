@@ -126,6 +126,23 @@ pub struct Session {
     /// Set once this game's result has been rated, so a winner that is
     /// stepped past more than once is only ever counted for one game.
     league_recorded: bool,
+    /// Who is playing each human seat: a player registered when this game
+    /// began, never one of the agents already in the roster.
+    human_players: BTreeMap<usize, SeatPlayer>,
+}
+
+/// The identity of a person playing a seat.
+///
+/// A single player game registers a new player rather than lending the person
+/// somebody else's name: the handle on screen is theirs, the rating beside it
+/// is theirs, and the result is filed under it. `rated` says whether that
+/// registration reached the roster on disk — without one there is nothing to
+/// rate into, so the identity is the game's own and goes no further.
+#[derive(Clone, Debug, PartialEq)]
+struct SeatPlayer {
+    name: String,
+    username: String,
+    rated: bool,
 }
 
 #[derive(Clone)]
@@ -1139,6 +1156,11 @@ impl Session {
     /// strategy (`league::seat_by_civ`); otherwise majors run the default
     /// hierarchical AI, which the league rates as its "advanced" entrant,
     /// so a loaded roster can still label those seats with an elo.
+    ///
+    /// A seat somebody is playing is never seated from the roster. Whoever is
+    /// at the keyboard is their own player — `register_human_players` gives
+    /// them a new one — and an entrant that had this seat handed to it would
+    /// wear a person's game as its own result.
     fn ai_fleet(
         game: &Game,
         league: Option<&crate::league::League>,
@@ -1149,7 +1171,7 @@ impl Session {
             let majors: Vec<usize> = game
                 .players
                 .iter()
-                .filter(|p| !p.is_minor && !p.is_barbarian)
+                .filter(|p| !p.is_minor && !p.is_barbarian && !game.is_human_seat(p.id))
                 .map(|p| p.id)
                 .collect();
             if seat_from_roster && !l.active().is_empty() {
@@ -1205,6 +1227,71 @@ impl Session {
         }
     }
 
+    /// Register a new player for every seat a person is at, and hand the seat
+    /// that identity.
+    ///
+    /// Sitting down to play does not make you one of the agents on the
+    /// leaderboard. When this game is being rated (`--league --league-record`)
+    /// the new player is written into that roster, so `record_league_result`
+    /// files the result under a name that is the person's own; otherwise
+    /// there is nothing to rate into and the handle is minted against the
+    /// roster in memory purely so the game can say who is playing. Either way
+    /// no existing entrant is reused.
+    fn register_human_players(
+        params: &Params,
+        game: &Game,
+        league: &mut Option<crate::league::League>,
+        seat_strategy: &mut [Option<usize>],
+    ) -> BTreeMap<usize, SeatPlayer> {
+        let mut players = BTreeMap::new();
+        let rated_dir = params
+            .league_record
+            .then(|| params.league_dir.clone())
+            .flatten();
+        // Handles for an unrated game are drawn against this scratch roster,
+        // so two seats in one game cannot mint the same one.
+        let mut unrated: Option<crate::league::League> = None;
+        for seat in game.human_seats.iter().copied() {
+            if game.players.get(seat).is_none() {
+                continue;
+            }
+            let registered = rated_dir
+                .as_deref()
+                .and_then(crate::league::register_player);
+            let player = match registered {
+                Some((updated, index)) => {
+                    let entry = &updated.strategies[index];
+                    let player = SeatPlayer {
+                        name: entry.name.clone(),
+                        username: entry.username.clone(),
+                        rated: true,
+                    };
+                    seat_strategy[seat] = Some(index);
+                    *league = Some(updated);
+                    player
+                }
+                None => {
+                    let table = unrated.get_or_insert_with(|| {
+                        league.clone().unwrap_or(crate::league::League {
+                            round: 0,
+                            strategies: Vec::new(),
+                            calibration: Default::default(),
+                        })
+                    });
+                    let index = crate::league::register_new_player(table);
+                    let entry = &table.strategies[index];
+                    SeatPlayer {
+                        name: entry.name.clone(),
+                        username: entry.username.clone(),
+                        rated: false,
+                    }
+                }
+            };
+            players.insert(seat, player);
+        }
+        players
+    }
+
     pub fn new(params: Params) -> Session {
         // Seat 0 is the person at the keyboard, which is what decides who the
         // difficulty hands its bonuses to. A spectated game has nobody there.
@@ -1235,8 +1322,10 @@ impl Session {
         // Paired and multiplayer evaluation make the hierarchical agent the
         // strongest built-in default. Minors/barbarians retain the cheaper
         // baseline because they do not need empire-level planning.
-        let (league, seat_from_roster) = Self::load_params_league(&params);
-        let (ais, seat_strategy) = Self::ai_fleet(&game, league.as_ref(), seat_from_roster);
+        let (mut league, seat_from_roster) = Self::load_params_league(&params);
+        let (ais, mut seat_strategy) = Self::ai_fleet(&game, league.as_ref(), seat_from_roster);
+        let human_players =
+            Self::register_human_players(&params, &game, &mut league, &mut seat_strategy);
         let chronicle = ChronicleState::from_game(&game);
         let roster = Self::load_roster(league.as_ref());
         Session {
@@ -1253,6 +1342,7 @@ impl Session {
             roster,
             autoplay_strategy: None,
             league_recorded: false,
+            human_players,
         }
     }
 
@@ -1297,12 +1387,20 @@ impl Session {
         let next_game_params = (simulation_settings(&requested_next)
             != simulation_settings(&params))
         .then_some(requested_next);
-        let (league, seat_from_roster) = Self::load_params_league(&params);
-        let (ais, seat_strategy) = Self::ai_fleet(&game, league.as_ref(), seat_from_roster);
+        let (mut league, seat_from_roster) = Self::load_params_league(&params);
+        let (ais, mut seat_strategy) = Self::ai_fleet(&game, league.as_ref(), seat_from_roster);
         let chronicle = ChronicleState::from_game(&game);
         // A match restored with its winner already decided was rated when it
         // finished; rating it again on the next step would count it twice.
         let league_recorded = game.winner.is_some();
+        // A save carries the world, not the person: whoever reloads it is a
+        // new player again, and a decided game has nothing left to rate, so
+        // it registers nobody.
+        let human_players = if league_recorded {
+            BTreeMap::new()
+        } else {
+            Self::register_human_players(&params, &game, &mut league, &mut seat_strategy)
+        };
         let roster = Self::load_roster(league.as_ref());
         Session {
             params,
@@ -1318,6 +1416,7 @@ impl Session {
             roster,
             autoplay_strategy: None,
             league_recorded,
+            human_players,
         }
     }
 
@@ -1477,6 +1576,44 @@ impl Session {
         })
     }
 
+    /// Say who is playing each human seat: the handle this game registered
+    /// for them, and — once a rated roster is holding it — the rating they
+    /// are defending. A player with no finished game is `player_rated` with
+    /// zero games rather than an authoritative 1500, the same way the
+    /// leaderboards mark a provisional entrant.
+    fn name_human_players(&self, o: &mut Value) {
+        if self.human_players.is_empty() {
+            return;
+        }
+        let Some(players) = o["players"].as_array_mut() else {
+            return;
+        };
+        for player in players {
+            let Some(id) = player["id"].as_u64().map(|id| id as usize) else {
+                continue;
+            };
+            let Some(seat) = self.human_players.get(&id) else {
+                continue;
+            };
+            player["player_name"] = json!(seat.name);
+            player["player_username"] = json!(seat.username);
+            player["player_rated"] = json!(seat.rated);
+            let rating = self
+                .league
+                .as_ref()
+                .zip(self.seat_strategy.get(id).copied().flatten())
+                .map(|(league, index)| &league.strategies[index]);
+            if let Some(entry) = rating {
+                let civ = &self.game.players[id].civ;
+                let (elo, rd, civ_specific) = crate::league::display_elo(entry, civ);
+                player["player_elo"] = json!(elo.round() as i64);
+                player["player_elo_rd"] = json!(rd.round() as i64);
+                player["player_elo_civ"] = json!(civ_specific);
+                player["player_games"] = json!(entry.games);
+            }
+        }
+    }
+
     pub fn state(&self) -> Value {
         if self.params.spectate {
             let g = &self.game;
@@ -1582,6 +1719,7 @@ impl Session {
             return o;
         }
         let mut o = observation(&self.game, 0);
+        self.name_human_players(&mut o);
         o["spectate"] = json!(false);
         o["supervised"] = json!(self.params.supervised);
         o["view_player"] = json!(0);
@@ -1763,6 +1901,12 @@ impl Session {
             if let Some(name) = self.autoplay_strategy.as_deref() {
                 return Some(name);
             }
+        }
+        // Nobody has been handed this seat and somebody is sitting in it. The
+        // honest answer is that person, not the agent that would take over if
+        // they got up.
+        if let Some(player) = self.human_players.get(&seat) {
+            return Some(&player.name);
         }
         if let (Some(Some(index)), Some(league)) = (self.seat_strategy.get(seat), self.league.as_ref())
         {
@@ -2135,8 +2279,13 @@ fn simulation_settings(params: &Params) -> Value {
 fn strategy_roster(session: &Session) -> Value {
     let mut rows: Vec<Value> = Vec::new();
     if let Some(roster) = session.roster.as_ref() {
-        let mut active: Vec<&crate::league::Strategy> =
-            roster.strategies.iter().filter(|s| !s.retired).collect();
+        // Agents only. A person registered in this roster is a player in it,
+        // but a seat cannot be handed to somebody who is not at a keyboard.
+        let mut active: Vec<&crate::league::Strategy> = roster
+            .strategies
+            .iter()
+            .filter(|s| !s.retired && !s.human)
+            .collect();
         active.sort_by(|a, b| b.rating.total_cmp(&a.rating));
         rows.extend(active.into_iter().map(|s| {
             json!({
