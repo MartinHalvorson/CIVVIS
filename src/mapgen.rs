@@ -1501,6 +1501,13 @@ pub(crate) const START_DISTANCE_MINOR_MAJOR: i32 = 6;
 pub(crate) const START_DISTANCE_MINOR_MINOR: i32 = 5;
 /// Shipped `START_DISTANCE_RANGE_MINOR`.
 pub(crate) const START_RANGE_MINOR: i32 = 3;
+/// Shipped `START_DISTANCE_MINOR_NATURAL_WONDER`: a city-state keeps this much
+/// clear of a Natural Wonder. (`START_DISTANCE_MAJOR_NATURAL_WONDER` is 2, and
+/// major placement already satisfies it — measured 0 violations in 96 starts —
+/// because Natural Wonder tiles are excluded from the candidate set outright.)
+pub(crate) const START_DISTANCE_MINOR_NATURAL_WONDER: i32 = 3;
+/// Shipped `START_DISTANCE_MAJOR_NATURAL_WONDER`.
+pub(crate) const START_DISTANCE_MAJOR_NATURAL_WONDER: i32 = 2;
 
 /// How badly one distance misses a shipped target band. Zero inside the band,
 /// growing outside it, and counting crowding double — two starts on top of
@@ -1745,9 +1752,39 @@ fn add_minor_spawns(
         .iter()
         .map(|candidate| (*candidate, start_quality(rules, wm, *candidate)))
         .collect();
+    let wonders: Vec<Pos> = wm
+        .tiles
+        .iter()
+        .filter(|(_, tile)| {
+            tile.feature
+                .as_ref()
+                .and_then(|feature| rules.features.get(feature))
+                .is_some_and(|feature| feature.natural_wonder)
+        })
+        .map(|(position, _)| *position)
+        .collect();
+    // Keep the shipped standoff where the map allows it, and fall back rather
+    // than fail on a wonder-dense seed.
+    let clear_of_wonders: Vec<Pos> = candidates
+        .iter()
+        .copied()
+        .filter(|candidate| {
+            wonders
+                .iter()
+                .all(|wonder| {
+                    hex::wdistance(*candidate, *wonder, wm.width)
+                        >= START_DISTANCE_MINOR_NATURAL_WONDER
+                })
+        })
+        .collect();
     let target = spawns.len() + count;
     while spawns.len() < target {
-        let Some(next) = candidates
+        let pool: &[Pos] = if clear_of_wonders.len() >= count {
+            &clear_of_wonders
+        } else {
+            candidates
+        };
+        let Some(next) = pool
             .iter()
             .filter(|candidate| !spawns.contains(candidate))
             .min_by_key(|candidate| {
@@ -2494,6 +2531,49 @@ mod river_tests {
                 "{} has an unfair start outlier: territory/neighbor/quality balance = {balance:?}, {score:?}",
                 size.name,
             );
+        }
+    }
+
+    #[test]
+    fn starts_keep_the_shipped_standoff_from_natural_wonders() {
+        // START_DISTANCE_MINOR_NATURAL_WONDER 3 and
+        // START_DISTANCE_MAJOR_NATURAL_WONDER 2. Majors already satisfied
+        // theirs because Natural Wonder tiles are not candidates at all;
+        // city-states did not, landing inside 3 about one time in eighteen.
+        let rules = Rules::embedded();
+        for seed in 0..6u64 {
+            let mut rng = Rng::new(61_000 + seed);
+            let (wm, spawns) = generate(&rules, 84, 54, 8, 12, 4, 2, &mut rng);
+            let wonders: Vec<Pos> = wm
+                .tiles
+                .iter()
+                .filter(|(_, tile)| {
+                    tile.feature
+                        .as_ref()
+                        .and_then(|feature| rules.features.get(feature))
+                        .is_some_and(|feature| feature.natural_wonder)
+                })
+                .map(|(position, _)| *position)
+                .collect();
+            if wonders.is_empty() {
+                continue;
+            }
+            for (index, start) in spawns.iter().enumerate() {
+                let nearest = wonders
+                    .iter()
+                    .map(|wonder| hex::wdistance(*start, *wonder, wm.width))
+                    .min()
+                    .unwrap();
+                let floor = if index < 8 {
+                    START_DISTANCE_MAJOR_NATURAL_WONDER
+                } else {
+                    START_DISTANCE_MINOR_NATURAL_WONDER
+                };
+                assert!(
+                    nearest >= floor,
+                    "seed {seed}: start {index} sits {nearest} from a Natural Wonder, inside {floor}"
+                );
+            }
         }
     }
 

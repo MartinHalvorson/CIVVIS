@@ -51,6 +51,7 @@ this is the flag that pins it:
 | Duplicate Civs and Leaders: ALLOWED | seats past the eighth reuse the roster |
 | Start Position: Balanced (FFA) | **not ported, and not a default** — see below |
 | Teamers Start Position: Standard | default; the generator does not distinguish a teamers layout from a free-for-all one, so a teamers game gets the same balanced-ish layout an FFA does |
+| Starts clear of Natural Wonders | `START_DISTANCE_MAJOR_NATURAL_WONDER` 2 and `START_DISTANCE_MINOR_NATURAL_WONDER` 3; majors already satisfied theirs (Natural Wonder tiles are not candidates), city-states now do too |
 | City-States: placed at the shipped distance | `add_minor_spawns` aims `START_DISTANCE_MINOR_MAJOR_CIVILIZATION` 6 from the nearest major and `START_DISTANCE_MINOR_CIVILIZATION_START` 5 from another city-state, both within `START_DISTANCE_RANGE_MINOR` 3 |
 | Major civilizations 10–14 tiles apart | `targeted_layout` aims the shipped `START_DISTANCE_MAJOR_CIVILIZATION` 12 ± `START_DISTANCE_RANGE_MAJOR` 2; 96% of nearest-neighbour distances land in band on the Standard 8-player map |
 | Temperature / Rainfall / Sea Level: Standard | not exposed by the generator; these three are at their defaults, so the gap is expressiveness rather than divergence |
