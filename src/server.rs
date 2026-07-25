@@ -2301,11 +2301,9 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
 mod tests {
     use super::{
         chronicle_world_events, final_countdown_ms, new_game_params, request_path, save_path,
-        seat_delay_ms, ChronicleSnapshot, ChronicleState, Params, Session,
-        EMBEDDED_CINEMATIC_3D, EMBEDDED_INDEX, EMBEDDED_WORLD_WONDER_ATLAS, SAVE_DIR,
-        chronicle_world_events, final_countdown_ms, new_game_params, request_path, seat_delay_ms,
-        ChronicleSnapshot, ChronicleState, FrameDelivery, Params, Session, SpectatorFrame,
-        EMBEDDED_CINEMATIC_3D, EMBEDDED_INDEX, EMBEDDED_WORLD_WONDER_ATLAS, VIEWER_ACTIVE,
+        seat_delay_ms, ChronicleSnapshot, ChronicleState, FrameDelivery, Params, Session,
+        SpectatorFrame, EMBEDDED_CINEMATIC_3D, EMBEDDED_INDEX, EMBEDDED_WORLD_WONDER_ATLAS,
+        SAVE_DIR, VIEWER_ACTIVE,
     };
     use crate::game::{Action, Game, VictoryConditions};
     use crate::setup::{GameSpeed, MapScript};
