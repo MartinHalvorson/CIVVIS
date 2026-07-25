@@ -897,7 +897,15 @@
   .winner-title { color: var(--gold-bright); font: 600 32px/1.05 Georgia, serif; }
   .winner-verdict { margin-top: 8px; color: #f3e5bd; font: 600 17px/1.2 Georgia, serif; }
   .winner-meta { margin-top: 13px; }
-  .winner-countdown { margin-top: 8px; color: #94a49e; letter-spacing: .12em; }
+  .winner-countdown {
+    margin-top: 16px; color: #f6edcf; font-size: 11px; letter-spacing: .14em;
+    text-shadow: 0 2px 10px #000, 0 0 18px color-mix(in srgb, var(--winner-color, #d7b66a) 40%, transparent);
+  }
+  .winner-countdown-time {
+    display: block; margin-top: 2px; color: #fffaf0;
+    font: 700 36px/1 Georgia, serif; font-variant-numeric: tabular-nums; letter-spacing: .02em;
+    text-shadow: 0 3px 16px #000, 0 0 24px color-mix(in srgb, var(--winner-color, #d7b66a) 65%, transparent);
+  }
   body.cinema-mode.cinema-finale #playerhud,
   body.cinema-mode.cinema-finale #cinema-story,
   body.cinema-mode.cinema-finale #cinema-follow { opacity: 0 !important; pointer-events: none; }
@@ -929,7 +937,8 @@
   }
   body.cinema-mode #winner .winner-verdict { margin-top: 12px; color: #f0d99c; font-size: clamp(21px, 2.1vw, 34px); }
   body.cinema-mode #winner .winner-meta { margin-top: 26px; color: #d1d8d3; font-size: 10px; }
-  body.cinema-mode #winner .winner-countdown { margin-top: 12px; font-size: 8px; }
+  body.cinema-mode #winner .winner-countdown { margin-top: 20px; font-size: 12px; }
+  body.cinema-mode #winner .winner-countdown-time { font-size: clamp(48px, 6vw, 76px); }
   @keyframes cinema-finale-reveal {
     from { opacity: 0; transform: translateY(14px) scale(.985); filter: blur(5px); }
     to { opacity: 1; transform: none; filter: none; }
@@ -4802,15 +4811,25 @@ function render(st, recordChronicle = true) {
         <strong class="winner-title">${winnerName}</strong>
         <span class="winner-verdict">${verdict}</span>
         <span class="winner-meta">Turn ${st.turn} · History remembers</span>
-        ${SPEC ? `<span class="winner-countdown" id="respawn"></span>` : ""}
+        ${SPEC ? `<span class="winner-countdown" id="respawn" role="timer"></span>` : ""}
       </div>`;
       playCinemaCue({priority:10, kicker:"History has a victor", title:winnerName});
     }
     const respawn = document.getElementById("respawn");
-    if (respawn) respawn.textContent = st.paused
-      ? "Final frame · exhibition paused"
-      : st.restart_in !== undefined ? `The next world begins in ${st.restart_in}s`
-      : "Preparing the next world";
+    if (respawn) {
+      respawn.replaceChildren();
+      if (st.paused) {
+        respawn.textContent = "Final frame · exhibition paused";
+      } else if (st.restart_in !== undefined) {
+        respawn.append("The next world begins in");
+        const countdownTime = document.createElement("strong");
+        countdownTime.className = "winner-countdown-time";
+        countdownTime.textContent = `${st.restart_in}s`;
+        respawn.append(countdownTime);
+      } else {
+        respawn.textContent = "Preparing the next world";
+      }
+    }
   } else {
     w.classList.remove("visible");
     w.style.removeProperty("--winner-color");
