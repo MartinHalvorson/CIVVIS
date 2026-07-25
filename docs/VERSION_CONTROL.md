@@ -211,7 +211,7 @@ Before marking the PR ready:
 
 ```bash
 git diff --check origin/main...
-cargo test --release --locked
+cargo test --profile ci --locked
 ```
 
 Also run the soak validation required by `CONTRIBUTING.md` for engine changes.
@@ -231,7 +231,7 @@ python3 tools/civvis_collab.py ship
 `ship` is the completion boundary. It pushes the finished commit, marks the PR
 ready, waits for `cargo-test` and `collaboration-policy`, and squash-merges as
 soon as both are green. If another feature reaches `main` while CI is running,
-it merges that new trunk into the task, reruns `cargo test --release --locked`,
+it merges that new trunk into the task, reruns `cargo test --profile ci --locked`,
 pushes the updated head, and waits for the new green result. It never invents a
 summary, checks validation boxes, resolves conflicts, or accepts a failed gate.
 
