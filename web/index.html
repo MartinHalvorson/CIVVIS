@@ -12666,10 +12666,15 @@ function drawUbar() {
   if (standing !== "sleep")
     h += `<button title="Rest until an enemy comes near or the unit is struck (Z)" onclick='orderUnit("sleep")'>☾ Sleep</button>`;
   if (standing)
-    h += `<button title="Take this unit off standing orders" onclick='unitOrders.delete(${u.id});drawUbar();drawTurnLoop()'>⏻ Wake</button>`;
+    h += `<button title="Take this unit off standing orders" onclick='unitOrders.delete(${u.id});drawUbar();drawTurnLoop()'>⏻ ${standing === "goto" ? "Halt" : "Wake"}</button>`;
   h += `<button onclick='sel=null;draw();drawUbar();drawTurnLoop()'>✕</button>`;
-  if (standing)
-    h += `<div class="small" style="margin-top:6px">${standing === "skip" ? "Skipping this turn" : "Sleeping until disturbed"}</div>`;
+  if (standing) {
+    const travel = unitTravelOrder(u);
+    h += `<div class="small" style="margin-top:6px">${
+      standing === "skip" ? "Skipping this turn"
+      : travel ? `Travelling to ${travel.to.join(",")}`
+      : "Sleeping until disturbed"}</div>`;
+  }
   bar.innerHTML = h;
   bar.style.display = "block";
 }
@@ -14361,6 +14366,13 @@ cv.addEventListener("click", ev => {
       send({type: "move_to", unit: sel.id, to: [pos[0], pos[1]]});
       return;
     }
+    // Out of range this turn is an order to travel, not a misclick. The
+    // engine paths the whole way and walks as far as the movement allows;
+    // the order carries the unit the rest of the way over later turns.
+    if (sel.moves_left > 0 && !TMAP.get(k)?.unknown) {
+      orderTravel(sel.id, [pos[0], pos[1]]);
+      return;
+    }
   }
   if (selCity && selCity._striking) {
     const sa = state.legal_actions.find(a => a.type === "city_strike" &&
@@ -14577,7 +14589,7 @@ function unitOrder(unit) {
   const held = unitOrders.get(unit.id);
   if (!held) return null;
   if (held.order === "skip") return held.turn === state.turn ? "skip" : null;
-  return "sleep";
+  return held.order === "goto" ? "goto" : "sleep";
 }
 // Sleeping units wake for the same reasons Civ 6 wakes them: a hostile unit
 // close enough to matter, or damage taken while they were not looking.
@@ -14629,6 +14641,86 @@ function advanceToNextUnit(force = false) {
   centerOn(sel.pos);
   draw(); drawSide(); drawUbar(); drawTurnLoop();
 }
+// ------------------------------------------------------- multi-turn travel
+// Clicking a tile outside a unit's remaining movement used to clear the
+// selection and nothing else, so crossing a continent meant finding the same
+// unit again once a turn for twenty turns. Civ 6 takes the click as an order
+// and the unit walks there over as many turns as it takes.
+//
+// `move_to` cannot express that: `path_to` seeds its search with the unit's
+// remaining movement, so anything further comes back "unreachable". The
+// engine's long-range router — the one the AI has always used — does express
+// it, and `/route` hands back the next step of it. So a travel order is a
+// standing order the client re-issues each turn: ask for the step, move onto
+// it, stop when there is no step left.
+function unitTravelOrder(unit) {
+  const held = unitOrders.get(unit.id);
+  return held && held.order === "goto" ? held : null;
+}
+async function orderTravel(unitId, to) {
+  unitOrders.set(unitId, {order: "goto", to: [to[0], to[1]], turn: state.turn});
+  drawUbar(); drawTurnLoop();
+  return resumeTravel(unitId);
+}
+// How many turns of no progress end a journey. A refused step is usually not
+// a dead end: a unit with one movement point left cannot enter a two-cost
+// forest, and next turn it can. Giving up on the first refusal stranded units
+// one tile short of where they were sent.
+const TRAVEL_PATIENCE = 3;
+// One turn's worth of travel: take steps while the router still offers one
+// and the unit still has movement. The order ends when the router has nothing
+// left to offer — arrival, or no route at all — or when several turns pass
+// with the unit no further along than it started.
+async function resumeTravel(unitId) {
+  const held = unitOrders.get(unitId);
+  if (!held || held.order !== "goto" || SPEC) return false;
+  const origin = state.units.find(candidate => candidate.id === unitId);
+  if (!origin) { unitOrders.delete(unitId); return false; }
+  const startedAt = origin.pos;
+  for (let step = 0; step < 12; step++) {
+    const unit = state.units.find(candidate => candidate.id === unitId);
+    if (!unit) { unitOrders.delete(unitId); return false; }
+    if (key(unit.pos) === key(held.to)) { unitOrders.delete(unitId); return false; }
+    if (unit.moves_left <= 0) break;
+    let next;
+    try {
+      next = await fetchJSON("/route", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({unit: unitId, to: held.to}),
+      });
+    } catch (error) { unitOrders.delete(unitId); return false; }
+    // No step at all means no route — that one is a dead end, not a delay.
+    if (!next || !Array.isArray(next.step)) { unitOrders.delete(unitId); return false; }
+    const before = unit.pos;
+    render(await fetchJSON("/action", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({action: {type: "move_to", unit: unitId, to: next.step}}),
+    }));
+    const after = state.units.find(candidate => candidate.id === unitId);
+    if (!after) { unitOrders.delete(unitId); return false; }
+    if (key(after.pos) === key(before)) break; // too little movement for that step
+  }
+  const finished = state.units.find(candidate => candidate.id === unitId);
+  if (!finished) { unitOrders.delete(unitId); return false; }
+  if (key(finished.pos) === key(held.to)) { unitOrders.delete(unitId); return false; }
+  held.stalled = key(finished.pos) === key(startedAt) ? (held.stalled || 0) + 1 : 0;
+  if (held.stalled >= TRAVEL_PATIENCE) { unitOrders.delete(unitId); return false; }
+  return true;
+}
+// At the top of a turn every traveller takes its step, in id order so the
+// same position always produces the same sequence.
+async function resumeAllTravel() {
+  if (!state || SPEC) return;
+  const travelling = [...unitOrders.entries()]
+    .filter(([, held]) => held.order === "goto")
+    .map(([id]) => id)
+    .sort((first, second) => first - second);
+  for (const id of travelling) await resumeTravel(id);
+  drawTurnLoop();
+}
+
 function nextAction() {
   if (!state || SPEC) return;
   advanceToNextUnit(true);
@@ -14837,6 +14929,7 @@ function openTurnIfNew() {
   if (first) noticeSeenTurn = Math.max(0, state.turn - 1);
   captureTurnNotices();
   drawTurnLoop();
+  resumeAllTravel();
   if (!sel && !selCity) advanceToNextUnit(true);
 }
 function togglePanel(force, persist = true) {
