@@ -2668,7 +2668,7 @@ try {
   restartPaused = sessionStorage.getItem("civvis-restart-paused-v1");
   sessionStorage.removeItem("civvis-restart-paused-v1");
 } catch (e) {}
-let SPEC = false, specPaused = restartPaused === "1", specTimer = null, specBusy = false;
+let SPEC = false, specPaused = restartPaused === "1", specTimer = null;
 let viewChanging = false;
 let eventLogs = new Map(), nextEventId = 1, lastLeaderByView = new Map(), lastSidePaint = 0;
 // The world and turn of the last state this page drew in full, and the turn
@@ -4528,7 +4528,7 @@ async function boot() {
       document.getElementById("gamespeed").value = "online";
     }
     fillStrategies(RULES);
-    render(await fetchJSON("/state" + paintedQuery()));
+    render(adoptTiles(await fetchJSON("/state" + paintedQuery())));
     if (firstLoad) {
       firstLoad = false;
       adoptRunningMode();
@@ -5314,34 +5314,107 @@ function advanceDirector(now = performance.now()) {
   return moving;
 }
 let lastSeed2 = null;
+// What this page calls itself for as long as it is open. Every viewer is owed
+// every turn and the server now waits for each of them in turn, so two tabs on
+// one exhibition have to arrive as two viewers — as one, they took alternate
+// turns and each saw half the game.
+const VIEWER_ID = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+// The tiles this page holds and the frame they belong to.
+//
+// A spectator state runs to about 1.4 MB and 1.2 MB of that is tiles, nearly
+// all of them the terrain they have been since the map was generated. The
+// server knows which ones this page already has, so it sends only the ones
+// that changed. Patching copies the array instead of writing through it: the
+// state drawn last turn keeps the tile objects it was drawn from, which is
+// what anything comparing one turn against the previous one relies on.
+let tileStore = null;
+function adoptTiles(st) {
+  const map = st && st.map;
+  if (!map) return st;
+  if (Array.isArray(map.tiles)) {
+    tileStore = {seed: st.seed, turn: st.turn, tiles: map.tiles};
+    return st;
+  }
+  const patch = map.tiles_changed;
+  if (!Array.isArray(patch)) return st;
+  if (!tileStore || tileStore.seed !== st.seed)
+    throw new Error("tile patch for a world this page is not holding");
+  const tiles = tileStore.tiles.slice();
+  for (const [at, tile] of patch) tiles[at] = tile;
+  tileStore = {seed: st.seed, turn: st.turn, tiles};
+  map.tiles = tiles;
+  return st;
+}
 // Every turn is owed one complete frame, and the server holds a finished turn
 // until an active viewer has been handed it. Only a page that actually paints
 // counts as one: the keeper's refresh check and any curl read /state as well,
 // and a reader that draws nothing must not slow the simulation to its own
 // cadence. Saying which turn was last painted is how this page announces
 // itself, and it is what the server counts turns nobody drew against.
+//
+// `have` is a different question from `painted`, and the tile patch below
+// turns on the difference: a state can arrive, patch the tiles and still fail
+// to draw. What a patch is built against is what this page *holds*.
 function paintedQuery() {
-  return paintedFrame === null ? "?painted="
-    : `?painted=${paintedFrame.turn}&world=${paintedFrame.seed}`;
+  // Only the watching loop says what it holds. Saying so is also what asks the
+  // server to hold the answer back until there is a next turn, and the human
+  // game's one-off boot read wants the state that exists now.
+  const held = SPEC && tileStore ? `&have=${tileStore.seed}:${tileStore.turn}` : "";
+  const who = `&viewer=${VIEWER_ID}`;
+  return (paintedFrame === null ? "?painted="
+    : `?painted=${paintedFrame.turn}&world=${paintedFrame.seed}`) + who + held;
 }
-async function specPoll() {
-  if (!SPEC || specBusy) return;
-  specBusy = true;
+// One turn, one frame on the glass.
+//
+// The server holds a finished turn until this page has been handed it, so the
+// exhibition runs at whatever rate this page reads — which quietly made the
+// page's own polling delay the simulation's speed limit. A fixed 100ms between
+// polls is a ceiling of ten turns a second however fast the world could
+// actually be played, and it was costing more than that: measured against the
+// live exhibition a turn took 584ms, of which only 318ms was simulating
+// anything.
+//
+// A delay is not what the promise needs anyway. Two turns drawn inside one
+// display refresh are composited into one, so a turn can be simulated,
+// delivered, drawn, and still never appear on a screen — which is what "some
+// turns are still being skipped" looks like from the far side of the glass.
+//
+// So the loop runs on the display's own clock. At most one turn is painted per
+// animation frame, which is what makes each turn a frame somebody can see; the
+// fetch for the next one goes out as soon as this one is off the queue, so the
+// network and the server's next turn overlap this paint instead of following
+// it. Nothing is ever dropped — a state that has arrived is always painted —
+// and the gate upstream will not simulate past the turn this page is holding,
+// so the queue cannot grow behind it.
+let specPending = null;  // fetched, not yet drawn
+let specFetching = false;
+function specFetch() {
+  if (!SPEC || specFetching || specPending) return;
+  specFetching = true;
+  fetchJSON("/state" + paintedQuery())
+    .then(st => { specPending = st; })
+    .catch(() => { tileStore = null; }) // hiccup: take the next state whole
+    .finally(() => { specFetching = false; });
+}
+(function specFrame() {
+  requestAnimationFrame(specFrame);
+  const st = specPending;
+  if (!st) { specFetch(); return; }
+  specPending = null;
   try {
-    const st = await fetchJSON("/state" + paintedQuery());
     const fresh = st.seed !== undefined && lastSeed2 !== null && st.seed !== lastSeed2;
     lastSeed2 = st.seed;
+    adoptTiles(st);
+    specFetch(); // ask for the next turn before spending this frame drawing
     render(st);
     if (fresh) { sel = null; selCity = null; } // new game
-  } catch (e) { /* server hiccup: next poll retries */ }
-  finally { specBusy = false; }
-}
-// Polling costs the server real work — a spectator state is the whole world —
-// and at the Lightning pace that work competes with the simulation for the
-// machine. Ask less often when the turns are already arriving faster than a
-// viewer can read them.
-(function pollSpec() {
-  specPoll().finally(() => setTimeout(pollSpec, specPace() === 0 ? 300 : 100));
+  } catch (e) {
+    // A patch that could not be applied, or a draw that threw. Give up this
+    // page's copy of the world rather than keep painting a wrong one; the next
+    // state arrives whole.
+    tileStore = null;
+    specFetch();
+  }
 })();
 // Watch pace is a whole-turn budget. Lightning is zero, so the server takes no
 // wait at all. A pick also has to outlive the server that received it. Every
