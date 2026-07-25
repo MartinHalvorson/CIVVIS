@@ -5408,10 +5408,15 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("? \"Start Single Player Game\""));
         assert!(EMBEDDED_INDEX
             .contains(".spec-controls #restart-sim.human-start::before { content: \"▶\";"));
-        // Its name needs the whole bar, and it must be the only gold button on
-        // it — two would leave neither reading as the one to press.
-        assert!(EMBEDDED_INDEX
-            .contains(".spec-controls:has(#restart-sim.human-start) { grid-template-columns: 1fr; }"));
+        // It shares the row with Pause/Resume rather than displacing it: keep
+        // watching or leave for your own game is one decision, so the two read
+        // as a pair. The row goes uneven instead — Pause keeps just enough for
+        // its own label and the start takes the rest — and the start stays the
+        // only gold button on it, since two would leave neither reading as the
+        // one to press.
+        assert!(EMBEDDED_INDEX.contains(
+            ".spec-controls:has(#restart-sim.human-start) { grid-template-columns: 96px minmax(0, 1fr); }"
+        ));
         assert!(EMBEDDED_INDEX
             .contains(".spec-controls:has(#restart-sim.human-start) #specpause.primary {"));
         assert!(EMBEDDED_INDEX.contains("body.watching-sim #startgame { display: none; }"));
