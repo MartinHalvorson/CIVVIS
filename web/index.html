@@ -904,6 +904,72 @@
     display: block; margin-top: 3px; font-size: 8px; font-weight: 700;
     letter-spacing: .09em; opacity: .72; text-transform: uppercase;
   }
+  /* Civ 6's launch bar: the empire's standing decisions, one click away and
+     always in the same place. It mirrors the notification rail on the far
+     edge — that one says what wants you, this one is where you go. */
+  #launchbar {
+    position: absolute; z-index: 8; left: 14px; top: 196px; bottom: 200px;
+    display: none; flex-direction: column; gap: 6px;
+    overflow: hidden auto; scrollbar-width: none;
+  }
+  #launchbar::-webkit-scrollbar { display: none; }
+  #launchbar.on { display: flex; }
+  .launch {
+    position: relative; flex: none; width: 42px; height: 42px; padding: 0; margin: 0;
+    display: grid; place-items: center; border-radius: 12px; font-size: 17px; line-height: 1;
+    color: var(--gold-bright); border: 1px solid #4d685f; background: #0a1512e8;
+    box-shadow: 0 8px 22px #0007; backdrop-filter: blur(12px);
+  }
+  .launch:hover { transform: translateX(3px); border-color: var(--gold); background: #12201cf0; }
+  .launch-badge {
+    position: absolute; right: -4px; top: -4px; min-width: 17px; height: 17px;
+    display: grid; place-items: center; padding: 0 4px; border-radius: 9px;
+    color: #17160f; background: var(--gold-bright); box-shadow: 0 2px 6px #0007;
+    font-size: 9px; font-weight: 900;
+  }
+  #empire {
+    position: absolute; z-index: 18; inset: 4% 3%; display: none; flex-direction: column;
+    overflow: hidden; color: var(--text); border: 1px solid #536c63; border-radius: 18px;
+    background: radial-gradient(circle at 18% 0, #1e332ef5, #091310fc 58%);
+    box-shadow: 0 28px 100px #000e; backdrop-filter: blur(20px);
+  }
+  #empire.open { display: flex; animation: rise .18s ease-out; }
+  .empire-head {
+    display: flex; align-items: center; gap: 14px; padding: 17px 20px 13px;
+    border-bottom: 1px solid #40534b;
+  }
+  .empire-title { color: var(--gold-bright); font: 600 22px/1 Georgia, serif; }
+  .empire-tabs { display: flex; flex-wrap: wrap; gap: 5px; margin-left: auto; }
+  .empire-tabs button { margin: 0; padding: 7px 11px; border-radius: 999px; font-size: 10px; }
+  .empire-tabs button.on {
+    color: #17160f; background: linear-gradient(135deg, #f0d58f, #c99e4e); border-color: #efd184;
+  }
+  .empire-body { flex: 1; overflow: auto; padding: 16px 20px 20px; }
+  .empire-group + .empire-group { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line-soft); }
+  .empire-heading {
+    display: flex; align-items: baseline; gap: 9px; margin-bottom: 9px;
+    color: var(--gold); font-size: 10px; font-weight: 850; letter-spacing: .12em; text-transform: uppercase;
+  }
+  .empire-heading span { color: var(--muted); font-weight: 600; letter-spacing: .02em; text-transform: none; }
+  .empire-grid { display: grid; gap: 9px; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); }
+  .empire-card {
+    display: flex; flex-direction: column; gap: 6px; padding: 11px 12px;
+    border: 1px solid #2d443d; border-radius: 12px; background: #101d1abb;
+  }
+  .empire-card.filled { border-color: #4a805d; background: #14261fcc; }
+  .empire-card.empty { border-color: var(--gold-deep); border-style: dashed; }
+  .empire-card-title { color: var(--gold-bright); font: 600 13px Georgia, serif; }
+  .empire-card-kind { color: var(--muted); font-size: 8px; font-weight: 850; letter-spacing: .12em; text-transform: uppercase; }
+  .empire-card-note { color: #c1cfc9; font-size: 10px; line-height: 1.5; }
+  .empire-card-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: auto; padding-top: 4px; }
+  .empire-card-actions button { margin: 0; padding: 6px 9px; font-size: 10px; }
+  .empire-slot-military { --slot: #eb807b; }
+  .empire-slot-economic { --slot: #d7b66a; }
+  .empire-slot-diplomatic { --slot: #76cde4; }
+  .empire-slot-wildcard { --slot: #c49be8; }
+  .empire-card[class*="empire-slot-"] { border-left: 3px solid var(--slot); }
+  .empire-meter { display: flex; align-items: center; gap: 8px; font-size: 10px; color: var(--muted); }
+  .empire-meter b { color: var(--text); font-variant-numeric: tabular-nums; }
   #tip {
     position: fixed; z-index: 30; display: none; max-width: 290px; padding: 10px 13px;
     color: var(--text); border: 1px solid #4a635a; border-radius: 11px;
@@ -1618,6 +1684,7 @@
   </div>
   <div id="ubar"></div>
   <div id="notify" aria-label="Notifications" aria-live="polite"></div>
+  <div id="launchbar" aria-label="Empire screens"></div>
   <div id="modeline"></div>
   <div id="err"></div>
   <div id="winner" role="status" aria-live="assertive"></div>
@@ -1644,6 +1711,14 @@
     </div>
     <div id="treecols"></div>
   </div>
+  <section id="empire" role="dialog" aria-modal="true" aria-labelledby="empire-title">
+    <div class="empire-head">
+      <div class="empire-title" id="empire-title">Government</div>
+      <div class="empire-tabs" id="empire-tabs"></div>
+      <button class="ghost" onclick="closeEmpire()">✕ Close</button>
+    </div>
+    <div class="empire-body" id="empire-body"></div>
+  </section>
   <section id="trade" role="dialog" aria-modal="true" aria-labelledby="tradetitle">
     <div class="trade-head">
       <div><div class="trade-title" id="tradetitle">Quick Deals</div>
@@ -1885,7 +1960,8 @@
       <span><kbd>F</kbd>Fortify · focus mode</span><span><kbd>Z</kbd>Sleep this unit</span>
       <span><kbd>1</kbd>Next unit</span><span><kbd>2</kbd>Settler lens</span>
       <span><kbd>3</kbd>Map tacks · 6.5</span><span><kbd>P</kbd>Civilopedia</span>
-      <span><kbd>D</kbd>Quick Deals</span><span><kbd>Alt/⌥ drag</kbd>Rotate · cinematic tilt</span>
+      <span><kbd>D</kbd>Quick Deals</span><span><kbd>G</kbd>Empire screens</span>
+      <span><kbd>Alt/⌥ drag</kbd>Rotate · cinematic tilt</span>
       <span><kbd>Q / E</kbd>Rotate map</span><span><kbd>Shift scroll</kbd>Rotate · <kbd>⌥ scroll</kbd>tilt</span>
       <span><kbd>Arrows</kbd>Pan map</span><span><kbd>+ / −</kbd>Zoom · double-click to dive</span>
       <span><kbd>Y</kbd>Tile yields</span><span><kbd>C</kbd>Cinema mode</span>
@@ -4891,6 +4967,7 @@ function render(st, recordChronicle = true) {
     if (w.dataset.signature) { delete w.dataset.signature; w.replaceChildren(); }
   }
   draw(); drawSide(newWorld); drawMini(); drawPlayerHud(); drawUbar(); drawQuickDeals(); drawCaptureChoice();
+  drawLaunchBar(); drawEmpire();
   if (newWorld) {
     unitOrders.clear(); noticeLog = []; noticeDismissed.clear();
     loopTurn = null; noticeSeenTurn = 0;
@@ -11042,6 +11119,384 @@ function drawQuickDeals() {
   }).join("");
 }
 
+// ------------------------------------------------------------ empire panel
+// Civ 6 keeps the empire's standing decisions on a launch bar: government and
+// its policy cards, religion, Great People, Governors, city-states, trade
+// routes, espionage. Each is a screen you open, decide in, and close. The
+// engine has offered every one of these to seat 0 since v0.6; this is the
+// bar and the screens, built over the same legal actions the agents use.
+const EMPIRE_TABS = [
+  {id: "government", icon: "♜", name: "Government"},
+  {id: "religion", icon: "☼", name: "Religion"},
+  {id: "people", icon: "★", name: "Great People"},
+  {id: "governors", icon: "⚑", name: "Governors"},
+  {id: "states", icon: "◈", name: "City-States"},
+  {id: "trade", icon: "⇄", name: "Trade"},
+  {id: "spies", icon: "◐", name: "Espionage"},
+];
+let empireTab = "government";
+
+function policySpec(id) { return (RULES && RULES.policies && RULES.policies[id]) || {}; }
+function policySlotOf(id) { return policySpec(id).slot || "wildcard"; }
+function emptyPolicySlots() {
+  if (!state || SPEC) return 0;
+  const total = Object.values(state.me.policy_slots || {}).reduce((a, b) => a + b, 0);
+  return Math.max(0, total - (state.me.policies || []).length);
+}
+// How many decisions each screen is holding. The badge is the whole reason a
+// launch bar beats a menu: you can see what is waiting without opening it.
+function empireBadge(tab) {
+  if (!state || SPEC) return 0;
+  const me = state.me;
+  switch (tab) {
+    case "government":
+      return emptyPolicySlots() + legalFor("government").length;
+    case "religion":
+      return (legalFor("choose_pantheon").length ? 1 : 0) +
+        (legalFor("found_religion").length ? 1 : 0) +
+        legalFor("evangelize_belief").length;
+    case "people":
+      return legalFor("recruit_great_person").length;
+    case "governors":
+      return (me.governor_titles_available || 0) + legalFor("assign_governor").length;
+    case "states":
+      return me.envoys_free || 0;
+    case "trade":
+      return Math.max(0, (me.trade_capacity || 0) - (me.routes || []).length);
+    case "spies":
+      return legalFor("assign_spy").length + legalFor("promote_spy").length;
+    default: return 0;
+  }
+}
+function drawLaunchBar() {
+  const bar = document.getElementById("launchbar");
+  if (!bar) return;
+  if (!state || SPEC) { bar.classList.remove("on"); return; }
+  bar.classList.add("on");
+  bar.innerHTML = EMPIRE_TABS.map(tab => {
+    const badge = empireBadge(tab.id);
+    return `<button class="launch" onclick="openEmpire('${tab.id}')" ` +
+      `title="${tab.name}${badge ? ` — ${badge} waiting` : ""}" aria-label="${tab.name}">${tab.icon}` +
+      (badge ? `<span class="launch-badge">${badge}</span>` : "") + `</button>`;
+  }).join("");
+}
+function openEmpire(tab) {
+  if (SPEC) return;
+  if (tab) empireTab = tab;
+  document.getElementById("empire").classList.add("open");
+  drawEmpire();
+}
+function closeEmpire() { document.getElementById("empire").classList.remove("open"); }
+function empireOpen() { return document.getElementById("empire").classList.contains("open"); }
+
+function empireCard({title, kind, note, actions = [], cls = ""}) {
+  return `<div class="empire-card ${cls}">` +
+    (kind ? `<div class="empire-card-kind">${kind}</div>` : "") +
+    `<div class="empire-card-title">${title}</div>` +
+    (note ? `<div class="empire-card-note">${note}</div>` : "") +
+    (actions.length ? `<div class="empire-card-actions">${actions.join("")}</div>` : "") +
+    `</div>`;
+}
+function empireAct(action, label, cls = "") {
+  return `<button class="${cls}" onclick='sendFromEmpire(${JSON.stringify(action)})'>${label}</button>`;
+}
+async function sendFromEmpire(action) {
+  await send(action);
+  if (empireOpen()) drawEmpire();
+}
+function empireGroup(heading, note, body) {
+  return `<div class="empire-group"><div class="empire-heading">${heading}` +
+    (note ? `<span>${note}</span>` : "") + `</div>${body}</div>`;
+}
+function empireGrid(cards, empty) {
+  return cards.length ? `<div class="empire-grid">${cards.join("")}</div>`
+    : `<div class="empty-state">${empty}</div>`;
+}
+
+function empireGovernment() {
+  const me = state.me;
+  const anarchy = me.anarchy_turns || 0;
+  const tried = new Set(me.past_governments || []);
+  const current = anarchy
+    ? `Anarchy — ${titleCase(me.pending_government || "")} takes power in ${anarchy} turn${anarchy === 1 ? "" : "s"}`
+    : titleCase(me.government || "Unformed");
+  const govs = legalFor("government").map(a => {
+    const spec = (RULES.governments || {})[a.government] || {};
+    const slots = spec.slots
+      ? Object.entries(spec.slots).map(([k, n]) => `${n}× ${titleCase(k)}`).join(" · ") : "";
+    return empireCard({
+      title: titleCase(a.government), kind: "Form of government",
+      note: [spec.note, slots].filter(Boolean).join("<br>") ||
+        (tried.has(a.government) ? "Already held once — two turns of Anarchy." : "A new form: adopted freely."),
+      actions: [empireAct(a, tried.has(a.government) ? "Adopt ⚠ Anarchy" : "Adopt",
+        tried.has(a.government) ? "" : "primary")],
+    });
+  });
+
+  // One frame per slot the government provides. Cards fill their own category
+  // first; whatever is left over lands in the wildcards, which take anything.
+  const slots = me.policy_slots || {};
+  const frames = [];
+  for (const kind of ["military", "economic", "diplomatic", "wildcard"])
+    for (let i = 0; i < (slots[kind] || 0); i++) frames.push({kind, policy: null});
+  const held = [...(me.policies || [])];
+  for (const frame of frames) {
+    const at = held.findIndex(policy => policySlotOf(policy) === frame.kind);
+    if (at >= 0) frame.policy = held.splice(at, 1)[0];
+  }
+  for (const frame of frames)
+    if (frame.kind === "wildcard" && !frame.policy && held.length) frame.policy = held.shift();
+  // A card the frames cannot account for still gets shown rather than
+  // silently dropped; the engine, not this layout, is the authority.
+  for (const policy of held) frames.push({kind: policySlotOf(policy), policy});
+  const unslot = new Map(legalFor("unslot_policy").map(a => [a.policy, a]));
+  const frameCards = frames.map(frame => {
+    if (!frame.policy) return empireCard({
+      title: "Empty", kind: `${frame.kind} slot`, cls: `empty empire-slot-${frame.kind}`,
+      note: "Slot a card below.",
+    });
+    const spec = policySpec(frame.policy);
+    const drop = unslot.get(frame.policy);
+    return empireCard({
+      title: titleCase(frame.policy), kind: `${frame.kind} slot`,
+      cls: `filled empire-slot-${frame.kind}`, note: spec.note || "",
+      actions: drop ? [empireAct(drop, "✕ Remove")] : [],
+    });
+  });
+
+  const slottable = legalFor("slot_policy").map(a => {
+    const spec = policySpec(a.policy);
+    return empireCard({
+      title: titleCase(a.policy), kind: `${policySlotOf(a.policy)} card`,
+      cls: `empire-slot-${policySlotOf(a.policy)}`, note: spec.note || "",
+      actions: [empireAct(a, "Slot it", "primary")],
+    });
+  });
+
+  return empireGroup("Government", current, empireGrid(govs, "No other government is unlocked yet.")) +
+    empireGroup("Policy slots", `${emptyPolicySlots()} empty of ${frames.length}`,
+      empireGrid(frameCards, "This government provides no policy slots.")) +
+    empireGroup("Cards in hand", `${slottable.length} available`,
+      empireGrid(slottable, "Every unlocked card is already slotted."));
+}
+
+function empireReligion() {
+  const me = state.me;
+  const beliefs = RULES.beliefs || {};
+  const noteFor = id => {
+    for (const category of Object.values(beliefs))
+      if (category && category[id]) return category[id].note || "";
+    return "";
+  };
+  const pantheons = legalFor("choose_pantheon").map(a => empireCard({
+    title: titleCase(a.belief), kind: "Pantheon belief", note: noteFor(a.belief),
+    actions: [empireAct(a, "Adopt", "primary")],
+  }));
+  const found = legalFor("found_religion").map(a => empireCard({
+    title: `${titleCase(a.follower)} · ${titleCase(a.founder)}`, kind: "Found a religion",
+    note: [noteFor(a.follower), noteFor(a.founder)].filter(Boolean).join("<br>"),
+    actions: [empireAct(a, "Found it", "primary")],
+  }));
+  const evangelise = legalFor("evangelize_belief").map(a => empireCard({
+    title: titleCase(a.belief), kind: "Add a belief", note: noteFor(a.belief),
+    actions: [empireAct(a, "Evangelise", "primary")],
+  }));
+  const held = (me.religion_beliefs || []).map(belief => empireCard({
+    title: titleCase(belief), kind: "Held belief", note: noteFor(belief), cls: "filled",
+  }));
+  const faith = `${Math.round(me.faith)} Faith · +${Math.round(me.yields.faith)} per turn`;
+  let out = empireGroup("Faith", faith, empireGrid(
+    (me.pantheon ? [empireCard({title: titleCase(me.pantheon), kind: "Pantheon",
+      note: noteFor(me.pantheon), cls: "filled"})] : [])
+      .concat(me.religion ? [empireCard({title: me.religion, kind: "Religion founded", cls: "filled",
+        note: "Your faith spreads from every city that follows it."})] : []),
+    "No pantheon yet. Accumulate Faith and one becomes available."));
+  if (pantheons.length) out += empireGroup("Choose a pantheon", "one only, and forever", empireGrid(pantheons, ""));
+  if (found.length) out += empireGroup("Found a religion", "a Great Prophet is waiting", empireGrid(found, ""));
+  if (evangelise.length) out += empireGroup("Evangelise a belief", "an Apostle's promotion", empireGrid(evangelise, ""));
+  if (held.length) out += empireGroup("Beliefs", `${held.length} of 4`, empireGrid(held, ""));
+  return out;
+}
+
+function empireGreatPeople() {
+  const me = state.me, specs = RULES.great_people || {};
+  const recruit = new Map(legalFor("recruit_great_person").map(a => [a.kind, a]));
+  const patronise = legalFor("patronize_great_person");
+  const kinds = [...new Set([...Object.keys(me.gpp || {}),
+    ...recruit.keys(), ...patronise.map(a => a.kind)])].sort();
+  // Which named person is next is a world fact — it depends on who every
+  // other civilization has already retired — and the observation does not
+  // carry it. So the accruing card names the kind and the points, and only
+  // the people actually in your service are named.
+  const cards = kinds.map(kind => {
+    const points = Math.round((me.gpp || {})[kind] || 0);
+    const claimed = (me.gp_claimed || {})[kind] || 0;
+    const offers = patronise.filter(a => a.kind === kind)
+      .map(a => empireAct(a, `Patronise · ${titleCase(a.currency || "gold")}`));
+    return empireCard({
+      title: `Great ${titleCase(kind)}`,
+      kind: recruit.has(kind) ? "Ready to recruit" : "Accruing",
+      cls: recruit.has(kind) ? "filled" : "",
+      note: `<div class="empire-meter"><b>${points}</b> points · ` +
+        `<b>${claimed}</b> recruited so far</div>` +
+        (recruit.has(kind) ? "The next of this kind is yours to claim."
+          : "Districts, buildings and wonders pay these points every turn."),
+      actions: (recruit.has(kind) ? [empireAct(recruit.get(kind), "Recruit", "primary")] : [])
+        .concat(offers),
+    });
+  });
+  const earned = (me.great_people || []).map(person => empireCard({
+    title: (specs[person] || {}).name || titleCase(person), kind: "In your service",
+    cls: "filled", note: Object.keys((specs[person] || {}).effects || {})
+      .map(effect => titleCase(effect)).join(" · "),
+  }));
+  return empireGroup("Recruitment", "points accrue from districts and buildings",
+    empireGrid(cards, "No Great Person points yet.")) +
+    empireGroup("Your Great People", `${earned.length} recruited`, empireGrid(earned, "None yet."));
+}
+
+function empireGovernors() {
+  const me = state.me, specs = RULES.governors || {};
+  const appoint = legalFor("appoint_governor");
+  const assign = legalFor("assign_governor");
+  const reassign = legalFor("reassign_governor");
+  const promote = legalFor("promote_governor");
+  const cityName = id => (state.cities.find(city => city.id === id) || {}).name || `city ${id}`;
+  const roster = Object.entries(specs).map(([id, spec]) => {
+    const posting = (me.governor_roster || {})[id];
+    const mine = (me.governors || []).includes(id) || posting !== undefined;
+    const promotions = promote.filter(a => a.governor === id).map(a =>
+      empireAct(a, `⬆ ${titleCase(a.promotion)}`));
+    const appointHere = appoint.filter(a => a.governor === id)
+      .map(a => empireAct(a, `Appoint to ${cityName(a.city)}`, "primary"));
+    const moveHere = reassign.filter(a => a.governor === id)
+      .map(a => empireAct(a, `Move to ${cityName(a.city)}`));
+    return empireCard({
+      title: spec.name || titleCase(id), kind: mine ? "Appointed" : "Available",
+      cls: mine ? "filled" : "",
+      note: (posting !== undefined ? `Established in ${cityName(posting)}.<br>` : "") +
+        Object.keys(spec.effects || {}).map(effect => titleCase(effect)).join(" · "),
+      actions: appointHere.concat(moveHere, promotions),
+    });
+  });
+  const plain = assign.map(a => empireCard({
+    title: cityName(a.city), kind: "Assign a governor",
+    note: "Send the next available Governor to this city.",
+    actions: [empireAct(a, "Assign", "primary")],
+  }));
+  return empireGroup("Titles", `${me.governor_titles_available || 0} unspent of ${me.governor_titles || 0} earned`,
+    empireGrid(roster, "No Governors are available yet.")) +
+    (plain.length ? empireGroup("Cities awaiting a Governor", "", empireGrid(plain, "")) : "");
+}
+
+function empireCityStates() {
+  const me = state.me;
+  const envoys = new Map((me.envoys || []).map(([player, count]) => [player, count]));
+  const envoyOffers = new Map(legalFor("send_envoy").map(a => [a.player, a]));
+  const levy = new Map(legalFor("levy_military").map(a => [a.player, a]));
+  const cards = state.players
+    .filter(player => player.is_minor && !player.is_barbarian && player.alive)
+    .map(player => {
+      const mine = envoys.get(player.id) || player.my_envoys || 0;
+      const suzerain = player.suzerain === null || player.suzerain === undefined
+        ? "No suzerain" : player.suzerain === 0 ? "You are suzerain"
+        : `Suzerain: ${(state.players[player.suzerain] || {}).civ || "another"}`;
+      const actions = [];
+      if (envoyOffers.has(player.id)) actions.push(empireAct(envoyOffers.get(player.id), "◈ Send envoy", "primary"));
+      if (levy.has(player.id)) actions.push(empireAct(levy.get(player.id), "⚔ Levy military"));
+      return empireCard({
+        title: player.civ, kind: titleCase(player.cs_type || "city-state"),
+        cls: player.suzerain === 0 ? "filled" : "",
+        note: `<div class="empire-meter"><b>${mine}</b> envoy${mine === 1 ? "" : "s"} · ${suzerain}</div>`,
+        actions,
+      });
+    });
+  return empireGroup("City-states", `${me.envoys_free || 0} envoy(s) unspent`,
+    empireGrid(cards, "You have met no city-states yet."));
+}
+
+function empireTrade() {
+  const me = state.me;
+  const cityName = id => (state.cities.find(city => city.id === id) || {}).name || "an unseen city";
+  const active = (me.routes || []).map(route => empireCard({
+    title: `${cityName(route.origin)} → ${cityName(route.dest)}`, kind: "Active route",
+    cls: "filled", note: `Runs until turn ${route.ends}.`,
+  }));
+  const offers = legalFor("trade_route").map(a => {
+    const trader = state.units.find(unit => unit.id === a.unit);
+    const home = trader ? (state.cities.find(city =>
+      city.pos[0] === trader.pos[0] && city.pos[1] === trader.pos[1]) || {}).name : null;
+    return empireCard({
+      title: `${home || `Trader #${a.unit}`} → ${cityName(a.city)}`, kind: "New route",
+      note: "A Trader is standing by.",
+      actions: [empireAct(a, "Establish", "primary")],
+    });
+  });
+  const corporations = legalFor("found_corporation").map(a => empireCard({
+    title: `Corporation at ${a.pos.join(",")}`, kind: "Corporation",
+    note: "Turn a worked luxury into a manufactured product.",
+    actions: [empireAct(a, "Found", "primary")],
+  }));
+  let out = empireGroup("Trade routes",
+    `${(me.routes || []).length} of ${me.trade_capacity || 0} capacity used`,
+    empireGrid(active, "No route is running."));
+  if (offers.length) out += empireGroup("Available routes", "", empireGrid(offers, ""));
+  if (corporations.length) out += empireGroup("Corporations", "", empireGrid(corporations, ""));
+  return out;
+}
+
+function empireSpies() {
+  const cityName = id => (state.cities.find(city => city.id === id) || {}).name || `city ${id}`;
+  const mine = (state.spies || []).filter(spy => spy.owner === 0);
+  const assign = legalFor("assign_spy");
+  const missions = legalFor("spy_mission");
+  const promote = legalFor("promote_spy");
+  const cards = mine.map(spy => {
+    const posted = spy.city === null || spy.city === undefined ? "unposted" : cityName(spy.city);
+    const busy = spy.mission
+      ? `Running ${titleCase(spy.mission.kind)} in ${cityName(spy.mission.city)} until turn ${spy.mission.ends}.`
+      : spy.captured_by !== null && spy.captured_by !== undefined
+        ? `Captured by ${(state.players[spy.captured_by] || {}).civ || "a rival"}.`
+        : spy.ready_turn > state.turn ? `In transit until turn ${spy.ready_turn}.` : "Idle.";
+    const actions = assign.filter(a => a.spy === spy.id)
+      .map(a => empireAct(a, `Post to ${cityName(a.city)}`))
+      .concat(missions.filter(a => a.spy === spy.id)
+        .map(a => empireAct(a, `⚙ ${titleCase(a.mission)}`, "primary")))
+      .concat(promote.filter(a => a.spy === spy.id)
+        .map(a => empireAct(a, `⬆ ${titleCase(a.promotion)}`)));
+    return empireCard({
+      title: `Agent #${spy.id}`,
+      kind: `Level ${spy.level || 1}${(spy.promotions || []).length
+        ? " · " + spy.promotions.map(titleCase).join(", ") : ""}`,
+      cls: spy.mission ? "filled" : "",
+      note: `Posted in ${posted}. ${busy}`,
+      actions,
+    });
+  });
+  return empireGroup("Agents", `${mine.length} in the field`,
+    empireGrid(cards, "You have trained no spies. Build them once Diplomatic Service is in."));
+}
+
+const EMPIRE_BUILDERS = {
+  government: empireGovernment, religion: empireReligion, people: empireGreatPeople,
+  governors: empireGovernors, states: empireCityStates, trade: empireTrade, spies: empireSpies,
+};
+function drawEmpire() {
+  if (!empireOpen()) return;
+  if (!state || SPEC) { closeEmpire(); return; }
+  const tab = EMPIRE_TABS.find(candidate => candidate.id === empireTab) || EMPIRE_TABS[0];
+  document.getElementById("empire-title").textContent = tab.name;
+  document.getElementById("empire-tabs").innerHTML = EMPIRE_TABS.map(candidate => {
+    const badge = empireBadge(candidate.id);
+    return `<button class="${candidate.id === tab.id ? "on" : ""}" onclick="openEmpire('${candidate.id}')">` +
+      `${candidate.icon} ${candidate.name}${badge ? ` · ${badge}` : ""}</button>`;
+  }).join("");
+  let body;
+  try { body = EMPIRE_BUILDERS[tab.id](); }
+  catch (error) { body = `<div class="empty-state">This screen could not be drawn: ${error.message}</div>`; }
+  document.getElementById("empire-body").innerHTML = body;
+}
+
 function drawUbar() {
   const bar = document.getElementById("ubar");
   if (!sel || SPEC) { bar.style.display = "none"; return; }
@@ -13286,6 +13741,12 @@ document.addEventListener("keydown", ev => {
     return;
   }
   if (tradeOpen) return;
+  if (ev.key === "Escape" && empireOpen()) { closeEmpire(); return; }
+  if (ev.key.toLowerCase() === "g" && !SPEC) {
+    empireOpen() ? closeEmpire() : openEmpire();
+    return;
+  }
+  if (empireOpen()) return;
   if (ev.key.toLowerCase() === "m" && cinemaActive()) { setCinemaAudio(!CINEMA_AUDIO); return; }
   if (ev.key.toLowerCase() === "c" && SPEC) { toggleCinemaMode(); return; }
   if (ev.key === "Enter") {
