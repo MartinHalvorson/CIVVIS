@@ -2255,9 +2255,28 @@ const FEATURE_LABEL = {
   pantanal:"Pantanal", uluru:"Uluru", yosemite:"Yosemite",
   dead_sea:"Dead Sea", mount_everest:"Mount Everest", pamukkale:"Pamukkale"
 };
+// One symbol for every resource in data/resources.json. Fourteen of the
+// fifty-two used to be named here and the other thirty-eight all came out as
+// the same "●", so the map could tell you a deposit existed and what class it
+// was but not what it was — diamonds, dyes and truffles were one dot.
 const RES_ICON = { wheat:"🌾", cattle:"🐄", sheep:"🐑", stone:"🪨", deer:"🦌",
-                   fish:"🐟", bananas:"🍌", horses:"🐎", iron:"⚒️", silk:"🧵",
-                   wine:"🍷", salt:"🧂", antiquity_site:"🏺", shipwreck:"⚓" };
+                   fish:"🐟", bananas:"🍌", copper:"🥉", crabs:"🦀",
+                   maize:"🌽", rice:"🍚",
+                   horses:"🐎", iron:"⚒️", niter:"🧨", coal:"⛏", oil:"🛢",
+                   aluminum:"🛩", uranium:"☢",
+                   silk:"🧵", wine:"🍷", salt:"🧂", amber:"🔶", citrus:"🍊",
+                   cocoa:"🍫", coffee:"☕", cosmetics:"💄", cotton:"🧶",
+                   diamonds:"💎", dyes:"🎨", furs:"🦫", gypsum:"🧱",
+                   honey:"🍯", incense:"🪔", ivory:"🐘", jade:"🟢",
+                   jeans:"👖", marble:"🏛", mercury:"🌡", olives:"🫒",
+                   pearls:"🦪", perfume:"🧴", silver:"🥈", spices:"🌶",
+                   sugar:"🍬", tea:"🍵", tobacco:"🚬", toys:"🧸",
+                   truffles:"🍄", turtles:"🐢", whales:"🐋",
+                   antiquity_site:"🏺", shipwreck:"⚓" };
+// Which hex corner a class sits in: strategics lower-left, bonuses at the
+// bottom point, luxuries lower-right. Class becomes a position, so it is
+// readable at a range where neither the rim colour nor the symbol is.
+const RESOURCE_CORNER = { strategic:3, bonus:2, luxury:1 };
 const ARTIFACT_RESOURCES = new Set(["antiquity_site", "shipwreck"]);
 // One symbol per unit in data/units.json — the production medallion and the
 // strategic-view discs both read from here, and a unit without an entry falls
@@ -6225,6 +6244,7 @@ function drawEnvironment3D(kind, t, x, y, span = 1) {
     kind,
     terrain:t.terrain,
     seed:Math.imul(t.pos[0] + 4096, 73856093) ^ Math.imul(t.pos[1] + 4096, 19349663),
+    hills:!!t.hills && t.terrain !== "mountain",
     yaw:cam.rot,
     tilt:YS,
     sunAngle:SUN,
@@ -6719,13 +6739,21 @@ function drawMountainRange(t, x, y) {
   cx.beginPath(); cx.ellipse(x, base + 2, (R - L) * 0.42, 3.5, 0, 0, 7); cx.fill();
 }
 
-function drawConifer(tx, ty, s, hv) {
+// The one stand every wooded tile draws, sorted back to front: offset, scale
+// and colour tone. Fixed rather than hashed per tile — a forest is one forest,
+// not a fresh arrangement of trees at every hex boundary.
+const WOODS_STAND = [
+  [3, -8, 1.45, 1], [-11, -6, 1.30, 0], [12, -4, 1.20, 2],
+  [-7, 1, 1.50, 1], [8, 4, 1.35, 0], [-2, 7, 1.40, 2],
+];
+
+function drawConifer(tx, ty, s, tone) {
   const th = 11 * s, tw = 4.6 * s;
   cx.fillStyle = "#00000028";
   cx.beginPath(); cx.ellipse(tx + 1, ty + 1, tw, 1.6 * s, 0, 0, 7); cx.fill();
   cx.fillStyle = "#3d2c1e";
   cx.fillRect(tx - 0.8 * s, ty - 2 * s, 1.6 * s, 3 * s);
-  const g = ["#1d4423", "#25552b", "#2e6634"][Math.floor(hv * 2.99)];
+  const g = ["#1d4423", "#25552b", "#2e6634"][tone];
   const lit = shade(g, 1.4);
   for (const [yo, w, hh] of [[0, tw, th * 0.62], [-th * 0.42, tw * 0.72, th * 0.55]]) {
     cx.fillStyle = lit;
@@ -6735,20 +6763,23 @@ function drawConifer(tx, ty, s, hv) {
   }
 }
 
-function drawJungleTree(tx, ty, s, hv) {
-  const g = ["#17603a", "#1d7044", "#14522f"][Math.floor(hv * 2.99)];
+// Rainforest is the fir's opposite number: a bare trunk carrying most of the
+// height, then one broad spread of leaf near the top. Neighbouring crowns
+// overlap into a closed canopy, which is the whole silhouette difference
+// between a rainforest and a stand of firs.
+function drawJungleTree(tx, ty, s, tone) {
+  const g = ["#17603a", "#1d7044", "#14522f"][tone];
+  const th = 15 * s, cw = 7.4 * s;
   cx.fillStyle = "#00000028";
-  cx.beginPath(); cx.ellipse(tx + 1, ty + 2, 6 * s, 2 * s, 0, 0, 7); cx.fill();
-  cx.fillStyle = "#3d2c1e";
-  cx.fillRect(tx - 0.9 * s, ty - 3 * s, 1.8 * s, 4 * s);
+  cx.beginPath(); cx.ellipse(tx + 1, ty + 2, 5 * s, 1.8 * s, 0, 0, 7); cx.fill();
+  cx.fillStyle = "#4a3524";
+  cx.fillRect(tx - 0.75 * s, ty - th * 0.84, 1.5 * s, th * 0.84);
   cx.fillStyle = g;
+  cx.beginPath(); cx.ellipse(tx, ty - th * 0.84, cw, 3.1 * s, 0, 0, 7); cx.fill();
+  cx.fillStyle = shade(g, 1.26);
   cx.beginPath();
-  cx.arc(tx - 3 * s, ty - 5 * s, 3.6 * s, 0, 7);
-  cx.arc(tx + 2.5 * s, ty - 6 * s, 4.2 * s, 0, 7);
-  cx.arc(tx, ty - 3.5 * s, 3.4 * s, 0, 7);
+  cx.ellipse(tx - cw * 0.2 * LITF, ty - th * 0.94, cw * 0.56, 2.4 * s, 0, 0, 7);
   cx.fill();
-  cx.fillStyle = shade(g, 1.32);
-  cx.beginPath(); cx.arc(tx - 1.5 * s * LITF, ty - 7 * s, 2.6 * s, 0, 7); cx.fill();
 }
 
 // Tiny battlefield characters are articulated by family. The JSON catalogue
@@ -9666,15 +9697,13 @@ function draw() {
       // pale ground the sunlit crest clipped to near-white on top of that. They
       // are light and shadow laid over the texture now, so hill country keeps
       // its grass and its sand and simply gains form.
-      // Placement still comes from the tile hash: the same three mounds at the
-      // same three offsets in every hex read as a stamped pattern and put the
-      // grid straight back into a run of hill country.
-      const hh = hash2(t.pos[0] * 31 + 5, t.pos[1] * 23 + 9);
-      const jit = i => (hash2(t.pos[0] * 7 + i * 13, t.pos[1] * 11 + i * 5) - 0.5);
+      // The same three mounds, centred, in every hex. Scattering them from the
+      // tile hash bought variety at the price of a tile-to-tile seam, and the
+      // middle of the face is where relief belongs: it is the ground the rest
+      // of the tile stands on, and a wood on a hill is lifted onto it rather
+      // than drawn through it.
       for (const [hx, hy, hw2, hh2] of [
-        [-8 + jit(1) * 7, -3 + jit(2) * 5, 12 + hh * 3, 7.5 + jit(3) * 1.6],
-        [7 + jit(4) * 6, -7 + jit(5) * 4, 11 + hh * 2.5, 6.8 + jit(6) * 1.4],
-        [1 + jit(7) * 7, 4 + jit(8) * 3, 13.5 + hh * 3, 8.2 + jit(9) * 1.5]]) {
+        [-8, 2, 12, 7.5], [7, -5, 11, 6.8], [1, 5, 13.5, 8.2]]) {
         cx.fillStyle = "rgba(22,15,6,.28)";               // cast shadow
         cx.beginPath(); cx.ellipse(x + hx, y + hy + 2.6, hw2, hh2, 0, Math.PI, 0);
         cx.fill();
@@ -9690,9 +9719,11 @@ function draw() {
         cx.stroke();
       }
     } else if (t.hills && !beau) {
+      // Low on the face for the same reason the cinematic mounds are: the
+      // middle of a tile belongs to whatever the tile is carrying.
       cx.strokeStyle = "#00000066"; cx.lineWidth = 2.4;
-      cx.beginPath(); cx.arc(x - 7, y - 7, 6.5, Math.PI, 0);
-      cx.arc(x + 6, y - 7, 6.5, Math.PI, 0); cx.stroke();
+      cx.beginPath(); cx.arc(x - 7, y + 1, 6.5, Math.PI, 0);
+      cx.arc(x + 6, y + 1, 6.5, Math.PI, 0); cx.stroke();
     }
     if (t.terrain === "desert" && !t.feature && beau) {
       // Dune ridges: light crest over shadow, placed and swept from the tile
@@ -9716,28 +9747,29 @@ function draw() {
     } else if (["forest", "jungle", "burning_forest", "burnt_forest",
                 "burning_jungle", "burnt_jungle"].includes(t.feature)) {
       const jungle = t.feature.includes("jungle");
+      // On a hill the stand rides up onto the crest instead of sinking into it.
+      const lift = t.hills ? -7 : 0;
       if (beau) {
-        // dense cluster of small individual trees (Civ 6 woods)
-        const trees = [];
-        for (let i = 0; i < 6; i++) {
-          const h1 = hash2(t.pos[0] * 5 + i * 3, t.pos[1] * 7 + i);
-          const h2 = hash2(t.pos[0] + i * 11, t.pos[1] * 3 + i * 5);
-          trees.push([x + (h1 - 0.5) * S * 1.3,
-                      y + (h2 - 0.5) * S * 0.85 + 4,
-                      1.1 + h1 * 0.7, h2]);
-        }
-        trees.sort((a, b) => a[1] - b[1]);
-        for (const [tx, ty, sc, hv] of trees) {
-          if (jungle) drawJungleTree(tx, ty, sc, hv);
-          else drawConifer(tx, ty, sc, hv);
+        // One woods and one rainforest, stamped the same way into every hex —
+        // see the stand tables in cinematic3d.js for why they are not scattered.
+        for (const [dx, dy, sc, tone] of WOODS_STAND) {
+          if (jungle) drawJungleTree(x + dx, y + dy + lift, sc, tone);
+          else drawConifer(x + dx, y + dy + lift, sc, tone);
         }
       } else {
-        for (let i = 0; i < 3; i++) {
-          const hsh = hash2(t.pos[0] * 3 + i, t.pos[1] + i * 7);
-          const ang = hsh * 6.28;
-          const tx = x + Math.cos(ang) * 9, ty = y + Math.sin(ang) * 6 + 5;
-          cx.fillStyle = jungle ? "#1d5c33" : "#1e4d24";
-          tri(tx - 7, ty, tx, ty - 14, tx + 7, ty);
+        // Same stand, drawn as a glyph: firs for woods, a bare trunk under a
+        // spread canopy for rainforest, so the two never read as each other.
+        for (const [dx, dy] of [[-9, -2], [1, 2], [9, 5]]) {
+          const tx = x + dx, ty = y + dy + 4 + lift;
+          if (jungle) {
+            cx.strokeStyle = "#4a3a24"; cx.lineWidth = 1.8;
+            cx.beginPath(); cx.moveTo(tx, ty); cx.lineTo(tx, ty - 12); cx.stroke();
+            cx.fillStyle = "#1d5c33";
+            cx.beginPath(); cx.ellipse(tx, ty - 13, 7.5, 3.4, 0, 0, 7); cx.fill();
+          } else {
+            cx.fillStyle = "#1e4d24";
+            tri(tx - 7, ty, tx, ty - 14, tx + 7, ty);
+          }
         }
       }
     } else if (t.feature === "marsh") {
@@ -9791,6 +9823,11 @@ function draw() {
         ? RULES.resources[t.resource].class : "bonus";
       const rim = rc === "strategic" ? "#ff9d5c"
         : rc === "luxury" ? "#d9a0f0" : "#e6ddbd";
+      // Seated toward its class's corner rather than always at the same
+      // lower-right spot, and rotated with the board like every other mark on
+      // a hex. 0.62 of the way out keeps the whole badge inside its own face.
+      const [rx, ry] = corner(x, y, S * 0.62, RESOURCE_CORNER[rc] === undefined
+        ? 2 : RESOURCE_CORNER[rc]);
       // A cinema establishing shot covers a continent: rendering every deposit
       // as a full dark badge there freckles the landscape with hundreds of
       // holes. Detail resolves with the camera instead. Manual/player views
@@ -9799,13 +9836,13 @@ function draw() {
       const detailedResource = FINE() && (!cinemaActive() || cam.scale >= 1.12);
       if (detailedResource) {
         cx.fillStyle = "#161c14cc";
-        cx.beginPath(); cx.arc(x + 10, y + 9, 8.2, 0, 7); cx.fill();
+        cx.beginPath(); cx.arc(rx, ry, 8.2, 0, 7); cx.fill();
         cx.strokeStyle = rim + "dd"; cx.lineWidth = 1.5; cx.stroke();
         // name the symbol fonts the way the unit badge does; bare "sans-serif"
         // leaves the glyph to whatever the platform happens to fall back to,
         // and an empty disc is a worse badge than no badge
         cx.font = "12px 'Segoe UI Symbol', 'Segoe UI Emoji', sans-serif";
-        cx.fillText(RES_ICON[t.resource] || "●", x + 10, y + 9.5);
+        cx.fillText(RES_ICON[t.resource] || "●", rx, ry + 0.5);
       } else {
         // Zoomed out to survey the map, the icon inside the badge is under a
         // pixel and unreadable, and a few hundred dark discs read as the map
@@ -9813,7 +9850,7 @@ function draw() {
         // is that a deposit is there and what class it is — so it becomes a
         // legible dot in the class color instead of an illegible badge.
         cx.fillStyle = rim;
-        cx.beginPath(); cx.arc(x + 10, y + 9, 3.6, 0, 7); cx.fill();
+        cx.beginPath(); cx.arc(rx, ry, 3.6, 0, 7); cx.fill();
         cx.strokeStyle = "#161c14bb"; cx.lineWidth = 1.2; cx.stroke();
       }
     }
