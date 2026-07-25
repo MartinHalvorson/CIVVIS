@@ -14,6 +14,8 @@ pub enum MapScript {
     Continents,
     SmallContinents,
     InlandSea,
+    TrueStartEarth,
+    TrueStartTrueEarth,
 }
 
 impl MapScript {
@@ -23,6 +25,8 @@ impl MapScript {
             Self::Continents => "continents",
             Self::SmallContinents => "small_continents",
             Self::InlandSea => "inland_sea",
+            Self::TrueStartEarth => "true_start_earth",
+            Self::TrueStartTrueEarth => "true_start_true_earth",
         }
     }
 
@@ -46,7 +50,7 @@ pub struct MapScriptSpec {
     pub script: MapScript,
 }
 
-pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 4] = [
+pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 6] = [
     MapScriptSpec {
         id: "pangaea",
         name: "Pangaea",
@@ -70,6 +74,18 @@ pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 4] = [
         name: "Inland Sea",
         description: "A broad connected landmass surrounding a central sea.",
         script: MapScript::InlandSea,
+    },
+    MapScriptSpec {
+        id: "true_start_earth",
+        name: "True Start Earth",
+        description: "Earth's continents with civilizations starting near their historic homelands, shown on a pole-tapered equal-area world.",
+        script: MapScript::TrueStartEarth,
+    },
+    MapScriptSpec {
+        id: "true_start_true_earth",
+        name: "True Start True Earth",
+        description: "The same true-start Earth geography wrapped onto an interactive three-dimensional globe.",
+        script: MapScript::TrueStartTrueEarth,
     },
 ];
 
@@ -307,7 +323,31 @@ mod tests {
 
     use crate::game::{Action, Game, Item};
 
-    use super::{GameSpeed, MapScript, MapSize, CIV6_GAME_SPEEDS};
+    use super::{GameSpeed, MapScript, MapSize, CIV6_GAME_SPEEDS, CIV6_MAP_SCRIPTS};
+
+    #[test]
+    fn true_earth_setup_choices_have_stable_names_and_ids() {
+        for (id, name, script) in [
+            (
+                "true_start_earth",
+                "True Start Earth",
+                MapScript::TrueStartEarth,
+            ),
+            (
+                "true_start_true_earth",
+                "True Start True Earth",
+                MapScript::TrueStartTrueEarth,
+            ),
+        ] {
+            assert_eq!(MapScript::from_id(id), Some(script));
+            let spec = CIV6_MAP_SCRIPTS
+                .iter()
+                .find(|candidate| candidate.id == id)
+                .unwrap();
+            assert_eq!(spec.name, name);
+            assert_eq!(spec.script, script);
+        }
+    }
 
     #[test]
     fn stock_game_speeds_scale_costs_durations_and_turn_limits() {
