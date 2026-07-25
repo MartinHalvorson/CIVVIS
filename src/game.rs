@@ -21336,20 +21336,19 @@ impl Game {
                 .center(pos)
                 .map_or(f64::MIN, |center| center.iter().zip(point).map(|(a, b)| a * b).sum())
         };
-        let mut best = toward(at);
         loop {
-            let mut moved = false;
+            // Each step strictly improves, so the walk cannot circle.
+            let mut best = (toward(at), at);
             for neighbor in self.nbrs(at) {
                 let score = toward(neighbor);
-                if score > best {
-                    best = score;
-                    at = neighbor;
-                    moved = true;
+                if score > best.0 {
+                    best = (score, neighbor);
                 }
             }
-            if !moved {
+            if best.1 == at {
                 return at;
             }
+            at = best.1;
         }
     }
 
