@@ -65,7 +65,7 @@ fn grow_blob(
 /// gets exactly the globe it names. Anything else — a caller that asked for
 /// Planet with a flat map's dimensions — gets the globe closest in tiles to
 /// the rectangle it wanted, which is how the shipped sizes stay recognizable.
-fn globe_frequency(width: i32, height: i32) -> i32 {
+pub fn globe_frequency(width: i32, height: i32) -> i32 {
     if width > 0 && width % 5 == 0 && height == 2 * (width / 5) + 2 {
         return width / 5;
     }
@@ -2240,6 +2240,27 @@ mod river_tests {
                     }
                 }
             }
+        }
+    }
+
+    /// The size table names a globe for every map size, and the generator has
+    /// to reach the same one from either rectangle — the size's own, or the
+    /// globe's — or the lobby and the world it builds would disagree.
+    #[test]
+    fn every_size_names_the_same_globe_from_either_rectangle() {
+        for size in CIV6_MAP_SIZES {
+            assert_eq!(
+                globe_frequency(size.width, size.height),
+                size.globe_frequency,
+                "{} from its own rectangle",
+                size.id
+            );
+            assert_eq!(
+                globe_frequency(size.globe_width(), size.globe_height()),
+                size.globe_frequency,
+                "{} from its globe's rectangle",
+                size.id
+            );
         }
     }
 

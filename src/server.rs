@@ -1667,11 +1667,15 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
         p.map_script = v;
     }
     // A globe is stored in a rectangle of its own shape, so the chosen size is
-    // re-expressed whenever either the size or the script moves.
-    if let Some(size) = MapSize::from_dimensions(p.width, p.height) {
-        let (width, height) = size.dimensions(p.map_script);
-        p.width = width;
-        p.height = height;
+    // re-expressed whenever either the size or the script moves, and the lobby
+    // always names the world it is about to build.
+    if p.map_script.is_globe() {
+        let frequency = crate::mapgen::globe_frequency(p.width, p.height);
+        p.width = crate::sphere::Sphere::width_for(frequency);
+        p.height = crate::sphere::Sphere::height_for(frequency);
+    } else if let Some(size) = MapSize::from_dimensions(p.width, p.height) {
+        p.width = size.width;
+        p.height = size.height;
     }
     if let Some(v) = request["game_speed"].as_str().and_then(GameSpeed::from_id) {
         p.game_speed = v;
@@ -1950,13 +1954,23 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         }
         ("GET", "/state") => {
             sh.note_frame_request();
+            // A Planet world is a globe, and a client cannot draw one from tile
+            // coordinates alone. It asks for the sphere's geometry the first
+            // time it sees one; the ordinary poll never carries it.
+            let wants_planet = request_target.contains("planet=1");
             let (mut o, frame) = {
                 let session = sh.session.lock().unwrap();
                 let frame = SpectatorFrame {
                     seed: session.game.seed,
                     turn: session.game.turn,
                 };
-                (session.state(), frame)
+                let mut observed = session.state();
+                if wants_planet {
+                    if let Some(geometry) = crate::obs::planet_geometry(&session.game) {
+                        observed["map"]["planet"] = geometry;
+                    }
+                }
+                (observed, frame)
             };
             decorate(&mut o, sh);
             if respond_json(stream, &o) {
@@ -2716,6 +2730,90 @@ mod tests {
         }
     }
 
+    /// Planet is drawn from geometry the client cannot derive, so the
+    /// protocol has to carry it — but only when asked, because the ordinary
+    /// observation is polled every turn and is already large.
+    #[test]
+    fn a_globe_hands_the_browser_its_shape_only_when_asked() {
+        let size = crate::setup::MapSize::for_players(2);
+        let (width, height) = size.dimensions(MapScript::Planet);
+        let game = Game::new_with(crate::game::GameOptions {
+            map_script: MapScript::Planet,
+            ..crate::game::GameOptions::new(2, width, height, 6_031, 30, 2)
+        });
+        let plain = crate::obs::observation_spectator(&game, 0);
+        assert!(plain["map"]["planet"].is_null(), "the poll never carries geometry");
+        assert_eq!(plain["map"]["script"], "planet");
+
+        let geometry = crate::obs::planet_geometry(&game).expect("a globe has geometry");
+        assert_eq!(geometry["frequency"], size.globe_frequency);
+        let cells = geometry["cells"].as_array().unwrap();
+        assert_eq!(cells.len(), game.map.tiles.len());
+        let corners = geometry["corners"].as_array().unwrap();
+        assert_eq!(corners.len() % 3, 0);
+        // Each corner is shared by the three tiles meeting there, and is sent
+        // once: a frequency-n globe has 20n² of them.
+        let frequency = size.globe_frequency as usize;
+        assert_eq!(corners.len() / 3, 20 * frequency * frequency);
+        let mut pentagons = 0;
+        for cell in cells {
+            let entry = cell.as_array().unwrap();
+            let pos = (entry[0].as_i64().unwrap() as i32, entry[1].as_i64().unwrap() as i32);
+            assert!(game.map.tiles.contains_key(&pos));
+            match entry.len() - 2 {
+                5 => pentagons += 1,
+                6 => {}
+                other => panic!("{pos:?} was sent {other} corners"),
+            }
+            for index in &entry[2..] {
+                assert!((index.as_i64().unwrap() as usize) < corners.len() / 3);
+            }
+        }
+        assert_eq!(pentagons, 12, "a globe closes with twelve pentagons");
+
+        // A flat map has no geometry to send.
+        let flat = Game::new(2, 44, 26, 6_031, 30, 2);
+        assert!(crate::obs::planet_geometry(&flat).is_none());
+    }
+
+    /// Picking the globe re-expresses the chosen size in the rectangle a globe
+    /// is stored in, so the lobby and the world it builds agree.
+    #[test]
+    fn choosing_the_globe_resizes_the_world_it_builds() {
+        let current = current();
+        let planet = new_game_params(&current, &json!({"map_script": "planet"}));
+        let size = crate::setup::MapSize::from_dimensions(current.width, current.height)
+            .unwrap_or_else(|| crate::setup::MapSize::for_players(current.num_players));
+        assert_eq!(planet.map_script, MapScript::Planet);
+        assert_eq!(
+            (planet.width, planet.height),
+            (
+                crate::sphere::Sphere::width_for(crate::mapgen::globe_frequency(
+                    current.width,
+                    current.height
+                )),
+                crate::sphere::Sphere::height_for(crate::mapgen::globe_frequency(
+                    current.width,
+                    current.height
+                ))
+            )
+        );
+        // A stock size keeps its own globe.
+        let stock = new_game_params(
+            &Params { width: size.width, height: size.height, ..current.clone() },
+            &json!({"map_script": "planet"}),
+        );
+        assert_eq!((stock.width, stock.height), (size.globe_width(), size.globe_height()));
+        assert_eq!(
+            crate::setup::MapSize::from_dimensions(stock.width, stock.height).map(|found| found.id),
+            Some(size.id),
+            "the globe still reports the size it was chosen at"
+        );
+        // And back again.
+        let flat = new_game_params(&stock, &json!({"map_script": "continents"}));
+        assert_eq!((flat.width, flat.height), (size.width, size.height));
+    }
+
     #[test]
     fn browser_orders_settings_event_log_and_strategy() {
         for players in [2, 4, 6, 8, 10, 12] {
@@ -2729,6 +2827,11 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("RULES.game_speeds.map(speed =>"));
         assert!(EMBEDDED_INDEX.contains("id=\"gamemode\""));
         assert!(EMBEDDED_INDEX.contains("id=\"maptype\""));
+        // The globe has its own renderer, and it is the only one now: the
+        // retired true-start Earth scripts must not linger in the client.
+        assert!(EMBEDDED_INDEX.contains("function drawPlanetMap()"));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"planet\">Planet</option>"));
+        assert!(!EMBEDDED_INDEX.contains("true_start"));
         assert!(EMBEDDED_INDEX.contains("id=\"gamespeed\""));
         for victory in [
             "science",
