@@ -3316,11 +3316,13 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("RULES.game_speeds.map(speed =>"));
         assert!(EMBEDDED_INDEX.contains("id=\"gamemode\""));
         assert!(EMBEDDED_INDEX.contains("id=\"maptype\""));
-        // The globe has its own renderer, and it is the only one now: the
-        // retired true-start Earth scripts must not linger in the client.
+        // The globe has its own renderer, and it is the only one: both globe
+        // scripts are drawn by it, so neither needs a projection of its own.
         assert!(EMBEDDED_INDEX.contains("function drawPlanetMap()"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"planet\">Planet</option>"));
-        assert!(!EMBEDDED_INDEX.contains("true_start"));
+        assert!(EMBEDDED_INDEX
+            .contains("<option value=\"true_start_earth\">True Start Earth</option>"));
+        assert!(EMBEDDED_INDEX.contains("const GLOBE_SCRIPTS = "));
         assert!(EMBEDDED_INDEX.contains("id=\"gamespeed\""));
         for victory in [
             "science",

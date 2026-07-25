@@ -2162,6 +2162,7 @@
           <option value="small_continents">Small Continents</option>
           <option value="inland_sea">Inland Sea</option>
           <option value="planet">Planet</option>
+          <option value="true_start_earth">True Start Earth</option>
         </select></label>
         <label class="small">Game speed<select id="gamespeed" style="margin-top:4px">
           <option value="online" selected>Online · 250 turns</option>
@@ -9464,8 +9465,11 @@ let PLANET = null;            // {frequency, corners, cells}
 let PLANET_WANTED = null;     // frequency currently being fetched
 let PLANET_HIT_CELLS = [];
 
+// Both globe scripts are the same shape and are drawn by the same renderer;
+// they differ only in whether the coastlines were grown or read off Earth.
+const GLOBE_SCRIPTS = new Set(["planet", "true_start_earth"]);
 function planetMap() {
-  return !!state && state.map.script === "planet";
+  return !!state && GLOBE_SCRIPTS.has(state.map.script);
 }
 // A globe's rectangle is five columns per subdivision, so the world says which
 // globe it is without being asked.

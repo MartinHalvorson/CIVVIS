@@ -117,6 +117,263 @@ fn noise_cell(wm: &WorldMap, pos: Pos) -> (i32, i32) {
     )
 }
 
+/// Even-odd point-in-polygon in degrees. No ring below crosses the
+/// antimeridian, so the test needs no wrapping to be exact.
+fn point_in_polygon(longitude: f64, latitude: f64, polygon: &[(f64, f64)]) -> bool {
+    let mut inside = false;
+    let mut previous = polygon.len() - 1;
+    for current in 0..polygon.len() {
+        let (xi, yi) = polygon[current];
+        let (xj, yj) = polygon[previous];
+        if ((yi > latitude) != (yj > latitude))
+            && longitude < (xj - xi) * (latitude - yi) / (yj - yi) + xi
+        {
+            inside = !inside;
+        }
+        previous = current;
+    }
+    inside
+}
+
+/// Earth as a deliberately low-frequency silhouette, one ring of
+/// `(longitude, latitude)` degrees per landmass.
+///
+/// The coastlines are coarse on purpose. A globe at the sizes this engine
+/// plays holds a few thousand tiles, so one tile spans several hundred
+/// kilometres and any detail finer than a peninsula would vanish in the
+/// sampling. What has to survive that resolution is the shape a player
+/// recognises and the shape that decides play: the Mediterranean, the Sahara's
+/// width, the gap at Panama, the fact that the Americas are reached by sea.
+fn earth_is_land(longitude: f64, latitude: f64) -> bool {
+    const NORTH_AMERICA: &[(f64, f64)] = &[
+        (-168.0, 71.0),
+        (-142.0, 72.0),
+        (-126.0, 59.0),
+        (-123.0, 49.0),
+        (-105.0, 48.0),
+        (-82.0, 25.0),
+        (-97.0, 16.0),
+        (-112.0, 28.0),
+        (-126.0, 43.0),
+        (-151.0, 58.0),
+        (-168.0, 60.0),
+    ];
+    const SOUTH_AMERICA: &[(f64, f64)] = &[
+        (-81.0, 12.0),
+        (-61.0, 11.0),
+        (-49.0, 2.0),
+        (-35.0, -7.0),
+        (-52.0, -35.0),
+        (-68.0, -55.0),
+        (-76.0, -38.0),
+        (-81.0, -5.0),
+    ];
+    const EURASIA: &[(f64, f64)] = &[
+        (-11.0, 36.0),
+        (-10.0, 59.0),
+        (5.0, 71.0),
+        (44.0, 72.0),
+        (82.0, 75.0),
+        (126.0, 70.0),
+        (169.0, 64.0),
+        (179.0, 52.0),
+        (145.0, 43.0),
+        (128.0, 31.0),
+        (121.0, 19.0),
+        (105.0, 7.0),
+        (93.0, 21.0),
+        (78.0, 8.0),
+        (66.0, 25.0),
+        (49.0, 29.0),
+        (35.0, 36.0),
+        (20.0, 35.0),
+        (8.0, 43.0),
+    ];
+    const AFRICA: &[(f64, f64)] = &[
+        (-17.0, 36.0),
+        (12.0, 37.0),
+        (34.0, 31.0),
+        (51.0, 12.0),
+        (42.0, -12.0),
+        (31.0, -35.0),
+        (17.0, -35.0),
+        (8.0, -18.0),
+        (-10.0, 5.0),
+    ];
+    const ARABIA_INDIA: &[(f64, f64)] = &[
+        (34.0, 31.0),
+        (67.0, 29.0),
+        (91.0, 24.0),
+        (83.0, 7.0),
+        (73.0, 8.0),
+        (61.0, 25.0),
+        (52.0, 13.0),
+        (42.0, 14.0),
+    ];
+    const SOUTHEAST_ASIA: &[(f64, f64)] = &[
+        (91.0, 25.0),
+        (121.0, 21.0),
+        (132.0, 4.0),
+        (118.0, -9.0),
+        (103.0, -7.0),
+        (97.0, 9.0),
+    ];
+    const AUSTRALIA: &[(f64, f64)] = &[
+        (112.0, -11.0),
+        (154.0, -10.0),
+        (153.0, -39.0),
+        (132.0, -44.0),
+        (113.0, -34.0),
+    ];
+    const GREENLAND: &[(f64, f64)] = &[(-73.0, 59.0), (-18.0, 60.0), (-14.0, 82.0), (-54.0, 84.0)];
+    const ISLANDS: &[&[(f64, f64)]] = &[
+        &[(-10.0, 50.0), (2.0, 51.0), (1.0, 59.0), (-8.0, 58.0)],
+        &[(129.0, 31.0), (145.0, 33.0), (146.0, 46.0), (137.0, 43.0)],
+        &[(43.0, -12.0), (51.0, -13.0), (50.0, -26.0), (44.0, -25.0)],
+        &[
+            (166.0, -34.0),
+            (179.0, -37.0),
+            (178.0, -48.0),
+            (168.0, -47.0),
+        ],
+    ];
+    const CONTINENTS: &[&[(f64, f64)]] = &[
+        NORTH_AMERICA,
+        SOUTH_AMERICA,
+        EURASIA,
+        AFRICA,
+        ARABIA_INDIA,
+        SOUTHEAST_ASIA,
+        AUSTRALIA,
+        GREENLAND,
+    ];
+    CONTINENTS
+        .iter()
+        .chain(ISLANDS.iter())
+        .any(|polygon| point_in_polygon(longitude, latitude, polygon))
+}
+
+/// Where each civilization actually began, in `(longitude, latitude)` degrees.
+///
+/// `CIV_NAMES` is ordered Rome, Egypt, Greece, China, Sumeria, Aztec, Nubia,
+/// Scythia. Preserve that order here so a True Start map is true in play and
+/// not merely Earth-shaped in the setup preview.
+const EARTH_HOMELANDS: [(f64, f64); 8] = [
+    (12.5, 41.9),
+    (31.2, 30.0),
+    (23.7, 38.0),
+    (116.4, 39.9),
+    (44.4, 32.5),
+    (-99.1, 19.4),
+    (32.5, 19.6),
+    (64.0, 48.0),
+];
+
+/// The unit vector a longitude and latitude in degrees point at.
+fn earth_direction(longitude: f64, latitude: f64) -> [f64; 3] {
+    let (longitude, latitude) = (longitude.to_radians(), latitude.to_radians());
+    [
+        latitude.cos() * longitude.cos(),
+        latitude.cos() * longitude.sin(),
+        latitude.sin(),
+    ]
+}
+
+/// Earth's land, sampled onto the globe's tiles.
+///
+/// Nothing here is generated: each tile asks the sphere where it is and the
+/// silhouette answers, so every game of this script is played on the same
+/// coastlines. The seed still moves the rivers, the resources and the terrain
+/// inside them, which is where a true-start map should differ between games.
+///
+/// The twelve pentagons are left wherever Earth puts them. Planet holds its
+/// twelve under water so that every land tile has six neighbours, and H3 turns
+/// its icosahedron until all twelve fall in open ocean — but neither option is
+/// open to Earth. The ten off-pole corners sit on two rings at ±26.57°, five to
+/// a ring and 72° apart, and at 26.57°N the ocean comes in gaps of only 65° and
+/// 127° of longitude; a 127° gap holds two of those five points and a 65° gap
+/// holds one, so no spin of the globe can seat all five at sea. Since a true
+/// Earth may not be rotated to suit its lattice anyway, the two that land on
+/// Earth — one in the Sahara near 0°E, one in the Indus near 72°E — stay land
+/// and simply have five neighbours. Adjacency, rings and distance all read the
+/// tile graph, so those two tiles are irregular, not special-cased.
+fn earth_land(wm: &WorldMap) -> BTreeSet<Pos> {
+    let Some(sphere) = wm.sphere() else {
+        return BTreeSet::new();
+    };
+    sphere
+        .positions()
+        .filter(|pos| {
+            earth_is_land(
+                sphere.longitude(*pos).to_degrees(),
+                sphere.latitude(*pos).to_degrees(),
+            )
+        })
+        .collect()
+}
+
+/// Seat each civilization on the viable tile closest to its homeland.
+///
+/// Closeness is measured on the globe, not in the storage rectangle: the tile
+/// whose centre points nearest the homeland's direction wins. Sites are handed
+/// out in `CIV_NAMES` order, and a start keeps clear of the ones already
+/// placed by the widest margin that still leaves every remaining seat a tile —
+/// so Rome and Greece stay distinct neighbours rather than collapsing onto the
+/// same Aegean plain.
+fn historic_major_spawns(wm: &WorldMap, candidates: &[Pos], count: usize) -> Vec<Pos> {
+    let Some(sphere) = wm.sphere() else {
+        return Vec::new();
+    };
+    let mut available: Vec<Pos> = candidates.to_vec();
+    let mut starts: Vec<Pos> = Vec::new();
+    for index in 0..count {
+        if available.is_empty() {
+            break;
+        }
+        let (longitude, latitude) = EARTH_HOMELANDS[index % EARTH_HOMELANDS.len()];
+        let target = earth_direction(longitude, latitude);
+        let seats_left = count - index;
+        let separation = (0..=4)
+            .rev()
+            .find(|separation| {
+                let taken = taken_within(sphere, &starts, *separation);
+                available
+                    .iter()
+                    .filter(|candidate| !taken.contains(candidate))
+                    .count()
+                    >= seats_left
+            })
+            .unwrap_or(0);
+        let taken = taken_within(sphere, &starts, separation);
+        let selected = available
+            .iter()
+            .enumerate()
+            .filter(|(_, candidate)| !taken.contains(candidate))
+            .max_by(|(_, a), (_, b)| {
+                let toward = |pos: &Pos| {
+                    sphere.center(*pos).map_or(-1.0, |center| {
+                        center[0] * target[0] + center[1] * target[1] + center[2] * target[2]
+                    })
+                };
+                toward(a)
+                    .partial_cmp(&toward(b))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|(candidate_index, _)| candidate_index)
+            .unwrap_or(0);
+        starts.push(available.swap_remove(selected));
+    }
+    starts
+}
+
+/// Every tile within `radius` steps of a start already placed.
+fn taken_within(sphere: &crate::sphere::Sphere, starts: &[Pos], radius: i32) -> BTreeSet<Pos> {
+    starts
+        .iter()
+        .flat_map(|start| sphere.disk(*start, radius))
+        .collect()
+}
+
 fn generate_land(
     wm: &WorldMap,
     script: MapScript,
@@ -317,6 +574,12 @@ fn generate_land(
             }
             land
         }
+        MapScript::TrueStartEarth => {
+            // The one script that is read rather than rolled. See
+            // [`earth_land`] for what the globe is asked, and why the two
+            // pentagons that fall on land are allowed to stay there.
+            earth_land(wm)
+        }
     }
 }
 
@@ -330,15 +593,15 @@ fn generate_land(
 /// as a flat expanse. The island scripts keep the stock zero — an island has no
 /// interior to put a lake in, and the enclosure rule would refuse one anyway.
 ///
-/// Planet's globe carries them like the continent scripts do: its landmasses
+/// The two globes carry them like the continent scripts do: their landmasses
 /// have interiors, and a lake is judged by the same enclosure rule there as
-/// anywhere else.
+/// anywhere else. Earth's interiors are the ones that earned the rule.
 fn large_lake_budget(script: MapScript, num_continents: usize) -> usize {
     match script {
         MapScript::Lakes => num_continents * 4,
         MapScript::Pangaea | MapScript::InlandSea => num_continents,
         MapScript::Continents => num_continents / 2,
-        MapScript::Planet => num_continents / 2,
+        MapScript::Planet | MapScript::TrueStartEarth => num_continents / 2,
         MapScript::SmallContinents => 0,
     }
 }
@@ -1022,7 +1285,12 @@ pub fn generate_with_script(
     let components = connected_components(&wm, &passable);
     let primary = components.first().cloned().unwrap_or_default();
     let mut all_candidates = candidates_for(&passable, total_spawns);
-    let mut spawns = if matches!(
+    let mut spawns = if script == MapScript::TrueStartEarth {
+        // Earth does not allocate seats by landmass: the whole point of the
+        // script is that Rome opens in Italy and the Aztecs open in Mexico,
+        // however lopsided that leaves the continents.
+        historic_major_spawns(&wm, &all_candidates, num_major_spawns)
+    } else if matches!(
         script,
         MapScript::Continents | MapScript::SmallContinents | MapScript::Planet
     ) {
@@ -2596,7 +2864,9 @@ mod river_tests {
                     "Small Continents needs several separated landmasses, got {:?}",
                     components.iter().map(|c| c.len()).collect::<Vec<_>>()
                 ),
-                MapScript::Planet => unreachable!("Planet is not a cylinder"),
+                MapScript::Planet | MapScript::TrueStartEarth => {
+                    unreachable!("the globe scripts are not cylinders")
+                }
             }
 
             let occupied_components = components
@@ -2750,6 +3020,202 @@ mod river_tests {
         }
     }
 
+    /// True Start Earth is the same globe as Planet, tiled the same way, but
+    /// its coastlines are read off Earth instead of grown. What this pins is
+    /// that the world a player recognises survives the sampling.
+    #[test]
+    fn true_start_earth_is_earth_on_the_hexagon_globe() {
+        let rules = Rules::embedded();
+        let size = CIV6_MAP_SIZES
+            .iter()
+            .find(|size| size.id == "standard")
+            .unwrap();
+        let mut rng = Rng::new(4_071);
+        let (world, spawns) = generate_with_script(
+            &rules,
+            size.width,
+            size.height,
+            8,
+            12,
+            size.natural_wonders,
+            size.continents,
+            MapScript::TrueStartEarth,
+            &mut rng,
+        );
+        let frequency = size.globe_frequency;
+        assert_eq!((world.width, world.height), (5 * frequency, 2 * frequency + 2));
+        assert_eq!(world.tiles.len(), (10 * frequency * frequency + 2) as usize);
+
+        // Still a closed globe of hexagons and exactly twelve pentagons.
+        let mut pentagons = 0;
+        for (pos, _) in world.tiles.iter() {
+            match world.neighbors(*pos).len() {
+                5 => pentagons += 1,
+                6 => {}
+                other => panic!("{pos:?} has {other} neighbours"),
+            }
+        }
+        assert_eq!(pentagons, 12);
+
+        // Earth is where it should be. Each probe is a place whose nearest
+        // tile must be land, or open sea whose nearest tile must not be.
+        let sphere = world.sphere().unwrap();
+        let nearest = |longitude: f64, latitude: f64| {
+            let target = earth_direction(longitude, latitude);
+            sphere
+                .positions()
+                .max_by(|a, b| {
+                    let toward = |pos: &Pos| {
+                        let center = sphere.center(*pos).unwrap();
+                        center[0] * target[0] + center[1] * target[1] + center[2] * target[2]
+                    };
+                    toward(a).partial_cmp(&toward(b)).unwrap()
+                })
+                .unwrap()
+        };
+        // Continental interiors only: a tile on this globe spans some three
+        // degrees, so Italy and the Nile delta are thinner than the sampling
+        // and a probe on either could honestly land offshore. What must
+        // survive the resolution is the body of each continent.
+        for (name, longitude, latitude) in [
+            ("central Europe", 20.0, 50.0),
+            ("central Asia", 80.0, 50.0),
+            ("Siberia", 100.0, 60.0),
+            ("the Congo", 20.0, 0.0),
+            ("the Sahara", 5.0, 22.0),
+            ("the Deccan", 77.0, 20.0),
+            ("Beijing", 116.4, 39.9),
+            ("central Brazil", -55.0, -10.0),
+            ("the Australian interior", 133.0, -25.0),
+        ] {
+            let pos = nearest(longitude, latitude);
+            assert!(!rules.is_water(&world.tiles[&pos]), "{name} came out at sea");
+        }
+        for (name, longitude, latitude) in [
+            ("the mid-Pacific", -150.0, 0.0),
+            ("the mid-Atlantic", -30.0, 10.0),
+            ("the south Pacific", -120.0, -30.0),
+            ("the Indian Ocean", 75.0, -25.0),
+            ("the Southern Ocean", 100.0, -60.0),
+            ("the north pole", 0.0, 90.0),
+        ] {
+            let pos = nearest(longitude, latitude);
+            assert!(rules.is_water(&world.tiles[&pos]), "{name} came out as land");
+        }
+
+        // Earth is about a third land, in several separate bodies — the Old
+        // World, the Americas and Australia at the very least.
+        let land: BTreeSet<Pos> = world
+            .tiles
+            .iter()
+            .filter(|(_, tile)| !rules.is_water(tile))
+            .map(|(pos, _)| *pos)
+            .collect();
+        let share = land.len() * 100 / world.tiles.len();
+        assert!((20..40).contains(&share), "{share}% land");
+        let components = land_components(&world, &rules);
+        assert!(
+            components.iter().filter(|body| body.len() >= 20).count() >= 3,
+            "Earth needs several landmasses, got {:?}",
+            components.iter().map(|body| body.len()).collect::<Vec<_>>()
+        );
+
+        // Every civilization opens in its own homeland. The seats are handed
+        // out in CIV_NAMES order, so the eight majors lead the spawn list.
+        for (index, (longitude, latitude)) in EARTH_HOMELANDS.iter().enumerate() {
+            let home = nearest(*longitude, *latitude);
+            let start = spawns[index];
+            assert!(!rules.is_water(&world.tiles[&start]));
+            assert!(
+                sphere.distance(home, start) <= 4,
+                "civilization {index} opened {} tiles from its homeland",
+                sphere.distance(home, start)
+            );
+        }
+    }
+
+    /// Earth may not be spun to suit its lattice, so unlike Planet it cannot
+    /// keep all twelve pentagons at sea. Exactly two fall on land, and this
+    /// pins both the count and the reason no rotation about the pole fixes it.
+    #[test]
+    fn earth_keeps_the_two_pentagons_that_land_on_it() {
+        let ring = (0.5f64).atan().to_degrees();
+        let corners: Vec<(f64, f64)> = (0..5)
+            .map(|k| (72.0 * k as f64, ring))
+            .chain((0..5).map(|k| (72.0 * k as f64 + 36.0, -ring)))
+            .collect();
+        let wrap = |longitude: f64| {
+            let mut longitude = longitude;
+            while longitude > 180.0 {
+                longitude -= 360.0;
+            }
+            while longitude <= -180.0 {
+                longitude += 360.0;
+            }
+            longitude
+        };
+
+        // Both poles are at sea: the Arctic is ocean and this Earth carries no
+        // Antarctica, so only the ten off-pole corners are ever in question.
+        assert!(!earth_is_land(0.0, 90.0) && !earth_is_land(0.0, -90.0));
+        let on_land: Vec<(f64, f64)> = corners
+            .iter()
+            .copied()
+            .filter(|(longitude, latitude)| earth_is_land(wrap(*longitude), *latitude))
+            .collect();
+        assert_eq!(on_land.len(), 2, "expected two land pentagons, got {on_land:?}");
+        assert_eq!(on_land[0].0, 0.0, "the Saharan corner");
+        assert_eq!(on_land[1].0, 72.0, "the Indus corner");
+
+        // And no spin of the globe does better, at any whole degree.
+        for spin in 0..360 {
+            let at_sea = corners
+                .iter()
+                .filter(|(longitude, latitude)| {
+                    !earth_is_land(wrap(*longitude + spin as f64), *latitude)
+                })
+                .count();
+            assert!(at_sea < 10, "a spin of {spin}° would seat every pentagon at sea");
+        }
+    }
+
+    /// The seed moves what grows on Earth, never Earth itself. The two runs
+    /// are not identical — lakes are still cut into the interiors and rivers
+    /// still run where the roll puts them — but the outline they are cut into
+    /// is the same one, so the disagreement stays inland and stays small.
+    #[test]
+    fn true_start_earth_draws_the_same_coastlines_every_game() {
+        let rules = Rules::embedded();
+        let land_of = |seed: u64| {
+            let mut rng = Rng::new(seed);
+            let (world, _) = generate_with_script(
+                &rules, 60, 38, 4, 6, 3, 2, MapScript::TrueStartEarth, &mut rng,
+            );
+            let land: BTreeSet<Pos> = world
+                .tiles
+                .iter()
+                .filter(|(_, tile)| !rules.is_water(tile))
+                .map(|(pos, _)| *pos)
+                .collect();
+            (world, land)
+        };
+        let (world, first) = land_of(11);
+        let (_, second) = land_of(9_999_991);
+        assert!(!first.is_empty());
+
+        // The sampled silhouette itself is a pure function of the globe.
+        assert_eq!(earth_land(&world), earth_land(&world));
+        assert!(first.is_subset(&earth_land(&world)));
+        assert!(second.is_subset(&earth_land(&world)));
+
+        let moved = first.symmetric_difference(&second).count();
+        assert!(
+            moved * 100 < world.tiles.len(),
+            "{moved} of {} tiles changed between seeds — more than inland water",
+            world.tiles.len()
+        );
+    }
+
     /// Rolling strategic resources against the whole 52-entry catalog, one
     /// 13% chance per tile, put a single Iron and a single Horses deposit on a
     /// six-player Pangaea. With no Iron nobody can train or upgrade into a
@@ -2773,6 +3239,7 @@ mod river_tests {
             MapScript::InlandSea,
             MapScript::Lakes,
             MapScript::Planet,
+            MapScript::TrueStartEarth,
         ]
         .into_iter()
         .enumerate()
