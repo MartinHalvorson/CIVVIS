@@ -39418,20 +39418,15 @@ impl Game {
             }
         }
 
-        // The picker exhausts the nearest ring containing an available plot
-        // before considering the next one. This is a hard eligibility rule,
-        // not merely a small distance bonus: even a ring-2 mountain precedes
-        // a ring-3 resource.
-        let Some(nearest_ring) = candidates
-            .iter()
-            .map(|position| self.wdist(*position, city_pos))
-            .min()
-        else {
+        // Distance is priced, not gated: `PLOT_INFLUENCE_RING_COST` adds 100
+        // per ring, so a nearer plot normally wins, but a Resource or Natural
+        // Wonder at -105 is worth exactly five more than one extra ring and
+        // does pull the border outward past a barren neighbour.
+        if candidates.is_empty() {
             return;
-        };
+        }
         let mut scored: Vec<(Pos, f64)> = candidates
             .into_iter()
-            .filter(|position| self.wdist(*position, city_pos) == nearest_ring)
             .map(|position| (position, self.border_influence_cost(cid, position)))
             .collect();
         let best_score = scored
@@ -39452,14 +39447,21 @@ impl Game {
 
     /// Lower is more attractive to Civ VI's cultural tile picker.
     ///
-    /// These are the shipped `PLOT_INFLUENCE_*` values: resources and Natural
-    /// Wonders receive -105, water +25, existing improvements -5 (or +100 for
-    /// a Barbarian Camp), and each raw yield point -1. Terrain contributes its
-    /// database `InfluenceCost`. Nearby unclaimed strategic/luxury resources
-    /// and Natural Wonders provide the stock one-point surface-tension nudge.
+    /// These are the shipped `PLOT_INFLUENCE_*` values: `RING_COST` 100 per
+    /// ring out from the City Center, resources and Natural Wonders -105,
+    /// water +25, existing improvements -5 (or +100 for a Barbarian Camp),
+    /// and each raw yield point -1. Terrain contributes its database
+    /// `InfluenceCost`. Nearby unclaimed strategic/luxury resources and
+    /// Natural Wonders provide the stock one-point surface-tension nudge.
+    ///
+    /// The -105 is calibrated against the 100 ring cost on purpose: one
+    /// Resource is worth slightly more than one extra ring of distance, so a
+    /// city reaches past a barren adjacent plot to take it.
     fn border_influence_cost(&self, cid: u32, position: Pos) -> f64 {
+        let city_pos = self.cities[&cid].pos;
         let tile = &self.map.tiles[&position];
-        let mut cost = match tile.terrain.as_str() {
+        let mut cost = 100.0 * self.wdist(position, city_pos) as f64;
+        cost += match tile.terrain.as_str() {
             "grassland" | "plains" | "ocean" => 1.0,
             "desert" | "tundra" | "snow" | "coast" | "lake" => 2.0,
             "mountain" => 3.0,
@@ -39481,7 +39483,6 @@ impl Game {
         }
         cost -= self.rules.tile_yields(tile).total();
 
-        let city_pos = self.cities[&cid].pos;
         for neighbor in self.nbrs(position) {
             let adjacent = &self.map.tiles[&neighbor];
             if adjacent.owner_city.is_some() {
@@ -40330,7 +40331,10 @@ mod border_growth_tests {
     }
 
     #[test]
-    fn nearest_available_ring_is_exhausted_before_a_resource_in_the_next_ring() {
+    fn a_resource_one_ring_out_outbids_a_barren_nearer_plot() {
+        // PLOT_INFLUENCE_RING_COST is 100 and PLOT_INFLUENCE_RESOURCE_COST is
+        // -105, so one Resource is worth marginally more than one ring of
+        // distance and the border reaches past a barren neighbour for it.
         let (mut game, city, center) = controlled_game(941_001);
         let second_ring = ring(&game, center, 2);
         let last_inner = second_ring[0];
@@ -40348,8 +40352,34 @@ mod border_growth_tests {
 
         game.expand_borders(city);
 
-        assert_eq!(game.map.tiles[&last_inner].owner_city, Some(city));
-        assert_eq!(game.map.tiles[&third_ring_resource].owner_city, None);
+        assert_eq!(game.map.tiles[&third_ring_resource].owner_city, Some(city));
+        assert_eq!(game.map.tiles[&last_inner].owner_city, None);
+    }
+
+    #[test]
+    fn distance_still_decides_between_plots_of_equal_worth() {
+        // The ring cost only loses to a Resource or Natural Wonder. Between
+        // two identical plots the nearer one always wins, so ordinary growth
+        // still fills outward ring by ring.
+        let (mut game, city, center) = controlled_game(941_006);
+        let second_ring = ring(&game, center, 2);
+        let near = second_ring[0];
+        for position in second_ring.into_iter().skip(1) {
+            claim(&mut game, city, position);
+        }
+        let far = ring(&game, center, 3)[0];
+        for position in [near, far] {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = "grassland".to_string();
+            tile.hills = false;
+            tile.feature = None;
+            tile.resource = None;
+        }
+
+        game.expand_borders(city);
+
+        assert_eq!(game.map.tiles[&near].owner_city, Some(city));
+        assert_eq!(game.map.tiles[&far].owner_city, None);
     }
 
     #[test]
