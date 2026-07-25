@@ -273,6 +273,7 @@ pub struct AdvancedAi {
     victory_target: Option<VictoryTarget>,
     forced_target_player: Option<usize>,
     force_groups: Vec<ForceGroup>,
+    force_groups_dirty: bool,
 }
 
 impl Default for AdvancedAi {
@@ -314,6 +315,7 @@ impl AdvancedAi {
             victory_target,
             forced_target_player: None,
             force_groups: Vec::new(),
+            force_groups_dirty: false,
         }
     }
 
@@ -1549,7 +1551,7 @@ impl AdvancedAi {
     /// free relocation from oscillating between equivalent slots.
     fn advanced_products(&self, g: &mut Game, pid: usize, strategy: GrandStrategy) {
         let candidates: BTreeSet<(u32, u32, String)> = g
-            .legal_actions_within(pid, ActionFamilies::CHEAP)
+            .legal_actions_within(pid, ActionFamilies::PRODUCTS)
             .into_iter()
             .filter_map(|action| match action {
                 Action::MoveProduct { from, to, product } => Some((from, to, product)),
@@ -3306,7 +3308,7 @@ impl AdvancedAi {
     /// on the brink of victory, where five setup turns can lose the game.
     /// City-states cannot be denounced and therefore remain direct targets.
     fn preferred_war_opening(&self, g: &Game, pid: usize, target: usize) -> Option<Action> {
-        let legal = g.legal_actions_within(pid, ActionFamilies::CHEAP);
+        let legal = g.legal_actions_within(pid, ActionFamilies::CORE);
         let casus_belli = legal
             .iter()
             .filter_map(|action| match action {
@@ -8784,6 +8786,7 @@ impl AdvancedAi {
         true
     }
 
+    #[cfg(test)]
     fn advanced_military_step(
         &mut self,
         g: &mut Game,
@@ -8791,12 +8794,23 @@ impl AdvancedAi {
         uid: u32,
         plan: &StrategicPlan,
     ) -> bool {
+        let decline_settlers = self.counts(g, pid).settlers > 0
+            || !self.base.has_practical_settle_site(g, pid);
+        self.advanced_military_step_with_decline(g, pid, uid, plan, decline_settlers)
+    }
+
+    fn advanced_military_step_with_decline(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        plan: &StrategicPlan,
+        decline_settlers: bool,
+    ) -> bool {
         let unit = g.units[&uid].clone();
         let rules = std::sync::Arc::clone(&g.rules);
         let spec = &rules.units[unit.kind.as_str()];
         let doctrine = BasicAi::unit_doctrine(g, uid);
-        let decline_settlers = self.counts(g, pid).settlers > 0
-            || !self.base.has_practical_settle_site(g, pid);
         let unwanted_settler_adjacent = decline_settlers
             && g.nbrs(unit.pos).into_iter().any(|position| {
                 g.units_at(position).iter().any(|other| {
@@ -8830,12 +8844,28 @@ impl AdvancedAi {
             return true;
         }
         if matches!(doctrine, UnitDoctrine::AirDefense | UnitDoctrine::AirStrike) {
-            return self
-                .advanced_air_action(g, pid, uid, plan)
-                .is_some_and(|action| g.apply(pid, &action).is_ok());
+            let Some(action) = self.advanced_air_action(g, pid, uid, plan) else {
+                return false;
+            };
+            let changes_force_picture = matches!(
+                &action,
+                Action::AirStrike { .. } | Action::PriorityTarget { .. }
+            );
+            let acted = g.apply(pid, &action).is_ok();
+            self.force_groups_dirty |= acted && changes_force_picture;
+            return acted;
         }
         if let Some(action) = self.base.doctrine_action(g, pid, uid) {
-            return g.apply(pid, &action).is_ok();
+            let changes_force_picture = matches!(
+                &action,
+                Action::Attack { .. }
+                    | Action::Ranged { .. }
+                    | Action::AirStrike { .. }
+                    | Action::PriorityTarget { .. }
+            );
+            let acted = g.apply(pid, &action).is_ok();
+            self.force_groups_dirty |= acted && changes_force_picture;
+            return acted;
         }
         if !unwanted_settler_adjacent {
             if let Some(city) = self.occupation_garrison_target(g, pid, uid) {
@@ -8871,12 +8901,14 @@ impl AdvancedAi {
             }
             return self.base.military_step(g, pid, uid);
         }
-        // Combat can change occupancy, local power, line of sight, and the
-        // best focus target after every action. Replan before each unit step
-        // so later units exploit the new position instead of following the
-        // turn-start snapshot.
-        if self.victory_planning {
+        // Combat can change occupancy, local power and the best focus target.
+        // Movement cannot change the opposing force, so keep the existing
+        // orders until an attack actually dirties them. The former
+        // unconditional rebuild before every step made a turn with `n` units
+        // repeatedly regroup and rescore all `n` after each unit moved.
+        if self.victory_planning && self.force_groups_dirty {
             self.rebuild_force_groups(g, pid, plan);
+            self.force_groups_dirty = false;
         }
         let group = self
             .force_groups
@@ -8960,6 +8992,7 @@ impl AdvancedAi {
         if let Some((score, _, action)) = best {
             let required_margin = if unit.hp < 55 { 12.0 } else { 0.0 };
             if score > required_margin && g.apply(pid, &action).is_ok() {
+                self.force_groups_dirty = true;
                 return true;
             }
         }
@@ -9278,7 +9311,7 @@ impl AdvancedAi {
             return;
         }
         let mut best: BTreeMap<u32, (f64, Pos)> = BTreeMap::new();
-        for action in g.legal_actions_within(pid, ActionFamilies::CHEAP) {
+        for action in g.legal_actions_within(pid, ActionFamilies::CORE) {
             let Action::EncampmentStrike { city, target } = action else {
                 continue;
             };
@@ -9304,7 +9337,7 @@ impl AdvancedAi {
     fn advanced_city_strikes(&self, g: &mut Game, pid: usize) {
         loop {
             let candidates: Vec<Action> = g
-                .legal_actions_within(pid, ActionFamilies::CHEAP)
+                .legal_actions_within(pid, ActionFamilies::CORE)
                 .into_iter()
                 .filter(|action| matches!(action, Action::CityStrike { .. }))
                 .collect();
@@ -9398,7 +9431,13 @@ impl AdvancedAi {
         } else {
             self.force_groups.clear();
         }
+        self.force_groups_dirty = false;
         let religious_offensive = self.religious_offensive_posture(g, pid, plan.strategy);
+        // Settlement feasibility is an empire/map question, not a unit
+        // question. It used to rescan the known world and recompute empire
+        // counts up to eight times for every military unit in the same turn.
+        let decline_settlers = self.counts(g, pid).settlers > 0
+            || !self.base.has_practical_settle_site(g, pid);
         let mut ids = g.player_unit_ids(pid);
         ids.sort_by_key(|uid| {
             let u = &g.units[uid];
@@ -9446,7 +9485,13 @@ impl AdvancedAi {
                             uid,
                             religious_offensive,
                         ),
-                    _ => self.advanced_military_step(g, pid, uid, plan),
+                    _ => self.advanced_military_step_with_decline(
+                        g,
+                        pid,
+                        uid,
+                        plan,
+                        decline_settlers,
+                    ),
                 };
                 if !acted {
                     break;
@@ -9871,6 +9916,12 @@ impl Ai for AdvancedAi {
     }
 
     fn take_turn(&mut self, g: &mut Game, pid: usize) {
+        g.with_deferred_visibility(|g| self.take_turn_inner(g, pid));
+    }
+}
+
+impl AdvancedAi {
+    fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
         self.base.minor = g.players[pid].is_minor;
         self.base.barb = g.players[pid].is_barbarian;
         let active_victory_target = self.active_victory_target(g);
