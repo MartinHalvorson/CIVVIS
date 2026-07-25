@@ -647,9 +647,9 @@ mod tests {
     #[test]
     fn a_game_plays_out_on_the_globe() {
         let size = crate::setup::MapSize::for_players(2);
-        let (width, height) = size.dimensions(crate::setup::MapScript::Planet);
+        let (width, height) = size.dimensions(crate::setup::MapTopology::Planet);
         let mut g = Game::new_with(crate::game::GameOptions {
-            map_script: crate::setup::MapScript::Planet,
+            map_topology: crate::setup::MapTopology::Planet,
             ..crate::game::GameOptions::new(2, width, height, 4_517, 40, 2)
         });
         assert_eq!(g.map.tiles.len(), crate::sphere::Sphere::tiles_for(size.globe_frequency));
@@ -678,9 +678,9 @@ mod tests {
     #[test]
     fn a_saved_globe_reloads_as_the_same_world() {
         let size = crate::setup::MapSize::for_players(2);
-        let (width, height) = size.dimensions(crate::setup::MapScript::Planet);
+        let (width, height) = size.dimensions(crate::setup::MapTopology::Planet);
         let g = Game::new_with(crate::game::GameOptions {
-            map_script: crate::setup::MapScript::Planet,
+            map_topology: crate::setup::MapTopology::Planet,
             ..crate::game::GameOptions::new(2, width, height, 8_812, 30, 2)
         });
         let restored: Game = serde_json::from_str(&serde_json::to_string(&g).unwrap()).unwrap();
@@ -2191,8 +2191,12 @@ mod tests {
                 );
             }
         }
-        // seats map to civs in order: 0 Rome .. 7 Scythia
-        for (i, name) in crate::game::CIV_NAMES.iter().enumerate() {
+        // this game's eight majors take the head of the roster in order:
+        // 0 Rome .. 7 Scythia. The seats past them are city-states, which are
+        // not seated from the roster at all.
+        let majors = g.players.iter().filter(|p| !p.is_minor).count();
+        assert_eq!(majors, 8);
+        for (i, name) in crate::game::CIV_NAMES.iter().take(majors).enumerate() {
             assert_eq!(&g.players[i].civ, name);
         }
         // unique units: only their civ builds them; the base is blocked
