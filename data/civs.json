@@ -18,7 +18,8 @@
     "agenda": "queen_of_the_nile",
     "traits": [
       "mediterranean"
-    ]
+    ],
+    "start_bias": {"feature": ["floodplains", "grassland_floodplains", "plains_floodplains"], "feature_tier": 2, "river_tier": 5}
   },
   "Greece": {
     "leader": "Pericles",
@@ -31,7 +32,8 @@
       "low_religious_preference",
       "pursue_diplomatic_victory",
       "surrounded_by_glory"
-    ]
+    ],
+    "start_bias": {"terrain": ["desert", "grassland", "plains", "tundra"], "terrain_hills": true, "terrain_tier": 3}
   },
   "China": {
     "leader": "Qin Shi Huang",
@@ -54,7 +56,8 @@
       "science_major_civ",
       "low_city_state_preference_war",
       "low_religious_preference"
-    ]
+    ],
+    "start_bias": {"river_tier": 3}
   },
   "Aztec": {
     "leader": "Montezuma",
@@ -74,7 +77,8 @@
     "agenda": "city_planner",
     "traits": [
       "science_major_civ"
-    ]
+    ],
+    "start_bias": {"terrain": ["desert"], "terrain_tier": 2, "resource": ["aluminum", "coal", "copper", "diamonds", "iron", "jade", "mercury", "niter", "salt", "silver", "uranium"], "resource_tier": 5}
   },
   "Scythia": {
     "leader": "Tomyris",
@@ -84,6 +88,7 @@
     "agenda": "backstab_averse",
     "traits": [
       "killer_of_cyrus"
-    ]
+    ],
+    "start_bias": {"terrain": ["grassland", "plains"], "terrain_tier": 5, "resource": ["horses"], "resource_tier": 2}
   }
 }

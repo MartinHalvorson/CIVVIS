@@ -3258,6 +3258,21 @@ mod governor_runtime_tests {
             tile.improvement = None;
             tile.pillaged = false;
         }
+        // Forestry Management pays its Appeal once per adjacent owned tile that
+        // carries an unimproved feature, so the target has to touch exactly one
+        // of them for the delta below to be 1. Which tile that is depends on
+        // the map, so pick it by the predicate rather than by position.
+        let unimproved_neighbours = |game: &Game, position: Pos| {
+            game.nbrs(position)
+                .into_iter()
+                .filter(|neighbour| {
+                    let tile = &game.map.tiles[neighbour];
+                    tile.owner_city == Some(city)
+                        && tile.improvement.is_none()
+                        && tile.feature.is_some()
+                })
+                .count()
+        };
         let appeal_target = game
             .nbrs(sites[1])
             .into_iter()
@@ -3278,9 +3293,15 @@ mod governor_runtime_tests {
                     .gold,
             2.0
         );
+        // One Appeal per adjacent owned tile carrying an unimproved feature,
+        // which is the rule rather than a property of this particular map.
         assert_eq!(
             game.tile_appeal(appeal_target) - without_forestry.tile_appeal(appeal_target),
-            1
+            unimproved_neighbours(&game, appeal_target) as i32
+        );
+        assert!(
+            unimproved_neighbours(&game, appeal_target) > 0,
+            "the fixture must give Forestry Management something to pay on"
         );
 
         {
@@ -11090,6 +11111,16 @@ impl Game {
             num_players,
             &civs,
             &g.rules.civs.keys().cloned().collect::<BTreeSet<_>>(),
+        );
+        // Civilization VI decides *which* start a civilization is given from
+        // its shipped StartBias rows. Reorder the major sites to honour them
+        // before any seat is handed one; generation itself is untouched.
+        let mut spawns = spawns;
+        mapgen::assign_starts_by_bias(
+            &g.rules,
+            &g.map,
+            &mut spawns[..num_players],
+            &seated,
         );
         for i in 0..num_players {
             let mut player = Player::new(i, &seated[i], false);
@@ -44903,6 +44934,51 @@ mod victory_conditions {
     /// perfectly and is not the game that was set up. Two of these assertions
     /// are regressions — barbarians were unreachable from any lobby, and the
     /// New Frontier game modes ran in every game whatever the lobby said.
+    #[test]
+    fn civilizations_are_seated_on_the_starts_their_bias_asks_for() {
+        // Shipped StartBias rows decide which start a civilization gets. Over
+        // a spread of seeds the biased civilizations should score better on
+        // their own bias than the seat order alone would give them.
+        let mut biased = 0;
+        let mut unbiased = 0;
+        for seed in 0..10u64 {
+            let game = Game::new_full(8, 84, 54, 71_000 + seed, 250, 0, false);
+            // Seats begin with a Settler on their start rather than a city.
+            let sites: Vec<Pos> = (0..8)
+                .map(|pid| {
+                    let unit = game.player_unit_ids(pid)[0];
+                    game.units[&unit].pos
+                })
+                .collect();
+            for pid in 0..8 {
+                let civ = game.players[pid].civ.clone();
+                if game.rules.civs[civ.as_str()].start_bias.is_none() {
+                    continue;
+                }
+                let mine = crate::mapgen::start_bias_score(&game.rules, &game.map, sites[pid], &civ);
+                let others: i32 = sites
+                    .iter()
+                    .enumerate()
+                    .filter(|(other, _)| *other != pid)
+                    .map(|(_, pos)| {
+                        crate::mapgen::start_bias_score(&game.rules, &game.map, *pos, &civ)
+                    })
+                    .sum::<i32>()
+                    / 7;
+                if mine >= others {
+                    biased += 1;
+                } else {
+                    unbiased += 1;
+                }
+            }
+        }
+        assert!(
+            biased > unbiased * 3,
+            "biased civilizations should usually beat the average site for their own bias: \
+             {biased} better vs {unbiased} worse"
+        );
+    }
+
     #[test]
     fn the_published_tournament_lobby_still_sets_up_the_game_it_describes() {
         let rules = Rules::embedded();
