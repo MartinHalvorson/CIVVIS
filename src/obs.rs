@@ -796,6 +796,8 @@ fn victory_progress_json(g: &Game, pid: usize, leading_score: i64) -> Value {
     // watcher can see moving.
     let techs_known = player.techs.len();
     let tech_total = g.rules.techs.len();
+    let civics_known = player.civics.len();
+    let civic_total = g.rules.civics.len();
 
     let rival_domestic = living_majors
         .iter()
@@ -916,6 +918,8 @@ fn victory_progress_json(g: &Game, pid: usize, leading_score: i64) -> Value {
             "progress": round1(culture_progress),
             "tourists": foreign_tourists,
             "target": culture_target,
+            "civics": civics_known,
+            "civic_total": civic_total,
             "domestic": domestic_tourists,
             "rival_domestic": rival_domestic,
             "leading_domestic": leading_domestic,
@@ -1382,13 +1386,12 @@ mod tests {
         }
     }
 
-    /// The victory ribbon draws two things per race where a race has two:
-    /// the technology tree behind the space programme, and the culture a
-    /// civilization keeps at home behind the tourism it exports. Domination
-    /// counts every original capital in the world, a civilization's own
-    /// included, which is how `check_domination` reads the board.
+    /// The victory ribbon carries the researched technology and civic counts
+    /// behind the science and culture races. Domination counts every original
+    /// capital in the world, a civilization's own included, which is how
+    /// `check_domination` reads the board.
     #[test]
-    fn victory_metrics_carry_the_tree_the_home_culture_and_every_capital() {
+    fn victory_metrics_carry_researched_trees_and_every_capital() {
         let players = 6;
         let game = Game::new_full(players, 26, 18, 81_005, 120, 1, false);
         let observed = observation_spectator(&game, 0);
@@ -1409,6 +1412,11 @@ mod tests {
                 serde_json::json!(game.rules.techs.len()),
             );
             assert!(victory["science"]["techs"].is_number());
+            assert_eq!(
+                victory["culture"]["civic_total"],
+                serde_json::json!(game.rules.civics.len()),
+            );
+            assert!(victory["culture"]["civics"].is_number());
             assert!(victory["culture"]["domestic"].is_number());
             assert!(victory["culture"]["leading_domestic"].is_number());
         }
