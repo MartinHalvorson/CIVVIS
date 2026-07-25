@@ -9,6 +9,28 @@ game. A policy trained against wrong unit costs learns wrong build orders.
 This document defines what "exact" means here, how it is measured, and what is
 built next.
 
+## The prose is not the ruleset
+
+`tools/civ6_fidelity.py` needs the game's *install* directory to replay the XML
+load order, so it cannot run without Civilization VI installed. It is not the
+only route to the shipped numbers: a machine that has ever run the game leaves
+the compiled gameplay database behind at
+
+    ~/Library/Application Support/Sid Meier's Civilization VI/Cache/DebugGameplay.sqlite
+
+(`%LOCALAPPDATA%\Firaxis Games\...\Cache\` on Windows), and that file is a
+plain read-only SQLite database with the whole ruleset in it — `LoyaltyLevels`,
+`Happinesses`, `GlobalParameters`, `Units`, and 400-odd more tables. Query it
+directly before changing any number.
+
+**Where the Civilopedia and the database disagree, the database wins.** The
+prose goes stale across rebalances and has been observed to be flatly wrong:
+the Loyalty entry describes two penalty steps (below 75, below 25) where
+`LoyaltyLevels` ships four, one per display band, and the Happiness entry
+gives Ecstatic a +10% yield bonus where `Happinesses.NonFoodYieldModifier`
+ships +20. Both readings were used to "correct" already-correct engine code.
+Cite a table and a column, not a sentence.
+
 ## What exactness can mean
 
 Civilization VI's rules live in a closed DLL. Bit-identical random streams are
