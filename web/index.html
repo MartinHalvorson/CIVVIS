@@ -2059,7 +2059,7 @@ try {
 } catch (e) {}
 let SPEC = false, specPaused = restartPaused === "1", specTimer = null, specBusy = false;
 let viewChanging = false;
-let eventLogs = new Map(), lastLeaderByView = new Map(), lastSidePaint = 0;
+let eventLogs = new Map(), nextEventId = 1, lastLeaderByView = new Map(), lastSidePaint = 0;
 let TMAP = new Map();
 let tradeFilter = "all", tradeBusy = false;
 // The leader ribbon opens one civilization at a time — this is whose dossier
@@ -2271,7 +2271,7 @@ function syncCinemaFocusLighting() {
   } else if (DIRECTOR && directorGoal) {
     kind = ({survey:"establishing", event:"event tableau", character:"tracking",
              battle:"battle sequence", front:"war front",
-             portrait:"empire portrait"})[directorGoal.kind] || "world chronicle";
+             portrait:"empire portrait", empire:"empire overview"})[directorGoal.kind] || "world chronicle";
     const unit = directorGoal.subjectUnitId !== undefined && directorGoal.subjectUnitId !== null
       ? state.units.find(candidate => candidate.id === directorGoal.subjectUnitId) : null;
     if (unit) {
@@ -3023,6 +3023,13 @@ let cameraFlight = null, cameraZoom = null;
 let cameraInertia = {vx:0, vy:0, vrot:0, vtilt:0};
 let cameraMotionLast = performance.now();
 let cameraFollowUnitId = null, cameraFollowManual = false, cameraFollowScale = 1.18;
+// Choosing a civilization to watch is also an explicit request for a living
+// empire portrait. Manual camera input suspends it until another civilization
+// is chosen (or Home is pressed), so the frame remains useful without fighting
+// a viewer who wants to inspect one particular tile.
+let watchedEmpireAutoFrame = false;
+let watchedEmpireUnitUntil = new Map();
+let watchedEmpireSubjectsCache = {state:null, player:null, subjects:[]};
 const cv = document.getElementById("map"), cx = cv.getContext("2d");
 const mini = document.getElementById("mini"), mx2 = mini.getContext("2d");
 const area = document.getElementById("maparea");
@@ -3443,6 +3450,8 @@ function resize() {
   cv.width = area.clientWidth * DPR; cv.height = area.clientHeight * DPR;
   applySavedHudLayouts();
   syncMiniCanvas();
+  if (watchedEmpireAutoFrame && Number.isInteger(state?.view_player) && !directorGoal)
+    setObservedPlayersView(false);
   if (SPEC && DIRECTOR) cam.y = clampCameraY(cam.y);
   draw(); if (state) drawMini();
 }
@@ -4043,6 +4052,7 @@ function cinematicShotGoal(goal, variation = 0) {
     battle:    {tilt:.70 + h * .035, yaw:.36, frameX:.58, frameY:.56},
     front:     {tilt:.62 + h * .045, yaw:.27, frameX:.60, frameY:.54},
     portrait:  {tilt:.55 + h * .045, yaw:.21, frameX:.64, frameY:.53},
+    empire:    {tilt:.59 + h * .025, yaw:.10, frameX:.50, frameY:.52},
   }[kind] || {tilt:.63, yaw:.18, frameX:.58, frameY:.53};
   return Object.assign(goal, {
     tilt:profiles.tilt,
@@ -4075,6 +4085,13 @@ function stageDirectorGoal(goal, useCut = false, now = performance.now()) {
 // broad world composition; during genuinely quiet stretches the director may
 // visit one capital or completed wonder before returning to the atlas view.
 function directorSurveyGoal() {
+  if (Number.isInteger(state?.view_player)) {
+    const frame = observedViewGoal(watchedEmpireSubjects(state.view_player));
+    const anchor = playerAnchor(state.view_player);
+    if (frame && anchor) return cinematicShotGoal({
+      pos:[...anchor.pos], scale:frame.scale, kind:"empire", holdMs:7200, arrivedAt:0
+    }, state?.turn || 0);
+  }
   const anchor = mainLandmassAnchor();
   return anchor ? cinematicShotGoal({pos:[...anchor.pos], focus:[...anchor.pos],
                    scale:.82, kind:"survey", holdMs:7200, arrivedAt:0},
@@ -4165,6 +4182,13 @@ function advanceDirector(now = performance.now()) {
     }
   }
   let trackedSubject = null;
+  if (directorGoal.kind === "empire" && Number.isInteger(state.view_player)) {
+    const frame = observedViewGoal(watchedEmpireSubjects(state.view_player));
+    if (frame) {
+      directorGoal.scale = frame.scale;
+      trackedSubject = {x:frame.x, y:frame.y};
+    }
+  }
   if (directorGoal.kind === "battle" && Array.isArray(directorGoal.battleTarget)) {
     const target = unitMapPoint(directorGoal.battleTarget);
     const attacker = state.units.find(unit => unit.id === directorGoal.battleAttackerId);
@@ -4265,7 +4289,7 @@ function advanceDirector(now = performance.now()) {
     if (!directorGoal.arrivedAt) directorGoal.arrivedAt = now;
     const battleStillPlaying = directorGoal.kind === "battle" && now < combatFocusUntil;
     if (!battleStillPlaying && now - directorGoal.arrivedAt >= directorGoal.holdMs) {
-      directorGoal = cinemaActive() && directorGoal.kind !== "survey"
+      directorGoal = cinemaActive() && !["survey", "empire"].includes(directorGoal.kind)
         ? directorSurveyGoal() : null;
       updateCameraFollowChip();
     }
@@ -4386,7 +4410,7 @@ function eventsFor(st) {
 function addEvent(icon, text, turn, st, important = false, value = 2) {
   const viewKey = eventViewKey(st);
   const events = eventLogs.get(viewKey) || [];
-  events.unshift({ icon, text, turn, important, value, at: performance.now() });
+  events.unshift({ id: nextEventId++, icon, text, turn, important, value, at: performance.now() });
   // The panel is as tall as the deck allows now, so the log keeps enough
   // history to fill a large screen. When it overflows, retire the least
   // valuable entry — oldest among ties — instead of simply the oldest, so
@@ -4421,6 +4445,11 @@ function civilizationEventText(text, next) {
     .replace(/\byour\b/gi, `${civilization}'s`)
     .replace(/\byou\b/gi, civilization);
 }
+function includeServerEventInGameLog(event, text) {
+  if (event.category === "War" && /\bupgraded .+ to .+\.?$/i.test(text)) return false;
+  if (event.category === "Diplomacy" && /\b(?:approves|disapproves) of\b/i.test(text)) return false;
+  return true;
+}
 function chronicleServer(next) {
   const events = Array.isArray(next.events) ? next.events : [];
   const viewKey = eventViewKey(next);
@@ -4429,6 +4458,7 @@ function chronicleServer(next) {
     const key = `${viewKey}|${event.turn}|${event.category}|${text}`;
     if (seenServerEvents.has(key)) continue;
     seenServerEvents.add(key);
+    if (!includeServerEventInGameLog(event, text)) continue;
     addEvent(SERVER_EVENT_ICONS[event.category] || "✦", text, event.turn,
       next, event.category === "General", SERVER_EVENT_VALUES[event.category] ?? 2);
   }
@@ -4574,6 +4604,11 @@ function render(st, recordChronicle = true) {
   if (st.server_instance !== undefined) serverInstance = st.server_instance;
   const newWorld = !state || st.seed !== state.seed || st.turn < state.turn;
   const viewChanged = !!state && !newWorld && st.view_player !== state.view_player;
+  if (newWorld || viewChanged) {
+    watchedEmpireAutoFrame = Number.isInteger(st.view_player);
+    watchedEmpireUnitUntil.clear();
+    watchedEmpireSubjectsCache = {state:null, player:null, subjects:[]};
+  }
   if (recordChronicle && !viewChanged) chronicle(state, st);
   const sameWorld = state && state.seed === st.seed;
   // A new world inherits none of the last one's motion. Only a change of
@@ -4641,12 +4676,14 @@ function render(st, recordChronicle = true) {
   applyCinemaMode();
   if (newWorld) showCinemaPrologue(st);
   queueDirectorCue(cinematicCue);
-  // Establish the view once per world, before its first paint. Fit the
-  // civilization(s) the observer actually asked to see into the unobstructed
-  // part of the map instead of pointing a fixed zoom at a landmass centroid.
-  // Subsequent simulation states never alter the camera; only explicit user
-  // input does.
-  if (newWorld || viewChanged) setObservedPlayersView();
+  // Establish the requested view before its first paint, then keep a watched
+  // civilization fitted as its borders and meaningful forces change. The
+  // director temporarily owns event close-ups; its survey shot and the normal
+  // watched view both return to this same empire portrait afterward.
+  if (newWorld || viewChanged) setObservedPlayersView(false);
+  else if (watchedEmpireAutoFrame && Number.isInteger(st.view_player) &&
+           !directorGoal && !cameraFollowManual && !dragState && !touchGesture)
+    setObservedPlayersView(true);
   const errEl = document.getElementById("err");
   if (st.error) { errEl.textContent = st.error; errEl.style.display = "block";
     setTimeout(() => errEl.style.display = "none", 2500); }
@@ -9396,6 +9433,15 @@ function drawEvents() {
   const signature = `${eventViewKey(state)}|` + events
     .map(e => `${e.turn}:${e.icon}:${e.text}`).join("|");
   if (el.dataset.signature === signature) return;
+  const oldScrollHeight = el.scrollHeight;
+  const keepViewport = el.scrollTop > 1;
+  const elTop = el.getBoundingClientRect().top;
+  const anchors = keepViewport ? [...el.querySelectorAll("[data-event-id]")]
+    .filter(item => item.getBoundingClientRect().bottom > elTop)
+    .map(item => ({
+      id: item.dataset.eventId,
+      offset: item.getBoundingClientRect().top - elTop,
+    })) : [];
   el.dataset.signature = signature;
   if (!events.length) {
     el.innerHTML = `<div class="empty-state">${playerView
@@ -9404,9 +9450,18 @@ function drawEvents() {
     return;
   }
   el.innerHTML = events.map(e =>
-    `<div class="event-item${e.important ? " important" : ""}"><div class="event-icon">${e.icon}</div>` +
+    `<div class="event-item${e.important ? " important" : ""}" data-event-id="${e.id}"><div class="event-icon">${e.icon}</div>` +
     `<div><div class="event-text">${e.text}</div><div class="event-turn">Turn ${e.turn}</div></div></div>`
   ).join("");
+  if (keepViewport) {
+    const anchor = anchors.find(({id}) => el.querySelector(`[data-event-id="${id}"]`));
+    if (anchor) {
+      const item = el.querySelector(`[data-event-id="${anchor.id}"]`);
+      el.scrollTop += item.getBoundingClientRect().top - el.getBoundingClientRect().top - anchor.offset;
+    } else {
+      el.scrollTop += el.scrollHeight - oldScrollHeight;
+    }
+  }
 }
 
 // A war is a running account, not a stream of notices: who is fighting, since
@@ -9916,6 +9971,7 @@ function stopCameraFollow() {
   updateCameraFollowChip();
 }
 function takeCameraControl(preserveZoom = false) {
+  watchedEmpireAutoFrame = false;
   cameraFlight = null;
   if (!preserveZoom) cameraZoom = null;
   clearCameraInertia();
@@ -10132,6 +10188,66 @@ function observedPlayerAnchors() {
   return observedPlayerIds().map(playerAnchor).filter(Boolean);
 }
 
+const EMPIRE_RECON_UNITS = new Set(["scout", "skirmisher", "ranger", "spec_ops"]);
+const EMPIRE_STRATEGIC_UNITS = new Set(["settler", "aircraft_carrier"]);
+
+// Borders and cities are the empire's durable shape. A remote unit expands
+// that shape only when it carries strategic weight or belongs to meaningful
+// action: an escorted/formed/promoted force, a group, or an active war front.
+// This deliberately lets a lone scout (and an isolated routine unit) leave the
+// composition for a while instead of turning every exploration move into a
+// map-wide zoom-out.
+function watchedEmpireSubjects(player) {
+  if (!state || !Number.isInteger(player)) return [];
+  if (watchedEmpireSubjectsCache.state === state &&
+      watchedEmpireSubjectsCache.player === player)
+    return watchedEmpireSubjectsCache.subjects;
+  const cities = state.cities.filter(city => city.owner === player);
+  const territory = state.map.tiles.filter(tile => tile.owner === player);
+  const units = state.units.filter(unit => unit.owner === player);
+  const owned = territory.map(tile => tile.pos);
+  const wars = (state.wars || []).filter(war =>
+    (war.ended === null || war.ended === undefined) &&
+    (war.aggressor === player || war.defender === player));
+  const enemies = new Set(wars.map(war =>
+    war.aggressor === player ? war.defender : war.aggressor));
+  const hostileSubjects = [
+    ...state.cities.filter(city => enemies.has(city.owner)),
+    ...state.units.filter(unit => enemies.has(unit.owner) && cinematicMilitaryUnit(unit)),
+  ];
+  const nearEmpire = unit => owned.some(pos => whexDist(pos, unit.pos) <= 2) ||
+    cities.some(city => whexDist(city.pos, unit.pos) <= 5);
+  const grouped = unit => units.some(other => other.id !== unit.id &&
+    whexDist(other.pos, unit.pos) <= 3);
+  const atWarFront = unit => enemies.size > 0 &&
+    hostileSubjects.some(enemy => whexDist(enemy.pos, unit.pos) <= 6);
+  const turn = Number(state.turn) || 0;
+  const importantUnits = units.filter(unit => {
+    const near = nearEmpire(unit), group = grouped(unit), front = atWarFront(unit);
+    const importantByRole = EMPIRE_STRATEGIC_UNITS.has(unit.type) ||
+      Number(unit.formation) > 0 || Number(unit.level) >= 3 ||
+      unit.linked_to !== null && unit.linked_to !== undefined;
+    const isolatedRecon = EMPIRE_RECON_UNITS.has(unit.type) &&
+      !near && !group && !front && !importantByRole;
+    const important = !isolatedRecon &&
+      (near || group || front || importantByRole);
+    if (important) watchedEmpireUnitUntil.set(unit.id, turn + 3);
+    return important || (watchedEmpireUnitUntil.get(unit.id) || -1) >= turn;
+  });
+  const liveIds = new Set(units.map(unit => unit.id));
+  for (const id of watchedEmpireUnitUntil.keys()) {
+    if (!liveIds.has(id) || (watchedEmpireUnitUntil.get(id) || -1) < turn)
+      watchedEmpireUnitUntil.delete(id);
+  }
+  // A unit remains framed for three turns after it stops qualifying. Armies
+  // can spread out briefly without producing an immediate zoom snap, while a
+  // scout that was never meaningful never enters the frame in the first place.
+  const subjects = [...territory, ...cities, ...importantUnits];
+  const result = subjects.length ? subjects : observedPlayerAnchors();
+  watchedEmpireSubjectsCache = {state, player, subjects:result};
+  return result;
+}
+
 // Moving to a simpler display mode is also an explicit return to the atlas:
 // cancel close-up tracking, put north back at the top, and fit one complete
 // copy of the world inside the unobstructed map stage. Deriving the bounds from
@@ -10226,11 +10342,10 @@ function unwrapObservedPoints(anchors) {
   });
 }
 
-function setObservedPlayersView() {
-  let anchors = observedPlayerAnchors();
+function observedViewGoal(anchors) {
   if (!anchors.length) {
     const fallback = mainLandmassAnchor();
-    if (!fallback) return;
+    if (!fallback) return null;
     anchors = [fallback];
   }
   const points = unwrapObservedPoints(anchors);
@@ -10249,8 +10364,9 @@ function setObservedPlayersView() {
   const spanX = maxX - minX, spanY = (maxY - minY) * YS;
   const fitX = spanX > 0 ? usableWidth / spanX : Infinity;
   const fitY = spanY > 0 ? usableHeight / spanY : Infinity;
-  const maximum = anchors.length === 1 ? (cinemaActive() ? 1 : 1.12)
-                                       : (cinemaActive() ? .76 : .82);
+  const oneEmpire = Number.isInteger(state?.view_player);
+  const maximum = oneEmpire ? (cinemaActive() ? 1 : 1.12)
+                            : (cinemaActive() ? .76 : .82);
   const scale = Math.max(.2, Math.min(maximum, fitX, fitY));
   const {x:desiredX, y:desiredY} = mapFocusPoint();
   const desiredViewX = (desiredX - area.clientWidth / 2) / scale;
@@ -10258,10 +10374,29 @@ function setObservedPlayersView() {
   const cameraViewX = (minX + maxX) / 2 - desiredViewX;
   const cameraViewY = (minY + maxY) / 2 - desiredViewY;
 
-  cameraFlight = null; cameraZoom = null; clearCameraInertia();
-  cam.scale = scale;
-  cam.x = COSR * cameraViewX + SINR * cameraViewY;
-  cam.y = clampCameraY(-SINR * cameraViewX + COSR * cameraViewY, scale);
+  return {
+    x:COSR * cameraViewX + SINR * cameraViewY,
+    y:clampCameraY(-SINR * cameraViewX + COSR * cameraViewY, scale),
+    scale,
+  };
+}
+
+function setObservedPlayersView(smooth = false) {
+  const watched = Number.isInteger(state?.view_player);
+  const anchors = watched
+    ? watchedEmpireSubjects(state.view_player) : observedPlayerAnchors();
+  const goal = observedViewGoal(anchors);
+  if (!goal) return;
+  cameraZoom = null; clearCameraInertia();
+  if (smooth && !REDUCED_MOTION_QUERY.matches) {
+    const target = cameraFlight || cam;
+    if (Math.abs(target.x - goal.x) + Math.abs(target.y - goal.y) > S * .2 ||
+        Math.abs(target.scale - goal.scale) > .006)
+      cameraFlight = goal;
+    return;
+  }
+  cameraFlight = null;
+  cam.x = goal.x; cam.y = goal.y; cam.scale = goal.scale;
 }
 function actionViewingAnchor(focus) {
   if (!state || !Array.isArray(focus)) return focus;
@@ -10358,7 +10493,10 @@ function setMainLandmassView() {
   cam.y = clampCameraY(y, cam.scale);
 }
 function centerMainLandmass() {
-  setMainLandmassView();
+  if (Number.isInteger(state?.view_player)) {
+    watchedEmpireAutoFrame = true;
+    setObservedPlayersView(false);
+  } else setMainLandmassView();
   draw(); drawMini();
 }
 function centerOn(pos) { centerWorld(pos); }
@@ -10421,6 +10559,7 @@ area.addEventListener("wheel", ev => {
 }, { passive: false });
 document.getElementById("zin").onclick = () => { takeCameraControl(true); zoomAt(1.35); };
 document.getElementById("zout").onclick = () => { takeCameraControl(true); zoomAt(1 / 1.35); };
+document.getElementById("zhome").onclick = () => centerMainLandmass();
 
 // ---------------------------------------------------------------- input
 let dragState = null, dragMoved = false, rdrag = null, rdragTo = null;
