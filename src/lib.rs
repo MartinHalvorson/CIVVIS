@@ -21,6 +21,7 @@ pub mod parallel;
 
 pub mod obs_tensor;
 pub mod policy;
+pub mod rating;
 pub mod rng;
 pub mod rules;
 pub mod selfplay;
