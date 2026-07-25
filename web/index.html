@@ -110,7 +110,7 @@
   .brand-title-row { display: flex; align-items: center; gap: 10px; }
   h1 {
     width: max-content; color: var(--gold-bright);
-    font: 650 33px/.95 "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    font: 650 36px/.95 "Iowan Old Style", "Palatino Linotype", Georgia, serif;
     letter-spacing: .095em; text-transform: uppercase;
     background: linear-gradient(100deg, #f6dfaa 8%, #d7b66a 66%, #a9823b);
     -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
@@ -119,9 +119,12 @@
   h1 .brand-suffix {
     font-size: .58em; letter-spacing: .025em; text-transform: lowercase;
   }
+  /* One narrow column pinned to the corner: YouTube takes the bottom right and
+     GitHub sits directly above it, so the icons cost the title one 24px lane
+     instead of the 55px a side-by-side row ate. */
   .brand-links {
     position: absolute; right: 10px; bottom: 9px;
-    display: flex; align-items: center; gap: 7px;
+    display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
   }
   .brand-links a {
     width: 24px; height: 24px; display: grid; place-items: center; border-radius: 7px;
@@ -135,11 +138,11 @@
   .brand-links a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
   .brand-links svg { width: 14px; height: 14px; fill: currentColor; }
   .tagline {
-    max-width: 225px; margin-top: 8px; color: #d3ddd8; font-size: 11px;
-    font-weight: 650; letter-spacing: .02em; line-height: 1.34;
+    max-width: 225px; margin-top: 9px; color: #dde6e2; font-size: 12.5px;
+    font-weight: 650; letter-spacing: .015em; line-height: 1.36;
   }
   .tagline span { display: block; white-space: nowrap; }
-  .tagline span + span { color: #a6b7af; }
+  .tagline span + span { color: #bccac4; }
   /* The deck is a column: the fixed panels take the height they need and the
      two chronicles share whatever is left, so a tall screen reads more
      history rather than more empty parchment. Below the point where the
