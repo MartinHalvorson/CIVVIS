@@ -37,8 +37,18 @@ refuse to start. Shared files are normal in this repository.
 | Every changed file is covered by `Claimed paths:` | always | revert the stray file, or add it to `Claimed paths:` |
 | No `autosync:` commits | always | those commits are machine backups; never merge them into a task |
 | Your edits do not collide with another open PR | **ready PRs only** | see below |
-| Branch contains current `origin/main` | ready PRs only | `git fetch origin main && git merge origin/main` |
 | Every validation checkbox is ticked | ready PRs only | run each check, then change `- [ ]` to `- [x]` |
+
+Being behind `main` is **not** a policy failure. It is reported as a notice.
+GitHub's branch protection runs with `strict = true`, so it refuses the merge
+itself until you update, and `ship` re-merges `main` on its own whenever it sees
+the base move. Failing the check as well only painted a red X on a PR whose
+author had done nothing wrong and could not durably fix, because `main` moves
+again while CI runs.
+
+Merging something that *was* behind `main` is still a hard error — the
+post-merge auditor catches it. The rule is enforced where it can be satisfied,
+not continuously against a moving target.
 
 ## Overlap: files versus lines
 
