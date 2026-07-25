@@ -766,16 +766,53 @@ struct SpectatorFrame {
 struct FrameDelivery {
     last_request: Option<Instant>,
     delivered: Option<SpectatorFrame>,
+    /// The last frame the page reported having painted, and the turns it
+    /// skipped getting there. A frame written to a socket is not yet a frame
+    /// anybody saw, so the page says which turn it actually drew and the
+    /// promise this gate exists to keep can be audited while it runs.
+    painted: Option<SpectatorFrame>,
+    missed: u64,
 }
 
 impl FrameDelivery {
-    fn request_started(&mut self, now: Instant) {
-        self.last_request = Some(now);
+    fn attached(&self, now: Instant) -> bool {
+        self.last_request
+            .is_some_and(|last| now.saturating_duration_since(last) <= VIEWER_ACTIVE)
     }
 
     fn frame_delivered(&mut self, frame: SpectatorFrame, now: Instant) {
         self.last_request = Some(now);
         self.delivered = Some(frame);
+    }
+
+    /// A viewer's request, carrying the turn it says it painted since the last
+    /// one. Turns between that and the previous report were simulated and
+    /// never drawn — the exact failure the gate is here to prevent, counted
+    /// rather than assumed away.
+    ///
+    /// Only counted against a viewer that never left. The promise is to a
+    /// viewer that is *here*: an unattended exhibition runs flat out on
+    /// purpose, so turns that went by while a tab was closed, reloading onto a
+    /// swapped binary, or between two worlds are nobody's missed frames. A
+    /// different world starts the count over for the same reason — seeds are
+    /// unordered, and the turns before it were another game's.
+    fn viewer_request(&mut self, painted: Option<SpectatorFrame>, now: Instant) {
+        let attached = self.attached(now);
+        self.last_request = Some(now);
+        // A viewer with nothing to report has painted nothing *yet*: a page
+        // still booting, or one that just reloaded onto a swapped binary. The
+        // turn it eventually draws does not follow whatever the last page
+        // drew, so drop the baseline rather than score the gap between them.
+        let Some(frame) = painted else {
+            self.painted = None;
+            return;
+        };
+        if let Some(previous) = self.painted {
+            if attached && previous.seed == frame.seed && frame.turn > previous.turn {
+                self.missed += u64::from(frame.turn - previous.turn - 1);
+            }
+        }
+        self.painted = Some(frame);
     }
 
     fn wait_remaining(&self, frame: SpectatorFrame, now: Instant) -> Option<Duration> {
@@ -789,10 +826,20 @@ impl FrameDelivery {
 }
 
 const MIN_RESTART_MS: u64 = 5_000;
-/// A lone `/state` probe must not throttle an otherwise unattended exhibition
-/// forever. The browser polls every 300ms at Lightning, so two seconds leaves
-/// ample room for rendering jitter while releasing a disconnected viewer.
-const VIEWER_ACTIVE: Duration = Duration::from_secs(2);
+/// How long after its last request a viewer is still considered present, and
+/// so still owed a frame for every turn.
+///
+/// This has to outlast a whole slow paint. A page painting a megabyte of
+/// observation is single-threaded and cannot say it is still there while it
+/// works, so a viewer that is merely slow is indistinguishable from one that
+/// closed the tab — and at two seconds a headless paint of about that length
+/// was being read as a departure, dropping the turn it was in the middle of.
+/// Six seconds covers a bad paint on a loaded machine with room to spare.
+///
+/// It costs almost nothing to be generous. A viewer that really has gone
+/// delays exactly one turn: the next turn's wait is already past the window,
+/// and the exhibition runs unattended at full speed from there.
+const VIEWER_ACTIVE: Duration = Duration::from_secs(6);
 const FRAME_WAIT_RECHECK: Duration = Duration::from_millis(100);
 /// The unlimited pace still hands the accept loop a slot this often, so the
 /// page keeps loading state while the stepper saturates a core.
@@ -826,13 +873,6 @@ fn blend(slot: &AtomicU64, sample: u64) {
 }
 
 impl Shared {
-    fn note_frame_request(&self) {
-        self.frame_delivery
-            .lock()
-            .unwrap()
-            .request_started(Instant::now());
-    }
-
     fn note_frame_delivered(&self, frame: SpectatorFrame) {
         self.frame_delivery
             .lock()
@@ -841,10 +881,36 @@ impl Shared {
         self.frame_delivered.notify_all();
     }
 
-    fn wait_for_lightning_frame(&self, frame: SpectatorFrame) {
+    fn note_viewer_request(&self, painted: Option<SpectatorFrame>) {
+        self.frame_delivery
+            .lock()
+            .unwrap()
+            .viewer_request(painted, Instant::now());
+    }
+
+    /// Turns this server simulated that no viewer ever drew, and the last turn
+    /// one reported drawing. The second reads the first: no painted turn at
+    /// all means nobody was watching, which is a different thing from a
+    /// promise being kept.
+    fn frame_audit(&self) -> (u64, Option<u32>) {
+        let delivery = self.frame_delivery.lock().unwrap();
+        (delivery.missed, delivery.painted.map(|frame| frame.turn))
+    }
+
+    /// Hold the stepper until an active viewer has been handed `frame`.
+    ///
+    /// A turn budget is a floor on how long a turn takes. It was being relied
+    /// on as something it never was — a promise that a browser could read the
+    /// turn before it was replaced. A page that needs longer to paint a
+    /// megabyte of observation than the budget allows loses turns outright,
+    /// and loses them silently: five of twenty-eight on the default Blitz pace
+    /// with a slow paint. Every turn owes the viewer one frame, so every pace
+    /// waits for one. With no viewer inside `VIEWER_ACTIVE` there is nothing
+    /// to wait for and an unattended exhibition still runs flat out.
+    fn wait_for_turn_frame(&self, frame: SpectatorFrame) {
         let mut delivery = self.frame_delivery.lock().unwrap();
         loop {
-            if self.pace_ms.load(Ordering::Relaxed) != 0 || self.paused.load(Ordering::Relaxed) {
+            if self.paused.load(Ordering::Relaxed) {
                 return;
             }
             let Some(remaining) = delivery.wait_remaining(frame, Instant::now()) else {
@@ -1733,6 +1799,18 @@ fn request_path(target: &str) -> &str {
     target.split_once('?').map_or(target, |(path, _)| path)
 }
 
+/// One parameter out of a request target's query, or `None` if the request
+/// did not carry the key at all. A key present with an empty value reads as
+/// `Some("")`: the page announces itself as a viewer on its very first poll,
+/// before it has painted anything to report.
+fn query_value<'a>(target: &'a str, key: &str) -> Option<&'a str> {
+    let (_, query) = target.split_once('?')?;
+    query.split('&').find_map(|pair| {
+        let (name, value) = pair.split_once('=').unwrap_or((pair, ""));
+        (name == key).then_some(value)
+    })
+}
+
 fn simulation_settings(params: &Params) -> Value {
     let victories = [
         (params.victory_conditions.science, "science"),
@@ -1949,6 +2027,16 @@ fn auto_step_loop(sh: Arc<Shared>) {
                     over_since = None;
                     watched_turn = None;
                     sh.restart_in.store(u64::MAX, Ordering::Relaxed);
+                    // A world's opening turn is a turn, and it is the one turn
+                    // no seat has to complete for it to exist. Gate it like
+                    // any other or the stepper plays straight through the
+                    // starting position — settlers before their capitals —
+                    // and the first thing a viewer ever sees of a new world is
+                    // already several turns into it.
+                    completed_frame = Some(SpectatorFrame {
+                        seed: s.game.seed,
+                        turn: s.game.turn,
+                    });
                 }
                 delay = 200;
                 waiting = true;
@@ -1990,14 +2078,21 @@ fn auto_step_loop(sh: Arc<Shared>) {
                 }
             }
         }
+        // An active browser consumes exactly one completed-turn state before
+        // the next round starts, at every pace. This makes Lightning as fast
+        // as the viewer can paint without letting it skip whole turns, and it
+        // stops the paced settings from skipping them too — a turn budget
+        // says how long a turn lasts, not that anyone managed to read it.
+        //
+        // The wait comes before the cadence sleep on purpose. `elapsed_ms`
+        // below measures from the top of the step, so a viewer who answers
+        // inside the seat's own slice costs the exhibition nothing at all;
+        // only one slower than the pace slows the pace down. With no recent
+        // viewer the wait returns at once and nothing is throttled.
+        if let Some(frame) = completed_frame {
+            sh.wait_for_turn_frame(frame);
+        }
         if pace == 0 && !waiting {
-            // An active browser consumes exactly one completed-turn state
-            // before the next round starts. This makes Lightning as fast as
-            // the viewer can paint without letting it skip whole turns. With
-            // no recent viewer, the exhibition remains truly unlimited.
-            if let Some(frame) = completed_frame {
-                sh.wait_for_lightning_frame(frame);
-            }
             // Unlimited: no wait between steps. Yield anyway, and give the
             // single-threaded accept loop a real slot a few times a second,
             // or /state would starve behind the session lock.
@@ -2049,8 +2144,8 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
     // Route on the URL path, not its cache-busting/query component. The
     // supervised spectator tags each successor URL with its server instance
     // so a long-lived tab loads fresh embedded assets after a binary swap.
-    let request_target = parts.next().unwrap_or("/");
-    let path = request_path(request_target).to_string();
+    let request_target = parts.next().unwrap_or("/").to_string();
+    let path = request_path(&request_target).to_string();
     let mut content_len = 0usize;
     loop {
         let mut h = String::new();
@@ -2099,11 +2194,27 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             respond(stream, "200 OK", "image/png", &mountain_atlas());
         }
         ("GET", "/state") => {
-            sh.note_frame_request();
             // A Planet world is a globe, and a client cannot draw one from tile
             // coordinates alone. It asks for the sphere's geometry the first
             // time it sees one; the ordinary poll never carries it.
-            let wants_planet = request_target.contains("planet=1");
+            let wants_planet = query_value(&request_target, "planet") == Some("1");
+            // Only a page that paints frames holds the simulation to a turn.
+            // The keeper's refresh check reads `/state` too, as does any
+            // curl, and a poller that draws nothing must not drag the
+            // exhibition down to its own cadence. A viewer identifies itself
+            // by reporting the turn it last painted; everyone else reads the
+            // same state and is not counted.
+            let painting_viewer = query_value(&request_target, "painted");
+            if let Some(reported) = painting_viewer {
+                let painted = match (
+                    reported.parse::<u32>(),
+                    query_value(&request_target, "world").map(str::parse::<u64>),
+                ) {
+                    (Ok(turn), Some(Ok(seed))) => Some(SpectatorFrame { seed, turn }),
+                    _ => None, // a page that has painted nothing yet
+                };
+                sh.note_viewer_request(painted);
+            }
             let (mut o, frame) = {
                 let session = sh.session.lock().unwrap();
                 let frame = SpectatorFrame {
@@ -2119,10 +2230,10 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 (observed, frame)
             };
             decorate(&mut o, sh);
-            if respond_json(stream, &o) {
-                // Release Lightning only after the completed-turn snapshot is
-                // on the wire. The browser renders every successful `/state`
-                // response as one synchronous map + HUD update.
+            if respond_json(stream, &o) && painting_viewer.is_some() {
+                // Release the stepper only after the completed-turn snapshot
+                // is on the wire. The browser renders every successful
+                // `/state` response as one synchronous map + HUD update.
                 sh.note_frame_delivered(frame);
             }
         }
@@ -2132,6 +2243,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         // few seconds to read one field spends the server's time on rendering
         // a view nobody looks at.
         ("GET", "/status") => {
+            let (frames_missed, frames_painted) = sh.frame_audit();
             let session = sh.session.lock().unwrap();
             let game = &session.game;
             respond_json(
@@ -2141,6 +2253,16 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "winner": game.winner,
                     "victory_type": game.victory_type,
                     "spectate": session.params.spectate,
+                    // Turns this server simulated that no viewer ever drew.
+                    // Every turn is supposed to reach the page as one whole
+                    // frame, and the page reports the turns it paints, so the
+                    // promise is measured rather than assumed. A healthy
+                    // exhibition holds this at zero.
+                    "frames_missed": frames_missed,
+                    // The last turn a viewer reported drawing; null when
+                    // nobody is watching, which is why zero misses on its own
+                    // is not yet good news.
+                    "frames_painted": frames_painted,
                     // Which code is actually playing. A binary swap only
                     // happens between games, so a running server is always
                     // somewhat behind origin/main and there was no way to see
@@ -2541,14 +2663,17 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::{
-        chronicle_world_events, final_countdown_ms, new_game_params, request_path, save_path,
-        seat_delay_ms, strategy_roster, ChronicleSnapshot, ChronicleState, FrameDelivery, Params,
+        chronicle_world_events, final_countdown_ms, new_game_params, query_value, request_path,
+        save_path, seat_delay_ms, strategy_roster, ChronicleSnapshot, ChronicleState,
+        FrameDelivery, Params,
         Session, SpectatorFrame, EMBEDDED_CINEMATIC_3D, EMBEDDED_INDEX,
         EMBEDDED_WORLD_WONDER_ATLAS, SAVE_DIR, VIEWER_ACTIVE,
     };
     use crate::game::{Action, Game, VictoryConditions};
     use crate::setup::{GameSpeed, MapScript};
-    use serde_json::json;
+    use serde_json::{json, Value};
+    use std::io::{Read, Write};
+    use std::net::{TcpListener, TcpStream};
     use std::time::{Duration, Instant};
 
     /// The pace a viewer picks is what a turn costs, so the seats' waits have
@@ -2583,7 +2708,7 @@ mod tests {
     }
 
     #[test]
-    fn lightning_waits_for_each_turn_only_while_a_viewer_is_active() {
+    fn every_turn_waits_for_its_frame_only_while_a_viewer_is_active() {
         let now = Instant::now();
         let turn_7 = SpectatorFrame { seed: 41, turn: 7 };
         let turn_8 = SpectatorFrame { seed: 41, turn: 8 };
@@ -2592,7 +2717,7 @@ mod tests {
 
         assert_eq!(delivery.wait_remaining(turn_7, now), None);
 
-        delivery.request_started(now);
+        delivery.viewer_request(None, now);
         assert_eq!(delivery.wait_remaining(turn_7, now), Some(VIEWER_ACTIVE));
 
         delivery.frame_delivered(turn_7, now + Duration::from_millis(20));
@@ -2608,6 +2733,169 @@ mod tests {
             delivery.wait_remaining(turn_8, now + VIEWER_ACTIVE + Duration::from_millis(21)),
             None
         );
+    }
+
+    /// A frame written to a socket is not yet a frame anybody saw. The page
+    /// reports the turn it painted, so turns that went by undrawn are counted
+    /// rather than assumed not to exist.
+    #[test]
+    fn painting_reports_count_the_turns_no_viewer_ever_drew() {
+        let world = |turn| Some(SpectatorFrame { seed: 41, turn });
+        let mut now = Instant::now();
+        let mut poll = |delivery: &mut FrameDelivery, painted, after: Duration| {
+            now += after;
+            delivery.viewer_request(painted, now);
+        };
+        let mut delivery = FrameDelivery::default();
+        let beat = Duration::from_millis(300);
+
+        poll(&mut delivery, world(7), beat);
+        assert_eq!(delivery.missed, 0); // nothing to compare the first against
+
+        poll(&mut delivery, world(8), beat);
+        assert_eq!(delivery.missed, 0);
+
+        poll(&mut delivery, world(12), beat);
+        assert_eq!(delivery.missed, 3); // 9, 10 and 11 were simulated unseen
+
+        // A viewer that left is owed nothing while it is gone. The exhibition
+        // is meant to run flat out unattended, and a tab that closes, reloads
+        // onto a swapped binary, or sits through a game boundary comes back to
+        // a later turn through no fault of the gate.
+        poll(&mut delivery, world(400), VIEWER_ACTIVE + beat);
+        assert_eq!(delivery.missed, 3);
+        poll(&mut delivery, world(401), beat);
+        assert_eq!(delivery.missed, 3);
+
+        // A different world starts the count over too: seeds are unordered and
+        // the turns before it belonged to another game. Nor is a repeated turn
+        // a miss — the page redraws the same turn whenever it polls twice
+        // inside one.
+        poll(&mut delivery, Some(SpectatorFrame { seed: 42, turn: 40 }), beat);
+        poll(&mut delivery, Some(SpectatorFrame { seed: 42, turn: 40 }), beat);
+        poll(&mut delivery, Some(SpectatorFrame { seed: 42, turn: 41 }), beat);
+        assert_eq!(delivery.missed, 3);
+    }
+
+    /// Only a page that paints holds the simulation to a turn. The keeper's
+    /// refresh check reads `/state` as well, and a reader that draws nothing
+    /// must not drag the exhibition down to its own polling cadence.
+    #[test]
+    fn only_a_request_that_reports_painting_is_a_viewer() {
+        assert_eq!(query_value("/state", "painted"), None);
+        assert_eq!(query_value("/state?instance=9232", "painted"), None);
+        // A page that has painted nothing yet is still a viewer.
+        assert_eq!(query_value("/state?painted=", "painted"), Some(""));
+        assert_eq!(
+            query_value("/state?painted=17&world=41", "painted"),
+            Some("17")
+        );
+        assert_eq!(
+            query_value("/state?painted=17&world=41", "world"),
+            Some("41")
+        );
+        assert_eq!(query_value("/state?painted=17", "world"), None);
+        // A key is a whole key, not a prefix of the next one along.
+        assert_eq!(query_value("/state?painted_at=17", "painted"), None);
+    }
+
+    fn http(port: u16, request: &str) -> Option<String> {
+        let mut stream = TcpStream::connect(("127.0.0.1", port)).ok()?;
+        stream
+            .set_read_timeout(Some(Duration::from_secs(20)))
+            .ok()?;
+        stream.write_all(request.as_bytes()).ok()?;
+        let mut response = String::new();
+        stream.read_to_string(&mut response).ok()?;
+        response
+            .split_once("\r\n\r\n")
+            .map(|(_, body)| body.to_string())
+    }
+
+    fn http_get(port: u16, target: &str) -> Option<String> {
+        http(
+            port,
+            &format!("GET {target} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n"),
+        )
+    }
+
+    fn http_post(port: u16, target: &str, body: &str) -> Option<String> {
+        http(
+            port,
+            &format!(
+                "POST {target} HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\n\
+                 Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            ),
+        )
+    }
+
+    /// The promise itself, end to end, against a real server over a real
+    /// socket. A page that paints slower than the turn budget is the case that
+    /// used to lose turns silently — five of twenty-eight on the default pace
+    /// when the paint took 1.2s — so the viewer here is deliberately slower
+    /// than the pace it asks for. Every turn the server simulated has to have
+    /// arrived in some response, and the server has to agree that it did.
+    #[test]
+    fn a_viewer_slower_than_the_pace_still_sees_every_turn() {
+        let port = TcpListener::bind(("127.0.0.1", 0))
+            .expect("a free port")
+            .local_addr()
+            .unwrap()
+            .port();
+        let mut params = current();
+        params.spectate = true;
+        params.num_players = 3;
+        params.num_city_states = 1;
+        params.width = 24;
+        params.height = 16;
+        params.seed = 20_260_725;
+        std::thread::spawn(move || super::serve_with_game(port, false, params, None, false));
+
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while http_get(port, "/status").is_none() {
+            assert!(Instant::now() < deadline, "spectator server never came up");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        http_post(port, "/pace", "{\"ms\":120}").expect("set the turn pace");
+
+        // The browser's loop at its worst: one request in flight at a time,
+        // and a paint that costs twice what the whole turn was budgeted.
+        let mut seen: Vec<u32> = Vec::new();
+        let mut painted: Option<(u64, u32)> = None;
+        for _ in 0..24 {
+            let target = match painted {
+                None => "/state?painted=".to_string(),
+                Some((seed, turn)) => format!("/state?painted={turn}&world={seed}"),
+            };
+            let body = http_get(port, &target).expect("a state to draw");
+            let state: Value = serde_json::from_str(&body).expect("state is JSON");
+            let turn = state["turn"].as_u64().expect("a turn") as u32;
+            let seed = state["seed"].as_u64().expect("a world");
+            std::thread::sleep(Duration::from_millis(250)); // the paint
+            seen.push(turn);
+            painted = Some((seed, turn));
+        }
+        if let Some((seed, turn)) = painted {
+            http_get(port, &format!("/state?painted={turn}&world={seed}"));
+        }
+        http_post(port, "/pace", "{\"paused\":true}"); // stop stepping this game
+
+        let (first, last) = (seen[0], *seen.last().unwrap());
+        assert!(
+            last >= first + 4,
+            "the exhibition never moved, so nothing was tested: {seen:?}"
+        );
+        let missed: Vec<u32> = (first..=last).filter(|turn| !seen.contains(turn)).collect();
+        assert!(
+            missed.is_empty(),
+            "turns simulated but never sent to the viewer: {missed:?} out of {seen:?}"
+        );
+
+        let status: Value = serde_json::from_str(&http_get(port, "/status").expect("status"))
+            .expect("status is JSON");
+        assert_eq!(status["frames_missed"], json!(0));
+        assert_eq!(status["frames_painted"], json!(last));
     }
 
     #[test]
@@ -2649,6 +2937,32 @@ mod tests {
         assert!(player_hud.contains("playerHudStats(p,"));
         assert!(player_hud.contains("victoryHud.innerHTML = overview;"));
         assert!(player_hud.contains("hud.innerHTML = html;"));
+
+        // The side panel is the one part of a frame that is allowed to skip a
+        // repaint, because below a second per turn it changes faster than
+        // anyone can read it. That budget may never swallow a turn's own
+        // frame: research, civics and government belonging to the previous
+        // turn is exactly the stale corner this promise rules out.
+        let side = EMBEDDED_INDEX
+            .split_once("function drawSide(force = true) {")
+            .expect("side panel renderer")
+            .1;
+        let throttle = side
+            .split_once("return;")
+            .expect("side panel repaint budget")
+            .0;
+        assert!(
+            throttle.contains("turn === lastSideTurn"),
+            "a new turn must repaint the side panel whatever the clock says"
+        );
+
+        // And the page tells the server which turn it painted, both so that
+        // only a painting page holds the simulation to a turn and so that
+        // turns nobody drew can be counted instead of assumed away.
+        assert!(EMBEDDED_INDEX.contains("paintedFrame = {seed:st.seed, turn:st.turn};"));
+        assert!(EMBEDDED_INDEX
+            .contains("`?painted=${paintedFrame.turn}&world=${paintedFrame.seed}`"));
+        assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/state\" + paintedQuery())"));
     }
 
     fn current() -> Params {
