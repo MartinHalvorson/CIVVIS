@@ -1506,7 +1506,7 @@
   <aside id="victoryhud" data-layout-widget="victory" aria-label="Turn and victory tracker"></aside>
   <aside id="playerhud" data-layout-widget="players" aria-label="Player stats"></aside>
   <div id="zoomctl">
-    <button id="paneltoggle" class="icon" title="Toggle command deck" aria-label="Toggle command deck">☰</button>
+    <button id="paneltoggle" class="icon" title="Hide command deck" aria-label="Hide command deck">&lt;</button>
     <button id="collapsepause" hidden title="Pause simulation" aria-label="Pause simulation">⏸</button>
     <button id="zin" title="Zoom in" aria-label="Zoom in">＋</button>
     <button id="zout" title="Zoom out" aria-label="Zoom out">−</button>
@@ -11025,8 +11025,11 @@ function togglePanel(force, persist = true) {
   const priorFocus = currentMapFocusWorld();
   const hide = force === undefined ? !document.body.classList.contains("sidebar-hidden") : force;
   document.body.classList.toggle("sidebar-hidden", hide);
-  document.getElementById("paneltoggle").textContent = hide ? "☷" : "☰";
-  document.getElementById("paneltoggle").title = hide ? "Show command deck" : "Hide command deck";
+  const panelToggle = document.getElementById("paneltoggle");
+  const panelAction = hide ? "Show command deck" : "Hide command deck";
+  panelToggle.textContent = hide ? ">" : "<";
+  panelToggle.title = panelAction;
+  panelToggle.setAttribute("aria-label", panelAction);
   if (persist) {
     try { localStorage.setItem(SIDEBAR_COLLAPSED_STATE_KEY, hide ? "1" : "0"); }
     catch (_) {}
