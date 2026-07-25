@@ -16126,6 +16126,15 @@ impl Game {
             .any(|city| city.owner == pid && self.city_has_active_district_family(city, family))
     }
 
+    /// Why this Great Person cannot be claimed right now, if they cannot.
+    /// The reasons are written for a person to read: the observation hands
+    /// them to the client so a card with enough points but no Recruit button
+    /// can say what is missing instead of looking broken.
+    pub(crate) fn great_person_blocker(&self, pid: usize, kind: &str) -> Option<String> {
+        let (_, spec) = self.current_great_person(kind)?;
+        self.validate_great_person_activation(pid, kind, spec).err()
+    }
+
     fn validate_great_person_activation(
         &self,
         pid: usize,
