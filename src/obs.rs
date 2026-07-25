@@ -1198,6 +1198,113 @@ mod tests {
         assert!(personal.iter().any(|category| category == "Culture"));
     }
 
+    /// The browser draws its blast, writes its log entry and marks its war card
+    /// from these three fields and nothing else. A detonation the client cannot
+    /// see is the same as one that did not happen, so the wire shape is pinned
+    /// here rather than left to a screenshot.
+    #[test]
+    fn a_detonation_reaches_the_wire_whole() {
+        let mut game = Game::new_full(2, 24, 16, 91_806, 200, 0, false);
+        let mut capitals = Vec::new();
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            capitals.push(game.found_city_for(pid, game.units[&settler].pos, None));
+            game.remove_unit(settler);
+        }
+        let target = game.cities[&capitals[1]].pos;
+        let city_name = game.cities[&capitals[1]].name.clone();
+        game.at_war.insert((0, 1));
+        // Whether two randomly placed capitals sit inside 12 tiles or 15 is a
+        // property of the seed, so the device is chosen to reach rather than the
+        // fixture bent to suit one.
+        let spec = game.rules.wmds["thermonuclear_device"].clone();
+        let distance = game.wdist(game.cities[&capitals[0]].pos, target);
+        assert!(
+            distance <= spec.icbm_strike_range,
+            "fixture capitals must sit within ICBM range ({distance})"
+        );
+        game.players[0]
+            .counters
+            .insert("project_effect:thermonuclear_devices".to_string(), 1);
+        for position in game.wdisk(target, spec.blast_radius) {
+            game.players[0].explored.insert(position);
+        }
+        game.apply(
+            0,
+            &crate::game::Action::WmdStrike {
+                city: capitals[0],
+                target,
+                thermonuclear: true,
+            },
+        )
+        .expect("the fixture capitals are inside ICBM range");
+
+        let observed = observation_spectator(&game, 0);
+
+        // 1. The strike ledger, which is what the animation reads.
+        let strikes = observed["nuclear_strikes"].as_array().unwrap();
+        assert_eq!(strikes.len(), 1);
+        let strike = &strikes[0];
+        assert!(strike["id"].as_u64().is_some(), "a blast needs an identity");
+        assert_eq!(strike["attacker"], serde_json::json!(0));
+        assert_eq!(strike["turn"], serde_json::json!(game.turn));
+        assert_eq!(
+            strike["target"],
+            serde_json::json!([target.0, target.1]),
+            "ground zero cannot be inferred from a halved city"
+        );
+        assert_eq!(strike["thermonuclear"], serde_json::json!(true));
+        assert_eq!(strike["platform"], serde_json::json!("city"));
+        assert_eq!(strike["blast_radius"], serde_json::json!(spec.blast_radius));
+        assert_eq!(strike["cities"], serde_json::json!([city_name]));
+        assert_eq!(strike["victims"], serde_json::json!([1]));
+        assert!(strike["fallout_until"].as_u64().unwrap() > game.turn as u64);
+
+        // 2. The notification, flagged so the log pins it.
+        let detonation = observed["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|event| event["category"] == "Nuclear")
+            .expect("the log hears about it");
+        assert_eq!(detonation["important"], serde_json::json!(true));
+        assert!(detonation["text"]
+            .as_str()
+            .unwrap()
+            .contains("thermonuclear device"));
+        assert_eq!(
+            detonation["pos"],
+            serde_json::json!([target.0, target.1]),
+            "the entry points at the crater"
+        );
+
+        // 3. The war moment, so the card can badge the war as nuclear.
+        let moment = observed["wars"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|war| war["highlights"].as_array().unwrap())
+            .find(|moment| moment["kind"] == "nuclear_strike")
+            .expect("the war ledger names the detonation");
+        assert_eq!(moment["actor"], serde_json::json!(0));
+        assert_eq!(moment["subject"], serde_json::json!(1));
+        assert_eq!(moment["city"], serde_json::json!(city_name));
+
+        // The victim's own view carries the same detonation, marked the same way.
+        let victim = observation(&game, 1);
+        let told = victim["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|event| event["category"] == "Nuclear")
+            .expect("the civilization it landed on is told");
+        assert_eq!(told["important"], serde_json::json!(true));
+    }
+
     #[test]
     fn observation_exposes_compact_hud_and_victory_race_metrics() {
         let mut game = Game::new_full(2, 20, 14, 81_004, 120, 1, false);

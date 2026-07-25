@@ -2734,24 +2734,31 @@ function claimPulse(c) {
 // tenth of a second; a device is allowed three, because the map is supposed to
 // stop and look at it.
 const BLAST_MS = 3000;
-// Start a detonation for every strike the engine has recorded and this page has
-// not shown yet.
+// Start a detonation for every strike that appeared between these two frames.
 //
 // Read from the strike ledger rather than from the board, because the board
 // cannot answer the questions the picture needs: a halved city and a ring of
 // fallout do not say which tile was ground zero, how wide the blast was, or
-// whether it was a nuclear or a thermonuclear device. On the first frame after
-// a reload every strike is unseen, so the ledger is only banked, never
-// replayed — nobody wants a nuclear war re-enacted because a tab was refreshed.
-function detonate(next) {
+// whether it was a nuclear or a thermonuclear device.
+//
+// "New" means new *relative to the previous frame*, which is the only rule that
+// gets both cases right. A first-visit test on the id set instead would have
+// treated the first detonation of a game as history and shown nothing, since a
+// game's opening strike is always the one that finds the set empty; and this
+// runs from `animateDiff`, which does nothing without a previous frame, so a
+// reloaded tab adopts the whole ledger silently rather than re-enacting a
+// nuclear war it missed.
+function detonate(prev, next) {
   const strikes = Array.isArray(next.nuclear_strikes) ? next.nuclear_strikes : [];
-  const cold = seenBlasts.size === 0 && strikes.length > 0 && !anim.blasts.length;
+  const before = new Set((Array.isArray(prev.nuclear_strikes)
+    ? prev.nuclear_strikes : []).map(strike => strike.id));
   for (const strike of strikes) {
+    if (before.has(strike.id)) continue;
+    // The engine keeps a bounded tail of strikes, so a state that jumps several
+    // turns can introduce an id that is already history.
+    if ((next.turn - strike.turn) > 2) { seenBlasts.add(strike.id); continue; }
     if (seenBlasts.has(strike.id)) continue;
     seenBlasts.add(strike.id);
-    // A strike from before this page was watching, or one already several turns
-    // old, is history rather than news.
-    if (cold || (next.turn - strike.turn) > 1) continue;
     anim.blasts.push({
       pos: strike.target,
       t0: performance.now(),
@@ -2947,7 +2954,7 @@ function animateDiff(prev, next) {
   const nextU = new Map(next.units.map(u => [u.id, u]));
   TMAP = new Map(next.map.tiles.map(t => [key(t.pos), t])); // for worldXY
   const cityKeys = new Set((next.cities || []).map(c => key(c.pos)));
-  detonate(next);
+  detonate(prev, next);
   for (const nu of next.units) {
     const pu = prevU.get(nu.id);
     if (!pu) continue;
@@ -9176,6 +9183,15 @@ function drawNuclearBlasts(now) {
     if (e < 0) continue;
     if (e >= 1) { anim.blasts.splice(i, 1); continue; }
     const { x, y, reach, ee } = blastGeometry(b, e);
+    // Remember where this landed on the glass. The screen-space bloom has to
+    // sit on the fireball, and reading it off the live transform is exact —
+    // recomputing it from `cam` would silently duplicate draw()'s arithmetic,
+    // shake included.
+    if (cx.getTransform) {
+      const m = cx.getTransform();
+      b.screen = [m.a * x + m.c * y + m.e, m.b * x + m.d * y + m.f];
+      b.screenScale = m.a;
+    }
     if (!b.kicked) {
       b.kicked = true;
       // Nothing else on this board is allowed to shake the camera this hard.
@@ -9195,26 +9211,26 @@ function drawNuclearBlasts(now) {
 // this only decides how much of it there is and how long it hangs.
 function seedBlastDebris(b, x, y, reach, now) {
   const heavy = MODE.fx >= 2;
-  const count = (b.thermo ? 34 : 24) * (heavy ? 1 : 0.55);
+  const count = Math.round((b.thermo ? 44 : 30) * (heavy ? 1 : 0.6));
   for (let n = 0; n < count; n++) {
     const angle = (n / count) * 6.2832 + (n % 3) * 0.4;
     const speed = 0.45 + (n % 5) / 5;
     anim.motes.push({
       x, y,
-      vx: Math.cos(angle) * speed * reach * 0.75,
-      vy: Math.sin(angle) * speed * reach * 0.4 - 26,
-      grav: 46, r: 1.5 + (n % 4) * 0.7,
-      col: n % 4 ? "#5b5348" : "#d9c9a8",
+      vx: Math.cos(angle) * speed * reach * 0.8,
+      vy: Math.sin(angle) * speed * reach * 0.42 - 30,
+      grav: 46, r: 1.8 + (n % 4) * 0.9,
+      col: n % 4 ? "#4a4238" : "#f0dcb4",
       t0: now, dur: 1500 + (n % 6) * 260,
     });
   }
   // The column itself: ash going straight up, slowly, long after the flash.
-  for (let n = 0; n < (heavy ? 22 : 10); n++) {
+  for (let n = 0; n < (heavy ? 30 : 14); n++) {
     anim.motes.push({
-      x: x + ((n % 5) - 2) * reach * 0.1, y: y - 4,
-      vx: ((n % 3) - 1) * 5, vy: -34 - (n % 4) * 9, grav: 0,
-      r: 3 + (n % 5), col: "#9d9384", rise: true,
-      t0: now + n * 40, dur: 2400 + (n % 5) * 420,
+      x: x + ((n % 5) - 2) * reach * 0.12, y: y - 4,
+      vx: ((n % 3) - 1) * 6, vy: -46 - (n % 4) * 12, grav: 0,
+      r: 4 + (n % 5) * 1.4, col: "#8d8478", rise: true,
+      t0: now + n * 34, dur: 2400 + (n % 5) * 420,
     });
   }
   // Scorched ground that outlives the cloud, so the tile still reads as struck
@@ -9224,85 +9240,129 @@ function seedBlastDebris(b, x, y, reach, now) {
 // Cinematic and Painted. A fireball, a wave travelling out along the board
 // plane, and a mushroom column — drawn as stacked ellipses in world space, so
 // it leans with the board and sits behind nothing.
+//
+// The alphas here are deliberately unsubtle. This map is a bright, busy,
+// fully-painted illustration; an effect pitched at the strength of a combat
+// impact simply disappears into it, and a nuclear strike that a viewer can miss
+// is a bug rather than a restrained choice.
 function drawPaintedBlast(b, x, y, reach, e, ee) {
   const volumetric = MODE.fx >= 2;
+  const punch = b.thermo ? 1.25 : 1;
   // 1. The wave. Two rings a beat apart read as a front with depth rather than
-  //    a circle being scaled.
-  for (const [delay, width, alpha] of [[0, 3.4, 0.9], [0.07, 1.8, 0.5]]) {
-    const re = (e - delay) / (0.55 - delay);
+  //    a circle being scaled, with a dust skirt dragged along behind them.
+  for (const [delay, width, alpha] of [[0, 5, 1], [0.09, 2.6, 0.6]]) {
+    const re = (e - delay) / (0.6 - delay);
     if (re <= 0 || re >= 1) continue;
-    const rr = reach * (0.18 + (1 - (1 - re) * (1 - re)) * 1.55);
-    cx.globalAlpha = alpha * (1 - re);
-    cx.strokeStyle = "#ffe6b0";
-    cx.lineWidth = width * (1 - re) + 0.6;
+    const rr = reach * (0.18 + (1 - (1 - re) * (1 - re)) * 1.7) * punch;
+    // Dust first, so the bright front sits on top of its own skirt.
+    cx.globalAlpha = 0.4 * (1 - re);
+    cx.fillStyle = "#a8967a";
+    cx.beginPath();
+    cx.ellipse(x, y, rr, rr * YS * 0.8, 0, 0, 7);
+    cx.ellipse(x, y, rr * 0.74, rr * YS * 0.6, 0, 0, 7);
+    cx.fill("evenodd");
+    cx.globalAlpha = alpha * (1 - re) * 0.95;
+    cx.strokeStyle = "#fff3d2";
+    cx.lineWidth = width * (1 - re) + 0.8;
     cx.beginPath(); cx.ellipse(x, y, rr, rr * YS * 0.8, 0, 0, 7); cx.stroke();
-    // Dust kicked up along the front, only where the board has depth to show it.
-    if (volumetric) {
-      cx.globalAlpha = 0.22 * (1 - re);
-      cx.fillStyle = "#b5a58a";
-      cx.beginPath();
-      cx.ellipse(x, y, rr * 0.98, rr * YS * 0.78, 0, 0, 7);
-      cx.ellipse(x, y, rr * 0.82, rr * YS * 0.66, 0, 0, 7);
-      cx.fill("evenodd");
+  }
+  // 2. The fireball: an opaque white core that goes orange and collapses into
+  //    the base of the column. A nuclear flash is the brightest thing on any
+  //    map it happens on, so the core is drawn at full opacity, not a wash.
+  const fe = e / 0.42;
+  if (fe < 1) {
+    const grow = 1 - (1 - fe) * (1 - fe);
+    const r = reach * (0.34 + grow * 1.05) * punch;
+    // Bloom well outside the fireball, so the ground around it is lit by it.
+    const fade = Math.pow(1 - fe, 0.7);
+    const bloom = cx.createRadialGradient(x, y, 0, x, y, r * 2.1);
+    bloom.addColorStop(0, `rgba(255,214,138,${(0.65 * fade).toFixed(3)})`);
+    bloom.addColorStop(0.5, `rgba(255,150,60,${(0.3 * fade).toFixed(3)})`);
+    bloom.addColorStop(1, "rgba(180,70,20,0)");
+    cx.globalAlpha = 1;
+    cx.fillStyle = bloom;
+    cx.beginPath(); cx.ellipse(x, y, r * 2.1, r * 2.1 * (0.5 + YS * 0.3), 0, 0, 7);
+    cx.fill();
+    const core = cx.createRadialGradient(x, y - r * 0.16, 0, x, y, r);
+    core.addColorStop(0, `rgba(255,255,252,${Math.min(1, 1.15 * fade).toFixed(3)})`);
+    core.addColorStop(0.34, `rgba(255,244,186,${Math.min(1, 1.05 * fade).toFixed(3)})`);
+    core.addColorStop(0.66, `rgba(255,146,42,${(0.9 * fade).toFixed(3)})`);
+    core.addColorStop(1, "rgba(122,38,8,0)");
+    cx.fillStyle = core;
+    cx.beginPath(); cx.ellipse(x, y, r, r * (0.66 + YS * 0.3), 0, 0, 7); cx.fill();
+    // The second flash. A fission detonation has two, a tenth of a second
+    // apart, and it is the detail that makes one unmistakable.
+    if (e > 0.05 && e < 0.11) {
+      cx.globalAlpha = 1 - Math.abs(e - 0.08) / 0.03;
+      cx.fillStyle = "#fffdf4";
+      cx.beginPath(); cx.ellipse(x, y, r * 0.62, r * 0.62 * (0.66 + YS * 0.3), 0, 0, 7);
+      cx.fill();
     }
   }
-  // 2. The fireball: white-hot, then orange, then gone. It overshoots the blast
-  //    radius briefly — the flash is bigger than the damage.
-  const fe = e / 0.34;
-  if (fe < 1) {
-    const r = reach * (0.3 + (1 - (1 - fe) * (1 - fe)) * 0.95);
-    const fade = 1 - fe;
-    const core = cx.createRadialGradient(x, y - r * 0.12, 0, x, y, r);
-    core.addColorStop(0, `rgba(255,255,250,${(0.98 * fade).toFixed(3)})`);
-    core.addColorStop(0.3, `rgba(255,236,160,${(0.92 * fade).toFixed(3)})`);
-    core.addColorStop(0.62, `rgba(255,138,42,${(0.72 * fade).toFixed(3)})`);
-    core.addColorStop(1, "rgba(120,40,10,0)");
-    cx.globalAlpha = 1;
-    cx.fillStyle = core;
-    cx.beginPath(); cx.ellipse(x, y, r, r * (0.62 + YS * 0.3), 0, 0, 7); cx.fill();
-  }
   // 3. The column. Stem first, then a cap that climbs, widens and thins out.
-  const ce = Math.max(0, (e - 0.09) / 0.91);
+  //    It towers: the height is what says "nuclear" from across the map.
+  const ce = Math.max(0, (e - 0.07) / 0.93);
   if (ce > 0) {
-    const rise = reach * (b.thermo ? 2.5 : 1.9) * (1 - (1 - ce) * (1 - ce));
-    const fade = ce < 0.55 ? 1 : 1 - (ce - 0.55) / 0.45;
-    const stemW = reach * (0.2 + ce * 0.16);
-    cx.globalAlpha = 0.5 * fade;
+    // Rise is deliberately short of a real cloud's proportions. Scaled
+    // honestly it climbs off the top of the viewport within a second and the
+    // shot everybody wants — the cloud standing over the city it destroyed —
+    // never happens. It tops out at a bit over two blast radii and holds.
+    const climb = 1 - Math.pow(1 - Math.min(1, ce * 1.35), 3);
+    const rise = reach * (b.thermo ? 2.9 : 2.2) * climb;
+    const fade = ce < 0.72 ? 1 : Math.max(0, 1 - (ce - 0.72) / 0.28);
+    const stemW = reach * (0.3 + ce * 0.22) * punch;
+    cx.globalAlpha = 0.9 * fade;
     const stem = cx.createLinearGradient(x, y, x, y - rise);
-    stem.addColorStop(0, "rgba(196,120,52,0.85)");
-    stem.addColorStop(0.5, "rgba(150,132,106,0.7)");
-    stem.addColorStop(1, "rgba(176,168,152,0.25)");
+    stem.addColorStop(0, "rgba(214,126,48,0.95)");
+    stem.addColorStop(0.35, "rgba(168,138,102,0.9)");
+    stem.addColorStop(1, "rgba(198,188,170,0.55)");
     cx.fillStyle = stem;
     cx.beginPath();
     cx.moveTo(x - stemW * 0.5, y);
-    cx.quadraticCurveTo(x - stemW * 0.34, y - rise * 0.6, x - stemW * 0.42, y - rise);
-    cx.lineTo(x + stemW * 0.42, y - rise);
-    cx.quadraticCurveTo(x + stemW * 0.34, y - rise * 0.6, x + stemW * 0.5, y);
+    cx.quadraticCurveTo(x - stemW * 0.3, y - rise * 0.62, x - stemW * 0.44, y - rise);
+    cx.lineTo(x + stemW * 0.44, y - rise);
+    cx.quadraticCurveTo(x + stemW * 0.3, y - rise * 0.62, x + stemW * 0.5, y);
     cx.closePath(); cx.fill();
     // The cap: one billow in Painted, a stack of them in Cinematic. Painted is
     // an illustration and reads better as a clean silhouette.
     const capY = y - rise;
-    const capW = reach * (0.5 + ce * 1.15) * (b.thermo ? 1.3 : 1);
-    const billows = volumetric ? 5 : 1;
+    const capW = reach * (0.7 + ce * 1.5) * punch;
+    // One wide, soft ellipse under the stack: without it six billows read as
+    // six balls in a row rather than one cloud.
+    const base = cx.createRadialGradient(x, capY + capW * 0.05, 0,
+                                         x, capY + capW * 0.05, capW * 0.95);
+    base.addColorStop(0, `rgba(206,190,164,${(0.8 * fade).toFixed(3)})`);
+    base.addColorStop(0.62, `rgba(158,144,122,${(0.6 * fade).toFixed(3)})`);
+    base.addColorStop(1, "rgba(96,86,74,0)");
+    cx.globalAlpha = 1;
+    cx.fillStyle = base;
+    cx.beginPath();
+    cx.ellipse(x, capY + capW * 0.05, capW * 0.95, capW * 0.42, 0, 0, 7);
+    cx.fill();
+    const billows = volumetric ? 6 : 1;
     for (let n = 0; n < billows; n++) {
       const t = billows === 1 ? 0.5 : n / (billows - 1);
-      const bx = x + (t - 0.5) * capW * 1.1;
-      const by = capY + Math.sin(t * 3.14) * -capW * 0.16 + capW * 0.06;
-      const br = capW * (0.42 - Math.abs(t - 0.5) * 0.3);
-      const cap = cx.createRadialGradient(bx, by - br * 0.3, 0, bx, by, br);
-      cap.addColorStop(0, `rgba(232,214,184,${(0.62 * fade).toFixed(3)})`);
-      cap.addColorStop(0.6, `rgba(150,138,118,${(0.5 * fade).toFixed(3)})`);
-      cap.addColorStop(1, "rgba(110,102,90,0)");
+      const bx = x + (t - 0.5) * capW * 1.15;
+      const by = capY + Math.sin(t * 3.14) * -capW * 0.2 + capW * 0.07;
+      const br = capW * (0.5 - Math.abs(t - 0.5) * 0.32);
+      const cap = cx.createRadialGradient(bx, by - br * 0.34, 0, bx, by, br);
+      cap.addColorStop(0, `rgba(246,232,204,${(0.95 * fade).toFixed(3)})`);
+      cap.addColorStop(0.55, `rgba(176,160,134,${(0.85 * fade).toFixed(3)})`);
+      cap.addColorStop(1, "rgba(96,86,74,0)");
       cx.globalAlpha = 1;
       cx.fillStyle = cap;
-      cx.beginPath(); cx.ellipse(bx, by, br, br * 0.78, 0, 0, 7); cx.fill();
+      cx.beginPath(); cx.ellipse(bx, by, br, br * 0.8, 0, 0, 7); cx.fill();
     }
-    // Heat still glowing under the cap while it is young.
-    if (ce < 0.4) {
-      cx.globalAlpha = (1 - ce / 0.4) * 0.5;
-      cx.fillStyle = "#ff9b3c";
+    // The cap's underside, lit from the fire still burning under it.
+    if (ce < 0.55) {
+      cx.globalAlpha = (1 - ce / 0.55) * 0.85;
+      const heat = cx.createRadialGradient(x, capY + capW * 0.16, 0,
+                                           x, capY + capW * 0.16, capW * 0.62);
+      heat.addColorStop(0, "rgba(255,176,72,0.95)");
+      heat.addColorStop(1, "rgba(255,120,32,0)");
+      cx.fillStyle = heat;
       cx.beginPath();
-      cx.ellipse(x, capY + capW * 0.1, capW * 0.3, capW * 0.16, 0, 0, 7);
+      cx.ellipse(x, capY + capW * 0.16, capW * 0.62, capW * 0.3, 0, 0, 7);
       cx.fill();
     }
   }
@@ -9315,15 +9375,15 @@ function drawStrategicBlast(b, x, y, reach, e, ee) {
   const fade = 1 - e;
   // The disk the device denied, hatched rather than filled so the terrain and
   // the borders under it stay readable.
-  cx.globalAlpha = 0.3 * fade + 0.08;
+  cx.globalAlpha = 0.55 * fade + 0.12;
   cx.strokeStyle = "#ff8b3d";
-  cx.lineWidth = 1.1;
+  cx.lineWidth = 1.6;
   cx.beginPath();
   cx.ellipse(x, y, reach, reach * YS, 0, 0, 7);
   cx.stroke();
   cx.save();
   cx.beginPath(); cx.ellipse(x, y, reach, reach * YS, 0, 0, 7); cx.clip();
-  cx.globalAlpha = 0.22 * fade + 0.06;
+  cx.globalAlpha = 0.34 * fade + 0.1;
   for (let h = -reach; h <= reach; h += 7) {
     cx.beginPath();
     cx.moveTo(x + h - reach, y - reach * YS);
@@ -9332,61 +9392,77 @@ function drawStrategicBlast(b, x, y, reach, e, ee) {
   }
   cx.restore();
   // Two hard wave fronts. A diagram wants edges, not gradients.
-  for (const [delay, alpha] of [[0, 1], [0.12, 0.55]]) {
+  for (const [delay, alpha] of [[0, 1], [0.12, 0.6]]) {
     const re = (e - delay) / (0.6 - delay);
     if (re <= 0 || re >= 1) continue;
-    const rr = reach * (0.1 + (1 - (1 - re) * (1 - re)) * 1.7);
+    const rr = reach * (0.1 + (1 - (1 - re) * (1 - re)) * 1.8);
     cx.globalAlpha = alpha * (1 - re);
     cx.strokeStyle = "#ffd35e";
-    cx.lineWidth = 2.2 * (1 - re) + 0.8;
+    cx.lineWidth = 3.2 * (1 - re) + 1;
     cx.beginPath(); cx.ellipse(x, y, rr, rr * YS, 0, 0, 7); cx.stroke();
   }
   // A hot pip at ground zero for the first beat, so the tile itself is not
   // ambiguous once the rings have travelled off it.
-  if (e < 0.3) {
-    cx.globalAlpha = 1 - e / 0.3;
+  if (e < 0.34) {
+    const pe = e / 0.34;
+    cx.globalAlpha = 1 - pe;
     cx.fillStyle = "#fff6e2";
-    cx.beginPath(); cx.ellipse(x, y, reach * 0.2, reach * 0.2 * YS, 0, 0, 7); cx.fill();
+    cx.beginPath();
+    cx.ellipse(x, y, reach * (0.24 + pe * 0.2), reach * (0.24 + pe * 0.2) * YS, 0, 0, 7);
+    cx.fill();
   }
   // The symbol, rising clear of the disk and holding for most of the animation:
-  // on a flat map this is what says "nuclear" rather than "a big battle".
-  const lift = 10 + ee * 24;
+  // on a flat map this is what says "nuclear" rather than "a big battle". It
+  // starts above the city nameplate rather than climbing through it — struck
+  // cities are exactly the tiles that have one.
+  const lift = 52 + ee * 34;
   cx.globalAlpha = e < 0.75 ? 1 : Math.max(0, (1 - e) / 0.25);
-  cx.font = `bold ${Math.round(15 + reach * 0.16)}px sans-serif`;
+  cx.font = `bold ${Math.round(18 + reach * 0.2)}px sans-serif`;
   cx.textAlign = "center";
-  cx.lineWidth = 3.4;
+  cx.lineWidth = 4;
   cx.strokeStyle = "#170d05";
-  cx.strokeText("☢", x, y - lift);
+  cx.strokeText("\u2622", x, y - lift);
   cx.fillStyle = b.thermo ? "#ff7a4a" : "#ffcf5a";
-  cx.fillText("☢", x, y - lift);
+  cx.fillText("\u2622", x, y - lift);
   cx.globalAlpha = 1;
 }
-// Screen space. A device is the only thing that can white out the whole frame,
-// and the frame coming back through an amber haze is what sells the scale of it.
-// Strategic gets a fraction of it: a command map should not be blinded.
+// Screen space, and last of all. A device is the only thing that can wash out
+// the frame itself: a hard white veil for the instant of the flash, then a bloom
+// sitting on the fireball rather than a wash over the whole picture — a
+// full-frame tint flattens the map instead of making the blast stand out of it.
+// Strategic gets a fraction of it; a command map should not be blinded.
 function drawNuclearFlash(now) {
   if (!anim.blasts.length) return;
-  let veil = 0, haze = 0;
+  const scale = MODE.fx === 0 ? 0.25 : 1;
+  let veil = 0;
+  const blooms = [];
   for (const b of anim.blasts) {
     const e = (now - b.t0) / b.dur;
     if (e < 0 || e >= 1) continue;
-    const punch = b.thermo ? 1 : 0.8;
-    if (e < 0.16) veil = Math.max(veil, (1 - e / 0.16) * punch);
-    if (e < 0.7) haze = Math.max(haze, (1 - e / 0.7) * punch);
+    const punch = b.thermo ? 1 : 0.82;
+    if (e < 0.13) veil = Math.max(veil, (1 - e / 0.13) * punch);
+    if (e < 0.62 && b.screen) {
+      blooms.push([b.screen, (1 - e / 0.62) * punch,
+                   (b.screenScale || 1) * S * SQ3 * (b.radius + 0.5)]);
+    }
   }
-  const scale = MODE.fx === 0 ? 0.22 : 1;
-  if (veil <= 0.001 && haze <= 0.001) return;
+  if (veil <= 0.002 && !blooms.length) return;
   const W = cv.width, H = cv.height;
   cx.save();
   cx.setTransform(1, 0, 0, 1, 0, 0);
-  if (haze > 0) {
-    cx.globalAlpha = 0.2 * haze * scale;
-    cx.fillStyle = "#ff9a3c";
+  for (const [[sx, sy], strength, radius] of blooms) {
+    const r = Math.max(60, radius * (2.6 + (1 - strength) * 3.4));
+    const glow = cx.createRadialGradient(sx, sy, 0, sx, sy, r);
+    glow.addColorStop(0, `rgba(255,226,168,${(0.5 * strength * scale).toFixed(3)})`);
+    glow.addColorStop(0.45, `rgba(255,152,58,${(0.24 * strength * scale).toFixed(3)})`);
+    glow.addColorStop(1, "rgba(255,120,40,0)");
+    cx.globalAlpha = 1;
+    cx.fillStyle = glow;
     cx.fillRect(0, 0, W, H);
   }
   if (veil > 0) {
-    cx.globalAlpha = Math.min(1, 0.82 * veil * veil * scale);
-    cx.fillStyle = "#fffaf0";
+    cx.globalAlpha = Math.min(1, 0.95 * veil * veil * scale);
+    cx.fillStyle = "#fffdf6";
     cx.fillRect(0, 0, W, H);
   }
   cx.restore();
