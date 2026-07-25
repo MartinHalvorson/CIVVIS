@@ -2204,9 +2204,9 @@
       <div class="utility-group">
         <div class="view-row"><span>Display</span>
           <select id="viewsel" aria-label="Map style">
-            <option value="strategic">Strategic · flat and fast</option>
-            <option value="balanced">Painted · illustrated 2D</option>
-            <option value="cinematic">Cinematic · dimensional 3D</option>
+            <option value="strategic">Strategic</option>
+            <option value="balanced">Painted 2D</option>
+            <option value="cinematic">Cinematic 3D</option>
           </select>
         </div>
         <div class="observer-settings" id="observer-settings">
@@ -6433,7 +6433,8 @@ function drawFeatureSprite(t, x, y) {
     // neighboring crowns interlock inside the union of woodland faces; the
     // cluster clip still stops every crown at the actual forest boundary.
     let knit = 1;
-    if (WOODLAND.has(t.feature)) {
+    const woodland = WOODLAND.has(t.feature);
+    if (woodland) {
       let n = 0;
       for (let i = 0; i < 6; i++) {
         const q = nbrTile(t.pos, DIRS[i]);
@@ -6443,8 +6444,16 @@ function drawFeatureSprite(t, x, y) {
     }
     const footprint = blendedTileFootprint(t, x, y, neighbor =>
       featureBlendKind(neighbor.feature) === baseFeature);
+    // Painted 2D is the one view that still reaches this atlas for woods, and
+    // it was spinning, mirroring, drifting and rescaling the same photograph
+    // per tile — so a wood was a different wood on every hex, which is the
+    // thing the strategic and cinematic stands were made to stop doing. A wood
+    // is one wood here too. `knit` stays: it is neighbour count, not noise, and
+    // it is what lets a dense forest close over its own boundaries.
     drawAtlasFeatureCell(FEATURE_ATLAS, 4, 1, [baseCol, 0], t, x, y,
-      {scale: knit, width:2.12, height:2.04, cropY:0.5, footprint, drift:0.13,
+      {scale: knit, width:2.12, height:2.04, cropY:0.5, footprint,
+       drift: woodland ? 0 : 0.13,
+       rotate: !woodland, flip: !woodland, vary: !woodland,
        alpha: burnt ? 0.48 : (baseFeature === "forest" || baseFeature === "jungle" ? 0.96 : 0.94)});
     return true;
   }
@@ -10275,8 +10284,10 @@ function draw() {
       // middle of the face is where relief belongs: it is the ground the rest
       // of the tile stands on, and a wood on a hill is lifted onto it rather
       // than drawn through it.
+      // Two fifths as tall as they were, and the same width: relief the tile
+      // wears rather than domes standing on it.
       for (const [hx, hy, hw2, hh2] of [
-        [-8, 2, 12, 7.5], [7, -5, 11, 6.8], [1, 5, 13.5, 8.2]]) {
+        [-8, 2, 12, 3], [7, -5, 11, 2.7], [1, 5, 13.5, 3.3]]) {
         cx.fillStyle = "rgba(22,15,6,.28)";               // cast shadow
         cx.beginPath(); cx.ellipse(x + hx, y + hy + 2.6, hw2, hh2, 0, Math.PI, 0);
         cx.fill();
@@ -10292,11 +10303,16 @@ function draw() {
         cx.stroke();
       }
     } else if (t.hills && !beau) {
-      // Low on the face for the same reason the cinematic mounds are: the
-      // middle of a tile belongs to whatever the tile is carrying.
+      // Centred, and low: two half-circles stood up like croquet hoops and
+      // fought every other mark the tile carries for the middle of the face.
+      // At two fifths of the height they are swells in the ground — the same
+      // width, so hill country still reads as hill country from across the
+      // map, but nothing has to be drawn around them.
       cx.strokeStyle = "#00000066"; cx.lineWidth = 2.4;
-      cx.beginPath(); cx.arc(x - 7, y + 1, 6.5, Math.PI, 0);
-      cx.arc(x + 6, y + 1, 6.5, Math.PI, 0); cx.stroke();
+      cx.beginPath();
+      cx.ellipse(x - 7, y + 3, 6.5, 2.6, 0, Math.PI, 0);
+      cx.ellipse(x + 6, y + 3, 6.5, 2.6, 0, Math.PI, 0);
+      cx.stroke();
     }
     if (t.terrain === "desert" && !t.feature && beau) {
       // Dune ridges: light crest over shadow, placed and swept from the tile
