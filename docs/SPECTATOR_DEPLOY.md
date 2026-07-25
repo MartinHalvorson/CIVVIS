@@ -91,14 +91,40 @@ exhibition down to their own cadence. A viewer that stops asking is dropped
 after a few seconds and costs the unattended exhibition exactly one turn's
 delay.
 
+**Every viewer is owed every turn, and each is waited for on its own.** Two tabs
+on one exhibition used to take alternate turns: the stepper released a turn as
+soon as either had been handed it, so each saw half the game — and the audit,
+reading the same single cursor, called it perfect, because between them they had
+seen it all. A page names itself with `?viewer=<id>` and gets a seat of its own.
+The cost is that a turn now waits for the slowest tab watching, which is the
+promise working rather than failing.
+
+**A turn reaches the glass, not just the socket.** The page draws at most one
+turn per animation frame. Two turns drawn inside one display refresh are
+composited into one, so a turn drawn faster than the screen can show it is still
+a turn nobody saw. Running on the display's clock also removed the fixed 100ms
+between polls, which was a ceiling of ten turns a second however fast the world
+could be played.
+
+**The map is sent as a patch.** A page says which tile array it is holding
+(`&have=<world>:<turn>`) and is sent only the tiles that changed — about a dozen
+of 2252 on a standard turn, so a poll costs ~157 KB instead of ~1.36 MB, an 89%
+saving. Saying so is also what parks the poll until there *is* a next turn, so a
+finished turn is written to a socket the moment it exists rather than at the
+page's next tick. A page that reports no baseline, including every health check,
+is answered immediately with the whole map.
+
 That report is also what makes the promise auditable while it runs. `/status`
 carries:
 
-- `frames_missed` — turns simulated that no attached viewer ever drew. **Zero**
-  on a healthy exhibition.
+- `frames_missed` — turns simulated that some attached viewer never drew. **Zero**
+  on a healthy exhibition, and kept for the server's whole run rather than reset
+  when the tab that missed them closes.
 - `frames_painted` — the last turn a viewer reported drawing, or `null` when
   nobody is watching. Zero misses with nothing painted means nobody was there,
   which is not the same as the promise being kept.
+- `viewers` — how many pages that promise is being kept to, and so how many
+  paints a turn costs before the next one starts.
 
 ```bash
 python3 tools/civvis_frames.py watch --port 8766          # read a live exhibition
@@ -112,6 +138,12 @@ fast synthetic viewer proves much less than the browser it stands in for.
 A viewer slower than the pace now sets the pace, by design — the alternative is
 turns nobody sees. A full-size map costs the page about 55ms a frame, well
 inside the 1s Blitz budget, so a foreground tab does not slow the exhibition.
+
+A page that is not being presented — a backgrounded tab, a headless browser with
+nobody watching — gets no animation frames, so it stops asking, is dropped after
+the staleness window, and the exhibition runs flat out unattended. It picks up
+again by itself when the tab comes back. That is the intended behaviour: a page
+that cannot put a frame on a screen should not be holding a turn open waiting to.
 
 ## Tuning
 
