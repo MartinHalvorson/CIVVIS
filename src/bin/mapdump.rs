@@ -49,6 +49,7 @@ fn main() {
         Some("inland_sea") => MapScript::InlandSea,
         Some("lakes") => MapScript::Lakes,
         Some("planet") => MapScript::Planet,
+        Some("true_start_earth") => MapScript::TrueStartEarth,
         _ => MapScript::Pangaea,
     };
     let rules = Rules::embedded();
