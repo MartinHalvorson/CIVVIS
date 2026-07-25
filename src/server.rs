@@ -2923,7 +2923,19 @@ mod tests {
             .expect("end of victory tracker renderer")
             .0;
         assert!(victory_hud.contains("victoryMetric(player, track.id)"));
-        assert!(victory_hud.contains("<strong>${state.turn}</strong>"));
+
+        // The turn plate is the player HUD's left cell, not the tracker's, so
+        // the turn count is rendered by the plate and must not linger in the
+        // tracker's markup.
+        let turn_plate = EMBEDDED_INDEX
+            .split_once("function hudTurnPlate() {")
+            .expect("turn plate renderer")
+            .1
+            .split_once("\nfunction playerHudOverview()")
+            .expect("end of turn plate renderer")
+            .0;
+        assert!(turn_plate.contains("<strong>${state.turn}</strong>"));
+        assert!(!victory_hud.contains("<strong>${state.turn}</strong>"));
 
         let player_hud = EMBEDDED_INDEX
             .split_once("function drawPlayerHud() {")
@@ -2933,6 +2945,7 @@ mod tests {
             .expect("end of player HUD renderer")
             .0;
         assert!(player_hud.contains("const overview = playerHudOverview();"));
+        assert!(player_hud.contains("hudTurnPlate()"));
         assert!(player_hud.contains("state.players"));
         assert!(player_hud.contains("playerHudStats(p,"));
         assert!(player_hud.contains("victoryHud.innerHTML = overview;"));
@@ -3420,6 +3433,26 @@ mod tests {
                 "map overlay {overlay} should have a close control"
             );
         }
+        // Any civilization in the standings can be locked so its row stays in
+        // view while the rest of the table scrolls past it. The choice belongs
+        // to the viewer, is keyed by civilization so it survives a new game,
+        // and defaults to whichever civilization the viewer is.
+        assert!(EMBEDDED_INDEX.contains("civvis-hud-locked-civs-v1"));
+        assert!(EMBEDDED_INDEX.contains("function toggleCivLock(id)"));
+        assert!(EMBEDDED_INDEX.contains("function viewerCivName()"));
+        assert!(EMBEDDED_INDEX.contains("function lockedCivs()"));
+        assert!(EMBEDDED_INDEX.contains("function syncPlayerLockPins()"));
+        assert!(EMBEDDED_INDEX.contains("data-hud-action=\"lock\""));
+        assert!(EMBEDDED_INDEX.contains("if (target.dataset.hudAction === \"lock\") toggleCivLock(id);"));
+        // A locked row holds at whichever edge it was about to leave, so it
+        // needs both offsets, staggered by one row per row held above it.
+        assert!(EMBEDDED_INDEX.contains("top: calc(var(--pin-head, 0) * var(--hud-row-pitch));"));
+        assert!(EMBEDDED_INDEX.contains("bottom: calc(var(--pin-tail, 0) * var(--hud-row-pitch));"));
+        // The standings never take more than a quarter of the screen; rows past
+        // that scroll at a fixed height rather than being squeezed to fit.
+        assert!(EMBEDDED_INDEX.contains("--player-hud-max-height: 25vh;"));
+        assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.25"));
+        assert!(EMBEDDED_INDEX.contains("grid-auto-rows: var(--hud-row-height);"));
         assert!(EMBEDDED_INDEX.contains("function dismissOverlay(name, source)"));
         assert!(EMBEDDED_INDEX.contains("addEventListener(\"pointerdown\", event =>"));
         assert!(EMBEDDED_INDEX.contains("overlay-return-flash .24s ease-in-out 3"));
@@ -3593,9 +3626,10 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("cam.y = clampCameraY(cam.y)"));
         // Default camera moves compose inside the rectangle the chrome leaves
         // the map, measured rather than guessed: below whichever top
-        // instrument hangs lower, down to the real bottom edge, right of the
-        // command deck, and left of the world map's own midline. Every
-        // instrument is draggable, so each edge comes off the live boxes.
+        // instrument hangs lower, down to the real bottom edge, right of both
+        // the command deck and the world map's own midline, and left of the
+        // victory rail. Every instrument is draggable, so each edge comes off
+        // the live boxes.
         assert!(EMBEDDED_INDEX.contains("function mapOverlayVisible(name)"));
         assert!(EMBEDDED_INDEX.contains(
             "document.body.classList.contains(\"sidebar-hidden\")"
@@ -3603,8 +3637,14 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function mapWidgetBox(name, areaRect)"));
         assert!(EMBEDDED_INDEX.contains("function mapFocusBounds()"));
         assert!(EMBEDDED_INDEX.contains("function mapFocusPoint()"));
-        assert!(EMBEDDED_INDEX.contains("if (minimap) right = (minimap.left + minimap.right) / 2;"));
-        assert!(EMBEDDED_INDEX.contains("if (box) top = Math.max(top, box.bottom);"));
+        // The world map sits in the lower-left corner, so it takes width off the
+        // left and gives up only half of it. The victory rail is not a corner
+        // widget — it stands the whole right edge — so the band ends where the
+        // rail begins, and the standings alone hang over the top.
+        assert!(EMBEDDED_INDEX
+            .contains("if (minimap) left = Math.max(left, (minimap.left + minimap.right) / 2);"));
+        assert!(EMBEDDED_INDEX.contains("if (victory) right = Math.min(right, victory.left);"));
+        assert!(EMBEDDED_INDEX.contains("if (players) top = Math.max(top, players.bottom);"));
         assert!(EMBEDDED_INDEX.contains(
             "return {x:(bounds.left + bounds.right) / 2, y:(bounds.top + bounds.bottom) / 2};"
         ));
