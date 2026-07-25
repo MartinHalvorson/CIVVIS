@@ -387,8 +387,23 @@ class PolicyTests(unittest.TestCase):
         self.assertNotIn("dismissal_restrictions", reviews)
         self.assertNotIn("required_signatures", payload)
         self.assertEqual(reviews["required_approving_review_count"], 0)
-        self.assertTrue(payload["required_status_checks"]["strict"])
         self.assertFalse(payload["allow_force_pushes"])
+
+    def test_personal_repository_protection_cannot_hard_block_main(self):
+        """The gate must fail open for admins and must not serialise the fleet.
+
+        `strict` would invalidate every other open PR each time one lands, and
+        `enforce_admins` left main unmergeable during the 2026-07-25 Actions
+        billing outage, when no job could start at all. The required contexts
+        still gate every PR; these two only decide who waits on whom.
+        """
+        payload = collab.personal_repository_protection_payload()
+        self.assertFalse(payload["required_status_checks"]["strict"])
+        self.assertFalse(payload["enforce_admins"])
+        self.assertEqual(
+            payload["required_status_checks"]["contexts"],
+            ["cargo-test", "collaboration-policy"],
+        )
 
 
 class ShipTests(unittest.TestCase):

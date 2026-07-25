@@ -5773,6 +5773,9 @@ mod trade_deal_tests {
 
     fn trade_game() -> Game {
         let mut game = Game::new_full(2, 24, 16, 7711, 120, 0, false);
+        // Two capitals dropped on opposite ends of a map have not met, and
+        // there is nothing to trade until they have.
+        game.record_contact(0, 1);
         for pid in 0..2 {
             let settler = game
                 .player_unit_ids(pid)
@@ -6513,6 +6516,9 @@ mod espionage_runtime_tests {
 
     fn game_with_spy_cities(seed: u64) -> (Game, u32, u32, Pos) {
         let mut game = Game::new_full(2, 24, 16, seed, 250, 0, false);
+        // Nobody spies on, or ransoms an operative back from, an empire they
+        // have never met.
+        game.record_contact(0, 1);
         let mut cities = Vec::new();
         for pid in 0..2 {
             let settler = game
@@ -7935,17 +7941,23 @@ mod maintenance_tests {
         let amenity_before = game.city_amenity_surplus(&game.cities[&city]);
         let mut twenty_deficit = game.clone();
 
+        // The Amenity line is 0 and the disband line is -10, so a shallow
+        // deficit costs an Amenity everywhere and no unit at all.
         game.settle_gold_budget(0, -9.0);
         assert_eq!(game.players[0].gold, 0.0);
         assert_eq!(game.players[0].gold_per_turn, -9.0);
-        assert_eq!(game.players[0].bankruptcy_amenity_penalty, 0);
-        assert_eq!(game.player_unit_ids(0).len(), 3);
-
-        game.settle_gold_budget(0, -10.0);
         assert_eq!(game.players[0].bankruptcy_amenity_penalty, 1);
         assert_eq!(
             game.city_amenity_surplus(&game.cities[&city]),
             amenity_before - 1
+        );
+        assert_eq!(game.player_unit_ids(0).len(), 3);
+
+        game.settle_gold_budget(0, -10.0);
+        assert_eq!(game.players[0].bankruptcy_amenity_penalty, 2);
+        assert_eq!(
+            game.city_amenity_surplus(&game.cities[&city]),
+            amenity_before - 2
         );
         assert!(game.units.contains_key(&archer));
         assert!(game.units.contains_key(&swordsman));
@@ -7955,7 +7967,7 @@ mod maintenance_tests {
         );
 
         twenty_deficit.settle_gold_budget(0, -20.0);
-        assert_eq!(twenty_deficit.players[0].bankruptcy_amenity_penalty, 2);
+        assert_eq!(twenty_deficit.players[0].bankruptcy_amenity_penalty, 3);
         assert_eq!(twenty_deficit.player_unit_ids(0), vec![archer]);
 
         let encoded = serde_json::to_value(&game).unwrap();
@@ -7974,7 +7986,7 @@ mod maintenance_tests {
 
         let mut restored: Game = serde_json::from_value(encoded).unwrap();
         assert_eq!(restored.players[0].gold_per_turn, -10.0);
-        assert_eq!(restored.players[0].bankruptcy_amenity_penalty, 1);
+        assert_eq!(restored.players[0].bankruptcy_amenity_penalty, 2);
         restored.settle_gold_budget(0, 4.0);
         assert_eq!(restored.players[0].gold, 4.0);
         assert_eq!(restored.players[0].gold_per_turn, 4.0);
@@ -8016,8 +8028,9 @@ mod maintenance_tests {
         game.begin_turn(0);
         assert_eq!(game.players[0].gold, 0.0);
         assert_eq!(game.players[0].gold_per_turn, -25.0);
-        assert_eq!(game.players[0].bankruptcy_amenity_penalty, 2);
-        // one maintained unit disbands per -10 quantum: both robots go
+        // Three Amenities from the 0 line at -10 steps, two disbands from the
+        // -10 line at the same step: both robots go.
+        assert_eq!(game.players[0].bankruptcy_amenity_penalty, 3);
         assert!(!game.units.contains_key(&robot));
         assert!(!game.units.contains_key(&escort));
 
@@ -8025,7 +8038,7 @@ mod maintenance_tests {
         assert_eq!(observed["me"]["gold_per_turn"], serde_json::json!(-25.0));
         assert_eq!(
             observed["me"]["bankruptcy_amenity_penalty"],
-            serde_json::json!(2)
+            serde_json::json!(3)
         );
         assert_eq!(
             observed["players"][0]["gold_per_turn"],
@@ -10498,6 +10511,20 @@ pub struct QueryCache {
     lux_alloc: std::cell::RefCell<Option<BTreeMap<usize, BTreeMap<u32, i64>>>>,
     lux_names: std::cell::RefCell<Option<BTreeMap<usize, BTreeSet<String>>>>,
     housed_works: std::cell::RefCell<Option<BTreeMap<usize, BTreeMap<u32, BTreeMap<String, usize>>>>>,
+    // A city-state's patron, which is a poll of every major's effective envoy
+    // count. Deciding whether a step crosses a hostile border asks it, so a
+    // route search asks it of the same city-state at every tile it considers.
+    suzerain: std::cell::RefCell<Option<BTreeMap<usize, Option<usize>>>>,
+    // Every Great Work slot the empire owns, and whether one more work of a
+    // kind would find a home. Deciding what a Builder or an Archaeologist may
+    // do on a tile asks the second of these, and the answer is the same at
+    // every tile.
+    gw_slots: std::cell::RefCell<Option<BTreeMap<usize, Vec<(u32, String)>>>>,
+    gw_housing: std::cell::RefCell<Option<BTreeMap<(usize, String, usize), bool>>>,
+    // What every regional building in the empire sends this city. Both its
+    // yields and its Amenities are read through it, so a single valuation of
+    // one city walks the whole empire's buildings twice.
+    regional: std::cell::RefCell<Option<BTreeMap<u32, (Yields, f64)>>>,
 }
 
 impl Clone for QueryCache {
@@ -10525,6 +10552,10 @@ impl Drop for QueryMemo<'_> {
             *self.game.query_memo.lux_alloc.borrow_mut() = None;
             *self.game.query_memo.lux_names.borrow_mut() = None;
             *self.game.query_memo.housed_works.borrow_mut() = None;
+            *self.game.query_memo.suzerain.borrow_mut() = None;
+            *self.game.query_memo.gw_slots.borrow_mut() = None;
+            *self.game.query_memo.gw_housing.borrow_mut() = None;
+            *self.game.query_memo.regional.borrow_mut() = None;
         }
     }
 }
@@ -11630,6 +11661,13 @@ pub struct Player {
     /// Last public City Center state observed by this player.
     #[serde(default)]
     pub remembered_cities: BTreeMap<u32, RememberedCity>,
+    /// Every seat this civilization has made contact with, and never forgets.
+    /// A world is full of empires nobody has met yet; until a unit or a city
+    /// of theirs has actually been seen, they are not on anybody's ledger,
+    /// which is why this is knowledge held per seat rather than a fact about
+    /// the world. Barbarians are nobody's acquaintance and are left out.
+    #[serde(default)]
+    pub met: BTreeSet<usize>,
     pub alive: bool,
     pub is_minor: bool,
     #[serde(default)]
@@ -11800,6 +11838,7 @@ impl Player {
             explored: BTreeSet::new(),
             remembered_tiles: TileMemory::default(),
             remembered_cities: BTreeMap::new(),
+            met: BTreeSet::new(),
             alive: true,
             is_minor,
             is_barbarian: false,
@@ -14253,6 +14292,52 @@ impl Game {
             .filter(|c| c.owner == pid)
             .map(|c| c.id)
             .collect()
+    }
+
+    /// Whether `viewer` has made contact with `other` and may therefore be
+    /// told anything at all about them.
+    ///
+    /// Civilization VI keeps an unmet empire off every panel it would
+    /// otherwise appear on — the diplomacy ribbon, the victory tracker, the
+    /// score list — and this is the one question all of those ask. A seat
+    /// always knows itself and its pre-game team; barbarians and Free Cities
+    /// are not diplomatic powers and are never withheld.
+    pub fn has_met(&self, viewer: usize, other: usize) -> bool {
+        if viewer == other || self.same_team(viewer, other) {
+            return true;
+        }
+        match self.players.get(other) {
+            None => true,
+            Some(player) if player.is_barbarian || player.is_free_city => true,
+            Some(_) => self
+                .players
+                .get(viewer)
+                .is_some_and(|player| player.met.contains(&other)),
+        }
+    }
+
+    /// Introduce two seats to each other, permanently and in both directions.
+    ///
+    /// Meeting is mutual: a scout that walks into sight of a border city has
+    /// been seen doing it. Recording both halves here means contact does not
+    /// depend on whose visibility happens to be refreshed first.
+    pub(crate) fn record_contact(&mut self, first: usize, second: usize) {
+        if first == second {
+            return;
+        }
+        let diplomatic = |player: Option<&Player>| {
+            player.is_some_and(|player| !player.is_barbarian && !player.is_free_city)
+        };
+        if !diplomatic(self.players.get(first)) || !diplomatic(self.players.get(second)) {
+            return;
+        }
+        // Reaching for a seat mutably copies it, so ask before taking.
+        if !self.players[first].met.contains(&second) {
+            self.players[first].met.insert(second);
+        }
+        if !self.players[second].met.contains(&first) {
+            self.players[second].met.insert(first);
+        }
     }
 
     /// Pre-game teams are permanent. `None` means an ordinary free-for-all
@@ -19026,6 +19111,19 @@ impl Game {
 
     /// Suzerain: at least 3 envoys and strictly more than every other major.
     pub fn suzerain_of(&self, minor: usize) -> Option<usize> {
+        if let Some(memo) = self.query_memo.suzerain.borrow().as_ref() {
+            if let Some(suzerain) = memo.get(&minor) {
+                return *suzerain;
+            }
+        }
+        let suzerain = self.suzerain_of_uncached(minor);
+        if let Some(memo) = self.query_memo.suzerain.borrow_mut().as_mut() {
+            memo.insert(minor, suzerain);
+        }
+        suzerain
+    }
+
+    fn suzerain_of_uncached(&self, minor: usize) -> Option<usize> {
         let mut best: Option<(i64, usize)> = None;
         let mut tied = false;
         for p in self.players.iter().filter(|p| !p.is_minor && p.alive) {
@@ -21585,6 +21683,19 @@ impl Game {
 
     /// Non-stacking regional building yields and Amenities reaching a city.
     fn regional_building_effects(&self, city: &City) -> (Yields, f64) {
+        if let Some(memo) = self.query_memo.regional.borrow().as_ref() {
+            if let Some(value) = memo.get(&city.id) {
+                return *value;
+            }
+        }
+        let value = self.regional_building_effects_uncached(city);
+        if let Some(memo) = self.query_memo.regional.borrow_mut().as_mut() {
+            memo.insert(city.id, value);
+        }
+        value
+    }
+
+    fn regional_building_effects_uncached(&self, city: &City) -> (Yields, f64) {
         let mut groups: BTreeMap<String, (Yields, f64)> = BTreeMap::new();
         let integrate_industry =
             self.governor_effect(city.owner, city.id, "regional_industry_all") > 0.0;
@@ -23158,7 +23269,7 @@ impl Game {
         }
         let mut heights = self.height_field();
         let mut visible = self.player_vision(&mut heights, pid);
-        let height = self.map.tiles[&pos].hills as i32 + self.district_viewpoint_bonus(pos);
+        let height = self.see_from_level(pos);
         visible.union_with(&self.visible_tiles_from(
             &mut heights,
             pos,
@@ -23344,40 +23455,62 @@ impl Game {
         height
     }
 
-    fn sight_height(&self, pos: Pos) -> i32 {
-        let t = &self.map.tiles[&pos];
-        if t.terrain == "mountain"
-            || t.feature.as_ref().is_some_and(|feature| {
-                self.rules
-                    .features
-                    .get(feature)
-                    .is_some_and(|feature| feature.natural_wonder)
-            })
-        {
-            return 3;
+    /// The shipped `Terrains.SightModifier`/`SightThroughModifier`, which carry
+    /// the same value for every terrain in the game database: Mountain 2, Hills
+    /// 1, everything else — including all water — 0. Elevation is a terrain
+    /// property alone; no feature raises the ground a unit stands on.
+    fn terrain_sight_level(tile: &Tile) -> i32 {
+        if tile.terrain == "mountain" {
+            2
+        } else {
+            i32::from(tile.hills)
         }
-        t.hills as i32
-            + matches!(t.feature.as_deref(), Some("forest" | "jungle")) as i32
+    }
+
+    /// How high a viewer standing here looks out from — the shipped
+    /// `SightModifier`, plus this ruleset's City Center/Encampment vantage.
+    fn see_from_level(&self, pos: Pos) -> i32 {
+        let Some(tile) = self.map.get(pos) else {
+            return 0;
+        };
+        Self::terrain_sight_level(tile) + self.district_viewpoint_bonus(pos)
+    }
+
+    /// How high the terrain on a tile stands: the shipped `SightThroughModifier`
+    /// of its terrain plus that of its feature. Woods and Rainforest each add 1,
+    /// so a wooded Hill reaches 2 and stands exactly as tall as a Mountain;
+    /// Mount Everest and Yosemite add 2 more while Crater Lake, the Pantanal and
+    /// the Great Barrier Reef add nothing at all.
+    fn sight_height(&self, pos: Pos) -> i32 {
+        let Some(tile) = self.map.get(pos) else {
+            return 0;
+        };
+        Self::terrain_sight_level(tile)
+            + self.feature_sight_through(tile.feature.as_deref())
             + self.district_viewpoint_bonus(pos)
     }
 
+    /// The same height as cover. Sentry sees through vegetation only: a
+    /// Mountain, a wooded Hill's rock, and a Natural Wonder are unchanged.
     fn blocker_height(&self, pos: Pos, see_through_woods: bool) -> i32 {
-        let tile = &self.map.tiles[&pos];
-        if tile.terrain == "mountain"
-            || tile.feature.as_ref().is_some_and(|feature| {
-                self.rules
-                    .features
-                    .get(feature)
-                    .is_some_and(|feature| feature.natural_wonder)
-            })
-        {
-            return 3;
-        }
-        tile.hills as i32
+        let Some(tile) = self.map.get(pos) else {
+            return 0;
+        };
+        let feature = tile.feature.as_deref();
+        let vegetation = see_through_woods && matches!(feature, Some("forest" | "jungle"));
+        Self::terrain_sight_level(tile)
             + self.district_viewpoint_bonus(pos)
-            + i32::from(
-                !see_through_woods && matches!(tile.feature.as_deref(), Some("forest" | "jungle")),
-            )
+            + if vegetation {
+                0
+            } else {
+                self.feature_sight_through(feature)
+            }
+    }
+
+    fn feature_sight_through(&self, feature: Option<&str>) -> i32 {
+        feature
+            .and_then(|feature| self.rules.features.get(feature))
+            .map_or(0, |feature| feature.sight_through)
     }
 
     /// The nearest unwrapped image of `to`, so a ray across the seam is drawn
@@ -23611,29 +23744,12 @@ impl Game {
         flying: bool,
     ) -> TileBits {
         let mut visible = TileBits::with_capacity(self.map.tiles.len());
-        let search_radius = if flying || radius <= 0 {
-            radius
-        } else {
-            radius + 1
-        };
-        for target in self.wdisk(from, search_radius) {
-            let distance = self.wdist(from, target);
-            if distance <= radius {
-                if flying
-                    || self.tile_has_visibility_line(
-                        heights,
-                        from,
-                        target,
-                        viewer_height,
-                        see_through_woods,
-                    )
-                {
-                    self.mark_visible(&mut visible, target);
-                }
-            } else if !flying
-                && distance == radius + 1
-                && self.sight_height_via(heights, target) > 0
-                && self.tile_has_visibility_line(
+        // Sight range is a hard cap in Civ VI. Elevation decides what a unit can
+        // see *past*, never how far it can see: a Mountain outside a Settler's
+        // three tiles stays dark until something walks close enough to it.
+        for target in self.wdisk(from, radius) {
+            if flying
+                || self.tile_has_visibility_line(
                     heights,
                     from,
                     target,
@@ -23641,8 +23757,6 @@ impl Game {
                     see_through_woods,
                 )
             {
-                // Elevated terrain one tile beyond nominal sight is itself
-                // visible when it rises above the intervening terrain.
                 self.mark_visible(&mut visible, target);
             }
         }
@@ -23669,7 +23783,7 @@ impl Game {
         if distance <= 1 || distance >= 3 {
             return true; // adjacent fire is unconditional; range 3+ lobs shots
         }
-        let attacker_height = self.map.tiles[&from].hills as i32
+        let attacker_height = Self::terrain_sight_level(&self.map.tiles[&from])
             + if unit_in_district {
                 self.district_viewpoint_bonus(from)
             } else {
@@ -23681,8 +23795,7 @@ impl Game {
     fn unit_has_line_of_sight(&self, uid: u32, to: Pos) -> bool {
         let unit = &self.units[&uid];
         if self.promotion_effect(unit, "see_through_woods") > 0.0 && self.wdist(unit.pos, to) == 2 {
-            let attacker_height =
-                self.map.tiles[&unit.pos].hills as i32 + self.district_viewpoint_bonus(unit.pos);
+            let attacker_height = self.see_from_level(unit.pos);
             return self.tile_has_visibility_line(
                 &mut HeightField::none(),
                 unit.pos,
@@ -23881,8 +23994,7 @@ impl Game {
         let sight = self.unit_sight(uid);
         let see_through_woods = self.promotion_effect(unit, "see_through_woods") > 0.0;
         let flying = spec.domain.as_deref() == Some("air");
-        let viewer_height =
-            self.map.tiles[&origin].hills as i32 + self.district_viewpoint_bonus(origin);
+        let viewer_height = self.see_from_level(origin);
         let key = vision_key(&[
             origin.0 as u64,
             origin.1 as u64,
@@ -23970,8 +24082,7 @@ impl Game {
             else {
                 continue;
             };
-            let height =
-                self.map.tiles[&position].hills as i32 + self.district_viewpoint_bonus(position);
+            let height = self.see_from_level(position);
             visible.union_with(&self.visible_tiles_from(
                 heights, position, 3, height, false, false,
             ));
@@ -24088,6 +24199,10 @@ impl Game {
             return;
         }
         let visible = self.player_vision(&mut self.height_field(), pid);
+        // Ahead of the snapshot's early-out rather than inside it: that guard
+        // is keyed on the seat's own memory and the world's cities, so a rival
+        // unit walking into a standing scout's sight would not disturb it.
+        self.record_contacts_in_sight(pid, &visible);
         self.refresh_visibility_snapshot(pid, &visible);
     }
 
@@ -24186,6 +24301,53 @@ impl Game {
         let settled = self.memory_stamp(pid);
         if let Some(slot) = self.remembered_under.get_mut(pid) {
             *slot = (settled, taken);
+        }
+    }
+
+    /// Meet everyone standing in `pid`'s sight.
+    ///
+    /// A city or a unit is what makes an empire meetable; territory alone is
+    /// not, which is why a border can be drawn on the map before its owner is
+    /// anybody you have heard of. The unmet list is built first and the whole
+    /// pass is skipped once it is empty, so a table that has already been
+    /// introduced pays one loop over the seats and nothing else — the common
+    /// case, since this runs behind every action a player takes.
+    fn record_contacts_in_sight(&mut self, pid: usize, visible: &TileBits) {
+        if self
+            .players
+            .get(pid)
+            .is_none_or(|seat| seat.is_barbarian || seat.is_free_city)
+        {
+            return;
+        }
+        let unmet: BTreeSet<usize> = self
+            .players
+            .iter()
+            .filter(|other| other.id != pid && !other.is_barbarian && !other.is_free_city)
+            .filter(|other| !self.players[pid].met.contains(&other.id))
+            .map(|other| other.id)
+            .collect();
+        if unmet.is_empty() {
+            return;
+        }
+        // Cities first: there are two orders of magnitude fewer of them than
+        // units, and a civilization with a city in sight needs no second look.
+        let mut found: BTreeSet<usize> = self
+            .cities
+            .values()
+            .filter(|city| unmet.contains(&city.owner) && self.sees(visible, city.pos))
+            .map(|city| city.owner)
+            .collect();
+        if found.len() < unmet.len() {
+            found.extend(
+                self.units
+                    .values()
+                    .filter(|unit| unmet.contains(&unit.owner) && self.sees(visible, unit.pos))
+                    .map(|unit| unit.owner),
+            );
+        }
+        for other in found {
+            self.record_contact(pid, other);
         }
     }
 
@@ -24681,11 +24843,17 @@ impl Game {
         if !self.unit_can_traverse(uid, pos) {
             return false;
         }
+        // Ask the two field reads that almost always settle it before asking
+        // diplomacy: this walks every unit in the world, once per neighbour a
+        // route search considers, and only a fighter actually flying a patrol
+        // over this very tile can block the step. Deciding a war is far from
+        // free — a city-state's belligerence follows its Suzerain, which is
+        // derived from every major's envoys.
         if self.units.values().any(|other| {
-            other.owner != u.owner
-                && self.is_at_war(u.owner, other.owner)
-                && other.air_patrol
+            other.air_patrol
                 && other.air_patrol_pos == Some(pos)
+                && other.owner != u.owner
+                && self.is_at_war(u.owner, other.owner)
         }) {
             return false;
         }
@@ -27106,6 +27274,10 @@ impl Game {
             *self.query_memo.lux_alloc.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.lux_names.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.housed_works.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.suzerain.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.gw_slots.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.gw_housing.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.regional.borrow_mut() = Some(BTreeMap::new());
         }
         QueryMemo {
             game: self,
@@ -28246,6 +28418,16 @@ impl Game {
     }
 
     fn valid_excavation(&self, pid: usize, pos: Pos) -> Option<String> {
+        self.excavation_at(pid, pos)
+            .filter(|_| self.can_house_additional_great_work(pid, "artifact"))
+    }
+
+    /// The excavation this hex offers, leaving aside whether the empire has
+    /// anywhere to put another Artifact. That last question is about the
+    /// empire, not the hex — it assigns every Great Work the player owns
+    /// across every slot in every city, twice — so a caller sweeping the map
+    /// asks it once rather than at every tile.
+    fn excavation_at(&self, pid: usize, pos: Pos) -> Option<String> {
         let tile = self.map.get(pos)?;
         if tile.flooded
             || tile.submerged
@@ -28254,7 +28436,6 @@ impl Game {
             || tile.district_foundation.is_some()
             || tile.wonder.is_some()
             || self.city_at(pos).is_some()
-            || !self.can_house_additional_great_work(pid, "artifact")
         {
             return None;
         }
@@ -28286,12 +28467,15 @@ impl Game {
     }
 
     pub(crate) fn excavation_sites(&self, pid: usize) -> Vec<(Pos, String)> {
+        if !self.can_house_additional_great_work(pid, "artifact") {
+            return Vec::new();
+        }
         self.map
             .tiles
             .keys()
             .copied()
             .filter_map(|position| {
-                self.valid_excavation(pid, position)
+                self.excavation_at(pid, position)
                     .map(|improvement| (position, improvement))
             })
             .collect()
@@ -29749,6 +29933,10 @@ impl Game {
     }
 
     pub fn producible_items(&self, pid: usize, cid: u32) -> Vec<Item> {
+        // Every unit, building, district and wonder in the ruleset is offered
+        // to the same city in turn, and each offer re-asks that city the same
+        // things.
+        let _memo = self.query_memo();
         let mut items = Vec::new();
         for name in self.rules.units.keys() {
             let it = Item::Unit { unit: name.clone() };
@@ -29844,17 +30032,27 @@ impl Game {
             {
                 continue;
             }
-            let mut sites = self.district_sites(cid, name);
-            sites.sort_by(|a, b| {
-                let foundation_a = self.map.tiles[a].district_foundation.is_some();
-                let foundation_b = self.map.tiles[b].district_foundation.is_some();
-                let ya = self.district_yields(name, *a).total();
-                let yb = self.district_yields(name, *b).total();
-                foundation_b
-                    .cmp(&foundation_a)
-                    .then_with(|| yb.partial_cmp(&ya).unwrap())
-                    .then(a.cmp(b))
+            // Rank the sites on values taken once each. Deriving a site's
+            // yields means walking its neighbours for adjacency, and a
+            // comparator that re-derives both sides pays that for every
+            // comparison in the sort rather than for every site.
+            let mut ranked: Vec<(bool, f64, Pos)> = self
+                .district_sites(cid, name)
+                .into_iter()
+                .map(|site| {
+                    (
+                        self.map.tiles[&site].district_foundation.is_some(),
+                        self.district_yields(name, site).total(),
+                        site,
+                    )
+                })
+                .collect();
+            ranked.sort_by(|a, b| {
+                b.0.cmp(&a.0)
+                    .then_with(|| b.1.partial_cmp(&a.1).unwrap())
+                    .then(a.2.cmp(&b.2))
             });
+            let sites: Vec<Pos> = ranked.into_iter().map(|(_, _, site)| site).collect();
             let mut fresh_sites = 0usize;
             for s in sites {
                 let foundation = self.map.tiles[&s].district_foundation.is_some();
@@ -30042,6 +30240,11 @@ impl Game {
         if self.winner.is_some() || self.current != pid {
             return vec![];
         }
+        // Enumerating what a civilization may do asks the same questions of
+        // the same cities many times over — what each produces, what each is
+        // worth, how content each is. One memo scope over the whole
+        // enumeration answers each of them once.
+        let _memo = self.query_memo();
         let capture_actions = self.pending_city_capture_actions(pid);
         if !capture_actions.is_empty() {
             return capture_actions;
@@ -30726,7 +30929,14 @@ impl Game {
             }
             if p.envoys_free > 0 {
                 for m in &self.players {
-                    if m.is_minor && !m.is_barbarian && m.alive && !self.is_at_war(pid, m.id) {
+                    // An envoy needs somewhere to be sent. A city-state
+                    // nobody has found yet has no court to receive one.
+                    if m.is_minor
+                        && !m.is_barbarian
+                        && m.alive
+                        && self.has_met(pid, m.id)
+                        && !self.is_at_war(pid, m.id)
+                    {
                         acts.push(Action::SendEnvoy { player: m.id });
                     }
                 }
@@ -31037,7 +31247,11 @@ impl Game {
         }
         if !p.is_barbarian {
             for o in &self.players {
-                if o.id != pid && o.alive && !o.is_barbarian {
+                // Diplomacy needs a counterpart. Until the two civilizations
+                // have met there is no embassy to send a demand to, no peace
+                // to sign and nobody to denounce, so none of the acts below
+                // exist against an empire this one has never heard of.
+                if o.id != pid && o.alive && !o.is_barbarian && self.has_met(pid, o.id) {
                     if self.is_at_war(pid, o.id) {
                         // A city-state can be at war only because its
                         // Suzerain is. That derived war must be ended with the
@@ -31200,7 +31414,11 @@ impl Game {
             return true;
         }
         self.units.values().any(|unit| {
-            unit.owner != pid
+            // Standing over the tile is the necessary condition, and it is two
+            // field reads; deciding a war is not. Ask it first, of a scan that
+            // covers every unit in the world.
+            (unit.pos == pos || (unit.air_patrol && unit.air_patrol_pos == Some(pos)))
+                && unit.owner != pid
                 && self.is_at_war(pid, unit.owner)
                 && ((unit.air_patrol
                     && unit.air_patrol_pos == Some(pos)
@@ -31212,10 +31430,10 @@ impl Game {
     fn enemy_ranged_target_at(&self, pid: usize, pos: Pos) -> bool {
         self.enemy_combat_target_at(pid, pos)
             || self.units.values().any(|unit| {
-                unit.owner != pid
-                    && self.is_at_war(pid, unit.owner)
-                    && unit.air_patrol
+                unit.air_patrol
                     && unit.air_patrol_pos == Some(pos)
+                    && unit.owner != pid
+                    && self.is_at_war(pid, unit.owner)
                     && self.rules.units[unit.kind.as_str()].promotion_class == "air_fighter"
             })
     }
@@ -32526,10 +32744,10 @@ impl Game {
             })
             .collect();
         enemy_ids.extend(self.units.values().filter_map(|unit| {
-            (unit.owner != pid
-                && self.is_at_war(pid, unit.owner)
-                && unit.air_patrol
+            (unit.air_patrol
                 && unit.air_patrol_pos == Some(target)
+                && unit.owner != pid
+                && self.is_at_war(pid, unit.owner)
                 && self.rules.units[unit.kind.as_str()].promotion_class == "air_fighter")
                 .then_some(unit.id)
                 .filter(|unit| self.unit_currently_visible_to(*unit, pid))
@@ -36015,6 +36233,11 @@ impl Game {
                     continue;
                 }
                 let front = pair(attacker, defender);
+                // Nobody learns who they are fighting from the battlefield.
+                // A war widened by a pact introduces its new belligerents, so
+                // an ally dragged in is on the ledger of everyone it now
+                // fights whether or not it has seen them.
+                self.record_contact(attacker, defender);
                 let opened = self.at_war.insert(front);
                 self.cancel_routes_with(attacker, defender);
                 self.cancel_trade_deals_with(attacker, defender);
@@ -36472,24 +36695,32 @@ impl Game {
     }
 
     /// Apply the recurring budget after city income and maintenance have been
-    /// calculated. Civ VI never stores a negative treasury: at zero Gold, one
-    /// Amenity and one maintained unit are lost for each complete -10 GPT.
+    /// calculated. Civ VI never stores a negative treasury, and the two
+    /// bankruptcy penalties start on different lines: the shipped
+    /// `GOLD_NEGATIVE_BALANCE_AMENITY_LOSS_LINE` is **0**, so an empire in the
+    /// red loses an Amenity everywhere the moment its balance goes negative,
+    /// while `GOLD_NEGATIVE_BALANCE_DISBAND_UNIT_LINE` is **-10** and no unit
+    /// is disbanded until then. Both step every -10 from their own line
+    /// (`GOLD_NEGATIVE_BALANCE_SUBSEQUENT_AMENITY_LOSS` /
+    /// `..._SUBSEQUENT_DISBAND_UNIT`), so the Amenity is always one ahead.
     fn settle_gold_budget(&mut self, pid: usize, local_gold: f64) {
         let budget = local_gold + self.contracted_gold_per_turn(pid);
         let treasury = (self.players[pid].gold + local_gold).max(0.0);
-        let penalty = if !self.players[pid].is_barbarian && treasury <= f64::EPSILON && budget < 0.0
+        let deficit = if !self.players[pid].is_barbarian && treasury <= f64::EPSILON && budget < 0.0
         {
-            ((-budget) / 10.0).floor() as i64
+            -budget
         } else {
-            0
+            0.0
         };
+        let disbands = (deficit / 10.0).floor() as i64;
+        let penalty = if deficit > 0.0 { 1 + disbands } else { 0 };
         {
             let player = &mut self.players[pid];
             player.gold = treasury;
             player.gold_per_turn = budget;
             player.bankruptcy_amenity_penalty = penalty;
         }
-        if penalty <= 0 {
+        if disbands <= 0 {
             return;
         }
 
@@ -36510,7 +36741,7 @@ impl Game {
                 .total_cmp(&left.1)
                 .then_with(|| left.0.cmp(&right.0))
         });
-        for (unit, _) in candidates.into_iter().take(penalty as usize) {
+        for (unit, _) in candidates.into_iter().take(disbands as usize) {
             self.remove_unit(unit);
         }
     }
@@ -37277,6 +37508,9 @@ impl Game {
                     && player.alive
                     && !player.is_minor
                     && !player.is_barbarian
+                    // There is nobody to negotiate with until the two
+                    // civilizations have found each other.
+                    && self.has_met(viewer, player.id)
                     && !self.is_at_war(viewer, player.id)
             })
             .map(|player| player.id)
@@ -38151,6 +38385,9 @@ impl Game {
     /// read-only makes the exact value available to clients and AI without
     /// duplicating (and eventually drifting from) the turn processor.
     fn loyalty_change_for_city(&self, pid: usize, cid: u32) -> LoyaltyChange {
+        // Loyalty weighs this city against every other within range, and asks
+        // several of them the same empire-wide questions.
+        let _memo = self.query_memo();
         let city = &self.cities[&cid];
         let cpos = city.pos;
         let protected = self
@@ -39248,6 +39485,8 @@ impl Game {
                 .remove(member);
             self.cancel_routes_with(*member, proposal.target);
             self.cancel_trade_deals_with(*member, proposal.target);
+            // A congress that names a target names it to everyone it enlists.
+            self.record_contact(*member, proposal.target);
             self.at_war.insert(pair(*member, proposal.target));
             self.open_war_front(
                 *member,
@@ -39883,6 +40122,19 @@ impl Game {
     }
 
     fn great_work_slots(&self, pid: usize) -> Vec<(u32, String)> {
+        if let Some(memo) = self.query_memo.gw_slots.borrow().as_ref() {
+            if let Some(slots) = memo.get(&pid) {
+                return slots.clone();
+            }
+        }
+        let slots = self.great_work_slots_uncached(pid);
+        if let Some(memo) = self.query_memo.gw_slots.borrow_mut().as_mut() {
+            memo.insert(pid, slots.clone());
+        }
+        slots
+    }
+
+    fn great_work_slots_uncached(&self, pid: usize) -> Vec<(u32, String)> {
         let mut slots = Vec::new();
         for city in self.cities.values().filter(|city| city.owner == pid) {
             if self.city_has_palace(city) {
@@ -40117,6 +40369,19 @@ impl Game {
     }
 
     pub(crate) fn can_house_great_works(&self, pid: usize, kind: &str, additional: usize) -> bool {
+        if let Some(memo) = self.query_memo.gw_housing.borrow().as_ref() {
+            if let Some(answer) = memo.get(&(pid, kind.to_string(), additional)) {
+                return *answer;
+            }
+        }
+        let answer = self.can_house_great_works_uncached(pid, kind, additional);
+        if let Some(memo) = self.query_memo.gw_housing.borrow_mut().as_mut() {
+            memo.insert((pid, kind.to_string(), additional), answer);
+        }
+        answer
+    }
+
+    fn can_house_great_works_uncached(&self, pid: usize, kind: &str, additional: usize) -> bool {
         let count = |allocation: &BTreeMap<u32, BTreeMap<String, usize>>| {
             allocation
                 .values()
@@ -40184,6 +40449,9 @@ impl Game {
     /// Named Great Works occupy compatible active building/wonder slots;
     /// legacy generic-Artist saves retain their former three-work fallback.
     fn tourism_components_per_turn(&self, pid: usize) -> (f64, f64) {
+        // A sweep of every city the empire owns, each of which is asked for
+        // its full yields to read one figure out of them.
+        let _memo = self.query_memo();
         let mut tourism = 0.0;
         let mut film_studio_bonus = 0.0;
         let housed_works = self.housed_great_works(pid);
@@ -43711,6 +43979,71 @@ mod visibility_tests {
             .expect("tile is in the observation")
     }
 
+    /// Civilization VI does not put a rival on your diplomacy screen because
+    /// the map generator dealt them in. Somebody has to walk far enough to
+    /// find them, and until they do, that empire is not on the ledger.
+    #[test]
+    fn a_civilization_is_met_only_when_something_of_theirs_is_seen() {
+        let (mut game, center) = controlled_game(63_101);
+        let scout = game.spawn_unit("scout", 0, center);
+        let far = along(&game, center, 9);
+        game.spawn_unit("warrior", 1, far);
+        game.refresh_all_visibility();
+        assert!(
+            !game.has_met(0, 1),
+            "a warrior nine tiles away has not been found"
+        );
+        assert!(!game.has_met(1, 0), "and has found nobody either");
+
+        // Walk the scout to within sight of it, the long way round: contact is
+        // read off the same visibility the observation is.
+        let doorstep = along(&game, center, 7);
+        game.units.get_mut(&scout).unwrap().pos = doorstep;
+        game.refresh_all_visibility();
+        assert!(game.has_met(0, 1), "a warrior two tiles away is in sight");
+        assert!(
+            game.has_met(1, 0),
+            "meeting is mutual — a scout that sees is a scout that was seen"
+        );
+
+        // And it stays met once the scout walks home again.
+        game.units.get_mut(&scout).unwrap().pos = center;
+        game.refresh_all_visibility();
+        assert!(game.has_met(0, 1), "an empire once found is never forgotten");
+    }
+
+    /// Diplomacy needs somebody to conduct it with. Every act on the panel is
+    /// withheld until contact, and a war is contact by itself.
+    #[test]
+    fn diplomacy_waits_for_contact_and_a_declaration_supplies_it() {
+        let (mut game, center) = controlled_game(63_102);
+        game.spawn_unit("warrior", 0, center);
+        game.spawn_unit("warrior", 1, along(&game, center, 9));
+        game.refresh_all_visibility();
+        assert!(!game.has_met(0, 1));
+        assert!(
+            !game
+                .legal_actions(0)
+                .iter()
+                .any(|action| matches!(action, Action::DeclareWar { player: 1 })),
+            "there is no embassy to declare war on"
+        );
+
+        game.record_contact(0, 1);
+        assert!(
+            game.legal_actions(0)
+                .iter()
+                .any(|action| matches!(action, Action::DeclareWar { player: 1 })),
+            "once met, the whole panel opens"
+        );
+        assert_eq!(game.apply(0, &Action::DeclareWar { player: 1 }), Ok(()));
+        assert!(game.is_at_war(0, 1));
+        assert!(
+            game.has_met(1, 0),
+            "nobody learns who they are fighting from the battlefield"
+        );
+    }
+
     #[test]
     fn stock_unit_sight_ranges_match_civilization_vi() {
         let rules = Rules::embedded();
@@ -43828,6 +44161,178 @@ mod visibility_tests {
         game.map.tiles.get_mut(&blocker).unwrap().feature = None;
         game.map.tiles.get_mut(&blocker).unwrap().hills = false;
         assert!(game.unit_visible_tiles(warrior).contains(&beyond));
+    }
+
+    /// Sight range is a hard cap. Elevation decides what a unit sees *past*,
+    /// never how far it sees, so a mountain range outside a Settler's three
+    /// tiles stays dark — the bug that had a turn-one start revealing tiles
+    /// four away.
+    #[test]
+    fn no_terrain_is_ever_visible_beyond_a_unit_s_sight_range() {
+        let (mut game, origin) = controlled_game(91_010);
+        let settler = game.spawn_unit("settler", 0, origin);
+        assert_eq!(game.unit_sight(settler), 3, "a Settler sees three tiles");
+
+        // Open ground the whole way out, then a mountain range starting exactly
+        // one tile past the Settler's range: nothing hides these peaks except
+        // the range itself.
+        for distance in 4..=6 {
+            let position = along(&game, origin, distance);
+            game.map.tiles.get_mut(&position).unwrap().terrain = "mountain".to_string();
+        }
+        let visible = game.unit_visible_tiles(settler);
+        assert!(visible.contains(&along(&game, origin, 3)));
+        for distance in 4..=6 {
+            let position = along(&game, origin, distance);
+            assert!(
+                !visible.contains(&position),
+                "a mountain {distance} tiles away is outside a three-tile Settler's sight"
+            );
+        }
+        assert_eq!(
+            visible.iter().map(|at| game.wdist(origin, *at)).max(),
+            Some(3),
+            "nothing at all is seen past the printed range"
+        );
+
+        // The same cap holds for the shorter ranges and for wooded ground.
+        let warrior = game.spawn_unit("warrior", 0, origin);
+        assert_eq!(game.unit_sight(warrior), 2);
+        for distance in 3..=4 {
+            let position = along(&game, origin, distance);
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = "plains".to_string();
+            tile.hills = true;
+            tile.feature = Some("forest".to_string());
+        }
+        assert_eq!(
+            game.unit_visible_tiles(warrior)
+                .iter()
+                .map(|at| game.wdist(origin, *at))
+                .max(),
+            Some(2)
+        );
+    }
+
+    /// The shipped `SightModifier`/`SightThroughModifier` columns: Mountain 2,
+    /// Hills 1, flat 0, with Woods and Rainforest adding 1 to whatever they
+    /// stand on. A blocker hides everything no taller than itself, which is why
+    /// a Mountain shows over Woods and Hills but not over a wooded Hill.
+    #[test]
+    fn civilization_vi_sight_levels_decide_what_rises_above_cover() {
+        let (mut game, origin) = controlled_game(91_011);
+        let blocker = along(&game, origin, 1);
+        let target = along(&game, origin, 2);
+        let warrior = game.spawn_unit("warrior", 0, origin);
+
+        let shape = |game: &mut Game, at: Pos, terrain: &str, hills: bool, feature: Option<&str>| {
+            let tile = game.map.tiles.get_mut(&at).unwrap();
+            tile.terrain = terrain.to_string();
+            tile.hills = hills;
+            tile.feature = feature.map(str::to_string);
+        };
+
+        // Level-1 cover: flat Woods, flat Rainforest, and a bare Hill.
+        for (cover, hills, feature) in [
+            ("plains", false, Some("forest")),
+            ("plains", false, Some("jungle")),
+            ("plains", true, None),
+        ] {
+            shape(&mut game, blocker, cover, hills, feature);
+
+            shape(&mut game, target, "mountain", false, None);
+            assert!(
+                game.unit_visible_tiles(warrior).contains(&target),
+                "a Mountain rises over {cover} cover at level 1"
+            );
+
+            shape(&mut game, target, "plains", true, Some("forest"));
+            assert!(
+                game.unit_visible_tiles(warrior).contains(&target),
+                "a wooded Hill rises over {cover} cover at level 1"
+            );
+
+            shape(&mut game, target, "plains", false, Some("forest"));
+            assert!(
+                !game.unit_visible_tiles(warrior).contains(&target),
+                "flat Woods are no taller than {cover} cover and stay hidden"
+            );
+
+            shape(&mut game, target, "plains", true, None);
+            assert!(
+                !game.unit_visible_tiles(warrior).contains(&target),
+                "a bare Hill is level 1 like {cover} cover and stays hidden too"
+            );
+        }
+
+        // Level-2 cover: a wooded Hill stands exactly as tall as a Mountain, so
+        // neither shows past the other.
+        shape(&mut game, blocker, "plains", true, Some("forest"));
+        shape(&mut game, target, "mountain", false, None);
+        assert!(
+            !game.unit_visible_tiles(warrior).contains(&target),
+            "a Mountain does not rise over a wooded Hill"
+        );
+        shape(&mut game, blocker, "mountain", false, None);
+        shape(&mut game, target, "plains", true, Some("forest"));
+        assert!(
+            !game.unit_visible_tiles(warrior).contains(&target),
+            "and a wooded Hill does not rise over a Mountain"
+        );
+
+        // A viewer's own elevation is terrain alone — standing in Woods is not
+        // standing higher, but standing on a Mountain is.
+        shape(&mut game, blocker, "plains", false, Some("forest"));
+        shape(&mut game, target, "plains", false, None);
+        shape(&mut game, origin, "plains", false, Some("forest"));
+        assert!(
+            !game.unit_visible_tiles(warrior).contains(&target),
+            "Woods underfoot are not a vantage point"
+        );
+        shape(&mut game, origin, "mountain", false, None);
+        shape(&mut game, blocker, "plains", true, Some("forest"));
+        assert!(
+            game.unit_visible_tiles(warrior).contains(&target),
+            "a Mountain looks out over level-2 cover"
+        );
+    }
+
+    /// Natural Wonders carry their own shipped `SightThroughModifier` rather
+    /// than one blanket height: Everest and Yosemite are cover above anything
+    /// else on the map, while Crater Lake, the Pantanal, the Dead Sea and the
+    /// Great Barrier Reef block nothing.
+    #[test]
+    fn natural_wonders_block_sight_only_where_civilization_vi_says_they_do() {
+        let (mut game, origin) = controlled_game(91_012);
+        let blocker = along(&game, origin, 1);
+        let target = along(&game, origin, 2);
+        let warrior = game.spawn_unit("warrior", 0, origin);
+
+        for wonder in ["crater_lake", "pantanal", "dead_sea", "great_barrier_reef"] {
+            game.map.tiles.get_mut(&blocker).unwrap().feature = Some(wonder.to_string());
+            assert!(
+                game.unit_visible_tiles(warrior).contains(&target),
+                "{wonder} is flat ground for line of sight"
+            );
+        }
+        for wonder in ["mount_everest", "yosemite", "uluru", "pamukkale"] {
+            game.map.tiles.get_mut(&blocker).unwrap().feature = Some(wonder.to_string());
+            assert!(
+                !game.unit_visible_tiles(warrior).contains(&target),
+                "{wonder} is cover"
+            );
+        }
+
+        // Everest at level 2 over flat ground is visible past anything a Hill or
+        // Woods can offer, and is itself cover a wooded Hill cannot see over.
+        game.map.tiles.get_mut(&blocker).unwrap().feature = Some("forest".to_string());
+        game.map.tiles.get_mut(&target).unwrap().feature = Some("mount_everest".to_string());
+        assert!(game.unit_visible_tiles(warrior).contains(&target));
+        game.map.tiles.get_mut(&blocker).unwrap().hills = true;
+        assert!(
+            !game.unit_visible_tiles(warrior).contains(&target),
+            "level-2 Everest does not rise over a level-2 wooded Hill"
+        );
     }
 
     #[test]
@@ -44009,6 +44514,9 @@ mod visibility_tests {
             observed_tile(&visible, remembered_position)["improvement"],
             "farm"
         );
+        // Appeal is read off the tile's *current* neighbours, so it is reported
+        // for what a player can see and withheld from what they only remember.
+        assert!(observed_tile(&visible, remembered_position)["appeal"].is_i64());
         assert!(visible["units"]
             .as_array()
             .unwrap()
@@ -44039,6 +44547,7 @@ mod visibility_tests {
             observed_tile(&fogged, remembered_position)["improvement"],
             "farm"
         );
+        assert!(observed_tile(&fogged, remembered_position)["appeal"].is_null());
         assert!(!fogged["units"]
             .as_array()
             .unwrap()
