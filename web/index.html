@@ -1729,22 +1729,16 @@
   body.hud-layout-active.layout-resizing,
   body.hud-layout-active.layout-resizing * { cursor: var(--layout-resize-cursor, nwse-resize) !important; }
 
-  /* Collapsing the command deck is also the map's focus mode. Apply that
-     temporary state to every map overlay without changing saved widget
-     preferences, so expanding the deck restores exactly the chosen layout.
-     The deck toggle itself remains as the one visible way back on touch-only
-     displays. */
-  body.sidebar-hidden #playerhud,
+  /* Collapsing the command deck collapses the deck and nothing else. Every map
+     overlay is switched from the deck's own display settings instead, so the
+     two controls stay independent: hand the map back the deck's width without
+     losing the instruments, or clear the instruments and keep the deck. Only
+     the pause button follows the deck, because collapsing it takes the deck's
+     own pause off the screen. */
   body.overlay-players-hidden #playerhud,
-  body.sidebar-hidden #victoryhud,
   body.overlay-victory-hidden #victoryhud,
-  body.sidebar-hidden .minimap-frame,
   body.overlay-minimap-hidden .minimap-frame,
-  body.overlay-controls-hidden #zoomctl,
-  body.sidebar-hidden #zoomctl > :not(#paneltoggle):not(#collapsepause),
-  body.sidebar-hidden #ubar,
-  body.sidebar-hidden #modeline,
-  body.sidebar-hidden #tip { display: none !important; }
+  body.overlay-controls-hidden #zoomctl { display: none !important; }
   body.sidebar-hidden #collapsepause:not([hidden]) { display: block; }
   #collapsepause[hidden] { display: none; }
 
@@ -2134,7 +2128,7 @@
     <div class="utility-body shortcut-grid">
       <span><kbd>↵</kbd>Next blocker · end turn</span><span><kbd>⇧ ↵</kbd>End turn anyway</span>
       <span><kbd>Tab</kbd>Next unit needing orders</span><span><kbd>Space</kbd>Skip this unit</span>
-      <span><kbd>F</kbd>Fortify · focus mode</span><span><kbd>Z</kbd>Sleep this unit</span>
+      <span><kbd>F</kbd>Fortify · hide the deck</span><span><kbd>Z</kbd>Sleep this unit</span>
       <span><kbd>1</kbd>Next unit</span><span><kbd>2</kbd>Settler lens</span>
       <span><kbd>3</kbd>Map tacks · 6.5</span><span><kbd>P</kbd>Civilopedia</span>
       <span><kbd>D</kbd>Quick Deals</span><span><kbd>G</kbd>Empire screens</span>
@@ -13637,35 +13631,60 @@ document.getElementById("cinema-follow").onclick = () => {
   else if (DIRECTOR && directorGoal?.kind === "character") setDirector(false);
 };
 
-// The tracker and standings usually occupy the top of the map, so the useful
-// visual center sits 42% of the screen height up from the bottom. The command
-// deck already takes layout width away from `area`, making its midpoint land
-// to the right of the full-window midpoint without another hard-coded offset.
-// Focus mode removes every map overlay and expands `area`, at which point the
-// map returns to the exact geometric center in both axes.
-const DEFAULT_MAP_FOCUS_FROM_BOTTOM = .42;
+// The map composes inside the rectangle the chrome actually leaves it, rather
+// than a guessed fraction of the window: below whichever of the two top
+// instruments hangs lower, down to the real bottom edge, right of the command
+// deck, and left of the world map's own midpoint. The world map gives up only
+// half its width because it sits in a corner; reserving all of it would shove
+// the world left for a widget nobody watches while the camera moves.
+//
+// Every edge is measured, because all three instruments can be dragged and
+// resized and none of their positions may be assumed. A layout that leaves no
+// usable band on an axis — an instrument parked down the whole height, the
+// world map dragged left of the deck — hands that axis back its full extent
+// instead of aiming the camera off-screen.
+const MIN_MAP_FOCUS_BAND = 120;
 function mapOverlayVisible(name) {
-  if (document.body.classList.contains("sidebar-hidden") ||
-      OVERLAY_VISIBILITY[name] === false) return false;
+  if (OVERLAY_VISIBILITY[name] === false) return false;
   if (cinemaActive() && ["players", "minimap", "controls"].includes(name)) return false;
   return true;
 }
-function mapFocusPoint() {
-  const topHudVisible = mapOverlayVisible("players") || mapOverlayVisible("victory");
-  let x = area.clientWidth / 2;
+// Area-local box of a HUD widget, or null when it is switched off, collapsed
+// or not laid out yet. An element hidden with `display: none` reports a zero
+// box, and that reading outranks the visibility flags.
+function mapWidgetBox(name, areaRect) {
+  const element = mapOverlayVisible(name) ? HUD_WIDGETS[name]?.element : null;
+  if (!element) return null;
+  const rect = element.getBoundingClientRect();
+  if (!rect.width || !rect.height) return null;
+  return {left:rect.left - areaRect.left, right:rect.right - areaRect.left,
+          top:rect.top - areaRect.top, bottom:rect.bottom - areaRect.top};
+}
+function mapFocusBounds() {
+  const width = Math.max(1, area.clientWidth), height = Math.max(1, area.clientHeight);
+  const areaRect = area.getBoundingClientRect();
+  let left = 0, right = width, top = 0, bottom = height;
   // On compact layouts the command deck floats over the canvas instead of
-  // shrinking it. Center in the uncovered strip there, just as flex layout
-  // naturally centers the desktop canvas to the right of the deck.
+  // shrinking it, so its right edge has to be read off the page. Under the
+  // desktop flex layout that width is already outside `area` and this is 0.
   if (!document.body.classList.contains("sidebar-hidden") && !cinemaActive()) {
-    const areaRect = area.getBoundingClientRect();
     const sideRect = document.getElementById("side").getBoundingClientRect();
-    const coveredLeft = Math.max(0, Math.min(area.clientWidth, sideRect.right - areaRect.left));
-    if (coveredLeft > 0) x = (coveredLeft + area.clientWidth) / 2;
+    if (sideRect.width)
+      left = Math.max(0, Math.min(width, sideRect.right - areaRect.left));
   }
-  return {
-    x,
-    y:area.clientHeight * (topHudVisible ? 1 - DEFAULT_MAP_FOCUS_FROM_BOTTOM : .5),
-  };
+  const minimap = mapWidgetBox("minimap", areaRect);
+  if (minimap) right = (minimap.left + minimap.right) / 2;
+  for (const name of ["players", "victory"]) {
+    const box = mapWidgetBox(name, areaRect);
+    if (box) top = Math.max(top, box.bottom);
+  }
+  if (right - left < MIN_MAP_FOCUS_BAND) { left = 0; right = width; }
+  if (bottom - top < MIN_MAP_FOCUS_BAND) { top = 0; bottom = height; }
+  return {left, right, top, bottom};
+}
+function mapFocusPoint() {
+  const bounds = mapFocusBounds();
+  return {x:(bounds.left + bounds.right) / 2, y:(bounds.top + bounds.bottom) / 2};
 }
 function cameraCenterForWorld(wx, wy, scale = cam.scale, focus = mapFocusPoint()) {
   const vx = (focus.x - area.clientWidth / 2) / Math.max(.25, scale);
