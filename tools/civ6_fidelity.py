@@ -25,6 +25,8 @@ wired into CI as a ratchet once a table reaches parity.
 from __future__ import annotations
 
 import argparse
+import sqlite3
+import urllib.parse
 import json
 import os
 import re
@@ -268,6 +270,63 @@ class Database:
         return list(self.tables.get(table, {}).values())
 
 
+CACHE_DATABASE_PATHS = (
+    "~/Library/Application Support/Sid Meier's Civilization VI/Cache/DebugGameplay.sqlite",
+    "~/AppData/Local/Firaxis Games/Sid Meier's Civilization VI/Cache/DebugGameplay.sqlite",
+)
+
+
+def find_cache_database(explicit: str | None = None) -> Path | None:
+    """The compiled gameplay database a previous run of the game left behind.
+
+    This is the same ruleset ``load_database`` reconstructs from XML, already
+    resolved through the load order, and it survives uninstalling the game. It
+    is the only route to the shipped numbers on a machine without an install.
+    """
+    candidates = [explicit] if explicit else list(CACHE_DATABASE_PATHS)
+    for candidate in candidates:
+        if not candidate:
+            continue
+        path = Path(candidate).expanduser()
+        if path.is_file():
+            return path
+    return None
+
+
+def load_cache_database(path: Path) -> Database:
+    database = Database()
+    uri = f"file:{urllib.parse.quote(str(path))}?mode=ro&immutable=1"
+    connection = sqlite3.connect(uri, uri=True)
+    try:
+        connection.row_factory = sqlite3.Row
+        present = {
+            name
+            for (name,) in connection.execute(
+                "select name from sqlite_master where type = 'table'"
+            )
+        }
+        for table in TABLE_KEYS:
+            if table not in present:
+                continue
+            rows = database.tables.setdefault(table, {})
+            for record in connection.execute(f'select * from "{table}"'):
+                # A NULL column is an absent attribute, not an empty one, so
+                # the projections fall back to the same defaults they use for
+                # a row the XML simply did not spell out.
+                row = {
+                    column: str(value)
+                    for column, value in dict(record).items()
+                    if value is not None
+                }
+                key = database._key(table, row)
+                if key is None:
+                    continue
+                rows[key] = row
+    finally:
+        connection.close()
+    return database
+
+
 def load_database(install: Path) -> Database:
     database = Database()
     for relative in LOAD_ORDER:
@@ -302,6 +361,57 @@ ALIASES = {
     "halicarnassus_mausoleum": "mausoleum_at_halicarnassus",
     "statue_liberty": "statue_of_liberty",
     "university_sankore": "university_of_sankore",
+    # Unique units: the game prefixes them with their civilization, CIVVIS
+    # names them the way the Civilopedia does. Nine units compared nothing at
+    # all before these, which is the whole point of the three above.
+    "roman_legion": "legion",
+    "greek_hoplite": "hoplite",
+    "aztec_eagle_warrior": "eagle_warrior",
+    "sumerian_war_cart": "war_cart",
+    "nubian_pitati": "pitati_archer",
+    "egyptian_chariot_archer": "maryannu_chariot_archer",
+    "scythian_horse_archer": "saka_horse_archer",
+    "chinese_crouching_tiger": "crouching_tiger",
+    "antiair_gun": "anti_air_gun",
+    # Warrior Monk promotions carry a MONK_ prefix in the shipped table, and
+    # three more differ by a word. Same blind spot as the unique units.
+    "monk_shadow_strike": "shadow_strike",
+    "monk_twilight_veil": "twilight_veil",
+    "monk_exploding_palms": "exploding_palms",
+    "monk_disciples": "disciples",
+    "monk_sweeping_wind": "sweeping_wind",
+    "monk_dancing_crane": "dancing_crane",
+    "monk_cobra_strike": "cobra_strike",
+    "surf_rock": "surf_band",
+    "goes_to": "goes_to_11",
+    "pop": "pop_star",
+    "super_carrier": "supercarrier",
+    # Government Plaza buildings ship under a GOV_ theme name rather than
+    # their title. GOV_TALL/GOV_WIDE are resolved by effect, not by guess:
+    # TALL carries the Governor Amenities/Housing/Loyalty modifiers (Audience
+    # Chamber), WIDE the Settler production and free Builder (Ancestral Hall).
+    "gov_tall": "audience_chamber",
+    "gov_wide": "ancestral_hall",
+    "gov_conquest": "warlords_throne",
+    "gov_citystates": "foreign_ministry",
+    "gov_faith": "grand_masters_chapel",
+    "gov_spies": "intelligence_agency",
+    "gov_culture": "national_history_museum",
+    "gov_science": "royal_society",
+    "gov_military": "war_department",
+    "museum_art": "art_museum",
+    "museum_artifact": "archaeological_museum",
+    # Walls and power plants are named for their era's fortification and fuel.
+    "castle": "medieval_walls",
+    "star_fort": "renaissance_walls",
+    "fossil_fuel_power_plant": "oil_power_plant",  # Electricity, 360
+    "power_plant": "nuclear_power_plant",  # Nuclear Fission, 480
+    "theater": "theater_square",
+    "government": "government_plaza",
+    "water_entertainment_complex": "water_park",
+    "water_street_carnival": "copacabana",
+    "beach_resort": "seaside_resort",
+    "pyramid": "nubian_pyramid",
 }
 
 
@@ -1916,6 +2026,15 @@ def report(results: list[dict], install: Path) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--civ6", help="path to the Civilization VI install")
+    parser.add_argument(
+        "--cache",
+        nargs="?",
+        const="",
+        help=(
+            "read the compiled gameplay database the game leaves in its Cache "
+            "directory instead of an install; give a path or let it be found"
+        ),
+    )
     parser.add_argument("--json", help="write the full result set here")
     parser.add_argument("--out", help="write the markdown report here instead of stdout")
     parser.add_argument(
@@ -1927,8 +2046,19 @@ def main() -> int:
     parser.add_argument("--table", action="append", help="limit the audit to these tables")
     args = parser.parse_args()
 
-    install = find_install(args.civ6)
-    database = load_database(install)
+    if args.cache is not None:
+        cache = find_cache_database(args.cache or None)
+        if cache is None:
+            print(
+                "no compiled gameplay database found; pass --cache <path>",
+                file=sys.stderr,
+            )
+            return 2
+        install = cache
+        database = load_cache_database(cache)
+    else:
+        install = find_install(args.civ6)
+        database = load_database(install)
 
     audits = [
         ("Units", ours_units(), project_units(database)),

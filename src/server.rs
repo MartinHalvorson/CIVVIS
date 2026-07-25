@@ -2993,11 +2993,23 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function warBelligerentRows("));
         assert!(EMBEDDED_INDEX.contains("function warPartyIsCityState("));
         assert!(EMBEDDED_INDEX.contains("war-row-label\">Belligerents"));
-        assert!(EMBEDDED_INDEX.contains("<span>Start</span><span>Peak</span><span>Total</span>"));
-        assert!(EMBEDDED_INDEX.contains("overflow-wrap: break-word"));
         assert!(EMBEDDED_INDEX.contains(
-            ".war-belligerent.city-state .war-belligerent-bar { width: 70%; }"
+            "[\"Start mil\", \"Peak mil\", \"Saw action\"]"
         ));
+        assert!(EMBEDDED_INDEX.contains(
+            "[\"Saw action\", \"Peak mil\", \"Start mil\"]"
+        ));
+        assert!(EMBEDDED_INDEX.contains("overflow-wrap: break-word"));
+        assert!(EMBEDDED_INDEX.contains("height: 4px"));
+        assert!(EMBEDDED_INDEX.contains("width: var(--war-effort, 0%)"));
+        assert!(EMBEDDED_INDEX.contains(
+            ".war-side.aggressor .war-belligerent-bar { margin-left: auto; }"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            ".war-side.defender .war-belligerent-bar { margin-right: auto; }"
+        ));
+        assert!(EMBEDDED_INDEX.contains("const effort = maxSawAction > 0 ? 100 * sawAction / maxSawAction : 0"));
+        assert!(!EMBEDDED_INDEX.contains("strength_total"));
         assert!(!EMBEDDED_INDEX.contains("Military strength at entry"));
         assert!(EMBEDDED_INDEX.contains("war-row-label\">Chronology"));
         assert!(EMBEDDED_INDEX.contains("war-row-label\">Losses"));
