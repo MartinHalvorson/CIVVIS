@@ -6452,10 +6452,13 @@ mod maintenance_tests {
             .insert("colosseum".to_string(), center);
         assert_eq!(loyalty(&mut game), baseline + 5.0);
 
-        // Martial Law pays 2 for a garrison, not 4.
+        // Martial Law's shipped MARTIALLAW_GARRISONIDENTITY is +4, gated on
+        // REQUIREMENT_CITY_HAS_GARRISON_UNIT. Limitanei is the +2 card.
         game.cities.get_mut(&city).unwrap().wonders.clear();
         game.spawn_unit("warrior", 0, game.cities[&city].pos);
         game.players[0].policies = ["martial_law".to_string()].into_iter().collect();
+        assert_eq!(loyalty(&mut game), baseline + 4.0);
+        game.players[0].policies = ["limitanei".to_string()].into_iter().collect();
         assert_eq!(loyalty(&mut game), baseline + 2.0);
     }
 
@@ -25828,9 +25831,10 @@ impl Game {
                 rys.food += self.policy_effect(city.owner, "trade_food");
                 rys.production += self.policy_effect(city.owner, "trade_production");
                 if domestic {
-                    // Isolationism pays only at home.
+                    // Isolationism pays only at home, and pays all three.
                     rys.food += self.policy_effect(city.owner, "domestic_trade_food");
                     rys.production += self.policy_effect(city.owner, "domestic_trade_production");
+                    rys.gold += self.policy_effect(city.owner, "domestic_trade_gold");
                 }
                 if !domestic {
                     // E-Commerce pays only on international routes.
@@ -26177,8 +26181,12 @@ impl Game {
         ys.science *= 1.0 + self.policy_effect(city.owner, "city_science_pct") / 100.0;
         ys.culture *= 1.0 + self.policy_effect(city.owner, "city_culture_pct") / 100.0;
         if self.city_has_active_district_family(city, "holy_site") {
+            // Monasticism's Culture penalty carries the same Holy Site
+            // requirement as its Science bonus: it is not empire-wide.
             ys.science *=
                 1.0 + self.policy_effect(city.owner, "holy_site_city_science_pct") / 100.0;
+            ys.culture *=
+                1.0 + self.policy_effect(city.owner, "holy_site_city_culture_pct") / 100.0;
         }
         if city.buildings.iter().any(|building| building == "stock_exchange")
             && !city.pillaged_buildings.contains("stock_exchange")
@@ -26801,10 +26809,16 @@ impl Game {
             }) {
                 continue;
             }
-            if t.resource
-                .as_ref()
-                .is_some_and(|resource| self.rules.resources[resource.as_str()].class != "bonus")
-            {
+            // Antiquity Sites and Shipwrecks are buried, not deposits: they
+            // are invisible until Natural History or Cultural Heritage and
+            // never reserve a tile. Building over one destroys it, exactly as
+            // a Bonus resource is destroyed.
+            if t.resource.as_ref().is_some_and(|resource| {
+                !matches!(
+                    self.rules.resources[resource.as_str()].class.as_str(),
+                    "bonus" | "artifact"
+                )
+            }) {
                 continue;
             }
             let removal_tech = match t.feature.as_deref() {
@@ -26972,7 +26986,11 @@ impl Game {
                     .as_ref()
                     .is_some_and(|feature| self.rules.features[feature.as_str()].natural_wonder)
                 || tile.resource.as_ref().is_some_and(|resource| {
-                    self.rules.resources[resource.as_str()].class != "bonus"
+                    // A buried Artifact reserves nothing — see `district_sites`.
+                    !matches!(
+                        self.rules.resources[resource.as_str()].class.as_str(),
+                        "bonus" | "artifact"
+                    )
                 })
             {
                 continue;
@@ -41009,7 +41027,12 @@ impl Game {
             }
             if self.wdist(neighbor, city_pos) <= 3
                 && adjacent.resource.as_ref().is_some_and(|resource| {
-                    self.rules.resources[resource.as_str()].class != "bonus"
+                    // Borders are not drawn toward a resource nobody can see,
+                    // and an Antiquity Site stays buried until Natural History.
+                    !matches!(
+                        self.rules.resources[resource.as_str()].class.as_str(),
+                        "bonus" | "artifact"
+                    )
                 })
             {
                 cost -= 1.0;
