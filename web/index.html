@@ -2485,6 +2485,10 @@ try {
 let SPEC = false, specPaused = restartPaused === "1", specTimer = null, specBusy = false;
 let viewChanging = false;
 let eventLogs = new Map(), nextEventId = 1, lastLeaderByView = new Map(), lastSidePaint = 0;
+// The world and turn of the last state this page drew in full, and the turn
+// the side panel was drawn for. Both are the frame promise: one complete frame
+// per turn, with nothing in it left over from the turn before.
+let paintedFrame = null, lastSideTurn = null;
 let TMAP = new Map();
 let tradeFilter = "all", tradeBusy = false;
 // The leader ribbon opens one civilization at a time — this is whose dossier
@@ -4131,7 +4135,7 @@ async function boot() {
       document.getElementById("gamespeed").value = "online";
     }
     fillStrategies(RULES);
-    render(await fetchJSON("/state"));
+    render(await fetchJSON("/state" + paintedQuery()));
     if (firstLoad) {
       firstLoad = false;
       adoptRunningMode();
@@ -4917,11 +4921,21 @@ function advanceDirector(now = performance.now()) {
   return moving;
 }
 let lastSeed2 = null;
+// Every turn is owed one complete frame, and the server holds a finished turn
+// until an active viewer has been handed it. Only a page that actually paints
+// counts as one: the keeper's refresh check and any curl read /state as well,
+// and a reader that draws nothing must not slow the simulation to its own
+// cadence. Saying which turn was last painted is how this page announces
+// itself, and it is what the server counts turns nobody drew against.
+function paintedQuery() {
+  return paintedFrame === null ? "?painted="
+    : `?painted=${paintedFrame.turn}&world=${paintedFrame.seed}`;
+}
 async function specPoll() {
   if (!SPEC || specBusy) return;
   specBusy = true;
   try {
-    const st = await fetchJSON("/state");
+    const st = await fetchJSON("/state" + paintedQuery());
     const fresh = st.seed !== undefined && lastSeed2 !== null && st.seed !== lastSeed2;
     lastSeed2 = st.seed;
     render(st);
@@ -5396,6 +5410,11 @@ function render(st, recordChronicle = true) {
   }
   openTurnIfNew();
   drawDiplomacy();
+  // Everything above draws this state, so this turn has now had its frame.
+  // The reload paths return before here on purpose: a page on its way to a
+  // successor world painted nothing, and must not claim it did.
+  if (st.turn !== undefined && st.seed !== undefined)
+    paintedFrame = {seed:st.seed, turn:st.turn};
 }
 
 function drawCaptureChoice() {
@@ -13676,10 +13695,18 @@ function drawWarLog() {
 function drawSide(force = true) {
   const now = performance.now();
   const pace = specPace();
-  // Below a second per turn the panels change faster than they can be read;
-  // repaint them on a human cadence instead. Lightning (0) is the fastest.
-  if (!force && SPEC && pace < 1000 && now - lastSidePaint < 250) return;
+  const turn = state ? `${state.seed}|${state.turn}` : null;
+  // Below a second per turn the panels change faster than they can be read, so
+  // repeated repaints within one turn go on a human cadence instead. A turn's
+  // own frame is never one of them. On the clock alone this budget swallowed
+  // whole turns whenever two draws landed close together — the boot frame and
+  // the first poll behind it, or a spectator opening a city, which repaints
+  // the panel directly and restarts the 250ms — leaving research, civics and
+  // government showing the previous turn inside a frame meant to be whole.
+  if (!force && SPEC && pace < 1000 && turn === lastSideTurn &&
+      now - lastSidePaint < 250) return;
   lastSidePaint = now;
+  lastSideTurn = turn;
   const scroller = document.querySelector(".side-scroll");
   const priorScroll = scroller ? scroller.scrollTop : 0;
   const me = state.me;
