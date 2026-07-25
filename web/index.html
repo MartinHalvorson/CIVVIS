@@ -2750,6 +2750,19 @@ function majorPlayers() {
   return state ? state.players.filter(p => !p.is_minor && !p.is_barbarian) : [];
 }
 
+// Whether this seat is somebody the view has actually met.
+//
+// A civilization the viewer has never found arrives with its dashboard
+// withheld — no score, no yields, no victory progress — because the server
+// does not hand out what the fog covers. Every list that ranks or compares
+// empires asks this first, so an unmet rival is absent rather than blank.
+// The omniscient spectator meets everyone by definition, and so does a seat
+// looking at itself, both of which the server answers with `met: true`; an
+// older server that says nothing at all is taken at its word.
+function metPlayer(player) {
+  return !player || player.met !== false;
+}
+
 // Every seat's key, by player id.
 function seatKeysById(majors) {
   const seen = new Map(), keys = new Map();
@@ -13565,7 +13578,8 @@ function hudTurnPlate() {
 }
 
 function playerHudOverview() {
-  const contenders = state.players.filter(p => p.alive && !p.is_minor && !p.is_barbarian);
+  const contenders = state.players
+    .filter(p => p.alive && !p.is_minor && !p.is_barbarian && metPlayer(p));
   const enabledVictoryTracks = VICTORY_TRACKS
     .filter(track => state.victory_conditions?.[track.id] !== false);
   const victoryTracks = enabledVictoryTracks.map(track => {
@@ -13706,7 +13720,7 @@ function drawPlayerHud() {
   syncVictoryLeaderCapacity(victoryHud);
   const acting = SPEC ? state.current : 0;
   const majors = state.players
-    .filter(p => !p.is_minor && !p.is_barbarian)
+    .filter(p => !p.is_minor && !p.is_barbarian && metPlayer(p))
     .sort((a, b) => b.score - a.score || a.id - b.id);
   const rows = Math.max(1, majors.length);
   const seats = seatKeysById(majors);
@@ -14547,7 +14561,8 @@ function empireCityStates() {
   const envoyOffers = new Map(legalFor("send_envoy").map(a => [a.player, a]));
   const levy = new Map(legalFor("levy_military").map(a => [a.player, a]));
   const cards = state.players
-    .filter(player => player.is_minor && !player.is_barbarian && player.alive)
+    .filter(player => player.is_minor && !player.is_barbarian && player.alive
+      && metPlayer(player))
     .map(player => {
       const mine = envoys.get(player.id) || player.my_envoys || 0;
       const suzerain = player.suzerain === null || player.suzerain === undefined
@@ -14745,9 +14760,11 @@ function drawDiplomacy() {
 
   // Majors first, then the city-states. Leaving the minors out entirely made
   // peace with one unreachable from anywhere on the page, and their war and
-  // peace live here for the same reason a major's does.
+  // peace live here for the same reason a major's does. Nobody the empire has
+  // yet to meet appears at all — the page's own empty state has always said
+  // so, and now it is true.
   const relevant = state.players.filter(player =>
-    player.id !== 0 && player.alive && !player.is_barbarian);
+    player.id !== 0 && player.alive && !player.is_barbarian && metPlayer(player));
   const cards = relevant
     .sort((first, second) => Number(first.is_minor) - Number(second.is_minor))
     .map(player => {

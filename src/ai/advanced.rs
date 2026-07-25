@@ -10773,6 +10773,12 @@ mod tests {
     fn advanced_ai_proposes_the_alliance_for_its_victory_plan() {
         let mut game = Game::new_full(3, 24, 16, 782, 300, 0, false);
         game.turn = 12;
+        // There is nobody to ally with until the table has been introduced.
+        for pid in 0..3 {
+            for other in pid + 1..3 {
+                game.record_contact(pid, other);
+            }
+        }
         for player in game.players.iter_mut() {
             player.civics.insert("civil_service".to_string());
             player.techs.insert("scientific_theory".to_string());
@@ -11210,6 +11216,8 @@ mod tests {
     #[test]
     fn conquest_army_stages_before_diplomacy_opens_the_war() {
         let mut game = Game::new_full(2, 30, 18, 7_114, 300, 0, false);
+        // A war has to be declarable, which means the two have met.
+        game.record_contact(0, 1);
         for pid in 0..2 {
             game.current = pid;
             let settler = game
@@ -11367,6 +11375,8 @@ mod tests {
     #[test]
     fn war_opening_waits_for_formal_war_but_interrupts_for_imminent_victory() {
         let mut game = Game::new_full(2, 24, 16, 712, 300, 0, false);
+        // A denunciation needs somebody to denounce.
+        game.record_contact(0, 1);
         game.current = 0;
         game.turn = 60;
         let ai = AdvancedAi::new();
@@ -11388,6 +11398,7 @@ mod tests {
         );
 
         let mut emergency = Game::new_full(2, 24, 16, 713, 300, 0, false);
+        emergency.record_contact(0, 1);
         emergency.current = 0;
         emergency.turn = 60;
         emergency.players[1]
@@ -11399,6 +11410,11 @@ mod tests {
         );
 
         let mut religious = Game::new_full(4, 24, 16, 714, 300, 0, false);
+        for pid in 0..4 {
+            for other in pid + 1..4 {
+                religious.record_contact(pid, other);
+            }
+        }
         for pid in 0..4 {
             religious.current = pid;
             let settler = religious
@@ -15174,6 +15190,8 @@ mod tests {
     #[test]
     fn culture_quick_deals_buy_the_direction_that_increases_our_tourism() {
         let mut game = Game::new_full(2, 18, 10, 79_004, 200, 0, false);
+        // A quick deal is offered to a counterparty, so there has to be one.
+        game.record_contact(0, 1);
         game.turn = 6;
         game.players[0].gold = 1_000.0;
         game.players[1].gold = 1_000.0;
@@ -15195,6 +15213,8 @@ mod tests {
     #[test]
     fn culture_quick_deals_buy_housed_great_works_and_preserve_our_own() {
         let mut game = Game::new_full(2, 20, 12, 79_005, 200, 0, false);
+        // A quick deal is offered to a counterparty, so there has to be one.
+        game.record_contact(0, 1);
         for pid in 0..2 {
             game.current = pid;
             let settler = game
