@@ -24,6 +24,40 @@ pub fn observation(g: &Game, pid: usize) -> Value {
 /// which discovery it was.
 pub const NORTH_TECH: &str = "celestial_navigation";
 
+/// The discoveries at which a people can say their world is a ball.
+///
+/// Two civilizations reach it two different ways and both are here: the sailors
+/// who came home from the west having set out to the east, and the scholars who
+/// read the round shadow the Earth throws on the Moon. Either is proof, so
+/// either opens it — a naval empire and a scholarly one both get there, by
+/// their own road. Hypatia edited the tables the second argument is made from,
+/// and brings it forward for whoever recruits her.
+///
+/// Until one of them lands, a Planet world is drawn as a surface with no edge a
+/// viewer can find: the camera stops while the horizon is still off-frame, so
+/// there is no silhouette, no space around it, and nothing in the sky. Like
+/// `NORTH_TECH` this is a presentation rule — nothing in the simulation turns
+/// on it — but it is decided here rather than in the viewer so the client is
+/// not left inventing which discovery it was.
+pub const GLOBE_TECHS: [&str; 2] = ["cartography", "astronomy"];
+pub const GLOBE_GREAT_PERSON: &str = "hypatia";
+
+/// The project that puts an eye above the air.
+///
+/// The Moon and Mars are naked-eye objects: a people who know their own world
+/// is a ball can place them, and they stand in the sky from that moment. A
+/// planet around another star is not visible from the ground at all — it takes
+/// an instrument above the atmosphere to know there is one — so the far end of
+/// the system opens only once a civilization has actually put something up
+/// there.
+pub const EXOPLANET_EYE: &str = "launch_earth_satellite";
+
+/// Whether this civilization has the round world, by discovery or by recruit.
+pub fn knows_globe(p: &crate::game::Player) -> bool {
+    GLOBE_TECHS.iter().any(|tech| p.techs.contains(*tech))
+        || p.great_people.iter().any(|id| id.as_str() == GLOBE_GREAT_PERSON)
+}
+
 /// The shape of a Planet world, for a client that has to draw it.
 ///
 /// A globe cannot be drawn from tile coordinates the way a flat map can: the
@@ -353,6 +387,14 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             // so it is never the party that has to find north.
             "found_north": omniscient || p.techs.contains(NORTH_TECH),
             "north_tech": NORTH_TECH,
+            // The same arrangement one step further out: a spectator is above
+            // the world rather than on it, so it was never in any doubt about
+            // the shape of the thing or about what else is out there.
+            "knows_globe": omniscient || knows_globe(p),
+            "globe_techs": GLOBE_TECHS,
+            "globe_great_person": GLOBE_GREAT_PERSON,
+            "sees_exoplanet": omniscient || p.science_projects.contains(EXOPLANET_EYE),
+            "exoplanet_eye": EXOPLANET_EYE,
             "civics": p.civics, "civic": p.civic,
             "civic_progress": round1(p.civic_progress),
             "government": p.government,
@@ -468,6 +510,29 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             },
         },
         "players": g.players.iter().map(|o| {
+            // An empire nobody has met is not on anybody's ledger. Civ VI
+            // keeps an unmet civilization off the diplomacy ribbon, the
+            // victory tracker and the score list alike, so the whole
+            // dashboard below is withheld until contact rather than merely
+            // hidden by the client — an agent reading this protocol is owed
+            // the same fog a browser is. What survives is the seat's
+            // identity: its id and civ decide the jersey its cities fly, and
+            // whether it is still standing is already told by `wars`, which
+            // is deliberately reported whole. An omniscient spectator sees
+            // everyone, as it always has.
+            if !omniscient && !g.has_met(pid, o.id) {
+                return json!({
+                    "id": o.id,
+                    "civ": o.civ,
+                    "met": false,
+                    "alive": o.alive,
+                    "is_minor": o.is_minor,
+                    "is_barbarian": o.is_barbarian,
+                    "is_free_city": o.is_free_city,
+                    "team": o.team,
+                    "teammate": false,
+                });
+            }
             // Civ VI's diplomacy ribbon keeps every major's broad empire
             // output visible.  These are aggregate public indicators rather
             // than hidden city details, and make spectator comparisons useful.
@@ -478,6 +543,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             let military = g.military_power(o.id).round() as i64;
             json!({
                 "id": o.id, "civ": o.civ,
+                "met": true,
                 "leader": g.rules.civs.get(&o.civ).map(|c| c.leader.clone()),
                 // A leader's agenda is public knowledge in Civ VI once you
                 // have met them, and so is roughly how they feel about you.
@@ -1088,9 +1154,19 @@ fn tile_json(
             })
         })
         .unwrap_or(Value::Null);
+    // Appeal is read off the *current* neighbours, exactly like adjacency
+    // above, so a remembered tile does not report a figure its owner has since
+    // changed — and the walk is paid for the tiles in sight, not for the whole
+    // explored map.
+    let appeal = if live {
+        json!(g.tile_appeal(tile.pos))
+    } else {
+        Value::Null
+    };
     json!({
         "pos": [tile.pos.0, tile.pos.1],
         "terrain": tile.terrain,
+        "appeal": appeal,
         "feature": tile.feature,
         "hills": tile.hills,
         "resource": resource,
@@ -1275,6 +1351,56 @@ fn merge(base: &mut Value, ext: Value) {
 mod tests {
     use super::*;
 
+    /// The player HUD and the victory tracker are drawn from `players`, so an
+    /// empire nobody has met has to be missing from it rather than merely
+    /// skipped by the browser. What is left is the seat's identity — the id
+    /// and civ its cities fly on the map — and nothing anyone could rank it by.
+    #[test]
+    fn an_unmet_civilization_reaches_the_wire_as_identity_and_nothing_else() {
+        let mut game = Game::new(2, 18, 12, 74_115, 25, 0);
+        for pid in 0..2 {
+            game.players[pid].met.clear();
+        }
+        let hidden = &observation(&game, 0)["players"][1];
+        assert_eq!(hidden["met"], json!(false));
+        assert_eq!(hidden["civ"], json!(game.players[1].civ));
+        for withheld in [
+            "score",
+            "victories",
+            "yields",
+            "military",
+            "cities",
+            "gold",
+            "leader",
+            "agenda",
+            "government",
+            "wonder_count",
+            "opinion_of_me",
+        ] {
+            assert!(
+                hidden[withheld].is_null(),
+                "an unmet civilization must not report {withheld}"
+            );
+        }
+        // The viewer is always on its own ledger, and so is the omniscient
+        // spectator's whole table.
+        assert_eq!(observation(&game, 0)["players"][0]["met"], json!(true));
+        let spectated = observation_spectator(&game, 0);
+        assert_eq!(spectated["players"][1]["met"], json!(true));
+        assert!(spectated["players"][1]["score"].is_number());
+
+        game.record_contact(0, 1);
+        let found = &observation(&game, 0)["players"][1];
+        assert_eq!(found["met"], json!(true));
+        assert!(found["score"].is_number(), "the dashboard arrives on contact");
+        assert!(!found["victories"].is_null());
+        assert_eq!(
+            observation(&game, 1)["players"][0]["met"],
+            json!(true),
+            "and the meeting was mutual"
+        );
+    }
+
     /// The viewer starts a world facing wherever it was found and only puts
     /// north at the top once the civilization it is watching can find north, so
     /// the observation has to say. A spectator is above the world rather than in
@@ -1307,6 +1433,64 @@ mod tests {
             observation_player_view(&game, 0)["me"]["found_north"],
             json!(true),
         );
+    }
+
+    /// The shape of the world is the same kind of fact as which way is north:
+    /// the viewer has to be told, because it draws a globe a people who have not
+    /// worked it out yet are not supposed to be looking at. Either proof opens
+    /// it, the great person opens it early, and the far end of the system waits
+    /// for an eye above the air.
+    #[test]
+    fn a_round_world_is_a_discovery_and_the_far_planet_waits_for_a_satellite() {
+        let mut game = Game::new(2, 18, 12, 11, 25, 0);
+        for tech in GLOBE_TECHS {
+            assert!(
+                game.rules.techs.get(tech).is_some(),
+                "{tech} must name a technology in the shipped tree",
+            );
+            game.players[0].techs.remove(tech);
+        }
+        assert!(
+            game.rules.great_people.get(GLOBE_GREAT_PERSON).is_some(),
+            "{GLOBE_GREAT_PERSON} must name a great person in the shipped roster",
+        );
+        game.players[0].great_people.clear();
+        game.players[0].science_projects.remove(EXOPLANET_EYE);
+
+        let own = observation(&game, 0);
+        assert_eq!(own["me"]["knows_globe"], json!(false));
+        assert_eq!(own["me"]["sees_exoplanet"], json!(false));
+        assert_eq!(own["me"]["globe_techs"], json!(GLOBE_TECHS));
+        assert_eq!(own["me"]["globe_great_person"], json!(GLOBE_GREAT_PERSON));
+        assert_eq!(own["me"]["exoplanet_eye"], json!(EXOPLANET_EYE));
+        assert_eq!(
+            observation_player_view(&game, 0)["me"]["knows_globe"],
+            json!(false),
+        );
+        // A spectator is above the world and has never had to prove anything
+        // about it, so the whole system is open from the first turn.
+        let watching = observation_spectator(&game, 0);
+        assert_eq!(watching["me"]["knows_globe"], json!(true));
+        assert_eq!(watching["me"]["sees_exoplanet"], json!(true));
+
+        // Each road on its own is enough.
+        for tech in GLOBE_TECHS {
+            game.players[0].techs.insert(tech.to_string());
+            assert_eq!(observation(&game, 0)["me"]["knows_globe"], json!(true));
+            game.players[0].techs.remove(tech);
+        }
+        game.players[0]
+            .great_people
+            .push(GLOBE_GREAT_PERSON.to_string());
+        assert_eq!(observation(&game, 0)["me"]["knows_globe"], json!(true));
+
+        // The other star stays out of reach until something has actually been
+        // put up there to see it with.
+        assert_eq!(observation(&game, 0)["me"]["sees_exoplanet"], json!(false));
+        game.players[0]
+            .science_projects
+            .insert(EXOPLANET_EYE.to_string());
+        assert_eq!(observation(&game, 0)["me"]["sees_exoplanet"], json!(true));
     }
 
     #[test]

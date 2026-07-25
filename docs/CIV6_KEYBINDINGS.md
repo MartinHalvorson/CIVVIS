@@ -51,7 +51,7 @@ make the board playable without reaching for the mouse first.
 | `F10` | `ToggleGovernors` | Empire → Governors |
 | `F2` | `ToggleCityStates` | Empire → City-States |
 | `F3` | `ToggleEspionage` | Empire → Espionage |
-| `F4` | `ToggleTradeRoutes` | Quick Deals |
+| `F4` | `ToggleTradeRoutes` | Empire → Trade |
 | `F9` | `OpenCivilopedia` | Civilopedia |
 | `Ctrl+,` | `CivilopediaBack` | Back along the Civilopedia trail |
 | `Ctrl+.` | `CivilopediaForward` | Forward along it |
@@ -115,6 +115,7 @@ shadow a binding somebody arrived with.
 | Key | Does |
 | --- | --- |
 | `F8` | Diplomacy — Civ 6 has no hotkey for its diplomacy screen, and `F8` is free |
+| `Ctrl+D` | Quick Deals — a CIVVIS screen with no Civ 6 counterpart; `F4` is Civ 6's trade-routes overview, which is the empire's Trade tab |
 | `Tab` | Next unit needing orders (`.` is the Civ 6 way to the same place) |
 | `=` / `−` | Zoom, for a keyboard with no numeric keypad |
 | `Ctrl+A` | Hand the seat to an agent for a stretch of turns |

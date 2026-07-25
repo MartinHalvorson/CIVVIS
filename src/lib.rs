@@ -477,6 +477,11 @@ mod tests {
                 .nth(1)
                 .unwrap(),
         );
+        // An agenda is public knowledge once you have met its leader, so the
+        // three seats this test reads across have to have met.
+        g.record_contact(a, b);
+        g.record_contact(a, tomyris);
+        g.record_contact(b, tomyris);
         g.apply(a, &Action::DeclareWar { player: b }).unwrap();
         // Run a full world turn so the upkeep pass sees the new stance.
         let world_turn = g.players.iter().filter(|player| player.alive).count() + 1;
@@ -1727,6 +1732,9 @@ mod tests {
         assert_eq!(g.suzerain_of(minor), None, "a tie has no Suzerain");
         g.players[0].envoys[0].1 = 4;
         assert_eq!(g.suzerain_of(minor), Some(0));
+        // A war written straight into the ledger skips the introduction that
+        // declaring one would have made.
+        g.record_contact(0, 1);
         g.at_war.insert((0, 1));
         assert!(
             g.is_at_war(minor, 1),
