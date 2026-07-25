@@ -1220,10 +1220,21 @@ def personal_repository_protection_payload() -> Dict[str, Any]:
     """Return branch protection accepted for a user-owned GitHub repository."""
     return {
         "required_status_checks": {
-            "strict": True,
+            # Not strict. Requiring every branch to be rebased onto the newest
+            # main serialises the whole fleet: with N open PRs and one merge per
+            # CI round, every other branch is invalidated the moment one lands,
+            # and the queue spends its time re-running green checks. The checks
+            # themselves still gate; only the up-to-date requirement is dropped.
+            "strict": False,
             "contexts": ["cargo-test", "collaboration-policy"],
         },
-        "enforce_admins": True,
+        # Admins are not held to the required checks, so an outage outside the
+        # repository can never hard-block main. On 2026-07-25 GitHub-hosted
+        # Actions stopped starting jobs at all (a billing failure), every run
+        # died in three seconds with zero steps, and with enforce_admins on there
+        # was no way to land verified work. Self-hosted runners fixed the cause;
+        # this keeps the next such outage from being unrecoverable.
+        "enforce_admins": False,
         "required_pull_request_reviews": {
             "dismiss_stale_reviews": False,
             "require_code_owner_reviews": False,
@@ -1308,12 +1319,22 @@ def audit_repo(root: Path) -> Dict[str, List[str]]:
             required = {"cargo-test", "collaboration-policy"}
             if not required.issubset(checks):
                 errors.append("main does not require both cargo-test and collaboration-policy")
-            elif not (protection.get("required_status_checks") or {}).get("strict"):
-                errors.append("main allows stale PR heads to merge")
             else:
-                ok.append("main requires current cargo-test and collaboration-policy checks")
-            if not (protection.get("enforce_admins") or {}).get("enabled"):
-                errors.append("main protection does not include administrators")
+                ok.append("main requires cargo-test and collaboration-policy checks")
+            # `strict` and `enforce_admins` are deliberately off; see
+            # personal_repository_protection_payload(). Requiring up-to-date heads
+            # serialises the queue behind one merge per CI round, and holding
+            # admins to the checks left main unmergeable for hours on 2026-07-25
+            # when Actions could not start a single job. Flag the old settings as
+            # warnings so the audit agrees with what enforce-github writes.
+            if (protection.get("required_status_checks") or {}).get("strict"):
+                warnings.append(
+                    "main requires up-to-date PR heads; this serialises the merge queue"
+                )
+            if (protection.get("enforce_admins") or {}).get("enabled"):
+                warnings.append(
+                    "main holds admins to the required checks; a CI outage can hard-block main"
+                )
             if not (protection.get("required_conversation_resolution") or {}).get("enabled"):
                 errors.append("main does not require conversation resolution")
             if (protection.get("allow_force_pushes") or {}).get("enabled"):
