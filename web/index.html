@@ -4902,6 +4902,268 @@ function shade(hex, f) {
   return "rgb(" + r + "," + g + "," + b + ")";
 }
 
+// --- painted materials ---------------------------------------------------
+//
+// Everything standing on this board used to be flat fills: one colour per
+// shape, a dark outline, done. That is a pictogram. It is why a tank at
+// cinematic zoom read as an ink blot on the canopy and a spearman read as a
+// chess piece — the shapes were right and the light was missing entirely.
+//
+// What makes a twenty-pixel sprite look painted is not more detail, it is
+// *value*: a lit side and a shadow side of the same material, a rim where the
+// sun grazes the silhouette, and darkening where the object meets the ground.
+// Three rules carry the whole vocabulary:
+//
+//   One light. `SUN` fixes a world azimuth and `LITF`/`SHX`/`SHY` already
+//   carry it into screen space for the terrain. Sprites take the same light,
+//   so a soldier, the hill he stands on and the shadow he throws all agree —
+//   and they keep agreeing when the camera yaws.
+//
+//   Warm light, cool shadow. A flat multiply gives the same colour, darker,
+//   which reads as the same sticker in a dimmer room. Sunlight is warm and the
+//   fill bouncing back off the sky is cold, so `tone` swings hue with value.
+//
+//   Gradients are cached in sprite-local space. Canvas resolves gradient
+//   coordinates against the transform in force when the gradient is *painted*,
+//   and every sprite is drawn after translating to its own position — so one
+//   cached gradient serves every unit of that colour anywhere on the board at
+//   any zoom. The costly part of painted shading is allocating gradients, not
+//   rasterising them, and this pays that once per colour instead of once per
+//   unit per frame.
+function rgbOf(col) {
+  if (col[0] === "#") {
+    const n = parseInt(col.slice(1), 16);
+    return col.length >= 7
+      ? [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+      : [((n >> 8) & 15) * 17, ((n >> 4) & 15) * 17, (n & 15) * 17];
+  }
+  const m = col.match(/[\d.]+/g) || ["0", "0", "0"];
+  return [+m[0], +m[1], +m[2]];
+}
+const clamp255 = v => v < 0 ? 0 : v > 255 ? 255 : Math.round(v);
+// Value with hue: f > 1 walks the colour into sunlight, f < 1 into skylight.
+function tone(col, f, a) {
+  const [r, g, b] = rgbOf(col);
+  const warm = Math.max(0, f - 1), cool = Math.max(0, 1 - f);
+  const out = [clamp255(r * f + warm * 54 - cool * 12),
+               clamp255(g * f + warm * 40 + cool * 3),
+               clamp255(b * f + warm * 9 + cool * 34)];
+  return a === undefined
+    ? `rgb(${out[0]},${out[1]},${out[2]})`
+    : `rgba(${out[0]},${out[1]},${out[2]},${a})`;
+}
+// Nothing in sunlight is actually black. Barbarian and city-state jerseys are
+// very nearly so, and a flat fill of one turned a soldier into a hole punched
+// in the map — the shape was there and no light was on it. Lifting only the
+// darkest colours toward the ambient before shading keeps the jersey
+// identifiable while giving the highlight something to work from.
+function litBase(col) {
+  const [r, g, b] = rgbOf(col);
+  const lum = (r * .3 + g * .59 + b * .11) / 255;
+  if (lum >= .3) return col;
+  const t = Math.min(.62, (.3 - lum) * 2.4);
+  return `rgb(${clamp255(r + (96 - r) * t)},${clamp255(g + (104 - g) * t)},${clamp255(b + (116 - b) * t)})`;
+}
+const PAINT = new Map();
+function painted(key, make) {
+  let g = PAINT.get(key);
+  if (g === undefined) PAINT.set(key, g = make());
+  return g;
+}
+// How wide, in sprite units, the material's light-to-shadow ramp runs. It has
+// to match the part being painted: a ramp sized for the whole figure spends
+// its entire range on a torso nine units across and delivers one flat purple,
+// which was the first version of this and looked exactly like the flat fills
+// it replaced. Callers pass the half-width of the volume they are about to
+// fill, so a helmet, a horse and a battleship each get a full turn of value.
+const FIG = 6;
+// `dir` is the sun's x direction *inside the sprite's own space*. Figures are
+// mirrored by facing, so callers pass `LITF * facing`: a unit that turns round
+// keeps its highlight on the side the sun is actually on instead of carrying
+// it along like a lamp.
+// Strategic is the flat style by definition — plates, no relief, no
+// photography, and the one you want when the box is busy playing the game. It
+// takes the same shapes as the painted styles with none of the paint, which is
+// both faithful to what that style is for and why it stays the cheap one: no
+// gradients, no rim pass, no cast shadows.
+function clothMat(col, dir, span = FIG) {
+  if (!MODE.painted) return col;
+  return painted(`cloth|${col}|${dir}|${span}`, () => {
+    col = litBase(col);
+    const g = cx.createLinearGradient(dir * span, -span, -dir * span, span * .7);
+    g.addColorStop(0, tone(col, 1.44));
+    g.addColorStop(.36, tone(col, 1.10));
+    g.addColorStop(.66, tone(col, .80));
+    g.addColorStop(1, tone(col, .50));
+    return g;
+  });
+}
+// Metal is cloth with the falloff compressed: a narrow blown-out specular, a
+// fast terminator, and a bounce along the bottom edge where the ground throws
+// light back up. Those three stops are the whole difference between painted
+// steel and grey plastic.
+function metalMat(col, dir, span = FIG) {
+  if (!MODE.painted) return col;
+  return painted(`metal|${col}|${dir}|${span}`, () => {
+    col = litBase(col);
+    const g = cx.createLinearGradient(dir * span, -span, -dir * span, span * .8);
+    g.addColorStop(0, tone(col, 1.85));
+    g.addColorStop(.17, tone(col, 1.34));
+    g.addColorStop(.34, tone(col, .92));
+    g.addColorStop(.72, tone(col, .48));
+    g.addColorStop(.92, tone(col, .38));
+    g.addColorStop(1, tone(col, .74));      // bounce off the ground
+    return g;
+  });
+}
+// Hide, leather, canvas, timber: matte, so the light side never blows out and
+// the shadow keeps some of the colour rather than going to soot.
+function matteMat(col, dir, span = FIG) {
+  if (!MODE.painted) return col;
+  return painted(`matte|${col}|${dir}|${span}`, () => {
+    col = litBase(col);
+    const g = cx.createLinearGradient(dir * span, -span, -dir * span, span * .7);
+    g.addColorStop(0, tone(col, 1.26));
+    g.addColorStop(.45, tone(col, 1.02));
+    g.addColorStop(1, tone(col, .58));
+    return g;
+  });
+}
+// A unit sphere, painted. Scale the transform to the radius you want; the
+// terminator and the bounce stay in proportion because they are fractions of
+// the same unit circle.
+function ballMat(col, dir) {
+  if (!MODE.painted) return col;
+  return painted(`ball|${col}|${dir}`, () => {
+    col = litBase(col);
+    const g = cx.createRadialGradient(dir * .40, -.46, .06, 0, 0, 1.32);
+    g.addColorStop(0, tone(col, 1.52));
+    g.addColorStop(.40, tone(col, 1.14));
+    g.addColorStop(.76, tone(col, .78));
+    g.addColorStop(1, tone(col, .44));
+    return g;
+  });
+}
+// A rim is skylight grazing an edge, not a brighter version of the object. Its
+// first form was `tone(col, 1.75)`, which on a purple tunic is hot magenta —
+// every figure wore a neon outline, which is precisely the opposite of what a
+// rim is for. Mix the material toward the colour of the sky instead.
+function skyRim(col) {
+  const [r, g, b] = rgbOf(litBase(col));
+  const t = .56;
+  return `rgb(${clamp255(r + (208 - r) * t)},${clamp255(g + (226 - g) * t)},${clamp255(b + (248 - b) * t)})`;
+}
+// Paint a volume: a crescent of sky-lit rim on the sun side, the body over it,
+// then an edge that survives mostly on the shadow side. A flat opaque outline
+// all the way round is what flattens a sprite — it is the single thing that
+// most makes small art read as a sticker — but photographic terrain will
+// swallow a shape with no edge at all. So the edge is *translucent*: enough
+// separation against a jungle canopy, and the fill's own hue still comes
+// through it rather than a band of black being laid over the paint.
+function volume(p, fill, dir, rim, edge = "rgba(11,15,21,.68)", lw = 1.05) {
+  if (rim && MODE.painted) {
+    cx.save();
+    cx.translate(dir * .9, -.75);
+    cx.fillStyle = rim; cx.fill(p);
+    cx.restore();
+  }
+  cx.fillStyle = fill; cx.fill(p);
+  if (edge) { cx.strokeStyle = edge; cx.lineWidth = lw; cx.stroke(p); }
+}
+function ball(x, y, r, col, dir, edge = "#0f141c", lw = 1.1) {
+  cx.save();
+  cx.translate(x, y); cx.scale(r, r);
+  cx.fillStyle = ballMat(col, dir);
+  cx.beginPath(); cx.arc(0, 0, 1, 0, 7); cx.fill();
+  cx.restore();
+  if (edge) {
+    cx.strokeStyle = edge; cx.lineWidth = lw;
+    cx.beginPath(); cx.arc(x, y, r, 0, 7); cx.stroke();
+  }
+}
+// An arm or a leg. Two strokes — the wide one is the shadow side of the limb,
+// the narrow one offset toward the sun is the lit side — which reads as round
+// for a third the cost of filling a tapered polygon, and matters because a
+// figure has four of them and the board has two hundred figures.
+function limb(x0, y0, x1, y1, w, col, dir) {
+  cx.lineCap = "round";
+  cx.strokeStyle = tone(col, .50); cx.lineWidth = w;
+  cx.beginPath(); cx.moveTo(x0, y0); cx.lineTo(x1, y1); cx.stroke();
+  cx.strokeStyle = tone(col, 1.20); cx.lineWidth = w * .44;
+  cx.beginPath();
+  cx.moveTo(x0 + dir * w * .22, y0 - w * .12);
+  cx.lineTo(x1 + dir * w * .22, y1 - w * .12);
+  cx.stroke();
+  cx.lineWidth = 1.15; cx.lineCap = "butt";
+}
+// A shaft: timber with a lit edge. Used for spears, oars, masts and axles.
+function shaft(x0, y0, x1, y1, w, dir, col = "#8a6a44") {
+  limb(x0, y0, x1, y1, w, col, dir);
+}
+// Steel that catches the sun along one edge, so a drawn sword is a blade with
+// a back and an edge rather than a grey stick.
+function blade(x0, y0, x1, y1, w, dir) {
+  cx.lineCap = "round";
+  cx.strokeStyle = "#5b6874"; cx.lineWidth = w;
+  cx.beginPath(); cx.moveTo(x0, y0); cx.lineTo(x1, y1); cx.stroke();
+  cx.strokeStyle = "#eaf2f7"; cx.lineWidth = Math.max(.55, w * .38);
+  cx.beginPath();
+  cx.moveTo(x0 + dir * w * .3, y0 - w * .2);
+  cx.lineTo(x1 + dir * w * .3, y1 - w * .2);
+  cx.stroke();
+  cx.lineWidth = 1.15; cx.lineCap = "butt";
+}
+// Ground darkening, blitted rather than filled. There are three of these per
+// unit and up to two hundred units, so building a fresh radial gradient for
+// each — or even reusing one and rasterising a gradient fill — measured about
+// eight milliseconds a frame more than stamping a cached sprite. Same reason
+// the water dabs and the old unit pad are sprites.
+const SHADE_SPRITES = {};
+function shadeSprite(rgb) {
+  return SHADE_SPRITES[rgb] || (SHADE_SPRITES[rgb] = radialSprite([
+    [0, `rgba(${rgb},1)`], [.58, `rgba(${rgb},.44)`], [1, `rgba(${rgb},0)`]]));
+}
+// Where a thing meets the ground, the ground goes dark — fast, and only right
+// at the contact. This is the single cheapest cue that a sprite is standing on
+// the terrain rather than pasted over it, and it is what the old symmetric
+// black pad was reaching for and missing.
+function contactAO(x, y, rx, ry, a = .38) {
+  cx.globalAlpha = a;
+  cx.drawImage(shadeSprite("6,9,14"), x - rx, y - ry, rx * 2, ry * 2);
+  cx.globalAlpha = 1;
+}
+// Where two parts of the same object meet, light does not reach.
+function jointAO(x, y, rx, ry, a = .34) {
+  if (!MODE.painted) return;
+  cx.globalAlpha = a;
+  cx.drawImage(shadeSprite("16,12,10"), x - rx, y - ry, rx * 2, ry * 2);
+  cx.globalAlpha = 1;
+}
+// The shadow the object actually throws, laid on the ground plane away from
+// the sun and squashed by the current tilt. It stretches and swings as the
+// camera yaws, which is most of why a unit reads as standing in the scene
+// rather than floating above a dark smudge.
+function castShadow(x, y, r, h, a = .34) {
+  const len = r + h * .52, wide = Math.max(1.4, r * .46);
+  cx.save();
+  cx.translate(x + SHX * h * .58, y + SHY * h * .58);
+  cx.rotate(Math.atan2(SHY, SHX));
+  cx.globalAlpha = a;
+  cx.drawImage(shadeSprite("5,8,12"), -len, -wide, len * 2, wide * 2);
+  cx.restore();
+  cx.globalAlpha = 1;
+}
+// A round shield: struck metal in the owner's colour with a boss that takes a
+// specular. Infantry carry one on the far shoulder, where it doubles as the
+// largest patch of empire colour a foot soldier has.
+function shieldPart(sx, sy, r, col, dir) {
+  const p = new Path2D();
+  p.arc(sx, sy, r, 0, 7);
+  volume(p, metalMat(tone(col, 1.12), dir, r), dir, skyRim(col));
+  cx.fillStyle = "rgba(255,248,224,.5)";
+  cx.beginPath(); cx.arc(sx + dir * r * .3, sy - r * .3, r * .27, 0, 7); cx.fill();
+}
+
 // Paint an AI-authored, photographic material sample onto the world plane.
 // Each tile takes a deterministic crop from its biome swatch, and the cached
 // radial mask turns that crop into a broad dab rather than a hex-shaped decal.
@@ -5904,9 +6166,75 @@ function cinematicDepthSubject(u, now) {
     now >= battle.t0 - 520 && now <= battle.endsAt &&
     (battle.attackerId === u.id || key(battle.target) === key(u.pos)));
 }
+// A unit's era, taken from the tech that unlocks it. Anything with no tech is
+// ancient. This is what lets headgear date itself across all eighty-odd units
+// without an eighty-row table to maintain — and it is the reason a bronze-age
+// spearman and a rifleman no longer wear the same dome, which was the single
+// largest thing the map declined to tell you about an army.
+const UNIT_ERA = new Map();
+function unitEra(k) {
+  const had = UNIT_ERA.get(k);
+  if (had !== undefined) return had;
+  if (!RULES?.units) return 0;                 // rules not in yet; do not cache
+  const tech = RULES.units[k]?.tech;
+  const era = tech ? RULES.techs?.[tech]?.era : 0;
+  const out = Number.isFinite(era) ? era : 0;
+  UNIT_ERA.set(k, out);
+  return out;
+}
+// Four silhouettes across the whole tech tree. More would be lost at map
+// scale; fewer, and the eye cannot date what it is looking at.
+function helmet(era, col, dir, fine) {
+  const edge = "rgba(11,15,21,.68)";
+  const shell = metalMat(tone(col, .82), dir, 3.7), rim = skyRim(col);
+  const p = new Path2D();
+  if (era <= 1) {                                // bronze cap, crested
+    p.arc(0, -10.1, 3.7, Math.PI, 0);
+    p.lineTo(3.7, -9.2); p.lineTo(-3.7, -9.2); p.closePath();
+    volume(p, shell, dir, rim, edge, 1);
+    if (fine) {
+      cx.strokeStyle = tone(col, 1.5); cx.lineWidth = 1.4;
+      cx.beginPath();
+      cx.moveTo(-2.6, -12.5); cx.quadraticCurveTo(0, -14.8, 2.6, -12.5); cx.stroke();
+    }
+  } else if (era <= 3) {                         // visored helm
+    p.moveTo(-3.8, -8.8); p.lineTo(-3.8, -11.4);
+    p.quadraticCurveTo(0, -14.8, 3.8, -11.4);
+    p.lineTo(3.8, -8.8); p.quadraticCurveTo(0, -7.4, -3.8, -8.8); p.closePath();
+    volume(p, shell, dir, rim, edge, 1);
+    cx.strokeStyle = "rgba(8,10,14,.72)"; cx.lineWidth = 1;
+    cx.beginPath(); cx.moveTo(-2.6, -10.3); cx.lineTo(2.6, -10.3); cx.stroke();
+  } else if (era <= 4) {                         // shako, plate and plume
+    p.moveTo(-3.2, -10.4); p.lineTo(-3.7, -15.6); p.lineTo(3.7, -15.6);
+    p.lineTo(3.2, -10.4); p.closePath();
+    volume(p, shell, dir, rim, edge, 1);
+    cx.fillStyle = "#e8d492";
+    cx.beginPath(); cx.arc(0, -13.2, 1.1, 0, 7); cx.fill();
+    if (fine) {
+      cx.strokeStyle = tone(col, 1.5); cx.lineWidth = 1.3;
+      cx.beginPath(); cx.moveTo(0, -15.6); cx.lineTo(.6, -18.6); cx.stroke();
+    }
+  } else {                                       // brimmed steel helmet
+    p.arc(0, -10.3, 3.6, Math.PI * 1.03, -.03);
+    p.lineTo(4.7, -9.3); p.quadraticCurveTo(0, -8.0, -4.7, -9.3); p.closePath();
+    volume(p, shell, dir, rim, edge, 1);
+  }
+  jointAO(0, -8.4, 3.2, 1.3, .3);                // brow, thrown onto the face
+}
+// The figure itself. Everything here is assembled out of the painted-material
+// vocabulary above, which is what separates this from the flat token it
+// replaces: each volume gets a lit side, a sky-lit rim on the sun side and a
+// dark edge on the other, and every one of them takes that light from the same
+// world sun the terrain is lit by.
+//
+// `dir` is where the sun is in the sprite's own coordinates. `LITF` gives the
+// screen-space side, `fc` mirrors the sprite by facing, and the product is
+// what every material and every highlight below is oriented against — so a
+// unit that turns to march the other way does not carry its highlight around
+// with it like a lamp.
 function drawUnitChar(u, x, y, now, moving) {
   const fc = facing.get(u.id) || 1;
-  const col = pcol(u.owner), dark = "#10151d", skin = "#e8c49b";
+  const col = pcol(u.owner), dark = "rgba(11,15,21,.68)", skin = "#e2bb92";
   const k = u.type;
   const family = unitVisualFamily(u);
   const phase = now / 1000 + Number(u.id || 0) * 1.7;
@@ -5939,24 +6267,26 @@ function drawUnitChar(u, x, y, now, moving) {
     return;
   }
   cx.scale(fc, 1);
-  if (cinemaActive()) {
-    cx.shadowColor = "#02050888";
-    cx.shadowBlur = 2.4;
-    cx.shadowOffsetY = 1.4;
-  }
-  cx.lineWidth = 1.4; cx.strokeStyle = dark;
+  const dir = -LITF * fc;
+  const rim = skyRim(col);
+  // Detail that is smaller than a pixel at survey zoom costs the same to draw
+  // as detail you can see. Below the fine threshold a figure paints its
+  // volumes and skips its trim.
+  const fine = FINE();
+  cx.lineWidth = 1.15; cx.strokeStyle = dark; cx.lineJoin = "round";
   if (family === "embarked") {
     // Embarked land units use a shared transport silhouette. Keeping their
     // land character here makes cavalry and civilians look like they are
     // walking or flying over the water even when the move itself is legal.
-    cx.fillStyle = "#6b4a2f";
-    cx.beginPath(); cx.moveTo(-11, 1); cx.quadraticCurveTo(0, 7, 11, 1);
-    cx.lineTo(8, -3); cx.lineTo(-8, -3); cx.closePath(); cx.fill(); cx.stroke();
-    cx.fillStyle = col;
-    cx.beginPath(); cx.moveTo(0, -2); cx.lineTo(0, -13); cx.lineTo(8, -6);
-    cx.closePath(); cx.fill(); cx.stroke();
-    cx.fillStyle = skin;
-    cx.beginPath(); cx.arc(-4, -5, 2.2, 0, 7); cx.fill(); cx.stroke();
+    const boat = new Path2D();
+    boat.moveTo(-11, 1); boat.quadraticCurveTo(0, 7.5, 11, 1);
+    boat.lineTo(8, -3); boat.lineTo(-8, -3); boat.closePath();
+    volume(boat, matteMat("#6b4a2f", dir, 11), dir, "#c19a6b");
+    const sail = new Path2D();
+    sail.moveTo(0, -2); sail.lineTo(0, -13.5); sail.lineTo(8.5, -6); sail.closePath();
+    volume(sail, clothMat(col, dir, 5), dir, rim);
+    shaft(0, -1, 0, -14, 1.5, dir);
+    ball(-4, -5, 2.2, skin, dir);
   } else if (family === "air") {
     const jet = k === "fighter" || k === "jet_fighter" || k === "jet_bomber";
     const bomber = k === "bomber" || k === "jet_bomber";
@@ -5965,19 +6295,24 @@ function drawUnitChar(u, x, y, now, moving) {
     cx.rotate(bank * .12);
     // The darker underside and offset wing are the depth read; the bright
     // spine stays sun-facing while the aircraft banks through a move.
-    cx.fillStyle = "#18222d";
-    cx.beginPath(); cx.ellipse(-1.4, 2.4, bomber ? 12 : 9, 3.2, 0, 0, 7); cx.fill();
-    cx.fillStyle = col; cx.strokeStyle = dark;
-    cx.beginPath();
-    cx.moveTo(13, 0); cx.lineTo(3, -2.7); cx.lineTo(-3, -10);
-    cx.lineTo(-6.5, -9); cx.lineTo(-3.5, -1.8); cx.lineTo(-11, -3.6);
-    cx.lineTo(-13, 0); cx.lineTo(-3.5, 2.2); cx.lineTo(-7, 7.5);
-    cx.lineTo(-3.2, 8.5); cx.lineTo(3, 2.7); cx.closePath(); cx.fill(); cx.stroke();
-    cx.fillStyle = shade(col, 1.35);
-    cx.beginPath(); cx.moveTo(13, 0); cx.lineTo(-8, -1.1); cx.lineTo(-12, 0);
-    cx.lineTo(-3, .9); cx.closePath(); cx.fill();
+    cx.fillStyle = "rgba(12,18,26,.62)";
+    cx.beginPath(); cx.ellipse(-1.4, 2.6, bomber ? 12 : 9, 3.2, 0, 0, 7); cx.fill();
+    const air = new Path2D();
+    air.moveTo(13, 0); air.lineTo(3, -2.7); air.lineTo(-3, -10);
+    air.lineTo(-6.5, -9); air.lineTo(-3.5, -1.8); air.lineTo(-11, -3.6);
+    air.lineTo(-13, 0); air.lineTo(-3.5, 2.2); air.lineTo(-7, 7.5);
+    air.lineTo(-3.2, 8.5); air.lineTo(3, 2.7); air.closePath();
+    volume(air, metalMat(col, dir, 12), dir, rim);
+    const spine = new Path2D();
+    spine.moveTo(13, 0); spine.lineTo(-8, -1.1); spine.lineTo(-12, 0);
+    spine.lineTo(-3, .9); spine.closePath();
+    cx.fillStyle = tone(col, 1.5); cx.fill(spine);
+    if (fine) {                                   // canopy, catching the sky
+      cx.fillStyle = "rgba(180,232,255,.72)";
+      cx.beginPath(); cx.ellipse(5.4, -.4, 2.4, 1.3, 0, 0, 7); cx.fill();
+    }
     if (jet) {
-      cx.fillStyle = `rgba(105,220,255,${(.45 + action * .5).toFixed(2)})`;
+      cx.fillStyle = `rgba(122,226,255,${(.5 + action * .45).toFixed(2)})`;
       cx.beginPath(); cx.moveTo(-11, -1.5); cx.lineTo(-17 - action * 4, 0);
       cx.lineTo(-11, 1.5); cx.closePath(); cx.fill();
     } else if (k === "biplane") {
@@ -5989,33 +6324,46 @@ function drawUnitChar(u, x, y, now, moving) {
     }
   } else if (family === "rotor") {
     cx.translate(0, -5 - Math.abs(Math.sin(phase * 3)) * .7);
-    cx.fillStyle = "#26333b";
-    cx.beginPath(); cx.moveTo(-5, -2); cx.lineTo(-15, -5); cx.lineTo(-16, -2);
-    cx.lineTo(-5, 2); cx.closePath(); cx.fill(); cx.stroke();
-    cx.fillStyle = col;
-    cx.beginPath(); cx.ellipse(1, 0, 8, 5, 0, 0, 7); cx.fill(); cx.stroke();
-    cx.fillStyle = "#8cc8d8";
+    const tail = new Path2D();
+    tail.moveTo(-5, -2); tail.lineTo(-15, -5); tail.lineTo(-16, -2);
+    tail.lineTo(-5, 2); tail.closePath();
+    volume(tail, metalMat("#3b4a55", dir, 6), dir, "#8fa6b4");
+    const body = new Path2D();
+    body.ellipse(1, 0, 8, 5, 0, 0, 7);
+    volume(body, metalMat(col, dir, 8), dir, rim);
+    cx.fillStyle = "rgba(158,222,244,.85)";
     cx.beginPath(); cx.ellipse(5, -1, 3.4, 2.5, 0, 0, 7); cx.fill();
-    cx.strokeStyle = "#d9e4df"; cx.lineWidth = 1.5;
+    cx.strokeStyle = "#e6efec"; cx.lineWidth = 1.5; cx.globalAlpha = .85;
     const rotor = phase * 22;
     cx.beginPath(); cx.moveTo(Math.cos(rotor) * 14, -6 + Math.sin(rotor) * 2);
     cx.lineTo(-Math.cos(rotor) * 14, -6 - Math.sin(rotor) * 2); cx.stroke();
-    cx.strokeStyle = dark;
+    cx.globalAlpha = 1;
+    cx.strokeStyle = dark; cx.lineWidth = 1.15;
     cx.beginPath(); cx.moveTo(-16, -6); cx.lineTo(-16, 2); cx.stroke();
   } else if (family === "balloon") {
     const sway = Math.sin(phase * 1.5) * .9;
     cx.translate(sway, -5);
-    cx.fillStyle = shade(col, .72);
-    cx.beginPath(); cx.ellipse(0, -8, 8.5, 11, 0, 0, 7); cx.fill(); cx.stroke();
-    cx.fillStyle = shade(col, 1.35);
-    cx.beginPath(); cx.ellipse(-2.4, -10, 3.1, 7.5, -.18, 0, 7); cx.fill();
+    const bag = new Path2D();
+    bag.ellipse(0, -8, 8.5, 11, 0, 0, 7);
+    volume(bag, clothMat(col, dir, 8.5), dir, rim);
+    if (fine) {                                   // gores, so it reads as sewn
+      cx.strokeStyle = tone(col, .62); cx.lineWidth = .8;
+      for (const gx of [-4.2, 0, 4.2]) {
+        cx.beginPath();
+        cx.moveTo(gx * .35, -18.6); cx.quadraticCurveTo(gx * 1.5, -8, gx * .35, 2.6);
+        cx.stroke();
+      }
+    }
     cx.strokeStyle = "#7a6245"; cx.lineWidth = 1;
     cx.beginPath(); cx.moveTo(-4, 0); cx.lineTo(-2, 6); cx.moveTo(4, 0); cx.lineTo(2, 6); cx.stroke();
-    cx.fillStyle = "#795a36"; cx.fillRect(-3, 5, 6, 4); cx.strokeRect(-3, 5, 6, 4);
+    const basket = new Path2D();
+    basket.rect(-3, 5, 6, 4);
+    volume(basket, matteMat("#79542f", dir, 3), dir, "#c0a074");
   } else if (family === "drone") {
     cx.translate(0, -7 + Math.sin(phase * 3) * .7);
-    cx.fillStyle = "#596872";
-    cx.beginPath(); cx.roundRect(-5, -3, 10, 6, 2); cx.fill(); cx.stroke();
+    const shell = new Path2D();
+    shell.roundRect(-5, -3, 10, 6, 2);
+    volume(shell, metalMat("#5d6d78", dir, 5), dir, "#c3d4de");
     cx.strokeStyle = "#a9b8c2"; cx.lineWidth = 1.7;
     for (const side of [-1, 1]) {
       cx.beginPath(); cx.moveTo(side * 4, 0); cx.lineTo(side * 10, -4); cx.stroke();
@@ -6025,264 +6373,407 @@ function drawUnitChar(u, x, y, now, moving) {
     cx.fillStyle = "#6eeaff"; cx.beginPath(); cx.arc(2.5, 2, 1.2, 0, 7); cx.fill();
   } else if (family === "robot") {
     const stride = moving ? step * .5 : Math.sin(phase * 1.2) * .3;
-    cx.fillStyle = "#303e49"; cx.lineWidth = 2.2;
-    cx.beginPath(); cx.moveTo(-5, 2); cx.lineTo(-6 - stride, 10);
-    cx.moveTo(5, 2); cx.lineTo(6 + stride, 10); cx.stroke();
-    cx.fillStyle = col; cx.lineWidth = 1.4;
-    cx.beginPath(); cx.roundRect(-7, -11, 14, 14, 3); cx.fill(); cx.stroke();
-    cx.fillStyle = shade(col, 1.35); cx.fillRect(-5, -9, 10, 3);
+    limb(-5, 2, -6 - stride, 10, 3.4, "#3c4c58", dir);
+    limb(5, 2, 6 + stride, 10, 3.4, "#3c4c58", dir);
+    const chassis = new Path2D();
+    chassis.roundRect(-7, -11, 14, 14, 3);
+    volume(chassis, metalMat(col, dir, 7), dir, rim);
+    cx.fillStyle = tone(col, 1.44); cx.fillRect(-5, -9, 10, 3);
     cx.fillStyle = "#8ff8ff"; cx.fillRect(-3, -8.5, 6, 1.4);
     for (const side of [-1, 1]) {
-      cx.strokeStyle = "#303e49"; cx.lineWidth = 2.6;
-      cx.beginPath(); cx.moveTo(side * 6, -6); cx.lineTo(side * (11 + action * 2), -1 - action * 4); cx.stroke();
-      cx.fillStyle = "#80efff"; cx.beginPath(); cx.arc(side * (11 + action * 2), -1 - action * 4, 1.8, 0, 7); cx.fill();
+      limb(side * 6, -6, side * (11 + action * 2), -1 - action * 4, 3.2, "#3c4c58", dir);
+      cx.fillStyle = "#80efff";
+      cx.beginPath(); cx.arc(side * (11 + action * 2), -1 - action * 4, 1.8, 0, 7); cx.fill();
     }
   } else if (family === "armor") {
+    // Armour was the worst of the flat tokens: a dark hull, a dark skirt and a
+    // dark turret, which over a jungle canopy at cinematic zoom was a hole in
+    // the map. The running gear stays dark because it is in the vehicle's own
+    // shadow, but the deck and turret are lit plate in the owner's colour and
+    // carry a hard sun edge along the top.
     const recoil = action * 3.5;
-    cx.fillStyle = "#1d272d";
-    cx.beginPath(); cx.roundRect(-11, 0, 22, 7, 3); cx.fill(); cx.stroke();
-    for (const side of [-1, 1]) {
-      cx.fillStyle = "#536067";
-      cx.beginPath(); cx.arc(side * 6.5, 4, 2.5, 0, 7); cx.fill();
+    const track = new Path2D();
+    track.roundRect(-11, 0, 22, 7, 3);
+    volume(track, metalMat("#2b3740", dir, 11), dir, "#7d8f9c");
+    if (fine) {
+      cx.fillStyle = "#59666f";
+      for (const side of [-6.5, 0, 6.5]) {
+        cx.beginPath(); cx.arc(side, 4, 2.4, 0, 7); cx.fill();
+      }
     }
-    cx.fillStyle = shade(col, .72);
-    cx.beginPath(); cx.moveTo(-9, 0); cx.lineTo(-5, -7); cx.lineTo(7, -7);
-    cx.lineTo(10, 0); cx.closePath(); cx.fill(); cx.stroke();
-    cx.fillStyle = col;
-    cx.beginPath(); cx.ellipse(1, -7, 5.5, 3.4, 0, 0, 7); cx.fill(); cx.stroke();
+    const skirt = new Path2D();
+    skirt.moveTo(-9, 0); skirt.lineTo(-5, -7); skirt.lineTo(7, -7);
+    skirt.lineTo(10, 0); skirt.closePath();
+    volume(skirt, metalMat(col, dir, 9.5), dir, rim);
+    const turret = new Path2D();
+    turret.ellipse(1, -7.4, 5.5, 3.4, 0, 0, 7);
+    volume(turret, metalMat(col, dir, 5.5), dir, rim);
     if (k === "mobile_sam" || k === "anti_air_gun") {
-      cx.strokeStyle = "#c5d0d2"; cx.lineWidth = 2.2;
-      for (const off of [-2, 2]) { cx.beginPath(); cx.moveTo(off, -9); cx.lineTo(off + 6, -16); cx.stroke(); }
+      for (const off of [-2, 2]) blade(off, -9, off + 6, -16, 2.2, dir);
     } else {
-      cx.strokeStyle = "#263138"; cx.lineWidth = 2.8;
-      cx.beginPath(); cx.moveTo(4, -8); cx.lineTo(14 - recoil, -11); cx.stroke();
+      blade(4, -8.4, 14 - recoil, -11.4, 2.6, dir);
     }
-    cx.strokeStyle = "#ffffff42"; cx.lineWidth = 1;
-    cx.beginPath(); cx.moveTo(-6, -5.5); cx.lineTo(5, -5.5); cx.stroke();
+    // Glacis highlight: one bright line along the top plate is what tells the
+    // eye this is a sloped metal surface and not a dark cut-out.
+    cx.strokeStyle = "rgba(255,255,255,.34)"; cx.lineWidth = 1;
+    cx.beginPath(); cx.moveTo(-5.6, -5.8); cx.lineTo(5.6, -5.8); cx.stroke();
   } else if (family === "gun") {
     const recoil = action * 3.2;
-    cx.fillStyle = "#343d42";
-    cx.beginPath(); cx.arc(-6, 5, 3.5, 0, 7); cx.fill(); cx.stroke();
-    cx.beginPath(); cx.arc(6, 5, 3.5, 0, 7); cx.fill(); cx.stroke();
-    cx.fillStyle = shade(col, .78);
-    cx.beginPath(); cx.moveTo(-8, 3); cx.lineTo(-3, -4); cx.lineTo(8, -2);
-    cx.lineTo(9, 3); cx.closePath(); cx.fill(); cx.stroke();
-    cx.strokeStyle = "#303940"; cx.lineCap = "round";
+    for (const wx of [-6, 6]) {
+      const wheel = new Path2D();
+      wheel.arc(wx, 5, 3.5, 0, 7);
+      volume(wheel, matteMat("#43505a", dir, 3.5), dir, "#93a6b2");
+    }
+    const carriage = new Path2D();
+    carriage.moveTo(-8, 3); carriage.lineTo(-3, -4); carriage.lineTo(8, -2);
+    carriage.lineTo(9, 3); carriage.closePath();
+    volume(carriage, metalMat(tone(col, .9), dir, 8.5), dir, rim);
+    const trail = new Path2D();                    // the spade that stops recoil
+    trail.moveTo(-7, -1); trail.lineTo(-14, 5); trail.lineTo(-12.6, 6.4);
+    trail.lineTo(-6, 1.6); trail.closePath();
+    volume(trail, metalMat(tone(col, .78), dir, 7), dir, rim);
+    if (fine) {                                    // gun shield
+      const shield = new Path2D();
+      shield.moveTo(-.6, -7.4); shield.lineTo(4.6, -6.6);
+      shield.lineTo(4.2, -.4); shield.lineTo(-1, -1.2); shield.closePath();
+      volume(shield, metalMat(col, dir, 3), dir, rim);
+    }
     if (k === "rocket_artillery") {
-      cx.lineWidth = 2;
       for (let tube = 0; tube < 3; tube++) {
-        cx.beginPath(); cx.moveTo(-1, -4 - tube * 2); cx.lineTo(12 - recoil, -10 - tube * 2); cx.stroke();
+        blade(-1, -4 - tube * 2, 12 - recoil, -10 - tube * 2, 2, dir);
       }
     } else {
-      cx.lineWidth = k === "machine_gun" ? 1.8 : 3;
-      cx.beginPath(); cx.moveTo(1, -4); cx.lineTo(15 - recoil, -10); cx.stroke();
+      blade(1, -4, 15 - recoil, -10, k === "machine_gun" ? 1.8 : 3, dir);
     }
-    cx.lineCap = "butt";
-    cx.fillStyle = col; cx.beginPath(); cx.arc(-1, -5, 2.5, 0, 7); cx.fill(); cx.stroke();
+    ball(-1, -5, 2.5, col, dir);
+    if (action > .62) {                            // muzzle flash
+      cx.fillStyle = `rgba(255,226,150,${((action - .62) * 2.4).toFixed(2)})`;
+      cx.beginPath(); cx.arc(15 - recoil, -10, 3.4, 0, 7); cx.fill();
+    }
   } else if (family === "naval") {
-    cx.strokeStyle = "#b8e6e866"; cx.lineWidth = moving ? 1.7 : 1;
+    cx.strokeStyle = "rgba(196,238,240,.5)"; cx.lineWidth = moving ? 1.7 : 1;
     cx.beginPath(); cx.moveTo(-15, 4); cx.quadraticCurveTo(-7, 7 + Math.sin(phase * 4), 1, 4);
     cx.quadraticCurveTo(8, 1, 15, 4); cx.stroke();
-    cx.strokeStyle = dark; cx.lineWidth = 1.4;
+    cx.strokeStyle = dark; cx.lineWidth = 1.15;
     if (k === "submarine" || k === "nuclear_submarine") {
-      cx.fillStyle = "#364653";
-      cx.beginPath(); cx.ellipse(0, 1, 12, 4.5, 0, 0, 7); cx.fill(); cx.stroke();
-      cx.fillRect(-2, -5, 5, 5); cx.strokeRect(-2, -5, 5, 5);
+      const boat = new Path2D();
+      boat.ellipse(0, 1, 12, 4.5, 0, 0, 7);
+      volume(boat, metalMat("#3a4a58", dir, 12), dir, "#8ea4b4");
+      const sail = new Path2D();
+      sail.rect(-2, -5, 5, 5);
+      volume(sail, metalMat("#33424e", dir, 3), dir, "#8ea4b4");
       cx.strokeStyle = "#80929a"; cx.lineWidth = 1.5;
       cx.beginPath(); cx.moveTo(1, -5); cx.lineTo(1, -9); cx.lineTo(4, -9); cx.stroke();
     } else {
       const modern = ["ironclad", "battleship", "destroyer", "aircraft_carrier",
                       "missile_cruiser"].includes(k);
-      cx.fillStyle = modern ? "#465560" : "#6b4a2f";
-      cx.beginPath(); cx.moveTo(-12, 1); cx.quadraticCurveTo(0, 8, 12, 1);
-      cx.lineTo(9, -3); cx.lineTo(-9, -3); cx.closePath(); cx.fill(); cx.stroke();
+      const hull = new Path2D();
+      hull.moveTo(-12, 1); hull.quadraticCurveTo(0, 8, 12, 1);
+      hull.lineTo(9, -3); hull.lineTo(-9, -3); hull.closePath();
+      volume(hull, modern ? metalMat("#4a5b68", dir, 12) : matteMat("#6b4a2f", dir, 12),
+             dir, modern ? "#a6bccb" : "#bb9668");
       if (modern) {
-        const deck = k === "aircraft_carrier" ? 16 : 8;
-        cx.fillStyle = col; cx.fillRect(-deck / 2, -6, deck, 3); cx.strokeRect(-deck / 2, -6, deck, 3);
+        const deck = k === "aircraft_carrier" ? 16 : 11;
+        const house = new Path2D();
+        house.rect(-deck / 2, -6.4, deck, 3.4);
+        volume(house, metalMat(col, dir, 5), dir, rim);
         if (k !== "aircraft_carrier") {
-          cx.fillStyle = shade(col, 1.25);
-          cx.beginPath(); cx.arc(3, -7, 2.5, 0, 7); cx.fill(); cx.stroke();
-          cx.strokeStyle = "#27323a"; cx.lineWidth = 2;
-          cx.beginPath(); cx.moveTo(4, -8); cx.lineTo(12 - action * 3, -10); cx.stroke();
+          ball(3, -7.4, 2.5, col, dir);
+          blade(4, -8.4, 12 - action * 3, -10.4, 2.2, dir);
         } else {
           cx.fillStyle = "#dbe5e7";
           cx.beginPath(); cx.moveTo(-5, -7); cx.lineTo(1, -7); cx.lineTo(-2, -10); cx.closePath(); cx.fill();
         }
       } else {
-        cx.fillStyle = col;
-        cx.beginPath(); cx.moveTo(0, -2); cx.lineTo(0, -13); cx.lineTo(8, -6);
-        cx.closePath(); cx.fill(); cx.stroke();
+        shaft(0, -1, 0, -14, 1.4, dir);
+        const sail = new Path2D();
+        sail.moveTo(0, -2); sail.lineTo(0, -13.5); sail.lineTo(8.5, -6); sail.closePath();
+        volume(sail, clothMat(col, dir, 5), dir, rim);
+        if (fine) {                                // the belly the wind puts in it
+          cx.strokeStyle = tone(col, .58); cx.lineWidth = .8;
+          cx.beginPath(); cx.moveTo(.6, -11.6); cx.quadraticCurveTo(4.6, -8.6, .6, -5.4);
+          cx.stroke();
+        }
       }
     }
   } else if (family === "siege") {
-    cx.fillStyle = "#7a5a38";
     if (k === "catapult" || k === "trebuchet") {
-      cx.fillRect(-9, 1, 18, 4); cx.strokeRect(-9, 1, 18, 4);
+      const frame = new Path2D();
+      frame.rect(-9, 1, 18, 4);
+      volume(frame, matteMat("#7a5a38", dir, 9), dir, "#c3a273");
       const throwArm = action * .55;
       cx.save(); cx.translate(-4, 2); cx.rotate(-.76 - throwArm);
-      cx.beginPath(); cx.moveTo(0, 0); cx.lineTo(15, -3); cx.stroke();
-      cx.beginPath(); cx.arc(15, -3, k === "trebuchet" ? 3 : 2.4, 0, 7);
-      cx.fillStyle = "#555"; cx.fill(); cx.restore();
+      shaft(0, 0, 15, -3, 2, dir, "#6d4f30");
+      cx.fillStyle = "#4c545c";
+      cx.beginPath(); cx.arc(15, -3, k === "trebuchet" ? 3 : 2.4, 0, 7); cx.fill();
+      cx.restore();
       if (k === "trebuchet") {
-        cx.strokeStyle = "#5a4028";
-        cx.beginPath(); cx.moveTo(-6, 1); cx.lineTo(0, -13); cx.lineTo(6, 1); cx.stroke();
+        shaft(-6, 1, 0, -13, 1.8, dir, "#6d4f30");
+        shaft(0, -13, 6, 1, 1.8, dir, "#5c4227");
       }
-      cx.fillStyle = "#4a3826";
-      cx.beginPath(); cx.arc(-6, 6, 2.6, 0, 7); cx.fill();
-      cx.beginPath(); cx.arc(6, 6, 2.6, 0, 7); cx.fill();
+      for (const wx of [-6, 6]) {
+        const wheel = new Path2D();
+        wheel.arc(wx, 6, 2.6, 0, 7);
+        volume(wheel, matteMat("#4a3826", dir, 2.6), dir, "#8d7150");
+      }
     } else if (k === "battering_ram") {
-      cx.fillRect(-10, -6, 20, 4); cx.strokeRect(-10, -6, 20, 4);
-      cx.fillStyle = "#4a3826";
-      cx.fillRect(-8, -2, 3, 8); cx.fillRect(5, -2, 3, 8);
+      // A pitched shed on wheels with the ram slung under it. Flat-topped it
+      // read as a coffee table; the roof pitch and the iron head are what say
+      // "this thing is for knocking a gate in".
+      const roof = new Path2D();
+      roof.moveTo(-11, -3.5); roof.lineTo(-8, -9); roof.lineTo(8, -9);
+      roof.lineTo(11, -3.5); roof.closePath();
+      volume(roof, matteMat("#7a5a38", dir, 10), dir, "#c3a273");
+      cx.strokeStyle = "rgba(52,36,20,.75)"; cx.lineWidth = .9;
+      for (const rx of [-5.5, 0, 5.5]) {
+        cx.beginPath(); cx.moveTo(rx - 1.4, -3.5); cx.lineTo(rx + .4, -9); cx.stroke();
+      }
+      cx.strokeStyle = "#5a4128"; cx.lineWidth = 1;    // slings
+      cx.beginPath(); cx.moveTo(-5, -3.5); cx.lineTo(-5, 0);
+      cx.moveTo(5, -3.5); cx.lineTo(5, 0); cx.stroke();
+      const ramShift = action * 3.4;
+      shaft(-9 + ramShift, 0, 8 + ramShift, 0, 2.8, dir, "#6d4f30");
+      const head = new Path2D();                        // iron head
+      head.ellipse(9.4 + ramShift, 0, 2.6, 2.1, 0, 0, 7);
+      volume(head, metalMat("#59636d", dir, 2.6), dir, "#dbe6ee");
+      for (const wx of [-7, 7]) {
+        const wheel = new Path2D();
+        wheel.arc(wx, 5.6, 2.6, 0, 7);
+        volume(wheel, matteMat("#4a3826", dir, 2.6), dir, "#8d7150");
+      }
     } else {
-      cx.fillRect(-6, -14, 12, 20); cx.strokeRect(-6, -14, 12, 20);
-      cx.fillStyle = "#4a3826"; cx.fillRect(-6, -8, 12, 2); cx.fillRect(-6, -2, 12, 2);
+      const tower = new Path2D();
+      tower.moveTo(-5.6, 6); tower.lineTo(-6.4, -13); tower.lineTo(6.4, -13);
+      tower.lineTo(5.6, 6); tower.closePath();
+      volume(tower, matteMat("#7a5a38", dir, 6), dir, "#c3a273");
+      cx.strokeStyle = "rgba(52,36,20,.7)"; cx.lineWidth = 1.1;  // deck lines
+      cx.beginPath();
+      cx.moveTo(-6.1, -7); cx.lineTo(6.1, -7); cx.moveTo(-5.9, -1); cx.lineTo(5.9, -1);
+      cx.stroke();
+      const top = new Path2D();                       // fighting platform
+      top.rect(-7.4, -16.4, 14.8, 3.6);
+      volume(top, matteMat("#8a6840", dir, 7.4), dir, "#d3b183");
+      const ramp = new Path2D();                      // drawbridge, part-lowered
+      ramp.moveTo(6.2, -12.4); ramp.lineTo(13.6 + action * 3, -6.6);
+      ramp.lineTo(13.2 + action * 3, -4.6); ramp.lineTo(6.2, -10.2); ramp.closePath();
+      volume(ramp, matteMat("#6d4f30", dir, 6), dir, "#b18f63");
+      ball(1.4, -18.6, 2.2, skin, dir);               // the man waiting on top
+      for (const wx of [-4, 4]) {
+        const wheel = new Path2D();
+        wheel.arc(wx, 6.4, 2.4, 0, 7);
+        volume(wheel, matteMat("#4a3826", dir, 2.4), dir, "#8d7150");
+      }
     }
   } else if (family === "mounted") {
-    // horse: body + neck + legs (swing while moving)
-    cx.fillStyle = "#7a5a38";
-    cx.beginPath(); cx.ellipse(0, 0, 8.5, 4.5, 0, 0, 7); cx.fill(); cx.stroke();
-    cx.beginPath(); cx.moveTo(7, -2); cx.quadraticCurveTo(11, -8, 9.5, -10);
-    cx.lineTo(12.5, -9); cx.lineTo(10, -3); cx.closePath(); cx.fill(); cx.stroke();
-    cx.lineWidth = 2; cx.strokeStyle = "#4a3826";
-    cx.beginPath(); cx.moveTo(-5, 3); cx.lineTo(-5 - step, 9); cx.stroke();
-    cx.beginPath(); cx.moveTo(5, 3); cx.lineTo(5 + step, 9); cx.stroke();
-    cx.lineWidth = 1.4; cx.strokeStyle = dark;
-    // rider
-    cx.fillStyle = col;
-    cx.beginPath(); cx.roundRect(-4, -10, 6, 7, 2); cx.fill(); cx.stroke();
-    cx.fillStyle = skin;
-    cx.beginPath(); cx.arc(-1, -12.5, 2.6, 0, 7); cx.fill(); cx.stroke();
+    // The horse gets a real barrel and haunch instead of one ellipse: at this
+    // size the difference between "a rider" and "a rider on a horse" is the
+    // rump line and the neck, and both are two extra path segments.
+    const horse = new Path2D();
+    horse.moveTo(-8.5, -1.4);
+    horse.quadraticCurveTo(-9.6, 3.4, -5.4, 3.6);
+    horse.lineTo(5.6, 3.6);
+    horse.quadraticCurveTo(9.2, 3.2, 8.4, -1.8);
+    horse.quadraticCurveTo(4, -4.8, -3, -4.6);
+    horse.quadraticCurveTo(-7.6, -4.4, -8.5, -1.4);
+    horse.closePath();
+    volume(horse, matteMat("#7d5c3a", dir, 9), dir, "#c7a271");
+    const neck = new Path2D();
+    neck.moveTo(6.6, -2.6); neck.quadraticCurveTo(11.2, -8.4, 9.6, -10.6);
+    neck.lineTo(12.8, -9.4); neck.lineTo(10.2, -2.8); neck.closePath();
+    volume(neck, matteMat("#7d5c3a", dir, 3.4), dir, "#c7a271");
+    limb(-5, 2.6, -5 - step, 9.4, 2.2, "#5b4128", dir);
+    limb(5, 2.6, 5 + step, 9.4, 2.2, "#5b4128", dir);
+    if (fine) {                                    // mane and tail
+      cx.strokeStyle = "#3f2d1a"; cx.lineWidth = 1.5; cx.lineCap = "round";
+      cx.beginPath(); cx.moveTo(6.4, -3.6); cx.quadraticCurveTo(9.4, -7.4, 10.4, -9.6); cx.stroke();
+      cx.beginPath(); cx.moveTo(-8.4, -1.6);
+      cx.quadraticCurveTo(-12.4, 1.4, -11.4, 5.4); cx.stroke();
+      cx.lineCap = "butt";
+    }
+    const rider = new Path2D();
+    rider.roundRect(-4.2, -10.4, 6.4, 7.4, 2.2);
+    jointAO(-1, -3.4, 4.4, 2.2, .42);              // seat, sitting into the saddle
+    volume(rider, clothMat(col, dir, 3.4), dir, rim);
+    ball(-1, -12.6, 2.7, skin, dir);
+    cx.save(); cx.translate(-1, -2.8);            // the rider's head sits high
+    helmet(unitEra(k), col, dir, fine);
+    cx.restore();
     if (k === "saka_horse_archer" || k === "maryannu_chariot_archer") {
       const draw = action * 2.4;
+      cx.strokeStyle = "#8a6744"; cx.lineWidth = 1.5;
       cx.beginPath(); cx.arc(4, -8, 5, -1.2, 1.2); cx.stroke();
+      cx.strokeStyle = "#e8dcbc"; cx.lineWidth = .9;
       cx.beginPath(); cx.moveTo(5.8, -12.7); cx.lineTo(-.5 - draw, -8);
       cx.lineTo(5.8, -3.3); cx.stroke();
     } else {
-      cx.beginPath(); cx.moveTo(3, -6);
-      cx.lineTo(9 + action * 5, -14 + action * 9); cx.stroke();
+      blade(3, -6, 9 + action * 5, -14 + action * 9, 2, dir);
     }
   } else {
     const civil = family === "civilian" || family === "religious";
-    // legs (walk swing)
-    cx.lineWidth = 2.2; cx.strokeStyle = "#20242c";
-    cx.beginPath(); cx.moveTo(-1.5, 3); cx.lineTo(-1.5 - step, 9); cx.stroke();
-    cx.beginPath(); cx.moveTo(1.5, 3); cx.lineTo(1.5 + step, 9); cx.stroke();
-    cx.lineWidth = 1.4; cx.strokeStyle = dark;
-    // tunic/torso in owner color
-    cx.fillStyle = col;
-    cx.beginPath(); cx.roundRect(-4, -6, 8, 10, 3); cx.fill(); cx.stroke();
-    // head + helm
-    cx.fillStyle = skin;
-    cx.beginPath(); cx.arc(0, -9.5, 3.4, 0, 7); cx.fill(); cx.stroke();
-    if (!civil) {
-      cx.fillStyle = shade(col, 0.6);
-      cx.beginPath(); cx.arc(0, -9.8, 3.6, Math.PI, 0); cx.fill();
+    // Legs, then boots. A walking figure that is two grey sticks reads as a
+    // pictogram no matter what is above it, so the legs get the same lit/shadow
+    // treatment as everything else and end in something heavier than a line.
+    limb(-1.6, 2.6, -1.6 - step, 9, 2.6, "#39404c", dir);
+    limb(1.6, 2.6, 1.6 + step, 9, 2.6, "#39404c", dir);
+    cx.fillStyle = "#252b34";
+    cx.beginPath(); cx.ellipse(-1.6 - step, 9.4, 2.1, 1.1, 0, 0, 7); cx.fill();
+    cx.beginPath(); cx.ellipse(1.6 + step, 9.4, 2.1, 1.1, 0, 0, 7); cx.fill();
+    // Torso: shoulders wider than the waist, which is the whole reason a
+    // rounded rectangle never looked like a person.
+    const torso = new Path2D();
+    torso.moveTo(-4.6, -5.4);
+    torso.quadraticCurveTo(-4.9, -7.2, -2.6, -7.4);
+    torso.lineTo(2.6, -7.4);
+    torso.quadraticCurveTo(4.9, -7.2, 4.6, -5.4);
+    torso.lineTo(3.7, 2.6);
+    torso.quadraticCurveTo(3.5, 4.3, 1.6, 4.3);
+    torso.lineTo(-1.6, 4.3);
+    torso.quadraticCurveTo(-3.5, 4.3, -3.7, 2.6);
+    torso.closePath();
+    jointAO(0, 4.1, 4.6, 2, .4);                   // hip, sitting into the legs
+    volume(torso, clothMat(col, dir, 4.7), dir, rim);
+    if (fine) {                                    // belt, and a fold beside it
+      cx.fillStyle = "rgba(24,18,10,.46)"; cx.fillRect(-4.1, -.7, 8.2, 1.5);
+      cx.strokeStyle = tone(col, .58, .7); cx.lineWidth = .8;
+      cx.beginPath(); cx.moveTo(1.6, -6.8); cx.lineTo(1.1, 3.6); cx.stroke();
     }
+    // Head. It is the first thing the eye lands on even at twelve pixels, so
+    // it is a painted sphere with a jaw shadow rather than a flat disc.
+    ball(0, -9.8, 3.3, skin, dir);
+    cx.fillStyle = "rgba(30,20,14,.30)";
+    cx.beginPath(); cx.ellipse(0, -7.4, 2.7, 1.1, 0, 0, 7); cx.fill();
+    if (!civil) helmet(unitEra(k), col, dir, fine);
     // Gear is part of the rig and moves through the attack pose. A sword arcs,
     // a bow draws, a rifle recoils, and a holy staff casts; the body no longer
     // slides toward its target while its weapon remains frozen at attention.
     if (["warrior", "eagle_warrior", "swordsman", "legion", "man_at_arms"].includes(k)) {
-      cx.fillStyle = shade(col, 1.3);
-      cx.beginPath(); cx.arc(-5.5, -2, 3.4, 0, 7); cx.fill(); cx.stroke();
+      shieldPart(-5.6, -2, 3.5, col, dir);
       const swordX = 8.5 + action * 4, swordY = -11 + action * 8;
-      cx.lineWidth = 1.8;
-      cx.beginPath(); cx.moveTo(4, -3); cx.lineTo(swordX, swordY); cx.stroke();
-      cx.strokeStyle = "#eef3f4"; cx.lineWidth = 1;
-      cx.beginPath(); cx.moveTo(swordX - 3.5, swordY - 1); cx.lineTo(swordX, swordY); cx.stroke();
+      blade(4, -3, swordX, swordY, 2.1, dir);
     } else if (FIREARM_UNITS.has(k)) {
       const recoil = action * 2.7;
-      cx.strokeStyle = "#323a3f"; cx.lineWidth = 2.4; cx.lineCap = "round";
+      cx.strokeStyle = "#2c343b"; cx.lineWidth = 2.4; cx.lineCap = "round";
       cx.beginPath(); cx.moveTo(-2, -3); cx.lineTo(11 - recoil, -7); cx.stroke();
-      cx.strokeStyle = "#80603c"; cx.lineWidth = 1.6;
-      cx.beginPath(); cx.moveTo(0, -2); cx.lineTo(7 - recoil, -5); cx.stroke();
+      cx.lineCap = "butt";
+      shaft(0, -2, 7 - recoil, -5, 1.8, dir, "#7d5c38");
       if (action > .62) {
         cx.fillStyle = `rgba(255,224,140,${((action - .62) * 2.6).toFixed(2)})`;
-        cx.beginPath(); cx.moveTo(10 - recoil, -7); cx.lineTo(16, -9);
-        cx.lineTo(12, -5); cx.closePath(); cx.fill();
+        cx.beginPath(); cx.moveTo(10 - recoil, -7); cx.lineTo(16.5, -9.4);
+        cx.lineTo(12, -4.6); cx.closePath(); cx.fill();
       }
-      cx.lineCap = "butt";
     } else if (SPEAR_UNITS.has(k)) {
       const thrust = action * 5;
-      cx.beginPath(); cx.moveTo(5, 6); cx.lineTo(5 + thrust, -15 + action * 8); cx.stroke();
-      cx.fillStyle = "#c9cfd8";
-      cx.beginPath(); cx.moveTo(5 + thrust, -15 + action * 8);
-      cx.lineTo(3.6 + thrust, -11.5 + action * 8); cx.lineTo(6.4 + thrust, -11.5 + action * 8);
-      cx.closePath(); cx.fill();
-      if (k === "hoplite") { cx.fillStyle = shade(col, 1.3);
-        cx.beginPath(); cx.arc(-5.5, -2, 3.8, 0, 7); cx.fill(); cx.stroke(); }
+      shaft(5, 6, 5 + thrust, -13.4 + action * 8, 1.5, dir);
+      const head = new Path2D();
+      head.moveTo(5 + thrust, -15.4 + action * 8);
+      head.lineTo(3.4 + thrust, -11.4 + action * 8);
+      head.lineTo(6.6 + thrust, -11.4 + action * 8);
+      head.closePath();
+      volume(head, metalMat("#b9c6d0", dir, 1.7), dir, "#f2f8fc", dark, .9);
+      if (k === "hoplite") shieldPart(-5.6, -2, 3.9, col, dir);
     } else if (BOW_UNITS.has(k)) {
       if (k === "slinger") {
-        cx.strokeStyle = "#8a6744";
+        cx.strokeStyle = "#8a6744"; cx.lineWidth = 1.3;
         cx.beginPath(); cx.moveTo(4, -3); cx.quadraticCurveTo(10 + action * 4, -12, 7, -15); cx.stroke();
-        cx.fillStyle = "#777"; cx.beginPath(); cx.arc(7, -15, 1.8, 0, 7); cx.fill();
+        cx.fillStyle = "#6d747c"; cx.beginPath(); cx.arc(7, -15, 1.9, 0, 7); cx.fill();
       } else {
-        const draw = action * 2.8;
+        const drawn = action * 2.8;
+        cx.strokeStyle = "#6d4f30"; cx.lineWidth = 1.7;
         cx.beginPath(); cx.arc(6.5, -3, 6, -1.3, 1.3); cx.stroke();
-        cx.beginPath(); cx.moveTo(8.1, -8.8); cx.lineTo(2.2 - draw, -3);
+        cx.strokeStyle = "#b08b5c"; cx.lineWidth = .7;
+        cx.beginPath(); cx.arc(6.5, -3, 6.4, -1.3, 1.3); cx.stroke();
+        cx.strokeStyle = "#e9dcbb"; cx.lineWidth = .9;
+        cx.beginPath(); cx.moveTo(8.1, -8.8); cx.lineTo(2.2 - drawn, -3);
         cx.lineTo(8.1, 2.8); cx.stroke();
-        cx.strokeStyle = "#ead9b0"; cx.lineWidth = 1;
-        cx.beginPath(); cx.moveTo(2.2 - draw, -3); cx.lineTo(13 - draw, -3); cx.stroke();
+        cx.strokeStyle = "#d8c9a4"; cx.lineWidth = 1;
+        cx.beginPath(); cx.moveTo(2.2 - drawn, -3); cx.lineTo(13 - drawn, -3); cx.stroke();
       }
     } else if (k === "scout") {
-      cx.beginPath(); cx.moveTo(5, 6); cx.lineTo(5, -12); cx.stroke();
-      cx.fillStyle = shade(col, 0.7);
-      cx.beginPath(); cx.arc(0, -10.2, 3.7, Math.PI * 0.9, Math.PI * 0.1); cx.fill();
+      shaft(5, 6, 5, -12, 1.4, dir);
+      const hood = new Path2D();
+      hood.arc(0, -10.4, 3.8, Math.PI * 0.92, Math.PI * 0.08);
+      hood.closePath();
+      volume(hood, clothMat(tone(col, .8), dir, 3.8), dir, rim, dark, .9);
     } else if (family === "religious") {
       const cast = action * 5;
-      cx.fillStyle = "#f2ead2";
-      cx.beginPath(); cx.roundRect(-4, -6, 8, 11, 3); cx.fill(); cx.stroke();
-      cx.strokeStyle = k === "inquisitor" ? "#f28b56" : "#d8b94d"; cx.lineWidth = 1.8;
-      cx.beginPath(); cx.moveTo(5, 6); cx.lineTo(7 + cast, -13 - cast * .2); cx.stroke();
+      const robe = new Path2D();
+      robe.moveTo(-4.2, -6.4); robe.lineTo(4.2, -6.4);
+      robe.lineTo(5.4, 5); robe.lineTo(-5.4, 5); robe.closePath();
+      volume(robe, matteMat("#f0e6cc", dir, 5), dir, "#fffaf0");
+      cx.fillStyle = tone(col, 1.05, .85);         // stole, in the owner's colour
+      cx.fillRect(-1.3, -6.2, 2.6, 11);
+      shaft(5, 6, 7 + cast, -13 - cast * .2, 1.4, dir, "#8a6a44");
+      cx.strokeStyle = k === "inquisitor" ? "#f6a271" : "#e9c96a"; cx.lineWidth = 1.8;
       cx.beginPath(); cx.arc(7 + cast, -14 - cast * .2, 2.2 + action * 1.6, 0, 7); cx.stroke();
       if (action > 0) {
-        cx.globalAlpha = action * .65;
+        cx.globalAlpha = action * .6;
         cx.beginPath(); cx.arc(0, -5, 8 + action * 6, 0, 7); cx.stroke();
         cx.globalAlpha = 1;
       }
     } else if (k === "builder") {
-      cx.strokeStyle = "#6b4a2f"; cx.lineWidth = 2;
-      cx.beginPath(); cx.moveTo(4, -2); cx.lineTo(8, -8); cx.stroke();
-      cx.fillStyle = "#9aa2ad"; cx.fillRect(6.4, -10.5, 4.4, 3.4);
-      cx.lineWidth = 1.4; cx.strokeStyle = dark;
+      shaft(4, -2, 8, -8, 1.9, dir, "#6b4a2f");
+      const head2 = new Path2D();
+      head2.rect(6.4, -10.8, 4.6, 3.6);
+      volume(head2, metalMat("#9aa4ae", dir, 2.3), dir, "#e8f0f6", dark, .9);
     } else if (k === "settler") {
-      cx.fillStyle = "#d8cdb4";
-      cx.beginPath(); cx.roundRect(-10, -4, 8, 6, 2.5); cx.fill(); cx.stroke();
-      cx.fillStyle = "#4a3826";
-      cx.beginPath(); cx.arc(-8, 3.4, 1.8, 0, 7); cx.fill();
-      cx.beginPath(); cx.arc(-4, 3.4, 1.8, 0, 7); cx.fill();
+      const pack = new Path2D();
+      pack.roundRect(-10.4, -4.4, 8.4, 6.4, 2.4);
+      volume(pack, matteMat("#cdbfa0", dir, 4.2), dir, "#f2e9d4");
+      cx.fillStyle = "#3f2f1e";
+      cx.beginPath(); cx.arc(-8, 3.6, 1.9, 0, 7); cx.fill();
+      cx.beginPath(); cx.arc(-4, 3.6, 1.9, 0, 7); cx.fill();
     } else if (k === "trader") {
-      cx.fillStyle = "#b08a55";
-      cx.beginPath(); cx.ellipse(-7, 0, 4.5, 3, 0, 0, 7); cx.fill(); cx.stroke();
-      cx.fillStyle = "#8a5f33";
-      cx.fillRect(-9.5, -4.5, 5, 3.4); cx.strokeRect(-9.5, -4.5, 5, 3.4);
+      const bale = new Path2D();
+      bale.ellipse(-7, 0, 4.6, 3.1, 0, 0, 7);
+      volume(bale, matteMat("#b08a55", dir, 4.6), dir, "#e3c186");
+      const crate = new Path2D();
+      crate.rect(-9.6, -4.6, 5.2, 3.6);
+      volume(crate, matteMat("#8a5f33", dir, 2.6), dir, "#c99a5e");
     } else if (k === "military_engineer") {
-      cx.fillStyle = "#8a6b3f"; cx.fillRect(-7, -4, 4, 8); cx.strokeRect(-7, -4, 4, 8);
-      cx.strokeStyle = "#9aa2ad"; cx.lineWidth = 2;
-      cx.beginPath(); cx.moveTo(4, 4); cx.lineTo(9, -8); cx.moveTo(6, -9); cx.lineTo(11, -7); cx.stroke();
+      const chest = new Path2D();
+      chest.rect(-7.2, -4.2, 4.4, 8.4);
+      volume(chest, matteMat("#8a6b3f", dir, 2.2), dir, "#c8a672");
+      blade(4, 4, 9, -8, 1.8, dir);
+      blade(6, -9, 11, -7, 1.6, dir);
     } else if (k === "medic") {
-      cx.fillStyle = "#f2eee4"; cx.fillRect(-6.5, -5, 4.2, 7); cx.strokeRect(-6.5, -5, 4.2, 7);
+      const bag = new Path2D();
+      bag.rect(-6.6, -5.2, 4.4, 7.2);
+      volume(bag, matteMat("#eee9dd", dir, 2.2), dir, "#ffffff");
       cx.strokeStyle = "#d64343"; cx.lineWidth = 1.5;
       cx.beginPath(); cx.moveTo(-4.4, -4); cx.lineTo(-4.4, 1);
       cx.moveTo(-6.2, -1.5); cx.lineTo(-2.6, -1.5); cx.stroke();
     } else if (k === "supply_convoy") {
-      cx.fillStyle = "#82704f"; cx.fillRect(-10, -4, 7, 7); cx.strokeRect(-10, -4, 7, 7);
-      cx.fillStyle = "#303840";
-      cx.beginPath(); cx.arc(-8, 4, 2, 0, 7); cx.fill(); cx.beginPath(); cx.arc(-3, 4, 2, 0, 7); cx.fill();
+      const crate = new Path2D();
+      crate.rect(-10.2, -4.2, 7.2, 7.2);
+      volume(crate, matteMat("#82704f", dir, 3.6), dir, "#c0ab7e");
+      cx.fillStyle = "#2a323a";
+      cx.beginPath(); cx.arc(-8, 4, 2, 0, 7); cx.fill();
+      cx.beginPath(); cx.arc(-3, 4, 2, 0, 7); cx.fill();
     } else if (k === "spy") {
-      cx.fillStyle = "#202631";
-      cx.beginPath(); cx.moveTo(-5, 4); cx.lineTo(0, -7); cx.lineTo(5, 4); cx.closePath(); cx.fill();
-      cx.fillStyle = "#d9e7ee"; cx.beginPath(); cx.arc(1.2, -9.5, 1, 0, 7); cx.fill();
+      const coat = new Path2D();
+      coat.moveTo(-5, 4); coat.lineTo(0, -7); coat.lineTo(5, 4); coat.closePath();
+      volume(coat, matteMat("#232a35", dir, 5), dir, "#6d7a8c");
+      const brim = new Path2D();                      // a hat, and the shadow it throws
+      brim.ellipse(0, -11.4, 5.2, 1.5, 0, 0, 7);
+      volume(brim, matteMat("#1c2230", dir, 5.2), dir, "#5f6d80");
+      const crown = new Path2D();
+      crown.roundRect(-2.6, -14.6, 5.2, 3.4, 1.2);
+      volume(crown, matteMat("#1c2230", dir, 2.6), dir, "#5f6d80");
+      cx.fillStyle = "rgba(6,9,14,.5)";
+      cx.beginPath(); cx.ellipse(0, -9.8, 3, 1.4, 0, 0, 7); cx.fill();
+      cx.fillStyle = "#d9e7ee"; cx.beginPath(); cx.arc(1.2, -9.6, .9, 0, 7); cx.fill();
     } else if (k === "naturalist") {
-      cx.strokeStyle = "#314f32"; cx.lineWidth = 2;
-      cx.beginPath(); cx.moveTo(4, -3); cx.lineTo(8, -11); cx.stroke();
-      cx.fillStyle = "#bfcfb9"; cx.beginPath(); cx.arc(8, -12, 2.2, 0, 7); cx.fill();
+      shaft(4, -3, 8, -11, 1.7, dir, "#3a5c3b");
+      cx.fillStyle = "#c6d6c0"; cx.beginPath(); cx.arc(8, -12, 2.2, 0, 7); cx.fill();
     } else if (k === "archaeologist") {
-      cx.fillStyle = "#9a7448"; cx.fillRect(-7, -4, 4, 6); cx.strokeRect(-7, -4, 4, 6);
-      cx.strokeStyle = "#6b4a2f"; cx.beginPath(); cx.moveTo(4, 4); cx.lineTo(9, -9); cx.stroke();
+      const kit = new Path2D();
+      kit.rect(-7.2, -4.2, 4.4, 6.4);
+      volume(kit, matteMat("#9a7448", dir, 2.2), dir, "#d4ac78");
+      shaft(4, 4, 9, -9, 1.7, dir, "#6b4a2f");
     } else if (k === "rock_band") {
-      cx.fillStyle = "#c95b8b";
-      cx.beginPath(); cx.ellipse(6, -2, 4, 5, -.35, 0, 7); cx.fill(); cx.stroke();
+      const guitar = new Path2D();
+      guitar.ellipse(6, -2, 4, 5, -.35, 0, 7);
+      volume(guitar, metalMat("#c95b8b", dir, 4.5), dir, "#ffb9d6");
       cx.strokeStyle = "#d8c6a4"; cx.lineWidth = 1.7;
       cx.beginPath(); cx.moveTo(4, -5); cx.lineTo(10, -12); cx.stroke();
     }
@@ -6374,18 +6865,28 @@ function drawCinematicSubjectBrackets(u, x, y, now) {
 function drawUnitBase(u, x, y) {
   const spent = u.moves_left !== undefined && u.moves_left <= 0;
   const cy = y + 8.5;
-  // The ground plate roots a unit at its feet, but the figure's body still had
-  // nothing behind it — and the map underneath is no longer quiet brown, it is
-  // gold fields and colored district terraces. A soft backdrop behind the whole
-  // figure keeps a soldier legible standing on a wheat field.
-  // Hold presence as the map zooms out. The plate carries almost all of a
+  // The ground plate roots a unit at its feet, and it has to hold its presence
+  // as the map zooms out. The plate carries almost all of a
   // unit's owner color, and drawn at fixed world size it shrank to a couple of
   // pixels exactly at survey zoom — the range where you most need to read whose
   // army that is, and where the figure on top is far too small to tell you.
   // Capped, so a token never swells past the hex it stands on.
   const k = Math.min(UI_K(), 1.7);
-  cx.drawImage(unitBackdrop(), x - 15 * k, y - 17 * k, 30 * k, 30 * k);
-  cx.drawImage(unitPad(), x - 13.5 * k, cy - 5.7 * k, 27 * k, 11.4 * k);
+  // The backdrop used to be a symmetric black disc thrown behind every figure,
+  // which is a hole rather than a shadow: it sat on the sunny side as heavily
+  // as the shady one, and in cinematic it merged with the unit's own dark
+  // panels into one ink blot on the canopy. In the painted styles the figure
+  // throws a real shadow instead — laid along the ground away from the sun,
+  // stretched and swung by the same `SHX`/`SHY` the hills and wonders use, so
+  // it turns with the board — plus a tight contact darkening at the feet.
+  // Strategic keeps the flat plate: there is no sun in that style to cast one.
+  if (MODE.painted) {
+    castShadow(x, cy, 8.2 * k, 15 * k, cinemaActive() ? .38 : .3);
+    contactAO(x, cy + 1.2 * k, 9.5 * k, 3.6 * k, .34);
+  } else {
+    cx.drawImage(unitBackdrop(), x - 15 * k, y - 17 * k, 30 * k, 30 * k);
+    cx.drawImage(unitPad(), x - 13.5 * k, cy - 5.7 * k, 27 * k, 11.4 * k);
+  }
   // A filled plate in the owner's color carries much further than a rim: at map
   // zoom the figure itself is only a few pixels of tunic, but the plate under
   // it stays an unmistakable blob of empire color. Its shape splits fighting
@@ -6398,9 +6899,16 @@ function drawUnitBase(u, x, y) {
     else cx.ellipse(x, cy, rx, ry, 0, 0, 7);
   };
   plate(9.6 * k, 4.1 * k);
-  cx.fillStyle = pcol(u.owner);
+  // Enamelled rather than printed: the plate takes the same light as the
+  // figure standing on it, so the two read as one object instead of a token
+  // sitting on a sticker.
+  cx.fillStyle = MODE.painted
+    ? ballMat(pcol(u.owner), -LITF) : pcol(u.owner);
   cx.globalAlpha = spent ? 0.5 : 0.9;
+  cx.save();
+  if (MODE.painted) { cx.translate(x, cy); cx.scale(9.6 * k, 4.1 * k); }
   cx.fill();
+  cx.restore();
   cx.globalAlpha = 1;
   // Barbarian black-on-shadow disappears against dark terrain, and a raider is
   // exactly the thing the eye needs to catch first — so their plate is rimmed
@@ -6442,13 +6950,22 @@ function drawDistrict(t, x, y) {
   cx.save();
   if (t.pillaged) cx.globalAlpha = 0.6;
   cx.lineJoin = "round";
-  cx.fillStyle = "rgba(0,0,0,.26)";                    // footing
-  cx.beginPath(); cx.ellipse(x, y + 8, 13, 4.4, 0, 0, 7); cx.fill();
-  cx.fillStyle = col; cx.strokeStyle = "#12161d"; cx.lineWidth = 1.2;
-  cx.beginPath();                                      // paved terrace
-  cx.moveTo(x - 13, y + 4); cx.lineTo(x, y - 1.5);
-  cx.lineTo(x + 13, y + 4); cx.lineTo(x, y + 9.5); cx.closePath();
-  cx.fill(); cx.stroke();
+  const dir = -LITF;
+  if (MODE.painted) castShadow(x, y + 7, 11, 9, .26);
+  contactAO(x, y + 8, 13, 4.4, .24);                   // footing
+  const terrace = new Path2D();                        // paved terrace
+  terrace.moveTo(x - 13, y + 4); terrace.lineTo(x, y - 1.5);
+  terrace.lineTo(x + 13, y + 4); terrace.lineTo(x, y + 9.5); terrace.closePath();
+  // Paving takes the light across its width, and the two lower edges get a
+  // lip, so the terrace reads as a raised platform the buildings stand on
+  // rather than a coloured lozenge printed on the ground.
+  volume(terrace, matteMat(col, dir, 13), dir, skyRim(col), "rgba(14,18,26,.72)", 1.2);
+  cx.strokeStyle = "rgba(255,255,255,.2)"; cx.lineWidth = 1;
+  cx.beginPath();
+  cx.moveTo(x - 13, y + 4); cx.lineTo(x, y - 1.5); cx.lineTo(x + 13, y + 4); cx.stroke();
+  cx.strokeStyle = "rgba(10,14,20,.35)";
+  cx.beginPath();
+  cx.moveTo(x - 13, y + 4); cx.lineTo(x, y + 9.5); cx.lineTo(x + 13, y + 4); cx.stroke();
   const dark = "#1b202a", pale = "#f2eee2";
   cx.strokeStyle = dark; cx.lineWidth = 1.1;
   if (fam === "campus") {                              // observatory dome
@@ -6647,9 +7164,10 @@ function drawImprovement(t, x, y) {
   // a small motif over photographic terrain reads as a decal until something
   // roots it. Worked ground — fields, groves, panel arrays — is already flat
   // against the tile and needs none.
+  const dir = -LITF;                      // improvements are drawn in screen space
   if (!(imp === "farm" || imp === "plantation" || imp === "solar_farm")) {
-    cx.fillStyle = "rgba(0,0,0,.24)";
-    cx.beginPath(); cx.ellipse(x, y + 7.6, 11.5, 4, 0, 0, 7); cx.fill();
+    if (MODE.painted) castShadow(x, y + 7, 8, 12, .3);
+    contactAO(x, y + 7.6, 11.5, 4, .28);
   }
   if (imp === "farm") {
     // Cultivation should read from across the map, so the field takes most of
@@ -6666,9 +7184,12 @@ function drawImprovement(t, x, y) {
       cx.lineTo(x + fw, y + 2 - tilt); cx.lineTo(x, y + 2 + fh); cx.closePath();
     };
     field();
-    cx.fillStyle = h1 > 0.5 ? "#d8b854" : "#c8b95a";
+    // Cropland is not one flat gold: the light runs across a field, and the
+    // hedge on the shaded side throws a line of shadow into it. Same ramp the
+    // figures use, sized to the field.
+    cx.fillStyle = matteMat(h1 > 0.5 ? "#d8b854" : "#c8b95a", dir, fw);
     cx.fill();
-    if (!FINE()) { field(); cx.strokeStyle = "#4f4014"; cx.lineWidth = 1.4;
+    if (!FINE()) { field(); cx.strokeStyle = "rgba(58,46,16,.8)"; cx.lineWidth = 1.4;
                    cx.stroke(); cx.restore(); return; }
     cx.save(); field(); cx.clip();
     cx.fillStyle = h2 > 0.5 ? "#b99a3c" : "#a89a45";  // second crop, patchwork
@@ -6685,56 +7206,89 @@ function drawImprovement(t, x, y) {
       cx.stroke();
     }
     cx.restore();
-    field(); cx.strokeStyle = "#4f4014"; cx.lineWidth = 1.4; cx.stroke();
+    field(); cx.strokeStyle = "rgba(58,46,16,.8)"; cx.lineWidth = 1.4; cx.stroke();
+    cx.save(); field(); cx.clip();              // hedge shadow on the shaded edge
+    cx.strokeStyle = "rgba(38,30,10,.34)"; cx.lineWidth = 3.4;
+    cx.beginPath();
+    cx.moveTo(x - dir * fw, y + 2 - dir * tilt);
+    cx.lineTo(x, y + 2 + fh); cx.stroke();
+    cx.restore();
   } else if (imp === "pasture") {
     cx.strokeStyle = "#8a6a3e"; cx.lineWidth = 1.4;
     cx.strokeRect(x - 11, y - 4, 22, 12);
     cx.beginPath(); cx.moveTo(x - 11, y + 1.5); cx.lineTo(x + 11, y + 1.5); cx.stroke();
-    cx.fillStyle = "#eae4d4"; cx.strokeStyle = "#4a3722"; cx.lineWidth = 0.8;
-    for (const bx of [-4.5, 4.5]) {
-      cx.beginPath(); cx.ellipse(x + bx, y + 5, 3.1, 2.1, 0, 0, 7);
-      cx.fill(); cx.stroke();
+    if (FINE()) {                              // posts, so the rail reads as a fence
+      cx.strokeStyle = "#6f5330"; cx.lineWidth = 1.2;
+      for (let i = -11; i <= 11; i += 5.5) {
+        cx.beginPath(); cx.moveTo(x + i, y - 4.6); cx.lineTo(x + i, y + 8.6); cx.stroke();
+      }
+    }
+    for (const bx of [-4.5, 4.5]) {            // stock, with a back and a belly
+      const beast = new Path2D();
+      beast.ellipse(x + bx, y + 5, 3.1, 2.1, 0, 0, 7);
+      volume(beast, matteMat("#e6dccb", dir, 3.1), dir, "#fffaf0", "rgba(30,22,12,.6)", .8);
     }
   } else if (imp === "plantation") {
-    cx.strokeStyle = "#1d4522"; cx.lineWidth = 0.8;
     for (let r = 0; r < 2; r++) for (let c2 = 0; c2 < 3; c2++) {
-      cx.fillStyle = r ? "#2f6b34" : "#3f8c44";
-      cx.beginPath();
-      cx.arc(x - 9 + c2 * 9 + r * 4.5, y - 2.5 + r * 7, 3.2, 0, 7);
-      cx.fill(); cx.stroke();
+      const px = x - 9 + c2 * 9 + r * 4.5, py = y - 2.5 + r * 7;
+      cx.fillStyle = "rgba(18,32,18,.4)";      // the shade each crown throws
+      cx.beginPath(); cx.ellipse(px + SHX * 2, py + 2.6 + SHY * 2, 3.2, 1.3, 0, 0, 7); cx.fill();
+      ball(px, py, 3.2, r ? "#2f6b34" : "#3f8c44", dir, "rgba(14,30,16,.7)", .8);
     }
   } else if (imp === "camp") {
-    cx.fillStyle = "#a97f4e"; cx.strokeStyle = "#4a3722"; cx.lineWidth = 1.1;
+    const sunFace = new Path2D();
+    sunFace.moveTo(x, y - 6); sunFace.lineTo(x + dir * 8, y + 7);
+    sunFace.lineTo(x, y + 7); sunFace.closePath();
+    const shadeFace = new Path2D();
+    shadeFace.moveTo(x, y - 6); shadeFace.lineTo(x - dir * 8, y + 7);
+    shadeFace.lineTo(x, y + 7); shadeFace.closePath();
+    cx.fillStyle = tone("#a97f4e", 1.18); cx.fill(sunFace);
+    cx.fillStyle = tone("#a97f4e", .62); cx.fill(shadeFace);
+    cx.strokeStyle = "rgba(38,28,16,.7)"; cx.lineWidth = 1.1;
     cx.beginPath();
-    cx.moveTo(x - 8, y + 7); cx.lineTo(x, y - 6); cx.lineTo(x + 8, y + 7);
-    cx.closePath(); cx.fill(); cx.stroke();
-    cx.fillStyle = "#3c2c1a";
+    cx.moveTo(x - 8, y + 7); cx.lineTo(x, y - 6); cx.lineTo(x + 8, y + 7); cx.stroke();
+    cx.fillStyle = "#2e2114";                  // the dark of the doorway
     cx.beginPath();
     cx.moveTo(x - 2.2, y + 7); cx.lineTo(x, y - 0.5); cx.lineTo(x + 2.2, y + 7);
     cx.closePath(); cx.fill();
+    if (FINE()) {                              // poles crossing at the apex
+      cx.strokeStyle = "#5e452a"; cx.lineWidth = 1;
+      cx.beginPath();
+      cx.moveTo(x - 1.6, y - 8.4); cx.lineTo(x + 1.6, y - 4.4);
+      cx.moveTo(x + 1.6, y - 8.4); cx.lineTo(x - 1.6, y - 4.4); cx.stroke();
+    }
   } else if (imp === "quarry") {
-    cx.strokeStyle = "#4c4f55"; cx.lineWidth = 1;
     for (const [bx, by] of [[-10, 1], [-1.5, -4], [3, 3.5], [-6, 6]]) {
-      cx.fillStyle = "#9aa0a8";
-      cx.beginPath(); cx.roundRect(x + bx, y + by, 8, 5.2, 1.2);
-      cx.fill(); cx.stroke();
+      const block = new Path2D();
+      block.roundRect(x + bx, y + by, 8, 5.2, 1.2);
+      volume(block, matteMat("#9aa0a8", dir, 4), dir, "#e3e9ee", "rgba(30,34,40,.66)", .9);
+      cx.fillStyle = "rgba(255,255,255,.24)";  // the cut top face catching the sky
+      cx.beginPath(); cx.ellipse(x + bx + 4, y + by + 1.2, 3.4, 1.1, 0, 0, 7); cx.fill();
     }
   } else if (imp === "mine") {
-    cx.fillStyle = "#6b6f77";                       // spoil heap
-    cx.beginPath();
-    cx.moveTo(x - 11, y + 8); cx.lineTo(x - 2, y - 4); cx.lineTo(x + 7, y + 8);
-    cx.closePath(); cx.fill();
-    cx.fillStyle = "#191d23";                       // adit mouth
+    const heapSun = new Path2D();                   // spoil heap, two slopes
+    heapSun.moveTo(x - 2, y - 4); heapSun.lineTo(x - 2 + dir * 9, y + 8);
+    heapSun.lineTo(x - 2, y + 8); heapSun.closePath();
+    const heapShade = new Path2D();
+    heapShade.moveTo(x - 2, y - 4); heapShade.lineTo(x - 2 - dir * 9, y + 8);
+    heapShade.lineTo(x - 2, y + 8); heapShade.closePath();
+    cx.fillStyle = tone("#6b6f77", 1.22); cx.fill(heapSun);
+    cx.fillStyle = tone("#6b6f77", .6); cx.fill(heapShade);
+    cx.fillStyle = "#12161c";                       // adit mouth
     cx.beginPath(); cx.arc(x - 2, y + 8, 3.6, Math.PI, 0); cx.fill();
-    cx.strokeStyle = "#c8a15a"; cx.lineWidth = 1.4; // pit-head timber
-    cx.beginPath(); cx.moveTo(x + 6, y + 8); cx.lineTo(x + 10, y - 3); cx.stroke();
+    cx.fillStyle = "rgba(210,226,240,.2)";          // lintel catching the sky
+    cx.beginPath(); cx.arc(x - 2, y + 8, 3.6, Math.PI, Math.PI * 1.35); cx.fill();
+    shaft(x + 6, y + 8, x + 10, y - 3, 1.6, dir, "#a8813f");
+    shaft(x + 10, y - 3, x + 4.5, y - 1.5, 1.2, dir, "#8e6c33");
   } else if (imp === "lumber_mill") {
-    cx.strokeStyle = "#3f2c17"; cx.lineWidth = 0.9; cx.fillStyle = "#8a6033";
     for (const [lx, ly] of [[-8, 4], [-1, 4], [-4.5, -1.5]]) {
-      cx.beginPath(); cx.arc(x + lx, y + ly, 3.4, 0, 7); cx.fill(); cx.stroke();
+      ball(x + lx, y + ly, 3.4, "#8a6033", dir, "rgba(40,28,14,.7)", .9);
+      cx.strokeStyle = "rgba(60,42,20,.55)"; cx.lineWidth = .7;
+      cx.beginPath(); cx.arc(x + lx, y + ly, 1.7, 0, 7); cx.stroke();
     }
-    cx.fillStyle = "#b9c0c8";                       // saw blade
-    cx.beginPath(); cx.arc(x + 7.5, y + 1.5, 4.2, 0, 7); cx.fill(); cx.stroke();
+    const bladeDisc = new Path2D();                 // saw blade
+    bladeDisc.arc(x + 7.5, y + 1.5, 4.2, 0, 7);
+    volume(bladeDisc, metalMat("#b9c0c8", dir, 4.2), dir, "#f2f8fc", "rgba(28,32,38,.7)", .9);
   } else if (imp === "fishing_boats" || imp === "fishery" || imp === "seastead") {
     cx.fillStyle = "#c9b083"; cx.strokeStyle = "#4a3a20"; cx.lineWidth = 1;
     cx.beginPath();
@@ -6771,12 +7325,15 @@ function drawImprovement(t, x, y) {
       cx.closePath(); cx.fill(); cx.stroke();
     }
   } else if (imp === "fort" || imp === "missile_silo") {
-    cx.fillStyle = "#8d8778"; cx.strokeStyle = "#2e2a22"; cx.lineWidth = 1.1;
-    cx.beginPath();                                  // squat bastion
-    cx.moveTo(x - 10, y + 6); cx.lineTo(x - 6, y - 3); cx.lineTo(x + 6, y - 3);
-    cx.lineTo(x + 10, y + 6); cx.closePath(); cx.fill(); cx.stroke();
-    cx.fillStyle = "#6f6a5d";
-    for (const cxo of [-7, 0, 7]) cx.fillRect(x + cxo - 1.6, y - 6, 3.2, 3.4);
+    const bastion = new Path2D();                    // squat bastion
+    bastion.moveTo(x - 10, y + 6); bastion.lineTo(x - 6, y - 3);
+    bastion.lineTo(x + 6, y - 3); bastion.lineTo(x + 10, y + 6); bastion.closePath();
+    volume(bastion, matteMat("#8d8778", dir, 10), dir, "#ded8c8", "rgba(30,28,22,.72)", 1.1);
+    for (const cxo of [-7, 0, 7]) {
+      const merlon = new Path2D();
+      merlon.rect(x + cxo - 1.6, y - 6, 3.2, 3.4);
+      volume(merlon, matteMat("#7d786a", dir, 1.6), dir, "#cfc8b6", "rgba(30,28,22,.7)", .9);
+    }
   } else if (imp === "great_wall") {
     // A rampart across the tile, not a shed. Ninety-odd of these end up strung
     // along a Chinese frontier, so they want to read as one running line.
@@ -6810,15 +7367,24 @@ function drawImprovement(t, x, y) {
   } else {
     // Everything rarer still reads as a built installation rather than a smear
     // of brown: a walled base with a roof catching the same light as the tiles.
-    cx.strokeStyle = "#241f18"; cx.lineWidth = 1.2;
-    cx.fillStyle = "#8e8474";
-    cx.beginPath(); cx.roundRect(x - 7.5, y - 1, 15, 9, 1.5); cx.fill(); cx.stroke();
-    cx.fillStyle = "#cfc3ab";
+    const walls = new Path2D();
+    walls.roundRect(x - 7.5, y - 1, 15, 9, 1.5);
+    volume(walls, matteMat("#8e8474", dir, 7.5), dir, "#d8cfbc", "rgba(30,26,20,.7)", 1);
+    const roofSun = new Path2D();
+    roofSun.moveTo(x, y - 8.5); roofSun.lineTo(x + dir * 10, y - .5);
+    roofSun.lineTo(x, y - .5); roofSun.closePath();
+    const roofShade = new Path2D();
+    roofShade.moveTo(x, y - 8.5); roofShade.lineTo(x - dir * 10, y - .5);
+    roofShade.lineTo(x, y - .5); roofShade.closePath();
+    cx.fillStyle = tone("#cfc3ab", 1.16); cx.fill(roofSun);
+    cx.fillStyle = tone("#cfc3ab", .64); cx.fill(roofShade);
+    cx.strokeStyle = "rgba(30,26,20,.7)"; cx.lineWidth = 1;
     cx.beginPath();
-    cx.moveTo(x - 10, y - 0.5); cx.lineTo(x, y - 8.5); cx.lineTo(x + 10, y - 0.5);
-    cx.closePath(); cx.fill(); cx.stroke();
-    cx.fillStyle = "#4a4239";                        // doorway, for scale
+    cx.moveTo(x - 10, y - .5); cx.lineTo(x, y - 8.5); cx.lineTo(x + 10, y - .5); cx.stroke();
+    cx.fillStyle = "#3b342c";                        // doorway, for scale
     cx.fillRect(x - 1.8, y + 2.4, 3.6, 5.6);
+    cx.fillStyle = "rgba(214,228,242,.22)";          // light down one jamb
+    cx.fillRect(x - 1.8 + (dir < 0 ? 2.9 : 0), y + 2.4, .7, 5.6);
   }
   cx.restore();
   if (t.pillaged) {   // burned out — and worth spotting the turn it happens
@@ -6858,10 +7424,13 @@ function drawSettlement(c, x, y, beau) {
   const spread = settlementSpread(pop);
   const rise = 0.82 + 0.36 * Math.min(1, pop / 14);
   const roof = cityBannerColor(c.owner);
+  const dir = -LITF;                      // no mirroring here: town space is screen space
+  const fine = FINE();
   if (beau) {
-    cx.fillStyle = "#00000030";
-    cx.beginPath();
-    cx.ellipse(x, y + 8, spread + 4, (spread + 4) * 0.36, 0, 0, 7); cx.fill();
+    // The town throws one shadow, in the direction everything else on the
+    // board throws its shadow, rather than sitting on a symmetric grey oval.
+    castShadow(x, y + 7, spread * .8, spread * 1.5, .3);
+    contactAO(x, y + 7.5, spread + 3, (spread + 3) * .34, .3);
   }
   // Golden-angle placement fills the footprint evenly at any count and is
   // stable frame to frame, so a city does not reshuffle its own streets.
@@ -6874,38 +7443,89 @@ function drawSettlement(c, x, y, beau) {
                 bw: 4.4 + h * 2.8, bh: (5.5 + h * 7) * rise, h });
   }
   town.sort((p, q) => p.by - q.by);          // back to front
-  cx.lineWidth = 0.8;
+  cx.lineWidth = 0.8; cx.lineJoin = "round";
+  const wall = "#d9d2c2";
   for (const b of town) {
     const bx = x + b.bx - b.bw / 2, by = y + b.by - b.bh + 2;
-    cx.fillStyle = "#5c5648";                                  // side face
-    cx.fillRect(bx + b.bw, by + 1.5, 2.2, b.bh);
-    cx.fillStyle = b.h > 0.72 ? "#c8c0ae" : "#ded8ca";          // front face
-    cx.fillRect(bx, by, b.bw, b.bh);
-    cx.strokeStyle = "#10151d";
-    cx.strokeRect(bx, by, b.bw, b.bh);
-    // every house is roofed — a flat-topped block reads as a domino, not a
-    // building — and a share of them are tiled in the empire's color, so a
-    // settlement declares who owns it without waiting for the nameplate
-    cx.fillStyle = b.h > 0.62 ? roof : "#a8593f";
+    // Every house is a box with a sunny face and a shady one, and the shady
+    // one is on the side away from the sun rather than always to the right —
+    // so the whole town relights together when the camera yaws, exactly as
+    // the hills under it do. That single rule is most of what turns a heap of
+    // white rectangles into a town seen at a particular hour.
+    const side = new Path2D();
+    side.rect(bx + (dir < 0 ? b.bw : -2.2), by + 1.5, 2.2, b.bh);
+    volume(side, matteMat(tone(wall, .62), dir, 2.2), dir, null, "rgba(11,15,21,.5)", .8);
+    const face = new Path2D();
+    face.rect(bx, by, b.bw, b.bh);
+    volume(face, matteMat(b.h > 0.72 ? tone(wall, .93) : wall, dir, b.bw * .8),
+           dir, null, "rgba(11,15,21,.62)", .8);
+    if (fine && b.bh > 7) {                  // windows, which give it a scale
+      cx.fillStyle = "rgba(38,44,56,.55)";
+      const rows = Math.min(3, Math.floor(b.bh / 3.4));
+      for (let r = 0; r < rows; r++) {
+        cx.fillRect(bx + b.bw * .22, by + 1.8 + r * 3.2, b.bw * .22, 1.5);
+        cx.fillRect(bx + b.bw * .56, by + 1.8 + r * 3.2, b.bw * .22, 1.5);
+      }
+    }
+    // A share of the roofs are tiled in the empire's colour, so a settlement
+    // declares who owns it without waiting for the nameplate. Both slopes are
+    // drawn: a single flat triangle is a gable sticker, two are a roof.
+    const tile = b.h > 0.62 ? roof : "#a8593f";
+    const ridgeX = bx + b.bw / 2, ridgeY = by - 3.6;
+    const sunSlope = new Path2D();
+    sunSlope.moveTo(ridgeX, ridgeY);
+    sunSlope.lineTo(bx + (dir < 0 ? -1 : b.bw + 1), by);
+    sunSlope.lineTo(ridgeX, by); sunSlope.closePath();
+    const shadeSlope = new Path2D();
+    shadeSlope.moveTo(ridgeX, ridgeY);
+    shadeSlope.lineTo(bx + (dir < 0 ? b.bw + 1 : -1), by);
+    shadeSlope.lineTo(ridgeX, by); shadeSlope.closePath();
+    cx.fillStyle = tone(tile, 1.2); cx.fill(sunSlope);
+    cx.fillStyle = tone(tile, .66); cx.fill(shadeSlope);
+    cx.strokeStyle = "rgba(11,15,21,.62)";
     cx.beginPath();
-    cx.moveTo(bx - 1, by); cx.lineTo(bx + b.bw / 2, by - 3.6);
-    cx.lineTo(bx + b.bw + 1, by); cx.closePath();
-    cx.fill(); cx.stroke();
+    cx.moveTo(bx - 1, by); cx.lineTo(ridgeX, ridgeY);
+    cx.lineTo(bx + b.bw + 1, by); cx.stroke();
   }
   if (c.is_capital) {                        // the seat gets a tower and a flag
     const th = 15 * rise;
-    cx.fillStyle = "#5c5648"; cx.fillRect(x + 3, y - th + 1.5, 2, th);
-    cx.fillStyle = "#e8e2d2"; cx.fillRect(x - 3, y - th, 6, th);
-    cx.strokeStyle = "#10151d"; cx.strokeRect(x - 3, y - th, 6, th);
-    cx.fillStyle = roof;
+    const side = new Path2D();
+    side.rect(x + (dir < 0 ? 3 : -5), y - th + 1.5, 2, th);
+    volume(side, matteMat(tone(wall, .58), dir, 2), dir, null, "rgba(11,15,21,.5)", .8);
+    const keep = new Path2D();
+    keep.rect(x - 3, y - th, 6, th);
+    volume(keep, matteMat("#eae4d4", dir, 5), dir, null, "rgba(11,15,21,.66)", .9);
+    if (fine) {                              // crenellations, and an arrow slit
+      cx.fillStyle = tone(wall, .72);
+      for (const cxo of [-3, -.8, 1.4]) cx.fillRect(x + cxo, y - th, 1.6, 1.4);
+      cx.fillStyle = "rgba(34,40,52,.6)";
+      cx.fillRect(x - .7, y - th + 4.4, 1.4, 3.2);
+    }
+    const capSun = new Path2D();
+    capSun.moveTo(x, y - th - 4.6);
+    capSun.lineTo(x + (dir < 0 ? -4.4 : 4.4), y - th);
+    capSun.lineTo(x, y - th); capSun.closePath();
+    const capShade = new Path2D();
+    capShade.moveTo(x, y - th - 4.6);
+    capShade.lineTo(x + (dir < 0 ? 4.4 : -4.4), y - th);
+    capShade.lineTo(x, y - th); capShade.closePath();
+    cx.fillStyle = tone(roof, 1.22); cx.fill(capSun);
+    cx.fillStyle = tone(roof, .66); cx.fill(capShade);
+    cx.strokeStyle = "rgba(11,15,21,.62)"; cx.lineWidth = .9;
     cx.beginPath();
     cx.moveTo(x - 4.4, y - th); cx.lineTo(x, y - th - 4.6);
-    cx.lineTo(x + 4.4, y - th); cx.closePath(); cx.fill(); cx.stroke();
+    cx.lineTo(x + 4.4, y - th); cx.stroke();
     cx.beginPath();
     cx.moveTo(x, y - th - 4.6); cx.lineTo(x, y - th - 10); cx.stroke();
-    cx.beginPath();
-    cx.moveTo(x, y - th - 10); cx.lineTo(x + 6, y - th - 8.2);
-    cx.lineTo(x, y - th - 6.4); cx.closePath(); cx.fill(); cx.stroke();
+    // A pennant with a fold in it. Flat, it was a paper triangle taped to a
+    // pole; the notch and the two values make it cloth.
+    const flag = new Path2D();
+    flag.moveTo(x, y - th - 10);
+    flag.lineTo(x + 6.4, y - th - 8.6);
+    flag.lineTo(x + 4.2, y - th - 7.6);
+    flag.lineTo(x + 6.2, y - th - 6.6);
+    flag.lineTo(x, y - th - 6.2); flag.closePath();
+    volume(flag, clothMat(roof, dir, 3.2), dir, skyRim(roof), "rgba(11,15,21,.6)", .8);
   }
 }
 
@@ -10732,6 +11352,12 @@ area.addEventListener("wheel", ev => {
 }, { passive: false });
 document.getElementById("zin").onclick = () => { takeCameraControl(true); zoomAt(1.35); };
 document.getElementById("zout").onclick = () => { takeCameraControl(true); zoomAt(1 / 1.35); };
+// `zhome` was the third corner button until the controls were refined down to
+// a toggle, a zoom in and a zoom out. The handler outlived its button, and
+// `getElementById` returning null here threw before anything else in this
+// script had run — no canvas sizing, no `/rules`, no first `/state` — so the
+// whole map came up blank. Recentring survives on the director path and on the
+// world minimap; only the dead binding goes.
 
 // ---------------------------------------------------------------- input
 let dragState = null, dragMoved = false, rdrag = null, rdragTo = null;
