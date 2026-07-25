@@ -304,6 +304,30 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             "trade_capacity": g.trade_capacity(pid),
             "gpp": p.gpp,
             "gp_claimed": p.gp_claimed,
+            // Which named person each kind is currently offering, and what it
+            // costs. This is a world fact — it depends on who every other
+            // civilization has retired — so a client cannot derive it, and
+            // without it a Great People screen can only say "a Great
+            // Merchant" where Civ 6 says "Marco Polo, 60 Faith".
+            "great_person_offers": p.gpp.keys()
+                .filter_map(|kind| {
+                    let (id, spec) = g.current_great_person(kind)?;
+                    Some((kind.clone(), json!({
+                        "id": id,
+                        "name": spec.name,
+                        "era": spec.era,
+                        "points": round1(g.gp_cost(pid, kind)),
+                        "gold": g.great_person_patronage_price(pid, kind, "gold").map(round1),
+                        "faith": g.great_person_patronage_price(pid, kind, "faith").map(round1),
+                        "effects": spec.effects.keys().collect::<Vec<_>>(),
+                        // Enough points is not always enough: a Great
+                        // Scientist wants a Campus, a Great Writer wants an
+                        // open Great Work slot. Say which, or the card reads
+                        // as broken.
+                        "blocked": g.great_person_blocker(pid, kind),
+                    })))
+                })
+                .collect::<serde_json::Map<_, _>>(),
             "great_people": p.great_people,
             "era_score": p.era_score,
             "normal_age_threshold": p.normal_age_threshold,
