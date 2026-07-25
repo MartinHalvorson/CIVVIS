@@ -2590,6 +2590,21 @@ const RES_ICON = { wheat:"🌾", cattle:"🐄", sheep:"🐑", stone:"🪨", deer
 // bottom point, luxuries lower-right. Class becomes a position, so it is
 // readable at a range where neither the rim colour nor the symbol is.
 const RESOURCE_CORNER = { strategic:3, bonus:2, luxury:1 };
+// The badge was drawn at a radius of 8.2 with a 12px symbol inside it, which is
+// a 16px disc holding an emoji on a hex 62 across: legible only if you already
+// knew what you were looking for. Everything about the badge — disc, rim, the
+// survey-zoom dot it collapses to, and the symbol's baseline nudge — is one
+// factor off that original size, so the badge stays the same drawing and only
+// its scale changed.
+const RES_BADGE_K = 1.5;
+const RES_BADGE_R = 8.2 * RES_BADGE_K;
+// How far out along its class's corner ray the badge is seated, as a fraction
+// of S. Derived rather than tuned: a seat `d` out along a corner ray stands
+// (S - d) * SQ3/2 from either of the two edges that meet at that corner, and
+// that has to clear the badge's own outer radius — the disc plus half the rim
+// it is stroked with. A hand-picked constant was fine while the badge was
+// small; at this size it decides whether the badge leans into the next hex.
+const RES_BADGE_SEAT = 1 - (RES_BADGE_R + 1.2) / (S * SQ3 / 2);
 const ARTIFACT_RESOURCES = new Set(["antiquity_site", "shipwreck"]);
 // One symbol per unit in data/units.json — the production medallion and the
 // strategic-view discs both read from here, and a unit without an entry falls
@@ -7916,7 +7931,35 @@ function surface(p, kind, alpha = .5) {
 // style is built on.
 const BAKED_FAMILIES = new Set(["infantry", "civilian", "religious", "mounted",
                                 "siege", "gun", "armor", "robot", "embarked"]);
-const ART_BOX = 20;                 // half-extent of a baked sprite, sprite units
+// A unit is a figure standing on a hex, and it stood well inside it. Rendering
+// every type in RULES.units through the paint path and taking the alpha bounds
+// gives a widest figure of 32 world units and a tallest of 33, against a hex
+// that is S * SQ3 = 62.3 across the flats: a little over half the ground the
+// unit actually holds, so an army reads as a scatter of small tokens rather
+// than as troops occupying tiles. One factor lifts the widest figure to
+// UNIT_FILL of its tile and carries every other type with it, because the size
+// relationships between a settler, a horseman and a tank are deliberate and
+// normalising each type to the same span would flatten them.
+const UNIT_SPAN = 32;               // measured widest figure, sprite units
+const UNIT_FILL = 0.80;
+const UNIT_SCALE = S * SQ3 * UNIT_FILL / UNIT_SPAN;
+// Strategic does not draw figures at all — it draws a flat disc token whose
+// size is set by the glyph it has to hold — so the figure scale is a painted
+// concern and that view is left exactly as it was.
+const unitScale = () => MODE.painted ? UNIT_SCALE : 1;
+// Every mark that hangs off a unit — the ground plate, the type badge, the
+// fortify shield, the health bar — is laid out against the figure it belongs
+// to, so all of them take the figure's scale or the composition comes apart:
+// the type badge sits at the figure's right edge by construction, and a badge
+// that did not grow with it would end up buried in the tunic. Compensating for
+// zoom is a separate concern and still comes from UI_K.
+const UNIT_K = () => UI_K() * unitScale();
+// Half-extent of a baked sprite, sprite units. This is a clip boundary, not a
+// nominal size: the same measurement above puts cavalry and the siege tower
+// 22 units above their origin and the observation balloon 25, so the old 20
+// was quietly shaving the top off a lance and a siege ladder in every baked
+// frame. Sized to cover the tallest figure measured, with a little room.
+const ART_BOX = 26;
 const UNIT_ART = new Map();
 const UNIT_ART_WARNED = new Set();
 const UNIT_ART_CAP = 192;           // ~24 types x 8 jerseys live on screen at once
@@ -7928,7 +7971,16 @@ let BAKE_RES = 2;
 // it replaced: the whole point is more detail, and a 2x upscale is less. Above
 // the top step the live path takes over, which is the same place close battle
 // shots already hand off to the projected models anyway.
-const ART_MAX_RES = 3;
+// Raised with UNIT_SCALE. `res` is pixels per sprite unit and the blit now
+// magnifies by a further UNIT_SCALE on top, so a cap of 3 would hand off to the
+// live path at cam.scale * DPR of 1.92 where it used to hold to 3.00 — 64% of
+// the range, and it is the busy mid-zoom range where the most figures are on
+// screen and the bake is worth the most. 4 takes that back to 2.57, or 86%.
+// Restoring it exactly wants 5, and the cost is all in sprite memory: at the
+// cache's stated worst case of 192 entries this cap is 32 MB against 50 MB for
+// 5 (and 11 MB for the old 20-unit box at 3). Above the cap a close shot is on
+// the projected models anyway, which is where the coverage matters least.
+const ART_MAX_RES = 4;
 // A cinematic close shot scales the sprite up by a tenth before it is blitted,
 // so the size a sprite is *shown* at is not `cam.scale * DPR`. Baking against
 // the camera alone therefore magnified those sprites by that tenth — a small
@@ -7937,7 +7989,11 @@ const ART_MAX_RES = 3;
 // hand-off to the live path ask for the scale the blit will really use.
 function unitArtScale() {
   const close = cinemaActive() && cam.scale >= 1.08 ? 1.1 : 1;
-  return cam.scale * DPR * close;
+  // unitScale() is part of the blit, not of the world: a sprite baked without
+  // it and then magnified by it is exactly the softening this cache exists to
+  // avoid, and it would have been invisible because the sprite still appears —
+  // just blurred.
+  return cam.scale * DPR * close * unitScale();
 }
 function unitArtRes() {
   return Math.min(ART_MAX_RES, Math.max(1, Math.ceil(unitArtScale())));
@@ -8300,7 +8356,11 @@ function drawUnitChar(u, x, y, now, moving) {
   y += bob;
   cx.save();
   cx.translate(x, y);
-  const closeScale = cinemaActive() && cam.scale >= 1.08 ? 1.1 : 1;
+  // One transform carries both the figure's size on its tile and the cinematic
+  // close-shot lift, so everything below — the baked blit, the projected model,
+  // the live vector fallback — is sized the same way and none of them has to
+  // know about it.
+  const closeScale = (cinemaActive() && cam.scale >= 1.08 ? 1.1 : 1) * unitScale();
   cx.scale(closeScale, closeScale);
   // Close battle shots graduate from the compact vector token to a genuinely
   // projected model: mesh faces are depth-sorted and lit, while the limbs,
@@ -9014,9 +9074,12 @@ function drawUnitCompany(u, x, y, now, moving) {
   const company = cinemaActive() && cam.scale >= 1.2 &&
     ["infantry", "mounted", "religious"].includes(family) && !u.survey_count;
   if (company) {
+    // The flankers stand off the principal by a fraction of a figure, so their
+    // spacing is in the figure's units and moves out with it.
+    const us = unitScale();
     for (const [i, ox, oy, scale] of [[1, -7, -1, .7], [2, 7, 0, .74]]) {
       cx.save();
-      cx.translate(x + ox, y + oy);
+      cx.translate(x + ox * us, y + oy * us);
       cx.scale(scale, scale);
       drawUnitChar({...u, id:Number(u.id || 0) + 100000 + i,
                     cinematic_depth:depthFeatured}, 0, 0,
@@ -9047,7 +9110,8 @@ function cinematicBattleRole(u) {
 function drawCinematicSubjectMarker(u, x, y, now) {
   const battleRole = cinematicBattleRole(u);
   if (!cinemaActive() || (cinematicSubjectUnitId() !== u.id && !battleRole)) return;
-  const k = Math.min(UI_K(), 1.7);
+  // Rings the subject on the ground, so it is sized off the figure it rings.
+  const k = Math.min(UI_K(), 1.7) * unitScale();
   const pulse = REDUCED_MOTION_QUERY.matches ? .5 : .5 + .5 * Math.sin(now / 520);
   const r = (18.5 + pulse * 1.8) * k, cy = y + 9 * k;
   const glow = cx.createRadialGradient(x, cy, 1, x, cy, r);
@@ -9069,7 +9133,8 @@ function drawCinematicSubjectMarker(u, x, y, now) {
 function drawCinematicSubjectBrackets(u, x, y, now) {
   const battleRole = cinematicBattleRole(u);
   if (!cinemaActive() || (cinematicSubjectUnitId() !== u.id && !battleRole)) return;
-  const k = Math.min(UI_K(), 1.7);
+  // Brackets close on the figure's silhouette, so they take its scale too.
+  const k = Math.min(UI_K(), 1.7) * unitScale();
   const pulse = REDUCED_MOTION_QUERY.matches ? .5 : .5 + .5 * Math.sin(now / 520);
   const r = (16 + pulse * 1.4) * k, cy = y - 1.5 * k;
   cx.save();
@@ -9087,14 +9152,17 @@ function drawCinematicSubjectBrackets(u, x, y, now) {
 }
 function drawUnitBase(u, x, y) {
   const spent = u.moves_left !== undefined && u.moves_left <= 0;
-  const cy = y + 8.5;
+  const cy = y + 8.5 * unitScale();
   // The ground plate roots a unit at its feet, and it has to hold its presence
   // as the map zooms out. The plate carries almost all of a
   // unit's owner color, and drawn at fixed world size it shrank to a couple of
   // pixels exactly at survey zoom — the range where you most need to read whose
   // army that is, and where the figure on top is far too small to tell you.
-  // Capped, so a token never swells past the hex it stands on.
-  const k = Math.min(UI_K(), 1.7);
+  // Capped, so a token never swells past the hex it stands on. The cap is on
+  // the zoom compensation only — the plate is the figure's footprint and has to
+  // stay under its feet, so the figure scale multiplies through it. At the cap
+  // that is a plate 51 across on a hex 62 across the flats, still inside.
+  const k = Math.min(UI_K(), 1.7) * unitScale();
   // The backdrop used to be a symmetric black disc thrown behind every figure,
   // which is a hole rather than a shadow: it sat on the sunny side as heavily
   // as the shady one, and in cinematic it merged with the unit's own dark
@@ -9788,7 +9856,7 @@ const UI_K = () => 1 / Math.min(1, Math.max(cam.scale, 0.5));
 // badge glyph the production medallion uses, so a unit looks the same coming
 // off the queue as it does standing on the map.
 function drawUnitBadge(u, x, y) {
-  const k = UI_K();
+  const k = UNIT_K();
   const br = 6.4 * k;
   const bx = x + 9.5 * k, by = y + 1;
   cx.save();                                   // ambient text state is shared
@@ -9860,7 +9928,7 @@ function cinematicSurveyUnits(units) {
 function drawUnitFormationBadge(u, x, y) {
   const count = u.survey_count || 1;
   if (count <= 1) return;
-  const k = UI_K(), bx = x + 9.5 * k, by = y + 1;
+  const k = UNIT_K(), bx = x + 9.5 * k, by = y + 1;
   const label = `×${count}`;
   cx.save();
   cx.font = `bold ${(7.6 * k).toFixed(1)}px Inter, sans-serif`;
@@ -12251,9 +12319,10 @@ function draw() {
         : rc === "luxury" ? "#d9a0f0" : "#e6ddbd";
       // Seated toward its class's corner rather than always at the same
       // lower-right spot, and rotated with the board like every other mark on
-      // a hex. 0.62 of the way out keeps the whole badge inside its own face.
-      const [rx, ry] = corner(x, y, S * 0.62, RESOURCE_CORNER[rc] === undefined
-        ? 2 : RESOURCE_CORNER[rc]);
+      // a hex, seated where RES_BADGE_SEAT says the badge still clears the two
+      // edges that meet at that corner.
+      const [rx, ry] = corner(x, y, S * RES_BADGE_SEAT,
+        RESOURCE_CORNER[rc] === undefined ? 2 : RESOURCE_CORNER[rc]);
       // A cinema establishing shot covers a continent: rendering every deposit
       // as a full dark badge there freckles the landscape with hundreds of
       // holes. Detail resolves with the camera instead. Manual/player views
@@ -12262,13 +12331,14 @@ function draw() {
       const detailedResource = FINE() && (!cinemaActive() || cam.scale >= 1.12);
       if (detailedResource) {
         cx.fillStyle = "#161c14cc";
-        cx.beginPath(); cx.arc(rx, ry, 8.2, 0, 7); cx.fill();
-        cx.strokeStyle = rim + "dd"; cx.lineWidth = 1.5; cx.stroke();
+        cx.beginPath(); cx.arc(rx, ry, RES_BADGE_R, 0, 7); cx.fill();
+        cx.strokeStyle = rim + "dd"; cx.lineWidth = 1.5 * RES_BADGE_K; cx.stroke();
         // name the symbol fonts the way the unit badge does; bare "sans-serif"
         // leaves the glyph to whatever the platform happens to fall back to,
         // and an empty disc is a worse badge than no badge
-        cx.font = "12px 'Segoe UI Symbol', 'Segoe UI Emoji', sans-serif";
-        cx.fillText(RES_ICON[t.resource] || "●", rx, ry + 0.5);
+        cx.font = (12 * RES_BADGE_K).toFixed(1) +
+          "px 'Segoe UI Symbol', 'Segoe UI Emoji', sans-serif";
+        cx.fillText(RES_ICON[t.resource] || "●", rx, ry + 0.5 * RES_BADGE_K);
       } else {
         // Zoomed out to survey the map, the icon inside the badge is under a
         // pixel and unreadable, and a few hundred dark discs read as the map
@@ -12276,8 +12346,8 @@ function draw() {
         // is that a deposit is there and what class it is — so it becomes a
         // legible dot in the class color instead of an illegible badge.
         cx.fillStyle = rim;
-        cx.beginPath(); cx.arc(rx, ry, 3.6, 0, 7); cx.fill();
-        cx.strokeStyle = "#161c14bb"; cx.lineWidth = 1.2; cx.stroke();
+        cx.beginPath(); cx.arc(rx, ry, 3.6 * RES_BADGE_K, 0, 7); cx.fill();
+        cx.strokeStyle = "#161c14bb"; cx.lineWidth = 1.2 * RES_BADGE_K; cx.stroke();
       }
     }
     if (t.district) drawDistrict(t, x, y);
@@ -12749,7 +12819,10 @@ function draw() {
       const a = mv.fromCity ? 1 : 0, b = mv.toCity ? 1 : 0;
       inTown = a + (b - a) * Math.min(1, Math.max(0, mv.e || 0));
     }
-    y += 12 * inTown;
+    // How far forward the garrison steps is a function of how much of the town
+    // it would otherwise stand on, which is the figure's size.
+    const us = unitScale();
+    y += 12 * us * inTown;
     const rr = 10.5;
     if (beau) {
       drawCinematicSubjectMarker(u, x, y, now);
@@ -12763,7 +12836,7 @@ function draw() {
         // marks stop crowding one shoulder, and scaled with them so it does not
         // shrink away at survey zoom. The old ring was wider than the unit
         // itself and read as a selection highlight rather than a state.
-        const k = UI_K(), w = 3.5 * k;
+        const k = UNIT_K(), w = 3.5 * k;
         const sx = x - 9.5 * k, sy = y + 1;
         cx.beginPath();
         cx.moveTo(sx - w, sy - 4.2 * k); cx.lineTo(sx + w, sy - 4.2 * k);
@@ -12797,36 +12870,47 @@ function draw() {
                   x, y + 0.5);
       cx.globalAlpha = 1;
     }
-    // chunky health bar — sized against zoom so it stays readable far out
+    // chunky health bar — sized against zoom so it stays readable far out, and
+    // against the figure so it clears the head of the one it belongs to. Both
+    // factors are needed: zoom alone would leave it buried in a painted
+    // figure's chest, the figure alone would let it vanish at survey range.
     if (u.hp < 100) {
-      const bw = 24 / Math.min(1, Math.max(cam.scale, 0.45));
-      const bh = 4.5 / Math.min(1, Math.max(cam.scale, 0.55));
+      const bw = 24 * us / Math.min(1, Math.max(cam.scale, 0.45));
+      const bh = 4.5 * us / Math.min(1, Math.max(cam.scale, 0.55));
+      const by = y - 18 * us;
       const frac = u.hp / 100;
       const fc2 = frac > 0.5 ? "#4fd45c" : (frac > 0.25 ? "#f0b429" : "#f04f3f");
       cx.fillStyle = "#10151dd8";
-      cx.beginPath(); cx.roundRect(x - bw / 2 - 1, y - 18 - 1, bw + 2, bh + 2, 2);
+      cx.beginPath(); cx.roundRect(x - bw / 2 - 1, by - 1, bw + 2, bh + 2, 2);
       cx.fill();
       cx.fillStyle = fc2;
-      cx.beginPath(); cx.roundRect(x - bw / 2, y - 18, bw * frac, bh, 1.5);
+      cx.beginPath(); cx.roundRect(x - bw / 2, by, bw * frac, bh, 1.5);
       cx.fill();
       if (frac <= 0.25) { // low health pulses for attention
         cx.globalAlpha = 0.35 + 0.3 * Math.sin(now / 160);
         cx.strokeStyle = "#ff7060"; cx.lineWidth = 1.6;
-        cx.strokeRect(x - bw / 2 - 2, y - 19 - 1, bw + 4, bh + 4);
+        cx.strokeRect(x - bw / 2 - 2, by - 2, bw + 4, bh + 4);
         cx.globalAlpha = 1;
       }
     }
+    // Promotion pips and the selection ring are both measured off `rr`, the
+    // flat token's radius, which stops being the right yardstick once a painted
+    // figure is half again as large as that token — the pips would sit on the
+    // helmet and the ring inside the boots.
+    const ur = rr * us;
     if (u.level > 1) {
       cx.fillStyle = "#ffd700";
       for (let i = 0; i < u.level - 1; i++) {
-        cx.beginPath(); cx.arc(x - 6 + i * 6, y - rr - (u.hp < 100 ? 12 : 4), 2, 0, 7);
+        cx.beginPath();
+        cx.arc(x + (i * 6 - 6) * us,
+               y - ur - (u.hp < 100 ? 12 : 4) * us, 2 * us, 0, 7);
         cx.fill();
       }
     }
     if (sel && sel.id === u.id) {
       cx.strokeStyle = "#f0c674"; cx.lineWidth = 2.4;
       cx.setLineDash([5, 4]);
-      cx.beginPath(); cx.arc(x, y, rr + 6, 0, 7); cx.stroke();
+      cx.beginPath(); cx.arc(x, y, ur + 6 * us, 0, 7); cx.stroke();
       cx.setLineDash([]);
     }
   }
