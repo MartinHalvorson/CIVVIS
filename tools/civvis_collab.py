@@ -1220,10 +1220,21 @@ def personal_repository_protection_payload() -> Dict[str, Any]:
     """Return branch protection accepted for a user-owned GitHub repository."""
     return {
         "required_status_checks": {
-            "strict": True,
+            # Not strict. Requiring every branch to be rebased onto the newest
+            # main serialises the whole fleet: with N open PRs and one merge per
+            # CI round, every other branch is invalidated the moment one lands,
+            # and the queue spends its time re-running green checks. The checks
+            # themselves still gate; only the up-to-date requirement is dropped.
+            "strict": False,
             "contexts": ["cargo-test", "collaboration-policy"],
         },
-        "enforce_admins": True,
+        # Admins are not held to the required checks, so an outage outside the
+        # repository can never hard-block main. On 2026-07-25 GitHub-hosted
+        # Actions stopped starting jobs at all (a billing failure), every run
+        # died in three seconds with zero steps, and with enforce_admins on there
+        # was no way to land verified work. Self-hosted runners fixed the cause;
+        # this keeps the next such outage from being unrecoverable.
+        "enforce_admins": False,
         "required_pull_request_reviews": {
             "dismiss_stale_reviews": False,
             "require_code_owner_reviews": False,
