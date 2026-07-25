@@ -18,6 +18,14 @@ fn arg(args: &[String], key: &str, default: i64) -> i64 {
         .unwrap_or(default)
 }
 
+fn arg_f64(args: &[String], key: &str, default: f64) -> f64 {
+    args.iter()
+        .position(|a| a == key)
+        .and_then(|i| args.get(i + 1))
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
+}
+
 fn arg_text(args: &[String], key: &str, default: &str) -> String {
     args.iter()
         .position(|arg| arg == key)
@@ -810,9 +818,88 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        "rating" => {
+            let dir = arg_text(
+                &args,
+                "--dir",
+                &std::env::var("CIVVIS_LEAGUE_DIR").unwrap_or_else(|_| "league".into()),
+            );
+            let mut history = match civvis::rating::load_history(&dir) {
+                Ok(history) if history.len() >= 2 => history,
+                Ok(_) => {
+                    eprintln!("{dir}/matches.csv has no finished games to rate");
+                    std::process::exit(1);
+                }
+                Err(error) => {
+                    eprintln!("cannot read {dir}/matches.csv: {error}");
+                    std::process::exit(1);
+                }
+            };
+            // A league directory can hold games of several table sizes; a
+            // single size is the cleaner slice to reason about.
+            let want_seats = arg(&args, "--seats", 0).max(0) as usize;
+            if want_seats > 0 {
+                history.retain(|m| m.seats.len() == want_seats);
+                if history.len() < 2 {
+                    eprintln!("{dir}/matches.csv has fewer than 2 games with {want_seats} seats");
+                    std::process::exit(1);
+                }
+            }
+            let seats = history.iter().map(|m| m.seats.len()).sum::<usize>() as f64
+                / history.len() as f64;
+            let burn_in = arg_f64(&args, "--burn-in", 0.3).clamp(0.0, 0.95);
+            let mut cfg = civvis::rating::RatingCfg {
+                stage_decay: arg_f64(&args, "--stage-decay", 0.5).clamp(0.0, 1.0),
+                beta: arg_f64(&args, "--beta", 0.9).max(1e-3),
+                ..civvis::rating::RatingCfg::default()
+            };
+            for anchor in arg_text(&args, "--anchors", "advanced,basic").split(',') {
+                let anchor = anchor.trim();
+                if !anchor.is_empty() {
+                    cfg.anchors.insert(anchor.to_string());
+                }
+            }
+            println!("{} games from {dir}/matches.csv\n", history.len());
+            if args.iter().any(|a| a == "--stages") {
+                let info = civvis::rating::fit_stage_weights(&history, burn_in);
+                println!("information carried by each placement stage (nats, measured)");
+                println!("  a stage at or below zero is noise and should not move a rating\n");
+                for (k, nats) in info.iter().enumerate() {
+                    let bar = "#".repeat(((nats.max(0.0)) * 60.0) as usize);
+                    println!("  stage {:<3} {:+8.4}  {bar}", k + 1, nats);
+                }
+            } else if args.iter().any(|a| a == "--sweep") {
+                println!(
+                    "{:<14}{:>12}{:>10}{:>12}",
+                    "stage decay", "winner LL", "accuracy", "info/game"
+                );
+                for step in 0..=10 {
+                    let decay = step as f64 / 10.0;
+                    let mut model = civvis::rating::ContextualRating::new(
+                        civvis::rating::RatingCfg {
+                            stage_decay: decay,
+                            ..cfg.clone()
+                        },
+                    );
+                    let m = civvis::rating::evaluate(&mut model, &history, burn_in);
+                    println!(
+                        "{decay:<14.1}{:>12.4}{:>9.1}%{:>12.4}",
+                        m.win_log_loss,
+                        100.0 * m.win_accuracy,
+                        m.information
+                    );
+                }
+            } else if args.iter().any(|a| a == "--backtest") {
+                let rows = civvis::rating::backtest(&history, burn_in, &cfg);
+                print!("{}", civvis::rating::backtest_report(&rows, seats));
+            } else {
+                let rating = civvis::rating::rate_history(&history, &cfg);
+                print!("{}", rating.standings());
+            }
+        }
         _ => {
             println!(
-                "usage: civvis <simulate|soak|benchmark|tournament|league|play|evolve|validate|pedia> \
+                "usage: civvis <simulate|soak|benchmark|tournament|league|rating|play|evolve|validate|pedia> \
                       [--players N] [--seed N] [--turns N] [--width N] [--height N] \
                       [--city-states N] [--games N] [--ais a,b] [--ratings path] [--port N] [--no-open] \
                       [--map pangaea|continents|small_continents|inland_sea] \
@@ -824,7 +911,8 @@ fn main() {
                       [--victories science,culture,religious,diplomatic,domination,score] \
                       [--spectate] [--supervised] [--restart-ms N] [--resume checkpoint.json] [--strict] \
                       [--league dir] [--league-record] [--standings [--civ Rome | --civs]] [--rounds N] \
-                      [--evolve-every N] [--pop N] [--worker ID] [--lease-seconds N]"
+                      [--evolve-every N] [--pop N] [--worker ID] [--lease-seconds N] \
+                      [rating: --dir league/ --backtest|--sweep|--stages --burn-in F --stage-decay F --anchors a,b]"
             );
         }
     }
