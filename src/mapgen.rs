@@ -3769,10 +3769,7 @@ mod river_tests {
             size.natural_wonders,
             size.continents,
             MapScript::TrueStartEarth,
-            // Earth is Earth: `generate_with_script` overrides both of these
-            // for a fixed geography, so this is the same lobby default every
-            // other test in this module passes.
-            FLAT,
+            GLOBE,
             POLED,
             &mut rng,
         );
