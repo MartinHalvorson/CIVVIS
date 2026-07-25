@@ -21,8 +21,10 @@
 //! `--counterfactual` instead exports unresolved endpoints from Strategic's
 //! adaptive and victory-lane rollouts, labels each by continuing that exact
 //! branch to the winner, and keeps all branches grouped by their source game.
-//! It requires `--scalar-only --ai strategic_score` so data generation cannot
-//! accidentally feed a learned evaluator back into its own labels.
+//! It requires `--ai strategic_score` so data generation cannot accidentally
+//! feed a learned evaluator back into its own labels. Passing `--scalar-only`
+//! keeps broad calibration inexpensive; omitting it exports the
+//! fog-honest endpoint tensors needed by contextual models.
 //!
 //! Read in Python with
 //! `np.fromfile(...).reshape(meta["planes_shape"])`.
@@ -33,8 +35,8 @@ use std::path::Path;
 
 use crate::ai::{Ai, VictoryTarget};
 use crate::elo::builtin_ai;
-use crate::game::{Action, Game, GameOptions};
 use crate::evolve::features as scalar_features;
+use crate::game::{Action, Game, GameOptions};
 use crate::obs_tensor::{obs_tensor, PLANES};
 use crate::strategic::{StrategicAi, FIRST_REVIEW_TURN};
 
@@ -137,20 +139,26 @@ fn play_one(cfg: &SelfPlayCfg, game_index: usize) -> PlayedGame {
                     let checkpoint = (g.turn - FIRST_REVIEW_TURN) / cfg.every;
                     let player = majors[(game_index + checkpoint as usize) % majors.len()];
                     counterfactual_roots += 1;
-                    pending.extend(
-                        sampler
-                            .counterfactual_value_samples(&g, player)
-                            .into_iter()
-                            .map(|sample| PendingSample {
-                                planes: Vec::new(),
-                                globals: Vec::new(),
-                                scalars: sample.features,
-                                pid: player,
-                                fraction: sample.turn_fraction,
-                                won: Some(sample.won),
-                                lane: Some(sample.target.map_or("adaptive", VictoryTarget::as_str)),
-                            }),
+                    let samples = sampler.counterfactual_value_samples_with_observation(
+                        &g,
+                        player,
+                        !cfg.scalar_only,
                     );
+                    if !cfg.scalar_only && global_names.is_empty() {
+                        if let Some(sample) = samples.first() {
+                            global_names = sample.global_names.clone();
+                            globals_len = sample.globals.len();
+                        }
+                    }
+                    pending.extend(samples.into_iter().map(|sample| PendingSample {
+                        planes: sample.planes,
+                        globals: sample.globals,
+                        scalars: sample.features,
+                        pid: player,
+                        fraction: sample.turn_fraction,
+                        won: Some(sample.won),
+                        lane: Some(sample.target.map_or("adaptive", VictoryTarget::as_str)),
+                    }));
                 }
             } else {
                 let fraction = g.turn as f32 / cfg.max_turns.max(1) as f32;
@@ -208,10 +216,10 @@ pub fn export(cfg: &SelfPlayCfg) -> std::io::Result<SelfPlayStats> {
             "--every must be at least 1",
         ));
     }
-    if cfg.counterfactual && (!cfg.scalar_only || cfg.ai != "strategic_score") {
+    if cfg.counterfactual && cfg.ai != "strategic_score" {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            "--counterfactual requires --scalar-only --ai strategic_score",
+            "--counterfactual requires --ai strategic_score",
         ));
     }
     let dir = Path::new(&cfg.out);
@@ -360,6 +368,48 @@ mod tests {
         };
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
         assert!(error.to_string().contains("strategic_score"));
+    }
+
+    #[test]
+    fn counterfactual_spatial_export_keeps_endpoint_shapes_honest() {
+        let dir = std::env::temp_dir().join("civvis_counterfactual_spatial_test");
+        let _ = std::fs::remove_dir_all(&dir);
+        let cfg = SelfPlayCfg {
+            // A zero-game export exercises the accepted score-only spatial
+            // mode and its schema without assuming that an opening root has
+            // unresolved rollout endpoints. Strategic's unit test covers
+            // populated endpoint tensors directly.
+            games: 0,
+            players: 3,
+            width: 20,
+            height: 14,
+            city_states: 0,
+            max_turns: 34,
+            seed: 199,
+            every: 40,
+            ai: "strategic_score".to_string(),
+            out: dir.to_string_lossy().to_string(),
+            scalar_only: false,
+            counterfactual: true,
+            counterfactual_roots: 0,
+            jobs: 1,
+        };
+
+        let stats = export(&cfg).expect("spatial counterfactual export");
+        assert_eq!(stats.samples, 0);
+        let meta: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("meta.json")).unwrap()).unwrap();
+        let samples = meta["samples"].as_u64().unwrap() as usize;
+        let globals = meta["globals_shape"][1].as_u64().unwrap() as usize;
+        assert_eq!(meta["config"]["counterfactual"], true);
+        assert_eq!(meta["config"]["scalar_only"], false);
+        assert_eq!(meta["planes_shape"][1].as_u64(), Some(PLANES.len() as u64));
+        assert_eq!(std::fs::metadata(dir.join("planes.f32")).unwrap().len(), 0);
+        assert_eq!(
+            std::fs::metadata(dir.join("globals.f32")).unwrap().len() as usize,
+            samples * globals * 4
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
