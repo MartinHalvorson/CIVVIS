@@ -11876,7 +11876,8 @@ function victoryDescription(victory, metric) {
     return `${metric.capitals || 0} of ${metric.target || 0} original capitals controlled, ` +
       `their own counted`;
   }
-  return `${compactStat(metric.points || 0)} points · meter is relative to the score leader`;
+  return `${compactStat(metric.points || 0)} points · meter is how much of the turn limit ` +
+    `has been played, scaled by their share of the score leader`;
 }
 
 const DEFAULT_VICTORY_LEADERS = 3;
