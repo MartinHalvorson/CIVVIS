@@ -42,21 +42,29 @@ fifteen pairwise comparisons, each carrying equal weight. But only the first
 of those is decided by winning; the rest are decided by an engine score that
 barely separates strategies.
 
-`--stages` measures how much each placement decision is worth, in nats:
+`--stages` measures how much each placement decision is worth, in nats, on a
+576-game 6-player league:
 
 ```
-stage 1 (who won)       +0.5607   ############################
-stage 2                 +0.1685   ########
-stage 3                 +0.2456   ############
-stage 4                 -0.0064
-stage 5                 -0.0024
+stage 1 (who won)       +0.4604   ###########################
+stage 2                 +0.5530   #################################
+stage 3                 +0.3359   ####################
+stage 4                 -0.0055
+stage 5                 -0.1120
 ```
 
-The last two stages are at or below zero: they are coin flips. Weighting them
-like the first buries one real observation under four fake ones. This system
-weights stage `k` by a geometric `--stage-decay` (0.5 by default, so the
-winner carries about half the update), and `--sweep` re-tunes it against a
-real history.
+The last two stages are at or below zero: they are coin flips, and the last is
+actively misleading. Weighting them like the first buries three real
+observations under two fake ones. This system weights stage `k` by a geometric
+`--stage-decay`, 0.5 by default, so the winner carries about half the update.
+
+**The best decay is a property of the league, not a constant**, which is why
+`--sweep` exists instead of a hard-coded number. On that fresh 6-player league
+it peaks near 0.1 — almost "rate only who won" — worth 0.591 nats per game
+against 0.551 at the default and 0.459 with flat weights. On the exhibition's
+4-seat games it peaks near 0.7 and is nearly flat across the range. 0.5 ships
+because it is close to the better end of both; sweep before trusting it on a
+new league.
 
 ### A seat is not just a strategy
 
@@ -149,6 +157,27 @@ The report prints a `(random guess)` row on every table. Read it first.
 The lesson generalises: **when ratings stop separating, fix the experiment
 before the estimator.** Balanced seating, a roster with real spread, and
 games that end decisively are what make a rating mean something.
+
+## What it scores on a healthy league
+
+576 games of a freshly seeded 6-player league — mirrored seating, a roster
+still spanning victory lanes — with 404 scored out of sample:
+
+| rating system | info/game | winner LL | accuracy | pair Brier |
+| --- | --- | --- | --- | --- |
+| elo, pairwise placements | 0.4677 | 1.3240 | 43.3% | 0.1593 |
+| glicko-2, what the league runs today | 0.4723 | 1.3194 | 43.3% | 0.1594 |
+| staged, no civ context | 0.5370 | 1.2548 | 42.3% | 0.1597 |
+| **staged + civ context** | **0.5507** | **1.2411** | 43.8% | **0.1571** |
+| random guessing | 0.0000 | 1.7918 | 16.7% | 0.2500 |
+
+**+0.078 nats per game over the deployed system, about 17% more information**,
+and +0.119 (25%) at the swept decay. Both changes contribute: staging is worth
+more than the civ term, and the civ term only helps because this league's
+mirrored rounds rotate civilizations. On the confounded exhibition history the
+same term makes forecasts slightly *worse* — covariate adjustment cannot
+rescue an experiment whose treatment assignment is deterministic, and it is
+worth knowing that the tool reports this rather than hiding it.
 
 ## Where the numbers live
 
