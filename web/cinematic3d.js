@@ -647,6 +647,11 @@
     // a hill is what the rest of the tile is built on, so it belongs in the
     // middle of the face. Anything the tile also carries rides on top of it —
     // see the lift `woodland` takes when `hills` is set.
+    // The flat views drop their hill symbol to two fifths of its height; this
+    // one deliberately does not follow. An ellipsoid draws its whole body, so
+    // squashing it does not make a lower dome — it makes a wafer, and three
+    // wafers with visible side walls read as coins laid on the tile. Height is
+    // what gives these mounds a lit flank to be read by at all.
     for (const [x, y, rx, ry, rz] of [[-10, 2, 10.5, 7.5, 4.6],
       [4, -5, 11, 7, 4.4], [11, 6, 9.5, 6.5, 4]])
       scene.ellipsoid([x, y, 1.4], [rx, ry, rz], color,
