@@ -12031,24 +12031,28 @@ function standingNotices() {
   const me = state.me, out = [];
   const legal = type => state.legal_actions.filter(a => a.type === type);
   for (const act of legal("recruit_great_person"))
-    out.push({kind: `gp:${act.kind}`, icon: "★", tone: "good",
+    out.push({kind: `gp:${act.kind}`, icon: "★", tone: "good", topic: act.kind,
       label: `${titleCase(act.kind)} may be recruited`,
       detail: "A Great Person is yours for the claiming."});
   if (legal("choose_pantheon").length)
-    out.push({kind: "pantheon", icon: "☼", tone: "good", label: "A pantheon may be founded",
+    out.push({kind: "pantheon", icon: "☼", tone: "good", topic: "pantheon",
+      label: "A pantheon may be founded",
       detail: "Your faith is enough to adopt a belief."});
   if (me.prophet_pending)
-    out.push({kind: "prophet", icon: "☼", tone: "good", label: "A Great Prophet awaits",
-      detail: "Found a religion with them."});
+    out.push({kind: "prophet", icon: "☼", tone: "good", topic: "prophet",
+      label: "A Great Prophet awaits", detail: "Found a religion with them."});
   const slots = Object.values(me.policy_slots || {}).reduce((a, b) => a + b, 0);
   if (slots > (me.policies || []).length && legal("slot_policy").length)
-    out.push({kind: "policy", icon: "⚿", tone: "good", label: "An empty policy slot",
+    out.push({kind: "policy", icon: "⚿", tone: "good", topic: "policy",
+      label: "An empty policy slot",
       detail: `${slots - me.policies.length} card slot(s) unfilled.`});
   if (me.governor_titles_available > 0)
-    out.push({kind: "governor", icon: "♜", tone: "good", label: "A Governor title is unspent",
+    out.push({kind: "governor", icon: "♜", tone: "good", topic: "governor",
+      label: "A Governor title is unspent",
       detail: `${me.governor_titles_available} title(s) available.`});
   if (me.envoys_free > 0)
-    out.push({kind: "envoy", icon: "◈", tone: "good", label: "Envoys are waiting",
+    out.push({kind: "envoy", icon: "◈", tone: "good", topic: "envoy",
+      label: "Envoys are waiting",
       detail: `${me.envoys_free} envoy(s) to send to a city-state.`});
   for (const alert of state.barbarian_alerts || []) {
     if (!Array.isArray(alert.camp)) continue;
@@ -12099,11 +12103,20 @@ function focusSection(id) {
   section.classList.add("section-flash");
   setTimeout(() => section.classList.remove("section-flash"), 1200);
 }
+// Until a decision has a panel of its own, its notification opens the
+// Civilopedia on the subject. Better than a chip that does nothing when
+// clicked, and it is where the rules actually live.
+function pediaSearch(term) {
+  openPedia();
+  const box = document.getElementById("pediaq");
+  if (box) { box.value = term; pediaKey = null; drawPedia(); }
+}
 function noticeAct(index) {
   const chip = noticeChips[index];
   if (!chip) return;
   if (chip.act) chip.act();
   else if (chip.pos) { centerOn(chip.pos); draw(); }
+  else if (chip.topic) pediaSearch(chip.topic);
   drawTurnLoop();
 }
 function noticeDismiss(index, event) {
