@@ -93,10 +93,14 @@ fn auto_cs(args: &[String], players: i64) -> usize {
 
 fn auto_dimension(args: &[String], key: &str, players: i64, width: bool) -> i32 {
     let size = MapSize::for_players(players.max(1) as usize);
+    // Planet stores its globe in a rectangle of its own shape, so the size's
+    // default dimensions depend on which script was asked for.
+    let script = MapScript::from_id(&arg_text(args, "--map", "pangaea")).unwrap_or_default();
+    let (default_width, default_height) = size.dimensions(script);
     arg(
         args,
         key,
-        if width { size.width } else { size.height } as i64,
+        if width { default_width } else { default_height } as i64,
     ) as i32
 }
 
@@ -924,7 +928,7 @@ fn main() {
                 "usage: civvis <simulate|soak|benchmark|tournament|league|rating|play|evolve|validate|pedia> \
                       [--players N] [--seed N] [--turns N] [--width N] [--height N] \
                       [--city-states N] [--games N] [--ais a,b] [--ratings path] [--port N] [--no-open] \
-                      [--map pangaea|continents|small_continents|inland_sea] \
+                      [--map pangaea|continents|small_continents|inland_sea|planet] \
                       [--difficulty settler|chieftain|warlord|prince|king|emperor|immortal|deity] \
                       [--speed online|quick|standard|epic|marathon] \
                       [--disasters 0|1|2|3|4] [--barbarians on|off] \

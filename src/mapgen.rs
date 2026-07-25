@@ -42,9 +42,7 @@ fn grow_blob(
         }
         let index = rng.below(frontier.len());
         let current = frontier[index];
-        let candidates: Vec<Pos> = hex::neighbors(current)
-            .into_iter()
-            .map(|neighbor| hex::canon(neighbor, wm.width))
+        let candidates: Vec<Pos> = wm.neighbors(current).into_iter()
             .filter(|neighbor| allowed.contains(neighbor) && !land.contains(neighbor))
             .collect();
         if candidates.is_empty() {
@@ -61,209 +59,44 @@ fn grow_blob(
     land
 }
 
-fn point_in_polygon(longitude: f64, latitude: f64, polygon: &[(f64, f64)]) -> bool {
-    let mut inside = false;
-    let mut previous = polygon.len() - 1;
-    for current in 0..polygon.len() {
-        let (xi, yi) = polygon[current];
-        let (xj, yj) = polygon[previous];
-        if ((yi > latitude) != (yj > latitude))
-            && longitude < (xj - xi) * (latitude - yi) / (yj - yi) + xi
-        {
-            inside = !inside;
-        }
-        previous = current;
+/// The subdivision frequency of the globe a rectangle asks for.
+///
+/// A globe's rectangle is `5n` by `2n + 2`, so a caller that already has one
+/// gets exactly the globe it names. Anything else — a caller that asked for
+/// Planet with a flat map's dimensions — gets the globe closest in tiles to
+/// the rectangle it wanted, which is how the shipped sizes stay recognizable.
+fn globe_frequency(width: i32, height: i32) -> i32 {
+    if width > 0 && width % 5 == 0 && height == 2 * (width / 5) + 2 {
+        return width / 5;
     }
-    inside
+    let wanted = (width.max(1) as i64) * (height.max(1) as i64);
+    (1..=64)
+        .min_by_key(|frequency| {
+            (crate::sphere::Sphere::tiles_for(*frequency) as i64 - wanted).abs()
+        })
+        .unwrap_or(1)
 }
 
-/// A deliberately low-frequency Earth silhouette. The generator samples these
-/// coastlines through the same equal-area latitude bands used by both browser
-/// projections: each row spans an equal amount of spherical surface, while its
-/// rendered circumference naturally shrinks toward either pole.
-fn generate_earth_land(wm: &WorldMap) -> BTreeSet<Pos> {
-    const NORTH_AMERICA: &[(f64, f64)] = &[
-        (-168.0, 71.0),
-        (-142.0, 72.0),
-        (-126.0, 59.0),
-        (-123.0, 49.0),
-        (-105.0, 48.0),
-        (-82.0, 25.0),
-        (-97.0, 16.0),
-        (-112.0, 28.0),
-        (-126.0, 43.0),
-        (-151.0, 58.0),
-        (-168.0, 60.0),
-    ];
-    const SOUTH_AMERICA: &[(f64, f64)] = &[
-        (-81.0, 12.0),
-        (-61.0, 11.0),
-        (-49.0, 2.0),
-        (-35.0, -7.0),
-        (-52.0, -35.0),
-        (-68.0, -55.0),
-        (-76.0, -38.0),
-        (-81.0, -5.0),
-    ];
-    const EURASIA: &[(f64, f64)] = &[
-        (-11.0, 36.0),
-        (-10.0, 59.0),
-        (5.0, 71.0),
-        (44.0, 72.0),
-        (82.0, 75.0),
-        (126.0, 70.0),
-        (169.0, 64.0),
-        (179.0, 52.0),
-        (145.0, 43.0),
-        (128.0, 31.0),
-        (121.0, 19.0),
-        (105.0, 7.0),
-        (93.0, 21.0),
-        (78.0, 8.0),
-        (66.0, 25.0),
-        (49.0, 29.0),
-        (35.0, 36.0),
-        (20.0, 35.0),
-        (8.0, 43.0),
-    ];
-    const AFRICA: &[(f64, f64)] = &[
-        (-17.0, 36.0),
-        (12.0, 37.0),
-        (34.0, 31.0),
-        (51.0, 12.0),
-        (42.0, -12.0),
-        (31.0, -35.0),
-        (17.0, -35.0),
-        (8.0, -18.0),
-        (-10.0, 5.0),
-    ];
-    const ARABIA_INDIA: &[(f64, f64)] = &[
-        (34.0, 31.0),
-        (67.0, 29.0),
-        (91.0, 24.0),
-        (83.0, 7.0),
-        (73.0, 8.0),
-        (61.0, 25.0),
-        (52.0, 13.0),
-        (42.0, 14.0),
-    ];
-    const SOUTHEAST_ASIA: &[(f64, f64)] = &[
-        (91.0, 25.0),
-        (121.0, 21.0),
-        (132.0, 4.0),
-        (118.0, -9.0),
-        (103.0, -7.0),
-        (97.0, 9.0),
-    ];
-    const AUSTRALIA: &[(f64, f64)] = &[
-        (112.0, -11.0),
-        (154.0, -10.0),
-        (153.0, -39.0),
-        (132.0, -44.0),
-        (113.0, -34.0),
-    ];
-    const GREENLAND: &[(f64, f64)] = &[(-73.0, 59.0), (-18.0, 60.0), (-14.0, 82.0), (-54.0, 84.0)];
-    const ISLANDS: &[&[(f64, f64)]] = &[
-        &[(-10.0, 50.0), (2.0, 51.0), (1.0, 59.0), (-8.0, 58.0)],
-        &[(129.0, 31.0), (145.0, 33.0), (146.0, 46.0), (137.0, 43.0)],
-        &[(43.0, -12.0), (51.0, -13.0), (50.0, -26.0), (44.0, -25.0)],
-        &[
-            (166.0, -34.0),
-            (179.0, -37.0),
-            (178.0, -48.0),
-            (168.0, -47.0),
-        ],
-    ];
-    let continents = [
-        NORTH_AMERICA,
-        SOUTH_AMERICA,
-        EURASIA,
-        AFRICA,
-        ARABIA_INDIA,
-        SOUTHEAST_ASIA,
-        AUSTRALIA,
-        GREENLAND,
-    ];
-    let mut land = BTreeSet::new();
-    for row in 0..wm.height {
-        let surface_y = 1.0 - 2.0 * (row as f64 + 0.5) / wm.height as f64;
-        let latitude = surface_y.clamp(-1.0, 1.0).asin().to_degrees();
-        for col in 0..wm.width {
-            let longitude = 360.0 * (col as f64 + 0.5) / wm.width as f64 - 180.0;
-            if continents
-                .iter()
-                .chain(ISLANDS.iter())
-                .any(|polygon| point_in_polygon(longitude, latitude, polygon))
-            {
-                land.insert(hex::offset_to_axial(col, row));
-            }
-        }
-    }
-    land
-}
-
-fn earth_position(width: i32, height: i32, longitude: f64, latitude: f64) -> Pos {
-    let col = (((longitude + 180.0) / 360.0 * width as f64).floor() as i32).clamp(0, width - 1);
-    let surface_y = latitude.to_radians().sin();
-    let row = (((1.0 - surface_y) * 0.5 * height as f64).floor() as i32).clamp(0, height - 1);
-    hex::offset_to_axial(col, row)
-}
-
-fn normalized_latitude(row: i32, height: i32, equal_area: bool) -> f64 {
-    if equal_area {
-        let surface_y = 1.0 - 2.0 * (row as f64 + 0.5) / height.max(1) as f64;
-        surface_y.clamp(-1.0, 1.0).asin().abs() / std::f64::consts::FRAC_PI_2
-    } else {
-        (2.0 * row as f64 / (height - 1).max(1) as f64 - 1.0).abs()
-    }
-}
-
-/// CIV_NAMES is ordered Rome, Egypt, Greece, China, Sumeria, Aztec, Nubia,
-/// Scythia. Preserve that order here so a True Start script is true in play,
-/// not only shaped like Earth in the setup preview.
-fn true_start_major_spawns(wm: &WorldMap, candidates: &[Pos], count: usize) -> Vec<Pos> {
-    const HOMELANDS: [(f64, f64); 8] = [
-        (12.5, 41.9),
-        (31.2, 30.0),
-        (23.7, 38.0),
-        (116.4, 39.9),
-        (44.4, 32.5),
-        (-99.1, 19.4),
-        (32.5, 19.6),
-        (64.0, 48.0),
-    ];
-    let mut available = candidates.to_vec();
-    let mut starts = Vec::new();
-    for index in 0..count {
-        if available.is_empty() {
-            break;
-        }
-        let (longitude, latitude) = HOMELANDS[index % HOMELANDS.len()];
-        let target = earth_position(wm.width, wm.height, longitude, latitude);
-        let minimum_separation = (0..=4)
-            .rev()
-            .find(|separation| {
-                available.iter().any(|candidate| {
-                    starts
-                        .iter()
-                        .all(|start| hex::wdistance(*candidate, *start, wm.width) >= *separation)
-                })
-            })
-            .unwrap_or(0);
-        let selected = available
-            .iter()
-            .enumerate()
-            .filter(|(_, candidate)| {
-                starts.iter().all(|start| {
-                    hex::wdistance(**candidate, *start, wm.width) >= minimum_separation
-                })
-            })
-            .min_by_key(|(_, candidate)| hex::wdistance(**candidate, target, wm.width))
-            .map(|(candidate_index, _)| candidate_index)
-            .unwrap_or(0);
-        starts.push(available.swap_remove(selected));
-    }
-    starts
+/// Where a tile samples a fractal height field.
+///
+/// The fields are cylindrical: they wrap east to west and stop north and
+/// south, which is the shape of a flat map, so a flat map samples one by its
+/// own column and row. A globe samples by longitude and latitude instead. Its
+/// storage rectangle is cut into ten rhombi, and reading the field through
+/// those would put a straight-line seam between two of them through every
+/// desert and every mountain range; read through longitude and latitude, a
+/// region stays one region wherever it lies on the globe.
+fn noise_cell(wm: &WorldMap, pos: Pos) -> (i32, i32) {
+    let Some(sphere) = wm.sphere() else {
+        return hex::axial_to_offset(pos.0, pos.1);
+    };
+    use std::f64::consts::{FRAC_PI_2, PI};
+    let east = (sphere.longitude(pos) + PI) / (2.0 * PI);
+    let south = (FRAC_PI_2 - sphere.latitude(pos)) / PI;
+    (
+        (east * wm.width as f64) as i32 % wm.width.max(1),
+        ((south * wm.height as f64) as i32).clamp(0, wm.height - 1),
+    )
 }
 
 fn generate_land(
@@ -357,7 +190,96 @@ fn generate_land(
             }
             land
         }
-        MapScript::TrueStartEarth | MapScript::TrueStartTrueEarth => generate_earth_land(wm),
+        MapScript::Planet => {
+            // A globe has no edge to hold the ocean against, so its land is
+            // seeded rather than cut out: continents are dropped around the
+            // sphere at arm's length from one another, kept off the two caps so
+            // the poles stay open water for the ice to form on, and grown until
+            // the world is about a third land. Every continent is separated by
+            // at least one tile of water, so "sail west and you arrive from the
+            // east" is a fact about this map in every direction, not just one.
+            //
+            // The twelve pentagons are held under water as well. Uber's H3
+            // grid, built the same way, turns its icosahedron so that all
+            // twelve corners fall in the ocean and the pentagons never surface
+            // in the data; a generated world can just be told to keep them
+            // wet. Every land tile then has six neighbours, so district
+            // adjacency, city work radii and the rest behave exactly as they
+            // do on a flat map.
+            let pole = 0.93;
+            let pentagons: BTreeSet<Pos> = wm
+                .sphere()
+                .map(|sphere| sphere.pentagons().into_iter().collect())
+                .unwrap_or_default();
+            let open_water: BTreeSet<Pos> = wm
+                .tiles
+                .keys()
+                .copied()
+                .filter(|pos| wm.polar_fraction(*pos) < pole && !pentagons.contains(pos))
+                .collect();
+            let continents = num_major_spawns.div_ceil(2).clamp(3, 7);
+            let per_continent = (wm.tiles.len() as f64 * 0.31) as usize / continents;
+            // A grown blob of `n` tiles is roughly a disc of radius √(n/3); ask
+            // for seeds a little under two radii apart and the continents stand
+            // clear of one another without the search having to back off far.
+            let mut separation = (1.6 * (per_continent as f64 / 3.0).sqrt()) as i32;
+            let pool: Vec<Pos> = open_water.iter().copied().collect();
+            let mut seeds: Vec<Pos> = Vec::new();
+            while seeds.len() < continents {
+                let mut placed = false;
+                for _ in 0..(4 * pool.len()).min(2_000) {
+                    let candidate = pool[rng.below(pool.len())];
+                    if seeds
+                        .iter()
+                        .all(|seed| wm.distance(candidate, *seed) >= separation)
+                    {
+                        seeds.push(candidate);
+                        placed = true;
+                        break;
+                    }
+                }
+                if !placed {
+                    if separation <= 2 {
+                        break;
+                    }
+                    separation -= 2;
+                }
+            }
+
+            let mut land = BTreeSet::new();
+            let mut open = open_water;
+            for seed in seeds {
+                if !open.contains(&seed) {
+                    continue;
+                }
+                let blob = grow_blob(wm, &open, seed, per_continent, rng);
+                for pos in &blob {
+                    for neighbor in wm.neighbors(*pos) {
+                        open.remove(&neighbor);
+                    }
+                    open.remove(pos);
+                }
+                land.extend(blob);
+            }
+            // Islands: enough to give the open ocean something in it without
+            // turning the sea lanes into an archipelago.
+            for _ in 0..continents * 3 {
+                if open.is_empty() {
+                    break;
+                }
+                let remaining: Vec<Pos> = open.iter().copied().collect();
+                let seed = remaining[rng.below(remaining.len())];
+                let island = grow_blob(wm, &open, seed, 3 + rng.below(9), rng);
+                for pos in &island {
+                    for neighbor in wm.neighbors(*pos) {
+                        open.remove(&neighbor);
+                    }
+                    open.remove(pos);
+                }
+                land.extend(island);
+            }
+            land
+        }
     }
 }
 
@@ -397,26 +319,24 @@ pub fn generate_with_script(
     script: MapScript,
     rng: &mut Rng,
 ) -> (WorldMap, Vec<Pos>) {
-    let mut wm = WorldMap::new(width, height);
+    // Planet is stored in a rectangle of its own shape, so the size's globe
+    // is built rather than the cylinder the other scripts lay out.
+    let mut wm = if script.is_globe() {
+        WorldMap::globe(globe_frequency(width, height))
+    } else {
+        WorldMap::new(width, height)
+    };
 
     // --- landmass topology selected by the stock-style map script
     let land = generate_land(&wm, script, num_major_spawns, rng);
 
     let land_list: Vec<Pos> = land.iter().cloned().collect();
-    let equal_area = matches!(
-        script,
-        MapScript::TrueStartEarth | MapScript::TrueStartTrueEarth
-    );
-    let latitude = |pos: Pos| -> f64 {
-        let (_, row) = hex::axial_to_offset(pos.0, pos.1);
-        normalized_latitude(row, height, equal_area)
-    };
 
     // --- relief, then climate. The stock generator settles elevation first
     // (MountainsCliffs.lua) and only then paints biomes over it, because the
     // mountain fractal has to be free of the latitude bands to run across them.
     apply_tectonics(&mut wm, &land, rng);
-    assign_biomes(&mut wm, &land_list, equal_area, rng);
+    assign_biomes(&mut wm, &land_list, rng);
 
     // --- coast. A shelf is one tile of shallow water plus the stock's three
     // expansion passes, each giving a quarter of the Ocean tiles that already
@@ -443,9 +363,7 @@ pub fn generate_with_script(
             .iter()
             .filter(|(pos, tile)| {
                 tile.terrain == "ocean"
-                    && hex::neighbors(**pos)
-                        .into_iter()
-                        .map(|neighbor| hex::canon(neighbor, width))
+                    && wm.neighbors(**pos).into_iter()
                         .any(|neighbor| {
                             wm.tiles
                                 .get(&neighbor)
@@ -469,9 +387,7 @@ pub fn generate_with_script(
         if wm.tiles[&pos].terrain == "mountain" {
             continue;
         }
-        for neighbor in hex::neighbors(pos)
-            .into_iter()
-            .map(|neighbor| hex::canon(neighbor, width))
+        for neighbor in wm.neighbors(pos).into_iter()
         {
             if wm
                 .tiles
@@ -513,9 +429,7 @@ pub fn generate_with_script(
         .copied()
         .filter(|position| wm.tiles[position].terrain == "mountain")
         .filter(|position| {
-            hex::neighbors(*position)
-                .into_iter()
-                .map(|neighbor| hex::canon(neighbor, width))
+            wm.neighbors(*position).into_iter()
                 .any(|neighbor| {
                     wm.tiles.get(&neighbor).is_some_and(|tile| {
                         !matches!(tile.terrain.as_str(), "mountain" | "coast" | "ocean")
@@ -535,7 +449,7 @@ pub fn generate_with_script(
         }
         if volcanoes
             .iter()
-            .all(|other| hex::wdistance(position, *other, width) >= 4)
+            .all(|other| wm.distance(position, *other) >= 4)
         {
             wm.tiles.get_mut(&position).unwrap().feature = Some("volcano".into());
             volcanoes.push(position);
@@ -546,9 +460,7 @@ pub fn generate_with_script(
     // Guarantee one deposit where geography allows, then scatter a few more
     // without consuming the RNG differently for later per-tile feature rolls.
     for volcano in &volcanoes {
-        let mut foothills: Vec<Pos> = hex::neighbors(*volcano)
-            .into_iter()
-            .map(|neighbor| hex::canon(neighbor, width))
+        let mut foothills: Vec<Pos> = wm.neighbors(*volcano).into_iter()
             .filter(|neighbor| {
                 wm.tiles.get(neighbor).is_some_and(|tile| {
                     !matches!(tile.terrain.as_str(), "mountain" | "coast" | "ocean")
@@ -576,9 +488,7 @@ pub fn generate_with_script(
             let tile = &wm.tiles[position];
             tile.terrain != "mountain"
                 && tile.feature.is_none()
-                && hex::neighbors(*position)
-                    .into_iter()
-                    .map(|neighbor| hex::canon(neighbor, width))
+                && wm.neighbors(*position).into_iter()
                     .any(|neighbor| {
                         wm.tiles.get(&neighbor).is_some_and(|neighbor_tile| {
                             neighbor_tile.terrain == "mountain"
@@ -599,7 +509,7 @@ pub fn generate_with_script(
         }
         if fissures
             .iter()
-            .all(|other| hex::wdistance(position, *other, width) >= 3)
+            .all(|other| wm.distance(position, *other) >= 3)
         {
             wm.tiles.get_mut(&position).unwrap().feature = Some("geothermal_fissure".into());
             fissures.push(position);
@@ -612,12 +522,13 @@ pub fn generate_with_script(
         .tiles
         .iter()
         .filter(|(position, tile)| {
-            matches!(tile.terrain.as_str(), "coast" | "ocean") && latitude(**position) > 0.82
+            matches!(tile.terrain.as_str(), "coast" | "ocean")
+                && wm.polar_fraction(**position) > 0.82
         })
         .map(|(position, _)| *position)
         .collect();
     for position in polar_water {
-        let chance = ((latitude(position) - 0.82) / 0.18 * 0.72).clamp(0.0, 0.72);
+        let chance = ((wm.polar_fraction(position) - 0.82) / 0.18 * 0.72).clamp(0.0, 0.72);
         if rng.chance(chance) {
             wm.tiles.get_mut(&position).unwrap().feature = Some("ice".into());
         }
@@ -625,7 +536,7 @@ pub fn generate_with_script(
 
     // --- vegetative, wetland and river-basin features, and the reefs that
     // supply the Campus's major Gathering Storm adjacency source.
-    add_features(&mut wm, &land, equal_area, rng);
+    add_features(&mut wm, &land, rng);
 
     // --- natural wonders: use the stock per-map-size count and the actual
     // footprint of each modeled wonder. Multi-tile wonders are grown as a
@@ -693,7 +604,7 @@ pub fn generate_with_script(
         let far_enough = |position: Pos, separation: i32| {
             placed_wonder_tiles
                 .iter()
-                .all(|placed| hex::wdistance(position, *placed, width) >= separation)
+                .all(|placed| wm.distance(position, *placed) >= separation)
         };
         let cluster_from = |anchor: Pos, preferred_only: bool, separation: i32| {
             let mut cluster = vec![anchor];
@@ -845,7 +756,7 @@ pub fn generate_with_script(
 
     place_strategic_quotas(rules, &mut wm, &land, num_major_spawns, rng);
 
-    assign_continents(&mut wm, &land, width, num_continents, rng);
+    assign_continents(&mut wm, &land, num_continents, rng);
 
     // Gathering Storm marks only a subset of flat coastal land as vulnerable
     // 1 m, 2 m, or 3 m Coastal Lowland. The stock generator derives these
@@ -866,9 +777,7 @@ pub fn generate_with_script(
                     .is_none_or(|feature| !feature.natural_wonder)
         })
         .filter(|(position, _)| {
-            hex::neighbors(**position)
-                .into_iter()
-                .map(|neighbor| hex::canon(neighbor, width))
+            wm.neighbors(**position).into_iter()
                 .any(|neighbor| {
                     wm.tiles
                         .get(&neighbor)
@@ -925,15 +834,13 @@ pub fn generate_with_script(
         candidates.sort();
         candidates
     };
-    let components = connected_components(&passable, width);
+    let components = connected_components(&wm, &passable);
     let primary = components.first().cloned().unwrap_or_default();
     let mut all_candidates = candidates_for(&passable, total_spawns);
     let mut spawns = if matches!(
         script,
-        MapScript::TrueStartEarth | MapScript::TrueStartTrueEarth
+        MapScript::Continents | MapScript::SmallContinents | MapScript::Planet
     ) {
-        true_start_major_spawns(&wm, &all_candidates, num_major_spawns)
-    } else if matches!(script, MapScript::Continents | MapScript::SmallContinents) {
         let viable: Vec<(BTreeSet<Pos>, Vec<Pos>)> = components
             .into_iter()
             .map(|component| {
@@ -1044,10 +951,7 @@ fn apply_tectonics(wm: &mut WorldMap, land: &BTreeSet<Pos>, rng: &mut Rng) {
     mountains.build_ridges(rng, PLATES, 5.0, 5.0);
     let hills = Fractal::new(rng, width, height, 3);
 
-    let cells: Vec<(i32, i32)> = land
-        .iter()
-        .map(|pos| hex::axial_to_offset(pos.0, pos.1))
-        .collect();
+    let cells: Vec<(i32, i32)> = land.iter().map(|pos| noise_cell(wm, *pos)).collect();
     let mountain_threshold =
         mountains.percentile_within(cells.iter().copied(), (97 - WORLD_AGE) as u32);
     let foothills_threshold =
@@ -1064,7 +968,7 @@ fn apply_tectonics(wm: &mut WorldMap, land: &BTreeSet<Pos>, rng: &mut Rng) {
     );
 
     for pos in land {
-        let (col, row) = hex::axial_to_offset(pos.0, pos.1);
+        let (col, row) = noise_cell(wm, *pos);
         let mountain_value = mountains.at(col, row);
         let hill_value = hills.at(col, row);
         let tile = wm.tiles.get_mut(pos).unwrap();
@@ -1091,9 +995,7 @@ fn apply_tectonics(wm: &mut WorldMap, land: &BTreeSet<Pos>, rng: &mut Rng) {
         .copied()
         .filter(|pos| wm.tiles[pos].terrain == "mountain")
         .filter(|pos| {
-            hex::neighbors(*pos)
-                .into_iter()
-                .map(|neighbor| hex::canon(neighbor, width))
+            wm.neighbors(*pos).into_iter()
                 .any(|neighbor| !land.contains(&neighbor))
         })
         .collect();
@@ -1113,7 +1015,7 @@ fn apply_tectonics(wm: &mut WorldMap, land: &BTreeSet<Pos>, rng: &mut Rng) {
 /// out of two further fractals so that both arrive as regions. Desert is
 /// additionally confined to the subtropics, which is why Civ VI worlds have
 /// desert belts either side of a green equator rather than desert everywhere.
-fn assign_biomes(wm: &mut WorldMap, land: &[Pos], equal_area: bool, rng: &mut Rng) {
+fn assign_biomes(wm: &mut WorldMap, land: &[Pos], rng: &mut Rng) {
     let (width, height) = (wm.width, wm.height);
     let deserts = Fractal::new(rng, width, height, 3);
     let plains = Fractal::new(rng, width, height, 3);
@@ -1122,11 +1024,11 @@ fn assign_biomes(wm: &mut WorldMap, land: &[Pos], equal_area: bool, rng: &mut Rn
     let plains_bottom = plains.percentile(100 - PLAINS_PERCENT);
 
     for pos in land {
-        let (col, row) = hex::axial_to_offset(pos.0, pos.1);
+        let (col, row) = noise_cell(wm, *pos);
         if wm.tiles[pos].terrain == "mountain" {
             continue;
         }
-        let base = normalized_latitude(row, height, equal_area);
+        let base = wm.polar_fraction(*pos);
         let latitude =
             (base + (128.0 - variation.at(col, row) as f64) / (255.0 * 5.0)).clamp(0.0, 1.0);
         let terrain = if latitude >= SNOW_LATITUDE {
@@ -1172,9 +1074,7 @@ fn cluster_score(adjacent: usize) -> i32 {
 }
 
 fn adjacent_feature_count(wm: &WorldMap, pos: Pos, feature: &str) -> usize {
-    hex::neighbors(pos)
-        .into_iter()
-        .map(|neighbor| hex::canon(neighbor, wm.width))
+    wm.neighbors(pos).into_iter()
         .filter(|neighbor| {
             wm.get(*neighbor)
                 .is_some_and(|tile| tile.feature.as_deref() == Some(feature))
@@ -1188,7 +1088,7 @@ fn within_share(count: usize, considered: usize, percent: usize) -> bool {
     considered == 0 || (count * 100).div_ceil(considered) <= percent
 }
 
-fn add_features(wm: &mut WorldMap, land: &BTreeSet<Pos>, equal_area: bool, rng: &mut Rng) {
+fn add_features(wm: &mut WorldMap, land: &BTreeSet<Pos>, rng: &mut Rng) {
     let (width, height) = (wm.width, wm.height);
     let equator = (height + 1) / 2;
 
@@ -1255,10 +1155,10 @@ fn add_features(wm: &mut WorldMap, land: &BTreeSet<Pos>, equal_area: bool, rng: 
                 continue;
             }
 
-            // Rainforest keeps to twenty degrees either side of the equator,
-            // whether rows are linear latitude or equal spherical area.
-            let tropical = if equal_area {
-                normalized_latitude(row, height, true) <= 20.0 / 90.0
+            // Rainforest keeps to twenty degrees either side of the equator.
+            // A globe measures that on the sphere; a flat map counts rows.
+            let tropical = if wm.sphere().is_some() {
+                wm.polar_fraction(pos) <= 20.0 / 90.0
             } else {
                 (row - equator).abs() <= (20 * height / 180).max(2)
             };
@@ -1295,7 +1195,7 @@ fn add_features(wm: &mut WorldMap, land: &BTreeSet<Pos>, equal_area: bool, rng: 
     for row in 0..height {
         for col in 0..width {
             let pos = hex::offset_to_axial(col, row);
-            let latitude = normalized_latitude(row, height, equal_area);
+            let latitude = wm.polar_fraction(pos);
             let eligible = wm
                 .get(pos)
                 .is_some_and(|tile| tile.terrain == "coast" && tile.feature.is_none());
@@ -1313,7 +1213,15 @@ fn add_features(wm: &mut WorldMap, land: &BTreeSet<Pos>, equal_area: bool, rng: 
                 3 | 4 => 175,
                 _ => 10_000,
             };
-            let score = 3 * (row - equator).abs() + crowding;
+            // Warm water first: on a flat map that is the distance in rows
+            // from the equator, and on a globe the same distance measured
+            // around the sphere instead.
+            let from_equator = if wm.sphere().is_some() {
+                (latitude * (height as f64 - 1.0) / 2.0) as i32
+            } else {
+                (row - equator).abs()
+            };
+            let score = 3 * from_equator + crowding;
             if (rng.below(200) as i32) >= score {
                 wm.tiles.get_mut(&pos).unwrap().feature = Some("reef".into());
                 reefs += 1;
@@ -1345,16 +1253,12 @@ struct SpawnLayoutScore {
 fn start_quality(rules: &Rules, wm: &WorldMap, pos: Pos) -> i32 {
     let center = &wm.tiles[&pos];
     let fresh_water = center.has_river()
-        || hex::neighbors(pos)
-            .into_iter()
-            .map(|neighbor| hex::canon(neighbor, wm.width))
+        || wm.neighbors(pos).into_iter()
             .any(|neighbor| {
                 wm.get(neighbor)
                     .is_some_and(|tile| tile.feature.as_deref() == Some("oasis"))
             });
-    let coastal = hex::neighbors(pos)
-        .into_iter()
-        .map(|neighbor| hex::canon(neighbor, wm.width))
+    let coastal = wm.neighbors(pos).into_iter()
         .any(|neighbor| wm.get(neighbor).is_some_and(|tile| rules.is_water(tile)));
 
     let mut nearby_yields = Vec::new();
@@ -1371,7 +1275,7 @@ fn start_quality(rules: &Rules, wm: &WorldMap, pos: Pos) -> i32 {
         if !rules.is_water(tile) && rules.is_passable(tile) {
             workable_land += 1;
         }
-        if tile_pos == pos || hex::wdistance(pos, tile_pos, wm.width) > 2 {
+        if tile_pos == pos || wm.distance(pos, tile_pos) > 2 {
             continue;
         }
         let yields = rules.tile_yields(tile);
@@ -1535,7 +1439,7 @@ fn spawn_layout_score(
                 ordered
                     .iter()
                     .filter(|other| *other != start)
-                    .map(|other| hex::wdistance(*start, *other, wm.width))
+                    .map(|other| wm.distance(*start, *other))
                     .min()
                     .unwrap()
             })
@@ -1550,7 +1454,7 @@ fn spawn_layout_score(
         let (distance, owner) = ordered
             .iter()
             .enumerate()
-            .map(|(index, start)| (hex::wdistance(*tile, *start, wm.width), index))
+            .map(|(index, start)| (wm.distance(*tile, *start), index))
             .min()
             .unwrap();
         coverage_radius = coverage_radius.max(distance);
@@ -1657,7 +1561,7 @@ fn targeted_layout(
             .min_by_key(|candidate| {
                 let nearest = layout
                     .iter()
-                    .map(|start| hex::wdistance(**candidate, *start, wm.width))
+                    .map(|start| wm.distance(**candidate, *start))
                     .min()
                     .unwrap_or(0);
                 (
@@ -1802,7 +1706,7 @@ fn balanced_major_spawns(
             let Some((candidate_rank, candidate)) = candidates
                 .iter()
                 .filter(|candidate| {
-                    hex::wdistance(**candidate, current, wm.width) <= 3
+                    wm.distance(**candidate, current) <= 3
                         && !layout.contains(candidate)
                 })
                 .map(|candidate| {
@@ -1880,7 +1784,7 @@ fn add_minor_spawns(
             wonders
                 .iter()
                 .all(|wonder| {
-                    hex::wdistance(*candidate, *wonder, wm.width)
+                    wm.distance(*candidate, *wonder)
                         >= START_DISTANCE_MINOR_NATURAL_WONDER
                 })
         })
@@ -1899,7 +1803,7 @@ fn add_minor_spawns(
                 let nearest = |group: &[Pos]| {
                     group
                         .iter()
-                        .map(|start| hex::wdistance(**candidate, *start, wm.width))
+                        .map(|start| wm.distance(**candidate, *start))
                         .min()
                 };
                 // Aim at the target, not merely inside the band. The minor
@@ -1951,7 +1855,7 @@ fn complete_major_spawns(
             .min_by_key(|candidate| {
                 let nearest = spawns
                     .iter()
-                    .map(|start| hex::wdistance(**candidate, *start, wm.width))
+                    .map(|start| wm.distance(**candidate, *start))
                     .min();
                 (
                     nearest.map(start_distance_miss).unwrap_or(0),
@@ -1980,9 +1884,7 @@ fn canonical_river_edge(a: Pos, b: Pos) -> RiverEdge {
 fn all_shared_edges(wm: &WorldMap) -> BTreeSet<RiverEdge> {
     let mut edges = BTreeSet::new();
     for pos in wm.tiles.keys().copied() {
-        for neighbor in hex::neighbors(pos)
-            .into_iter()
-            .map(|p| hex::canon(p, wm.width))
+        for neighbor in wm.neighbors(pos).into_iter()
             .filter(|p| wm.tiles.contains_key(p))
         {
             edges.insert(canonical_river_edge(pos, neighbor));
@@ -1996,14 +1898,10 @@ fn all_shared_edges(wm: &WorldMap) -> BTreeSet<RiverEdge> {
 /// four possible continuations are A/C and B/C at those two vertices.
 fn connected_river_edges(wm: &WorldMap, edge: RiverEdge) -> Vec<RiverEdge> {
     let (a, b) = edge;
-    let b_neighbors: BTreeSet<Pos> = hex::neighbors(b)
-        .into_iter()
-        .map(|p| hex::canon(p, wm.width))
+    let b_neighbors: BTreeSet<Pos> = wm.neighbors(b).into_iter()
         .collect();
     let mut connected = BTreeSet::new();
-    for common in hex::neighbors(a)
-        .into_iter()
-        .map(|p| hex::canon(p, wm.width))
+    for common in wm.neighbors(a).into_iter()
         .filter(|p| *p != b && wm.tiles.contains_key(p) && b_neighbors.contains(p))
     {
         connected.insert(canonical_river_edge(a, common));
@@ -2037,7 +1935,6 @@ fn generate_rivers(wm: &mut WorldMap, land: &[Pos], rng: &mut Rng) {
         return;
     }
 
-    let width = wm.width;
     let is_water = |pos: Pos| {
         wm.tiles
             .get(&pos)
@@ -2046,7 +1943,7 @@ fn generate_rivers(wm: &mut WorldMap, land: &[Pos], rng: &mut Rng) {
     let distance_to_water = |pos: Pos| {
         water_tiles
             .iter()
-            .map(|water| hex::wdistance(pos, *water, width))
+            .map(|water| wm.distance(pos, *water))
             .min()
             .unwrap_or(0)
     };
@@ -2186,13 +2083,7 @@ fn place_strategic_quotas(
 /// continent count is not a promise of disconnected landmasses; a large
 /// landmass can span several continents, so farthest-point Voronoi regions
 /// are a closer model than equating one flood-fill component to one continent.
-fn assign_continents(
-    wm: &mut WorldMap,
-    land: &BTreeSet<Pos>,
-    width: i32,
-    requested: usize,
-    rng: &mut Rng,
-) {
+fn assign_continents(wm: &mut WorldMap, land: &BTreeSet<Pos>, requested: usize, rng: &mut Rng) {
     if land.is_empty() || requested == 0 {
         return;
     }
@@ -2206,7 +2097,7 @@ fn assign_continents(
             .max_by_key(|p| {
                 let nearest = centers
                     .iter()
-                    .map(|c| hex::wdistance(**p, *c, width))
+                    .map(|c| wm.distance(**p, *c))
                     .min()
                     .unwrap_or(0);
                 (nearest, **p)
@@ -2218,13 +2109,13 @@ fn assign_continents(
         let continent = centers
             .iter()
             .enumerate()
-            .min_by_key(|(id, center)| (hex::wdistance(*pos, **center, width), *id))
+            .min_by_key(|(id, center)| (wm.distance(*pos, **center), *id))
             .map(|(id, _)| id);
         wm.tiles.get_mut(pos).unwrap().continent = continent;
     }
 }
 
-fn connected_components(cells: &BTreeSet<Pos>, width: i32) -> Vec<BTreeSet<Pos>> {
+fn connected_components(wm: &WorldMap, cells: &BTreeSet<Pos>) -> Vec<BTreeSet<Pos>> {
     let mut seen: BTreeSet<Pos> = BTreeSet::new();
     let mut components = Vec::new();
     for start in cells {
@@ -2235,8 +2126,7 @@ fn connected_components(cells: &BTreeSet<Pos>, width: i32) -> Vec<BTreeSet<Pos>>
         comp.insert(*start);
         let mut stack = vec![*start];
         while let Some(cur) = stack.pop() {
-            for n0 in hex::neighbors(cur) {
-                let n = hex::canon(n0, width);
+            for n in wm.neighbors(cur) {
                 if cells.contains(&n) && !comp.contains(&n) {
                     comp.insert(n);
                     stack.push(n);
@@ -2251,8 +2141,8 @@ fn connected_components(cells: &BTreeSet<Pos>, width: i32) -> Vec<BTreeSet<Pos>>
 }
 
 #[cfg(test)]
-fn largest_component(cells: &BTreeSet<Pos>, width: i32) -> BTreeSet<Pos> {
-    connected_components(cells, width)
+fn largest_component(wm: &WorldMap, cells: &BTreeSet<Pos>) -> BTreeSet<Pos> {
+    connected_components(wm, cells)
         .into_iter()
         .next()
         .unwrap_or_default()
@@ -2270,7 +2160,7 @@ mod river_tests {
             .filter(|(_, tile)| !rules.is_water(tile))
             .map(|(position, _)| *position)
             .collect();
-        connected_components(&land, world.width)
+        connected_components(world, &land)
     }
 
     #[test]
@@ -2291,11 +2181,7 @@ mod river_tests {
             assert_eq!(spawns.len(), 12, "{script:?} spawn count");
             for (spawn_index, start) in spawns.iter().enumerate() {
                 assert!(
-                    spawns[spawn_index + 1..].iter().all(|other| hex::wdistance(
-                        *start,
-                        *other,
-                        world.width
-                    ) >= 4),
+                    spawns[spawn_index + 1..].iter().all(|other| world.distance(*start, *other) >= 4),
                     "{script:?} starts must leave room for distinct cities"
                 );
             }
@@ -2328,7 +2214,7 @@ mod river_tests {
                     "Small Continents needs several separated landmasses, got {:?}",
                     components.iter().map(|c| c.len()).collect::<Vec<_>>()
                 ),
-                MapScript::TrueStartEarth | MapScript::TrueStartTrueEarth => unreachable!(),
+                MapScript::Planet => unreachable!("Planet is not a cylinder"),
             }
 
             let occupied_components = components
@@ -2357,69 +2243,107 @@ mod river_tests {
         }
     }
 
+    /// Planet is the one script whose world has no edge: every tile has a
+    /// neighbour in every direction, so a fleet can leave any coast on any
+    /// heading and come back to it.
     #[test]
-    fn true_earth_scripts_share_geography_and_use_historic_major_starts() {
+    fn planet_closes_into_a_sphere_of_hexagons_and_twelve_pentagons() {
         let rules = Rules::embedded();
-        let mut flat_rng = Rng::new(93_011);
-        let mut globe_rng = Rng::new(93_011);
-        let (flat, flat_spawns) = generate_with_script(
+        let size = CIV6_MAP_SIZES
+            .iter()
+            .find(|size| size.id == "small")
+            .unwrap();
+        let mut rng = Rng::new(51_517);
+        let (world, spawns) = generate_with_script(
             &rules,
-            60,
-            38,
-            8,
+            size.width,
+            size.height,
             6,
-            0,
-            3,
-            MapScript::TrueStartEarth,
-            &mut flat_rng,
+            9,
+            size.natural_wonders,
+            size.continents,
+            MapScript::Planet,
+            &mut rng,
         );
-        let (globe, globe_spawns) = generate_with_script(
-            &rules,
-            60,
-            38,
-            8,
-            6,
-            0,
-            3,
-            MapScript::TrueStartTrueEarth,
-            &mut globe_rng,
-        );
-        assert!(flat.tiles == globe.tiles);
-        assert_eq!(flat_spawns, globe_spawns);
-        assert_eq!(flat_spawns.len(), 14);
 
-        let homelands = [
-            (12.5, 41.9),
-            (31.2, 30.0),
-            (23.7, 38.0),
-            (116.4, 39.9),
-            (44.4, 32.5),
-            (-99.1, 19.4),
-            (32.5, 19.6),
-            (64.0, 48.0),
-        ];
-        for (spawn, (longitude, latitude)) in flat_spawns.iter().zip(homelands) {
-            let target = earth_position(flat.width, flat.height, longitude, latitude);
-            assert!(
-                hex::wdistance(*spawn, target, flat.width) <= 7,
-                "historic start {longitude},{latitude} moved too far: {spawn:?}"
-            );
-            assert!(!rules.is_water(&flat.tiles[spawn]));
+        // The size's rectangle is re-expressed as that size's globe.
+        let frequency = size.globe_frequency;
+        assert_eq!((world.width, world.height), (5 * frequency, 2 * frequency + 2));
+        assert_eq!(world.tiles.len(), (10 * frequency * frequency + 2) as usize);
+
+        // No edge of the world, anywhere: every tile is surrounded, and the
+        // twelve tiles that are short a neighbour are the pentagons.
+        let mut pentagons = 0;
+        for (pos, _) in world.tiles.iter() {
+            let neighbors = world.neighbors(*pos);
+            match neighbors.len() {
+                5 => pentagons += 1,
+                6 => {}
+                other => panic!("{pos:?} has {other} neighbours"),
+            }
+            for neighbor in neighbors {
+                assert!(world.tiles.contains_key(&neighbor));
+                assert!(world.neighbors(neighbor).contains(pos));
+            }
         }
-        // Equal-area rows converge onto ocean at both poles; the recognized
-        // continents occupy both hemispheres and leave both great oceans open.
-        for (longitude, latitude, land) in [
-            (-110.0, 40.0, true),
-            (-60.0, -20.0, true),
-            (20.0, 5.0, true),
-            (100.0, 50.0, true),
-            (135.0, -25.0, true),
-            (-150.0, 0.0, false),
-            (-25.0, 0.0, false),
-            (0.0, 88.0, false),
-        ] {
-            let tile = &flat.tiles[&earth_position(flat.width, flat.height, longitude, latitude)];
-            assert_eq!(!rules.is_water(tile), land, "at {longitude},{latitude}");
+        assert_eq!(pentagons, 12);
+
+        // Following the H3 grid's trick of keeping its pentagons in the ocean,
+        // no pentagon carries land, so every workable tile is a full hexagon.
+        for pos in world.sphere().unwrap().pentagons() {
+            assert!(rules.is_water(&world.tiles[&pos]), "{pos:?} is a land pentagon");
+        }
+        let land: BTreeSet<Pos> = world
+            .tiles
+            .iter()
+            .filter(|(_, tile)| !rules.is_water(tile))
+            .map(|(pos, _)| *pos)
+            .collect();
+        for pos in &land {
+            assert_eq!(world.neighbors(*pos).len(), 6, "land tile {pos:?}");
+        }
+
+        // A world worth playing: about a third land, in several landmasses,
+        // with open water over both poles.
+        let share = land.len() * 100 / world.tiles.len();
+        assert!((20..45).contains(&share), "{share}% land");
+        let components = land_components(&world, &rules);
+        assert!(
+            components.iter().filter(|body| body.len() >= 20).count() >= 3,
+            "Planet needs several landmasses, got {:?}",
+            components.iter().map(|body| body.len()).collect::<Vec<_>>()
+        );
+        for row in [0, world.height - 1] {
+            let pole = hex::offset_to_axial(0, row);
+            assert!(world.polar_fraction(pole) > 0.9, "row {row} holds a pole");
+            assert_eq!(world.neighbors(pole).len(), 5, "a pole is a pentagon");
+            assert!(rules.is_water(&world.tiles[&pole]), "the caps stay open water");
+        }
+
+        // Sailing keeps going: step away from a start and around the globe,
+        // always taking the neighbour furthest from where the walk began until
+        // it turns back, and the walk returns to its own starting tile.
+        let start = *land.iter().next().unwrap();
+        let mut at = start;
+        let mut previous = start;
+        for _ in 0..(30 * frequency) {
+            let next = world
+                .neighbors(at)
+                .into_iter()
+                .filter(|pos| *pos != previous)
+                .max_by_key(|pos| (world.distance(start, *pos), *pos))
+                .unwrap();
+            previous = at;
+            at = next;
+            if at == start {
+                break;
+            }
+        }
+        assert!(world.distance(start, at) <= 3 * frequency, "the walk never left the globe");
+
+        assert_eq!(spawns.len(), 15);
+        for start in &spawns {
+            assert!(!rules.is_water(&world.tiles[start]));
         }
     }
 
@@ -2444,8 +2368,7 @@ mod river_tests {
             MapScript::Continents,
             MapScript::SmallContinents,
             MapScript::InlandSea,
-            MapScript::TrueStartEarth,
-            MapScript::TrueStartTrueEarth,
+            MapScript::Planet,
         ]
         .into_iter()
         .enumerate()
@@ -2591,7 +2514,7 @@ mod river_tests {
                 .filter(|(_, tile)| !rules.is_water(tile) && rules.is_passable(tile))
                 .map(|(pos, _)| *pos)
                 .collect();
-            let landmass = largest_component(&passable, wm.width);
+            let landmass = largest_component(&wm, &passable);
             let majors = &spawns[..size.default_players];
             assert!(majors.iter().all(|start| landmass.contains(start)));
             assert_eq!(
@@ -2604,7 +2527,7 @@ mod river_tests {
                 assert!(
                     spawns[spawn_index + 1..]
                         .iter()
-                        .all(|other| hex::wdistance(*start, *other, wm.width) >= 4),
+                        .all(|other| wm.distance(*start, *other) >= 4),
                     "{} produced starts too close to found distinct cities",
                     size.name
                 );
@@ -2625,7 +2548,7 @@ mod river_tests {
                 let nearest = majors
                     .iter()
                     .filter(|other| *other != start)
-                    .map(|other| hex::wdistance(*start, *other, wm.width))
+                    .map(|other| wm.distance(*start, *other))
                     .min()
                     .unwrap_or(START_DISTANCE_MAJOR);
                 assert!(
@@ -2669,7 +2592,7 @@ mod river_tests {
             for (index, start) in spawns.iter().enumerate() {
                 let nearest = wonders
                     .iter()
-                    .map(|wonder| hex::wdistance(*start, *wonder, wm.width))
+                    .map(|wonder| wm.distance(*start, *wonder))
                     .min()
                     .unwrap();
                 let floor = if index < 8 {
@@ -2700,7 +2623,7 @@ mod river_tests {
             for (index, minor) in minors.iter().enumerate() {
                 let to_major = majors
                     .iter()
-                    .map(|major| hex::wdistance(*minor, *major, wm.width))
+                    .map(|major| wm.distance(*minor, *major))
                     .min()
                     .unwrap();
                 assert!(
@@ -2711,7 +2634,7 @@ mod river_tests {
                     .iter()
                     .enumerate()
                     .filter(|(other, _)| *other != index)
-                    .map(|(_, other)| hex::wdistance(*minor, *other, wm.width))
+                    .map(|(_, other)| wm.distance(*minor, *other))
                     .min()
                 {
                     assert!(
@@ -2736,7 +2659,7 @@ mod river_tests {
                 .filter(|(_, tile)| !rules.is_water(tile) && rules.is_passable(tile))
                 .map(|(pos, _)| *pos)
                 .collect();
-            let landmass = largest_component(&passable, wm.width);
+            let landmass = largest_component(&wm, &passable);
             let majors = &spawns[..4];
             let qualities = majors
                 .iter()
@@ -2803,9 +2726,7 @@ mod river_tests {
                         assert_eq!(tile.terrain, "mountain", "volcano at {position:?}")
                     }
                     "volcanic_soil" => assert!(
-                        hex::neighbors(*position)
-                            .into_iter()
-                            .map(|neighbor| hex::canon(neighbor, world.width))
+                        world.neighbors(*position).into_iter()
                             .any(|neighbor| world.tiles.get(&neighbor).is_some_and(
                                 |neighbor_tile| {
                                     neighbor_tile.feature.as_deref() == Some("volcano")
@@ -2814,9 +2735,7 @@ mod river_tests {
                         "volcanic soil at {position:?} has no volcano"
                     ),
                     "geothermal_fissure" => assert!(
-                        hex::neighbors(*position)
-                            .into_iter()
-                            .map(|neighbor| hex::canon(neighbor, world.width))
+                        world.neighbors(*position).into_iter()
                             .any(|neighbor| world.tiles.get(&neighbor).is_some_and(
                                 |neighbor_tile| { neighbor_tile.terrain == "mountain" }
                             )),
@@ -2877,9 +2796,7 @@ mod river_tests {
                     continue;
                 }
                 frontier.extend(
-                    hex::neighbors(position)
-                        .into_iter()
-                        .map(|neighbor| hex::canon(neighbor, world.width))
+                    world.neighbors(position).into_iter()
                         .filter(|neighbor| tiles.contains(neighbor)),
                 );
             }
@@ -2941,7 +2858,7 @@ mod river_tests {
                                 .flat_map(|left| {
                                     footprints[*second]
                                         .iter()
-                                        .map(move |right| hex::wdistance(*left, *right, size.width))
+                                        .map(|right| world.distance(*left, *right))
                                 })
                                 .min()
                                 .unwrap();

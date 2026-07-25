@@ -8343,34 +8343,21 @@ impl Game {
         self.game_speed.scale_turns(turns)
     }
 
-    /// Wrapped hex distance (the world is an east-west cylinder).
+    /// Distance along the world's own shape: wrapped hex distance on the
+    /// cylindrical scripts, steps around the globe on Planet.
     pub fn wdist(&self, a: Pos, b: Pos) -> i32 {
-        hex::wdistance(a, b, self.map.width)
+        self.map.distance(a, b)
     }
 
-    /// Canonicalized in-map neighbors across the wrap seam.
+    /// In-map neighbors, across the wrap seam or around the globe.
     #[inline]
     pub fn nbrs(&self, p: Pos) -> hex::Neighbors {
-        let mut out = hex::Neighbors::new();
-        for neighbor in crate::hex::neighbors(p) {
-            let neighbor = hex::canon(neighbor, self.map.width);
-            if self.map.tiles.contains_key(&neighbor) {
-                out.push(neighbor);
-            }
-        }
-        out
+        self.map.neighbors(p)
     }
 
-    /// Canonicalized in-map disk across the wrap seam.
+    /// Every in-map tile within `r` steps of `c`.
     pub fn wdisk(&self, c: Pos, r: i32) -> Vec<Pos> {
-        let mut v: Vec<Pos> = crate::hex::disk(c, r)
-            .into_iter()
-            .map(|p| hex::canon(p, self.map.width))
-            .filter(|p| self.map.tiles.contains_key(p))
-            .collect();
-        v.sort();
-        v.dedup();
-        v
+        self.map.disk(c, r)
     }
 }
 
@@ -19131,12 +19118,7 @@ impl Game {
             let Some(spec) = self.rules.disasters.get(&storm.kind).cloned() else {
                 continue;
             };
-            let step = hex::DIRS[storm.heading % 6];
-            let next = hex::canon(
-                (storm.pos.0 + step.0, storm.pos.1 + step.1),
-                self.map.width,
-            );
-            if self.map.tiles.contains_key(&next) {
+            if let Some(next) = self.map.step(storm.pos, storm.heading) {
                 storm.pos = next;
             }
             let moved = storm.clone();
@@ -21253,6 +21235,103 @@ impl Game {
         true
     }
 
+    /// The same corridor on a globe, where cube coordinates do not reach.
+    ///
+    /// A flat map draws its sight line by interpolating hex coordinates, which
+    /// only works because the whole world is one lattice. On Planet the line
+    /// between two tiles is a great circle, so the ray is walked along the arc
+    /// itself: sample the arc at each step and follow the tile graph to the
+    /// tile nearest that point. The corridor that comes out is the same
+    /// object — every tile strictly between the two ends — so the cover rules
+    /// above it are unchanged.
+    fn arc_is_clear(
+        &self,
+        heights: &mut HeightField,
+        from: Pos,
+        to: Pos,
+        viewer_height: i32,
+        target_height: i32,
+        see_through_woods: bool,
+    ) -> bool {
+        let Some(sphere) = self.map.sphere() else {
+            return true;
+        };
+        let (Some(start), Some(end)) = (sphere.center(from), sphere.center(to)) else {
+            return true;
+        };
+        let steps = self.wdist(from, to).max(1);
+        let angle = start
+            .iter()
+            .zip(end)
+            .map(|(a, b)| a * b)
+            .sum::<f64>()
+            .clamp(-1.0, 1.0)
+            .acos();
+        let mut previous: Option<Pos> = None;
+        let mut at = from;
+        let mut distinct = 0usize;
+        for step in 0..=steps {
+            let t = step as f64 / steps as f64;
+            // Along the arc, not along the chord: an interpolated chord would
+            // drift off the surface and pick tiles beside the sight line.
+            let (first, second) = if angle < 1e-9 {
+                (1.0 - t, t)
+            } else {
+                (
+                    ((1.0 - t) * angle).sin() / angle.sin(),
+                    (t * angle).sin() / angle.sin(),
+                )
+            };
+            let sample = [
+                start[0] * first + end[0] * second,
+                start[1] * first + end[1] * second,
+                start[2] * first + end[2] * second,
+            ];
+            at = self.tile_nearest(at, sample);
+            if previous == Some(at) {
+                continue;
+            }
+            if distinct >= 2 {
+                let blocker = self.blocker_height_via(heights, previous.unwrap(), see_through_woods);
+                if blocker > viewer_height && blocker >= target_height {
+                    return false;
+                }
+            }
+            previous = Some(at);
+            distinct += 1;
+        }
+        true
+    }
+
+    /// Walk from a tile to whichever tile the given direction actually points
+    /// at. Each step is short, so following the steepest neighbour arrives in
+    /// one or two moves.
+    fn tile_nearest(&self, mut at: Pos, point: [f64; 3]) -> Pos {
+        let Some(sphere) = self.map.sphere() else {
+            return at;
+        };
+        let toward = |pos: Pos| {
+            sphere
+                .center(pos)
+                .map_or(f64::MIN, |center| center.iter().zip(point).map(|(a, b)| a * b).sum())
+        };
+        let mut best = toward(at);
+        loop {
+            let mut moved = false;
+            for neighbor in self.nbrs(at) {
+                let score = toward(neighbor);
+                if score > best {
+                    best = score;
+                    at = neighbor;
+                    moved = true;
+                }
+            }
+            if !moved {
+                return at;
+            }
+        }
+    }
+
     /// The two small cube-coordinate nudges produce both direct corridors
     /// when a ray lies exactly on a hex edge. A target is visible when either
     /// corridor is open, matching Civ VI's "half-hidden" hex behavior.
@@ -21266,6 +21345,10 @@ impl Game {
     ) -> bool {
         if self.wdist(from, to) <= 1 {
             return true;
+        }
+        if self.map.sphere().is_some() {
+            let target_height = self.sight_height_via(heights, to);
+            return self.arc_is_clear(heights, from, to, viewer_height, target_height, see_through_woods);
         }
         let unwrapped = self.unwrapped_toward(from, to);
         let distance = hex::distance(from, unwrapped);
@@ -23096,9 +23179,9 @@ impl Game {
     }
 
     fn district_under_siege(&self, owner: usize, position: Pos) -> bool {
-        crate::hex::neighbors(position)
+        self.map
+            .around(position)
             .into_iter()
-            .map(|pos| hex::canon(pos, self.map.width))
             .all(|pos| {
                 let Some(tile) = self.map.get(pos) else {
                     return true;
@@ -23391,14 +23474,38 @@ impl Game {
         appeal
     }
 
+    /// The four tiles of a park on a globe: a tile, two of its neighbours that
+    /// also touch each other, and the tile opposite. The pair is taken at a
+    /// fixed place in the tile's own ring so that one tile names one park.
+    fn park_rhombus(&self, top: Pos) -> Option<[Pos; 4]> {
+        let ring = self.nbrs(top);
+        if ring.len() < 6 {
+            return None;
+        }
+        let (left, right) = (ring[4], ring[5]);
+        let far = self
+            .nbrs(left)
+            .into_iter()
+            .find(|pos| *pos != top && self.nbrs(right).contains(pos))?;
+        Some([top, left, right, far])
+    }
+
     fn national_park_diamond(&self, top: Pos) -> Option<[Pos; 4]> {
-        let positions = [
-            top,
-            (top.0 - 1, top.1 + 1),
-            (top.0, top.1 + 1),
-            (top.0 - 1, top.1 + 2),
-        ]
-        .map(|position| hex::canon(position, self.map.width));
+        // A park is a rhombus: a tile, two neighbours that touch each other,
+        // and the tile those two share on the far side. On a flat map that is
+        // a fixed set of coordinate offsets; on a globe the same shape is
+        // built from the tile's own ring of neighbours, which is the only
+        // definition that survives a world with no fixed compass.
+        let positions = match self.map.sphere() {
+            Some(_) => self.park_rhombus(top)?,
+            None => [
+                top,
+                (top.0 - 1, top.1 + 1),
+                (top.0, top.1 + 1),
+                (top.0 - 1, top.1 + 2),
+            ]
+            .map(|position| hex::canon(position, self.map.width)),
+        };
         let mut sorted = positions;
         sorted.sort_unstable();
         let distinct = sorted.windows(2).all(|pair| pair[0] != pair[1]);
@@ -23495,14 +23602,19 @@ impl Game {
             .filter(|position| {
                 self.map.tiles[position].improvement.as_deref() == Some("national_park")
             })
-            .flat_map(|position| {
-                [
-                    position,
-                    (position.0 + 1, position.1 - 1),
-                    (position.0, position.1 - 1),
-                    (position.0 + 1, position.1 - 2),
-                ]
-                .map(|top| hex::canon(top, self.map.width))
+            .flat_map(|position| -> Vec<Pos> {
+                match self.map.sphere() {
+                    // Any tile of a rhombus lies within two steps of its top.
+                    Some(_) => self.wdisk(position, 2),
+                    None => [
+                        position,
+                        (position.0 + 1, position.1 - 1),
+                        (position.0, position.1 - 1),
+                        (position.0 + 1, position.1 - 2),
+                    ]
+                    .map(|top| hex::canon(top, self.map.width))
+                    .to_vec(),
+                }
             })
             .collect();
         for top in candidate_tops {

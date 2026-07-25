@@ -1666,6 +1666,13 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     if let Some(v) = request["map_script"].as_str().and_then(MapScript::from_id) {
         p.map_script = v;
     }
+    // A globe is stored in a rectangle of its own shape, so the chosen size is
+    // re-expressed whenever either the size or the script moves.
+    if let Some(size) = MapSize::from_dimensions(p.width, p.height) {
+        let (width, height) = size.dimensions(p.map_script);
+        p.width = width;
+        p.height = height;
+    }
     if let Some(v) = request["game_speed"].as_str().and_then(GameSpeed::from_id) {
         p.game_speed = v;
         p.speed = v.id().to_string();

@@ -6,8 +6,13 @@
 //! VI's own generator targets, so a change can be judged by eye and by number.
 //!
 //! Usage: mapdump [--seed N] [--width N] [--height N] [--script pangaea|
-//!                 continents|small_continents|inland_sea|true_start_earth|
-//!                 true_start_true_earth] [--maps N] [--quiet]
+//!                 continents|small_continents|inland_sea|planet]
+//!                 [--maps N] [--quiet]
+//!
+//! Planet is a globe, and its rectangle is the storage the sphere is laid out
+//! in rather than a picture of the world: a row is not a parallel of latitude
+//! and the two rows holding the poles are one tile wide. The shares below it
+//! are counted over the tiles themselves, so they read the same either way.
 use std::collections::BTreeMap;
 
 use civvis::rng::Rng;
@@ -42,8 +47,7 @@ fn main() {
         Some("continents") => MapScript::Continents,
         Some("small_continents") => MapScript::SmallContinents,
         Some("inland_sea") => MapScript::InlandSea,
-        Some("true_start_earth") => MapScript::TrueStartEarth,
-        Some("true_start_true_earth") => MapScript::TrueStartTrueEarth,
+        Some("planet") => MapScript::Planet,
         _ => MapScript::Pangaea,
     };
     let rules = Rules::embedded();
@@ -63,15 +67,24 @@ fn main() {
         );
 
         if !quiet {
-            println!("--- seed {} {script:?} {width}x{height}", seed + map);
-            for row in 0..height {
+            println!(
+                "--- seed {} {script:?} {}x{} ({} tiles)",
+                seed + map,
+                world.width,
+                world.height,
+                world.tiles.len()
+            );
+            for row in 0..world.height {
                 let mut line = String::new();
                 if row % 2 == 1 {
                     line.push(' ');
                 }
-                for col in 0..width {
+                for col in 0..world.width {
                     let pos = hex::offset_to_axial(col, row);
-                    let tile = &world.tiles[&pos];
+                    let Some(tile) = world.get(pos) else {
+                        line.push_str("  ");
+                        continue;
+                    };
                     let glyph = match (tile.terrain.as_str(), tile.feature.as_deref()) {
                         (_, Some("ice")) => '*',
                         (_, Some("reef")) => ':',
@@ -112,7 +125,7 @@ fn main() {
                     .iter()
                     .enumerate()
                     .filter(|(other, _)| *other != index)
-                    .map(|(_, other)| hex::wdistance(*start, *other, world.width))
+                    .map(|(_, other)| world.distance(*start, *other))
                     .min()
                     .unwrap_or(0)
             })
@@ -130,7 +143,7 @@ fn main() {
                     let mut tiles: Vec<f64> = world
                         .tiles
                         .iter()
-                        .filter(|(pos, _)| hex::wdistance(**pos, *start, world.width) <= 3)
+                        .filter(|(pos, _)| world.distance(**pos, *start) <= 3)
                         .map(|(_, tile)| rules.tile_yields(tile).total())
                         .collect();
                     tiles.sort_by(|left, right| right.total_cmp(left));
