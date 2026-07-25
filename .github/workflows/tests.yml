@@ -14,13 +14,32 @@ concurrency:
 
 jobs:
   cargo-test:
-    runs-on: ubuntu-latest
+    # GitHub-hosted minutes are billed on a private repository, and this
+    # account is not paying for them: every hosted job dies in about three
+    # seconds on "recent account payments have failed", which fails a required
+    # check and blocks every merge. Self-hosted runners are not metered, so the
+    # gate runs on the fleet's own machine and stays honest. The `civvis` label
+    # picks the one runner allowed to build, so two cargo jobs never share a
+    # machine — concurrent builds here have faked failures before.
+    runs-on: [self-hosted, civvis]
     timeout-minutes: 45
     env:
       CARGO_INCREMENTAL: 0
+      # A self-hosted workspace is wiped by `actions/checkout` (`git clean
+      # -ffdx` takes ignored files too), so the build cache has to live outside
+      # it. This one directory is shared by every branch and is the reason a
+      # warm run costs a fraction of the cold one this gate used to pay on
+      # every push — no `actions/cache`, no 10 GB quota to thrash.
+      CARGO_TARGET_DIR: ${{ runner.temp }}/../civvis-ci-target
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Put the machine's toolchain on PATH
+        # A launchd-started runner inherits a minimal PATH, and rustup and
+        # Homebrew are installed for the user, not the system.
+        run: |
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+      - run: cargo --version && rustc --version
       # The `ci` profile inherits `release`, so tests run at the same
       # optimisation level; it only drops the single-codegen-unit and LTO
       # settings that exist to buy the production spectator about four percent
