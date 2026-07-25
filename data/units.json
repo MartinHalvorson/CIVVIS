@@ -424,6 +424,7 @@
     "class": "military",
     "cost": 110,
     "maintenance": 2,
+    "charges": 1,
     "moves": 2,
     "strength": 40,
     "tech": "iron_working",
@@ -491,8 +492,8 @@
   },
   "maryannu_chariot_archer": {
     "class": "military",
-    "cost": 120,
-    "maintenance": 2,
+    "cost": 90,
+    "maintenance": 1,
     "moves": 2,
     "strength": 25,
     "ranged_strength": 35,
@@ -651,7 +652,8 @@
     "upgrade_to": "jet_bomber"
   },
   "anti_air_gun": {
-    "class": "support", "cost": 455, "maintenance": 2, "moves": 2,
+    "class": "support", "cost": 455, "maintenance": 2,
+    "range": 1, "moves": 2,
     "anti_air_strength": 90, "anti_air_range": 1, "tech": "advanced_ballistics",
     "upgrade_to": "mobile_sam"
   },

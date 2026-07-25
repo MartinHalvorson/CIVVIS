@@ -35,6 +35,28 @@ specific content set in a specific order; the cache is whatever the game last
 compiled for itself. **Where they disagree, that disagreement is itself a
 finding** — see the Cartography note below.
 
+### Aliases decide what is audited at all
+
+`ALIASES` maps the game's spelling onto CIVVIS'. An entry the map does not cover
+is not reported as wrong — it is reported as *absent from the other side*, and
+compared against nothing. The nine unique units the game prefixes with their
+civilization (`UNIT_ROMAN_LEGION`, `UNIT_GREEK_HOPLITE`,
+`UNIT_EGYPTIAN_CHARIOT_ARCHER`, …) sat in that blind spot, so the `Units` table
+audited 73 of 82 rows and looked clean. Aliasing them surfaced four real
+divergences immediately, all now fixed:
+
+| Unit | Field | was | shipped |
+|---|---|---|---|
+| Maryannu Chariot Archer | cost | 120 | **90** |
+| Maryannu Chariot Archer | maintenance | 2 | **1** |
+| Roman Legion | build charges | 0 | **1** (its Roman Fort) |
+| Anti-Air Gun | range | 0 | **1** |
+
+Egypt's unique was a third overpriced and cost twice the upkeep, which is a
+direct distortion of that civilization's strength. **When a table reports
+"Only in CIVVIS", check the alias map before concluding anything** — a nonzero
+count there means rows are going unaudited.
+
 ### First cache run: 15 divergences, 5 fixed
 
 The install-based audit last reported zero unwaived divergences. The cache run

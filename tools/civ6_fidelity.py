@@ -361,6 +361,18 @@ ALIASES = {
     "halicarnassus_mausoleum": "mausoleum_at_halicarnassus",
     "statue_liberty": "statue_of_liberty",
     "university_sankore": "university_of_sankore",
+    # Unique units: the game prefixes them with their civilization, CIVVIS
+    # names them the way the Civilopedia does. Nine units compared nothing at
+    # all before these, which is the whole point of the three above.
+    "roman_legion": "legion",
+    "greek_hoplite": "hoplite",
+    "aztec_eagle_warrior": "eagle_warrior",
+    "sumerian_war_cart": "war_cart",
+    "nubian_pitati": "pitati_archer",
+    "egyptian_chariot_archer": "maryannu_chariot_archer",
+    "scythian_horse_archer": "saka_horse_archer",
+    "chinese_crouching_tiger": "crouching_tiger",
+    "antiair_gun": "anti_air_gun",
 }
 
 
