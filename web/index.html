@@ -827,7 +827,8 @@
   }
   #zoomctl button { width: 34px; height: 34px; margin: 0; padding: 0; border: 0; background: transparent; font-size: 16px; }
   #zoomctl button + button { border-left: 1px solid #ffffff0c; border-radius: 0; }
-  #paneltoggle { background: transparent; }
+  #paneltoggle, #collapsepause { background: transparent; }
+  #collapsepause { display: none; }
   #ubar {
     position: absolute; z-index: 7; left: 50%; bottom: 22px; transform: translateX(-50%);
     display: none; min-width: 360px; max-width: min(680px, calc(100% - 450px)); padding: 13px 16px;
@@ -1468,10 +1469,12 @@
   body.sidebar-hidden .minimap-frame,
   body.overlay-minimap-hidden .minimap-frame,
   body.overlay-controls-hidden #zoomctl,
-  body.sidebar-hidden #zoomctl > :not(#paneltoggle),
+  body.sidebar-hidden #zoomctl > :not(#paneltoggle):not(#collapsepause),
   body.sidebar-hidden #ubar,
   body.sidebar-hidden #modeline,
   body.sidebar-hidden #tip { display: none !important; }
+  body.sidebar-hidden #collapsepause:not([hidden]) { display: block; }
+  #collapsepause[hidden] { display: none; }
 
   @media (max-width: 720px) {
     #side { inset-block-start: 132px; }
@@ -1544,7 +1547,8 @@
   <aside id="victoryhud" data-layout-widget="victory" aria-label="Turn and victory tracker"></aside>
   <aside id="playerhud" data-layout-widget="players" aria-label="Player stats"></aside>
   <div id="zoomctl">
-    <button id="paneltoggle" class="icon" title="Toggle command deck" aria-label="Toggle command deck">☰</button>
+    <button id="paneltoggle" class="icon" title="Hide command deck" aria-label="Hide command deck">&lt;</button>
+    <button id="collapsepause" hidden title="Pause simulation" aria-label="Pause simulation">⏸</button>
     <button id="zin" title="Zoom in" aria-label="Zoom in">＋</button>
     <button id="zout" title="Zoom out" aria-label="Zoom out">−</button>
     <button class="overlay-close" type="button" data-overlay-close="controls" aria-label="Hide map controls; restore them in Display settings" title="Hide map controls · restore in Display settings">✕</button>
@@ -1824,6 +1828,7 @@
 <script>
 "use strict";
 const SIDEBAR_SECTION_STATE_KEY = "civvis-sidebar-sections-v1";
+const SIDEBAR_COLLAPSED_STATE_KEY = "civvis-sidebar-collapsed-v1";
 function initSidebarSections() {
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem(SIDEBAR_SECTION_STATE_KEY) || "{}"); }
@@ -3657,6 +3662,25 @@ function reportSpecStatus() {
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({paused: specPaused})}, 3000).catch(() => {});
 }
+function updateSpecPauseButtons() {
+  const action = specPaused ? "Resume" : "Pause";
+  const main = document.getElementById("specpause");
+  const collapsed = document.getElementById("collapsepause");
+  main.textContent = specPaused ? "▶ Resume" : "⏸ Pause";
+  main.setAttribute("aria-pressed", String(specPaused));
+  collapsed.textContent = specPaused ? "▶" : "⏸";
+  collapsed.title = `${action} simulation`;
+  collapsed.setAttribute("aria-label", `${action} simulation`);
+  collapsed.setAttribute("aria-pressed", String(specPaused));
+  collapsed.hidden = !SPEC;
+}
+function toggleSpecPause() {
+  if (!SPEC) return;
+  specPaused = !specPaused;
+  updateSpecPauseButtons();
+  reportSpecStatus();
+  setPace({paused: specPaused});
+}
 setInterval(reportSpecStatus, 4000);
 function cuePlace(st, pos) {
   if (!st || !Array.isArray(pos)) return "Across the known world";
@@ -4676,9 +4700,8 @@ function render(st, recordChronicle = true) {
   syncCinemaPresentation(st);
   if (SPEC && st.paused !== undefined && st.paused !== specPaused) {
     specPaused = st.paused; // stay in sync with the server-side stepper
-    document.getElementById("specpause").textContent =
-      specPaused ? "▶ Resume" : "⏸ Pause";
   }
+  updateSpecPauseButtons();
   if (SPEC) updatePaceControl(st);
   const fullMapSpectator = SPEC && (st.view_player === null || st.view_player === undefined);
   document.getElementById("humanfooter").style.display = SPEC ? "none" : "grid";
@@ -11808,13 +11831,20 @@ function nextAction() {
   centerOn(sel.pos);
   drawSide(); drawUbar();
 }
-function togglePanel(force) {
+function togglePanel(force, persist = true) {
   if (force === undefined && cinemaActive()) { setCinemaMode(false); return; }
   const priorFocus = currentMapFocusWorld();
   const hide = force === undefined ? !document.body.classList.contains("sidebar-hidden") : force;
   document.body.classList.toggle("sidebar-hidden", hide);
-  document.getElementById("paneltoggle").textContent = hide ? "☷" : "☰";
-  document.getElementById("paneltoggle").title = hide ? "Show command deck" : "Hide command deck";
+  const panelToggle = document.getElementById("paneltoggle");
+  const panelAction = hide ? "Show command deck" : "Hide command deck";
+  panelToggle.textContent = hide ? ">" : "<";
+  panelToggle.title = panelAction;
+  panelToggle.setAttribute("aria-label", panelAction);
+  if (persist) {
+    try { localStorage.setItem(SIDEBAR_COLLAPSED_STATE_KEY, hide ? "1" : "0"); }
+    catch (_) {}
+  }
   // The deck changes the map's layout width. Resize its backing canvas in the
   // same frame so the browser never stretches an old bitmap and then snaps it
   // to a different size a quarter-second later.
@@ -11929,19 +11959,14 @@ async function autoplay(turns) {
 document.getElementById("autoplaybtn").onclick = ev => autoplay(ev.shiftKey ? 10 : 1);
 document.getElementById("tradebtn").onclick = () => openTrade();
 document.getElementById("paneltoggle").onclick = () => togglePanel();
+document.getElementById("collapsepause").onclick = toggleSpecPause;
 document.getElementById("cinema-director").onclick = () => setDirector(!DIRECTOR);
 document.getElementById("cinema-audio").onclick = () => setCinemaAudio(!CINEMA_AUDIO);
 document.getElementById("cinema-fullscreen").onclick = toggleCinemaFullscreen;
 document.getElementById("cinema-exit").onclick = () => setCinemaMode(false);
 updateDirectorButton();
 updateCinemaAudioButton();
-document.getElementById("specpause").onclick = () => {
-  specPaused = !specPaused;
-  document.getElementById("specpause").textContent =
-    specPaused ? "▶ Resume" : "⏸ Pause";
-  reportSpecStatus();
-  setPace({paused: specPaused});
-};
+document.getElementById("specpause").onclick = toggleSpecPause;
 document.getElementById("specspeed").onchange = () => {
   rememberPace(specPace()); // the pick outranks any state already in flight
   setPace({ms: paceChoice});
@@ -12062,7 +12087,7 @@ async function startNewSimulation() {
     }
 
     specPaused = wasPaused;
-    document.getElementById("specpause").textContent = specPaused ? "▶ Resume" : "⏸ Pause";
+    updateSpecPauseButtons();
     const next = await fetchJSON("/new", { method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify(payload) });
@@ -12074,7 +12099,7 @@ async function startNewSimulation() {
     setNewSimulationBusy(false);
   } catch (error) {
     specPaused = wasPaused;
-    document.getElementById("specpause").textContent = specPaused ? "▶ Resume" : "⏸ Pause";
+    updateSpecPauseButtons();
     reportSpecStatus();
     scheduleSpec(state);
     setNewSimulationBusy(false);
@@ -12128,7 +12153,12 @@ setRot(parseFloat(localStorage.getItem("civvis-rot") || "0"));
   setTilt(migrated);
   localStorage.setItem("civvis-cinema-camera-v3", "1");
 }
-if (window.matchMedia("(max-width: 720px)").matches) togglePanel(true);
+let savedSidebarCollapsed = null;
+try { savedSidebarCollapsed = localStorage.getItem(SIDEBAR_COLLAPSED_STATE_KEY); }
+catch (_) {}
+if (savedSidebarCollapsed === "1") togglePanel(true, false);
+else if (savedSidebarCollapsed === "0") togglePanel(false, false);
+else if (window.matchMedia("(max-width: 720px)").matches) togglePanel(true, false);
 resize();
 boot();
 
