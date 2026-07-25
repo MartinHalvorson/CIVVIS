@@ -23,6 +23,56 @@ plain read-only SQLite database with the whole ruleset in it — `LoyaltyLevels`
 `Happinesses`, `GlobalParameters`, `Units`, and 400-odd more tables. Query it
 directly before changing any number.
 
+## Running the audit without an install
+
+`tools/civ6_fidelity.py --cache` reads the compiled gameplay database directly
+instead of replaying the install's XML load order, so the ratchet runs on a
+machine where Civilization VI is no longer installed. It finds the file at the
+usual Cache path on macOS and Windows, or takes one: `--cache <path>`.
+
+The two routes are not guaranteed identical. The XML route reconstructs a
+specific content set in a specific order; the cache is whatever the game last
+compiled for itself. **Where they disagree, that disagreement is itself a
+finding** — see the Cartography note below.
+
+### First cache run: 15 divergences to triage
+
+The install-based audit last reported zero unwaived divergences. The cache run
+reports fifteen, one of which is already fixed:
+
+- **`Adjacency` / `industrial_zone` mine — FIXED here.** CIVVIS paid 1.5
+  Production per adjacent Mine. The shipped `Minel_HalfProduction` row is
+  `YieldChange` 1 with `TilesRequired` 2, i.e. **0.5 per Mine** — three times
+  too generous on a core production adjacency, in a district built beside hills
+  by every civilization that industrializes. Every other Industrial Zone source
+  matched exactly (quarry 1, lumber mill 0.5, district 0.5, aqueduct/canal/dam
+  2, government plaza 1, strategic 1), which is what makes the one outlier
+  convincing rather than a projection artifact.
+
+Still to triage, listed so they are not lost:
+
+| Table | Entry | CIVVIS | cache DB |
+|---|---|---|---|
+| Technologies | `cartography` requires | buttress, shipbuilding | buttress |
+| Technologies | `mass_production` requires | …, shipbuilding | (no shipbuilding) |
+| Buildings | `prasat` relic slots / faith | 2 / 4 | 1 / 6 |
+| Buildings | `sukiennice` gold | 3 | 2 |
+| Buildings | `tlachtli` culture | 1 | 2 |
+| Boosts | `near_future_governance` count | 10 | 0 |
+| Resources | `niter` feature | + generic floodplains | only the two typed floodplains |
+| Resources | `pearls`/`turtles`/`whales` improvement | fishing_boats | industry |
+| Improvements | `corporation`/`industry` resources | 3 luxuries | 28 luxuries |
+| Improvements | `sphinx` terrain | + snow | no snow |
+| Wonders | `biosphere` yields | science 8 | none |
+
+**The Cartography pair contradicts this document's own history.** The first-wave
+install audit lists "Cartography and Mass Production both require Shipbuilding"
+as a *fix it applied*, and the cache says the opposite. One of the two reads is
+wrong, and settling it needs an install — do not "correct" CIVVIS from the cache
+alone. The `pearls`/`turtles`/`whales` rows look like a projection artifact
+(harvest improvement versus Corporation improvement) rather than a CIVVIS defect,
+and should be checked before being treated as one.
+
 ## Open measured divergence: major start spacing
 
 `START_DISTANCE_MAJOR_CIVILIZATION` is **12** with `START_DISTANCE_RANGE_MAJOR`
