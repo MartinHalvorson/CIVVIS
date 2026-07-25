@@ -812,20 +812,22 @@ def normalized_simulation_settings(values: Any) -> dict[str, Any] | None:
 
 def manual_new_game_request(
     state: dict[str, Any],
-) -> tuple[str, dict[str, Any]] | None:
+) -> tuple[str, dict[str, Any], bool] | None:
     """Return a normalized manual restart request emitted by the live server."""
     request = state.get("supervisor_request")
     if not isinstance(request, dict):
         return None
     mode = request.get("mode")
     settings = normalized_simulation_settings(request.get("settings"))
+    paused = request.get("paused")
     if (
         mode not in ("restart", "fresh_code")
         or request.get("server_instance") != state.get("server_instance")
         or settings is None
+        or not isinstance(paused, bool)
     ):
         return None
-    return mode, settings
+    return mode, settings, paused
 
 
 def result_standings(state: dict[str, Any]) -> str | None:
@@ -907,6 +909,7 @@ def server_command(
     settings: dict[str, Any],
     open_browser: bool,
     resume: Path | None = None,
+    initially_paused: bool = False,
 ) -> list[str]:
     args = [
         str(
@@ -940,6 +943,8 @@ def server_command(
     ]
     if resume is not None:
         args.extend(("--resume", str(resume)))
+    if initially_paused:
+        args.append("--paused")
     roster = league_dir(LEAGUE_SPEC)
     if roster is not None:
         directory, record = roster
@@ -959,13 +964,14 @@ def start_server(
     settings: dict[str, int],
     open_browser: bool,
     resume: Path | None = None,
+    initially_paused: bool = False,
 ) -> subprocess.Popen[str]:
     # The server prefers loose web/ files in its working directory over the
     # page embedded in the executable. Starting in the shared checkout would
     # pair a canonical engine with whichever UI a development session is
     # editing, recreating the cross-machine mismatch at the presentation layer.
     process = subprocess.Popen(
-        server_command(port, settings, open_browser, resume),
+        server_command(port, settings, open_browser, resume, initially_paused),
         cwd=RUNTIME_BINARY.parent,
         text=True,
         **_NO_WINDOW,
@@ -1554,7 +1560,7 @@ def main() -> int:
 
             manual_request = manual_new_game_request(state)
             if manual_request is not None:
-                mode, requested_settings = manual_request
+                mode, requested_settings, preserve_pause = manual_request
                 if mode == "fresh_code":
                     snapshot = source_snapshot()
                     latest_ready = runtime_matches(snapshot)
@@ -1578,7 +1584,6 @@ def main() -> int:
                 else:
                     log("restart requested; starting a new simulation on existing code")
 
-                preserve_pause = bool(state.get("spectator_paused"))
                 stop_server(process, adopted_pid)
                 process = None
                 adopted_pid = None
@@ -1588,11 +1593,14 @@ def main() -> int:
                     pass
                 settings = requested_settings
                 launch_runtime_id = promoted_runtime_id()
-                process = start_server(args.port, settings, False)
+                process = start_server(
+                    args.port,
+                    settings,
+                    False,
+                    initially_paused=preserve_pause,
+                )
                 running_runtime_id = launch_runtime_id
                 state = wait_for_server(args.port, process)
-                if preserve_pause:
-                    state = set_spectator_pause(args.port, True) or state
                 unavailable_since = None
                 last_progress = progress_marker(state)
                 progress_at = time.monotonic()
