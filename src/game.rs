@@ -10,7 +10,7 @@ use crate::rules::{
     AgendaSpec, BuildingSpec, DifficultySpec, DisasterSpec, Rules, SpeedSpec, Yields, ERA_NAMES,
 };
 use crate::specmap::SpecMap;
-use crate::setup::{GameSpeed, MapScript, MapSize};
+use crate::setup::{GameSpeed, MapPoles, MapScript, MapSize, MapTopology};
 use crate::world::{DistrictFoundation, RememberedTile, Tile, TileBits, TileMemory, WorldMap};
 use crate::{hex, mapgen, Pos};
 
@@ -10240,6 +10240,13 @@ pub struct GameOptions {
     pub city_states: usize,
     pub barbarians: bool,
     pub map_script: MapScript,
+    /// What shape the world is, asked separately from what fills it: every
+    /// world type can be laid out flat or closed into a globe.
+    pub map_topology: MapTopology,
+    /// Whether the world has cold ends. With poles, latitude runs the climate
+    /// and the extremes end in tundra, snow and sea ice; without them the
+    /// world is warm from edge to edge.
+    pub map_poles: MapPoles,
     pub difficulty: String,
     pub speed: String,
     pub human_seats: BTreeSet<usize>,
@@ -10277,6 +10284,8 @@ impl GameOptions {
             city_states,
             barbarians: true,
             map_script: MapScript::Pangaea,
+            map_topology: MapTopology::default(),
+            map_poles: MapPoles::default(),
             difficulty: default_difficulty(),
             speed: default_speed(),
             human_seats: BTreeSet::new(),
@@ -10494,6 +10503,11 @@ pub struct Game {
     /// unaffected by the setting unless a seat is declared human.
     pub human_seats: BTreeSet<usize>,
     pub map_script: MapScript,
+    /// Whether the world was rolled with cold ends. The shape it was rolled on
+    /// is on the map itself (`map.topology`), and the climate this chose is
+    /// baked into the terrain — this is kept so that a loaded game can still
+    /// say what it was set up with, and offer the same world again.
+    pub map_poles: MapPoles,
     pub game_speed: GameSpeed,
     pub max_turns: u32,
     pub turn: u32,
@@ -10654,6 +10668,10 @@ struct GameSer {
     events: Vec<Event>,
     #[serde(default)]
     map_script: MapScript,
+    /// Absent in saves written before the poles became a choice, which were
+    /// all rolled with them.
+    #[serde(default)]
+    map_poles: MapPoles,
     #[serde(default)]
     game_speed: GameSpeed,
     #[serde(default)]
@@ -10759,6 +10777,7 @@ impl From<GameSer> for Game {
             mods: s.mods,
             events: s.events.into(),
             map_script: s.map_script,
+            map_poles: s.map_poles,
             game_speed,
             max_turns: s.max_turns,
             turn: s.turn,
@@ -10906,6 +10925,7 @@ impl From<Game> for GameSer {
             mods: g.mods,
             events: g.events.into(),
             map_script: g.map_script,
+            map_poles: g.map_poles,
             game_speed: g.game_speed,
             max_turns: g.max_turns,
             turn: g.turn,
@@ -11020,6 +11040,8 @@ impl Game {
             city_states: num_city_states,
             barbarians,
             map_script,
+            map_topology,
+            map_poles,
             difficulty,
             speed,
             human_seats,
@@ -11050,6 +11072,8 @@ impl Game {
             map_size.natural_wonders,
             map_size.continents,
             map_script,
+            map_topology,
+            map_poles,
             &mut rng,
         );
         let game_speed = GameSpeed::from_id(&speed).unwrap_or(GameSpeed::Standard);
@@ -11066,6 +11090,7 @@ impl Game {
             speed,
             human_seats,
             map_script,
+            map_poles,
             game_speed,
             mods: crate::mods::active_names(),
             max_turns,

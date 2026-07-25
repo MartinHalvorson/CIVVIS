@@ -17,7 +17,8 @@ use crate::game::{Action, Game, GameOptions, VictoryConditions};
 use crate::rules::Rules;
 use crate::obs::{observation, observation_player_view, observation_spectator};
 use crate::setup::{
-    GameSpeed, MapScript, MapSize, CIV6_GAME_SPEEDS, CIV6_MAP_SCRIPTS, CIV6_MAP_SIZES,
+    GameSpeed, MapPoles, MapScript, MapSize, MapTopology, CIV6_GAME_SPEEDS, CIV6_MAP_SCRIPTS,
+    CIV6_MAP_SIZES, MAP_POLES, MAP_TOPOLOGIES,
 };
 use crate::Pos;
 
@@ -51,6 +52,10 @@ pub struct Params {
     pub height: i32,
     pub seed: u64,
     pub map_script: MapScript,
+    /// What shape the world is, chosen independently of what fills it.
+    pub map_topology: MapTopology,
+    /// Whether the world has cold ends.
+    pub map_poles: MapPoles,
     pub game_speed: GameSpeed,
     pub max_turns: u32,
     pub victory_conditions: VictoryConditions,
@@ -1007,6 +1012,8 @@ impl Session {
         };
         let mut game = Game::new_with(GameOptions {
             map_script: params.map_script,
+            map_topology: params.map_topology,
+            map_poles: params.map_poles,
             difficulty: params.difficulty.clone(),
             speed: params.speed.clone(),
             human_seats,
@@ -1067,6 +1074,12 @@ impl Session {
         params.height = game.map.height;
         params.seed = game.seed;
         params.map_script = game.map_script;
+        params.map_topology = if game.map.topology == crate::world::Topology::Cylinder {
+            MapTopology::Flat
+        } else {
+            MapTopology::Planet
+        };
+        params.map_poles = game.map_poles;
         params.game_speed = game.game_speed;
         params.max_turns = game.max_turns;
         params.difficulty = game.difficulty.clone();
@@ -1836,6 +1849,8 @@ fn simulation_settings(params: &Params) -> Value {
         "city_states": params.num_city_states,
         "turns": params.max_turns,
         "map": params.map_script.id(),
+        "shape": params.map_topology.id(),
+        "poles": params.map_poles.id(),
         "speed": params.game_speed.id(),
         "victories": victories,
     })
@@ -1895,11 +1910,31 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     }
     if let Some(v) = request["map_script"].as_str().and_then(MapScript::from_id) {
         p.map_script = v;
+        // `planet` used to name a world type; it now names a shape. A client
+        // still asking for it by the old name means both halves of what it
+        // used to mean, so the shape comes along with the type.
+        if request["map_script"].as_str() == Some("planet") {
+            p.map_topology = MapTopology::Planet;
+        }
+    }
+    if let Some(v) = request["map_topology"].as_str().and_then(MapTopology::from_id) {
+        p.map_topology = v;
+    }
+    if let Some(v) = request["map_poles"].as_str().and_then(MapPoles::from_id) {
+        p.map_poles = v;
+    }
+    if let Some(v) = request["map_poles"].as_bool() {
+        p.map_poles = if v { MapPoles::Poles } else { MapPoles::NoPoles };
+    }
+    // Earth is drawn from real longitudes and latitudes and closes on itself,
+    // so it is always a globe whatever shape the lobby asked for.
+    if p.map_script.is_fixed_geography() {
+        p.map_topology = MapTopology::Planet;
     }
     // A globe is stored in a rectangle of its own shape, so the chosen size is
-    // re-expressed whenever either the size or the script moves, and the lobby
+    // re-expressed whenever either the size or the shape moves, and the lobby
     // always names the world it is about to build.
-    if p.map_script.is_globe() {
+    if p.map_topology.is_globe() {
         let frequency = crate::mapgen::globe_frequency(p.width, p.height);
         p.width = crate::sphere::Sphere::width_for(frequency);
         p.height = crate::sphere::Sphere::height_for(frequency);
@@ -2438,6 +2473,8 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "map_sizes": CIV6_MAP_SIZES,
                     "difficulties": r.difficulties, "speeds": r.speeds,
                     "map_scripts": CIV6_MAP_SCRIPTS,
+                    "map_topologies": MAP_TOPOLOGIES,
+                    "map_poles": MAP_POLES,
                     "game_speeds": CIV6_GAME_SPEEDS,
                     "strategies": strategy_roster(&session),
                     "seat_strategy": session.seated_strategy_name(0),
@@ -2676,7 +2713,7 @@ mod tests {
         EMBEDDED_WORLD_WONDER_ATLAS, SAVE_DIR, VIEWER_ACTIVE,
     };
     use crate::game::{Action, Game, VictoryConditions};
-    use crate::setup::{GameSpeed, MapScript};
+    use crate::setup::{GameSpeed, MapPoles, MapScript, MapTopology};
     use serde_json::{json, Value};
     use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};
@@ -2986,6 +3023,8 @@ mod tests {
 
     fn current() -> Params {
         Params {
+            map_topology: MapTopology::Flat,
+            map_poles: MapPoles::Poles,
             num_players: 2,
             width: 20,
             height: 14,
@@ -3231,14 +3270,14 @@ mod tests {
     #[test]
     fn a_globe_hands_the_browser_its_shape_only_when_asked() {
         let size = crate::setup::MapSize::for_players(2);
-        let (width, height) = size.dimensions(MapScript::Planet);
+        let (width, height) = size.dimensions(MapTopology::Planet);
         let game = Game::new_with(crate::game::GameOptions {
-            map_script: MapScript::Planet,
+            map_topology: MapTopology::Planet,
             ..crate::game::GameOptions::new(2, width, height, 6_031, 30, 2)
         });
         let plain = crate::obs::observation_spectator(&game, 0);
         assert!(plain["map"]["planet"].is_null(), "the poll never carries geometry");
-        assert_eq!(plain["map"]["script"], "planet");
+        assert_eq!(plain["map"]["shape"], "planet");
 
         let geometry = crate::obs::planet_geometry(&game).expect("a globe has geometry");
         assert_eq!(geometry["frequency"], size.globe_frequency);
@@ -3276,10 +3315,10 @@ mod tests {
     #[test]
     fn choosing_the_globe_resizes_the_world_it_builds() {
         let current = current();
-        let planet = new_game_params(&current, &json!({"map_script": "planet"}));
+        let planet = new_game_params(&current, &json!({"map_topology": "planet"}));
         let size = crate::setup::MapSize::from_dimensions(current.width, current.height)
             .unwrap_or_else(|| crate::setup::MapSize::for_players(current.num_players));
-        assert_eq!(planet.map_script, MapScript::Planet);
+        assert_eq!(planet.map_topology, MapTopology::Planet);
         assert_eq!(
             (planet.width, planet.height),
             (
@@ -3296,7 +3335,7 @@ mod tests {
         // A stock size keeps its own globe.
         let stock = new_game_params(
             &Params { width: size.width, height: size.height, ..current.clone() },
-            &json!({"map_script": "planet"}),
+            &json!({"map_topology": "planet"}),
         );
         assert_eq!((stock.width, stock.height), (size.globe_width(), size.globe_height()));
         assert_eq!(
@@ -3304,9 +3343,26 @@ mod tests {
             Some(size.id),
             "the globe still reports the size it was chosen at"
         );
-        // And back again.
-        let flat = new_game_params(&stock, &json!({"map_script": "continents"}));
+        // Changing what fills the world does not change its shape: a globe
+        // asked for Continents is a globe of continents, and keeps its
+        // rectangle.
+        let still_round = new_game_params(&stock, &json!({"map_script": "continents"}));
+        assert_eq!(still_round.map_topology, MapTopology::Planet);
+        assert_eq!(
+            (still_round.width, still_round.height),
+            (size.globe_width(), size.globe_height())
+        );
+        // Asking for the flat shape is what flattens it, and back comes the
+        // size's own rectangle.
+        let flat = new_game_params(&stock, &json!({"map_topology": "flat"}));
         assert_eq!((flat.width, flat.height), (size.width, size.height));
+        // Earth is the exception, and overrules the shape it is handed.
+        let earth = new_game_params(
+            &flat,
+            &json!({"map_script": "true_start_earth", "map_topology": "flat"}),
+        );
+        assert_eq!(earth.map_topology, MapTopology::Planet);
+        assert_eq!((earth.width, earth.height), (size.globe_width(), size.globe_height()));
     }
 
     #[test]
@@ -3341,7 +3397,15 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("<option value=\"planet\">Planet</option>"));
         assert!(EMBEDDED_INDEX
             .contains("<option value=\"true_start_earth\">True Start Earth</option>"));
-        assert!(EMBEDDED_INDEX.contains("const GLOBE_SCRIPTS = "));
+        // The world's shape and its poles are settings of their own, and the
+        // renderer picks its projection from the shape the world reports
+        // rather than from the world type it was filled with.
+        assert!(EMBEDDED_INDEX.contains("id=\"mapshape\""));
+        assert!(EMBEDDED_INDEX.contains("id=\"mappoles\""));
+        assert!(EMBEDDED_INDEX.contains("return state.map.shape === \"planet\""));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"land_only\">Land Only</option>"));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"water_world\">Water World</option>"));
+        assert!(EMBEDDED_INDEX.contains("RULES.map_topologies"));
         assert!(EMBEDDED_INDEX.contains("id=\"gamespeed\""));
         for victory in [
             "science",
@@ -4150,6 +4214,8 @@ mod tests {
                 "city_states": 9,
                 "turns": 330,
                 "map": "continents",
+                "shape": "flat",
+                "poles": "poles",
                 "speed": "quick",
                 "victories": ["science", "religious", "diplomatic", "domination"],
             })
@@ -4203,6 +4269,8 @@ mod tests {
                 "city_states": 6,
                 "turns": 330,
                 "map": "continents",
+                "shape": "flat",
+                "poles": "poles",
                 "speed": "quick",
                 "victories": ["science", "religious", "diplomatic", "domination"],
             })

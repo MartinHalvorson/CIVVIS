@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::fractal::Fractal;
 use crate::rng::Rng;
 use crate::rules::Rules;
-use crate::setup::MapScript;
+use crate::setup::{MapPoles, MapScript, MapTopology};
 use crate::world::WorldMap;
 use crate::{hex, Pos};
 
@@ -279,6 +279,10 @@ fn earth_direction(longitude: f64, latitude: f64) -> [f64; 3] {
     ]
 }
 
+fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
 /// Earth's land, sampled onto the globe's tiles.
 ///
 /// Nothing here is generated: each tile asks the sphere where it is and the
@@ -297,17 +301,17 @@ fn earth_direction(longitude: f64, latitude: f64) -> [f64; 3] {
 /// Earth — one in the Sahara near 0°E, one in the Indus near 72°E — stay land
 /// and simply have five neighbours. Adjacency, rings and distance all read the
 /// tile graph, so those two tiles are irregular, not special-cased.
+/// A flat Earth is the same silhouette read through the same longitudes and
+/// latitudes, which is exactly what a paper world map is: the globe rolled
+/// flat. The two pentagons stay a globe's problem, because a flat map has no
+/// pentagons to begin with.
 fn earth_land(wm: &WorldMap) -> BTreeSet<Pos> {
-    let Some(sphere) = wm.sphere() else {
-        return BTreeSet::new();
-    };
-    sphere
-        .positions()
+    wm.tiles
+        .keys()
+        .copied()
         .filter(|pos| {
-            earth_is_land(
-                sphere.longitude(*pos).to_degrees(),
-                sphere.latitude(*pos).to_degrees(),
-            )
+            let (longitude, latitude) = wm.lon_lat(*pos);
+            earth_is_land(longitude, latitude)
         })
         .collect()
 }
@@ -321,9 +325,6 @@ fn earth_land(wm: &WorldMap) -> BTreeSet<Pos> {
 /// so Rome and Greece stay distinct neighbours rather than collapsing onto the
 /// same Aegean plain.
 fn historic_major_spawns(wm: &WorldMap, candidates: &[Pos], count: usize) -> Vec<Pos> {
-    let Some(sphere) = wm.sphere() else {
-        return Vec::new();
-    };
     let mut available: Vec<Pos> = candidates.to_vec();
     let mut starts: Vec<Pos> = Vec::new();
     for index in 0..count {
@@ -336,7 +337,7 @@ fn historic_major_spawns(wm: &WorldMap, candidates: &[Pos], count: usize) -> Vec
         let separation = (0..=4)
             .rev()
             .find(|separation| {
-                let taken = taken_within(sphere, &starts, *separation);
+                let taken = taken_within(wm, &starts, *separation);
                 available
                     .iter()
                     .filter(|candidate| !taken.contains(candidate))
@@ -344,17 +345,13 @@ fn historic_major_spawns(wm: &WorldMap, candidates: &[Pos], count: usize) -> Vec
                     >= seats_left
             })
             .unwrap_or(0);
-        let taken = taken_within(sphere, &starts, separation);
+        let taken = taken_within(wm, &starts, separation);
         let selected = available
             .iter()
             .enumerate()
             .filter(|(_, candidate)| !taken.contains(candidate))
             .max_by(|(_, a), (_, b)| {
-                let toward = |pos: &Pos| {
-                    sphere.center(*pos).map_or(-1.0, |center| {
-                        center[0] * target[0] + center[1] * target[1] + center[2] * target[2]
-                    })
-                };
+                let toward = |pos: &Pos| dot(wm.direction(*pos), target);
                 toward(a)
                     .partial_cmp(&toward(b))
                     .unwrap_or(std::cmp::Ordering::Equal)
@@ -367,23 +364,81 @@ fn historic_major_spawns(wm: &WorldMap, candidates: &[Pos], count: usize) -> Vec
 }
 
 /// Every tile within `radius` steps of a start already placed.
-fn taken_within(sphere: &crate::sphere::Sphere, starts: &[Pos], radius: i32) -> BTreeSet<Pos> {
+fn taken_within(wm: &WorldMap, starts: &[Pos], radius: i32) -> BTreeSet<Pos> {
     starts
         .iter()
-        .flat_map(|start| sphere.disk(*start, radius))
+        .flat_map(|start| wm.disk(*start, radius))
         .collect()
 }
 
+/// The land of a world, under the world type asked for and on whatever shape
+/// the world turned out to be.
+///
+/// The two shapes want genuinely different generators and always have. A flat
+/// map is a rectangle with edges, so its scripts draw against those edges — an
+/// oval that stops short of them, two regions cut out of them, a fractal cut
+/// at a percentile. A globe has no edge to hold an ocean against, so its land
+/// has to be seeded and grown instead. Keeping the two apart is what lets the
+/// world type and the world shape be answered separately: every type below
+/// knows how to arrive on either.
 fn generate_land(
     wm: &WorldMap,
     script: MapScript,
+    poles: MapPoles,
     num_major_spawns: usize,
+    num_minor_spawns: usize,
+    rng: &mut Rng,
+) -> BTreeSet<Pos> {
+    if script.is_fixed_geography() {
+        // The one type that is read rather than rolled. See [`earth_land`] for
+        // what the world is asked, and why the two pentagons that fall on land
+        // are allowed to stay there.
+        return earth_land(wm);
+    }
+    if wm.sphere().is_some() {
+        return globe_land(wm, script, poles, num_major_spawns, num_minor_spawns, rng);
+    }
+    flat_land(wm, script, num_major_spawns, num_minor_spawns, rng)
+}
+
+/// The land of a flat world: a rectangle that wraps east to west and ends at a
+/// northern and a southern edge.
+///
+/// Every type here but Land Only leaves the top and bottom rows as water. That
+/// is the map's edge rather than its climate — a coastline has to end
+/// somewhere, and a river needs somewhere to run to — so it holds whether or
+/// not the world has poles. Land Only is the exception, because a world that
+/// is 95% land and still rings itself in ocean is not one.
+fn flat_land(
+    wm: &WorldMap,
+    script: MapScript,
+    num_major_spawns: usize,
+    num_minor_spawns: usize,
     rng: &mut Rng,
 ) -> BTreeSet<Pos> {
     let width = wm.width;
     let height = wm.height;
     let area = (width * height) as usize;
     match script {
+        MapScript::LandOnly => {
+            // Cut like Lakes, but at the far end of the same dial: the wettest
+            // twentieth of the field is the only water there is, and it is
+            // left wherever the fractal happens to put it, so a world arrives
+            // with a handful of inland seas rather than a ring of ocean. The
+            // edge rows are cut from too, which is what makes this the one
+            // flat type whose land reaches the top and bottom of the map.
+            let basin = Fractal::new(rng, width, height, 3);
+            let waterline = basin.percentile(MapScript::LandOnly.land_percent());
+            let mut land = BTreeSet::new();
+            for row in 0..height {
+                for col in 0..width {
+                    if basin.at(col, row) < waterline {
+                        land.insert(hex::offset_to_axial(col, row));
+                    }
+                }
+            }
+            land
+        }
         MapScript::Pangaea => {
             // A compact oval gives every seat comparable hinterland while
             // retaining a single coast-to-coast supercontinent. The stock
@@ -484,125 +539,312 @@ fn generate_land(
             }
             land
         }
-        MapScript::Planet => {
-            // A globe has no edge to hold the ocean against, so its land is
-            // seeded rather than cut out: continents are dropped around the
-            // sphere at arm's length from one another, kept off the two caps so
-            // the poles stay open water for the ice to form on, and grown until
-            // the world is about a third land. Every continent is separated by
-            // at least one tile of water, so "sail west and you arrive from the
-            // east" is a fact about this map in every direction, not just one.
-            //
-            // The twelve pentagons are held under water as well. Uber's H3
-            // grid, built the same way, turns its icosahedron so that all
-            // twelve corners fall in the ocean and the pentagons never surface
-            // in the data; a generated world can just be told to keep them
-            // wet. Every land tile then has six neighbours, so district
-            // adjacency, city work radii and the rest behave exactly as they
-            // do on a flat map.
-            let pole = 0.93;
-            let pentagons: BTreeSet<Pos> = wm
-                .sphere()
-                .map(|sphere| sphere.pentagons().into_iter().collect())
-                .unwrap_or_default();
-            let open_water: BTreeSet<Pos> = wm
-                .tiles
-                .keys()
-                .copied()
-                .filter(|pos| wm.polar_fraction(*pos) < pole && !pentagons.contains(pos))
-                .collect();
-            let continents = num_major_spawns.div_ceil(2).clamp(3, 7);
-            let per_continent = (wm.tiles.len() as f64 * 0.31) as usize / continents;
-            // A grown blob of `n` tiles is roughly a disc of radius √(n/3); ask
-            // for seeds a little under two radii apart and the continents stand
-            // clear of one another without the search having to back off far.
-            let mut separation = (1.6 * (per_continent as f64 / 3.0).sqrt()) as i32;
-            let pool: Vec<Pos> = open_water.iter().copied().collect();
-            let mut seeds: Vec<Pos> = Vec::new();
-            while seeds.len() < continents {
-                let mut placed = false;
-                for _ in 0..(4 * pool.len()).min(2_000) {
-                    let candidate = pool[rng.below(pool.len())];
-                    if seeds
-                        .iter()
-                        .all(|seed| wm.distance(candidate, *seed) >= separation)
-                    {
-                        seeds.push(candidate);
-                        placed = true;
-                        break;
-                    }
-                }
-                if !placed {
-                    if separation <= 2 {
-                        break;
-                    }
-                    separation -= 2;
-                }
-            }
-
-            let mut land = BTreeSet::new();
-            let mut open = open_water;
-            for seed in seeds {
-                if !open.contains(&seed) {
-                    continue;
-                }
-                let blob = grow_blob(wm, &open, seed, per_continent, rng);
-                for pos in &blob {
-                    for neighbor in wm.neighbors(*pos) {
-                        open.remove(&neighbor);
-                    }
-                    open.remove(pos);
-                }
-                land.extend(blob);
-            }
-            // Islands: enough to give the open ocean something in it without
-            // turning the sea lanes into an archipelago.
-            for _ in 0..continents * 3 {
-                if open.is_empty() {
-                    break;
-                }
-                let remaining: Vec<Pos> = open.iter().copied().collect();
-                let seed = remaining[rng.below(remaining.len())];
-                let island = grow_blob(wm, &open, seed, 3 + rng.below(9), rng);
-                for pos in &island {
-                    for neighbor in wm.neighbors(*pos) {
-                        open.remove(&neighbor);
-                    }
-                    open.remove(pos);
-                }
-                land.extend(island);
-            }
-            land
+        MapScript::Islands => {
+            // An archipelago. Islands are scattered rather than cut, because a
+            // fractal waterline at this share gives a few ragged continents
+            // and not many small islands: the shape of the coastline is the
+            // point of the type, so it is the thing that gets generated. Every
+            // island stands clear of its neighbours by at least one tile of
+            // water, so every one of them is its own shore and the sea lanes
+            // between them are the map.
+            let mut open = offset_region(wm, 0, width, 1, height - 1);
+            let target = area * MapScript::Islands.land_percent() as usize / 100;
+            let seats = num_major_spawns + num_minor_spawns;
+            scatter_islands(wm, &mut open, target, 8, 24, ISLAND_CHANNEL, seats, rng)
         }
-        MapScript::TrueStartEarth => {
-            // The one script that is read rather than rolled. See
-            // [`earth_land`] for what the globe is asked, and why the two
-            // pentagons that fall on land are allowed to stay there.
-            earth_land(wm)
+        MapScript::WaterWorld => {
+            // The far end of the same dial as Land Only: specks of land in an
+            // ocean. The floor is what keeps it playable — a world that cannot
+            // seat every civilization and city-state on land is not a map, so
+            // the smallest sizes get a little more land than the share asks
+            // for rather than a broken world.
+            let mut open = offset_region(wm, 0, width, 1, height - 1);
+            let seats = num_major_spawns + num_minor_spawns;
+            let target = (area * MapScript::WaterWorld.land_percent() as usize / 100)
+                .max(seats * WATER_WORLD_TILES_PER_SEAT);
+            scatter_islands(
+                wm,
+                &mut open,
+                target,
+                WATER_WORLD_TILES_PER_SEAT,
+                15,
+                ISLAND_CHANNEL,
+                seats,
+                rng,
+            )
+        }
+        // Answered before the shape was dispatched on, because Earth's
+        // coastlines are read rather than rolled and are the same coastlines
+        // on either shape.
+        MapScript::TrueStartEarth => earth_land(wm),
+    }
+}
+
+/// The land a seat needs under it on a Water World before the share is allowed
+/// to squeeze it any further. A capital wants its own island and enough of one
+/// to work; below about this the spacing search starts seating two
+/// civilizations on the same rock.
+const WATER_WORLD_TILES_PER_SEAT: usize = 9;
+
+/// How wide the water between two scattered islands is. One tile keeps them
+/// from touching; three keeps two capitals on neighbouring islands as far
+/// apart as the spacing search asks for on a land map, which is what stops an
+/// archipelago from seating civilizations closer than any other world type.
+const ISLAND_CHANNEL: i32 = 3;
+
+/// Scatter separated landmasses through open water until about `target` tiles
+/// of it are land, and until at least `min_bodies` of them exist.
+///
+/// Each island is grown from a seed picked out of whatever water is still
+/// open, and the water around the finished island is then closed off, so no
+/// two islands come within `channel` tiles: every one of them keeps its own
+/// coast, and the sea between them stays navigable. Islands arrive between
+/// `min_size` and `max_size` tiles so the archipelago is varied rather than a
+/// field of identical dots.
+///
+/// `min_bodies` is what makes a nearly-empty world playable. A seat needs an
+/// island of its own — two capitals on one rock are two cities only one of
+/// which can be founded — so on Water World the count of islands matters more
+/// than the exact share of land, and the scatter keeps going a little past its
+/// target rather than leave a civilization without a shore.
+///
+/// The attempt cap is what ends it either way. As the water fills up, more and
+/// more seeds land in gaps too small to grow anything, and the run has to stop
+/// on that rather than on a target it can no longer reach.
+fn scatter_islands(
+    wm: &WorldMap,
+    open: &mut BTreeSet<Pos>,
+    target: usize,
+    min_size: usize,
+    max_size: usize,
+    channel: i32,
+    min_bodies: usize,
+    rng: &mut Rng,
+) -> BTreeSet<Pos> {
+    let span = (max_size + 1).saturating_sub(min_size).max(1);
+    let attempt_cap = 12 * (target / min_size.max(1) + min_bodies + 1);
+    let mut land = BTreeSet::new();
+    let mut bodies = 0;
+    let mut attempts = 0;
+    while (land.len() < target || bodies < min_bodies) && !open.is_empty() && attempts < attempt_cap
+    {
+        attempts += 1;
+        let pool: Vec<Pos> = open.iter().copied().collect();
+        let seed = pool[rng.below(pool.len())];
+        // Once the land target is met and only the island count is still
+        // owed, the remaining islands are kept to the smallest size that can
+        // still hold a capital, so meeting the count costs the world as
+        // little of its ocean as possible.
+        let wanted = if land.len() >= target {
+            min_size
+        } else {
+            (min_size + rng.below(span)).min(target - land.len()).max(1)
+        };
+        let island = grow_blob(wm, open, seed, wanted.max(1), rng);
+        // A seed with nowhere to grow is not an island; it is the scatter
+        // running out of room, and it must not count towards the quota.
+        if island.len() >= min_size.min(3) {
+            bodies += 1;
+        }
+        close_off(wm, open, &island, channel);
+        land.extend(island);
+    }
+    land
+}
+
+/// Take a finished body and the water around it out of the open field, so the
+/// next body grown there cannot come nearer than `channel` tiles.
+///
+/// One tile is enough to keep two bodies from touching. An archipelago wants
+/// more than that: capitals want room between them, and two islands a single
+/// tile apart seat two civilizations closer than any land map ever would.
+fn close_off(wm: &WorldMap, open: &mut BTreeSet<Pos>, body: &BTreeSet<Pos>, channel: i32) {
+    for pos in body {
+        for near in wm.disk(*pos, channel.max(1)) {
+            open.remove(&near);
+        }
+        open.remove(pos);
+    }
+}
+
+/// Grow `count` separated bodies totalling about `total` tiles inside a field.
+///
+/// Seeds are dropped at arm's length from one another first, so the bodies
+/// arrive spread over the whole field instead of clustered wherever the first
+/// roll happened to fall. A body of `n` tiles is roughly a disc of radius
+/// `√(n/3)`; asking for seeds a little under two radii apart stands them clear
+/// of one another without the search having to back off far. When the field is
+/// too tight to hold that, the requested separation is relaxed two tiles at a
+/// time rather than the placement being abandoned.
+fn scatter_bodies(
+    wm: &WorldMap,
+    field: &mut BTreeSet<Pos>,
+    count: usize,
+    total: usize,
+    rng: &mut Rng,
+) -> BTreeSet<Pos> {
+    let count = count.max(1);
+    let per_body = (total / count).max(1);
+    let mut separation = (1.6 * (per_body as f64 / 3.0).sqrt()) as i32;
+    let pool: Vec<Pos> = field.iter().copied().collect();
+    if pool.is_empty() {
+        return BTreeSet::new();
+    }
+    let mut seeds: Vec<Pos> = Vec::new();
+    while seeds.len() < count {
+        let mut placed = false;
+        for _ in 0..(4 * pool.len()).min(2_000) {
+            let candidate = pool[rng.below(pool.len())];
+            if seeds
+                .iter()
+                .all(|seed| wm.distance(candidate, *seed) >= separation)
+            {
+                seeds.push(candidate);
+                placed = true;
+                break;
+            }
+        }
+        if !placed {
+            if separation <= 2 {
+                break;
+            }
+            separation -= 2;
+        }
+    }
+
+    let mut grown = BTreeSet::new();
+    for seed in seeds {
+        if !field.contains(&seed) {
+            continue;
+        }
+        let body = grow_blob(wm, field, seed, per_body, rng);
+        close_off(wm, field, &body, 1);
+        grown.extend(body);
+    }
+    grown
+}
+
+/// The land of a globe: a closed world of hexagons and twelve pentagons, with
+/// no edge anywhere on it.
+///
+/// A globe has nothing to hold an ocean against, so it cannot draw a coastline
+/// the way a flat map does — its land is seeded and grown instead. That gives
+/// the same generator for every world type, run at two settings: how much of
+/// the world is land, and how many separate pieces the *minority* of land and
+/// water arrives in. Below half land, that minority is the land and continents
+/// are grown in an ocean; above half it is the water, and seas are cut out of
+/// a world that starts solid. Land Only and Water World are the same procedure
+/// seen from the two ends.
+///
+/// Two things are held out of the field either way. The caps, when the world
+/// has poles, so there is open water at the top and bottom for sea ice to form
+/// on — a world with no poles wants no such reservation and does not get one.
+/// And the twelve pentagons, always: Uber's H3 grid, built the same way, turns
+/// its icosahedron so that all twelve corners fall in the ocean and the
+/// pentagons never surface in the data, and a generated world can simply be
+/// told to keep them wet. Every land tile then has six neighbours, so district
+/// adjacency, city work radii and the rest behave exactly as they do on a flat
+/// map. On a Land Only globe those twelve become the world's smallest lakes,
+/// which is the same rule reaching the same answer from the other side.
+fn globe_land(
+    wm: &WorldMap,
+    script: MapScript,
+    poles: MapPoles,
+    num_major_spawns: usize,
+    num_minor_spawns: usize,
+    rng: &mut Rng,
+) -> BTreeSet<Pos> {
+    let pentagons: BTreeSet<Pos> = wm
+        .sphere()
+        .map(|sphere| sphere.pentagons().into_iter().collect())
+        .unwrap_or_default();
+    let cap = if poles.has_poles() { 0.93 } else { f64::MAX };
+    let mut field: BTreeSet<Pos> = wm
+        .tiles
+        .keys()
+        .copied()
+        .filter(|pos| wm.polar_fraction(*pos) < cap && !pentagons.contains(pos))
+        .collect();
+
+    let tiles = wm.tiles.len();
+    let land_share = script.land_percent() as usize;
+    let seats = num_major_spawns + num_minor_spawns;
+
+    if land_share > 50 {
+        // Cut the sea out of a solid world. What is left over — the caps and
+        // the pentagons — stays water too, which is why the world never comes
+        // out at exactly the share asked for on a poled globe.
+        let water = tiles * (100 - land_share) / 100;
+        let seas = match script {
+            MapScript::InlandSea => 1,
+            MapScript::Lakes => (tiles / 320).clamp(6, 40),
+            _ => (tiles / 220).clamp(8, 60),
+        };
+        let sea = scatter_bodies(wm, &mut field, seas, water, rng);
+        return wm
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| !sea.contains(pos) && !pentagons.contains(pos))
+            .filter(|pos| wm.polar_fraction(*pos) < cap)
+            .collect();
+    }
+
+    // Below half, the land is the minority and is grown directly.
+    let target = (tiles * land_share / 100).max(seats * WATER_WORLD_TILES_PER_SEAT);
+    match script {
+        MapScript::Islands => {
+            scatter_islands(wm, &mut field, target, 8, 24, ISLAND_CHANNEL, seats, rng)
+        }
+        MapScript::WaterWorld => scatter_islands(
+            wm,
+            &mut field,
+            target,
+            WATER_WORLD_TILES_PER_SEAT,
+            15,
+            ISLAND_CHANNEL,
+            seats,
+            rng,
+        ),
+        _ => {
+            let continents = match script {
+                MapScript::Pangaea => 1,
+                MapScript::Continents => 2,
+                _ => num_major_spawns.div_ceil(2).clamp(3, 7),
+            };
+            let mut land = scatter_bodies(wm, &mut field, continents, target, rng);
+            // Something in the open ocean to find, without turning the sea
+            // lanes into an archipelago of their own.
+            let islands = (target / 12).min(continents * 3);
+            land.extend(scatter_islands(wm, &mut field, islands * 6, 3, 11, 1, 0, rng));
+            land
         }
     }
 }
 
-/// How many bodies a script may spread past a single plot.
+/// How many bodies a world type may spread past a single plot.
 ///
 /// `Lakes.lua` asks for four per continent region; every other stock script
 /// asks for none and receives the one-plot ponds the same roll produces. The
-/// two single-supercontinent scripts are given a budget of their own here,
-/// which is a deliberate departure: their interiors are deep enough to hold an
-/// inland sea, and a supercontinent whose only water is its own shoreline plays
-/// as a flat expanse. The island scripts keep the stock zero — an island has no
-/// interior to put a lake in, and the enclosure rule would refuse one anyway.
+/// two single-supercontinent types are given a budget of their own here, which
+/// is a deliberate departure: their interiors are deep enough to hold an
+/// inland sea, and a supercontinent whose only water is its own shoreline
+/// plays as a flat expanse. The island types keep the stock zero — an island
+/// has no interior to put a lake in, and the enclosure rule would refuse one
+/// anyway. Earth's interiors are the ones that earned the rule.
 ///
-/// The two globes carry them like the continent scripts do: their landmasses
-/// have interiors, and a lake is judged by the same enclosure rule there as
-/// anywhere else. Earth's interiors are the ones that earned the rule.
+/// Land Only asks for none for the opposite reason: the water it already has
+/// is inland by construction, so the pass would be spreading lakes through a
+/// world that is nothing but lakes.
 fn large_lake_budget(script: MapScript, num_continents: usize) -> usize {
     match script {
         MapScript::Lakes => num_continents * 4,
         MapScript::Pangaea | MapScript::InlandSea => num_continents,
-        MapScript::Continents => num_continents / 2,
-        MapScript::Planet | MapScript::TrueStartEarth => num_continents / 2,
-        MapScript::SmallContinents => 0,
+        MapScript::Continents | MapScript::TrueStartEarth => num_continents / 2,
+        MapScript::LandOnly
+        | MapScript::SmallContinents
+        | MapScript::Islands
+        | MapScript::WaterWorld => 0,
     }
 }
 
@@ -736,6 +978,8 @@ pub fn generate(
         num_natural_wonders,
         num_continents,
         MapScript::Pangaea,
+        MapTopology::Flat,
+        MapPoles::Poles,
         rng,
     )
 }
@@ -750,18 +994,28 @@ pub fn generate_with_script(
     num_natural_wonders: usize,
     num_continents: usize,
     script: MapScript,
+    topology: MapTopology,
+    poles: MapPoles,
     rng: &mut Rng,
 ) -> (WorldMap, Vec<Pos>) {
-    // Planet is stored in a rectangle of its own shape, so the size's globe
-    // is built rather than the cylinder the other scripts lay out.
-    let mut wm = if script.is_globe() {
+    // The world's shape is asked for separately from what fills it, but Earth
+    // is Earth: it is drawn from real longitudes and latitudes and it closes,
+    // so it is always laid out on the globe whatever the lobby selected.
+    let topology = if script.is_fixed_geography() {
+        MapTopology::Planet
+    } else {
+        topology
+    };
+    // A globe is stored in a rectangle of its own shape, so its size's globe
+    // is built rather than the cylinder a flat world lays out.
+    let mut wm = if topology.is_globe() {
         WorldMap::globe(globe_frequency(width, height))
     } else {
         WorldMap::new(width, height)
     };
 
-    // --- landmass topology selected by the stock-style map script
-    let mut land = generate_land(&wm, script, num_major_spawns, rng);
+    // --- landmass, from the world type asked for and the shape it landed on
+    let mut land = generate_land(&wm, script, poles, num_major_spawns, num_minor_spawns, rng);
 
     let land_list: Vec<Pos> = land.iter().cloned().collect();
 
@@ -769,7 +1023,7 @@ pub fn generate_with_script(
     // (MountainsCliffs.lua) and only then paints biomes over it, because the
     // mountain fractal has to be free of the latitude bands to run across them.
     apply_tectonics(&mut wm, &land, rng);
-    assign_biomes(&mut wm, &land_list, rng);
+    assign_biomes(&mut wm, &land_list, poles, rng);
 
     // --- coast. A shelf is one tile of shallow water plus the stock's three
     // expansion passes, each giving a quarter of the Ocean tiles that already
@@ -964,16 +1218,22 @@ pub fn generate_with_script(
     }
 
     // Polar sea ice occupies both Ocean and Coast. Latitude controls density,
-    // leaving navigable gaps instead of drawing an artificial solid wall.
-    let polar_water: Vec<Pos> = wm
-        .tiles
-        .iter()
-        .filter(|(position, tile)| {
-            matches!(tile.terrain.as_str(), "coast" | "ocean")
-                && wm.polar_fraction(**position) > 0.82
-        })
-        .map(|(position, _)| *position)
-        .collect();
+    // leaving navigable gaps instead of drawing an artificial solid wall. A
+    // world with no poles has no cold end for it to form on, so it forms none:
+    // the ends of a poleless world are as open as its middle, which is most of
+    // what the setting is for.
+    let polar_water: Vec<Pos> = if poles.has_poles() {
+        wm.tiles
+            .iter()
+            .filter(|(position, tile)| {
+                matches!(tile.terrain.as_str(), "coast" | "ocean")
+                    && wm.polar_fraction(**position) > 0.82
+            })
+            .map(|(position, _)| *position)
+            .collect()
+    } else {
+        Vec::new()
+    };
     for position in polar_water {
         let chance = ((wm.polar_fraction(position) - 0.82) / 0.18 * 0.72).clamp(0.0, 0.72);
         if rng.chance(chance) {
@@ -1200,7 +1460,7 @@ pub fn generate_with_script(
         }
     }
 
-    place_strategic_quotas(rules, &mut wm, &land, num_major_spawns, rng);
+    place_strategic_quotas(rules, &mut wm, &land, num_major_spawns, &BTreeSet::new(), rng);
 
     assign_continents(&mut wm, &land, num_continents, rng);
 
@@ -1292,7 +1552,10 @@ pub fn generate_with_script(
         historic_major_spawns(&wm, &all_candidates, num_major_spawns)
     } else if matches!(
         script,
-        MapScript::Continents | MapScript::SmallContinents | MapScript::Planet
+        MapScript::Continents
+            | MapScript::SmallContinents
+            | MapScript::Islands
+            | MapScript::WaterWorld
     ) {
         let viable: Vec<(BTreeSet<Pos>, Vec<Pos>)> = components
             .into_iter()
@@ -1330,6 +1593,19 @@ pub fn generate_with_script(
             let other = rng.below(index + 1);
             starts.swap(index, other);
         }
+        // Every landmass offers its own best sites to the city-states as well.
+        // The global pool asks for grassland or plains before it will settle
+        // for anything else, and on a world of many small islands that filter
+        // can be satisfied several times over on four islands while leaving
+        // eight with nothing in the pool at all — so the placer, having no
+        // tile it is allowed to use on an empty island, doubles up on a
+        // populated one. Unioning in what each landmass already offered its
+        // capitals costs nothing here and gives every island a seat.
+        for (_, candidates) in &viable {
+            all_candidates.extend(candidates.iter().copied());
+        }
+        all_candidates.sort();
+        all_candidates.dedup();
         starts
     } else {
         let primary_candidates = candidates_for(&primary, total_spawns);
@@ -1357,11 +1633,20 @@ pub fn generate_with_script(
         num_minor_spawns,
         num_major_spawns,
     );
-    for s in &spawns {
+    let occupied: BTreeSet<Pos> = spawns.iter().copied().collect();
+    for s in &occupied {
         let t = wm.tiles.get_mut(s).unwrap();
         t.feature = None;
         t.resource = None;
     }
+    // Clearing the capitals takes deposits off the map, and the quota is a
+    // claim about what a civilization can reach rather than about what was
+    // laid down before the seats were known. On a world with plenty of land
+    // that is one or two tiles and the top-up finds nothing to do; on a Water
+    // World, where every seat is a large share of the land, it is the
+    // difference between an iron age and a bronze one. Nothing after this
+    // draws from the stream, so a world that needed no top-up is unmoved.
+    place_strategic_quotas(rules, &mut wm, &land, num_major_spawns, &occupied, rng);
     (wm, spawns)
 }
 
@@ -1463,12 +1748,28 @@ fn apply_tectonics(wm: &mut WorldMap, land: &BTreeSet<Pos>, rng: &mut Rng) {
     }
 }
 
+/// The latitude a world with no poles is painted at.
+///
+/// A poleless world still has to hand `TerrainGenerator.lua`'s bands *some*
+/// latitude, and this is the one that reads as warm everywhere: below
+/// [`TUNDRA_LATITUDE`], so no tile is ever cold enough for tundra or snow, and
+/// inside the desert belt, so the dry fractal is still free to lay deserts
+/// down wherever it is dry. What the bands then decide is rainfall alone,
+/// which is exactly what a world without cold ends should be deciding on.
+const POLELESS_LATITUDE: f64 = 0.34;
+
 /// Climate, the way `TerrainGenerator.lua` paints it: latitude bands whose
 /// borders are roughened by a variation fractal, with Desert and Plains cut
 /// out of two further fractals so that both arrive as regions. Desert is
 /// additionally confined to the subtropics, which is why Civ VI worlds have
 /// desert belts either side of a green equator rather than desert everywhere.
-fn assign_biomes(wm: &mut WorldMap, land: &[Pos], rng: &mut Rng) {
+///
+/// With poles, latitude is where the tile actually is: hottest across the
+/// middle of the world and colder with every step towards either extreme,
+/// ending in tundra and then snow. Without them, every tile is handed the same
+/// warm latitude instead, so there is no cold end to the world at all and the
+/// two fractals decide everything between desert, plains and grassland.
+fn assign_biomes(wm: &mut WorldMap, land: &[Pos], poles: MapPoles, rng: &mut Rng) {
     let (width, height) = (wm.width, wm.height);
     let deserts = Fractal::new(rng, width, height, 3);
     let plains = Fractal::new(rng, width, height, 3);
@@ -1481,7 +1782,10 @@ fn assign_biomes(wm: &mut WorldMap, land: &[Pos], rng: &mut Rng) {
         if wm.tiles[pos].terrain == "mountain" {
             continue;
         }
-        let base = wm.polar_fraction(*pos);
+        let base = match poles {
+            MapPoles::Poles => wm.polar_fraction(*pos),
+            MapPoles::NoPoles => POLELESS_LATITUDE,
+        };
         let latitude =
             (base + (128.0 - variation.at(col, row) as f64) / (255.0 * 5.0)).clamp(0.0, 1.0);
         let terrain = if latitude >= SNOW_LATITUDE {
@@ -1973,6 +2277,44 @@ pub(crate) const START_DISTANCE_MINOR_NATURAL_WONDER: i32 = 3;
 /// Shipped `START_DISTANCE_MAJOR_NATURAL_WONDER`.
 pub(crate) const START_DISTANCE_MAJOR_NATURAL_WONDER: i32 = 2;
 
+/// The one start distance that is a rule rather than an aim.
+///
+/// `Game::can_found_city` refuses a site within four tiles of a city that
+/// already exists, so two starts closer than that are two cities only one of
+/// which can be founded. Every other distance here is a target the layout
+/// scores itself against and misses when the land gives it no choice; this one
+/// is a floor, and a layout that breaks it is not a layout.
+///
+/// It went unnoticed while every world type was continuous, because a
+/// landmass always had a tile at the right distance and the placer never had
+/// to choose between crowding and a long jump. An archipelago is the first
+/// world where the nearest legal tile can be on another island: aiming for
+/// "five from the last city-state" then scores a neighbouring rock two tiles
+/// away above an empty island ten tiles away, and takes it.
+pub(crate) const MIN_START_SEPARATION: i32 = 4;
+
+/// The candidates that keep [`MIN_START_SEPARATION`] from every start already
+/// placed, or all of them when no tile on the map does — a crowded start is
+/// still better than a missing civilization.
+fn far_enough_from_starts<'a>(
+    wm: &WorldMap,
+    pool: &'a [Pos],
+    spawns: &[Pos],
+    scratch: &'a mut Vec<Pos>,
+) -> &'a [Pos] {
+    scratch.clear();
+    scratch.extend(pool.iter().copied().filter(|candidate| {
+        spawns
+            .iter()
+            .all(|start| wm.distance(*candidate, *start) >= MIN_START_SEPARATION)
+    }));
+    if scratch.is_empty() {
+        pool
+    } else {
+        scratch.as_slice()
+    }
+}
+
 /// How badly one distance misses a shipped target band. Zero inside the band,
 /// growing outside it, and counting crowding double — two starts on top of
 /// each other is worse than two a little too far apart.
@@ -2298,12 +2640,14 @@ fn add_minor_spawns(
         })
         .collect();
     let target = spawns.len() + count;
+    let mut scratch = Vec::new();
     while spawns.len() < target {
         let pool: &[Pos] = if clear_of_wonders.len() >= count {
             &clear_of_wonders
         } else {
             candidates
         };
+        let pool = far_enough_from_starts(wm, pool, spawns, &mut scratch);
         let Some(next) = pool
             .iter()
             .filter(|candidate| !spawns.contains(candidate))
@@ -2356,8 +2700,10 @@ fn complete_major_spawns(
         .map(|candidate| (*candidate, start_quality(rules, wm, *candidate)))
         .collect();
     let target = spawns.len() + count;
+    let mut scratch = Vec::new();
     while spawns.len() < target {
-        let Some(next) = candidates
+        let pool = far_enough_from_starts(wm, candidates, spawns, &mut scratch);
+        let Some(next) = pool
             .iter()
             .filter(|candidate| !spawns.contains(candidate))
             .min_by_key(|candidate| {
@@ -2530,6 +2876,7 @@ fn place_strategic_quotas(
     wm: &mut WorldMap,
     land: &BTreeSet<Pos>,
     num_major_spawns: usize,
+    reserved: &BTreeSet<Pos>,
     rng: &mut Rng,
 ) {
     // Enough for every civilization to hold a source with some left to fight
@@ -2557,6 +2904,7 @@ fn place_strategic_quotas(
         let mut candidates: Vec<Pos> = land_list
             .iter()
             .copied()
+            .filter(|pos| !reserved.contains(pos))
             .filter(|pos| {
                 let tile = &wm.tiles[pos];
                 if tile.resource.is_some() || !rules.is_passable(tile) {
@@ -2659,7 +3007,37 @@ fn largest_component(wm: &WorldMap, cells: &BTreeSet<Pos>) -> BTreeSet<Pos> {
 #[cfg(test)]
 mod river_tests {
     use super::*;
-    use crate::setup::{MapScript, CIV6_MAP_SIZES};
+    use crate::setup::{MapPoles, MapScript, MapTopology, CIV6_MAP_SIZES};
+
+    /// The two shapes and the two climates, named so a call reads as the world
+    /// it asks for rather than as four trailing arguments.
+    const FLAT: MapTopology = MapTopology::Flat;
+    const GLOBE: MapTopology = MapTopology::Planet;
+    const POLED: MapPoles = MapPoles::Poles;
+    const POLELESS: MapPoles = MapPoles::NoPoles;
+
+    /// Every world type but Earth, in the order the lobby lists them: most
+    /// land first, most water last.
+    const ROLLED_TYPES: [MapScript; 8] = [
+        MapScript::LandOnly,
+        MapScript::Lakes,
+        MapScript::InlandSea,
+        MapScript::Pangaea,
+        MapScript::Continents,
+        MapScript::SmallContinents,
+        MapScript::Islands,
+        MapScript::WaterWorld,
+    ];
+
+    /// What share of a generated world is dry land.
+    fn land_share(world: &WorldMap, rules: &Rules) -> usize {
+        let land = world
+            .tiles
+            .values()
+            .filter(|tile| !rules.is_water(tile))
+            .count();
+        land * 100 / world.tiles.len()
+    }
 
     fn land_components(world: &WorldMap, rules: &Rules) -> Vec<BTreeSet<Pos>> {
         let land = world
@@ -2699,7 +3077,7 @@ mod river_tests {
             for seed in 0..3u64 {
                 let mut rng = Rng::new(64_000 + index as u64 * 16 + seed);
                 let (world, spawns) =
-                    generate_with_script(&rules, 74, 46, 6, 9, 4, 3, script, &mut rng);
+                    generate_with_script(&rules, 74, 46, 6, 9, 4, 3, script, FLAT, POLED, &mut rng);
                 let lakes: BTreeSet<Pos> = world
                     .tiles
                     .iter()
@@ -2765,7 +3143,7 @@ mod river_tests {
         for seed in 0..3u64 {
             let mut rng = Rng::new(31_400 + seed);
             let (world, _) =
-                generate_with_script(&rules, 74, 46, 6, 9, 4, 3, MapScript::Lakes, &mut rng);
+                generate_with_script(&rules, 74, 46, 6, 9, 4, 3, MapScript::Lakes, FLAT, POLED, &mut rng);
             let land = world
                 .tiles
                 .values()
@@ -2812,22 +3190,221 @@ mod river_tests {
         }
     }
 
+    /// The world types are a dial from all land to all water, and the lobby
+    /// lists them in that order. Two claims are checked here, on both shapes:
+    /// that each type lands near the share it advertises, and that going down
+    /// the list never gains land. Without the second, "ordered from land to
+    /// water" is a comment rather than a property, and the two ends stop
+    /// meaning anything.
+    #[test]
+    fn world_types_run_from_all_land_to_all_water_on_either_shape() {
+        let rules = Rules::embedded();
+        for topology in [FLAT, GLOBE] {
+            let mut measured: Vec<(MapScript, usize)> = Vec::new();
+            for (index, script) in ROLLED_TYPES.into_iter().enumerate() {
+                // Three worlds, because a single roll of a scatter is noisy
+                // and the claim is about the type, not about one seed.
+                let mut total = 0;
+                for seed in 0..3u64 {
+                    let mut rng = Rng::new(19_000 + index as u64 * 8 + seed);
+                    let (world, _) = generate_with_script(
+                        &rules, 74, 46, 6, 9, 4, 3, script, topology, POLED, &mut rng,
+                    );
+                    total += land_share(&world, &rules);
+                }
+                measured.push((script, total / 3));
+            }
+            for (script, share) in &measured {
+                let claimed = script.land_percent() as i64;
+                // Wide, because the share is what the generator aims at and
+                // the coast, the lakes and a globe's reserved caps all move it
+                // a little. Narrow enough that a type cannot drift into its
+                // neighbour's place on the dial.
+                assert!(
+                    (*share as i64 - claimed).abs() <= 8,
+                    "{script:?} on {topology:?} is {share}% land, but the lobby says {claimed}%"
+                );
+            }
+            for pair in measured.windows(2) {
+                let ((above, more), (below, less)) = (pair[0], pair[1]);
+                assert!(
+                    more + 2 >= less,
+                    "{below:?} ({less}% land) holds more land than {above:?} ({more}%), \
+                     so the list is no longer ordered from land to water"
+                );
+            }
+            // The two ends have to actually be the ends.
+            assert!(
+                measured[0].1 >= 85,
+                "Land Only came out {}% land on {topology:?}",
+                measured[0].1
+            );
+            assert!(
+                measured[measured.len() - 1].1 <= 12,
+                "Water World came out {}% land on {topology:?}",
+                measured[measured.len() - 1].1
+            );
+        }
+    }
+
+    /// Every world type has to arrive on either shape, seat everybody, and —
+    /// on a globe — close. The shape is a separate question from the type, and
+    /// this is what makes that true rather than merely offered.
+    #[test]
+    fn every_world_type_lays_out_on_either_shape() {
+        let rules = Rules::embedded();
+        for (index, script) in ROLLED_TYPES
+            .into_iter()
+            .chain([MapScript::TrueStartEarth])
+            .enumerate()
+        {
+            for topology in [FLAT, GLOBE] {
+                let mut rng = Rng::new(28_000 + index as u64 * 4 + topology.is_globe() as u64);
+                let (world, spawns) = generate_with_script(
+                    &rules, 60, 38, 4, 6, 3, 2, script, topology, POLED, &mut rng,
+                );
+                let where_ = format!("{script:?} on {topology:?}");
+                assert_eq!(spawns.len(), 10, "{where_}: every seat is placed");
+                let mut seen = BTreeSet::new();
+                for start in &spawns {
+                    assert!(seen.insert(*start), "{where_}: two civilizations share {start:?}");
+                    let tile = &world.tiles[start];
+                    assert!(!rules.is_water(tile), "{where_}: a start is at sea");
+                    assert!(tile.terrain != "mountain", "{where_}: a start is on a peak");
+                }
+                // Earth is the one type whose shape is not the lobby's to
+                // choose, so it closes whichever shape was asked for.
+                let globe = topology.is_globe() || script.is_fixed_geography();
+                assert_eq!(world.sphere().is_some(), globe, "{where_}: shape");
+                if globe {
+                    let mut pentagons = 0;
+                    for (pos, _) in world.tiles.iter() {
+                        match world.neighbors(*pos).len() {
+                            5 => pentagons += 1,
+                            6 => {}
+                            other => panic!("{where_}: {pos:?} has {other} neighbours"),
+                        }
+                    }
+                    assert_eq!(pentagons, 12, "{where_}: a globe closes with twelve pentagons");
+                }
+            }
+        }
+    }
+
+    /// What "poles" means, stated as the thing a player would notice: the
+    /// middle of the world is its warm ground and every step out towards an
+    /// extreme is colder, ending in tundra and snow. Land Only is the type
+    /// this is measured on, because it is the only one with land at every
+    /// latitude to measure.
+    #[test]
+    fn poles_make_the_middle_of_the_world_hot_and_its_extremes_cold() {
+        let rules = Rules::embedded();
+        // Bands from the equator out to a pole. A tile is cold if the climate
+        // pass gave it one of the two cold terrains.
+        const BANDS: [(f64, f64); 4] = [(0.0, 0.2), (0.2, 0.45), (0.45, 0.7), (0.7, 1.01)];
+        for topology in [FLAT, GLOBE] {
+            let mut cold = [0usize; BANDS.len()];
+            let mut total = [0usize; BANDS.len()];
+            for seed in 0..3u64 {
+                let mut rng = Rng::new(37_000 + seed);
+                let (world, _) = generate_with_script(
+                    &rules, 74, 46, 6, 9, 4, 3, MapScript::LandOnly, topology, POLED, &mut rng,
+                );
+                for (pos, tile) in world.tiles.iter() {
+                    if rules.is_water(tile) {
+                        continue;
+                    }
+                    let latitude = world.polar_fraction(*pos);
+                    let Some(band) = BANDS
+                        .iter()
+                        .position(|(low, high)| latitude >= *low && latitude < *high)
+                    else {
+                        continue;
+                    };
+                    total[band] += 1;
+                    if matches!(tile.terrain.as_str(), "snow" | "tundra") {
+                        cold[band] += 1;
+                    }
+                }
+            }
+            let share: Vec<usize> = (0..BANDS.len())
+                .map(|band| cold[band] * 100 / total[band].max(1))
+                .collect();
+            assert!(
+                total.iter().all(|count| *count > 100),
+                "{topology:?}: every band needs land in it to measure, got {total:?}"
+            );
+            assert_eq!(share[0], 0, "{topology:?}: the middle of the world is not cold");
+            for band in 1..BANDS.len() {
+                assert!(
+                    share[band] >= share[band - 1],
+                    "{topology:?}: band {band} is warmer than the one inside it, shares {share:?}"
+                );
+            }
+            assert!(
+                share[BANDS.len() - 1] >= 60,
+                "{topology:?}: the extremes should be mostly tundra and snow, shares {share:?}"
+            );
+        }
+    }
+
+    /// And what "no poles" means: no cold end to the world at all. Not a
+    /// milder one — none. Snow, tundra and sea ice are the three things a
+    /// latitude puts on a map, and a world without poles carries none of them
+    /// at any latitude, including the two rows that used to be its ice caps.
+    #[test]
+    fn a_world_without_poles_has_no_cold_end_at_any_latitude() {
+        let rules = Rules::embedded();
+        for topology in [FLAT, GLOBE] {
+            for (index, script) in ROLLED_TYPES.into_iter().enumerate() {
+                let mut rng = Rng::new(46_000 + index as u64 * 4);
+                let (world, _) = generate_with_script(
+                    &rules, 60, 38, 4, 6, 3, 2, script, topology, POLELESS, &mut rng,
+                );
+                let where_ = format!("{script:?} on {topology:?} without poles");
+                for (pos, tile) in world.tiles.iter() {
+                    assert!(
+                        !matches!(tile.terrain.as_str(), "snow" | "tundra"),
+                        "{where_}: {} at {pos:?}, {:.2} from the equator",
+                        tile.terrain,
+                        world.polar_fraction(*pos)
+                    );
+                    assert!(
+                        tile.feature.as_deref() != Some("ice"),
+                        "{where_}: sea ice at {pos:?}"
+                    );
+                }
+            }
+            // The same world with poles does carry all three, so the absence
+            // above is the setting and not a broken generator.
+            let mut rng = Rng::new(46_000);
+            let (poled, _) = generate_with_script(
+                &rules, 60, 38, 4, 6, 3, 2, MapScript::Pangaea, topology, POLED, &mut rng,
+            );
+            assert!(
+                poled
+                    .tiles
+                    .values()
+                    .any(|tile| matches!(tile.terrain.as_str(), "snow" | "tundra")),
+                "{topology:?}: the poled control grew no cold terrain"
+            );
+            assert!(
+                poled
+                    .tiles
+                    .values()
+                    .any(|tile| tile.feature.as_deref() == Some("ice")),
+                "{topology:?}: the poled control grew no sea ice"
+            );
+        }
+    }
+
     #[test]
     fn stock_map_scripts_create_distinct_playable_topologies() {
         let rules = Rules::embedded();
-        for (index, script) in [
-            MapScript::Pangaea,
-            MapScript::Continents,
-            MapScript::SmallContinents,
-            MapScript::InlandSea,
-            MapScript::Lakes,
-        ]
-        .into_iter()
-        .enumerate()
-        {
+        for (index, script) in ROLLED_TYPES.into_iter().enumerate() {
             let mut rng = Rng::new(72_000 + index as u64);
             let (world, spawns) =
-                generate_with_script(&rules, 60, 38, 6, 6, 0, 3, script, &mut rng);
+                generate_with_script(&rules, 60, 38, 6, 6, 0, 3, script, FLAT, POLED, &mut rng);
             assert_eq!(spawns.len(), 12, "{script:?} spawn count");
             for (spawn_index, start) in spawns.iter().enumerate() {
                 assert!(
@@ -2864,8 +3441,18 @@ mod river_tests {
                     "Small Continents needs several separated landmasses, got {:?}",
                     components.iter().map(|c| c.len()).collect::<Vec<_>>()
                 ),
-                MapScript::Planet | MapScript::TrueStartEarth => {
-                    unreachable!("the globe scripts are not cylinders")
+                MapScript::LandOnly => assert!(
+                    share(1) >= 80,
+                    "Land Only should be one unbroken world, largest holds {}%",
+                    share(1)
+                ),
+                MapScript::Islands | MapScript::WaterWorld => assert!(
+                    components.len() >= 8 && components[0].len() * 4 <= total,
+                    "{script:?} needs many small islands and no continent, got {:?}",
+                    components.iter().map(|c| c.len()).collect::<Vec<_>>()
+                ),
+                MapScript::TrueStartEarth => {
+                    unreachable!("Earth is not in this list")
                 }
             }
 
@@ -2935,7 +3522,9 @@ mod river_tests {
             9,
             size.natural_wonders,
             size.continents,
-            MapScript::Planet,
+            MapScript::SmallContinents,
+            GLOBE,
+            POLED,
             &mut rng,
         );
 
@@ -3040,6 +3629,8 @@ mod river_tests {
             size.natural_wonders,
             size.continents,
             MapScript::TrueStartEarth,
+            GLOBE,
+            POLED,
             &mut rng,
         );
         let frequency = size.globe_frequency;
@@ -3189,7 +3780,7 @@ mod river_tests {
         let land_of = |seed: u64| {
             let mut rng = Rng::new(seed);
             let (world, _) = generate_with_script(
-                &rules, 60, 38, 4, 6, 3, 2, MapScript::TrueStartEarth, &mut rng,
+                &rules, 60, 38, 4, 6, 3, 2, MapScript::TrueStartEarth, GLOBE, POLED, &mut rng,
             );
             let land: BTreeSet<Pos> = world
                 .tiles
@@ -3232,20 +3823,13 @@ mod river_tests {
             .map(|(name, _)| name.as_str())
             .collect();
         assert!(strategics.contains(&"iron") && strategics.contains(&"horses"));
-        for (index, script) in [
-            MapScript::Pangaea,
-            MapScript::Continents,
-            MapScript::SmallContinents,
-            MapScript::InlandSea,
-            MapScript::Lakes,
-            MapScript::Planet,
-            MapScript::TrueStartEarth,
-        ]
-        .into_iter()
-        .enumerate()
+        for (index, script) in ROLLED_TYPES
+            .into_iter()
+            .chain([MapScript::TrueStartEarth])
+            .enumerate()
         {
             let mut rng = Rng::new(81_000 + index as u64);
-            let (world, _) = generate_with_script(&rules, 60, 38, 6, 6, 0, 3, script, &mut rng);
+            let (world, _) = generate_with_script(&rules, 60, 38, 6, 6, 0, 3, script, FLAT, POLED, &mut rng);
             for resource in &strategics {
                 let count = world
                     .tiles
@@ -3702,6 +4286,8 @@ mod river_tests {
                         size.natural_wonders,
                         size.continents,
                         script,
+                        FLAT,
+                        POLED,
                         &mut rng,
                     );
                     let mut footprints: BTreeMap<String, Vec<Pos>> = BTreeMap::new();
