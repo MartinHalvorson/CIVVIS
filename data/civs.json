@@ -90,5 +90,149 @@
       "killer_of_cyrus"
     ],
     "start_bias": {"terrain": ["grassland", "plains"], "terrain_tier": 5, "resource": ["horses"], "resource_tier": 2}
+  },
+  "England": {
+    "leader": "Victoria",
+    "ability": "workshop_of_the_world",
+    "note": "Workshop of the World: +20% production toward buildings, and +1 gold in every city",
+    "agenda": "sun_never_sets",
+    "traits": [
+      "expansionist"
+    ],
+    "effects": {"building_production_pct": 20, "city_gold": 1}
+  },
+  "Germany": {
+    "leader": "Frederick Barbarossa",
+    "ability": "free_imperial_cities",
+    "note": "Free Imperial Cities: +20% production toward districts, and +1 production in every city",
+    "agenda": "iron_crown",
+    "traits": [
+      "expansionist",
+      "low_religious_preference"
+    ],
+    "effects": {"district_production_pct": 20, "city_production": 1}
+  },
+  "Russia": {
+    "leader": "Peter",
+    "ability": "mother_russia",
+    "note": "Mother Russia: +1 faith and +1 production in every city",
+    "agenda": "westernizer",
+    "traits": [
+      "expansionist"
+    ],
+    "effects": {"city_faith": 1, "city_production": 1},
+    "start_bias": {"terrain": ["tundra"], "terrain_tier": 3}
+  },
+  "Korea": {
+    "leader": "Seondeok",
+    "ability": "three_kingdoms",
+    "note": "Three Kingdoms: +1 science and +1 food in every city",
+    "agenda": "cheomseongdae",
+    "traits": [
+      "science_major_civ"
+    ],
+    "effects": {"city_science": 1, "city_food": 1},
+    "start_bias": {"terrain": ["grassland", "plains"], "terrain_hills": true, "terrain_tier": 2}
+  },
+  "Maya": {
+    "leader": "Lady Six Sky",
+    "ability": "mayab",
+    "note": "Mayab: +1 food and +1 science in every city",
+    "agenda": "solitary_observer",
+    "traits": [
+      "science_major_civ"
+    ],
+    "effects": {"city_food": 1, "city_science": 1},
+    "start_bias": {"feature": ["jungle"], "feature_tier": 4, "resource": ["cocoa", "maize"], "resource_tier": 3}
+  },
+  "Mali": {
+    "leader": "Mansa Musa",
+    "ability": "songs_of_the_jeli",
+    "note": "Songs of the Jeli: +1 gold and +1 faith in every city",
+    "agenda": "trade_caravans",
+    "traits": [
+      "pursue_diplomatic_victory"
+    ],
+    "effects": {"city_gold": 1, "city_faith": 1},
+    "start_bias": {"terrain": ["desert"], "terrain_tier": 3, "resource": ["salt", "silver"], "resource_tier": 3}
+  },
+  "Phoenicia": {
+    "leader": "Dido",
+    "ability": "mediterranean_colonies",
+    "note": "Mediterranean Colonies: +50% production toward settlers, and +1 gold in every city",
+    "agenda": "sea_lanes",
+    "traits": [
+      "expansionist",
+      "mediterranean"
+    ],
+    "effects": {"settler_production_pct": 50, "city_gold": 1}
+  },
+  "Byzantium": {
+    "leader": "Basil II",
+    "ability": "taxis",
+    "note": "Taxis: +2 combat strength for every unit",
+    "agenda": "trial_by_combat",
+    "traits": [
+      "aggressive_military",
+      "low_city_state_preference_war"
+    ],
+    "effects": {"combat_strength": 2}
+  },
+  "Zulu": {
+    "leader": "Shaka",
+    "ability": "isibongo",
+    "note": "Isibongo: +25% combat experience, and +20% production toward units",
+    "agenda": "ingoma_yenkosi",
+    "traits": [
+      "aggressive_military",
+      "expansionist"
+    ],
+    "effects": {"unit_xp_pct": 25, "unit_production_pct": 20}
+  },
+  "Gaul": {
+    "leader": "Ambiorix",
+    "ability": "hallstatt_culture",
+    "note": "Hallstatt Culture: +1 production and +1 culture in every city",
+    "agenda": "king_of_the_eburones",
+    "traits": [
+      "aggressive_military"
+    ],
+    "effects": {"city_production": 1, "city_culture": 1},
+    "start_bias": {"resource": ["copper", "iron"], "resource_tier": 3}
+  },
+  "Kongo": {
+    "leader": "Mvemba a Nzinga",
+    "ability": "nkisi",
+    "note": "Nkisi: +1 gold and +1 culture in every city",
+    "agenda": "enthusiastic_disciple",
+    "traits": [
+      "cultural_major_civ",
+      "low_religious_preference"
+    ],
+    "effects": {"city_gold": 1, "city_culture": 1},
+    "start_bias": {"feature": ["forest", "jungle"], "feature_tier": 3}
+  },
+  "Vietnam": {
+    "leader": "Ba Trieu",
+    "ability": "nine_dragon_river_delta",
+    "note": "Nine Dragon River Delta: +1 culture and +1 food in every city",
+    "agenda": "garden_of_the_east",
+    "traits": [
+      "cultural_major_civ",
+      "science_major_civ"
+    ],
+    "effects": {"city_culture": 1, "city_food": 1},
+    "start_bias": {"feature": ["jungle", "marsh", "forest"], "feature_tier": 2}
+  },
+  "Brazil": {
+    "leader": "Pedro II",
+    "ability": "amazon",
+    "note": "Amazon: +1 culture and +1 gold in every city",
+    "agenda": "patron_of_the_arts",
+    "traits": [
+      "cultural_major_civ"
+    ],
+    "effects": {"city_culture": 1, "city_gold": 1},
+    "start_bias": {"feature": ["jungle"], "feature_tier": 2}
   }
 }

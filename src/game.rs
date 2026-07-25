@@ -14,8 +14,36 @@ use crate::setup::{GameSpeed, MapPoles, MapScript, MapSize, MapTopology};
 use crate::world::{DistrictFoundation, RememberedTile, Tile, TileBits, TileMemory, WorldMap};
 use crate::{hex, mapgen, Pos};
 
-pub const CIV_NAMES: [&str; 8] = [
-    "Rome", "Egypt", "Greece", "China", "Sumeria", "Aztec", "Nubia", "Scythia",
+/// The civilizations this ruleset can seat, in seating order. A stock lobby
+/// seats majors straight down this list, so it must be at least as long as the
+/// largest major count any map size offers — Huge tops out at twenty — or two
+/// seats end up sharing a leader, an ability and a unique.
+///
+/// The order is fixed history: seat *i* of a game nobody customised has been
+/// `CIV_NAMES[i]` since the first seed, so new civilizations are appended and
+/// never inserted.
+pub const CIV_NAMES: [&str; 21] = [
+    "Rome",
+    "Egypt",
+    "Greece",
+    "China",
+    "Sumeria",
+    "Aztec",
+    "Nubia",
+    "Scythia",
+    "England",
+    "Germany",
+    "Russia",
+    "Korea",
+    "Maya",
+    "Mali",
+    "Phoenicia",
+    "Byzantium",
+    "Zulu",
+    "Gaul",
+    "Kongo",
+    "Vietnam",
+    "Brazil",
 ];
 /// The city-states this ruleset can seat, in placement order. The first
 /// twelve carry bespoke Suzerain bonuses; the rest round out the Huge map's
@@ -188,6 +216,240 @@ fn city_names(civ: &str) -> &'static [&'static str] {
             "Alexandropol",
             "Olbia",
         ],
+        "England" => &[
+            "London",
+            "Liverpool",
+            "Manchester",
+            "Birmingham",
+            "Leeds",
+            "York",
+            "Bristol",
+            "Newcastle",
+            "Coventry",
+            "Sheffield",
+            "Nottingham",
+            "Portsmouth",
+            "Oxford",
+            "Cambridge",
+            "Canterbury",
+            "Plymouth",
+        ],
+        "Germany" => &[
+            "Aachen",
+            "Cologne",
+            "Frankfurt",
+            "Munich",
+            "Hamburg",
+            "Nuremberg",
+            "Mainz",
+            "Berlin",
+            "Leipzig",
+            "Dresden",
+            "Bremen",
+            "Augsburg",
+            "Heidelberg",
+            "Trier",
+            "Regensburg",
+            "Stuttgart",
+        ],
+        "Russia" => &[
+            "Moscow",
+            "St Petersburg",
+            "Novgorod",
+            "Kazan",
+            "Rostov",
+            "Yekaterinburg",
+            "Nizhny Novgorod",
+            "Smolensk",
+            "Tver",
+            "Vladimir",
+            "Yaroslavl",
+            "Voronezh",
+            "Samara",
+            "Tula",
+            "Pskov",
+            "Astrakhan",
+        ],
+        "Korea" => &[
+            "Gyeongju",
+            "Hanseong",
+            "Pyongyang",
+            "Kaesong",
+            "Sangju",
+            "Jeonju",
+            "Gongju",
+            "Buyeo",
+            "Naju",
+            "Chuncheon",
+            "Wonju",
+            "Ganghwa",
+            "Suwon",
+            "Andong",
+            "Jinju",
+            "Cheongju",
+        ],
+        "Maya" => &[
+            "Palenque",
+            "Tikal",
+            "Copan",
+            "Calakmul",
+            "Chichen Itza",
+            "Uxmal",
+            "Yaxchilan",
+            "Caracol",
+            "Coba",
+            "Bonampak",
+            "Quirigua",
+            "Naranjo",
+            "Piedras Negras",
+            "Tulum",
+            "Mayapan",
+            "Dos Pilas",
+        ],
+        "Mali" => &[
+            "Niani",
+            "Timbuktu",
+            "Djenne",
+            "Gao",
+            "Walata",
+            "Kumbi Saleh",
+            "Segou",
+            "Bamako",
+            "Kangaba",
+            "Taghaza",
+            "Tadmekka",
+            "Awdaghost",
+            "Sikasso",
+            "Nioro",
+            "Kayes",
+            "Mopti",
+        ],
+        "Phoenicia" => &[
+            "Tyre",
+            "Sidon",
+            "Byblos",
+            "Berytus",
+            "Arwad",
+            "Ugarit",
+            "Sarepta",
+            "Tripolis",
+            "Utica",
+            "Gadir",
+            "Motya",
+            "Panormus",
+            "Lixus",
+            "Hadrumetum",
+            "Kition",
+            "Tharros",
+        ],
+        "Byzantium" => &[
+            "Constantinople",
+            "Nicaea",
+            "Thessalonica",
+            "Antioch",
+            "Trebizond",
+            "Adrianople",
+            "Smyrna",
+            "Dyrrachium",
+            "Iconium",
+            "Chalcedon",
+            "Sardica",
+            "Varna",
+            "Cherson",
+            "Nicomedia",
+            "Ancyra",
+            "Amorium",
+        ],
+        "Zulu" => &[
+            "Ulundi",
+            "Nobamba",
+            "Mgungundlovu",
+            "Bulawayo",
+            "Ondini",
+            "Nodwengu",
+            "Emakhosini",
+            "Gibixhegu",
+            "KwaDukuza",
+            "Eshowe",
+            "Empangeni",
+            "Nongoma",
+            "Mahlabathini",
+            "Melmoth",
+            "Vryheid",
+            "Ingwavuma",
+        ],
+        "Gaul" => &[
+            "Bibracte",
+            "Cenabum",
+            "Gergovia",
+            "Alesia",
+            "Lutetia",
+            "Avaricum",
+            "Narbo",
+            "Tolosa",
+            "Burdigala",
+            "Lugdunum",
+            "Nemausus",
+            "Vesontio",
+            "Agedincum",
+            "Noviodunum",
+            "Durocortorum",
+            "Samarobriva",
+        ],
+        "Kongo" => &[
+            "Mbanza-Kongo",
+            "Mbanza Mbata",
+            "Mbanza Soyo",
+            "Mbanza Nsundi",
+            "Mbanza Mpangu",
+            "Mbanza Mbamba",
+            "Nkusu",
+            "Mpemba",
+            "Luanda",
+            "Matadi",
+            "Boma",
+            "Kabinda",
+            "Mindouli",
+            "Loango",
+            "Nsanda",
+            "Kinkanga",
+        ],
+        "Vietnam" => &[
+            "Hanoi",
+            "Hue",
+            "Saigon",
+            "Da Nang",
+            "Hai Phong",
+            "Co Loa",
+            "Vinh",
+            "Can Tho",
+            "Nha Trang",
+            "Quy Nhon",
+            "Bien Hoa",
+            "Nam Dinh",
+            "Thanh Hoa",
+            "Lang Son",
+            "Cao Bang",
+            "My Tho",
+        ],
+        "Brazil" => &[
+            "Rio de Janeiro",
+            "Sao Paulo",
+            "Salvador",
+            "Recife",
+            "Brasilia",
+            "Belo Horizonte",
+            "Fortaleza",
+            "Manaus",
+            "Porto Alegre",
+            "Curitiba",
+            "Belem",
+            "Natal",
+            "Sao Luis",
+            "Olinda",
+            "Ouro Preto",
+            "Santos",
+        ],
         _ => &[],
     }
 }
@@ -218,17 +480,54 @@ mod seating_tests {
     use super::*;
 
     /// Determinism is sacred and every existing seed depends on this: with no
-    /// civilization chosen, the seats must come out exactly as the old
-    /// `CIV_NAMES[i % CIV_NAMES.len()]` produced them.
+    /// civilization chosen, the seats must come out exactly as
+    /// `CIV_NAMES[i % CIV_NAMES.len()]` produces them, and the head of that
+    /// list is the same eight in the same order it has always been.
     #[test]
     fn stock_seating_is_untouched_when_nobody_is_chosen() {
         let known: BTreeSet<String> = Rules::shared().civs.keys().cloned().collect();
+        assert_eq!(
+            &CIV_NAMES[..8],
+            ["Rome", "Egypt", "Greece", "China", "Sumeria", "Aztec", "Nubia", "Scythia"],
+            "an existing seed seats its majors by position, so the roster only grows at the end"
+        );
         for players in [1usize, 2, 4, 6, 8, 12] {
             let seated = seat_civs(players, &[], &known);
             let stock: Vec<String> = (0..players)
                 .map(|i| CIV_NAMES[i % CIV_NAMES.len()].to_string())
                 .collect();
             assert_eq!(seated, stock, "stock seating changed at {players} players");
+        }
+    }
+
+    /// Nobody is handed a civilization another seat already has. A stock lobby
+    /// never sets that up on its own — two Trajans in one game share an
+    /// ability, an agenda, a unique unit and a city-name pool, and read as a
+    /// bug rather than a match-up — so the roster has to be at least as long
+    /// as the largest lobby the setup screen offers.
+    #[test]
+    fn no_stock_lobby_seats_the_same_civilization_twice() {
+        let known: BTreeSet<String> = Rules::shared().civs.keys().cloned().collect();
+        let largest = crate::setup::CIV6_MAP_SIZES
+            .iter()
+            .map(|size| size.max_players)
+            .max()
+            .unwrap();
+        assert!(
+            CIV_NAMES.len() >= largest,
+            "{largest} majors can be seated but only {} civilizations exist",
+            CIV_NAMES.len()
+        );
+        for players in 1..=largest {
+            let seated = seat_civs(players, &[], &known);
+            assert_eq!(
+                seated.iter().collect::<BTreeSet<_>>().len(),
+                players,
+                "duplicate civilization at {players} players: {seated:?}"
+            );
+            for civ in &seated {
+                assert!(known.contains(civ), "{civ} is not in the ruleset");
+            }
         }
     }
 
@@ -259,11 +558,30 @@ mod seating_tests {
         let seated = seat_civs(3, &["Atlantis".to_string()], &known);
         assert_eq!(seated[0], CIV_NAMES[0]);
         assert_eq!(seated.iter().collect::<BTreeSet<_>>().len(), 3);
+    }
 
-        // And asking twice for the same civilization only seats it once.
+    /// A lobby that names the same civilization for two seats means it. Only
+    /// the automatic fill has to avoid a collision, because only the automatic
+    /// fill can produce one nobody asked for.
+    #[test]
+    fn a_lobby_that_names_a_civilization_twice_seats_it_twice() {
+        let known: BTreeSet<String> = Rules::shared().civs.keys().cloned().collect();
         let twice = seat_civs(3, &["Egypt".to_string(), "Egypt".to_string()], &known);
-        assert_eq!(twice[0], "Egypt");
-        assert_eq!(twice.iter().collect::<BTreeSet<_>>().len(), 3);
+        assert_eq!(&twice[..2], ["Egypt".to_string(), "Egypt".to_string()]);
+        // The seat nobody asked about still steers clear of the mirror match.
+        assert_ne!(twice[2], "Egypt");
+    }
+
+    /// Past the end of the roster there is nothing left to hand out, so the
+    /// stock fill starts again at the top rather than running out of seats.
+    #[test]
+    fn a_lobby_larger_than_the_roster_wraps_instead_of_failing() {
+        let known: BTreeSet<String> = Rules::shared().civs.keys().cloned().collect();
+        let players = CIV_NAMES.len() + 3;
+        let seated = seat_civs(players, &[], &known);
+        assert_eq!(seated.len(), players);
+        assert_eq!(&seated[..CIV_NAMES.len()], &CIV_NAMES.map(String::from)[..]);
+        assert_eq!(&seated[CIV_NAMES.len()..], &CIV_NAMES.map(String::from)[..3]);
     }
 }
 
@@ -10262,7 +10580,8 @@ pub struct GameOptions {
     /// Civilizations for the leading major seats, in seat order. A setup
     /// screen picks the person's own civilization here; every seat it does
     /// not name is filled from [`CIV_NAMES`], skipping anything already
-    /// chosen so no two majors share an identity. Empty is the stock order.
+    /// chosen so no two majors share an identity by accident. Empty is the
+    /// stock order.
     pub civs: Vec<String>,
 }
 
@@ -10298,9 +10617,16 @@ impl GameOptions {
 }
 
 /// Seat the majors: the civilizations a setup screen named, in seat order,
-/// then the stock roster for everything it left open — skipping any name
-/// already spoken for, because two majors sharing a civilization would share
-/// its unique unit, ability and agenda.
+/// then the stock roster for everything it left open.
+///
+/// The seats nobody asked for never collide — with each other or with a
+/// chosen name — because two majors sharing a civilization by accident share
+/// its unique unit, ability, agenda and city names, which reads as a bug. A
+/// lobby that deliberately names the same civilization twice gets it twice:
+/// a mirror match is a legitimate thing to set up, and the request is
+/// unambiguous in a way an automatic fill never is. Past the end of the
+/// roster — more majors than there are civilizations — the stock fill has
+/// nothing left to hand out and starts again at the top.
 ///
 /// A name the ruleset does not know is ignored rather than fatal: a save or a
 /// client from another ruleset should seat a stock civilization, not panic.
@@ -10308,7 +10634,8 @@ pub fn seat_civs(num_players: usize, chosen: &[String], known: &BTreeSet<String>
     let mut seats: Vec<Option<String>> = vec![None; num_players];
     let mut taken: BTreeSet<String> = BTreeSet::new();
     for (seat, civ) in chosen.iter().enumerate().take(num_players) {
-        if known.contains(civ) && taken.insert(civ.clone()) {
+        if known.contains(civ) {
+            taken.insert(civ.clone());
             seats[seat] = Some(civ.clone());
         }
     }
@@ -14220,6 +14547,24 @@ impl Game {
             .unwrap_or(false)
     }
 
+    /// What this player's signature ability is worth under a named modifier,
+    /// for the abilities whose whole effect is a number the engine already
+    /// applies from somewhere else. Zero for a civilization that declares no
+    /// such effect, and for city-states and barbarians, which are not seated
+    /// from the civilization roster at all.
+    ///
+    /// See `CivSpec::effects` for the vocabulary. Abilities the engine cannot
+    /// express as a modifier stay keyed by name in [`Game::has_ability`].
+    pub fn civ_effect(&self, pid: usize, effect: &str) -> f64 {
+        self.players
+            .get(pid)
+            .filter(|player| !player.is_minor && !player.is_barbarian)
+            .and_then(|player| self.rules.civs.get(player.civ.as_str()))
+            .and_then(|civ| civ.effects.get(effect))
+            .copied()
+            .unwrap_or(0.0)
+    }
+
     /// Eureka/inspiration fraction (China's Dynastic Cycle: 50% vs 40%).
     /// Boost grant for a named node, for callers that only know the node
     /// (steals, goody huts, and applying a stored boost on selection).
@@ -17300,6 +17645,7 @@ impl Game {
         if spec.promotion_class == "ranged" && self.has_ability(owner, "ta_seti") {
             multiplier += 0.5;
         }
+        multiplier += self.civ_effect(owner, "unit_xp_pct") / 100.0;
         (amt * multiplier).round() as i64
     }
 
@@ -17711,6 +18057,22 @@ impl Game {
             }
             _ => {}
         }
+        // A civilization whose signature ability speeds one kind of build
+        // declares the percentage in civs.json rather than earning a branch of
+        // its own here.
+        bonus += match item {
+            Some(Item::Unit { unit }) | Some(Item::Formation { unit, .. }) => {
+                let mut pct = self.civ_effect(pid, "unit_production_pct");
+                if unit == "settler" {
+                    pct += self.civ_effect(pid, "settler_production_pct");
+                }
+                pct
+            }
+            Some(Item::Building { .. }) => self.civ_effect(pid, "building_production_pct"),
+            Some(Item::District { .. }) => self.civ_effect(pid, "district_production_pct"),
+            Some(Item::Wonder { .. }) => self.civ_effect(pid, "wonder_production_pct"),
+            _ => 0.0,
+        } / 100.0;
         let kilwa_kind = match item {
             Some(Item::Unit { .. } | Item::Formation { .. }) => Some("militaristic"),
             Some(Item::Building { .. } | Item::District { .. } | Item::Wonder { .. }) => {
@@ -18035,6 +18397,7 @@ impl Game {
         if self.has_ability(u.owner, "gifts_for_the_tlatoani") {
             s += self.empire_luxuries(u.owner) as f64; // Montezuma
         }
+        s += self.civ_effect(u.owner, "combat_strength");
         // Foreign Ministry applies only after a unit is actually levied.
         // While levied, `owner` is the Suzerain and `levied_from` is the
         // city-state that must regain the unit when the contract ends.
@@ -25338,6 +25701,14 @@ impl Game {
             ys.faith += self.policy_effect(city.owner, "capital_faith");
         }
         ys.production += self.policy_effect(city.owner, "city_production");
+        // A civilization whose signature ability is a flat yield in every city
+        // pays it here, once per city, alongside the policy that does the same.
+        ys.food += self.civ_effect(city.owner, "city_food");
+        ys.production += self.civ_effect(city.owner, "city_production");
+        ys.gold += self.civ_effect(city.owner, "city_gold");
+        ys.science += self.civ_effect(city.owner, "city_science");
+        ys.culture += self.civ_effect(city.owner, "city_culture");
+        ys.faith += self.civ_effect(city.owner, "city_faith");
         if self.city_has_district_family(city, "neighborhood") {
             ys.food += self.policy_effect(city.owner, "neighborhood_food");
             ys.production += self.policy_effect(city.owner, "neighborhood_production");
