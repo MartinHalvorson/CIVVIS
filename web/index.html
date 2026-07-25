@@ -957,15 +957,32 @@
     letter-spacing: .09em; opacity: .72; text-transform: uppercase;
   }
   /* Civ 6's launch bar: the empire's standing decisions, one click away and
-     always in the same place. It mirrors the notification rail on the far
-     edge — that one says what wants you, this one is where you go. */
+     always in the same place, plus the two screens where it deals with anyone
+     else. It mirrors the notification rail on the far edge — that one says what
+     wants you, this one is where you go. The rail stops at 200px because the
+     minimap sits under it; this side has only the zoom cluster below (46px
+     tall, 16px up), so the bar may run most of the way down, which is what lets
+     all ten screens fit on a 900px-tall laptop without a scroll nobody can
+     see. */
   #launchbar {
-    position: absolute; z-index: 8; left: 14px; top: 196px; bottom: 200px;
+    position: absolute; z-index: 8; left: 14px; top: 196px; bottom: 96px;
     display: none; flex-direction: column; gap: 6px;
     overflow: hidden auto; scrollbar-width: none;
   }
   #launchbar::-webkit-scrollbar { display: none; }
   #launchbar.on { display: flex; }
+  #launchtabs { flex: none; display: flex; flex-direction: column; gap: 6px; }
+  /* Below the rule are the two screens that talk to somebody else rather than
+     decide something at home: the same kind of control, a different room. */
+  .launch-rule {
+    flex: none; width: 42px; height: 1px; margin: 3px 0;
+    background: linear-gradient(90deg, transparent, #77978b, transparent);
+  }
+  /* Every icon on this bar has to be a glyph the text fonts actually have, so
+     that it takes the gold below. A dove (U+1F54A) exists only in Apple Color
+     Emoji and paints a white sticker among ten gold marks; neither the
+     variation selector nor font-variant-emoji brings it back, because there is
+     no text glyph to fall back to. Diplomacy is the joined rings instead. */
   .launch {
     position: relative; flex: none; width: 42px; height: 42px; padding: 0; margin: 0;
     display: grid; place-items: center; border-radius: 12px; font-size: 17px; line-height: 1;
@@ -979,6 +996,14 @@
     color: #17160f; background: var(--gold-bright); box-shadow: 0 2px 6px #0007;
     font-size: 9px; font-weight: 900;
   }
+  .launch-badge[hidden] { display: none; }
+  /* These two carried their shortcut in the old sidebar label. An icon has no
+     room for "· D", so the key stays as a corner mark rather than being lost. */
+  .launch-key {
+    position: absolute; right: 4px; bottom: 3px; color: #8ba79b;
+    font-size: 7.5px; font-weight: 850; letter-spacing: 0; line-height: 1; opacity: .85;
+  }
+  .launch:hover .launch-key { color: var(--gold); }
   #empire {
     position: absolute; z-index: 18; inset: 4% 3%; display: none; flex-direction: column;
     overflow: hidden; color: var(--text); border: 1px solid #536c63; border-radius: 18px;
@@ -1516,9 +1541,11 @@
   .deal-action button { width: 100%; margin: 0; padding: 8px 10px; }
   .mutual-gain { margin-top: 6px; color: #86b997; font-size: 8px; white-space: nowrap; font-variant-numeric: tabular-nums; }
   .trade-empty { grid-column: 1 / -1; padding: 54px 20px; color: var(--muted); text-align: center; border: 1px dashed #34493f; border-radius: 14px; }
-  .footer-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
+  /* What is left in the deck is the turn itself: end it, or hand the seat to a
+     strategy. Diplomacy and Quick Deals moved to the launch bar on the map,
+     where the rest of the screens you open already live. */
+  .footer-actions { display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px; }
   .footer-actions button { margin: 0; }
-  #tradebtn { min-width: 112px; margin: 0; }
   /* Auto-play: who plays your seat, and for how long. Both are decisions, so
      both sit beside the button rather than behind a modifier key. */
   .autoplay-bar {
@@ -1999,6 +2026,16 @@
     #playerhud .ribbon-stat b { font-size: 13px; }
     #playerhud .diplomacy-name { font-size: 8px; }
   }
+  /* Ten screens at full size need 487px and the bar has (height − 292) to give,
+     so below 780px it would hide its last button behind a scrollbar that is
+     deliberately invisible. Shrinking the icons keeps the whole bar on screen
+     down to ~700px instead. */
+  @media (max-height: 780px) {
+    #launchbar, #launchtabs { gap: 4px; }
+    .launch { width: 36px; height: 36px; font-size: 15px; }
+    .launch-rule { width: 36px; margin: 2px 0; }
+    .launch-badge { min-width: 15px; height: 15px; font-size: 8px; }
+  }
   @media (max-height: 650px) {
     #playerhud .leader-medallion { width: 20px; height: 20px; }
   }
@@ -2053,7 +2090,16 @@
   </div>
   <div id="ubar"></div>
   <div id="notify" aria-label="Notifications" aria-live="polite"></div>
-  <div id="launchbar" aria-label="Empire screens"></div>
+  <div id="launchbar" aria-label="Empire and diplomacy screens">
+    <div id="launchtabs"></div>
+    <div class="launch-rule" aria-hidden="true"></div>
+    <button class="launch" id="diplomacybtn"
+      title="Diplomacy — leaders, agendas, war and peace (L)" aria-label="Diplomacy">⚭<span
+      class="launch-badge" hidden></span><span class="launch-key" aria-hidden="true">L</span></button>
+    <button class="launch" id="tradebtn"
+      title="Quick Deals — every mutually acceptable offer (D)" aria-label="Quick Deals">⚖<span
+      class="launch-badge" hidden></span><span class="launch-key" aria-hidden="true">D</span></button>
+  </div>
   <div id="modeline"></div>
   <div id="err"></div>
   <div id="winner" role="status" aria-live="assertive"></div>
@@ -2173,8 +2219,6 @@
     <div class="side-actions" aria-label="Simulation controls">
       <div class="footer-actions" id="humanfooter">
         <button class="primary" id="endturn">End turn · Enter</button>
-        <button id="tradebtn" title="Compare all mutually acceptable offers (D)">⚖ Quick Deals · D</button>
-      <button id="diplomacybtn" title="Leaders, agendas, war and peace (L)">🕊 Diplomacy · L</button>
         <div class="autoplay-bar" id="autoplaybar">
           <div class="autoplay-fields">
             <label class="autoplay-field"><span>Agent</span>
@@ -3826,7 +3870,7 @@ function animateDiff(prev, next) {
 const easeIO = e => e < 0.5 ? 2 * e * e : 1 - (1 - e) * (2 - 2 * e);
 const cam = { x: 0, y: 0, scale: 1 };
 let cameraFlight = null, cameraZoom = null;
-let cameraInertia = {vx:0, vy:0, vrot:0, vtilt:0};
+let cameraInertia = {vx:0, vy:0, vrot:0, vtilt:0, spin:null};
 let cameraMotionLast = performance.now();
 let cameraFollowUnitId = null, cameraFollowManual = false, cameraFollowScale = 1.18;
 // Choosing a civilization to watch is also an explicit request for a living
@@ -4333,6 +4377,44 @@ function syncFoundNorth(st) {
   updateCompass();
 }
 if (compassButton) compassButton.onclick = () => resetMapFacing();
+
+// ----------------------------------------------------- the shape of the world
+// Working out that the world is round changes nothing on the board and
+// everything about the picture of it: the chart becomes a globe under the same
+// camera, the zoom carries on out past the surface, and two neighbours are
+// standing there when it does. That is worth saying once, the same way finding
+// north is — otherwise a player who researched Cartography for the harbours
+// never notices what else it bought them.
+let KNOWS_GLOBE = true;
+let KNOWS_GLOBE_WORLD = null;
+function syncKnownWorld(st) {
+  const round = knowsGlobe(st);
+  const world = st?.seed ?? null;
+  if (world !== KNOWS_GLOBE_WORLD) {
+    KNOWS_GLOBE_WORLD = world;
+  } else if (round && !KNOWS_GLOBE && planetMap() && !SPEC) {
+    noticeLog.push({
+      kind:"world-is-round", turn:st.turn, icon:"⌬", tone:"good",
+      label:"The world is round",
+      detail:"Pull the map back to see the whole of it — and what is beyond it.",
+    });
+  }
+  KNOWS_GLOBE = round;
+  updateZoomOut();
+}
+// A zoom control that simply stops reads as broken. This one says whose limit
+// it is and what lifts it.
+function updateZoomOut() {
+  const button = document.getElementById("zout");
+  if (!button) return;
+  const chart = planetMap() && !knowsGlobe();
+  const title = chart
+    ? `Zoom out · no chart holds more of the world — ${globeDiscoveryLabel()} proves it round`
+    : "Zoom out";
+  if (button.title === title) return;
+  button.title = title;
+  button.setAttribute("aria-label", chart ? "Zoom out; limited by what is charted" : "Zoom out");
+}
 // Cylindrical scripts use the copy nearest the camera; bounded scripts retain
 // their literal east and west edges.
 // hexXY returns camera-relative view coords (rotate, then dimetric squash).
@@ -5026,7 +5108,11 @@ function queueDirectorCue(cue) {
     const nextGoal = cinematicShotGoal({
       pos: tracksUnit ? [...cue.pos] : actionViewingAnchor(cue.pos),
       focus:[...cue.pos],
-      scale:Math.max(.78, Math.min(1.42, cue.zoom || 1.08)),
+      // A shot on a globe is still bound by how far out that world is willing
+      // to be seen from, which on a small chart is closer in than the gentlest
+      // cinematic zoom.
+      scale:(planetMap() ? planetScaleClamp : (n => n))(
+        Math.max(.78, Math.min(1.42, cue.zoom || 1.08))),
       kind:battle ? "battle" : (tracksUnit ? "character" : "event"),
       subjectUnitId:tracksUnit ? cue.unitId : null,
       battleAttackerId:cue.attackerId,
@@ -5798,6 +5884,7 @@ function render(st, recordChronicle = true) {
   state = st;
   SPEC = !!st.spectate;
   syncFoundNorth(st);
+  syncKnownWorld(st);
   syncCinemaPresentation(st);
   if (SPEC && st.paused !== undefined && st.paused !== specPaused) {
     specPaused = st.paused; // stay in sync with the server-side stepper
@@ -9880,12 +9967,17 @@ function planetCamera() {
     longitude:2 * Math.PI * (cam.x / Math.max(1, WW())) - Math.PI,
     latitude:Math.PI / 2 - Math.PI * north,
     // On a globe the yaw is the viewer's bearing, not another way to spin the
-    // world: turning east is what panning east already does, and a sphere whose
-    // poles are pinned to the top of the screen can never face any direction
-    // but north. So cam.rot rolls the hemisphere, exactly as it turns the board
-    // on a flat map, and Q/E mean the same thing in both topologies.
+    // world: turning east is what panning east already does. So cam.rot rolls
+    // the hemisphere, exactly as it turns the board on a flat map, and Q/E mean
+    // the same thing in both topologies. It is a reading as well as a setting,
+    // because a globe dragged over a pole comes down the far side with north
+    // pointing the other way, and this is where that lands.
     roll:cam.rot,
     radius:WW() / (2 * Math.PI),
+    // Whether this world is still being drawn the way its own people draw it.
+    // Carried on the camera rather than read per corner: it is one fact about
+    // the frame, and the projection below is the hottest loop on the map.
+    chart:!knowsGlobe(),
   };
 }
 // The camera is steered in the same world coordinates the flat maps use, so
@@ -9907,7 +9999,17 @@ function planetStageCenter() {
   return [(frame.left + frame.right) / 2, (frame.top + frame.bottom) / 2];
 }
 
-// Orthographic: the hemisphere facing the camera, as a globe is actually seen.
+// Orthographic: the hemisphere facing the camera, as a globe is actually seen —
+// once a people know that is what they are standing on.
+//
+// Before that the same world is drawn the way their own charts drew it, and the
+// difference is one factor in the line below. Azimuthal equidistant puts
+// distance over the ground at distance across the sheet: it is exact where the
+// viewer is looking, it has no limb anywhere to give the shape away, and the
+// map simply keeps going instead of ending in a silhouette. What it gets wrong
+// it gets wrong the way old maps did — stretched sideways round the rim rather
+// than squashed flat against an edge — which is the whole reason a flat chart
+// of a round world was believable for as long as it was.
 function planetProject(point, camera, scale, centerX, centerY) {
   const cosLat = Math.cos(camera.latitude), sinLat = Math.sin(camera.latitude);
   const cosLon = Math.cos(camera.longitude), sinLon = Math.sin(camera.longitude);
@@ -9920,12 +10022,126 @@ function planetProject(point, camera, scale, centerX, centerY) {
   // the camera alone: the same rigid turn a flat board gets, so world north
   // lands in the same screen direction at the same yaw in either topology.
   const cosRoll = Math.cos(camera.roll || 0), sinRoll = Math.sin(camera.roll || 0);
+  let spread = radius;
+  if (camera.chart) {
+    // The angle from what the viewer is centred on, laid down as a length.
+    const away = Math.hypot(east, north);
+    if (away > 1e-9) spread = radius * Math.atan2(away, toward) / away;
+  }
   return {
-    x:centerX + (east * cosRoll + north * sinRoll) * radius,
-    y:centerY - (north * cosRoll - east * sinRoll) * radius,
+    x:centerX + (east * cosRoll + north * sinRoll) * spread,
+    y:centerY - (north * cosRoll - east * sinRoll) * spread,
     z:toward,
   };
 }
+
+// ------------------------------------------------------- turning it by hand
+// The camera is three numbers, because that is what the flat maps already
+// store: cam.x is a longitude, cam.y a latitude, cam.rot the roll. A drag is
+// not expressible in those three. A drag is a rotation about an axis lying in
+// the picture plane, and spending it on longitude and latitude instead makes
+// the globe behave differently depending on where you grabbed it — near a pole
+// the parallels are a few pixels long, so a sideways drag spins the world about
+// the point under the pointer rather than moving it, and the pole itself is a
+// wall the camera cannot climb over because latitude runs out there.
+//
+// So a drag is done as the rotation it is: the camera's own basis is turned
+// bodily and read back into the three numbers afterwards. That makes one pixel
+// of drag one pixel of arc in every direction anywhere on the globe, and it
+// needs no case for the poles — the axis carries the view straight over the
+// top, and the roll it lands on is the one that leaves the ground pointing
+// where the drag left it.
+const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1],
+                          a[2] * b[0] - a[0] * b[2],
+                          a[0] * b[1] - a[1] * b[0]];
+function turnAbout(v, axis, angle) {
+  const cos = Math.cos(angle), sin = Math.sin(angle), lean = dot3(axis, v) * (1 - cos);
+  const side = cross3(axis, v);
+  return [v[0] * cos + side[0] * sin + axis[0] * lean,
+          v[1] * cos + side[1] * sin + axis[1] * lean,
+          v[2] * cos + side[2] * sin + axis[2] * lean];
+}
+// The three unit vectors the projection above is written in: `out` is the point
+// facing the viewer, `right` and `up` its screen axes once the roll is applied.
+function planetViewBasis(camera) {
+  const cosLat = Math.cos(camera.latitude), sinLat = Math.sin(camera.latitude);
+  const cosLon = Math.cos(camera.longitude), sinLon = Math.sin(camera.longitude);
+  const east = [-sinLon, cosLon, 0];
+  const north = [-sinLat * cosLon, -sinLat * sinLon, cosLat];
+  const cosRoll = Math.cos(camera.roll || 0), sinRoll = Math.sin(camera.roll || 0);
+  return {
+    out:[cosLat * cosLon, cosLat * sinLon, sinLat],
+    right:[0, 1, 2].map(i => east[i] * cosRoll + north[i] * sinRoll),
+    up:[0, 1, 2].map(i => north[i] * cosRoll - east[i] * sinRoll),
+  };
+}
+// And back out of it. A basis that has gone over a pole reads as the opposite
+// longitude with half a turn of roll, which is the same picture — so the
+// reading is always in range and the camera never needs holding away from the
+// poles to stay well formed.
+function planetBasisCamera(basis) {
+  const latitude = Math.asin(Math.max(-1, Math.min(1, basis.out[2])));
+  const longitude = Math.atan2(basis.out[1], basis.out[0]);
+  const cosLat = Math.cos(latitude), sinLat = Math.sin(latitude);
+  const cosLon = Math.cos(longitude), sinLon = Math.sin(longitude);
+  const east = [-sinLon, cosLon, 0];
+  const north = [-sinLat * cosLon, -sinLat * sinLon, cosLat];
+  return {longitude, latitude,
+          roll:Math.atan2(dot3(basis.right, north), dot3(basis.right, east))};
+}
+// The globe's radius on screen, so a pixel of drag is an arc of that radius —
+// which is exactly what a sideways drag already cost at the centre of the view.
+function planetRadiusPx() {
+  return Math.max(1, WW() / (2 * Math.PI) * cam.scale);
+}
+// The basis the camera is looking through now, or null on a flat map.
+function planetBasisNow() {
+  return state && planetMap() ? planetViewBasis(planetCamera()) : null;
+}
+function planetSpin(basis, axis, angle) {
+  return {out:turnAbout(basis.out, axis, angle),
+          right:turnAbout(basis.right, axis, angle),
+          up:turnAbout(basis.up, axis, angle)};
+}
+// The axis and angle that move the surface (dx, dy) screen pixels: square to
+// that displacement, in the picture plane. The camera turns against the
+// surface, because dragging the world right brings what was to its left into
+// the middle. Feeding a pixel velocity in gives the same axis and a rate.
+function planetTurnAxis(basis, dx, dy) {
+  const reach = Math.hypot(dx, dy);
+  if (!(reach > 1e-9)) return null;
+  const along = [0, 1, 2].map(i => (basis.right[i] * dx - basis.up[i] * dy) / reach);
+  const axis = cross3(basis.out, along);
+  const length = Math.hypot(axis[0], axis[1], axis[2]) || 1;
+  return {axis:[axis[0] / length, axis[1] / length, axis[2] / length],
+          angle:-reach / planetRadiusPx()};
+}
+function planetTurn(basis, dx, dy) {
+  const turn = planetTurnAxis(basis, dx, dy);
+  return turn ? planetSpin(basis, turn.axis, turn.angle) : basis;
+}
+// Store a basis. cam.x stays on the wrap copy it was already on, so nothing
+// that reads a column — a flight target, the world map's own frame — jumps a
+// whole world when the view crosses the date line or comes over a pole.
+function applyPlanetBasis(basis) {
+  const view = planetBasisCamera(basis);
+  const span = Math.max(1, S * 1.5 * (state.map.height - 1));
+  const width = Math.max(1, WW());
+  let column = (view.longitude + Math.PI) / (2 * Math.PI) * width;
+  column += Math.round((cam.x - column) / width) * width;
+  cam.x = column;
+  cam.y = (Math.PI / 2 - view.latitude) / Math.PI * span;
+  setRot(view.roll);
+}
+// A globe's glide after the pointer leaves keeps turning about the axis the
+// drag ended on, so it carries on over a pole exactly as the drag would have.
+function planetGlide(vx, vy) {
+  const basis = planetBasisNow();
+  const turn = basis && planetTurnAxis(basis, vx, vy);
+  return turn ? {axis:turn.axis, rate:turn.angle} : null;
+}
+
 function planetCellGeometry(tile, camera, scale, centerX, centerY) {
   const cell = PLANET?.cells.get(key(tile.pos));
   if (!cell) return null;
@@ -9935,8 +10151,9 @@ function planetCellGeometry(tile, camera, scale, centerX, centerY) {
     camera, scale, centerX, centerY));
   // A tile straddling the limb has corners behind the horizon. Pushing those
   // out to the limb itself keeps the silhouette a clean circle instead of
-  // letting the last ring of tiles fold back over the globe.
-  for (const point of points) {
+  // letting the last ring of tiles fold back over the globe. A chart has no
+  // limb to fold over: every corner is somewhere on the sheet already.
+  if (!camera.chart) for (const point of points) {
     if (point.z >= 0) continue;
     const dx = point.x - centerX, dy = point.y - centerY;
     const length = Math.hypot(dx, dy) || 1;
@@ -9944,6 +10161,13 @@ function planetCellGeometry(tile, camera, scale, centerX, centerY) {
     point.y = centerY + dy * radius / length;
   }
   return {cell, points, center:planetProject(cell.center, camera, scale, centerX, centerY)};
+}
+// How far round the world a chart of this scale still reaches, given as the
+// cosine everything above is already working in: the angle to the far corner of
+// the frame, plus a cell's slack so nothing pops at the edge.
+function planetChartHorizon(camera, scale, reach) {
+  const radius = Math.max(1, camera.radius * scale);
+  return Math.cos(Math.min(Math.PI, reach / radius + .1));
 }
 function planetPath(context, points) {
   context.beginPath();
@@ -10090,14 +10314,21 @@ function planetFeatureGlyph(tile) {
 // Tiles in painter order, nearest last, with everything behind the horizon
 // dropped. Shared by the map, the minimap, and hit testing so all three agree
 // on which half of the world is showing.
-function planetCells(camera, scale, centerX, centerY) {
+function planetCells(camera, scale, centerX, centerY,
+                     reach = planetStageReach(centerX, centerY)) {
   const out = [];
+  // Slightly past the horizon: a tile whose centre has just turned away still
+  // has corners on this side, and dropping it early leaves a ring of bare ocean
+  // inside the silhouette. A chart has no horizon to stop at, so its own edge
+  // is the frame: everything past the far corner of it, plus a cell's slack.
+  // That is not a constant — pulling a chart back reaches further round the
+  // world — and the alternative was drawing five-sixths of the planet at every
+  // zoom, most of it a long way off the stage.
+  const behind = camera.chart
+    ? planetChartHorizon(camera, scale, reach) : -.03;
   for (const tile of state.map.tiles) {
     const geometry = planetCellGeometry(tile, camera, scale, centerX, centerY);
-    // Slightly past the horizon: a tile whose centre has just turned away
-    // still has corners on this side, and dropping it early leaves a ring of
-    // bare ocean inside the silhouette.
-    if (!geometry || geometry.center.z <= -.03) continue;
+    if (!geometry || geometry.center.z <= behind) continue;
     out.push({tile, ...geometry});
   }
   out.sort((a, b) => a.center.z - b.center.z);
@@ -10149,6 +10380,11 @@ const SKY_BODIES = [
 const SKY_EARTH = {id:"earth", name:"Earth", orbit:0, size:1, bearing:0};
 function skyWorlds() { return [SKY_EARTH, ...SKY_BODIES]; }
 function skyBody(id) { return skyWorlds().find(body => body.id === id) || null; }
+// The worlds this civilization is allowed to be looking at, home included. The
+// camera reckons with these rather than with everything that is out there: a
+// body nobody has ever seen must not pull the camera toward it, set how far the
+// zoom goes, or answer for what a drag is turning.
+function skyKnownWorlds() { return [SKY_EARTH, ...visibleSkyBodies()]; }
 // Where a body sits, in Earth radii from the Earth. The arrangement is fixed;
 // the camera is the only thing that moves.
 function skyBodyPos(body) {
@@ -10178,6 +10414,37 @@ const SKY_CHAIN = {
 function skyGroundFade(place) {
   const start = 3 * place.frequency;
   return Math.max(0, Math.min(1, (place.r - start) / (3 * place.frequency)));
+}
+
+// How much of all this a civilization is allowed to be looking at.
+//
+// The sky is not the same sky for everyone under it. A people who have not
+// worked out that their world is a ball are not handed the proof by the camera:
+// they get the chart projection above, the zoom stops well before their world
+// could become an object, and there is nothing standing around it. Either proof
+// of a round world opens the globe, and with it the two neighbours anyone can
+// point at on a clear night. The other star is not one of those — no eye on the
+// ground has ever seen a planet at another sun — so the far end of the system
+// waits until a civilization has actually put something above the air.
+//
+// The server decides all of it, in the same place and for the same reason it
+// decides who has found north, and a spectator watches from outside the world
+// and was never the party in the dark.
+function knowsGlobe(st = state) {
+  return !st || !!st.spectate || st.me?.knows_globe !== false;
+}
+function seesExoplanet(st = state) {
+  return !st || !!st.spectate || st.me?.sees_exoplanet !== false;
+}
+function visibleSkyBodies(st = state) {
+  if (!knowsGlobe(st)) return [];
+  return seesExoplanet(st) ? SKY_BODIES
+                           : SKY_BODIES.filter(body => body.id !== "exo");
+}
+function globeDiscoveryLabel() {
+  const techs = state?.me?.globe_techs;
+  return Array.isArray(techs) && techs.length
+    ? techs.map(titleCase).join(" or ") : "The right discovery";
 }
 
 function planetEarthRadius(scale = cam.scale) {
@@ -10411,7 +10678,7 @@ function planetEarthCenter(radius = planetEarthRadius()) {
 function skyFocusBody() {
   const radius = planetEarthRadius();
   let best = null;
-  for (const body of skyWorlds()) {
+  for (const body of skyKnownWorlds()) {
     const drawn = Math.max(body.floor || 0, body.size * radius);
     if (drawn < SKY_SURFACE) continue;
     const [px, py] = skyBodyPos(body);
@@ -10448,7 +10715,7 @@ function skyGrip(body, radius, stageX, stageY) {
 function skySettleCamera(radius, zoom) {
   const [stageX, stageY] = planetStageCenter();
   let best = null;
-  for (const body of skyWorlds()) {
+  for (const body of skyKnownWorlds()) {
     const grip = skyGrip(body, radius, stageX, stageY);
     if (!best || grip > best.grip) best = {grip, at:skyBodyPos(body)};
   }
@@ -10528,6 +10795,11 @@ function skyWidgetBoxes() {
 // frame, which also says where the camera has to be standing to see it. That
 // makes it a property of the window rather than a number: a wider screen holds
 // the same system with a bigger Earth in it.
+//
+// The arrangement is only the part of it this civilization has any business
+// seeing. Before anyone puts something above the air, the exoplanet is not out
+// there to be framed, and sizing the shot to it would pull the camera fifty
+// Earth radii out to hold a body that is never drawn.
 function skySystemFrame() {
   const frame = observedFrameRect();
   const padding = Math.min(44, (frame.right - frame.left) * .07,
@@ -10535,7 +10807,7 @@ function skySystemFrame() {
   const width = Math.max(80, frame.right - frame.left - padding * 2);
   const height = Math.max(80, frame.bottom - frame.top - padding * 2);
   let minX = -1, maxX = 1, minY = -1, maxY = 1;
-  for (const body of SKY_BODIES) {
+  for (const body of visibleSkyBodies()) {
     const [x, y] = skyBodyPos(body);
     minX = Math.min(minX, x - body.size); maxX = Math.max(maxX, x + body.size);
     minY = Math.min(minY, y - body.size); maxY = Math.max(maxY, y + body.size);
@@ -10545,15 +10817,40 @@ function skySystemFrame() {
     radius:Math.max(SKY_MIN_EARTH, Math.min(width / (maxX - minX), height / (maxY - minY))),
   };
 }
-// Zooming out stops where that picture is complete.
+// A chart pulls back to the edge of what a chart can honestly hold. Distance
+// across the sheet is angle over the ground, so the corner of the stage is at
+// `reach / radius` radians from the middle of it, and past about a hundred
+// degrees the rim is stretched into nonsense and the far cap is coming round to
+// meet itself. Stopping there is what keeps a flat world flat: no matter how
+// far out the camera goes it is always looking at a piece of a map, never at
+// the whole of an object.
+const CHART_LIMIT = 1.75;
+function planetStageReach(centerX, centerY) {
+  let corner = 0;
+  for (const x of [0, area.clientWidth])
+    for (const y of [0, area.clientHeight])
+      corner = Math.max(corner, Math.hypot(x - centerX, y - centerY));
+  return corner;
+}
+function planetChartFloor(centerX, centerY) {
+  return planetStageReach(centerX, centerY) / CHART_LIMIT;
+}
+// Zooming out stops where that picture is complete. Before the world is known
+// to be round there is no system to complete and no body to hold, so the
+// chart's own limit is the stop instead.
 function planetMinScale() {
-  return Math.min(.08, skySystemFrame().radius / Math.max(1, WW() / (2 * Math.PI)));
+  const unit = Math.max(1, WW() / (2 * Math.PI));
+  if (!visibleSkyBodies().length) {
+    const [centerX, centerY] = planetStageCenter();
+    return planetChartFloor(centerX, centerY) / unit;
+  }
+  return Math.min(.08, skySystemFrame().radius / unit);
 }
 // The world the camera is heading for, by the same reckoning the buttons aim
 // by: nearest, with a large world counting as nearer than a pebble beside it.
 function skyNearestWorld() {
   let best = null;
-  for (const body of skyWorlds()) {
+  for (const body of skyKnownWorlds()) {
     const [px, py] = skyBodyPos(body);
     const away = Math.hypot(px - SKY_PAN.x, py - SKY_PAN.y) / (body.size + 2);
     if (!best || away < best.away) best = {away, body};
@@ -10574,6 +10871,12 @@ function planetMaxScale() {
   // permanently the smallest thing on screen.
   const stage = Math.max(160, Math.min(area.clientWidth, area.clientHeight));
   return Math.min(6, stage * .58 / body.size / Math.max(1, WW() / (2 * Math.PI)));
+}
+// Every path that sets a globe's zoom goes through here, so a world nobody has
+// proved round cannot be zoomed out of by any other route: an opening fit, a
+// flight to a city, a pinch, or a director's shot.
+function planetScaleClamp(scale) {
+  return Math.max(planetMinScale(), Math.min(planetMaxScale(), scale));
 }
 // How much of the picture is space rather than surface: 0 while the globe still
 // fills the stage, 1 once it is a marble among others.
@@ -10973,10 +11276,16 @@ function drawSkyCaption(place, crew, alpha, note, above) {
 // Everything above, in the order it is seen: the far bodies first, then what is
 // standing on them, then the traffic between.
 function drawPlanetSky(camera, radius, centerX, centerY) {
+  // None of this is above a chart. Filtering the *bodies* by what is known is
+  // not enough on its own: the satellites and the expedition are drawn from
+  // whoever launched them, which is every civilization rather than this one, so
+  // a neighbour's craft would otherwise be seen orbiting a world its viewer has
+  // no reason to believe is a ball.
+  if (camera.chart) return;
   const crews = skyCrews();
   const now = performance.now();
   let exo = null;
-  for (const body of SKY_BODIES) {
+  for (const body of visibleSkyBodies()) {
     const place = skyPlacement(body, radius, centerX, centerY);
     if (body.id === "exo") exo = place;
     if (!skyOnCanvas(place)) continue;
@@ -11081,16 +11390,22 @@ function drawPlanetMap() {
   const earthInFrame = skyOnCanvas({x:centerX, y:centerY, r:radius});
 
   // The ocean sphere under the tiles: it fills the limb no tile quite reaches
-  // and gives the globe its roundness.
+  // and gives the globe its roundness. On a chart there is no limb and no ball
+  // to be round, so the same wash is spread to the corners of the sheet instead
+  // — an unknown sea running off the edge of the paper, which is what the blank
+  // parts of a chart have always been.
+  const sheet = camera.chart ? planetStageReach(centerX, centerY) : radius;
   cx.save();
-  // The drop shadow is the globe's own, so it has to shrink with it: a fixed
-  // eighteen-pixel blur around a five-pixel Earth is a smudge with a world in
-  // the middle of it.
-  cx.shadowColor = "#000d";
-  cx.shadowBlur = Math.max(Math.min(18, radius * .4), radius * .12);
-  cx.shadowOffsetY = Math.max(Math.min(8, radius * .2), radius * .05);
-  const ocean = cx.createRadialGradient(centerX - radius * .32, centerY - radius * .36,
-                                        radius * .05, centerX, centerY, radius);
+  if (!camera.chart) {
+    // The drop shadow is the globe's own, so it has to shrink with it: a fixed
+    // eighteen-pixel blur around a five-pixel Earth is a smudge with a world in
+    // the middle of it. Nothing is casting one across a chart.
+    cx.shadowColor = "#000d";
+    cx.shadowBlur = Math.max(Math.min(18, radius * .4), radius * .12);
+    cx.shadowOffsetY = Math.max(Math.min(8, radius * .2), radius * .05);
+  }
+  const ocean = cx.createRadialGradient(centerX - sheet * .32, centerY - sheet * .36,
+                                        sheet * .05, centerX, centerY, sheet);
   if (spectator) {
     ocean.addColorStop(0, "#477f9b"); ocean.addColorStop(.52, "#163f57");
     ocean.addColorStop(.88, "#082437"); ocean.addColorStop(1, "#020b13");
@@ -11100,7 +11415,9 @@ function drawPlanetMap() {
     ocean.addColorStop(0, "#39434c"); ocean.addColorStop(.52, "#222a32");
     ocean.addColorStop(.88, "#141a20"); ocean.addColorStop(1, "#05090d");
   }
-  cx.fillStyle = ocean; cx.beginPath(); cx.arc(centerX, centerY, radius, 0, 7); cx.fill();
+  cx.fillStyle = ocean;
+  if (camera.chart) cx.fillRect(0, 0, area.clientWidth, area.clientHeight);
+  else { cx.beginPath(); cx.arc(centerX, centerY, radius, 0, 7); cx.fill(); }
   cx.restore();
 
   const cells = earthInFrame ? planetCells(camera, scale, centerX, centerY) : [];
@@ -11109,8 +11426,10 @@ function drawPlanetMap() {
     planetPath(cx, points);
     const base = TERRAIN[tile.terrain] || "#4b5960";
     // Lit from the direction the camera is looking, so the world reads as a
-    // ball rather than as a flat disc of tiles.
-    const light = .70 + .34 * Math.max(0, center.z);
+    // ball rather than as a flat disc of tiles — which is exactly why a chart
+    // is lit evenly instead. Shading that falls away toward the rim is the
+    // roundness itself, drawn.
+    const light = camera.chart ? 1 : .70 + .34 * Math.max(0, center.z);
     cx.fillStyle = spectator || visible.has(key(tile.pos))
       ? shade(base, light)
       : shade(base, .30);
@@ -11146,6 +11465,13 @@ function drawPlanetMap() {
     planetPath(cx, cell.points); cx.strokeStyle = color; cx.lineWidth = 2.2; cx.stroke();
   }
 
+  // How far round the world a thing standing on it can be and still be drawn.
+  // On a globe that is the horizon; on a chart the sheet runs on past it, and
+  // stopping at the horizon would leave the outer half of the map unpopulated.
+  const onSheet = camera.chart
+    ? planetChartHorizon(camera, scale, planetStageReach(centerX, centerY))
+    : null;
+
   // Features stay restrained at survey scale; cities and armies carry the
   // strategic layer and grow only enough to stay clickable while zoomed out.
   if (scale > .42) {
@@ -11153,7 +11479,7 @@ function drawPlanetMap() {
     cx.font = `${Math.max(7, Math.min(13, 8 * scale))}px serif`;
     for (const cell of cells) {
       const glyph = planetFeatureGlyph(cell.tile);
-      if (!glyph || cell.center.z < .08) continue;
+      if (!glyph || cell.center.z < (onSheet ?? .08)) continue;
       cx.globalAlpha = .58; cx.fillStyle = "#111b17";
       cx.fillText(glyph, cell.center.x, cell.center.y); cx.globalAlpha = 1;
     }
@@ -11166,7 +11492,7 @@ function drawPlanetMap() {
     : new Map();
   for (const city of state.cities) {
     const cell = cellByKey.get(key(city.pos));
-    if (!cell || cell.center.z < .02) continue;
+    if (!cell || cell.center.z < (onSheet ?? .02)) continue;
     const r = Math.max(4, Math.min(8, 5 * Math.sqrt(scale)));
     cx.fillStyle = cityBannerColor(city.owner); cx.strokeStyle = "#f7e5b1"; cx.lineWidth = 1.2;
     cx.beginPath(); cx.arc(cell.center.x, cell.center.y, r, 0, 7); cx.fill(); cx.stroke();
@@ -11179,7 +11505,7 @@ function drawPlanetMap() {
   }
   for (const unit of state.units) {
     const cell = cellByKey.get(key(unit.pos));
-    if (!cell || cell.center.z < .025) continue;
+    if (!cell || cell.center.z < (onSheet ?? .025)) continue;
     const r = Math.max(3.5, Math.min(7, 4.5 * Math.sqrt(scale)));
     cx.fillStyle = pcol(unit.owner); cx.strokeStyle = sel?.id === unit.id ? "#fff2a8" : "#10151d";
     cx.lineWidth = sel?.id === unit.id ? 2.3 : 1.2;
@@ -11191,16 +11517,20 @@ function drawPlanetMap() {
     cx.fillStyle = "#ffd86b"; cx.font = "bold 13px serif"; cx.fillText("◆", cell.center.x, cell.center.y);
   }
 
-  const rim = cx.createRadialGradient(centerX, centerY, radius * .82,
-                                      centerX, centerY, radius * 1.08);
-  rim.addColorStop(0, "rgba(110,201,255,0)");
-  rim.addColorStop(.7, "rgba(110,201,255,.06)");
-  rim.addColorStop(.92, "rgba(133,216,255,.42)");
-  rim.addColorStop(1, "rgba(133,216,255,0)");
-  cx.fillStyle = rim; cx.beginPath(); cx.arc(centerX, centerY, radius * 1.1, 0, 7); cx.fill();
-  cx.strokeStyle = "rgba(196,235,255,.48)";
-  cx.lineWidth = Math.max(.5, Math.min(1.4, radius * .06));
-  cx.beginPath(); cx.arc(centerX, centerY, radius, 0, 7); cx.stroke();
+  // The air seen edge-on, and the edge it is seen against. Both are the ball
+  // itself and neither belongs on a chart.
+  if (!camera.chart) {
+    const rim = cx.createRadialGradient(centerX, centerY, radius * .82,
+                                        centerX, centerY, radius * 1.08);
+    rim.addColorStop(0, "rgba(110,201,255,0)");
+    rim.addColorStop(.7, "rgba(110,201,255,.06)");
+    rim.addColorStop(.92, "rgba(133,216,255,.42)");
+    rim.addColorStop(1, "rgba(133,216,255,0)");
+    cx.fillStyle = rim; cx.beginPath(); cx.arc(centerX, centerY, radius * 1.1, 0, 7); cx.fill();
+    cx.strokeStyle = "rgba(196,235,255,.48)";
+    cx.lineWidth = Math.max(.5, Math.min(1.4, radius * .06));
+    cx.beginPath(); cx.arc(centerX, centerY, radius, 0, 7); cx.stroke();
+  }
   drawPlanetSky(camera, radius, centerX, centerY);
   cx.setTransform(1, 0, 0, 1, 0, 0);
   return true;
@@ -13063,19 +13393,31 @@ function drawAtmosphere(now) {
 
 // ---------------------------------------------------------------- minimap
 // Keep the globe's minimap in the same projection as the main view so their
-// shapes, visible hemisphere, and click targets always agree.
+// shapes, visible hemisphere, and click targets always agree — which is also
+// what stops the world chart from handing back the ball the map is withholding.
+// A people charting a flat world get a flat chart in the corner too, filling
+// its frame corner to corner with no disc in it, exactly as their map does.
+function planetMiniScale(width, height) {
+  return knowsGlobe() ? Math.min(width, height) * .44
+                      : Math.hypot(width, height) / 2 / CHART_LIMIT;
+}
 function drawPlanetMini() {
   if (!planetReady()) return planetMap();
   const {width, height} = syncMiniCanvas();
   const camera = {...planetCamera(), radius:1};
   const centerX = width / 2, centerY = height / 2;
-  const scale = Math.min(width, height) * .44;
+  const scale = planetMiniScale(width, height);
   mx2.setTransform(DPR, 0, 0, DPR, 0, 0);
-  mx2.fillStyle = "#03080c"; mx2.fillRect(0, 0, width, height);
-  mx2.fillStyle = "#123b55"; mx2.beginPath(); mx2.arc(centerX, centerY, scale, 0, 7); mx2.fill();
+  mx2.fillStyle = camera.chart ? "#123b55" : "#03080c";
+  mx2.fillRect(0, 0, width, height);
+  if (!camera.chart) {
+    mx2.fillStyle = "#123b55";
+    mx2.beginPath(); mx2.arc(centerX, centerY, scale, 0, 7); mx2.fill();
+  }
   const visible = new Set(state.visible.map(key));
   const spectator = !Number.isInteger(state.view_player);
-  const cells = planetCells(camera, scale, centerX, centerY);
+  const reach = Math.hypot(width, height) / 2;
+  const cells = planetCells(camera, scale, centerX, centerY, reach);
   for (const cell of cells) {
     planetPath(mx2, cell.points);
     const base = TERRAIN[cell.tile.terrain] || "#44545a";
@@ -13086,13 +13428,16 @@ function drawPlanetMini() {
       mx2.globalAlpha = 1;
     }
   }
-  mx2.strokeStyle = "#b9e3f388"; mx2.lineWidth = 1;
-  mx2.beginPath(); mx2.arc(centerX, centerY, scale, 0, 7); mx2.stroke();
+  if (!camera.chart) {
+    mx2.strokeStyle = "#b9e3f388"; mx2.lineWidth = 1;
+    mx2.beginPath(); mx2.arc(centerX, centerY, scale, 0, 7); mx2.stroke();
+  }
   for (const city of state.cities) {
     const tile = TMAP.get(key(city.pos));
     if (!tile) continue;
     const cell = planetCellGeometry(tile, camera, scale, centerX, centerY);
-    if (!cell || cell.center.z <= 0) continue;
+    if (!cell || cell.center.z <=
+        (camera.chart ? planetChartHorizon(camera, scale, reach) : 0)) continue;
     mx2.fillStyle = cityBannerColor(city.owner);
     mx2.fillRect(cell.center.x - 1.5, cell.center.y - 1.5, 3, 3);
   }
@@ -13233,9 +13578,10 @@ mini.addEventListener("click", ev => {
     if (!planetReady()) return;
     const camera = {...planetCamera(), radius:1};
     const centerX = r.width / 2, centerY = r.height / 2;
-    const scale = Math.min(r.width, r.height) * .44;
+    const scale = planetMiniScale(r.width, r.height);
     const x = ev.clientX - r.left, y = ev.clientY - r.top;
-    const target = planetCells(camera, scale, centerX, centerY)
+    const target = planetCells(camera, scale, centerX, centerY,
+                               Math.hypot(r.width, r.height) / 2)
       .filter(cell => pointInsidePlanetCell(x, y, cell.points))
       .sort((a, b) => b.center.z - a.center.z)[0];
     if (target) { takeCameraControl(); centerWorld(target.tile.pos); }
@@ -14159,17 +14505,36 @@ function empireBadge(tab) {
     default: return 0;
   }
 }
+// The bar's own two buttons are declared in the markup rather than rendered
+// here, so their ids survive a redraw and stay bindable at boot. Only the
+// empire tabs are regenerated; the foreign-affairs pair just gets its counts.
+function setLaunchBadge(id, count, name, key) {
+  const button = document.getElementById(id);
+  if (!button) return;
+  const badge = button.querySelector(".launch-badge");
+  if (!badge) return;
+  badge.textContent = count > 0 ? String(count) : "";
+  badge.hidden = count <= 0;
+  button.title = `${name} (${key})${count > 0 ? ` — ${count} waiting` : ""}`;
+}
 function drawLaunchBar() {
   const bar = document.getElementById("launchbar");
   if (!bar) return;
   if (!state || SPEC) { bar.classList.remove("on"); return; }
   bar.classList.add("on");
-  bar.innerHTML = EMPIRE_TABS.map(tab => {
+  const tabs = document.getElementById("launchtabs");
+  if (tabs) tabs.innerHTML = EMPIRE_TABS.map(tab => {
     const badge = empireBadge(tab.id);
     return `<button class="launch" onclick="openEmpire('${tab.id}')" ` +
       `title="${tab.name}${badge ? ` — ${badge} waiting` : ""}" aria-label="${tab.name}">${tab.icon}` +
       (badge ? `<span class="launch-badge">${badge}</span>` : "") + `</button>`;
   }).join("");
+  // Same "waiting for you" count the empire tabs carry: a proposal nobody has
+  // answered, and every offer another table would sign right now.
+  setLaunchBadge("diplomacybtn", legalFor("accept_deal").length,
+    "Diplomacy — leaders, agendas, war and peace", "L");
+  setLaunchBadge("tradebtn", Array.isArray(state.quick_deals) ? state.quick_deals.length : 0,
+    "Quick Deals — every mutually acceptable offer", "D");
 }
 function openEmpire(tab) {
   if (SPEC) return;
@@ -15896,7 +16261,7 @@ function clampCameraY(y, scale = cam.scale) {
   return bounds ? Math.max(bounds.min, Math.min(bounds.max, y)) : y;
 }
 function clearCameraInertia() {
-  cameraInertia = {vx:0, vy:0, vrot:0, vtilt:0};
+  cameraInertia = {vx:0, vy:0, vrot:0, vtilt:0, spin:null};
 }
 function updateCameraFollowChip() {
   const chip = document.getElementById("cinema-follow");
@@ -16029,7 +16394,8 @@ function cameraTargetFor(pos, scale = cam.scale) {
   return cameraCenterForWorld(x, S * 1.5 * pos[1], scale);
 }
 function applyCameraAnchor(wx, wy, sx, sy, scale = cam.scale) {
-  cam.scale = Math.max(.25, Math.min(3.2, scale));
+  cam.scale = planetMap() ? planetScaleClamp(scale)
+                          : Math.max(.25, Math.min(3.2, scale));
   const vx = (sx - area.clientWidth / 2) / cam.scale;
   const vy = (sy - area.clientHeight / 2) / cam.scale / YS;
   cam.x = wx - (COSR * vx + SINR * vy);
@@ -16037,6 +16403,7 @@ function applyCameraAnchor(wx, wy, sx, sy, scale = cam.scale) {
 }
 function flyCameraTo(pos, scale = cam.scale) {
   if (!Array.isArray(pos)) return;
+  if (planetMap()) scale = planetScaleClamp(scale);
   const [x, y] = cameraTargetFor(pos, scale);
   cameraZoom = null; clearCameraInertia();
   // A tile is on the Earth, so going to one is also coming back from the
@@ -16060,6 +16427,15 @@ function orbitCamera(deltaRot = 0, deltaTilt = 0) {
 }
 function nudgeCamera(screenX, screenY) {
   takeCameraControl();
+  const basis = planetBasisNow();
+  if (basis) {
+    // The arrows move a globe the way a drag does, so they cross a pole instead
+    // of stopping at it. The camera goes where asked, so the ground under it
+    // travels the other way.
+    applyPlanetBasis(planetTurn(basis, -screenX, -screenY));
+    draw(); drawMini();
+    return;
+  }
   const vx = screenX / cam.scale, vy = screenY / cam.scale / YS;
   const dx = COSR * vx + SINR * vy, dy = -SINR * vx + COSR * vy;
   cameraFlight = {x:cam.x + dx, y:clampCameraY(cam.y + dy), scale:cam.scale};
@@ -16070,6 +16446,16 @@ function zoomAt(f, sx, sy) {
     cameraFlight = null; cameraZoom = null; clearCameraInertia();
     const [stageX, stageY] = planetStageCenter();
     const before = planetEarthRadius(cam.scale);
+    // A chart has no system to travel through. Everything below is about
+    // holding one body still under the pointer so the zoom walks toward it,
+    // and a people who have not proved their world round have exactly one
+    // sheet and nowhere to go: it stays under the middle of the stage.
+    if (!knowsGlobe()) {
+      skyReturnHome();
+      cam.scale = planetScaleClamp(base * f);
+      draw(); drawMini();
+      return;
+    }
     if (sx === undefined)
       [sx, sy] = f > 1 ? skyZoomAnchor(before, stageX, stageY) : [stageX, stageY];
     // Which point of the system the pointer is over, in Earth radii from the
@@ -16081,7 +16467,7 @@ function zoomAt(f, sx, sy) {
     // A globe's zoom-out does not stop at the globe. It carries on until the
     // rest of the system is in frame, which is a fixed apparent size for the
     // Earth rather than a fixed number, because a bigger world starts bigger.
-    cam.scale = Math.max(planetMinScale(), Math.min(planetMaxScale(), base * f));
+    cam.scale = planetScaleClamp(base * f);
     const after = planetEarthRadius(cam.scale);
     SKY_PAN = {x:pointerX - (sx - stageX) / after, y:pointerY - (sy - stageY) / after};
     skySettleCamera(after, f);
@@ -16137,9 +16523,15 @@ function advanceUserCameraMotion(now = performance.now()) {
     }
   }
   if (!dragState && !cameraFlight && !cameraZoom) {
+    // A globe glides as a turn about a fixed axis rather than as a drift in
+    // columns and rows, so it coasts over a pole the same way the drag did.
+    const spin = cameraInertia.spin;
     const speed = Math.abs(cameraInertia.vx) + Math.abs(cameraInertia.vy) +
-      Math.abs(cameraInertia.vrot) * 80 + Math.abs(cameraInertia.vtilt) * 80;
+      Math.abs(cameraInertia.vrot) * 80 + Math.abs(cameraInertia.vtilt) * 80 +
+      (spin ? Math.abs(spin.rate) * 80 : 0);
     if (speed > .002) {
+      const basis = spin && planetBasisNow();
+      if (basis) applyPlanetBasis(planetSpin(basis, spin.axis, spin.rate * dt));
       cam.x += cameraInertia.vx * dt; cam.y += cameraInertia.vy * dt;
       if (Math.abs(cameraInertia.vrot) > .00001) setRot(cam.rot + cameraInertia.vrot * dt);
       if (Math.abs(cameraInertia.vtilt) > .00001) setTilt(cinematicYS + cameraInertia.vtilt * dt);
@@ -16147,6 +16539,7 @@ function advanceUserCameraMotion(now = performance.now()) {
       const decay = Math.pow(.003, dt / 1000);
       cameraInertia.vx *= decay; cameraInertia.vy *= decay;
       cameraInertia.vrot *= decay; cameraInertia.vtilt *= decay;
+      if (spin) spin.rate *= decay;
       active = true;
     } else clearCameraInertia();
   }
@@ -16273,8 +16666,11 @@ function fitPlanetView() {
   // Framing the world means framing *this* world, so the camera comes back in
   // from wherever in the system it had wandered to.
   skyReturnHome();
-  cam.scale = Math.max(.01, Math.min(3.2, usableWidth / projectedWidth,
-                                    usableHeight / projectedHeight));
+  // Fitting one whole world in the stage is fitting an object in it, so on a
+  // world nobody has proved round this lands on the chart's own stop instead —
+  // "the whole world" is not a shot that exists yet.
+  cam.scale = planetScaleClamp(Math.min(usableWidth / projectedWidth,
+                                        usableHeight / projectedHeight));
   cam.x = S * SQ3 * state.map.width / 2;
   cam.y = S * 1.5 * (state.map.height - 1) / 2;
 }
@@ -16625,6 +17021,11 @@ cv.addEventListener("pointerdown", ev => {
                   rotate: ev.altKey, rot0: cam.rot, tilt0: cinematicYS,
                   lastX:cam.x, lastY:cam.y, lastRot:cam.rot, lastTilt:cinematicYS,
                   lastT:performance.now(), vx:0, vy:0, vrot:0, vtilt:0,
+                  // A globe is turned rather than slid, so it drags from the
+                  // orientation it was grabbed at and reports its speed in
+                  // pixels of arc instead of columns and rows.
+                  basis:planetBasisNow(),
+                  lastPX:ev.clientX, lastPY:ev.clientY, vpx:0, vpy:0,
                   controlled:false };
     dragMoved = false;
   } else if (ev.button === 2 && state && !SPEC) {
@@ -16664,6 +17065,20 @@ window.addEventListener("pointermove", ev => {
       draw(); drawMini();
     } else if (dragMoved && skyDragApply(dragState, dx, dy)) {
       draw(); drawMini();
+    } else if (dragMoved && dragState.basis) {
+      // The sky above has first refusal and hands Earth back here. The same
+      // pixel of drag is then the same arc at the equator, at a pole, and
+      // straight across one: the world follows the pointer over the top and
+      // keeps going down the far side.
+      applyPlanetBasis(planetTurn(dragState.basis, dx, dy));
+      dragState.turned = true;
+      const now = performance.now(), dt = Math.max(1, now - dragState.lastT);
+      const vpx = (ev.clientX - dragState.lastPX) / dt;
+      const vpy = (ev.clientY - dragState.lastPY) / dt;
+      dragState.vpx = dragState.vpx * .55 + vpx * .45;
+      dragState.vpy = dragState.vpy * .55 + vpy * .45;
+      dragState.lastPX = ev.clientX; dragState.lastPY = ev.clientY; dragState.lastT = now;
+      draw(); drawMini();
     } else if (dragMoved) {
       const dvx = dx / cam.scale, dvy = dy / cam.scale / YS;
       cam.x = dragState.cx - (COSR * dvx + SINR * dvy);
@@ -16690,8 +17105,14 @@ function endMapPointer(ev) {
     dragState = null;
     if (released && dragMoved && performance.now() - released.lastT < 90 &&
         !REDUCED_MOTION_QUERY.matches) {
+      // `turned` rather than `basis`: out in the system the sky took the drag,
+      // and the globe it left alone must not glide off on its own afterwards.
       cameraInertia = released.rotate
         ? {vx:0, vy:0, vrot:released.vrot * .32, vtilt:released.vtilt * .25}
+        : released.turned
+        ? {vx:0, vy:0, vrot:0, vtilt:0, spin:planetGlide(released.vpx, released.vpy)}
+        : released.basis
+        ? {vx:0, vy:0, vrot:0, vtilt:0, spin:null}
         : {vx:released.vx, vy:released.vy, vrot:0, vtilt:0};
     }
     return;
@@ -16736,7 +17157,7 @@ function beginTouchTransform() {
   const [wx, wy] = screenToWorld(mx, my);
   touchGesture = {mode:"transform", mx, my, wx, wy, distance:Math.hypot(dx, dy),
                   angle:Math.atan2(dy, dx), scale:cam.scale, rot:cam.rot,
-                  controlled:false};
+                  basis:planetBasisNow(), controlled:false};
   clearCameraInertia(); cameraFlight = null; cameraZoom = null;
 }
 cv.addEventListener("pointerdown", ev => {
@@ -16746,6 +17167,8 @@ cv.addEventListener("pointerdown", ev => {
   if (mapTouches.size === 1) {
     touchGesture = {mode:"pan", x:ev.clientX, y:ev.clientY, cx:cam.x, cy:cam.y,
                     lastX:cam.x, lastY:cam.y, lastT:performance.now(), vx:0, vy:0,
+                    basis:planetBasisNow(),
+                    lastPX:ev.clientX, lastPY:ev.clientY, vpx:0, vpy:0,
                     controlled:false, moved:false};
     clearCameraInertia(); cameraFlight = null; cameraZoom = null;
   } else beginTouchTransform();
@@ -16793,6 +17216,16 @@ cv.addEventListener("pointermove", ev => {
     }
     if (touchGesture.controlled && skyDragApply(touchGesture, dx, dy)) {
       draw(); drawMini();
+    } else if (touchGesture.controlled && touchGesture.basis) {
+      applyPlanetBasis(planetTurn(touchGesture.basis, dx, dy));
+      touchGesture.turned = true;
+      const now = performance.now(), dt = Math.max(1, now - touchGesture.lastT);
+      const vpx = (point.x - touchGesture.lastPX) / dt;
+      const vpy = (point.y - touchGesture.lastPY) / dt;
+      touchGesture.vpx = touchGesture.vpx * .55 + vpx * .45;
+      touchGesture.vpy = touchGesture.vpy * .55 + vpy * .45;
+      touchGesture.lastPX = point.x; touchGesture.lastPY = point.y; touchGesture.lastT = now;
+      draw(); drawMini();
     } else if (touchGesture.controlled) {
       const dvx = dx / cam.scale, dvy = dy / cam.scale / YS;
       cam.x = touchGesture.cx - (COSR * dvx + SINR * dvy);
@@ -16812,13 +17245,19 @@ function endMapTouch(ev) {
   mapTouches.delete(ev.pointerId);
   if (!mapTouches.size) {
     if (released?.mode === "pan" && released.controlled && !REDUCED_MOTION_QUERY.matches)
-      cameraInertia = {vx:released.vx, vy:released.vy, vrot:0, vtilt:0};
+      cameraInertia = released.turned
+        ? {vx:0, vy:0, vrot:0, vtilt:0, spin:planetGlide(released.vpx, released.vpy)}
+        : released.basis
+        ? {vx:0, vy:0, vrot:0, vtilt:0, spin:null}
+        : {vx:released.vx, vy:released.vy, vrot:0, vtilt:0};
     touchGesture = null;
     setTimeout(() => { if (!mapTouches.size) dragMoved = false; }, 60);
   } else if (mapTouches.size === 1) {
     const point = touchPair()[0];
     touchGesture = {mode:"pan", x:point.x, y:point.y, cx:cam.x, cy:cam.y,
                     lastX:cam.x, lastY:cam.y, lastT:performance.now(), vx:0, vy:0,
+                    basis:planetBasisNow(),
+                    lastPX:point.x, lastPY:point.y, vpx:0, vpy:0,
                     controlled:true, moved:true};
   } else beginTouchTransform();
 }

@@ -4181,12 +4181,40 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function worldFacing(seed)"));
         assert!(EMBEDDED_INDEX.contains("function adoptWorldFacing(st)"));
         assert!(EMBEDDED_INDEX.contains("found_north !== false"));
+        // The same rule one step out: a world is drawn as its own people draw
+        // it. Until they have proved it round the viewer must keep the chart
+        // projection, keep the zoom short of anything that would show them an
+        // object, and keep the sky empty — and the world chart in the corner
+        // has to obey the same limit, or it hands back what the map withheld.
+        assert!(EMBEDDED_INDEX.contains("knows_globe !== false"));
+        assert!(EMBEDDED_INDEX.contains("sees_exoplanet !== false"));
+        assert!(EMBEDDED_INDEX.contains("function visibleSkyBodies(st = state)"));
+        assert!(EMBEDDED_INDEX.contains("chart:!knowsGlobe()"));
+        assert!(EMBEDDED_INDEX.contains("function planetChartFloor(centerX, centerY)"));
+        assert!(EMBEDDED_INDEX.contains("function planetScaleClamp(scale)"));
+        assert!(EMBEDDED_INDEX.contains("function planetMiniScale(width, height)"));
         assert!(EMBEDDED_INDEX.contains("id=\"compass\""));
         assert!(EMBEDDED_INDEX.contains("id=\"compass-needle\""));
         assert!(EMBEDDED_INDEX.contains("resetMapFacing(DEFAULT_CINEMA_YS - cinematicYS)"));
         assert!(!EMBEDDED_INDEX.contains("orbitCamera(-cam.rot, DEFAULT_CINEMA_YS"));
         // The globe's yaw is a bearing, not a second way to spin it eastward.
         assert!(EMBEDDED_INDEX.contains("roll:cam.rot"));
+        // A globe is turned, not slid. Longitude and latitude cannot express a
+        // drag — near a pole the parallels are a few pixels long, so spending a
+        // sideways drag on longitude spins the world about the point under the
+        // pointer, and the pole is a wall latitude stops at. So the camera's own
+        // basis is rotated bodily and read back into cam.x/cam.y/cam.rot, which
+        // makes a pixel of drag the same arc anywhere on the globe and carries
+        // the view straight over a pole and down the far side. Every way of
+        // moving the map shares that one turn: pointer, touch and the arrows.
+        assert!(EMBEDDED_INDEX.contains("function planetViewBasis(camera)"));
+        assert!(EMBEDDED_INDEX.contains("function planetBasisCamera(basis)"));
+        assert!(EMBEDDED_INDEX.contains("function planetTurnAxis(basis, dx, dy)"));
+        assert!(EMBEDDED_INDEX.contains("function applyPlanetBasis(basis)"));
+        assert!(EMBEDDED_INDEX.contains("applyPlanetBasis(planetTurn(dragState.basis, dx, dy))"));
+        assert!(EMBEDDED_INDEX.contains("applyPlanetBasis(planetTurn(touchGesture.basis, dx, dy))"));
+        assert!(EMBEDDED_INDEX.contains("applyPlanetBasis(planetTurn(basis, -screenX, -screenY))"));
+        assert!(EMBEDDED_INDEX.contains("spin:planetGlide(released.vpx, released.vpy)"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"planet\">Planet</option>"));
         assert!(EMBEDDED_INDEX
             .contains("<option value=\"true_start_earth\">True Start Earth</option>"));
