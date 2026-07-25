@@ -779,6 +779,7 @@ fn main() {
                     league_record: args.iter().any(|a| a == "--league-record"),
                 },
                 resumed,
+                args.iter().any(|a| a == "--paused"),
             );
         }
         "pedia" => {

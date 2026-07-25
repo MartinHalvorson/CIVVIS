@@ -998,7 +998,7 @@
   .spec-controls #restart-sim::before { content: "↻"; margin-right: 5px; font-size: 13px; }
   .spec-controls #restart-sim .sub {
     display: block; margin-top: 3px; color: var(--muted); font-size: 8px;
-    font-weight: 700; letter-spacing: .07em;
+    font-weight: 700; letter-spacing: .07em; white-space: nowrap;
   }
   .spec-controls #restart-sim .sub::before { content: "with "; }
   .spec-controls #restart-sim.primary {
@@ -1598,6 +1598,17 @@
           <button class="primary" id="specpause">⏸ Pause</button>
           <button id="restart-sim" title="Restart with the same settings">Restart sim<span class="sub">same settings</span></button>
         </div>
+        <script>
+          // A supervised restart replaces this whole page. Restore the label
+          // beside the button so the default Pause text is never painted while
+          // a paused simulation is coming back as paused.
+          try {
+            const paused = sessionStorage.getItem("civvis-restart-paused-v1");
+            if (paused !== null)
+              document.getElementById("specpause").textContent =
+                paused === "1" ? "▶ Resume" : "⏸ Pause";
+          } catch (e) {}
+        </script>
       </div>
     </div>
     <details class="sidebar-section" data-section="game-settings">
@@ -2022,7 +2033,12 @@ const VICTORY_TRACKS = [
 // ---------------------------------------------------------------- state
 let state = null, sel = null, selCity = null, RULES = null;
 let lensOn = false, tackMode = false, tacks = [], lastSeed = null, cycleIdx = -1;
-let SPEC = false, specPaused = false, specTimer = null, specBusy = false;
+let restartPaused = null;
+try {
+  restartPaused = sessionStorage.getItem("civvis-restart-paused-v1");
+  sessionStorage.removeItem("civvis-restart-paused-v1");
+} catch (e) {}
+let SPEC = false, specPaused = restartPaused === "1", specTimer = null, specBusy = false;
 let viewChanging = false;
 let eventLogs = new Map(), lastLeaderByView = new Map(), lastSidePaint = 0;
 let TMAP = new Map();
@@ -11076,33 +11092,33 @@ async function startNewSimulation() {
   const wasPaused = specPaused;
   setNewSimulationBusy(true);
   try {
-    const payload = newSimulationPayload();
+    const payload = {...newSimulationPayload(), paused: wasPaused};
     sel = null; selCity = null;
     clearTimeout(specTimer);
     if (supervised) {
       const finishedInstance = state.server_instance;
       const finishedSeed = state.seed;
-      specPaused = true;
-      document.getElementById("specpause").textContent = "▶ Resume";
-      reportSpecStatus();
       const requested = await fetchJSON("/supervisor-new", { method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({...payload, mode: "restart"}) });
       if (requested.error) throw new Error(requested.error);
       const respawn = document.getElementById("respawn");
       if (respawn) respawn.textContent = "restarting sim on existing code";
+      try {
+        sessionStorage.setItem("civvis-restart-paused-v1", wasPaused ? "1" : "0");
+      } catch (e) {}
       waitForSupervisedSuccessor(finishedInstance, finishedSeed);
       return;
     }
 
-    specPaused = false;
-    document.getElementById("specpause").textContent = "⏸ Pause";
+    specPaused = wasPaused;
+    document.getElementById("specpause").textContent = specPaused ? "▶ Resume" : "⏸ Pause";
     const next = await fetchJSON("/new", { method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify(payload) });
     if (next.error) throw new Error(next.error);
     render(next);
-    setPace({paused: false});
+    setPace({paused: wasPaused});
     reportSpecStatus();
     scheduleSpec(state);
     setNewSimulationBusy(false);
