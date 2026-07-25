@@ -386,6 +386,32 @@ ALIASES = {
     "goes_to": "goes_to_11",
     "pop": "pop_star",
     "super_carrier": "supercarrier",
+    # Government Plaza buildings ship under a GOV_ theme name rather than
+    # their title. GOV_TALL/GOV_WIDE are resolved by effect, not by guess:
+    # TALL carries the Governor Amenities/Housing/Loyalty modifiers (Audience
+    # Chamber), WIDE the Settler production and free Builder (Ancestral Hall).
+    "gov_tall": "audience_chamber",
+    "gov_wide": "ancestral_hall",
+    "gov_conquest": "warlords_throne",
+    "gov_citystates": "foreign_ministry",
+    "gov_faith": "grand_masters_chapel",
+    "gov_spies": "intelligence_agency",
+    "gov_culture": "national_history_museum",
+    "gov_science": "royal_society",
+    "gov_military": "war_department",
+    "museum_art": "art_museum",
+    "museum_artifact": "archaeological_museum",
+    # Walls and power plants are named for their era's fortification and fuel.
+    "castle": "medieval_walls",
+    "star_fort": "renaissance_walls",
+    "fossil_fuel_power_plant": "oil_power_plant",  # Electricity, 360
+    "power_plant": "nuclear_power_plant",  # Nuclear Fission, 480
+    "theater": "theater_square",
+    "government": "government_plaza",
+    "water_entertainment_complex": "water_park",
+    "water_street_carnival": "copacabana",
+    "beach_resort": "seaside_resort",
+    "pyramid": "nubian_pyramid",
 }
 
 

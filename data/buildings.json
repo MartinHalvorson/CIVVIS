@@ -58,7 +58,7 @@
     }
   },
   "medieval_walls": {
-    "cost": 225,
+    "cost": 220,
     "tech": "castles",
     "district": "city_center",
     "requires": [
@@ -71,7 +71,7 @@
     }
   },
   "renaissance_walls": {
-    "cost": 305,
+    "cost": 300,
     "tech": "siege_tactics",
     "district": "city_center",
     "requires": [
