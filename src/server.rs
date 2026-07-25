@@ -4787,7 +4787,11 @@ mod tests {
             "function advanceUserCameraMotion(now = performance.now())",
             "function advanceCameraFollow(now = performance.now())",
             "function startCameraFollow(unitId)",
-            "function unitMapPoint(p, nearX = cam.x)",
+            // The default is `null`, not `cam.x`: a chart that has not been
+            // round its world is unrolled about that civilization's own ground
+            // rather than about the camera, and only a caller chaining a path
+            // together names the point it wants a leg drawn beside.
+            "function unitMapPoint(p, nearX = null)",
             "function sampleUnitMove(mv, now = performance.now())",
             "function cinematicUnitMapPoint(unit, now = performance.now())",
             "function unitMoveDuration(unitId, steps)",

@@ -1473,6 +1473,26 @@ mod tests {
         );
     }
 
+    /// Sailing round the world is a proof that it is round. A people who set
+    /// out west and came home from the east have settled the question on the
+    /// water, without anyone having to read it in a book first.
+    #[test]
+    fn a_lap_of_the_world_proves_it_round_without_the_technology() {
+        let mut game = Game::new(2, 18, 12, 11, 25, 0);
+        for tech in GLOBE_TECHS {
+            game.players[0].techs.remove(tech);
+        }
+        game.players[0].great_people.clear();
+        game.players[0].went_around = false;
+        assert_eq!(observation(&game, 0)["me"]["knows_globe"], json!(false));
+
+        game.players[0].went_around = true;
+        assert_eq!(observation(&game, 0)["me"]["knows_globe"], json!(true));
+        // Still only the world they have been round: the far end of the system
+        // waits for an instrument above the air either way.
+        assert_eq!(observation(&game, 0)["me"]["sees_exoplanet"], json!(false));
+    }
+
     /// The shape of the world is the same kind of fact as which way is north:
     /// the viewer has to be told, because it draws a globe a people who have not
     /// worked it out yet are not supposed to be looking at. Either proof opens

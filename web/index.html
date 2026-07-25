@@ -4310,12 +4310,15 @@ function chartAnchorX() {
 function chartHomePos() {
   if (!state) return null;
   const me = state.player;
-  let capital = null;
+  let home = null;
   for (const city of state.cities || []) {
     if (city.owner !== me) continue;
-    if (!capital || (city.id ?? 0) < (capital.id ?? 0)) capital = city;
+    // The palace, not merely the oldest city you hold: a captured one can carry
+    // a lower id than anything you founded and would drag the sheet to it.
+    if (city.is_capital) { home = city; break; }
+    if (!home || (city.id ?? 0) < (home.id ?? 0)) home = city;
   }
-  if (capital) return { pos:capital.pos, settled:true };
+  if (home) return { pos:home.pos, settled:true };
   for (const unit of state.units || [])
     if (unit.owner === me) return { pos:unit.pos, settled:false };
   const tiles = state.map?.tiles;
@@ -13709,12 +13712,6 @@ function chartUnrolledU(u) {
   const w = Math.max(1, state.map.width);
   return u + Math.round((chartAnchorX() / (S * SQ3) - u) / w) * w;
 }
-// What the thumbnail has to hold. Once a people have been round their world
-// that is the world, all of it, at a scale that never changes again. Until
-// then it is the ground they know, and the thumbnail grows and rescales as
-// they find more — which is the honest thing for it to do, because a frame
-// drawn around the whole rectangle from turn one is a statement about how big
-// the world is and how much of it is left, made before anyone went to look.
 // What the thumbnail has to hold.
 //
 // Measured off the tiles, the way the map itself is fitted, because the world
