@@ -63,8 +63,9 @@ the GA champion from `evolved/best.json` when present.
 
 ## Players
 
-Every strategy plays under a **username themed to what it plays**, listed
-with its Elo on the leaderboard: founders keep fixed handles
+Every AI strategy is represented as a player under a **username themed to what
+it plays**, using the same player identity model as a human account. It is
+listed with its Elo on the leaderboard: founders keep fixed handles
 (`JackOfAllTrades` = advanced, `TrainingWheels` = basic, `TechPriest` =
 science lane, `Warmonger` = domination, ...) and bred offspring draw a
 fresh handle from their victory lane's pool (`LabRat`, `SiegeLord`,
@@ -108,29 +109,30 @@ period and cumulative metrics. Lower is better for both. Old snapshots begin
 with an empty audit and measure forward, because reconstructing predictions
 from final ratings would leak future results.
 
-## Civ-specific ratings
+## Leader/civilization-specific ratings
 
-Not every civ wants to play the same way, so besides its overall rating
-every strategy keeps a **per-civ Glicko table** (`civ_elo`): its skill
-specifically when drawing Rome, Egypt, ... (civs are fixed per seat in
-`Game::new`, so every league game feeds both tables). Opponents are
-measured by their global rating, which keeps civ numbers on the overall
-scale. Civ tables are sparse — they update only in periods actually played —
-and a new table uses the strategy's current global rating as its prior, with
-an additional 200 RD for the unknown strategy×civilization effect. A table
-needs 5 games before it outranks the global rating for display and seating.
-This avoids pretending an established 1800 strategy is a fresh 1500 player
-merely because it drew a civilization it has not played before.
+Besides its overall summary, every player keeps a nested **per-leader and
+per-civilization Glicko table** (`leader_elo`): leader → civilization → rating.
+Both dimensions matter because one leader may lead multiple civilizations;
+Eleanor/England and Eleanor/France must not share evidence. Every game compares
+and updates the exact player/leader/civilization combinations that participated.
 
-- `civvis league --civ Rome` — who plays Rome best, ranked by Rome elo.
-- `civvis league --civs` — each civ's current champion strategy.
+Combination tables are sparse and update only in periods actually played. A
+new combination uses the player's current global rating as its prior, with an
+additional 200 RD for the unknown leader/civilization effect. Its own rating is
+shown after the first game and remains marked provisional until 5 games. This
+avoids pretending an established 1800 player is a fresh 1500 player merely
+because they selected a leader they have not played before.
+
+- `civvis league --civ Rome` — who plays the ruleset's Rome leader best.
+- `civvis league --civs` — each observed leader/civ combination's champion.
 
 ## Watching players in the game HUD
 
 `civvis play --spectate --league league/` seats every major civ with its
-best-rated available strategy (distinct specialists per civ) and the
+best-rated available strategy (distinct specialists per leader/civ) and the
 spectator HUD lists, per player: **civ, league username + strategy, its
-elo** (civ-specific when settled, ±RD on hover) **and the elo-implied
+elo** (exact leader/civ rating after game one, ±RD on hover) **and the elo-implied
 expected win chance** against the table — compare against who actually
 wins to audit the ratings over time. That last number is a share of the
 one win a table has to give (`elo::win_shares`), so the seats sum to
@@ -207,9 +209,10 @@ hundreds of rounds even after every founder has been replaced.
 
 ## State on disk (`--dir`, default `league/`, gitignored)
 
-- `league.json` — the roster: every strategy's kind/genome, rating, RD,
-  volatility, record, lineage (`parents`), and status. The single source
-  of truth; delete it to start a fresh league.
+- `league.json` — the roster: every AI player's strategy kind/genome,
+  aggregate rating, leader/civ ratings, RD, volatility, record, lineage
+  (`parents`), and status. The single source of truth; delete it to start a
+  fresh league.
 - `ratings.csv` — per-round rating history of active strategies (for
   plotting progress over time).
 - `calibration.csv` — per-round and cumulative pairwise prediction count,

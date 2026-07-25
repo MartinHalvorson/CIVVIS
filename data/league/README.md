@@ -4,6 +4,8 @@
 committed so every checkout can seat rated strategies and show elo and
 usernames in the spectator HUD without first running a league locally.
 `tools/spectator_supervisor.py` picks it up automatically (`--league auto`).
+Each AI strategy is a named player, and `leader_elo` stores that player's
+separate rating for every observed leader/civilization combination.
 
 Provenance: 60 rounds x 16 games at `--turns 250 --seed 7`, run 2026-07-23.
 
