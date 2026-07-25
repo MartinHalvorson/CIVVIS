@@ -21423,7 +21423,7 @@ impl Game {
         }
         let mut heights = self.height_field();
         let mut visible = self.player_vision(&mut heights, pid);
-        let height = self.map.tiles[&pos].hills as i32 + self.district_viewpoint_bonus(pos);
+        let height = self.see_from_level(pos);
         visible.union_with(&self.visible_tiles_from(
             &mut heights,
             pos,
@@ -21609,40 +21609,62 @@ impl Game {
         height
     }
 
-    fn sight_height(&self, pos: Pos) -> i32 {
-        let t = &self.map.tiles[&pos];
-        if t.terrain == "mountain"
-            || t.feature.as_ref().is_some_and(|feature| {
-                self.rules
-                    .features
-                    .get(feature)
-                    .is_some_and(|feature| feature.natural_wonder)
-            })
-        {
-            return 3;
+    /// The shipped `Terrains.SightModifier`/`SightThroughModifier`, which carry
+    /// the same value for every terrain in the game database: Mountain 2, Hills
+    /// 1, everything else — including all water — 0. Elevation is a terrain
+    /// property alone; no feature raises the ground a unit stands on.
+    fn terrain_sight_level(tile: &Tile) -> i32 {
+        if tile.terrain == "mountain" {
+            2
+        } else {
+            i32::from(tile.hills)
         }
-        t.hills as i32
-            + matches!(t.feature.as_deref(), Some("forest" | "jungle")) as i32
+    }
+
+    /// How high a viewer standing here looks out from — the shipped
+    /// `SightModifier`, plus this ruleset's City Center/Encampment vantage.
+    fn see_from_level(&self, pos: Pos) -> i32 {
+        let Some(tile) = self.map.get(pos) else {
+            return 0;
+        };
+        Self::terrain_sight_level(tile) + self.district_viewpoint_bonus(pos)
+    }
+
+    /// How high the terrain on a tile stands: the shipped `SightThroughModifier`
+    /// of its terrain plus that of its feature. Woods and Rainforest each add 1,
+    /// so a wooded Hill reaches 2 and stands exactly as tall as a Mountain;
+    /// Mount Everest and Yosemite add 2 more while Crater Lake, the Pantanal and
+    /// the Great Barrier Reef add nothing at all.
+    fn sight_height(&self, pos: Pos) -> i32 {
+        let Some(tile) = self.map.get(pos) else {
+            return 0;
+        };
+        Self::terrain_sight_level(tile)
+            + self.feature_sight_through(tile.feature.as_deref())
             + self.district_viewpoint_bonus(pos)
     }
 
+    /// The same height as cover. Sentry sees through vegetation only: a
+    /// Mountain, a wooded Hill's rock, and a Natural Wonder are unchanged.
     fn blocker_height(&self, pos: Pos, see_through_woods: bool) -> i32 {
-        let tile = &self.map.tiles[&pos];
-        if tile.terrain == "mountain"
-            || tile.feature.as_ref().is_some_and(|feature| {
-                self.rules
-                    .features
-                    .get(feature)
-                    .is_some_and(|feature| feature.natural_wonder)
-            })
-        {
-            return 3;
-        }
-        tile.hills as i32
+        let Some(tile) = self.map.get(pos) else {
+            return 0;
+        };
+        let feature = tile.feature.as_deref();
+        let vegetation = see_through_woods && matches!(feature, Some("forest" | "jungle"));
+        Self::terrain_sight_level(tile)
             + self.district_viewpoint_bonus(pos)
-            + i32::from(
-                !see_through_woods && matches!(tile.feature.as_deref(), Some("forest" | "jungle")),
-            )
+            + if vegetation {
+                0
+            } else {
+                self.feature_sight_through(feature)
+            }
+    }
+
+    fn feature_sight_through(&self, feature: Option<&str>) -> i32 {
+        feature
+            .and_then(|feature| self.rules.features.get(feature))
+            .map_or(0, |feature| feature.sight_through)
     }
 
     /// The nearest unwrapped image of `to`, so a ray across the seam is drawn
@@ -21876,29 +21898,12 @@ impl Game {
         flying: bool,
     ) -> TileBits {
         let mut visible = TileBits::with_capacity(self.map.tiles.len());
-        let search_radius = if flying || radius <= 0 {
-            radius
-        } else {
-            radius + 1
-        };
-        for target in self.wdisk(from, search_radius) {
-            let distance = self.wdist(from, target);
-            if distance <= radius {
-                if flying
-                    || self.tile_has_visibility_line(
-                        heights,
-                        from,
-                        target,
-                        viewer_height,
-                        see_through_woods,
-                    )
-                {
-                    self.mark_visible(&mut visible, target);
-                }
-            } else if !flying
-                && distance == radius + 1
-                && self.sight_height_via(heights, target) > 0
-                && self.tile_has_visibility_line(
+        // Sight range is a hard cap in Civ VI. Elevation decides what a unit can
+        // see *past*, never how far it can see: a Mountain outside a Settler's
+        // three tiles stays dark until something walks close enough to it.
+        for target in self.wdisk(from, radius) {
+            if flying
+                || self.tile_has_visibility_line(
                     heights,
                     from,
                     target,
@@ -21906,8 +21911,6 @@ impl Game {
                     see_through_woods,
                 )
             {
-                // Elevated terrain one tile beyond nominal sight is itself
-                // visible when it rises above the intervening terrain.
                 self.mark_visible(&mut visible, target);
             }
         }
@@ -21934,7 +21937,7 @@ impl Game {
         if distance <= 1 || distance >= 3 {
             return true; // adjacent fire is unconditional; range 3+ lobs shots
         }
-        let attacker_height = self.map.tiles[&from].hills as i32
+        let attacker_height = Self::terrain_sight_level(&self.map.tiles[&from])
             + if unit_in_district {
                 self.district_viewpoint_bonus(from)
             } else {
@@ -21946,8 +21949,7 @@ impl Game {
     fn unit_has_line_of_sight(&self, uid: u32, to: Pos) -> bool {
         let unit = &self.units[&uid];
         if self.promotion_effect(unit, "see_through_woods") > 0.0 && self.wdist(unit.pos, to) == 2 {
-            let attacker_height =
-                self.map.tiles[&unit.pos].hills as i32 + self.district_viewpoint_bonus(unit.pos);
+            let attacker_height = self.see_from_level(unit.pos);
             return self.tile_has_visibility_line(
                 &mut HeightField::none(),
                 unit.pos,
@@ -22146,8 +22148,7 @@ impl Game {
         let sight = self.unit_sight(uid);
         let see_through_woods = self.promotion_effect(unit, "see_through_woods") > 0.0;
         let flying = spec.domain.as_deref() == Some("air");
-        let viewer_height =
-            self.map.tiles[&origin].hills as i32 + self.district_viewpoint_bonus(origin);
+        let viewer_height = self.see_from_level(origin);
         let key = vision_key(&[
             origin.0 as u64,
             origin.1 as u64,
@@ -22235,8 +22236,7 @@ impl Game {
             else {
                 continue;
             };
-            let height =
-                self.map.tiles[&position].hills as i32 + self.district_viewpoint_bonus(position);
+            let height = self.see_from_level(position);
             visible.union_with(&self.visible_tiles_from(
                 heights, position, 3, height, false, false,
             ));
@@ -42095,6 +42095,178 @@ mod visibility_tests {
         assert!(game.unit_visible_tiles(warrior).contains(&beyond));
     }
 
+    /// Sight range is a hard cap. Elevation decides what a unit sees *past*,
+    /// never how far it sees, so a mountain range outside a Settler's three
+    /// tiles stays dark — the bug that had a turn-one start revealing tiles
+    /// four away.
+    #[test]
+    fn no_terrain_is_ever_visible_beyond_a_unit_s_sight_range() {
+        let (mut game, origin) = controlled_game(91_010);
+        let settler = game.spawn_unit("settler", 0, origin);
+        assert_eq!(game.unit_sight(settler), 3, "a Settler sees three tiles");
+
+        // Open ground the whole way out, then a mountain range starting exactly
+        // one tile past the Settler's range: nothing hides these peaks except
+        // the range itself.
+        for distance in 4..=6 {
+            let position = along(&game, origin, distance);
+            game.map.tiles.get_mut(&position).unwrap().terrain = "mountain".to_string();
+        }
+        let visible = game.unit_visible_tiles(settler);
+        assert!(visible.contains(&along(&game, origin, 3)));
+        for distance in 4..=6 {
+            let position = along(&game, origin, distance);
+            assert!(
+                !visible.contains(&position),
+                "a mountain {distance} tiles away is outside a three-tile Settler's sight"
+            );
+        }
+        assert_eq!(
+            visible.iter().map(|at| game.wdist(origin, *at)).max(),
+            Some(3),
+            "nothing at all is seen past the printed range"
+        );
+
+        // The same cap holds for the shorter ranges and for wooded ground.
+        let warrior = game.spawn_unit("warrior", 0, origin);
+        assert_eq!(game.unit_sight(warrior), 2);
+        for distance in 3..=4 {
+            let position = along(&game, origin, distance);
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = "plains".to_string();
+            tile.hills = true;
+            tile.feature = Some("forest".to_string());
+        }
+        assert_eq!(
+            game.unit_visible_tiles(warrior)
+                .iter()
+                .map(|at| game.wdist(origin, *at))
+                .max(),
+            Some(2)
+        );
+    }
+
+    /// The shipped `SightModifier`/`SightThroughModifier` columns: Mountain 2,
+    /// Hills 1, flat 0, with Woods and Rainforest adding 1 to whatever they
+    /// stand on. A blocker hides everything no taller than itself, which is why
+    /// a Mountain shows over Woods and Hills but not over a wooded Hill.
+    #[test]
+    fn civilization_vi_sight_levels_decide_what_rises_above_cover() {
+        let (mut game, origin) = controlled_game(91_011);
+        let blocker = along(&game, origin, 1);
+        let target = along(&game, origin, 2);
+        let warrior = game.spawn_unit("warrior", 0, origin);
+
+        let shape = |game: &mut Game, at: Pos, terrain: &str, hills: bool, feature: Option<&str>| {
+            let tile = game.map.tiles.get_mut(&at).unwrap();
+            tile.terrain = terrain.to_string();
+            tile.hills = hills;
+            tile.feature = feature.map(str::to_string);
+        };
+
+        // Level-1 cover: flat Woods, flat Rainforest, and a bare Hill.
+        for (cover, hills, feature) in [
+            ("plains", false, Some("forest")),
+            ("plains", false, Some("jungle")),
+            ("plains", true, None),
+        ] {
+            shape(&mut game, blocker, cover, hills, feature);
+
+            shape(&mut game, target, "mountain", false, None);
+            assert!(
+                game.unit_visible_tiles(warrior).contains(&target),
+                "a Mountain rises over {cover} cover at level 1"
+            );
+
+            shape(&mut game, target, "plains", true, Some("forest"));
+            assert!(
+                game.unit_visible_tiles(warrior).contains(&target),
+                "a wooded Hill rises over {cover} cover at level 1"
+            );
+
+            shape(&mut game, target, "plains", false, Some("forest"));
+            assert!(
+                !game.unit_visible_tiles(warrior).contains(&target),
+                "flat Woods are no taller than {cover} cover and stay hidden"
+            );
+
+            shape(&mut game, target, "plains", true, None);
+            assert!(
+                !game.unit_visible_tiles(warrior).contains(&target),
+                "a bare Hill is level 1 like {cover} cover and stays hidden too"
+            );
+        }
+
+        // Level-2 cover: a wooded Hill stands exactly as tall as a Mountain, so
+        // neither shows past the other.
+        shape(&mut game, blocker, "plains", true, Some("forest"));
+        shape(&mut game, target, "mountain", false, None);
+        assert!(
+            !game.unit_visible_tiles(warrior).contains(&target),
+            "a Mountain does not rise over a wooded Hill"
+        );
+        shape(&mut game, blocker, "mountain", false, None);
+        shape(&mut game, target, "plains", true, Some("forest"));
+        assert!(
+            !game.unit_visible_tiles(warrior).contains(&target),
+            "and a wooded Hill does not rise over a Mountain"
+        );
+
+        // A viewer's own elevation is terrain alone — standing in Woods is not
+        // standing higher, but standing on a Mountain is.
+        shape(&mut game, blocker, "plains", false, Some("forest"));
+        shape(&mut game, target, "plains", false, None);
+        shape(&mut game, origin, "plains", false, Some("forest"));
+        assert!(
+            !game.unit_visible_tiles(warrior).contains(&target),
+            "Woods underfoot are not a vantage point"
+        );
+        shape(&mut game, origin, "mountain", false, None);
+        shape(&mut game, blocker, "plains", true, Some("forest"));
+        assert!(
+            game.unit_visible_tiles(warrior).contains(&target),
+            "a Mountain looks out over level-2 cover"
+        );
+    }
+
+    /// Natural Wonders carry their own shipped `SightThroughModifier` rather
+    /// than one blanket height: Everest and Yosemite are cover above anything
+    /// else on the map, while Crater Lake, the Pantanal, the Dead Sea and the
+    /// Great Barrier Reef block nothing.
+    #[test]
+    fn natural_wonders_block_sight_only_where_civilization_vi_says_they_do() {
+        let (mut game, origin) = controlled_game(91_012);
+        let blocker = along(&game, origin, 1);
+        let target = along(&game, origin, 2);
+        let warrior = game.spawn_unit("warrior", 0, origin);
+
+        for wonder in ["crater_lake", "pantanal", "dead_sea", "great_barrier_reef"] {
+            game.map.tiles.get_mut(&blocker).unwrap().feature = Some(wonder.to_string());
+            assert!(
+                game.unit_visible_tiles(warrior).contains(&target),
+                "{wonder} is flat ground for line of sight"
+            );
+        }
+        for wonder in ["mount_everest", "yosemite", "uluru", "pamukkale"] {
+            game.map.tiles.get_mut(&blocker).unwrap().feature = Some(wonder.to_string());
+            assert!(
+                !game.unit_visible_tiles(warrior).contains(&target),
+                "{wonder} is cover"
+            );
+        }
+
+        // Everest at level 2 over flat ground is visible past anything a Hill or
+        // Woods can offer, and is itself cover a wooded Hill cannot see over.
+        game.map.tiles.get_mut(&blocker).unwrap().feature = Some("forest".to_string());
+        game.map.tiles.get_mut(&target).unwrap().feature = Some("mount_everest".to_string());
+        assert!(game.unit_visible_tiles(warrior).contains(&target));
+        game.map.tiles.get_mut(&blocker).unwrap().hills = true;
+        assert!(
+            !game.unit_visible_tiles(warrior).contains(&target),
+            "level-2 Everest does not rise over a level-2 wooded Hill"
+        );
+    }
+
     #[test]
     fn owned_borders_and_their_outer_ring_are_always_visible() {
         let (mut game, center) = controlled_game(91_002);
@@ -42274,6 +42446,9 @@ mod visibility_tests {
             observed_tile(&visible, remembered_position)["improvement"],
             "farm"
         );
+        // Appeal is read off the tile's *current* neighbours, so it is reported
+        // for what a player can see and withheld from what they only remember.
+        assert!(observed_tile(&visible, remembered_position)["appeal"].is_i64());
         assert!(visible["units"]
             .as_array()
             .unwrap()
@@ -42304,6 +42479,7 @@ mod visibility_tests {
             observed_tile(&fogged, remembered_position)["improvement"],
             "farm"
         );
+        assert!(observed_tile(&fogged, remembered_position)["appeal"].is_null());
         assert!(!fogged["units"]
             .as_array()
             .unwrap()
