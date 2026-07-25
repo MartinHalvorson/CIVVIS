@@ -440,9 +440,15 @@ def start_worker(cfg: FleetConfig, status: HostStatus) -> Tuple[bool, str]:
     host = status.host
     league_dir = league_dir_for(cfg, host)
     log = f"{host.root}/league-worker.log"
+    # All three of the worker's descriptors have to leave the pipe this
+    # command is being read through, or the caller blocks until the worker
+    # exits — which for a league worker is hours. `&&` would also put the
+    # whole compound in the background, holding stdout open the same way.
     script = (
-        f"mkdir -p {shlex.quote(host.root)} {shlex.quote(league_dir)} && "
-        f"nohup {league_command(cfg, status)} >> {shlex.quote(log)} 2>&1 & echo started $!"
+        f"mkdir -p {shlex.quote(host.root)} {shlex.quote(league_dir)}; "
+        f"nohup {league_command(cfg, status)} "
+        f">> {shlex.quote(log)} 2>&1 </dev/null & "
+        f"echo started $!"
     )
     code, out, err = run_on(host, script, timeout=30)
     if code != 0:

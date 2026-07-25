@@ -162,6 +162,28 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(fleet.league_dir_for(cfg, cfg.host("boxa")), "/srv/league")
         self.assertEqual(fleet.league_dir_for(cfg, cfg.host("boxb")), "/r/league")
 
+    def test_a_started_worker_lets_go_of_the_pipe_it_was_launched_through(self):
+        # The worker outlives the command that starts it, so every one of its
+        # descriptors has to leave the caller's pipe. Leaving any attached
+        # blocks the fleet cycle until the worker exits, which is hours.
+        cfg = fleet.parse_config({"hosts": [{"name": "local", "root": "/srv"}]})
+        status = fleet.HostStatus(host=cfg.hosts[0], reachable=True, cores=4)
+        seen = {}
+
+        def capture(cmd, **kwargs):
+            seen["script"] = cmd[-1]
+            return completed(stdout="started 4242")
+
+        with patch("subprocess.run", side_effect=capture):
+            ok, detail = fleet.start_worker(cfg, status)
+        self.assertTrue(ok)
+        script = seen["script"]
+        self.assertIn("</dev/null", script)
+        self.assertIn(">> /srv/league-worker.log 2>&1", script)
+        # `mkdir && nohup ... &` would background the whole compound and hold
+        # stdout open; the directories must be made before the fork.
+        self.assertNotIn("&& nohup", script)
+
     def test_starting_a_worker_twice_does_not_start_two(self):
         cfg = fleet.parse_config({"hosts": [{"name": "local", "root": "/srv"}]})
         status = fleet.HostStatus(host=cfg.hosts[0], reachable=True, cores=4, worker_running=True)
