@@ -599,7 +599,7 @@ def merge_current_main(repo: Path) -> bool:
         )
     git(repo, "diff", "--check", "origin/main...")
     run(
-        ("cargo", "test", "--release", "--locked"),
+        ("cargo", "test", "--profile", "ci", "--locked"),
         cwd=repo,
         capture=False,
     )
@@ -917,7 +917,7 @@ Draft claim; implementation is in progress.
 - [ ] Ownership/overlap is coordinated above
 - [ ] Latest `origin/main` merged before ready
 - [ ] `git diff --check origin/main...`
-- [ ] `cargo test --release --locked`
+- [ ] `cargo test --profile ci --locked`
 - [ ] Relevant focused tests
 - [ ] Soak run for engine changes, or reason it is not applicable
 - [ ] No unrelated formatting, generated output, or runtime artifacts

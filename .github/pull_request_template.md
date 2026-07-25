@@ -16,7 +16,7 @@
 - [ ] Ownership/overlap is coordinated above
 - [ ] Latest `origin/main` merged before ready
 - [ ] `git diff --check origin/main...`
-- [ ] `cargo test --release --locked`
+- [ ] `cargo test --profile ci --locked`
 - [ ] Relevant focused tests
 - [ ] Soak run for engine changes, or reason it is not applicable
 - [ ] No unrelated formatting, generated output, or runtime artifacts
