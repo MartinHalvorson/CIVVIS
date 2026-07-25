@@ -32,6 +32,7 @@ fn main() {
     let players = number(&args, "--players", 4) as usize;
     let city_states = number(&args, "--city-states", 6) as usize;
     let quiet = args.iter().any(|arg| arg == "--quiet");
+    let start_quality = args.iter().any(|arg| arg == "--start-quality");
     let script = match args
         .iter()
         .position(|arg| arg == "--script")
@@ -116,6 +117,36 @@ fn main() {
                     .unwrap_or(0)
             })
             .collect();
+        if start_quality {
+            // The land a capital actually works, measured independently of the
+            // generator's own `start_quality` scorer: the best twelve tiles a
+            // city can reach at radius 3, by raw yield total. Using the
+            // generator's scorer here would flatter the generator, since that
+            // is the number it optimizes.
+            let worked: Vec<f64> = spawns
+                .iter()
+                .take(players)
+                .map(|start| {
+                    let mut tiles: Vec<f64> = world
+                        .tiles
+                        .iter()
+                        .filter(|(pos, _)| hex::wdistance(**pos, *start, world.width) <= 3)
+                        .map(|(_, tile)| rules.tile_yields(tile).total())
+                        .collect();
+                    tiles.sort_by(|left, right| right.total_cmp(left));
+                    tiles.iter().take(12).sum()
+                })
+                .collect();
+            let best = worked.iter().copied().fold(f64::MIN, f64::max);
+            let worst = worked.iter().copied().fold(f64::MAX, f64::min);
+            let mean = worked.iter().sum::<f64>() / worked.len().max(1) as f64;
+            println!(
+                "start quality (best twelve worked tiles) mean {mean:.1} best {best:.1} worst {worst:.1} spread {:.1} ({:.1}% of mean)",
+                best - worst,
+                100.0 * (best - worst) / mean.max(1.0)
+            );
+        }
+
         println!(
             "spawns {:?} nearest-neighbour separations {separations:?}",
             spawns
