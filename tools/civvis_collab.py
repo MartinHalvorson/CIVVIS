@@ -684,6 +684,7 @@ def ship_task(args: argparse.Namespace) -> int:
 
     deadline = time.monotonic() + max(1.0, args.timeout_seconds)
     ready_thresholds: Dict[str, str] = {}
+    auto_merge_armed = False
     while True:
         if time.monotonic() >= deadline:
             raise CommandError("timed out waiting for the task to reach main")
@@ -727,11 +728,49 @@ def ship_task(args: argparse.Namespace) -> int:
             if str(pr.get("headRefOid") or "") != local_head:
                 raise CommandError("the PR head changed outside this task's one-writer worktree")
 
+            if not auto_merge_armed:
+                # Armed auto-merge fires the instant a green run coincides with
+                # being current, instead of only when this poll happens to
+                # observe both at once. That window is small: `main` takes a
+                # merge every few minutes and the gate runs for several.
+                armed = run(
+                    (
+                        "gh", "pr", "merge", str(pr["number"]),
+                        "--repo", REPOSITORY, "--squash", "--auto",
+                        "--delete-branch",
+                    ),
+                    cwd=root,
+                    check=False,
+                )
+                if armed.returncode == 0:
+                    auto_merge_armed = True
+                    print(f"auto-merge armed on PR #{pr['number']}")
+
             fetch_main(root)
             if not ref_contains(root, "origin/main"):
-                print("main advanced while CI was running; updating this task")
+                # Update the branch through GitHub rather than rebuilding the
+                # task locally. This merges `main` into the head server-side,
+                # so CI reruns on the exact merge result without paying for a
+                # local release build that CI is about to repeat anyway.
+                print("main advanced; updating the PR branch through GitHub")
+                updated = gh_api_write(
+                    "PUT",
+                    f"repos/{REPOSITORY}/pulls/{pr['number']}/update-branch",
+                    {},
+                    check=False,
+                )
+                if updated is None:
+                    # A conflict GitHub cannot resolve needs a real merge in the
+                    # worktree, which is what the outer loop does.
+                    print("GitHub could not update the branch; merging locally")
+                    ready_thresholds.clear()
+                    break
+                git(root, "fetch", "origin", branch)
+                git(root, "merge", "--ff-only", f"origin/{branch}")
+                local_head = git(root, "rev-parse", "HEAD")
                 ready_thresholds.clear()
-                break
+                time.sleep(args.poll_seconds)
+                continue
 
             state, names = required_check_state(
                 pr.get("statusCheckRollup") or [], minimum_started=ready_thresholds
@@ -1149,7 +1188,14 @@ def gh_api_optional(path: str) -> Tuple[int, Any]:
     return 0, json.loads(result.stdout)
 
 
-def gh_api_write(method: str, path: str, payload: Dict[str, Any]) -> Any:
+def gh_api_write(
+    method: str, path: str, payload: Dict[str, Any], *, check: bool = True
+) -> Any:
+    """Call a writing GitHub endpoint.
+
+    With ``check=False`` a rejected call returns ``None`` instead of raising, so
+    a caller can fall back to a different strategy.
+    """
     result = subprocess.run(
         ("gh", "api", "--method", method, path, "--input", "-"),
         input=json.dumps(payload),
@@ -1158,6 +1204,8 @@ def gh_api_write(method: str, path: str, payload: Dict[str, Any]) -> Any:
         stderr=subprocess.PIPE,
         check=False,
     )
+    if result.returncode and not check:
+        return None
     if result.returncode:
         detail = "\n".join(
             value.strip() for value in (result.stdout, result.stderr) if value.strip()
