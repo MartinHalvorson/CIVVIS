@@ -3518,24 +3518,32 @@ mod tests {
         // needs both offsets, staggered by one row per row held above it.
         assert!(EMBEDDED_INDEX.contains("top: calc(var(--pin-head, 0) * var(--hud-row-pitch));"));
         assert!(EMBEDDED_INDEX.contains("bottom: calc(var(--pin-tail, 0) * var(--hud-row-pitch));"));
-        // The standings never take more than their share of the rail they head;
+        // The standings never take more than their share of the map they head;
         // rows past that scroll at a fixed height rather than being squeezed to
-        // fit, which is what leaves the victory tracker a readable share of the
-        // same column.
-        assert!(EMBEDDED_INDEX.contains("--player-hud-max-height: 42vh;"));
-        assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.42"));
-        // The three instruments stand in one right-hand column: the standings
-        // at the top with their close control in the corner, the tracker below
-        // them, and the world minimap at the foot. Each seam is the
-        // neighbour's own height, so a table of twelve pushes the tracker down
-        // instead of anything sliding underneath.
+        // fit, which is what keeps the world underneath them visible.
+        assert!(EMBEDDED_INDEX.contains("--player-hud-max-height: 34vh;"));
+        assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.34"));
+        // Two edges, not one column: the standings are the masthead across the
+        // whole top, and the right rail is the victory tracker from the top
+        // corner down to the world minimap in the bottom one. The masthead
+        // stops at the rail's width, and the tracker stops at the minimap's
+        // height, so neither seam can slide underneath its neighbour.
         assert!(EMBEDDED_INDEX.contains("--hud-rail-width:"));
-        assert!(EMBEDDED_INDEX
-            .contains("bottom: calc(var(--minimap-height) + 22px);"));
         assert!(EMBEDDED_INDEX.contains(
-            "top: calc(min(var(--player-hud-height, 220px), var(--player-hud-max-height)) + 16px);"
+            "top: 10px; left: 12px; right: calc(min(var(--hud-rail-width), \
+             var(--hud-rail-share)) + 20px); width: auto;"
         ));
+        assert!(EMBEDDED_INDEX
+            .contains("top: 10px; bottom: calc(var(--minimap-height) + 22px);"));
         assert!(EMBEDDED_INDEX.contains("grid-auto-rows: var(--hud-row-height);"));
+        // A masthead row is one line: identity and the ten values side by side,
+        // under one set of column heads. Stacking them was what the rail needed
+        // and it costs the map 12px of height per civilization here.
+        assert!(EMBEDDED_INDEX.contains(
+            "grid-template-columns: var(--hud-lock-column, 0px) var(--hud-medallion-column) \
+             var(--hud-identity-column) minmax(0, 1fr);"
+        ));
+        assert!(EMBEDDED_INDEX.contains("--hud-row-height: 23px;"));
         assert!(EMBEDDED_INDEX.contains("function dismissOverlay(name, source)"));
         assert!(EMBEDDED_INDEX.contains("addEventListener(\"pointerdown\", event =>"));
         assert!(EMBEDDED_INDEX.contains("overlay-return-flash .24s ease-in-out 3"));

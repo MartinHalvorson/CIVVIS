@@ -40,27 +40,27 @@
   }
   button, select, input { font: inherit; }
   button { -webkit-tap-highlight-color: transparent; }
-  /* Every instrument stands in one right-hand rail — standings at the top, the
-     victory tracker under them, the world minimap in the corner — so the map
-     keeps its whole top edge and loses one column instead of three separate
-     footprints. These three numbers are the seams between them: the rail's
-     width, and the heights of the two panels that fix where the middle one
-     starts and stops. Dragging a panel writes its own height inline here, so
-     both sides of a seam always agree. */
+  /* Two instruments, two edges. The standings are the map's masthead and run
+     across the whole top; the victory tracker and the world minimap share the
+     right-hand rail, the tracker from the top corner down to the map in the
+     bottom corner. These three numbers are the seams: the rail's width, which
+     is also where the masthead stops, and the two panel heights that fix where
+     the tracker starts and stops. Dragging a panel writes its own measurement
+     inline here, so both sides of a seam always agree. */
   #maparea {
     flex: 1; min-width: 0; position: relative; overflow: hidden; background: #07110f;
-    --hud-rail-width: clamp(310px, 25vw, 424px);
+    --hud-rail-width: clamp(258px, 20vw, 320px);
     /* Whatever the width steps ask for, the rail never takes more than this
        share of the map it floats over. Between 620px and 980px the command
        deck is still a column of its own, and without the cap the rail and the
        deck together left the world a strip barely wider than a city. */
-    --hud-rail-share: 56%;
+    --hud-rail-share: 38%;
     --minimap-height: 172px;
-    /* A ceiling on the standings: a little under half the rail, whatever the
-       player count or a dragged layout asks for, so the victory tracker always
-       keeps a readable share of the column. Rows past it scroll inside the
-       ribbon, which is what the row locks are for. */
-    --player-hud-max-height: 42vh;
+    /* A ceiling on the masthead, whatever the player count or a dragged layout
+       asks for, so a table of twelve cannot swallow the world underneath it.
+       Rows past it scroll inside the ribbon, which is what the row locks are
+       for. */
+    --player-hud-max-height: 34vh;
   }
   #maparea::before {
     content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none;
@@ -323,9 +323,9 @@
   .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 3px 0; }
   .chip { display: inline-block; width: 8px; height: 8px; margin-right: 7px; border-radius: 50%; box-shadow: 0 0 0 3px #ffffff09; }
 
-  /* #playerhud's own box is written once, further down, next to the rail it
-     stands in. A second base rule here would only be a trap: the two carry the
-     same specificity, so whichever came last would quietly win. */
+  /* #playerhud's own box is written once, further down, next to the victory
+     rail it stops at. A second base rule here would only be a trap: the two
+     carry the same specificity, so whichever came last would quietly win. */
   .hud-region {
     min-width: 0; display: flex; flex-direction: column; padding: 4px 4px 3px;
     overflow: hidden; border: 1px solid #ffffff0b; border-radius: 9px;
@@ -1572,49 +1572,38 @@
     body.cinema-mode #cinema-story { left: 18px; width: calc(100% - 36px); }
   }
 
-  /* The standings head the rail: the turn plate as a strip across the top and
-     the table under it. Every civilization keeps one row of the same height;
-     the requested height is calculated from the player count in
-     drawPlayerHud(), then capped so a large table does not swallow the rail.
-     A row is two lines here rather than one — who this is, then their ten
-     values. Across the old full-width masthead one line was right, because
-     there was width to spend and height to save; a rail inverts both, and ten
-     values cannot be read at 18px a column. */
+  /* The standings are the map's masthead: they run across the whole top edge,
+     stopping where the victory rail begins, with the turn plate as the left
+     cell and the table filling the rest. Every civilization keeps one
+     full-width row of the same height; the requested height is calculated from
+     the player count in drawPlayerHud(), then capped so a large table does not
+     swallow the map underneath it. A row is one line here rather than two —
+     who this is, then their ten values, side by side. That is what the width
+     is for; stacking them would spend height the map wants back. */
   #playerhud {
     position: absolute; z-index: 7; pointer-events: auto;
-    top: 10px; right: 12px; left: auto; width: min(var(--hud-rail-width), var(--hud-rail-share));
-    height: min(var(--player-hud-height, 220px), var(--player-hud-max-height));
-    --hud-medallion-column: 21px; --hud-column-gap: 5px;
-    --hud-lock-column: 13px; --hud-row-height: 33px; --hud-row-gap: 2px;
+    top: 10px; left: 12px; right: calc(min(var(--hud-rail-width), var(--hud-rail-share)) + 20px); width: auto;
+    height: min(var(--player-hud-height, 200px), var(--player-hud-max-height));
+    --hud-medallion-column: 21px; --hud-identity-column: minmax(300px, 42%); --hud-column-gap: 6px;
+    --hud-lock-column: 13px; --hud-row-height: 23px; --hud-row-gap: 2px;
     --hud-row-pitch: calc(var(--hud-row-height) + var(--hud-row-gap));
-    display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr);
+    display: grid; grid-template-columns: 108px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
     align-items: stretch; gap: 5px; min-width: 0; padding: 5px;
     overflow: visible; transform: none;
     border: 1px solid #526a618f; border-radius: 12px;
-    background: linear-gradient(195deg, #091411ed, #0d1a17e8 58%, #091411ed);
+    background: linear-gradient(105deg, #091411ed, #0d1a17e8 58%, #091411ed);
     box-shadow: 0 14px 38px #000a, inset 0 1px #ffffff0a;
     backdrop-filter: blur(16px) saturate(130%);
   }
-  /* In the rail the plate reads along one line instead of stacking, so it costs
-     the table a strip rather than a column. */
-  #playerhud > .victory-turn {
-    grid-column: 1; grid-row: 1; min-height: 0;
-    grid-template-columns: auto auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
-    align-items: baseline; gap: 8px; padding: 6px 9px 7px; text-align: left;
-  }
-  #playerhud > .victory-turn .turn-count {
-    grid-auto-flow: column; align-items: baseline; place-content: center start;
-    gap: 4px; margin: 0;
-  }
-  #playerhud > .victory-turn strong { font-size: 22px; }
-  #playerhud > .victory-turn .turn-era {
-    padding: 0 0 0 9px; overflow: hidden; border-top: 0; border-left: 1px solid #d7b66a24;
-    text-align: right; text-overflow: ellipsis;
-  }
-  /* The standings stack inside the second row. This wrapper stays unpositioned
-     so an expanded dossier still hangs off #playerhud itself. */
+  /* Hiding the victory rail hands its column back to the masthead. */
+  body.overlay-victory-hidden #playerhud { right: 12px; }
+  /* Across the masthead the plate stacks in its own left cell, which is the one
+     place in the panel where height is cheaper than width. */
+  #playerhud > .victory-turn { grid-column: 1; grid-row: 1; }
+  /* The standings fill the second cell. This wrapper stays unpositioned so an
+     expanded dossier still hangs off #playerhud itself. */
   #playerhud > .player-standings {
-    grid-column: 1; grid-row: 2; min-width: 0; min-height: 0;
+    grid-column: 2; grid-row: 1; min-width: 0; min-height: 0;
     display: flex; flex-direction: column; gap: 3px;
   }
   .ribbon-heading {
@@ -1626,11 +1615,11 @@
   .ribbon-heading.widget-drag-handle::before { position: absolute; left: 4px; }
   .ribbon-stat-heading {
     min-height: 9px; display: grid;
-    grid-template-columns: var(--hud-lock-column, 0px) var(--hud-medallion-column) minmax(0, 1fr);
+    grid-template-columns: var(--hud-lock-column, 0px) var(--hud-medallion-column) var(--hud-identity-column) minmax(0, 1fr);
     align-items: stretch; gap: var(--hud-column-gap); padding: 0 4px 0 3px;
   }
   .diplomacy-stat-head {
-    min-width: 0; display: grid; grid-column: 3;
+    min-width: 0; display: grid; grid-column: 4;
     grid-template-columns: repeat(10, minmax(0, 1fr));
     color: #a9bbb4; font-size: 7px; font-weight: 950; letter-spacing: .015em;
   }
@@ -1650,18 +1639,18 @@
   }
   #playerhud .diplomacy-ribbon::-webkit-scrollbar { width: 3px; }
   #playerhud .diplomacy-ribbon::-webkit-scrollbar-thumb { background: #476057; border-radius: 4px; }
-  /* Lock and medallion run the full height of the row and the two text lines
-     stack beside them: identity above, the ten values below. */
+  /* One line, four cells: the lock, the medallion, who this is, and their ten
+     values. The masthead has the width to run them side by side, which is what
+     keeps a row 23px instead of 35px. */
   #playerhud .diplomacy-card {
     width: auto; height: auto; min-height: 0; display: grid;
-    grid-template-columns: var(--hud-lock-column, 0px) var(--hud-medallion-column) minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr);
-    align-items: center; gap: 1px var(--hud-column-gap); margin: 0; padding: 3px 4px 3px 3px;
+    grid-template-columns: var(--hud-lock-column, 0px) var(--hud-medallion-column) var(--hud-identity-column) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    align-items: center; gap: var(--hud-column-gap); margin: 0; padding: 1px 4px 1px 3px;
     overflow: hidden; border-radius: 7px;
   }
-  #playerhud .lock-toggle, #playerhud .leader-medallion { grid-row: 1 / span 2; }
   #playerhud .diplomacy-identity { grid-column: 3; grid-row: 1; }
-  #playerhud .diplomacy-stats { grid-column: 3; grid-row: 2; }
+  #playerhud .diplomacy-stats { grid-column: 4; grid-row: 1; }
 
   /* Locking a seat keeps its row in view while the rest of the table scrolls
      past it — one row, even when the table seats two of that civilization. The
@@ -1731,9 +1720,9 @@
   #playerhud .ribbon-stat {
     min-height: 0; display: grid; place-content: center; padding: 0;
   }
-  /* A truncated name still reads; a truncated number lies. The identity line is
-     allowed to ellipsize, and the values get a line of their own at the rail's
-     full width, so four digits stay whole down to a narrow desktop. */
+  /* A truncated name still reads; a truncated number lies. The identity column
+     is allowed to ellipsize and gives up width first, so four digits stay whole
+     down to a narrow desktop. */
   #playerhud .ribbon-stat b {
     font-size: clamp(9px, .8vw, 13px); font-weight: 950; letter-spacing: -.025em;
     line-height: 1; text-shadow: 0 1px 2px #000, 0 0 8px currentColor;
@@ -1746,17 +1735,17 @@
   }
   #playerhud .diplomacy-card.expanded { border-radius: 7px; }
 
-  /* Victory progress is the middle of the rail: it starts under the standings
-     and stops above the world minimap, so the corner instrument is never
-     buried under it. Both seams are the neighbours' own heights, which is what
-     lets a table of twelve push the tracker down without anything overlapping.
-     Six races in a rail this wide read as two columns of three rather than one
-     tall stack — the same panel height then shows every race at once instead of
-     scrolling four of them out of sight. */
+  /* Victory progress owns the right rail from the top corner down, stopping
+     above the world minimap so the corner instrument is never buried under it.
+     The masthead runs beside it rather than above it, so the tracker gets the
+     whole height of the map minus one map: six races read one under the other,
+     each keeping the rail's full width for its civilization names, and the
+     rail's height rather than a 116px column decides how many contenders each
+     of them shows. The bottom seam is the minimap's own height, which is what
+     lets dragging the map taller push the tracker up without overlapping. */
   #victoryhud {
     position: absolute; z-index: 7; right: 12px; left: auto;
-    top: calc(min(var(--player-hud-height, 220px), var(--player-hud-max-height)) + 16px);
-    bottom: calc(var(--minimap-height) + 22px);
+    top: 10px; bottom: calc(var(--minimap-height) + 22px);
     width: min(var(--hud-rail-width), var(--hud-rail-share)); height: auto;
     display: grid; grid-template-columns: minmax(0, 1fr);
     grid-template-rows: 18px minmax(0, 1fr);
@@ -1766,17 +1755,9 @@
     box-shadow: 0 14px 38px #000a, inset 0 1px #ffffff0a;
     backdrop-filter: blur(16px) saturate(130%); pointer-events: auto;
   }
-  /* A neighbour that is switched off hands the rail back: the tracker takes the
-     top of the column when the standings are hidden, and runs to the floor when
-     the minimap is. */
-  body.overlay-players-hidden #victoryhud { top: 10px; }
+  /* Switching the minimap off hands the corner back and the tracker runs to
+     the floor. */
   body.overlay-minimap-hidden #victoryhud { bottom: 16px; }
-  #victoryhud .victory-ribbon {
-    min-height: max(100%, var(--victory-pair-min-height, 204px));
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-rows: repeat(var(--victory-pair-rows, 3), minmax(66px, 1fr));
-  }
-  #victoryhud .victory-track:nth-child(2n) { border-left: 1px solid #ffffff0b; }
   #victoryhud > .hud-section-heading {
     position: relative; grid-column: 1; grid-row: 1; min-height: 18px;
     justify-content: center; margin: 0 3px; color: #c7d3ce; font-size: 10px;
@@ -1907,39 +1888,58 @@
   body.sidebar-hidden #collapsepause:not([hidden]) { display: block; }
   #collapsepause[hidden] { display: none; }
 
-  /* Width breakpoints for the rail. These have to sit below the base #playerhud
-     and #maparea rules: they carry the same specificity, so above them they
-     would simply lose — which is exactly how the identity column once kept its
-     full 300px on a 1100px screen and squeezed the ten value columns into 64px.
-     The rail gives up width in steps, and the row's ten values are what that
-     width is being kept for, so the gaps close before the numbers shrink. */
+  /* Width breakpoints for the masthead and the rail beside it. These have to
+     sit below the base #playerhud and #maparea rules: they carry the same
+     specificity, so above them they would simply lose — which is exactly how
+     the identity column once kept its full 300px on a 1100px screen and
+     squeezed the ten value columns into 64px. The masthead gives up the
+     identity first — it ellipsizes and keeps its tooltip — so that every value
+     stays whole, and the rail narrows alongside it. */
+  @media (min-width: 2200px) {
+    #playerhud { grid-template-columns: 128px minmax(0, 1fr); --hud-identity-column: minmax(340px, 40%); }
+  }
+  @media (max-width: 1580px) {
+    #playerhud { grid-template-columns: 98px minmax(0, 1fr); --hud-identity-column: minmax(150px, 30%); }
+    #maparea { --hud-rail-width: clamp(240px, 20vw, 300px); }
+  }
+  /* Ten value columns, a turn plate and a standing rail stop fitting side by
+     side around here. */
   @media (max-width: 1300px) {
-    #maparea { --hud-rail-width: clamp(296px, 27vw, 340px); }
-    #playerhud { --hud-column-gap: 4px; }
+    #playerhud {
+      grid-template-columns: 84px minmax(0, 1fr);
+      --hud-identity-column: minmax(118px, 26%); --hud-column-gap: 4px;
+    }
+    #maparea { --hud-rail-width: 224px; }
   }
   @media (max-width: 1180px) {
-    #maparea { --hud-rail-width: 292px; --minimap-height: 158px; }
-    #playerhud { --hud-column-gap: 3px; --hud-medallion-column: 19px; }
+    #maparea { --hud-rail-width: 200px; --minimap-height: 158px; }
+    #playerhud {
+      grid-template-columns: 74px minmax(0, 1fr);
+      --hud-identity-column: minmax(92px, 22%); --hud-column-gap: 3px;
+      --hud-medallion-column: 19px;
+    }
     #playerhud .leader-medallion { width: 19px; height: 19px; }
-    /* The rail's share cap can take the value columns under 19px here, and a
-       four-digit figure needs the extra point of room more than it needs the
-       ninth pixel of type: a clipped number is a wrong number. */
+    /* The masthead can take the value columns under 19px here, and a four-digit
+       figure needs the extra point of room more than it needs the ninth pixel
+       of type: a clipped number is a wrong number. */
     #playerhud .ribbon-stat b { font-size: clamp(8px, .8vw, 13px); }
   }
   @media (max-width: 720px) {
     #side { inset-block-start: 132px; }
-    #maparea { --hud-rail-width: 274px; --minimap-height: 138px; }
+    #maparea { --hud-rail-width: 182px; --minimap-height: 138px; }
+    #playerhud { --hud-medallion-column: 23px; --hud-identity-column: minmax(112px, 142px); }
   }
   @media (max-width: 620px) {
-    /* Too narrow for a rail beside the map at all: the three instruments give
-       up the column and go back to bands across the top, with the tracker's
-       paths in columns because there is no height left to stack them into. */
-    #playerhud {
+    /* Too narrow for a rail beside the masthead at all: the instruments give up
+       the column and stack as bands across the top, with the tracker's paths in
+       columns because there is no height left to stack them into. */
+    #playerhud, body.overlay-victory-hidden #playerhud {
       top: 8px; left: 8px; right: 8px; width: auto; padding: 4px;
-      --hud-lock-column: 11px; --hud-medallion-column: 21px;
+      --hud-lock-column: 11px;
+      --hud-medallion-column: 21px; --hud-identity-column: minmax(150px, 42%);
     }
-    #victoryhud, body.overlay-players-hidden #victoryhud {
-      top: calc(min(var(--player-hud-height, 220px), var(--player-hud-max-height)) + 14px);
+    #victoryhud, body.overlay-minimap-hidden #victoryhud {
+      top: calc(min(var(--player-hud-height, 200px), var(--player-hud-max-height)) + 14px);
       left: 8px; right: 8px; bottom: auto; width: auto; height: 132px;
       grid-template-columns: minmax(0, 1fr); padding: 4px;
     }
@@ -3804,13 +3804,13 @@ const area = document.getElementById("maparea");
 // sees the rail instead of three panels pinned where they no longer belong.
 const HUD_LAYOUT_STORAGE_KEY = "civvis-hud-layout-v3";
 const HUD_WIDGETS = {
-  // Ten fixed metric columns share the lower line of every player row, so the
-  // standings need the rail's width but not the map's. They are capped at a
-  // little under half the map's height however they are sized — by the player
-  // count, by a dragged edge, or by a layout saved earlier — which is what
-  // leaves the victory tracker a readable share of the same column.
-  players: {element:document.getElementById("playerhud"), minWidth:264, minHeight:112,
-            maxHeightRatio:.42},
+  // A player row is one line: the turn plate, an identity and ten fixed metric
+  // columns side by side, which is why the standings want the map's width and
+  // very little of its height. They are capped at a third of that height
+  // however they are sized — by the player count, by a dragged edge, or by a
+  // layout saved earlier — so a large table never swallows the world.
+  players: {element:document.getElementById("playerhud"), minWidth:420, minHeight:82,
+            maxHeightRatio:.34},
   victory: {element:document.getElementById("victoryhud"), minWidth:150, minHeight:88},
   minimap: {element:document.querySelector(".minimap-frame"), minWidth:130, minHeight:96},
 };
@@ -3919,9 +3919,10 @@ function applyHudWidgetMetrics(name, metrics, persist = false) {
   style.maxWidth = "none"; style.maxHeight = "none"; style.transform = "none";
   config.element.classList.add("layout-widget-custom");
   HUD_LAYOUT[name] = serializeHudWidget(next);
-  // The victory tracker fills whatever the rail's other two instruments leave
-  // it, so dragging either of their edges has to move the seam in the same
-  // gesture rather than letting the tracker slide underneath.
+  // The victory tracker runs down to whatever the world map leaves it, so
+  // dragging the map's edge has to move the seam in the same gesture rather
+  // than letting the tracker slide underneath it. The masthead's own height is
+  // published for the narrow layout, where the tracker does stand under it.
   if (name === "players") area.style.setProperty("--player-hud-height", `${next.height}px`);
   if (name === "minimap") area.style.setProperty("--minimap-height", `${next.height}px`);
   // Victory leaders stack vertically inside each path. Reveal another rank as
@@ -12136,10 +12137,10 @@ function victoryLeaderCapacity(victoryHud) {
   if (!rail || !tracks.length) return DEFAULT_VICTORY_LEADERS;
   const ribbon = victoryHud.querySelector(".victory-ribbon");
   const ribbonGap = parseFloat(getComputedStyle(ribbon || rail).rowGap) || 0;
-  // The ribbon's shape changes with the room it has: one band per row in a tall
-  // stack, two per row in the rail, and a single row of columns below 620px.
-  // What a band actually gets is the rail divided by the number of grid rows,
-  // so count the rows the bands landed on rather than assuming any one shape.
+  // The ribbon's shape changes with the room it has: one band per row down the
+  // rail, and a single row of columns below 620px, where there is no rail. What
+  // a band actually gets is the rail divided by the number of grid rows, so
+  // count the rows the bands landed on rather than assuming any one shape.
   const gridRows = Math.max(1, new Set(tracks.map(track => track.offsetTop)).size);
   const share = (rail.clientHeight - ribbonGap * (gridRows - 1)) / gridRows;
   let capacity = Infinity;
@@ -12230,11 +12231,9 @@ function playerHudOverview() {
       }).join("") + `</div></section>`;
   }).join("");
   const victoryCount = Math.max(1, enabledVictoryTracks.length);
-  // Three floors for three orientations: one band per row in a tall stack, two
-  // bands per row in the rail, and one row of columns on a narrow viewport.
-  const victoryPairRows = Math.ceil(victoryCount / 2);
+  // Two floors for two orientations: one band per row down the rail, and one
+  // row of columns on a viewport too narrow to have a rail at all.
   const victoryMinHeight = victoryCount * 66 + Math.max(0, victoryCount - 1) * 2;
-  const victoryPairMinHeight = victoryPairRows * 66 + Math.max(0, victoryPairRows - 1) * 2;
   const victoryMinWidth = victoryCount * 116 + Math.max(0, victoryCount - 1) * 2;
   const overview =
     `<div class="hud-section-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
@@ -12244,8 +12243,7 @@ function playerHudOverview() {
     `<section class="hud-region victory-region" aria-labelledby="victory-tracker-title">` +
     `<div class="hud-rail" tabindex="0" aria-label="Victory paths; scroll vertically for every path">` +
     `<div class="victory-ribbon" style="--victory-rows:${victoryCount};` +
-    `--victory-pair-rows:${victoryPairRows};--victory-min-height:${victoryMinHeight}px;` +
-    `--victory-pair-min-height:${victoryPairMinHeight}px;--victory-min-width:${victoryMinWidth}px">` +
+    `--victory-min-height:${victoryMinHeight}px;--victory-min-width:${victoryMinWidth}px">` +
     `${victoryTracks}</div></div></section>` + hudResizeHandles("victory tracker");
 
   return overview;
@@ -12353,13 +12351,13 @@ function drawPlayerHud() {
   const repeatedCivs = repeatedCivNames(majors);
   seedOwnSeatLock(seats);
   const lockedKeys = lockedSeats();
-  // Two lines per row in the rail — who this is, then their ten values — which
-  // is 33px plus the 2px gap under it. The fixed 82px is the turn plate, the
-  // heading, the column heads, the gaps and the panel's padding; the floor
-  // keeps a two-player table from collapsing onto its own heading. Anything
-  // past the ceiling scrolls, so this is what the panel would *like* rather
-  // than what it is allowed to take.
-  const requestedHeight = Math.max(150, 82 + rows * 35);
+  // One line per row across the masthead — who this is and their ten values
+  // side by side — so a row is only as tall as its medallion: 23px, plus the
+  // 2px gap under it. The fixed 44px is the heading, the column heads, the
+  // gaps and the panel's padding; the floor keeps the turn plate beside it
+  // legible at a two-player table. Anything past the ceiling scrolls, so this
+  // is what the panel would *like* rather than what it is allowed to take.
+  const requestedHeight = Math.max(96, 44 + rows * 25);
   const mapArea = document.getElementById("maparea");
   if (!HUD_LAYOUT.players)
     mapArea.style.setProperty("--player-hud-height", `${requestedHeight}px`);
