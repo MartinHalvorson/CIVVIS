@@ -140,6 +140,12 @@ class FleetConfig:
     seed: int = 1
     pop: int = 12
     evolve_every: int = 4
+    # The league leases a claimed game for an hour by default, which is right
+    # for a machine that crashed and wrong for a fleet that restarts workers
+    # on purpose: a supervised restart mid-round otherwise strands its claims
+    # and the round cannot finalize until the hour is up. A 250-turn game
+    # takes minutes, so this is still far longer than any game in flight.
+    lease_seconds: int = 900
 
     def host(self, name: str) -> Optional[Host]:
         for host in self.hosts:
@@ -210,6 +216,7 @@ def parse_config(raw: Dict) -> FleetConfig:
         seed=int(raw.get("seed", base.seed)),
         pop=int(raw.get("pop", base.pop)),
         evolve_every=int(raw.get("evolve_every", base.evolve_every)),
+        lease_seconds=max(60, int(raw.get("lease_seconds", base.lease_seconds))),
     )
 
 
@@ -418,6 +425,8 @@ def league_command(cfg: FleetConfig, status: HostStatus) -> str:
         str(cfg.pop),
         "--evolve-every",
         str(cfg.evolve_every),
+        "--lease-seconds",
+        str(cfg.lease_seconds),
         "--rounds",
         str(cfg.rounds if cfg.rounds > 0 else 1),
         "--quiet",

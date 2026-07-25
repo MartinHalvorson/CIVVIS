@@ -151,6 +151,21 @@ class WorkerTests(unittest.TestCase):
         self.assertIn("--jobs 8", cmd)
         self.assertIn("--dir /srv/league", cmd)
 
+    def test_a_supervised_restart_does_not_strand_its_claims_for_an_hour(self):
+        # The league's default lease assumes a claim is only orphaned by a
+        # crash. A fleet restarts workers on purpose, and a stranded claim
+        # blocks the whole round from finalizing until the lease expires.
+        cfg = fleet.parse_config({"hosts": [{"name": "boxa", "root": "/srv"}]})
+        self.assertLess(cfg.lease_seconds, 3600)
+        status = fleet.HostStatus(host=cfg.hosts[0], reachable=True, cores=4)
+        self.assertIn(f"--lease-seconds {cfg.lease_seconds}", fleet.league_command(cfg, status))
+        # ...but still far longer than any single game takes to play.
+        self.assertGreaterEqual(cfg.lease_seconds, 300)
+
+    def test_an_absurdly_short_lease_is_clamped_rather_than_obeyed(self):
+        cfg = fleet.parse_config({"lease_seconds": 1, "hosts": [{"name": "a"}]})
+        self.assertGreaterEqual(cfg.lease_seconds, 60)
+
     def test_a_remote_host_keeps_its_own_mirror_of_the_league(self):
         cfg = fleet.parse_config(
             {
