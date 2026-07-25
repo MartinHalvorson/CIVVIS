@@ -9371,6 +9371,11 @@ pub struct Player {
     pub alliances: BTreeMap<usize, AllianceState>,
     #[serde(default)]
     pub diplomatic_favor: f64,
+    /// Accumulated War Weariness points. Every
+    /// `WAR_WEARINESS_POINTS_FOR_AMENITY_LOSS` (400) of them costs one
+    /// Amenity in *every* city this civilization owns.
+    #[serde(default)]
+    pub war_weariness: f64,
     #[serde(default)]
     pub dvp: i64, // diplomatic victory points
     #[serde(default = "normal_age")]
@@ -9478,6 +9483,7 @@ impl Player {
             open_borders_until: BTreeMap::new(),
             alliances: BTreeMap::new(),
             diplomatic_favor: 0.0,
+            war_weariness: 0.0,
             dvp: 0,
             age: "normal".to_string(),
             culture_lifetime: 0.0,
@@ -12762,6 +12768,50 @@ impl Game {
             Some(pos),
         );
         Ok(())
+    }
+
+    /// Shipped `WAR_WEARINESS_POINTS_FOR_AMENITY_LOSS`: every 400 points cost
+    /// one Amenity, in every city the civilization owns.
+    pub fn war_weariness_amenity_loss(&self, pid: usize) -> i64 {
+        (self.players[pid].war_weariness / 400.0).floor() as i64
+    }
+
+    /// Charge one bout of fighting. `WAR_WEARINESS_PER_COMBAT_IN_FOREIGN_LANDS`
+    /// is 2 and `_IN_ALLIED_LANDS` is 1; fighting on your own soil is the
+    /// cheapest case. Policy and government reductions apply here, which is
+    /// what makes `war_weariness_multiplier` mean anything.
+    fn accrue_combat_weariness(&mut self, pid: usize, at: Pos) {
+        if !self.at_war_with_any_civilization(pid) {
+            return;
+        }
+        let owner = self
+            .map
+            .get(at)
+            .and_then(|tile| tile.owner_city)
+            .and_then(|cid| self.cities.get(&cid))
+            .map(|city| city.owner);
+        let home = owner == Some(pid);
+        let points = match owner {
+            Some(other) if other == pid => 1.0,
+            Some(other) if self.are_allied(pid, other) || self.same_team(pid, other) => 1.0,
+            _ => 2.0,
+        };
+        self.add_war_weariness(pid, points * self.war_weariness_multiplier(pid, home));
+    }
+
+    fn add_war_weariness(&mut self, pid: usize, points: f64) {
+        self.players[pid].war_weariness = (self.players[pid].war_weariness + points).max(0.0);
+    }
+
+    /// `WAR_WEARINESS_DECAY_TURN_AT_WAR` 50 while any war is running, and
+    /// `_AT_PEACE` 200 once they are all over.
+    fn decay_war_weariness(&mut self, pid: usize) {
+        let decay = if self.at_war_with_any_civilization(pid) {
+            50.0
+        } else {
+            200.0
+        };
+        self.add_war_weariness(pid, -decay);
     }
 
     pub fn war_weariness_multiplier(&self, pid: usize, home_territory: bool) -> f64 {
@@ -19301,7 +19351,10 @@ impl Game {
         if self.city_governor_active(city.owner, city.id) {
             supply += self.policy_effect(city.owner, "governor_amenity");
         }
-        supply.round() as i64
+        // War Weariness "is applied to every city you own as a negative
+        // Amenity" — it is empire-wide, not a property of the cities doing
+        // the fighting.
+        supply.round() as i64 - self.war_weariness_amenity_loss(city.owner)
     }
 
     /// Each distinct luxury gives +1 Amenity to the four cities that need it
@@ -28442,8 +28495,12 @@ impl Game {
         let r = match action {
             Action::Move { unit, to } => self.do_move(pid, *unit, *to),
             Action::MoveTo { unit, to } => self.do_move_to(pid, *unit, *to),
-            Action::Attack { unit, target } => self.do_attack(pid, *unit, *target),
-            Action::Ranged { unit, target } => self.do_ranged(pid, *unit, *target),
+            Action::Attack { unit, target } => self
+                .do_attack(pid, *unit, *target)
+                .inspect(|()| self.accrue_combat_weariness(pid, *target)),
+            Action::Ranged { unit, target } => self
+                .do_ranged(pid, *unit, *target)
+                .inspect(|()| self.accrue_combat_weariness(pid, *target)),
             Action::FoundCity { unit } => self.do_found_city(pid, *unit),
             Action::Improve { unit, improvement } => self.do_improve(pid, *unit, improvement),
             Action::FoundCorporation { pos } => self.do_found_corporation(pid, *pos),
@@ -28461,7 +28518,9 @@ impl Game {
             Action::RepairImprovement { unit } => self.do_repair_improvement(pid, *unit),
             Action::CoastalRaid { unit, target } => self.do_coastal_raid(pid, *unit, *target),
             Action::AirRebase { unit, to } => self.do_air_rebase(pid, *unit, *to),
-            Action::AirStrike { unit, target } => self.do_air_strike(pid, *unit, *target),
+            Action::AirStrike { unit, target } => self
+                .do_air_strike(pid, *unit, *target)
+                .inspect(|()| self.accrue_combat_weariness(pid, *target)),
             Action::AirPillage { unit, target } => self.do_air_pillage(pid, *unit, *target),
             Action::PriorityTarget { unit, target } => self.do_priority_target(pid, *unit, *target),
             Action::AirPatrol { unit, to } => self.do_air_patrol(pid, *unit, *to),
@@ -28576,12 +28635,18 @@ impl Game {
                 self.do_evangelize_belief(pid, *unit, belief)
             }
             Action::ConvertBarbarians { unit } => self.do_convert_barbarians(pid, *unit),
-            Action::CityStrike { city, target } => self.do_city_strike(pid, *city, *target),
+            Action::CityStrike { city, target } => self
+                .do_city_strike(pid, *city, *target)
+                .inspect(|()| self.accrue_combat_weariness(pid, *target)),
             Action::WmdStrike {
                 city,
                 target,
                 thermonuclear,
-            } => self.do_wmd_strike(pid, *city, *target, *thermonuclear),
+            } => self
+                .do_wmd_strike(pid, *city, *target, *thermonuclear)
+                // WAR_WEARINESS_PER_WMD_LAUNCHED: launching is the single
+                // most expensive thing you can do to your own people.
+                .inspect(|()| self.add_war_weariness(pid, 10.0)),
             Action::BuildRailroad { unit } => self.do_build_railroad(pid, *unit),
             Action::EncampmentStrike { city, target } => {
                 self.do_encampment_strike(pid, *city, *target)
@@ -34425,6 +34490,7 @@ impl Game {
 
     fn process_diplomacy(&mut self, pid: usize) {
         let turn = self.turn;
+        self.decay_war_weariness(pid);
         self.pending_deals.retain(|deal| deal.expires >= turn);
         self.players[pid]
             .denounced_until
@@ -34770,6 +34836,11 @@ impl Game {
         // turn after signing, which is not a war — it is the same war, and it
         // reads in the log as a dozen of them.
         let holds_until = self.turn + self.standard_duration(PEACE_TREATY_TURNS);
+        // WAR_WEARINESS_DECAY_PEACE_DECLARED: signing forgives a large block
+        // of weariness outright, for both sides of the treaty.
+        for side in first_side.iter().chain(second_side.iter()) {
+            self.add_war_weariness(*side, -2000.0);
+        }
         terms.push("Current borders recognized".to_string());
         terms.push(format!("Peace treaty through Turn {holds_until}"));
         let settlement = WarPeace {
@@ -45794,6 +45865,52 @@ mod victory_conditions {
             g.players[1].counters["project_effect:thermonuclear_devices"],
             0
         );
+    }
+
+    #[test]
+    fn war_weariness_costs_every_city_an_amenity_and_decays_at_the_shipped_rates() {
+        let mut g = game_with_capitals(2, 4_162, 300);
+        let home = g.player_city_ids(0)[0];
+        let baseline = g.city_local_amenities(&g.cities[&home]);
+
+        // WAR_WEARINESS_POINTS_FOR_AMENITY_LOSS is 400, and the loss lands on
+        // every city the civilization owns, not just the ones at war.
+        g.players[0].war_weariness = 399.0;
+        assert_eq!(g.war_weariness_amenity_loss(0), 0);
+        assert_eq!(g.city_local_amenities(&g.cities[&home]), baseline);
+        g.players[0].war_weariness = 400.0;
+        assert_eq!(g.war_weariness_amenity_loss(0), 1);
+        assert_eq!(g.city_local_amenities(&g.cities[&home]), baseline - 1);
+        g.players[0].war_weariness = 1_200.0;
+        assert_eq!(g.city_local_amenities(&g.cities[&home]), baseline - 3);
+
+        // WAR_WEARINESS_DECAY_TURN_AT_WAR 50, _AT_PEACE 200.
+        g.at_war.insert(pair(0, 1));
+        g.process_diplomacy(0);
+        assert_eq!(g.players[0].war_weariness, 1_150.0);
+        g.at_war.remove(&pair(0, 1));
+        g.process_diplomacy(0);
+        assert_eq!(g.players[0].war_weariness, 950.0);
+    }
+
+    #[test]
+    fn fighting_abroad_wearies_twice_as_fast_as_fighting_at_home() {
+        // WAR_WEARINESS_PER_COMBAT_IN_FOREIGN_LANDS 2 against _IN_ALLIED_LANDS
+        // 1; your own soil is the cheap case alongside an ally's.
+        let mut g = game_with_capitals(2, 4_163, 300);
+        g.at_war.insert(pair(0, 1));
+        let home = g.cities[&g.player_city_ids(0)[0]].pos;
+        let abroad = g.cities[&g.player_city_ids(1)[0]].pos;
+
+        g.accrue_combat_weariness(0, home);
+        assert_eq!(g.players[0].war_weariness, 1.0);
+        g.accrue_combat_weariness(0, abroad);
+        assert_eq!(g.players[0].war_weariness, 3.0);
+
+        // Peace means no weariness accrues at all.
+        g.at_war.remove(&pair(0, 1));
+        g.accrue_combat_weariness(0, abroad);
+        assert_eq!(g.players[0].war_weariness, 3.0);
     }
 
     #[test]
