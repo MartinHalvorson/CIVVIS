@@ -239,6 +239,7 @@
   .settings-sec { padding: 11px 13px; }
   .settings-sec h2 { margin-bottom: 7px; }
   .observer-settings { display: none; }
+  .setting-row[hidden] { display: none; }
   .shortcut-panel {
     position: relative; z-index: 3; flex: 0 0 auto; margin: 0;
     border-top: 1px solid #355047; background: linear-gradient(180deg, #101d1a, #091310);
@@ -546,7 +547,7 @@
   .force-chip.muster { background: #2a4a6b3d; color: #9fc7e6; }
   .force-chip.recover { background: #3d3a5c40; color: #c0b6e8; }
 
-  /* Cinema presentation is a spectator composition, not another map style:
+  /* Cinema presentation is a director-controlled spectator composition, not another map style:
      the existing terrain renderer remains authoritative while the broadcast
      furniture yields to it. The race stays readable across the room; the
      dense leader table and command deck remain one C/F key away. */
@@ -650,8 +651,7 @@
   }
   body.cinema-mode.cinema-intertitle #playerhud,
   body.cinema-mode.cinema-intertitle #cinema-story,
-  body.cinema-mode.cinema-intertitle #cinema-follow,
-  body.cinema-mode.cinema-intertitle #cinema-chrome { opacity: 0 !important; pointer-events: none; }
+  body.cinema-mode.cinema-intertitle #cinema-follow { opacity: 0 !important; pointer-events: none; }
   .cinema-prologue-content {
     width: min(900px, calc(100vw - 80px));
     animation: cinema-prologue-title 5.1s cubic-bezier(.16,.8,.24,1) both;
@@ -797,21 +797,28 @@
   #cinema-follow b { min-width: 0; overflow: hidden; color: #f6e4ac; text-overflow: ellipsis; white-space: nowrap; }
   #cinema-follow em { color: #9fb0aa; font-style: normal; letter-spacing: .03em; }
   body.cinema-mode #cinema-chrome {
-    position: absolute; z-index: 15; top: 31px; right: 30px; display: flex; align-items: center; gap: 5px;
-    padding: 4px; border: 1px solid #d8bd7938; border-radius: 999px;
-    background: #06100dc4; box-shadow: 0 10px 28px #0009; backdrop-filter: blur(16px);
-    opacity: .12; transform: translateY(-5px); transition: opacity .25s ease, transform .25s ease;
+    position: absolute; z-index: 19; top: max(18px, env(safe-area-inset-top));
+    right: max(18px, env(safe-area-inset-right)); display: flex; align-items: center;
+    padding: 0; border: 1px solid #d8bd7960; border-radius: 999px;
+    background: #06100de8; box-shadow: 0 10px 28px #0009; backdrop-filter: blur(16px);
+    opacity: .96; transform: none; pointer-events: auto;
   }
-  body.cinema-mode.cinema-idle #cinema-chrome { opacity: 0; pointer-events: none; }
-  body.cinema-mode:not(.cinema-idle) #cinema-chrome,
-  body.cinema-mode #cinema-chrome:focus-within,
-  body.cinema-mode #cinema-chrome:hover { opacity: .94; transform: translateY(0); }
-  #cinema-chrome button { width: 34px; height: 30px; margin: 0; padding: 0; border: 0; background: transparent; }
-  #cinema-chrome button + button { border-left: 1px solid #ffffff12; border-radius: 0; }
-  #cinema-chrome button:last-child { border-radius: 0 999px 999px 0; }
-  #cinema-chrome .director-on, #cinema-chrome .audio-on {
-    color: var(--gold-bright); text-shadow: 0 0 10px #e6c87699;
+  #cinema-chrome > :not(#cinema-exit) { display: none; }
+  #cinema-exit {
+    width: auto; height: 34px; margin: 0; padding: 0 13px; border: 0;
+    border-radius: 999px; background: transparent; color: #f5e8c3;
+    font-size: 10px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase;
   }
+  #cinema-exit:hover, #cinema-exit:focus-visible {
+    background: #d7b66a1f; color: #fff8e7; outline: none;
+  }
+  /* Presentation is deliberately clean: only its environmental grade, matte,
+     camera movement and explicit exit remain over the 3D map. */
+  body.cinema-mode #playerhud, body.cinema-mode #victoryhud,
+  body.cinema-mode .minimap-frame, body.cinema-mode #zoomctl,
+  body.cinema-mode #ubar, body.cinema-mode #modeline, body.cinema-mode #tip,
+  body.cinema-mode #cinema-prologue, body.cinema-mode #cinema-frame,
+  body.cinema-mode #cinema-story, body.cinema-mode #cinema-follow { display: none !important; }
   @media (prefers-reduced-motion: reduce) {
     body.cinema-mode #cinema-prologue.active,
     body.cinema-mode #cinema-prologue .cinema-prologue-content { animation: none !important; opacity: 1; }
@@ -1133,8 +1140,7 @@
   }
   body.cinema-mode.cinema-finale #playerhud,
   body.cinema-mode.cinema-finale #cinema-story,
-  body.cinema-mode.cinema-finale #cinema-follow,
-  body.cinema-mode.cinema-finale #cinema-chrome { opacity: 0 !important; pointer-events: none; }
+  body.cinema-mode.cinema-finale #cinema-follow { opacity: 0 !important; pointer-events: none; }
   body.cinema-mode #winner {
     position: absolute; inset: 0; min-width: 0; padding: 0; transform: none;
     border: 0; border-radius: 0; box-shadow: none; text-align: center;
@@ -1467,7 +1473,9 @@
     .trade-balance { display: none; }
     #tradelist { grid-template-columns: 1fr; padding-inline: 10px; }
     body.cinema-mode #playerhud { top: 36px; width: calc(100% - 32px); grid-template-columns: 82px minmax(0, 1fr); }
-    body.cinema-mode #cinema-chrome { top: auto; right: 12px; bottom: 31px; }
+    body.cinema-mode #cinema-chrome {
+      top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); bottom: auto;
+    }
     body.cinema-mode #cinema-story { left: 24px; bottom: 84px; width: calc(100% - 48px); }
     body.cinema-mode #cinema-frame::before { inset-inline: 16px; }
     body.cinema-mode #cinema-story .cinema-detail {
@@ -1598,7 +1606,7 @@
   #victoryhud > .victory-turn { grid-column: 1; grid-row: 1 / -1; }
   #victoryhud > .victory-region { grid-column: 2; grid-row: 2; min-height: 0; }
 
-  body.cinema-mode #playerhud { display: none !important; }
+  body.cinema-mode #playerhud, body.cinema-mode #victoryhud { display: none !important; }
   body.cinema-mode #victoryhud {
     top: clamp(37px, 4.6vh, 54px); left: 50%; right: auto;
     width: min(960px, calc(100% - 168px)); height: 112px;
@@ -1786,11 +1794,11 @@
   <button id="cinema-follow" type="button" aria-live="polite" title="Stop following this unit">
     <span>Following</span><b></b><em>click to release</em>
   </button>
-  <div id="cinema-chrome" aria-label="Cinema controls">
-    <button id="cinema-director" title="Toggle automatic camera" aria-label="Toggle automatic camera">◉</button>
-    <button id="cinema-audio" title="Enable cinema soundscape (M)" aria-label="Enable cinema soundscape" aria-pressed="false">♩</button>
-    <button id="cinema-fullscreen" title="Enter fullscreen" aria-label="Enter fullscreen">⛶</button>
-    <button id="cinema-exit" title="Exit cinema mode (C)" aria-label="Exit cinema mode">✕</button>
+  <div id="cinema-chrome" aria-label="Exit cinematic presentation">
+    <button id="cinema-director" hidden title="Toggle automatic camera" aria-label="Toggle automatic camera">◉</button>
+    <button id="cinema-audio" hidden title="Enable cinema soundscape (M)" aria-label="Enable cinema soundscape" aria-pressed="false">♩</button>
+    <button id="cinema-fullscreen" hidden title="Enter fullscreen" aria-label="Enter fullscreen">⛶</button>
+    <button id="cinema-exit" title="Exit cinematic presentation (Escape)" aria-label="Exit cinematic presentation">Esc&nbsp; ×</button>
   </div>
   <aside id="victoryhud" data-layout-widget="victory" aria-label="Turn and victory tracker"></aside>
   <aside id="playerhud" data-layout-widget="players" aria-label="Player stats"></aside>
@@ -2024,7 +2032,7 @@
               <option value="10000">Slow</option>
             </select>
           </div>
-          <label class="setting-row"><span><input type="checkbox" id="cinemachk" checked> Cinema presentation</span><kbd>C</kbd></label>
+          <label class="setting-row" id="cinema-setting" hidden><span><input type="checkbox" id="cinemachk" checked> Cinema presentation</span><kbd>C</kbd></label>
         </div>
         <div class="overlay-options" role="group" aria-labelledby="overlay-options-title">
           <h2 id="overlay-options-title">Map overlays</h2>
@@ -2424,6 +2432,7 @@ function setView(v) {
   VIEW = v; MODE = VIEW_MODES[v];
   localStorage.setItem("civvis-view-v3", v);
   syncTiltForView();
+  syncCinemaPresentationControl();
   applyCinemaMode();
   if (movingDown) setFullWorldView();
   else setRot(cam.rot, false);  // recompute screen-space light for the new pitch
@@ -2538,14 +2547,12 @@ let CINEMA = localStorage.getItem("civvis-cinema-v1") !== "0";
 let CINEMA_AUDIO = localStorage.getItem("civvis-cinema-audio-v1") === "1";
 const REDUCED_MOTION_QUERY = window.matchMedia("(prefers-reduced-motion: reduce)");
 let cinemaIdleTimer = null, cinemaIntertitleTimer = null, cinemaIntertitleSignature = null;
-// Automatic camera movement is strictly opt-in. A spectator may still ask the
-// director to find the action, but loading or entering Cinema must never start
-// moving a viewport that the viewer left still. Use a fresh preference key so
-// browsers where Cinema previously forced v2 on also return to a steady view.
-const DIRECTOR_STORAGE_KEY = "civvis-director-v3";
-let DIRECTOR = localStorage.getItem(DIRECTOR_STORAGE_KEY) === "1";
+// Presentation owns the director. The 3D cinematic display remains available
+// after presentation exits, but no automatic camera survives that exit.
+let DIRECTOR = false;
 let directorGoal = null, directorLast = 0, directorMotionLast = 0;
 let directorTransition = null;
+let directorPendingCue = null;
 let directorStoryUntil = 0, directorAmbientLast = performance.now();
 let directorPortraitIndex = 0;
 let cinemaAudioContext = null, cinemaAudioMaster = null, cinemaAudioAnalyser = null;
@@ -2558,6 +2565,10 @@ if (VIEW === "simple" || VIEW === "minimal") VIEW = "strategic";
 
 function cinemaActive() {
   return !!(SPEC && CINEMA && VIEW === "cinematic");
+}
+function syncCinemaPresentationControl() {
+  const row = document.getElementById("cinema-setting");
+  if (row) row.hidden = VIEW !== "cinematic";
 }
 const CINEMA_TONE_CLASSES = ["cinema-tone-dawn", "cinema-tone-day",
                               "cinema-tone-dusk", "cinema-tone-night"];
@@ -2671,6 +2682,7 @@ function showCinemaChapter(cue) {
 function applyCinemaMode() {
   const active = cinemaActive();
   const wasActive = document.body.classList.contains("cinema-mode");
+  DIRECTOR = active;
   document.body.classList.toggle("cinema-mode", active);
   if (!active || !wasActive) document.body.classList.remove("cinema-idle");
   const checkbox = document.getElementById("cinemachk");
@@ -2678,7 +2690,7 @@ function applyCinemaMode() {
   const footerButton = document.getElementById("speccinema");
   if (footerButton) footerButton.classList.toggle("active", active);
   if (active && !wasActive) {
-    if (DIRECTOR && !directorGoal && state) directorGoal = directorSurveyGoal();
+    startDirectorPresentation();
     wakeCinema();
     if (state && !showCinemaPrologue(state)) {
       const civilizations = state.players.filter(player =>
@@ -2695,9 +2707,13 @@ function applyCinemaMode() {
     clearTimeout(cinemaIdleTimer);
     cinemaIdleTimer = null;
     clearDirectorTransition();
+    directorPendingCue = null;
+    directorGoal = null;
     hideDirectorStory();
     hideCinemaIntertitle();
   }
+  updateDirectorButton();
+  updateCameraFollowChip();
   updateCinemaAudioButton();
   if (cinemaAudioContext) syncCinemaAudioState();
   if (active !== wasActive) resize();
@@ -4409,6 +4425,11 @@ function directorCue(prev, next) {
 function queueDirectorCue(cue) {
   if (!DIRECTOR || !cue) return;
   const now = performance.now();
+  if (directorGoal?.opening) {
+    if (!directorPendingCue || (cue.priority || 0) > (directorPendingCue.priority || 0))
+      directorPendingCue = cue;
+    return;
+  }
   const battle = cue.kind === "battle";
   const signature = battle
     ? `battle:${cue.attackerId ?? "city"}:${key(cue.battleTarget || cue.pos)}`
@@ -4518,8 +4539,36 @@ function directorSurveyGoal() {
                    scale:.82, kind:"survey", holdMs:7200, arrivedAt:0},
                    state?.turn || 0) : null;
 }
+function startDirectorPresentation(now = performance.now()) {
+  if (!cinemaActive() || !state?.map?.tiles?.length) return false;
+  const frame = fitFullWorldView(true);
+  const anchor = mainLandmassAnchor() || state.map.tiles[0];
+  if (!frame || !anchor) return false;
+  directorPendingCue = null;
+  directorGoal = {
+    pos:[...anchor.pos], focus:null, worldX:frame.x, worldY:frame.y,
+    scale:frame.scale, rot:0, tilt:DEFAULT_CINEMA_YS,
+    kind:"survey", opening:true, holdMs:4200, arrivedAt:now
+  };
+  directorLast = now;
+  directorAmbientLast = now;
+  updateCameraFollowChip();
+  return true;
+}
 function directorAmbientCue() {
   if (!state) return null;
+  const disasters = [...(state.active_disasters || [])]
+    .filter(disaster => Array.isArray(disaster.center))
+    .sort((a, b) => (b.severity || 0) - (a.severity || 0) ||
+                    (b.tiles?.length || 0) - (a.tiles?.length || 0));
+  const urgentDisaster = disasters.find(disaster => (disaster.severity || 0) >= 2 ||
+    ["active_volcano", "tornado", "hurricane", "forest_fire", "jungle_fire"]
+      .includes(disaster.kind));
+  if (urgentDisaster) {
+    const disaster = urgentDisaster;
+    return {pos:[...disaster.center], priority:6, kind:"event",
+            ...cinematicDisasterStory(disaster, state)};
+  }
   const warContext = cinematicWarContext(state);
   if (warContext.active.length) {
     const war = warContext.active[(state.turn + directorPortraitIndex++) % warContext.active.length];
@@ -4531,6 +4580,11 @@ function directorAmbientCue() {
         kind:"front", kicker:"The war continues", title:`${aggressor} against ${defender}`,
         detail:`Turn ${state.turn} · ${Math.max(1, state.turn - war.started)} turns at war · ${cuePlace(state, front.pos)}`};
     }
+  }
+  if (disasters.length) {
+    const disaster = disasters[0];
+    return {pos:[...disaster.center], priority:4, kind:"event",
+            ...cinematicDisasterStory(disaster, state)};
   }
   const majors = new Set(state.players
     .filter(player => !player.is_minor && !player.is_barbarian && player.alive)
@@ -4640,8 +4694,10 @@ function advanceDirector(now = performance.now()) {
   const dt = Math.max(1, Math.min(80, now - (directorMotionLast || now - 16)));
   directorMotionLast = now;
   let gx = trackedSubject
-    ? trackedSubject.x : wrapX(S * SQ3 * (directorGoal.pos[0] + directorGoal.pos[1] / 2));
-  let gy = trackedSubject ? trackedSubject.y : S * 1.5 * directorGoal.pos[1];
+    ? trackedSubject.x : (directorGoal.worldX ??
+      wrapX(S * SQ3 * (directorGoal.pos[0] + directorGoal.pos[1] / 2)));
+  let gy = trackedSubject ? trackedSubject.y :
+    (directorGoal.worldY ?? S * 1.5 * directorGoal.pos[1]);
   if (cinemaActive() && directorGoal.focus) {
     // The land-biased viewing anchor may sit a few tiles away from the event.
     // Preserve that richer background, but keep the actual subject clear of
@@ -4710,6 +4766,15 @@ function advanceDirector(now = performance.now()) {
     if (!directorGoal.arrivedAt) directorGoal.arrivedAt = now;
     const battleStillPlaying = directorGoal.kind === "battle" && now < combatFocusUntil;
     if (!battleStillPlaying && now - directorGoal.arrivedAt >= directorGoal.holdMs) {
+      if (directorGoal.opening) {
+        const pending = directorPendingCue;
+        directorPendingCue = null;
+        directorGoal = null;
+        if (pending) queueDirectorCue(pending);
+        else beginDirectorAmbientShot(now);
+        updateCameraFollowChip();
+        return true;
+      }
       directorGoal = cinemaActive() && !["survey", "empire"].includes(directorGoal.kind)
         ? directorSurveyGoal() : null;
       updateCameraFollowChip();
@@ -5060,7 +5125,7 @@ function render(st, recordChronicle = true) {
   if (!sameWorld) {
     unitHeadings.clear();
     clearDirectorTransition();
-    directorGoal = null; directorSeen.clear();
+    directorGoal = null; directorPendingCue = null; directorSeen.clear();
     directorAmbientLast = performance.now(); directorPortraitIndex = 0;
     cameraFollowUnitId = null; cameraFollowManual = false;
     cameraFlight = null; cameraZoom = null; clearCameraInertia();
@@ -5101,16 +5166,18 @@ function render(st, recordChronicle = true) {
   TMAP = new Map(st.map.tiles.map(t => [key(t.pos), t]));
   updateCameraFollowChip();
   applyCinemaMode();
-  if (newWorld) showCinemaPrologue(st);
-  queueDirectorCue(cinematicCue);
-  // Establish the requested view before its first paint, then keep a watched
-  // civilization fitted as its borders and meaningful forces change. The
-  // director temporarily owns event close-ups; its survey shot and the normal
-  // watched view both return to this same empire portrait afterward.
-  if (newWorld || viewChanged) setObservedPlayersView(false);
-  else if (watchedEmpireAutoFrame && Number.isInteger(st.view_player) &&
+  // Establish the requested view before its first paint. Presentation begins
+  // with the whole atlas; outside presentation, watched civilizations retain
+  // the living empire portrait and its smooth reframing from the normal view.
+  if (newWorld || viewChanged) {
+    if (cinemaActive()) startDirectorPresentation();
+    else setObservedPlayersView(false);
+  }
+  else if (!cinemaActive() && watchedEmpireAutoFrame && Number.isInteger(st.view_player) &&
            !directorGoal && !cameraFollowManual && !dragState && !touchGesture)
     setObservedPlayersView(true);
+  if (newWorld) showCinemaPrologue(st);
+  queueDirectorCue(cinematicCue);
   const errEl = document.getElementById("err");
   if (st.error) { errEl.textContent = st.error; errEl.style.display = "block";
     setTimeout(() => errEl.style.display = "none", 2500); }
@@ -13679,6 +13746,14 @@ function fitTrueEarthView() {
 function setFullWorldView() {
   takeCameraControl();
   setRot(0);
+  return fitFullWorldView(false);
+}
+function fitFullWorldView(preservePresentation = false) {
+  if (preservePresentation) {
+    cameraFlight = null; cameraZoom = null; clearCameraInertia(); stopCameraFollow();
+    setRot(0, false);
+    if (VIEW === "cinematic") setTilt(DEFAULT_CINEMA_YS, false);
+  }
   if (!state?.map?.tiles?.length) return;
 
   if (trueEarthMap()) {
@@ -13707,7 +13782,9 @@ function setFullWorldView() {
   cameraFlight = null; cameraZoom = null; clearCameraInertia();
   cam.scale = Math.max(.01, scale);
   cam.x = (minX + maxX) / 2 - (desiredX - area.clientWidth / 2) / cam.scale;
-  cam.y = (minY + maxY) / 2 - (desiredY - area.clientHeight / 2) / (cam.scale * YS);
+  cam.y = clampCameraY((minY + maxY) / 2 -
+    (desiredY - area.clientHeight / 2) / (cam.scale * YS), cam.scale);
+  return {x:cam.x, y:cam.y, scale:cam.scale};
 }
 
 // Reserve enough room to fit the initial subjects around the visible widgets.
@@ -13944,24 +14021,8 @@ function updateDirectorButton() {
   cinemaButton.title = DIRECTOR ? "Automatic camera on" : "Automatic camera off";
 }
 function setDirector(on) {
-  DIRECTOR = !!on;
-  localStorage.setItem(DIRECTOR_STORAGE_KEY, DIRECTOR ? "1" : "0");
-  clearDirectorTransition();
-  directorGoal = null;
-  directorAmbientLast = performance.now();
-  if (DIRECTOR) {
-    cameraFlight = null; cameraZoom = null; clearCameraInertia(); stopCameraFollow();
-  }
-  if (!DIRECTOR) {
-    directorStoryUntil = 0;
-    document.getElementById("cinema-story").classList.remove("visible");
-  }
-  updateDirectorButton();
-  updateCameraFollowChip();
-  if (DIRECTOR && SPEC) {
-    centerMainLandmass();
-    if (cinemaActive()) directorGoal = directorSurveyGoal();
-  }
+  if (on && (!SPEC || VIEW !== "cinematic")) return;
+  setCinemaMode(!!on);
 }
 function focusPlayer(pid) {
   if (!state) return;
@@ -14770,7 +14831,7 @@ document.addEventListener("keydown", ev => {
   }
   if (diplomacyOpen()) return;
   if (ev.key.toLowerCase() === "m" && cinemaActive()) { setCinemaAudio(!CINEMA_AUDIO); return; }
-  if (ev.key.toLowerCase() === "c" && SPEC) { toggleCinemaMode(); return; }
+  if (ev.key.toLowerCase() === "c" && SPEC && VIEW === "cinematic") { toggleCinemaMode(); return; }
   if (ev.key === "Enter") {
     if (SPEC) document.getElementById("specpause").click();
     else advanceTurn(ev.shiftKey);
@@ -15024,6 +15085,7 @@ document.getElementById("newgame-options").addEventListener("change", stageSelec
   const cinema = document.getElementById("cinemachk");
   cinema.checked = CINEMA;
   cinema.onchange = () => setCinemaMode(cinema.checked);
+  syncCinemaPresentationControl();
 }
 {
   const ys = document.getElementById("yieldchk");
