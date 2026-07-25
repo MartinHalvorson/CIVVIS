@@ -3487,6 +3487,50 @@ mod tests {
     /// waiting on, `Enter` walks those blockers in a fixed order and only
     /// ends the turn once none are left, and a unit under a standing order
     /// stops being counted. `docs/SINGLE_PLAYER.md` states the contract.
+    /// War, peace and denouncement have been in `legal_actions(0)` since v0.6
+    /// with nothing on the page that would send one, which closed the
+    /// domination path to a person while leaving it open to every agent. The
+    /// diplomacy screen is where those live now, and it must keep covering
+    /// them — including for city-states, or a war with one can be started and
+    /// never ended.
+    #[test]
+    fn browser_lets_the_player_conduct_diplomacy() {
+        for piece in [
+            "id=\"diplomacy\"",
+            "function drawDiplomacy()",
+            "function openDiplomacy()",
+            "function sendFromDiplomacy(action)",
+            "id=\"diplomacybtn\"",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(piece),
+                "the diplomacy screen is missing {piece}"
+            );
+        }
+        for action in [
+            "declare_war",
+            "declare_war_with_casus_belli",
+            "make_peace",
+            "denounce",
+            "propose_deal",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("byPlayer(\"{action}\")")),
+                "the diplomacy screen does not offer {action}"
+            );
+        }
+        // Incoming proposals are answered from the same screen.
+        assert!(EMBEDDED_INDEX.contains("a.type === \"accept_deal\" || a.type === \"reject_deal\""));
+        // City-states are listed, so peace with one is reachable.
+        assert!(EMBEDDED_INDEX.contains("Number(first.is_minor) - Number(second.is_minor)"));
+        // Barbarians are permanently at war and must not be counted as a power.
+        assert!(EMBEDDED_INDEX
+            .contains("player.at_war_with_me && player.alive && !player.is_barbarian"));
+        // Actions are posted back exactly as the engine handed them over.
+        assert!(EMBEDDED_INDEX
+            .contains("onclick='sendFromDiplomacy(${JSON.stringify(action)})'>${label}</button>"));
+    }
+
     #[test]
     fn browser_runs_a_civ_six_turn_loop() {
         for piece in [
