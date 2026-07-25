@@ -5234,6 +5234,26 @@ function render(st, recordChronicle = true) {
   advanceDirector();
   const w = document.getElementById("winner");
   const hasWinner = st.winner !== null && st.winner !== undefined;
+  // Being eliminated ends the game for the person at the keyboard even though
+  // the world plays on. Say so, rather than leaving them on a live-looking
+  // map they cannot touch.
+  const fallen = !SPEC && !hasWinner && st.players[0] && st.players[0].alive === false;
+  if (fallen) {
+    const signature = `fallen|${st.seed}|${st.turn}`;
+    w.classList.add("visible");
+    w.style.setProperty("--winner-color", pcol(0));
+    if (w.dataset.signature !== signature) {
+      w.dataset.signature = signature;
+      w.innerHTML = `<div class="winner-content">
+        <span class="winner-kicker">Defeat</span>
+        <span class="winner-mark" aria-hidden="true">✦</span>
+        <strong class="winner-title">${st.players[0].civ} is no more</strong>
+        <span class="winner-verdict">Your last city has fallen</span>
+        <span class="winner-meta">Turn ${st.turn} · the world plays on without you</span>
+        <button class="primary winner-again" onclick="startNewSimulation()">Start another game</button>
+      </div>`;
+    }
+  }
   document.body.classList.toggle("cinema-finale", cinemaActive() && hasWinner);
   if (hasWinner) {
     const p = st.players[st.winner];
@@ -5280,7 +5300,7 @@ function render(st, recordChronicle = true) {
         respawn.textContent = "Preparing the next world";
       }
     }
-  } else {
+  } else if (!fallen) {
     w.classList.remove("visible");
     w.style.removeProperty("--winner-color");
     if (w.dataset.signature) { delete w.dataset.signature; w.replaceChildren(); }
@@ -14981,15 +15001,21 @@ function drawTurnLoop() {
     `</button>`).join("");
   rail.classList.toggle("on", chips.length > 0);
   if (!button) return;
-  // A finished game has no next turn. Leaving the button live meant Enter
-  // posted an `end_turn` the engine refused, and the player got a red error
+  // A finished game has no next turn, and neither does an eliminated one:
+  // the world plays on without you and the engine answers `end_turn` with
+  // "not your turn". Leaving the button live meant Enter earned a red error
   // toast for the crime of pressing the only lit control on the screen.
-  const over = state.winner !== null && state.winner !== undefined;
-  button.disabled = over;
-  if (over) {
+  const won = state.winner !== null && state.winner !== undefined;
+  const eliminated = state.players[0] && state.players[0].alive === false;
+  button.disabled = won || eliminated;
+  if (won || eliminated) {
     button.classList.remove("blocked");
-    button.innerHTML = `The game is over<span class="endturn-hint">Start another below</span>`;
-    button.title = "This world has its victor. Start a new game from Game settings.";
+    button.innerHTML = eliminated && !won
+      ? `Your civilization has fallen<span class="endturn-hint">Start another below</span>`
+      : `The game is over<span class="endturn-hint">Start another below</span>`;
+    button.title = eliminated && !won
+      ? "Your last city is gone. Start a new game from Game settings."
+      : "This world has its victor. Start a new game from Game settings.";
     return;
   }
   // The capture modal disables the button outright; leave that alone.
@@ -15006,6 +15032,7 @@ function drawTurnLoop() {
 function advanceTurn(force = false) {
   if (!state || SPEC) return;
   if (state.winner !== null && state.winner !== undefined) return;
+  if (state.players[0] && state.players[0].alive === false) return;
   const blockers = turnBlockers();
   const next = blockers.find(b => b.kind !== "capture");
   if (blockers.some(b => b.kind === "capture")) return;

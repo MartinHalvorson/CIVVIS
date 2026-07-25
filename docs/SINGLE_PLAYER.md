@@ -209,6 +209,22 @@ There is no production queue, and that is an engine fact rather than a client
 gap: `do_produce` sets `city.queue = vec![item]`. Adding a real queue is engine
 work.
 
+## Endings
+
+A game can end two ways for the person at the keyboard, and both used to
+leave them on a live-looking map with an End Turn button that earned a red
+error toast when pressed.
+
+- **Somebody wins.** The button says the game is over and is disabled; the
+  finale names the victor and the victory.
+- **You are eliminated.** The world plays on without you — the engine answers
+  your `end_turn` with "not your turn" — so the button says your civilization
+  has fallen and the finale says so too.
+
+Both offer the one thing still useful: another game, started from the setup
+panel. A spectated finale keeps its countdown instead, because the supervisor
+owns that handoff.
+
 ## Keys
 
 Chosen to match Civ 6 where Civ 6 has an opinion, and to leave the existing
