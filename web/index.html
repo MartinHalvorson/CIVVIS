@@ -5701,21 +5701,53 @@ function drawNaturalWonderSprite(feature, t, x, y, footprint) {
   return true;
 }
 
+// Cinematic environment art is projected from real mesh vertices in world
+// space. Passing the map camera through to the model renderer is what makes a
+// tree reveal a different side, a mountain turn its ridgeline, and every cast
+// face relight against the fixed sun as the player rotates the board. Canvas'
+// outer transform supplies zoom, so the geometry remains vector-crisp at every
+// camera distance. Other display modes deliberately retain their cheaper art.
+function drawEnvironment3D(kind, t, x, y, span = 1) {
+  if (VIEW !== "cinematic" || !MODE.relief ||
+      !globalThis.Cinematic3D?.supportsEnvironment(kind)) return false;
+  cx.save();
+  cx.translate(x, y);
+  const drawn = Cinematic3D.drawEnvironment({
+    ctx:cx,
+    kind,
+    terrain:t.terrain,
+    seed:Math.imul(t.pos[0] + 4096, 73856093) ^ Math.imul(t.pos[1] + 4096, 19349663),
+    yaw:cam.rot,
+    tilt:YS,
+    sunAngle:SUN,
+    time:performance.now(),
+    detail:cam.scale >= .62,
+    span,
+    active:(t.volcano_state || 0) > 0,
+    polar:state && (t.pos[1] < state.map.height * .18 ||
+      t.pos[1] > state.map.height * .82),
+  });
+  cx.restore();
+  return drawn;
+}
+
 function drawFeatureEffects(t, x, y) {
   const burning = t.feature === "burning_forest" || t.feature === "burning_jungle";
   const burnt = t.feature === "burnt_forest" || t.feature === "burnt_jungle";
-  if (burning) {
+  const depthFeature = VIEW === "cinematic" &&
+    globalThis.Cinematic3D?.supportsEnvironment(t.feature);
+  if (burning && !depthFeature) {
     for (const [dx, dy, size] of [[-8,4,8],[1,-1,10],[9,5,7]]) {
       cx.fillStyle = "#b8270ddd";
       tri(x + dx - size * .45, y + dy + size * .5, x + dx, y + dy - size, x + dx + size * .45, y + dy + size * .5);
       cx.fillStyle = "#ffd34ee8";
       tri(x + dx - size * .22, y + dy + size * .35, x + dx, y + dy - size * .48, x + dx + size * .22, y + dy + size * .35);
     }
-  } else if (burnt) {
+  } else if (burnt && !depthFeature) {
     cx.fillStyle = "#17161188";
     cx.beginPath(); cx.ellipse(x, y + 4, 22, 11, 0, 0, 7); cx.fill();
   }
-  if (t.feature === "volcano" && t.volcano_state > 0) {
+  if (t.feature === "volcano" && t.volcano_state > 0 && !depthFeature) {
     cx.fillStyle = t.volcano_state === 2 ? "#ff6b2ac8" : "#aeb7b4a8";
     for (const [dx, dy, radius] of [[-5,-18,5],[2,-27,7],[9,-38,8]]) {
       cx.beginPath(); cx.arc(x + dx, y + dy, radius, 0, Math.PI * 2); cx.fill();
@@ -8819,8 +8851,12 @@ function draw() {
       const placement = naturalWonderPlacements.get(k);
       if (placement) {
         if (beau) {
-          drawNaturalWonderSprite(placement.feature, placement.tile,
-                                  placement.x, placement.y, placement.footprint);
+          const span = Math.max(1, Math.sqrt(placement.footprint.length) * .92);
+          if (!drawEnvironment3D(placement.feature, placement.tile,
+                                 placement.x, placement.y, span)) {
+            drawNaturalWonderSprite(placement.feature, placement.tile,
+                                    placement.x, placement.y, placement.footprint);
+          }
         } else {
           cx.fillStyle = "#f0ce62";
           cx.beginPath(); cx.arc(placement.x, placement.y, 10, 0, Math.PI * 2); cx.fill();
@@ -8832,7 +8868,7 @@ function draw() {
     }
     if (t.feature === "volcano") {
       if (beau) {
-        drawFeatureSprite(t, x, y);
+        if (!drawEnvironment3D("volcano", t, x, y)) drawFeatureSprite(t, x, y);
       } else {
         cx.fillStyle = "#4a4140";
         tri(x - 14, y + 10, x, y - 14, x + 14, y + 10);
@@ -8844,7 +8880,8 @@ function draw() {
     }
     if (t.terrain === "mountain") {
       if (beau) {
-        if (!drawMountainSprite(t, x, y)) drawMountainRange(t, x, y);
+        if (!drawEnvironment3D("mountain", t, x, y) && !drawMountainSprite(t, x, y))
+          drawMountainRange(t, x, y);
       } else {
         cx.fillStyle = "#6f747c";
         tri(x - 13, y + 9, x - 3, y - 11, x + 5, y + 9);
@@ -8853,7 +8890,7 @@ function draw() {
       }
       continue;
     }
-    if (t.hills && beau) {
+    if (t.hills && beau && !drawEnvironment3D("hills", t, x, y)) {
       // Relief, not repaint. These were opaque ellipses filled in the terrain's
       // flat color, which painted over the photographic material underneath: a
       // hill read as a pale dome sitting on the map rather than as ground that
@@ -8885,7 +8922,7 @@ function draw() {
         cx.beginPath(); cx.ellipse(x + hx, y + hy, hw2, hh2, 0, Math.PI, 0);
         cx.stroke();
       }
-    } else if (t.hills) {
+    } else if (t.hills && !beau) {
       cx.strokeStyle = "#00000066"; cx.lineWidth = 2.4;
       cx.beginPath(); cx.arc(x - 7, y - 7, 6.5, Math.PI, 0);
       cx.arc(x + 6, y - 7, 6.5, Math.PI, 0); cx.stroke();
@@ -8905,8 +8942,10 @@ function draw() {
         cx.beginPath(); cx.arc(x + dx2, y + dy2, r2, a0, a1); cx.stroke();
       }
     }
-    if (beau && drawFeatureSprite(t, x, y)) {
-      // Lifelike atlas sprite already painted.
+    if (beau && drawEnvironment3D(t.feature, t, x, y)) {
+      // True mesh feature already painted.
+    } else if (beau && drawFeatureSprite(t, x, y)) {
+      // Lifelike atlas fallback already painted.
     } else if (["forest", "jungle", "burning_forest", "burnt_forest",
                 "burning_jungle", "burnt_jungle"].includes(t.feature)) {
       const jungle = t.feature.includes("jungle");
