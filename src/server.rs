@@ -1494,7 +1494,10 @@ fn mountain_atlas() -> Vec<u8> {
         .unwrap_or_else(|_| EMBEDDED_MOUNTAIN_ATLAS.to_vec())
 }
 
-fn respond(stream: &mut TcpStream, code: &str, ctype: &str, body: &[u8]) {
+/// Write one complete HTTP response, returning whether it reached the socket.
+/// Callers normally have nothing useful to do with a disconnected client, but
+/// completed-turn delivery uses the result as its release acknowledgement.
+fn respond(stream: &mut TcpStream, code: &str, ctype: &str, body: &[u8]) -> bool {
     // Nothing this server sends is worth reusing from a cache. The page and
     // its art are compiled into the binary, so a build swap changes them
     // underneath an open tab - and with no cache headers at all a browser was
@@ -1506,18 +1509,20 @@ fn respond(stream: &mut TcpStream, code: &str, ctype: &str, body: &[u8]) {
          Cache-Control: no-store, must-revalidate\r\nPragma: no-cache\r\n\
          Connection: close\r\n\r\n",
         body.len());
-    let _ = stream.write_all(head.as_bytes());
-    let _ = stream.write_all(body);
-    let _ = stream.flush();
+    stream
+        .write_all(head.as_bytes())
+        .and_then(|()| stream.write_all(body))
+        .and_then(|()| stream.flush())
+        .is_ok()
 }
 
-fn respond_json(stream: &mut TcpStream, v: &Value) {
+fn respond_json(stream: &mut TcpStream, v: &Value) -> bool {
     respond(
         stream,
         "200 OK",
         "application/json",
         v.to_string().as_bytes(),
-    );
+    )
 }
 
 fn request_path(target: &str) -> &str {
@@ -1830,9 +1835,13 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 };
                 (session.state(), frame)
             };
-            sh.note_frame_delivered(frame);
             decorate(&mut o, sh);
-            respond_json(stream, &o);
+            if respond_json(stream, &o) {
+                // Release Lightning only after the completed-turn snapshot is
+                // on the wire. The browser renders every successful `/state`
+                // response as one synchronous map + HUD update.
+                sh.note_frame_delivered(frame);
+            }
         }
         // Everything a supervisor needs to know - is there a game, is it over -
         // without building the whole observation. /state runs close to a
@@ -2086,12 +2095,14 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             decorate(&mut out, sh);
             respond_json(stream, &out);
         }
-        _ => respond(
-            stream,
-            "404 Not Found",
-            "application/json",
-            b"{\"error\":\"not found\"}",
-        ),
+        _ => {
+            respond(
+                stream,
+                "404 Not Found",
+                "application/json",
+                b"{\"error\":\"not found\"}",
+            );
+        }
     }
 }
 
@@ -2165,6 +2176,47 @@ mod tests {
             delivery.wait_remaining(turn_8, now + VIEWER_ACTIVE + Duration::from_millis(21)),
             None
         );
+    }
+
+    #[test]
+    fn browser_renders_each_delivered_state_as_one_complete_frame() {
+        let render = EMBEDDED_INDEX
+            .split_once("function render(st, recordChronicle = true) {")
+            .expect("browser render function")
+            .1
+            .split_once("\nfunction drawCaptureChoice()")
+            .expect("end of browser render function")
+            .0;
+        let state_assignment = render.find("state = st;").expect("install delivered state");
+        let full_frame = render
+            .find(
+                "draw(); drawSide(newWorld); drawMini(); drawPlayerHud(); drawUbar(); drawQuickDeals(); drawCaptureChoice();",
+            )
+            .expect("map, minimap, HUDs, and controls must repaint together");
+        assert!(state_assignment < full_frame);
+
+        let victory_hud = EMBEDDED_INDEX
+            .split_once("function playerHudOverview() {")
+            .expect("victory tracker renderer")
+            .1
+            .split_once("\nfunction spectatorIdentity(player)")
+            .expect("end of victory tracker renderer")
+            .0;
+        assert!(victory_hud.contains("victoryMetric(player, track.id)"));
+        assert!(victory_hud.contains("<strong>${state.turn}</strong>"));
+
+        let player_hud = EMBEDDED_INDEX
+            .split_once("function drawPlayerHud() {")
+            .expect("player HUD renderer")
+            .1
+            .split_once("\n// CSS mode changes")
+            .expect("end of player HUD renderer")
+            .0;
+        assert!(player_hud.contains("const overview = playerHudOverview();"));
+        assert!(player_hud.contains("state.players"));
+        assert!(player_hud.contains("playerHudStats(p,"));
+        assert!(player_hud.contains("victoryHud.innerHTML = overview;"));
+        assert!(player_hud.contains("hud.innerHTML = html;"));
     }
 
     fn current() -> Params {
