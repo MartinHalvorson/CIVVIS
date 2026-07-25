@@ -19411,30 +19411,39 @@ impl Game {
         }
     }
 
-    /// Rise & Fall / Gathering Storm loyalty yield band. The Civilopedia
-    /// gives two penalty steps, not one per display band: "When the Loyalty
-    /// drops below 75, the city's yields and growth are penalized 25%. When
-    /// the Loyalty drops below 25, the city's yields are penalized 50% and
-    /// growth is penalized 75%." A city in Unrest is crippled, never blank.
+    /// Rise & Fall / Gathering Storm loyalty yield band, taken from the
+    /// shipped `LoyaltyLevels` table (`YieldChange` per level, one step per
+    /// display band): Loyal 76-100 pays 0, Wavering 51-75 pays -0.25,
+    /// Disloyal 26-50 pays -0.5, and Unrest 0-25 pays -1.0 — a city in
+    /// Unrest really does produce nothing.
+    ///
+    /// The Civilopedia prose ("below 75 … penalized 25%; below 25 … 50%
+    /// yields and 75% growth") describes two steps and disagrees with the
+    /// table the game actually runs on. The table wins; do not "fix" this
+    /// back from the prose.
     fn loyalty_yield_mult(loyalty: f64) -> f64 {
         if loyalty > 75.0 {
             1.0
-        } else if loyalty > 25.0 {
+        } else if loyalty > 50.0 {
             0.75
-        } else {
+        } else if loyalty > 25.0 {
             0.50
+        } else {
+            0.0
         }
     }
 
-    /// Growth shares the first penalty step with yields and takes a harsher
-    /// second one: -25% below Loyal, -75% in Unrest.
+    /// `LoyaltyLevels.GrowthChange` is the multiplier outright: Loyal 1.0,
+    /// Wavering 0.75, Disloyal 0.25, Unrest 0.0.
     fn loyalty_growth_mult(loyalty: f64) -> f64 {
         if loyalty > 75.0 {
             1.0
-        } else if loyalty > 25.0 {
+        } else if loyalty > 50.0 {
             0.75
-        } else {
+        } else if loyalty > 25.0 {
             0.25
+        } else {
+            0.0
         }
     }
 
@@ -44797,17 +44806,18 @@ mod victory_conditions {
 
     #[test]
     fn loyalty_states_apply_stock_yield_and_growth_bands() {
-        // Two penalty steps, at 75 and at 25 — the Disloyal display band is
-        // penalized exactly like Wavering, and Unrest is halved rather than
-        // blanked. See the Gathering Storm Loyalty Civilopedia entry.
+        // One step per display band, straight off the shipped LoyaltyLevels
+        // rows (YieldChange 0/-0.25/-0.5/-1.0, GrowthChange 1/0.75/0.25/0)
+        // for LoyaltyMin..LoyaltyMax of 76-100, 51-75, 26-50 and 0-25.
         for (loyalty, yields, growth) in [
             (100.0, 1.0, 1.0),
             (76.0, 1.0, 1.0),
             (75.0, 0.75, 0.75),
-            (50.0, 0.75, 0.75),
-            (26.0, 0.75, 0.75),
-            (25.0, 0.50, 0.25),
-            (0.0, 0.50, 0.25),
+            (51.0, 0.75, 0.75),
+            (50.0, 0.50, 0.25),
+            (26.0, 0.50, 0.25),
+            (25.0, 0.0, 0.0),
+            (0.0, 0.0, 0.0),
         ] {
             assert_eq!(Game::loyalty_yield_mult(loyalty), yields);
             assert_eq!(Game::loyalty_growth_mult(loyalty), growth);
