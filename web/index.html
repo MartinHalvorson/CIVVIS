@@ -841,6 +841,68 @@
     display: none; padding: 8px 12px; border-radius: 999px; color: #1b190f;
     background: var(--gold-bright); box-shadow: 0 7px 20px #0007; font-size: 9px; font-weight: 900; letter-spacing: .1em;
   }
+  /* Civ 6's notification rail: a column of small chips down the map's inner
+     edge. Anything the player may still want to act on is a chip; anything
+     that merely happened stays in the event log. Blockers are chips too —
+     they are the ones that also gate the End Turn button. */
+  #notify {
+    position: absolute; z-index: 8; right: 14px; top: 196px; bottom: 200px;
+    display: none; flex-direction: column; align-items: flex-end; gap: 6px;
+    overflow: hidden auto; scrollbar-width: none; pointer-events: none;
+  }
+  #notify::-webkit-scrollbar { display: none; }
+  #notify.on { display: flex; }
+  .notice {
+    position: relative; flex: none; width: 42px; height: 42px; padding: 0;
+    display: grid; place-items: center; pointer-events: auto;
+    border: 1px solid #4d685f; border-radius: 12px; font-size: 17px; line-height: 1;
+    color: var(--text); background: #0a1512e8; box-shadow: 0 8px 22px #0007;
+    backdrop-filter: blur(12px); cursor: pointer;
+    transition: transform .12s ease, border-color .12s ease, background .12s ease;
+  }
+  .notice:hover { transform: translateX(-3px); border-color: var(--gold); background: #12201cf0; }
+  .notice.tone-good { border-color: #3f6d52; color: var(--green); }
+  .notice.tone-warn { border-color: #6f5c33; color: #e8c47b; }
+  .notice.tone-bad { border-color: #6b3f3c; color: var(--danger); }
+  .notice.tone-action { border-color: var(--gold-deep); color: var(--gold-bright); }
+  .notice.blocking {
+    border-color: var(--gold); box-shadow: 0 8px 22px #0007, 0 0 0 2px #d7b66a3d;
+    animation: noticePulse 2.4s ease-in-out infinite;
+  }
+  @keyframes noticePulse {
+    0%, 100% { box-shadow: 0 8px 22px #0007, 0 0 0 2px #d7b66a30; }
+    50% { box-shadow: 0 8px 22px #0007, 0 0 0 5px #d7b66a14; }
+  }
+  .notice-count {
+    position: absolute; right: -4px; top: -4px; min-width: 17px; height: 17px;
+    display: grid; place-items: center; padding: 0 4px; border-radius: 9px;
+    color: #17160f; background: var(--gold-bright); box-shadow: 0 2px 6px #0007;
+    font-size: 9px; font-weight: 900;
+  }
+  .notice-dismiss {
+    position: absolute; left: -5px; top: -5px; width: 16px; height: 16px;
+    display: none; place-items: center; padding: 0; margin: 0; border-radius: 50%;
+    border: 1px solid #56706691; background: #0c1a16; color: var(--muted); font-size: 9px;
+  }
+  .notice:hover .notice-dismiss { display: grid; }
+  /* A notification that sends the player to a sidebar section marks where it
+     landed them; without it the jump is invisible on a long deck. */
+  .section-flash { animation: sectionFlash 1.2s ease; }
+  @keyframes sectionFlash {
+    0%, 100% { box-shadow: none; }
+    25% { box-shadow: inset 0 0 0 2px #d7b66a88; }
+  }
+  /* The End Turn button carries the blocker's own name, so the player reads
+     what the game is waiting on without hunting for it. */
+  #endturn.blocked {
+    color: #f2e6c6; background: linear-gradient(135deg, #3a3423, #262f2a);
+    border-color: #7d6a3e; box-shadow: 0 7px 22px #0005, inset 0 1px #ffffff14;
+  }
+  #endturn.blocked:hover { color: #fff3d5; background: linear-gradient(135deg, #4a4129, #2f3a34); border-color: #a08a52; }
+  #endturn .endturn-hint {
+    display: block; margin-top: 3px; font-size: 8px; font-weight: 700;
+    letter-spacing: .09em; opacity: .72; text-transform: uppercase;
+  }
   #tip {
     position: fixed; z-index: 30; display: none; max-width: 290px; padding: 10px 13px;
     color: var(--text); border: 1px solid #4a635a; border-radius: 11px;
@@ -1554,6 +1616,7 @@
     <button class="overlay-close" type="button" data-overlay-close="controls" aria-label="Hide map controls; restore them in Display settings" title="Hide map controls · restore in Display settings">✕</button>
   </div>
   <div id="ubar"></div>
+  <div id="notify" aria-label="Notifications" aria-live="polite"></div>
   <div id="modeline"></div>
   <div id="err"></div>
   <div id="winner" role="status" aria-live="assertive"></div>
@@ -1814,13 +1877,15 @@
   <details class="shortcut-panel">
     <summary>Keyboard shortcuts</summary>
     <div class="utility-body shortcut-grid">
+      <span><kbd>↵</kbd>Next blocker · end turn</span><span><kbd>⇧ ↵</kbd>End turn anyway</span>
+      <span><kbd>Tab</kbd>Next unit needing orders</span><span><kbd>Space</kbd>Skip this unit</span>
+      <span><kbd>F</kbd>Fortify · focus mode</span><span><kbd>Z</kbd>Sleep this unit</span>
       <span><kbd>1</kbd>Next unit</span><span><kbd>2</kbd>Settler lens</span>
-      <span><kbd>3</kbd>Map tacks · 6.5</span><span><kbd>F</kbd>Focus mode</span>
+      <span><kbd>3</kbd>Map tacks · 6.5</span><span><kbd>P</kbd>Civilopedia</span>
       <span><kbd>D</kbd>Quick Deals</span><span><kbd>Alt/⌥ drag</kbd>Rotate · cinematic tilt</span>
       <span><kbd>Q / E</kbd>Rotate map</span><span><kbd>Shift scroll</kbd>Rotate · <kbd>⌥ scroll</kbd>tilt</span>
       <span><kbd>Arrows</kbd>Pan map</span><span><kbd>+ / −</kbd>Zoom · double-click to dive</span>
       <span><kbd>Y</kbd>Tile yields</span><span><kbd>C</kbd>Cinema mode</span>
-      <span><kbd>↵</kbd>End / pause</span>
     </div>
   </details>
 </div>
@@ -3658,6 +3723,14 @@ async function send(action) {
   render(await fetchJSON("/action", { method: "POST",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({action}) }));
+  // A unit that has spent itself hands the turn to the next one, the way Civ 6
+  // does. Anything else — a half-move, a city order — leaves the selection be.
+  if (action.unit !== undefined && state && !SPEC && state.winner === null &&
+      (!sel || sel.id !== action.unit || !unitNeedsOrders(sel))) {
+    advanceToNextUnit(true);
+  } else {
+    drawTurnLoop();
+  }
 }
 
 // --- spectate is SERVER-DRIVEN: a thread in the server steps the game at the
@@ -4805,6 +4878,11 @@ function render(st, recordChronicle = true) {
     if (w.dataset.signature) { delete w.dataset.signature; w.replaceChildren(); }
   }
   draw(); drawSide(newWorld); drawMini(); drawPlayerHud(); drawUbar(); drawQuickDeals(); drawCaptureChoice();
+  if (newWorld) {
+    unitOrders.clear(); noticeLog = []; noticeDismissed.clear();
+    loopTurn = null; noticeSeenTurn = 0;
+  }
+  openTurnIfNew();
 }
 
 function drawCaptureChoice() {
@@ -10709,7 +10787,18 @@ function drawUbar() {
     if (a.type === "convert_barbarians")
       h += `<button onclick='send(${JSON.stringify(a)})'>☼ Convert adjacent Barbarians</button>`;
   }
-  h += `<button onclick='sel=null;draw();drawUbar()'>✕</button>`;
+  // Standing orders close the loop: a unit the player has answered for stops
+  // asking, and the End Turn button stops counting it.
+  const standing = unitOrder(u);
+  if (standing !== "skip")
+    h += `<button title="Done for this turn (Space)" onclick='orderUnit("skip")'>⏭ Skip</button>`;
+  if (standing !== "sleep")
+    h += `<button title="Rest until an enemy comes near or the unit is struck (Z)" onclick='orderUnit("sleep")'>☾ Sleep</button>`;
+  if (standing)
+    h += `<button title="Take this unit off standing orders" onclick='unitOrders.delete(${u.id});drawUbar();drawTurnLoop()'>⏻ Wake</button>`;
+  h += `<button onclick='sel=null;draw();drawUbar();drawTurnLoop()'>✕</button>`;
+  if (standing)
+    h += `<div class="small" style="margin-top:6px">${standing === "skip" ? "Skipping this turn" : "Sleeping until disturbed"}</div>`;
   bar.innerHTML = h;
   bar.style.display = "block";
 }
@@ -12518,15 +12607,285 @@ cv.addEventListener("mousemove", ev => {
 });
 cv.addEventListener("mouseleave", () => { tip.style.display = "none"; });
 
-// keys
+// ----------------------------------------------------------- the turn loop
+// A Civ 6 turn is a loop around one button: the game names what it is waiting
+// on, in priority order, and End Turn only turns gold once nothing is. See
+// docs/SINGLE_PLAYER.md for the contract this implements.
+
+// Client-side standing orders. The engine has fortify; "skip this turn" and
+// "sleep until something changes" are the client's own, so they live here and
+// never pretend to be engine state.
+const unitOrders = new Map(); // unit id -> {order:"skip"|"sleep", turn}
+let loopTurn = null;          // the turn the loop last opened on
+let noticeLog = [];           // event-derived notifications, newest last
+let noticeDismissed = new Set();
+let noticeSeenTurn = 0;
+const NOTICE_LIFE = 8;        // turns an event-derived chip survives
+
+function myUnits() {
+  return state && !SPEC ? state.units.filter(u => u.owner === 0) : [];
+}
+function unitOrder(unit) {
+  const held = unitOrders.get(unit.id);
+  if (!held) return null;
+  if (held.order === "skip") return held.turn === state.turn ? "skip" : null;
+  return "sleep";
+}
+// Sleeping units wake for the same reasons Civ 6 wakes them: a hostile unit
+// close enough to matter, or damage taken while they were not looking.
+function wakeSleepers() {
+  if (!state || SPEC) return;
+  const hostile = state.units.filter(u => u.owner !== 0 &&
+    (state.players[u.owner]?.at_war_with_me || state.players[u.owner]?.is_barbarian));
+  for (const unit of myUnits()) {
+    const held = unitOrders.get(unit.id);
+    if (!held || held.order !== "sleep") continue;
+    const threatened = hostile.some(enemy => hexDistUI(enemy.pos, unit.pos) <= 2);
+    if (threatened || unit.hp < (held.hp ?? unit.hp)) unitOrders.delete(unit.id);
+    else held.hp = unit.hp;
+  }
+  // Orders outlive nothing: a spent skip is dropped with the turn that set it,
+  // and a dead unit's id can be reissued by the engine to a different unit.
+  const alive = new Set(myUnits().map(u => u.id));
+  for (const [id, held] of [...unitOrders])
+    if (!alive.has(id) || (held.order === "skip" && held.turn !== state.turn))
+      unitOrders.delete(id);
+}
+function unitNeedsOrders(unit) {
+  return unit.moves_left > 0 && !unit.fortified && !unitOrder(unit);
+}
+function unitsNeedingOrders() {
+  return myUnits().filter(unitNeedsOrders);
+}
+function orderUnit(order) {
+  if (!sel || SPEC) return;
+  // Fortify is the engine's, and only the engine can say whether this unit may
+  // take it. The two client-side orders are always available.
+  if (order === "fortify") {
+    const act = state.legal_actions.find(a => a.type === "fortify" && a.unit === sel.id);
+    if (act) send(act);
+    return;
+  }
+  unitOrders.set(sel.id, {order, turn: state.turn, hp: sel.hp});
+  advanceToNextUnit(true);
+}
+// Spending a unit's last move should hand the player the next one, the way
+// Civ 6 does — otherwise every order ends with a hunt across the map.
+function advanceToNextUnit(force = false) {
+  const waiting = unitsNeedingOrders();
+  if (!waiting.length) { sel = null; draw(); drawSide(); drawUbar(); drawTurnLoop(); return; }
+  if (!force && sel && unitNeedsOrders(sel)) { drawTurnLoop(); return; }
+  const from = sel ? waiting.findIndex(u => u.id === sel.id) : -1;
+  sel = waiting[(from + 1) % waiting.length];
+  selCity = null;
+  centerOn(sel.pos);
+  draw(); drawSide(); drawUbar(); drawTurnLoop();
+}
 function nextAction() {
   if (!state || SPEC) return;
-  const ready = state.units.filter(u => u.owner === 0 && u.moves_left > 0 && !u.fortified);
-  if (!ready.length) return;
-  cycleIdx = (cycleIdx + 1) % ready.length;
-  sel = ready[cycleIdx]; selCity = null;
-  centerOn(sel.pos);
-  drawSide(); drawUbar();
+  advanceToNextUnit(true);
+}
+
+// A blocker is {kind, icon, label, detail, tone, act}. `act` takes the player
+// to the decision; it never makes it for them.
+function turnBlockers() {
+  if (!state || SPEC || state.winner !== null && state.winner !== undefined) return [];
+  const me = state.me, out = [];
+  const legal = type => state.legal_actions.filter(a => a.type === type);
+  if (legal("keep_city").length || legal("raze_city").length || legal("liberate_city").length)
+    out.push({kind: "capture", icon: "🏛", tone: "action", label: "Decide a city's fate",
+      detail: "A captured city is waiting on you.", act: () => {}});
+  const replies = state.legal_actions.filter(a => a.type === "accept_deal" || a.type === "reject_deal");
+  if (replies.length)
+    out.push({kind: "deal", icon: "✉", tone: "action", label: "Answer a proposal",
+      detail: `${new Set(replies.map(a => a.deal)).size} rival proposal(s) await a reply.`,
+      act: () => focusSection("govsec")});
+  if (legal("congress_vote").length)
+    out.push({kind: "congress", icon: "⚖", tone: "action", label: "Vote in the Congress",
+      detail: "The World Congress is in session.", act: () => focusSection("govsec")});
+  if (legal("choose_dedication").length)
+    out.push({kind: "dedication", icon: "✦", tone: "action", label: "Dedicate the age",
+      detail: `A ${titleCase(me.age || "new")} age has begun and wants its dedication.`,
+      act: () => focusSection("govsec")});
+  if (!me.research && legal("research").length)
+    out.push({kind: "research", icon: "⌬", tone: "action", label: "Choose research",
+      detail: "Your scientists have nothing to work on.", act: () => openTree("techs")});
+  if (!me.civic && legal("civic").length)
+    out.push({kind: "civic", icon: "❦", tone: "action", label: "Choose a civic",
+      detail: "Your thinkers have nothing to work on.", act: () => openTree("civics")});
+  for (const city of state.cities) {
+    if (city.owner !== 0 || (city.queue && city.queue.length)) continue;
+    if (!state.legal_actions.some(a => a.type === "produce" && a.city === city.id)) continue;
+    out.push({kind: `produce:${city.id}`, icon: "⚙", tone: "action",
+      label: `${city.name} is idle`, detail: "Choose what this city builds.", pos: city.pos,
+      act: () => { selCity = city; sel = null; centerOn(city.pos); draw(); drawSide(); focusSection("citysec"); }});
+  }
+  const waiting = unitsNeedingOrders();
+  if (waiting.length)
+    out.push({kind: "units", icon: "⚑", tone: "action", count: waiting.length,
+      label: waiting.length === 1 ? "A unit needs orders" : `${waiting.length} units need orders`,
+      detail: "Move it, fortify it, or skip its turn.", act: () => advanceToNextUnit(true)});
+  return out;
+}
+
+// Standing notifications: things worth acting on that do not gate the turn.
+function standingNotices() {
+  if (!state || SPEC) return [];
+  const me = state.me, out = [];
+  const legal = type => state.legal_actions.filter(a => a.type === type);
+  for (const act of legal("recruit_great_person"))
+    out.push({kind: `gp:${act.kind}`, icon: "★", tone: "good", topic: act.kind,
+      label: `${titleCase(act.kind)} may be recruited`,
+      detail: "A Great Person is yours for the claiming."});
+  if (legal("choose_pantheon").length)
+    out.push({kind: "pantheon", icon: "☼", tone: "good", topic: "pantheon",
+      label: "A pantheon may be founded",
+      detail: "Your faith is enough to adopt a belief."});
+  if (me.prophet_pending)
+    out.push({kind: "prophet", icon: "☼", tone: "good", topic: "prophet",
+      label: "A Great Prophet awaits", detail: "Found a religion with them."});
+  const slots = Object.values(me.policy_slots || {}).reduce((a, b) => a + b, 0);
+  if (slots > (me.policies || []).length && legal("slot_policy").length)
+    out.push({kind: "policy", icon: "⚿", tone: "good", topic: "policy",
+      label: "An empty policy slot",
+      detail: `${slots - me.policies.length} card slot(s) unfilled.`});
+  if (me.governor_titles_available > 0)
+    out.push({kind: "governor", icon: "♜", tone: "good", topic: "governor",
+      label: "A Governor title is unspent",
+      detail: `${me.governor_titles_available} title(s) available.`});
+  if (me.envoys_free > 0)
+    out.push({kind: "envoy", icon: "◈", tone: "good", topic: "envoy",
+      label: "Envoys are waiting",
+      detail: `${me.envoys_free} envoy(s) to send to a city-state.`});
+  for (const alert of state.barbarian_alerts || []) {
+    if (!Array.isArray(alert.camp)) continue;
+    out.push({kind: `barb:${key(alert.camp)}`, icon: "☠", tone: "bad",
+      label: "A barbarian camp has your scent",
+      detail: alert.target ? `Raiders are heading for ${alert.target.join(",")}.`
+        : "Its scouts have found you.", pos: alert.camp});
+  }
+  for (const city of state.cities) {
+    if (city.owner !== 0) continue;
+    if (city.hp !== undefined && city.hp < 200)
+      out.push({kind: `siege:${city.id}`, icon: "⚔", tone: "bad", label: `${city.name} is under attack`,
+        detail: `${Math.round(city.hp)} / 200 health.`, pos: city.pos,
+        act: () => { selCity = city; centerOn(city.pos); draw(); drawSide(); }});
+  }
+  return out;
+}
+
+// The engine's own event categories, so the rail and the event log can never
+// tell different stories about the same turn.
+const NOTICE_ICONS = {
+  Science: "⌬", Culture: "❦", War: "⚔", Diplomacy: "✉", People: "★",
+  Cities: "⌂", World: "☄", General: "◆",
+};
+const NOTICE_TONES = { War: "bad", World: "warn", Diplomacy: "warn" };
+// Capture what happened between one of the player's turns and the next. The
+// engine's own event categories carry over so the rail and the event log can
+// never tell different stories about the same turn.
+function captureTurnNotices() {
+  const fresh = (state.events || []).filter(e => e.turn > noticeSeenTurn);
+  noticeSeenTurn = state.turn;
+  for (const event of fresh) {
+    const kind = `ev:${event.turn}:${event.text}`;
+    if (noticeDismissed.has(kind)) continue;
+    noticeLog.push({kind, turn: event.turn, pos: event.pos,
+      icon: NOTICE_ICONS[event.category] || "◆",
+      tone: NOTICE_TONES[event.category] || "good",
+      label: event.text, detail: `${event.category} · turn ${event.turn}`});
+  }
+  noticeLog = noticeLog.filter(n => state.turn - n.turn < NOTICE_LIFE).slice(-14);
+}
+function focusSection(id) {
+  const section = document.getElementById(id);
+  if (!section) return;
+  document.body.classList.remove("sidebar-hidden");
+  if (section.tagName === "DETAILS") section.open = true;
+  section.scrollIntoView({block: "nearest", behavior: "smooth"});
+  section.classList.add("section-flash");
+  setTimeout(() => section.classList.remove("section-flash"), 1200);
+}
+// Until a decision has a panel of its own, its notification opens the
+// Civilopedia on the subject. Better than a chip that does nothing when
+// clicked, and it is where the rules actually live.
+function pediaSearch(term) {
+  openPedia();
+  const box = document.getElementById("pediaq");
+  if (box) { box.value = term; pediaKey = null; drawPedia(); }
+}
+function noticeAct(index) {
+  const chip = noticeChips[index];
+  if (!chip) return;
+  if (chip.act) chip.act();
+  else if (chip.pos) { centerOn(chip.pos); draw(); }
+  else if (chip.topic) pediaSearch(chip.topic);
+  drawTurnLoop();
+}
+function noticeDismiss(index, event) {
+  event.stopPropagation();
+  const chip = noticeChips[index];
+  if (!chip) return;
+  noticeDismissed.add(chip.kind);
+  noticeLog = noticeLog.filter(n => n.kind !== chip.kind);
+  drawTurnLoop();
+}
+let noticeChips = [];
+
+function drawTurnLoop() {
+  const rail = document.getElementById("notify");
+  const button = document.getElementById("endturn");
+  if (!state || SPEC) { rail.classList.remove("on"); return; }
+  wakeSleepers();
+  const blockers = turnBlockers();
+  const chips = blockers.map(b => ({...b, blocking: true}))
+    .concat(standingNotices())
+    .concat([...noticeLog].reverse().filter(n => !noticeDismissed.has(n.kind)));
+  noticeChips = chips;
+  rail.innerHTML = chips.map((chip, i) =>
+    `<button class="notice tone-${chip.tone}${chip.blocking ? " blocking" : ""}" ` +
+    `onclick="noticeAct(${i})" title="${escapeAttr(chip.label)}${chip.detail ? " — " + escapeAttr(chip.detail) : ""}" ` +
+    `aria-label="${escapeAttr(chip.label)}">${chip.icon}` +
+    (chip.count > 1 ? `<span class="notice-count">${chip.count}</span>` : "") +
+    (chip.blocking ? "" : `<span class="notice-dismiss" onclick="noticeDismiss(${i},event)" title="Dismiss">✕</span>`) +
+    `</button>`).join("");
+  rail.classList.toggle("on", chips.length > 0);
+  if (!button) return;
+  // The capture modal disables the button outright; leave that alone.
+  const captured = blockers.some(b => b.kind === "capture");
+  const next = blockers.find(b => b.kind !== "capture");
+  button.classList.toggle("blocked", !!next);
+  if (captured) return;
+  button.innerHTML = next
+    ? `${next.icon} ${next.label}<span class="endturn-hint">Enter · Shift+Enter ends anyway</span>`
+    : `End turn<span class="endturn-hint">Enter</span>`;
+  button.title = next ? next.detail : "Everything is settled. End the turn.";
+}
+// Enter walks the blockers and then ends the turn; Shift overrides.
+function advanceTurn(force = false) {
+  if (!state || SPEC) return;
+  const blockers = turnBlockers();
+  const next = blockers.find(b => b.kind !== "capture");
+  if (blockers.some(b => b.kind === "capture")) return;
+  if (next && !force) { next.act(); drawTurnLoop(); return; }
+  sel = null;
+  send({type: "end_turn"});
+}
+function escapeAttr(text) {
+  return String(text ?? "").replaceAll("&", "&amp;").replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
+// Opening a turn is its own moment: clear the spent skips, harvest the events
+// that happened while the rivals played, and hand the player their first unit.
+function openTurnIfNew() {
+  if (!state || SPEC) return;
+  if (loopTurn === state.turn) { drawTurnLoop(); return; }
+  const first = loopTurn === null;
+  loopTurn = state.turn;
+  if (first) noticeSeenTurn = Math.max(0, state.turn - 1);
+  captureTurnNotices();
+  drawTurnLoop();
+  if (!sel && !selCity) advanceToNextUnit(true);
 }
 function togglePanel(force, persist = true) {
   if (force === undefined && cinemaActive()) { setCinemaMode(false); return; }
@@ -12574,8 +12933,16 @@ document.addEventListener("keydown", ev => {
   if (ev.key.toLowerCase() === "c" && SPEC) { toggleCinemaMode(); return; }
   if (ev.key === "Enter") {
     if (SPEC) document.getElementById("specpause").click();
-    else { sel = null; send({type: "end_turn"}); }
+    else advanceTurn(ev.shiftKey);
   }
+  // Civ 6's unit keys. With nothing selected they fall through to the turn,
+  // which is what a player pressing space at the end of a turn expects.
+  else if (ev.key === " " && !SPEC) {
+    ev.preventDefault();
+    if (sel) orderUnit("skip"); else advanceTurn(ev.shiftKey);
+  }
+  else if (ev.key.toLowerCase() === "z" && !SPEC && sel) orderUnit("sleep");
+  else if (ev.key === "Tab" && !SPEC) { ev.preventDefault(); advanceToNextUnit(true); }
   else if (ev.key === "Escape") {
     // The dossier is the topmost thing Escape can close, so it goes first.
     if (hudExpanded !== null) { hudExpanded = null; drawPlayerHud(); return; }
@@ -12611,7 +12978,9 @@ document.addEventListener("keydown", ev => {
   else if (ev.key.toLowerCase() === "q") orbitCamera(-Math.PI / 12, 0);
   else if (ev.key.toLowerCase() === "e") orbitCamera(Math.PI / 12, 0);
   else if (ev.key.toLowerCase() === "r") orbitCamera(-cam.rot, DEFAULT_CINEMA_YS - cinematicYS);
-  else if (ev.key.toLowerCase() === "f") togglePanel();
+  else if (ev.key.toLowerCase() === "f") {
+    if (sel && !SPEC) orderUnit("fortify"); else togglePanel();
+  }
 });
 document.addEventListener("keyup", ev => {
   if (ev.key !== "Alt") return;
@@ -12623,7 +12992,7 @@ document.addEventListener("keyup", ev => {
   }
   altTap = false;
 });
-document.getElementById("endturn").onclick = () => { sel = null; send({type: "end_turn"}); };
+document.getElementById("endturn").onclick = ev => advanceTurn(ev.shiftKey);
 // Hand your own seat to the agent for a turn or ten. Useful for skipping a
 // decided game, and for seeing how the agent would play the position you are
 // in — which is most of why Unciv has it.
