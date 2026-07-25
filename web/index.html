@@ -3770,6 +3770,23 @@ function pcol2(id) {
     return CITY_STATE_TYPE_COLORS[p.cs_type] || CITY_STATE_TYPE_COLORS.trade;
   return playerJerseys()[id]?.[1] || PCOLORS2[id % PCOLORS2.length];
 }
+// sRGB-weighted lightness. Only ever used to sort a pair of jersey colours, so
+// the gamma-correct version would not change an answer.
+function lightness(hex) {
+  if (typeof hex !== "string" || hex[0] !== "#" || hex.length !== 7) return 0.5;
+  const n = parseInt(hex.slice(1), 16);
+  return (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255)
+          + 0.0722 * (n & 255)) / 255;
+}
+// A civilization's jersey pair, darker first. Jersey order is which colour is
+// "primary", which says nothing about which is light: Rome is purple on yellow
+// and Sumeria is navy on orange, so anything that wants the light half has to
+// ask rather than assume [1]. Borders want it in this order — the light colour
+// belongs on the inside of a frontier, whichever half of the pair that is.
+function jerseyLanes(id) {
+  const a = pcol(id), b = pcol2(id);
+  return lightness(a) <= lightness(b) ? [a, b] : [b, a];
+}
 function cityBannerColor(owner) {
   const p = state.players[owner];
   return p && p.is_minor
@@ -9461,48 +9478,98 @@ function draw() {
   // Strategic view is explicitly the empire-reading view. Keep its frontier
   // close to one useful screen-space weight at survey zoom, where an ordinary
   // world-space stroke otherwise shrinks into the tile grid and route network.
-  // Its ribbon also sits a little farther inside the owning tiles so both
-  // civilizations keep a visible colour at a shared boundary.
   const borderK = beau ? 1 : UI_K();
-  const borderInset = beau ? 1.5 : 2.4 * borderK;
+  // Every hex on the board shares the same six edge orientations, so the unit
+  // edge vector and the inward normal a lane needs are six values per frame, not
+  // two square roots per frontier edge per pass.
+  const laneAxis = [];
+  for (let i = 0; i < 6; i++) {
+    const [c1, c2] = EDGE_CORNERS[i];
+    const [ax, ay] = corner(0, 0, S, c1), [bx, by] = corner(0, 0, S, c2);
+    let ex = bx - ax, ey = by - ay;
+    const len = Math.hypot(ex, ey) || 1;
+    ex /= len; ey /= len;
+    let nx = -ey, ny = ex;                         // the tile centre is (0, 0) here,
+    if (nx * (ax + bx) + ny * (ay + by) > 0) { nx = -nx; ny = -ny; }   // so point it in
+    laneAxis.push([ex, ey, nx, ny]);
+  }
   const borderSegs = new Map();
+  // One neighbour lookup per side, reused by the edge test and by both of that
+  // edge's corners. nbrTile builds a string key, so asking it again per corner
+  // would be the most expensive thing in this layer by a wide margin.
+  const ourSide = [false, false, false, false, false, false];
   for (const t of tiles) {
     if (t.owner === null || t.owner === undefined) continue;
     const [x, yy] = hexXY(t.pos[0], t.pos[1]);
     const y = yy - elev(t);
     for (let i = 0; i < 6; i++) {
       const n = nbrTile(t.pos, DIRS[i]);
-      if (n && n.owner === t.owner) continue;
+      ourSide[i] = !!n && n.owner === t.owner;
+    }
+    for (let i = 0; i < 6; i++) {
+      if (ourSide[i]) continue;
       const [c1, c2] = EDGE_CORNERS[i];
-      const [ax, ay] = corner(x, y, S - borderInset, c1);
-      const [bx, by] = corner(x, y, S - borderInset, c2);
+      const [ax, ay] = corner(x, y, S, c1);
+      const [bx, by] = corner(x, y, S, c2);
       let segs = borderSegs.get(t.owner);
       if (!segs) { segs = []; borderSegs.set(t.owner, segs); }
-      segs.push([ax, ay, bx, by]);
+      // A lane held off the edge has to be mitred at each corner, and which way
+      // depends on how the frontier turns there. Edge `i` shares its first
+      // corner with edge i+1 and its second with edge i+5; if that neighbouring
+      // edge is a frontier too, this tile turns the corner by itself and the
+      // two lanes cross inside it, so the segment is SHORT. If it is interior,
+      // the frontier turns across two of the empire's tiles and the far tile's
+      // lane sits past the corner, so the segment is LONG. Getting this
+      // backwards pokes a bright spur out through the border at every corner.
+      segs.push([ax, ay, bx, by, i,
+                 ourSide[(i + 1) % 6] ? 1 : -1,
+                 ourSide[(i + 5) % 6] ? 1 : -1]);
     }
   }
+  // Slide each edge into the tile that owns it by `d`, mitre it, and path it in
+  // one pass: two lanes meet a corner at 120 degrees, so d/sqrt(3) is the run
+  // past it (or back from it) that makes them touch instead of leaving a notch.
+  const pathBorderLane = (segs, d) => {
+    const g = d / SQ3;
+    cx.beginPath();
+    for (const [ax, ay, bx, by, i, s1, s2] of segs) {
+      const [ex, ey, nx, ny] = laneAxis[i];
+      const g1 = g * s1, g2 = g * s2;
+      cx.moveTo(ax + nx * d - ex * g1, ay + ny * d - ey * g1);
+      cx.lineTo(bx + nx * d + ex * g2, by + ny * d + ey * g2);
+    }
+  };
   cx.lineCap = "round"; cx.lineJoin = "round";
-  // Two-tone ribbon, Civ 6 style: a casing in the empire's jersey partner
-  // under a crisp core in its main colour. A single colour kept dissolving
-  // into terrain that shared its hue — green borders into grassland, gold
-  // into desert; whichever of the pair the ground steals, the other still
-  // draws the line.
+  // Two-tone ribbon, Civ 6 style: the two jersey colours run as parallel lanes
+  // rather than as concentric bands, and the whole ribbon lies *inside* the
+  // empire that owns the tile, with the LIGHTER of the pair on the inner lane.
+  // Concentric bands centred on the shared edge meant both empires painted the
+  // same pixels from both sides, so a frontier came out as one four-stripe
+  // ribbon you had to trace to a city to work out which half was whose. Lanes
+  // put each civilization's bright colour on its own ground and leave the two
+  // dark lanes back to back along the seam, which is the contrast that makes
+  // one border read as two.
+  // A single colour would also dissolve into terrain sharing its hue — green
+  // borders into grassland, gold into desert; whichever of the pair the ground
+  // steals, the other still draws the line.
   for (const [owner, segs] of borderSegs) {
+    const [dark, light] = jerseyLanes(owner);
     // Flat strategic terrain has a dark hex grid, roads, and compact symbols
     // competing for the same pixels. A near-black keyline gives its border a
-    // stable silhouette before the two jersey colours identify the owner.
-    // Painted views retain their softer ribbon; terrain remains the subject.
+    // stable silhouette before the two jersey colours identify the owner, and
+    // it alone reaches back across the seam so the frontier keeps an outline
+    // against unclaimed ground. Painted views retain their softer ribbon;
+    // terrain remains the subject.
     const passes = beau
-      ? [[6.0, 0.25, pcol(owner)],   // soft glow
-         [4.2, 0.9,  pcol2(owner)],  // casing
-         [1.8, 0.95, pcol(owner)]]   // core
-      : [[7.2 * borderK, 0.78, "#090d12"],
-         [5.2 * borderK, 1.0,  pcol2(owner)],
-         [2.2 * borderK, 1.0,  pcol(owner)]];
-    for (const [w, a, c] of passes) {
+      ? [[5.8, 0.22, light, 2.7],   // soft bloom, inside the border it belongs to
+         [2.4, 0.85, dark,  1.2],   // seam lane
+         [1.8, 0.95, light, 3.4]]   // inner lane
+      : [[7.6 * borderK, 0.78, "#090d12", 1.5 * borderK],
+         [2.8 * borderK, 1.0,  dark,      1.5 * borderK],
+         [2.8 * borderK, 1.0,  light,     4.2 * borderK]];
+    for (const [w, a, c, d] of passes) {
       cx.strokeStyle = c; cx.lineWidth = w; cx.globalAlpha = a;
-      cx.beginPath();
-      for (const [ax, ay, bx, by] of segs) { cx.moveTo(ax, ay); cx.lineTo(bx, by); }
+      pathBorderLane(segs, d);
       cx.stroke();
     }
   }
