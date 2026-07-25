@@ -23,6 +23,36 @@ plain read-only SQLite database with the whole ruleset in it — `LoyaltyLevels`
 `Happinesses`, `GlobalParameters`, `Units`, and 400-odd more tables. Query it
 directly before changing any number.
 
+## Open measured divergence: major start spacing
+
+`START_DISTANCE_MAJOR_CIVILIZATION` is **12** with `START_DISTANCE_RANGE_MAJOR`
+**2**, so Civilization VI aims major civilizations 10-14 tiles apart (minors use
+`START_DISTANCE_MINOR_MAJOR_CIVILIZATION` 6 and
+`START_DISTANCE_MINOR_CIVILIZATION_START` 5, and there is a
+`START_DISTANCE_FERTILITY_EXCLUSION_ZONE` of 6).
+
+CIVVIS does not target a distance at all. `balanced_major_spawns` maximizes
+spread — farthest-point layouts scored on separation, coverage, territory
+balance and site quality — which on the tournament lobby's Standard 84x54 map
+with 8 majors puts every civilization far outside the shipped band:
+
+    major-major nearest-neighbour separation, 20 maps, 160 measurements
+    min 17  max 23  mean 18.3  median 18
+    within the shipped 10..14 band:  0 / 160  (0%)
+
+Every single measurement is above the band; CIVVIS spreads civilizations about
+50% farther apart than the game does. That changes the whole early game —
+settling races, border friction, early aggression, and the Loyalty and religious
+pressure that depend on how close neighbours sit. It is measured with
+`mapdump --width 84 --height 54 --players 8 --city-states 0`, whose
+nearest-neighbour separations are major-only when no minors are requested
+(minors are appended after majors are placed, so major placement is identical
+either way).
+
+Fixing this means giving `balanced_major_spawns` a target distance instead of a
+maximization objective, and it changes every generated map — so it invalidates
+saved layouts and any league snapshot measured before it.
+
 **Where the Civilopedia and the database disagree, the database wins.** The
 prose goes stale across rebalances and has been observed to be flatly wrong:
 the Loyalty entry describes two penalty steps (below 75, below 25) where

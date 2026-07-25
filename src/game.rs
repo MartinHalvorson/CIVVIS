@@ -4576,7 +4576,8 @@ mod espionage_runtime_tests {
                 > partisans_before
         );
         game.apply_spy_mission_effect(spy_id, &mission("foment_unrest", target_center), true);
-        assert_eq!(game.cities[&target].loyalty, 75.0);
+        // Shipped -15 base, -5 per Spy level, off a full-Loyalty city.
+        assert_eq!(game.cities[&target].loyalty, 80.0);
         game.apply_spy_mission_effect(spy_id, &mission("neutralize_governor", target_center), true);
         assert!(game.players[1].governor_roster["pingala"].disabled_until > game.turn);
         game.cities.get_mut(&target).unwrap().queue = vec![Item::Project {
@@ -10183,6 +10184,12 @@ pub struct Game {
     pub next_deal_id: u32,
     pub congress: Option<CongressSession>,
     pub active_congress_effects: Vec<CongressEffect>,
+    /// Turn the last Special Session was seated. Shipped
+    /// `WORLD_CONGRESS_MIN_TIME_BETWEEN_SPECIAL_SESSIONS` holds the next one
+    /// off for 15 standard-scaled turns. Saves from before this field start
+    /// at zero, which only ever lets one extra early Session through.
+    #[serde(default)]
+    pub last_special_session: u32,
     pub pending_emergencies: Vec<EmergencyProposal>,
     pub active_emergencies: Vec<Emergency>,
     occ: BTreeMap<Pos, Vec<u32>>,
@@ -10334,6 +10341,8 @@ struct GameSer {
     #[serde(default)]
     active_congress_effects: Vec<CongressEffect>,
     #[serde(default)]
+    last_special_session: u32,
+    #[serde(default)]
     pending_emergencies: Vec<EmergencyProposal>,
     #[serde(default)]
     active_emergencies: Vec<Emergency>,
@@ -10410,6 +10419,7 @@ impl From<GameSer> for Game {
             next_deal_id: s.next_deal_id,
             congress: s.congress,
             active_congress_effects: s.active_congress_effects,
+            last_special_session: s.last_special_session,
             pending_emergencies: s.pending_emergencies,
             active_emergencies: s.active_emergencies,
             occ: BTreeMap::new(),
@@ -10551,6 +10561,7 @@ impl From<Game> for GameSer {
             next_deal_id: g.next_deal_id,
             congress: g.congress,
             active_congress_effects: g.active_congress_effects,
+            last_special_session: g.last_special_session,
             pending_emergencies: g.pending_emergencies,
             active_emergencies: g.active_emergencies,
             map: g.map,
@@ -10713,6 +10724,7 @@ impl Game {
             next_deal_id: 1,
             congress: None,
             active_congress_effects: Vec::new(),
+            last_special_session: 0,
             pending_emergencies: Vec::new(),
             active_emergencies: Vec::new(),
             occ: BTreeMap::new(),
@@ -13515,8 +13527,10 @@ impl Game {
             }
             "recruit_partisans" => self.spawn_partisans(city.id),
             "foment_unrest" => {
+                // Shipped ESPIONAGE_FOMENT_UNREST_BASE_LOYALTY_CHANGE -15 plus
+                // ESPIONAGE_FOMENT_UNREST_LEVEL_LOYALTY_CHANGE -5 per level.
                 self.cities.get_mut(&city.id).unwrap().loyalty =
-                    (city.loyalty - 20.0 - 5.0 * spy.level.max(0) as f64).max(0.0);
+                    (city.loyalty - 15.0 - 5.0 * spy.level.max(0) as f64).max(0.0);
             }
             "neutralize_governor" => {
                 let until = self.turn + self.standard_duration(7 + spy.level.max(0) as u32);
@@ -19529,12 +19543,16 @@ impl Game {
         }
     }
 
+    /// Housing left (Housing minus Population) throttles growth at the three
+    /// shipped steps: `CITY_HOUSING_LEFT_50PCT_GROWTH` 1,
+    /// `CITY_HOUSING_LEFT_25PCT_GROWTH` 0 and `CITY_HOUSING_LEFT_ZERO_GROWTH`
+    /// -4. Growth stops *at* -4, not one short of -5.
     fn housing_growth_mult(headroom: f64) -> f64 {
         if headroom >= 2.0 {
             1.0
         } else if headroom >= 1.0 {
             0.5
-        } else if headroom > -5.0 {
+        } else if headroom > -4.0 {
             0.25
         } else {
             0.0
@@ -36000,7 +36018,17 @@ impl Game {
         }
     }
 
+    /// Seat the oldest still-valid queued Emergency, if a Special Session is
+    /// allowed to open at all. Shipped
+    /// `WORLD_CONGRESS_MIN_TIME_BETWEEN_SPECIAL_SESSIONS` is 15, so Sessions
+    /// cannot chain: a queued proposal simply waits its turn rather than
+    /// being dropped, because the crisis has not gone away.
     fn convene_pending_emergency(&mut self) {
+        if self.last_special_session > 0
+            && self.turn < self.last_special_session + self.standard_duration(15)
+        {
+            return;
+        }
         while self.congress.is_none() && !self.pending_emergencies.is_empty() {
             let mut proposal = self.pending_emergencies[0].clone();
             proposal.eligible.retain(|player| {
@@ -36022,6 +36050,7 @@ impl Game {
                 continue;
             }
             self.pending_emergencies[0].eligible = proposal.eligible;
+            self.last_special_session = self.turn;
             let title = if proposal.kind == "city_state" {
                 "City-State Emergency"
             } else {
@@ -39455,20 +39484,15 @@ impl Game {
             }
         }
 
-        // The picker exhausts the nearest ring containing an available plot
-        // before considering the next one. This is a hard eligibility rule,
-        // not merely a small distance bonus: even a ring-2 mountain precedes
-        // a ring-3 resource.
-        let Some(nearest_ring) = candidates
-            .iter()
-            .map(|position| self.wdist(*position, city_pos))
-            .min()
-        else {
+        // Distance is priced, not gated: `PLOT_INFLUENCE_RING_COST` adds 100
+        // per ring, so a nearer plot normally wins, but a Resource or Natural
+        // Wonder at -105 is worth exactly five more than one extra ring and
+        // does pull the border outward past a barren neighbour.
+        if candidates.is_empty() {
             return;
-        };
+        }
         let mut scored: Vec<(Pos, f64)> = candidates
             .into_iter()
-            .filter(|position| self.wdist(*position, city_pos) == nearest_ring)
             .map(|position| (position, self.border_influence_cost(cid, position)))
             .collect();
         let best_score = scored
@@ -39489,14 +39513,21 @@ impl Game {
 
     /// Lower is more attractive to Civ VI's cultural tile picker.
     ///
-    /// These are the shipped `PLOT_INFLUENCE_*` values: resources and Natural
-    /// Wonders receive -105, water +25, existing improvements -5 (or +100 for
-    /// a Barbarian Camp), and each raw yield point -1. Terrain contributes its
-    /// database `InfluenceCost`. Nearby unclaimed strategic/luxury resources
-    /// and Natural Wonders provide the stock one-point surface-tension nudge.
+    /// These are the shipped `PLOT_INFLUENCE_*` values: `RING_COST` 100 per
+    /// ring out from the City Center, resources and Natural Wonders -105,
+    /// water +25, existing improvements -5 (or +100 for a Barbarian Camp),
+    /// and each raw yield point -1. Terrain contributes its database
+    /// `InfluenceCost`. Nearby unclaimed strategic/luxury resources and
+    /// Natural Wonders provide the stock one-point surface-tension nudge.
+    ///
+    /// The -105 is calibrated against the 100 ring cost on purpose: one
+    /// Resource is worth slightly more than one extra ring of distance, so a
+    /// city reaches past a barren adjacent plot to take it.
     fn border_influence_cost(&self, cid: u32, position: Pos) -> f64 {
+        let city_pos = self.cities[&cid].pos;
         let tile = &self.map.tiles[&position];
-        let mut cost = match tile.terrain.as_str() {
+        let mut cost = 100.0 * self.wdist(position, city_pos) as f64;
+        cost += match tile.terrain.as_str() {
             "grassland" | "plains" | "ocean" => 1.0,
             "desert" | "tundra" | "snow" | "coast" | "lake" => 2.0,
             "mountain" => 3.0,
@@ -39518,7 +39549,6 @@ impl Game {
         }
         cost -= self.rules.tile_yields(tile).total();
 
-        let city_pos = self.cities[&cid].pos;
         for neighbor in self.nbrs(position) {
             let adjacent = &self.map.tiles[&neighbor];
             if adjacent.owner_city.is_some() {
@@ -40367,7 +40397,10 @@ mod border_growth_tests {
     }
 
     #[test]
-    fn nearest_available_ring_is_exhausted_before_a_resource_in_the_next_ring() {
+    fn a_resource_one_ring_out_outbids_a_barren_nearer_plot() {
+        // PLOT_INFLUENCE_RING_COST is 100 and PLOT_INFLUENCE_RESOURCE_COST is
+        // -105, so one Resource is worth marginally more than one ring of
+        // distance and the border reaches past a barren neighbour for it.
         let (mut game, city, center) = controlled_game(941_001);
         let second_ring = ring(&game, center, 2);
         let last_inner = second_ring[0];
@@ -40385,8 +40418,34 @@ mod border_growth_tests {
 
         game.expand_borders(city);
 
-        assert_eq!(game.map.tiles[&last_inner].owner_city, Some(city));
-        assert_eq!(game.map.tiles[&third_ring_resource].owner_city, None);
+        assert_eq!(game.map.tiles[&third_ring_resource].owner_city, Some(city));
+        assert_eq!(game.map.tiles[&last_inner].owner_city, None);
+    }
+
+    #[test]
+    fn distance_still_decides_between_plots_of_equal_worth() {
+        // The ring cost only loses to a Resource or Natural Wonder. Between
+        // two identical plots the nearer one always wins, so ordinary growth
+        // still fills outward ring by ring.
+        let (mut game, city, center) = controlled_game(941_006);
+        let second_ring = ring(&game, center, 2);
+        let near = second_ring[0];
+        for position in second_ring.into_iter().skip(1) {
+            claim(&mut game, city, position);
+        }
+        let far = ring(&game, center, 3)[0];
+        for position in [near, far] {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = "grassland".to_string();
+            tile.hills = false;
+            tile.feature = None;
+            tile.resource = None;
+        }
+
+        game.expand_borders(city);
+
+        assert_eq!(game.map.tiles[&near].owner_city, Some(city));
+        assert_eq!(game.map.tiles[&far].owner_city, None);
     }
 
     #[test]
@@ -45834,6 +45893,51 @@ mod victory_conditions {
     }
 
     #[test]
+    fn special_sessions_keep_the_shipped_fifteen_turn_spacing() {
+        // WORLD_CONGRESS_MIN_TIME_BETWEEN_SPECIAL_SESSIONS is 15. Without it
+        // a queue of Emergencies seats one after another, and since each one
+        // displaces the regular Congress, a run of captures could starve the
+        // World Congress -- and with it the Diplomatic Victory it awards.
+        let mut g = game_with_capitals(3, 4_151, 300);
+        let city = g.player_city_ids(1)[0];
+        let proposal = |id: u32| EmergencyProposal {
+            id,
+            kind: "military".to_string(),
+            target: 1,
+            city,
+            original_owner: 1,
+            eligible: BTreeSet::from([0, 2]),
+            requested: 0,
+        };
+        g.turn = 40;
+        g.pending_emergencies = vec![proposal(1), proposal(2)];
+
+        g.convene_pending_emergency();
+        assert!(g.congress.is_some(), "the first Emergency seats at once");
+        assert_eq!(g.last_special_session, 40);
+
+        // Close that session and offer the next one one turn too early.
+        let spacing = g.standard_duration(15);
+        g.congress = None;
+        g.turn = 40 + spacing - 1;
+        g.convene_pending_emergency();
+        assert!(
+            g.congress.is_none(),
+            "a second Special Session cannot open inside the spacing"
+        );
+        assert_eq!(
+            g.pending_emergencies.len(),
+            2,
+            "held proposals wait rather than being dropped"
+        );
+
+        g.turn = 40 + spacing;
+        g.convene_pending_emergency();
+        assert!(g.congress.is_some(), "and seats once the spacing elapses");
+        assert_eq!(g.last_special_session, 40 + spacing);
+    }
+
+    #[test]
     fn congress_ties_use_the_largest_share_of_available_favor() {
         let mut g = game_with_capitals(2, 414, 300);
         g.turn = 30;
@@ -46159,7 +46263,8 @@ mod victory_conditions {
             (1.5, 0.5),
             (1.0, 0.5),
             (0.0, 0.25),
-            (-4.5, 0.25),
+            (-3.5, 0.25),
+            (-4.0, 0.0),
             (-5.0, 0.0),
         ];
         for (headroom, growth) in cases {
