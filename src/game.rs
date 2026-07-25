@@ -6299,17 +6299,23 @@ mod maintenance_tests {
         let amenity_before = game.city_amenity_surplus(&game.cities[&city]);
         let mut twenty_deficit = game.clone();
 
+        // The Amenity line is 0 and the disband line is -10, so a shallow
+        // deficit costs an Amenity everywhere and no unit at all.
         game.settle_gold_budget(0, -9.0);
         assert_eq!(game.players[0].gold, 0.0);
         assert_eq!(game.players[0].gold_per_turn, -9.0);
-        assert_eq!(game.players[0].bankruptcy_amenity_penalty, 0);
-        assert_eq!(game.player_unit_ids(0).len(), 3);
-
-        game.settle_gold_budget(0, -10.0);
         assert_eq!(game.players[0].bankruptcy_amenity_penalty, 1);
         assert_eq!(
             game.city_amenity_surplus(&game.cities[&city]),
             amenity_before - 1
+        );
+        assert_eq!(game.player_unit_ids(0).len(), 3);
+
+        game.settle_gold_budget(0, -10.0);
+        assert_eq!(game.players[0].bankruptcy_amenity_penalty, 2);
+        assert_eq!(
+            game.city_amenity_surplus(&game.cities[&city]),
+            amenity_before - 2
         );
         assert!(game.units.contains_key(&archer));
         assert!(game.units.contains_key(&swordsman));
@@ -6319,7 +6325,7 @@ mod maintenance_tests {
         );
 
         twenty_deficit.settle_gold_budget(0, -20.0);
-        assert_eq!(twenty_deficit.players[0].bankruptcy_amenity_penalty, 2);
+        assert_eq!(twenty_deficit.players[0].bankruptcy_amenity_penalty, 3);
         assert_eq!(twenty_deficit.player_unit_ids(0), vec![archer]);
 
         let encoded = serde_json::to_value(&game).unwrap();
@@ -6338,7 +6344,7 @@ mod maintenance_tests {
 
         let mut restored: Game = serde_json::from_value(encoded).unwrap();
         assert_eq!(restored.players[0].gold_per_turn, -10.0);
-        assert_eq!(restored.players[0].bankruptcy_amenity_penalty, 1);
+        assert_eq!(restored.players[0].bankruptcy_amenity_penalty, 2);
         restored.settle_gold_budget(0, 4.0);
         assert_eq!(restored.players[0].gold, 4.0);
         assert_eq!(restored.players[0].gold_per_turn, 4.0);
@@ -6380,8 +6386,9 @@ mod maintenance_tests {
         game.begin_turn(0);
         assert_eq!(game.players[0].gold, 0.0);
         assert_eq!(game.players[0].gold_per_turn, -25.0);
-        assert_eq!(game.players[0].bankruptcy_amenity_penalty, 2);
-        // one maintained unit disbands per -10 quantum: both robots go
+        // Three Amenities from the 0 line at -10 steps, two disbands from the
+        // -10 line at the same step: both robots go.
+        assert_eq!(game.players[0].bankruptcy_amenity_penalty, 3);
         assert!(!game.units.contains_key(&robot));
         assert!(!game.units.contains_key(&escort));
 
@@ -6389,7 +6396,7 @@ mod maintenance_tests {
         assert_eq!(observed["me"]["gold_per_turn"], serde_json::json!(-25.0));
         assert_eq!(
             observed["me"]["bankruptcy_amenity_penalty"],
-            serde_json::json!(2)
+            serde_json::json!(3)
         );
         assert_eq!(
             observed["players"][0]["gold_per_turn"],
@@ -34793,24 +34800,32 @@ impl Game {
     }
 
     /// Apply the recurring budget after city income and maintenance have been
-    /// calculated. Civ VI never stores a negative treasury: at zero Gold, one
-    /// Amenity and one maintained unit are lost for each complete -10 GPT.
+    /// calculated. Civ VI never stores a negative treasury, and the two
+    /// bankruptcy penalties start on different lines: the shipped
+    /// `GOLD_NEGATIVE_BALANCE_AMENITY_LOSS_LINE` is **0**, so an empire in the
+    /// red loses an Amenity everywhere the moment its balance goes negative,
+    /// while `GOLD_NEGATIVE_BALANCE_DISBAND_UNIT_LINE` is **-10** and no unit
+    /// is disbanded until then. Both step every -10 from their own line
+    /// (`GOLD_NEGATIVE_BALANCE_SUBSEQUENT_AMENITY_LOSS` /
+    /// `..._SUBSEQUENT_DISBAND_UNIT`), so the Amenity is always one ahead.
     fn settle_gold_budget(&mut self, pid: usize, local_gold: f64) {
         let budget = local_gold + self.contracted_gold_per_turn(pid);
         let treasury = (self.players[pid].gold + local_gold).max(0.0);
-        let penalty = if !self.players[pid].is_barbarian && treasury <= f64::EPSILON && budget < 0.0
+        let deficit = if !self.players[pid].is_barbarian && treasury <= f64::EPSILON && budget < 0.0
         {
-            ((-budget) / 10.0).floor() as i64
+            -budget
         } else {
-            0
+            0.0
         };
+        let disbands = (deficit / 10.0).floor() as i64;
+        let penalty = if deficit > 0.0 { 1 + disbands } else { 0 };
         {
             let player = &mut self.players[pid];
             player.gold = treasury;
             player.gold_per_turn = budget;
             player.bankruptcy_amenity_penalty = penalty;
         }
-        if penalty <= 0 {
+        if disbands <= 0 {
             return;
         }
 
@@ -34831,7 +34846,7 @@ impl Game {
                 .total_cmp(&left.1)
                 .then_with(|| left.0.cmp(&right.0))
         });
-        for (unit, _) in candidates.into_iter().take(penalty as usize) {
+        for (unit, _) in candidates.into_iter().take(disbands as usize) {
             self.remove_unit(unit);
         }
     }
