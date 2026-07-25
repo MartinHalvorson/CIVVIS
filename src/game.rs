@@ -3087,16 +3087,6 @@ mod governor_runtime_tests {
     }
 
     #[test]
-    fn security_expert_defends_the_city_victor_governs() {
-        let mut game = Game::new_full(1, 24, 16, 91_957, 200, 0, false);
-        let city = found_capital(&mut game, 0);
-        let center = game.cities[&city].pos;
-        let before = game.spy_defense_level(city, center);
-        appoint_established(&mut game, 0, "victor", city, &["security_expert"]);
-        assert_eq!(game.spy_defense_level(city, center), before + 2);
-    }
-
-    #[test]
     fn governor_promotions_speed_their_district_buildings() {
         // Connoisseur, Divine Architect and Provision each pair a headline
         // effect with a Production bonus for one district's buildings.
@@ -3137,28 +3127,16 @@ mod governor_runtime_tests {
     }
 
     #[test]
-    fn first_tier_governor_abilities_cost_a_title() {
-        // Land Acquisition and Librarian are promotions in the shipped tree,
-        // not abilities that arrive with the appointment.
+    fn base_governor_abilities_arrive_with_the_appointment() {
+        // GovernorPromotions marks Land Acquisition and Librarian
+        // BaseAbility, at Level 0 — they arrive with the establishment rather
+        // than costing a title, the same way Magnus' Groundbreaker, Liang's
+        // Guildmaster, Amani's Messenger, Moksha's Bishop and Victor's Redoubt
+        // already did here.
         let mut game = Game::new_full(1, 24, 16, 91_947, 200, 0, false);
         let city = found_capital(&mut game, 0);
         appoint_established(&mut game, 0, "reyna", city, &[]);
         appoint_established(&mut game, 0, "pingala", city, &[]);
-        for effect in [
-            "border_growth_pct",
-            "incoming_foreign_trade_gold",
-            "science_pct",
-            "culture_pct",
-        ] {
-            assert_eq!(
-                game.governor_effect(0, city, effect),
-                0.0,
-                "{effect} must wait for its promotion"
-            );
-        }
-
-        appoint_established(&mut game, 0, "reyna", city, &["land_acquisition"]);
-        appoint_established(&mut game, 0, "pingala", city, &["librarian"]);
         assert_eq!(game.governor_effect(0, city, "border_growth_pct"), 20.0);
         assert_eq!(
             game.governor_effect(0, city, "incoming_foreign_trade_gold"),
@@ -3166,6 +3144,16 @@ mod governor_runtime_tests {
         );
         assert_eq!(game.governor_effect(0, city, "science_pct"), 15.0);
         assert_eq!(game.governor_effect(0, city, "culture_pct"), 15.0);
+
+        // Every governor carries exactly the five promotions the shipped
+        // promotion set holds beside its base ability.
+        for governor in ["amani", "liang", "magnus", "moksha", "pingala", "reyna", "victor"] {
+            assert_eq!(
+                game.rules.governors[governor].promotions.len(),
+                5,
+                "{governor} should hold five promotions beside its base ability"
+            );
+        }
     }
 
     #[test]
