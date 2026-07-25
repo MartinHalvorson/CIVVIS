@@ -3,7 +3,9 @@
 //! POST /action, POST /step, POST /autoplay, POST /view,
 //! POST /spectator-status, POST /next-game-settings, POST /new,
 //! POST /supervisor-new.
+use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, BTreeSet};
+use std::hash::{Hash, Hasher};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -17,7 +19,8 @@ use crate::game::{Action, Game, GameOptions, VictoryConditions};
 use crate::rules::Rules;
 use crate::obs::{observation, observation_player_view, observation_spectator};
 use crate::setup::{
-    GameSpeed, MapScript, MapSize, CIV6_GAME_SPEEDS, CIV6_MAP_SCRIPTS, CIV6_MAP_SIZES,
+    GameSpeed, MapPoles, MapScript, MapSize, MapTopology, CIV6_GAME_SPEEDS, CIV6_MAP_SCRIPTS,
+    CIV6_MAP_SIZES, MAP_POLES, MAP_TOPOLOGIES,
 };
 use crate::Pos;
 
@@ -51,6 +54,10 @@ pub struct Params {
     pub height: i32,
     pub seed: u64,
     pub map_script: MapScript,
+    /// What shape the world is, chosen independently of what fills it.
+    pub map_topology: MapTopology,
+    /// Whether the world has cold ends.
+    pub map_poles: MapPoles,
     pub game_speed: GameSpeed,
     pub max_turns: u32,
     pub victory_conditions: VictoryConditions,
@@ -754,6 +761,18 @@ pub struct Shared {
     pub turn_compute_us: AtomicU64,
     frame_delivery: Mutex<FrameDelivery>,
     frame_delivered: Condvar,
+    /// The most recent turn the stepper finished, and a bell rung when it
+    /// changes. A page asks for whatever comes *after* the frame it is
+    /// holding, and waits here until there is one.
+    ///
+    /// Without this, a page with no polling delay spins: `/state` answers at
+    /// once with the turn it has already drawn, so it would rebuild a megabyte
+    /// of observation over and over for a turn nobody needs again, competing
+    /// with the simulation for the machine it is waiting on. With it, the last
+    /// of the polling latency goes too — a finished turn is written to a
+    /// socket the moment it exists rather than at the page's next tick.
+    latest: Mutex<Option<SpectatorFrame>>,
+    turn_ready: Condvar,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -762,27 +781,83 @@ struct SpectatorFrame {
     turn: u32,
 }
 
-#[derive(Default)]
-struct FrameDelivery {
-    last_request: Option<Instant>,
+/// One page, tracked apart from every other page.
+///
+/// Delivery used to be a single cursor for the whole server, which quietly
+/// made the promise weaker the more people kept it: the stepper released a
+/// turn as soon as *any* request had been handed it, so two tabs on one
+/// exhibition took alternate turns and each saw half the game. The audit read
+/// that same one cursor — the two tabs between them reported an unbroken run
+/// of turns — so it reported nothing wrong. Every viewer is owed every turn,
+/// so every viewer gets a seat of its own and the gate waits for all of them.
+struct ViewerSeat {
+    last_request: Instant,
     delivered: Option<SpectatorFrame>,
-    /// The last frame the page reported having painted, and the turns it
+    /// The last frame this page reported having painted, and the turns it
     /// skipped getting there. A frame written to a socket is not yet a frame
     /// anybody saw, so the page says which turn it actually drew and the
     /// promise this gate exists to keep can be audited while it runs.
     painted: Option<SpectatorFrame>,
     missed: u64,
+    /// A fingerprint of every tile this page was last sent, and the frame they
+    /// belonged to. A spectator `/state` is about 1.4 MB and 1.2 MB of that is
+    /// tiles, nearly all of which are the same terrain they were last turn, so
+    /// what the page already holds is worth remembering rather than sending
+    /// again.
+    ///
+    /// Eight bytes a tile rather than the tiles themselves. Keeping the parsed
+    /// JSON would be about two kilobytes each — fine for the exhibition's 2252,
+    /// a hundred megabytes on a large world, and that again for every tab
+    /// watching. The walk that hashes a tile is the walk that would have
+    /// compared it, so the bound is close to free.
+    tiles: Option<(SpectatorFrame, Vec<u64>)>,
+}
+
+impl ViewerSeat {
+    fn new(now: Instant) -> Self {
+        ViewerSeat {
+            last_request: now,
+            delivered: None,
+            painted: None,
+            missed: 0,
+            tiles: None,
+        }
+    }
+
+    fn attached(&self, now: Instant) -> bool {
+        now.saturating_duration_since(self.last_request) <= VIEWER_ACTIVE
+    }
+}
+
+#[derive(Default)]
+struct FrameDelivery {
+    seats: BTreeMap<String, ViewerSeat>,
+    /// Every turn any viewer missed since this server started, kept apart from
+    /// the seats so that closing the tab that missed them does not erase the
+    /// record. A seat is retired six seconds after its page stops asking; the
+    /// audit is for the whole run.
+    missed: u64,
 }
 
 impl FrameDelivery {
-    fn attached(&self, now: Instant) -> bool {
-        self.last_request
-            .is_some_and(|last| now.saturating_duration_since(last) <= VIEWER_ACTIVE)
+    /// Forget the pages that stopped asking. A seat costs a cached copy of the
+    /// world's tiles, and a closed tab must not go on holding turns open for a
+    /// viewer that is not there to read them.
+    fn retire_departed(&mut self, now: Instant) {
+        self.seats.retain(|_, seat| seat.attached(now));
     }
 
-    fn frame_delivered(&mut self, frame: SpectatorFrame, now: Instant) {
-        self.last_request = Some(now);
-        self.delivered = Some(frame);
+    fn seat(&mut self, viewer: &str, now: Instant) -> &mut ViewerSeat {
+        self.retire_departed(now);
+        self.seats
+            .entry(viewer.to_string())
+            .or_insert_with(|| ViewerSeat::new(now))
+    }
+
+    fn frame_delivered(&mut self, viewer: &str, frame: SpectatorFrame, now: Instant) {
+        let seat = self.seat(viewer, now);
+        seat.last_request = now;
+        seat.delivered = Some(frame);
     }
 
     /// A viewer's request, carrying the turn it says it painted since the last
@@ -796,32 +871,45 @@ impl FrameDelivery {
     /// swapped binary, or between two worlds are nobody's missed frames. A
     /// different world starts the count over for the same reason — seeds are
     /// unordered, and the turns before it were another game's.
-    fn viewer_request(&mut self, painted: Option<SpectatorFrame>, now: Instant) {
-        let attached = self.attached(now);
-        self.last_request = Some(now);
+    fn viewer_request(&mut self, viewer: &str, painted: Option<SpectatorFrame>, now: Instant) {
+        // Read this before taking the seat: taking it retires the departed and
+        // stamps the survivor with `now`, either of which would make a page
+        // that has been away for a minute look like it never left.
+        let attached = self.seats.get(viewer).is_some_and(|s| s.attached(now));
+        let seat = self.seat(viewer, now);
+        seat.last_request = now;
         // A viewer with nothing to report has painted nothing *yet*: a page
         // still booting, or one that just reloaded onto a swapped binary. The
         // turn it eventually draws does not follow whatever the last page
         // drew, so drop the baseline rather than score the gap between them.
         let Some(frame) = painted else {
-            self.painted = None;
+            seat.painted = None;
             return;
         };
-        if let Some(previous) = self.painted {
+        let mut lost = 0;
+        if let Some(previous) = seat.painted {
             if attached && previous.seed == frame.seed && frame.turn > previous.turn {
-                self.missed += u64::from(frame.turn - previous.turn - 1);
+                lost = u64::from(frame.turn - previous.turn - 1);
+                seat.missed += lost;
             }
         }
-        self.painted = Some(frame);
+        seat.painted = Some(frame);
+        self.missed += lost;
     }
 
+    /// How long the stepper must still hold this turn: the longest wait owed
+    /// to any attached viewer that has not been handed it yet. `None` once
+    /// every viewer present has had it — or when nobody is watching at all.
     fn wait_remaining(&self, frame: SpectatorFrame, now: Instant) -> Option<Duration> {
-        if self.delivered == Some(frame) {
-            return None;
-        }
-        VIEWER_ACTIVE
-            .checked_sub(now.saturating_duration_since(self.last_request?))
-            .filter(|remaining| !remaining.is_zero())
+        self.seats
+            .values()
+            .filter(|seat| seat.delivered != Some(frame))
+            .filter_map(|seat| {
+                VIEWER_ACTIVE
+                    .checked_sub(now.saturating_duration_since(seat.last_request))
+                    .filter(|remaining| !remaining.is_zero())
+            })
+            .max()
     }
 }
 
@@ -841,6 +929,10 @@ const MIN_RESTART_MS: u64 = 5_000;
 /// and the exhibition runs unattended at full speed from there.
 const VIEWER_ACTIVE: Duration = Duration::from_secs(6);
 const FRAME_WAIT_RECHECK: Duration = Duration::from_millis(100);
+/// The longest a page's poll is held open waiting for the next turn before it
+/// is answered with the one it already has. Short enough that a finished
+/// game's restart countdown still ticks over once a second on screen.
+const STATE_LONG_POLL: Duration = Duration::from_millis(1_000);
 /// The unlimited pace still hands the accept loop a slot this often, so the
 /// page keeps loading state while the stepper saturates a core.
 const UNLIMITED_BREATH_MS: u64 = 100;
@@ -873,31 +965,147 @@ fn blend(slot: &AtomicU64, sample: u64) {
 }
 
 impl Shared {
-    fn note_frame_delivered(&self, frame: SpectatorFrame) {
+    /// Announce a finished turn to the pages parked waiting for one.
+    fn note_turn_ready(&self, frame: SpectatorFrame) {
+        *self.latest.lock().unwrap() = Some(frame);
+        self.turn_ready.notify_all();
+    }
+
+    /// Park a page until the game is past the frame it says it holds.
+    ///
+    /// A page that holds nothing, or holds a turn this server has already left
+    /// behind, is answered immediately — including every reader that is not a
+    /// viewer at all, so a health check is never made to wait. The cap is what
+    /// keeps a finished game's restart countdown ticking on screen while
+    /// nothing is being simulated at all.
+    fn wait_for_next_turn(&self, have: Option<SpectatorFrame>) {
+        let Some(held) = have else { return };
+        let deadline = Instant::now() + STATE_LONG_POLL;
+        let mut latest = self.latest.lock().unwrap();
+        loop {
+            // What the game is on, rather than only what the stepper last
+            // announced. A world replaced outright — a new game, a save loaded
+            // — never completed a turn to announce, and a page holding the old
+            // one would otherwise sit here until the cap ran out.
+            //
+            // The bell is held across this read so the answer cannot arrive
+            // between looking and listening. Nothing holds the session lock
+            // while ringing it, so taking them in this order is safe.
+            let current = {
+                let session = self.session.lock().unwrap();
+                SpectatorFrame {
+                    seed: session.game.seed,
+                    turn: session.game.turn,
+                }
+            };
+            if current != held {
+                return;
+            }
+            let Some(left) = deadline.checked_duration_since(Instant::now()) else {
+                return;
+            };
+            latest = self.turn_ready.wait_timeout(latest, left).unwrap().0;
+        }
+    }
+
+    fn note_frame_delivered(&self, viewer: &str, frame: SpectatorFrame) {
         self.frame_delivery
             .lock()
             .unwrap()
-            .frame_delivered(frame, Instant::now());
+            .frame_delivered(viewer, frame, Instant::now());
         self.frame_delivered.notify_all();
     }
 
-    fn note_viewer_request(&self, painted: Option<SpectatorFrame>) {
+    fn note_viewer_request(&self, viewer: &str, painted: Option<SpectatorFrame>) {
         self.frame_delivery
             .lock()
             .unwrap()
-            .viewer_request(painted, Instant::now());
+            .viewer_request(viewer, painted, Instant::now());
     }
 
-    /// Turns this server simulated that no viewer ever drew, and the last turn
-    /// one reported drawing. The second reads the first: no painted turn at
-    /// all means nobody was watching, which is a different thing from a
-    /// promise being kept.
-    fn frame_audit(&self) -> (u64, Option<u32>) {
-        let delivery = self.frame_delivery.lock().unwrap();
-        (delivery.missed, delivery.painted.map(|frame| frame.turn))
+    /// Turns this server simulated that some viewer never drew, the last turn
+    /// one reported drawing, and how many pages are watching. The second reads
+    /// the first: no painted turn at all means nobody was watching, which is a
+    /// different thing from a promise being kept. The third says how many
+    /// pages that "no turns missed" is a promise to.
+    fn frame_audit(&self) -> (u64, Option<u32>, usize) {
+        let mut delivery = self.frame_delivery.lock().unwrap();
+        delivery.retire_departed(Instant::now());
+        let missed = delivery.missed;
+        let painted = delivery
+            .seats
+            .values()
+            .filter_map(|seat| seat.painted.map(|frame| frame.turn))
+            .max();
+        (missed, painted, delivery.seats.len())
     }
 
-    /// Hold the stepper until an active viewer has been handed `frame`.
+    /// Replace the tile array in `o` with just the tiles that have changed
+    /// since this viewer's last one.
+    ///
+    /// Tiles are 1.2 MB of a 1.4 MB spectator state and the overwhelming
+    /// majority of them are the terrain they have been since the map was
+    /// generated. Sending all of it every turn is what made a viewer cost the
+    /// exhibition a quarter of a second per turn — serialising it here,
+    /// pushing it through a socket, and parsing it there — and that quarter
+    /// second was being paid out of the turn rate, because the gate holds each
+    /// turn until the page has it.
+    ///
+    /// `have` is the turn the page says its own copy is built from, so the
+    /// baseline is what the page *holds*, never what was last written at it: a
+    /// response that never arrived leaves the two disagreeing, and disagreeing
+    /// costs one full array rather than a silently wrong map. Indices are
+    /// stable to compare against because the array is built from an explored
+    /// set that only ever grows, so equal lengths mean equal membership in the
+    /// same order — and a length that differs sends the whole thing.
+    fn deliver_tiles(
+        &self,
+        viewer: &str,
+        frame: SpectatorFrame,
+        have: Option<SpectatorFrame>,
+        o: &mut Value,
+    ) {
+        // Lift the array out of the map rather than blanking it in place: a
+        // patched response carries no `tiles` key at all, and a null one would
+        // read to the page as a world with no ground in it.
+        let Some(Value::Object(map)) = o.get_mut("map") else {
+            return;
+        };
+        let Some(Value::Array(tiles)) = map.remove("tiles") else {
+            return;
+        };
+        let marks: Vec<u64> = tiles.iter().map(tile_mark).collect();
+        let now = Instant::now();
+        let mut delivery = self.frame_delivery.lock().unwrap();
+        let seat = delivery.seat(viewer, now);
+        let changed: Option<Vec<Value>> = seat
+            .tiles
+            .as_ref()
+            .filter(|(held, cached)| {
+                held.seed == frame.seed && Some(*held) == have && cached.len() == marks.len()
+            })
+            .map(|(_, cached)| {
+                tiles
+                    .iter()
+                    .enumerate()
+                    .filter(|(at, _)| cached[*at] != marks[*at])
+                    .map(|(at, tile)| json!([at, tile]))
+                    .collect()
+            });
+        match changed {
+            Some(changed) => {
+                // The map key carries the patch and no `tiles` at all: a page
+                // that reported a baseline is holding one, and a full array
+                // arriving anyway would be a megabyte saying nothing.
+                o["map"]["tiles_from"] = json!(have.map(|held| held.turn));
+                o["map"]["tiles_changed"] = Value::Array(changed);
+            }
+            None => o["map"]["tiles"] = Value::Array(tiles),
+        }
+        seat.tiles = Some((frame, marks));
+    }
+
+    /// Hold the stepper until every active viewer has been handed `frame`.
     ///
     /// A turn budget is a floor on how long a turn takes. It was being relied
     /// on as something it never was — a promise that a browser could read the
@@ -1007,6 +1215,8 @@ impl Session {
         };
         let mut game = Game::new_with(GameOptions {
             map_script: params.map_script,
+            map_topology: params.map_topology,
+            map_poles: params.map_poles,
             difficulty: params.difficulty.clone(),
             speed: params.speed.clone(),
             human_seats,
@@ -1067,6 +1277,12 @@ impl Session {
         params.height = game.map.height;
         params.seed = game.seed;
         params.map_script = game.map_script;
+        params.map_topology = if game.map.topology == crate::world::Topology::Cylinder {
+            MapTopology::Flat
+        } else {
+            MapTopology::Planet
+        };
+        params.map_poles = game.map_poles;
         params.game_speed = game.game_speed;
         params.max_turns = game.max_turns;
         params.difficulty = game.difficulty.clone();
@@ -1129,7 +1345,13 @@ impl Session {
     /// Start a requested world, rejecting a delayed result-countdown request
     /// after the supervisor has already replaced the finished server.
     fn start_new_game(&mut self, request: &Value) -> Result<(), String> {
-        if self.params.supervised {
+        // The supervisor owns the exhibition: every AI-only world is a fresh
+        // process on freshly built code, so this process may not replace one
+        // in place. A game somebody sits down to play is not part of that
+        // cycle — it takes this process over exactly as it would on a server
+        // nobody is supervising, and the supervisor leaves it alone until it
+        // is over.
+        if self.params.supervised && request["spectate"].as_bool() != Some(false) {
             return Err("the spectator supervisor owns in-process game replacement".into());
         }
         if let Some(finished) = request.get("replace_finished") {
@@ -1811,6 +2033,71 @@ fn query_value<'a>(target: &'a str, key: &str) -> Option<&'a str> {
     })
 }
 
+/// A structural fingerprint of one tile, for telling whether it has changed
+/// since a viewer was last sent it without keeping a copy of it to compare.
+///
+/// Deterministic across turns because the map it walks is ordered — sorted by
+/// key on the default `serde_json`, insertion-ordered under `preserve_order`,
+/// and either way the same builder produces the same shape every turn. Kinds
+/// are tagged so that `null`, `false` and `0` cannot agree by coincidence, and
+/// numbers are tagged by how they read back so `1` and `1.0` do not either.
+fn hash_json(value: &Value, into: &mut DefaultHasher) {
+    match value {
+        Value::Null => 0u8.hash(into),
+        Value::Bool(flag) => {
+            1u8.hash(into);
+            flag.hash(into);
+        }
+        Value::Number(number) => {
+            2u8.hash(into);
+            match (number.as_i64(), number.as_u64(), number.as_f64()) {
+                (Some(whole), _, _) => (0u8, whole).hash(into),
+                (_, Some(whole), _) => (1u8, whole).hash(into),
+                (_, _, Some(real)) => (2u8, real.to_bits()).hash(into),
+                _ => 3u8.hash(into),
+            }
+        }
+        Value::String(text) => {
+            3u8.hash(into);
+            text.hash(into);
+        }
+        Value::Array(items) => {
+            4u8.hash(into);
+            items.len().hash(into);
+            for item in items {
+                hash_json(item, into);
+            }
+        }
+        Value::Object(fields) => {
+            5u8.hash(into);
+            fields.len().hash(into);
+            for (key, item) in fields {
+                key.hash(into);
+                hash_json(item, into);
+            }
+        }
+    }
+}
+
+fn tile_mark(tile: &Value) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    hash_json(tile, &mut hasher);
+    hasher.finish()
+}
+
+/// The frame a page says its own copy of the tiles is built from, written
+/// `world:turn`. Both halves matter: a patch is only meaningful against the
+/// exact array the server sent, and turn 5 of one world is not turn 5 of the
+/// next. Anything unparseable simply means no baseline, and the page is sent
+/// the whole map.
+fn held_frame(token: &str) -> Option<SpectatorFrame> {
+    let (seed, turn) = token.split_once(':')?;
+    Some(SpectatorFrame {
+        seed: seed.parse().ok()?,
+        turn: turn.parse().ok()?,
+    })
+}
+
 fn simulation_settings(params: &Params) -> Value {
     let victories = [
         (params.victory_conditions.science, "science"),
@@ -1830,6 +2117,8 @@ fn simulation_settings(params: &Params) -> Value {
         "city_states": params.num_city_states,
         "turns": params.max_turns,
         "map": params.map_script.id(),
+        "shape": params.map_topology.id(),
+        "poles": params.map_poles.id(),
         "speed": params.game_speed.id(),
         "victories": victories,
     })
@@ -1889,11 +2178,31 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     }
     if let Some(v) = request["map_script"].as_str().and_then(MapScript::from_id) {
         p.map_script = v;
+        // `planet` used to name a world type; it now names a shape. A client
+        // still asking for it by the old name means both halves of what it
+        // used to mean, so the shape comes along with the type.
+        if request["map_script"].as_str() == Some("planet") {
+            p.map_topology = MapTopology::Planet;
+        }
+    }
+    if let Some(v) = request["map_topology"].as_str().and_then(MapTopology::from_id) {
+        p.map_topology = v;
+    }
+    if let Some(v) = request["map_poles"].as_str().and_then(MapPoles::from_id) {
+        p.map_poles = v;
+    }
+    if let Some(v) = request["map_poles"].as_bool() {
+        p.map_poles = if v { MapPoles::Poles } else { MapPoles::NoPoles };
+    }
+    // Earth is drawn from real longitudes and latitudes and closes on itself,
+    // so it is always a globe whatever shape the lobby asked for.
+    if p.map_script.is_fixed_geography() {
+        p.map_topology = MapTopology::Planet;
     }
     // A globe is stored in a rectangle of its own shape, so the chosen size is
-    // re-expressed whenever either the size or the script moves, and the lobby
+    // re-expressed whenever either the size or the shape moves, and the lobby
     // always names the world it is about to build.
-    if p.map_script.is_globe() {
+    if p.map_topology.is_globe() {
         let frequency = crate::mapgen::globe_frequency(p.width, p.height);
         p.width = crate::sphere::Sphere::width_for(frequency);
         p.height = crate::sphere::Sphere::height_for(frequency);
@@ -2090,6 +2399,10 @@ fn auto_step_loop(sh: Arc<Shared>) {
         // only one slower than the pace slows the pace down. With no recent
         // viewer the wait returns at once and nothing is throttled.
         if let Some(frame) = completed_frame {
+            // Wake the pages parked on "whatever comes after what I hold"
+            // before waiting on them to take it, or the two would deadlock on
+            // each other for the length of the poll cap, every single turn.
+            sh.note_turn_ready(frame);
             sh.wait_for_turn_frame(frame);
         }
         if pace == 0 && !waiting {
@@ -2205,6 +2518,18 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             // by reporting the turn it last painted; everyone else reads the
             // same state and is not counted.
             let painting_viewer = query_value(&request_target, "painted");
+            // Which page is asking. Every viewer is owed every turn, so they
+            // are counted and waited for one at a time; a page that names
+            // itself gets a seat of its own, and one too old to know to (a tab
+            // open across a binary swap) shares the unnamed seat, which is the
+            // single-cursor behaviour it was written against.
+            let viewer = query_value(&request_target, "viewer").unwrap_or("").to_string();
+            // The frame the page's own tile array is built from, which is not
+            // the frame it painted: a state can arrive, patch the tiles and
+            // still fail to draw. It names its world as well as its turn — a
+            // page holding turn 5 of the world before this one must not be
+            // handed a patch against turn 5 of this one.
+            let have = query_value(&request_target, "have").and_then(held_frame);
             if let Some(reported) = painting_viewer {
                 let painted = match (
                     reported.parse::<u32>(),
@@ -2213,8 +2538,12 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     (Ok(turn), Some(Ok(seed))) => Some(SpectatorFrame { seed, turn }),
                     _ => None, // a page that has painted nothing yet
                 };
-                sh.note_viewer_request(painted);
+                sh.note_viewer_request(&viewer, painted);
             }
+            // A page that says what it holds is asking for the next turn, not
+            // this one again, so it waits here instead of spinning on a clock
+            // of its own. A reader that names nothing is answered at once.
+            sh.wait_for_next_turn(have);
             let (mut o, frame) = {
                 let session = sh.session.lock().unwrap();
                 let frame = SpectatorFrame {
@@ -2230,11 +2559,14 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 (observed, frame)
             };
             decorate(&mut o, sh);
+            if painting_viewer.is_some() {
+                sh.deliver_tiles(&viewer, frame, have, &mut o);
+            }
             if respond_json(stream, &o) && painting_viewer.is_some() {
                 // Release the stepper only after the completed-turn snapshot
                 // is on the wire. The browser renders every successful
                 // `/state` response as one synchronous map + HUD update.
-                sh.note_frame_delivered(frame);
+                sh.note_frame_delivered(&viewer, frame);
             }
         }
         // Everything a supervisor needs to know - is there a game, is it over -
@@ -2243,7 +2575,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         // few seconds to read one field spends the server's time on rendering
         // a view nobody looks at.
         ("GET", "/status") => {
-            let (frames_missed, frames_painted) = sh.frame_audit();
+            let (frames_missed, frames_painted, viewers) = sh.frame_audit();
             let session = sh.session.lock().unwrap();
             let game = &session.game;
             respond_json(
@@ -2263,6 +2595,10 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     // nobody is watching, which is why zero misses on its own
                     // is not yet good news.
                     "frames_painted": frames_painted,
+                    // How many pages that promise is being kept to. Each is
+                    // waited for separately, so this is also the number of
+                    // paints a turn now costs before the next one starts.
+                    "viewers": viewers,
                     // Which code is actually playing. A binary swap only
                     // happens between games, so a running server is always
                     // somewhat behind origin/main and there was no way to see
@@ -2432,6 +2768,8 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "map_sizes": CIV6_MAP_SIZES,
                     "difficulties": r.difficulties, "speeds": r.speeds,
                     "map_scripts": CIV6_MAP_SCRIPTS,
+                    "map_topologies": MAP_TOPOLOGIES,
+                    "map_poles": MAP_POLES,
                     "game_speeds": CIV6_GAME_SPEEDS,
                     "strategies": strategy_roster(&session),
                     "seat_strategy": session.seated_strategy_name(0),
@@ -2664,13 +3002,13 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
 mod tests {
     use super::{
         chronicle_world_events, final_countdown_ms, new_game_params, query_value, request_path,
-        save_path, seat_delay_ms, strategy_roster, ChronicleSnapshot, ChronicleState,
+        save_path, seat_delay_ms, strategy_roster, tile_mark, ChronicleSnapshot, ChronicleState,
         FrameDelivery, Params,
         Session, SpectatorFrame, EMBEDDED_CINEMATIC_3D, EMBEDDED_INDEX,
-        EMBEDDED_WORLD_WONDER_ATLAS, SAVE_DIR, VIEWER_ACTIVE,
+        EMBEDDED_WORLD_WONDER_ATLAS, SAVE_DIR, STATE_LONG_POLL, VIEWER_ACTIVE,
     };
     use crate::game::{Action, Game, VictoryConditions};
-    use crate::setup::{GameSpeed, MapScript};
+    use crate::setup::{GameSpeed, MapPoles, MapScript, MapTopology};
     use serde_json::{json, Value};
     use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};
@@ -2717,10 +3055,10 @@ mod tests {
 
         assert_eq!(delivery.wait_remaining(turn_7, now), None);
 
-        delivery.viewer_request(None, now);
+        delivery.viewer_request("one", None, now);
         assert_eq!(delivery.wait_remaining(turn_7, now), Some(VIEWER_ACTIVE));
 
-        delivery.frame_delivered(turn_7, now + Duration::from_millis(20));
+        delivery.frame_delivered("one", turn_7, now + Duration::from_millis(20));
         assert_eq!(delivery.wait_remaining(turn_7, now), None);
         assert!(delivery.wait_remaining(turn_8, now).is_some());
         assert!(delivery.wait_remaining(next_world, now).is_some());
@@ -2735,6 +3073,56 @@ mod tests {
         );
     }
 
+    /// Two tabs on one exhibition are two promises, not one. The gate used to
+    /// keep a single delivery cursor, so either page satisfying it released the
+    /// turn and they took alternate ones — each seeing half the game while the
+    /// audit, reading that same cursor, called it perfect.
+    #[test]
+    fn every_viewer_is_owed_the_turn_not_whichever_asks_first() {
+        let now = Instant::now();
+        let turn_7 = SpectatorFrame { seed: 41, turn: 7 };
+        let mut delivery = FrameDelivery::default();
+
+        delivery.viewer_request("one", None, now);
+        delivery.viewer_request("two", None, now);
+
+        delivery.frame_delivered("one", turn_7, now);
+        assert!(
+            delivery.wait_remaining(turn_7, now).is_some(),
+            "the second tab has not been handed this turn yet"
+        );
+        delivery.frame_delivered("two", turn_7, now);
+        assert_eq!(delivery.wait_remaining(turn_7, now), None);
+
+        // And a tab that closes stops holding turns open once it goes stale,
+        // rather than costing the exhibition a wait for a page nobody has.
+        let later = now + VIEWER_ACTIVE + Duration::from_millis(1);
+        let turn_8 = SpectatorFrame { seed: 41, turn: 8 };
+        delivery.viewer_request("one", None, later);
+        delivery.frame_delivered("one", turn_8, later);
+        assert_eq!(delivery.wait_remaining(turn_8, later), None);
+        assert_eq!(delivery.seats.len(), 1, "the departed tab was retired");
+    }
+
+    /// Each viewer's misses are its own. One page catching every turn does not
+    /// cover for another that is dropping them.
+    #[test]
+    fn misses_are_counted_against_the_viewer_that_missed_them() {
+        let world = |turn| Some(SpectatorFrame { seed: 41, turn });
+        let mut now = Instant::now();
+        let beat = Duration::from_millis(50);
+        let mut delivery = FrameDelivery::default();
+
+        for turn in 7..=10 {
+            now += beat;
+            delivery.viewer_request("steady", world(turn), now);
+            delivery.viewer_request("skipping", world(7 + (turn - 7) * 3), now);
+        }
+        let seat = |id: &str| delivery.seats[id].missed;
+        assert_eq!(seat("steady"), 0);
+        assert_eq!(seat("skipping"), 6); // three turns lost, three times over
+    }
+
     /// A frame written to a socket is not yet a frame anybody saw. The page
     /// reports the turn it painted, so turns that went by undrawn are counted
     /// rather than assumed not to exist.
@@ -2744,28 +3132,29 @@ mod tests {
         let mut now = Instant::now();
         let mut poll = |delivery: &mut FrameDelivery, painted, after: Duration| {
             now += after;
-            delivery.viewer_request(painted, now);
+            delivery.viewer_request("tab", painted, now);
         };
         let mut delivery = FrameDelivery::default();
         let beat = Duration::from_millis(300);
+        let missed = |delivery: &FrameDelivery| delivery.missed;
 
         poll(&mut delivery, world(7), beat);
-        assert_eq!(delivery.missed, 0); // nothing to compare the first against
+        assert_eq!(missed(&delivery), 0); // nothing to compare the first against
 
         poll(&mut delivery, world(8), beat);
-        assert_eq!(delivery.missed, 0);
+        assert_eq!(missed(&delivery), 0);
 
         poll(&mut delivery, world(12), beat);
-        assert_eq!(delivery.missed, 3); // 9, 10 and 11 were simulated unseen
+        assert_eq!(missed(&delivery), 3); // 9, 10 and 11 were simulated unseen
 
         // A viewer that left is owed nothing while it is gone. The exhibition
         // is meant to run flat out unattended, and a tab that closes, reloads
         // onto a swapped binary, or sits through a game boundary comes back to
         // a later turn through no fault of the gate.
         poll(&mut delivery, world(400), VIEWER_ACTIVE + beat);
-        assert_eq!(delivery.missed, 3);
+        assert_eq!(missed(&delivery), 3);
         poll(&mut delivery, world(401), beat);
-        assert_eq!(delivery.missed, 3);
+        assert_eq!(missed(&delivery), 3);
 
         // A different world starts the count over too: seeds are unordered and
         // the turns before it belonged to another game. Nor is a repeated turn
@@ -2774,7 +3163,7 @@ mod tests {
         poll(&mut delivery, Some(SpectatorFrame { seed: 42, turn: 40 }), beat);
         poll(&mut delivery, Some(SpectatorFrame { seed: 42, turn: 40 }), beat);
         poll(&mut delivery, Some(SpectatorFrame { seed: 42, turn: 41 }), beat);
-        assert_eq!(delivery.missed, 3);
+        assert_eq!(missed(&delivery), 3);
     }
 
     /// Only a page that paints holds the simulation to a turn. The keeper's
@@ -2898,6 +3287,261 @@ mod tests {
         assert_eq!(status["frames_painted"], json!(last));
     }
 
+    /// Start a spectator on its own port and wait for it to answer.
+    fn exhibition(seed: u64) -> u16 {
+        let port = TcpListener::bind(("127.0.0.1", 0))
+            .expect("a free port")
+            .local_addr()
+            .unwrap()
+            .port();
+        let mut params = current();
+        params.spectate = true;
+        params.num_players = 3;
+        params.num_city_states = 1;
+        params.width = 24;
+        params.height = 16;
+        params.seed = seed;
+        std::thread::spawn(move || super::serve_with_game(port, false, params, None, false));
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while http_get(port, "/status").is_none() {
+            assert!(Instant::now() < deadline, "spectator server never came up");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        port
+    }
+
+    /// Two tabs on one exhibition are two promises, not one.
+    ///
+    /// Delivery used to be a single cursor for the whole server, so a turn was
+    /// released as soon as *either* page had been handed it and the two of
+    /// them took alternate turns — each seeing half the game. The audit read
+    /// that same cursor, and between them they had reported an unbroken run of
+    /// turns, so it called it perfect. Both of these viewers paint slower than
+    /// the pace they ask for, and both are owed all of it.
+    #[test]
+    fn two_viewers_each_see_every_turn() {
+        let port = exhibition(20_260_726);
+        http_post(port, "/pace", "{\"ms\":60}").expect("set the turn pace");
+
+        // The two run side by side for the same stretch of wall clock rather
+        // than for the same number of polls, because the whole point is that
+        // they read at different rates: one an order of magnitude slower than
+        // the other, which is what a big map on a loaded machine looks like
+        // next to a small one.
+        let until = Instant::now() + Duration::from_secs(6);
+        let watch = |name: &'static str, paint: u64| {
+            std::thread::spawn(move || {
+                let mut seen: Vec<u32> = Vec::new();
+                let mut painted: Option<(u64, u32)> = None;
+                while Instant::now() < until {
+                    let target = match painted {
+                        None => format!("/state?painted=&viewer={name}"),
+                        Some((seed, turn)) => {
+                            format!("/state?painted={turn}&world={seed}&viewer={name}")
+                        }
+                    };
+                    let Some(body) = http_get(port, &target) else {
+                        continue;
+                    };
+                    let state: Value = serde_json::from_str(&body).expect("state is JSON");
+                    let turn = state["turn"].as_u64().expect("a turn") as u32;
+                    let seed = state["seed"].as_u64().expect("a world");
+                    std::thread::sleep(Duration::from_millis(paint)); // the paint
+                    seen.push(turn);
+                    painted = Some((seed, turn));
+                }
+                seen
+            })
+        };
+        let slow = watch("slow", 400);
+        let quick = watch("quick", 40);
+        let (slow, quick) = (slow.join().unwrap(), quick.join().unwrap());
+        http_post(port, "/pace", "{\"paused\":true}");
+
+        for (name, seen) in [("slow", &slow), ("quick", &quick)] {
+            let (first, last) = (seen[0], *seen.last().unwrap());
+            assert!(
+                last >= first + 3,
+                "the exhibition never moved for {name}, so nothing was tested: {seen:?}"
+            );
+            let missed: Vec<u32> = (first..=last).filter(|turn| !seen.contains(turn)).collect();
+            assert!(
+                missed.is_empty(),
+                "{name} was never sent {missed:?}, out of {seen:?}"
+            );
+        }
+        let status: Value = serde_json::from_str(&http_get(port, "/status").expect("status"))
+            .expect("status is JSON");
+        assert_eq!(status["frames_missed"], json!(0));
+        assert_eq!(status["viewers"], json!(2));
+    }
+
+    /// A tile's fingerprint stands in for the tile when deciding whether a
+    /// viewer needs to be sent it again, so anything that changes on a tile has
+    /// to change the mark. A false match is a hex that stays wrong on somebody's
+    /// map until the next resync — silently, and only in the corner nobody is
+    /// looking at.
+    #[test]
+    fn a_tile_that_changed_does_not_keep_its_fingerprint() {
+        let tile = json!({
+            "pos": [-15, 30], "terrain": "ocean", "hills": false, "road": 0,
+            "resource": null, "river_edges": [false, false, false, false, false, false],
+            "disaster_yields": {"faith": 0.0, "food": 0.0, "production": 0.0},
+        });
+        let same = tile_mark(&tile);
+        assert_eq!(same, tile_mark(&tile.clone()), "the same tile, twice");
+
+        let mut changed = |mutate: &dyn Fn(&mut Value)| {
+            let mut other = tile.clone();
+            mutate(&mut other);
+            assert_ne!(tile_mark(&other), same, "unnoticed change: {other}");
+        };
+        changed(&|t| t["terrain"] = json!("grass"));
+        changed(&|t| t["hills"] = json!(true));
+        changed(&|t| t["road"] = json!(1));
+        changed(&|t| t["resource"] = json!("iron"));
+        changed(&|t| t["pos"] = json!([-15, 31]));
+        changed(&|t| t["river_edges"][2] = json!(true));
+        changed(&|t| t["disaster_yields"]["food"] = json!(2.0));
+        changed(&|t| t["owner"] = json!(0)); // a field appearing at all
+        // The kinds that would otherwise all hash as "empty", and the numbers
+        // that would otherwise hash as each other.
+        changed(&|t| t["resource"] = json!(false));
+        changed(&|t| t["resource"] = json!(0));
+        changed(&|t| t["resource"] = json!(""));
+        changed(&|t| t["road"] = json!(0.5));
+        assert_ne!(tile_mark(&json!(0)), tile_mark(&json!(0.5)));
+        assert_ne!(tile_mark(&json!(null)), tile_mark(&json!(false)));
+        assert_ne!(tile_mark(&json!([])), tile_mark(&json!({})));
+    }
+
+    /// A page that says what it is holding is asking for the turn *after* it.
+    ///
+    /// It waits on the server rather than on a clock of its own. That is what
+    /// lets the page ask again the instant it has finished drawing without
+    /// spinning: `/state` answers immediately by nature, so a loop with no
+    /// delay in it would rebuild a megabyte of observation over and over for a
+    /// turn already on the screen, competing with the simulation for the
+    /// machine. Readers that hold nothing — every health check there is — are
+    /// still answered at once.
+    #[test]
+    fn a_page_holding_the_current_turn_waits_for_the_next_one() {
+        let port = exhibition(20_260_728);
+        http_post(port, "/pace", "{\"paused\":true}").expect("pause the exhibition");
+        let read = |target: &str| -> Value {
+            serde_json::from_str(&http_get(port, target).expect("a state")).expect("state is JSON")
+        };
+        let now = read("/state?painted=&viewer=one");
+        let seed = now["seed"].as_u64().expect("a world");
+        let turn = now["turn"].as_u64().expect("a turn") as u32;
+        let holding =
+            format!("/state?painted={turn}&world={seed}&viewer=one&have={seed}:{turn}");
+
+        // Nothing is being simulated, so a page holding the current turn is
+        // held until the cap and then answered with what it already had.
+        let began = Instant::now();
+        let same = read(&holding);
+        let waited = began.elapsed();
+        assert_eq!(same["turn"], json!(turn));
+        assert!(
+            waited >= STATE_LONG_POLL - Duration::from_millis(50),
+            "answered a page that had nothing to be told, after {waited:?}"
+        );
+        assert!(waited < STATE_LONG_POLL * 4, "held far past the cap: {waited:?}");
+
+        // A reader that names no baseline is never made to wait for one.
+        let began = Instant::now();
+        read("/state");
+        assert!(began.elapsed() < Duration::from_millis(500));
+
+        // And once the game is moving, the wait ends when the turn does rather
+        // than when the cap runs out.
+        http_post(port, "/pace", "{\"ms\":0,\"paused\":false}").expect("let it run");
+        let began = Instant::now();
+        let next = read(&holding);
+        let woken = began.elapsed();
+        http_post(port, "/pace", "{\"paused\":true}");
+        assert!(
+            next["turn"].as_u64().expect("a turn") as u32 > turn,
+            "the wait ended on the same turn it started on"
+        );
+        assert!(woken < STATE_LONG_POLL, "timed out rather than woken: {woken:?}");
+    }
+
+    /// The map is 1.2 MB of a 1.4 MB state and hardly any of it differs from
+    /// one turn to the next, so a page that says which array it is holding is
+    /// sent only what changed. What it rebuilds from that has to be exactly the
+    /// map the server would have sent it whole — the failure this guards
+    /// against is not a crash but a world that is quietly a few turns stale in
+    /// the corners nobody is looking at.
+    #[test]
+    fn a_viewer_is_sent_only_the_tiles_that_changed() {
+        let port = exhibition(20_260_727);
+        // Hold the turn still, so the whole map and the patched one can be
+        // compared as of the same moment.
+        http_post(port, "/pace", "{\"paused\":true}").expect("pause the exhibition");
+
+        let read = |target: &str| -> Value {
+            serde_json::from_str(&http_get(port, target).expect("a state")).expect("state is JSON")
+        };
+        let first = read("/state?painted=&viewer=one");
+        let seed = first["seed"].as_u64().expect("a world");
+        let base = first["turn"].as_u64().expect("a turn") as u32;
+        let mut held: Vec<Value> = first["map"]["tiles"]
+            .as_array()
+            .expect("the whole map, the first time")
+            .clone();
+        assert!(held.len() > 300, "a map of {} tiles", held.len());
+
+        // Play on far enough that the map itself has moved on: capitals get
+        // founded, borders claim their tiles, improvements appear.
+        for _ in 0..12 {
+            http_post(port, "/step", "{\"count\":8}").expect("step the game on");
+        }
+
+        let patched = read(&format!(
+            "/state?painted={base}&world={seed}&viewer=one&have={seed}:{base}"
+        ));
+        assert!(
+            patched["map"]["tiles"].is_null(),
+            "a page that is holding the map must not be sent it again"
+        );
+        assert_eq!(patched["map"]["tiles_from"], json!(base));
+        let changed = patched["map"]["tiles_changed"]
+            .as_array()
+            .expect("a patch")
+            .clone();
+        assert!(!changed.is_empty(), "a dozen turns changed nothing at all");
+        assert!(
+            changed.len() < held.len() / 2,
+            "{} of {} tiles is not worth calling a patch",
+            changed.len(),
+            held.len()
+        );
+        for entry in &changed {
+            let at = entry[0].as_u64().expect("a tile index") as usize;
+            held[at] = entry[1].clone();
+        }
+
+        // What a reader with no baseline is handed, at the same still turn.
+        let whole = read("/state");
+        assert_eq!(whole["turn"], patched["turn"], "the game moved mid-test");
+        assert_eq!(
+            whole["map"]["tiles"].as_array().expect("a whole map"),
+            &held,
+            "the patched map is not the map"
+        );
+
+        // And a page whose baseline the server does not share gets the map
+        // back whole rather than a patch it cannot apply.
+        let stale = read(&format!(
+            "/state?painted={base}&world={seed}&viewer=one&have={seed}:{}",
+            base + 9_000
+        ));
+        assert!(stale["map"]["tiles"].is_array());
+        assert!(stale["map"]["tiles_changed"].is_null());
+    }
+
     #[test]
     fn browser_renders_each_delivered_state_as_one_complete_frame() {
         let render = EMBEDDED_INDEX
@@ -2976,10 +3620,48 @@ mod tests {
         assert!(EMBEDDED_INDEX
             .contains("`?painted=${paintedFrame.turn}&world=${paintedFrame.seed}`"));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/state\" + paintedQuery())"));
+        // Two tabs are two promises, so a page says which one it is, and what
+        // it holds is asked separately from what it drew — a state can arrive,
+        // patch the tiles and still fail to paint.
+        assert!(EMBEDDED_INDEX.contains("&viewer=${VIEWER_ID}"));
+        assert!(EMBEDDED_INDEX.contains("&have=${tileStore.seed}:${tileStore.turn}"));
+
+        // And it draws one turn per animation frame, on the display's clock
+        // rather than a timer of its own. Two turns painted inside one refresh
+        // are composited into one, so a turn drawn faster than the screen can
+        // show it is still a turn nobody saw — and a fixed delay between polls
+        // is a ceiling on the whole exhibition, because the simulation is held
+        // to whatever rate this loop reads.
+        let frame_loop = EMBEDDED_INDEX
+            .split_once("(function specFrame() {")
+            .expect("the spectator's frame loop")
+            .1
+            .split_once("\n})();")
+            .expect("the end of the frame loop")
+            .0;
+        assert!(frame_loop.contains("requestAnimationFrame(specFrame)"));
+        assert!(
+            !frame_loop.contains("setTimeout"),
+            "the frame loop keeps no clock of its own"
+        );
+        assert!(
+            frame_loop.contains("render(st);"),
+            "every state taken off the queue is drawn"
+        );
+        // Nothing may be dropped: the gate released that turn on the strength
+        // of this page drawing it, so a state already in hand has to be
+        // painted before another one is asked for.
+        let fetching = EMBEDDED_INDEX
+            .split_once("function specFetch() {")
+            .expect("the spectator's fetch")
+            .1;
+        assert!(fetching.contains("if (!SPEC || specFetching || specPending) return;"));
     }
 
     fn current() -> Params {
         Params {
+            map_topology: MapTopology::Flat,
+            map_poles: MapPoles::Poles,
             num_players: 2,
             width: 20,
             height: 14,
@@ -3225,14 +3907,14 @@ mod tests {
     #[test]
     fn a_globe_hands_the_browser_its_shape_only_when_asked() {
         let size = crate::setup::MapSize::for_players(2);
-        let (width, height) = size.dimensions(MapScript::Planet);
+        let (width, height) = size.dimensions(MapTopology::Planet);
         let game = Game::new_with(crate::game::GameOptions {
-            map_script: MapScript::Planet,
+            map_topology: MapTopology::Planet,
             ..crate::game::GameOptions::new(2, width, height, 6_031, 30, 2)
         });
         let plain = crate::obs::observation_spectator(&game, 0);
         assert!(plain["map"]["planet"].is_null(), "the poll never carries geometry");
-        assert_eq!(plain["map"]["script"], "planet");
+        assert_eq!(plain["map"]["shape"], "planet");
 
         let geometry = crate::obs::planet_geometry(&game).expect("a globe has geometry");
         assert_eq!(geometry["frequency"], size.globe_frequency);
@@ -3270,10 +3952,10 @@ mod tests {
     #[test]
     fn choosing_the_globe_resizes_the_world_it_builds() {
         let current = current();
-        let planet = new_game_params(&current, &json!({"map_script": "planet"}));
+        let planet = new_game_params(&current, &json!({"map_topology": "planet"}));
         let size = crate::setup::MapSize::from_dimensions(current.width, current.height)
             .unwrap_or_else(|| crate::setup::MapSize::for_players(current.num_players));
-        assert_eq!(planet.map_script, MapScript::Planet);
+        assert_eq!(planet.map_topology, MapTopology::Planet);
         assert_eq!(
             (planet.width, planet.height),
             (
@@ -3290,7 +3972,7 @@ mod tests {
         // A stock size keeps its own globe.
         let stock = new_game_params(
             &Params { width: size.width, height: size.height, ..current.clone() },
-            &json!({"map_script": "planet"}),
+            &json!({"map_topology": "planet"}),
         );
         assert_eq!((stock.width, stock.height), (size.globe_width(), size.globe_height()));
         assert_eq!(
@@ -3298,9 +3980,26 @@ mod tests {
             Some(size.id),
             "the globe still reports the size it was chosen at"
         );
-        // And back again.
-        let flat = new_game_params(&stock, &json!({"map_script": "continents"}));
+        // Changing what fills the world does not change its shape: a globe
+        // asked for Continents is a globe of continents, and keeps its
+        // rectangle.
+        let still_round = new_game_params(&stock, &json!({"map_script": "continents"}));
+        assert_eq!(still_round.map_topology, MapTopology::Planet);
+        assert_eq!(
+            (still_round.width, still_round.height),
+            (size.globe_width(), size.globe_height())
+        );
+        // Asking for the flat shape is what flattens it, and back comes the
+        // size's own rectangle.
+        let flat = new_game_params(&stock, &json!({"map_topology": "flat"}));
         assert_eq!((flat.width, flat.height), (size.width, size.height));
+        // Earth is the exception, and overrules the shape it is handed.
+        let earth = new_game_params(
+            &flat,
+            &json!({"map_script": "true_start_earth", "map_topology": "flat"}),
+        );
+        assert_eq!(earth.map_topology, MapTopology::Planet);
+        assert_eq!((earth.width, earth.height), (size.globe_width(), size.globe_height()));
     }
 
     #[test]
@@ -3344,10 +4043,34 @@ mod tests {
         assert!(!EMBEDDED_INDEX.contains("orbitCamera(-cam.rot, DEFAULT_CINEMA_YS"));
         // The globe's yaw is a bearing, not a second way to spin it eastward.
         assert!(EMBEDDED_INDEX.contains("roll:cam.rot"));
+        // A globe is turned, not slid. Longitude and latitude cannot express a
+        // drag — near a pole the parallels are a few pixels long, so spending a
+        // sideways drag on longitude spins the world about the point under the
+        // pointer, and the pole is a wall latitude stops at. So the camera's own
+        // basis is rotated bodily and read back into cam.x/cam.y/cam.rot, which
+        // makes a pixel of drag the same arc anywhere on the globe and carries
+        // the view straight over a pole and down the far side. Every way of
+        // moving the map shares that one turn: pointer, touch and the arrows.
+        assert!(EMBEDDED_INDEX.contains("function planetViewBasis(camera)"));
+        assert!(EMBEDDED_INDEX.contains("function planetBasisCamera(basis)"));
+        assert!(EMBEDDED_INDEX.contains("function planetTurnAxis(basis, dx, dy)"));
+        assert!(EMBEDDED_INDEX.contains("function applyPlanetBasis(basis)"));
+        assert!(EMBEDDED_INDEX.contains("applyPlanetBasis(planetTurn(dragState.basis, dx, dy))"));
+        assert!(EMBEDDED_INDEX.contains("applyPlanetBasis(planetTurn(touchGesture.basis, dx, dy))"));
+        assert!(EMBEDDED_INDEX.contains("applyPlanetBasis(planetTurn(basis, -screenX, -screenY))"));
+        assert!(EMBEDDED_INDEX.contains("spin:planetGlide(released.vpx, released.vpy)"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"planet\">Planet</option>"));
         assert!(EMBEDDED_INDEX
             .contains("<option value=\"true_start_earth\">True Start Earth</option>"));
-        assert!(EMBEDDED_INDEX.contains("const GLOBE_SCRIPTS = "));
+        // The world's shape and its poles are settings of their own, and the
+        // renderer picks its projection from the shape the world reports
+        // rather than from the world type it was filled with.
+        assert!(EMBEDDED_INDEX.contains("id=\"mapshape\""));
+        assert!(EMBEDDED_INDEX.contains("id=\"mappoles\""));
+        assert!(EMBEDDED_INDEX.contains("return state.map.shape === \"planet\""));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"land_only\">Land Only</option>"));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"water_world\">Water World</option>"));
+        assert!(EMBEDDED_INDEX.contains("RULES.map_topologies"));
         assert!(EMBEDDED_INDEX.contains("id=\"gamespeed\""));
         for victory in [
             "science",
@@ -3381,7 +4104,7 @@ mod tests {
         // human game never offers to replace it with a simulation by default.
         assert!(EMBEDDED_INDEX.contains("select.value = SPEC ? \"ai_sim\" : \"single\""));
         assert!(EMBEDDED_INDEX.contains(
-            "id=\"restart-sim\" title=\"Restart with the same settings\">Restart sim<span class=\"sub\">same settings</span>"
+            "id=\"restart-sim\" title=\"Restart with the same settings\"><span class=\"lbl\">Restart sim</span><span class=\"sub\">same settings</span>"
         ));
         assert!(!EMBEDDED_INDEX.contains("id=\"fresh-sim\""));
         assert!(!EMBEDDED_INDEX.contains("id=\"default-settings\""));
@@ -4156,6 +4879,8 @@ mod tests {
                 "city_states": 9,
                 "turns": 330,
                 "map": "continents",
+                "shape": "flat",
+                "poles": "poles",
                 "speed": "quick",
                 "victories": ["science", "religious", "diplomatic", "domination"],
             })
@@ -4209,6 +4934,8 @@ mod tests {
                 "city_states": 6,
                 "turns": 330,
                 "map": "continents",
+                "shape": "flat",
+                "poles": "poles",
                 "speed": "quick",
                 "victories": ["science", "religious", "diplomatic", "domination"],
             })
@@ -4222,6 +4949,39 @@ mod tests {
             .request_supervised_new_game(&json!({"mode": "fresh_code"}))
             .is_err());
         assert!(session.state()["supervisor_request"].is_null());
+    }
+
+    /// The supervisor replaces the AI exhibition process by process, so this
+    /// server may not swap one simulation for another in place. Sitting down
+    /// to play is the exception the rule exists around: a single-player game
+    /// is not part of that cycle, so choosing it in the setup panel and
+    /// starting it takes this process over at once, and the way back to the
+    /// exhibition is the supervised request it has always been.
+    #[test]
+    fn a_supervised_exhibition_hands_its_process_to_a_single_player_game() {
+        let mut params = current();
+        params.spectate = true;
+        params.supervised = true;
+        let mut session = Session::new(params);
+        let watched = session.game.seed;
+
+        assert!(session
+            .start_new_game(&json!({"seed": 7, "spectate": true, "force": true}))
+            .is_err());
+        assert_eq!(session.game.seed, watched);
+
+        session
+            .start_new_game(&json!({"seed": 8, "spectate": false, "force": true}))
+            .unwrap();
+        assert_eq!(session.game.seed, 8);
+        let state = session.state();
+        assert_eq!(state["spectate"], json!(false));
+        assert_eq!(state["supervised"], json!(true));
+        assert!(!state["legal_actions"].as_array().unwrap().is_empty());
+
+        assert!(session
+            .request_supervised_new_game(&json!({"mode": "restart", "paused": false}))
+            .is_ok());
     }
 
     #[test]
@@ -4640,6 +5400,50 @@ mod tests {
         // A build without the save endpoints hides the group rather than
         // offering one that cannot work.
         assert!(EMBEDDED_INDEX.contains("catch (error) { group.style.display = \"none\";"));
+    }
+
+    /// Choosing single player and pressing the one start control on screen
+    /// must open that game — on the supervised exhibition too, where every
+    /// simulation is a fresh process but a human game takes this one over.
+    /// Which control that is follows the world on screen, never the pending
+    /// selection: keying the sidebar button to the mode select left a player
+    /// who picked AI-only with no way to launch anything at all.
+    #[test]
+    fn browser_enters_single_player_from_whichever_start_control_is_showing() {
+        assert!(EMBEDDED_INDEX
+            .contains("const supervised = !!(state && state.supervised) && payload.spectate;"));
+        assert!(EMBEDDED_INDEX.contains("const human = !selectedSimulationSettings().spectate;"));
+        // Choosing single player renames that control after the game it opens,
+        // rather than leaving "Restart sim" over a single-player subtitle.
+        assert!(EMBEDDED_INDEX.contains("<span class=\"lbl\">Restart sim</span>"));
+        assert!(EMBEDDED_INDEX.contains("button.classList.toggle(\"human-start\", human);"));
+        assert!(EMBEDDED_INDEX.contains("? \"Start Single Player Game\""));
+        assert!(EMBEDDED_INDEX
+            .contains(".spec-controls #restart-sim.human-start::before { content: \"▶\";"));
+        // It shares the row with Pause/Resume rather than displacing it: keep
+        // watching or leave for your own game is one decision, so the two read
+        // as a pair. The row goes uneven instead — Pause keeps just enough for
+        // its own label and the start takes the rest — and the start stays the
+        // only gold button on it, since two would leave neither reading as the
+        // one to press.
+        assert!(EMBEDDED_INDEX.contains(
+            ".spec-controls:has(#restart-sim.human-start) { grid-template-columns: 96px minmax(0, 1fr); }"
+        ));
+        assert!(EMBEDDED_INDEX
+            .contains(".spec-controls:has(#restart-sim.human-start) #specpause.primary {"));
+        assert!(EMBEDDED_INDEX.contains("body.watching-sim #startgame { display: none; }"));
+        assert!(EMBEDDED_INDEX.contains("document.body.classList.toggle(\"watching-sim\", SPEC);"));
+        // The start button belongs to the game being played, not to the mode
+        // the sidebar is staging for the next one.
+        assert!(!EMBEDDED_INDEX.contains("human-setting\" id=\"startgame\""));
+        // Leader and difficulty still do follow the selection.
+        assert!(EMBEDDED_INDEX.contains("body.spectating .human-setting { display: none; }"));
+        assert!(EMBEDDED_INDEX.contains("class=\"small human-setting\">Leader"));
+        assert!(EMBEDDED_INDEX.contains("class=\"small human-setting\">Difficulty"));
+        // Settings staged for the next simulation describe a spectated world,
+        // so they may only adopt that mode while one is on screen.
+        assert!(EMBEDDED_INDEX
+            .contains("if (SPEC) document.getElementById(\"gamemode\").value = \"ai_sim\";"));
     }
 
     /// War, peace and denouncement have been in `legal_actions(0)` since v0.6
@@ -5129,6 +5933,8 @@ pub fn serve_with_game(
         turn_compute_us: AtomicU64::new(0),
         frame_delivery: Mutex::new(FrameDelivery::default()),
         frame_delivered: Condvar::new(),
+        latest: Mutex::new(None),
+        turn_ready: Condvar::new(),
     });
     let stepper = shared.clone();
     std::thread::spawn(move || auto_step_loop(stepper));

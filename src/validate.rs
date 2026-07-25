@@ -647,6 +647,25 @@ fn people(check: &mut Check) {
         }
     }
 
+    // Every modifier a signature ability declares needs somewhere in the
+    // engine that reads it, or the civilization silently has no ability at
+    // all — a misspelt key is indistinguishable from a fair one until someone
+    // measures a whole game against the note in the ruleset.
+    const CIV_EFFECTS: [&str; 13] = [
+        "city_food",
+        "city_production",
+        "city_gold",
+        "city_science",
+        "city_culture",
+        "city_faith",
+        "unit_production_pct",
+        "settler_production_pct",
+        "building_production_pct",
+        "district_production_pct",
+        "wonder_production_pct",
+        "combat_strength",
+        "unit_xp_pct",
+    ];
     let units = check.rules.units.clone();
     for (id, spec) in &check.rules.civs.clone() {
         let subject = format!("civs/{id}");
@@ -655,6 +674,14 @@ fn people(check: &mut Check) {
         }
         if spec.ability.is_empty() {
             check.warn(&subject, "has no signature ability");
+        }
+        for effect in spec.effects.keys() {
+            if !CIV_EFFECTS.contains(&effect.as_str()) {
+                check.error(
+                    &subject,
+                    format!("ability effect {effect:?} has no engine handler"),
+                );
+            }
         }
         match &spec.agenda {
             None => check.warn(&subject, "has no historical agenda"),

@@ -5,19 +5,23 @@
 //! like static. This renders a world as text and reports the shares that Civ
 //! VI's own generator targets, so a change can be judged by eye and by number.
 //!
-//! Usage: mapdump [--seed N] [--width N] [--height N] [--script pangaea|
-//!                 continents|small_continents|inland_sea|lakes|planet]
+//! Usage: mapdump [--seed N] [--width N] [--height N]
+//!                 [--script land_only|lakes|inland_sea|pangaea|continents|
+//!                  small_continents|islands|water_world|true_start_earth]
+//!                 [--shape flat|planet] [--poles poles|no_poles]
 //!                 [--maps N] [--quiet]
 //!
-//! Planet is a globe, and its rectangle is the storage the sphere is laid out
-//! in rather than a picture of the world: a row is not a parallel of latitude
-//! and the two rows holding the poles are one tile wide. The shares below it
-//! are counted over the tiles themselves, so they read the same either way.
+//! `--shape planet` is a globe, and its rectangle is the storage the sphere is
+//! laid out in rather than a picture of the world: a row is not a parallel of
+//! latitude and the two rows holding the poles are one tile wide. The shares
+//! below are counted over the tiles themselves, so they read the same either
+//! way — which is what makes the same world type comparable across the two
+//! shapes.
 use std::collections::BTreeMap;
 
 use civvis::rng::Rng;
 use civvis::rules::Rules;
-use civvis::setup::MapScript;
+use civvis::setup::{MapPoles, MapScript, MapTopology};
 use civvis::{hex, mapgen};
 
 fn number(args: &[String], flag: &str, default: i64) -> i64 {
@@ -38,20 +42,28 @@ fn main() {
     let city_states = number(&args, "--city-states", 6) as usize;
     let quiet = args.iter().any(|arg| arg == "--quiet");
     let start_quality = args.iter().any(|arg| arg == "--start-quality");
-    let script = match args
-        .iter()
-        .position(|arg| arg == "--script")
-        .and_then(|index| args.get(index + 1))
-        .map(String::as_str)
-    {
-        Some("continents") => MapScript::Continents,
-        Some("small_continents") => MapScript::SmallContinents,
-        Some("inland_sea") => MapScript::InlandSea,
-        Some("lakes") => MapScript::Lakes,
-        Some("planet") => MapScript::Planet,
-        Some("true_start_earth") => MapScript::TrueStartEarth,
-        _ => MapScript::Pangaea,
+    let text = |flag: &str, default: &str| -> String {
+        args.iter()
+            .position(|arg| arg == flag)
+            .and_then(|index| args.get(index + 1))
+            .cloned()
+            .unwrap_or_else(|| default.to_string())
     };
+    let requested = text("--script", "pangaea");
+    let script = MapScript::from_id(&requested).unwrap_or(MapScript::Pangaea);
+    // `--script planet` named a world type before the globe became a shape of
+    // its own, and still asks for both halves of what it used to mean.
+    let default_shape = if requested == "planet" || script.is_fixed_geography() {
+        MapTopology::Planet
+    } else {
+        MapTopology::Flat
+    };
+    let topology = if script.is_fixed_geography() {
+        MapTopology::Planet
+    } else {
+        MapTopology::from_id(&text("--shape", default_shape.id())).unwrap_or(default_shape)
+    };
+    let poles = MapPoles::from_id(&text("--poles", "poles")).unwrap_or_default();
     let rules = Rules::embedded();
 
     for map in 0..maps {
@@ -65,6 +77,8 @@ fn main() {
             3,
             2,
             script,
+            topology,
+            poles,
             &mut rng,
         );
 

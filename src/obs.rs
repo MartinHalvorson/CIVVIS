@@ -354,6 +354,11 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             "size": g.map_size().id,
             "size_name": g.map_size().name,
             "script": g.map_script.id(),
+            // The world's shape, which the browser needs in order to know
+            // whether it is drawing a rectangle or a globe. It is read off the
+            // map rather than off the setup, so a loaded save answers too.
+            "shape": if g.map.sphere().is_some() { "planet" } else { "flat" },
+            "poles": g.map_poles.id(),
             "width": g.map.width,
             "height": g.map.height,
             "default_players": g.map_size().default_players,
