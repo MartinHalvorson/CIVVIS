@@ -10156,6 +10156,12 @@ pub struct Game {
     pub next_deal_id: u32,
     pub congress: Option<CongressSession>,
     pub active_congress_effects: Vec<CongressEffect>,
+    /// Turn the last Special Session was seated. Shipped
+    /// `WORLD_CONGRESS_MIN_TIME_BETWEEN_SPECIAL_SESSIONS` holds the next one
+    /// off for 15 standard-scaled turns. Saves from before this field start
+    /// at zero, which only ever lets one extra early Session through.
+    #[serde(default)]
+    pub last_special_session: u32,
     pub pending_emergencies: Vec<EmergencyProposal>,
     pub active_emergencies: Vec<Emergency>,
     occ: BTreeMap<Pos, Vec<u32>>,
@@ -10307,6 +10313,8 @@ struct GameSer {
     #[serde(default)]
     active_congress_effects: Vec<CongressEffect>,
     #[serde(default)]
+    last_special_session: u32,
+    #[serde(default)]
     pending_emergencies: Vec<EmergencyProposal>,
     #[serde(default)]
     active_emergencies: Vec<Emergency>,
@@ -10383,6 +10391,7 @@ impl From<GameSer> for Game {
             next_deal_id: s.next_deal_id,
             congress: s.congress,
             active_congress_effects: s.active_congress_effects,
+            last_special_session: s.last_special_session,
             pending_emergencies: s.pending_emergencies,
             active_emergencies: s.active_emergencies,
             occ: BTreeMap::new(),
@@ -10524,6 +10533,7 @@ impl From<Game> for GameSer {
             next_deal_id: g.next_deal_id,
             congress: g.congress,
             active_congress_effects: g.active_congress_effects,
+            last_special_session: g.last_special_session,
             pending_emergencies: g.pending_emergencies,
             active_emergencies: g.active_emergencies,
             map: g.map,
@@ -10686,6 +10696,7 @@ impl Game {
             next_deal_id: 1,
             congress: None,
             active_congress_effects: Vec::new(),
+            last_special_session: 0,
             pending_emergencies: Vec::new(),
             active_emergencies: Vec::new(),
             occ: BTreeMap::new(),
@@ -35963,7 +35974,17 @@ impl Game {
         }
     }
 
+    /// Seat the oldest still-valid queued Emergency, if a Special Session is
+    /// allowed to open at all. Shipped
+    /// `WORLD_CONGRESS_MIN_TIME_BETWEEN_SPECIAL_SESSIONS` is 15, so Sessions
+    /// cannot chain: a queued proposal simply waits its turn rather than
+    /// being dropped, because the crisis has not gone away.
     fn convene_pending_emergency(&mut self) {
+        if self.last_special_session > 0
+            && self.turn < self.last_special_session + self.standard_duration(15)
+        {
+            return;
+        }
         while self.congress.is_none() && !self.pending_emergencies.is_empty() {
             let mut proposal = self.pending_emergencies[0].clone();
             proposal.eligible.retain(|player| {
@@ -35985,6 +36006,7 @@ impl Game {
                 continue;
             }
             self.pending_emergencies[0].eligible = proposal.eligible;
+            self.last_special_session = self.turn;
             let title = if proposal.kind == "city_state" {
                 "City-State Emergency"
             } else {
@@ -45824,6 +45846,51 @@ mod victory_conditions {
             g.players[1].counters["project_effect:thermonuclear_devices"],
             0
         );
+    }
+
+    #[test]
+    fn special_sessions_keep_the_shipped_fifteen_turn_spacing() {
+        // WORLD_CONGRESS_MIN_TIME_BETWEEN_SPECIAL_SESSIONS is 15. Without it
+        // a queue of Emergencies seats one after another, and since each one
+        // displaces the regular Congress, a run of captures could starve the
+        // World Congress -- and with it the Diplomatic Victory it awards.
+        let mut g = game_with_capitals(3, 4_151, 300);
+        let city = g.player_city_ids(1)[0];
+        let proposal = |id: u32| EmergencyProposal {
+            id,
+            kind: "military".to_string(),
+            target: 1,
+            city,
+            original_owner: 1,
+            eligible: BTreeSet::from([0, 2]),
+            requested: 0,
+        };
+        g.turn = 40;
+        g.pending_emergencies = vec![proposal(1), proposal(2)];
+
+        g.convene_pending_emergency();
+        assert!(g.congress.is_some(), "the first Emergency seats at once");
+        assert_eq!(g.last_special_session, 40);
+
+        // Close that session and offer the next one one turn too early.
+        let spacing = g.standard_duration(15);
+        g.congress = None;
+        g.turn = 40 + spacing - 1;
+        g.convene_pending_emergency();
+        assert!(
+            g.congress.is_none(),
+            "a second Special Session cannot open inside the spacing"
+        );
+        assert_eq!(
+            g.pending_emergencies.len(),
+            2,
+            "held proposals wait rather than being dropped"
+        );
+
+        g.turn = 40 + spacing;
+        g.convene_pending_emergency();
+        assert!(g.congress.is_some(), "and seats once the spacing elapses");
+        assert_eq!(g.last_special_session, 40 + spacing);
     }
 
     #[test]
