@@ -270,6 +270,51 @@ ruleset:
 - enable auto-merge after the required gates pass (the `ship` command also
   waits and merges explicitly, so it works before that owner setting is fixed).
 
+### Where CI runs
+
+Both required checks run on **self-hosted runners on the fleet's own machine**,
+not on GitHub-hosted ones. CIVVIS is a private repository, so hosted minutes are
+metered; when the account is not paying for them every hosted job dies in about
+three seconds on *"the job was not started because recent account payments have
+failed"*. That is indistinguishable from a real failure on the PR page, it fails
+a required check, and it stops every merge in the fleet. Self-hosted minutes are
+not metered, so the gate runs for free and still runs for real.
+
+Two runners, one lane each, registered as launchd services that come back at
+login:
+
+| Runner | Label | Job | Directory |
+| --- | --- | --- | --- |
+| `martin-mbp` | `civvis` | `cargo-test` | `~/actions-runner` |
+| `martin-mbp-policy` | `policy` | `collaboration-policy` | `~/actions-runner-policy` |
+
+They are deliberately separate. A runner takes one job at a time, so a single
+runner would put every PR's ten-second policy check behind somebody else's
+build; and two `cargo test` runs sharing this machine have faked failures
+before, so exactly one runner carries the `civvis` label.
+
+`cargo-test` keeps its build cache in `CARGO_TARGET_DIR` **outside** the
+workspace, because `actions/checkout` cleans the workspace with `git clean
+-ffdx`, which takes ignored files like `target/` with it. One directory serves
+every branch: no `actions/cache`, nothing to thrash a quota, and a warm run
+costs a fraction of the cold one this gate used to pay on every single push.
+
+Both jobs put `~/.cargo/bin` and `/opt/homebrew/bin` on `GITHUB_PATH`
+explicitly — a launchd-started runner inherits a minimal environment, and both
+toolchains are installed for the user rather than the system.
+
+Housekeeping:
+
+```bash
+gh api repos/MartinHalvorson/CIVVIS/actions/runners \
+  --jq '.runners[] | "\(.name) \(.status) busy=\(.busy)"'   # are they up?
+~/actions-runner/svc.sh status                              # or restart/stop
+```
+
+If the runners are ever gone and a merge has to happen anyway, the honest
+fallback is to say so in the PR and record the local `cargo test --profile ci
+--locked` result — not to leave a red required check and merge past it.
+
 Both `cargo-test` and `collaboration-policy` are required checks. The latter
 rejects ambiguous branch names, missing or mismatched machine/agent identity,
 changes outside claimed paths, undeclared file overlap with another open PR,
