@@ -2429,6 +2429,18 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("data-hud-action=\"dossier\" data-hud-civ=\"${p.id}\""));
         assert!(EMBEDDED_INDEX.contains("else spectatePlayer(id);"));
         assert!(EMBEDDED_INDEX.contains("async function spectatePlayer(player)"));
+        // Watching one civilization is a persistent empire portrait, not a
+        // one-time jump to its capital. Borders/cities define the durable
+        // frame; strategic, grouped, promoted, and war-front units may widen
+        // it, while a lone recon unit cannot continually zoom the map out.
+        assert!(EMBEDDED_INDEX.contains("function watchedEmpireSubjects(player)"));
+        assert!(EMBEDDED_INDEX.contains("function observedViewGoal(anchors)"));
+        assert!(EMBEDDED_INDEX.contains("watchedEmpireAutoFrame"));
+        assert!(EMBEDDED_INDEX.contains("const EMPIRE_RECON_UNITS"));
+        assert!(EMBEDDED_INDEX.contains("const atWarFront"));
+        assert!(EMBEDDED_INDEX.contains("Number(unit.formation) > 0"));
+        assert!(EMBEDDED_INDEX.contains("Number(unit.level) >= 3"));
+        assert!(EMBEDDED_INDEX.contains("directorGoal.kind === \"empire\""));
         assert!(EMBEDDED_INDEX.contains("player log"));
         assert!(EMBEDDED_INDEX.contains("Spectator · combined summary"));
         assert!(EMBEDDED_INDEX.contains("let eventLogs = new Map()"));
