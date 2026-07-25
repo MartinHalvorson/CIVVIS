@@ -436,8 +436,8 @@
   .leader-medallion {
     width: 38px; height: 38px; display: grid; place-items: center; padding: 0; border-radius: 50%;
     width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%;
-    color: #fff; background: radial-gradient(circle at 35% 28%, color-mix(in srgb, var(--civ) 72%, white), var(--civ) 58%, #07110f);
-    border: 2px solid var(--civ); box-shadow: 0 0 0 2px #07110f, 0 4px 12px #0008;
+    color: #fff; background: var(--civ);
+    border: 2px solid var(--civ-border); box-shadow: 0 0 0 2px #07110f, 0 4px 12px #0008;
     font: 700 15px/1 Georgia, serif; text-shadow: 0 1px 3px #000; cursor: pointer;
   }
   .diplomacy-identity, .diplomacy-stats {
@@ -460,14 +460,15 @@
   .diplomacy-leader {
     flex: 1 1 auto; color: var(--muted); font-size: .82em; font-weight: 650;
   }
-  /* Competitive identity reads in one stable order: rating, themed player
-     handle, then the strategy that player is using right now. */
+  /* Competitive identity reads in one stable order: themed player handle,
+     rating, Elo-implied win estimate, then the strategy in use right now. */
   .diplomacy-player-line {
     min-width: 0; display: flex; align-items: baseline; gap: 3px; margin-top: 2px;
     overflow: hidden; color: #9fb0a9; font-size: 9px; line-height: 1.15;
     white-space: nowrap;
   }
   .diplomacy-elo { flex: 0 0 auto; color: var(--gold-bright); font-weight: 850; }
+  .diplomacy-expected { flex: 0 0 auto; color: #8fd6a4; font-weight: 850; }
   .diplomacy-player { flex: 1 1 auto; color: #d9e1dc; font-weight: 750; }
   .identity-separator { flex: 0 0 auto; color: #667a72; font-weight: 500; }
   .agenda-mark { margin-left: 3px; font-size: 8px; vertical-align: 1px; }
@@ -1009,7 +1010,7 @@
   .spec-controls #restart-sim::before { content: "↻"; margin-right: 5px; font-size: 13px; }
   .spec-controls #restart-sim .sub {
     display: block; margin-top: 3px; color: var(--muted); font-size: 8px;
-    font-weight: 700; letter-spacing: .07em;
+    font-weight: 700; letter-spacing: .07em; white-space: nowrap;
   }
   .spec-controls #restart-sim .sub::before { content: "with "; }
   .spec-controls #restart-sim.primary {
@@ -1609,6 +1610,17 @@
           <button class="primary" id="specpause">⏸ Pause</button>
           <button id="restart-sim" title="Restart with the same settings">Restart sim<span class="sub">same settings</span></button>
         </div>
+        <script>
+          // A supervised restart replaces this whole page. Restore the label
+          // beside the button so the default Pause text is never painted while
+          // a paused simulation is coming back as paused.
+          try {
+            const paused = sessionStorage.getItem("civvis-restart-paused-v1");
+            if (paused !== null)
+              document.getElementById("specpause").textContent =
+                paused === "1" ? "▶ Resume" : "⏸ Pause";
+          } catch (e) {}
+        </script>
       </div>
     </div>
     <details class="sidebar-section" data-section="game-settings">
@@ -1975,6 +1987,44 @@ const PCOLORS = ["#ffd700","#e05050","#50a0e0","#50c878","#c878e0","#e09050",
 // the green core carries it across snow. Indexed in PCOLORS order.
 const PCOLORS2 = ["#4a2a8a","#f8eed6","#0e2f5e","#f4f7e8","#e8c25a","#1d3a6e",
                   "#5c2140","#7a2020","#4e1e30","#123c3c","#3d2070","#7a1f2e"];
+// Civ VI's PlayerColors tables give every leader a canonical pair plus three
+// alternates. Keep those pairs together: when two primaries collide, the
+// later player takes the first free backup exactly as the base game does.
+// PCOLORS/PCOLORS2 remain the last resort for custom or future civilizations.
+const CIV6_JERSEYS = {
+  Rome: [
+    ["#6d00cd", "#f7d801"], ["#780001", "#f7d801"],
+    ["#f7d801", "#370065"], ["#6d00cd", "#f9f9f9"],
+  ],
+  Egypt: [
+    ["#014f51", "#eae19d"], ["#eae19d", "#6d00cd"],
+    ["#eae19d", "#014f51"], ["#6d00cd", "#eae19d"],
+  ],
+  Greece: [
+    ["#74a3f3", "#f9f9f9"], ["#f9f9f9", "#74a3f3"],
+    ["#74a3f3", "#012a6c"], ["#012a6c", "#74a3f3"],
+  ],
+  China: [
+    ["#156c30", "#f9f9f9"], ["#ca1415", "#f7d801"],
+    ["#f7d801", "#ca1415"], ["#f7d801", "#012a6c"],
+  ],
+  Sumeria: [
+    ["#012a6c", "#ff8112"], ["#012a6c", "#7dece3"],
+    ["#ff8112", "#012a6c"], ["#012a6c", "#b780e6"],
+  ],
+  Aztec: [
+    ["#7dece3", "#780001"], ["#780001", "#7dece3"],
+    ["#ff8112", "#014f51"], ["#014f51", "#ff8112"],
+  ],
+  Nubia: [
+    ["#eae19d", "#783d02"], ["#783d02", "#eae19d"],
+    ["#f9f9f9", "#783d02"], ["#783d02", "#f9f9f9"],
+  ],
+  Scythia: [
+    ["#ffb23c", "#780001"], ["#783d02", "#f9f9f9"],
+    ["#780001", "#eae19d"], ["#783d02", "#eae19d"],
+  ],
+};
 const CITY_STATE_TINT = "#202225";
 const CITY_STATE_TYPE_COLORS = {
   scientific:"#4aa3df", cultural:"#a46bd4", religious:"#eee7cf",
@@ -1995,7 +2045,12 @@ const VICTORY_TRACKS = [
 // ---------------------------------------------------------------- state
 let state = null, sel = null, selCity = null, RULES = null;
 let lensOn = false, tackMode = false, tacks = [], lastSeed = null, cycleIdx = -1;
-let SPEC = false, specPaused = false, specTimer = null, specBusy = false;
+let restartPaused = null;
+try {
+  restartPaused = sessionStorage.getItem("civvis-restart-paused-v1");
+  sessionStorage.removeItem("civvis-restart-paused-v1");
+} catch (e) {}
+let SPEC = false, specPaused = restartPaused === "1", specTimer = null, specBusy = false;
 let viewChanging = false;
 let eventLogs = new Map(), lastLeaderByView = new Map(), lastSidePaint = 0;
 let TMAP = new Map();
@@ -3214,11 +3269,33 @@ const MIN_YS = 0.35, MAX_YS = 1;
 let cinematicYS = DEFAULT_CINEMA_YS;
 let YS = VIEW === "cinematic" ? cinematicYS : MODE.projection;
 function key(p) { return p[0] + "," + p[1]; }
+let jerseyCacheState = null, jerseyCache = [];
+function playerJerseys() {
+  if (jerseyCacheState === state) return jerseyCache;
+  const assigned = [], usedPrimaries = new Set();
+  const majors = state ? state.players
+    .filter(p => !p.is_minor && !p.is_barbarian)
+    .sort((a, b) => a.id - b.id) : [];
+  for (const p of majors) {
+    const canonical = CIV6_JERSEYS[p.civ] || [];
+    const generic = PCOLORS.map((primary, offset) => {
+      const index = (p.id + offset) % PCOLORS.length;
+      return [PCOLORS[index], PCOLORS2[index]];
+    });
+    const options = [...canonical, ...generic];
+    const jersey = options.find(pair => !usedPrimaries.has(pair[0])) || options[0];
+    assigned[p.id] = jersey;
+    if (jersey) usedPrimaries.add(jersey[0]);
+  }
+  jerseyCacheState = state;
+  jerseyCache = assigned;
+  return assigned;
+}
 function pcol(id) {
   const p = state.players[id];
   if (p && p.is_barbarian) return "#30262a";
   if (p && p.is_minor) return CITY_STATE_TINT;
-  return PCOLORS[id % PCOLORS.length];
+  return playerJerseys()[id]?.[0] || PCOLORS[id % PCOLORS.length];
 }
 // The jersey partner. City-states get their type colour — black-on-type is
 // exactly how Civ 6 dresses them, and their near-black primary needs the help.
@@ -3227,7 +3304,7 @@ function pcol2(id) {
   if (p && p.is_barbarian) return "#8a3a34";
   if (p && p.is_minor)
     return CITY_STATE_TYPE_COLORS[p.cs_type] || CITY_STATE_TYPE_COLORS.trade;
-  return PCOLORS2[id % PCOLORS2.length];
+  return playerJerseys()[id]?.[1] || PCOLORS2[id % PCOLORS2.length];
 }
 function cityBannerColor(owner) {
   const p = state.players[owner];
@@ -7158,18 +7235,9 @@ function draw() {
   // Collected per empire and stroked as one network with round joins, the way
   // the river layer is: a frontier then reads as a single flowing outline
   // rather than six separately-capped hex edges with notches at every corner.
-  // Which frontiers are fronts. The war log names who is fighting whom, but the
-  // map drew the border between two empires at war exactly like the border
-  // between two at peace — so the SHAPE of a war, the thing you actually want
-  // to look at, existed only as text in a side panel.
-  const atWar = new Set();
-  for (const w of state.wars || []) {
-    if (w.ended !== null && w.ended !== undefined) continue;
-    atWar.add(Math.min(w.aggressor, w.defender) + ":" + Math.max(w.aggressor, w.defender));
-  }
-  const contested = (a, b) =>
-    a !== b && a !== null && a !== undefined && b !== null && b !== undefined &&
-    atWar.has(Math.min(a, b) + ":" + Math.max(a, b));
+  // War state must not change the border's geometry. The former dashed
+  // war-front overlay covered only some edges of an empire and made one
+  // continuous outline look like unrelated chunks.
   // Strategic view is explicitly the empire-reading view. Keep its frontier
   // close to one useful screen-space weight at survey zoom, where an ordinary
   // world-space stroke otherwise shrinks into the tile grid and route network.
@@ -7178,7 +7246,6 @@ function draw() {
   const borderK = beau ? 1 : UI_K();
   const borderInset = beau ? 1.5 : 2.4 * borderK;
   const borderSegs = new Map();
-  const frontSegs = [];
   for (const t of tiles) {
     if (t.owner === null || t.owner === undefined) continue;
     const [x, yy] = hexXY(t.pos[0], t.pos[1]);
@@ -7192,11 +7259,6 @@ function draw() {
       let segs = borderSegs.get(t.owner);
       if (!segs) { segs = []; borderSegs.set(t.owner, segs); }
       segs.push([ax, ay, bx, by]);
-      // one side is enough: the opposing tile pushes the same edge itself, and
-      // drawing it twice only doubles the alpha along the same line
-      if (n && t.owner < n.owner && contested(t.owner, n.owner)) {
-        frontSegs.push([ax, ay, bx, by]);
-      }
     }
   }
   cx.lineCap = "round"; cx.lineJoin = "round";
@@ -7223,28 +7285,6 @@ function draw() {
       for (const [ax, ay, bx, by] of segs) { cx.moveTo(ax, ay); cx.lineTo(bx, by); }
       cx.stroke();
     }
-  }
-  // A front burns on top of the ordinary ribbon: a hot wash under a broken
-  // line, so a contested border reads as contested from across the map without
-  // hiding whose land is whose underneath it.
-  if (frontSegs.length) {
-    const strokeFront = (w, col, a, dash) => {
-      cx.setLineDash(dash);
-      cx.strokeStyle = col; cx.lineWidth = w; cx.globalAlpha = a;
-      cx.beginPath();
-      for (const [ax, ay, bx, by] of frontSegs) { cx.moveTo(ax, ay); cx.lineTo(bx, by); }
-      cx.stroke();
-    };
-    // A front holds its on-screen weight as the map zooms out, the way unit
-    // plates and status badges do. Painted-view borders deliberately do not —
-    // there are hundreds of them and scaling every one would smother the
-    // landscape — but there are only ever a few fronts, and survey zoom is
-    // exactly the range where you want to see the shape of a war rather than
-    // hunt for it. Strategic borders use their own bounded treatment above.
-    const fk = UI_K();
-    strokeFront(8.5 * fk, "#e0402f", 0.24, []);
-    strokeFront(2.6 * fk, "#ff8452", 0.92, [5 * fk, 4 * fk]);
-    cx.setLineDash([]);
   }
   cx.globalAlpha = 1; cx.lineCap = "butt"; cx.lineJoin = "miter";
   // --- roads: the arteries of an empire, and until now the one piece of tile
@@ -8829,7 +8869,7 @@ function drawPlayerHud() {
       const stats = statsByPlayer.get(p.id);
       const watchTitle = `Watch ${p.civ} through its fog of war · ${relationSummary}${agendaText}`;
       const expanded = hudExpanded === p.id;
-      return `<div class="diplomacy-card ${stateClass} ${expanded ? "expanded" : ""}" style="--civ:${color}" role="listitem">` +
+      return `<div class="diplomacy-card ${stateClass} ${expanded ? "expanded" : ""}" style="--civ:${color};--civ-border:${pcol2(p.id)}" role="listitem">` +
         `<button class="leader-medallion" data-hud-action="watch" data-hud-civ="${p.id}" title="${watchTitle}" aria-label="Watch ${p.civ}">${initial}</button>` +
         `<button class="diplomacy-identity" data-hud-action="dossier" data-hud-civ="${p.id}" aria-expanded="${expanded}" ` +
         `title="${expanded ? "Close" : "Open"} the ${p.civ} dossier · ${relationSummary}${agendaText}" ` +
@@ -8840,8 +8880,10 @@ function drawPlayerHud() {
         `<span class="diplomacy-leader">${leader}${agendaGlyph}</span>` +
         `<span class="detail-caret">${expanded ? "▾" : "▸"}</span></span>` +
         `<span class="diplomacy-player-line" title="${leagueTitle}">` +
-        `<span class="diplomacy-elo">${playerElo}</span><span class="identity-separator" aria-hidden="true">·</span>` +
         `<span class="diplomacy-player">${playerName}</span><span class="identity-separator" aria-hidden="true">·</span>` +
+        `<span class="diplomacy-elo">${playerElo}</span><span class="identity-separator" aria-hidden="true">·</span>` +
+        `${expectPct === null ? "" : `<span class="diplomacy-expected" title="Elo-implied win estimate">${expectPct}%</span>` +
+          `<span class="identity-separator" aria-hidden="true">·</span>`}` +
         `${activeStrategy}</span></button>` +
         `<button class="diplomacy-stats" data-hud-action="watch" data-hud-civ="${p.id}" title="${watchTitle}" aria-label="Watch ${p.civ}">` +
         stats.map(([kind, , value, label]) => {
@@ -11027,33 +11069,33 @@ async function startNewSimulation() {
   const wasPaused = specPaused;
   setNewSimulationBusy(true);
   try {
-    const payload = newSimulationPayload();
+    const payload = {...newSimulationPayload(), paused: wasPaused};
     sel = null; selCity = null;
     clearTimeout(specTimer);
     if (supervised) {
       const finishedInstance = state.server_instance;
       const finishedSeed = state.seed;
-      specPaused = true;
-      document.getElementById("specpause").textContent = "▶ Resume";
-      reportSpecStatus();
       const requested = await fetchJSON("/supervisor-new", { method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({...payload, mode: "restart"}) });
       if (requested.error) throw new Error(requested.error);
       const respawn = document.getElementById("respawn");
       if (respawn) respawn.textContent = "restarting sim on existing code";
+      try {
+        sessionStorage.setItem("civvis-restart-paused-v1", wasPaused ? "1" : "0");
+      } catch (e) {}
       waitForSupervisedSuccessor(finishedInstance, finishedSeed);
       return;
     }
 
-    specPaused = false;
-    document.getElementById("specpause").textContent = "⏸ Pause";
+    specPaused = wasPaused;
+    document.getElementById("specpause").textContent = specPaused ? "▶ Resume" : "⏸ Pause";
     const next = await fetchJSON("/new", { method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify(payload) });
     if (next.error) throw new Error(next.error);
     render(next);
-    setPace({paused: false});
+    setPace({paused: wasPaused});
     reportSpecStatus();
     scheduleSpec(state);
     setNewSimulationBusy(false);
