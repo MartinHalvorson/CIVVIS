@@ -3433,11 +3433,10 @@ mod tests {
                 "map overlay {overlay} should have a close control"
             );
         }
-        // The switches are a two-column grid, so the order they are written in
-        // is the corner each one stands for: the standings and the victory
-        // tracker along the top, the world minimap lower-left and the map
-        // controls lower-right, which is where those four instruments sit on
-        // the map itself.
+        // The switches are a two-column grid, and the order they are written in
+        // follows the map: the rail read top to bottom — standings, victory
+        // tracker, world minimap — and then the map controls, which are the one
+        // instrument still standing in the opposite corner.
         assert!(EMBEDDED_INDEX
             .contains(".overlay-option-grid { display: grid; grid-template-columns: 1fr 1fr;"));
         let switches = EMBEDDED_INDEX
@@ -3457,7 +3456,7 @@ mod tests {
         assert_eq!(
             corners,
             ["players", "victory", "minimap", "controls"],
-            "the world minimap is the lower-left switch and the map controls the lower-right"
+            "the switches read down the rail, then the map controls in the far corner"
         );
         // One instrument, one name. The switch, the title bar it is dragged by
         // and the label that follows it across the map all say "World minimap",
@@ -3477,25 +3476,50 @@ mod tests {
             !EMBEDDED_INDEX.contains("World map"),
             "\"World map\" names the map itself, not the corner instrument showing it"
         );
-        // Any civilization in the standings can be locked so its row stays in
-        // view while the rest of the table scrolls past it. The choice belongs
-        // to the viewer, is keyed by civilization so it survives a new game,
-        // and defaults to whichever civilization the viewer is.
-        assert!(EMBEDDED_INDEX.contains("civvis-hud-locked-civs-v1"));
-        assert!(EMBEDDED_INDEX.contains("function toggleCivLock(id)"));
-        assert!(EMBEDDED_INDEX.contains("function viewerCivName()"));
-        assert!(EMBEDDED_INDEX.contains("function lockedCivs()"));
+        // Any row in the standings can be locked so it stays in view while the
+        // rest of the table scrolls past it. The choice belongs to the viewer,
+        // and it names a *seat* — the civilization plus which of that
+        // civilization's seats it is — because an exhibition table routinely
+        // seats two Romes, and a name alone locked and unlocked both at once.
+        // The name is still the durable half, so a lock carries into the next
+        // game after every id has been reassigned.
+        assert!(EMBEDDED_INDEX.contains("civvis-hud-locked-seats-v1"));
+        assert!(EMBEDDED_INDEX.contains("function toggleSeatLock(id)"));
+        assert!(EMBEDDED_INDEX.contains("function seatKeysById(majors)"));
+        assert!(EMBEDDED_INDEX.contains("function lockedSeats()"));
         assert!(EMBEDDED_INDEX.contains("function syncPlayerLockPins()"));
         assert!(EMBEDDED_INDEX.contains("data-hud-action=\"lock\""));
-        assert!(EMBEDDED_INDEX.contains("if (target.dataset.hudAction === \"lock\") toggleCivLock(id);"));
+        assert!(EMBEDDED_INDEX.contains("if (target.dataset.hudAction === \"lock\") toggleSeatLock(id);"));
+        // Nothing but the viewer's own clicking may write the lock set. A
+        // default synthesized from whichever civilization was being watched
+        // moved the mark from row to row on its own, and the first real click
+        // then persisted it as a lock the viewer had never made.
+        assert!(
+            !EMBEDDED_INDEX.contains("function viewerCivName()"),
+            "a lock is the viewer's stored choice, never derived from the watched civilization"
+        );
+        assert!(EMBEDDED_INDEX.contains("function seedOwnSeatLock(seats)"));
         // A locked row holds at whichever edge it was about to leave, so it
         // needs both offsets, staggered by one row per row held above it.
         assert!(EMBEDDED_INDEX.contains("top: calc(var(--pin-head, 0) * var(--hud-row-pitch));"));
         assert!(EMBEDDED_INDEX.contains("bottom: calc(var(--pin-tail, 0) * var(--hud-row-pitch));"));
-        // The standings never take more than a quarter of the screen; rows past
-        // that scroll at a fixed height rather than being squeezed to fit.
-        assert!(EMBEDDED_INDEX.contains("--player-hud-max-height: 25vh;"));
-        assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.25"));
+        // The standings never take more than their share of the rail they head;
+        // rows past that scroll at a fixed height rather than being squeezed to
+        // fit, which is what leaves the victory tracker a readable share of the
+        // same column.
+        assert!(EMBEDDED_INDEX.contains("--player-hud-max-height: 42vh;"));
+        assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.42"));
+        // The three instruments stand in one right-hand column: the standings
+        // at the top with their close control in the corner, the tracker below
+        // them, and the world minimap at the foot. Each seam is the
+        // neighbour's own height, so a table of twelve pushes the tracker down
+        // instead of anything sliding underneath.
+        assert!(EMBEDDED_INDEX.contains("--hud-rail-width:"));
+        assert!(EMBEDDED_INDEX
+            .contains("bottom: calc(var(--minimap-height) + 22px);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "top: calc(min(var(--player-hud-height, 220px), var(--player-hud-max-height)) + 16px);"
+        ));
         assert!(EMBEDDED_INDEX.contains("grid-auto-rows: var(--hud-row-height);"));
         assert!(EMBEDDED_INDEX.contains("function dismissOverlay(name, source)"));
         assert!(EMBEDDED_INDEX.contains("addEventListener(\"pointerdown\", event =>"));

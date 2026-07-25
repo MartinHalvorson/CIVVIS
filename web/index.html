@@ -40,16 +40,27 @@
   }
   button, select, input { font: inherit; }
   button { -webkit-tap-highlight-color: transparent; }
-  /* One number decides how much of the top edge the standings get and how wide
-     the victory rail stands. Dragging the rail's edge writes it inline here, so
-     both sides of the seam always agree. */
+  /* Every instrument stands in one right-hand rail — standings at the top, the
+     victory tracker under them, the world minimap in the corner — so the map
+     keeps its whole top edge and loses one column instead of three separate
+     footprints. These three numbers are the seams between them: the rail's
+     width, and the heights of the two panels that fix where the middle one
+     starts and stops. Dragging a panel writes its own height inline here, so
+     both sides of a seam always agree. */
   #maparea {
     flex: 1; min-width: 0; position: relative; overflow: hidden; background: #07110f;
-    --victory-hud-width: 272px;
-    /* A hard ceiling on the standings: a quarter of the screen, never more,
-       whatever the player count or a dragged layout asks for. Rows past it
-       scroll inside the ribbon. */
-    --player-hud-max-height: 25vh;
+    --hud-rail-width: clamp(310px, 25vw, 424px);
+    /* Whatever the width steps ask for, the rail never takes more than this
+       share of the map it floats over. Between 620px and 980px the command
+       deck is still a column of its own, and without the cap the rail and the
+       deck together left the world a strip barely wider than a city. */
+    --hud-rail-share: 56%;
+    --minimap-height: 172px;
+    /* A ceiling on the standings: a little under half the rail, whatever the
+       player count or a dragged layout asks for, so the victory tracker always
+       keeps a readable share of the column. Rows past it scroll inside the
+       ribbon, which is what the row locks are for. */
+    --player-hud-max-height: 42vh;
   }
   #maparea::before {
     content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none;
@@ -312,19 +323,9 @@
   .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 3px 0; }
   .chip { display: inline-block; width: 8px; height: 8px; margin-right: 7px; border-radius: 50%; box-shadow: 0 0 0 3px #ffffff09; }
 
-  /* Unified player HUD: turn, victory tracker, and every civilization now share
-     one top-edge instrument instead of competing floating panels. Each of the
-     two information rails scrolls in place on a narrow map, keeping the bar a
-     constant height and the world visible. */
-  #playerhud {
-    position: absolute; z-index: 7; top: 10px; left: 12px; right: 12px; height: 112px;
-    display: grid; grid-template-columns: 90px minmax(0, 1fr) clamp(340px, 30%, 520px);
-    align-items: stretch; gap: 5px; min-width: 0; padding: 5px; overflow: hidden;
-    border: 1px solid #526a618f; border-radius: 14px;
-    background: linear-gradient(105deg, #091411ed, #0d1a17e6 54%, #0a1512ed);
-    box-shadow: 0 15px 42px #000a, inset 0 1px #ffffff0a;
-    backdrop-filter: blur(18px) saturate(135%); pointer-events: auto;
-  }
+  /* #playerhud's own box is written once, further down, next to the rail it
+     stands in. A second base rule here would only be a trap: the two carry the
+     same specificity, so whichever came last would quietly win. */
   .hud-region {
     min-width: 0; display: flex; flex-direction: column; padding: 4px 4px 3px;
     overflow: hidden; border: 1px solid #ffffff0b; border-radius: 9px;
@@ -1124,10 +1125,11 @@
   .tip-adj { color: #c6d6cf; }
   .tip-adj-count { display: inline-block; min-width: 20px; color: var(--muted); }
   .tip-adj-part { color: var(--muted); }
-  /* The victory rail owns the right edge now, so the world map takes the
-     lower-left corner and sits directly above the map controls. */
+  /* The foot of the rail. It stands in the lower-right corner, under the
+     victory tracker, and its height is the seam the tracker stops at. */
   .minimap-frame {
-    position: absolute; z-index: 6; left: 16px; right: auto; bottom: 68px; width: 212px; height: 170px;
+    position: absolute; z-index: 6; left: auto; right: 12px; bottom: 16px;
+    width: min(var(--hud-rail-width), var(--hud-rail-share)); height: var(--minimap-height);
     display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 6px; border-radius: 12px;
     background: #091310e6; border: 1px solid #40584f; box-shadow: 0 14px 35px #0008;
   }
@@ -1512,9 +1514,6 @@
     #maparea { height: 100%; }
     #side { position: fixed; inset: 132px auto 8px 8px; width: min(390px, calc(100% - 16px)); min-width: 0; height: auto; max-height: calc(100dvh - 140px); border: 1px solid #40584f; border-radius: 16px; }
     body.sidebar-hidden #side { width: min(390px, calc(100% - 16px)); transform: translateX(calc(-100% - 16px)); opacity: 0; }
-    #playerhud { grid-template-columns: 88px minmax(0, 1fr); }
-    #maparea { --victory-hud-width: 210px; }
-    .minimap-frame { left: 8px; right: auto; bottom: 62px; width: 174px; height: 138px; }
     #zoomctl { left: 12px; bottom: 12px; }
     #ubar { min-width: 0; width: calc(100% - 28px); bottom: 18px; }
     #trade { inset: 2% 8px; }
@@ -1532,14 +1531,12 @@
     }
   }
   @media (max-width: 620px) {
-    #playerhud { grid-template-columns: 78px minmax(0, 1fr); gap: 3px; }
     .victory-turn { padding-inline: 6px; }
     body.cinema-mode #cinema-frame .cinema-frame-brand span,
     body.cinema-mode #cinema-frame .cinema-frame-era span,
     body.cinema-mode #cinema-frame .cinema-frame-shot span { display: none; }
   }
   @media (max-width: 430px) {
-    #playerhud { top: 8px; left: 8px; right: 8px; grid-template-columns: 74px minmax(0, 1fr); padding: 4px; }
     .hud-region { padding-inline: 2px; }
     .diplomacy-card { flex-basis: 286px; grid-template-columns: 31px minmax(76px, .7fr) minmax(155px, 1.45fr); gap: 4px; padding: 4px; }
     .leader-medallion { width: 29px; height: 29px; font-size: 12px; }
@@ -1553,32 +1550,49 @@
     body.cinema-mode #cinema-story { left: 18px; width: calc(100% - 36px); }
   }
 
-  /* The player HUD is the map's masthead: it runs the whole width the victory
-     rail leaves it, with the turn plate as its left cell and the standings
-     filling the rest. Every civilization keeps one full-width row in the same
-     ranked column; the requested height is calculated from the player count in
-     drawPlayerHud(), then capped so a large table does not consume the map. */
+  /* The standings head the rail: the turn plate as a strip across the top and
+     the table under it. Every civilization keeps one row of the same height;
+     the requested height is calculated from the player count in
+     drawPlayerHud(), then capped so a large table does not swallow the rail.
+     A row is two lines here rather than one — who this is, then their ten
+     values. Across the old full-width masthead one line was right, because
+     there was width to spend and height to save; a rail inverts both, and ten
+     values cannot be read at 18px a column. */
   #playerhud {
-    top: 10px; left: 12px; right: calc(var(--victory-hud-width) + 20px); width: auto;
-    height: min(var(--player-hud-height, 200px), var(--player-hud-max-height));
-    --hud-medallion-column: 21px; --hud-identity-column: minmax(300px, 42%); --hud-column-gap: 6px;
-    --hud-lock-column: 13px; --hud-row-height: 23px; --hud-row-gap: 2px;
+    position: absolute; z-index: 7; pointer-events: auto;
+    top: 10px; right: 12px; left: auto; width: min(var(--hud-rail-width), var(--hud-rail-share));
+    height: min(var(--player-hud-height, 220px), var(--player-hud-max-height));
+    --hud-medallion-column: 21px; --hud-column-gap: 5px;
+    --hud-lock-column: 13px; --hud-row-height: 33px; --hud-row-gap: 2px;
     --hud-row-pitch: calc(var(--hud-row-height) + var(--hud-row-gap));
-    display: grid; grid-template-columns: 108px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
+    display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr);
     align-items: stretch; gap: 5px; min-width: 0; padding: 5px;
     overflow: visible; transform: none;
     border: 1px solid #526a618f; border-radius: 12px;
-    background: linear-gradient(105deg, #091411ed, #0d1a17e8 58%, #091411ed);
+    background: linear-gradient(195deg, #091411ed, #0d1a17e8 58%, #091411ed);
     box-shadow: 0 14px 38px #000a, inset 0 1px #ffffff0a;
     backdrop-filter: blur(16px) saturate(130%);
   }
-  /* Hiding the victory rail hands its column back to the standings. */
-  body.overlay-victory-hidden #playerhud { right: 12px; }
-  #playerhud > .victory-turn { grid-column: 1; grid-row: 1; }
-  /* The standings stack inside the second cell. This wrapper stays unpositioned
+  /* In the rail the plate reads along one line instead of stacking, so it costs
+     the table a strip rather than a column. */
+  #playerhud > .victory-turn {
+    grid-column: 1; grid-row: 1; min-height: 0;
+    grid-template-columns: auto auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
+    align-items: baseline; gap: 8px; padding: 6px 9px 7px; text-align: left;
+  }
+  #playerhud > .victory-turn .turn-count {
+    grid-auto-flow: column; align-items: baseline; place-content: center start;
+    gap: 4px; margin: 0;
+  }
+  #playerhud > .victory-turn strong { font-size: 22px; }
+  #playerhud > .victory-turn .turn-era {
+    padding: 0 0 0 9px; overflow: hidden; border-top: 0; border-left: 1px solid #d7b66a24;
+    text-align: right; text-overflow: ellipsis;
+  }
+  /* The standings stack inside the second row. This wrapper stays unpositioned
      so an expanded dossier still hangs off #playerhud itself. */
   #playerhud > .player-standings {
-    grid-column: 2; grid-row: 1; min-width: 0; min-height: 0;
+    grid-column: 1; grid-row: 2; min-width: 0; min-height: 0;
     display: flex; flex-direction: column; gap: 3px;
   }
   .ribbon-heading {
@@ -1590,13 +1604,13 @@
   .ribbon-heading.widget-drag-handle::before { position: absolute; left: 4px; }
   .ribbon-stat-heading {
     min-height: 9px; display: grid;
-    grid-template-columns: var(--hud-lock-column, 0px) var(--hud-medallion-column) var(--hud-identity-column) minmax(0, 1fr);
+    grid-template-columns: var(--hud-lock-column, 0px) var(--hud-medallion-column) minmax(0, 1fr);
     align-items: stretch; gap: var(--hud-column-gap); padding: 0 4px 0 3px;
   }
   .diplomacy-stat-head {
-    min-width: 0; display: grid; grid-column: 4;
+    min-width: 0; display: grid; grid-column: 3;
     grid-template-columns: repeat(10, minmax(0, 1fr));
-    color: #a9bbb4; font-size: 6px; font-weight: 950; letter-spacing: .015em;
+    color: #a9bbb4; font-size: 7px; font-weight: 950; letter-spacing: .015em;
   }
   .diplomacy-stat-head span {
     min-width: 0; display: grid; place-items: center; overflow: hidden;
@@ -1614,17 +1628,23 @@
   }
   #playerhud .diplomacy-ribbon::-webkit-scrollbar { width: 3px; }
   #playerhud .diplomacy-ribbon::-webkit-scrollbar-thumb { background: #476057; border-radius: 4px; }
+  /* Lock and medallion run the full height of the row and the two text lines
+     stack beside them: identity above, the ten values below. */
   #playerhud .diplomacy-card {
     width: auto; height: auto; min-height: 0; display: grid;
-    grid-template-columns: var(--hud-lock-column, 0px) var(--hud-medallion-column) var(--hud-identity-column) minmax(0, 1fr);
-    align-items: center; gap: var(--hud-column-gap); margin: 0; padding: 2px 4px 2px 3px;
+    grid-template-columns: var(--hud-lock-column, 0px) var(--hud-medallion-column) minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    align-items: center; gap: 1px var(--hud-column-gap); margin: 0; padding: 3px 4px 3px 3px;
     overflow: hidden; border-radius: 7px;
   }
+  #playerhud .lock-toggle, #playerhud .leader-medallion { grid-row: 1 / span 2; }
+  #playerhud .diplomacy-identity { grid-column: 3; grid-row: 1; }
+  #playerhud .diplomacy-stats { grid-column: 3; grid-row: 2; }
 
-  /* Locking a civilization keeps its row in view while the rest of the table
-     scrolls past it. The control is a quiet dot until it is switched on or
-     reached by pointer or keyboard, so twelve of them do not compete with the
-     numbers they sit beside. */
+  /* Locking a seat keeps its row in view while the rest of the table scrolls
+     past it — one row, even when the table seats two of that civilization. The
+     control is a quiet dot until it is switched on or reached by pointer or
+     keyboard, so twelve of them do not compete with the numbers beside them. */
   #playerhud .lock-toggle {
     grid-column: 1; width: 13px; height: 13px; display: grid; place-items: center;
     margin: 0; padding: 0; border: 0; border-radius: 4px; box-shadow: none;
@@ -1645,15 +1665,14 @@
   }
   #playerhud .diplomacy-card:hover { transform: none; }
   #playerhud .leader-medallion {
-    width: clamp(15px, 1.9vh, 19px); height: clamp(15px, 1.9vh, 19px);
+    grid-column: 2; width: 21px; height: 21px;
     border-width: 1px; box-shadow: 0 0 0 1px #07110f, 0 3px 8px #0008;
-    font-size: 9px;
+    font-size: 10px;
   }
-  /* Two identity lines cost every row a second baseline for what is really one
-     sentence — who this is. Run rank, civilization, leader, league handle,
-     rating and active plan along a single line, and the whole table gets
-     shorter without dropping a word. Only the civilization is allowed to grow;
-     everything after it gives way, then truncates, as the column narrows. */
+  /* Rank, civilization, leader, league handle, rating and active plan are one
+     sentence about one player, so they stay on one line — the row's second line
+     belongs to the values. Everything after the civilization gives way, then
+     truncates, as the rail narrows. */
   #playerhud .diplomacy-identity {
     min-width: 0; display: flex; align-items: baseline; gap: 3px; padding-block: 0;
   }
@@ -1662,9 +1681,11 @@
     white-space: nowrap;
   }
   #playerhud .diplomacy-rank { flex: 0 0 auto; margin-right: 0; font-size: 8px; }
-  /* When the line is too long for its column the two names give way, but the
-     civilization is what the row is ranked and coloured by, so it yields last. */
-  #playerhud .diplomacy-civ { flex: 0 .25 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  /* When the line is too long for its column the leader, the handle and the
+     plan give way. The civilization is what the row is ranked, coloured and
+     locked by, so it does not shrink at all — "Chi…" cost the row the one word
+     it is read by while the tail of the line still had characters to spare. */
+  #playerhud .diplomacy-civ { flex: 0 0 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   #playerhud .detail-caret { flex: 0 0 auto; margin-left: 1px; font-size: 7px; }
   #playerhud .diplomacy-leader {
     flex: 0 1 auto; min-width: 0; overflow: hidden; font-size: 8px; line-height: 1.1;
@@ -1688,11 +1709,11 @@
   #playerhud .ribbon-stat {
     min-height: 0; display: grid; place-content: center; padding: 0;
   }
-  /* A truncated name still reads; a truncated number lies. The identity column
-     is allowed to ellipsize, so the values scale with the width available to
-     them instead, and keep four digits whole down to a narrow desktop. */
+  /* A truncated name still reads; a truncated number lies. The identity line is
+     allowed to ellipsize, and the values get a line of their own at the rail's
+     full width, so four digits stay whole down to a narrow desktop. */
   #playerhud .ribbon-stat b {
-    font-size: clamp(9px, .85vw, 14px); font-weight: 950; letter-spacing: -.025em;
+    font-size: clamp(9px, .8vw, 13px); font-weight: 950; letter-spacing: -.025em;
     line-height: 1; text-shadow: 0 1px 2px #000, 0 0 8px currentColor;
   }
   #playerhud .civ-dossier {
@@ -1703,14 +1724,18 @@
   }
   #playerhud .diplomacy-card.expanded { border-radius: 7px; }
 
-  /* Victory progress is a separate, independently hideable rail standing on
-     the right edge from the top corner down. Six races read better one under
-     the other — each keeps the panel's whole width for its civilization names,
-     and the rail's height, not a 116px column, decides how many contenders
-     each of them shows. */
+  /* Victory progress is the middle of the rail: it starts under the standings
+     and stops above the world minimap, so the corner instrument is never
+     buried under it. Both seams are the neighbours' own heights, which is what
+     lets a table of twelve push the tracker down without anything overlapping.
+     Six races in a rail this wide read as two columns of three rather than one
+     tall stack — the same panel height then shows every race at once instead of
+     scrolling four of them out of sight. */
   #victoryhud {
-    position: absolute; z-index: 7; top: 10px; right: 12px; left: auto;
-    bottom: 16px; width: var(--victory-hud-width); height: auto;
+    position: absolute; z-index: 7; right: 12px; left: auto;
+    top: calc(min(var(--player-hud-height, 220px), var(--player-hud-max-height)) + 16px);
+    bottom: calc(var(--minimap-height) + 22px);
+    width: min(var(--hud-rail-width), var(--hud-rail-share)); height: auto;
     display: grid; grid-template-columns: minmax(0, 1fr);
     grid-template-rows: 18px minmax(0, 1fr);
     align-items: stretch; gap: 5px; min-width: 0; padding: 5px;
@@ -1719,6 +1744,17 @@
     box-shadow: 0 14px 38px #000a, inset 0 1px #ffffff0a;
     backdrop-filter: blur(16px) saturate(130%); pointer-events: auto;
   }
+  /* A neighbour that is switched off hands the rail back: the tracker takes the
+     top of the column when the standings are hidden, and runs to the floor when
+     the minimap is. */
+  body.overlay-players-hidden #victoryhud { top: 10px; }
+  body.overlay-minimap-hidden #victoryhud { bottom: 16px; }
+  #victoryhud .victory-ribbon {
+    min-height: max(100%, var(--victory-pair-min-height, 204px));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(var(--victory-pair-rows, 3), minmax(66px, 1fr));
+  }
+  #victoryhud .victory-track:nth-child(2n) { border-left: 1px solid #ffffff0b; }
   #victoryhud > .hud-section-heading {
     position: relative; grid-column: 1; grid-row: 1; min-height: 18px;
     justify-content: center; margin: 0 3px; color: #c7d3ce; font-size: 10px;
@@ -1849,53 +1885,45 @@
   body.sidebar-hidden #collapsepause:not([hidden]) { display: block; }
   #collapsepause[hidden] { display: none; }
 
-  /* Width breakpoints for the masthead. These have to sit below the base
-     #playerhud rule: they carry the same specificity, so above it they would
-     simply lose — which is exactly how the identity column once kept its full
-     300px on a 1100px screen and squeezed the ten value columns into 64px. */
-  @media (min-width: 2200px) {
-    #playerhud { grid-template-columns: 128px minmax(0, 1fr); --hud-identity-column: minmax(340px, 40%); }
-  }
-  @media (max-width: 1580px) {
-    #playerhud { grid-template-columns: 98px minmax(0, 1fr); --hud-identity-column: minmax(150px, 30%); }
-    #maparea { --victory-hud-width: 240px; }
-  }
-  /* Ten value columns, a turn plate and a standing rail stop fitting side by
-     side around here. The identity gives way first — it ellipsizes and keeps
-     its tooltip — so that every value stays whole. */
+  /* Width breakpoints for the rail. These have to sit below the base #playerhud
+     and #maparea rules: they carry the same specificity, so above them they
+     would simply lose — which is exactly how the identity column once kept its
+     full 300px on a 1100px screen and squeezed the ten value columns into 64px.
+     The rail gives up width in steps, and the row's ten values are what that
+     width is being kept for, so the gaps close before the numbers shrink. */
   @media (max-width: 1300px) {
-    #playerhud { grid-template-columns: 84px minmax(0, 1fr); --hud-identity-column: minmax(118px, 26%); }
-    #maparea { --victory-hud-width: 204px; }
+    #maparea { --hud-rail-width: clamp(296px, 27vw, 340px); }
+    #playerhud { --hud-column-gap: 4px; }
   }
   @media (max-width: 1180px) {
-    #playerhud {
-      grid-template-columns: 74px minmax(0, 1fr);
-      --hud-identity-column: minmax(92px, 22%); --hud-column-gap: 4px;
-    }
-    #maparea { --victory-hud-width: 178px; }
+    #maparea { --hud-rail-width: 292px; --minimap-height: 158px; }
+    #playerhud { --hud-column-gap: 3px; --hud-medallion-column: 19px; }
+    #playerhud .leader-medallion { width: 19px; height: 19px; }
+    /* The rail's share cap can take the value columns under 19px here, and a
+       four-digit figure needs the extra point of room more than it needs the
+       ninth pixel of type: a clipped number is a wrong number. */
+    #playerhud .ribbon-stat b { font-size: clamp(8px, .8vw, 13px); }
   }
   @media (max-width: 720px) {
     #side { inset-block-start: 132px; }
-    #playerhud {
-      --hud-medallion-column: 23px; --hud-identity-column: minmax(112px, 142px); --hud-column-gap: 3px;
-    }
+    #maparea { --hud-rail-width: 274px; --minimap-height: 138px; }
   }
   @media (max-width: 620px) {
-    /* Too narrow for a rail beside the masthead: the standings take the whole
-       width and the tracker returns to a band under them, its paths back in
-       columns because there is no height to stack them into. */
-    #playerhud, body.overlay-victory-hidden #playerhud {
+    /* Too narrow for a rail beside the map at all: the three instruments give
+       up the column and go back to bands across the top, with the tracker's
+       paths in columns because there is no height left to stack them into. */
+    #playerhud {
       top: 8px; left: 8px; right: 8px; width: auto; padding: 4px;
-      --hud-lock-column: 11px;
-      --hud-medallion-column: 21px; --hud-identity-column: minmax(150px, 42%);
+      --hud-lock-column: 11px; --hud-medallion-column: 21px;
     }
-    #victoryhud {
-      top: calc(min(var(--player-hud-height, 200px), var(--player-hud-max-height)) + 14px);
+    #victoryhud, body.overlay-players-hidden #victoryhud {
+      top: calc(min(var(--player-hud-height, 220px), var(--player-hud-max-height)) + 14px);
       left: 8px; right: 8px; bottom: auto; width: auto; height: 132px;
       grid-template-columns: minmax(0, 1fr); padding: 4px;
     }
+    .minimap-frame { left: 8px; right: auto; bottom: 62px; width: 174px; }
     #victoryhud .hud-rail { overflow-x: auto; overflow-y: hidden; }
-    .victory-ribbon {
+    #victoryhud .victory-ribbon {
       min-height: 0; width: max(100%, var(--victory-min-width, 514px));
       grid-template-rows: minmax(0, 1fr);
       grid-template-columns: repeat(var(--victory-rows, 6), minmax(84px, 1fr));
@@ -2231,7 +2259,7 @@
         <div class="overlay-options" role="group" aria-labelledby="overlay-options-title">
           <h2 id="overlay-options-title">Map overlays</h2>
           <div class="small overlay-layout-help">Drag a title bar to move an overlay; drag any edge or corner to resize. Your layout saves automatically.</div>
-          <div class="small overlay-layout-help">In the standings, ◉ locks a civilization: its row stays in view while the rest of the table scrolls past it.</div>
+          <div class="small overlay-layout-help">In the standings, ◉ locks a row: it stays in view while the rest of the table scrolls past it. Two seats of the same civilization lock separately, and a lock is remembered into the next game.</div>
           <div class="overlay-option-grid">
             <label class="overlay-option"><input type="checkbox" data-overlay="players" checked>Player standings</label>
             <label class="overlay-option"><input type="checkbox" data-overlay="victory" checked>Victory tracker</label>
@@ -2625,45 +2653,87 @@ let hudExpanded = null;
 // table would scroll it out of sight, then holds at the edge it was about to
 // leave, so a viewer can watch one empire while the rest of the table scrolls
 // past. The choice belongs to the viewer, not to the game, so it lives in this
-// browser and is keyed by civilization name — the exhibition starts a new game
-// every few minutes and player ids are reassigned, but "keep Rome in front of
-// me" survives that.
-const HUD_LOCK_STORAGE_KEY = "civvis-hud-locked-civs-v1";
-// null means "never chosen", which is what selects the default below. An empty
-// set is a real choice: the viewer unlocked everything.
+// browser.
+//
+// A lock names a *seat*, not a civilization. An exhibition table routinely
+// seats two Romes, and keying the lock on the name alone lit up both of their
+// rows, then cleared the pair when either one was clicked. A seat key carries
+// the name and which of that civilization's seats it is, counted in player-id
+// order — an order that never changes inside a game, so a key cannot follow the
+// standings when they reorder. The name is still the durable half: the
+// exhibition starts a new game every few minutes and reassigns every id, but
+// "keep Rome in front of me" survives that.
+const HUD_LOCK_STORAGE_KEY = "civvis-hud-locked-seats-v1";
+// null means "never chosen", which is what lets a human game seed its own seat
+// below. An empty set is a real choice: the viewer unlocked everything.
 let HUD_LOCKS = null;
 try {
   const saved = JSON.parse(localStorage.getItem(HUD_LOCK_STORAGE_KEY) || "null");
   if (Array.isArray(saved)) HUD_LOCKS = new Set(saved.map(String));
 } catch (_) {}
+const NO_HUD_LOCKS = new Set();
 
-// The viewer's own civilization: the empire they are playing, or the one they
-// have singled out to watch. A spectator watching the whole table has none.
-function viewerCivName() {
-  if (!state) return null;
-  const id = SPEC ? state.view_player : state.player;
-  if (id === null || id === undefined) return null;
-  const player = state.players.find(candidate => candidate.id === id);
-  return player && !player.is_minor && !player.is_barbarian ? player.civ : null;
+function majorPlayers() {
+  return state ? state.players.filter(p => !p.is_minor && !p.is_barbarian) : [];
 }
 
-// Until the viewer says otherwise, the one row they always want in front of
-// them is their own.
-function lockedCivs() {
-  if (HUD_LOCKS) return HUD_LOCKS;
-  const own = viewerCivName();
-  return new Set(own ? [own] : []);
+// Every seat's key, by player id.
+function seatKeysById(majors) {
+  const seen = new Map(), keys = new Map();
+  for (const player of [...majors].sort((a, b) => a.id - b.id)) {
+    const occurrence = seen.get(player.civ) || 0;
+    seen.set(player.civ, occurrence + 1);
+    keys.set(player.id, `${player.civ}#${occurrence}`);
+  }
+  return keys;
 }
 
-function toggleCivLock(id) {
-  const player = state?.players.find(candidate => candidate.id === id);
-  if (!player) return;
-  const next = new Set(lockedCivs());
-  if (next.has(player.civ)) next.delete(player.civ);
-  else next.add(player.civ);
-  HUD_LOCKS = next;
-  try { localStorage.setItem(HUD_LOCK_STORAGE_KEY, JSON.stringify([...next])); }
+// Civilization names the table uses more than once, which are the rows that
+// have to name their leader as well to be told apart.
+function repeatedCivNames(majors) {
+  const seen = new Set(), repeated = new Set();
+  for (const player of majors) {
+    if (seen.has(player.civ)) repeated.add(player.civ);
+    seen.add(player.civ);
+  }
+  return repeated;
+}
+
+// What the viewer chose, and nothing else. Deriving a lock from whichever
+// civilization was being watched meant the mark moved from row to row on its
+// own every time the view changed — including when the director changed it.
+function lockedSeats() {
+  return HUD_LOCKS || NO_HUD_LOCKS;
+}
+
+function saveHudLocks() {
+  try { localStorage.setItem(HUD_LOCK_STORAGE_KEY, JSON.stringify([...lockedSeats()])); }
   catch (_) {}
+}
+
+// The one row a player always wants in front of them is their own, so a human
+// game locks that seat the first time it draws the standings, and writes it
+// straight to storage — where it becomes an ordinary lock they can drop for
+// good. A spectator has no seat of its own and starts with nothing locked.
+function seedOwnSeatLock(seats) {
+  if (HUD_LOCKS || SPEC || !state) return;
+  const key = seats.get(state.player);
+  if (!key) return;
+  HUD_LOCKS = new Set([key]);
+  saveHudLocks();
+}
+
+function toggleSeatLock(id) {
+  const key = seatKeysById(majorPlayers()).get(id);
+  if (!key) return;
+  // Built from the stored set alone. Seeding it from a default that followed
+  // the watched civilization meant a viewer's first click silently persisted a
+  // second lock they had never made, and undoing that click left it behind.
+  const next = new Set(lockedSeats());
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  HUD_LOCKS = next;
+  saveHudLocks();
   drawPlayerHud();
 }
 // Three map styles, in ascending order of what the machine is asked to do.
@@ -3703,17 +3773,19 @@ const cv = document.getElementById("map");
 let cx = cv.getContext("2d");
 const mini = document.getElementById("mini"), mx2 = mini.getContext("2d");
 const area = document.getElementById("maparea");
-// v2 retires the layouts saved against the old arrangement — the standings in
-// the upper right, the tracker as a top strip, the minimap bottom right — so a
-// returning viewer sees the redesigned default instead of their old geometry.
-const HUD_LAYOUT_STORAGE_KEY = "civvis-hud-layout-v2";
+// v3 retires the layouts saved against the previous arrangement — the standings
+// as a masthead across the top edge, the tracker standing the full height of
+// the right edge, the minimap in the lower-left corner — so a returning viewer
+// sees the rail instead of three panels pinned where they no longer belong.
+const HUD_LAYOUT_STORAGE_KEY = "civvis-hud-layout-v3";
 const HUD_WIDGETS = {
-  // Ten fixed metric columns share every player row, so the standings keep
-  // enough width for their values and short labels whenever the map allows.
-  // The standings are capped at a quarter of the map however they are sized —
-  // by the player count, by a dragged edge, or by a layout saved earlier.
-  players: {element:document.getElementById("playerhud"), minWidth:520, minHeight:96,
-            maxHeightRatio:.25},
+  // Ten fixed metric columns share the lower line of every player row, so the
+  // standings need the rail's width but not the map's. They are capped at a
+  // little under half the map's height however they are sized — by the player
+  // count, by a dragged edge, or by a layout saved earlier — which is what
+  // leaves the victory tracker a readable share of the same column.
+  players: {element:document.getElementById("playerhud"), minWidth:264, minHeight:112,
+            maxHeightRatio:.42},
   victory: {element:document.getElementById("victoryhud"), minWidth:150, minHeight:88},
   minimap: {element:document.querySelector(".minimap-frame"), minWidth:130, minHeight:96},
 };
@@ -3822,10 +3894,11 @@ function applyHudWidgetMetrics(name, metrics, persist = false) {
   style.maxWidth = "none"; style.maxHeight = "none"; style.transform = "none";
   config.element.classList.add("layout-widget-custom");
   HUD_LAYOUT[name] = serializeHudWidget(next);
+  // The victory tracker fills whatever the rail's other two instruments leave
+  // it, so dragging either of their edges has to move the seam in the same
+  // gesture rather than letting the tracker slide underneath.
   if (name === "players") area.style.setProperty("--player-hud-height", `${next.height}px`);
-  // The standings run to wherever the victory rail starts, so widening the
-  // rail has to shorten the masthead in the same gesture.
-  if (name === "victory") area.style.setProperty("--victory-hud-width", `${next.width}px`);
+  if (name === "minimap") area.style.setProperty("--minimap-height", `${next.height}px`);
   // Victory leaders stack vertically inside each path. Reveal another rank as
   // soon as a resize makes room for a complete row, without replacing the
   // resize handle that currently owns the pointer gesture.
@@ -3850,9 +3923,9 @@ function resetHudWidget(name, persist = true) {
                           "max-width", "max-height", "transform"])
     config.element.style.removeProperty(property);
   config.element.classList.remove("layout-widget-custom", "layout-widget-active");
-  // The masthead reads the rail's width to know where to stop. Hand that back
-  // to the stylesheet's default at the same moment the rail itself returns.
-  if (name === "victory") area.style.removeProperty("--victory-hud-width");
+  // The tracker reads its neighbours' heights to know where to start and stop.
+  // Hand those back to the stylesheet at the same moment the neighbour returns.
+  if (name === "minimap") area.style.removeProperty("--minimap-height");
   if ((name === "players" || name === "victory") && state) drawPlayerHud();
   if (persist) saveHudLayout();
   if (name === "minimap") requestAnimationFrame(refreshMiniForLayout);
@@ -11897,12 +11970,12 @@ function victoryLeaderCapacity(victoryHud) {
   if (!rail || !tracks.length) return DEFAULT_VICTORY_LEADERS;
   const ribbon = victoryHud.querySelector(".victory-ribbon");
   const ribbonGap = parseFloat(getComputedStyle(ribbon || rail).rowGap) || 0;
-  // Below 620px the same ribbon lays its paths out in columns again, and there
-  // every band has the rail's full height to itself.
-  const stacked = tracks.length < 2 || tracks[1].offsetTop > tracks[0].offsetTop;
-  const share = stacked
-    ? (rail.clientHeight - ribbonGap * (tracks.length - 1)) / tracks.length
-    : rail.clientHeight;
+  // The ribbon's shape changes with the room it has: one band per row in a tall
+  // stack, two per row in the rail, and a single row of columns below 620px.
+  // What a band actually gets is the rail divided by the number of grid rows,
+  // so count the rows the bands landed on rather than assuming any one shape.
+  const gridRows = Math.max(1, new Set(tracks.map(track => track.offsetTop)).size);
+  const share = (rail.clientHeight - ribbonGap * (gridRows - 1)) / gridRows;
   let capacity = Infinity;
   for (const track of tracks) {
     const list = track.querySelector(".victory-list");
@@ -11991,9 +12064,11 @@ function playerHudOverview() {
       }).join("") + `</div></section>`;
   }).join("");
   const victoryCount = Math.max(1, enabledVictoryTracks.length);
-  // Two floors for two orientations: the stacked rail needs vertical room per
-  // band, the narrow-viewport fallback needs horizontal room per column.
+  // Three floors for three orientations: one band per row in a tall stack, two
+  // bands per row in the rail, and one row of columns on a narrow viewport.
+  const victoryPairRows = Math.ceil(victoryCount / 2);
   const victoryMinHeight = victoryCount * 66 + Math.max(0, victoryCount - 1) * 2;
+  const victoryPairMinHeight = victoryPairRows * 66 + Math.max(0, victoryPairRows - 1) * 2;
   const victoryMinWidth = victoryCount * 116 + Math.max(0, victoryCount - 1) * 2;
   const overview =
     `<div class="hud-section-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
@@ -12003,7 +12078,8 @@ function playerHudOverview() {
     `<section class="hud-region victory-region" aria-labelledby="victory-tracker-title">` +
     `<div class="hud-rail" tabindex="0" aria-label="Victory paths; scroll vertically for every path">` +
     `<div class="victory-ribbon" style="--victory-rows:${victoryCount};` +
-    `--victory-min-height:${victoryMinHeight}px;--victory-min-width:${victoryMinWidth}px">` +
+    `--victory-pair-rows:${victoryPairRows};--victory-min-height:${victoryMinHeight}px;` +
+    `--victory-pair-min-height:${victoryPairMinHeight}px;--victory-min-width:${victoryMinWidth}px">` +
     `${victoryTracks}</div></div></section>` + hudResizeHandles("victory tracker");
 
   return overview;
@@ -12107,14 +12183,17 @@ function drawPlayerHud() {
     .filter(p => !p.is_minor && !p.is_barbarian)
     .sort((a, b) => b.score - a.score || a.id - b.id);
   const rows = Math.max(1, majors.length);
-  const lockedNames = lockedCivs();
-  // One identity line per row instead of two, so a row is only as tall as its
-  // medallion: 23px, plus the 2px gap under it, against the 36px two lines
-  // needed. The fixed 44px is the heading, the column heads, the gaps and the
-  // panel's padding; the floor keeps the turn plate beside it legible at a
-  // two-player table. Anything past the quarter-screen ceiling scrolls, so this
-  // is what the panel would *like* rather than what it is allowed to take.
-  const requestedHeight = Math.max(96, 44 + rows * 25);
+  const seats = seatKeysById(majors);
+  const repeatedCivs = repeatedCivNames(majors);
+  seedOwnSeatLock(seats);
+  const lockedKeys = lockedSeats();
+  // Two lines per row in the rail — who this is, then their ten values — which
+  // is 33px plus the 2px gap under it. The fixed 82px is the turn plate, the
+  // heading, the column heads, the gaps and the panel's padding; the floor
+  // keeps a two-player table from collapsing onto its own heading. Anything
+  // past the ceiling scrolls, so this is what the panel would *like* rather
+  // than what it is allowed to take.
+  const requestedHeight = Math.max(150, 82 + rows * 35);
   const mapArea = document.getElementById("maparea");
   if (!HUD_LAYOUT.players)
     mapArea.style.setProperty("--player-hud-height", `${requestedHeight}px`);
@@ -12185,10 +12264,13 @@ function drawPlayerHud() {
       // Which rows actually hold at an edge, and how they stagger, depends on
       // how tall the ribbon is right now; syncPlayerLockPins() settles that
       // against the rendered box. The markup only records the choice.
-      const locked = lockedNames.has(p.civ);
+      const locked = lockedKeys.has(seats.get(p.id));
+      // Two seats can share a civilization, so a row the table repeats names
+      // its leader as well — otherwise both lock controls read "Lock Rome".
+      const seatName = repeatedCivs.has(p.civ) ? `${p.civ} under ${leader}` : p.civ;
       const lockTitle = locked
-        ? `Unlock ${p.civ} · its row scrolls with the rest of the table`
-        : `Lock ${p.civ} · its row stays in view while the table scrolls`;
+        ? `Unlock ${seatName} · its row scrolls with the rest of the table`
+        : `Lock ${seatName} · its row stays in view while the table scrolls`;
       return `<div class="diplomacy-card ${stateClass} ${expanded ? "expanded" : ""}${locked ? " locked" : ""}" style="--civ:${color};--civ-border:${pcol2(p.id)}" role="listitem">` +
         `<button class="lock-toggle" data-hud-action="lock" data-hud-civ="${p.id}" aria-pressed="${locked}" ` +
         `title="${lockTitle}" aria-label="${lockTitle}">${locked ? "◉" : "○"}</button>` +
@@ -12238,33 +12320,47 @@ function observePlayerRibbon() {
 
 // Settle which locked rows hold at an edge and where they stack.
 //
-// A held row costs the scroller one row of travel, so pinning more of them than
-// the ribbon can show would leave nothing to scroll past. Hold as many as fit,
-// in ranking order, and let any remainder ride along with the table — the lock
-// is still recorded, it simply has nothing to hold against.
+// A held row is taken out of the same box the table scrolls in, so holding
+// most of them leaves nothing to scroll past and the lock stops meaning
+// anything. Hold at most half the rows the ribbon can show, and never the last
+// one; any remainder rides along with the table — the lock is still recorded,
+// it simply has nothing to hold against.
 //
 // Each held row is offset by one row pitch per row held above it, so several
 // can hold at once without covering one another. Giving a row both a `top` and
 // a `bottom` is what keeps it in view in either direction: it holds at the top
 // once the table has scrolled past it, and at the bottom while it is still
 // below the fold.
+//
+// Every card is cleared first. The pins are derived state, and leaving a stale
+// one behind on a row that is no longer locked is how a held row survives the
+// lock that put it there.
 function syncPlayerLockPins() {
   const ribbon = document.getElementById("playerhud")?.querySelector(".diplomacy-ribbon");
   if (!ribbon) return;
-  const locked = [...ribbon.querySelectorAll(".diplomacy-card.locked")];
+  const cards = [...ribbon.children].filter(child => child.classList.contains("diplomacy-card"));
+  for (const card of cards) {
+    card.classList.remove("pinned");
+    card.style.removeProperty("--pin-head");
+    card.style.removeProperty("--pin-tail");
+  }
+  const locked = cards.filter(card => card.classList.contains("locked"));
   if (!locked.length) return;
   // Sticky offsets do not move an element's layout position, so offsetTop still
   // reports the true row pitch even while rows are held.
-  const cards = [...ribbon.children].filter(child => child.classList.contains("diplomacy-card"));
   const style = getComputedStyle(ribbon);
+  const gap = parseFloat(style.rowGap) || 2;
   const pitch = cards.length > 1 && cards[1].offsetTop > cards[0].offsetTop
     ? cards[1].offsetTop - cards[0].offsetTop
-    : Math.max(1, (parseFloat(style.gridAutoRows) || 23) + (parseFloat(style.rowGap) || 2));
-  const holds = Math.min(locked.length, Math.max(1, Math.floor(ribbon.clientHeight / pitch) - 1));
-  locked.forEach((card, index) => {
-    card.classList.toggle("pinned", index < holds);
+    : Math.max(1, (parseFloat(style.gridAutoRows) || 23) + gap);
+  // The last row needs no gap under it, so the box shows one more row than a
+  // plain division reports.
+  const visibleRows = Math.floor((ribbon.clientHeight + gap) / pitch);
+  const holds = Math.max(0, Math.min(locked.length, Math.floor(visibleRows / 2), visibleRows - 1));
+  locked.slice(0, holds).forEach((card, index) => {
+    card.classList.add("pinned");
     card.style.setProperty("--pin-head", index);
-    card.style.setProperty("--pin-tail", Math.max(0, holds - 1 - index));
+    card.style.setProperty("--pin-tail", holds - 1 - index);
   });
 }
 
@@ -12292,7 +12388,7 @@ function toggleCivDossier(id) {
 function runHudAction(target) {
   const id = +target.dataset.hudCiv;
   if (!Number.isInteger(id)) return;
-  if (target.dataset.hudAction === "lock") toggleCivLock(id);
+  if (target.dataset.hudAction === "lock") toggleSeatLock(id);
   else if (target.dataset.hudAction === "dossier") toggleCivDossier(id);
   else spectatePlayer(id);
 }
