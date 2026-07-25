@@ -3743,6 +3743,13 @@ mod tests {
         assert!(player_hud.contains("playerHudStats(p,"));
         assert!(player_hud.contains("victoryHud.innerHTML = overview;"));
         assert!(player_hud.contains("hud.innerHTML = html;"));
+        // A seat somebody is playing is named after the player this game
+        // registered for them, and it is preferred over any agent handle: a
+        // person is never one of the entrants on the leaderboard.
+        assert!(player_hud.contains("p.player_username || p.ai_username || \"AI player\""));
+        // And a player with nothing behind them reads unrated rather than
+        // wearing the 1500 every unrated player would have.
+        assert!(player_hud.contains("(playedGames ? `${p.player_elo} ELO` : \"Unrated\")"));
 
         // The side panel is the one part of a frame that is allowed to skip a
         // repaint, because below a second per turn it changes faster than
@@ -5763,8 +5770,15 @@ mod tests {
             assert!(entry["provisional"].is_boolean());
         }
 
-        // Nothing is seated until somebody asks, and then it stays seated.
-        assert_eq!(session.seated_strategy_name(0), Some("advanced"));
+        // Nobody is offered a person's seat: the roster on offer is agents.
+        assert!(
+            !names.contains(&"player"),
+            "a seat cannot be handed to somebody who is not at a keyboard: {names:?}"
+        );
+
+        // The seat starts as the person's own. Nothing is seated until
+        // somebody asks, and then it stays seated.
+        assert_eq!(session.seated_strategy_name(0), Some("player"));
         session
             .seat_strategy_at(0, "basic")
             .expect("a built-in agent is always available");
@@ -5780,6 +5794,110 @@ mod tests {
         let before = session.game.turn;
         assert_eq!(session.autoplay(3), 3);
         assert_eq!(session.game.turn, before + 3);
+    }
+
+    /// Sitting down to play registers a *new* player.
+    ///
+    /// The seat used to be dealt an entrant off the league table like any
+    /// other major, so a person wore an agent's handle and rating, and the
+    /// game they finished was filed as that agent's win. Both halves are the
+    /// same mistake: an identity nobody at the keyboard earned.
+    #[test]
+    fn a_single_player_game_registers_a_new_player() {
+        let dir = std::env::temp_dir().join(format!(
+            "civvis-server-register-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let dir = dir.to_str().unwrap().to_string();
+        let _ = std::fs::remove_dir_all(&dir);
+        let entrant = |ai: &str| {
+            crate::league::Strategy::new(
+                ai,
+                crate::league::StrategyKind::Builtin { ai: ai.to_string() },
+                0,
+            )
+        };
+        crate::league::save_league(
+            &dir,
+            &crate::league::League {
+                round: 2,
+                strategies: vec![entrant("advanced"), entrant("basic")],
+                calibration: Default::default(),
+            },
+        );
+
+        let mut params = current();
+        params.league_dir = Some(dir.clone());
+        params.league_record = true;
+        let mut session = Session::new(params);
+
+        // Seat 0 is the person: a row of their own, provisional, and not one
+        // of the two agents that were already here.
+        let seated = session.seat_strategy[0].expect("the person is rated");
+        let league = session.league.clone().expect("a rated roster");
+        assert!(league.strategies[seated].human);
+        assert_eq!(league.strategies[seated].username, "Player");
+        assert_eq!(session.seated_strategy_name(0), Some("player"));
+        // The rival is still seated from the roster, and is still an agent.
+        let rival = session.seat_strategy[1].expect("the rival is rated");
+        assert!(!league.strategies[rival].human);
+
+        // The registration reached the roster on disk, so the result has a
+        // name to be filed under.
+        let saved = crate::league::load_league(&dir).expect("roster on disk");
+        assert_eq!(saved.strategies.len(), 3);
+        assert_eq!(saved.humans().len(), 1);
+
+        // And the game says who is playing it.
+        let state = session.state();
+        let me = &state["players"][0];
+        assert_eq!(me["player_username"], json!("Player"));
+        assert_eq!(me["player_rated"], json!(true));
+        assert_eq!(me["player_games"], json!(0));
+        assert!(
+            state["players"][1]["player_username"].is_null(),
+            "only a seat somebody is playing carries a person"
+        );
+
+        // A decided game rates the person, and rates nobody in their place.
+        session.game.winner = Some(0);
+        session.game.victory_type = Some("score".to_string());
+        session.record_league_result();
+        let rated = crate::league::load_league(&dir).expect("roster on disk");
+        let person = rated.strategies.iter().find(|s| s.human).expect("the person");
+        assert_eq!((person.games, person.wins), (1, 1));
+        assert!(person.rating > 1500.0);
+        for agent in rated.strategies.iter().filter(|s| !s.human) {
+            assert_eq!(agent.wins, 0, "{} was credited a person's win", agent.name);
+        }
+        assert_eq!(
+            rated.strategies.iter().filter(|s| s.games > 0).count(),
+            2,
+            "the person and the rival they beat, nobody else"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Most games are rated against nothing at all. The person is still not
+    /// an existing player: they get a handle for this game, and it goes no
+    /// further than this game.
+    #[test]
+    fn an_unrated_single_player_game_still_names_the_person() {
+        let session = Session::new(current());
+        assert_eq!(session.seated_strategy_name(0), Some("player"));
+        assert_eq!(session.seat_strategy[0], None, "there is nothing to rate into");
+        let state = session.state();
+        assert_eq!(state["players"][0]["player_username"], json!("Player"));
+        assert_eq!(state["players"][0]["player_rated"], json!(false));
+        assert!(state["players"][0]["player_elo"].is_null());
+
+        // A spectated world has nobody at a keyboard and registers nobody.
+        let mut params = current();
+        params.spectate = true;
+        let spectated = Session::new(params);
+        assert!(spectated.human_players.is_empty());
+        assert!(spectated.state()["players"][0]["player_username"].is_null());
     }
 
     /// "All" is a turn count like any other, bounded by the turns this game

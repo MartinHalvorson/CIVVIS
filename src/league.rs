@@ -175,7 +175,8 @@ pub struct Strategy {
 }
 
 impl Strategy {
-    fn new(name: &str, kind: StrategyKind, born_round: u32) -> Strategy {
+    /// A fresh entrant at the base rating with no history behind it.
+    pub fn new(name: &str, kind: StrategyKind, born_round: u32) -> Strategy {
         Strategy {
             name: name.to_string(),
             username: String::new(),
@@ -2655,6 +2656,91 @@ mod tests {
         let bench = &league.strategies[2];
         assert_eq!((bench.rating, bench.rd), bench_before);
         assert_eq!(bench.games, 0);
+    }
+
+    /// Somebody who sits down to play joins the table as themselves. They are
+    /// rated by the same arithmetic as the agents and they appear in the
+    /// standings, but nothing may ever schedule, breed, retire or seat them:
+    /// a league round that dealt a person's row to a worker would play games
+    /// in their name that they never touched.
+    #[test]
+    fn a_registered_person_is_a_player_but_never_an_entrant() {
+        let builtin = |ai: &str| StrategyKind::Builtin { ai: ai.into() };
+        let mut league = League {
+            round: 4,
+            strategies: vec![
+                Strategy::new("advanced", builtin("advanced"), 0),
+                Strategy::new("basic", builtin("basic"), 0),
+            ],
+            calibration: Calibration::default(),
+        };
+        ensure_usernames(&mut league);
+
+        let first = register_new_player(&mut league);
+        let second = register_new_player(&mut league);
+        assert_ne!(first, second);
+        assert_eq!(league.strategies[first].name, "player");
+        assert_eq!(league.strategies[first].username, "Player");
+        assert_eq!(league.strategies[second].username, "Player2");
+        assert_eq!(league.strategies[first].rating, BASE_RATING);
+        assert_eq!(league.strategies[first].games, 0);
+        assert_eq!(league.strategies[first].born_round, 4);
+        assert_eq!(league.strategies[first].label(), "human");
+
+        assert_eq!(league.active(), vec![0, 1]);
+        assert_eq!(league.humans(), vec![first, second]);
+        assert!(seat_by_civ(&league, &["Rome".into(), "Egypt".into()])
+            .iter()
+            .all(|seated| !league.strategies[*seated].human));
+        assert!(standings(&league).contains("person"));
+    }
+
+    /// A person is registered before their game starts, so the result has a
+    /// name of their own to be filed under. The roster on disk is the one
+    /// that changes, and a second person is a second player.
+    #[test]
+    fn registering_a_player_persists_a_new_row() {
+        let dir = std::env::temp_dir().join(format!(
+            "civvis-league-register-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let dir = dir.to_str().unwrap();
+        let _ = fs::remove_dir_all(dir);
+        let builtin = |ai: &str| StrategyKind::Builtin { ai: ai.into() };
+        save_league(
+            dir,
+            &League {
+                round: 3,
+                strategies: vec![Strategy::new("advanced", builtin("advanced"), 0)],
+                calibration: Calibration::default(),
+            },
+        );
+
+        let (league, index) = register_player(dir).expect("registered");
+        assert_eq!(index, 1);
+        assert!(league.strategies[index].human);
+        let reloaded = load_league(dir).expect("roster on disk");
+        assert_eq!(reloaded.strategies.len(), 2);
+        assert_eq!(reloaded.strategies[index].username, "Player");
+        // The round is untouched: registering is not a rating period.
+        assert_eq!(reloaded.round, 3);
+
+        let (_, next) = register_player(dir).expect("registered again");
+        assert_eq!(load_league(dir).unwrap().strategies[next].username, "Player2");
+
+        // A game a person actually finishes rates them, and rates them alone
+        // among the two of them — nothing was credited to `advanced`.
+        let placements = vec![
+            ("player".to_string(), "Rome".to_string()),
+            ("advanced".to_string(), "Egypt".to_string()),
+        ];
+        let rated = record_game(dir, &placements, 9, 140, "science").expect("rated");
+        let person = rated.strategies.iter().find(|s| s.name == "player").unwrap();
+        assert_eq!((person.games, person.wins), (1, 1));
+        assert!(person.rating > BASE_RATING);
+        assert_eq!(rated.strategies.iter().find(|s| s.name == "player2").unwrap().games, 0);
+        fs::remove_dir_all(dir).unwrap();
     }
 
     /// `record_game` is the live server's whole path to a moving table: it
