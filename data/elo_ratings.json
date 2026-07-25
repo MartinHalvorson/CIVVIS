@@ -1,86 +1,70 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "base_rating": 1000.0,
   "ratings": [
     {
+      "player": "basic",
+      "leader": "Qin Shi Huang",
       "civilization": "China",
-      "strategy": "basic",
       "elo": 1004.0,
       "games": 1,
-      "wins": 0,
-      "agents": [
-        "basic"
-      ]
+      "wins": 0
     },
     {
+      "player": "advanced",
+      "leader": "Qin Shi Huang",
       "civilization": "China",
-      "strategy": "science",
       "elo": 988.0,
       "games": 1,
-      "wins": 0,
-      "agents": [
-        "advanced"
-      ]
+      "wins": 0
     },
     {
+      "player": "basic",
+      "leader": "Cleopatra",
       "civilization": "Egypt",
-      "strategy": "basic",
       "elo": 996.0,
       "games": 1,
-      "wins": 0,
-      "agents": [
-        "basic"
-      ]
+      "wins": 0
     },
     {
+      "player": "advanced",
+      "leader": "Cleopatra",
       "civilization": "Egypt",
-      "strategy": "science",
       "elo": 996.0,
       "games": 1,
-      "wins": 0,
-      "agents": [
-        "advanced"
-      ]
+      "wins": 0
     },
     {
+      "player": "basic",
+      "leader": "Pericles",
       "civilization": "Greece",
-      "strategy": "basic",
       "elo": 1004.0,
       "games": 1,
-      "wins": 0,
-      "agents": [
-        "basic"
-      ]
+      "wins": 0
     },
     {
+      "player": "advanced",
+      "leader": "Pericles",
       "civilization": "Greece",
-      "strategy": "culture",
       "elo": 988.0,
       "games": 1,
-      "wins": 0,
-      "agents": [
-        "advanced"
-      ]
+      "wins": 0
     },
     {
+      "player": "basic",
+      "leader": "Trajan",
       "civilization": "Rome",
-      "strategy": "basic",
       "elo": 1012.0,
       "games": 1,
-      "wins": 1,
-      "agents": [
-        "basic"
-      ]
+      "wins": 1
     },
     {
+      "player": "advanced",
+      "leader": "Trajan",
       "civilization": "Rome",
-      "strategy": "science",
       "elo": 1012.0,
       "games": 1,
-      "wins": 1,
-      "agents": [
-        "advanced"
-      ]
+      "wins": 1
     }
   ]
 }
