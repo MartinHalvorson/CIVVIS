@@ -8677,6 +8677,8 @@ function drawAtmosphere(now) {
 }
 
 // ---------------------------------------------------------------- minimap
+// Keep Earth minimap cells in the same projection as the main view so their
+// shapes, visible hemisphere, and click targets always agree.
 function drawTrueEarthMini() {
   if (!trueEarthMap()) return false;
   const {width, height} = syncMiniCanvas();
