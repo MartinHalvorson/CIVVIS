@@ -1375,6 +1375,24 @@
     letter-spacing: .08em; text-transform: uppercase;
   }
   .spec-controls #restart-sim::before { content: "↻"; margin-right: 5px; font-size: 13px; }
+  /* Choosing single player turns this one control into the way into that game,
+     so it says which game it starts instead of leaving "Restart sim" over a
+     single-player subtitle. A start is not a restart: the glyph changes too.
+     The name is long enough that sharing a row with Pause would break it over
+     three lines, so the pair stacks while it is showing. */
+  .spec-controls:has(#restart-sim.human-start) { grid-template-columns: 1fr; }
+  .spec-controls #restart-sim.human-start::before { content: "▶"; font-size: 11px; }
+  /* Stacked, the two would be gold together and neither would read as the one
+     to press. Pausing the simulation you are about to leave is not the point,
+     so Pause steps back to the plain treatment while the start is staged. */
+  .spec-controls:has(#restart-sim.human-start) #specpause.primary {
+    color: #c2cec8; background: linear-gradient(180deg, #243530, #192823);
+    border-color: #3b5049; box-shadow: none;
+  }
+  .spec-controls:has(#restart-sim.human-start) #specpause.primary:hover {
+    color: var(--text); background: linear-gradient(180deg, #315048, #223a34);
+    border-color: #57776d;
+  }
   .spec-controls #restart-sim .sub {
     display: block; margin-top: 3px; color: var(--muted); font-size: 8px;
     font-weight: 700; letter-spacing: .07em; white-space: nowrap;
@@ -2180,7 +2198,7 @@
       <div id="specbar" style="display:none">
         <div class="spec-controls">
           <button class="primary" id="specpause">⏸ Pause</button>
-          <button id="restart-sim" title="Restart with the same settings">Restart sim<span class="sub">same settings</span></button>
+          <button id="restart-sim" title="Restart with the same settings"><span class="lbl">Restart sim</span><span class="sub">same settings</span></button>
         </div>
         <script>
           // A supervised restart replaces this whole page. Restore the label
@@ -16939,19 +16957,22 @@ function applyQueuedSimulationSettings(settings) {
 function updateRestartSimulationButton() {
   const button = document.getElementById("restart-sim");
   // Picking single player turns the specbar's one start control into the way
-  // into that game, so it always reads as a change from the world on screen.
+  // into that game: it becomes Start Single Player Game, and always reads as a
+  // change from the world on screen.
   const human = !selectedSimulationSettings().spectate;
   const changed = human || (activeSimulationSettingsKey !== null &&
     simulationSettingsKey(selectedSimulationSettings()) !== activeSimulationSettingsKey);
   button.classList.toggle("primary", changed);
+  button.classList.toggle("human-start", human);
+  button.querySelector(".lbl").textContent = human
+    ? "Start Single Player Game"
+    : "Restart sim";
   button.title = human
     ? "Start a single-player game with the selected settings"
     : changed
     ? "Restart with the selected settings"
     : "Restart with the same settings";
-  button.querySelector(".sub").textContent = human
-    ? "single-player game"
-    : changed
+  button.querySelector(".sub").textContent = human || changed
     ? "with selected settings"
     : "same settings";
 }

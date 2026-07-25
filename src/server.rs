@@ -3375,7 +3375,7 @@ mod tests {
         // human game never offers to replace it with a simulation by default.
         assert!(EMBEDDED_INDEX.contains("select.value = SPEC ? \"ai_sim\" : \"single\""));
         assert!(EMBEDDED_INDEX.contains(
-            "id=\"restart-sim\" title=\"Restart with the same settings\">Restart sim<span class=\"sub\">same settings</span>"
+            "id=\"restart-sim\" title=\"Restart with the same settings\"><span class=\"lbl\">Restart sim</span><span class=\"sub\">same settings</span>"
         ));
         assert!(!EMBEDDED_INDEX.contains("id=\"fresh-sim\""));
         assert!(!EMBEDDED_INDEX.contains("id=\"default-settings\""));
@@ -4680,7 +4680,19 @@ mod tests {
         assert!(EMBEDDED_INDEX
             .contains("const supervised = !!(state && state.supervised) && payload.spectate;"));
         assert!(EMBEDDED_INDEX.contains("const human = !selectedSimulationSettings().spectate;"));
-        assert!(EMBEDDED_INDEX.contains("? \"single-player game\""));
+        // Choosing single player renames that control after the game it opens,
+        // rather than leaving "Restart sim" over a single-player subtitle.
+        assert!(EMBEDDED_INDEX.contains("<span class=\"lbl\">Restart sim</span>"));
+        assert!(EMBEDDED_INDEX.contains("button.classList.toggle(\"human-start\", human);"));
+        assert!(EMBEDDED_INDEX.contains("? \"Start Single Player Game\""));
+        assert!(EMBEDDED_INDEX
+            .contains(".spec-controls #restart-sim.human-start::before { content: \"▶\";"));
+        // Its name needs the whole bar, and it must be the only gold button on
+        // it — two would leave neither reading as the one to press.
+        assert!(EMBEDDED_INDEX
+            .contains(".spec-controls:has(#restart-sim.human-start) { grid-template-columns: 1fr; }"));
+        assert!(EMBEDDED_INDEX
+            .contains(".spec-controls:has(#restart-sim.human-start) #specpause.primary {"));
         assert!(EMBEDDED_INDEX.contains("body.watching-sim #startgame { display: none; }"));
         assert!(EMBEDDED_INDEX.contains("document.body.classList.toggle(\"watching-sim\", SPEC);"));
         // The start button belongs to the game being played, not to the mode
