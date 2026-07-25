@@ -9404,6 +9404,14 @@ pub struct Player {
     /// Amenity in *every* city this civilization owns.
     #[serde(default)]
     pub war_weariness: f64,
+    /// Ages already lived through. `THRESHOLD_SHIFT_PER_PAST_DARK_AGE` is -10
+    /// and `_PER_PAST_GOLDEN_AGE` is +5, so a civilization that has struggled
+    /// finds the next Normal Age easier to reach and one that has prospered
+    /// finds it harder.
+    #[serde(default)]
+    pub past_dark_ages: i64,
+    #[serde(default)]
+    pub past_golden_ages: i64,
     #[serde(default)]
     pub dvp: i64, // diplomatic victory points
     #[serde(default = "normal_age")]
@@ -9512,6 +9520,8 @@ impl Player {
             alliances: BTreeMap::new(),
             diplomatic_favor: 0.0,
             war_weariness: 0.0,
+            past_dark_ages: 0,
+            past_golden_ages: 0,
             dvp: 0,
             age: "normal".to_string(),
             culture_lifetime: 0.0,
@@ -36552,6 +36562,20 @@ impl Game {
     /// and Golden thresholds based on era and empire size. Climbing directly
     /// from a Dark Age to the Golden threshold produces a Heroic Age and
     /// three simultaneous dedication choices.
+    /// Era Score needed to avoid a Dark Age, from the shipped
+    /// `THRESHOLD_SHIFT_*` parameters: `_PER_CITY` 3, counted past the first
+    /// city the base already covers, `_PER_PAST_DARK_AGE` -10 and
+    /// `_PER_PAST_GOLDEN_AGE` +5. The last two make ages self-correcting — a
+    /// civilization that has struggled finds Normal easier to reach next time,
+    /// one that has prospered finds it harder.
+    ///
+    /// `_PER_ANARCHY`, `_PER_INCOMPLETE_ERA_TECH`/`_CIVIC`, `_PER_INCOMPLETE_OLD_TECH`/`_CIVIC`
+    /// and `_PER_MISSING_AMENITY` all ship as 0, so there is nothing to model
+    /// for them.
+    fn normal_age_threshold(era: usize, cities: i64, past_dark: i64, past_golden: i64) -> i64 {
+        (12 + 3 * era as i64 + 3 * (cities - 1) - 10 * past_dark + 5 * past_golden).max(6)
+    }
+
     fn process_eras(&mut self) {
         let era = self.era_from_progress();
         if era <= self.world_era {
@@ -36607,9 +36631,23 @@ impl Game {
             player.dedication_choices = if player.age == "heroic" { 3 } else { 1 };
             player.era_score = 0;
             player.era_score_baseline = 0;
-            let adjustment = if player.age == "dark" { -4 } else { 0 };
-            player.normal_age_threshold =
-                (12 + 3 * era as i64 + 2 * (cities - 1) + adjustment).max(6);
+            // The age just entered counts toward the next threshold: shipped
+            // THRESHOLD_SHIFT_PER_PAST_DARK_AGE -10 and
+            // _PER_PAST_GOLDEN_AGE +5 make ages self-correcting, so a
+            // civilization that has struggled finds Normal easier to reach
+            // next time and one that has prospered finds it harder. Heroic
+            // counts as the Golden Age it is.
+            match player.age.as_str() {
+                "dark" => player.past_dark_ages += 1,
+                "golden" | "heroic" => player.past_golden_ages += 1,
+                _ => {}
+            }
+            player.normal_age_threshold = Self::normal_age_threshold(
+                era,
+                cities,
+                player.past_dark_ages,
+                player.past_golden_ages,
+            );
             player.golden_age_threshold = player.normal_age_threshold + 12 + cities;
         }
         // A Dark Age card is a loan against the age that offered it. Climbing
@@ -45987,6 +46025,26 @@ mod victory_conditions {
         g.at_war.remove(&pair(0, 1));
         g.process_diplomacy(0);
         assert_eq!(g.players[0].war_weariness, 950.0);
+    }
+
+    #[test]
+    fn past_ages_shift_the_next_threshold_by_the_shipped_amounts() {
+        // THRESHOLD_SHIFT_PER_CITY 3, _PER_PAST_DARK_AGE -10,
+        // _PER_PAST_GOLDEN_AGE +5.
+        let t = Game::normal_age_threshold;
+        assert_eq!(t(1, 1, 0, 0), 15);
+        // Each extra city past the first raises it by three.
+        assert_eq!(t(1, 4, 0, 0), 15 + 9);
+        // A past Dark Age makes the next Normal Age ten points easier...
+        assert_eq!(t(1, 4, 1, 0), 15 + 9 - 10);
+        // ...but never past the floor of six: 24 - 20 would be 4.
+        assert_eq!(t(1, 4, 2, 0), 6);
+        assert_eq!(t(1, 1, 1, 0), 6);
+        // ...and a past Golden Age makes it five points harder.
+        assert_eq!(t(1, 4, 0, 1), 15 + 9 + 5);
+        assert_eq!(t(1, 4, 1, 2), 15 + 9 - 10 + 10);
+        // The threshold never drops below six however dark the history.
+        assert_eq!(t(1, 1, 9, 0), 6);
     }
 
     #[test]
