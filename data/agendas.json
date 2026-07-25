@@ -124,5 +124,479 @@
     "description": "Likes civilizations who build wonders for the world to admire. Dislikes civilizations who build none.",
     "measure": "wonders",
     "approves_of": "more"
+  },
+  "black_queen": {
+    "name": "The Black Queen",
+    "description": "Likes civilizations that keep their own counsel. Dislikes the artlessly honest.",
+    "measure": "trustworthiness",
+    "approves_of": "less"
+  },
+  "counter_reformation": {
+    "name": "Counter-Reformation",
+    "description": "Likes civilizations that keep their wealth to themselves. Dislikes open markets.",
+    "measure": "shared_luxuries",
+    "approves_of": "less"
+  },
+  "navigators_school": {
+    "name": "School of Navigators",
+    "description": "Likes civilizations that keep faith with their partners. Dislikes the faithless.",
+    "measure": "loyalty_to_friends",
+    "approves_of": "more"
+  },
+  "billboard": {
+    "name": "Billboard",
+    "description": "Likes civilizations that trade freely. Dislikes those that hoard.",
+    "measure": "shared_luxuries",
+    "approves_of": "more"
+  },
+  "queens_bibliotheque": {
+    "name": "Queen's Bibliotheque",
+    "description": "Likes civilizations that raise great works. Dislikes those that build nothing lasting.",
+    "measure": "wonders",
+    "approves_of": "more"
+  },
+  "last_viking_king": {
+    "name": "Last Viking King",
+    "description": "Likes civilizations that keep a strong army. Dislikes the undefended.",
+    "measure": "military",
+    "approves_of": "more"
+  },
+  "union_of_crowns": {
+    "name": "Union of Crowns",
+    "description": "Likes civilizations that hold their alliances. Dislikes those that break them.",
+    "measure": "loyalty_to_friends",
+    "approves_of": "more"
+  },
+  "lithuanian_union": {
+    "name": "Lithuanian Union",
+    "description": "Likes civilizations that grow their realm. Dislikes those that stay small.",
+    "measure": "territory",
+    "approves_of": "more"
+  },
+  "raven_king": {
+    "name": "Raven King",
+    "description": "Likes civilizations that leave the small states alone. Dislikes their patrons.",
+    "measure": "city_state_rivalry",
+    "approves_of": "less"
+  },
+  "diplomatic_marriage": {
+    "name": "Diplomatic Marriage",
+    "description": "Likes civilizations that win by arrangement. Dislikes those that win by siege.",
+    "measure": "city_state_rivalry",
+    "approves_of": "less"
+  },
+  "father_of_the_country": {
+    "name": "Father of the Country",
+    "description": "Likes civilizations that leave monuments. Dislikes those that leave nothing.",
+    "measure": "wonders",
+    "approves_of": "more"
+  },
+  "bannockburn": {
+    "name": "Bannockburn",
+    "description": "Likes civilizations that can defend themselves. Dislikes the weak.",
+    "measure": "military",
+    "approves_of": "more"
+  },
+  "high_king": {
+    "name": "High King",
+    "description": "Likes civilizations that stand by their word. Dislikes the treacherous.",
+    "measure": "loyalty_to_friends",
+    "approves_of": "more"
+  },
+  "red_cross": {
+    "name": "Red Cross",
+    "description": "Likes civilizations that keep their treaties. Dislikes the perfidious.",
+    "measure": "trustworthiness",
+    "approves_of": "more"
+  },
+  "serenissima": {
+    "name": "La Serenissima",
+    "description": "Likes civilizations that keep the trade lanes open. Dislikes those that close them.",
+    "measure": "shared_luxuries",
+    "approves_of": "more"
+  },
+  "emperor_of_the_serbs": {
+    "name": "Emperor of the Serbs",
+    "description": "Likes civilizations that expand boldly. Dislikes the timid.",
+    "measure": "territory",
+    "approves_of": "more"
+  },
+  "tsar_of_the_bulgars": {
+    "name": "Tsar of the Bulgars",
+    "description": "Likes civilizations that keep a standing army. Dislikes the defenceless.",
+    "measure": "military",
+    "approves_of": "more"
+  },
+  "from_sea_to_sea": {
+    "name": "From Sea to Sea",
+    "description": "Likes civilizations that reach across the map. Dislikes those hemmed in.",
+    "measure": "territory",
+    "approves_of": "more"
+  },
+  "cossack_hetman": {
+    "name": "Cossack Hetman",
+    "description": "Likes civilizations that ride to war prepared. Dislikes the unready.",
+    "measure": "military",
+    "approves_of": "more"
+  },
+  "winter_war": {
+    "name": "Winter War",
+    "description": "Likes civilizations that can hold a border. Dislikes those that cannot.",
+    "measure": "military",
+    "approves_of": "more"
+  },
+  "impaler": {
+    "name": "The Impaler",
+    "description": "Likes civilizations feared by their neighbours. Dislikes the harmless.",
+    "measure": "military",
+    "approves_of": "more"
+  },
+  "lord_novgorod_the_great": {
+    "name": "Lord Novgorod the Great",
+    "description": "Likes civilizations that trade in good faith. Dislikes those that close their markets.",
+    "measure": "shared_luxuries",
+    "approves_of": "more"
+  },
+  "drill_and_discipline": {
+    "name": "Drill and Discipline",
+    "description": "Likes civilizations that drill their armies. Dislikes the slovenly.",
+    "measure": "military",
+    "approves_of": "more"
+  },
+  "llibre_del_consolat": {
+    "name": "Llibre del Consolat",
+    "description": "Likes civilizations that keep a lawful market. Dislikes the closed and grasping.",
+    "measure": "shared_luxuries",
+    "approves_of": "more"
+  },
+  "shore_of_traders": {
+    "name": "Shore of Traders",
+    "description": "Likes civilizations that keep their harbours open. Dislikes those that shut them.",
+    "measure": "shared_luxuries",
+    "approves_of": "more"
+  },
+  "siege_engines": {
+    "name": "Siege Engines",
+    "description": "Likes civilizations that keep a fearsome army. Dislikes the soft.",
+    "measure": "military",
+    "approves_of": "more"
+  },
+  "king_of_kings": {
+    "name": "King of Kings",
+    "description": "Likes civilizations that rule widely. Dislikes those content with little.",
+    "measure": "territory",
+    "approves_of": "more"
+  },
+  "mountain_confederacy": {
+    "name": "Mountain Confederacy",
+    "description": "Likes civilizations that field real armies. Dislikes paper ones.",
+    "measure": "military",
+    "approves_of": "more"
+  },
+  "eight_banners": {
+    "name": "Eight Banners",
+    "description": "Likes civilizations that keep their armies in order. Dislikes the disorganised.",
+    "measure": "military",
+    "approves_of": "more"
+  },
+  "golden_treasury": {
+    "name": "Golden Treasury",
+    "description": "Likes civilizations that keep coin moving. Dislikes misers.",
+    "measure": "shared_luxuries",
+    "approves_of": "more"
+  },
+  "horse_archers": {
+    "name": "Horse Archers",
+    "description": "Likes civilizations with cavalry to spare. Dislikes the footbound.",
+    "measure": "military",
+    "approves_of": "more"
+  },
+  "caravan_cities": {
+    "name": "Caravan Cities",
+    "description": "Likes civilizations that keep the roads open. Dislikes those that close them.",
+    "measure": "shared_luxuries",
+    "approves_of": "more"
+  },
+  "lawgiver": {
+    "name": "The Lawgiver",
+    "description": "Likes civilizations that keep order by strength. Dislikes the disordered.",
+    "measure": "military",
+    "approves_of": "more"
+  },
+  "ayyubid_dynasty": {
+    "name": "Ayyubid Dynasty",
+    "description": "Likes civilizations that keep faith with allies. Dislikes betrayers.",
+    "measure": "loyalty_to_friends",
+    "approves_of": "more"
+  },
+  "wisdom_of_solomon": {
+    "name": "Wisdom of Solomon",
+    "description": "Likes civilizations that deal honestly. Dislikes the false.",
+    "measure": "trustworthiness",
+    "approves_of": "more"
+  },
+  "king_of_kings_armenia": {
+    "name": "Great King",
+    "description": "Likes civilizations that hold wide borders. Dislikes the shrunken.",
+    "measure": "territory",
+    "approves_of": "more"
+  },
+  "golden_age_georgia": {
+    "name": "Georgian Golden Age",
+    "description": "Likes civilizations that protect their friends. Dislikes those that abandon them.",
+    "measure": "loyalty_to_friends",
+    "approves_of": "more"
+  },
+  "scourge_of_kings": {
+    "name": "Scourge of Kings",
+    "description": "Likes civilizations that campaign relentlessly. Dislikes the settled.",
+    "measure": "military",
+    "approves_of": "more"
+  },
+  "great_jute": {
+    "name": "The Great Steppe",
+    "description": "Likes civilizations that range widely. Dislikes those that stay put.",
+    "measure": "territory",
+    "approves_of": "more"
+  },
+  "hellenic_east": {
+    "name": "The Hellenic East",
+    "description": "Likes civilizations that build in stone. Dislikes those that leave no trace.",
+    "measure": "wonders",
+    "approves_of": "more"
+  },
+  "lion_of_judah": {
+    "name": "Lion of Judah",
+    "description": "Likes civilizations that can defend their independence. Dislikes the conquered.",
+    "measure": "military",
+    "approves_of": "more"
+  },
+  "red_sea_trade": {
+    "name": "Red Sea Trade",
+    "description": "Likes civilizations that keep the sea lanes open. Dislikes those that raid them.",
+    "measure": "shared_luxuries",
+    "approves_of": "more"
+  },
+  "golden_one": {
+    "name": "The Golden One",
+    "description": "Likes civilizations that trade in luxuries. Dislikes those that hoard them.",
+    "measure": "shared_luxuries",
+    "approves_of": "more"
+  },
+  "first_among_kings": {
+    "name": "First Among Kings",
+    "description": "Likes civilizations that ride well. Dislikes those that cannot.",
+    "measure": "military",
+    "approves_of": "more"
+  },
+  "sankore": {
+    "name": "Sankore",
+    "description": "Likes civilizations that share their wealth. Dislikes the tight-fisted.",
+    "measure": "shared_luxuries",
+    "approves_of": "more"
+  },
+  "salt_and_gold": {
+    "name": "Salt and Gold",
+    "description": "Likes civilizations that keep caravans moving. Dislikes those that tax them dry.",
+    "measure": "shared_luxuries",
+    "approves_of": "more"
+  },
+  "walls_of_benin": {
+    "name": "Walls of Benin",
+    "description": "Likes civilizations that build to last. Dislikes those that build nothing.",
+    "measure": "wonders",
+    "approves_of": "more"
+  },
+  "asantehene": {
+    "name": "Asantehene",
+    "description": "Likes civilizations that hold their ground. Dislikes those that yield it.",
+    "measure": "military",
+    "approves_of": "more"
+  },
+  "monsoon_trade": {
+    "name": "Monsoon Trade",
+    "description": "Likes civilizations that sail to trade. Dislikes those that sail to raid.",
+    "measure": "shared_luxuries",
+    "approves_of": "more"
+  },
+  "great_enclosure": {
+    "name": "The Great Enclosure",
+    "description": "Likes civilizations that raise great works. Dislikes those that do not.",
+    "measure": "wonders",
+    "approves_of": "more"
+  },
+  "kabaka": {
+    "name": "The Kabaka",
+    "description": "Likes civilizations that keep their promises. Dislikes those that forget them.",
+    "measure": "loyalty_to_friends",
+    "approves_of": "more"
+  },
+  "alaafin": {
+    "name": "The Alaafin",
+    "description": "Likes civilizations that keep a standing force. Dislikes the unguarded.",
+    "measure": "military",
+    "approves_of": "more"
+  },
+  "veiled_men": {
+    "name": "The Veiled Men",
+    "description": "Likes civilizations that command the open country. Dislikes those penned in.",
+    "measure": "territory",
+    "approves_of": "more"
+  },
+  "merina_unifier": {
+    "name": "Merina Unifier",
+    "description": "Likes civilizations that unify their island. Dislikes the fragmented.",
+    "measure": "territory",
+    "approves_of": "more"
+  },
+  "pillars_of_ashoka": {
+    "name": "Pillars of Ashoka",
+    "description": "Likes civilizations that keep the peace they promise. Dislikes oathbreakers.",
+    "measure": "trustworthiness",
+    "approves_of": "more"
+  },
+  "bushido": {
+    "name": "Bushido",
+    "description": "Likes civilizations that keep a disciplined army. Dislikes the disorderly.",
+    "measure": "military",
+    "approves_of": "more"
+  },
+  "horde": {
+    "name": "The Horde",
+    "description": "Likes civilizations that campaign without rest. Dislikes the sedentary.",
+    "measure": "military",
+    "approves_of": "more"
+  },
+  "dharma_king": {
+    "name": "Dharma King",
+    "description": "Likes civilizations that keep faith. Dislikes those that break it.",
+    "measure": "trustworthiness",
+    "approves_of": "more"
+  },
+  "unifier_of_the_hills": {
+    "name": "Unifier of the Hills",
+    "description": "Likes civilizations that unite their highlands. Dislikes the divided.",
+    "measure": "territory",
+    "approves_of": "more"
+  },
+  "let_no_drop_be_wasted": {
+    "name": "Let No Drop Be Wasted",
+    "description": "Likes civilizations that build great works. Dislikes those that build none.",
+    "measure": "wonders",
+    "approves_of": "more"
+  },
+  "sea_empire": {
+    "name": "Sea Empire",
+    "description": "Likes civilizations that reach across the water. Dislikes those that stay ashore.",
+    "measure": "territory",
+    "approves_of": "more"
+  },
+  "rivers_of_gold": {
+    "name": "Rivers of Grain",
+    "description": "Likes civilizations that trade their surplus. Dislikes those that withhold it.",
+    "measure": "shared_luxuries",
+    "approves_of": "more"
+  },
+  "ganimi_kava": {
+    "name": "Ganimi Kava",
+    "description": "Likes civilizations that fight cleverly. Dislikes the ponderous.",
+    "measure": "military",
+    "approves_of": "more"
+  },
+  "temple_builder": {
+    "name": "Temple Builder",
+    "description": "Likes civilizations that raise temples. Dislikes those that raise none.",
+    "measure": "wonders",
+    "approves_of": "more"
+  },
+  "father_governs_children": {
+    "name": "Father Governs Children",
+    "description": "Likes civilizations that shelter their friends. Dislikes those that abandon them.",
+    "measure": "loyalty_to_friends",
+    "approves_of": "more"
+  },
+  "builder_of_pagodas": {
+    "name": "Builder of Pagodas",
+    "description": "Likes civilizations that leave monuments. Dislikes the plain.",
+    "measure": "wonders",
+    "approves_of": "more"
+  },
+  "palapa_oath": {
+    "name": "The Palapa Oath",
+    "description": "Likes civilizations that gather many islands. Dislikes those that hold one.",
+    "measure": "territory",
+    "approves_of": "more"
+  },
+  "sea_raiders": {
+    "name": "Sea Raiders",
+    "description": "Likes civilizations that keep a fleet. Dislikes those without one.",
+    "measure": "military",
+    "approves_of": "more"
+  },
+  "manifest_destiny": {
+    "name": "Manifest Destiny",
+    "description": "Likes civilizations that push their frontier. Dislikes those that stand still.",
+    "measure": "territory",
+    "approves_of": "more"
+  },
+  "honest_broker": {
+    "name": "Honest Broker",
+    "description": "Likes civilizations that keep their treaties. Dislikes those that tear them up.",
+    "measure": "trustworthiness",
+    "approves_of": "more"
+  },
+  "longhouse_council": {
+    "name": "Longhouse Council",
+    "description": "Likes civilizations that hold their confederacies together. Dislikes those that split.",
+    "measure": "loyalty_to_friends",
+    "approves_of": "more"
+  },
+  "written_word": {
+    "name": "The Written Word",
+    "description": "Likes civilizations that record themselves. Dislikes those that leave nothing.",
+    "measure": "wonders",
+    "approves_of": "more"
+  },
+  "black_hills": {
+    "name": "The Black Hills",
+    "description": "Likes civilizations that hold their land. Dislikes those that surrender it.",
+    "measure": "territory",
+    "approves_of": "more"
+  },
+  "qhapaq_nan": {
+    "name": "Qhapaq Nan",
+    "description": "Likes civilizations that bind their empire with roads. Dislikes the disconnected.",
+    "measure": "territory",
+    "approves_of": "more"
+  },
+  "el_dorado": {
+    "name": "El Dorado",
+    "description": "Likes civilizations that trade their treasures. Dislikes those that bury them.",
+    "measure": "shared_luxuries",
+    "approves_of": "more"
+  },
+  "never_conquered": {
+    "name": "Never Conquered",
+    "description": "Likes civilizations that resist conquest. Dislikes those that submit.",
+    "measure": "military",
+    "approves_of": "more"
+  },
+  "liberator": {
+    "name": "The Liberator",
+    "description": "Likes civilizations that free their neighbours. Dislikes those that subjugate them.",
+    "measure": "loyalty_to_friends",
+    "approves_of": "more"
+  },
+  "citadel_of_civilisation": {
+    "name": "Citadel of Civilisation",
+    "description": "Likes civilizations that stand by their allies in war. Dislikes those that stand aside.",
+    "measure": "loyalty_to_friends",
+    "approves_of": "more"
+  },
+  "kaitiakitanga": {
+    "name": "Kaitiakitanga",
+    "description": "Likes civilizations that treat the land as a trust. Dislikes those that strip it.",
+    "measure": "wonders",
+    "approves_of": "more"
   }
 }

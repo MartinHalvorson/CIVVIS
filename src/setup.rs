@@ -242,9 +242,18 @@ pub struct MapSize {
     pub continents: usize,
 }
 
-/// The unmodified Civilization VI map-size rows (Base/Gameplay/Data/Maps.xml
-/// plus the stock setup limits exposed by Advanced Setup).
-pub const CIV6_MAP_SIZES: [MapSize; 6] = [
+/// The six unmodified Civilization VI map-size rows (Base/Gameplay/Data/Maps.xml
+/// plus the stock setup limits exposed by Advanced Setup), followed by four
+/// larger worlds that Civilization VI does not ship.
+///
+/// The scaled rows are not invented numbers: every stock size holds about 580
+/// tiles per major civilization on a 1.6:1 rectangle, seats exactly 1.5
+/// city-states per major, and takes `players / 2` continents and
+/// `players / 2 + 1` religions. Massive through Ludicrous continue all four
+/// ratios. Only `natural_wonders` breaks the pattern, because a map cannot
+/// draw more wonders than the ruleset defines: the largest worlds take the
+/// whole 26-wonder catalogue and are correspondingly sparser in them.
+pub const CIV6_MAP_SIZES: [MapSize; 10] = [
     MapSize {
         id: "duel",
         name: "Duel",
@@ -329,11 +338,67 @@ pub const CIV6_MAP_SIZES: [MapSize; 6] = [
         natural_wonders: 7,
         continents: 6,
     },
+    MapSize {
+        id: "massive",
+        name: "Massive",
+        width: 118,
+        height: 74,
+        globe_frequency: 30,
+        default_players: 15,
+        max_players: 20,
+        default_city_states: 22,
+        max_city_states: 30,
+        max_religions: 8,
+        natural_wonders: 8,
+        continents: 7,
+    },
+    MapSize {
+        id: "enormous",
+        name: "Enormous",
+        width: 136,
+        height: 85,
+        globe_frequency: 34,
+        default_players: 20,
+        max_players: 30,
+        default_city_states: 30,
+        max_city_states: 40,
+        max_religions: 11,
+        natural_wonders: 11,
+        continents: 10,
+    },
+    MapSize {
+        id: "colossal",
+        name: "Colossal",
+        width: 215,
+        height: 135,
+        globe_frequency: 54,
+        default_players: 50,
+        max_players: 75,
+        default_city_states: 75,
+        max_city_states: 100,
+        max_religions: 26,
+        natural_wonders: 20,
+        continents: 25,
+    },
+    MapSize {
+        id: "ludicrous",
+        name: "Ludicrous",
+        width: 305,
+        height: 190,
+        globe_frequency: 76,
+        default_players: 100,
+        max_players: 100,
+        default_city_states: 150,
+        max_city_states: 150,
+        max_religions: 51,
+        natural_wonders: 26,
+        continents: 50,
+    },
 ];
 
 impl MapSize {
-    /// Pick the stock size whose default major-civilization count fits the
-    /// requested game. Counts above Huge retain Huge's world parameters.
+    /// Pick the smallest size whose default major-civilization count fits the
+    /// requested game. Counts above Ludicrous retain Ludicrous' parameters.
     pub fn for_players(players: usize) -> &'static MapSize {
         CIV6_MAP_SIZES
             .iter()
