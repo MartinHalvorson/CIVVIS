@@ -957,15 +957,32 @@
     letter-spacing: .09em; opacity: .72; text-transform: uppercase;
   }
   /* Civ 6's launch bar: the empire's standing decisions, one click away and
-     always in the same place. It mirrors the notification rail on the far
-     edge — that one says what wants you, this one is where you go. */
+     always in the same place, plus the two screens where it deals with anyone
+     else. It mirrors the notification rail on the far edge — that one says what
+     wants you, this one is where you go. The rail stops at 200px because the
+     minimap sits under it; this side has only the zoom cluster below (46px
+     tall, 16px up), so the bar may run most of the way down, which is what lets
+     all ten screens fit on a 900px-tall laptop without a scroll nobody can
+     see. */
   #launchbar {
-    position: absolute; z-index: 8; left: 14px; top: 196px; bottom: 200px;
+    position: absolute; z-index: 8; left: 14px; top: 196px; bottom: 96px;
     display: none; flex-direction: column; gap: 6px;
     overflow: hidden auto; scrollbar-width: none;
   }
   #launchbar::-webkit-scrollbar { display: none; }
   #launchbar.on { display: flex; }
+  #launchtabs { flex: none; display: flex; flex-direction: column; gap: 6px; }
+  /* Below the rule are the two screens that talk to somebody else rather than
+     decide something at home: the same kind of control, a different room. */
+  .launch-rule {
+    flex: none; width: 42px; height: 1px; margin: 3px 0;
+    background: linear-gradient(90deg, transparent, #77978b, transparent);
+  }
+  /* Every icon on this bar has to be a glyph the text fonts actually have, so
+     that it takes the gold below. A dove (U+1F54A) exists only in Apple Color
+     Emoji and paints a white sticker among ten gold marks; neither the
+     variation selector nor font-variant-emoji brings it back, because there is
+     no text glyph to fall back to. Diplomacy is the joined rings instead. */
   .launch {
     position: relative; flex: none; width: 42px; height: 42px; padding: 0; margin: 0;
     display: grid; place-items: center; border-radius: 12px; font-size: 17px; line-height: 1;
@@ -979,6 +996,14 @@
     color: #17160f; background: var(--gold-bright); box-shadow: 0 2px 6px #0007;
     font-size: 9px; font-weight: 900;
   }
+  .launch-badge[hidden] { display: none; }
+  /* These two carried their shortcut in the old sidebar label. An icon has no
+     room for "· D", so the key stays as a corner mark rather than being lost. */
+  .launch-key {
+    position: absolute; right: 4px; bottom: 3px; color: #8ba79b;
+    font-size: 7.5px; font-weight: 850; letter-spacing: 0; line-height: 1; opacity: .85;
+  }
+  .launch:hover .launch-key { color: var(--gold); }
   #empire {
     position: absolute; z-index: 18; inset: 4% 3%; display: none; flex-direction: column;
     overflow: hidden; color: var(--text); border: 1px solid #536c63; border-radius: 18px;
@@ -1516,9 +1541,11 @@
   .deal-action button { width: 100%; margin: 0; padding: 8px 10px; }
   .mutual-gain { margin-top: 6px; color: #86b997; font-size: 8px; white-space: nowrap; font-variant-numeric: tabular-nums; }
   .trade-empty { grid-column: 1 / -1; padding: 54px 20px; color: var(--muted); text-align: center; border: 1px dashed #34493f; border-radius: 14px; }
-  .footer-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
+  /* What is left in the deck is the turn itself: end it, or hand the seat to a
+     strategy. Diplomacy and Quick Deals moved to the launch bar on the map,
+     where the rest of the screens you open already live. */
+  .footer-actions { display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px; }
   .footer-actions button { margin: 0; }
-  #tradebtn { min-width: 112px; margin: 0; }
   /* Auto-play: who plays your seat, and for how long. Both are decisions, so
      both sit beside the button rather than behind a modifier key. */
   .autoplay-bar {
@@ -1999,6 +2026,16 @@
     #playerhud .ribbon-stat b { font-size: 13px; }
     #playerhud .diplomacy-name { font-size: 8px; }
   }
+  /* Ten screens at full size need 487px and the bar has (height − 292) to give,
+     so below 780px it would hide its last button behind a scrollbar that is
+     deliberately invisible. Shrinking the icons keeps the whole bar on screen
+     down to ~700px instead. */
+  @media (max-height: 780px) {
+    #launchbar, #launchtabs { gap: 4px; }
+    .launch { width: 36px; height: 36px; font-size: 15px; }
+    .launch-rule { width: 36px; margin: 2px 0; }
+    .launch-badge { min-width: 15px; height: 15px; font-size: 8px; }
+  }
   @media (max-height: 650px) {
     #playerhud .leader-medallion { width: 20px; height: 20px; }
   }
@@ -2053,7 +2090,16 @@
   </div>
   <div id="ubar"></div>
   <div id="notify" aria-label="Notifications" aria-live="polite"></div>
-  <div id="launchbar" aria-label="Empire screens"></div>
+  <div id="launchbar" aria-label="Empire and diplomacy screens">
+    <div id="launchtabs"></div>
+    <div class="launch-rule" aria-hidden="true"></div>
+    <button class="launch" id="diplomacybtn"
+      title="Diplomacy — leaders, agendas, war and peace (L)" aria-label="Diplomacy">⚭<span
+      class="launch-badge" hidden></span><span class="launch-key" aria-hidden="true">L</span></button>
+    <button class="launch" id="tradebtn"
+      title="Quick Deals — every mutually acceptable offer (D)" aria-label="Quick Deals">⚖<span
+      class="launch-badge" hidden></span><span class="launch-key" aria-hidden="true">D</span></button>
+  </div>
   <div id="modeline"></div>
   <div id="err"></div>
   <div id="winner" role="status" aria-live="assertive"></div>
@@ -2173,8 +2219,6 @@
     <div class="side-actions" aria-label="Simulation controls">
       <div class="footer-actions" id="humanfooter">
         <button class="primary" id="endturn">End turn · Enter</button>
-        <button id="tradebtn" title="Compare all mutually acceptable offers (D)">⚖ Quick Deals · D</button>
-      <button id="diplomacybtn" title="Leaders, agendas, war and peace (L)">🕊 Diplomacy · L</button>
         <div class="autoplay-bar" id="autoplaybar">
           <div class="autoplay-fields">
             <label class="autoplay-field"><span>Agent</span>
@@ -14437,17 +14481,36 @@ function empireBadge(tab) {
     default: return 0;
   }
 }
+// The bar's own two buttons are declared in the markup rather than rendered
+// here, so their ids survive a redraw and stay bindable at boot. Only the
+// empire tabs are regenerated; the foreign-affairs pair just gets its counts.
+function setLaunchBadge(id, count, name, key) {
+  const button = document.getElementById(id);
+  if (!button) return;
+  const badge = button.querySelector(".launch-badge");
+  if (!badge) return;
+  badge.textContent = count > 0 ? String(count) : "";
+  badge.hidden = count <= 0;
+  button.title = `${name} (${key})${count > 0 ? ` — ${count} waiting` : ""}`;
+}
 function drawLaunchBar() {
   const bar = document.getElementById("launchbar");
   if (!bar) return;
   if (!state || SPEC) { bar.classList.remove("on"); return; }
   bar.classList.add("on");
-  bar.innerHTML = EMPIRE_TABS.map(tab => {
+  const tabs = document.getElementById("launchtabs");
+  if (tabs) tabs.innerHTML = EMPIRE_TABS.map(tab => {
     const badge = empireBadge(tab.id);
     return `<button class="launch" onclick="openEmpire('${tab.id}')" ` +
       `title="${tab.name}${badge ? ` — ${badge} waiting` : ""}" aria-label="${tab.name}">${tab.icon}` +
       (badge ? `<span class="launch-badge">${badge}</span>` : "") + `</button>`;
   }).join("");
+  // Same "waiting for you" count the empire tabs carry: a proposal nobody has
+  // answered, and every offer another table would sign right now.
+  setLaunchBadge("diplomacybtn", legalFor("accept_deal").length,
+    "Diplomacy — leaders, agendas, war and peace", "L");
+  setLaunchBadge("tradebtn", Array.isArray(state.quick_deals) ? state.quick_deals.length : 0,
+    "Quick Deals — every mutually acceptable offer", "D");
 }
 function openEmpire(tab) {
   if (SPEC) return;
