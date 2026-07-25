@@ -3401,6 +3401,64 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("if (held.order === \"skip\") return held.turn === state.turn ? \"skip\" : null;"));
         assert!(EMBEDDED_INDEX.contains("function wakeSleepers()"));
     }
+
+    /// Every empire decision the engine offers seat 0 has a screen behind the
+    /// launch bar, and each screen speaks only the JSON protocol: it labels
+    /// the legal actions it was given and posts them back unchanged. The
+    /// action kinds below are the ledger — a screen that stops covering one
+    /// of them is a decision the player silently loses.
+    #[test]
+    fn browser_covers_every_empire_decision() {
+        for piece in [
+            "id=\"launchbar\"",
+            "id=\"empire\"",
+            "function drawLaunchBar()",
+            "function openEmpire(tab)",
+            "function empireBadge(tab)",
+            "function empireGovernment()",
+            "function empireReligion()",
+            "function empireGreatPeople()",
+            "function empireGovernors()",
+            "function empireCityStates()",
+            "function empireTrade()",
+            "function empireSpies()",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(piece),
+                "the empire panel is missing {piece}"
+            );
+        }
+        for action in [
+            "government",
+            "slot_policy",
+            "unslot_policy",
+            "choose_pantheon",
+            "found_religion",
+            "evangelize_belief",
+            "recruit_great_person",
+            "patronize_great_person",
+            "appoint_governor",
+            "assign_governor",
+            "reassign_governor",
+            "promote_governor",
+            "send_envoy",
+            "levy_military",
+            "trade_route",
+            "found_corporation",
+            "assign_spy",
+            "spy_mission",
+            "promote_spy",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("legalFor(\"{action}\")")),
+                "no empire screen offers the {action} action to the player"
+            );
+        }
+        // Actions are posted back exactly as the engine handed them over. A
+        // screen that rebuilt one by hand would be inventing protocol.
+        assert!(EMBEDDED_INDEX
+            .contains("onclick='sendFromEmpire(${JSON.stringify(action)})'>${label}</button>"));
+    }
 }
 
 pub fn serve_with_game(
