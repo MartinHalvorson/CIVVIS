@@ -270,12 +270,15 @@ civvis tournament --ais advanced,basic --games 40 --players 4
 
 The CLI checkpoints every completed game to the tracked
 `data/elo_ratings.json` ledger (override it with `--ratings path`). Ratings are
-keyed by civilization and the strategy actually used for most of that
-player's turns. For agents without an observable strategy, the agent name is
-the strategy. The ledger also retains contributing agent names, game counts,
-and wins, so later agents can distinguish evidence from an unmeasured pairing.
-Writes are atomic and briefly locked per game, allowing concurrent workers to
-share the file without replacing one another's updates.
+keyed by **player, leader, and civilization**. A player can be a human account
+or a named AI strategy; the tournament entrant name is the AI player's stable
+identity. Internal plan changes no longer split that player's evidence. Leader
+and civilization are both keys because the relationship is not one-to-one:
+Eleanor/England and Eleanor/France are separate ratings for the same player.
+Each game updates only the exact combinations that participated. The ledger
+also retains games and wins, so callers can distinguish evidence from an
+unmeasured pairing. Writes are atomic and briefly locked per game, allowing
+concurrent workers to share the file without replacing one another's updates.
 
 Entrants use a seeded round-robin seat schedule instead of independent random
 sampling. Across one complete cycle, every fixed civilization seat sees every
@@ -308,11 +311,13 @@ Multiplayer games score as pairwise Elo results by final placement
 non-persisted evaluation. Game generation and seating are deterministic given
 `cfg.seed`; persistent ratings also depend on the ledger's prior state.
 
-The seven advanced strategy labels are `expansion`, `science`, `culture`,
-`religion`, `diplomacy`, `conquest`, and `recovery`. Use the shared ledger to
-prioritize low-rated civilization/strategy rows with meaningful sample counts,
-then rerun the same evaluation battery after a strategy change. Missing rows
-are unmeasured, not evidence of parity.
+Non-tournament callers can rate human and AI players through the same API by
+constructing each result with `RatedPlayer::new(player, leader, civilization,
+score, won)` and passing the finished table to `EloPool::record_game`.
+
+Use the shared ledger to prioritize low-rated player/leader/civilization rows
+with meaningful sample counts, then rerun the same evaluation battery after a
+strategy change. Missing rows are unmeasured, not evidence of parity.
 
 ## External agents over HTTP (any language)
 
