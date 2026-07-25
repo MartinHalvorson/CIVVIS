@@ -30,9 +30,13 @@ python3 tools/civvis_collab.py start <task-slug> --machine <machine-id> \
   `agent/<machine-id>/<agent-id>/<task>-<UTC timestamp>-<nonce>`.
   Never reuse a branch for another task or PR.
 - Open a draft PR before substantial editing. Its ownership block must name
-  the machine, agent, task, and exact claimed paths/globs. Check all open draft
-  and ready PRs first; overlapping ownership must be coordinated in the older PR before
-  either agent continues.
+  the machine, agent, task, and exact claimed paths/globs. The launcher writes
+  this block for you.
+- Sharing a file with another PR is normal and is not a violation. You must
+  coordinate only when you rewrite the same *lines* as another open PR: agree in
+  the older PR, then add its number to `Coordinated with:`. Collisions are
+  reported as notices on drafts and only block once a PR is marked ready. See
+  [docs/collaboration-policy.md](docs/collaboration-policy.md).
 - If work moves to another computer or agent, record an explicit handoff in the
   draft PR, push the current commit, and stop the old writer before the new one
   starts.
