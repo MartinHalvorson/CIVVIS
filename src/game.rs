@@ -4549,7 +4549,8 @@ mod espionage_runtime_tests {
                 > partisans_before
         );
         game.apply_spy_mission_effect(spy_id, &mission("foment_unrest", target_center), true);
-        assert_eq!(game.cities[&target].loyalty, 75.0);
+        // Shipped -15 base, -5 per Spy level, off a full-Loyalty city.
+        assert_eq!(game.cities[&target].loyalty, 80.0);
         game.apply_spy_mission_effect(spy_id, &mission("neutralize_governor", target_center), true);
         assert!(game.players[1].governor_roster["pingala"].disabled_until > game.turn);
         game.cities.get_mut(&target).unwrap().queue = vec![Item::Project {
@@ -13478,8 +13479,10 @@ impl Game {
             }
             "recruit_partisans" => self.spawn_partisans(city.id),
             "foment_unrest" => {
+                // Shipped ESPIONAGE_FOMENT_UNREST_BASE_LOYALTY_CHANGE -15 plus
+                // ESPIONAGE_FOMENT_UNREST_LEVEL_LOYALTY_CHANGE -5 per level.
                 self.cities.get_mut(&city.id).unwrap().loyalty =
-                    (city.loyalty - 20.0 - 5.0 * spy.level.max(0) as f64).max(0.0);
+                    (city.loyalty - 15.0 - 5.0 * spy.level.max(0) as f64).max(0.0);
             }
             "neutralize_governor" => {
                 let until = self.turn + self.standard_duration(7 + spy.level.max(0) as u32);
@@ -19492,12 +19495,16 @@ impl Game {
         }
     }
 
+    /// Housing left (Housing minus Population) throttles growth at the three
+    /// shipped steps: `CITY_HOUSING_LEFT_50PCT_GROWTH` 1,
+    /// `CITY_HOUSING_LEFT_25PCT_GROWTH` 0 and `CITY_HOUSING_LEFT_ZERO_GROWTH`
+    /// -4. Growth stops *at* -4, not one short of -5.
     fn housing_growth_mult(headroom: f64) -> f64 {
         if headroom >= 2.0 {
             1.0
         } else if headroom >= 1.0 {
             0.5
-        } else if headroom > -5.0 {
+        } else if headroom > -4.0 {
             0.25
         } else {
             0.0
@@ -46122,7 +46129,8 @@ mod victory_conditions {
             (1.5, 0.5),
             (1.0, 0.5),
             (0.0, 0.25),
-            (-4.5, 0.25),
+            (-3.5, 0.25),
+            (-4.0, 0.0),
             (-5.0, 0.0),
         ];
         for (headroom, growth) in cases {
