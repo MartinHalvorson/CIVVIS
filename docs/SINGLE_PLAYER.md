@@ -143,6 +143,7 @@ Below them sit the saves this server is holding — every autosave and every
 named one, newest turn first, each with the turn, leader and difficulty it
 was written at. A build whose server has no save endpoints hides the group
 rather than showing one that cannot work.
+
 ## Diplomacy
 
 Quick Deals compares every trade the rivals would accept at once. The
