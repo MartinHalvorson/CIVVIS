@@ -28,6 +28,7 @@ pub mod selfplay;
 pub mod specmap;
 pub mod server;
 pub mod setup;
+pub mod sphere;
 pub mod strategic;
 pub mod valuenet;
 pub mod mods;
@@ -637,6 +638,70 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Planet's world is a different shape, and the rules that walk it — sight
+    /// lines, movement, city work, borders — have to survive a map with no
+    /// edges and twelve tiles that have five neighbours instead of six. A
+    /// played game is the only honest test of that.
+    #[test]
+    fn a_game_plays_out_on_the_globe() {
+        let size = crate::setup::MapSize::for_players(2);
+        let (width, height) = size.dimensions(crate::setup::MapScript::Planet);
+        let mut g = Game::new_with(crate::game::GameOptions {
+            map_script: crate::setup::MapScript::Planet,
+            ..crate::game::GameOptions::new(2, width, height, 4_517, 40, 2)
+        });
+        assert_eq!(g.map.tiles.len(), crate::sphere::Sphere::tiles_for(size.globe_frequency));
+        let mut ais = BasicAi::fleet(&g);
+        run_game(&mut g, &mut ais);
+        assert!(g.turn > 30, "the globe reached turn {}", g.turn);
+        assert!(g.cities.len() >= 2);
+        // Nothing fell off the world: every city, unit and owned tile is on a
+        // real tile of the sphere, and every tile is still surrounded.
+        for city in g.cities.values() {
+            assert!(g.map.tiles.contains_key(&city.pos));
+            assert_eq!(g.nbrs(city.pos).len(), 6, "a city sits on a hexagon");
+        }
+        for unit in g.units.values() {
+            assert!(g.map.tiles.contains_key(&unit.pos));
+        }
+        for (pos, _) in g.map.tiles.iter() {
+            let neighbors = g.nbrs(*pos);
+            assert!(matches!(neighbors.len(), 5 | 6), "{pos:?} is on an edge");
+        }
+    }
+
+    /// A saved globe has to come back a globe. The sphere's geometry is not in
+    /// the save — it is a pure function of the subdivision — so what the file
+    /// carries is which globe this was, and everything else is rebuilt.
+    #[test]
+    fn a_saved_globe_reloads_as_the_same_world() {
+        let size = crate::setup::MapSize::for_players(2);
+        let (width, height) = size.dimensions(crate::setup::MapScript::Planet);
+        let g = Game::new_with(crate::game::GameOptions {
+            map_script: crate::setup::MapScript::Planet,
+            ..crate::game::GameOptions::new(2, width, height, 8_812, 30, 2)
+        });
+        let restored: Game = serde_json::from_str(&serde_json::to_string(&g).unwrap()).unwrap();
+        assert_eq!(restored.map.topology, g.map.topology);
+        assert_eq!(restored.map.tiles.len(), g.map.tiles.len());
+        assert!(restored.map.sphere().is_some(), "the globe was rebuilt on load");
+        for (pos, _) in g.map.tiles.iter() {
+            assert_eq!(*restored.nbrs(*pos), *g.nbrs(*pos), "{pos:?} kept its neighbours");
+        }
+        let far = *g.map.tiles.keys().last().unwrap();
+        let near = *g.map.tiles.keys().next().unwrap();
+        assert_eq!(restored.wdist(near, far), g.wdist(near, far));
+        // A save written before Planet existed has no topology at all, and is
+        // still the cylinder it always was.
+        let flat = Game::new(2, 44, 26, 8_812, 30, 2);
+        let mut raw = serde_json::to_value(&flat).unwrap();
+        assert!(raw["map"]["topology"].is_null(), "a cylinder writes no topology");
+        raw["map"].as_object_mut().unwrap().remove("topology");
+        let legacy: Game = serde_json::from_value(raw).unwrap();
+        assert_eq!(legacy.map.topology, crate::world::Topology::Cylinder);
+        assert!(legacy.map.sphere().is_none());
     }
 
     /// A crowded spawn used to drop its city-state on the floor, so a request

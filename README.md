@@ -25,7 +25,9 @@ Firaxis or 2K; no assets, art, text, or code from Civilization VI are used.
 - Hex maps with Pangaea, Continents, Small Continents, and Inland Sea scripts,
   climate bands, the complete Civ VI terrain-feature roster (including polar
   ice, reefs, tectonic fissures, volcanoes, and volcanic soil), resources, and
-  fog of war. Cinematic terrain uses lifelike feature and Natural Wonder art;
+  fog of war. **Planet** closes the world into a globe — hexagons and the
+  twelve pentagons a sphere requires, the shape Uber's H3 grid uses — with no
+  edge in any direction, drawn as a globe you can turn. Cinematic terrain uses lifelike feature and Natural Wonder art;
   the strategic map retains compact symbols and flat terrain colors
 - Stock Civ VI map-size profiles (dimensions, players/city-states, natural
   wonders, continents, and religion caps)

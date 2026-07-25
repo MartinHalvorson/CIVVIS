@@ -2159,8 +2159,7 @@
           <option value="continents">Continents</option>
           <option value="small_continents">Small Continents</option>
           <option value="inland_sea">Inland Sea</option>
-          <option value="true_start_earth">True Start Earth</option>
-          <option value="true_start_true_earth">True Start True Earth</option>
+          <option value="planet">Planet</option>
         </select></label>
         <label class="small">Game speed<select id="gamespeed" style="margin-top:4px">
           <option value="online" selected>Online · 250 turns</option>
@@ -4180,13 +4179,13 @@ function axialRound(wx, wy) {
   return [rx, rz];
 }
 function pixelToHex(sx, sy) {
-  if (trueEarthMap()) {
+  if (planetMap()) {
     // Cells are already clipped at the globe limb and stored in painter order.
-    // Search front-to-back so a polar wedge at the horizon never steals a
-    // click from the face visibly above it.
-    for (let index = EARTH_HIT_CELLS.length - 1; index >= 0; index--) {
-      const cell = EARTH_HIT_CELLS[index];
-      if (pointInsideEarthCell(sx, sy, cell.points)) return cell.pos;
+    // Search front-to-back so a tile at the horizon never steals a click from
+    // the face visibly above it.
+    for (let index = PLANET_HIT_CELLS.length - 1; index >= 0; index--) {
+      const cell = PLANET_HIT_CELLS[index];
+      if (pointInsidePlanetCell(sx, sy, cell.points)) return cell.pos;
     }
     return null;
   }
@@ -9451,102 +9450,128 @@ function drawUnitFormationBadge(u, x, y) {
   cx.restore();
 }
 
-// ---------------------------------------------------------------- true Earth projections
-// The simulation remains one wrapped hex graph. Its Earth presentations use
-// equal-area latitude bands: row boundaries are equally spaced in sin(latitude),
-// then split into longitude wedges. Every cell therefore owns the same surface
-// area on the sphere, while ring circumference tends continuously to zero at
-// the poles and reaches its maximum at the equator.
-let EARTH_HIT_CELLS = [];
-function trueEarthMap() {
-  return state && (state.map.script === "true_start_earth" ||
-                   state.map.script === "true_start_true_earth");
+// ---------------------------------------------------------------- the Planet globe
+// Planet is a closed world: hexagons and twelve pentagons wrapped onto a
+// sphere, with no edge anywhere. It cannot be drawn from tile coordinates the
+// way a flat map can, because its storage rectangle is not a picture of
+// anything — a row is not a parallel of latitude. The server hands over the
+// real shape once per world (where each tile sits on the sphere and what its
+// outline is), the client keeps it, and everything below draws that.
+let PLANET = null;            // {frequency, corners, cells}
+let PLANET_WANTED = null;     // frequency currently being fetched
+let PLANET_HIT_CELLS = [];
+
+function planetMap() {
+  return !!state && state.map.script === "planet";
 }
-function trueEarthGlobe() {
-  return state?.map?.script === "true_start_true_earth";
+// A globe's rectangle is five columns per subdivision, so the world says which
+// globe it is without being asked.
+function planetFrequency() {
+  return state ? Math.round(state.map.width / 5) : 0;
 }
-function earthOffsetCell(pos) {
-  return [pos[0] + ((pos[1] - (pos[1] & 1)) >> 1), pos[1]];
+function planetReady() {
+  return planetMap() && PLANET && PLANET.frequency === planetFrequency();
 }
-function earthLatitude(edge) {
-  const surfaceY = 1 - 2 * edge / Math.max(1, state.map.height);
-  return Math.asin(Math.max(-1, Math.min(1, surfaceY)));
+
+function decodePlanet(raw) {
+  const scale = raw.scale || 1e4;
+  const corners = new Float64Array(raw.corners.length);
+  for (let index = 0; index < raw.corners.length; index++) corners[index] = raw.corners[index] / scale;
+  const cells = new Map();
+  for (const entry of raw.cells) {
+    const pos = [entry[0], entry[1]];
+    const ids = entry.slice(2);
+    let x = 0, y = 0, z = 0;
+    for (const id of ids) { x += corners[3 * id]; y += corners[3 * id + 1]; z += corners[3 * id + 2]; }
+    const length = Math.hypot(x, y, z) || 1;
+    cells.set(key(pos), {pos, ids, center:[x / length, y / length, z / length]});
+  }
+  return {frequency:raw.frequency, corners, cells};
 }
-function earthCamera() {
-  const width = state.map.width, height = state.map.height;
-  const cameraCol = cam.x / (S * SQ3);
-  const cameraRow = cam.y / (S * 1.5);
+
+// Asked for the first time a Planet world appears and never again while it
+// lasts: the geometry is a property of the globe, not of the turn.
+async function ensurePlanetGeometry() {
+  if (!planetMap() || planetReady()) return;
+  const wanted = planetFrequency();
+  if (PLANET_WANTED === wanted) return;
+  PLANET_WANTED = wanted;
+  try {
+    const full = await fetchJSON("/state?planet=1");
+    if (full?.map?.planet) {
+      PLANET = decodePlanet(full.map.planet);
+      draw(); drawMini();
+    }
+  } catch (error) {
+    PLANET_WANTED = null;
+  }
+}
+
+function planetCamera() {
+  const span = Math.max(1, S * 1.5 * (state.map.height - 1));
+  const north = Math.min(1, Math.max(0, cam.y / span));
   return {
-    longitude:2 * Math.PI * cameraCol / width - Math.PI + cam.rot,
-    latitude:earthLatitude(Math.max(0, Math.min(height, cameraRow + .5))),
+    longitude:2 * Math.PI * (cam.x / Math.max(1, WW())) - Math.PI + cam.rot,
+    latitude:Math.PI / 2 - Math.PI * north,
     radius:WW() / (2 * Math.PI),
   };
 }
-function earthStageCenter() {
+// The camera is steered in the same world coordinates the flat maps use, so
+// centring on a tile means turning the globe until that tile faces the viewer.
+function planetCameraTargetFor(pos) {
+  const cell = PLANET?.cells.get(key(pos));
+  if (!cell) return null;
+  const [x, y, z] = cell.center;
+  const longitude = Math.atan2(y, x);
+  const latitude = Math.asin(Math.max(-1, Math.min(1, z)));
+  const span = Math.max(1, S * 1.5 * (state.map.height - 1));
+  let column = (longitude + Math.PI - cam.rot) / (2 * Math.PI) * WW();
+  const width = WW();
+  column += Math.round((cam.x - column) / width) * width;
+  return [column, (Math.PI / 2 - latitude) / Math.PI * span];
+}
+function planetStageCenter() {
   const frame = observedFrameRect();
   return [(frame.left + frame.right) / 2, (frame.top + frame.bottom) / 2];
 }
-function wrapRadians(value) {
-  return Math.atan2(Math.sin(value), Math.cos(value));
+
+// Orthographic: the hemisphere facing the camera, as a globe is actually seen.
+function planetProject(point, camera, scale, centerX, centerY) {
+  const cosLat = Math.cos(camera.latitude), sinLat = Math.sin(camera.latitude);
+  const cosLon = Math.cos(camera.longitude), sinLon = Math.sin(camera.longitude);
+  const along = cosLon * point[0] + sinLon * point[1];
+  const east = -sinLon * point[0] + cosLon * point[1];
+  const north = -sinLat * along + cosLat * point[2];
+  const toward = cosLat * along + sinLat * point[2];
+  const radius = camera.radius * scale;
+  return {x:centerX + east * radius, y:centerY - north * radius, z:toward};
 }
-function earthProject(longitude, latitude, camera, globe, scale, centerX, centerY,
-                      unwrappedDelta = null) {
-  const delta = unwrappedDelta === null
-    ? wrapRadians(longitude - camera.longitude)
-    : unwrappedDelta;
-  const cosLat = Math.cos(latitude), sinLat = Math.sin(latitude);
-  let x, y, z = 1;
-  if (globe) {
-    const cosCam = Math.cos(camera.latitude), sinCam = Math.sin(camera.latitude);
-    x = camera.radius * cosLat * Math.sin(delta);
-    y = camera.radius * (sinCam * cosLat * Math.cos(delta) - cosCam * sinLat);
-    z = cosCam * cosLat * Math.cos(delta) + sinCam * sinLat;
-  } else {
-    // Sinusoidal is equal-area and keeps every parallel true to scale.
-    x = camera.radius * delta * cosLat;
-    y = camera.radius * (camera.latitude - latitude);
+function planetCellGeometry(tile, camera, scale, centerX, centerY) {
+  const cell = PLANET?.cells.get(key(tile.pos));
+  if (!cell) return null;
+  const radius = camera.radius * scale;
+  const points = cell.ids.map(id => planetProject(
+    [PLANET.corners[3 * id], PLANET.corners[3 * id + 1], PLANET.corners[3 * id + 2]],
+    camera, scale, centerX, centerY));
+  // A tile straddling the limb has corners behind the horizon. Pushing those
+  // out to the limb itself keeps the silhouette a clean circle instead of
+  // letting the last ring of tiles fold back over the globe.
+  for (const point of points) {
+    if (point.z >= 0) continue;
+    const dx = point.x - centerX, dy = point.y - centerY;
+    const length = Math.hypot(dx, dy) || 1;
+    point.x = centerX + dx * radius / length;
+    point.y = centerY + dy * radius / length;
   }
-  return {x:centerX + x * scale, y:centerY + y * scale, z};
+  return {points, center:planetProject(cell.center, camera, scale, centerX, centerY)};
 }
-function earthCellGeometry(tile, camera, globe, scale, centerX, centerY) {
-  const [col, row] = earthOffsetCell(tile.pos);
-  const half = Math.PI / state.map.width;
-  const centerLongitude = 2 * Math.PI * (col + .5) / state.map.width - Math.PI;
-  const centerDelta = wrapRadians(centerLongitude - camera.longitude);
-  const longitude = camera.longitude + centerDelta;
-  const top = earthLatitude(row), bottom = earthLatitude(row + 1);
-  // At the antimeridian, floating-point +π can normalize to −π. Preserve the
-  // chosen side of the seam for all four corners so its last cell stays a
-  // narrow wedge instead of drawing one full-width stripe across the world.
-  const leftDelta = Math.max(-Math.PI, centerDelta - half);
-  const rightDelta = Math.min(Math.PI, centerDelta + half);
-  const points = [
-    earthProject(longitude - half, top, camera, globe, scale, centerX, centerY, leftDelta),
-    earthProject(longitude + half, top, camera, globe, scale, centerX, centerY, rightDelta),
-    earthProject(longitude + half, bottom, camera, globe, scale, centerX, centerY, rightDelta),
-    earthProject(longitude - half, bottom, camera, globe, scale, centerX, centerY, leftDelta),
-  ];
-  const center = earthProject(longitude, earthLatitude(row + .5), camera,
-                              globe, scale, centerX, centerY, centerDelta);
-  if (globe) {
-    const radius = camera.radius * scale;
-    for (const point of points) {
-      if (point.z >= 0) continue;
-      const dx = point.x - centerX, dy = point.y - centerY;
-      const length = Math.hypot(dx, dy) || 1;
-      point.x = centerX + dx * radius / length;
-      point.y = centerY + dy * radius / length;
-    }
-  }
-  return {points, center};
-}
-function earthPath(context, points) {
+function planetPath(context, points) {
   context.beginPath();
   points.forEach((point, index) => index ? context.lineTo(point.x, point.y)
                                          : context.moveTo(point.x, point.y));
   context.closePath();
 }
-function pointInsideEarthCell(x, y, points) {
+function pointInsidePlanetCell(x, y, points) {
   let inside = false;
   for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
     const a = points[i], b = points[j];
@@ -9555,7 +9580,7 @@ function pointInsideEarthCell(x, y, points) {
   }
   return inside;
 }
-function earthFeatureGlyph(tile) {
+function planetFeatureGlyph(tile) {
   if (tile.terrain === "mountain") return "▲";
   if (tile.feature === "forest") return "♠";
   if (tile.feature === "jungle") return "♣";
@@ -9563,60 +9588,90 @@ function earthFeatureGlyph(tile) {
   if (tile.feature === "volcano") return "△";
   return tile.resource ? (RES_ICON[tile.resource] || "•") : "";
 }
-function drawTrueEarthMap() {
-  if (!trueEarthMap()) return false;
-  const globe = trueEarthGlobe();
-  const camera = earthCamera();
-  const [centerX, centerY] = earthStageCenter();
+// Tiles in painter order, nearest last, with everything behind the horizon
+// dropped. Shared by the map, the minimap, and hit testing so all three agree
+// on which half of the world is showing.
+function planetCells(camera, scale, centerX, centerY) {
+  const out = [];
+  for (const tile of state.map.tiles) {
+    const geometry = planetCellGeometry(tile, camera, scale, centerX, centerY);
+    // Slightly past the horizon: a tile whose centre has just turned away
+    // still has corners on this side, and dropping it early leaves a ring of
+    // bare ocean inside the silhouette.
+    if (!geometry || geometry.center.z <= -.03) continue;
+    out.push({tile, ...geometry});
+  }
+  out.sort((a, b) => a.center.z - b.center.z);
+  return out;
+}
+
+function drawPlanetMap() {
+  if (!planetMap()) return false;
+  if (!planetReady()) {
+    ensurePlanetGeometry();
+    cx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    cx.fillStyle = "#050d14";
+    cx.fillRect(0, 0, area.clientWidth, area.clientHeight);
+    cx.fillStyle = "#8fb8cc"; cx.textAlign = "center"; cx.font = "13px Inter,sans-serif";
+    cx.fillText("Building the globe…", area.clientWidth / 2, area.clientHeight / 2);
+    cx.setTransform(1, 0, 0, 1, 0, 0);
+    return true;
+  }
+  const camera = planetCamera();
+  const [centerX, centerY] = planetStageCenter();
   const scale = cam.scale;
   const radius = camera.radius * scale;
   const visible = new Set(state.visible.map(key));
   const spectator = !Number.isInteger(state.view_player);
-  EARTH_HIT_CELLS = [];
+  PLANET_HIT_CELLS = [];
 
   cx.setTransform(DPR, 0, 0, DPR, 0, 0);
   const backdrop = cx.createRadialGradient(centerX, centerY, 0, centerX, centerY,
-                                            Math.max(area.clientWidth, area.clientHeight));
-  backdrop.addColorStop(0, globe ? "#132a38" : "#17323a");
-  backdrop.addColorStop(.58, globe ? "#071018" : "#101c1d");
+                                           Math.max(area.clientWidth, area.clientHeight));
+  backdrop.addColorStop(0, "#132a38");
+  backdrop.addColorStop(.58, "#071018");
   backdrop.addColorStop(1, "#03070c");
   cx.fillStyle = backdrop;
   cx.fillRect(0, 0, area.clientWidth, area.clientHeight);
 
-  if (globe) {
-    cx.save();
-    cx.shadowColor = "#000d"; cx.shadowBlur = Math.max(18, radius * .12);
-    cx.shadowOffsetY = Math.max(8, radius * .05);
-    const ocean = cx.createRadialGradient(centerX - radius * .32, centerY - radius * .36,
-                                          radius * .05, centerX, centerY, radius);
+  // The ocean sphere under the tiles: it fills the limb no tile quite reaches
+  // and gives the globe its roundness.
+  cx.save();
+  cx.shadowColor = "#000d"; cx.shadowBlur = Math.max(18, radius * .12);
+  cx.shadowOffsetY = Math.max(8, radius * .05);
+  const ocean = cx.createRadialGradient(centerX - radius * .32, centerY - radius * .36,
+                                        radius * .05, centerX, centerY, radius);
+  if (spectator) {
     ocean.addColorStop(0, "#477f9b"); ocean.addColorStop(.52, "#163f57");
     ocean.addColorStop(.88, "#082437"); ocean.addColorStop(1, "#020b13");
-    cx.fillStyle = ocean; cx.beginPath(); cx.arc(centerX, centerY, radius, 0, 7); cx.fill();
-    cx.restore();
+  } else {
+    // Under fog the bare sphere is everything this empire has never seen, so
+    // it reads as unknown rather than as an ocean nobody needs to explore.
+    ocean.addColorStop(0, "#39434c"); ocean.addColorStop(.52, "#222a32");
+    ocean.addColorStop(.88, "#141a20"); ocean.addColorStop(1, "#05090d");
   }
+  cx.fillStyle = ocean; cx.beginPath(); cx.arc(centerX, centerY, radius, 0, 7); cx.fill();
+  cx.restore();
 
-  const cells = state.map.tiles.map(tile => {
-    const geometry = earthCellGeometry(tile, camera, globe, scale, centerX, centerY);
-    return {tile, ...geometry};
-  }).filter(cell => !globe || cell.center.z > -.025)
-    .sort((a, b) => a.center.z - b.center.z);
-
+  const cells = planetCells(camera, scale, centerX, centerY);
   for (const cell of cells) {
     const {tile, points, center} = cell;
-    earthPath(cx, points);
+    planetPath(cx, points);
     const base = TERRAIN[tile.terrain] || "#4b5960";
-    const light = globe ? .72 + .32 * Math.max(0, center.z) : .94;
+    // Lit from the direction the camera is looking, so the world reads as a
+    // ball rather than as a flat disc of tiles.
+    const light = .70 + .34 * Math.max(0, center.z);
     cx.fillStyle = spectator || visible.has(key(tile.pos))
       ? shade(base, light)
       : shade(base, .30);
     cx.fill();
     if (tile.owner !== null && tile.owner !== undefined) {
-      cx.globalAlpha = globe ? .28 : .22;
+      cx.globalAlpha = .28;
       cx.fillStyle = pcol(tile.owner); cx.fill(); cx.globalAlpha = 1;
     }
-    cx.strokeStyle = globe ? "rgba(214,235,231,.075)" : "rgba(18,28,27,.28)";
+    cx.strokeStyle = "rgba(214,235,231,.075)";
     cx.lineWidth = Math.max(.3, Math.min(1, scale * .75)); cx.stroke();
-    EARTH_HIT_CELLS.push({pos:tile.pos, points, z:center.z});
+    PLANET_HIT_CELLS.push({pos:tile.pos, points, z:center.z});
   }
 
   const highlighted = new Map();
@@ -9629,17 +9684,17 @@ function drawTrueEarthMap() {
   for (const cell of cells) {
     const color = highlighted.get(key(cell.tile.pos));
     if (!color) continue;
-    earthPath(cx, cell.points); cx.strokeStyle = color; cx.lineWidth = 2.2; cx.stroke();
+    planetPath(cx, cell.points); cx.strokeStyle = color; cx.lineWidth = 2.2; cx.stroke();
   }
 
-  // Features remain restrained at survey scale; cities and armies carry the
+  // Features stay restrained at survey scale; cities and armies carry the
   // strategic layer and grow only enough to stay clickable while zoomed out.
   if (scale > .42) {
     cx.textAlign = "center"; cx.textBaseline = "middle";
     cx.font = `${Math.max(7, Math.min(13, 8 * scale))}px serif`;
     for (const cell of cells) {
-      const glyph = earthFeatureGlyph(cell.tile);
-      if (!glyph || (globe && cell.center.z < .08)) continue;
+      const glyph = planetFeatureGlyph(cell.tile);
+      if (!glyph || cell.center.z < .08) continue;
       cx.globalAlpha = .58; cx.fillStyle = "#111b17";
       cx.fillText(glyph, cell.center.x, cell.center.y); cx.globalAlpha = 1;
     }
@@ -9647,7 +9702,7 @@ function drawTrueEarthMap() {
   const cellByKey = new Map(cells.map(cell => [key(cell.tile.pos), cell]));
   for (const city of state.cities) {
     const cell = cellByKey.get(key(city.pos));
-    if (!cell || (globe && cell.center.z < .02)) continue;
+    if (!cell || cell.center.z < .02) continue;
     const r = Math.max(4, Math.min(8, 5 * Math.sqrt(scale)));
     cx.fillStyle = cityBannerColor(city.owner); cx.strokeStyle = "#f7e5b1"; cx.lineWidth = 1.2;
     cx.beginPath(); cx.arc(cell.center.x, cell.center.y, r, 0, 7); cx.fill(); cx.stroke();
@@ -9660,7 +9715,7 @@ function drawTrueEarthMap() {
   }
   for (const unit of state.units) {
     const cell = cellByKey.get(key(unit.pos));
-    if (!cell || (globe && cell.center.z < .025)) continue;
+    if (!cell || cell.center.z < .025) continue;
     const r = Math.max(3.5, Math.min(7, 4.5 * Math.sqrt(scale)));
     cx.fillStyle = pcol(unit.owner); cx.strokeStyle = sel?.id === unit.id ? "#fff2a8" : "#10151d";
     cx.lineWidth = sel?.id === unit.id ? 2.3 : 1.2;
@@ -9672,36 +9727,22 @@ function drawTrueEarthMap() {
     cx.fillStyle = "#ffd86b"; cx.font = "bold 13px serif"; cx.fillText("◆", cell.center.x, cell.center.y);
   }
 
-  if (globe) {
-    const rim = cx.createRadialGradient(centerX, centerY, radius * .82,
-                                        centerX, centerY, radius * 1.08);
-    rim.addColorStop(0, "rgba(110,201,255,0)");
-    rim.addColorStop(.7, "rgba(110,201,255,.06)");
-    rim.addColorStop(.92, "rgba(133,216,255,.42)");
-    rim.addColorStop(1, "rgba(133,216,255,0)");
-    cx.fillStyle = rim; cx.beginPath(); cx.arc(centerX, centerY, radius * 1.1, 0, 7); cx.fill();
-    cx.strokeStyle = "rgba(196,235,255,.48)"; cx.lineWidth = 1.4;
-    cx.beginPath(); cx.arc(centerX, centerY, radius, 0, 7); cx.stroke();
-  } else {
-    // The curved outline makes the vanishing polar circumference explicit.
-    const outline = [];
-    for (let row = 0; row <= state.map.height; row++) {
-      outline.push(earthProject(camera.longitude + Math.PI, earthLatitude(row), camera,
-                                false, scale, centerX, centerY));
-    }
-    for (let row = state.map.height; row >= 0; row--) {
-      outline.push(earthProject(camera.longitude - Math.PI, earthLatitude(row), camera,
-                                false, scale, centerX, centerY));
-    }
-    earthPath(cx, outline); cx.strokeStyle = "rgba(210,231,220,.55)"; cx.lineWidth = 1.3; cx.stroke();
-  }
+  const rim = cx.createRadialGradient(centerX, centerY, radius * .82,
+                                      centerX, centerY, radius * 1.08);
+  rim.addColorStop(0, "rgba(110,201,255,0)");
+  rim.addColorStop(.7, "rgba(110,201,255,.06)");
+  rim.addColorStop(.92, "rgba(133,216,255,.42)");
+  rim.addColorStop(1, "rgba(133,216,255,0)");
+  cx.fillStyle = rim; cx.beginPath(); cx.arc(centerX, centerY, radius * 1.1, 0, 7); cx.fill();
+  cx.strokeStyle = "rgba(196,235,255,.48)"; cx.lineWidth = 1.4;
+  cx.beginPath(); cx.arc(centerX, centerY, radius, 0, 7); cx.stroke();
   cx.setTransform(1, 0, 0, 1, 0, 0);
   return true;
 }
 
 function draw() {
   if (!state) return;
-  if (drawTrueEarthMap()) return;
+  if (drawPlanetMap()) return;
   const beau0 = MODE.painted;
   const now0 = performance.now();
   const sceneTime = performance.now();
@@ -11555,31 +11596,22 @@ function drawAtmosphere(now) {
 }
 
 // ---------------------------------------------------------------- minimap
-// Keep Earth minimap cells in the same projection as the main view so their
+// Keep the globe's minimap in the same projection as the main view so their
 // shapes, visible hemisphere, and click targets always agree.
-function drawTrueEarthMini() {
-  if (!trueEarthMap()) return false;
+function drawPlanetMini() {
+  if (!planetReady()) return planetMap();
   const {width, height} = syncMiniCanvas();
-  const globe = trueEarthGlobe();
-  const worldCamera = earthCamera();
-  const camera = {...worldCamera, radius:1};
+  const camera = {...planetCamera(), radius:1};
   const centerX = width / 2, centerY = height / 2;
-  const scale = globe ? Math.min(width, height) * .44
-                      : Math.min((width - 8) / (2 * Math.PI), (height - 8) / Math.PI);
+  const scale = Math.min(width, height) * .44;
   mx2.setTransform(DPR, 0, 0, DPR, 0, 0);
   mx2.fillStyle = "#03080c"; mx2.fillRect(0, 0, width, height);
-  if (globe) {
-    mx2.fillStyle = "#123b55"; mx2.beginPath(); mx2.arc(centerX, centerY, scale, 0, 7); mx2.fill();
-  }
+  mx2.fillStyle = "#123b55"; mx2.beginPath(); mx2.arc(centerX, centerY, scale, 0, 7); mx2.fill();
   const visible = new Set(state.visible.map(key));
   const spectator = !Number.isInteger(state.view_player);
-  const cells = state.map.tiles.map(tile => ({
-    tile,
-    ...earthCellGeometry(tile, camera, globe, scale, centerX, centerY),
-  })).filter(cell => !globe || cell.center.z > -.025)
-     .sort((a, b) => a.center.z - b.center.z);
+  const cells = planetCells(camera, scale, centerX, centerY);
   for (const cell of cells) {
-    earthPath(mx2, cell.points);
+    planetPath(mx2, cell.points);
     const base = TERRAIN[cell.tile.terrain] || "#44545a";
     mx2.fillStyle = spectator || visible.has(key(cell.tile.pos)) ? base : shade(base, .35);
     mx2.fill();
@@ -11588,15 +11620,13 @@ function drawTrueEarthMini() {
       mx2.globalAlpha = 1;
     }
   }
-  if (globe) {
-    mx2.strokeStyle = "#b9e3f388"; mx2.lineWidth = 1;
-    mx2.beginPath(); mx2.arc(centerX, centerY, scale, 0, 7); mx2.stroke();
-  }
+  mx2.strokeStyle = "#b9e3f388"; mx2.lineWidth = 1;
+  mx2.beginPath(); mx2.arc(centerX, centerY, scale, 0, 7); mx2.stroke();
   for (const city of state.cities) {
     const tile = TMAP.get(key(city.pos));
     if (!tile) continue;
-    const cell = earthCellGeometry(tile, camera, globe, scale, centerX, centerY);
-    if (globe && cell.center.z <= 0) continue;
+    const cell = planetCellGeometry(tile, camera, scale, centerX, centerY);
+    if (!cell || cell.center.z <= 0) continue;
     mx2.fillStyle = cityBannerColor(city.owner);
     mx2.fillRect(cell.center.x - 1.5, cell.center.y - 1.5, 3, 3);
   }
@@ -11634,7 +11664,7 @@ function miniHexPath(x, y, size) {
 }
 function drawMini() {
   if (!state) return;
-  if (drawTrueEarthMini()) return;
+  if (drawPlanetMini()) return;
   const tiles = state.map.tiles;
   const {width:miniWidth, height:miniHeight} = syncMiniCanvas();
   mx2.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -11717,17 +11747,14 @@ function drawMini() {
 }
 mini.addEventListener("click", ev => {
   const r = mini.getBoundingClientRect();
-  if (trueEarthMap()) {
-    const globe = trueEarthGlobe();
-    const camera = {...earthCamera(), radius:1};
+  if (planetMap()) {
+    if (!planetReady()) return;
+    const camera = {...planetCamera(), radius:1};
     const centerX = r.width / 2, centerY = r.height / 2;
-    const scale = globe ? Math.min(r.width, r.height) * .44
-                        : Math.min((r.width - 8) / (2 * Math.PI), (r.height - 8) / Math.PI);
+    const scale = Math.min(r.width, r.height) * .44;
     const x = ev.clientX - r.left, y = ev.clientY - r.top;
-    const target = state.map.tiles.map(tile => ({
-      tile, ...earthCellGeometry(tile, camera, globe, scale, centerX, centerY),
-    })).filter(cell => !globe || cell.center.z > 0)
-      .filter(cell => pointInsideEarthCell(x, y, cell.points))
+    const target = planetCells(camera, scale, centerX, centerY)
+      .filter(cell => pointInsidePlanetCell(x, y, cell.points))
       .sort((a, b) => b.center.z - a.center.z)[0];
     if (target) { takeCameraControl(); centerWorld(target.tile.pos); }
     return;
@@ -14305,7 +14332,14 @@ function cameraYBounds(scale = cam.scale) {
   // automatic framing inside those
   // rows so a battle near a pole cannot replace a large part of the map with
   // empty background. Rotated/manual views remain unconstrained.
-  if (!state || !area.clientHeight || Math.abs(SINR) > 0.001) return null;
+  if (!state || !area.clientHeight) return null;
+  // A globe turns to any latitude — that is what a globe is for — so the only
+  // limit is the poles themselves. The framing rule below is about keeping a
+  // flat map's empty background off the screen, which a sphere does not have.
+  if (planetMap()) {
+    return {min:0, max:S * 1.5 * Math.max(1, state.map.height - 1)};
+  }
+  if (Math.abs(SINR) > 0.001) return null;
   const halfVisible = area.clientHeight / (2 * Math.max(0.25, scale) * YS);
   const top = -S;
   const bottom = S * 1.5 * Math.max(0, state.map.height - 1) + S + MODE.skirt / YS;
@@ -14444,6 +14478,10 @@ function reframeCurrentMapFocus(world) {
   draw(); drawMini();
 }
 function cameraTargetFor(pos, scale = cam.scale) {
+  if (planetMap()) {
+    const target = planetCameraTargetFor(pos);
+    return target || [cam.x, cam.y];
+  }
   let x = S * SQ3 * (pos[0] + pos[1] / 2);
   if (mapWrapsX()) x += Math.round((cam.x - x) / WW()) * WW();
   return cameraCenterForWorld(x, S * 1.5 * pos[1], scale);
@@ -14482,7 +14520,7 @@ function nudgeCamera(screenX, screenY) {
   cameraFlight = {x:cam.x + dx, y:clampCameraY(cam.y + dy), scale:cam.scale};
 }
 function zoomAt(f, sx, sy) {
-  if (trueEarthMap()) {
+  if (planetMap()) {
     const base = cameraZoom?.scale || cam.scale;
     cameraFlight = null; cameraZoom = null; clearCameraInertia();
     cam.scale = Math.max(.08, Math.min(3.2, base * f));
@@ -14661,15 +14699,14 @@ function watchedEmpireSubjects(player) {
 // cancel close-up tracking, put north back at the top, and fit one complete
 // copy of the world inside the unobstructed map stage. Deriving the bounds from
 // the tiles keeps this correct for both cylindrical and bounded scripts.
-function fitTrueEarthView() {
+function fitPlanetView() {
   const frame = observedFrameRect();
   const padding = Math.min(32, (frame.right - frame.left) * .06,
                            (frame.bottom - frame.top) * .08);
   const usableWidth = Math.max(1, frame.right - frame.left - padding * 2);
   const usableHeight = Math.max(1, frame.bottom - frame.top - padding * 2);
   const radius = WW() / (2 * Math.PI);
-  const projectedWidth = trueEarthGlobe() ? radius * 2 : radius * 2 * Math.PI;
-  const projectedHeight = trueEarthGlobe() ? radius * 2 : radius * Math.PI;
+  const projectedWidth = radius * 2, projectedHeight = radius * 2;
   cameraFlight = null; cameraZoom = null; clearCameraInertia();
   cam.scale = Math.max(.01, Math.min(3.2, usableWidth / projectedWidth,
                                     usableHeight / projectedHeight));
@@ -14690,8 +14727,8 @@ function fitFullWorldView(preservePresentation = false) {
   }
   if (!state?.map?.tiles?.length) return;
 
-  if (trueEarthMap()) {
-    fitTrueEarthView();
+  if (planetMap()) {
+    fitPlanetView();
     return;
   }
 
@@ -14825,7 +14862,7 @@ function observedViewGoal(anchors) {
 }
 
 function setObservedPlayersView(smooth = false) {
-  if (trueEarthMap()) { fitTrueEarthView(); return; }
+  if (planetMap()) { fitPlanetView(); return; }
   const watched = Number.isInteger(state?.view_player);
   const anchors = watched
     ? watchedEmpireSubjects(state.view_player) : observedPlayerAnchors();
@@ -14929,7 +14966,7 @@ function mainLandmassAnchor() {
   }, null).tile;
 }
 function setMainLandmassView() {
-  if (trueEarthMap()) { setFullWorldView(); return; }
+  if (planetMap()) { setFullWorldView(); return; }
   const anchor = mainLandmassAnchor();
   if (!anchor) return;
   cam.scale = cinemaActive() ? .82 : .9;
