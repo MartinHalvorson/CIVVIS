@@ -437,8 +437,12 @@ fn lake_eligible(wm: &WorldMap, land: &BTreeSet<Pos>, pos: Pos) -> bool {
         .into_iter()
         .map(|neighbor| hex::canon(neighbor, wm.width))
         .all(|neighbor| match wm.tiles.get(&neighbor) {
-            // Off the map is the world's edge, not a shore.
-            None => true,
+            // Civ VI's polar rows are always ocean, so a plot on the world's
+            // edge is coastal land there and never floods. A CIVVIS script may
+            // put land on the rim — Inland Sea rings its basin that way — and
+            // treating the edge as a shore keeps that rim whole rather than
+            // punching a lake through it.
+            None => false,
             Some(tile) => land.contains(&neighbor) && !tile.has_river(),
         })
 }
@@ -2017,6 +2021,62 @@ fn balanced_major_spawns(
         }
         if !improved {
             break;
+        }
+    }
+
+    // Then the shipped Natural Wonder standoff, as a repair rather than a
+    // filter. A wonder's own tiles are never candidates, which is why majors
+    // were taken to keep their distance already — but that only rules out
+    // standing *on* one, and a capital sharing a border with a wonder is short
+    // the tiles it cannot work from its first turn. Filtering the pool up front
+    // is the obvious fix and is the wrong one: it changes which layouts the
+    // spacing search ever sees, and cost the Large map its shipped 10-14
+    // separation band. Repairing the finished layout leaves that search alone
+    // and moves a start by a tile or two, keeping the separation it just won.
+    let wonders: Vec<Pos> = wm
+        .tiles
+        .iter()
+        .filter(|(_, tile)| {
+            tile.feature
+                .as_deref()
+                .and_then(|feature| rules.features.get(feature))
+                .is_some_and(|feature| feature.natural_wonder)
+        })
+        .map(|(position, _)| *position)
+        .collect();
+    let crowds_a_wonder = |position: Pos| {
+        wonders.iter().any(|wonder| {
+            hex::wdistance(position, *wonder, wm.width) < START_DISTANCE_MAJOR_NATURAL_WONDER
+        })
+    };
+    for index in 0..layout.len() {
+        if !crowds_a_wonder(layout[index]) {
+            continue;
+        }
+        let replacement = candidates
+            .iter()
+            .copied()
+            .filter(|candidate| !crowds_a_wonder(*candidate) && !layout.contains(candidate))
+            .filter(|candidate| {
+                layout
+                    .iter()
+                    .enumerate()
+                    .filter(|(other, _)| *other != index)
+                    .all(|(_, other)| {
+                        hex::wdistance(*candidate, *other, wm.width) >= separation_floor
+                    })
+            })
+            .min_by_key(|candidate| {
+                (
+                    hex::wdistance(*candidate, layout[index], wm.width),
+                    std::cmp::Reverse(qualities[candidate]),
+                    *candidate,
+                )
+            });
+        // A map whose wonders leave nowhere to stand keeps the start it had:
+        // a capital beside a wonder beats no capital at all.
+        if let Some(position) = replacement {
+            layout[index] = position;
         }
     }
 
