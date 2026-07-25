@@ -49,6 +49,9 @@ pub struct Params {
     pub difficulty: String,
     pub speed: String,
     pub teams: Vec<Option<usize>>,
+    /// Civilizations for the leading major seats, in seat order — seat 0 is
+    /// the person's own. Empty is the stock roster; see `Game::seat_civs`.
+    pub civs: Vec<String>,
     /// A lifecycle supervisor, rather than the browser countdown, owns the
     /// transition after a completed spectator game.
     pub supervised: bool,
@@ -910,6 +913,7 @@ impl Session {
             speed: params.speed.clone(),
             human_seats,
             teams: params.teams.clone(),
+            civs: params.civs.clone(),
             ..GameOptions::new(
                 params.num_players,
                 params.width,
@@ -1670,6 +1674,25 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     if let Some(v) = request["max_turns"].as_u64() {
         p.max_turns = v as u32;
     }
+    // The two settings a Civ 6 lobby asks for that this protocol could not
+    // carry: how hard the rivals play, and who the player is. Both are
+    // validated against the live ruleset rather than trusted, because the
+    // constructor asserts on an unknown difficulty and would take the server
+    // down with it.
+    if let Some(difficulty) = request["difficulty"].as_str() {
+        if Rules::shared().difficulties.contains_key(difficulty) {
+            p.difficulty = difficulty.to_string();
+        }
+    }
+    if let Some(civs) = request["civs"].as_array() {
+        let rules = Rules::shared();
+        p.civs = civs
+            .iter()
+            .filter_map(|civ| civ.as_str())
+            .filter(|civ| rules.civs.contains_key(*civ))
+            .map(str::to_string)
+            .collect();
+    }
     if let Some(victories) = request["victory_conditions"].as_object() {
         for (name, enabled) in victories {
             let Some(enabled) = enabled.as_bool() else {
@@ -2425,11 +2448,47 @@ mod tests {
             difficulty: crate::game::default_difficulty(),
             speed: crate::game::default_speed(),
             teams: Vec::new(),
+            civs: Vec::new(),
             supervised: false,
             restart_ms: 5_000,
             league_dir: None,
             league_record: false,
         }
+    }
+
+    /// A Civ 6 lobby asks two things this protocol could not carry: how hard
+    /// the rivals play, and who the player is. Both are validated against the
+    /// live ruleset — `Game::new_with` asserts on an unknown difficulty, and
+    /// a request is not a trusted caller.
+    #[test]
+    fn new_game_takes_a_difficulty_and_a_leader_and_refuses_nonsense() {
+        let current = current();
+        let next = new_game_params(&current, &json!({"difficulty": "deity"}));
+        assert_eq!(next.difficulty, "deity");
+
+        let ignored = new_game_params(&current, &json!({"difficulty": "impossible"}));
+        assert_eq!(ignored.difficulty, current.difficulty);
+
+        let seated = new_game_params(&current, &json!({"civs": ["Egypt", "Nowhere", "Greece"]}));
+        assert_eq!(seated.civs, vec!["Egypt".to_string(), "Greece".to_string()]);
+
+        // The chosen civilization reaches the seat, and nobody else is given
+        // the same one.
+        let mut params = current;
+        params.num_players = 4;
+        params.civs = vec!["Egypt".to_string()];
+        let session = Session::new(params);
+        assert_eq!(session.game.players[0].civ, "Egypt");
+        let majors: Vec<&str> = session
+            .game
+            .players
+            .iter()
+            .filter(|player| !player.is_minor && !player.is_barbarian)
+            .map(|player| player.civ.as_str())
+            .collect();
+        assert_eq!(majors.len(), 4);
+        let unique: std::collections::BTreeSet<&str> = majors.iter().copied().collect();
+        assert_eq!(unique.len(), 4, "two majors were seated as {majors:?}");
     }
 
     /// A save name becomes a path, so it is checked rather than trusted.
