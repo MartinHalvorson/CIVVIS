@@ -3356,7 +3356,7 @@ mod action_family_tests {
     /// A settled position: cities to buy in, units to order, rivals to deal
     /// with, and a congress in session by the time this many turns are up.
     fn played_in_game() -> Game {
-        let mut game = Game::new_with(GameOptions::new(4, 32, 22, 90_001, 400, 4));
+        let mut game = Game::new_with(GameOptions::new(4, 32, 22, 90_002, 400, 4));
         let mut ais = AdvancedAi::fleet(&game);
         while game.turn < 60 && game.winner.is_none() {
             let pid = game.current;
