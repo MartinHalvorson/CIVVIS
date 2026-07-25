@@ -3042,18 +3042,33 @@ mod tests {
         );
         assert!(EMBEDDED_INDEX.contains("function initSidebarSections()"));
         assert!(EMBEDDED_INDEX.contains("civvis-sidebar-sections-v1"));
-        for overlay in [
+        // Collapsing the command deck collapses the deck alone. Every map
+        // overlay is switched from the deck's display settings instead, so the
+        // two controls stay independent and the deck's width can be handed to
+        // the map without losing the instruments on it.
+        for (overlay, element) in [
+            ("players", "#playerhud"),
+            ("victory", "#victoryhud"),
+            ("minimap", ".minimap-frame"),
+            ("controls", "#zoomctl"),
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("body.overlay-{overlay}-hidden {element}")),
+                "display settings should hide the {element} map overlay"
+            );
+        }
+        for element in [
             "#playerhud",
             "#victoryhud",
             ".minimap-frame",
-            "#zoomctl > :not(#paneltoggle)",
+            "#zoomctl",
             "#ubar",
             "#modeline",
             "#tip",
         ] {
             assert!(
-                EMBEDDED_INDEX.contains(&format!("body.sidebar-hidden {overlay}")),
-                "focus mode should hide the {overlay} map overlay"
+                !EMBEDDED_INDEX.contains(&format!("body.sidebar-hidden {element}")),
+                "collapsing the deck should leave the {element} map overlay alone"
             );
         }
         assert!(EMBEDDED_INDEX.contains("function civilizationEventText(text, next)"));
@@ -3185,19 +3200,37 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(".diplomacy-card.allied"));
         assert!(EMBEDDED_INDEX.contains("function cameraYBounds"));
         assert!(EMBEDDED_INDEX.contains("cam.y = clampCameraY(cam.y)"));
-        // Default camera moves use the center of the map canvas horizontally.
-        // The command deck narrows that canvas and therefore shifts the focus
-        // right on the full screen. Top HUDs move it 42% up from the bottom;
-        // focus mode hides them and restores the exact 50/50 center.
-        assert!(EMBEDDED_INDEX.contains("const DEFAULT_MAP_FOCUS_FROM_BOTTOM = .42;"));
+        // Default camera moves compose inside the rectangle the chrome leaves
+        // the map, measured rather than guessed: below whichever top
+        // instrument hangs lower, down to the real bottom edge, right of both
+        // the command deck and the world map's own midline, and left of the
+        // victory rail. Every instrument is draggable, so each edge comes off
+        // the live boxes.
         assert!(EMBEDDED_INDEX.contains("function mapOverlayVisible(name)"));
         assert!(EMBEDDED_INDEX.contains(
             "document.body.classList.contains(\"sidebar-hidden\")"
         ));
+        assert!(EMBEDDED_INDEX.contains("function mapWidgetBox(name, areaRect)"));
+        assert!(EMBEDDED_INDEX.contains("function mapFocusBounds()"));
         assert!(EMBEDDED_INDEX.contains("function mapFocusPoint()"));
+        // The world map sits in the lower-left corner, so it takes width off the
+        // left and gives up only half of it. The victory rail is not a corner
+        // widget — it stands the whole right edge — so the band ends where the
+        // rail begins, and the standings alone hang over the top.
+        assert!(EMBEDDED_INDEX
+            .contains("if (minimap) left = Math.max(left, (minimap.left + minimap.right) / 2);"));
+        assert!(EMBEDDED_INDEX.contains("if (victory) right = Math.min(right, victory.left);"));
+        assert!(EMBEDDED_INDEX.contains("if (players) top = Math.max(top, players.bottom);"));
         assert!(EMBEDDED_INDEX.contains(
-            "topHudVisible ? 1 - DEFAULT_MAP_FOCUS_FROM_BOTTOM : .5"
+            "return {x:(bounds.left + bounds.right) / 2, y:(bounds.top + bounds.bottom) / 2};"
         ));
+        // A widget parked over a whole axis must hand that axis back rather
+        // than aiming the camera off-screen.
+        assert!(EMBEDDED_INDEX.contains("const MIN_MAP_FOCUS_BAND = 120;"));
+        assert!(EMBEDDED_INDEX
+            .contains("if (right - left < MIN_MAP_FOCUS_BAND) { left = 0; right = width; }"));
+        assert!(EMBEDDED_INDEX
+            .contains("if (bottom - top < MIN_MAP_FOCUS_BAND) { top = 0; bottom = height; }"));
         assert!(EMBEDDED_INDEX.contains("function cameraCenterForWorld("));
         assert!(EMBEDDED_INDEX.contains("function currentMapFocusWorld()"));
         assert!(EMBEDDED_INDEX.contains("function reframeCurrentMapFocus(world)"));

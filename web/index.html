@@ -1834,22 +1834,16 @@
   body.hud-layout-active.layout-resizing,
   body.hud-layout-active.layout-resizing * { cursor: var(--layout-resize-cursor, nwse-resize) !important; }
 
-  /* Collapsing the command deck is also the map's focus mode. Apply that
-     temporary state to every map overlay without changing saved widget
-     preferences, so expanding the deck restores exactly the chosen layout.
-     The deck toggle itself remains as the one visible way back on touch-only
-     displays. */
-  body.sidebar-hidden #playerhud,
+  /* Collapsing the command deck collapses the deck and nothing else. Every map
+     overlay is switched from the deck's own display settings instead, so the
+     two controls stay independent: hand the map back the deck's width without
+     losing the instruments, or clear the instruments and keep the deck. Only
+     the pause button follows the deck, because collapsing it takes the deck's
+     own pause off the screen. */
   body.overlay-players-hidden #playerhud,
-  body.sidebar-hidden #victoryhud,
   body.overlay-victory-hidden #victoryhud,
-  body.sidebar-hidden .minimap-frame,
   body.overlay-minimap-hidden .minimap-frame,
-  body.overlay-controls-hidden #zoomctl,
-  body.sidebar-hidden #zoomctl > :not(#paneltoggle):not(#collapsepause),
-  body.sidebar-hidden #ubar,
-  body.sidebar-hidden #modeline,
-  body.sidebar-hidden #tip { display: none !important; }
+  body.overlay-controls-hidden #zoomctl { display: none !important; }
   body.sidebar-hidden #collapsepause:not([hidden]) { display: block; }
   #collapsepause[hidden] { display: none; }
 
@@ -2302,7 +2296,7 @@
     <div class="utility-body shortcut-grid">
       <span><kbd>↵</kbd>Next blocker · end turn</span><span><kbd>⇧ ↵</kbd>End turn anyway</span>
       <span><kbd>Tab</kbd>Next unit needing orders</span><span><kbd>Space</kbd>Skip this unit</span>
-      <span><kbd>F</kbd>Fortify · focus mode</span><span><kbd>Z</kbd>Sleep this unit</span>
+      <span><kbd>F</kbd>Fortify · hide the deck</span><span><kbd>Z</kbd>Sleep this unit</span>
       <span><kbd>1</kbd>Next unit</span><span><kbd>2</kbd>Settler lens</span>
       <span><kbd>3</kbd>Map tacks · 6.5</span><span><kbd>P</kbd>Civilopedia</span>
       <span><kbd>D</kbd>Quick Deals</span><span><kbd>G</kbd>Empire screens</span>
@@ -2338,12 +2332,16 @@ initSidebarSections();
 const S = 36, SQ3 = Math.sqrt(3);
 const TERRAIN = { grassland:"#5e9440", plains:"#ab9e4e", desert:"#d8c184",
                   tundra:"#98a089", snow:"#e8eef2", coast:"#20647e",
-                  ocean:"#0e3752", mountain:"#877f6f" };
+                  ocean:"#0e3752", mountain:"#877f6f", lake:"#2b7a86" };
 const TERRAIN_HI = { grassland:"#79ad52", plains:"#c1b360", desert:"#e8d49c",
                      tundra:"#aab29a", snow:"#f6fafc", coast:"#2f7d99",
-                     ocean:"#174a6b", mountain:"#9c9484" };
+                     ocean:"#174a6b", mountain:"#9c9484", lake:"#3d97a4" };
+// Fresh water is shallower and greener than the shelf, which is the whole read
+// a player needs: a lake waters the tiles around it and a bay does not. It
+// borrows the Coast cell of the atlas, having no photography of its own.
 const ATLAS_CELL = { grassland:[0,0], plains:[1,0], desert:[2,0], tundra:[3,0],
-                     coast:[0,1], ocean:[1,1], snow:[2,1], mountain:[3,1] };
+                     coast:[0,1], ocean:[1,1], snow:[2,1], mountain:[3,1],
+                     lake:[0,1] };
 const TERRAIN_ATLAS = new Image();
 let ATLAS_READY = false;
 // Anything baked before the material arrived is a flat colour wash that would
@@ -4007,6 +4005,23 @@ function pcol2(id) {
     return CITY_STATE_TYPE_COLORS[p.cs_type] || CITY_STATE_TYPE_COLORS.trade;
   return playerJerseys()[id]?.[1] || PCOLORS2[id % PCOLORS2.length];
 }
+// sRGB-weighted lightness. Only ever used to sort a pair of jersey colours, so
+// the gamma-correct version would not change an answer.
+function lightness(hex) {
+  if (typeof hex !== "string" || hex[0] !== "#" || hex.length !== 7) return 0.5;
+  const n = parseInt(hex.slice(1), 16);
+  return (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255)
+          + 0.0722 * (n & 255)) / 255;
+}
+// A civilization's jersey pair, darker first. Jersey order is which colour is
+// "primary", which says nothing about which is light: Rome is purple on yellow
+// and Sumeria is navy on orange, so anything that wants the light half has to
+// ask rather than assume [1]. Borders want it in this order — the light colour
+// belongs on the inside of a frontier, whichever half of the pair that is.
+function jerseyLanes(id) {
+  const a = pcol(id), b = pcol2(id);
+  return lightness(a) <= lightness(b) ? [a, b] : [b, a];
+}
 function cityBannerColor(owner) {
   const p = state.players[owner];
   return p && p.is_minor
@@ -4090,7 +4105,7 @@ function elev(t) {
   if (!MODE.relief) return 0;
   const k = reliefScale();
   if (t.terrain === "ocean") return -6 * k;
-  if (t.terrain === "coast") return -4 * k;
+  if (t.terrain === "coast" || t.terrain === "lake") return -4 * k;
   let e = 7;
   if (t.hills) e += 6;
   if (t.terrain === "mountain") e += 9;
@@ -6115,7 +6130,7 @@ function drawFeathered(t, x, y, alpha) {
   cx.restore();
 }
 
-const isWater = t => t.terrain === "coast" || t.terrain === "ocean";
+const isWater = t => t.terrain === "coast" || t.terrain === "ocean" || t.terrain === "lake";
 
 // Only open sea is blended. Feathering was tried for land too — same terrain,
 // same relief, so terrain and hill boundaries would have stayed crisp — but on
@@ -6252,7 +6267,7 @@ function bakeDunes(g, variant) {
 function bakeTileArt(g, terrain, hills, variant, R) {
   const base = TERRAIN[terrain] || "#333";
   const hi = TERRAIN_HI[terrain] || base;
-  const water = terrain === "coast" || terrain === "ocean";
+  const water = terrain === "coast" || terrain === "ocean" || terrain === "lake";
   const cine = MODE.atmosphere;
   g.save();
   planeHexPath(g, S + 0.7); g.clip();
@@ -9767,7 +9782,7 @@ function draw() {
     const e = elev(t);
     const y = y0 - e;
     const base = TERRAIN[t.terrain] || "#333";
-    const water = (t.terrain === "coast" || t.terrain === "ocean");
+    const water = (t.terrain === "coast" || t.terrain === "ocean" || t.terrain === "lake");
     if (beau && MODE.relief > 0 && !water) drawWalls(t, x, y, base, e);
     // Slightly overlap adjacent top faces so antialiasing cannot expose the
     // backdrop between them. Texture and lighting are painted in a separate
@@ -9897,12 +9912,12 @@ function draw() {
   if (beau) {
     const shore = [];
     for (const t of tiles) {
-      if (t.terrain !== "coast") continue;
+      if (t.terrain !== "coast" && t.terrain !== "lake") continue;
       const [x, yy] = hexXY(t.pos[0], t.pos[1]);
       const y = yy - elev(t);
       for (let i = 0; i < 6; i++) {
         const n = nbrTile(t.pos, DIRS[i]);
-        if (!n || n.terrain === "coast" || n.terrain === "ocean") continue;
+        if (!n || isWater(n)) continue;
         const [c1, c2] = EDGE_CORNERS[i];
         const [ax, ay] = corner(x, y, S - 1.2, c1);
         const [bx, by] = corner(x, y, S - 1.2, c2);
@@ -9950,48 +9965,98 @@ function draw() {
   // Strategic view is explicitly the empire-reading view. Keep its frontier
   // close to one useful screen-space weight at survey zoom, where an ordinary
   // world-space stroke otherwise shrinks into the tile grid and route network.
-  // Its ribbon also sits a little farther inside the owning tiles so both
-  // civilizations keep a visible colour at a shared boundary.
   const borderK = beau ? 1 : UI_K();
-  const borderInset = beau ? 1.5 : 2.4 * borderK;
+  // Every hex on the board shares the same six edge orientations, so the unit
+  // edge vector and the inward normal a lane needs are six values per frame, not
+  // two square roots per frontier edge per pass.
+  const laneAxis = [];
+  for (let i = 0; i < 6; i++) {
+    const [c1, c2] = EDGE_CORNERS[i];
+    const [ax, ay] = corner(0, 0, S, c1), [bx, by] = corner(0, 0, S, c2);
+    let ex = bx - ax, ey = by - ay;
+    const len = Math.hypot(ex, ey) || 1;
+    ex /= len; ey /= len;
+    let nx = -ey, ny = ex;                         // the tile centre is (0, 0) here,
+    if (nx * (ax + bx) + ny * (ay + by) > 0) { nx = -nx; ny = -ny; }   // so point it in
+    laneAxis.push([ex, ey, nx, ny]);
+  }
   const borderSegs = new Map();
+  // One neighbour lookup per side, reused by the edge test and by both of that
+  // edge's corners. nbrTile builds a string key, so asking it again per corner
+  // would be the most expensive thing in this layer by a wide margin.
+  const ourSide = [false, false, false, false, false, false];
   for (const t of tiles) {
     if (t.owner === null || t.owner === undefined) continue;
     const [x, yy] = hexXY(t.pos[0], t.pos[1]);
     const y = yy - elev(t);
     for (let i = 0; i < 6; i++) {
       const n = nbrTile(t.pos, DIRS[i]);
-      if (n && n.owner === t.owner) continue;
+      ourSide[i] = !!n && n.owner === t.owner;
+    }
+    for (let i = 0; i < 6; i++) {
+      if (ourSide[i]) continue;
       const [c1, c2] = EDGE_CORNERS[i];
-      const [ax, ay] = corner(x, y, S - borderInset, c1);
-      const [bx, by] = corner(x, y, S - borderInset, c2);
+      const [ax, ay] = corner(x, y, S, c1);
+      const [bx, by] = corner(x, y, S, c2);
       let segs = borderSegs.get(t.owner);
       if (!segs) { segs = []; borderSegs.set(t.owner, segs); }
-      segs.push([ax, ay, bx, by]);
+      // A lane held off the edge has to be mitred at each corner, and which way
+      // depends on how the frontier turns there. Edge `i` shares its first
+      // corner with edge i+1 and its second with edge i+5; if that neighbouring
+      // edge is a frontier too, this tile turns the corner by itself and the
+      // two lanes cross inside it, so the segment is SHORT. If it is interior,
+      // the frontier turns across two of the empire's tiles and the far tile's
+      // lane sits past the corner, so the segment is LONG. Getting this
+      // backwards pokes a bright spur out through the border at every corner.
+      segs.push([ax, ay, bx, by, i,
+                 ourSide[(i + 1) % 6] ? 1 : -1,
+                 ourSide[(i + 5) % 6] ? 1 : -1]);
     }
   }
+  // Slide each edge into the tile that owns it by `d`, mitre it, and path it in
+  // one pass: two lanes meet a corner at 120 degrees, so d/sqrt(3) is the run
+  // past it (or back from it) that makes them touch instead of leaving a notch.
+  const pathBorderLane = (segs, d) => {
+    const g = d / SQ3;
+    cx.beginPath();
+    for (const [ax, ay, bx, by, i, s1, s2] of segs) {
+      const [ex, ey, nx, ny] = laneAxis[i];
+      const g1 = g * s1, g2 = g * s2;
+      cx.moveTo(ax + nx * d - ex * g1, ay + ny * d - ey * g1);
+      cx.lineTo(bx + nx * d + ex * g2, by + ny * d + ey * g2);
+    }
+  };
   cx.lineCap = "round"; cx.lineJoin = "round";
-  // Two-tone ribbon, Civ 6 style: a casing in the empire's jersey partner
-  // under a crisp core in its main colour. A single colour kept dissolving
-  // into terrain that shared its hue — green borders into grassland, gold
-  // into desert; whichever of the pair the ground steals, the other still
-  // draws the line.
+  // Two-tone ribbon, Civ 6 style: the two jersey colours run as parallel lanes
+  // rather than as concentric bands, and the whole ribbon lies *inside* the
+  // empire that owns the tile, with the LIGHTER of the pair on the inner lane.
+  // Concentric bands centred on the shared edge meant both empires painted the
+  // same pixels from both sides, so a frontier came out as one four-stripe
+  // ribbon you had to trace to a city to work out which half was whose. Lanes
+  // put each civilization's bright colour on its own ground and leave the two
+  // dark lanes back to back along the seam, which is the contrast that makes
+  // one border read as two.
+  // A single colour would also dissolve into terrain sharing its hue — green
+  // borders into grassland, gold into desert; whichever of the pair the ground
+  // steals, the other still draws the line.
   for (const [owner, segs] of borderSegs) {
+    const [dark, light] = jerseyLanes(owner);
     // Flat strategic terrain has a dark hex grid, roads, and compact symbols
     // competing for the same pixels. A near-black keyline gives its border a
-    // stable silhouette before the two jersey colours identify the owner.
-    // Painted views retain their softer ribbon; terrain remains the subject.
+    // stable silhouette before the two jersey colours identify the owner, and
+    // it alone reaches back across the seam so the frontier keeps an outline
+    // against unclaimed ground. Painted views retain their softer ribbon;
+    // terrain remains the subject.
     const passes = beau
-      ? [[6.0, 0.25, pcol(owner)],   // soft glow
-         [4.2, 0.9,  pcol2(owner)],  // casing
-         [1.8, 0.95, pcol(owner)]]   // core
-      : [[7.2 * borderK, 0.78, "#090d12"],
-         [5.2 * borderK, 1.0,  pcol2(owner)],
-         [2.2 * borderK, 1.0,  pcol(owner)]];
-    for (const [w, a, c] of passes) {
+      ? [[5.8, 0.22, light, 2.7],   // soft bloom, inside the border it belongs to
+         [2.4, 0.85, dark,  1.2],   // seam lane
+         [1.8, 0.95, light, 3.4]]   // inner lane
+      : [[7.6 * borderK, 0.78, "#090d12", 1.5 * borderK],
+         [2.8 * borderK, 1.0,  dark,      1.5 * borderK],
+         [2.8 * borderK, 1.0,  light,     4.2 * borderK]];
+    for (const [w, a, c, d] of passes) {
       cx.strokeStyle = c; cx.lineWidth = w; cx.globalAlpha = a;
-      cx.beginPath();
-      for (const [ax, ay, bx, by] of segs) { cx.moveTo(ax, ay); cx.lineTo(bx, by); }
+      pathBorderLane(segs, d);
       cx.stroke();
     }
   }
@@ -14170,7 +14235,7 @@ function settleValue(pos) {
   return v;
 }
 function validSettle(t) {
-  if (t.terrain === "ocean" || t.terrain === "coast" || t.terrain === "mountain") return false;
+  if (isWater(t) || t.terrain === "mountain") return false;
   if (t.owner !== null && t.owner !== undefined && t.owner !== state.player) return false;
   for (const c of state.cities) if (whexDist(t.pos, c.pos) < 4) return false;
   return true;
@@ -14258,42 +14323,64 @@ document.getElementById("cinema-follow").onclick = () => {
   else if (DIRECTOR && directorGoal?.kind === "character") setDirector(false);
 };
 
-// The tracker and standings usually occupy the top of the map, so the useful
-// visual center sits 42% of the screen height up from the bottom. The command
-// deck already takes layout width away from `area`, making its midpoint land
-// to the right of the full-window midpoint without another hard-coded offset.
-// Focus mode removes every map overlay and expands `area`, at which point the
-// map returns to the exact geometric center in both axes.
-const DEFAULT_MAP_FOCUS_FROM_BOTTOM = .42;
+// The map composes inside the rectangle the chrome actually leaves it, rather
+// than a guessed fraction of the window: below whichever of the two top
+// instruments hangs lower, down to the real bottom edge, right of the command
+// deck and the world map's own midpoint, and left of the victory rail.
+//
+// Every edge is measured, because all three instruments can be dragged and
+// resized and none of their positions may be assumed. A layout that leaves no
+// usable band on an axis — an instrument parked down the whole height, the
+// world map dragged left of the deck — hands that axis back its full extent
+// instead of aiming the camera off-screen.
+const MIN_MAP_FOCUS_BAND = 120;
 function mapOverlayVisible(name) {
-  if (document.body.classList.contains("sidebar-hidden") ||
-      OVERLAY_VISIBILITY[name] === false) return false;
+  if (OVERLAY_VISIBILITY[name] === false) return false;
   if (cinemaActive() && ["players", "minimap", "controls"].includes(name)) return false;
   return true;
 }
-function mapFocusPoint() {
-  const topHudVisible = mapOverlayVisible("players") || mapOverlayVisible("victory");
-  let left = 0, right = area.clientWidth;
+// Area-local box of a HUD widget, or null when it is switched off, collapsed
+// or not laid out yet. An element hidden with `display: none` reports a zero
+// box, and that reading outranks the visibility flags.
+function mapWidgetBox(name, areaRect) {
+  const element = mapOverlayVisible(name) ? HUD_WIDGETS[name]?.element : null;
+  if (!element) return null;
+  const rect = element.getBoundingClientRect();
+  if (!rect.width || !rect.height) return null;
+  return {left:rect.left - areaRect.left, right:rect.right - areaRect.left,
+          top:rect.top - areaRect.top, bottom:rect.bottom - areaRect.top};
+}
+function mapFocusBounds() {
+  const width = Math.max(1, area.clientWidth), height = Math.max(1, area.clientHeight);
+  const areaRect = area.getBoundingClientRect();
+  let left = 0, right = width, top = 0, bottom = height;
   // On compact layouts the command deck floats over the canvas instead of
-  // shrinking it. Center in the uncovered strip there, just as flex layout
-  // naturally centers the desktop canvas to the right of the deck.
+  // shrinking it, so its right edge has to be read off the page. Under the
+  // desktop flex layout that width is already outside `area` and this is 0.
   if (!document.body.classList.contains("sidebar-hidden") && !cinemaActive()) {
-    const areaRect = area.getBoundingClientRect();
     const sideRect = document.getElementById("side").getBoundingClientRect();
-    const coveredLeft = Math.max(0, Math.min(area.clientWidth, sideRect.right - areaRect.left));
-    if (coveredLeft > 0) left = coveredLeft;
-    // The victory rail is a full-height wall down the right edge rather than a
-    // corner widget, so the world it leaves behind is genuinely narrower and
-    // its middle is the middle of what remains.
-    const victoryHud = document.getElementById("victoryhud");
-    if (mapOverlayVisible("victory") && victoryHud)
-      right = Math.min(right, Math.max(left + 180,
-        victoryHud.getBoundingClientRect().left - areaRect.left));
+    if (sideRect.width)
+      left = Math.max(0, Math.min(width, sideRect.right - areaRect.left));
   }
-  return {
-    x:(left + right) / 2,
-    y:area.clientHeight * (topHudVisible ? 1 - DEFAULT_MAP_FOCUS_FROM_BOTTOM : .5),
-  };
+  // The world map sits in the lower-left corner, so it gives up only half its
+  // width: reserving all of it would shove the world right for a widget nobody
+  // watches while the camera moves. The victory rail is not a corner widget at
+  // all — it stands the whole height of the right edge — so the world it leaves
+  // behind genuinely ends where the rail begins.
+  const minimap = mapWidgetBox("minimap", areaRect);
+  if (minimap) left = Math.max(left, (minimap.left + minimap.right) / 2);
+  const victory = mapWidgetBox("victory", areaRect);
+  if (victory) right = Math.min(right, victory.left);
+  // Only the standings hang over the top of the map now.
+  const players = mapWidgetBox("players", areaRect);
+  if (players) top = Math.max(top, players.bottom);
+  if (right - left < MIN_MAP_FOCUS_BAND) { left = 0; right = width; }
+  if (bottom - top < MIN_MAP_FOCUS_BAND) { top = 0; bottom = height; }
+  return {left, right, top, bottom};
+}
+function mapFocusPoint() {
+  const bounds = mapFocusBounds();
+  return {x:(bounds.left + bounds.right) / 2, y:(bounds.top + bounds.bottom) / 2};
 }
 function cameraCenterForWorld(wx, wy, scale = cam.scale, focus = mapFocusPoint()) {
   const vx = (focus.x - area.clientWidth / 2) / Math.max(.25, scale);
@@ -14714,7 +14801,7 @@ function setObservedPlayersView(smooth = false) {
 }
 function actionViewingAnchor(focus) {
   if (!state || !Array.isArray(focus)) return focus;
-  const isLand = tile => tile.terrain !== "coast" && tile.terrain !== "ocean";
+  const isLand = tile => !isWater(tile);
   const candidates = state.map.tiles.filter(tile =>
     isLand(tile) && whexDist(tile.pos, focus) <= 4);
   if (!candidates.length) return focus;
@@ -14746,7 +14833,7 @@ function actionViewingAnchor(focus) {
 function mainLandmassAnchor() {
   if (!state) return null;
   const land = new Map(state.map.tiles
-    .filter(t => t.terrain !== "coast" && t.terrain !== "ocean")
+    .filter(t => !isWater(t))
     .map(t => [key(t.pos), t]));
   const seen = new Set();
   let main = [];

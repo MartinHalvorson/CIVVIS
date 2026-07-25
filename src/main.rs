@@ -924,7 +924,8 @@ fn main() {
                 "usage: civvis <simulate|soak|benchmark|tournament|league|rating|play|evolve|validate|pedia> \
                       [--players N] [--seed N] [--turns N] [--width N] [--height N] \
                       [--city-states N] [--games N] [--ais a,b] [--ratings path] [--port N] [--no-open] \
-                      [--map pangaea|continents|small_continents|inland_sea] \
+                      [--map pangaea|continents|small_continents|inland_sea|lakes|\
+                      true_start_earth|true_start_true_earth] \
                       [--difficulty settler|chieftain|warlord|prince|king|emperor|immortal|deity] \
                       [--speed online|quick|standard|epic|marathon] \
                       [--disasters 0|1|2|3|4] [--barbarians on|off] \
