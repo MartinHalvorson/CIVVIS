@@ -2008,6 +2008,41 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             respond_json(stream, &save);
         }
         // The saves this process can see, newest turn first.
+        // Where a unit would step next on its way somewhere far. `path_to`
+        // only searches this turn's movement, so a click on a distant tile is
+        // "unreachable" and the client has no way to offer Civ 6's "go there".
+        // `route_step` is the router the AI already uses: it plans across
+        // future turns, around mountains, coastlines and choke points, and
+        // returns the first step. Read-only — the client still sends a normal
+        // Move for the step it is given, so the engine remains the authority
+        // on whether that move is legal now.
+        ("POST", "/route") => {
+            let session = sh.session.lock().unwrap();
+            let unit = parsed["unit"].as_u64().map(|unit| unit as u32);
+            let to = parsed["to"]
+                .as_array()
+                .and_then(|pos| Some((pos.first()?.as_i64()? as i32, pos.get(1)?.as_i64()? as i32)));
+            let answer = match (unit, to) {
+                (Some(unit), Some(to)) => {
+                    let owned = session
+                        .game
+                        .units
+                        .get(&unit)
+                        .is_some_and(|held| held.owner == 0);
+                    if !owned {
+                        json!({"error": "not your unit"})
+                    } else {
+                        match session.game.route_step(unit, to, 0) {
+                            Some(step) => json!({"step": [step.0, step.1], "error": Value::Null}),
+                            None => json!({"step": Value::Null, "error": Value::Null}),
+                        }
+                    }
+                }
+                _ => json!({"error": "route needs a unit and a destination"}),
+            };
+            drop(session);
+            respond_json(stream, &answer);
+        }
         ("GET", "/saves") => {
             respond_json(stream, &json!({"saves": list_saves()}));
         }
@@ -3917,6 +3952,72 @@ mod tests {
         // An idle city is a turn blocker; it must open the screen that
         // answers it rather than merely scrolling a sidebar.
         assert!(EMBEDDED_INDEX.contains("openCityScreen(city.id);"));
+    }
+
+    /// Clicking a distant tile is Civ 6's "go there", and it cannot be built
+    /// on `move_to`: `path_to` seeds its search with the unit's remaining
+    /// movement, so anything further is `"unreachable"`. `/route` exposes the
+    /// long-range router the AI already uses, one step at a time, and the
+    /// client still sends a normal Move for that step — so the engine stays
+    /// the authority on whether the move is legal now.
+    #[test]
+    fn route_offers_one_step_of_a_journey_the_current_turn_cannot_finish() {
+        let session = Session::new(current());
+        let unit = *session
+            .game
+            .units
+            .iter()
+            .find(|(_, held)| held.owner == 0)
+            .expect("seat 0 starts with a unit")
+            .0;
+        let start = session.game.units[&unit].pos;
+
+        // A destination beyond this turn's movement: `path_to` refuses it,
+        // which is exactly the case the client could not express before.
+        let far = session
+            .game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| session.game.path_to(unit, *pos).is_none())
+            .max_by_key(|pos| session.game.wdist(start, *pos))
+            .expect("a map has somewhere out of reach");
+        assert!(session.game.path_to(unit, far).is_none());
+
+        match session.game.route_step(unit, far, 0) {
+            Some(step) => {
+                assert_ne!(step, start, "a route step must leave where it started");
+                assert_eq!(
+                    session.game.wdist(start, step),
+                    1,
+                    "a route step is one tile, validated by the caller's Move"
+                );
+            }
+            // An island start can legitimately have no land route; the client
+            // treats that the same way — the order ends rather than retrying.
+            None => {}
+        }
+
+        // A refused step must not end the journey: a unit with one movement
+        // point cannot enter a two-cost forest, and next turn it can. The
+        // first draft dropped the order on the first refusal and stranded
+        // units one tile short of where they were sent.
+        assert!(EMBEDDED_INDEX.contains("const TRAVEL_PATIENCE = 3;"));
+        assert!(EMBEDDED_INDEX.contains("break; // too little movement for that step"));
+
+        // The browser has the order and re-issues it each turn.
+        for piece in [
+            "async function resumeTravel(unitId)",
+            "async function resumeAllTravel()",
+            "async function orderTravel(unitId, to)",
+            "fetchJSON(\"/route\"",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(piece),
+                "the browser cannot travel: missing {piece}"
+            );
+        }
     }
 
     #[test]
