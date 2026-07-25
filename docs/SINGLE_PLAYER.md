@@ -108,7 +108,7 @@ the action from the UI without a debugger.
 | Cities | `produce`, `buy`, `buy_building`, `buy_district` | yes — city screen; there is no production *queue* because the engine has none (`do_produce` replaces `city.queue`) |
 | Government | `government`, `slot_policy`, `unslot_policy` | yes — Empire ▸ Government |
 | Religion | `choose_pantheon`, `found_religion`, `evangelize_belief` | yes — Empire ▸ Religion |
-| Great People | `recruit_great_person`, `patronize_great_person` | yes — Empire ▸ Great People, though it cannot name the person on offer |
+| Great People | `recruit_great_person`, `patronize_great_person` | yes — Empire ▸ Great People, naming the person on offer and why they cannot be claimed |
 | Governors | `appoint_governor`, `assign_governor`, `reassign_governor`, `promote_governor` | yes — Empire ▸ Governors |
 | City-states | `send_envoy`, `levy_military` | yes — Empire ▸ City-States |
 | Trade | `trade_route`, `found_corporation`, `move_product` | partial — routes and corporations; `move_product` is still a unit order |
@@ -136,11 +136,16 @@ byte-for-byte. No screen constructs an action of its own, so no screen can
 disagree with the engine about what is legal — which is also what keeps the
 client inside the JSON-protocol rule in `CONTRIBUTING.md`.
 
-The one thing a screen must never do is guess. The Great People screen does
-not name the person each kind is currently offering, because that is a world
-fact — it depends on which people every civilization has retired — and the
-observation does not carry it. It shows the kind, the points and the count,
-and names only the Great People already in your service.
+The one thing a screen must never do is guess. Which named person each kind
+is offering is a world fact — it depends on which people every civilization
+has retired — so the client cannot derive it and must not try. The engine
+ships it instead, in `me.great_person_offers`: the name, era, points
+threshold, patronage prices, effects, and `blocked`, the reason it cannot be
+claimed if it cannot. That last field matters more than it sounds — enough
+points is not enough on its own (a Great Scientist wants a Campus, a Great
+Writer wants an open Great Work slot), and a card showing 268 of 240 points
+with no Recruit button reads as a bug until it says "requires 3 open art
+Great Work slots".
 
 ## Setup
 

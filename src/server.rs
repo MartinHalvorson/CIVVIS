@@ -4020,6 +4020,55 @@ mod tests {
         }
     }
 
+    /// A finished game has no next turn. Leaving End Turn live meant `Enter`
+    /// posted an `end_turn` the engine refused, and the player got a red
+    /// error toast for pressing the only lit control on the screen. The
+    /// finale offers the one thing still useful instead: another game.
+    #[test]
+    fn browser_stops_asking_for_turns_once_somebody_has_won() {
+        assert!(EMBEDDED_INDEX
+            .contains("const over = state.winner !== null && state.winner !== undefined;"));
+        assert!(EMBEDDED_INDEX.contains("button.disabled = over;"));
+        assert!(EMBEDDED_INDEX.contains("The game is over<span class=\"endturn-hint\">"));
+        // The keys agree with the button.
+        assert!(EMBEDDED_INDEX
+            .contains("if (state.winner !== null && state.winner !== undefined) return;"));
+        // And a human finale offers a way on; a spectated one keeps its
+        // countdown, because the supervisor owns that handoff.
+        assert!(EMBEDDED_INDEX.contains("class=\"primary winner-again\" onclick=\"startNewSimulation()\""));
+        assert!(EMBEDDED_INDEX.contains("id=\"respawn\" role=\"timer\""));
+    }
+
+    /// Which named Great Person a kind is offering is a world fact — it
+    /// depends on who every civilization has retired — so the client cannot
+    /// derive it and used to say "a Great Merchant" where Civ 6 says "Marco
+    /// Polo, 60 Faith". And enough points is not enough on its own: a Great
+    /// Scientist wants a Campus, a Great Writer wants an open Great Work
+    /// slot. A card with the points and no Recruit button reads as broken
+    /// unless it says which.
+    #[test]
+    fn browser_names_the_great_person_the_points_are_buying() {
+        let mut session = Session::new(current());
+        for _ in 0..2 {
+            session.act(&json!({"type": "end_turn"}));
+        }
+        let state = session.state();
+        let offers = &state["me"]["great_person_offers"];
+        assert!(offers.is_object(), "the observation must carry the offers");
+        for (kind, offer) in offers.as_object().unwrap() {
+            assert!(offer["name"].is_string(), "{kind} offer has no name");
+            assert!(offer["points"].is_number(), "{kind} offer has no threshold");
+            assert!(
+                offer["blocked"].is_string() || offer["blocked"].is_null(),
+                "{kind} blocker must be a reason or nothing"
+            );
+        }
+        // And the screen shows all three.
+        assert!(EMBEDDED_INDEX.contains("const offered = me.great_person_offers || {};"));
+        assert!(EMBEDDED_INDEX.contains("offer ? offer.name : `Great ${titleCase(kind)}`"));
+        assert!(EMBEDDED_INDEX.contains("offer && offer.blocked"));
+    }
+
     #[test]
     fn browser_runs_a_civ_six_turn_loop() {
         for piece in [
