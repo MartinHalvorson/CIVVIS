@@ -98,7 +98,7 @@ the action from the UI without a debugger.
 | City-states | `send_envoy`, `levy_military` | partial — levy only |
 | Trade | `trade_route`, `found_corporation`, `move_product` | no |
 | Espionage | `assign_spy`, `spy_mission`, `promote_spy` | no |
-| Diplomacy | `declare_war`, `declare_war_with_casus_belli`, `make_peace`, `denounce`, `propose_deal`, `trade` | partial — Quick Deals and deal replies; no leader screen |
+| Diplomacy | `declare_war`, `declare_war_with_casus_belli`, `make_peace`, `denounce`, `propose_deal`, `trade` | yes — Diplomacy screen (`L`), plus Quick Deals |
 | World Congress | `congress_vote` | yes — Government panel |
 | Ages | `choose_dedication`, `choose_secret_society` | yes — Government panel |
 | Conquest | `keep_city`, `raze_city`, `liberate_city` | yes — modal |
@@ -106,6 +106,23 @@ the action from the UI without a debugger.
 
 Rows marked "no" or "partial" are the remaining work, in roughly that order of
 value to a player.
+
+## Diplomacy
+
+Quick Deals compares every trade the rivals would accept at once. The
+Diplomacy screen (`L`) is the other half: one card per leader with their
+agenda, their opinion, the grievances in both directions, and the four things
+you can do that are not a trade — declare war (plain or with a casus belli),
+sue for peace, denounce, and offer a pact. Proposals a rival has put to you
+sit at the top, because they are the only part of the screen with a clock on
+it.
+
+City-states are listed below the majors with the meters that actually apply to
+them — envoys, suzerain — and their own war and peace. Leaving them out made a
+war with a city-state startable and never endable.
+
+Barbarians are permanently at war with everyone and are not a power; they are
+not listed and are not counted in the "at war with N" line.
 
 ## Keys
 
