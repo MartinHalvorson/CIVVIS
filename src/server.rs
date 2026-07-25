@@ -3316,8 +3316,8 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("RULES.game_speeds.map(speed =>"));
         assert!(EMBEDDED_INDEX.contains("id=\"gamemode\""));
         assert!(EMBEDDED_INDEX.contains("id=\"maptype\""));
-        // The globe has its own renderer, and it is the only one now: the
-        // retired true-start Earth scripts must not linger in the client.
+        // The globe has its own renderer, and it is the only one: both globe
+        // scripts are drawn by it, so neither needs a projection of its own.
         assert!(EMBEDDED_INDEX.contains("function drawPlanetMap()"));
         // A world faces the way it was found until north is discovered, so
         // nothing in the viewer may go back to a bare north-up reset: the
@@ -3333,7 +3333,9 @@ mod tests {
         // The globe's yaw is a bearing, not a second way to spin it eastward.
         assert!(EMBEDDED_INDEX.contains("roll:cam.rot"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"planet\">Planet</option>"));
-        assert!(!EMBEDDED_INDEX.contains("true_start"));
+        assert!(EMBEDDED_INDEX
+            .contains("<option value=\"true_start_earth\">True Start Earth</option>"));
+        assert!(EMBEDDED_INDEX.contains("const GLOBE_SCRIPTS = "));
         assert!(EMBEDDED_INDEX.contains("id=\"gamespeed\""));
         for victory in [
             "science",
