@@ -987,9 +987,16 @@ pub fn generate_with_script(
     // city-state placement in the largest remaining gaps on eligible land.
     if spawns.len() < num_major_spawns {
         let missing = num_major_spawns - spawns.len();
-        add_minor_spawns(rules, &wm, &all_candidates, &mut spawns, missing);
+        complete_major_spawns(rules, &wm, &all_candidates, &mut spawns, missing);
     }
-    add_minor_spawns(rules, &wm, &all_candidates, &mut spawns, num_minor_spawns);
+    add_minor_spawns(
+        rules,
+        &wm,
+        &all_candidates,
+        &mut spawns,
+        num_minor_spawns,
+        num_major_spawns,
+    );
     for s in &spawns {
         let t = wm.tiles.get_mut(s).unwrap();
         t.feature = None;
@@ -1486,13 +1493,28 @@ pub(crate) const START_DISTANCE_MAJOR: i32 = 12;
 /// start may sit before the placement counts as a compromise.
 pub(crate) const START_RANGE_MAJOR: i32 = 2;
 
-/// How badly one nearest-neighbour distance misses the shipped band. Zero
-/// inside 10..=14, growing outside it, and counting crowding double — two
-/// civilizations on top of each other is a worse start than two a little too
-/// far apart.
-pub(crate) fn start_distance_miss(distance: i32) -> i32 {
-    let low = START_DISTANCE_MAJOR - START_RANGE_MAJOR;
-    let high = START_DISTANCE_MAJOR + START_RANGE_MAJOR;
+/// Shipped `START_DISTANCE_MINOR_MAJOR_CIVILIZATION`: a city-state is aimed
+/// this far from the nearest major civilization.
+pub(crate) const START_DISTANCE_MINOR_MAJOR: i32 = 6;
+/// Shipped `START_DISTANCE_MINOR_CIVILIZATION_START`: and this far from
+/// another city-state.
+pub(crate) const START_DISTANCE_MINOR_MINOR: i32 = 5;
+/// Shipped `START_DISTANCE_RANGE_MINOR`.
+pub(crate) const START_RANGE_MINOR: i32 = 3;
+/// Shipped `START_DISTANCE_MINOR_NATURAL_WONDER`: a city-state keeps this much
+/// clear of a Natural Wonder. (`START_DISTANCE_MAJOR_NATURAL_WONDER` is 2, and
+/// major placement already satisfies it — measured 0 violations in 96 starts —
+/// because Natural Wonder tiles are excluded from the candidate set outright.)
+pub(crate) const START_DISTANCE_MINOR_NATURAL_WONDER: i32 = 3;
+/// Shipped `START_DISTANCE_MAJOR_NATURAL_WONDER`.
+pub(crate) const START_DISTANCE_MAJOR_NATURAL_WONDER: i32 = 2;
+
+/// How badly one distance misses a shipped target band. Zero inside the band,
+/// growing outside it, and counting crowding double — two starts on top of
+/// each other is worse than two a little too far apart.
+pub(crate) fn distance_miss(distance: i32, target: i32, range: i32) -> i32 {
+    let low = target - range;
+    let high = target + range;
     if distance < low {
         2 * (low - distance)
     } else if distance > high {
@@ -1500,6 +1522,11 @@ pub(crate) fn start_distance_miss(distance: i32) -> i32 {
     } else {
         0
     }
+}
+
+/// The major-civilization band, 10..=14.
+pub(crate) fn start_distance_miss(distance: i32) -> i32 {
+    distance_miss(distance, START_DISTANCE_MAJOR, START_RANGE_MAJOR)
 }
 
 /// Place each start at the shipped distance from its nearest neighbour rather
@@ -1704,7 +1731,100 @@ fn balanced_major_spawns(
 
 /// City-states fill the remaining largest gaps after major civilizations are
 /// fixed, so they cannot pull a major start away from an otherwise fair grid.
+/// Place city-states at the shipped distances rather than in the largest
+/// remaining gaps: `START_DISTANCE_MINOR_MAJOR_CIVILIZATION` 6 from the nearest
+/// major and `START_DISTANCE_MINOR_CIVILIZATION_START` 5 from another
+/// city-state, both within `START_DISTANCE_RANGE_MINOR` 3. Filling the gaps
+/// instead put them roughly twice as far out as Civilization VI does, which
+/// changes envoy competition and how early a suzerain is worth contesting.
+///
+/// `major_count` is how many of `spawns` are major civilizations; the rest are
+/// city-states already placed by this pass.
 fn add_minor_spawns(
+    rules: &Rules,
+    wm: &WorldMap,
+    candidates: &[Pos],
+    spawns: &mut Vec<Pos>,
+    count: usize,
+    major_count: usize,
+) {
+    let qualities: BTreeMap<Pos, i32> = candidates
+        .iter()
+        .map(|candidate| (*candidate, start_quality(rules, wm, *candidate)))
+        .collect();
+    let wonders: Vec<Pos> = wm
+        .tiles
+        .iter()
+        .filter(|(_, tile)| {
+            tile.feature
+                .as_ref()
+                .and_then(|feature| rules.features.get(feature))
+                .is_some_and(|feature| feature.natural_wonder)
+        })
+        .map(|(position, _)| *position)
+        .collect();
+    // Keep the shipped standoff where the map allows it, and fall back rather
+    // than fail on a wonder-dense seed.
+    let clear_of_wonders: Vec<Pos> = candidates
+        .iter()
+        .copied()
+        .filter(|candidate| {
+            wonders
+                .iter()
+                .all(|wonder| {
+                    hex::wdistance(*candidate, *wonder, wm.width)
+                        >= START_DISTANCE_MINOR_NATURAL_WONDER
+                })
+        })
+        .collect();
+    let target = spawns.len() + count;
+    while spawns.len() < target {
+        let pool: &[Pos] = if clear_of_wonders.len() >= count {
+            &clear_of_wonders
+        } else {
+            candidates
+        };
+        let Some(next) = pool
+            .iter()
+            .filter(|candidate| !spawns.contains(candidate))
+            .min_by_key(|candidate| {
+                let nearest = |group: &[Pos]| {
+                    group
+                        .iter()
+                        .map(|start| hex::wdistance(**candidate, *start, wm.width))
+                        .min()
+                };
+                // Aim at the target, not merely inside the band. The minor
+                // bands are wide (3..=9 and 2..=8), so scoring band membership
+                // alone leaves most candidates tied at zero and hands the
+                // choice to the quality tiebreak, which clusters city-states
+                // against their neighbours at the near edge.
+                let deviation = |distance: i32, target: i32| {
+                    distance_miss(distance, target, START_RANGE_MINOR) + (distance - target).abs()
+                };
+                let major_miss = nearest(&spawns[..major_count.min(spawns.len())])
+                    .map(|d| deviation(d, START_DISTANCE_MINOR_MAJOR))
+                    .unwrap_or(0);
+                let minor_miss = nearest(&spawns[major_count.min(spawns.len())..])
+                    .map(|d| deviation(d, START_DISTANCE_MINOR_MINOR))
+                    .unwrap_or(0);
+                (
+                    major_miss + minor_miss,
+                    -qualities[*candidate],
+                    **candidate,
+                )
+            })
+            .copied()
+        else {
+            break;
+        };
+        spawns.push(next);
+    }
+}
+
+/// Finish a major layout the sampler could not complete on a mountain-heavy
+/// seed, using the major band rather than the city-state one.
+fn complete_major_spawns(
     rules: &Rules,
     wm: &WorldMap,
     candidates: &[Pos],
@@ -1720,13 +1840,16 @@ fn add_minor_spawns(
         let Some(next) = candidates
             .iter()
             .filter(|candidate| !spawns.contains(candidate))
-            .max_by_key(|candidate| {
+            .min_by_key(|candidate| {
                 let nearest = spawns
                     .iter()
                     .map(|start| hex::wdistance(**candidate, *start, wm.width))
-                    .min()
-                    .unwrap_or(i32::MAX);
-                (nearest, qualities[*candidate], **candidate)
+                    .min();
+                (
+                    nearest.map(start_distance_miss).unwrap_or(0),
+                    -qualities[*candidate],
+                    **candidate,
+                )
             })
             .copied()
         else {
@@ -2408,6 +2531,87 @@ mod river_tests {
                 "{} has an unfair start outlier: territory/neighbor/quality balance = {balance:?}, {score:?}",
                 size.name,
             );
+        }
+    }
+
+    #[test]
+    fn starts_keep_the_shipped_standoff_from_natural_wonders() {
+        // START_DISTANCE_MINOR_NATURAL_WONDER 3 and
+        // START_DISTANCE_MAJOR_NATURAL_WONDER 2. Majors already satisfied
+        // theirs because Natural Wonder tiles are not candidates at all;
+        // city-states did not, landing inside 3 about one time in eighteen.
+        let rules = Rules::embedded();
+        for seed in 0..6u64 {
+            let mut rng = Rng::new(61_000 + seed);
+            let (wm, spawns) = generate(&rules, 84, 54, 8, 12, 4, 2, &mut rng);
+            let wonders: Vec<Pos> = wm
+                .tiles
+                .iter()
+                .filter(|(_, tile)| {
+                    tile.feature
+                        .as_ref()
+                        .and_then(|feature| rules.features.get(feature))
+                        .is_some_and(|feature| feature.natural_wonder)
+                })
+                .map(|(position, _)| *position)
+                .collect();
+            if wonders.is_empty() {
+                continue;
+            }
+            for (index, start) in spawns.iter().enumerate() {
+                let nearest = wonders
+                    .iter()
+                    .map(|wonder| hex::wdistance(*start, *wonder, wm.width))
+                    .min()
+                    .unwrap();
+                let floor = if index < 8 {
+                    START_DISTANCE_MAJOR_NATURAL_WONDER
+                } else {
+                    START_DISTANCE_MINOR_NATURAL_WONDER
+                };
+                assert!(
+                    nearest >= floor,
+                    "seed {seed}: start {index} sits {nearest} from a Natural Wonder, inside {floor}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn city_states_sit_at_the_shipped_distance_from_civilizations_and_each_other() {
+        // START_DISTANCE_MINOR_MAJOR_CIVILIZATION 6 and
+        // START_DISTANCE_MINOR_CIVILIZATION_START 5, both within
+        // START_DISTANCE_RANGE_MINOR 3. Filling the largest remaining gaps
+        // instead put city-states roughly twice as far out as the game does.
+        let rules = Rules::embedded();
+        for seed in 0..6u64 {
+            let mut rng = Rng::new(52_000 + seed);
+            let (wm, spawns) = generate(&rules, 84, 54, 8, 12, 4, 2, &mut rng);
+            assert_eq!(spawns.len(), 20, "seed {seed}");
+            let (majors, minors) = spawns.split_at(8);
+            for (index, minor) in minors.iter().enumerate() {
+                let to_major = majors
+                    .iter()
+                    .map(|major| hex::wdistance(*minor, *major, wm.width))
+                    .min()
+                    .unwrap();
+                assert!(
+                    distance_miss(to_major, START_DISTANCE_MINOR_MAJOR, START_RANGE_MINOR) == 0,
+                    "seed {seed}: city-state {to_major} from the nearest major, outside 3..=9"
+                );
+                if let Some(to_minor) = minors
+                    .iter()
+                    .enumerate()
+                    .filter(|(other, _)| *other != index)
+                    .map(|(_, other)| hex::wdistance(*minor, *other, wm.width))
+                    .min()
+                {
+                    assert!(
+                        distance_miss(to_minor, START_DISTANCE_MINOR_MINOR, START_RANGE_MINOR) == 0,
+                        "seed {seed}: city-states {to_minor} apart, outside 2..=8"
+                    );
+                }
+            }
         }
     }
 
