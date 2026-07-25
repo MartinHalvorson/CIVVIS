@@ -239,6 +239,46 @@ game is already being rated against another one, in which case it is that one
 and the ratings shown are the ratings in play. Reading it is a labelling
 concern only: nothing about auto-play seats a rival differently.
 
+The agents the picker offers are agents. A person registered in the same
+roster (below) is a player in it but never an entrant, so a seat can never be
+handed to somebody who is not at a keyboard.
+
+## You are a new player
+
+Starting a single player game **registers a new player**. The seat is not one
+of the agents already in the league: `League::active` — the entrants a league
+schedules, breeds, retires and seats — leaves people out, `Session::ai_fleet`
+skips every human seat when it deals entrants to civilizations, and
+`league::register_player` appends a fresh row with its own handle, provisional
+at the base rating until the game is decided.
+
+It was the other way around, and both halves of that were wrong. A person wore
+an entrant's handle and elo in the HUD, which was an identity nobody at the
+keyboard had earned; and when the game finished, `record_league_result` filed
+the result under that entrant, so an agent that never played the game
+collected its rating. A league is only worth reading if the name beside a
+result is the one that produced it.
+
+What the person sees: their seat's row carries `player_username` (the handle),
+`player_rated` (whether the registration reached a roster on disk),
+`player_elo`/`player_elo_rd` and `player_games`. Every other seat keeps the
+`ai_*` fields it always had. A player with no finished game reads *Unrated*
+rather than an authoritative 1500, the same way the leaderboards mark a
+provisional entrant.
+
+Two boundaries worth knowing:
+
+- **Only a game that is being rated writes anything.** Without
+  `--league <dir> --league-record` there is no roster to join, so the handle is
+  minted against whatever roster is loaded, names the seat for this game, and
+  goes no further. `register_player` also refuses a roster a distributed league
+  round has already snapshotted — a manifest is an immutable promise about who
+  is playing that round — and that game then goes unrated rather than
+  invalidating jobs already running on other machines.
+- **A save carries the world, not the person.** Reloading one registers
+  another new player; the save format has no room for an identity, and
+  inventing one on load would be a guess about who picked the file up.
+
 ## Diplomacy
 
 Quick Deals compares every trade the rivals would accept at once. The
