@@ -72,13 +72,29 @@ the reason a CIVVIS map is not a CPL map:
   Separation and coverage are ranked ahead of quality on purpose, so quality
   balance is what gives way when they conflict.
 
-  Separation is no longer *maximized*, though. `targeted_layout` now aims each
-  start at the shipped 10-14 band rather than as far away as the landmass
-  allows. The spread figure below was measured before that change, and against
-  the twelve tiles a capital actually works — deliberately independent of the
-  generator's own scorer. It has **not** been re-measured here: doing that
-  honestly needs the same independent metric, because `start_quality` is what
-  the generator optimizes and would flatter the result.
+  Separation is no longer *maximized*, though. `targeted_layout` aims each start
+  at the shipped 10-14 band rather than as far away as the landmass allows, and
+  that turned out to help fairness rather than cost it — maximizing separation
+  was fighting site quality for the same tiles.
+
+  `mapdump --start-quality` measures this independently of the generator's own
+  scorer, by summing the best twelve tiles a capital can work at radius 3.
+  (Measuring with `start_quality` instead would flatter the generator, since
+  that is the number it optimizes.) Over 24 standard 8-player maps, with the old
+  maximizing rule restored and then the shipped targeting:
+
+  | | mean capital quality | best-worst spread |
+  |---|---|---|
+  | maximizing separation | 43.8 | 14.1 — **32.2%** of mean |
+  | shipped 10-14 targeting | 47.7 | 11.8 — **24.6%** of mean |
+
+  The spread falls by about a quarter *and* the average capital gets better,
+  because the generator no longer has to shove civilizations into the map's far
+  corners. The 32.2% reading also reproduces the ~30% figure measured below by a
+  different hand, which is the check that the metric is measuring the same thing.
+
+  Reproduce either column with
+  `mapdump --width 84 --height 54 --players 8 --city-states 12 --maps 24 --quiet --start-quality`.
 
   What that leaves, measured over 24 standard 8-player maps against the twelve
   tiles a capital actually works (independently of the generator's own scorer):
