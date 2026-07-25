@@ -81,6 +81,24 @@ reported fifteen. Five are fixed here; the rest are triaged below.
   `Improvement_ValidTerrains` lists Desert, Grassland, Plains and Tundra with
   their Hills variants, and no Snow.
 
+- **`Improvements` placement rows.** The Nubian Pyramid ships `TERRAIN_DESERT`
+  *and* `TERRAIN_DESERT_HILLS`, so it is not flat-only, and `FEATURE_FLOODPLAINS`
+  is a valid host — CIVVIS had neither. Gathering Storm's Volcanic Soil is a
+  valid Beach Resort host; CIVVIS had no feature list at all.
+- **`Resources` / `niter`.** CIVVIS listed the generic `floodplains` alongside
+  the two typed ones. `Feature_ValidTerrains` settles what that generic feature
+  is: `FEATURE_FLOODPLAINS` is Desert-only, and `Resource_ValidFeatures` for
+  Niter names only the Grassland and Plains variants. Removed, with
+  `every_strategic_resource_reaches_a_playable_supply` standing guard — plain
+  Desert is still a valid Niter terrain, so only Desert *floodplains* are
+  excluded and supply is unaffected.
+- **`Boosts` / `near_future_governance` — waived, not a divergence.** The shipped
+  trigger is `BOOST_TRIGGER_HAVE_GOVERNMENT_TIER` at `Tier4` with no `NumItems`,
+  so the projection reads 0 against CIVVIS' ten Government slots. Those are
+  exactly equivalent: `Government_SlotCounts` totals 2/4/6/8/10 for
+  Chiefdom/Tier1/Tier2/Tier3/Tier4, so ten slots is reached by the Tier 4
+  governments and by nothing else. The 90% boost matches.
+
 Still to triage, listed so they are not lost:
 
 | Table | Entry | CIVVIS | cache DB |

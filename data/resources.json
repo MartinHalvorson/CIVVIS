@@ -10,7 +10,7 @@
 
   "horses": {"class": "strategic", "tech": "animal_husbandry", "yields": {"food": 1, "production": 1}, "terrain": ["grassland", "plains"], "improvement": "pasture", "hills": false},
   "iron": {"class": "strategic", "tech": "bronze_working", "yields": {"science": 1}, "terrain": ["desert", "grassland", "plains", "tundra"], "improvement": "mine", "hills": true},
-  "niter": {"class": "strategic", "tech": "military_engineering", "yields": {"food": 1, "production": 1}, "terrain": ["desert", "grassland", "plains", "tundra"], "improvement": "mine", "feature": ["floodplains", "grassland_floodplains", "plains_floodplains"], "hills": false},
+  "niter": {"class": "strategic", "tech": "military_engineering", "yields": {"food": 1, "production": 1}, "terrain": ["desert", "grassland", "plains", "tundra"], "improvement": "mine", "feature": ["grassland_floodplains", "plains_floodplains"], "hills": false},
   "coal": {"class": "strategic", "tech": "industrialization", "yields": {"production": 2}, "terrain": ["grassland", "plains"], "improvement": "mine", "feature": ["forest"], "hills": true},
   "oil": {"class": "strategic", "tech": "refining", "yields": {"production": 3}, "terrain": ["coast", "desert", "snow", "tundra"], "improvement": "oil_well", "feature": ["floodplains", "marsh"], "hills": false},
   "aluminum": {"class": "strategic", "tech": "radio", "yields": {"science": 1}, "terrain": ["desert", "plains"], "improvement": "mine", "feature": ["jungle"]},

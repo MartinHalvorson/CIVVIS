@@ -294,6 +294,9 @@
    "plains",
    "desert"
   ],
+  "feature": [
+   "volcanic_soil"
+  ],
   "requires_flat": true,
   "effects": {
    "appeal_gold": 1,
@@ -478,7 +481,10 @@
   "terrain": [
    "desert"
   ],
-  "requires_flat": true
+  "feature": [
+   "floodplains"
+  ],
+  "requires_flat": false
  },
  "kurgan": {
   "tech": "animal_husbandry",

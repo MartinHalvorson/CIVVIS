@@ -137,6 +137,12 @@
       "entry": "industry",
       "field": "resources",
       "reason": "Monopolies & Corporations is a game mode, and CPL's tournament lobby disables all game modes. Improvements_MODE names these two improvements as mode content, so their luxury lists are out of scope for the shipped ruleset CIVVIS models."
+    },
+    {
+      "table": "Boosts",
+      "entry": "near_future_governance",
+      "field": "count",
+      "reason": "The shipped trigger is BOOST_TRIGGER_HAVE_GOVERNMENT_TIER with GovernmentTierType Tier4 and no NumItems, so the projection reads 0. CIVVIS spells the same condition as ten Government policy slots, which is exactly equivalent: Government_SlotCounts totals 2/4/6/8/10 for Chiefdom/Tier1/Tier2/Tier3/Tier4, so ten slots is reached by the Tier 4 governments and by nothing else. The 90% boost matches."
     }
   ]
 }
