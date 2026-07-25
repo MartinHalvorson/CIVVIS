@@ -6603,11 +6603,21 @@ let BAKE_RES = 2;
 // the top step the live path takes over, which is the same place close battle
 // shots already hand off to the projected models anyway.
 const ART_MAX_RES = 3;
+// A cinematic close shot scales the sprite up by a tenth before it is blitted,
+// so the size a sprite is *shown* at is not `cam.scale * DPR`. Baking against
+// the camera alone therefore magnified those sprites by that tenth — a small
+// softening, but softening is the one thing this cache promised not to do, and
+// the promise is worth more than the tenth. Both the resolution and the
+// hand-off to the live path ask for the scale the blit will really use.
+function unitArtScale() {
+  const close = cinemaActive() && cam.scale >= 1.08 ? 1.1 : 1;
+  return cam.scale * DPR * close;
+}
 function unitArtRes() {
-  return Math.min(ART_MAX_RES, Math.max(1, Math.ceil(cam.scale * DPR)));
+  return Math.min(ART_MAX_RES, Math.max(1, Math.ceil(unitArtScale())));
 }
 function unitArtUsable() {
-  return cam.scale * DPR <= ART_MAX_RES + .05;
+  return unitArtScale() <= ART_MAX_RES + .05;
 }
 function unitArt(type, col, family, fc, skin) {
   const res = unitArtRes();
@@ -6950,7 +6960,7 @@ function helmet(era, col, dir, fine) {
 // with it like a lamp.
 function drawUnitChar(u, x, y, now, moving) {
   const fc = facing.get(u.id) || 1;
-  const col = pcol(u.owner), dark = "rgba(11,15,21,.68)", skin = "#e2bb92";
+  const col = pcol(u.owner), skin = "#e2bb92";
   const k = u.type;
   const family = unitVisualFamily(u);
   const phase = now / 1000 + Number(u.id || 0) * 1.7;
