@@ -318,6 +318,27 @@ class PolicyTests(unittest.TestCase):
             errors = collab.merged_pr_gate_errors(42, base_sha="base5678")
         self.assertIn("PR head did not contain current main before merge", errors)
 
+    def test_a_rejected_write_can_fall_back_instead_of_raising(self):
+        # ship updates a stale branch through GitHub, but a conflict GitHub
+        # cannot resolve must hand back to the local merge path rather than
+        # aborting the whole ship.
+        rejected = subprocess.CompletedProcess([], 1, stdout="", stderr="merge conflict")
+        with patch.object(subprocess, "run", return_value=rejected):
+            self.assertIsNone(
+                collab.gh_api_write("PUT", "/repos/x/y/pulls/1/update-branch", {}, check=False)
+            )
+        with patch.object(subprocess, "run", return_value=rejected):
+            with self.assertRaises(collab.CommandError):
+                collab.gh_api_write("PUT", "/repos/x/y/pulls/1/merge", {})
+
+    def test_a_successful_write_still_returns_its_payload(self):
+        ok = subprocess.CompletedProcess([], 0, stdout='{"merged": true}', stderr="")
+        with patch.object(subprocess, "run", return_value=ok):
+            self.assertEqual(
+                collab.gh_api_write("PUT", "/repos/x/y/pulls/1/merge", {}, check=False),
+                {"merged": True},
+            )
+
     def test_only_ahead_or_identical_heads_include_current_main(self):
         self.assertTrue(collab.compare_status_is_current("ahead"))
         self.assertTrue(collab.compare_status_is_current("identical"))
