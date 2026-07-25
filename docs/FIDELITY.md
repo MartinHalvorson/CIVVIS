@@ -142,7 +142,7 @@ alone. The `pearls`/`turtles`/`whales` rows look like a projection artifact
 (harvest improvement versus Corporation improvement) rather than a CIVVIS defect,
 and should be checked before being treated as one.
 
-## Open measured divergence: civilization start bias
+## Closed: civilization start bias
 
 Civilization VI ships four `StartBias*` tables — 132 rows across
 `StartBiasTerrains`, `StartBiasFeatures`, `StartBiasRivers` and
@@ -170,11 +170,21 @@ tournament drafts, and a Scythia away from Horses is a different civilization.
 CPL allows duplicate civilizations, so drafting depends on each performing the
 way its bias implies.
 
-The fix is contained: `Game::new_full` hands seat `i` the spawn at `spawns[i]`,
-so the change is to permute the major spawns against a bias score before that
-loop, rather than to touch generation. It needs the bias rows carried in
-`data/civs.json`, a per-site evaluator, and a deterministic assignment — enough
-that it wants its own change rather than a corner of another.
+**Fixed.** The bias rows are carried in `data/civs.json`, mapped onto CIVVIS'
+own spelling — Hills are a tile flag rather than a terrain here, so Greece's four
+Hills rows become one `terrain_hills` requirement, and the floodplain variants
+take the names `features.json` uses. `start_bias_score` weighs a site by the
+biases it satisfies, each worth `6 - Tier`, across the tiles a city works rather
+than the centre alone, and `assign_starts_by_bias` permutes the major sites
+before any seat is handed one. Generation itself is untouched.
+
+Measured over ten seeds and the five biased civilizations, asking whether each
+civilization's own site beats the average of the other seven *for its bias*:
+
+| | better | worse |
+|---|---|---|
+| before | 34 | 16 |
+| after | **50** | **0** |
 
 ## Closed: major start spacing
 
