@@ -41,16 +41,16 @@ const TAU: f64 = 0.5;
 /// Selection uses a two-sided 95% confidence bound rather than treating a
 /// noisy point estimate as settled skill.
 const SELECTION_Z: f64 = 1.96;
-/// A civilization-specific rating starts at the strategy's global strength,
-/// with extra uncertainty for the unmeasured strategy x civilization effect.
-const CIV_EFFECT_RD: f64 = 200.0;
+/// A leader/civilization-specific rating starts at the player's global
+/// strength, with extra uncertainty for the unmeasured combination effect.
+const LEADER_EFFECT_RD: f64 = 200.0;
 /// Retirement needs evidence: this many games and the deviation below this
 /// bound, so an unlucky newcomer is never culled on noise.
 const MIN_GAMES_TO_RETIRE: u32 = 20;
 const MAX_RD_TO_RETIRE: f64 = 110.0;
 /// Immutable work/result protocol. Bump this whenever a binary can no longer
 /// execute a pending round exactly as an older binary would.
-const WORK_SCHEMA_VERSION: u32 = 1;
+const WORK_SCHEMA_VERSION: u32 = 2;
 /// A dead simulator's game becomes available again after this lease. Duplicate
 /// execution is harmless because results have deterministic IDs and publish
 /// with create-if-absent semantics.
@@ -73,11 +73,7 @@ pub enum StrategyKind {
     },
 }
 
-/// Glicko state of one strategy playing one particular civilization.
-/// Opponents are measured by their *global* rating, so this answers "how
-/// strong is this strategy when it draws this civ" on the same scale as
-/// the overall table. Not every civ wants to play the same way, so the
-/// same strategy legitimately carries different numbers per civ.
+/// Glicko state of one player using one leader/civilization combination.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CivRating {
     pub rating: f64,
@@ -99,8 +95,8 @@ impl Default for CivRating {
     }
 }
 
-/// A civ table needs this many games before its number outranks the
-/// global rating for display and seating decisions.
+/// A leader/civilization table needs this many games before standings call it
+/// settled. Its actual combination rating is still displayed after game one.
 pub const CIV_ELO_MIN_GAMES: u32 = 5;
 
 /// Online calibration audit for the rating system's pairwise predictions.
@@ -151,12 +147,15 @@ pub struct Strategy {
     pub vol: f64,
     pub games: u32,
     pub wins: u32,
-    /// Per-civ rating tables (civ name -> Glicko state). Sparse: pairs only
-    /// update in periods where they actually played — with a handful of
-    /// games per round spread over many civs, growing every idle pair's
-    /// deviation each round would pin them all at maximum uncertainty.
+    /// Per-leader/per-civilization tables (leader -> civ -> Glicko state).
+    /// Each named AI strategy is a player, matching the same identity model
+    /// used for humans. Sparse combinations only update when actually played.
     #[serde(default)]
-    pub civ_elo: BTreeMap<String, CivRating>,
+    pub leader_elo: BTreeMap<String, BTreeMap<String, CivRating>>,
+    /// Migration source for league snapshots written before leaders were part
+    /// of rating identity. It is consumed on load and never written again.
+    #[serde(default, rename = "civ_elo", skip_serializing)]
+    legacy_civ_elo: BTreeMap<String, CivRating>,
     pub born_round: u32,
     #[serde(default)]
     pub parents: Vec<String>,
@@ -179,7 +178,8 @@ impl Strategy {
             vol: BASE_VOL,
             games: 0,
             wins: 0,
-            civ_elo: BTreeMap::new(),
+            leader_elo: BTreeMap::new(),
+            legacy_civ_elo: BTreeMap::new(),
             born_round,
             parents: Vec::new(),
             retired: false,
@@ -342,6 +342,7 @@ struct StoredOutcome {
     job_id: String,
     /// Strategy names in finish order.
     placements: Vec<String>,
+    leaders: Vec<String>,
     civs: Vec<String>,
     ranks: Vec<u32>,
     won: Vec<bool>,
@@ -406,8 +407,8 @@ fn matchup_expectation(a: Glicko, b: Glicko) -> f64 {
     1.0 / (1.0 + (-g(combined_phi) * (a.mu - b.mu)).exp())
 }
 
-fn civ_prior(global: Glicko) -> CivRating {
-    let effect_phi = CIV_EFFECT_RD / SCALE;
+fn leader_prior(global: Glicko) -> CivRating {
+    let effect_phi = LEADER_EFFECT_RD / SCALE;
     CivRating {
         rating: BASE_RATING + SCALE * global.mu,
         rd: (SCALE * (global.phi * global.phi + effect_phi * effect_phi).sqrt()).min(BASE_RD),
@@ -1193,10 +1194,12 @@ fn validate_result(
         || result.job_id != job.id
         || result.seed != job.seed
         || result.placements.len() != count
+        || result.leaders.len() != count
         || result.civs.len() != count
         || result.ranks.len() != count
         || result.won.len() != count
         || result.civs.iter().any(|civ| civ.trim().is_empty())
+        || result.leaders.iter().any(|leader| leader.trim().is_empty())
         || expected != actual
         || !valid_ranks
         || winners > 1
@@ -1264,8 +1267,35 @@ fn seed_league(dir: &str) -> League {
 pub fn load_league(dir: &str) -> Option<League> {
     let raw = fs::read_to_string(Path::new(dir).join("league.json")).ok()?;
     let mut league: League = serde_json::from_str(&raw).ok()?;
+    migrate_legacy_leader_ratings(&mut league);
     ensure_usernames(&mut league);
     Some(league)
+}
+
+fn default_leader(civilization: &str) -> String {
+    crate::elo::leader_for_civilization(civilization)
+}
+
+fn migrate_legacy_leader_ratings(league: &mut League) {
+    for player in &mut league.strategies {
+        for (civilization, rating) in std::mem::take(&mut player.legacy_civ_elo) {
+            let leader = default_leader(&civilization);
+            player
+                .leader_elo
+                .entry(leader)
+                .or_default()
+                .entry(civilization)
+                .or_insert(rating);
+        }
+    }
+}
+
+fn combination_rating<'a>(
+    player: &'a Strategy,
+    leader: &str,
+    civilization: &str,
+) -> Option<&'a CivRating> {
+    player.leader_elo.get(leader)?.get(civilization)
 }
 
 /// Write via a temp file + rename so a crash mid-write cannot lose the roster.
@@ -1377,6 +1407,8 @@ fn build_manifest(league: &League, cfg: &LeagueCfg) -> RoundManifest {
 struct Outcome {
     /// Strategy indices, winner first then by score.
     placements: Vec<usize>,
+    /// Leader each placement used, aligned with `placements`.
+    leaders: Vec<String>,
     /// Civ each placement played, aligned with `placements`.
     civs: Vec<String>,
     /// Competition ranks aligned with `placements`; equal scores share a rank
@@ -1439,6 +1471,17 @@ fn play_job(manifest: &RoundManifest, job: &WorkJob, worker: &str) -> StoredOutc
         round: manifest.round,
         job_id: job.id.clone(),
         placements: ranked.iter().map(|pid| job.table[*pid].clone()).collect(),
+        leaders: ranked
+            .iter()
+            .map(|pid| {
+                let civilization = &game.players[*pid].civ;
+                game.rules
+                    .civs
+                    .get(civilization)
+                    .map(|spec| spec.leader.clone())
+                    .unwrap_or_else(|| civilization.clone())
+            })
+            .collect(),
         civs: ranked
             .iter()
             .map(|pid| game.players[*pid].civ.clone())
@@ -1458,11 +1501,42 @@ fn play_job(manifest: &RoundManifest, job: &WorkJob, worker: &str) -> StoredOutc
 /// league round schedules the whole roster, so anyone missing really did idle
 /// and their deviation should grow. A single recorded game is a period only
 /// six seats could enter, so ageing the rest would pin the roster at maximum
-/// uncertainty within an afternoon — the same reason civ tables are sparse.
+/// uncertainty within an afternoon — the same reason combination tables are sparse.
 fn apply_round(league: &mut League, outcomes: &[Outcome], age_idle: bool) {
     let pre: Vec<Glicko> = league.strategies.iter().map(to_internal).collect();
     let mut results: BTreeMap<usize, Vec<(Glicko, f64, f64)>> = BTreeMap::new();
-    let mut civ_results: BTreeMap<(usize, &str), Vec<(Glicko, f64, f64)>> = BTreeMap::new();
+    let mut combination_pre = BTreeMap::<(usize, String, String), Glicko>::new();
+    for outcome in outcomes {
+        for (place, player) in outcome.placements.iter().copied().enumerate() {
+            let key = (
+                player,
+                outcome.leaders[place].clone(),
+                outcome.civs[place].clone(),
+            );
+            combination_pre.entry(key).or_insert_with(|| {
+                combination_rating(
+                    &league.strategies[player],
+                    &outcome.leaders[place],
+                    &outcome.civs[place],
+                )
+                .map(|rating| Glicko {
+                    mu: (rating.rating - BASE_RATING) / SCALE,
+                    phi: rating.rd / SCALE,
+                    sigma: rating.vol,
+                })
+                .unwrap_or_else(|| {
+                    let prior = leader_prior(pre[player]);
+                    Glicko {
+                        mu: (prior.rating - BASE_RATING) / SCALE,
+                        phi: prior.rd / SCALE,
+                        sigma: prior.vol,
+                    }
+                })
+            });
+        }
+    }
+    let mut combination_results =
+        BTreeMap::<(usize, String, String), Vec<(Glicko, f64, f64)>>::new();
     for outcome in outcomes {
         let p = &outcome.placements;
         let comparison_weight = 1.0 / p.len().saturating_sub(1).max(1) as f64;
@@ -1476,22 +1550,31 @@ fn apply_round(league: &mut League, outcomes: &[Outcome], age_idle: bool) {
                     std::cmp::Ordering::Equal => 0.5,
                     std::cmp::Ordering::Greater => 0.0,
                 };
-                results.entry(p[i]).or_default().push((pre[p[j]], score_i, comparison_weight));
                 results
-                    .entry(p[j])
-                    .or_default()
-                    .push((pre[p[i]], 1.0 - score_i, comparison_weight));
-                civ_results
-                    .entry((p[i], outcome.civs[i].as_str()))
+                    .entry(p[i])
                     .or_default()
                     .push((pre[p[j]], score_i, comparison_weight));
-                civ_results
-                    .entry((p[j], outcome.civs[j].as_str()))
-                    .or_default()
-                    .push((pre[p[i]], 1.0 - score_i, comparison_weight));
-                league
-                    .calibration
-                    .record(matchup_expectation(pre[p[i]], pre[p[j]]), score_i);
+                results.entry(p[j]).or_default().push((
+                    pre[p[i]],
+                    1.0 - score_i,
+                    comparison_weight,
+                ));
+                let key_i = (p[i], outcome.leaders[i].clone(), outcome.civs[i].clone());
+                let key_j = (p[j], outcome.leaders[j].clone(), outcome.civs[j].clone());
+                combination_results.entry(key_i.clone()).or_default().push((
+                    combination_pre[&key_j],
+                    score_i,
+                    comparison_weight,
+                ));
+                combination_results.entry(key_j.clone()).or_default().push((
+                    combination_pre[&key_i],
+                    1.0 - score_i,
+                    comparison_weight,
+                ));
+                league.calibration.record(
+                    matchup_expectation(combination_pre[&key_i], combination_pre[&key_j]),
+                    score_i,
+                );
             }
         }
         for (rank, s) in p.iter().enumerate() {
@@ -1500,34 +1583,35 @@ fn apply_round(league: &mut League, outcomes: &[Outcome], age_idle: bool) {
             if outcome.won[rank] {
                 strategy.wins += 1;
             }
-            let prior = civ_prior(pre[*s]);
-            let on_civ = strategy
-                .civ_elo
+            let prior = leader_prior(pre[*s]);
+            let on_combination = strategy
+                .leader_elo
+                .entry(outcome.leaders[rank].clone())
+                .or_default()
                 .entry(outcome.civs[rank].clone())
                 .or_insert(prior);
-            on_civ.games += 1;
+            on_combination.games += 1;
             if outcome.won[rank] {
-                on_civ.wins += 1;
+                on_combination.wins += 1;
             }
         }
     }
-    let civ_updates: Vec<((usize, String), Glicko)> = civ_results
+    let combination_updates: Vec<((usize, String, String), Glicko)> = combination_results
         .into_iter()
-        .map(|((si, civ), res)| {
-            let cur = &league.strategies[si].civ_elo[civ];
-            let state = Glicko {
-                mu: (cur.rating - BASE_RATING) / SCALE,
-                phi: cur.rd / SCALE,
-                sigma: cur.vol,
-            };
-            ((si, civ.to_string()), rate(state, &res))
+        .map(|(key, res)| {
+            let state = combination_pre[&key];
+            (key, rate(state, &res))
         })
         .collect();
-    for ((si, civ), updated) in civ_updates {
-        let on_civ = league.strategies[si].civ_elo.get_mut(&civ).unwrap();
-        on_civ.rating = BASE_RATING + SCALE * updated.mu;
-        on_civ.rd = SCALE * updated.phi;
-        on_civ.vol = updated.sigma;
+    for ((player, leader, civilization), updated) in combination_updates {
+        let rating = league.strategies[player]
+            .leader_elo
+            .get_mut(&leader)
+            .and_then(|civilizations| civilizations.get_mut(&civilization))
+            .unwrap();
+        rating.rating = BASE_RATING + SCALE * updated.mu;
+        rating.rd = SCALE * updated.phi;
+        rating.vol = updated.sigma;
     }
     let empty = Vec::new();
     for i in 0..league.strategies.len() {
@@ -1547,8 +1631,9 @@ fn apply_round(league: &mut League, outcomes: &[Outcome], age_idle: bool) {
 /// server playing rated seats actually moves the table instead of showing a
 /// snapshot forever.
 ///
-/// `placements` is (strategy name, civ played) ordered winner first, then by
-/// score. The roster is re-read from `dir` and seats are resolved by *name*
+/// `placements` is (player/strategy id, civilization) ordered winner first,
+/// then by score. The active ruleset resolves the matching leader. The roster
+/// is re-read from `dir` and seats are resolved by stable strategy id
 /// rather than by the index the caller seated from: a live server holds its
 /// league in memory for the length of a game, and writing that stale copy
 /// back would undo any result recorded in the meantime. Returns the updated
@@ -1580,6 +1665,10 @@ pub fn record_game(
         .collect();
     let outcome = Outcome {
         placements: seats?,
+        leaders: placements
+            .iter()
+            .map(|(_, civilization)| default_leader(civilization))
+            .collect(),
         civs: placements.iter().map(|(_, civ)| civ.clone()).collect(),
         // The live-server API supplies a strict placement list. Engine-run
         // league rounds retain score ties in `Outcome::ranks`.
@@ -1591,7 +1680,7 @@ pub fn record_game(
     };
     let names: Vec<String> = placements
         .iter()
-        .map(|(name, civ)| format!("{name}@{civ}"))
+        .map(|(name, civ)| format!("{name}@{}@{civ}", default_leader(civ)))
         .collect();
     let round = league.round;
     let calibration_before = league.calibration.clone();
@@ -1736,12 +1825,16 @@ fn evolve_league(
     (born, retired)
 }
 
-/// The rating to show (and seat by) for a strategy on a given civ: the
-/// civ table once it has evidence, else the global one.
-/// Returns (rating, rd, is_civ_specific).
+/// The rating to show for an exact player/leader/civilization combination.
+/// An unplayed combination uses the player's global prior; after its first
+/// game, the combination's own rating is always returned, even provisionally.
 pub fn display_elo(s: &Strategy, civ: &str) -> (f64, f64, bool) {
-    match s.civ_elo.get(civ) {
-        Some(c) if c.games >= CIV_ELO_MIN_GAMES => (c.rating, c.rd, true),
+    display_elo_for(s, &default_leader(civ), civ)
+}
+
+pub fn display_elo_for(s: &Strategy, leader: &str, civ: &str) -> (f64, f64, bool) {
+    match combination_rating(s, leader, civ) {
+        Some(rating) if rating.games > 0 => (rating.rating, rating.rd, true),
         _ => (s.rating, s.rd, false),
     }
 }
@@ -1751,11 +1844,20 @@ pub fn display_elo(s: &Strategy, civ: &str) -> (f64, f64, bool) {
 /// *for its civ*, so different civs field different specialists. Reuses
 /// strategies only when the roster is smaller than the table.
 pub fn seat_by_civ(league: &League, civs: &[String]) -> Vec<usize> {
+    let combinations: Vec<(String, String)> = civs
+        .iter()
+        .map(|civ| (default_leader(civ), civ.clone()))
+        .collect();
+    seat_by_leader_civ(league, &combinations)
+}
+
+pub fn seat_by_leader_civ(league: &League, combinations: &[(String, String)]) -> Vec<usize> {
     let active = league.active();
     assert!(!active.is_empty(), "league has no active strategies");
     let mut used: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
-    civs.iter()
-        .map(|civ| {
+    combinations
+        .iter()
+        .map(|(leader, civ)| {
             let fresh = active.iter().copied().filter(|i| !used.contains(i));
             let pool: Vec<usize> = if used.len() < active.len() {
                 fresh.collect()
@@ -1765,8 +1867,8 @@ pub fn seat_by_civ(league: &League, civs: &[String]) -> Vec<usize> {
             let pick = pool
                 .into_iter()
                 .max_by(|a, b| {
-                    let ea = display_elo(&league.strategies[*a], civ).0;
-                    let eb = display_elo(&league.strategies[*b], civ).0;
+                    let ea = display_elo_for(&league.strategies[*a], leader, civ).0;
+                    let eb = display_elo_for(&league.strategies[*b], leader, civ).0;
                     ea.partial_cmp(&eb).unwrap().then(b.cmp(a))
                 })
                 .unwrap();
@@ -1799,19 +1901,21 @@ pub fn make_send_ai(kind: &StrategyKind, seed: u64) -> Box<dyn Ai + Send> {
     }
 }
 
-/// One civ's leaderboard: who plays this civ best, by its civ table.
+/// One leader/civilization leaderboard. The current ruleset supplies the
+/// leader for the compatibility `--civ` interface.
 pub fn civ_standings(league: &League, civ: &str) -> String {
+    let leader = default_leader(civ);
     let mut rows: Vec<(&Strategy, &CivRating)> = league
         .strategies
         .iter()
-        .filter_map(|s| s.civ_elo.get(civ).map(|c| (s, c)))
+        .filter_map(|s| combination_rating(s, &leader, civ).map(|rating| (s, rating)))
         .filter(|(_, c)| c.games > 0)
         .collect();
     if rows.is_empty() {
         return format!("no rated games for {civ} yet\n");
     }
     rows.sort_by(|a, b| b.1.rating.partial_cmp(&a.1.rating).unwrap());
-    let mut out = format!("{civ} leaderboard (round {}):\n", league.round);
+    let mut out = format!("{leader} / {civ} leaderboard (round {}):\n", league.round);
     for (rank, (s, c)) in rows.iter().enumerate() {
         out.push_str(&format!(
             "  {:>2}. {:<18} {:6.0} elo ±{:<4.0} games={:<4} wins={:<3} winrate={:3.0}%  {:<14}{}{}\n",
@@ -1834,31 +1938,33 @@ pub fn civ_standings(league: &League, civ: &str) -> String {
     out
 }
 
-/// Every civ's current champion strategy, one line per civ.
+/// Every observed leader/civilization combination's champion player.
 pub fn civ_summary(league: &League) -> String {
-    let mut civs: std::collections::BTreeSet<&String> = std::collections::BTreeSet::new();
+    let mut combinations = std::collections::BTreeSet::<(&String, &String)>::new();
     for s in &league.strategies {
-        civs.extend(s.civ_elo.keys());
+        for (leader, civilizations) in &s.leader_elo {
+            combinations.extend(civilizations.keys().map(|civ| (leader, civ)));
+        }
     }
-    if civs.is_empty() {
-        return "no per-civ ratings yet (play some rounds first)\n".to_string();
+    if combinations.is_empty() {
+        return "no per-leader ratings yet (play some rounds first)\n".to_string();
     }
-    let mut out = format!("Best player per civ (round {}):\n", league.round);
-    for civ in civs {
+    let mut out = format!("Best player per leader/civ (round {}):\n", league.round);
+    for (leader, civ) in combinations {
         let best = league
             .strategies
             .iter()
             .filter(|s| !s.retired)
             .filter_map(|s| {
-                s.civ_elo
-                    .get(civ)
+                combination_rating(s, leader, civ)
                     .filter(|c| c.games >= CIV_ELO_MIN_GAMES)
                     .map(|c| (s, c))
             })
             .max_by(|a, b| a.1.rating.partial_cmp(&b.1.rating).unwrap());
         match best {
             Some((s, c)) => out.push_str(&format!(
-                "  {:<10} {:<18} {:6.0} elo ±{:<4.0} ({} games, {:.0}% wins, {})\n",
+                "  {:<18} {:<12} {:<18} {:6.0} elo ±{:<4.0} ({} games, {:.0}% wins, {})\n",
+                leader,
                 civ,
                 s.username,
                 c.rating,
@@ -1867,7 +1973,9 @@ pub fn civ_summary(league: &League) -> String {
                 100.0 * c.wins as f64 / c.games.max(1) as f64,
                 s.label(),
             )),
-            None => out.push_str(&format!("  {civ:<10} (no settled rating yet)\n")),
+            None => out.push_str(&format!(
+                "  {leader:<18} {civ:<12} (no settled rating yet)\n"
+            )),
         }
     }
     out
@@ -1921,6 +2029,7 @@ fn resolve_outcome(league: &League, stored: &StoredOutcome) -> io::Result<Outcom
                 format!("result {} references an unknown strategy", stored.job_id),
             )
         })?,
+        leaders: stored.leaders.clone(),
         civs: stored.civs.clone(),
         ranks: stored.ranks.clone(),
         won: stored.won.clone(),
@@ -2367,13 +2476,13 @@ mod tests {
     }
 
     #[test]
-    fn a_new_civ_table_uses_global_skill_as_an_uncertain_prior() {
+    fn a_new_leader_table_uses_global_skill_as_an_uncertain_prior() {
         let global = Glicko {
             mu: (1800.0 - BASE_RATING) / SCALE,
             phi: 50.0 / SCALE,
             sigma: BASE_VOL,
         };
-        let prior = civ_prior(global);
+        let prior = leader_prior(global);
         assert!((prior.rating - 1800.0).abs() < 1e-9);
         assert!(prior.rd > 200.0 && prior.rd < BASE_RD);
         assert_eq!((prior.games, prior.wins), (0, 0));
@@ -2392,6 +2501,7 @@ mod tests {
         };
         let outcome = Outcome {
             placements: vec![0, 1],
+            leaders: vec!["Trajan".into(), "Cleopatra".into()],
             civs: vec!["Rome".into(), "Egypt".into()],
             ranks: vec![0, 0],
             won: vec![false, false],
@@ -2420,6 +2530,7 @@ mod tests {
         };
         let outcomes = vec![Outcome {
             placements: vec![0, 1],
+            leaders: vec!["Trajan".into(), "Cleopatra".into()],
             civs: vec!["Rome".into(), "Egypt".into()],
             ranks: vec![0, 1],
             won: vec![true, false],
@@ -2432,12 +2543,12 @@ mod tests {
         assert!(league.strategies[1].rating < BASE_RATING);
         assert_eq!(league.strategies[0].wins, 1);
         assert_eq!(league.strategies[0].games, 1);
-        // the same result also lands on each side's civ table
-        let rome = &league.strategies[0].civ_elo["Rome"];
-        let egypt = &league.strategies[1].civ_elo["Egypt"];
+        // the same result also lands on each exact leader/civ table
+        let rome = &league.strategies[0].leader_elo["Trajan"]["Rome"];
+        let egypt = &league.strategies[1].leader_elo["Cleopatra"]["Egypt"];
         assert!(rome.rating > BASE_RATING && rome.games == 1 && rome.wins == 1);
         assert!(egypt.rating < BASE_RATING && egypt.games == 1 && egypt.wins == 0);
-        assert!(league.strategies[0].civ_elo.get("Egypt").is_none());
+        assert!(league.strategies[0].leader_elo.get("Cleopatra").is_none());
     }
 
     /// A finished game rated on its own moves only the strategies that
@@ -2459,6 +2570,7 @@ mod tests {
         let bench_before = (league.strategies[2].rating, league.strategies[2].rd);
         let outcomes = vec![Outcome {
             placements: vec![0, 1],
+            leaders: vec!["Trajan".into(), "Cleopatra".into()],
             civs: vec!["Rome".into(), "Egypt".into()],
             ranks: vec![0, 1],
             won: vec![true, false],
@@ -2507,7 +2619,7 @@ mod tests {
         assert_eq!(first.round, 13);
         assert!(first.strategies[0].rating > BASE_RATING);
         assert!(first.strategies[1].rating < 1600.0);
-        assert_eq!(first.strategies[0].civ_elo["Rome"].wins, 1);
+        assert_eq!(first.strategies[0].leader_elo["Trajan"]["Rome"].wins, 1);
 
         // Reloaded from disk, not from the caller's copy.
         let second = record_game(dir, &placements, 6, 130, "culture").expect("rated");
@@ -2521,7 +2633,7 @@ mod tests {
         );
         let matches = fs::read_to_string(Path::new(dir).join("matches.csv")).unwrap();
         assert_eq!(matches.lines().count(), 3, "header plus one row per game");
-        assert!(matches.contains("a@Rome|b@Egypt"));
+        assert!(matches.contains("a@Trajan@Rome|b@Cleopatra@Egypt"));
         let calibration = fs::read_to_string(Path::new(dir).join("calibration.csv")).unwrap();
         assert_eq!(calibration.lines().count(), 3);
         assert!(calibration.starts_with("round,comparisons,brier,log_loss,"));
@@ -2544,10 +2656,37 @@ mod tests {
         assert_eq!(league.calibration.comparisons, 0);
     }
 
-    /// Seating by civ prefers each civ's settled specialist and never
+    #[test]
+    fn civilization_only_snapshots_migrate_to_the_ruleset_leader() {
+        let dir = std::env::temp_dir().join(format!(
+            "civvis-league-migrate-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("league.json"),
+            r#"{"round":1,"strategies":[{"name":"a","kind":{"Builtin":{"ai":"basic"}},"rating":1500.0,"rd":350.0,"vol":0.06,"games":1,"wins":1,"civ_elo":{"Rome":{"rating":1600.0,"rd":200.0,"vol":0.06,"games":1,"wins":1}},"born_round":0}]}"#,
+        )
+        .unwrap();
+        let league = load_league(dir.to_str().unwrap()).unwrap();
+        assert_eq!(
+            league.strategies[0].leader_elo["Trajan"]["Rome"].rating,
+            1600.0
+        );
+        assert!(league.strategies[0].legacy_civ_elo.is_empty());
+        save_league(dir.to_str().unwrap(), &league);
+        let saved = fs::read_to_string(dir.join("league.json")).unwrap();
+        assert!(saved.contains("\"leader_elo\""));
+        assert!(!saved.contains("\"civ_elo\""));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// Seating by leader/civ prefers each combination's specialist and never
     /// doubles a strategy up while unused ones remain.
     #[test]
-    fn seat_by_civ_prefers_civ_specialists() {
+    fn seat_by_civ_prefers_leader_specialists() {
         let mut league = League {
             round: 0,
             strategies: vec![
@@ -2565,13 +2704,16 @@ mod tests {
         };
         league.strategies[0].rating = 1650.0; // globally stronger
         league.strategies[1].rating = 1450.0;
-        league.strategies[1].civ_elo.insert(
-            "Rome".into(),
-            CivRating {
-                rating: 1750.0,
-                games: CIV_ELO_MIN_GAMES,
-                ..CivRating::default()
-            },
+        league.strategies[1].leader_elo.insert(
+            "Trajan".into(),
+            BTreeMap::from([(
+                "Rome".into(),
+                CivRating {
+                    rating: 1750.0,
+                    games: CIV_ELO_MIN_GAMES,
+                    ..CivRating::default()
+                },
+            )]),
         );
         let seats = seat_by_civ(&league, &["Rome".into(), "Egypt".into()]);
         assert_eq!(seats, vec![1, 0], "Rome goes to its specialist");
@@ -2687,6 +2829,7 @@ mod tests {
             round: manifest.round,
             job_id: job.id.clone(),
             placements: job.table.clone(),
+            leaders: vec!["Trajan".into(), "Cleopatra".into()],
             civs: vec!["Rome".into(), "Egypt".into()],
             ranks: vec![0, 1],
             won: vec![true, false],

@@ -1,11 +1,12 @@
 //! Elo tournament harness: evaluate AI strategies against each other.
 //!
-//! Ratings are attached to `(civilization, strategy)` rather than just the
-//! factory name used to construct an agent. Advanced agents can change plans
-//! during a game, so the strategy credited with the result is the plan used on
-//! the greatest number of that player's turns (the final plan breaks ties).
+//! Every rating belongs to one `(player, leader, civilization)` combination.
+//! A player may be a human account or a named AI strategy; changing leaders
+//! selects a different rating without changing player identity. Leader and
+//! civilization are both retained because they are not one-to-one (Eleanor,
+//! for example, can lead either England or France).
 //! Multiplayer games are scored as pairwise results with `K/(n-1)` scaling.
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fs::{self, OpenOptions};
 use std::io::{self, ErrorKind, Write};
 use std::path::{Path, PathBuf};
@@ -17,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use crate::ai::{AdvancedAi, Ai, BasicAi, RandomAi};
 use crate::game::{Action, Game};
 use crate::rng::Rng;
+use crate::rules::Rules;
 use crate::setup::MapSize;
 
 pub const BUILTIN_AIS: [&str; 9] = [
@@ -33,13 +35,23 @@ pub const BUILTIN_AIS: [&str; 9] = [
 
 /// Controls intended for paired evaluator experiments, not persistent
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
-/// factory from being pooled into the same civilization/plan rating key as
+/// factory from being pooled into the same player/leader rating key as
 /// its treatment.
 pub const EVAL_ONLY_AIS: [&str; 1] = ["strategic_score"];
 
-/// On-disk schema for the shared civilization/strategy rating ledger.
-pub const ELO_SCHEMA_VERSION: u32 = 1;
+/// On-disk schema for the shared player/leader/civilization rating ledger.
+pub const ELO_SCHEMA_VERSION: u32 = 2;
 pub const DEFAULT_RATINGS_PATH: &str = "data/elo_ratings.json";
+
+/// Resolve the leader supplied by the active ruleset. Keeping this beside the
+/// ledger migration also gives old civilization-only rows an unambiguous home.
+pub fn leader_for_civilization(civilization: &str) -> String {
+    Rules::embedded()
+        .civs
+        .get(civilization)
+        .map(|spec| spec.leader.clone())
+        .unwrap_or_else(|| civilization.to_string())
+}
 
 pub fn expected(ra: f64, rb: f64) -> f64 {
     1.0 / (1.0 + 10f64.powf((rb - ra) / 400.0))
@@ -62,15 +74,21 @@ pub fn win_shares(ratings: &[f64]) -> Vec<f64> {
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct RatingKey {
+    pub player: String,
+    pub leader: String,
     pub civilization: String,
-    pub strategy: String,
 }
 
 impl RatingKey {
-    pub fn new(civilization: impl Into<String>, strategy: impl Into<String>) -> Self {
+    pub fn new(
+        player: impl Into<String>,
+        leader: impl Into<String>,
+        civilization: impl Into<String>,
+    ) -> Self {
         Self {
+            player: player.into(),
+            leader: leader.into(),
             civilization: civilization.into(),
-            strategy: strategy.into(),
         }
     }
 }
@@ -80,9 +98,6 @@ pub struct Rating {
     pub elo: f64,
     pub games: u32,
     pub wins: u32,
-    /// Agent factories that have contributed games to this strategy rating.
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub agents: BTreeSet<String>,
 }
 
 impl Rating {
@@ -91,7 +106,6 @@ impl Rating {
             elo: base,
             games: 0,
             wins: 0,
-            agents: BTreeSet::new(),
         }
     }
 }
@@ -100,7 +114,7 @@ impl Rating {
 pub struct EloPool {
     pub base_rating: f64,
     /// The rating identity is deliberately structured, not a display string:
-    /// civilization and strategy can be queried independently by optimizers.
+    /// player, leader, and civilization can be queried independently.
     pub ratings: BTreeMap<RatingKey, Rating>,
 }
 
@@ -113,28 +127,50 @@ struct StoredPool {
 
 #[derive(Serialize, Deserialize)]
 struct StoredRating {
+    #[serde(default)]
+    player: String,
+    #[serde(default)]
+    leader: String,
     civilization: String,
-    strategy: String,
+    /// Schema-1 migration source. A legacy strategy becomes the player only
+    /// when the row does not identify exactly one contributing AI factory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    strategy: Option<String>,
     elo: f64,
     games: u32,
     wins: u32,
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    agents: BTreeSet<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    agents: Vec<String>,
 }
 
 /// Everything needed to score one rated major at the end of a game.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RatedPlayer {
     pub key: RatingKey,
-    pub agent: String,
     pub score: i64,
     pub won: bool,
 }
 
+impl RatedPlayer {
+    pub fn new(
+        player: impl Into<String>,
+        leader: impl Into<String>,
+        civilization: impl Into<String>,
+        score: i64,
+        won: bool,
+    ) -> Self {
+        Self {
+            key: RatingKey::new(player, leader, civilization),
+            score,
+            won,
+        }
+    }
+}
+
 impl EloPool {
     /// Keep the historical constructor shape for library callers. Entrants no
-    /// longer create rating rows up front because their civilizations and
-    /// played strategies are not known until a game has run.
+    /// longer create rating rows up front because their leader/civilization
+    /// combinations are not known until a game has run.
     pub fn new(_names: &[String], base: f64) -> EloPool {
         EloPool {
             base_rating: base,
@@ -155,7 +191,7 @@ impl EloPool {
                 format!("invalid Elo ledger {}: {error}", path.display()),
             )
         })?;
-        if stored.schema_version != ELO_SCHEMA_VERSION {
+        if !matches!(stored.schema_version, 1 | ELO_SCHEMA_VERSION) {
             return Err(io::Error::new(
                 ErrorKind::InvalidData,
                 format!(
@@ -172,10 +208,25 @@ impl EloPool {
                 format!("non-finite base rating in {}", path.display()),
             ));
         }
-        let mut ratings = BTreeMap::new();
+        let mut ratings: BTreeMap<RatingKey, Rating> = BTreeMap::new();
         for row in stored.ratings {
-            if row.civilization.trim().is_empty()
-                || row.strategy.trim().is_empty()
+            let player = if stored.schema_version == 1 {
+                if row.agents.len() == 1 {
+                    row.agents[0].clone()
+                } else {
+                    row.strategy.clone().unwrap_or_default()
+                }
+            } else {
+                row.player
+            };
+            let leader = if stored.schema_version == 1 {
+                leader_for_civilization(&row.civilization)
+            } else {
+                row.leader
+            };
+            if player.trim().is_empty()
+                || leader.trim().is_empty()
+                || row.civilization.trim().is_empty()
                 || !row.elo.is_finite()
                 || row.wins > row.games
             {
@@ -184,22 +235,32 @@ impl EloPool {
                     format!("invalid rating row in {}", path.display()),
                 ));
             }
-            let key = RatingKey::new(row.civilization, row.strategy);
+            let key = RatingKey::new(player, leader, row.civilization);
             let rating = Rating {
                 elo: row.elo,
                 games: row.games,
                 wins: row.wins,
-                agents: row.agents,
             };
-            if ratings.insert(key.clone(), rating).is_some() {
-                return Err(io::Error::new(
-                    ErrorKind::InvalidData,
-                    format!(
-                        "duplicate civilization/strategy row {:?} in {}",
-                        key,
-                        path.display()
-                    ),
-                ));
+            if let Some(existing) = ratings.get_mut(&key) {
+                if stored.schema_version == ELO_SCHEMA_VERSION {
+                    return Err(io::Error::new(
+                        ErrorKind::InvalidData,
+                        format!(
+                            "duplicate player/leader/civilization row {key:?} in {}",
+                            path.display()
+                        ),
+                    ));
+                }
+                let total = existing.games.saturating_add(rating.games);
+                if total > 0 {
+                    existing.elo = (existing.elo * existing.games as f64
+                        + rating.elo * rating.games as f64)
+                        / total as f64;
+                }
+                existing.games = total;
+                existing.wins = existing.wins.saturating_add(rating.wins);
+            } else {
+                ratings.insert(key, rating);
             }
         }
         Ok(EloPool {
@@ -232,12 +293,14 @@ impl EloPool {
                 .ratings
                 .iter()
                 .map(|(key, rating)| StoredRating {
+                    player: key.player.clone(),
+                    leader: key.leader.clone(),
                     civilization: key.civilization.clone(),
-                    strategy: key.strategy.clone(),
+                    strategy: None,
                     elo: rating.elo,
                     games: rating.games,
                     wins: rating.wins,
-                    agents: rating.agents.clone(),
+                    agents: Vec::new(),
                 })
                 .collect(),
         };
@@ -287,9 +350,10 @@ impl EloPool {
             for j in (i + 1)..players.len() {
                 let a = &players[i];
                 let b = &players[j];
-                if a.key == b.key {
-                    // Two seats represented by one rating produce equal and
-                    // opposite self-updates, hence a net zero change.
+                if a.key.player == b.key.player {
+                    // A tournament may reuse one AI player when there are
+                    // fewer entrants than seats. Its leader ratings must not
+                    // manufacture evidence by competing against themselves.
                     continue;
                 }
                 let actual_a = if a.won != b.won {
@@ -319,7 +383,6 @@ impl EloPool {
             let rating = self.ratings.get_mut(&player.key).unwrap();
             rating.games = rating.games.saturating_add(1);
             rating.wins = rating.wins.saturating_add(u32::from(player.won));
-            rating.agents.insert(player.agent.clone());
         }
     }
 
@@ -331,8 +394,7 @@ impl EloPool {
             .iter()
             .enumerate()
             .map(|(place, name)| RatedPlayer {
-                key: RatingKey::new("unknown", name),
-                agent: name.clone(),
+                key: RatingKey::new(name, "unknown", "unknown"),
                 score: (placements.len() - place) as i64,
                 won: place == 0,
             })
@@ -451,22 +513,6 @@ fn scheduled_seats(
         .collect()
 }
 
-fn dominant_strategy(
-    counts: &BTreeMap<String, u32>,
-    final_strategy: Option<&str>,
-) -> Option<String> {
-    let most = counts.values().copied().max()?;
-    if let Some(final_strategy) = final_strategy {
-        if counts.get(final_strategy) == Some(&most) {
-            return Some(final_strategy.to_string());
-        }
-    }
-    counts
-        .iter()
-        .find(|(_, count)| **count == most)
-        .map(|(strategy, _)| strategy.clone())
-}
-
 fn play_tournament<F, C, E>(
     names: &[String],
     make: &F,
@@ -519,15 +565,9 @@ where
                 }
             })
             .collect();
-        let mut strategy_turns = vec![BTreeMap::<String, u32>::new(); cfg.players_per_game];
         while game.winner.is_none() {
             let pid = game.current;
             ais[pid].take_turn(&mut game, pid);
-            if pid < cfg.players_per_game {
-                if let Some(strategy) = ais[pid].strategy_label() {
-                    *strategy_turns[pid].entry(strategy.to_string()).or_insert(0) += 1;
-                }
-            }
             if game.winner.is_none() && game.current == pid {
                 let _ = game.apply(pid, &Action::EndTurn);
             }
@@ -540,14 +580,20 @@ where
         let winner = game.winner;
         let results: Vec<RatedPlayer> = (0..cfg.players_per_game)
             .map(|pid| {
-                let strategy = dominant_strategy(&strategy_turns[pid], ais[pid].strategy_label())
-                    .unwrap_or_else(|| seats[pid].clone());
-                RatedPlayer {
-                    key: RatingKey::new(game.players[pid].civ.clone(), strategy),
-                    agent: seats[pid].clone(),
-                    score: game.score(pid),
-                    won: winner == Some(pid),
-                }
+                let civilization = game.players[pid].civ.clone();
+                let leader = game
+                    .rules
+                    .civs
+                    .get(&civilization)
+                    .map(|spec| spec.leader.clone())
+                    .unwrap_or_else(|| civilization.clone());
+                RatedPlayer::new(
+                    seats[pid].clone(),
+                    leader,
+                    civilization,
+                    game.score(pid),
+                    winner == Some(pid),
+                )
             })
             .collect();
         let wname = match winner {
@@ -558,7 +604,10 @@ where
         (
             results,
             wname,
-            winner.map_or_else(|| "-".to_string(), |winner| game.players[winner].civ.clone()),
+            winner.map_or_else(
+                || "-".to_string(),
+                |winner| game.players[winner].civ.clone(),
+            ),
             game.victory_type.clone().unwrap_or_default(),
             game.turn,
         )
@@ -574,7 +623,7 @@ where
                 .map(|result| {
                     format!(
                         "{}:{}:{}",
-                        result.key.civilization, result.agent, result.key.strategy
+                        result.key.player, result.key.leader, result.key.civilization
                     )
                 })
                 .collect();
@@ -701,21 +750,21 @@ pub fn leaderboard(pool: &EloPool) -> String {
     rows.sort_by(|(key_a, a), (key_b, b)| {
         b.elo
             .total_cmp(&a.elo)
+            .then(key_a.player.cmp(&key_b.player))
+            .then(key_a.leader.cmp(&key_b.leader))
             .then(key_a.civilization.cmp(&key_b.civilization))
-            .then(key_a.strategy.cmp(&key_b.strategy))
     });
-    let mut out = String::from("Elo leaderboard (civilization × strategy):\n");
+    let mut out = String::from("Elo leaderboard (player × leader × civilization):\n");
     for (key, rating) in rows {
-        let agents = rating.agents.iter().cloned().collect::<Vec<_>>().join(",");
         out.push_str(&format!(
-            "  {:<10} {:<12} {:7.1}   games={:<4} wins={:<4} winrate={:>3.0}%  agents={}\n",
+            "  {:<18} {:<18} {:<12} {:7.1}   games={:<4} wins={:<4} winrate={:>3.0}%\n",
+            key.player,
+            key.leader,
             key.civilization,
-            key.strategy,
             rating.elo,
             rating.games,
             rating.wins,
             100.0 * rating.wins as f64 / rating.games.max(1) as f64,
-            agents,
         ));
     }
     out
@@ -724,8 +773,8 @@ pub fn leaderboard(pool: &EloPool) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        dominant_strategy, expected, scheduled_seats, seat_schedule, win_shares, EloPool,
-        RatedPlayer, RatingKey, ELO_SCHEMA_VERSION,
+        expected, scheduled_seats, seat_schedule, win_shares, EloPool, RatedPlayer, RatingKey,
+        ELO_SCHEMA_VERSION,
     };
     use crate::rng::Rng;
     use std::collections::BTreeMap;
@@ -733,13 +782,8 @@ mod tests {
     use std::sync::{Arc, Barrier};
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    fn player(civ: &str, strategy: &str, agent: &str, score: i64, won: bool) -> RatedPlayer {
-        RatedPlayer {
-            key: RatingKey::new(civ, strategy),
-            agent: agent.to_string(),
-            score,
-            won,
-        }
+    fn player(name: &str, leader: &str, civ: &str, score: i64, won: bool) -> RatedPlayer {
+        RatedPlayer::new(name, leader, civ, score, won)
     }
 
     #[test]
@@ -755,22 +799,20 @@ mod tests {
     }
 
     #[test]
-    fn result_updates_civilization_strategy_rows_and_metadata() {
+    fn result_updates_player_leader_civilization_rows() {
         let mut pool = EloPool::with_base(1000.0);
         pool.record_game(
             &[
-                player("Rome", "science", "advanced", 200, true),
-                player("Egypt", "science", "advanced_evolved", 100, false),
+                player("TechPriest", "Trajan", "Rome", 200, true),
+                player("LabRat", "Cleopatra", "Egypt", 100, false),
             ],
             24.0,
         );
-        let rome = &pool.ratings[&RatingKey::new("Rome", "science")];
-        let egypt = &pool.ratings[&RatingKey::new("Egypt", "science")];
+        let rome = &pool.ratings[&RatingKey::new("TechPriest", "Trajan", "Rome")];
+        let egypt = &pool.ratings[&RatingKey::new("LabRat", "Cleopatra", "Egypt")];
         assert_eq!(rome.elo, 1012.0);
         assert_eq!(egypt.elo, 988.0);
         assert_eq!((rome.games, rome.wins), (1, 1));
-        assert!(rome.agents.contains("advanced"));
-        assert!(egypt.agents.contains("advanced_evolved"));
     }
 
     #[test]
@@ -778,8 +820,8 @@ mod tests {
         let mut pool = EloPool::with_base(1000.0);
         pool.record_game(
             &[
-                player("Rome", "culture", "advanced", 150, false),
-                player("Egypt", "culture", "advanced", 150, false),
+                player("Alice", "Trajan", "Rome", 150, false),
+                player("Bob", "Cleopatra", "Egypt", 150, false),
             ],
             24.0,
         );
@@ -791,28 +833,28 @@ mod tests {
     }
 
     #[test]
-    fn a_different_strategy_for_the_same_civilization_has_an_independent_elo() {
+    fn a_player_has_independent_ratings_for_different_leaders() {
         let mut pool = EloPool::with_base(1000.0);
         pool.record_game(
             &[
-                player("Rome", "science", "advanced", 200, true),
-                player("Egypt", "science", "advanced", 100, false),
+                player("Alice", "Trajan", "Rome", 200, true),
+                player("Bob", "Cleopatra", "Egypt", 100, false),
             ],
             24.0,
         );
         pool.record_game(
             &[
-                player("Rome", "culture", "advanced", 100, false),
-                player("Egypt", "science", "advanced", 200, true),
+                player("Alice", "Eleanor", "England", 100, false),
+                player("Bob", "Cleopatra", "Egypt", 200, true),
             ],
             24.0,
         );
-        let science = &pool.ratings[&RatingKey::new("Rome", "science")];
-        let culture = &pool.ratings[&RatingKey::new("Rome", "culture")];
-        assert_eq!(science.games, 1);
-        assert_eq!(culture.games, 1);
-        assert!(science.elo > 1000.0);
-        assert!(culture.elo < 1000.0);
+        let trajan = &pool.ratings[&RatingKey::new("Alice", "Trajan", "Rome")];
+        let eleanor = &pool.ratings[&RatingKey::new("Alice", "Eleanor", "England")];
+        assert_eq!(trajan.games, 1);
+        assert_eq!(eleanor.games, 1);
+        assert!(trajan.elo > 1000.0);
+        assert!(eleanor.elo < 1000.0);
     }
 
     #[test]
@@ -820,29 +862,53 @@ mod tests {
         let mut pool = EloPool::with_base(1000.0);
         pool.record_game(
             &[
-                player("Rome", "religion", "advanced", 80, true),
-                player("Egypt", "science", "advanced", 200, false),
+                player("Alice", "Trajan", "Rome", 80, true),
+                player("Bob", "Cleopatra", "Egypt", 200, false),
             ],
             24.0,
         );
-        assert!(pool.ratings[&RatingKey::new("Rome", "religion")].elo > 1000.0);
+        assert!(pool.ratings[&RatingKey::new("Alice", "Trajan", "Rome")].elo > 1000.0);
     }
 
     #[test]
-    fn dominant_plan_uses_turns_then_the_final_plan_as_tiebreaker() {
-        let counts = BTreeMap::from([
-            ("culture".to_string(), 8),
-            ("science".to_string(), 8),
-            ("recovery".to_string(), 2),
-        ]);
-        assert_eq!(
-            dominant_strategy(&counts, Some("science")).as_deref(),
-            Some("science")
+    fn eleanor_leading_two_civilizations_has_two_ratings() {
+        let mut pool = EloPool::with_base(1000.0);
+        pool.record_game(
+            &[
+                player("Alice", "Eleanor", "England", 200, true),
+                player("Bob", "Victoria", "England", 100, false),
+            ],
+            24.0,
         );
-        assert_eq!(
-            dominant_strategy(&counts, Some("recovery")).as_deref(),
-            Some("culture")
+        pool.record_game(
+            &[
+                player("Alice", "Eleanor", "France", 100, false),
+                player("Bob", "Catherine de Medici", "France", 200, true),
+            ],
+            24.0,
         );
+        assert!(pool
+            .ratings
+            .contains_key(&RatingKey::new("Alice", "Eleanor", "England")));
+        assert!(pool
+            .ratings
+            .contains_key(&RatingKey::new("Alice", "Eleanor", "France")));
+        assert!(pool.ratings[&RatingKey::new("Alice", "Eleanor", "England")].elo > 1000.0);
+        assert!(pool.ratings[&RatingKey::new("Alice", "Eleanor", "France")].elo < 1000.0);
+    }
+
+    #[test]
+    fn one_player_cannot_rate_their_leaders_against_each_other() {
+        let mut pool = EloPool::with_base(1000.0);
+        pool.record_game(
+            &[
+                player("Alice", "Eleanor", "England", 200, true),
+                player("Alice", "Eleanor", "France", 100, false),
+            ],
+            24.0,
+        );
+        assert!(pool.ratings.values().all(|rating| rating.elo == 1000.0));
+        assert!(pool.ratings.values().all(|rating| rating.games == 1));
     }
 
     #[test]
@@ -888,8 +954,8 @@ mod tests {
         let mut pool = EloPool::with_base(1000.0);
         pool.record_game(
             &[
-                player("Rome", "science", "advanced", 2, true),
-                player("Egypt", "culture", "advanced", 1, false),
+                player("TechPriest", "Trajan", "Rome", 2, true),
+                player("CultureVulture", "Cleopatra", "Egypt", 1, false),
             ],
             24.0,
         );
@@ -898,6 +964,31 @@ mod tests {
         let raw = fs::read_to_string(&path).unwrap();
         assert!(raw.contains(&format!("\"schema_version\": {ELO_SCHEMA_VERSION}")));
         assert!(raw.contains("\"civilization\": \"Rome\""));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn schema_one_rows_migrate_to_player_leader_civilization() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir =
+            std::env::temp_dir().join(format!("civvis-elo-migrate-{}-{nonce}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("ratings.json");
+        fs::write(
+            &path,
+            r#"{"schema_version":1,"base_rating":1000.0,"ratings":[{"civilization":"Rome","strategy":"science","elo":1111.0,"games":3,"wins":2,"agents":["advanced"]}]}"#,
+        )
+        .unwrap();
+        let pool = EloPool::load(&path).unwrap();
+        let rating = &pool.ratings[&RatingKey::new("advanced", "Trajan", "Rome")];
+        assert_eq!((rating.elo, rating.games, rating.wins), (1111.0, 3, 2));
+        pool.save(&path).unwrap();
+        let raw = fs::read_to_string(&path).unwrap();
+        assert!(raw.contains("\"schema_version\": 2"));
+        assert!(!raw.contains("\"strategy\""));
         fs::remove_dir_all(dir).unwrap();
     }
 
@@ -915,12 +1006,12 @@ mod tests {
         let barrier = Arc::new(Barrier::new(2));
         let workers: Vec<_> = [
             (
-                player("Rome", "science", "advanced", 2, true),
-                player("Egypt", "science", "advanced", 1, false),
+                player("TechPriest", "Trajan", "Rome", 2, true),
+                player("LabRat", "Cleopatra", "Egypt", 1, false),
             ),
             (
-                player("Greece", "culture", "advanced", 2, true),
-                player("China", "culture", "advanced", 1, false),
+                player("CultureVulture", "Pericles", "Greece", 2, true),
+                player("OperaGhost", "Qin Shi Huang", "China", 1, false),
             ),
         ]
         .into_iter()
