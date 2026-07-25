@@ -1015,6 +1015,24 @@ class RecoveryTests(unittest.TestCase):
             )
         )
 
+    def test_a_game_played_by_hand_is_never_nudged_or_recovered(self):
+        """A single-player game stands still between turns by design.
+
+        Its stall clock says nothing about its health, and the recovery step
+        it cannot take would report the server as unavailable and restart it
+        out from under the player.
+        """
+        playing = {"spectate": False, "turn": 12, "current": 0, "winner": None}
+        self.assertTrue(supervisor.played_by_hand(playing))
+        self.assertFalse(supervisor.should_nudge(playing, stalled_for=3600, timeout=30))
+        # Only an explicit false counts: the exhibition always says so, and a
+        # state that could not be read keeps the supervision it has today.
+        for watched in ({}, {"spectate": True}, {"turn": 4}):
+            self.assertFalse(supervisor.played_by_hand(watched))
+            self.assertTrue(
+                supervisor.should_nudge(watched, stalled_for=31, timeout=30)
+            )
+
     def test_server_command_can_resume_an_atomic_checkpoint(self):
         settings = {
             "players": 4,
@@ -1435,7 +1453,9 @@ class RecoveryTests(unittest.TestCase):
                 patch.object(
                     supervisor,
                     "read_state",
-                    side_effect=[active, active, finished, KeyboardInterrupt],
+                    # The fourth read is the boundary's own re-check for a
+                    # player who took the seat during the result cooldown.
+                    side_effect=[active, active, finished, finished, KeyboardInterrupt],
                 ) as read,
                 patch.object(supervisor, "capture_checkpoint", return_value=False),
                 patch.object(supervisor, "archive_result"),
@@ -1451,7 +1471,7 @@ class RecoveryTests(unittest.TestCase):
                 self.assertEqual(supervisor.main(), 0)
 
         start.assert_called_once()
-        self.assertEqual(read.call_count, 4)
+        self.assertEqual(read.call_count, 5)
         stop_build.assert_called_once_with(worker)
 
     def test_finished_server_starts_successor_without_waiting_for_a_build(self):
@@ -1519,7 +1539,9 @@ class RecoveryTests(unittest.TestCase):
                 patch.object(
                     supervisor,
                     "read_state",
-                    side_effect=[finished, KeyboardInterrupt],
+                    # The second read is the boundary re-checking whether the
+                    # result screen was turned into a single-player game.
+                    side_effect=[finished, finished, KeyboardInterrupt],
                 ),
                 patch.object(supervisor, "archive_result") as archive,
                 patch.object(supervisor, "stop_server", side_effect=stop),
@@ -1532,6 +1554,82 @@ class RecoveryTests(unittest.TestCase):
         self.assertLess(retired, launched)
         self.assertNotIn(("prepare", None), events)
         archive.assert_called_once_with(8766, finished)
+
+    def test_a_player_who_takes_the_seat_during_the_cooldown_keeps_it(self):
+        """The result screen offers a single-player game, and that game is
+        started in the process the supervisor was about to retire. Retiring it
+        anyway would take the new board away a few seconds after it appeared.
+        """
+        args = SimpleNamespace(
+            port=8766,
+            players=4,
+            width=60,
+            height=38,
+            city_states=6,
+            turns=500,
+            map="pangaea",
+            speed="standard",
+            cooldown=0.0,
+            poll=0.01,
+            build_retry=0.01,
+            source_check_interval=30.0,
+            unresponsive_timeout=20.0,
+            busy_timeout=600.0,
+            stall_timeout=30.0,
+            checkpoint_interval=5.0,
+            max_resume_attempts=2,
+            no_open=True,
+            adopt_pid=None,
+        )
+        finished = {
+            "seed": 9,
+            "turn": 70,
+            "current": 3,
+            "winner": 1,
+            "victory_type": "science",
+            "players": [],
+        }
+        playing = {"spectate": False, "seed": 11, "turn": 1, "current": 0, "winner": None}
+        server = SimpleNamespace(pid=321)
+        events = []
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = root / "civvis"
+            runtime.touch()
+            checkpoint = root / "save.json"
+            with (
+                patch.object(supervisor, "parse_args", return_value=args),
+                patch.object(supervisor, "RUNTIME_BINARY", runtime),
+                patch.object(supervisor, "checkpoint_path", return_value=checkpoint),
+                patch.object(supervisor, "pid_listening_on", return_value=None),
+                patch.object(supervisor, "runtime_matches", return_value=True),
+                patch.object(
+                    supervisor,
+                    "start_server",
+                    side_effect=lambda *a, **k: (events.append("start"), server)[1],
+                ),
+                patch.object(supervisor, "wait_for_server", return_value=finished),
+                patch.object(
+                    supervisor,
+                    "read_state",
+                    side_effect=[finished, playing, KeyboardInterrupt],
+                ),
+                patch.object(supervisor, "archive_result", return_value=None),
+                patch.object(
+                    supervisor,
+                    "stop_server",
+                    side_effect=lambda *a, **k: events.append("stop"),
+                ),
+                patch.object(supervisor.time, "sleep"),
+            ):
+                self.assertEqual(supervisor.main(), 0)
+
+        # The cold start, and nothing after it. Retiring the finished result
+        # would have added a second start for the successor; the stops around
+        # it are the cold-start orphan sweep and the shutdown.
+        self.assertEqual(events.count("start"), 1)
+        self.assertEqual(events, ["stop", "start", "stop"])
 
 
 class LeagueRosterTests(unittest.TestCase):

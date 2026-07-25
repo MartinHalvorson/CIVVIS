@@ -1129,7 +1129,13 @@ impl Session {
     /// Start a requested world, rejecting a delayed result-countdown request
     /// after the supervisor has already replaced the finished server.
     fn start_new_game(&mut self, request: &Value) -> Result<(), String> {
-        if self.params.supervised {
+        // The supervisor owns the exhibition: every AI-only world is a fresh
+        // process on freshly built code, so this process may not replace one
+        // in place. A game somebody sits down to play is not part of that
+        // cycle — it takes this process over exactly as it would on a server
+        // nobody is supervising, and the supervisor leaves it alone until it
+        // is over.
+        if self.params.supervised && request["spectate"].as_bool() != Some(false) {
             return Err("the spectator supervisor owns in-process game replacement".into());
         }
         if let Some(finished) = request.get("replace_finished") {
@@ -4212,6 +4218,39 @@ mod tests {
         assert!(session.state()["supervisor_request"].is_null());
     }
 
+    /// The supervisor replaces the AI exhibition process by process, so this
+    /// server may not swap one simulation for another in place. Sitting down
+    /// to play is the exception the rule exists around: a single-player game
+    /// is not part of that cycle, so choosing it in the setup panel and
+    /// starting it takes this process over at once, and the way back to the
+    /// exhibition is the supervised request it has always been.
+    #[test]
+    fn a_supervised_exhibition_hands_its_process_to_a_single_player_game() {
+        let mut params = current();
+        params.spectate = true;
+        params.supervised = true;
+        let mut session = Session::new(params);
+        let watched = session.game.seed;
+
+        assert!(session
+            .start_new_game(&json!({"seed": 7, "spectate": true, "force": true}))
+            .is_err());
+        assert_eq!(session.game.seed, watched);
+
+        session
+            .start_new_game(&json!({"seed": 8, "spectate": false, "force": true}))
+            .unwrap();
+        assert_eq!(session.game.seed, 8);
+        let state = session.state();
+        assert_eq!(state["spectate"], json!(false));
+        assert_eq!(state["supervised"], json!(true));
+        assert!(!state["legal_actions"].as_array().unwrap().is_empty());
+
+        assert!(session
+            .request_supervised_new_game(&json!({"mode": "restart", "paused": false}))
+            .is_ok());
+    }
+
     #[test]
     fn next_game_drops_a_watched_player_that_is_not_in_the_new_world() {
         let mut params = current();
@@ -4628,6 +4667,33 @@ mod tests {
         // A build without the save endpoints hides the group rather than
         // offering one that cannot work.
         assert!(EMBEDDED_INDEX.contains("catch (error) { group.style.display = \"none\";"));
+    }
+
+    /// Choosing single player and pressing the one start control on screen
+    /// must open that game — on the supervised exhibition too, where every
+    /// simulation is a fresh process but a human game takes this one over.
+    /// Which control that is follows the world on screen, never the pending
+    /// selection: keying the sidebar button to the mode select left a player
+    /// who picked AI-only with no way to launch anything at all.
+    #[test]
+    fn browser_enters_single_player_from_whichever_start_control_is_showing() {
+        assert!(EMBEDDED_INDEX
+            .contains("const supervised = !!(state && state.supervised) && payload.spectate;"));
+        assert!(EMBEDDED_INDEX.contains("const human = !selectedSimulationSettings().spectate;"));
+        assert!(EMBEDDED_INDEX.contains("? \"single-player game\""));
+        assert!(EMBEDDED_INDEX.contains("body.watching-sim #startgame { display: none; }"));
+        assert!(EMBEDDED_INDEX.contains("document.body.classList.toggle(\"watching-sim\", SPEC);"));
+        // The start button belongs to the game being played, not to the mode
+        // the sidebar is staging for the next one.
+        assert!(!EMBEDDED_INDEX.contains("human-setting\" id=\"startgame\""));
+        // Leader and difficulty still do follow the selection.
+        assert!(EMBEDDED_INDEX.contains("body.spectating .human-setting { display: none; }"));
+        assert!(EMBEDDED_INDEX.contains("class=\"small human-setting\">Leader"));
+        assert!(EMBEDDED_INDEX.contains("class=\"small human-setting\">Difficulty"));
+        // Settings staged for the next simulation describe a spectated world,
+        // so they may only adopt that mode while one is on screen.
+        assert!(EMBEDDED_INDEX
+            .contains("if (SPEC) document.getElementById(\"gamemode\").value = \"ai_sim\";"));
     }
 
     /// War, peace and denouncement have been in `legal_actions(0)` since v0.6
