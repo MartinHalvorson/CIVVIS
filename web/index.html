@@ -376,18 +376,25 @@
   .victory-meter b { display: block; height: 100%; border-radius: inherit; background: currentColor; }
   /* Two of the races are really two races at once — the technology tree and
      the launches that follow it, the culture a civilization keeps and the
-     tourism it exports — so those rows split their meter down the middle. */
+     tourism it exports — so those rows split their meter. The first part is
+     the long haul and the second only starts once it is nearly done, so the
+     tail takes the right third and the run-up keeps the rest. */
   .victory-meter.split {
-    display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: 4px;
+    display: grid; grid-template-columns: 2fr 1fr; align-items: center; gap: 4px;
     height: 4px; overflow: visible; background: none; box-shadow: none;
   }
   .victory-half {
     height: 3px; overflow: hidden; border-radius: 3px;
     background: #020706b3; box-shadow: inset 0 1px 2px #000b;
   }
-  .victory-dots { display: flex; align-items: center; gap: 3px; }
+  /* Four dots at a fixed 4px are wider than the third they are given, and a
+     grid column never shrinks below its content, so a rigid dot would quietly
+     take the launches row back to half the meter. They share their third
+     instead, keeping their circle and stopping at the old 4px. */
+  .victory-dots { display: flex; align-items: center; gap: 2px; }
   .victory-dots i {
-    width: 4px; height: 4px; border-radius: 50%; background: #02070699;
+    flex: 1 1 0; max-width: 4px; height: auto; aspect-ratio: 1;
+    border-radius: 50%; background: #02070699;
     box-shadow: inset 0 0 0 1px #ffffff2b;
   }
   .victory-dots i.on { background: currentColor; box-shadow: 0 0 4px currentColor; }
