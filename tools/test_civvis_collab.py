@@ -136,6 +136,34 @@ class ClaimTests(unittest.TestCase):
         self.assertFalse(collab.valid_claim_pattern("../src/game.rs"))
 
 
+class HunkTests(unittest.TestCase):
+    def test_base_side_ranges_are_read_from_hunk_headers(self):
+        patch = (
+            "@@ -10,5 +10,7 @@ fn one()\n"
+            " ctx\n-old\n+new\n"
+            "@@ -200 +202 @@ fn two()\n"
+            "-single\n+single\n"
+        )
+        self.assertEqual(collab.patch_base_ranges(patch), [(10, 14), (200, 200)])
+
+    def test_a_pure_insertion_is_a_zero_width_range_at_the_seam(self):
+        self.assertEqual(collab.patch_base_ranges("@@ -40,0 +41,3 @@\n"), [(40, 40)])
+
+    def test_nearby_edits_touch_because_git_needs_context(self):
+        self.assertTrue(collab.ranges_touch([(10, 20)], [(22, 30)]))
+        self.assertFalse(collab.ranges_touch([(10, 20)], [(40, 50)]))
+
+    def test_an_unreadable_patch_falls_back_to_whole_file(self):
+        self.assertTrue(collab.file_edits_collide(None, [(1, 2)]))
+        self.assertTrue(collab.file_edits_collide([(1, 2)], None))
+        self.assertFalse(collab.file_edits_collide([(1, 2)], [(90, 95)]))
+
+    def test_only_genuinely_colliding_paths_are_reported(self):
+        mine = {"a.rs": [(1, 10)], "b.rs": [(1, 10)], "c.rs": [(1, 10)]}
+        theirs = {"a.rs": [(5, 15)], "b.rs": [(500, 510)]}
+        self.assertEqual(collab.colliding_paths(mine, theirs), ["a.rs"])
+
+
 class PolicyTests(unittest.TestCase):
     branch = "agent/render-win-02/codex-47/government-cleanup-20260723T210500Z-a31f"
 
@@ -161,7 +189,9 @@ class PolicyTests(unittest.TestCase):
             files=["web/index.html"],
             commit_subjects=[],
         )
-        self.assertIn("changed path is not claimed: web/index.html", errors)
+        self.assertTrue(
+            any("changed path is not claimed: web/index.html" in e for e in errors)
+        )
 
     def test_autosync_commits_are_forbidden(self):
         errors = collab.validate_pr(
@@ -171,21 +201,66 @@ class PolicyTests(unittest.TestCase):
         )
         self.assertTrue(any("autosync commit" in error for error in errors))
 
-    def test_file_overlap_requires_an_explicit_pr_reference(self):
+    def test_unknown_patches_collide_conservatively_on_a_ready_pr(self):
         errors = collab.validate_pr(
-            pr(self.branch, body()),
+            pr(self.branch, body(), draft=False),
             files=["src/game.rs"],
             commit_subjects=[],
             other_files={5: {"src/game.rs"}},
         )
-        self.assertTrue(any("overlap PR #5" in error for error in errors))
+        self.assertTrue(any("collide with PR #5" in error for error in errors))
         coordinated = collab.validate_pr(
-            pr(self.branch, body(coordinated="#5")),
+            pr(self.branch, body(coordinated="#5"), draft=False),
             files=["src/game.rs"],
             commit_subjects=[],
             other_files={5: {"src/game.rs"}},
         )
         self.assertEqual(coordinated, [])
+
+    def test_a_draft_reports_collisions_without_failing(self):
+        advisories = []
+        errors = collab.validate_pr(
+            pr(self.branch, body()),
+            files=["src/game.rs"],
+            commit_subjects=[],
+            other_files={5: {"src/game.rs"}},
+            advisories=advisories,
+        )
+        self.assertEqual(errors, [])
+        self.assertTrue(any("collide with PR #5" in note for note in advisories))
+
+    def test_disjoint_edits_to_one_file_never_gate_a_ready_pr(self):
+        advisories = []
+        errors = collab.validate_pr(
+            pr(self.branch, body(), draft=False),
+            files=["src/game.rs"],
+            commit_subjects=[],
+            ranges={"src/game.rs": [(10, 20)]},
+            other_ranges={5: {"src/game.rs": [(900, 910)]}},
+            advisories=advisories,
+        )
+        self.assertEqual(errors, [])
+        self.assertTrue(any("different places" in note for note in advisories))
+
+    def test_edits_to_the_same_lines_gate_a_ready_pr(self):
+        errors = collab.validate_pr(
+            pr(self.branch, body(), draft=False),
+            files=["src/game.rs"],
+            commit_subjects=[],
+            ranges={"src/game.rs": [(100, 140)]},
+            other_ranges={5: {"src/game.rs": [(130, 160)]}},
+        )
+        self.assertTrue(any("collide with PR #5" in error for error in errors))
+
+    def test_a_declared_collision_is_accepted(self):
+        errors = collab.validate_pr(
+            pr(self.branch, body(coordinated="#5"), draft=False),
+            files=["src/game.rs"],
+            commit_subjects=[],
+            ranges={"src/game.rs": [(100, 140)]},
+            other_ranges={5: {"src/game.rs": [(130, 160)]}},
+        )
+        self.assertEqual(errors, [])
 
     def test_ready_pr_must_complete_checkboxes(self):
         errors = collab.validate_pr(
@@ -193,7 +268,9 @@ class PolicyTests(unittest.TestCase):
             files=["src/game.rs"],
             commit_subjects=[],
         )
-        self.assertIn("ready PRs must complete every validation checkbox", errors)
+        self.assertTrue(
+            any("must complete every validation checkbox" in e for e in errors)
+        )
 
     def test_main_commit_requires_the_matching_merged_pr_commit(self):
         rows = [
