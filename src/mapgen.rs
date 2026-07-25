@@ -8,6 +8,24 @@ use crate::setup::MapScript;
 use crate::world::WorldMap;
 use crate::{hex, Pos};
 
+/// `GlobalParameters.LAKE_PLOT_RANDOM`: one eligible inland plot in forty
+/// floods when the stock generator adds lakes.
+const LAKE_PLOT_RANDOM: usize = 40;
+
+/// `GlobalParameters.LAKE_MAX_AREA_SIZE`: the whole of Civ VI's distinction
+/// between the two kinds of enclosed water. A body of at most nine plots is a
+/// **lake** — fresh water for every tile around it, a Fishery, and the site
+/// Huey Teocalli has to be built on. A larger one is an **inland sea**: Coast
+/// that ships can sail and work, and that no city can drink from.
+const LAKE_MAX_AREA_SIZE: usize = 9;
+
+/// The share of the world `Lakes.lua` leaves as land. It stacks three fractal
+/// layers at 81, 88 and 95 percent, but `Adjacent` bars every layer after the
+/// first from any plot an earlier one made land *or* borders, so only the first
+/// cut really decides the world: land nearly everywhere, and the driest fifth
+/// of the field left behind as scattered interior basins.
+const LAKES_SCRIPT_LAND_PERCENT: u32 = 81;
+
 fn offset_region(
     wm: &WorldMap,
     col_start: i32,
@@ -190,6 +208,25 @@ fn generate_land(
             }
             land
         }
+        MapScript::Lakes => {
+            // The basins this leaves behind are the map's water. They are cut
+            // from the field rather than grown, so they arrive in the range of
+            // sizes the fractal happens to hold: most of them small enough to
+            // be lakes, a few broad enough to be inland seas. Only the poles
+            // are kept open, because a world with no sea at all has nowhere for
+            // a river to run to and no shelf for polar ice.
+            let basin = Fractal::new(rng, width, height, 3);
+            let waterline = basin.percentile(LAKES_SCRIPT_LAND_PERCENT);
+            let mut land = BTreeSet::new();
+            for row in 1..height - 1 {
+                for col in 0..width {
+                    if basin.at(col, row) < waterline {
+                        land.insert(hex::offset_to_axial(col, row));
+                    }
+                }
+            }
+            land
+        }
         MapScript::Planet => {
             // A globe has no edge to hold the ocean against, so its land is
             // seeded rather than cut out: continents are dropped around the
@@ -283,6 +320,139 @@ fn generate_land(
     }
 }
 
+/// How many bodies a script may spread past a single plot.
+///
+/// `Lakes.lua` asks for four per continent region; every other stock script
+/// asks for none and receives the one-plot ponds the same roll produces. The
+/// two single-supercontinent scripts are given a budget of their own here,
+/// which is a deliberate departure: their interiors are deep enough to hold an
+/// inland sea, and a supercontinent whose only water is its own shoreline plays
+/// as a flat expanse. The island scripts keep the stock zero — an island has no
+/// interior to put a lake in, and the enclosure rule would refuse one anyway.
+///
+/// Planet's globe carries them like the continent scripts do: its landmasses
+/// have interiors, and a lake is judged by the same enclosure rule there as
+/// anywhere else.
+fn large_lake_budget(script: MapScript, num_continents: usize) -> usize {
+    match script {
+        MapScript::Lakes => num_continents * 4,
+        MapScript::Pangaea | MapScript::InlandSea => num_continents,
+        MapScript::Continents => num_continents / 2,
+        MapScript::Planet => num_continents / 2,
+        MapScript::SmallContinents => 0,
+    }
+}
+
+/// Whether a plot may flood, using the stock script's filters.
+///
+/// A lake plot has to be inland land: not water, not *coastal* land, and clear
+/// of rivers and of tiles carrying one. The enclosure is a precondition of
+/// placement rather than something checked afterwards, and it is also what
+/// keeps two lakes apart — a plot beside one that has already flooded is
+/// coastal land by the time the scan reaches it.
+fn lake_eligible(wm: &WorldMap, land: &BTreeSet<Pos>, pos: Pos) -> bool {
+    if !land.contains(&pos) || wm.tiles.get(&pos).is_none_or(|tile| tile.has_river()) {
+        return false;
+    }
+    wm.around(pos)
+        .into_iter()
+        .all(|neighbor| match wm.tiles.get(&neighbor) {
+            // Civ VI's polar rows are always ocean, so a plot on the world's
+            // edge is coastal land there and never floods. A CIVVIS script may
+            // put land on the rim — Inland Sea rings its basin that way — and
+            // treating the edge as a shore keeps that rim whole rather than
+            // punching a lake through it.
+            None => false,
+            Some(tile) => land.contains(&neighbor) && !tile.has_river(),
+        })
+}
+
+/// Flood one plot. The stock script leaves it as Coast and lets the engine
+/// decide afterwards whether the body it belongs to is small enough to be a
+/// lake, which is what [`classify_lakes`] does here.
+///
+/// Dropping the plot from `land` is what makes the water real to the rest of
+/// generation: every later pass — features, volcanoes, natural wonders,
+/// resources, continents, spawns — works from that set, so none of them will
+/// plant anything in the new lake or strand a civilization in it.
+fn flood_lake_plot(wm: &mut WorldMap, land: &mut BTreeSet<Pos>, pos: Pos) {
+    land.remove(&pos);
+    let tile = wm.tiles.get_mut(&pos).unwrap();
+    tile.terrain = "coast".into();
+    // Relief was settled before the rivers ran; water has none.
+    tile.hills = false;
+}
+
+/// `AddMoreLake`: give the six neighbours of a fresh lake a chance to join it.
+///
+/// The denominator grows with the body, so the sixth plot is far less likely
+/// than the first and a lake stops of its own accord. The stock script counts
+/// the attempt against the large-lake budget only when three or more take, but
+/// floods whatever it picked either way.
+fn spread_lake(wm: &mut WorldMap, land: &mut BTreeSet<Pos>, pos: Pos, rng: &mut Rng) -> bool {
+    let mut picked: Vec<Pos> = Vec::new();
+    for neighbor in wm.neighbors(pos) {
+        // Eligibility is read before anything floods, so the six are judged
+        // against the shore as it stood when the lake was drawn.
+        if lake_eligible(wm, land, neighbor) && rng.below(4 + picked.len()) < 3 {
+            picked.push(neighbor);
+        }
+    }
+    let grew = picked.len() > 2;
+    for neighbor in picked {
+        flood_lake_plot(wm, land, neighbor);
+    }
+    grew
+}
+
+/// Civ VI's `AddLakes` (`RiversLakes.lua`), in its stock position in the
+/// pipeline: after the rivers, because "lakes would interfere with rivers,
+/// causing them to stop and not reach the ocean, if placed any sooner".
+fn add_lakes(
+    wm: &mut WorldMap,
+    land: &mut BTreeSet<Pos>,
+    mut large_lakes: usize,
+    rng: &mut Rng,
+) {
+    let (width, height) = (wm.width, wm.height);
+    let scan: Vec<Pos> = (0..height)
+        .flat_map(|row| (0..width).map(move |col| hex::offset_to_axial(col, row)))
+        .collect();
+    for pos in scan {
+        if !lake_eligible(wm, land, pos) || rng.below(LAKE_PLOT_RANDOM) != 0 {
+            continue;
+        }
+        if large_lakes > 0 && spread_lake(wm, land, pos, rng) {
+            large_lakes -= 1;
+        }
+        flood_lake_plot(wm, land, pos);
+    }
+}
+
+/// Sort the world's enclosed water into lakes and inland seas by area, the way
+/// `AreaBuilder` does once the terrain is settled.
+///
+/// This runs for every script, not only the ones that add lakes, because a
+/// fractal coastline encloses basins of its own: a pocket the sea cannot reach
+/// has always been a lake, and until now CIVVIS painted it as open ocean.
+fn classify_lakes(wm: &mut WorldMap) {
+    let water: BTreeSet<Pos> = wm
+        .tiles
+        .iter()
+        .filter(|(_, tile)| matches!(tile.terrain.as_str(), "coast" | "ocean"))
+        .map(|(pos, _)| *pos)
+        .collect();
+    let enclosed = connected_components(wm, &water);
+    for body in enclosed {
+        if body.len() > LAKE_MAX_AREA_SIZE {
+            continue;
+        }
+        for pos in body {
+            wm.tiles.get_mut(&pos).unwrap().terrain = "lake".into();
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn generate(
     rules: &Rules,
@@ -328,7 +498,7 @@ pub fn generate_with_script(
     };
 
     // --- landmass topology selected by the stock-style map script
-    let land = generate_land(&wm, script, num_major_spawns, rng);
+    let mut land = generate_land(&wm, script, num_major_spawns, rng);
 
     let land_list: Vec<Pos> = land.iter().cloned().collect();
 
@@ -348,9 +518,7 @@ pub fn generate_with_script(
         .iter()
         .filter(|(pos, t)| {
             t.terrain == "ocean"
-                && hex::neighbors(**pos)
-                    .iter()
-                    .any(|n| land.contains(&hex::canon(*n, width)))
+                && wm.neighbors(**pos).iter().any(|n| land.contains(n))
         })
         .map(|(pos, _)| *pos)
         .collect();
@@ -408,6 +576,22 @@ pub fn generate_with_script(
     // edge graph (rather than the tile-center graph) keeps every consecutive
     // segment joined at a hex corner and never sends a channel through a tile.
     generate_rivers(&mut wm, &land_list, rng);
+
+    // --- lakes and inland seas, in the stock order: the rivers already have
+    // their outlets, so nothing that floods now can dam one. `add_lakes` only
+    // creates water; `classify_lakes` then sorts every enclosed body on the
+    // map — the ones it just made and the ones the coastline enclosed by
+    // itself — into lakes and inland seas by area.
+    {
+        add_lakes(
+            &mut wm,
+            &mut land,
+            large_lake_budget(script, num_continents),
+            rng,
+        );
+    }
+    classify_lakes(&mut wm);
+    let land_list: Vec<Pos> = land.iter().cloned().collect();
 
     // --- tribal villages (goody huts), roughly 1 per 40 land tiles
     for pos in &land_list {
@@ -611,8 +795,7 @@ pub fn generate_with_script(
             while cluster.len() < footprint {
                 let mut frontier: Vec<Pos> = cluster
                     .iter()
-                    .flat_map(|position| hex::neighbors(*position))
-                    .map(|position| hex::canon(position, width))
+                    .flat_map(|position| wm.neighbors(*position))
                     .filter(|position| wm.tiles.contains_key(position))
                     .filter(|position| !cluster.contains(position))
                     .filter(|position| far_enough(*position, separation))
@@ -779,9 +962,11 @@ pub fn generate_with_script(
         .filter(|(position, _)| {
             wm.neighbors(**position).into_iter()
                 .any(|neighbor| {
+                    // Sea level is what rises, so a lake shore is not lowland
+                    // however low it lies.
                     wm.tiles
                         .get(&neighbor)
-                        .is_some_and(|tile| rules.is_water(tile))
+                        .is_some_and(|tile| matches!(tile.terrain.as_str(), "coast" | "ocean"))
                 })
         })
         .map(|(position, _)| *position)
@@ -1264,8 +1449,7 @@ fn start_quality(rules: &Rules, wm: &WorldMap, pos: Pos) -> i32 {
     let mut nearby_yields = Vec::new();
     let mut workable_land = 0;
     let mut seen = BTreeSet::new();
-    for raw in hex::disk(pos, 3) {
-        let tile_pos = hex::canon(raw, wm.width);
+    for tile_pos in wm.disk(pos, 3) {
         if !seen.insert(tile_pos) {
             continue;
         }
@@ -1314,9 +1498,9 @@ pub fn start_bias_score(rules: &Rules, wm: &WorldMap, pos: Pos, civ: &str) -> i3
         return 0;
     };
     let mut score = 0;
-    let nearby: Vec<&crate::world::Tile> = hex::disk(pos, 3)
+    let nearby: Vec<&crate::world::Tile> = wm
+        .disk(pos, 3)
         .into_iter()
-        .map(|raw| hex::canon(raw, wm.width))
         .filter_map(|tile| wm.get(tile))
         .collect();
 
@@ -1729,6 +1913,62 @@ fn balanced_major_spawns(
         }
         if !improved {
             break;
+        }
+    }
+
+    // Then the shipped Natural Wonder standoff, as a repair rather than a
+    // filter. A wonder's own tiles are never candidates, which is why majors
+    // were taken to keep their distance already — but that only rules out
+    // standing *on* one, and a capital sharing a border with a wonder is short
+    // the tiles it cannot work from its first turn. Filtering the pool up front
+    // is the obvious fix and is the wrong one: it changes which layouts the
+    // spacing search ever sees, and cost the Large map its shipped 10-14
+    // separation band. Repairing the finished layout leaves that search alone
+    // and moves a start by a tile or two, keeping the separation it just won.
+    let wonders: Vec<Pos> = wm
+        .tiles
+        .iter()
+        .filter(|(_, tile)| {
+            tile.feature
+                .as_deref()
+                .and_then(|feature| rules.features.get(feature))
+                .is_some_and(|feature| feature.natural_wonder)
+        })
+        .map(|(position, _)| *position)
+        .collect();
+    let crowds_a_wonder = |position: Pos| {
+        wonders.iter().any(|wonder| {
+            wm.distance(position, *wonder) < START_DISTANCE_MAJOR_NATURAL_WONDER
+        })
+    };
+    for index in 0..layout.len() {
+        if !crowds_a_wonder(layout[index]) {
+            continue;
+        }
+        let replacement = candidates
+            .iter()
+            .copied()
+            .filter(|candidate| !crowds_a_wonder(*candidate) && !layout.contains(candidate))
+            .filter(|candidate| {
+                layout
+                    .iter()
+                    .enumerate()
+                    .filter(|(other, _)| *other != index)
+                    .all(|(_, other)| {
+                        wm.distance(*candidate, *other) >= separation_floor
+                    })
+            })
+            .min_by_key(|candidate| {
+                (
+                    wm.distance(*candidate, layout[index]),
+                    std::cmp::Reverse(qualities[candidate]),
+                    *candidate,
+                )
+            });
+        // A map whose wonders leave nowhere to stand keeps the start it had:
+        // a capital beside a wonder beats no capital at all.
+        if let Some(position) = replacement {
+            layout[index] = position;
         }
     }
 
@@ -2163,6 +2403,147 @@ mod river_tests {
         connected_components(world, &land)
     }
 
+    /// Lakes were modeled everywhere except on the map. `terrains.json` has
+    /// carried a Lake row from the beginning, and with it the Fishery, the
+    /// Water Park, the Offshore Wind Farm, fresh-water Housing, and Huey
+    /// Teocalli — whose stock placement rule is a Lake tile and nothing else.
+    /// The generator never made one, so every bit of that was unreachable.
+    ///
+    /// What makes a lake a lake is that the sea cannot reach it; what separates
+    /// it from an inland sea is area. Both halves are checked here, because a
+    /// "lake" open to the ocean would hand out fresh water for a bay, and one
+    /// over the ceiling would hand it out for a sea.
+    #[test]
+    fn every_land_script_grows_enclosed_lakes_within_the_stock_area_ceiling() {
+        let rules = Rules::embedded();
+        for (index, script) in [
+            MapScript::Pangaea,
+            MapScript::Continents,
+            MapScript::SmallContinents,
+            MapScript::InlandSea,
+            MapScript::Lakes,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let mut lake_tiles = 0usize;
+            let mut watered_shores = 0usize;
+            for seed in 0..3u64 {
+                let mut rng = Rng::new(64_000 + index as u64 * 16 + seed);
+                let (world, spawns) =
+                    generate_with_script(&rules, 74, 46, 6, 9, 4, 3, script, &mut rng);
+                let lakes: BTreeSet<Pos> = world
+                    .tiles
+                    .iter()
+                    .filter(|(_, tile)| tile.terrain == "lake")
+                    .map(|(position, _)| *position)
+                    .collect();
+                lake_tiles += lakes.len();
+                let where_ = format!("{script:?} seed {seed}");
+                for position in &lakes {
+                    let tile = &world.tiles[position];
+                    assert!(!tile.hills, "{where_}: lake on hills at {position:?}");
+                    assert!(
+                        tile.improvement.is_none(),
+                        "{where_}: a tribal village is under the lake at {position:?}"
+                    );
+                    assert!(
+                        !spawns.contains(position),
+                        "{where_}: a civilization starts in the water at {position:?}"
+                    );
+                    for neighbor in hex::neighbors(*position)
+                        .into_iter()
+                        .map(|neighbor| hex::canon(neighbor, world.width))
+                    {
+                        let Some(neighbor_tile) = world.tiles.get(&neighbor) else {
+                            continue;
+                        };
+                        assert!(
+                            !matches!(neighbor_tile.terrain.as_str(), "coast" | "ocean"),
+                            "{where_}: the lake at {position:?} opens onto the sea"
+                        );
+                        if !rules.is_water(neighbor_tile) {
+                            watered_shores += 1;
+                        }
+                    }
+                }
+                for body in connected_components(&world, &lakes) {
+                    assert!(
+                        body.len() <= LAKE_MAX_AREA_SIZE,
+                        "{where_}: a body of {} tiles is an inland sea, not a lake",
+                        body.len()
+                    );
+                }
+            }
+            assert!(
+                lake_tiles > 0,
+                "{script:?} generated no lake in three worlds, leaving the Fishery, \
+                 Huey Teocalli and fresh-water Housing unreachable on it"
+            );
+            assert!(
+                watered_shores > 0,
+                "{script:?} generated lakes that water no land"
+            );
+        }
+    }
+
+    /// The Lakes script inverts the usual world: `Lakes.lua` fills it with land
+    /// and leaves the water inside. A player should find both kinds of inland
+    /// water there — ponds that water a city, and basins too broad to drink
+    /// from that still have to be sailed around.
+    #[test]
+    fn the_lakes_script_is_a_land_world_holding_both_lakes_and_inland_seas() {
+        let rules = Rules::embedded();
+        for seed in 0..3u64 {
+            let mut rng = Rng::new(31_400 + seed);
+            let (world, _) =
+                generate_with_script(&rules, 74, 46, 6, 9, 4, 3, MapScript::Lakes, &mut rng);
+            let land = world
+                .tiles
+                .values()
+                .filter(|tile| !rules.is_water(tile))
+                .count();
+            let land_share = land * 100 / world.tiles.len();
+            assert!(
+                land_share >= 65,
+                "seed {seed}: Lakes should be a world of land, got {land_share}%"
+            );
+            let lakes = world
+                .tiles
+                .values()
+                .filter(|tile| tile.terrain == "lake")
+                .count();
+            assert!(lakes >= 40, "seed {seed}: only {lakes} lake tiles");
+
+            // An inland sea is enclosed water the area rule leaves as Coast.
+            // The polar water is excluded by construction: a body that reaches
+            // the top or bottom row is the open sea, whatever its size.
+            let sea: BTreeSet<Pos> = world
+                .tiles
+                .iter()
+                .filter(|(_, tile)| matches!(tile.terrain.as_str(), "coast" | "ocean"))
+                .map(|(position, _)| *position)
+                .collect();
+            let bodies = connected_components(&world, &sea);
+            let inland_seas = bodies
+                .iter()
+                .filter(|body| {
+                    body.len() > LAKE_MAX_AREA_SIZE
+                        && body.iter().all(|position| {
+                            let (_, row) = hex::axial_to_offset(position.0, position.1);
+                            row > 0 && row < world.height - 1
+                        })
+                })
+                .count();
+            assert!(
+                inland_seas >= 1,
+                "seed {seed}: Lakes should hold at least one basin too large to drink from, \
+                 water bodies were {:?}",
+                bodies.iter().map(|body| body.len()).collect::<Vec<_>>()
+            );
+        }
+    }
+
     #[test]
     fn stock_map_scripts_create_distinct_playable_topologies() {
         let rules = Rules::embedded();
@@ -2171,6 +2552,7 @@ mod river_tests {
             MapScript::Continents,
             MapScript::SmallContinents,
             MapScript::InlandSea,
+            MapScript::Lakes,
         ]
         .into_iter()
         .enumerate()
@@ -2197,7 +2579,7 @@ mod river_tests {
                 * 100
                 / total.max(1);
             match script {
-                MapScript::Pangaea | MapScript::InlandSea => assert!(
+                MapScript::Pangaea | MapScript::InlandSea | MapScript::Lakes => assert!(
                     share(1) >= 80,
                     "{script:?} should be one continent with at most a few islets, \n                     largest holds {}%",
                     share(1)
@@ -2389,6 +2771,7 @@ mod river_tests {
             MapScript::Continents,
             MapScript::SmallContinents,
             MapScript::InlandSea,
+            MapScript::Lakes,
             MapScript::Planet,
         ]
         .into_iter()
@@ -2839,6 +3222,7 @@ mod river_tests {
                 MapScript::Continents,
                 MapScript::SmallContinents,
                 MapScript::InlandSea,
+                MapScript::Lakes,
             ] {
                 for seed in 0..3u64 {
                     let mut rng = Rng::new(seed);

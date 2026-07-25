@@ -3623,20 +3623,41 @@ mod action_family_tests {
         part.iter().all(|item| rest.any(|other| other == item))
     }
 
-    /// A settled position: cities to buy in, units to order, rivals to deal
-    /// with, and a congress in session by the time this many turns are up.
+    /// A settled position: cities to buy in, units to order, and rivals to
+    /// deal with.
+    ///
+    /// The last of those is the one that cannot be had by naming a turn. A
+    /// congress sits for only part of its cycle and a trade route needs a
+    /// trader already in the field, so which turn has a deal on the table
+    /// depends on the map and on how the AI played it. Stopping at a chosen
+    /// turn made a rich position a coincidence, and any change to either could
+    /// move it — turn 60 held one until the generator started filling lakes,
+    /// and turns 65, 70, 80 and 90 all did while 75 and 100 did not. Play on
+    /// until a deal is genuinely available instead.
     fn played_in_game() -> Game {
         let mut game = Game::new_with(GameOptions::new(4, 32, 22, 90_002, 400, 4));
         let mut ais = AdvancedAi::fleet(&game);
-        while game.turn < 60 && game.winner.is_none() {
+        while game.turn < 120 && game.winner.is_none() {
             let pid = game.current;
             ais[pid].take_turn(&mut game, pid);
             if game.winner.is_none() && game.current == pid {
                 let _ = game.apply(pid, &Action::EndTurn);
             }
+            let settled = game.turn >= 60 && game.winner.is_none();
+            if settled
+                && game
+                    .legal_actions_within(game.current, ActionFamilies::DEALS)
+                    .len()
+                    > game
+                        .legal_actions_within(game.current, ActionFamilies::CHEAP)
+                        .len()
+            {
+                break;
+            }
         }
         game
     }
+
 
     #[test]
     fn action_families_partition_the_full_enumeration() {

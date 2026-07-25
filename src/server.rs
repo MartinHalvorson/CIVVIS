@@ -33,6 +33,17 @@ const EMBEDDED_WORLD_WONDER_ATLAS: &[u8] =
     include_bytes!("../web/assets/world-wonder-atlas.png");
 const EMBEDDED_MOUNTAIN_ATLAS: &[u8] = include_bytes!("../web/assets/mountain-atlas.png");
 
+/// The agents that exist in every build, whether or not a league snapshot is
+/// on disk, with the handle the leaderboards give them. `make_send_ai`
+/// resolves each id, and the auto-play control offers this list when there is
+/// no roster to offer instead.
+const BUILTIN_STRATEGIES: [(&str, &str); 4] = [
+    ("advanced", "JackOfAllTrades"),
+    ("advanced_evolved", "Evolved"),
+    ("advanced_v1", "OldGuard"),
+    ("basic", "TrainingWheels"),
+];
+
 #[derive(Clone)]
 pub struct Params {
     pub num_players: usize,
@@ -95,6 +106,16 @@ pub struct Session {
     league: Option<crate::league::League>,
     /// Per-seat index into `league.strategies` for rated major seats.
     seat_strategy: Vec<Option<usize>>,
+    /// The strategies auto-play can hand the human seat to. `league` above is
+    /// the roster this game is *rated* against and is often absent; every
+    /// build ships the committed snapshot under `data/league`, so the choice
+    /// on offer is our bred strategies whether or not anything is being rated.
+    /// Reading it is a labelling concern only: nothing here seats a rival.
+    roster: Option<crate::league::League>,
+    /// The strategy a player handed their own seat to, by roster name. Held
+    /// separately from `seat_strategy[0]` because the roster it came from is
+    /// not always the roster this game is rated against.
+    autoplay_strategy: Option<String>,
     /// Set once this game's result has been rated, so a winner that is
     /// stepped past more than once is only ever counted for one game.
     league_recorded: bool,
@@ -890,6 +911,17 @@ impl Session {
         (ais, seat_strategy)
     }
 
+    /// The strategies auto-play may offer. Prefer whatever this game is
+    /// already rated against, so the ratings shown are the ones in play; fall
+    /// back to the snapshot every build ships, so the control still names our
+    /// bred strategies in a game that is rating nothing.
+    fn load_roster(league: Option<&crate::league::League>) -> Option<crate::league::League> {
+        match league {
+            Some(l) => Some(l.clone()),
+            None => crate::league::load_league("data/league"),
+        }
+    }
+
     /// The roster named by `--league`, else a best-effort `league/` load
     /// purely for elo labels.
     fn load_params_league(params: &Params) -> (Option<crate::league::League>, bool) {
@@ -930,6 +962,7 @@ impl Session {
         let (league, seat_from_roster) = Self::load_params_league(&params);
         let (ais, seat_strategy) = Self::ai_fleet(&game, league.as_ref(), seat_from_roster);
         let chronicle = ChronicleState::from_game(&game);
+        let roster = Self::load_roster(league.as_ref());
         Session {
             params,
             game,
@@ -941,6 +974,8 @@ impl Session {
             next_game_params: None,
             league,
             seat_strategy,
+            roster,
+            autoplay_strategy: None,
             league_recorded: false,
         }
     }
@@ -986,6 +1021,7 @@ impl Session {
         // A match restored with its winner already decided was rated when it
         // finished; rating it again on the next step would count it twice.
         let league_recorded = game.winner.is_some();
+        let roster = Self::load_roster(league.as_ref());
         Session {
             params,
             game,
@@ -997,6 +1033,8 @@ impl Session {
             next_game_params,
             league,
             seat_strategy,
+            roster,
+            autoplay_strategy: None,
             league_recorded,
         }
     }
@@ -1389,6 +1427,66 @@ impl Session {
         steps
     }
 
+    /// Hand seat 0 to a named strategy, so auto-play runs *that* agent rather
+    /// than whichever one the fleet happened to build for the seat.
+    ///
+    /// A name is matched against the league roster first — by entrant name or
+    /// by the handle the leaderboards show — and then against the built-in
+    /// agents, so a build with no roster on disk still has something to hand
+    /// the seat to. An unknown name is an error rather than a silent fallback:
+    /// a player who picked a strategy and got a different one has been lied to.
+    pub fn seat_strategy_at(&mut self, seat: usize, name: &str) -> Result<(), String> {
+        if name.is_empty() || self.autoplay_strategy.as_deref() == Some(name) {
+            return Ok(());
+        }
+        let seed = self.game.seed.wrapping_add(seat as u64);
+        let kind = self
+            .roster
+            .as_ref()
+            .and_then(|roster| {
+                roster
+                    .strategies
+                    .iter()
+                    .find(|s| s.name == name || s.username == name)
+                    .map(|s| s.kind.clone())
+            })
+            .or_else(|| {
+                BUILTIN_STRATEGIES.iter().any(|(id, _)| *id == name).then(|| {
+                    crate::league::StrategyKind::Builtin { ai: name.to_string() }
+                })
+            })
+            .ok_or_else(|| format!("no strategy named {name}"))?;
+        self.ais[seat] = crate::league::make_send_ai(&kind, seed);
+        // The rated roster and the offered roster can be different rosters, so
+        // only claim a rated identity for the seat when this name is in the
+        // rated one; the name below is what the browser is told either way.
+        self.seat_strategy[seat] = self
+            .league
+            .as_ref()
+            .and_then(|l| l.strategies.iter().position(|s| s.name == name || s.username == name));
+        self.autoplay_strategy = Some(name.to_string());
+        Ok(())
+    }
+
+    /// The strategy currently playing `seat`, by roster name: the one a player
+    /// handed the seat to, else whichever entrant the fleet seated there.
+    pub fn seated_strategy_name(&self, seat: usize) -> Option<&str> {
+        if seat == 0 {
+            if let Some(name) = self.autoplay_strategy.as_deref() {
+                return Some(name);
+            }
+        }
+        if let (Some(Some(index)), Some(league)) = (self.seat_strategy.get(seat), self.league.as_ref())
+        {
+            return Some(league.strategies[*index].name.as_str());
+        }
+        // No rated identity for the seat. That does not make it nameless: the
+        // fleet built the default agent there, and the roster's name for that
+        // agent is "advanced" — the cheaper baseline for minors.
+        let player = self.game.players.get(seat)?;
+        Some(if player.is_minor || player.is_barbarian { "basic" } else { "advanced" })
+    }
+
     /// Hand the player's own seat to the AI for `turns` turns.
     ///
     /// Unciv calls this AutoPlay, and it earns its keep in the same two
@@ -1396,9 +1494,18 @@ impl Session {
     /// and watching how the agent would have played a position you are in.
     /// Seat 0 already has an agent built for it — in a human game it simply
     /// never gets asked — so this is a matter of asking it.
+    ///
+    /// "Play the rest of it" is a turn count like any other: the bound is the
+    /// turns this game has left, because a game ends at its limit and the loop
+    /// already stops on a winner or a dead seat.
     pub fn autoplay(&mut self, turns: u32) -> usize {
         let mut played = 0;
-        for _ in 0..turns.min(500) {
+        let remaining = self
+            .game
+            .max_turns
+            .saturating_sub(self.game.turn)
+            .saturating_add(1);
+        for _ in 0..turns.min(remaining) {
             if self.game.winner.is_some() || !self.game.players[0].alive {
                 break;
             }
@@ -1648,6 +1755,45 @@ fn simulation_settings(params: &Params) -> Value {
         "speed": params.game_speed.id(),
         "victories": victories,
     })
+}
+
+/// The agents a person can hand their seat to, strongest first.
+///
+/// With a league roster on disk this is every entrant still competing, with
+/// the rating it is defending, so the choice is between *our* strategies and
+/// not between adjectives. An entrant that has not played a rated game yet is
+/// marked provisional rather than shown as an authoritative 1500. Without a
+/// roster the list falls back to the built-in agents, because a control with
+/// nothing in it is worse than one with four honest entries.
+fn strategy_roster(session: &Session) -> Value {
+    let mut rows: Vec<Value> = Vec::new();
+    if let Some(roster) = session.roster.as_ref() {
+        let mut active: Vec<&crate::league::Strategy> =
+            roster.strategies.iter().filter(|s| !s.retired).collect();
+        active.sort_by(|a, b| b.rating.total_cmp(&a.rating));
+        rows.extend(active.into_iter().map(|s| {
+            json!({
+                "name": s.name,
+                "username": s.username,
+                "label": s.label(),
+                "rating": s.rating.round(),
+                "games": s.games,
+                "wins": s.wins,
+                "provisional": s.games == 0,
+            })
+        }));
+    }
+    if rows.is_empty() {
+        rows.extend(BUILTIN_STRATEGIES.iter().map(|(name, username)| {
+            json!({
+                "name": name,
+                "username": username,
+                "label": name,
+                "provisional": true,
+            })
+        }));
+    }
+    json!(rows)
 }
 
 fn new_game_params(current: &Params, request: &Value) -> Params {
@@ -2165,9 +2311,14 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "difficulties": r.difficulties, "speeds": r.speeds,
                     "map_scripts": CIV6_MAP_SCRIPTS,
                     "game_speeds": CIV6_GAME_SPEEDS,
+                    "strategies": strategy_roster(&session),
+                    "seat_strategy": session.seated_strategy_name(0),
                 }),
             );
         }
+        // Hand your seat to one of our agents for a stretch of turns. `turns`
+        // is a count or the string "all"; `strategy` names who plays, and is
+        // remembered on the seat so a run continued in chunks stays one agent.
         ("POST", "/autoplay") => {
             let mut session = sh.session.lock().unwrap();
             if session.params.spectate {
@@ -2175,10 +2326,21 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 respond_json(stream, &json!({"error": "a spectated game is already playing itself"}));
                 return;
             }
-            let turns = parsed["turns"].as_u64().unwrap_or(1).clamp(1, 500) as u32;
+            if let Some(name) = parsed["strategy"].as_str() {
+                if let Err(error) = session.seat_strategy_at(0, name) {
+                    drop(session);
+                    respond_json(stream, &json!({"error": error}));
+                    return;
+                }
+            }
+            let turns = match parsed["turns"].as_str() {
+                Some("all") => u32::MAX,
+                _ => parsed["turns"].as_u64().unwrap_or(1).clamp(1, u32::MAX as u64) as u32,
+            };
             let played = session.autoplay(turns);
             let mut out = session.state();
             out["autoplayed"] = json!(played);
+            out["autoplay_strategy"] = json!(session.seated_strategy_name(0));
             drop(session);
             decorate(&mut out, sh);
             respond_json(stream, &out);
@@ -2380,9 +2542,9 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
 mod tests {
     use super::{
         chronicle_world_events, final_countdown_ms, new_game_params, request_path, save_path,
-        seat_delay_ms, ChronicleSnapshot, ChronicleState, FrameDelivery, Params, Session,
-        SpectatorFrame, EMBEDDED_CINEMATIC_3D, EMBEDDED_INDEX, EMBEDDED_WORLD_WONDER_ATLAS,
-        SAVE_DIR, VIEWER_ACTIVE,
+        seat_delay_ms, strategy_roster, ChronicleSnapshot, ChronicleState, FrameDelivery, Params,
+        Session, SpectatorFrame, EMBEDDED_CINEMATIC_3D, EMBEDDED_INDEX,
+        EMBEDDED_WORLD_WONDER_ATLAS, SAVE_DIR, VIEWER_ACTIVE,
     };
     use crate::game::{Action, Game, VictoryConditions};
     use crate::setup::{GameSpeed, MapScript};
@@ -2847,12 +3009,23 @@ mod tests {
             );
         }
         assert!(EMBEDDED_INDEX.contains("victory_conditions: victoryConditions"));
-        assert!(EMBEDDED_INDEX.contains("AI-only simulation"));
-        // Single player is no longer "later": it is the default mode, and it
-        // is the only one that offers a leader and a difficulty.
-        assert!(EMBEDDED_INDEX.contains("<option value=\"single\" selected>Single player</option>"));
+        // The modes in the order they are offered: the AI-only simulation this
+        // engine exists for, then the human seat, then the one that is still
+        // "later". Single player is no longer "later" and is the only mode
+        // that offers a leader and a difficulty.
+        assert!(
+            EMBEDDED_INDEX.contains("<option value=\"ai_sim\" selected>AI-only simulation</option>")
+        );
+        assert!(EMBEDDED_INDEX.contains("<option value=\"single\">Single player</option>"));
         assert!(!EMBEDDED_INDEX.contains("Single player · later"));
         assert!(EMBEDDED_INDEX.contains("Multiplayer · later"));
+        let ai_sim_mode = EMBEDDED_INDEX.find("AI-only simulation").expect("ai sim mode");
+        let single_mode = EMBEDDED_INDEX.find(">Single player<").expect("single player mode");
+        let multiplayer_mode = EMBEDDED_INDEX.find("Multiplayer · later").expect("multiplayer mode");
+        assert!(ai_sim_mode < single_mode && single_mode < multiplayer_mode);
+        // A world already on screen sets the mode select, so the panel beside a
+        // human game never offers to replace it with a simulation by default.
+        assert!(EMBEDDED_INDEX.contains("select.value = SPEC ? \"ai_sim\" : \"single\""));
         assert!(EMBEDDED_INDEX.contains(
             "id=\"restart-sim\" title=\"Restart with the same settings\">Restart sim<span class=\"sub\">same settings</span>"
         ));
@@ -2921,9 +3094,9 @@ mod tests {
             .expect("active strategy section");
         assert!(
             game_settings < display_settings
-                && display_settings < war_log
-                && war_log < event_log
-                && event_log < strategy,
+                && display_settings < event_log
+                && event_log < war_log
+                && war_log < strategy,
             "left panel should show game settings, display settings, and the two logs first"
         );
         assert!(EMBEDDED_INDEX.contains("<span>Display settings</span>"));
@@ -2946,18 +3119,33 @@ mod tests {
         );
         assert!(EMBEDDED_INDEX.contains("function initSidebarSections()"));
         assert!(EMBEDDED_INDEX.contains("civvis-sidebar-sections-v1"));
-        for overlay in [
+        // Collapsing the command deck collapses the deck alone. Every map
+        // overlay is switched from the deck's display settings instead, so the
+        // two controls stay independent and the deck's width can be handed to
+        // the map without losing the instruments on it.
+        for (overlay, element) in [
+            ("players", "#playerhud"),
+            ("victory", "#victoryhud"),
+            ("minimap", ".minimap-frame"),
+            ("controls", "#zoomctl"),
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("body.overlay-{overlay}-hidden {element}")),
+                "display settings should hide the {element} map overlay"
+            );
+        }
+        for element in [
             "#playerhud",
             "#victoryhud",
             ".minimap-frame",
-            "#zoomctl > :not(#paneltoggle)",
+            "#zoomctl",
             "#ubar",
             "#modeline",
             "#tip",
         ] {
             assert!(
-                EMBEDDED_INDEX.contains(&format!("body.sidebar-hidden {overlay}")),
-                "focus mode should hide the {overlay} map overlay"
+                !EMBEDDED_INDEX.contains(&format!("body.sidebar-hidden {element}")),
+                "collapsing the deck should leave the {element} map overlay alone"
             );
         }
         assert!(EMBEDDED_INDEX.contains("function civilizationEventText(text, next)"));
@@ -3089,19 +3277,30 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(".diplomacy-card.allied"));
         assert!(EMBEDDED_INDEX.contains("function cameraYBounds"));
         assert!(EMBEDDED_INDEX.contains("cam.y = clampCameraY(cam.y)"));
-        // Default camera moves use the center of the map canvas horizontally.
-        // The command deck narrows that canvas and therefore shifts the focus
-        // right on the full screen. Top HUDs move it 42% up from the bottom;
-        // focus mode hides them and restores the exact 50/50 center.
-        assert!(EMBEDDED_INDEX.contains("const DEFAULT_MAP_FOCUS_FROM_BOTTOM = .42;"));
+        // Default camera moves compose inside the rectangle the chrome leaves
+        // the map, measured rather than guessed: below whichever top
+        // instrument hangs lower, down to the real bottom edge, right of the
+        // command deck, and left of the world map's own midline. Every
+        // instrument is draggable, so each edge comes off the live boxes.
         assert!(EMBEDDED_INDEX.contains("function mapOverlayVisible(name)"));
         assert!(EMBEDDED_INDEX.contains(
             "document.body.classList.contains(\"sidebar-hidden\")"
         ));
+        assert!(EMBEDDED_INDEX.contains("function mapWidgetBox(name, areaRect)"));
+        assert!(EMBEDDED_INDEX.contains("function mapFocusBounds()"));
         assert!(EMBEDDED_INDEX.contains("function mapFocusPoint()"));
+        assert!(EMBEDDED_INDEX.contains("if (minimap) right = (minimap.left + minimap.right) / 2;"));
+        assert!(EMBEDDED_INDEX.contains("if (box) top = Math.max(top, box.bottom);"));
         assert!(EMBEDDED_INDEX.contains(
-            "topHudVisible ? 1 - DEFAULT_MAP_FOCUS_FROM_BOTTOM : .5"
+            "return {x:(bounds.left + bounds.right) / 2, y:(bounds.top + bounds.bottom) / 2};"
         ));
+        // A widget parked over a whole axis must hand that axis back rather
+        // than aiming the camera off-screen.
+        assert!(EMBEDDED_INDEX.contains("const MIN_MAP_FOCUS_BAND = 120;"));
+        assert!(EMBEDDED_INDEX
+            .contains("if (right - left < MIN_MAP_FOCUS_BAND) { left = 0; right = width; }"));
+        assert!(EMBEDDED_INDEX
+            .contains("if (bottom - top < MIN_MAP_FOCUS_BAND) { top = 0; bottom = height; }"));
         assert!(EMBEDDED_INDEX.contains("function cameraCenterForWorld("));
         assert!(EMBEDDED_INDEX.contains("function currentMapFocusWorld()"));
         assert!(EMBEDDED_INDEX.contains("function reframeCurrentMapFocus(world)"));
@@ -4138,9 +4337,10 @@ mod tests {
     fn browser_stops_asking_for_turns_once_somebody_has_won() {
         // The winner test's `over` became `won`, because elimination now
         // disables the button on the same path — same contract, wider reason.
+        // Auto-play is the third reason: the seat is on loan while it runs.
         assert!(EMBEDDED_INDEX
             .contains("const won = state.winner !== null && state.winner !== undefined;"));
-        assert!(EMBEDDED_INDEX.contains("button.disabled = won || eliminated;"));
+        assert!(EMBEDDED_INDEX.contains("button.disabled = won || eliminated || autoplaying;"));
         assert!(EMBEDDED_INDEX.contains("The game is over<span class=\"endturn-hint\">"));
         // The keys agree with the button.
         assert!(EMBEDDED_INDEX
@@ -4149,6 +4349,109 @@ mod tests {
         // countdown, because the supervisor owns that handoff.
         assert!(EMBEDDED_INDEX.contains("class=\"primary winner-again\" onclick=\"startNewSimulation()\""));
         assert!(EMBEDDED_INDEX.contains("id=\"respawn\" role=\"timer\""));
+    }
+
+    /// Auto-play used to be one button that ran whichever agent the fleet
+    /// happened to build for the seat, for one turn or ten. Both of those are
+    /// decisions a person should make: *which* of our strategies plays, and
+    /// for how long.
+    #[test]
+    fn a_player_can_hand_their_seat_to_a_named_strategy() {
+        let mut session = Session::new(current());
+        // The roster is the one every build ships, so the choice exists in a
+        // game that is rating nothing.
+        let roster = strategy_roster(&session);
+        let names: Vec<&str> = roster
+            .as_array()
+            .expect("a roster")
+            .iter()
+            .filter_map(|entry| entry["name"].as_str())
+            .collect();
+        assert!(names.contains(&"advanced"), "the default agent is offerable");
+        assert!(
+            names.len() >= 4,
+            "a roster with nothing in it is not a choice: {names:?}"
+        );
+        // Ratings are shown as ratings, and an entrant that has never played a
+        // rated game is marked rather than shown as an authoritative 1500.
+        for entry in roster.as_array().expect("a roster") {
+            assert!(entry["username"].as_str().is_some_and(|name| !name.is_empty()));
+            assert!(entry["provisional"].is_boolean());
+        }
+
+        // Nothing is seated until somebody asks, and then it stays seated.
+        assert_eq!(session.seated_strategy_name(0), Some("advanced"));
+        session
+            .seat_strategy_at(0, "basic")
+            .expect("a built-in agent is always available");
+        assert_eq!(session.seated_strategy_name(0), Some("basic"));
+        assert_eq!(
+            session.seat_strategy_at(0, "no-such-strategy"),
+            Err("no strategy named no-such-strategy".to_string()),
+            "a player who picked a strategy must not silently get another one"
+        );
+        assert_eq!(session.seated_strategy_name(0), Some("basic"));
+
+        // And it plays: turns pass, and the seat is still the player's after.
+        let before = session.game.turn;
+        assert_eq!(session.autoplay(3), 3);
+        assert_eq!(session.game.turn, before + 3);
+    }
+
+    /// "All" is a turn count like any other, bounded by the turns this game
+    /// has left rather than by a fixed 500 — a marathon game is 1500 turns
+    /// long, and a request for the rest of it must not stop two thirds of the
+    /// way through.
+    #[test]
+    fn autoplay_of_everything_is_bounded_by_the_turns_that_remain() {
+        let mut params = current();
+        params.max_turns = 12;
+        let mut session = Session::new(params);
+        let played = session.autoplay(u32::MAX);
+        assert!(played <= 13, "played {played} turns of a 12-turn game");
+        assert!(played >= 12, "only played {played} turns of a 12-turn game");
+    }
+
+    /// The control that drives the two decisions above. The turn counts are
+    /// the ones offered, and the loop that runs them has to be interruptible:
+    /// a full game is over a minute of engine work, and a person watching it
+    /// wants to be able to stop.
+    #[test]
+    fn browser_offers_a_strategy_and_a_turn_count_to_auto_play() {
+        for piece in [
+            "id=\"autoplaystrategy\"",
+            "id=\"autoplayturns\"",
+            "id=\"autoplaybtn\"",
+            "function fillStrategies(rules)",
+            "function autoplayRequest()",
+            "async function autoplay(turns)",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(piece),
+                "the auto-play control is missing {piece}"
+            );
+        }
+        for turns in [
+            "1", "2", "3", "4", "5", "10", "20", "30", "40", "50", "100", "150", "200", "250",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("<option value=\"{turns}\"")),
+                "the auto-play turn counts are missing {turns}"
+            );
+        }
+        assert!(EMBEDDED_INDEX.contains("<option value=\"all\">All</option>"));
+        // The picker is filled from the server's roster, never a hardcoded list.
+        assert!(EMBEDDED_INDEX
+            .contains("const roster = Array.isArray(rules.strategies) ? rules.strategies : []"));
+        assert!(EMBEDDED_INDEX.contains("fillStrategies(RULES)"));
+        // The choice rides on every request, so a run continued in batches
+        // cannot change agent halfway through.
+        assert!(EMBEDDED_INDEX.contains("body: JSON.stringify({turns: ask, strategy})"));
+        // Pressing it again stops, rather than queueing a second run.
+        assert!(EMBEDDED_INDEX.contains("if (autoplaying) { autoplayStop = true; return; }"));
+        assert!(EMBEDDED_INDEX.contains("while (left > 0 && !autoplayStop)"));
+        // Short of the turns asked for means the game ended under it.
+        assert!(EMBEDDED_INDEX.contains("if (played < ask) break;"));
     }
 
     /// Which named Great Person a kind is offering is a world fact — it
@@ -4212,7 +4515,7 @@ mod tests {
     fn browser_tells_the_player_when_they_have_been_eliminated() {
         assert!(EMBEDDED_INDEX
             .contains("const eliminated = state.players[0] && state.players[0].alive === false;"));
-        assert!(EMBEDDED_INDEX.contains("button.disabled = won || eliminated;"));
+        assert!(EMBEDDED_INDEX.contains("button.disabled = won || eliminated || autoplaying;"));
         assert!(EMBEDDED_INDEX.contains("Your civilization has fallen<span class=\"endturn-hint\">"));
         // The keys agree with the button.
         assert!(EMBEDDED_INDEX
