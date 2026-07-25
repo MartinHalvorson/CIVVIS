@@ -120,7 +120,7 @@
   .brand-title-row { display: flex; align-items: center; gap: 10px; }
   h1 {
     width: max-content; color: var(--gold-bright);
-    font: 650 33px/.95 "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    font: 650 36px/.95 "Iowan Old Style", "Palatino Linotype", Georgia, serif;
     letter-spacing: .095em; text-transform: uppercase;
     background: linear-gradient(100deg, #f6dfaa 8%, #d7b66a 66%, #a9823b);
     -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
@@ -129,9 +129,12 @@
   h1 .brand-suffix {
     font-size: .58em; letter-spacing: .025em; text-transform: lowercase;
   }
+  /* One narrow column pinned to the corner: YouTube takes the bottom right and
+     GitHub sits directly above it, so the icons cost the title one 24px lane
+     instead of the 55px a side-by-side row ate. */
   .brand-links {
     position: absolute; right: 10px; bottom: 9px;
-    display: flex; align-items: center; gap: 7px;
+    display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
   }
   .brand-links a {
     width: 24px; height: 24px; display: grid; place-items: center; border-radius: 7px;
@@ -145,11 +148,11 @@
   .brand-links a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
   .brand-links svg { width: 14px; height: 14px; fill: currentColor; }
   .tagline {
-    max-width: 225px; margin-top: 8px; color: #d3ddd8; font-size: 11px;
-    font-weight: 650; letter-spacing: .02em; line-height: 1.34;
+    max-width: 225px; margin-top: 9px; color: #dde6e2; font-size: 12.5px;
+    font-weight: 650; letter-spacing: .015em; line-height: 1.36;
   }
   .tagline span { display: block; white-space: nowrap; }
-  .tagline span + span { color: #a6b7af; }
+  .tagline span + span { color: #bccac4; }
   /* The deck is a column: the fixed panels take the height they need and the
      two chronicles share whatever is left, so a tall screen reads more
      history rather than more empty parchment. Below the point where the
@@ -2477,10 +2480,12 @@ const FAMILY_COLOR = {
 };
 const districtColor = d =>
   DISTRICT_COLOR[d] || FAMILY_COLOR[DISTRICT_FAMILY[d]] || "#ddd";
+// Text yields — tooltips and the sidebar, where a yield is a word in a line
+// rather than a mark on the map. The map's own palette and emblems live with
+// `drawTileYields`; `YCOLOR` used to sit here to tint the tile chips and went
+// with them.
 const YICON = { food:"🍞", production:"⚙️", gold:"🪙", science:"🔬",
                 culture:"🎭", faith:"✡" };
-const YCOLOR = { food:"#76c893", production:"#d7b66a", gold:"#e8c64c",
-                 science:"#76cde4", culture:"#c49be8", faith:"#eee7cf" };
 const PCOLORS = ["#ffd700","#e05050","#50a0e0","#50c878","#c878e0","#e09050",
                  "#70d0d0","#f0f080","#a0a0ff","#ffa0c0","#80e080","#d0b080"];
 // Jersey partners, Civ 6 style: each empire pairs its colour with a second one
@@ -6759,32 +6764,282 @@ function buildNaturalWonderPlacements(tiles) {
   return placements;
 }
 
-// Compact Civ-style yield chips. Three fit on a row; unusually rich natural
-// wonders wrap to a second row instead of spilling into neighboring tiles.
-function drawTileYields(t, x, y, worked) {
-  const entries = Object.entries(tileYieldFull(t)).filter(([, amount]) => amount > 0);
-  if (!entries.length) return;
-  const cols = Math.min(3, entries.length), chipW = 19, chipH = 12;
-  const rows = Math.ceil(entries.length / cols);
-  const top = y + (rows === 1 ? 10 : 3);
+// ---------------------------------------------------------------- tile yields
+//
+// Civ 6 never writes a number on a tile. It lays down one small icon per point
+// of yield and lets you count them: a 2-food 1-production hex carries two green
+// sheaves and one orange cog in a single centred cluster on the hex face.
+// Comparing two tiles then means comparing two patches of colour instead of
+// reading six glyphs, which is why that display survives at map zoom at all —
+// and it is the language the rest of this board already speaks.
+//
+// The pips are drawn, not typed. Emoji did the work before, which meant the
+// palette was whatever the platform happened to ship: the coin came out grey,
+// the cog blue-black, and none of it took the map's light. These are shapes
+// filled with `ballMat`, like every other rounded thing out there.
+const YPIP = { food:"#4f9c30", production:"#c8762b", gold:"#dcae2b",
+               science:"#3f9ed4", culture:"#9a5ccb", faith:"#d6cfbb" };
+// Ink sits on the pip, so it tracks the pip's value rather than the palette:
+// dark on the two pale discs, near-white on the four saturated ones.
+const YINK = { food:"#f3fbef", production:"#fff4e6", gold:"#553a08",
+               science:"#f1fbff", culture:"#fbf3ff", faith:"#463f2e" };
+const YORDER = ["food", "production", "gold", "science", "culture", "faith"];
+
+// Each emblem is drawn inside the unit square so one routine serves every pip
+// size. Twelve pixels across leaves room for a silhouette and nothing else, so
+// each of these is the coarsest shape that is still unmistakable, and the
+// interior detail is cut back *out* of the emblem in the pip's own colour
+// rather than drawn on top of it — a kernel line or a coin's punch has to be a
+// hole to survive being three pixels wide.
+//
+// The first cut of these was more literal and read worse: a sheaf of separate
+// grains became a shrub, and a coin drawn as concentric rings became a
+// bullseye. What separates six shapes at this size is the outline, so each one
+// now commits to a silhouette no other yield owns.
+function yieldGlyph(kind, bg) {
+  switch (kind) {
+    case "food":                                     // an ear of wheat
+      cx.beginPath();
+      cx.moveTo(0, -1.02);
+      cx.bezierCurveTo(.48, -.62, .48, .04, 0, .36);
+      cx.bezierCurveTo(-.48, .04, -.48, -.62, 0, -1.02);
+      cx.fill();
+      cx.lineWidth = .19;
+      cx.beginPath(); cx.moveTo(0, .28); cx.lineTo(0, 1.0); cx.stroke();
+      cx.beginPath();                                // one blade off the stalk
+      cx.moveTo(.03, .56);
+      cx.quadraticCurveTo(.54, .44, .76, .80);
+      cx.quadraticCurveTo(.34, .86, .03, .72);
+      cx.fill();
+      cx.strokeStyle = bg; cx.lineWidth = .13;       // kernel divisions
+      cx.beginPath();
+      for (const gy of [-.58, -.26, .06]) {
+        cx.moveTo(-.36, gy - .13); cx.lineTo(0, gy + .07); cx.lineTo(.36, gy - .13);
+      }
+      cx.stroke();
+      break;
+    case "production":                               // a six-tooth cog
+      cx.beginPath();
+      for (let i = 0; i < 24; i++) {
+        const a = (i + .5) * Math.PI / 12, rr = i % 4 < 2 ? 1.02 : .58;
+        const gx = Math.cos(a) * rr, gy = Math.sin(a) * rr;
+        i ? cx.lineTo(gx, gy) : cx.moveTo(gx, gy);
+      }
+      cx.closePath();
+      cx.moveTo(.32, 0); cx.arc(0, 0, .32, 0, 7, true);
+      cx.fill("evenodd");
+      break;
+    case "gold":                                     // two struck coins
+      cx.beginPath(); cx.arc(-.32, -.30, .54, 0, 7); cx.fill();
+      cx.beginPath(); cx.arc(.22, .22, .62, 0, 7); cx.fill();
+      cx.strokeStyle = bg; cx.lineWidth = .19;
+      cx.beginPath();                                // the seam, and the punch
+      cx.moveTo(.84, .22); cx.arc(.22, .22, .62, 0, 7);
+      cx.moveTo(.49, .22); cx.arc(.22, .22, .27, 0, 7);
+      cx.stroke();
+      break;
+    case "science":                                  // a round-bottom flask
+      cx.beginPath(); cx.arc(0, .36, .62, 0, 7); cx.fill();
+      cx.fillRect(-.19, -.90, .38, .80);
+      cx.fillRect(-.44, -1.02, .88, .26);
+      cx.strokeStyle = bg; cx.lineWidth = .15;       // the level of the liquid
+      cx.beginPath(); cx.moveTo(-.44, .28); cx.lineTo(.44, .28); cx.stroke();
+      break;
+    case "culture":                                  // a lyre
+      cx.lineWidth = .24;
+      cx.beginPath();
+      cx.moveTo(-.62, -.70);
+      cx.bezierCurveTo(-1.02, .16, -.56, .92, 0, .96);
+      cx.bezierCurveTo(.56, .92, 1.02, .16, .62, -.70);
+      cx.moveTo(-.70, -.56); cx.lineTo(.70, -.56);
+      cx.stroke();
+      cx.lineWidth = .14;
+      cx.beginPath();
+      for (const sx of [-.26, .26]) { cx.moveTo(sx, -.50); cx.lineTo(sx, .60); }
+      cx.stroke();
+      break;
+    default:                                         // faith: a flame
+      // A symmetrical teardrop with a highlight in it is an oil drop, which is
+      // what the first version of this looked like. What makes a flame is the
+      // lean: the tip curls off to one side and the body is fatter on the
+      // other, and the core is small and low rather than a second teardrop.
+      cx.beginPath();
+      cx.moveTo(.14, -1.06);
+      cx.bezierCurveTo(.10, -.58, .62, -.42, .66, .08);
+      cx.bezierCurveTo(.70, .62, .32, .99, -.02, .99);
+      cx.bezierCurveTo(-.40, .99, -.72, .62, -.68, .16);
+      cx.bezierCurveTo(-.64, -.32, -.18, -.36, .14, -1.06);
+      cx.fill();
+      cx.fillStyle = bg;
+      cx.beginPath();
+      cx.moveTo(.06, .06);
+      cx.bezierCurveTo(.32, .34, .30, .62, .06, .74);
+      cx.bezierCurveTo(-.18, .64, -.24, .34, .06, .06);
+      cx.fill();
+  }
+}
+
+// A pip's dome is a radial-gradient *fill*, and a gradient fill is the one
+// genuinely expensive thing on this canvas — three of them per unit for ground
+// shadow used to cost a whole tenth of a map draw. A close board carries a
+// couple of thousand pips, so a dome and its emblem are painted once into an
+// offscreen canvas and blitted from then on: one `drawImage` per pip, no
+// gradient and no glyph geometry at draw time. Drawn live it measured 20µs a
+// tile against the old chips' 15; blitted it is 6.
+//
+// Everything a pip shares with its neighbours — contact shadow, dark rim, the
+// worked ring — is not in the bake either. Each is one path for the whole
+// cluster, so a nine-pip hex spends three operations on all three rather than
+// twenty-seven.
+const YIELD_ART = new Map();
+const YIELD_PAD = 1.06;             // room for the dome's own antialiasing
+let YIELD_ART_WARNED = false;
+// Three resolutions cover the zoom range: the bake is a little larger than the
+// pip will be shown at, so the common case is a slight downscale rather than a
+// stretch.
+const yieldArtRes = rd => rd <= 9 ? 10 : rd <= 18 ? 20 : 40;
+function yieldArt(kind, res) {
+  const base = YPIP[kind] || "#cccccc";
+  const key = `${kind}|${LITF}|${MODE.painted ? 1 : 0}|${res}`;
+  const had = YIELD_ART.get(key);
+  if (had !== undefined) return had;
+  let art = null;
+  try {
+    const D = Math.ceil(2 * YIELD_PAD * res);
+    const c = document.createElement("canvas");
+    c.width = c.height = D;
+    const g = c.getContext("2d");
+    const screen = cx;
+    try {
+      cx = g;                       // one synchronous paint; put back below
+      g.setTransform(res, 0, 0, res, D / 2, D / 2);
+      g.beginPath(); g.arc(0, 0, 1, 0, 7);
+      g.fillStyle = ballMat(base, -LITF);
+      g.fill();
+      g.scale(.62, .62);
+      g.fillStyle = g.strokeStyle = YINK[kind] || "#ffffff";
+      g.lineCap = "round"; g.lineJoin = "round";
+      yieldGlyph(kind, base);
+    } finally {
+      cx = screen;
+    }
+    art = c;
+  } catch (err) {
+    // A bake that throws must not throw every frame, so the failure caches as a
+    // null and the pip falls back to the live path — reported once, because a
+    // silently empty cache looks exactly like one that is working.
+    art = null;
+    if (!YIELD_ART_WARNED) {
+      YIELD_ART_WARNED = true;
+      console.error("CIVVIS yield pip bake failed", kind, err);
+    }
+  }
+  YIELD_ART.set(key, art);
+  return art;
+}
+
+// The fallback, and the only path when a bake has failed.
+function yieldPip(px, py, r, kind) {
+  const base = YPIP[kind] || "#cccccc";
   cx.save();
+  cx.translate(px, py);
+  cx.scale(r, r);
+  cx.beginPath(); cx.arc(0, 0, 1, 0, 7);
+  cx.fillStyle = ballMat(base, -LITF);
+  cx.fill();
+  cx.scale(.62, .62);
+  cx.fillStyle = cx.strokeStyle = YINK[kind] || "#ffffff";
+  cx.lineCap = "round"; cx.lineJoin = "round";
+  yieldGlyph(kind, base);
+  cx.restore();
+}
+
+// Every pip's circle at one radius, as a single path. `moveTo` before each arc
+// keeps the sub-paths from being strung together by a connecting line.
+function yieldRingPath(pts, r, ox = 0, oy = 0) {
+  cx.beginPath();
+  for (const [px, py] of pts) {
+    cx.moveTo(px + ox + r, py + oy);
+    cx.arc(px + ox, py + oy, r, 0, 7);
+  }
+}
+
+// Six of one yield on one tile is rare but real — a late floodplains farm gets
+// there — and eleven pips do not fit inside a hex. Past five the run collapses
+// to a single pip wearing its count, the way a stacked unit wears one.
+function yieldPipCount(px, py, r, n) {
+  cx.save();
+  const bx = px + r * .82, by = py + r * .78;
+  cx.fillStyle = "#0d120bea";
+  cx.beginPath(); cx.roundRect(bx - 5, by - 4, 10, 8, 3); cx.fill();
+  cx.strokeStyle = "#e8dfc077"; cx.lineWidth = .7; cx.stroke();
+  cx.fillStyle = "#f4ecd6";
+  cx.font = "bold 7px Inter, sans-serif";
   cx.textAlign = "center"; cx.textBaseline = "middle";
-  cx.shadowColor = "#000b"; cx.shadowBlur = 3; cx.shadowOffsetY = 1;
-  entries.forEach(([kind, amount], i) => {
-    const row = Math.floor(i / cols), rowCount = Math.min(cols, entries.length - row * cols);
-    const col = i % cols;
-    const px = x + (col - (rowCount - 1) / 2) * (chipW + 1);
-    const py = top + row * (chipH + 1);
-    cx.fillStyle = "#0a100de8";
-    cx.beginPath(); cx.roundRect(px - chipW / 2, py - chipH / 2, chipW, chipH, 5); cx.fill();
-    cx.strokeStyle = worked ? "#f0c674" : (YCOLOR[kind] || "#ddd");
-    cx.lineWidth = worked ? 1.4 : 0.8; cx.stroke();
-    cx.shadowBlur = 0;
-    cx.fillStyle = YCOLOR[kind] || "#fff";
-    cx.font = "bold 8px Inter, sans-serif";
-    cx.fillText(String(amount), px - 4.5, py + 0.5);
-    cx.font = "7px 'Segoe UI Symbol', sans-serif";
-    cx.fillText(YICON[kind] || "•", px + 4, py + 0.5);
+  cx.fillText(String(n), bx, by + .5);
+  cx.restore();
+}
+
+function drawTileYields(t, x, y, worked) {
+  // Below half zoom a pip is a pixel and a screenful of them is static, which
+  // is the state the old chips were in whenever anyone looked at a whole
+  // continent. Civ 6 drops them at strategic range for the same reason.
+  if (cam.scale < .5) return;
+  const full = tileYieldFull(t);
+  const pips = [];
+  for (const kind of YORDER) {
+    const n = Math.round(full[kind] || 0);
+    if (n <= 0) continue;
+    if (n > 5) pips.push([kind, n]);
+    else for (let i = 0; i < n; i++) pips.push([kind, 0]);
+  }
+  if (!pips.length) return;
+  // Three to a row is the hex talking, not a style choice: the flat-to-flat
+  // width is S*√3, and a fourth pip walks the cluster off the near edges.
+  const fine = FINE();
+  const cols = Math.min(3, pips.length);
+  const rows = Math.ceil(pips.length / cols);
+  const r = !fine ? 2.7 : pips.length <= 6 ? 6.8 : pips.length <= 9 ? 5.8 : 5.0;
+  const step = r * 2 + (fine ? 1.5 : 1.1);
+  const top = y + 9 - (rows - 1) * step / 2;
+  const pts = pips.map((_, i) => {
+    const row = Math.floor(i / cols);
+    const rowCount = Math.min(cols, pips.length - row * cols);
+    return [x + (i % cols - (rowCount - 1) / 2) * step, top + row * step];
+  });
+  cx.save();
+  if (fine) {
+    yieldRingPath(pts, r * 1.04, r * .10, r * .18);
+    cx.fillStyle = "rgba(9,13,9,.42)"; cx.fill();
+    if (worked) {
+      // A citizen is standing on this tile. Civ 6 keeps that in the city panel,
+      // but a spectator never opens one, so it stays on the map as a warm ring
+      // outside the dark rim — which is visible even round the gold pip, where
+      // a warm rim on its own would not be.
+      yieldRingPath(pts, r * 1.16);
+      cx.lineWidth = r * .13; cx.strokeStyle = "rgba(244,206,122,.95)"; cx.stroke();
+    }
+    const res = yieldArtRes(r * cam.scale * DPR), box = 2 * YIELD_PAD * r;
+    pips.forEach(([kind], i) => {
+      const art = yieldArt(kind, res);
+      if (art) cx.drawImage(art, pts[i][0] - box / 2, pts[i][1] - box / 2, box, box);
+      else yieldPip(pts[i][0], pts[i][1], r, kind);
+    });
+  } else {
+    // Too far out for an emblem to survive, but the colours still count and
+    // still cluster, so a tile keeps its shape as a patch of colour rather than
+    // vanishing the moment the map stops being close.
+    pips.forEach(([kind], i) => {
+      cx.beginPath(); cx.arc(pts[i][0], pts[i][1], r, 0, 7);
+      cx.fillStyle = YPIP[kind] || "#cccccc"; cx.fill();
+    });
+  }
+  yieldRingPath(pts, r);
+  cx.lineWidth = r * (fine ? .14 : .34);
+  cx.strokeStyle = fine ? "rgba(12,16,12,.70)" : "rgba(10,14,10,.6)";
+  cx.stroke();
+  if (fine) pips.forEach(([, count], i) => {
+    if (count) yieldPipCount(pts[i][0], pts[i][1], r, count);
   });
   cx.restore();
 }
@@ -11307,25 +11562,26 @@ function turnCapLabel() {
 
 // The meter under each civilization. Most races are one number against one
 // target; science and culture are two, and are drawn as two half-width
-// meters. Their researched trees are relative comparisons: the civilization
-// with the most discoveries fills the left half and every rival shows its
-// fraction of that leader. The right halves remain the actual victory races.
-function victoryMeter(victory, metric, progress, researchLeader = 0) {
+// meters. Their researched trees fill against the whole tree, so a half that
+// is a third full means a third of the discoveries in the game — the leader's
+// own meter moves too, instead of pinning itself full from turn one. The
+// right halves remain the actual victory races.
+function victoryMeter(victory, metric, progress) {
   const bar = pct => `<b style="width:${Math.max(0, Math.min(100, pct))}%"></b>`;
   if (victory === "science") {
-    const leader = Math.max(1, +researchLeader || 0);
+    const total = Math.max(1, +metric.tech_total || 0);
     const launches = +metric.project_target || 4;
     const done = +metric.projects || 0;
     const dots = Array.from({ length: launches },
       (_, i) => `<i${i < done ? ' class="on"' : ""}></i>`).join("");
     return `<div class="victory-meter split"><span class="victory-half">` +
-      `${bar(100 * (+metric.techs || 0) / leader)}</span>` +
+      `${bar(100 * (+metric.techs || 0) / total)}</span>` +
       `<span class="victory-dots">${dots}</span></div>`;
   }
   if (victory === "culture") {
-    const leader = Math.max(1, +researchLeader || 0);
+    const total = Math.max(1, +metric.civic_total || 0);
     return `<div class="victory-meter split">` +
-      `<span class="victory-half">${bar(100 * (+metric.civics || 0) / leader)}</span>` +
+      `<span class="victory-half">${bar(100 * (+metric.civics || 0) / total)}</span>` +
       `<span class="victory-half">${bar(progress)}</span></div>`;
   }
   return `<div class="victory-meter">${bar(progress)}</div>`;
@@ -11495,9 +11751,6 @@ function playerHudOverview() {
           || (researchField ? (+bm[researchField] || 0) - (+am[researchField] || 0) : 0)
           || b.score - a.score || a.id - b.id;
       });
-    const researchLeader = researchField
-      ? Math.max(0, ...ranked.map(player => +victoryMetric(player, track.id)[researchField] || 0))
-      : 0;
     return `<section class="victory-track" style="--track:${track.color}" aria-label="${track.label} victory leaders">` +
       `<div class="victory-heading"><span>${track.icon}</span><b>${track.label}</b></div>` +
       `<div class="victory-subheading${track.id === "score" ? " score" : ""}">${victoryTrackerSubheading(track.id)}</div>` +
@@ -11507,7 +11760,7 @@ function playerHudOverview() {
         return `<div class="victory-entry" style="--civ:${pcol(player.id)}" title="#${index + 1} ${player.civ}: ${victoryDescription(track.id, metric)}">` +
           `<div class="victory-line"><span class="victory-civ-dot"></span>` +
           `<span class="victory-civ">${player.civ}</span><span class="victory-value${track.id === "score" ? " single" : ""}">${victoryTrackerStats(track.id, metric)}</span></div>` +
-          victoryMeter(track.id, metric, progress, researchLeader) + `</div>`;
+          victoryMeter(track.id, metric, progress) + `</div>`;
       }).join("") + `</div></section>`;
   }).join("");
   const victoryCount = Math.max(1, enabledVictoryTracks.length);
