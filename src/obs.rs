@@ -314,6 +314,11 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         "max_turns": g.max_turns,
         "seed": g.seed,
         "game_speed": g.game_speed.id(),
+        // The handicap the game is being played on. The save list has always
+        // reported this for games nobody is playing; without it here the setup
+        // panel could not tell a reloaded page which difficulty the game on
+        // screen was started at, and offered to restart it at the stock one.
+        "difficulty": g.difficulty,
         "world_era": g.world_era,
         "climate_phase": g.climate_phase,
         "climate_points": g.climate_points(),
@@ -1698,6 +1703,13 @@ mod tests {
         game.found_city_for(0, capital_position, None);
         let observed = observation_spectator(&game, 0);
         assert_eq!(observed["max_turns"], serde_json::json!(120));
+        // The setup panel adopts the running game's handicap, so the
+        // observation has to carry it.
+        assert_eq!(
+            observed["difficulty"],
+            serde_json::json!(game.difficulty),
+            "the observation reports the difficulty the game is played on"
+        );
 
         let player = observed["players"]
             .as_array()
