@@ -32910,9 +32910,11 @@ impl Game {
         );
         let aggressor = self.civ_name(attacker);
         for victim in strike.victims.iter().copied() {
+            // A device that lands on open ground has no city to name, and
+            // "…: was struck" is not a sentence. Name the ground instead.
             let hit = match struck_names.first() {
                 Some(city) => format!("{city} was struck"),
-                None => "was struck".to_string(),
+                None => format!("{} territory was struck", self.civ_name(victim)),
             };
             self.note_important(
                 victim,
