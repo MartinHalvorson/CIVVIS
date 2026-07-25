@@ -603,9 +603,13 @@
     };
   }
 
+  // A shadow is a shadow, not a wafer. Modelling it as a flat black ellipsoid
+  // meant the scene stroked all twenty of its faces, so what landed on the map
+  // was a wheel of black spokes over ground that never actually darkened — the
+  // fill is a fifth of an alpha, the outlines are not. It only stayed hidden
+  // because the model standing on it happened to cover it.
   function groundShadow(scene, radius, alpha = .2) {
-    scene.ellipsoid([1.5, 2, .08], [radius, radius * .68, .14],
-      "#10140f", 10, 2, alpha);
+    scene.shadow(radius, radius * .68 * scene.tilt, alpha);
   }
 
   function crag(scene, x, y, radius, height, color, snow, random) {
@@ -636,67 +640,92 @@
   }
 
   function hills(scene, o) {
-    const random = seeded(o.seed + 43);
     groundShadow(scene, 18, .12);
     const color = o.terrain === "desert" ? "#b78955"
       : o.terrain === "snow" ? "#cbd3cf" : "#738153";
-    for (const [x, y] of [[-9, 2], [5, -4], [11, 6]])
-      scene.ellipsoid([x, y, 1.8], [10 + random() * 3, 8 + random() * 2,
-        4.4 + random() * 2], color, o.detail ? 8 : 6, o.detail ? 3 : 2, .82);
+    // Centred, and the same three mounds on every hill tile: the ground under
+    // a hill is what the rest of the tile is built on, so it belongs in the
+    // middle of the face. Anything the tile also carries rides on top of it —
+    // see the lift `woodland` takes when `hills` is set.
+    for (const [x, y, rx, ry, rz] of [[-10, 2, 10.5, 7.5, 4.6],
+      [4, -5, 11, 7, 4.4], [11, 6, 9.5, 6.5, 4]])
+      scene.ellipsoid([x, y, 1.4], [rx, ry, rz], color,
+        o.detail ? 9 : 6, o.detail ? 3 : 2, .82);
   }
 
+  // Woods and rainforest are stamped, not scattered. Scattering every hex from
+  // its own seed gave each tile a different arrangement of trees at different
+  // heights in a different green, so a wood read as a run of unrelated clumps
+  // with a visible seam at every boundary rather than as one forest. One woods
+  // and one rainforest, repeated: what tells them apart is species, not noise.
+  // Firs are squat triangles; rainforest is a tall bare trunk under a broad
+  // crown, and neighbouring crowns overlap into the closed canopy that a fir
+  // stand deliberately does not have.
+  const CONIFERS = [                       // x, y, height, tone
+    [-13, -10, 13.5, 0], [1, -13, 15.5, 1], [12, -8, 12.5, 2],
+    [-7, -2, 16.5, 1], [8, 2, 14, 0], [-14, 7, 13, 2],
+    [0, 10, 15, 1], [13, 10, 12, 0],
+  ];
+  const CONIFER_GREENS = ["#24562d", "#2d6636", "#1b4825"];
+  // Ordered so that dropping every other tree still leaves one on each side of
+  // the face rather than a bare half.
+  const RAINFOREST = [
+    [-14, -6, 21, 0], [2, -12, 22, 1], [13, 2, 19, 2],
+    [-8, 8, 20, 1], [1, 13, 18, 0],
+  ];
+  const RAINFOREST_GREENS = ["#17613b", "#237447", "#145433"];
+
   function woodland(scene, o, jungle) {
-    const random = seeded(o.seed + (jungle ? 173 : 113));
     const burnt = o.kind.startsWith("burnt_");
     const burning = o.kind.startsWith("burning_");
-    const count = o.detail ? 7 : 3;
-    const crownSegments = o.detail ? 8 : 6;
-    const crownRings = o.detail ? 3 : 2;
+    const stand = jungle ? RAINFOREST : CONIFERS;
+    const greens = jungle ? RAINFOREST_GREENS : CONIFER_GREENS;
+    // Zoomed out, thin the stand by dropping every other tree rather than the
+    // tail of the list, so what remains still covers the whole face.
+    const trees = o.detail ? stand : stand.filter((_, i) => !(i % 2));
+    const sides = o.detail ? 8 : 6;
+    // A wood on a hill grows on the hill, not through it. Standing the trunks
+    // on the mound and setting the stand further back puts the trees in the
+    // upper half of the face, where the crest is, instead of half-buried in
+    // relief that is drawn after them.
+    const crest = o.hills ? 3.8 : 0;
+    const back = o.hills ? -6 : 0;
     groundShadow(scene, 20, burnt ? .28 : .2);
-    const trees = [];
-    for (let i = 0; i < count; i++) {
-      const angle = random() * Math.PI * 2;
-      const radius = Math.sqrt(random()) * 15;
-      trees.push({x:Math.cos(angle) * radius, y:Math.sin(angle) * radius,
-        h:(jungle ? 12 : 15) * (.72 + random() * .48), v:random()});
-    }
-    trees.sort((a, b) => a.y - b.y);
-    for (const tree of trees) {
-      const trunkTop = tree.h * (jungle ? .7 : .55);
-      scene.tube([tree.x, tree.y, 0], [tree.x + (tree.v - .5) * 1.2,
-        tree.y, trunkTop], jungle ? .85 : .68, burnt ? "#332b25" : "#5b3d24", 6);
+    trees.forEach(([x, ty, height, tone], i) => {
+      const y = ty + back;
+      const trunkTop = crest + height * (jungle ? .74 : .3);
+      scene.tube([x, y, crest], [x, y, trunkTop], jungle ? .85 : .7,
+        burnt ? "#332b25" : "#5b3d24", 6);
       if (burnt) {
-        scene.tube([tree.x, tree.y, trunkTop * .72],
-          [tree.x - 3, tree.y + 1, tree.h * .83], .32, "#282521", 5);
-        continue;
+        scene.tube([x, y, crest + (trunkTop - crest) * .72],
+          [x - 3, y + 1, crest + height * .83],
+          .32, "#282521", 5);
+        return;
       }
+      const green = greens[tone];
       if (jungle) {
-        const green = tree.v > .66 ? "#17613b" : tree.v > .33 ? "#237447" : "#145433";
-        if (o.detail) {
-          scene.ellipsoid([tree.x, tree.y, tree.h], [5.7, 5.1, 4.2], green,
-            crownSegments, crownRings);
-          scene.ellipsoid([tree.x - 2.6, tree.y + .8, tree.h + 1.1],
-            [4.2, 3.8, 3.2], tint(green, 1.12), crownSegments, crownRings);
-        }
+        // A dome, not a parasol. A cone wide at the bottom shows the map its
+        // underside — six of them per hex read as a row of beach umbrellas on
+        // sticks. A flattened ellipsoid hides its own floor behind its top and
+        // merges with its neighbours into one canopy.
+        const crown = o.detail ? 10 : 9;
+        scene.ellipsoid([x, y, trunkTop], [crown, crown * .86, 3.6], green,
+          sides, o.detail ? 3 : 2);
+        scene.ellipsoid([x - crown * .3, y + .8, trunkTop + 1.5],
+          [crown * .54, crown * .46, 2.6], tint(green, 1.12), sides,
+          o.detail ? 3 : 2);
       } else {
-        const green = tree.v > .66 ? "#2d6636" : tree.v > .33 ? "#24562d" : "#1b4825";
-        scene.cone([tree.x, tree.y, tree.h * .32], 5.3, tree.h * .68,
-          green, 7, .15, tree.v * 6.28);
-        scene.cone([tree.x, tree.y, tree.h * .54], 4.2, tree.h * .55,
-          tint(green, 1.08), 7, .08, tree.v * 6.28 + .25);
+        scene.cone([x, y, crest + height * .22], 6.2, height * .62,
+          green, 7, .15, tone);
+        scene.cone([x, y, crest + height * .5], 4.8, height * .56,
+          tint(green, 1.08), 7, .08, tone + .25);
       }
-      if (burning && tree.v > .28) {
-        scene.cone([tree.x + 1, tree.y - .5, 1], 2.5, 8 + tree.v * 5,
-          "#e34c1c", 6, .1, tree.v * 5, .88);
-        scene.cone([tree.x + 1, tree.y - .5, 2], 1.25, 5 + tree.v * 3,
-          "#ffd34d", 6, .05, tree.v * 5, .92);
-        scene.glow([tree.x + 1, tree.y, 5], 7, "#ff6a24", .34);
+      if (burning && i % 3 !== 2) {
+        scene.cone([x + 1, y - .5, crest + 1], 2.5, 9, "#e34c1c", 6, .1, tone, .88);
+        scene.cone([x + 1, y - .5, crest + 2], 1.25, 6, "#ffd34d", 6, .05, tone, .92);
+        scene.glow([x + 1, y, crest + 5], 7, "#ff6a24", .34);
       }
-    }
-    if (jungle && !o.detail && !burnt) {
-      scene.ellipsoid([-2, 0, 12], [13, 10, 5.2], "#17613b", 7, 2);
-      scene.ellipsoid([7, 2, 13.2], [8.5, 7, 4.4], "#237447", 7, 2);
-    }
+    });
   }
 
   function waterPatch(scene, color, scale = 1, alpha = .88) {
