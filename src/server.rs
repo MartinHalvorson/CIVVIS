@@ -3433,6 +3433,50 @@ mod tests {
                 "map overlay {overlay} should have a close control"
             );
         }
+        // The switches are a two-column grid, so the order they are written in
+        // is the corner each one stands for: the standings and the victory
+        // tracker along the top, the world minimap lower-left and the map
+        // controls lower-right, which is where those four instruments sit on
+        // the map itself.
+        assert!(EMBEDDED_INDEX
+            .contains(".overlay-option-grid { display: grid; grid-template-columns: 1fr 1fr;"));
+        let switches = EMBEDDED_INDEX
+            .split_once("<div class=\"overlay-option-grid\">")
+            .expect("map overlay switches")
+            .1
+            .split_once("</div>")
+            .expect("end of map overlay switches")
+            .0;
+        let corners: Vec<&str> = switches
+            .match_indices("data-overlay=\"")
+            .map(|(at, marker)| {
+                let rest = &switches[at + marker.len()..];
+                &rest[..rest.find('"').expect("overlay name is quoted")]
+            })
+            .collect();
+        assert_eq!(
+            corners,
+            ["players", "victory", "minimap", "controls"],
+            "the world minimap is the lower-left switch and the map controls the lower-right"
+        );
+        // One instrument, one name. The switch, the title bar it is dragged by
+        // and the label that follows it across the map all say "World minimap",
+        // so nothing in the interface reads as a second, separate world map —
+        // the world map is the thing filling the screen behind all of them.
+        for name in [
+            "<span>World minimap</span>",
+            "data-overlay=\"minimap\" checked>World minimap",
+            "minimap:\"World minimap\"",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(name),
+                "the corner map should be named the same everywhere: {name}"
+            );
+        }
+        assert!(
+            !EMBEDDED_INDEX.contains("World map"),
+            "\"World map\" names the map itself, not the corner instrument showing it"
+        );
         // Any civilization in the standings can be locked so its row stays in
         // view while the rest of the table scrolls past it. The choice belongs
         // to the viewer, is keyed by civilization so it survives a new game,
