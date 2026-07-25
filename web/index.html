@@ -11148,7 +11148,12 @@ area.addEventListener("wheel", ev => {
 }, { passive: false });
 document.getElementById("zin").onclick = () => { takeCameraControl(true); zoomAt(1.35); };
 document.getElementById("zout").onclick = () => { takeCameraControl(true); zoomAt(1 / 1.35); };
-document.getElementById("zhome").onclick = () => centerMainLandmass();
+// `zhome` was the third corner button until the controls were refined down to
+// a toggle, a zoom in and a zoom out. The handler outlived its button, and
+// `getElementById` returning null here threw before anything else in this
+// script had run — no canvas sizing, no `/rules`, no first `/state` — so the
+// whole map came up blank. Recentring survives on the director path and on the
+// world minimap; only the dead binding goes.
 
 // ---------------------------------------------------------------- input
 let dragState = null, dragMoved = false, rdrag = null, rdragTo = null;
