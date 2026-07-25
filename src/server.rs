@@ -3304,6 +3304,60 @@ mod tests {
         assert_eq!(restored.params.num_city_states, 1);
     }
 
+    /// The single-player turn loop is a promise to the player, not an
+    /// implementation detail: the End Turn button says what the game is
+    /// waiting on, `Enter` walks those blockers in a fixed order and only
+    /// ends the turn once none are left, and a unit under a standing order
+    /// stops being counted. `docs/SINGLE_PLAYER.md` states the contract.
+    #[test]
+    fn browser_runs_a_civ_six_turn_loop() {
+        for piece in [
+            "function turnBlockers()",
+            "function standingNotices()",
+            "function drawTurnLoop()",
+            "function advanceTurn(force = false)",
+            "function openTurnIfNew()",
+            "function advanceToNextUnit(force = false)",
+            "function unitNeedsOrders(unit)",
+            "id=\"notify\"",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(piece),
+                "the browser turn loop is missing {piece}"
+            );
+        }
+        // Blockers are announced in priority order, highest first.
+        let order = [
+            "kind: \"capture\"",
+            "kind: \"deal\"",
+            "kind: \"congress\"",
+            "kind: \"dedication\"",
+            "kind: \"research\"",
+            "kind: \"civic\"",
+            "kind: `produce:${city.id}`",
+            "kind: \"units\"",
+        ];
+        let mut previous = 0;
+        for blocker in order {
+            let at = EMBEDDED_INDEX
+                .find(blocker)
+                .unwrap_or_else(|| panic!("turn blocker {blocker} is missing"));
+            assert!(
+                at > previous,
+                "turn blockers must be enumerated in priority order; {blocker} is out of place"
+            );
+            previous = at;
+        }
+        // Shift overrides the blockers; without that a disagreement with the
+        // priority order becomes a trap the player cannot leave.
+        assert!(EMBEDDED_INDEX.contains("advanceTurn(ev.shiftKey)"));
+        assert!(EMBEDDED_INDEX.contains("if (next && !force) { next.act(); drawTurnLoop(); return; }"));
+        // Standing orders are the client's own; they must never masquerade as
+        // engine state, and a skip must expire with the turn that set it.
+        assert!(EMBEDDED_INDEX.contains("if (held.order === \"skip\") return held.turn === state.turn ? \"skip\" : null;"));
+        assert!(EMBEDDED_INDEX.contains("function wakeSleepers()"));
+    }
+
     /// Every empire decision the engine offers seat 0 has a screen behind the
     /// launch bar, and each screen speaks only the JSON protocol: it labels
     /// the legal actions it was given and posts them back unchanged. The
