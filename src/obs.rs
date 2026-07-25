@@ -475,6 +475,11 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         // the diplomacy panel above already names every player, so this is
         // shown whole rather than through the viewer's fog.
         "wars": wars_json(g),
+        // Every detonation, newest last. Shown whole for the same reason wars
+        // are: a mushroom cloud is not a thing one civilization keeps to
+        // itself, and a client needs the account to place the blast on the map
+        // rather than inferring one from a ring of fallout.
+        "nuclear_strikes": nuclear_strikes_json(g),
         "winner": g.winner,
         "winners": g.winning_players(),
         "victory_type": g.victory_type,
@@ -717,6 +722,32 @@ fn recent_events(g: &Game, pid: usize, omniscient: bool) -> Vec<Value> {
                 "category": event.category,
                 "text": event.text,
                 "pos": event.pos.map(|pos| [pos.0, pos.1]),
+                "important": event.important,
+            })
+        })
+        .collect()
+}
+
+/// The detonations this game has seen, oldest first. `id` is what lets a client
+/// tell a fresh blast from one it has already shown without comparing fields —
+/// two devices can land on the same tile on the same turn.
+fn nuclear_strikes_json(g: &Game) -> Vec<Value> {
+    g.nuclear_strikes
+        .iter()
+        .map(|strike| {
+            json!({
+                "id": strike.id,
+                "turn": strike.turn,
+                "attacker": strike.attacker,
+                "target": [strike.target.0, strike.target.1],
+                "thermonuclear": strike.thermonuclear,
+                "platform": strike.platform,
+                "launched_from": [strike.launched_from.0, strike.launched_from.1],
+                "blast_radius": strike.blast_radius,
+                "fallout_until": strike.fallout_until,
+                "victims": strike.victims,
+                "cities": strike.cities,
+                "units_destroyed": strike.units_destroyed,
             })
         })
         .collect()
