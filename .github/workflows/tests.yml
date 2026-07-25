@@ -21,4 +21,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test --release --locked
+      # The `ci` profile inherits `release`, so tests run at the same
+      # optimisation level; it only drops the single-codegen-unit and LTO
+      # settings that exist to buy the production spectator about four percent
+      # simulation throughput. The gate does not run rated games, and
+      # serialising the backend over a 100k-line crate is what made this the
+      # slowest step in the merge path.
+      - run: cargo test --profile ci --locked
