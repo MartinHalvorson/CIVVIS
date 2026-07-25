@@ -2614,7 +2614,19 @@ mod tests {
             .expect("end of victory tracker renderer")
             .0;
         assert!(victory_hud.contains("victoryMetric(player, track.id)"));
-        assert!(victory_hud.contains("<strong>${state.turn}</strong>"));
+
+        // The turn plate is the player HUD's left cell, not the tracker's, so
+        // the turn count is rendered by the plate and must not linger in the
+        // tracker's markup.
+        let turn_plate = EMBEDDED_INDEX
+            .split_once("function hudTurnPlate() {")
+            .expect("turn plate renderer")
+            .1
+            .split_once("\nfunction playerHudOverview()")
+            .expect("end of turn plate renderer")
+            .0;
+        assert!(turn_plate.contains("<strong>${state.turn}</strong>"));
+        assert!(!victory_hud.contains("<strong>${state.turn}</strong>"));
 
         let player_hud = EMBEDDED_INDEX
             .split_once("function drawPlayerHud() {")
@@ -2624,6 +2636,7 @@ mod tests {
             .expect("end of player HUD renderer")
             .0;
         assert!(player_hud.contains("const overview = playerHudOverview();"));
+        assert!(player_hud.contains("hudTurnPlate()"));
         assert!(player_hud.contains("state.players"));
         assert!(player_hud.contains("playerHudStats(p,"));
         assert!(player_hud.contains("victoryHud.innerHTML = overview;"));

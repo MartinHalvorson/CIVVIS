@@ -40,7 +40,17 @@
   }
   button, select, input { font: inherit; }
   button { -webkit-tap-highlight-color: transparent; }
-  #maparea { flex: 1; min-width: 0; position: relative; overflow: hidden; background: #07110f; }
+  /* One number decides how much of the top edge the standings get and how wide
+     the victory rail stands. Dragging the rail's edge writes it inline here, so
+     both sides of the seam always agree. */
+  #maparea {
+    flex: 1; min-width: 0; position: relative; overflow: hidden; background: #07110f;
+    --victory-hud-width: 272px;
+    /* A hard ceiling on the standings: a quarter of the screen, never more,
+       whatever the player count or a dragged layout asks for. Rows past it
+       scroll inside the ribbon. */
+    --player-hud-max-height: 25vh;
+  }
   #maparea::before {
     content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none;
     opacity: 0; transition: opacity .6s ease;
@@ -377,20 +387,22 @@
     box-shadow: inset 0 0 0 1px #ffffff2b;
   }
   .victory-dots i.on { background: currentColor; box-shadow: 0 0 4px currentColor; }
-  /* The set of enabled victory paths is a game option. Build one equal grid
-     column per enabled path, so removing a path hands its share to the paths
-     that remain. The computed minimum keeps every path readable when the
-     viewport is too narrow; only then does the rail scroll. */
+  /* The set of enabled victory paths is a game option. Stack one band per
+     enabled path down the rail, each taking an equal share of its height, so
+     removing a path hands its share to the paths that remain. The computed
+     minimum keeps every band readable when the rail is too short; only then
+     does it scroll. */
   .victory-ribbon {
-    width: max(100%, var(--victory-min-width, 514px)); display: grid;
-    grid-template-columns: repeat(var(--victory-columns, 6), minmax(84px, 1fr));
+    min-height: max(100%, var(--victory-min-height, 396px)); display: grid;
+    grid-template-rows: repeat(var(--victory-rows, 6), minmax(56px, 1fr));
     align-items: stretch; gap: 2px;
   }
   .victory-track {
-    container-type: inline-size; min-height: 88px; padding: 5px 5px 4px;
-    color: var(--track); background: #ffffff03; border-left: 1px solid #ffffff0b;
+    container-type: inline-size; min-height: 0; display: flex; flex-direction: column;
+    justify-content: center; padding: 4px 5px;
+    color: var(--track); background: #ffffff03; border-top: 1px solid #ffffff0b;
   }
-  .victory-track:first-child { border-left-color: transparent; }
+  .victory-track:first-child { border-top-color: transparent; }
   .victory-heading { display: flex; align-items: center; gap: 4px; margin-bottom: 2px; color: var(--track); }
   .victory-heading b { overflow: hidden; color: #dde5e1; font-size: 9px; letter-spacing: .03em; text-overflow: ellipsis; white-space: nowrap; }
   .victory-subheading {
@@ -1107,8 +1119,10 @@
   .tip-adj { color: #c6d6cf; }
   .tip-adj-count { display: inline-block; min-width: 20px; color: var(--muted); }
   .tip-adj-part { color: var(--muted); }
+  /* The victory rail owns the right edge now, so the world map takes the
+     lower-left corner and sits directly above the map controls. */
   .minimap-frame {
-    position: absolute; z-index: 6; right: 16px; bottom: 20px; width: 212px; height: 170px;
+    position: absolute; z-index: 6; left: 16px; right: auto; bottom: 68px; width: 212px; height: 170px;
     display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 6px; border-radius: 12px;
     background: #091310e6; border: 1px solid #40584f; box-shadow: 0 14px 35px #0008;
   }
@@ -1474,7 +1488,7 @@
   /* A wide desktop can show more civilizations without changing the HUD's
      hierarchy or pushing it farther down the map. */
   @media (min-width: 2200px) {
-    #playerhud { grid-template-columns: 76px minmax(0, 1fr) 520px; }
+    #playerhud { grid-template-columns: 128px minmax(0, 1fr); }
     .diplomacy-card { flex-basis: 330px; grid-template-columns: 36px minmax(88px, .75fr) minmax(164px, 1.35fr); }
     .leader-medallion { width: 36px; height: 36px; font-size: 15px; }
     .diplomacy-name { font-size: 12px; }
@@ -1486,7 +1500,8 @@
     .dossier-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
   @media (max-width: 1580px) {
-    #playerhud { grid-template-columns: 86px minmax(0, 1fr) clamp(300px, 32%, 380px); }
+    #playerhud { grid-template-columns: 98px minmax(0, 1fr); --hud-identity-column: minmax(258px, 46%); }
+    #maparea { --victory-hud-width: 240px; }
   }
   @media (max-width: 980px) {
     #side { width: 320px; min-width: 320px; }
@@ -1497,8 +1512,9 @@
     #maparea { height: 100%; }
     #side { position: fixed; inset: 132px auto 8px 8px; width: min(390px, calc(100% - 16px)); min-width: 0; height: auto; max-height: calc(100dvh - 140px); border: 1px solid #40584f; border-radius: 16px; }
     body.sidebar-hidden #side { width: min(390px, calc(100% - 16px)); transform: translateX(calc(-100% - 16px)); opacity: 0; }
-    #playerhud { grid-template-columns: 86px minmax(0, .9fr) minmax(0, 1.1fr); }
-    .minimap-frame { right: 8px; bottom: 62px; width: 174px; height: 138px; }
+    #playerhud { grid-template-columns: 88px minmax(0, 1fr); }
+    #maparea { --victory-hud-width: 210px; }
+    .minimap-frame { left: 8px; right: auto; bottom: 62px; width: 174px; height: 138px; }
     #zoomctl { left: 12px; bottom: 12px; }
     #ubar { min-width: 0; width: calc(100% - 28px); bottom: 18px; }
     #trade { inset: 2% 8px; }
@@ -1516,14 +1532,14 @@
     }
   }
   @media (max-width: 620px) {
-    #playerhud { grid-template-columns: 86px minmax(0, .78fr) minmax(0, 1.22fr); gap: 3px; }
+    #playerhud { grid-template-columns: 78px minmax(0, 1fr); gap: 3px; }
     .victory-turn { padding-inline: 6px; }
     body.cinema-mode #cinema-frame .cinema-frame-brand span,
     body.cinema-mode #cinema-frame .cinema-frame-era span,
     body.cinema-mode #cinema-frame .cinema-frame-shot span { display: none; }
   }
   @media (max-width: 430px) {
-    #playerhud { top: 8px; left: 8px; right: 8px; grid-template-columns: 86px minmax(0, .68fr) minmax(0, 1.32fr); padding: 4px; }
+    #playerhud { top: 8px; left: 8px; right: 8px; grid-template-columns: 74px minmax(0, 1fr); padding: 4px; }
     .hud-region { padding-inline: 2px; }
     .diplomacy-card { flex-basis: 286px; grid-template-columns: 31px minmax(76px, .7fr) minmax(155px, 1.45fr); gap: 4px; padding: 4px; }
     .leader-medallion { width: 29px; height: 29px; font-size: 12px; }
@@ -1537,20 +1553,31 @@
     body.cinema-mode #cinema-story { left: 18px; width: calc(100% - 36px); }
   }
 
-  /* The standings return to their original upper-right home. Every
-     civilization keeps one full-width row in the same ranked column; the
-     requested height is calculated from the player count in drawPlayerHud(),
-     then capped so a large table does not consume the map. */
+  /* The player HUD is the map's masthead: it runs the whole width the victory
+     rail leaves it, with the turn plate as its left cell and the standings
+     filling the rest. Every civilization keeps one full-width row in the same
+     ranked column; the requested height is calculated from the player count in
+     drawPlayerHud(), then capped so a large table does not consume the map. */
   #playerhud {
-    top: 10px; right: 12px; left: auto; width: min(var(--player-hud-width, 540px), 56%);
-    height: min(var(--player-hud-height, 200px), calc(33.333vh - 12px));
-    --hud-medallion-column: 25px; --hud-identity-column: minmax(124px, 152px); --hud-column-gap: 4px;
-    display: flex; flex-direction: column; gap: 3px; min-width: 0; padding: 5px;
+    top: 10px; left: 12px; right: calc(var(--victory-hud-width) + 20px); width: auto;
+    height: min(var(--player-hud-height, 200px), var(--player-hud-max-height));
+    --hud-medallion-column: 21px; --hud-identity-column: minmax(300px, 42%); --hud-column-gap: 6px;
+    display: grid; grid-template-columns: 108px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
+    align-items: stretch; gap: 5px; min-width: 0; padding: 5px;
     overflow: visible; transform: none;
     border: 1px solid #526a618f; border-radius: 12px;
     background: linear-gradient(105deg, #091411ed, #0d1a17e8 58%, #091411ed);
     box-shadow: 0 14px 38px #000a, inset 0 1px #ffffff0a;
     backdrop-filter: blur(16px) saturate(130%);
+  }
+  /* Hiding the victory rail hands its column back to the standings. */
+  body.overlay-victory-hidden #playerhud { right: 12px; }
+  #playerhud > .victory-turn { grid-column: 1; grid-row: 1; }
+  /* The standings stack inside the second cell. This wrapper stays unpositioned
+     so an expanded dossier still hangs off #playerhud itself. */
+  #playerhud > .player-standings {
+    grid-column: 2; grid-row: 1; min-width: 0; min-height: 0;
+    display: flex; flex-direction: column; gap: 3px;
   }
   .ribbon-heading {
     position: relative; min-height: 17px; display: flex; align-items: center;
@@ -1573,12 +1600,18 @@
     min-width: 0; display: grid; place-items: center; overflow: hidden;
     border-left: 1px solid #ffffff10; text-overflow: clip;
   }
+  /* Every row keeps the same readable height instead of being squeezed to fit
+     the panel, so a large table scrolls rather than shrinking into illegibility. */
   #playerhud .diplomacy-ribbon {
     flex: 1; min-width: 0; min-height: 0; display: grid;
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: repeat(var(--hud-rows, 1), minmax(0, 1fr));
-    grid-auto-flow: row; align-items: stretch; gap: 2px; padding: 0;
+    grid-auto-rows: var(--hud-row-height, 23px);
+    grid-auto-flow: row; align-content: start; gap: 2px; padding: 0;
+    overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain;
+    scrollbar-color: #476057 transparent; scrollbar-width: thin;
   }
+  #playerhud .diplomacy-ribbon::-webkit-scrollbar { width: 3px; }
+  #playerhud .diplomacy-ribbon::-webkit-scrollbar-thumb { background: #476057; border-radius: 4px; }
   #playerhud .diplomacy-card {
     width: auto; height: auto; min-height: 0; display: grid;
     grid-template-columns: var(--hud-medallion-column) var(--hud-identity-column) minmax(0, 1fr);
@@ -1587,17 +1620,42 @@
   }
   #playerhud .diplomacy-card:hover { transform: none; }
   #playerhud .leader-medallion {
-    width: clamp(20px, 2.6vh, 25px); height: clamp(20px, 2.6vh, 25px);
+    width: clamp(15px, 1.9vh, 19px); height: clamp(15px, 1.9vh, 19px);
     border-width: 1px; box-shadow: 0 0 0 1px #07110f, 0 3px 8px #0008;
-    font-size: 10px;
+    font-size: 9px;
   }
-  #playerhud .diplomacy-name { gap: 2px; font-size: 9px; line-height: 1.05; }
-  #playerhud .diplomacy-rank { margin-right: 0; font-size: 8px; }
-  #playerhud .detail-caret { margin-left: 2px; font-size: 7px; }
+  /* Two identity lines cost every row a second baseline for what is really one
+     sentence — who this is. Run rank, civilization, leader, league handle,
+     rating and active plan along a single line, and the whole table gets
+     shorter without dropping a word. Only the civilization is allowed to grow;
+     everything after it gives way, then truncates, as the column narrows. */
+  #playerhud .diplomacy-identity {
+    min-width: 0; display: flex; align-items: baseline; gap: 3px; padding-block: 0;
+  }
+  #playerhud .diplomacy-name {
+    flex: 0 1 auto; min-width: 0; gap: 3px; font-size: 9px; line-height: 1.1;
+    white-space: nowrap;
+  }
+  #playerhud .diplomacy-rank { flex: 0 0 auto; margin-right: 0; font-size: 8px; }
+  /* When the line is too long for its column the two names give way, but the
+     civilization is what the row is ranked and coloured by, so it yields last. */
+  #playerhud .diplomacy-civ { flex: 0 .25 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  #playerhud .detail-caret { flex: 0 0 auto; margin-left: 1px; font-size: 7px; }
   #playerhud .diplomacy-leader {
-    font-size: 7px; line-height: 1.05;
+    flex: 0 1 auto; min-width: 0; overflow: hidden; font-size: 8px; line-height: 1.1;
+    text-overflow: ellipsis;
   }
-  #playerhud .diplomacy-player-line { gap: 2px; margin-top: 2px; font-size: 6.5px; line-height: 1.05; }
+  #playerhud .diplomacy-identity .identity-separator { flex: 0 0 auto; }
+  /* The league facts continue the same line rather than starting a new one. */
+  #playerhud .diplomacy-player-line {
+    flex: 1 1 auto; min-width: 0; gap: 3px; margin-top: 0; overflow: hidden;
+    font-size: 8px; line-height: 1.1; white-space: nowrap;
+  }
+  #playerhud .diplomacy-player { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  #playerhud .diplomacy-elo, #playerhud .diplomacy-expected { flex: 0 0 auto; }
+  #playerhud .diplomacy-player-line .ai-plan {
+    flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  }
   #playerhud .diplomacy-stats {
     align-self: stretch; display: grid; grid-template-columns: repeat(10, minmax(0, 1fr));
     grid-template-rows: minmax(0, 1fr); gap: 0;
@@ -1617,32 +1675,37 @@
   }
   #playerhud .diplomacy-card.expanded { border-radius: 7px; }
 
-  /* Victory progress remains a separate, independently hideable top strip.
-     Its right edge reserves exactly the space occupied by the standings. */
+  /* Victory progress is a separate, independently hideable rail standing on
+     the right edge from the top corner down. Six races read better one under
+     the other — each keeps the panel's whole width for its civilization names,
+     and the rail's height, not a 116px column, decides how many contenders
+     each of them shows. */
   #victoryhud {
-    position: absolute; z-index: 7; top: 10px; left: 12px;
-    right: min(calc(var(--player-hud-width, 540px) + 20px), calc(56% + 20px));
-    height: 132px; display: grid; grid-template-columns: 104px minmax(0, 1fr);
+    position: absolute; z-index: 7; top: 10px; right: 12px; left: auto;
+    bottom: 16px; width: var(--victory-hud-width); height: auto;
+    display: grid; grid-template-columns: minmax(0, 1fr);
     grid-template-rows: 18px minmax(0, 1fr);
-    align-items: stretch; gap: 5px; min-width: 0; max-width: 1000px; padding: 5px;
+    align-items: stretch; gap: 5px; min-width: 0; padding: 5px;
     overflow: hidden; border: 1px solid #526a618f; border-radius: 12px;
-    background: linear-gradient(105deg, #091411ed, #0d1a17e6 54%, #0a1512ed);
+    background: linear-gradient(195deg, #091411ed, #0d1a17e6 54%, #0a1512ed);
     box-shadow: 0 14px 38px #000a, inset 0 1px #ffffff0a;
     backdrop-filter: blur(16px) saturate(130%); pointer-events: auto;
   }
   #victoryhud > .hud-section-heading {
-    position: relative; grid-column: 2; grid-row: 1; min-height: 18px;
+    position: relative; grid-column: 1; grid-row: 1; min-height: 18px;
     justify-content: center; margin: 0 3px; color: #c7d3ce; font-size: 10px;
   }
   #victoryhud > .hud-section-heading.widget-drag-handle::before { position: absolute; left: 3px; }
-  #victoryhud > .victory-turn { grid-column: 1; grid-row: 1 / -1; }
-  #victoryhud > .victory-region { grid-column: 2; grid-row: 2; min-height: 0; }
+  #victoryhud > .victory-region { grid-column: 1; grid-row: 2; min-height: 0; }
+  /* A standing rail scrolls down, not across. */
+  #victoryhud .hud-rail { overflow-x: hidden; overflow-y: auto; }
+  #victoryhud .hud-rail::-webkit-scrollbar { width: 3px; height: 3px; }
 
   body.cinema-mode #playerhud, body.cinema-mode #victoryhud { display: none !important; }
   body.cinema-mode #victoryhud {
     top: clamp(37px, 4.6vh, 54px); left: 50%; right: auto;
     width: min(960px, calc(100% - 168px)); height: 112px;
-    grid-template-columns: 86px minmax(0, 1fr); transform: translateX(-50%);
+    grid-template-columns: minmax(0, 1fr); transform: translateX(-50%);
     border-color: #d8bd7948; border-radius: 3px 3px 14px 14px;
     background:
       linear-gradient(90deg, #d8bd7928, transparent 15%, transparent 85%, #d8bd7920) top / 100% 1px no-repeat,
@@ -1678,7 +1741,7 @@
     font-size: 11px; font-weight: 700; line-height: 1;
   }
   .overlay-close:hover { color: #fff; border-color: #9b6c66; background: #35201e; }
-  #playerhud > .ribbon-heading, #victoryhud > .hud-section-heading,
+  #playerhud .player-standings > .ribbon-heading, #victoryhud > .hud-section-heading,
   .minimap-frame > .minimap-label { padding-right: 25px; }
   #zoomctl .overlay-close {
     position: static; order: 20; width: 28px; height: 34px; flex: 0 0 28px;
@@ -1771,18 +1834,29 @@
     }
   }
   @media (max-width: 620px) {
-    #playerhud {
+    /* Too narrow for a rail beside the masthead: the standings take the whole
+       width and the tracker returns to a band under them, its paths back in
+       columns because there is no height to stack them into. */
+    #playerhud, body.overlay-victory-hidden #playerhud {
       top: 8px; left: 8px; right: 8px; width: auto; padding: 4px;
-      --hud-medallion-column: 21px; --hud-identity-column: minmax(102px, 132px);
+      --hud-medallion-column: 21px; --hud-identity-column: minmax(150px, 42%);
     }
     #victoryhud {
-      top: calc(min(var(--player-hud-height, 200px), calc(33.333vh - 12px)) + 14px);
-      left: 8px; right: 8px; width: auto; height: 132px;
-      grid-template-columns: 100px minmax(0, 1fr); padding: 4px;
+      top: calc(min(var(--player-hud-height, 200px), var(--player-hud-max-height)) + 14px);
+      left: 8px; right: 8px; bottom: auto; width: auto; height: 132px;
+      grid-template-columns: minmax(0, 1fr); padding: 4px;
     }
+    #victoryhud .hud-rail { overflow-x: auto; overflow-y: hidden; }
+    .victory-ribbon {
+      min-height: 0; width: max(100%, var(--victory-min-width, 514px));
+      grid-template-rows: minmax(0, 1fr);
+      grid-template-columns: repeat(var(--victory-rows, 6), minmax(84px, 1fr));
+    }
+    .victory-track { display: block; border-top: 0; border-left: 1px solid #ffffff0b; }
+    .victory-track:first-child { border-left-color: transparent; }
     body.cinema-mode #victoryhud {
       top: 36px; left: 16px; right: auto; width: calc(100% - 32px);
-      grid-template-columns: 82px minmax(0, 1fr);
+      grid-template-columns: minmax(0, 1fr);
     }
     #playerhud .diplomacy-card { padding-inline: 2px; }
     .ribbon-heading { padding-inline: 2px; }
@@ -3524,11 +3598,17 @@ const cv = document.getElementById("map");
 let cx = cv.getContext("2d");
 const mini = document.getElementById("mini"), mx2 = mini.getContext("2d");
 const area = document.getElementById("maparea");
-const HUD_LAYOUT_STORAGE_KEY = "civvis-hud-layout-v1";
+// v2 retires the layouts saved against the old arrangement — the standings in
+// the upper right, the tracker as a top strip, the minimap bottom right — so a
+// returning viewer sees the redesigned default instead of their old geometry.
+const HUD_LAYOUT_STORAGE_KEY = "civvis-hud-layout-v2";
 const HUD_WIDGETS = {
   // Ten fixed metric columns share every player row, so the standings keep
   // enough width for their values and short labels whenever the map allows.
-  players: {element:document.getElementById("playerhud"), minWidth:520, minHeight:96},
+  // The standings are capped at a quarter of the map however they are sized —
+  // by the player count, by a dragged edge, or by a layout saved earlier.
+  players: {element:document.getElementById("playerhud"), minWidth:520, minHeight:96,
+            maxHeightRatio:.25},
   victory: {element:document.getElementById("victoryhud"), minWidth:150, minHeight:88},
   minimap: {element:document.querySelector(".minimap-frame"), minWidth:130, minHeight:96},
 };
@@ -3562,10 +3642,18 @@ function hudWidgetMetrics(element) {
           width:rect.width, height:rect.height};
 }
 
+// The tallest a widget may be: the map it floats over, less its margins, and
+// less again for any widget that claims only a share of the height.
+function hudWidgetMaxHeight(config) {
+  const ceiling = config.maxHeightRatio
+    ? area.clientHeight * config.maxHeightRatio : Infinity;
+  return Math.max(1, Math.min(area.clientHeight - 8, ceiling));
+}
+
 function clampHudWidget(config, metrics) {
   const margin = 4;
   const maxWidth = Math.max(1, area.clientWidth - margin * 2);
-  const maxHeight = Math.max(1, area.clientHeight - margin * 2);
+  const maxHeight = hudWidgetMaxHeight(config);
   const minWidth = Math.min(config.minWidth, maxWidth);
   const minHeight = Math.min(config.minHeight, maxHeight);
   const width = Math.max(minWidth, Math.min(maxWidth, Number(metrics.width) || minWidth));
@@ -3629,10 +3717,10 @@ function applyHudWidgetMetrics(name, metrics, persist = false) {
   style.maxWidth = "none"; style.maxHeight = "none"; style.transform = "none";
   config.element.classList.add("layout-widget-custom");
   HUD_LAYOUT[name] = serializeHudWidget(next);
-  if (name === "players") {
-    area.style.setProperty("--player-hud-width", `${next.width}px`);
-    area.style.setProperty("--player-hud-height", `${next.height}px`);
-  }
+  if (name === "players") area.style.setProperty("--player-hud-height", `${next.height}px`);
+  // The standings run to wherever the victory rail starts, so widening the
+  // rail has to shorten the masthead in the same gesture.
+  if (name === "victory") area.style.setProperty("--victory-hud-width", `${next.width}px`);
   // Victory leaders stack vertically inside each path. Reveal another rank as
   // soon as a resize makes room for a complete row, without replacing the
   // resize handle that currently owns the pointer gesture.
@@ -3657,6 +3745,9 @@ function resetHudWidget(name, persist = true) {
                           "max-width", "max-height", "transform"])
     config.element.style.removeProperty(property);
   config.element.classList.remove("layout-widget-custom", "layout-widget-active");
+  // The masthead reads the rail's width to know where to stop. Hand that back
+  // to the stylesheet's default at the same moment the rail itself returns.
+  if (name === "victory") area.style.removeProperty("--victory-hud-width");
   if ((name === "players" || name === "victory") && state) drawPlayerHud();
   if (persist) saveHudLayout();
   if (name === "minimap") requestAnimationFrame(refreshMiniForLayout);
@@ -3670,13 +3761,17 @@ function resetAllHudWidgets() {
 function resizeHudWidget(config, start, edge, dx, dy) {
   const margin = 4;
   const minWidth = Math.min(config.minWidth, Math.max(1, area.clientWidth - margin * 2));
-  const minHeight = Math.min(config.minHeight, Math.max(1, area.clientHeight - margin * 2));
+  const maxHeight = hudWidgetMaxHeight(config);
+  const minHeight = Math.min(config.minHeight, maxHeight);
   let left = start.x, right = start.x + start.width;
   let top = start.y, bottom = start.y + start.height;
   if (edge.includes("w")) left = Math.max(margin, Math.min(right - minWidth, left + dx));
   if (edge.includes("e")) right = Math.min(area.clientWidth - margin, Math.max(left + minWidth, right + dx));
-  if (edge.includes("n")) top = Math.max(margin, Math.min(bottom - minHeight, top + dy));
-  if (edge.includes("s")) bottom = Math.min(area.clientHeight - margin, Math.max(top + minHeight, bottom + dy));
+  // Clamping the height alone would let a top-edge drag push the bottom edge
+  // down instead of simply stopping, so the ceiling is applied to the moving
+  // edge itself.
+  if (edge.includes("n")) top = Math.max(margin, Math.max(bottom - maxHeight, Math.min(bottom - minHeight, top + dy)));
+  if (edge.includes("s")) bottom = Math.min(area.clientHeight - margin, Math.min(top + maxHeight, Math.max(top + minHeight, bottom + dy)));
   return {x:left, y:top, width:right - left, height:bottom - top};
 }
 
@@ -11305,14 +11400,26 @@ function victoryDescription(victory, metric) {
 const DEFAULT_VICTORY_LEADERS = 3;
 
 // Measure the space the rendered track actually has instead of coupling this
-// behavior to the widget's default 112px height. This keeps custom layouts,
-// keyboard resizing, compact viewports, and future style changes in sync. All
-// paths use the same capacity so every column advances from top 3 to top 4
-// together; science's slightly taller split meter sets the safe limit.
+// behavior to a hard-coded widget height. This keeps custom layouts, keyboard
+// resizing, compact viewports, and future style changes in sync. All paths use
+// the same capacity so every band advances from top 3 to top 4 together;
+// science's slightly taller split meter sets the safe limit.
+//
+// The bands are stacked, so each one gets an equal share of the rail rather
+// than the whole of it — dividing by the full height would ask every band to
+// print the entire table and leave the rail permanently scrolled.
 function victoryLeaderCapacity(victoryHud) {
   const rail = victoryHud?.querySelector(".hud-rail");
   const tracks = [...(victoryHud?.querySelectorAll(".victory-track") || [])];
   if (!rail || !tracks.length) return DEFAULT_VICTORY_LEADERS;
+  const ribbon = victoryHud.querySelector(".victory-ribbon");
+  const ribbonGap = parseFloat(getComputedStyle(ribbon || rail).rowGap) || 0;
+  // Below 620px the same ribbon lays its paths out in columns again, and there
+  // every band has the rail's full height to itself.
+  const stacked = tracks.length < 2 || tracks[1].offsetTop > tracks[0].offsetTop;
+  const share = stacked
+    ? (rail.clientHeight - ribbonGap * (tracks.length - 1)) / tracks.length
+    : rail.clientHeight;
   let capacity = Infinity;
   for (const track of tracks) {
     const list = track.querySelector(".victory-list");
@@ -11326,7 +11433,7 @@ function victoryLeaderCapacity(victoryHud) {
     const fixedHeight = list.getBoundingClientRect().top -
       track.getBoundingClientRect().top + (parseFloat(trackStyle.paddingBottom) || 0);
     const fits = rowHeight > 0
-      ? Math.floor((rail.clientHeight - fixedHeight + gap) / (rowHeight + gap))
+      ? Math.floor((share - fixedHeight + gap) / (rowHeight + gap))
       : floor;
     capacity = Math.min(capacity, Math.max(floor, fits));
   }
@@ -11344,7 +11451,9 @@ function syncVictoryLeaderCapacity(victoryHud = document.getElementById("victory
   }
 }
 
-function playerHudOverview() {
+// The turn plate is the standings' left cell: the count, the cap it runs to,
+// and the age the world is in, with the whole observer sentence on its tooltip.
+function hudTurnPlate() {
   const actor = state.players[SPEC ? state.current : 0] || state.players[state.player];
   const viewer = state.players[state.player] || actor;
   const eraRaw = state.world_era;
@@ -11364,6 +11473,13 @@ function playerHudOverview() {
   const meta = [...profile.details, mapLabel, climateLabel].filter(Boolean).join(" · ");
   const identityContext = `${viewLabel}: ${identity.civ} · ${profile.role} · ${meta}` +
     (actor.id !== identity.id ? ` · Acting civilization: ${actor.civ}` : "");
+  const ageLabel = `${titleCase(era)} Age`;
+  return `<section class="victory-turn" title="${identityContext}" aria-label="${identityContext}; turn ${state.turn} of ${turnCapLabel()}; ${ageLabel}">` +
+    `<span class="turn-label">Turn</span><div class="turn-count"><strong>${state.turn}</strong>` +
+    `<small class="turn-total">of ${turnCapLabel()}</small></div><span class="turn-era">${ageLabel}</span></section>`;
+}
+
+function playerHudOverview() {
   const contenders = state.players.filter(p => p.alive && !p.is_minor && !p.is_barbarian);
   const enabledVictoryTracks = VICTORY_TRACKS
     .filter(track => state.victory_conditions?.[track.id] !== false);
@@ -11395,19 +11511,19 @@ function playerHudOverview() {
       }).join("") + `</div></section>`;
   }).join("");
   const victoryCount = Math.max(1, enabledVictoryTracks.length);
+  // Two floors for two orientations: the stacked rail needs vertical room per
+  // band, the narrow-viewport fallback needs horizontal room per column.
+  const victoryMinHeight = victoryCount * 66 + Math.max(0, victoryCount - 1) * 2;
   const victoryMinWidth = victoryCount * 116 + Math.max(0, victoryCount - 1) * 2;
-  const ageLabel = `${titleCase(era)} Age`;
   const overview =
     `<div class="hud-section-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
     `aria-label="Move victory tracker; use arrow keys or drag" title="Drag to move · arrow keys also move" id="victory-tracker-title">` +
     `<span>Victory tracker</span></div>` +
     `<button class="overlay-close" type="button" data-overlay-close="victory" aria-label="Hide victory tracker; restore it in Display settings" title="Hide victory tracker · restore in Display settings">✕</button>` +
-    `<section class="victory-turn" title="${identityContext}" aria-label="${identityContext}; turn ${state.turn} of ${turnCapLabel()}; ${ageLabel}">` +
-    `<span class="turn-label">Turn</span><div class="turn-count"><strong>${state.turn}</strong>` +
-    `<small class="turn-total">of ${turnCapLabel()}</small></div><span class="turn-era">${ageLabel}</span></section>` +
     `<section class="hud-region victory-region" aria-labelledby="victory-tracker-title">` +
-    `<div class="hud-rail" tabindex="0" aria-label="Victory paths; scroll horizontally for every path">` +
-    `<div class="victory-ribbon" style="--victory-columns:${victoryCount};--victory-min-width:${victoryMinWidth}px">` +
+    `<div class="hud-rail" tabindex="0" aria-label="Victory paths; scroll vertically for every path">` +
+    `<div class="victory-ribbon" style="--victory-rows:${victoryCount};` +
+    `--victory-min-height:${victoryMinHeight}px;--victory-min-width:${victoryMinWidth}px">` +
     `${victoryTracks}</div></div></section>` + hudResizeHandles("victory tracker");
 
   return overview;
@@ -11497,13 +11613,13 @@ function drawPlayerHud() {
   // State updates are frequent in spectator mode. Preserve each rail's exact
   // reading position so a person can browse an off-screen victory path
   // without the next simulation frame snapping the HUD back to the leader.
-  const victoryScroll = victoryHud.querySelector(".hud-rail")?.scrollLeft || 0;
+  const victoryScroll = victoryHud.querySelector(".hud-rail")?.scrollTop || 0;
   const overview = playerHudOverview();
   if (overview !== victoryHudHtml && hudLayoutGesture?.name !== "victory") {
     victoryHudHtml = overview;
     victoryHud.innerHTML = overview;
     const rail = victoryHud.querySelector(".hud-rail");
-    if (rail) rail.scrollLeft = victoryScroll;
+    if (rail) rail.scrollTop = victoryScroll;
   }
   syncVictoryLeaderCapacity(victoryHud);
   const acting = SPEC ? state.current : 0;
@@ -11511,12 +11627,16 @@ function drawPlayerHud() {
     .filter(p => !p.is_minor && !p.is_barbarian)
     .sort((a, b) => b.score - a.score || a.id - b.id);
   const rows = Math.max(1, majors.length);
-  const requestedHeight = 32 + rows * 36;
+  // One identity line per row instead of two, so a row is only as tall as its
+  // medallion: 23px, plus the 2px gap under it, against the 36px two lines
+  // needed. The fixed 44px is the heading, the column heads, the gaps and the
+  // panel's padding; the floor keeps the turn plate beside it legible at a
+  // two-player table. Anything past the quarter-screen ceiling scrolls, so this
+  // is what the panel would *like* rather than what it is allowed to take.
+  const requestedHeight = Math.max(96, 44 + rows * 25);
   const mapArea = document.getElementById("maparea");
-  if (!HUD_LAYOUT.players) {
-    mapArea.style.setProperty("--player-hud-width", "540px");
+  if (!HUD_LAYOUT.players)
     mapArea.style.setProperty("--player-hud-height", `${requestedHeight}px`);
-  }
   const rankById = new Map(majors.map((p, index) => [p.id, index + 1]));
   const statsByPlayer = new Map(majors.map(p => [p.id, playerHudStats(p, rankById.get(p.id), state.cities)]));
   const highestByStat = new Map();
@@ -11525,10 +11645,12 @@ function drawPlayerHud() {
     highestByStat.set(kind, Math.max(highestByStat.get(kind) ?? -Infinity, numericValue));
   }));
   const html =
+    `<button class="overlay-close" type="button" data-overlay-close="players" aria-label="Hide player standings; restore them in Display settings" title="Hide player standings · restore in Display settings">✕</button>` +
+    hudTurnPlate() +
+    `<div class="player-standings">` +
     `<div class="ribbon-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
     `aria-label="Move player stats; use arrow keys or drag" title="Drag to move · arrow keys also move" id="player-stats-title">` +
     `<span>Player stats</span></div>` +
-    `<button class="overlay-close" type="button" data-overlay-close="players" aria-label="Hide player standings; restore them in Display settings" title="Hide player standings · restore in Display settings">✕</button>` +
     `<div class="ribbon-stat-heading" aria-hidden="true"><span class="diplomacy-stat-head">` +
     [["production", "PROD"], ["science", "SCI"], ["culture", "CUL"], ["faith", "FPT"], ["gold", "GPT"],
       ["military", "MIL"], ["cities", "CITY"], ["suzerain", "SUZ"], ["wonders", "WNDR"], ["score", "SCORE"]]
@@ -11584,17 +11706,21 @@ function drawPlayerHud() {
         `<button class="diplomacy-identity" data-hud-action="dossier" data-hud-civ="${p.id}" aria-expanded="${expanded}" ` +
         `title="${expanded ? "Close" : "Open"} the ${p.civ} dossier · ${relationSummary}${agendaText}" ` +
         `aria-label="${expanded ? "Close" : "Open"} dossier for ${p.civ}, rank ${rank}, ${relationSummary}">` +
+        // Rank, civilization, leader, league handle, rating and plan are one
+        // sentence about one player, so they run along one line and the caret
+        // closes it. Only the two names may grow; the rest holds its width.
         `<span class="diplomacy-name"><span class="diplomacy-rank">#${rank}</span>` +
         `<span class="diplomacy-civ">${p.id === acting && SPEC ? "◉ " : ""}${p.civ}</span>` +
         `<span class="identity-separator" aria-hidden="true">·</span>` +
-        `<span class="diplomacy-leader">${leader}${agendaGlyph}</span>` +
-        `<span class="detail-caret">${expanded ? "▾" : "▸"}</span></span>` +
+        `<span class="diplomacy-leader">${leader}${agendaGlyph}</span></span>` +
+        `<span class="identity-separator" aria-hidden="true">·</span>` +
         `<span class="diplomacy-player-line" title="${leagueTitle}">` +
         `<span class="diplomacy-player">${playerName}</span><span class="identity-separator" aria-hidden="true">·</span>` +
         `<span class="diplomacy-elo">${playerElo}</span><span class="identity-separator" aria-hidden="true">·</span>` +
         `${expectPct === null ? "" : `<span class="diplomacy-expected" title="Elo-implied win estimate">${expectPct}%</span>` +
           `<span class="identity-separator" aria-hidden="true">·</span>`}` +
-        `${activeStrategy}</span></button>` +
+        `${activeStrategy}</span>` +
+        `<span class="detail-caret">${expanded ? "▾" : "▸"}</span></button>` +
         `<button class="diplomacy-stats" data-hud-action="watch" data-hud-civ="${p.id}" title="${watchTitle}" aria-label="Watch ${p.civ}">` +
         stats.map(([kind, , value, label, marker = ""]) => {
           const isLeader = highestByStat.get(kind) !== 0 && Number(value || 0) === highestByStat.get(kind);
@@ -11799,10 +11925,14 @@ function civDossier(p, rank, relation) {
 
 // A vertical wheel gesture over a one-row rail should browse that rail, not
 // disappear into a page that cannot scroll. Native horizontal trackpad input
-// is left untouched, and touch users retain normal swipe scrolling.
+// is left untouched, and touch users retain normal swipe scrolling. The
+// standing rail already answers a vertical wheel by itself, so this only
+// applies to the narrow-viewport layout, where the paths sit in a row again.
 document.getElementById("victoryhud").addEventListener("wheel", event => {
   const rail = event.target.closest(".hud-rail");
-  if (!rail || rail.scrollWidth <= rail.clientWidth || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+  if (!rail || rail.scrollHeight > rail.clientHeight ||
+      rail.scrollWidth <= rail.clientWidth ||
+      Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
   rail.scrollLeft += event.deltaY;
   event.preventDefault();
 }, {passive:false});
@@ -13732,7 +13862,7 @@ function mapOverlayVisible(name) {
 }
 function mapFocusPoint() {
   const topHudVisible = mapOverlayVisible("players") || mapOverlayVisible("victory");
-  let x = area.clientWidth / 2;
+  let left = 0, right = area.clientWidth;
   // On compact layouts the command deck floats over the canvas instead of
   // shrinking it. Center in the uncovered strip there, just as flex layout
   // naturally centers the desktop canvas to the right of the deck.
@@ -13740,10 +13870,17 @@ function mapFocusPoint() {
     const areaRect = area.getBoundingClientRect();
     const sideRect = document.getElementById("side").getBoundingClientRect();
     const coveredLeft = Math.max(0, Math.min(area.clientWidth, sideRect.right - areaRect.left));
-    if (coveredLeft > 0) x = (coveredLeft + area.clientWidth) / 2;
+    if (coveredLeft > 0) left = coveredLeft;
+    // The victory rail is a full-height wall down the right edge rather than a
+    // corner widget, so the world it leaves behind is genuinely narrower and
+    // its middle is the middle of what remains.
+    const victoryHud = document.getElementById("victoryhud");
+    if (mapOverlayVisible("victory") && victoryHud)
+      right = Math.min(right, Math.max(left + 180,
+        victoryHud.getBoundingClientRect().left - areaRect.left));
   }
   return {
-    x,
+    x:(left + right) / 2,
     y:area.clientHeight * (topHudVisible ? 1 - DEFAULT_MAP_FOCUS_FROM_BOTTOM : .5),
   };
 }
@@ -14049,13 +14186,16 @@ function fitFullWorldView(preservePresentation = false) {
 function observedFrameRect() {
   const width = Math.max(1, area.clientWidth), height = Math.max(1, area.clientHeight);
   const narrow = width <= 720;
-  const topHudVisible = mapOverlayVisible("players") || mapOverlayVisible("victory");
+  const victoryVisible = mapOverlayVisible("victory");
+  const topHudVisible = mapOverlayVisible("players") || victoryVisible;
   const minimapVisible = mapOverlayVisible("minimap");
   const controlsVisible = mapOverlayVisible("controls");
   if (!topHudVisible && !minimapVisible && !controlsVisible)
     return {left:0, right:width, top:0, bottom:height};
-  let left = narrow ? 28 : 40;
-  let right = width - (narrow || !minimapVisible ? 28 : 242);
+  // The victory rail stands the full height of the right edge, and the world
+  // map now sits in the lower left with the controls beneath it.
+  let left = narrow || !minimapVisible ? (narrow ? 28 : 40) : 244;
+  let right = width - (narrow || !victoryVisible || cinemaActive() ? 28 : 300);
   let top = topHudVisible
     ? (cinemaActive()
       ? Math.min(height * .36, Math.max(150, height * .18))
