@@ -165,10 +165,18 @@ pub struct Strategy {
     /// era pins the rating scale so numbers stay comparable across rounds.
     #[serde(default)]
     pub anchor: bool,
+    /// A person, registered when they sat down to play. They are rated here
+    /// exactly like an agent — that is the whole point of one identity model
+    /// — but they are not an entrant: `League::active` leaves them out, so
+    /// nothing ever schedules, breeds, retires, or seats them. `kind` is the
+    /// agent their seat falls back to if they hand it over to auto-play.
+    #[serde(default)]
+    pub human: bool,
 }
 
 impl Strategy {
-    fn new(name: &str, kind: StrategyKind, born_round: u32) -> Strategy {
+    /// A fresh entrant at the base rating with no history behind it.
+    pub fn new(name: &str, kind: StrategyKind, born_round: u32) -> Strategy {
         Strategy {
             name: name.to_string(),
             username: String::new(),
@@ -184,10 +192,14 @@ impl Strategy {
             parents: Vec::new(),
             retired: false,
             anchor: false,
+            human: false,
         }
     }
 
     pub fn label(&self) -> String {
+        if self.human {
+            return "human".to_string();
+        }
         match &self.kind {
             StrategyKind::Builtin { ai } => ai.clone(),
             StrategyKind::Advanced { target, .. } => match target {
@@ -211,9 +223,20 @@ pub struct League {
 }
 
 impl League {
+    /// The entrants this league schedules, breeds, retires and seats — the
+    /// agents still competing. Registered people are players in the same
+    /// table and are rated by the same arithmetic, but they are never
+    /// entrants: nothing may play a game *as* somebody who is not here.
     pub fn active(&self) -> Vec<usize> {
         (0..self.strategies.len())
-            .filter(|i| !self.strategies[*i].retired)
+            .filter(|i| !self.strategies[*i].retired && !self.strategies[*i].human)
+            .collect()
+    }
+
+    /// Every registered person, in registration order.
+    pub fn humans(&self) -> Vec<usize> {
+        (0..self.strategies.len())
+            .filter(|i| self.strategies[*i].human)
             .collect()
     }
 }
@@ -718,6 +741,31 @@ fn ensure_usernames(league: &mut League) {
         taken.insert(handle.clone());
         league.strategies[i].username = handle;
     }
+}
+
+/// Register a brand-new player in `league` and return their index.
+///
+/// Somebody who sits down to play is nobody who is already here. Handing them
+/// an existing entrant would give them a rating they never earned and give
+/// that entrant a result it never played for, so a seat a person takes always
+/// gets a row of its own: a new handle, provisional at the base rating until
+/// they finish a game. `kind` is only the agent the seat falls back to if
+/// they hand it to auto-play; it is not a claim about how they play.
+pub fn register_new_player(league: &mut League) -> usize {
+    let names: BTreeSet<String> = league.strategies.iter().map(|s| s.name.clone()).collect();
+    let handles: BTreeSet<String> = league
+        .strategies
+        .iter()
+        .map(|s| s.username.clone())
+        .collect();
+    let kind = StrategyKind::Builtin {
+        ai: "advanced".to_string(),
+    };
+    let mut player = Strategy::new(&unique_username("player", &names), kind, league.round);
+    player.username = unique_username("Player", &handles);
+    player.human = true;
+    league.strategies.push(player);
+    league.strategies.len() - 1
 }
 
 // ---------------------------------------------------------------------------
@@ -1640,6 +1688,28 @@ fn apply_round(league: &mut League, outcomes: &[Outcome], age_idle: bool) {
 /// league, or `None` if the roster is unreadable or no longer holds every
 /// name (a retired or renamed entrant leaves the game unrated rather than
 /// rating the wrong strategy).
+/// Register a new player in the roster on disk, so the game they are about to
+/// play is rated as theirs. Returns the roster they are now part of and their
+/// index in it.
+///
+/// The two guards are the ones `record_game` already relies on: the league
+/// lock, so concurrent workers cannot lose each other's rows, and a refusal to
+/// touch a roster a distributed round has already snapshotted. A manifest is
+/// an immutable promise about exactly who is playing that round; a person
+/// arriving mid-round joins the roster after it instead, and their game goes
+/// unrated rather than invalidating jobs already running on other machines.
+pub fn register_player(dir: &str) -> Option<(League, usize)> {
+    let worker = default_worker_id();
+    let _lock = acquire_league_lock(dir, &worker).ok()?;
+    let mut league = load_league(dir)?;
+    if manifest_path(dir, league.round).exists() {
+        return None;
+    }
+    let index = register_new_player(&mut league);
+    save_league_checked(dir, &league).ok()?;
+    Some((league, index))
+}
+
 pub fn record_game(
     dir: &str,
     placements: &[(String, String)],
@@ -2226,6 +2296,8 @@ pub fn standings(league: &League) -> String {
     for (rank, s) in order.iter().enumerate() {
         let status = if s.retired {
             "retired"
+        } else if s.human {
+            "person"
         } else if s.anchor {
             "anchor"
         } else {
@@ -2584,6 +2656,91 @@ mod tests {
         let bench = &league.strategies[2];
         assert_eq!((bench.rating, bench.rd), bench_before);
         assert_eq!(bench.games, 0);
+    }
+
+    /// Somebody who sits down to play joins the table as themselves. They are
+    /// rated by the same arithmetic as the agents and they appear in the
+    /// standings, but nothing may ever schedule, breed, retire or seat them:
+    /// a league round that dealt a person's row to a worker would play games
+    /// in their name that they never touched.
+    #[test]
+    fn a_registered_person_is_a_player_but_never_an_entrant() {
+        let builtin = |ai: &str| StrategyKind::Builtin { ai: ai.into() };
+        let mut league = League {
+            round: 4,
+            strategies: vec![
+                Strategy::new("advanced", builtin("advanced"), 0),
+                Strategy::new("basic", builtin("basic"), 0),
+            ],
+            calibration: Calibration::default(),
+        };
+        ensure_usernames(&mut league);
+
+        let first = register_new_player(&mut league);
+        let second = register_new_player(&mut league);
+        assert_ne!(first, second);
+        assert_eq!(league.strategies[first].name, "player");
+        assert_eq!(league.strategies[first].username, "Player");
+        assert_eq!(league.strategies[second].username, "Player2");
+        assert_eq!(league.strategies[first].rating, BASE_RATING);
+        assert_eq!(league.strategies[first].games, 0);
+        assert_eq!(league.strategies[first].born_round, 4);
+        assert_eq!(league.strategies[first].label(), "human");
+
+        assert_eq!(league.active(), vec![0, 1]);
+        assert_eq!(league.humans(), vec![first, second]);
+        assert!(seat_by_civ(&league, &["Rome".into(), "Egypt".into()])
+            .iter()
+            .all(|seated| !league.strategies[*seated].human));
+        assert!(standings(&league).contains("person"));
+    }
+
+    /// A person is registered before their game starts, so the result has a
+    /// name of their own to be filed under. The roster on disk is the one
+    /// that changes, and a second person is a second player.
+    #[test]
+    fn registering_a_player_persists_a_new_row() {
+        let dir = std::env::temp_dir().join(format!(
+            "civvis-league-register-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let dir = dir.to_str().unwrap();
+        let _ = fs::remove_dir_all(dir);
+        let builtin = |ai: &str| StrategyKind::Builtin { ai: ai.into() };
+        save_league(
+            dir,
+            &League {
+                round: 3,
+                strategies: vec![Strategy::new("advanced", builtin("advanced"), 0)],
+                calibration: Calibration::default(),
+            },
+        );
+
+        let (league, index) = register_player(dir).expect("registered");
+        assert_eq!(index, 1);
+        assert!(league.strategies[index].human);
+        let reloaded = load_league(dir).expect("roster on disk");
+        assert_eq!(reloaded.strategies.len(), 2);
+        assert_eq!(reloaded.strategies[index].username, "Player");
+        // The round is untouched: registering is not a rating period.
+        assert_eq!(reloaded.round, 3);
+
+        let (_, next) = register_player(dir).expect("registered again");
+        assert_eq!(load_league(dir).unwrap().strategies[next].username, "Player2");
+
+        // A game a person actually finishes rates them, and rates them alone
+        // among the two of them — nothing was credited to `advanced`.
+        let placements = vec![
+            ("player".to_string(), "Rome".to_string()),
+            ("advanced".to_string(), "Egypt".to_string()),
+        ];
+        let rated = record_game(dir, &placements, 9, 140, "science").expect("rated");
+        let person = rated.strategies.iter().find(|s| s.name == "player").unwrap();
+        assert_eq!((person.games, person.wins), (1, 1));
+        assert!(person.rating > BASE_RATING);
+        assert_eq!(rated.strategies.iter().find(|s| s.name == "player2").unwrap().games, 0);
+        fs::remove_dir_all(dir).unwrap();
     }
 
     /// `record_game` is the live server's whole path to a moving table: it
