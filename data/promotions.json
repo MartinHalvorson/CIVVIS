@@ -128,8 +128,8 @@
 
   "shadow_strike": {"class":"warrior_monk","tier":1,"effects":{"flanking_multiplier":2},"note":"Double flanking bonus."},
   "twilight_veil": {"class":"warrior_monk","tier":1,"effects":{"camouflage":1},"note":"Visible only to adjacent enemy units."},
-  "exploding_palms": {"class":"warrior_monk","tier":2,"requires":["shadow_strike"],"effects":{"combat_all":10},"note":"+10 Combat Strength."},
-  "disciples": {"class":"warrior_monk","tier":2,"requires":["twilight_veil"],"effects":{"religious_pressure_on_kill":250},"note":"Spreads its religion after defeating a unit."},
+  "exploding_palms": {"class":"warrior_monk","tier":2,"requires":["shadow_strike","twilight_veil"],"effects":{"combat_all":10},"note":"+10 Combat Strength."},
+  "disciples": {"class":"warrior_monk","tier":2,"requires":["shadow_strike","twilight_veil"],"effects":{"religious_pressure_on_kill":250},"note":"Spreads its religion after defeating a unit."},
   "sweeping_wind": {"class":"warrior_monk","tier":3,"requires":["exploding_palms","disciples"],"effects":{"extra_attacks":1},"note":"+1 attack per turn when Movement allows."},
   "dancing_crane": {"class":"warrior_monk","tier":3,"requires":["exploding_palms","disciples"],"effects":{"movement":1},"note":"+1 Movement."},
   "cobra_strike": {"class":"warrior_monk","tier":4,"requires":["sweeping_wind","dancing_crane"],"effects":{"combat_all":15},"note":"+15 Combat Strength."}

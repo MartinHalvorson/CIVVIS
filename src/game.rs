@@ -1356,6 +1356,33 @@ mod belief_runtime_tests {
     }
 
     #[test]
+    fn the_world_aims_for_three_barbarian_camps_per_major_civilization() {
+        // BARBARIAN_CAMP_MAX_PER_MAJOR_CIV is 3, and
+        // BARBARIAN_CAMP_FIRST_TURN_PERCENT_OF_TARGET_TO_ADD puts a third of
+        // that on the map before the first turn is played. The tournament
+        // lobby's eight majors therefore open against a handful of camps and
+        // grow toward twenty-four, not toward nine.
+        for players in [2_usize, 6, 8] {
+            let g = Game::new_full(players, 44, 30, 4_170 + players as u64, 200, 0, true);
+            assert_eq!(
+                g.barbarian_camp_target(),
+                3 * players,
+                "{players} majors should aim for three camps each"
+            );
+            let opening = g.barb_camps.len();
+            assert_eq!(
+                opening,
+                (3 * players * 33 / 100).max(1),
+                "{players} majors should open against a third of the target"
+            );
+            assert!(
+                opening < g.barbarian_camp_target(),
+                "the opening placement must leave room to grow"
+            );
+        }
+    }
+
+    #[test]
     fn barbarian_camps_field_half_the_leaders_technology() {
         let mut game = Game::new_full(2, 24, 16, 91_805, 200, 0, true);
         // Ancient leaders: the camps make do with tech-free units.
@@ -3590,7 +3617,7 @@ mod action_family_tests {
     /// A settled position: cities to buy in, units to order, rivals to deal
     /// with, and a congress in session by the time this many turns are up.
     fn played_in_game() -> Game {
-        let mut game = Game::new_with(GameOptions::new(4, 32, 22, 90_001, 400, 4));
+        let mut game = Game::new_with(GameOptions::new(4, 32, 22, 90_002, 400, 4));
         let mut ais = AdvancedAi::fleet(&game);
         while game.turn < 60 && game.winner.is_none() {
             let pid = game.current;
@@ -9659,6 +9686,19 @@ pub struct Player {
     pub alliances: BTreeMap<usize, AllianceState>,
     #[serde(default)]
     pub diplomatic_favor: f64,
+    /// Accumulated War Weariness points. Every
+    /// `WAR_WEARINESS_POINTS_FOR_AMENITY_LOSS` (400) of them costs one
+    /// Amenity in *every* city this civilization owns.
+    #[serde(default)]
+    pub war_weariness: f64,
+    /// Ages already lived through. `THRESHOLD_SHIFT_PER_PAST_DARK_AGE` is -10
+    /// and `_PER_PAST_GOLDEN_AGE` is +5, so a civilization that has struggled
+    /// finds the next Normal Age easier to reach and one that has prospered
+    /// finds it harder.
+    #[serde(default)]
+    pub past_dark_ages: i64,
+    #[serde(default)]
+    pub past_golden_ages: i64,
     #[serde(default)]
     pub dvp: i64, // diplomatic victory points
     #[serde(default = "normal_age")]
@@ -9766,6 +9806,9 @@ impl Player {
             open_borders_until: BTreeMap::new(),
             alliances: BTreeMap::new(),
             diplomatic_favor: 0.0,
+            war_weariness: 0.0,
+            past_dark_ages: 0,
+            past_golden_ages: 0,
             dvp: 0,
             age: "normal".to_string(),
             culture_lifetime: 0.0,
@@ -11116,7 +11159,11 @@ impl Game {
             barb.is_barbarian = true;
             g.players.push(barb);
             g.barb_pid = Some(pid);
-            for _ in 0..2 {
+            // BARBARIAN_CAMP_FIRST_TURN_PERCENT_OF_TARGET_TO_ADD: a third of
+            // the world's camp target is already on the map when the game
+            // opens, rather than a flat pair regardless of player count.
+            let opening = g.barbarian_camp_target() * 33 / 100;
+            for _ in 0..opening.max(1) {
                 g.spawn_camp();
             }
         }
@@ -11602,6 +11649,13 @@ impl Game {
         }
     }
 
+    /// Shipped `BARBARIAN_CAMP_MAX_PER_MAJOR_CIV` is 3, so the world aims for
+    /// three camps per major civilization — twenty-four on the tournament
+    /// lobby's eight-player map, not nine.
+    fn barbarian_camp_target(&self) -> usize {
+        3 * self.players.iter().filter(|p| !p.is_minor).count()
+    }
+
     fn spawn_camp(&mut self) {
         let mut cands: Vec<Pos> = Vec::new();
         for (pos, t) in &self.map.tiles {
@@ -11752,8 +11806,7 @@ impl Game {
         self.barb_camp_targets
             .retain(|camp, _| self.barb_camps.contains_key(camp));
         self.barbarian_scout_phase(bpid);
-        let n_majors = self.players.iter().filter(|p| !p.is_minor).count();
-        if self.turn.is_multiple_of(10) && self.barb_camps.len() < n_majors + 1 {
+        if self.turn.is_multiple_of(10) && self.barb_camps.len() < self.barbarian_camp_target() {
             self.spawn_camp();
         }
         let alerted = self.barb_alerted_until.len();
@@ -13141,6 +13194,50 @@ impl Game {
             Some(pos),
         );
         Ok(())
+    }
+
+    /// Shipped `WAR_WEARINESS_POINTS_FOR_AMENITY_LOSS`: every 400 points cost
+    /// one Amenity, in every city the civilization owns.
+    pub fn war_weariness_amenity_loss(&self, pid: usize) -> i64 {
+        (self.players[pid].war_weariness / 400.0).floor() as i64
+    }
+
+    /// Charge one bout of fighting. `WAR_WEARINESS_PER_COMBAT_IN_FOREIGN_LANDS`
+    /// is 2 and `_IN_ALLIED_LANDS` is 1; fighting on your own soil is the
+    /// cheapest case. Policy and government reductions apply here, which is
+    /// what makes `war_weariness_multiplier` mean anything.
+    fn accrue_combat_weariness(&mut self, pid: usize, at: Pos) {
+        if !self.at_war_with_any_civilization(pid) {
+            return;
+        }
+        let owner = self
+            .map
+            .get(at)
+            .and_then(|tile| tile.owner_city)
+            .and_then(|cid| self.cities.get(&cid))
+            .map(|city| city.owner);
+        let home = owner == Some(pid);
+        let points = match owner {
+            Some(other) if other == pid => 1.0,
+            Some(other) if self.are_allied(pid, other) || self.same_team(pid, other) => 1.0,
+            _ => 2.0,
+        };
+        self.add_war_weariness(pid, points * self.war_weariness_multiplier(pid, home));
+    }
+
+    fn add_war_weariness(&mut self, pid: usize, points: f64) {
+        self.players[pid].war_weariness = (self.players[pid].war_weariness + points).max(0.0);
+    }
+
+    /// `WAR_WEARINESS_DECAY_TURN_AT_WAR` 50 while any war is running, and
+    /// `_AT_PEACE` 200 once they are all over.
+    fn decay_war_weariness(&mut self, pid: usize) {
+        let decay = if self.at_war_with_any_civilization(pid) {
+            50.0
+        } else {
+            200.0
+        };
+        self.add_war_weariness(pid, -decay);
     }
 
     pub fn war_weariness_multiplier(&self, pid: usize, home_territory: bool) -> f64 {
@@ -19682,7 +19779,10 @@ impl Game {
         if self.city_governor_active(city.owner, city.id) {
             supply += self.policy_effect(city.owner, "governor_amenity");
         }
-        supply.round() as i64
+        // War Weariness "is applied to every city you own as a negative
+        // Amenity" — it is empire-wide, not a property of the cities doing
+        // the fighting.
+        supply.round() as i64 - self.war_weariness_amenity_loss(city.owner)
     }
 
     /// Each distinct luxury gives +1 Amenity to the four cities that need it
@@ -28868,8 +28968,12 @@ impl Game {
         let r = match action {
             Action::Move { unit, to } => self.do_move(pid, *unit, *to),
             Action::MoveTo { unit, to } => self.do_move_to(pid, *unit, *to),
-            Action::Attack { unit, target } => self.do_attack(pid, *unit, *target),
-            Action::Ranged { unit, target } => self.do_ranged(pid, *unit, *target),
+            Action::Attack { unit, target } => self
+                .do_attack(pid, *unit, *target)
+                .inspect(|()| self.accrue_combat_weariness(pid, *target)),
+            Action::Ranged { unit, target } => self
+                .do_ranged(pid, *unit, *target)
+                .inspect(|()| self.accrue_combat_weariness(pid, *target)),
             Action::FoundCity { unit } => self.do_found_city(pid, *unit),
             Action::Improve { unit, improvement } => self.do_improve(pid, *unit, improvement),
             Action::FoundCorporation { pos } => self.do_found_corporation(pid, *pos),
@@ -28887,7 +28991,9 @@ impl Game {
             Action::RepairImprovement { unit } => self.do_repair_improvement(pid, *unit),
             Action::CoastalRaid { unit, target } => self.do_coastal_raid(pid, *unit, *target),
             Action::AirRebase { unit, to } => self.do_air_rebase(pid, *unit, *to),
-            Action::AirStrike { unit, target } => self.do_air_strike(pid, *unit, *target),
+            Action::AirStrike { unit, target } => self
+                .do_air_strike(pid, *unit, *target)
+                .inspect(|()| self.accrue_combat_weariness(pid, *target)),
             Action::AirPillage { unit, target } => self.do_air_pillage(pid, *unit, *target),
             Action::PriorityTarget { unit, target } => self.do_priority_target(pid, *unit, *target),
             Action::AirPatrol { unit, to } => self.do_air_patrol(pid, *unit, *to),
@@ -29002,12 +29108,18 @@ impl Game {
                 self.do_evangelize_belief(pid, *unit, belief)
             }
             Action::ConvertBarbarians { unit } => self.do_convert_barbarians(pid, *unit),
-            Action::CityStrike { city, target } => self.do_city_strike(pid, *city, *target),
+            Action::CityStrike { city, target } => self
+                .do_city_strike(pid, *city, *target)
+                .inspect(|()| self.accrue_combat_weariness(pid, *target)),
             Action::WmdStrike {
                 city,
                 target,
                 thermonuclear,
-            } => self.do_wmd_strike(pid, *city, *target, *thermonuclear),
+            } => self
+                .do_wmd_strike(pid, *city, *target, *thermonuclear)
+                // WAR_WEARINESS_PER_WMD_LAUNCHED: launching is the single
+                // most expensive thing you can do to your own people.
+                .inspect(|()| self.add_war_weariness(pid, 10.0)),
             Action::BuildRailroad { unit } => self.do_build_railroad(pid, *unit),
             Action::EncampmentStrike { city, target } => {
                 self.do_encampment_strike(pid, *city, *target)
@@ -35040,6 +35152,7 @@ impl Game {
 
     fn process_diplomacy(&mut self, pid: usize) {
         let turn = self.turn;
+        self.decay_war_weariness(pid);
         self.pending_deals.retain(|deal| deal.expires >= turn);
         self.players[pid]
             .denounced_until
@@ -35385,6 +35498,11 @@ impl Game {
         // turn after signing, which is not a war — it is the same war, and it
         // reads in the log as a dozen of them.
         let holds_until = self.turn + self.standard_duration(PEACE_TREATY_TURNS);
+        // WAR_WEARINESS_DECAY_PEACE_DECLARED: signing forgives a large block
+        // of weariness outright, for both sides of the treaty.
+        for side in first_side.iter().chain(second_side.iter()) {
+            self.add_war_weariness(*side, -2000.0);
+        }
         terms.push("Current borders recognized".to_string());
         terms.push(format!("Peace treaty through Turn {holds_until}"));
         let settlement = WarPeace {
@@ -37041,6 +37159,20 @@ impl Game {
     /// and Golden thresholds based on era and empire size. Climbing directly
     /// from a Dark Age to the Golden threshold produces a Heroic Age and
     /// three simultaneous dedication choices.
+    /// Era Score needed to avoid a Dark Age, from the shipped
+    /// `THRESHOLD_SHIFT_*` parameters: `_PER_CITY` 3, counted past the first
+    /// city the base already covers, `_PER_PAST_DARK_AGE` -10 and
+    /// `_PER_PAST_GOLDEN_AGE` +5. The last two make ages self-correcting — a
+    /// civilization that has struggled finds Normal easier to reach next time,
+    /// one that has prospered finds it harder.
+    ///
+    /// `_PER_ANARCHY`, `_PER_INCOMPLETE_ERA_TECH`/`_CIVIC`, `_PER_INCOMPLETE_OLD_TECH`/`_CIVIC`
+    /// and `_PER_MISSING_AMENITY` all ship as 0, so there is nothing to model
+    /// for them.
+    fn normal_age_threshold(era: usize, cities: i64, past_dark: i64, past_golden: i64) -> i64 {
+        (12 + 3 * era as i64 + 3 * (cities - 1) - 10 * past_dark + 5 * past_golden).max(6)
+    }
+
     fn process_eras(&mut self) {
         let era = self.era_from_progress();
         if era <= self.world_era {
@@ -37096,9 +37228,23 @@ impl Game {
             player.dedication_choices = if player.age == "heroic" { 3 } else { 1 };
             player.era_score = 0;
             player.era_score_baseline = 0;
-            let adjustment = if player.age == "dark" { -4 } else { 0 };
-            player.normal_age_threshold =
-                (12 + 3 * era as i64 + 2 * (cities - 1) + adjustment).max(6);
+            // The age just entered counts toward the next threshold: shipped
+            // THRESHOLD_SHIFT_PER_PAST_DARK_AGE -10 and
+            // _PER_PAST_GOLDEN_AGE +5 make ages self-correcting, so a
+            // civilization that has struggled finds Normal easier to reach
+            // next time and one that has prospered finds it harder. Heroic
+            // counts as the Golden Age it is.
+            match player.age.as_str() {
+                "dark" => player.past_dark_ages += 1,
+                "golden" | "heroic" => player.past_golden_ages += 1,
+                _ => {}
+            }
+            player.normal_age_threshold = Self::normal_age_threshold(
+                era,
+                cities,
+                player.past_dark_ages,
+                player.past_golden_ages,
+            );
             player.golden_age_threshold = player.normal_age_threshold + 12 + cities;
         }
         // A Dark Age card is a loan against the age that offered it. Climbing
@@ -46527,6 +46673,72 @@ mod victory_conditions {
     }
 
     #[test]
+    fn war_weariness_costs_every_city_an_amenity_and_decays_at_the_shipped_rates() {
+        let mut g = game_with_capitals(2, 4_162, 300);
+        let home = g.player_city_ids(0)[0];
+        let baseline = g.city_local_amenities(&g.cities[&home]);
+
+        // WAR_WEARINESS_POINTS_FOR_AMENITY_LOSS is 400, and the loss lands on
+        // every city the civilization owns, not just the ones at war.
+        g.players[0].war_weariness = 399.0;
+        assert_eq!(g.war_weariness_amenity_loss(0), 0);
+        assert_eq!(g.city_local_amenities(&g.cities[&home]), baseline);
+        g.players[0].war_weariness = 400.0;
+        assert_eq!(g.war_weariness_amenity_loss(0), 1);
+        assert_eq!(g.city_local_amenities(&g.cities[&home]), baseline - 1);
+        g.players[0].war_weariness = 1_200.0;
+        assert_eq!(g.city_local_amenities(&g.cities[&home]), baseline - 3);
+
+        // WAR_WEARINESS_DECAY_TURN_AT_WAR 50, _AT_PEACE 200.
+        g.at_war.insert(pair(0, 1));
+        g.process_diplomacy(0);
+        assert_eq!(g.players[0].war_weariness, 1_150.0);
+        g.at_war.remove(&pair(0, 1));
+        g.process_diplomacy(0);
+        assert_eq!(g.players[0].war_weariness, 950.0);
+    }
+
+    #[test]
+    fn past_ages_shift_the_next_threshold_by_the_shipped_amounts() {
+        // THRESHOLD_SHIFT_PER_CITY 3, _PER_PAST_DARK_AGE -10,
+        // _PER_PAST_GOLDEN_AGE +5.
+        let t = Game::normal_age_threshold;
+        assert_eq!(t(1, 1, 0, 0), 15);
+        // Each extra city past the first raises it by three.
+        assert_eq!(t(1, 4, 0, 0), 15 + 9);
+        // A past Dark Age makes the next Normal Age ten points easier...
+        assert_eq!(t(1, 4, 1, 0), 15 + 9 - 10);
+        // ...but never past the floor of six: 24 - 20 would be 4.
+        assert_eq!(t(1, 4, 2, 0), 6);
+        assert_eq!(t(1, 1, 1, 0), 6);
+        // ...and a past Golden Age makes it five points harder.
+        assert_eq!(t(1, 4, 0, 1), 15 + 9 + 5);
+        assert_eq!(t(1, 4, 1, 2), 15 + 9 - 10 + 10);
+        // The threshold never drops below six however dark the history.
+        assert_eq!(t(1, 1, 9, 0), 6);
+    }
+
+    #[test]
+    fn fighting_abroad_wearies_twice_as_fast_as_fighting_at_home() {
+        // WAR_WEARINESS_PER_COMBAT_IN_FOREIGN_LANDS 2 against _IN_ALLIED_LANDS
+        // 1; your own soil is the cheap case alongside an ally's.
+        let mut g = game_with_capitals(2, 4_163, 300);
+        g.at_war.insert(pair(0, 1));
+        let home = g.cities[&g.player_city_ids(0)[0]].pos;
+        let abroad = g.cities[&g.player_city_ids(1)[0]].pos;
+
+        g.accrue_combat_weariness(0, home);
+        assert_eq!(g.players[0].war_weariness, 1.0);
+        g.accrue_combat_weariness(0, abroad);
+        assert_eq!(g.players[0].war_weariness, 3.0);
+
+        // Peace means no weariness accrues at all.
+        g.at_war.remove(&pair(0, 1));
+        g.accrue_combat_weariness(0, abroad);
+        assert_eq!(g.players[0].war_weariness, 3.0);
+    }
+
+    #[test]
     fn special_sessions_keep_the_shipped_fifteen_turn_spacing() {
         // WORLD_CONGRESS_MIN_TIME_BETWEEN_SPECIAL_SESSIONS is 15. Without it
         // a queue of Emergencies seats one after another, and since each one
@@ -47677,7 +47889,8 @@ mod district_mechanics {
             ("theater_square", "government_plaza", 1.0),
             ("industrial_zone", "quarry", 1.0),
             ("industrial_zone", "strategic_resource", 1.0),
-            ("industrial_zone", "mine", 1.5),
+            // Shipped Minel_HalfProduction: 1 Production per 2 adjacent Mines.
+            ("industrial_zone", "mine", 0.5),
             ("industrial_zone", "lumber_mill", 0.5),
             ("industrial_zone", "district", 0.5),
             ("industrial_zone", "aqueduct", 2.0),
