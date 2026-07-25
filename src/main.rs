@@ -8,7 +8,7 @@ use civvis::game::{
     DEFAULT_DISASTER_INTENSITY, GAME_MODES,
 };
 use civvis::rules::Rules;
-use civvis::setup::{GameSpeed, MapScript, MapSize};
+use civvis::setup::{GameSpeed, MapPoles, MapScript, MapSize, MapTopology};
 
 fn arg(args: &[String], key: &str, default: i64) -> i64 {
     args.iter()
@@ -93,15 +93,37 @@ fn auto_cs(args: &[String], players: i64) -> usize {
 
 fn auto_dimension(args: &[String], key: &str, players: i64, width: bool) -> i32 {
     let size = MapSize::for_players(players.max(1) as usize);
-    // Planet stores its globe in a rectangle of its own shape, so the size's
-    // default dimensions depend on which script was asked for.
-    let script = MapScript::from_id(&arg_text(args, "--map", "pangaea")).unwrap_or_default();
-    let (default_width, default_height) = size.dimensions(script);
+    // A globe stores itself in a rectangle of its own shape, so the size's
+    // default dimensions depend on which world shape was asked for.
+    let (default_width, default_height) = size.dimensions(map_topology(args));
     arg(
         args,
         key,
         if width { default_width } else { default_height } as i64,
     ) as i32
+}
+
+/// The world's shape, which is asked for separately from what fills it.
+/// `--map true_start_earth` is the one type that overrules it: Earth is drawn
+/// from real longitudes and latitudes and closes on itself.
+fn map_topology(args: &[String]) -> MapTopology {
+    let script = MapScript::from_id(&arg_text(args, "--map", "pangaea")).unwrap_or_default();
+    if script.is_fixed_geography() {
+        return MapTopology::Planet;
+    }
+    // `--map planet` named a world type before the globe became a shape of its
+    // own, and still means both halves of what it meant then.
+    let default = if arg_text(args, "--map", "pangaea") == "planet" {
+        MapTopology::Planet
+    } else {
+        MapTopology::Flat
+    };
+    MapTopology::from_id(&arg_text(args, "--shape", default.id())).unwrap_or(default)
+}
+
+/// Whether the world has cold ends.
+fn map_poles(args: &[String]) -> MapPoles {
+    MapPoles::from_id(&arg_text(args, "--poles", "poles")).unwrap_or_default()
 }
 
 /// Difficulty and speed are chosen the same way everywhere: by name, against
@@ -163,6 +185,8 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
     GameOptions {
         map_script: MapScript::from_id(&arg_text(args, "--map", "pangaea"))
             .unwrap_or(MapScript::Pangaea),
+        map_topology: map_topology(args),
+        map_poles: map_poles(args),
         difficulty,
         speed,
         // A headless game has nobody at the keyboard, so the difficulty only
@@ -785,6 +809,8 @@ fn main() {
             };
             let play_options = game_options(&args, players, seed);
             let map_script = play_options.map_script;
+            let map_topology = play_options.map_topology;
+            let map_poles = play_options.map_poles;
             let game_speed = GameSpeed::from_id(&play_options.speed).unwrap_or(GameSpeed::Standard);
             civvis::server::serve_with_game(
                 arg(&args, "--port", 8765) as u16,
@@ -795,6 +821,8 @@ fn main() {
                     height: auto_dimension(&args, "--height", players, false),
                     seed,
                     map_script,
+                    map_topology,
+                    map_poles,
                     game_speed,
                     max_turns: play_options.max_turns,
                     victory_conditions: victory_conditions(&args),
@@ -928,7 +956,8 @@ fn main() {
                 "usage: civvis <simulate|soak|benchmark|tournament|league|rating|play|evolve|validate|pedia> \
                       [--players N] [--seed N] [--turns N] [--width N] [--height N] \
                       [--city-states N] [--games N] [--ais a,b] [--ratings path] [--port N] [--no-open] \
-                      [--map pangaea|continents|small_continents|inland_sea|lakes|planet] \
+                      [--map land_only|lakes|inland_sea|pangaea|continents|small_continents|islands|water_world|true_start_earth] \
+                      [--shape flat|planet] [--poles poles|no_poles] \
                       [--difficulty settler|chieftain|warlord|prince|king|emperor|immortal|deity] \
                       [--speed online|quick|standard|epic|marathon] \
                       [--disasters 0|1|2|3|4] [--barbarians on|off] \
