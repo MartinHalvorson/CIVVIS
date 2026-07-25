@@ -52,9 +52,13 @@ pub const GLOBE_GREAT_PERSON: &str = "hypatia";
 /// there.
 pub const EXOPLANET_EYE: &str = "launch_earth_satellite";
 
-/// Whether this civilization has the round world, by discovery or by recruit.
+/// Whether this civilization has the round world, by discovery, by recruit, or
+/// by having sailed round it: a people who set out west and came home from the
+/// east have proved the thing on the water, and do not also need to read it in
+/// a book.
 pub fn knows_globe(p: &crate::game::Player) -> bool {
-    GLOBE_TECHS.iter().any(|tech| p.techs.contains(*tech))
+    p.went_around
+        || GLOBE_TECHS.iter().any(|tech| p.techs.contains(*tech))
         || p.great_people.iter().any(|id| id.as_str() == GLOBE_GREAT_PERSON)
 }
 
@@ -310,6 +314,11 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         "max_turns": g.max_turns,
         "seed": g.seed,
         "game_speed": g.game_speed.id(),
+        // The handicap the game is being played on. The save list has always
+        // reported this for games nobody is playing; without it here the setup
+        // panel could not tell a reloaded page which difficulty the game on
+        // screen was started at, and offered to restart it at the stock one.
+        "difficulty": g.difficulty,
         "world_era": g.world_era,
         "climate_phase": g.climate_phase,
         "climate_points": g.climate_points(),
@@ -387,6 +396,13 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             // so it is never the party that has to find north.
             "found_north": omniscient || p.techs.contains(NORTH_TECH),
             "north_tech": NORTH_TECH,
+            // Whether this people's knowledge has ever run the whole way round
+            // the world, which is how a civilization finds out that it does
+            // come back on itself and how far round it is. Until then their
+            // chart is an open sheet that stops where they have stopped, and
+            // the world does not helpfully repeat past the edge of it. A
+            // spectator is not living in the world and is told at once.
+            "went_around": omniscient || p.went_around,
             // The same arrangement one step further out: a spectator is above
             // the world rather than on it, so it was never in any doubt about
             // the shape of the thing or about what else is out there.
@@ -1435,6 +1451,53 @@ mod tests {
         );
     }
 
+    /// The other half of a world's bearing, and all of its extent: a people
+    /// know their world comes back on itself once their own knowledge has run
+    /// the whole way round it. A spectator is above the world and is told at
+    /// once; a civilization has to go.
+    #[test]
+    fn going_the_whole_way_round_is_earned_by_a_civilization_and_free_for_a_spectator() {
+        let mut game = Game::new(2, 18, 12, 11, 25, 0);
+
+        let own = observation(&game, 0);
+        assert_eq!(own["me"]["went_around"], json!(false));
+        assert_eq!(
+            observation_player_view(&game, 0)["me"]["went_around"],
+            json!(false),
+        );
+        assert_eq!(
+            observation_spectator(&game, 0)["me"]["went_around"],
+            json!(true),
+        );
+
+        game.players[0].went_around = true;
+        assert_eq!(observation(&game, 0)["me"]["went_around"], json!(true));
+        assert_eq!(
+            observation_player_view(&game, 0)["me"]["went_around"],
+            json!(true),
+        );
+    }
+
+    /// Sailing round the world is a proof that it is round. A people who set
+    /// out west and came home from the east have settled the question on the
+    /// water, without anyone having to read it in a book first.
+    #[test]
+    fn a_lap_of_the_world_proves_it_round_without_the_technology() {
+        let mut game = Game::new(2, 18, 12, 11, 25, 0);
+        for tech in GLOBE_TECHS {
+            game.players[0].techs.remove(tech);
+        }
+        game.players[0].great_people.clear();
+        game.players[0].went_around = false;
+        assert_eq!(observation(&game, 0)["me"]["knows_globe"], json!(false));
+
+        game.players[0].went_around = true;
+        assert_eq!(observation(&game, 0)["me"]["knows_globe"], json!(true));
+        // Still only the world they have been round: the far end of the system
+        // waits for an instrument above the air either way.
+        assert_eq!(observation(&game, 0)["me"]["sees_exoplanet"], json!(false));
+    }
+
     /// The shape of the world is the same kind of fact as which way is north:
     /// the viewer has to be told, because it draws a globe a people who have not
     /// worked it out yet are not supposed to be looking at. Either proof opens
@@ -1640,6 +1703,13 @@ mod tests {
         game.found_city_for(0, capital_position, None);
         let observed = observation_spectator(&game, 0);
         assert_eq!(observed["max_turns"], serde_json::json!(120));
+        // The setup panel adopts the running game's handicap, so the
+        // observation has to carry it.
+        assert_eq!(
+            observed["difficulty"],
+            serde_json::json!(game.difficulty),
+            "the observation reports the difficulty the game is played on"
+        );
 
         let player = observed["players"]
             .as_array()

@@ -4187,6 +4187,18 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function worldFacing(seed)"));
         assert!(EMBEDDED_INDEX.contains("function adoptWorldFacing(st)"));
         assert!(EMBEDDED_INDEX.contains("found_north !== false"));
+        // A world's shape and its bearing are earned by going round it: until
+        // then the chart is unrolled about one fixed place instead of about the
+        // camera, so panning east does not hand back the coasts you started
+        // from, and the thumbnail frames the ground that is known rather than
+        // the whole rectangle.
+        assert!(EMBEDDED_INDEX.contains("function wentAround(st = state)"));
+        assert!(EMBEDDED_INDEX.contains("went_around !== false"));
+        assert!(EMBEDDED_INDEX.contains("function chartAnchorX()"));
+        assert!(EMBEDDED_INDEX.contains("function chartCovers(worldX)"));
+        assert!(EMBEDDED_INDEX.contains("function miniBounds()"));
+        assert!(EMBEDDED_INDEX.contains("function axisRot()"));
+        assert!(!EMBEDDED_INDEX.contains("Math.round((cam.x - x) / WW()) * WW()"));
         // The same rule one step out: a world is drawn as its own people draw
         // it. Until they have proved it round the viewer must keep the chart
         // projection, keep the zoom short of anything that would show them an
@@ -4735,6 +4747,102 @@ mod tests {
         assert!(!EMBEDDED_INDEX.contains("${state.turn}/${maxTurns}"));
     }
 
+    /// The viewer's controls are Civilization VI's, read out of the game's own
+    /// `InputConfiguration.xml` (`InputActionDefaultGestures`, plus the rows
+    /// the two expansions add). Every pair below is one row of that table, so
+    /// a binding cannot be quietly moved or dropped without this failing.
+    /// `docs/CIV6_KEYBINDINGS.md` carries the same table in prose, including
+    /// the Civ 6 actions this build has nothing to bind to.
+    #[test]
+    fn browser_key_bindings_are_civ6s_own() {
+        for (action, key) in [
+            // UI
+            ("ToggleTechTree", "t"),
+            ("ToggleCivicsTree", "c"),
+            ("ToggleGovernment", "F7"),
+            ("ToggleReligion", "l"),
+            ("ToggleGreatPeople", "o"),
+            ("ToggleCityStates", "F2"),
+            ("ToggleEspionage", "F3"),
+            ("ToggleTradeRoutes", "F4"),
+            ("ToggleGovernors", "F10"),
+            ("OpenCivilopedia", "F9"),
+            ("ToggleFSMap", "End"),
+            // Units
+            ("FoundCity", "b"),
+            ("MoveTo", "m"),
+            ("Fortify", "f"),
+            ("FortifyUntilHeal", "h"),
+            ("Attack", "a"),
+            ("RangedAttack", "r"),
+            ("AutoExplore", "e"),
+            ("SkipTurn", " "),
+            ("Sleep", "z"),
+            ("Alert", "v"),
+            // Global
+            ("EndTurn", "Enter"),
+            ("ToggleGrid", "g"),
+            ("ToggleResources", "q"),
+            ("ToggleYield", "y"),
+            ("Toggle2DView", "+"),
+            ("PauseMenu", "Home"),
+            ("QuickSave", "F5"),
+            ("QuickLoad", "F6"),
+            ("OnlinePause", "p"),
+            ("PrevUnit", ","),
+            ("NextUnit", "."),
+            ("PrevCity", "["),
+            ("NextCity", "]"),
+            ("CapitalCity", "\\\\"),
+            // Camera
+            ("CameraPanLeft", "ArrowLeft"),
+            ("CameraPanRight", "ArrowRight"),
+            ("CameraPanUp", "ArrowUp"),
+            ("CameraPanDown", "ArrowDown"),
+            ("ZoomIn", "NumpadAdd"),
+            ("ZoomOut", "NumpadSubtract"),
+        ] {
+            let row = format!("{{id: \"{action}\", key: \"{key}\"");
+            assert!(
+                EMBEDDED_INDEX.contains(&row),
+                "Civ 6's {action} must stay on {key}: no `{row}` in the viewer"
+            );
+        }
+        // The pedia's history is Civ 6's only chorded pair.
+        assert!(EMBEDDED_INDEX
+            .contains("{id: \"CivilopediaBack\", key: \",\", ctrl: true"));
+        assert!(EMBEDDED_INDEX
+            .contains("{id: \"CivilopediaForward\", key: \".\", ctrl: true"));
+
+        // Three keys are the operator's deliberate overrides and keep their
+        // CIVVIS meaning; Civ 6 spends them on lenses that do not exist here.
+        for (action, key) in [("NextAction", "1"), ("SettlerLens", "2"), ("PlaceTack", "3")] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("{{id: \"{action}\", key: \"{key}\"")),
+                "the {key} override must stay {action}"
+            );
+        }
+        // Everything CIVVIS adds sits on a chord or a key Civ 6 leaves free,
+        // so arriving from Civ 6 cannot find a shadowed binding.
+        for chord in [
+            "{id: \"AutoPlay\", key: \"a\", ctrl: true",
+            "{id: \"ResetFacing\", key: \"r\", ctrl: true",
+            "{id: \"HidePanel\", key: \"u\", ctrl: true",
+            "{id: \"QuickDeals\", key: \"d\", ctrl: true",
+        ] {
+            assert!(EMBEDDED_INDEX.contains(chord), "missing CIVVIS chord: {chord}");
+        }
+        assert!(EMBEDDED_INDEX.contains("{id: \"Diplomacy\", key: \"F8\""));
+
+        // Movement: Civ 6 pans with a left drag, moves with the right button,
+        // centres with the middle one, and walks the camera at the map's edge.
+        assert!(EMBEDDED_INDEX.contains("function updateEdgePan(clientX, clientY)"));
+        assert!(EMBEDDED_INDEX.contains("id=\"edgepanchk\""));
+        assert!(EMBEDDED_INDEX.contains("else if (ev.button === 1) {"));
+        // Command belongs to the browser on a Mac; only Control chords are ours.
+        assert!(EMBEDDED_INDEX.contains("if (ev.metaKey) return undefined;"));
+    }
+
     #[test]
     fn browser_includes_the_cinematic_spectator_director() {
         for id in [
@@ -4775,7 +4883,11 @@ mod tests {
             "function advanceUserCameraMotion(now = performance.now())",
             "function advanceCameraFollow(now = performance.now())",
             "function startCameraFollow(unitId)",
-            "function unitMapPoint(p, nearX = cam.x)",
+            // The default is `null`, not `cam.x`: a chart that has not been
+            // round its world is unrolled about that civilization's own ground
+            // rather than about the camera, and only a caller chaining a path
+            // together names the point it wants a leg drawn beside.
+            "function unitMapPoint(p, nearX = null)",
             "function sampleUnitMove(mv, now = performance.now())",
             "function cinematicUnitMapPoint(unit, now = performance.now())",
             "function unitMoveDuration(unitId, steps)",
