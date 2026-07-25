@@ -125,6 +125,18 @@
       "entry": "volcano",
       "field": "impassable",
       "reason": "The shipped volcano feature rides impassable mountain terrain; CIVVIS marks the feature itself impassable so a volcano blocks movement wherever it stands."
+    },
+    {
+      "table": "Improvements",
+      "entry": "corporation",
+      "field": "resources",
+      "reason": "Monopolies & Corporations is a game mode, and CPL's tournament lobby disables all game modes. Improvements_MODE names these two improvements as mode content, so their luxury lists are out of scope for the shipped ruleset CIVVIS models."
+    },
+    {
+      "table": "Improvements",
+      "entry": "industry",
+      "field": "resources",
+      "reason": "Monopolies & Corporations is a game mode, and CPL's tournament lobby disables all game modes. Improvements_MODE names these two improvements as mode content, so their luxury lists are out of scope for the shipped ruleset CIVVIS models."
     }
   ]
 }

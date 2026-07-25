@@ -105,6 +105,7 @@ TABLE_KEYS = {
     "Resource_ValidTerrains": ("ResourceType", "TerrainType"),
     "Resource_ValidFeatures": ("ResourceType", "FeatureType"),
     "Improvements": "ImprovementType",
+    "Improvements_MODE": "ImprovementType",
     "Improvement_YieldChanges": ("ImprovementType", "YieldType"),
     "Improvement_ValidTerrains": ("ImprovementType", "TerrainType"),
     "Improvement_ValidFeatures": ("ImprovementType", "FeatureType"),
@@ -714,10 +715,22 @@ def project_resources(database: Database) -> dict[str, dict]:
         for row in database.rows("Improvements")
         if truthy(row.get("Coast")) or row.get("Domain") == "DOMAIN_SEA"
     }
+    # Game-mode improvements are not a resource's improvement. The Industry
+    # and Corporation of Monopolies & Corporations sit on top of a luxury that
+    # is already improved, and they are land builds, so the land-over-sea rule
+    # above would otherwise report them as the improvement for every marine
+    # luxury: Pearls, Turtles and Whales are worked by Fishing Boats.
+    # `Improvements_MODE` names them, so this stays data-driven.
+    mode_improvements = {
+        slug(row["ImprovementType"], "IMPROVEMENT_")
+        for row in database.rows("Improvements_MODE")
+    }
     improvements: dict[str, str] = {}
     for row in database.rows("Improvement_ValidResources"):
         name = slug(row["ResourceType"], "RESOURCE_")
         improvement = slug(row["ImprovementType"], "IMPROVEMENT_")
+        if improvement in mode_improvements:
+            continue
         current = improvements.get(name)
         if current is None or (current in sea_improvements and improvement not in sea_improvements):
             improvements[name] = improvement
