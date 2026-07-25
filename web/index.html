@@ -970,6 +970,56 @@
   .empire-card[class*="empire-slot-"] { border-left: 3px solid var(--slot); }
   .empire-meter { display: flex; align-items: center; gap: 8px; font-size: 10px; color: var(--muted); }
   .empire-meter b { color: var(--text); font-variant-numeric: tabular-nums; }
+  /* The city screen. The sidebar panel is the glance; this is the desk you
+     work at — everything the city is, and everything it could build, in one
+     place, the way Civ 6 opens a city rather than a dropdown. */
+  #cityscreen {
+    position: absolute; z-index: 18; inset: 4% 3%; display: none; flex-direction: column;
+    overflow: hidden; color: var(--text); border: 1px solid #536c63; border-radius: 18px;
+    background: radial-gradient(circle at 12% 0, #1d322df5, #091310fc 58%);
+    box-shadow: 0 28px 100px #000e; backdrop-filter: blur(20px);
+  }
+  #cityscreen.open { display: flex; animation: rise .18s ease-out; }
+  .city-head { display: flex; align-items: center; gap: 14px; padding: 16px 20px 12px; border-bottom: 1px solid #40534b; }
+  .city-head-name { color: var(--gold-bright); font: 600 23px/1 Georgia, serif; }
+  .city-head-sub { margin-top: 5px; color: var(--muted); font-size: 9px; letter-spacing: .08em; }
+  .city-cols { flex: 1; display: grid; grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); gap: 0; overflow: hidden; }
+  .city-dossier { overflow: auto; padding: 15px 18px 20px; border-right: 1px solid #26372f; }
+  .city-build { overflow: auto; padding: 15px 18px 20px; }
+  .city-yields { display: grid; gap: 5px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 12px; }
+  .city-yield {
+    display: flex; flex-direction: column; gap: 1px; padding: 7px 9px; border-radius: 10px;
+    background: #0c1815; border: 1px solid #26372f;
+  }
+  .city-yield b { color: var(--text); font-size: 14px; font-variant-numeric: tabular-nums; }
+  .city-yield span { color: var(--muted); font-size: 8px; font-weight: 850; letter-spacing: .1em; text-transform: uppercase; }
+  .city-group { margin-top: 14px; }
+  .city-group-head {
+    display: flex; align-items: baseline; gap: 8px; margin-bottom: 7px;
+    color: var(--gold); font-size: 9px; font-weight: 850; letter-spacing: .12em; text-transform: uppercase;
+  }
+  .city-group-head span { color: var(--muted); font-weight: 600; letter-spacing: .02em; text-transform: none; }
+  .city-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+  .city-tag {
+    padding: 4px 8px; border-radius: 999px; font-size: 10px;
+    color: #c6d6cf; background: #0f1c19; border: 1px solid #2d443d;
+  }
+  .city-tag.district { color: var(--gold-bright); border-color: var(--gold-deep); }
+  .city-tag.wonder { color: var(--violet); border-color: #5a466b; }
+  .build-list { display: grid; gap: 7px; grid-template-columns: repeat(auto-fill, minmax(268px, 1fr)); }
+  .build-item {
+    display: flex; flex-direction: column; gap: 5px; padding: 9px 11px;
+    border: 1px solid #2d443d; border-radius: 11px; background: #101d1abb;
+  }
+  .build-item.current { border-color: var(--gold); background: #1b241bcc; }
+  .build-row { display: flex; align-items: baseline; gap: 8px; }
+  .build-name { color: var(--text); font-size: 12px; font-weight: 700; }
+  .build-cost { margin-left: auto; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .build-note { color: var(--muted); font-size: 9px; line-height: 1.5; }
+  .build-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+  .build-actions button { margin: 0; padding: 5px 8px; font-size: 10px; }
+  .build-sites { display: flex; flex-wrap: wrap; gap: 3px; }
+  .build-sites button { margin: 0; padding: 4px 7px; border-radius: 7px; font-size: 9px; }
   #tip {
     position: fixed; z-index: 30; display: none; max-width: 290px; padding: 10px 13px;
     color: var(--text); border: 1px solid #4a635a; border-radius: 11px;
@@ -1718,6 +1768,17 @@
       <button class="ghost" onclick="closeEmpire()">✕ Close</button>
     </div>
     <div class="empire-body" id="empire-body"></div>
+  </section>
+  <section id="cityscreen" role="dialog" aria-modal="true" aria-labelledby="cityscreen-name">
+    <div class="city-head">
+      <div><div class="city-head-name" id="cityscreen-name">City</div>
+        <div class="city-head-sub" id="cityscreen-sub"></div></div>
+      <button class="ghost" style="margin-left:auto" onclick="closeCityScreen()">✕ Close</button>
+    </div>
+    <div class="city-cols">
+      <div class="city-dossier" id="cityscreen-dossier"></div>
+      <div class="city-build" id="cityscreen-build"></div>
+    </div>
   </section>
   <section id="trade" role="dialog" aria-modal="true" aria-labelledby="tradetitle">
     <div class="trade-head">
@@ -4956,6 +5017,7 @@ function render(st, recordChronicle = true) {
   }
   draw(); drawSide(newWorld); drawMini(); drawPlayerHud(); drawUbar(); drawQuickDeals(); drawCaptureChoice();
   drawLaunchBar(); drawEmpire();
+  drawCityScreen();
   if (newWorld) {
     unitOrders.clear(); noticeLog = []; noticeDismissed.clear();
     loopTurn = null; noticeSeenTurn = 0;
@@ -11181,6 +11243,253 @@ function drawEmpire() {
   document.getElementById("empire-body").innerHTML = body;
 }
 
+// ------------------------------------------------------------- city screen
+// The sidebar panel is the glance. This is the desk: what the city is, and
+// everything it could build, in one place — the way Civ 6 opens a city rather
+// than a dropdown. It also holds the two purchases the client never offered,
+// `buy_building` and `buy_district`, which meant a treasury could buy a
+// Warrior and nothing else.
+let cityScreenId = null;
+
+function cityScreenOpen() {
+  return document.getElementById("cityscreen").classList.contains("open");
+}
+function openCityScreen(id) {
+  if (SPEC) return;
+  if (id !== undefined) cityScreenId = id;
+  if (cityScreenId === null) return;
+  document.getElementById("cityscreen").classList.add("open");
+  drawCityScreen();
+}
+function closeCityScreen() {
+  document.getElementById("cityscreen").classList.remove("open");
+}
+async function sendFromCity(action) {
+  await send(action);
+  if (cityScreenOpen()) drawCityScreen();
+}
+function cityAct(action, label, cls = "", title = "") {
+  return `<button class="${cls}" title="${escapeAttr(title)}" ` +
+    `onclick='sendFromCity(${JSON.stringify(action)})'>${label}</button>`;
+}
+// What kind of thing an Item is, in the order Civ 6's production list shows
+// them. Districts before buildings because a building usually waits on one.
+function itemCategory(item) {
+  if (item.unit) return "Units";
+  if (item.district) return "Districts";
+  if (item.wonder) return "Wonders";
+  if (item.project) return "Projects";
+  return "Buildings";
+}
+// Items are keyed by what they are, not where they go: one Campus card with
+// four candidate tiles reads better than four Campus cards.
+function itemKey(item) {
+  return item.unit
+    ? `unit:${item.unit}:${item.formation || 0}`
+    : item.district ? `district:${item.district}`
+    : item.wonder ? `wonder:${item.wonder}`
+    : item.project ? `project:${item.project}`
+    : `building:${item.building}`;
+}
+// The ruleset carries no prose for units, buildings or districts, so say what
+// the numbers say: what it fights with, what it pays, what it houses. A
+// production list without that is a list of prices.
+const YIELD_MARKS = {food: "🌾", production: "⚙", gold: "💰",
+                     science: "⌬", culture: "❦", faith: "☼"};
+function yieldWords(yields) {
+  if (!yields) return [];
+  return Object.entries(yields)
+    .filter(([, amount]) => amount)
+    .map(([kind, amount]) => `${amount > 0 ? "+" : ""}${Math.round(amount * 10) / 10} ` +
+      `${YIELD_MARKS[kind] || ""}${titleCase(kind)}`);
+}
+function itemNote(item) {
+  if (!RULES) return "";
+  if (item.unit) {
+    const spec = RULES.units[item.unit];
+    if (!spec) return "";
+    const parts = [];
+    if (spec.strength) parts.push(`${Math.round(spec.strength)} strength`);
+    if (spec.ranged_strength) parts.push(`${Math.round(spec.ranged_strength)} ranged`);
+    if (spec.bombard_strength) parts.push(`${Math.round(spec.bombard_strength)} bombard`);
+    if (spec.moves) parts.push(`${Math.round(spec.moves)} movement`);
+    if (spec.charges) parts.push(`${spec.charges} charges`);
+    if (spec.requires_resource) parts.push(`needs ${titleCase(spec.requires_resource)}`);
+    return parts.join(" · ");
+  }
+  if (item.project) {
+    const spec = RULES.projects[item.project];
+    return spec && spec.repeatable ? "Repeatable." : "";
+  }
+  const spec = item.building ? RULES.buildings[item.building]
+    : item.wonder ? RULES.wonders[item.wonder]
+    : RULES.districts[item.district];
+  if (!spec) return "";
+  const parts = yieldWords(spec.yields).concat(yieldWords(spec.citizen_yields).map(word =>
+    `${word} per specialist`));
+  if (spec.housing) parts.push(`+${Math.round(spec.housing)} Housing`);
+  if (spec.amenity) parts.push(`+${Math.round(spec.amenity)} Amenities`);
+  // Great Work slots are a map of what each slot takes, not a count.
+  for (const [kind, count] of Object.entries(spec.great_work_slots || {})) {
+    if (count) parts.push(`${count} ${kind === "any" ? "Great Work" : titleCase(kind)} slot` +
+      `${count === 1 ? "" : "s"}`);
+  }
+  if (spec.maintenance) parts.push(`${Math.round(spec.maintenance)} Gold upkeep`);
+  return parts.join(" · ");
+}
+function turnsFor(cost, perTurn, banked = 0) {
+  const left = Math.max(0, cost - banked);
+  if (left <= 0) return 1;
+  return perTurn > 0 ? Math.ceil(left / perTurn) : Infinity;
+}
+function drawCityScreen() {
+  if (!cityScreenOpen()) return;
+  if (!state || SPEC) { closeCityScreen(); return; }
+  const city = state.cities.find(candidate =>
+    candidate.id === cityScreenId && candidate.owner === 0);
+  if (!city) { closeCityScreen(); return; }
+
+  const yields = city.yields || {};
+  const perTurn = yields.production || 0;
+  const current = (city.queue || [])[0];
+  const banked = city.production || 0;
+
+  document.getElementById("cityscreen-name").textContent =
+    city.name + (city.is_capital ? " ♛" : "");
+  document.getElementById("cityscreen-sub").textContent =
+    `Population ${city.pop} · ${titleCase(city.happiness || "content")}` +
+    (city.governor ? " · Governor established" : "") +
+    (city.religion ? ` · ${titleCase(city.religion)}` : "");
+
+  const yieldTile = (label, value, suffix = "") =>
+    `<div class="city-yield"><b>${Math.round(value * 10) / 10}${suffix}</b><span>${label}</span></div>`;
+  const growthTurns = yields.food > 0
+    ? Math.max(1, Math.ceil((city.growth_need - city.food) / yields.food)) : "—";
+  let dossier =
+    `<div class="city-yields">` +
+    yieldTile("Food", yields.food) + yieldTile("Production", yields.production) +
+    yieldTile("Gold", yields.gold) + yieldTile("Science", yields.science) +
+    yieldTile("Culture", yields.culture) + yieldTile("Faith", yields.faith) +
+    `</div>` +
+    `<div class="row"><span class="small">Growth</span>` +
+    `<b>${growthTurns === "—" ? "stalled" : `${growthTurns} turn${growthTurns === 1 ? "" : "s"}`}</b></div>` +
+    prog(city.food, city.growth_need, "#76c893") +
+    `<div class="row"><span class="small">Housing</span><b>${city.housing}</b></div>` +
+    `<div class="row"><span class="small">Amenities</span>` +
+    `<b>${city.amenities} of ${city.amenities_required} needed</b></div>` +
+    `<div class="row"><span class="small">Loyalty</span>` +
+    `<b>${Math.round(city.loyalty)} · ${titleCase(city.loyalty_state || "")}` +
+    ` (${city.loyalty_per_turn >= 0 ? "+" : ""}${Math.round(city.loyalty_per_turn)})</b></div>`;
+
+  const districts = Object.keys(city.districts || {});
+  const buildings = city.buildings || [];
+  const wonders = Object.keys(city.wonders || {});
+  const tags = (items, cls) => items.length
+    ? `<div class="city-tags">${items.map(name =>
+        `<span class="city-tag ${cls}">${titleCase(name)}</span>`).join("")}</div>`
+    : `<div class="empty-state">None yet.</div>`;
+  dossier +=
+    `<div class="city-group"><div class="city-group-head">Districts<span>${districts.length}</span></div>` +
+    tags(districts, "district") + `</div>` +
+    `<div class="city-group"><div class="city-group-head">Buildings<span>${buildings.length}</span></div>` +
+    tags(buildings, "") + `</div>`;
+  if (wonders.length) {
+    dossier += `<div class="city-group"><div class="city-group-head">Wonders<span>${wonders.length}</span></div>` +
+      tags(wonders, "wonder") + `</div>`;
+  }
+  if (city.citizens) {
+    const specialists = city.citizens.specialists || [];
+    dossier += `<div class="city-group"><div class="city-group-head">Citizens` +
+      `<span>${city.citizens.worked_tiles.length} tiles · ${specialists.length} specialists</span></div>` +
+      `<div class="row"><span class="small">Focus</span><b>${titleCase(city.citizens.focus)}</b></div>` +
+      (specialists.length
+        ? `<div class="city-tags">${specialists.map(job =>
+            `<span class="city-tag">${titleCase(job)}</span>`).join("")}</div>` : "") +
+      `</div>`;
+  }
+  document.getElementById("cityscreen-dossier").innerHTML = dossier;
+
+  // Everything this city could start, gathered by what it is rather than by
+  // where it would go, with its purchases attached.
+  const produce = state.legal_actions.filter(a => a.type === "produce" && a.city === city.id);
+  const buys = state.legal_actions.filter(a =>
+    (a.type === "buy" || a.type === "buy_building" || a.type === "buy_district") &&
+    a.city === city.id);
+  const entries = new Map();
+  for (const action of produce) {
+    const key = itemKey(action.item);
+    if (!entries.has(key)) {
+      entries.set(key, {item: action.item, category: itemCategory(action.item), sites: [], buys: []});
+    }
+    entries.get(key).sites.push(action);
+  }
+  for (const action of buys) {
+    const item = action.unit ? {unit: action.unit}
+      : action.building ? {building: action.building}
+      : action.district ? {district: action.district, pos: action.pos}
+      : null;
+    if (!item) continue;
+    const key = itemKey(item);
+    if (!entries.has(key)) {
+      entries.set(key, {item, category: itemCategory(item), sites: [], buys: []});
+    }
+    entries.get(key).buys.push(action);
+  }
+
+  const order = ["Districts", "Buildings", "Units", "Wonders", "Projects"];
+  const currentKey = current ? itemKey(current) : null;
+  let build = "";
+  if (current) {
+    const cost = city.queue_cost || itemCost(current);
+    const turns = turnsFor(cost, perTurn, banked);
+    build += `<div class="city-group"><div class="city-group-head">Producing` +
+      `<span>${turns === Infinity ? "stalled" : `${turns} turn${turns === 1 ? "" : "s"} left`}</span></div>` +
+      `<div class="build-item current"><div class="build-row">` +
+      `<span class="build-name">${titleCase(itemName(current))}</span>` +
+      `<span class="build-cost">${Math.round(banked)} / ${Math.round(cost)} ⚙</span></div>` +
+      prog(banked, cost, "#d7b66a") + `</div></div>`;
+  } else {
+    build += `<div class="city-group"><div class="city-group-head">Producing<span>nothing</span></div>` +
+      `<div class="empty-state">${Math.round(banked)} ⚙ banked and waiting for an order.</div></div>`;
+  }
+  for (const category of order) {
+    const group = [...entries.values()].filter(entry => entry.category === category);
+    if (!group.length) continue;
+    group.sort((a, b) => itemCost(a.item) - itemCost(b.item));
+    build += `<div class="city-group"><div class="city-group-head">${category}` +
+      `<span>${group.length}</span></div><div class="build-list">` +
+      group.map(entry => {
+        const cost = itemCost(entry.item);
+        const isCurrent = itemKey(entry.item) === currentKey;
+        const turns = turnsFor(cost, perTurn, isCurrent ? banked : 0);
+        const note = itemNote(entry.item);
+        // One site: a plain Produce. Several: name the tiles, because where a
+        // district goes decides what it is worth.
+        const sites = entry.sites.length > 1
+          ? `<div class="build-sites">` + entry.sites.map(action =>
+              cityAct(action, `@ ${action.item.pos.join(",")}`, "",
+                "Found it on this tile")).join("") + `</div>`
+          : entry.sites.length === 1
+            ? `<div class="build-actions">` +
+              cityAct(entry.sites[0], isCurrent ? "Producing" : "Produce",
+                isCurrent ? "" : "primary") + `</div>`
+            : "";
+        const purchases = entry.buys.length
+          ? `<div class="build-actions">` + entry.buys.map(action =>
+              cityAct(action, `Buy · ${titleCase(action.currency || "gold")}`, "",
+                "Pay for it outright")).join("") + `</div>`
+          : "";
+        return `<div class="build-item ${isCurrent ? "current" : ""}">` +
+          `<div class="build-row"><span class="build-name">${titleCase(itemName(entry.item))}</span>` +
+          `<span class="build-cost">${Math.round(cost)} ⚙ · ` +
+          `${turns === Infinity ? "—" : `${turns}t`}</span></div>` +
+          (note ? `<div class="build-note">${note}</div>` : "") +
+          sites + purchases + `</div>`;
+      }).join("") + `</div></div>`;
+  }
+  document.getElementById("cityscreen-build").innerHTML = build;
+}
+
 function drawUbar() {
   const bar = document.getElementById("ubar");
   if (!sel || SPEC) { bar.style.display = "none"; return; }
@@ -11842,6 +12151,8 @@ function drawCityPanel() {
     h += `<div class="empty-state">Production is idle · ${Math.round(c.production)} ⚙ banked</div>`;
   }
   if (SPEC) { document.getElementById("citypanel").innerHTML = h; return; }
+  h += `<button class="primary" style="margin-top:9px" onclick='openCityScreen(${c.id})'>` +
+    `⌂ Manage ${c.name}</button>`;
   const prods = state.legal_actions.filter(a => a.type === "produce" && a.city === c.id);
   h += `<div class="small" style="margin:10px 0 4px">CHOOSE PRODUCTION</div><select id="prodsel"><option value="">Select a project…</option>` +
     prods.map((a, i) => `<option value="${i}">${titleCase(itemName(a.item))} · ${itemCost(a.item)} ⚙</option>`).join("") +
@@ -13184,7 +13495,10 @@ function turnBlockers() {
     if (!state.legal_actions.some(a => a.type === "produce" && a.city === city.id)) continue;
     out.push({kind: `produce:${city.id}`, icon: "⚙", tone: "action",
       label: `${city.name} is idle`, detail: "Choose what this city builds.", pos: city.pos,
-      act: () => { selCity = city; sel = null; centerOn(city.pos); draw(); drawSide(); focusSection("citysec"); }});
+      act: () => {
+        selCity = city; sel = null; centerOn(city.pos); draw(); drawSide();
+        openCityScreen(city.id);
+      }});
   }
   const waiting = unitsNeedingOrders();
   if (waiting.length)
@@ -13395,6 +13709,8 @@ document.addEventListener("keydown", ev => {
     return;
   }
   if (tradeOpen) return;
+  if (ev.key === "Escape" && cityScreenOpen()) { closeCityScreen(); return; }
+  if (cityScreenOpen()) return;
   if (ev.key === "Escape" && empireOpen()) { closeEmpire(); return; }
   if (ev.key.toLowerCase() === "g" && !SPEC) {
     empireOpen() ? closeEmpire() : openEmpire();
