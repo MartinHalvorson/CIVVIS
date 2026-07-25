@@ -14,6 +14,7 @@ pub enum MapScript {
     Continents,
     SmallContinents,
     InlandSea,
+    Lakes,
     TrueStartEarth,
     TrueStartTrueEarth,
 }
@@ -25,6 +26,7 @@ impl MapScript {
             Self::Continents => "continents",
             Self::SmallContinents => "small_continents",
             Self::InlandSea => "inland_sea",
+            Self::Lakes => "lakes",
             Self::TrueStartEarth => "true_start_earth",
             Self::TrueStartTrueEarth => "true_start_true_earth",
         }
@@ -50,7 +52,7 @@ pub struct MapScriptSpec {
     pub script: MapScript,
 }
 
-pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 6] = [
+pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 7] = [
     MapScriptSpec {
         id: "pangaea",
         name: "Pangaea",
@@ -74,6 +76,12 @@ pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 6] = [
         name: "Inland Sea",
         description: "A broad connected landmass surrounding a central sea.",
         script: MapScript::InlandSea,
+    },
+    MapScriptSpec {
+        id: "lakes",
+        name: "Lakes",
+        description: "A world of land, broken up by lakes and inland seas instead of oceans.",
+        script: MapScript::Lakes,
     },
     MapScriptSpec {
         id: "true_start_earth",
