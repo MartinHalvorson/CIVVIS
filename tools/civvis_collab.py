@@ -409,8 +409,15 @@ def check_pr_action(event_path: Path, token: str, repository: str) -> int:
                 f"/repos/{repository}/compare/{base_sha}...{head_sha}", token
             )
             if not compare_status_is_current(str(comparison.get("status") or "")):
-                errors.append(
-                    "ready PR branch must include the current main tip; run: "
+                # Staleness is not a policy violation. GitHub's own branch
+                # protection runs with strict=true, so it already refuses to
+                # merge a branch that is behind main, and `ship` re-merges main
+                # whenever it observes the base moving. Failing here as well
+                # only paints a red X on a PR whose author did nothing wrong and
+                # cannot durably fix, because main moves again during CI.
+                advisories.append(
+                    "main advanced while this PR was open; GitHub will require "
+                    "an update before merging. Run: "
                     "git fetch origin main && git merge origin/main"
                 )
     for advisory in advisories:
@@ -1339,8 +1346,11 @@ def audit_repo(root: Path) -> Dict[str, List[str]]:
                     if not compare_status_is_current(
                         str(comparison.get("status") or "")
                     ):
-                        errors.append(
-                            f"PR #{number}: ready branch does not include current main"
+                        # Transient, and enforced by GitHub at merge time. See
+                        # the note in check_pr_action.
+                        warnings.append(
+                            f"PR #{number}: behind current main; GitHub will "
+                            "require an update before it can merge"
                         )
         if prs and not any(item.startswith("PR #") for item in errors):
             ok.append(f"all {len(prs)} open PR claim(s) satisfy policy")
