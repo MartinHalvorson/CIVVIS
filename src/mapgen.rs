@@ -1397,7 +1397,7 @@ pub fn generate_with_script(
     };
     if spawns.len() < num_major_spawns {
         let missing = num_major_spawns - spawns.len();
-        fill_remaining_starts(rules, &wm, &major_pool, &mut spawns, missing);
+        fill_remaining_starts(rules, &wm, &major_pool, &passable, &mut spawns, missing);
     }
 
     // City-states get a second, finer set of regions once the majors are down,
@@ -1461,7 +1461,7 @@ pub fn generate_with_script(
     spawns.extend(minors.into_iter().map(|(_, start)| start));
     if spawns.len() < total_spawns {
         let missing = total_spawns - spawns.len();
-        fill_remaining_starts(rules, &wm, &minor_pool, &mut spawns, missing);
+        fill_remaining_starts(rules, &wm, &minor_pool, &passable, &mut spawns, missing);
     }
     for s in &spawns {
         let t = wm.tiles.get_mut(s).unwrap();
@@ -2368,9 +2368,12 @@ fn clear_of(wm: &WorldMap, position: Pos, from: &[Pos], buffer: i32) -> bool {
 ///
 /// A region that cannot honour its buffer relaxes it a hex at a time rather
 /// than failing, down to `MIN_START_SEPARATION` — the radius inside which a
-/// city cannot be founded at all, which is never given up. A region with no
-/// site even that clear is left to the caller's fallback rather than handed a
-/// start that the game will silently move somewhere else.
+/// city cannot be founded at all, which is never given up. Clearance outranks
+/// the tile: at each rung the whole region is searched before the next hex is
+/// surrendered, so a start stands on a hill with proper spacing rather than on
+/// grassland jammed against its neighbour. A region with no site even that
+/// clear is left to the caller's fallback rather than handed a start the game
+/// would silently move somewhere else.
 fn regional_starts(
     rules: &Rules,
     wm: &WorldMap,
@@ -2387,29 +2390,31 @@ fn regional_starts(
         let Some(center) = region_center(wm, region, fertility) else {
             continue;
         };
-        let pool: Vec<Pos> = region
+        let preferred: Vec<Pos> = region
             .iter()
             .copied()
             .filter(|position| candidates.contains(position))
             .collect();
-        let pool = if pool.is_empty() { region.clone() } else { pool };
         let worth = |position: &Pos| {
-            start_quality(rules, wm, *position) - REGION_CENTRALITY_PULL * wm.distance(*position, center)
+            start_quality(rules, wm, *position)
+                - REGION_CENTRALITY_PULL * wm.distance(*position, center)
         };
         let mut chosen = None;
-        for relaxed in 0..=foreign_buffer.max(own_buffer) {
+        'search: for relaxed in 0..=foreign_buffer.max(own_buffer) {
             let foreign_want = (foreign_buffer - relaxed).max(MIN_START_SEPARATION - 1);
             let own_want = (own_buffer - relaxed).max(MIN_START_SEPARATION - 1);
-            chosen = pool
-                .iter()
-                .filter(|position| {
-                    clear_of(wm, **position, foreign, foreign_want)
-                        && clear_of(wm, **position, &placed, own_want)
-                })
-                .max_by_key(|position| (worth(position), **position))
-                .copied();
-            if chosen.is_some() {
-                break;
+            for pool in [preferred.as_slice(), region.as_slice()] {
+                chosen = pool
+                    .iter()
+                    .filter(|position| {
+                        clear_of(wm, **position, foreign, foreign_want)
+                            && clear_of(wm, **position, &placed, own_want)
+                    })
+                    .max_by_key(|position| (worth(position), **position))
+                    .copied();
+                if chosen.is_some() {
+                    break 'search;
+                }
             }
         }
         if let Some(position) = chosen {
@@ -2421,36 +2426,49 @@ fn regional_starts(
 }
 
 /// Fill seats no region could seat, on a map whose land is too broken or too
-/// crowded for one start apiece. Takes the site with the most room left,
-/// which is the same rule `Game::city_state_site` would apply afterwards —
-/// applying it here keeps the choice inside the generator, where the map is
-/// still visible.
+/// crowded for one start apiece. Takes the site with the most room left, which
+/// is the same rule `Game::city_state_site` would apply afterwards — applying
+/// it here keeps the choice inside the generator, where the map is still
+/// visible.
+///
+/// A capital site is preferred, but not at the price of `MIN_START_SEPARATION`:
+/// a fistful of grassland tiles bunched in one corner is exactly the shape of
+/// pool that made this pass hand out a start three hexes from its neighbour,
+/// which the game then refuses to found on. Any passable ground with the room
+/// beats good ground without it.
 fn fill_remaining_starts(
     rules: &Rules,
     wm: &WorldMap,
     candidates: &BTreeSet<Pos>,
+    land: &BTreeSet<Pos>,
     spawns: &mut Vec<Pos>,
     count: usize,
 ) {
-    let pool: Vec<Pos> = candidates
-        .iter()
-        .copied()
-        .filter(|position| !spawns.contains(position))
-        .collect();
-    for _ in 0..count {
-        let Some(next) = pool
+    let room = |spawns: &[Pos], position: Pos| {
+        spawns
             .iter()
-            .filter(|position| !spawns.contains(position))
-            .max_by_key(|position| {
-                let room = spawns
-                    .iter()
-                    .map(|start| wm.distance(**position, *start))
-                    .min()
-                    .unwrap_or(i32::MAX);
-                (room, start_quality(rules, wm, **position), **position)
-            })
-            .copied()
-        else {
+            .map(|start| wm.distance(position, *start))
+            .min()
+            .unwrap_or(i32::MAX)
+    };
+    for _ in 0..count {
+        let pick = |pool: &BTreeSet<Pos>, spawns: &[Pos], floor: i32| {
+            pool.iter()
+                .filter(|position| !spawns.contains(position) && room(spawns, **position) >= floor)
+                .max_by_key(|position| {
+                    (
+                        room(spawns, **position),
+                        start_quality(rules, wm, **position),
+                        **position,
+                    )
+                })
+                .copied()
+        };
+        let next = pick(candidates, spawns, MIN_START_SEPARATION)
+            .or_else(|| pick(land, spawns, MIN_START_SEPARATION))
+            .or_else(|| pick(candidates, spawns, 0))
+            .or_else(|| pick(land, spawns, 0));
+        let Some(next) = next else {
             break;
         };
         spawns.push(next);
@@ -4127,6 +4145,37 @@ mod river_tests {
                     }
                 }
             }
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn probe_small_fixture_maps() {
+        for (players, width, height, seed) in
+            [(3usize, 18, 10, 79_001u64), (1, 20, 14, 7_107), (2, 24, 16, 36)]
+        {
+            let game = crate::game::Game::new_full(players, width, height, seed, 200, 0, false);
+            let starts: Vec<Pos> = game
+                .units
+                .values()
+                .filter(|unit| unit.kind == "settler")
+                .map(|unit| unit.pos)
+                .collect();
+            let land = game
+                .map
+                .tiles
+                .values()
+                .filter(|tile| !game.rules.is_water(tile) && game.rules.is_passable(tile))
+                .count();
+            let mut gaps = Vec::new();
+            for (index, start) in starts.iter().enumerate() {
+                for other in &starts[index + 1..] {
+                    gaps.push(game.wdist(*start, *other));
+                }
+            }
+            println!(
+                "{players}p {width}x{height} seed {seed}: land {land} starts {starts:?} gaps {gaps:?}"
+            );
         }
     }
 
