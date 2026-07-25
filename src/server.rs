@@ -2222,7 +2222,10 @@ mod tests {
         }
         assert!(EMBEDDED_INDEX.contains("victory_conditions: victoryConditions"));
         assert!(EMBEDDED_INDEX.contains("AI-only simulation"));
-        assert!(EMBEDDED_INDEX.contains("Single player · later"));
+        // Single player is no longer "later": it is the default mode, and it
+        // is the only one that offers a leader and a difficulty.
+        assert!(EMBEDDED_INDEX.contains("<option value=\"single\" selected>Single player</option>"));
+        assert!(!EMBEDDED_INDEX.contains("Single player · later"));
         assert!(EMBEDDED_INDEX.contains("Multiplayer · later"));
         assert!(EMBEDDED_INDEX.contains(
             "id=\"restart-sim\" title=\"Restart with the same settings\">Restart sim<span class=\"sub\">same settings</span>"
@@ -3309,6 +3312,40 @@ mod tests {
     /// waiting on, `Enter` walks those blockers in a fixed order and only
     /// ends the turn once none are left, and a unit under a standing order
     /// stops being counted. `docs/SINGLE_PLAYER.md` states the contract.
+    /// A Civ 6 lobby asks who you are and how hard the rivals play, and it
+    /// can open a game you saved. The browser could do none of those: single
+    /// player was disabled in the mode select, and `/new`'s `difficulty` and
+    /// `civs` and the save endpoints had no control anywhere.
+    #[test]
+    fn browser_sets_up_and_reopens_a_single_player_game() {
+        for piece in [
+            "id=\"leader\"",
+            "id=\"difficulty\"",
+            "id=\"startgame\"",
+            "id=\"saves-group\"",
+            "function syncSetupMode()",
+            "async function refreshSaves()",
+            "async function loadSave(name)",
+            "async function writeSave()",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(piece),
+                "the setup screen is missing {piece}"
+            );
+        }
+        // Both selects are filled from the live ruleset, never a hardcoded list.
+        assert!(EMBEDDED_INDEX.contains("RULES.civs && typeof RULES.civs === \"object\""));
+        assert!(EMBEDDED_INDEX
+            .contains("RULES.difficulties && typeof RULES.difficulties === \"object\""));
+        // A spectated world has nobody to hand a leader or a handicap to.
+        assert!(EMBEDDED_INDEX.contains(
+            "...(gameMode === \"ai_sim\" ? {} : {civs: leader ? [leader] : [], difficulty})"
+        ));
+        // A build without the save endpoints hides the group rather than
+        // offering one that cannot work.
+        assert!(EMBEDDED_INDEX.contains("catch (error) { group.style.display = \"none\";"));
+    }
+
     #[test]
     fn browser_runs_a_civ_six_turn_loop() {
         for piece in [

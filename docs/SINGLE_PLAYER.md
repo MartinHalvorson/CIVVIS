@@ -102,7 +102,7 @@ the action from the UI without a debugger.
 | World Congress | `congress_vote` | yes — Government panel |
 | Ages | `choose_dedication`, `choose_secret_society` | yes — Government panel |
 | Conquest | `keep_city`, `raze_city`, `liberate_city` | yes — modal |
-| Setup | difficulty, leader choice | no — CLI flags only |
+| Setup | difficulty, leader choice, save and load | yes — Game settings ▸ Single player, with a leader, a difficulty and the server's saves |
 
 Rows marked "no" or "partial" are the remaining work, in roughly that order of
 value to a player. The largest of them is diplomacy: a person still cannot
@@ -127,6 +127,21 @@ not name the person each kind is currently offering, because that is a world
 fact — it depends on which people every civilization has retired — and the
 observation does not carry it. It shows the kind, the points and the count,
 and names only the Great People already in your service.
+
+## Setup
+
+The browser's Game settings panel used to offer one mode — an AI-only
+simulation — with "Single player · later" greyed out beside it. Single player
+is now the default mode there, and it asks the two things a Civ 6 lobby asks
+that this one could not: which leader you are, and how hard the rivals play.
+Both selects are filled from the live ruleset, so a mod that adds a
+civilization or a difficulty appears in them without a client change. Neither
+is offered for an AI-only world, because there is nobody to hand them to.
+
+Below them sit the saves this server is holding — every autosave and every
+named one, newest turn first, each with the turn, leader and difficulty it
+was written at. A build whose server has no save endpoints hides the group
+rather than showing one that cannot work.
 
 ## Keys
 
