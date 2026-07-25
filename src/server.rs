@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
@@ -728,9 +728,48 @@ pub struct Shared {
     pub turn_us: AtomicU64,
     /// The same turn with the sleeps taken out: what the unlimited pace costs.
     pub turn_compute_us: AtomicU64,
+    frame_delivery: Mutex<FrameDelivery>,
+    frame_delivered: Condvar,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct SpectatorFrame {
+    seed: u64,
+    turn: u32,
+}
+
+#[derive(Default)]
+struct FrameDelivery {
+    last_request: Option<Instant>,
+    delivered: Option<SpectatorFrame>,
+}
+
+impl FrameDelivery {
+    fn request_started(&mut self, now: Instant) {
+        self.last_request = Some(now);
+    }
+
+    fn frame_delivered(&mut self, frame: SpectatorFrame, now: Instant) {
+        self.last_request = Some(now);
+        self.delivered = Some(frame);
+    }
+
+    fn wait_remaining(&self, frame: SpectatorFrame, now: Instant) -> Option<Duration> {
+        if self.delivered == Some(frame) {
+            return None;
+        }
+        VIEWER_ACTIVE
+            .checked_sub(now.saturating_duration_since(self.last_request?))
+            .filter(|remaining| !remaining.is_zero())
+    }
 }
 
 const MIN_RESTART_MS: u64 = 5_000;
+/// A lone `/state` probe must not throttle an otherwise unattended exhibition
+/// forever. The browser polls every 300ms at Lightning, so two seconds leaves
+/// ample room for rendering jitter while releasing a disconnected viewer.
+const VIEWER_ACTIVE: Duration = Duration::from_secs(2);
+const FRAME_WAIT_RECHECK: Duration = Duration::from_millis(100);
 /// The unlimited pace still hands the accept loop a slot this often, so the
 /// page keeps loading state while the stepper saturates a core.
 const UNLIMITED_BREATH_MS: u64 = 100;
@@ -760,6 +799,40 @@ fn blend(slot: &AtomicU64, sample: u64) {
         (prior * 3 + sample) / 4
     };
     slot.store(next, Ordering::Relaxed);
+}
+
+impl Shared {
+    fn note_frame_request(&self) {
+        self.frame_delivery
+            .lock()
+            .unwrap()
+            .request_started(Instant::now());
+    }
+
+    fn note_frame_delivered(&self, frame: SpectatorFrame) {
+        self.frame_delivery
+            .lock()
+            .unwrap()
+            .frame_delivered(frame, Instant::now());
+        self.frame_delivered.notify_all();
+    }
+
+    fn wait_for_lightning_frame(&self, frame: SpectatorFrame) {
+        let mut delivery = self.frame_delivery.lock().unwrap();
+        loop {
+            if self.pace_ms.load(Ordering::Relaxed) != 0 || self.paused.load(Ordering::Relaxed) {
+                return;
+            }
+            let Some(remaining) = delivery.wait_remaining(frame, Instant::now()) else {
+                return;
+            };
+            let result = self
+                .frame_delivered
+                .wait_timeout(delivery, remaining.min(FRAME_WAIT_RECHECK))
+                .unwrap();
+            delivery = result.0;
+        }
+    }
 }
 
 impl Session {
@@ -1421,7 +1494,10 @@ fn mountain_atlas() -> Vec<u8> {
         .unwrap_or_else(|_| EMBEDDED_MOUNTAIN_ATLAS.to_vec())
 }
 
-fn respond(stream: &mut TcpStream, code: &str, ctype: &str, body: &[u8]) {
+/// Write one complete HTTP response, returning whether it reached the socket.
+/// Callers normally have nothing useful to do with a disconnected client, but
+/// completed-turn delivery uses the result as its release acknowledgement.
+fn respond(stream: &mut TcpStream, code: &str, ctype: &str, body: &[u8]) -> bool {
     // Nothing this server sends is worth reusing from a cache. The page and
     // its art are compiled into the binary, so a build swap changes them
     // underneath an open tab - and with no cache headers at all a browser was
@@ -1433,18 +1509,20 @@ fn respond(stream: &mut TcpStream, code: &str, ctype: &str, body: &[u8]) {
          Cache-Control: no-store, must-revalidate\r\nPragma: no-cache\r\n\
          Connection: close\r\n\r\n",
         body.len());
-    let _ = stream.write_all(head.as_bytes());
-    let _ = stream.write_all(body);
-    let _ = stream.flush();
+    stream
+        .write_all(head.as_bytes())
+        .and_then(|()| stream.write_all(body))
+        .and_then(|()| stream.flush())
+        .is_ok()
 }
 
-fn respond_json(stream: &mut TcpStream, v: &Value) {
+fn respond_json(stream: &mut TcpStream, v: &Value) -> bool {
     respond(
         stream,
         "200 OK",
         "application/json",
         v.to_string().as_bytes(),
-    );
+    )
 }
 
 fn request_path(target: &str) -> &str {
@@ -1580,6 +1658,7 @@ fn auto_step_loop(sh: Arc<Shared>) {
         let cadence_started = Instant::now();
         let delay; // this seat's slice of the turn budget
         let mut waiting = false; // between games nothing is being simulated
+        let mut completed_frame = None;
         {
             let mut s = sh.session.lock().unwrap();
             if !s.params.spectate {
@@ -1604,8 +1683,15 @@ fn auto_step_loop(sh: Arc<Shared>) {
                 over_since = None;
                 sh.restart_in.store(u64::MAX, Ordering::Relaxed);
                 let step_started = Instant::now();
+                let turn_before = s.game.turn;
                 let (pid, _) = s.step();
                 turn_compute_us += step_started.elapsed().as_micros() as u64;
+                if s.game.turn != turn_before {
+                    completed_frame = Some(SpectatorFrame {
+                        seed: s.game.seed,
+                        turn: s.game.turn,
+                    });
+                }
                 // A turn is one step per seat, so a seat waits for its own
                 // share of the turn budget and the round adds up to the pace.
                 // Only the living take a step: counting the eliminated made a
@@ -1632,6 +1718,13 @@ fn auto_step_loop(sh: Arc<Shared>) {
             }
         }
         if pace == 0 && !waiting {
+            // An active browser consumes exactly one completed-turn state
+            // before the next round starts. This makes Lightning as fast as
+            // the viewer can paint without letting it skip whole turns. With
+            // no recent viewer, the exhibition remains truly unlimited.
+            if let Some(frame) = completed_frame {
+                sh.wait_for_lightning_frame(frame);
+            }
             // Unlimited: no wait between steps. Yield anyway, and give the
             // single-threaded accept loop a real slot a few times a second,
             // or /state would starve behind the session lock.
@@ -1733,9 +1826,22 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             respond(stream, "200 OK", "image/png", &mountain_atlas());
         }
         ("GET", "/state") => {
-            let mut o = sh.session.lock().unwrap().state();
+            sh.note_frame_request();
+            let (mut o, frame) = {
+                let session = sh.session.lock().unwrap();
+                let frame = SpectatorFrame {
+                    seed: session.game.seed,
+                    turn: session.game.turn,
+                };
+                (session.state(), frame)
+            };
             decorate(&mut o, sh);
-            respond_json(stream, &o);
+            if respond_json(stream, &o) {
+                // Release Lightning only after the completed-turn snapshot is
+                // on the wire. The browser renders every successful `/state`
+                // response as one synchronous map + HUD update.
+                sh.note_frame_delivered(frame);
+            }
         }
         // Everything a supervisor needs to know - is there a game, is it over -
         // without building the whole observation. /state runs close to a
@@ -1989,12 +2095,14 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             decorate(&mut out, sh);
             respond_json(stream, &out);
         }
-        _ => respond(
-            stream,
-            "404 Not Found",
-            "application/json",
-            b"{\"error\":\"not found\"}",
-        ),
+        _ => {
+            respond(
+                stream,
+                "404 Not Found",
+                "application/json",
+                b"{\"error\":\"not found\"}",
+            );
+        }
     }
 }
 
@@ -2003,12 +2111,13 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
 mod tests {
     use super::{
         chronicle_world_events, final_countdown_ms, new_game_params, request_path, seat_delay_ms,
-        ChronicleSnapshot, ChronicleState, Params, Session, EMBEDDED_CINEMATIC_3D,
-        EMBEDDED_INDEX, EMBEDDED_WORLD_WONDER_ATLAS,
+        ChronicleSnapshot, ChronicleState, FrameDelivery, Params, Session, SpectatorFrame,
+        EMBEDDED_CINEMATIC_3D, EMBEDDED_INDEX, EMBEDDED_WORLD_WONDER_ATLAS, VIEWER_ACTIVE,
     };
     use crate::game::{Action, VictoryConditions};
     use crate::setup::{GameSpeed, MapScript};
     use serde_json::json;
+    use std::time::{Duration, Instant};
 
     /// The pace a viewer picks is what a turn costs, so the seats' waits have
     /// to add back up to it — at any player count, with minors on their
@@ -2039,6 +2148,75 @@ mod tests {
         assert_eq!(final_countdown_ms(4_999), 5_000);
         assert_eq!(final_countdown_ms(5_000), 5_000);
         assert_eq!(final_countdown_ms(12_500), 12_500);
+    }
+
+    #[test]
+    fn lightning_waits_for_each_turn_only_while_a_viewer_is_active() {
+        let now = Instant::now();
+        let turn_7 = SpectatorFrame { seed: 41, turn: 7 };
+        let turn_8 = SpectatorFrame { seed: 41, turn: 8 };
+        let next_world = SpectatorFrame { seed: 42, turn: 7 };
+        let mut delivery = FrameDelivery::default();
+
+        assert_eq!(delivery.wait_remaining(turn_7, now), None);
+
+        delivery.request_started(now);
+        assert_eq!(delivery.wait_remaining(turn_7, now), Some(VIEWER_ACTIVE));
+
+        delivery.frame_delivered(turn_7, now + Duration::from_millis(20));
+        assert_eq!(delivery.wait_remaining(turn_7, now), None);
+        assert!(delivery.wait_remaining(turn_8, now).is_some());
+        assert!(delivery.wait_remaining(next_world, now).is_some());
+
+        assert_eq!(
+            delivery.wait_remaining(turn_8, now + Duration::from_millis(20) + VIEWER_ACTIVE),
+            None
+        );
+        assert_eq!(
+            delivery.wait_remaining(turn_8, now + VIEWER_ACTIVE + Duration::from_millis(21)),
+            None
+        );
+    }
+
+    #[test]
+    fn browser_renders_each_delivered_state_as_one_complete_frame() {
+        let render = EMBEDDED_INDEX
+            .split_once("function render(st, recordChronicle = true) {")
+            .expect("browser render function")
+            .1
+            .split_once("\nfunction drawCaptureChoice()")
+            .expect("end of browser render function")
+            .0;
+        let state_assignment = render.find("state = st;").expect("install delivered state");
+        let full_frame = render
+            .find(
+                "draw(); drawSide(newWorld); drawMini(); drawPlayerHud(); drawUbar(); drawQuickDeals(); drawCaptureChoice();",
+            )
+            .expect("map, minimap, HUDs, and controls must repaint together");
+        assert!(state_assignment < full_frame);
+
+        let victory_hud = EMBEDDED_INDEX
+            .split_once("function playerHudOverview() {")
+            .expect("victory tracker renderer")
+            .1
+            .split_once("\nfunction spectatorIdentity(player)")
+            .expect("end of victory tracker renderer")
+            .0;
+        assert!(victory_hud.contains("victoryMetric(player, track.id)"));
+        assert!(victory_hud.contains("<strong>${state.turn}</strong>"));
+
+        let player_hud = EMBEDDED_INDEX
+            .split_once("function drawPlayerHud() {")
+            .expect("player HUD renderer")
+            .1
+            .split_once("\n// CSS mode changes")
+            .expect("end of player HUD renderer")
+            .0;
+        assert!(player_hud.contains("const overview = playerHudOverview();"));
+        assert!(player_hud.contains("state.players"));
+        assert!(player_hud.contains("playerHudStats(p,"));
+        assert!(player_hud.contains("victoryHud.innerHTML = overview;"));
+        assert!(player_hud.contains("hud.innerHTML = html;"));
     }
 
     fn current() -> Params {
@@ -3486,6 +3664,8 @@ pub fn serve_with_game(
         restart_in: AtomicU64::new(u64::MAX),
         turn_us: AtomicU64::new(0),
         turn_compute_us: AtomicU64::new(0),
+        frame_delivery: Mutex::new(FrameDelivery::default()),
+        frame_delivered: Condvar::new(),
     });
     let stepper = shared.clone();
     std::thread::spawn(move || auto_step_loop(stepper));
