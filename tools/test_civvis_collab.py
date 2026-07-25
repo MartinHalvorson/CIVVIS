@@ -158,6 +158,18 @@ class HunkTests(unittest.TestCase):
         self.assertTrue(collab.file_edits_collide([(1, 2)], None))
         self.assertFalse(collab.file_edits_collide([(1, 2)], [(90, 95)]))
 
+    def test_the_cli_range_reader_matches_the_api_reader(self):
+        rows = [
+            {"filename": "web/index.html", "patch": "@@ -12,4 +12,6 @@\n-a\n+b\n"},
+            {"filename": "assets/logo.png"},
+        ]
+        with patch.object(collab, "gh_json", return_value=rows):
+            ranges = collab.gh_pr_file_ranges(7)
+        # A readable patch yields ranges; a binary file stays None so the
+        # audit falls back to whole-file exactly like check-pr does.
+        self.assertEqual(ranges["web/index.html"], [(12, 15)])
+        self.assertIsNone(ranges["assets/logo.png"])
+
     def test_only_genuinely_colliding_paths_are_reported(self):
         mine = {"a.rs": [(1, 10)], "b.rs": [(1, 10)], "c.rs": [(1, 10)]}
         theirs = {"a.rs": [(5, 15)], "b.rs": [(500, 510)]}
