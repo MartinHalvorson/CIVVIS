@@ -5999,6 +5999,23 @@ function render(st, recordChronicle = true) {
     document.getElementById("mappoles").value = st.map.poles || "poles";
     syncEarthShape();
     document.getElementById("gamespeed").value = st.game_speed || "standard";
+    // The seat a person is playing and the handicap they are playing it on are
+    // settings of this world too, so the panel adopts them alongside the map
+    // and the speed. Without this a reloaded page read "Random leader" and
+    // "Prince" over a Deity game as Vietnam, and Restart offered to start that
+    // instead of the game on screen.
+    // A spectated world has no seat, and its empty civ would match the leader
+    // list's own "Random leader" entry, so the seat has to be real before any
+    // of this runs.
+    const leaderSelect = document.getElementById("leader");
+    const seatCiv = st.players.find(player => player.id === st.view_player)?.civ || "";
+    if (leaderSelect && seatCiv &&
+        [...leaderSelect.options].some(option => option.value === seatCiv))
+      leaderSelect.value = seatCiv;
+    const difficultySelect = document.getElementById("difficulty");
+    if (difficultySelect && st.difficulty &&
+        [...difficultySelect.options].some(option => option.value === st.difficulty))
+      difficultySelect.value = st.difficulty;
     for (const track of VICTORY_TRACKS) {
       const checkbox = document.getElementById(`victory-${track.id}`);
       if (checkbox) checkbox.checked = st.victory_conditions?.[track.id] !== false;
