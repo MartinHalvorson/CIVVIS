@@ -4031,6 +4031,22 @@ mod tests {
         assert!(!EMBEDDED_INDEX.contains("orbitCamera(-cam.rot, DEFAULT_CINEMA_YS"));
         // The globe's yaw is a bearing, not a second way to spin it eastward.
         assert!(EMBEDDED_INDEX.contains("roll:cam.rot"));
+        // A globe is turned, not slid. Longitude and latitude cannot express a
+        // drag — near a pole the parallels are a few pixels long, so spending a
+        // sideways drag on longitude spins the world about the point under the
+        // pointer, and the pole is a wall latitude stops at. So the camera's own
+        // basis is rotated bodily and read back into cam.x/cam.y/cam.rot, which
+        // makes a pixel of drag the same arc anywhere on the globe and carries
+        // the view straight over a pole and down the far side. Every way of
+        // moving the map shares that one turn: pointer, touch and the arrows.
+        assert!(EMBEDDED_INDEX.contains("function planetViewBasis(camera)"));
+        assert!(EMBEDDED_INDEX.contains("function planetBasisCamera(basis)"));
+        assert!(EMBEDDED_INDEX.contains("function planetTurnAxis(basis, dx, dy)"));
+        assert!(EMBEDDED_INDEX.contains("function applyPlanetBasis(basis)"));
+        assert!(EMBEDDED_INDEX.contains("applyPlanetBasis(planetTurn(dragState.basis, dx, dy))"));
+        assert!(EMBEDDED_INDEX.contains("applyPlanetBasis(planetTurn(touchGesture.basis, dx, dy))"));
+        assert!(EMBEDDED_INDEX.contains("applyPlanetBasis(planetTurn(basis, -screenX, -screenY))"));
+        assert!(EMBEDDED_INDEX.contains("spin:planetGlide(released.vpx, released.vpy)"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"planet\">Planet</option>"));
         assert!(EMBEDDED_INDEX
             .contains("<option value=\"true_start_earth\">True Start Earth</option>"));
@@ -5392,10 +5408,15 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("? \"Start Single Player Game\""));
         assert!(EMBEDDED_INDEX
             .contains(".spec-controls #restart-sim.human-start::before { content: \"▶\";"));
-        // Its name needs the whole bar, and it must be the only gold button on
-        // it — two would leave neither reading as the one to press.
-        assert!(EMBEDDED_INDEX
-            .contains(".spec-controls:has(#restart-sim.human-start) { grid-template-columns: 1fr; }"));
+        // It shares the row with Pause/Resume rather than displacing it: keep
+        // watching or leave for your own game is one decision, so the two read
+        // as a pair. The row goes uneven instead — Pause keeps just enough for
+        // its own label and the start takes the rest — and the start stays the
+        // only gold button on it, since two would leave neither reading as the
+        // one to press.
+        assert!(EMBEDDED_INDEX.contains(
+            ".spec-controls:has(#restart-sim.human-start) { grid-template-columns: 96px minmax(0, 1fr); }"
+        ));
         assert!(EMBEDDED_INDEX
             .contains(".spec-controls:has(#restart-sim.human-start) #specpause.primary {"));
         assert!(EMBEDDED_INDEX.contains("body.watching-sim #startgame { display: none; }"));
