@@ -432,6 +432,25 @@ def gh_json(args: Sequence[str], *, cwd: Optional[Path] = None) -> Any:
     return json.loads(result.stdout or "null")
 
 
+def gh_pr_file_ranges(
+    number: int, *, cwd: Optional[Path] = None
+) -> Dict[str, Optional[List[Tuple[int, int]]]]:
+    """``pr_file_ranges`` over the GitHub CLI, for commands that run locally."""
+    rows = gh_json(
+        (
+            "api",
+            "--paginate",
+            f"/repos/{REPOSITORY}/pulls/{number}/files?per_page=100",
+        ),
+        cwd=cwd,
+    )
+    ranges: Dict[str, Optional[List[Tuple[int, int]]]] = {}
+    for row in rows or []:
+        patch = row.get("patch")
+        ranges[str(row["filename"])] = patch_base_ranges(str(patch)) if patch else None
+    return ranges
+
+
 def required_check_state(
     rows: Sequence[Dict[str, Any]],
     *,
@@ -1284,15 +1303,26 @@ def audit_repo(root: Path) -> Dict[str, List[str]]:
             )
             pr_views[number] = view
             pr_changed[number] = {row["path"] for row in view.get("files", [])}
+        # `gh pr view` reports paths without patches, which would force the
+        # whole-file fallback and report collisions CI does not. Fetch the same
+        # hunk ranges check-pr uses so the audit and the gate always agree.
+        pr_ranges: Dict[int, Dict[str, Optional[List[Tuple[int, int]]]]] = {
+            number: gh_pr_file_ranges(number, cwd=root) for number in pr_views
+        }
         for number, view in pr_views.items():
             files = sorted(pr_changed[number])
             subjects = [row["messageHeadline"] for row in view.get("commits", [])]
-            others = {key: value for key, value in pr_changed.items() if key != number}
+            others = {
+                key: value
+                for key, value in pr_ranges.items()
+                if key != number and set(value) & set(pr_ranges[number])
+            }
             violations = validate_pr(
                 view,
                 files=files,
                 commit_subjects=subjects,
-                other_files=others,
+                ranges=pr_ranges[number],
+                other_ranges=others,
             )
             for violation in violations:
                 errors.append(f"PR #{number}: {violation}")
