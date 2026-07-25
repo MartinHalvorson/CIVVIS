@@ -12001,23 +12001,38 @@ function empireGreatPeople() {
   const patronise = legalFor("patronize_great_person");
   const kinds = [...new Set([...Object.keys(me.gpp || {}),
     ...recruit.keys(), ...patronise.map(a => a.kind)])].sort();
-  // Which named person is next is a world fact — it depends on who every
-  // other civilization has already retired — and the observation does not
-  // carry it. So the accruing card names the kind and the points, and only
-  // the people actually in your service are named.
+  // Which named person each kind is offering is a world fact — it depends on
+  // who every other civilization has retired — so the engine ships it rather
+  // than the client guessing. A kind with nobody left on offer still shows
+  // its points; there is simply no one to name.
+  const offered = me.great_person_offers || {};
   const cards = kinds.map(kind => {
     const points = Math.round((me.gpp || {})[kind] || 0);
     const claimed = (me.gp_claimed || {})[kind] || 0;
-    const offers = patronise.filter(a => a.kind === kind)
-      .map(a => empireAct(a, `Patronise · ${titleCase(a.currency || "gold")}`));
+    const offer = offered[kind];
+    const offers = patronise.filter(a => a.kind === kind).map(a => {
+      const currency = a.currency || "gold";
+      const price = offer ? offer[currency] : null;
+      return empireAct(a, `Patronise · ${Math.round(price ?? 0) || ""} ${titleCase(currency)}`.replace("  ", " "),
+        "", price ? `${Math.round(price)} ${titleCase(currency)}` : "");
+    });
     return empireCard({
-      title: `Great ${titleCase(kind)}`,
-      kind: recruit.has(kind) ? "Ready to recruit" : "Accruing",
+      title: offer ? offer.name : `Great ${titleCase(kind)}`,
+      kind: offer ? `Great ${titleCase(kind)} · ${ERA_NAMES[offer.era] || "era " + offer.era}`
+        : `Great ${titleCase(kind)}`,
       cls: recruit.has(kind) ? "filled" : "",
-      note: `<div class="empire-meter"><b>${points}</b> points · ` +
-        `<b>${claimed}</b> recruited so far</div>` +
-        (recruit.has(kind) ? "The next of this kind is yours to claim."
-          : "Districts, buildings and wonders pay these points every turn."),
+      note: `<div class="empire-meter"><b>${points}</b>` +
+        (offer ? ` of <b>${Math.round(offer.points)}</b> points` : " points") +
+        ` · <b>${claimed}</b> recruited so far</div>` +
+        (offer && offer.effects && offer.effects.length
+          ? offer.effects.map(effect => titleCase(effect)).join(" · ")
+          : recruit.has(kind) ? "The next of this kind is yours to claim."
+          : "Districts, buildings and wonders pay these points every turn.") +
+        // Enough points and still no Recruit button reads as a bug unless the
+        // card says what is actually missing.
+        (offer && offer.blocked
+          ? `<div class="empire-meter" style="color:var(--danger)">${escapeAttr(offer.blocked)}</div>`
+          : ""),
       actions: (recruit.has(kind) ? [empireAct(recruit.get(kind), "Recruit", "primary")] : [])
         .concat(offers),
     });
