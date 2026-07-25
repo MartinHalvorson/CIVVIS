@@ -977,6 +977,58 @@
   .empire-card[class*="empire-slot-"] { border-left: 3px solid var(--slot); }
   .empire-meter { display: flex; align-items: center; gap: 8px; font-size: 10px; color: var(--muted); }
   .empire-meter b { color: var(--text); font-variant-numeric: tabular-nums; }
+  /* Civ 6 conducts diplomacy leader by leader: who they are, what they want,
+     how they feel about you, and what you can do about it. Quick Deals
+     already compares every acceptable trade at once; this is the other half —
+     war, peace, denouncement, and the standing relationship each one moves. */
+  #diplomacy {
+    position: absolute; z-index: 18; inset: 4% 3%; display: none; flex-direction: column;
+    overflow: hidden; color: var(--text); border: 1px solid #6a5c53; border-radius: 18px;
+    background: radial-gradient(circle at 82% 0, #2c2620f5, #091310fc 58%);
+    box-shadow: 0 28px 100px #000e; backdrop-filter: blur(20px);
+  }
+  #diplomacy.open { display: flex; animation: rise .18s ease-out; }
+  .diplo-head {
+    display: flex; align-items: center; gap: 14px; padding: 17px 20px 13px;
+    border-bottom: 1px solid #4b3f37;
+  }
+  .diplo-title { color: var(--gold-bright); font: 600 22px/1 Georgia, serif; }
+  .diplo-subtitle { margin-top: 5px; color: var(--muted); font-size: 9px; letter-spacing: .08em; }
+  .diplo-body { flex: 1; overflow: auto; padding: 16px 20px 20px; }
+  .diplo-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+  .leader {
+    display: flex; flex-direction: column; gap: 9px; padding: 13px 14px;
+    border: 1px solid #3a4a43; border-radius: 14px; background: #101d1abb;
+  }
+  .leader.at-war { border-color: #6b3f3c; background: #1c1312bb; }
+  .leader.allied { border-color: #4a805d; background: #14261fbb; }
+  .leader-head { display: flex; align-items: baseline; gap: 9px; }
+  .leader-name { color: var(--gold-bright); font: 600 17px Georgia, serif; }
+  .leader-civ { color: var(--muted); font-size: 10px; }
+  .leader-stance {
+    margin-left: auto; padding: 3px 9px; border-radius: 999px; font-size: 9px;
+    font-weight: 850; letter-spacing: .08em; text-transform: uppercase;
+    color: #cfe0d8; background: #14231f; border: 1px solid #365046;
+  }
+  .leader-stance.war { color: #f3a7a4; background: #2a1614; border-color: #6b3f3c; }
+  .leader-stance.friend { color: #9bd8ae; background: #14261f; border-color: #4a805d; }
+  .leader-agenda { color: #c1cfc9; font-size: 10px; line-height: 1.5; }
+  .leader-agenda b { color: var(--gold); }
+  .leader-meters { display: grid; gap: 4px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .leader-meter {
+    display: flex; justify-content: space-between; gap: 8px; padding: 4px 7px;
+    border-radius: 8px; background: #0b1512; font-size: 10px; color: var(--muted);
+  }
+  .leader-meter b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .leader-meter b.good { color: var(--green); }
+  .leader-meter b.bad { color: var(--danger); }
+  .leader-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: auto; padding-top: 3px; }
+  .leader-actions button { margin: 0; padding: 6px 9px; font-size: 10px; }
+  .diplo-proposal {
+    display: flex; flex-direction: column; gap: 7px; padding: 12px 13px; margin-bottom: 9px;
+    border: 1px solid var(--gold-deep); border-radius: 12px; background: #1b1a12aa;
+  }
+  .diplo-proposal-title { color: var(--gold-bright); font: 600 13px Georgia, serif; }
   #tip {
     position: fixed; z-index: 30; display: none; max-width: 290px; padding: 10px 13px;
     color: var(--text); border: 1px solid #4a635a; border-radius: 11px;
@@ -1743,6 +1795,13 @@
       <button class="ghost" onclick="closeEmpire()">✕ Close</button>
     </div>
     <div class="empire-body" id="empire-body"></div>
+  <section id="diplomacy" role="dialog" aria-modal="true" aria-labelledby="diplomacy-title">
+    <div class="diplo-head">
+      <div><div class="diplo-title" id="diplomacy-title">Diplomacy</div>
+        <div class="diplo-subtitle" id="diplomacy-subtitle"></div></div>
+      <button class="ghost" style="margin-left:auto" onclick="closeDiplomacy()">✕ Close</button>
+    </div>
+    <div class="diplo-body" id="diplomacy-body"></div>
   </section>
   <section id="trade" role="dialog" aria-modal="true" aria-labelledby="tradetitle">
     <div class="trade-head">
@@ -1812,6 +1871,7 @@
       <div class="footer-actions" id="humanfooter">
         <button class="primary" id="endturn">End turn · Enter</button>
         <button id="tradebtn" title="Compare all mutually acceptable offers (D)">⚖ Quick Deals · D</button>
+      <button id="diplomacybtn" title="Leaders, agendas, war and peace (L)">🕊 Diplomacy · L</button>
         <button id="autoplaybtn" title="Let the agent play your seat (A · hold Shift for ten turns)">▶▶ Auto-play · A</button>
       </div>
       <div id="specbar" style="display:none">
@@ -1987,6 +2047,8 @@
       <span><kbd>3</kbd>Map tacks · 6.5</span><span><kbd>P</kbd>Civilopedia</span>
       <span><kbd>D</kbd>Quick Deals</span><span><kbd>G</kbd>Empire screens</span>
       <span><kbd>Alt/⌥ drag</kbd>Rotate · cinematic tilt</span>
+      <span><kbd>D</kbd>Quick Deals</span><span><kbd>L</kbd>Diplomacy</span>
+      <span><kbd>P</kbd>Civilopedia</span><span><kbd>Alt/⌥ drag</kbd>Rotate · cinematic tilt</span>
       <span><kbd>Q / E</kbd>Rotate map</span><span><kbd>Shift scroll</kbd>Rotate · <kbd>⌥ scroll</kbd>tilt</span>
       <span><kbd>Arrows</kbd>Pan map</span><span><kbd>+ / −</kbd>Zoom · double-click to dive</span>
       <span><kbd>Y</kbd>Tile yields</span><span><kbd>C</kbd>Cinema mode</span>
@@ -5118,6 +5180,7 @@ function render(st, recordChronicle = true) {
     loopTurn = null; noticeSeenTurn = 0;
   }
   openTurnIfNew();
+  drawDiplomacy();
 }
 
 function drawCaptureChoice() {
@@ -11993,6 +12056,176 @@ function drawEmpire() {
   document.getElementById("empire-body").innerHTML = body;
 }
 
+// -------------------------------------------------------- diplomacy screen
+// Quick Deals compares every trade the rivals would accept. This is the other
+// half of Civ 6's diplomacy: the standing relationship with each leader, what
+// their agenda wants, and the four things you can do about it that are not a
+// trade — declare war, sue for peace, denounce, and offer a pact.
+//
+// Until now none of those four reached the player at all. `declare_war`,
+// `make_peace` and `denounce` have been in `legal_actions(0)` since v0.6 with
+// nothing anywhere on the page that would send one, which closed the
+// domination path to a person while leaving it open to every agent.
+function diplomacyOpen() {
+  return document.getElementById("diplomacy").classList.contains("open");
+}
+function openDiplomacy() {
+  if (SPEC) return;
+  document.getElementById("diplomacy").classList.add("open");
+  drawDiplomacy();
+}
+function closeDiplomacy() {
+  document.getElementById("diplomacy").classList.remove("open");
+}
+async function sendFromDiplomacy(action) {
+  await send(action);
+  if (diplomacyOpen()) drawDiplomacy();
+}
+function diploButton(action, label, cls = "", title = "") {
+  return `<button class="${cls}" title="${escapeAttr(title)}" ` +
+    `onclick='sendFromDiplomacy(${JSON.stringify(action)})'>${label}</button>`;
+}
+// Civ 6 states a relationship in words before it states it in numbers.
+function opinionWord(opinion) {
+  if (opinion >= 30) return "Friendly";
+  if (opinion >= 10) return "Cordial";
+  if (opinion > -10) return "Neutral";
+  if (opinion > -30) return "Unfriendly";
+  return "Hostile";
+}
+// A proposed pact is a bundle of flags, not a name. Say what is actually in
+// it rather than calling every one of them "a deal".
+function dealWords(action) {
+  const parts = [];
+  if (action.peace) parts.push("peace");
+  if (action.friendship) parts.push("a declaration of friendship");
+  if (action.alliance) parts.push(`a ${titleCase(action.alliance)} alliance`);
+  if (action.open_borders) parts.push("open borders");
+  if (action.give_gold > 0) parts.push(`${Math.round(action.give_gold)} Gold from you`);
+  if (action.request_gold > 0) parts.push(`${Math.round(action.request_gold)} Gold from them`);
+  return parts.length ? parts.join(" · ") : "an understanding";
+}
+function drawDiplomacy() {
+  if (!diplomacyOpen()) return;
+  if (!state || SPEC) { closeDiplomacy(); return; }
+  const byPlayer = type => {
+    const grouped = new Map();
+    for (const action of legalFor(type)) {
+      if (!grouped.has(action.player)) grouped.set(action.player, []);
+      grouped.get(action.player).push(action);
+    }
+    return grouped;
+  };
+  const wars = byPlayer("declare_war");
+  const casus = byPlayer("declare_war_with_casus_belli");
+  const peace = byPlayer("make_peace");
+  const denounce = byPlayer("denounce");
+  const proposals = byPlayer("propose_deal");
+  const replies = state.legal_actions.filter(a =>
+    a.type === "accept_deal" || a.type === "reject_deal");
+
+  // Anything a rival has put on the table comes first: it is the only part of
+  // this screen with a clock on it.
+  let inbox = "";
+  const deals = new Map();
+  for (const reply of replies) {
+    if (!deals.has(reply.deal)) deals.set(reply.deal, []);
+    deals.get(reply.deal).push(reply);
+  }
+  for (const [id, actions] of deals) {
+    const pending = (state.pending_deals || []).find(deal => deal.id === id);
+    const from = pending && state.players[pending.from]
+      ? state.players[pending.from] : null;
+    const expiry = pending && pending.expires > state.turn
+      ? ` · expires turn ${pending.expires}` : "";
+    inbox += `<div class="diplo-proposal">` +
+      `<div class="diplo-proposal-title">${from ? `${from.civ} proposes` : `Proposal #${id}`}` +
+      `<span class="diplo-subtitle" style="margin-left:8px">${expiry}</span></div>` +
+      (pending ? `<div class="leader-agenda">${escapeAttr(dealWords(pending))}</div>` : "") +
+      `<div class="leader-actions">` +
+      actions.map(action => diploButton(action,
+        action.type === "accept_deal" ? "✔ Accept" : "✕ Reject",
+        action.type === "accept_deal" ? "primary" : "")).join("") +
+      `</div></div>`;
+  }
+
+  // Majors first, then the city-states. Leaving the minors out entirely made
+  // peace with one unreachable from anywhere on the page, and their war and
+  // peace live here for the same reason a major's does.
+  const relevant = state.players.filter(player =>
+    player.id !== 0 && player.alive && !player.is_barbarian);
+  const cards = relevant
+    .sort((first, second) => Number(first.is_minor) - Number(second.is_minor))
+    .map(player => {
+      const atWar = player.at_war_with_me;
+      const opinion = Math.round(player.opinion_of_me);
+      const stance = atWar ? "war" : player.allied || player.friend ? "friend" : "";
+      const stanceWord = atWar ? "At war"
+        : player.teammate ? "Teammate"
+        : player.allied ? `${titleCase(player.alliance || "")} ally`
+        : player.friend ? "Friend"
+        : player.is_minor ? (player.suzerain === 0 ? "Your suzerainty" : "Independent")
+        : opinionWord(opinion);
+      const actions = []
+        .concat((peace.get(player.id) || []).map(action =>
+          diploButton(action, "🕊 Make peace", "primary", "End the war on the current terms")))
+        .concat((proposals.get(player.id) || []).map(action =>
+          diploButton(action, `🤝 Propose ${dealWords(action)}`, "",
+            "They may refuse; Quick Deals shows what they would accept today")))
+        .concat((wars.get(player.id) || []).map(action =>
+          diploButton(action, "⚔ Declare war", "danger",
+            "A surprise war. Everyone who knows you will hold it against you")))
+        .concat((casus.get(player.id) || []).map(action =>
+          diploButton(action, `⚔ ${titleCase(action.casus_belli)}`, "danger",
+            "A justified war carries far fewer grievances than a surprise one")))
+        .concat((denounce.get(player.id) || []).map(action =>
+          diploButton(action, "☒ Denounce", "",
+            "Say publicly what you think of them. A war declared after this is not a surprise war")));
+      const meter = (label, value, tone = "") =>
+        `<div class="leader-meter"><span>${label}</span><b class="${tone}">${value}</b></div>`;
+      // A city-state has no leader, no agenda and no opinion of anyone. Its
+      // relationship is envoys and suzerainty, so say that instead of six
+      // meters that all read zero.
+      const meters = player.is_minor
+        ? meter("Your envoys", player.my_envoys || 0) +
+          meter("Suzerain", player.suzerain === 0 ? "you"
+            : player.suzerain === null || player.suzerain === undefined ? "none"
+            : (state.players[player.suzerain] || {}).civ || "another") +
+          meter("Cities", player.cities) +
+          meter("Military", Math.round(player.military))
+        : meter("Opinion of you", opinion, opinion > 0 ? "good" : opinion < 0 ? "bad" : "") +
+          meter("Their grievances", Math.round(player.grievances_against_me),
+            player.grievances_against_me > 0 ? "bad" : "") +
+          meter("Your grievances", Math.round(player.my_grievances),
+            player.my_grievances > 0 ? "good" : "") +
+          meter("Borders", (player.open_borders_to_me ? "open to you" : "closed to you") +
+            (player.my_open_borders_to_them ? " · open to them" : "")) +
+          meter("Cities", player.cities) +
+          meter("Military", Math.round(player.military));
+      return `<div class="leader ${atWar ? "at-war" : ""} ${player.allied ? "allied" : ""}">` +
+        `<div class="leader-head"><span class="leader-name">${player.leader || player.civ}</span>` +
+        `<span class="leader-civ">${player.is_minor
+          ? `${titleCase(player.cs_type || "city")}-state` : player.civ}</span>` +
+        `<span class="leader-stance ${stance}">${stanceWord}</span></div>` +
+        (player.agenda ? `<div class="leader-agenda"><b>${player.agenda.name}</b> — ` +
+          `${player.agenda.description}</div>` : "") +
+        `<div class="leader-meters">${meters}</div>` +
+        (actions.length ? `<div class="leader-actions">${actions.join("")}</div>`
+          : `<div class="empty-state">Nothing can be offered or declared this turn.</div>`) +
+        `</div>`;
+    });
+
+  // Barbarians are permanently at war with everyone and are not a power.
+  const atWarCount = state.players.filter(player =>
+    player.at_war_with_me && player.alive && !player.is_barbarian).length;
+  document.getElementById("diplomacy-subtitle").textContent = atWarCount
+    ? `At war with ${atWarCount} ${atWarCount === 1 ? "power" : "powers"}`
+    : "At peace with the world";
+  document.getElementById("diplomacy-body").innerHTML = inbox +
+    (cards.length ? `<div class="diplo-grid">${cards.join("")}</div>`
+      : `<div class="empty-state">You have met no other civilization yet.</div>`);
+}
+
 function drawUbar() {
   const bar = document.getElementById("ubar");
   if (!sel || SPEC) { bar.style.display = "none"; return; }
@@ -14275,6 +14508,12 @@ document.addEventListener("keydown", ev => {
     return;
   }
   if (empireOpen()) return;
+  if (ev.key === "Escape" && diplomacyOpen()) { closeDiplomacy(); return; }
+  if (ev.key.toLowerCase() === "l" && !SPEC) {
+    diplomacyOpen() ? closeDiplomacy() : openDiplomacy();
+    return;
+  }
+  if (diplomacyOpen()) return;
   if (ev.key.toLowerCase() === "m" && cinemaActive()) { setCinemaAudio(!CINEMA_AUDIO); return; }
   if (ev.key.toLowerCase() === "c" && SPEC && VIEW === "cinematic") { toggleCinemaMode(); return; }
   if (ev.key === "Enter") {
@@ -14370,6 +14609,7 @@ async function autoplay(turns) {
 }
 document.getElementById("autoplaybtn").onclick = ev => autoplay(ev.shiftKey ? 10 : 1);
 document.getElementById("tradebtn").onclick = () => openTrade();
+document.getElementById("diplomacybtn").onclick = () => openDiplomacy();
 document.getElementById("paneltoggle").onclick = () => togglePanel();
 document.getElementById("collapsepause").onclick = toggleSpecPause;
 document.getElementById("cinema-director").onclick = () => setDirector(!DIRECTOR);
