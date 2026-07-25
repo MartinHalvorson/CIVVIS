@@ -1091,6 +1091,10 @@
   .build-actions button { margin: 0; padding: 5px 8px; font-size: 10px; }
   .build-sites { display: flex; flex-wrap: wrap; gap: 3px; }
   .build-sites button { margin: 0; padding: 4px 7px; border-radius: 7px; font-size: 9px; }
+  .winner-again {
+    width: auto; margin-top: 14px; padding: 10px 18px; border-radius: 10px;
+    font-size: 11px; letter-spacing: .06em;
+  }
   #tip {
     position: fixed; z-index: 30; display: none; max-width: 290px; padding: 10px 13px;
     color: var(--text); border: 1px solid #4a635a; border-radius: 11px;
@@ -5256,7 +5260,8 @@ function render(st, recordChronicle = true) {
         <strong class="winner-title">${winnerName}</strong>
         <span class="winner-verdict">${verdict}</span>
         <span class="winner-meta">Turn ${st.turn} · History remembers</span>
-        ${SPEC ? `<span class="winner-countdown" id="respawn" role="timer"></span>` : ""}
+        ${SPEC ? `<span class="winner-countdown" id="respawn" role="timer"></span>`
+          : `<button class="primary winner-again" onclick="startNewSimulation()">Start another game</button>`}
       </div>`;
       playCinemaCue({priority:10, kicker:"History has a victor", title:winnerName});
     }
@@ -14894,6 +14899,17 @@ function drawTurnLoop() {
     `</button>`).join("");
   rail.classList.toggle("on", chips.length > 0);
   if (!button) return;
+  // A finished game has no next turn. Leaving the button live meant Enter
+  // posted an `end_turn` the engine refused, and the player got a red error
+  // toast for the crime of pressing the only lit control on the screen.
+  const over = state.winner !== null && state.winner !== undefined;
+  button.disabled = over;
+  if (over) {
+    button.classList.remove("blocked");
+    button.innerHTML = `The game is over<span class="endturn-hint">Start another below</span>`;
+    button.title = "This world has its victor. Start a new game from Game settings.";
+    return;
+  }
   // The capture modal disables the button outright; leave that alone.
   const captured = blockers.some(b => b.kind === "capture");
   const next = blockers.find(b => b.kind !== "capture");
@@ -14907,6 +14923,7 @@ function drawTurnLoop() {
 // Enter walks the blockers and then ends the turn; Shift overrides.
 function advanceTurn(force = false) {
   if (!state || SPEC) return;
+  if (state.winner !== null && state.winner !== undefined) return;
   const blockers = turnBlockers();
   const next = blockers.find(b => b.kind !== "capture");
   if (blockers.some(b => b.kind === "capture")) return;

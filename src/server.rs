@@ -4020,6 +4020,25 @@ mod tests {
         }
     }
 
+    /// A finished game has no next turn. Leaving End Turn live meant `Enter`
+    /// posted an `end_turn` the engine refused, and the player got a red
+    /// error toast for pressing the only lit control on the screen. The
+    /// finale offers the one thing still useful instead: another game.
+    #[test]
+    fn browser_stops_asking_for_turns_once_somebody_has_won() {
+        assert!(EMBEDDED_INDEX
+            .contains("const over = state.winner !== null && state.winner !== undefined;"));
+        assert!(EMBEDDED_INDEX.contains("button.disabled = over;"));
+        assert!(EMBEDDED_INDEX.contains("The game is over<span class=\"endturn-hint\">"));
+        // The keys agree with the button.
+        assert!(EMBEDDED_INDEX
+            .contains("if (state.winner !== null && state.winner !== undefined) return;"));
+        // And a human finale offers a way on; a spectated one keeps its
+        // countdown, because the supervisor owns that handoff.
+        assert!(EMBEDDED_INDEX.contains("class=\"primary winner-again\" onclick=\"startNewSimulation()\""));
+        assert!(EMBEDDED_INDEX.contains("id=\"respawn\" role=\"timer\""));
+    }
+
     #[test]
     fn browser_runs_a_civ_six_turn_loop() {
         for piece in [
