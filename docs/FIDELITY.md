@@ -35,10 +35,10 @@ specific content set in a specific order; the cache is whatever the game last
 compiled for itself. **Where they disagree, that disagreement is itself a
 finding** — see the Cartography note below.
 
-### First cache run: 15 divergences to triage
+### First cache run: 15 divergences, 5 fixed
 
 The install-based audit last reported zero unwaived divergences. The cache run
-reports fifteen, one of which is already fixed:
+reported fifteen. Five are fixed here; the rest are triaged below.
 
 - **`Adjacency` / `industrial_zone` mine — FIXED here.** CIVVIS paid 1.5
   Production per adjacent Mine. The shipped `Minel_HalfProduction` row is
@@ -49,21 +49,35 @@ reports fifteen, one of which is already fixed:
   2, government plaza 1, strategic 1), which is what makes the one outlier
   convincing rather than a projection artifact.
 
+- **`Buildings` — three uniques carrying their base building's yield.** The
+  Prasat replaces the Temple (Faith 4, one Relic slot) and ships Faith **6** with
+  the same single slot; CIVVIS had the Temple's 4 and an invented second slot.
+  The Sukiennice replaces the Market (Gold 2) and does not raise it; CIVVIS had
+  3. The Tlachtli replaces the Arena (Culture 1) and doubles it to **2**; CIVVIS
+  had the Arena's 1. One error repeated three times, which is what identified it.
+- **`Improvements` / `sphinx` terrain.** CIVVIS allowed Snow;
+  `Improvement_ValidTerrains` lists Desert, Grassland, Plains and Tundra with
+  their Hills variants, and no Snow.
+
 Still to triage, listed so they are not lost:
 
 | Table | Entry | CIVVIS | cache DB |
 |---|---|---|---|
 | Technologies | `cartography` requires | buttress, shipbuilding | buttress |
 | Technologies | `mass_production` requires | …, shipbuilding | (no shipbuilding) |
-| Buildings | `prasat` relic slots / faith | 2 / 4 | 1 / 6 |
-| Buildings | `sukiennice` gold | 3 | 2 |
-| Buildings | `tlachtli` culture | 1 | 2 |
 | Boosts | `near_future_governance` count | 10 | 0 |
 | Resources | `niter` feature | + generic floodplains | only the two typed floodplains |
 | Resources | `pearls`/`turtles`/`whales` improvement | fishing_boats | industry |
 | Improvements | `corporation`/`industry` resources | 3 luxuries | 28 luxuries |
-| Improvements | `sphinx` terrain | + snow | no snow |
 | Wonders | `biosphere` yields | science 8 | none |
+
+`niter` and `biosphere` are deliberately left alone. CIVVIS' generic
+`floodplains` is the Desert variant the game calls `FEATURE_FLOODPLAINS`, so
+dropping it from Niter is a map-placement change dressed as a data fix, and it
+needs checking against where Niter actually spawns rather than against the
+feature list alone. The Biosphere's shipped effect is Culture on Rainforest,
+Marsh and Woods rather than a flat yield; zeroing its Science without modelling
+that effect would delete the wonder's value instead of correcting it.
 
 **The Cartography pair contradicts this document's own history.** The first-wave
 install audit lists "Cartography and Mass Production both require Shipbuilding"
