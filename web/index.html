@@ -9694,9 +9694,32 @@ function decodePlanet(raw) {
     let x = 0, y = 0, z = 0;
     for (const id of ids) { x += corners[3 * id]; y += corners[3 * id + 1]; z += corners[3 * id + 2]; }
     const length = Math.hypot(x, y, z) || 1;
-    cells.set(key(pos), {pos, ids, center:[x / length, y / length, z / length]});
+    cells.set(key(pos), {pos, ids, center:[x / length, y / length, z / length],
+                         nbrs:new Array(ids.length).fill(null)});
   }
+  linkPlanetCells(cells);
   return {frequency:raw.frequency, corners, cells};
+}
+
+// Which tile lies across each of a tile's own edges, read off the geometry
+// once. Two cells share exactly two corners, so a corner pair names the seam
+// between them and nothing else. A frontier needs this for the whole globe and
+// not just the half in the picture: a border exists where the tile on the
+// *other* side is held by somebody else, and that tile is often over the
+// horizon.
+function linkPlanetCells(cells) {
+  const seams = new Map();
+  for (const [cellKey, cell] of cells) {
+    const ids = cell.ids;
+    for (let i = 0; i < ids.length; i++) {
+      const a = ids[i], b = ids[(i + 1) % ids.length];
+      const seam = a < b ? a + "_" + b : b + "_" + a;
+      const first = seams.get(seam);
+      if (first === undefined) { seams.set(seam, [cellKey, i]); continue; }
+      cell.nbrs[i] = first[0];
+      cells.get(first[0]).nbrs[first[1]] = cellKey;
+    }
+  }
 }
 
 // Asked for the first time a Planet world appears and never again while it
@@ -9787,7 +9810,7 @@ function planetCellGeometry(tile, camera, scale, centerX, centerY) {
     point.x = centerX + dx * radius / length;
     point.y = centerY + dy * radius / length;
   }
-  return {points, center:planetProject(cell.center, camera, scale, centerX, centerY)};
+  return {cell, points, center:planetProject(cell.center, camera, scale, centerX, centerY)};
 }
 function planetPath(context, points) {
   context.beginPath();
@@ -9804,6 +9827,125 @@ function pointInsidePlanetCell(x, y, points) {
   }
   return inside;
 }
+// ---- frontiers on a globe.
+// The empire boundary is the same two-tone ribbon the flat maps fly: the two
+// jersey colours as parallel lanes lying *inside* the empire that owns the
+// tile, the lighter of the pair furthest in, over a near-black keyline. None of
+// that reasoning changes on a sphere — a territory wash says a tile is held but
+// not where one empire stops and the next starts, and two neighbouring washes
+// meet with nothing between them — only the geometry it is built from. A flat
+// board has six shared edge orientations and can precompute the lot; here every
+// cell is projected differently and twelve of them are pentagons, so each edge
+// carries its own screen-space normal and each corner is mitred by intersecting
+// the two lanes that actually meet there.
+//
+// Screen size at which the ribbon reaches the flat map's weight: the inradius
+// of a strategic-view hex at survey zoom, so a globe zoomed to about the same
+// tile size gets about the same border.
+const PLANET_LANE_TILE = 15.6;
+function planetFrontierLanes(cells) {
+  const lanes = new Map();
+  for (const {tile, cell, points, center} of cells) {
+    const owner = tile.owner;
+    if (owner === null || owner === undefined || !cell) continue;
+    const sides = points.length;
+    // How much ribbon a tile can hold is a property of that tile as drawn. A
+    // fixed pixel offset is right where the tile is big enough for it and
+    // ruinous at the limb, where a tile is a sliver a pixel or two across and a
+    // lane held four pixels inside it comes out the far side. Weight is
+    // quantized so the layer stays a handful of strokes instead of one per
+    // edge; four steps is finer than the eye follows a border foreshortening
+    // into the horizon.
+    let inradius = Infinity;
+    for (let i = 0; i < sides; i++) {
+      const a = points[i], b = points[(i + 1) % sides];
+      const ex = b.x - a.x, ey = b.y - a.y;
+      const len = Math.hypot(ex, ey);
+      if (len < 1e-6) continue;
+      inradius = Math.min(inradius, Math.abs((a.x - center.x) * ey - (a.y - center.y) * ex) / len);
+    }
+    if (!(inradius > PLANET_LANE_TILE / 8)) continue;
+    const weight = Math.min(1, Math.round(4 * inradius / PLANET_LANE_TILE) / 4);
+    for (let i = 0; i < sides; i++) {
+      const across = TMAP.get(cell.nbrs[i]);
+      if (across && across.owner === owner) continue;
+      const a = points[i], b = points[(i + 1) % sides];
+      let ex = b.x - a.x, ey = b.y - a.y;
+      const len = Math.hypot(ex, ey);
+      if (len < 1e-6) continue;
+      ex /= len; ey /= len;
+      let nx = -ey, ny = ex;
+      if (nx * (center.x - a.x) + ny * (center.y - a.y) < 0) { nx = -nx; ny = -ny; }
+      let lane = lanes.get(owner);
+      if (!lane) { lane = {corners:new Map(), weights:new Map()}; lanes.set(owner, lane); }
+      const edge = {ax:a.x, ay:a.y, bx:b.x, by:b.y, ex, ey, nx, ny, len, weight,
+                    ia:cell.ids[i], ib:cell.ids[(i + 1) % sides]};
+      const sameWeight = lane.weights.get(weight);
+      if (sameWeight) sameWeight.push(edge); else lane.weights.set(weight, [edge]);
+      for (const id of [edge.ia, edge.ib]) {
+        const meeting = lane.corners.get(id);
+        if (meeting) meeting.push(edge); else lane.corners.set(id, [edge]);
+      }
+    }
+  }
+  return lanes;
+}
+// Where two frontier edges meet, their two offset lanes cross at exactly one
+// point, and that crossing is the mitre. It is the same rule whether the
+// frontier turns inside one tile or runs on into the next tile along, which is
+// the only form of it that survives a board with two tile shapes on it. Three
+// cells meet at every corner, so an empire owning one or two of them always has
+// precisely two frontier edges there; one is a border running off the horizon,
+// and a plain perpendicular offset is the honest end for it.
+function planetLaneEnd(lane, edge, cornerId, px, py, off) {
+  const d = off * edge.weight;
+  const meeting = lane.corners.get(cornerId);
+  const other = meeting && meeting.length === 2
+    ? (meeting[0] === edge ? meeting[1] : meeting[0]) : null;
+  if (other) {
+    const turn = edge.ex * other.ey - edge.ey * other.ex;
+    if (Math.abs(turn) > .12) {
+      const d2 = off * other.weight;
+      const p1x = edge.ax + edge.nx * d, p1y = edge.ay + edge.ny * d;
+      const p2x = other.ax + other.nx * d2, p2y = other.ay + other.ny * d2;
+      const t = ((p2x - p1x) * other.ey - (p2y - p1y) * other.ex) / turn;
+      // A join landing a long way off the edge it belongs to is a tile crushed
+      // by the limb, not a corner. Left alone it fires a bright spur across the
+      // globe.
+      if (Math.abs(t) < 2 * edge.len + 8) return [p1x + edge.ex * t, p1y + edge.ey * t];
+    }
+  }
+  return [px + edge.nx * d, py + edge.ny * d];
+}
+function drawPlanetFrontiers(cells) {
+  const lanes = planetFrontierLanes(cells);
+  if (!lanes.size) return;
+  cx.lineCap = "round"; cx.lineJoin = "round";
+  for (const [owner, lane] of lanes) {
+    const [dark, light] = jerseyLanes(owner);
+    // The globe's ground is the same compact strategic terrain the flat view
+    // has, so it takes the flat view's treatment: a near-black keyline reaching
+    // back across the seam for a stable silhouette, then the seam lane, then
+    // the light lane furthest inside the empire that owns it.
+    for (const [w, alpha, color, off] of [[7.6, .78, "#090d12", 1.5],
+                                          [2.8, 1, dark, 1.5],
+                                          [2.8, 1, light, 4.2]]) {
+      cx.strokeStyle = color; cx.globalAlpha = alpha;
+      for (const [weight, edges] of lane.weights) {
+        cx.lineWidth = w * weight;
+        cx.beginPath();
+        for (const edge of edges) {
+          const [x1, y1] = planetLaneEnd(lane, edge, edge.ia, edge.ax, edge.ay, off);
+          const [x2, y2] = planetLaneEnd(lane, edge, edge.ib, edge.bx, edge.by, off);
+          cx.moveTo(x1, y1); cx.lineTo(x2, y2);
+        }
+        cx.stroke();
+      }
+    }
+  }
+  cx.globalAlpha = 1; cx.lineCap = "butt"; cx.lineJoin = "miter";
+}
+
 function planetFeatureGlyph(tile) {
   if (tile.terrain === "mountain") return "▲";
   if (tile.feature === "forest") return "♠";
@@ -10367,6 +10509,11 @@ function drawPlanetMap() {
     }
     PLANET_HIT_CELLS.push({pos:tile.pos, points, z:center.z});
   }
+
+  // Frontiers go over the finished ground, the way they do on a flat board, and
+  // below everything a viewer clicks. Under a coin-sized world a tile is a
+  // pixel and its border is a smear, which is the same reason the grid stops.
+  if (radius >= SKY_MARKERS) drawPlanetFrontiers(cells);
 
   const highlighted = new Map();
   if (sel) {
