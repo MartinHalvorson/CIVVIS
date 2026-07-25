@@ -1465,6 +1465,213 @@ mod belief_runtime_tests {
             vaporized,
             "every unit the blast killed is counted against its side"
         );
+
+        // The engine's own account of the detonation, which is what a client
+        // animates and what the notification log is written from.
+        let record = game
+            .nuclear_strikes
+            .last()
+            .expect("a detonation is recorded on the game");
+        assert_eq!(record.attacker, 0);
+        assert_eq!(record.target, target);
+        assert!(record.thermonuclear);
+        assert_eq!(record.platform, "city");
+        assert_eq!(record.launched_from, game.cities[&launch].pos);
+        assert_eq!(record.blast_radius, spec.blast_radius);
+        assert_eq!(record.units_destroyed, vaporized);
+        assert_eq!(record.cities, vec![city_name.clone()]);
+        assert!(record.victims.contains(&1), "the struck civ is a victim");
+
+        // Both sides hear about it, and both entries are pinned: a log running
+        // at speed must not scroll a mushroom cloud past unread.
+        let launcher_entry = game
+            .events_for(0)
+            .into_iter()
+            .rev()
+            .find(|event| event.text.contains("thermonuclear device"))
+            .expect("the launcher's log names the detonation");
+        assert!(launcher_entry.important);
+        assert!(
+            launcher_entry.text.contains(&city_name),
+            "the entry names what it hit: {}",
+            launcher_entry.text
+        );
+        let victim_entry = game
+            .events_for(1)
+            .into_iter()
+            .rev()
+            .find(|event| event.text.contains("thermonuclear device"))
+            .expect("the victim's log names the detonation");
+        assert!(victim_entry.important);
+        assert_eq!(victim_entry.pos, Some(target));
+    }
+
+    /// An SSBN is the reason a device has a range at all rather than a launch
+    /// site: the boat carries the range to the target.
+    #[test]
+    fn a_nuclear_submarine_carries_a_device_past_its_launch_city_reach() {
+        let (mut game, cities) = game_with_capitals(91_803);
+        let launch = cities[0];
+        let home = game.cities[&launch].pos;
+        let spec = game.rules.wmds["nuclear_device"].clone();
+        game.players[0]
+            .counters
+            .insert("project_effect:nuclear_devices".to_string(), 2);
+
+        // An empty tile beyond every land platform's reach. Nothing lives there,
+        // so this isolates range from every other rule the order checks.
+        let distant = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| game.wdist(*position, home) > spec.icbm_strike_range)
+            .expect("a 24x16 map has a tile out of ICBM range");
+        game.players[0].explored.insert(distant);
+        let strike = Action::WmdStrike {
+            city: launch,
+            target: distant,
+            thermonuclear: false,
+        };
+        assert_eq!(
+            game.apply(0, &strike),
+            Err("target out of ICBM range".to_string()),
+            "no land platform reaches that far"
+        );
+
+        // A boat within range makes the same order legal, and the record says
+        // what carried it.
+        let boat = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| {
+                *position != distant && game.wdist(*position, distant) <= spec.icbm_strike_range
+            })
+            .expect("some other tile is within range of the target");
+        let submarine = game.spawn_test_unit("nuclear_submarine", 0, boat);
+        assert!(game.apply(0, &strike).is_ok());
+        let record = game.nuclear_strikes.last().expect("the strike is recorded");
+        assert_eq!(record.platform, "nuclear_submarine");
+        assert_eq!(record.launched_from, boat);
+        // The stockpile, not the boat, is what a launch spends.
+        assert_eq!(game.players[0].counters["project_effect:nuclear_devices"], 1);
+        assert!(
+            game.units.contains_key(&submarine),
+            "the boat survives its own launch"
+        );
+
+        // Sinking it takes the reach away again.
+        game.remove_unit(submarine);
+        assert_eq!(
+            game.apply(0, &strike),
+            Err("target out of ICBM range".to_string()),
+            "the range left with the boat"
+        );
+    }
+
+    /// A reloaded game has to remember the war it is in the middle of. The
+    /// ledger is a new field on a long-lived save format, so the round trip is
+    /// the thing that proves the `serde` plumbing on all four sides — struct,
+    /// save struct, and both conversions — is actually wired up.
+    #[test]
+    fn the_strike_ledger_survives_a_save_round_trip() {
+        let (mut game, cities) = game_with_capitals(91_807);
+        let (launch, struck) = (cities[0], cities[1]);
+        let target = game.cities[&struck].pos;
+        let spec = game.rules.wmds["thermonuclear_device"].clone();
+        let distance = game.wdist(game.cities[&launch].pos, target);
+        assert!(
+            distance <= spec.icbm_strike_range,
+            "fixture capitals must sit within ICBM range ({distance})"
+        );
+        game.at_war.insert(pair(0, 1));
+        game.players[0]
+            .counters
+            .insert("project_effect:thermonuclear_devices".to_string(), 1);
+        for position in game.wdisk(target, spec.blast_radius) {
+            game.players[0].explored.insert(position);
+        }
+        game.apply(
+            0,
+            &Action::WmdStrike {
+                city: launch,
+                target,
+                thermonuclear: true,
+            },
+        )
+        .unwrap();
+        assert_eq!(game.nuclear_strikes.len(), 1);
+
+        let encoded = serde_json::to_value(&game).unwrap();
+        let restored: Game = serde_json::from_value(encoded).unwrap();
+        assert_eq!(restored.nuclear_strikes, game.nuclear_strikes);
+
+        // And a save written before the ledger existed loads as an empty one
+        // rather than refusing to open.
+        let mut older = serde_json::to_value(&game).unwrap();
+        older
+            .as_object_mut()
+            .unwrap()
+            .remove("nuclear_strikes")
+            .expect("the field is written");
+        let old_save: Game = serde_json::from_value(older).unwrap();
+        assert!(old_save.nuclear_strikes.is_empty());
+    }
+
+    /// Fallout that only cost yields would make a crater the safest ground on
+    /// the map: nothing contests it, and a wounded army could sit in it and
+    /// heal.
+    #[test]
+    fn fallout_wounds_what_stands_in_it_and_stops_it_healing() {
+        let (mut game, cities) = game_with_capitals(91_805);
+        let position = game.cities[&cities[0]].owned_tiles[1];
+        let soldier = game.spawn_test_unit("warrior", 0, position);
+        game.units.get_mut(&soldier).unwrap().hp = 60;
+
+        // Clean ground: the same unit on the same tile heals.
+        assert!(
+            game.unit_heal_rate(soldier) > 0,
+            "a wounded unit heals on its own land"
+        );
+
+        game.map.tiles.get_mut(&position).unwrap().fallout_until = game.turn + 5;
+        assert!(game.fallout_at(position));
+        assert_eq!(
+            game.unit_heal_rate(soldier),
+            0,
+            "nothing recovers in fallout"
+        );
+
+        game.irradiate_units(0);
+        assert_eq!(
+            game.units[&soldier].hp,
+            60 - Game::FALLOUT_UNIT_DAMAGE,
+            "holding irradiated ground costs health every turn"
+        );
+
+        // It kills, and the death is logged where the player will see it.
+        game.units.get_mut(&soldier).unwrap().hp = Game::FALLOUT_UNIT_DAMAGE;
+        game.irradiate_units(0);
+        assert!(!game.units.contains_key(&soldier), "fallout finishes it");
+        let obituary = game
+            .events_for(0)
+            .into_iter()
+            .rev()
+            .find(|event| event.text.contains("nuclear fallout"))
+            .expect("a unit lost to fallout is logged");
+        assert!(obituary.important);
+        assert_eq!(obituary.pos, Some(position));
+
+        // Once it decays, the ground is ordinary again.
+        let survivor = game.spawn_test_unit("warrior", 0, position);
+        game.units.get_mut(&survivor).unwrap().hp = 60;
+        game.turn = game.map.tiles[&position].fallout_until;
+        assert!(!game.fallout_at(position));
+        assert!(game.unit_heal_rate(survivor) > 0);
+        game.irradiate_units(0);
+        assert_eq!(game.units[&survivor].hp, 60, "decayed fallout is harmless");
     }
 
 
@@ -9140,6 +9347,40 @@ pub struct WarHighlight {
     pub city: Option<String>,
 }
 
+/// One detonation, recorded on the game rather than reconstructed from its
+/// consequences.
+///
+/// A nuclear strike is the loudest single event a game contains, and three
+/// separate surfaces need the *same* account of it: the notification log has
+/// to name it, the war ledger has to place it in the war it was used in, and a
+/// client has to put a fireball on the tile it landed on. Diffing the board
+/// answers none of those — a halved city and a ring of fallout do not say who
+/// fired, from what, or with which device — so the engine writes the account
+/// once and everybody reads it.
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Debug)]
+pub struct NuclearStrike {
+    /// Unique for the life of the game, so a client can tell a fresh
+    /// detonation from one it has already animated without comparing fields.
+    pub id: u32,
+    pub turn: u32,
+    pub attacker: usize,
+    /// Ground zero.
+    pub target: Pos,
+    pub thermonuclear: bool,
+    /// What carried the shot — `city`, `missile_silo` or `nuclear_submarine` —
+    /// and the tile it was fired from.
+    pub platform: String,
+    pub launched_from: Pos,
+    pub blast_radius: i32,
+    pub fallout_until: u32,
+    /// Everyone whose city, unit or territory the blast touched.
+    pub victims: BTreeSet<usize>,
+    /// Cities inside the radius, named as they stood before the blast halved
+    /// them.
+    pub cities: Vec<String>,
+    pub units_destroyed: u32,
+}
+
 /// The engine's account of one bilateral front, so every client and every
 /// reloaded save tells the same story about it. All fronts opened by one
 /// declaration share `conflict`; city-states are participants in their
@@ -9822,12 +10063,20 @@ pub struct Event {
     pub turn: u32,
     /// The civilization this happened to. Events are visible only to them.
     pub player: usize,
-    /// General, Cities, War, Science, Culture, Faith, People, Diplomacy.
+    /// General, Cities, War, Nuclear, Science, Culture, Faith, People,
+    /// Diplomacy. `Nuclear` is deliberately its own category rather than a
+    /// flavour of `War`: it is the only one a client is expected to give a
+    /// distinct icon and a place at the top of the log.
     pub category: String,
     pub text: String,
     /// Where to look, when there is somewhere to look.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pos: Option<Pos>,
+    /// Too consequential to let scroll past. Set for the handful of events
+    /// whose category does not already say so — a detonation is `War`, like a
+    /// unit upgrade.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub important: bool,
 }
 
 /// Ruleset identifiers are snake_case; event text is for people.
@@ -10111,6 +10360,11 @@ pub struct Game {
     /// The wars that ended, oldest first and bounded — long enough for a
     /// client to show what a peace cost, short enough not to grow forever.
     pub concluded_wars: Vec<WarRecord>,
+    /// Every nuclear detonation, oldest first and bounded. The tail is what a
+    /// client animates and what a log describes; the whole history is not
+    /// worth carrying in every frame of a five-hundred-turn game.
+    #[serde(default)]
+    pub nuclear_strikes: Vec<NuclearStrike>,
     pub barb_pid: Option<usize>,
     pub barb_camps: BTreeMap<Pos, u32>,
     pub barb_scout_homes: BTreeMap<u32, Pos>,
@@ -10264,6 +10518,8 @@ struct GameSer {
     #[serde(default)]
     concluded_wars: Vec<WarRecord>,
     #[serde(default)]
+    nuclear_strikes: Vec<NuclearStrike>,
+    #[serde(default)]
     barb_pid: Option<usize>,
     #[serde(default)]
     barb_camps: Vec<(Pos, u32)>,
@@ -10363,6 +10619,7 @@ impl From<GameSer> for Game {
             peace_treaties: s.peace_treaties.into_iter().collect(),
             wars: s.wars.into_iter().collect(),
             concluded_wars: s.concluded_wars,
+            nuclear_strikes: s.nuclear_strikes,
             barb_pid: s.barb_pid,
             barb_camps: s.barb_camps.into_iter().collect(),
             barb_scout_homes: s.barb_scout_homes,
@@ -10505,6 +10762,7 @@ impl From<Game> for GameSer {
             peace_treaties: g.peace_treaties.into_iter().collect(),
             wars: g.wars.into_iter().collect(),
             concluded_wars: g.concluded_wars,
+            nuclear_strikes: g.nuclear_strikes,
             barb_pid: g.barb_pid,
             barb_camps: g.barb_camps.into_iter().collect(),
             barb_scout_homes: g.barb_scout_homes,
@@ -10668,6 +10926,7 @@ impl Game {
             peace_treaties: BTreeMap::new(),
             wars: BTreeMap::new(),
             concluded_wars: Vec::new(),
+            nuclear_strikes: Vec::new(),
             barb_pid: None,
             barb_camps: BTreeMap::new(),
             barb_scout_homes: BTreeMap::new(),
@@ -11178,10 +11437,37 @@ impl Game {
             category: category.to_string(),
             text,
             pos,
+            important: false,
         });
         if self.events.len() > EVENT_LIMIT {
             let excess = self.events.len() - EVENT_LIMIT;
             self.events.drain(..excess);
+        }
+    }
+
+    /// Record something that must not be missed.
+    ///
+    /// The log is a stream, and a stream at Lightning pace scrolls a routine
+    /// notice past a reader in well under a second. Category alone cannot say
+    /// which entries deserve to be held: a nuclear detonation and a unit
+    /// upgrade are both `War`. This marks the handful that are, and every
+    /// surface reading the log — a browser panel, an agent's observation —
+    /// gets the same answer about which those are.
+    pub(crate) fn note_important(
+        &mut self,
+        pid: usize,
+        category: &str,
+        text: impl Into<String>,
+        pos: Option<Pos>,
+    ) {
+        // `note` drops minor and barbarian seats, so marking the last entry
+        // blind would promote whatever unrelated event happened to precede it.
+        let before = self.events.len();
+        self.note(pid, category, text, pos);
+        if self.events.len() != before {
+            if let Some(event) = self.events.last_mut() {
+                event.important = true;
+            }
         }
     }
 
@@ -12352,9 +12638,31 @@ impl Game {
         }
     }
 
+    /// What a unit standing in nuclear fallout loses at the start of its turn.
+    ///
+    /// The shipped WMDs table carries the blast radius, the ICBM range and how
+    /// long the fallout lasts, but not what standing in it costs — the same gap
+    /// the per-ring blast damage has. This is the one number here: enough that
+    /// holding irradiated ground is a decision rather than an oversight, and
+    /// slow enough that a full-health unit can still cross a contaminated
+    /// corridor and live.
+    pub const FALLOUT_UNIT_DAMAGE: i32 = 20;
+
+    /// Is this tile contaminated right now?
+    pub fn fallout_at(&self, pos: Pos) -> bool {
+        self.map
+            .get(pos)
+            .is_some_and(|tile| tile.fallout_until > self.turn)
+    }
+
     pub fn unit_heal_rate(&self, uid: u32) -> i32 {
         let unit = &self.units[&uid];
         let spec = &self.rules.units[unit.kind.as_str()];
+        // Nothing recovers in fallout. A blast that only cost yields would make
+        // ground zero the safest place on the map to park a wounded army.
+        if self.fallout_at(unit.pos) {
+            return 0;
+        }
         // Twilight Valor: the army that fights harder cannot patch itself up
         // on somebody else's ground.
         if self.policy_effect(unit.owner, "no_healing_abroad") > 0.0
@@ -27887,14 +28195,59 @@ impl Game {
                     continue;
                 }
                 let range = self.rules.wmds[weapon].icbm_strike_range;
-                for launch in self.cities.values().filter(|c| c.owner == pid) {
-                    for enemy in self.cities.values() {
-                        if self.is_at_war(pid, enemy.owner)
-                            && p.explored.contains(&enemy.pos)
-                            && self.wdist(launch.pos, enemy.pos) <= range
+                // Hoisted once rather than rebuilt per candidate target: an
+                // SSBN's reach does not depend on which city the order names,
+                // and rescanning every unit inside a doubly-nested city loop
+                // would put the whole roster in a hot enumeration path.
+                let submarines: Vec<Pos> = self
+                    .units
+                    .values()
+                    .filter(|unit| unit.owner == pid && unit.kind == "nuclear_submarine")
+                    .map(|unit| unit.pos)
+                    .collect();
+                let launchers: Vec<(u32, Vec<Pos>)> = self
+                    .cities
+                    .values()
+                    .filter(|city| city.owner == pid)
+                    .map(|city| {
+                        let mut platforms = vec![city.pos];
+                        platforms.extend(city.owned_tiles.iter().copied().filter(|position| {
+                            self.map.tiles.get(position).is_some_and(|tile| {
+                                tile.improvement.as_deref() == Some("missile_silo")
+                                    && !tile.pillaged
+                            })
+                        }));
+                        (city.id, platforms)
+                    })
+                    .collect();
+                for enemy in self.cities.values() {
+                    if !self.is_at_war(pid, enemy.owner) || !p.explored.contains(&enemy.pos) {
+                        continue;
+                    }
+                    let mut offered = false;
+                    for (launch, platforms) in &launchers {
+                        if platforms
+                            .iter()
+                            .any(|position| self.wdist(*position, enemy.pos) <= range)
                         {
+                            offered = true;
                             acts.push(Action::WmdStrike {
-                                city: launch.id,
+                                city: *launch,
+                                target: enemy.pos,
+                                thermonuclear,
+                            });
+                        }
+                    }
+                    // A boat in range makes the target reachable from anywhere,
+                    // so offer the shot once rather than once per city.
+                    if !offered
+                        && submarines
+                            .iter()
+                            .any(|position| self.wdist(*position, enemy.pos) <= range)
+                    {
+                        if let Some((launch, _)) = launchers.first() {
+                            acts.push(Action::WmdStrike {
+                                city: *launch,
                                 target: enemy.pos,
                                 thermonuclear,
                             });
@@ -32328,6 +32681,43 @@ impl Game {
         Ok(())
     }
 
+    /// Every platform of `pid`'s that could deliver a device to `target`,
+    /// nearest first, as (distance, what carried it, where it fired from).
+    ///
+    /// A device is national stockpile rather than a unit, so the order names a
+    /// city and the question is only which of that civilization's platforms is
+    /// closest: the city center, one of that city's working Missile Silos, or —
+    /// and this is the whole point of an SSBN — a Nuclear Submarine, which
+    /// carries the device's range wherever it sails instead of waiting for the
+    /// target to come inside a silo's reach.
+    fn wmd_launch_platforms(&self, pid: usize, cid: u32, target: Pos) -> Vec<(i32, &'static str, Pos)> {
+        let mut platforms: Vec<(i32, &'static str, Pos)> = Vec::new();
+        if let Some(city) = self.cities.get(&cid).filter(|city| city.owner == pid) {
+            platforms.push((self.wdist(city.pos, target), "city", city.pos));
+            for position in &city.owned_tiles {
+                let silo = self.map.tiles.get(position).is_some_and(|tile| {
+                    tile.improvement.as_deref() == Some("missile_silo") && !tile.pillaged
+                });
+                if silo {
+                    platforms.push((self.wdist(*position, target), "missile_silo", *position));
+                }
+            }
+        }
+        for unit in self.units.values() {
+            if unit.owner == pid && unit.kind == "nuclear_submarine" {
+                platforms.push((
+                    self.wdist(unit.pos, target),
+                    "nuclear_submarine",
+                    unit.pos,
+                ));
+            }
+        }
+        platforms.sort_by_key(|(distance, platform, position)| {
+            (*distance, *platform, position.0, position.1)
+        });
+        platforms
+    }
+
     /// Launch a stockpiled device. Range, blast radius and fallout duration
     /// are the shipped WMDs rows; the per-ring unit damage is the one number
     /// the database does not carry.
@@ -32338,11 +32728,14 @@ impl Game {
         target: Pos,
         thermonuclear: bool,
     ) -> Result<(), String> {
-        let city = self
+        if self
             .cities
             .get(&cid)
             .filter(|city| city.owner == pid)
-            .ok_or_else(|| "launch city must be yours".to_string())?;
+            .is_none()
+        {
+            return Err("launch city must be yours".into());
+        }
         let device_key = if thermonuclear {
             "project_effect:thermonuclear_devices"
         } else {
@@ -32357,35 +32750,27 @@ impl Game {
         {
             return Err("no device of that type in the stockpile".into());
         }
-        let spec = &self.rules.wmds[if thermonuclear {
+        let spec = self.rules.wmds[if thermonuclear {
             "thermonuclear_device"
         } else {
             "nuclear_device"
-        }];
+        }]
+        .clone();
         if !self.map.tiles.contains_key(&target) {
             return Err("no such tile".into());
         }
         if !self.players[pid].explored.contains(&target) {
             return Err("target tile is unrevealed".into());
         }
-        // The launch platform is the city itself or any of its owned,
-        // working Missile Silos; the closest one carries the shot.
-        let range = city
-            .owned_tiles
-            .iter()
-            .filter(|position| {
-                self.map.tiles[position].improvement.as_deref() == Some("missile_silo")
-                    && !self.map.tiles[position].pillaged
-            })
-            .chain(std::iter::once(&city.pos))
-            .map(|platform| self.wdist(*platform, target))
-            .min()
-            .unwrap_or(i32::MAX);
-        if range > spec.icbm_strike_range {
-            return Err("target out of ICBM range".into());
-        }
+        // The closest platform carries the shot.
+        let (_, platform, launched_from) = self
+            .wmd_launch_platforms(pid, cid, target)
+            .into_iter()
+            .find(|(distance, _, _)| *distance <= spec.icbm_strike_range)
+            .ok_or_else(|| "target out of ICBM range".to_string())?;
         // Nuking a major you are at peace with is not a legal order.
         let blast: Vec<Pos> = self.wdisk(target, spec.blast_radius);
+        let mut targeted_owners = BTreeSet::new();
         for position in &blast {
             let victims = self
                 .units_at(*position)
@@ -32400,6 +32785,9 @@ impl Game {
                 let victim = &self.players[owner];
                 if owner != pid && !victim.is_barbarian && !self.is_at_war(pid, owner) {
                     return Err("cannot nuke a civilization you are at peace with".into());
+                }
+                if owner != pid && !victim.is_barbarian {
+                    targeted_owners.insert(owner);
                 }
             }
         }
@@ -32419,7 +32807,37 @@ impl Game {
             .filter(|(_, city)| city.owner != pid)
             .map(|(cid, city)| (cid, city.owner, city.name.clone()))
             .collect();
-        for position in blast {
+        // Everything standing in the radius before the blast, so the record can
+        // report what the device actually killed rather than what it aimed at.
+        let exposed: Vec<u32> = blast
+            .iter()
+            .flat_map(|position| self.units_at(*position))
+            .collect();
+        let exposed_military = exposed
+            .iter()
+            .filter_map(|unit| self.units.get(unit))
+            .filter(|unit| {
+                unit.owner != pid
+                    && self.rules.units[unit.kind.as_str()].class == "military"
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        for defender in &exposed_military {
+            self.record_war_unit_participation(defender, pid);
+        }
+        let launch_unit = if platform == "nuclear_submarine" {
+            self.units
+                .values()
+                .find(|unit| {
+                    unit.owner == pid
+                        && unit.kind == "nuclear_submarine"
+                        && unit.pos == launched_from
+                })
+                .cloned()
+        } else {
+            None
+        };
+        for position in blast.iter().copied() {
             if let Some(tile) = self.map.tiles.get_mut(&position) {
                 tile.fallout_until = tile.fallout_until.max(fallout_until);
             }
@@ -32458,27 +32876,135 @@ impl Game {
         // the city it hit where it hit one, and otherwise on the front whose
         // land took it.
         let mut struck_owners: BTreeSet<usize> = BTreeSet::new();
+        let mut struck_names: Vec<String> = Vec::new();
         for (_, owner, name) in struck_cities {
             struck_owners.insert(owner);
+            struck_names.push(name.clone());
             self.record_war_moment(pid, owner, "nuclear_strike", Some(name));
         }
-        for owner in aggrieved {
-            if !struck_owners.contains(&owner) {
-                self.record_war_moment(pid, owner, "nuclear_strike", None);
+        for owner in &aggrieved {
+            if !struck_owners.contains(owner) {
+                self.record_war_moment(pid, *owner, "nuclear_strike", None);
             }
         }
-        let weapon = if thermonuclear {
+        let units_destroyed = exposed
+            .into_iter()
+            .filter(|uid| !self.units.contains_key(uid))
+            .count() as u32;
+        let victims: BTreeSet<usize> = targeted_owners
+            .union(&aggrieved)
+            .copied()
+            .filter(|owner| *owner != pid)
+            .collect();
+        if let Some(launcher) = &launch_unit {
+            for owner in &victims {
+                self.record_war_unit_participation(launcher, *owner);
+            }
+        }
+        let strike = NuclearStrike {
+            id: self.allocate_conflict_id(),
+            turn: self.turn,
+            attacker: pid,
+            target,
+            thermonuclear,
+            platform: platform.to_string(),
+            launched_from,
+            blast_radius: spec.blast_radius,
+            fallout_until,
+            victims: victims.clone(),
+            cities: struck_names.clone(),
+            units_destroyed,
+        };
+        self.announce_nuclear_strike(&strike, &struck_names);
+        self.nuclear_strikes.push(strike);
+        // A client animates the tail of this list and a log describes it; the
+        // full history of a long nuclear war is not worth carrying in every
+        // frame forever.
+        const STRIKES_KEPT: usize = 32;
+        if self.nuclear_strikes.len() > STRIKES_KEPT {
+            let excess = self.nuclear_strikes.len() - STRIKES_KEPT;
+            self.nuclear_strikes.drain(..excess);
+        }
+        Ok(())
+    }
+
+    /// Tell the world. A detonation is not private news: the launcher's own
+    /// log, every civilization that lost something to it, and every other
+    /// living major all get an entry, and all three are marked important so a
+    /// log scrolling at speed holds them instead of letting the largest event
+    /// in the game slide past between two city-growth notices.
+    fn announce_nuclear_strike(&mut self, strike: &NuclearStrike, struck_names: &[String]) {
+        let attacker = strike.attacker;
+        let weapon = if strike.thermonuclear {
             "thermonuclear device"
         } else {
             "nuclear device"
         };
-        self.note(
-            pid,
-            "War",
-            format!("detonated a {weapon}"),
-            Some(target),
+        // Name the place it landed on: the city if it hit one, otherwise the
+        // civilization whose ground took it, otherwise bare coordinates.
+        let place = struck_names.first().cloned().or_else(|| {
+            strike
+                .victims
+                .iter()
+                .next()
+                .map(|victim| format!("{} territory", self.civ_name(*victim)))
+        });
+        let where_it_landed = match &place {
+            Some(place) => format!(" on {place}"),
+            None => String::new(),
+        };
+        let toll = match strike.units_destroyed {
+            0 => String::new(),
+            1 => " · 1 unit lost".to_string(),
+            count => format!(" · {count} units lost"),
+        };
+        let from = match strike.platform.as_str() {
+            "missile_silo" => " from a Missile Silo",
+            "nuclear_submarine" => " from a Nuclear Submarine",
+            _ => "",
+        };
+        self.note_important(
+            attacker,
+            "Nuclear",
+            format!("detonated a {weapon}{where_it_landed}{from}{toll}"),
+            Some(strike.target),
         );
-        Ok(())
+        let aggressor = self.civ_name(attacker);
+        for victim in strike.victims.iter().copied() {
+            // A device that lands on open ground has no city to name, and
+            // "…: was struck" is not a sentence. Name the ground instead.
+            let hit = match struck_names.first() {
+                Some(city) => format!("{city} was struck"),
+                None => format!("{} territory was struck", self.civ_name(victim)),
+            };
+            self.note_important(
+                victim,
+                "Nuclear",
+                format!("{aggressor} detonated a {weapon}: {hit}{toll}"),
+                Some(strike.target),
+            );
+        }
+        // Nobody misses a mushroom cloud, whatever the fog says.
+        let bystanders: Vec<usize> = self
+            .players
+            .iter()
+            .filter(|player| {
+                player.alive
+                    && !player.is_minor
+                    && !player.is_barbarian
+                    && player.id != attacker
+                    && !strike.victims.contains(&player.id)
+            })
+            .map(|player| player.id)
+            .collect();
+        for bystander in bystanders {
+            self.note_important(
+                bystander,
+                "Nuclear",
+                format!("{aggressor} detonated a {weapon}{where_it_landed}"),
+                Some(strike.target),
+            );
+        }
     }
 
     fn do_city_strike(&mut self, pid: usize, cid: u32, target: Pos) -> Result<(), String> {
@@ -37481,6 +38007,40 @@ impl Game {
 
     // ------------------------------------------------------- turn engine
 
+    /// Bleed every one of `pid`'s units that is standing in fallout.
+    ///
+    /// A blast that only zeroed a tile's yields would deny nothing: the crater
+    /// is the last place a defender would want to stand and exactly the place
+    /// it could stand for free. Charged at the start of the owner's turn, so a
+    /// unit that walks in and out inside one turn pays nothing and one that
+    /// holds the ground pays every turn it holds it. Fatalities go through the
+    /// same removal path as any other death, so a unit killed by fallout is
+    /// counted, logged and unlinked like one killed in battle.
+    fn irradiate_units(&mut self, pid: usize) {
+        for uid in self.player_unit_ids(pid) {
+            let Some(unit) = self.units.get(&uid) else {
+                continue;
+            };
+            if !self.fallout_at(unit.pos) {
+                continue;
+            }
+            let position = unit.pos;
+            let hp = unit.hp - Self::FALLOUT_UNIT_DAMAGE;
+            if hp <= 0 {
+                let kind = pretty(&self.units[&uid].kind);
+                self.remove_unit(uid);
+                self.note_important(
+                    pid,
+                    "Nuclear",
+                    format!("lost a {kind} to nuclear fallout"),
+                    Some(position),
+                );
+            } else {
+                self.units.get_mut(&uid).unwrap().hp = hp;
+            }
+        }
+    }
+
     fn begin_turn(&mut self, pid: usize) {
         self.process_anarchy(pid);
         self.process_levies(pid);
@@ -37500,6 +38060,7 @@ impl Game {
         self.process_loyalty(pid);
         self.record_emergency_presence(pid);
         self.process_influence(pid);
+        self.irradiate_units(pid);
         for uid in self.player_unit_ids(pid) {
             let (kind, hp, acted, attacks_left, air_patrol) = {
                 let u = &self.units[&uid];
