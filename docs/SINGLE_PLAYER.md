@@ -90,7 +90,7 @@ the action from the UI without a debugger.
 | Turn loop | `end_turn` | yes — blockers, notifications, unit cycling |
 | Unit orders | `move`, `move_to`, `attack`, `ranged`, `fortify`, `promote`, `upgrade`, `improve`, `pillage`, `repair_improvement`, air ops, religious ops | yes — contextual unit bar |
 | Research | `research`, `civic` | yes — cards and both trees |
-| Cities | `produce`, `buy` | partial — production and unit purchase; no queue, no building/district purchase, no district siting |
+| Cities | `produce`, `buy`, `buy_building`, `buy_district` | yes — city screen; there is no production *queue* because the engine has none (`do_produce` replaces `city.queue`) |
 | Government | `government`, `slot_policy`, `unslot_policy` | yes — Empire ▸ Government |
 | Religion | `choose_pantheon`, `found_religion`, `evangelize_belief` | yes — Empire ▸ Religion |
 | Great People | `recruit_great_person`, `patronize_great_person` | yes — Empire ▸ Great People, though it cannot name the person on offer |
@@ -105,10 +105,9 @@ the action from the UI without a debugger.
 | Setup | difficulty, leader choice | no — CLI flags only |
 
 Rows marked "no" or "partial" are the remaining work, in roughly that order of
-value to a player. What is left is the city screen — no production queue, no
-buying a building or a district, no choosing where a district goes — and the
-setup screen, which still says "Single player · later" and cannot pick a
-leader or a difficulty even though `/new` now takes both.
+value to a player. What is left is the setup screen, which still says
+"Single player · later" and cannot pick a leader or a difficulty even though
+`/new` takes both.
 
 ## The Empire panel
 
@@ -145,6 +144,28 @@ war with a city-state startable and never endable.
 
 Barbarians are permanently at war with everyone and are not a power; they are
 not listed and are not counted in the "at war with N" line.
+## The city screen
+
+The sidebar panel is the glance; the city screen is the desk. Left: what the
+city *is* — six yields, growth, housing, amenities, loyalty, its districts,
+buildings, wonders and citizens. Right: everything it *could* start, grouped
+Districts, Buildings, Units, Wonders, Projects, each with its cost, its turns
+at the current production, and a Produce or Buy button where the engine allows
+one.
+
+Two things it does deliberately:
+
+- **A district names its tiles.** Where a district goes is most of what it is
+  worth, so an item with more than one candidate site shows the sites rather
+  than one arbitrary one.
+- **It describes what it sells.** The ruleset carries no prose for units,
+  buildings or districts, so the note is synthesised from the numbers —
+  strength and movement, yields and housing, upkeep. A production list without
+  that is a list of prices.
+
+There is no production queue, and that is an engine fact rather than a client
+gap: `do_produce` sets `city.queue = vec![item]`. Adding a real queue is engine
+work.
 
 ## Keys
 
