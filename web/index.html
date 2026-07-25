@@ -9849,18 +9849,36 @@ function planetCells(camera, scale, centerX, centerY) {
 // so a body's largest possible apparent size is size/orbit of the stage — which
 // is what the orbits are really tuned to. Each one is set to come in about
 // three zoom steps after the last and to be worth looking at when it does; the
-// floor keeps it from dissolving once the camera has gone past it. Their
-// bearings are fixed so the system is somewhere rather than rearranged each
-// frame: the Moon up and right of home, Mars down and left, and the exoplanet
-// out to the right where the expedition is headed.
+// floor keeps it from dissolving once the camera has gone past it. The Moon and
+// Mars are their real fractions of the Earth; the exoplanet is deliberately not
+// — a world twice the size of home is a reason to cross fifty light-years for
+// it, and it is the one body out here nobody has ever measured anyway.
+//
+// All three bearings point the same way, into the lower right, so the system is
+// one chain leaving home rather than three unrelated directions. Zooming out is
+// then a single motion: the Moon swings in from the bottom right corner, Mars
+// follows it up the same diagonal, and the exoplanet comes in last behind both.
+// `frequency` is that world's own tiling — the same hexagons-and-twelve-
+// pentagons construction the Earth has, coarser on a smaller world so a tile is
+// about the same size on screen whichever one you are standing over.
 const SKY_BODIES = [
-  {id:"moon", name:"The Moon",  orbit:6.4, size:.272, floor:3,   bearing:-.58,
-   tint:"#c3c6cb", dark:"#31333a"},
-  {id:"mars", name:"Mars",      orbit:18,  size:.532, floor:4.5, bearing:2.72,
-   tint:"#c8683c", dark:"#3d1d13"},
-  {id:"exo",  name:"Exoplanet", orbit:52,  size:1.15, floor:7.5, bearing:-.10,
-   tint:"#6ec7b2", dark:"#123a3d"},
+  {id:"moon", name:"The Moon",  orbit:6.4, size:.272, floor:3,   bearing:.42,
+   tint:"#c3c6cb", dark:"#31333a", frequency:9,  seed:1721},
+  {id:"mars", name:"Mars",      orbit:18,  size:.532, floor:4.5, bearing:.56,
+   tint:"#c8683c", dark:"#3d1d13", frequency:11, seed:4409},
+  {id:"exo",  name:"Exoplanet", orbit:52,  size:2,    floor:7.5, bearing:.68,
+   tint:"#6ec7b2", dark:"#123a3d", frequency:14, seed:9137},
 ];
+// Home, written the same way, so the camera can treat the world underfoot as
+// one body among four instead of as a special case everywhere.
+const SKY_EARTH = {id:"earth", name:"Earth", orbit:0, size:1, bearing:0};
+function skyWorlds() { return [SKY_EARTH, ...SKY_BODIES]; }
+function skyBody(id) { return skyWorlds().find(body => body.id === id) || null; }
+// Where a body sits, in Earth radii from the Earth. The arrangement is fixed;
+// the camera is the only thing that moves.
+function skyBodyPos(body) {
+  return [Math.cos(body.bearing) * body.orbit, Math.sin(body.bearing) * body.orbit];
+}
 // The far end of the zoom is the shot that holds the whole system: the
 // outermost body just inside the stage, and no smaller an Earth than that
 // needs. A world this small is a dot, but it is a dot with everything it ever
@@ -9877,9 +9895,342 @@ const SKY_CHAIN = {
   satellite:"launch_earth_satellite", moon:"launch_moon_landing",
   mars:"launch_mars_colony", expedition:"exoplanet_expedition",
 };
+// When a body stops being a marble and starts being a place. Its own ground
+// fades in over the painted ball, and the threshold cannot be one number for
+// all three: a tile is about `2 * r / frequency` across, so a world carrying
+// twice the tiles needs twice the disc before any of them can be told apart.
+// Below this the mesh is mush and the marble already says everything.
+function skyGroundFade(place) {
+  const start = 3 * place.frequency;
+  return Math.max(0, Math.min(1, (place.r - start) / (3 * place.frequency)));
+}
 
 function planetEarthRadius(scale = cam.scale) {
   return WW() / (2 * Math.PI) * scale;
+}
+
+// ------------------------------------------------- the other worlds' tilings
+// Earth's tiling belongs to the game and comes from the server, because units
+// stand on it. The other three are not played on, so theirs is built here — by
+// the same construction, which is the point: subdivide an icosahedron, take its
+// vertices as cell centres and the triangle centroids around each one as that
+// cell's corners. That is what puts hexagons everywhere and exactly twelve
+// pentagons on every world, so the Moon and Mars are recognisably the same kind
+// of object as the world you play on rather than textured spheres.
+const ICO_X = .5257311121191336, ICO_Z = .8506508083520399;
+const ICO_VERTICES = [
+  [-ICO_X, 0, ICO_Z], [ICO_X, 0, ICO_Z], [-ICO_X, 0, -ICO_Z], [ICO_X, 0, -ICO_Z],
+  [0, ICO_Z, ICO_X], [0, ICO_Z, -ICO_X], [0, -ICO_Z, ICO_X], [0, -ICO_Z, -ICO_X],
+  [ICO_Z, ICO_X, 0], [-ICO_Z, ICO_X, 0], [ICO_Z, -ICO_X, 0], [-ICO_Z, -ICO_X, 0],
+];
+const ICO_FACES = [
+  [0, 4, 1], [0, 9, 4], [9, 5, 4], [4, 5, 8], [4, 8, 1], [8, 10, 1], [8, 3, 10],
+  [5, 3, 8], [5, 2, 3], [2, 7, 3], [7, 10, 3], [7, 6, 10], [7, 11, 6], [11, 0, 6],
+  [0, 1, 6], [6, 1, 10], [9, 0, 11], [9, 11, 2], [9, 2, 5], [7, 2, 11],
+];
+function skyGlobeMesh(frequency) {
+  const step = Math.max(2, Math.round(frequency));
+  const points = [], index = new Map(), triangles = [];
+  // Two faces meet along an edge and each computes that edge's points from its
+  // own corners, so the same point arrives twice with the last bit different.
+  // Rounding alone splits such a pair whenever it straddles a bucket boundary
+  // and leaves a crack in the world, so the neighbouring buckets are searched
+  // too — at these frequencies no two distinct cells are anywhere near that
+  // close, and the seam closes exactly.
+  const intern = point => {
+    const length = Math.hypot(point[0], point[1], point[2]) || 1;
+    const unit = [point[0] / length, point[1] / length, point[2] / length];
+    const cell = unit.map(value => Math.round(value * 1e5));
+    for (let dx = -1; dx <= 1; dx++)
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dz = -1; dz <= 1; dz++) {
+          const found = index.get(`${cell[0] + dx},${cell[1] + dy},${cell[2] + dz}`);
+          if (found !== undefined) return found;
+        }
+    index.set(`${cell[0]},${cell[1]},${cell[2]}`, points.length);
+    points.push(unit);
+    return points.length - 1;
+  };
+  for (const [a, b, c] of ICO_FACES) {
+    const A = ICO_VERTICES[a], B = ICO_VERTICES[b], C = ICO_VERTICES[c];
+    const rows = [];
+    for (let i = 0; i <= step; i++) {
+      const row = [], u = i / step;
+      for (let j = 0; j <= i; j++) {
+        const v = i ? j / i : 0, point = [0, 0, 0];
+        for (let axis = 0; axis < 3; axis++)
+          point[axis] = A[axis] + (B[axis] - A[axis]) * u * (1 - v)
+                                + (C[axis] - A[axis]) * u * v;
+        row.push(intern(point));
+      }
+      rows.push(row);
+    }
+    for (let i = 1; i <= step; i++)
+      for (let j = 0; j < i; j++) {
+        triangles.push([rows[i - 1][j], rows[i][j], rows[i][j + 1]]);
+        if (j + 1 < i) triangles.push([rows[i - 1][j], rows[i][j + 1], rows[i - 1][j + 1]]);
+      }
+  }
+  const centroids = triangles.map(triangle => {
+    let x = 0, y = 0, z = 0;
+    for (const id of triangle) { x += points[id][0]; y += points[id][1]; z += points[id][2]; }
+    const length = Math.hypot(x, y, z) || 1;
+    return [x / length, y / length, z / length];
+  });
+  const touching = points.map(() => []);
+  triangles.forEach((triangle, id) => { for (const point of triangle) touching[point].push(id); });
+  return points.map((center, id) => {
+    // The corners come out of the triangle list in no particular order, so they
+    // are wound into a ring by their angle in the tangent plane at the centre.
+    // Without that the polygon is a star and the world looks shattered.
+    const away = Math.abs(center[0]) < .9 ? [1, 0, 0] : [0, 1, 0];
+    const east = [center[1] * away[2] - center[2] * away[1],
+                  center[2] * away[0] - center[0] * away[2],
+                  center[0] * away[1] - center[1] * away[0]];
+    const span = Math.hypot(east[0], east[1], east[2]) || 1;
+    for (let axis = 0; axis < 3; axis++) east[axis] /= span;
+    const north = [center[1] * east[2] - center[2] * east[1],
+                   center[2] * east[0] - center[0] * east[2],
+                   center[0] * east[1] - center[1] * east[0]];
+    const corners = touching[id]
+      .map(triangle => centroids[triangle])
+      .map(corner => ({corner, angle:Math.atan2(
+        corner[0] * north[0] + corner[1] * north[1] + corner[2] * north[2],
+        corner[0] * east[0] + corner[1] * east[1] + corner[2] * east[2])}))
+      .sort((a, b) => a.angle - b.angle)
+      .map(entry => entry.corner);
+    return {center, corners};
+  });
+}
+
+// Ground colour, and the noise that decides it. A sum of plane waves in random
+// directions is smooth over the whole sphere and has no seam and no pole to
+// give the projection away — which a grid of noise wrapped onto a globe always
+// does, right where the ice cap is and you are most likely to be looking.
+function skyWaves(seed, count, low, high) {
+  const waves = [];
+  for (let i = 0; i < count; i++) {
+    const z = 2 * hash2(seed + i, 17) - 1;
+    const around = 6.283 * hash2(seed + i, 29);
+    const ring = Math.sqrt(Math.max(0, 1 - z * z));
+    waves.push({
+      dx:ring * Math.cos(around), dy:ring * Math.sin(around), dz:z,
+      k:low + (high - low) * hash2(seed + i, 37),
+      phase:6.283 * hash2(seed + i, 43),
+      amp:1 / (1 + i * .11),
+    });
+  }
+  return waves;
+}
+function skyNoise(waves, point) {
+  let sum = 0, total = 0;
+  for (const wave of waves) {
+    sum += wave.amp * Math.sin(
+      wave.k * (wave.dx * point[0] + wave.dy * point[1] + wave.dz * point[2]) + wave.phase);
+    total += wave.amp;
+  }
+  return sum / (total || 1);
+}
+// Rank, not value. A sum of sine waves piles up near its own mean, so a
+// threshold written as a number is a lottery: `noise < -.3` was a third of one
+// world and none of the next, and the moon came out three-quarters a single
+// flat grey. Ranking turns every threshold into *the fraction of the world it
+// covers*, which is the thing actually being chosen — 58% of the exoplanet is
+// ocean because that line says .58.
+function skyRanks(values) {
+  const order = values.map((value, index) => [value, index]).sort((a, b) => a[0] - b[0]);
+  const ranks = new Array(values.length);
+  const last = Math.max(1, values.length - 1);
+  order.forEach(([, index], place) => { ranks[index] = place / last; });
+  return ranks;
+}
+// One rule per world, reading the same two ranked fields: `broad` is the shape
+// of the ground and `fine` is what has happened to it since. Both run 0 to 1.
+const SKY_GROUND = {
+  // Maria are the dark floods the near side is famous for; everything else is
+  // the pale battered highland, with the brightest fine noise as the rays of
+  // ejecta thrown out of a young crater.
+  moon(point, broad, fine) {
+    if (broad < .34) return fine > .78 ? "#585d66" : "#464a53";
+    if (fine > .90) return "#d3d7dd";
+    if (fine < .10) return "#787e88";
+    return broad > .74 ? "#b3b8c0" : "#9aa0a9";
+  },
+  // Rust everywhere, dark volcanic plain where the ground is low, wind-blown
+  // dust where it is high, and a cap at each pole. The caps are latitude, not
+  // noise: they are the one feature of this world everybody can already picture.
+  mars(point, broad, fine) {
+    const polar = Math.abs(point[2]);
+    if (polar > .95 + (fine - .5) * .04) return "#e9eff3";
+    if (polar > .90 + (fine - .5) * .05) return "#d5ccc1";
+    if (broad < .26) return fine < .5 ? "#5f3120" : "#6f3a26";
+    if (broad > .72) return fine > .6 ? "#dfa273" : "#cf8a58";
+    return fine < .22 ? "#9c4d2d" : "#b45c36";
+  },
+  // A living world, which is the whole reason for the fifty-light-year trip:
+  // ocean, shelf, forest, a highland spine, and ice at both ends.
+  exo(point, broad, fine) {
+    const polar = Math.abs(point[2]);
+    if (polar > .93 + (fine - .5) * .04) return "#dbeef2";
+    if (broad < .30) return "#0f4954";
+    if (broad < .58) return "#17697a";
+    if (broad < .64) return "#2b8f93";
+    if (broad > .90) return fine > .5 ? "#a9c78a" : "#7fae6e";
+    return fine > .62 ? "#63a869" : "#4a9159";
+  },
+};
+// Built the first time a world is close enough to show its ground, and kept:
+// the tiling is a property of the world, exactly as Earth's is.
+const SKY_GLOBES = new Map();
+function skyGlobe(body) {
+  let globe = SKY_GLOBES.get(body.id);
+  if (globe) return globe;
+  const cells = skyGlobeMesh(body.frequency);
+  const shape = skyWaves(body.seed, 9, 1.1, 3.3);
+  const weather = skyWaves(body.seed + 101, 11, 5, 15);
+  const broad = skyRanks(cells.map(cell => skyNoise(shape, cell.center)));
+  const fine = skyRanks(cells.map(cell => skyNoise(weather, cell.center)));
+  const paint = SKY_GROUND[body.id] || SKY_GROUND.moon;
+  globe = cells.map((cell, index) =>
+    ({...cell, fill:paint(cell.center, broad[index], fine[index])}));
+  SKY_GLOBES.set(body.id, globe);
+  return globe;
+}
+
+// Each world remembers the face it was last turned to, the way the Earth
+// remembers it in `cam.x` and `cam.y`. Started somewhere off the prime meridian
+// so arriving at one is not the same dead-on shot every time.
+const SKY_VIEWS = new Map();
+function skyView(id) {
+  let view = SKY_VIEWS.get(id);
+  if (!view) {
+    const body = skyBody(id);
+    view = {longitude:6.283 * hash2(body ? Math.round(body.orbit * 10) : 0, 53),
+            latitude:(hash2(body ? Math.round(body.orbit * 10) : 0, 59) - .5) * .8};
+    SKY_VIEWS.set(id, view);
+  }
+  return view;
+}
+// The same orthographic camera the Earth is drawn with, so a world out here is
+// turned by the same arithmetic and reads as the same kind of thing.
+function skyBodyCamera(id) {
+  const view = skyView(id);
+  return {longitude:view.longitude, latitude:view.latitude, roll:0, radius:1};
+}
+
+// Where the stage centre is, in Earth radii out from the Earth's own centre.
+// Zero is the camera looking at home, which is every case the surface view has
+// ever known; anything else is the camera out in the system, and it is the one
+// piece of state that lets zooming in on Mars be the same gesture as zooming in
+// on a city.
+let SKY_PAN = {x:0, y:0};
+function skyReturnHome() { SKY_PAN = {x:0, y:0}; }
+function planetEarthCenter(radius = planetEarthRadius()) {
+  const [stageX, stageY] = planetStageCenter();
+  return [stageX - SKY_PAN.x * radius, stageY - SKY_PAN.y * radius];
+}
+// The world the camera is actually looking at: the one big enough to fill the
+// stage and standing near the middle of it. Dragging means turn-this-world when
+// there is an answer and move-the-camera when there is not, which is what makes
+// every body scrollable without a mode to switch between them.
+function skyFocusBody() {
+  const radius = planetEarthRadius();
+  let best = null;
+  for (const body of skyWorlds()) {
+    const drawn = Math.max(body.floor || 0, body.size * radius);
+    if (drawn < SKY_SURFACE) continue;
+    const [px, py] = skyBodyPos(body);
+    const away = Math.hypot(px - SKY_PAN.x, py - SKY_PAN.y) * radius;
+    if (away > drawn) continue;   // the stage is not over this world at all
+    if (!best || drawn > best.drawn) best = {body, drawn};
+  }
+  return best;
+}
+
+// How strongly a world is claiming the camera: big on the stage and near the
+// middle of it. Size alone cannot decide — zoom in on the Moon and the Earth is
+// four times its width, but it is also six diameters off the edge of the
+// screen, so it is not what anyone is looking at.
+function skyGrip(body, radius, stageX, stageY) {
+  const drawn = Math.max(body.floor || 0, body.size * radius);
+  const [px, py] = skyBodyPos(body);
+  const away = Math.hypot(px - SKY_PAN.x, py - SKY_PAN.y) * radius;
+  const reach = Math.max(140, Math.min(area.clientWidth, area.clientHeight) * .55);
+  const near = Math.max(0, 1 - away / (reach + drawn));
+  // Nothing claims the camera until it is at least half a stage wide. Set any
+  // lower and the outermost body owns the full-system shot — it is the biggest
+  // disc in that picture — and zooming all the way out lands on the exoplanet
+  // with home off the side of the screen.
+  const large = Math.max(0, Math.min(1, (drawn / SKY_SURFACE - .55) / .45));
+  return large * near;
+}
+// Zooming in on a world is meant to arrive at it. Held to the pointer alone the
+// last few steps leave the body clinging to the cursor at the edge of the
+// stage, so once one world is plainly the subject the camera eases onto it —
+// and when none of them is, it eases back onto the shot that holds the whole
+// system, which is what makes zooming out of Mars return to the space view
+// rather than to an empty patch of sky where Mars used to be.
+function skySettleCamera(radius, zoom) {
+  const [stageX, stageY] = planetStageCenter();
+  let best = null;
+  for (const body of skyWorlds()) {
+    const grip = skyGrip(body, radius, stageX, stageY);
+    if (!best || grip > best.grip) best = {grip, at:skyBodyPos(body)};
+  }
+  let target, ease;
+  if (best && best.grip > .02) {
+    target = best.at;
+    ease = .18 + .55 * best.grip;
+  } else if (zoom < 1) {
+    // Only on the way out. Coming back in the pointer is the authority, and
+    // this pull applied to a zoom-in is a headwind: it cancels the zoom about a
+    // third of the way there, shoves the camera back out along the chain, and
+    // the Moon — small enough to need a dozen steps — never arrives at all.
+    const frame = skySystemFrame();
+    target = [frame.x, frame.y];
+    ease = .60 * Math.max(0, Math.min(1, frame.radius * 2.2 / Math.max(1e-3, radius) - .55));
+  } else return;
+  SKY_PAN = {x:SKY_PAN.x + (target[0] - SKY_PAN.x) * ease,
+             y:SKY_PAN.y + (target[1] - SKY_PAN.y) * ease};
+  // Within a pixel of the mark, sit on it exactly: a globe that fills the stage
+  // has to be centred on it, not a third of a pixel off for ever.
+  if (Math.abs(SKY_PAN.x - target[0]) * radius < 1) SKY_PAN.x = target[0];
+  if (Math.abs(SKY_PAN.y - target[1]) * radius < 1) SKY_PAN.y = target[1];
+}
+
+// With no pointer to aim by — the corner buttons, the keyboard — a zoom still
+// has to aim at something, and the middle of the full-system shot is empty sky
+// between Mars and the exoplanet. Aim at the nearest world instead, counting a
+// large one as nearer than a pebble at the same distance, so zooming in always
+// arrives somewhere rather than magnifying the dark.
+function skyZoomAnchor(radius, stageX, stageY) {
+  const [px, py] = skyBodyPos(skyNearestWorld());
+  return [stageX + (px - SKY_PAN.x) * radius, stageY + (py - SKY_PAN.y) * radius];
+}
+
+// A drag out here means whatever the camera is looking at. Over a world it
+// turns that world — the same gesture that turns the Earth, done on the Moon or
+// on Mars — and out in the space view, where no world fills the stage, it moves
+// the camera through the system instead. The Earth is the one case this hands
+// back: it is steered through `cam.x` and `cam.y` because units stand on it.
+function skyDragApply(drag, dx, dy) {
+  if (!planetMap()) return false;
+  const focus = skyFocusBody();
+  if (focus && focus.body.id === "earth") return false;
+  if (focus) {
+    const view = skyView(focus.body.id);
+    if (!drag.skyTurn) drag.skyTurn = {longitude:view.longitude, latitude:view.latitude};
+    // A pixel at the middle of a ball of this size is one over its radius in
+    // radians, so the ground keeps up with the pointer instead of sliding.
+    const turn = 1 / Math.max(12, focus.drawn);
+    view.longitude = drag.skyTurn.longitude - dx * turn;
+    view.latitude = Math.max(-1.45, Math.min(1.45, drag.skyTurn.latitude + dy * turn));
+    return true;
+  }
+  const radius = Math.max(.001, planetEarthRadius());
+  if (!drag.skyPan) drag.skyPan = {x:SKY_PAN.x, y:SKY_PAN.y};
+  SKY_PAN = {x:drag.skyPan.x - dx / radius, y:drag.skyPan.y - dy / radius};
+  return true;
 }
 // Every HUD widget the sky has to stay clear of, measured where it actually
 // is. Neither existing answer survives this: `observedFrameRect` reserves a
@@ -9896,41 +10247,58 @@ function skyWidgetBoxes() {
   }
   return boxes;
 }
-// Where a ray leaves the canvas or meets a widget, whichever comes first — the
-// slab test, so a widget off to one side of the bearing is correctly ignored.
-function skyRayLimit(x, y, dx, dy, box) {
-  let near = -Infinity, far = Infinity;
-  for (const [origin, dir, lo, hi] of
-       [[x, dx, box.left, box.right], [y, dy, box.top, box.bottom]]) {
-    if (Math.abs(dir) < 1e-6) {
-      if (origin < lo || origin > hi) return Infinity;
-      continue;
-    }
-    const a = (lo - origin) / dir, b = (hi - origin) / dir;
-    near = Math.max(near, Math.min(a, b));
-    far = Math.min(far, Math.max(a, b));
+// The shot that holds the whole system: every body inside the stage at once.
+// It is a rectangle problem, not a ray one — the camera can be anywhere out
+// here now, so the answer is the bounding box of the arrangement fitted to the
+// frame, which also says where the camera has to be standing to see it. That
+// makes it a property of the window rather than a number: a wider screen holds
+// the same system with a bigger Earth in it.
+function skySystemFrame() {
+  const frame = observedFrameRect();
+  const padding = Math.min(44, (frame.right - frame.left) * .07,
+                           (frame.bottom - frame.top) * .09);
+  const width = Math.max(80, frame.right - frame.left - padding * 2);
+  const height = Math.max(80, frame.bottom - frame.top - padding * 2);
+  let minX = -1, maxX = 1, minY = -1, maxY = 1;
+  for (const body of SKY_BODIES) {
+    const [x, y] = skyBodyPos(body);
+    minX = Math.min(minX, x - body.size); maxX = Math.max(maxX, x + body.size);
+    minY = Math.min(minY, y - body.size); maxY = Math.max(maxY, y + body.size);
   }
-  return far < Math.max(0, near) ? Infinity : Math.max(0, near);
+  return {
+    x:(minX + maxX) / 2, y:(minY + maxY) / 2,
+    radius:Math.max(SKY_MIN_EARTH, Math.min(width / (maxX - minX), height / (maxY - minY))),
+  };
 }
-function skyReach(bearing, centerX, centerY) {
-  const dx = Math.cos(bearing), dy = Math.sin(bearing);
-  const edge = (origin, dir, span) => Math.abs(dir) < 1e-6 ? Infinity
-    : (dir > 0 ? span - origin : origin) / Math.abs(dir);
-  let reach = Math.min(edge(centerX, dx, area.clientWidth),
-                       edge(centerY, dy, area.clientHeight));
-  for (const box of skyWidgetBoxes())
-    reach = Math.min(reach, skyRayLimit(centerX, centerY, dx, dy, box));
-  return Math.max(40, reach);
-}
-// Zooming out stops where the picture is complete: the outermost body inside
-// the stage. That is a property of the window, not a number — a wider screen
-// holds the same system with a bigger Earth in it.
+// Zooming out stops where that picture is complete.
 function planetMinScale() {
-  const [centerX, centerY] = planetStageCenter();
-  const outer = SKY_BODIES[SKY_BODIES.length - 1];
-  const fits = skyReach(outer.bearing, centerX, centerY) * .84 / outer.orbit;
-  return Math.min(.08, Math.max(SKY_MIN_EARTH, fits) /
-                       Math.max(1, WW() / (2 * Math.PI)));
+  return Math.min(.08, skySystemFrame().radius / Math.max(1, WW() / (2 * Math.PI)));
+}
+// The world the camera is heading for, by the same reckoning the buttons aim
+// by: nearest, with a large world counting as nearer than a pebble beside it.
+function skyNearestWorld() {
+  let best = null;
+  for (const body of skyWorlds()) {
+    const [px, py] = skyBodyPos(body);
+    const away = Math.hypot(px - SKY_PAN.x, py - SKY_PAN.y) / (body.size + 2);
+    if (!best || away < best.away) best = {away, body};
+  }
+  return best ? best.body : SKY_EARTH;
+}
+// Zooming in stops differently depending on which world it is. Earth is a
+// place and the zoom runs right down to the tile, because there is a city on
+// it. The others are things to look at: nothing lives under a Martian hexagon,
+// so the zoom stops with that world filling the frame rather than carrying on
+// until the camera is inside one ocean tile of somebody else's planet.
+function planetMaxScale() {
+  const body = skyNearestWorld();
+  if (body.id === "earth") return 3.2;
+  // Past the flat map's own ceiling where it has to be: the Moon is a quarter
+  // of the Earth, so filling the frame with it costs four times the Earth's
+  // closest zoom, and stopping at 3.2 would leave the one body nobody can miss
+  // permanently the smallest thing on screen.
+  const stage = Math.max(160, Math.min(area.clientWidth, area.clientHeight));
+  return Math.min(6, stage * .58 / body.size / Math.max(1, WW() / (2 * Math.PI)));
 }
 // How much of the picture is space rather than surface: 0 while the globe still
 // fills the stage, 1 once it is a marble among others.
@@ -9953,12 +10321,12 @@ function skyCrewFor(crews, body) {
   return body.id === "moon" ? crews.moon : body.id === "mars" ? crews.mars : [];
 }
 function skyPlacement(body, radius, centerX, centerY) {
-  const distance = body.orbit * radius;
+  const [px, py] = skyBodyPos(body);
   return {
     ...body,
-    x:centerX + Math.cos(body.bearing) * distance,
-    y:centerY + Math.sin(body.bearing) * distance,
-    r:Math.max(body.floor, body.size * radius),
+    x:centerX + px * radius,
+    y:centerY + py * radius,
+    r:Math.max(body.floor || 0, body.size * radius),
   };
 }
 // Reached means standing on canvas and out from behind the HUD. The margin
@@ -9971,10 +10339,19 @@ function skyOnStage(x, y, margin = 0) {
     x > box.left - margin && x < box.right + margin &&
     y > box.top - margin && y < box.bottom + margin);
 }
-function skyOnScreen(place) {
-  // The disc has to be clear, not the caption: the text is stroked dark and a
-  // few pixels of it grazing the rail costs less than dropping a whole world
-  // that fits.
+// A body is drawn wherever it lands on the canvas, HUD or no HUD. The widgets
+// are elements standing over the map, so a world passing under one is simply
+// behind it and comes back out the other side — which is what has to happen
+// now that the whole system arrives from the lower right, straight across the
+// corner the world map sits in. Dropping it there instead made it blink.
+function skyOnCanvas(place) {
+  const margin = place.r + 40;
+  return place.x > -margin && place.x < area.clientWidth + margin &&
+         place.y > -margin && place.y < area.clientHeight + margin;
+}
+// The caption is the part that must stay clear: stacked text sliding under the
+// rail is unreadable in a way a half-covered disc is not.
+function skyCaptionClear(place) {
   return skyOnStage(place.x, place.y, place.r + 8);
 }
 
@@ -10033,6 +10410,82 @@ function drawSkyBall(place, alpha) {
   cx.restore();
 }
 
+// Close enough, the ball is a world: its own tiling, turned to whatever face it
+// was last dragged to and lit from the same side the Earth is. It fades in over
+// the painted ball rather than replacing it, so nothing pops — and the ball
+// underneath goes on supplying the limb the tiles never quite reach.
+function drawSkyGlobe(place, alpha) {
+  const camera = skyBodyCamera(place.id);
+  const cells = [];
+  for (const cell of skyGlobe(place)) {
+    const center = planetProject(cell.center, camera, place.r, place.x, place.y);
+    if (center.z <= -.03) continue;
+    const points = cell.corners.map(corner =>
+      planetProject(corner, camera, place.r, place.x, place.y));
+    // A tile straddling the limb has corners behind the horizon; pushing those
+    // out to the limb keeps the silhouette a circle, exactly as on Earth.
+    for (const point of points) {
+      if (point.z >= 0) continue;
+      const dx = point.x - place.x, dy = point.y - place.y;
+      const length = Math.hypot(dx, dy) || 1;
+      point.x = place.x + dx * place.r / length;
+      point.y = place.y + dy * place.r / length;
+    }
+    cells.push({fill:cell.fill, points, z:center.z});
+  }
+  cells.sort((a, b) => a.z - b.z);
+  cx.save();
+  cx.globalAlpha = alpha;
+  // The grid is what says hexagons-and-pentagons rather than mottling, but
+  // until a tile is a good twenty pixels across it is finer than the line
+  // drawing it and only greys the whole world out. Stroked on the path that
+  // was just filled — a second pass over two thousand cells rebuilds every
+  // polygon to draw its outline.
+  const grid = place.r >= 10 * place.frequency;
+  cx.strokeStyle = "rgba(214,235,231,.042)";
+  cx.lineWidth = .6;
+  for (const cell of cells) {
+    planetPath(cx, cell.points);
+    cx.fillStyle = shade(cell.fill, .70 + .34 * Math.max(0, cell.z));
+    cx.fill();
+    if (grid) cx.stroke();
+  }
+  cx.restore();
+}
+
+// Where each civilization's landing sits. Close enough to see the ground, a
+// landing site is a place on the ground: it turns with the world and goes round
+// the back with it. Far off there is no ground to be a place on — the body is a
+// few pixels wide — so the crews are seated along an arc across the lit face
+// where every one of them can still be counted.
+function skyLandingSeats(place, crew) {
+  if (skyGroundFade(place) >= .5) {
+    const camera = skyBodyCamera(place.id);
+    return crew.map(player => {
+      const latitude = (hash2(player.id, 61) - .5) * 1.7;
+      const longitude = 6.283 * hash2(player.id, 67);
+      const point = planetProject(
+        [Math.cos(latitude) * Math.cos(longitude),
+         Math.cos(latitude) * Math.sin(longitude), Math.sin(latitude)],
+        camera, place.r, place.x, place.y);
+      return {player, x:point.x, y:point.y, z:point.z,
+              angle:Math.atan2(point.y - place.y, point.x - place.x),
+              gap:place.r * .5};
+    }).filter(seat => seat.z > .06);
+  }
+  // Both the marker and its mast are sized from the gap between neighbours
+  // rather than from the body — four landings drawn at "looks right for one"
+  // are a single smear.
+  const seat = place.r * .58;
+  const from = -2.4, span = crew.length > 1 ? 2.75 : 0;
+  const gap = crew.length > 1 ? span / (crew.length - 1) * seat : seat;
+  return crew.map((player, index) => {
+    const angle = crew.length === 1 ? -1.1 : from + index * (span / (crew.length - 1));
+    return {player, angle, gap,
+            x:place.x + Math.cos(angle) * seat, y:place.y + Math.sin(angle) * seat};
+  });
+}
+
 // A landing is drawn where it would be seen from here: on the lit face, at a
 // spot that belongs to one civilization and stays put between frames.
 function drawSkyLandings(place, crew, alpha) {
@@ -10040,19 +10493,15 @@ function drawSkyLandings(place, crew, alpha) {
   // colours carry the same fact without pretending to a position.
   const shown = alpha * Math.max(0, Math.min(1, (place.r - 2.2) / 2.6));
   if (!crew.length || shown <= .02) return;
-  // Six civilizations can land on the same moon, and a moon is small. They are
-  // seated along an arc across the lit face, and both the marker and its mast
-  // are sized from the gap between neighbours rather than from the body — four
-  // landings drawn at "looks right for one" are a single smear.
-  const seat = place.r * .58;
-  const from = -2.4, span = crew.length > 1 ? 2.75 : 0;
-  const gap = crew.length > 1 ? span / (crew.length - 1) * seat : seat;
-  const size = Math.max(1.1, Math.min(3.4, place.r * .17, gap * .42));
+  const seats = skyLandingSeats(place, crew);
+  const gap = seats.length ? seats[0].gap : place.r;
+  // A marker that stops growing at three pixels is a speck on a world that
+  // fills the stage, so the ceiling opens with the body it stands on.
+  const cap = 2.6 + Math.min(6.4, place.r * .022);
+  const size = Math.max(1.1, Math.min(place.r * .17, gap * .42, cap));
   cx.save();
   cx.globalAlpha = shown;
-  crew.forEach((player, index) => {
-    const angle = crew.length === 1 ? -1.1 : from + index * (span / (crew.length - 1));
-    const x = place.x + Math.cos(angle) * seat, y = place.y + Math.sin(angle) * seat;
+  seats.forEach(({player, angle, x, y}) => {
     cx.fillStyle = pcol(player.id);
     cx.strokeStyle = "#0b1116"; cx.lineWidth = .9;
     if (place.id === "mars") {
@@ -10082,23 +10531,41 @@ function drawSkyLandings(place, crew, alpha) {
 // Orbits are real circles seen at an angle, so a satellite passing behind the
 // world goes behind it. The depth that decides is the same one the projection
 // throws away.
-function drawSkySatellites(crew, radius, centerX, centerY, alpha, now) {
+function drawSkySatellites(crew, camera, radius, centerX, centerY, alpha, now) {
   // Low orbit is a hand's breadth off a world; from far enough out to see
   // Mars, nothing that close to Earth resolves at all.
   const shown = alpha * Math.max(0, Math.min(1, (radius - 10) / 16));
   if (!crew.length || shown <= .02) return;
+  // The orbit is fixed to the world, not to the screen. A screen-space ellipse
+  // is a decal: turn the Earth under it and the orbit stays put, so the craft
+  // stops being in orbit and starts being painted on the lens. An inclination
+  // and an ascending node in the planet's own frame, projected through the same
+  // camera the tiles are, gives the real thing — the plane leans over with the
+  // ground it is over, and a satellite over one continent stays over it.
+  const view = {...camera, radius:1};
+  const site = (basis, angle) => {
+    const along = Math.cos(angle), across = Math.sin(angle);
+    return [basis.ring * (basis.ux * along + basis.wx * across),
+            basis.ring * (basis.uy * along + basis.wy * across),
+            basis.ring * (basis.uz * along + basis.wz * across)];
+  };
   const flight = crew.map((player, index) => {
-    const tilt = .26 + .30 * hash2(player.id, 3);
-    const lean = (hash2(player.id, 9) - .5) * 2.2;
-    const ring = radius * 1.38 + Math.min(8, radius * .5) +
-      index * Math.max(2, radius * .07);
+    const inclination = (.30 + .95 * hash2(player.id, 3)) *
+      (hash2(player.id, 13) < .5 ? 1 : -1);
+    const node = 6.283 * hash2(player.id, 9);
+    // Kept in Earth radii so the ring stands off the limb by the same margin
+    // whatever the zoom, the way the old pixel figure did.
+    const ring = 1.38 + Math.min(8, radius * .5) / Math.max(1, radius) +
+      index * Math.max(2, radius * .07) / Math.max(1, radius);
+    const cosNode = Math.cos(node), sinNode = Math.sin(node);
+    const cosLean = Math.cos(inclination), sinLean = Math.sin(inclination);
+    const basis = {ring,
+      ux:cosNode, uy:sinNode, uz:0,
+      wx:-sinNode * cosLean, wy:cosNode * cosLean, wz:sinLean};
     const angle = now / (9200 + 3400 * hash2(player.id, 5)) * 6.283
       + hash2(player.id, 7) * 6.283;
-    const ux = Math.cos(lean), uy = Math.sin(lean);
-    const along = Math.cos(angle), across = Math.sin(angle);
-    const x = centerX + ring * (along * ux + across * tilt * -uy);
-    const y = centerY + ring * (along * uy + across * tilt * ux);
-    return {player, tilt, lean, ring, x, y, behind:across < 0};
+    const at = planetProject(site(basis, angle), view, radius, centerX, centerY);
+    return {player, basis, x:at.x, y:at.y, behind:at.z < 0};
   });
   // The track first, and only where there is sky to draw it on: a ring laid
   // straight over the tiles reads as a scratch on the lens rather than as an
@@ -10109,9 +10576,15 @@ function drawSkySatellites(crew, radius, centerX, centerY, alpha, now) {
   cx.arc(centerX, centerY, radius, 0, 7, true);
   cx.clip();
   cx.globalAlpha = shown * .3; cx.lineWidth = .8;
-  for (const {player, ring, tilt, lean} of flight) {
+  for (const {player, basis} of flight) {
     cx.strokeStyle = pcol(player.id);
-    cx.beginPath(); cx.ellipse(centerX, centerY, ring, ring * tilt, lean, 0, 7); cx.stroke();
+    cx.beginPath();
+    for (let step = 0; step <= 72; step++) {
+      const point = planetProject(site(basis, step / 72 * 6.283), view,
+                                  radius, centerX, centerY);
+      step ? cx.lineTo(point.x, point.y) : cx.moveTo(point.x, point.y);
+    }
+    cx.stroke();
   }
   cx.restore();
   // Then the craft, which is not clipped — half its orbit is in front of the
@@ -10224,14 +10697,14 @@ function drawSkyCaption(place, crew, alpha, note, above) {
 
 // Everything above, in the order it is seen: the far bodies first, then what is
 // standing on them, then the traffic between.
-function drawPlanetSky(radius, centerX, centerY) {
+function drawPlanetSky(camera, radius, centerX, centerY) {
   const crews = skyCrews();
   const now = performance.now();
   let exo = null;
   for (const body of SKY_BODIES) {
     const place = skyPlacement(body, radius, centerX, centerY);
     if (body.id === "exo") exo = place;
-    if (!skyOnScreen(place)) continue;
+    if (!skyOnCanvas(place)) continue;
     // Under a pixel a body is noise, so it arrives by fading up rather than by
     // flickering into existence.
     const alpha = Math.max(0, Math.min(1, (place.r - .7) / 2.4));
@@ -10247,8 +10720,11 @@ function drawPlanetSky(radius, centerX, centerY) {
     }
     const crew = skyCrewFor(crews, body);
     drawSkyBall(place, alpha);
+    // Its own ground, once there is enough of the body on screen to hold it.
+    const ground = skyGroundFade(place);
+    if (ground > 0) drawSkyGlobe(place, alpha * ground);
     drawSkyLandings(place, crew, alpha);
-    if (alpha > .5) {
+    if (alpha > .5 && skyCaptionClear(place)) {
       // The exoplanet's caption belongs to whoever actually got there, which is
       // not the same list as whoever set out.
       const arrived = body.id === "exo"
@@ -10263,7 +10739,7 @@ function drawPlanetSky(radius, centerX, centerY) {
     }
   }
   if (exo) drawSkyExpeditions(crews.expedition, exo, radius, centerX, centerY, 1, now);
-  drawSkySatellites(crews.satellite, radius, centerX, centerY, 1, now);
+  drawSkySatellites(crews.satellite, camera, radius, centerX, centerY, 1, now);
   // Far enough out, home is a dot among dots and needs saying so. The names
   // out here are the engine's own — its four projects are the Earth satellite,
   // the Moon landing, the Mars colony and the exoplanet expedition — so the
@@ -10296,9 +10772,12 @@ function drawPlanetMap() {
     return true;
   }
   const camera = planetCamera();
-  const [centerX, centerY] = planetStageCenter();
   const scale = cam.scale;
   const radius = camera.radius * scale;
+  // Home is at the centre of the stage right up until the camera leaves it, so
+  // everything below draws around wherever the Earth actually is rather than
+  // around the middle of the window.
+  const [centerX, centerY] = planetEarthCenter(radius);
   const visible = new Set(state.visible.map(key));
   const spectator = !Number.isInteger(state.view_player);
   PLANET_HIT_CELLS = [];
@@ -10319,6 +10798,12 @@ function drawPlanetMap() {
     cx.fillRect(0, 0, area.clientWidth, area.clientHeight);
     drawSkyStars(depth);
   }
+
+  // Standing over Mars, the Earth is a whole screen-width of world sitting
+  // several screens off the side of the stage. Every one of its tiles still
+  // projects and still fills, for nothing. Ask once whether home is even in the
+  // picture; the disc behind it is two fills either way and costs nothing.
+  const earthInFrame = skyOnCanvas({x:centerX, y:centerY, r:radius});
 
   // The ocean sphere under the tiles: it fills the limb no tile quite reaches
   // and gives the globe its roundness.
@@ -10343,7 +10828,7 @@ function drawPlanetMap() {
   cx.fillStyle = ocean; cx.beginPath(); cx.arc(centerX, centerY, radius, 0, 7); cx.fill();
   cx.restore();
 
-  const cells = planetCells(camera, scale, centerX, centerY);
+  const cells = earthInFrame ? planetCells(camera, scale, centerX, centerY) : [];
   for (const cell of cells) {
     const {tile, points, center} = cell;
     planetPath(cx, points);
@@ -10436,7 +10921,7 @@ function drawPlanetMap() {
   cx.strokeStyle = "rgba(196,235,255,.48)";
   cx.lineWidth = Math.max(.5, Math.min(1.4, radius * .06));
   cx.beginPath(); cx.arc(centerX, centerY, radius, 0, 7); cx.stroke();
-  drawPlanetSky(radius, centerX, centerY);
+  drawPlanetSky(camera, radius, centerX, centerY);
   cx.setTransform(1, 0, 0, 1, 0, 0);
   return true;
 }
@@ -15246,6 +15731,9 @@ function flyCameraTo(pos, scale = cam.scale) {
   if (!Array.isArray(pos)) return;
   const [x, y] = cameraTargetFor(pos, scale);
   cameraZoom = null; clearCameraInertia();
+  // A tile is on the Earth, so going to one is also coming back from the
+  // system: nothing else can put a tile in the middle of the stage.
+  if (planetMap()) skyReturnHome();
   if (REDUCED_MOTION_QUERY.matches) {
     cam.x = x; cam.y = clampCameraY(y, scale); cam.scale = scale;
     cameraFlight = null; draw(); drawMini(); return;
@@ -15272,10 +15760,23 @@ function zoomAt(f, sx, sy) {
   if (planetMap()) {
     const base = cameraZoom?.scale || cam.scale;
     cameraFlight = null; cameraZoom = null; clearCameraInertia();
+    const [stageX, stageY] = planetStageCenter();
+    const before = planetEarthRadius(cam.scale);
+    if (sx === undefined)
+      [sx, sy] = f > 1 ? skyZoomAnchor(before, stageX, stageY) : [stageX, stageY];
+    // Which point of the system the pointer is over, in Earth radii from the
+    // Earth. Holding that point still across the step is what makes scrolling
+    // in over Mars a way of *going* to Mars: aim at a body and the zoom walks
+    // toward it, aim at empty sky and the zoom stays where you are looking.
+    const pointerX = SKY_PAN.x + (sx - stageX) / before;
+    const pointerY = SKY_PAN.y + (sy - stageY) / before;
     // A globe's zoom-out does not stop at the globe. It carries on until the
     // rest of the system is in frame, which is a fixed apparent size for the
     // Earth rather than a fixed number, because a bigger world starts bigger.
-    cam.scale = Math.max(planetMinScale(), Math.min(3.2, base * f));
+    cam.scale = Math.max(planetMinScale(), Math.min(planetMaxScale(), base * f));
+    const after = planetEarthRadius(cam.scale);
+    SKY_PAN = {x:pointerX - (sx - stageX) / after, y:pointerY - (sy - stageY) / after};
+    skySettleCamera(after, f);
     draw(); drawMini();
     return;
   }
@@ -15367,6 +15868,7 @@ function advanceCameraFollow(now = performance.now()) {
 function centerWorld(pos, immediate = false) {
   if (!immediate) { flyCameraTo(pos); return; }
   const [x, y] = cameraTargetFor(pos);
+  if (planetMap()) skyReturnHome();
   cam.x = x; cam.y = clampCameraY(y);
   cameraFlight = null; draw(); drawMini();
 }
@@ -15460,6 +15962,9 @@ function fitPlanetView() {
   const radius = WW() / (2 * Math.PI);
   const projectedWidth = radius * 2, projectedHeight = radius * 2;
   cameraFlight = null; cameraZoom = null; clearCameraInertia();
+  // Framing the world means framing *this* world, so the camera comes back in
+  // from wherever in the system it had wandered to.
+  skyReturnHome();
   cam.scale = Math.max(.01, Math.min(3.2, usableWidth / projectedWidth,
                                     usableHeight / projectedHeight));
   cam.x = S * SQ3 * state.map.width / 2;
@@ -15849,6 +16354,8 @@ window.addEventListener("pointermove", ev => {
       dragState.vtilt = dragState.vtilt * .55 + vt * .45;
       dragState.lastRot = cam.rot; dragState.lastTilt = cinematicYS; dragState.lastT = now;
       draw(); drawMini();
+    } else if (dragMoved && skyDragApply(dragState, dx, dy)) {
+      draw(); drawMini();
     } else if (dragMoved) {
       const dvx = dx / cam.scale, dvy = dy / cam.scale / YS;
       cam.x = dragState.cx - (COSR * dvx + SINR * dvy);
@@ -15957,9 +16464,16 @@ cv.addEventListener("pointermove", ev => {
     if (touchGesture.controlled) {
       const turn = Math.atan2(Math.sin(angle - touchGesture.angle), Math.cos(angle - touchGesture.angle));
       setRot(touchGesture.rot + turn);
-      const scale = Math.max(.25, Math.min(3.2,
-        touchGesture.scale * distance / Math.max(12, touchGesture.distance)));
-      applyCameraAnchor(touchGesture.wx, touchGesture.wy, mx, my, scale);
+      const want = touchGesture.scale * distance / Math.max(12, touchGesture.distance);
+      if (planetMap()) {
+        // A globe has no world plane to anchor a pinch against, and its zoom
+        // runs far below the flat map's floor, so it goes through the same path
+        // the wheel does and reaches the rest of the system the same way.
+        zoomAt(want / Math.max(1e-4, cam.scale), mx, my);
+      } else {
+        applyCameraAnchor(touchGesture.wx, touchGesture.wy, mx, my,
+                          Math.max(.25, Math.min(3.2, want)));
+      }
       draw(); drawMini();
     }
   } else if (touchGesture.mode === "pan") {
@@ -15969,7 +16483,9 @@ cv.addEventListener("pointermove", ev => {
       takeCameraControl(); touchGesture.controlled = true;
       touchGesture.moved = true; dragMoved = true;
     }
-    if (touchGesture.controlled) {
+    if (touchGesture.controlled && skyDragApply(touchGesture, dx, dy)) {
+      draw(); drawMini();
+    } else if (touchGesture.controlled) {
       const dvx = dx / cam.scale, dvy = dy / cam.scale / YS;
       cam.x = touchGesture.cx - (COSR * dvx + SINR * dvy);
       cam.y = touchGesture.cy - (-SINR * dvx + COSR * dvy);
