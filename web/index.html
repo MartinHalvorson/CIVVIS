@@ -11215,25 +11215,26 @@ function turnCapLabel() {
 
 // The meter under each civilization. Most races are one number against one
 // target; science and culture are two, and are drawn as two half-width
-// meters. Their researched trees are relative comparisons: the civilization
-// with the most discoveries fills the left half and every rival shows its
-// fraction of that leader. The right halves remain the actual victory races.
-function victoryMeter(victory, metric, progress, researchLeader = 0) {
+// meters. Their researched trees fill against the whole tree, so a half that
+// is a third full means a third of the discoveries in the game — the leader's
+// own meter moves too, instead of pinning itself full from turn one. The
+// right halves remain the actual victory races.
+function victoryMeter(victory, metric, progress) {
   const bar = pct => `<b style="width:${Math.max(0, Math.min(100, pct))}%"></b>`;
   if (victory === "science") {
-    const leader = Math.max(1, +researchLeader || 0);
+    const total = Math.max(1, +metric.tech_total || 0);
     const launches = +metric.project_target || 4;
     const done = +metric.projects || 0;
     const dots = Array.from({ length: launches },
       (_, i) => `<i${i < done ? ' class="on"' : ""}></i>`).join("");
     return `<div class="victory-meter split"><span class="victory-half">` +
-      `${bar(100 * (+metric.techs || 0) / leader)}</span>` +
+      `${bar(100 * (+metric.techs || 0) / total)}</span>` +
       `<span class="victory-dots">${dots}</span></div>`;
   }
   if (victory === "culture") {
-    const leader = Math.max(1, +researchLeader || 0);
+    const total = Math.max(1, +metric.civic_total || 0);
     return `<div class="victory-meter split">` +
-      `<span class="victory-half">${bar(100 * (+metric.civics || 0) / leader)}</span>` +
+      `<span class="victory-half">${bar(100 * (+metric.civics || 0) / total)}</span>` +
       `<span class="victory-half">${bar(progress)}</span></div>`;
   }
   return `<div class="victory-meter">${bar(progress)}</div>`;
@@ -11382,9 +11383,6 @@ function playerHudOverview() {
           || (researchField ? (+bm[researchField] || 0) - (+am[researchField] || 0) : 0)
           || b.score - a.score || a.id - b.id;
       });
-    const researchLeader = researchField
-      ? Math.max(0, ...ranked.map(player => +victoryMetric(player, track.id)[researchField] || 0))
-      : 0;
     return `<section class="victory-track" style="--track:${track.color}" aria-label="${track.label} victory leaders">` +
       `<div class="victory-heading"><span>${track.icon}</span><b>${track.label}</b></div>` +
       `<div class="victory-subheading${track.id === "score" ? " score" : ""}">${victoryTrackerSubheading(track.id)}</div>` +
@@ -11394,7 +11392,7 @@ function playerHudOverview() {
         return `<div class="victory-entry" style="--civ:${pcol(player.id)}" title="#${index + 1} ${player.civ}: ${victoryDescription(track.id, metric)}">` +
           `<div class="victory-line"><span class="victory-civ-dot"></span>` +
           `<span class="victory-civ">${player.civ}</span><span class="victory-value${track.id === "score" ? " single" : ""}">${victoryTrackerStats(track.id, metric)}</span></div>` +
-          victoryMeter(track.id, metric, progress, researchLeader) + `</div>`;
+          victoryMeter(track.id, metric, progress) + `</div>`;
       }).join("") + `</div></section>`;
   }).join("");
   const victoryCount = Math.max(1, enabledVictoryTracks.length);
