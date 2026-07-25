@@ -46,5 +46,83 @@
     "description": "Likes civilizations who are their declared friend. Hates civilizations who backstab and declare surprise wars.",
     "measure": "trustworthiness",
     "approves_of": "more"
+  },
+  "sun_never_sets": {
+    "name": "The Sun Never Sets",
+    "description": "Likes civilizations whose empire spans the world. Dislikes civilizations content with a handful of cities.",
+    "measure": "territory",
+    "approves_of": "more"
+  },
+  "iron_crown": {
+    "name": "Iron Crown",
+    "description": "Dislikes civilizations who court the city-states he means to bring under the crown himself.",
+    "measure": "city_state_rivalry",
+    "approves_of": "less"
+  },
+  "westernizer": {
+    "name": "Westernizer",
+    "description": "Admires civilizations who build out their cities in every direction, and learns from them. Dislikes civilizations who leave their cities undeveloped.",
+    "measure": "districts_per_city",
+    "approves_of": "more"
+  },
+  "cheomseongdae": {
+    "name": "Cheomseongdae",
+    "description": "Likes civilizations who fill their cities with districts of learning. Dislikes civilizations who neglect them.",
+    "measure": "districts_per_city",
+    "approves_of": "more"
+  },
+  "solitary_observer": {
+    "name": "Solitary Observer",
+    "description": "Keeps her own cities close together, and thinks well of civilizations who do not sprawl. Dislikes civilizations who claim half the world.",
+    "measure": "territory",
+    "approves_of": "less"
+  },
+  "trade_caravans": {
+    "name": "Trade Caravans",
+    "description": "Likes civilizations who keep their word, because a caravan route is only worth what the promise behind it is. Dislikes civilizations who break their agreements.",
+    "measure": "trustworthiness",
+    "approves_of": "more"
+  },
+  "sea_lanes": {
+    "name": "Sea Lanes",
+    "description": "Likes civilizations who stand by their allies across the water. Dislikes civilizations who abandon a friend.",
+    "measure": "loyalty_to_friends",
+    "approves_of": "more"
+  },
+  "trial_by_combat": {
+    "name": "Trial by Combat",
+    "description": "Likes civilizations with an army worth measuring himself against. Dislikes civilizations too weak to be worth the trouble.",
+    "measure": "military",
+    "approves_of": "more"
+  },
+  "ingoma_yenkosi": {
+    "name": "Ingoma Yenkosi",
+    "description": "Likes civilizations who muster a real army. Holds civilizations with no army in contempt.",
+    "measure": "military",
+    "approves_of": "more"
+  },
+  "king_of_the_eburones": {
+    "name": "King of the Eburones",
+    "description": "Likes civilizations strong enough to be worth fighting. Dislikes civilizations who leave themselves undefended.",
+    "measure": "military",
+    "approves_of": "more"
+  },
+  "enthusiastic_disciple": {
+    "name": "Enthusiastic Disciple",
+    "description": "Likes civilizations who share the luxuries of his own court. Dislikes civilizations hoarding a luxury he has never seen.",
+    "measure": "shared_luxuries",
+    "approves_of": "more"
+  },
+  "garden_of_the_east": {
+    "name": "Garden of the East",
+    "description": "Likes civilizations who honour their agreements. Dislikes civilizations who arrive uninvited and at war.",
+    "measure": "trustworthiness",
+    "approves_of": "more"
+  },
+  "patron_of_the_arts": {
+    "name": "Patron of the Arts",
+    "description": "Likes civilizations who build wonders for the world to admire. Dislikes civilizations who build none.",
+    "measure": "wonders",
+    "approves_of": "more"
   }
 }
