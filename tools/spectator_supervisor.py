@@ -603,8 +603,25 @@ def resumed_checkpoint(state: dict[str, Any], marker: tuple[Any, ...] | None) ->
     )
 
 
+def played_by_hand(state: dict[str, Any]) -> bool:
+    """Whether this process has been handed to a game somebody is playing.
+
+    The exhibition server answers `spectate: true` for every AI-only world, so
+    only an explicit `false` counts: an unreadable or older state keeps the
+    supervision it has always had.
+    """
+    return state.get("spectate") is False
+
+
 def should_nudge(state: dict[str, Any], stalled_for: float, timeout: float) -> bool:
-    """Distinguish a dead spectator loop from an intentional GUI pause."""
+    """Distinguish a dead spectator loop from an intentional GUI pause.
+
+    A single-player game makes no progress at all between its turns, so the
+    stall clock says nothing about its health and a recovery step it cannot
+    take would report the server as unavailable.
+    """
+    if played_by_hand(state):
+        return False
     return not state.get("spectator_paused", False) and stalled_for >= max(0.1, timeout)
 
 
@@ -1663,15 +1680,24 @@ def main() -> int:
                         # HTTP-liveness failure on the following polls.
                         unavailable_since = time.monotonic()
 
+                # A game being played by hand is not the exhibition and is not
+                # replaceable: its checkpoint would come back as a spectated
+                # world on the next launch, and a live code refresh would take
+                # the board away mid-turn. Leave it alone; the server writes
+                # the player their own save at the end of every turn, and the
+                # pending refresh lands at the next boundary.
+                playing = played_by_hand(state)
+
                 if (
-                    now - checkpoint_at >= max(0.1, args.checkpoint_interval)
+                    not playing
+                    and now - checkpoint_at >= max(0.1, args.checkpoint_interval)
                     and marker != checkpointed_progress
                     and capture_checkpoint(args.port, save_path)
                 ):
                     checkpoint_at = now
                     checkpointed_progress = marker
 
-                if refresh_pending and now >= refresh_at:
+                if refresh_pending and not playing and now >= refresh_at:
                     refresh_at = now + max(0.1, args.build_retry)
                     snapshot = source_snapshot()
                     runtime_ready = prebuild_process is None and runtime_matches(snapshot)
@@ -1728,13 +1754,26 @@ def main() -> int:
                 else:
                     log("could not archive the final save; continuing the handoff")
 
-            # The supervised server rejects every in-process /new request, so
-            # it is safe to leave the result reachable during the short
-            # cooldown. Builds happen during active play; the boundary itself
-            # never waits on Cargo.
+            # The supervised server rejects an in-process /new for another
+            # simulation, so it is safe to leave the result reachable during
+            # the short cooldown. Builds happen during active play; the
+            # boundary itself never waits on Cargo.
             remaining = FINAL_COUNTDOWN_SECONDS - (time.monotonic() - finished_seen_at)
             if remaining > 0:
                 time.sleep(remaining)
+            # It does accept a single-player game, which is exactly what the
+            # result screen offers. Somebody who takes the seat during the
+            # cooldown keeps it; the exhibition resumes when that game ends.
+            latest = read_state(args.port)
+            if latest is not None and played_by_hand(latest):
+                log("a single-player game took this process; leaving it to the player")
+                state = latest
+                finished_key = None
+                last_progress = progress_marker(state)
+                progress_at = time.monotonic()
+                checkpointed_progress = None
+                time.sleep(args.poll)
+                continue
             stop_server(process, adopted_pid)
             process = None
             adopted_pid = None

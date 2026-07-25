@@ -179,6 +179,17 @@ from the live ruleset, so a mod that adds a civilization or a difficulty
 appears in them without a client change. Neither is offered for an AI-only
 world, because there is nobody to hand them to.
 
+One control on screen starts the next world, and which one it is follows the
+world you are looking at rather than the mode you have just picked: the
+specbar's restart button while a simulation is playing itself, the sidebar's
+**Start new game** in a game somebody is playing. Choosing Single player
+therefore renames the specbar control **Start Single Player Game** — pressing
+it opens that game rather than another simulation. On the supervised exhibition
+that is not a restart: every simulation is a fresh process on freshly built
+code, but a human game takes the running process over in place, so sitting down
+to play does not wait out a process handoff, and the supervisor then leaves
+that game alone until it is over.
+
 Below them sit the saves this server is holding — every autosave and every
 named one, newest turn first, each with the turn, leader and difficulty it
 was written at. A build whose server has no save endpoints hides the group
