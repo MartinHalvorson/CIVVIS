@@ -147,7 +147,7 @@ class WorkerTests(unittest.TestCase):
         )
         status = fleet.HostStatus(host=cfg.hosts[0], reachable=True, cores=10)
         cmd = fleet.league_command(cfg, status)
-        self.assertIn("--worker boxa", cmd)
+        self.assertIn("--worker boxa", cmd)  # host name stays the prefix
         self.assertIn("--jobs 8", cmd)
         self.assertIn("--dir /srv/league", cmd)
 
@@ -165,6 +165,29 @@ class WorkerTests(unittest.TestCase):
     def test_an_absurdly_short_lease_is_clamped_rather_than_obeyed(self):
         cfg = fleet.parse_config({"lease_seconds": 1, "hosts": [{"name": "a"}]})
         self.assertGreaterEqual(cfg.lease_seconds, 60)
+
+    def test_each_worker_start_gets_an_identity_of_its_own(self):
+        # The league charges a worker's own outstanding leases against its
+        # fair share, so a restart under the same identity computes
+        # claim_limit == 0, never reaches displace_stale_lease, and waits
+        # forever on claims only it could release.
+        host = fleet.Host(name="boxa", root="/srv")
+        first = fleet.worker_id(host, started=1000)
+        second = fleet.worker_id(host, started=2000)
+        self.assertNotEqual(first, second)
+        self.assertTrue(first.startswith("boxa"), "the host must stay readable in logs")
+        self.assertTrue(second.startswith("boxa"))
+
+    def test_a_restarted_worker_does_not_reuse_its_predecessors_identity(self):
+        cfg = fleet.parse_config(
+            {"home": "boxa", "league_dir": "/srv/league", "hosts": [{"name": "boxa", "root": "/srv"}]}
+        )
+        status = fleet.HostStatus(host=cfg.hosts[0], reachable=True, cores=8)
+        before = fleet.league_command(cfg, status, started=1000)
+        after = fleet.league_command(cfg, status, started=1001)
+        self.assertNotEqual(before, after)
+        self.assertIn("--worker boxa-1000", before)
+        self.assertIn("--worker boxa-1001", after)
 
     def test_a_remote_host_keeps_its_own_mirror_of_the_league(self):
         cfg = fleet.parse_config(

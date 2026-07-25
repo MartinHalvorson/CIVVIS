@@ -401,7 +401,25 @@ def replicate(
 # ---------------------------------------------------------------------------
 
 
-def league_command(cfg: FleetConfig, status: HostStatus) -> str:
+def worker_id(host: Host, started: Optional[int] = None) -> str:
+    """A worker identity that changes every time the worker is started.
+
+    The league charges a worker's own outstanding leases against its fair
+    share of the round, so a worker restarted under the same identity finds
+    `claim_limit == 0`, never reaches the code that displaces a stale lease,
+    and waits forever on claims only it could release. Observed live: a
+    replacement worker sleeping at 0% CPU with 18 of 24 games published and
+    six of its predecessor's claims stranded.
+
+    Distinguishing each start sidesteps that entirely — the new worker owes
+    nothing, so it displaces the expired leases and finishes the round. The
+    host name stays as the prefix so logs and result attribution still read.
+    """
+    stamp = int(time.time()) if started is None else started
+    return f"{host.name}-{stamp}"
+
+
+def league_command(cfg: FleetConfig, status: HostStatus, started: Optional[int] = None) -> str:
     host = status.host
     league_dir = league_dir_for(cfg, host)
     parts = [
@@ -410,7 +428,7 @@ def league_command(cfg: FleetConfig, status: HostStatus) -> str:
         "--dir",
         shlex.quote(league_dir),
         "--worker",
-        shlex.quote(host.name),
+        shlex.quote(worker_id(host, started)),
         "--jobs",
         str(status.jobs),
         "--games",
