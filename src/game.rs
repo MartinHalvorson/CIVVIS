@@ -1571,6 +1571,55 @@ mod belief_runtime_tests {
         );
     }
 
+    /// A reloaded game has to remember the war it is in the middle of. The
+    /// ledger is a new field on a long-lived save format, so the round trip is
+    /// the thing that proves the `serde` plumbing on all four sides — struct,
+    /// save struct, and both conversions — is actually wired up.
+    #[test]
+    fn the_strike_ledger_survives_a_save_round_trip() {
+        let (mut game, cities) = game_with_capitals(91_807);
+        let (launch, struck) = (cities[0], cities[1]);
+        let target = game.cities[&struck].pos;
+        let spec = game.rules.wmds["thermonuclear_device"].clone();
+        let distance = game.wdist(game.cities[&launch].pos, target);
+        assert!(
+            distance <= spec.icbm_strike_range,
+            "fixture capitals must sit within ICBM range ({distance})"
+        );
+        game.at_war.insert(pair(0, 1));
+        game.players[0]
+            .counters
+            .insert("project_effect:thermonuclear_devices".to_string(), 1);
+        for position in game.wdisk(target, spec.blast_radius) {
+            game.players[0].explored.insert(position);
+        }
+        game.apply(
+            0,
+            &Action::WmdStrike {
+                city: launch,
+                target,
+                thermonuclear: true,
+            },
+        )
+        .unwrap();
+        assert_eq!(game.nuclear_strikes.len(), 1);
+
+        let encoded = serde_json::to_value(&game).unwrap();
+        let restored: Game = serde_json::from_value(encoded).unwrap();
+        assert_eq!(restored.nuclear_strikes, game.nuclear_strikes);
+
+        // And a save written before the ledger existed loads as an empty one
+        // rather than refusing to open.
+        let mut older = serde_json::to_value(&game).unwrap();
+        older
+            .as_object_mut()
+            .unwrap()
+            .remove("nuclear_strikes")
+            .expect("the field is written");
+        let old_save: Game = serde_json::from_value(older).unwrap();
+        assert!(old_save.nuclear_strikes.is_empty());
+    }
+
     /// Fallout that only cost yields would make a crater the safest ground on
     /// the map: nothing contests it, and a wounded army could sit in it and
     /// heal.
