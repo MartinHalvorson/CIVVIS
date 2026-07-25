@@ -9822,6 +9822,460 @@ function planetCells(camera, scale, centerX, centerY) {
   return out;
 }
 
+// ------------------------------------------------------------- the sky beyond
+// A Planet world hangs in a solar system, and the space race is the one victory
+// whose progress happens entirely off the map. Pulling the camera back past the
+// surface brings the Moon into frame, then Mars, then the exoplanet — and
+// whatever each civilization has already sent up is standing there when they
+// arrive: a satellite in orbit, a rover on the Moon, a colony on Mars, and the
+// expedition itself somewhere out in the dark on its way to the other star.
+//
+// Distance is the honest thing to get wrong here. At true scale the Moon alone
+// sits sixty Earths away and the exoplanet is millions of screens past that, so
+// there is no zoom at which any two of them share a picture. The system is
+// compressed instead: every body keeps its order and its size against Earth,
+// and only the gaps are squeezed. They stay *multiples of the Earth's drawn
+// radius*, which is the whole trick — the arrangement is fixed out there and
+// the camera is the only thing that moves, so zooming out really does leave one
+// body behind and reach the next.
+// `orbit` is the gap in Earth radii and `size` the true radius against Earth's,
+// so a body's largest possible apparent size is size/orbit of the stage — which
+// is what the orbits are really tuned to. Each one is set to come in about
+// three zoom steps after the last and to be worth looking at when it does; the
+// floor keeps it from dissolving once the camera has gone past it. Their
+// bearings are fixed so the system is somewhere rather than rearranged each
+// frame: the Moon up and right of home, Mars down and left, and the exoplanet
+// out to the right where the expedition is headed.
+const SKY_BODIES = [
+  {id:"moon", name:"The Moon",  orbit:6.4, size:.272, floor:3,   bearing:-.58,
+   tint:"#c3c6cb", dark:"#31333a"},
+  {id:"mars", name:"Mars",      orbit:18,  size:.532, floor:4.5, bearing:2.72,
+   tint:"#c8683c", dark:"#3d1d13"},
+  {id:"exo",  name:"Exoplanet", orbit:52,  size:1.15, floor:7.5, bearing:-.10,
+   tint:"#6ec7b2", dark:"#123a3d"},
+];
+// The far end of the zoom is the shot that holds the whole system: the
+// outermost body just inside the stage, and no smaller an Earth than that
+// needs. A world this small is a dot, but it is a dot with everything it ever
+// sent out in frame around it.
+const SKY_MIN_EARTH = 3.4;
+// Above this the globe is a place; below it, a marble. Space fades in across
+// that line.
+const SKY_SURFACE = 96;
+// Cities and armies are drawn at a floor size so they stay clickable, which
+// stops meaning anything once the world they sit on is smaller than a coin.
+// This is the old zoom floor, so nothing that used to be drawn stops being.
+const SKY_MARKERS = 58;
+const SKY_CHAIN = {
+  satellite:"launch_earth_satellite", moon:"launch_moon_landing",
+  mars:"launch_mars_colony", expedition:"exoplanet_expedition",
+};
+
+function planetEarthRadius(scale = cam.scale) {
+  return WW() / (2 * Math.PI) * scale;
+}
+// Every HUD widget the sky has to stay clear of, measured where it actually
+// is. Neither existing answer survives this: `observedFrameRect` reserves a
+// nominal strip narrower than the rail really is, and `mapFocusBounds` reads
+// the world map as a lower-left corner widget and gives up on the whole width
+// once it is docked in the rail instead. The widgets are draggable and
+// resizable, so the only durable answer is their boxes.
+function skyWidgetBoxes() {
+  const areaRect = area.getBoundingClientRect();
+  const boxes = [];
+  for (const name of Object.keys(HUD_WIDGETS)) {
+    const box = mapWidgetBox(name, areaRect);
+    if (box) boxes.push(box);
+  }
+  return boxes;
+}
+// Where a ray leaves the canvas or meets a widget, whichever comes first — the
+// slab test, so a widget off to one side of the bearing is correctly ignored.
+function skyRayLimit(x, y, dx, dy, box) {
+  let near = -Infinity, far = Infinity;
+  for (const [origin, dir, lo, hi] of
+       [[x, dx, box.left, box.right], [y, dy, box.top, box.bottom]]) {
+    if (Math.abs(dir) < 1e-6) {
+      if (origin < lo || origin > hi) return Infinity;
+      continue;
+    }
+    const a = (lo - origin) / dir, b = (hi - origin) / dir;
+    near = Math.max(near, Math.min(a, b));
+    far = Math.min(far, Math.max(a, b));
+  }
+  return far < Math.max(0, near) ? Infinity : Math.max(0, near);
+}
+function skyReach(bearing, centerX, centerY) {
+  const dx = Math.cos(bearing), dy = Math.sin(bearing);
+  const edge = (origin, dir, span) => Math.abs(dir) < 1e-6 ? Infinity
+    : (dir > 0 ? span - origin : origin) / Math.abs(dir);
+  let reach = Math.min(edge(centerX, dx, area.clientWidth),
+                       edge(centerY, dy, area.clientHeight));
+  for (const box of skyWidgetBoxes())
+    reach = Math.min(reach, skyRayLimit(centerX, centerY, dx, dy, box));
+  return Math.max(40, reach);
+}
+// Zooming out stops where the picture is complete: the outermost body inside
+// the stage. That is a property of the window, not a number — a wider screen
+// holds the same system with a bigger Earth in it.
+function planetMinScale() {
+  const [centerX, centerY] = planetStageCenter();
+  const outer = SKY_BODIES[SKY_BODIES.length - 1];
+  const fits = skyReach(outer.bearing, centerX, centerY) * .84 / outer.orbit;
+  return Math.min(.08, Math.max(SKY_MIN_EARTH, fits) /
+                       Math.max(1, WW() / (2 * Math.PI)));
+}
+// How much of the picture is space rather than surface: 0 while the globe still
+// fills the stage, 1 once it is a marble among others.
+function skyDepth(radius) {
+  return Math.max(0, Math.min(1, (SKY_SURFACE - radius) / (SKY_SURFACE - 26)));
+}
+// Who has finished what. A project is permanent, so this is the standing state
+// of the sky rather than anything that happened this turn.
+function skyCrews() {
+  const crews = {satellite:[], moon:[], mars:[], expedition:[]};
+  for (const player of state.players || []) {
+    if (!player.alive || player.is_minor || player.is_barbarian) continue;
+    const done = player.science_projects || [];
+    for (const [place, project] of Object.entries(SKY_CHAIN))
+      if (done.includes(project)) crews[place].push(player);
+  }
+  return crews;
+}
+function skyCrewFor(crews, body) {
+  return body.id === "moon" ? crews.moon : body.id === "mars" ? crews.mars : [];
+}
+function skyPlacement(body, radius, centerX, centerY) {
+  const distance = body.orbit * radius;
+  return {
+    ...body,
+    x:centerX + Math.cos(body.bearing) * distance,
+    y:centerY + Math.sin(body.bearing) * distance,
+    r:Math.max(body.floor, body.size * radius),
+  };
+}
+// Reached means standing on canvas and out from behind the HUD. The margin
+// runs both ways: it lets a body hang over the canvas edge, and it keeps one
+// off a widget by its own width so a caption does not slide under the rail.
+function skyOnStage(x, y, margin = 0) {
+  if (x < -margin || x > area.clientWidth + margin ||
+      y < -margin || y > area.clientHeight + margin) return false;
+  return !skyWidgetBoxes().some(box =>
+    x > box.left - margin && x < box.right + margin &&
+    y > box.top - margin && y < box.bottom + margin);
+}
+function skyOnScreen(place) {
+  // The disc has to be clear, not the caption: the text is stroked dark and a
+  // few pixels of it grazing the rail costs less than dropping a whole world
+  // that fits.
+  return skyOnStage(place.x, place.y, place.r + 8);
+}
+
+// Stars belong to the screen, not to the world: they do not slide when the
+// globe turns, and they come up only as the sky opens behind it.
+function drawSkyStars(depth) {
+  cx.save();
+  cx.fillStyle = "#dceaf6";
+  for (let i = 0; i < 130; i++) {
+    const size = .5 + 1.2 * hash2(i, 31);
+    cx.globalAlpha = depth * (.20 + .60 * hash2(i, 41));
+    cx.fillRect(hash2(i, 11) * area.clientWidth, hash2(i, 23) * area.clientHeight,
+                size, size);
+  }
+  cx.restore();
+}
+
+// Every body out here is the same object — a ball lit from the same side as the
+// globe is — so only its colour, its size and what is standing on it change.
+function drawSkyBall(place, alpha) {
+  const {x, y, r, tint, dark} = place;
+  cx.save();
+  cx.globalAlpha = alpha;
+  const lit = cx.createRadialGradient(x - r * .34, y - r * .38, r * .06, x, y, r);
+  lit.addColorStop(0, shade(tint, 1.06));
+  lit.addColorStop(.55, shade(tint, .68));
+  lit.addColorStop(.9, dark);
+  lit.addColorStop(1, shade(dark, .45));
+  cx.fillStyle = lit;
+  cx.beginPath(); cx.arc(x, y, r, 0, 7); cx.fill();
+  // Detail that only exists once there is room for it: craters, a polar cap, a
+  // banded atmosphere. Below a few pixels every one of them is a smudge.
+  if (place.id === "moon" && r > 8) {
+    cx.fillStyle = "rgba(46,48,55,.42)";
+    for (let i = 0; i < 5; i++) {
+      const a = hash2(i, 77) * 6.283, d = r * (.18 + .58 * hash2(i, 88));
+      cx.beginPath();
+      cx.arc(x + Math.cos(a) * d, y + Math.sin(a) * d, r * (.07 + .12 * hash2(i, 99)), 0, 7);
+      cx.fill();
+    }
+  }
+  if (place.id === "mars" && r > 6) {
+    cx.fillStyle = "rgba(233,240,246,.72)";
+    cx.beginPath(); cx.ellipse(x - r * .1, y - r * .78, r * .34, r * .17, 0, 0, 7); cx.fill();
+  }
+  if (place.id === "exo" && r > 7) {
+    cx.save();
+    cx.beginPath(); cx.arc(x, y, r, 0, 7); cx.clip();
+    cx.fillStyle = "rgba(18,74,84,.38)";
+    for (let i = 0; i < 3; i++) {
+      const cy = y + r * (-.5 + .42 * i);
+      cx.fillRect(x - r, cy, r * 2, r * (.1 + .07 * hash2(i, 5)));
+    }
+    cx.restore();
+  }
+  cx.restore();
+}
+
+// A landing is drawn where it would be seen from here: on the lit face, at a
+// spot that belongs to one civilization and stays put between frames.
+function drawSkyLandings(place, crew, alpha) {
+  // On a body a few pixels wide a landing is a dot on a dot. The caption's
+  // colours carry the same fact without pretending to a position.
+  const shown = alpha * Math.max(0, Math.min(1, (place.r - 2.2) / 2.6));
+  if (!crew.length || shown <= .02) return;
+  // Six civilizations can land on the same moon, and a moon is small. They are
+  // seated along an arc across the lit face, and both the marker and its mast
+  // are sized from the gap between neighbours rather than from the body — four
+  // landings drawn at "looks right for one" are a single smear.
+  const seat = place.r * .58;
+  const from = -2.4, span = crew.length > 1 ? 2.75 : 0;
+  const gap = crew.length > 1 ? span / (crew.length - 1) * seat : seat;
+  const size = Math.max(1.1, Math.min(3.4, place.r * .17, gap * .42));
+  cx.save();
+  cx.globalAlpha = shown;
+  crew.forEach((player, index) => {
+    const angle = crew.length === 1 ? -1.1 : from + index * (span / (crew.length - 1));
+    const x = place.x + Math.cos(angle) * seat, y = place.y + Math.sin(angle) * seat;
+    cx.fillStyle = pcol(player.id);
+    cx.strokeStyle = "#0b1116"; cx.lineWidth = .9;
+    if (place.id === "mars") {
+      // A colony is a dome standing on the ground, so it stands on the ground:
+      // rotated to the outward normal at its own seat rather than to the screen.
+      cx.save();
+      cx.translate(x, y); cx.rotate(angle + Math.PI / 2);
+      cx.beginPath(); cx.arc(0, 0, size * 1.3, Math.PI, 0); cx.closePath();
+      cx.fill(); cx.stroke();
+      cx.restore();
+      return;
+    }
+    // A mast is what reads as a landing rather than as a speck, but it needs a
+    // body big enough to plant it on and a neighbour far enough not to touch.
+    if (place.r > 9 && gap > 6) {
+      cx.strokeStyle = "rgba(11,17,22,.8)"; cx.lineWidth = 1;
+      cx.beginPath(); cx.moveTo(x, y); cx.lineTo(x, y - size * 2.6); cx.stroke();
+      cx.fillStyle = pcol(player.id);
+      cx.fillRect(x, y - size * 2.9, size * 1.8, size * 1.3);
+      cx.strokeStyle = "#0b1116";
+    }
+    cx.beginPath(); cx.arc(x, y, size, 0, 7); cx.fill(); cx.stroke();
+  });
+  cx.restore();
+}
+
+// Orbits are real circles seen at an angle, so a satellite passing behind the
+// world goes behind it. The depth that decides is the same one the projection
+// throws away.
+function drawSkySatellites(crew, radius, centerX, centerY, alpha, now) {
+  // Low orbit is a hand's breadth off a world; from far enough out to see
+  // Mars, nothing that close to Earth resolves at all.
+  const shown = alpha * Math.max(0, Math.min(1, (radius - 10) / 16));
+  if (!crew.length || shown <= .02) return;
+  const flight = crew.map((player, index) => {
+    const tilt = .26 + .30 * hash2(player.id, 3);
+    const lean = (hash2(player.id, 9) - .5) * 2.2;
+    const ring = radius * 1.38 + Math.min(8, radius * .5) +
+      index * Math.max(2, radius * .07);
+    const angle = now / (9200 + 3400 * hash2(player.id, 5)) * 6.283
+      + hash2(player.id, 7) * 6.283;
+    const ux = Math.cos(lean), uy = Math.sin(lean);
+    const along = Math.cos(angle), across = Math.sin(angle);
+    const x = centerX + ring * (along * ux + across * tilt * -uy);
+    const y = centerY + ring * (along * uy + across * tilt * ux);
+    return {player, tilt, lean, ring, x, y, behind:across < 0};
+  });
+  // The track first, and only where there is sky to draw it on: a ring laid
+  // straight over the tiles reads as a scratch on the lens rather than as an
+  // orbit going round the back.
+  cx.save();
+  cx.beginPath();
+  cx.rect(0, 0, area.clientWidth, area.clientHeight);
+  cx.arc(centerX, centerY, radius, 0, 7, true);
+  cx.clip();
+  cx.globalAlpha = shown * .3; cx.lineWidth = .8;
+  for (const {player, ring, tilt, lean} of flight) {
+    cx.strokeStyle = pcol(player.id);
+    cx.beginPath(); cx.ellipse(centerX, centerY, ring, ring * tilt, lean, 0, 7); cx.stroke();
+  }
+  cx.restore();
+  // Then the craft, which is not clipped — half its orbit is in front of the
+  // world and it should pass over the daylight side rather than under it.
+  cx.save();
+  const size = Math.max(1.5, Math.min(3.2, radius * .045));
+  for (const {player, x, y, behind} of flight) {
+    if (behind && Math.hypot(x - centerX, y - centerY) < radius) continue;
+    cx.globalAlpha = shown;
+    cx.fillStyle = pcol(player.id);
+    cx.fillRect(x - size, y - size * .55, size * 2, size * 1.1);
+    // Solar wings, once the craft is more than a moving dot.
+    if (size > 2) {
+      cx.globalAlpha = shown * .85;
+      cx.fillStyle = pcol2(player.id);
+      cx.fillRect(x - size * 2.6, y - size * .3, size * 1.4, size * .6);
+      cx.fillRect(x + size * 1.2, y - size * .3, size * 1.4, size * .6);
+    }
+  }
+  cx.restore();
+}
+
+// The expedition is the only one of the four that is still moving, and the
+// engine already knows how far it has come. Its lane is the line from here to
+// there, and the ship sits on it at exactly that fraction.
+function drawSkyExpeditions(crew, exo, radius, centerX, centerY, alpha, now) {
+  if (!crew.length) return;
+  const dx = exo.x - centerX, dy = exo.y - centerY;
+  const span = Math.hypot(dx, dy) || 1;
+  const ux = dx / span, uy = dy / span;
+  const lane = Math.max(7, radius * .9);
+  cx.save();
+  crew.forEach((player, index) => {
+    const target = +player.victories?.science?.distance_target || 50;
+    const travelled = Math.max(0, Math.min(1, (+player.exoplanet_distance || 0) / target));
+    const offset = (index - (crew.length - 1) / 2) * lane;
+    const ox = -uy * offset, oy = ux * offset;
+    const from = radius * 1.6 + 6, to = span - exo.r - 5;
+    const startX = centerX + ux * from + ox, startY = centerY + uy * from + oy;
+    const endX = centerX + ux * to + ox, endY = centerY + uy * to + oy;
+    const shipX = startX + (endX - startX) * travelled;
+    const shipY = startY + (endY - startY) * travelled;
+    // Zoomed in close, the whole lane is off in the dark and all that reaches
+    // the stage is a line leaving the frame with nothing on it. Wait until the
+    // ship itself is in the picture; that is the thing worth drawing.
+    if (!skyOnStage(shipX, shipY, 24)) return;
+    const colour = pcol(player.id);
+    // The road ahead, then the part already flown over the top of it.
+    cx.globalAlpha = alpha * .22; cx.strokeStyle = colour; cx.lineWidth = 1;
+    cx.setLineDash([2, 5]);
+    cx.beginPath(); cx.moveTo(startX, startY); cx.lineTo(endX, endY); cx.stroke();
+    cx.setLineDash([]);
+    cx.globalAlpha = alpha * .62; cx.lineWidth = 1.4;
+    cx.beginPath(); cx.moveTo(startX, startY); cx.lineTo(shipX, shipY); cx.stroke();
+    cx.globalAlpha = alpha;
+    const size = Math.max(2.2, Math.min(5, radius * .07));
+    // An engine that flickers is the cheapest way to say a thing is under way
+    // rather than parked; an arrived expedition holds still instead.
+    if (travelled < 1) {
+      const flare = size * (1.5 + .5 * Math.sin(now / 190 + player.id));
+      const glow = cx.createRadialGradient(shipX - ux * size, shipY - uy * size, 0,
+                                           shipX - ux * size, shipY - uy * size, flare);
+      glow.addColorStop(0, colour); glow.addColorStop(1, "rgba(255,214,140,0)");
+      cx.globalAlpha = alpha * .55; cx.fillStyle = glow;
+      cx.beginPath(); cx.arc(shipX - ux * size, shipY - uy * size, flare, 0, 7); cx.fill();
+      cx.globalAlpha = alpha;
+    }
+    cx.fillStyle = colour; cx.strokeStyle = "#0b1116"; cx.lineWidth = .8;
+    cx.beginPath();
+    cx.moveTo(shipX + ux * size, shipY + uy * size);
+    cx.lineTo(shipX - ux * size - uy * size * .62, shipY - uy * size + ux * size * .62);
+    cx.lineTo(shipX - ux * size + uy * size * .62, shipY - uy * size - ux * size * .62);
+    cx.closePath(); cx.fill(); cx.stroke();
+  });
+  cx.restore();
+}
+
+// A body nobody could name is just a light. The caption carries the name and,
+// under it, one dot per civilization standing there.
+function drawSkyCaption(place, crew, alpha, note, above) {
+  cx.save();
+  cx.globalAlpha = alpha;
+  cx.textAlign = "center"; cx.textBaseline = "top";
+  // A caption normally hangs under its body. The Moon is the exception: pulled
+  // right back it sits a few pixels off the Earth, and both captions land in
+  // the same place — so that one goes above instead.
+  const stack = 11 * ((note ? 1 : 0) + (crew.length ? 1 : 0));
+  const top = above ? place.y - place.r - 9 - stack : place.y + place.r + 7;
+  cx.font = "800 9px Inter,sans-serif";
+  cx.strokeStyle = "#04080cd9"; cx.lineWidth = 3;
+  cx.strokeText(place.name.toUpperCase(), place.x, top);
+  cx.fillStyle = "#d7e6ef";
+  cx.fillText(place.name.toUpperCase(), place.x, top);
+  if (note) {
+    cx.font = "600 8px Inter,sans-serif";
+    cx.strokeText(note, place.x, top + 11);
+    cx.fillStyle = "#8fa6b3";
+    cx.fillText(note, place.x, top + 11);
+  }
+  if (crew.length) {
+    const row = top + (note ? 22 : 11), gap = 6;
+    crew.forEach((player, index) => {
+      const x = place.x + (index - (crew.length - 1) / 2) * gap;
+      cx.fillStyle = pcol(player.id);
+      cx.beginPath(); cx.arc(x, row + 2, 2.1, 0, 7); cx.fill();
+    });
+  }
+  cx.restore();
+}
+
+// Everything above, in the order it is seen: the far bodies first, then what is
+// standing on them, then the traffic between.
+function drawPlanetSky(radius, centerX, centerY) {
+  const crews = skyCrews();
+  const now = performance.now();
+  let exo = null;
+  for (const body of SKY_BODIES) {
+    const place = skyPlacement(body, radius, centerX, centerY);
+    if (body.id === "exo") exo = place;
+    if (!skyOnScreen(place)) continue;
+    // Under a pixel a body is noise, so it arrives by fading up rather than by
+    // flickering into existence.
+    const alpha = Math.max(0, Math.min(1, (place.r - .7) / 2.4));
+    if (alpha <= 0) continue;
+    if (body.id === "exo") {
+      // Another sun, far enough off that only its light reaches here.
+      const halo = cx.createRadialGradient(place.x, place.y, place.r,
+                                           place.x, place.y, place.r * 6);
+      halo.addColorStop(0, "rgba(150,232,214,.20)");
+      halo.addColorStop(1, "rgba(150,232,214,0)");
+      cx.save(); cx.globalAlpha = alpha; cx.fillStyle = halo;
+      cx.beginPath(); cx.arc(place.x, place.y, place.r * 6, 0, 7); cx.fill(); cx.restore();
+    }
+    const crew = skyCrewFor(crews, body);
+    drawSkyBall(place, alpha);
+    drawSkyLandings(place, crew, alpha);
+    if (alpha > .5) {
+      // The exoplanet's caption belongs to whoever actually got there, which is
+      // not the same list as whoever set out.
+      const arrived = body.id === "exo"
+        ? crews.expedition.filter(p => (+p.exoplanet_distance || 0) >=
+            (+p.victories?.science?.distance_target || 50))
+        : crew;
+      drawSkyCaption(place, arrived, alpha,
+        body.id === "exo"
+          ? `${crews.expedition[0]?.victories?.science?.distance_target || 50} light-years`
+          : "",
+        body.id === "moon" && body.orbit * radius < 92);
+    }
+  }
+  if (exo) drawSkyExpeditions(crews.expedition, exo, radius, centerX, centerY, 1, now);
+  drawSkySatellites(crews.satellite, radius, centerX, centerY, 1, now);
+  // Far enough out, home is a dot among dots and needs saying so. The names
+  // out here are the engine's own — its four projects are the Earth satellite,
+  // the Moon landing, the Mars colony and the exoplanet expedition — so the
+  // globe under all of it is Earth.
+  if (radius < 22) {
+    drawSkyCaption({x:centerX, y:centerY, r:Math.max(radius, 3), name:"Earth"},
+                   crews.satellite, Math.min(1, (22 - radius) / 7), "");
+  }
+}
+
+// Orbits only move if something asks for the frame, and a strategic view sits
+// perfectly still between turns. While the sky is open and something up there
+// is under way, the map keeps painting.
+function planetSkyAnimating() {
+  if (!state || !planetReady() || planetEarthRadius() > SKY_SURFACE) return false;
+  const crews = skyCrews();
+  return crews.satellite.length > 0 || crews.expedition.length > 0;
+}
+
 function drawPlanetMap() {
   if (!planetMap()) return false;
   if (!planetReady()) {
@@ -9850,12 +10304,24 @@ function drawPlanetMap() {
   backdrop.addColorStop(1, "#03070c");
   cx.fillStyle = backdrop;
   cx.fillRect(0, 0, area.clientWidth, area.clientHeight);
+  // Once the globe stops filling the stage, the wash behind it is no longer
+  // the top of an atmosphere — it is the space the rest of the system is in.
+  const depth = skyDepth(radius);
+  if (depth > 0) {
+    cx.fillStyle = `rgba(2,5,10,${(depth * .78).toFixed(3)})`;
+    cx.fillRect(0, 0, area.clientWidth, area.clientHeight);
+    drawSkyStars(depth);
+  }
 
   // The ocean sphere under the tiles: it fills the limb no tile quite reaches
   // and gives the globe its roundness.
   cx.save();
-  cx.shadowColor = "#000d"; cx.shadowBlur = Math.max(18, radius * .12);
-  cx.shadowOffsetY = Math.max(8, radius * .05);
+  // The drop shadow is the globe's own, so it has to shrink with it: a fixed
+  // eighteen-pixel blur around a five-pixel Earth is a smudge with a world in
+  // the middle of it.
+  cx.shadowColor = "#000d";
+  cx.shadowBlur = Math.max(Math.min(18, radius * .4), radius * .12);
+  cx.shadowOffsetY = Math.max(Math.min(8, radius * .2), radius * .05);
   const ocean = cx.createRadialGradient(centerX - radius * .32, centerY - radius * .36,
                                         radius * .05, centerX, centerY, radius);
   if (spectator) {
@@ -9886,8 +10352,12 @@ function drawPlanetMap() {
       cx.globalAlpha = .28;
       cx.fillStyle = pcol(tile.owner); cx.fill(); cx.globalAlpha = 1;
     }
-    cx.strokeStyle = "rgba(214,235,231,.075)";
-    cx.lineWidth = Math.max(.3, Math.min(1, scale * .75)); cx.stroke();
+    // Below a coin-sized world the grid is finer than a pixel, and drawing it
+    // anyway turns the marble grey.
+    if (radius >= SKY_MARKERS) {
+      cx.strokeStyle = "rgba(214,235,231,.075)";
+      cx.lineWidth = Math.max(.3, Math.min(1, scale * .75)); cx.stroke();
+    }
     PLANET_HIT_CELLS.push({pos:tile.pos, points, z:center.z});
   }
 
@@ -9916,7 +10386,12 @@ function drawPlanetMap() {
       cx.fillText(glyph, cell.center.x, cell.center.y); cx.globalAlpha = 1;
     }
   }
-  const cellByKey = new Map(cells.map(cell => [key(cell.tile.pos), cell]));
+  // Cities and armies are drawn at a floor size so they stay clickable, and a
+  // four-pixel dot on a world the size of a coin is no longer a city on it.
+  // Past that the globe is one object among several and only reads as one.
+  const cellByKey = radius >= SKY_MARKERS
+    ? new Map(cells.map(cell => [key(cell.tile.pos), cell]))
+    : new Map();
   for (const city of state.cities) {
     const cell = cellByKey.get(key(city.pos));
     if (!cell || cell.center.z < .02) continue;
@@ -9951,8 +10426,10 @@ function drawPlanetMap() {
   rim.addColorStop(.92, "rgba(133,216,255,.42)");
   rim.addColorStop(1, "rgba(133,216,255,0)");
   cx.fillStyle = rim; cx.beginPath(); cx.arc(centerX, centerY, radius * 1.1, 0, 7); cx.fill();
-  cx.strokeStyle = "rgba(196,235,255,.48)"; cx.lineWidth = 1.4;
+  cx.strokeStyle = "rgba(196,235,255,.48)";
+  cx.lineWidth = Math.max(.5, Math.min(1.4, radius * .06));
   cx.beginPath(); cx.arc(centerX, centerY, radius, 0, 7); cx.stroke();
+  drawPlanetSky(radius, centerX, centerY);
   cx.setTransform(1, 0, 0, 1, 0, 0);
   return true;
 }
@@ -14788,7 +15265,10 @@ function zoomAt(f, sx, sy) {
   if (planetMap()) {
     const base = cameraZoom?.scale || cam.scale;
     cameraFlight = null; cameraZoom = null; clearCameraInertia();
-    cam.scale = Math.max(.08, Math.min(3.2, base * f));
+    // A globe's zoom-out does not stop at the globe. It carries on until the
+    // rest of the system is in frame, which is a fixed apparent size for the
+    // Earth rather than a fixed number, because a bigger world starts bigger.
+    cam.scale = Math.max(planetMinScale(), Math.min(3.2, base * f));
     draw(); drawMini();
     return;
   }
@@ -16663,7 +17143,7 @@ function animTick(now) {
     anim.sparks.length > 0 || anim.deaths.length > 0 || anim.strike ||
     anim.shots.length > 0 || anim.bursts.length > 0 || anim.motes.length > 0 ||
     anim.scars.length > 0 || anim.battles.length > 0 || shakeUntil > now ||
-    anim.blasts.length > 0;
+    anim.blasts.length > 0 || planetSkyAnimating();
   // Never spend more than about half the wall clock painting. Cinematic asks
   // for a repaint thirty times a second so its weather and water keep moving,
   // which is right on a machine that can afford it and ruinous on one that
