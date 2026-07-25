@@ -8623,11 +8623,16 @@ mod tests {
             .buildings
             .push("archaeological_museum".to_string());
         g.players[0].civics.insert("natural_history".to_string());
+        // One `archaeologist_step` is one movement step, so the dig has to
+        // border the city for the route to finish inside it. Taking the first
+        // owned tile instead left that to the shape of the generated map.
         let site = g.cities[&city]
             .owned_tiles
             .iter()
             .copied()
-            .find(|position| *position != g.cities[&city].pos && g.units_at(*position).is_empty())
+            .find(|position| {
+                g.wdist(*position, g.cities[&city].pos) == 1 && g.units_at(*position).is_empty()
+            })
             .unwrap();
         let tile = g.map.tiles.get_mut(&site).unwrap();
         tile.terrain = "plains".to_string();

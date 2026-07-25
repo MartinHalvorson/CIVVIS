@@ -910,10 +910,18 @@ mod tests {
         assert_eq!(game_score(Some(2), &seats, "challenger"), 0.5);
     }
 
+
     #[test]
     fn terminal_score_share_is_bounded_symmetric_and_independent_of_winner() {
         let mut game = Game::new(2, 20, 14, 71, 40, 0);
         let seats = ["challenger", "incumbent"];
+        // There is already score on the board at turn 0: a start whose units
+        // can see a Natural Wonder is paid Era Score for finding it, and which
+        // start that is belongs to the map. Level the seats so this measures
+        // the share function rather than the generator that fed it.
+        for pid in 0..seats.len() {
+            game.players[pid].era_score = 0;
+        }
         let baseline = terminal_score_share(&game, &seats, "challenger");
         assert!((baseline - 0.5).abs() < 1e-12);
 

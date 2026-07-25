@@ -2214,12 +2214,16 @@ initSidebarSections();
 const S = 36, SQ3 = Math.sqrt(3);
 const TERRAIN = { grassland:"#5e9440", plains:"#ab9e4e", desert:"#d8c184",
                   tundra:"#98a089", snow:"#e8eef2", coast:"#20647e",
-                  ocean:"#0e3752", mountain:"#877f6f" };
+                  ocean:"#0e3752", mountain:"#877f6f", lake:"#2b7a86" };
 const TERRAIN_HI = { grassland:"#79ad52", plains:"#c1b360", desert:"#e8d49c",
                      tundra:"#aab29a", snow:"#f6fafc", coast:"#2f7d99",
-                     ocean:"#174a6b", mountain:"#9c9484" };
+                     ocean:"#174a6b", mountain:"#9c9484", lake:"#3d97a4" };
+// Fresh water is shallower and greener than the shelf, which is the whole read
+// a player needs: a lake waters the tiles around it and a bay does not. It
+// borrows the Coast cell of the atlas, having no photography of its own.
 const ATLAS_CELL = { grassland:[0,0], plains:[1,0], desert:[2,0], tundra:[3,0],
-                     coast:[0,1], ocean:[1,1], snow:[2,1], mountain:[3,1] };
+                     coast:[0,1], ocean:[1,1], snow:[2,1], mountain:[3,1],
+                     lake:[0,1] };
 const TERRAIN_ATLAS = new Image();
 let ATLAS_READY = false;
 // Anything baked before the material arrived is a flat colour wash that would
@@ -3916,7 +3920,7 @@ function elev(t) {
   if (!MODE.relief) return 0;
   const k = reliefScale();
   if (t.terrain === "ocean") return -6 * k;
-  if (t.terrain === "coast") return -4 * k;
+  if (t.terrain === "coast" || t.terrain === "lake") return -4 * k;
   let e = 7;
   if (t.hills) e += 6;
   if (t.terrain === "mountain") e += 9;
@@ -5941,7 +5945,7 @@ function drawFeathered(t, x, y, alpha) {
   cx.restore();
 }
 
-const isWater = t => t.terrain === "coast" || t.terrain === "ocean";
+const isWater = t => t.terrain === "coast" || t.terrain === "ocean" || t.terrain === "lake";
 
 // Only open sea is blended. Feathering was tried for land too — same terrain,
 // same relief, so terrain and hill boundaries would have stayed crisp — but on
@@ -6078,7 +6082,7 @@ function bakeDunes(g, variant) {
 function bakeTileArt(g, terrain, hills, variant, R) {
   const base = TERRAIN[terrain] || "#333";
   const hi = TERRAIN_HI[terrain] || base;
-  const water = terrain === "coast" || terrain === "ocean";
+  const water = terrain === "coast" || terrain === "ocean" || terrain === "lake";
   const cine = MODE.atmosphere;
   g.save();
   planeHexPath(g, S + 0.7); g.clip();
@@ -9593,7 +9597,7 @@ function draw() {
     const e = elev(t);
     const y = y0 - e;
     const base = TERRAIN[t.terrain] || "#333";
-    const water = (t.terrain === "coast" || t.terrain === "ocean");
+    const water = (t.terrain === "coast" || t.terrain === "ocean" || t.terrain === "lake");
     if (beau && MODE.relief > 0 && !water) drawWalls(t, x, y, base, e);
     // Slightly overlap adjacent top faces so antialiasing cannot expose the
     // backdrop between them. Texture and lighting are painted in a separate
@@ -9723,12 +9727,12 @@ function draw() {
   if (beau) {
     const shore = [];
     for (const t of tiles) {
-      if (t.terrain !== "coast") continue;
+      if (t.terrain !== "coast" && t.terrain !== "lake") continue;
       const [x, yy] = hexXY(t.pos[0], t.pos[1]);
       const y = yy - elev(t);
       for (let i = 0; i < 6; i++) {
         const n = nbrTile(t.pos, DIRS[i]);
-        if (!n || n.terrain === "coast" || n.terrain === "ocean") continue;
+        if (!n || isWater(n)) continue;
         const [c1, c2] = EDGE_CORNERS[i];
         const [ax, ay] = corner(x, y, S - 1.2, c1);
         const [bx, by] = corner(x, y, S - 1.2, c2);
@@ -13949,7 +13953,7 @@ function settleValue(pos) {
   return v;
 }
 function validSettle(t) {
-  if (t.terrain === "ocean" || t.terrain === "coast" || t.terrain === "mountain") return false;
+  if (isWater(t) || t.terrain === "mountain") return false;
   if (t.owner !== null && t.owner !== undefined && t.owner !== state.player) return false;
   for (const c of state.cities) if (whexDist(t.pos, c.pos) < 4) return false;
   return true;
@@ -14483,7 +14487,7 @@ function setObservedPlayersView(smooth = false) {
 }
 function actionViewingAnchor(focus) {
   if (!state || !Array.isArray(focus)) return focus;
-  const isLand = tile => tile.terrain !== "coast" && tile.terrain !== "ocean";
+  const isLand = tile => !isWater(tile);
   const candidates = state.map.tiles.filter(tile =>
     isLand(tile) && whexDist(tile.pos, focus) <= 4);
   if (!candidates.length) return focus;
@@ -14515,7 +14519,7 @@ function actionViewingAnchor(focus) {
 function mainLandmassAnchor() {
   if (!state) return null;
   const land = new Map(state.map.tiles
-    .filter(t => t.terrain !== "coast" && t.terrain !== "ocean")
+    .filter(t => !isWater(t))
     .map(t => [key(t.pos), t]));
   const seen = new Set();
   let main = [];

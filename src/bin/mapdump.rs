@@ -6,8 +6,8 @@
 //! VI's own generator targets, so a change can be judged by eye and by number.
 //!
 //! Usage: mapdump [--seed N] [--width N] [--height N] [--script pangaea|
-//!                 continents|small_continents|inland_sea|true_start_earth|
-//!                 true_start_true_earth] [--maps N] [--quiet]
+//!                 continents|small_continents|inland_sea|lakes|
+//!                 true_start_earth|true_start_true_earth] [--maps N] [--quiet]
 use std::collections::BTreeMap;
 
 use civvis::rng::Rng;
@@ -42,6 +42,7 @@ fn main() {
         Some("continents") => MapScript::Continents,
         Some("small_continents") => MapScript::SmallContinents,
         Some("inland_sea") => MapScript::InlandSea,
+        Some("lakes") => MapScript::Lakes,
         Some("true_start_earth") => MapScript::TrueStartEarth,
         Some("true_start_true_earth") => MapScript::TrueStartTrueEarth,
         _ => MapScript::Pangaea,
@@ -77,6 +78,7 @@ fn main() {
                         (_, Some("reef")) => ':',
                         ("ocean", _) => ' ',
                         ("coast", _) => '.',
+                        ("lake", _) => '~',
                         ("mountain", _) => 'A',
                         (_, Some("jungle")) => 'J',
                         (_, Some("forest")) => 'f',
