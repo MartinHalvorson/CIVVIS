@@ -1032,10 +1032,15 @@
   .save-entry b { color: var(--text); font-size: 11px; font-weight: 650; }
   .save-entry span { color: var(--muted); font-size: 9px; }
   .save-entry button { margin: 0 0 0 auto; padding: 4px 8px; font-size: 9px; }
-  /* Leader, difficulty and the start button only mean anything with somebody
-     at the keyboard. The AI-only view starts its next world from the specbar's
-     Restart sim, which already says when the selected settings differ. */
+  /* Leader and difficulty only mean anything with somebody at the keyboard. */
   body.spectating .human-setting { display: none; }
+  /* Exactly one control starts the next world, and which one it is follows the
+     world on screen rather than the pending selection: the specbar's Restart
+     sim while a simulation is playing itself (it already says what it will
+     start), the sidebar's button in a game somebody is playing. Keying this to
+     the mode select instead would leave a player who selects AI-only with no
+     way to launch it at all. */
+  body.watching-sim #startgame { display: none; }
   /* Civ 6 conducts diplomacy leader by leader: who they are, what they want,
      how they feel about you, and what you can do about it. Quick Deals
      already compares every acceptable trade at once; this is the other half —
@@ -1370,6 +1375,24 @@
     letter-spacing: .08em; text-transform: uppercase;
   }
   .spec-controls #restart-sim::before { content: "↻"; margin-right: 5px; font-size: 13px; }
+  /* Choosing single player turns this one control into the way into that game,
+     so it says which game it starts instead of leaving "Restart sim" over a
+     single-player subtitle. A start is not a restart: the glyph changes too.
+     The name is long enough that sharing a row with Pause would break it over
+     three lines, so the pair stacks while it is showing. */
+  .spec-controls:has(#restart-sim.human-start) { grid-template-columns: 1fr; }
+  .spec-controls #restart-sim.human-start::before { content: "▶"; font-size: 11px; }
+  /* Stacked, the two would be gold together and neither would read as the one
+     to press. Pausing the simulation you are about to leave is not the point,
+     so Pause steps back to the plain treatment while the start is staged. */
+  .spec-controls:has(#restart-sim.human-start) #specpause.primary {
+    color: #c2cec8; background: linear-gradient(180deg, #243530, #192823);
+    border-color: #3b5049; box-shadow: none;
+  }
+  .spec-controls:has(#restart-sim.human-start) #specpause.primary:hover {
+    color: var(--text); background: linear-gradient(180deg, #315048, #223a34);
+    border-color: #57776d;
+  }
   .spec-controls #restart-sim .sub {
     display: block; margin-top: 3px; color: var(--muted); font-size: 8px;
     font-weight: 700; letter-spacing: .07em; white-space: nowrap;
@@ -2175,7 +2198,7 @@
       <div id="specbar" style="display:none">
         <div class="spec-controls">
           <button class="primary" id="specpause">⏸ Pause</button>
-          <button id="restart-sim" title="Restart with the same settings">Restart sim<span class="sub">same settings</span></button>
+          <button id="restart-sim" title="Restart with the same settings"><span class="lbl">Restart sim</span><span class="sub">same settings</span></button>
         </div>
         <script>
           // A supervised restart replaces this whole page. Restore the label
@@ -2229,7 +2252,7 @@
           <option value="epic">Epic · 750 turns</option>
           <option value="marathon">Marathon · 1500 turns</option>
         </select></label>
-        <button class="primary human-setting" id="startgame" style="margin-top:9px"
+        <button class="primary" id="startgame" style="margin-top:9px"
           title="Begin a new game with these settings — the current one is not saved first"
           >Start new game</button>
         <div class="utility-group" id="saves-group" style="display:none">
@@ -5684,6 +5707,9 @@ function render(st, recordChronicle = true) {
   const fullMapSpectator = SPEC && (st.view_player === null || st.view_player === undefined);
   document.getElementById("humanfooter").style.display = SPEC ? "none" : "grid";
   document.getElementById("specbar").style.display = SPEC ? "block" : "none";
+  // The specbar's Restart sim is the one start control while a simulation is
+  // on screen; the sidebar's start button is the one in a game being played.
+  document.body.classList.toggle("watching-sim", SPEC);
   document.getElementById("observer-settings").style.display = SPEC ? "block" : "none";
   document.getElementById("strategysec").style.display = fullMapSpectator ? "none" : "block";
   if (SPEC) closeTrade();
@@ -16916,7 +16942,10 @@ function simulationSettingsKey(settings) {
 }
 function applyQueuedSimulationSettings(settings) {
   if (!settings) return;
-  document.getElementById("gamemode").value = "ai_sim";
+  // Staged settings describe a spectated world, so they adopt that mode while
+  // one is on screen. They must not overrule the person who just asked for a
+  // single-player game and is now looking at it.
+  if (SPEC) document.getElementById("gamemode").value = "ai_sim";
   syncSetupMode();
   document.getElementById("np").value = String(settings.players);
   document.getElementById("maptype").value = settings.map;
@@ -16927,13 +16956,23 @@ function applyQueuedSimulationSettings(settings) {
 }
 function updateRestartSimulationButton() {
   const button = document.getElementById("restart-sim");
-  const changed = activeSimulationSettingsKey !== null &&
-    simulationSettingsKey(selectedSimulationSettings()) !== activeSimulationSettingsKey;
+  // Picking single player turns the specbar's one start control into the way
+  // into that game: it becomes Start Single Player Game, and always reads as a
+  // change from the world on screen.
+  const human = !selectedSimulationSettings().spectate;
+  const changed = human || (activeSimulationSettingsKey !== null &&
+    simulationSettingsKey(selectedSimulationSettings()) !== activeSimulationSettingsKey);
   button.classList.toggle("primary", changed);
-  button.title = changed
+  button.classList.toggle("human-start", human);
+  button.querySelector(".lbl").textContent = human
+    ? "Start Single Player Game"
+    : "Restart sim";
+  button.title = human
+    ? "Start a single-player game with the selected settings"
+    : changed
     ? "Restart with the selected settings"
     : "Restart with the same settings";
-  button.querySelector(".sub").textContent = changed
+  button.querySelector(".sub").textContent = human || changed
     ? "with selected settings"
     : "same settings";
 }
@@ -17031,11 +17070,15 @@ async function writeSave() {
 
 async function startNewSimulation() {
   if (newSimulationBusy) return;
-  const supervised = !!(state && state.supervised);
   const wasPaused = specPaused;
   setNewSimulationBusy(true);
   try {
     const payload = {...newSimulationPayload(), paused: wasPaused};
+    // The supervisor owns the AI exhibition — each simulation is a fresh
+    // process on freshly built code. A single-player game is not part of that
+    // cycle: it takes over this process in place, so sitting down to play
+    // starts immediately instead of waiting out a process handoff.
+    const supervised = !!(state && state.supervised) && payload.spectate;
     sel = null; selCity = null;
     clearTimeout(specTimer);
     if (supervised) {
