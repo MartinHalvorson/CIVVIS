@@ -255,18 +255,36 @@ fn earth_is_land(longitude: f64, latitude: f64) -> bool {
 
 /// Where each civilization actually began, in `(longitude, latitude)` degrees.
 ///
-/// `CIV_NAMES` is ordered Rome, Egypt, Greece, China, Sumeria, Aztec, Nubia,
-/// Scythia. Preserve that order here so a True Start map is true in play and
-/// not merely Earth-shaped in the setup preview.
-const EARTH_HOMELANDS: [(f64, f64); 8] = [
-    (12.5, 41.9),
-    (31.2, 30.0),
-    (23.7, 38.0),
-    (116.4, 39.9),
-    (44.4, 32.5),
-    (-99.1, 19.4),
-    (32.5, 19.6),
-    (64.0, 48.0),
+/// One entry per seat in `CIV_NAMES`, in that same order, so a True Start map
+/// is true in play and not merely Earth-shaped in the setup preview.
+///
+/// A globe of this size gives each tile some three degrees, so a homeland is
+/// the civilization's heartland rather than the exact site of its capital: a
+/// point on a peninsula or a river delta thinner than the sampling would come
+/// out at sea and seat the civilization on whatever coast the search found
+/// first. `every_homeland_is_on_land` holds the line.
+const EARTH_HOMELANDS: [(f64, f64); 21] = [
+    (12.5, 41.9),   // Rome
+    (31.2, 30.0),   // Egypt
+    (23.7, 38.0),   // Greece
+    (116.4, 39.9),  // China
+    (44.4, 32.5),   // Sumeria
+    (-99.1, 19.4),  // Aztec
+    (32.5, 19.6),   // Nubia
+    (64.0, 48.0),   // Scythia
+    (-1.5, 52.5),   // England
+    (9.0, 50.1),    // Germany
+    (37.6, 55.8),   // Russia
+    (128.0, 36.5),  // Korea
+    (-89.0, 21.0),  // Maya
+    (-8.4, 13.5),   // Mali
+    (36.0, 35.0),   // Phoenicia
+    (31.5, 39.8),   // Byzantium
+    (30.5, -27.5),  // Zulu
+    (3.5, 46.5),    // Gaul
+    (16.0, -6.0),   // Kongo
+    (105.5, 21.5),  // Vietnam
+    (-45.0, -20.0), // Brazil
 ];
 
 /// The unit vector a longitude and latitude in degrees point at.
@@ -3121,8 +3139,9 @@ mod river_tests {
         );
 
         // Every civilization opens in its own homeland. The seats are handed
-        // out in CIV_NAMES order, so the eight majors lead the spawn list.
-        for (index, (longitude, latitude)) in EARTH_HOMELANDS.iter().enumerate() {
+        // out in CIV_NAMES order, so this game's eight majors lead the spawn
+        // list and take the first eight homelands.
+        for (index, (longitude, latitude)) in EARTH_HOMELANDS.iter().enumerate().take(8) {
             let home = nearest(*longitude, *latitude);
             let start = spawns[index];
             assert!(!rules.is_water(&world.tiles[&start]));
@@ -3132,6 +3151,65 @@ mod river_tests {
                 sphere.distance(home, start)
             );
         }
+    }
+
+    /// Every seat's homeland is dry land on the sampled globe, and no two
+    /// share a tile.
+    ///
+    /// A homeland that samples as ocean does not fail loudly — the search
+    /// simply seats that civilization on the nearest viable land, which can be
+    /// a continent away — so a True Start map would quietly stop being true
+    /// for whichever civilization was added last. Two homelands on one tile
+    /// are the same silent failure by another route.
+    #[test]
+    fn every_homeland_is_on_land_and_has_it_to_itself() {
+        let rules = Rules::embedded();
+        let size = CIV6_MAP_SIZES
+            .iter()
+            .find(|size| size.id == "huge")
+            .unwrap();
+        let mut rng = Rng::new(9_133);
+        let (world, _) = generate_with_script(
+            &rules,
+            size.width,
+            size.height,
+            8,
+            12,
+            size.natural_wonders,
+            size.continents,
+            MapScript::TrueStartEarth,
+            &mut rng,
+        );
+        let sphere = world.sphere().unwrap();
+        assert_eq!(
+            EARTH_HOMELANDS.len(),
+            crate::game::CIV_NAMES.len(),
+            "every civilization needs a homeland of its own"
+        );
+        let mut seen: BTreeMap<Pos, &str> = BTreeMap::new();
+        let mut adrift: Vec<String> = Vec::new();
+        for (civilization, (longitude, latitude)) in
+            crate::game::CIV_NAMES.iter().zip(EARTH_HOMELANDS)
+        {
+            let target = earth_direction(longitude, latitude);
+            let home = sphere
+                .positions()
+                .max_by(|a, b| {
+                    let toward = |pos: &Pos| {
+                        let center = sphere.center(*pos).unwrap();
+                        center[0] * target[0] + center[1] * target[1] + center[2] * target[2]
+                    };
+                    toward(a).partial_cmp(&toward(b)).unwrap()
+                })
+                .unwrap();
+            if rules.is_water(&world.tiles[&home]) {
+                adrift.push(format!("{civilization} ({longitude}, {latitude}) is at sea"));
+            }
+            if let Some(other) = seen.insert(home, civilization) {
+                adrift.push(format!("{civilization} shares {other}'s homeland tile"));
+            }
+        }
+        assert!(adrift.is_empty(), "{}", adrift.join("; "));
     }
 
     /// Earth may not be spun to suit its lattice, so unlike Planet it cannot
