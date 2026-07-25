@@ -9869,17 +9869,46 @@ const SKY_CHAIN = {
 function planetEarthRadius(scale = cam.scale) {
   return WW() / (2 * Math.PI) * scale;
 }
-// How far the stage runs in one direction before the HUD takes over. The
-// system is composed against this rather than against the canvas, because a
-// planet drawn under the victory rail has not been reached.
+// Every HUD widget the sky has to stay clear of, measured where it actually
+// is. Neither existing answer survives this: `observedFrameRect` reserves a
+// nominal strip narrower than the rail really is, and `mapFocusBounds` reads
+// the world map as a lower-left corner widget and gives up on the whole width
+// once it is docked in the rail instead. The widgets are draggable and
+// resizable, so the only durable answer is their boxes.
+function skyWidgetBoxes() {
+  const areaRect = area.getBoundingClientRect();
+  const boxes = [];
+  for (const name of Object.keys(HUD_WIDGETS)) {
+    const box = mapWidgetBox(name, areaRect);
+    if (box) boxes.push(box);
+  }
+  return boxes;
+}
+// Where a ray leaves the canvas or meets a widget, whichever comes first — the
+// slab test, so a widget off to one side of the bearing is correctly ignored.
+function skyRayLimit(x, y, dx, dy, box) {
+  let near = -Infinity, far = Infinity;
+  for (const [origin, dir, lo, hi] of
+       [[x, dx, box.left, box.right], [y, dy, box.top, box.bottom]]) {
+    if (Math.abs(dir) < 1e-6) {
+      if (origin < lo || origin > hi) return Infinity;
+      continue;
+    }
+    const a = (lo - origin) / dir, b = (hi - origin) / dir;
+    near = Math.max(near, Math.min(a, b));
+    far = Math.min(far, Math.max(a, b));
+  }
+  return far < Math.max(0, near) ? Infinity : Math.max(0, near);
+}
 function skyReach(bearing, centerX, centerY) {
-  const frame = observedFrameRect();
   const dx = Math.cos(bearing), dy = Math.sin(bearing);
-  const across = Math.abs(dx) < 1e-3 ? Infinity
-    : (dx > 0 ? frame.right - centerX : centerX - frame.left) / Math.abs(dx);
-  const down = Math.abs(dy) < 1e-3 ? Infinity
-    : (dy > 0 ? frame.bottom - centerY : centerY - frame.top) / Math.abs(dy);
-  return Math.max(40, Math.min(across, down));
+  const edge = (origin, dir, span) => Math.abs(dir) < 1e-6 ? Infinity
+    : (dir > 0 ? span - origin : origin) / Math.abs(dir);
+  let reach = Math.min(edge(centerX, dx, area.clientWidth),
+                       edge(centerY, dy, area.clientHeight));
+  for (const box of skyWidgetBoxes())
+    reach = Math.min(reach, skyRayLimit(centerX, centerY, dx, dy, box));
+  return Math.max(40, reach);
 }
 // Zooming out stops where the picture is complete: the outermost body inside
 // the stage. That is a property of the window, not a number — a wider screen
@@ -9887,7 +9916,7 @@ function skyReach(bearing, centerX, centerY) {
 function planetMinScale() {
   const [centerX, centerY] = planetStageCenter();
   const outer = SKY_BODIES[SKY_BODIES.length - 1];
-  const fits = skyReach(outer.bearing, centerX, centerY) * .88 / outer.orbit;
+  const fits = skyReach(outer.bearing, centerX, centerY) * .84 / outer.orbit;
   return Math.min(.08, Math.max(SKY_MIN_EARTH, fits) /
                        Math.max(1, WW() / (2 * Math.PI)));
 }
@@ -9920,15 +9949,21 @@ function skyPlacement(body, radius, centerX, centerY) {
     r:Math.max(body.floor, body.size * radius),
   };
 }
-// Reached means standing in the part of the window the map actually owns. The
-// margin lets a body cross the edge under the HUD rather than blink at it.
+// Reached means standing on canvas and out from behind the HUD. The margin
+// runs both ways: it lets a body hang over the canvas edge, and it keeps one
+// off a widget by its own width so a caption does not slide under the rail.
 function skyOnStage(x, y, margin = 0) {
-  const frame = observedFrameRect();
-  return x > frame.left - margin && x < frame.right + margin &&
-         y > frame.top - margin && y < frame.bottom + margin;
+  if (x < -margin || x > area.clientWidth + margin ||
+      y < -margin || y > area.clientHeight + margin) return false;
+  return !skyWidgetBoxes().some(box =>
+    x > box.left - margin && x < box.right + margin &&
+    y > box.top - margin && y < box.bottom + margin);
 }
 function skyOnScreen(place) {
-  return skyOnStage(place.x, place.y, place.r + 34);
+  // The disc has to be clear, not the caption: the text is stroked dark and a
+  // few pixels of it grazing the rail costs less than dropping a whole world
+  // that fits.
+  return skyOnStage(place.x, place.y, place.r + 8);
 }
 
 // Stars belong to the screen, not to the world: they do not slide when the
