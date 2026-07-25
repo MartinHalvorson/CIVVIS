@@ -3009,6 +3009,26 @@ mod tests {
                 "map overlay {overlay} should have a close control"
             );
         }
+        // Any civilization in the standings can be locked so its row stays in
+        // view while the rest of the table scrolls past it. The choice belongs
+        // to the viewer, is keyed by civilization so it survives a new game,
+        // and defaults to whichever civilization the viewer is.
+        assert!(EMBEDDED_INDEX.contains("civvis-hud-locked-civs-v1"));
+        assert!(EMBEDDED_INDEX.contains("function toggleCivLock(id)"));
+        assert!(EMBEDDED_INDEX.contains("function viewerCivName()"));
+        assert!(EMBEDDED_INDEX.contains("function lockedCivs()"));
+        assert!(EMBEDDED_INDEX.contains("function syncPlayerLockPins()"));
+        assert!(EMBEDDED_INDEX.contains("data-hud-action=\"lock\""));
+        assert!(EMBEDDED_INDEX.contains("if (target.dataset.hudAction === \"lock\") toggleCivLock(id);"));
+        // A locked row holds at whichever edge it was about to leave, so it
+        // needs both offsets, staggered by one row per row held above it.
+        assert!(EMBEDDED_INDEX.contains("top: calc(var(--pin-head, 0) * var(--hud-row-pitch));"));
+        assert!(EMBEDDED_INDEX.contains("bottom: calc(var(--pin-tail, 0) * var(--hud-row-pitch));"));
+        // The standings never take more than a quarter of the screen; rows past
+        // that scroll at a fixed height rather than being squeezed to fit.
+        assert!(EMBEDDED_INDEX.contains("--player-hud-max-height: 25vh;"));
+        assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.25"));
+        assert!(EMBEDDED_INDEX.contains("grid-auto-rows: var(--hud-row-height);"));
         assert!(EMBEDDED_INDEX.contains("function dismissOverlay(name, source)"));
         assert!(EMBEDDED_INDEX.contains("addEventListener(\"pointerdown\", event =>"));
         assert!(EMBEDDED_INDEX.contains("overlay-return-flash .24s ease-in-out 3"));
