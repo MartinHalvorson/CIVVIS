@@ -3319,6 +3319,19 @@ mod tests {
         // The globe has its own renderer, and it is the only one now: the
         // retired true-start Earth scripts must not linger in the client.
         assert!(EMBEDDED_INDEX.contains("function drawPlanetMap()"));
+        // A world faces the way it was found until north is discovered, so
+        // nothing in the viewer may go back to a bare north-up reset: the
+        // camera paths, the compass and the minimap all read one bearing.
+        assert!(EMBEDDED_INDEX.contains("function restingRot()"));
+        assert!(EMBEDDED_INDEX.contains("function worldFacing(seed)"));
+        assert!(EMBEDDED_INDEX.contains("function adoptWorldFacing(st)"));
+        assert!(EMBEDDED_INDEX.contains("found_north !== false"));
+        assert!(EMBEDDED_INDEX.contains("id=\"compass\""));
+        assert!(EMBEDDED_INDEX.contains("id=\"compass-needle\""));
+        assert!(EMBEDDED_INDEX.contains("resetMapFacing(DEFAULT_CINEMA_YS - cinematicYS)"));
+        assert!(!EMBEDDED_INDEX.contains("orbitCamera(-cam.rot, DEFAULT_CINEMA_YS"));
+        // The globe's yaw is a bearing, not a second way to spin it eastward.
+        assert!(EMBEDDED_INDEX.contains("roll:cam.rot"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"planet\">Planet</option>"));
         assert!(!EMBEDDED_INDEX.contains("true_start"));
         assert!(EMBEDDED_INDEX.contains("id=\"gamespeed\""));
@@ -3391,17 +3404,17 @@ mod tests {
         let mode_setting = EMBEDDED_INDEX
             .find("id=\"gamemode\"")
             .expect("game mode setting");
+        let map_setting = EMBEDDED_INDEX.find("id=\"maptype\"").expect("map setting");
         let world_setting = EMBEDDED_INDEX
             .find("id=\"np\"")
             .expect("world size setting");
-        let map_setting = EMBEDDED_INDEX.find("id=\"maptype\"").expect("map setting");
         let speed_setting = EMBEDDED_INDEX
             .find("id=\"gamespeed\"")
             .expect("game speed setting");
         assert!(
-            mode_setting < world_setting
-                && world_setting < map_setting
-                && map_setting < speed_setting
+            mode_setting < map_setting
+                && map_setting < world_setting
+                && world_setting < speed_setting
         );
 
         let game_settings = EMBEDDED_INDEX
@@ -3664,7 +3677,9 @@ mod tests {
         ));
         assert!(EMBEDDED_INDEX.contains("if (movingDown) setFullWorldView();"));
         assert!(EMBEDDED_INDEX.contains("function setFullWorldView()"));
-        assert!(EMBEDDED_INDEX.contains("takeCameraControl();\n  setRot(0);"));
+        // The atlas view returns to whatever "up" means in this world, which is
+        // north only for a civilization that has found it.
+        assert!(EMBEDDED_INDEX.contains("takeCameraControl();\n  setRot(restingRot());"));
         assert!(EMBEDDED_INDEX.contains("const centers = state.map.tiles.map"));
         assert!(
             EMBEDDED_INDEX.contains("if (beau && MODE.relief > 0 && !water) drawWalls(")

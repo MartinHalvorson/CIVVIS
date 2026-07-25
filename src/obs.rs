@@ -13,6 +13,17 @@ pub fn observation(g: &Game, pid: usize) -> Value {
     obs_impl(g, pid, false, true)
 }
 
+/// The technology that teaches a people to read their bearing off the sky.
+///
+/// Sailing put them out of sight of the coast and astrology gave them the
+/// figures to steer by; together they are the point at which a civilization can
+/// say which way is north rather than only which way it came from. Until then a
+/// map faces the direction it was first seen from, which the viewer keeps in
+/// `found_north` below — a presentation rule, so it is reported rather than
+/// enforced, but it is reported from here so the client is not left deciding
+/// which discovery it was.
+pub const NORTH_TECH: &str = "celestial_navigation";
+
 /// The shape of a Planet world, for a client that has to draw it.
 ///
 /// A globe cannot be drawn from tile coordinates the way a flat map can: the
@@ -333,6 +344,10 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             "bankruptcy_amenity_penalty": p.bankruptcy_amenity_penalty,
             "techs": p.techs, "research": p.research,
             "research_progress": round1(p.research_progress),
+            // A spectator watches from above the world rather than inside it,
+            // so it is never the party that has to find north.
+            "found_north": omniscient || p.techs.contains(NORTH_TECH),
+            "north_tech": NORTH_TECH,
             "civics": p.civics, "civic": p.civic,
             "civic_progress": round1(p.civic_progress),
             "government": p.government,
@@ -1254,6 +1269,40 @@ fn merge(base: &mut Value, ext: Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The viewer starts a world facing wherever it was found and only puts
+    /// north at the top once the civilization it is watching can find north, so
+    /// the observation has to say. A spectator is above the world rather than in
+    /// it and always can; a civilization has to research it.
+    #[test]
+    fn finding_north_is_a_technology_for_a_civilization_and_free_for_a_spectator() {
+        let mut game = Game::new(2, 18, 12, 11, 25, 0);
+        assert!(
+            game.rules.techs.get(NORTH_TECH).is_some(),
+            "{NORTH_TECH} must name a technology in the shipped tree",
+        );
+        game.players[0].techs.remove(NORTH_TECH);
+
+        let own = observation(&game, 0);
+        assert_eq!(own["me"]["found_north"], json!(false));
+        assert_eq!(own["me"]["north_tech"], json!(NORTH_TECH));
+        // Watching one civilization's own view is that civilization's knowledge.
+        assert_eq!(
+            observation_player_view(&game, 0)["me"]["found_north"],
+            json!(false),
+        );
+        assert_eq!(
+            observation_spectator(&game, 0)["me"]["found_north"],
+            json!(true),
+        );
+
+        game.players[0].techs.insert(NORTH_TECH.to_string());
+        assert_eq!(observation(&game, 0)["me"]["found_north"], json!(true));
+        assert_eq!(
+            observation_player_view(&game, 0)["me"]["found_north"],
+            json!(true),
+        );
+    }
 
     #[test]
     fn the_spectator_feed_trades_per_item_research_for_era_firsts() {
