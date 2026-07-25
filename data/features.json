@@ -145,5 +145,137 @@
       "city_amenity": 1,
       "entertainment_complex_adjacent_amenity": 1
     }
+  },
+  "torres_del_paine": {
+    "yields": {},
+    "adjacent_yields": {
+      "food": 1,
+      "production": 1
+    },
+    "natural_wonder": true,
+    "impassable": true
+  },
+  "eye_of_the_sahara": {
+    "yields": {
+      "science": 3,
+      "gold": 1
+    },
+    "natural_wonder": true
+  },
+  "zhangye_danxia": {
+    "yields": {
+      "culture": 3
+    },
+    "natural_wonder": true
+  },
+  "ha_long_bay": {
+    "yields": {
+      "food": 2,
+      "gold": 2
+    },
+    "natural_wonder": true
+  },
+  "cliffs_of_dover": {
+    "yields": {
+      "culture": 2,
+      "gold": 1
+    },
+    "natural_wonder": true
+  },
+  "giants_causeway": {
+    "yields": {
+      "faith": 2,
+      "science": 1
+    },
+    "natural_wonder": true
+  },
+  "galapagos_islands": {
+    "yields": {
+      "science": 3
+    },
+    "natural_wonder": true
+  },
+  "matterhorn": {
+    "yields": {},
+    "adjacent_yields": {
+      "production": 1,
+      "culture": 1
+    },
+    "natural_wonder": true,
+    "impassable": true
+  },
+  "kilimanjaro": {
+    "yields": {},
+    "adjacent_yields": {
+      "food": 2
+    },
+    "natural_wonder": true,
+    "impassable": true
+  },
+  "piopiotahi": {
+    "yields": {},
+    "adjacent_yields": {
+      "culture": 1,
+      "gold": 1
+    },
+    "natural_wonder": true,
+    "impassable": true
+  },
+  "ik_kil": {
+    "yields": {
+      "faith": 3,
+      "food": 1
+    },
+    "natural_wonder": true
+  },
+  "gobustan": {
+    "yields": {
+      "culture": 2,
+      "production": 1
+    },
+    "natural_wonder": true
+  },
+  "ubsunur_hollow": {
+    "yields": {
+      "food": 1,
+      "science": 2
+    },
+    "natural_wonder": true
+  },
+  "mato_tipila": {
+    "yields": {
+      "faith": 2,
+      "culture": 1
+    },
+    "natural_wonder": true
+  },
+  "delicate_arch": {
+    "yields": {
+      "culture": 2,
+      "faith": 1
+    },
+    "natural_wonder": true
+  },
+  "chocolate_hills": {
+    "yields": {
+      "food": 2,
+      "culture": 1
+    },
+    "natural_wonder": true
+  },
+  "vesuvius": {
+    "yields": {},
+    "adjacent_yields": {
+      "production": 2,
+      "faith": 1
+    },
+    "natural_wonder": true,
+    "impassable": true
+  },
+  "lake_retba": {
+    "yields": {
+      "gold": 3
+    },
+    "natural_wonder": true
   }
 }

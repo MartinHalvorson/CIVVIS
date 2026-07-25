@@ -1132,15 +1132,15 @@
       "aggressive_military"
     ]
   },
-  "Sri Lanka": {
-    "leader": "Parakramabahu",
-    "ability": "tank_cascades",
-    "agenda": "let_no_drop_be_wasted",
+  "Kalinga": {
+    "leader": "Kharavela",
+    "ability": "edict_of_remorse",
+    "agenda": "hathigumpha",
     "effects": {
-      "city_food": 1,
-      "city_faith": 1
+      "city_faith": 1,
+      "city_food": 1
     },
-    "note": "Tank Cascades: +1 food and +1 faith in every city",
+    "note": "Edict of Remorse: +1 faith and +1 food in every city",
     "traits": [
       "religious_major_civ"
     ]
@@ -1273,30 +1273,30 @@
       "pursue_diplomatic_victory"
     ]
   },
-  "Iroquois": {
-    "leader": "Hiawatha",
-    "ability": "great_law_of_peace",
-    "agenda": "longhouse_council",
+  "Pueblo": {
+    "leader": "Popay",
+    "ability": "cliff_dwellings",
+    "agenda": "kiva_council",
     "effects": {
-      "city_culture": 1,
-      "city_production": 1
+      "city_production": 1,
+      "city_faith": 1
     },
-    "note": "Great Law of Peace: +1 culture and +1 production in every city",
+    "note": "Cliff Dwellings: +1 production and +1 faith in every city",
     "traits": [
-      "cultural_major_civ"
+      "religious_major_civ"
     ]
   },
-  "Cherokee": {
-    "leader": "Sequoyah",
-    "ability": "syllabary",
-    "agenda": "written_word",
+  "Comanche": {
+    "leader": "Quanah Parker",
+    "ability": "lords_of_the_plains",
+    "agenda": "horse_lords",
     "effects": {
-      "city_science": 1,
-      "city_culture": 1
+      "unit_production_pct": 15,
+      "combat_strength": 2
     },
-    "note": "Syllabary: +1 science and +1 culture in every city",
+    "note": "Lords of the Plains: +15% production toward units and +2 combat strength",
     "traits": [
-      "cultural_major_civ"
+      "aggressive_military"
     ]
   },
   "Sioux": {

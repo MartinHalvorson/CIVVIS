@@ -103,7 +103,7 @@ pub const CIV_NAMES: [&str; 100] = [
     "Mongolia",
     "Tibet",
     "Nepal",
-    "Sri Lanka",
+    "Kalinga",
     "Chola",
     "Bengal",
     "Maratha",
@@ -114,8 +114,8 @@ pub const CIV_NAMES: [&str; 100] = [
     "Champa",
     "America",
     "Canada",
-    "Iroquois",
-    "Cherokee",
+    "Pueblo",
+    "Comanche",
     "Sioux",
     "Inca",
     "Muisca",
@@ -1726,23 +1726,23 @@ fn city_names(civ: &str) -> &'static [&'static str] {
             "Bandipur",
             "Dolakha",
         ],
-        "Sri Lanka" => &[
-            "Anuradhapura",
-            "Polonnaruwa",
-            "Sigiriya",
-            "Dambulla",
-            "Mihintale",
-            "Ruhuna",
-            "Yapahuwa",
-            "Kurunegala",
-            "Gampola",
-            "Kotte",
-            "Kelaniya",
-            "Trincomalee",
-            "Batticaloa",
-            "Jaffna",
-            "Ratnapura",
-            "Badulla",
+        "Kalinga" => &[
+            "Tosali",
+            "Dhauli",
+            "Udayagiri",
+            "Sisupalgarh",
+            "Kalinganagara",
+            "Jajpur",
+            "Puri",
+            "Konark",
+            "Cuttack",
+            "Bhubaneswar",
+            "Balasore",
+            "Ganjam",
+            "Berhampur",
+            "Sambalpur",
+            "Bolangir",
+            "Koraput",
         ],
         "Chola" => &[
             "Thanjavur",
@@ -1924,41 +1924,41 @@ fn city_names(civ: &str) -> &'static [&'static str] {
             "Charlottetown",
             "Thunder Bay",
         ],
-        "Iroquois" => &[
-            "Onondaga",
-            "Cayuga",
-            "Oneida",
-            "Seneca",
-            "Mohawk",
-            "Tuscarora",
-            "Ganondagan",
-            "Kanatsiohareke",
-            "Akwesasne",
-            "Tonawanda",
-            "Allegany",
-            "Cattaraugus",
-            "Canandaigua",
-            "Chenussio",
-            "Tioga",
-            "Oswego",
+        "Pueblo" => &[
+            "Oraibi",
+            "Walpi",
+            "Sky City",
+            "Kuaua",
+            "Picuris",
+            "Nambe",
+            "Tesuque",
+            "Cochiti",
+            "Santo Domingo",
+            "San Felipe",
+            "Sandia",
+            "Isleta",
+            "Laguna",
+            "Jemez",
+            "Pecos",
+            "Galisteo",
         ],
-        "Cherokee" => &[
-            "Echota",
-            "Kituwa",
-            "Tanasi",
-            "Chota",
-            "Nikwasi",
-            "Tugaloo",
-            "Coosawattee",
-            "Hiwassee",
-            "Etowah",
-            "Toqua",
-            "Citico",
-            "Chilhowee",
-            "Tellico",
-            "Keowee",
-            "Estatoe",
-            "Ustanali",
+        "Comanche" => &[
+            "Quahada",
+            "Penateka",
+            "Nokoni",
+            "Yamparika",
+            "Kotsoteka",
+            "Tanima",
+            "Palo Duro",
+            "Llano Estacado",
+            "Adobe Walls",
+            "Medicine Lodge",
+            "Cache Creek",
+            "Elk Creek",
+            "Antelope Hills",
+            "Tule Canyon",
+            "Blanco Canyon",
+            "Wichita Mountains",
         ],
         "Sioux" => &[
             "Paha Sapa",
@@ -3961,6 +3961,56 @@ mod belief_runtime_tests {
         let atheists = game.cities[&target].atheist_pressure;
         game.apply_growth_pressure(target);
         assert_eq!(game.cities[&target].atheist_pressure, atheists + 50.0);
+    }
+
+    /// A Trade Route carries religion in both directions but not equally:
+    /// `RELIGION_SPREAD_TRADE_ROUTE_PRESSURE_FOR_DESTINATION` is 1.0 and
+    /// `..._FOR_ORIGIN` is 0.5, so sending a Trader *to* a city pressures it
+    /// twice as hard as receiving one from it. CIVVIS paid a flat 0.5 both
+    /// ways, halving the main non-missionary route to a foreign city.
+    #[test]
+    fn a_trade_route_pressures_its_destination_twice_as_hard_as_its_origin() {
+        let (mut game, cities) = game_with_capitals(91_764);
+        let religion = establish_religion(&mut game, cities[0], &[]);
+        let target = cities[1];
+
+        // Passive city-to-city Pressure is whatever the map's spacing gives;
+        // measure it once so the route's share can be read as a delta.
+        let gain = |game: &mut Game| {
+            game.cities.get_mut(&target).unwrap().pressure.clear();
+            game.process_pressure(1);
+            game.cities[&target]
+                .pressure
+                .get(&religion)
+                .copied()
+                .unwrap_or(0.0)
+        };
+        let passive = gain(&mut game);
+
+        game.routes.push(TradeRoute {
+            origin: cities[0],
+            dest: target,
+            owner: 0,
+            ends: game.turn + 30,
+        });
+        assert_eq!(
+            gain(&mut game) - passive,
+            1.0,
+            "the destination of a route takes the full 1.0 Pressure"
+        );
+
+        game.routes.clear();
+        game.routes.push(TradeRoute {
+            origin: target,
+            dest: cities[0],
+            owner: 1,
+            ends: game.turn + 30,
+        });
+        assert_eq!(
+            gain(&mut game) - passive,
+            0.5,
+            "the origin of a route takes back only half"
+        );
     }
 
     #[test]
@@ -17448,7 +17498,8 @@ impl Game {
     }
 
     /// Passive spread: cities pressure other cities within ten tiles, while
-    /// active Trade Routes exchange an additional 0.5 pressure per turn.
+    /// active Trade Routes exchange additional pressure per turn — 1 to the
+    /// route's destination and 0.5 back to its origin.
     fn process_pressure(&mut self, pid: usize) {
         // Exodus of the Evangelists pays for the first time each city takes
         // the founder's religion, so the majorities are read before pressure
@@ -17516,10 +17567,14 @@ impl Game {
                 .routes
                 .iter()
                 .filter_map(|route| {
-                    let other = if route.origin == cid {
-                        route.dest
+                    // A route is directional: the shipped
+                    // RELIGION_SPREAD_TRADE_ROUTE_PRESSURE_FOR_DESTINATION is
+                    // 1.0 and _FOR_ORIGIN is 0.5, so the city the trader
+                    // travels *to* takes twice the pressure the origin does.
+                    let (other, share) = if route.origin == cid {
+                        (route.dest, 0.5)
                     } else if route.dest == cid {
-                        route.origin
+                        (route.origin, 1.0)
                     } else {
                         return None;
                     };
@@ -17527,12 +17582,13 @@ impl Game {
                         self.city_religion(city).map(|religion| {
                             (
                                 religion.to_string(),
-                                0.5 * (1.0
-                                    + self.governor_effect(
-                                        city.owner,
-                                        city.id,
-                                        "religious_pressure_pct",
-                                    ) / 100.0),
+                                share
+                                    * (1.0
+                                        + self.governor_effect(
+                                            city.owner,
+                                            city.id,
+                                            "religious_pressure_pct",
+                                        ) / 100.0),
                             )
                         })
                     })

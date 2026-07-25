@@ -550,7 +550,7 @@ pub const CIV6_MAP_SIZES: [MapSize; 10] = [
         default_city_states: 75,
         max_city_states: 100,
         max_religions: 26,
-        natural_wonders: 20,
+        natural_wonders: 26,
         continents: 25,
     },
     MapSize {
@@ -821,11 +821,73 @@ mod tests {
 
     #[test]
     fn dimensions_round_trip_for_every_stock_size() {
-        for players in [2, 4, 6, 8, 10, 12] {
+        for players in [2, 4, 6, 8, 10, 12, 15, 20, 50, 100] {
             let size = MapSize::for_players(players);
             assert_eq!(
                 MapSize::from_dimensions(size.width, size.height),
                 Some(size)
+            );
+        }
+    }
+
+    /// The four worlds past Huge are extrapolations, not shipped rows, so what
+    /// pins them is the ratios they extrapolate from. Every stock size holds
+    /// about 580 tiles per major civilization on a roughly 1.6:1 rectangle and
+    /// seats exactly 1.5 city-states per major; a scaled row that quietly drifts
+    /// off those is a world that no longer plays like a Civilization VI map.
+    #[test]
+    fn the_scaled_worlds_keep_the_stock_ratios_and_stay_inside_the_roster() {
+        let scaled = [("massive", 15), ("enormous", 20), ("colossal", 50), ("ludicrous", 100)];
+        for (id, players) in scaled {
+            let size = CIV6_MAP_SIZES.iter().find(|size| size.id == id).unwrap();
+            assert_eq!(size.default_players, players, "{id} seats");
+            assert_eq!(MapSize::for_players(players).id, id, "{id} is chosen for {players}");
+
+            let tiles = (size.width * size.height) as f64;
+            let per_civ = tiles / players as f64;
+            assert!(
+                (560.0..=600.0).contains(&per_civ),
+                "{id} gives each civilization {per_civ:.0} tiles, outside the stock 567-583 band"
+            );
+            let aspect = size.width as f64 / size.height as f64;
+            assert!((1.55..=1.65).contains(&aspect), "{id} is {aspect:.2}:1");
+            // Exactly 1.5 per major, rounded down: an odd seat count cannot
+            // halve, and Massive's fifteen majors take 22 rather than 22.5.
+            assert_eq!(
+                size.default_city_states,
+                players * 3 / 2,
+                "{id} should seat 1.5 city-states per major"
+            );
+            assert_eq!(size.continents, players / 2, "{id} continents");
+
+            // Nothing may seat more majors than there are civilizations to
+            // seat, or more city-states than the ruleset has identities for.
+            assert!(
+                size.max_players <= crate::game::CIV_NAMES.len(),
+                "{id} seats up to {} majors but the roster holds {}",
+                size.max_players,
+                crate::game::CIV_NAMES.len()
+            );
+            assert!(
+                size.max_city_states <= crate::game::CITY_STATE_NAMES.len(),
+                "{id} seats up to {} city-states but the ruleset names {}",
+                size.max_city_states,
+                crate::game::CITY_STATE_NAMES.len()
+            );
+            // Religions and natural wonders both follow `players / 2 + 1`, but
+            // a map cannot draw more wonders than the ruleset defines, so that
+            // one is the rule capped by the catalogue. Ludicrous is the only
+            // size the cap actually binds.
+            assert_eq!(size.max_religions, players / 2 + 1, "{id} religions");
+            let catalogue = crate::rules::Rules::embedded()
+                .features
+                .values()
+                .filter(|feature| feature.natural_wonder)
+                .count();
+            assert_eq!(
+                size.natural_wonders,
+                (players / 2 + 1).min(catalogue),
+                "{id} should draw players/2+1 wonders, capped at the {catalogue} the ruleset carries"
             );
         }
     }

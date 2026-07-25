@@ -479,9 +479,9 @@
     "measure": "territory",
     "approves_of": "more"
   },
-  "let_no_drop_be_wasted": {
-    "name": "Let No Drop Be Wasted",
-    "description": "Likes civilizations that build great works. Dislikes those that build none.",
+  "hathigumpha": {
+    "name": "Hathigumpha",
+    "description": "Likes civilizations that cut their record in stone. Dislikes those that leave none.",
     "measure": "wonders",
     "approves_of": "more"
   },
@@ -545,16 +545,16 @@
     "measure": "trustworthiness",
     "approves_of": "more"
   },
-  "longhouse_council": {
-    "name": "Longhouse Council",
-    "description": "Likes civilizations that hold their confederacies together. Dislikes those that split.",
+  "kiva_council": {
+    "name": "Kiva Council",
+    "description": "Likes civilizations that keep their word to neighbours. Dislikes those that raid them.",
     "measure": "loyalty_to_friends",
     "approves_of": "more"
   },
-  "written_word": {
-    "name": "The Written Word",
-    "description": "Likes civilizations that record themselves. Dislikes those that leave nothing.",
-    "measure": "wonders",
+  "horse_lords": {
+    "name": "Horse Lords",
+    "description": "Likes civilizations that can ride and fight. Dislikes the earthbound.",
+    "measure": "military",
     "approves_of": "more"
   },
   "black_hills": {
