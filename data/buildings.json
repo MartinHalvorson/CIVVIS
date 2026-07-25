@@ -58,7 +58,7 @@
     }
   },
   "medieval_walls": {
-    "cost": 225,
+    "cost": 220,
     "tech": "castles",
     "district": "city_center",
     "requires": [
@@ -71,7 +71,7 @@
     }
   },
   "renaissance_walls": {
-    "cost": 305,
+    "cost": 300,
     "tech": "siege_tactics",
     "district": "city_center",
     "requires": [
@@ -330,7 +330,7 @@
       "shrine"
     ],
     "yields": {
-      "faith": 4
+      "faith": 6
     },
     "maintenance": 2,
     "citizen_slots": 1,
@@ -338,7 +338,7 @@
       "prophet": 1
     },
     "great_work_slots": {
-      "relic": 2
+      "relic": 1
     },
     "effects": {
       "culture_per_population": 0.5,
@@ -537,7 +537,7 @@
     "unique_to": "Poland",
     "replaces": "market",
     "yields": {
-      "gold": 3
+      "gold": 2
     },
     "citizen_slots": 1,
     "great_person_points": {
@@ -1127,7 +1127,7 @@
     "replaces": "arena",
     "yields": {
       "faith": 2,
-      "culture": 1
+      "culture": 2
     },
     "amenity": 2,
     "maintenance": 1,

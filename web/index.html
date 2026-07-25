@@ -1239,16 +1239,16 @@
   .war-side { min-width: 0; padding: 5px 0 6px; border-right: 1px solid #ffffff10; }
   .war-side:last-child { border-right: 0; text-align: right; }
   .war-strength-head, .war-strength-values { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; padding: 0 7px; text-align: center; }
-  .war-strength-head { margin-bottom: 3px; color: #81948c; font-size: 6px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
-  .war-belligerent { min-width: 0; padding: 4px 7px; }
+  .war-strength-head { margin-bottom: 3px; color: #81948c; font-size: 6px; font-weight: 850; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+  .war-belligerent { min-width: 0; padding: 4px 0; }
   .war-belligerent + .war-belligerent { border-top: 1px solid #ffffff0a; }
-  .war-belligerent.city-state { margin-left: 7px; padding-left: 5px; border-left: 1px solid #62756d66; }
-  .war-side.defender .war-belligerent.city-state { margin-right: 7px; margin-left: 0; padding-right: 5px; padding-left: 7px; border-right: 1px solid #62756d66; border-left: 0; }
-  .war-belligerent-bar { display: block; width: 100%; height: 2px; margin-bottom: 4px; border-radius: 2px; box-shadow: 0 0 4px #0008; }
-  .war-belligerent.city-state .war-belligerent-bar { width: 70%; }
-  .war-side.defender .war-belligerent.city-state .war-belligerent-bar { margin-left: auto; }
-  .war-party { min-width: 0; margin: 2px 0; color: #e7ece7; font-size: 9px; font-weight: 750; }
+  .war-belligerent-bar { display: block; width: var(--war-effort, 0%); height: 4px; margin-bottom: 4px; border-radius: 2px; box-shadow: 0 0 4px #0008; }
+  .war-side.aggressor .war-belligerent-bar { margin-left: auto; }
+  .war-side.defender .war-belligerent-bar { margin-right: auto; }
+  .war-party { min-width: 0; margin: 2px 7px; color: #e7ece7; font-size: 9px; font-weight: 750; }
   .war-belligerent.city-state .war-party { color: #b9c8c1; font-size: 8px; font-weight: 650; }
+  .war-side.aggressor .war-belligerent.city-state .war-party { margin-left: 14px; padding-left: 5px; border-left: 1px solid #62756d66; }
+  .war-side.defender .war-belligerent.city-state .war-party { margin-right: 14px; padding-right: 5px; border-right: 1px solid #62756d66; }
   .war-party-copy { min-width: 0; }
   .war-party-name { display: block; overflow-wrap: break-word; word-break: normal; hyphens: auto; line-height: 1.25; }
   .war-card .war-party-name,
@@ -11358,14 +11358,19 @@ function exactStat(value) {
   return Math.round(n).toLocaleString();
 }
 
-function playerHudStats(player, rank) {
+function foundedReligionMarker(player, cities) {
+  if (!player.religion) return "";
+  return cities.some(city => city.religion === player.religion) ? "*" : "";
+}
+
+function playerHudStats(player, rank, cities) {
   const y = player.yields || {};
   const goldPerTurn = Number.isFinite(+player.gold_per_turn) ? +player.gold_per_turn : +(y.gold || 0);
   return [
     ["production", "PROD", y.production, `Production: ${exactStat(y.production)} per turn`],
     ["science", "SCI", y.science, `Science: ${exactStat(y.science)} per turn`],
     ["culture", "CUL", y.culture, `Culture: ${exactStat(y.culture)} per turn`],
-    ["faith", "FPT", y.faith, `Faith: ${exactStat(y.faith)} per turn · ${exactStat(player.faith)} banked`],
+    ["faith", "FPT", y.faith, `Faith: ${exactStat(y.faith)} per turn · ${exactStat(player.faith)} banked`, foundedReligionMarker(player, cities)],
     ["gold", "GPT", goldPerTurn, `Net Gold: ${exactStat(goldPerTurn)} per turn · ${exactStat(player.gold)} banked`],
     ["military", "MIL", player.military, `Military strength: ${exactStat(player.military)}`],
     ["cities", "CITY", player.cities, `Cities controlled: ${exactStat(player.cities)}`],
@@ -11408,7 +11413,7 @@ function drawPlayerHud() {
     mapArea.style.setProperty("--player-hud-height", `${requestedHeight}px`);
   }
   const rankById = new Map(majors.map((p, index) => [p.id, index + 1]));
-  const statsByPlayer = new Map(majors.map(p => [p.id, playerHudStats(p, rankById.get(p.id))]));
+  const statsByPlayer = new Map(majors.map(p => [p.id, playerHudStats(p, rankById.get(p.id), state.cities)]));
   const highestByStat = new Map();
   statsByPlayer.forEach(stats => stats.forEach(([kind, , value]) => {
     const numericValue = Number(value) || 0;
@@ -11486,10 +11491,10 @@ function drawPlayerHud() {
           `<span class="identity-separator" aria-hidden="true">·</span>`}` +
         `${activeStrategy}</span></button>` +
         `<button class="diplomacy-stats" data-hud-action="watch" data-hud-civ="${p.id}" title="${watchTitle}" aria-label="Watch ${p.civ}">` +
-        stats.map(([kind, , value, label]) => {
+        stats.map(([kind, , value, label, marker = ""]) => {
           const isLeader = highestByStat.get(kind) !== 0 && Number(value || 0) === highestByStat.get(kind);
           return `<span class="ribbon-stat ${kind}${isLeader ? " category-leader" : ""}" ` +
-            `title="${label}${isLeader ? " · Category leader" : ""}"><b>${ribbonStat(value)}</b></span>`;
+            `title="${label}${isLeader ? " · Category leader" : ""}"><b>${ribbonStat(value)}${marker}</b></span>`;
         }).join("") + `</button></div>` +
         (expanded ? civDossier(p, rank, relation) : "");
     }).join("") + `</div>` + hudResizeHandles("player standings");
@@ -13003,24 +13008,36 @@ function warStrengthValue(value) {
   if (value === null || value === undefined || !Number.isFinite(Number(value))) return "—";
   return Math.round(Number(value));
 }
-function warBelligerentRows(war, declarerSide, role) {
+function warSawAction(party) {
+  const value = Number(party.strength_saw_action ?? 0);
+  return Number.isFinite(value) ? Math.max(0, value) : 0;
+}
+function warBelligerentRows(war, declarerSide, role, maxSawAction) {
   const rows = warParties(war, declarerSide).map(party => {
     const minor = warPartyIsCityState(party);
     const note = warParticipationNote(party, war);
     const start = party.strength_start ?? party.strength;
     const peak = party.strength_peak ?? start;
-    const total = party.strength_total;
+    const sawAction = warSawAction(party);
+    const effort = maxSawAction > 0 ? 100 * sawAction / maxSawAction : 0;
+    const values = declarerSide
+      ? [[start, "Military strength on entry"], [peak, "Peak unit-only military strength"],
+          [sawAction, "Military value of distinct units that saw action"]]
+      : [[sawAction, "Military value of distinct units that saw action"],
+          [peak, "Peak unit-only military strength"], [start, "Military strength on entry"]];
     return `<div class="war-belligerent${minor ? " city-state" : ""}">` +
-      `<i class="war-belligerent-bar" style="background:${cityBannerColor(party.player)}"></i>` +
+      `<i class="war-belligerent-bar" style="--war-effort:${effort}%;background:${cityBannerColor(party.player)}"></i>` +
       `<div class="war-party"><span class="war-party-copy"><span class="war-party-name">` +
       `${warEntityLink(party.player, minor ? " ⌂" : "")}</span>` +
       `${note ? `<span class="war-party-note">${note}</span>` : ""}</span></div>` +
-      `<div class="war-strength-values"><b title="Military strength on entry">${warStrengthValue(start)}</b>` +
-      `<b title="Highest combined unit and engaged-district strength">${warStrengthValue(peak)}</b>` +
-      `<b title="Latest unit strength plus engaged city and Encampment defense">${warStrengthValue(total)}</b></div></div>`;
+      `<div class="war-strength-values">${values.map(([value, title]) =>
+        `<b title="${title}">${warStrengthValue(value)}</b>`).join("")}</div></div>`;
   }).join("");
+  const headings = declarerSide
+    ? ["Start mil", "Peak mil", "Saw action"]
+    : ["Saw action", "Peak mil", "Start mil"];
   return `<div class="war-side ${role}"><div class="war-strength-head">` +
-    `<span>Start</span><span>Peak</span><span>Total</span></div>${rows}</div>`;
+    `${headings.map(heading => `<span>${heading}</span>`).join("")}</div>${rows}</div>`;
 }
 // The war highlight and the strike ledger are two views of one detonation. Join
 // them on turn and attacker, then on the city if the blast hit one and on the
@@ -13121,6 +13138,7 @@ function drawWarLog() {
           ? `${warEntityLink(war.victor)} won by conquest — no peace deal`
           : (war.outcome === "coalition" ? "Emergency coalition ceasefire" : "No recorded peace terms")
         }</b></div>`);
+    const maxSawAction = Math.max(0, ...(war.parties || []).map(warSawAction));
     // Whether the atom was used is the largest single fact about a war, and it
     // was previously buried in a chronology line a reader had to scroll to.
     const detonations = (war.highlights || [])
@@ -13134,8 +13152,8 @@ function drawWarLog() {
       `<div class="war-period"><span>Started<b>Turn ${war.started}</b></span>` +
       `<span>${over ? "Ended" : "Status"}<b>${over ? `Turn ${war.ended}` : `Ongoing · ${length} turn${length === 1 ? "" : "s"}`}</b>${nuclearBadge}</span></div>` +
       `<div class="war-infobox-row"><div class="war-row-label">Belligerents</div>` +
-      `<div class="war-columns">${warBelligerentRows(war, true, "aggressor")}` +
-      `${warBelligerentRows(war, false, "defender")}</div></div>` +
+      `<div class="war-columns">${warBelligerentRows(war, true, "aggressor", maxSawAction)}` +
+      `${warBelligerentRows(war, false, "defender", maxSawAction)}</div></div>` +
       `<div class="war-infobox-row"><div class="war-row-label">Losses</div>` +
       `${warLossLedger(war)}</div>` +
       `${outcome ? `<div class="war-infobox-row"><div class="war-row-label">Peace deal terms</div>` +
