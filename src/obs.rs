@@ -13,6 +13,17 @@ pub fn observation(g: &Game, pid: usize) -> Value {
     obs_impl(g, pid, false, true)
 }
 
+/// The technology that teaches a people to read their bearing off the sky.
+///
+/// Sailing put them out of sight of the coast and astrology gave them the
+/// figures to steer by; together they are the point at which a civilization can
+/// say which way is north rather than only which way it came from. Until then a
+/// map faces the direction it was first seen from, which the viewer keeps in
+/// `found_north` below — a presentation rule, so it is reported rather than
+/// enforced, but it is reported from here so the client is not left deciding
+/// which discovery it was.
+pub const NORTH_TECH: &str = "celestial_navigation";
+
 /// The shape of a Planet world, for a client that has to draw it.
 ///
 /// A globe cannot be drawn from tile coordinates the way a flat map can: the
@@ -333,6 +344,10 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             "bankruptcy_amenity_penalty": p.bankruptcy_amenity_penalty,
             "techs": p.techs, "research": p.research,
             "research_progress": round1(p.research_progress),
+            // A spectator watches from above the world rather than inside it,
+            // so it is never the party that has to find north.
+            "found_north": omniscient || p.techs.contains(NORTH_TECH),
+            "north_tech": NORTH_TECH,
             "civics": p.civics, "civic": p.civic,
             "civic_progress": round1(p.civic_progress),
             "government": p.government,
@@ -965,8 +980,20 @@ fn victory_progress_json(g: &Game, pid: usize, leading_score: i64) -> Value {
     let diplomatic_progress =
         100.0 * diplomatic_points as f64 / DIPLOMATIC_VICTORY_POINTS.max(1) as f64;
     let score = g.team_score_rank_key(pid).0;
+    // The score race is run against the clock, not against a threshold: it is
+    // decided the turn the limit runs out, so the leader's meter is simply how
+    // much of the game has been played, and everyone else sits at their share
+    // of the leader's score along that same clock. On the final turn the
+    // leader is full and a civilization on half their score is at half. A game
+    // with no turn limit has no clock to fill, so its meter stays purely
+    // relative to the leader.
+    let clock = if g.max_turns > 0 && g.max_turns < 100_000 {
+        (g.turn as f64 / g.max_turns as f64).clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
     let score_progress = if leading_score > 0 {
-        100.0 * score.max(0) as f64 / leading_score as f64
+        100.0 * clock * score.max(0) as f64 / leading_score as f64
     } else {
         0.0
     };
@@ -1243,6 +1270,40 @@ fn merge(base: &mut Value, ext: Value) {
 mod tests {
     use super::*;
 
+    /// The viewer starts a world facing wherever it was found and only puts
+    /// north at the top once the civilization it is watching can find north, so
+    /// the observation has to say. A spectator is above the world rather than in
+    /// it and always can; a civilization has to research it.
+    #[test]
+    fn finding_north_is_a_technology_for_a_civilization_and_free_for_a_spectator() {
+        let mut game = Game::new(2, 18, 12, 11, 25, 0);
+        assert!(
+            game.rules.techs.get(NORTH_TECH).is_some(),
+            "{NORTH_TECH} must name a technology in the shipped tree",
+        );
+        game.players[0].techs.remove(NORTH_TECH);
+
+        let own = observation(&game, 0);
+        assert_eq!(own["me"]["found_north"], json!(false));
+        assert_eq!(own["me"]["north_tech"], json!(NORTH_TECH));
+        // Watching one civilization's own view is that civilization's knowledge.
+        assert_eq!(
+            observation_player_view(&game, 0)["me"]["found_north"],
+            json!(false),
+        );
+        assert_eq!(
+            observation_spectator(&game, 0)["me"]["found_north"],
+            json!(true),
+        );
+
+        game.players[0].techs.insert(NORTH_TECH.to_string());
+        assert_eq!(observation(&game, 0)["me"]["found_north"], json!(true));
+        assert_eq!(
+            observation_player_view(&game, 0)["me"]["found_north"],
+            json!(true),
+        );
+    }
+
     #[test]
     fn the_spectator_feed_trades_per_item_research_for_era_firsts() {
         let mut game = Game::new(2, 18, 12, 7, 25, 0);
@@ -1487,5 +1548,52 @@ mod tests {
             assert!(victory["culture"]["domestic"].is_number());
             assert!(victory["culture"]["leading_domestic"].is_number());
         }
+    }
+
+    /// The score race ends on the turn limit rather than at a threshold, so
+    /// its meter is the clock: the leader is exactly as far along as the game
+    /// is, and every rival is that same distance cut by their share of the
+    /// leader's score.
+    #[test]
+    fn score_meter_is_the_turn_clock_scaled_by_the_share_of_the_leader() {
+        let mut game = Game::new_full(4, 26, 18, 81_006, 100, 1, false);
+        game.turn = 25;
+        let leading = game
+            .players
+            .iter()
+            .filter(|player| !player.is_minor && !player.is_barbarian)
+            .map(|player| game.team_score_rank_key(player.id).0)
+            .max()
+            .unwrap();
+        assert!(leading > 0);
+
+        let observed = observation_spectator(&game, 0);
+        let mut saw_leader = false;
+        for player in observed["players"].as_array().unwrap() {
+            let Some(score) = player["victories"]["score"].as_object() else {
+                continue;
+            };
+            let points = score["points"].as_i64().unwrap();
+            let expected = round1(100.0 * 0.25 * points as f64 / leading as f64);
+            assert_eq!(score["progress"], serde_json::json!(expected));
+            if points == leading {
+                saw_leader = true;
+                // A quarter of the turns played puts the leader a quarter up.
+                assert_eq!(score["progress"], serde_json::json!(25.0));
+            }
+        }
+        assert!(saw_leader);
+
+        // The last playable turn fills the leader's meter: the score victory
+        // is awarded once the turn passes the limit.
+        game.turn = game.max_turns;
+        let observed = observation_spectator(&game, 0);
+        let best = observed["players"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|player| player["victories"]["score"]["progress"].as_f64())
+            .fold(0.0_f64, f64::max);
+        assert_eq!(best, 100.0);
     }
 }
