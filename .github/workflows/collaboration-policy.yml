@@ -16,10 +16,17 @@ concurrency:
 
 jobs:
   collaboration-policy:
-    runs-on: ubuntu-latest
+    # Self-hosted for the same reason as cargo-test — see the note there. This
+    # one takes the `policy` label rather than `civvis`, so a long build cannot
+    # hold up the cheap check every PR in the fleet is waiting on.
+    runs-on: [self-hosted, policy]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - name: Put the machine's tools on PATH
+        # A launchd-started runner inherits a minimal PATH; python3 is
+        # Homebrew's, installed for the user rather than the system.
+        run: echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
       - name: Test the policy engine
         run: python3 -m unittest tools/test_civvis_collab.py tools/test_civvis_push_guard.py tools/test_civvis_fleet.py
       - name: Validate branch, ownership, overlap, and commits
