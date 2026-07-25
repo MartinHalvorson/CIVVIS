@@ -977,6 +977,18 @@
   .empire-card[class*="empire-slot-"] { border-left: 3px solid var(--slot); }
   .empire-meter { display: flex; align-items: center; gap: 8px; font-size: 10px; color: var(--muted); }
   .empire-meter b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .save-row { display: flex; gap: 5px; margin-top: 7px; }
+  .save-row input { flex: 1; min-width: 0; padding: 7px 9px; border-radius: 8px;
+    color: var(--text); background: #0d1816; border: 1px solid #385149; outline: none; font-size: 11px; }
+  .save-row input:focus { border-color: var(--gold); box-shadow: 0 0 0 3px #d7b66a1d; }
+  .save-row button { margin: 0; }
+  .save-entry { display: flex; align-items: center; gap: 7px; padding: 5px 0; border-bottom: 1px solid var(--line-soft); }
+  .save-entry:last-child { border-bottom: 0; }
+  .save-entry b { color: var(--text); font-size: 11px; font-weight: 650; }
+  .save-entry span { color: var(--muted); font-size: 9px; }
+  .save-entry button { margin: 0 0 0 auto; padding: 4px 8px; font-size: 9px; }
+  /* Leader and difficulty only mean anything with somebody at the keyboard. */
+  body.spectating .human-setting { display: none; }
   /* Civ 6 conducts diplomacy leader by leader: who they are, what they want,
      how they feel about you, and what you can do about it. Quick Deals
      already compares every acceptable trade at once; this is the other half —
@@ -1961,10 +1973,14 @@
       <div class="sec settings-sec" id="game-settings">
       <div id="newgame-options">
         <label class="small">Game mode<select id="gamemode" style="margin-top:4px">
-          <option value="ai_sim" selected>AI-only simulation</option>
-          <option disabled>Single player · later</option>
+          <option value="single" selected>Single player</option>
+          <option value="ai_sim">AI-only simulation</option>
           <option disabled>Multiplayer · later</option>
         </select></label>
+        <label class="small human-setting">Leader<select id="leader" style="margin-top:4px">
+          <option value="">Random</option>
+        </select></label>
+        <label class="small human-setting">Difficulty<select id="difficulty" style="margin-top:4px"></select></label>
         <label class="small">World size<select id="np" style="margin-top:4px">
           <option value="2">Duel · 2 civs · 3 city-states · 44×26</option>
           <option value="4" selected>Tiny · 4 civs · 6 city-states · 60×38</option>
@@ -1988,6 +2004,17 @@
           <option value="epic">Epic · 750 turns</option>
           <option value="marathon">Marathon · 1500 turns</option>
         </select></label>
+        <button class="primary" id="startgame" style="margin-top:9px"
+          title="Begin a new world with these settings">Start new game</button>
+        <div class="utility-group" id="saves-group" style="display:none">
+          <div class="city-group-head" style="margin-bottom:6px">Saved games<span id="saves-count"></span></div>
+          <div id="saves-list"></div>
+          <div class="save-row">
+            <input id="savename" type="text" placeholder="name this save" maxlength="64"
+              autocomplete="off" aria-label="Save name">
+            <button id="savebtn" title="Write a save this server can offer back later">Save</button>
+          </div>
+        </div>
         <div class="victory-options" role="group" aria-labelledby="victory-options-title">
           <h2 id="victory-options-title">Victory conditions</h2>
           <div class="victory-option-grid">
@@ -3993,6 +4020,25 @@ async function boot() {
       document.getElementById("maptype").innerHTML = RULES.map_scripts.map(script =>
         `<option value="${script.id}" title="${script.description}">${script.name}</option>`
       ).join("");
+    }
+    // A leader is a civilization plus the person who leads it; the ruleset
+    // knows both, and their agendas, so the setup screen never invents names.
+    if (RULES.civs && typeof RULES.civs === "object") {
+      const leaders = Object.entries(RULES.civs)
+        .map(([civ, spec]) => ({civ, leader: spec.leader || civ, note: spec.note || ""}))
+        .sort((first, second) => first.leader.localeCompare(second.leader));
+      document.getElementById("leader").innerHTML =
+        `<option value="">Random leader</option>` + leaders.map(entry =>
+          `<option value="${entry.civ}" title="${escapeAttr(entry.note)}">` +
+          `${entry.leader} of ${entry.civ}</option>`).join("");
+    }
+    if (RULES.difficulties && typeof RULES.difficulties === "object") {
+      const ladder = Object.entries(RULES.difficulties)
+        .sort((first, second) => (first[1].order || 0) - (second[1].order || 0));
+      document.getElementById("difficulty").innerHTML = ladder.map(([id, spec]) =>
+        `<option value="${id}">${spec.name || titleCase(id)}</option>`).join("");
+      const stock = ladder.find(([id]) => id === "prince") || ladder[Math.floor(ladder.length / 2)];
+      if (stock) document.getElementById("difficulty").value = stock[0];
     }
     if (Array.isArray(RULES.game_speeds)) {
       document.getElementById("gamespeed").innerHTML = RULES.game_speeds.map(speed =>
@@ -14785,6 +14831,7 @@ function escapeAttr(text) {
 function openTurnIfNew() {
   if (!state || SPEC) return;
   if (loopTurn === state.turn) { drawTurnLoop(); return; }
+  refreshSaves();
   const first = loopTurn === null;
   loopTurn = state.turn;
   if (first) noticeSeenTurn = Math.max(0, state.turn - 1);
@@ -14943,6 +14990,10 @@ async function autoplay(turns) {
 }
 document.getElementById("autoplaybtn").onclick = ev => autoplay(ev.shiftKey ? 10 : 1);
 document.getElementById("tradebtn").onclick = () => openTrade();
+document.getElementById("gamemode").addEventListener("change", syncSetupMode);
+document.getElementById("startgame").onclick = () => startNewSimulation();
+document.getElementById("savebtn").onclick = () => writeSave();
+syncSetupMode();
 document.getElementById("diplomacybtn").onclick = () => openDiplomacy();
 document.getElementById("paneltoggle").onclick = () => togglePanel();
 document.getElementById("collapsepause").onclick = toggleSpecPause;
@@ -14993,9 +15044,13 @@ function selectedSimulationSettings() {
   const gameSpeed = document.getElementById("gamespeed").value;
   const victoryConditions = Object.fromEntries(VICTORY_TRACKS.map(track =>
     [track.id, document.getElementById(`victory-${track.id}`).checked]));
+  const leader = (document.getElementById("leader") || {}).value || "";
+  const difficulty = (document.getElementById("difficulty") || {}).value || "";
   return {num_players: np, map_script: mapScript, game_speed: gameSpeed,
           victory_conditions: victoryConditions,
-          spectate: gameMode === "ai_sim"};
+          spectate: gameMode === "ai_sim",
+          // A spectated world has nobody to hand a leader or a handicap to.
+          ...(gameMode === "ai_sim" ? {} : {civs: leader ? [leader] : [], difficulty})};
 }
 function simulationSettingsKey(settings) {
   return JSON.stringify(settings);
@@ -15003,6 +15058,7 @@ function simulationSettingsKey(settings) {
 function applyQueuedSimulationSettings(settings) {
   if (!settings) return;
   document.getElementById("gamemode").value = "ai_sim";
+  syncSetupMode();
   document.getElementById("np").value = String(settings.players);
   document.getElementById("maptype").value = settings.map;
   document.getElementById("gamespeed").value = settings.speed;
@@ -15047,6 +15103,68 @@ function showNewSimulationError(error, action = "start simulation") {
   errEl.style.display = "block";
   setTimeout(() => errEl.style.display = "none", 4000);
 }
+// Leader and difficulty are meaningless in a spectated world, and the start
+// button says what it will actually do.
+function syncSetupMode() {
+  const mode = (document.getElementById("gamemode") || {}).value || "single";
+  document.body.classList.toggle("spectating", mode === "ai_sim");
+  const start = document.getElementById("startgame");
+  if (start) {
+    start.textContent = mode === "ai_sim" ? "Start new simulation" : "Start new game";
+    start.title = mode === "ai_sim"
+      ? "Begin a new AI-only world with these settings"
+      : "Begin a new game with these settings — the current one is not saved first";
+  }
+}
+
+// The saves this server is holding. A build without the save endpoints simply
+// does not show the group, rather than showing one that cannot work.
+let savesKnown = null;
+async function refreshSaves() {
+  const group = document.getElementById("saves-group");
+  if (!group || SPEC) { if (group) group.style.display = "none"; return; }
+  let saves;
+  try { saves = (await fetchJSON("/saves", {}, 4000)).saves; }
+  catch (error) { group.style.display = "none"; savesKnown = null; return; }
+  if (!Array.isArray(saves)) { group.style.display = "none"; return; }
+  savesKnown = saves;
+  group.style.display = "block";
+  document.getElementById("saves-count").textContent = saves.length ? ` ${saves.length}` : "";
+  document.getElementById("saves-list").innerHTML = saves.length
+    ? saves.slice(0, 8).map(save =>
+        `<div class="save-entry"><div><b>${escapeAttr(save.name)}</b><br>` +
+        `<span>Turn ${save.turn}${save.civ ? ` · ${escapeAttr(save.civ)}` : ""}` +
+        `${save.difficulty ? ` · ${titleCase(save.difficulty)}` : ""}</span></div>` +
+        `<button onclick='loadSave(${JSON.stringify(save.name)})'>Load</button></div>`).join("")
+    : `<div class="empty-state">No saves yet. One is written at the end of every turn.</div>`;
+}
+async function loadSave(name) {
+  try {
+    sel = null; selCity = null;
+    const next = await fetchJSON("/load", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({name})});
+    if (next.error) throw new Error(next.error);
+    render(next);
+  } catch (error) {
+    showNewSimulationError(error, "load that save");
+  }
+}
+async function writeSave() {
+  const box = document.getElementById("savename");
+  const name = (box.value || "").trim() || `turn-${state ? state.turn : 0}`;
+  try {
+    const done = await fetchJSON("/save", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({name})});
+    if (done.error) throw new Error(done.error);
+    box.value = "";
+    await refreshSaves();
+  } catch (error) {
+    showNewSimulationError(error, "write that save");
+  }
+}
+
 async function startNewSimulation() {
   if (newSimulationBusy) return;
   const supervised = !!(state && state.supervised);
