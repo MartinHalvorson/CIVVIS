@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 import urllib.request
@@ -40,9 +41,20 @@ from urllib.error import URLError
 
 
 def read_json(port: int, path: str, timeout: float = 10.0) -> dict:
+    return read_sized(port, path, timeout)[1]
+
+
+def read_sized(port: int, path: str, timeout: float = 10.0) -> tuple[int, dict]:
+    """The response and what it cost on the wire.
+
+    The size is the point of half this tool now: the map is most of a state and
+    almost none of it changes between turns, so a viewer that says what it is
+    holding is sent only the difference.
+    """
     url = f"http://127.0.0.1:{port}{path}"
     with urllib.request.urlopen(url, timeout=timeout) as response:
-        return json.loads(response.read())
+        raw = response.read()
+    return len(raw), json.loads(raw)
 
 
 def gaps(turns: list[int]) -> list[int]:
@@ -74,6 +86,9 @@ def watch(port: int, seconds: float, interval: float) -> int:
         "turns_played": last["turn"] - first["turn"],
         "frames_missed": missed,
         "last_painted_turn": painted,
+        # Every viewer is owed every turn and each is waited for separately, so
+        # this is also how many paints a turn costs before the next one starts.
+        "viewers": last.get("viewers"),
         "turn": last["turn"],
     }
     if painted is None:
@@ -98,20 +113,47 @@ def probe(port: int, seconds: float, render_ms: float, poll_ms: float) -> int:
     seen: list[int] = []
     errors = 0
     painted: tuple[int, int] | None = None
+    # A seat of its own. Every viewer is owed every turn and the server waits
+    # for each separately, so a probe sharing an id with the page in front of
+    # somebody would take turns with it rather than testing anything.
+    viewer = f"probe-{os.getpid()}"
+    # What this stand-in holds, exactly as the page holds it: the tile array
+    # and the frame it belongs to. Saying so is what earns a patch instead of
+    # the whole map, and what asks the server to hold the answer back until
+    # there is a next turn to give.
+    held: tuple[int, int] | None = None
+    tiles: list = []
+    bytes_first = 0
+    bytes_patched: list[int] = []
     started = time.monotonic()
     while time.monotonic() - started < seconds:
-        target = ("/state?painted=" if painted is None
-                  else f"/state?painted={painted[1]}&world={painted[0]}")
+        report = ("painted=" if painted is None
+                  else f"painted={painted[1]}&world={painted[0]}")
+        baseline = f"&have={held[0]}:{held[1]}" if held else ""
+        target = f"/state?{report}&viewer={viewer}{baseline}"
         try:
-            state = read_json(port, target, timeout=30.0)
+            size, state = read_sized(port, target, timeout=30.0)
         except (URLError, OSError, ValueError):
             errors += 1
+            held = None  # a dropped response: take the next map whole
             time.sleep(poll_ms / 1000.0)
             continue
+        patch = state.get("map", {}).get("tiles_changed")
+        if patch is None:
+            tiles = state.get("map", {}).get("tiles", [])
+            bytes_first = bytes_first or size
+        else:
+            if held is None or state["seed"] != held[0]:
+                errors += 1
+                continue
+            for at, tile in patch:
+                tiles[at] = tile
+            bytes_patched.append(size)
+        held = (state["seed"], state["turn"])
         # A real page parses the whole observation and repaints the map before
         # it asks for the next one. Touch the payload and spend the time, or
         # this loop is a faster viewer than any browser and proves less.
-        len(state.get("map", {}).get("tiles", ()))
+        len(tiles)
         len(state.get("units", ()))
         if render_ms:
             time.sleep(render_ms / 1000.0)
@@ -139,6 +181,10 @@ def probe(port: int, seconds: float, render_ms: float, poll_ms: float) -> int:
         "missed": missed[:40],
         "fetch_errors": errors,
         "turns_per_sec": round((max(seen) - min(seen)) / elapsed, 2) if elapsed else 0,
+        "first_poll_bytes": bytes_first,
+        "patched_poll_bytes": round(sum(bytes_patched) / len(bytes_patched))
+                              if bytes_patched else None,
+        "tiles_held": len(tiles),
         "verdict": "every turn reached the viewer" if not missed
                    else f"{len(missed)} turns were simulated that never reached a frame",
     }, indent=2))
