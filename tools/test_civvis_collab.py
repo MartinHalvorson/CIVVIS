@@ -293,6 +293,31 @@ class PolicyTests(unittest.TestCase):
         self.assertIsNone(collab.commit_is_pr_backed(rows, "def"))
         self.assertIsNone(collab.commit_is_pr_backed(rows, "missing"))
 
+    def test_a_stale_merge_is_still_caught_after_the_fact(self):
+        # Staleness is only an advisory on an open PR, because GitHub blocks
+        # the merge itself. Once something *has* merged while behind main, that
+        # is a real violation and must stay a hard error.
+        views = {
+            "pr": {
+                "headRefOid": "head1234",
+                "mergedAt": "2026-07-25T03:00:00Z",
+            },
+            "compare": {"status": "diverged"},
+            "checks": {"check_runs": []},
+        }
+
+        def fake_gh_json(args, *, cwd=None):
+            joined = " ".join(args)
+            if "compare" in joined:
+                return views["compare"]
+            if "check-runs" in joined:
+                return views["checks"]
+            return views["pr"]
+
+        with patch.object(collab, "gh_json", side_effect=fake_gh_json):
+            errors = collab.merged_pr_gate_errors(42, base_sha="base5678")
+        self.assertIn("PR head did not contain current main before merge", errors)
+
     def test_only_ahead_or_identical_heads_include_current_main(self):
         self.assertTrue(collab.compare_status_is_current("ahead"))
         self.assertTrue(collab.compare_status_is_current("identical"))

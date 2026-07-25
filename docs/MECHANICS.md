@@ -132,3 +132,45 @@ are at war.
 Reference basis: the in-game [Civilopedia Zone of Control entry](https://www.civilopedia.net/en-US/standard-rules/concepts/movement_3/),
 the detailed [Civilization VI ZOC rules](https://civilization.fandom.com/wiki/Zone_of_control_%28Civ6%29),
 and the general hex-grid [zone-of-control definition](https://en.wikipedia.org/wiki/Zone_of_control).
+
+## Nuclear weapons
+
+A device is built, not trained: the `build_nuclear_device` and
+`build_thermonuclear_device` projects add to a national stockpile rather than
+placing a unit, and each stockpiled device charges its shipped Gold maintenance
+every turn it sits there.
+
+Delivery is a platform question. A launch order names a city, and the shot is
+carried by whichever platform stands closest to the target: the city center
+itself, any of that city's unpillaged **Missile Silos**, or any **Nuclear
+Submarine** the launching civilization has at sea. The device's own
+`icbm_strike_range` from the shipped WMDs table — 12 for a nuclear device, 15
+for a thermonuclear one — is measured from the platform that fires, which is
+what makes an SSBN worth its cost: it carries the range with it. The target
+tile must be revealed, and a blast that would touch a major or city-state the
+launcher is at peace with is not a legal order.
+
+Detonation covers the shipped blast radius (1 and 2). Ground zero kills a
+full-health unit outright and levels a city's Outer Defenses; the outer rings
+wound severely and halve what walls remain. A struck city loses half its
+population, and improvements, districts and their non-immune buildings inside
+the radius are pillaged. Every tile in the radius carries fallout for the
+device's shipped duration.
+
+Fallout is not decoration. A tile under it yields nothing, and any unit
+beginning a turn on it takes damage and cannot heal there, so a blast denies
+ground for as long as it lasts rather than only for the turn it lands.
+
+Diplomatically, a strike is the single most expensive thing a war can contain:
+Grievances against every civilization whose land it touched, and the largest
+single addition to the launcher's own War Weariness in the game.
+
+Every detonation is recorded on the game as a strike record and announced to
+the launcher, every victim, and every other living major — nobody misses a
+mushroom cloud. Clients read the same records to place the blast on the map and
+to mark the moment in the war log.
+
+Reference basis: the [Nuclear device](https://civilization.fandom.com/wiki/Nuclear_device_%28Civ6%29)
+and [Thermonuclear device](https://civilization.fandom.com/wiki/Thermonuclear_device_%28Civ6%29)
+pages, and the shipped `WMDs` table this implementation reads its ranges,
+radii and fallout durations from.
