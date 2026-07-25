@@ -9535,6 +9535,57 @@ const FINE = () => cam.scale >= 0.8;
 // drawn a border around. They are painted into the tile rather than badged
 // over it: a farm should read as cultivation from across the map instead of as
 // a label you have to zoom in to identify.
+// Resource badges are terrain information, not actors, so they sit a step
+// quieter than the unit plates instead of ringing the map in bright white
+// discs of the same weight. The rim carries the resource class, so strategics
+// and luxuries separate from ordinary bonuses at a glance.
+// Called from the tile loop for an empty tile and again after the figures for
+// an occupied one, so it cannot inherit the tile loop's ambient text state the
+// way it did when it was inline — `textAlign`/`textBaseline` are set here or
+// the deferred badges paint off their seat. The glyph's fill is deliberately
+// left at the disc's own colour, which is what the inline version drew with:
+// color-emoji fonts ignore it, and changing it here would quietly restyle the
+// "●" fallback rather than move a badge, which is all this is meant to do.
+function drawResourceBadge(t, x, y) {
+  const rc = RULES && RULES.resources && RULES.resources[t.resource]
+    ? RULES.resources[t.resource].class : "bonus";
+  const rim = rc === "strategic" ? "#ff9d5c"
+    : rc === "luxury" ? "#d9a0f0" : "#e6ddbd";
+  // Seated toward its class's corner rather than always at the same lower-right
+  // spot, and rotated with the board like every other mark on a hex, seated
+  // where RES_BADGE_SEAT says the badge still clears the two edges that meet at
+  // that corner.
+  const [rx, ry] = corner(x, y, S * RES_BADGE_SEAT,
+    RESOURCE_CORNER[rc] === undefined ? 2 : RESOURCE_CORNER[rc]);
+  // A cinema establishing shot covers a continent: rendering every deposit as a
+  // full dark badge there freckles the landscape with hundreds of holes. Detail
+  // resolves with the camera instead. Manual/player views keep the established
+  // threshold, while a directed close shot crosses 1.12 and reveals every
+  // resource symbol naturally.
+  const detailedResource = FINE() && (!cinemaActive() || cam.scale >= 1.12);
+  if (detailedResource) {
+    cx.fillStyle = "#161c14cc";
+    cx.beginPath(); cx.arc(rx, ry, RES_BADGE_R, 0, 7); cx.fill();
+    cx.strokeStyle = rim + "dd"; cx.lineWidth = 1.5 * RES_BADGE_K; cx.stroke();
+    // name the symbol fonts the way the unit badge does; bare "sans-serif"
+    // leaves the glyph to whatever the platform happens to fall back to, and an
+    // empty disc is a worse badge than no badge
+    cx.font = (12 * RES_BADGE_K).toFixed(1) +
+      "px 'Segoe UI Symbol', 'Segoe UI Emoji', sans-serif";
+    cx.textAlign = "center"; cx.textBaseline = "middle";
+    cx.fillText(RES_ICON[t.resource] || "●", rx, ry + 0.5 * RES_BADGE_K);
+  } else {
+    // Zoomed out to survey the map, the icon inside the badge is under a pixel
+    // and unreadable, and a few hundred dark discs read as the map being
+    // spotted with holes. What is still worth knowing at that range is that a
+    // deposit is there and what class it is — so it becomes a legible dot in
+    // the class color instead of an illegible badge.
+    cx.fillStyle = rim;
+    cx.beginPath(); cx.arc(rx, ry, 3.6 * RES_BADGE_K, 0, 7); cx.fill();
+    cx.strokeStyle = "#161c14bb"; cx.lineWidth = 1.2 * RES_BADGE_K; cx.stroke();
+  }
+}
+
 function drawImprovement(t, x, y) {
   const imp = t.improvement;
   cx.save();
@@ -11784,6 +11835,9 @@ function draw() {
   const workedSet = new Set(state.cities.flatMap(c =>
     c.citizens ? c.citizens.worked_tiles.map(key) : []));
   const unitOwnerByTile = new Map(state.units.map(u => [key(u.pos), u.owner]));
+  // Deposits whose tile has somebody standing on it: their badge waits until
+  // after the figures. See drawResourceBadge.
+  const occupiedResourceTiles = [];
   const beau = MODE.painted;
   const hl = {};
   if (sel) {
@@ -12410,47 +12464,19 @@ function draw() {
     } else if (t.improvement) {
       drawImprovement(t, x, y);
     }
-    if (SHOW_RESOURCES && t.resource && (SHOW_ARTIFACT_SITES || !ARTIFACT_RESOURCES.has(t.resource))) {
-      // Resource badges are terrain information, not actors, so they sit a
-      // step quieter than the unit plates instead of ringing the map in bright
-      // white discs of the same weight. The rim carries the resource class, so
-      // strategics and luxuries separate from ordinary bonuses at a glance.
-      const rc = RULES && RULES.resources && RULES.resources[t.resource]
-        ? RULES.resources[t.resource].class : "bonus";
-      const rim = rc === "strategic" ? "#ff9d5c"
-        : rc === "luxury" ? "#d9a0f0" : "#e6ddbd";
-      // Seated toward its class's corner rather than always at the same
-      // lower-right spot, and rotated with the board like every other mark on
-      // a hex, seated where RES_BADGE_SEAT says the badge still clears the two
-      // edges that meet at that corner.
-      const [rx, ry] = corner(x, y, S * RES_BADGE_SEAT,
-        RESOURCE_CORNER[rc] === undefined ? 2 : RESOURCE_CORNER[rc]);
-      // A cinema establishing shot covers a continent: rendering every deposit
-      // as a full dark badge there freckles the landscape with hundreds of
-      // holes. Detail resolves with the camera instead. Manual/player views
-      // keep the established threshold, while a directed close shot crosses
-      // 1.12 and reveals every resource symbol naturally.
-      const detailedResource = FINE() && (!cinemaActive() || cam.scale >= 1.12);
-      if (detailedResource) {
-        cx.fillStyle = "#161c14cc";
-        cx.beginPath(); cx.arc(rx, ry, RES_BADGE_R, 0, 7); cx.fill();
-        cx.strokeStyle = rim + "dd"; cx.lineWidth = 1.5 * RES_BADGE_K; cx.stroke();
-        // name the symbol fonts the way the unit badge does; bare "sans-serif"
-        // leaves the glyph to whatever the platform happens to fall back to,
-        // and an empty disc is a worse badge than no badge
-        cx.font = (12 * RES_BADGE_K).toFixed(1) +
-          "px 'Segoe UI Symbol', 'Segoe UI Emoji', sans-serif";
-        cx.fillText(RES_ICON[t.resource] || "●", rx, ry + 0.5 * RES_BADGE_K);
-      } else {
-        // Zoomed out to survey the map, the icon inside the badge is under a
-        // pixel and unreadable, and a few hundred dark discs read as the map
-        // being spotted with holes. What is still worth knowing at that range
-        // is that a deposit is there and what class it is — so it becomes a
-        // legible dot in the class color instead of an illegible badge.
-        cx.fillStyle = rim;
-        cx.beginPath(); cx.arc(rx, ry, 3.6 * RES_BADGE_K, 0, 7); cx.fill();
-        cx.strokeStyle = "#161c14bb"; cx.lineWidth = 1.2 * RES_BADGE_K; cx.stroke();
-      }
+    // main added the SHOW_RESOURCES toggle to this condition while this branch
+    // moved the body into drawResourceBadge; the tile still has to pass both.
+    if (SHOW_RESOURCES && t.resource &&
+        (SHOW_ARTIFACT_SITES || !ARTIFACT_RESOURCES.has(t.resource))) {
+      // A unit standing on a deposit covers about a third of its symbol, and
+      // which third depends on the board's bearing, because the badge is
+      // seated on a hex corner and the corners turn with the map. There is no
+      // seat that hides from a figure filling 80% of the tile — the badge is
+      // already as far out as the hex edges allow. So the badge of an occupied
+      // tile is held back and drawn after the figures instead. It stays the
+      // same quiet dark disc; only its turn to paint moves.
+      if (unitOwnerByTile.has(k)) occupiedResourceTiles.push([t, x, y]);
+      else drawResourceBadge(t, x, y);
     }
     if (t.district) drawDistrict(t, x, y);
     if (t.wonder && !drawWorldWonderSprite(t.wonder, x, y)) drawWonder(x, y);
@@ -13016,6 +13042,10 @@ function draw() {
       cx.setLineDash([]);
     }
   }
+  // The deposits the figures were standing on. Held back above so a badge is
+  // not a third hidden behind the unit occupying its tile; drawn here, in the
+  // same seat and at the same weight, only after the figures are down.
+  for (const [t, x, y] of occupiedResourceTiles) drawResourceBadge(t, x, y);
   // --- projectiles. Everything above happens on the ground; a shot happens
   // over it, so it is drawn after the figures and before the numbers. The path
   // is a parabola between the two hexes — a lobbed stone climbs and drops, a
