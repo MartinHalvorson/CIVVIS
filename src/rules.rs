@@ -690,6 +690,36 @@ pub struct GovSpec {
     pub slots: PolicySlots,
 }
 
+/// Shipped `StartBias*` rows for a civilization. A lower `Tier` is a stronger
+/// pull, so the weight a satisfied bias carries is `6 - tier`.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct StartBias {
+    #[serde(default)]
+    pub terrain: Vec<String>,
+    /// Every shipped terrain row for this civilization is a Hills variant, so
+    /// the bias is really "hills", not the base terrain underneath it.
+    #[serde(default)]
+    pub terrain_hills: bool,
+    #[serde(default)]
+    pub terrain_tier: i32,
+    #[serde(default)]
+    pub feature: Vec<String>,
+    #[serde(default)]
+    pub feature_tier: i32,
+    #[serde(default)]
+    pub resource: Vec<String>,
+    #[serde(default)]
+    pub resource_tier: i32,
+    #[serde(default)]
+    pub river_tier: i32,
+}
+
+impl StartBias {
+    pub fn weight(tier: i32) -> i32 {
+        if tier <= 0 { 0 } else { (6 - tier).max(1) }
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct CivSpec {
     pub leader: String,
@@ -705,6 +735,9 @@ pub struct CivSpec {
     pub unique_unit: Option<String>,
     #[serde(default)]
     pub note: String,
+    /// Shipped start bias, absent for the civilizations that have none.
+    #[serde(default)]
+    pub start_bias: Option<StartBias>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
