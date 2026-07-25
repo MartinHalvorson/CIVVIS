@@ -589,6 +589,49 @@ impl WorldMap {
         }
     }
 
+    /// Where the tile stands on the world, in degrees of longitude
+    /// (-180..180, east positive) and latitude (-90..90, north positive).
+    ///
+    /// A globe reads both off the sphere. A cylinder has no globe to read, so
+    /// it is treated as the equirectangular projection it looks like: its
+    /// columns are meridians spread evenly around the world and its rows are
+    /// parallels from pole to pole, which is the same reading
+    /// [`Self::polar_fraction`] already takes of a row. Anything that wants to
+    /// place a real-world feature — Earth's coastlines, a civilization's
+    /// homeland — can then ask the world where it is without first asking what
+    /// shape it is.
+    pub fn lon_lat(&self, pos: Pos) -> (f64, f64) {
+        match self.sphere() {
+            Some(sphere) => (
+                sphere.longitude(pos).to_degrees(),
+                sphere.latitude(pos).to_degrees(),
+            ),
+            None => {
+                let (col, row) = hex::axial_to_offset(pos.0, pos.1);
+                let longitude = 360.0 * col as f64 / self.width.max(1) as f64 - 180.0;
+                let latitude = 90.0 - 180.0 * row as f64 / (self.height - 1).max(1) as f64;
+                (longitude, latitude)
+            }
+        }
+    }
+
+    /// The unit vector the tile's centre points along, on the unit sphere the
+    /// world's longitudes and latitudes describe. A globe has a real centre to
+    /// return; a cylinder gets the point its projection names, which is what
+    /// makes "nearest to this homeland" answerable on either shape.
+    pub fn direction(&self, pos: Pos) -> [f64; 3] {
+        if let Some(center) = self.sphere().and_then(|sphere| sphere.center(pos)) {
+            return center;
+        }
+        let (longitude, latitude) = self.lon_lat(pos);
+        let (longitude, latitude) = (longitude.to_radians(), latitude.to_radians());
+        [
+            latitude.cos() * longitude.cos(),
+            latitude.cos() * longitude.sin(),
+            latitude.sin(),
+        ]
+    }
+
     /// The neighbour `heading` steps around the tile, used by anything that
     /// travels in a fixed direction. A cylinder counts from due east; a globe
     /// counts around the tile's own outline.
