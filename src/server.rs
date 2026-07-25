@@ -1421,6 +1421,99 @@ fn mountain_atlas() -> Vec<u8> {
         .unwrap_or_else(|_| EMBEDDED_MOUNTAIN_ATLAS.to_vec())
 }
 
+/// Where a single-player game keeps its own saves, relative to the process's
+/// working directory. Files are named `*.save.json`, which `.gitignore`
+/// already covers, so a game played inside a checkout leaves the tree clean.
+const SAVE_DIR: &str = "saves";
+/// How many turn-stamped autosaves to keep. Civ 6 keeps a rolling handful for
+/// the same reason: the useful save is rarely the newest one.
+const AUTOSAVES: usize = 5;
+
+/// A save name is used to build a path, so it is checked rather than trusted:
+/// no separators, no traversal, nothing exotic. Returns the file path.
+fn save_path(name: &str) -> Option<std::path::PathBuf> {
+    let name = name.trim();
+    if name.is_empty()
+        || name.len() > 64
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return None;
+    }
+    Some(std::path::Path::new(SAVE_DIR).join(format!("{name}.save.json")))
+}
+
+/// Write a save whole or not at all. A game interrupted mid-write is exactly
+/// the game most likely to be reloaded, and a half-written save reads as a
+/// corrupt one.
+fn write_save(game: &Game, path: &std::path::Path) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let temporary = path.with_extension("writing");
+    std::fs::write(&temporary, serde_json::to_vec(game)?)?;
+    std::fs::rename(&temporary, path)
+}
+
+/// Every save this process can see, newest turn first, with enough of each to
+/// choose between them without loading any.
+fn list_saves() -> Vec<Value> {
+    let Ok(entries) = std::fs::read_dir(SAVE_DIR) else {
+        return Vec::new();
+    };
+    let mut saves: Vec<Value> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            let name = path.file_name()?.to_str()?.strip_suffix(".save.json")?.to_string();
+            let raw = std::fs::read(&path).ok()?;
+            let game: Game = serde_json::from_slice(&raw).ok()?;
+            let leader = game
+                .players
+                .iter()
+                .find(|player| !player.is_minor && !player.is_barbarian)
+                .map(|player| player.civ.clone());
+            Some(json!({
+                "name": name,
+                "turn": game.turn,
+                "seed": game.seed,
+                "civ": leader,
+                "difficulty": game.difficulty,
+                "speed": game.game_speed.id(),
+                "winner": game.winner,
+                "bytes": raw.len(),
+            }))
+        })
+        .collect();
+    saves.sort_by_key(|save| std::cmp::Reverse(save["turn"].as_u64().unwrap_or(0)));
+    saves
+}
+
+/// Keep the newest `AUTOSAVES` turn-stamped autosaves and drop the rest.
+fn prune_autosaves() {
+    let Ok(entries) = std::fs::read_dir(SAVE_DIR) else {
+        return;
+    };
+    let mut stamped: Vec<(u32, std::path::PathBuf)> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            let name = path.file_name()?.to_str()?;
+            let turn = name
+                .strip_prefix("autosave-t")?
+                .strip_suffix(".save.json")?
+                .parse::<u32>()
+                .ok()?;
+            Some((turn, path))
+        })
+        .collect();
+    stamped.sort_by_key(|(turn, _)| std::cmp::Reverse(*turn));
+    for (_, path) in stamped.into_iter().skip(AUTOSAVES) {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
 fn respond(stream: &mut TcpStream, code: &str, ctype: &str, body: &[u8]) {
     // Nothing this server sends is worth reusing from a cache. The page and
     // its art are compiled into the binary, so a build swap changes them
@@ -1785,6 +1878,88 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             let save = serde_json::to_value(&session.game).unwrap();
             respond_json(stream, &save);
         }
+        // The saves this process can see, newest turn first.
+        ("GET", "/saves") => {
+            respond_json(stream, &json!({"saves": list_saves()}));
+        }
+        // Name a save and it is written to disk; the browser can then offer
+        // it back later instead of asking the player to keep a JSON file.
+        ("POST", "/save") => {
+            let name = parsed["name"].as_str().unwrap_or("").to_string();
+            let Some(path) = save_path(&name) else {
+                respond_json(stream, &json!({"error": "a save name is letters, digits, - and _"}));
+                return;
+            };
+            let session = sh.session.lock().unwrap();
+            let result = write_save(&session.game, &path);
+            let turn = session.game.turn;
+            drop(session);
+            respond_json(
+                stream,
+                &match result {
+                    Ok(()) => json!({"error": Value::Null, "name": name, "turn": turn}),
+                    Err(error) => json!({"error": format!("cannot write {name}: {error}")}),
+                },
+            );
+        }
+        // Restore a game: `{"name": "…"}` for one of this process's saves, or
+        // `{"game": {…}}` for a save the player uploaded from somewhere else.
+        // The AIs' transient plans are rebuilt; the serialized game keeps the
+        // authoritative RNG and world state.
+        ("POST", "/load") => {
+            let loaded: Result<Game, String> = if let Some(name) = parsed["name"].as_str() {
+                save_path(name)
+                    .ok_or_else(|| "a save name is letters, digits, - and _".to_string())
+                    .and_then(|path| {
+                        std::fs::read(&path).map_err(|error| format!("cannot read {name}: {error}"))
+                    })
+                    .and_then(|raw| {
+                        serde_json::from_slice(&raw)
+                            .map_err(|error| format!("{name} is not a save: {error}"))
+                    })
+            } else if !parsed["game"].is_null() {
+                serde_json::from_value(parsed["game"].clone())
+                    .map_err(|error| format!("that is not a save: {error}"))
+            } else {
+                Err("load needs a save name or a game".to_string())
+            };
+            let mut out = match loaded {
+                Ok(game) => {
+                    // A save records the mods it was played under. Loading it
+                    // under a different set silently changes the rules
+                    // mid-game, so refuse rather than pretend otherwise.
+                    let active = crate::mods::active_names();
+                    if game.mods != active {
+                        let session = sh.session.lock().unwrap();
+                        let mut out = session.state();
+                        out["error"] = json!(format!(
+                            "that save was played with mods {:?}, this server has {:?}",
+                            game.mods, active
+                        ));
+                        drop(session);
+                        decorate(&mut out, sh);
+                        respond_json(stream, &out);
+                        return;
+                    }
+                    let mut session = sh.session.lock().unwrap();
+                    let params = session.params.clone();
+                    *session = Session::from_game(params, game);
+                    let mut out = session.state();
+                    out["error"] = Value::Null;
+                    drop(session);
+                    out
+                }
+                Err(error) => {
+                    let session = sh.session.lock().unwrap();
+                    let mut out = session.state();
+                    out["error"] = json!(error);
+                    drop(session);
+                    out
+                }
+            };
+            decorate(&mut out, sh);
+            respond_json(stream, &out);
+        }
         ("GET", "/rules") => {
             let session = sh.session.lock().unwrap();
             let r = &session.game.rules;
@@ -1833,6 +2008,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         }
         ("POST", "/action") => {
             let mut session = sh.session.lock().unwrap();
+            let ending_turn = parsed["action"]["type"].as_str() == Some("end_turn");
             let movement_path = serde_json::from_value::<Action>(parsed["action"].clone())
                 .ok()
                 .and_then(|action| match action {
@@ -1860,10 +2036,24 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     }
                 }
             }
+            let refused = err.is_some();
             out["error"] = match err {
                 Some(e) => Value::String(e),
                 None => Value::Null,
             };
+            // Civ 6 autosaves at the top of every turn, and the reason is the
+            // same here: a single-player game that only exists in one
+            // process's memory is one crash away from never having happened.
+            // Spectated games are the supervisor's business, not this.
+            if ending_turn && !refused && !session.params.spectate {
+                let turn = session.game.turn;
+                let path =
+                    std::path::Path::new(SAVE_DIR).join(format!("autosave-t{turn}.save.json"));
+                if write_save(&session.game, &path).is_ok() {
+                    prune_autosaves();
+                    out["autosaved"] = json!(turn);
+                }
+            }
             respond_json(stream, &out);
         }
         ("POST", "/step") => {
@@ -2002,11 +2192,11 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::{
-        chronicle_world_events, final_countdown_ms, new_game_params, request_path, seat_delay_ms,
-        ChronicleSnapshot, ChronicleState, Params, Session, EMBEDDED_CINEMATIC_3D,
-        EMBEDDED_INDEX, EMBEDDED_WORLD_WONDER_ATLAS,
+        chronicle_world_events, final_countdown_ms, new_game_params, request_path, save_path,
+        seat_delay_ms, ChronicleSnapshot, ChronicleState, Params, Session,
+        EMBEDDED_CINEMATIC_3D, EMBEDDED_INDEX, EMBEDDED_WORLD_WONDER_ATLAS, SAVE_DIR,
     };
-    use crate::game::{Action, VictoryConditions};
+    use crate::game::{Action, Game, VictoryConditions};
     use crate::setup::{GameSpeed, MapScript};
     use serde_json::json;
 
@@ -2061,6 +2251,59 @@ mod tests {
             league_dir: None,
             league_record: false,
         }
+    }
+
+    /// A save name becomes a path, so it is checked rather than trusted.
+    /// Everything a browser might send that is not a plain name is refused
+    /// before it can reach the filesystem.
+    #[test]
+    fn a_save_name_cannot_escape_the_save_directory() {
+        for good in ["autosave-t12", "my_game", "Rome_1", "a"] {
+            let path = save_path(good).expect("{good} is a plain name");
+            assert_eq!(path.parent().unwrap(), std::path::Path::new(SAVE_DIR));
+            assert_eq!(
+                path.file_name().unwrap().to_str().unwrap(),
+                format!("{good}.save.json")
+            );
+        }
+        for bad in [
+            "",
+            "   ",
+            "..",
+            "../secrets",
+            "a/b",
+            "a\\b",
+            "/etc/passwd",
+            "game.save.json",
+            "spaced name",
+            "n\u{0000}ull",
+            &"x".repeat(65),
+        ] {
+            assert!(save_path(bad).is_none(), "{bad:?} should not be a save name");
+        }
+    }
+
+    /// A save written and read back is the same game, and the session that
+    /// comes out of it can still be played. `Session::from_game` rebuilds the
+    /// agents; the serialized game keeps the authoritative RNG.
+    #[test]
+    fn a_saved_game_reloads_onto_the_same_turn() {
+        let mut session = Session::new(current());
+        for _ in 0..3 {
+            session.act(&json!({"type": "end_turn"}));
+        }
+        let turn = session.game.turn;
+        assert!(turn > 1, "the game should have advanced");
+
+        let round_tripped: Game =
+            serde_json::from_value(serde_json::to_value(&session.game).unwrap()).unwrap();
+        assert_eq!(round_tripped.turn, turn);
+        assert_eq!(round_tripped.seed, session.game.seed);
+
+        let mut restored = Session::from_game(session.params.clone(), round_tripped);
+        assert_eq!(restored.game.turn, turn);
+        assert!(restored.act(&json!({"type": "end_turn"})).is_none());
+        assert!(restored.game.turn > turn, "a loaded game plays on");
     }
 
     #[test]
