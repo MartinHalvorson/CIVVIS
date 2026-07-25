@@ -6880,21 +6880,27 @@ impl AdvancedAi {
             .as_deref()
             .map(|improvement| self.improvement_value(g, pos, improvement, strategy))
             .unwrap_or(0.0);
-        let mut choices: Vec<String> = g
+        // Score each candidate once and sort the scores. The comparator used
+        // to re-derive both sides of every comparison, so ranking eight
+        // improvements valued a tile's appeal and resource close to sixty
+        // times instead of eight. Same order, same ties.
+        let mut choices: Vec<(f64, String)> = g
             .valid_improvements(pid, pos)
             .into_iter()
-            .filter(|improvement| {
-                g.rules.improvements[improvement].builder_buildable
-                    && self.improvement_value(g, pos, improvement, strategy) > current_value + 0.5
+            .filter(|improvement| g.rules.improvements[improvement].builder_buildable)
+            .map(|improvement| {
+                let value = self.improvement_value(g, pos, &improvement, strategy);
+                (value, improvement)
             })
+            .filter(|(value, _)| *value > current_value + 0.5)
             .collect();
-        choices.sort_by(|a, b| {
-            self.improvement_value(g, pos, b, strategy)
-                .partial_cmp(&self.improvement_value(g, pos, a, strategy))
-                .unwrap()
-                .then(a.cmp(b))
+        choices.sort_by(|(a_value, a), (b_value, b)| {
+            b_value.partial_cmp(a_value).unwrap().then(a.cmp(b))
         });
         choices
+            .into_iter()
+            .map(|(_, improvement)| improvement)
+            .collect()
     }
 
     fn advanced_builder_step(
@@ -6957,36 +6963,51 @@ impl AdvancedAi {
             .filter(|(other, _)| **other != uid && g.units.contains_key(other))
             .map(|(_, pos)| *pos)
             .collect();
-        let current_target = self.builder_targets.get(&uid).copied().filter(|pos| {
-            !reserved.contains(pos)
-                && !self
-                    .worthwhile_improvements(g, pid, *pos, strategy)
-                    .is_empty()
-        });
-        let target = current_target.or_else(|| {
-            let mut best: Option<(f64, Pos)> = None;
-            for cid in g.player_city_ids(pid) {
-                for pos in &g.cities[&cid].owned_tiles {
-                    if reserved.contains(pos) {
-                        continue;
-                    }
-                    for improvement in self.worthwhile_improvements(g, pid, *pos, strategy) {
-                        let score = self.improvement_value(g, *pos, &improvement, strategy)
-                            - g.wdist(current, *pos) as f64 * 0.7;
-                        if best
-                            .map(|(old, bp)| score > old || (score == old && *pos < bp))
-                            .unwrap_or(true)
-                        {
-                            best = Some((score, *pos));
+        // Reading every tile the empire owns: one memo scope so the
+        // empire-wide questions each tile asks are answered once for the whole
+        // sweep rather than once per tile. The borrow checker rejects the
+        // guard the moment anything in here starts mutating the game.
+        let best = {
+            let _memo = g.query_memo();
+            let current_target = self.builder_targets.get(&uid).copied().filter(|pos| {
+                !reserved.contains(pos)
+                    && !self
+                        .worthwhile_improvements(g, pid, *pos, strategy)
+                        .is_empty()
+            });
+            match current_target {
+                Some(pos) => Ok(pos),
+                None => {
+                    let mut best: Option<(f64, Pos)> = None;
+                    for cid in g.player_city_ids(pid) {
+                        for pos in &g.cities[&cid].owned_tiles {
+                            if reserved.contains(pos) {
+                                continue;
+                            }
+                            for improvement in self.worthwhile_improvements(g, pid, *pos, strategy)
+                            {
+                                let score = self.improvement_value(g, *pos, &improvement, strategy)
+                                    - g.wdist(current, *pos) as f64 * 0.7;
+                                if best
+                                    .map(|(old, bp)| score > old || (score == old && *pos < bp))
+                                    .unwrap_or(true)
+                                {
+                                    best = Some((score, *pos));
+                                }
+                            }
                         }
                     }
+                    Err(best.map(|(_, pos)| pos))
                 }
             }
-            best.map(|(_, pos)| {
+        };
+        let target = match best {
+            Ok(pos) => Some(pos),
+            Err(found) => found.map(|pos| {
                 self.builder_targets.insert(uid, pos);
                 pos
-            })
-        });
+            }),
+        };
         target.is_some_and(|pos| self.base.step_toward(g, pid, uid, pos))
     }
 
