@@ -2078,7 +2078,7 @@ try {
 } catch (e) {}
 let SPEC = false, specPaused = restartPaused === "1", specTimer = null, specBusy = false;
 let viewChanging = false;
-let eventLogs = new Map(), lastLeaderByView = new Map(), lastSidePaint = 0;
+let eventLogs = new Map(), nextEventId = 1, lastLeaderByView = new Map(), lastSidePaint = 0;
 let TMAP = new Map();
 let tradeFilter = "all", tradeBusy = false;
 // The leader ribbon opens one civilization at a time — this is whose dossier
@@ -4429,7 +4429,7 @@ function eventsFor(st) {
 function addEvent(icon, text, turn, st, important = false, value = 2) {
   const viewKey = eventViewKey(st);
   const events = eventLogs.get(viewKey) || [];
-  events.unshift({ icon, text, turn, important, value, at: performance.now() });
+  events.unshift({ id: nextEventId++, icon, text, turn, important, value, at: performance.now() });
   // The panel is as tall as the deck allows now, so the log keeps enough
   // history to fill a large screen. When it overflows, retire the least
   // valuable entry — oldest among ties — instead of simply the oldest, so
@@ -4464,6 +4464,11 @@ function civilizationEventText(text, next) {
     .replace(/\byour\b/gi, `${civilization}'s`)
     .replace(/\byou\b/gi, civilization);
 }
+function includeServerEventInGameLog(event, text) {
+  if (event.category === "War" && /\bupgraded .+ to .+\.?$/i.test(text)) return false;
+  if (event.category === "Diplomacy" && /\b(?:approves|disapproves) of\b/i.test(text)) return false;
+  return true;
+}
 function chronicleServer(next) {
   const events = Array.isArray(next.events) ? next.events : [];
   const viewKey = eventViewKey(next);
@@ -4472,6 +4477,7 @@ function chronicleServer(next) {
     const key = `${viewKey}|${event.turn}|${event.category}|${text}`;
     if (seenServerEvents.has(key)) continue;
     seenServerEvents.add(key);
+    if (!includeServerEventInGameLog(event, text)) continue;
     addEvent(SERVER_EVENT_ICONS[event.category] || "✦", text, event.turn,
       next, event.category === "General", SERVER_EVENT_VALUES[event.category] ?? 2);
   }
@@ -9446,6 +9452,15 @@ function drawEvents() {
   const signature = `${eventViewKey(state)}|` + events
     .map(e => `${e.turn}:${e.icon}:${e.text}`).join("|");
   if (el.dataset.signature === signature) return;
+  const oldScrollHeight = el.scrollHeight;
+  const keepViewport = el.scrollTop > 1;
+  const elTop = el.getBoundingClientRect().top;
+  const anchors = keepViewport ? [...el.querySelectorAll("[data-event-id]")]
+    .filter(item => item.getBoundingClientRect().bottom > elTop)
+    .map(item => ({
+      id: item.dataset.eventId,
+      offset: item.getBoundingClientRect().top - elTop,
+    })) : [];
   el.dataset.signature = signature;
   if (!events.length) {
     el.innerHTML = `<div class="empty-state">${playerView
@@ -9454,9 +9469,18 @@ function drawEvents() {
     return;
   }
   el.innerHTML = events.map(e =>
-    `<div class="event-item${e.important ? " important" : ""}"><div class="event-icon">${e.icon}</div>` +
+    `<div class="event-item${e.important ? " important" : ""}" data-event-id="${e.id}"><div class="event-icon">${e.icon}</div>` +
     `<div><div class="event-text">${e.text}</div><div class="event-turn">Turn ${e.turn}</div></div></div>`
   ).join("");
+  if (keepViewport) {
+    const anchor = anchors.find(({id}) => el.querySelector(`[data-event-id="${id}"]`));
+    if (anchor) {
+      const item = el.querySelector(`[data-event-id="${anchor.id}"]`);
+      el.scrollTop += item.getBoundingClientRect().top - el.getBoundingClientRect().top - anchor.offset;
+    } else {
+      el.scrollTop += el.scrollHeight - oldScrollHeight;
+    }
+  }
 }
 
 // A war is a running account, not a stream of notices: who is fighting, since
