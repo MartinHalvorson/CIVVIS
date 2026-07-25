@@ -1002,7 +1002,9 @@
   .save-entry b { color: var(--text); font-size: 11px; font-weight: 650; }
   .save-entry span { color: var(--muted); font-size: 9px; }
   .save-entry button { margin: 0 0 0 auto; padding: 4px 8px; font-size: 9px; }
-  /* Leader and difficulty only mean anything with somebody at the keyboard. */
+  /* Leader, difficulty and the start button only mean anything with somebody
+     at the keyboard. The AI-only view starts its next world from the specbar's
+     Restart sim, which already says when the selected settings differ. */
   body.spectating .human-setting { display: none; }
   /* Civ 6 conducts diplomacy leader by leader: who they are, what they want,
      how they feel about you, and what you can do about it. Quick Deals
@@ -2168,8 +2170,9 @@
           <option value="epic">Epic · 750 turns</option>
           <option value="marathon">Marathon · 1500 turns</option>
         </select></label>
-        <button class="primary" id="startgame" style="margin-top:9px"
-          title="Begin a new world with these settings">Start new game</button>
+        <button class="primary human-setting" id="startgame" style="margin-top:9px"
+          title="Begin a new game with these settings — the current one is not saved first"
+          >Start new game</button>
         <div class="utility-group" id="saves-group" style="display:none">
           <div class="city-group-head" style="margin-bottom:6px">Saved games<span id="saves-count"></span></div>
           <div id="saves-list"></div>
@@ -16201,26 +16204,21 @@ function showNewSimulationError(error, action = "start simulation") {
 }
 // The mode select says what the *next* game will be, and it opens on the
 // AI-only simulation. Once a world is on screen it opens on that world's mode
-// instead: a person playing a game should not have to notice that the button
-// beside their empire now says "Start new simulation".
+// instead, so a person playing a game finds the start button beside their
+// empire and a spectator is not offered one they do not need.
 function adoptRunningMode() {
   const select = document.getElementById("gamemode");
   if (!select || !state) return;
   select.value = SPEC ? "ai_sim" : "single";
   syncSetupMode();
 }
-// Leader and difficulty are meaningless in a spectated world, and the start
-// button says what it will actually do.
+// Leader, difficulty and the start button are meaningless in a spectated
+// world: nobody is at the keyboard, and the settings the sidebar stages there
+// are what the specbar's Restart sim already opens the next simulation with.
+// Selecting single player brings the start button back to launch that game.
 function syncSetupMode() {
   const mode = (document.getElementById("gamemode") || {}).value || "ai_sim";
   document.body.classList.toggle("spectating", mode === "ai_sim");
-  const start = document.getElementById("startgame");
-  if (start) {
-    start.textContent = mode === "ai_sim" ? "Start new simulation" : "Start new game";
-    start.title = mode === "ai_sim"
-      ? "Begin a new AI-only world with these settings"
-      : "Begin a new game with these settings — the current one is not saved first";
-  }
 }
 
 // The saves this server is holding. A build without the save endpoints simply
