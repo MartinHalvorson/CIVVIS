@@ -11312,14 +11312,19 @@ function exactStat(value) {
   return Math.round(n).toLocaleString();
 }
 
-function playerHudStats(player, rank) {
+function foundedReligionMarker(player, cities) {
+  if (!player.religion) return "";
+  return cities.some(city => city.religion === player.religion) ? "*" : "";
+}
+
+function playerHudStats(player, rank, cities) {
   const y = player.yields || {};
   const goldPerTurn = Number.isFinite(+player.gold_per_turn) ? +player.gold_per_turn : +(y.gold || 0);
   return [
     ["production", "PROD", y.production, `Production: ${exactStat(y.production)} per turn`],
     ["science", "SCI", y.science, `Science: ${exactStat(y.science)} per turn`],
     ["culture", "CUL", y.culture, `Culture: ${exactStat(y.culture)} per turn`],
-    ["faith", "FPT", y.faith, `Faith: ${exactStat(y.faith)} per turn · ${exactStat(player.faith)} banked`],
+    ["faith", "FPT", y.faith, `Faith: ${exactStat(y.faith)} per turn · ${exactStat(player.faith)} banked`, foundedReligionMarker(player, cities)],
     ["gold", "GPT", goldPerTurn, `Net Gold: ${exactStat(goldPerTurn)} per turn · ${exactStat(player.gold)} banked`],
     ["military", "MIL", player.military, `Military strength: ${exactStat(player.military)}`],
     ["cities", "CITY", player.cities, `Cities controlled: ${exactStat(player.cities)}`],
@@ -11362,7 +11367,7 @@ function drawPlayerHud() {
     mapArea.style.setProperty("--player-hud-height", `${requestedHeight}px`);
   }
   const rankById = new Map(majors.map((p, index) => [p.id, index + 1]));
-  const statsByPlayer = new Map(majors.map(p => [p.id, playerHudStats(p, rankById.get(p.id))]));
+  const statsByPlayer = new Map(majors.map(p => [p.id, playerHudStats(p, rankById.get(p.id), state.cities)]));
   const highestByStat = new Map();
   statsByPlayer.forEach(stats => stats.forEach(([kind, , value]) => {
     const numericValue = Number(value) || 0;
@@ -11440,10 +11445,10 @@ function drawPlayerHud() {
           `<span class="identity-separator" aria-hidden="true">·</span>`}` +
         `${activeStrategy}</span></button>` +
         `<button class="diplomacy-stats" data-hud-action="watch" data-hud-civ="${p.id}" title="${watchTitle}" aria-label="Watch ${p.civ}">` +
-        stats.map(([kind, , value, label]) => {
+        stats.map(([kind, , value, label, marker = ""]) => {
           const isLeader = highestByStat.get(kind) !== 0 && Number(value || 0) === highestByStat.get(kind);
           return `<span class="ribbon-stat ${kind}${isLeader ? " category-leader" : ""}" ` +
-            `title="${label}${isLeader ? " · Category leader" : ""}"><b>${ribbonStat(value)}</b></span>`;
+            `title="${label}${isLeader ? " · Category leader" : ""}"><b>${ribbonStat(value)}${marker}</b></span>`;
         }).join("") + `</button></div>` +
         (expanded ? civDossier(p, rank, relation) : "");
     }).join("") + `</div>` + hudResizeHandles("player standings");
