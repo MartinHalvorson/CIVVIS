@@ -94,7 +94,8 @@ mod tests {
         assert_eq!(extra_units(&prince, 1), extra_units(&prince, 0));
         assert_eq!(
             extra_units(&deity, 1),
-            extra_units(&deity, 0) + 7, // 4 warriors, 2 builders, a settler
+            // MajorStartingUnits at Deity: 4 Warriors, 2 Builders, 2 Settlers.
+            extra_units(&deity, 0) + 8,
         );
     }
 
