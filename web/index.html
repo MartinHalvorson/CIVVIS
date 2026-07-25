@@ -423,6 +423,10 @@
   .victory-track:first-child { border-top-color: transparent; }
   .victory-heading { display: flex; align-items: center; gap: 4px; margin-bottom: 2px; color: var(--track); }
   .victory-heading b { overflow: hidden; color: #dde5e1; font-size: 9px; letter-spacing: .03em; text-overflow: ellipsis; white-space: nowrap; }
+  .victory-none-note {
+    margin: 3px 0 0 9px; color: #8ea099; font-size: 9px; font-weight: 650;
+    line-height: 1.45; text-wrap: pretty;
+  }
   .victory-subheading {
     min-height: 9px; display: grid; grid-template-columns: minmax(0, 1fr) 42px; gap: 6px;
     margin: 0 0 3px 9px; color: #80938b; font-size: 6.5px; font-weight: 900;
@@ -13954,6 +13958,15 @@ function playerHudOverview() {
           victoryMeter(track.id, metric, progress) + `</div>`;
       }).join("") + `</div></section>`;
   }).join("");
+  // The lobby lets every victory condition be switched off, and then there is
+  // genuinely nothing to track: `set_winner` is gated on the condition being
+  // enabled, so the world simply runs to its turn cap and ends with nobody
+  // having won. Say that instead of standing an empty panel down the rail.
+  const victoryBody = victoryTracks ||
+    `<section class="victory-track victory-none" aria-label="No victory conditions">` +
+    `<div class="victory-heading"><span>◌</span><b>No victory conditions</b></div>` +
+    `<p class="victory-none-note">Every path is switched off in Game settings, so this ` +
+    `world plays to turn ${turnCapLabel()} and ends without a winner.</p></section>`;
   const victoryCount = Math.max(1, enabledVictoryTracks.length);
   // Two floors for two orientations: one band per row down the rail, and one
   // row of columns on a viewport too narrow to have a rail at all.
@@ -13968,7 +13981,7 @@ function playerHudOverview() {
     `<div class="hud-rail" tabindex="0" aria-label="Victory paths; scroll vertically for every path">` +
     `<div class="victory-ribbon" style="--victory-rows:${victoryCount};` +
     `--victory-min-height:${victoryMinHeight}px;--victory-min-width:${victoryMinWidth}px">` +
-    `${victoryTracks}</div></div></section>` + hudResizeHandles("victory tracker");
+    `${victoryBody}</div></div></section>` + hudResizeHandles("victory tracker");
 
   return overview;
 }
