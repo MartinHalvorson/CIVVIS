@@ -2529,9 +2529,9 @@ mod tests {
             .expect("active strategy section");
         assert!(
             game_settings < display_settings
-                && display_settings < event_log
-                && event_log < war_log
-                && war_log < strategy,
+                && display_settings < war_log
+                && war_log < event_log
+                && event_log < strategy,
             "left panel should show game settings, display settings, and the two logs first"
         );
         assert!(EMBEDDED_INDEX.contains("<span>Display settings</span>"));
@@ -3588,6 +3588,42 @@ mod tests {
         // Actions are posted back exactly as the engine handed them over.
         assert!(EMBEDDED_INDEX
             .contains("onclick='sendFromDiplomacy(${JSON.stringify(action)})'>${label}</button>"));
+    }
+
+    /// A treasury that can buy a Warrior and nothing else is not a treasury.
+    /// `buy_building` and `buy_district` were legal for seat 0 and had no
+    /// control anywhere, and a district's tile — which is most of what a
+    /// district is worth — could only be picked out of a flat dropdown. The
+    /// city screen is where all of that lives.
+    #[test]
+    fn browser_has_a_city_screen_that_can_spend() {
+        for piece in [
+            "id=\"cityscreen\"",
+            "function drawCityScreen()",
+            "function openCityScreen(id)",
+            "function sendFromCity(action)",
+            "function itemNote(item)",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(piece),
+                "the city screen is missing {piece}"
+            );
+        }
+        // Both purchases the client never offered, and production itself.
+        for action in ["\"buy\"", "\"buy_building\"", "\"buy_district\"", "\"produce\""] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("a.type === {action}")),
+                "the city screen does not offer {action}"
+            );
+        }
+        // A district with more than one candidate tile names the tiles.
+        assert!(EMBEDDED_INDEX.contains("entry.sites.length > 1"));
+        // Actions are posted back exactly as the engine handed them over.
+        assert!(EMBEDDED_INDEX
+            .contains("onclick='sendFromCity(${JSON.stringify(action)})'>${label}</button>"));
+        // An idle city is a turn blocker; it must open the screen that
+        // answers it rather than merely scrolling a sidebar.
+        assert!(EMBEDDED_INDEX.contains("openCityScreen(city.id);"));
     }
 
     #[test]
