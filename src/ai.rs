@@ -3409,13 +3409,15 @@ impl BasicAi {
                     self.project_matches_focus(g, project) && g.can_produce(pid, cid, item)
                 })
                 .collect();
-            projects.sort_by(|a, b| {
-                g.item_cost_for(pid, a)
-                    .partial_cmp(&g.item_cost_for(pid, b))
-                    .unwrap()
-                    .then_with(|| format!("{a:?}").cmp(&format!("{b:?}")))
-            });
-            if let Some(project) = projects.into_iter().next() {
+            // Cost and label taken once per candidate: the comparator used to
+            // re-derive both, and its tiebreak built two Debug strings for
+            // every comparison the sort made.
+            let mut ranked: Vec<(f64, String, Item)> = projects
+                .into_iter()
+                .map(|item| (g.item_cost_for(pid, &item), format!("{item:?}"), item))
+                .collect();
+            ranked.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then_with(|| a.1.cmp(&b.1)));
+            if let Some((_, _, project)) = ranked.into_iter().next() {
                 return Some(project);
             }
         }
@@ -3643,13 +3645,15 @@ impl BasicAi {
                 })
                 .filter(|item| g.can_produce(pid, cid, item))
                 .collect();
-            projects.sort_by(|a, b| {
-                g.item_cost_for(pid, a)
-                    .partial_cmp(&g.item_cost_for(pid, b))
-                    .unwrap()
-                    .then_with(|| format!("{a:?}").cmp(&format!("{b:?}")))
-            });
-            if let Some(project) = projects.into_iter().next() {
+            // Cost and label taken once per candidate: the comparator used to
+            // re-derive both, and its tiebreak built two Debug strings for
+            // every comparison the sort made.
+            let mut ranked: Vec<(f64, String, Item)> = projects
+                .into_iter()
+                .map(|item| (g.item_cost_for(pid, &item), format!("{item:?}"), item))
+                .collect();
+            ranked.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then_with(|| a.1.cmp(&b.1)));
+            if let Some((_, _, project)) = ranked.into_iter().next() {
                 return Some(project);
             }
         }

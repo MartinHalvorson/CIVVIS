@@ -27783,17 +27783,27 @@ impl Game {
             {
                 continue;
             }
-            let mut sites = self.district_sites(cid, name);
-            sites.sort_by(|a, b| {
-                let foundation_a = self.map.tiles[a].district_foundation.is_some();
-                let foundation_b = self.map.tiles[b].district_foundation.is_some();
-                let ya = self.district_yields(name, *a).total();
-                let yb = self.district_yields(name, *b).total();
-                foundation_b
-                    .cmp(&foundation_a)
-                    .then_with(|| yb.partial_cmp(&ya).unwrap())
-                    .then(a.cmp(b))
+            // Rank the sites on values taken once each. Deriving a site's
+            // yields means walking its neighbours for adjacency, and a
+            // comparator that re-derives both sides pays that for every
+            // comparison in the sort rather than for every site.
+            let mut ranked: Vec<(bool, f64, Pos)> = self
+                .district_sites(cid, name)
+                .into_iter()
+                .map(|site| {
+                    (
+                        self.map.tiles[&site].district_foundation.is_some(),
+                        self.district_yields(name, site).total(),
+                        site,
+                    )
+                })
+                .collect();
+            ranked.sort_by(|a, b| {
+                b.0.cmp(&a.0)
+                    .then_with(|| b.1.partial_cmp(&a.1).unwrap())
+                    .then(a.2.cmp(&b.2))
             });
+            let sites: Vec<Pos> = ranked.into_iter().map(|(_, _, site)| site).collect();
             let mut fresh_sites = 0usize;
             for s in sites {
                 let foundation = self.map.tiles[&s].district_foundation.is_some();
