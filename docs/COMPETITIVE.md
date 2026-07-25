@@ -49,10 +49,13 @@ this is the flag that pins it:
 | Start Era: Ancient | default |
 | All Game Modes: DISABLED | default; `--game-modes apocalypse,secret_societies` opts back in |
 | Duplicate Civs and Leaders: ALLOWED | seats past the eighth reuse the roster |
-| Start Position: Balanced | **not ported, and not a default** — see below |
+| Start Position: Balanced (FFA) | **not ported, and not a default** — see below |
+| Teamers Start Position: Standard | default; the generator does not distinguish a teamers layout from a free-for-all one, so a teamers game gets the same balanced-ish layout an FFA does |
+| Major civilizations 10–14 tiles apart | `targeted_layout` aims the shipped `START_DISTANCE_MAJOR_CIVILIZATION` 12 ± `START_DISTANCE_RANGE_MAJOR` 2; 96% of nearest-neighbour distances land in band on the Standard 8-player map |
 | Temperature / Rainfall / Sea Level: Standard | not exposed by the generator; these three are at their defaults, so the gap is expressiveness rather than divergence |
 | World Age: New | **not a default either**, and the setting no longer exists in current Civ VI — see below |
-| Turn Timer: MPH Dynamic · Turn Mode: Simultaneous | out of scope: sequential engine |
+| Smart Timer: Competitive · Turn Mode: Simultaneous | out of scope: sequential engine. CPL now publishes the timer as "Smart Timer: Competitive"; the older "MPH Dynamic" wording is gone |
+| Map Pins: DISABLED (MPH) | out of scope: a client annotation, not engine state |
 | No Gold or strategic-resource trading, no military alliances | referee policy, not a rule |
 
 ### The two map lines are not defaults
@@ -68,6 +71,14 @@ the reason a CIVVIS map is not a CPL map:
   start over its neighbourhood to remove outliers the sampler never offered.
   Separation and coverage are ranked ahead of quality on purpose, so quality
   balance is what gives way when they conflict.
+
+  Separation is no longer *maximized*, though. `targeted_layout` now aims each
+  start at the shipped 10-14 band rather than as far away as the landmass
+  allows. The spread figure below was measured before that change, and against
+  the twelve tiles a capital actually works — deliberately independent of the
+  generator's own scorer. It has **not** been re-measured here: doing that
+  honestly needs the same independent metric, because `start_quality` is what
+  the generator optimizes and would flatter the result.
 
   What that leaves, measured over 24 standard 8-player maps against the twelve
   tiles a capital actually works (independently of the generator's own scorer):
