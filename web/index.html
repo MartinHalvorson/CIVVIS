@@ -3826,7 +3826,7 @@ function animateDiff(prev, next) {
 const easeIO = e => e < 0.5 ? 2 * e * e : 1 - (1 - e) * (2 - 2 * e);
 const cam = { x: 0, y: 0, scale: 1 };
 let cameraFlight = null, cameraZoom = null;
-let cameraInertia = {vx:0, vy:0, vrot:0, vtilt:0};
+let cameraInertia = {vx:0, vy:0, vrot:0, vtilt:0, spin:null};
 let cameraMotionLast = performance.now();
 let cameraFollowUnitId = null, cameraFollowManual = false, cameraFollowScale = 1.18;
 // Choosing a civilization to watch is also an explicit request for a living
@@ -9880,10 +9880,11 @@ function planetCamera() {
     longitude:2 * Math.PI * (cam.x / Math.max(1, WW())) - Math.PI,
     latitude:Math.PI / 2 - Math.PI * north,
     // On a globe the yaw is the viewer's bearing, not another way to spin the
-    // world: turning east is what panning east already does, and a sphere whose
-    // poles are pinned to the top of the screen can never face any direction
-    // but north. So cam.rot rolls the hemisphere, exactly as it turns the board
-    // on a flat map, and Q/E mean the same thing in both topologies.
+    // world: turning east is what panning east already does. So cam.rot rolls
+    // the hemisphere, exactly as it turns the board on a flat map, and Q/E mean
+    // the same thing in both topologies. It is a reading as well as a setting,
+    // because a globe dragged over a pole comes down the far side with north
+    // pointing the other way, and this is where that lands.
     roll:cam.rot,
     radius:WW() / (2 * Math.PI),
   };
@@ -9926,6 +9927,114 @@ function planetProject(point, camera, scale, centerX, centerY) {
     z:toward,
   };
 }
+
+// ------------------------------------------------------- turning it by hand
+// The camera is three numbers, because that is what the flat maps already
+// store: cam.x is a longitude, cam.y a latitude, cam.rot the roll. A drag is
+// not expressible in those three. A drag is a rotation about an axis lying in
+// the picture plane, and spending it on longitude and latitude instead makes
+// the globe behave differently depending on where you grabbed it — near a pole
+// the parallels are a few pixels long, so a sideways drag spins the world about
+// the point under the pointer rather than moving it, and the pole itself is a
+// wall the camera cannot climb over because latitude runs out there.
+//
+// So a drag is done as the rotation it is: the camera's own basis is turned
+// bodily and read back into the three numbers afterwards. That makes one pixel
+// of drag one pixel of arc in every direction anywhere on the globe, and it
+// needs no case for the poles — the axis carries the view straight over the
+// top, and the roll it lands on is the one that leaves the ground pointing
+// where the drag left it.
+const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1],
+                          a[2] * b[0] - a[0] * b[2],
+                          a[0] * b[1] - a[1] * b[0]];
+function turnAbout(v, axis, angle) {
+  const cos = Math.cos(angle), sin = Math.sin(angle), lean = dot3(axis, v) * (1 - cos);
+  const side = cross3(axis, v);
+  return [v[0] * cos + side[0] * sin + axis[0] * lean,
+          v[1] * cos + side[1] * sin + axis[1] * lean,
+          v[2] * cos + side[2] * sin + axis[2] * lean];
+}
+// The three unit vectors the projection above is written in: `out` is the point
+// facing the viewer, `right` and `up` its screen axes once the roll is applied.
+function planetViewBasis(camera) {
+  const cosLat = Math.cos(camera.latitude), sinLat = Math.sin(camera.latitude);
+  const cosLon = Math.cos(camera.longitude), sinLon = Math.sin(camera.longitude);
+  const east = [-sinLon, cosLon, 0];
+  const north = [-sinLat * cosLon, -sinLat * sinLon, cosLat];
+  const cosRoll = Math.cos(camera.roll || 0), sinRoll = Math.sin(camera.roll || 0);
+  return {
+    out:[cosLat * cosLon, cosLat * sinLon, sinLat],
+    right:[0, 1, 2].map(i => east[i] * cosRoll + north[i] * sinRoll),
+    up:[0, 1, 2].map(i => north[i] * cosRoll - east[i] * sinRoll),
+  };
+}
+// And back out of it. A basis that has gone over a pole reads as the opposite
+// longitude with half a turn of roll, which is the same picture — so the
+// reading is always in range and the camera never needs holding away from the
+// poles to stay well formed.
+function planetBasisCamera(basis) {
+  const latitude = Math.asin(Math.max(-1, Math.min(1, basis.out[2])));
+  const longitude = Math.atan2(basis.out[1], basis.out[0]);
+  const cosLat = Math.cos(latitude), sinLat = Math.sin(latitude);
+  const cosLon = Math.cos(longitude), sinLon = Math.sin(longitude);
+  const east = [-sinLon, cosLon, 0];
+  const north = [-sinLat * cosLon, -sinLat * sinLon, cosLat];
+  return {longitude, latitude,
+          roll:Math.atan2(dot3(basis.right, north), dot3(basis.right, east))};
+}
+// The globe's radius on screen, so a pixel of drag is an arc of that radius —
+// which is exactly what a sideways drag already cost at the centre of the view.
+function planetRadiusPx() {
+  return Math.max(1, WW() / (2 * Math.PI) * cam.scale);
+}
+// The basis the camera is looking through now, or null on a flat map.
+function planetBasisNow() {
+  return state && planetMap() ? planetViewBasis(planetCamera()) : null;
+}
+function planetSpin(basis, axis, angle) {
+  return {out:turnAbout(basis.out, axis, angle),
+          right:turnAbout(basis.right, axis, angle),
+          up:turnAbout(basis.up, axis, angle)};
+}
+// The axis and angle that move the surface (dx, dy) screen pixels: square to
+// that displacement, in the picture plane. The camera turns against the
+// surface, because dragging the world right brings what was to its left into
+// the middle. Feeding a pixel velocity in gives the same axis and a rate.
+function planetTurnAxis(basis, dx, dy) {
+  const reach = Math.hypot(dx, dy);
+  if (!(reach > 1e-9)) return null;
+  const along = [0, 1, 2].map(i => (basis.right[i] * dx - basis.up[i] * dy) / reach);
+  const axis = cross3(basis.out, along);
+  const length = Math.hypot(axis[0], axis[1], axis[2]) || 1;
+  return {axis:[axis[0] / length, axis[1] / length, axis[2] / length],
+          angle:-reach / planetRadiusPx()};
+}
+function planetTurn(basis, dx, dy) {
+  const turn = planetTurnAxis(basis, dx, dy);
+  return turn ? planetSpin(basis, turn.axis, turn.angle) : basis;
+}
+// Store a basis. cam.x stays on the wrap copy it was already on, so nothing
+// that reads a column — a flight target, the world map's own frame — jumps a
+// whole world when the view crosses the date line or comes over a pole.
+function applyPlanetBasis(basis) {
+  const view = planetBasisCamera(basis);
+  const span = Math.max(1, S * 1.5 * (state.map.height - 1));
+  const width = Math.max(1, WW());
+  let column = (view.longitude + Math.PI) / (2 * Math.PI) * width;
+  column += Math.round((cam.x - column) / width) * width;
+  cam.x = column;
+  cam.y = (Math.PI / 2 - view.latitude) / Math.PI * span;
+  setRot(view.roll);
+}
+// A globe's glide after the pointer leaves keeps turning about the axis the
+// drag ended on, so it carries on over a pole exactly as the drag would have.
+function planetGlide(vx, vy) {
+  const basis = planetBasisNow();
+  const turn = basis && planetTurnAxis(basis, vx, vy);
+  return turn ? {axis:turn.axis, rate:turn.angle} : null;
+}
+
 function planetCellGeometry(tile, camera, scale, centerX, centerY) {
   const cell = PLANET?.cells.get(key(tile.pos));
   if (!cell) return null;
@@ -15872,7 +15981,7 @@ function clampCameraY(y, scale = cam.scale) {
   return bounds ? Math.max(bounds.min, Math.min(bounds.max, y)) : y;
 }
 function clearCameraInertia() {
-  cameraInertia = {vx:0, vy:0, vrot:0, vtilt:0};
+  cameraInertia = {vx:0, vy:0, vrot:0, vtilt:0, spin:null};
 }
 function updateCameraFollowChip() {
   const chip = document.getElementById("cinema-follow");
@@ -16036,6 +16145,15 @@ function orbitCamera(deltaRot = 0, deltaTilt = 0) {
 }
 function nudgeCamera(screenX, screenY) {
   takeCameraControl();
+  const basis = planetBasisNow();
+  if (basis) {
+    // The arrows move a globe the way a drag does, so they cross a pole instead
+    // of stopping at it. The camera goes where asked, so the ground under it
+    // travels the other way.
+    applyPlanetBasis(planetTurn(basis, -screenX, -screenY));
+    draw(); drawMini();
+    return;
+  }
   const vx = screenX / cam.scale, vy = screenY / cam.scale / YS;
   const dx = COSR * vx + SINR * vy, dy = -SINR * vx + COSR * vy;
   cameraFlight = {x:cam.x + dx, y:clampCameraY(cam.y + dy), scale:cam.scale};
@@ -16113,9 +16231,15 @@ function advanceUserCameraMotion(now = performance.now()) {
     }
   }
   if (!dragState && !cameraFlight && !cameraZoom) {
+    // A globe glides as a turn about a fixed axis rather than as a drift in
+    // columns and rows, so it coasts over a pole the same way the drag did.
+    const spin = cameraInertia.spin;
     const speed = Math.abs(cameraInertia.vx) + Math.abs(cameraInertia.vy) +
-      Math.abs(cameraInertia.vrot) * 80 + Math.abs(cameraInertia.vtilt) * 80;
+      Math.abs(cameraInertia.vrot) * 80 + Math.abs(cameraInertia.vtilt) * 80 +
+      (spin ? Math.abs(spin.rate) * 80 : 0);
     if (speed > .002) {
+      const basis = spin && planetBasisNow();
+      if (basis) applyPlanetBasis(planetSpin(basis, spin.axis, spin.rate * dt));
       cam.x += cameraInertia.vx * dt; cam.y += cameraInertia.vy * dt;
       if (Math.abs(cameraInertia.vrot) > .00001) setRot(cam.rot + cameraInertia.vrot * dt);
       if (Math.abs(cameraInertia.vtilt) > .00001) setTilt(cinematicYS + cameraInertia.vtilt * dt);
@@ -16123,6 +16247,7 @@ function advanceUserCameraMotion(now = performance.now()) {
       const decay = Math.pow(.003, dt / 1000);
       cameraInertia.vx *= decay; cameraInertia.vy *= decay;
       cameraInertia.vrot *= decay; cameraInertia.vtilt *= decay;
+      if (spin) spin.rate *= decay;
       active = true;
     } else clearCameraInertia();
   }
@@ -16601,6 +16726,11 @@ cv.addEventListener("pointerdown", ev => {
                   rotate: ev.altKey, rot0: cam.rot, tilt0: cinematicYS,
                   lastX:cam.x, lastY:cam.y, lastRot:cam.rot, lastTilt:cinematicYS,
                   lastT:performance.now(), vx:0, vy:0, vrot:0, vtilt:0,
+                  // A globe is turned rather than slid, so it drags from the
+                  // orientation it was grabbed at and reports its speed in
+                  // pixels of arc instead of columns and rows.
+                  basis:planetBasisNow(),
+                  lastPX:ev.clientX, lastPY:ev.clientY, vpx:0, vpy:0,
                   controlled:false };
     dragMoved = false;
   } else if (ev.button === 2 && state && !SPEC) {
@@ -16640,6 +16770,20 @@ window.addEventListener("pointermove", ev => {
       draw(); drawMini();
     } else if (dragMoved && skyDragApply(dragState, dx, dy)) {
       draw(); drawMini();
+    } else if (dragMoved && dragState.basis) {
+      // The sky above has first refusal and hands Earth back here. The same
+      // pixel of drag is then the same arc at the equator, at a pole, and
+      // straight across one: the world follows the pointer over the top and
+      // keeps going down the far side.
+      applyPlanetBasis(planetTurn(dragState.basis, dx, dy));
+      dragState.turned = true;
+      const now = performance.now(), dt = Math.max(1, now - dragState.lastT);
+      const vpx = (ev.clientX - dragState.lastPX) / dt;
+      const vpy = (ev.clientY - dragState.lastPY) / dt;
+      dragState.vpx = dragState.vpx * .55 + vpx * .45;
+      dragState.vpy = dragState.vpy * .55 + vpy * .45;
+      dragState.lastPX = ev.clientX; dragState.lastPY = ev.clientY; dragState.lastT = now;
+      draw(); drawMini();
     } else if (dragMoved) {
       const dvx = dx / cam.scale, dvy = dy / cam.scale / YS;
       cam.x = dragState.cx - (COSR * dvx + SINR * dvy);
@@ -16666,8 +16810,14 @@ function endMapPointer(ev) {
     dragState = null;
     if (released && dragMoved && performance.now() - released.lastT < 90 &&
         !REDUCED_MOTION_QUERY.matches) {
+      // `turned` rather than `basis`: out in the system the sky took the drag,
+      // and the globe it left alone must not glide off on its own afterwards.
       cameraInertia = released.rotate
         ? {vx:0, vy:0, vrot:released.vrot * .32, vtilt:released.vtilt * .25}
+        : released.turned
+        ? {vx:0, vy:0, vrot:0, vtilt:0, spin:planetGlide(released.vpx, released.vpy)}
+        : released.basis
+        ? {vx:0, vy:0, vrot:0, vtilt:0, spin:null}
         : {vx:released.vx, vy:released.vy, vrot:0, vtilt:0};
     }
     return;
@@ -16712,7 +16862,7 @@ function beginTouchTransform() {
   const [wx, wy] = screenToWorld(mx, my);
   touchGesture = {mode:"transform", mx, my, wx, wy, distance:Math.hypot(dx, dy),
                   angle:Math.atan2(dy, dx), scale:cam.scale, rot:cam.rot,
-                  controlled:false};
+                  basis:planetBasisNow(), controlled:false};
   clearCameraInertia(); cameraFlight = null; cameraZoom = null;
 }
 cv.addEventListener("pointerdown", ev => {
@@ -16722,6 +16872,8 @@ cv.addEventListener("pointerdown", ev => {
   if (mapTouches.size === 1) {
     touchGesture = {mode:"pan", x:ev.clientX, y:ev.clientY, cx:cam.x, cy:cam.y,
                     lastX:cam.x, lastY:cam.y, lastT:performance.now(), vx:0, vy:0,
+                    basis:planetBasisNow(),
+                    lastPX:ev.clientX, lastPY:ev.clientY, vpx:0, vpy:0,
                     controlled:false, moved:false};
     clearCameraInertia(); cameraFlight = null; cameraZoom = null;
   } else beginTouchTransform();
@@ -16769,6 +16921,16 @@ cv.addEventListener("pointermove", ev => {
     }
     if (touchGesture.controlled && skyDragApply(touchGesture, dx, dy)) {
       draw(); drawMini();
+    } else if (touchGesture.controlled && touchGesture.basis) {
+      applyPlanetBasis(planetTurn(touchGesture.basis, dx, dy));
+      touchGesture.turned = true;
+      const now = performance.now(), dt = Math.max(1, now - touchGesture.lastT);
+      const vpx = (point.x - touchGesture.lastPX) / dt;
+      const vpy = (point.y - touchGesture.lastPY) / dt;
+      touchGesture.vpx = touchGesture.vpx * .55 + vpx * .45;
+      touchGesture.vpy = touchGesture.vpy * .55 + vpy * .45;
+      touchGesture.lastPX = point.x; touchGesture.lastPY = point.y; touchGesture.lastT = now;
+      draw(); drawMini();
     } else if (touchGesture.controlled) {
       const dvx = dx / cam.scale, dvy = dy / cam.scale / YS;
       cam.x = touchGesture.cx - (COSR * dvx + SINR * dvy);
@@ -16788,13 +16950,19 @@ function endMapTouch(ev) {
   mapTouches.delete(ev.pointerId);
   if (!mapTouches.size) {
     if (released?.mode === "pan" && released.controlled && !REDUCED_MOTION_QUERY.matches)
-      cameraInertia = {vx:released.vx, vy:released.vy, vrot:0, vtilt:0};
+      cameraInertia = released.turned
+        ? {vx:0, vy:0, vrot:0, vtilt:0, spin:planetGlide(released.vpx, released.vpy)}
+        : released.basis
+        ? {vx:0, vy:0, vrot:0, vtilt:0, spin:null}
+        : {vx:released.vx, vy:released.vy, vrot:0, vtilt:0};
     touchGesture = null;
     setTimeout(() => { if (!mapTouches.size) dragMoved = false; }, 60);
   } else if (mapTouches.size === 1) {
     const point = touchPair()[0];
     touchGesture = {mode:"pan", x:point.x, y:point.y, cx:cam.x, cy:cam.y,
                     lastX:cam.x, lastY:cam.y, lastT:performance.now(), vx:0, vy:0,
+                    basis:planetBasisNow(),
+                    lastPX:point.x, lastPY:point.y, vpx:0, vpy:0,
                     controlled:true, moved:true};
   } else beginTouchTransform();
 }
