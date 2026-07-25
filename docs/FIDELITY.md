@@ -115,9 +115,13 @@ Still to triage, listed so they are not lost:
 `floodplains` is the Desert variant the game calls `FEATURE_FLOODPLAINS`, so
 dropping it from Niter is a map-placement change dressed as a data fix, and it
 needs checking against where Niter actually spawns rather than against the
-feature list alone. The Biosphere's shipped effect is Culture on Rainforest,
-Marsh and Woods rather than a flat yield; zeroing its Science without modelling
-that effect would delete the wonder's value instead of correcting it.
+feature list alone. The Biosphere is settled, and my earlier reason for
+leaving it was wrong: its shipped effect is not Culture but +1 Appeal to Marsh
+and Rainforest, +100% renewable-power Tourism and +200 free Power — and CIVVIS
+already models all three, as `rainforest_marsh_adjacent_appeal`,
+`renewable_power_tourism` and `renewable_power_pct`, all live in the engine. The
+`science: 8` was invention layered on top of a correct wonder, so removing it
+costs the Biosphere nothing.
 
 **Three of the fifteen were the tool's fault, not CIVVIS'.** The
 resource-to-improvement projection prefers a land improvement over a sea one, so
