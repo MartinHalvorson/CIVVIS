@@ -4031,6 +4031,18 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function worldFacing(seed)"));
         assert!(EMBEDDED_INDEX.contains("function adoptWorldFacing(st)"));
         assert!(EMBEDDED_INDEX.contains("found_north !== false"));
+        // The same rule one step out: a world is drawn as its own people draw
+        // it. Until they have proved it round the viewer must keep the chart
+        // projection, keep the zoom short of anything that would show them an
+        // object, and keep the sky empty — and the world chart in the corner
+        // has to obey the same limit, or it hands back what the map withheld.
+        assert!(EMBEDDED_INDEX.contains("knows_globe !== false"));
+        assert!(EMBEDDED_INDEX.contains("sees_exoplanet !== false"));
+        assert!(EMBEDDED_INDEX.contains("function visibleSkyBodies(st = state)"));
+        assert!(EMBEDDED_INDEX.contains("chart:!knowsGlobe()"));
+        assert!(EMBEDDED_INDEX.contains("function planetChartFloor(centerX, centerY)"));
+        assert!(EMBEDDED_INDEX.contains("function planetScaleClamp(scale)"));
+        assert!(EMBEDDED_INDEX.contains("function planetMiniScale(width, height)"));
         assert!(EMBEDDED_INDEX.contains("id=\"compass\""));
         assert!(EMBEDDED_INDEX.contains("id=\"compass-needle\""));
         assert!(EMBEDDED_INDEX.contains("resetMapFacing(DEFAULT_CINEMA_YS - cinematicYS)"));

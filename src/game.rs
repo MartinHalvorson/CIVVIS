@@ -2327,6 +2327,56 @@ mod belief_runtime_tests {
         assert_eq!(game.cities[&target].atheist_pressure, atheists + 50.0);
     }
 
+    /// A Trade Route carries religion in both directions but not equally:
+    /// `RELIGION_SPREAD_TRADE_ROUTE_PRESSURE_FOR_DESTINATION` is 1.0 and
+    /// `..._FOR_ORIGIN` is 0.5, so sending a Trader *to* a city pressures it
+    /// twice as hard as receiving one from it. CIVVIS paid a flat 0.5 both
+    /// ways, halving the main non-missionary route to a foreign city.
+    #[test]
+    fn a_trade_route_pressures_its_destination_twice_as_hard_as_its_origin() {
+        let (mut game, cities) = game_with_capitals(91_764);
+        let religion = establish_religion(&mut game, cities[0], &[]);
+        let target = cities[1];
+
+        // Passive city-to-city Pressure is whatever the map's spacing gives;
+        // measure it once so the route's share can be read as a delta.
+        let gain = |game: &mut Game| {
+            game.cities.get_mut(&target).unwrap().pressure.clear();
+            game.process_pressure(1);
+            game.cities[&target]
+                .pressure
+                .get(&religion)
+                .copied()
+                .unwrap_or(0.0)
+        };
+        let passive = gain(&mut game);
+
+        game.routes.push(TradeRoute {
+            origin: cities[0],
+            dest: target,
+            owner: 0,
+            ends: game.turn + 30,
+        });
+        assert_eq!(
+            gain(&mut game) - passive,
+            1.0,
+            "the destination of a route takes the full 1.0 Pressure"
+        );
+
+        game.routes.clear();
+        game.routes.push(TradeRoute {
+            origin: target,
+            dest: cities[0],
+            owner: 1,
+            ends: game.turn + 30,
+        });
+        assert_eq!(
+            gain(&mut game) - passive,
+            0.5,
+            "the origin of a route takes back only half"
+        );
+    }
+
     #[test]
     fn founder_unity_combat_and_loyalty_beliefs_use_runtime_city_state() {
         let (mut game, cities) = game_with_capitals(91_764);
@@ -6255,17 +6305,23 @@ mod maintenance_tests {
         let amenity_before = game.city_amenity_surplus(&game.cities[&city]);
         let mut twenty_deficit = game.clone();
 
+        // The Amenity line is 0 and the disband line is -10, so a shallow
+        // deficit costs an Amenity everywhere and no unit at all.
         game.settle_gold_budget(0, -9.0);
         assert_eq!(game.players[0].gold, 0.0);
         assert_eq!(game.players[0].gold_per_turn, -9.0);
-        assert_eq!(game.players[0].bankruptcy_amenity_penalty, 0);
-        assert_eq!(game.player_unit_ids(0).len(), 3);
-
-        game.settle_gold_budget(0, -10.0);
         assert_eq!(game.players[0].bankruptcy_amenity_penalty, 1);
         assert_eq!(
             game.city_amenity_surplus(&game.cities[&city]),
             amenity_before - 1
+        );
+        assert_eq!(game.player_unit_ids(0).len(), 3);
+
+        game.settle_gold_budget(0, -10.0);
+        assert_eq!(game.players[0].bankruptcy_amenity_penalty, 2);
+        assert_eq!(
+            game.city_amenity_surplus(&game.cities[&city]),
+            amenity_before - 2
         );
         assert!(game.units.contains_key(&archer));
         assert!(game.units.contains_key(&swordsman));
@@ -6275,7 +6331,7 @@ mod maintenance_tests {
         );
 
         twenty_deficit.settle_gold_budget(0, -20.0);
-        assert_eq!(twenty_deficit.players[0].bankruptcy_amenity_penalty, 2);
+        assert_eq!(twenty_deficit.players[0].bankruptcy_amenity_penalty, 3);
         assert_eq!(twenty_deficit.player_unit_ids(0), vec![archer]);
 
         let encoded = serde_json::to_value(&game).unwrap();
@@ -6294,7 +6350,7 @@ mod maintenance_tests {
 
         let mut restored: Game = serde_json::from_value(encoded).unwrap();
         assert_eq!(restored.players[0].gold_per_turn, -10.0);
-        assert_eq!(restored.players[0].bankruptcy_amenity_penalty, 1);
+        assert_eq!(restored.players[0].bankruptcy_amenity_penalty, 2);
         restored.settle_gold_budget(0, 4.0);
         assert_eq!(restored.players[0].gold, 4.0);
         assert_eq!(restored.players[0].gold_per_turn, 4.0);
@@ -6336,8 +6392,9 @@ mod maintenance_tests {
         game.begin_turn(0);
         assert_eq!(game.players[0].gold, 0.0);
         assert_eq!(game.players[0].gold_per_turn, -25.0);
-        assert_eq!(game.players[0].bankruptcy_amenity_penalty, 2);
-        // one maintained unit disbands per -10 quantum: both robots go
+        // Three Amenities from the 0 line at -10 steps, two disbands from the
+        // -10 line at the same step: both robots go.
+        assert_eq!(game.players[0].bankruptcy_amenity_penalty, 3);
         assert!(!game.units.contains_key(&robot));
         assert!(!game.units.contains_key(&escort));
 
@@ -6345,7 +6402,7 @@ mod maintenance_tests {
         assert_eq!(observed["me"]["gold_per_turn"], serde_json::json!(-25.0));
         assert_eq!(
             observed["me"]["bankruptcy_amenity_penalty"],
-            serde_json::json!(2)
+            serde_json::json!(3)
         );
         assert_eq!(
             observed["players"][0]["gold_per_turn"],
@@ -15829,7 +15886,8 @@ impl Game {
     }
 
     /// Passive spread: cities pressure other cities within ten tiles, while
-    /// active Trade Routes exchange an additional 0.5 pressure per turn.
+    /// active Trade Routes exchange additional pressure per turn — 1 to the
+    /// route's destination and 0.5 back to its origin.
     fn process_pressure(&mut self, pid: usize) {
         // Exodus of the Evangelists pays for the first time each city takes
         // the founder's religion, so the majorities are read before pressure
@@ -15897,10 +15955,14 @@ impl Game {
                 .routes
                 .iter()
                 .filter_map(|route| {
-                    let other = if route.origin == cid {
-                        route.dest
+                    // A route is directional: the shipped
+                    // RELIGION_SPREAD_TRADE_ROUTE_PRESSURE_FOR_DESTINATION is
+                    // 1.0 and _FOR_ORIGIN is 0.5, so the city the trader
+                    // travels *to* takes twice the pressure the origin does.
+                    let (other, share) = if route.origin == cid {
+                        (route.dest, 0.5)
                     } else if route.dest == cid {
-                        route.origin
+                        (route.origin, 1.0)
                     } else {
                         return None;
                     };
@@ -15908,12 +15970,13 @@ impl Game {
                         self.city_religion(city).map(|religion| {
                             (
                                 religion.to_string(),
-                                0.5 * (1.0
-                                    + self.governor_effect(
-                                        city.owner,
-                                        city.id,
-                                        "religious_pressure_pct",
-                                    ) / 100.0),
+                                share
+                                    * (1.0
+                                        + self.governor_effect(
+                                            city.owner,
+                                            city.id,
+                                            "religious_pressure_pct",
+                                        ) / 100.0),
                             )
                         })
                     })
@@ -34864,24 +34927,32 @@ impl Game {
     }
 
     /// Apply the recurring budget after city income and maintenance have been
-    /// calculated. Civ VI never stores a negative treasury: at zero Gold, one
-    /// Amenity and one maintained unit are lost for each complete -10 GPT.
+    /// calculated. Civ VI never stores a negative treasury, and the two
+    /// bankruptcy penalties start on different lines: the shipped
+    /// `GOLD_NEGATIVE_BALANCE_AMENITY_LOSS_LINE` is **0**, so an empire in the
+    /// red loses an Amenity everywhere the moment its balance goes negative,
+    /// while `GOLD_NEGATIVE_BALANCE_DISBAND_UNIT_LINE` is **-10** and no unit
+    /// is disbanded until then. Both step every -10 from their own line
+    /// (`GOLD_NEGATIVE_BALANCE_SUBSEQUENT_AMENITY_LOSS` /
+    /// `..._SUBSEQUENT_DISBAND_UNIT`), so the Amenity is always one ahead.
     fn settle_gold_budget(&mut self, pid: usize, local_gold: f64) {
         let budget = local_gold + self.contracted_gold_per_turn(pid);
         let treasury = (self.players[pid].gold + local_gold).max(0.0);
-        let penalty = if !self.players[pid].is_barbarian && treasury <= f64::EPSILON && budget < 0.0
+        let deficit = if !self.players[pid].is_barbarian && treasury <= f64::EPSILON && budget < 0.0
         {
-            ((-budget) / 10.0).floor() as i64
+            -budget
         } else {
-            0
+            0.0
         };
+        let disbands = (deficit / 10.0).floor() as i64;
+        let penalty = if deficit > 0.0 { 1 + disbands } else { 0 };
         {
             let player = &mut self.players[pid];
             player.gold = treasury;
             player.gold_per_turn = budget;
             player.bankruptcy_amenity_penalty = penalty;
         }
-        if penalty <= 0 {
+        if disbands <= 0 {
             return;
         }
 
@@ -34902,7 +34973,7 @@ impl Game {
                 .total_cmp(&left.1)
                 .then_with(|| left.0.cmp(&right.0))
         });
-        for (unit, _) in candidates.into_iter().take(penalty as usize) {
+        for (unit, _) in candidates.into_iter().take(disbands as usize) {
             self.remove_unit(unit);
         }
     }
