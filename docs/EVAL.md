@@ -1474,3 +1474,57 @@ announced "scripted, no artifacts required" while quietly depending on a
 34-wide net. That is the precise failure this repository's
 provenance layer exists to prevent, so the coverage test now asserts that
 only the four genuinely scripted agents may report no artifacts.
+
+## 2026-07-26 — the blindness was protecting it
+
+`policy_wide` is `PolicyAi` scoring with the 34-wide `decision_features`
+and a net trained on it: the configuration the whole representation thread
+was building toward, and the first in which the tactical evaluator can tell
+its candidate actions apart.
+
+`ai_eval policy_wide advanced --pairs 120 --players 4 --seed 70000
+--turns 200`:
+
+| entrant | games | maps for | against | Elo-equivalent |
+|---|---|---|---|---|
+| `policy` (25-wide, blind) | 108/240 (45.0%) | 9 | 21 | −35 |
+| `policy_wide` (34-wide, sighted) | **34/240 (14.2%)** | **1** | **87** | **−313** |
+
+Sight made it catastrophically worse, and the reason is the most useful
+thing this line of work has produced.
+
+With the 25-wide vector the computed gain is exactly zero on 96% of
+candidates, so the agent cannot clear its commitment margin, declines to
+act, and falls through to the scripted layer. That is why it measured near
+parity: it was mostly *not playing*. The wider vector lets it distinguish
+candidates, so it commits — and its ranking is far worse than the scripted
+doctrine it displaces. **The blindness was not why it failed to win. It was
+why it failed to lose.**
+
+The mechanism is standard and worth naming rather than rediscovering. The
+net is trained on states that `advanced` self-play visits. Greedily
+maximising it one ply at a time walks immediately off that distribution,
+into positions the training data never covered, where the estimate carries
+no information — and the argmax is precisely the point where the estimate
+is most likely to be wrong, because it selects for optimistic error. A
+better-calibrated net does not fix this; the earlier measurement that the
+34-wide net's BCE is *worse* than the 25-wide one's is irrelevant to it
+either way.
+
+What this rules in, for the next attempt:
+
+- **Iterated self-play.** Retrain on states the agent itself visits, so the
+  distribution follows the policy.
+- **Staying near the data.** Constrain the learned policy to the
+  neighbourhood of the scripted one that generated the corpus, rather than
+  letting it maximise freely.
+- **Search instead of a greedy argmax.** Rollouts evaluate a commitment by
+  playing it out, which is why the macro search is the one search here that
+  wins games — it never trusts a point estimate off-distribution.
+
+What it rules out: widening the input further. Representation was a real
+and necessary fix — 44.5% to 86.1% action visibility, measured — and it was
+not the binding constraint on strength. Both facts are now established, and
+this entry exists so the next attempt starts from the second one.
+
+`policy` and `policy_wide` both remain eval-only; no default changed.
