@@ -8435,6 +8435,49 @@ mod government_runtime_tests {
         game.players[second].alliances.insert(first, alliance);
     }
 
+    #[test]
+    fn wisselbanken_and_collectivization_pay_only_the_routes_they_name() {
+        let (mut game, home, abroad) = two_cities(51_207);
+        game.routes.push(TradeRoute {
+            origin: home,
+            dest: abroad,
+            owner: 0,
+            ends: game.turn + 30,
+        });
+        let food = |game: &Game| game.city_yields(home).food;
+        let production = |game: &Game| game.city_yields(home).production;
+        let (base_food, base_production) = (food(&game), production(&game));
+
+        // WISSELBANKEN ships eight rows, and every one of them is
+        // _FOR_ALLY_ROUTE or _FOR_SUZERAIN_ROUTE. A route to a civilization
+        // that is neither pays nothing at all.
+        game.players[0].policies = ["wisselbanken".to_string()].into_iter().collect();
+        assert_eq!(food(&game), base_food);
+        assert_eq!(production(&game), base_production);
+
+        install_alliance(&mut game, 0, 1);
+        assert_eq!(food(&game), base_food + 2.0);
+        assert_eq!(production(&game), base_production + 2.0);
+
+        // COLLECTIVIZATION is ADJUST_TRADE_ROUTE_YIELD_FOR_DOMESTIC, so the
+        // same allied foreign route it just paid for earns it nothing.
+        game.players[0].policies = ["collectivization".to_string()].into_iter().collect();
+        assert_eq!(food(&game), base_food);
+        assert_eq!(production(&game), base_production);
+
+        game.routes.clear();
+        game.routes.push(TradeRoute {
+            origin: home,
+            dest: home,
+            owner: 0,
+            ends: game.turn + 30,
+        });
+        let (domestic_food, domestic_production) = (food(&game), production(&game));
+        game.players[0].policies.clear();
+        assert_eq!(domestic_food - food(&game), 4.0);
+        assert_eq!(domestic_production - production(&game), 2.0);
+    }
+
     fn without_government(game: &Game) -> Game {
         let mut baseline = game.clone();
         baseline.players[0].government = None;
@@ -8743,7 +8786,7 @@ mod government_runtime_tests {
     }
 
     #[test]
-    fn fascism_applies_combat_production_and_weariness_bonuses() {
+    fn fascism_applies_combat_production_bonuses_and_a_weariness_penalty() {
         let (mut game, city) = one_city(774_508);
         game.players[0].government = Some("fascism".to_string());
         let baseline = without_government(&game);
@@ -8771,8 +8814,10 @@ mod government_runtime_tests {
                 .abs()
                 < 1e-9
         );
-        assert_eq!(game.war_weariness_multiplier(0, false), 0.85);
-        assert_eq!(game.war_weariness_multiplier(0, true), 0.85);
+        // FASCISM_WAR_WEARINESS is +20, a penalty — see
+        // fascism_endures_war_worse_than_every_other_government.
+        assert_eq!(game.war_weariness_multiplier(0, false), 1.2);
+        assert_eq!(game.war_weariness_multiplier(0, true), 1.2);
     }
 
     #[test]
@@ -28796,6 +28841,13 @@ impl Game {
                 if self.government_trade_partner(city.owner, dc.owner) {
                     rys.food += government.allied_suzerain_trade_food;
                     rys.production += government.allied_suzerain_trade_production;
+                    // Wisselbanken is Democracy's policy twin at half rate: it
+                    // ships the same eight rows, ORIGIN and DESTINATION halves
+                    // of _FOR_ALLY_ROUTE and _FOR_SUZERAIN_ROUTE. This is the
+                    // origin half, paid to the city sending the route.
+                    rys.food += self.policy_effect(city.owner, "allied_suzerain_trade_food");
+                    rys.production +=
+                        self.policy_effect(city.owner, "allied_suzerain_trade_production");
                 }
                 ys.add(rys);
             }
@@ -28811,6 +28863,10 @@ impl Game {
             if self.government_trade_partner(route.owner, city.owner) {
                 ys.food += government.allied_suzerain_trade_food;
                 ys.production += government.allied_suzerain_trade_production;
+                // ...and the destination half, paid to the city receiving it.
+                ys.food += self.policy_effect(route.owner, "allied_suzerain_trade_food");
+                ys.production +=
+                    self.policy_effect(route.owner, "allied_suzerain_trade_production");
             }
             if let Some(alliance) = self.alliance_with(city.owner, route.owner) {
                 match alliance.kind.as_str() {
@@ -51356,6 +51412,32 @@ mod victory_conditions {
         g.at_war.remove(&pair(0, 1));
         g.process_diplomacy(0);
         assert_eq!(g.players[0].war_weariness, 950.0);
+    }
+
+    #[test]
+    fn fascism_endures_war_worse_than_every_other_government() {
+        // EFFECT_ADJUST_WAR_WEARINESS signs its Amount: TOWORLDSEND is -100 for
+        // "no war weariness", INCREASE_ENEMY is +100. FASCISM_WAR_WEARINESS is
+        // {Amount: 20, Overall: 1} — the +50% unit Production and +5 Combat
+        // Strength are paid for with a fifth MORE weariness, not less.
+        let mut g = game_with_capitals(2, 4_162, 300);
+        assert_eq!(g.war_weariness_multiplier(0, false), 1.0);
+
+        g.players[0].government = Some("fascism".to_string());
+        assert_eq!(g.war_weariness_multiplier(0, false), 1.2);
+        assert_eq!(g.war_weariness_multiplier(0, true), 1.2);
+
+        // The governments that really do reduce it still do, at their own rates:
+        // MARTIALLAW_OVERALLWARWEARINESS -25 anywhere, and
+        // DEFENSEOFMOTHERLAND_DOMESTICWARWEARINESS -100 with Domestic set, so
+        // that card is free only on home soil.
+        g.players[0].government = Some("oligarchy".to_string());
+        g.players[0].policies = ["martial_law".to_string()].into_iter().collect();
+        assert_eq!(g.war_weariness_multiplier(0, false), 0.75);
+        g.players[0].policies =
+            ["defense_of_motherland".to_string()].into_iter().collect();
+        assert_eq!(g.war_weariness_multiplier(0, true), 0.0);
+        assert_eq!(g.war_weariness_multiplier(0, false), 1.0);
     }
 
     #[test]

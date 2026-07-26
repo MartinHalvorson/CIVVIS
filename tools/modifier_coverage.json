@@ -46,6 +46,11 @@
       "verified": true,
       "note": "Rationalism, Free Market, Grand Opera and Simultaneum each ship twice. The base rows double a named building's yield outright; the Gathering Storm rows replace that with two conditional halves, +50% where the city has 15 Population and +50% where the district already earns 4 of that yield from adjacency, which is what the Gathering Storm description states. CIVVIS carried the flat double -- strictly stronger than the shipped card in every city that meets neither condition, which early on is all of them."
     },
+    "ADJUST_CITY_ALL_YIELDS_CHANGE": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified: Autocracy's six rows are one per yield at +1, matching CIVVIS' government_building_yields of 1 across Food, Production, Gold, Science, Culture and Faith."
+    },
     "ADJUST_CITY_FREE_POWER": {
       "status": "implemented",
       "verified": true,
@@ -55,6 +60,11 @@
       "status": "implemented",
       "verified": true,
       "note": "Verified row by row against the cache: 28 rows, of which CIVVIS models exactly one and models it correctly. Kandy's MINOR_CIV_KANDY_BETTER_RELIC_BONUS is ScalingFactor 150 on Relic Faith, and city_yields raises relic_faith from 4 to 6 under grants_city_state_unique_bonus(\"Kandy\") - both halves of that suzerain bonus are present, the Relic grant on discovering a Natural Wonder and the Faith scaling. The base Great Work yields themselves (Relic 4 Faith, Writing 2 Culture, Art/Artifact 3, Music 4) are audited separately and exactly by civ6_fidelity.py's GreatWorkValues table. The other 27 rows belong to Babylon (3, a city-state outside the modelled 12), the Reliquaries belief (CIVVIS models 6 of 9 followers), Heroes & Legends relic content the CPL lobby disables with all game modes, and the Lithuania, Kongo and Nkisi traits - content scope, measured by civ6_fidelity.py."
+    },
+    "ADJUST_CITY_GROWTH": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified: Fertility Rites +10%, Hanging Gardens +15%, Colonial Offices +15%. CIVVIS keeps them on three distinct keys because their scopes differ -- the belief is per-city, the wonder is empire-wide, and the card applies only off the Capital's continent."
     },
     "ADJUST_CITY_IDENTITY_PER_TURN": {
       "status": "implemented",
@@ -75,6 +85,11 @@
       "status": "implemented",
       "verified": true,
       "note": "Verified row by row for the wonders, policies and governments CIVVIS models. Amundsen-Scott, Broadway, Casa de Contratacion and Kilwa Kisiwani carry their shipped percentages; Colonial Taxes was missing the +10% Production that accompanies its +25% Gold on foreign continents, now applied. Communism and Corporate Libertarianism yields, Disinformation Campaign and the Great Work rows remain content or systems CIVVIS scopes differently; POLICY_INQUISITION belongs to a game mode outside the baseline."
+    },
+    "ADJUST_DISTRICT_GREAT_PERSON_POINTS": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified: the Oracle's seven rows are one per Great Person class, each +2, which is what CIVVIS' single city_district_gpp 2 pays."
     },
     "ADJUST_DISTRICT_TOURISM_CHANGE": {
       "status": "implemented",
@@ -106,6 +121,11 @@
       "verified": true,
       "note": "Verified row by row against the cache: 10 rows. The Camp, Pasture and Plantation rows look at first like base improvements granting an Amenity, which Civ VI does not do - they are the TEMPLE OF ARTEMIS', gated on PLOT_ADJACENT_BUILDING_TYPE_MATCHES BUILDING_TEMPLE_ARTEMIS at range 4. CIVVIS carries exactly that as improvement_amenity_range 4, counting owned unpillaged Camps, Pastures and Plantations in the disk. City Park's water Amenity (adjacent to Coast, Lake or River) and the Ski Resort's are also carried. Golf Course, Ice Hockey Rink and Mound are improvements CIVVIS does not model."
     },
+    "ADJUST_INFLUENCE_POINTS_PER_TURN": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified: Charismatic Leader +2, Gunboat Diplomacy +4, Consulate +2, Chancery +3."
+    },
     "ADJUST_PLAYER_GOVERNMENT_SLOT_TYPE": {
       "status": "implemented",
       "verified": true,
@@ -133,6 +153,16 @@
       "status": "implemented",
       "verified": true,
       "note": "Verified row by row. All 48 promotion Combat Strength amounts CIVVIS models match the shipped values exactly, under CIVVIS' own semantic effect names. The Giant Death Robot's four tech upgrades were attached to the wrong nodes: Advanced Power Cells ships the Particle Beam Siege Cannon and Cybernetics Enhanced Mobility, while CIVVIS had the movement on Advanced Power Cells and invented a healing upgrade on Cybernetics that no shipped row grants. Now corrected. The remaining rows are unit abilities for leaders and city-states outside CIVVIS' roster."
+    },
+    "ADJUST_PLAYER_TRADE_ROUTE_DESTINATION_YIELD_FOR_ALLY_ROUTE": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified together with its ORIGIN and _FOR_SUZERAIN_ROUTE siblings, which only ever ship as a set of eight. Democracy pays 4 and Wisselbanken pays 2, each across both directions and both ally and suzerain routes. CIVVIS had the government half right via government_trade_partner, but Wisselbanken was on the ungated trade_food/trade_production keys and so paid every route, domestic ones included. Fixed by giving the policy the same allied_suzerain_ keys at both endpoints. Its own note field had said 'Alliance routes' all along."
+    },
+    "ADJUST_PLAYER_YIELD_CHANGE_PER_TRIBUTARY": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified: Raj ships exactly four rows -- Gold, Faith, Science and Culture at +2 each, with no Food or Production. CIVVIS' key is named suzerain_all_yields but the code enumerates those same four, so the loose name does not cost anything."
     },
     "ADJUST_PLOT_YIELD": {
       "status": "implemented",
@@ -162,12 +192,12 @@
     "ADJUST_TRADE_ROUTE_YIELD": {
       "status": "implemented",
       "verified": true,
-      "note": "Verified row by row against the cache, and it found E-Commerce wrong in three ways, now fixed. The shipped rows are ECOMMERCE_TRADEROUTEGOLD 5 and ECOMMERCE_TRADEROUTEPRODUCTION 2 with NO requirement set, so they pay every route; CIVVIS paid 10 Gold and 5 Production and restricted both to international. The scope error is the decisive one: the database ships ADJUST_TRADE_ROUTE_YIELD and ADJUST_TRADE_ROUTE_YIELD_FOR_INTERNATIONAL as separate effects, and E-Commerce uses the generic one where Market Economy uses the international one. Caravansaries 2 Gold and Triangular Trade 4 Gold plus 1 Faith already matched."
+      "note": "Verified row by row against the cache, and it found E-Commerce wrong in three ways, now fixed. The shipped rows are ECOMMERCE_TRADEROUTEGOLD 5 and ECOMMERCE_TRADEROUTEPRODUCTION 2 with NO requirement set, so they pay every route; CIVVIS paid 10 Gold and 5 Production and restricted both to international. The scope error is the decisive one: the database ships ADJUST_TRADE_ROUTE_YIELD and ADJUST_TRADE_ROUTE_YIELD_FOR_INTERNATIONAL as separate effects, and E-Commerce uses the generic one where Market Economy uses the international one. Caravansaries 2 Gold and Triangular Trade 4 Gold plus 1 Faith already matched. Re-confirmed on the later sweep of the whole trade-route family: this is the genuinely ungated effect, and the family's four EffectTypes -- generic, _FOR_DOMESTIC, _FOR_INTERNATIONAL, and the ally/suzerain pair -- are the only thing that says which routes a card pays."
     },
     "ADJUST_TRADE_ROUTE_YIELD_FOR_DOMESTIC": {
       "status": "implemented",
       "verified": true,
-      "note": "Verified row by row against the cache: Collectivization 4 Food and 2 Production, Isolationism 3 Food, 3 Production and 3 Gold, all matching. Isolationism's Gold was added and its 2s raised to 3s in an earlier pass of this loop."
+      "note": "Verified row by row against the cache: Collectivization 4 Food and 2 Production, Isolationism 3 Food, 3 Production and 3 Gold. Isolationism's Gold was added and its 2s raised to 3s in an earlier pass of this loop. That pass compared the AMOUNTS and called Collectivization matching, which it was -- but its 4 and 2 sat on the ungated trade_food/trade_production keys, so CIVVIS paid them on international routes too while Isolationism alone used domestic_trade_. Fixed. The lesson is that reading an effect's name is part of checking a row, not a formality: the gate lives in the EffectType here, not in a requirement set."
     },
     "ADJUST_TRADE_ROUTE_YIELD_FOR_INTERNATIONAL": {
       "status": "implemented",
@@ -204,6 +234,11 @@
       "verified": true,
       "note": "Raid and Total War multiply pillage yields by 2 -- the shipped Amount is a multiplier, not a percentage. CIVVIS read it as +50%."
     },
+    "ADJUST_UNIT_PRODUCTION": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row: all six owners CIVVIS models carry the shipped Amount and UnitType. Colonization and Expropriation +50% Settler, Ilkum and Public Works +30% Builder, Machiavellianism +50% Spy, Future Victory Domination +50% Giant Death Robot."
+    },
     "ADJUST_UNIT_PURCHASE_COST": {
       "status": "partial",
       "verified": true,
@@ -218,6 +253,11 @@
       "status": "implemented",
       "verified": true,
       "note": "Verified row by row. The amounts and class groupings were already right, but the effect's whole point is the era window and CIVVIS ignored it: Agoge boosted a Modern Infantry as readily as a Warrior, and every one of the nine cards stacked across all nine eras. Each card now carries its shipped window -- Agoge 0-1, Feudal Contract 2-3, Grande Armee 4-5, Military First 6-7, Chivalry 0-4, Lightning Warfare 5-7, Defense of the Motherland 5-7, Strategic Air Force 6-7, International Waters 0-7 -- checked against the era of the node that unlocks the unit. Letters of Marque, Patriotic War and Finest Hour are cards CIVVIS does not carry."
+    },
+    "ADJUST_WAR_WEARINESS": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row, and the sign is the whole story. The Amount is signed toward MORE weariness: TRAIT_TOWORLDSEND_NO_WAR_WEARINESS is -100 and TRAIT_INCREASE_ENEMY_WAR_WEARINESS is +100. Martial Law and Propaganda are -25 Overall and Defense of the Motherland is -100 Domestic, all of which CIVVIS had right. FASCISM_WAR_WEARINESS is {Amount 20, Overall 1} -- a fifth MORE weariness, the price of the +50% unit Production and +5 Combat Strength -- and CIVVIS was paying a 15% reduction instead. Fixed; war_weariness_multiplier reads -20 as 1.2 with no change to the formula. Rows for Joaquim Marques Lisboa, Trung Trac and the Backstab emergency belong to content CIVVIS does not model."
     },
     "ATTACH_MODIFIER": {
       "status": "unmodelled",

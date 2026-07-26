@@ -88,7 +88,7 @@
     "influence_threshold": 200,
     "envoys_per_threshold": 3,
     "diplomatic_favor_per_turn": 3,
-    "effects": {"combat_strength": 5, "unit_production_pct": 50, "war_weariness_reduction_pct": 15},
+    "effects": {"combat_strength": 5, "unit_production_pct": 50, "war_weariness_reduction_pct": -20},
     "slots": {"military": 4, "economic": 1, "diplomatic": 1, "wildcard": 2}
   },
   "corporate_libertarianism": {
