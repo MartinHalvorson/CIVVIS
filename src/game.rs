@@ -6664,6 +6664,27 @@ mod trade_deal_tests {
             .insert("gunboat_diplomacy".to_string());
         assert!(game.has_open_borders(0, minor));
         assert!(!game.has_open_borders(1, minor));
+
+        game.players[0].policies.clear();
+        game.players[0].civ = "Portugal".to_string();
+        assert!(
+            game.has_open_borders(0, minor),
+            "João III has Open Borders with every city-state"
+        );
+    }
+
+    #[test]
+    fn bilateral_open_borders_wait_for_both_early_empire_civics() {
+        let mut game = trade_game();
+        game.players[1].civics.remove("early_empire");
+        assert_eq!(
+            game.do_propose_deal(0, 1, 0.0, 0.0, true, false, false, None),
+            Err("invalid diplomatic deal".to_string())
+        );
+        game.players[1].civics.insert("early_empire".to_string());
+        assert!(game
+            .do_propose_deal(0, 1, 0.0, 0.0, true, false, false, None)
+            .is_ok());
     }
 
     #[test]
@@ -21523,7 +21544,13 @@ impl Game {
     /// Whether this unit type has learned how to embark onto Coast tiles.
     /// Sailing unlocks Builders, Celestial Navigation unlocks Traders, and
     /// Shipbuilding unlocks every remaining land unit (Gathering Storm).
+    /// Māori Mana starts with the complete embarkation package even though
+    /// this compact ruleset does not inject its two free technologies into the
+    /// player's research ledger.
     fn has_embarkation(&self, owner: usize, kind: &str) -> bool {
+        if self.has_ability(owner, "mana") {
+            return true;
+        }
         match kind {
             "builder" => self.tree_effect(owner, "builder_embark") > 0.0,
             "trader" => self.tree_effect(owner, "trader_embark") > 0.0,
@@ -21572,10 +21599,19 @@ impl Game {
         let spec = &self.rules.units[unit.kind.as_str()];
         let sea = spec.domain.as_deref() == Some("sea");
         let wading_giant = unit.kind == "giant_death_robot";
+        // Cartography is the stock gate for every naval and embarked unit.
+        // Knarr substitutes Shipbuilding for Norway; Mana lets Māori cross
+        // Ocean from the opening turn.
+        let ocean = wading_giant
+            || self.has_ability(unit.owner, "mana")
+            || self.tree_effect(unit.owner, "ocean_navigation") > 0.0
+            || (sea
+                && self.has_ability(unit.owner, "knarr")
+                && self.players[unit.owner].techs.contains("shipbuilding"));
         TraversalClass {
             sea,
             embark: !sea && (wading_giant || self.has_embarkation(unit.owner, &unit.kind)),
-            ocean: wading_giant || self.tree_effect(unit.owner, "ocean_navigation") > 0.0,
+            ocean,
             mountain: (unit.kind == "builder"
                 && self.unlocked(
                     unit.owner,
@@ -24878,6 +24914,7 @@ impl Game {
             self.unit_is_embarked_at(unit, from) != self.unit_is_embarked_at(unit, to);
         if changes_embarkation
             && self.promotion_effect(unit, "amphibious") <= 0.0
+            && !self.has_ability(unit.owner, "knarr")
             && !self.embarkation_facility_at(from)
             && !self.embarkation_facility_at(to)
         {
@@ -25363,6 +25400,9 @@ impl Game {
         }
         if embarked {
             moves += self.tree_effect(u.owner, "embarked_movement");
+            if self.has_ability(u.owner, "mana") {
+                moves += 2.0;
+            }
         }
         if spec.domain.as_deref() == Some("sea") || embarked {
             moves += self.empire_wonder_effect(u.owner, "naval_movement");
@@ -26659,6 +26699,36 @@ impl Game {
                 || unit.moves_left >= self.unit_step_cost(uid, from, to))
     }
 
+    fn territory_owner_at(&self, pos: Pos) -> Option<usize> {
+        self.map
+            .get(pos)
+            .and_then(|tile| tile.owner_city)
+            .and_then(|city| self.cities.get(&city))
+            .map(|city| city.owner)
+    }
+
+    /// Units which Gathering Storm lets cross an enforced border without a
+    /// diplomatic grant. Traders and religious units always ignore closed
+    /// borders; Rock Bands use Music Censorship instead; Terracotta Army gives
+    /// the same exception to Archaeologists.
+    fn unit_ignores_closed_borders(&self, unit: &Unit) -> bool {
+        let spec = &self.rules.units[unit.kind.as_str()];
+        spec.class == "religious"
+            || unit.kind == "trader"
+            || unit.kind == "rock_band"
+            || (unit.kind == "archaeologist"
+                && self.empire_wonder_effect(unit.owner, "archaeologist_open_borders") > 0.0)
+    }
+
+    /// The complete territory gate shared by immediate movement, future route
+    /// segments, and displacement when a temporary grant ends.
+    fn unit_has_territory_access(&self, unit: &Unit, territory_owner: usize) -> bool {
+        territory_owner == unit.owner
+            || self.unit_ignores_closed_borders(unit)
+            || self.is_at_war(unit.owner, territory_owner)
+            || self.has_open_borders(unit.owner, territory_owner)
+    }
+
     fn can_enter(&self, uid: u32, from: Pos, pos: Pos) -> bool {
         let u = &self.units[&uid];
         if self.wdist(from, pos) != 1 {
@@ -26696,23 +26766,11 @@ impl Game {
         {
             return false;
         }
-        let archaeologist_ignores_borders = u.kind == "archaeologist"
-            && self.empire_wonder_effect(u.owner, "archaeologist_open_borders") > 0.0;
-        // Rock Bands use their own Music Censorship gate above; ordinary Open
-        // Borders are deliberately not required to enter a concert market.
-        let ignores_borders = archaeologist_ignores_borders || u.kind == "rock_band";
-        if spec.class != "religious" && !ignores_borders {
-            let territory_owner = self.map.tiles[&pos]
-                .owner_city
-                .and_then(|city| self.cities.get(&city))
-                .map(|city| city.owner);
-            if territory_owner.is_some_and(|owner| {
-                owner != u.owner
-                    && !self.is_at_war(u.owner, owner)
-                    && !self.has_open_borders(u.owner, owner)
-            }) {
-                return false;
-            }
+        if self
+            .territory_owner_at(pos)
+            .is_some_and(|owner| !self.unit_has_territory_access(u, owner))
+        {
+            return false;
         }
         for oid in self.units_at(pos) {
             let o = &self.units[&oid];
@@ -26757,6 +26815,171 @@ impl Game {
             }
         }
         true
+    }
+
+    /// Whether one unit can be displaced to `pos` without capturing anything,
+    /// entering a hostile district, or violating the ordinary stacking layer.
+    /// Border expulsion is a teleport, not a move or attack, so enemy units are
+    /// never resolved as casualties along the way.
+    fn legal_border_displacement(
+        &self,
+        uid: u32,
+        pos: Pos,
+        moving: &BTreeSet<u32>,
+        forbidden_owner: Option<usize>,
+    ) -> bool {
+        let unit = &self.units[&uid];
+        let spec = &self.rules.units[unit.kind.as_str()];
+        if spec.domain.as_deref() == Some("air") || !self.unit_can_traverse(uid, pos) {
+            return false;
+        }
+        if let Some(owner) = self.territory_owner_at(pos) {
+            if Some(owner) == forbidden_owner
+                || (owner != unit.owner
+                    && (self.is_at_war(unit.owner, owner)
+                        || !self.unit_has_territory_access(unit, owner)))
+            {
+                return false;
+            }
+        }
+        if self
+            .city_at(pos)
+            .is_some_and(|city| self.cities[&city].owner != unit.owner)
+            || self
+                .encampment_at(pos)
+                .is_some_and(|city| self.cities[&city].owner != unit.owner)
+        {
+            return false;
+        }
+        self.units_at(pos).into_iter().all(|other_id| {
+            if moving.contains(&other_id) {
+                return true;
+            }
+            let other = &self.units[&other_id];
+            let other_spec = &self.rules.units[other.kind.as_str()];
+            if other_spec.domain.as_deref() == Some("air") {
+                return true;
+            }
+            if other.owner != unit.owner {
+                return false;
+            }
+            if other_spec.class != spec.class {
+                return true;
+            }
+            spec.class == "military"
+                && (spec.domain.as_deref() == Some("sea"))
+                    != (other_spec.domain.as_deref() == Some("sea"))
+        })
+    }
+
+    fn border_displacement_destination(
+        &self,
+        uid: u32,
+        forbidden_owner: Option<usize>,
+    ) -> Option<Pos> {
+        let unit = self.units.get(&uid)?;
+        let mut moving = BTreeSet::from([uid]);
+        if let Some(peer) = unit.linked_to {
+            moving.insert(peer);
+        }
+        self.map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|position| {
+                moving.iter().all(|member| {
+                    self.legal_border_displacement(
+                        *member,
+                        *position,
+                        &moving,
+                        forbidden_owner,
+                    )
+                })
+            })
+            .map(|position| {
+                let rank = match self.territory_owner_at(position) {
+                    Some(owner)
+                        if owner == unit.owner
+                            || self.same_team(unit.owner, owner)
+                            || (self.players[owner].is_minor
+                                && self.suzerain_of(owner) == Some(unit.owner)) =>
+                    {
+                        0
+                    }
+                    None => 1,
+                    Some(_) => 2,
+                };
+                (rank, self.wdist(unit.pos, position), position)
+            })
+            .min()
+            .map(|(_, _, position)| position)
+    }
+
+    fn displace_unit_from_closed_border(
+        &mut self,
+        uid: u32,
+        forbidden_owner: Option<usize>,
+    ) {
+        let Some(unit) = self.units.get(&uid) else {
+            return;
+        };
+        if unit.linked_to.is_some() && !self.is_linked_leader(uid) {
+            return;
+        }
+        let Some(destination) = self.border_displacement_destination(uid, forbidden_owner) else {
+            return;
+        };
+        let peer = self.units[&uid].linked_to;
+        let carried_aircraft: Vec<u32> = if self.units[&uid].kind == "aircraft_carrier" {
+            self.units_at(self.units[&uid].pos)
+                .into_iter()
+                .filter(|other| {
+                    *other != uid
+                        && self.units[other].owner == self.units[&uid].owner
+                        && self.rules.units[self.units[other].kind.as_str()]
+                            .domain
+                            .as_deref()
+                            == Some("air")
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        self.relocate(uid, destination);
+        if let Some(peer) = peer {
+            self.relocate(peer, destination);
+            let maximum = self.unit_max_moves(peer);
+            self.units.get_mut(&peer).unwrap().moves_left =
+                self.units[&peer].moves_left.min(maximum);
+        }
+        for aircraft in carried_aircraft {
+            self.relocate(aircraft, destination);
+        }
+        let maximum = self.unit_max_moves(uid);
+        self.units.get_mut(&uid).unwrap().moves_left = self.units[&uid].moves_left.min(maximum);
+    }
+
+    /// Civ VI expels units when an access grant lapses. Reconcile one mover at
+    /// the start of its turn, and all movers when Early Empire first changes a
+    /// territory owner's borders from universally open to enforced.
+    fn reconcile_closed_border_units(&mut self, mover: Option<usize>) {
+        let mut displaced: Vec<(u32, usize)> = self
+            .units
+            .values()
+            .filter(|unit| mover.is_none_or(|owner| unit.owner == owner))
+            .filter(|unit| {
+                self.rules.units[unit.kind.as_str()].domain.as_deref() != Some("air")
+            })
+            .filter_map(|unit| {
+                let territory_owner = self.territory_owner_at(unit.pos)?;
+                (!self.unit_has_territory_access(unit, territory_owner))
+                    .then_some((unit.id, territory_owner))
+            })
+            .collect();
+        displaced.sort_unstable();
+        for (uid, territory_owner) in displaced {
+            self.displace_unit_from_closed_border(uid, Some(territory_owner));
+        }
     }
 
     fn is_linked_leader(&self, uid: u32) -> bool {
@@ -26808,7 +27031,7 @@ impl Game {
         if !self.zone_connected(uid, to, range) {
             return None; // proven: no chain of traversable tiles links them
         }
-        let cached_next = {
+        let cached_tail = {
             let routing = self.routing.borrow();
             routing
                 .paths
@@ -26819,12 +27042,18 @@ impl Game {
                         .path
                         .iter()
                         .position(|position| *position == start)
-                        .and_then(|index| route.path.get(index + 1))
-                        .copied()
+                        .map(|index| route.path[index..].to_vec())
                 })
         };
-        if cached_next.is_some_and(|next| self.can_enter(uid, start, next)) {
-            return cached_next;
+        if let Some(tail) = cached_tail {
+            let reusable = tail.get(1).is_some_and(|next| self.can_enter(uid, start, *next))
+                && tail
+                    .windows(2)
+                    .skip(1)
+                    .all(|edge| self.can_path_through(uid, edge[0], edge[1]));
+            if reusable {
+                return tail.get(1).copied();
+            }
         }
 
         // A* keeps known-target routing cheap enough for high-throughput
@@ -26918,6 +27147,12 @@ impl Game {
         }
         let unit = &self.units[&uid];
         if !self.unit_can_traverse(uid, pos) {
+            return false;
+        }
+        if self
+            .territory_owner_at(pos)
+            .is_some_and(|owner| !self.unit_has_territory_access(unit, owner))
+        {
             return false;
         }
         self.city_at(pos)
@@ -38389,7 +38624,9 @@ impl Game {
             || (peace && self.emergency_war_pair(pid, other))
             || (peace && self.peace_available_at(pid, other).is_some())
             || ((friendship || open_borders || alliance.is_some()) && self.is_at_war(pid, other))
-            || (open_borders && self.tree_effect(pid, "open_borders") <= 0.0)
+            || (open_borders
+                && (self.tree_effect(pid, "open_borders") <= 0.0
+                    || self.tree_effect(other, "open_borders") <= 0.0))
             || (friendship
                 && (self.players[pid]
                     .denounced_until
@@ -40049,7 +40286,10 @@ impl Game {
             || self.tree_effect(territory_owner, "open_borders") <= 0.0
             || (self.players[territory_owner].is_minor
                 && (self.suzerain_of(territory_owner) == Some(mover)
-                    || self.policy_effect(mover, "open_city_state_borders") > 0.0))
+                    || self.policy_effect(mover, "open_city_state_borders") > 0.0
+                    // João III's Porta do Cerco is folded into Portugal's
+                    // modeled Casa da Índia ability record.
+                    || self.has_ability(mover, "casa_da_india")))
             || self.players[mover]
                 .alliances
                 .get(&territory_owner)
@@ -43083,6 +43323,7 @@ impl Game {
         self.process_strategic_resources(pid);
         self.process_reactors(pid);
         self.process_diplomacy(pid);
+        self.reconcile_closed_border_units(Some(pid));
         self.process_routes(pid);
         self.process_great_people(pid);
         self.process_pressure(pid);
@@ -43310,6 +43551,9 @@ impl Game {
             .counters
             .entry(format!("tree_completions:{node}"))
             .or_insert(0) += 1;
+        if !technology && first && node == "early_empire" {
+            self.reconcile_closed_border_units(None);
+        }
         if first {
             self.players[pid].envoys_free +=
                 effects.get("free_envoys").copied().unwrap_or(0.0) as i64;
@@ -50495,8 +50739,191 @@ mod combat_scenarios {
     }
 
     #[test]
+    fn norway_and_maori_use_their_stock_early_ocean_rules() {
+        let (mut g, land, ring) = controlled_game(3_201);
+        let coast = ring[0];
+        let ocean = g
+            .nbrs(coast)
+            .into_iter()
+            .find(|position| *position != land)
+            .unwrap();
+        g.map.tiles.get_mut(&coast).unwrap().terrain = "coast".to_string();
+        g.map.tiles.get_mut(&ocean).unwrap().terrain = "ocean".to_string();
+
+        g.players[0].civ = "Norway".to_string();
+        let longship = g.spawn_unit("galley", 0, coast);
+        assert!(!g.can_move(longship, ocean));
+        g.players[0].techs.insert("shipbuilding".to_string());
+        assert!(
+            g.can_move(longship, ocean),
+            "Knarr substitutes Shipbuilding for Cartography"
+        );
+        g.remove_unit(longship);
+
+        let warrior = g.spawn_unit("warrior", 0, land);
+        g.relocate(warrior, coast);
+        assert!(
+            !g.can_move(warrior, ocean),
+            "Knarr's early Ocean access is restricted to naval units"
+        );
+        g.remove_unit(warrior);
+
+        g.players[0].techs.clear();
+        g.players[0].civ = "Maori".to_string();
+        let warrior = g.spawn_unit("warrior", 0, land);
+        assert!(
+            g.can_move(warrior, coast),
+            "Mana gives the starting Shipbuilding embarkation package"
+        );
+        g.relocate(warrior, coast);
+        assert!(
+            g.can_move(warrior, ocean),
+            "Mana permits Ocean movement without Cartography"
+        );
+        assert_eq!(
+            g.unit_max_moves(warrior),
+            4.0,
+            "Mana gives embarked units +2 Movement"
+        );
+    }
+
+    #[test]
+    fn enforced_borders_share_one_rule_across_steps_and_routes() {
+        let (mut g, start, ring) = controlled_game(3_202);
+        g.at_war.clear();
+        let target = ring[0];
+        let foreign_city_position = g
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| g.wdist(start, *position) > 5)
+            .unwrap();
+        let foreign_city = g.found_city_for(1, foreign_city_position, None);
+        g.map.tiles.get_mut(&target).unwrap().owner_city = Some(foreign_city);
+        let warrior = g.spawn_unit("warrior", 0, start);
+
+        assert!(
+            g.can_move(warrior, target),
+            "borders remain open before their owner adopts Early Empire"
+        );
+        g.players[1].civics.insert("early_empire".to_string());
+        assert!(!g.can_move(warrior, target));
+
+        g.players[0].friends_until.insert(1, 40);
+        g.players[1].friends_until.insert(0, 40);
+        assert!(!g.can_move(warrior, target), "friendship is not Open Borders");
+        g.players[0].open_borders_until.insert(1, 40);
+        assert!(
+            !g.can_move(warrior, target),
+            "granting our borders is the wrong direction"
+        );
+        g.players[1].open_borders_until.insert(0, 40);
+        assert!(g.can_move(warrior, target));
+
+        g.players[0].open_borders_until.clear();
+        g.players[1].open_borders_until.clear();
+        let alliance = AllianceState {
+            kind: "military".to_string(),
+            points: 0.0,
+            level: 1,
+            ends: 40,
+        };
+        g.players[0].alliances.insert(1, alliance.clone());
+        g.players[1].alliances.insert(0, alliance);
+        assert!(g.can_move(warrior, target));
+
+        g.players[0].alliances.clear();
+        g.players[1].alliances.clear();
+        g.at_war.insert(pair(0, 1));
+        assert!(g.can_move(warrior, target));
+
+        g.at_war.clear();
+        g.remove_unit(warrior);
+        let trader = g.spawn_unit("trader", 0, start);
+        assert!(g.can_move(trader, target), "Traders ignore closed borders");
+        g.remove_unit(trader);
+        let missionary = g.spawn_unit("missionary", 0, start);
+        assert!(
+            g.can_move(missionary, target),
+            "religious units ignore closed borders"
+        );
+
+        g.remove_unit(missionary);
+        g.map.tiles.get_mut(&target).unwrap().owner_city = None;
+        for tile in g.map.tiles.values_mut() {
+            tile.terrain = "mountain".to_string();
+        }
+        let first = hex::canon((start.0 + 1, start.1), g.map.width);
+        let closed = hex::canon((start.0 + 2, start.1), g.map.width);
+        let goal = hex::canon((start.0 + 3, start.1), g.map.width);
+        for position in [start, first, closed, goal] {
+            g.map.tiles.get_mut(&position).unwrap().terrain = "plains".to_string();
+            g.map.tiles.get_mut(&position).unwrap().owner_city = None;
+        }
+        g.map.tiles.get_mut(&closed).unwrap().owner_city = Some(foreign_city);
+        let scout = g.spawn_unit("warrior", 0, start);
+        assert_eq!(
+            g.route_step(scout, goal, 0),
+            None,
+            "future route segments may not plan through closed territory"
+        );
+        g.players[1].open_borders_until.insert(0, 40);
+        assert_eq!(g.route_step(scout, goal, 0), Some(first));
+        g.players[1].open_borders_until.clear();
+        assert_eq!(
+            g.route_step(scout, goal, 0),
+            None,
+            "a cached route must be invalidated when access expires"
+        );
+    }
+
+    #[test]
+    fn enforced_or_expired_borders_expel_only_units_that_need_access() {
+        let setup = |seed| {
+            let (mut game, start, ring) = controlled_game(seed);
+            game.at_war.clear();
+            let foreign_city_position = game
+                .map
+                .tiles
+                .keys()
+                .copied()
+                .find(|position| game.wdist(start, *position) > 5)
+                .unwrap();
+            let city = game.found_city_for(1, foreign_city_position, None);
+            let foreign = ring[0];
+            game.map.tiles.get_mut(&foreign).unwrap().owner_city = Some(city);
+            (game, foreign)
+        };
+
+        let (mut expired, foreign) = setup(3_204);
+        expired.players[1].civics.insert("early_empire".to_string());
+        expired.players[1].open_borders_until.insert(0, 5);
+        let warrior = expired.spawn_unit("warrior", 0, foreign);
+        let trader = expired.spawn_unit("trader", 0, foreign);
+        expired.turn = 5;
+        expired.begin_turn(0);
+        assert_ne!(expired.units[&warrior].pos, foreign);
+        assert_ne!(expired.territory_owner_at(expired.units[&warrior].pos), Some(1));
+        assert_eq!(
+            expired.units[&trader].pos, foreign,
+            "a Trader remains legal when ordinary Open Borders expires"
+        );
+
+        let (mut enforced, foreign) = setup(3_205);
+        let scout = enforced.spawn_unit("warrior", 0, foreign);
+        assert!(enforced.has_open_borders(0, 1));
+        enforced.players[1].civics.insert("early_empire".to_string());
+        enforced.apply_tree_completion(1, false, "early_empire", true);
+        assert_ne!(
+            enforced.units[&scout].pos, foreign,
+            "adopting Early Empire immediately expels existing intruders"
+        );
+    }
+
+    #[test]
     fn known_target_routes_reuse_the_planned_path_after_each_step() {
-        let (mut g, start, _) = controlled_game(3_202);
+        let (mut g, start, _) = controlled_game(3_206);
         let target = g
             .map
             .tiles
