@@ -4937,6 +4937,42 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("applyPlanetBasis(planetTurn(touchGesture.basis, dx, dy))"));
         assert!(EMBEDDED_INDEX.contains("applyPlanetBasis(planetTurn(basis, -screenX, -screenY))"));
         assert!(EMBEDDED_INDEX.contains("spin:planetGlide(released.vpx, released.vpy)"));
+        // Zooming shares that turn too, and it aims at a world rather than at a
+        // pixel. Out in the system a body is a few pixels across — the Moon is
+        // four on the whole-system shot — so an anchor held to the raw point of
+        // space under the pointer demanded an aim nobody can manage and walked
+        // off into empty sky when it was missed: measured at twelve pixels wide
+        // of the Moon, sixteen wheel steps finished three thousand pixels away
+        // with nothing at all on the stage. So every world claims a halo, the
+        // strongest claim takes the pointer, and a pointer on nothing is
+        // therefore taken by the roughly nearest world. What the pointer's aim
+        // is *for* changes with how big that world is drawn: travel while it is
+        // a marble, and once it is the place underfoot the world turns until the
+        // ground that was under the pointer is back under it, which is the same
+        // lean a flat map has always had and which the globe recovered three per
+        // cent of before this. The ceiling comes from the world being flown to,
+        // not from whichever marble happens to be nearest the frame's middle.
+        assert!(EMBEDDED_INDEX.contains("function skyPointerWorld(sx, sy, radius = planetEarthRadius(), pan = SKY_PAN)"));
+        assert!(EMBEDDED_INDEX.contains("function skyWorldGrab(drawn)"));
+        assert!(EMBEDDED_INDEX.contains("function skyZoomAim(sx, sy, radius = planetEarthRadius(), pan = SKY_PAN)"));
+        assert!(EMBEDDED_INDEX.contains("function skySurfacePoint(body, sx, sy, radius, pan = SKY_PAN)"));
+        assert!(EMBEDDED_INDEX.contains("function skyLean(lean, ease)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "applyPlanetBasis(planetSpin(basis, axis.map(value => value / length), -owed * ease));",
+        ));
+        assert!(EMBEDDED_INDEX.contains("if (!body || !lean.point || body.id !== \"earth\") return 0;"));
+        assert!(EMBEDDED_INDEX
+            .contains("function planetMaxScale(pan = SKY_PAN, body = skyNearestWorld(pan))"));
+        assert!(EMBEDDED_INDEX.contains("const ceiling = planetMaxScale(basePan, subject);"));
+        assert!(EMBEDDED_INDEX.contains("const aim = skyAnchor"));
+        assert!(EMBEDDED_INDEX.contains("cameraZoom = {kind:\"planet\", scale, pan, lean};"));
+        assert!(EMBEDDED_INDEX
+            .contains("const leanLeft = cameraZoom.lean ? skyLean(cameraZoom.lean, ease) : 0;"));
+        // The old raw-point anchor, and the early return that left a chart with
+        // no lean at all, must both be gone: a chart has no system to travel
+        // through, but it leans towards the pointer exactly as a flat map does.
+        assert!(!EMBEDDED_INDEX.contains("const pointerX = skyAnchor?.x ??"));
+        assert!(!EMBEDDED_INDEX.contains("const scale = planetScaleClampAt(base * f, {x:0, y:0});"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"planet\">Planet</option>"));
         assert!(EMBEDDED_INDEX
             .contains("<option value=\"true_start_earth\">True Start Earth</option>"));
