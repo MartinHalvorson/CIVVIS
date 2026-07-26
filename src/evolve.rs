@@ -152,6 +152,10 @@ fn make_table(g: &Game, w: &Weights, opponents: &[Weights], seat: usize) -> Vec<
 
 /// Per-player position features for value-net training (NNUE-style dataset).
 /// All roughly 0..1-normalized; self block, best-opponent block, then turn.
+/// Width of [`features`]: twelve aggregates for this empire, twelve for
+/// the leading rival, plus turn fraction.
+pub const FEATURE_WIDTH: usize = 25;
+
 pub fn features(g: &Game, pid: usize) -> Vec<f32> {
     let block = |p: usize| -> Vec<f32> {
         let cids = g.player_city_ids(p);
