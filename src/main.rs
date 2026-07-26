@@ -433,10 +433,16 @@ fn main() {
                     let mut g = Game::new_with(game_options(&args, players, seed as u64));
                     let mut ais = AdvancedAi::fleet(&g);
                     run_game(&mut g, &mut ais);
-                    g
+                    // Every major's turns, pooled: what the empires in this game
+                    // actually spent the game doing.
+                    let mut census = civvis::ai::StrategyCensus::default();
+                    for ai in ais.iter().take(g.players.iter().filter(|p| !p.is_minor).count()) {
+                        census.absorb(&ai.strategy_census());
+                    }
+                    (g, census)
                 });
                 match result {
-                    Ok(g) => {
+                    Ok((g, census)) => {
                         let majors: Vec<_> = g.players.iter().filter(|p| !p.is_minor).collect();
                         let minors: Vec<_> = g
                             .players
@@ -553,6 +559,39 @@ fn main() {
                              capitals_taken={capitals_taken} mean_turns={mean_war:.0} \
                              ended_in_peace={ended} events=[{}]",
                             events.join(" ")
+                        ));
+                        // A war is only prosecuted if somebody chose to
+                        // prosecute it. Recovery is the defensive posture, so
+                        // turns spent there are turns nobody was besieging
+                        // anything.
+                        let total = census.total().max(1);
+                        let share = |turns: u32| 100 * turns / total;
+                        flags.push_str(&format!(
+                            " PLAN conquest={}% recovery={}% expansion={}% science={}% \
+                             culture={}% religion={}% diplomacy={}%",
+                            share(census.conquest),
+                            share(census.recovery),
+                            share(census.expansion),
+                            share(census.science),
+                            share(census.culture),
+                            share(census.religion),
+                            share(census.diplomacy),
+                        ));
+                        let posture_total = census.posture_total().max(1);
+                        let pshare = |turns: u32| 100 * turns / posture_total;
+                        flags.push_str(&format!(
+                            " FORCE engage={}% advance={}% hold={}% muster={}% recover={}%",
+                            pshare(census.engage),
+                            pshare(census.advance),
+                            pshare(census.hold),
+                            pshare(census.muster),
+                            pshare(census.recover),
+                        ));
+                        let held = (census.hold_threatened + census.hold_weak).max(1);
+                        flags.push_str(&format!(
+                            " HELD_BY threatened_city={}% locally_weak={}%",
+                            100 * census.hold_threatened / held,
+                            100 * census.hold_weak / held,
                         ));
                         Some(format!(
                             "seed {:3}  t{:<4} {:<10} {:<8} majors_alive={}/{} cities={:<2} cs_alive={}/{} [{:.2}s]{}",

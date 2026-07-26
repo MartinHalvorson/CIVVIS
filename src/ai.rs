@@ -20,7 +20,8 @@ const MINOR_DEFENSE_RADIUS: i32 = 6;
 
 mod advanced;
 pub use advanced::{
-    AdvancedAi, ForceDomain, ForceGroup, ForcePosture, GrandStrategy, StrategicPlan, VictoryTarget,
+    AdvancedAi, ForceDomain, ForceGroup, ForcePosture, GrandStrategy, StrategicPlan,
+    StrategyCensus, VictoryTarget,
 };
 
 const TECH_PRIORITY: [&str; 15] = [

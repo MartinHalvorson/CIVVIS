@@ -34,6 +34,100 @@ impl GrandStrategy {
     }
 }
 
+/// How many turns an agent actually spent pursuing each grand strategy.
+///
+/// A plan is chosen every few turns and only the latest one is visible in
+/// `plan_report`, so an end-of-game snapshot cannot say whether a war was ever
+/// prosecuted or merely survived. Wars in this engine last 50-150 turns and
+/// take almost nothing (measured: 17 declarations, 4 cities, 0 capitals over 12
+/// full-length six-player games), and the difference between "the AI chose
+/// Conquest and failed to execute it" and "the AI was in Recovery the whole
+/// time" is not otherwise observable.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct StrategyCensus {
+    pub expansion: u32,
+    pub science: u32,
+    pub culture: u32,
+    pub religion: u32,
+    pub diplomacy: u32,
+    pub conquest: u32,
+    pub recovery: u32,
+    /// Force-group turns by posture. A different denominator from the strategy
+    /// counts above — one turn contributes one strategy and as many postures as
+    /// the empire had force groups — because deciding to conquer and actually
+    /// advancing on a city are separate failures and only the second one shows
+    /// up as a captured city.
+    pub muster: u32,
+    pub advance: u32,
+    pub engage: u32,
+    pub hold: u32,
+    pub recover: u32,
+    /// Which disjunct sent a group to `Hold`. The threatened-city test is
+    /// empire-global, so one city under pressure anywhere holds every force
+    /// group, including one already standing at a rival's gates.
+    pub hold_threatened: u32,
+    pub hold_weak: u32,
+}
+
+impl StrategyCensus {
+    pub fn total(&self) -> u32 {
+        self.expansion
+            + self.science
+            + self.culture
+            + self.religion
+            + self.diplomacy
+            + self.conquest
+            + self.recovery
+    }
+
+    fn count_posture(&mut self, posture: ForcePosture) {
+        let slot = match posture {
+            ForcePosture::Muster => &mut self.muster,
+            ForcePosture::Advance => &mut self.advance,
+            ForcePosture::Engage => &mut self.engage,
+            ForcePosture::Hold => &mut self.hold,
+            ForcePosture::Recover => &mut self.recover,
+        };
+        *slot += 1;
+    }
+
+    /// Force-group turns counted, which is not [`StrategyCensus::total`].
+    pub fn posture_total(&self) -> u32 {
+        self.muster + self.advance + self.engage + self.hold + self.recover
+    }
+
+    fn count(&mut self, strategy: GrandStrategy) {
+        let slot = match strategy {
+            GrandStrategy::Expansion => &mut self.expansion,
+            GrandStrategy::Science => &mut self.science,
+            GrandStrategy::Culture => &mut self.culture,
+            GrandStrategy::Religion => &mut self.religion,
+            GrandStrategy::Diplomacy => &mut self.diplomacy,
+            GrandStrategy::Conquest => &mut self.conquest,
+            GrandStrategy::Recovery => &mut self.recovery,
+        };
+        *slot += 1;
+    }
+
+    /// Accumulate another agent's turns into this total.
+    pub fn absorb(&mut self, other: &StrategyCensus) {
+        self.expansion += other.expansion;
+        self.science += other.science;
+        self.culture += other.culture;
+        self.religion += other.religion;
+        self.diplomacy += other.diplomacy;
+        self.conquest += other.conquest;
+        self.recovery += other.recovery;
+        self.muster += other.muster;
+        self.advance += other.advance;
+        self.engage += other.engage;
+        self.hold += other.hold;
+        self.recover += other.recover;
+        self.hold_threatened += other.hold_threatened;
+        self.hold_weak += other.hold_weak;
+    }
+}
+
 /// A concrete game-ending objective. Unlike `GrandStrategy`, which may
 /// temporarily become Expansion or Recovery, this remains fixed for the
 /// lifetime of a deliberately targeted AI.
@@ -263,6 +357,7 @@ impl EmpireCounts {
 pub struct AdvancedAi {
     base: BasicAi,
     plan: Option<StrategicPlan>,
+    census: StrategyCensus,
     settler_targets: BTreeMap<u32, Pos>,
     builder_targets: BTreeMap<u32, Pos>,
     major_war_since: Option<u32>,
@@ -313,6 +408,7 @@ impl AdvancedAi {
             peace_until: 0,
             victory_planning,
             victory_target,
+            census: StrategyCensus::default(),
             forced_target_player: None,
             force_groups: Vec::new(),
             force_groups_dirty: false,
@@ -408,6 +504,11 @@ impl AdvancedAi {
     /// civilization becomes the immediate victory threat in the same lane.
     pub fn forced_target_player(&self) -> Option<usize> {
         self.forced_target_player
+    }
+
+    /// How many turns this agent spent on each grand strategy.
+    pub fn strategy_census(&self) -> StrategyCensus {
+        self.census
     }
 
     fn active_victory_target(&self, g: &Game) -> Option<VictoryTarget> {
@@ -8211,6 +8312,17 @@ impl AdvancedAi {
             });
         }
         self.force_groups.sort_by_key(|group| group.id);
+        let threatened = plan.threatened_city.is_some();
+        for group in &self.force_groups {
+            self.census.count_posture(group.posture);
+            if group.posture == ForcePosture::Hold {
+                if threatened {
+                    self.census.hold_threatened += 1;
+                } else {
+                    self.census.hold_weak += 1;
+                }
+            }
+        }
     }
 
     fn coordinated_tactical_step(
@@ -10361,6 +10473,7 @@ impl AdvancedAi {
             self.plan = Some(self.assess(g, pid));
         }
         let plan = self.plan.clone().unwrap();
+        self.census.count(plan.strategy);
         self.advanced_research(g, pid, &plan);
         if self.victory_planning {
             let denied_rival = plan
