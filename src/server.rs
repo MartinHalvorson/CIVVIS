@@ -5886,6 +5886,38 @@ mod tests {
     }
 
     #[test]
+    fn painted_planet_blends_terrain_without_revealing_the_hex_mesh() {
+        let underpaint = EMBEDDED_INDEX
+            .split("function planetTerrainUnderpaint")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawPlanetShoreline").next())
+            .expect("painted planet terrain foundation");
+        assert!(underpaint.contains("isWater(tile)"));
+        assert!(underpaint.contains("#174b61"));
+        assert!(underpaint.contains("#747655"));
+
+        let ground = EMBEDDED_INDEX
+            .split("function drawPlanetGround")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawPlanetSurfaceDetail").next())
+            .expect("planet terrain renderer");
+        assert!(ground.contains("painted ? planetTerrainUnderpaint(cell.tile)"));
+        assert!(ground.contains("const blend = Math.max(1.2, Math.min(5.2"));
+        assert!(ground.contains("cx.filter = `blur(${blend.toFixed(2)}px)`"));
+        assert!(ground.contains("cx.globalCompositeOperation = \"soft-light\""));
+        assert!(ground.contains("drawPlanetShoreline(knownCells)"));
+
+        let shoreline = EMBEDDED_INDEX
+            .split("function drawPlanetShoreline")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawPlanetGround").next())
+            .expect("painted planet shoreline renderer");
+        assert!(shoreline.contains("const painted = new Set(cells.map"));
+        assert!(shoreline.contains("painted.has(cell.nbrs[side])"));
+        assert!(shoreline.contains("cx.quadraticCurveTo(mx, my, bx, by)"));
+    }
+
+    #[test]
     fn instance_tagged_spectator_url_routes_to_the_embedded_page() {
         assert_eq!(request_path("/"), "/");
         assert_eq!(request_path("/?instance=9232"), "/");
