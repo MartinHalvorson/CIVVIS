@@ -1250,6 +1250,12 @@ ENGINE_PARAMETERS = {
     "WORLD_CONGRESS_TRADE_PARTNER_FAVOR_PER_TURN": 0,
     "CITY_POPULATION_AQUEDUCT_BOOST": 2,  # city_housing: +2, or up to a floor of 6
     "CITY_POPULATION_AQUEDUCT_MIN": 6,
+    # Left unpinned while buying a plot was not a modelled action at all -
+    # asserting the range would have read green on a rule nothing implemented.
+    # #246 shipped BuyPlot, and plot_purchase_cost refuses anything past ring 3,
+    # so the parameter is honoured and worth guarding now.
+    "CITY_MAX_BUY_PLOT_RANGE": 3,  # game.rs plot_purchase_cost
+    "PLOT_BUY_BASE_COST": 50,  # its ring-one and ring-two base
 }
 
 
