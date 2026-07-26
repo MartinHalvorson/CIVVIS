@@ -1400,21 +1400,37 @@ mod tests {
 
         const INDEX: &str = include_str!("../web/index.html");
         assert!(INDEX.contains("id=\"map-controls-dock\""));
-        for lens in [
-            "religion",
-            "continent",
-            "appeal",
-            "settler",
-            "government",
-            "political",
-            "tourism",
-            "empire",
-        ] {
-            assert!(
-                INDEX.contains(&format!("data-map-lens=\"{lens}\"")),
-                "the base-game {lens} lens must be available in the map toolbar"
-            );
-        }
+        // The strip reads outward from the ground under the cursor: the land
+        // itself, where to settle it, who holds it, what they built on it —
+        // and only then the softer cultural readings of that same territory.
+        let toolbar = INDEX
+            .split_once("<div id=\"map-lenses\"")
+            .expect("map lens toolbar")
+            .1
+            .split_once("</div>")
+            .expect("end of map lens toolbar")
+            .0;
+        let lenses: Vec<&str> = toolbar
+            .match_indices("data-map-lens=\"")
+            .map(|(at, marker)| {
+                let rest = &toolbar[at + marker.len()..];
+                &rest[..rest.find('"').expect("lens name is quoted")]
+            })
+            .collect();
+        assert_eq!(
+            lenses,
+            [
+                "continent",
+                "settler",
+                "political",
+                "empire",
+                "religion",
+                "government",
+                "appeal",
+                "tourism",
+            ],
+            "every base-game lens belongs in the toolbar, in reading order"
+        );
         for renderer in [
             "function drawReligiousPressureRing(",
             "function drawFlatLensGroupLabels(",
