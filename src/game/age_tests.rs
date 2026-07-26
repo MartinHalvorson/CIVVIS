@@ -7,6 +7,28 @@ fn two_player_game() -> Game {
 }
 
 #[test]
+fn a_late_unlock_cannot_skip_world_eras() {
+    let mut game = two_player_game();
+    game.world_era = 2;
+    game.players[0]
+        .techs
+        .insert("telecommunications".to_string());
+    assert_eq!(
+        game.era_from_progress(),
+        7,
+        "the fixture's leading civilization has reached Information"
+    );
+
+    for expected in 3..=7 {
+        game.process_eras();
+        assert_eq!(
+            game.world_era, expected,
+            "the world must enter every era between Medieval and Information"
+        );
+    }
+}
+
+#[test]
 fn every_dedication_carries_both_halves_and_an_era_span() {
     let rules = crate::rules::Rules::embedded();
     assert_eq!(
