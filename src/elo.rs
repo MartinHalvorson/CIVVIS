@@ -37,7 +37,7 @@ pub const BUILTIN_AIS: [&str; 9] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 9] = [
+pub const EVAL_ONLY_AIS: [&str; 10] = [
     "strategic_score",
     "strategic_doctrine",
     "strategic_r20",
@@ -47,6 +47,7 @@ pub const EVAL_ONLY_AIS: [&str; 9] = [
     "strategic_h80",
     "strategic_rot20",
     "strategic_rot10",
+    "production",
 ];
 
 /// On-disk schema for the shared player/leader/civilization rating ledger.
@@ -488,6 +489,12 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             ai.horizon = 80;
             Box::new(ai)
         }
+        // Rollout search over what a city builds, rate-limited to one
+        // decision every fifteen turns so the whole feature costs about
+        // what the lane search costs.
+        "production" => Box::new(crate::production::ProductionSearchAi::with_weights(
+            crate::evolve::load_champion("evolved").unwrap_or_default(),
+        )),
         "strategic_rot20" => {
             let mut ai = crate::strategic::StrategicAi::with_weights(
                 crate::evolve::load_champion("evolved").unwrap_or_default(),
@@ -680,6 +687,9 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "strategic_h80" => (vec![genome, value(false)], "strategic_h80"),
         "strategic_rot20" => (vec![genome, value(false)], "strategic_rot20"),
         "strategic_rot10" => (vec![genome, value(false)], "strategic_rot10"),
+        // The genome tunes both its rollout policy and its scripted
+        // governor; it consults no net.
+        "production" => (vec![genome], "production"),
         "advanced" => (Vec::new(), "advanced"),
         "advanced_v1" => (Vec::new(), "advanced_v1"),
         "random" => (Vec::new(), "random"),

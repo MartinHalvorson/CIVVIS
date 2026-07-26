@@ -1165,3 +1165,54 @@ anti-evidence — they produced two confident and opposite errors. The
 minimum useful size here is ~100 maps, which is one `--jobs 12` run of
 about half an hour. Nothing below that should be written down as a
 conclusion.
+
+## 2026-07-26 — searching what the city builds makes it worse
+
+Rollout search over victory lanes is the one search in this codebase that
+measurably wins games, so the obvious next target was the decision that
+compounds most: what a city builds. `ProductionSearchAi` commits a build by
+projection before delegating to the scripted governor, which is possible
+because the governor begins `if !g.cities[cid].queue.is_empty() { continue;
+}` and leaves a filled queue alone. Searches are rate-limited to one city
+every fifteen turns, putting the whole feature in the same cost class as
+the lane search.
+
+It is worse than the governor, at adequate power:
+
+`ai_eval production advanced --pairs 120 --players 4 --seed 70000
+--turns 200` → 108/240 games (45.0%), **9 mirrored maps for, 21 against**,
+exact sign p=0.0428, significant *in the incumbent's favour*. Terminal
+score share 49.7%.
+
+The search was not inert — that was checked first, with the diagnostic that
+should have existed before the doctrine axis was built. Candidate values
+spread by 0.0057 at the median against a 0.002 commitment margin, with 1 of
+6 sampled decisions degenerate, and the agent displaced the governor's pick
+on a real fraction of its searches. It searched, it acted, and it lost.
+
+**The likely cause is the horizon, and it generalizes.** A lane's effect is
+visible in score share inside the projection: committing to Science changes
+what the empire does immediately. A building's payoff compounds over the
+century *after* it completes, while this rollout stops ten rounds past the
+slowest candidate, capped at forty. Inside that window a cheap unit adding
+score now beats infrastructure that pays later, so the search overrides the
+governor toward the myopic choice and discards exactly the long-horizon
+sequencing — reserved Spaceports, district families, wonder timing — that
+the scripted layer is good at.
+
+That is `PolicyAi`'s failure one level up. There the evaluator could not
+see the action at all; here it can see the action but not its payoff.
+Both are evaluator/decision mismatches, and the pattern across this
+session is that every inert or harmful learned component has been one:
+
+| component | mismatch |
+|---|---|
+| `PolicyAi` tactical | empire features cannot change under a unit move |
+| `strategic` value net | blended estimate never flips a lane argmax |
+| `Doctrine` axis | commitment margin exceeded the value spread |
+| `ProductionSearchAi` | horizon shorter than the decision's payoff |
+
+A future attempt at production search needs a terminal value that credits
+unfinished compounding — a trained value net, or continuing the branch to a
+real result the way `counterfactual_value_samples` already does — rather
+than a longer fixed horizon, which only moves the cliff.
