@@ -224,12 +224,19 @@ been lied to.
 
 Two things the client does deliberately:
 
-- **It plays in batches, not in one request.** A full game is over a minute of
-  engine work. Somebody who asked for 250 turns still wants to watch them
-  happen and still wants to be able to stop, so the loop posts a batch, renders
-  it, and goes again; the batch grows only while batches keep coming back
-  quickly, which leaves a handful of turns turn-by-turn. Pressing the button
-  again stops between batches.
+- **It plays one turn per request, and draws every one of them.** Somebody who
+  asked for 250 turns wants to watch them happen, and a batch is turns nobody
+  watches: the engine plays every turn in it, but only the state *after the
+  last one* ever comes back, so a batch of ten draws one frame and discards
+  nine. Each turn now gets its own request and its own `requestAnimationFrame`,
+  because two states rendered inside one display refresh are composited into a
+  single frame — the same one-turn-per-presented-frame rule the exhibition
+  keeps. Throughput survives it: the next turn is requested *before* the
+  current one is painted, so the engine plays turn N+1 while the browser draws
+  turn N. Measured on this machine, that costs about a fifth of the raw turn
+  rate late in a game (18 against 22 turns/s at turn 200) and buys every turn
+  a frame instead of one in ten. Pressing the button again stops after the
+  turn already in flight, which is drawn rather than dropped.
 - **It says the seat is on loan.** While an agent plays, End Turn is disabled
   and reads "An agent is playing", and both selects lock. A lit control that
   quietly does nothing is worse than a disabled one that explains itself.
