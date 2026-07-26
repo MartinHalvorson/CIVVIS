@@ -6415,6 +6415,15 @@ function specPace() {
   const select = document.getElementById("specspeed");
   return select ? +select.value : 1000;
 }
+// At rapid exhibition speeds the acting seat changes too quickly to read; its
+// marker becomes a flickering distraction rather than useful turn context.
+// Four seconds is the first pace where the viewer can follow a whole turn, so
+// only Standard and slower paces mark the acting civilization in the HUD.
+const PLAYER_HUD_ACTIVE_MIN_PACE_MS = 4000;
+function highlightActingPlayerInHud() {
+  const pace = Number(state?.pace);
+  return SPEC && Number.isFinite(pace) && pace >= PLAYER_HUD_ACTIVE_MIN_PACE_MS;
+}
 function updatePaceControl(st) {
   const select = document.getElementById("specspeed");
   if (!select) return;
@@ -15677,6 +15686,7 @@ function drawPlayerHud() {
   }
   syncVictoryLeaderCapacity(victoryHud);
   const acting = SPEC ? state.current : 0;
+  const highlightActing = highlightActingPlayerInHud();
   const majors = state.players
     .filter(p => !p.is_minor && !p.is_barbarian && metPlayer(p))
     .sort((a, b) => b.score - a.score || a.id - b.id);
@@ -15833,7 +15843,7 @@ function drawPlayerHud() {
         `title="${expanded ? "Close" : "Open"} the ${p.civ} dossier · ${relationSummary}${agendaText}" ` +
         `aria-label="${expanded ? "Close" : "Open"} dossier for ${p.civ}, rank ${rank}, ${relationSummary}">` +
         `<span class="diplomacy-identity-field"><span class="diplomacy-rank">#${rank}</span>` +
-        `<span class="diplomacy-civ">${p.id === acting && SPEC ? "◉ " : ""}${p.civ}</span></span>` +
+        `<span class="diplomacy-civ">${p.id === acting && highlightActing ? "◉ " : ""}${p.civ}</span></span>` +
         `<span class="diplomacy-identity-field"><span class="diplomacy-leader-name">${leader}</span>${agendaGlyph}</span>` +
         `<span class="diplomacy-identity-field" title="${leagueTitle}"><span class="diplomacy-player">${playerName}</span></span>` +
         `<span class="diplomacy-identity-field diplomacy-elo" title="${playerEloLabel} · ${leagueTitle}">` +
