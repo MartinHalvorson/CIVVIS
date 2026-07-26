@@ -644,3 +644,44 @@ The bounded operational smoke (`--counterfactual-roots 1 --turns 90 --seed
 still writing seven terminally labeled rows—adaptive plus all six lanes—and
 advertising one root and a 7×3 label shape in metadata. This distinguishes the
 intended early source stop from incomplete branch labels.
+
+## 2026-07-26 — every learned entrant was silently scripted
+
+`evolved/` is generated and git-ignored, so a fresh clone has neither
+`best.json` nor `valuenet.json`. `builtin_ai` falls back rather than fail,
+which is right for playability and wrong for evidence: on such a checkout —
+which is every checkout in this repository, and was every worktree on this
+machine when this was found — the learned names are not learned agents.
+
+| Requested | Definitional artifact | What actually plays without it |
+|---|---|---|
+| `evolved`, `advanced_evolved` | `best.json` | `advanced` (stock weights) |
+| `neural` | `valuenet.json` | `basic` |
+| `policy` | `valuenet.json` | `advanced` |
+| `strategic` | `valuenet.json` | `strategic_score` |
+
+So `ai_eval policy advanced` was `advanced` against `advanced`, and its
+50/50 split was filed as a fact about a learned policy. The published
+learned-agent numbers above (2026-07-23's 28/50 for tactical `policy`, and
+every `strategic` result that credits the net) were produced against
+artifacts that no longer exist anywhere on this machine; treat them as
+unreproduced until the corpus is rebuilt and they are re-run.
+
+`elo::builtin_provenance(name, dir)` now resolves a name through the same
+loaders the agents use — an existing but unloadable `valuenet.json` is
+reported missing, because that is what the agent does with it — and
+`ai_eval` prints one provenance line per entrant before playing anything:
+
+```
+$ ai_eval policy advanced --pairs 1 --turns 40
+policy: plays as advanced (missing best.json, valuenet.json)
+advanced: scripted, no artifacts required
+warning: policy and advanced both play as advanced; this run measures
+advanced against itself and says nothing about either name
+```
+
+`--require-artifacts` exits 3 instead of recording an untrained result, and
+`--artifact-dir` points the check at a non-default champion directory. The
+collapse warning is the load-bearing half: a missing artifact is only a
+problem when it makes two entrants the same agent, and that is precisely
+the case a win rate cannot show you.

@@ -428,8 +428,8 @@
   .hud-rail:focus-visible { outline: 1px solid #d7b66a70; outline-offset: -1px; border-radius: 6px; }
   .victory-turn, .victory-track { min-width: 0; border-radius: 8px; }
   .victory-turn {
-    display: grid; grid-template-rows: auto 1fr auto; align-items: center;
-    padding: 6px 8px 7px; overflow: hidden; color: var(--gold-bright);
+    display: grid; grid-template-rows: auto auto minmax(0, 1fr); align-items: start;
+    padding: 6px 7px 7px; overflow: hidden; color: var(--gold-bright);
     background: linear-gradient(155deg, #d7b66a1c, #d7b66a08);
     border: 1px solid #d7b66a30; text-align: center;
   }
@@ -437,33 +437,50 @@
     color: #aebeb7; font-size: 9px; font-weight: 900; letter-spacing: .14em;
     line-height: 1; text-transform: uppercase;
   }
-  .turn-label { font-size: 10px; }
+  .turn-label { font-size: 11px; }
   .turn-count {
-    min-width: 0; display: grid; place-content: center; gap: 2px; margin: 2px 0;
+    min-width: 0; display: grid; place-content: center; gap: 1px; margin: 4px 0 5px;
+  }
+  .turn-heading, .turn-progress {
+    min-width: 0; display: flex; align-items: baseline; justify-content: center;
+  }
+  .turn-heading { gap: 5px; }
+  .turn-progress { gap: 4px; white-space: nowrap; }
+  .turn-era {
+    min-width: 0; overflow: hidden; color: #e1e8e4;
+    font-size: clamp(13px, 1vw, 14px); font-weight: 850; letter-spacing: -.01em;
+    line-height: 1.05; text-overflow: ellipsis; white-space: nowrap;
   }
   .victory-turn strong {
-    color: #f4d892; font: 700 31px/.9 "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    color: #f4d892; font: 700 28px/.9 "Iowan Old Style", "Palatino Linotype", Georgia, serif;
     font-variant-numeric: tabular-nums; text-shadow: 0 2px 10px #0009;
   }
   .victory-turn .turn-total {
-    color: #8fa29a; font-size: 10px; font-weight: 800; font-variant-numeric: tabular-nums;
+    color: #8fa29a; font-size: 11px; font-weight: 800; font-variant-numeric: tabular-nums;
     line-height: 1; white-space: nowrap;
   }
-  .turn-speed {
-    color: #aebeb7; font-size: clamp(6px, .58vw, 8px); font-weight: 800;
-    letter-spacing: 0;
-    line-height: 1; white-space: nowrap;
+  .turn-settings {
+    align-self: stretch; min-width: 0; display: grid; align-content: start; gap: 2px;
+    padding-top: 4px; color: #9fb0a9; border-top: 1px solid #d7b66a24;
+    font-size: 9px; font-weight: 700; letter-spacing: -.015em; line-height: 1.18;
+  }
+  .turn-setting {
+    min-width: 0; display: flex; align-items: baseline; justify-content: space-between;
+    gap: 3px; white-space: nowrap;
+  }
+  .turn-setting span, .turn-setting b { min-width: 0; }
+  .turn-setting b {
+    overflow: hidden; color: #dce6e1; font-weight: 900; text-overflow: ellipsis;
+  }
+  .turn-settings-secondary {
+    display: grid; gap: 2px; margin-top: 2px; padding-top: 4px;
+    border-top: 1px solid #d7b66a1c;
   }
   /* Borrowed turns. It sits under the turn cap because that cap is the thing
      it explains: the number went up because somebody asked it to. */
   .turn-playon {
-    color: #f0d99c; font-size: 8px; font-weight: 900; letter-spacing: .12em;
+    color: #f0d99c; font-size: 7px; font-weight: 900; letter-spacing: .08em;
     line-height: 1; text-transform: uppercase; white-space: nowrap;
-  }
-  .turn-era {
-    padding-top: 5px; color: #d4ddd9; border-top: 1px solid #d7b66a1c;
-    font-size: 10px; font-weight: 800; letter-spacing: .015em; line-height: 1;
-    white-space: nowrap;
   }
   .victory-meter { overflow: hidden; background: #020706b3; box-shadow: inset 0 1px 2px #000b; }
   .victory-meter b { display: block; height: 100%; border-radius: inherit; background: currentColor; }
@@ -546,7 +563,7 @@
   .diplomacy-ribbon { min-width: max-content; display: flex; align-items: stretch; gap: 4px; padding-bottom: 1px; }
   .diplomacy-card {
     flex: 0 0 clamp(282px, 19vw, 315px); display: grid;
-    grid-template-columns: 31px minmax(74px, .75fr) minmax(148px, 1.35fr);
+    grid-template-columns: 48px minmax(74px, .75fr) minmax(148px, 1.35fr);
     align-items: center; gap: 5px; height: 78px; margin: 0; padding: 4px 5px;
     overflow: hidden; border-radius: 8px; color: var(--text);
     background: linear-gradient(105deg, #0b1714f5, #142720ee);
@@ -558,16 +575,32 @@
   .diplomacy-card.friend { border-color: #708d62; box-shadow: inset 3px 0 #9dbb7d, inset 0 1px #fff1; }
   .diplomacy-card.at-war { border-color: #a65450; box-shadow: inset 3px 0 var(--danger), inset 0 1px #fff1; }
   .diplomacy-card.dead { opacity: .42; filter: grayscale(.75); }
-  /* The card carries two separate actions now: the medallion and the stat
-     block follow a civilization, the name column opens its dossier. Each is a
-     real button, so the ribbon stays keyboard-reachable. */
-  .leader-medallion {
-    width: 38px; height: 38px; display: grid; place-items: center; padding: 0; border-radius: 50%;
-    width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%;
-    color: #fff; background: var(--civ);
-    border: 2px solid var(--civ-border); box-shadow: 0 0 0 2px #07110f, 0 4px 12px #0008;
-    font: 700 15px/1 Georgia, serif; text-shadow: 0 1px 3px #000; cursor: pointer;
+  /* Each row has two literal map links now: the jersey circle frames the
+     empire and the crown goes straight to its capital. The identity still
+     opens the dossier, while the values retain the existing watch action. */
+  .player-map-links {
+    min-width: 0; display: flex; align-items: center; justify-content: center; gap: 4px;
   }
+  .empire-link, .capital-link {
+    flex: 0 0 auto; display: grid; place-items: center; margin: 0; padding: 0;
+    cursor: pointer;
+  }
+  .empire-link {
+    width: 32px; height: 32px; border-radius: 50%;
+    color: #fff;
+    background: radial-gradient(circle, var(--civ-border) 0 23%, var(--civ) 26% 100%);
+    border: 2px solid var(--civ-border); box-shadow: 0 0 0 2px #07110f, 0 4px 12px #0008;
+  }
+  .capital-link {
+    width: 12px; height: 24px; border: 0; border-radius: 4px;
+    color: var(--gold-bright); background: transparent; box-shadow: none;
+    font: 700 14px/1 Georgia, serif; text-shadow: 0 1px 3px #000, 0 0 7px #d7b66a66;
+  }
+  .capital-link:hover, .capital-link:focus-visible {
+    color: #fff4c7; background: #d7b66a18; transform: none;
+  }
+  .empire-link:disabled, .capital-link:disabled { opacity: .28; cursor: default; }
+  .empire-link:disabled:hover, .capital-link:disabled:hover { transform: none; }
   .diplomacy-identity, .diplomacy-stats {
     margin: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit;
     text-align: left; cursor: pointer;
@@ -1761,8 +1794,9 @@
   /* A wide desktop can show more civilizations without changing the HUD's
      hierarchy or pushing it farther down the map. */
   @media (min-width: 2200px) {
-    .diplomacy-card { flex-basis: 330px; grid-template-columns: 36px minmax(88px, .75fr) minmax(164px, 1.35fr); }
-    .leader-medallion { width: 36px; height: 36px; font-size: 15px; }
+    .diplomacy-card { flex-basis: 330px; grid-template-columns: 52px minmax(88px, .75fr) minmax(164px, 1.35fr); }
+    .empire-link { width: 36px; height: 36px; }
+    .capital-link { font-size: 15px; }
     .ribbon-stat b { font-size: 11px; }
     .ribbon-stat em { font-size: 7px; }
     /* Four dossier columns need about 480px to stay readable; below that they
@@ -1805,8 +1839,9 @@
   }
   @media (max-width: 430px) {
     .hud-region { padding-inline: 2px; }
-    .diplomacy-card { flex-basis: 286px; grid-template-columns: 31px minmax(76px, .7fr) minmax(155px, 1.45fr); gap: 4px; padding: 4px; }
-    .leader-medallion { width: 29px; height: 29px; font-size: 12px; }
+    .diplomacy-card { flex-basis: 286px; grid-template-columns: 44px minmax(76px, .7fr) minmax(155px, 1.45fr); gap: 4px; padding: 4px; }
+    .empire-link { width: 29px; height: 29px; }
+    .capital-link { font-size: 12px; }
     .ribbon-stat { padding-inline: 0; }
     .ribbon-stat b { font-size: 8px; }
     .ribbon-stat em { font-size: 6px; letter-spacing: 0; }
@@ -1827,12 +1862,12 @@
     width: min(var(--player-hud-width, 100%),
       calc(100% - min(var(--hud-rail-width), var(--hud-rail-share)) - 32px));
     height: min(var(--player-hud-height, 200px), var(--player-hud-max-height));
-    --hud-medallion-column: 21px; --hud-identity-column: minmax(300px, 42%); --hud-column-gap: 6px;
+    --hud-map-links-column: 38px; --hud-identity-column: minmax(300px, 42%); --hud-column-gap: 6px;
     --hud-identity-tracks: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1fr)
       minmax(0, .55fr) minmax(0, .55fr) minmax(0, 1.1fr);
     --hud-lock-column: 13px; --hud-row-height: 23px; --hud-row-gap: 2px;
     --hud-row-pitch: calc(var(--hud-row-height) + var(--hud-row-gap));
-    display: grid; grid-template-columns: 108px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
+    display: grid; grid-template-columns: 140px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
     align-items: stretch; gap: 5px; min-width: 0; padding: 5px;
     overflow: visible; transform: none;
     border: 1px solid #526a618f; border-radius: 12px;
@@ -1862,7 +1897,7 @@
   .ribbon-heading.widget-drag-handle::before { position: absolute; left: 4px; }
   .ribbon-stat-heading {
     min-height: 9px; display: grid;
-    grid-template-columns: var(--hud-lock-column, 0px) var(--hud-medallion-column) var(--hud-identity-column) minmax(0, 1fr);
+    grid-template-columns: var(--hud-lock-column, 0px) var(--hud-map-links-column) var(--hud-identity-column) minmax(0, 1fr);
     align-items: stretch; gap: var(--hud-column-gap); padding: 0 4px 0 3px;
   }
   .diplomacy-identity-head {
@@ -1897,16 +1932,17 @@
   }
   #playerhud .diplomacy-ribbon::-webkit-scrollbar { width: 3px; }
   #playerhud .diplomacy-ribbon::-webkit-scrollbar-thumb { background: #476057; border-radius: 4px; }
-  /* One line, four cells: the lock, the medallion, who this is, and their ten
+  /* One line, four cells: the lock, two map links, who this is, and their ten
      values. The masthead has the width to run them side by side, which is what
      keeps a row 23px instead of 35px. */
   #playerhud .diplomacy-card {
     width: auto; height: auto; min-height: 0; display: grid;
-    grid-template-columns: var(--hud-lock-column, 0px) var(--hud-medallion-column) var(--hud-identity-column) minmax(0, 1fr);
+    grid-template-columns: var(--hud-lock-column, 0px) var(--hud-map-links-column) var(--hud-identity-column) minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
     align-items: center; gap: var(--hud-column-gap); margin: 0; padding: 1px 4px 1px 3px;
     overflow: hidden; border-radius: 7px;
   }
+  #playerhud .player-map-links { grid-column: 2; grid-row: 1; }
   #playerhud .diplomacy-identity { grid-column: 3; grid-row: 1; }
   #playerhud .diplomacy-stats { grid-column: 4; grid-row: 1; }
 
@@ -1933,10 +1969,13 @@
                 0 var(--hud-row-gap) 0 #0b1714, 0 5px 14px #0009;
   }
   #playerhud .diplomacy-card:hover { transform: none; }
-  #playerhud .leader-medallion {
-    grid-column: 2; width: 21px; height: 21px;
+  #playerhud .player-map-links { justify-content: space-between; gap: 2px; }
+  #playerhud .empire-link {
+    width: 21px; height: 21px;
     border-width: 1px; box-shadow: 0 0 0 1px #07110f, 0 3px 8px #0008;
-    font-size: 10px;
+  }
+  #playerhud .capital-link {
+    width: 14px; height: 19px; font-size: 12px;
   }
   /* Every identity fact uses the same six tracks as the heading above it.
      Variable-length names can ellipsize inside their own cell without moving
@@ -1981,8 +2020,15 @@
      is allowed to ellipsize and gives up width first, so four digits stay whole
      down to a narrow desktop. */
   #playerhud .ribbon-stat b {
+    position: relative; overflow: visible;
     font-size: clamp(9px, .8vw, 13px); font-weight: 950; letter-spacing: -.025em;
     line-height: 1; text-shadow: 0 1px 2px #000, 0 0 8px currentColor;
+  }
+  /* The marker is out of flow: it follows the FPT value without changing the
+     centered number's width or moving that number away from the other rows. */
+  #playerhud .founded-religion-marker {
+    position: absolute; inset-inline-start: calc(100% + 1px); top: -.18em;
+    font-size: .72em; letter-spacing: 0; text-shadow: 0 1px 2px #000;
   }
   /* Victory progress starts in the right corner and grows down with the rows
      it actually shows, never past the world minimap. Six races read one under
@@ -2151,17 +2197,17 @@
      identity first — it ellipsizes and keeps its tooltip — so that every value
      stays whole, and the rail narrows alongside it. */
   @media (min-width: 2200px) {
-    #playerhud { grid-template-columns: 128px minmax(0, 1fr); --hud-identity-column: minmax(340px, 40%); }
+    #playerhud { grid-template-columns: 140px minmax(0, 1fr); --hud-identity-column: minmax(340px, 40%); }
   }
   @media (max-width: 1580px) {
-    #playerhud { grid-template-columns: 98px minmax(0, 1fr); --hud-identity-column: minmax(330px, 50%); }
+    #playerhud { grid-template-columns: 132px minmax(0, 1fr); --hud-identity-column: minmax(330px, 50%); }
     #maparea { --hud-rail-width: clamp(240px, 20vw, 300px); }
   }
   /* Ten value columns, a turn plate and a standing rail stop fitting side by
      side around here. */
   @media (max-width: 1300px) {
     #playerhud {
-      grid-template-columns: 84px minmax(0, 1fr);
+      grid-template-columns: 132px minmax(0, 1fr);
       --hud-identity-column: minmax(250px, 50%); --hud-column-gap: 4px;
     }
     #maparea { --hud-rail-width: 224px; }
@@ -2169,11 +2215,12 @@
   @media (max-width: 1180px) {
     #maparea { --hud-rail-width: 200px; --minimap-height: 158px; }
     #playerhud {
-      grid-template-columns: 74px minmax(0, 1fr);
+      grid-template-columns: 132px minmax(0, 1fr);
       --hud-identity-column: minmax(210px, 48%); --hud-column-gap: 3px;
-      --hud-medallion-column: 19px;
+      --hud-map-links-column: 34px;
     }
-    #playerhud .leader-medallion { width: 19px; height: 19px; }
+    #playerhud .empire-link { width: 19px; height: 19px; }
+    #playerhud .capital-link { width: 12px; font-size: 11px; }
     /* The masthead can take the value columns under 19px here, and a four-digit
        figure needs the extra point of room more than it needs the ninth pixel
        of type: a clipped number is a wrong number. */
@@ -2182,7 +2229,7 @@
   @media (max-width: 720px) {
     #side { inset-block-start: 132px; }
     #maparea { --hud-rail-width: 182px; --minimap-height: 138px; }
-    #playerhud { --hud-medallion-column: 23px; --hud-identity-column: minmax(112px, 142px); }
+    #playerhud { --hud-map-links-column: 38px; --hud-identity-column: minmax(112px, 142px); }
   }
   @media (max-width: 1100px) {
     /* Six identity columns plus ten value columns need the map's full width at
@@ -2191,7 +2238,7 @@
     #playerhud, body.overlay-victory-hidden #playerhud {
       top: 8px; left: 8px; right: 8px; width: auto; padding: 4px;
       --hud-lock-column: 11px;
-      --hud-medallion-column: 21px; --hud-identity-column: minmax(270px, 52%);
+      --hud-map-links-column: 36px; --hud-identity-column: minmax(270px, 52%);
     }
     #victoryhud, body.overlay-minimap-hidden #victoryhud {
       top: calc(min(var(--player-hud-height, 200px), var(--player-hud-max-height)) + 14px);
@@ -2233,7 +2280,7 @@
     .launch-badge { min-width: 15px; height: 15px; font-size: 8px; }
   }
   @media (max-height: 650px) {
-    #playerhud .leader-medallion { width: 20px; height: 20px; }
+    #playerhud .empire-link { width: 20px; height: 20px; }
   }
   @media (prefers-reduced-motion: reduce) {
     .section-label.overlay-return-flash { animation-duration: .01ms; }
@@ -3247,7 +3294,7 @@ function setView(v) {
   if (movingDown) setFullWorldView();
   else setRot(cam.rot, false);  // recompute screen-space light for the new pitch
   TILE_ART.clear();            // relief and grading are baked into the sprites
-  if (state) { draw(); drawMini(); }
+  if (state) { draw(); drawMini(); drawPlayerHud(); }
 }
 let SHOW_YIELDS = localStorage.getItem("civvis-show-yields") === "1";
 let SHOW_ARTIFACT_SITES = localStorage.getItem("civvis-show-artifact-sites") === "1";
@@ -4282,7 +4329,7 @@ const HUD_WIDGETS = {
   // very little of its height. They are capped at a third of that height
   // however they are sized — by the player count, by a dragged edge, or by a
   // layout saved earlier — so a large table never swallows the world.
-  players: {element:document.getElementById("playerhud"), minWidth:420, minHeight:82,
+  players: {element:document.getElementById("playerhud"), minWidth:420, minHeight:144,
             maxHeightRatio:.34},
   victory: {element:document.getElementById("victoryhud"), minWidth:150, minHeight:88},
   minimap: {element:document.querySelector(".minimap-frame"), minWidth:130, minHeight:96},
@@ -15397,8 +15444,9 @@ function syncVictoryLeaderCapacity(victoryHud = document.getElementById("victory
   }
 }
 
-// The turn plate is the standings' left cell: the count, the cap it runs to,
-// and the age the world is in, with the whole observer sentence on its tooltip.
+// The turn plate is the standings' left cell: the world's age and turn first,
+// then the handful of setup and display choices a viewer needs at a glance.
+// The whole observer sentence remains on its tooltip.
 function hudTurnPlate() {
   const actor = state.players[SPEC ? state.current : 0] || state.players[state.player];
   const viewer = state.players[state.player] || actor;
@@ -15411,14 +15459,11 @@ function hudTurnPlate() {
   const viewLabel = playerView ? "Player view" : SPEC ? "Observing" : "Your empire";
   const mapName = titleCase(state.map.script || "pangaea");
   const speedName = titleCase(state.game_speed || "standard");
-  // A watched simulation has two speeds: the world's rules speed and the
-  // viewer's turn-to-turn pace. The turn clock should name the pace a viewer
-  // actually experiences (Lightning, Blitz, and so on); a played game falls
-  // back to its rules speed because it has no spectator pace.
   const paceOption = document.getElementById("specspeed")?.selectedOptions[0];
-  const turnSpeed = SPEC
-    ? `${paceOption?.textContent.trim() || "Blitz"} speed`
-    : `${speedName} speed`;
+  const watchPace = SPEC ? paceOption?.textContent.trim() || "Blitz" : "Manual";
+  const currentView = VIEW === "balanced" ? "Painted" : titleCase(VIEW);
+  const civCount = state.players.filter(p => !p.is_minor && !p.is_barbarian).length;
+  const cityStateCount = state.players.filter(p => p.is_minor && !p.is_barbarian).length;
   // The world's shape and its poles are only worth a word when they are not
   // the ones a world arrives with by default.
   const shapeNote = planetMap() ? " · Planet" : "";
@@ -15445,12 +15490,23 @@ function hudTurnPlate() {
     ? `Playing on past ${decided.civ || "the winner"}'s ${titleCase(decided.victory_type || "score")} victory on turn ${decided.turn}`
     : "";
   const context = identityContext + (playOnLabel ? ` · ${playOnLabel}` : "");
-  return `<section class="victory-turn" title="${escapeAttr(context)}" aria-label="${escapeAttr(context)}; turn ${state.turn} of ${turnCapLabel()}; ${turnSpeed}; ${ageLabel}">` +
-    `<span class="turn-label">Turn</span><div class="turn-count"><strong>${state.turn}</strong>` +
-    `<small class="turn-total">of ${turnCapLabel()}</small>` +
-    `<small class="turn-speed">(${turnSpeed})</small>` +
+  const plateLabel = `${context}; ${ageLabel}; turn ${state.turn} of ${turnCapLabel()}; ` +
+    `${civCount} civilizations; ${cityStateCount} city states; game speed ${speedName}; ` +
+    `current view ${currentView}; watch pace ${watchPace}`;
+  return `<section class="victory-turn" title="${escapeAttr(context)}" aria-label="${escapeAttr(plateLabel)}">` +
+    `<span class="turn-era">${ageLabel}</span>` +
+    `<div class="turn-count"><div class="turn-heading"><span class="turn-label">Turn</span>` +
     (decided ? `<small class="turn-playon">Playing on</small>` : ``) +
-    `</div><span class="turn-era">${ageLabel}</span></section>`;
+    `</div><div class="turn-progress"><strong>${state.turn}</strong>` +
+    `<small class="turn-total">/ ${turnCapLabel()}</small></div></div>` +
+    `<div class="turn-settings" aria-label="Game and display settings">` +
+    `<div class="turn-setting"><span>Civs: <b>${civCount}</b></span>` +
+    `<span>City states: <b>${cityStateCount}</b></span></div>` +
+    `<div class="turn-setting"><span>Game speed:</span><b>${speedName}</b></div>` +
+    `<div class="turn-settings-secondary">` +
+    `<div class="turn-setting"><span>Current view:</span><b>${currentView}</b></div>` +
+    `<div class="turn-setting"><span>Watch pace:</span><b>${watchPace}</b></div>` +
+    `</div></div></section>`;
 }
 
 function playerHudOverview() {
@@ -15579,19 +15635,18 @@ function exactStat(value) {
   return Math.round(n).toLocaleString();
 }
 
-function foundedReligionMarker(player, cities) {
-  if (!player.religion) return "";
-  return cities.some(city => city.religion === player.religion) ? "*" : "";
+function foundedReligionMarker(player) {
+  return player.founded_religion_exists ? "*" : "";
 }
 
-function playerHudStats(player, rank, cities) {
+function playerHudStats(player, rank) {
   const y = player.yields || {};
   const goldPerTurn = Number.isFinite(+player.gold_per_turn) ? +player.gold_per_turn : +(y.gold || 0);
   return [
     ["production", "PROD", y.production, `Production: ${exactStat(y.production)} per turn`],
     ["science", "SCI", y.science, `Science: ${exactStat(y.science)} per turn`],
     ["culture", "CUL", y.culture, `Culture: ${exactStat(y.culture)} per turn`],
-    ["faith", "FPT", y.faith, `Faith: ${exactStat(y.faith)} per turn · ${exactStat(player.faith)} banked`, foundedReligionMarker(player, cities)],
+    ["faith", "FPT", y.faith, `Faith: ${exactStat(y.faith)} per turn · ${exactStat(player.faith)} banked`, foundedReligionMarker(player)],
     ["gold", "GPT", goldPerTurn, `Net Gold: ${exactStat(goldPerTurn)} per turn · ${exactStat(player.gold)} banked`],
     ["military", "MIL", player.military, `Military strength: ${exactStat(player.military)}`],
     ["cities", "CITY", player.cities, `Cities controlled: ${exactStat(player.cities)}`],
@@ -15637,11 +15692,11 @@ function drawPlayerHud() {
   // One line per row across the masthead — who this is and their ten values
   // side by side — so a row is only as tall as its medallion: 23px, plus the
   // 2px gap under it. The fixed 44px is the heading, the column heads, the
-  // gaps and the panel's padding; the floor keeps the turn plate's count,
-  // watch pace, and age legible at a two-player table. Anything past the
+  // gaps and the panel's padding; the floor keeps the turn plate's age, count,
+  // and two settings groups legible at a two-player table. Anything past the
   // ceiling scrolls, so this is what the panel would *like* rather than what
   // it is allowed to take.
-  const requestedHeight = Math.max(106, 44 + rows * 25);
+  const requestedHeight = Math.max(144, 44 + rows * 25);
   // A newly started human game usually knows only its own row; do not stretch
   // that one-row scorecard across the whole map. Each additional known player
   // buys the table another 100px until the available masthead width caps it.
@@ -15653,7 +15708,18 @@ function drawPlayerHud() {
     mapArea.style.setProperty("--player-hud-width", `${requestedWidth}px`);
   }
   const rankById = new Map(majors.map((p, index) => [p.id, index + 1]));
-  const statsByPlayer = new Map(majors.map(p => [p.id, playerHudStats(p, rankById.get(p.id), state.cities)]));
+  const statsByPlayer = new Map(majors.map(p => [p.id, playerHudStats(p, rankById.get(p.id))]));
+  const capitalsByOwner = new Map();
+  const empireOwnerIds = new Set();
+  for (const city of state.cities || []) {
+    empireOwnerIds.add(city.owner);
+    if (city.is_capital && !capitalsByOwner.has(city.owner))
+      capitalsByOwner.set(city.owner, city);
+  }
+  for (const tile of state.map?.tiles || []) {
+    if (Number.isInteger(tile.owner)) empireOwnerIds.add(tile.owner);
+  }
+  for (const unit of state.units || []) empireOwnerIds.add(unit.owner);
   const highestByStat = new Map();
   statsByPlayer.forEach(stats => stats.forEach(([kind, , value]) => {
     const numericValue = Number(value) || 0;
@@ -15681,7 +15747,14 @@ function drawPlayerHud() {
       const color = pcol(p.id);
       const leader = p.leader || "Unknown leader";
       const rank = rankById.get(p.id);
-      const initial = (leader === "Unknown leader" ? p.civ : leader).trim().charAt(0).toUpperCase();
+      const capital = capitalsByOwner.get(p.id);
+      const hasEmpire = empireOwnerIds.has(p.id);
+      const empireTitle = hasEmpire
+        ? `Focus map on ${p.civ}'s empire`
+        : `${p.civ} has no empire left to focus`;
+      const capitalTitle = capital
+        ? `Focus map on ${p.civ}'s capital, ${capital.name}`
+        : `${p.civ} has no capital to focus`;
       const alliance = p.alliance;
       const strategy = p.ai_strategy || "";
       const strategyText = strategy ? `${titleCase(strategy)} plan` : "";
@@ -15754,7 +15827,12 @@ function drawPlayerHud() {
       return `<div class="diplomacy-card ${stateClass} ${expanded ? "expanded" : ""}${locked ? " locked" : ""}" style="--civ:${color};--civ-border:${pcol2(p.id)}" role="listitem">` +
         `<button class="lock-toggle" data-hud-action="lock" data-hud-civ="${p.id}" aria-pressed="${locked}" ` +
         `title="${lockTitle}" aria-label="${lockTitle}">${locked ? "◉" : "○"}</button>` +
-        `<button class="leader-medallion" data-hud-action="watch" data-hud-civ="${p.id}" title="${watchTitle}" aria-label="Watch ${p.civ}">${initial}</button>` +
+        `<span class="player-map-links" role="group" aria-label="${escapeAttr(p.civ)} map links">` +
+        `<button class="empire-link" data-hud-action="empire" data-hud-civ="${p.id}" ` +
+        `title="${escapeAttr(empireTitle)}" aria-label="${escapeAttr(empireTitle)}"${hasEmpire ? "" : " disabled"}></button>` +
+        `<button class="capital-link" data-hud-action="capital" data-hud-civ="${p.id}" ` +
+        `title="${escapeAttr(capitalTitle)}" aria-label="${escapeAttr(capitalTitle)}"${capital ? "" : " disabled"}>♛</button>` +
+        `</span>` +
         `<button class="diplomacy-identity" data-hud-action="dossier" data-hud-civ="${p.id}" aria-expanded="${expanded}" ` +
         `title="${expanded ? "Close" : "Open"} the ${p.civ} dossier · ${relationSummary}${agendaText}" ` +
         `aria-label="${expanded ? "Close" : "Open"} dossier for ${p.civ}, rank ${rank}, ${relationSummary}">` +
@@ -15771,8 +15849,12 @@ function drawPlayerHud() {
         `<button class="diplomacy-stats" data-hud-action="watch" data-hud-civ="${p.id}" title="${watchTitle}" aria-label="Watch ${p.civ}">` +
         stats.map(([kind, , value, label, marker = ""]) => {
           const isLeader = highestByStat.get(kind) !== 0 && Number(value || 0) === highestByStat.get(kind);
+          const markerHtml = marker
+            ? `<span class="founded-religion-marker" aria-hidden="true">${marker}</span>`
+            : "";
           return `<span class="ribbon-stat ${kind}${isLeader ? " category-leader" : ""}" ` +
-            `title="${label}${isLeader ? " · Category leader" : ""}"><b>${ribbonStat(value)}${marker}</b></span>`;
+            `title="${label}${marker ? " · Founded religion still followed" : ""}${isLeader ? " · Category leader" : ""}">` +
+            `<b>${ribbonStat(value)}${markerHtml}</b></span>`;
         }).join("") + `</button></div>`;
     }).join("") + `</div>` + hudResizeHandles("player standings");
   drawDossierWindows(majors, rankById, relationById);
@@ -15873,6 +15955,8 @@ function runHudAction(target) {
   if (!Number.isInteger(id)) return;
   if (target.dataset.hudAction === "lock") toggleSeatLock(id);
   else if (target.dataset.hudAction === "dossier") toggleCivDossier(id);
+  else if (target.dataset.hudAction === "capital") focusCapital(id);
+  else if (target.dataset.hudAction === "empire") focusEmpire(id);
   else spectatePlayer(id);
 }
 
@@ -18671,7 +18755,8 @@ function watchedEmpireSubjects(player) {
   // can spread out briefly without producing an immediate zoom snap, while a
   // scout that was never meaningful never enters the frame in the first place.
   const subjects = [...territory, ...cities, ...importantUnits];
-  const result = subjects.length ? subjects : observedPlayerAnchors();
+  const anchor = playerAnchor(player);
+  const result = subjects.length ? subjects : anchor ? [anchor] : [];
   watchedEmpireSubjectsCache = {state, player, subjects:result};
   return result;
 }
@@ -18824,7 +18909,7 @@ function unwrapObservedPoints(anchors) {
   return unwrapPointAxis(points, "y", WH(), mapWrapsY());
 }
 
-function observedViewGoal(anchors) {
+function observedViewGoal(anchors, oneEmpire = Number.isInteger(state?.view_player)) {
   if (!anchors.length) {
     const fallback = mainLandmassAnchor();
     if (!fallback) return null;
@@ -18846,7 +18931,6 @@ function observedViewGoal(anchors) {
   const spanX = maxX - minX, spanY = (maxY - minY) * YS;
   const fitX = spanX > 0 ? usableWidth / spanX : Infinity;
   const fitY = spanY > 0 ? usableHeight / spanY : Infinity;
-  const oneEmpire = Number.isInteger(state?.view_player);
   const maximum = oneEmpire ? (cinemaActive() ? 1 : 1.12)
                             : (cinemaActive() ? .76 : .82);
   const scale = Math.max(.2, Math.min(maximum, fitX, fitY));
@@ -19000,6 +19084,73 @@ function setDirector(on) {
   if (on && (!SPEC || VIEW !== "cinematic")) return;
   setCinemaMode(!!on);
 }
+// The player HUD offers two map links with deliberately different scales.
+// The crown is an exact city target; the jersey circle fits the durable shape
+// of the civilization without also changing whose fog of war is being viewed.
+function focusCapital(pid) {
+  if (!state) return;
+  const capital = state.cities.find(city => city.owner === pid && city.is_capital);
+  if (!capital) return;
+  takeCameraControl();
+  centerWorld(capital.pos);
+  if (SPEC) { selCity = capital; drawSide(); }
+}
+
+// A globe cannot use the flat map's rectangular longitude bounds. Aim its
+// centre at the empire's spherical centroid, then use the farthest owned
+// subject to choose a regional scale that keeps the whole realm on stage.
+function planetEmpireGoal(subjects) {
+  const located = subjects.map(subject => ({
+    subject,
+    point:PLANET?.cells.get(key(subject.pos))?.center,
+  })).filter(item => item.point);
+  if (!located.length) return null;
+  const sum = located.reduce((total, item) => [
+    total[0] + item.point[0], total[1] + item.point[1], total[2] + item.point[2],
+  ], [0, 0, 0]);
+  const length = Math.hypot(...sum);
+  const center = length > 1e-6
+    ? sum.map(value => value / length)
+    : located[0].point;
+  const middle = located.reduce((best, item) =>
+    dot3(item.point, center) > dot3(best.point, center) ? item : best,
+  located[0]);
+  const extent = located.reduce((largest, item) => Math.max(largest,
+    Math.acos(Math.max(-1, Math.min(1, dot3(item.point, center))))), 0);
+  const frame = observedFrameRect();
+  const padding = Math.min(72, (frame.right - frame.left) * .12,
+                           (frame.bottom - frame.top) * .16);
+  const usableRadius = Math.max(72,
+    Math.min(frame.right - frame.left, frame.bottom - frame.top) / 2 - padding);
+  // Add roughly one cell of breathing room. A chart lays angular distance
+  // straight down; a discovered globe foreshortens it at the hemisphere.
+  const angle = Math.min(Math.PI / 2, extent + .06);
+  const projectedExtent = knowsGlobe() ? Math.sin(angle) : angle;
+  const radius = Math.max(1, WW() / (2 * Math.PI));
+  const fit = usableRadius / (radius * Math.max(.12, projectedExtent));
+  const maximum = cinemaActive() ? 1 : 1.12;
+  return {pos:middle.subject.pos, scale:planetScaleClamp(Math.min(maximum, fit))};
+}
+
+function focusEmpire(pid) {
+  if (!state) return;
+  const subjects = watchedEmpireSubjects(pid);
+  if (!subjects.length) return;
+  takeCameraControl();
+  if (planetMap()) {
+    skyReturnHome();
+    const goal = planetEmpireGoal(subjects);
+    if (goal) flyCameraTo(goal.pos, goal.scale);
+    return;
+  }
+  const goal = observedViewGoal(subjects, true);
+  if (!goal) return;
+  if (REDUCED_MOTION_QUERY.matches) {
+    cam.x = goal.x; cam.y = goal.y; cam.scale = goal.scale;
+    cameraFlight = null; draw(); drawMini();
+  } else cameraFlight = goal;
+}
+
 function focusPlayer(pid) {
   if (!state) return;
   takeCameraControl();
@@ -20694,6 +20845,7 @@ document.getElementById("specpause").onclick = toggleSpecPause;
 document.getElementById("specspeed").onchange = () => {
   rememberPace(specPace()); // the pick outranks any state already in flight
   setPace({ms: paceChoice});
+  if (state) drawPlayerHud();
 };
 restorePace();
 async function spectatePlayer(player) {
