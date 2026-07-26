@@ -17320,8 +17320,12 @@ function reframeIfMapFocusBoundsChanged(before, world) {
     reframeCurrentMapFocus(world);
 }
 function cameraCenterForWorld(wx, wy, scale = cam.scale, focus = mapFocusPoint()) {
-  const vx = (focus.x - area.clientWidth / 2) / Math.max(.25, scale);
-  const vy = (focus.y - area.clientHeight / 2) / Math.max(.25, scale) / YS;
+  // Full-world framing may legitimately zoom below the interactive .25 floor.
+  // Use the actual fitted scale so this remains the inverse of screenToWorld
+  // and a moving HUD edge keeps the same ground beneath the stage center.
+  const actualScale = Math.max(.01, scale);
+  const vx = (focus.x - area.clientWidth / 2) / actualScale;
+  const vy = (focus.y - area.clientHeight / 2) / actualScale / YS;
   return [wx - (COSR * vx + SINR * vy),
           wy - (-SINR * vx + COSR * vy)];
 }

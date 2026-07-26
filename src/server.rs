@@ -5045,6 +5045,7 @@ mod tests {
             "reframeIfMapFocusBoundsChanged(priorBounds, priorFocus);"
         ));
         assert!(EMBEDDED_INDEX.contains("function cameraCenterForWorld("));
+        assert!(EMBEDDED_INDEX.contains("const actualScale = Math.max(.01, scale);"));
         assert!(EMBEDDED_INDEX.contains("function currentMapFocusWorld()"));
         assert!(EMBEDDED_INDEX.contains("function reframeCurrentMapFocus(world)"));
         assert!(EMBEDDED_INDEX.contains(
