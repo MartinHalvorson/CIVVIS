@@ -240,47 +240,37 @@ gives Ecstatic a +10% yield bonus where `Happinesses.NonFoodYieldModifier`
 ships +20. Both readings were used to "correct" already-correct engine code.
 Cite a table and a column, not a sentence.
 
-## Open: buying a tile with Gold is a missing legal action
+## Resolved: buying a tile with Gold
 
-Civilization VI lets a city buy an unowned tile within
-`CITY_MAX_BUY_PLOT_RANGE` (**3**) for Gold. **CIVVIS does not model it at
-all.** There is no `BuyPlot` variant in `Action` — the enum carries `Buy`,
-`BuyBuilding` and `BuyDistrict` and stops there — so no state in CIVVIS ever
-admits the move.
+`BuyPlot` is a complete legal action. A city may annex an explored, unowned
+plot only when it touches that city's own territory and lies through ring 3;
+`CITY_MAX_BUY_PLOT_RANGE` remains the shipped **3**. Applying the action
+revalidates the live state and price, deducts Gold, assigns both tile and city
+ownership, and immediately exposes the tile to yields, resources, Builders,
+districts and Wonders. The browser lists every affordable plot with its exact
+price and yields. Both AIs value resources, Natural Wonders and raw yields;
+the strategic AI also values the district/Wonder sites ownership unlocks.
 
-This is a **clause 1** failure, and clause 1 is the one a trained policy is
-most sensitive to. Buying a plot to beat a rival to a Luxury, to reach a
-Natural Wonder, or to open a district site is ordinary tournament play; an
-agent trained here never learns it exists, and an agent trained on the real
-game arrives with a habit CIVVIS cannot express.
+The executable-only curve was settled from real-game measurements rather than
+inferred from the unrelated Culture-border curve. A
+[measured vanilla sequence](https://www.realmsbeyond.net/forums/showthread.php?page=2&tid=8994)
+established the 1x–5x farther-tree progression, while a
+[current Gathering Storm Marathon sequence](https://www.reddit.com/r/CivVI/comments/1polncr/district_discount_and_tile_price_demo/)
+identifies the present 77-technology and 61-civic denominators and the
+rounding/discount order. CIVVIS executes:
 
-It has a visible second-order cost today. **Land Surveyors** — an Early Empire
-economic card, `tile_purchase_discount_pct: 20` — is a **no-op**. Its effect
-key is read by `Game::tile_purchase_cost`, and that function has *no callers*:
-it is `pub` and dead, in the same way `war_weariness_multiplier` was dead
-before it was wired up. A player can slot the card and receive nothing.
+    progress = floor(100 × max(completed techs / 77, completed civics / 61)) / 100
+    price = floor_to_5(speed × ring base × (1 + 4 × progress)) × (1 - discount)
 
-`tools/civvis_inert.py` cannot see this. It reports 0 of 656 effect keys
-without a consumer, because the key *is* read — one level above, the reader is
-unreachable. Reachability, not mere reference, is what the tool would have to
-check.
-
-**Why it is not simply implemented: the cost curve does not ship.** Only
-`PLOT_BUY_BASE_COST` (**50**) is in `GlobalParameters`. The progression that
-makes each subsequent tile dearer lives in the executable, exactly as the Gold
-price of swapping a policy card does. The database has a full curve for the
-*Culture* route — `CULTURE_COST_FIRST_PLOT` 10,
-`CULTURE_COST_LATER_PLOT_MULTIPLIER` 6, `CULTURE_COST_LATER_PLOT_EXPONENT` 1.3,
-giving `10 + 6 × plots^1.3`, which `process_city` already implements — and it
-is tempting that `PLOT_BUY_BASE_COST` is exactly five times
-`CULTURE_COST_FIRST_PLOT`, which would make the Gold curve
-`5 × (10 + 6 × plots^1.3)` and land the first purchase on 50.
-
-**That is a conjecture, not a shipped number, and it must not be committed as
-one.** A wrong curve is worse than a missing action here: a missing action is a
-gap an agent cannot learn, while a wrong price is a lever it learns to pull at
-the wrong time. Settling it needs a source outside this database — an install,
-or measured purchases from a real game.
+The [observed ring bases and legal range](https://civilization.fandom.com/wiki/Borders_%28Civ6%29)
+are **50** Gold through ring 2 and **75** for ring 3 (ring 1 is normally
+granted at foundation, but can exceptionally become neutral). Rounding to 5
+comes after game-speed scaling but before Land Surveyors or Expropriation;
+that otherwise easy-to-miss order is why a 20% discount produces multiples of
+4 on Marathon. Regression tests reproduce the measured 8-tech/8-civic prices
+of **180/272** and 8-tech/11-civic prices of **204/308**. The forged-price test
+also posts a zero quote and proves the engine still charges its recomputed live
+price, so the browser's quote is never trusted as authority.
 
 ## What exactness can mean
 
