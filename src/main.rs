@@ -913,6 +913,21 @@ fn main() {
                     cfg.anchors.insert(anchor.to_string());
                 }
             }
+            // Explicit per-stage credit, e.g. `--stage-credit 1,0.5,0.25,0`
+            // to keep the geometric shape but silence an anti-informative
+            // last stage. Overrides --stage-decay.
+            let credit = arg_text(&args, "--stage-credit", "");
+            if !credit.is_empty() {
+                let parsed: Vec<f64> = credit
+                    .split(',')
+                    .filter_map(|x| x.trim().parse::<f64>().ok())
+                    .collect();
+                if parsed.is_empty() {
+                    eprintln!("--stage-credit needs comma-separated numbers");
+                    std::process::exit(1);
+                }
+                cfg.stage_credit = Some(parsed);
+            }
             println!("{} games from {dir}/matches.csv\n", history.len());
             if args.iter().any(|a| a == "--stages") {
                 let info = civvis::rating::fit_stage_weights(&history, burn_in);
