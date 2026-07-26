@@ -1411,6 +1411,59 @@ whatever the military grants are worth, it is a small fraction of what the
 economy is worth.
 
 
+## 2026-07-26 — the agent picks the wrong thing to play for, by 30 points
+
+The three capability grants said this agent is not limited by what it can do.
+The other half of the question is whether it is limited by what it chooses to
+do. `ablate --mode best-lane` answers it: each cell is played once per victory
+lane with the seat committed to that lane from turn one, and once adaptively.
+The maximum over lanes is an oracle no agent could implement — it needs the
+result before the decision — so the gap to the adaptive agent bounds the whole
+of victory routing, search and priors included.
+
+`--mode best-lane --pairs 25 --players 4 --turns 500 --seed 420000`, 50 cells,
+350 games:
+
+| policy | wins | share |
+|---|---|---|
+| adaptive (the shipped agent) | 14/50 | 28.0% |
+| **committed Religion** | **29/50** | **58.0%** |
+| committed Diplomacy | 20/50 | 40.0% |
+| committed Science | 0/50 | 0.0% |
+| committed Culture | 0/50 | 0.0% |
+| committed Domination | 0/50 | 0.0% |
+| committed Score | 0/50 | 0.0% |
+| best lane per cell (oracle) | 38/50 | 76.0% |
+
+25 cells where some lane won and adaptive lost, 1 the other way, McNemar exact
+**p=0.0000**.
+
+**The headline is not the oracle.** "Some lane won 76%" is a maximum over six
+correlated runs and is optimistic by construction. The load-bearing number is a
+single fixed policy: **committing to Religion from turn one wins 58% against
+28% for adapting**, on the same 50 cells, at 25% parity. That is not a max over
+anything. The agent gives up roughly thirty points by deciding for itself.
+
+Read with the ablation, the picture is consistent and narrow: capability is
+not the constraint (three free military superpowers, all null, against a
+calibration that scored 62-0), and *routing* is, by a very large margin.
+
+**Four of the six lanes never win.** Committed Science, Culture, Domination and
+Score won 0 of 50 each. For Science that is arithmetic rather than weakness:
+`docs/AI_GUIDE.md` records unassisted science victories landing on turns 1021
+and 940, and these games stop at 500. Any agent that routes toward one of
+those four at this player count and turn budget has already lost, which is
+what the adaptive agent spends much of its time doing — 26% of its turns
+planning Conquest across 48 games that produced no domination victory at all.
+
+Caveats. Only one seat commits while three adapt, so 58% is "committing beats
+adapting", not "religion is unconditionally strongest" — if every seat
+committed they would contest the same prophet slots. The result is specific to
+4 players, 500 turns, this map profile and all six conditions enabled. And a
+single fixed lane is not the fix: it is the evidence that the routing decision
+is worth an enormous amount and is currently being made badly.
+
+
 ## 2026-07-26 — strategic_deep promoted on a pre-registered 300-map run
 
 `strategic_r20h80` passed the gate once at 120 maps by 0.2 points of Wilson
