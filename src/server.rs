@@ -123,6 +123,11 @@ pub struct Session {
     /// separately from `seat_strategy[0]` because the roster it came from is
     /// not always the roster this game is rated against.
     autoplay_strategy: Option<String>,
+    /// The last browser batch that borrowed the human seat, and how many
+    /// turns it played. A client retries the same id after a dropped socket;
+    /// remembering one completed batch makes that retry an acknowledgement,
+    /// not a second run.
+    last_autoplay_request: Option<(String, usize)>,
     /// Set once this game's result has been rated, so a winner that is
     /// stepped past more than once is only ever counted for one game.
     league_recorded: bool,
@@ -1341,6 +1346,7 @@ impl Session {
             seat_strategy,
             roster,
             autoplay_strategy: None,
+            last_autoplay_request: None,
             league_recorded: false,
             human_players,
         }
@@ -1415,6 +1421,7 @@ impl Session {
             seat_strategy,
             roster,
             autoplay_strategy: None,
+            last_autoplay_request: None,
             league_recorded,
             human_players,
         }
@@ -2941,6 +2948,38 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 respond_json(stream, &json!({"error": "a spectated game is already playing itself"}));
                 return;
             }
+            // A stale page must never hand a seat in the successor world to an
+            // agent. The identifiers are optional for old clients, but every
+            // current browser sends both with each retryable batch.
+            if parsed["seed"]
+                .as_u64()
+                .is_some_and(|seed| seed != session.game.seed)
+                || parsed["server_instance"]
+                    .as_u64()
+                    .is_some_and(|instance| instance != std::process::id() as u64)
+            {
+                drop(session);
+                respond_json(stream, &json!({"error": "the game changed before auto-play began"}));
+                return;
+            }
+            let request_id = parsed["request_id"]
+                .as_str()
+                .filter(|id| !id.is_empty() && id.len() <= 128);
+            if let Some((_, played)) = request_id.and_then(|id| {
+                session
+                    .last_autoplay_request
+                    .as_ref()
+                    .filter(|(completed, _)| completed == id)
+            }) {
+                let played = *played;
+                let mut out = session.state();
+                out["autoplayed"] = json!(played);
+                out["autoplay_strategy"] = json!(session.seated_strategy_name(0));
+                drop(session);
+                decorate(&mut out, sh);
+                respond_json(stream, &out);
+                return;
+            }
             if let Some(name) = parsed["strategy"].as_str() {
                 if let Err(error) = session.seat_strategy_at(0, name) {
                     drop(session);
@@ -2953,6 +2992,9 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 _ => parsed["turns"].as_u64().unwrap_or(1).clamp(1, u32::MAX as u64) as u32,
             };
             let played = session.autoplay(turns);
+            if let Some(request_id) = request_id {
+                session.last_autoplay_request = Some((request_id.to_string(), played));
+            }
             let mut out = session.state();
             out["autoplayed"] = json!(played);
             out["autoplay_strategy"] = json!(session.seated_strategy_name(0));
@@ -6060,6 +6102,68 @@ mod tests {
         assert!(played >= 12, "only played {played} turns of a 12-turn game");
     }
 
+    /// A browser can lose the response after the agent has already played the
+    /// turns. Retrying that POST must acknowledge the completed batch rather
+    /// than silently playing it twice.
+    #[test]
+    fn an_autoplay_batch_is_idempotent_across_a_dropped_response() {
+        let port = TcpListener::bind(("127.0.0.1", 0))
+            .expect("a free port")
+            .local_addr()
+            .unwrap()
+            .port();
+        let mut params = current();
+        params.num_players = 3;
+        params.num_city_states = 0;
+        params.width = 24;
+        params.height = 16;
+        params.seed = 20_260_726;
+        std::thread::spawn(move || super::serve_with_game(port, false, params, None, false));
+
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while http_get(port, "/status").is_none() {
+            assert!(Instant::now() < deadline, "single-player server never came up");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let stale = json!({
+            "turns": 3,
+            "strategy": "basic",
+            "request_id": "viewer-1-stale",
+            "seed": 20_260_726,
+            "server_instance": u64::from(std::process::id()) + 1,
+        })
+        .to_string();
+        let refused: Value =
+            serde_json::from_str(&http_post(port, "/autoplay", &stale).expect("stale response"))
+                .expect("stale response is JSON");
+        assert_eq!(
+            refused["error"],
+            json!("the game changed before auto-play began")
+        );
+
+        let body = json!({
+            "turns": 3,
+            "strategy": "basic",
+            "request_id": "viewer-1-autoplay-1",
+            "seed": 20_260_726,
+            "server_instance": std::process::id(),
+        })
+        .to_string();
+        let first: Value =
+            serde_json::from_str(&http_post(port, "/autoplay", &body).expect("first response"))
+                .expect("first response is JSON");
+        let retry: Value =
+            serde_json::from_str(&http_post(port, "/autoplay", &body).expect("retry response"))
+                .expect("retry response is JSON");
+
+        assert_eq!(first["autoplayed"], json!(3));
+        assert_eq!(retry["autoplayed"], json!(3));
+        assert_eq!(
+            retry["turn"], first["turn"],
+            "the retry played the completed batch a second time"
+        );
+    }
+
     /// The control that drives the two decisions above. The turn counts are
     /// the ones offered, and the loop that runs them has to be interruptible:
     /// a full game is over a minute of engine work, and a person watching it
@@ -6094,7 +6198,10 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("fillStrategies(RULES)"));
         // The choice rides on every request, so a run continued in batches
         // cannot change agent halfway through.
-        assert!(EMBEDDED_INDEX.contains("body: JSON.stringify({turns: ask, strategy})"));
+        assert!(EMBEDDED_INDEX.contains("async function autoplayBatch(turns, strategy)"));
+        assert!(EMBEDDED_INDEX.contains("request_id: requestId"));
+        assert!(EMBEDDED_INDEX.contains("AUTOPLAY_BATCH_TIMEOUT_MS = 120000"));
+        assert!(EMBEDDED_INDEX.contains("const next = await autoplayBatch(ask, strategy)"));
         // Pressing it again stops, rather than queueing a second run.
         assert!(EMBEDDED_INDEX.contains("if (autoplaying) { autoplayStop = true; return; }"));
         assert!(EMBEDDED_INDEX.contains("while (left > 0 && !autoplayStop)"));

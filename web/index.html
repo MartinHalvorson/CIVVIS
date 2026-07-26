@@ -19032,6 +19032,8 @@ document.getElementById("endturn").onclick = ev => advanceTurn(ev.shiftKey);
 // many turns are both choices, so both are selects rather than modifier keys.
 let autoplaying = false, autoplayStop = false;
 const AUTOPLAY_STRATEGY_KEY = "civvis-autoplay-strategy-v1";
+const AUTOPLAY_BATCH_TIMEOUT_MS = 120000;
+let autoplayRequestSequence = 0;
 // Fill the agent picker from the roster the server offers. Every entrant is
 // one of ours, named by the handle its leaderboard uses and carrying the
 // rating it is defending, so the choice is between strategies and not between
@@ -19065,6 +19067,38 @@ function setAutoplayNote(text) {
   const note = document.getElementById("autoplaynote");
   if (note) note.textContent = text || "";
 }
+function retryableAutoplayFetch(error) {
+  return error && (error.name === "AbortError" || error instanceof TypeError);
+}
+// A turn batch mutates the world before its large state response reaches the
+// page. If that socket is dropped, blindly posting it again would play the
+// same turns twice. Give the batch a page-unique id and retry that id once:
+// the server remembers the completed result and turns the retry into an
+// acknowledgement. The generous timeout is deliberate too — the generic
+// request budget is 15 seconds, but a late-game batch can exceed that on a
+// machine compiling several CIVVIS branches without being stuck.
+async function autoplayBatch(turns, strategy) {
+  const requestId = `${VIEWER_ID}-autoplay-${++autoplayRequestSequence}`;
+  const body = JSON.stringify({
+    turns, strategy, request_id: requestId,
+    seed: (state || {}).seed,
+    server_instance: (state || {}).server_instance,
+  });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const next = await fetchJSON("/autoplay", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body,
+      }, AUTOPLAY_BATCH_TIMEOUT_MS);
+      if (attempt) setAutoplayNote("");
+      return next;
+    } catch (error) {
+      if (attempt || !retryableAutoplayFetch(error)) throw error;
+      setAutoplayNote("Connection interrupted · confirming the completed turns…");
+    }
+  }
+}
 // Played in batches rather than in one request: a full game is over a minute
 // of engine work, and a person who asked for 250 turns still wants to watch
 // them happen and still wants to be able to stop. The batch grows only while
@@ -19091,11 +19125,7 @@ async function autoplay(turns) {
       button.textContent = `⏹ Stop · ${left} turn${left === 1 ? "" : "s"} left`;
       const started = performance.now();
       sel = null;
-      const next = await fetchJSON("/autoplay", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({turns: ask, strategy}),
-      });
+      const next = await autoplayBatch(ask, strategy);
       if (next.error) throw new Error(next.error);
       const played = +next.autoplayed || 0;
       render(next);
