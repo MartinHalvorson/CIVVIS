@@ -50451,6 +50451,44 @@ mod combat_scenarios {
     }
 
     #[test]
+    fn every_religious_unit_carries_its_shipped_strength_and_eviction() {
+        // Units.ReligiousStrength and Units.ReligionEvictPercent, which the
+        // fidelity ratchet did not reach until now. The Inquisitor's 75 is the
+        // interesting one: CIVVIS spends it through Remove Heresy rather than
+        // Spread, so it shows up as rival pressure retained at a quarter.
+        let rules = crate::rules::Rules::embedded();
+        for (unit, strength) in [
+            ("apostle", 110.0),
+            ("missionary", 100.0),
+            ("guru", 90.0),
+            ("inquisitor", 75.0),
+        ] {
+            assert_eq!(rules.units[unit].religious_strength, strength, "{unit}");
+        }
+
+        // RELIGION_SPREAD_STRENGTH_MULTIPLIER is 200: a unit spreads at twice
+        // its Religious Strength, and the Inquisitor does not spread at all.
+        assert_eq!(rules.units["apostle"].religious_spread, 220.0);
+        assert_eq!(rules.units["missionary"].religious_spread, 200.0);
+        assert_eq!(rules.units["inquisitor"].religious_spread, 0.0);
+
+        // ReligionEvictPercent 75 for the Inquisitor, through Remove Heresy.
+        let (mut g, city_pos, ring) = controlled_game(319);
+        let cid = g.found_city_for(0, city_pos, None);
+        g.cities
+            .get_mut(&cid)
+            .unwrap()
+            .pressure
+            .insert("Rival".to_string(), 400.0);
+        let inquisitor = g.spawn_unit("inquisitor", 0, city_pos);
+        g.units.get_mut(&inquisitor).unwrap().religion = Some("Ours".to_string());
+        g.players[0].religion = Some("Ours".to_string());
+        g.do_remove_heresy(0, inquisitor).unwrap();
+        assert_eq!(g.cities[&cid].pressure["Rival"], 100.0, "75% removed");
+        let _ = ring;
+    }
+
+    #[test]
     fn proselytizer_evicts_the_half_its_row_ships() {
         // APOSTLE_EVICT_ALL is 50, and CIVVIS takes the greater of the unit's
         // own eviction and the promotion's. A bare Apostle evicts a quarter;

@@ -2933,7 +2933,7 @@
       </summary>
       <div class="sec settings-sec" id="display-settings">
       <div class="utility-group">
-        <div class="view-row"><span>Display</span>
+        <div class="view-row"><span>Terrain</span>
           <select id="viewsel" aria-label="Map style">
             <option value="strategic">Strategic</option>
             <option value="balanced">Painted 2D</option>
@@ -2941,9 +2941,9 @@
           </select>
         </div>
         <div class="observer-settings" id="observer-settings">
-          <div class="view-row"><span>View as</span>
+          <div class="view-row"><span>Watch as</span>
             <select id="viewplayer" aria-label="Observation perspective">
-              <option value="spectator">Spectator · full map</option>
+              <option value="spectator">Spectator - Full Map Visablity</option>
             </select>
           </div>
           <div class="speed-row"><span>Watch pace</span>
@@ -5691,11 +5691,11 @@ function syncViewPlayer() {
   const select = document.getElementById("viewplayer");
   if (!select || !state) return;
   const majors = state.players.filter(p => !p.is_minor && !p.is_barbarian);
-  const signature = `${state.seed}|${majors.map(p => `${p.id}:${p.civ}`).join("|")}`;
+  const signature = `${state.seed}|${majors.map(p => `${p.id}:${p.civ}:${p.leader || ""}`).join("|")}`;
   if (select.dataset.signature !== signature) {
     select.dataset.signature = signature;
-    select.innerHTML = `<option value="spectator">Spectator · full map</option>` +
-      majors.map(p => `<option value="${p.id}">${p.civ} · player ${p.id + 1}</option>`).join("");
+    select.innerHTML = `<option value="spectator">Spectator - Full Map Visablity</option>` +
+      majors.map(p => `<option value="${p.id}">Player ${p.id + 1} - ${p.civ} (${p.leader || "Unknown leader"})</option>`).join("");
   }
   select.value = state.view_player === null || state.view_player === undefined
     ? "spectator" : String(state.view_player);
@@ -18942,11 +18942,12 @@ document.getElementById("cinema-follow").onclick = () => {
   else if (DIRECTOR && directorGoal?.kind === "character") setDirector(false);
 };
 
-// The map composes at the exact midpoint of the uncovered central stage. Its
-// horizontal borders are the command deck's right edge and the victory
-// tracker's left edge; each missing widget hands its side back to the screen.
-// Vertically, the player HUD's bottom edge is the top border and the screen's
-// bottom is the other. No minimap or percentage heuristic gets a vote.
+// The map composes at the exact midpoint of the uncovered central stage. On a
+// wide screen its horizontal borders are the command deck's right edge and
+// the victory tracker's left edge. When the responsive layout turns that rail
+// into a band across the top, its bottom joins the player HUD's bottom as the
+// stage's top border instead. Each missing widget hands its edge back to the
+// screen. No minimap or percentage heuristic gets a vote.
 function mapOverlayVisible(name) {
   if (OVERLAY_VISIBILITY[name] === false) return false;
   if (cinemaActive() && ["players", "minimap", "controls"].includes(name)) return false;
@@ -18975,10 +18976,23 @@ function mapFocusBounds() {
     if (sideRect.width)
       left = Math.max(0, Math.min(width, sideRect.right - areaRect.left));
   }
-  const victory = mapWidgetBox("victory", areaRect);
-  if (victory) right = Math.max(0, Math.min(width, victory.left));
   const players = mapWidgetBox("players", areaRect);
   if (players) top = Math.max(0, Math.min(height, players.bottom));
+  const victory = mapWidgetBox("victory", areaRect);
+  if (victory) {
+    // At the 1100px responsive breakpoint the rail spans the map between 8px
+    // gutters. Read the live box instead of duplicating that breakpoint so a
+    // resized or future stacked layout follows the same rule automatically.
+    const spansWidth = victory.left <= 16 && victory.right >= width - 16;
+    if (spansWidth) top = Math.max(top, Math.max(0, Math.min(height, victory.bottom)));
+    else right = Math.max(0, Math.min(width, victory.left));
+  }
+  // A custom widget layout can put the nominal right edge left of the deck,
+  // or the nominal top edge below the screen. There is no uncovered rectangle
+  // on that axis, so retain a real on-screen center instead of returning an
+  // inverted or zero-width band and aiming the camera outside the canvas.
+  if (right <= left) { left = 0; right = width; }
+  if (bottom <= top) { top = 0; bottom = height; }
   return {left, right, top, bottom};
 }
 function mapFocusPoint() {
