@@ -5,7 +5,7 @@ use std::time::Instant;
 use civvis::ai::{run_game, AdvancedAi, Ai};
 use civvis::game::{
     default_difficulty, default_speed, Game, GameOptions, LeaderPool, VictoryConditions,
-    DEFAULT_DISASTER_INTENSITY, GAME_MODES,
+    WarRecord, DEFAULT_DISASTER_INTENSITY, GAME_MODES,
 };
 use civvis::rules::Rules;
 use civvis::setup::{GameSpeed, MapPoles, MapScript, MapSize, MapTopology};
@@ -504,8 +504,19 @@ fn main() {
                         // ended in a white peace reads exactly like a game of
                         // uninterrupted peace. Count what the declarations
                         // actually achieved.
-                        let wars = g.wars.len();
-                        let (units_lost, cities_taken) = g.wars.values().fold(
+                        // `Game::wars` holds only the wars still running:
+                        // `close_war_record` removes a finished one and pushes
+                        // it to `concluded_wars`. Reading the live map alone
+                        // therefore hid every war that ended — which is every
+                        // war that was *won*, and every white peace this block
+                        // was written to make legible. Measured over eight
+                        // six-player games it saw 6 of 39 declarations, 96 of
+                        // 317 unit losses, and 0 of 13 city captures, while
+                        // `ended_in_peace` could not be anything but zero.
+                        let all_wars: Vec<&WarRecord> =
+                            g.wars.values().chain(g.concluded_wars.iter()).collect();
+                        let wars = all_wars.len();
+                        let (units_lost, cities_taken) = all_wars.iter().fold(
                             (0u32, 0u32),
                             |(units, cities), war| {
                                 (
@@ -515,16 +526,15 @@ fn main() {
                                 )
                             },
                         );
-                        let capitals_taken = g
-                            .wars
-                            .values()
+                        let capitals_taken = all_wars
+                            .iter()
                             .flat_map(|war| war.highlights.iter())
                             .filter(|highlight| highlight.kind == "capital_captured")
                             .count();
                         // How long the declarations lasted, because a war that
                         // ends in a handful of turns cannot take a walled city
                         // whatever army was pointed at it.
-                        let (turns_at_war, ended) = g.wars.values().fold(
+                        let (turns_at_war, ended) = all_wars.iter().fold(
                             (0u32, 0usize),
                             |(turns, ended), war| {
                                 let stop = war.ended.unwrap_or(g.turn);
@@ -543,7 +553,7 @@ fn main() {
                         // that only ever produces its own declaration is
                         // legible as exactly that.
                         let mut events: BTreeMap<&str, usize> = BTreeMap::new();
-                        for highlight in g.wars.values().flat_map(|war| war.highlights.iter()) {
+                        for highlight in all_wars.iter().flat_map(|war| war.highlights.iter()) {
                             *events.entry(highlight.kind.as_str()).or_default() += 1;
                         }
                         let events: Vec<String> = events
@@ -1124,5 +1134,44 @@ fn main() {
                       [rating: --dir league/ --backtest|--sweep|--stages --burn-in F --stage-decay F --anchors a,b]"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use civvis::game::{Action, Game};
+
+    /// The soak's WAR block folds over the wars it can see, and
+    /// `close_war_record` moves a finished war out of `Game::wars` into
+    /// `Game::concluded_wars`. Reading the live map alone therefore hides
+    /// every war that ended — which is every war that was *won*, and every
+    /// white peace the block exists to make legible — and makes
+    /// `ended_in_peace` structurally impossible to observe.
+    #[test]
+    fn a_settled_war_leaves_the_live_map_and_must_still_be_counted() {
+        let mut game = Game::new(2, 24, 16, 5150, 400, 0);
+        game.current = 0;
+        game.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
+        assert_eq!(game.wars.len(), 1, "the declaration must open a war");
+        assert!(game.concluded_wars.is_empty());
+
+        // Peace is gated behind a mandatory war duration; wait it out.
+        while let Some(until) = game.peace_available_at(0, 1) {
+            assert!(until > game.turn, "the gate must advance the clock");
+            game.turn = until;
+        }
+        game.apply(0, &Action::MakePeace { player: 1 }).unwrap();
+
+        assert!(
+            game.wars.is_empty(),
+            "a settled war must not remain in the live map"
+        );
+        assert_eq!(
+            game.concluded_wars.len(),
+            1,
+            "the settled war has to be read from concluded_wars or it is \
+             invisible to every count in the soak line"
+        );
+        assert!(game.concluded_wars[0].ended.is_some());
     }
 }
