@@ -6520,6 +6520,48 @@ mod strategic_resource_tests {
     }
 
     #[test]
+    fn china_trains_both_the_crouching_tiger_and_the_crossbowman() {
+        // UnitReplaces carries no row for UNIT_CHINESE_CROUCHING_TIGER, so it
+        // is an ADDITIONAL unique rather than a replacement -- the same shape
+        // as Sumeria's War Cart, Egypt's Maryannu and Scythia's Saka Horse
+        // Archer, all of which CIVVIS already had right. The two units are a
+        // real choice: the Tiger hits for 50 at range 1 and costs 140, the
+        // Crossbowman for 40 at range 2 and costs 180.
+        let mut game = strategic_game();
+        game.players[0].civ = "China".to_string();
+        // Both units go obsolete at Advanced Ballistics, and the helper grants
+        // every technology, so research back down to just Machinery.
+        game.players[0].techs.clear();
+        game.players[0].techs.insert("machinery".to_string());
+        let city = game.player_city_ids(0)[0];
+        let unit = |name: &str| Item::Unit {
+            unit: name.to_string(),
+        };
+        assert!(game.can_produce(0, city, &unit("crouching_tiger")));
+        assert!(
+            game.can_produce(0, city, &unit("crossbowman")),
+            "the Crouching Tiger does not take the Crossbowman away"
+        );
+
+        // A civilization that really does replace its base unit still cannot
+        // train it, so the suppression rule itself is intact.
+        game.players[0].civ = "Rome".to_string();
+        game.players[0].techs.clear();
+        game.players[0].techs.insert("iron_working".to_string());
+        game.players[0]
+            .strategic_resources
+            .insert("iron".to_string(), 40.0);
+        assert!(game.can_produce(0, city, &unit("legion")));
+        assert!(!game.can_produce(0, city, &unit("swordsman")));
+
+        // The two ranged units differ where the shipped columns say they do.
+        let tiger = &game.rules.units["crouching_tiger"];
+        let crossbow = &game.rules.units["crossbowman"];
+        assert_eq!((tiger.ranged_strength, tiger.range, tiger.cost), (50.0, 1, 140.0));
+        assert_eq!((crossbow.ranged_strength, crossbow.range, crossbow.cost), (40.0, 2, 180.0));
+    }
+
+    #[test]
     fn unit_build_commits_material_once_even_when_production_is_paused() {
         let mut game = strategic_game();
         // Rome replaces Swordsmen with Legions; use a civilization without a
@@ -55684,7 +55726,11 @@ mod district_mechanics {
     fn a_civilizations_unique_unit_stands_in_for_the_upgrade_target() {
         let mut game = emergency_game_with_capitals(2, 5_504, 300);
         game.players[0].civ = "Rome".to_string();
+        game.players[0].techs.clear();
         game.players[0].techs.insert("iron_working".to_string());
+        game.players[0]
+            .strategic_resources
+            .insert("iron".to_string(), 40.0);
         let (target, _, _) = game.unit_upgrade_price(0, "warrior").unwrap();
         assert_eq!(target, "legion");
         // Rome's Legion carries the shipped Swordsman upgrade path onward.
