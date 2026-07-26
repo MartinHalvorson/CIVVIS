@@ -12605,9 +12605,9 @@ pub struct GameOptions {
     pub game_modes: BTreeSet<String>,
     /// Civilizations for the leading major seats, in seat order. A setup
     /// screen picks the person's own civilization here; every seat it does
-    /// not name is filled from [`CIV_NAMES`], skipping anything already
-    /// chosen so no two majors share an identity by accident. Empty is the
-    /// stock order.
+    /// not name is filled from [`Self::leader_pool`], skipping anything
+    /// already chosen so no two majors share an identity by accident. Empty
+    /// uses that pool's stock order.
     pub civs: Vec<String>,
     /// Roster from which every unnamed seat is filled. The official Civ VI
     /// civilizations are the default; the full modeled roster is opt-in.
