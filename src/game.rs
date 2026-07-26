@@ -10572,6 +10572,36 @@ pub const DIPLOMATIC_VICTORY_POINTS: i64 = 20;
 pub const GAME_MODES: [&str; 2] = ["apocalypse", "secret_societies"];
 
 pub const EXOPLANET_DESTINATION: f64 = 50.0;
+
+/// Every civilization's standing in every victory race, each as a percentage of
+/// what that race requires. Produced by [`Game::victory_races`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct VictoryRaces {
+    pub science: f64,
+    pub science_projects: usize,
+    pub science_project_target: usize,
+    pub exoplanet_distance: f64,
+    pub techs: usize,
+    pub tech_total: usize,
+    pub culture: f64,
+    pub foreign_tourists: i64,
+    pub culture_target: i64,
+    pub civics: usize,
+    pub civic_total: usize,
+    pub domestic_tourists: i64,
+    pub rival_domestic: i64,
+    pub leading_domestic: i64,
+    pub religious: f64,
+    pub converted_civs: usize,
+    pub religious_target: usize,
+    pub diplomatic: f64,
+    pub diplomatic_points: i64,
+    pub domination: f64,
+    pub controlled_capitals: usize,
+    pub capital_target: usize,
+    pub score: f64,
+    pub score_points: i64,
+}
 pub const TOURISM_PER_VISITOR: f64 = 200.0;
 const STANDARD_DEAL_TURNS: u32 = 30;
 /// Shipped `GOVERNMENT_BASE_ANARCHY_TURNS`: returning to a government the
@@ -44600,6 +44630,213 @@ impl Game {
         // stopped existing; close those records now so they carry the turn it
         // happened rather than the turn something else touched diplomacy.
         self.sync_war_log();
+    }
+
+    /// How far each civilization has come along every victory race, as a
+    /// percentage of what that race requires.
+    ///
+    /// This is the one implementation: `obs.rs` formats it for the victory
+    /// tracker and the AI reads it to decide who is worth fighting. Keeping two
+    /// copies of "how close is this player to winning" is how a HUD and an AI
+    /// end up disagreeing about who is about to win the game.
+    pub fn victory_races(&self, pid: usize, leading_score: i64) -> VictoryRaces {
+        let player = &self.players[pid];
+        let all_majors: Vec<usize> = self
+            .players
+            .iter()
+            .filter(|candidate| !candidate.is_minor && !candidate.is_barbarian)
+            .map(|candidate| candidate.id)
+            .collect();
+        let living_majors: Vec<usize> = all_majors
+            .iter()
+            .copied()
+            .filter(|candidate| self.players[*candidate].alive)
+            .collect();
+
+        let science_projects = [
+            "launch_earth_satellite",
+            "launch_moon_landing",
+            "launch_mars_colony",
+            "exoplanet_expedition",
+        ];
+        let completed_projects = science_projects
+            .iter()
+            .filter(|project| player.science_projects.contains(**project))
+            .count();
+        let science = if player.science_projects.contains("exoplanet_expedition") {
+            75.0 + 25.0 * player.exoplanet_distance / EXOPLANET_DESTINATION
+        } else {
+            match completed_projects {
+                0 => 0.0,
+                1 => 25.0,
+                2 => 45.0,
+                _ => 65.0,
+            }
+        }
+        .clamp(0.0, 100.0);
+
+        let rival_domestic = living_majors
+            .iter()
+            .filter(|candidate| **candidate != pid && !self.same_team(pid, **candidate))
+            .map(|candidate| self.domestic_tourists(*candidate))
+            .max()
+            .unwrap_or(0);
+        let culture_target = rival_domestic + 1;
+        let leading_domestic = all_majors
+            .iter()
+            .map(|candidate| self.domestic_tourists(*candidate))
+            .max()
+            .unwrap_or(0);
+        let foreign_tourists = self.foreign_tourists(pid);
+        let culture = if culture_target > 0 {
+            100.0 * foreign_tourists as f64 / culture_target as f64
+        } else {
+            0.0
+        }
+        .clamp(0.0, 100.0);
+
+        let team_religions = self
+            .team_members(pid)
+            .into_iter()
+            .filter_map(|member| self.players[member].religion.as_deref())
+            .collect::<Vec<_>>();
+        let religious_rivals = living_majors
+            .iter()
+            .copied()
+            .filter(|candidate| player.team.is_none() || !self.same_team(pid, *candidate))
+            .collect::<Vec<_>>();
+        let converted_civs = religious_rivals
+            .iter()
+            .filter(|candidate| {
+                let cities = self.player_city_ids(**candidate);
+                !cities.is_empty()
+                    && team_religions.iter().any(|religion| {
+                        cities
+                            .iter()
+                            .filter(|city| self.city_religion(&self.cities[city]) == Some(*religion))
+                            .count()
+                            * 2
+                            > cities.len()
+                    })
+            })
+            .count();
+        let religious_target = religious_rivals.len();
+        let religious = if religious_target > 0 {
+            100.0 * converted_civs as f64 / religious_target as f64
+        } else {
+            0.0
+        };
+
+        let capital_target = all_majors.len();
+        let controlled_capitals = if player.team.is_some() {
+            all_majors
+                .iter()
+                .filter(|original_owner| {
+                    let capital = self
+                        .cities
+                        .values()
+                        .find(|city| city.is_capital && city.original_owner == **original_owner);
+                    if **original_owner == pid || self.same_team(pid, **original_owner) {
+                        capital.is_some_and(|capital| capital.owner == **original_owner)
+                    } else {
+                        capital.is_none_or(|capital| capital.owner != **original_owner)
+                    }
+                })
+                .count()
+        } else {
+            all_majors
+                .iter()
+                .filter(|original_owner| {
+                    self.cities
+                        .values()
+                        .find(|city| city.is_capital && city.original_owner == **original_owner)
+                        .map_or(
+                            **original_owner == pid || !self.players[**original_owner].alive,
+                            |capital| capital.owner == pid,
+                        )
+                })
+                .count()
+        };
+        let domination = if capital_target > 0 {
+            100.0 * controlled_capitals as f64 / capital_target as f64
+        } else {
+            0.0
+        };
+
+        let diplomatic_points = player.dvp.max(0);
+        let diplomatic =
+            (100.0 * diplomatic_points as f64 / DIPLOMATIC_VICTORY_POINTS.max(1) as f64)
+                .clamp(0.0, 100.0);
+
+        let score_points = self.team_score_rank_key(pid).0;
+        let clock = self
+            .turn_limit()
+            .filter(|limit| *limit > 0 && *limit < 100_000)
+            .map_or(1.0, |limit| (self.turn as f64 / limit as f64).clamp(0.0, 1.0));
+        let score = if leading_score > 0 {
+            (100.0 * clock * score_points.max(0) as f64 / leading_score as f64).clamp(0.0, 100.0)
+        } else {
+            0.0
+        };
+
+        VictoryRaces {
+            science,
+            science_projects: completed_projects,
+            science_project_target: science_projects.len(),
+            exoplanet_distance: player.exoplanet_distance,
+            techs: player.techs.len(),
+            tech_total: self.rules.techs.len(),
+            culture,
+            foreign_tourists,
+            culture_target,
+            civics: player.civics.len(),
+            civic_total: self.rules.civics.len(),
+            domestic_tourists: self.domestic_tourists(pid),
+            rival_domestic,
+            leading_domestic,
+            religious,
+            converted_civs,
+            religious_target,
+            diplomatic,
+            diplomatic_points,
+            domination,
+            controlled_capitals,
+            capital_target,
+            score,
+            score_points,
+        }
+    }
+
+    /// How close `pid` is to winning by any enabled race another empire could
+    /// actually interfere with, as a percentage.
+    ///
+    /// Score is deliberately excluded. It is not a race to a threshold but a
+    /// standing measured when the clock runs out, so its meter fills for
+    /// everybody as the game ages and folding it in would turn this back into
+    /// "who has the biggest empire" — the signal the AI already had.
+    pub fn victory_threat(&self, pid: usize) -> f64 {
+        if !self.victory_eligible(pid) {
+            return 0.0;
+        }
+        let leading_score = self
+            .players
+            .iter()
+            .filter(|p| !p.is_minor && !p.is_barbarian)
+            .map(|p| self.team_score_rank_key(p.id).0)
+            .max()
+            .unwrap_or(0);
+        let races = self.victory_races(pid, leading_score);
+        let enabled = &self.victory_conditions;
+        [
+            (enabled.science, races.science),
+            (enabled.culture, races.culture),
+            (enabled.religious, races.religious),
+            (enabled.diplomatic, races.diplomatic),
+            (enabled.domination, races.domination),
+        ]
+        .into_iter()
+        .filter_map(|(on, progress)| on.then_some(progress))
+        .fold(0.0_f64, f64::max)
     }
 
     fn check_domination(&mut self) {
