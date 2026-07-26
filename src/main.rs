@@ -496,6 +496,64 @@ fn main() {
                             " ARMY {army} obsolete={obsolete} ancient={ancient} era={}",
                             g.world_era
                         ));
+                        // A war nobody ever wins is as invisible as an army
+                        // nobody modernizes: the standings only show who was
+                        // left standing, so a game where every declaration
+                        // ended in a white peace reads exactly like a game of
+                        // uninterrupted peace. Count what the declarations
+                        // actually achieved.
+                        let wars = g.wars.len();
+                        let (units_lost, cities_taken) = g.wars.values().fold(
+                            (0u32, 0u32),
+                            |(units, cities), war| {
+                                (
+                                    units + war.losses.values().map(|side| side.units).sum::<u32>(),
+                                    cities
+                                        + war.losses.values().map(|side| side.cities).sum::<u32>(),
+                                )
+                            },
+                        );
+                        let capitals_taken = g
+                            .wars
+                            .values()
+                            .flat_map(|war| war.highlights.iter())
+                            .filter(|highlight| highlight.kind == "capital_captured")
+                            .count();
+                        // How long the declarations lasted, because a war that
+                        // ends in a handful of turns cannot take a walled city
+                        // whatever army was pointed at it.
+                        let (turns_at_war, ended) = g.wars.values().fold(
+                            (0u32, 0usize),
+                            |(turns, ended), war| {
+                                let stop = war.ended.unwrap_or(g.turn);
+                                (
+                                    turns + stop.saturating_sub(war.started),
+                                    ended + war.ended.is_some() as usize,
+                                )
+                            },
+                        );
+                        let mean_war = if wars > 0 {
+                            turns_at_war as f64 / wars as f64
+                        } else {
+                            0.0
+                        };
+                        // Every kind of thing the declarations produced, so a war
+                        // that only ever produces its own declaration is
+                        // legible as exactly that.
+                        let mut events: BTreeMap<&str, usize> = BTreeMap::new();
+                        for highlight in g.wars.values().flat_map(|war| war.highlights.iter()) {
+                            *events.entry(highlight.kind.as_str()).or_default() += 1;
+                        }
+                        let events: Vec<String> = events
+                            .iter()
+                            .map(|(kind, count)| format!("{kind}:{count}"))
+                            .collect();
+                        flags.push_str(&format!(
+                            " WAR {wars} units_lost={units_lost} cities_taken={cities_taken} \
+                             capitals_taken={capitals_taken} mean_turns={mean_war:.0} \
+                             ended_in_peace={ended} events=[{}]",
+                            events.join(" ")
+                        ));
                         Some(format!(
                             "seed {:3}  t{:<4} {:<10} {:<8} majors_alive={}/{} cities={:<2} cs_alive={}/{} [{:.2}s]{}",
                             seed,
