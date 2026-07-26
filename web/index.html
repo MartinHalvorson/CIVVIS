@@ -2292,6 +2292,87 @@
     #playerhud .empire-link { width: 20px; height: 20px; }
   }
 
+  /* Viewport breakpoints choose where the instruments start, but every one of
+     these boxes can also be resized by the viewer. The data attributes below
+     are written from each box's live ResizeObserver measurement, so its inner
+     layout follows the space it actually has instead of the screen it happens
+     to be floating over. */
+  #playerhud[data-type-size="compact"] {
+    grid-template-columns: clamp(132px, 32%, 148px) minmax(0, 1fr);
+    --hud-identity-column: minmax(250px, 46%); --hud-column-gap: 4px;
+  }
+  #playerhud[data-type-size="compact"] > .player-standings {
+    overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain;
+    scrollbar-color: #476057 transparent; scrollbar-width: thin;
+  }
+  #playerhud[data-type-size="compact"] > .player-standings::-webkit-scrollbar { height: 4px; }
+  #playerhud[data-type-size="compact"] > .player-standings::-webkit-scrollbar-thumb {
+    border-radius: 4px; background: #476057;
+  }
+  #playerhud[data-type-size="compact"] > .player-standings:focus-visible {
+    outline: 1px solid #d7b66a70; outline-offset: -1px; border-radius: 6px;
+  }
+  /* Ten complete numeric columns have a real minimum width. When a custom or
+     phone-sized box cannot supply it, keep a readable type floor and scroll the
+     table inside its own panel instead of crushing or spilling its cells. */
+  #playerhud[data-type-size="compact"] .ribbon-stat-heading,
+  #playerhud[data-type-size="compact"] .diplomacy-ribbon { min-width: 720px; }
+  #playerhud[data-type-size="roomy"] {
+    grid-template-columns: 148px minmax(0, 1fr);
+    --hud-identity-column: minmax(350px, 40%); --hud-column-gap: 7px;
+    --hud-row-height: 30px;
+  }
+
+  /* The victory tracker has two useful shapes. A rail gives every path the
+     whole width; a short wide box gives every path a column. ResizeObserver
+     selects between them from the box's own aspect ratio, including after a
+     dragged edge crosses the threshold on a wide desktop. */
+  #victoryhud[data-type-shape="wide"] .hud-rail {
+    overflow-x: auto; overflow-y: hidden;
+  }
+  #victoryhud[data-type-shape="wide"] .victory-ribbon {
+    min-height: 0; width: max(100%, var(--victory-min-width, 514px));
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-columns: repeat(var(--victory-rows, 6), minmax(112px, 1fr));
+  }
+  #victoryhud[data-type-shape="wide"] .victory-track {
+    display: block; border-top: 0; border-left: 1px solid #ffffff0b;
+  }
+  #victoryhud[data-type-shape="wide"] .victory-track:first-child { border-left-color: transparent; }
+  #victoryhud[data-type-shape="rail"] .hud-rail {
+    overflow-x: hidden; overflow-y: auto;
+  }
+  #victoryhud[data-type-shape="rail"] .victory-ribbon {
+    min-height: max(100%, var(--victory-min-height, 396px)); width: auto;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: repeat(var(--victory-rows, 6), minmax(64px, 1fr));
+  }
+  #victoryhud[data-type-shape="rail"] .victory-track {
+    display: flex; border-left: 0; border-top: 1px solid #ffffff0b;
+  }
+  #victoryhud[data-type-shape="rail"] .victory-track:first-child { border-top-color: transparent; }
+
+  /* A dossier's former four-column grid followed the viewport, so a 300px
+     dossier on a 4K screen still tried to render four 70px ledgers. These
+     bands follow the dossier window itself and preserve every section by
+     reflowing it into one, two, or four useful reading columns. */
+  .dossier-window[data-type-size="compact"] .dossier-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .dossier-window[data-type-size="standard"] .dossier-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .dossier-window[data-type-size="roomy"] .dossier-grid {
+    grid-template-columns: 1.1fr .85fr 1fr 1.15fr;
+  }
+  #side[data-type-size="roomy"] {
+    --type-small: 12px; --type-secondary: 13px;
+    --type-control: 14px; --type-body: 15px;
+  }
+  /* A target that still cannot fit at the shared 9px readability floor keeps
+     its complete wording in the native tooltip and clips only as a last resort. */
+  [data-fit-clipped="true"] { overflow: hidden; text-overflow: ellipsis; }
+
   /* Neutral charcoal shell. Green remains a semantic game color, but it no
      longer tints the interface's supposedly black surfaces. Keeping these
      palette overrides together also makes the visual direction independent
@@ -4567,6 +4648,193 @@ const HUD_RESIZE_EDGES = [
   ["ne", "top-right corner"], ["se", "bottom-right corner"],
   ["sw", "bottom-left corner"], ["nw", "top-left corner"],
 ];
+
+// Text belongs to the box that contains it, not to the viewport. Each rule
+// gives a one-line text cell a readable floor and a generous ceiling. The
+// fitter measures the live cell at that ceiling, then uses the largest size
+// that keeps both dimensions inside it. Wrapped prose is deliberately absent:
+// it keeps the shared body scale and lets its panel scroll naturally.
+const RESPONSIVE_TEXT_RULES = [
+  {selector:"#side .tagline span", min:12, max:15},
+  {selector:"#side .section-title > span:last-child", min:10, max:13},
+  {selector:"#side .event-scope", min:9, max:12},
+  {selector:"#side .sec h2", min:10, max:12},
+  {selector:"#specpause", min:11, max:15},
+  {selector:"#restart-sim .lbl", min:10, max:14},
+  {selector:"#restart-sim .sub", min:9, max:11},
+  {selector:"#playerhud .ribbon-heading > span", min:10, max:14},
+  {selector:"#playerhud .diplomacy-identity-head span", min:9, max:11},
+  {selector:"#playerhud .diplomacy-stat-head span", min:9, max:11},
+  {selector:"#playerhud .diplomacy-rank", min:9, max:11},
+  {selector:"#playerhud .diplomacy-civ", min:9, max:13},
+  {selector:"#playerhud .diplomacy-leader-name", min:9, max:13},
+  {selector:"#playerhud .diplomacy-player", min:9, max:13},
+  {selector:"#playerhud .diplomacy-elo-value", min:9, max:13},
+  {selector:"#playerhud .diplomacy-expected-value", min:9, max:13},
+  {selector:"#playerhud .diplomacy-strategy .ai-plan", min:9, max:12},
+  {selector:"#playerhud .ribbon-stat b", min:10, max:15},
+  {selector:"#playerhud .player-map-links button", min:9, max:12},
+  {selector:"#playerhud .turn-era", min:12, max:17},
+  {selector:"#playerhud .turn-label", min:11, max:14},
+  {selector:"#playerhud .victory-turn strong", min:24, max:34},
+  {selector:"#playerhud .turn-total", min:10, max:14},
+  {selector:"#playerhud .turn-setting > span, #playerhud .turn-setting > b", min:9, max:13},
+  {selector:"#victoryhud > .hud-section-heading > span", min:10, max:14},
+  {selector:"#victoryhud .victory-heading b", min:10, max:14},
+  {selector:"#victoryhud .victory-subheading span", min:9, max:11},
+  {selector:"#victoryhud .victory-civ", min:10, max:14},
+  {selector:"#victoryhud .victory-value", min:10, max:14},
+  {selector:".dossier-window .dossier-title", min:11, max:18},
+  {selector:".dossier-window .dossier-tag", min:9, max:11},
+  {selector:".dossier-window .dossier-btn", min:10, max:14},
+  {selector:".dossier-window .dossier-section h4", min:9, max:12},
+  {selector:".dossier-window .dossier-row > span, .dossier-window .dossier-row > b", min:10, max:14},
+  {selector:".dossier-window .dossier-track-line > span, .dossier-window .dossier-track-line > b", min:9, max:13},
+  {selector:".dossier-window .force-chip", min:9, max:12},
+  {selector:".minimap-frame .minimap-label > span", min:9, max:13},
+  {selector:".minimap-frame .minimap-hint", min:9, max:11},
+  {selector:"#pediahead b, #treetitle", min:14, max:22},
+  {selector:"#pedialist button, #treecols .tnode", min:10, max:15},
+  {selector:".empire-title, .diplo-title, .city-head-name, .trade-title, .capture-title", min:17, max:28},
+  {selector:".empire-card-title, .leader-name, .build-name, .deal-name", min:11, max:16},
+];
+const RESPONSIVE_TYPE_ROOT_SELECTOR = [
+  "#side", "#playerhud", "#victoryhud", ".dossier-window", ".minimap-frame",
+  "#pedia", "#tree", "#empire", "#diplomacy", "#cityscreen", "#trade", "#capture-choice",
+].join(",");
+const responsiveTypeRoots = new Set();
+let responsiveTypeFrame = 0;
+
+function responsiveTypeBand(root, width) {
+  if (root.id === "playerhud") return width < 760 ? "compact" : width >= 1250 ? "roomy" : "standard";
+  if (root.classList.contains("dossier-window"))
+    return width < 480 ? "compact" : width >= 900 ? "roomy" : "standard";
+  if (root.id === "side") return width < 330 ? "compact" : width >= 370 ? "roomy" : "standard";
+  if (root.id === "victoryhud") return width < 220 ? "compact" : width >= 420 ? "roomy" : "standard";
+  return width < 420 ? "compact" : width >= 900 ? "roomy" : "standard";
+}
+
+function syncResponsiveTypeBox(root, width, height) {
+  root.dataset.typeSize = responsiveTypeBand(root, width);
+  if (root.id === "victoryhud") {
+    const ratio = width / Math.max(1, height);
+    root.dataset.typeShape = width >= 300 && (ratio >= 2.15 || (width >= 520 && height <= 260))
+      ? "wide" : "rail";
+  }
+}
+
+function scheduleResponsiveType(root) {
+  if (!root?.isConnected) return;
+  responsiveTypeRoots.add(root);
+  if (!responsiveTypeFrame) responsiveTypeFrame = requestAnimationFrame(fitResponsiveType);
+}
+
+function responsiveTextTargets(root) {
+  const targets = new Map();
+  for (const rule of RESPONSIVE_TEXT_RULES) {
+    if (root.matches?.(rule.selector)) targets.set(root, rule);
+    for (const element of root.querySelectorAll(rule.selector)) targets.set(element, rule);
+  }
+  return targets;
+}
+
+// All maximum-size writes happen before the first read, and every fitted write
+// happens after the last read. That batching keeps a 12-player update to two
+// layouts instead of forcing one layout per cell.
+function fitResponsiveType() {
+  responsiveTypeFrame = 0;
+  const targets = new Map();
+  for (const root of responsiveTypeRoots) {
+    if (!root.isConnected) continue;
+    for (const [element, rule] of responsiveTextTargets(root)) targets.set(element, rule);
+  }
+  responsiveTypeRoots.clear();
+  for (const [element, rule] of targets) element.style.fontSize = `${rule.max}px`;
+  const fitted = [];
+  for (const [element, rule] of targets) {
+    if (!element.isConnected || !element.textContent.trim()) continue;
+    const width = element.clientWidth, height = element.clientHeight;
+    if (width < 1 || height < 1) continue;
+    const availableHeight = Math.max(height, element.parentElement?.clientHeight || 0);
+    // Inline line boxes commonly report one extra device-rounded pixel even
+    // when every glyph is visible. Treat only a larger difference as real
+    // overflow so that harmless rounding cannot ratchet text below its ceiling.
+    const widthFit = element.scrollWidth > width + 1 ? width / element.scrollWidth * .985 : 1;
+    const heightFit = element.scrollHeight > availableHeight + 1
+      ? availableHeight / element.scrollHeight * .985 : 1;
+    const ideal = rule.max * Math.min(1, widthFit, heightFit);
+    const size = Math.max(rule.min, Math.floor(ideal * 4) / 4);
+    fitted.push({element, size, clipped:size === rule.min && ideal < rule.min});
+  }
+  for (const {element, size, clipped} of fitted) {
+    element.style.fontSize = `${size}px`;
+    if (clipped) element.dataset.fitClipped = "true";
+    else delete element.dataset.fitClipped;
+  }
+}
+
+const responsiveTypeSizeObserver = typeof ResizeObserver === "function"
+  ? new ResizeObserver(entries => {
+      for (const entry of entries) {
+        const {width, height} = entry.contentRect;
+        syncResponsiveTypeBox(entry.target, width, height);
+        scheduleResponsiveType(entry.target);
+      }
+    })
+  : null;
+
+function registerResponsiveTypeRoot(root) {
+  if (!root || root.dataset.responsiveTypeObserved === "true") return;
+  root.dataset.responsiveTypeObserved = "true";
+  const rect = root.getBoundingClientRect();
+  syncResponsiveTypeBox(root, rect.width, rect.height);
+  responsiveTypeSizeObserver?.observe(root);
+  scheduleResponsiveType(root);
+}
+
+for (const root of document.querySelectorAll(RESPONSIVE_TYPE_ROOT_SELECTOR))
+  registerResponsiveTypeRoot(root);
+
+// Live HUDs and ledgers replace their text nodes as the world changes. Follow
+// those replacements explicitly; observing attributes would also see the
+// fitter's own style writes and create a feedback loop, so only text and child
+// mutations belong here.
+const responsiveTypeMutationObserver = new MutationObserver(records => {
+  const changedRoots = new Set();
+  for (const record of records) {
+    const owner = record.target.nodeType === Node.ELEMENT_NODE
+      ? record.target.closest?.(RESPONSIVE_TYPE_ROOT_SELECTOR)
+      : record.target.parentElement?.closest(RESPONSIVE_TYPE_ROOT_SELECTOR);
+    if (owner) changedRoots.add(owner);
+    for (const node of record.addedNodes) {
+      if (node.nodeType !== Node.ELEMENT_NODE) continue;
+      if (node.matches(RESPONSIVE_TYPE_ROOT_SELECTOR)) registerResponsiveTypeRoot(node);
+      for (const root of node.querySelectorAll?.(RESPONSIVE_TYPE_ROOT_SELECTOR) || [])
+        registerResponsiveTypeRoot(root);
+    }
+  }
+  for (const root of changedRoots) scheduleResponsiveType(root);
+});
+for (const root of [document.getElementById("side"), document.getElementById("playerhud"),
+                    document.getElementById("victoryhud"), document.getElementById("dossier-windows"),
+                    document.getElementById("pedia"), document.getElementById("tree"),
+                    document.getElementById("empire"), document.getElementById("diplomacy"),
+                    document.getElementById("cityscreen"), document.getElementById("trade"),
+                    document.getElementById("capture-choice")]) {
+  if (root) responsiveTypeMutationObserver.observe(root, {subtree:true, childList:true, characterData:true});
+}
+
+// ResizeObserver is available in every supported browser. This fallback keeps
+// the largest-fit pass correct in older embedded webviews without trying to
+// emulate box observation.
+if (!responsiveTypeSizeObserver)
+  window.addEventListener("resize", () => {
+    for (const root of document.querySelectorAll(RESPONSIVE_TYPE_ROOT_SELECTOR)) {
+      const rect = root.getBoundingClientRect();
+      syncResponsiveTypeBox(root, rect.width, rect.height);
+      scheduleResponsiveType(root);
+    }
+  });
 
 function hudResizeHandles(label) {
   return HUD_RESIZE_EDGES.map(([edge, description]) =>
@@ -15970,7 +16238,7 @@ function drawPlayerHud() {
   const html =
     `<button class="overlay-close" type="button" data-overlay-close="players" aria-label="Hide player standings; restore them in Display settings" title="Hide player standings · restore in Display settings">✕</button>` +
     hudTurnPlate() +
-    `<div class="player-standings">` +
+    `<div class="player-standings" tabindex="0" aria-label="Player statistics; scroll horizontally for every column">` +
     `<div class="ribbon-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
     `aria-label="Move player stats; use arrow keys or drag" title="Drag to move · arrow keys also move" id="player-stats-title">` +
     `<span>Player stats</span></div>` +
