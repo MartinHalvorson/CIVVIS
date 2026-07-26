@@ -13,6 +13,7 @@
 //! randomly.
 use crate::action_space::{kind_name, legal_encoded};
 use crate::ai::{AdvancedAi, Ai, PlanReport, Weights};
+use crate::decision_features::{decision_features, WIDTH as DECISION_WIDTH};
 use crate::evolve::features;
 use crate::game::{Action, Game};
 use crate::valuenet::ValueNet;
@@ -26,6 +27,16 @@ pub struct PolicyAi {
     pub depth: usize,
     /// Minimum value gain required to commit an action.
     pub margin: f64,
+    /// Score candidates with `decision_features` and a net trained on it,
+    /// instead of `evolve::features` and a 25-wide net.
+    ///
+    /// This is the whole point of the wider vector: the 25 aggregates are
+    /// unchanged by 96% of the candidates this agent clones, so its
+    /// computed gain is exactly zero and it declines to act. The 34-wide
+    /// vector moves for 69% of unit moves. Whether that turns into better
+    /// *ranking* is a separate question from whether it can rank at all,
+    /// and is what an evaluation of `policy_wide` measures.
+    pub wide: bool,
     /// Restrict the net to action kinds where a one-ply value delta is
     /// meaningful. Multi-turn commitments (production, research, purchases)
     /// look near-free to a one-ply evaluator, which is how an unrestricted
@@ -76,7 +87,8 @@ impl PolicyAi {
     pub fn with_weights(weights: Weights) -> PolicyAi {
         PolicyAi {
             fallback: AdvancedAi::with_weights(weights),
-            net: ValueNet::load("evolved"),
+            net: ValueNet::load_width("evolved", crate::evolve::FEATURE_WIDTH),
+            wide: false,
             width: 48,
             depth: 10,
             margin: 1e-4,
@@ -88,9 +100,23 @@ impl PolicyAi {
         self.net.is_some()
     }
 
+    /// Load the wider net and score with the wider vector.
+    pub fn with_decision_features(mut self) -> PolicyAi {
+        self.net = ValueNet::load_width("evolved", DECISION_WIDTH);
+        self.wide = true;
+        self
+    }
+
     fn value(&self, g: &Game, pid: usize) -> f64 {
         match &self.net {
-            Some(net) => net.eval(&features(g, pid)),
+            Some(net) => {
+                let x = if self.wide {
+                    decision_features(g, pid)
+                } else {
+                    features(g, pid)
+                };
+                net.eval(&x)
+            }
             None => 0.0,
         }
     }
