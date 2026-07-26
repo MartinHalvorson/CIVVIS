@@ -4707,6 +4707,12 @@ mod tests {
                 "map overlay {overlay} should have a close control"
             );
         }
+        assert!(
+            EMBEDDED_INDEX.contains(
+                r#"body.sidebar-hidden .overlay-close[data-overlay-close="controls"] { display: none; }"#
+            ),
+            "map controls should not offer dismissal while their restore switch is hidden"
+        );
         // The switches are a two-column grid, and the order they are written in
         // follows the map: the rail read top to bottom — standings, victory
         // tracker, world minimap — and then the map controls, which are the one
@@ -6178,7 +6184,13 @@ mod tests {
             );
         }
         // Both purchases the client never offered, and production itself.
-        for action in ["\"buy\"", "\"buy_building\"", "\"buy_district\"", "\"produce\""] {
+        for action in [
+            "\"buy\"",
+            "\"buy_building\"",
+            "\"buy_district\"",
+            "\"buy_plot\"",
+            "\"produce\"",
+        ] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("a.type === {action}")),
                 "the city screen does not offer {action}"
