@@ -861,6 +861,9 @@ fn setup(check: &mut Check) {
         if spec.barb_force_scale <= 0.0 {
             check.error(&subject, "scales barbarian forces to nothing");
         }
+        if spec.barb_spawn_scale <= 0.0 {
+            check.error(&subject, "stops barbarian camps spawning entirely");
+        }
     }
 
     let speeds = check.rules.speeds.clone();

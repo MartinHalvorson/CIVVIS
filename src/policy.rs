@@ -30,6 +30,26 @@ pub struct PolicyAi {
     /// Score candidates with `decision_features` and a net trained on it,
     /// instead of `evolve::features` and a 25-wide net.
     ///
+    /// **Measured at 14.2% against `advanced` — an Elo-equivalent of
+    /// −313.** Turning this on is a large regression, and the reason is
+    /// the most useful thing this agent has produced.
+    ///
+    /// With the 25-wide vector the computed gain is exactly zero on 96% of
+    /// candidates, so the agent declines to act and falls through to the
+    /// scripted layer; that is why it measured at parity. The wider vector
+    /// lets it distinguish candidates, so it commits — and its ranking is
+    /// much worse than the scripted doctrine it displaces. The blindness
+    /// was not the reason it failed to win. It was the reason it failed to
+    /// lose.
+    ///
+    /// The mechanism is standard and worth naming: the net is trained on
+    /// states that `advanced` self-play visits, and greedily maximising it
+    /// one ply at a time walks straight off that distribution, where its
+    /// estimate carries no information. Fixing it needs the training
+    /// distribution to follow the policy (iterated self-play), or the
+    /// policy to be kept near the one that generated the data, or search
+    /// rather than a greedy argmax — not a wider input.
+    ///
     /// This is the whole point of the wider vector: the 25 aggregates are
     /// unchanged by 96% of the candidates this agent clones, so its
     /// computed gain is exactly zero and it declines to act. The 34-wide

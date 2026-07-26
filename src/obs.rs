@@ -1351,7 +1351,7 @@ mod tests {
             previous = at;
         }
         assert!(INDEX.contains(".tip-primary, .tip-unit"));
-        assert!(INDEX.contains("font-size: 13px; font-weight: 850"));
+        assert!(INDEX.contains("font-size: var(--type-body); font-weight: 850"));
         assert!(INDEX.contains("Rome:\"Roman\""));
         assert!(INDEX.contains(
             "<span class=\"tip-unit\">● ${civAdjective(civ)} ${titleCase(unit.type)}"
