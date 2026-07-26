@@ -303,7 +303,10 @@ fn isolationism_closes_the_frontier_and_pays_at_home() {
         !game.can_produce_unit(0, city, "settler", true, 0.0),
         "Isolationism forbids training Settlers"
     );
-    assert_eq!(game.policy_effect(0, "domestic_trade_food"), 2.0);
+    // The shipped card pays +3 of all three yields on a domestic route.
+    assert_eq!(game.policy_effect(0, "domestic_trade_food"), 3.0);
+    assert_eq!(game.policy_effect(0, "domestic_trade_production"), 3.0);
+    assert_eq!(game.policy_effect(0, "domestic_trade_gold"), 3.0);
     assert_eq!(game.policy_effect(0, "policy_trade_route_capacity"), 1.0);
 }
 

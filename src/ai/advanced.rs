@@ -7255,7 +7255,7 @@ impl AdvancedAi {
                             (GrandStrategy::Science, "wat")
                             | (GrandStrategy::Culture, "cathedral")
                             | (GrandStrategy::Diplomacy, "pagoda")
-                            | (GrandStrategy::Conquest, "crusade")
+                            | (GrandStrategy::Conquest, "just_war")
                             | (GrandStrategy::Expansion, "religious_colonization")
                             | (GrandStrategy::Religion, "holy_order") => 300,
                             (GrandStrategy::Conquest, "meeting_house")

@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Check that every simulated turn reaches the viewer as one complete frame.
+"""Check Martin's requirement that every simulated turn shows one complete frame.
 
-Every turn the spectator plays is owed at least one frame, and that frame has
-to carry the whole turn — player stats, victory tracker, map and units, all
-from the same snapshot. The server keeps the first half of that promise by
-holding a finished turn until an active viewer has been handed it, whatever
-pace the turn was played at. This checks that it is actually being kept.
+Every turn the spectator plays is owed at least one frame, and that frame must
+carry the whole updated turn — HUD, player stats, victory tracker, map, minimap,
+units, sidebars, controls, and every other turn-bound surface — from the same
+snapshot. The server holds a finished turn until an active viewer acknowledges
+painting the exact snapshot it was handed, whatever pace the turn was played
+at. This checks that Martin's simulation requirement is actually being kept.
 
 Two modes:
 

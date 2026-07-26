@@ -4042,7 +4042,7 @@ mod belief_runtime_tests {
         assert_eq!(game.players[0].envoys, vec![(1, 1)]);
 
         let warrior = game.spawn_unit("warrior", 0, game.cities[&cities[1]].pos);
-        game.players[0].religion_beliefs = vec!["crusade".to_string()];
+        game.players[0].religion_beliefs = vec!["just_war".to_string()];
         assert_eq!(game.unit_unembarked_strength(&game.units[&warrior]), 30.0);
         game.relocate(warrior, game.cities[&cities[0]].pos);
         game.players[0].religion_beliefs = vec!["defender_of_the_faith".to_string()];
@@ -6881,7 +6881,12 @@ mod espionage_runtime_tests {
         // Shipped -15 base, -5 per Spy level, off a full-Loyalty city.
         assert_eq!(game.cities[&target].loyalty, 80.0);
         game.apply_spy_mission_effect(spy_id, &mission("neutralize_governor", target_center), true);
-        assert!(game.players[1].governor_roster["pingala"].disabled_until > game.turn);
+        // Shipped ESPIONAGE_NEUTRALIZE_GOVERNOR_BASE_TURNS is a flat 6; unlike
+        // Foment Unrest and Fabricate Scandal it ships no per-level row.
+        assert_eq!(
+            game.players[1].governor_roster["pingala"].disabled_until,
+            game.turn + game.standard_duration(6)
+        );
         game.cities.get_mut(&target).unwrap().queue = vec![Item::Project {
             project: "launch_earth_satellite".to_string(),
         }];
@@ -6951,7 +6956,11 @@ mod espionage_runtime_tests {
         game.spies.get_mut(&spy_id).unwrap().city = Some(city_state);
         game.spies.get_mut(&spy_id).unwrap().mission = None;
         game.apply_spy_mission_effect(spy_id, &scandal, true);
-        assert_eq!(game.envoys_at(1, minor), 2);
+        // Shipped ESPIONAGE_FABRICATE_SCANDAL_BASE_ENVOYS_REMOVED 2 plus
+        // _LEVEL_ENVOYS_REMOVED 1 per Spy level, taken off the rival holding
+        // the most Envoys there and nobody else.
+        let removed = 2 + game.spies[&spy_id].level.max(0);
+        assert_eq!(game.envoys_at(1, minor), 7 - removed);
         assert_eq!(game.envoys_at(0, minor), 3);
     }
 
@@ -8095,10 +8104,13 @@ mod maintenance_tests {
             .insert("colosseum".to_string(), center);
         assert_eq!(loyalty(&mut game), baseline + 5.0);
 
-        // Martial Law pays 2 for a garrison, not 4.
+        // Martial Law's shipped MARTIALLAW_GARRISONIDENTITY is +4, gated on
+        // REQUIREMENT_CITY_HAS_GARRISON_UNIT. Limitanei is the +2 card.
         game.cities.get_mut(&city).unwrap().wonders.clear();
         game.spawn_unit("warrior", 0, game.cities[&city].pos);
         game.players[0].policies = ["martial_law".to_string()].into_iter().collect();
+        assert_eq!(loyalty(&mut game), baseline + 4.0);
+        game.players[0].policies = ["limitanei".to_string()].into_iter().collect();
         assert_eq!(loyalty(&mut game), baseline + 2.0);
     }
 
@@ -11654,6 +11666,12 @@ pub struct Player {
     #[serde(default)]
     pub co2_emissions: f64,
     pub explored: BTreeSet<Pos>,
+    /// Whether this civilization's own knowledge has ever run the whole way
+    /// round the world — see [`Game::update_world_lap`]. Once a people have
+    /// been around they know the shape they live on; until then they do not,
+    /// and their chart says so.
+    #[serde(default)]
+    pub went_around: bool,
     /// Per-tile last-known state. Unlike `explored`, this does not update
     /// while a tile is under fog, so improvements, ownership, disasters, and
     /// other changes cannot leak through a player observation.
@@ -11837,6 +11855,7 @@ impl Player {
             power_fuel_consumed: BTreeMap::new(),
             co2_emissions: 0.0,
             explored: BTreeSet::new(),
+            went_around: false,
             remembered_tiles: TileMemory::default(),
             remembered_cities: BTreeMap::new(),
             met: BTreeSet::new(),
@@ -12265,6 +12284,17 @@ fn pretty(id: &str) -> String {
 /// Events older than this are dropped, oldest first. Long games are long.
 const EVENT_LIMIT: usize = 2_000;
 
+/// How many longitudes a globe is cut into when asking whether a people have
+/// been round it — ten degrees apiece. Coarse enough that a ship crossing a
+/// band cannot pass through without seeing it, fine enough that a lap is a
+/// lap. A cylinder is asked about its own columns instead, since it has a
+/// countable number of them and each one is real ground.
+const GLOBE_LAP_BANDS: usize = 36;
+
+/// The latitude past which going round proves nothing, in radians: the Arctic
+/// Circle. See [`Game::update_world_lap`].
+const POLAR_LAP_LIMIT: f64 = 66.5 * std::f64::consts::PI / 180.0;
+
 pub fn default_difficulty() -> String {
     "prince".to_string()
 }
@@ -12423,6 +12453,24 @@ impl std::ops::BitOr for ActionFamilies {
     }
 }
 
+/// A result the game already reached. Kept verbatim when a world is asked to
+/// play on past it, so the verdict survives the extension that follows.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Decided {
+    pub winner: usize,
+    pub victory_type: String,
+    /// The turn the victory was declared on, not the turn play resumed.
+    pub turn: u32,
+}
+
+/// How many turns one press of "one more turn" is worth.
+///
+/// The extension is bounded on purpose. A person at the keyboard can ask for
+/// another block whenever this one runs out, but the unattended exhibition has
+/// nobody to ask, and a world that plays on forever would be the last world it
+/// ever shows.
+pub const PLAY_ON_TURNS: u32 = 25;
+
 /// Victory paths that can end the game. All paths are enabled by default so
 /// existing callers and saves retain the traditional rules unless a new-game
 /// setup explicitly disables one.
@@ -12569,6 +12617,11 @@ pub struct Game {
     pub current: usize,
     pub winner: Option<usize>,
     pub victory_type: Option<String>,
+    /// The result of the game that was already decided, kept when somebody
+    /// chose to play on past it. History still has its victor even though the
+    /// world is live again; `winner` is `None` while the extension runs.
+    #[serde(default)]
+    pub decided: Option<Decided>,
     pub victory_conditions: VictoryConditions,
     pub next_id: u32,
     pub map: WorldMap,
@@ -12737,6 +12790,8 @@ struct GameSer {
     winner: Option<usize>,
     victory_type: Option<String>,
     #[serde(default)]
+    decided: Option<Decided>,
+    #[serde(default)]
     victory_conditions: VictoryConditions,
     next_id: u32,
     rng: Rng,
@@ -12839,6 +12894,7 @@ impl From<GameSer> for Game {
             current: s.current,
             winner: s.winner,
             victory_type: s.victory_type,
+            decided: s.decided,
             victory_conditions: s.victory_conditions,
             next_id: s.next_id,
             map: s.map,
@@ -12987,6 +13043,7 @@ impl From<Game> for GameSer {
             current: g.current,
             winner: g.winner,
             victory_type: g.victory_type,
+            decided: g.decided,
             victory_conditions: g.victory_conditions,
             next_id: g.next_id,
             rng: g.rng,
@@ -13153,6 +13210,7 @@ impl Game {
             current: 0,
             winner: None,
             victory_type: None,
+            decided: None,
             victory_conditions: VictoryConditions::default(),
             next_id: 1,
             map,
@@ -16124,7 +16182,12 @@ impl Game {
                     (city.loyalty - 15.0 - 5.0 * spy.level.max(0) as f64).max(0.0);
             }
             "neutralize_governor" => {
-                let until = self.turn + self.standard_duration(7 + spy.level.max(0) as u32);
+                // Shipped ESPIONAGE_NEUTRALIZE_GOVERNOR_BASE_TURNS is 6 flat.
+                // Every mission whose effect scales with the Spy's level has
+                // its own _LEVEL_ parameter beside the base — Foment Unrest and
+                // Fabricate Scandal both do; this one has no such row, so the
+                // level term was invention.
+                let until = self.turn + self.standard_duration(6);
                 for state in self.players[defender]
                     .governor_roster
                     .values_mut()
@@ -16181,7 +16244,10 @@ impl Game {
                     .max_by_key(|(envoys, player)| (*envoys, std::cmp::Reverse(*player)))
                     .map(|(_, player)| player);
                 if let Some(victim) = victim {
-                    let remove = 3 + spy.level.max(0);
+                    // Shipped ESPIONAGE_FABRICATE_SCANDAL_BASE_ENVOYS_REMOVED 2
+                    // plus _LEVEL_ENVOYS_REMOVED 1 per level — the same
+                    // base-plus-level shape Foment Unrest already follows.
+                    let remove = 2 + spy.level.max(0);
                     if let Some((_, envoys)) = self.players[victim]
                         .envoys
                         .iter_mut()
@@ -16943,6 +17009,8 @@ impl Game {
                 + effect("gold_per_foreign_city") * foreign_following,
             culture: (effect("culture_per_followers") * followers).floor()
                 + (effect("culture_per_foreign_followers") * foreign_followers).floor(),
+            // Cross-Cultural Dialogue counts followers abroad only.
+            science: (effect("science_per_foreign_followers") * foreign_followers).floor(),
             faith: effect("faith_per_city") * following
                 + effect("faith_per_foreign_city") * foreign_following,
             ..Yields::default()
@@ -24470,6 +24538,13 @@ impl Game {
             return;
         }
 
+        // Only ground nobody had seen can close the ring, so this is asked on
+        // the turns exploring actually got somewhere rather than on every
+        // refresh behind every move.
+        if !newly_explored.is_empty() {
+            self.update_world_lap(pid);
+        }
+
         let wonders: BTreeSet<String> = newly_explored
             .into_iter()
             .filter_map(|position| self.map.get(position))
@@ -24500,6 +24575,71 @@ impl Game {
                 self.grant_great_work(pid, "relic", era, "kandy");
             }
         }
+    }
+
+    /// Take note of the longitudes this seat's knowledge now reaches, and of
+    /// whether they have closed the ring.
+    ///
+    /// A civilization does not begin knowing what shape it lives on. The world
+    /// could be a plain that runs on forever, and every unknown quarter is
+    /// somewhere it might keep running. What settles it is going round: once a
+    /// people have seen ground at every longitude, with no gap left for the
+    /// world to continue through, the two ends of their chart have to be the
+    /// same ground. That is the moment the world is known to come back on
+    /// itself, and it is the moment one lap of exploring arrives at.
+    ///
+    /// Reported, never enforced — nothing in the simulation turns on this. It
+    /// decides what a civilization's own map has earned the right to show, and
+    /// reaches the client as `me.went_around` in [`crate::obs`].
+    fn update_world_lap(&mut self, pid: usize) {
+        if self.map.width <= 0 || self.players[pid].went_around {
+            return;
+        }
+        let globe = self.map.sphere();
+        let bands = if globe.is_some() {
+            GLOBE_LAP_BANDS
+        } else {
+            self.map.width as usize
+        };
+        // One tile can only account for one longitude, so most of a game is
+        // settled without looking at the ground at all.
+        if self.players[pid].explored.len() < bands {
+            return;
+        }
+        let mut seen = vec![false; bands];
+        let mut count = 0usize;
+        for position in &self.players[pid].explored {
+            let band = match globe {
+                Some(sphere) => {
+                    // Near a pole every longitude is a short walk from every
+                    // other, so a circuit of the ice says nothing about how
+                    // big the world is. A cylinder's rows are all one length,
+                    // so this is a globe's problem only.
+                    if sphere.latitude(*position).abs() > POLAR_LAP_LIMIT {
+                        continue;
+                    }
+                    let turns =
+                        (sphere.longitude(*position) / std::f64::consts::TAU).rem_euclid(1.0);
+                    ((turns * bands as f64) as usize).min(bands - 1)
+                }
+                None => crate::hex::axial_to_offset(position.0, position.1)
+                    .0
+                    .rem_euclid(self.map.width) as usize,
+            };
+            if !std::mem::replace(&mut seen[band], true) {
+                count += 1;
+            }
+        }
+        if count < bands {
+            return;
+        }
+        self.players[pid].went_around = true;
+        self.note_important(
+            pid,
+            "World",
+            "have been the whole way around the world: the two ends of the chart are the same ground",
+            None,
+        );
     }
 
     fn refresh_all_visibility(&mut self) {
@@ -24572,10 +24712,18 @@ impl Game {
         }
         // Memory just arrived from somewhere other than a sweep, so no seat's
         // last snapshot can be assumed to still describe it.
-        self.remembered_under.iter_mut().for_each(|(stamp, tiles, _)| {
-            *stamp = 0;
-            *tiles = 0;
-        });
+        self.remembered_under
+            .iter_mut()
+            .for_each(|(stamp, tiles, _)| {
+                *stamp = 0;
+                *tiles = 0;
+            });
+        // Allies pool what they know, and a ring closed between two of them is
+        // still a closed ring: each side has sailed its half and the charts
+        // agree where they meet.
+        for member in members {
+            self.update_world_lap(*member);
+        }
     }
 
     fn backfill_visibility_memory(&mut self) {
@@ -27733,9 +27881,10 @@ impl Game {
                 rys.food += self.policy_effect(city.owner, "trade_food");
                 rys.production += self.policy_effect(city.owner, "trade_production");
                 if domestic {
-                    // Isolationism pays only at home.
+                    // Isolationism pays only at home, and pays all three.
                     rys.food += self.policy_effect(city.owner, "domestic_trade_food");
                     rys.production += self.policy_effect(city.owner, "domestic_trade_production");
+                    rys.gold += self.policy_effect(city.owner, "domestic_trade_gold");
                 }
                 if !domestic {
                     // E-Commerce pays only on international routes.
@@ -28082,8 +28231,12 @@ impl Game {
         ys.science *= 1.0 + self.policy_effect(city.owner, "city_science_pct") / 100.0;
         ys.culture *= 1.0 + self.policy_effect(city.owner, "city_culture_pct") / 100.0;
         if self.city_has_active_district_family(city, "holy_site") {
+            // Monasticism's Culture penalty carries the same Holy Site
+            // requirement as its Science bonus: it is not empire-wide.
             ys.science *=
                 1.0 + self.policy_effect(city.owner, "holy_site_city_science_pct") / 100.0;
+            ys.culture *=
+                1.0 + self.policy_effect(city.owner, "holy_site_city_culture_pct") / 100.0;
         }
         if city.buildings.iter().any(|building| building == "stock_exchange")
             && !city.pillaged_buildings.contains("stock_exchange")
@@ -28718,10 +28871,16 @@ impl Game {
             }) {
                 continue;
             }
-            if t.resource
-                .as_ref()
-                .is_some_and(|resource| self.rules.resources[resource.as_str()].class != "bonus")
-            {
+            // Antiquity Sites and Shipwrecks are buried, not deposits: they
+            // are invisible until Natural History or Cultural Heritage and
+            // never reserve a tile. Building over one destroys it, exactly as
+            // a Bonus resource is destroyed.
+            if t.resource.as_ref().is_some_and(|resource| {
+                !matches!(
+                    self.rules.resources[resource.as_str()].class.as_str(),
+                    "bonus" | "artifact"
+                )
+            }) {
                 continue;
             }
             let removal_tech = match t.feature.as_deref() {
@@ -28889,7 +29048,11 @@ impl Game {
                     .as_ref()
                     .is_some_and(|feature| self.rules.features[feature.as_str()].natural_wonder)
                 || tile.resource.as_ref().is_some_and(|resource| {
-                    self.rules.resources[resource.as_str()].class != "bonus"
+                    // A buried Artifact reserves nothing — see `district_sites`.
+                    !matches!(
+                        self.rules.resources[resource.as_str()].class.as_str(),
+                        "bonus" | "artifact"
+                    )
                 })
             {
                 continue;
@@ -40897,7 +41060,10 @@ impl Game {
             self.check_culture_victory();
             // A score victory is only a turn-limit tiebreak, never an
             // immediate win for crossing an arbitrary score threshold.
-            if self.turn > self.max_turns && self.winner.is_none() {
+            if self.turn > self.max_turns && self.winner.is_none() && self.played_on() {
+                // These were borrowed turns, and they have run out.
+                self.close_extension();
+            } else if self.turn > self.max_turns && self.winner.is_none() {
                 // Ties resolve through the shipped chain (civics, cities,
                 // districts, Population, Great People, religion,
                 // technologies, wonders) before falling back to seat order.
@@ -43002,7 +43168,12 @@ impl Game {
             }
             if self.wdist(neighbor, city_pos) <= 3
                 && adjacent.resource.as_ref().is_some_and(|resource| {
-                    self.rules.resources[resource.as_str()].class != "bonus"
+                    // Borders are not drawn toward a resource nobody can see,
+                    // and an Antiquity Site stays buried until Natural History.
+                    !matches!(
+                        self.rules.resources[resource.as_str()].class.as_str(),
+                        "bonus" | "artifact"
+                    )
                 })
             {
                 cost -= 1.0;
@@ -43605,7 +43776,86 @@ impl Game {
             .is_some_and(|p| p.alive && !p.is_minor && !p.is_barbarian)
     }
 
+    /// Whether the game has been asked to carry on past a decided result.
+    pub fn played_on(&self) -> bool {
+        self.decided.is_some()
+    }
+
+    /// Carry on past the result this game already reached: "one more turn".
+    ///
+    /// The verdict is kept in `decided` and the world becomes live again for
+    /// another block of turns. The path that was already won cannot be won a
+    /// second time — nor can any other, or a science victory one turn from its
+    /// launch would simply re-declare itself and the button would do nothing.
+    /// The turn limit is the one ending that still lands, which is what stops
+    /// an extension from running forever.
+    ///
+    /// Returns `false` when there is no result to play on past.
+    pub fn play_on(&mut self) -> bool {
+        let (Some(winner), Some(victory_type)) = (self.winner, self.victory_type.clone()) else {
+            return false;
+        };
+        // Only the first press records the verdict; later ones extend the same
+        // continuation, so the game still remembers who actually won it.
+        self.decided.get_or_insert(Decided {
+            winner,
+            victory_type: victory_type.clone(),
+            turn: self.turn,
+        });
+        self.winner = None;
+        self.victory_type = None;
+        self.max_turns = self.turn.saturating_add(PLAY_ON_TURNS);
+        let seats: Vec<usize> = self.players.iter().map(|player| player.id).collect();
+        for seat in seats {
+            self.note(
+                seat,
+                "General",
+                // A note is a predicate: the chronicle prints it after the
+                // seat's own name, so "Rome plays on for 25 more turns".
+                format!("plays on for {PLAY_ON_TURNS} more turns"),
+                None,
+            );
+        }
+        // A decided game stopped mid-turn: whoever is up has to be given their
+        // turn again, or the extension opens on a seat that cannot act.
+        self.begin_turn(self.current);
+        self.sync_war_log();
+        true
+    }
+
+    /// Hand a played-on world back the result it was already given.
+    ///
+    /// The extension ends on the verdict that granted it rather than on a
+    /// fresh score count: the game was won on its own terms and a tiebreak
+    /// would be free to name somebody else. It also cannot lean on the score
+    /// path, which a lobby is allowed to switch off entirely — an extension
+    /// with no ending at all would leave the exhibition on one world forever.
+    fn close_extension(&mut self) {
+        let Some(decided) = self.decided.clone() else {
+            return;
+        };
+        self.winner = Some(decided.winner);
+        self.victory_type = Some(decided.victory_type.clone());
+        let name = self.civ_name(decided.winner);
+        let vtype = decided.victory_type;
+        let seats: Vec<usize> = self.players.iter().map(|player| player.id).collect();
+        for seat in seats {
+            self.note(
+                seat,
+                "General",
+                format!("runs out of extra turns; {name} keeps the {vtype} victory"),
+                None,
+            );
+        }
+    }
+
     fn set_winner(&mut self, pid: usize, vtype: &str) {
+        // A world playing on past its result cannot be won again. The ending
+        // it already has is restored when the extension runs out; see
+        // `close_extension`.
+        if self.played_on() {
+            return;
+        }
         if self.winner.is_none()
             && self.victory_eligible(pid)
             && self.victory_conditions.is_enabled(vtype)
@@ -47827,6 +48077,67 @@ mod victory_conditions {
             assert_eq!(game.winner, Some(0), "enabled {victory_type} did not win");
             assert_eq!(game.victory_type.as_deref(), Some(victory_type));
         }
+    }
+
+    /// "One more turn": the world goes back into play, no path can be won
+    /// during the extension, and the ending it already had is what closes it.
+    ///
+    /// Suppressing the other paths is not tidiness. A science victory is still
+    /// won on the turn after it was won, so a game that merely cleared its
+    /// winner would re-declare the same result on the next end of turn and the
+    /// button would do nothing at all.
+    #[test]
+    fn playing_on_borrows_turns_and_gives_the_result_back() {
+        let mut game = game_with_capitals(2, 90_100, 40);
+        game.turn = 30;
+        game.set_winner(1, "science");
+        assert_eq!(game.winner, Some(1));
+
+        assert!(game.play_on());
+        assert_eq!(game.winner, None);
+        assert_eq!(game.max_turns, 30 + PLAY_ON_TURNS);
+        assert_eq!(game.decided.as_ref().map(|d| d.winner), Some(1));
+        assert_eq!(
+            game.decided.as_ref().map(|d| d.victory_type.as_str()),
+            Some("science")
+        );
+        assert_eq!(game.decided.as_ref().map(|d| d.turn), Some(30));
+
+        // Nothing can be won during borrowed turns, including the path that
+        // granted them and including a lobby's score tiebreak.
+        for victory_type in VictoryConditions::NAMES {
+            game.set_winner(0, victory_type);
+            assert_eq!(game.winner, None, "{victory_type} ended an extension");
+        }
+
+        // The exhibition checkpoints and resumes mid-game, so the verdict has
+        // to survive a save. One that forgot it would be a live world with
+        // every victory path armed again, and would re-declare the result it
+        // was granted the extension from on the next end of turn.
+        let raw = serde_json::to_string(&game).expect("a played-on game saves");
+        let reloaded: Game = serde_json::from_str(&raw).expect("and loads");
+        assert_eq!(reloaded.decided, game.decided);
+        assert_eq!(reloaded.max_turns, game.max_turns);
+        assert!(reloaded.played_on());
+
+        // A live game has nothing to play on past.
+        let mut untouched = game_with_capitals(2, 90_101, 40);
+        assert!(!untouched.play_on());
+        assert!(untouched.decided.is_none());
+
+        // Past the raised limit the original verdict is restored rather than
+        // recounted — the game was won on its own terms, and a score tiebreak
+        // would be free to name somebody else.
+        game.turn = game.max_turns + 1;
+        game.close_extension();
+        assert_eq!(game.winner, Some(1));
+        assert_eq!(game.victory_type.as_deref(), Some("science"));
+
+        // And it can be asked again, from the new result, without losing the
+        // turn the victory was actually won on.
+        assert!(game.play_on());
+        assert_eq!(game.decided.as_ref().map(|d| d.turn), Some(30));
+        assert_eq!(game.max_turns, game.turn + PLAY_ON_TURNS);
     }
 
     /// The Civilization Players League publishes the lobby it plays
@@ -53278,5 +53589,107 @@ mod district_mechanics {
         assert_eq!(target, "legion");
         // Rome's Legion carries the shipped Swordsman upgrade path onward.
         assert_eq!(game.rules.units["legion"].upgrade_to.as_deref(), Some("man_at_arms"));
+    }
+}
+
+#[cfg(test)]
+mod world_lap_tests {
+    use super::*;
+
+    fn band_of(longitude: f64) -> usize {
+        let turns = (longitude / std::f64::consts::TAU).rem_euclid(1.0);
+        ((turns * GLOBE_LAP_BANDS as f64) as usize).min(GLOBE_LAP_BANDS - 1)
+    }
+
+    /// A people learn that their world comes back on itself by going round it,
+    /// and not one step before. Every longitude but one still leaves a gap,
+    /// and a gap is a direction the world might simply keep going in.
+    #[test]
+    fn a_world_is_known_to_come_back_on_itself_only_once_every_longitude_is_seen() {
+        let mut game = Game::new(2, 24, 16, 4_242, 25, 0);
+        let width = game.map.width;
+        game.players[0].explored.clear();
+        game.players[0].went_around = false;
+
+        for column in 0..width - 1 {
+            game.players[0]
+                .explored
+                .insert(crate::hex::offset_to_axial(column, 8));
+        }
+        game.update_world_lap(0);
+        assert!(
+            !game.players[0].went_around,
+            "one unseen longitude is a way the world might still continue",
+        );
+
+        game.players[0]
+            .explored
+            .insert(crate::hex::offset_to_axial(width - 1, 8));
+        game.update_world_lap(0);
+        assert!(game.players[0].went_around, "that was a lap");
+        assert!(
+            game.events
+                .iter()
+                .any(|event| event.player == 0 && event.text.contains("whole way around the world")),
+            "closing the ring is the sort of thing a chronicle records",
+        );
+
+        // Knowing the shape of your world is not something you can un-know:
+        // ground can be lost, and this cannot.
+        game.players[0].explored.clear();
+        game.update_world_lap(0);
+        assert!(game.players[0].went_around);
+    }
+
+    /// Near a pole every longitude is a few steps from every other, so a
+    /// circuit of the ice crosses all of them without going anywhere. It is
+    /// not a lap of the world and must not read as one.
+    #[test]
+    fn a_circuit_of_the_ice_is_not_a_lap_of_a_globe() {
+        let mut game = Game::new(2, 24, 16, 90_210, 25, 0);
+        game.map = crate::world::WorldMap::globe(16);
+        let cells: Vec<(Pos, f64, f64)> = {
+            let sphere = game.map.sphere().expect("a globe is laid out on a sphere");
+            sphere
+                .positions()
+                .map(|pos| (pos, sphere.latitude(pos), sphere.longitude(pos)))
+                .collect()
+        };
+        let polar: Vec<(Pos, f64)> = cells
+            .iter()
+            .filter(|(_, latitude, _)| latitude.abs() > 70f64.to_radians())
+            .map(|(pos, _, longitude)| (*pos, *longitude))
+            .collect();
+        assert_eq!(
+            polar
+                .iter()
+                .map(|(_, longitude)| band_of(*longitude))
+                .collect::<BTreeSet<_>>()
+                .len(),
+            GLOBE_LAP_BANDS,
+            "the fixture only tests anything if the ice does cross every longitude",
+        );
+
+        game.players[0].explored.clear();
+        game.players[0].went_around = false;
+        for (pos, _) in &polar {
+            game.players[0].explored.insert(*pos);
+        }
+        game.update_world_lap(0);
+        assert!(
+            !game.players[0].went_around,
+            "walking round the ice is not sailing round the world",
+        );
+
+        for (pos, latitude, _) in &cells {
+            if latitude.abs() < 20f64.to_radians() {
+                game.players[0].explored.insert(*pos);
+            }
+        }
+        game.update_world_lap(0);
+        assert!(
+            game.players[0].went_around,
+            "a way round at the equator is the real thing",
+        );
     }
 }
