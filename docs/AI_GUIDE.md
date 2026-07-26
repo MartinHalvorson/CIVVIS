@@ -384,6 +384,28 @@ describe a much smaller historical rules workload.
 - `civvis::strategic::StrategicAi` (builtin `strategic`) picks its victory
   lane by rolling each lane forward and judging the resulting position —
   the first macro-search rung above the scripted agents.
+- Evaluator-only `strategic_deep` is the same agent with four times the
+  search compute, split across both of its axes: it reviews every 20 turns
+  rather than 40 and projects 80 rounds rather than 40. It is the strongest
+  configuration measured — 240 mirrored maps across two disjoint seed sets,
+  53 map-directions to 15, sign p=4.1e-06 — and it is **not promoted**. It
+  passed the gate once at 120 maps, by 0.2 points of Wilson bound, and did
+  not pass again on the second seed set. Treat the effect as real and the
+  promotion as unearned until a PASS replicates at a pre-registered size.
+
+  `strategic` is unchanged and is the frozen control for measuring further
+  search changes, the way `advanced_v1` is for `advanced`. Four times the
+  macro-search compute is also a real cost, so batch callers (soak, league,
+  fleet) should adopt it deliberately rather than inherit it.
+
+  Two cautions that generalize beyond this agent. Nothing below about a
+  hundred maps of `ai_eval --players 4` is a result here — the same
+  measurements at twenty maps said the opposite twice, in opposite
+  directions — and since `--jobs` landed, a hundred maps is one run of
+  roughly half an hour. And the gate can decline overwhelming evidence:
+  `strategic_r20` reached an e-value of 19,720 over 400 maps, 46 map
+  directions to 12, and still read INCONCLUSIVE because its 54.2% effect
+  needs about 540 maps for the Wilson bound to clear.
 - Ranked AI-strength roadmap and current status: `docs/AI_GAPS.md`.
   Recorded eval baselines and the regression battery: `docs/EVAL.md`.
 
