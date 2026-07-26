@@ -836,3 +836,51 @@ measured before more axes are added.
 so `strategic` is unchanged. `StrategicAi::doctrine_values` exposes the
 per-doctrine projections, because the spread between them is what decides
 whether the axis can act at all — which no win rate would reveal.
+
+## 2026-07-26 — search cadence: more decisions beat better decisions
+
+The previous entry ended on a ceiling: the macro search reached the rollouts
+about 1.5 times per seat per game, which bounds every improvement hung off
+it. Cadence is the cheapest way to raise that — `review_every` is already a
+field — so it was measured as a dose, with everything else (weights,
+horizon, lane policy, priors) held equal. All runs are four-player,
+`--turns 200`.
+
+**Dose (seed 41000, 12 maps each, against `strategic`):**
+
+| entrant | period | rollout reviews | games | maps for | maps against |
+|---|---|---|---|---|---|
+| `strategic` | 40 | 105 | — | — | — |
+| `strategic_r20` | 20 | 158 (1.5×) | 13/24 (54.2%) | 1 | 0 |
+| `strategic_r10` | 10 | 316 (3.0×) | 14/24 (58.3%) | 2 | 0 |
+
+Monotone in the dose, and across those 24 maps not one broke *against* the
+denser search.
+
+**Confirmation on a disjoint seed set (52000, 24 maps, `strategic_r20`):**
+28/48 games (58.3%), paired score 58.3%, Elo-equivalent +58 (CI −79..+196),
+**5 maps swept to 1**, exact sign p=0.2188, anytime-valid e=6.993
+(p≤0.1430). Rollout reviews 251 against 160 (1.57×).
+
+Pooled over the two disjoint `strategic_r20` seed sets: 36 maps, 41/72 games
+(56.9%), direction **6 for, 1 against, 29 neutral**.
+
+**This is not promoted.** The gate requires the anytime-valid evidence to
+cross, and e=6.993 is well short of the 40 that 2.5% needs. `strategic` is
+unchanged and the cadences ship as eval-only entrants. The e-process is
+anytime-valid, so more maps on `strategic_r20 strategic --players 4` can be
+added to this evidence without inflating the error budget — that is the
+cheapest open path to a promotion in this codebase right now.
+
+**A falsified hypothesis, recorded so it is not retried.** An interrupt sets
+`next_review = turn + review_every`, so a cheap prior read off the victory
+screen appeared to postpone the expensive periodic projection it was never
+meant to replace. `strategic_nodefer` holds the periodic schedule instead.
+It changed the decision count by **one review** (95 against 96) and lost a
+map. Interrupts do not meaningfully displace periodic searches; whatever
+suppresses the decision count, this is not it.
+
+Note on reading these runs: a mirrored seat-swapped A/B between agents that
+differ slightly is close to powerless, because identical agents split every
+map by construction. The count of maps that break neutral — and their
+direction — carries the signal long before the win rate does.
