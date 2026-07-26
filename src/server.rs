@@ -4812,13 +4812,17 @@ mod tests {
         ));
         assert!(EMBEDDED_INDEX.contains("data-victory-focus=\"${isFocus}\""));
         assert!(EMBEDDED_INDEX.contains("grid-auto-rows: var(--hud-row-height);"));
-        // A masthead row is one line: identity and the ten values side by side,
-        // under one set of column heads. Stacking them was what the rail needed
-        // and it costs the map 12px of height per civilization here.
+        // A masthead row is one line: its map links, identity and ten values
+        // sit side by side under one set of column heads. Stacking them was
+        // what the rail needed and it costs the map 12px per civilization here.
         assert!(EMBEDDED_INDEX.contains(
-            "grid-template-columns: var(--hud-lock-column, 0px) var(--hud-medallion-column) \
+            "grid-template-columns: var(--hud-lock-column, 0px) var(--hud-map-links-column) \
              var(--hud-identity-column) minmax(0, 1fr);"
         ));
+        assert!(EMBEDDED_INDEX.contains("data-hud-action=\"empire\""));
+        assert!(EMBEDDED_INDEX.contains("data-hud-action=\"capital\""));
+        assert!(EMBEDDED_INDEX.contains("function focusEmpire(pid)"));
+        assert!(EMBEDDED_INDEX.contains("function focusCapital(pid)"));
         assert!(EMBEDDED_INDEX.contains("--hud-row-height: 23px;"));
         assert!(EMBEDDED_INDEX.contains("function dismissOverlay(name, source)"));
         assert!(EMBEDDED_INDEX.contains("addEventListener(\"pointerdown\", event =>"));
@@ -5044,7 +5048,9 @@ mod tests {
         // frame; strategic, grouped, promoted, and war-front units may widen
         // it, while a lone recon unit cannot continually zoom the map out.
         assert!(EMBEDDED_INDEX.contains("function watchedEmpireSubjects(player)"));
-        assert!(EMBEDDED_INDEX.contains("function observedViewGoal(anchors)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "function observedViewGoal(anchors, oneEmpire = Number.isInteger(state?.view_player))"
+        ));
         assert!(EMBEDDED_INDEX.contains("watchedEmpireAutoFrame"));
         assert!(EMBEDDED_INDEX.contains("const EMPIRE_RECON_UNITS"));
         assert!(EMBEDDED_INDEX.contains("const atWarFront"));

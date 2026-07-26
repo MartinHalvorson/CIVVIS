@@ -471,7 +471,7 @@
   .diplomacy-ribbon { min-width: max-content; display: flex; align-items: stretch; gap: 4px; padding-bottom: 1px; }
   .diplomacy-card {
     flex: 0 0 clamp(282px, 19vw, 315px); display: grid;
-    grid-template-columns: 31px minmax(74px, .75fr) minmax(148px, 1.35fr);
+    grid-template-columns: 48px minmax(74px, .75fr) minmax(148px, 1.35fr);
     align-items: center; gap: 5px; height: 78px; margin: 0; padding: 4px 5px;
     overflow: hidden; border-radius: 8px; color: var(--text);
     background: linear-gradient(105deg, #0b1714f5, #142720ee);
@@ -483,16 +483,32 @@
   .diplomacy-card.friend { border-color: #708d62; box-shadow: inset 3px 0 #9dbb7d, inset 0 1px #fff1; }
   .diplomacy-card.at-war { border-color: #a65450; box-shadow: inset 3px 0 var(--danger), inset 0 1px #fff1; }
   .diplomacy-card.dead { opacity: .42; filter: grayscale(.75); }
-  /* The card carries two separate actions now: the medallion and the stat
-     block follow a civilization, the name column opens its dossier. Each is a
-     real button, so the ribbon stays keyboard-reachable. */
-  .leader-medallion {
-    width: 38px; height: 38px; display: grid; place-items: center; padding: 0; border-radius: 50%;
-    width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%;
-    color: #fff; background: var(--civ);
-    border: 2px solid var(--civ-border); box-shadow: 0 0 0 2px #07110f, 0 4px 12px #0008;
-    font: 700 15px/1 Georgia, serif; text-shadow: 0 1px 3px #000; cursor: pointer;
+  /* Each row has two literal map links now: the jersey circle frames the
+     empire and the crown goes straight to its capital. The identity still
+     opens the dossier, while the values retain the existing watch action. */
+  .player-map-links {
+    min-width: 0; display: flex; align-items: center; justify-content: center; gap: 4px;
   }
+  .empire-link, .capital-link {
+    flex: 0 0 auto; display: grid; place-items: center; margin: 0; padding: 0;
+    cursor: pointer;
+  }
+  .empire-link {
+    width: 32px; height: 32px; border-radius: 50%;
+    color: #fff;
+    background: radial-gradient(circle, var(--civ-border) 0 23%, var(--civ) 26% 100%);
+    border: 2px solid var(--civ-border); box-shadow: 0 0 0 2px #07110f, 0 4px 12px #0008;
+  }
+  .capital-link {
+    width: 12px; height: 24px; border: 0; border-radius: 4px;
+    color: var(--gold-bright); background: transparent; box-shadow: none;
+    font: 700 14px/1 Georgia, serif; text-shadow: 0 1px 3px #000, 0 0 7px #d7b66a66;
+  }
+  .capital-link:hover, .capital-link:focus-visible {
+    color: #fff4c7; background: #d7b66a18; transform: none;
+  }
+  .empire-link:disabled, .capital-link:disabled { opacity: .28; cursor: default; }
+  .empire-link:disabled:hover, .capital-link:disabled:hover { transform: none; }
   .diplomacy-identity, .diplomacy-stats {
     margin: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit;
     text-align: left; cursor: pointer;
@@ -1648,8 +1664,9 @@
   /* A wide desktop can show more civilizations without changing the HUD's
      hierarchy or pushing it farther down the map. */
   @media (min-width: 2200px) {
-    .diplomacy-card { flex-basis: 330px; grid-template-columns: 36px minmax(88px, .75fr) minmax(164px, 1.35fr); }
-    .leader-medallion { width: 36px; height: 36px; font-size: 15px; }
+    .diplomacy-card { flex-basis: 330px; grid-template-columns: 52px minmax(88px, .75fr) minmax(164px, 1.35fr); }
+    .empire-link { width: 36px; height: 36px; }
+    .capital-link { font-size: 15px; }
     .diplomacy-name { font-size: 12px; }
     .diplomacy-leader { font-size: 9px; }
     .ribbon-stat b { font-size: 11px; }
@@ -1691,8 +1708,9 @@
   }
   @media (max-width: 430px) {
     .hud-region { padding-inline: 2px; }
-    .diplomacy-card { flex-basis: 286px; grid-template-columns: 31px minmax(76px, .7fr) minmax(155px, 1.45fr); gap: 4px; padding: 4px; }
-    .leader-medallion { width: 29px; height: 29px; font-size: 12px; }
+    .diplomacy-card { flex-basis: 286px; grid-template-columns: 44px minmax(76px, .7fr) minmax(155px, 1.45fr); gap: 4px; padding: 4px; }
+    .empire-link { width: 29px; height: 29px; }
+    .capital-link { font-size: 12px; }
     .diplomacy-name { font-size: 10px; }
     .diplomacy-leader { margin-top: 1px; font-size: 8px; }
     .ribbon-stat { padding-inline: 0; }
@@ -1715,7 +1733,7 @@
     width: min(var(--player-hud-width, 100%),
       calc(100% - min(var(--hud-rail-width), var(--hud-rail-share)) - 32px));
     height: min(var(--player-hud-height, 200px), var(--player-hud-max-height));
-    --hud-medallion-column: 21px; --hud-identity-column: minmax(300px, 42%); --hud-column-gap: 6px;
+    --hud-map-links-column: 38px; --hud-identity-column: minmax(300px, 42%); --hud-column-gap: 6px;
     --hud-lock-column: 13px; --hud-row-height: 23px; --hud-row-gap: 2px;
     --hud-row-pitch: calc(var(--hud-row-height) + var(--hud-row-gap));
     display: grid; grid-template-columns: 108px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
@@ -1748,7 +1766,7 @@
   .ribbon-heading.widget-drag-handle::before { position: absolute; left: 4px; }
   .ribbon-stat-heading {
     min-height: 9px; display: grid;
-    grid-template-columns: var(--hud-lock-column, 0px) var(--hud-medallion-column) var(--hud-identity-column) minmax(0, 1fr);
+    grid-template-columns: var(--hud-lock-column, 0px) var(--hud-map-links-column) var(--hud-identity-column) minmax(0, 1fr);
     align-items: stretch; gap: var(--hud-column-gap); padding: 0 4px 0 3px;
   }
   .diplomacy-stat-head {
@@ -1772,16 +1790,17 @@
   }
   #playerhud .diplomacy-ribbon::-webkit-scrollbar { width: 3px; }
   #playerhud .diplomacy-ribbon::-webkit-scrollbar-thumb { background: #476057; border-radius: 4px; }
-  /* One line, four cells: the lock, the medallion, who this is, and their ten
+  /* One line, four cells: the lock, two map links, who this is, and their ten
      values. The masthead has the width to run them side by side, which is what
      keeps a row 23px instead of 35px. */
   #playerhud .diplomacy-card {
     width: auto; height: auto; min-height: 0; display: grid;
-    grid-template-columns: var(--hud-lock-column, 0px) var(--hud-medallion-column) var(--hud-identity-column) minmax(0, 1fr);
+    grid-template-columns: var(--hud-lock-column, 0px) var(--hud-map-links-column) var(--hud-identity-column) minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
     align-items: center; gap: var(--hud-column-gap); margin: 0; padding: 1px 4px 1px 3px;
     overflow: hidden; border-radius: 7px;
   }
+  #playerhud .player-map-links { grid-column: 2; grid-row: 1; }
   #playerhud .diplomacy-identity { grid-column: 3; grid-row: 1; }
   #playerhud .diplomacy-stats { grid-column: 4; grid-row: 1; }
 
@@ -1808,10 +1827,13 @@
                 0 var(--hud-row-gap) 0 #0b1714, 0 5px 14px #0009;
   }
   #playerhud .diplomacy-card:hover { transform: none; }
-  #playerhud .leader-medallion {
-    grid-column: 2; width: 21px; height: 21px;
+  #playerhud .player-map-links { justify-content: space-between; gap: 2px; }
+  #playerhud .empire-link {
+    width: 21px; height: 21px;
     border-width: 1px; box-shadow: 0 0 0 1px #07110f, 0 3px 8px #0008;
-    font-size: 10px;
+  }
+  #playerhud .capital-link {
+    width: 14px; height: 19px; font-size: 12px;
   }
   /* Rank, civilization, leader, league handle, rating and active plan are one
      sentence about one player, so they stay on one line — the row's second line
@@ -2050,9 +2072,10 @@
     #playerhud {
       grid-template-columns: 74px minmax(0, 1fr);
       --hud-identity-column: minmax(92px, 22%); --hud-column-gap: 3px;
-      --hud-medallion-column: 19px;
+      --hud-map-links-column: 34px;
     }
-    #playerhud .leader-medallion { width: 19px; height: 19px; }
+    #playerhud .empire-link { width: 19px; height: 19px; }
+    #playerhud .capital-link { width: 12px; font-size: 11px; }
     /* The masthead can take the value columns under 19px here, and a four-digit
        figure needs the extra point of room more than it needs the ninth pixel
        of type: a clipped number is a wrong number. */
@@ -2061,7 +2084,7 @@
   @media (max-width: 720px) {
     #side { inset-block-start: 132px; }
     #maparea { --hud-rail-width: 182px; --minimap-height: 138px; }
-    #playerhud { --hud-medallion-column: 23px; --hud-identity-column: minmax(112px, 142px); }
+    #playerhud { --hud-map-links-column: 38px; --hud-identity-column: minmax(112px, 142px); }
   }
   @media (max-width: 620px) {
     /* Too narrow for a rail beside the masthead at all: the instruments give up
@@ -2070,7 +2093,7 @@
     #playerhud, body.overlay-victory-hidden #playerhud {
       top: 8px; left: 8px; right: 8px; width: auto; padding: 4px;
       --hud-lock-column: 11px;
-      --hud-medallion-column: 21px; --hud-identity-column: minmax(150px, 42%);
+      --hud-map-links-column: 36px; --hud-identity-column: minmax(150px, 42%);
     }
     #victoryhud, body.overlay-minimap-hidden #victoryhud {
       top: calc(min(var(--player-hud-height, 200px), var(--player-hud-max-height)) + 14px);
@@ -2107,7 +2130,7 @@
     .launch-badge { min-width: 15px; height: 15px; font-size: 8px; }
   }
   @media (max-height: 650px) {
-    #playerhud .leader-medallion { width: 20px; height: 20px; }
+    #playerhud .empire-link { width: 20px; height: 20px; }
   }
   @media (prefers-reduced-motion: reduce) {
     .section-label.overlay-return-flash { animation-duration: .01ms; }
@@ -14743,6 +14766,17 @@ function drawPlayerHud() {
   }
   const rankById = new Map(majors.map((p, index) => [p.id, index + 1]));
   const statsByPlayer = new Map(majors.map(p => [p.id, playerHudStats(p, rankById.get(p.id), state.cities)]));
+  const capitalsByOwner = new Map();
+  const empireOwnerIds = new Set();
+  for (const city of state.cities || []) {
+    empireOwnerIds.add(city.owner);
+    if (city.is_capital && !capitalsByOwner.has(city.owner))
+      capitalsByOwner.set(city.owner, city);
+  }
+  for (const tile of state.map?.tiles || []) {
+    if (Number.isInteger(tile.owner)) empireOwnerIds.add(tile.owner);
+  }
+  for (const unit of state.units || []) empireOwnerIds.add(unit.owner);
   const highestByStat = new Map();
   statsByPlayer.forEach(stats => stats.forEach(([kind, , value]) => {
     const numericValue = Number(value) || 0;
@@ -14764,7 +14798,14 @@ function drawPlayerHud() {
       const color = pcol(p.id);
       const leader = p.leader || "Unknown leader";
       const rank = rankById.get(p.id);
-      const initial = (leader === "Unknown leader" ? p.civ : leader).trim().charAt(0).toUpperCase();
+      const capital = capitalsByOwner.get(p.id);
+      const hasEmpire = empireOwnerIds.has(p.id);
+      const empireTitle = hasEmpire
+        ? `Focus map on ${p.civ}'s empire`
+        : `${p.civ} has no empire left to focus`;
+      const capitalTitle = capital
+        ? `Focus map on ${p.civ}'s capital, ${capital.name}`
+        : `${p.civ} has no capital to focus`;
       const alliance = p.alliance;
       const strategy = p.ai_strategy || "";
       const strategyText = strategy ? `${titleCase(strategy)} plan` : "";
@@ -14831,7 +14872,12 @@ function drawPlayerHud() {
       return `<div class="diplomacy-card ${stateClass} ${expanded ? "expanded" : ""}${locked ? " locked" : ""}" style="--civ:${color};--civ-border:${pcol2(p.id)}" role="listitem">` +
         `<button class="lock-toggle" data-hud-action="lock" data-hud-civ="${p.id}" aria-pressed="${locked}" ` +
         `title="${lockTitle}" aria-label="${lockTitle}">${locked ? "◉" : "○"}</button>` +
-        `<button class="leader-medallion" data-hud-action="watch" data-hud-civ="${p.id}" title="${watchTitle}" aria-label="Watch ${p.civ}">${initial}</button>` +
+        `<span class="player-map-links" role="group" aria-label="${escapeAttr(p.civ)} map links">` +
+        `<button class="empire-link" data-hud-action="empire" data-hud-civ="${p.id}" ` +
+        `title="${escapeAttr(empireTitle)}" aria-label="${escapeAttr(empireTitle)}"${hasEmpire ? "" : " disabled"}></button>` +
+        `<button class="capital-link" data-hud-action="capital" data-hud-civ="${p.id}" ` +
+        `title="${escapeAttr(capitalTitle)}" aria-label="${escapeAttr(capitalTitle)}"${capital ? "" : " disabled"}>♛</button>` +
+        `</span>` +
         `<button class="diplomacy-identity" data-hud-action="dossier" data-hud-civ="${p.id}" aria-expanded="${expanded}" ` +
         `title="${expanded ? "Close" : "Open"} the ${p.civ} dossier · ${relationSummary}${agendaText}" ` +
         `aria-label="${expanded ? "Close" : "Open"} dossier for ${p.civ}, rank ${rank}, ${relationSummary}">` +
@@ -14949,6 +14995,8 @@ function runHudAction(target) {
   if (!Number.isInteger(id)) return;
   if (target.dataset.hudAction === "lock") toggleSeatLock(id);
   else if (target.dataset.hudAction === "dossier") toggleCivDossier(id);
+  else if (target.dataset.hudAction === "capital") focusCapital(id);
+  else if (target.dataset.hudAction === "empire") focusEmpire(id);
   else spectatePlayer(id);
 }
 
@@ -17557,7 +17605,8 @@ function watchedEmpireSubjects(player) {
   // can spread out briefly without producing an immediate zoom snap, while a
   // scout that was never meaningful never enters the frame in the first place.
   const subjects = [...territory, ...cities, ...importantUnits];
-  const result = subjects.length ? subjects : observedPlayerAnchors();
+  const anchor = playerAnchor(player);
+  const result = subjects.length ? subjects : anchor ? [anchor] : [];
   watchedEmpireSubjectsCache = {state, player, subjects:result};
   return result;
 }
@@ -17706,7 +17755,7 @@ function unwrapObservedPoints(anchors) {
   });
 }
 
-function observedViewGoal(anchors) {
+function observedViewGoal(anchors, oneEmpire = Number.isInteger(state?.view_player)) {
   if (!anchors.length) {
     const fallback = mainLandmassAnchor();
     if (!fallback) return null;
@@ -17728,7 +17777,6 @@ function observedViewGoal(anchors) {
   const spanX = maxX - minX, spanY = (maxY - minY) * YS;
   const fitX = spanX > 0 ? usableWidth / spanX : Infinity;
   const fitY = spanY > 0 ? usableHeight / spanY : Infinity;
-  const oneEmpire = Number.isInteger(state?.view_player);
   const maximum = oneEmpire ? (cinemaActive() ? 1 : 1.12)
                             : (cinemaActive() ? .76 : .82);
   const scale = Math.max(.2, Math.min(maximum, fitX, fitY));
@@ -17882,6 +17930,73 @@ function setDirector(on) {
   if (on && (!SPEC || VIEW !== "cinematic")) return;
   setCinemaMode(!!on);
 }
+// The player HUD offers two map links with deliberately different scales.
+// The crown is an exact city target; the jersey circle fits the durable shape
+// of the civilization without also changing whose fog of war is being viewed.
+function focusCapital(pid) {
+  if (!state) return;
+  const capital = state.cities.find(city => city.owner === pid && city.is_capital);
+  if (!capital) return;
+  takeCameraControl();
+  centerWorld(capital.pos);
+  if (SPEC) { selCity = capital; drawSide(); }
+}
+
+// A globe cannot use the flat map's rectangular longitude bounds. Aim its
+// centre at the empire's spherical centroid, then use the farthest owned
+// subject to choose a regional scale that keeps the whole realm on stage.
+function planetEmpireGoal(subjects) {
+  const located = subjects.map(subject => ({
+    subject,
+    point:PLANET?.cells.get(key(subject.pos))?.center,
+  })).filter(item => item.point);
+  if (!located.length) return null;
+  const sum = located.reduce((total, item) => [
+    total[0] + item.point[0], total[1] + item.point[1], total[2] + item.point[2],
+  ], [0, 0, 0]);
+  const length = Math.hypot(...sum);
+  const center = length > 1e-6
+    ? sum.map(value => value / length)
+    : located[0].point;
+  const middle = located.reduce((best, item) =>
+    dot3(item.point, center) > dot3(best.point, center) ? item : best,
+  located[0]);
+  const extent = located.reduce((largest, item) => Math.max(largest,
+    Math.acos(Math.max(-1, Math.min(1, dot3(item.point, center))))), 0);
+  const frame = observedFrameRect();
+  const padding = Math.min(72, (frame.right - frame.left) * .12,
+                           (frame.bottom - frame.top) * .16);
+  const usableRadius = Math.max(72,
+    Math.min(frame.right - frame.left, frame.bottom - frame.top) / 2 - padding);
+  // Add roughly one cell of breathing room. A chart lays angular distance
+  // straight down; a discovered globe foreshortens it at the hemisphere.
+  const angle = Math.min(Math.PI / 2, extent + .06);
+  const projectedExtent = knowsGlobe() ? Math.sin(angle) : angle;
+  const radius = Math.max(1, WW() / (2 * Math.PI));
+  const fit = usableRadius / (radius * Math.max(.12, projectedExtent));
+  const maximum = cinemaActive() ? 1 : 1.12;
+  return {pos:middle.subject.pos, scale:planetScaleClamp(Math.min(maximum, fit))};
+}
+
+function focusEmpire(pid) {
+  if (!state) return;
+  const subjects = watchedEmpireSubjects(pid);
+  if (!subjects.length) return;
+  takeCameraControl();
+  if (planetMap()) {
+    skyReturnHome();
+    const goal = planetEmpireGoal(subjects);
+    if (goal) flyCameraTo(goal.pos, goal.scale);
+    return;
+  }
+  const goal = observedViewGoal(subjects, true);
+  if (!goal) return;
+  if (REDUCED_MOTION_QUERY.matches) {
+    cam.x = goal.x; cam.y = goal.y; cam.scale = goal.scale;
+    cameraFlight = null; draw(); drawMini();
+  } else cameraFlight = goal;
+}
+
 function focusPlayer(pid) {
   if (!state) return;
   takeCameraControl();
