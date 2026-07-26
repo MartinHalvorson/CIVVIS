@@ -1361,7 +1361,7 @@ mod tests {
         assert!(observed_city["atheist_pressure"].is_number());
 
         const INDEX: &str = include_str!("../web/index.html");
-        assert!(INDEX.contains("id=\"map-controls-row\""));
+        assert!(INDEX.contains("id=\"map-controls-dock\""));
         for lens in [
             "religion",
             "continent",
