@@ -2281,6 +2281,226 @@
   @media (max-height: 650px) {
     #playerhud .empire-link { width: 20px; height: 20px; }
   }
+
+  /* Neutral charcoal shell. Green remains a semantic game color, but it no
+     longer tints the interface's supposedly black surfaces. Keeping these
+     palette overrides together also makes the visual direction independent
+     of the component layout rules above. */
+  :root {
+    --ink: #050607;
+    --panel: #0b0d0e;
+    --panel-2: #111416;
+    --panel-3: #181c1f;
+    --line: #30363a;
+    --line-soft: #202529;
+    --text: #f0f1ee;
+    --muted: #a4aaa7;
+    --faint: #7c827f;
+    --gold: #caa456;
+    --gold-bright: #e2c478;
+    --gold-deep: #806127;
+  }
+  #maparea { background: var(--ink); }
+  #world-transition {
+    color: var(--text); background:
+      radial-gradient(circle at 50% 42%, #282522 0, #121315 25%, transparent 52%),
+      linear-gradient(145deg, #0d0f10 0%, #060708 58%, #030405 100%);
+  }
+  .world-transition-card {
+    background: linear-gradient(155deg, #191817f2, #08090af7);
+  }
+  .world-transition-mark {
+    color: #17130c; background: linear-gradient(145deg, #dec176, #aa7d30);
+    border-color: #e5c77d;
+  }
+
+  #side {
+    scrollbar-color: #3d4346 transparent;
+    background:
+      radial-gradient(circle at 80% -10%, #29272670, transparent 34%),
+      linear-gradient(180deg, #101214 0%, #060708 100%);
+    border-right-color: #343a3e;
+  }
+  .side-head {
+    border-bottom-color: #363b3e;
+    background:
+      radial-gradient(circle at 9% 16%, #caa45612, transparent 27%),
+      linear-gradient(118deg, #191b1df5 0%, #101214ed 70%, #0a0c0df5 100%);
+    box-shadow: inset 0 -1px #030405c7;
+  }
+  .brand-mark {
+    background: #070809; border-color: #c9a75d8f;
+    box-shadow: 0 0 0 4px #111315, 0 10px 25px #000a, 0 0 20px #caa45612;
+  }
+  .brand-mark .globe-sea { stroke: #d8b965; }
+  .brand-mark .globe-land { stroke: #e3c579; }
+  .brand-mark .globe-shine { stroke: #ead89c; stroke-opacity: .09; }
+  #brand-sea stop:nth-child(1) { stop-color: #272a2c; }
+  #brand-sea stop:nth-child(2) { stop-color: #121416; }
+  #brand-sea stop:nth-child(3) { stop-color: #070809; }
+  #brand-land stop:nth-child(1) { stop-color: #e0c274; }
+  #brand-land stop:nth-child(2) { stop-color: #bf9644; }
+  #brand-land stop:nth-child(3) { stop-color: #76581f; }
+  h1 {
+    background: linear-gradient(100deg, #e4c67e 8%, #c8a052 66%, #89672c);
+    -webkit-background-clip: text; background-clip: text;
+  }
+  .tagline { color: #e1e3df; }
+  .tagline span + span { color: #b8bdb9; }
+
+  .side-scroll {
+    scrollbar-color: #3d4346 transparent;
+    background: linear-gradient(90deg, #ffffff02, transparent 14%, transparent 86%, #0003);
+  }
+  #side::-webkit-scrollbar-thumb, .side-scroll::-webkit-scrollbar-thumb,
+  .hud-rail::-webkit-scrollbar-thumb, #playerhud .diplomacy-ribbon::-webkit-scrollbar-thumb {
+    background: #3d4346;
+  }
+  .side-actions {
+    border-color: #343a3e;
+    background: linear-gradient(135deg, #141719, #090b0c);
+  }
+  .sec {
+    background: linear-gradient(145deg, #15181af5, #0a0c0df5);
+  }
+  .section-label {
+    color: #b9bfbc; border-color: var(--line);
+    background: linear-gradient(135deg, #15181a, #0e1012);
+  }
+  .section-label:hover {
+    border-color: #4b5256;
+    background: linear-gradient(135deg, #1d2023, #121416);
+  }
+  .sidebar-section:not([open]) .section-label {
+    color: #929895;
+    background: linear-gradient(135deg, #111416, #0a0c0e);
+  }
+  .section-meta kbd { background: #090b0c99; border-color: #343a3e; }
+  .shortcut-panel {
+    border-top-color: #343a3e;
+    background: linear-gradient(180deg, #0f1113, #070809);
+  }
+  .shortcut-panel[open] > .utility-body {
+    border-color: #343a3e;
+    background: linear-gradient(145deg, #15181afa, #080a0bfc);
+  }
+
+  button {
+    background: linear-gradient(180deg, #24282b, #181b1e);
+    border-color: #42484c;
+  }
+  button:hover {
+    background: linear-gradient(180deg, #2d3236, #202428);
+    border-color: #5b6368;
+  }
+  .spec-controls #restart-sim,
+  .spec-controls:has(#restart-sim.human-start) #specpause.primary {
+    color: #c7ccca; background: linear-gradient(180deg, #23272a, #171a1d);
+    border-color: #42484c;
+  }
+  .spec-controls:has(#restart-sim.human-start) #specpause.primary:hover {
+    color: var(--text); background: linear-gradient(180deg, #2d3236, #202428);
+    border-color: #5b6368;
+  }
+  button.primary, .spec-controls #restart-sim.primary,
+  .empire-tabs button.on {
+    color: #17130c; background: linear-gradient(135deg, #d8b663, #b58435);
+    border-color: #d8b763; box-shadow: 0 7px 22px #0006, inset 0 1px #fff4;
+  }
+  button.primary:hover {
+    color: #120f09; background: linear-gradient(135deg, #e2c26f, #c18f3e);
+    border-color: #e2c370;
+  }
+  select, .save-row input, #pediaq {
+    color: var(--text); background: #0a0c0e; border-color: #373d41;
+  }
+  kbd { color: #c9cecb; background: #090b0c; border-color: #363c40; }
+  .bar, .victory-meter, .victory-half { background: #030405; }
+
+  #playerhud, #victoryhud {
+    border-color: #444b4f9c;
+    background: linear-gradient(105deg, #090b0ded, #111417e8 58%, #080a0ced);
+    backdrop-filter: blur(16px) saturate(108%);
+  }
+  #victoryhud {
+    background: linear-gradient(195deg, #090b0ded, #111417e8 54%, #080a0ced);
+  }
+  .hud-region { background: #07090a7d; }
+  .hud-section-heading, .ribbon-heading,
+  #victoryhud > .hud-section-heading { color: #c4c9c6; }
+  .diplomacy-card, #playerhud .diplomacy-card.pinned {
+    background: linear-gradient(105deg, #0b0d0ff5, #171a1cee);
+    border-color: #42494d;
+  }
+  .diplomacy-card:hover {
+    border-color: #626a6f;
+    background: linear-gradient(100deg, #101315f7, #202428f2);
+  }
+  #playerhud .diplomacy-card.pinned {
+    box-shadow: inset 0 1px #ffffff10, 0 0 0 1px #caa45633,
+                0 var(--hud-row-gap) 0 #090b0d, 0 5px 14px #0009;
+  }
+  .victory-turn { background: linear-gradient(155deg, #caa45618, #caa45606); }
+
+  .minimap-frame, #zoomctl, #map-lenses, #ubar {
+    background: #090b0de8; border-color: #41484c;
+  }
+  #mini { background: var(--ink); }
+  #map-lenses button:hover { border-color: #555d62; background: #1b1f22; }
+  #map-lenses button.active {
+    color: #f2e6c5; border-color: #caa4568f;
+    background: linear-gradient(135deg, #3c3320cc, #1b1d1ee8);
+  }
+  .notice, .launch { background: #0a0c0ee8; border-color: #454c50; }
+  .notice:hover, .launch:hover { background: #171a1df0; }
+  .notice-dismiss { background: #0c0e10; border-color: #4d5559; }
+
+  #empire, #diplomacy, #cityscreen, #pedia, #tree, #trade {
+    border-color: #4b5155;
+    background: radial-gradient(circle at 18% 0, #202225f2, #07090afc 58%);
+  }
+  .empire-head, .diplo-head, .city-head, .trade-head {
+    border-bottom-color: #393f43;
+  }
+  .empire-card, .leader:not(.at-war):not(.allied), .city-yield,
+  .build-item, .quick-deal {
+    background: #111416c7; border-color: #32383c;
+  }
+  .leader-meter, .metric, .term, .autoplay-bar, .victory-options,
+  .trade-balance span {
+    background: #090b0d; border-color: #2e3438;
+  }
+  .event-item { background: #090b0c; border-left-color: #4b5256; }
+  .event-item.important {
+    background: linear-gradient(90deg, #302713, #090b0c 72%);
+  }
+  .event-item.nuclear {
+    background: linear-gradient(90deg, #38150c, #090b0c 76%);
+  }
+  .war-card { background: #090b0c; }
+  .city-tag, .trade-filter { background: #111416; border-color: #343a3e; }
+  .quick-deal:hover { background: #191d20; border-color: #62686c; }
+  .trade-toolbar { background: #090b0dc7; border-bottom-color: #292e31; }
+  #capture-choice {
+    background: radial-gradient(circle at 25% 0, #30291ff8, #080a0bfc 62%);
+  }
+  #tip { background: #080a0bf2; border-color: #4d5458; }
+  #winner {
+    background: radial-gradient(circle at top, #2b291f, #090b0df7 65%);
+  }
+  .dossier-window {
+    background: linear-gradient(180deg, #0a0c0efa, #07090af5);
+    border-color: #4b5256;
+  }
+  .dossier-window .dossier-head { background: #111416f2; }
+  .dossier-window .dossier-body {
+    background: linear-gradient(180deg, #0a0c0ef7, #07090aef);
+  }
+  .dossier-btn, .dossier-section { background: #090b0d; }
+  .overlay-close { background: #090b0ddc; border-color: #555d61; }
+  .overlay-collapse-ghost {
+    background: linear-gradient(135deg, #181b1df2, #090b0de8);
+  }
   @media (prefers-reduced-motion: reduce) {
     .section-label.overlay-return-flash { animation-duration: .01ms; }
     #world-transition::before, .world-transition-mark::before,
