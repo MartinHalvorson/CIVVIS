@@ -221,6 +221,52 @@ pub struct StrategicAi {
     /// long ones.
     pub horizon: u32,
     next_review: u32,
+    /// Project each branch from the plan actually in force, instead of
+    /// from a planner that has just been constructed.
+    ///
+    /// `AdvancedAi` carries state a rollout cannot re-derive in forty
+    /// rounds: the strategic plan, settler and builder assignments, the
+    /// turn a major war started, a peace cooldown, and the force groups
+    /// that make campaigns coherent. Every branch has always been handed a
+    /// **new** agent, so the projection asks "what happens if I restart my
+    /// planner and commit to this lane" when the decision it is standing in
+    /// for is "what happens if I commit to this lane from here". A branch
+    /// that reaches for the army finds an empty force-group table; a branch
+    /// projected from an empire mid-campaign forgets it is at war and
+    /// forgets it is inside a peace cooldown.
+    ///
+    /// Cloning the agent in force and applying the branch's decision to the
+    /// clone — `retarget`, `adapt`, `reweight`, the same three calls
+    /// `take_turn` makes after a review — makes the counterfactual an exact
+    /// simulation of the decision being considered. All three deliberately
+    /// preserve campaign and unit-role memory and drop only the plan, so
+    /// the branch re-assesses under its new lane without amnesia.
+    ///
+    /// Costs nothing: the same number of branches, the same horizon, one
+    /// clone of a small struct in place of one construction of it.
+    ///
+    /// **★ PROMOTED — on by default.** Earned on a pre-registered 500-map
+    /// run at fresh seed 132000: 553/1000 games (55.3%), 87 map directions
+    /// to 34, sign p=0.0000, Wilson 50.9%–59.6%, Elo-equivalent +37,
+    /// anytime-valid evidence 6.6e4 crossing at map 209, and
+    /// `promotion gate: PASS` under the unmodified gate. Terminal score
+    /// agrees independently (271 to 206, p=0.0033). Three disjoint seed sets
+    /// total **860 maps, 140 map-directions to 58, sign p=5.2e-09**.
+    ///
+    /// Unlike `strategic_deep`, which costs 4x the macro-search compute and
+    /// therefore had to be opt-in, this costs nothing, so every caller gets
+    /// it: `strategic`, `strategic_deep`, `strategic_score`, soak, the fleet
+    /// and the exhibition. `strategic_cold` is the frozen control that keeps
+    /// every published pre-promotion number reproducible.
+    ///
+    /// One caution for anyone reading the older numbers: what shifted was
+    /// victory *routing*, not the economy. The promoted agent took 32
+    /// domination seats against the control's 51 and 148 religious against
+    /// 112, while terminal score moved only 0.8 points. Domination converts
+    /// at 3-8%, the worst lane on the board. The run cannot separate which
+    /// piece of retained state does it -- the force groups, the peace
+    /// cooldown, or simply the plan surviving.
+    pub continue_from_plan: bool,
     /// Search the doctrine axis as well as the lane. Off by default so
     /// `strategic` is bit-identical to its published behaviour; the
     /// `strategic_doctrine` entrant turns it on, which makes the two an
@@ -300,6 +346,7 @@ impl StrategicAi {
             weights,
             net,
             census: ReviewCensus::default(),
+            continue_from_plan: true,
             adaptive_horizon: false,
             doctrine_search: false,
             defer_periodic_on_interrupt: true,
@@ -647,12 +694,7 @@ impl StrategicAi {
             .iter()
             .map(|p| {
                 if p.id == pid {
-                    if let Some(target) = target {
-                        Box::new(AdvancedAi::with_weights_and_target(weights.clone(), target))
-                            as Box<dyn Ai>
-                    } else {
-                        Box::new(AdvancedAi::with_weights(weights.clone())) as Box<dyn Ai>
-                    }
+                    self.branch_agent(target, weights)
                 } else {
                     // The counterfactual must preserve the opponent class the
                     // strategic layer is trying to beat. BasicAi understates
@@ -671,6 +713,50 @@ impl StrategicAi {
             }
         }
         (sim, ais)
+    }
+
+    /// The searching seat's agent for one branch.
+    ///
+    /// With `continue_from_plan` off this is the shipped behaviour: a newly
+    /// constructed planner carrying the branch's lane and genome and nothing
+    /// else. With it on, the agent in force is cloned and the branch's
+    /// decision is applied to the clone through exactly the calls
+    /// `take_turn` makes after a review — and only when they would change
+    /// something, so a branch that re-nominates the lane already in force
+    /// keeps its plan rather than dropping it for no reason.
+    fn branch_agent(&self, target: Option<VictoryTarget>, weights: &Weights) -> Box<dyn Ai> {
+        if !self.continue_from_plan {
+            return match target {
+                Some(target) => {
+                    Box::new(AdvancedAi::with_weights_and_target(weights.clone(), target))
+                        as Box<dyn Ai>
+                }
+                None => Box::new(AdvancedAi::with_weights(weights.clone())) as Box<dyn Ai>,
+            };
+        }
+        let mut inner = self.inner.clone();
+        if inner.weights().to_vec() != weights.to_vec() {
+            inner.reweight(weights.clone());
+        }
+        match target {
+            Some(target) if inner.victory_target() != Some(target) => inner.retarget(target),
+            None if inner.victory_target().is_some() => inner.adapt(),
+            _ => {}
+        }
+        Box::new(inner) as Box<dyn Ai>
+    }
+
+    /// Every branch's projected value, in the order `review` compares them.
+    ///
+    /// Exposed for the same reason `doctrine_values` is: whether projecting
+    /// from the plan in force changes what the search sees is a question
+    /// about these numbers, and a win rate cannot answer it.
+    pub fn lane_values(&self, g: &Game, pid: usize) -> Vec<(f64, Option<VictoryTarget>)> {
+        let mut values = vec![(self.rollout(g, pid, None), None)];
+        for target in self.lane_candidates(g) {
+            values.push((self.rollout(g, pid, Some(target)), Some(target)));
+        }
+        values
     }
 
     /// Projected value of staying adaptive (`None`) or committing to `target`
@@ -1621,6 +1707,65 @@ mod tests {
     }
 
     /// A treatment has to be shown to fire before it is worth evaluating.
+    /// #380 cost a 240-game run to discover its treatment was inert with
+    /// every diagnostic identical to the digit, so this asserts directly
+    /// that projecting from the plan in force changes the numbers the
+    /// search reads — on the same agent, in the same position, with only
+    /// the flag moved.
+    #[test]
+    fn projecting_from_the_plan_in_force_changes_what_the_search_sees() {
+        let mut changed = 0;
+        let mut checked = 0;
+        for seed in [31u64, 57, 83] {
+            let mut g = Game::new(3, 20, 14, seed, 200, 0);
+            let mut strategic = StrategicAi::with_weights(Default::default());
+            let mut rivals = BasicAi::fleet(&g);
+            // Let the searching seat accumulate the plan, campaign and
+            // force-group state a cold branch throws away.
+            for _ in 0..45 {
+                if g.winner.is_some() {
+                    break;
+                }
+                for pid in 0..g.players.len() {
+                    if g.winner.is_some() {
+                        break;
+                    }
+                    if pid == 0 {
+                        strategic.take_turn(&mut g, pid);
+                    } else {
+                        rivals[pid].take_turn(&mut g, pid);
+                    }
+                }
+            }
+            if g.winner.is_some() {
+                continue;
+            }
+            checked += 1;
+            strategic.continue_from_plan = false;
+            let cold = strategic.lane_values(&g, 0);
+            strategic.continue_from_plan = true;
+            let warm = strategic.lane_values(&g, 0);
+            assert_eq!(cold.len(), warm.len());
+            assert!(warm.iter().all(|(value, _)| value.is_finite()));
+            // Determinism: the same flag must give the same numbers twice.
+            assert_eq!(warm, strategic.lane_values(&g, 0));
+            if cold
+                .iter()
+                .zip(&warm)
+                .any(|((left, _), (right, _))| left != right)
+            {
+                changed += 1;
+            }
+        }
+        assert!(checked > 0, "no ordinary mid-game position was reached");
+        assert!(
+            changed > 0,
+            "the warm and cold projections agreed to the digit in all {checked} positions, \
+             so the plan in force carries nothing the rollout cannot re-derive and an \
+             evaluation would measure nothing"
+        );
+    }
+
     /// #380 spent a 240-game run to discover its treatment was inert, with
     /// every diagnostic identical to the digit. This asserts the adaptive
     /// horizon actually declines rounds in ordinary positions, so that a
