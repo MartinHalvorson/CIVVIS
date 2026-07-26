@@ -2480,6 +2480,144 @@ mod seating_tests {
 }
 
 #[cfg(test)]
+mod modifier_attachment_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn game_with_capitals(players: usize, seed: u64, max_turns: u32) -> Game {
+        let mut game = Game::new_full(players, 26, 16, seed, max_turns, 0, false);
+        for pid in 0..players {
+            let position = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find_map(|unit| {
+                    let unit = &game.units[&unit];
+                    (unit.kind == "settler").then_some(unit.pos)
+                })
+                .unwrap();
+            game.found_city_for(pid, position, None);
+        }
+        game
+    }
+
+    fn rules_with_runtime_modifier() -> Rules {
+        let mut files = Rules::shipped_values();
+        files.insert(
+            "modifiers".to_string(),
+            json!({
+                "congress_public_works": {
+                    "effects": {"builder_production_pct": 25}
+                }
+            }),
+        );
+        Rules::from_values(files).unwrap()
+    }
+
+    fn install_runtime_modifier(game: &mut Game) {
+        let modifiers = rules_with_runtime_modifier().modifiers;
+        let mut rules = (*game.rules).clone();
+        rules.modifiers = modifiers;
+        game.rules = Arc::new(rules);
+    }
+
+    #[test]
+    fn player_type_attachment_targets_only_that_class_and_reaches_engine_consumers() {
+        let mut game = game_with_capitals(2, 86_001, 80);
+        install_runtime_modifier(&mut game);
+        let city = game.player_city_ids(0)[0];
+        let builder = Item::Unit {
+            unit: "builder".to_string(),
+        };
+        let baseline = game.item_prod_mult(0, city, Some(&builder));
+
+        assert_eq!(
+            game.attach_modifier_to_player_type(
+                "PLAYERTYPE_MAJOR",
+                "congress_public_works"
+            )
+            .unwrap(),
+            2
+        );
+        assert_eq!(game.player_modifier_effect(0, "builder_production_pct"), 25.0);
+        assert_eq!(game.policy_effect(0, "builder_production_pct"), 25.0);
+        assert_eq!(game.item_prod_mult(0, city, Some(&builder)), baseline + 0.25);
+        for player in game.players.iter().filter(|player| {
+            player.is_minor || player.is_barbarian || player.is_free_city
+        }) {
+            assert!(player.attached_modifiers.is_empty());
+        }
+
+        // Modifier identity is stable: applying one resolution twice does
+        // not stack it, and expiry removes exactly the original targets.
+        assert_eq!(
+            game.attach_modifier_to_player_type("major", "congress_public_works")
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            game.detach_modifier_from_player_type("player_major", "congress_public_works")
+                .unwrap(),
+            2
+        );
+        assert_eq!(game.item_prod_mult(0, city, Some(&builder)), baseline);
+    }
+
+    #[test]
+    fn player_type_attachment_supports_minor_barbarian_and_free_city_seats() {
+        let mut game = Game::new_full(2, 24, 16, 86_002, 80, 1, true);
+        install_runtime_modifier(&mut game);
+        let count = |game: &Game, kind: &str| {
+            game.players
+                .iter()
+                .filter(|player| Game::player_has_type(player, kind))
+                .count()
+        };
+
+        for (selector, kind) in [
+            ("city_state", "minor"),
+            ("barbarian", "barbarian"),
+            ("free_cities", "free_cities"),
+        ] {
+            let expected = count(&game, kind);
+            assert!(expected > 0, "test game has no {kind} seat");
+            assert_eq!(
+                game.attach_modifier_to_player_type(selector, "congress_public_works")
+                    .unwrap(),
+                expected
+            );
+            assert_eq!(
+                game.detach_modifier_from_player_type(selector, "congress_public_works")
+                    .unwrap(),
+                expected
+            );
+        }
+        assert!(game
+            .attach_modifier_to_player_type("spectator", "congress_public_works")
+            .unwrap_err()
+            .contains("unknown player type"));
+        assert!(game
+            .attach_modifier_to_player_type("major", "missing")
+            .unwrap_err()
+            .contains("unknown modifier"));
+    }
+
+    #[test]
+    fn runtime_modifier_attachments_survive_save_round_trip() {
+        let mut game = game_with_capitals(2, 86_003, 80);
+        install_runtime_modifier(&mut game);
+        game.attach_modifier_to_player(0, "congress_public_works")
+            .unwrap();
+
+        let restored: Game =
+            serde_json::from_str(&serde_json::to_string(&game).unwrap()).unwrap();
+        assert!(restored.players[0]
+            .attached_modifiers
+            .contains("congress_public_works"));
+        assert!(restored.players[1].attached_modifiers.is_empty());
+    }
+}
+
+#[cfg(test)]
 fn install_test_district(game: &mut Game, city: u32, district: &str) -> Pos {
     let center = game.cities[&city].pos;
     let position = game.cities[&city]
@@ -6664,6 +6802,27 @@ mod trade_deal_tests {
             .insert("gunboat_diplomacy".to_string());
         assert!(game.has_open_borders(0, minor));
         assert!(!game.has_open_borders(1, minor));
+
+        game.players[0].policies.clear();
+        game.players[0].civ = "Portugal".to_string();
+        assert!(
+            game.has_open_borders(0, minor),
+            "João III has Open Borders with every city-state"
+        );
+    }
+
+    #[test]
+    fn bilateral_open_borders_wait_for_both_early_empire_civics() {
+        let mut game = trade_game();
+        game.players[1].civics.remove("early_empire");
+        assert_eq!(
+            game.do_propose_deal(0, 1, 0.0, 0.0, true, false, false, None),
+            Err("invalid diplomatic deal".to_string())
+        );
+        game.players[1].civics.insert("early_empire".to_string());
+        assert!(game
+            .do_propose_deal(0, 1, 0.0, 0.0, true, false, false, None)
+            .is_ok());
     }
 
     #[test]
@@ -11624,6 +11783,11 @@ struct PlannedRoute {
     unit: u32,
     target: Pos,
     range: i32,
+    /// Diplomatic and city-ownership state which made the path legal. The
+    /// routing cache already expires at every new turn and map mutation; this
+    /// compact key catches same-turn deals, wars, civics, and city transfers
+    /// without rescanning the complete remaining path before every step.
+    access_key: u64,
     /// Complete path including the position where it was planned and the
     /// stopping tile. Looking up the unit's live position makes repeated
     /// calls before a move harmless and advances naturally after one.
@@ -12550,6 +12714,15 @@ pub struct WarHighlight {
     pub city: Option<String>,
 }
 
+/// A place where a war was fought.  Unlike the units and borders on the live
+/// map, these sites survive peace, conquest, later rebuilding and a reload, so
+/// a client can return to the battlefield and show what became of it.
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Debug)]
+pub struct WarTheaterSite {
+    pub turn: u32,
+    pub pos: Pos,
+}
+
 /// One detonation, recorded on the game rather than reconstructed from its
 /// consequences.
 ///
@@ -12611,6 +12784,11 @@ pub struct WarRecord {
     #[serde(default)]
     pub peace_terms: Vec<WarPeace>,
     pub highlights: Vec<WarHighlight>,
+    /// Recent places where this front saw action, oldest first.  The bounded
+    /// tail describes the current theater while a war is active and becomes a
+    /// durable aftermath target once it is over.
+    #[serde(default)]
+    pub theater: Vec<WarTheaterSite>,
 }
 
 impl WarRecord {
@@ -12644,6 +12822,25 @@ impl WarRecord {
                 })
                 .into_iter()
                 .collect(),
+            theater: Vec::new(),
+        }
+    }
+
+    fn record_theater_site(&mut self, turn: u32, pos: Pos) {
+        if self
+            .theater
+            .iter()
+            .rev()
+            .take_while(|site| site.turn == turn)
+            .any(|site| site.pos == pos)
+        {
+            return;
+        }
+        self.theater.push(WarTheaterSite { turn, pos });
+        const THEATER_SITES_KEPT: usize = 64;
+        if self.theater.len() > THEATER_SITES_KEPT {
+            self.theater
+                .drain(..self.theater.len() - THEATER_SITES_KEPT);
         }
     }
 
@@ -12756,6 +12953,12 @@ pub struct Player {
     pub anarchy_turns: u32,
     #[serde(default)]
     pub policies: BTreeSet<String>,
+    /// Runtime modifier bundles attached directly to this player. World
+    /// Congress and mod-defined systems use this for Civ VI's
+    /// `ATTACH_MODIFIER_TO_PLAYERTYPE`; the IDs resolve through
+    /// `rules.modifiers` and survive save/load.
+    #[serde(default)]
+    pub attached_modifiers: BTreeSet<String>,
     #[serde(default)]
     pub influence: f64,
     #[serde(default)]
@@ -12914,6 +13117,7 @@ impl Player {
             pending_government: None,
             anarchy_turns: 0,
             policies: BTreeSet::new(),
+            attached_modifiers: BTreeSet::new(),
             influence: 0.0,
             envoys_free: 0,
             gpp: BTreeMap::new(),
@@ -15886,18 +16090,38 @@ impl Game {
         if self.wars.contains_key(&key) {
             return;
         }
-        self.wars.insert(
-            key,
-            WarRecord::new(
-                conflict,
-                declarer,
-                target,
-                aggressor,
-                defender,
-                self.turn,
-                declared_front,
-            ),
+        // Before the first armies meet, the named target's capital is the
+        // intelligible theater of the declaration.  Only the declared front
+        // contributes this seed; alliance fronts will add their own real
+        // action sites if and when fighting reaches them.
+        let opening_site = if declared_front {
+            self.cities
+                .values()
+                .find(|city| city.owner == target && city.is_capital)
+                .or_else(|| self.cities.values().find(|city| city.owner == target))
+                .map(|city| city.pos)
+                .or_else(|| {
+                    self.units
+                        .values()
+                        .find(|unit| unit.owner == target)
+                        .map(|unit| unit.pos)
+                })
+        } else {
+            None
+        };
+        let mut record = WarRecord::new(
+            conflict,
+            declarer,
+            target,
+            aggressor,
+            defender,
+            self.turn,
+            declared_front,
         );
+        if let Some(pos) = opening_site {
+            record.record_theater_site(self.turn, pos);
+        }
+        self.wars.insert(key, record);
         self.sync_war_participants_for(key);
     }
 
@@ -16006,15 +16230,16 @@ impl Game {
             .round() as i64;
         let current_strength = self.military_power(owner).round() as i64;
         let key = pair(first, second);
+        let turn = self.turn;
         self.open_war_record(first, second);
-        if let Some(participant) = self
-            .wars
-            .get_mut(&key)
-            .and_then(|war| {
-                war.participants
-                    .iter_mut()
-                    .find(|participant| participant.player == owner && participant.exited.is_none())
-            })
+        let Some(war) = self.wars.get_mut(&key) else {
+            return;
+        };
+        war.record_theater_site(turn, unit.pos);
+        if let Some(participant) = war
+            .participants
+            .iter_mut()
+            .find(|participant| participant.player == owner && participant.exited.is_none())
         {
             participant.peak_strength = Some(
                 participant
@@ -16243,7 +16468,9 @@ impl Game {
             let multiplier = self.war_weariness_multiplier(victim_owner, home);
             self.add_war_weariness(victim_owner, 3.0 * multiplier);
         }
+        let turn = self.turn;
         if let Some((war, _, _)) = self.war_ledger(killer, victim_owner) {
+            war.record_theater_site(turn, at);
             let label = format!(
                 "{}{}",
                 kind,
@@ -16262,10 +16489,20 @@ impl Game {
     /// A moment worth naming in the war it belongs to. Silently dropped when
     /// the two are not at war — a Barbarian raid or a strike in peacetime has
     /// no war to be part of.
-    fn record_war_moment(&mut self, actor: usize, subject: usize, kind: &str, city: Option<String>) {
+    fn record_war_moment(
+        &mut self,
+        actor: usize,
+        subject: usize,
+        kind: &str,
+        city: Option<String>,
+        at: Option<Pos>,
+    ) {
         let turn = self.turn;
         let kind = kind.to_string();
         if let Some((war, _, _)) = self.war_ledger(actor, subject) {
+            if let Some(pos) = at {
+                war.record_theater_site(turn, pos);
+            }
             war.highlights.push(WarHighlight {
                 turn,
                 kind,
@@ -16279,7 +16516,14 @@ impl Game {
     /// A city changing hands under arms — the one event a war log should
     /// never summarize away. A capital is called out by name: losing one is
     /// the moment a war turns.
-    fn record_war_city_loss(&mut self, taker: usize, loser: usize, city: &str, capital: bool) {
+    fn record_war_city_loss(
+        &mut self,
+        taker: usize,
+        loser: usize,
+        city: &str,
+        capital: bool,
+        at: Pos,
+    ) {
         if let Some((war, _, _)) = self.war_ledger(taker, loser) {
             let losses = war.losses.entry(loser).or_default();
             losses.cities += 1;
@@ -16290,7 +16534,7 @@ impl Game {
         } else {
             "city_captured"
         };
-        self.record_war_moment(taker, loser, kind, Some(city.to_string()));
+        self.record_war_moment(taker, loser, kind, Some(city.to_string()), Some(at));
     }
 
     /// Classify a tile from a unit owner's perspective for passive healing.
@@ -16504,18 +16748,127 @@ impl Game {
         !self.in_anarchy(pid) && self.players[pid].policies.contains(name)
     }
 
-    /// Sum a numeric primitive across all currently slotted policy cards.
-    /// Policy rules remain data-driven while callers provide the game context
-    /// (unit class, district family, city state, and so on).
-    pub fn policy_effect(&self, pid: usize, effect: &str) -> f64 {
-        if self.in_anarchy(pid) {
-            return 0.0; // the cards come out of their slots in Anarchy
+    /// Sum a reusable modifier bundle attached directly to one player.
+    pub fn player_modifier_effect(&self, pid: usize, effect: &str) -> f64 {
+        self.players
+            .get(pid)
+            .into_iter()
+            .flat_map(|player| player.attached_modifiers.iter())
+            .filter_map(|modifier| self.rules.modifiers.get(modifier)?.effects.get(effect))
+            .sum()
+    }
+
+    /// Attach one named modifier to one player. Repeating the same attachment
+    /// is idempotent, matching Civ VI's stable modifier identity.
+    pub fn attach_modifier_to_player(
+        &mut self,
+        pid: usize,
+        modifier: &str,
+    ) -> Result<bool, String> {
+        if !self.rules.modifiers.contains_key(modifier) {
+            return Err(format!("unknown modifier {modifier}"));
         }
-        self.players[pid]
+        let player = self
+            .players
+            .get_mut(pid)
+            .ok_or_else(|| format!("unknown player {pid}"))?;
+        Ok(player.attached_modifiers.insert(modifier.to_string()))
+    }
+
+    /// Remove one named runtime attachment from one player.
+    pub fn detach_modifier_from_player(&mut self, pid: usize, modifier: &str) -> bool {
+        self.players
+            .get_mut(pid)
+            .is_some_and(|player| player.attached_modifiers.remove(modifier))
+    }
+
+    fn normalized_player_type(player_type: &str) -> Result<&'static str, String> {
+        match player_type.trim().to_ascii_lowercase().as_str() {
+            "all" | "player_all" | "playertype_all" => Ok("all"),
+            "major" | "major_civilization" | "player_major" | "playertype_major" => {
+                Ok("major")
+            }
+            "minor" | "minor_civilization" | "city_state" | "player_minor"
+            | "playertype_minor" => Ok("minor"),
+            "barbarian" | "player_barbarian" | "playertype_barbarian" => Ok("barbarian"),
+            "free_city" | "free_cities" | "player_free_cities"
+            | "playertype_free_cities" => Ok("free_cities"),
+            _ => Err(format!("unknown player type {player_type}")),
+        }
+    }
+
+    fn player_has_type(player: &Player, player_type: &str) -> bool {
+        match player_type {
+            "all" => true,
+            "major" => !player.is_minor && !player.is_barbarian && !player.is_free_city,
+            "minor" => player.is_minor && !player.is_barbarian && !player.is_free_city,
+            "barbarian" => player.is_barbarian,
+            "free_cities" => player.is_free_city,
+            _ => false,
+        }
+    }
+
+    /// Attach a modifier to every seat in a Civ VI player class. This is the
+    /// runtime primitive used by World Congress-style effects; callers keep
+    /// the returned count for diagnostics and can remove the same attachment
+    /// when the resolution expires.
+    pub fn attach_modifier_to_player_type(
+        &mut self,
+        player_type: &str,
+        modifier: &str,
+    ) -> Result<usize, String> {
+        if !self.rules.modifiers.contains_key(modifier) {
+            return Err(format!("unknown modifier {modifier}"));
+        }
+        let player_type = Self::normalized_player_type(player_type)?;
+        let targets: Vec<usize> = self
+            .players
+            .iter()
+            .filter(|player| Self::player_has_type(player, player_type))
+            .map(|player| player.id)
+            .collect();
+        let mut attached = 0;
+        for pid in targets {
+            attached += usize::from(self.attach_modifier_to_player(pid, modifier)?);
+        }
+        Ok(attached)
+    }
+
+    /// Remove a class-wide runtime attachment, for example when the next
+    /// regular Congress session replaces the previous outcomes.
+    pub fn detach_modifier_from_player_type(
+        &mut self,
+        player_type: &str,
+        modifier: &str,
+    ) -> Result<usize, String> {
+        let player_type = Self::normalized_player_type(player_type)?;
+        let targets: Vec<usize> = self
+            .players
+            .iter()
+            .filter(|player| Self::player_has_type(player, player_type))
+            .map(|player| player.id)
+            .collect();
+        Ok(targets
+            .into_iter()
+            .filter(|pid| self.detach_modifier_from_player(*pid, modifier))
+            .count())
+    }
+
+    /// Sum a numeric primitive across all currently slotted policy cards and
+    /// runtime player attachments. Policy rules remain data-driven while
+    /// callers provide the game context (unit class, district family, city
+    /// state, and so on). Anarchy suppresses cards but not external modifiers.
+    pub fn policy_effect(&self, pid: usize, effect: &str) -> f64 {
+        let attached = self.player_modifier_effect(pid, effect);
+        if self.in_anarchy(pid) {
+            return attached; // the cards come out; external modifiers remain
+        }
+        attached
+            + self.players[pid]
             .policies
             .iter()
             .filter_map(|name| self.rules.policies.get(name)?.effects.get(effect))
-            .sum()
+            .sum::<f64>()
     }
 
     /// The era a unit belongs to, taken from the node that unlocks it. Unit
@@ -16534,8 +16887,9 @@ impl Game {
 
     /// Sums a policy effect over the cards whose era window admits `era`.
     fn policy_effect_for_unit(&self, pid: usize, effect: &str, unit: &str) -> f64 {
+        let attached = self.player_modifier_effect(pid, effect);
         if self.in_anarchy(pid) {
-            return 0.0;
+            return attached;
         }
         let era = self.unit_era(unit);
         let class = self
@@ -16543,18 +16897,20 @@ impl Game {
             .units
             .get(unit)
             .map_or("", |unit| unit.promotion_class.as_str());
-        self.players[pid]
-            .policies
-            .iter()
-            .filter_map(|name| self.rules.policies.get(name))
-            .filter(|spec| spec.unit_eras.is_empty() || spec.unit_eras.contains(&era))
-            .filter(|spec| {
-                !spec.unit_era_gaps
-                    .get(class)
-                    .is_some_and(|eras| eras.contains(&era))
-            })
-            .filter_map(|spec| spec.effects.get(effect))
-            .sum()
+        attached
+            + self.players[pid]
+                .policies
+                .iter()
+                .filter_map(|name| self.rules.policies.get(name))
+                .filter(|spec| spec.unit_eras.is_empty() || spec.unit_eras.contains(&era))
+                .filter(|spec| {
+                    !spec
+                        .unit_era_gaps
+                        .get(class)
+                        .is_some_and(|eras| eras.contains(&era))
+                })
+                .filter_map(|spec| spec.effects.get(effect))
+                .sum::<f64>()
     }
 
     /// Stock Gold price of a plot whose ring base is `base` (50 through ring
@@ -21523,7 +21879,13 @@ impl Game {
     /// Whether this unit type has learned how to embark onto Coast tiles.
     /// Sailing unlocks Builders, Celestial Navigation unlocks Traders, and
     /// Shipbuilding unlocks every remaining land unit (Gathering Storm).
+    /// Māori Mana starts with the complete embarkation package even though
+    /// this compact ruleset does not inject its two free technologies into the
+    /// player's research ledger.
     fn has_embarkation(&self, owner: usize, kind: &str) -> bool {
+        if self.has_ability(owner, "mana") {
+            return true;
+        }
         match kind {
             "builder" => self.tree_effect(owner, "builder_embark") > 0.0,
             "trader" => self.tree_effect(owner, "trader_embark") > 0.0,
@@ -21572,10 +21934,19 @@ impl Game {
         let spec = &self.rules.units[unit.kind.as_str()];
         let sea = spec.domain.as_deref() == Some("sea");
         let wading_giant = unit.kind == "giant_death_robot";
+        // Cartography is the stock gate for every naval and embarked unit.
+        // Knarr substitutes Shipbuilding for Norway; Mana lets Māori cross
+        // Ocean from the opening turn.
+        let ocean = wading_giant
+            || self.has_ability(unit.owner, "mana")
+            || self.tree_effect(unit.owner, "ocean_navigation") > 0.0
+            || (sea
+                && self.has_ability(unit.owner, "knarr")
+                && self.players[unit.owner].techs.contains("shipbuilding"));
         TraversalClass {
             sea,
             embark: !sea && (wading_giant || self.has_embarkation(unit.owner, &unit.kind)),
-            ocean: wading_giant || self.tree_effect(unit.owner, "ocean_navigation") > 0.0,
+            ocean,
             mountain: (unit.kind == "builder"
                 && self.unlocked(
                     unit.owner,
@@ -24878,6 +25249,7 @@ impl Game {
             self.unit_is_embarked_at(unit, from) != self.unit_is_embarked_at(unit, to);
         if changes_embarkation
             && self.promotion_effect(unit, "amphibious") <= 0.0
+            && !self.has_ability(unit.owner, "knarr")
             && !self.embarkation_facility_at(from)
             && !self.embarkation_facility_at(to)
         {
@@ -25363,6 +25735,9 @@ impl Game {
         }
         if embarked {
             moves += self.tree_effect(u.owner, "embarked_movement");
+            if self.has_ability(u.owner, "mana") {
+                moves += 2.0;
+            }
         }
         if spec.domain.as_deref() == Some("sea") || embarked {
             moves += self.empire_wonder_effect(u.owner, "naval_movement");
@@ -26659,6 +27034,36 @@ impl Game {
                 || unit.moves_left >= self.unit_step_cost(uid, from, to))
     }
 
+    fn territory_owner_at(&self, pos: Pos) -> Option<usize> {
+        self.map
+            .get(pos)
+            .and_then(|tile| tile.owner_city)
+            .and_then(|city| self.cities.get(&city))
+            .map(|city| city.owner)
+    }
+
+    /// Units which Gathering Storm lets cross an enforced border without a
+    /// diplomatic grant. Traders and religious units always ignore closed
+    /// borders; Rock Bands use Music Censorship instead; Terracotta Army gives
+    /// the same exception to Archaeologists.
+    fn unit_ignores_closed_borders(&self, unit: &Unit) -> bool {
+        let spec = &self.rules.units[unit.kind.as_str()];
+        spec.class == "religious"
+            || unit.kind == "trader"
+            || unit.kind == "rock_band"
+            || (unit.kind == "archaeologist"
+                && self.empire_wonder_effect(unit.owner, "archaeologist_open_borders") > 0.0)
+    }
+
+    /// The complete territory gate shared by immediate movement, future route
+    /// segments, and displacement when a temporary grant ends.
+    fn unit_has_territory_access(&self, unit: &Unit, territory_owner: usize) -> bool {
+        territory_owner == unit.owner
+            || self.unit_ignores_closed_borders(unit)
+            || self.is_at_war(unit.owner, territory_owner)
+            || self.has_open_borders(unit.owner, territory_owner)
+    }
+
     fn can_enter(&self, uid: u32, from: Pos, pos: Pos) -> bool {
         let u = &self.units[&uid];
         if self.wdist(from, pos) != 1 {
@@ -26696,23 +27101,11 @@ impl Game {
         {
             return false;
         }
-        let archaeologist_ignores_borders = u.kind == "archaeologist"
-            && self.empire_wonder_effect(u.owner, "archaeologist_open_borders") > 0.0;
-        // Rock Bands use their own Music Censorship gate above; ordinary Open
-        // Borders are deliberately not required to enter a concert market.
-        let ignores_borders = archaeologist_ignores_borders || u.kind == "rock_band";
-        if spec.class != "religious" && !ignores_borders {
-            let territory_owner = self.map.tiles[&pos]
-                .owner_city
-                .and_then(|city| self.cities.get(&city))
-                .map(|city| city.owner);
-            if territory_owner.is_some_and(|owner| {
-                owner != u.owner
-                    && !self.is_at_war(u.owner, owner)
-                    && !self.has_open_borders(u.owner, owner)
-            }) {
-                return false;
-            }
+        if self
+            .territory_owner_at(pos)
+            .is_some_and(|owner| !self.unit_has_territory_access(u, owner))
+        {
+            return false;
         }
         for oid in self.units_at(pos) {
             let o = &self.units[&oid];
@@ -26757,6 +27150,171 @@ impl Game {
             }
         }
         true
+    }
+
+    /// Whether one unit can be displaced to `pos` without capturing anything,
+    /// entering a hostile district, or violating the ordinary stacking layer.
+    /// Border expulsion is a teleport, not a move or attack, so enemy units are
+    /// never resolved as casualties along the way.
+    fn legal_border_displacement(
+        &self,
+        uid: u32,
+        pos: Pos,
+        moving: &BTreeSet<u32>,
+        forbidden_owner: Option<usize>,
+    ) -> bool {
+        let unit = &self.units[&uid];
+        let spec = &self.rules.units[unit.kind.as_str()];
+        if spec.domain.as_deref() == Some("air") || !self.unit_can_traverse(uid, pos) {
+            return false;
+        }
+        if let Some(owner) = self.territory_owner_at(pos) {
+            if Some(owner) == forbidden_owner
+                || (owner != unit.owner
+                    && (self.is_at_war(unit.owner, owner)
+                        || !self.unit_has_territory_access(unit, owner)))
+            {
+                return false;
+            }
+        }
+        if self
+            .city_at(pos)
+            .is_some_and(|city| self.cities[&city].owner != unit.owner)
+            || self
+                .encampment_at(pos)
+                .is_some_and(|city| self.cities[&city].owner != unit.owner)
+        {
+            return false;
+        }
+        self.units_at(pos).into_iter().all(|other_id| {
+            if moving.contains(&other_id) {
+                return true;
+            }
+            let other = &self.units[&other_id];
+            let other_spec = &self.rules.units[other.kind.as_str()];
+            if other_spec.domain.as_deref() == Some("air") {
+                return true;
+            }
+            if other.owner != unit.owner {
+                return false;
+            }
+            if other_spec.class != spec.class {
+                return true;
+            }
+            spec.class == "military"
+                && (spec.domain.as_deref() == Some("sea"))
+                    != (other_spec.domain.as_deref() == Some("sea"))
+        })
+    }
+
+    fn border_displacement_destination(
+        &self,
+        uid: u32,
+        forbidden_owner: Option<usize>,
+    ) -> Option<Pos> {
+        let unit = self.units.get(&uid)?;
+        let mut moving = BTreeSet::from([uid]);
+        if let Some(peer) = unit.linked_to {
+            moving.insert(peer);
+        }
+        self.map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|position| {
+                moving.iter().all(|member| {
+                    self.legal_border_displacement(
+                        *member,
+                        *position,
+                        &moving,
+                        forbidden_owner,
+                    )
+                })
+            })
+            .map(|position| {
+                let rank = match self.territory_owner_at(position) {
+                    Some(owner)
+                        if owner == unit.owner
+                            || self.same_team(unit.owner, owner)
+                            || (self.players[owner].is_minor
+                                && self.suzerain_of(owner) == Some(unit.owner)) =>
+                    {
+                        0
+                    }
+                    None => 1,
+                    Some(_) => 2,
+                };
+                (rank, self.wdist(unit.pos, position), position)
+            })
+            .min()
+            .map(|(_, _, position)| position)
+    }
+
+    fn displace_unit_from_closed_border(
+        &mut self,
+        uid: u32,
+        forbidden_owner: Option<usize>,
+    ) {
+        let Some(unit) = self.units.get(&uid) else {
+            return;
+        };
+        if unit.linked_to.is_some() && !self.is_linked_leader(uid) {
+            return;
+        }
+        let Some(destination) = self.border_displacement_destination(uid, forbidden_owner) else {
+            return;
+        };
+        let peer = self.units[&uid].linked_to;
+        let carried_aircraft: Vec<u32> = if self.units[&uid].kind == "aircraft_carrier" {
+            self.units_at(self.units[&uid].pos)
+                .into_iter()
+                .filter(|other| {
+                    *other != uid
+                        && self.units[other].owner == self.units[&uid].owner
+                        && self.rules.units[self.units[other].kind.as_str()]
+                            .domain
+                            .as_deref()
+                            == Some("air")
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        self.relocate(uid, destination);
+        if let Some(peer) = peer {
+            self.relocate(peer, destination);
+            let maximum = self.unit_max_moves(peer);
+            self.units.get_mut(&peer).unwrap().moves_left =
+                self.units[&peer].moves_left.min(maximum);
+        }
+        for aircraft in carried_aircraft {
+            self.relocate(aircraft, destination);
+        }
+        let maximum = self.unit_max_moves(uid);
+        self.units.get_mut(&uid).unwrap().moves_left = self.units[&uid].moves_left.min(maximum);
+    }
+
+    /// Civ VI expels units when an access grant lapses. Reconcile one mover at
+    /// the start of its turn, and all movers when Early Empire first changes a
+    /// territory owner's borders from universally open to enforced.
+    fn reconcile_closed_border_units(&mut self, mover: Option<usize>) {
+        let mut displaced: Vec<(u32, usize)> = self
+            .units
+            .values()
+            .filter(|unit| mover.is_none_or(|owner| unit.owner == owner))
+            .filter(|unit| {
+                self.rules.units[unit.kind.as_str()].domain.as_deref() != Some("air")
+            })
+            .filter_map(|unit| {
+                let territory_owner = self.territory_owner_at(unit.pos)?;
+                (!self.unit_has_territory_access(unit, territory_owner))
+                    .then_some((unit.id, territory_owner))
+            })
+            .collect();
+        displaced.sort_unstable();
+        for (uid, territory_owner) in displaced {
+            self.displace_unit_from_closed_border(uid, Some(territory_owner));
+        }
     }
 
     fn is_linked_leader(&self, uid: u32) -> bool {
@@ -26808,23 +27366,36 @@ impl Game {
         if !self.zone_connected(uid, to, range) {
             return None; // proven: no chain of traversable tiles links them
         }
-        let cached_next = {
+        let territory_access = self.unit_territory_access(unit);
+        if range == 0
+            && self
+                .territory_owner_at(to)
+                .is_some_and(|owner| !territory_access[owner])
+        {
+            return None;
+        }
+        let access_key = self.route_access_key(unit, &territory_access);
+        let cached_step = {
             let routing = self.routing.borrow();
             routing
                 .paths
                 .iter()
-                .find(|route| route.unit == uid && route.target == to && route.range == range)
+                .find(|route| {
+                    route.unit == uid
+                        && route.target == to
+                        && route.range == range
+                        && route.access_key == access_key
+                })
                 .and_then(|route| {
                     route
                         .path
                         .iter()
                         .position(|position| *position == start)
-                        .and_then(|index| route.path.get(index + 1))
-                        .copied()
+                        .and_then(|index| route.path.get(index + 1).copied())
                 })
         };
-        if cached_next.is_some_and(|next| self.can_enter(uid, start, next)) {
-            return cached_next;
+        if cached_step.is_some_and(|next| self.can_enter(uid, start, next)) {
+            return cached_step;
         }
 
         // A* keeps known-target routing cheap enough for high-throughput
@@ -26866,7 +27437,7 @@ impl Game {
                 let enterable = if cur == start {
                     self.can_enter(uid, cur, n)
                 } else {
-                    self.can_path_through(uid, cur, n)
+                    self.can_path_through(uid, cur, n, &territory_access)
                 };
                 if !enterable {
                     continue;
@@ -26902,9 +27473,31 @@ impl Game {
             unit: uid,
             target: to,
             range,
+            access_key,
             path: reverse_path,
         });
         Some(step)
+    }
+
+    /// Everything which can change whether this unit may cross a border
+    /// without changing the map itself. Player access is already the complete
+    /// shared predicate; city owners distinguish a same-turn city transfer
+    /// whose tiles retain their existing owner-city ids.
+    fn route_access_key(&self, unit: &Unit, territory_access: &[bool]) -> u64 {
+        let mut key = vision_key(&[unit.owner as u64, self.players.len() as u64]);
+        for (owner, access) in territory_access.iter().enumerate() {
+            key = vision_key(&[key, owner as u64, *access as u64]);
+        }
+        for city in self.cities.values() {
+            key = vision_key(&[key, city.id as u64, city.owner as u64]);
+        }
+        key
+    }
+
+    fn unit_territory_access(&self, unit: &Unit) -> Vec<bool> {
+        (0..self.players.len())
+            .map(|owner| self.unit_has_territory_access(unit, owner))
+            .collect()
     }
 
     /// Terrain/domain legality for future route segments. Dynamic unit
@@ -26912,12 +27505,24 @@ impl Game {
     /// in the plan avoids expensive scans and lets moving units clear before
     /// the traveler arrives. Routes are recalculated whenever the immediate
     /// step remains blocked.
-    fn can_path_through(&self, uid: u32, from: Pos, pos: Pos) -> bool {
+    fn can_path_through(
+        &self,
+        uid: u32,
+        from: Pos,
+        pos: Pos,
+        territory_access: &[bool],
+    ) -> bool {
         if self.wdist(from, pos) != 1 {
             return false;
         }
         let unit = &self.units[&uid];
         if !self.unit_can_traverse(uid, pos) {
+            return false;
+        }
+        if self
+            .territory_owner_at(pos)
+            .is_some_and(|owner| !territory_access[owner])
+        {
             return false;
         }
         self.city_at(pos)
@@ -27045,6 +27650,7 @@ impl Game {
             return None;
         }
         let _memo = self.query_memo();
+        let territory_access = self.unit_territory_access(unit);
 
         // Same breadth-first walk in the same neighbour order, but the map
         // already numbers its tiles, so the frontier's bookkeeping is two
@@ -27068,7 +27674,7 @@ impl Game {
                 let enterable = if cur == start {
                     self.can_enter(uid, cur, n)
                 } else {
-                    self.can_path_through(uid, cur, n)
+                    self.can_path_through(uid, cur, n, &territory_access)
                 };
                 if !enterable {
                     continue;
@@ -27105,6 +27711,7 @@ impl Game {
         if self.formation_movement_locked_by_zoc(uid) {
             return BTreeMap::new();
         }
+        let _memo = self.query_memo();
         let mut best: BTreeMap<Pos, f64> = BTreeMap::new();
         best.insert(start, moves);
         let mut queue = vec![start];
@@ -27143,10 +27750,17 @@ impl Game {
         if start == to {
             return Some(vec![]);
         }
+        // MoveTo is also the protocol used for an AI route's already chosen
+        // adjacent step. Do not flood the unit's whole remaining movement
+        // area merely to rediscover that one-edge path.
+        if self.wdist(start, to) == 1 {
+            return self.can_move(uid, to).then_some(vec![to]);
+        }
         let max_moves = self.unit_max_moves(uid);
         if self.formation_movement_locked_by_zoc(uid) {
             return None;
         }
+        let _memo = self.query_memo();
         let mut best: BTreeMap<Pos, f64> = BTreeMap::new();
         let mut parent: BTreeMap<Pos, Pos> = BTreeMap::new();
         best.insert(start, moves);
@@ -37689,11 +38303,23 @@ impl Game {
         for (_, owner, name) in struck_cities {
             struck_owners.insert(owner);
             struck_names.push(name.clone());
-            self.record_war_moment(pid, owner, "nuclear_strike", Some(name));
+            self.record_war_moment(
+                pid,
+                owner,
+                "nuclear_strike",
+                Some(name),
+                Some(target),
+            );
         }
         for owner in &aggrieved {
             if !struck_owners.contains(owner) {
-                self.record_war_moment(pid, *owner, "nuclear_strike", None);
+                self.record_war_moment(
+                    pid,
+                    *owner,
+                    "nuclear_strike",
+                    None,
+                    Some(target),
+                );
             }
         }
         let units_destroyed = exposed
@@ -38389,7 +39015,9 @@ impl Game {
             || (peace && self.emergency_war_pair(pid, other))
             || (peace && self.peace_available_at(pid, other).is_some())
             || ((friendship || open_borders || alliance.is_some()) && self.is_at_war(pid, other))
-            || (open_borders && self.tree_effect(pid, "open_borders") <= 0.0)
+            || (open_borders
+                && (self.tree_effect(pid, "open_borders") <= 0.0
+                    || self.tree_effect(other, "open_borders") <= 0.0))
             || (friendship
                 && (self.players[pid]
                     .denounced_until
@@ -40049,7 +40677,10 @@ impl Game {
             || self.tree_effect(territory_owner, "open_borders") <= 0.0
             || (self.players[territory_owner].is_minor
                 && (self.suzerain_of(territory_owner) == Some(mover)
-                    || self.policy_effect(mover, "open_city_state_borders") > 0.0))
+                    || self.policy_effect(mover, "open_city_state_borders") > 0.0
+                    // João III's Porta do Cerco is folded into Portugal's
+                    // modeled Casa da Índia ability record.
+                    || self.has_ability(mover, "casa_da_india")))
             || self.players[mover]
                 .alliances
                 .get(&territory_owner)
@@ -43083,6 +43714,7 @@ impl Game {
         self.process_strategic_resources(pid);
         self.process_reactors(pid);
         self.process_diplomacy(pid);
+        self.reconcile_closed_border_units(Some(pid));
         self.process_routes(pid);
         self.process_great_people(pid);
         self.process_pressure(pid);
@@ -43310,6 +43942,9 @@ impl Game {
             .counters
             .entry(format!("tree_completions:{node}"))
             .or_insert(0) += 1;
+        if !technology && first && node == "early_empire" {
+            self.reconcile_closed_border_units(None);
+        }
         if first {
             self.players[pid].envoys_free +=
                 effects.get("free_envoys").copied().unwrap_or(0.0) as i64;
@@ -45186,7 +45821,7 @@ impl Game {
             self.note(new_owner, "War", message.clone(), Some(pos));
             self.note(old, "War", message, Some(pos));
             if conquest {
-                self.record_war_city_loss(new_owner, old, &name, capital);
+                self.record_war_city_loss(new_owner, old, &name, capital, pos);
             }
         }
         let captured_works = self
@@ -45532,7 +46167,13 @@ impl Game {
             return Err("that captured city cannot be razed".into());
         }
         self.capture_rewards(pid, defeated, 150.0);
-        self.record_war_moment(pid, defeated, "city_razed", Some(city.name.clone()));
+        self.record_war_moment(
+            pid,
+            defeated,
+            "city_razed",
+            Some(city.name.clone()),
+            Some(city.pos),
+        );
 
         for position in &city.owned_tiles {
             if let Some(tile) = self.map.tiles.get_mut(position) {
@@ -50495,8 +51136,191 @@ mod combat_scenarios {
     }
 
     #[test]
+    fn norway_and_maori_use_their_stock_early_ocean_rules() {
+        let (mut g, land, ring) = controlled_game(3_201);
+        let coast = ring[0];
+        let ocean = g
+            .nbrs(coast)
+            .into_iter()
+            .find(|position| *position != land)
+            .unwrap();
+        g.map.tiles.get_mut(&coast).unwrap().terrain = "coast".to_string();
+        g.map.tiles.get_mut(&ocean).unwrap().terrain = "ocean".to_string();
+
+        g.players[0].civ = "Norway".to_string();
+        let longship = g.spawn_unit("galley", 0, coast);
+        assert!(!g.can_move(longship, ocean));
+        g.players[0].techs.insert("shipbuilding".to_string());
+        assert!(
+            g.can_move(longship, ocean),
+            "Knarr substitutes Shipbuilding for Cartography"
+        );
+        g.remove_unit(longship);
+
+        let warrior = g.spawn_unit("warrior", 0, land);
+        g.relocate(warrior, coast);
+        assert!(
+            !g.can_move(warrior, ocean),
+            "Knarr's early Ocean access is restricted to naval units"
+        );
+        g.remove_unit(warrior);
+
+        g.players[0].techs.clear();
+        g.players[0].civ = "Maori".to_string();
+        let warrior = g.spawn_unit("warrior", 0, land);
+        assert!(
+            g.can_move(warrior, coast),
+            "Mana gives the starting Shipbuilding embarkation package"
+        );
+        g.relocate(warrior, coast);
+        assert!(
+            g.can_move(warrior, ocean),
+            "Mana permits Ocean movement without Cartography"
+        );
+        assert_eq!(
+            g.unit_max_moves(warrior),
+            4.0,
+            "Mana gives embarked units +2 Movement"
+        );
+    }
+
+    #[test]
+    fn enforced_borders_share_one_rule_across_steps_and_routes() {
+        let (mut g, start, ring) = controlled_game(3_202);
+        g.at_war.clear();
+        let target = ring[0];
+        let foreign_city_position = g
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| g.wdist(start, *position) > 5)
+            .unwrap();
+        let foreign_city = g.found_city_for(1, foreign_city_position, None);
+        g.map.tiles.get_mut(&target).unwrap().owner_city = Some(foreign_city);
+        let warrior = g.spawn_unit("warrior", 0, start);
+
+        assert!(
+            g.can_move(warrior, target),
+            "borders remain open before their owner adopts Early Empire"
+        );
+        g.players[1].civics.insert("early_empire".to_string());
+        assert!(!g.can_move(warrior, target));
+
+        g.players[0].friends_until.insert(1, 40);
+        g.players[1].friends_until.insert(0, 40);
+        assert!(!g.can_move(warrior, target), "friendship is not Open Borders");
+        g.players[0].open_borders_until.insert(1, 40);
+        assert!(
+            !g.can_move(warrior, target),
+            "granting our borders is the wrong direction"
+        );
+        g.players[1].open_borders_until.insert(0, 40);
+        assert!(g.can_move(warrior, target));
+
+        g.players[0].open_borders_until.clear();
+        g.players[1].open_borders_until.clear();
+        let alliance = AllianceState {
+            kind: "military".to_string(),
+            points: 0.0,
+            level: 1,
+            ends: 40,
+        };
+        g.players[0].alliances.insert(1, alliance.clone());
+        g.players[1].alliances.insert(0, alliance);
+        assert!(g.can_move(warrior, target));
+
+        g.players[0].alliances.clear();
+        g.players[1].alliances.clear();
+        g.at_war.insert(pair(0, 1));
+        assert!(g.can_move(warrior, target));
+
+        g.at_war.clear();
+        g.remove_unit(warrior);
+        let trader = g.spawn_unit("trader", 0, start);
+        assert!(g.can_move(trader, target), "Traders ignore closed borders");
+        g.remove_unit(trader);
+        let missionary = g.spawn_unit("missionary", 0, start);
+        assert!(
+            g.can_move(missionary, target),
+            "religious units ignore closed borders"
+        );
+
+        g.remove_unit(missionary);
+        g.map.tiles.get_mut(&target).unwrap().owner_city = None;
+        for tile in g.map.tiles.values_mut() {
+            tile.terrain = "mountain".to_string();
+        }
+        let first = hex::canon((start.0 + 1, start.1), g.map.width);
+        let closed = hex::canon((start.0 + 2, start.1), g.map.width);
+        let goal = hex::canon((start.0 + 3, start.1), g.map.width);
+        for position in [start, first, closed, goal] {
+            g.map.tiles.get_mut(&position).unwrap().terrain = "plains".to_string();
+            g.map.tiles.get_mut(&position).unwrap().owner_city = None;
+        }
+        g.map.tiles.get_mut(&closed).unwrap().owner_city = Some(foreign_city);
+        let scout = g.spawn_unit("warrior", 0, start);
+        assert_eq!(
+            g.route_step(scout, goal, 0),
+            None,
+            "future route segments may not plan through closed territory"
+        );
+        g.players[1].open_borders_until.insert(0, 40);
+        assert_eq!(g.route_step(scout, goal, 0), Some(first));
+        g.players[1].open_borders_until.clear();
+        assert_eq!(
+            g.route_step(scout, goal, 0),
+            None,
+            "a cached route must be invalidated when access expires"
+        );
+    }
+
+    #[test]
+    fn enforced_or_expired_borders_expel_only_units_that_need_access() {
+        let setup = |seed| {
+            let (mut game, start, ring) = controlled_game(seed);
+            game.at_war.clear();
+            let foreign_city_position = game
+                .map
+                .tiles
+                .keys()
+                .copied()
+                .find(|position| game.wdist(start, *position) > 5)
+                .unwrap();
+            let city = game.found_city_for(1, foreign_city_position, None);
+            let foreign = ring[0];
+            game.map.tiles.get_mut(&foreign).unwrap().owner_city = Some(city);
+            (game, foreign)
+        };
+
+        let (mut expired, foreign) = setup(3_204);
+        expired.players[1].civics.insert("early_empire".to_string());
+        expired.players[1].open_borders_until.insert(0, 5);
+        let warrior = expired.spawn_unit("warrior", 0, foreign);
+        let trader = expired.spawn_unit("trader", 0, foreign);
+        expired.turn = 5;
+        expired.begin_turn(0);
+        assert_ne!(expired.units[&warrior].pos, foreign);
+        assert_ne!(expired.territory_owner_at(expired.units[&warrior].pos), Some(1));
+        assert_eq!(
+            expired.units[&trader].pos, foreign,
+            "a Trader remains legal when ordinary Open Borders expires"
+        );
+
+        let (mut enforced, foreign) = setup(3_205);
+        let scout = enforced.spawn_unit("warrior", 0, foreign);
+        assert!(enforced.has_open_borders(0, 1));
+        enforced.players[1].civics.insert("early_empire".to_string());
+        enforced.apply_tree_completion(1, false, "early_empire", true);
+        assert_ne!(
+            enforced.units[&scout].pos, foreign,
+            "adopting Early Empire immediately expels existing intruders"
+        );
+    }
+
+    #[test]
     fn known_target_routes_reuse_the_planned_path_after_each_step() {
-        let (mut g, start, _) = controlled_game(3_202);
+        let (mut g, start, _) = controlled_game(3_206);
         let target = g
             .map
             .tiles
@@ -56401,19 +57225,37 @@ mod district_mechanics {
 
         let key = pair(0, 1);
         let war = game.wars.get(&key).expect("the declaration opened a war");
+        let defender_capital = game
+            .cities
+            .values()
+            .find(|city| city.owner == 1 && city.is_capital)
+            .unwrap()
+            .pos;
         assert_eq!((war.aggressor, war.defender, war.started), (0, 1, 40));
         assert_eq!((war.declarer, war.target), (0, 1));
         assert_eq!(war.participants.len(), 2);
         assert_eq!(war.participants[0].strength, opening_strength[0]);
         assert_eq!(war.participants[1].strength, opening_strength[1]);
         assert_eq!(war.highlights[0].kind, "declared");
+        assert_eq!(
+            war.theater,
+            [WarTheaterSite {
+                turn: 40,
+                pos: defender_capital,
+            }],
+            "the Watch action has a useful target before the first battle"
+        );
+        game.players[2].explored.remove(&defender_capital);
+        let third_party_view = crate::obs::observation(&game, 2);
+        let public_war = third_party_view["wars"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["aggressor"] == 0 && entry["defender"] == 1)
+            .expect("a war is public knowledge to the civilizations watching it");
         assert!(
-            crate::obs::observation(&game, 2)["wars"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|entry| entry["aggressor"] == 0 && entry["defender"] == 1),
-            "a war is public knowledge to the civilizations watching it"
+            public_war["theater"].as_array().unwrap().is_empty(),
+            "the public declaration must not reveal an unexplored battlefield"
         );
 
         // A casualty on each side, then a city taken, is the whole vocabulary
@@ -56482,6 +57324,19 @@ mod district_mechanics {
             .collect::<Vec<_>>();
         assert!(turns.windows(2).all(|pair| pair[0] <= pair[1]));
         assert_eq!(entry["peace_terms"][0]["turn"], 52);
+        let aftermath = crate::obs::observation_spectator(&game, 0)["wars"][0]["theater"].clone();
+        assert!(
+            aftermath
+                .as_array()
+                .is_some_and(|sites| !sites.is_empty()),
+            "a concluded war exposes its durable battlefield to the full-map spectator"
+        );
+        game.turn = 92;
+        assert_eq!(
+            crate::obs::observation_spectator(&game, 0)["wars"][0]["theater"],
+            aftermath,
+            "later history must not move the View aftermath target"
+        );
     }
 
     #[test]
