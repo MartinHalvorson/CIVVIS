@@ -428,8 +428,8 @@
   .hud-rail:focus-visible { outline: 1px solid #d7b66a70; outline-offset: -1px; border-radius: 6px; }
   .victory-turn, .victory-track { min-width: 0; border-radius: 8px; }
   .victory-turn {
-    display: grid; grid-template-rows: auto 1fr auto; align-items: center;
-    padding: 6px 8px 7px; overflow: hidden; color: var(--gold-bright);
+    display: grid; grid-template-rows: auto auto minmax(0, 1fr); align-items: start;
+    padding: 6px 7px 7px; overflow: hidden; color: var(--gold-bright);
     background: linear-gradient(155deg, #d7b66a1c, #d7b66a08);
     border: 1px solid #d7b66a30; text-align: center;
   }
@@ -437,33 +437,50 @@
     color: #aebeb7; font-size: 9px; font-weight: 900; letter-spacing: .14em;
     line-height: 1; text-transform: uppercase;
   }
-  .turn-label { font-size: 10px; }
+  .turn-label { font-size: 11px; }
   .turn-count {
-    min-width: 0; display: grid; place-content: center; gap: 2px; margin: 2px 0;
+    min-width: 0; display: grid; place-content: center; gap: 1px; margin: 4px 0 5px;
+  }
+  .turn-heading, .turn-progress {
+    min-width: 0; display: flex; align-items: baseline; justify-content: center;
+  }
+  .turn-heading { gap: 5px; }
+  .turn-progress { gap: 4px; white-space: nowrap; }
+  .turn-era {
+    min-width: 0; overflow: hidden; color: #e1e8e4;
+    font-size: clamp(13px, 1vw, 14px); font-weight: 850; letter-spacing: -.01em;
+    line-height: 1.05; text-overflow: ellipsis; white-space: nowrap;
   }
   .victory-turn strong {
-    color: #f4d892; font: 700 31px/.9 "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    color: #f4d892; font: 700 28px/.9 "Iowan Old Style", "Palatino Linotype", Georgia, serif;
     font-variant-numeric: tabular-nums; text-shadow: 0 2px 10px #0009;
   }
   .victory-turn .turn-total {
-    color: #8fa29a; font-size: 10px; font-weight: 800; font-variant-numeric: tabular-nums;
+    color: #8fa29a; font-size: 11px; font-weight: 800; font-variant-numeric: tabular-nums;
     line-height: 1; white-space: nowrap;
   }
-  .turn-speed {
-    color: #aebeb7; font-size: clamp(6px, .58vw, 8px); font-weight: 800;
-    letter-spacing: 0;
-    line-height: 1; white-space: nowrap;
+  .turn-settings {
+    align-self: stretch; min-width: 0; display: grid; align-content: start; gap: 2px;
+    padding-top: 4px; color: #9fb0a9; border-top: 1px solid #d7b66a24;
+    font-size: 9px; font-weight: 700; letter-spacing: -.015em; line-height: 1.18;
+  }
+  .turn-setting {
+    min-width: 0; display: flex; align-items: baseline; justify-content: space-between;
+    gap: 3px; white-space: nowrap;
+  }
+  .turn-setting span, .turn-setting b { min-width: 0; }
+  .turn-setting b {
+    overflow: hidden; color: #dce6e1; font-weight: 900; text-overflow: ellipsis;
+  }
+  .turn-settings-secondary {
+    display: grid; gap: 2px; margin-top: 2px; padding-top: 4px;
+    border-top: 1px solid #d7b66a1c;
   }
   /* Borrowed turns. It sits under the turn cap because that cap is the thing
      it explains: the number went up because somebody asked it to. */
   .turn-playon {
-    color: #f0d99c; font-size: 8px; font-weight: 900; letter-spacing: .12em;
+    color: #f0d99c; font-size: 7px; font-weight: 900; letter-spacing: .08em;
     line-height: 1; text-transform: uppercase; white-space: nowrap;
-  }
-  .turn-era {
-    padding-top: 5px; color: #d4ddd9; border-top: 1px solid #d7b66a1c;
-    font-size: 10px; font-weight: 800; letter-spacing: .015em; line-height: 1;
-    white-space: nowrap;
   }
   .victory-meter { overflow: hidden; background: #020706b3; box-shadow: inset 0 1px 2px #000b; }
   .victory-meter b { display: block; height: 100%; border-radius: inherit; background: currentColor; }
@@ -1832,7 +1849,7 @@
       minmax(0, .55fr) minmax(0, .55fr) minmax(0, 1.1fr);
     --hud-lock-column: 13px; --hud-row-height: 23px; --hud-row-gap: 2px;
     --hud-row-pitch: calc(var(--hud-row-height) + var(--hud-row-gap));
-    display: grid; grid-template-columns: 108px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
+    display: grid; grid-template-columns: 140px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
     align-items: stretch; gap: 5px; min-width: 0; padding: 5px;
     overflow: visible; transform: none;
     border: 1px solid #526a618f; border-radius: 12px;
@@ -1981,8 +1998,15 @@
      is allowed to ellipsize and gives up width first, so four digits stay whole
      down to a narrow desktop. */
   #playerhud .ribbon-stat b {
+    position: relative; overflow: visible;
     font-size: clamp(9px, .8vw, 13px); font-weight: 950; letter-spacing: -.025em;
     line-height: 1; text-shadow: 0 1px 2px #000, 0 0 8px currentColor;
+  }
+  /* The marker is out of flow: it follows the FPT value without changing the
+     centered number's width or moving that number away from the other rows. */
+  #playerhud .founded-religion-marker {
+    position: absolute; inset-inline-start: calc(100% + 1px); top: -.18em;
+    font-size: .72em; letter-spacing: 0; text-shadow: 0 1px 2px #000;
   }
   /* Victory progress starts in the right corner and grows down with the rows
      it actually shows, never past the world minimap. Six races read one under
@@ -2151,17 +2175,17 @@
      identity first — it ellipsizes and keeps its tooltip — so that every value
      stays whole, and the rail narrows alongside it. */
   @media (min-width: 2200px) {
-    #playerhud { grid-template-columns: 128px minmax(0, 1fr); --hud-identity-column: minmax(340px, 40%); }
+    #playerhud { grid-template-columns: 140px minmax(0, 1fr); --hud-identity-column: minmax(340px, 40%); }
   }
   @media (max-width: 1580px) {
-    #playerhud { grid-template-columns: 98px minmax(0, 1fr); --hud-identity-column: minmax(330px, 50%); }
+    #playerhud { grid-template-columns: 132px minmax(0, 1fr); --hud-identity-column: minmax(330px, 50%); }
     #maparea { --hud-rail-width: clamp(240px, 20vw, 300px); }
   }
   /* Ten value columns, a turn plate and a standing rail stop fitting side by
      side around here. */
   @media (max-width: 1300px) {
     #playerhud {
-      grid-template-columns: 84px minmax(0, 1fr);
+      grid-template-columns: 132px minmax(0, 1fr);
       --hud-identity-column: minmax(250px, 50%); --hud-column-gap: 4px;
     }
     #maparea { --hud-rail-width: 224px; }
@@ -2169,7 +2193,7 @@
   @media (max-width: 1180px) {
     #maparea { --hud-rail-width: 200px; --minimap-height: 158px; }
     #playerhud {
-      grid-template-columns: 74px minmax(0, 1fr);
+      grid-template-columns: 132px minmax(0, 1fr);
       --hud-identity-column: minmax(210px, 48%); --hud-column-gap: 3px;
       --hud-medallion-column: 19px;
     }
@@ -2528,6 +2552,10 @@
           <option value="ai_sim" selected>AI-only simulation</option>
           <option value="single">Single player</option>
           <option disabled>Multiplayer · later</option>
+        </select></label>
+        <label class="small">Leader Pool<select id="leaderpool" style="margin-top:4px">
+          <option value="civ6" selected>Civ 6 Leaders</option>
+          <option value="expanded">Expanded</option>
         </select></label>
         <label class="small human-setting">Leader<select id="leader" style="margin-top:4px">
           <option value="">Random</option>
@@ -3243,7 +3271,7 @@ function setView(v) {
   if (movingDown) setFullWorldView();
   else setRot(cam.rot, false);  // recompute screen-space light for the new pitch
   TILE_ART.clear();            // relief and grading are baked into the sprites
-  if (state) { draw(); drawMini(); }
+  if (state) { draw(); drawMini(); drawPlayerHud(); }
 }
 let SHOW_YIELDS = localStorage.getItem("civvis-show-yields") === "1";
 let SHOW_ARTIFACT_SITES = localStorage.getItem("civvis-show-artifact-sites") === "1";
@@ -4278,7 +4306,7 @@ const HUD_WIDGETS = {
   // very little of its height. They are capped at a third of that height
   // however they are sized — by the player count, by a dragged edge, or by a
   // layout saved earlier — so a large table never swallows the world.
-  players: {element:document.getElementById("playerhud"), minWidth:420, minHeight:82,
+  players: {element:document.getElementById("playerhud"), minWidth:420, minHeight:144,
             maxHeightRatio:.34},
   victory: {element:document.getElementById("victoryhud"), minWidth:150, minHeight:88},
   minimap: {element:document.querySelector(".minimap-frame"), minWidth:130, minHeight:96},
@@ -5396,13 +5424,7 @@ async function boot() {
     // A leader is a civilization plus the person who leads it; the ruleset
     // knows both, and their agendas, so the setup screen never invents names.
     if (RULES.civs && typeof RULES.civs === "object") {
-      const leaders = Object.entries(RULES.civs)
-        .map(([civ, spec]) => ({civ, leader: spec.leader || civ, note: spec.note || ""}))
-        .sort((first, second) => first.leader.localeCompare(second.leader));
-      document.getElementById("leader").innerHTML =
-        `<option value="">Random leader</option>` + leaders.map(entry =>
-          `<option value="${entry.civ}" title="${escapeAttr(entry.note)}">` +
-          `${entry.leader} of ${entry.civ}</option>`).join("");
+      syncLeaderPool();
     }
     if (RULES.difficulties && typeof RULES.difficulties === "object") {
       const ladder = Object.entries(RULES.difficulties)
@@ -6692,6 +6714,8 @@ function render(st, recordChronicle = true) {
     document.getElementById("mappoles").value = st.map.poles || "poles";
     syncEarthShape();
     document.getElementById("gamespeed").value = st.game_speed || "standard";
+    document.getElementById("leaderpool").value = st.leader_pool || "civ6";
+    syncLeaderPool();
     // The seat a person is playing and the handicap they are playing it on are
     // settings of this world too, so the panel adopts them alongside the map
     // and the speed. Without this a reloaded page read "Random leader" and
@@ -15397,8 +15421,9 @@ function syncVictoryLeaderCapacity(victoryHud = document.getElementById("victory
   }
 }
 
-// The turn plate is the standings' left cell: the count, the cap it runs to,
-// and the age the world is in, with the whole observer sentence on its tooltip.
+// The turn plate is the standings' left cell: the world's age and turn first,
+// then the handful of setup and display choices a viewer needs at a glance.
+// The whole observer sentence remains on its tooltip.
 function hudTurnPlate() {
   const actor = state.players[SPEC ? state.current : 0] || state.players[state.player];
   const viewer = state.players[state.player] || actor;
@@ -15411,14 +15436,11 @@ function hudTurnPlate() {
   const viewLabel = playerView ? "Player view" : SPEC ? "Observing" : "Your empire";
   const mapName = titleCase(state.map.script || "pangaea");
   const speedName = titleCase(state.game_speed || "standard");
-  // A watched simulation has two speeds: the world's rules speed and the
-  // viewer's turn-to-turn pace. The turn clock should name the pace a viewer
-  // actually experiences (Lightning, Blitz, and so on); a played game falls
-  // back to its rules speed because it has no spectator pace.
   const paceOption = document.getElementById("specspeed")?.selectedOptions[0];
-  const turnSpeed = SPEC
-    ? `${paceOption?.textContent.trim() || "Blitz"} speed`
-    : `${speedName} speed`;
+  const watchPace = SPEC ? paceOption?.textContent.trim() || "Blitz" : "Manual";
+  const currentView = VIEW === "balanced" ? "Painted" : titleCase(VIEW);
+  const civCount = state.players.filter(p => !p.is_minor && !p.is_barbarian).length;
+  const cityStateCount = state.players.filter(p => p.is_minor && !p.is_barbarian).length;
   // The world's shape and its poles are only worth a word when they are not
   // the ones a world arrives with by default.
   const shapeNote = planetMap() ? " · Planet" : "";
@@ -15445,12 +15467,23 @@ function hudTurnPlate() {
     ? `Playing on past ${decided.civ || "the winner"}'s ${titleCase(decided.victory_type || "score")} victory on turn ${decided.turn}`
     : "";
   const context = identityContext + (playOnLabel ? ` · ${playOnLabel}` : "");
-  return `<section class="victory-turn" title="${escapeAttr(context)}" aria-label="${escapeAttr(context)}; turn ${state.turn} of ${turnCapLabel()}; ${turnSpeed}; ${ageLabel}">` +
-    `<span class="turn-label">Turn</span><div class="turn-count"><strong>${state.turn}</strong>` +
-    `<small class="turn-total">of ${turnCapLabel()}</small>` +
-    `<small class="turn-speed">(${turnSpeed})</small>` +
+  const plateLabel = `${context}; ${ageLabel}; turn ${state.turn} of ${turnCapLabel()}; ` +
+    `${civCount} civilizations; ${cityStateCount} city states; game speed ${speedName}; ` +
+    `current view ${currentView}; watch pace ${watchPace}`;
+  return `<section class="victory-turn" title="${escapeAttr(context)}" aria-label="${escapeAttr(plateLabel)}">` +
+    `<span class="turn-era">${ageLabel}</span>` +
+    `<div class="turn-count"><div class="turn-heading"><span class="turn-label">Turn</span>` +
     (decided ? `<small class="turn-playon">Playing on</small>` : ``) +
-    `</div><span class="turn-era">${ageLabel}</span></section>`;
+    `</div><div class="turn-progress"><strong>${state.turn}</strong>` +
+    `<small class="turn-total">/ ${turnCapLabel()}</small></div></div>` +
+    `<div class="turn-settings" aria-label="Game and display settings">` +
+    `<div class="turn-setting"><span>Civs: <b>${civCount}</b></span>` +
+    `<span>City states: <b>${cityStateCount}</b></span></div>` +
+    `<div class="turn-setting"><span>Game speed:</span><b>${speedName}</b></div>` +
+    `<div class="turn-settings-secondary">` +
+    `<div class="turn-setting"><span>Current view:</span><b>${currentView}</b></div>` +
+    `<div class="turn-setting"><span>Watch pace:</span><b>${watchPace}</b></div>` +
+    `</div></div></section>`;
 }
 
 function playerHudOverview() {
@@ -15579,19 +15612,18 @@ function exactStat(value) {
   return Math.round(n).toLocaleString();
 }
 
-function foundedReligionMarker(player, cities) {
-  if (!player.religion) return "";
-  return cities.some(city => city.religion === player.religion) ? "*" : "";
+function foundedReligionMarker(player) {
+  return player.founded_religion_exists ? "*" : "";
 }
 
-function playerHudStats(player, rank, cities) {
+function playerHudStats(player, rank) {
   const y = player.yields || {};
   const goldPerTurn = Number.isFinite(+player.gold_per_turn) ? +player.gold_per_turn : +(y.gold || 0);
   return [
     ["production", "PROD", y.production, `Production: ${exactStat(y.production)} per turn`],
     ["science", "SCI", y.science, `Science: ${exactStat(y.science)} per turn`],
     ["culture", "CUL", y.culture, `Culture: ${exactStat(y.culture)} per turn`],
-    ["faith", "FPT", y.faith, `Faith: ${exactStat(y.faith)} per turn · ${exactStat(player.faith)} banked`, foundedReligionMarker(player, cities)],
+    ["faith", "FPT", y.faith, `Faith: ${exactStat(y.faith)} per turn · ${exactStat(player.faith)} banked`, foundedReligionMarker(player)],
     ["gold", "GPT", goldPerTurn, `Net Gold: ${exactStat(goldPerTurn)} per turn · ${exactStat(player.gold)} banked`],
     ["military", "MIL", player.military, `Military strength: ${exactStat(player.military)}`],
     ["cities", "CITY", player.cities, `Cities controlled: ${exactStat(player.cities)}`],
@@ -15637,11 +15669,11 @@ function drawPlayerHud() {
   // One line per row across the masthead — who this is and their ten values
   // side by side — so a row is only as tall as its medallion: 23px, plus the
   // 2px gap under it. The fixed 44px is the heading, the column heads, the
-  // gaps and the panel's padding; the floor keeps the turn plate's count,
-  // watch pace, and age legible at a two-player table. Anything past the
+  // gaps and the panel's padding; the floor keeps the turn plate's age, count,
+  // and two settings groups legible at a two-player table. Anything past the
   // ceiling scrolls, so this is what the panel would *like* rather than what
   // it is allowed to take.
-  const requestedHeight = Math.max(106, 44 + rows * 25);
+  const requestedHeight = Math.max(144, 44 + rows * 25);
   // A newly started human game usually knows only its own row; do not stretch
   // that one-row scorecard across the whole map. Each additional known player
   // buys the table another 100px until the available masthead width caps it.
@@ -15653,7 +15685,7 @@ function drawPlayerHud() {
     mapArea.style.setProperty("--player-hud-width", `${requestedWidth}px`);
   }
   const rankById = new Map(majors.map((p, index) => [p.id, index + 1]));
-  const statsByPlayer = new Map(majors.map(p => [p.id, playerHudStats(p, rankById.get(p.id), state.cities)]));
+  const statsByPlayer = new Map(majors.map(p => [p.id, playerHudStats(p, rankById.get(p.id))]));
   const highestByStat = new Map();
   statsByPlayer.forEach(stats => stats.forEach(([kind, , value]) => {
     const numericValue = Number(value) || 0;
@@ -15771,8 +15803,12 @@ function drawPlayerHud() {
         `<button class="diplomacy-stats" data-hud-action="watch" data-hud-civ="${p.id}" title="${watchTitle}" aria-label="Watch ${p.civ}">` +
         stats.map(([kind, , value, label, marker = ""]) => {
           const isLeader = highestByStat.get(kind) !== 0 && Number(value || 0) === highestByStat.get(kind);
+          const markerHtml = marker
+            ? `<span class="founded-religion-marker" aria-hidden="true">${marker}</span>`
+            : "";
           return `<span class="ribbon-stat ${kind}${isLeader ? " category-leader" : ""}" ` +
-            `title="${label}${isLeader ? " · Category leader" : ""}"><b>${ribbonStat(value)}${marker}</b></span>`;
+            `title="${label}${marker ? " · Founded religion still followed" : ""}${isLeader ? " · Category leader" : ""}">` +
+            `<b>${ribbonStat(value)}${markerHtml}</b></span>`;
         }).join("") + `</button></div>`;
     }).join("") + `</div>` + hudResizeHandles("player standings");
   drawDossierWindows(majors, rankById, relationById);
@@ -20675,6 +20711,7 @@ async function autoplay(turns) {
 document.getElementById("autoplaybtn").onclick = () => autoplay(autoplayRequest());
 document.getElementById("tradebtn").onclick = () => openTrade();
 document.getElementById("gamemode").addEventListener("change", syncSetupMode);
+document.getElementById("leaderpool").addEventListener("change", syncLeaderPool);
 document.getElementById("maptype").addEventListener("change", syncEarthShape);
 document.getElementById("startgame").onclick = () => startNewSimulation();
 document.getElementById("savebtn").onclick = () => writeSave();
@@ -20693,6 +20730,7 @@ document.getElementById("specpause").onclick = toggleSpecPause;
 document.getElementById("specspeed").onchange = () => {
   rememberPace(specPace()); // the pick outranks any state already in flight
   setPace({ms: paceChoice});
+  if (state) drawPlayerHud();
 };
 restorePace();
 async function spectatePlayer(player) {
@@ -20730,12 +20768,14 @@ function selectedSimulationSettings() {
   const mapTopology = document.getElementById("mapshape").value;
   const mapPoles = document.getElementById("mappoles").value;
   const gameSpeed = document.getElementById("gamespeed").value;
+  const leaderPool = document.getElementById("leaderpool").value;
   const victoryConditions = Object.fromEntries(VICTORY_TRACKS.map(track =>
     [track.id, document.getElementById(`victory-${track.id}`).checked]));
   const leader = (document.getElementById("leader") || {}).value || "";
   const difficulty = (document.getElementById("difficulty") || {}).value || "";
   return {num_players: np, map_script: mapScript, map_topology: mapTopology,
           map_poles: mapPoles, game_speed: gameSpeed,
+          leader_pool: leaderPool,
           victory_conditions: victoryConditions,
           spectate: gameMode === "ai_sim",
           // A spectated world has nobody to hand a leader or a handicap to.
@@ -20772,6 +20812,8 @@ function applyQueuedSimulationSettings(settings) {
   if (settings.poles) document.getElementById("mappoles").value = settings.poles;
   syncEarthShape();
   document.getElementById("gamespeed").value = settings.speed;
+  document.getElementById("leaderpool").value = settings.leader_pool || "civ6";
+  syncLeaderPool();
   const victories = new Set(settings.victories || []);
   for (const track of VICTORY_TRACKS)
     document.getElementById(`victory-${track.id}`).checked = victories.has(track.id);
@@ -20856,6 +20898,26 @@ function adoptRunningMode() {
 function syncSetupMode() {
   const mode = (document.getElementById("gamemode") || {}).value || "ai_sim";
   document.body.classList.toggle("spectating", mode === "ai_sim");
+}
+
+// The broad historical ruleset remains available, but a normal lobby offers
+// only civilizations that Civilization VI itself ships. The same pool fills
+// random AI seats on the server and filters the person's explicit leader
+// choice here, so "Random leader" and a named pick describe one roster.
+function syncLeaderPool() {
+  const select = document.getElementById("leader");
+  const pool = document.getElementById("leaderpool");
+  if (!select || !pool || !RULES || !RULES.civs || typeof RULES.civs !== "object") return;
+  const selected = select.value;
+  const civ6 = new Set(Array.isArray(RULES.civ6_leaders) ? RULES.civ6_leaders : []);
+  const leaders = Object.entries(RULES.civs)
+    .filter(([civ]) => pool.value === "expanded" || civ6.has(civ))
+    .map(([civ, spec]) => ({civ, leader: spec.leader || civ, note: spec.note || ""}))
+    .sort((first, second) => first.leader.localeCompare(second.leader));
+  select.innerHTML = `<option value="">Random leader</option>` + leaders.map(entry =>
+    `<option value="${entry.civ}" title="${escapeAttr(entry.note)}">` +
+    `${entry.leader} of ${entry.civ}</option>`).join("");
+  if (leaders.some(entry => entry.civ === selected)) select.value = selected;
 }
 
 // Earth is the one world type whose shape is not the lobby's to choose: it is

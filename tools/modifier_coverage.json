@@ -47,7 +47,8 @@
     },
     "ADJUST_UNIT_GRANT_EXPERIENCE": {
       "status": "implemented",
-      "note": "Flat XP grants on training and from Great People."
+      "verified": true,
+      "note": "Verified row by row against the cache: 22 rows. Only one grants a flat amount - GOODY_MILITARY_GRANT_EXPERIENCE at 20, which CIVVIS pays as goody_huts.json military/grant_experience reward experience 20. The other 21 all carry Amount -1, which is the shipped idiom for \"enough XP for a free promotion\" rather than a quantity; of those CIVVIS models Hannibal Barca, as land_unit_promotion_level 1. The rest hang off Great People, governor promotions and unique abilities CIVVIS does not model, which is content scope measured by civ6_fidelity.py rather than a gap in this effect. ALLIANCE_FREE_UNIT_UPGRADE and GREATPERSON_GENGHIS_KHAN_ACTIVE are unattached - no owner table grants them - so the shipped game never fires them either."
     },
     "ADJUST_UNIT_HEALING_MODIFIERS": {
       "status": "implemented",
@@ -56,7 +57,8 @@
     },
     "ADJUST_UNIT_SPY_OPERATION_CHANCE": {
       "status": "implemented",
-      "note": "The espionage promotion tree adjusts operation odds."
+      "verified": true,
+      "note": "Verified row by row against the cache. Ten offensive rows, one per operation at Amount 2 with Offensive 1, each on its own promotion - CIVVIS' spy_mission_promotion maps all ten to the same missions and pays the same +2. Six more rows carry Offensive 0 and all six attach to a SINGLE promotion, PROMOTION_SPY_SEDUCTION, so the shipped Seduction is one promotion defending against six operations rather than six promotions; CIVVIS models it as one `seduction` giving +2 to the defending counterspy, which is exact. CIVVIS carries all 17 shipped PROMOTION_CLASS_SPY promotions. SPYING_EMERGENCY_MEMBER_ANTI_SPY_REWARD (-10 against Great Work Heist for an Emergency target) is unattached and unmodelled. Beware PROMOTION_SPYGLASS: it matches a PROMOTION_SPY% pattern and is a RECON promotion, not an eighteenth spy one."
     },
     "ENABLE_UNIT_FAITH_PURCHASE": {
       "status": "implemented",
@@ -116,7 +118,8 @@
     },
     "TERRAIN_ADJACENCY": {
       "status": "implemented",
-      "note": "District adjacency is audited source by source at zero divergence."
+      "verified": true,
+      "note": "Verified row by row against the cache: 27 rows, and only one owner is content CIVVIS models. Machu Picchu accounts for 15 of them - Commercial Hub, Industrial Zone and Theater at +1 across all five *_MOUNTAIN terrains - which CIVVIS carries exactly as mountain_commercial_industrial_theater_adjacency 1. The other 12 belong to content outside the roster: 4 to Indonesia's Nusantara (Holy Site, Campus, Industrial Zone and Theater on Coast), 4 to Mali's Gold Desert (City Center Faith and Food on Desert and Desert Hills), and 4 to the Dance of the Aurora and Desert Folklore pantheons, of which CIVVIS models 6 of the shipped 23. That is content scope, measured by civ6_fidelity.py, not a gap in this effect."
     },
     "ADD_RELIGIOUS_BELIEF_YIELD": {
       "status": "implemented",
@@ -153,7 +156,8 @@
     },
     "GRANT_YIELD": {
       "status": "implemented",
-      "note": "Instant yields from Great People activation and goody huts."
+      "verified": true,
+      "note": "Verified row by row against the cache: 17 rows. The six goody-hut grants match exactly - Gold 120/75/40 and Faith 100/60/20 against goody_huts.json large/medium/small. Of the eleven Great Person grants CIVVIS models one, Marcus Licinius Crassus, whose shipped pair is GREATPERSON_GOLD_TINY at 60 Gold plus GREATPERSON_GRANT_PLOT; CIVVIS carries both as gold 60 and the three-tile annex. The rest (Ching Shih 500, Ferdinand Magellan 300, the 200/350/500 Gold and 100 Faith tiers, and the two 1000-point Culture/Science grants) belong to Great People outside the modelled 27 of 212 - content scope, measured by civ6_fidelity.py. The GOODY_* rows report as unattached because the GoodyHuts table grants them rather than an owner-table row."
     },
     "ADJUST_BUILDING_YIELD_CHANGE": {
       "status": "partial",
