@@ -43,7 +43,7 @@
     "influence_threshold": 150,
     "envoys_per_threshold": 2,
     "diplomatic_favor_per_turn": 2,
-    "effects": {"wall_level_housing": 1, "influence_pct": 50},
+    "effects": {"wall_level_housing": 1, "influence_pct": 50, "walled_city_diplomatic_favor": 2},
     "slots": {"military": 2, "economic": 1, "diplomatic": 1, "wildcard": 2}
   },
   "merchant_republic": {
