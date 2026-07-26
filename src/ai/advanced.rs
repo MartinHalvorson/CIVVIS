@@ -34,6 +34,62 @@ impl GrandStrategy {
     }
 }
 
+/// How many turns an agent actually spent pursuing each grand strategy.
+///
+/// A plan is chosen every few turns and only the latest one is visible in
+/// `plan_report`, so an end-of-game snapshot cannot say whether a war was ever
+/// prosecuted or merely survived. Wars in this engine last 50-150 turns and
+/// take almost nothing (measured: 17 declarations, 4 cities, 0 capitals over 12
+/// full-length six-player games), and the difference between "the AI chose
+/// Conquest and failed to execute it" and "the AI was in Recovery the whole
+/// time" is not otherwise observable.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct StrategyCensus {
+    pub expansion: u32,
+    pub science: u32,
+    pub culture: u32,
+    pub religion: u32,
+    pub diplomacy: u32,
+    pub conquest: u32,
+    pub recovery: u32,
+}
+
+impl StrategyCensus {
+    pub fn total(&self) -> u32 {
+        self.expansion
+            + self.science
+            + self.culture
+            + self.religion
+            + self.diplomacy
+            + self.conquest
+            + self.recovery
+    }
+
+    fn count(&mut self, strategy: GrandStrategy) {
+        let slot = match strategy {
+            GrandStrategy::Expansion => &mut self.expansion,
+            GrandStrategy::Science => &mut self.science,
+            GrandStrategy::Culture => &mut self.culture,
+            GrandStrategy::Religion => &mut self.religion,
+            GrandStrategy::Diplomacy => &mut self.diplomacy,
+            GrandStrategy::Conquest => &mut self.conquest,
+            GrandStrategy::Recovery => &mut self.recovery,
+        };
+        *slot += 1;
+    }
+
+    /// Accumulate another agent's turns into this total.
+    pub fn absorb(&mut self, other: &StrategyCensus) {
+        self.expansion += other.expansion;
+        self.science += other.science;
+        self.culture += other.culture;
+        self.religion += other.religion;
+        self.diplomacy += other.diplomacy;
+        self.conquest += other.conquest;
+        self.recovery += other.recovery;
+    }
+}
+
 /// A concrete game-ending objective. Unlike `GrandStrategy`, which may
 /// temporarily become Expansion or Recovery, this remains fixed for the
 /// lifetime of a deliberately targeted AI.
@@ -263,6 +319,7 @@ impl EmpireCounts {
 pub struct AdvancedAi {
     base: BasicAi,
     plan: Option<StrategicPlan>,
+    census: StrategyCensus,
     settler_targets: BTreeMap<u32, Pos>,
     builder_targets: BTreeMap<u32, Pos>,
     major_war_since: Option<u32>,
@@ -313,6 +370,7 @@ impl AdvancedAi {
             peace_until: 0,
             victory_planning,
             victory_target,
+            census: StrategyCensus::default(),
             forced_target_player: None,
             force_groups: Vec::new(),
             force_groups_dirty: false,
@@ -408,6 +466,11 @@ impl AdvancedAi {
     /// civilization becomes the immediate victory threat in the same lane.
     pub fn forced_target_player(&self) -> Option<usize> {
         self.forced_target_player
+    }
+
+    /// How many turns this agent spent on each grand strategy.
+    pub fn strategy_census(&self) -> StrategyCensus {
+        self.census
     }
 
     fn active_victory_target(&self, g: &Game) -> Option<VictoryTarget> {
@@ -10361,6 +10424,7 @@ impl AdvancedAi {
             self.plan = Some(self.assess(g, pid));
         }
         let plan = self.plan.clone().unwrap();
+        self.census.count(plan.strategy);
         self.advanced_research(g, pid, &plan);
         if self.victory_planning {
             let denied_rival = plan
