@@ -5136,8 +5136,11 @@ mod tests {
         // Default camera moves compose at the exact center of the rectangle
         // requested by the operator: the command deck's right edge to the
         // victory rail's left edge, and the player HUD's bottom edge to the
-        // screen bottom. A missing widget naturally leaves its screen edge in
-        // place, and the minimap is deliberately absent from this calculation.
+        // screen bottom. At the responsive breakpoint the victory rail becomes
+        // a top band, so its live box extends the top edge instead of collapsing
+        // the horizontal stage against its 8px left gutter. A missing widget
+        // naturally leaves its screen edge in place, and the minimap is
+        // deliberately absent from this calculation.
         assert!(EMBEDDED_INDEX.contains("function mapOverlayVisible(name)"));
         assert!(EMBEDDED_INDEX.contains(
             "document.body.classList.contains(\"sidebar-hidden\")"
@@ -5149,10 +5152,22 @@ mod tests {
             "left = Math.max(0, Math.min(width, sideRect.right - areaRect.left));"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "if (victory) right = Math.max(0, Math.min(width, victory.left));"
+            "if (players) top = Math.max(0, Math.min(height, players.bottom));"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "if (players) top = Math.max(0, Math.min(height, players.bottom));"
+            "const spansWidth = victory.left <= 16 && victory.right >= width - 16;"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (spansWidth) top = Math.max(top, Math.max(0, Math.min(height, victory.bottom)));"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "else right = Math.max(0, Math.min(width, victory.left));"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (right <= left) { left = 0; right = width; }"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (bottom <= top) { top = 0; bottom = height; }"
         ));
         assert!(!EMBEDDED_INDEX.contains(
             "if (minimap) left = Math.max(left, (minimap.left + minimap.right) / 2);"
