@@ -19,13 +19,13 @@
   },
   "drought": {
     "per_game": 5.0,
-    "severities": 3,
+    "severities": 2,
     "unit_damage": 0.0,
-    "pillage_chance": [1.0, 1.0, 1.0],
-    "fertility_chance": [0.0, 0.0, 0.0],
-    "population_loss": [0, 0, 0],
-    "duration": [8, 12, 16],
-    "radius": [1, 2, 3]
+    "pillage_chance": [1.0, 1.0],
+    "fertility_chance": [0.0, 0.0],
+    "population_loss": [0, 0],
+    "duration": [5, 10],
+    "radius": [1, 1]
   },
   "hurricane": {
     "per_game": 8.0,
@@ -46,7 +46,7 @@
     "fertility_chance": [0.0, 0.0],
     "population_loss": [0, 1],
     "duration": [3, 3],
-    "radius": [1, 1],
+    "radius": [0, 1],
     "terrains": ["plains", "grassland"]
   },
   "blizzard": {
@@ -68,7 +68,7 @@
     "fertility_chance": [0.25, 0.45],
     "population_loss": [0, 0],
     "duration": [3, 3],
-    "radius": [1, 2],
+    "radius": [1, 1],
     "terrains": ["desert"]
   }
 }
