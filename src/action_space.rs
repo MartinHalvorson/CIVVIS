@@ -15,7 +15,7 @@ use crate::Pos;
 
 /// Every `Action` discriminant, in a stable order. Appending is safe;
 /// reordering invalidates trained policies.
-pub const KINDS: [&str; 76] = [
+pub const KINDS: [&str; 77] = [
     "move", "move_to", "attack", "ranged", "found_city", "improve",
     "found_corporation", "move_product", "contribute_project",
     "contribute_district", "perform_concert", "pillage", "repair_improvement",
@@ -34,12 +34,12 @@ pub const KINDS: [&str; 76] = [
     "launch_inquisition", "evangelize_belief", "convert_barbarians",
     "city_strike", "wmd_strike", "encampment_strike", "keep_city", "raze_city",
     "liberate_city", "end_turn", "air_pillage", "priority_target", "upgrade",
-    "build_railroad",
+    "build_railroad", "buy_plot",
 ];
 
 /// Width of one action's feature row: kind one-hot plus the shared
 /// numeric block described in [`features`].
-pub const FEATURE_WIDTH: usize = KINDS.len() + 12;
+pub const FEATURE_WIDTH: usize = KINDS.len() + 13;
 
 pub fn kind_index(action: &Action) -> usize {
     let name = kind_name(action);
@@ -72,6 +72,7 @@ pub fn kind_name(action: &Action) -> &'static str {
         Action::Buy { .. } => "buy",
         Action::BuyBuilding { .. } => "buy_building",
         Action::BuyDistrict { .. } => "buy_district",
+        Action::BuyPlot { .. } => "buy_plot",
         Action::Research { .. } => "research",
         Action::Civic { .. } => "civic",
         Action::DeclareWar { .. } => "declare_war",
@@ -163,14 +164,16 @@ pub fn target_tile(g: &Game, action: &Action) -> Option<Pos> {
         | Action::KeepCity { city }
         | Action::RazeCity { city }
         | Action::LiberateCity { city } => g.cities.get(city).map(|c| c.pos),
+        Action::BuyPlot { pos, .. } => Some(*pos),
         _ => None,
     }
 }
 
 /// One action's fixed-width feature row: the kind one-hot, then a shared
 /// numeric block — has-target, own-tile, enemy-tile, target city HP,
-/// attacker HP/strength, distance to the acting unit, whether the target is
-/// ours, and normalized costs. Everything is derived from `pid`'s own view,
+/// attacker HP/strength, distance to the acting unit/city, whether the target
+/// is ours, treasury/Faith context, and quoted plot cost. Everything is
+/// derived from `pid`'s own view,
 /// so a fog-honest policy stays fog-honest.
 pub fn features(g: &Game, pid: usize, action: &Action) -> Vec<f32> {
     let mut row = vec![0.0f32; FEATURE_WIDTH];
@@ -208,6 +211,12 @@ pub fn features(g: &Game, pid: usize, action: &Action) -> Vec<f32> {
                 row[base + 9] = (g.wdist(unit.pos, pos) as f32 / 10.0).clamp(0.0, 1.0);
             }
         }
+    }
+    if let Action::BuyPlot { city, pos, cost } = action {
+        if let Some(city) = g.cities.get(city) {
+            row[base + 9] = (g.wdist(city.pos, *pos) as f32 / 10.0).clamp(0.0, 1.0);
+        }
+        row[base + 12] = (*cost as f32 / 2_000.0).clamp(0.0, 1.0);
     }
     // Treasury and Faith give the policy the context that makes purchase
     // actions comparable across turns.
