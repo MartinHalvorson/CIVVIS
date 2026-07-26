@@ -934,6 +934,48 @@ seven branches to three and buys frequency at *negative* compute cost.
 only concrete endgame progress and is zero for every lane in the early game
 where most reviews happen.
 
+## 2026-07-26 — rotating the projected lanes: cheaper, not better
+
+If frequency is what marginal search compute should buy, the obvious next
+move is to buy it at negative cost. A review projects the adaptive baseline
+plus every enabled lane — seven branches. Rotation projects the baseline,
+the lane currently in force, and one challenger that advances each review,
+so a review costs about three branches instead of seven.
+
+Keeping the incumbent in the set is load-bearing: `choose_rollout_target`
+only returns a lane it actually projected, so a subset that omitted the lane
+in force would drop it on the first review that failed to re-nominate it,
+and the agent would thrash between whichever two lanes the cursor exposed.
+`rotation_reaches_every_enabled_lane_on_a_cycle` pins that every lane still
+comes up, on a fixed cycle rather than a lucky one.
+
+Same maps as the previous entry (`--pairs 20 --players 4 --seed 52000
+--turns 200`), with the compute column derived from the measured review
+counts times branches per review:
+
+| arm | branches | reviews | compute | games | maps for | against | e |
+|---|---|---|---|---|---|---|---|
+| `strategic_r20` | 7 | 1.65× | 2.00× | 25/40 (62.5%) | **5** | **0** | **6.99** |
+| `strategic_rot10` | ~3 | 3.05× | 1.31× | 23/40 (57.5%) | 4 | 1 | 1.79 |
+| `strategic_rot20` | ~3 | 1.65× | **0.71×** | 21/40 (52.5%) | 3 | 2 | 1.00 |
+
+Rotation does what it was built to do: `strategic_rot20` runs at about 70%
+of the baseline's search cost with 1.65× the reviews, and holds parity
+(3–2). What it does not do is beat full-width density. `strategic_r20`
+remains the strongest arm measured, and `strategic_rot10` — more reviews
+than `r20` at two thirds of its compute — lands behind it.
+
+The refinement to the previous entry is worth stating precisely: the gain
+is not from re-planning more often, it is from **re-evaluating the whole
+lane set more often**. Narrowing the branch set trades away the thing that
+made the extra reviews valuable. Cadence and width are not interchangeable
+currencies.
+
+None of this clears the gate, and every arm here is eval-only; `strategic`
+is unchanged. But the pattern across nine arms now is that they are *all*
+inconclusive, and that is a statement about the instrument rather than the
+arms: at roughly twenty maps a run, this design cannot resolve the effect
+sizes the search produces.
 ## 2026-07-26 — the promotion gate was the only batch runner on one core
 
 Nine search arms were measured this session and every one returned
@@ -975,3 +1017,4 @@ threaded batch equal the serial ones.
 The practical consequence: the twenty-map runs in the entries above were
 never a considered choice of sample size. Re-run anything worth deciding at
 a hundred maps or more.
+||||||| b07a0ea
