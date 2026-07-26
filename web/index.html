@@ -5762,8 +5762,11 @@ function adoptTiles(st) {
   map.tiles = tiles;
   return st;
 }
-// Every turn is owed one complete frame, and the server holds a finished turn
-// until an active viewer has been handed it. Only a page that actually paints
+// Martin-requested simulation requirement: every turn is owed at least one
+// complete frame from one snapshot — updated HUD, victory tracker, map,
+// minimap, units, sidebars, controls, and everything else bound to that turn.
+// The server holds a finished turn until an active viewer acknowledges that
+// complete paint. Only a page that actually paints
 // counts as one: the keeper's refresh check and any curl read /state as well,
 // and a reader that draws nothing must not slow the simulation to its own
 // cadence. Saying which turn was last painted is how this page announces
@@ -5783,11 +5786,11 @@ function paintedQuery() {
 }
 // One turn, one frame on the glass.
 //
-// The server holds a finished turn until this page has been handed it, so the
-// exhibition runs at whatever rate this page reads — which quietly made the
-// page's own polling delay the simulation's speed limit. A fixed 100ms between
-// polls is a ceiling of ten turns a second however fast the world could
-// actually be played, and it was costing more than that: measured against the
+// The server holds a finished turn until this page acknowledges painting it,
+// so the exhibition runs at whatever rate this page paints — which quietly
+// made the page's own polling delay the simulation's speed limit. A fixed
+// 100ms between polls is a ceiling of ten turns a second however fast the
+// world could actually be played, and it was costing more than that: measured against the
 // live exhibition a turn took 584ms, of which only 318ms was simulating
 // anything.
 //
@@ -5798,11 +5801,11 @@ function paintedQuery() {
 //
 // So the loop runs on the display's own clock. At most one turn is painted per
 // animation frame, which is what makes each turn a frame somebody can see; the
-// fetch for the next one goes out as soon as this one is off the queue, so the
-// network and the server's next turn overlap this paint instead of following
-// it. Nothing is ever dropped — a state that has arrived is always painted —
-// and the gate upstream will not simulate past the turn this page is holding,
-// so the queue cannot grow behind it.
+// fetch for the next one is the paint acknowledgement: it goes out only after
+// render() has updated the map, HUD, victory tracker, and all other turn-bound
+// surfaces. Nothing is ever dropped — a state that has arrived is always
+// painted — and the gate upstream will not simulate past the turn this page
+// is holding, so the queue cannot grow behind it.
 let specPending = null;  // fetched, not yet drawn
 let specFetching = false;
 function specFetch() {
@@ -5822,9 +5825,9 @@ function specFetch() {
     const fresh = st.seed !== undefined && lastSeed2 !== null && st.seed !== lastSeed2;
     lastSeed2 = st.seed;
     adoptTiles(st);
-    specFetch(); // ask for the next turn before spending this frame drawing
     render(st);
     if (fresh) { sel = null; selCity = null; } // new game
+    specFetch(); // acknowledge this complete frame, then ask for the next turn
   } catch (e) {
     // A patch that could not be applied, or a draw that threw. Give up this
     // page's copy of the world rather than keep painting a wrong one; the next
@@ -6326,7 +6329,9 @@ function render(st, recordChronicle = true) {
   }
   openTurnIfNew();
   drawDiplomacy();
-  // Everything above draws this state, so this turn has now had its frame.
+  // Everything above draws this same snapshot, so this turn has now had its
+  // Martin-required complete frame: updated HUD, victory tracker, map,
+  // minimap, units, sidebars, controls, and every other turn-bound surface.
   // The reload paths return before here on purpose: a page on its way to a
   // successor world painted nothing, and must not claim it did.
   if (st.turn !== undefined && st.seed !== undefined)
