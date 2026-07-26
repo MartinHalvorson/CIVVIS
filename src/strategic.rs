@@ -26,6 +26,10 @@ const VALUE_NET_WEIGHT: f64 = 0.25;
 /// amounts, and a margin larger than the spread is a search that can never
 /// choose.
 const DOCTRINE_COMMITMENT_MARGIN: f64 = 0.002;
+/// Rounds projected between separation checks under an adaptive horizon.
+/// Small enough to stop soon after the branches part, large enough that
+/// the check itself is not most of the work.
+const ADAPTIVE_CHUNK: u32 = 10;
 pub const FIRST_REVIEW_TURN: u32 = 30;
 
 /// One position on the exact distribution consumed by the Strategic value
@@ -246,6 +250,38 @@ pub struct StrategicAi {
     /// `strategic_doctrine` entrant turns it on, which makes the two an
     /// exact paired A/B of the second axis alone.
     pub doctrine_search: bool,
+    /// Project every branch together and stop as soon as they separate,
+    /// instead of running each for a fixed count of rounds.
+    ///
+    /// **Measured worse, and kept only so nobody rebuilds it.** Against the
+    /// frozen `strategic_deep` control over 120 mirrored maps it scored
+    /// 39.2% (95% Wilson CI 30.9%..48.1%), Elo-equivalent **-76**, sign
+    /// p=0.0000, with the anytime-valid evidence crossing against it at map
+    /// 62. The gate said RETAIN `strategic_deep`.
+    ///
+    /// The reasoning it was built on: a branch that reaches a decided game
+    /// returns exactly 1.0 or 0.0, so once every branch resolves inside the
+    /// horizon they agree by construction — 56% of reviews are in that
+    /// state at horizon 80 and 89% at 120 — while the reviews that do not
+    /// saturate carry more the longer they run. Stopping at the first chunk
+    /// where the branches differ by more than the commitment margin should
+    /// therefore have spent rounds only while they still bought something.
+    ///
+    /// The inferential gap, which the run exposes: saturation says extra
+    /// rounds add nothing *once the branches are decided*. It does not say
+    /// an early difference predicts the late one. Stopping at the first
+    /// separation commits on a gap that has not held up yet, and at
+    /// horizon 80 most of those gaps do not survive.
+    ///
+    /// The run localises the damage exactly. Terminal score is a dead heat
+    /// (49.8%, p=0.7770) and the adaptive agent is in fact slightly *ahead*
+    /// on development — 2.60 cities to 2.41, 17.0 population to 15.9, 14.8
+    /// techs to 14.0. What it loses is conversion: 79 religious victories
+    /// against 130. It builds the better empire and wins fewer games, which
+    /// is what a broken victory-routing decision looks like, and it is
+    /// evidence for spending a review's budget on depth rather than on
+    /// stopping early.
+    pub adaptive_horizon: bool,
     /// Whether a prior-driven interrupt postpones the next periodic review.
     /// True reproduces the shipped behaviour exactly.
     pub defer_periodic_on_interrupt: bool,
@@ -289,6 +325,7 @@ impl StrategicAi {
             net,
             census: ReviewCensus::default(),
             continue_from_plan: false,
+            adaptive_horizon: false,
             doctrine_search: false,
             defer_periodic_on_interrupt: true,
             rotate_lanes: false,
@@ -886,6 +923,115 @@ impl StrategicAi {
             .and_then(|(_, target)| target)
     }
 
+    /// Every branch's value, projected in lockstep and stopped as soon as
+    /// they separate.
+    ///
+    /// Returns the same `(value, target)` pairs a fixed-horizon review
+    /// produces, so `choose_rollout_target` is unchanged. Determinism is
+    /// preserved: the branches are stepped in a fixed order, the stopping
+    /// test reads only their values, and no clock or RNG is consulted.
+    fn lockstep_values(
+        &self,
+        g: &Game,
+        pid: usize,
+        targets: &[Option<VictoryTarget>],
+    ) -> Vec<(f64, Option<VictoryTarget>)> {
+        self.lockstep_values_projected(g, pid, targets).0
+    }
+
+    /// The same search, also reporting how many rounds it actually spent.
+    /// A treatment has to be shown to fire before it is worth evaluating,
+    /// and the rounds it declines to project are the only direct evidence
+    /// that this one does anything at all.
+    fn lockstep_values_projected(
+        &self,
+        g: &Game,
+        pid: usize,
+        targets: &[Option<VictoryTarget>],
+    ) -> (Vec<(f64, Option<VictoryTarget>)>, u32) {
+        let mut branches: Vec<(Game, Vec<Box<dyn Ai>>)> = targets
+            .iter()
+            .map(|target| self.branch_state(g, pid, *target))
+            .collect();
+        let deadline = g.turn + self.horizon;
+        let mut projected = 0;
+        loop {
+            let chunk = ADAPTIVE_CHUNK.min(self.horizon.saturating_sub(projected));
+            if chunk == 0 {
+                break;
+            }
+            for (sim, ais) in branches.iter_mut() {
+                let stop = sim.turn + chunk;
+                while sim.winner.is_none() && sim.turn < stop && sim.turn < deadline {
+                    let current = sim.current;
+                    ais[current].take_turn(sim, current);
+                    if sim.winner.is_none() && sim.current == current {
+                        let _ = sim.apply(current, &Action::EndTurn);
+                    }
+                }
+            }
+            projected += chunk;
+            let values: Vec<f64> = branches
+                .iter()
+                .map(|(sim, _)| self.branch_value(sim, pid))
+                .collect();
+            let low = values.iter().copied().fold(f64::INFINITY, f64::min);
+            let high = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            // Separated enough to decide, or every branch has resolved and
+            // further rounds cannot change anything.
+            if high - low > TARGET_COMMITMENT_MARGIN
+                || branches.iter().all(|(sim, _)| sim.winner.is_some())
+            {
+                break;
+            }
+        }
+        (
+            branches
+                .iter()
+                .zip(targets)
+                .map(|((sim, _), target)| (self.branch_value(sim, pid), *target))
+                .collect(),
+            projected,
+        )
+    }
+
+    fn branch_state(
+        &self,
+        g: &Game,
+        pid: usize,
+        target: Option<VictoryTarget>,
+    ) -> (Game, Vec<Box<dyn Ai>>) {
+        let sim = g.clone();
+        let ais: Vec<Box<dyn Ai>> = sim
+            .players
+            .iter()
+            .map(|p| {
+                if p.id == pid {
+                    match target {
+                        Some(target) => Box::new(AdvancedAi::with_weights_and_target(
+                            self.weights.clone(),
+                            target,
+                        )) as Box<dyn Ai>,
+                        None => {
+                            Box::new(AdvancedAi::with_weights(self.weights.clone())) as Box<dyn Ai>
+                        }
+                    }
+                } else {
+                    Box::new(AdvancedAi::new()) as Box<dyn Ai>
+                }
+            })
+            .collect();
+        (sim, ais)
+    }
+
+    fn branch_value(&self, sim: &Game, pid: usize) -> f64 {
+        match sim.winner {
+            Some(winner) if winner == pid => 1.0,
+            Some(_) => 0.0,
+            None => self.position_value(sim, pid),
+        }
+    }
+
     /// Compare the adaptive parent with every enabled victory lane. Deterministic:
     /// rollouts are seed-free clones and ties keep declaration order; an explicit
     /// lane must clear the adaptive value by `TARGET_COMMITMENT_MARGIN`.
@@ -912,10 +1058,16 @@ impl StrategicAi {
                 ReviewPath::IrreversibleReligion,
             );
         }
-        let mut values = vec![(self.rollout(g, pid, None), None)];
-        for target in self.lane_candidates(g) {
-            values.push((self.rollout(g, pid, Some(target)), Some(target)));
-        }
+        let mut branches: Vec<Option<VictoryTarget>> = vec![None];
+        branches.extend(self.lane_candidates(g).into_iter().map(Some));
+        let values = if self.adaptive_horizon {
+            self.lockstep_values(g, pid, &branches)
+        } else {
+            branches
+                .into_iter()
+                .map(|target| (self.rollout(g, pid, target), target))
+                .collect()
+        };
         (self.choose_rollout_target(&values), ReviewPath::Rollouts)
     }
 
@@ -1589,6 +1741,59 @@ mod tests {
             "the warm and cold projections agreed to the digit in all {checked} positions, \
              so the plan in force carries nothing the rollout cannot re-derive and an \
              evaluation would measure nothing"
+        );
+    }
+
+    /// #380 spent a 240-game run to discover its treatment was inert, with
+    /// every diagnostic identical to the digit. This asserts the adaptive
+    /// horizon actually declines rounds in ordinary positions, so that a
+    /// pre-registered evaluation is measuring something that happens.
+    #[test]
+    fn the_adaptive_horizon_stops_early_in_ordinary_games() {
+        let mut checked = 0;
+        let mut fired = 0;
+        for seed in [31u64, 57, 83] {
+            // Three players: a duel is answered by the religion prior and
+            // never reaches the rollouts this measures.
+            let mut g = Game::new(3, 20, 14, seed, 200, 0);
+            let mut strategic = StrategicAi::with_weights(Default::default());
+            strategic.adaptive_horizon = true;
+            // The promoted deep budget, which is the one the saturation
+            // measurement was taken at and the only one this can help: at
+            // horizon 40 the median spread between branches is 0.0045,
+            // under the 0.01 commitment margin, so the branches never
+            // separate and the search runs its full count regardless.
+            strategic.horizon = 80;
+            let mut ais = BasicAi::fleet(&g);
+            for _ in 0..40 {
+                if g.winner.is_some() {
+                    break;
+                }
+                for pid in 0..g.players.len() {
+                    if g.winner.is_some() {
+                        break;
+                    }
+                    ais[pid].take_turn(&mut g, pid);
+                }
+            }
+            if g.winner.is_some() {
+                continue;
+            }
+            let mut targets: Vec<Option<VictoryTarget>> = vec![None];
+            targets.extend(strategic.lane_candidates(&g).into_iter().map(Some));
+            let (values, projected) = strategic.lockstep_values_projected(&g, 0, &targets);
+            assert_eq!(values.len(), targets.len());
+            assert!(values.iter().all(|(value, _)| value.is_finite()));
+            checked += 1;
+            if projected < strategic.horizon {
+                fired += 1;
+            }
+        }
+        assert!(checked > 0, "no ordinary mid-game position was reached");
+        assert!(
+            fired > 0,
+            "the adaptive horizon projected every round in all {checked} positions, \
+             so it is inert and an evaluation would measure nothing"
         );
     }
 

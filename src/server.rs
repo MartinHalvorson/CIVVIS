@@ -886,6 +886,10 @@ struct FrameDelivery {
     /// record. A seat is retired six seconds after its page stops asking; the
     /// audit is for the whole run.
     missed: u64,
+    /// Every turn `POST /autoplay` has simulated since this server started.
+    /// The denominator `missed` is otherwise missing: see
+    /// [`FrameDelivery::turns_simulated_without_a_frame`].
+    autoplayed: u64,
 }
 
 impl FrameDelivery {
@@ -952,6 +956,34 @@ impl FrameDelivery {
         }
         seat.painted = Some(frame);
         self.missed += lost;
+    }
+
+    /// Turns a single request simulated that no page could ever have drawn.
+    ///
+    /// Everything above counts a *viewer's* gaps: a page says which turn it
+    /// painted, and the turns between that and its previous acknowledgement
+    /// were simulated behind its back. Auto-play never has that conversation.
+    /// The browser asks for `n` turns over `POST /autoplay`, the engine plays
+    /// all of them, and exactly one state comes back — the one after the last.
+    /// The other `n - 1` were played, were never serialised, and reached no
+    /// screen. Nobody missed them; there was never a frame to miss.
+    ///
+    /// So they are counted here, at the only place that knows: the response is
+    /// one state, and `played` says how many turns went into it. `played - 1`
+    /// is the shortfall exactly, and it is the difference between a promise
+    /// somebody remembered to keep in the client and one this server can be
+    /// held to. `/status` reported a clean `frames_missed: 0` through a run
+    /// that dropped nine turns in ten, because the only thing it knew how to
+    /// count was an acknowledgement auto-play does not send.
+    ///
+    /// The turns are totalled as well as the shortfall, for the reason
+    /// `frames_painted` exists: no misses is not the same claim as no misses
+    /// *out of something*. A run of two hundred clean turns and a game where
+    /// auto-play was never pressed both report zero, and only the total tells
+    /// them apart.
+    fn turns_simulated_without_a_frame(&mut self, played: usize) {
+        self.autoplayed += played as u64;
+        self.missed += played.saturating_sub(1) as u64;
     }
 
     /// How long the stepper must still hold this turn: the longest wait owed
@@ -1090,8 +1122,10 @@ impl Shared {
     /// one reported drawing, and how many pages are watching. The second reads
     /// the first: no painted turn at all means nobody was watching, which is a
     /// different thing from a promise being kept. The third says how many
-    /// pages that "no turns missed" is a promise to.
-    fn frame_audit(&self) -> (u64, Option<u32>, usize) {
+    /// pages that "no turns missed" is a promise to. The fourth is auto-play's
+    /// own denominator: turns it has simulated, so that its zero can be told
+    /// apart from a game where nobody ever pressed it.
+    fn frame_audit(&self) -> (u64, Option<u32>, usize, u64) {
         let mut delivery = self.frame_delivery.lock().unwrap();
         delivery.retire_departed(Instant::now());
         let missed = delivery.missed;
@@ -1100,7 +1134,7 @@ impl Shared {
             .values()
             .filter_map(|seat| seat.painted.map(|frame| frame.turn))
             .max();
-        (missed, painted, delivery.seats.len())
+        (missed, painted, delivery.seats.len(), delivery.autoplayed)
     }
 
     /// Replace the tile array in `o` with just the tiles that have changed
@@ -2604,6 +2638,26 @@ fn auto_step_loop(sh: Arc<Shared>) {
             std::thread::sleep(Duration::from_millis(150));
             continue;
         }
+        // A game somebody is playing is not stepped from here, and this loop
+        // must not hold the frame gate while it idles past it.
+        //
+        // The gate orders this loop against a viewer's *first* snapshot, so
+        // the opening `/state?painted=` of every page blocks on it. Taking it,
+        // sleeping 300ms and immediately retaking it leaves a window too narrow
+        // to win against a thread that is already parked on the mutex, and a
+        // single-player page then never finishes booting: its opening read is
+        // starved until the page gives up at fifteen seconds, retries, and is
+        // starved again. So decide before taking the gate, not after.
+        //
+        // Read it into a bool first: a guard built in an `if` condition lives
+        // until the end of the whole `if`, so testing the lock inline would
+        // hold the *session* across the sleep below and stall every request
+        // that needs it.
+        let being_played_by_hand = !sh.session.lock().unwrap().params.spectate;
+        if being_played_by_hand {
+            std::thread::sleep(Duration::from_millis(300));
+            continue;
+        }
         // Close the first-viewer race as well as the steady-state one. A page
         // attaching to the current turn must either finish registering and
         // receive that snapshot before this step begins, or wait until the
@@ -2638,7 +2692,11 @@ fn auto_step_loop(sh: Arc<Shared>) {
         {
             let mut s = sh.session.lock().unwrap();
             if !s.params.spectate {
+                // Seating can change between the check above and this one, so
+                // this stays as the authority — but it releases the gate
+                // before idling, for the same reason.
                 drop(s);
+                drop(simulation_frame_gate);
                 std::thread::sleep(Duration::from_millis(300));
                 continue;
             }
@@ -2953,7 +3011,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         // few seconds to read one field spends the server's time on rendering
         // a view nobody looks at.
         ("GET", "/status") => {
-            let (frames_missed, frames_painted, viewers) = sh.frame_audit();
+            let (frames_missed, frames_painted, viewers, autoplay_turns) = sh.frame_audit();
             let session = sh.session.lock().unwrap();
             let game = &session.game;
             respond_json(
@@ -2977,6 +3035,15 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     // waited for separately, so this is also the number of
                     // paints a turn now costs before the next one starts.
                     "viewers": viewers,
+                    // Turns `POST /autoplay` has simulated. A human game is
+                    // not stepped by the exhibition loop and its page sends no
+                    // painted acknowledgements, so auto-play contributes
+                    // nothing to `frames_painted` and used to contribute
+                    // nothing to `frames_missed` either — it could drop nine
+                    // turns in ten and still read clean. This is the count
+                    // those misses are out of: zero here means auto-play was
+                    // never pressed, not that it behaved.
+                    "autoplay_turns": autoplay_turns,
                     // Which code is actually playing. A binary swap only
                     // happens between games, so a running server is always
                     // somewhat behind origin/main and there was no way to see
@@ -3220,6 +3287,16 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             out["autoplayed"] = json!(played);
             out["autoplay_strategy"] = json!(session.seated_strategy_name(0));
             drop(session);
+            // One response carries one state, so every turn in this batch past
+            // the first was played where nobody could see it. Recorded after
+            // the session lock is released, and only on the path that actually
+            // simulated: the retry arm above answers from
+            // `last_autoplay_request` without playing anything, and counting
+            // there would charge a dropped response twice.
+            sh.frame_delivery
+                .lock()
+                .unwrap()
+                .turns_simulated_without_a_frame(played);
             decorate(&mut out, sh);
             respond_json(stream, &out);
         }
@@ -3713,6 +3790,132 @@ mod tests {
         delivery.viewer_request("one", Some(turn_7), now);
         assert_eq!(delivery.seats["one"].painted, Some(turn_7));
         assert_eq!(delivery.wait_remaining(turn_7, now), None);
+    }
+
+    /// A batch of `n` turns answers with one state, so `n - 1` of them were
+    /// played where no page could draw them.
+    ///
+    /// This is arithmetic on the response, not an inference about a viewer:
+    /// whatever the browser does with the state it gets, the turns that never
+    /// became a state cannot be drawn by anybody. One turn per request is the
+    /// only shape that costs nothing.
+    #[test]
+    fn a_batch_of_turns_answers_with_one_state_and_owes_the_rest() {
+        let mut delivery = FrameDelivery::default();
+
+        // The shape the browser is supposed to use.
+        for _ in 0..5 {
+            delivery.turns_simulated_without_a_frame(1);
+        }
+        assert_eq!(delivery.missed, 0, "one turn per response is one frame each");
+        assert_eq!(delivery.autoplayed, 5);
+
+        // The shape that lost them: ten turns, one state.
+        delivery.turns_simulated_without_a_frame(10);
+        assert_eq!(delivery.missed, 9, "nine of the ten turns had no state");
+        assert_eq!(delivery.autoplayed, 15);
+
+        // A request that ran out of game played nothing and owes nothing.
+        delivery.turns_simulated_without_a_frame(0);
+        assert_eq!(delivery.missed, 9);
+        assert_eq!(delivery.autoplayed, 15);
+    }
+
+    /// `/status` has to be able to see auto-play, which it could not.
+    ///
+    /// `frames_missed` is built out of the gaps between a viewer's
+    /// `/state?painted=` acknowledgements. A single-player page advances over
+    /// `POST /autoplay` and sends none, and the exhibition stepper does not
+    /// touch a game somebody is playing — so auto-play could drop nine turns
+    /// in ten and every number on the audit still read clean. That is why this
+    /// went unnoticed for as long as it did, so the audit is what gets the
+    /// test: one turn per request must cost nothing, a batch must be charged
+    /// for what it swallowed, and a retried request must not be charged twice.
+    #[test]
+    fn the_audit_can_see_the_turns_auto_play_never_shows() {
+        let port = TcpListener::bind(("127.0.0.1", 0))
+            .expect("a free port")
+            .local_addr()
+            .unwrap()
+            .port();
+        let mut params = current();
+        params.num_players = 3;
+        params.num_city_states = 0;
+        params.width = 24;
+        params.height = 16;
+        params.seed = 20_260_726;
+        assert!(!params.spectate, "auto-play is the human-game path");
+        std::thread::spawn(move || super::serve_with_game(port, false, params, None, false));
+
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while http_get(port, "/status").is_none() {
+            assert!(Instant::now() < deadline, "single-player server never came up");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let audit = |port| -> Value {
+            serde_json::from_str(&http_get(port, "/status").expect("status")).expect("status JSON")
+        };
+        let ask = |turns: u32, id: &str| {
+            json!({
+                "turns": turns,
+                "strategy": "basic",
+                "request_id": id,
+                "seed": 20_260_726,
+                "server_instance": std::process::id(),
+            })
+            .to_string()
+        };
+
+        assert_eq!(
+            audit(port)["autoplay_turns"],
+            json!(0),
+            "nothing has been auto-played yet, and that is a different claim from a clean run"
+        );
+
+        // The shape the browser uses: one turn, one state, one frame.
+        for n in 1..=5 {
+            let body = ask(1, &format!("viewer-1-autoplay-{n}"));
+            let played: Value =
+                serde_json::from_str(&http_post(port, "/autoplay", &body).expect("a response"))
+                    .expect("response is JSON");
+            assert_eq!(played["autoplayed"], json!(1), "request {n} played one turn");
+        }
+        let clean = audit(port);
+        assert_eq!(clean["autoplay_turns"], json!(5));
+        assert_eq!(
+            clean["frames_missed"],
+            json!(0),
+            "five turns arrived as five states and none of them was owed a frame"
+        );
+
+        // The shape that lost them. Nine of these ten turns are simulated into
+        // a state that is thrown away before it is ever serialised.
+        let batch = ask(10, "viewer-1-autoplay-batch");
+        let swallowed: Value =
+            serde_json::from_str(&http_post(port, "/autoplay", &batch).expect("batch response"))
+                .expect("batch response is JSON");
+        assert_eq!(swallowed["autoplayed"], json!(10));
+        let charged = audit(port);
+        assert_eq!(charged["autoplay_turns"], json!(15));
+        assert_eq!(
+            charged["frames_missed"],
+            json!(9),
+            "a ten-turn batch answers with one state, so nine turns had none"
+        );
+
+        // A dropped response is replayed from `last_autoplay_request` without
+        // simulating anything, so the retry arm must not be charged.
+        let retry: Value =
+            serde_json::from_str(&http_post(port, "/autoplay", &batch).expect("retry response"))
+                .expect("retry response is JSON");
+        assert_eq!(retry["turn"], swallowed["turn"], "the retry replayed the batch");
+        let after_retry = audit(port);
+        assert_eq!(
+            after_retry["autoplay_turns"],
+            json!(15),
+            "the retry played no turns, so it owes none"
+        );
+        assert_eq!(after_retry["frames_missed"], json!(9));
     }
 
     /// Each viewer's misses are its own. One page catching every turn does not
@@ -4350,6 +4553,30 @@ mod tests {
         ));
         assert!(stale["map"]["tiles"].is_array());
         assert!(stale["map"]["tiles_changed"].is_null());
+    }
+
+    #[test]
+    fn a_page_that_cannot_boot_says_so_instead_of_showing_a_black_map() {
+        // The failure this pins is invisible from outside the browser: the
+        // shell paints, the title is right, the server is healthy, and the map
+        // is simply never drawn. A page that is still retrying must say which
+        // attempt it is on, and must take the notice down once a world arrives.
+        let boot = EMBEDDED_INDEX
+            .split_once("async function boot() {")
+            .expect("browser boot function")
+            .1
+            .split_once("\nasync function send(action) {")
+            .expect("end of browser boot function")
+            .0;
+        assert!(
+            boot.contains("showBootRetrying(++bootAttempts);"),
+            "a failed boot must report itself on screen, not only to the console"
+        );
+        assert!(
+            boot.contains("if (bootAttempts) { bootAttempts = 0; clearBootRetrying(); }"),
+            "a boot that finally succeeds must clear its own notice"
+        );
+        assert!(EMBEDDED_INDEX.contains("Connecting to the server — retrying (attempt ${attempt})"));
     }
 
     #[test]
@@ -7492,6 +7719,59 @@ mod tests {
         assert!(played >= 12, "only played {played} turns of a 12-turn game");
     }
 
+    /// A single-player page has to be able to read its own first state.
+    ///
+    /// The opening `/state?painted=` of every page takes
+    /// `simulation_frame_gate` — that is how a page attaching mid-turn is
+    /// ordered against the stepper. The stepper does not step a game somebody
+    /// is playing, but it used to take that gate *first* and only then notice,
+    /// sleeping 300ms with the gate held and retaking it the moment it let go.
+    /// The window left for the page was too narrow to win, so a browser opening
+    /// a single-player game was starved out of its first snapshot: boot aborts
+    /// at fifteen seconds, retries, and is starved again. The map never
+    /// appears, and auto-play has nothing to draw a frame from.
+    #[test]
+    fn a_single_player_page_gets_its_first_state_at_once() {
+        let port = TcpListener::bind(("127.0.0.1", 0))
+            .expect("a free port")
+            .local_addr()
+            .unwrap()
+            .port();
+        let mut params = current();
+        params.num_players = 3;
+        params.num_city_states = 0;
+        params.width = 24;
+        params.height = 16;
+        params.seed = 20_260_726;
+        assert!(!params.spectate, "this test is about the human-game path");
+        std::thread::spawn(move || super::serve_with_game(port, false, params, None, false));
+
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while http_get(port, "/status").is_none() {
+            assert!(Instant::now() < deadline, "single-player server never came up");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        // Exactly what boot asks for: a viewer that has painted nothing yet.
+        // Asked repeatedly, because starvation is a race and one lucky read
+        // proves nothing.
+        for attempt in 1..=5 {
+            let started = Instant::now();
+            let body = http_get(port, "/state?painted=&viewer=boot-probe")
+                .unwrap_or_else(|| panic!("read {attempt}: the opening state never arrived"));
+            let elapsed = started.elapsed();
+            let state: Value = serde_json::from_str(&body)
+                .unwrap_or_else(|e| panic!("read {attempt}: opening state is not JSON: {e}"));
+            assert!(
+                state["turn"].is_number(),
+                "read {attempt}: the opening state carries no turn"
+            );
+            assert!(
+                elapsed < Duration::from_secs(5),
+                "read {attempt}: the opening state took {elapsed:?}, and a page gives up at 15s"
+            );
+        }
+    }
+
     /// A browser can lose the response after the agent has already played the
     /// turns. Retrying that POST must acknowledge the completed batch rather
     /// than silently playing it twice.
@@ -7586,17 +7866,55 @@ mod tests {
         assert!(EMBEDDED_INDEX
             .contains("const roster = Array.isArray(rules.strategies) ? rules.strategies : []"));
         assert!(EMBEDDED_INDEX.contains("fillStrategies(RULES)"));
-        // The choice rides on every request, so a run continued in batches
+        // The choice rides on every request, so a run continued turn by turn
         // cannot change agent halfway through.
         assert!(EMBEDDED_INDEX.contains("async function autoplayBatch(turns, strategy)"));
         assert!(EMBEDDED_INDEX.contains("request_id: requestId"));
         assert!(EMBEDDED_INDEX.contains("AUTOPLAY_BATCH_TIMEOUT_MS = 120000"));
-        assert!(EMBEDDED_INDEX.contains("const next = await autoplayBatch(ask, strategy)"));
         // Pressing it again stops, rather than queueing a second run.
         assert!(EMBEDDED_INDEX.contains("if (autoplaying) { autoplayStop = true; return; }"));
-        assert!(EMBEDDED_INDEX.contains("while (left > 0 && !autoplayStop)"));
-        // Short of the turns asked for means the game ended under it.
-        assert!(EMBEDDED_INDEX.contains("if (played < ask) break;"));
+        assert!(EMBEDDED_INDEX.contains("while (inFlight)"));
+    }
+
+    /// Every turn auto-play simulates has to reach the screen as a frame.
+    ///
+    /// This is Martin's standing requirement, and auto-play was the one loop
+    /// that broke it. It asked the engine for a *batch* of turns and got back
+    /// only the state after the last one, so a batch of ten played ten turns
+    /// and drew one — nine turns simulated, delivered to nobody, gone. The
+    /// batch doubled while responses were quick, which is why it looked like
+    /// turns were skipped "sometimes": the run began at one turn per request
+    /// and grew away from it within a second.
+    ///
+    /// Two properties fix it and both are load-bearing. The request is for one
+    /// turn, so every turn has a state of its own. And the paint happens inside
+    /// an animation frame, because two states rendered inside one display
+    /// refresh are composited into a single frame — a turn can otherwise be
+    /// simulated, delivered, drawn, and still never appear on a screen.
+    #[test]
+    fn auto_play_draws_a_frame_for_every_turn_it_plays() {
+        // One turn per request, both the first and every one after it.
+        assert!(EMBEDDED_INDEX.contains("inFlight = autoplayBatch(1, strategy);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "inFlight = played > 0 && left > 0 && !autoplayStop ? autoplayBatch(1, strategy) : null;"
+        ));
+        // One presented frame per turn.
+        assert!(EMBEDDED_INDEX.contains(
+            "return new Promise(drawn => requestAnimationFrame(() => { render(st); drawn(); }));"
+        ));
+        assert!(EMBEDDED_INDEX.contains("await autoplayFrame(next);"));
+        // The adaptive batch is what dropped the turns. It must not come back,
+        // in any of the three shapes it had.
+        for gone in [
+            "batch = elapsed < 250",
+            "const ask = Math.min(batch, left)",
+            "await autoplayBatch(ask, strategy)",
+        ] {
+            assert!(
+                !EMBEDDED_INDEX.contains(gone),
+                "auto-play is batching turns again, so turns go unseen: {gone}"
+            );
+        }
     }
 
     /// Which named Great Person a kind is offering is a world fact — it

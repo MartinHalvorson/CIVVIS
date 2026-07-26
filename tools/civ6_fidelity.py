@@ -1211,6 +1211,11 @@ ENGINE_PARAMETERS = {
     "TRADE_ROUTE_TURN_DURATION_BASE": 20,  # game.rs trade_route_duration
     "BARBARIAN_CAMP_MINIMUM_DISTANCE_CITY": 4,  # game.rs spawn_camp
     "BARBARIAN_CAMP_MINIMUM_DISTANCE_ANOTHER_CAMP": 7,
+    # A third of the target is seated before turn one, and every turn after it
+    # the world rolls one in two for one more -- both in the fog, since a camp
+    # may not be placed where any non-Barbarian unit or city is looking.
+    "BARBARIAN_CAMP_FIRST_TURN_PERCENT_OF_TARGET_TO_ADD": 33,  # game.rs new_with
+    "BARBARIAN_CAMP_ODDS_OF_NEW_CAMP_SPAWNING": 2,  # game.rs barbarian_phase
     "BARBARIAN_TECH_PERCENT": 50,  # game.rs barbarian_phase unit pool
     "BARBARIAN_NUM_RANDOM_UNIT_CHOICES": 3,
     # Verified against the engine during the 2026-07-26 tournament-rules sweep.
