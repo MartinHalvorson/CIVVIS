@@ -3595,6 +3595,41 @@ mod belief_runtime_tests {
     }
 
     #[test]
+    fn the_top_difficulties_also_spawn_barbarians_twice_as_often() {
+        // BarbarianAttackForces carries SpawnRate alongside its force sizes,
+        // and it is 2 for every band up to Emperor and 1 from Immortal. The
+        // top band does not just field bigger parties -- it assembles them
+        // twice as often, on the same band boundary the force scale uses.
+        let rules = crate::rules::Rules::embedded();
+        for difficulty in ["settler", "chieftain", "warlord", "prince", "king", "emperor"] {
+            assert_eq!(rules.difficulties[difficulty].barb_spawn_scale, 1.0, "{difficulty}");
+        }
+        for difficulty in ["immortal", "deity"] {
+            assert_eq!(rules.difficulties[difficulty].barb_spawn_scale, 0.5, "{difficulty}");
+        }
+
+        // And it reaches the map: a camp that has just spawned waits half as
+        // long to spawn again at Deity as it does at Prince.
+        let rearm = |difficulty: &str| {
+            let mut game = Game::new_full(2, 40, 26, 4_172, 200, 0, true);
+            game.difficulty = difficulty.to_string();
+            game.turn = 1;
+            let before: Vec<u32> = game.barb_camps.values().copied().collect();
+            for _ in 0..12 {
+                game.turn += 1;
+                game.barbarian_phase();
+            }
+            let after: Vec<u32> = game.barb_camps.values().copied().collect();
+            let _ = before;
+            after.into_iter().max().unwrap_or(0)
+        };
+        assert!(
+            rearm("deity") < rearm("prince"),
+            "Deity re-arms sooner than Prince"
+        );
+    }
+
+    #[test]
     fn difficulty_scales_the_standing_barbarian_force() {
         // BarbarianAttackForces bands its forces on difficulty and the bands
         // are what barb_force_scale carries: Settler and Chieftain at 0.5,
@@ -15121,6 +15156,7 @@ impl Game {
         // three bands as 0.5, 1.0 and 1.5, and the standing barbarian
         // population is where a force size lives in this engine.
         let scale = self.difficulty_spec().barb_force_scale;
+        let spawn_scale = self.difficulty_spec().barb_spawn_scale;
         let cap = (((2 + 2 * self.barb_camps.len() + 2 * alerted) as f64) * scale).round() as usize;
         let mut n_barb = self.player_unit_ids(bpid).len();
         let pool = self.barbarian_unit_pool();
@@ -15158,8 +15194,13 @@ impl Game {
                     .barb_alerted_until
                     .get(&pos)
                     .is_some_and(|until| *until > self.turn);
-                self.barb_camps
-                    .insert(pos, self.turn + if rapid { 2 } else { 6 });
+                // BarbarianAttackForces.SpawnRate is 2 up to Emperor and 1
+                // from Immortal, so the top band assembles forces twice as
+                // often as well as fielding bigger ones.
+                let wait = (f64::from(if rapid { 2 } else { 6 }) * spawn_scale)
+                    .round()
+                    .max(1.0) as u32;
+                self.barb_camps.insert(pos, self.turn + wait);
             }
         }
     }
