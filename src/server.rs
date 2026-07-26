@@ -7113,8 +7113,19 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("id=\"play-on-next-victory\""));
         assert!(EMBEDDED_INDEX.contains("id=\"play-on-indefinite\""));
         assert!(EMBEDDED_INDEX.contains("Take a look around"));
-        assert!(EMBEDDED_INDEX.contains("Play until next victory condition"));
-        assert!(EMBEDDED_INDEX.contains("Play indefinitely"));
+        // The two rules that resume play are named for what the person wants
+        // rather than for the rule they select; the rule itself is on the
+        // tooltip, which is why both buttons still have to carry one.
+        assert!(EMBEDDED_INDEX.contains(">Continue</button>"));
+        assert!(EMBEDDED_INDEX.contains(">To infinity and beyond</button>"));
+        assert!(EMBEDDED_INDEX.contains(
+            "title=\"Keep playing this world without a turn limit. The exact result shown \
+             here will not repeat; the next distinct victory ends the game.\">Continue<"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "title=\"Keep playing this world without a turn limit and ignore every later \
+             victory.\">To infinity and beyond<"
+        ));
         assert!(EMBEDDED_INDEX.contains(
             "playOnPastVictory('until_next_victory', true)"
         ));
@@ -7125,6 +7136,34 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("async function playOnPastVictory(mode, paused)"));
         assert!(EMBEDDED_INDEX.contains("body: JSON.stringify({mode, paused})"));
         assert!(EMBEDDED_INDEX.contains("cancelSupervisedSuccessorWatch();"));
+    }
+
+    /// A spectated finale is counted down by the supervisor. A finished human
+    /// game has nobody driving it, so its own result screen counts down to the
+    /// next game — and every way of saying "I am still here" has to stop it,
+    /// or the offer to keep the world is only an offer for ten seconds.
+    #[test]
+    fn a_human_finale_counts_itself_down_to_the_next_game() {
+        assert!(EMBEDDED_INDEX.contains("const FINALE_RESTART_SECONDS = 10;"));
+        assert!(EMBEDDED_INDEX.contains("id=\"finale-restart\""));
+        assert!(EMBEDDED_INDEX
+            .contains("button.textContent = `${FINALE_RESTART_LABEL} (${left})`;"));
+        // The supervisor owns the exhibition's handoff, so a spectated finale
+        // never arms this one on top of the countdown it already publishes.
+        assert!(EMBEDDED_INDEX
+            .contains("if (SPEC || finaleCountdownResult === signature) return;"));
+        // Both human endings count down: a victory and a last city lost.
+        assert_eq!(EMBEDDED_INDEX.matches("armFinaleCountdown(signature);").count(), 2);
+        // Any input stops it, the three ways to keep the world stop it, and a
+        // result screen that goes away takes it with it.
+        assert!(EMBEDDED_INDEX.contains(
+            "for (const gesture of [\"pointerdown\", \"keydown\", \"wheel\"])"
+        ));
+        assert!(EMBEDDED_INDEX.contains("cancelFinaleCountdown(),\n    {capture: true, passive: true});"));
+        assert!(EMBEDDED_INDEX.contains("cancelSupervisedSuccessorWatch();\n  cancelFinaleCountdown();"));
+        assert!(EMBEDDED_INDEX.contains("clearFinaleCountdown();"));
+        // And reaching zero is the same act as pressing the button.
+        assert!(EMBEDDED_INDEX.contains("cancelFinaleCountdown();\n  startNewSimulation();"));
     }
 
     /// Auto-play used to be one button that ran whichever agent the fleet
