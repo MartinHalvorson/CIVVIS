@@ -53151,10 +53151,14 @@ mod district_mechanics {
         let mut religious_baseline = religion.clone();
         religious_baseline.players[0].alliances.clear();
         religious_baseline.players[1].alliances.clear();
-        assert_eq!(
-            religion.city_yields(own_city).faith - religious_baseline.city_yields(own_city).faith,
-            3.2,
-            "four allied-religion followers pass through the city's 80% yield modifier"
+        // A difference of two sums, so the last bit of the mantissa depends on
+        // what else the city happens to be producing. Compare the number, not
+        // its representation.
+        let allied_faith =
+            religion.city_yields(own_city).faith - religious_baseline.city_yields(own_city).faith;
+        assert!(
+            (allied_faith - 3.2).abs() < 1e-9,
+            "four allied-religion followers pass through the city's 80% yield modifier, got {allied_faith}"
         );
         religion.routes.push(TradeRoute {
             origin: own_city,
