@@ -1988,6 +1988,37 @@ impl Session {
         }
         played
     }
+    /// "One more turn": put the decided world back into play.
+    ///
+    /// A victory can be declared in the middle of a round, which leaves the
+    /// turn parked on whichever seat was up. A spectated world does not care —
+    /// the stepper plays whoever is current — but a game somebody is playing
+    /// would come back live on an AI seat, refusing every action the person
+    /// tried to take. So the same catch-up `act` runs after an end-turn runs
+    /// here, handing the round back to seat zero.
+    pub fn play_on(&mut self) -> bool {
+        if !self.game.play_on() {
+            return false;
+        }
+        if !self.params.spectate {
+            let g = &mut self.game;
+            let mut guard = 0;
+            while g.winner.is_none()
+                && g.current != 0
+                && g.players[0].alive
+                && guard < 2 * g.players.len()
+            {
+                let pid = g.current;
+                self.ais[pid].take_turn(g, pid);
+                if g.current == pid && g.winner.is_none() {
+                    let _ = g.apply(pid, &Action::EndTurn);
+                }
+                guard += 1;
+            }
+        }
+        true
+    }
+
     pub fn act(&mut self, v: &Value) -> Option<String> {
         let action: Action = match serde_json::from_value(v.clone()) {
             Ok(a) => a,
@@ -2551,6 +2582,20 @@ fn auto_step_loop(sh: Arc<Shared>) {
                         turn: s.game.turn,
                     });
                 }
+                // The step that ends a game has to hand the viewer its
+                // countdown in the same breath. Arming it on the next pass
+                // instead left `/state` reporting no countdown at all for a
+                // beat, so the result screen opened on "preparing the next
+                // world" and only then began counting down from five — and the
+                // window in which "one more turn" can be pressed is exactly
+                // the window the countdown describes.
+                if s.game.winner.is_some() {
+                    over_since = Some(Instant::now());
+                    sh.restart_in.store(
+                        final_countdown_ms(s.params.restart_ms),
+                        Ordering::Relaxed,
+                    );
+                }
                 // A turn is one step per seat, so a seat waits for its own
                 // share of the turn budget and the round adds up to the pace.
                 // Only the living take a step: counting the eliminated made a
@@ -2975,6 +3020,9 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "game_speeds": CIV6_GAME_SPEEDS,
                     "strategies": strategy_roster(&session),
                     "seat_strategy": session.seated_strategy_name(0),
+                    // What one press of "one more turn" buys, so the result
+                    // screen can promise the number the engine actually grants.
+                    "play_on_turns": crate::game::PLAY_ON_TURNS,
                 }),
             );
         }
@@ -3114,6 +3162,26 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             decorate(&mut out, sh);
             respond_json(stream, &out);
         }
+        // "One more turn": carry the decided world on instead of retiring it.
+        // The countdown is cleared here rather than left to the stepper, so a
+        // state read between the press and the stepper's next pass never
+        // reports a restart that is no longer coming.
+        ("POST", "/play-on") => {
+            let mut session = sh.session.lock().unwrap();
+            let played_on = session.play_on();
+            let mut out = session.state();
+            out["error"] = if played_on {
+                Value::Null
+            } else {
+                json!("this game has no result to play on past")
+            };
+            drop(session);
+            if played_on {
+                sh.restart_in.store(u64::MAX, Ordering::Relaxed);
+            }
+            decorate(&mut out, sh);
+            respond_json(stream, &out);
+        }
         ("POST", "/view") => {
             let mut session = sh.session.lock().unwrap();
             let result = match parsed.get("player") {
@@ -3206,7 +3274,7 @@ mod tests {
         chronicle_world_events, final_countdown_ms, new_game_params, query_value, request_path,
         save_path, seat_delay_ms, strategy_roster, tile_mark, ChronicleSnapshot, ChronicleState,
         FrameDelivery, Params,
-        Session, SpectatorFrame, EMBEDDED_CINEMATIC_3D, EMBEDDED_INDEX,
+        Session, SpectatorFrame, EMBEDDED_CINEMATIC_3D, EMBEDDED_INDEX, MIN_RESTART_MS,
         EMBEDDED_WORLD_WONDER_ATLAS, SAVE_DIR, STATE_LONG_POLL, VIEWER_ACTIVE,
     };
     use crate::game::{Action, Game, VictoryConditions};
@@ -3601,6 +3669,78 @@ mod tests {
             std::thread::sleep(Duration::from_millis(50));
         }
         port
+    }
+
+    /// A result has to arrive with the window it promises, and that window has
+    /// to be answerable.
+    ///
+    /// The countdown used to be armed on the stepper's *next* pass, so for a
+    /// beat `/state` carried a winner and no `restart_in` at all and the
+    /// result screen opened on "preparing the next world" before it started
+    /// counting. That beat is the difference between five seconds to press
+    /// "one more turn" and however much of five seconds is left over.
+    #[test]
+    fn a_result_arrives_with_its_countdown_and_can_be_played_past() {
+        let port = TcpListener::bind(("127.0.0.1", 0))
+            .expect("a free port")
+            .local_addr()
+            .unwrap()
+            .port();
+        let mut params = current();
+        params.spectate = true;
+        params.num_players = 2;
+        params.num_city_states = 1;
+        params.width = 24;
+        params.height = 16;
+        params.seed = 20_260_727;
+        // Short enough that the turn limit lands within the test's patience.
+        params.max_turns = 3;
+        std::thread::spawn(move || super::serve_with_game(port, false, params, None, false));
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while http_get(port, "/status").is_none() {
+            assert!(Instant::now() < deadline, "spectator server never came up");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
+        let read = |target: &str| -> Value {
+            serde_json::from_str(&http_get(port, target).expect("a state")).expect("state is JSON")
+        };
+        let deadline = Instant::now() + Duration::from_secs(60);
+        let decided = loop {
+            let state = read("/state");
+            if !state["winner"].is_null() {
+                break state;
+            }
+            assert!(Instant::now() < deadline, "the short game never ended");
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        // Every state that carries a winner carries the countdown with it.
+        assert_eq!(
+            decided["restart_in"],
+            json!(MIN_RESTART_MS / 1_000),
+            "a result was published without the five seconds it is owed"
+        );
+
+        let played_on: Value =
+            serde_json::from_str(&http_post(port, "/play-on", "{}").expect("play on"))
+                .expect("play-on answers JSON");
+        assert!(played_on["error"].is_null());
+        assert!(played_on["winner"].is_null(), "the world is live again");
+        // The verdict survives the extension, and the countdown that was
+        // running for it does not.
+        assert_eq!(played_on["decided"]["turn"], decided["turn"]);
+        assert_eq!(
+            played_on["decided"]["victory_type"],
+            decided["victory_type"]
+        );
+        assert!(played_on["restart_in"].is_null());
+        assert_eq!(
+            played_on["max_turns"].as_u64().expect("a raised limit"),
+            decided["turn"].as_u64().unwrap() + u64::from(crate::game::PLAY_ON_TURNS)
+        );
+        assert_eq!(played_on["seed"], decided["seed"], "the same world");
+
+        http_post(port, "/pace", "{\"paused\":true}");
     }
 
     /// Two tabs on one exhibition are two promises, not one.
@@ -5420,6 +5560,33 @@ mod tests {
             .is_ok());
     }
 
+    /// "One more turn" on a game somebody is playing. The victory that ended
+    /// it can be declared on any seat's turn, so the round is usually parked
+    /// on an agent when the result appears; coming back live there would hand
+    /// the person a board that refuses every action they take.
+    #[test]
+    fn playing_on_returns_the_round_to_the_person_at_the_keyboard() {
+        let mut params = current();
+        params.max_turns = 40;
+        let mut session = Session::new(params);
+        session.game.turn = 12;
+        session.game.current = 1;
+        session.game.winner = Some(1);
+        session.game.victory_type = Some("science".to_string());
+
+        assert!(session.play_on());
+        assert_eq!(session.game.current, 0);
+        assert!(session.game.winner.is_none());
+        assert_eq!(session.game.max_turns, 12 + crate::game::PLAY_ON_TURNS);
+        let state = session.state();
+        assert!(state["winner"].is_null());
+        assert_eq!(state["decided"]["victory_type"], json!("science"));
+        assert_eq!(state["decided"]["turn"], json!(12));
+        // A live game has nothing to play on past, and says so rather than
+        // quietly granting turns nobody won.
+        assert!(!session.play_on());
+    }
+
     #[test]
     fn next_game_drops_a_watched_player_that_is_not_in_the_new_world() {
         let mut params = current();
@@ -6048,6 +6215,12 @@ mod tests {
         // countdown, because the supervisor owns that handoff.
         assert!(EMBEDDED_INDEX.contains("class=\"primary winner-again\" onclick=\"startNewSimulation()\""));
         assert!(EMBEDDED_INDEX.contains("id=\"respawn\" role=\"timer\""));
+        // Both finales also offer the other answer: keep this world. It is
+        // the reason the countdown has to be long enough to read — a button
+        // nobody can reach before the next world loads is not an offer.
+        assert!(EMBEDDED_INDEX.contains("id=\"play-on\" onclick=\"playOnPastVictory()\""));
+        assert!(EMBEDDED_INDEX.contains("async function playOnPastVictory()"));
+        assert!(EMBEDDED_INDEX.contains("cancelSupervisedSuccessorWatch();"));
     }
 
     /// Auto-play used to be one button that ran whichever agent the fleet
