@@ -149,10 +149,13 @@ rate.
 does not. That would say routing is not the binding constraint, which is a
 result worth having.
 
-**Interim rule until this lands.** Prune on *eligibility* — can this branch
-still be chosen? — never on rank. A lane already behind the adaptive baseline
-cannot be selected without swinging two margins, so dropping it removes no
-reachable outcome and leaves the maximum ranging over the same candidates.
+**Note the scope.** The pruning that exposed this is retired (see the
+rank-preservation constraint above) — but the margin defect it exposed is not.
+It applies to `rotate_lanes`, to any ruleset that disables victory conditions
+and so shrinks the enabled-lane set, and to a duel, where the enabled set is
+the same but three priors answer first. The threshold moving with the
+candidate count is a standing property of the decision rule, independent of
+whatever produced the count.
 
 ### M2 — Make the counterfactual an exact simulation of the decision
 
