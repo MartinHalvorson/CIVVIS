@@ -560,6 +560,12 @@ fn main() {
         }
     }
     let pairs = number(&args, "--pairs", 50).max(1) as usize;
+    // How many games run at once. Every game is independent and seeded, so
+    // this changes only wall-clock time, never a result.
+    let jobs = match number(&args, "--jobs", 0) {
+        requested if requested > 0 => requested as usize,
+        _ => civvis::parallel::default_jobs(),
+    };
     let turns = number(&args, "--turns", 180).max(1) as u32;
     let players = number(&args, "--players", 2).max(2) as usize;
     let city_states = number(&args, "--city-states", 0).max(0) as usize;
@@ -584,11 +590,34 @@ fn main() {
     let mut pair_scores = Vec::with_capacity(pairs);
     let mut pair_terminal_scores = Vec::with_capacity(pairs);
 
-    for pair in 0..pairs {
-        let game_seed = seed + pair as u64;
-        let mut pair_score = 0.0;
-        let mut pair_terminal_score = 0.0;
-        for swap in 0..2 {
+    // One finished game, carried back from a worker so the fold below can
+    // apply it in the order it would have happened serially.
+    struct PlayedGame<'a> {
+        game: Game,
+        seats: Vec<&'a str>,
+        traces: Vec<PlanTrace>,
+        targets: Vec<&'static str>,
+        censuses: Vec<Option<ReviewCensus>>,
+    }
+
+    // Games share nothing but the immutable ruleset, and every one is fully
+    // determined by its seed, so a batch is embarrassingly parallel. Results
+    // come back in index order and are folded sequentially, which makes a
+    // parallel run produce byte-identical output to a serial one — only
+    // sooner. That matters more here than anywhere else in the codebase:
+    // this binary is the promotion gate, and how many maps it can afford is
+    // what decides whether an effect is resolvable at all.
+    //
+    // Chunked rather than one flat batch so peak memory holds a chunk of
+    // finished games rather than the whole run.
+    let chunk_pairs = jobs.max(1);
+    let mut pair = 0usize;
+    while pair < pairs {
+        let chunk = chunk_pairs.min(pairs - pair);
+        let played = civvis::parallel::map(chunk * 2, jobs, |index| {
+            let local_pair = pair + index / 2;
+            let swap = index % 2;
+            let game_seed = seed + local_pair as u64;
             let seats: Vec<&str> = (0..players)
                 .map(|pid| if (pid + swap) % 2 == 0 { a } else { b })
                 .collect();
@@ -598,12 +627,12 @@ fn main() {
                 .filter(|(_, name)| **name == a)
                 .map(|(pid, _)| pid)
                 .collect();
-            let mut g = Game::new_with(GameOptions {
+            let mut game = Game::new_with(GameOptions {
                 difficulty: difficulty.clone(),
                 human_seats: challenger_seats,
                 ..GameOptions::new(players, width, height, game_seed, turns, city_states)
             });
-            let mut ais: Vec<Box<dyn Ai>> = g
+            let mut ais: Vec<Box<dyn Ai>> = game
                 .players
                 .iter()
                 .map(|p| {
@@ -611,30 +640,63 @@ fn main() {
                     builtin_ai(name, game_seed + p.id as u64)
                 })
                 .collect();
-            let traces = run_traced_game(&mut g, &mut ais, players);
-            total_turns += g.turn as u64;
-            pair_score += game_score(g.winner, &seats, a);
-            pair_terminal_score += terminal_score_share(&g, &seats, a);
+            let traces = run_traced_game(&mut game, &mut ais, players);
+            let targets = (0..players)
+                .map(|pid| plan_target(ais[pid].as_ref()))
+                .collect();
+            let censuses = (0..players).map(|pid| ais[pid].review_census()).collect();
+            PlayedGame {
+                game,
+                seats,
+                traces,
+                targets,
+                censuses,
+            }
+        });
+        for (index, result) in played.into_iter().enumerate() {
+            let PlayedGame {
+                game,
+                seats,
+                traces,
+                targets,
+                censuses,
+            } = result;
+            total_turns += game.turn as u64;
+            let score = game_score(game.winner, &seats, a);
+            let terminal = terminal_score_share(&game, &seats, a);
+            if index % 2 == 0 {
+                pair_scores.push(score);
+                pair_terminal_scores.push(terminal);
+            } else {
+                *pair_scores.last_mut().expect("the swap follows its pair") += score;
+                *pair_terminal_scores
+                    .last_mut()
+                    .expect("the swap follows its pair") += terminal;
+            }
             // Legacy per-seat win metrics count a game nobody won as zero
             // wins. The paired promotion score above records it as a draw.
             for (pid, name) in seats.iter().enumerate() {
-                let target = plan_target(ais[pid].as_ref());
-                if let Some(census) = ais[pid].review_census() {
+                if let Some(census) = censuses[pid] {
                     let metrics = totals.get_mut(*name).unwrap();
                     metrics.census.merge(census);
                     metrics.searching_seats += 1;
                 }
                 totals.get_mut(*name).unwrap().record(
-                    &g,
+                    &game,
                     pid,
-                    g.winner == Some(pid),
-                    target,
+                    game.winner == Some(pid),
+                    targets[pid],
                     &traces[pid],
                 );
             }
         }
-        pair_scores.push(pair_score / 2.0);
-        pair_terminal_scores.push(pair_terminal_score / 2.0);
+        pair += chunk;
+    }
+    for score in pair_scores.iter_mut() {
+        *score /= 2.0;
+    }
+    for score in pair_terminal_scores.iter_mut() {
+        *score /= 2.0;
     }
 
     println!(
@@ -997,6 +1059,40 @@ mod tests {
         assert_eq!(game_score(Some(2), &seats, "challenger"), 0.5);
     }
 
+
+    /// A threaded batch must produce the serial numbers exactly. Every game
+    /// is determined by its seed and shares nothing mutable, and results are
+    /// folded in index order, so the only thing `--jobs` may change is how
+    /// long the run takes. If this ever fails, the evaluator has started
+    /// reporting a different answer depending on the machine it ran on.
+    #[test]
+    fn parallel_batches_match_a_serial_run() {
+        let play = |jobs: usize| {
+            civvis::parallel::map(4, jobs, |index| {
+                let seed = 52_000 + index as u64 / 2;
+                let swap = index % 2;
+                let seats: Vec<&str> = (0..2)
+                    .map(|pid| if (pid + swap) % 2 == 0 { "advanced" } else { "basic" })
+                    .collect();
+                let mut game = Game::new(2, 20, 14, seed, 40, 0);
+                let mut ais: Vec<Box<dyn Ai>> = game
+                    .players
+                    .iter()
+                    .map(|p| {
+                        let name = if p.id < 2 { seats[p.id] } else { "basic" };
+                        civvis::elo::builtin_ai(name, seed + p.id as u64)
+                    })
+                    .collect();
+                run_traced_game(&mut game, &mut ais, 2);
+                (
+                    game.turn,
+                    game.winner,
+                    game_score(game.winner, &seats, "advanced"),
+                )
+            })
+        };
+        assert_eq!(play(1), play(4));
+    }
 
     #[test]
     fn terminal_score_share_is_bounded_symmetric_and_independent_of_winner() {

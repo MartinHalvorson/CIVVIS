@@ -933,3 +933,45 @@ seven branches to three and buys frequency at *negative* compute cost.
 `victory_progress` cannot do that pruning, because it deliberately scores
 only concrete endgame progress and is zero for every lane in the early game
 where most reviews happen.
+
+## 2026-07-26 — the promotion gate was the only batch runner on one core
+
+Nine search arms were measured this session and every one returned
+INCONCLUSIVE. At some point that stops being a statement about the arms.
+`src/parallel.rs` exists because "benchmarks, soaks, tournaments, and
+self-play all play a batch of games that share nothing but the ruleset,"
+and `benchmark`, `soak`, `tournament` and `selfplay` all use it. `ai_eval`
+— the paired evaluator that decides whether an AI change may ship — did
+not. It played every game on one core.
+
+That is why a run affords twenty maps. Twenty maps cannot resolve the
+effect sizes this search produces, so the instrument, not the ideas, was
+the limit.
+
+`ai_eval` now takes `--jobs` (default: available parallelism) and plays its
+batch through `parallel::map`, which hands results back in index order. The
+fold that accumulates metrics, paired scores and censuses still runs
+sequentially over that ordered list, so a parallel run reproduces a serial
+one exactly:
+
+```
+$ ai_eval strategic_r20 strategic --pairs 6 --players 4 --seed 52000 \
+    --turns 150 --jobs 1  > serial.txt
+$ ai_eval ... --jobs 12 > parallel.txt
+$ diff serial.txt parallel.txt          # no output
+serial   real 142.80
+parallel real  31.89
+```
+
+**4.5× on a machine already at load 17 of 18 cores**, byte-identical
+output. Games are chunked `--jobs` pairs at a time so peak memory holds a
+chunk of finished games rather than the whole run.
+
+Determinism is not incidental here, it is the whole contract: every game is
+fully determined by its seed and shares nothing mutable, and
+`parallel_batches_match_a_serial_run` pins that the paired scores from a
+threaded batch equal the serial ones.
+
+The practical consequence: the twenty-map runs in the entries above were
+never a considered choice of sample size. Re-run anything worth deciding at
+a hundred maps or more.
