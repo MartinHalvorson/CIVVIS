@@ -1080,6 +1080,56 @@ class RecoveryTests(unittest.TestCase):
                 supervisor.should_nudge(watched, stalled_for=31, timeout=30)
             )
 
+    def test_a_finished_game_does_not_take_its_own_seat_forever(self):
+        """The exhibition must resume after the game that took it ends.
+
+        Observed live on 2026-07-25: a single-player game reached a diplomatic
+        victory on turn 243 and the supervisor parked on it, logging "a
+        single-player game took this process" and re-archiving the same 8.5 MB
+        save every six seconds — 355 identical copies, about 90 MB a minute —
+        while five merged commits waited for a promotion that never came. The
+        handoff was asking `played_by_hand`, which a finished game keeps
+        answering `false` for as long as it is reachable, so the process was
+        handed back to the game that had just released it.
+        """
+        finished_key = ("instance-40048", 171790132)
+        ended = {
+            "spectate": False,
+            "turn": 243,
+            "winner": 0,
+            "victory_type": "diplomatic",
+            "server_instance": "instance-40048",
+            "seed": 171790132,
+        }
+        self.assertTrue(supervisor.played_by_hand(ended))
+        self.assertFalse(supervisor.takes_over_the_seat(ended, finished_key))
+        # An AI-only world that ended is likewise nobody's seat.
+        self.assertFalse(
+            supervisor.takes_over_the_seat({**ended, "spectate": True}, finished_key)
+        )
+        # Somebody really taking the seat from the result screen keeps it: the
+        # process is the same, the game is not.
+        took_over = {
+            "spectate": False,
+            "turn": 1,
+            "winner": None,
+            "server_instance": "instance-40048",
+            "seed": 902_113_447,
+        }
+        self.assertTrue(supervisor.takes_over_the_seat(took_over, finished_key))
+        # A new process holding a live human game counts too.
+        self.assertTrue(
+            supervisor.takes_over_the_seat(
+                {**took_over, "server_instance": "instance-40052"}, finished_key
+            )
+        )
+        # And a game still in play but watched, or a state that could not be
+        # read at all, leaves the exhibition free to cycle.
+        self.assertFalse(
+            supervisor.takes_over_the_seat({**took_over, "spectate": True}, finished_key)
+        )
+        self.assertFalse(supervisor.takes_over_the_seat(None, finished_key))
+
     def test_server_command_can_resume_an_atomic_checkpoint(self):
         settings = {
             "players": 4,
