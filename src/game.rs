@@ -5554,6 +5554,23 @@ mod governor_runtime_tests {
     }
 
     #[test]
+    fn every_wall_tier_carries_its_shipped_outer_defence() {
+        // Buildings.OuterDefenseHitPoints, which the ratchet's Buildings
+        // projection did not read. Every wall tier is 100 and Georgia's Tsikhe
+        // is the one that ships 200 -- the reason it is worth taking over the
+        // Renaissance Walls it replaces.
+        let rules = crate::rules::Rules::embedded();
+        for wall in ["walls", "medieval_walls", "renaissance_walls"] {
+            assert_eq!(rules.buildings[wall].outer_defense, 100, "{wall}");
+        }
+        assert_eq!(rules.buildings["tsikhe"].outer_defense, 200);
+        assert_eq!(
+            rules.buildings["tsikhe"].replaces.as_deref(),
+            Some("renaissance_walls")
+        );
+    }
+
+    #[test]
     fn mines_and_quarries_lower_the_appeal_of_their_neighbours() {
         let mut game = Game::new_full(1, 24, 16, 91_971, 200, 0, false);
         let city = found_capital(&mut game, 0);
