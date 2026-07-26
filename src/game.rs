@@ -2480,6 +2480,144 @@ mod seating_tests {
 }
 
 #[cfg(test)]
+mod modifier_attachment_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn game_with_capitals(players: usize, seed: u64, max_turns: u32) -> Game {
+        let mut game = Game::new_full(players, 26, 16, seed, max_turns, 0, false);
+        for pid in 0..players {
+            let position = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find_map(|unit| {
+                    let unit = &game.units[&unit];
+                    (unit.kind == "settler").then_some(unit.pos)
+                })
+                .unwrap();
+            game.found_city_for(pid, position, None);
+        }
+        game
+    }
+
+    fn rules_with_runtime_modifier() -> Rules {
+        let mut files = Rules::shipped_values();
+        files.insert(
+            "modifiers".to_string(),
+            json!({
+                "congress_public_works": {
+                    "effects": {"builder_production_pct": 25}
+                }
+            }),
+        );
+        Rules::from_values(files).unwrap()
+    }
+
+    fn install_runtime_modifier(game: &mut Game) {
+        let modifiers = rules_with_runtime_modifier().modifiers;
+        let mut rules = (*game.rules).clone();
+        rules.modifiers = modifiers;
+        game.rules = Arc::new(rules);
+    }
+
+    #[test]
+    fn player_type_attachment_targets_only_that_class_and_reaches_engine_consumers() {
+        let mut game = game_with_capitals(2, 86_001, 80);
+        install_runtime_modifier(&mut game);
+        let city = game.player_city_ids(0)[0];
+        let builder = Item::Unit {
+            unit: "builder".to_string(),
+        };
+        let baseline = game.item_prod_mult(0, city, Some(&builder));
+
+        assert_eq!(
+            game.attach_modifier_to_player_type(
+                "PLAYERTYPE_MAJOR",
+                "congress_public_works"
+            )
+            .unwrap(),
+            2
+        );
+        assert_eq!(game.player_modifier_effect(0, "builder_production_pct"), 25.0);
+        assert_eq!(game.policy_effect(0, "builder_production_pct"), 25.0);
+        assert_eq!(game.item_prod_mult(0, city, Some(&builder)), baseline + 0.25);
+        for player in game.players.iter().filter(|player| {
+            player.is_minor || player.is_barbarian || player.is_free_city
+        }) {
+            assert!(player.attached_modifiers.is_empty());
+        }
+
+        // Modifier identity is stable: applying one resolution twice does
+        // not stack it, and expiry removes exactly the original targets.
+        assert_eq!(
+            game.attach_modifier_to_player_type("major", "congress_public_works")
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            game.detach_modifier_from_player_type("player_major", "congress_public_works")
+                .unwrap(),
+            2
+        );
+        assert_eq!(game.item_prod_mult(0, city, Some(&builder)), baseline);
+    }
+
+    #[test]
+    fn player_type_attachment_supports_minor_barbarian_and_free_city_seats() {
+        let mut game = Game::new_full(2, 24, 16, 86_002, 80, 1, true);
+        install_runtime_modifier(&mut game);
+        let count = |game: &Game, kind: &str| {
+            game.players
+                .iter()
+                .filter(|player| Game::player_has_type(player, kind))
+                .count()
+        };
+
+        for (selector, kind) in [
+            ("city_state", "minor"),
+            ("barbarian", "barbarian"),
+            ("free_cities", "free_cities"),
+        ] {
+            let expected = count(&game, kind);
+            assert!(expected > 0, "test game has no {kind} seat");
+            assert_eq!(
+                game.attach_modifier_to_player_type(selector, "congress_public_works")
+                    .unwrap(),
+                expected
+            );
+            assert_eq!(
+                game.detach_modifier_from_player_type(selector, "congress_public_works")
+                    .unwrap(),
+                expected
+            );
+        }
+        assert!(game
+            .attach_modifier_to_player_type("spectator", "congress_public_works")
+            .unwrap_err()
+            .contains("unknown player type"));
+        assert!(game
+            .attach_modifier_to_player_type("major", "missing")
+            .unwrap_err()
+            .contains("unknown modifier"));
+    }
+
+    #[test]
+    fn runtime_modifier_attachments_survive_save_round_trip() {
+        let mut game = game_with_capitals(2, 86_003, 80);
+        install_runtime_modifier(&mut game);
+        game.attach_modifier_to_player(0, "congress_public_works")
+            .unwrap();
+
+        let restored: Game =
+            serde_json::from_str(&serde_json::to_string(&game).unwrap()).unwrap();
+        assert!(restored.players[0]
+            .attached_modifiers
+            .contains("congress_public_works"));
+        assert!(restored.players[1].attached_modifiers.is_empty());
+    }
+}
+
+#[cfg(test)]
 fn install_test_district(game: &mut Game, city: u32, district: &str) -> Pos {
     let center = game.cities[&city].pos;
     let position = game.cities[&city]
@@ -12789,6 +12927,12 @@ pub struct Player {
     pub anarchy_turns: u32,
     #[serde(default)]
     pub policies: BTreeSet<String>,
+    /// Runtime modifier bundles attached directly to this player. World
+    /// Congress and mod-defined systems use this for Civ VI's
+    /// `ATTACH_MODIFIER_TO_PLAYERTYPE`; the IDs resolve through
+    /// `rules.modifiers` and survive save/load.
+    #[serde(default)]
+    pub attached_modifiers: BTreeSet<String>,
     #[serde(default)]
     pub influence: f64,
     #[serde(default)]
@@ -12947,6 +13091,7 @@ impl Player {
             pending_government: None,
             anarchy_turns: 0,
             policies: BTreeSet::new(),
+            attached_modifiers: BTreeSet::new(),
             influence: 0.0,
             envoys_free: 0,
             gpp: BTreeMap::new(),
@@ -16577,18 +16722,127 @@ impl Game {
         !self.in_anarchy(pid) && self.players[pid].policies.contains(name)
     }
 
-    /// Sum a numeric primitive across all currently slotted policy cards.
-    /// Policy rules remain data-driven while callers provide the game context
-    /// (unit class, district family, city state, and so on).
-    pub fn policy_effect(&self, pid: usize, effect: &str) -> f64 {
-        if self.in_anarchy(pid) {
-            return 0.0; // the cards come out of their slots in Anarchy
+    /// Sum a reusable modifier bundle attached directly to one player.
+    pub fn player_modifier_effect(&self, pid: usize, effect: &str) -> f64 {
+        self.players
+            .get(pid)
+            .into_iter()
+            .flat_map(|player| player.attached_modifiers.iter())
+            .filter_map(|modifier| self.rules.modifiers.get(modifier)?.effects.get(effect))
+            .sum()
+    }
+
+    /// Attach one named modifier to one player. Repeating the same attachment
+    /// is idempotent, matching Civ VI's stable modifier identity.
+    pub fn attach_modifier_to_player(
+        &mut self,
+        pid: usize,
+        modifier: &str,
+    ) -> Result<bool, String> {
+        if !self.rules.modifiers.contains_key(modifier) {
+            return Err(format!("unknown modifier {modifier}"));
         }
-        self.players[pid]
+        let player = self
+            .players
+            .get_mut(pid)
+            .ok_or_else(|| format!("unknown player {pid}"))?;
+        Ok(player.attached_modifiers.insert(modifier.to_string()))
+    }
+
+    /// Remove one named runtime attachment from one player.
+    pub fn detach_modifier_from_player(&mut self, pid: usize, modifier: &str) -> bool {
+        self.players
+            .get_mut(pid)
+            .is_some_and(|player| player.attached_modifiers.remove(modifier))
+    }
+
+    fn normalized_player_type(player_type: &str) -> Result<&'static str, String> {
+        match player_type.trim().to_ascii_lowercase().as_str() {
+            "all" | "player_all" | "playertype_all" => Ok("all"),
+            "major" | "major_civilization" | "player_major" | "playertype_major" => {
+                Ok("major")
+            }
+            "minor" | "minor_civilization" | "city_state" | "player_minor"
+            | "playertype_minor" => Ok("minor"),
+            "barbarian" | "player_barbarian" | "playertype_barbarian" => Ok("barbarian"),
+            "free_city" | "free_cities" | "player_free_cities"
+            | "playertype_free_cities" => Ok("free_cities"),
+            _ => Err(format!("unknown player type {player_type}")),
+        }
+    }
+
+    fn player_has_type(player: &Player, player_type: &str) -> bool {
+        match player_type {
+            "all" => true,
+            "major" => !player.is_minor && !player.is_barbarian && !player.is_free_city,
+            "minor" => player.is_minor && !player.is_barbarian && !player.is_free_city,
+            "barbarian" => player.is_barbarian,
+            "free_cities" => player.is_free_city,
+            _ => false,
+        }
+    }
+
+    /// Attach a modifier to every seat in a Civ VI player class. This is the
+    /// runtime primitive used by World Congress-style effects; callers keep
+    /// the returned count for diagnostics and can remove the same attachment
+    /// when the resolution expires.
+    pub fn attach_modifier_to_player_type(
+        &mut self,
+        player_type: &str,
+        modifier: &str,
+    ) -> Result<usize, String> {
+        if !self.rules.modifiers.contains_key(modifier) {
+            return Err(format!("unknown modifier {modifier}"));
+        }
+        let player_type = Self::normalized_player_type(player_type)?;
+        let targets: Vec<usize> = self
+            .players
+            .iter()
+            .filter(|player| Self::player_has_type(player, player_type))
+            .map(|player| player.id)
+            .collect();
+        let mut attached = 0;
+        for pid in targets {
+            attached += usize::from(self.attach_modifier_to_player(pid, modifier)?);
+        }
+        Ok(attached)
+    }
+
+    /// Remove a class-wide runtime attachment, for example when the next
+    /// regular Congress session replaces the previous outcomes.
+    pub fn detach_modifier_from_player_type(
+        &mut self,
+        player_type: &str,
+        modifier: &str,
+    ) -> Result<usize, String> {
+        let player_type = Self::normalized_player_type(player_type)?;
+        let targets: Vec<usize> = self
+            .players
+            .iter()
+            .filter(|player| Self::player_has_type(player, player_type))
+            .map(|player| player.id)
+            .collect();
+        Ok(targets
+            .into_iter()
+            .filter(|pid| self.detach_modifier_from_player(*pid, modifier))
+            .count())
+    }
+
+    /// Sum a numeric primitive across all currently slotted policy cards and
+    /// runtime player attachments. Policy rules remain data-driven while
+    /// callers provide the game context (unit class, district family, city
+    /// state, and so on). Anarchy suppresses cards but not external modifiers.
+    pub fn policy_effect(&self, pid: usize, effect: &str) -> f64 {
+        let attached = self.player_modifier_effect(pid, effect);
+        if self.in_anarchy(pid) {
+            return attached; // the cards come out; external modifiers remain
+        }
+        attached
+            + self.players[pid]
             .policies
             .iter()
             .filter_map(|name| self.rules.policies.get(name)?.effects.get(effect))
-            .sum()
+            .sum::<f64>()
     }
 
     /// The era a unit belongs to, taken from the node that unlocks it. Unit
@@ -16607,8 +16861,9 @@ impl Game {
 
     /// Sums a policy effect over the cards whose era window admits `era`.
     fn policy_effect_for_unit(&self, pid: usize, effect: &str, unit: &str) -> f64 {
+        let attached = self.player_modifier_effect(pid, effect);
         if self.in_anarchy(pid) {
-            return 0.0;
+            return attached;
         }
         let era = self.unit_era(unit);
         let class = self
@@ -16616,18 +16871,20 @@ impl Game {
             .units
             .get(unit)
             .map_or("", |unit| unit.promotion_class.as_str());
-        self.players[pid]
-            .policies
-            .iter()
-            .filter_map(|name| self.rules.policies.get(name))
-            .filter(|spec| spec.unit_eras.is_empty() || spec.unit_eras.contains(&era))
-            .filter(|spec| {
-                !spec.unit_era_gaps
-                    .get(class)
-                    .is_some_and(|eras| eras.contains(&era))
-            })
-            .filter_map(|spec| spec.effects.get(effect))
-            .sum()
+        attached
+            + self.players[pid]
+                .policies
+                .iter()
+                .filter_map(|name| self.rules.policies.get(name))
+                .filter(|spec| spec.unit_eras.is_empty() || spec.unit_eras.contains(&era))
+                .filter(|spec| {
+                    !spec
+                        .unit_era_gaps
+                        .get(class)
+                        .is_some_and(|eras| eras.contains(&era))
+                })
+                .filter_map(|spec| spec.effects.get(effect))
+                .sum::<f64>()
     }
 
     /// Stock Gold price of a plot whose ring base is `base` (50 through ring
