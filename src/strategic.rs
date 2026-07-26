@@ -212,6 +212,12 @@ pub struct StrategicAi {
     /// Whether a prior-driven interrupt postpones the next periodic review.
     /// True reproduces the shipped behaviour exactly.
     pub defer_periodic_on_interrupt: bool,
+    /// Project a rotating subset of lanes instead of all of them: the
+    /// adaptive baseline, the lane in force, and one challenger that
+    /// advances each review. Cuts a review from seven branches to about
+    /// three, which buys frequency at negative compute cost.
+    pub rotate_lanes: bool,
+    rotation: usize,
     doctrine: Doctrine,
     doctrine_switches: u32,
 }
@@ -247,6 +253,8 @@ impl StrategicAi {
             census: ReviewCensus::default(),
             doctrine_search: false,
             defer_periodic_on_interrupt: true,
+            rotate_lanes: false,
+            rotation: 0,
             doctrine: Doctrine::Incumbent,
             doctrine_switches: 0,
             review_every: 40,
@@ -828,13 +836,50 @@ impl StrategicAi {
             );
         }
         let mut values = vec![(self.rollout(g, pid, None), None)];
-        for target in VictoryTarget::ALL
-            .into_iter()
-            .filter(|target| Self::target_enabled(g, *target))
-        {
+        for target in self.lane_candidates(g) {
             values.push((self.rollout(g, pid, Some(target)), Some(target)));
         }
         (self.choose_rollout_target(&values), ReviewPath::Rollouts)
+    }
+
+    /// Lanes this review will project, always alongside the adaptive
+    /// baseline.
+    ///
+    /// Without rotation this is every enabled lane, which is what the agent
+    /// has always done. With it, the set is the lane currently in force plus
+    /// one challenger that advances every review. Keeping the incumbent in
+    /// the set matters: `choose_rollout_target` only returns a lane it
+    /// actually projected, so omitting the lane in force would drop it on
+    /// the first review that failed to re-nominate it, and the agent would
+    /// thrash between whichever two lanes the cursor happened to expose.
+    pub fn lane_candidates(&self, g: &Game) -> Vec<VictoryTarget> {
+        let enabled: Vec<VictoryTarget> = VictoryTarget::ALL
+            .into_iter()
+            .filter(|target| Self::target_enabled(g, *target))
+            .collect();
+        if !self.rotate_lanes || enabled.len() <= 2 {
+            return enabled;
+        }
+        let mut out = Vec::with_capacity(2);
+        if let Some(current) = self.inner.victory_target() {
+            if enabled.contains(&current) {
+                out.push(current);
+            }
+        }
+        let challenger = enabled[self.rotation % enabled.len()];
+        if !out.contains(&challenger) {
+            out.push(challenger);
+        }
+        out
+    }
+
+    /// Advance the rotation cursor. Test-only: in play the cursor moves
+    /// once per projected review inside `take_turn`, and exposing that as a
+    /// public step would invite a caller to desynchronise it from the
+    /// reviews it is meant to count.
+    #[cfg(test)]
+    pub(crate) fn advance_rotation_for_test(&mut self) {
+        self.rotation = self.rotation.wrapping_add(1);
     }
 
     /// How this agent's reviews were resolved so far.
@@ -871,6 +916,12 @@ impl Ai for StrategicAi {
                 None => self.review_detailed(g, pid),
             };
             self.census.record(path);
+            // Advance the cursor on every projected review, not only when
+            // the challenger was adopted, so each lane comes up for
+            // examination on a fixed cycle rather than a lucky one.
+            if path == ReviewPath::Rollouts {
+                self.rotation = self.rotation.wrapping_add(1);
+            }
             // Only search the second axis on a review that reached the
             // first one. A prior short-circuits because the lane is already
             // forced or the game is nearly decided; spending four more
@@ -1013,6 +1064,61 @@ mod tests {
 
         let expected = score_share + 0.25 * (0.5 - score_share);
         assert!((strategic.position_value(&game, 0) - expected).abs() < 1e-12);
+    }
+
+    /// Rotation must still examine every lane, just on a cycle. A subset
+    /// that permanently excluded a lane would not be a cheaper search, it
+    /// would be a smaller game.
+    #[test]
+    fn rotation_reaches_every_enabled_lane_on_a_cycle() {
+        let g = Game::new(4, 28, 18, 41000, 200, 2);
+        let enabled: Vec<VictoryTarget> = VictoryTarget::ALL
+            .into_iter()
+            .filter(|target| {
+                let mut probe = StrategicAi::new();
+                probe.rotate_lanes = false;
+                probe.lane_candidates(&g).contains(target)
+            })
+            .collect();
+        assert!(enabled.len() > 2, "need a real lane set to rotate over");
+        let mut seen: Vec<VictoryTarget> = Vec::new();
+        let mut rotating = StrategicAi::new();
+        rotating.rotate_lanes = true;
+        for _ in 0..enabled.len() * 2 {
+            let candidates = rotating.lane_candidates(&g);
+            assert!(
+                candidates.len() <= 2,
+                "a rotating review projected {} lanes",
+                candidates.len()
+            );
+            for target in candidates {
+                if !seen.contains(&target) {
+                    seen.push(target);
+                }
+            }
+            rotating.advance_rotation_for_test();
+        }
+        for target in &enabled {
+            assert!(
+                seen.contains(target),
+                "{target:?} never came up in two full cycles"
+            );
+        }
+    }
+
+    /// Without rotation the candidate set must be exactly what it always
+    /// was, so the default agent is untouched.
+    #[test]
+    fn rotation_is_off_by_default_and_projects_every_lane() {
+        let g = Game::new(4, 28, 18, 41000, 200, 2);
+        let plain = StrategicAi::new();
+        assert!(!plain.rotate_lanes);
+        let all: Vec<VictoryTarget> = VictoryTarget::ALL
+            .into_iter()
+            .filter(|target| plain.lane_candidates(&g).contains(target))
+            .collect();
+        assert_eq!(plain.lane_candidates(&g), all);
+        assert!(all.len() > 2);
     }
 
     /// Halving the review period must actually buy reviews. This is the
