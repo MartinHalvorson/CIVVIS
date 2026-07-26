@@ -177,7 +177,8 @@
     },
     "CITY_GRANT_RANDOM_RESOURCE_PRODUCT": {
       "status": "partial",
-      "note": "Products and Corporations exist and are capped and movable, but the project-completion random grant is not wired."
+      "verified": true,
+      "note": "Verified row by row against the cache: 28 rows, one per luxury, each a Corporation Product project completion. This is Monopolies & Corporations content, which the CPL lobby disables along with all game modes, so none of it reaches a tournament game. CIVVIS models the chain - FoundCorporation, city products, product_capacity - and three product yields, and the modelling diverges structurally rather than numerically, which is why it stays partial and is not half-fixed here. ResourceCorporations gives each luxury one of eight effects and they are PERCENTAGE modifiers: CORPORATION_CULTURE_YIELD_BONUS and its Faith, Gold and Science siblings are +40% city yield, CORPORATION_CITY_GROWTH is +40% growth, and the rest are unit and building discounts. CIVVIS pays flat amounts instead - Silk +3 Culture, Wine and Salt +3 Food. Two faults: the magnitude is a flat yield where the shipped effect is a 40% modifier, and Wine is grouped with Salt when the shipped ResourceCorporations puts Wine with Silk on CORPORATION_CULTURE_YIELD_BONUS and only Salt on CITY_GROWTH. Correcting the yield type alone would leave it differently wrong, so the fix is the whole flat-to-percentage conversion or nothing."
     },
     "ADJUST_TRADE_ROUTE_YIELD_FOR_INTERNATIONAL": {
       "status": "implemented",
