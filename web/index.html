@@ -2529,6 +2529,10 @@
           <option value="single">Single player</option>
           <option disabled>Multiplayer · later</option>
         </select></label>
+        <label class="small">Leader Pool<select id="leaderpool" style="margin-top:4px">
+          <option value="civ6" selected>Civ 6 Leaders</option>
+          <option value="expanded">Expanded</option>
+        </select></label>
         <label class="small human-setting">Leader<select id="leader" style="margin-top:4px">
           <option value="">Random</option>
         </select></label>
@@ -3032,6 +3036,27 @@ const CITY_STATE_TYPE_COLORS = {
   scientific:"#4aa3df", cultural:"#a46bd4", religious:"#eee7cf",
   militaristic:"#c94b45", industrial:"#e67e22", trade:"#e2c04a"
 };
+// Major civilizations are the strategic subjects of the map; city-states are
+// landmarks within that story. Keep the ratio explicit and shared by flat,
+// globe and minimap renderers so switching views never reverses that hierarchy.
+// Type colour still identifies a city-state, but it no longer gives one small
+// enclave the same visual weight as a civilization-scale empire.
+const MAP_CIV_HIERARCHY = Object.freeze({
+  flatWashMajorStrategic:.15,
+  flatWashMajorPainted:.11,
+  flatWashCityState:.025,
+  planetWashMajorStrategic:.32,
+  planetWashMajorBalanced:.18,
+  planetWashMajorCinematic:.14,
+  planetWashCityState:.035,
+  frontierCityState:.34,
+  frontierCityStateScale:.72,
+  empireFrontierCityState:.20,
+  cityStateMarker:.64,
+  empireCityStateMarker:.28,
+  minimapMajor:.76,
+  minimapCityState:.18,
+});
 const EDGE_CORNERS = [[0,1],[5,0],[4,5],[3,4],[2,3],[1,2]]; // matches DIRS order
 const DIRS = [[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];
 const ERA_NAMES = ["ancient", "classical", "medieval", "renaissance",
@@ -4222,7 +4247,11 @@ function animateDiff(prev, next) {
 const easeIO = e => e < 0.5 ? 2 * e * e : 1 - (1 - e) * (2 - 2 * e);
 const cam = { x: 0, y: 0, scale: 1 };
 let cameraFlight = null, cameraZoom = null;
-let cameraInertia = {vx:0, vy:0, vrot:0, vtilt:0, spin:null};
+function stoppedCameraInertia(extra = {}) {
+  return {vx:0, vy:0, vrot:0, vtilt:0, spin:null,
+          skyPan:null, skyTurn:null, ...extra};
+}
+let cameraInertia = stoppedCameraInertia();
 let cameraMotionLast = performance.now();
 let cameraFollowUnitId = null, cameraFollowManual = false, cameraFollowScale = 1.18;
 // Choosing a civilization to watch is also an explicit request for a living
@@ -4631,6 +4660,10 @@ function pcol(id) {
   if (p && p.is_barbarian) return "#30262a";
   if (p && p.is_minor) return CITY_STATE_TINT;
   return playerJerseys()[id]?.[0] || PCOLORS[id % PCOLORS.length];
+}
+function ownerIsCityState(owner) {
+  const p = state?.players?.[owner];
+  return Boolean(p && p.is_minor && !p.is_barbarian);
 }
 // The jersey partner. City-states get their type colour — black-on-type is
 // exactly how Civ 6 dresses them, and their near-black primary needs the help.
@@ -5367,13 +5400,7 @@ async function boot() {
     // A leader is a civilization plus the person who leads it; the ruleset
     // knows both, and their agendas, so the setup screen never invents names.
     if (RULES.civs && typeof RULES.civs === "object") {
-      const leaders = Object.entries(RULES.civs)
-        .map(([civ, spec]) => ({civ, leader: spec.leader || civ, note: spec.note || ""}))
-        .sort((first, second) => first.leader.localeCompare(second.leader));
-      document.getElementById("leader").innerHTML =
-        `<option value="">Random leader</option>` + leaders.map(entry =>
-          `<option value="${entry.civ}" title="${escapeAttr(entry.note)}">` +
-          `${entry.leader} of ${entry.civ}</option>`).join("");
+      syncLeaderPool();
     }
     if (RULES.difficulties && typeof RULES.difficulties === "object") {
       const ladder = Object.entries(RULES.difficulties)
@@ -6663,6 +6690,8 @@ function render(st, recordChronicle = true) {
     document.getElementById("mappoles").value = st.map.poles || "poles";
     syncEarthShape();
     document.getElementById("gamespeed").value = st.game_speed || "standard";
+    document.getElementById("leaderpool").value = st.leader_pool || "civ6";
+    syncLeaderPool();
     // The seat a person is playing and the handicap they are playing it on are
     // settings of this world too, so the panel adopts them alongside the map
     // and the speed. Without this a reloaded page read "Random leader" and
@@ -11190,8 +11219,12 @@ function drawPlanetFrontiers(cells) {
   cx.lineCap = "round"; cx.lineJoin = "round";
   for (const [owner, lane] of lanes) {
     const [dark, light] = jerseyLanes(owner);
-    const minor = !!state.players[owner]?.is_minor;
-    const presence = empire && minor ? .22 : 1;
+    const cityState = ownerIsCityState(owner);
+    const presence = cityState
+      ? (empire ? MAP_CIV_HIERARCHY.empireFrontierCityState
+                : MAP_CIV_HIERARCHY.frontierCityState)
+      : 1;
+    const hierarchyScale = cityState ? MAP_CIV_HIERARCHY.frontierCityStateScale : 1;
     // The globe's ground is the same compact strategic terrain the flat view
     // has, so it takes the flat view's treatment: a near-black keyline reaching
     // back across the seam for a stable silhouette, then the seam lane, then
@@ -11202,11 +11235,13 @@ function drawPlanetFrontiers(cells) {
     for (const [w, alpha, color, off] of passes) {
       cx.strokeStyle = color; cx.globalAlpha = alpha * presence;
       for (const [weight, edges] of lane.weights) {
-        cx.lineWidth = w * weight;
+        cx.lineWidth = w * weight * hierarchyScale;
         cx.beginPath();
         for (const edge of edges) {
-          const [x1, y1] = planetLaneEnd(lane, edge, edge.ia, edge.ax, edge.ay, off);
-          const [x2, y2] = planetLaneEnd(lane, edge, edge.ib, edge.bx, edge.by, off);
+          const [x1, y1] = planetLaneEnd(lane, edge, edge.ia, edge.ax, edge.ay,
+                                        off * hierarchyScale);
+          const [x2, y2] = planetLaneEnd(lane, edge, edge.ib, edge.bx, edge.by,
+                                        off * hierarchyScale);
           cx.moveTo(x1, y1); cx.lineTo(x2, y2);
         }
         cx.stroke();
@@ -11647,10 +11682,10 @@ function skyFocusBody() {
 // middle of it. Size alone cannot decide — zoom in on the Moon and the Earth is
 // four times its width, but it is also six diameters off the edge of the
 // screen, so it is not what anyone is looking at.
-function skyGrip(body, radius, stageX, stageY) {
+function skyGrip(body, radius, pan = SKY_PAN) {
   const drawn = Math.max(body.floor || 0, body.size * radius);
   const [px, py] = skyBodyPos(body);
-  const away = Math.hypot(px - SKY_PAN.x, py - SKY_PAN.y) * radius;
+  const away = Math.hypot(px - pan.x, py - pan.y) * radius;
   const reach = Math.max(140, Math.min(area.clientWidth, area.clientHeight) * .55);
   const near = Math.max(0, 1 - away / (reach + drawn));
   // Nothing claims the camera until it is at least half a stage wide. Set any
@@ -11666,11 +11701,10 @@ function skyGrip(body, radius, stageX, stageY) {
 // and when none of them is, it eases back onto the shot that holds the whole
 // system, which is what makes zooming out of Mars return to the space view
 // rather than to an empty patch of sky where Mars used to be.
-function skySettleCamera(radius, zoom) {
-  const [stageX, stageY] = planetStageCenter();
+function skySettledPan(pan, radius, zoom) {
   let best = null;
   for (const body of skyKnownWorlds()) {
-    const grip = skyGrip(body, radius, stageX, stageY);
+    const grip = skyGrip(body, radius, pan);
     if (!best || grip > best.grip) best = {grip, at:skyBodyPos(body)};
   }
   let target, ease;
@@ -11685,13 +11719,14 @@ function skySettleCamera(radius, zoom) {
     const frame = skySystemFrame();
     target = [frame.x, frame.y];
     ease = .60 * Math.max(0, Math.min(1, frame.radius * 2.2 / Math.max(1e-3, radius) - .55));
-  } else return;
-  SKY_PAN = {x:SKY_PAN.x + (target[0] - SKY_PAN.x) * ease,
-             y:SKY_PAN.y + (target[1] - SKY_PAN.y) * ease};
+  } else return {...pan};
+  const settled = {x:pan.x + (target[0] - pan.x) * ease,
+                   y:pan.y + (target[1] - pan.y) * ease};
   // Within a pixel of the mark, sit on it exactly: a globe that fills the stage
   // has to be centred on it, not a third of a pixel off for ever.
-  if (Math.abs(SKY_PAN.x - target[0]) * radius < 1) SKY_PAN.x = target[0];
-  if (Math.abs(SKY_PAN.y - target[1]) * radius < 1) SKY_PAN.y = target[1];
+  if (Math.abs(settled.x - target[0]) * radius < 1) settled.x = target[0];
+  if (Math.abs(settled.y - target[1]) * radius < 1) settled.y = target[1];
+  return settled;
 }
 
 // With no pointer to aim by — the corner buttons, the keyboard — a zoom still
@@ -11699,9 +11734,9 @@ function skySettleCamera(radius, zoom) {
 // between Mars and the exoplanet. Aim at the nearest world instead, counting a
 // large one as nearer than a pebble at the same distance, so zooming in always
 // arrives somewhere rather than magnifying the dark.
-function skyZoomAnchor(radius, stageX, stageY) {
-  const [px, py] = skyBodyPos(skyNearestWorld());
-  return [stageX + (px - SKY_PAN.x) * radius, stageY + (py - SKY_PAN.y) * radius];
+function skyZoomAnchor(radius, stageX, stageY, pan = SKY_PAN) {
+  const [px, py] = skyBodyPos(skyNearestWorld(pan));
+  return [stageX + (px - pan.x) * radius, stageY + (py - pan.y) * radius];
 }
 
 // A drag out here means whatever the camera is looking at. Over a world it
@@ -11709,23 +11744,54 @@ function skyZoomAnchor(radius, stageX, stageY) {
 // on Mars — and out in the space view, where no world fills the stage, it moves
 // the camera through the system instead. The Earth is the one case this hands
 // back: it is steered through `cam.x` and `cam.y` because units stand on it.
-function skyDragApply(drag, dx, dy) {
+function skyDragApply(drag, dx, dy, now = performance.now()) {
   if (!planetMap()) return false;
-  const focus = skyFocusBody();
-  if (focus && focus.body.id === "earth") return false;
-  if (focus) {
-    const view = skyView(focus.body.id);
-    if (!drag.skyTurn) drag.skyTurn = {longitude:view.longitude, latitude:view.latitude};
+  // Decide what was grabbed once. Without this capture, a space pan that
+  // crossed a large world changed into a globe turn halfway through the same
+  // gesture, while a world dragged off centre abruptly changed back to a pan.
+  if (!drag.skyMode) {
+    const focus = skyFocusBody();
+    if (focus) {
+      const view = skyView(focus.body.id);
+      drag.skyMode = {kind:focus.body.id === "earth" ? "earth" : "turn",
+                      bodyId:focus.body.id, drawn:focus.drawn,
+                      longitude:view.longitude, latitude:view.latitude,
+                      lastLongitude:view.longitude, lastLatitude:view.latitude,
+                      vlongitude:0, vlatitude:0};
+    } else {
+      drag.skyMode = {kind:"pan", x:SKY_PAN.x, y:SKY_PAN.y,
+                      lastX:SKY_PAN.x, lastY:SKY_PAN.y, vx:0, vy:0};
+    }
+  }
+  const mode = drag.skyMode;
+  if (mode.kind === "earth") return false;
+  const dt = Math.max(1, now - (drag.lastT || now - 16));
+  if (mode.kind === "turn") {
+    const view = skyView(mode.bodyId);
     // A pixel at the middle of a ball of this size is one over its radius in
     // radians, so the ground keeps up with the pointer instead of sliding.
-    const turn = 1 / Math.max(12, focus.drawn);
-    view.longitude = drag.skyTurn.longitude - dx * turn;
-    view.latitude = Math.max(-1.45, Math.min(1.45, drag.skyTurn.latitude + dy * turn));
+    const turn = 1 / Math.max(12, mode.drawn);
+    view.longitude = mode.longitude - dx * turn;
+    view.latitude = Math.max(-1.45, Math.min(1.45, mode.latitude + dy * turn));
+    const dl = Math.atan2(Math.sin(view.longitude - mode.lastLongitude),
+                          Math.cos(view.longitude - mode.lastLongitude)) / dt;
+    const da = (view.latitude - mode.lastLatitude) / dt;
+    mode.vlongitude = mode.vlongitude * .55 + dl * .45;
+    mode.vlatitude = mode.vlatitude * .55 + da * .45;
+    mode.lastLongitude = view.longitude; mode.lastLatitude = view.latitude;
+    drag.skyMotion = {kind:"turn", bodyId:mode.bodyId,
+                      vlongitude:mode.vlongitude, vlatitude:mode.vlatitude};
+    drag.lastT = now;
     return true;
   }
   const radius = Math.max(.001, planetEarthRadius());
-  if (!drag.skyPan) drag.skyPan = {x:SKY_PAN.x, y:SKY_PAN.y};
-  SKY_PAN = {x:drag.skyPan.x - dx / radius, y:drag.skyPan.y - dy / radius};
+  SKY_PAN = {x:mode.x - dx / radius, y:mode.y - dy / radius};
+  const vx = (SKY_PAN.x - mode.lastX) / dt, vy = (SKY_PAN.y - mode.lastY) / dt;
+  mode.vx = mode.vx * .55 + vx * .45;
+  mode.vy = mode.vy * .55 + vy * .45;
+  mode.lastX = SKY_PAN.x; mode.lastY = SKY_PAN.y;
+  drag.skyMotion = {kind:"pan", vx:mode.vx, vy:mode.vy};
+  drag.lastT = now;
   return true;
 }
 // Every HUD widget the sky has to stay clear of, measured where it actually
@@ -11802,11 +11868,11 @@ function planetMinScale() {
 }
 // The world the camera is heading for, by the same reckoning the buttons aim
 // by: nearest, with a large world counting as nearer than a pebble beside it.
-function skyNearestWorld() {
+function skyNearestWorld(pan = SKY_PAN) {
   let best = null;
   for (const body of skyKnownWorlds()) {
     const [px, py] = skyBodyPos(body);
-    const away = Math.hypot(px - SKY_PAN.x, py - SKY_PAN.y) / (body.size + 2);
+    const away = Math.hypot(px - pan.x, py - pan.y) / (body.size + 2);
     if (!best || away < best.away) best = {away, body};
   }
   return best ? best.body : SKY_EARTH;
@@ -11816,8 +11882,8 @@ function skyNearestWorld() {
 // it. The others are things to look at: nothing lives under a Martian hexagon,
 // so the zoom stops with that world filling the frame rather than carrying on
 // until the camera is inside one ocean tile of somebody else's planet.
-function planetMaxScale() {
-  const body = skyNearestWorld();
+function planetMaxScale(pan = SKY_PAN) {
+  const body = skyNearestWorld(pan);
   if (body.id === "earth") return 3.2;
   // Past the flat map's own ceiling where it has to be: the Moon is a quarter
   // of the Earth, so filling the frame with it costs four times the Earth's
@@ -11830,7 +11896,10 @@ function planetMaxScale() {
 // proved round cannot be zoomed out of by any other route: an opening fit, a
 // flight to a city, a pinch, or a director's shot.
 function planetScaleClamp(scale) {
-  return Math.max(planetMinScale(), Math.min(planetMaxScale(), scale));
+  return planetScaleClampAt(scale, SKY_PAN);
+}
+function planetScaleClampAt(scale, pan) {
+  return Math.max(planetMinScale(), Math.min(planetMaxScale(pan), scale));
 }
 // How much of the picture is space rather than surface: 0 while the globe still
 // fills the stage, 1 once it is a marble among others.
@@ -12542,9 +12611,14 @@ function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
     const owner = cell.tile.owner;
     if (owner === null || owner === undefined) continue;
     planetPaintPath(cx, cell, .22);
-    const minor = !!state.players[owner]?.is_minor;
-    cx.globalAlpha = empire ? (minor ? .07 : .42)
-      : painted ? (MODE.atmosphere ? .14 : .17) : .28;
+    const cityState = ownerIsCityState(owner);
+    cx.globalAlpha = empire
+      ? (cityState ? .055 : .45)
+      : cityState ? MAP_CIV_HIERARCHY.planetWashCityState
+      : painted ? (MODE.atmosphere
+          ? MAP_CIV_HIERARCHY.planetWashMajorCinematic
+          : MAP_CIV_HIERARCHY.planetWashMajorBalanced)
+      : MAP_CIV_HIERARCHY.planetWashMajorStrategic;
     cx.fillStyle = pcol(owner);
     cx.fill();
   }
@@ -12710,7 +12784,7 @@ function drawEmpireLensFlat(tiles) {
     if (tile.owner === null || tile.owner === undefined) continue;
     hexPath(x, y, S + .45);
     cx.fillStyle = pcol(tile.owner);
-    cx.globalAlpha = state.players[tile.owner]?.is_minor ? .07 : .42;
+    cx.globalAlpha = ownerIsCityState(tile.owner) ? .055 : .45;
     cx.fill(); cx.globalAlpha = 1;
   }
 
@@ -12751,14 +12825,17 @@ function drawEmpireLensFlat(tiles) {
   cx.lineCap = "round"; cx.lineJoin = "round";
   for (const [owner, segments] of borders) {
     const [dark, light] = jerseyLanes(owner);
-    const presence = state.players[owner]?.is_minor ? .22 : 1;
+    const cityState = ownerIsCityState(owner);
+    const presence = cityState ? MAP_CIV_HIERARCHY.empireFrontierCityState : 1;
+    const hierarchyScale = cityState ? MAP_CIV_HIERARCHY.frontierCityStateScale : 1;
     for (const [width, alpha, color, distance] of [
       [10.2 * k, .88, "#070b0d", 1.4 * k],
       [4.2 * k, 1, dark, 1.4 * k],
       [4.2 * k, 1, light, 5.5 * k],
     ]) {
-      pathLane(segments, distance);
-      cx.strokeStyle = color; cx.lineWidth = width; cx.globalAlpha = alpha * presence;
+      pathLane(segments, distance * hierarchyScale);
+      cx.strokeStyle = color; cx.lineWidth = width * hierarchyScale;
+      cx.globalAlpha = alpha * presence;
       cx.stroke();
     }
   }
@@ -12901,18 +12978,36 @@ function drawPlanetMap() {
   for (const city of state.cities) {
     const cell = cellByKey.get(key(city.pos));
     if (!cell || cell.center.z < (onSheet ?? .02)) continue;
-    const minorLens = empireLens && !!state.players[city.owner]?.is_minor;
-    if (minorLens) { cx.save(); cx.globalAlpha = .28; }
-    const r = Math.max(4, Math.min(8, 5 * Math.sqrt(scale)));
-    cx.fillStyle = cityBannerColor(city.owner); cx.strokeStyle = "#f7e5b1"; cx.lineWidth = 1.2;
+    const cityState = ownerIsCityState(city.owner);
+    if (cityState) {
+      cx.save();
+      cx.globalAlpha = empireLens ? MAP_CIV_HIERARCHY.empireCityStateMarker
+                                  : MAP_CIV_HIERARCHY.cityStateMarker;
+    }
+    const r = cityState
+      ? Math.max(3, Math.min(5.8, 3.8 * Math.sqrt(scale)))
+      : Math.max(5.5, Math.min(10.5, 6.6 * Math.sqrt(scale)));
+    const bannerColor = cityBannerColor(city.owner);
+    cx.fillStyle = bannerColor;
+    cx.strokeStyle = cityState ? "#10151d" : pcol2(city.owner);
+    cx.lineWidth = cityState ? .9 : 2.4;
+    if (!cityState) { cx.shadowColor = bannerColor; cx.shadowBlur = 7; }
     cx.beginPath(); cx.arc(cell.center.x, cell.center.y, r, 0, 7); cx.fill(); cx.stroke();
-    if (scale > .65) {
-      cx.font = `700 ${Math.max(8, Math.min(12, 8 * scale))}px Inter,sans-serif`;
-      cx.textAlign = "center"; cx.fillStyle = "#fff4d4"; cx.strokeStyle = "#07100f"; cx.lineWidth = 3;
+    cx.shadowBlur = 0;
+    if (!cityState) {
+      cx.strokeStyle = bannerColor; cx.lineWidth = 1.2;
+      cx.beginPath(); cx.arc(cell.center.x, cell.center.y, r + 3, 0, 7); cx.stroke();
+    }
+    if (scale > (cityState ? .95 : .52)) {
+      cx.font = `${cityState ? 650 : 800} ${cityState
+        ? Math.max(7, Math.min(9.5, 6.8 * scale))
+        : Math.max(9, Math.min(13.5, 9 * scale))}px Inter,sans-serif`;
+      cx.textAlign = "center"; cx.fillStyle = cityState ? "#d8ddd9" : "#fff4d4";
+      cx.strokeStyle = "#07100f"; cx.lineWidth = cityState ? 2.4 : 3.5;
       cx.strokeText(city.name, cell.center.x, cell.center.y - r - 5);
       cx.fillText(city.name, cell.center.x, cell.center.y - r - 5);
     }
-    if (minorLens) cx.restore();
+    if (cityState) cx.restore();
   }
   for (const unit of empireLens ? [] : state.units) {
     const cell = cellByKey.get(key(unit.pos));
@@ -13252,7 +13347,10 @@ function draw() {
     const [x, yy] = hexXY(t.pos[0], t.pos[1]);
     hexPath(x, yy - elev(t), S - 0.5);
     cx.fillStyle = pcol(t.owner);
-    cx.globalAlpha = 0.085;
+    cx.globalAlpha = ownerIsCityState(t.owner)
+      ? MAP_CIV_HIERARCHY.flatWashCityState
+      : beau ? MAP_CIV_HIERARCHY.flatWashMajorPainted
+             : MAP_CIV_HIERARCHY.flatWashMajorStrategic;
     cx.fill();
   }
   cx.globalAlpha = 1;
@@ -13342,6 +13440,9 @@ function draw() {
   // steals, the other still draws the line.
   for (const [owner, segs] of borderSegs) {
     const [dark, light] = jerseyLanes(owner);
+    const cityState = ownerIsCityState(owner);
+    const presence = cityState ? MAP_CIV_HIERARCHY.frontierCityState : 1;
+    const hierarchyScale = cityState ? MAP_CIV_HIERARCHY.frontierCityStateScale : 1;
     // Flat strategic terrain has a dark hex grid, roads, and compact symbols
     // competing for the same pixels. A near-black keyline gives its border a
     // stable silhouette before the two jersey colours identify the owner, and
@@ -13356,8 +13457,9 @@ function draw() {
          [2.8 * borderK, 1.0,  dark,      1.5 * borderK],
          [2.8 * borderK, 1.0,  light,     4.2 * borderK]];
     for (const [w, a, c, d] of passes) {
-      cx.strokeStyle = c; cx.lineWidth = w; cx.globalAlpha = a;
-      pathBorderLane(segs, d);
+      cx.strokeStyle = c; cx.lineWidth = w * hierarchyScale;
+      cx.globalAlpha = a * presence;
+      pathBorderLane(segs, d * hierarchyScale);
       cx.stroke();
     }
   }
@@ -13846,8 +13948,13 @@ function draw() {
     const ct = TMAP.get(key(c.pos));
     const [x, yy] = hexXY(c.pos[0], c.pos[1]);
     const y = yy - (ct ? elev(ct) : 0);
-    const minorLens = mapLens === "empire" && !!state.players[c.owner]?.is_minor;
-    if (minorLens) { cx.save(); cx.globalAlpha = .28; }
+    const cityState = ownerIsCityState(c.owner);
+    if (cityState) {
+      cx.save();
+      cx.globalAlpha = mapLens === "empire"
+        ? MAP_CIV_HIERARCHY.empireCityStateMarker
+        : MAP_CIV_HIERARCHY.cityStateMarker;
+    }
     // A city bleeding loyalty defects — it changes hands without a shot fired,
     // which is among the most consequential things that can happen to a border
     // and gave no warning at all on the map. Only cities actually slipping draw
@@ -13929,26 +14036,45 @@ function draw() {
       cx.restore();
     }
     {
-      // parchment-style nameplate
+      // Major-city plates carry both jersey colours, a larger type scale and a
+      // soft colour key. City-states keep a compact single-colour plate. The
+      // difference survives terrain, zoom and colour-blind viewing because it
+      // is expressed in size, line weight and silhouette as well as hue.
       const name = (c.is_capital ? "★ " : "") + c.name.toUpperCase();
-      cx.font = "bold 10px Georgia, serif";
-      const tw = Math.max(cx.measureText(name).width + 28, 48);
-      const bx = x - tw / 2, by = y - S - 6;
       const bannerColor = cityBannerColor(c.owner);
       const cityOwner = state.players[c.owner];
-      cx.fillStyle = cityOwner && cityOwner.is_minor
-        ? shade(bannerColor, 0.48) : "#1c2418ee";
-      cx.beginPath(); cx.roundRect(bx, by, tw, 16, 8); cx.fill();
-      cx.strokeStyle = bannerColor; cx.lineWidth = 1.6; cx.stroke();
+      const minorPlate = Boolean(cityOwner && cityOwner.is_minor);
+      const bannerHeight = minorPlate ? 13 : 18;
+      const popWidth = minorPlate ? 12 : 16;
+      cx.font = `${minorPlate ? 700 : 800} ${minorPlate ? 8.2 : 10.5}px Georgia, serif`;
+      const tw = Math.max(cx.measureText(name).width + (minorPlate ? 23 : 33),
+                          minorPlate ? 40 : 54);
+      const bx = x - tw / 2, by = y - S - (minorPlate ? 3 : 8);
+      cx.fillStyle = shade(bannerColor, minorPlate ? .43 : .31);
+      if (!minorPlate) { cx.shadowColor = bannerColor; cx.shadowBlur = 7; }
+      cx.beginPath(); cx.roundRect(bx, by, tw, bannerHeight, bannerHeight / 2); cx.fill();
+      cx.strokeStyle = minorPlate ? bannerColor : pcol2(c.owner);
+      cx.lineWidth = minorPlate ? 1 : 2.5; cx.stroke();
+      cx.shadowBlur = 0;
+      if (!minorPlate) {
+        cx.strokeStyle = bannerColor; cx.lineWidth = 1;
+        cx.beginPath();
+        cx.roundRect(bx + 2, by + 2, tw - 4, bannerHeight - 4, (bannerHeight - 4) / 2);
+        cx.stroke();
+      }
       cx.fillStyle = bannerColor;
-      cx.beginPath(); cx.roundRect(bx + 2, by + 2, 14, 12, 6); cx.fill();
-      cx.fillStyle = "#10151d"; cx.font = "bold 10px Georgia, serif";
-      cx.fillText(c.pop, bx + 9, by + 8.5);
-      cx.fillStyle = "#f0ead8"; cx.font = "bold 9.5px Georgia, serif";
+      cx.beginPath();
+      cx.roundRect(bx + 2, by + 2, popWidth, bannerHeight - 4, (bannerHeight - 4) / 2);
+      cx.fill();
+      cx.fillStyle = "#10151d";
+      cx.font = `bold ${minorPlate ? 8 : 10.5}px Georgia, serif`;
+      cx.fillText(c.pop, bx + 2 + popWidth / 2, by + bannerHeight / 2 + .5);
+      cx.fillStyle = minorPlate ? "#d8ddd9" : "#fff3cf";
+      cx.font = `${minorPlate ? 700 : 800} ${minorPlate ? 8.2 : 10.2}px Georgia, serif`;
       cx.textAlign = "left";
-      cx.fillText(name, bx + 20, by + 8.5);
+      cx.fillText(name, bx + popWidth + 7, by + bannerHeight / 2 + .5);
       cx.textAlign = "center";
-      let statusY = by + 17;
+      let statusY = by + bannerHeight + 1;
       if (c.hp < 200) {
         const hpFraction = Math.max(0, Math.min(1, c.hp / 200));
         cx.fillStyle = "#2b0908"; cx.fillRect(bx, statusY, tw, 3);
@@ -13970,7 +14096,8 @@ function draw() {
       // observed seat, and an owner gate makes it blink with them.
       if (c.queue && c.queue.length && c.queue_cost) {
         const it = c.queue[0];
-        const mx = bx + tw + 8, my = by + 8, mr = 9.5;
+        const mx = bx + tw + (minorPlate ? 6.5 : 9);
+        const my = by + bannerHeight / 2, mr = minorPlate ? 7.2 : 10;
         cx.fillStyle = "#1c2418f2";
         cx.beginPath(); cx.arc(mx, my, mr, 0, 7); cx.fill();
         cx.strokeStyle = "#0d1117"; cx.lineWidth = 2.6;   // unfilled track
@@ -13986,14 +14113,14 @@ function draw() {
         // family fallback here too, so the twenty-seven districts with no color
         // of their own stop coming off the queue as the same plain cream glyph
         cx.fillStyle = it.district ? districtColor(it.district) : "#f0ead8";
-        cx.font = "10px 'Segoe UI Symbol', 'Segoe UI Emoji', sans-serif";
+        cx.font = `${minorPlate ? 8 : 10.5}px 'Segoe UI Symbol', 'Segoe UI Emoji', sans-serif`;
         cx.fillText(prodGlyph(it), mx, my + 0.5);
       }
     }
     if (selCity && selCity.id === c.id) {
       hexPath(x, y); cx.strokeStyle = "#f0c674"; cx.lineWidth = 3; cx.stroke();
     }
-    if (minorLens) cx.restore();
+    if (cityState) cx.restore();
   }
   // --- espionage in progress. A spy is the only piece on the board with no
   // presence on it at all: it sits inside a city, runs a mission with a known
@@ -14847,7 +14974,9 @@ function drawPlanetMini() {
     mx2.fillStyle = spectator || visible.has(key(cell.tile.pos)) ? base : shade(base, .35);
     mx2.fill();
     if (cell.tile.owner !== null && cell.tile.owner !== undefined) {
-      mx2.globalAlpha = .68; mx2.fillStyle = cityBannerColor(cell.tile.owner); mx2.fill();
+      mx2.globalAlpha = ownerIsCityState(cell.tile.owner)
+        ? MAP_CIV_HIERARCHY.minimapCityState : MAP_CIV_HIERARCHY.minimapMajor;
+      mx2.fillStyle = cityBannerColor(cell.tile.owner); mx2.fill();
       mx2.globalAlpha = 1;
     }
   }
@@ -14861,8 +14990,15 @@ function drawPlanetMini() {
     const cell = planetCellGeometry(tile, camera, scale, centerX, centerY);
     if (!cell || cell.center.z <=
         (camera.chart ? planetChartHorizon(camera, scale, reach) : 0)) continue;
+    const cityState = ownerIsCityState(city.owner);
+    const cityRadius = cityState ? 1.15 : 2.35;
+    mx2.globalAlpha = cityState ? MAP_CIV_HIERARCHY.cityStateMarker : 1;
     mx2.fillStyle = cityBannerColor(city.owner);
-    mx2.fillRect(cell.center.x - 1.5, cell.center.y - 1.5, 3, 3);
+    mx2.beginPath(); mx2.arc(cell.center.x, cell.center.y, cityRadius, 0, 7); mx2.fill();
+    if (!cityState) {
+      mx2.strokeStyle = "#f8edca"; mx2.lineWidth = .75; mx2.stroke();
+    }
+    mx2.globalAlpha = 1;
   }
   mx2.setTransform(1, 0, 0, 1, 0, 0);
   return true;
@@ -14986,7 +15122,6 @@ function drawMini() {
   // frontier is moving. The main map keeps its territory wash deliberately
   // faint so the ground shows through; here ownership is the point and terrain
   // is the backdrop, so it goes on heavier.
-  mx2.globalAlpha = 0.7;
   for (const t of tiles) {
     if (t.owner === null || t.owner === undefined) continue;
     const [x, y] = miniHexCenter(t.pos, layout);
@@ -14995,17 +15130,25 @@ function drawMini() {
     // ground at minimap strength. The banner colour carries their TYPE instead,
     // and matches the hex already drawn for their capital.
     mx2.fillStyle = cityBannerColor(t.owner);
+    mx2.globalAlpha = ownerIsCityState(t.owner)
+      ? MAP_CIV_HIERARCHY.minimapCityState : MAP_CIV_HIERARCHY.minimapMajor;
     miniHexPath(x, y, layout.size + 0.12); mx2.fill();
   }
   mx2.globalAlpha = 1;
   for (const c of state.cities) {
     const [x, y] = miniHexCenter(c.pos, layout);
-    const citySize = layout.size + Math.min(1.25, Math.max(0.55, layout.size * 0.45));
+    const cityState = ownerIsCityState(c.owner);
+    const citySize = layout.size + (cityState
+      ? Math.min(.45, Math.max(.18, layout.size * .16))
+      : Math.min(1.75, Math.max(.8, layout.size * .58)));
+    mx2.globalAlpha = cityState ? MAP_CIV_HIERARCHY.cityStateMarker : 1;
     mx2.fillStyle = cityBannerColor(c.owner);
     miniHexPath(x, y, citySize); mx2.fill();
     // a dark keyline keeps a city legible now that it sits on its own colour
-    mx2.strokeStyle = "#0b0e13"; mx2.lineWidth = 0.7;
+    mx2.strokeStyle = cityState ? "#0b0e13" : "#f8edca";
+    mx2.lineWidth = cityState ? .45 : .9;
     miniHexPath(x, y, citySize - 0.35); mx2.stroke();
+    mx2.globalAlpha = 1;
   }
   // Detonations. The minimap is the only view that always holds the whole
   // world, so it is the only place a strike on the far side of the map is
@@ -18085,7 +18228,7 @@ function clampCameraY(y, scale = cam.scale) {
   return bounds ? Math.max(bounds.min, Math.min(bounds.max, y)) : y;
 }
 function clearCameraInertia() {
-  cameraInertia = {vx:0, vy:0, vrot:0, vtilt:0, spin:null};
+  cameraInertia = stoppedCameraInertia();
 }
 function updateCameraFollowChip() {
   const chip = document.getElementById("cinema-follow");
@@ -18261,38 +18404,52 @@ function nudgeCamera(screenX, screenY) {
   const dx = COSR * vx + SINR * vy, dy = -SINR * vx + COSR * vy;
   cameraFlight = {x:cam.x + dx, y:clampCameraY(cam.y + dy), scale:cam.scale};
 }
-function zoomAt(f, sx, sy) {
+function zoomAt(f, sx, sy, skyAnchor = null) {
   if (planetMap()) {
-    const base = cameraZoom?.scale || cam.scale;
-    cameraFlight = null; cameraZoom = null; clearCameraInertia();
+    const pending = cameraZoom?.kind === "planet" ? cameraZoom : null;
+    const base = pending?.scale || cam.scale;
+    const basePan = pending?.pan || SKY_PAN;
+    cameraFlight = null; clearCameraInertia();
     const [stageX, stageY] = planetStageCenter();
-    const before = planetEarthRadius(cam.scale);
+    const before = planetEarthRadius(base);
     // A chart has no system to travel through. Everything below is about
     // holding one body still under the pointer so the zoom walks toward it,
     // and a people who have not proved their world round have exactly one
     // sheet and nowhere to go: it stays under the middle of the stage.
     if (!knowsGlobe()) {
-      skyReturnHome();
-      cam.scale = planetScaleClamp(base * f);
-      draw(); drawMini();
+      const scale = planetScaleClampAt(base * f, {x:0, y:0});
+      const target = {kind:"planet", scale, pan:{x:0, y:0}};
+      if (REDUCED_MOTION_QUERY.matches) {
+        cameraZoom = null; cam.scale = scale; skyReturnHome();
+        draw(); drawMini();
+      } else cameraZoom = target;
       return;
     }
     if (sx === undefined)
-      [sx, sy] = f > 1 ? skyZoomAnchor(before, stageX, stageY) : [stageX, stageY];
+      [sx, sy] = f > 1 ? skyZoomAnchor(before, stageX, stageY, basePan)
+                       : [stageX, stageY];
     // Which point of the system the pointer is over, in Earth radii from the
     // Earth. Holding that point still across the step is what makes scrolling
     // in over Mars a way of *going* to Mars: aim at a body and the zoom walks
     // toward it, aim at empty sky and the zoom stays where you are looking.
-    const pointerX = SKY_PAN.x + (sx - stageX) / before;
-    const pointerY = SKY_PAN.y + (sy - stageY) / before;
+    const pointerX = skyAnchor?.x ?? basePan.x + (sx - stageX) / before;
+    const pointerY = skyAnchor?.y ?? basePan.y + (sy - stageY) / before;
     // A globe's zoom-out does not stop at the globe. It carries on until the
     // rest of the system is in frame, which is a fixed apparent size for the
     // Earth rather than a fixed number, because a bigger world starts bigger.
-    cam.scale = planetScaleClamp(base * f);
-    const after = planetEarthRadius(cam.scale);
-    SKY_PAN = {x:pointerX - (sx - stageX) / after, y:pointerY - (sy - stageY) / after};
-    skySettleCamera(after, f);
-    draw(); drawMini();
+    const scale = planetScaleClampAt(base * f, basePan);
+    const after = planetEarthRadius(scale);
+    const anchored = {x:pointerX - (sx - stageX) / after,
+                      y:pointerY - (sy - stageY) / after};
+    // A two-finger translation with no scale change is a deliberate pan, not
+    // a request to recenter the nearest world. Once the pinch is zooming, the
+    // same gentle body capture as the wheel keeps the approach intentional.
+    const settling = !skyAnchor || Math.abs(Math.log(Math.max(1e-6, f))) > .003;
+    const pan = settling ? skySettledPan(anchored, after, f) : anchored;
+    if (REDUCED_MOTION_QUERY.matches) {
+      cameraZoom = null; cam.scale = scale; SKY_PAN = pan;
+      draw(); drawMini();
+    } else cameraZoom = {kind:"planet", scale, pan};
     return;
   }
   if (sx === undefined) { sx = area.clientWidth / 2; sy = area.clientHeight / 2; }
@@ -18323,12 +18480,31 @@ function advanceUserCameraMotion(now = performance.now()) {
   }
   if (cameraZoom) {
     const ease = 1 - Math.pow(.012, dt / 1000);
-    const nextScale = cam.scale + (cameraZoom.scale - cam.scale) * ease;
-    applyCameraAnchor(cameraZoom.wx, cameraZoom.wy, cameraZoom.sx, cameraZoom.sy, nextScale);
-    active = true;
-    if (Math.abs(cameraZoom.scale - cam.scale) < .001) {
-      applyCameraAnchor(cameraZoom.wx, cameraZoom.wy, cameraZoom.sx, cameraZoom.sy, cameraZoom.scale);
-      cameraZoom = null;
+    if (cameraZoom.kind === "planet") {
+      // Scale is multiplicative, so interpolate it logarithmically: travelling
+      // from a tile to the full system keeps one visual pace instead of racing
+      // through the small worlds and crawling over the last large one. Pan and
+      // scale share the same ease, which keeps the chosen world on one path.
+      cam.scale *= Math.exp(Math.log(cameraZoom.scale / Math.max(1e-6, cam.scale)) * ease);
+      SKY_PAN = {x:SKY_PAN.x + (cameraZoom.pan.x - SKY_PAN.x) * ease,
+                 y:SKY_PAN.y + (cameraZoom.pan.y - SKY_PAN.y) * ease};
+      const scaleLeft = Math.abs(Math.log(cameraZoom.scale / Math.max(1e-6, cam.scale)));
+      const panLeft = Math.hypot(cameraZoom.pan.x - SKY_PAN.x,
+                                 cameraZoom.pan.y - SKY_PAN.y) * planetEarthRadius();
+      active = true;
+      if (scaleLeft < .0008 && panLeft < .25) {
+        cam.scale = cameraZoom.scale; SKY_PAN = {...cameraZoom.pan};
+        cameraZoom = null;
+      }
+    } else {
+      const nextScale = cam.scale + (cameraZoom.scale - cam.scale) * ease;
+      applyCameraAnchor(cameraZoom.wx, cameraZoom.wy, cameraZoom.sx, cameraZoom.sy, nextScale);
+      active = true;
+      if (Math.abs(cameraZoom.scale - cam.scale) < .001) {
+        applyCameraAnchor(cameraZoom.wx, cameraZoom.wy,
+                          cameraZoom.sx, cameraZoom.sy, cameraZoom.scale);
+        cameraZoom = null;
+      }
     }
   } else if (cameraFlight) {
     const ease = 1 - Math.pow(.018, dt / 1000);
@@ -18358,13 +18534,26 @@ function advanceUserCameraMotion(now = performance.now()) {
   if (!dragState && !cameraFlight && !cameraZoom) {
     // A globe glides as a turn about a fixed axis rather than as a drift in
     // columns and rows, so it coasts over a pole the same way the drag did.
-    const spin = cameraInertia.spin;
+    const spin = cameraInertia.spin, skyPan = cameraInertia.skyPan;
+    const skyTurn = cameraInertia.skyTurn;
     const speed = Math.abs(cameraInertia.vx) + Math.abs(cameraInertia.vy) +
       Math.abs(cameraInertia.vrot) * 80 + Math.abs(cameraInertia.vtilt) * 80 +
-      (spin ? Math.abs(spin.rate) * 80 : 0);
+      (spin ? Math.abs(spin.rate) * 80 : 0) +
+      (skyPan ? Math.hypot(skyPan.vx, skyPan.vy) * planetEarthRadius() : 0) +
+      (skyTurn ? Math.hypot(skyTurn.vlongitude, skyTurn.vlatitude) * 80 : 0);
     if (speed > .002) {
       const basis = spin && planetBasisNow();
       if (basis) applyPlanetBasis(planetSpin(basis, spin.axis, spin.rate * dt));
+      if (skyPan) {
+        SKY_PAN.x += skyPan.vx * dt;
+        SKY_PAN.y += skyPan.vy * dt;
+      }
+      if (skyTurn) {
+        const view = skyView(skyTurn.bodyId);
+        view.longitude += skyTurn.vlongitude * dt;
+        view.latitude = Math.max(-1.45, Math.min(1.45,
+          view.latitude + skyTurn.vlatitude * dt));
+      }
       cam.x += cameraInertia.vx * dt; cam.y += cameraInertia.vy * dt;
       if (Math.abs(cameraInertia.vrot) > .00001) setRot(cam.rot + cameraInertia.vrot * dt);
       if (Math.abs(cameraInertia.vtilt) > .00001) setTilt(cinematicYS + cameraInertia.vtilt * dt);
@@ -18373,6 +18562,10 @@ function advanceUserCameraMotion(now = performance.now()) {
       cameraInertia.vx *= decay; cameraInertia.vy *= decay;
       cameraInertia.vrot *= decay; cameraInertia.vtilt *= decay;
       if (spin) spin.rate *= decay;
+      if (skyPan) { skyPan.vx *= decay; skyPan.vy *= decay; }
+      if (skyTurn) {
+        skyTurn.vlongitude *= decay; skyTurn.vlatitude *= decay;
+      }
       active = true;
     } else clearCameraInertia();
   }
@@ -18970,15 +19163,24 @@ function endMapPointer(ev) {
     dragState = null;
     if (released && dragMoved && performance.now() - released.lastT < 90 &&
         !REDUCED_MOTION_QUERY.matches) {
-      // `turned` rather than `basis`: out in the system the sky took the drag,
-      // and the globe it left alone must not glide off on its own afterwards.
+      // Each captured surface keeps the motion it actually received: Earth
+      // spins about its final 3D axis, another world keeps turning, and an
+      // empty-sky drag coasts the camera through the system.
       cameraInertia = released.rotate
-        ? {vx:0, vy:0, vrot:released.vrot * .32, vtilt:released.vtilt * .25}
+        ? stoppedCameraInertia({vrot:released.vrot * .32,
+                                vtilt:released.vtilt * .25})
+        : released.skyMotion?.kind === "pan"
+        ? stoppedCameraInertia({skyPan:{vx:released.skyMotion.vx,
+                                        vy:released.skyMotion.vy}})
+        : released.skyMotion?.kind === "turn"
+        ? stoppedCameraInertia({skyTurn:{bodyId:released.skyMotion.bodyId,
+                                         vlongitude:released.skyMotion.vlongitude,
+                                         vlatitude:released.skyMotion.vlatitude}})
         : released.turned
-        ? {vx:0, vy:0, vrot:0, vtilt:0, spin:planetGlide(released.vpx, released.vpy)}
+        ? stoppedCameraInertia({spin:planetGlide(released.vpx, released.vpy)})
         : released.basis
-        ? {vx:0, vy:0, vrot:0, vtilt:0, spin:null}
-        : {vx:released.vx, vy:released.vy, vrot:0, vtilt:0};
+        ? stoppedCameraInertia()
+        : stoppedCameraInertia({vx:released.vx, vy:released.vy});
     }
     return;
   }
@@ -19020,9 +19222,16 @@ function beginTouchTransform() {
   const my = (points[0].y + points[1].y) / 2 - rect.top;
   const dx = points[1].x - points[0].x, dy = points[1].y - points[0].y;
   const [wx, wy] = screenToWorld(mx, my);
+  let skyAnchor = null;
+  if (planetMap()) {
+    const [stageX, stageY] = planetStageCenter();
+    const radius = Math.max(.001, planetEarthRadius());
+    skyAnchor = {x:SKY_PAN.x + (mx - stageX) / radius,
+                 y:SKY_PAN.y + (my - stageY) / radius};
+  }
   touchGesture = {mode:"transform", mx, my, wx, wy, distance:Math.hypot(dx, dy),
                   angle:Math.atan2(dy, dx), scale:cam.scale, rot:cam.rot,
-                  basis:planetBasisNow(), controlled:false};
+                  basis:planetBasisNow(), skyAnchor, controlled:false};
   clearCameraInertia(); cameraFlight = null; cameraZoom = null;
 }
 cv.addEventListener("pointerdown", ev => {
@@ -19065,7 +19274,8 @@ cv.addEventListener("pointermove", ev => {
         // A globe has no world plane to anchor a pinch against, and its zoom
         // runs far below the flat map's floor, so it goes through the same path
         // the wheel does and reaches the rest of the system the same way.
-        zoomAt(want / Math.max(1e-4, cam.scale), mx, my);
+        const base = cameraZoom?.kind === "planet" ? cameraZoom.scale : cam.scale;
+        zoomAt(want / Math.max(1e-4, base), mx, my, touchGesture.skyAnchor);
       } else {
         applyCameraAnchor(touchGesture.wx, touchGesture.wy, mx, my,
                           Math.max(.25, Math.min(3.2, want)));
@@ -19110,11 +19320,18 @@ function endMapTouch(ev) {
   mapTouches.delete(ev.pointerId);
   if (!mapTouches.size) {
     if (released?.mode === "pan" && released.controlled && !REDUCED_MOTION_QUERY.matches)
-      cameraInertia = released.turned
-        ? {vx:0, vy:0, vrot:0, vtilt:0, spin:planetGlide(released.vpx, released.vpy)}
+      cameraInertia = released.skyMotion?.kind === "pan"
+        ? stoppedCameraInertia({skyPan:{vx:released.skyMotion.vx,
+                                        vy:released.skyMotion.vy}})
+        : released.skyMotion?.kind === "turn"
+        ? stoppedCameraInertia({skyTurn:{bodyId:released.skyMotion.bodyId,
+                                         vlongitude:released.skyMotion.vlongitude,
+                                         vlatitude:released.skyMotion.vlatitude}})
+        : released.turned
+        ? stoppedCameraInertia({spin:planetGlide(released.vpx, released.vpy)})
         : released.basis
-        ? {vx:0, vy:0, vrot:0, vtilt:0, spin:null}
-        : {vx:released.vx, vy:released.vy, vrot:0, vtilt:0};
+        ? stoppedCameraInertia()
+        : stoppedCameraInertia({vx:released.vx, vy:released.vy});
     touchGesture = null;
     setTimeout(() => { if (!mapTouches.size) dragMoved = false; }, 60);
   } else if (mapTouches.size === 1) {
@@ -20458,6 +20675,7 @@ async function autoplay(turns) {
 document.getElementById("autoplaybtn").onclick = () => autoplay(autoplayRequest());
 document.getElementById("tradebtn").onclick = () => openTrade();
 document.getElementById("gamemode").addEventListener("change", syncSetupMode);
+document.getElementById("leaderpool").addEventListener("change", syncLeaderPool);
 document.getElementById("maptype").addEventListener("change", syncEarthShape);
 document.getElementById("startgame").onclick = () => startNewSimulation();
 document.getElementById("savebtn").onclick = () => writeSave();
@@ -20513,12 +20731,14 @@ function selectedSimulationSettings() {
   const mapTopology = document.getElementById("mapshape").value;
   const mapPoles = document.getElementById("mappoles").value;
   const gameSpeed = document.getElementById("gamespeed").value;
+  const leaderPool = document.getElementById("leaderpool").value;
   const victoryConditions = Object.fromEntries(VICTORY_TRACKS.map(track =>
     [track.id, document.getElementById(`victory-${track.id}`).checked]));
   const leader = (document.getElementById("leader") || {}).value || "";
   const difficulty = (document.getElementById("difficulty") || {}).value || "";
   return {num_players: np, map_script: mapScript, map_topology: mapTopology,
           map_poles: mapPoles, game_speed: gameSpeed,
+          leader_pool: leaderPool,
           victory_conditions: victoryConditions,
           spectate: gameMode === "ai_sim",
           // A spectated world has nobody to hand a leader or a handicap to.
@@ -20555,6 +20775,8 @@ function applyQueuedSimulationSettings(settings) {
   if (settings.poles) document.getElementById("mappoles").value = settings.poles;
   syncEarthShape();
   document.getElementById("gamespeed").value = settings.speed;
+  document.getElementById("leaderpool").value = settings.leader_pool || "civ6";
+  syncLeaderPool();
   const victories = new Set(settings.victories || []);
   for (const track of VICTORY_TRACKS)
     document.getElementById(`victory-${track.id}`).checked = victories.has(track.id);
@@ -20639,6 +20861,26 @@ function adoptRunningMode() {
 function syncSetupMode() {
   const mode = (document.getElementById("gamemode") || {}).value || "ai_sim";
   document.body.classList.toggle("spectating", mode === "ai_sim");
+}
+
+// The broad historical ruleset remains available, but a normal lobby offers
+// only civilizations that Civilization VI itself ships. The same pool fills
+// random AI seats on the server and filters the person's explicit leader
+// choice here, so "Random leader" and a named pick describe one roster.
+function syncLeaderPool() {
+  const select = document.getElementById("leader");
+  const pool = document.getElementById("leaderpool");
+  if (!select || !pool || !RULES || !RULES.civs || typeof RULES.civs !== "object") return;
+  const selected = select.value;
+  const civ6 = new Set(Array.isArray(RULES.civ6_leaders) ? RULES.civ6_leaders : []);
+  const leaders = Object.entries(RULES.civs)
+    .filter(([civ]) => pool.value === "expanded" || civ6.has(civ))
+    .map(([civ, spec]) => ({civ, leader: spec.leader || civ, note: spec.note || ""}))
+    .sort((first, second) => first.leader.localeCompare(second.leader));
+  select.innerHTML = `<option value="">Random leader</option>` + leaders.map(entry =>
+    `<option value="${entry.civ}" title="${escapeAttr(entry.note)}">` +
+    `${entry.leader} of ${entry.civ}</option>`).join("");
+  if (leaders.some(entry => entry.civ === selected)) select.value = selected;
 }
 
 // Earth is the one world type whose shape is not the lobby's to choose: it is
