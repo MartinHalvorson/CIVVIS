@@ -384,14 +384,24 @@ describe a much smaller historical rules workload.
 - `civvis::strategic::StrategicAi` (builtin `strategic`) picks its victory
   lane by rolling each lane forward and judging the resulting position —
   the first macro-search rung above the scripted agents.
-- Evaluator-only `strategic_deep` is the same agent with four times the
-  search compute, split across both of its axes: it reviews every 20 turns
-  rather than 40 and projects 80 rounds rather than 40. It is the strongest
-  configuration measured — 240 mirrored maps across two disjoint seed sets,
-  53 map-directions to 15, sign p=4.1e-06 — and it is **not promoted**. It
-  passed the gate once at 120 maps, by 0.2 points of Wilson bound, and did
-  not pass again on the second seed set. Treat the effect as real and the
-  promotion as unearned until a PASS replicates at a pre-registered size.
+- Builtin `strategic_deep` is the same agent with four times the search
+  compute, split across both of its axes: it reviews every 20 turns rather
+  than 40 and projects 80 rounds rather than 40. It is the strongest agent
+  measured here and the only one promoted through the gate.
+
+  Its evidence is a pre-registered 300-map run at a fresh seed — size and
+  decision rule fixed in writing beforehand, because the gate's Wilson
+  interval is a fixed-n statistic and stopping when it happens to clear
+  would be optional stopping. Result: 339/600 games (56.5%), **56 mirrored
+  maps to 17**, sign p=0.0000, an anytime e-process of 3.14e4 crossing at
+  map 127, Wilson 50.8%..62.0%, Elo-equivalent +45 (CI +6..+85), and
+  `promotion gate: PASS` under the unmodified gate. Two earlier disjoint
+  sets add 240 maps at 53 to 15, for 540 independent maps at 109 to 32.
+
+  Each doubling on its own clears the anytime-valid evidence but not the
+  effect interval; only together do they clear both. Spending the same 4×
+  on frequency alone (`strategic_r10`) is the weakest arm measured, so it
+  is the product of the axes that pays rather than the total.
 
   `strategic` is unchanged and is the frozen control for measuring further
   search changes, the way `advanced_v1` is for `advanced`. Four times the

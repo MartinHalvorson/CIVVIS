@@ -9438,8 +9438,11 @@ mod district_building_wonder_runtime_tests {
         };
         assert!(game.can_produce(0, city, &corps));
         assert!(game.can_produce(0, city, &army));
+        // UNIT_CORPS_COST_MODIFIER 1.5 and UNIT_ARMY_COST_MODIFIER 2.0 against
+        // a Warrior's 40, so 60 and 80 -- not the 90 a compounded Corps rate
+        // would charge.
         assert_eq!(game.item_cost(&corps), 60.0);
-        assert_eq!(game.item_cost(&army), 90.0);
+        assert_eq!(game.item_cost(&army), 80.0);
         // +25% from the Academy and an effective +33⅓% for Ikanda's 25%
         // cost reduction.
         assert!((game.item_prod_mult(0, city, Some(&corps)) - 1.5833333333333333).abs() < 1e-9);
@@ -30616,7 +30619,12 @@ impl Game {
     fn base_item_cost(&self, item: &Item) -> f64 {
         match item {
             Item::Formation { unit, formation } => {
-                self.rules.units[unit.as_str()].cost * if *formation >= 2 { 2.25 } else { 1.5 }
+                // UNIT_CORPS_COST_MODIFIER 1.5 and UNIT_ARMY_COST_MODIFIER 2.0.
+                // Both are read against the base unit's cost, so an Army is 2x
+                // rather than the 1.5 x 1.5 an extrapolated Corps rate gives.
+                // The resource cost is separate and really does step 2 then 3,
+                // one per unit folded in -- see unit_resource_cost.
+                self.rules.units[unit.as_str()].cost * if *formation >= 2 { 2.0 } else { 1.5 }
             }
             Item::Unit { unit } => self.rules.units[unit.as_str()].cost,
             Item::Building { building } => self.rules.buildings[building.as_str()].cost,
@@ -47099,6 +47107,21 @@ mod combat_scenarios {
                 .get(&Game::item_progress_key(&swordsman)),
             Some(&20.0)
         );
+    }
+
+    #[test]
+    fn the_healing_rates_are_the_ones_the_parameters_name() {
+        // COMBAT_HEAL_LAND_FRIENDLY 15, _NEUTRAL 10, _ENEMY 5 and
+        // COMBAT_HEAL_CITY_GARRISON 20 for a unit standing in a district.
+        assert_eq!(HealingLocation::District.rate(), 20);
+        assert_eq!(HealingLocation::FriendlyTerritory.rate(), 15);
+        assert_eq!(HealingLocation::NeutralTerritory.rate(), 10);
+        assert_eq!(HealingLocation::EnemyTerritory.rate(), 5);
+
+        // COMBAT_HEAL_NAVAL_FRIENDLY is 20, and _NEUTRAL and _ENEMY are both
+        // zero: a ship away from a friendly city recovers nothing at all
+        // unless a promotion says otherwise.
+        assert!(HealingLocation::NeutralTerritory.rate() > 0);
     }
 
     #[test]
