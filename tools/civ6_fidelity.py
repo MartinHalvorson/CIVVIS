@@ -1251,6 +1251,16 @@ ENGINE_PARAMETERS = {
     # either would be invention.
     "WORLD_CONGRESS_SUZERAIN_FAVOR_PER_TURN": 1,  # process_diplomacy
     "INFLUENCE_TOKENS_MINIMUM_FOR_SUZERAIN": 3,  # game.rs suzerain_of_uncached
+    # game.rs HealingLocation::rate and the naval branch of unit_heal_rate.
+    "COMBAT_HEAL_LAND_FRIENDLY": 15,
+    "COMBAT_HEAL_LAND_NEUTRAL": 10,
+    "COMBAT_HEAL_LAND_ENEMY": 5,
+    "COMBAT_HEAL_NAVAL_FRIENDLY": 20,
+    "COMBAT_HEAL_NAVAL_NEUTRAL": 0,
+    "COMBAT_HEAL_NAVAL_ENEMY": 0,
+    "COMBAT_HEAL_CITY_GARRISON": 20,
+    "UNIT_CORPS_COST_MODIFIER": 1.5,  # game.rs base_item_cost
+    "UNIT_ARMY_COST_MODIFIER": 2.0,
     "SCIENCE_VICTORY_POINTS_REQUIRED": 50,  # game.rs EXOPLANET_DESTINATION
     "GRIEVANCES_FOR_DENOUNCEMENT": 25,  # game.rs do_denounce
     # Held as a decay offset rather than an addition, which comes to the same
