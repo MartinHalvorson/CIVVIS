@@ -1250,6 +1250,13 @@ ENGINE_PARAMETERS = {
     # nothing for a bare turn and nothing for a trade partner, so a term for
     # either would be invention.
     "WORLD_CONGRESS_SUZERAIN_FAVOR_PER_TURN": 1,  # process_diplomacy
+    "INFLUENCE_TOKENS_MINIMUM_FOR_SUZERAIN": 3,  # game.rs suzerain_of_uncached
+    "SCIENCE_VICTORY_POINTS_REQUIRED": 50,  # game.rs EXOPLANET_DESTINATION
+    "GRIEVANCES_FOR_DENOUNCEMENT": 25,  # game.rs do_denounce
+    # Held as a decay offset rather than an addition, which comes to the same
+    # thing: game.rs occupation_modifier in the grievance decay loop.
+    "GRIEVANCES_POSSESS_CAPITAL_PER_TURN": 3,
+    "GRIEVANCES_POSSESS_NON_CAPITAL_PER_TURN": 1,
     "WORLD_CONGRESS_ALLIANCE_FAVOR_PER_TURN": 1,  # per alliance level
     "WORLD_CONGRESS_BASELINE_FAVOR_PER_TURN": 0,
     "WORLD_CONGRESS_TRADE_PARTNER_FAVOR_PER_TURN": 0,

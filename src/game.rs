@@ -51124,6 +51124,50 @@ mod victory_conditions {
     }
 
     #[test]
+    fn the_city_state_and_grievance_thresholds_match_their_parameters() {
+        // INFLUENCE_TOKENS_MINIMUM_FOR_SUZERAIN is 3: two Envoys is never
+        // enough, three is, and a tie is nobody's.
+        let mut g = Game::new_full(2, 26, 16, 91_781, 200, 1, false);
+        let minor = g
+            .players
+            .iter()
+            .find(|player| player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .expect("a city-state");
+        g.players[0].envoys.clear();
+        g.players[1].envoys.clear();
+        g.players[0].envoys.push((minor, 2));
+        g.query_memo();
+        assert_eq!(g.suzerain_of(minor), None, "two Envoys is not Suzerainty");
+        g.players[0].envoys.clear();
+        g.players[0].envoys.push((minor, 3));
+        g.query_memo();
+        assert_eq!(g.suzerain_of(minor), Some(0));
+        g.players[1].envoys.push((minor, 3));
+        g.query_memo();
+        assert_eq!(g.suzerain_of(minor), None, "a tie leaves the seat empty");
+
+        // GRIEVANCES_POSSESS_CAPITAL_PER_TURN 3 and _NON_CAPITAL_PER_TURN 1,
+        // held as a decay offset. Ancient decay is 10, so holding the victim's
+        // original Capital leaves 7 a turn and any other city 9.
+        let mut held = game_with_capitals(2, 4_241, 300);
+        held.world_era = 0;
+        let capital = held
+            .cities
+            .values()
+            .find(|city| city.original_owner == 0 && city.is_capital)
+            .map(|city| city.id)
+            .unwrap();
+        held.players[0].grievances.insert(1, 100.0);
+        held.process_diplomacy(0);
+        assert_eq!(held.players[0].grievances.get(&1), Some(&90.0), "no city held");
+        held.cities.get_mut(&capital).unwrap().owner = 1;
+        held.players[0].grievances.insert(1, 100.0);
+        held.process_diplomacy(0);
+        assert_eq!(held.players[0].grievances.get(&1), Some(&93.0), "Capital held");
+    }
+
+    #[test]
     fn grievance_decay_pauses_at_war_and_uses_capital_occupation_modifier() {
         let mut g = game_with_capitals(2, 4_241, 300);
         let capital = g
