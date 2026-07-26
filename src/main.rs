@@ -34,6 +34,24 @@ fn arg_text(args: &[String], key: &str, default: &str) -> String {
         .unwrap_or_else(|| default.to_string())
 }
 
+/// The turn budget the named game speed ships with, which `--turns` overrides.
+///
+/// Every path that judges which AI is stronger has to play a whole game. A
+/// short cap does not just shorten the game, it changes who won: over 9336
+/// six-seat league games capped at 250 turns, 81.8% ended on the cap, no game
+/// ever ended on a natural score victory, and domination and science never
+/// happened at all. Replaying 24 seeds at both budgets, the cap names a
+/// different winner in 13 of them.
+fn stock_turns(args: &[String]) -> i64 {
+    let rules = Rules::embedded();
+    let speed = arg_text(args, "--speed", &default_speed());
+    rules
+        .speeds
+        .get(&speed)
+        .map(|spec| i64::from(spec.turns))
+        .unwrap_or(500)
+}
+
 fn victory_conditions(args: &[String]) -> VictoryConditions {
     let Some(enabled) = args
         .iter()
@@ -649,7 +667,9 @@ fn main() {
                 players_per_game: arg(&args, "--players", 4) as usize,
                 width: auto_dimension(&args, "--width", arg(&args, "--players", 4), true),
                 height: auto_dimension(&args, "--height", arg(&args, "--players", 4), false),
-                max_turns: arg(&args, "--turns", 150) as u32,
+                // A tournament writes the project's persistent Elo, so it has
+                // to rank on whole games; see `stock_turns`.
+                max_turns: arg(&args, "--turns", stock_turns(&args)) as u32,
                 num_city_states: auto_cs(&args, arg(&args, "--players", 4)),
                 seed: arg(&args, "--seed", 0) as u64,
                 k: arg(&args, "--k", 24) as f64,
@@ -770,7 +790,12 @@ fn main() {
                 players: players as usize,
                 width: auto_dimension(&args, "--width", players, true),
                 height: auto_dimension(&args, "--height", players, false),
-                max_turns: arg(&args, "--turns", 160) as u32,
+                // `eval_game` pays 100 for an outright win on top of a ~50
+                // average score share, but at 160 turns almost nothing reaches
+                // a victory, so the win term that is supposed to decide
+                // champion promotion almost never fired and fitness was score
+                // at an arbitrary cutoff. See `stock_turns`.
+                max_turns: arg(&args, "--turns", stock_turns(&args)) as u32,
                 seed: arg(&args, "--seed", 1) as u64,
                 threads: arg(&args, "--threads", 8) as usize,
                 dir: arg_text(&args, "--dir", "evolved"),
