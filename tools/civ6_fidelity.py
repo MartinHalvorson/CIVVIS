@@ -1259,6 +1259,14 @@ ENGINE_PARAMETERS = {
     "COMBAT_HEAL_NAVAL_NEUTRAL": 0,
     "COMBAT_HEAL_NAVAL_ENEMY": 0,
     "COMBAT_HEAL_CITY_GARRISON": 20,
+    # game.rs tourism_multiplier, domestic_tourists and tourism_components.
+    "TOURISM_OPEN_BORDERS_BONUS": 25,
+    "TOURISM_TRADE_ROUTE_BONUS": 25,
+    "TOURISM_DIFFERENT_RELIGION_REDUCTION": 50,
+    "TOURISM_CULTURE_PER_CITIZEN": 100,  # one domestic tourist per 100 Culture
+    "TOURISM_TOURISM_TO_MOVE_CITIZEN": 200,  # game.rs TOURISM_PER_VISITOR
+    "TOURISM_BASE_FROM_WONDER": 2,
+    "TOURISM_FROM_HOLY_CITY": 8,
     # game.rs `damage`: 30 * exp((att - def) / 25) * U(0.8, 1.2), clamped.
     # 30 * 0.8 is the base 24 and 30 * 1.2 is 24 + the 12 of extra, and
     # dividing the strength difference by 25 is the same as scaling it by 0.04.

@@ -47127,6 +47127,38 @@ mod combat_scenarios {
     }
 
     #[test]
+    fn the_tourism_multipliers_are_the_ones_the_parameters_name() {
+        // TOURISM_OPEN_BORDERS_BONUS 25, TOURISM_TRADE_ROUTE_BONUS 25 and
+        // TOURISM_DIFFERENT_RELIGION_REDUCTION 50. A culture victory is won
+        // and lost on these, and nothing held them.
+        let (mut g, centre, ring) = controlled_game(4_166);
+        g.found_city_for(0, centre, None);
+        g.found_city_for(1, ring[3], None);
+        let plain = g.international_tourism_multiplier(0, 1, false);
+        assert_eq!(plain, 1.0, "no borders, no route, no religion");
+
+        g.players[0].open_borders_until.insert(1, g.turn + 30);
+        g.players[1].open_borders_until.insert(0, g.turn + 30);
+        assert_eq!(g.international_tourism_multiplier(0, 1, false), 1.25);
+        g.players[0].open_borders_until.clear();
+        g.players[1].open_borders_until.clear();
+
+        // Religious Tourism is halved between two different religions, and
+        // only when both sides actually have one.
+        g.players[0].religion = Some("Ours".to_string());
+        assert_eq!(g.international_tourism_multiplier(0, 1, true), 1.0, "the target has none");
+        g.players[1].religion = Some("Theirs".to_string());
+        assert_eq!(g.international_tourism_multiplier(0, 1, true), 0.5);
+        g.players[1].religion = Some("Ours".to_string());
+        assert_eq!(g.international_tourism_multiplier(0, 1, true), 1.0, "the same faith is not reduced");
+
+        // TOURISM_CULTURE_PER_CITIZEN 100 and TOURISM_TOURISM_TO_MOVE_CITIZEN 200.
+        g.players[0].culture_lifetime = 950.0;
+        assert_eq!(g.domestic_tourists(0), 9);
+        assert_eq!(TOURISM_PER_VISITOR, 200.0);
+    }
+
+    #[test]
     fn the_damage_curve_is_the_one_the_parameters_describe() {
         // COMBAT_BASE_DAMAGE 24 with COMBAT_MAX_EXTRA_DAMAGE 12 is a roll of
         // 24 to 36, which is what 30 * U(0.8, 1.2) gives. COMBAT_POWER_SCALING
