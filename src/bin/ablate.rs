@@ -14,8 +14,10 @@
 //!
 //! `--grant none` is the control and must land at parity; if it does not, the
 //! harness is reporting its own noise as headroom.
-use civvis::ai::{AdvancedAi, Ai};
-use civvis::game::{Action, Game, GameOptions};
+use civvis::ai::{AdvancedAi, Ai, VictoryTarget};
+use civvis::game::{default_difficulty, Action, Game, GameOptions};
+use civvis::rules::Rules;
+use std::collections::BTreeSet;
 use civvis::setup::MapSize;
 use civvis::oracle::{Grant, Oracle};
 
@@ -117,6 +119,17 @@ fn run(grants: &[Grant], args: &[String]) {
     let height = number(args, "--height", default_height as i64).max(8) as i32;
     let city_states =
         number(args, "--city-states", size.default_city_states as i64).max(0) as usize;
+    // A grant's p-value says whether a subsystem limits the agent, not by how
+    // much. The difficulty ladder supplies the missing scale: the granted seat
+    // plays the human side of the handicap and its opponents the AI side, so
+    // `--grant none --difficulty king` measures what a known, documented
+    // advantage is worth on this exact harness. Every other grant can then be
+    // read against it instead of against nothing.
+    let difficulty = text(args, "--difficulty", &default_difficulty());
+    if !Rules::embedded().difficulties.contains_key(&difficulty) {
+        eprintln!("unknown difficulty {difficulty:?}");
+        std::process::exit(2);
+    }
 
     // Every map is played from two different seats so a map that simply
     // favours one start cannot be read as evidence about a grant.
@@ -129,7 +142,13 @@ fn run(grants: &[Grant], args: &[String]) {
         .collect();
 
     let options_for = |cell: Cell| {
-        GameOptions::new(players, width, height, seed + cell.map as u64, turns, city_states)
+        let mut options =
+            GameOptions::new(players, width, height, seed + cell.map as u64, turns, city_states);
+        options.difficulty = difficulty.clone();
+        // Only the granted seat sits on the human side of the ladder, so the
+        // handicap moves with the grant rather than with the map.
+        options.human_seats = BTreeSet::from([cell.seat]);
+        options
     };
 
     // The control is played once and shared by every grant. Each grant is then
@@ -138,7 +157,7 @@ fn run(grants: &[Grant], args: &[String]) {
     // averaged over. Comparing a granted seat's raw win rate against 1/players
     // instead would have to carry all of that variance, which at these sample
     // sizes is most of the signal.
-    println!("playing {} control games...", cells.len());
+    println!("playing {} control games at difficulty {difficulty}...", cells.len());
     let control: Vec<bool> = civvis::parallel::map(cells.len(), jobs, |index| {
         play(options_for(cells[index]), cells[index].seat, Grant::None).0
     });
@@ -209,8 +228,154 @@ mis-specified rather than the subsystem being fine"
     }
 }
 
+/// One game played by a seat committed to `target` from the first turn, or
+/// adaptive when `target` is `None`. Every other major plays the stock
+/// adaptive agent.
+fn play_lane(options: GameOptions, seat: usize, target: Option<VictoryTarget>) -> bool {
+    let mut game = Game::new_with(options);
+    let mut stock = AdvancedAi::fleet(&game);
+    let mut routed = match target {
+        Some(target) => AdvancedAi::targeting(target),
+        None => AdvancedAi::new(),
+    };
+    while game.winner.is_none() && game.turn <= game.max_turns {
+        let pid = game.current;
+        if pid == seat {
+            routed.take_turn(&mut game, pid);
+        } else {
+            stock[pid].take_turn(&mut game, pid);
+        }
+        if game.winner.is_none() && game.current == pid {
+            let _ = game.apply(pid, &Action::EndTurn);
+        }
+    }
+    game.winner == Some(seat)
+}
+
+/// What perfect victory routing is worth.
+///
+/// The three capability grants all measured null, which leaves the other
+/// half of the question open: capability is not what limits this agent, but
+/// is *choosing what to play for*? This bounds that directly. Each cell is
+/// played once per victory lane with the seat committed to it from turn one,
+/// and once adaptively. Taking the maximum over lanes is an oracle no agent
+/// could implement — it needs the result before the decision — so the gap
+/// between it and the adaptive agent is the entire headroom in victory
+/// routing, search and priors included.
+///
+/// If this is also null, then neither what this agent can do nor what it
+/// chooses to do decides these games, and the search has to move off the
+/// agent altogether.
+fn run_best_lane(args: &[String]) {
+    let pairs = number(args, "--pairs", 40).max(1) as usize;
+    let players = number(args, "--players", 4).max(2) as usize;
+    let seed = number(args, "--seed", 310_000).max(0) as u64;
+    let turns = number(args, "--turns", 500).max(1) as u32;
+    let jobs = match number(args, "--jobs", 0) {
+        requested if requested > 0 => requested as usize,
+        _ => civvis::parallel::default_jobs(),
+    };
+    let size = MapSize::for_players(players);
+    let (default_width, default_height) = size.dimensions(Default::default());
+    let width = number(args, "--width", default_width as i64).max(8) as i32;
+    let height = number(args, "--height", default_height as i64).max(8) as i32;
+    let city_states =
+        number(args, "--city-states", size.default_city_states as i64).max(0) as usize;
+
+    let cells: Vec<Cell> = (0..pairs)
+        .flat_map(|map| {
+            [0usize, players - 1]
+                .into_iter()
+                .map(move |seat| Cell { map, seat })
+        })
+        .collect();
+    let options_for = |cell: Cell| {
+        GameOptions::new(players, width, height, seed + cell.map as u64, turns, city_states)
+    };
+
+    // One job per (cell, lane) so the whole grid runs across every core
+    // rather than one lane at a time.
+    let lanes = VictoryTarget::ALL;
+    let total = cells.len() * (lanes.len() + 1);
+    println!(
+        "playing {total} games: {} cells x ({} lanes + adaptive), {players} players, {turns} turns",
+        cells.len(),
+        lanes.len()
+    );
+    let grid = civvis::parallel::map(total, jobs, |index| {
+        let cell = cells[index / (lanes.len() + 1)];
+        let slot = index % (lanes.len() + 1);
+        let target = (slot > 0).then(|| lanes[slot - 1]);
+        play_lane(options_for(cell), cell.seat, target)
+    });
+
+    let mut adaptive_wins = 0u32;
+    let mut best_wins = 0u32;
+    let mut best_only = 0u32;
+    let mut adaptive_only = 0u32;
+    let mut per_lane = vec![0u32; lanes.len()];
+    for (index, cell) in cells.iter().enumerate() {
+        let _ = cell;
+        let base = index * (lanes.len() + 1);
+        let adaptive = grid[base];
+        let mut best = false;
+        for (lane, slot) in (1..=lanes.len()).enumerate() {
+            if grid[base + slot] {
+                best = true;
+                per_lane[lane] += 1;
+            }
+        }
+        adaptive_wins += u32::from(adaptive);
+        best_wins += u32::from(best);
+        match (best, adaptive) {
+            (true, false) => best_only += 1,
+            (false, true) => adaptive_only += 1,
+            _ => {}
+        }
+    }
+    let n = cells.len() as f64;
+    let discordant = best_only + adaptive_only;
+    let p = exact_two_sided(best_only, discordant);
+    println!();
+    println!("best-lane oracle   {} cells, {players} players, {turns} turns", cells.len());
+    println!("  adaptive won        {adaptive_wins}/{} = {:.1}%   (parity {:.1}%)",
+        cells.len(), 100.0 * adaptive_wins as f64 / n, 100.0 / players as f64);
+    println!("  SOME lane won       {best_wins}/{} = {:.1}%",
+        cells.len(), 100.0 * best_wins as f64 / n);
+    println!("  matched pairs       a lane won where adaptive lost: {best_only}; \
+adaptive won where no lane did: {adaptive_only}");
+    println!("  McNemar exact       p={p:.4} over {discordant} discordant cells");
+    for (lane, wins) in lanes.iter().zip(&per_lane) {
+        println!("    committed {:<11} {wins}/{} = {:.1}%",
+            format!("{lane:?}"), cells.len(), 100.0 * *wins as f64 / n);
+    }
+    let verdict = if discordant < 8 {
+        "TOO FEW DISCORDANT CELLS to say anything — raise --pairs"
+    } else if p >= 0.05 {
+        "NO MEASURABLE HEADROOM IN VICTORY ROUTING — knowing the right lane \
+in advance does not win these games"
+    } else if best_only > adaptive_only {
+        "HEADROOM IN VICTORY ROUTING — choosing the lane better can pay, and \
+this is the ceiling on it"
+    } else {
+        "COMMITMENT IS HARMFUL — adapting beats every fixed lane, so routing \
+is not a choice worth improving"
+    };
+    println!("  verdict             {verdict}");
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if text(&args, "--mode", "grants") == "best-lane" {
+        println!(
+            "Best-lane oracle. Each cell is played once per victory lane with the seat\n\
+             committed to it from turn one, and once adaptively. The maximum over lanes is\n\
+             an oracle no agent could implement, so the gap to the adaptive agent is the\n\
+             whole headroom in victory routing.\n"
+        );
+        run_best_lane(&args);
+        return;
+    }
     let requested = text(&args, "--grant", "all");
     let grants: Vec<Grant> = if requested == "all" {
         Grant::ALL.to_vec()

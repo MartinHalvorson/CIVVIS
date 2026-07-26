@@ -68,11 +68,30 @@ pub enum Grant {
     /// It does not make units immortal. A blow large enough to kill still
     /// kills; what disappears is accumulated damage.
     Attrition,
+    /// A large, unearned pile of Gold and Faith every turn.
+    ///
+    /// Not a subsystem. This is the instrument's calibration: it grants an
+    /// advantage nobody would argue is small, so a run can establish that the
+    /// harness detects an advantage at all. Without it a null from any other
+    /// grant is ambiguous between "this subsystem does not limit the agent"
+    /// and "this design cannot resolve anything", and those call for opposite
+    /// next steps.
+    ///
+    /// Deliberately crude and deliberately huge — a stock empire finishes
+    /// these games with a few hundred Gold, so this is worth orders of
+    /// magnitude more than any honest improvement to any subsystem. If it
+    /// does not register, nothing else measured here means anything.
+    Treasury,
 }
 
 impl Grant {
-    pub const ALL: [Grant; 4] =
-        [Grant::None, Grant::Modernity, Grant::Taker, Grant::Attrition];
+    pub const ALL: [Grant; 5] = [
+        Grant::None,
+        Grant::Modernity,
+        Grant::Taker,
+        Grant::Attrition,
+        Grant::Treasury,
+    ];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -80,6 +99,7 @@ impl Grant {
             Grant::Modernity => "modernity",
             Grant::Taker => "taker",
             Grant::Attrition => "attrition",
+            Grant::Treasury => "treasury",
         }
     }
 
@@ -149,6 +169,13 @@ impl<A: Ai> Oracle<A> {
                 self.fired += 1;
             }
         }
+    }
+
+    /// Hand over Gold and Faith at a rate no economy in these games reaches.
+    fn grant_treasury(&mut self, g: &mut Game, pid: usize) {
+        g.players[pid].gold += 200.0;
+        g.players[pid].faith += 100.0;
+        self.fired += 1;
     }
 
     /// Restore every unit to full health.
@@ -256,6 +283,7 @@ impl<A: Ai> Ai for Oracle<A> {
                 Grant::Modernity => self.grant_modernity(g, pid),
                 Grant::Taker => self.grant_taker(g, pid),
                 Grant::Attrition => self.grant_attrition(g, pid),
+                Grant::Treasury => self.grant_treasury(g, pid),
             }
         }
         self.inner.take_turn(g, pid);
