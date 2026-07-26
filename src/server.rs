@@ -4720,6 +4720,12 @@ mod tests {
                 "map overlay {overlay} should have a close control"
             );
         }
+        assert!(
+            EMBEDDED_INDEX.contains(
+                r#"body.sidebar-hidden .overlay-close[data-overlay-close="controls"] { display: none; }"#
+            ),
+            "map controls should not offer dismissal while their restore switch is hidden"
+        );
         // The switches are a two-column grid, and the order they are written in
         // follows the map: the rail read top to bottom — standings, victory
         // tracker, world minimap — and then the map controls, which are the one
