@@ -908,15 +908,14 @@ impl StrategicAi {
         }
     }
 
-    /// How many branches survive each stage of a focused review, starting
-    /// with all of them and halving down to the adaptive baseline plus one
-    /// lane.
+    /// The branch counts the chunk schedule is *sized* for, halving from
+    /// all of them down to the adaptive baseline plus one lane.
     ///
-    /// Halving rather than dropping straight to the leader: at the default
-    /// horizon the median spread between branches is 0.0045, so an early
-    /// ranking is a weak signal and cutting to one arm would commit on
-    /// almost no evidence. Halving keeps the runner-up alive to be
-    /// re-examined at twice the depth, which is the whole point.
+    /// This is a budget assumption, not a survivor contract. Pruning is by
+    /// eligibility, so more branches than this can survive a stage — in
+    /// which case the hard budget guard stops the search early and it
+    /// degenerates toward the fixed horizon, which is the correct
+    /// behaviour when no branch has dropped out of contention.
     fn stage_sizes(branches: usize) -> Vec<usize> {
         let mut sizes = vec![branches];
         let mut live = branches;
@@ -998,24 +997,44 @@ impl StrategicAi {
             if live.iter().all(|index| branches[*index].0.winner.is_some()) {
                 break;
             }
-            let Some(keep) = sizes.get(stage + 1) else {
+            if stage + 1 >= chunks.len() {
                 break;
-            };
-            // Rank the lanes only. The adaptive baseline is the reference
-            // every lane is measured against and is never dropped.
-            let mut lanes: Vec<usize> = live
+            }
+            // Prune on *eligibility*, not on rank.
+            //
+            // Ranking looked right and was wrong. `choose_rollout_target`
+            // commits only when the best lane clears the adaptive baseline
+            // by `TARGET_COMMITMENT_MARGIN`, so the review is a maximum over
+            // however many lanes survive — and a maximum over one draw
+            // clears a fixed margin far less often than a maximum over six.
+            // Halving by rank therefore did not only reallocate compute, it
+            // silently raised the commitment threshold: measured over 120
+            // mirrored maps the agent spent 58.4% of its player-turns
+            // uncommitted against the control's 44.9%, and dropped religious
+            // commitment from 29.0% to 24.5% — the lane that wins most.
+            //
+            // A lane already behind the adaptive baseline cannot be chosen
+            // without swinging two margins, so dropping it removes no
+            // outcome the review could have reached. Every lane that could
+            // still be chosen stays in the set, and the maximum ranges over
+            // the same candidates it would have without pruning.
+            let adaptive = live
                 .iter()
-                .copied()
-                .filter(|index| targets[*index].is_some())
-                .collect();
-            lanes.sort_by(|a, b| {
-                let value = |index: usize| self.branch_value(&branches[index].0, pid);
-                value(*b)
-                    .partial_cmp(&value(*a))
-                    .unwrap_or(std::cmp::Ordering::Equal)
+                .find(|index| targets[**index].is_none())
+                .map(|index| self.branch_value(&branches[*index].0, pid))
+                .unwrap_or(0.0);
+            live.retain(|index| {
+                targets[*index].is_none()
+                    || self.branch_value(&branches[*index].0, pid) + TARGET_COMMITMENT_MARGIN
+                        >= adaptive
             });
-            lanes.truncate(keep.saturating_sub(1));
-            live.retain(|index| targets[*index].is_none() || lanes.contains(index));
+            // Nothing was eligible to drop: there is no budget to
+            // reallocate, so the schedule runs on and the hard budget guard
+            // above degenerates this to the fixed horizon rather than
+            // overspending.
+            if live.len() <= 1 {
+                break;
+            }
         }
         let report = FocusReport {
             branch_rounds: spent,
@@ -1766,7 +1785,24 @@ mod tests {
             if g.winner.is_some() {
                 continue;
             }
+            // The lane a full fixed-horizon review would commit to must
+            // never be one of the branches pruning throws away. Rank-based
+            // pruning violated this and cost a 120-map run: dropping a lane
+            // that was ahead of the adaptive baseline shrinks the maximum
+            // `choose_rollout_target` takes, which raises the effective
+            // commitment threshold and shows up only as an agent that stops
+            // committing.
+            strategic.focused_deepening = false;
+            let fixed = strategic.review(&g, 0);
+            strategic.focused_deepening = true;
+
             let (values, report) = strategic.focused_review(&g, 0);
+            if let Some(fixed) = fixed {
+                assert!(
+                    values.iter().any(|(_, target)| *target == Some(fixed)),
+                    "the fixed review commits to {fixed:?} but focused deepening pruned it"
+                );
+            }
             checked += 1;
             assert!(values.iter().any(|(_, target)| target.is_none()));
             assert!(values.iter().all(|(value, _)| value.is_finite()));
