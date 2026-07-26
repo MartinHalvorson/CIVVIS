@@ -7,8 +7,8 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashSet, VecDeque};
 
 use crate::rng::Rng;
 use crate::rules::{
-    AgendaSpec, BuildingSpec, DifficultySpec, DisasterSpec, FutureTreeLayout, PillageReward, Rules,
-    SpeedSpec, Yields, ERA_NAMES,
+    AgendaSpec, BuildingSpec, DifficultySpec, DisasterSpec, FutureTreeLayout, Rules, SpeedSpec,
+    Yields, ERA_NAMES,
 };
 use crate::specmap::SpecMap;
 
@@ -35683,36 +35683,28 @@ impl Game {
             && self.pillageable_at(pid, pos)
     }
 
-    fn scaled_pillage_amount(&self, pid: usize, reward: &PillageReward) -> f64 {
-        if reward.yield_type == "heal" {
-            return reward.amount;
+    fn scaled_pillage_amount(&self, pid: usize, yield_type: &str, base: f64) -> f64 {
+        if yield_type == "heal" {
+            return base;
         }
-        self.game_speed.scale(reward.amount)
+        self.game_speed.scale(base)
             * (self.world_era as f64 + 1.0)
             * (1.0 + self.policy_effect(pid, "pillage_yield_pct") / 100.0)
     }
 
-    fn grant_pillage_yield(&mut self, pid: usize, uid: u32, reward: &PillageReward) {
-        let amount = self.scaled_pillage_amount(pid, reward);
-        match reward.yield_type.as_str() {
+    fn grant_pillage_yield(&mut self, pid: usize, uid: u32, yield_type: &str, base: f64) {
+        let amount = self.scaled_pillage_amount(pid, yield_type, base);
+        match yield_type {
             "" | "none" => {}
             "heal" => {
                 if let Some(unit) = self.units.get_mut(&uid) {
                     unit.hp = (unit.hp + amount.round() as i32).min(100);
                 }
             }
-            "science" => {
-                self.players[pid].research_overflow += amount;
-            }
-            "faith" => {
-                self.players[pid].faith += amount;
-            }
-            "culture" => {
-                self.players[pid].civic_overflow += amount;
-            }
-            "gold" => {
-                self.players[pid].gold += amount;
-            }
+            "science" => self.players[pid].research_overflow += amount,
+            "faith" => self.players[pid].faith += amount,
+            "culture" => self.players[pid].civic_overflow += amount,
+            "gold" => self.players[pid].gold += amount,
             unknown => panic!("unknown pillage yield {unknown:?}"),
         }
     }
@@ -35725,20 +35717,26 @@ impl Game {
         improvement: bool,
         coastal: bool,
     ) {
-        let (reward, bonuses) = if improvement {
+        let (yield_type, base, bonuses) = if improvement {
             let spec = &self.rules.improvements[source];
-            (spec.pillage.clone(), spec.bonus_pillage.clone())
+            (
+                spec.plunder_type.clone().unwrap_or_default(),
+                spec.plunder_amount,
+                spec.bonus_pillage.clone(),
+            )
         } else {
             let family = self.district_family(source);
+            let spec = &self.rules.districts[family];
             (
-                self.rules.districts[family].pillage.clone(),
+                spec.plunder_type.clone().unwrap_or_default(),
+                spec.plunder_amount,
                 BTreeMap::new(),
             )
         };
-        self.grant_pillage_yield(pid, uid, &reward);
+        self.grant_pillage_yield(pid, uid, &yield_type, base);
         for (ability, bonus) in bonuses {
             if self.has_ability(pid, &ability) {
-                self.grant_pillage_yield(pid, uid, &bonus);
+                self.grant_pillage_yield(pid, uid, &bonus.yield_type, bonus.amount);
             }
         }
 
@@ -35754,14 +35752,7 @@ impl Game {
             .map(|city| self.city_building_effect(city, chapel_effect))
             .sum::<f64>();
         if chapel_faith > 0.0 {
-            self.grant_pillage_yield(
-                pid,
-                uid,
-                &PillageReward {
-                    yield_type: "faith".to_string(),
-                    amount: chapel_faith,
-                },
-            );
+            self.grant_pillage_yield(pid, uid, "faith", chapel_faith);
         }
 
         // Loot is a flat Standard-speed +50 Gold from every coastal raid; it
@@ -47110,6 +47101,7 @@ mod visibility_tests {
 #[cfg(test)]
 mod combat_scenarios {
     use super::*;
+    use crate::rules::PillageReward;
 
     fn controlled_game(seed: u64) -> (Game, Pos, Vec<Pos>) {
         let mut g = Game::new_full(2, 20, 14, seed, 40, 0, false);
@@ -47538,9 +47530,9 @@ mod combat_scenarios {
             ("kurgan", "faith", 25.0),
         ];
         for (improvement, yield_type, amount) in improvements {
-            let reward = &game.rules.improvements[improvement].pillage;
-            assert_eq!(reward.yield_type, yield_type, "{improvement}");
-            assert_eq!(reward.amount, amount, "{improvement}");
+            let spec = &game.rules.improvements[improvement];
+            assert_eq!(spec.plunder_type.as_deref(), Some(yield_type), "{improvement}");
+            assert_eq!(spec.plunder_amount, amount, "{improvement}");
         }
         for improvement in [
             "great_wall",
@@ -47557,7 +47549,8 @@ mod combat_scenarios {
         for improvement in ["fort", "airstrip", "missile_silo"] {
             let spec = &game.rules.improvements[improvement];
             assert!(spec.unit_pillageable, "{improvement}");
-            assert_eq!(spec.pillage, PillageReward::default(), "{improvement}");
+            assert_eq!(spec.plunder_type, None, "{improvement}");
+            assert_eq!(spec.plunder_amount, 0.0, "{improvement}");
         }
         assert_eq!(
             game.rules.improvements["mine"].bonus_pillage["knarr"],
@@ -47597,9 +47590,9 @@ mod combat_scenarios {
             ("preserve", "gold", 50.0),
         ];
         for (district, yield_type, amount) in districts {
-            let reward = &game.rules.districts[district].pillage;
-            assert_eq!(reward.yield_type, yield_type, "{district}");
-            assert_eq!(reward.amount, amount, "{district}");
+            let spec = &game.rules.districts[district];
+            assert_eq!(spec.plunder_type.as_deref(), Some(yield_type), "{district}");
+            assert_eq!(spec.plunder_amount, amount, "{district}");
         }
     }
 
@@ -47640,13 +47633,7 @@ mod combat_scenarios {
         game.world_era = 2;
         game.game_speed = GameSpeed::Online;
         assert_eq!(
-            game.scaled_pillage_amount(
-                0,
-                &PillageReward {
-                    yield_type: "gold".to_string(),
-                    amount: 50.0,
-                },
-            ),
+            game.scaled_pillage_amount(0, "gold", 50.0),
             112.5
         );
         game.game_speed = GameSpeed::Standard;
@@ -50693,6 +50680,88 @@ mod combat_scenarios {
         assert!(builders
             .iter()
             .any(|builder| builder.charges > g.rules.units["builder"].charges));
+    }
+
+    #[test]
+    fn pillaging_pays_the_yield_and_amount_its_row_ships() {
+        // Districts.PlunderType/PlunderAmount and the same pair on
+        // Improvements. Gold and heal pay 50, Science, Culture and Faith 25 --
+        // and the type is per entry, not per family guess. A hand-written
+        // match had 24 of the 48 wrong.
+        let rules = crate::rules::Rules::embedded();
+        for (district, kind, amount) in [
+            ("campus", "science", 25.0),
+            ("holy_site", "faith", 25.0),
+            ("theater_square", "culture", 25.0),
+            ("commercial_hub", "gold", 50.0),
+            ("harbor", "gold", 50.0),
+            // The three CIVVIS used to get wrong.
+            ("industrial_zone", "science", 25.0),
+            ("aerodrome", "gold", 50.0),
+            ("entertainment_complex", "heal", 50.0),
+            ("diplomatic_quarter", "culture", 25.0),
+            ("spaceport", "science", 25.0),
+        ] {
+            let spec = &rules.districts[district];
+            assert_eq!(spec.plunder_type.as_deref(), Some(kind), "{district}");
+            assert_eq!(spec.plunder_amount, amount, "{district}");
+        }
+        for (improvement, kind, amount) in [
+            ("farm", "heal", 50.0),
+            ("mine", "gold", 50.0),
+            ("quarry", "faith", 25.0),
+            ("camp", "faith", 25.0),
+            ("pasture", "faith", 25.0),
+            ("plantation", "faith", 25.0),
+        ] {
+            let spec = &rules.improvements[improvement];
+            assert_eq!(spec.plunder_type.as_deref(), Some(kind), "{improvement}");
+            assert_eq!(spec.plunder_amount, amount, "{improvement}");
+        }
+
+        // A unique district plunders as the district it replaces.
+        assert_eq!(
+            rules.districts["hansa"].plunder_type.as_deref().or(Some("science")),
+            Some("science")
+        );
+    }
+
+    #[test]
+    fn every_religious_unit_carries_its_shipped_strength_and_eviction() {
+        // Units.ReligiousStrength and Units.ReligionEvictPercent, which the
+        // fidelity ratchet did not reach until now. The Inquisitor's 75 is the
+        // interesting one: CIVVIS spends it through Remove Heresy rather than
+        // Spread, so it shows up as rival pressure retained at a quarter.
+        let rules = crate::rules::Rules::embedded();
+        for (unit, strength) in [
+            ("apostle", 110.0),
+            ("missionary", 100.0),
+            ("guru", 90.0),
+            ("inquisitor", 75.0),
+        ] {
+            assert_eq!(rules.units[unit].religious_strength, strength, "{unit}");
+        }
+
+        // RELIGION_SPREAD_STRENGTH_MULTIPLIER is 200: a unit spreads at twice
+        // its Religious Strength, and the Inquisitor does not spread at all.
+        assert_eq!(rules.units["apostle"].religious_spread, 220.0);
+        assert_eq!(rules.units["missionary"].religious_spread, 200.0);
+        assert_eq!(rules.units["inquisitor"].religious_spread, 0.0);
+
+        // ReligionEvictPercent 75 for the Inquisitor, through Remove Heresy.
+        let (mut g, city_pos, ring) = controlled_game(319);
+        let cid = g.found_city_for(0, city_pos, None);
+        g.cities
+            .get_mut(&cid)
+            .unwrap()
+            .pressure
+            .insert("Rival".to_string(), 400.0);
+        let inquisitor = g.spawn_unit("inquisitor", 0, city_pos);
+        g.units.get_mut(&inquisitor).unwrap().religion = Some("Ours".to_string());
+        g.players[0].religion = Some("Ours".to_string());
+        g.do_remove_heresy(0, inquisitor).unwrap();
+        assert_eq!(g.cities[&cid].pressure["Rival"], 100.0, "75% removed");
+        let _ = ring;
     }
 
     #[test]

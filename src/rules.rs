@@ -157,8 +157,8 @@ pub struct HarvestSpec {
     pub tech: Option<String>,
 }
 
-/// The base Standard-speed spoils from pillaging one improvement or one
-/// district layer. Non-healing rewards scale with game speed and world era.
+/// Additional Standard-speed spoils from a pillage modifier. Non-healing
+/// rewards scale with game speed and world era.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PillageReward {
@@ -171,6 +171,12 @@ pub struct PillageReward {
 pub struct ImprovementSpec {
     #[serde(default)]
     pub tech: Option<String>,
+    /// `PlunderType` and `PlunderAmount`: which yield pillaging this pays and
+    /// how much. Gold and heal pay 50, Science, Culture and Faith pay 25.
+    #[serde(default)]
+    pub plunder_type: Option<String>,
+    #[serde(default)]
+    pub plunder_amount: f64,
     #[serde(default)]
     pub civic: Option<String>,
     #[serde(default)]
@@ -211,8 +217,6 @@ pub struct ImprovementSpec {
     /// be damaged by disasters but cannot be pillaged by units.
     #[serde(default = "default_true")]
     pub unit_pillageable: bool,
-    #[serde(default)]
-    pub pillage: PillageReward,
     /// Ability-keyed extra spoils, currently Harald's improvement bonuses.
     #[serde(default)]
     pub bonus_pillage: BTreeMap<String, PillageReward>,
@@ -350,6 +354,12 @@ impl UnitSpec {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct DistrictSpec {
     pub cost: f64,
+    /// `PlunderType` and `PlunderAmount`: which yield pillaging this pays and
+    /// how much. Gold and heal pay 50, Science, Culture and Faith pay 25.
+    #[serde(default)]
+    pub plunder_type: Option<String>,
+    #[serde(default)]
+    pub plunder_amount: f64,
     #[serde(default)]
     pub maintenance: f64,
     #[serde(default)]
@@ -408,8 +418,6 @@ pub struct DistrictSpec {
     pub appeal: f64,
     #[serde(default)]
     pub loyalty: f64,
-    #[serde(default)]
-    pub pillage: PillageReward,
     #[serde(default)]
     pub effects: BTreeMap<String, f64>,
 }

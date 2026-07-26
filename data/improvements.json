@@ -1,5 +1,7 @@
 {
  "farm": {
+  "plunder_type": "heal",
+  "plunder_amount": 50,
   "yields": {
    "food": 1
   },
@@ -20,10 +22,11 @@
    "grassland_floodplains",
    "plains_floodplains",
    "volcanic_soil"
-  ],
-  "pillage": {"yield": "heal", "amount": 50}
+  ]
  },
  "fishery": {
+  "plunder_type": "heal",
+  "plunder_amount": 50,
   "yields": {
    "food": 1
   },
@@ -37,10 +40,11 @@
    "liang_production": 1
   },
   "housing": 0.5,
-  "tech": "sailing",
-  "pillage": {"yield": "heal", "amount": 50}
+  "tech": "sailing"
  },
  "city_park": {
+  "plunder_type": "heal",
+  "plunder_amount": 50,
   "yields": {
    "culture": 1
   },
@@ -56,10 +60,12 @@
    "plains",
    "snow",
    "tundra"
-  ],
-  "pillage": {"yield": "heal", "amount": 50}
+  ]
  },
  "mine": {
+  "plunder_type": "gold",
+  "plunder_amount": 50,
+  "bonus_pillage": {"knarr": {"yield": "science", "amount": 15}},
   "tech": "mining",
   "yields": {
    "production": 1
@@ -91,11 +97,12 @@
   ],
   "effects": {
    "adjacent_appeal": -1
-  },
-  "pillage": {"yield": "gold", "amount": 50},
-  "bonus_pillage": {"knarr": {"yield": "science", "amount": 15}}
+  }
  },
  "quarry": {
+  "plunder_type": "faith",
+  "plunder_amount": 25,
+  "bonus_pillage": {"knarr": {"yield": "culture", "amount": 15}},
   "tech": "mining",
   "yields": {
    "production": 1
@@ -108,11 +115,12 @@
   "resource_only": true,
   "effects": {
    "adjacent_appeal": -1
-  },
-  "pillage": {"yield": "faith", "amount": 25},
-  "bonus_pillage": {"knarr": {"yield": "culture", "amount": 15}}
+  }
  },
  "pasture": {
+  "plunder_type": "faith",
+  "plunder_amount": 25,
+  "bonus_pillage": {"knarr": {"yield": "culture", "amount": 15}},
   "tech": "animal_husbandry",
   "yields": {
    "production": 1
@@ -123,11 +131,12 @@
    "horses",
    "sheep"
   ],
-  "resource_only": true,
-  "pillage": {"yield": "faith", "amount": 25},
-  "bonus_pillage": {"knarr": {"yield": "culture", "amount": 15}}
+  "resource_only": true
  },
  "plantation": {
+  "plunder_type": "faith",
+  "plunder_amount": 25,
+  "bonus_pillage": {"knarr": {"yield": "culture", "amount": 15}},
   "tech": "irrigation",
   "yields": {
    "gold": 2
@@ -149,11 +158,12 @@
    "tobacco",
    "wine"
   ],
-  "resource_only": true,
-  "pillage": {"yield": "faith", "amount": 25},
-  "bonus_pillage": {"knarr": {"yield": "culture", "amount": 15}}
+  "resource_only": true
  },
  "camp": {
+  "plunder_type": "faith",
+  "plunder_amount": 25,
+  "bonus_pillage": {"knarr": {"yield": "culture", "amount": 15}},
   "tech": "animal_husbandry",
   "yields": {
    "gold": 2
@@ -166,11 +176,11 @@
    "ivory",
    "truffles"
   ],
-  "resource_only": true,
-  "pillage": {"yield": "faith", "amount": 25},
-  "bonus_pillage": {"knarr": {"yield": "culture", "amount": 15}}
+  "resource_only": true
  },
  "fishing_boats": {
+  "plunder_type": "heal",
+  "plunder_amount": 50,
   "tech": "sailing",
   "yields": {
    "food": 1
@@ -185,10 +195,11 @@
    "whales"
   ],
   "resource_only": true,
-  "water": true,
-  "pillage": {"yield": "heal", "amount": 50}
+  "water": true
  },
  "lumber_mill": {
+  "plunder_type": "gold",
+  "plunder_amount": 50,
   "tech": "construction",
   "yields": {
    "production": 2
@@ -198,10 +209,11 @@
   ],
   "feature_after_civic": {
    "jungle": "mercantilism"
-  },
-  "pillage": {"yield": "gold", "amount": 50}
+  }
  },
  "oil_well": {
+  "plunder_type": "gold",
+  "plunder_amount": 50,
   "tech": "refining",
   "yields": {
    "production": 2
@@ -219,10 +231,11 @@
   ],
   "effects": {
    "adjacent_appeal": -1
-  },
-  "pillage": {"yield": "gold", "amount": 50}
+  }
  },
  "offshore_oil_rig": {
+  "plunder_type": "gold",
+  "plunder_amount": 50,
   "tech": "plastics",
   "yields": {
    "production": 2
@@ -238,10 +251,11 @@
   ],
   "effects": {
    "adjacent_appeal": -1
-  },
-  "pillage": {"yield": "gold", "amount": 50}
+  }
  },
  "wind_farm": {
+  "plunder_type": "gold",
+  "plunder_amount": 50,
   "tech": "composites",
   "yields": {
    "gold": 2,
@@ -257,10 +271,11 @@
    "plains",
    "snow",
    "tundra"
-  ],
-  "pillage": {"yield": "gold", "amount": 50}
+  ]
  },
  "geothermal_plant": {
+  "plunder_type": "gold",
+  "plunder_amount": 50,
   "tech": "synthetic_materials",
   "yields": {
    "production": 2,
@@ -271,10 +286,11 @@
   ],
   "effects": {
    "power": 4
-  },
-  "pillage": {"yield": "gold", "amount": 50}
+  }
  },
  "solar_farm": {
+  "plunder_type": "gold",
+  "plunder_amount": 50,
   "tech": "satellites",
   "yields": {
    "production": 1,
@@ -289,10 +305,11 @@
    "grassland",
    "plains",
    "tundra"
-  ],
-  "pillage": {"yield": "gold", "amount": 50}
+  ]
  },
  "offshore_wind_farm": {
+  "plunder_type": "gold",
+  "plunder_amount": 50,
   "tech": "predictive_systems",
   "yields": {
    "production": 2
@@ -304,10 +321,11 @@
   "water": true,
   "effects": {
    "power": 2
-  },
-  "pillage": {"yield": "gold", "amount": 50}
+  }
  },
  "seaside_resort": {
+  "plunder_type": "gold",
+  "plunder_amount": 50,
   "tech": "radio",
   "yields": {},
   "terrain": [
@@ -322,8 +340,7 @@
   "effects": {
    "appeal_gold": 1,
    "appeal_tourism": 1
-  },
-  "pillage": {"yield": "gold", "amount": 50}
+  }
  },
  "ski_resort": {
   "civic": "professional_sports",
@@ -339,6 +356,8 @@
   "unit_pillageable": false
  },
  "seastead": {
+  "plunder_type": "heal",
+  "plunder_amount": 50,
   "tech": "seasteads",
   "yields": {
    "food": 2
@@ -354,8 +373,7 @@
    "adjacent_reef_culture": 1,
    "adjacent_reef_tourism": 1
   },
-  "housing": 2,
-  "pillage": {"yield": "heal", "amount": 50}
+  "housing": 2
  },
  "fort": {
   "tech": "siege_tactics",
@@ -420,6 +438,8 @@
   "unit_pillageable": false
  },
  "industry": {
+  "plunder_type": "gold",
+  "plunder_amount": 50,
   "tech": "currency",
   "yields": {
    "food": 2,
@@ -434,10 +454,11 @@
   "resource_only": true,
   "effects": {
    "great_merchant_points": 1
-  },
-  "pillage": {"yield": "gold", "amount": 50}
+  }
  },
  "corporation": {
+  "plunder_type": "gold",
+  "plunder_amount": 50,
   "tech": "economics",
   "yields": {
    "food": 4,
@@ -451,10 +472,11 @@
   ],
   "resource_only": true,
   "unbuildable": true,
-  "unit_pillageable": false,
-  "pillage": {"yield": "gold", "amount": 50}
+  "unit_pillageable": false
  },
  "sphinx": {
+  "plunder_type": "faith",
+  "plunder_amount": 25,
   "civic": "craftsmanship",
   "unique_to": "Egypt",
   "yields": {
@@ -476,10 +498,11 @@
    "floodplains_culture": 1,
    "adjacent_wonder_faith": 2,
    "adjacent_appeal": 1
-  },
-  "pillage": {"yield": "faith", "amount": 25}
+  }
  },
  "great_wall": {
+  "plunder_type": "gold",
+  "plunder_amount": 50,
   "tech": "masonry",
   "unique_to": "China",
   "yields": {
@@ -499,10 +522,11 @@
   "feature": [
    "volcanic_soil"
   ],
-  "unit_pillageable": false,
-  "pillage": {"yield": "gold", "amount": 50}
+  "unit_pillageable": false
  },
  "nubian_pyramid": {
+  "plunder_type": "faith",
+  "plunder_amount": 25,
   "tech": "masonry",
   "unique_to": "Nubia",
   "yields": {
@@ -515,10 +539,11 @@
   "feature": [
    "floodplains"
   ],
-  "requires_flat": false,
-  "pillage": {"yield": "faith", "amount": 25}
+  "requires_flat": false
  },
  "kurgan": {
+  "plunder_type": "faith",
+  "plunder_amount": 25,
   "tech": "animal_husbandry",
   "unique_to": "Scythia",
   "yields": {
@@ -536,8 +561,7 @@
   "effects": {
    "adjacent_pasture_faith": 1,
    "adjacent_pasture_faith_after_stirrups": 2
-  },
-  "pillage": {"yield": "faith", "amount": 25}
+  }
  },
  "national_park": {
   "civic": "conservation",

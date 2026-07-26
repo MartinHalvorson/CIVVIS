@@ -53,16 +53,13 @@ fn main() {
     let script = MapScript::from_id(&requested).unwrap_or(MapScript::Pangaea);
     // `--script planet` named a world type before the globe became a shape of
     // its own, and still asks for both halves of what it used to mean.
-    let default_shape = if requested == "planet" || script.is_fixed_geography() {
+    let default_shape = if requested == "planet" {
         MapTopology::Planet
     } else {
         MapTopology::Flat
     };
-    let topology = if script.is_fixed_geography() {
-        MapTopology::Planet
-    } else {
-        MapTopology::from_id(&text("--shape", default_shape.id())).unwrap_or(default_shape)
-    };
+    let topology =
+        MapTopology::from_id(&text("--shape", default_shape.id())).unwrap_or(default_shape);
     let poles = MapPoles::from_id(&text("--poles", "poles")).unwrap_or_default();
     let rules = Rules::embedded();
 

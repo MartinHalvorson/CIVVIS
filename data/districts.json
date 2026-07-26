@@ -7,6 +7,8 @@
     "effects": {"zone_of_control": 1}
   },
   "campus": {
+    "plunder_type": "science",
+    "plunder_amount": 25,
     "cost": 54,
     "maintenance": 1,
     "tech": "writing",
@@ -21,10 +23,11 @@
       "pamukkale": {"science": 2},
       "government_plaza": {"science": 1}
     },
-    "great_person_points": {"scientist": 1},
-    "pillage": {"yield": "science", "amount": 25}
+    "great_person_points": {"scientist": 1}
   },
   "holy_site": {
+    "plunder_type": "faith",
+    "plunder_amount": 25,
     "cost": 54,
     "maintenance": 1,
     "tech": "astrology",
@@ -39,8 +42,7 @@
       "government_plaza": {"faith": 1}
     },
     "great_person_points": {"prophet": 1},
-    "appeal": 1,
-    "pillage": {"yield": "faith", "amount": 25}
+    "appeal": 1
   },
   "encampment": {
     "cost": 54,
@@ -55,6 +57,8 @@
     "effects": {"zone_of_control": 1}
   },
   "commercial_hub": {
+    "plunder_type": "gold",
+    "plunder_amount": 50,
     "cost": 54,
     "tech": "currency",
     "yields": {},
@@ -66,10 +70,11 @@
       "pamukkale": {"gold": 2},
       "government_plaza": {"gold": 1}
     },
-    "great_person_points": {"merchant": 1},
-    "pillage": {"yield": "gold", "amount": 50}
+    "great_person_points": {"merchant": 1}
   },
   "harbor": {
+    "plunder_type": "gold",
+    "plunder_amount": 50,
     "cost": 54,
     "tech": "celestial_navigation",
     "water": true,
@@ -82,10 +87,11 @@
       "city_center": {"gold": 2},
       "government_plaza": {"gold": 1}
     },
-    "great_person_points": {"admiral": 1},
-    "pillage": {"yield": "gold", "amount": 50}
+    "great_person_points": {"admiral": 1}
   },
   "theater_square": {
+    "plunder_type": "culture",
+    "plunder_amount": 25,
     "cost": 54,
     "maintenance": 1,
     "civic": "drama_poetry",
@@ -100,10 +106,11 @@
       "government_plaza": {"culture": 1}
     },
     "great_person_points": {"writer": 1, "artist": 1, "musician": 1},
-    "appeal": 1,
-    "pillage": {"yield": "culture", "amount": 25}
+    "appeal": 1
   },
   "industrial_zone": {
+    "plunder_type": "science",
+    "plunder_amount": 25,
     "cost": 54,
     "maintenance": 1,
     "tech": "apprenticeship",
@@ -121,20 +128,22 @@
       "government_plaza": {"production": 1}
     },
     "great_person_points": {"engineer": 1},
-    "appeal": -1,
-    "pillage": {"yield": "science", "amount": 25}
+    "appeal": -1
   },
   "entertainment_complex": {
+    "plunder_type": "heal",
+    "plunder_amount": 50,
     "cost": 54,
     "maintenance": 1,
     "civic": "games_recreation",
     "yields": {},
     "amenity": 1,
     "appeal": 1,
-    "excludes": ["water_park"],
-    "pillage": {"yield": "heal", "amount": 50}
+    "excludes": ["water_park"]
   },
   "water_park": {
+    "plunder_type": "heal",
+    "plunder_amount": 50,
     "cost": 54,
     "maintenance": 1,
     "civic": "natural_history",
@@ -143,10 +152,11 @@
     "yields": {},
     "amenity": 1,
     "appeal": 1,
-    "excludes": ["entertainment_complex"],
-    "pillage": {"yield": "heal", "amount": 50}
+    "excludes": ["entertainment_complex"]
   },
   "aqueduct": {
+    "plunder_type": "gold",
+    "plunder_amount": 50,
     "cost": 36,
     "tech": "engineering",
     "specialty": false,
@@ -155,20 +165,22 @@
     "effects": {
       "geothermal_amenity": 1,
       "drought_protection": 1
-    },
-    "pillage": {"yield": "gold", "amount": 50}
+    }
   },
   "neighborhood": {
+    "plunder_type": "gold",
+    "plunder_amount": 50,
     "cost": 54,
     "civic": "urbanization",
     "specialty": false,
     "max_per_city": null,
     "placement": "land",
     "yields": {},
-    "effects": {"appeal_housing_max": 6},
-    "pillage": {"yield": "gold", "amount": 50}
+    "effects": {"appeal_housing_max": 6}
   },
   "canal": {
+    "plunder_type": "gold",
+    "plunder_amount": 50,
     "cost": 81,
     "tech": "steam_power",
     "specialty": false,
@@ -176,10 +188,11 @@
     "placement": "canal",
     "yields": {},
     "appeal": 1,
-    "effects": {"naval_passage": 1},
-    "pillage": {"yield": "gold", "amount": 50}
+    "effects": {"naval_passage": 1}
   },
   "dam": {
+    "plunder_type": "heal",
+    "plunder_amount": 50,
     "cost": 81,
     "tech": "buttress",
     "specialty": false,
@@ -189,59 +202,65 @@
     "housing": 3,
     "amenity": 1,
     "appeal": 1,
-    "effects": {"flood_protection": 1, "drought_protection": 1},
-    "pillage": {"yield": "heal", "amount": 50}
+    "effects": {"flood_protection": 1, "drought_protection": 1}
   },
   "aerodrome": {
+    "plunder_type": "gold",
+    "plunder_amount": 50,
     "cost": 54,
     "maintenance": 1,
     "tech": "flight",
     "placement": "flat_land",
     "yields": {},
     "air_slots": 2,
-    "appeal": -1,
-    "pillage": {"yield": "gold", "amount": 50}
+    "appeal": -1
   },
   "spaceport": {
+    "plunder_type": "science",
+    "plunder_amount": 25,
     "cost": 1800,
     "tech": "rocketry",
     "specialty": false,
     "max_per_city": null,
     "placement": "flat_land",
     "yields": {},
-    "appeal": -1,
-    "pillage": {"yield": "science", "amount": 25}
+    "appeal": -1
   },
   "government_plaza": {
+    "plunder_type": "culture",
+    "plunder_amount": 25,
     "cost": 30,
     "maintenance": 1,
     "civic": "state_workforce",
     "max_per_empire": 1,
     "yields": {},
     "loyalty": 8,
-    "effects": {"governor_titles": 1},
-    "pillage": {"yield": "culture", "amount": 25}
+    "effects": {"governor_titles": 1}
   },
   "diplomatic_quarter": {
+    "plunder_type": "culture",
+    "plunder_amount": 25,
     "cost": 30,
     "maintenance": 1,
     "tech": "mathematics",
     "max_per_empire": 1,
     "yields": {},
-    "effects": {"envoy_if_adjacent_city_center": 1, "spy_defense_levels": 2},
-    "pillage": {"yield": "culture", "amount": 25}
+    "effects": {"envoy_if_adjacent_city_center": 1, "spy_defense_levels": 2}
   },
   "preserve": {
+    "plunder_type": "gold",
+    "plunder_amount": 50,
     "cost": 54,
     "civic": "mysticism",
     "placement": "not_adjacent_city",
     "yields": {},
     "appeal": 1,
-    "effects": {"appeal_housing_max": 3, "culture_bomb": 1},
-    "pillage": {"yield": "gold", "amount": 50}
+    "effects": {"appeal_housing_max": 3, "culture_bomb": 1}
   },
 
   "acropolis": {
+    "plunder_type": "culture",
+    "plunder_amount": 25,
     "cost": 27,
     "maintenance": 1,
     "civic": "drama_poetry",
@@ -263,6 +282,8 @@
     "effects": {"envoys": 1}
   },
   "bath": {
+    "plunder_type": "gold",
+    "plunder_amount": 50,
     "cost": 18,
     "tech": "engineering",
     "specialty": false,
@@ -278,6 +299,8 @@
     }
   },
   "observatory": {
+    "plunder_type": "science",
+    "plunder_amount": 25,
     "cost": 27,
     "maintenance": 1,
     "tech": "writing",
@@ -295,6 +318,8 @@
     "great_person_points": {"scientist": 1}
   },
   "seowon": {
+    "plunder_type": "science",
+    "plunder_amount": 25,
     "cost": 27,
     "maintenance": 1,
     "tech": "writing",
@@ -310,6 +335,8 @@
     "great_person_points": {"scientist": 1}
   },
   "lavra": {
+    "plunder_type": "faith",
+    "plunder_amount": 25,
     "cost": 27,
     "maintenance": 1,
     "tech": "astrology",
@@ -362,6 +389,8 @@
     "effects": {"zone_of_control": 1, "tourism_after_flight": 1}
   },
   "suguba": {
+    "plunder_type": "gold",
+    "plunder_amount": 50,
     "cost": 27,
     "tech": "currency",
     "unique_to": "Mali",
@@ -378,6 +407,8 @@
     "effects": {"gold_faith_purchase_discount_pct": 20}
   },
   "cothon": {
+    "plunder_type": "gold",
+    "plunder_amount": 50,
     "cost": 27,
     "tech": "celestial_navigation",
     "unique_to": "Phoenicia",
@@ -395,6 +426,8 @@
     "effects": {"naval_settler_production_pct": 50, "naval_heal_full": 1}
   },
   "royal_navy_dockyard": {
+    "plunder_type": "gold",
+    "plunder_amount": 50,
     "cost": 27,
     "tech": "celestial_navigation",
     "unique_to": "England",
@@ -416,6 +449,8 @@
     }
   },
   "hansa": {
+    "plunder_type": "science",
+    "plunder_amount": 25,
     "cost": 27,
     "maintenance": 1,
     "tech": "apprenticeship",
@@ -452,6 +487,8 @@
     "effects": {"unlock_apprenticeship": 1, "zone_of_control": 1}
   },
   "street_carnival": {
+    "plunder_type": "heal",
+    "plunder_amount": 50,
     "cost": 27,
     "maintenance": 1,
     "civic": "games_recreation",
@@ -463,6 +500,8 @@
     "excludes": ["water_park"]
   },
   "hippodrome": {
+    "plunder_type": "heal",
+    "plunder_amount": 50,
     "cost": 27,
     "maintenance": 1,
     "civic": "games_recreation",
@@ -475,6 +514,8 @@
     "effects": {"free_heavy_cavalry": 1}
   },
   "copacabana": {
+    "plunder_type": "heal",
+    "plunder_amount": 50,
     "cost": 27,
     "maintenance": 1,
     "civic": "natural_history",
@@ -488,6 +529,8 @@
     "excludes": ["entertainment_complex"]
   },
   "mbanza": {
+    "plunder_type": "gold",
+    "plunder_amount": 50,
     "cost": 27,
     "civic": "guilds",
     "specialty": false,
