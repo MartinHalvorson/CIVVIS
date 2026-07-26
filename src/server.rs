@@ -5074,7 +5074,7 @@ mod tests {
             "left panel should show game settings, display settings, and the two logs first"
         );
         assert!(EMBEDDED_INDEX.contains("<span>Display settings</span>"));
-        for overlay in ["players", "victory", "minimap", "controls"] {
+        for overlay in ["players", "victory", "minimap", "controls", "lenses"] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("data-overlay-close=\"{overlay}\"")),
                 "map overlay {overlay} should have a close control"
@@ -5113,6 +5113,23 @@ mod tests {
         );
         assert!(EMBEDDED_INDEX.contains("id=\"map-lens-exit\""));
         assert!(EMBEDDED_INDEX.contains("body.overlay-lenses-hidden #map-lenses"));
+        // The lenses scroll sideways inside the bar. Their dismiss control is a
+        // sibling of that scroller, not its last item, so it neither rides away
+        // with the buttons nor comes to rest on top of one.
+        let lens_bar = EMBEDDED_INDEX
+            .split_once("<div id=\"map-lenses\"")
+            .expect("map lens bar")
+            .1;
+        let strip = lens_bar.find("<div id=\"map-lens-strip\"").expect("lens scroller");
+        let strip_end = lens_bar.find("</div>").expect("end of lens scroller");
+        let close = lens_bar
+            .find("data-overlay-close=\"lenses\"")
+            .expect("lens dismiss control");
+        assert!(
+            strip < strip_end && strip_end < close,
+            "the lens bar's close control belongs outside the strip that scrolls"
+        );
+        assert!(EMBEDDED_INDEX.contains("#map-lens-strip::-webkit-scrollbar { display: none; }"));
         assert!(EMBEDDED_INDEX
             .contains("document.getElementById(\"map-lens-exit\").onclick = () => setMapLens(null);"));
         // One instrument, one name. The switch, the title bar it is dragged by
