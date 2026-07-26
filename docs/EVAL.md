@@ -1528,3 +1528,56 @@ not the binding constraint on strength. Both facts are now established, and
 this entry exists so the next attempt starts from the second one.
 
 `policy` and `policy_wide` both remain eval-only; no default changed.
+
+## 2026-07-26 — it maximises a symptom (correcting the previous mechanism)
+
+The previous entry explained `policy_wide`'s collapse as an
+off-distribution failure: a net trained on `advanced`-visited states,
+greedily maximised, walks somewhere its estimate is meaningless. That
+explanation is **wrong**, and testing it was much cheaper than the
+retraining loop it recommended.
+
+Two 8-game corpora on identical seeds, one walked by `advanced` and one by
+`policy_wide`, scored against the same net:
+
+| corpus | rows | BCE | Brier | ECE |
+|---|---|---|---|---|
+| expert-visited states | 320 | 0.3720 | 0.1146 | 0.1034 |
+| learner-visited states | 320 | 0.3898 | 0.1222 | **0.0643** |
+
+Both far beat the 0.5623 constant baseline, and the learner states are if
+anything *better* calibrated. The estimate is fine where the agent goes.
+
+The real mechanism is subtler and more general. The net is fit to outcomes,
+so it encodes **correlation**, and an argmax over sibling actions optimises
+whichever correlate is cheapest to move. Over 468 committed decisions:
+
+| per-decision delta | chosen action | average legal candidate |
+|---|---|---|
+| adjacent enemies | **+0.13675** | +0.00176 |
+| mean gap to nearest enemy | −0.00663 | +0.00123 |
+| own HP-weighted material | **−0.00054** | — |
+
+The agent drives units into contact at **seventy-eight times the rate of
+the average legal move**, closing distance where the field opens it, and
+loses material doing so. In games `advanced` wins, units stand in contact
+because a strong empire is pressing an attack: contact is a *symptom* of
+strength, not a cause of it. Maximising a symptom marches units into fights
+they lose.
+
+This is why accuracy was never going to help, and it explains the whole
+shape of the session in one line: **a state-value function tells you how
+good a position is, and says nothing about which action caused it.** The
+macro search wins games because a rollout is counterfactual — it plays the
+action out and observes the consequence. The one-ply value delta is
+correlational, and correlational action selection is not merely weak, it is
+actively harmful: `policy` at 45% was declining to act; `policy_wide` at
+14.2% is acting on it.
+
+Corrected recommendation, replacing the previous entry's. Iterated
+self-play does not address this, because the correlation survives
+retraining. What the learned route needs is **action-conditioned value** —
+Q or advantage, trained on returns for actions actually taken — not a
+state-value regression read greedily. The self-play loop is still required,
+but as the thing that generates action-conditioned returns rather than as a
+distribution fix.
