@@ -173,7 +173,8 @@
     },
     "GRANT_ABILITY": {
       "status": "partial",
-      "note": "Promotions and a fixed set of named unit abilities execute, but the general UnitAbilities system that most of these rows target does not exist. Most rows here are Great Person birth abilities."
+      "verified": true,
+      "note": "Verified row by row against the cache: 139 rows, the second-largest effect. Twenty owners are content CIVVIS models and every one of them checks out. Most were already confirmed through other drills - the Barracks, Stable, Armory, Military Academy, Lighthouse, Shipyard, Seaport, Hangar and Airport XP abilities under ADJUST_UNIT_EXPERIENCE_MODIFIER, and Oligarchy, Fascism, Theocracy, Digital Democracy, Finest Hour, Future counter-domination, Inquisition and Religious Orders under ADJUST_PLAYER_STRENGTH_MODIFIER. Ordu grants ABILITY_ORDU_INCREASED_MOVEMENT +1 and ORDU_TRAINED_XP 25, both carried as cavalry_movement and cavalry_siege_xp_pct. MILITARYORGANIZATION_GREATGENERAL_MOVEMENT is +2 Movement gated on UNIT_TYPE_MATCHES UNIT_GREAT_GENERAL, and CIVVIS has no such effect - but that is a MODELLING BOUNDARY, not a gap: there is no great_general unit in units.json at all, because Great Generals are an activation that promotes every eligible military unit a level rather than a unit that walks the map. Adding the movement would be a value no code path could read. Status stays partial for the unmodelled remainder - unique units, leaders and game-mode abilities - not for anything wrong in what is modelled."
     },
     "CITY_GRANT_RANDOM_RESOURCE_PRODUCT": {
       "status": "partial",
