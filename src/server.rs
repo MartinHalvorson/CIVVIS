@@ -5040,6 +5040,87 @@ mod tests {
         }
     }
 
+    /// A setting can be left unanswered. Every one of them offers `?????`, the
+    /// mark is rolled among that setting's own options at the moment a game
+    /// starts, and the start control says so before it is pressed — so nobody
+    /// finds out what they agreed to only once the world is on screen.
+    #[test]
+    fn every_game_setting_can_be_left_to_chance() {
+        for setting in [
+            "baseruleset",
+            "gamemode",
+            "starteon",
+            "startera",
+            "leaderpool",
+            "leader",
+            "difficulty",
+            "maptype",
+            "mapshape",
+            "mappoles",
+            "np",
+            "gamespeed",
+        ] {
+            let select = format!("id=\"{setting}\"");
+            let at = EMBEDDED_INDEX
+                .find(&select)
+                .unwrap_or_else(|| panic!("browser setup is missing the {setting} select"));
+            let tail = &EMBEDDED_INDEX[at..];
+            let end = tail.find("</select>").expect("unterminated select");
+            assert!(
+                tail[..end].contains("<option value=\"?????\""),
+                "the {setting} setting cannot be left at ????? "
+            );
+        }
+        // A victory condition has no option list to hold a third entry, so its
+        // third state is the checkbox's own indeterminate flag, said out loud
+        // in the label beside it.
+        for victory in ["science", "culture", "religious", "diplomatic", "domination", "score"] {
+            assert!(EMBEDDED_INDEX.contains(&format!(
+                "id=\"victory-{victory}\" checked><span>"
+            )));
+        }
+        assert_eq!(
+            EMBEDDED_INDEX
+                .matches("<span class=\"victory-random\" aria-hidden=\"true\">?????</span>")
+                .count(),
+            6
+        );
+        assert!(EMBEDDED_INDEX
+            .contains(".victory-option input:indeterminate ~ .victory-random { display: inline; }"));
+        assert!(EMBEDDED_INDEX.contains("const RANDOM_SETTING = \"?????\""));
+        // The mark never leaves the lobby: staging and starting both resolve.
+        assert!(EMBEDDED_INDEX.contains("const payload = selectedSimulationSettings(true)"));
+        assert!(EMBEDDED_INDEX.contains("return {...selectedSimulationSettings(true),"));
+        // ...and the key the restart control compares against does not, or a
+        // ????? would read as the same world it just replaced.
+        assert!(EMBEDDED_INDEX.contains("const rolling = pendingRandomSettings().length > 0;"));
+        assert!(EMBEDDED_INDEX.contains("const changed = human || rolling ||"));
+        // A roll answers among that setting's own offers, never with a blank
+        // or a disabled entry.
+        assert!(EMBEDDED_INDEX
+            .contains("!option.disabled && option.value && option.value !== RANDOM_SETTING"));
+        // The note lives with the start control, not buried in the settings.
+        assert!(EMBEDDED_INDEX.contains("id=\"randomnote\""));
+        assert!(EMBEDDED_INDEX.contains("chosen at random among its own"));
+        assert!(EMBEDDED_INDEX.contains("id=\"luckybtn\""));
+        assert!(EMBEDDED_INDEX.contains("I'm Feeling Lucky"));
+        assert!(EMBEDDED_INDEX.contains("document.getElementById(\"luckybtn\").onclick = feelingLucky;"));
+        // A world arriving from the supervisor writes its own settings over
+        // the whole panel, and so do staged settings and the mode adopting the
+        // game on screen. A standing ????? has to survive all three.
+        assert!(EMBEDDED_INDEX.contains("const RANDOM_SETTINGS_KEY = \"civvis-random-settings-v1\""));
+        for restored in [
+            "applyQueuedSimulationSettings(st.next_game_settings);\n    // The world on screen",
+            "victory-${track.id}`).checked = victories.has(track.id);\n  applyRandomMarks();",
+            "select.value = SPEC ? \"ai_sim\" : \"single\";\n  applyRandomMarks();",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(restored),
+                "a standing ????? is lost when the panel is rewritten: {restored}"
+            );
+        }
+    }
+
     /// Planet is drawn from geometry the client cannot derive, so the
     /// protocol has to carry it — but only when asked, because the ordinary
     /// observation is polled every turn and is already large.
@@ -5393,7 +5474,12 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("render(adoptTiles(first), true, true);"));
         assert!(EMBEDDED_INDEX.contains("st.seed !== state.seed"));
         assert!(!EMBEDDED_INDEX.contains("id=\"head-newgame\""));
-        assert!(EMBEDDED_INDEX.contains("spectate: gameMode === \"ai_sim\""));
+        // The mode still decides whether anyone is watching or playing — but it
+        // is one more setting that can be left at ?????, and the flag the
+        // server is handed is never the mark itself.
+        assert!(EMBEDDED_INDEX.contains(
+            "spectate: gameMode === RANDOM_SETTING ? RANDOM_SETTING : gameMode === \"ai_sim\""
+        ));
         assert!(!EMBEDDED_INDEX.contains("id=\"specchk\""));
         assert!(!EMBEDDED_INDEX.contains("RULES.map_sizes.filter"));
 
@@ -5593,13 +5679,74 @@ mod tests {
         // narrow masthead ellipsizes a name rather than running two figures
         // together. A percentage identity column with a 300px floor never
         // yielded, which left the ten values 27px each at 1600px.
-        assert!(EMBEDDED_INDEX.contains("--hud-identity-column: minmax(196px, 1fr);"));
+        //
+        // Every data column is now a share rather than a pixel count, and each
+        // of these two enclosing tracks is the exact *sum* of the columns
+        // inside it — 6 identity columns totalling 9.804 against 10 value
+        // columns of 1. That identity is not decoration: it is what lets the
+        // bar between the two blocks move width across itself, and it is the
+        // ratio origin/main rendered (1fr against 1.02fr) to the tenth of a
+        // pixel at 1280, 1600, 1920 and 2400. Changing one number here without
+        // the other silently re-weights the whole masthead.
+        assert!(EMBEDDED_INDEX.contains(
+            "--hud-identity-column: minmax(\n      \
+             calc(var(--hud-ident-min) * 4 + var(--hud-ident-num-min) * 2), 9.804fr);"
+        ));
         assert!(EMBEDDED_INDEX.contains(
             "--hud-stats-column: minmax(\n      \
-             calc(var(--hud-stat-min) * 10 + var(--hud-stat-gap) * 9), 1.02fr);"
+             calc(var(--hud-stat-min) * 10 + var(--hud-stat-gap) * 9), 10fr);"
         ));
+        // The floors stay in the stylesheet so the width breakpoints can lower
+        // them; the shares belong to the viewer. A breakpoint that rewrote a
+        // share would undo a dragged column on the next window resize, so no
+        // media rule may set either track list or either enclosing track.
+        assert!(EMBEDDED_INDEX.contains("--hud-ident-min: 30px; --hud-ident-num-min: 38px;"));
+        assert_eq!(EMBEDDED_INDEX.matches("--hud-ident-num-min:").count(), 1,
+            "the figure floor is declared once and holds at every width: four \
+             digits need the same room on a laptop as on a wall");
+        assert_eq!(EMBEDDED_INDEX.matches("--hud-identity-column:").count(), 1,
+            "the identity track is written once and then only from the column model");
+        assert_eq!(EMBEDDED_INDEX.matches("--hud-stats-column:").count(), 1,
+            "the value track is written once and then only from the column model");
         // A gutter between adjacent figures, and no per-value hairline.
         assert!(EMBEDDED_INDEX.contains("column-gap: var(--hud-stat-gap, 0px);"));
+        // Heading and rows read the same two track lists, which is the only
+        // reason a dragged column moves the figures under it as well as its
+        // own head.
+        assert_eq!(EMBEDDED_INDEX.matches("grid-template-columns: var(--hud-stat-tracks);").count(), 2,
+            "the value heads and the value cells are the same ten tracks");
+        assert_eq!(EMBEDDED_INDEX.matches("grid-template-columns: var(--hud-identity-tracks);").count(), 2,
+            "the identity heads and the identity cells are the same tracks");
+        // `clip`, not `ellipsis`: the fitter compares integral scrollWidth with
+        // integral clientWidth while the browser applies text-overflow on any
+        // sub-pixel overflow, so ellipsis spends a character on a head that
+        // renders whole. Measured at 1600px: WIN% in its 38px column.
+        assert!(EMBEDDED_INDEX.contains(
+            "border-left: 1px solid #ffffff10; text-overflow: clip; white-space: nowrap;"
+        ));
+
+        // One bar per seam between two adjacent data columns, dragged to move
+        // width from the column on its left into the column on its right.
+        assert!(EMBEDDED_INDEX.contains("const HUD_COLUMN_STORAGE_KEY = \"civvis-hud-columns-v1\";"));
+        assert!(EMBEDDED_INDEX.contains("const PLAYER_HUD_COLUMN_SEAMS = PLAYER_HUD_COLUMNS.slice(0, -1)"));
+        assert!(EMBEDDED_INDEX.contains("function aimPlayerHudSeam(seam, targetWidth)"));
+        assert!(EMBEDDED_INDEX.contains("class=\"hud-col-grip\" type=\"button\" data-hud-column-seam="));
+        assert!(EMBEDDED_INDEX.contains("role=\"separator\" aria-orientation=\"vertical\""));
+        // The bar takes the pointer; the layer over the heads does not, or the
+        // heads lose their tooltips and the All button loses its click.
+        assert!(EMBEDDED_INDEX.contains(
+            ".hud-col-grips { position: absolute; inset: 0; z-index: 2; pointer-events: none; }"
+        ));
+        assert!(EMBEDDED_INDEX.contains("cursor: col-resize; pointer-events: auto; touch-action: none;"));
+        // A repaint mid-gesture would take the bar out from under the pointer
+        // along with its pointer capture.
+        assert!(EMBEDDED_INDEX.contains(
+            "if (html === hudHtml || hudLayoutGesture?.name === \"players\" || playerHudColumnGesture) {"
+        ));
+        // The bars are placed from the rendered heading, so they cannot drift
+        // from the columns they name.
+        assert!(EMBEDDED_INDEX.contains("function syncPlayerHudColumnGrips()"));
+        assert!(EMBEDDED_INDEX.contains("grip.style.left = `${Math.round(left.right - origin)}px`;"));
         // The fitter has to measure the cell: the figure is centered content in
         // its own grid, so its clientWidth and scrollWidth are always equal and
         // it can never report the overflow that would shrink it.
@@ -7072,7 +7219,10 @@ mod tests {
     fn browser_transforms_restart_control_for_single_player() {
         assert!(EMBEDDED_INDEX
             .contains("const supervised = !!(state && state.supervised) && payload.spectate;"));
-        assert!(EMBEDDED_INDEX.contains("const human = !selectedSimulationSettings().spectate;"));
+        // Only a world that is definitely spectated leaves this a restart. A
+        // mode left at ????? may come up either way, so it reads as a start —
+        // the one label that is true whichever it rolls.
+        assert!(EMBEDDED_INDEX.contains("const human = settings.spectate !== true;"));
         // Choosing single player renames that control after the game it opens,
         // rather than leaving "Restart sim" over a single-player subtitle.
         assert!(EMBEDDED_INDEX.contains("<span class=\"lbl\">Restart sim</span>"));
@@ -7094,9 +7244,13 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "document.getElementById(\"specbar\").style.display = \"block\";"
         ));
+        // Adopting the running mode still re-reads the panel and relabels the
+        // control; it goes through the ????? restore, which syncs the mode, so
+        // a standing mark is not lost to the world that just arrived.
         assert!(EMBEDDED_INDEX.contains(
-            "syncSetupMode();\n  updateRestartSimulationButton();"
+            "applyRandomMarks();\n  updateRestartSimulationButton();"
         ));
+        assert!(EMBEDDED_INDEX.contains("  syncSetupMode();\n  updateRandomNote();\n}"));
         assert!(EMBEDDED_INDEX.contains(
             "body:not(.watching-sim) .spec-controls:has(#restart-sim) {"
         ));

@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 16] = [
+pub const EVAL_ONLY_AIS: [&str; 17] = [
     "advanced_lane_reachable",
     "advanced_relief_scoped",
     "strategic_score",
@@ -55,6 +55,7 @@ pub const EVAL_ONLY_AIS: [&str; 16] = [
     "production_net",
     "policy_wide",
     "policy_wide_frozen",
+    "strategic_deep_adaptive",
 ];
 
 /// On-disk schema for the shared player/leader/civilization rating ledger.
@@ -578,6 +579,28 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         "production" => Box::new(crate::production::ProductionSearchAi::with_weights(
             crate::evolve::load_champion("evolved").unwrap_or_default(),
         )),
+        // The promoted deep budget, spent adaptively: project every branch
+        // in lockstep and stop at the first chunk where they separate,
+        // rather than always running the full count. Measured WORSE than
+        // its control over 120 mirrored maps -- 39.2% paired score,
+        // Elo-equivalent -76, sign p=0.0000, gate RETAIN strategic_deep --
+        // and kept as an entrant only so the result stays reproducible.
+        //
+        // There is deliberately no `strategic_adaptive` at the default
+        // horizon of 40. The branches there separate by a median 0.0045,
+        // under the 0.01 commitment margin, so the search never stops
+        // early and the entrant would be bit-identical to its control —
+        // an evaluation of it would measure nothing, which is what #380
+        // cost a 240-game run to discover.
+        "strategic_deep_adaptive" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.review_every = 20;
+            ai.horizon = 80;
+            ai.adaptive_horizon = true;
+            Box::new(ai)
+        }
         "strategic_rot20" => {
             let mut ai = crate::strategic::StrategicAi::with_weights(
                 crate::evolve::load_champion("evolved").unwrap_or_default(),
@@ -796,6 +819,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "strategic_r20h20" => (vec![genome, value(false)], "strategic_r20h20"),
         "strategic_h80" => (vec![genome, value(false)], "strategic_h80"),
         "strategic_rot20" => (vec![genome, value(false)], "strategic_rot20"),
+        "strategic_deep_adaptive" => (vec![genome, value(false)], "strategic_deep_adaptive"),
         // Same artifact dependencies as `strategic`: the genome tunes it,
         // and the net is non-definitional because the search runs without
         // one. There is no separate published netless name to degrade to.
