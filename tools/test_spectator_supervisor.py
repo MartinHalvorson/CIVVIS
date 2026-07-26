@@ -227,6 +227,53 @@ class SessionSettingsTests(unittest.TestCase):
         self.assertEqual(carried["players"], 6)
         self.assertEqual(carried["city_states"], 9)
 
+    def test_borrowed_turns_do_not_ratchet_the_next_game_longer(self):
+        """"One more turn" raises `max_turns`; the next game must not inherit it."""
+        played_on = {
+            "players": [{"is_minor": False}, {"is_minor": False}],
+            "map": {"width": 74, "height": 46, "script": "pangaea"},
+            "game_speed": "online",
+            # 250 turns of game plus two presses of "one more turn".
+            "max_turns": 300,
+            "decided": {"winner": 0, "civ": "Rome", "victory_type": "science", "turn": 244},
+        }
+        defaults = {
+            "players": 6,
+            "width": 74,
+            "height": 46,
+            "city_states": 9,
+            "turns": 250,
+            "map": "pangaea",
+            "speed": "online",
+        }
+        self.assertEqual(supervisor.session_settings(played_on, defaults)["turns"], 250)
+        # A world that was never extended still carries its own limit forward.
+        untouched = {**played_on, "max_turns": 180}
+        del untouched["decided"]
+        self.assertEqual(supervisor.session_settings(untouched, defaults)["turns"], 180)
+
+    def test_playing_on_is_told_apart_from_the_next_world(self):
+        """Only the same seed, live and already decided, is an extension."""
+        self.assertTrue(
+            supervisor.playing_on(
+                {"winner": None, "seed": 77, "decided": {"winner": 1, "turn": 210}}, 77
+            )
+        )
+        # The server's own cooldown elapsed first and rolled into another
+        # world: live and unrecorded, and still owed a freshly built process.
+        self.assertFalse(
+            supervisor.playing_on({"winner": None, "seed": 78, "decided": None}, 77)
+        )
+        # A decided world whose seed moved on is that same handoff, one poll
+        # later, with the previous game's record still in view.
+        self.assertFalse(
+            supervisor.playing_on(
+                {"winner": None, "seed": 78, "decided": {"winner": 1, "turn": 210}}, 77
+            )
+        )
+        self.assertFalse(supervisor.playing_on({"winner": 0, "seed": 77}, 77))
+        self.assertFalse(supervisor.playing_on(None, 77))
+
     def test_selected_settings_override_the_live_game_at_the_next_boundary(self):
         selected = {
             "players": 6,
@@ -1679,6 +1726,88 @@ class RecoveryTests(unittest.TestCase):
         # would have added a second start for the successor; the stops around
         # it are the cold-start orphan sweep and the shutdown.
         self.assertEqual(events.count("start"), 1)
+        self.assertEqual(events, ["stop", "start", "stop"])
+
+    def test_a_world_asked_for_one_more_turn_is_not_retired(self):
+        """The result screen's other offer keeps the same world instead of
+        replacing it. The winner clears, the seed does not, and the supervisor
+        has to recognise that as a game still being played rather than as the
+        handoff it was a moment away from performing.
+        """
+        args = SimpleNamespace(
+            port=8766,
+            players=4,
+            width=60,
+            height=38,
+            city_states=6,
+            turns=500,
+            map="pangaea",
+            speed="standard",
+            cooldown=0.0,
+            poll=0.01,
+            build_retry=0.01,
+            source_check_interval=30.0,
+            unresponsive_timeout=20.0,
+            busy_timeout=600.0,
+            stall_timeout=30.0,
+            checkpoint_interval=5.0,
+            max_resume_attempts=2,
+            no_open=True,
+            adopt_pid=None,
+        )
+        finished = {
+            "seed": 9,
+            "turn": 70,
+            "current": 3,
+            "winner": 1,
+            "victory_type": "science",
+            "players": [],
+        }
+        played_on = {
+            **finished,
+            "winner": None,
+            "victory_type": None,
+            "turn": 71,
+            "max_turns": 95,
+            "decided": {"winner": 1, "civ": "Greece", "victory_type": "science", "turn": 70},
+        }
+        server = SimpleNamespace(pid=321)
+        events = []
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = root / "civvis"
+            runtime.touch()
+            checkpoint = root / "save.json"
+            with (
+                patch.object(supervisor, "parse_args", return_value=args),
+                patch.object(supervisor, "RUNTIME_BINARY", runtime),
+                patch.object(supervisor, "checkpoint_path", return_value=checkpoint),
+                patch.object(supervisor, "pid_listening_on", return_value=None),
+                patch.object(supervisor, "runtime_matches", return_value=True),
+                patch.object(
+                    supervisor,
+                    "start_server",
+                    side_effect=lambda *a, **k: (events.append("start"), server)[1],
+                ),
+                patch.object(supervisor, "wait_for_server", return_value=finished),
+                patch.object(
+                    supervisor,
+                    "read_state",
+                    side_effect=[finished, played_on, KeyboardInterrupt],
+                ),
+                patch.object(supervisor, "archive_result", return_value=None),
+                patch.object(
+                    supervisor,
+                    "stop_server",
+                    side_effect=lambda *a, **k: events.append("stop"),
+                ),
+                patch.object(supervisor.time, "sleep"),
+            ):
+                self.assertEqual(supervisor.main(), 0)
+
+        # As above: the cold start and nothing after it. A retirement would
+        # have shown up as a second start for the successor world.
         self.assertEqual(events, ["stop", "start", "stop"])
 
 

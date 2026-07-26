@@ -155,5 +155,155 @@
       "entertainment_complex_adjacent_amenity": 1
     },
     "sight_through": 1
+  },
+  "torres_del_paine": {
+    "yields": {},
+    "adjacent_yields": {
+      "food": 1,
+      "production": 1
+    },
+    "natural_wonder": true,
+    "impassable": true,
+    "sight_through": 2
+  },
+  "eye_of_the_sahara": {
+    "yields": {
+      "production": 2,
+      "science": 1
+    },
+    "natural_wonder": true
+  },
+  "zhangye_danxia": {
+    "yields": {},
+    "natural_wonder": true,
+    "impassable": true,
+    "sight_through": 2
+  },
+  "ha_long_bay": {
+    "yields": {
+      "food": 3,
+      "production": 1,
+      "culture": 1
+    },
+    "natural_wonder": true
+  },
+  "cliffs_of_dover": {
+    "yields": {
+      "food": 2,
+      "gold": 3,
+      "culture": 3
+    },
+    "natural_wonder": true
+  },
+  "giants_causeway": {
+    "yields": {},
+    "adjacent_yields": {
+      "culture": 1
+    },
+    "natural_wonder": true,
+    "impassable": true
+  },
+  "galapagos_islands": {
+    "yields": {},
+    "adjacent_yields": {
+      "science": 2
+    },
+    "natural_wonder": true,
+    "impassable": true
+  },
+  "matterhorn": {
+    "yields": {},
+    "adjacent_yields": {
+      "production": 1,
+      "culture": 1
+    },
+    "natural_wonder": true,
+    "impassable": true,
+    "sight_through": 2
+  },
+  "kilimanjaro": {
+    "yields": {},
+    "adjacent_yields": {
+      "food": 2
+    },
+    "natural_wonder": true,
+    "impassable": true,
+    "sight_through": 2
+  },
+  "piopiotahi": {
+    "yields": {},
+    "adjacent_yields": {
+      "culture": 1,
+      "gold": 1
+    },
+    "natural_wonder": true,
+    "impassable": true,
+    "sight_through": 2
+  },
+  "ik_kil": {
+    "yields": {},
+    "natural_wonder": true,
+    "impassable": true
+  },
+  "gobustan": {
+    "yields": {
+      "production": 1,
+      "culture": 3
+    },
+    "natural_wonder": true
+  },
+  "ubsunur_hollow": {
+    "yields": {
+      "food": 1,
+      "production": 1,
+      "faith": 2
+    },
+    "natural_wonder": true
+  },
+  "mato_tipila": {
+    "yields": {},
+    "adjacent_yields": {
+      "production": 1,
+      "faith": 1
+    },
+    "natural_wonder": true,
+    "impassable": true,
+    "sight_through": 2
+  },
+  "delicate_arch": {
+    "yields": {},
+    "adjacent_yields": {
+      "gold": 1,
+      "faith": 2
+    },
+    "natural_wonder": true,
+    "impassable": true,
+    "sight_through": 1
+  },
+  "chocolate_hills": {
+    "yields": {
+      "food": 1,
+      "production": 2,
+      "science": 1
+    },
+    "natural_wonder": true
+  },
+  "vesuvius": {
+    "yields": {},
+    "adjacent_yields": {
+      "production": 2,
+      "faith": 1
+    },
+    "natural_wonder": true,
+    "impassable": true,
+    "sight_through": 2
+  },
+  "lake_retba": {
+    "yields": {
+      "production": 1,
+      "gold": 2,
+      "culture": 2
+    },
+    "natural_wonder": true
   }
 }
