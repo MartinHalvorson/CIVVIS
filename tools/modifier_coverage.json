@@ -156,7 +156,8 @@
     },
     "GRANT_YIELD": {
       "status": "implemented",
-      "note": "Instant yields from Great People activation and goody huts."
+      "verified": true,
+      "note": "Verified row by row against the cache: 17 rows. The six goody-hut grants match exactly - Gold 120/75/40 and Faith 100/60/20 against goody_huts.json large/medium/small. Of the eleven Great Person grants CIVVIS models one, Marcus Licinius Crassus, whose shipped pair is GREATPERSON_GOLD_TINY at 60 Gold plus GREATPERSON_GRANT_PLOT; CIVVIS carries both as gold 60 and the three-tile annex. The rest (Ching Shih 500, Ferdinand Magellan 300, the 200/350/500 Gold and 100 Faith tiers, and the two 1000-point Culture/Science grants) belong to Great People outside the modelled 27 of 212 - content scope, measured by civ6_fidelity.py. The GOODY_* rows report as unattached because the GoodyHuts table grants them rather than an owner-table row."
     },
     "ADJUST_BUILDING_YIELD_CHANGE": {
       "status": "partial",
