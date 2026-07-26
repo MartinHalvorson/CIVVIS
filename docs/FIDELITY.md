@@ -240,6 +240,48 @@ gives Ecstatic a +10% yield bonus where `Happinesses.NonFoodYieldModifier`
 ships +20. Both readings were used to "correct" already-correct engine code.
 Cite a table and a column, not a sentence.
 
+## Open: buying a tile with Gold is a missing legal action
+
+Civilization VI lets a city buy an unowned tile within
+`CITY_MAX_BUY_PLOT_RANGE` (**3**) for Gold. **CIVVIS does not model it at
+all.** There is no `BuyPlot` variant in `Action` — the enum carries `Buy`,
+`BuyBuilding` and `BuyDistrict` and stops there — so no state in CIVVIS ever
+admits the move.
+
+This is a **clause 1** failure, and clause 1 is the one a trained policy is
+most sensitive to. Buying a plot to beat a rival to a Luxury, to reach a
+Natural Wonder, or to open a district site is ordinary tournament play; an
+agent trained here never learns it exists, and an agent trained on the real
+game arrives with a habit CIVVIS cannot express.
+
+It has a visible second-order cost today. **Land Surveyors** — an Early Empire
+economic card, `tile_purchase_discount_pct: 20` — is a **no-op**. Its effect
+key is read by `Game::tile_purchase_cost`, and that function has *no callers*:
+it is `pub` and dead, in the same way `war_weariness_multiplier` was dead
+before it was wired up. A player can slot the card and receive nothing.
+
+`tools/civvis_inert.py` cannot see this. It reports 0 of 656 effect keys
+without a consumer, because the key *is* read — one level above, the reader is
+unreachable. Reachability, not mere reference, is what the tool would have to
+check.
+
+**Why it is not simply implemented: the cost curve does not ship.** Only
+`PLOT_BUY_BASE_COST` (**50**) is in `GlobalParameters`. The progression that
+makes each subsequent tile dearer lives in the executable, exactly as the Gold
+price of swapping a policy card does. The database has a full curve for the
+*Culture* route — `CULTURE_COST_FIRST_PLOT` 10,
+`CULTURE_COST_LATER_PLOT_MULTIPLIER` 6, `CULTURE_COST_LATER_PLOT_EXPONENT` 1.3,
+giving `10 + 6 × plots^1.3`, which `process_city` already implements — and it
+is tempting that `PLOT_BUY_BASE_COST` is exactly five times
+`CULTURE_COST_FIRST_PLOT`, which would make the Gold curve
+`5 × (10 + 6 × plots^1.3)` and land the first purchase on 50.
+
+**That is a conjecture, not a shipped number, and it must not be committed as
+one.** A wrong curve is worse than a missing action here: a missing action is a
+gap an agent cannot learn, while a wrong price is a lever it learns to pull at
+the wrong time. Settling it needs a source outside this database — an install,
+or measured purchases from a real game.
+
 ## What exactness can mean
 
 Civilization VI's rules live in a closed DLL. Bit-identical random streams are
