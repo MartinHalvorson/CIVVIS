@@ -8300,9 +8300,13 @@ mod maintenance_tests {
         assert_eq!(bonus(&game, "warrior"), warrior_before + 0.5);
         assert_eq!(bonus(&game, "infantry"), infantry_before);
 
-        // Military First is the Atomic/Information card at the other end.
+        // Military First sits at the far end of the same ladder, but it does
+        // not hand off from Grande Armee -- it repeats every era below it as
+        // well, so it boosts a Warrior just as readily as a Mechanized
+        // Infantry. See
+        // the_unit_ladders_repeat_their_predecessors_eras_instead_of_succeeding_them.
         game.players[0].policies = ["military_first".to_string()].into_iter().collect();
-        assert_eq!(bonus(&game, "warrior"), warrior_before);
+        assert_eq!(bonus(&game, "warrior"), warrior_before + 0.5);
         let mechanized_before = bonus(&game, "mechanized_infantry");
         game.players[0].policies.clear();
         assert_eq!(bonus(&game, "mechanized_infantry"), mechanized_before - 0.5);
@@ -8433,6 +8437,68 @@ mod government_runtime_tests {
             .alliances
             .insert(second, alliance.clone());
         game.players[second].alliances.insert(first, alliance);
+    }
+
+    #[test]
+    fn the_unit_ladders_repeat_their_predecessors_eras_instead_of_succeeding_them() {
+        let (mut game, city) = one_city(60_318);
+        let pct = |game: &Game, unit: &str| {
+            let item = Item::Unit {
+                unit: unit.to_string(),
+            };
+            ((game.item_prod_mult(0, city, Some(&item)) - 1.0) * 100.0).round()
+        };
+        let card = |game: &mut Game, policy: &str| {
+            game.players[0].policies = [policy.to_string()].into_iter().collect();
+        };
+
+        // Each ADJUST_UNIT_TAG_ERA_PRODUCTION card ships one row per era, and
+        // every card in a ladder REPEATS its predecessor's eras rather than
+        // starting where that one stopped. Agoge covers Ancient-Classical
+        // infantry; Feudal Contract covers those two AGAIN plus Medieval and
+        // Renaissance, and Military First covers every era there is.
+        card(&mut game, "agoge");
+        assert_eq!(pct(&game, "warrior"), 50.0);
+        assert_eq!(pct(&game, "man_at_arms"), 0.0);
+
+        card(&mut game, "feudal_contract");
+        assert_eq!(pct(&game, "warrior"), 50.0, "Ancient melee is still covered");
+        assert_eq!(pct(&game, "musketman"), 50.0);
+        assert_eq!(pct(&game, "line_infantry"), 0.0, "Industrial is past it");
+
+        card(&mut game, "military_first");
+        for unit in ["warrior", "man_at_arms", "line_infantry", "mechanized_infantry"] {
+            assert_eq!(pct(&game, unit), 50.0, "{unit}");
+        }
+
+        // The one hole Firaxis left: every infantry card after Agoge omits the
+        // Classical row for ranged units, which is invisible unless a
+        // civilization fields a Classical ranged unique.
+        card(&mut game, "agoge");
+        assert_eq!(pct(&game, "saka_horse_archer"), 50.0);
+        for policy in ["feudal_contract", "grande_armee", "military_first"] {
+            card(&mut game, policy);
+            assert_eq!(pct(&game, "archer"), 50.0, "{policy} covers Ancient ranged");
+            assert_eq!(pct(&game, "saka_horse_archer"), 0.0, "{policy} skips Classical ranged");
+        }
+
+        // The naval ladder runs the same way, and Press Gangs stops after the
+        // Industrial era rather than covering every later hull.
+        card(&mut game, "maritime_industries");
+        assert_eq!(pct(&game, "galley"), 100.0);
+        assert_eq!(pct(&game, "caravel"), 0.0);
+        card(&mut game, "press_gangs");
+        assert_eq!(pct(&game, "galley"), 100.0);
+        assert_eq!(pct(&game, "ironclad"), 100.0);
+        assert_eq!(pct(&game, "destroyer"), 0.0);
+
+        // Strategic Air Force is one card covering two classes over different
+        // windows: Information-era air, but Carriers from the Atomic era.
+        card(&mut game, "strategic_air_force");
+        assert_eq!(pct(&game, "fighter"), 0.0, "Atomic-era air is not covered");
+        assert_eq!(pct(&game, "jet_fighter"), 50.0);
+        assert_eq!(pct(&game, "jet_bomber"), 50.0);
+        assert_eq!(pct(&game, "aircraft_carrier"), 50.0);
     }
 
     #[test]
@@ -15836,11 +15902,21 @@ impl Game {
             return 0.0;
         }
         let era = self.unit_era(unit);
+        let class = self
+            .rules
+            .units
+            .get(unit)
+            .map_or("", |unit| unit.promotion_class.as_str());
         self.players[pid]
             .policies
             .iter()
             .filter_map(|name| self.rules.policies.get(name))
             .filter(|spec| spec.unit_eras.is_empty() || spec.unit_eras.contains(&era))
+            .filter(|spec| {
+                !spec.unit_era_gaps
+                    .get(class)
+                    .is_some_and(|eras| eras.contains(&era))
+            })
             .filter_map(|spec| spec.effects.get(effect))
             .sum()
     }
