@@ -7,7 +7,8 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashSet, VecDeque};
 
 use crate::rng::Rng;
 use crate::rules::{
-    AgendaSpec, BuildingSpec, DifficultySpec, DisasterSpec, Rules, SpeedSpec, Yields, ERA_NAMES,
+    AgendaSpec, BuildingSpec, DifficultySpec, DisasterSpec, FutureTreeLayout, Rules, SpeedSpec,
+    Yields, ERA_NAMES,
 };
 use crate::specmap::SpecMap;
 use crate::setup::{GameSpeed, MapPoles, MapScript, MapSize, MapTopology};
@@ -12631,8 +12632,9 @@ impl Default for VictoryConditions {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(from = "GameSer", into = "GameSer")]
 pub struct Game {
-    /// Shared with every other game in the process: nothing plays a game by
-    /// rewriting its own rules, and copying them per search branch is not free.
+    /// Shared with every clone/search branch of this game. A match gets one
+    /// immutable snapshot because Gathering Storm randomizes its Future trees
+    /// at setup; no rule changes after the first turn.
     pub rules: Arc<Rules>,
     /// Derived from the rest of the game, never saved, and safe to drop at
     /// any moment — it is only ever a shortcut to an answer the sweep would
@@ -12833,6 +12835,11 @@ fn default_disaster_intensity() -> u8 {
 #[derive(Clone, Serialize, Deserialize)]
 struct GameSer {
     seed: u64,
+    /// The concrete Future-era graph rolled at setup. Old saves did not carry
+    /// it and deterministically regenerate from their seed; new saves keep it
+    /// so an engine update cannot reroll a match in progress.
+    #[serde(default)]
+    future_tree_layout: Option<FutureTreeLayout>,
     /// Zero means the save predates persistent last-seen snapshots. Current
     /// saves must load their memories verbatim so deserialization is pure.
     #[serde(default)]
@@ -12934,6 +12941,7 @@ struct GameSer {
 impl From<GameSer> for Game {
     fn from(s: GameSer) -> Game {
         let needs_visibility_backfill = s.visibility_memory_version == 0;
+        let rules = Rules::for_game(s.seed, s.future_tree_layout.as_ref());
         // Both speed representations exist for save compatibility. Prefer an
         // explicit ruleset speed, except when loading an older map-script save
         // whose absent string field defaulted to Standard.
@@ -12944,7 +12952,7 @@ impl From<GameSer> for Game {
             (game_speed.id().to_string(), game_speed)
         };
         let mut g = Game {
-            rules: Rules::shared(),
+            rules,
             vision: std::cell::RefCell::new(VisionCache::default()),
             routing: std::cell::RefCell::new(RoutingCache::default()),
             query_memo: QueryCache::default(),
@@ -13097,6 +13105,7 @@ impl From<Game> for GameSer {
     fn from(g: Game) -> GameSer {
         GameSer {
             seed: g.seed,
+            future_tree_layout: Some(g.rules.future_tree_layout()),
             visibility_memory_version: 1,
             difficulty: g.difficulty,
             // `game_speed` is the live, typed setting used by every rules
@@ -13238,7 +13247,7 @@ impl Game {
             teams.is_empty() || teams.len() == num_players,
             "team assignments must be empty or contain one entry per major player"
         );
-        let rules = Rules::shared();
+        let rules = Rules::for_game(seed, None);
         assert!(
             rules.difficulties.contains_key(&difficulty),
             "unknown difficulty {difficulty}"
@@ -48592,6 +48601,39 @@ mod victory_conditions {
         g.apply_tree_completion(0, false, "future_civic", false);
         assert_eq!(g.players[0].counters["district_governor_titles"], 1);
         assert_eq!(g.players[0].counters["diplomatic_favor"], 50);
+    }
+
+    #[test]
+    fn save_restore_preserves_the_games_randomized_future_trees() {
+        let game = Game::new_full(2, 24, 16, 818_181, 80, 0, false);
+        let expected = game.rules.future_tree_layout();
+        let value = serde_json::to_value(&game).unwrap();
+        assert_eq!(
+            value["future_tree_layout"]["techs"].as_object().unwrap().len(),
+            8
+        );
+        assert_eq!(
+            value["future_tree_layout"]["civics"]
+                .as_object()
+                .unwrap()
+                .len(),
+            6
+        );
+
+        let restored: Game = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(restored.rules.future_tree_layout(), expected);
+
+        // Saves written before this field existed regenerate through a
+        // domain-separated stream, so loading one cannot perturb the saved
+        // runtime RNG and the same seed still recovers the same graph.
+        let mut legacy = value;
+        legacy
+            .as_object_mut()
+            .unwrap()
+            .remove("future_tree_layout");
+        let restored_legacy: Game = serde_json::from_value(legacy).unwrap();
+        assert_eq!(restored_legacy.rules.future_tree_layout(), expected);
+        assert_eq!(restored_legacy.rng, game.rng);
     }
 
     #[test]

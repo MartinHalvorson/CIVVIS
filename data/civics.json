@@ -54,10 +54,10 @@
   "synthetic_technocracy": {"cost": 3000, "era": 7, "requires": ["globalization", "social_media"], "boost": {"trigger": "tech:robotics"}},
   "corporate_libertarianism": {"cost": 3000, "era": 7, "requires": ["globalization", "social_media"], "boost": {"trigger": "improve_resource:uranium"}},
   "near_future_governance": {"governor_title": 1, "cost": 3100, "era": 7, "requires": ["environmentalism", "globalization"], "boost": {"trigger": "government_slots", "count": 10, "percent": 90}},
-  "information_warfare": {"cost": 3200, "era": 8, "requires": ["near_future_governance"]},
-  "global_warming_mitigation": {"cost": 3200, "era": 8, "requires": ["environmentalism"]},
-  "cultural_hegemony": {"cost": 3200, "era": 8, "requires": ["digital_democracy"]},
-  "smart_power_doctrine": {"cost": 3200, "era": 8, "requires": ["corporate_libertarianism"]},
-  "exodus_imperative": {"cost": 3200, "era": 8, "requires": ["synthetic_technocracy"]},
-  "future_civic": {"governor_title": 1, "cost": 3500, "era": 8, "requires": ["information_warfare", "global_warming_mitigation", "cultural_hegemony", "smart_power_doctrine", "exodus_imperative"], "repeatable": true}
+  "information_warfare": {"cost": 3200, "era": 8, "requires": [], "random_prereqs": true, "random_costs": [3200, 3300]},
+  "global_warming_mitigation": {"cost": 3200, "era": 8, "requires": [], "random_prereqs": true, "random_costs": [3200, 3300]},
+  "cultural_hegemony": {"cost": 3200, "era": 8, "requires": [], "random_prereqs": true, "random_costs": [3200, 3300]},
+  "smart_power_doctrine": {"cost": 3200, "era": 8, "requires": [], "random_prereqs": true, "random_costs": [3200, 3300]},
+  "exodus_imperative": {"cost": 3200, "era": 8, "requires": [], "random_prereqs": true, "random_costs": [3200, 3300]},
+  "future_civic": {"governor_title": 1, "cost": 3500, "era": 8, "requires": [], "random_prereqs": true, "repeatable": true}
 }
