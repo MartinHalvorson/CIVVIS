@@ -13314,6 +13314,18 @@ function drawPlanetMap() {
       cx.strokeStyle = "#07100f"; cx.lineWidth = cityState ? 2.4 : 3.5;
       cx.strokeText(city.name, cell.center.x, cell.center.y - r - 5);
       cx.fillText(city.name, cell.center.x, cell.center.y - r - 5);
+      const governor = cityGovernor(city);
+      if (governor) {
+        const waiting = governor.status === "established"
+          ? "" : ` · ${governor.turns_remaining}T`;
+        const posting = `⚑ ${governor.name}${waiting}`;
+        cx.font = `750 ${Math.max(9, Math.min(12, 9 * scale))}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
+        cx.strokeStyle = "#07100f"; cx.lineWidth = 3;
+        cx.strokeText(posting, cell.center.x, cell.center.y + r + 10);
+        cx.fillStyle = governor.status === "disabled" ? "#f08b82"
+          : governor.status === "establishing" ? "#8ed9ec" : "#f5d27a";
+        cx.fillText(posting, cell.center.x, cell.center.y + r + 10);
+      }
     }
     if (cityState) cx.restore();
   }
@@ -14356,6 +14368,7 @@ function draw() {
       const bannerColor = cityBannerColor(c.owner);
       const cityOwner = state.players[c.owner];
       const minorPlate = Boolean(cityOwner && cityOwner.is_minor);
+      const governor = cityGovernor(c);
       const bannerHeight = minorPlate ? 16 : 21;
       const popWidth = minorPlate ? 14 : 19;
       cx.font = `${minorPlate ? 700 : 800} ${minorPlate ? 10 : 12}px Georgia, serif`;
@@ -14386,6 +14399,17 @@ function draw() {
       cx.textAlign = "left";
       cx.fillText(name, bx + popWidth + 7, by + bannerHeight / 2 + .5);
       cx.textAlign = "center";
+      if (governor) {
+        const waiting = governor.status === "established"
+          ? "" : ` · ${governor.turns_remaining}T`;
+        const posting = `⚑ ${governor.name.toUpperCase()}${waiting}`;
+        cx.font = `800 ${minorPlate ? 9 : 10}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
+        cx.strokeStyle = "#10151d"; cx.lineWidth = 2.8;
+        cx.strokeText(posting, x, by - 5);
+        cx.fillStyle = governor.status === "disabled" ? "#f08b82"
+          : governor.status === "establishing" ? "#8ed9ec" : "#f5d27a";
+        cx.fillText(posting, x, by - 5);
+      }
       let statusY = by + bannerHeight + 1;
       if (c.hp < 200) {
         const hpFraction = Math.max(0, Math.min(1, c.hp / 200));
@@ -16697,6 +16721,7 @@ function empireCities() {
       second.pop - first.pop)
     .map(city => {
       const yields = city.yields || {};
+      const governor = cityGovernor(city);
       const perTurn = yields.production || 0;
       const current = (city.queue || [])[0];
       const cost = city.queue_cost || (current ? itemCost(current) : 0);
@@ -16711,7 +16736,7 @@ function empireCities() {
       if (city.loyalty_state && city.loyalty_state !== "loyal") trouble.push(titleCase(city.loyalty_state));
       return empireCard({
         title: `${city.name}${city.is_capital ? " ♛" : ""}`,
-        kind: `Population ${city.pop}${city.governor ? " · Governor" : ""}`,
+        kind: `Population ${city.pop}${governor ? ` · ⚑ ${governor.name}` : ""}`,
         cls: idle(city) ? "empty" : "filled",
         note: `<div class="empire-meter"><b>${Math.round(yields.food)}</b> 🌾 ` +
           `<b>${Math.round(yields.production)}</b> ⚙ <b>${Math.round(yields.gold)}</b> 💰 ` +
@@ -16721,6 +16746,7 @@ function empireCities() {
             ? `Building ${titleCase(itemName(current))}${left ? ` · ${left} turn${left === 1 ? "" : "s"}` : ""}`
             : `<b>Building nothing</b>`) +
           (growth ? ` · grows in ${growth}` : "") +
+          (governor ? `<div class="empire-meter">${governor.title} · ${governorStatus(governor)}</div>` : "") +
           (trouble.length
             ? `<div class="empire-meter" style="color:var(--danger)">${trouble.join(" · ")}</div>` : ""),
         actions: [`<button class="${idle(city) ? "primary" : ""}" ` +
@@ -16906,7 +16932,13 @@ function empireGovernors() {
   const cityName = id => (state.cities.find(city => city.id === id) || {}).name || `city ${id}`;
   const roster = Object.entries(specs).map(([id, spec]) => {
     const posting = (me.governor_roster || {})[id];
-    const mine = (me.governors || []).includes(id) || posting !== undefined;
+    const mine = posting !== undefined;
+    const city = posting && posting.city !== null
+      ? state.cities.find(candidate => candidate.id === posting.city) : null;
+    const assignment = city ? cityGovernor(city) : null;
+    const postingNote = !posting ? ""
+      : posting.city === null ? "Awaiting a city assignment.<br>"
+      : `${assignment ? governorStatus(assignment) : "Assigned"} in ${cityName(posting.city)}.<br>`;
     const promotions = promote.filter(a => a.governor === id).map(a =>
       empireAct(a, `⬆ ${titleCase(a.promotion)}`));
     const appointHere = appoint.filter(a => a.governor === id)
@@ -16914,9 +16946,12 @@ function empireGovernors() {
     const moveHere = reassign.filter(a => a.governor === id)
       .map(a => empireAct(a, `Move to ${cityName(a.city)}`));
     return empireCard({
-      title: spec.name || titleCase(id), kind: mine ? "Appointed" : "Available",
+      title: spec.name || titleCase(id),
+      kind: mine ? (assignment ? governorStatus(assignment) : "Appointed") : "Available",
       cls: mine ? "filled" : "",
-      note: (posting !== undefined ? `Established in ${cityName(posting)}.<br>` : "") +
+      note: postingNote +
+        (posting && posting.promotions && posting.promotions.length
+          ? `${posting.promotions.length} promotion${posting.promotions.length === 1 ? "" : "s"}.<br>` : "") +
         Object.keys(spec.effects || {}).map(effect => titleCase(effect)).join(" · "),
       actions: appointHere.concat(moveHere, promotions),
     });
@@ -17323,12 +17358,13 @@ function drawCityScreen() {
   const perTurn = yields.production || 0;
   const current = (city.queue || [])[0];
   const banked = city.production || 0;
+  const governor = cityGovernor(city);
 
   document.getElementById("cityscreen-name").textContent =
     city.name + (city.is_capital ? " ♛" : "");
   document.getElementById("cityscreen-sub").textContent =
     `Population ${city.pop} · ${titleCase(city.happiness || "content")}` +
-    (city.governor ? " · Governor established" : "") +
+    (governor ? ` · ⚑ ${governor.name}` : "") +
     (city.religion ? ` · ${titleCase(city.religion)}` : "");
 
   const yieldTile = (label, value, suffix = "") =>
@@ -17349,7 +17385,9 @@ function drawCityScreen() {
     `<b>${city.amenities} of ${city.amenities_required} needed</b></div>` +
     `<div class="row"><span class="small">Loyalty</span>` +
     `<b>${Math.round(city.loyalty)} · ${titleCase(city.loyalty_state || "")}` +
-    ` (${city.loyalty_per_turn >= 0 ? "+" : ""}${Math.round(city.loyalty_per_turn)})</b></div>`;
+    ` (${city.loyalty_per_turn >= 0 ? "+" : ""}${Math.round(city.loyalty_per_turn)})</b></div>` +
+    (governor ? `<div class="row"><span class="small">Governor</span>` +
+      `<b>${governor.name} · ${governor.title} · ${governorStatus(governor)}</b></div>` : "");
 
   const districts = Object.keys(city.districts || {});
   const buildings = city.buildings || [];
@@ -17630,6 +17668,23 @@ function gameSpeedPercent() {
 }
 function techCost(t) { return RULES ? RULES.techs[t].cost * gameSpeedPercent() / 100 : 100; }
 function civicCost(c) { return RULES ? RULES.civics[c].cost * gameSpeedPercent() / 100 : 100; }
+// Governor assignments are private player knowledge. The engine attaches the
+// viewer's posting to the city it belongs to; spectator mode deliberately
+// stays with the uncluttered public city presentation.
+function cityGovernor(city) {
+  if (!state || SPEC || !city) return null;
+  const governor = city.governor_assignment;
+  return governor && governor.id ? governor : null;
+}
+function governorStatus(governor) {
+  if (!governor) return "";
+  const turns = Number.isFinite(governor.turns_remaining) ? governor.turns_remaining : 0;
+  if (governor.status === "disabled")
+    return `Disabled${turns ? ` · ${turns} turn${turns === 1 ? "" : "s"}` : ""}`;
+  if (governor.status === "establishing")
+    return `Establishing${turns ? ` · ${turns} turn${turns === 1 ? "" : "s"}` : ""}`;
+  return "Established";
+}
 function titleCase(n) { return (n || "").replaceAll("_", " ").replace(/\b\w/g, c => c.toUpperCase()); }
 function researchCard(kind, name, progress, total, perTurn, boosted) {
   const eta = perTurn > 0 ? Math.max(1, Math.ceil((total - progress) / perTurn)) : "∞";
@@ -18185,12 +18240,18 @@ function drawCityPanel() {
   selCity = c; selCity._striking = striking; selCity._encampmentStriking = encampmentStriking;
   secEl.style.display = "block";
   const owner = state.players[c.owner];
+  const governor = cityGovernor(c);
   let h = `<div class="city-hero"><div><div class="city-name">${c.name}${c.is_capital ? " ♛" : ""}</div>` +
-    `<div class="small" style="margin-top:4px">${owner.civ}${c.religion ? ` · ${titleCase(c.religion)}` : ""}</div></div>` +
+    `<div class="small" style="margin-top:4px">${owner.civ}${c.religion ? ` · ${titleCase(c.religion)}` : ""}` +
+    `${governor ? ` · ⚑ ${governor.name}` : ""}</div></div>` +
     `<div class="city-pop" title="Population">${c.pop}</div></div>` +
     `<div class="city-stats"><div class="metric"><b>${c.hp} / 200</b><span>Health</span></div>` +
     `<div class="metric"><b>${c.wall_hp || 0} / ${c.wall_max || 0}</b><span>Walls</span></div>` +
     `<div class="metric"><b>${c.housing === undefined ? "—" : c.housing}</b><span>Housing</span></div></div>`;
+  if (governor) {
+    h += `<div class="row"><span class="small">Governor</span>` +
+      `<b>${governor.title} · ${governorStatus(governor)}</b></div>`;
+  }
   if (c.districts && c.districts.encampment) {
     h += `<div class="row"><span class="small">Encampment defenses</span><b>${c.encampment_pillaged ? "Pillaged" : `${c.encampment_hp} HP · ${Math.max(0, c.encampment_wall_hp)} walls`}</b></div>`;
   }
