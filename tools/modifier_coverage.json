@@ -23,6 +23,11 @@
       "verified": true,
       "note": "Verified, and the ambiguity is settled by the shipped text rather than the tables. Tithe, Pilgrimage and World Church each carry a base row and a Gathering Storm row with no Delete between them, but Gathering Storm also ships _EXPANSION2_DESCRIPTION wording for all three: Tithe '+3 Gold for each city following the Religion', Pilgrimage '+2 Faith for each city following this Religion', World Church '+1 Culture for every 4 followers of this Religion'. Only the Gathering Storm row is live, and 'each city following this Religion' means every such city rather than the founder's own. CIVVIS carries exactly that for all four beliefs, Church Property included. Reverting yesterday's change was correct."
     },
+    "ADD_RELIGIOUS_BUILDING": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row against the cache: 9 rows, one per Worship belief, each granting that belief's building. CIVVIS models all nine Worship beliefs - the only belief class it carries complete - and each grants its building."
+    },
     "ADJUST_BUILDING_PRODUCTION": {
       "status": "implemented",
       "verified": true,
@@ -81,6 +86,11 @@
       "verified": true,
       "note": "Verified row by row. Every adjacency-doubling card CIVVIS carries matches at +100%: Aesthetics and Sports Media on the Theater Square, Natural Philosophy and Five Year Plan on the Campus, Five Year Plan and Craftsmen on the Industrial Zone, Town Charters and Economic Union on the Commercial Hub, Economic Union and Naval Infrastructure on the Harbor, Scripture on the Holy Site, and Reyna's Harbormaster on both Commercial Hub and Harbor. Collectivism is a card CIVVIS does not carry."
     },
+    "ADJUST_FLAT_BONUS": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row against the cache: 8 government bonuses. Seven already matched - Autocracy WONDER_CONSTRUCTION 10 as wonder_production_pct, Oligarchy COMBAT_EXPERIENCE 20 in modified_xp rather than data, Classical Republic GREAT_PEOPLE 15, Monarchy ENVOYS 50 as influence_pct, Merchant Republic DISTRICT_PRODUCTION 15, Fascism UNIT_PRODUCTION 50, Democracy GOLD_PURCHASES 15. Theocracy's FAITH_PURCHASES 15 had no counterpart at all: the purchase path applied a government discount for Gold and nothing for Faith, though THEOCRACY_FAITH_PURCHASE is the exact twin of Democracy's Gold row. Added as faith_purchase_discount_pct."
+    },
     "ADJUST_GREAT_PERSON_POINTS": {
       "status": "implemented",
       "verified": true,
@@ -93,6 +103,11 @@
       "leads": [
         "Casa de Contratacion's three titles are modelled as governor_titles 3 on the wonder; confirm they arrive once rather than per building."
       ]
+    },
+    "ADJUST_PLAYER_RESOURCE_ACCUMULATION_MODIFIER": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row against the cache: 6 rows, +1 accumulation each. They pair by era exactly as CIVVIS groups them: Equestrian Orders on Horses and Iron (early_strategic_resource_rate), Drill Manuals on Niter and Coal (industrial), Resource Management on Aluminum and Oil (modern). The era grouping is not a simplification - it reproduces the shipped pairs."
     },
     "ADJUST_PLAYER_STRENGTH_MODIFIER": {
       "status": "implemented",
@@ -123,6 +138,16 @@
       "status": "implemented",
       "verified": true,
       "note": "Verified row by row, and it found two gaps now fixed. A city earns up to two routes from its own infrastructure and each is an either/or: the Commercial Hub grants one and a Harbor grants it only where there is no Commercial Hub (REQUIRES_NO_COMMERCIAL_HUB), with England's Royal Navy Dockyard unconditional; separately a Market grants one and a Lighthouse only where there is no Market (REQUIRES_NO_MARKET). CIVVIS had only the building tier. Merchant Republic's two routes were also missing. Foreign Trade, Colossus, Great Zimbabwe, Carthage and the Great Merchants already executed. Alliance-level routes remain unmodelled."
+    },
+    "ADJUST_TRADE_ROUTE_YIELD": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row against the cache, and it found E-Commerce wrong in three ways, now fixed. The shipped rows are ECOMMERCE_TRADEROUTEGOLD 5 and ECOMMERCE_TRADEROUTEPRODUCTION 2 with NO requirement set, so they pay every route; CIVVIS paid 10 Gold and 5 Production and restricted both to international. The scope error is the decisive one: the database ships ADJUST_TRADE_ROUTE_YIELD and ADJUST_TRADE_ROUTE_YIELD_FOR_INTERNATIONAL as separate effects, and E-Commerce uses the generic one where Market Economy uses the international one. Caravansaries 2 Gold and Triangular Trade 4 Gold plus 1 Faith already matched."
+    },
+    "ADJUST_TRADE_ROUTE_YIELD_FOR_DOMESTIC": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row against the cache: Collectivization 4 Food and 2 Production, Isolationism 3 Food, 3 Production and 3 Gold, all matching. Isolationism's Gold was added and its 2s raised to 3s in an earlier pass of this loop."
     },
     "ADJUST_TRADE_ROUTE_YIELD_FOR_INTERNATIONAL": {
       "status": "implemented",
