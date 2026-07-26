@@ -44697,12 +44697,20 @@ impl Game {
         let embrasure_promotion = spec.class == "military"
             && !spec.promotion_class.is_empty()
             && self.governor_effect(city.owner, cid, "military_free_promotion") > 0.0;
+        // ALLIANCE_FREE_UNIT_UPGRADE is named for something it does not do. Its
+        // collection is COLLECTION_ALLIANCE_TRAINED_UNITS and its effect is
+        // ADJUST_UNIT_GRANT_EXPERIENCE at -1 -- the same amount every row named
+        // FREE_PROMOTION carries, and the same one the Terracotta Army uses. A
+        // Level 3 Military Alliance trains its units already promoted.
+        let allied_promotion = spec.class == "military"
+            && !spec.promotion_class.is_empty()
+            && self.alliance_partner(city.owner, "military", 3).is_some();
         let unit = self.units.get_mut(&uid).unwrap();
         if spec.earns_xp {
             unit.xp_bonus_pct += xp_pct;
             unit.xp += starting_xp;
         }
-        if spec.earns_xp && embrasure_promotion {
+        if spec.earns_xp && (embrasure_promotion || allied_promotion) {
             // A free promotion is represented by exactly enough XP to expose
             // the first promotion choice. max() prevents free-promotion
             // effects from stacking with one another.
@@ -54990,6 +54998,43 @@ mod district_mechanics {
         let gained = game.players[0].research_progress + game.players[0].research_overflow;
         let without = baseline.players[0].research_progress + baseline.players[0].research_overflow;
         assert!((gained - without - copied).abs() < 1e-9, "{gained} - {without} != {copied}");
+    }
+
+    #[test]
+    fn a_level_three_military_alliance_trains_its_units_promoted() {
+        // ALLIANCE_FREE_UNIT_UPGRADE is a misnomer: COLLECTION_ALLIANCE_TRAINED
+        // _UNITS with EFFECT_ADJUST_UNIT_GRANT_EXPERIENCE at -1, which is the
+        // amount every FREE_PROMOTION row in the game carries -- Hetairoi,
+        // Corbaci, Nau, City Defender, and the Terracotta Army. It grants a
+        // promotion, not a discount.
+        let mut game = emergency_game_with_capitals(2, 88_106, 300);
+        let city = game.player_city_ids(0)[0];
+        let warrior = Item::Unit {
+            unit: "warrior".to_string(),
+        };
+        let trained_xp = |game: &mut Game| {
+            let before: BTreeSet<u32> = game.player_unit_ids(0).into_iter().collect();
+            assert!(game.complete_item(0, city, &warrior));
+            let uid = game
+                .player_unit_ids(0)
+                .into_iter()
+                .find(|id| !before.contains(id))
+                .expect("a trained Warrior");
+            game.units[&uid].xp
+        };
+        assert_eq!(trained_xp(&mut game), 0, "no alliance, no promotion");
+
+        install_alliance(&mut game, 0, 1, "military", 3, 240.0);
+        let promoted = trained_xp(&mut game);
+        assert_eq!(
+            promoted,
+            Game::promotion_threshold(1),
+            "trained already able to promote"
+        );
+
+        // Level 2 is not enough: the free promotion is the Level 3 reward.
+        install_alliance(&mut game, 0, 1, "military", 2, 80.0);
+        assert_eq!(trained_xp(&mut game), 0);
     }
 
     #[test]
