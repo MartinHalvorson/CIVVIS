@@ -1,5 +1,7 @@
 {
  "farm": {
+  "plunder_type": "heal",
+  "plunder_amount": 50,
   "yields": {
    "food": 1
   },
@@ -23,6 +25,8 @@
   ]
  },
  "fishery": {
+  "plunder_type": "heal",
+  "plunder_amount": 50,
   "yields": {
    "food": 1
   },
@@ -39,6 +43,8 @@
   "tech": "sailing"
  },
  "city_park": {
+  "plunder_type": "heal",
+  "plunder_amount": 50,
   "yields": {
    "culture": 1
   },
@@ -57,6 +63,8 @@
   ]
  },
  "mine": {
+  "plunder_type": "gold",
+  "plunder_amount": 50,
   "tech": "mining",
   "yields": {
    "production": 1
@@ -91,6 +99,8 @@
   }
  },
  "quarry": {
+  "plunder_type": "faith",
+  "plunder_amount": 25,
   "tech": "mining",
   "yields": {
    "production": 1
@@ -106,6 +116,8 @@
   }
  },
  "pasture": {
+  "plunder_type": "faith",
+  "plunder_amount": 25,
   "tech": "animal_husbandry",
   "yields": {
    "production": 1
@@ -119,6 +131,8 @@
   "resource_only": true
  },
  "plantation": {
+  "plunder_type": "faith",
+  "plunder_amount": 25,
   "tech": "irrigation",
   "yields": {
    "gold": 2
@@ -143,6 +157,8 @@
   "resource_only": true
  },
  "camp": {
+  "plunder_type": "faith",
+  "plunder_amount": 25,
   "tech": "animal_husbandry",
   "yields": {
    "gold": 2
@@ -158,6 +174,8 @@
   "resource_only": true
  },
  "fishing_boats": {
+  "plunder_type": "heal",
+  "plunder_amount": 50,
   "tech": "sailing",
   "yields": {
    "food": 1
@@ -175,6 +193,8 @@
   "water": true
  },
  "lumber_mill": {
+  "plunder_type": "gold",
+  "plunder_amount": 50,
   "tech": "construction",
   "yields": {
    "production": 2
@@ -187,6 +207,8 @@
   }
  },
  "oil_well": {
+  "plunder_type": "gold",
+  "plunder_amount": 50,
   "tech": "refining",
   "yields": {
    "production": 2
@@ -207,6 +229,8 @@
   }
  },
  "offshore_oil_rig": {
+  "plunder_type": "gold",
+  "plunder_amount": 50,
   "tech": "plastics",
   "yields": {
    "production": 2
@@ -225,6 +249,8 @@
   }
  },
  "wind_farm": {
+  "plunder_type": "gold",
+  "plunder_amount": 50,
   "tech": "composites",
   "yields": {
    "gold": 2,
@@ -243,6 +269,8 @@
   ]
  },
  "geothermal_plant": {
+  "plunder_type": "gold",
+  "plunder_amount": 50,
   "tech": "synthetic_materials",
   "yields": {
    "production": 2,
@@ -256,6 +284,8 @@
   }
  },
  "solar_farm": {
+  "plunder_type": "gold",
+  "plunder_amount": 50,
   "tech": "satellites",
   "yields": {
    "production": 1,
@@ -273,6 +303,8 @@
   ]
  },
  "offshore_wind_farm": {
+  "plunder_type": "gold",
+  "plunder_amount": 50,
   "tech": "predictive_systems",
   "yields": {
    "production": 2
@@ -316,6 +348,8 @@
   }
  },
  "seastead": {
+  "plunder_type": "heal",
+  "plunder_amount": 50,
   "tech": "seasteads",
   "yields": {
    "food": 2
@@ -395,6 +429,8 @@
   }
  },
  "industry": {
+  "plunder_type": "gold",
+  "plunder_amount": 50,
   "tech": "currency",
   "yields": {
    "food": 2,
@@ -412,6 +448,8 @@
   }
  },
  "corporation": {
+  "plunder_type": "gold",
+  "plunder_amount": 50,
   "tech": "economics",
   "yields": {
    "food": 4,
@@ -427,6 +465,8 @@
   "unbuildable": true
  },
  "sphinx": {
+  "plunder_type": "faith",
+  "plunder_amount": 25,
   "civic": "craftsmanship",
   "unique_to": "Egypt",
   "yields": {
@@ -451,6 +491,8 @@
   }
  },
  "great_wall": {
+  "plunder_type": "gold",
+  "plunder_amount": 50,
   "tech": "masonry",
   "unique_to": "China",
   "yields": {
@@ -487,6 +529,8 @@
   "requires_flat": false
  },
  "kurgan": {
+  "plunder_type": "faith",
+  "plunder_amount": 25,
   "tech": "animal_husbandry",
   "unique_to": "Scythia",
   "yields": {
