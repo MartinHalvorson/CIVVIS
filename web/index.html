@@ -6742,11 +6742,13 @@ function shieldPart(sx, sy, r, col, dir, type) {
 // radial mask turns that crop into a broad dab rather than a hex-shaped decal.
 // The dabs are allowed to overlap compatible neighboring faces below, making
 // grass into a field and ocean into a body of water instead of a tile set.
-const BIOME_STAMPS = {}, BIOME_PATTERNS = {};
-function biomePattern(terrain) {
-  if (BIOME_PATTERNS[terrain]) return BIOME_PATTERNS[terrain];
+const BIOME_STAMPS = {}, BIOME_PATTERNS = {}, PLANET_BIOME_PATTERNS = {};
+function biomePattern(terrain, cache = BIOME_PATTERNS) {
+  if (cache[terrain]) return cache[terrain];
   if (!ATLAS_READY) return null;
-  const [col, row] = ATLAS_CELL[terrain];
+  const cell = ATLAS_CELL[terrain];
+  if (!cell) return null;
+  const [col, row] = cell;
   const cw = TERRAIN_ATLAS.naturalWidth / 4;
   const ch = TERRAIN_ATLAS.naturalHeight / 2;
   const inset = 2, D = 224;
@@ -6767,8 +6769,8 @@ function biomePattern(terrain) {
   };
   paint(0, 0, false, false); paint(D, 0, true, false);
   paint(0, D, false, true); paint(D, D, true, true);
-  BIOME_PATTERNS[terrain] = cx.createPattern(c, "repeat");
-  return BIOME_PATTERNS[terrain];
+  cache[terrain] = cx.createPattern(c, "repeat");
+  return cache[terrain];
 }
 
 function biomeStamp(terrain, variant) {
@@ -10535,6 +10537,40 @@ function planetPath(context, points) {
                                          : context.moveTo(point.x, point.y));
   context.closePath();
 }
+// Canvas antialiases both sides of every separately-filled polygon. Exact
+// shared coordinates therefore still leave a hairline of the sphere showing
+// between two cells, especially once the limb crushes one of them to a sliver.
+// Ground paint overlaps by one physical pixel; hit testing, borders and the
+// optional grid continue to use the exact topology above.
+function appendPlanetPaintPath(context, cell, bleed = 0.8) {
+  const {points, center} = cell;
+  for (let index = 0; index < points.length; index++) {
+    const point = points[index];
+    const dx = point.x - center.x, dy = point.y - center.y;
+    const distance = Math.hypot(dx, dy) || 1;
+    const x = point.x + dx / distance * bleed;
+    const y = point.y + dy / distance * bleed;
+    index ? context.lineTo(x, y) : context.moveTo(x, y);
+  }
+  context.closePath();
+}
+function planetPaintPath(context, cell, bleed = 0.8) {
+  context.beginPath();
+  appendPlanetPaintPath(context, cell, bleed);
+}
+function planetCellInradius(cell) {
+  const {points, center} = cell;
+  let inradius = Infinity;
+  for (let index = 0; index < points.length; index++) {
+    const a = points[index], b = points[(index + 1) % points.length];
+    const ex = b.x - a.x, ey = b.y - a.y;
+    const length = Math.hypot(ex, ey);
+    if (length < 1e-6) continue;
+    inradius = Math.min(inradius,
+      Math.abs((a.x - center.x) * ey - (a.y - center.y) * ex) / length);
+  }
+  return Number.isFinite(inradius) ? inradius : 0;
+}
 function pointInsidePlanetCell(x, y, points) {
   let inside = false;
   for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
@@ -10573,14 +10609,7 @@ function planetFrontierLanes(cells) {
     // quantized so the layer stays a handful of strokes instead of one per
     // edge; four steps is finer than the eye follows a border foreshortening
     // into the horizon.
-    let inradius = Infinity;
-    for (let i = 0; i < sides; i++) {
-      const a = points[i], b = points[(i + 1) % sides];
-      const ex = b.x - a.x, ey = b.y - a.y;
-      const len = Math.hypot(ex, ey);
-      if (len < 1e-6) continue;
-      inradius = Math.min(inradius, Math.abs((a.x - center.x) * ey - (a.y - center.y) * ex) / len);
-    }
+    const inradius = planetCellInradius({points, center});
     if (!(inradius > PLANET_LANE_TILE / 8)) continue;
     const weight = Math.min(1, Math.round(4 * inradius / PLANET_LANE_TILE) / 4);
     for (let i = 0; i < sides; i++) {
@@ -11703,6 +11732,199 @@ function planetSkyAnimating() {
   return crews.satellite.length > 0 || crews.expedition.length > 0;
 }
 
+// The flat board and the globe share the same terrain atlas, but not the same
+// tile shape. Stretching one baked hex over every projected cell makes
+// pentagons visibly wrong and restarts the photograph at every tile. Globe
+// material is instead one continuous pattern per biome, clipped by the real
+// spherical cells. Its private pattern cache can follow the globe camera
+// without changing the flat board's world-space patterns.
+function planetTerrainPatterns(camera, scale) {
+  const patterns = new Map();
+  for (const terrain of Object.keys(ATLAS_CELL)) {
+    const pattern = biomePattern(terrain, PLANET_BIOME_PATTERNS);
+    if (!pattern) continue;
+    if (typeof pattern.setTransform === "function" && typeof DOMMatrix !== "undefined") {
+      const materialScale = Math.max(.62, Math.min(1.35, .72 + scale * .12));
+      const matrix = new DOMMatrix();
+      matrix.translateSelf(-camera.longitude * 74, camera.latitude * 58);
+      matrix.rotateSelf(-(camera.roll || 0) * 180 / Math.PI);
+      matrix.scaleSelf(materialScale, materialScale);
+      pattern.setTransform(matrix);
+    }
+    patterns.set(terrain, pattern);
+  }
+  return patterns;
+}
+
+function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
+                          visible, spectator) {
+  const painted = MODE.painted;
+  const known = cell => spectator || visible.has(key(cell.tile.pos));
+
+  // Opaque, slightly overlapping underpaint is the tiling invariant. Every
+  // later translucent layer can miss an antialiased edge without exposing the
+  // ocean sphere through a land seam.
+  for (const cell of cells) {
+    const base = TERRAIN[cell.tile.terrain] || "#4b5960";
+    const light = camera.chart ? 1 : .70 + .34 * Math.max(0, cell.center.z);
+    planetPaintPath(cx, cell, .8);
+    cx.fillStyle = known(cell)
+      ? shade(base, painted ? .92 + light * .12 : light)
+      : shade(base, .30);
+    cx.fill();
+  }
+
+  if (painted) {
+    // One compound path per biome: neighboring grass cells sample one field
+    // and neighboring ocean cells sample one sea. Repainting the atlas from
+    // each tile centre is the checkerboard this renderer exists to avoid.
+    const byTerrain = new Map();
+    for (const cell of cells) {
+      if (!known(cell)) continue;
+      const terrain = cell.tile.terrain;
+      const group = byTerrain.get(terrain);
+      if (group) group.push(cell); else byTerrain.set(terrain, [cell]);
+    }
+    const patterns = planetTerrainPatterns(camera, scale);
+    cx.save();
+    cx.globalAlpha = MODE.atmosphere ? .82 : .68;
+    for (const [terrain, group] of byTerrain) {
+      const pattern = patterns.get(terrain);
+      if (!pattern) continue;
+      cx.beginPath();
+      for (const cell of group) appendPlanetPaintPath(cx, cell, .35);
+      cx.fillStyle = pattern;
+      cx.fill();
+    }
+    cx.restore();
+
+    // Lighting is continuous over the hemisphere, not reset inside every
+    // polygon. Painted 2D keeps a gentle wash; Cinematic gives the same sphere
+    // a real terminator and a warm shoulder.
+    cx.save();
+    cx.beginPath();
+    for (const cell of cells) appendPlanetPaintPath(cx, cell, .15);
+    cx.clip();
+    let light;
+    if (camera.chart) {
+      light = cx.createLinearGradient(centerX - radius, centerY - radius,
+                                      centerX + radius, centerY + radius);
+      light.addColorStop(0, MODE.atmosphere ? "rgba(255,239,194,.10)" : "rgba(255,246,216,.06)");
+      light.addColorStop(1, MODE.atmosphere ? "rgba(8,15,27,.24)" : "rgba(15,20,25,.10)");
+    } else {
+      light = cx.createRadialGradient(centerX - radius * .34, centerY - radius * .38,
+                                      radius * .05, centerX, centerY, radius * 1.04);
+      light.addColorStop(0, MODE.atmosphere ? "rgba(255,239,197,.16)" : "rgba(255,247,222,.08)");
+      light.addColorStop(.48, "rgba(255,255,255,0)");
+      light.addColorStop(1, MODE.atmosphere ? "rgba(1,7,15,.58)" : "rgba(3,10,16,.34)");
+    }
+    cx.fillStyle = light;
+    cx.fillRect(centerX - radius * 1.1, centerY - radius * 1.1,
+                radius * 2.2, radius * 2.2);
+    cx.restore();
+  }
+
+  // Ownership is a transparent map layer over finished ground. Painted modes
+  // leave more material showing; Strategic keeps the stronger command-map
+  // wash it had before.
+  for (const cell of cells) {
+    const owner = cell.tile.owner;
+    if (owner === null || owner === undefined) continue;
+    planetPaintPath(cx, cell, .22);
+    cx.globalAlpha = painted ? (MODE.atmosphere ? .14 : .17) : .28;
+    cx.fillStyle = pcol(owner);
+    cx.fill();
+  }
+  cx.globalAlpha = 1;
+
+  // Strategic owns the always-on cell diagram. Painted and Cinematic dissolve
+  // the honeycomb unless the player explicitly asks for the G grid overlay.
+  if (radius >= SKY_MARKERS && (!painted || SHOW_GRID)) {
+    cx.strokeStyle = painted
+      ? (MODE.atmosphere ? "rgba(234,242,231,.19)" : "rgba(33,29,20,.22)")
+      : "rgba(214,235,231,.075)";
+    cx.lineWidth = painted ? 1 : Math.max(.3, Math.min(1, scale * .75));
+    for (const cell of cells) {
+      planetPath(cx, cell.points);
+      cx.stroke();
+    }
+  }
+}
+
+// Close enough to read individual cells, Painted gets illustrated landform
+// marks and Cinematic gets the same forms with deeper occlusion and highlights.
+// These are clipped to the exact five- or six-sided top face, so relief never
+// reintroduces rectangular or hexagonal art at the twelve pentagons.
+function drawPlanetSurfaceDetail(cell) {
+  if (!MODE.painted) return;
+  const tile = cell.tile;
+  const r = planetCellInradius(cell);
+  if (r < 1.6) return;
+  const x = cell.center.x, y = cell.center.y;
+  const depth = MODE.atmosphere ? 1 : .62;
+  const seed = hash2(tile.pos[0] * 31 + 7, tile.pos[1] * 37 + 11);
+  cx.save();
+  planetPath(cx, cell.points); cx.clip();
+
+  if (isWater(tile)) {
+    if (seed > .48 && r > 2.2) {
+      cx.globalAlpha = .10 + depth * .08;
+      cx.strokeStyle = "#dff7ff";
+      cx.lineWidth = Math.max(.45, r * .10);
+      cx.beginPath();
+      cx.moveTo(x - r * .58, y + (seed - .5) * r);
+      cx.quadraticCurveTo(x, y - r * .18, x + r * .58, y + (seed - .5) * r);
+      cx.stroke();
+    }
+  } else if (tile.terrain === "mountain" || tile.feature === "volcano") {
+    const peak = r * (tile.feature === "volcano" ? .78 : .92);
+    cx.globalAlpha = .48 + depth * .24;
+    cx.fillStyle = "#18201d";
+    cx.beginPath();
+    cx.moveTo(x - r * .72, y + r * .58);
+    cx.lineTo(x + r * .15, y - peak);
+    cx.lineTo(x + r * .74, y + r * .58);
+    cx.closePath(); cx.fill();
+    cx.fillStyle = tile.feature === "volcano" ? "#d98942" : "#e8e1ca";
+    cx.globalAlpha = .52 + depth * .24;
+    cx.beginPath();
+    cx.moveTo(x + r * .15, y - peak);
+    cx.lineTo(x + r * .08, y + r * .15);
+    cx.lineTo(x + r * .48, y + r * .50);
+    cx.closePath(); cx.fill();
+  } else if (tile.hills) {
+    const mound = cx.createRadialGradient(x - r * .24, y - r * .30, r * .05,
+                                          x, y, r * .95);
+    mound.addColorStop(0, `rgba(255,244,207,${(.16 + depth * .12).toFixed(2)})`);
+    mound.addColorStop(.55, "rgba(255,255,255,0)");
+    mound.addColorStop(1, `rgba(8,12,12,${(.15 + depth * .17).toFixed(2)})`);
+    cx.fillStyle = mound;
+    cx.beginPath(); cx.ellipse(x, y + r * .12, r * .80, r * .58, 0, 0, 7); cx.fill();
+  }
+
+  if (tile.feature === "forest" || tile.feature === "jungle") {
+    const jungle = tile.feature === "jungle";
+    const color = jungle ? "#173f2c" : "#234a31";
+    cx.fillStyle = color;
+    cx.globalAlpha = .56 + depth * .20;
+    const crown = r * (jungle ? .34 : .29);
+    for (const [dx, dy, size] of [[-.34,.18,.88],[.06,-.18,1.08],[.38,.20,.82]]) {
+      cx.beginPath(); cx.arc(x + dx * r, y + dy * r, crown * size, 0, 7); cx.fill();
+    }
+    cx.fillStyle = "rgba(228,235,190,.22)";
+    cx.beginPath(); cx.arc(x - r * .06, y - r * .31, crown * .46, 0, 7); cx.fill();
+  } else if (tile.feature === "ice") {
+    cx.globalAlpha = .52 + depth * .24;
+    cx.fillStyle = "#d9f3f5";
+    cx.beginPath();
+    cx.moveTo(x - r * .68, y + r * .18); cx.lineTo(x - r * .18, y - r * .52);
+    cx.lineTo(x + r * .66, y - r * .12); cx.lineTo(x + r * .18, y + r * .48);
+    cx.closePath(); cx.fill();
+  }
+  cx.restore();
+  cx.globalAlpha = 1;
+}
+
 function drawPlanetMap() {
   if (!planetMap()) return false;
   if (!planetReady()) {
@@ -11781,31 +12003,9 @@ function drawPlanetMap() {
   cx.restore();
 
   const cells = earthInFrame ? planetCells(camera, scale, centerX, centerY) : [];
-  for (const cell of cells) {
-    const {tile, points, center} = cell;
-    planetPath(cx, points);
-    const base = TERRAIN[tile.terrain] || "#4b5960";
-    // Lit from the direction the camera is looking, so the world reads as a
-    // ball rather than as a flat disc of tiles — which is exactly why a chart
-    // is lit evenly instead. Shading that falls away toward the rim is the
-    // roundness itself, drawn.
-    const light = camera.chart ? 1 : .70 + .34 * Math.max(0, center.z);
-    cx.fillStyle = spectator || visible.has(key(tile.pos))
-      ? shade(base, light)
-      : shade(base, .30);
-    cx.fill();
-    if (tile.owner !== null && tile.owner !== undefined) {
-      cx.globalAlpha = .28;
-      cx.fillStyle = pcol(tile.owner); cx.fill(); cx.globalAlpha = 1;
-    }
-    // Below a coin-sized world the grid is finer than a pixel, and drawing it
-    // anyway turns the marble grey.
-    if (radius >= SKY_MARKERS) {
-      cx.strokeStyle = "rgba(214,235,231,.075)";
-      cx.lineWidth = Math.max(.3, Math.min(1, scale * .75)); cx.stroke();
-    }
+  drawPlanetGround(cells, camera, scale, radius, centerX, centerY, visible, spectator);
+  for (const {tile, points, center} of cells)
     PLANET_HIT_CELLS.push({pos:tile.pos, points, z:center.z});
-  }
 
   // Frontiers go over the finished ground, the way they do on a flat board, and
   // below everything a viewer clicks. Under a coin-sized world a tile is a
@@ -11832,9 +12032,15 @@ function drawPlanetMap() {
     ? planetChartHorizon(camera, scale, planetStageReach(centerX, centerY))
     : null;
 
-  // Features stay restrained at survey scale; cities and armies carry the
-  // strategic layer and grow only enough to stay clickable while zoomed out.
-  if (scale > .42) {
+  // Strategic keeps the compact command-map symbols. Painted and Cinematic
+  // use landform paint clipped to each real spherical face instead.
+  if (MODE.painted && radius >= SKY_MARKERS) {
+    for (const cell of cells) {
+      if ((!spectator && !visible.has(key(cell.tile.pos))) ||
+          cell.center.z < (onSheet ?? .04)) continue;
+      drawPlanetSurfaceDetail(cell);
+    }
+  } else if (scale > .42) {
     cx.textAlign = "center"; cx.textBaseline = "middle";
     cx.font = `${Math.max(7, Math.min(13, 8 * scale))}px serif`;
     for (const cell of cells) {
