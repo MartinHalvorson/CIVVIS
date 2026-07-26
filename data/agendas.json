@@ -138,9 +138,9 @@
     "approves_of": "less"
   },
   "navigators_school": {
-    "name": "School of Navigators",
-    "description": "Likes civilizations that keep faith with their partners. Dislikes the faithless.",
-    "measure": "loyalty_to_friends",
+    "name": "Navigator's Legacy",
+    "description": "Likes civilizations that explore the world. Dislikes civilizations that stay close to home.",
+    "measure": "territory",
     "approves_of": "more"
   },
   "billboard": {
@@ -597,6 +597,42 @@
     "name": "Kaitiakitanga",
     "description": "Likes civilizations that treat the land as a trust. Dislikes those that strip it.",
     "measure": "wonders",
+    "approves_of": "more"
+  },
+  "peacekeeper": {
+    "name": "Peacekeeper",
+    "description": "Never declares wars for which he can be branded a warmonger, and likes peaceful civilizations.",
+    "measure": "trustworthiness",
+    "approves_of": "more"
+  },
+  "cradle_of_civilization": {
+    "name": "Cradle of Civilization",
+    "description": "Builds every kind of district, and likes civilizations that do the same.",
+    "measure": "districts_per_city",
+    "approves_of": "more"
+  },
+  "iron_confederacy": {
+    "name": "Iron Confederacy",
+    "description": "Builds strong alliances and likes civilizations that do the same.",
+    "measure": "loyalty_to_friends",
+    "approves_of": "more"
+  },
+  "carabobo": {
+    "name": "Carabobo",
+    "description": "Builds a large, experienced army and respects civilizations with strong militaries.",
+    "measure": "military",
+    "approves_of": "more"
+  },
+  "archipelagic_state": {
+    "name": "Archipelagic State",
+    "description": "Likes civilizations that settle widely across islands and coasts.",
+    "measure": "territory",
+    "approves_of": "more"
+  },
+  "short_life_of_glory": {
+    "name": "Short Life of Glory",
+    "description": "Likes civilizations at war with powers other than Macedon, and dislikes civilizations at peace.",
+    "measure": "military",
     "approves_of": "more"
   }
 }
