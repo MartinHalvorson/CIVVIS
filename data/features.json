@@ -1,5 +1,6 @@
 {
   "forest": {
+    "appeal": 1,
     "yields": {
       "production": 1
     },
@@ -11,6 +12,7 @@
     "defense": 3
   },
   "jungle": {
+    "appeal": -1,
     "yields": {
       "food": 1
     },
@@ -23,6 +25,7 @@
     "defense": 3
   },
   "marsh": {
+    "appeal": -1,
     "yields": {
       "food": 1
     },
@@ -33,16 +36,19 @@
     "defense": -2
   },
   "floodplains": {
+    "appeal": -1,
     "yields": {
       "food": 2
     },
     "defense": -2
   },
   "grassland_floodplains": {
+    "appeal": -1,
     "yields": {},
     "defense": -2
   },
   "plains_floodplains": {
+    "appeal": -1,
     "yields": {},
     "defense": -2
   },
@@ -69,36 +75,42 @@
     "impassable": true
   },
   "burning_forest": {
+    "appeal": -1,
     "yields": {},
     "move_cost": 1,
     "sight_through": 1,
     "defense": 3
   },
   "burnt_forest": {
+    "appeal": -1,
     "yields": {},
     "move_cost": 1,
     "sight_through": 1,
     "defense": 3
   },
   "burning_jungle": {
+    "appeal": -1,
     "yields": {},
     "move_cost": 1,
     "sight_through": 1,
     "defense": 3
   },
   "burnt_jungle": {
+    "appeal": -1,
     "yields": {},
     "move_cost": 1,
     "sight_through": 1,
     "defense": 3
   },
   "oasis": {
+    "appeal": 1,
     "yields": {
       "food": 3,
       "gold": 1
     }
   },
   "great_barrier_reef": {
+    "appeal": 2,
     "yields": {
       "science": 2,
       "food": 3
@@ -106,6 +118,7 @@
     "natural_wonder": true
   },
   "crater_lake": {
+    "appeal": 2,
     "yields": {
       "faith": 5,
       "science": 1
@@ -113,6 +126,7 @@
     "natural_wonder": true
   },
   "pantanal": {
+    "appeal": 2,
     "yields": {
       "culture": 2,
       "food": 2
@@ -122,6 +136,7 @@
     "defense": -2
   },
   "uluru": {
+    "appeal": 4,
     "yields": {},
     "adjacent_yields": {
       "culture": 2,
@@ -132,6 +147,7 @@
     "sight_through": 1
   },
   "yosemite": {
+    "appeal": 2,
     "yields": {},
     "adjacent_yields": {
       "gold": 1,
@@ -143,6 +159,7 @@
     "sight_through": 2
   },
   "dead_sea": {
+    "appeal": 2,
     "yields": {
       "culture": 2,
       "faith": 2
@@ -150,6 +167,7 @@
     "natural_wonder": true
   },
   "mount_everest": {
+    "appeal": 2,
     "yields": {},
     "adjacent_yields": {
       "faith": 1
@@ -159,6 +177,7 @@
     "sight_through": 2
   },
   "pamukkale": {
+    "appeal": 2,
     "yields": {},
     "natural_wonder": true,
     "impassable": true,
@@ -169,6 +188,7 @@
     "sight_through": 1
   },
   "torres_del_paine": {
+    "appeal": 2,
     "yields": {},
     "adjacent_yields": {
       "food": 1,
@@ -179,6 +199,7 @@
     "sight_through": 2
   },
   "eye_of_the_sahara": {
+    "appeal": 2,
     "yields": {
       "production": 2,
       "science": 1
@@ -186,12 +207,14 @@
     "natural_wonder": true
   },
   "zhangye_danxia": {
+    "appeal": 2,
     "yields": {},
     "natural_wonder": true,
     "impassable": true,
     "sight_through": 2
   },
   "ha_long_bay": {
+    "appeal": 2,
     "yields": {
       "food": 3,
       "production": 1,
@@ -201,6 +224,7 @@
     "defense": 15
   },
   "cliffs_of_dover": {
+    "appeal": 4,
     "yields": {
       "food": 2,
       "gold": 3,
@@ -209,6 +233,7 @@
     "natural_wonder": true
   },
   "giants_causeway": {
+    "appeal": 2,
     "yields": {},
     "adjacent_yields": {
       "culture": 1
@@ -217,6 +242,7 @@
     "impassable": true
   },
   "galapagos_islands": {
+    "appeal": 2,
     "yields": {},
     "adjacent_yields": {
       "science": 2
@@ -225,6 +251,7 @@
     "impassable": true
   },
   "matterhorn": {
+    "appeal": 2,
     "yields": {},
     "adjacent_yields": {
       "culture": 1
@@ -234,6 +261,7 @@
     "sight_through": 2
   },
   "kilimanjaro": {
+    "appeal": 2,
     "yields": {},
     "adjacent_yields": {
       "food": 2
@@ -243,6 +271,7 @@
     "sight_through": 2
   },
   "piopiotahi": {
+    "appeal": 2,
     "yields": {},
     "adjacent_yields": {
       "culture": 1,
@@ -253,11 +282,13 @@
     "sight_through": 2
   },
   "ik_kil": {
+    "appeal": 2,
     "yields": {},
     "natural_wonder": true,
     "impassable": true
   },
   "gobustan": {
+    "appeal": 2,
     "yields": {
       "production": 1,
       "culture": 3
@@ -267,6 +298,7 @@
     "move_cost": 1
   },
   "ubsunur_hollow": {
+    "appeal": 2,
     "yields": {
       "food": 1,
       "production": 1,
@@ -277,6 +309,7 @@
     "move_cost": 1
   },
   "mato_tipila": {
+    "appeal": 2,
     "yields": {},
     "adjacent_yields": {
       "production": 1,
@@ -287,6 +320,7 @@
     "sight_through": 2
   },
   "delicate_arch": {
+    "appeal": 2,
     "yields": {},
     "adjacent_yields": {
       "gold": 1,
@@ -297,6 +331,7 @@
     "sight_through": 1
   },
   "chocolate_hills": {
+    "appeal": 2,
     "yields": {
       "food": 1,
       "production": 2,
@@ -307,6 +342,7 @@
     "move_cost": 1
   },
   "vesuvius": {
+    "appeal": 2,
     "yields": {},
     "adjacent_yields": {
       "production": 1
@@ -316,6 +352,7 @@
     "sight_through": 2
   },
   "lake_retba": {
+    "appeal": 2,
     "yields": {
       "production": 1,
       "gold": 2,
