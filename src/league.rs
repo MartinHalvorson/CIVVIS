@@ -1067,23 +1067,33 @@ fn active_worker_count(dir: &str) -> usize {
 }
 
 fn worker_round_contributions(cfg: &LeagueCfg, manifest: &RoundManifest) -> usize {
-    let published = manifest
+    manifest
         .jobs
         .iter()
-        .filter_map(|job| {
-            read_json::<StoredOutcome>(&result_path(&cfg.dir, manifest.round, &job.id)).ok()
+        .filter(|job| {
+            let completed = result_path(&cfg.dir, manifest.round, &job.id);
+            if let Ok(result) = read_json::<StoredOutcome>(&completed) {
+                return result.worker == cfg.worker_id;
+            }
+            // A result and its claim can coexist if the process dies after
+            // durable publication but before best-effort claim cleanup. The
+            // completed job belongs to its publisher and must not also count
+            // as a leased contribution.
+            if completed.exists() {
+                return false;
+            }
+            let path = claim_path(&cfg.dir, manifest.round, &job.id);
+            let Ok(lease) = read_json::<LeaseRecord>(&path) else {
+                return false;
+            };
+            // Expired work is no longer a contribution. In particular, a
+            // replacement process commonly has the same stable worker ID as
+            // the process that died. Counting its abandoned claims can fill
+            // the fair-share quota and make `claim_jobs` return before
+            // `try_claim_job` ever gets the chance to reclaim them.
+            lease.worker == cfg.worker_id && !lease_is_stale(&path, cfg.lease_seconds)
         })
-        .filter(|result| result.worker == cfg.worker_id)
-        .count();
-    let leased = manifest
-        .jobs
-        .iter()
-        .filter_map(|job| {
-            read_json::<LeaseRecord>(&claim_path(&cfg.dir, manifest.round, &job.id)).ok()
-        })
-        .filter(|lease| lease.worker == cfg.worker_id)
-        .count();
-    published + leased
+        .count()
 }
 
 fn validate_manifest(manifest: &RoundManifest, league: &League) -> io::Result<()> {
@@ -3532,6 +3542,146 @@ mod tests {
         let b = run("b", 4);
         assert_eq!(a, b);
         let _ = fs::remove_dir_all(&base);
+    }
+
+    fn publish_test_result(
+        cfg: &LeagueCfg,
+        manifest: &RoundManifest,
+        job: &WorkJob,
+        worker: &str,
+    ) {
+        atomic_write_json(
+            &result_path(&cfg.dir, manifest.round, &job.id),
+            &StoredOutcome {
+                schema_version: WORK_SCHEMA_VERSION,
+                engine: manifest.engine.clone(),
+                worker: worker.to_string(),
+                round: manifest.round,
+                job_id: job.id.clone(),
+                placements: job.table.clone(),
+                leaders: vec!["Trajan".into(), "Cleopatra".into()],
+                civs: vec!["Rome".into(), "Egypt".into()],
+                ranks: vec![0, 1],
+                won: vec![true, false],
+                seed: job.seed,
+                turn: 80,
+                victory: "science".into(),
+            },
+        )
+        .unwrap();
+    }
+
+    /// A supervisor normally restarts with the same stable worker ID. If that
+    /// worker died after filling its fair share, its expired claims must not
+    /// keep the replacement at a zero-claim quota forever (issue #118).
+    #[test]
+    fn restarted_worker_reclaims_its_own_stale_claim_at_a_full_quota() {
+        let dir = std::env::temp_dir().join(format!(
+            "civvis-stale-worker-restart-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        let cfg = LeagueCfg {
+            games_per_round: 4,
+            players_per_game: 2,
+            jobs: 4,
+            dir: dir.to_string_lossy().into_owned(),
+            verbose: false,
+            worker_id: "stable-worker".into(),
+            lease_seconds: 60,
+            ..LeagueCfg::default()
+        };
+        let league = seed_league(&cfg.dir);
+        let manifest = load_or_create_manifest(&league, &cfg).unwrap();
+        assert_eq!(manifest.jobs.len(), 4);
+        for job in manifest.jobs.iter().skip(1) {
+            publish_test_result(&cfg, &manifest, job, &cfg.worker_id);
+        }
+
+        let abandoned = &manifest.jobs[0];
+        let path = claim_path(&cfg.dir, manifest.round, &abandoned.id);
+        let old_lease = LeaseRecord {
+            worker: cfg.worker_id.clone(),
+            process: u32::MAX,
+            created_unix: 1,
+        };
+        atomic_write_json(&path, &old_lease).unwrap();
+        OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_times(fs::FileTimes::new().set_modified(UNIX_EPOCH))
+            .unwrap();
+        assert!(lease_is_stale(&path, cfg.lease_seconds));
+
+        let claimed = claim_jobs(&cfg, &manifest).unwrap();
+        assert_eq!(claimed.len(), 1);
+        assert_eq!(claimed[0].job.id, abandoned.id);
+        assert_ne!(claimed[0].lease, old_lease);
+        assert_eq!(read_json::<LeaseRecord>(&path).unwrap(), claimed[0].lease);
+        release_claim(&cfg, manifest.round, &claimed[0]);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Expiry is the distinction: a live lease remains work in progress and
+    /// must still consume this worker's fair share while a peer is active.
+    #[test]
+    fn live_claims_still_count_toward_a_shared_workers_fair_share() {
+        let dir = std::env::temp_dir().join(format!(
+            "civvis-live-worker-share-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        let cfg = LeagueCfg {
+            games_per_round: 8,
+            players_per_game: 2,
+            jobs: 8,
+            dir: dir.to_string_lossy().into_owned(),
+            verbose: false,
+            worker_id: "machine-a".into(),
+            lease_seconds: 60,
+            ..LeagueCfg::default()
+        };
+        let league = seed_league(&cfg.dir);
+        let manifest = load_or_create_manifest(&league, &cfg).unwrap();
+        assert_eq!(manifest.jobs.len(), 8);
+        let _first_presence = register_worker(&cfg).unwrap();
+        let mut peer_cfg = cfg.clone();
+        peer_cfg.worker_id = "machine-b".into();
+        let _peer_presence = register_worker(&peer_cfg).unwrap();
+        for job in manifest.jobs.iter().take(2) {
+            publish_test_result(&cfg, &manifest, job, &cfg.worker_id);
+        }
+        for job in manifest.jobs.iter().skip(2).take(2) {
+            atomic_write_json(
+                &claim_path(&cfg.dir, manifest.round, &job.id),
+                &LeaseRecord {
+                    worker: cfg.worker_id.clone(),
+                    process: std::process::id(),
+                    created_unix: unix_now(),
+                },
+            )
+            .unwrap();
+        }
+        // Publishing is durable before claim cleanup. A crash in that small
+        // window leaves both files, but the finished job is one contribution,
+        // not a result plus a second leased job.
+        atomic_write_json(
+            &claim_path(&cfg.dir, manifest.round, &manifest.jobs[0].id),
+            &LeaseRecord {
+                worker: cfg.worker_id.clone(),
+                process: std::process::id(),
+                created_unix: unix_now(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(active_worker_count(&cfg.dir), 2);
+        assert_eq!(worker_round_contributions(&cfg, &manifest), 4);
+        assert!(claim_jobs(&cfg, &manifest).unwrap().is_empty());
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
