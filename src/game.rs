@@ -15062,6 +15062,23 @@ impl Game {
     }
 
     fn spawn_camp(&mut self) {
+        // The shipped placement floors: 4 tiles from any city, 7 from another
+        // camp. Both are clearance radii, so they are read off a disk around
+        // each city and camp rather than measured from every tile on the map.
+        // The distinction is the whole cost of the routine on a globe: a flat
+        // map answers `wdist` with arithmetic, but a sphere past its cached
+        // ring answers with an A* search of the world, and asking that once
+        // per land tile per city never finished. A land-heavy globe seating 30
+        // civilizations hung in setup, before turn one, because a third of the
+        // camp target is placed there. A disk of radius 3 or 6 stays inside
+        // the sphere's precomputed rings, so it is a table lookup either way.
+        let mut blocked: HashSet<Pos> = HashSet::new();
+        for city in self.cities.values() {
+            blocked.extend(self.wdisk(city.pos, 3));
+        }
+        for camp in self.barb_camps.keys() {
+            blocked.extend(self.wdisk(*camp, 6));
+        }
         let mut cands: Vec<Pos> = Vec::new();
         for (pos, t) in &self.map.tiles {
             if self.rules.is_water(t) || !self.rules.is_passable(t) {
@@ -15073,12 +15090,7 @@ impl Game {
             {
                 continue;
             }
-            // The shipped placement floors: 4 tiles from any city, 7 from
-            // another camp.
-            if self.cities.values().any(|c| self.wdist(*pos, c.pos) < 4) {
-                continue;
-            }
-            if self.barb_camps.keys().any(|cp| self.wdist(*pos, *cp) < 7) {
+            if blocked.contains(pos) {
                 continue;
             }
             cands.push(*pos);
@@ -55407,6 +55419,50 @@ mod district_mechanics {
         assert_eq!(game.barb_camp_targets.get(&home), Some(&city_position));
         assert!(game.barb_alerted_until[&home] > game.turn);
         assert!(game.barb_camps[&home] <= game.turn + 1);
+    }
+
+    /// Camp placement reads its clearance off a disk around each city and
+    /// camp. Measuring instead from every land tile is what made a land-heavy
+    /// globe hang in setup: a sphere answers a distance past its cached ring
+    /// with an A* search of the world, and a third of the camp target is
+    /// placed before turn one. Twenty-one seats is where the size table moves
+    /// up to a globe large enough for that to matter — at twenty it still
+    /// finished in under two seconds, and at twenty-one it had not finished
+    /// after three minutes. The floors it may place under are unchanged.
+    #[test]
+    fn camps_keep_their_clearance_on_a_land_heavy_globe_without_searching_it() {
+        let size = MapSize::for_players(21);
+        let (width, height) = size.dimensions(MapTopology::Planet);
+        let started = std::time::Instant::now();
+        let game = Game::new_with(GameOptions {
+            barbarians: true,
+            map_script: MapScript::LandOnly,
+            map_topology: MapTopology::Planet,
+            ..GameOptions::new(21, width, height, 88_207, 100, 0)
+        });
+        let elapsed = started.elapsed();
+
+        assert!(!game.barb_camps.is_empty(), "a land-heavy globe seats camps");
+        for camp in game.barb_camps.keys() {
+            for city in game.cities.values() {
+                assert!(
+                    game.wdist(*camp, city.pos) >= 4,
+                    "camp {camp:?} sits {} from a city",
+                    game.wdist(*camp, city.pos)
+                );
+            }
+            for other in game.barb_camps.keys().filter(|other| *other != camp) {
+                assert!(
+                    game.wdist(*camp, *other) >= 7,
+                    "camps {camp:?} and {other:?} sit {} apart",
+                    game.wdist(*camp, *other)
+                );
+            }
+        }
+        assert!(
+            elapsed < std::time::Duration::from_secs(120),
+            "setting up a land-heavy globe took {elapsed:?}"
+        );
     }
 
     #[test]
