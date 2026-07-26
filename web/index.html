@@ -4804,6 +4804,25 @@ function scheduleResponsiveType(root) {
   if (!responsiveTypeFrame) responsiveTypeFrame = requestAnimationFrame(fitResponsiveType);
 }
 
+// A state update can replace both live HUDs between two paints. Waiting for a
+// later animation frame in that case lets the new nodes appear once at their
+// stylesheet size and then move when the fitter runs, which reads as the whole
+// interface shaking at fast spectator speeds. MutationObserver callbacks
+// already run at the end of the update task, before rendering; fit those roots
+// there. Size-observer updates still use the scheduled path above so a genuine
+// resize cannot create a synchronous ResizeObserver feedback cycle.
+function flushResponsiveType(roots = []) {
+  for (const root of roots) {
+    if (root?.isConnected) responsiveTypeRoots.add(root);
+  }
+  if (!responsiveTypeRoots.size) return;
+  if (responsiveTypeFrame) {
+    cancelAnimationFrame(responsiveTypeFrame);
+    responsiveTypeFrame = 0;
+  }
+  fitResponsiveType();
+}
+
 function responsiveTextTargets(root) {
   const targets = new Map();
   for (const rule of RESPONSIVE_TEXT_RULES) {
@@ -4896,7 +4915,10 @@ const responsiveTypeMutationObserver = new MutationObserver(records => {
         registerResponsiveTypeRoot(root);
     }
   }
-  for (const root of changedRoots) scheduleResponsiveType(root);
+  // Keep semantic content replacement and its fitted presentation in one
+  // paint. registerResponsiveTypeRoot() may also have queued a newly inserted
+  // dossier, so flush the shared root set rather than only changedRoots.
+  flushResponsiveType(changedRoots);
 });
 for (const root of [document.getElementById("side"), document.getElementById("playerhud"),
                     document.getElementById("victoryhud"), document.getElementById("dossier-windows"),
@@ -5870,13 +5892,36 @@ function waitForSupervisedSuccessor(finishedInstance, finishedSeed) {
     supervisorReconnectTimer = null;
     supervisorReconnectBusy = true;
     try {
-      const successor = await fetchJSON("/state", {cache: "no-store"}, 3000);
+      // Identity is all this loop needs. `/state` is roughly 3 MB on the live
+      // exhibition and takes the simulation mutex; if the probe landed during
+      // a long AI step it sat until this request's old, exact three-second
+      // timeout. `/runtime` is lock-free and tiny, so a successor is noticed
+      // as soon as its socket exists rather than after an intermittent pause.
+      const successor = await fetchJSON("/runtime", {cache: "no-store"}, 500);
       if (supervisedSuccessorChanged(successor, finishedInstance, finishedSeed)) {
+        const sameCode = worldTransitionHandoff?.reusePage === true &&
+          successor.commit && successor.commit !== "unknown" &&
+          successor.commit === state?.server_commit;
+        if (sameCode) {
+          // A manual "restart" deliberately reuses the promoted runtime. Keep
+          // this already-loaded page too: one full successor snapshot is all
+          // it needs, while reloading HTML, rules, and then that same snapshot
+          // added another visible half-second to every start.
+          const first = await fetchJSON(
+            `/state?painted=&viewer=${VIEWER_ID}`, {cache: "no-store"}, 1500);
+          if (!supervisedSuccessorChanged(first, finishedInstance, finishedSeed))
+            throw new Error("successor identity changed before its first frame");
+          supervisorReconnectWanted = false;
+          tileStore = null;
+          lastSeed2 = first.seed;
+          render(adoptTiles(first), true, true);
+          setNewSimulationBusy(false);
+          return;
+        }
+        supervisorReconnectWanted = false;
         reloadForSupervisedWorld(successor.server_instance, successor.seed);
         return;
       }
-      if (successor.supervisor_request)
-        setWorldTransitionStage("Restart accepted · changing worlds");
     } catch (e) {
       // A short connection failure is expected while the listening socket is
       // handed from the completed process to its successor.
@@ -5887,9 +5932,9 @@ function waitForSupervisedSuccessor(finishedInstance, finishedSeed) {
     // A poll that was in flight when the watch was called off must not put it
     // back: cancelling has to mean cancelled, not "one more request".
     if (supervisorReconnectWanted)
-      supervisorReconnectTimer = setTimeout(poll, 400);
+      supervisorReconnectTimer = setTimeout(poll, 50);
   };
-  supervisorReconnectTimer = setTimeout(poll, 200);
+  supervisorReconnectTimer = setTimeout(poll, 0);
 }
 
 // Stop watching for a successor world. The watcher is armed the moment a
@@ -5974,22 +6019,12 @@ function finishWorldTransition(st) {
   }
   worldTransitionFinishing = true;
   setWorldTransitionStage(st?.turn === undefined ? "World ready" : `World ready · turn ${st.turn}`);
-  const generation = worldTransitionGeneration;
-  let fadeStarted = false;
-  const startFade = () => {
-    if (fadeStarted || generation !== worldTransitionGeneration) return;
-    fadeStarted = true;
-    document.documentElement.classList.add("world-transition-ready");
-    setTimeout(() => {
-      if (generation === worldTransitionGeneration) clearWorldTransition();
-    }, 240);
-  };
-  // One frame commits the freshly drawn canvas and HUD under the veil; the
-  // next begins the veil's fade. Background tabs can suspend animation frames
-  // entirely, so the timeout is a fallback: when that tab is shown again the
-  // already-complete DOM and canvas are what its first paint contains.
-  requestAnimationFrame(() => requestAnimationFrame(startFade));
-  setTimeout(startFade, 500);
+  // Rendering above synchronously updated the canvas, HUD, and every other
+  // turn-bound surface. Remove the veil in this same task so the browser's
+  // next paint is the complete new world; waiting for animation frames or a
+  // fade only kept a ready simulation hidden (and background tabs throttle
+  // those clocks especially aggressively).
+  clearWorldTransition();
 }
 
 function syncViewPlayer() {
@@ -6857,7 +6892,9 @@ function adoptTiles(st) {
   const map = st && st.map;
   if (!map) return st;
   if (Array.isArray(map.tiles)) {
-    tileStore = {seed: st.seed, turn: st.turn, tiles: map.tiles};
+    tileStore = {seed: st.seed, turn: st.turn,
+                 finished:st.winner !== null && st.winner !== undefined,
+                 tiles: map.tiles};
     return st;
   }
   const patch = map.tiles_changed;
@@ -6866,7 +6903,8 @@ function adoptTiles(st) {
     throw new Error("tile patch for a world this page is not holding");
   const tiles = tileStore.tiles.slice();
   for (const [at, tile] of patch) tiles[at] = tile;
-  tileStore = {seed: st.seed, turn: st.turn, tiles};
+  tileStore = {seed: st.seed, turn: st.turn,
+               finished:st.winner !== null && st.winner !== undefined, tiles};
   map.tiles = tiles;
   return st;
 }
@@ -6887,10 +6925,12 @@ function paintedQuery() {
   // Only the watching loop says what it holds. Saying so is also what asks the
   // server to hold the answer back until there is a next turn, and the human
   // game's one-off boot read wants the state that exists now.
-  const held = SPEC && tileStore ? `&have=${tileStore.seed}:${tileStore.turn}` : "";
+  const held = SPEC && tileStore
+    ? `&have=${tileStore.seed}:${tileStore.turn}:${tileStore.finished ? 1 : 0}` : "";
   const who = `&viewer=${VIEWER_ID}`;
   return (paintedFrame === null ? "?painted="
-    : `?painted=${paintedFrame.turn}&world=${paintedFrame.seed}`) + who + held;
+    : `?painted=${paintedFrame.turn}&world=${paintedFrame.seed}` +
+      `&finished=${paintedFrame.finished ? 1 : 0}`) + who + held;
 }
 // One turn, one frame on the glass.
 //
@@ -7259,10 +7299,10 @@ function chronicle(prev, next) {
   chronicleServer(next, true);
 }
 
-function render(st, recordChronicle = true) {
+function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false) {
   // The between-game supervisor may replace the server with a freshly built
   // binary. Reload once so this tab also picks up the new HTML/JavaScript.
-  if (serverInstance !== null && st.server_instance !== undefined &&
+  if (!acceptingSupervisedSuccessor && serverInstance !== null && st.server_instance !== undefined &&
       st.server_instance !== serverInstance) {
     reloadForSupervisedWorld(st.server_instance, st.seed);
     return;
@@ -7270,7 +7310,7 @@ function render(st, recordChronicle = true) {
   // The server can also begin its successor in-process. Treat its seed as
   // part of the supervised runtime identity so stale transition state cannot
   // leave the completed map painted until a person refreshes the page.
-  if (state && st.supervised && st.seed !== undefined &&
+  if (!acceptingSupervisedSuccessor && state && st.supervised && st.seed !== undefined &&
       state.seed !== undefined && st.seed !== state.seed) {
     reloadForSupervisedWorld(st.server_instance, st.seed);
     return;
@@ -7491,7 +7531,8 @@ function render(st, recordChronicle = true) {
   // The reload paths return before here on purpose: a page on its way to a
   // successor world painted nothing, and must not claim it did.
   if (st.turn !== undefined && st.seed !== undefined)
-    paintedFrame = {seed:st.seed, turn:st.turn};
+    paintedFrame = {seed:st.seed, turn:st.turn,
+                    finished:st.winner !== null && st.winner !== undefined};
   finishWorldTransition(st);
 }
 
@@ -22223,7 +22264,7 @@ async function startNewSimulation() {
   const supervised = !!(state && state.supervised) && payload.spectate;
   const handoff = {
     requestedAt: Date.now(), paused: wasPaused, targetSeed: payload.seed,
-    supervised,
+    supervised, reusePage: supervised,
     finishedInstance: state?.server_instance ?? null,
     finishedSeed: state?.seed ?? null,
     summary: selectedSimulationSummary(),
