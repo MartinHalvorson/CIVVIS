@@ -15,7 +15,9 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Value};
 
 use crate::ai::{AdvancedAi, Ai, BasicAi};
-use crate::game::{Action, Game, GameOptions, VictoryConditions};
+use crate::game::{
+    Action, Game, GameOptions, LeaderPool, VictoryConditions, CIV6_LEADER_POOL,
+};
 use crate::rules::Rules;
 use crate::obs::{observation, observation_player_view, observation_spectator};
 use crate::setup::{
@@ -67,6 +69,8 @@ pub struct Params {
     pub difficulty: String,
     pub speed: String,
     pub teams: Vec<Option<usize>>,
+    /// Roster used for every major seat the setup did not name explicitly.
+    pub leader_pool: LeaderPool,
     /// Civilizations for the leading major seats, in seat order — seat 0 is
     /// the person's own. Empty is the stock roster; see `Game::seat_civs`.
     pub civs: Vec<String>,
@@ -1337,6 +1341,7 @@ impl Session {
             human_seats,
             teams: params.teams.clone(),
             civs: params.civs.clone(),
+            leader_pool: params.leader_pool,
             randomize_civs: true,
             ..GameOptions::new(
                 params.num_players,
@@ -1407,6 +1412,7 @@ impl Session {
         params.max_turns = game.max_turns;
         params.difficulty = game.difficulty.clone();
         params.speed = game.speed.clone();
+        params.leader_pool = game.leader_pool;
         params.victory_conditions = game.victory_conditions;
         params.teams = game
             .players
@@ -1742,6 +1748,7 @@ impl Session {
             o["supervised"] = json!(self.params.supervised);
             o["spectator_paused"] = json!(self.spectator_paused);
             o["view_player"] = json!(self.view_player);
+            o["leader_pool"] = json!(self.game.leader_pool.id());
             o["victory_conditions"] = json!(self.game.victory_conditions);
             o["supervisor_request"] = json!(self.supervisor_request);
             o["next_game_settings"] = self
@@ -1760,6 +1767,7 @@ impl Session {
         o["spectate"] = json!(false);
         o["supervised"] = json!(self.params.supervised);
         o["view_player"] = json!(0);
+        o["leader_pool"] = json!(self.game.leader_pool.id());
         o["victory_conditions"] = json!(self.game.victory_conditions);
         o["supervisor_request"] = json!(self.supervisor_request);
         o["next_game_settings"] = self
@@ -2333,6 +2341,7 @@ fn simulation_settings(params: &Params) -> Value {
         "shape": params.map_topology.id(),
         "poles": params.map_poles.id(),
         "speed": params.game_speed.id(),
+        "leader_pool": params.leader_pool.id(),
         "victories": victories,
     })
 }
@@ -2435,6 +2444,9 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     }
     if let Some(v) = request["max_turns"].as_u64() {
         p.max_turns = v as u32;
+    }
+    if let Some(v) = request["leader_pool"].as_str().and_then(LeaderPool::from_id) {
+        p.leader_pool = v;
     }
     // The two settings a Civ 6 lobby asks for that this protocol could not
     // carry: how hard the rivals play, and who the player is. Both are
@@ -3024,6 +3036,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "wonders": r.wonders,
                     "projects": r.projects,
                     "policies": r.policies, "beliefs": r.beliefs, "civs": r.civs,
+                    "civ6_leaders": CIV6_LEADER_POOL.as_slice(),
                     "great_people": r.great_people, "governors": r.governors,
                     "map_sizes": CIV6_MAP_SIZES,
                     "difficulties": r.difficulties, "speeds": r.speeds,
@@ -3325,7 +3338,7 @@ mod tests {
         Session, SpectatorFrame, EMBEDDED_CINEMATIC_3D, EMBEDDED_INDEX, MIN_RESTART_MS,
         EMBEDDED_WORLD_WONDER_ATLAS, SAVE_DIR, STATE_LONG_POLL, VIEWER_ACTIVE,
     };
-    use crate::game::{Action, Game, VictoryConditions};
+    use crate::game::{Action, Game, LeaderPool, VictoryConditions, CIV6_LEADER_POOL};
     use crate::setup::{GameSpeed, MapPoles, MapScript, MapTopology};
     use serde_json::{json, Value};
     use std::io::{Read, Write};
@@ -4167,7 +4180,10 @@ mod tests {
             .split_once("function specFetch() {")
             .expect("the spectator's fetch")
             .1;
-        assert!(fetching.contains("if (!SPEC || specFetching || specPending) return;"));
+        assert!(fetching.contains(
+            "if (!SPEC || specFetching || specPending || worldTransitionPending()) return;"
+        ));
+        assert!(fetching.contains("generation === specFetchGeneration"));
     }
 
     fn current() -> Params {
@@ -4187,6 +4203,7 @@ mod tests {
             difficulty: crate::game::default_difficulty(),
             speed: crate::game::default_speed(),
             teams: Vec::new(),
+            leader_pool: LeaderPool::Civ6,
             civs: Vec::new(),
             supervised: false,
             restart_ms: 5_000,
@@ -4265,7 +4282,9 @@ mod tests {
     /// agents; the serialized game keeps the authoritative RNG.
     #[test]
     fn a_saved_game_reloads_onto_the_same_turn() {
-        let mut session = Session::new(current());
+        let mut params = current();
+        params.leader_pool = LeaderPool::Expanded;
+        let mut session = Session::new(params);
         for _ in 0..3 {
             session.act(&json!({"type": "end_turn"}));
         }
@@ -4276,9 +4295,11 @@ mod tests {
             serde_json::from_value(serde_json::to_value(&session.game).unwrap()).unwrap();
         assert_eq!(round_tripped.turn, turn);
         assert_eq!(round_tripped.seed, session.game.seed);
+        assert_eq!(round_tripped.leader_pool, LeaderPool::Expanded);
 
         let mut restored = Session::from_game(session.params.clone(), round_tripped);
         assert_eq!(restored.game.turn, turn);
+        assert_eq!(restored.params.leader_pool, LeaderPool::Expanded);
         assert!(restored.act(&json!({"type": "end_turn"})).is_none());
         assert!(restored.game.turn > turn, "a loaded game plays on");
     }
@@ -4334,6 +4355,29 @@ mod tests {
         );
         assert_eq!(custom.game_speed, GameSpeed::Marathon);
         assert_eq!(custom.max_turns, 99);
+    }
+
+    #[test]
+    fn leader_pool_defaults_to_civ6_and_accepts_expanded_explicitly() {
+        let stock = current();
+        assert_eq!(stock.leader_pool, LeaderPool::Civ6);
+
+        let ignored = new_game_params(&stock, &json!({"leader_pool": "unknown"}));
+        assert_eq!(ignored.leader_pool, LeaderPool::Civ6);
+
+        let expanded = new_game_params(&stock, &json!({"leader_pool": "expanded"}));
+        assert_eq!(expanded.leader_pool, LeaderPool::Expanded);
+        let session = Session::new(expanded);
+        assert_eq!(session.game.leader_pool, LeaderPool::Expanded);
+        assert_eq!(session.state()["leader_pool"], "expanded");
+
+        let stock_session = Session::new(stock);
+        assert!(stock_session
+            .game
+            .players
+            .iter()
+            .filter(|player| !player.is_minor && !player.is_barbarian)
+            .all(|player| CIV6_LEADER_POOL.contains(&player.civ.as_str())));
     }
 
     #[test]
@@ -4526,6 +4570,12 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("RULES.map_scripts.map(script =>"));
         assert!(EMBEDDED_INDEX.contains("RULES.game_speeds.map(speed =>"));
         assert!(EMBEDDED_INDEX.contains("id=\"gamemode\""));
+        assert!(EMBEDDED_INDEX.contains("id=\"leaderpool\""));
+        assert!(EMBEDDED_INDEX.contains(">Civ 6 Leaders</option>"));
+        assert!(EMBEDDED_INDEX.contains(">Expanded</option>"));
+        assert!(EMBEDDED_INDEX.contains("leader_pool: leaderPool"));
+        assert!(EMBEDDED_INDEX.contains("function syncLeaderPool()"));
+        assert!(EMBEDDED_INDEX.contains("RULES.civ6_leaders"));
         assert!(EMBEDDED_INDEX.contains("id=\"maptype\""));
         // The globe has its own renderer, and it is the only one: both globe
         // scripts are drawn by it, so neither needs a projection of its own.
@@ -4640,9 +4690,19 @@ mod tests {
             .contains("const payload = {...newSimulationPayload(), paused: wasPaused}"));
         assert!(EMBEDDED_INDEX.contains("setPace({paused: wasPaused})"));
         assert!(EMBEDDED_INDEX.contains(
-            "sessionStorage.setItem(\"civvis-restart-paused-v1\", wasPaused ? \"1\" : \"0\")"
+            "sessionStorage.setItem(\"civvis-restart-paused-v1\", handoff.paused ? \"1\" : \"0\")"
         ));
-        assert!(EMBEDDED_INDEX.contains("specPaused = restartPaused === \"1\""));
+        assert!(EMBEDDED_INDEX.contains("<html class=\"world-loading\">"));
+        assert!(EMBEDDED_INDEX.contains("id=\"world-transition\""));
+        assert!(EMBEDDED_INDEX.contains("sessionStorage.setItem(\"civvis-world-transition-v1\""));
+        assert!(EMBEDDED_INDEX.contains("await settingsStageChain.catch(() => {})"));
+        assert!(EMBEDDED_INDEX.contains("specFetching || specPending || worldTransitionPending()"));
+        assert!(EMBEDDED_INDEX.contains("specFetchAbort?.abort()"));
+        assert!(EMBEDDED_INDEX.contains("worldTransitionHandoff.supervised"));
+        assert!(EMBEDDED_INDEX
+            .contains("String(st?.seed) === String(worldTransitionHandoff.targetSeed)"));
+        assert!(EMBEDDED_INDEX.contains("finishWorldTransition(st);"));
+        assert!(EMBEDDED_INDEX.contains("setTimeout(startFade, 500)"));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/next-game-settings\""));
         assert!(EMBEDDED_INDEX.contains("with selected settings"));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/supervisor-new\""));
@@ -4999,12 +5059,33 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(".diplomacy-card.allied"));
         assert!(EMBEDDED_INDEX.contains("function cameraYBounds"));
         assert!(EMBEDDED_INDEX.contains("cam.y = clampCameraY(cam.y)"));
-        // Default camera moves compose inside the rectangle the chrome leaves
-        // the map, measured rather than guessed: below whichever top
-        // instrument hangs lower, down to the real bottom edge, right of both
-        // the command deck and the world map's own midline, and left of the
-        // victory rail. Every instrument is draggable, so each edge comes off
-        // the live boxes.
+        assert!(EMBEDDED_INDEX.contains("const focusBounds = mapFocusBounds();"));
+        assert!(EMBEDDED_INDEX.contains("return { min:centered, max:centered };"));
+        // Flat charts expose both wrapping axes as persistent display choices.
+        // East-west starts on, north-south starts off, and both the projected
+        // tile positions and canonical hit-test positions consume the choice.
+        assert!(EMBEDDED_INDEX.contains("id=\"wrapxchk\" checked"));
+        assert!(EMBEDDED_INDEX.contains("id=\"wrapychk\""));
+        assert!(EMBEDDED_INDEX.contains(
+            "let FLAT_MAP_WRAP_X = localStorage.getItem(\"civvis-flat-map-wrap-x\") !== \"0\";"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "let FLAT_MAP_WRAP_Y = localStorage.getItem(\"civvis-flat-map-wrap-y\") === \"1\";"
+        ));
+        assert!(EMBEDDED_INDEX.contains("function mapWrapsY()"));
+        assert!(EMBEDDED_INDEX.contains("function wrapY(y, about = null)"));
+        assert!(EMBEDDED_INDEX.contains("const wy = wrapY(S * 1.5 * r) - cam.y;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "return canonicalOffsetPos(p, mapWrapsX(), mapWrapsY());"
+        ));
+        assert!(EMBEDDED_INDEX.contains("setFlatMapWrap(\"x\", wrapXBox.checked)"));
+        assert!(EMBEDDED_INDEX.contains("setFlatMapWrap(\"y\", wrapYBox.checked)"));
+
+        // Default camera moves compose at the exact center of the rectangle
+        // requested by the operator: the command deck's right edge to the
+        // victory rail's left edge, and the player HUD's bottom edge to the
+        // screen bottom. A missing widget naturally leaves its screen edge in
+        // place, and the minimap is deliberately absent from this calculation.
         assert!(EMBEDDED_INDEX.contains("function mapOverlayVisible(name)"));
         assert!(EMBEDDED_INDEX.contains(
             "document.body.classList.contains(\"sidebar-hidden\")"
@@ -5012,25 +5093,27 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function mapWidgetBox(name, areaRect)"));
         assert!(EMBEDDED_INDEX.contains("function mapFocusBounds()"));
         assert!(EMBEDDED_INDEX.contains("function mapFocusPoint()"));
-        // The world map sits in the lower-left corner, so it takes width off the
-        // left and gives up only half of it. The victory rail is not a corner
-        // widget — it stands the whole right edge — so the band ends where the
-        // rail begins, and the standings alone hang over the top.
-        assert!(EMBEDDED_INDEX
-            .contains("if (minimap) left = Math.max(left, (minimap.left + minimap.right) / 2);"));
-        assert!(EMBEDDED_INDEX.contains("if (victory) right = Math.min(right, victory.left);"));
-        assert!(EMBEDDED_INDEX.contains("if (players) top = Math.max(top, players.bottom);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "left = Math.max(0, Math.min(width, sideRect.right - areaRect.left));"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (victory) right = Math.max(0, Math.min(width, victory.left));"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (players) top = Math.max(0, Math.min(height, players.bottom));"
+        ));
+        assert!(!EMBEDDED_INDEX.contains(
+            "if (minimap) left = Math.max(left, (minimap.left + minimap.right) / 2);"
+        ));
         assert!(EMBEDDED_INDEX.contains(
             "return {x:(bounds.left + bounds.right) / 2, y:(bounds.top + bounds.bottom) / 2};"
         ));
-        // A widget parked over a whole axis must hand that axis back rather
-        // than aiming the camera off-screen.
-        assert!(EMBEDDED_INDEX.contains("const MIN_MAP_FOCUS_BAND = 120;"));
-        assert!(EMBEDDED_INDEX
-            .contains("if (right - left < MIN_MAP_FOCUS_BAND) { left = 0; right = width; }"));
-        assert!(EMBEDDED_INDEX
-            .contains("if (bottom - top < MIN_MAP_FOCUS_BAND) { top = 0; bottom = height; }"));
+        assert!(EMBEDDED_INDEX.contains("function reframeIfMapFocusBoundsChanged("));
+        assert!(EMBEDDED_INDEX.contains(
+            "reframeIfMapFocusBoundsChanged(priorBounds, priorFocus);"
+        ));
         assert!(EMBEDDED_INDEX.contains("function cameraCenterForWorld("));
+        assert!(EMBEDDED_INDEX.contains("const actualScale = Math.max(.01, scale);"));
         assert!(EMBEDDED_INDEX.contains("function currentMapFocusWorld()"));
         assert!(EMBEDDED_INDEX.contains("function reframeCurrentMapFocus(world)"));
         assert!(EMBEDDED_INDEX.contains(
@@ -5256,11 +5339,10 @@ mod tests {
             "function advanceUserCameraMotion(now = performance.now())",
             "function advanceCameraFollow(now = performance.now())",
             "function startCameraFollow(unitId)",
-            // The default is `null`, not `cam.x`: a chart that has not been
-            // round its world is unrolled about that civilization's own ground
-            // rather than about the camera, and only a caller chaining a path
-            // together names the point it wants a leg drawn beside.
-            "function unitMapPoint(p, nearX = null)",
+            // Both defaults are `null`: a standalone subject uses the copies
+            // nearest the camera, while a caller chaining a path can name the
+            // point it wants the next leg drawn beside across either seam.
+            "function unitMapPoint(p, nearX = null, nearY = null)",
             "function sampleUnitMove(mv, now = performance.now())",
             "function cinematicUnitMapPoint(unit, now = performance.now())",
             "function unitMoveDuration(unitId, steps)",
@@ -5475,6 +5557,7 @@ mod tests {
             session.params.num_city_states,
             session.params.map_script,
             session.params.game_speed,
+            session.params.leader_pool,
             session.params.spectate,
         );
 
@@ -5491,6 +5574,7 @@ mod tests {
                 session.params.num_city_states,
                 session.params.map_script,
                 session.params.game_speed,
+                session.params.leader_pool,
                 session.params.spectate,
             ),
             previous_settings
@@ -5511,6 +5595,7 @@ mod tests {
             "num_players": 6,
             "map_script": "continents",
             "game_speed": "quick",
+            "leader_pool": "expanded",
             "victory_conditions": {"culture": false, "score": false},
         }));
 
@@ -5529,6 +5614,7 @@ mod tests {
                 "shape": "flat",
                 "poles": "poles",
                 "speed": "quick",
+                "leader_pool": "expanded",
                 "victories": ["science", "religious", "diplomatic", "domination"],
             })
         );
@@ -5539,6 +5625,7 @@ mod tests {
         assert_eq!(session.params.num_players, 6);
         assert_eq!(session.params.map_script, MapScript::Continents);
         assert_eq!(session.params.game_speed, GameSpeed::Quick);
+        assert_eq!(session.params.leader_pool, LeaderPool::Expanded);
         assert!(!session.game.victory_conditions.culture);
         assert!(!session.game.victory_conditions.score);
         assert!(session.state()["next_game_settings"].is_null());
@@ -5559,6 +5646,7 @@ mod tests {
                 "num_players": 4,
                 "map_script": "continents",
                 "game_speed": "quick",
+                "leader_pool": "expanded",
                 "victory_conditions": {"culture": false, "score": false},
             }))
             .unwrap();
@@ -5584,6 +5672,7 @@ mod tests {
                 "shape": "flat",
                 "poles": "poles",
                 "speed": "quick",
+                "leader_pool": "expanded",
                 "victories": ["science", "religious", "diplomatic", "domination"],
             })
         );
