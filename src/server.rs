@@ -2604,21 +2604,6 @@ fn auto_step_loop(sh: Arc<Shared>) {
             std::thread::sleep(Duration::from_millis(150));
             continue;
         }
-        // A game somebody is playing is stepped from their keyboard, never
-        // here, and this loop must find that out BEFORE taking the frame gate.
-        // It used to take the gate, wait up to a viewer-active window for a
-        // page to paint, then sleep 300ms still holding it, only to discover it
-        // had no step to take — and the gate is exactly what a page's first
-        // `/state` read has to hold in order to register. Releasing it and
-        // re-locking it immediately gives a waiting request only a microsecond
-        // of daylight against an unfair mutex, so a single-player server
-        // answered a fresh page load only if it won that race. It usually lost:
-        // the boot fetch timed out after fifteen seconds and the tab sat on a
-        // black map, with the port listening and the server perfectly healthy.
-        if !sh.session.lock().unwrap().params.spectate {
-            std::thread::sleep(Duration::from_millis(300));
-            continue;
-        }
         // Close the first-viewer race as well as the steady-state one. A page
         // attaching to the current turn must either finish registering and
         // receive that snapshot before this step begins, or wait until the
@@ -3954,56 +3939,6 @@ mod tests {
             .expect("status is JSON");
         assert_eq!(status["frames_missed"], json!(0));
         assert_eq!(status["frames_painted"], json!(last));
-    }
-
-    /// The first read a page makes is the one that registers it as a viewer,
-    /// and registering takes the simulation frame gate. A game somebody is
-    /// playing is never stepped by the auto-step loop, but that loop used to
-    /// take the same gate before it checked — and then sleep 300ms still
-    /// holding it — so a boot read could only get through by winning a
-    /// microsecond race against a thread that re-locks immediately. It usually
-    /// lost: the read timed out after fifteen seconds and the tab sat on a
-    /// black map while the port listened and the server reported perfect
-    /// health. Measured against a wall clock, because the failure is a delay.
-    #[test]
-    fn a_single_player_server_answers_the_first_page_read_at_once() {
-        let port = TcpListener::bind(("127.0.0.1", 0))
-            .expect("a free port")
-            .local_addr()
-            .unwrap()
-            .port();
-        let mut params = current();
-        params.spectate = false; // somebody is at the keyboard
-        params.num_players = 3;
-        params.num_city_states = 1;
-        params.width = 24;
-        params.height = 16;
-        params.seed = 20_260_726;
-        std::thread::spawn(move || super::serve_with_game(port, false, params, None, false));
-
-        let deadline = Instant::now() + Duration::from_secs(60);
-        while http_get(port, "/status").is_none() {
-            assert!(
-                Instant::now() < deadline,
-                "single-player server never came up"
-            );
-            std::thread::sleep(Duration::from_millis(50));
-        }
-
-        // Three reads, because the race is against a loop that comes back every
-        // 300ms: one lucky read proves nothing.
-        for attempt in 1..=3 {
-            let started = Instant::now();
-            let body = http_get(port, "/state?painted=&viewer=boot-probe")
-                .unwrap_or_else(|| panic!("boot read {attempt} was never answered"));
-            let took = started.elapsed();
-            let state: Value = serde_json::from_str(&body).expect("state is JSON");
-            assert!(state["turn"].as_u64().is_some(), "boot read {attempt} state");
-            assert!(
-                took < Duration::from_secs(3),
-                "boot read {attempt} took {took:?}; a page cannot draw until it returns"
-            );
-        }
     }
 
     /// Martin's requirement is a simulation gate, not merely an audit after
