@@ -1004,33 +1004,39 @@
     body.cinema-mode #cinema-lighting::before, .cinema-frame-brand i { animation: none; }
   }
   #map-controls-dock {
-    position: absolute; z-index: 14; bottom: 0; left: 0;
-    display: flex; align-items: flex-end; gap: 6px; pointer-events: none;
+    position: absolute; z-index: 14;
+    right: calc(min(var(--hud-rail-width), var(--hud-rail-share)) + 6px);
+    bottom: 0; left: 0;
+    display: flex; align-items: stretch; gap: 6px; min-width: 0;
+    pointer-events: none;
   }
   #zoomctl {
-    position: relative; display: flex; flex-direction: row; pointer-events: auto;
+    position: relative; z-index: 1; display: flex; flex: 0 0 auto; flex-direction: row;
     gap: 5px; padding: 5px; border-radius: 13px; background: #0a1512cb; border: 1px solid #3c554c;
     box-shadow: 0 12px 26px #0006; backdrop-filter: blur(12px);
+    pointer-events: auto;
   }
   #zoomctl button { width: 34px; height: 34px; margin: 0; padding: 0; border: 0; background: transparent; font-size: 16px; }
   #zoomctl button + button { border-left: 1px solid #ffffff0c; border-radius: 0; }
   #map-lenses {
-    position: relative; pointer-events: auto;
-    display: flex; align-items: stretch; gap: 3px; padding: 4px;
+    position: relative; z-index: 1; display: flex; min-width: 0; max-width: 680px;
+    align-items: stretch; gap: 3px; padding: 4px; overflow-x: auto; overflow-y: hidden;
     border: 1px solid #3c554c; border-radius: 13px;
     background: #0a1512df; box-shadow: 0 12px 26px #0006;
     backdrop-filter: blur(12px);
+    pointer-events: auto; scrollbar-width: none;
   }
+  #map-lenses::-webkit-scrollbar { display: none; }
   .map-lens-title {
     display: flex; align-items: center; padding: 0 8px 0 6px;
     color: #81958d; font-size: var(--type-caption); font-weight: 900; letter-spacing: .10em;
     text-transform: uppercase;
   }
   #map-lenses button {
-    position: relative; width: auto; min-width: 80px; height: 34px;
-    display: grid; grid-template-columns: 18px 1fr 15px; align-items: center; gap: 5px;
+    position: relative; width: auto; min-width: 68px; height: 34px;
+    display: grid; grid-template-columns: 18px minmax(34px, 1fr) auto; align-items: center; gap: 5px;
     margin: 0; padding: 0 7px; border: 1px solid transparent; border-radius: 8px;
-    background: transparent; color: #b8c7c0; font-size: var(--type-small); font-weight: 800;
+    background: transparent; color: #b8c7c0; font-size: var(--type-caption); font-weight: 800;
     text-align: left;
   }
   #map-lenses button:hover { transform: none; border-color: #4d6b60; background: #183027; }
@@ -1043,6 +1049,12 @@
   #map-lens-exit[hidden] { display: none; }
   #map-lens-exit .map-lens-icon { color: #e4a49d; }
   .map-lens-icon { color: #e6c978; font-size: 15px; line-height: 1; text-align: center; }
+  #map-lenses button[data-map-lens="religion"] .map-lens-icon { color: #eadfbd; }
+  #map-lenses button[data-map-lens="continent"] .map-lens-icon { color: #8bc5c1; }
+  #map-lenses button[data-map-lens="appeal"] .map-lens-icon { color: #87c878; }
+  #map-lenses button[data-map-lens="government"] .map-lens-icon { color: #bca0df; }
+  #map-lenses button[data-map-lens="political"] .map-lens-icon { color: #df9a86; }
+  #map-lenses button[data-map-lens="tourism"] .map-lens-icon { color: #e9b5dd; }
   #map-lenses button[data-map-lens="empire"] .map-lens-icon { color: #9ed8ca; }
   #map-lenses kbd {
     min-width: 15px; height: 15px; margin: 0; padding: 0;
@@ -1824,12 +1836,17 @@
     #side { width: 340px; min-width: 340px; }
     #ubar { max-width: calc(100% - 70px); }
   }
+  @media (max-width: 1600px) {
+    .map-lens-title { display: none; }
+    #map-lenses button { min-width: 66px; }
+  }
   @media (max-width: 720px) {
     body { display: block; }
     #maparea { height: 100%; }
     #side { position: fixed; inset: 132px auto 8px 8px; width: min(390px, calc(100% - 16px)); min-width: 0; height: auto; max-height: calc(100dvh - 140px); border: 1px solid #40584f; border-radius: 16px; }
     body.sidebar-hidden #side { width: min(390px, calc(100% - 16px)); transform: translateX(calc(-100% - 16px)); opacity: 0; }
-    #map-controls-dock { left: 0; bottom: 0; }
+    #map-controls-dock { right: 0; }
+    #map-lenses { flex: 1 1 auto; }
     .map-lens-title, .map-lens-label { display: none; }
     #map-lenses button { min-width: 44px; grid-template-columns: 20px 15px; padding: 0 5px; }
     #ubar { min-width: 0; width: calc(100% - 28px); bottom: 18px; }
@@ -2256,6 +2273,8 @@
     /* Six identity columns plus ten value columns need the map's full width at
        this point. The instruments stack as bands across the top, with the
        tracker's paths in columns because there is no height left to stack them. */
+    #map-controls-dock { right: 0; }
+    #map-lenses { flex: 1 1 auto; }
     #playerhud, body.overlay-victory-hidden #playerhud {
       top: 8px; left: 8px; right: 8px; width: auto; padding: 4px;
       --hud-lock-column: 11px;
@@ -2267,7 +2286,7 @@
       left: 8px; right: 8px; bottom: auto; width: auto; height: 132px;
       grid-template-columns: minmax(0, 1fr); padding: 4px;
     }
-    .minimap-frame { left: auto; right: 0; bottom: 0; width: 174px; }
+    .minimap-frame { left: 0; right: auto; bottom: 50px; width: 174px; }
     #victoryhud .hud-rail { overflow-x: auto; overflow-y: hidden; }
     #victoryhud .victory-ribbon {
       min-height: 0; width: max(100%, var(--victory-min-width, 514px));
@@ -2616,13 +2635,43 @@
     </div>
     <div id="map-lenses" role="toolbar" aria-label="Map lenses">
       <span class="map-lens-title" aria-hidden="true">Lenses</span>
+      <button type="button" data-map-lens="religion" aria-pressed="false"
+        title="Religion lens — majority faith and religious pressure">
+        <span class="map-lens-icon" aria-hidden="true">✦</span>
+        <span class="map-lens-label">Religion</span>
+      </button>
+      <button type="button" data-map-lens="continent" aria-pressed="false"
+        title="Continent lens — geographic continent regions">
+        <span class="map-lens-icon" aria-hidden="true">◒</span>
+        <span class="map-lens-label">Continent</span>
+      </button>
+      <button type="button" data-map-lens="appeal" aria-pressed="false"
+        title="Appeal lens — Breathtaking through Disgusting tiles">
+        <span class="map-lens-icon" aria-hidden="true">❀</span>
+        <span class="map-lens-label">Appeal</span>
+      </button>
       <button type="button" data-map-lens="settler" aria-pressed="false"
-        title="Settler lens — compare legal city sites (2)">
+        title="Settler lens — legal sites, quality, and water access (2)">
         <span class="map-lens-icon" aria-hidden="true">⌂</span>
         <span class="map-lens-label">Settler</span><kbd aria-hidden="true">2</kbd>
       </button>
+      <button type="button" data-map-lens="government" aria-pressed="false"
+        title="Government lens — territory grouped by form of government">
+        <span class="map-lens-icon" aria-hidden="true">♜</span>
+        <span class="map-lens-label">Government</span>
+      </button>
+      <button type="button" data-map-lens="political" aria-pressed="false"
+        title="Political lens — territory grouped by civilization">
+        <span class="map-lens-icon" aria-hidden="true">◩</span>
+        <span class="map-lens-label">Political</span>
+      </button>
+      <button type="button" data-map-lens="tourism" aria-pressed="false"
+        title="Tourism lens — exact Tourism generated by each tile">
+        <span class="map-lens-icon" aria-hidden="true">♪</span>
+        <span class="map-lens-label">Tourism</span>
+      </button>
       <button type="button" data-map-lens="empire" aria-pressed="false"
-        title="Empire lens — isolate land, water, and civilization frontiers (4)">
+        title="Empire lens — city borders, districts, adjacency, and wonders (4)">
         <span class="map-lens-icon" aria-hidden="true">◈</span>
         <span class="map-lens-label">Empire</span><kbd aria-hidden="true">4</kbd>
       </button>
@@ -13019,6 +13068,269 @@ function drawPlanetSurfaceDetail(cell) {
   cx.globalAlpha = 1;
 }
 
+function mixLensColor(first, second, amount) {
+  const read = color => [1, 3, 5].map(at => parseInt(color.slice(at, at + 2), 16));
+  const a = read(first), b = read(second), t = Math.max(0, Math.min(1, amount));
+  return "#" + a.map((value, index) => Math.round(value + (b[index] - value) * t)
+    .toString(16).padStart(2, "0")).join("");
+}
+function mapLensContext(tiles) {
+  const cities = new Map(state.cities.map(city => [city.id, city]));
+  const tourismHigh = Math.max(1, ...tiles.map(tile => Number(tile.tourism) || 0));
+  return {cities, tourismHigh};
+}
+function politicalLensColor(owner) {
+  const player = state.players[owner];
+  if (!player) return "#464c4b";
+  if (player.is_free_city) return "#44484c";
+  if (player.is_minor) return "#171d1c";
+  return pcol(owner);
+}
+function lensTileStyle(tile, context) {
+  if (mapLens === "continent") {
+    if (isWater(tile)) return null;
+    const continent = Number.isInteger(tile.continent) ? tile.continent : -1;
+    return {fill:continent < 0 ? "#626968"
+      : CONTINENT_COLORS[continent % CONTINENT_COLORS.length], alpha:.72};
+  }
+  if (mapLens === "appeal") {
+    if (isWater(tile)) return null;
+    const band = Number.isFinite(tile.appeal) ? appealBand(tile.appeal) : "Average";
+    return {fill:APPEAL_LENS_COLORS[band], alpha:Number.isFinite(tile.appeal) ? .72 : .38};
+  }
+  if (mapLens === "religion") {
+    if (tile.owner_city === null || tile.owner_city === undefined) return null;
+    const religion = context.cities.get(tile.owner_city)?.religion;
+    return {fill:religion ? faithColor(religion) : "#626967", alpha:religion ? .68 : .46};
+  }
+  if (mapLens === "government") {
+    if (tile.owner === null || tile.owner === undefined) return null;
+    const player = state.players[tile.owner];
+    const government = player && !player.is_minor && !player.is_barbarian
+      ? player.government : null;
+    return {fill:GOVERNMENT_LENS_COLORS[government] || "#4c5253", alpha:government ? .7 : .52};
+  }
+  if (mapLens === "political") {
+    if (tile.owner === null || tile.owner === undefined)
+      return {fill:isWater(tile) ? "#173846" : "#59615c", alpha:.48};
+    return {fill:politicalLensColor(tile.owner), alpha:.76};
+  }
+  if (mapLens === "tourism") {
+    const value = Number(tile.tourism) || 0;
+    if (value <= 0) return {fill:isWater(tile) ? "#17313c" : "#35383d", alpha:.64};
+    const quality = Math.sqrt(value / context.tourismHigh);
+    return {fill:mixLensColor("#9b4f9d", "#f1cf66", quality), alpha:.64 + quality * .24};
+  }
+  return null;
+}
+function lensTileValue(tile) {
+  if (mapLens === "appeal" && Number.isFinite(tile.appeal)) return String(tile.appeal);
+  if (mapLens === "tourism" && Number(tile.tourism) > 0)
+    return `${Number(tile.tourism).toFixed(Number(tile.tourism) % 1 ? 1 : 0)}♪`;
+  return "";
+}
+function religiousPressureEntries(city) {
+  const entries = Object.entries(city.religious_pressure || {})
+    .filter(([, pressure]) => Number(pressure) > 0)
+    .map(([religion, pressure]) => ({religion, pressure:Number(pressure)}));
+  if (Number(city.atheist_pressure) > 0)
+    entries.push({religion:null, pressure:Number(city.atheist_pressure)});
+  if (!entries.length && city.religion) entries.push({religion:city.religion, pressure:1});
+  return entries;
+}
+function drawReligiousPressureRing(x, y, city, scale = 1) {
+  const entries = religiousPressureEntries(city);
+  const total = entries.reduce((sum, entry) => sum + entry.pressure, 0);
+  if (!(total > 0)) return;
+  const radius = (10 + Math.min(8, Math.sqrt(Math.max(1, city.pop || 1)) * 1.4)) * scale;
+  let angle = -Math.PI / 2;
+  cx.save();
+  cx.lineWidth = 3.6 * scale;
+  for (const entry of entries) {
+    const next = angle + Math.PI * 2 * entry.pressure / total;
+    cx.strokeStyle = entry.religion ? faithColor(entry.religion) : "#848b89";
+    cx.beginPath(); cx.arc(x, y, radius, angle, next); cx.stroke();
+    angle = next;
+  }
+  cx.strokeStyle = "#0a1110"; cx.lineWidth = .85 * scale;
+  cx.beginPath(); cx.arc(x, y, radius + 2.2 * scale, 0, Math.PI * 2); cx.stroke();
+  cx.restore();
+}
+function drawFlatLensGroupLabels(tiles, context) {
+  if (mapLens !== "continent") return;
+  const groups = new Map();
+  for (const tile of tiles) {
+    if (!Number.isInteger(tile.continent) || isWater(tile)) continue;
+    const [x, yy] = hexXY(tile.pos[0], tile.pos[1]);
+    const group = groups.get(tile.continent) || {x:0, y:0, n:0};
+    group.x += x; group.y += yy - elev(tile); group.n++;
+    groups.set(tile.continent, group);
+  }
+  cx.save(); cx.textAlign = "center"; cx.textBaseline = "middle";
+  cx.font = `900 ${10 * UI_K()}px Inter,sans-serif`;
+  cx.lineWidth = 3.5 * UI_K(); cx.strokeStyle = "#111918"; cx.fillStyle = "#fff8df";
+  for (const [continent, group] of groups) {
+    if (group.n < 3) continue;
+    const label = CONTINENT_NAMES[continent] || `Continent ${continent + 1}`;
+    cx.strokeText(label, group.x / group.n, group.y / group.n);
+    cx.fillText(label, group.x / group.n, group.y / group.n);
+  }
+  cx.restore();
+}
+function drawThematicLensFlat(tiles) {
+  const context = mapLensContext(tiles);
+  cx.save();
+  for (const tile of tiles) {
+    const style = lensTileStyle(tile, context);
+    if (!style) continue;
+    const [x, yy] = hexXY(tile.pos[0], tile.pos[1]);
+    const y = yy - elev(tile);
+    hexPath(x, y, S + .45); cx.fillStyle = style.fill; cx.globalAlpha = style.alpha; cx.fill();
+    cx.strokeStyle = "#101716"; cx.lineWidth = .75 * UI_K(); cx.globalAlpha = .28; cx.stroke();
+    const value = lensTileValue(tile);
+    if (value && cam.scale >= .6) {
+      cx.globalAlpha = 1; cx.textAlign = "center"; cx.textBaseline = "middle";
+      cx.font = `900 ${9 * UI_K()}px Inter,sans-serif`;
+      cx.lineWidth = 3 * UI_K(); cx.strokeStyle = "#101514"; cx.fillStyle = "#fff7de";
+      cx.strokeText(value, x, y); cx.fillText(value, x, y);
+    }
+  }
+  cx.globalAlpha = 1;
+  drawFlatLensGroupLabels(tiles, context);
+  if (mapLens === "religion") {
+    for (const city of state.cities) {
+      const tile = TMAP.get(key(city.pos));
+      if (!tile) continue;
+      const [x, yy] = hexXY(city.pos[0], city.pos[1]);
+      drawReligiousPressureRing(x, yy - elev(tile), city, UI_K());
+    }
+  }
+  cx.restore();
+}
+
+function drawPlanetLensGroupLabels(cells) {
+  if (mapLens !== "continent") return;
+  const groups = new Map();
+  for (const cell of cells) {
+    const continent = cell.tile.continent;
+    if (!Number.isInteger(continent) || isWater(cell.tile) || cell.center.z < .12) continue;
+    const group = groups.get(continent) || {x:0, y:0, n:0};
+    group.x += cell.center.x; group.y += cell.center.y; group.n++;
+    groups.set(continent, group);
+  }
+  cx.save(); cx.textAlign = "center"; cx.textBaseline = "middle";
+  cx.font = "900 10px Inter,sans-serif"; cx.lineWidth = 3.5;
+  cx.strokeStyle = "#111918"; cx.fillStyle = "#fff8df";
+  for (const [continent, group] of groups) {
+    if (group.n < 3) continue;
+    const label = CONTINENT_NAMES[continent] || `Continent ${continent + 1}`;
+    cx.strokeText(label, group.x / group.n, group.y / group.n);
+    cx.fillText(label, group.x / group.n, group.y / group.n);
+  }
+  cx.restore();
+}
+function drawThematicLensPlanet(cells) {
+  const context = mapLensContext(cells.map(cell => cell.tile));
+  for (const cell of cells) {
+    const style = lensTileStyle(cell.tile, context);
+    if (!style) continue;
+    planetPaintPath(cx, cell, .35); cx.fillStyle = style.fill; cx.globalAlpha = style.alpha; cx.fill();
+    const value = lensTileValue(cell.tile);
+    if (value && planetCellInradius(cell) > 6.5) {
+      cx.globalAlpha = 1; cx.textAlign = "center"; cx.textBaseline = "middle";
+      cx.font = "900 8px Inter,sans-serif"; cx.lineWidth = 2.6;
+      cx.strokeStyle = "#101514"; cx.fillStyle = "#fff7de";
+      cx.strokeText(value, cell.center.x, cell.center.y);
+      cx.fillText(value, cell.center.x, cell.center.y);
+    }
+  }
+  cx.globalAlpha = 1;
+  drawPlanetLensGroupLabels(cells);
+  if (mapLens === "religion") {
+    const cellsByPosition = new Map(cells.map(cell => [key(cell.tile.pos), cell]));
+    for (const city of state.cities) {
+      const cell = cellsByPosition.get(key(city.pos));
+      if (cell && cell.center.z > .04) drawReligiousPressureRing(cell.center.x, cell.center.y, city);
+    }
+  }
+}
+
+function districtAdjacencyLabel(tile) {
+  const yields = tile.district_yields || tile.planned_district?.yields;
+  if (!yields) return "";
+  return Object.entries(yields)
+    .filter(([, value]) => Math.abs(Number(value) || 0) >= .05)
+    .map(([kind, value]) => `${Number(value) >= 0 ? "+" : ""}${Number(value).toFixed(Number(value) % 1 ? 1 : 0)}${YICON[kind] || ""}`)
+    .join(" ");
+}
+function drawEmpireDistrictBadge(x, y, tile, scale = 1) {
+  const district = tile.district || tile.planned_district?.district;
+  if (!district && !tile.wonder) return;
+  cx.save(); cx.textAlign = "center"; cx.textBaseline = "middle";
+  if (tile.wonder) {
+    cx.fillStyle = "#f2d47e"; cx.strokeStyle = "#2a210d"; cx.lineWidth = 2 * scale;
+    cx.font = `900 ${13 * scale}px serif`; cx.strokeText("★", x, y); cx.fillText("★", x, y);
+  }
+  if (district) {
+    const radius = 7.5 * scale;
+    cx.fillStyle = districtColor(district); cx.strokeStyle = "#101716"; cx.lineWidth = 2 * scale;
+    cx.beginPath(); cx.arc(x, y, radius, 0, Math.PI * 2); cx.fill(); cx.stroke();
+    const label = districtAdjacencyLabel(tile);
+    if (label) {
+      cx.font = `900 ${8 * scale}px Inter,sans-serif`; cx.lineWidth = 3 * scale;
+      cx.strokeStyle = "#111716"; cx.fillStyle = "#fff8df";
+      cx.strokeText(label, x, y - 11 * scale); cx.fillText(label, x, y - 11 * scale);
+    }
+  }
+  cx.restore();
+}
+function drawEmpireDetailsFlat(tiles) {
+  cx.save(); cx.setLineDash([4 * UI_K(), 3 * UI_K()]);
+  cx.strokeStyle = "#f4e2a2"; cx.globalAlpha = .75; cx.lineWidth = 1.6 * UI_K();
+  for (const tile of tiles) {
+    if (tile.owner_city === null || tile.owner_city === undefined) continue;
+    const [x, yy] = hexXY(tile.pos[0], tile.pos[1]), y = yy - elev(tile);
+    for (let side = 0; side < 6; side++) {
+      const neighbor = nbrTile(tile.pos, DIRS[side]);
+      if (!neighbor || neighbor.owner !== tile.owner ||
+          neighbor.owner_city === tile.owner_city) continue;
+      if (key(tile.pos) > key(neighbor.pos)) continue;
+      const [first, second] = EDGE_CORNERS[side];
+      const [ax, ay] = corner(x, y, S, first), [bx, by] = corner(x, y, S, second);
+      cx.beginPath(); cx.moveTo(ax, ay); cx.lineTo(bx, by); cx.stroke();
+    }
+  }
+  cx.setLineDash([]); cx.globalAlpha = 1;
+  for (const tile of tiles) {
+    if (!tile.district && !tile.planned_district && !tile.wonder) continue;
+    const [x, yy] = hexXY(tile.pos[0], tile.pos[1]);
+    drawEmpireDistrictBadge(x, yy - elev(tile), tile, UI_K());
+  }
+  cx.restore();
+}
+function drawEmpireDetailsPlanet(cells) {
+  cx.save(); cx.setLineDash([4, 3]); cx.strokeStyle = "#f4e2a2";
+  cx.globalAlpha = .75; cx.lineWidth = 1.5;
+  for (const {tile, cell, points} of cells) {
+    if (tile.owner_city === null || tile.owner_city === undefined || !cell) continue;
+    for (let side = 0; side < points.length; side++) {
+      const neighbor = TMAP.get(cell.nbrs[side]);
+      if (!neighbor || neighbor.owner !== tile.owner ||
+          neighbor.owner_city === tile.owner_city) continue;
+      if (key(tile.pos) > key(neighbor.pos)) continue;
+      const a = points[side], b = points[(side + 1) % points.length];
+      cx.beginPath(); cx.moveTo(a.x, a.y); cx.lineTo(b.x, b.y); cx.stroke();
+    }
+  }
+  cx.setLineDash([]); cx.globalAlpha = 1;
+  for (const cell of cells) {
+    if (!cell.tile.district && !cell.tile.planned_district && !cell.tile.wonder) continue;
+    const scale = Math.max(.7, Math.min(1, planetCellInradius(cell) / 12));
+    drawEmpireDistrictBadge(cell.center.x, cell.center.y, cell.tile, scale);
+  }
+  cx.restore();
+}
+
 function settleLensColor(quality, alpha) {
   const q = Math.max(0, Math.min(1, quality));
   const red = Math.round(205 - q * 142);
@@ -13277,6 +13589,8 @@ function drawPlanetMap() {
     }
   }
   if (mapLens === "settler") drawPlanetSettlerLens(cells);
+  else if (mapLens === "empire") drawEmpireDetailsPlanet(cells);
+  else if (mapLens) drawThematicLensPlanet(cells);
   // Cities and armies are drawn at a floor size so they stay clickable, and a
   // four-pixel dot on a world the size of a coin is no longer a city on it.
   // Past that the globe is one object among several and only reads as one.
@@ -14123,8 +14437,11 @@ function draw() {
   // Lens passes replace or grade the finished ground while leaving the map's
   // geometry and controls alone. Empire goes first because Settler's site
   // marks are meant to sit over terrain, never over another lens.
-  if (mapLens === "empire") drawEmpireLensFlat(tiles);
-  else if (mapLens === "settler") drawSettlerLensFlat(tiles);
+  if (mapLens === "empire") {
+    drawEmpireLensFlat(tiles);
+    drawEmpireDetailsFlat(tiles);
+  } else if (mapLens === "settler") drawSettlerLensFlat(tiles);
+  else if (mapLens) drawThematicLensFlat(tiles);
   // --- raids in the making. A barbarian camp that finds a city goes on alert
   // and starts throwing raiders at it, and the wire has said so all along —
   // which camp, which city, and for how long — while the map drew a tent
@@ -18496,6 +18813,30 @@ const CONTINENT_NAMES = ["Africa", "Amasia", "America", "Antarctica", "Arctica",
   "North America", "Novopangaea", "Nuna", "Oceania", "Pangaea",
   "Pangaea Ultima", "Pannotia", "Rodinia", "Siberia", "South America",
   "Terra Australis", "Ur"];
+const CONTINENT_COLORS = ["#d9825b", "#58a6a6", "#c2a75d", "#788fd0",
+  "#b9799f", "#6fae68", "#d06b6b", "#6f9fc2", "#a887cf", "#cf9862",
+  "#77a88d", "#c7be73", "#887bba", "#d47791", "#65a7c8", "#a0a866"];
+const APPEAL_LENS_COLORS = {
+  Breathtaking:"#176a3a", Charming:"#65ad5a", Average:"#8b8f8a",
+  Uninviting:"#d27b35", Disgusting:"#b73535",
+};
+const GOVERNMENT_LENS_COLORS = {
+  chiefdom:"#7d8583", autocracy:"#b9554f", oligarchy:"#b4773e",
+  classical_republic:"#5b8fba", monarchy:"#8b63a9", theocracy:"#c8a84d",
+  merchant_republic:"#4d9a80", fascism:"#8e3939", communism:"#b65a72",
+  democracy:"#4e83c2", corporate_libertarianism:"#a76c39",
+  digital_democracy:"#5a9faf", synthetic_technocracy:"#6676b9",
+};
+const MAP_LENS_INFO = {
+  religion:"RELIGION LENS — territory follows its majority faith · city rings show pressure distribution",
+  continent:"CONTINENT LENS — each geographic continent has one color · water remains blue",
+  appeal:"APPEAL LENS — dark green Breathtaking · green Charming · gray Average · orange Uninviting · red Disgusting",
+  settler:"SETTLER LENS — green is stronger · blue edge fresh water · teal coast · ochre dry (2 to exit)",
+  government:"GOVERNMENT LENS — territory is grouped by its civilization's current government",
+  political:"POLITICAL LENS — territory uses civilization colors · city-states are dark",
+  tourism:"TOURISM LENS — highlighted tiles show exact current Tourism per turn",
+  empire:"EMPIRE LENS — city borders · districts and adjacency · wonders (4 to exit)",
+};
 const SETTLE_DISK = [];
 for (let q = -2; q <= 2; q++) for (let r = -2; r <= 2; r++)
   if (Math.max(Math.abs(q), Math.abs(r), Math.abs(q + r)) <= 2)
@@ -18582,10 +18923,7 @@ for (const button of document.querySelectorAll("[data-map-lens]"))
 document.getElementById("map-lens-exit").onclick = () => setMapLens(null);
 function modeline() {
   const m = [];
-  if (mapLens === "settler")
-    m.push("SETTLER LENS — green is stronger · blue edge has fresh water (2 to exit)");
-  if (mapLens === "empire")
-    m.push("EMPIRE LENS — major frontiers emphasized · city-states translucent (4 to exit)");
+  if (mapLens && MAP_LENS_INFO[mapLens]) m.push(MAP_LENS_INFO[mapLens]);
   if (tackMode) m.push("TACK MODE — click to place/remove a 📍 (3 to exit)");
   if (interfaceMode && INTERFACE_MODE_NOTE[interfaceMode]) m.push(INTERFACE_MODE_NOTE[interfaceMode]);
   const el = document.getElementById("modeline");
@@ -19987,6 +20325,18 @@ function tileTipLines(t, pos, tileKey) {
   const lines = [];
   const owner = tileOwnershipTipLine(t);
   if (owner) lines.push(owner);
+  if (mapLens === "government" && t.owner !== null && t.owner !== undefined) {
+    const player = state.players[t.owner];
+    lines.push(player?.government
+      ? "♜ Government: " + titleCase(player.government)
+      : "♜ Government: none");
+  }
+  if (mapLens === "religion" && t.owner_city !== null && t.owner_city !== undefined) {
+    const religiousCity = state.cities.find(city => city.id === t.owner_city);
+    lines.push(religiousCity?.religion
+      ? "✦ Majority religion: " + titleCase(religiousCity.religion)
+      : "✦ Majority religion: none");
+  }
 
   let terrainName = titleCase(t.terrain) + (t.hills ? " Hills" : "");
   if (t.feature) terrainName += " · " + (FEATURE_LABEL[t.feature] || titleCase(t.feature));
@@ -20026,6 +20376,8 @@ function tileTipLines(t, pos, tileKey) {
     : tileYieldFull(t);
   const yieldText = yieldStr(yields);
   if (yieldText) lines.push("Yields: " + yieldText);
+  if (Number(t.tourism) > 0)
+    lines.push("♪ Tourism: " + fmtYield(t.tourism) + " per turn from this tile");
 
   // These are all properties of crossing or occupying the ground, and stay
   // together immediately before the things constructed on top of it.
@@ -20039,13 +20391,30 @@ function tileTipLines(t, pos, tileKey) {
     movement.push("🌸 appeal " + (t.appeal > 0 ? "+" : "") + t.appeal +
       " · " + appealBand(t.appeal));
   if (movement.length) lines.push("Movement: " + movement.join(" · "));
+  if (mapLens === "settler") {
+    const site = settlerLensSites().sites.get(tileKey);
+    if (site) lines.push(`⌂ Settlement quality ${Math.round(settleSiteQuality(site) * 100)}/100 · ` +
+      (site.water === "fresh" ? "fresh water" : site.water === "coast" ? "coastal water" : "no water"));
+    else lines.push("⌂ Settlement unavailable");
+  }
 
   if (t.road > 0) lines.push("🛤 " + (ROAD_LABELS[t.road] || "Road"));
   if (t.district) lines.push(...districtTipLines(t));
   else if (t.planned_district) lines.push(...plannedTipLines(t));
   if (t.wonder) lines.push("★ " + titleCase(t.wonder) + " Wonder");
   const city = state.cities.find(candidate => candidate.pos[0] === pos[0] && candidate.pos[1] === pos[1]);
-  if (city) lines.push("🏛 " + city.name + " · population " + city.pop);
+  if (city) {
+    lines.push("🏛 " + city.name + " · population " + city.pop);
+    if (city.religion && mapLens !== "religion")
+      lines.push("✦ Majority religion: " + titleCase(city.religion));
+    if (mapLens === "religion") {
+      const entries = religiousPressureEntries(city);
+      const total = entries.reduce((sum, entry) => sum + entry.pressure, 0);
+      if (total > 0) lines.push("✦ Religious pressure: " + entries.map(entry =>
+        `${entry.religion ? titleCase(entry.religion) : "No religion"} ` +
+        `${Math.round(entry.pressure * 100 / total)}%`).join(" · "));
+    }
+  }
 
   for (const unit of state.units) {
     if (key(unit.pos) !== tileKey) continue;
