@@ -1830,9 +1830,18 @@ def project_projects(database: Database) -> dict[str, dict]:
 def project_districts(database: Database) -> dict[str, dict]:
     projected = {}
     for row in database.rows("Districts"):
-        projected[slug(row["DistrictType"], "DISTRICT_")] = {
+        entry = {
             "cost": number(row.get("Cost")),
+            "maintenance": number(row.get("Maintenance")),
+            "appeal": number(row.get("Appeal")),
+            "air_slots": number(row.get("AirSlots")),
         }
+        # MaxPerPlayer is -1 for "as many as you like"; CIVVIS leaves the field
+        # off. Only the Government Plaza and the Diplomatic Quarter carry a 1.
+        limit = number(row.get("MaxPerPlayer"))
+        if limit > 0:
+            entry["max_per_empire"] = limit
+        projected[slug(row["DistrictType"], "DISTRICT_")] = entry
     return projected
 
 
