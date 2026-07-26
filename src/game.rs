@@ -5773,7 +5773,10 @@ mod action_family_tests {
                 |action| {
                     matches!(
                         action,
-                        Action::Buy { .. } | Action::BuyBuilding { .. } | Action::BuyDistrict { .. }
+                        Action::Buy { .. }
+                            | Action::BuyBuilding { .. }
+                            | Action::BuyDistrict { .. }
+                            | Action::BuyPlot { .. }
                     )
                 },
             ),
@@ -12165,6 +12168,14 @@ pub enum Action {
         #[serde(default = "gold_s")]
         currency: String,
     },
+    /// Purchase one neutral plot for a city. `cost` is the quoted price sent
+    /// to clients; applying the action always recomputes it from live state.
+    BuyPlot {
+        city: u32,
+        pos: Pos,
+        #[serde(default)]
+        cost: f64,
+    },
     Research {
         tech: String,
     },
@@ -12591,7 +12602,8 @@ pub fn seat_civs_randomized(
 ///
 /// `Buy` and `BuyBuilding` are produced by both `PURCHASES` and `EMPIRE` —
 /// the latter sells Naturalists, Rock Bands and Great Person patronage — so
-/// an agent shopping with a treasury wants both.
+/// an agent shopping with a treasury wants both. `BuyPlot` is a city purchase
+/// and lives in `PURCHASES` alone.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct ActionFamilies(u8);
 
@@ -12602,7 +12614,7 @@ impl ActionFamilies {
     /// Everything a unit can be ordered to do: movement, attacks, promotions,
     /// improvements, religious missions, air operations, settling.
     pub const UNITS: ActionFamilies = ActionFamilies(1);
-    /// `Produce`, `Buy`, `BuyBuilding` and `BuyDistrict` in each city.
+    /// `Produce`, `Buy`, `BuyBuilding`, `BuyDistrict` and `BuyPlot` in each city.
     pub const PURCHASES: ActionFamilies = ActionFamilies(2);
     /// Governments, policies, governors, religion, great people, envoys,
     /// trade routes and WMD strikes — the major-only management block.
@@ -15516,8 +15528,48 @@ impl Game {
             .sum()
     }
 
+    /// Stock Gold price of a plot whose ring base is `base` (50 through ring
+    /// two, 75 in ring three). Civ VI uses the farther-advanced research tree,
+    /// truncates it to a whole percent, applies its 1x-5x progression, scales
+    /// for game speed, rounds down to 5 Gold, and only then applies Land
+    /// Surveyors/Expropriation. That order is observable on Marathon, where a
+    /// 20% discount leaves prices divisible by four rather than five.
     pub fn tile_purchase_cost(&self, pid: usize, base: f64) -> f64 {
-        base * (1.0 - self.policy_effect(pid, "tile_purchase_discount_pct") / 100.0)
+        let progressed = base * (1.0 + 4.0 * self.game_progress_ratio(pid));
+        let speed_scaled = self.game_speed.scale(progressed);
+        let rounded = (speed_scaled / 5.0 + 1e-9).floor() * 5.0;
+        let discount = self
+            .policy_effect(pid, "tile_purchase_discount_pct")
+            .clamp(0.0, 100.0);
+        rounded * (1.0 - discount / 100.0)
+    }
+
+    /// The live quote for annexing `pos` to `cid`, or `None` when that city
+    /// may not buy the plot. A purchase must extend this city's own connected
+    /// territory, remain inside the workable three-ring radius, and never
+    /// disclose an unexplored tile through the legal-action protocol.
+    pub fn plot_purchase_cost(&self, pid: usize, cid: u32, pos: Pos) -> Option<f64> {
+        let city = self.cities.get(&cid)?;
+        let tile = self.map.get(pos)?;
+        if city.owner != pid
+            || tile.owner_city.is_some()
+            || !self.players.get(pid)?.explored.contains(&pos)
+            || !self
+                .nbrs(pos)
+                .into_iter()
+                .any(|neighbor| self.map.tiles[&neighbor].owner_city == Some(cid))
+        {
+            return None;
+        }
+        let base = match self.wdist(city.pos, pos) {
+            // Ring one is normally granted on foundation. It can become
+            // neutral after a neighboring city is razed, and then uses the
+            // same base price as ring two.
+            1 | 2 => 50.0,
+            3 => 75.0,
+            _ => return None,
+        };
+        Some(self.tile_purchase_cost(pid, base))
     }
 
     pub fn upgrade_costs(&self, pid: usize, gold: f64, resources: f64) -> (f64, f64) {
@@ -31407,6 +31459,24 @@ impl Game {
             Vec::new()
         };
         for cid in purchase_city_ids {
+            let mut plots: Vec<(Pos, f64)> = self
+                .wdisk(self.cities[&cid].pos, 3)
+                .into_iter()
+                .filter_map(|position| {
+                    self.plot_purchase_cost(pid, cid, position)
+                        .map(|cost| (position, cost))
+                })
+                .collect();
+            plots.sort_unstable_by_key(|(position, _)| *position);
+            for (pos, cost) in plots {
+                if p.gold + f64::EPSILON >= cost {
+                    acts.push(Action::BuyPlot {
+                        city: cid,
+                        pos,
+                        cost,
+                    });
+                }
+            }
             let producible = self.producible_items(pid, cid);
             for item in &producible {
                 acts.push(Action::Produce {
@@ -32324,6 +32394,7 @@ impl Game {
                 pos,
                 currency,
             } => self.do_buy_district(pid, *city, district, *pos, currency),
+            Action::BuyPlot { city, pos, .. } => self.do_buy_plot(pid, *city, *pos),
             Action::Research { tech } => self.do_research(pid, tech),
             Action::Civic { civic } => self.do_civic(pid, civic),
             Action::DeclareWar { player } => self.do_declare_war(pid, *player),
@@ -35872,6 +35943,22 @@ impl Game {
             self.players[pid].faith -= cost;
         } else {
             self.players[pid].gold -= cost;
+        }
+        Ok(())
+    }
+
+    fn do_buy_plot(&mut self, pid: usize, cid: u32, pos: Pos) -> Result<(), String> {
+        let cost = self
+            .plot_purchase_cost(pid, cid, pos)
+            .ok_or_else(|| "plot cannot be purchased by that city".to_string())?;
+        if self.players[pid].gold + f64::EPSILON < cost {
+            return Err("cannot afford".into());
+        }
+        self.players[pid].gold -= cost;
+        self.map.tiles.get_mut(&pos).unwrap().owner_city = Some(cid);
+        let city = self.cities.get_mut(&cid).unwrap();
+        if !city.owned_tiles.contains(&pos) {
+            city.owned_tiles.push(pos);
         }
         Ok(())
     }
@@ -44785,6 +44872,102 @@ mod border_growth_tests {
 
         assert_eq!(game.map.tiles[&natural_wonder].owner_city, Some(city));
         assert_eq!(game.map.tiles[&ordinary].owner_city, None);
+    }
+
+    #[test]
+    fn plot_purchase_curve_matches_measured_gathering_storm_prices() {
+        let (mut game, _, _) = controlled_game(941_007);
+        game.game_speed = GameSpeed::Marathon;
+        game.players[0].techs.clear();
+        game.players[0].civics.clear();
+        game.players[0]
+            .policies
+            .insert("land_surveyors".to_string());
+
+        let techs: Vec<String> = game.rules.techs.keys().take(11).cloned().collect();
+        let civics: Vec<String> = game.rules.civics.keys().take(11).cloned().collect();
+        game.players[0].techs.extend(techs.iter().take(8).cloned());
+        game.players[0].civics.extend(civics.iter().take(8).cloned());
+        assert_eq!(game.tile_purchase_cost(0, 50.0), 180.0);
+        assert_eq!(game.tile_purchase_cost(0, 75.0), 272.0);
+
+        game.players[0].civics.extend(civics.iter().take(11).cloned());
+        assert_eq!(game.tile_purchase_cost(0, 50.0), 204.0);
+        assert_eq!(game.tile_purchase_cost(0, 75.0), 308.0);
+
+        game.players[0].policies.clear();
+        game.game_speed = GameSpeed::Standard;
+        game.players[0].techs.clear();
+        game.players[0].civics.clear();
+        assert_eq!(game.tile_purchase_cost(0, 50.0), 50.0);
+        assert_eq!(game.tile_purchase_cost(0, 75.0), 75.0);
+    }
+
+    #[test]
+    fn buying_a_plot_extends_only_that_citys_connected_three_ring_border() {
+        let (mut game, city, center) = controlled_game(941_008);
+        game.players[0].techs.clear();
+        game.players[0].civics.clear();
+        game.players[0].gold = 1_000.0;
+        game.players[0]
+            .explored
+            .extend(game.map.tiles.keys().copied());
+
+        let second = ring(&game, center, 2)[0];
+        let connected_third = ring(&game, center, 3)
+            .into_iter()
+            .find(|position| game.nbrs(*position).contains(&second))
+            .unwrap();
+        let disconnected_third = ring(&game, center, 3)
+            .into_iter()
+            .find(|position| {
+                *position != connected_third && !game.nbrs(*position).contains(&second)
+            })
+            .unwrap();
+
+        assert_eq!(game.plot_purchase_cost(0, city, second), Some(50.0));
+        assert_eq!(game.plot_purchase_cost(0, city, connected_third), None);
+        assert_eq!(game.plot_purchase_cost(0, city, disconnected_third), None);
+        assert!(game.legal_actions(0).contains(&Action::BuyPlot {
+            city,
+            pos: second,
+            cost: 50.0,
+        }));
+
+        // The quote is informational, not authority: a forged zero-price
+        // action still pays the live 50 Gold price.
+        game.apply(
+            0,
+            &Action::BuyPlot {
+                city,
+                pos: second,
+                cost: 0.0,
+            },
+        )
+        .unwrap();
+        assert_eq!(game.players[0].gold, 950.0);
+        assert_eq!(game.map.tiles[&second].owner_city, Some(city));
+        assert!(game.cities[&city].owned_tiles.contains(&second));
+        assert_eq!(
+            game.plot_purchase_cost(0, city, connected_third),
+            Some(75.0)
+        );
+        assert_eq!(game.plot_purchase_cost(0, city, disconnected_third), None);
+
+        game.players[0].gold = 74.0;
+        let before = game.cities[&city].owned_tiles.clone();
+        assert!(game
+            .apply(
+                0,
+                &Action::BuyPlot {
+                    city,
+                    pos: connected_third,
+                    cost: 75.0,
+                },
+            )
+            .is_err());
+        assert_eq!(game.map.tiles[&connected_third].owner_city, None);
+        assert_eq!(game.cities[&city].owned_tiles, before);
     }
 }
 
