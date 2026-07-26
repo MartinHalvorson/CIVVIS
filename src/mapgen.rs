@@ -1124,14 +1124,9 @@ pub fn generate_with_script(
     poles: MapPoles,
     rng: &mut Rng,
 ) -> (WorldMap, Vec<Pos>) {
-    // The world's shape is asked for separately from what fills it, but Earth
-    // is Earth: it is drawn from real longitudes and latitudes and it closes,
-    // so it is always laid out on the globe whatever the lobby selected.
-    let topology = if script.is_fixed_geography() {
-        MapTopology::Planet
-    } else {
-        topology
-    };
+    // The world's shape is asked for separately from what fills it. Fixed
+    // geography only means its coastline is sampled rather than rolled: the
+    // same longitudes and latitudes can be laid onto a flat atlas or a globe.
     // A globe is stored in a rectangle of its own shape, so its size's globe
     // is built rather than the cylinder a flat world lays out.
     let mut wm = if topology.is_globe() {
@@ -4404,11 +4399,8 @@ mod river_tests {
                     assert!(!rules.is_water(tile), "{where_}: a start is at sea");
                     assert!(tile.terrain != "mountain", "{where_}: a start is on a peak");
                 }
-                // Earth is the one type whose shape is not the lobby's to
-                // choose, so it closes whichever shape was asked for.
-                let globe = topology.is_globe() || script.is_fixed_geography();
-                assert_eq!(world.sphere().is_some(), globe, "{where_}: shape");
-                if globe {
+                assert_eq!(world.sphere().is_some(), topology.is_globe(), "{where_}: shape");
+                if topology.is_globe() {
                     let mut pentagons = 0;
                     for (pos, _) in world.tiles.iter() {
                         match world.neighbors(*pos).len() {
