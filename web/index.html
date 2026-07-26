@@ -1540,6 +1540,8 @@
   .winner-again {
     width: auto; margin-top: 14px; padding: 10px 18px; border-radius: 10px;
     font-size: var(--type-control); letter-spacing: .04em;
+    /* The restart button carries a live count, so its digits hold still. */
+    font-variant-numeric: tabular-nums;
   }
   /* The result screen's answers keep their hierarchy: the offer that replaces
      the world spans the row, while the three ways to keep it sit side by side
@@ -6595,6 +6597,65 @@ function cancelSupervisedSuccessorWatch() {
   supervisorReconnectTimer = null;
 }
 
+// A spectated finale is counted down by the supervisor, which owns that
+// handoff; a finished human game has nobody driving it at all, so its result
+// screen counts itself down to the next game instead of waiting on a click
+// that may never come. Ten seconds is long enough to read the verdict and
+// still reach one of the three ways to keep the world.
+//
+// Any click or key press stops it, because a person who is still deciding has
+// just proved they are there. That is the whole cancel affordance: the
+// countdown only ever fires for a screen nobody has touched.
+const FINALE_RESTART_SECONDS = 10;
+const FINALE_RESTART_LABEL = "Start another game";
+let finaleCountdownDeadline = 0;
+let finaleCountdownTimer = null;
+// The result this countdown belongs to. It is kept after a cancel so the same
+// finale cannot re-arm itself on the next poll, and cleared when the screen
+// goes away so a later result in the same world gets its own countdown.
+let finaleCountdownResult = null;
+
+function armFinaleCountdown(signature) {
+  if (SPEC || finaleCountdownResult === signature) return;
+  cancelFinaleCountdown();
+  finaleCountdownResult = signature;
+  finaleCountdownDeadline = Date.now() + FINALE_RESTART_SECONDS * 1000;
+  // Sub-second ticks so the number on the button is never a second stale, and
+  // so a throttled background tab cannot overshoot the start by a whole tick.
+  finaleCountdownTimer = setInterval(tickFinaleCountdown, 200);
+  tickFinaleCountdown();
+}
+
+function tickFinaleCountdown() {
+  const button = document.getElementById("finale-restart");
+  // The result screen was replaced or dismissed under the countdown. Nothing
+  // is left to count, and an interval with no button never stops on its own.
+  if (!button) { cancelFinaleCountdown(); return; }
+  const left = Math.max(0, Math.ceil((finaleCountdownDeadline - Date.now()) / 1000));
+  button.textContent = `${FINALE_RESTART_LABEL} (${left})`;
+  if (left > 0) return;
+  cancelFinaleCountdown();
+  startNewSimulation();
+}
+
+function cancelFinaleCountdown() {
+  if (finaleCountdownTimer === null) return;
+  clearInterval(finaleCountdownTimer);
+  finaleCountdownTimer = null;
+  const button = document.getElementById("finale-restart");
+  if (button) button.textContent = FINALE_RESTART_LABEL;
+}
+
+// Forget the result as well, so the next one counts down again.
+function clearFinaleCountdown() {
+  cancelFinaleCountdown();
+  finaleCountdownResult = null;
+}
+
+for (const gesture of ["pointerdown", "keydown", "wheel"])
+  window.addEventListener(gesture, () => cancelFinaleCountdown(),
+    {capture: true, passive: true});
+
 function worldTransitionPending() {
   return document.documentElement.classList.contains("world-loading");
 }
@@ -8100,8 +8161,10 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
         <strong class="winner-title">${st.players[0].civ} is no more</strong>
         <span class="winner-verdict">Your last city has fallen</span>
         <span class="winner-meta">Turn ${st.turn} · the world plays on without you</span>
-        <button class="primary winner-again" onclick="startNewSimulation()">Start another game</button>
+        <button class="primary winner-again" onclick="startNewSimulation()" id="finale-restart"
+          title="Starts a new game when the count reaches zero. Any click or key press stops the countdown.">Start another game</button>
       </div>`;
+      armFinaleCountdown(signature);
     }
   }
   document.body.classList.toggle("cinema-finale", cinemaActive() && hasWinner);
@@ -8132,19 +8195,21 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
         <span class="winner-meta">Turn ${st.turn} · History remembers</span>
         ${SPEC ? `<span class="winner-countdown" id="respawn" role="timer"></span>` : ``}
         <span class="winner-actions">
-          ${SPEC ? `` : `<button class="primary winner-again" onclick="startNewSimulation()">Start another game</button>`}
+          ${SPEC ? `` : `<button class="primary winner-again" onclick="startNewSimulation()" id="finale-restart"
+            title="Starts a new game when the count reaches zero. Any click or key press stops the countdown.">Start another game</button>`}
           <button class="winner-again winner-playon" id="play-on-look-around"
             onclick="playOnPastVictory('until_next_victory', true)"
             title="Keep this world and pause before another turn runs, so you can inspect the final map.">Take a look around</button>
           <button class="winner-again winner-playon" id="play-on-next-victory"
             onclick="playOnPastVictory('until_next_victory', false)"
-            title="Keep this world without a turn limit. The exact result shown here will not repeat; the next distinct victory ends the game.">Play until next victory condition</button>
+            title="Keep playing this world without a turn limit. The exact result shown here will not repeat; the next distinct victory ends the game.">Continue</button>
           <button class="winner-again winner-playon" id="play-on-indefinite"
             onclick="playOnPastVictory('indefinite', false)"
-            title="Keep this world without a turn limit and ignore every later victory.">Play indefinitely</button>
+            title="Keep playing this world without a turn limit and ignore every later victory.">To infinity and beyond</button>
         </span>
       </div>`;
       playCinemaCue({priority:10, kicker:"History has a victor", title:winnerName});
+      armFinaleCountdown(signature);
     }
     const respawn = document.getElementById("respawn");
     if (respawn) {
@@ -8165,6 +8230,9 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     w.classList.remove("visible");
     w.style.removeProperty("--winner-color");
     if (w.dataset.signature) { delete w.dataset.signature; w.replaceChildren(); }
+    // Playing on takes the result screen away, and with it any countdown to
+    // the game that would have replaced this one.
+    clearFinaleCountdown();
   }
   draw(); drawSide(newWorld); drawMini(); drawPlayerHud(); drawUbar(); drawQuickDeals(); drawCaptureChoice();
   refreshTileTip();
@@ -23467,6 +23535,7 @@ async function writeSave() {
 
 async function startNewSimulation() {
   if (newSimulationBusy) return;
+  cancelFinaleCountdown();
   const wasPaused = specPaused;
   const payload = {...newSimulationPayload(), paused: wasPaused};
   const supervised = !!(state && state.supervised) && payload.spectate;
@@ -23543,6 +23612,7 @@ async function playOnPastVictory(mode, paused) {
   const buttons = [...document.querySelectorAll(".winner-playon")];
   for (const button of buttons) button.disabled = true;
   cancelSupervisedSuccessorWatch();
+  cancelFinaleCountdown();
   try {
     const next = await fetchJSON("/play-on", {method: "POST",
       headers: {"Content-Type": "application/json"}, body: JSON.stringify({mode, paused})});
