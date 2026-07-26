@@ -1273,6 +1273,9 @@
     background: #091310f2; box-shadow: var(--shadow); pointer-events: none;
     font-size: 11px; line-height: 1.6; backdrop-filter: blur(14px);
   }
+  .tip-primary, .tip-unit {
+    display: inline-block; color: #fffaf0; font-size: 13px; font-weight: 850; line-height: 1.45;
+  }
   /* The adjacency ledger is a list under the district line: a heading in the
      yield's own voice, then one indented row per source that pays. */
   .tip-adj-head { color: var(--muted); font-size: 9px; font-weight: 850; letter-spacing: .1em; text-transform: uppercase; }
@@ -19046,9 +19049,7 @@ function adjacencyLines(sources, label, district) {
   return lines;
 }
 function districtTipLines(t) {
-  const total = yieldStr(t.district_yields);
-  const lines = ["🏗 " + t.district.replaceAll("_", " ") + " district" +
-    (total ? " — " + total : "")];
+  const lines = ["🏗 " + titleCase(t.district) + " District"];
   // A pillaged district keeps its adjacency on paper and pays none of it, so
   // the figure above is what repairing the tile buys back.
   if (t.pillaged) lines.push(`<span class="tip-adj-part">🔥 pillaged — yields suspended until repaired</span>`);
@@ -19059,9 +19060,119 @@ function districtTipLines(t) {
 function plannedTipLines(t) {
   const p = t.planned_district;
   const total = yieldStr(p.yields);
-  const lines = ["⬡ " + p.district.replaceAll("_", " ") + " under construction" +
+  const lines = ["⬡ " + titleCase(p.district) + " under construction" +
     (total ? " — " + total : "")];
   return lines.concat(adjacencyLines(p.adjacency, "projected adjacency", p.district));
+}
+
+const ROAD_LABELS = [null, "Ancient Road", "Medieval Road", "Industrial Road",
+                     "Modern Road", "Railroad"];
+// Unit ownership reads as a name, not a database join: "Roman Archer" rather
+// than "Rome Archer". Mods and city-states fall back to their supplied name.
+const CIV_ADJECTIVES = {
+  Rome:"Roman", Egypt:"Egyptian", Greece:"Greek", China:"Chinese", Sumeria:"Sumerian",
+  Aztec:"Aztec", Nubia:"Nubian", Scythia:"Scythian", England:"English", Germany:"German",
+  Russia:"Russian", Korea:"Korean", Maya:"Mayan", Mali:"Malian", Phoenicia:"Phoenician",
+  Byzantium:"Byzantine", Zulu:"Zulu", Gaul:"Gallic", Kongo:"Kongolese", Vietnam:"Vietnamese",
+  Brazil:"Brazilian", France:"French", Spain:"Spanish", Portugal:"Portuguese", Netherlands:"Dutch",
+  Sweden:"Swedish", Norway:"Norwegian", Denmark:"Danish", Poland:"Polish", Hungary:"Hungarian",
+  Austria:"Austrian", Bohemia:"Bohemian", Scotland:"Scottish", Ireland:"Irish", Switzerland:"Swiss",
+  Venice:"Venetian", Serbia:"Serbian", Bulgaria:"Bulgarian", Lithuania:"Lithuanian", Ukraine:"Ukrainian",
+  Finland:"Finnish", Romania:"Romanian", Novgorod:"Novgorodian", Prussia:"Prussian", Catalonia:"Catalan",
+  Gujarat:"Gujarati", Assyria:"Assyrian", Persia:"Persian", Media:"Median", Manchuria:"Manchu",
+  Lydia:"Lydian", Parthia:"Parthian", Sogdiana:"Sogdian", Ottomans:"Ottoman", Arabia:"Arabian",
+  Israel:"Israeli", Armenia:"Armenian", Georgia:"Georgian", Timurids:"Timurid", Kazakh:"Kazakh",
+  Bactria:"Bactrian", Ethiopia:"Ethiopian", Axum:"Aksumite", Morocco:"Moroccan", Numidia:"Numidian",
+  Songhai:"Songhai", Ghana:"Ghanaian", Benin:"Beninese", Ashanti:"Ashanti", Swahili:"Swahili",
+  "Great Zimbabwe":"Zimbabwean", Buganda:"Bagandan", Oyo:"Oyo", Tuareg:"Tuareg", Madagascar:"Malagasy",
+  India:"Indian", Japan:"Japanese", Mongolia:"Mongolian", Tibet:"Tibetan", Nepal:"Nepali",
+  Kalinga:"Kalingan", Chola:"Chola", Bengal:"Bengali", Maratha:"Maratha", Khmer:"Khmer",
+  Siam:"Siamese", Burma:"Burmese", Majapahit:"Majapahit", Champa:"Cham", America:"American",
+  Canada:"Canadian", Pueblo:"Pueblo", Comanche:"Comanche", Sioux:"Sioux", Inca:"Incan",
+  Muisca:"Muisca", Mapuche:"Mapuche", Argentina:"Argentine", Australia:"Australian", Maori:"Māori",
+};
+function civAdjective(civ) { return CIV_ADJECTIVES[civ] || civ; }
+function tileOwnershipTipLine(t) {
+  if (t.owner === null || t.owner === undefined) return null;
+  const empire = state.players[t.owner];
+  if (!empire) return null;
+  const knownCity = state.cities.find(city => city.id === t.owner_city);
+  const cityName = t.owner_city_name || knownCity?.name;
+  return `<span class="tip-primary">${empire.civ}${cityName ? ` (${cityName})` : ""}</span>`;
+}
+function tileTipLines(t, pos, tileKey) {
+  const lines = [];
+  const owner = tileOwnershipTipLine(t);
+  if (owner) lines.push(owner);
+
+  let terrainName = titleCase(t.terrain) + (t.hills ? " Hills" : "");
+  if (t.feature) terrainName += " · " + (FEATURE_LABEL[t.feature] || titleCase(t.feature));
+  if (t.river) terrainName += " · 💧 River";
+  if (t.continent !== null && t.continent !== undefined)
+    terrainName += " · 🗺 " + (CONTINENT_NAMES[t.continent] || "Continent " + (t.continent + 1));
+  lines.push("Terrain: " + terrainName);
+
+  if (t.fallout_until > state.turn) lines.push(`☢ Fallout · ${t.fallout_until - state.turn} turns remain`);
+  if (t.drought) lines.push("Drying drought");
+  if (t.storm) lines.push("🌀 " + titleCase(t.storm) + " passing over");
+  if (t.disaster_yields && t.disaster_yields.food > 0)
+    lines.push("Fertile ground left by disaster · +" + t.disaster_yields.food + "🍞");
+  if (t.feature === "volcano" && t.volcano_state)
+    lines.push(t.volcano_state === 2 ? "Erupting volcano" : "Active volcano · eruption warning");
+  for (const event of state.active_disasters || []) {
+    if (["blizzard", "dust_storm", "tornado", "hurricane"].includes(event.kind) &&
+        event.tiles.some(eventPos => eventPos[0] === t.pos[0] && eventPos[1] === t.pos[1]))
+      lines.push(`${titleCase(event.kind)} · phase ${event.age + 1} of ${event.duration}`);
+  }
+  if (t.flooded) lines.push("Flooded coastal lowland");
+  if (t.submerged) lines.push("Submerged by sea-level rise");
+  lines.push(sightTipLine(t));
+
+  if (t.resource) {
+    const resource = ruleSpec("resources", t.resource);
+    lines.push((RES_ICON[t.resource] || "●") + " Resource: " + titleCase(t.resource) +
+      (resource?.class ? " (" + titleCase(resource.class) + ")" : ""));
+  }
+  if (t.improvement && t.improvement !== "barbarian_camp")
+    lines.push("⚒ Improvement: " + titleCase(t.improvement));
+  if (t.improvement === "barbarian_camp")
+    lines.push("⛺ Improvement: Barbarian Camp (+50🪙 to clear)");
+
+  const yields = t.district ? t.district_yields
+    : t.wonder ? ruleSpec("wonders", t.wonder)?.yields
+    : tileYieldFull(t);
+  const yieldText = yieldStr(yields);
+  if (yieldText) lines.push("Yields: " + yieldText);
+
+  // These are all properties of crossing or occupying the ground, and stay
+  // together immediately before the things constructed on top of it.
+  const movement = [];
+  const mp = tileMoveCost(t);
+  if (mp !== null) movement.push("🥾 " + (mp % 1 ? mp.toFixed(1) : mp) + " MP");
+  else if (tileImpassable(t)) movement.push("🥾 Impassable");
+  const defense = tileDefense(t);
+  if (defense) movement.push("🛡 " + (defense > 0 ? "+" : "") + defense + " defense");
+  if (t.appeal !== null && t.appeal !== undefined)
+    movement.push("🌸 appeal " + (t.appeal > 0 ? "+" : "") + t.appeal +
+      " · " + appealBand(t.appeal));
+  if (movement.length) lines.push("Movement: " + movement.join(" · "));
+
+  if (t.road > 0) lines.push("🛤 " + (ROAD_LABELS[t.road] || "Road"));
+  if (t.district) lines.push(...districtTipLines(t));
+  else if (t.planned_district) lines.push(...plannedTipLines(t));
+  if (t.wonder) lines.push("★ " + titleCase(t.wonder) + " Wonder");
+  const city = state.cities.find(candidate => candidate.pos[0] === pos[0] && candidate.pos[1] === pos[1]);
+  if (city) lines.push("🏛 " + city.name + " · population " + city.pop);
+
+  for (const unit of state.units) {
+    if (key(unit.pos) !== tileKey) continue;
+    const civ = state.players[unit.owner]?.civ || `Player ${unit.owner}`;
+    lines.push(`<span class="tip-unit">● ${civAdjective(civ)} ${titleCase(unit.type)} — ` +
+      fmtYield(unit.hp) + " HP, " + fmtYield(unit.moves_left) + " MP" +
+      (unit.level > 1 ? ", level " + unit.level : "") + (unit.embarked ? ", embarked" : "") +
+      (unit.fortified ? ", fortified" : "") + "</span>");
+  }
+  return lines;
 }
 
 // tooltip
@@ -19085,66 +19196,7 @@ cv.addEventListener("mousemove", ev => {
   const t = pos && TMAP.get(key(pos));
   if (!t) { tip.style.display = "none"; return; }
   const k = key(pos);
-  const lines = [];
-  let head = titleCase(t.terrain) + (t.hills ? " Hills" : "");
-  if (t.feature) head += " · " + (FEATURE_LABEL[t.feature] || titleCase(t.feature));
-  if (t.river) head += " · 💧river";
-  lines.push("<b>" + head + "</b>");
-  if (t.fallout_until > state.turn) lines.push(`☢ Fallout · ${t.fallout_until - state.turn} turns remain`);
-  if (t.drought) lines.push("Drying drought");
-  if (t.storm) lines.push("🌀 " + titleCase(t.storm.replaceAll("_", " ")) + " passing over");
-  if (t.disaster_yields && t.disaster_yields.food > 0)
-    lines.push("Fertile ground left by disaster · +" + t.disaster_yields.food + "🍞");
-  if (t.feature === "volcano" && t.volcano_state)
-    lines.push(t.volcano_state === 2 ? "Erupting volcano" : "Active volcano · eruption warning");
-  for (const event of state.active_disasters || []) {
-    if (["blizzard", "dust_storm", "tornado", "hurricane"].includes(event.kind) &&
-        event.tiles.some(pos => pos[0] === t.pos[0] && pos[1] === t.pos[1]))
-      lines.push(`${titleCase(event.kind)} · phase ${event.age + 1} of ${event.duration}`);
-  }
-  if (t.flooded) lines.push("Flooded coastal lowland");
-  if (t.submerged) lines.push("Submerged by sea-level rise");
-  if (t.resource)
-    lines.push((RES_ICON[t.resource] || "●") + " " + t.resource +
-      (RULES && RULES.resources ? " (" + RULES.resources[t.resource].class + ")" : ""));
-  if (t.improvement && t.improvement !== "barbarian_camp")
-    lines.push("⚒ " + t.improvement.replaceAll("_", " "));
-  if (t.improvement === "barbarian_camp") lines.push("⛺ barbarian camp (+50🪙 to clear)");
-  if (t.district) lines.push(...districtTipLines(t));
-  else if (t.planned_district) lines.push(...plannedTipLines(t));
-  if (t.wonder) lines.push("★ " + t.wonder.replaceAll("_", " ") + " wonder");
-  const y = tileYieldFull(t);
-  const ystr = Object.entries(y).filter(([, v]) => v > 0)
-    .map(([kk, v]) => v + YICON[kk]).join(" ");
-  if (ystr && !t.district && !t.wonder) lines.push(ystr);
-  // The Civ 6 tile panel's own footing: what it costs to cross, what it is
-  // worth to defend, how it looks, and — the whole point of a sight range —
-  // what it lets you see past.
-  const terrain = [];
-  const mp = tileMoveCost(t);
-  if (mp !== null) terrain.push("🥾 " + (mp % 1 ? mp.toFixed(1) : mp) + " MP");
-  else if (tileImpassable(t)) terrain.push("🥾 impassable");
-  const defense = tileDefense(t);
-  if (defense) terrain.push("🛡 " + (defense > 0 ? "+" : "") + defense + " defense");
-  if (t.appeal !== null && t.appeal !== undefined)
-    terrain.push("🌸 appeal " + (t.appeal > 0 ? "+" : "") + t.appeal +
-      " · " + appealBand(t.appeal));
-  if (terrain.length) lines.push(terrain.join(" · "));
-  lines.push(sightTipLine(t));
-  if (t.owner !== null && t.owner !== undefined)
-    lines.push("territory: " + state.players[t.owner].civ);
-  if (t.continent !== null && t.continent !== undefined)
-    lines.push("🗺 " + (CONTINENT_NAMES[t.continent] || "continent " + (t.continent + 1)));
-  const city = state.cities.find(c => c.pos[0] === pos[0] && c.pos[1] === pos[1]);
-  if (city) lines.push("🏛 <b>" + city.name + "</b> pop " + city.pop +
-    " (" + state.players[city.owner].civ + ")");
-  for (const u of state.units) {
-    if (key(u.pos) !== k) continue;
-    lines.push("● " + state.players[u.owner].civ + " " + u.type +
-      " — " + u.hp + "hp, " + u.moves_left + "mp" +
-      (u.level > 1 ? ", lvl " + u.level : "") + (u.embarked ? ", embarked" : "") +
-      (u.fortified ? ", fortified" : ""));
-  }
+  const lines = tileTipLines(t, pos, k);
   tip.innerHTML = lines.join("<br>");
   tip.style.display = "block";
   tip.style.left = Math.min(ev.clientX + 16, window.innerWidth - 290) + "px";
