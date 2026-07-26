@@ -65,6 +65,7 @@
  "mine": {
   "plunder_type": "gold",
   "plunder_amount": 50,
+  "bonus_pillage": {"knarr": {"yield": "science", "amount": 15}},
   "tech": "mining",
   "yields": {
    "production": 1
@@ -101,6 +102,7 @@
  "quarry": {
   "plunder_type": "faith",
   "plunder_amount": 25,
+  "bonus_pillage": {"knarr": {"yield": "culture", "amount": 15}},
   "tech": "mining",
   "yields": {
    "production": 1
@@ -118,6 +120,7 @@
  "pasture": {
   "plunder_type": "faith",
   "plunder_amount": 25,
+  "bonus_pillage": {"knarr": {"yield": "culture", "amount": 15}},
   "tech": "animal_husbandry",
   "yields": {
    "production": 1
@@ -133,6 +136,7 @@
  "plantation": {
   "plunder_type": "faith",
   "plunder_amount": 25,
+  "bonus_pillage": {"knarr": {"yield": "culture", "amount": 15}},
   "tech": "irrigation",
   "yields": {
    "gold": 2
@@ -159,6 +163,7 @@
  "camp": {
   "plunder_type": "faith",
   "plunder_amount": 25,
+  "bonus_pillage": {"knarr": {"yield": "culture", "amount": 15}},
   "tech": "animal_husbandry",
   "yields": {
    "gold": 2
@@ -319,6 +324,8 @@
   }
  },
  "seaside_resort": {
+  "plunder_type": "gold",
+  "plunder_amount": 50,
   "tech": "radio",
   "yields": {},
   "terrain": [
@@ -345,7 +352,8 @@
    "appeal_tourism": 1,
    "amenity": 1,
    "unworkable": 1
-  }
+  },
+  "unit_pillageable": false
  },
  "seastead": {
   "plunder_type": "heal",
@@ -426,7 +434,8 @@
   ],
   "effects": {
    "passage": 1
-  }
+  },
+  "unit_pillageable": false
  },
  "industry": {
   "plunder_type": "gold",
@@ -462,7 +471,8 @@
    "salt"
   ],
   "resource_only": true,
-  "unbuildable": true
+  "unbuildable": true,
+  "unit_pillageable": false
  },
  "sphinx": {
   "plunder_type": "faith",
@@ -511,9 +521,12 @@
   ],
   "feature": [
    "volcanic_soil"
-  ]
+  ],
+  "unit_pillageable": false
  },
  "nubian_pyramid": {
+  "plunder_type": "faith",
+  "plunder_amount": 25,
   "tech": "masonry",
   "unique_to": "Nubia",
   "yields": {
@@ -559,7 +572,8 @@
    "host_city_amenity": 2,
    "nearby_city_amenity": 1,
    "nearby_city_count": 4
-  }
+  },
+  "unit_pillageable": false
  },
  "archaeological_dig": {
   "civic": "natural_history",
