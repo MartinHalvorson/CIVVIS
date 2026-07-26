@@ -12114,9 +12114,29 @@ pub struct SiegeCensus {
     pub damage: i64,
     /// Times a wall was knocked from standing to flat.
     pub walls_breached: u64,
-    /// Times a city was driven to zero health, whether or not it was then
-    /// occupied — a barbarian leaves it at 1 instead of capturing.
+    /// Times damage took a city's garrison to zero *inside*
+    /// [`Game::city_take_damage`]. This is not the same as the city being left
+    /// depleted: only a Bombard-class shot may leave a garrison at zero, and an
+    /// ordinary ranged attack has its caller restore it to 1 immediately
+    /// afterwards, so this overcounts by every reverted crossing. Use
+    /// [`SiegeCensus::left_depleted`] for cities that were actually left open.
     pub cities_reduced: u64,
+    /// Times a city was actually left standing at zero garrison, which is the
+    /// state a melee unit can walk into. A barbarian never captures and leaves
+    /// the city at 1 instead.
+    pub left_depleted: u64,
+    /// Of those reductions, how many happened with a melee-capable unit of the
+    /// attacking side already standing next to the city, so occupying it was
+    /// available that turn.
+    ///
+    /// This is the discriminating count. Only melee can walk into a city, and
+    /// an unoccupied city at zero health heals, so 663 reductions against 23
+    /// captures has exactly two explanations: the AI declines a capture it
+    /// could make, or it never has anyone there to make it. Attack valuation
+    /// already pays 520+ for a capture and only vetoes one that loyalty would
+    /// flip back within four turns, which points at the second — but pointing
+    /// is not measuring.
+    pub reduced_with_melee_adjacent: u64,
 }
 
 /// What one belligerent has had taken from it in a war — never what it
@@ -23416,7 +23436,7 @@ impl Game {
     /// damaged walls, and full damage once breached (<20%) or bare (Civ 6).
     fn city_take_damage(
         &mut self,
-        _attacker: usize,
+        attacker: usize,
         cid: u32,
         dmg: i32,
         wall_mult: f64,
@@ -23453,6 +23473,15 @@ impl Game {
         }
         if before_hp > 0 && after_hp <= 0 {
             self.siege.cities_reduced += 1;
+            let city_pos = self.cities[&cid].pos;
+            let melee_on_the_doorstep = self.units.values().any(|unit| {
+                unit.owner == attacker
+                    && self.wdist(unit.pos, city_pos) <= 1
+                    && self.rules.units[unit.kind.as_str()].is_melee_capable()
+            });
+            if melee_on_the_doorstep {
+                self.siege.reduced_with_melee_adjacent += 1;
+            }
         }
     }
 
@@ -34416,6 +34445,7 @@ impl Game {
                 // Bombard-class shots may deplete a city, but still cannot
                 // capture it. The depleting shot earns the city final-blow XP.
                 self.cities.get_mut(&cid).unwrap().hp = 0;
+                self.siege.left_depleted += 1;
                 self.award_initiated_combat_xp(uid, 10.0);
             } else {
                 // Ordinary ranged attacks cannot reduce Garrison Health
