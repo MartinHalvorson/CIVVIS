@@ -1,6 +1,9 @@
 //! Paired, seat-balanced head-to-head evaluator for built-in AIs.
 use civvis::ai::Ai;
-use civvis::elo::{builtin_ai, BUILTIN_AIS, EVAL_ONLY_AIS};
+use civvis::elo::{
+    builtin_ai, builtin_provenances, collapsed_entrants, AgentProvenance, ARTIFACT_DIR,
+    BUILTIN_AIS, EVAL_ONLY_AIS,
+};
 use civvis::game::{default_difficulty, Action, Game, GameOptions};
 use civvis::rules::Rules;
 use std::collections::{BTreeMap, BTreeSet};
@@ -516,6 +519,37 @@ fn main() {
             BUILTIN_AIS.contains(&name) || EVAL_ONLY_AIS.contains(&name),
             "unknown AI {name:?}: builtins {BUILTIN_AIS:?}; evaluator-only {EVAL_ONLY_AIS:?}"
         );
+    }
+    // A learned name is only worth recording if its artifacts actually
+    // loaded. Say what each entrant resolved to before playing anything, so
+    // a result is never filed under an agent that was never in the game.
+    let artifact_dir = text(&args, "--artifact-dir", ARTIFACT_DIR);
+    let provenance = builtin_provenances(&[a, b], &artifact_dir);
+    for entry in &provenance {
+        println!("{}", entry.line());
+    }
+    for (left, right, shared) in collapsed_entrants(&[a, b], &artifact_dir) {
+        println!(
+            "warning: {left} and {right} both play as {shared}; this run measures \
+             {shared} against itself and says nothing about either name"
+        );
+    }
+    if args.iter().any(|arg| arg == "--require-artifacts") {
+        let untrained: Vec<&AgentProvenance> = provenance
+            .iter()
+            .filter(|entry| entry.untrained())
+            .collect();
+        if !untrained.is_empty() {
+            for entry in untrained {
+                eprintln!(
+                    "{}: missing {} in {artifact_dir}/",
+                    entry.requested,
+                    entry.missing().join(", ")
+                );
+            }
+            eprintln!("--require-artifacts: refusing to record an untrained result");
+            std::process::exit(3);
+        }
     }
     let pairs = number(&args, "--pairs", 50).max(1) as usize;
     let turns = number(&args, "--turns", 180).max(1) as u32;
