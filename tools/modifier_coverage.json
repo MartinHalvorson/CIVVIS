@@ -330,12 +330,14 @@
       "note": "Verified: 20 percent of the ally's Tourism at Level 3, already exact."
     },
     "ATTACH_MODIFIER": {
-      "status": "unmodelled",
-      "note": "The interpreter primitive: attach another modifier to a collection. CIVVIS hardcodes effects per object, so it has no general way to express this. Implementing it is phase 2 itself, and it gates the long tail behind it."
+      "status": "implemented",
+      "verified": false,
+      "note": "Implemented as the reusable modifiers.json catalog and the modifiers array accepted on every raw rules object. Rules::from_values recursively resolves nested bundles, adds them to the owner's native effects before typed deserialization, and rejects cycles, dangling references, malformed attachment lists and non-finite sums. Because expansion happens before the existing object-specific consumers are built, one primitive works uniformly for technologies, civics, policies, buildings, wonders, beliefs, promotions and mod-defined content. The primitive is regression-tested; its shipped SQLite rows still need a fresh row-by-row cache drill before verified can be true."
     },
     "ATTACH_MODIFIER_TO_PLAYERTYPE": {
-      "status": "unmodelled",
-      "note": "World Congress outcomes attaching modifiers to a class of players. Congress resolutions are hardcoded per resolution instead."
+      "status": "implemented",
+      "verified": false,
+      "note": "Implemented as Game::attach_modifier_to_player_type and its symmetric detach operation. Major civilizations, city-states, Barbarians, Free Cities and all-player selectors target stable named modifier identities; repeat attachment is idempotent, expiry removes the same identity, effects feed the player/policy effect consumers even through Anarchy, and attached IDs survive save/load. Existing World Congress resolutions retain their verified hardcoded outcomes, while new and mod-defined outcomes can use the general primitive. The engine path is regression-tested; the raw shipped attachment rows still require a fresh cache drill before verified can be true."
     },
     "CITY_GRANT_RANDOM_RESOURCE_PRODUCT": {
       "status": "partial",
