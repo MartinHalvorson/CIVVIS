@@ -13,6 +13,7 @@
 //! randomly.
 use crate::action_space::{kind_name, legal_encoded};
 use crate::ai::{AdvancedAi, Ai, PlanReport, Weights};
+use crate::decision_features::{decision_features, WIDTH as DECISION_WIDTH};
 use crate::evolve::features;
 use crate::game::{Action, Game};
 use crate::valuenet::ValueNet;
@@ -26,6 +27,36 @@ pub struct PolicyAi {
     pub depth: usize,
     /// Minimum value gain required to commit an action.
     pub margin: f64,
+    /// Score candidates with `decision_features` and a net trained on it,
+    /// instead of `evolve::features` and a 25-wide net.
+    ///
+    /// **Measured at 14.2% against `advanced` — an Elo-equivalent of
+    /// −313.** Turning this on is a large regression, and the reason is
+    /// the most useful thing this agent has produced.
+    ///
+    /// With the 25-wide vector the computed gain is exactly zero on 96% of
+    /// candidates, so the agent declines to act and falls through to the
+    /// scripted layer; that is why it measured at parity. The wider vector
+    /// lets it distinguish candidates, so it commits — and its ranking is
+    /// much worse than the scripted doctrine it displaces. The blindness
+    /// was not the reason it failed to win. It was the reason it failed to
+    /// lose.
+    ///
+    /// The mechanism is standard and worth naming: the net is trained on
+    /// states that `advanced` self-play visits, and greedily maximising it
+    /// one ply at a time walks straight off that distribution, where its
+    /// estimate carries no information. Fixing it needs the training
+    /// distribution to follow the policy (iterated self-play), or the
+    /// policy to be kept near the one that generated the data, or search
+    /// rather than a greedy argmax — not a wider input.
+    ///
+    /// This is the whole point of the wider vector: the 25 aggregates are
+    /// unchanged by 96% of the candidates this agent clones, so its
+    /// computed gain is exactly zero and it declines to act. The 34-wide
+    /// vector moves for 69% of unit moves. Whether that turns into better
+    /// *ranking* is a separate question from whether it can rank at all,
+    /// and is what an evaluation of `policy_wide` measures.
+    pub wide: bool,
     /// Restrict the net to action kinds where a one-ply value delta is
     /// meaningful. Multi-turn commitments (production, research, purchases)
     /// look near-free to a one-ply evaluator, which is how an unrestricted
@@ -76,7 +107,8 @@ impl PolicyAi {
     pub fn with_weights(weights: Weights) -> PolicyAi {
         PolicyAi {
             fallback: AdvancedAi::with_weights(weights),
-            net: ValueNet::load("evolved"),
+            net: ValueNet::load_width("evolved", crate::evolve::FEATURE_WIDTH),
+            wide: false,
             width: 48,
             depth: 10,
             margin: 1e-4,
@@ -88,9 +120,23 @@ impl PolicyAi {
         self.net.is_some()
     }
 
+    /// Load the wider net and score with the wider vector.
+    pub fn with_decision_features(mut self) -> PolicyAi {
+        self.net = ValueNet::load_width("evolved", DECISION_WIDTH);
+        self.wide = true;
+        self
+    }
+
     fn value(&self, g: &Game, pid: usize) -> f64 {
         match &self.net {
-            Some(net) => net.eval(&features(g, pid)),
+            Some(net) => {
+                let x = if self.wide {
+                    decision_features(g, pid)
+                } else {
+                    features(g, pid)
+                };
+                net.eval(&x)
+            }
             None => 0.0,
         }
     }

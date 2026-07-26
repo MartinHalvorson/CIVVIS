@@ -171,8 +171,18 @@ sessions the way the rules batches did.
 > fixed-n Wilson criterion, which declined a change carrying an e-value of
 > 19,720 over 400 maps.
 >
-> Suggested order from here: **3 → 1 → 2's remaining compute → 8 → the
-> rest.** Item 4 (combat micro) is unranked here because it has never been
+> **Amended after measuring item 3's payoff.** Representation was fixed
+> (action visibility 44.5% → 86.1%) and the agent using it got *worse*, not
+> better: `policy_wide` scores 14.2% against `advanced`, an Elo-equivalent
+> of −313, where the blind version scored 45%. The blindness had been
+> suppressing a bad policy, not hiding a good one. So item 3 is necessary
+> and was never the binding constraint; the constraint is that a value net
+> greedily maximised one ply at a time leaves the distribution it was
+> trained on. Item 8 (a self-play loop that retrains on the states the
+> agent visits) therefore moves *before* item 1, not after it.
+>
+> Suggested order from here: **8 → 1 → 2's remaining compute → the
+> rest**, with item 3 already done. Item 4 (combat micro) is unranked here because it has never been
 > measured; treat it as unknown rather than cheap. Whatever is attempted,
 > the cheap first move is now standard: check that the evaluator's inputs
 > actually move under the decision, before building anything on top of it.
