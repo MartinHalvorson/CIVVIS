@@ -24,7 +24,7 @@ use crate::{hex, mapgen, Pos};
 /// The order is fixed history: seat *i* of a game nobody customised has been
 /// `CIV_NAMES[i]` since the first seed, so new civilizations are appended and
 /// never inserted.
-pub const CIV_NAMES: [&str; 100] = [
+pub const CIV_NAMES: [&str; 105] = [
     "Rome",
     "Egypt",
     "Greece",
@@ -125,6 +125,11 @@ pub const CIV_NAMES: [&str; 100] = [
     "Argentina",
     "Australia",
     "Maori",
+    "Babylon",
+    "Cree",
+    "Gran Colombia",
+    "Indonesia",
+    "Macedon",
 ];
 
 /// Which modeled leaders can fill seats the lobby leaves random.
@@ -165,13 +170,10 @@ impl LeaderPool {
     }
 }
 
-/// Civilizations in the modeled roster that Civilization VI itself ships.
-///
-/// Five Civ VI civilizations are not modeled yet (Babylon, Cree, Gran
-/// Colombia, Indonesia and Macedon), so they cannot enter this pool. Keep the
-/// remaining names in [`CIV_NAMES`] order: deterministic non-random callers
+/// All fifty civilizations shipped by Civilization VI and its official DLC.
+/// Keep the names in [`CIV_NAMES`] order: deterministic non-random callers
 /// have always relied on the head of that list.
-pub const CIV6_LEADER_POOL: [&str; 45] = [
+pub const CIV6_LEADER_POOL: [&str; 50] = [
     "Rome",
     "Egypt",
     "Greece",
@@ -217,6 +219,11 @@ pub const CIV6_LEADER_POOL: [&str; 45] = [
     "Mapuche",
     "Australia",
     "Maori",
+    "Babylon",
+    "Cree",
+    "Gran Colombia",
+    "Indonesia",
+    "Macedon",
 ];
 /// The city-states this ruleset can seat, in placement order. The first
 /// twelve carry bespoke Suzerain bonuses; the rest round out the largest
@@ -2180,6 +2187,96 @@ fn city_names(civ: &str) -> &'static [&'static str] {
             "Opotiki",
             "Kawhia",
         ],
+        "Babylon" => &[
+            "Babylon",
+            "Ur",
+            "Uruk",
+            "Sippar",
+            "Nippur",
+            "Borsippa",
+            "Kish",
+            "Lagash",
+            "Adab",
+            "Akkad",
+            "Dur-Kurigalzu",
+            "Isin",
+            "Larsa",
+            "Umma",
+            "Shuruppak",
+            "Eridu",
+        ],
+        "Cree" => &[
+            "Mikisiw-Wacihk",
+            "Mistawasis",
+            "Okanese",
+            "Peepeekisis",
+            "Sakimay",
+            "Cowessess",
+            "Kahkewistahaw",
+            "Star Blanket",
+            "Muskowekwan",
+            "Pasqua",
+            "George Gordon",
+            "Day Star",
+            "Beardy's",
+            "Little Pine",
+            "Sweetgrass",
+            "Thunderchild",
+        ],
+        "Gran Colombia" => &[
+            "Bogota",
+            "Caracas",
+            "Quito",
+            "Panama City",
+            "Guayaquil",
+            "Cali",
+            "Medellin",
+            "Cartagena",
+            "Cucuta",
+            "Bucaramanga",
+            "Maracaibo",
+            "Barquisimeto",
+            "Valencia",
+            "Santa Marta",
+            "Popayan",
+            "Tunja",
+        ],
+        "Indonesia" => &[
+            "Jakarta",
+            "Surabaya",
+            "Medan",
+            "Makassar",
+            "Palembang",
+            "Bandung",
+            "Banjarmasin",
+            "Denpasar",
+            "Yogyakarta",
+            "Semarang",
+            "Ternate",
+            "Tidore",
+            "Malang",
+            "Padang",
+            "Manado",
+            "Kupang",
+        ],
+        "Macedon" => &[
+            "Pella",
+            "Aigai",
+            "Amphipolis",
+            "Dion",
+            "Mygdonia",
+            "Cassandreia",
+            "Thessalonica",
+            "Philippi",
+            "Heraclea Lyncestis",
+            "Stobi",
+            "Edessa",
+            "Beroea",
+            "Olynthus",
+            "Potidaea",
+            "Methone",
+            "Eion",
+        ],
         _ => &[],
     }
 }
@@ -2373,6 +2470,11 @@ mod seating_tests {
             );
         }
         assert!(CIV6_LEADER_POOL.contains(&"Byzantium"));
+        assert!(CIV6_LEADER_POOL.contains(&"Babylon"));
+        assert!(CIV6_LEADER_POOL.contains(&"Cree"));
+        assert!(CIV6_LEADER_POOL.contains(&"Gran Colombia"));
+        assert!(CIV6_LEADER_POOL.contains(&"Indonesia"));
+        assert!(CIV6_LEADER_POOL.contains(&"Macedon"));
         assert!(!CIV6_LEADER_POOL.contains(&"Denmark"));
     }
 }
