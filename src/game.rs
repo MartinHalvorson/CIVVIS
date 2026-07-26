@@ -4405,6 +4405,47 @@ mod belief_runtime_tests {
     }
 
     #[test]
+    fn the_army_combat_beliefs_do_not_reach_an_apostle() {
+        // JUST_WAR_REQUIREMENTS and DEFENDER_OF_FAITH_REQUIREMENTS are the same
+        // TEST_ALL set bar one argument, and both open with NOT CLASS_RELIGIOUS
+        // and NOT CLASS_SUPPORT. They are army beliefs: an Apostle carries
+        // nothing from either into theological combat, where CIVVIS was paying
+        // both.
+        let (mut game, cities) = game_with_capitals(91_765);
+        let religion = establish_religion(&mut game, cities[0], &[]);
+        for city in [cities[0], cities[1]] {
+            let city = game.cities.get_mut(&city).unwrap();
+            city.pressure = BTreeMap::from([(religion.clone(), 100.0)]);
+            city.atheist_pressure = 0.0;
+        }
+        let foreign = game.cities[&cities[1]].pos;
+
+        let apostle = game.spawn_unit("apostle", 0, foreign);
+        game.units.get_mut(&apostle).unwrap().religion = Some(religion.clone());
+        let bare = game.theological_strength(&game.units[&apostle]);
+
+        game.players[0].religion_beliefs = vec!["just_war".to_string()];
+        assert_eq!(
+            game.theological_strength(&game.units[&apostle]),
+            bare,
+            "Just War is an army belief"
+        );
+        game.players[0].religion_beliefs = vec!["defender_of_the_faith".to_string()];
+        assert_eq!(
+            game.theological_strength(&game.units[&apostle]),
+            bare,
+            "so is Defender of the Faith"
+        );
+
+        // The army still gets it, so the exclusion is narrow rather than a
+        // blanket removal.
+        let warrior = game.spawn_unit("warrior", 0, foreign);
+        let plain = game.unit_unembarked_strength(&game.units[&warrior]);
+        game.players[0].religion_beliefs = vec!["just_war".to_string()];
+        assert_eq!(game.unit_unembarked_strength(&game.units[&warrior]), plain + 10.0);
+    }
+
+    #[test]
     fn founder_unity_combat_and_loyalty_beliefs_use_runtime_city_state() {
         let (mut game, cities) = game_with_capitals(91_764);
         let religion = establish_religion(&mut game, cities[0], &[]);
@@ -18206,7 +18247,18 @@ impl Game {
         }
     }
 
-    fn religious_combat_belief_bonus(&self, owner: usize, position: Pos) -> f64 {
+    /// Just War and Defender of the Faith, which ship the same requirement set
+    /// bar one argument: both are TEST_ALL of NOT `CLASS_RELIGIOUS`, NOT
+    /// `CLASS_SUPPORT`, founding the religion, and standing near a city that
+    /// follows it -- `FriendlyCity` 0 for Just War and 1 for Defender. The two
+    /// inverted tags matter: these are army beliefs, and an Apostle gets
+    /// nothing from either in theological combat.
+    fn religious_combat_belief_bonus(&self, unit: &Unit) -> f64 {
+        let (owner, position) = (unit.owner, unit.pos);
+        let class = self.rules.units[unit.kind.as_str()].class.as_str();
+        if matches!(class, "religious" | "religious_apostle" | "support") {
+            return 0.0;
+        }
         let Some(religion) = self.players[owner].religion.as_deref() else {
             return 0.0;
         };
@@ -18504,7 +18556,7 @@ impl Game {
         {
             strength += self.policy_effect(unit.owner, "home_religious_strength");
         }
-        strength += self.religious_combat_belief_bonus(unit.owner, unit.pos);
+        strength += self.religious_combat_belief_bonus(unit);
         if let Some(city) = self
             .map
             .get(unit.pos)
@@ -21518,7 +21570,7 @@ impl Game {
             + self.unit_formation_bonus(u)
             + self.promotion_effect(u, "combat_all")
             + self.congress_military_strength_bonus(u)
-            + self.religious_combat_belief_bonus(u.owner, u.pos)
+            + self.religious_combat_belief_bonus(u)
             + self.handicap_combat_strength(u.owner);
         if !matches!(
             self.rules.units[u.kind.as_str()].domain.as_deref(),
@@ -21647,7 +21699,7 @@ impl Game {
         rs + self.government_combat_bonus(u, true)
             + self.unit_formation_bonus(u)
             + self.congress_military_strength_bonus(u)
-            + self.religious_combat_belief_bonus(u.owner, u.pos)
+            + self.religious_combat_belief_bonus(u)
             + (10.0 - u.hp.clamp(0, 100) as f64 / 10.0).round()
                 * self.policy_effect(u.owner, "wounded_penalty_reduction_pct")
                 / 100.0
@@ -21668,7 +21720,7 @@ impl Game {
             + self.government_combat_bonus(u, true)
             + self.unit_formation_bonus(u)
             + self.congress_military_strength_bonus(u)
-            + self.religious_combat_belief_bonus(u.owner, u.pos)
+            + self.religious_combat_belief_bonus(u)
             + (10.0 - u.hp.clamp(0, 100) as f64 / 10.0).round()
                 * self.policy_effect(u.owner, "wounded_penalty_reduction_pct")
                 / 100.0
