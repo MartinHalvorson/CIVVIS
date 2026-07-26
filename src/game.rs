@@ -28055,13 +28055,13 @@ impl Game {
             }
         }
 
-        if tile.improvement.as_deref() == Some("farm")
-            && tile
-                .resource
-                .as_ref()
-                .is_some_and(|resource| self.rules.resources[resource.as_str()].class == "bonus")
-        {
-            yields.food += building_effect("farmable_bonus_resource_food");
+        // The Water Mill names three resources and asks nothing of the tile
+        // beyond carrying one: WATERMILL_* ship a RESOURCE_TYPE_MATCHES each
+        // for Maize, Rice and Wheat, with no improvement requirement. CIVVIS
+        // demanded a Farm and then paid *any* Bonus resource, which is both
+        // too strict and too broad at once.
+        if matches!(tile.resource.as_deref(), Some("maize" | "rice" | "wheat")) {
+            yields.food += building_effect("cereal_resource_food");
         }
         if fresh_water {
             yields.food += building_effect("fresh_water_tile_food");
@@ -28079,10 +28079,16 @@ impl Game {
         if matches!(tile.feature.as_deref(), Some("jungle" | "marsh")) {
             yields.science += building_effect("rainforest_marsh_science");
         }
-        if is_coast_or_lake
-            || matches!(tile.feature.as_deref(), Some("reef" | "great_barrier_reef"))
-        {
-            yields.science += building_effect("coast_lake_feature_science");
+        // The Aquarium pays a Reef, and separately a Coast tile that has a
+        // visible resource - AQUARIUM_REEF_SCIENCE against
+        // AQUARIUM_SEARESOURCE_SCIENCE, whose requirement set is
+        // PLOT_RESOURCE_VISIBLE and TERRAIN_COAST together. CIVVIS paid every
+        // coast tile whether or not anything was on it.
+        if matches!(tile.feature.as_deref(), Some("reef" | "great_barrier_reef")) {
+            yields.science += building_effect("reef_science");
+        }
+        if is_coast_or_lake && tile.resource.is_some() {
+            yields.science += building_effect("coast_resource_science");
         }
         if tile.feature.is_some() && self.rules.is_passable(tile) {
             yields.culture += building_effect("passable_feature_culture");
@@ -52461,6 +52467,58 @@ mod district_mechanics {
         game.map.tiles.get_mut(&ring[0]).unwrap().pillaged = true;
         assert_eq!(game.tile_appeal(position), 3);
         assert_eq!(game.district_housing("neighborhood", position), 5.0);
+    }
+
+    /// The Water Mill names three resources and asks nothing of the tile
+    /// beyond carrying one: WATERMILL_* ship a RESOURCE_TYPE_MATCHES each for
+    /// Maize, Rice and Wheat with no improvement requirement. The Aquarium
+    /// pays a Reef, and separately a Coast tile that has a *visible* resource.
+    /// CIVVIS used to demand a Farm and then pay any Bonus resource, and to
+    /// pay Science for every coast tile whether or not anything was on it.
+    #[test]
+    fn water_mill_and_aquarium_pay_the_tiles_their_rows_name() {
+        let (mut game, city, position, _) = controlled_game();
+        // Measure the plot rows where they are computed. Going through
+        // city_yields would fold in each building's own city yields and only
+        // count tiles the city happens to be working.
+        let yields = |game: &Game, position: Pos| {
+            game.player_tile_yields(0, position, &game.map.tiles[&position])
+        };
+        let shape = |game: &mut Game, terrain: &str, resource: Option<&str>| {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = terrain.to_string();
+            tile.feature = None;
+            tile.improvement = None;
+            tile.resource = resource.map(str::to_string);
+        };
+
+        shape(&mut game, "plains", Some("wheat"));
+        let wheat_bare = yields(&game, position).food;
+        shape(&mut game, "plains", Some("stone"));
+        let stone_bare = yields(&game, position).food;
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .push("water_mill".to_string());
+        shape(&mut game, "plains", Some("wheat"));
+        assert_eq!(
+            yields(&game, position).food - wheat_bare,
+            1.0,
+            "unimproved Wheat earns it: the rows name the resource, not a Farm"
+        );
+        shape(&mut game, "plains", Some("stone"));
+        assert_eq!(
+            yields(&game, position).food - stone_bare,
+            0.0,
+            "a Bonus resource the card does not name earns nothing"
+        );
+
+        // The Aquarium half of this change - Reef separately from a Coast tile
+        // with a visible resource - is evidenced by AQUARIUM_REEF_SCIENCE and
+        // AQUARIUM_SEARESOURCE_SCIENCE but is not covered here: it is a Harbor
+        // building, so exercising it needs a standing Harbor that this fixture
+        // does not build.
     }
 
     /// Public Transport pays per Neighborhood and bands its Food and

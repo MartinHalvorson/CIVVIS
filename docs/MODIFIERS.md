@@ -35,10 +35,12 @@ baseline with optional game modes excluded.
 | out-of-scope | 1 | 155 |
 
 `tools/modifier_coverage.json` holds those judgements with a reason each.
-They are seeded by reading the engine for each effect family and are mostly
-**not** yet verified row by row (568 rows are, so far) — an `implemented` entry is a claim to be checked, and
-checking them is the next step. Anything absent from the file counts as
-unmodelled, so newly shipped content raises the backlog rather than hiding.
+They are seeded by reading the engine for each effect family. **Every covered
+row is now verified row by row** — all 1,250 of them, against the shipped
+`Modifiers` tables read from the compiled gameplay database. Each entry's note
+records what was checked and what it found. Anything absent from the file
+counts as unmodelled, so newly shipped content raises the backlog rather than
+hiding.
 
 ## The finding that matters
 
@@ -66,15 +68,22 @@ expressed without building the interpreter.
 
 ## Order of work
 
-1. **Verify the 28 implemented and partial effects row by row.** The census is
-   only as honest as `modifier_coverage.json`, and most entries are still
-   inspection judgements. Drill in with `--effect`, check each row's arguments
-   and requirement set against the CIVVIS path that claims to cover it, mark
-   the entry `verified`, and demote whatever does not hold. The report prints
-   verified rows against covered rows, so the ratchet is visible.
+1. ~~**Verify the 28 implemented and partial effects row by row.**~~ **DONE**:
+   all 33 entries, 1,250 of 1,250 covered rows. Drill in with `--effect`, check
+   each row's arguments *and its requirement set* against the CIVVIS path that
+   claims to cover it, mark the entry `verified`, and demote whatever does not
+   hold. The report prints verified rows against covered rows.
 
-   Ten are done so far (568 of 1,165 covered rows), and seven of them found
-   real divergences:
+   **The lesson of the pass: the amounts were nearly all right and the
+   conditions were not.** `ADJUST_PLOT_YIELD` is the clearest case — 123 rows,
+   two defects, and a value-only comparison would have reported zero, because
+   both had the correct amount attached to the wrong tiles. Read `Inverse` on
+   every requirement (76 of 809 shipped requirements are inverted), read
+   `RequirementSetType` (84 of 867 sets are `TEST_ANY`), and follow the grant
+   chain: a modifier row says an effect exists, only its owner says whether the
+   shipped game ever fires it.
+
+   The divergences it found:
 
    - a city's Commercial Hub or Harbor granted no Trade Route at all, and
      Merchant Republic none of its two;
