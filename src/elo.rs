@@ -438,6 +438,193 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
     }
 }
 
+/// Directory `builtin_ai` resolves trained artifacts from.
+pub const ARTIFACT_DIR: &str = "evolved";
+/// Evolved strategy genome written by `civvis evolve`.
+pub const CHAMPION_FILE: &str = "best.json";
+/// Distilled scalar value net written by `tools/train_valuenet.py`.
+pub const VALUENET_FILE: &str = "valuenet.json";
+
+/// One trained artifact a builtin name reads, and whether it loaded.
+///
+/// `definitional` separates the two ways a name depends on an artifact. A
+/// definitional artifact *is* the agent: without it `builtin_ai` returns a
+/// different agent under the same name. A non-definitional one only tunes
+/// the agent, so its absence leaves the name honest but the numbers
+/// untrained.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArtifactStatus {
+    pub file: &'static str,
+    pub found: bool,
+    pub definitional: bool,
+}
+
+/// What a builtin name actually plays as once its artifacts are resolved.
+///
+/// `builtin_ai` falls back silently when a trained artifact is missing —
+/// correctly, because a missing file should not stop a game. What it must
+/// not do is let an evaluation record the result under the learned name: on
+/// a checkout with no `evolved/` directory, `neural` is `basic` and
+/// `policy` is `advanced`, so a run pitting them against `advanced`
+/// measures the scripted agent against itself and reports it as evidence
+/// about a learned one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentProvenance {
+    /// The name the caller asked for.
+    pub requested: String,
+    /// Every artifact the name reads, in the order it reads them.
+    pub artifacts: Vec<ArtifactStatus>,
+    /// The agent that actually plays. Equals `requested` unless a
+    /// definitional artifact is missing.
+    pub effective: &'static str,
+}
+
+impl AgentProvenance {
+    /// True when the name promises more than the loaded artifacts deliver.
+    pub fn degraded(&self) -> bool {
+        self.effective != self.requested
+    }
+
+    /// True when some artifact the name reads did not load, whether or not
+    /// that changed which agent plays.
+    pub fn untrained(&self) -> bool {
+        self.artifacts.iter().any(|artifact| !artifact.found)
+    }
+
+    pub fn missing(&self) -> Vec<&'static str> {
+        self.artifacts
+            .iter()
+            .filter(|artifact| !artifact.found)
+            .map(|artifact| artifact.file)
+            .collect()
+    }
+
+    /// One reportable line, e.g.
+    /// `neural: plays as basic (missing valuenet.json, best.json)`.
+    pub fn line(&self) -> String {
+        let missing = self.missing();
+        if missing.is_empty() {
+            return match self.artifacts.is_empty() {
+                true => format!("{}: scripted, no artifacts required", self.requested),
+                false => format!("{}: loaded {}", self.requested, self.artifacts_list()),
+            };
+        }
+        let plays = match self.degraded() {
+            true => format!("plays as {}", self.effective),
+            false => format!("plays as {} with untrained defaults", self.requested),
+        };
+        format!("{}: {} (missing {})", self.requested, plays, missing.join(", "))
+    }
+
+    fn artifacts_list(&self) -> String {
+        self.artifacts
+            .iter()
+            .map(|artifact| artifact.file)
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
+/// Resolve what `builtin_ai(name, _)` will actually construct from `dir`.
+///
+/// Presence is decided by the same loaders the agents use, not by a stat:
+/// a `valuenet.json` that fails `ValueNet::valid` is rejected at load time,
+/// so reporting it as present would restate the bug it is meant to catch.
+pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
+    let champion = crate::evolve::load_champion(dir).is_some();
+    let net = crate::valuenet::ValueNet::load(dir).is_some();
+    let genome = ArtifactStatus {
+        file: CHAMPION_FILE,
+        found: champion,
+        definitional: false,
+    };
+    let value = |definitional| ArtifactStatus {
+        file: VALUENET_FILE,
+        found: net,
+        definitional,
+    };
+    let (artifacts, effective) = match name {
+        // The genome *is* these two names; without it they are the stock
+        // scripted agent under a name that claims otherwise.
+        "evolved" => (
+            vec![ArtifactStatus {
+                definitional: true,
+                ..genome
+            }],
+            if champion { "evolved" } else { "advanced" },
+        ),
+        "advanced_evolved" => (
+            vec![ArtifactStatus {
+                definitional: true,
+                ..genome
+            }],
+            if champion {
+                "advanced_evolved"
+            } else {
+                "advanced"
+            },
+        ),
+        // NeuralAi needs the net to exist at all and drops all the way to
+        // the lightweight agent without it — the largest silent gap here.
+        "neural" => (
+            vec![genome, value(true)],
+            if net { "neural" } else { "basic" },
+        ),
+        "policy" => (
+            vec![genome, value(true)],
+            if net { "policy" } else { "advanced" },
+        ),
+        // Strategic keeps its lane rollouts without a net; what it loses is
+        // the learned terminal evaluator, which is exactly the published
+        // `strategic_score` control.
+        "strategic" => (
+            vec![genome, value(true)],
+            if net { "strategic" } else { "strategic_score" },
+        ),
+        // The control refuses a net by construction, so it is never
+        // degraded — only untrained when the genome is absent.
+        "strategic_score" => (vec![genome], "strategic_score"),
+        "advanced" => (Vec::new(), "advanced"),
+        "advanced_v1" => (Vec::new(), "advanced_v1"),
+        "random" => (Vec::new(), "random"),
+        // `builtin_ai` answers every other name with the lightweight agent.
+        "basic" => (Vec::new(), "basic"),
+        _ => (Vec::new(), "basic"),
+    };
+    AgentProvenance {
+        requested: name.to_string(),
+        artifacts,
+        effective,
+    }
+}
+
+/// Provenance for a whole entrant list, in the order given.
+pub fn builtin_provenances(names: &[&str], dir: &str) -> Vec<AgentProvenance> {
+    names
+        .iter()
+        .map(|name| builtin_provenance(name, dir))
+        .collect()
+}
+
+/// Distinct requested names that resolve to the same agent, which makes any
+/// difference between them noise. Returns `(first, second, shared agent)`.
+pub fn collapsed_entrants(names: &[&str], dir: &str) -> Vec<(String, String, &'static str)> {
+    let resolved = builtin_provenances(names, dir);
+    let mut out = Vec::new();
+    for (index, left) in resolved.iter().enumerate() {
+        for right in resolved.iter().skip(index + 1) {
+            if left.requested != right.requested && left.effective == right.effective {
+                out.push((
+                    left.requested.clone(),
+                    right.requested.clone(),
+                    left.effective,
+                ));
+            }
+        }
+    }
+    out
+}
+
 pub struct TourneyCfg {
     pub games: u32,
     pub players_per_game: usize,
@@ -773,14 +960,111 @@ pub fn leaderboard(pool: &EloPool) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        expected, scheduled_seats, seat_schedule, win_shares, EloPool, RatedPlayer, RatingKey,
-        ELO_SCHEMA_VERSION,
+        builtin_provenance, collapsed_entrants, expected, scheduled_seats, seat_schedule,
+        win_shares, EloPool, RatedPlayer, RatingKey, BUILTIN_AIS, CHAMPION_FILE,
+        ELO_SCHEMA_VERSION, EVAL_ONLY_AIS, VALUENET_FILE,
     };
     use crate::rng::Rng;
     use std::collections::BTreeMap;
     use std::fs;
     use std::sync::{Arc, Barrier};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    /// A checkout with no trained artifacts is the default state of this
+    /// repository — `evolved/` is generated and ignored — so every learned
+    /// name must report the scripted agent it really is.
+    #[test]
+    fn a_bare_checkout_reports_the_agent_that_actually_plays() {
+        let dir = "target/test-provenance-bare";
+        let _ = fs::remove_dir_all(dir);
+        fs::create_dir_all(dir).unwrap();
+        for (name, effective) in [
+            ("evolved", "advanced"),
+            ("advanced_evolved", "advanced"),
+            ("neural", "basic"),
+            ("policy", "advanced"),
+            ("strategic", "strategic_score"),
+        ] {
+            let resolved = builtin_provenance(name, dir);
+            assert_eq!(resolved.effective, effective, "{name}");
+            assert!(resolved.degraded(), "{name}");
+            assert!(resolved.untrained(), "{name}");
+            assert!(resolved.line().contains("missing"), "{}", resolved.line());
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// The scripted names promise nothing they load, so they are never
+    /// degraded and never untrained — including on a bare checkout.
+    #[test]
+    fn scripted_names_are_never_degraded() {
+        let dir = "target/test-provenance-scripted";
+        let _ = fs::remove_dir_all(dir);
+        fs::create_dir_all(dir).unwrap();
+        for name in ["advanced", "advanced_v1", "basic", "random"] {
+            let resolved = builtin_provenance(name, dir);
+            assert_eq!(resolved.effective, name);
+            assert!(!resolved.degraded(), "{name}");
+            assert!(!resolved.untrained(), "{name}");
+        }
+        // The evaluator-only control refuses a net by construction, so a
+        // missing net is not a degradation for it — only the genome is.
+        let control = builtin_provenance("strategic_score", dir);
+        assert_eq!(control.effective, "strategic_score");
+        assert!(!control.degraded());
+        assert!(control.untrained());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// Presence is decided by the loaders the agents use. A file that exists
+    /// but cannot load leaves the agent scripted, so provenance must not
+    /// call it found.
+    #[test]
+    fn an_unloadable_artifact_is_not_a_loaded_one() {
+        let dir = "target/test-provenance-corrupt";
+        let _ = fs::remove_dir_all(dir);
+        fs::create_dir_all(dir).unwrap();
+        fs::write(format!("{dir}/{VALUENET_FILE}"), "{\"sizes\":[1,2]}").unwrap();
+        fs::write(format!("{dir}/{CHAMPION_FILE}"), "not json").unwrap();
+        let resolved = builtin_provenance("neural", dir);
+        assert_eq!(resolved.effective, "basic");
+        assert_eq!(resolved.missing(), vec![CHAMPION_FILE, VALUENET_FILE]);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// Two entrants that resolve to one agent make their difference noise.
+    #[test]
+    fn entrants_that_collapse_to_one_agent_are_reported() {
+        let dir = "target/test-provenance-collapse";
+        let _ = fs::remove_dir_all(dir);
+        fs::create_dir_all(dir).unwrap();
+        let collapsed = collapsed_entrants(&["policy", "advanced", "basic"], dir);
+        assert_eq!(
+            collapsed,
+            vec![("policy".to_string(), "advanced".to_string(), "advanced")]
+        );
+        assert!(collapsed_entrants(&["advanced", "basic", "random"], dir).is_empty());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// Every selectable entrant name must have an explicit provenance row,
+    /// so adding a builtin cannot quietly inherit the catch-all.
+    #[test]
+    fn every_selectable_name_resolves_to_itself_or_a_named_fallback() {
+        let dir = "target/test-provenance-names";
+        let _ = fs::remove_dir_all(dir);
+        fs::create_dir_all(dir).unwrap();
+        for name in BUILTIN_AIS.iter().chain(EVAL_ONLY_AIS.iter()) {
+            let resolved = builtin_provenance(name, dir);
+            assert!(
+                BUILTIN_AIS.contains(&resolved.effective)
+                    || EVAL_ONLY_AIS.contains(&resolved.effective),
+                "{name} resolved to unknown {}",
+                resolved.effective
+            );
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
 
     fn player(name: &str, leader: &str, civ: &str, score: i64, won: bool) -> RatedPlayer {
         RatedPlayer::new(name, leader, civ, score, won)
