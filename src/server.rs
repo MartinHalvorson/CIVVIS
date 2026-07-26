@@ -4796,8 +4796,8 @@ mod tests {
         );
         // The switches are a two-column grid, and the order they are written in
         // follows the map: the rail read top to bottom — standings, victory
-        // tracker, world minimap — and then the map controls, which are the one
-        // instrument still standing in the opposite corner.
+        // tracker, world minimap — and then the map controls and lenses docked
+        // together in the opposite corner.
         assert!(EMBEDDED_INDEX
             .contains(".overlay-option-grid { display: grid; grid-template-columns: 1fr 1fr;"));
         let switches = EMBEDDED_INDEX
@@ -4816,9 +4816,13 @@ mod tests {
             .collect();
         assert_eq!(
             corners,
-            ["players", "victory", "minimap", "controls"],
-            "the switches read down the rail, then the map controls in the far corner"
+            ["players", "victory", "minimap", "controls", "lenses"],
+            "the switches read down the rail, then the map dock in the far corner"
         );
+        assert!(EMBEDDED_INDEX.contains("id=\"map-lens-exit\""));
+        assert!(EMBEDDED_INDEX.contains("body.overlay-lenses-hidden #map-lenses"));
+        assert!(EMBEDDED_INDEX
+            .contains("document.getElementById(\"map-lens-exit\").onclick = () => setMapLens(null);"));
         // One instrument, one name. The switch, the title bar it is dragged by
         // and the label that follows it across the map all say "World minimap",
         // so nothing in the interface reads as a second, separate world map —
