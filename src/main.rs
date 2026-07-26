@@ -589,12 +589,13 @@ fn main() {
                         ));
                         flags.push_str(&format!(
                             " SIEGE blows={} damage={} walls_breached={} cities_reduced={} \
-                             left_depleted={} melee_was_there={}",
+                             left_depleted={} taker_ready={} melee_was_there={}",
                             g.siege.blows,
                             g.siege.damage,
                             g.siege.walls_breached,
                             g.siege.cities_reduced,
                             g.siege.left_depleted,
+                            g.siege.depleted_with_a_taker_ready,
                             g.siege.reduced_with_melee_adjacent,
                         ));
                         let held = (census.hold_threatened + census.hold_weak).max(1);
