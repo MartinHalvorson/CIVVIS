@@ -22,7 +22,7 @@ use crate::{hex, mapgen, Pos};
 /// The order is fixed history: seat *i* of a game nobody customised has been
 /// `CIV_NAMES[i]` since the first seed, so new civilizations are appended and
 /// never inserted.
-pub const CIV_NAMES: [&str; 21] = [
+pub const CIV_NAMES: [&str; 100] = [
     "Rome",
     "Egypt",
     "Greece",
@@ -44,12 +44,94 @@ pub const CIV_NAMES: [&str; 21] = [
     "Kongo",
     "Vietnam",
     "Brazil",
+    "France",
+    "Spain",
+    "Portugal",
+    "Netherlands",
+    "Sweden",
+    "Norway",
+    "Denmark",
+    "Poland",
+    "Hungary",
+    "Austria",
+    "Bohemia",
+    "Scotland",
+    "Ireland",
+    "Switzerland",
+    "Venice",
+    "Serbia",
+    "Bulgaria",
+    "Lithuania",
+    "Ukraine",
+    "Finland",
+    "Romania",
+    "Novgorod",
+    "Prussia",
+    "Catalonia",
+    "Gujarat",
+    "Assyria",
+    "Persia",
+    "Media",
+    "Manchuria",
+    "Lydia",
+    "Parthia",
+    "Sogdiana",
+    "Ottomans",
+    "Arabia",
+    "Israel",
+    "Armenia",
+    "Georgia",
+    "Timurids",
+    "Kazakh",
+    "Bactria",
+    "Ethiopia",
+    "Axum",
+    "Morocco",
+    "Numidia",
+    "Songhai",
+    "Ghana",
+    "Benin",
+    "Ashanti",
+    "Swahili",
+    "Great Zimbabwe",
+    "Buganda",
+    "Oyo",
+    "Tuareg",
+    "Madagascar",
+    "India",
+    "Japan",
+    "Mongolia",
+    "Tibet",
+    "Nepal",
+    "Kalinga",
+    "Chola",
+    "Bengal",
+    "Maratha",
+    "Khmer",
+    "Siam",
+    "Burma",
+    "Majapahit",
+    "Champa",
+    "America",
+    "Canada",
+    "Pueblo",
+    "Comanche",
+    "Sioux",
+    "Inca",
+    "Muisca",
+    "Mapuche",
+    "Argentina",
+    "Australia",
+    "Maori",
 ];
 /// The city-states this ruleset can seat, in placement order. The first
-/// twelve carry bespoke Suzerain bonuses; the rest round out the Huge map's
-/// eighteen seats with their type bonuses alone. Every seat needs its own
-/// entry here — two city-states sharing a name would share an identity.
-pub const CITY_STATE_NAMES: [&str; 18] = [
+/// twelve carry bespoke Suzerain bonuses; the rest round out the largest
+/// map's hundred and fifty seats with their type bonuses alone. Every seat
+/// needs its own entry here — two city-states sharing a name would share an
+/// identity, and so would a city-state sharing one with a civilization or
+/// with a city that civilization can found. Append only: a city-state's
+/// index is its identity in a saved game.
+pub const CITY_STATE_NAMES: [&str; 150] = [
     "Kabul",
     "Geneva",
     "Carthage",
@@ -68,6 +150,138 @@ pub const CITY_STATE_NAMES: [&str; 18] = [
     "Antananarivo",
     "Seoul",
     "Amsterdam",
+    "Akragas",
+    "Gela",
+    "Tarentum",
+    "Croton",
+    "Kos",
+    "Knidos",
+    "Pergamon",
+    "Sinope",
+    "Massalia",
+    "Emporion",
+    "Cyrene",
+    "Leptis Magna",
+    "Thapsus",
+    "Malaca",
+    "Palmyra",
+    "Petra",
+    "Ebla",
+    "Kadesh",
+    "Alalakh",
+    "Qatna",
+    "Emar",
+    "Nuzi",
+    "Sicyon",
+    "Orchomenus",
+    "Tiryns",
+    "Megara",
+    "Chalcis",
+    "Eretria",
+    "Dodona",
+    "Elis",
+    "Capua",
+    "Tarquinia",
+    "Veii",
+    "Perusia",
+    "Ancona",
+    "Ragusa",
+    "Amalfi",
+    "Pisa",
+    "Lubeck",
+    "Rostock",
+    "Wismar",
+    "Riga",
+    "Reval",
+    "Visby",
+    "Bruges",
+    "Ghent",
+    "Antwerp",
+    "Soest",
+    "Bamberg",
+    "Goslar",
+    "Ulm",
+    "Basel City",
+    "Sankt Gallen City",
+    "Zurich City",
+    "Bergen City",
+    "Trondheim",
+    "Wisby",
+    "Elsinore",
+    "Malmo",
+    "Turku City",
+    "Abo",
+    "Narva",
+    "Derbent",
+    "Tanais",
+    "Chersonesos",
+    "Phanagoria",
+    "Sarkel",
+    "Itil",
+    "Bolghar",
+    "Suzdal",
+    "Merv City",
+    "Balasagun",
+    "Talas",
+    "Osh",
+    "Kashgar",
+    "Khotan",
+    "Turfan",
+    "Dunhuang",
+    "Pagan City",
+    "Pegu City",
+    "Malacca",
+    "Brunei",
+    "Aceh",
+    "Palembang",
+    "Makassar",
+    "Ternate",
+    "Tidore",
+    "Hoi An City",
+    "Luang Prabang",
+    "Vientiane",
+    "Ayutthaya City",
+    "Pattani",
+    "Kedah",
+    "Manila",
+    "Cebu",
+    "Ryukyu",
+    "Naha",
+    "Hakodate",
+    "Sakai City",
+    "Hakata City",
+    "Kamakura City",
+    "Dazaifu",
+    "Gao City",
+    "Kano",
+    "Katsina",
+    "Zaria",
+    "Sokoto",
+    "Ife",
+    "Nri",
+    "Bonny",
+    "Cabinda",
+    "Ndongo",
+    "Adal",
+    "Zeila",
+    "Berbera",
+    "Mogadishu",
+    "Barawa",
+    "Merca",
+    "Cahokia",
+    "Poverty Point",
+    "Chaco",
+    "Mesa Verde",
+    "Taos",
+    "Zuni",
+    "Hopi",
+    "Acoma",
+    "Kabah",
+    "Monte Alban",
+    "El Tajin",
+    "Cholula",
+    "Chan Chan",
+    "Chavin",
 ];
 
 fn city_names(civ: &str) -> &'static [&'static str] {
@@ -449,6 +663,1428 @@ fn city_names(civ: &str) -> &'static [&'static str] {
             "Olinda",
             "Ouro Preto",
             "Santos",
+        ],
+        "France" => &[
+            "Paris",
+            "Orleans",
+            "Lyon",
+            "Reims",
+            "Tours",
+            "Bordeaux",
+            "Rouen",
+            "Dijon",
+            "Toulouse",
+            "Poitiers",
+            "Nantes",
+            "Amiens",
+            "Grenoble",
+            "Limoges",
+            "Angers",
+            "Besancon",
+        ],
+        "Spain" => &[
+            "Madrid",
+            "Toledo",
+            "Sevilla",
+            "Valladolid",
+            "Zaragoza",
+            "Cordoba",
+            "Salamanca",
+            "Burgos",
+            "Granada",
+            "Segovia",
+            "Leon",
+            "Avila",
+            "Cuenca",
+            "Merida",
+            "Caceres",
+            "Soria",
+        ],
+        "Portugal" => &[
+            "Lisboa",
+            "Porto",
+            "Coimbra",
+            "Braga",
+            "Evora",
+            "Guimaraes",
+            "Viseu",
+            "Leiria",
+            "Santarem",
+            "Faro",
+            "Beja",
+            "Lamego",
+            "Guarda",
+            "Portalegre",
+            "Tomar",
+            "Braganca",
+        ],
+        "Netherlands" => &[
+            "Den Haag",
+            "Rotterdam",
+            "Utrecht",
+            "Haarlem",
+            "Leiden",
+            "Delft",
+            "Groningen",
+            "Nijmegen",
+            "Arnhem",
+            "Maastricht",
+            "Breda",
+            "Eindhoven",
+            "Zwolle",
+            "Deventer",
+            "Alkmaar",
+            "Dordrecht",
+        ],
+        "Sweden" => &[
+            "Uppsala",
+            "Sigtuna",
+            "Linkoping",
+            "Orebro",
+            "Vasteras",
+            "Norrkoping",
+            "Jonkoping",
+            "Kalmar",
+            "Skara",
+            "Nykoping",
+            "Falun",
+            "Gavle",
+            "Karlstad",
+            "Vaxjo",
+            "Umea",
+            "Lund",
+        ],
+        "Norway" => &[
+            "Nidaros",
+            "Bergen",
+            "Oslo",
+            "Tonsberg",
+            "Stavanger",
+            "Hamar",
+            "Skien",
+            "Lillehammer",
+            "Molde",
+            "Bodo",
+            "Alta",
+            "Voss",
+            "Roros",
+            "Kongsberg",
+            "Halden",
+            "Narvik",
+        ],
+        "Denmark" => &[
+            "Roskilde",
+            "Aarhus",
+            "Odense",
+            "Aalborg",
+            "Ribe",
+            "Viborg",
+            "Randers",
+            "Horsens",
+            "Kolding",
+            "Vejle",
+            "Silkeborg",
+            "Herning",
+            "Holstebro",
+            "Skive",
+            "Naestved",
+            "Slagelse",
+        ],
+        "Poland" => &[
+            "Krakow",
+            "Warszawa",
+            "Gniezno",
+            "Poznan",
+            "Wroclaw",
+            "Lublin",
+            "Torun",
+            "Plock",
+            "Sandomierz",
+            "Kalisz",
+            "Lodz",
+            "Radom",
+            "Kielce",
+            "Opole",
+            "Legnica",
+            "Przemysl",
+        ],
+        "Hungary" => &[
+            "Buda",
+            "Esztergom",
+            "Szekesfehervar",
+            "Debrecen",
+            "Szeged",
+            "Pecs",
+            "Gyor",
+            "Eger",
+            "Miskolc",
+            "Veszprem",
+            "Sopron",
+            "Kecskemet",
+            "Szolnok",
+            "Vac",
+            "Kalocsa",
+            "Tokaj",
+        ],
+        "Austria" => &[
+            "Wien",
+            "Salzburg",
+            "Graz",
+            "Linz",
+            "Innsbruck",
+            "Klagenfurt",
+            "Melk",
+            "Krems",
+            "Villach",
+            "Wels",
+            "Steyr",
+            "Bregenz",
+            "Sankt Polten",
+            "Baden",
+            "Leoben",
+            "Amstetten",
+        ],
+        "Bohemia" => &[
+            "Praha",
+            "Brno",
+            "Kutna Hora",
+            "Plzen",
+            "Olomouc",
+            "Ceske Budejovice",
+            "Hradec Kralove",
+            "Cheb",
+            "Tabor",
+            "Jihlava",
+            "Znojmo",
+            "Pardubice",
+            "Liberec",
+            "Trebic",
+            "Kolin",
+            "Melnik",
+        ],
+        "Scotland" => &[
+            "Edinburgh",
+            "Stirling",
+            "Perth",
+            "Glasgow",
+            "Aberdeen",
+            "Dundee",
+            "Inverness",
+            "Dunfermline",
+            "Scone",
+            "Elgin",
+            "Ayr",
+            "Falkirk",
+            "Dumfries",
+            "Paisley",
+            "Kirkcaldy",
+            "Oban",
+        ],
+        "Ireland" => &[
+            "Dublin",
+            "Tara",
+            "Cashel",
+            "Armagh",
+            "Cork",
+            "Limerick",
+            "Galway",
+            "Kildare",
+            "Clonmacnoise",
+            "Waterford",
+            "Kilkenny",
+            "Sligo",
+            "Wexford",
+            "Ennis",
+            "Trim",
+            "Kells",
+        ],
+        "Switzerland" => &[
+            "Bern",
+            "Zurich",
+            "Basel",
+            "Geneve",
+            "Luzern",
+            "Lausanne",
+            "Sankt Gallen",
+            "Chur",
+            "Winterthur",
+            "Schaffhausen",
+            "Fribourg",
+            "Neuchatel",
+            "Sion",
+            "Zug",
+            "Solothurn",
+            "Aarau",
+        ],
+        "Venice" => &[
+            "Venezia",
+            "Padova",
+            "Pordenone",
+            "Vicenza",
+            "Treviso",
+            "Brescia",
+            "Bergamo",
+            "Udine",
+            "Rovigo",
+            "Belluno",
+            "Chioggia",
+            "Feltre",
+            "Bassano",
+            "Conegliano",
+            "Adria",
+            "Este",
+        ],
+        "Serbia" => &[
+            "Beograd",
+            "Skopje",
+            "Nis",
+            "Prizren",
+            "Novi Sad",
+            "Kragujevac",
+            "Krusevac",
+            "Smederevo",
+            "Subotica",
+            "Zrenjanin",
+            "Cacak",
+            "Sabac",
+            "Valjevo",
+            "Uzice",
+            "Pirot",
+            "Vranje",
+        ],
+        "Bulgaria" => &[
+            "Pliska",
+            "Tarnovo",
+            "Sofia",
+            "Plovdiv",
+            "Vidin",
+            "Ruse",
+            "Shumen",
+            "Sliven",
+            "Stara Zagora",
+            "Pleven",
+            "Dobrich",
+            "Pernik",
+            "Haskovo",
+            "Yambol",
+            "Lovech",
+            "Silistra",
+        ],
+        "Lithuania" => &[
+            "Kernave",
+            "Trakai",
+            "Kaunas",
+            "Siauliai",
+            "Panevezys",
+            "Klaipeda",
+            "Alytus",
+            "Marijampole",
+            "Utena",
+            "Telsiai",
+            "Taurage",
+            "Mazeikiai",
+            "Jonava",
+            "Kedainiai",
+            "Ukmerge",
+            "Raseiniai",
+        ],
+        "Ukraine" => &[
+            "Kyiv",
+            "Chernihiv",
+            "Poltava",
+            "Lviv",
+            "Vinnytsia",
+            "Zhytomyr",
+            "Cherkasy",
+            "Uman",
+            "Kaniv",
+            "Bila Tserkva",
+            "Kropyvnytskyi",
+            "Sumy",
+            "Kharkiv",
+            "Rivne",
+            "Lutsk",
+            "Ternopil",
+        ],
+        "Finland" => &[
+            "Turku",
+            "Helsinki",
+            "Tampere",
+            "Hameenlinna",
+            "Porvoo",
+            "Vaasa",
+            "Oulu",
+            "Kuopio",
+            "Jyvaskyla",
+            "Lahti",
+            "Joensuu",
+            "Mikkeli",
+            "Rovaniemi",
+            "Kotka",
+            "Pori",
+            "Savonlinna",
+        ],
+        "Romania" => &[
+            "Targoviste",
+            "Bucuresti",
+            "Sibiu",
+            "Brasov",
+            "Cluj",
+            "Iasi",
+            "Timisoara",
+            "Craiova",
+            "Suceava",
+            "Alba Iulia",
+            "Arad",
+            "Oradea",
+            "Ploiesti",
+            "Pitesti",
+            "Bacau",
+            "Galati",
+        ],
+        "Novgorod" => &[
+            "Holmgard",
+            "Ladoga",
+            "Izborsk",
+            "Torzhok",
+            "Rusa",
+            "Beloozero",
+            "Vologda",
+            "Ustyug",
+            "Vyatka",
+            "Kholmogory",
+            "Onega",
+            "Kargopol",
+            "Toropets",
+            "Velikiye Luki",
+            "Staraya Russa",
+            "Demyansk",
+        ],
+        "Prussia" => &[
+            "Konigsberg",
+            "Potsdam",
+            "Stettin",
+            "Magdeburg",
+            "Halle",
+            "Breslau",
+            "Danzig",
+            "Elbing",
+            "Frankfurt an der Oder",
+            "Brandenburg",
+            "Kolberg",
+            "Thorn",
+            "Marienburg",
+            "Kustrin",
+            "Glogau",
+            "Schwerin",
+        ],
+        "Catalonia" => &[
+            "Barcelona",
+            "Girona",
+            "Lleida",
+            "Tarragona",
+            "Vic",
+            "Manresa",
+            "Tortosa",
+            "Reus",
+            "Sabadell",
+            "Terrassa",
+            "Mataro",
+            "Igualada",
+            "Olot",
+            "Berga",
+            "Solsona",
+            "Balaguer",
+        ],
+        "Gujarat" => &[
+            "Anhilwara",
+            "Lothal",
+            "Dholavira",
+            "Khambhat",
+            "Junagadh",
+            "Bharuch",
+            "Surat",
+            "Vadodara",
+            "Dwarka",
+            "Somnath",
+            "Idar",
+            "Modhera",
+            "Siddhpur",
+            "Palitana",
+            "Champaner",
+            "Veraval",
+        ],
+        "Assyria" => &[
+            "Assur",
+            "Nineveh",
+            "Nimrud",
+            "Dur-Sharrukin",
+            "Arbela",
+            "Harran",
+            "Kalhu",
+            "Guzana",
+            "Imgur-Enlil",
+            "Shibaniba",
+            "Tarbisu",
+            "Kar-Tukulti",
+            "Ekallatum",
+            "Shubat-Enlil",
+            "Til Barsip",
+            "Carchemish",
+        ],
+        "Persia" => &[
+            "Persepolis",
+            "Pasargadae",
+            "Susa",
+            "Ecbatana",
+            "Anshan",
+            "Istakhr",
+            "Bishapur",
+            "Rey",
+            "Nishapur",
+            "Yazd",
+            "Kerman",
+            "Qom",
+            "Kashan",
+            "Hamadan",
+            "Shiraz",
+            "Zaranj",
+        ],
+        "Media" => &[
+            "Hagmatana",
+            "Rhagae",
+            "Aspadana",
+            "Laodicea",
+            "Bagistana",
+            "Kunaxa",
+            "Nisaya",
+            "Kampanda",
+            "Sagbita",
+            "Karkashi",
+            "Zakruti",
+            "Uppuria",
+            "Bit-Kari",
+            "Andirpatianu",
+            "Sikris",
+            "Uriakku",
+        ],
+        "Manchuria" => &[
+            "Hetu Ala",
+            "Mukden",
+            "Jilin",
+            "Ningguta",
+            "Aigun",
+            "Qiqihar",
+            "Yarkand",
+            "Hulun",
+            "Sanxing",
+            "Fuzhou",
+            "Liaoyang",
+            "Kaiyuan",
+            "Tieling",
+            "Yingkou",
+            "Dandong",
+            "Hunchun",
+        ],
+        "Lydia" => &[
+            "Sardis",
+            "Kaystros",
+            "Torrhebos",
+            "Magnesia",
+            "Attaleia",
+            "Thyateira",
+            "Hypaepa",
+            "Tralles",
+            "Hierapolis",
+            "Silandos",
+            "Colossae",
+            "Aphrodisias",
+            "Priene",
+            "Dioshieron",
+            "Mylasa",
+            "Alabanda",
+        ],
+        "Parthia" => &[
+            "Nisa",
+            "Ctesiphon",
+            "Hecatompylos",
+            "Merv",
+            "Arsak",
+            "Asaak",
+            "Dara",
+            "Charax",
+            "Seleucia",
+            "Vologesocerta",
+            "Apamea",
+            "Europos",
+            "Arsakia",
+            "Gabae",
+            "Zadracarta",
+            "Kangavar",
+        ],
+        "Sogdiana" => &[
+            "Samarkand",
+            "Bukhara",
+            "Panjikent",
+            "Kesh",
+            "Nasaf",
+            "Ustrushana",
+            "Chach",
+            "Khujand",
+            "Termez",
+            "Varakhsha",
+            "Paykend",
+            "Dabusiya",
+            "Ishtikhan",
+            "Kushaniya",
+            "Maymurgh",
+            "Rivdad",
+        ],
+        "Ottomans" => &[
+            "Istanbul",
+            "Bursa",
+            "Edirne",
+            "Konya",
+            "Ankara",
+            "Izmir",
+            "Trabzon",
+            "Sivas",
+            "Kayseri",
+            "Diyarbakir",
+            "Antalya",
+            "Amasya",
+            "Manisa",
+            "Erzurum",
+            "Van",
+            "Urfa",
+        ],
+        "Arabia" => &[
+            "Baghdad",
+            "Damascus",
+            "Mecca",
+            "Medina",
+            "Kufa",
+            "Basra",
+            "Aleppo",
+            "Riyadh",
+            "Najran",
+            "Taif",
+            "Hail",
+            "Buraydah",
+            "Tabuk",
+            "Yanbu",
+            "Khaybar",
+            "Jeddah",
+        ],
+        "Israel" => &[
+            "Hebron",
+            "Shechem",
+            "Beersheba",
+            "Megiddo",
+            "Lachish",
+            "Jericho",
+            "Bethel",
+            "Shiloh",
+            "Gezer",
+            "Hazor",
+            "Beth Horon",
+            "Gibeon",
+            "Ramah",
+            "Mizpah",
+            "Timnah",
+            "Beth Shean",
+        ],
+        "Armenia" => &[
+            "Artashat",
+            "Ani",
+            "Dvin",
+            "Vagharshapat",
+            "Tigranakert",
+            "Gyumri",
+            "Vanadzor",
+            "Goris",
+            "Kapan",
+            "Sisian",
+            "Ashtarak",
+            "Armavir",
+            "Ijevan",
+            "Dilijan",
+            "Meghri",
+            "Yeghegnadzor",
+        ],
+        "Georgia" => &[
+            "Tbilisi",
+            "Mtskheta",
+            "Kutaisi",
+            "Gori",
+            "Telavi",
+            "Batumi",
+            "Rustavi",
+            "Zugdidi",
+            "Akhaltsikhe",
+            "Ambrolauri",
+            "Ozurgeti",
+            "Poti",
+            "Sighnaghi",
+            "Kaspi",
+            "Khashuri",
+            "Borjomi",
+        ],
+        "Timurids" => &[
+            "Shahrisabz",
+            "Herat",
+            "Balkh",
+            "Andijan",
+            "Kokand",
+            "Margilan",
+            "Urgench",
+            "Ferghana",
+            "Tirmidh",
+            "Qarshi",
+            "Guzar",
+            "Baysun",
+            "Denau",
+            "Jizzakh",
+            "Zaamin",
+            "Kattaqorgon",
+        ],
+        "Kazakh" => &[
+            "Turkistan",
+            "Taraz",
+            "Otrar",
+            "Sygnak",
+            "Sauran",
+            "Semey",
+            "Karagandy",
+            "Pavlodar",
+            "Kokshetau",
+            "Atbasar",
+            "Ulytau",
+            "Zhezkazgan",
+            "Balkhash",
+            "Ayagoz",
+            "Zaysan",
+            "Arkalyk",
+        ],
+        "Bactria" => &[
+            "Bactra",
+            "Ai-Khanoum",
+            "Drapsaka",
+            "Aornos",
+            "Kapisa",
+            "Bagram",
+            "Kunduz",
+            "Taloqan",
+            "Shibarghan",
+            "Maimana",
+            "Andkhoy",
+            "Samangan",
+            "Pul-i-Khumri",
+            "Baghlan",
+            "Faizabad",
+            "Ishkashim",
+        ],
+        "Ethiopia" => &[
+            "Addis Ababa",
+            "Gondar",
+            "Lalibela",
+            "Aksum",
+            "Harar",
+            "Dire Dawa",
+            "Bahir Dar",
+            "Mekele",
+            "Jimma",
+            "Dessie",
+            "Adama",
+            "Debre Markos",
+            "Awasa",
+            "Arba Minch",
+            "Nekemte",
+            "Ambo",
+        ],
+        "Axum" => &[
+            "Axum",
+            "Adulis",
+            "Matara",
+            "Yeha",
+            "Qohaito",
+            "Keskese",
+            "Tekonda",
+            "Hawulti",
+            "Debarwa",
+            "Senafe",
+            "Adigrat",
+            "Adwa",
+            "Shire",
+            "Inticho",
+            "Edaga Hamus",
+            "Rama",
+        ],
+        "Morocco" => &[
+            "Marrakesh",
+            "Fes",
+            "Meknes",
+            "Rabat",
+            "Sale",
+            "Taza",
+            "Sijilmasa",
+            "Agadir",
+            "Ouarzazate",
+            "Beni Mellal",
+            "Khouribga",
+            "Settat",
+            "Safi",
+            "Essaouira",
+            "Ifrane",
+            "Errachidia",
+        ],
+        "Numidia" => &[
+            "Cirta",
+            "Hippo Regius",
+            "Thugga",
+            "Zama",
+            "Sicca",
+            "Thagaste",
+            "Madauros",
+            "Calama",
+            "Theveste",
+            "Lambaesis",
+            "Timgad",
+            "Setif",
+            "Tipasa",
+            "Icosium",
+            "Rusicade",
+            "Milev",
+        ],
+        "Songhai" => &[
+            "Kukiya",
+            "Tendirma",
+            "Bamba",
+            "Hombori",
+            "Kabara",
+            "Ansongo",
+            "Menaka",
+            "Douentza",
+            "Niafunke",
+            "Goundam",
+            "Dire",
+            "Bourem",
+            "Tillaberi",
+            "Ayorou",
+            "Tera",
+            "Say",
+        ],
+        "Ghana" => &[
+            "Koumbi Saleh",
+            "Aoudaghost",
+            "Tegdaoust",
+            "Nema",
+            "Tichitt",
+            "Oualata",
+            "Kiffa",
+            "Ayoun",
+            "Timbedra",
+            "Bassikounou",
+            "Kobenni",
+            "Tamchakett",
+            "Boumdeid",
+            "Moudjeria",
+            "Sani",
+            "Rosso",
+        ],
+        "Benin" => &[
+            "Benin City",
+            "Ughoton",
+            "Sabongida",
+            "Ekpoma",
+            "Uromi",
+            "Irrua",
+            "Auchi",
+            "Igarra",
+            "Okada",
+            "Udo",
+            "Ehor",
+            "Iyanomo",
+            "Ologbo",
+            "Urhonigbe",
+            "Abudu",
+            "Agbor",
+        ],
+        "Ashanti" => &[
+            "Kumasi",
+            "Bekwai",
+            "Mampong",
+            "Ejisu",
+            "Obuasi",
+            "Konongo",
+            "Offinso",
+            "Agona",
+            "Juaben",
+            "Nkawie",
+            "Tepa",
+            "Bantama",
+            "Asokwa",
+            "Effiduase",
+            "Kuntanase",
+            "Adansi",
+        ],
+        "Swahili" => &[
+            "Kilwa",
+            "Mombasa",
+            "Malindi",
+            "Lamu",
+            "Pate",
+            "Gedi",
+            "Sofala",
+            "Songo Mnara",
+            "Pemba",
+            "Bagamoyo",
+            "Tanga",
+            "Mafia",
+            "Comoro",
+            "Vumba",
+            "Shanga",
+            "Manda",
+        ],
+        "Great Zimbabwe" => &[
+            "Zimbabwe",
+            "Khami",
+            "Mapungubwe",
+            "Naletale",
+            "Danangombe",
+            "Chumnungwa",
+            "Ziwa",
+            "Nyanga",
+            "Manyikeni",
+            "Tsindi",
+            "Matendere",
+            "Bumbusi",
+            "Lekkerwater",
+            "Chipadze",
+            "Mtoko",
+            "Chibvumani",
+        ],
+        "Buganda" => &[
+            "Mengo",
+            "Entebbe",
+            "Mubende",
+            "Masaka",
+            "Mityana",
+            "Bulemeezi",
+            "Kyaggwe",
+            "Buddu",
+            "Singo",
+            "Gomba",
+            "Butambala",
+            "Mawokota",
+            "Busiro",
+            "Kyadondo",
+            "Bugerere",
+            "Buvuma",
+        ],
+        "Oyo" => &[
+            "Oyo-Ile",
+            "Ibadan",
+            "Ogbomoso",
+            "Iseyin",
+            "Saki",
+            "Ede",
+            "Ilorin",
+            "Osogbo",
+            "Iwo",
+            "Ikirun",
+            "Ejigbo",
+            "Igboho",
+            "Kishi",
+            "Igbeti",
+            "Fiditi",
+            "Awe",
+        ],
+        "Tuareg" => &[
+            "Agadez",
+            "Tamanrasset",
+            "Ghat",
+            "Djanet",
+            "Iferouane",
+            "Arlit",
+            "Bilma",
+            "In Salah",
+            "Timia",
+            "Abalak",
+            "Tchirozerine",
+            "Ingall",
+            "Assamakka",
+            "Tabelot",
+            "Dirkou",
+            "Fachi",
+        ],
+        "Madagascar" => &[
+            "Ambohimanga",
+            "Fianarantsoa",
+            "Toamasina",
+            "Antsirabe",
+            "Mahajanga",
+            "Toliara",
+            "Antsiranana",
+            "Ambatondrazaka",
+            "Morondava",
+            "Manakara",
+            "Sambava",
+            "Farafangana",
+            "Maintirano",
+            "Ihosy",
+            "Betroka",
+            "Moramanga",
+        ],
+        "India" => &[
+            "Pataliputra",
+            "Varanasi",
+            "Ujjain",
+            "Taxila",
+            "Kaushambi",
+            "Vidisha",
+            "Mathura",
+            "Sravasti",
+            "Rajagriha",
+            "Champa",
+            "Kanchipuram",
+            "Indraprastha",
+            "Vaishali",
+            "Kausambi",
+            "Sarnath",
+            "Nalanda",
+        ],
+        "Japan" => &[
+            "Kyoto",
+            "Nara",
+            "Osaka",
+            "Kamakura",
+            "Edo",
+            "Nagoya",
+            "Hakata",
+            "Sakai",
+            "Kanazawa",
+            "Sendai",
+            "Hiroshima",
+            "Kagoshima",
+            "Nagasaki",
+            "Matsuyama",
+            "Nikko",
+            "Himeji",
+        ],
+        "Mongolia" => &[
+            "Karakorum",
+            "Avarga",
+            "Ulaanbaatar",
+            "Kharkhorin",
+            "Erdenet",
+            "Choibalsan",
+            "Hovd",
+            "Moron",
+            "Dalanzadgad",
+            "Bayankhongor",
+            "Altai",
+            "Tsetserleg",
+            "Arvaikheer",
+            "Baruun-Urt",
+            "Ondorkhaan",
+            "Sainshand",
+        ],
+        "Tibet" => &[
+            "Lhasa",
+            "Shigatse",
+            "Gyantse",
+            "Yarlung",
+            "Samye",
+            "Chamdo",
+            "Nagchu",
+            "Nyingchi",
+            "Sakya",
+            "Tsetang",
+            "Zhongba",
+            "Purang",
+            "Gartok",
+            "Rutog",
+            "Dingri",
+            "Lhatse",
+        ],
+        "Nepal" => &[
+            "Kathmandu",
+            "Bhaktapur",
+            "Patan",
+            "Gorkha",
+            "Pokhara",
+            "Janakpur",
+            "Lumbini",
+            "Palpa",
+            "Dhankuta",
+            "Ilam",
+            "Butwal",
+            "Nepalgunj",
+            "Dang",
+            "Jumla",
+            "Bandipur",
+            "Dolakha",
+        ],
+        "Kalinga" => &[
+            "Tosali",
+            "Dhauli",
+            "Udayagiri",
+            "Sisupalgarh",
+            "Kalinganagara",
+            "Jajpur",
+            "Puri",
+            "Konark",
+            "Cuttack",
+            "Bhubaneswar",
+            "Balasore",
+            "Ganjam",
+            "Berhampur",
+            "Sambalpur",
+            "Bolangir",
+            "Koraput",
+        ],
+        "Chola" => &[
+            "Thanjavur",
+            "Gangaikonda",
+            "Uraiyur",
+            "Kaveripattinam",
+            "Madurai",
+            "Tiruchirapalli",
+            "Nagapattinam",
+            "Kumbakonam",
+            "Chidambaram",
+            "Srirangam",
+            "Tirunelveli",
+            "Vellore",
+            "Salem",
+            "Karur",
+            "Erode",
+            "Dindigul",
+        ],
+        "Bengal" => &[
+            "Gauda",
+            "Pundravardhana",
+            "Vikrampur",
+            "Sonargaon",
+            "Dhaka",
+            "Murshidabad",
+            "Rajshahi",
+            "Bogra",
+            "Comilla",
+            "Barisal",
+            "Khulna",
+            "Rangpur",
+            "Jessore",
+            "Faridpur",
+            "Mymensingh",
+            "Pabna",
+        ],
+        "Maratha" => &[
+            "Raigad",
+            "Pune",
+            "Satara",
+            "Kolhapur",
+            "Nashik",
+            "Ahmednagar",
+            "Sinhagad",
+            "Panhala",
+            "Pratapgad",
+            "Torna",
+            "Rajgad",
+            "Shivneri",
+            "Vijaydurg",
+            "Sindhudurg",
+            "Jinji",
+            "Thanjavur Fort",
+        ],
+        "Khmer" => &[
+            "Angkor",
+            "Hariharalaya",
+            "Koh Ker",
+            "Sambor Prei Kuk",
+            "Banteay Chhmar",
+            "Battambang",
+            "Preah Khan",
+            "Beng Mealea",
+            "Phnom Penh",
+            "Kampong Thom",
+            "Siem Reap",
+            "Kratie",
+            "Pursat",
+            "Takeo",
+            "Kampot",
+            "Stung Treng",
+        ],
+        "Siam" => &[
+            "Sukhothai",
+            "Ayutthaya",
+            "Si Satchanalai",
+            "Lopburi",
+            "Phitsanulok",
+            "Kamphaeng Phet",
+            "Nakhon Si Thammarat",
+            "Chiang Mai",
+            "Lampang",
+            "Phetchaburi",
+            "Ratchaburi",
+            "Suphanburi",
+            "Uttaradit",
+            "Tak",
+            "Phichit",
+            "Nan",
+        ],
+        "Burma" => &[
+            "Bagan",
+            "Ava",
+            "Sagaing",
+            "Pegu",
+            "Mandalay",
+            "Prome",
+            "Toungoo",
+            "Amarapura",
+            "Shwebo",
+            "Myinsaing",
+            "Pinya",
+            "Martaban",
+            "Bassein",
+            "Magwe",
+            "Meiktila",
+            "Monywa",
+        ],
+        "Majapahit" => &[
+            "Trowulan",
+            "Kediri",
+            "Singhasari",
+            "Tuban",
+            "Gresik",
+            "Surabaya",
+            "Malang",
+            "Blitar",
+            "Madiun",
+            "Jepara",
+            "Demak",
+            "Semarang",
+            "Banten",
+            "Cirebon",
+            "Sunda Kelapa",
+            "Pasuruan",
+        ],
+        "Champa" => &[
+            "Vijaya",
+            "Indrapura",
+            "Simhapura",
+            "Panduranga",
+            "Kauthara",
+            "Amaravati",
+            "Virapura",
+            "Rajapura",
+            "Phan Rang",
+            "Tra Kieu",
+            "My Son",
+            "Tuy Hoa",
+            "Hoi An",
+            "Thu Bon",
+            "Quang Ngai",
+            "Cam Ranh",
+        ],
+        "America" => &[
+            "Washington",
+            "Philadelphia",
+            "Boston",
+            "Baltimore",
+            "Charleston",
+            "Richmond",
+            "Albany",
+            "Pittsburgh",
+            "Cincinnati",
+            "Saint Louis",
+            "Detroit",
+            "Chicago",
+            "Denver",
+            "Portland",
+            "Sacramento",
+            "Santa Fe",
+        ],
+        "Canada" => &[
+            "Ottawa",
+            "Quebec",
+            "Montreal",
+            "Toronto",
+            "Halifax",
+            "Winnipeg",
+            "Victoria",
+            "Kingston",
+            "Hamilton",
+            "Regina",
+            "Calgary",
+            "Edmonton",
+            "Saskatoon",
+            "Fredericton",
+            "Charlottetown",
+            "Thunder Bay",
+        ],
+        "Pueblo" => &[
+            "Oraibi",
+            "Walpi",
+            "Sky City",
+            "Kuaua",
+            "Picuris",
+            "Nambe",
+            "Tesuque",
+            "Cochiti",
+            "Santo Domingo",
+            "San Felipe",
+            "Sandia",
+            "Isleta",
+            "Laguna",
+            "Jemez",
+            "Pecos",
+            "Galisteo",
+        ],
+        "Comanche" => &[
+            "Quahada",
+            "Penateka",
+            "Nokoni",
+            "Yamparika",
+            "Kotsoteka",
+            "Tanima",
+            "Palo Duro",
+            "Llano Estacado",
+            "Adobe Walls",
+            "Medicine Lodge",
+            "Cache Creek",
+            "Elk Creek",
+            "Antelope Hills",
+            "Tule Canyon",
+            "Blanco Canyon",
+            "Wichita Mountains",
+        ],
+        "Sioux" => &[
+            "Paha Sapa",
+            "Bdote",
+            "Mnisota",
+            "Wakpa Sica",
+            "Inyan Kara",
+            "Mato Tipila",
+            "Hunkpapa",
+            "Oglala",
+            "Sicangu",
+            "Minneconjou",
+            "Itazipco",
+            "Sihasapa",
+            "Oohenumpa",
+            "Yankton",
+            "Wahpeton",
+            "Sisseton",
+        ],
+        "Inca" => &[
+            "Cusco",
+            "Ollantaytambo",
+            "Pisac",
+            "Vilcabamba",
+            "Tiwanaku",
+            "Cajamarca",
+            "Huanuco",
+            "Vitcos",
+            "Sacsayhuaman",
+            "Chinchero",
+            "Andahuaylas",
+            "Ayacucho",
+            "Arequipa",
+            "Puno",
+            "Abancay",
+            "Urubamba",
+        ],
+        "Muisca" => &[
+            "Bacata",
+            "Hunza",
+            "Sogamoso",
+            "Tunja",
+            "Zipaquira",
+            "Nemocon",
+            "Chia",
+            "Guatavita",
+            "Ubate",
+            "Duitama",
+            "Paipa",
+            "Ramiriqui",
+            "Turmeque",
+            "Sachica",
+            "Chiquinquira",
+            "Muzo",
+        ],
+        "Mapuche" => &[
+            "Temuco",
+            "Villarrica",
+            "Purén",
+            "Arauco",
+            "Cañete",
+            "Tirua",
+            "Curacautin",
+            "Lonquimay",
+            "Nueva Imperial",
+            "Carahue",
+            "Pitrufquen",
+            "Loncoche",
+            "Angol",
+            "Traiguen",
+            "Collipulli",
+            "Galvarino",
+        ],
+        "Argentina" => &[
+            "Buenos Aires",
+            "Tucuman",
+            "Salta",
+            "Mendoza",
+            "Rosario",
+            "La Plata",
+            "Corrientes",
+            "Parana",
+            "San Juan",
+            "La Rioja",
+            "Catamarca",
+            "Jujuy",
+            "Bahia Blanca",
+            "Neuquen",
+            "Santiago del Estero",
+            "Formosa",
+        ],
+        "Australia" => &[
+            "Canberra",
+            "Sydney",
+            "Melbourne",
+            "Brisbane",
+            "Fremantle",
+            "Adelaide",
+            "Hobart",
+            "Darwin",
+            "Wollongong",
+            "Ballarat",
+            "Bendigo",
+            "Toowoomba",
+            "Geelong",
+            "Kalgoorlie",
+            "Broken Hill",
+            "Alice Springs",
+        ],
+        "Maori" => &[
+            "Waitangi",
+            "Rotorua",
+            "Tauranga",
+            "Whangarei",
+            "Kaitaia",
+            "Gisborne",
+            "Napier",
+            "Taupo",
+            "Wanganui",
+            "Hastings",
+            "Palmerston",
+            "Masterton",
+            "Whakatane",
+            "Otaki",
+            "Opotiki",
+            "Kawhia",
         ],
         _ => &[],
     }
@@ -10017,6 +11653,12 @@ pub struct Player {
     #[serde(default)]
     pub co2_emissions: f64,
     pub explored: BTreeSet<Pos>,
+    /// Whether this civilization's own knowledge has ever run the whole way
+    /// round the world — see [`Game::update_world_lap`]. Once a people have
+    /// been around they know the shape they live on; until then they do not,
+    /// and their chart says so.
+    #[serde(default)]
+    pub went_around: bool,
     /// Per-tile last-known state. Unlike `explored`, this does not update
     /// while a tile is under fog, so improvements, ownership, disasters, and
     /// other changes cannot leak through a player observation.
@@ -10200,6 +11842,7 @@ impl Player {
             power_fuel_consumed: BTreeMap::new(),
             co2_emissions: 0.0,
             explored: BTreeSet::new(),
+            went_around: false,
             remembered_tiles: TileMemory::default(),
             remembered_cities: BTreeMap::new(),
             met: BTreeSet::new(),
@@ -10628,6 +12271,17 @@ fn pretty(id: &str) -> String {
 /// Events older than this are dropped, oldest first. Long games are long.
 const EVENT_LIMIT: usize = 2_000;
 
+/// How many longitudes a globe is cut into when asking whether a people have
+/// been round it — ten degrees apiece. Coarse enough that a ship crossing a
+/// band cannot pass through without seeing it, fine enough that a lap is a
+/// lap. A cylinder is asked about its own columns instead, since it has a
+/// countable number of them and each one is real ground.
+const GLOBE_LAP_BANDS: usize = 36;
+
+/// The latitude past which going round proves nothing, in radians: the Arctic
+/// Circle. See [`Game::update_world_lap`].
+const POLAR_LAP_LIMIT: f64 = 66.5 * std::f64::consts::PI / 180.0;
+
 pub fn default_difficulty() -> String {
     "prince".to_string()
 }
@@ -10786,6 +12440,24 @@ impl std::ops::BitOr for ActionFamilies {
     }
 }
 
+/// A result the game already reached. Kept verbatim when a world is asked to
+/// play on past it, so the verdict survives the extension that follows.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Decided {
+    pub winner: usize,
+    pub victory_type: String,
+    /// The turn the victory was declared on, not the turn play resumed.
+    pub turn: u32,
+}
+
+/// How many turns one press of "one more turn" is worth.
+///
+/// The extension is bounded on purpose. A person at the keyboard can ask for
+/// another block whenever this one runs out, but the unattended exhibition has
+/// nobody to ask, and a world that plays on forever would be the last world it
+/// ever shows.
+pub const PLAY_ON_TURNS: u32 = 25;
+
 /// Victory paths that can end the game. All paths are enabled by default so
 /// existing callers and saves retain the traditional rules unless a new-game
 /// setup explicitly disables one.
@@ -10930,6 +12602,11 @@ pub struct Game {
     pub current: usize,
     pub winner: Option<usize>,
     pub victory_type: Option<String>,
+    /// The result of the game that was already decided, kept when somebody
+    /// chose to play on past it. History still has its victor even though the
+    /// world is live again; `winner` is `None` while the extension runs.
+    #[serde(default)]
+    pub decided: Option<Decided>,
     pub victory_conditions: VictoryConditions,
     pub next_id: u32,
     pub map: WorldMap,
@@ -11098,6 +12775,8 @@ struct GameSer {
     winner: Option<usize>,
     victory_type: Option<String>,
     #[serde(default)]
+    decided: Option<Decided>,
+    #[serde(default)]
     victory_conditions: VictoryConditions,
     next_id: u32,
     rng: Rng,
@@ -11200,6 +12879,7 @@ impl From<GameSer> for Game {
             current: s.current,
             winner: s.winner,
             victory_type: s.victory_type,
+            decided: s.decided,
             victory_conditions: s.victory_conditions,
             next_id: s.next_id,
             map: s.map,
@@ -11348,6 +13028,7 @@ impl From<Game> for GameSer {
             current: g.current,
             winner: g.winner,
             victory_type: g.victory_type,
+            decided: g.decided,
             victory_conditions: g.victory_conditions,
             next_id: g.next_id,
             rng: g.rng,
@@ -11514,6 +13195,7 @@ impl Game {
             current: 0,
             winner: None,
             victory_type: None,
+            decided: None,
             victory_conditions: VictoryConditions::default(),
             next_id: 1,
             map,
@@ -15115,7 +16797,7 @@ impl Game {
 
     // -------------------------------------------------- religion
 
-    const RELIGION_NAMES: [&'static str; 8] = [
+    const RELIGION_NAMES: [&'static str; 51] = [
         "Buddhism",
         "Christianity",
         "Confucianism",
@@ -15124,6 +16806,49 @@ impl Game {
         "Judaism",
         "Protestantism",
         "Shinto",
+        "Taoism",
+        "Zoroastrianism",
+        "Jainism",
+        "Sikhism",
+        "Bon",
+        "Tengrism",
+        "Manichaeism",
+        "Mithraism",
+        "Druidism",
+        "Asatru",
+        "Vodun",
+        "Candomble",
+        "Santeria",
+        "Bahai",
+        "Yazidism",
+        "Mandaeism",
+        "Samaritanism",
+        "Rastafari",
+        "Cao Dai",
+        "Tenrikyo",
+        "Hermeticism",
+        "Gnosticism",
+        "Arianism",
+        "Nestorianism",
+        "Catharism",
+        "Bogomilism",
+        "Sufism",
+        "Ismailism",
+        "Alevism",
+        "Druzism",
+        "Orthodoxy",
+        "Catholicism",
+        "Lutheranism",
+        "Calvinism",
+        "Anglicanism",
+        "Methodism",
+        "Quakerism",
+        "Unitarianism",
+        "Theravada",
+        "Mahayana",
+        "Vajrayana",
+        "Animism",
+        "Shaivism",
     ];
 
     pub fn religions_founded(&self) -> usize {
@@ -15432,7 +17157,7 @@ impl Game {
             .first()
             .copied()
             .ok_or_else(|| "needs a city with a holy site or Stonehenge".to_string())?;
-        let name = Self::RELIGION_NAMES[self.religions_founded() % 8].to_string();
+        let name = Self::RELIGION_NAMES[self.religions_founded() % Self::RELIGION_NAMES.len()].to_string();
         self.players[pid].prophet_pending = false;
         self.players[pid].religion = Some(name.clone());
         self.players[pid].holy_city = Some(holy);
@@ -22731,6 +24456,13 @@ impl Game {
             return;
         }
 
+        // Only ground nobody had seen can close the ring, so this is asked on
+        // the turns exploring actually got somewhere rather than on every
+        // refresh behind every move.
+        if !newly_explored.is_empty() {
+            self.update_world_lap(pid);
+        }
+
         let wonders: BTreeSet<String> = newly_explored
             .into_iter()
             .filter_map(|position| self.map.get(position))
@@ -22761,6 +24493,71 @@ impl Game {
                 self.grant_great_work(pid, "relic", era, "kandy");
             }
         }
+    }
+
+    /// Take note of the longitudes this seat's knowledge now reaches, and of
+    /// whether they have closed the ring.
+    ///
+    /// A civilization does not begin knowing what shape it lives on. The world
+    /// could be a plain that runs on forever, and every unknown quarter is
+    /// somewhere it might keep running. What settles it is going round: once a
+    /// people have seen ground at every longitude, with no gap left for the
+    /// world to continue through, the two ends of their chart have to be the
+    /// same ground. That is the moment the world is known to come back on
+    /// itself, and it is the moment one lap of exploring arrives at.
+    ///
+    /// Reported, never enforced — nothing in the simulation turns on this. It
+    /// decides what a civilization's own map has earned the right to show, and
+    /// reaches the client as `me.went_around` in [`crate::obs`].
+    fn update_world_lap(&mut self, pid: usize) {
+        if self.map.width <= 0 || self.players[pid].went_around {
+            return;
+        }
+        let globe = self.map.sphere();
+        let bands = if globe.is_some() {
+            GLOBE_LAP_BANDS
+        } else {
+            self.map.width as usize
+        };
+        // One tile can only account for one longitude, so most of a game is
+        // settled without looking at the ground at all.
+        if self.players[pid].explored.len() < bands {
+            return;
+        }
+        let mut seen = vec![false; bands];
+        let mut count = 0usize;
+        for position in &self.players[pid].explored {
+            let band = match globe {
+                Some(sphere) => {
+                    // Near a pole every longitude is a short walk from every
+                    // other, so a circuit of the ice says nothing about how
+                    // big the world is. A cylinder's rows are all one length,
+                    // so this is a globe's problem only.
+                    if sphere.latitude(*position).abs() > POLAR_LAP_LIMIT {
+                        continue;
+                    }
+                    let turns =
+                        (sphere.longitude(*position) / std::f64::consts::TAU).rem_euclid(1.0);
+                    ((turns * bands as f64) as usize).min(bands - 1)
+                }
+                None => crate::hex::axial_to_offset(position.0, position.1)
+                    .0
+                    .rem_euclid(self.map.width) as usize,
+            };
+            if !std::mem::replace(&mut seen[band], true) {
+                count += 1;
+            }
+        }
+        if count < bands {
+            return;
+        }
+        self.players[pid].went_around = true;
+        self.note_important(
+            pid,
+            "World",
+            "have been the whole way around the world: the two ends of the chart are the same ground",
+            None,
+        );
     }
 
     fn refresh_all_visibility(&mut self) {
@@ -22836,6 +24633,12 @@ impl Game {
         self.remembered_under
             .iter_mut()
             .for_each(|(stamp, _)| *stamp = 0);
+        // Allies pool what they know, and a ring closed between two of them is
+        // still a closed ring: each side has sailed its half and the charts
+        // agree where they meet.
+        for member in members {
+            self.update_world_lap(*member);
+        }
     }
 
     fn backfill_visibility_memory(&mut self) {
@@ -39157,7 +40960,10 @@ impl Game {
             self.check_culture_victory();
             // A score victory is only a turn-limit tiebreak, never an
             // immediate win for crossing an arbitrary score threshold.
-            if self.turn > self.max_turns && self.winner.is_none() {
+            if self.turn > self.max_turns && self.winner.is_none() && self.played_on() {
+                // These were borrowed turns, and they have run out.
+                self.close_extension();
+            } else if self.turn > self.max_turns && self.winner.is_none() {
                 // Ties resolve through the shipped chain (civics, cities,
                 // districts, Population, Great People, religion,
                 // technologies, wonders) before falling back to seat order.
@@ -41865,7 +43671,86 @@ impl Game {
             .is_some_and(|p| p.alive && !p.is_minor && !p.is_barbarian)
     }
 
+    /// Whether the game has been asked to carry on past a decided result.
+    pub fn played_on(&self) -> bool {
+        self.decided.is_some()
+    }
+
+    /// Carry on past the result this game already reached: "one more turn".
+    ///
+    /// The verdict is kept in `decided` and the world becomes live again for
+    /// another block of turns. The path that was already won cannot be won a
+    /// second time — nor can any other, or a science victory one turn from its
+    /// launch would simply re-declare itself and the button would do nothing.
+    /// The turn limit is the one ending that still lands, which is what stops
+    /// an extension from running forever.
+    ///
+    /// Returns `false` when there is no result to play on past.
+    pub fn play_on(&mut self) -> bool {
+        let (Some(winner), Some(victory_type)) = (self.winner, self.victory_type.clone()) else {
+            return false;
+        };
+        // Only the first press records the verdict; later ones extend the same
+        // continuation, so the game still remembers who actually won it.
+        self.decided.get_or_insert(Decided {
+            winner,
+            victory_type: victory_type.clone(),
+            turn: self.turn,
+        });
+        self.winner = None;
+        self.victory_type = None;
+        self.max_turns = self.turn.saturating_add(PLAY_ON_TURNS);
+        let seats: Vec<usize> = self.players.iter().map(|player| player.id).collect();
+        for seat in seats {
+            self.note(
+                seat,
+                "General",
+                // A note is a predicate: the chronicle prints it after the
+                // seat's own name, so "Rome plays on for 25 more turns".
+                format!("plays on for {PLAY_ON_TURNS} more turns"),
+                None,
+            );
+        }
+        // A decided game stopped mid-turn: whoever is up has to be given their
+        // turn again, or the extension opens on a seat that cannot act.
+        self.begin_turn(self.current);
+        self.sync_war_log();
+        true
+    }
+
+    /// Hand a played-on world back the result it was already given.
+    ///
+    /// The extension ends on the verdict that granted it rather than on a
+    /// fresh score count: the game was won on its own terms and a tiebreak
+    /// would be free to name somebody else. It also cannot lean on the score
+    /// path, which a lobby is allowed to switch off entirely — an extension
+    /// with no ending at all would leave the exhibition on one world forever.
+    fn close_extension(&mut self) {
+        let Some(decided) = self.decided.clone() else {
+            return;
+        };
+        self.winner = Some(decided.winner);
+        self.victory_type = Some(decided.victory_type.clone());
+        let name = self.civ_name(decided.winner);
+        let vtype = decided.victory_type;
+        let seats: Vec<usize> = self.players.iter().map(|player| player.id).collect();
+        for seat in seats {
+            self.note(
+                seat,
+                "General",
+                format!("runs out of extra turns; {name} keeps the {vtype} victory"),
+                None,
+            );
+        }
+    }
+
     fn set_winner(&mut self, pid: usize, vtype: &str) {
+        // A world playing on past its result cannot be won again. The ending
+        // it already has is restored when the extension runs out; see
+        // `close_extension`.
+        if self.played_on() {
+            return;
+        }
         if self.winner.is_none()
             && self.victory_eligible(pid)
             && self.victory_conditions.is_enabled(vtype)
@@ -46087,6 +47972,67 @@ mod victory_conditions {
             assert_eq!(game.winner, Some(0), "enabled {victory_type} did not win");
             assert_eq!(game.victory_type.as_deref(), Some(victory_type));
         }
+    }
+
+    /// "One more turn": the world goes back into play, no path can be won
+    /// during the extension, and the ending it already had is what closes it.
+    ///
+    /// Suppressing the other paths is not tidiness. A science victory is still
+    /// won on the turn after it was won, so a game that merely cleared its
+    /// winner would re-declare the same result on the next end of turn and the
+    /// button would do nothing at all.
+    #[test]
+    fn playing_on_borrows_turns_and_gives_the_result_back() {
+        let mut game = game_with_capitals(2, 90_100, 40);
+        game.turn = 30;
+        game.set_winner(1, "science");
+        assert_eq!(game.winner, Some(1));
+
+        assert!(game.play_on());
+        assert_eq!(game.winner, None);
+        assert_eq!(game.max_turns, 30 + PLAY_ON_TURNS);
+        assert_eq!(game.decided.as_ref().map(|d| d.winner), Some(1));
+        assert_eq!(
+            game.decided.as_ref().map(|d| d.victory_type.as_str()),
+            Some("science")
+        );
+        assert_eq!(game.decided.as_ref().map(|d| d.turn), Some(30));
+
+        // Nothing can be won during borrowed turns, including the path that
+        // granted them and including a lobby's score tiebreak.
+        for victory_type in VictoryConditions::NAMES {
+            game.set_winner(0, victory_type);
+            assert_eq!(game.winner, None, "{victory_type} ended an extension");
+        }
+
+        // The exhibition checkpoints and resumes mid-game, so the verdict has
+        // to survive a save. One that forgot it would be a live world with
+        // every victory path armed again, and would re-declare the result it
+        // was granted the extension from on the next end of turn.
+        let raw = serde_json::to_string(&game).expect("a played-on game saves");
+        let reloaded: Game = serde_json::from_str(&raw).expect("and loads");
+        assert_eq!(reloaded.decided, game.decided);
+        assert_eq!(reloaded.max_turns, game.max_turns);
+        assert!(reloaded.played_on());
+
+        // A live game has nothing to play on past.
+        let mut untouched = game_with_capitals(2, 90_101, 40);
+        assert!(!untouched.play_on());
+        assert!(untouched.decided.is_none());
+
+        // Past the raised limit the original verdict is restored rather than
+        // recounted — the game was won on its own terms, and a score tiebreak
+        // would be free to name somebody else.
+        game.turn = game.max_turns + 1;
+        game.close_extension();
+        assert_eq!(game.winner, Some(1));
+        assert_eq!(game.victory_type.as_deref(), Some("science"));
+
+        // And it can be asked again, from the new result, without losing the
+        // turn the victory was actually won on.
+        assert!(game.play_on());
+        assert_eq!(game.decided.as_ref().map(|d| d.turn), Some(30));
+        assert_eq!(game.max_turns, game.turn + PLAY_ON_TURNS);
     }
 
     /// The Civilization Players League publishes the lobby it plays
@@ -51542,5 +53488,107 @@ mod district_mechanics {
         assert_eq!(target, "legion");
         // Rome's Legion carries the shipped Swordsman upgrade path onward.
         assert_eq!(game.rules.units["legion"].upgrade_to.as_deref(), Some("man_at_arms"));
+    }
+}
+
+#[cfg(test)]
+mod world_lap_tests {
+    use super::*;
+
+    fn band_of(longitude: f64) -> usize {
+        let turns = (longitude / std::f64::consts::TAU).rem_euclid(1.0);
+        ((turns * GLOBE_LAP_BANDS as f64) as usize).min(GLOBE_LAP_BANDS - 1)
+    }
+
+    /// A people learn that their world comes back on itself by going round it,
+    /// and not one step before. Every longitude but one still leaves a gap,
+    /// and a gap is a direction the world might simply keep going in.
+    #[test]
+    fn a_world_is_known_to_come_back_on_itself_only_once_every_longitude_is_seen() {
+        let mut game = Game::new(2, 24, 16, 4_242, 25, 0);
+        let width = game.map.width;
+        game.players[0].explored.clear();
+        game.players[0].went_around = false;
+
+        for column in 0..width - 1 {
+            game.players[0]
+                .explored
+                .insert(crate::hex::offset_to_axial(column, 8));
+        }
+        game.update_world_lap(0);
+        assert!(
+            !game.players[0].went_around,
+            "one unseen longitude is a way the world might still continue",
+        );
+
+        game.players[0]
+            .explored
+            .insert(crate::hex::offset_to_axial(width - 1, 8));
+        game.update_world_lap(0);
+        assert!(game.players[0].went_around, "that was a lap");
+        assert!(
+            game.events
+                .iter()
+                .any(|event| event.player == 0 && event.text.contains("whole way around the world")),
+            "closing the ring is the sort of thing a chronicle records",
+        );
+
+        // Knowing the shape of your world is not something you can un-know:
+        // ground can be lost, and this cannot.
+        game.players[0].explored.clear();
+        game.update_world_lap(0);
+        assert!(game.players[0].went_around);
+    }
+
+    /// Near a pole every longitude is a few steps from every other, so a
+    /// circuit of the ice crosses all of them without going anywhere. It is
+    /// not a lap of the world and must not read as one.
+    #[test]
+    fn a_circuit_of_the_ice_is_not_a_lap_of_a_globe() {
+        let mut game = Game::new(2, 24, 16, 90_210, 25, 0);
+        game.map = crate::world::WorldMap::globe(16);
+        let cells: Vec<(Pos, f64, f64)> = {
+            let sphere = game.map.sphere().expect("a globe is laid out on a sphere");
+            sphere
+                .positions()
+                .map(|pos| (pos, sphere.latitude(pos), sphere.longitude(pos)))
+                .collect()
+        };
+        let polar: Vec<(Pos, f64)> = cells
+            .iter()
+            .filter(|(_, latitude, _)| latitude.abs() > 70f64.to_radians())
+            .map(|(pos, _, longitude)| (*pos, *longitude))
+            .collect();
+        assert_eq!(
+            polar
+                .iter()
+                .map(|(_, longitude)| band_of(*longitude))
+                .collect::<BTreeSet<_>>()
+                .len(),
+            GLOBE_LAP_BANDS,
+            "the fixture only tests anything if the ice does cross every longitude",
+        );
+
+        game.players[0].explored.clear();
+        game.players[0].went_around = false;
+        for (pos, _) in &polar {
+            game.players[0].explored.insert(*pos);
+        }
+        game.update_world_lap(0);
+        assert!(
+            !game.players[0].went_around,
+            "walking round the ice is not sailing round the world",
+        );
+
+        for (pos, latitude, _) in &cells {
+            if latitude.abs() < 20f64.to_radians() {
+                game.players[0].explored.insert(*pos);
+            }
+        }
+        game.update_world_lap(0);
+        assert!(
+            game.players[0].went_around,
+            "a way round at the equator is the real thing",
+        );
     }
 }

@@ -272,48 +272,29 @@ ruleset:
 
 ### Where CI runs
 
-Both required checks run on **self-hosted runners on the fleet's own machine**,
-not on GitHub-hosted ones. CIVVIS is a private repository, so hosted minutes are
-metered; when the account is not paying for them every hosted job dies in about
-three seconds on *"the job was not started because recent account payments have
-failed"*. That is indistinguishable from a real failure on the PR page, it fails
-a required check, and it stops every merge in the fleet. Self-hosted minutes are
-not metered, so the gate runs for free and still runs for real.
+Both required checks run on **GitHub-hosted `ubuntu-latest` runners**. CIVVIS is
+a public repository, so those are free and unmetered — there is no minute budget
+to manage and no reason for the gate to depend on any particular machine being
+awake.
 
-Two runners, one lane each, registered as launchd services that come back at
-login:
+`cargo-test` caches the cargo registry and `target/` with `actions/cache`, keyed
+on the **lockfile**, with `restore-keys` for a near-miss. The key must never
+contain the commit SHA: that writes a fresh entry on every push, nothing ever
+hits, and the 10 GB quota evicts itself — the gate then pays for a cold build of
+a 100k-line crate at release optimisation every time, which is what makes the
+merge race above hurt. If a run looks slow, check the cache actually hit before
+blaming anything else; the `Cache restored from key:` line is in the job log.
 
-| Runner | Label | Job | Directory |
-| --- | --- | --- | --- |
-| `martin-mbp` | `civvis` | `cargo-test` | `~/actions-runner` |
-| `martin-mbp-policy` | `policy` | `collaboration-policy` | `~/actions-runner-policy` |
-
-They are deliberately separate. A runner takes one job at a time, so a single
-runner would put every PR's ten-second policy check behind somebody else's
-build; and two `cargo test` runs sharing this machine have faked failures
-before, so exactly one runner carries the `civvis` label.
-
-`cargo-test` keeps its build cache in `CARGO_TARGET_DIR` **outside** the
-workspace, because `actions/checkout` cleans the workspace with `git clean
--ffdx`, which takes ignored files like `target/` with it. One directory serves
-every branch: no `actions/cache`, nothing to thrash a quota, and a warm run
-costs a fraction of the cold one this gate used to pay on every single push.
-
-Both jobs put `~/.cargo/bin` and `/opt/homebrew/bin` on `GITHUB_PATH`
-explicitly — a launchd-started runner inherits a minimal environment, and both
-toolchains are installed for the user rather than the system.
-
-Housekeeping:
-
-```bash
-gh api repos/MartinHalvorson/CIVVIS/actions/runners \
-  --jq '.runners[] | "\(.name) \(.status) busy=\(.busy)"'   # are they up?
-~/actions-runner/svc.sh status                              # or restart/stop
-```
-
-If the runners are ever gone and a merge has to happen anyway, the honest
-fallback is to say so in the PR and record the local `cargo test --profile ci
---locked` result — not to leave a red required check and merge past it.
+For about an hour on 2026-07-25 this ran on two self-hosted runners instead.
+That was a workaround for the repository being *private* with unpaid metered
+minutes, when every hosted job died in three seconds on *"recent account
+payments have failed"* — a red required check that blocked every merge in the
+fleet, and which let a non-compiling `main` through. Going public removed the
+reason for it. **Do not put a self-hosted runner back on this repository
+casually**: on a public repo it would execute pull-request code from strangers
+on somebody's own machine. Workflow runs from outside contributors already
+require approval (`Settings → Actions → Fork pull request workflows`), and that
+setting should stay on.
 
 Both `cargo-test` and `collaboration-policy` are required checks. The latter
 rejects ambiguous branch names, missing or mismatched machine/agent identity,
