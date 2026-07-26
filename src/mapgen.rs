@@ -649,7 +649,16 @@ fn flat_land(
             let mut open = offset_region(wm, 0, width, 1, height - 1);
             let target = area * MapScript::Islands.land_percent() as usize / 100;
             let seats = num_major_spawns + num_minor_spawns;
-            scatter_islands(wm, &mut open, target, 8, 24, ISLAND_CHANNEL, seats, rng)
+            scatter_islands(
+                wm,
+                &mut open,
+                target,
+                MIN_LANDMASS_FOR_A_START,
+                24,
+                ISLAND_CHANNEL,
+                seats,
+                rng,
+            )
         }
         MapScript::WaterWorld => {
             // The far end of the same dial as Land Only: specks of land in an
@@ -683,7 +692,7 @@ fn flat_land(
 /// to squeeze it any further. A capital wants its own island and enough of one
 /// to work; below about this the spacing search starts seating two
 /// civilizations on the same rock.
-const WATER_WORLD_TILES_PER_SEAT: usize = 9;
+const WATER_WORLD_TILES_PER_SEAT: usize = MIN_LANDMASS_FOR_A_START;
 
 /// How wide the water between two scattered islands is. One tile keeps them
 /// from touching; three keeps two capitals on neighbouring islands as far
@@ -902,7 +911,16 @@ fn globe_land(
     let target = (tiles * land_share / 100).max(seats * WATER_WORLD_TILES_PER_SEAT);
     match script {
         MapScript::Islands => {
-            scatter_islands(wm, &mut field, target, 8, 24, ISLAND_CHANNEL, seats, rng)
+            scatter_islands(
+                wm,
+                &mut field,
+                target,
+                MIN_LANDMASS_FOR_A_START,
+                24,
+                ISLAND_CHANNEL,
+                seats,
+                rng,
+            )
         }
         MapScript::WaterWorld => scatter_islands(
             wm,
@@ -1829,20 +1847,25 @@ pub fn generate_with_script(
                 .position(|component| component.contains(&position))
         };
         let start_home: Vec<Option<usize>> = spawns.iter().copied().map(home_of).collect();
+        let start_distances: Vec<MapDistanceRow<'_>> = spawns
+            .iter()
+            .copied()
+            .map(|start| MapDistanceRow::new(&wm, start))
+            .collect();
         let mut cells: Vec<Vec<Pos>> = vec![Vec::new(); spawns.len()];
         for tile in major_regions.iter().flatten() {
             let here = home_of(*tile);
-            let owner = spawns
+            let owner = start_distances
                 .iter()
                 .enumerate()
                 .filter(|(index, _)| start_home[*index] == here)
-                .map(|(index, start)| (wm.distance(*tile, *start), index))
+                .map(|(index, distances)| (distances.distance(*tile), index))
                 .min()
                 .or_else(|| {
-                    spawns
+                    start_distances
                         .iter()
                         .enumerate()
-                        .map(|(index, start)| (wm.distance(*tile, *start), index))
+                        .map(|(index, distances)| (distances.distance(*tile), index))
                         .min()
                 });
             if let Some((_, owner)) = owner {
@@ -2619,6 +2642,51 @@ const REGION_SAMPLE: usize = 48;
 /// hex buys a genuinely better capital two or three hexes out and no further.
 const REGION_CENTRALITY_PULL: i32 = 20;
 
+/// Exact distances from one anchor for a deliberate bulk comparison. Flat
+/// maps already have a constant-time coordinate formula; Planet builds one
+/// temporary graph row and releases it with the region pass that requested it.
+enum MapDistanceRow<'a> {
+    Flat { from: Pos, width: i32 },
+    Planet {
+        sphere: &'a crate::sphere::Sphere,
+        row: Box<[u16]>,
+    },
+}
+
+impl<'a> MapDistanceRow<'a> {
+    fn new(wm: &'a WorldMap, from: Pos) -> Self {
+        if let Some(sphere) = wm.sphere() {
+            Self::Planet {
+                sphere,
+                row: sphere.distance_row(from),
+            }
+        } else {
+            Self::Flat {
+                from,
+                width: wm.width,
+            }
+        }
+    }
+
+    fn distance(&self, to: Pos) -> i32 {
+        match self {
+            Self::Flat { from, width } => hex::wdistance(*from, to, *width),
+            Self::Planet { sphere, row } => sphere.row_distance(row, to),
+        }
+    }
+}
+
+fn map_distances_to(wm: &WorldMap, from: Pos, targets: &[Pos]) -> Vec<i32> {
+    if let Some(sphere) = wm.sphere() {
+        sphere.distances_to(from, targets)
+    } else {
+        targets
+            .iter()
+            .map(|target| hex::wdistance(from, *target, wm.width))
+            .collect()
+    }
+}
+
 /// The middle of a region: the tile whose fertility-weighted distance to the
 /// rest of the region is smallest. A hex globe has no arithmetic mean, so this
 /// is a medoid over an evenly-strided sample — a stride and not a draw, so it
@@ -2629,15 +2697,22 @@ fn region_center(wm: &WorldMap, region: &[Pos], fertility: &BTreeMap<Pos, i32>) 
     }
     let stride = region.len().div_ceil(REGION_SAMPLE).max(1);
     let sample: Vec<Pos> = region.iter().copied().step_by(stride).collect();
-    region.iter().copied().min_by_key(|position| {
-        let cost: i64 = sample
-            .iter()
-            .map(|other| {
-                wm.distance(*position, *other) as i64 * fertility.get(other).copied().unwrap_or(1) as i64
-            })
-            .sum();
-        (cost, *position)
-    })
+    let mut costs = vec![0_i64; region.len()];
+    for other in sample {
+        let weight = fertility.get(&other).copied().unwrap_or(1) as i64;
+        for (cost, distance) in costs
+            .iter_mut()
+            .zip(map_distances_to(wm, other, region))
+        {
+            *cost += distance as i64 * weight;
+        }
+    }
+    region
+        .iter()
+        .copied()
+        .zip(costs)
+        .min_by_key(|(position, cost)| (*cost, *position))
+        .map(|(position, _)| position)
 }
 
 /// Divide the viable land into `count` regions of roughly equal fertility, one
@@ -2669,20 +2744,24 @@ fn divide_into_regions(
     {
         centers.push(*first);
     }
+    // Farthest-point sampling only changes a tile's nearest-center distance
+    // when a new center is added. Carry that minimum forward instead of
+    // rescanning every earlier center for every tile on every round; the
+    // latter is quadratic in the seat count and made 100-seat Planet maps
+    // spend tens of seconds before region assignment even began.
+    let mut nearest = vec![i32::MAX; land.len()];
     while centers.len() < count {
+        let newest = *centers.last().unwrap();
+        let distances = MapDistanceRow::new(wm, newest);
+        for (index, position) in land.iter().enumerate() {
+            nearest[index] = nearest[index].min(distances.distance(*position));
+        }
         let Some(next) = land
             .iter()
-            .filter(|position| !centers.contains(position))
-            .max_by_key(|position| {
-                (
-                    centers
-                        .iter()
-                        .map(|center| wm.distance(**position, *center))
-                        .min()
-                        .unwrap_or(0),
-                    **position,
-                )
-            })
+            .enumerate()
+            .filter(|(_, position)| !centers.contains(position))
+            .max_by_key(|(index, position)| (nearest[*index], **position))
+            .map(|(_, position)| position)
             .copied()
         else {
             break;
@@ -2700,10 +2779,15 @@ fn divide_into_regions(
 
     let mut regions: Vec<Vec<Pos>> = Vec::new();
     for _ in 0..REGION_PASSES {
+        let distance_rows: Vec<MapDistanceRow<'_>> = centers
+            .iter()
+            .copied()
+            .map(|center| MapDistanceRow::new(wm, center))
+            .collect();
         let mut reach: Vec<(i32, Pos, usize)> = Vec::with_capacity(land.len() * centers.len());
         for position in land {
-            for (index, center) in centers.iter().enumerate() {
-                reach.push((wm.distance(*position, *center), *position, index));
+            for (index, distances) in distance_rows.iter().enumerate() {
+                reach.push((distances.distance(*position), *position, index));
             }
         }
         reach.sort_unstable();
@@ -2894,13 +2978,6 @@ fn regions_for_seats(
     regions
 }
 
-/// Whether a site keeps `buffer` hexes of clearance from every start in `from`.
-/// Civilization VI's buffers reject a plot *at* the distance, so clearance is
-/// strictly greater than the parameter.
-fn clear_of(wm: &WorldMap, position: Pos, from: &[Pos], buffer: i32) -> bool {
-    from.iter().all(|start| wm.distance(position, *start) > buffer)
-}
-
 /// Give each region its start: the site that is both good and central, subject
 /// to the shipped clearance buffers against everything already on the map.
 ///
@@ -2924,10 +3001,22 @@ fn regional_starts(
 ) -> Vec<(usize, Pos)> {
     let mut seated: Vec<(usize, Pos)> = Vec::with_capacity(regions.len());
     let mut placed: Vec<Pos> = Vec::with_capacity(regions.len());
+    let relax_limit = foreign_buffer.max(own_buffer);
+    let mut foreign_blocked: BTreeMap<i32, BTreeSet<Pos>> = BTreeMap::new();
+    for relaxed in 0..=relax_limit {
+        let radius = (foreign_buffer - relaxed).max(MIN_START_SEPARATION - 1);
+        foreign_blocked.entry(radius).or_insert_with(|| {
+            foreign
+                .iter()
+                .flat_map(|start| wm.disk(*start, radius))
+                .collect()
+        });
+    }
     for (index, region) in regions.iter().enumerate() {
         let Some(center) = region_center(wm, region, fertility) else {
             continue;
         };
+        let center_distances = MapDistanceRow::new(wm, center);
         let preferred: Vec<Pos> = region
             .iter()
             .copied()
@@ -2935,18 +3024,22 @@ fn regional_starts(
             .collect();
         let worth = |position: &Pos| {
             start_quality(rules, wm, *position)
-                - REGION_CENTRALITY_PULL * wm.distance(*position, center)
+                - REGION_CENTRALITY_PULL * center_distances.distance(*position)
         };
         let mut chosen = None;
-        'search: for relaxed in 0..=foreign_buffer.max(own_buffer) {
+        'search: for relaxed in 0..=relax_limit {
             let foreign_want = (foreign_buffer - relaxed).max(MIN_START_SEPARATION - 1);
             let own_want = (own_buffer - relaxed).max(MIN_START_SEPARATION - 1);
+            let blocked_by_placed: BTreeSet<Pos> = placed
+                .iter()
+                .flat_map(|start| wm.disk(*start, own_want))
+                .collect();
             for pool in [preferred.as_slice(), region.as_slice()] {
                 chosen = pool
                     .iter()
                     .filter(|position| {
-                        clear_of(wm, **position, foreign, foreign_want)
-                            && clear_of(wm, **position, &placed, own_want)
+                        !foreign_blocked[&foreign_want].contains(position)
+                            && !blocked_by_placed.contains(position)
                     })
                     .max_by_key(|position| (worth(position), **position))
                     .copied();
@@ -2982,20 +3075,45 @@ fn fill_remaining_starts(
     spawns: &mut Vec<Pos>,
     count: usize,
 ) {
-    let room = |spawns: &[Pos], position: Pos| {
-        spawns
-            .iter()
-            .map(|start| wm.distance(position, *start))
-            .min()
-            .unwrap_or(i32::MAX)
-    };
+    // The fallback asks the same question for every candidate: its distance
+    // to the nearest occupied start. Build that exact graph-distance field
+    // once, then repair only the cells made nearer by each newly placed seat.
+    // Re-running a point-to-point search for candidate × start × missing seat
+    // made a large archipelago spend minutes here after an otherwise healthy
+    // regional layout missed only a handful of city-states.
+    let mut room: BTreeMap<Pos, i32> = wm
+        .tiles
+        .keys()
+        .copied()
+        .map(|position| (position, i32::MAX))
+        .collect();
+    let mut frontier = VecDeque::new();
+    for start in spawns.iter().copied() {
+        if let Some(distance) = room.get_mut(&start) {
+            if *distance != 0 {
+                *distance = 0;
+                frontier.push_back(start);
+            }
+        }
+    }
+    while let Some(position) = frontier.pop_front() {
+        let next = room[&position].saturating_add(1);
+        for neighbor in wm.neighbors(position) {
+            if room.get(&neighbor).is_some_and(|distance| next < *distance) {
+                room.insert(neighbor, next);
+                frontier.push_back(neighbor);
+            }
+        }
+    }
     for _ in 0..count {
         let pick = |pool: &BTreeSet<Pos>, spawns: &[Pos], floor: i32| {
             pool.iter()
-                .filter(|position| !spawns.contains(position) && room(spawns, **position) >= floor)
+                .filter(|position| {
+                    !spawns.contains(position) && room.get(*position).copied().unwrap_or(0) >= floor
+                })
                 .max_by_key(|position| {
                     (
-                        room(spawns, **position),
+                        room.get(*position).copied().unwrap_or(0),
                         start_quality(rules, wm, **position),
                         **position,
                     )
@@ -3010,6 +3128,22 @@ fn fill_remaining_starts(
             break;
         };
         spawns.push(next);
+        if room.get(&next).copied().unwrap_or(0) != 0 {
+            room.insert(next, 0);
+            frontier.push_back(next);
+        }
+        while let Some(position) = frontier.pop_front() {
+            let next_distance = room[&position].saturating_add(1);
+            for neighbor in wm.neighbors(position) {
+                if room
+                    .get(&neighbor)
+                    .is_some_and(|distance| next_distance < *distance)
+                {
+                    room.insert(neighbor, next_distance);
+                    frontier.push_back(neighbor);
+                }
+            }
+        }
     }
 }
 
@@ -3052,12 +3186,17 @@ fn balance_territory(
     // rather than a fixed handful of times — and at a hundred seats that is the
     // difference between the pass working and the pass being decorative.
     let survey = |starts: &[Pos]| -> Vec<(i32, usize, i32, usize)> {
+        let distance_rows: Vec<MapDistanceRow<'_>> = starts
+            .iter()
+            .copied()
+            .map(|start| MapDistanceRow::new(wm, start))
+            .collect();
         land.iter()
             .map(|tile| {
                 let mut best = (i32::MAX, 0_usize);
                 let mut next = (i32::MAX, 0_usize);
-                for (index, start) in starts.iter().enumerate() {
-                    let distance = wm.distance(*tile, *start);
+                for (index, distances) in distance_rows.iter().enumerate() {
+                    let distance = distances.distance(*tile);
                     if distance < best.0 {
                         next = best;
                         best = (distance, index);
@@ -3086,8 +3225,9 @@ fn balance_territory(
                  site: Pos|
      -> Vec<usize> {
         let mut moved = held.to_vec();
+        let distances = MapDistanceRow::new(wm, site);
         for (tile, (own, owner, next, runner)) in land.iter().zip(nearest) {
-            let distance = wm.distance(*tile, site);
+            let distance = distances.distance(*tile);
             if *owner == mover {
                 if distance > *next {
                     moved[mover] -= 1;
@@ -3125,6 +3265,10 @@ fn balance_territory(
             .filter(|(index, _)| *index != poorest)
             .map(|(_, start)| *start)
             .collect();
+        let blocked: BTreeSet<Pos> = others
+            .iter()
+            .flat_map(|start| wm.disk(*start, floor - 1))
+            .collect();
         let mut trials: Vec<Pos> = region
             .iter()
             .copied()
@@ -3132,7 +3276,7 @@ fn balance_territory(
                 *position != current
                     && candidates.contains(position)
                     && wm.distance(*position, current) <= 6
-                    && clear_of(wm, *position, &others, floor - 1)
+                    && !blocked.contains(position)
                     && start_quality(rules, wm, *position) >= keep
             })
             .collect();
@@ -3213,11 +3357,21 @@ fn equalize_start_quality(
             settled.insert(weakest);
             continue;
         };
+        let center_distances = MapDistanceRow::new(wm, center);
         let others: Vec<Pos> = seated
             .iter()
             .enumerate()
             .filter(|(index, _)| *index != weakest)
             .map(|(_, (_, start))| *start)
+            .collect();
+        // Clearance is a radius predicate, so build the union of those disks
+        // once for this seat. Testing every candidate against every other
+        // start with an exact point-to-point distance was the dominant cost on
+        // large Planet maps even though only the nearby few could reject it.
+        let blocked: BTreeSet<Pos> = others
+            .iter()
+            .chain(foreign)
+            .flat_map(|start| wm.disk(*start, floor - 1))
             .collect();
         let current = qualities[weakest];
         // The same centrality pull the first pick used, so lifting the weakest
@@ -3227,15 +3381,12 @@ fn equalize_start_quality(
             .iter()
             .copied()
             .filter(|position| candidates.contains(position))
-            .filter(|position| {
-                clear_of(wm, *position, &others, floor - 1)
-                    && clear_of(wm, *position, foreign, floor - 1)
-            })
+            .filter(|position| !blocked.contains(position))
             .map(|position| (start_quality(rules, wm, position), position))
             .filter(|(quality, _)| *quality > current)
             .max_by_key(|(quality, position)| {
                 (
-                    quality - REGION_CENTRALITY_PULL * wm.distance(*position, center),
+                    quality - REGION_CENTRALITY_PULL * center_distances.distance(*position),
                     *position,
                 )
             })
@@ -3698,11 +3849,11 @@ mod river_tests {
             let seats = size.default_players + size.default_city_states;
             let settleable = components
                 .iter()
-                .filter(|component| component.len() >= 8)
+                .filter(|component| component.len() >= MIN_LANDMASS_FOR_A_START)
                 .count();
             let target = wm.tiles.len() * MapScript::Islands.land_percent() as usize / 100;
             let sizes = components.iter().map(BTreeSet::len).collect::<Vec<_>>();
-            if land.len().abs_diff(target) >= 8 {
+            if land.len().abs_diff(target) >= MIN_LANDMASS_FOR_A_START {
                 failures.push(format!(
                     "{} has {} land tiles instead of about {target}; bodies {sizes:?}",
                     size.name,
@@ -3715,7 +3866,10 @@ mod river_tests {
                     size.name
                 ));
             }
-            if components.iter().any(|component| component.len() < 8) {
+            if components
+                .iter()
+                .any(|component| component.len() < MIN_LANDMASS_FOR_A_START)
+            {
                 failures.push(format!(
                     "{} generated island fragments smaller than the promised minimum: {sizes:?}",
                     size.name
@@ -3743,6 +3897,60 @@ mod river_tests {
             tiny.is_disjoint(&land),
             "a pocket too small to settle was committed as land"
         );
+    }
+
+    #[test]
+    fn incremental_spawn_fallback_matches_pointwise_distance_search() {
+        let rules = Rules::embedded();
+        let mut wm = WorldMap::globe(5);
+        for tile in wm.tiles.values_mut() {
+            tile.terrain = "plains".into();
+        }
+        let land: BTreeSet<Pos> = wm.tiles.keys().copied().collect();
+        let candidates = land.clone();
+        let positions: Vec<Pos> = land.iter().copied().collect();
+        let initial = vec![positions[0], positions[83]];
+        let mut expected = initial.clone();
+        for _ in 0..7 {
+            let room = |spawns: &[Pos], position: Pos| {
+                spawns
+                    .iter()
+                    .map(|start| wm.distance(position, *start))
+                    .min()
+                    .unwrap_or(i32::MAX)
+            };
+            let pick = |pool: &BTreeSet<Pos>, spawns: &[Pos], floor: i32| {
+                pool.iter()
+                    .filter(|position| {
+                        !spawns.contains(position) && room(spawns, **position) >= floor
+                    })
+                    .max_by_key(|position| {
+                        (
+                            room(spawns, **position),
+                            start_quality(&rules, &wm, **position),
+                            **position,
+                        )
+                    })
+                    .copied()
+            };
+            let next = pick(&candidates, &expected, MIN_START_SEPARATION)
+                .or_else(|| pick(&land, &expected, MIN_START_SEPARATION))
+                .or_else(|| pick(&candidates, &expected, 0))
+                .or_else(|| pick(&land, &expected, 0))
+                .unwrap();
+            expected.push(next);
+        }
+
+        let mut actual = initial;
+        fill_remaining_starts(
+            &rules,
+            &wm,
+            &candidates,
+            &land,
+            &mut actual,
+            7,
+        );
+        assert_eq!(actual, expected);
     }
 
     /// Lakes were modeled everywhere except on the map. `terrains.json` has

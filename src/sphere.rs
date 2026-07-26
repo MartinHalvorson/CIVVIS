@@ -287,6 +287,73 @@ impl Sphere {
         self.search_between(from, to) as i32
     }
 
+    /// One exact, caller-owned distance row for algorithms that deliberately
+    /// compare a known anchor with most of the world. Unlike [`Sphere::distance`]
+    /// this does not consume a slot in the shared opportunistic cache; callers
+    /// keep the row only for the bulk pass that asked for it.
+    pub(crate) fn distance_row(&self, from: Pos) -> Box<[u16]> {
+        self.index_of(from)
+            .map(|index| self.search_all(index))
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn row_distance(&self, row: &[u16], to: Pos) -> i32 {
+        self.index_of(to)
+            .and_then(|index| row.get(index as usize))
+            .copied()
+            .map_or(i32::MAX, i32::from)
+    }
+
+    /// Exact distances to a known target set. The search stops when the last
+    /// target is reached, which is much cheaper than a full row when all
+    /// targets occupy one small map region.
+    pub(crate) fn distances_to(&self, from: Pos, targets: &[Pos]) -> Vec<i32> {
+        let Some(source) = self.index_of(from) else {
+            return vec![i32::MAX; targets.len()];
+        };
+        let mut wanted = vec![false; self.len()];
+        let mut remaining = 0usize;
+        for target in targets {
+            if let Some(index) = self.index_of(*target) {
+                if !wanted[index as usize] {
+                    wanted[index as usize] = true;
+                    remaining += 1;
+                }
+            }
+        }
+        if remaining == 0 {
+            return vec![i32::MAX; targets.len()];
+        }
+        let mut distance = vec![u16::MAX; self.len()];
+        distance[source as usize] = 0;
+        let mut queue = VecDeque::from([source]);
+        while let Some(cell) = queue.pop_front() {
+            let at = cell as usize;
+            if wanted[at] {
+                wanted[at] = false;
+                remaining -= 1;
+                if remaining == 0 {
+                    break;
+                }
+            }
+            let next = distance[at] + 1;
+            for neighbor in &self.adjacent[at][..self.degree[at] as usize] {
+                if distance[*neighbor as usize] == u16::MAX {
+                    distance[*neighbor as usize] = next;
+                    queue.push_back(*neighbor);
+                }
+            }
+        }
+        targets
+            .iter()
+            .map(|target| {
+                self.index_of(*target)
+                    .map(|index| i32::from(distance[index as usize]))
+                    .unwrap_or(i32::MAX)
+            })
+            .collect()
+    }
+
     /// The middle of a tile, as a unit vector.
     pub fn center(&self, pos: Pos) -> Option<[f64; 3]> {
         self.cell(pos).map(|cell| cell.center)
@@ -930,6 +997,9 @@ mod tests {
             for (pos, steps) in &walked {
                 assert_eq!(globe.distance(from, *pos), *steps, "{from:?} -> {pos:?}");
             }
+            let targets: Vec<Pos> = globe.positions().step_by(11).collect();
+            let expected: Vec<i32> = targets.iter().map(|target| walked[target]).collect();
+            assert_eq!(globe.distances_to(from, &targets), expected);
             for radius in [0, 1, 3, RING_RADIUS, RING_RADIUS + 4] {
                 let disk = globe.disk(from, radius);
                 let expected = walked.values().filter(|steps| **steps <= radius).count();
