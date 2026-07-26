@@ -1081,3 +1081,45 @@ conservative by construction for this data shape. **That is written down
 here rather than fixed**: loosening a promotion rule to admit one's own
 change is the wrong way round, and the choice belongs to whoever owns the
 gate.
+
+## 2026-07-26 — the gate's conservatism is real, and has no drop-in fix
+
+The previous entry noted that `strategic_r20` cleared the anytime-valid
+e-process at 120 maps (e=73.4, crossed at map 108) while the promotion gate
+still read INCONCLUSIVE, because promotion also requires the Wilson
+interval to clear parity and it spanned 46.5%..64.0%. Wilson assumes every
+map is a maximum-variance Bernoulli draw; 103 of those 120 maps scored
+exactly 0.5, so the realised variance is about 0.05 against an assumed 0.25.
+
+Three candidate replacements were measured by simulation against the map
+shape these runs produce (400 replications, 120 maps each, null mean 0.5,
+one map in five breaking evenly either way):
+
+| interval | coverage | mean width |
+|---|---|---|
+| Wilson (current gate) | **400/400 (100%)** | 0.176 |
+| normal, sample variance | 372/400 (93.0%) | 0.079 |
+| bootstrap percentile, 2000 resamples | 374/400 (93.5%) | 0.079 |
+| empirical Bernstein (Maurer–Pontil) | — | **0.321** |
+
+Read that as three failures rather than a menu. Wilson is not 95%
+conservative on this shape, it is total, and pays 2.2× the width for it.
+Both variance-adaptive alternatives land slightly *under* nominal, and an
+interval that undercovers a promotion gate is worse than one that
+over-covers. Empirical Bernstein — the textbook non-asymptotic choice for
+bounded variables — is *wider* than Wilson here, because its additive
+`3 ln(3/δ)/n` term dominates until n is far larger than these runs.
+
+So no narrower interval on offer is also calibrated, and nothing is
+changed. `no_narrower_interval_here_is_also_calibrated` pins all three
+measurements so the next attempt starts from them.
+
+**What this leaves.** The e-process is already the correctly specified
+instrument for this data: non-asymptotic, anytime-valid, and it does not
+assume a variance it cannot see. Requiring an additional worst-case
+interval alongside it is not a second layer of rigour — it is a second,
+mis-specified test that the first one has to carry. Whether the gate should
+turn on the e-process alone is a policy question for whoever owns the gate,
+and deliberately not settled here: the agent proposing a change is the
+wrong party to widen the door it wants to walk through. The evidence needed
+to decide is now in one place.
