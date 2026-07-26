@@ -157,6 +157,40 @@ class CanonicalSyncTests(unittest.TestCase):
 
 
 class SessionSettingsTests(unittest.TestCase):
+    def test_every_map_type_can_launch_on_either_world_shape(self):
+        for map_type in supervisor.MAP_TYPES:
+            for shape in supervisor.MAP_SHAPES:
+                with self.subTest(map=map_type, shape=shape):
+                    with patch.object(
+                        supervisor.sys,
+                        "argv",
+                        [
+                            "spectator_supervisor.py",
+                            "--map",
+                            map_type,
+                            "--shape",
+                            shape,
+                            "--poles",
+                            "no_poles",
+                        ],
+                    ):
+                        parsed = supervisor.parse_args()
+                    settings = {
+                        "players": parsed.players,
+                        "width": parsed.width,
+                        "height": parsed.height,
+                        "city_states": parsed.city_states,
+                        "turns": parsed.turns,
+                        "map": parsed.map,
+                        "shape": parsed.shape,
+                        "poles": parsed.poles,
+                        "speed": parsed.speed,
+                    }
+                    command = supervisor.server_command(8766, settings, False)
+                    self.assertEqual(command[command.index("--map") + 1], map_type)
+                    self.assertEqual(command[command.index("--shape") + 1], shape)
+                    self.assertEqual(command[command.index("--poles") + 1], "no_poles")
+
     def test_launch_victories_are_validated_and_keep_score_disabled(self):
         self.assertEqual(
             supervisor.parse_victories("science,culture,domination"),
@@ -173,7 +207,13 @@ class SessionSettingsTests(unittest.TestCase):
                 {"is_minor": True},
                 {"is_minor": True, "is_barbarian": True},
             ],
-            "map": {"width": 44, "height": 26, "script": "continents"},
+            "map": {
+                "width": 55,
+                "height": 24,
+                "script": "continents",
+                "shape": "planet",
+                "poles": "no_poles",
+            },
             "game_speed": "online",
             "leader_pool": "expanded",
             "max_turns": 250,
@@ -193,6 +233,8 @@ class SessionSettingsTests(unittest.TestCase):
             "city_states": 6,
             "turns": 500,
             "map": "pangaea",
+            "shape": "flat",
+            "poles": "poles",
             "speed": "standard",
             "leader_pool": "civ6",
         }
@@ -203,8 +245,9 @@ class SessionSettingsTests(unittest.TestCase):
         # down game after game and never recovers.
         self.assertEqual(
             supervisor.session_settings(state, defaults),
-            {"players": 4, "width": 44, "height": 26, "city_states": 6,
-             "turns": 250, "map": "continents", "speed": "online",
+            {"players": 4, "width": 55, "height": 24, "city_states": 6,
+             "turns": 250, "map": "continents", "shape": "planet",
+             "poles": "no_poles", "speed": "online",
              "leader_pool": "expanded",
              "victories": ["science", "culture", "domination", "score"]},
         )
@@ -285,6 +328,8 @@ class SessionSettingsTests(unittest.TestCase):
             "city_states": 9,
             "turns": 330,
             "map": "continents",
+            "shape": "planet",
+            "poles": "no_poles",
             "speed": "quick",
             "leader_pool": "expanded",
             "victories": ["science", "domination"],
@@ -349,6 +394,8 @@ class SessionSettingsTests(unittest.TestCase):
                 "city_states": 6,
                 "turns": 330,
                 "map": "continents",
+                "shape": "planet",
+                "poles": "no_poles",
                 "speed": "quick",
                 "leader_pool": "expanded",
                 "victories": ["science", "culture", "domination"],
@@ -367,6 +414,8 @@ class SessionSettingsTests(unittest.TestCase):
                     "city_states": 6,
                     "turns": 330,
                     "map": "continents",
+                    "shape": "planet",
+                    "poles": "no_poles",
                     "speed": "quick",
                     "leader_pool": "expanded",
                     "victories": ["science", "culture", "domination"],
@@ -379,6 +428,24 @@ class SessionSettingsTests(unittest.TestCase):
                 {"server_instance": 9999, "supervisor_request": request}
             )
         )
+
+    def test_invalid_shape_or_poles_rejects_a_supervisor_handoff(self):
+        settings = {
+            "players": 4,
+            "width": 60,
+            "height": 38,
+            "city_states": 6,
+            "turns": 250,
+            "map": "pangaea",
+            "shape": "cube",
+            "poles": "poles",
+            "speed": "online",
+            "victories": ["science"],
+        }
+        self.assertIsNone(supervisor.normalized_simulation_settings(settings))
+        settings["shape"] = "planet"
+        settings["poles"] = "sometimes"
+        self.assertIsNone(supervisor.normalized_simulation_settings(settings))
 
     def test_result_standings_preserves_winner_and_excludes_non_major_players(self):
         state = {

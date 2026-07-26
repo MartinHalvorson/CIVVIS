@@ -35665,47 +35665,47 @@ impl Game {
             && self.pillageable_at(pid, pos)
     }
 
+    /// Districts and Improvements each carry a `PlunderType` and a
+    /// `PlunderAmount`: Gold and heal pay 50, Science, Culture and Faith pay
+    /// 25. Reading them beats a hand-written match, which had drifted on 24 of
+    /// the 48 entries -- an Industrial Zone paid Production where it ships
+    /// Science, a Mine paid Science where it ships Gold, and every
+    /// Entertainment Complex paid Gold where it ships a heal.
     fn grant_pillage_reward(&mut self, pid: usize, uid: u32, source: &str, coastal: bool) {
-        let amount = 25.0
-            * (self.world_era as f64 + 1.0)
-            * (1.0 + self.policy_effect(pid, "pillage_yield_pct") / 100.0);
-        let district_family = self
+        let family = self
             .rules
             .districts
             .get(source)
             .map(|_| self.district_family(source))
             .unwrap_or(source);
-        match district_family {
-            "farm" | "fishing_boats" => {
+        let plunder = self
+            .rules
+            .districts
+            .get(family)
+            .map(|spec| (spec.plunder_type.clone(), spec.plunder_amount))
+            .or_else(|| {
+                self.rules
+                    .improvements
+                    .get(source)
+                    .map(|spec| (spec.plunder_type.clone(), spec.plunder_amount))
+            });
+        let Some((Some(kind), base)) = plunder else {
+            return;
+        };
+        // The era curve and the pillage cards scale the shipped base.
+        let amount = base
+            * (self.world_era as f64 + 1.0)
+            * (1.0 + self.policy_effect(pid, "pillage_yield_pct") / 100.0);
+        match kind.as_str() {
+            // A heal is health, not a yield: the shipped 50 is 50 hit points.
+            "heal" => {
                 if let Some(unit) = self.units.get_mut(&uid) {
-                    unit.hp = (unit.hp + 50).min(100);
+                    unit.hp = (unit.hp + base as i32).min(100);
                 }
             }
-            "campus" | "mine" | "quarry" | "oil_well" | "offshore_oil_rig" | "geothermal_plant"
-            | "solar_farm" | "wind_farm" | "offshore_wind_farm" => {
-                self.players[pid].research_overflow += amount;
-            }
-            "holy_site" | "sphinx" | "kurgan" | "nubian_pyramid" => {
-                self.players[pid].faith += amount;
-            }
-            "theater_square"
-            | "great_wall"
-            | "seaside_resort"
-            | "ski_resort"
-            | "national_park"
-            | "archaeological_dig"
-            | "shipwreck_excavation" => {
-                self.players[pid].civic_overflow += amount;
-            }
-            "industrial_zone" | "aerodrome" => {
-                if let Some(cid) = self
-                    .player_city_ids(pid)
-                    .into_iter()
-                    .min_by_key(|cid| self.wdist(self.cities[cid].pos, self.units[&uid].pos))
-                {
-                    self.cities.get_mut(&cid).unwrap().production += amount;
-                }
-            }
+            "science" => self.players[pid].research_overflow += amount,
+            "faith" => self.players[pid].faith += amount,
+            "culture" => self.players[pid].civic_overflow += amount,
             _ => {
                 let bonus = if coastal {
                     self.promotion_effect(&self.units[&uid], "coastal_raid_gold_pct")
@@ -44697,12 +44697,20 @@ impl Game {
         let embrasure_promotion = spec.class == "military"
             && !spec.promotion_class.is_empty()
             && self.governor_effect(city.owner, cid, "military_free_promotion") > 0.0;
+        // ALLIANCE_FREE_UNIT_UPGRADE is named for something it does not do. Its
+        // collection is COLLECTION_ALLIANCE_TRAINED_UNITS and its effect is
+        // ADJUST_UNIT_GRANT_EXPERIENCE at -1 -- the same amount every row named
+        // FREE_PROMOTION carries, and the same one the Terracotta Army uses. A
+        // Level 3 Military Alliance trains its units already promoted.
+        let allied_promotion = spec.class == "military"
+            && !spec.promotion_class.is_empty()
+            && self.alliance_partner(city.owner, "military", 3).is_some();
         let unit = self.units.get_mut(&uid).unwrap();
         if spec.earns_xp {
             unit.xp_bonus_pct += xp_pct;
             unit.xp += starting_xp;
         }
-        if spec.earns_xp && embrasure_promotion {
+        if spec.earns_xp && (embrasure_promotion || allied_promotion) {
             // A free promotion is represented by exactly enough XP to expose
             // the first promotion choice. max() prevents free-promotion
             // effects from stacking with one another.
@@ -50326,6 +50334,88 @@ mod combat_scenarios {
     }
 
     #[test]
+    fn pillaging_pays_the_yield_and_amount_its_row_ships() {
+        // Districts.PlunderType/PlunderAmount and the same pair on
+        // Improvements. Gold and heal pay 50, Science, Culture and Faith 25 --
+        // and the type is per entry, not per family guess. A hand-written
+        // match had 24 of the 48 wrong.
+        let rules = crate::rules::Rules::embedded();
+        for (district, kind, amount) in [
+            ("campus", "science", 25.0),
+            ("holy_site", "faith", 25.0),
+            ("theater_square", "culture", 25.0),
+            ("commercial_hub", "gold", 50.0),
+            ("harbor", "gold", 50.0),
+            // The three CIVVIS used to get wrong.
+            ("industrial_zone", "science", 25.0),
+            ("aerodrome", "gold", 50.0),
+            ("entertainment_complex", "heal", 50.0),
+            ("diplomatic_quarter", "culture", 25.0),
+            ("spaceport", "science", 25.0),
+        ] {
+            let spec = &rules.districts[district];
+            assert_eq!(spec.plunder_type.as_deref(), Some(kind), "{district}");
+            assert_eq!(spec.plunder_amount, amount, "{district}");
+        }
+        for (improvement, kind, amount) in [
+            ("farm", "heal", 50.0),
+            ("mine", "gold", 50.0),
+            ("quarry", "faith", 25.0),
+            ("camp", "faith", 25.0),
+            ("pasture", "faith", 25.0),
+            ("plantation", "faith", 25.0),
+        ] {
+            let spec = &rules.improvements[improvement];
+            assert_eq!(spec.plunder_type.as_deref(), Some(kind), "{improvement}");
+            assert_eq!(spec.plunder_amount, amount, "{improvement}");
+        }
+
+        // A unique district plunders as the district it replaces.
+        assert_eq!(
+            rules.districts["hansa"].plunder_type.as_deref().or(Some("science")),
+            Some("science")
+        );
+    }
+
+    #[test]
+    fn every_religious_unit_carries_its_shipped_strength_and_eviction() {
+        // Units.ReligiousStrength and Units.ReligionEvictPercent, which the
+        // fidelity ratchet did not reach until now. The Inquisitor's 75 is the
+        // interesting one: CIVVIS spends it through Remove Heresy rather than
+        // Spread, so it shows up as rival pressure retained at a quarter.
+        let rules = crate::rules::Rules::embedded();
+        for (unit, strength) in [
+            ("apostle", 110.0),
+            ("missionary", 100.0),
+            ("guru", 90.0),
+            ("inquisitor", 75.0),
+        ] {
+            assert_eq!(rules.units[unit].religious_strength, strength, "{unit}");
+        }
+
+        // RELIGION_SPREAD_STRENGTH_MULTIPLIER is 200: a unit spreads at twice
+        // its Religious Strength, and the Inquisitor does not spread at all.
+        assert_eq!(rules.units["apostle"].religious_spread, 220.0);
+        assert_eq!(rules.units["missionary"].religious_spread, 200.0);
+        assert_eq!(rules.units["inquisitor"].religious_spread, 0.0);
+
+        // ReligionEvictPercent 75 for the Inquisitor, through Remove Heresy.
+        let (mut g, city_pos, ring) = controlled_game(319);
+        let cid = g.found_city_for(0, city_pos, None);
+        g.cities
+            .get_mut(&cid)
+            .unwrap()
+            .pressure
+            .insert("Rival".to_string(), 400.0);
+        let inquisitor = g.spawn_unit("inquisitor", 0, city_pos);
+        g.units.get_mut(&inquisitor).unwrap().religion = Some("Ours".to_string());
+        g.players[0].religion = Some("Ours".to_string());
+        g.do_remove_heresy(0, inquisitor).unwrap();
+        assert_eq!(g.cities[&cid].pressure["Rival"], 100.0, "75% removed");
+        let _ = ring;
+    }
+
+    #[test]
     fn proselytizer_evicts_the_half_its_row_ships() {
         // APOSTLE_EVICT_ALL is 50, and CIVVIS takes the greater of the unit's
         // own eviction and the promotion's. A bare Apostle evicts a quarter;
@@ -54990,6 +55080,43 @@ mod district_mechanics {
         let gained = game.players[0].research_progress + game.players[0].research_overflow;
         let without = baseline.players[0].research_progress + baseline.players[0].research_overflow;
         assert!((gained - without - copied).abs() < 1e-9, "{gained} - {without} != {copied}");
+    }
+
+    #[test]
+    fn a_level_three_military_alliance_trains_its_units_promoted() {
+        // ALLIANCE_FREE_UNIT_UPGRADE is a misnomer: COLLECTION_ALLIANCE_TRAINED
+        // _UNITS with EFFECT_ADJUST_UNIT_GRANT_EXPERIENCE at -1, which is the
+        // amount every FREE_PROMOTION row in the game carries -- Hetairoi,
+        // Corbaci, Nau, City Defender, and the Terracotta Army. It grants a
+        // promotion, not a discount.
+        let mut game = emergency_game_with_capitals(2, 88_106, 300);
+        let city = game.player_city_ids(0)[0];
+        let warrior = Item::Unit {
+            unit: "warrior".to_string(),
+        };
+        let trained_xp = |game: &mut Game| {
+            let before: BTreeSet<u32> = game.player_unit_ids(0).into_iter().collect();
+            assert!(game.complete_item(0, city, &warrior));
+            let uid = game
+                .player_unit_ids(0)
+                .into_iter()
+                .find(|id| !before.contains(id))
+                .expect("a trained Warrior");
+            game.units[&uid].xp
+        };
+        assert_eq!(trained_xp(&mut game), 0, "no alliance, no promotion");
+
+        install_alliance(&mut game, 0, 1, "military", 3, 240.0);
+        let promoted = trained_xp(&mut game);
+        assert_eq!(
+            promoted,
+            Game::promotion_threshold(1),
+            "trained already able to promote"
+        );
+
+        // Level 2 is not enough: the free promotion is the Level 3 reward.
+        install_alliance(&mut game, 0, 1, "military", 2, 80.0);
+        assert_eq!(trained_xp(&mut game), 0);
     }
 
     #[test]

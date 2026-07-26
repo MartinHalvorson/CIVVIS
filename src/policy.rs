@@ -13,7 +13,7 @@
 //! randomly.
 use crate::action_space::{kind_name, legal_encoded};
 use crate::ai::{AdvancedAi, Ai, PlanReport, Weights};
-use crate::decision_features::{decision_features, WIDTH as DECISION_WIDTH};
+use crate::decision_features::{decision_features, CONTACT_TERMS, WIDTH as DECISION_WIDTH};
 use crate::evolve::features;
 use crate::game::{Action, Game};
 use crate::valuenet::ValueNet;
@@ -42,13 +42,32 @@ pub struct PolicyAi {
     /// was not the reason it failed to win. It was the reason it failed to
     /// lose.
     ///
-    /// The mechanism is standard and worth naming: the net is trained on
-    /// states that `advanced` self-play visits, and greedily maximising it
-    /// one ply at a time walks straight off that distribution, where its
-    /// estimate carries no information. Fixing it needs the training
-    /// distribution to follow the policy (iterated self-play), or the
-    /// policy to be kept near the one that generated the data, or search
-    /// rather than a greedy argmax — not a wider input.
+    /// The obvious mechanism — that greedy maximisation walks off the
+    /// training distribution — was tested and is **wrong**. Scoring the
+    /// same net against outcomes on states this agent reaches gives BCE
+    /// 0.3898 against 0.3720 on states the expert reaches, with *better*
+    /// calibration (ECE 0.064 against 0.103). The estimate is fine where
+    /// the agent goes.
+    ///
+    /// What is actually wrong is subtler and more general. The net is fit
+    /// to outcomes, so it encodes **correlation**, and the argmax over
+    /// sibling actions optimises whichever correlate is cheapest to move.
+    /// Measured over 468 committed decisions, the chosen action raises the
+    /// adjacent-enemy count by 0.137 where the average legal candidate
+    /// raises it by 0.002 — seventy-eight times the field — while own
+    /// HP-weighted material falls. In games that `advanced` wins, units
+    /// stand in contact because a strong empire is pressing an attack;
+    /// contact is a *symptom* of strength. Maximising a symptom drives
+    /// units into fights they lose.
+    ///
+    /// A state-value function cannot fix this by being more accurate,
+    /// because it is accurate. Ranking actions needs a counterfactual
+    /// signal — play the action out and observe the consequence, which is
+    /// what a rollout does and what a one-ply value delta does not, and is
+    /// why the macro search is the search in this codebase that wins
+    /// games. The learned route is action-conditioned value (Q or
+    /// advantage) trained on returns for actions actually taken, not a
+    /// state-value regression read greedily.
     ///
     /// This is the whole point of the wider vector: the 25 aggregates are
     /// unchanged by 96% of the candidates this agent clones, so its
@@ -57,6 +76,16 @@ pub struct PolicyAi {
     /// *ranking* is a separate question from whether it can rank at all,
     /// and is what an evaluation of `policy_wide` measures.
     pub wide: bool,
+    /// Hold the contact terms at their pre-action values when scoring a
+    /// candidate, so the net cannot reward an action for moving them.
+    ///
+    /// This is a causal test of why `policy_wide` collapses, not a
+    /// proposed agent. If the correlation story is right — that the argmax
+    /// is chasing a symptom of strength rather than a cause — then denying
+    /// it that particular symptom should recover most of the loss. If the
+    /// loss survives, the story is incomplete and the remaining damage is
+    /// coming from somewhere else.
+    pub freeze_contact: bool,
     /// Restrict the net to action kinds where a one-ply value delta is
     /// meaningful. Multi-turn commitments (production, research, purchases)
     /// look near-free to a one-ply evaluator, which is how an unrestricted
@@ -109,6 +138,7 @@ impl PolicyAi {
             fallback: AdvancedAi::with_weights(weights),
             net: ValueNet::load_width("evolved", crate::evolve::FEATURE_WIDTH),
             wide: false,
+            freeze_contact: false,
             width: 48,
             depth: 10,
             margin: 1e-4,
@@ -127,14 +157,32 @@ impl PolicyAi {
         self
     }
 
+    /// [`Self::with_decision_features`] with the contact terms frozen.
+    pub fn with_frozen_contact(mut self) -> PolicyAi {
+        self = self.with_decision_features();
+        self.freeze_contact = true;
+        self
+    }
+
     fn value(&self, g: &Game, pid: usize) -> f64 {
+        self.value_against(g, pid, None)
+    }
+
+    /// `value`, optionally holding the contact terms at the values they had
+    /// in `baseline`.
+    fn value_against(&self, g: &Game, pid: usize, baseline: Option<&[f32]>) -> f64 {
         match &self.net {
             Some(net) => {
-                let x = if self.wide {
+                let mut x = if self.wide {
                     decision_features(g, pid)
                 } else {
                     features(g, pid)
                 };
+                if let Some(base) = baseline.filter(|_| self.freeze_contact && self.wide) {
+                    for index in CONTACT_TERMS {
+                        x[index] = base[index];
+                    }
+                }
                 net.eval(&x)
             }
             None => 0.0,
@@ -174,6 +222,7 @@ impl PolicyAi {
     pub fn best_action(&self, g: &Game, pid: usize) -> Option<(Action, f64)> {
         self.net.as_ref()?;
         let base = self.value(g, pid);
+        let frozen = (self.freeze_contact && self.wide).then(|| decision_features(g, pid));
         let mut best: Option<(Action, f64)> = None;
         for action in self.candidates(g, pid) {
             let mut sim = g.clone();
@@ -183,7 +232,7 @@ impl PolicyAi {
             let gain = match sim.winner {
                 Some(w) if w == pid => 1.0,
                 Some(_) => -1.0,
-                None => self.value(&sim, pid) - base,
+                None => self.value_against(&sim, pid, frozen.as_deref()) - base,
             };
             let better = best
                 .as_ref()
