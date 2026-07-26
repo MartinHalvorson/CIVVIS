@@ -122,13 +122,9 @@ fn auto_dimension(args: &[String], key: &str, players: i64, width: bool) -> i32 
 }
 
 /// The world's shape, which is asked for separately from what fills it.
-/// `--map true_start_earth` is the one type that overrules it: Earth is drawn
-/// from real longitudes and latitudes and closes on itself.
+/// Fixed geography changes where the land comes from, not which shape it is
+/// sampled onto: even True Start Earth can be a flat atlas or a globe.
 fn map_topology(args: &[String]) -> MapTopology {
-    let script = MapScript::from_id(&arg_text(args, "--map", "pangaea")).unwrap_or_default();
-    if script.is_fixed_geography() {
-        return MapTopology::Planet;
-    }
     // `--map planet` named a world type before the globe became a shape of its
     // own, and still means both halves of what it meant then.
     let default = if arg_text(args, "--map", "pangaea") == "planet" {
