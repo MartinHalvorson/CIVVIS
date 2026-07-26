@@ -161,6 +161,12 @@ pub struct HarvestSpec {
 pub struct ImprovementSpec {
     #[serde(default)]
     pub tech: Option<String>,
+    /// `PlunderType` and `PlunderAmount`: which yield pillaging this pays and
+    /// how much. Gold and heal pay 50, Science, Culture and Faith pay 25.
+    #[serde(default)]
+    pub plunder_type: Option<String>,
+    #[serde(default)]
+    pub plunder_amount: f64,
     #[serde(default)]
     pub civic: Option<String>,
     #[serde(default)]
@@ -331,6 +337,12 @@ impl UnitSpec {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct DistrictSpec {
     pub cost: f64,
+    /// `PlunderType` and `PlunderAmount`: which yield pillaging this pays and
+    /// how much. Gold and heal pay 50, Science, Culture and Faith pay 25.
+    #[serde(default)]
+    pub plunder_type: Option<String>,
+    #[serde(default)]
+    pub plunder_amount: f64,
     #[serde(default)]
     pub maintenance: f64,
     #[serde(default)]
