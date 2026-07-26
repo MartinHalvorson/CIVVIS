@@ -811,7 +811,8 @@
   body.cinema-mode.cinema-idle #playerhud { opacity: .62; }
   body.cinema-mode #playerhud .leader-region { display: none; }
   body.cinema-mode #playerhud .victory-track { min-height: 60px; padding-top: 4px; }
-  body.cinema-mode #zoomctl, body.cinema-mode #ubar, body.cinema-mode #modeline,
+  body.cinema-mode #zoomctl, body.cinema-mode #map-lenses,
+  body.cinema-mode #ubar, body.cinema-mode #modeline,
   body.cinema-mode .minimap-frame { display: none !important; }
   body.cinema-mode #cinema-story {
     position: absolute; z-index: 10; left: clamp(34px, 4.5vw, 82px); bottom: clamp(68px, 7vh, 96px);
@@ -883,6 +884,7 @@
      camera movement and explicit exit remain over the 3D map. */
   body.cinema-mode #playerhud, body.cinema-mode #victoryhud,
   body.cinema-mode .minimap-frame, body.cinema-mode #zoomctl,
+  body.cinema-mode #map-lenses,
   body.cinema-mode #ubar, body.cinema-mode #modeline, body.cinema-mode #tip,
   body.cinema-mode #cinema-prologue, body.cinema-mode #cinema-frame,
   body.cinema-mode #cinema-story, body.cinema-mode #cinema-follow { display: none !important; }
@@ -902,6 +904,38 @@
   }
   #zoomctl button { width: 34px; height: 34px; margin: 0; padding: 0; border: 0; background: transparent; font-size: 16px; }
   #zoomctl button + button { border-left: 1px solid #ffffff0c; border-radius: 0; }
+  #map-lenses {
+    position: absolute; z-index: 14; bottom: 67px; left: 16px;
+    display: flex; align-items: stretch; gap: 3px; padding: 4px;
+    border: 1px solid #3c554c; border-radius: 13px;
+    background: #0a1512df; box-shadow: 0 12px 26px #0006;
+    backdrop-filter: blur(12px);
+  }
+  .map-lens-title {
+    display: flex; align-items: center; padding: 0 8px 0 6px;
+    color: #81958d; font-size: 7px; font-weight: 900; letter-spacing: .15em;
+    text-transform: uppercase;
+  }
+  #map-lenses button {
+    position: relative; width: auto; min-width: 80px; height: 34px;
+    display: grid; grid-template-columns: 18px 1fr 15px; align-items: center; gap: 5px;
+    margin: 0; padding: 0 7px; border: 1px solid transparent; border-radius: 8px;
+    background: transparent; color: #b8c7c0; font-size: 9px; font-weight: 800;
+    text-align: left;
+  }
+  #map-lenses button:hover { transform: none; border-color: #4d6b60; background: #183027; }
+  #map-lenses button.active {
+    border-color: #d7b66a9c; color: #fff6dc;
+    background: linear-gradient(135deg, #4b4226cc, #173128e8);
+    box-shadow: inset 0 1px #ffffff16, 0 0 13px #d7b66a1c;
+  }
+  .map-lens-icon { color: #e6c978; font-size: 15px; line-height: 1; text-align: center; }
+  #map-lenses button[data-map-lens="empire"] .map-lens-icon { color: #9ed8ca; }
+  #map-lenses kbd {
+    min-width: 15px; height: 15px; margin: 0; padding: 0;
+    border-color: #ffffff16; color: #899b94; font-size: 7px;
+  }
+  #map-lenses button.active kbd { color: #fff0c5; border-color: #d7b66a55; }
   /* The compass reads the map's bearing, so it is an instrument rather than a
      label: the needle turns with the world and the dial stays put. A
      civilization that cannot yet find north has the dial and no needle. */
@@ -1685,6 +1719,9 @@
     #side { position: fixed; inset: 132px auto 8px 8px; width: min(390px, calc(100% - 16px)); min-width: 0; height: auto; max-height: calc(100dvh - 140px); border: 1px solid #40584f; border-radius: 16px; }
     body.sidebar-hidden #side { width: min(390px, calc(100% - 16px)); transform: translateX(calc(-100% - 16px)); opacity: 0; }
     #zoomctl { left: 12px; bottom: 12px; }
+    #map-lenses { left: 12px; bottom: 63px; }
+    .map-lens-title, .map-lens-label { display: none; }
+    #map-lenses button { min-width: 44px; grid-template-columns: 20px 15px; padding: 0 5px; }
     #ubar { min-width: 0; width: calc(100% - 28px); bottom: 18px; }
     #trade { inset: 2% 8px; }
     .trade-balance { display: none; }
@@ -2043,7 +2080,8 @@
   body.overlay-players-hidden #playerhud,
   body.overlay-victory-hidden #victoryhud,
   body.overlay-minimap-hidden .minimap-frame,
-  body.overlay-controls-hidden #zoomctl { display: none !important; }
+  body.overlay-controls-hidden #zoomctl,
+  body.overlay-controls-hidden #map-lenses { display: none !important; }
   body.sidebar-hidden #collapsepause:not([hidden]) { display: block; }
   #collapsepause[hidden] { display: none; }
 
@@ -2183,6 +2221,19 @@
     <button id="zout" title="Zoom out" aria-label="Zoom out">−</button>
     <button id="compass" type="button" title="Face north · R" aria-label="Face north"><span id="compass-needle"></span></button>
     <button class="overlay-close" type="button" data-overlay-close="controls" aria-label="Hide map controls; restore them in Display settings" title="Hide map controls · restore in Display settings">✕</button>
+  </div>
+  <div id="map-lenses" role="toolbar" aria-label="Map lenses">
+    <span class="map-lens-title" aria-hidden="true">Lenses</span>
+    <button type="button" data-map-lens="settler" aria-pressed="false"
+      title="Settler lens — compare legal city sites (2)">
+      <span class="map-lens-icon" aria-hidden="true">⌂</span>
+      <span class="map-lens-label">Settler</span><kbd aria-hidden="true">2</kbd>
+    </button>
+    <button type="button" data-map-lens="empire" aria-pressed="false"
+      title="Empire lens — isolate land, water, and civilization frontiers (4)">
+      <span class="map-lens-icon" aria-hidden="true">◈</span>
+      <span class="map-lens-label">Empire</span><kbd aria-hidden="true">4</kbd>
+    </button>
   </div>
   <div id="ubar"></div>
   <div id="notify" aria-label="Notifications" aria-live="polite"></div>
@@ -2567,7 +2618,7 @@
       <span><kbd>Middle-click</kbd>Centre on that tile</span><span><kbd>Scroll</kbd>Zoom · double-click to dive</span>
       <span class="shortcut-head">CIVVIS additions</span>
       <span><kbd>1</kbd>Next action</span><span><kbd>2</kbd>Settler lens</span>
-      <span><kbd>3</kbd>Map tacks</span><span><kbd>Esc</kbd>Close · cancel</span>
+      <span><kbd>3</kbd>Map tacks</span><span><kbd>4</kbd>Empire lens</span>
       <span><kbd>F8</kbd>Diplomacy</span><span><kbd>^ D</kbd>Quick Deals</span>
       <span><kbd>^ A</kbd>Auto-play</span><span><kbd>^ U</kbd>Hide the command deck</span>
       <span><kbd>= / −</kbd>Zoom without a keypad</span><span><kbd>Tab</kbd>Next unit needing orders</span>
@@ -2882,7 +2933,7 @@ const VICTORY_TRACKS = [
 ];
 // ---------------------------------------------------------------- state
 let state = null, sel = null, selCity = null, RULES = null;
-let lensOn = false, tackMode = false, tacks = [], lastSeed = null, cycleIdx = -1;
+let mapLens = null, tackMode = false, tacks = [], lastSeed = null, cycleIdx = -1;
 // Civ 6's M, A and R arm the next click rather than acting on the spot. The
 // flag lives up here with the other map modes because `modeline()` reads it
 // and runs long before the key bindings further down are defined.
@@ -10766,17 +10817,21 @@ function planetLaneEnd(lane, edge, cornerId, px, py, off) {
 function drawPlanetFrontiers(cells) {
   const lanes = planetFrontierLanes(cells);
   if (!lanes.size) return;
+  const empire = mapLens === "empire";
   cx.lineCap = "round"; cx.lineJoin = "round";
   for (const [owner, lane] of lanes) {
     const [dark, light] = jerseyLanes(owner);
+    const minor = !!state.players[owner]?.is_minor;
+    const presence = empire && minor ? .22 : 1;
     // The globe's ground is the same compact strategic terrain the flat view
     // has, so it takes the flat view's treatment: a near-black keyline reaching
     // back across the seam for a stable silhouette, then the seam lane, then
     // the light lane furthest inside the empire that owns it.
-    for (const [w, alpha, color, off] of [[7.6, .78, "#090d12", 1.5],
-                                          [2.8, 1, dark, 1.5],
-                                          [2.8, 1, light, 4.2]]) {
-      cx.strokeStyle = color; cx.globalAlpha = alpha;
+    const passes = empire
+      ? [[10.2, .86, "#070b0d", 1.5], [4.1, 1, dark, 1.5], [4.1, 1, light, 5.3]]
+      : [[7.6, .78, "#090d12", 1.5], [2.8, 1, dark, 1.5], [2.8, 1, light, 4.2]];
+    for (const [w, alpha, color, off] of passes) {
+      cx.strokeStyle = color; cx.globalAlpha = alpha * presence;
       for (const [weight, edges] of lane.weights) {
         cx.lineWidth = w * weight;
         cx.beginPath();
@@ -11859,22 +11914,25 @@ function planetTerrainPatterns(camera, scale) {
 function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
                           visible, spectator) {
   const painted = MODE.painted;
+  const empire = mapLens === "empire";
   const known = cell => spectator || visible.has(key(cell.tile.pos));
 
   // Opaque, slightly overlapping underpaint is the tiling invariant. Every
   // later translucent layer can miss an antialiased edge without exposing the
   // ocean sphere through a land seam.
   for (const cell of cells) {
-    const base = TERRAIN[cell.tile.terrain] || "#4b5960";
+    const base = empire
+      ? (isWater(cell.tile) ? "#173846" : "#687068")
+      : (TERRAIN[cell.tile.terrain] || "#4b5960");
     const light = camera.chart ? 1 : .70 + .34 * Math.max(0, cell.center.z);
     planetPaintPath(cx, cell, .8);
     cx.fillStyle = known(cell)
-      ? shade(base, painted ? .92 + light * .12 : light)
+      ? shade(base, empire ? .82 + light * .18 : painted ? .92 + light * .12 : light)
       : shade(base, .30);
     cx.fill();
   }
 
-  if (painted) {
+  if (painted && !empire) {
     // One compound path per biome: neighboring grass cells sample one field
     // and neighboring ocean cells sample one sea. Repainting the atlas from
     // each tile centre is the checkerboard this renderer exists to avoid.
@@ -11931,7 +11989,9 @@ function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
     const owner = cell.tile.owner;
     if (owner === null || owner === undefined) continue;
     planetPaintPath(cx, cell, .22);
-    cx.globalAlpha = painted ? (MODE.atmosphere ? .14 : .17) : .28;
+    const minor = !!state.players[owner]?.is_minor;
+    cx.globalAlpha = empire ? (minor ? .07 : .42)
+      : painted ? (MODE.atmosphere ? .14 : .17) : .28;
     cx.fillStyle = pcol(owner);
     cx.fill();
   }
@@ -11939,7 +11999,7 @@ function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
 
   // Strategic owns the always-on cell diagram. Painted and Cinematic dissolve
   // the honeycomb unless the player explicitly asks for the G grid overlay.
-  if (radius >= SKY_MARKERS && (!painted || SHOW_GRID)) {
+  if (!empire && radius >= SKY_MARKERS && (!painted || SHOW_GRID)) {
     cx.strokeStyle = painted
       ? (MODE.atmosphere ? "rgba(234,242,231,.19)" : "rgba(33,29,20,.22)")
       : "rgba(214,235,231,.075)";
@@ -12025,6 +12085,133 @@ function drawPlanetSurfaceDetail(cell) {
   cx.globalAlpha = 1;
 }
 
+function settleLensColor(quality, alpha) {
+  const q = Math.max(0, Math.min(1, quality));
+  const red = Math.round(205 - q * 142);
+  const green = Math.round(151 + q * 91);
+  const blue = Math.round(72 + q * 42);
+  return `rgba(${red},${green},${blue},${alpha})`;
+}
+function settleWaterColor(water) {
+  return water === "fresh" ? "#72d9ff" : water === "coast" ? "#89d8c7" : "#d2af68";
+}
+function drawPlanetSettlerLens(cells) {
+  const lens = settlerLensSites();
+  for (const cell of cells) {
+    const site = lens.sites.get(key(cell.tile.pos));
+    if (!site) {
+      if (isWater(cell.tile)) continue;
+      planetPaintPath(cx, cell, .15);
+      cx.fillStyle = "rgba(38,24,30,.48)"; cx.fill();
+      continue;
+    }
+    const quality = settleSiteQuality(site, lens);
+    planetPaintPath(cx, cell, .15);
+    cx.fillStyle = settleLensColor(quality, .26 + quality * .38); cx.fill();
+    planetPath(cx, cell.points);
+    cx.strokeStyle = settleWaterColor(site.water);
+    cx.lineWidth = quality > .76 ? 2.2 : 1.15;
+    cx.globalAlpha = .58 + quality * .4; cx.stroke(); cx.globalAlpha = 1;
+  }
+}
+
+function drawSettlerLensFlat(tiles) {
+  const lens = settlerLensSites();
+  cx.save();
+  for (const tile of tiles) {
+    const [x, yy] = hexXY(tile.pos[0], tile.pos[1]);
+    const y = yy - elev(tile);
+    const site = lens.sites.get(key(tile.pos));
+    if (!site) {
+      if (isWater(tile)) continue;
+      hexPath(x, y, S + .2); cx.fillStyle = "rgba(38,24,30,.48)"; cx.fill();
+      continue;
+    }
+    const quality = settleSiteQuality(site, lens);
+    hexPath(x, y, S + .2);
+    cx.fillStyle = settleLensColor(quality, .25 + quality * .42); cx.fill();
+    cx.strokeStyle = settleWaterColor(site.water);
+    cx.lineWidth = (quality > .76 ? 2.7 : 1.5) * UI_K();
+    cx.globalAlpha = .58 + quality * .4; cx.stroke(); cx.globalAlpha = 1;
+    if (quality > .84) {
+      cx.fillStyle = "#f8f0c8";
+      cx.beginPath(); cx.arc(x, y, 2.6 * UI_K(), 0, 7); cx.fill();
+    }
+  }
+  cx.restore();
+}
+
+// Empire lens is deliberately a replacement ground pass. Painting it after
+// terrain, routes, improvements, resources and yields means every map style
+// collapses to the same two land/water materials without changing hit-testing
+// or the normal renderer. Major territory remains saturated; minor territory
+// is present at a fraction of that weight so the eye reads civilization-scale
+// frontiers first.
+function drawEmpireLensFlat(tiles) {
+  cx.save();
+  for (const tile of tiles) {
+    const [x, yy] = hexXY(tile.pos[0], tile.pos[1]);
+    const y = yy - elev(tile);
+    hexPath(x, y, S + .85);
+    cx.fillStyle = isWater(tile) ? "#173846" : "#687068"; cx.fill();
+    if (tile.owner === null || tile.owner === undefined) continue;
+    hexPath(x, y, S + .45);
+    cx.fillStyle = pcol(tile.owner);
+    cx.globalAlpha = state.players[tile.owner]?.is_minor ? .07 : .42;
+    cx.fill(); cx.globalAlpha = 1;
+  }
+
+  const axis = [];
+  for (let i = 0; i < 6; i++) {
+    const [c1, c2] = EDGE_CORNERS[i];
+    const [ax, ay] = corner(0, 0, S, c1), [bx, by] = corner(0, 0, S, c2);
+    let ex = bx - ax, ey = by - ay;
+    const length = Math.hypot(ex, ey) || 1; ex /= length; ey /= length;
+    let nx = -ey, ny = ex;
+    if (nx * (ax + bx) + ny * (ay + by) > 0) { nx = -nx; ny = -ny; }
+    axis.push([nx, ny]);
+  }
+  const borders = new Map();
+  for (const tile of tiles) {
+    const owner = tile.owner;
+    if (owner === null || owner === undefined) continue;
+    const [x, yy] = hexXY(tile.pos[0], tile.pos[1]);
+    const y = yy - elev(tile);
+    for (let i = 0; i < 6; i++) {
+      const neighbor = nbrTile(tile.pos, DIRS[i]);
+      if (neighbor?.owner === owner) continue;
+      const [c1, c2] = EDGE_CORNERS[i];
+      const segment = [...corner(x, y, S, c1), ...corner(x, y, S, c2), i];
+      const group = borders.get(owner);
+      if (group) group.push(segment); else borders.set(owner, [segment]);
+    }
+  }
+  const pathLane = (segments, distance) => {
+    cx.beginPath();
+    for (const [ax, ay, bx, by, side] of segments) {
+      const [nx, ny] = axis[side];
+      cx.moveTo(ax + nx * distance, ay + ny * distance);
+      cx.lineTo(bx + nx * distance, by + ny * distance);
+    }
+  };
+  const k = UI_K();
+  cx.lineCap = "round"; cx.lineJoin = "round";
+  for (const [owner, segments] of borders) {
+    const [dark, light] = jerseyLanes(owner);
+    const presence = state.players[owner]?.is_minor ? .22 : 1;
+    for (const [width, alpha, color, distance] of [
+      [10.2 * k, .88, "#070b0d", 1.4 * k],
+      [4.2 * k, 1, dark, 1.4 * k],
+      [4.2 * k, 1, light, 5.5 * k],
+    ]) {
+      pathLane(segments, distance);
+      cx.strokeStyle = color; cx.lineWidth = width; cx.globalAlpha = alpha * presence;
+      cx.stroke();
+    }
+  }
+  cx.restore();
+}
+
 function drawPlanetMap() {
   if (!planetMap()) return false;
   if (!planetReady()) {
@@ -12046,6 +12233,7 @@ function drawPlanetMap() {
   const [centerX, centerY] = planetEarthCenter(radius);
   const visible = new Set(state.visible.map(key));
   const spectator = !Number.isInteger(state.view_player);
+  const empireLens = mapLens === "empire";
   PLANET_HIT_CELLS = [];
 
   cx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -12134,13 +12322,13 @@ function drawPlanetMap() {
 
   // Strategic keeps the compact command-map symbols. Painted and Cinematic
   // use landform paint clipped to each real spherical face instead.
-  if (MODE.painted && radius >= SKY_MARKERS) {
+  if (!empireLens && MODE.painted && radius >= SKY_MARKERS) {
     for (const cell of cells) {
       if ((!spectator && !visible.has(key(cell.tile.pos))) ||
           cell.center.z < (onSheet ?? .04)) continue;
       drawPlanetSurfaceDetail(cell);
     }
-  } else if (scale > .42) {
+  } else if (!empireLens && scale > .42) {
     cx.textAlign = "center"; cx.textBaseline = "middle";
     cx.font = `${Math.max(7, Math.min(13, 8 * scale))}px serif`;
     for (const cell of cells) {
@@ -12150,6 +12338,7 @@ function drawPlanetMap() {
       cx.fillText(glyph, cell.center.x, cell.center.y); cx.globalAlpha = 1;
     }
   }
+  if (mapLens === "settler") drawPlanetSettlerLens(cells);
   // Cities and armies are drawn at a floor size so they stay clickable, and a
   // four-pixel dot on a world the size of a coin is no longer a city on it.
   // Past that the globe is one object among several and only reads as one.
@@ -12159,6 +12348,8 @@ function drawPlanetMap() {
   for (const city of state.cities) {
     const cell = cellByKey.get(key(city.pos));
     if (!cell || cell.center.z < (onSheet ?? .02)) continue;
+    const minorLens = empireLens && !!state.players[city.owner]?.is_minor;
+    if (minorLens) { cx.save(); cx.globalAlpha = .28; }
     const r = Math.max(4, Math.min(8, 5 * Math.sqrt(scale)));
     cx.fillStyle = cityBannerColor(city.owner); cx.strokeStyle = "#f7e5b1"; cx.lineWidth = 1.2;
     cx.beginPath(); cx.arc(cell.center.x, cell.center.y, r, 0, 7); cx.fill(); cx.stroke();
@@ -12168,8 +12359,9 @@ function drawPlanetMap() {
       cx.strokeText(city.name, cell.center.x, cell.center.y - r - 5);
       cx.fillText(city.name, cell.center.x, cell.center.y - r - 5);
     }
+    if (minorLens) cx.restore();
   }
-  for (const unit of state.units) {
+  for (const unit of empireLens ? [] : state.units) {
     const cell = cellByKey.get(key(unit.pos));
     if (!cell || cell.center.z < (onSheet ?? .025)) continue;
     const r = Math.max(3.5, Math.min(7, 4.5 * Math.sqrt(scale)));
@@ -12177,7 +12369,7 @@ function drawPlanetMap() {
     cx.lineWidth = sel?.id === unit.id ? 2.3 : 1.2;
     cx.beginPath(); cx.arc(cell.center.x + r * .7, cell.center.y + r * .6, r, 0, 7); cx.fill(); cx.stroke();
   }
-  for (const tack of tacks) {
+  for (const tack of empireLens ? [] : tacks) {
     const cell = cellByKey.get(key(tack));
     if (!cell) continue;
     cx.fillStyle = "#ffd86b"; cx.font = "bold 13px serif"; cx.fillText("◆", cell.center.x, cell.center.y);
@@ -12949,27 +13141,18 @@ function draw() {
     if (t.wonder && !drawWorldWonderSprite(t.wonder, x, y)) drawWonder(x, y);
     if (SHOW_YIELDS && !t.district && !t.wonder) drawTileYields(t, x, y, workedSet.has(k));
   }
-  // --- settler lens
-  if (lensOn) {
-    const vals = [];
-    for (const t of tiles) if (validSettle(t)) vals.push([t.pos, settleValue(t.pos)]);
-    const mxv = Math.max(1, ...vals.map(v => v[1]));
-    for (const [p2, v] of vals) {
-      const t2 = TMAP.get(key(p2));
-      const [x, yy] = hexXY(p2[0], p2[1]);
-      const y = yy - (t2 ? elev(t2) : 0);
-      hexPath(x, y);
-      cx.fillStyle = `rgba(80,255,120,${(0.12 + 0.5 * v / mxv).toFixed(2)})`;
-      cx.fill();
-    }
-  }
+  // Lens passes replace or grade the finished ground while leaving the map's
+  // geometry and controls alone. Empire goes first because Settler's site
+  // marks are meant to sit over terrain, never over another lens.
+  if (mapLens === "empire") drawEmpireLensFlat(tiles);
+  else if (mapLens === "settler") drawSettlerLensFlat(tiles);
   // --- raids in the making. A barbarian camp that finds a city goes on alert
   // and starts throwing raiders at it, and the wire has said so all along —
   // which camp, which city, and for how long — while the map drew a tent
   // identical to every other tent. This is the one threat on the board that
   // arrives with no declaration and no border to watch, so it is exactly the
   // thing a glance should catch.
-  for (const al of state.barbarian_alerts || []) {
+  for (const al of mapLens === "empire" ? [] : (state.barbarian_alerts || [])) {
     if (!al || !al.camp) continue;
     const ct = TMAP.get(key(al.camp));
     const [ax, ayy] = hexXY(al.camp[0], al.camp[1]);
@@ -13005,7 +13188,7 @@ function draw() {
   // --- land changing hands: a ring in the claiming empire's color, opening out
   // of the tile and fading. A city growing sends up one; a conquest sends up a
   // wave of them, which is exactly the difference the eye should register.
-  for (let i = anim.claims.length - 1; i >= 0; i--) {
+  for (let i = mapLens === "empire" ? -1 : anim.claims.length - 1; i >= 0; i--) {
     const cl = anim.claims[i];
     const e = (performance.now() - cl.t0) / (cl.big ? 1500 : 1050);
     if (e >= 1) { anim.claims.splice(i, 1); continue; }
@@ -13095,10 +13278,10 @@ function draw() {
     cx.setLineDash([]);
     hexPath(x2, y2); cx.stroke();
   }
-  drawCinematicDisasterField(sceneTime);
+  if (mapLens !== "empire") drawCinematicDisasterField(sceneTime);
   // --- tacks
   cx.font = "16px sans-serif";
-  for (const tk of tacks) {
+  for (const tk of mapLens === "empire" ? [] : tacks) {
     const tt = TMAP.get(key(tk));
     const [x, yy] = hexXY(tk[0], tk[1]);
     cx.fillText("📍", x, yy - (tt ? elev(tt) : 0) - 6);
@@ -13110,6 +13293,8 @@ function draw() {
     const ct = TMAP.get(key(c.pos));
     const [x, yy] = hexXY(c.pos[0], c.pos[1]);
     const y = yy - (ct ? elev(ct) : 0);
+    const minorLens = mapLens === "empire" && !!state.players[c.owner]?.is_minor;
+    if (minorLens) { cx.save(); cx.globalAlpha = .28; }
     // A city bleeding loyalty defects — it changes hands without a shot fired,
     // which is among the most consequential things that can happen to a border
     // and gave no warning at all on the map. Only cities actually slipping draw
@@ -13255,6 +13440,7 @@ function draw() {
     if (selCity && selCity.id === c.id) {
       hexPath(x, y); cx.strokeStyle = "#f0c674"; cx.lineWidth = 3; cx.stroke();
     }
+    if (minorLens) cx.restore();
   }
   // --- espionage in progress. A spy is the only piece on the board with no
   // presence on it at all: it sits inside a city, runs a mission with a known
@@ -13263,7 +13449,7 @@ function draw() {
   // left before the job lands.
   // The server sends only spies the observer owns or has captured (a spectator
   // sees every side), so drawing them reveals nothing that was hidden.
-  for (const sp of state.spies || []) {
+  for (const sp of mapLens === "empire" ? [] : (state.spies || [])) {
     const m = sp && sp.mission;
     if (!m || !m.target) continue;
     const mt = TMAP.get(key(m.target));
@@ -13300,7 +13486,7 @@ function draw() {
   // --- what a fight leaves on the ground. Scorched earth in the fallen side's
   // colour, laid on the board plane and under the living, so a contested tile
   // still looks contested a few seconds after the bodies are gone.
-  for (let i = anim.scars.length - 1; i >= 0; i--) {
+  for (let i = mapLens === "empire" ? -1 : anim.scars.length - 1; i >= 0; i--) {
     const sc = anim.scars[i];
     const e = (now0 - sc.t0) / sc.dur;
     if (e < 0) continue;
@@ -13318,7 +13504,7 @@ function draw() {
   for (let i = anim.battles.length - 1; i >= 0; i--)
     if (now0 >= anim.battles[i].endsAt) anim.battles.splice(i, 1);
   const cinemaSurvey = cinemaActive() && cam.scale < 1.08;
-  const sorted = [...cinematicSurveyUnits(state.units)].sort((a, b) =>
+  const sorted = [...cinematicSurveyUnits(mapLens === "empire" ? [] : state.units)].sort((a, b) =>
     (hexXY(a.pos[0], a.pos[1])[1] - hexXY(b.pos[0], b.pos[1])[1]) ||
     (CIVILIAN_UNITS.has(a.type) ? -1 : 1));
   const now = performance.now();
@@ -13512,7 +13698,8 @@ function draw() {
   // The deposits the figures were standing on. Held back above so a badge is
   // not a third hidden behind the unit occupying its tile; drawn here, in the
   // same seat and at the same weight, only after the figures are down.
-  for (const [t, x, y] of occupiedResourceTiles) drawResourceBadge(t, x, y);
+  if (mapLens !== "empire")
+    for (const [t, x, y] of occupiedResourceTiles) drawResourceBadge(t, x, y);
   // --- projectiles. Everything above happens on the ground; a shot happens
   // over it, so it is drawn after the figures and before the numbers. The path
   // is a parabola between the two hexes — a lobbed stone climbs and drops, a
@@ -17148,22 +17335,65 @@ const CONTINENT_NAMES = ["Africa", "Amasia", "America", "Antarctica", "Arctica",
   "North America", "Novopangaea", "Nuna", "Oceania", "Pangaea",
   "Pangaea Ultima", "Pannotia", "Rodinia", "Siberia", "South America",
   "Terra Australis", "Ur"];
+const SETTLE_DISK = [];
+for (let q = -2; q <= 2; q++) for (let r = -2; r <= 2; r++)
+  if (Math.max(Math.abs(q), Math.abs(r), Math.abs(q + r)) <= 2)
+    SETTLE_DISK.push([q, r]);
+function settleWaterAccess(t) {
+  if (t.river || DIRS.some(d => nbrTile(t.pos, d)?.feature === "oasis")) return "fresh";
+  if (DIRS.some(d => { const n = nbrTile(t.pos, d); return n && isWater(n); })) return "coast";
+  return "dry";
+}
 function settleValue(pos) {
-  let v = 0;
-  const D = [[0,0],[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];
-  for (const dd of D) {
+  let value = 0;
+  for (const dd of SETTLE_DISK) {
     const t = nbrTile(pos, dd);
-    if (!t) continue;
+    if (!t || (t.owner !== null && t.owner !== undefined && t.owner !== state.player)) continue;
+    const distance = Math.max(Math.abs(dd[0]), Math.abs(dd[1]), Math.abs(dd[0] + dd[1]));
+    const weight = distance <= 1 ? 1 : .45;
     const y = tileYieldFull(t);
-    v += y.food * 1.2 + y.production + y.gold * 0.3;
+    value += weight * (y.food * 2 + y.production * 2.2 + y.gold * .7 +
+      y.science * 1.2 + y.culture * 1.2 + y.faith * .4);
+    const resource = ruleSpec("resources", t.resource);
+    if (resource) value += weight * (resource.class === "luxury" ? 5
+      : resource.class === "strategic" ? 4 : 1.5);
   }
-  return v;
+  const tile = TMAP.get(key(pos));
+  const water = tile ? settleWaterAccess(tile) : "dry";
+  value += water === "fresh" ? 14 : water === "coast" ? 6 : -5;
+  if (tile && Number.isFinite(tile.appeal)) value += Math.max(-3, tile.appeal) * .7;
+  const enemyDistance = Math.min(20, ...state.cities
+    .filter(city => city.owner !== state.player && !state.players[city.owner]?.is_barbarian)
+    .map(city => whexDist(pos, city.pos)));
+  if (enemyDistance < 6) value -= (6 - enemyDistance) * 6;
+  return value;
 }
 function validSettle(t) {
-  if (isWater(t) || t.terrain === "mountain") return false;
+  if (isWater(t) || t.terrain === "mountain" || tileImpassable(t)) return false;
   if (t.owner !== null && t.owner !== undefined && t.owner !== state.player) return false;
   for (const c of state.cities) if (whexDist(t.pos, c.pos) < 4) return false;
   return true;
+}
+let settleLensCache = { state:null, rules:null, sites:new Map(), low:0, high:1 };
+function settlerLensSites() {
+  if (settleLensCache.state === state && settleLensCache.rules === RULES) return settleLensCache;
+  const sites = new Map();
+  const values = [];
+  for (const tile of state.map.tiles) {
+    if (!validSettle(tile)) continue;
+    const value = settleValue(tile.pos);
+    const site = {tile, value, water:settleWaterAccess(tile)};
+    sites.set(key(tile.pos), site); values.push(value);
+  }
+  values.sort((a, b) => a - b);
+  const at = fraction => values[Math.min(values.length - 1,
+    Math.max(0, Math.floor((values.length - 1) * fraction)))] ?? 0;
+  const low = at(.12), high = Math.max(low + 1, at(.92));
+  settleLensCache = {state, rules:RULES, sites, low, high};
+  return settleLensCache;
+}
+function settleSiteQuality(site, lens = settlerLensSites()) {
+  return Math.max(0, Math.min(1, (site.value - lens.low) / (lens.high - lens.low)));
 }
 function tackStoreKey() { return "civvis-tacks-" + (lastSeed === null ? "x" : lastSeed); }
 function loadTacks() {
@@ -17171,15 +17401,34 @@ function loadTacks() {
   catch { tacks = []; }
 }
 function saveTacks() { localStorage.setItem(tackStoreKey(), JSON.stringify(tacks)); }
+function syncMapLensControls() {
+  for (const button of document.querySelectorAll("[data-map-lens]")) {
+    const active = button.dataset.mapLens === mapLens;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  }
+}
+function setMapLens(next) {
+  mapLens = mapLens === next ? null : next;
+  tackMode = false;
+  syncMapLensControls(); modeline();
+  if (state) { draw(); drawMini(); }
+}
+for (const button of document.querySelectorAll("[data-map-lens]"))
+  button.onclick = () => setMapLens(button.dataset.mapLens);
 function modeline() {
   const m = [];
-  if (lensOn) m.push("SETTLER LENS — greener is better (2 to exit)");
+  if (mapLens === "settler")
+    m.push("SETTLER LENS — green is stronger · blue edge has fresh water (2 to exit)");
+  if (mapLens === "empire")
+    m.push("EMPIRE LENS — major frontiers emphasized · city-states translucent (4 to exit)");
   if (tackMode) m.push("TACK MODE — click to place/remove a 📍 (3 to exit)");
   if (interfaceMode && INTERFACE_MODE_NOTE[interfaceMode]) m.push(INTERFACE_MODE_NOTE[interfaceMode]);
   const el = document.getElementById("modeline");
   el.textContent = m.join("   ");
   el.style.display = m.length ? "block" : "none";
 }
+syncMapLensControls();
 modeline();
 
 // ---------------------------------------------------------------- camera
@@ -19028,9 +19277,9 @@ function togglePanel(force, persist = true) {
 // CIVVIS has nothing to bind to, and the CIVVIS-only extras, which live only
 // on keys and chords Civ 6 leaves free.
 //
-// Three keys are deliberate overrides that keep their CIVVIS meaning: 1 is
-// next action, 2 is the settler lens and 3 places a tack. Civ 6 spends 1, 2
-// and 3 on the religion, continent and appeal lenses, none of which exist here.
+// Four keys are deliberate overrides that keep their CIVVIS meaning: 1 is
+// next action, 2 is the settler lens, 3 places a tack and 4 is the empire
+// lens. Civ 6 spends 1–4 on lenses CIVVIS does not otherwise expose.
 // ===================================================================
 
 // ---- map overlays. Each setter is the one place that writes the flag, the
@@ -19359,8 +19608,11 @@ const CIV6_BINDINGS = [
 // here can shadow a binding somebody arrived with.
 const CIVVIS_BINDINGS = [
   {id: "NextAction", key: "1", run: () => nextAction()},
-  {id: "SettlerLens", key: "2", run: () => { lensOn = !lensOn; tackMode = false; modeline(); draw(); }},
-  {id: "PlaceTack", key: "3", spectator: true, run: () => { tackMode = !tackMode; lensOn = false; modeline(); draw(); }},
+  {id: "SettlerLens", key: "2", spectator: true, run: () => setMapLens("settler")},
+  {id: "PlaceTack", key: "3", spectator: true, run: () => {
+    tackMode = !tackMode; mapLens = null; syncMapLensControls(); modeline(); draw();
+  }},
+  {id: "EmpireLens", key: "4", spectator: true, run: () => setMapLens("empire")},
   {id: "Diplomacy", key: "F8", run: () => toggleDiplomacy()},
   {id: "QuickDeals", key: "d", ctrl: true, run: () => toggleTrade()},
   {id: "NextUnitTab", key: "Tab", run: () => advanceToNextUnit(true)},
@@ -19438,7 +19690,8 @@ document.addEventListener("keydown", ev => {
     if (cameraFollowManual) { stopCameraFollow(); return; }
     if (fullscreenMapRestore) { toggleFullscreenMap(); return; }
     if (cinemaActive()) { setCinemaMode(false); return; }
-    sel = null; selCity = null; lensOn = false; tackMode = false;
+    sel = null; selCity = null; mapLens = null; tackMode = false;
+    syncMapLensControls();
     modeline(); draw(); drawSide(); drawUbar();
   }
 });
