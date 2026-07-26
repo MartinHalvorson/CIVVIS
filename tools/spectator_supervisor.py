@@ -833,6 +833,7 @@ def session_settings(state: dict[str, Any], defaults: dict[str, Any]) -> dict[st
         else int(state.get("max_turns") or defaults["turns"]),
         "map": game_map.get("script") or defaults["map"],
         "speed": state.get("game_speed") or defaults["speed"],
+        "leader_pool": state.get("leader_pool") or defaults.get("leader_pool", "civ6"),
     }
     victory_conditions = state.get("victory_conditions")
     if isinstance(victory_conditions, dict):
@@ -858,6 +859,9 @@ def normalized_simulation_settings(values: Any) -> dict[str, Any] | None:
     if not isinstance(values, dict):
         return None
     try:
+        leader_pool = str(values.get("leader_pool", "civ6"))
+        if leader_pool not in ("civ6", "expanded"):
+            return None
         return {
             "players": int(values["players"]),
             "width": int(values["width"]),
@@ -866,6 +870,7 @@ def normalized_simulation_settings(values: Any) -> dict[str, Any] | None:
             "turns": int(values["turns"]),
             "map": str(values["map"]),
             "speed": str(values["speed"]),
+            "leader_pool": leader_pool,
             "victories": [str(value) for value in values["victories"]],
         }
     except (KeyError, TypeError, ValueError):
@@ -994,6 +999,8 @@ def server_command(
         str(settings["map"]),
         "--speed",
         str(settings["speed"]),
+        "--leader-pool",
+        str(settings.get("leader_pool", "civ6")),
         "--seed",
         str(random.randrange(1_000_000_000)),
         "--port",
@@ -1269,6 +1276,11 @@ def parse_args() -> argparse.Namespace:
         default="online",
     )
     parser.add_argument(
+        "--leader-pool",
+        choices=("civ6", "expanded"),
+        default="civ6",
+    )
+    parser.add_argument(
         "--victories",
         type=parse_victories,
         help=(
@@ -1443,6 +1455,7 @@ def main() -> int:
         "turns": args.turns,
         "map": args.map,
         "speed": args.speed,
+        "leader_pool": getattr(args, "leader_pool", "civ6"),
     }
     if getattr(args, "victories", None):
         settings["victories"] = list(args.victories)

@@ -175,6 +175,7 @@ class SessionSettingsTests(unittest.TestCase):
             ],
             "map": {"width": 44, "height": 26, "script": "continents"},
             "game_speed": "online",
+            "leader_pool": "expanded",
             "max_turns": 250,
             "victory_conditions": {
                 "science": True,
@@ -193,6 +194,7 @@ class SessionSettingsTests(unittest.TestCase):
             "turns": 500,
             "map": "pangaea",
             "speed": "standard",
+            "leader_pool": "civ6",
         }
         # Board shape, pacing and victory selection follow the live game; the
         # seat counts stay with the operator's flags. `/state` is fog-of-war
@@ -203,6 +205,7 @@ class SessionSettingsTests(unittest.TestCase):
             supervisor.session_settings(state, defaults),
             {"players": 4, "width": 44, "height": 26, "city_states": 6,
              "turns": 250, "map": "continents", "speed": "online",
+             "leader_pool": "expanded",
              "victories": ["science", "culture", "domination", "score"]},
         )
 
@@ -283,6 +286,7 @@ class SessionSettingsTests(unittest.TestCase):
             "turns": 330,
             "map": "continents",
             "speed": "quick",
+            "leader_pool": "expanded",
             "victories": ["science", "domination"],
         }
         state = {
@@ -313,6 +317,7 @@ class SessionSettingsTests(unittest.TestCase):
             "turns": 500,
             "map": "pangaea",
             "speed": "standard",
+            "leader_pool": "civ6",
         }
         self.assertEqual(supervisor.session_settings({}, defaults), defaults)
 
@@ -345,6 +350,7 @@ class SessionSettingsTests(unittest.TestCase):
                 "turns": 330,
                 "map": "continents",
                 "speed": "quick",
+                "leader_pool": "expanded",
                 "victories": ["science", "culture", "domination"],
             },
         }
@@ -362,6 +368,7 @@ class SessionSettingsTests(unittest.TestCase):
                     "turns": 330,
                     "map": "continents",
                     "speed": "quick",
+                    "leader_pool": "expanded",
                     "victories": ["science", "culture", "domination"],
                 },
                 False,
@@ -812,6 +819,7 @@ class RecoveryTests(unittest.TestCase):
             "turns": 250,
             "map": "pangaea",
             "speed": "online",
+            "leader_pool": "civ6",
             "victories": ["science", "score"],
         }
         active = {
@@ -865,6 +873,7 @@ class RecoveryTests(unittest.TestCase):
             "turns": 330,
             "map": "continents",
             "speed": "quick",
+            "leader_pool": "expanded",
             "victories": ["science", "culture", "domination"],
         }
         active = {
@@ -1177,6 +1186,7 @@ class RecoveryTests(unittest.TestCase):
             "turns": 330,
             "map": "continents",
             "speed": "quick",
+            "leader_pool": "expanded",
             "victories": ["science", "culture", "domination"],
         }
         command = supervisor.server_command(8766, settings, False)
@@ -1184,6 +1194,7 @@ class RecoveryTests(unittest.TestCase):
             command[command.index("--victories") + 1],
             "science,culture,domination",
         )
+        self.assertEqual(command[command.index("--leader-pool") + 1], "expanded")
 
     def test_server_command_can_pause_before_the_stepper_starts(self):
         settings = {
@@ -1384,6 +1395,7 @@ class RecoveryTests(unittest.TestCase):
                 "turns": 500,
                 "map": "pangaea",
                 "speed": "standard",
+                "leader_pool": "civ6",
             },
             False,
             checkpoint,
