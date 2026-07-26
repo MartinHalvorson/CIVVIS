@@ -11783,6 +11783,11 @@ struct PlannedRoute {
     unit: u32,
     target: Pos,
     range: i32,
+    /// Diplomatic and city-ownership state which made the path legal. The
+    /// routing cache already expires at every new turn and map mutation; this
+    /// compact key catches same-turn deals, wars, civics, and city transfers
+    /// without rescanning the complete remaining path before every step.
+    access_key: u64,
     /// Complete path including the position where it was planned and the
     /// stopping tile. Looking up the unit's live position makes repeated
     /// calls before a move harmless and advances naturally after one.
@@ -27288,29 +27293,36 @@ impl Game {
         if !self.zone_connected(uid, to, range) {
             return None; // proven: no chain of traversable tiles links them
         }
-        let cached_tail = {
+        let territory_access = self.unit_territory_access(unit);
+        if range == 0
+            && self
+                .territory_owner_at(to)
+                .is_some_and(|owner| !territory_access[owner])
+        {
+            return None;
+        }
+        let access_key = self.route_access_key(unit, &territory_access);
+        let cached_step = {
             let routing = self.routing.borrow();
             routing
                 .paths
                 .iter()
-                .find(|route| route.unit == uid && route.target == to && route.range == range)
+                .find(|route| {
+                    route.unit == uid
+                        && route.target == to
+                        && route.range == range
+                        && route.access_key == access_key
+                })
                 .and_then(|route| {
                     route
                         .path
                         .iter()
                         .position(|position| *position == start)
-                        .map(|index| route.path[index..].to_vec())
+                        .and_then(|index| route.path.get(index + 1).copied())
                 })
         };
-        if let Some(tail) = cached_tail {
-            let reusable = tail.get(1).is_some_and(|next| self.can_enter(uid, start, *next))
-                && tail
-                    .windows(2)
-                    .skip(1)
-                    .all(|edge| self.can_path_through(uid, edge[0], edge[1]));
-            if reusable {
-                return tail.get(1).copied();
-            }
+        if cached_step.is_some_and(|next| self.can_enter(uid, start, next)) {
+            return cached_step;
         }
 
         // A* keeps known-target routing cheap enough for high-throughput
@@ -27352,7 +27364,7 @@ impl Game {
                 let enterable = if cur == start {
                     self.can_enter(uid, cur, n)
                 } else {
-                    self.can_path_through(uid, cur, n)
+                    self.can_path_through(uid, cur, n, &territory_access)
                 };
                 if !enterable {
                     continue;
@@ -27388,9 +27400,31 @@ impl Game {
             unit: uid,
             target: to,
             range,
+            access_key,
             path: reverse_path,
         });
         Some(step)
+    }
+
+    /// Everything which can change whether this unit may cross a border
+    /// without changing the map itself. Player access is already the complete
+    /// shared predicate; city owners distinguish a same-turn city transfer
+    /// whose tiles retain their existing owner-city ids.
+    fn route_access_key(&self, unit: &Unit, territory_access: &[bool]) -> u64 {
+        let mut key = vision_key(&[unit.owner as u64, self.players.len() as u64]);
+        for (owner, access) in territory_access.iter().enumerate() {
+            key = vision_key(&[key, owner as u64, *access as u64]);
+        }
+        for city in self.cities.values() {
+            key = vision_key(&[key, city.id as u64, city.owner as u64]);
+        }
+        key
+    }
+
+    fn unit_territory_access(&self, unit: &Unit) -> Vec<bool> {
+        (0..self.players.len())
+            .map(|owner| self.unit_has_territory_access(unit, owner))
+            .collect()
     }
 
     /// Terrain/domain legality for future route segments. Dynamic unit
@@ -27398,7 +27432,13 @@ impl Game {
     /// in the plan avoids expensive scans and lets moving units clear before
     /// the traveler arrives. Routes are recalculated whenever the immediate
     /// step remains blocked.
-    fn can_path_through(&self, uid: u32, from: Pos, pos: Pos) -> bool {
+    fn can_path_through(
+        &self,
+        uid: u32,
+        from: Pos,
+        pos: Pos,
+        territory_access: &[bool],
+    ) -> bool {
         if self.wdist(from, pos) != 1 {
             return false;
         }
@@ -27408,7 +27448,7 @@ impl Game {
         }
         if self
             .territory_owner_at(pos)
-            .is_some_and(|owner| !self.unit_has_territory_access(unit, owner))
+            .is_some_and(|owner| !territory_access[owner])
         {
             return false;
         }
@@ -27537,6 +27577,7 @@ impl Game {
             return None;
         }
         let _memo = self.query_memo();
+        let territory_access = self.unit_territory_access(unit);
 
         // Same breadth-first walk in the same neighbour order, but the map
         // already numbers its tiles, so the frontier's bookkeeping is two
@@ -27560,7 +27601,7 @@ impl Game {
                 let enterable = if cur == start {
                     self.can_enter(uid, cur, n)
                 } else {
-                    self.can_path_through(uid, cur, n)
+                    self.can_path_through(uid, cur, n, &territory_access)
                 };
                 if !enterable {
                     continue;
@@ -27597,6 +27638,7 @@ impl Game {
         if self.formation_movement_locked_by_zoc(uid) {
             return BTreeMap::new();
         }
+        let _memo = self.query_memo();
         let mut best: BTreeMap<Pos, f64> = BTreeMap::new();
         best.insert(start, moves);
         let mut queue = vec![start];
@@ -27635,10 +27677,17 @@ impl Game {
         if start == to {
             return Some(vec![]);
         }
+        // MoveTo is also the protocol used for an AI route's already chosen
+        // adjacent step. Do not flood the unit's whole remaining movement
+        // area merely to rediscover that one-edge path.
+        if self.wdist(start, to) == 1 {
+            return self.can_move(uid, to).then_some(vec![to]);
+        }
         let max_moves = self.unit_max_moves(uid);
         if self.formation_movement_locked_by_zoc(uid) {
             return None;
         }
+        let _memo = self.query_memo();
         let mut best: BTreeMap<Pos, f64> = BTreeMap::new();
         let mut parent: BTreeMap<Pos, Pos> = BTreeMap::new();
         best.insert(start, moves);
