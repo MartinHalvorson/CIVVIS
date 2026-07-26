@@ -1806,3 +1806,50 @@ That is the same conclusion the whole session keeps arriving at from
 different directions, and it is now measured rather than argued: the macro
 search wins games because a rollout is an experiment, and every learned
 component that failed was reading a correlation.
+
+## 2026-07-26 — the horizon has a ceiling, and the promoted agent is near it
+
+Doubling the search budget is the one change promoted this session, so the
+obvious follow-up is to retest the null results at the larger budget — the
+doctrine axis first, since a longer projection should let play styles
+separate. A probe answered that before an evaluation was spent on it, and
+the answer is no, for a reason that matters more than the retest would
+have.
+
+Spread between the four doctrine branches at one lane, three seeds, three
+sampled reviews each, four-player 200-turn games:
+
+| horizon | median spread | max spread | reviews where every branch is decided |
+|---|---|---|---|
+| 40 | 0.00451 | 0.01454 | 22% |
+| 80 | **0.00000** | 0.06162 | **56%** |
+| 120 | **0.00000** | 0.15994 | **89%** |
+
+The median collapses to zero while the maximum grows tenfold. That is
+saturation, not noise: a branch that reaches a decided game returns exactly
+1.0 or 0.0, so once every branch resolves inside the horizon they agree **by
+construction**, and the search is blind however good its evaluator is. At
+horizon 120, 89% of reviews are in that state.
+
+Three consequences.
+
+**The doctrine axis should not be retested at the promoted budget.** It
+would act less often, not more — the retest is answered.
+
+**`strategic_deep` is already over half saturated.** It projects 80 rounds,
+where 56% of these reviews are decided before the horizon ends. It wins
+anyway, and the promotion stands on 540 maps, but the natural next move —
+push the horizon further — is measured to be a dead end. The compute lever
+that has paid all session has a ceiling, and it is close.
+
+**The signal is bimodal, which suggests the fix.** Saturated reviews carry
+nothing; unsaturated ones carry *more* at longer horizons, with the maximum
+spread rising from 0.015 to 0.160. A fixed horizon averages those two
+regimes together. An adaptive one — project until the branches separate or
+the game decides, rather than for a fixed count — would spend rounds only
+where they still buy discrimination. That is the first concrete improvement
+to the macro search this session has identified that is not simply more
+compute, and it is untested.
+
+The threshold scales with how much game remains, so these percentages are
+specific to 200-turn four-player games and will bite later in longer ones.
