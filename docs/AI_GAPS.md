@@ -126,7 +126,58 @@ sessions the way the rules batches did.
 
 ## Sequencing
 
-Tackle in this order: **9 → 4 → 3 → 2 → 6 → 8 → 1 → 7 → 10 → 5.**
+> **Re-sequenced 2026-07-26 on measurement.** The order below was written
+> before any of these items had numbers. Six search configurations and four
+> learned components have now been measured at 120–400 mirrored maps
+> (`docs/EVAL.md`), and they imply a different order and, more usefully, a
+> single organising principle.
+>
+> **Every learned component that failed, failed the same way: its evaluator
+> could not see the decision it was ranking.** Not "was poorly tuned" —
+> could not see it.
+>
+> | component | the mismatch | evidence |
+> |---|---|---|
+> | `PolicyAi` tactical | 25 *empire* features cannot change under a unit move | gain exactly 0.0 on 96.4% of 11,347 candidates |
+> | `strategic` value net | blended estimate never flips a lane argmax | 20/20 identical maps; 127 identical reviews |
+> | `Doctrine` axis | commitment margin exceeded the value spread | 0 switches in 16 reviews at the lane margin |
+> | `ProductionSearchAi` | horizon shorter than the decision's payoff | loses 9 maps to 21, p=0.0428 |
+>
+> That reframes the ranking. **Item 3 is not a prerequisite for item 1 by
+> argument any more; it is one by measurement.** No amount of training
+> improves a predictor whose inputs are constant across the actions being
+> compared, and the current 25 scalars are constant across every unit move
+> and near-constant across lane choices. Calibration was never the
+> bottleneck: the net trained this session reached grouped-holdout BCE
+> 0.4058 against a 0.5636 constant baseline and still changed nothing.
+>
+> **What pays right now is item 2, and it pays through compute rather than
+> sophistication.** The macro search reaches its rollouts about 1.5 times
+> per seat per game, and doubling its budget — as reviews, as horizon, or
+> split across both — wins significantly more maps every time it has been
+> measured (best: 240 maps, 53 map-directions to 15, sign p=4.1e-06). The
+> two *clever* extensions both measured null: a second search axis over
+> play-style genomes, and rotating the projected lane set to buy frequency
+> cheaply. Buy compute before cleverness here.
+>
+> **Item 9 was the real blocker for all of it, and is largely closed.** The
+> evaluator now reports which artifacts each entrant actually loaded, how
+> many of its reviews reached its search, how many maps each direction
+> rests on, and runs its batch in parallel. That last one matters most: it
+> was the only batch runner in the repository on a single core, which is
+> why runs were twenty maps, and **twenty-map runs on this evaluator are
+> anti-evidence** — two conclusions published from them inverted at 120
+> maps, in opposite directions. The remaining piece is the promotion gate's
+> fixed-n Wilson criterion, which declined a change carrying an e-value of
+> 19,720 over 400 maps.
+>
+> Suggested order from here: **3 → 1 → 2's remaining compute → 8 → the
+> rest.** Item 4 (combat micro) is unranked here because it has never been
+> measured; treat it as unknown rather than cheap. Whatever is attempted,
+> the cheap first move is now standard: check that the evaluator's inputs
+> actually move under the decision, before building anything on top of it.
+
+The original ordering, kept for context: **9 → 4 → 3 → 2 → 6 → 8 → 1 → 7 → 10 → 5.**
 
 Wave one — aim the compass, bank the cheap Elo:
 - **9** first: days of work with existing tools, and everything after is
