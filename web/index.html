@@ -501,29 +501,14 @@
   .diplomacy-identity { min-width: 0; }
   .diplomacy-identity:hover .diplomacy-civ, .diplomacy-identity:focus-visible .diplomacy-civ { color: #fff; }
   .detail-caret { flex: 0 0 auto; margin-left: 2px; color: #93aca1; font-size: 9px; vertical-align: 1px; }
-  .diplomacy-name {
-    min-width: 0; display: flex; align-items: baseline; gap: 3px; overflow: hidden;
-    color: #f1f4ed; font-size: 11px; font-weight: 800; white-space: nowrap;
-  }
-  .diplomacy-civ, .diplomacy-leader, .diplomacy-player {
+  .diplomacy-civ, .diplomacy-player {
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .diplomacy-civ { color: #f1f4ed; }
   .diplomacy-rank { margin-right: 4px; color: var(--gold-bright); font: 700 10px Georgia, serif; }
-  .diplomacy-leader {
-    flex: 1 1 auto; color: var(--muted); font-size: .82em; font-weight: 650;
-  }
-  /* Competitive identity reads in one stable order: themed player handle,
-     rating, Elo-implied win estimate, then the strategy in use right now. */
-  .diplomacy-player-line {
-    min-width: 0; display: flex; align-items: baseline; gap: 3px; margin-top: 2px;
-    overflow: hidden; color: #9fb0a9; font-size: 9px; line-height: 1.15;
-    white-space: nowrap;
-  }
   .diplomacy-elo { flex: 0 0 auto; color: var(--gold-bright); font-weight: 850; }
   .diplomacy-expected { flex: 0 0 auto; color: #8fd6a4; font-weight: 850; }
   .diplomacy-player { flex: 1 1 auto; color: #d9e1dc; font-weight: 750; }
-  .identity-separator { flex: 0 0 auto; color: #667a72; font-weight: 500; }
   .agenda-mark { margin-left: 3px; font-size: 8px; vertical-align: 1px; }
   .agenda-mark.up { color: #8fd6a4; }
   .agenda-mark.down { color: #f2a09b; }
@@ -1650,8 +1635,6 @@
   @media (min-width: 2200px) {
     .diplomacy-card { flex-basis: 330px; grid-template-columns: 36px minmax(88px, .75fr) minmax(164px, 1.35fr); }
     .leader-medallion { width: 36px; height: 36px; font-size: 15px; }
-    .diplomacy-name { font-size: 12px; }
-    .diplomacy-leader { font-size: 9px; }
     .ribbon-stat b { font-size: 11px; }
     .ribbon-stat em { font-size: 7px; }
     /* Four dossier columns need about 480px to stay readable; below that they
@@ -1693,8 +1676,6 @@
     .hud-region { padding-inline: 2px; }
     .diplomacy-card { flex-basis: 286px; grid-template-columns: 31px minmax(76px, .7fr) minmax(155px, 1.45fr); gap: 4px; padding: 4px; }
     .leader-medallion { width: 29px; height: 29px; font-size: 12px; }
-    .diplomacy-name { font-size: 10px; }
-    .diplomacy-leader { margin-top: 1px; font-size: 8px; }
     .ribbon-stat { padding-inline: 0; }
     .ribbon-stat b { font-size: 8px; }
     .ribbon-stat em { font-size: 6px; letter-spacing: 0; }
@@ -1716,6 +1697,8 @@
       calc(100% - min(var(--hud-rail-width), var(--hud-rail-share)) - 32px));
     height: min(var(--player-hud-height, 200px), var(--player-hud-max-height));
     --hud-medallion-column: 21px; --hud-identity-column: minmax(300px, 42%); --hud-column-gap: 6px;
+    --hud-identity-tracks: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1fr)
+      minmax(0, .55fr) minmax(0, .55fr) minmax(0, 1.1fr);
     --hud-lock-column: 13px; --hud-row-height: 23px; --hud-row-gap: 2px;
     --hud-row-pitch: calc(var(--hud-row-height) + var(--hud-row-gap));
     display: grid; grid-template-columns: 108px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
@@ -1751,6 +1734,17 @@
     grid-template-columns: var(--hud-lock-column, 0px) var(--hud-medallion-column) var(--hud-identity-column) minmax(0, 1fr);
     align-items: stretch; gap: var(--hud-column-gap); padding: 0 4px 0 3px;
   }
+  .diplomacy-identity-head {
+    min-width: 0; display: grid; grid-column: 3;
+    grid-template-columns: var(--hud-identity-tracks); overflow: hidden;
+    color: #a9bbb4; font-size: 6px; font-weight: 950; letter-spacing: .025em;
+  }
+  .diplomacy-identity-head span {
+    min-width: 0; overflow: hidden; padding-inline: 3px;
+    border-left: 1px solid #ffffff10; text-overflow: clip; white-space: nowrap;
+  }
+  .diplomacy-identity-head span:first-child { border-left-color: transparent; }
+  .diplomacy-identity-head .numeric { text-align: right; }
   .diplomacy-stat-head {
     min-width: 0; display: grid; grid-column: 4;
     grid-template-columns: repeat(10, minmax(0, 1fr));
@@ -1813,38 +1807,37 @@
     border-width: 1px; box-shadow: 0 0 0 1px #07110f, 0 3px 8px #0008;
     font-size: 10px;
   }
-  /* Rank, civilization, leader, league handle, rating and active plan are one
-     sentence about one player, so they stay on one line — the row's second line
-     belongs to the values. Everything after the civilization gives way, then
-     truncates, as the rail narrows. */
+  /* Every identity fact uses the same six tracks as the heading above it.
+     Variable-length names can ellipsize inside their own cell without moving
+     ELO, win odds or strategy to a different horizontal position on each row. */
   #playerhud .diplomacy-identity {
-    min-width: 0; display: flex; align-items: baseline; gap: 3px; padding-block: 0;
+    position: relative; min-width: 0; display: grid;
+    grid-template-columns: var(--hud-identity-tracks); align-items: stretch;
+    gap: 0; overflow: hidden; padding-block: 0;
   }
-  #playerhud .diplomacy-name {
-    flex: 0 1 auto; min-width: 0; gap: 3px; font-size: 9px; line-height: 1.1;
-    white-space: nowrap;
-  }
-  #playerhud .diplomacy-rank { flex: 0 0 auto; margin-right: 0; font-size: 8px; }
-  /* When the line is too long for its column the leader, the handle and the
-     plan give way. The civilization is what the row is ranked, coloured and
-     locked by, so it does not shrink at all — "Chi…" cost the row the one word
-     it is read by while the tail of the line still had characters to spare. */
-  #playerhud .diplomacy-civ { flex: 0 0 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  #playerhud .detail-caret { flex: 0 0 auto; margin-left: 1px; font-size: 7px; }
-  #playerhud .diplomacy-leader {
-    flex: 0 1 auto; min-width: 0; overflow: hidden; font-size: 8px; line-height: 1.1;
-    text-overflow: ellipsis;
-  }
-  #playerhud .diplomacy-identity .identity-separator { flex: 0 0 auto; }
-  /* The league facts continue the same line rather than starting a new one. */
-  #playerhud .diplomacy-player-line {
-    flex: 1 1 auto; min-width: 0; gap: 3px; margin-top: 0; overflow: hidden;
+  #playerhud .diplomacy-identity-field {
+    min-width: 0; display: flex; align-items: center; gap: 3px;
+    overflow: hidden; padding-inline: 3px; border-left: 1px solid #ffffff0b;
     font-size: 8px; line-height: 1.1; white-space: nowrap;
   }
-  #playerhud .diplomacy-player { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  #playerhud .diplomacy-elo, #playerhud .diplomacy-expected { flex: 0 0 auto; }
-  #playerhud .diplomacy-player-line .ai-plan {
-    flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  #playerhud .diplomacy-identity-field:first-child { border-left-color: transparent; }
+  #playerhud .diplomacy-rank { flex: 0 0 auto; margin-right: 0; font-size: 8px; }
+  #playerhud .diplomacy-civ { flex: 1 1 auto; }
+  #playerhud .diplomacy-leader-name { color: var(--muted); font-weight: 650; }
+  #playerhud .diplomacy-player { color: #d9e1dc; font-weight: 750; }
+  #playerhud .diplomacy-civ, #playerhud .diplomacy-leader-name,
+  #playerhud .diplomacy-player, #playerhud .diplomacy-elo-value,
+  #playerhud .diplomacy-expected-value, #playerhud .diplomacy-strategy .ai-plan {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #playerhud .diplomacy-elo, #playerhud .diplomacy-expected {
+    justify-content: flex-end; text-align: right; font-variant-numeric: tabular-nums;
+  }
+  #playerhud .diplomacy-strategy { padding-right: 11px; }
+  #playerhud .diplomacy-strategy .ai-plan { display: block; }
+  #playerhud .detail-caret {
+    position: absolute; right: 1px; top: 50%; margin: 0; transform: translateY(-50%);
+    font-size: 7px;
   }
   #playerhud .diplomacy-stats {
     align-self: stretch; display: grid; grid-template-columns: repeat(10, minmax(0, 1fr));
@@ -2033,7 +2026,7 @@
     #playerhud { grid-template-columns: 128px minmax(0, 1fr); --hud-identity-column: minmax(340px, 40%); }
   }
   @media (max-width: 1580px) {
-    #playerhud { grid-template-columns: 98px minmax(0, 1fr); --hud-identity-column: minmax(150px, 30%); }
+    #playerhud { grid-template-columns: 98px minmax(0, 1fr); --hud-identity-column: minmax(330px, 50%); }
     #maparea { --hud-rail-width: clamp(240px, 20vw, 300px); }
   }
   /* Ten value columns, a turn plate and a standing rail stop fitting side by
@@ -2041,7 +2034,7 @@
   @media (max-width: 1300px) {
     #playerhud {
       grid-template-columns: 84px minmax(0, 1fr);
-      --hud-identity-column: minmax(118px, 26%); --hud-column-gap: 4px;
+      --hud-identity-column: minmax(250px, 50%); --hud-column-gap: 4px;
     }
     #maparea { --hud-rail-width: 224px; }
   }
@@ -2049,7 +2042,7 @@
     #maparea { --hud-rail-width: 200px; --minimap-height: 158px; }
     #playerhud {
       grid-template-columns: 74px minmax(0, 1fr);
-      --hud-identity-column: minmax(92px, 22%); --hud-column-gap: 3px;
+      --hud-identity-column: minmax(210px, 48%); --hud-column-gap: 3px;
       --hud-medallion-column: 19px;
     }
     #playerhud .leader-medallion { width: 19px; height: 19px; }
@@ -2063,14 +2056,14 @@
     #maparea { --hud-rail-width: 182px; --minimap-height: 138px; }
     #playerhud { --hud-medallion-column: 23px; --hud-identity-column: minmax(112px, 142px); }
   }
-  @media (max-width: 620px) {
-    /* Too narrow for a rail beside the masthead at all: the instruments give up
-       the column and stack as bands across the top, with the tracker's paths in
-       columns because there is no height left to stack them into. */
+  @media (max-width: 1100px) {
+    /* Six identity columns plus ten value columns need the map's full width at
+       this point. The instruments stack as bands across the top, with the
+       tracker's paths in columns because there is no height left to stack them. */
     #playerhud, body.overlay-victory-hidden #playerhud {
       top: 8px; left: 8px; right: 8px; width: auto; padding: 4px;
       --hud-lock-column: 11px;
-      --hud-medallion-column: 21px; --hud-identity-column: minmax(150px, 42%);
+      --hud-medallion-column: 21px; --hud-identity-column: minmax(270px, 52%);
     }
     #victoryhud, body.overlay-minimap-hidden #victoryhud {
       top: calc(min(var(--player-hud-height, 200px), var(--player-hud-max-height)) + 14px);
@@ -2093,8 +2086,13 @@
     #playerhud .diplomacy-card { padding-inline: 2px; }
     .ribbon-heading { padding-inline: 2px; }
     .diplomacy-stat-head { font-size: 5.5px; }
+  }
+  @media (max-width: 720px) {
+    #playerhud { --hud-identity-column: minmax(160px, 48%); }
+  }
+  @media (max-width: 620px) {
+    #playerhud { --hud-identity-column: minmax(150px, 48%); }
     #playerhud .ribbon-stat b { font-size: 13px; }
-    #playerhud .diplomacy-name { font-size: 8px; }
   }
   /* Ten screens at full size need 487px and the bar has (height − 292) to give,
      so below 780px it would hide its last button behind a scrollbar that is
@@ -14755,7 +14753,12 @@ function drawPlayerHud() {
     `<div class="ribbon-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
     `aria-label="Move player stats; use arrow keys or drag" title="Drag to move · arrow keys also move" id="player-stats-title">` +
     `<span>Player stats</span></div>` +
-    `<div class="ribbon-stat-heading" aria-hidden="true"><span class="diplomacy-stat-head">` +
+    `<div class="ribbon-stat-heading" aria-hidden="true">` +
+    `<span class="diplomacy-identity-head">` +
+    `<span title="Civilization">CIV</span><span>LEADER</span><span>PLAYER</span>` +
+    `<span class="numeric">ELO</span><span class="numeric" title="Win odds">WIN ODDS</span>` +
+    `<span title="AI active strategy">AI STRATEGY</span></span>` +
+    `<span class="diplomacy-stat-head">` +
     [["production", "PROD"], ["science", "SCI"], ["culture", "CUL"], ["faith", "FPT"], ["gold", "GPT"],
       ["military", "MIL"], ["cities", "CITY"], ["suzerain", "SUZ"], ["wonders", "WNDR"], ["score", "SCORE"]]
       .map(([kind, label]) => `<span class="${kind}">${label}</span>`).join("") + `</span></div>` +
@@ -14800,9 +14803,14 @@ function drawPlayerHud() {
       const playedGames = +p.player_games || 0;
       // A new player has no record to show yet, and 1500 is the number every
       // unrated player would wear. Say unrated until they have finished one.
-      const playerElo = p.player_username
+      const playerEloLabel = p.player_username
         ? (playedGames ? `${p.player_elo} ELO` : "Unrated")
         : Number.isFinite(+p.ai_elo) ? `${p.ai_elo} ELO` : "Unrated";
+      // The column heading already supplies the unit, so keep its cells to the
+      // rating itself. This makes a four-digit ELO fit without truncation.
+      const playerElo = p.player_username
+        ? (playedGames ? `${p.player_elo}` : "—")
+        : Number.isFinite(+p.ai_elo) ? `${p.ai_elo}` : "—";
       const humanTitle = `You · new league player ${p.player_username}` +
         ` · ${playedGames ? `${p.player_elo} ±${p.player_elo_rd} over ${playedGames} rated ` +
           `${playedGames === 1 ? "game" : "games"}` : "unrated until this game is decided"}` +
@@ -14835,20 +14843,15 @@ function drawPlayerHud() {
         `<button class="diplomacy-identity" data-hud-action="dossier" data-hud-civ="${p.id}" aria-expanded="${expanded}" ` +
         `title="${expanded ? "Close" : "Open"} the ${p.civ} dossier · ${relationSummary}${agendaText}" ` +
         `aria-label="${expanded ? "Close" : "Open"} dossier for ${p.civ}, rank ${rank}, ${relationSummary}">` +
-        // Rank, civilization, leader, league handle, rating and plan are one
-        // sentence about one player, so they run along one line and the caret
-        // closes it. Only the two names may grow; the rest holds its width.
-        `<span class="diplomacy-name"><span class="diplomacy-rank">#${rank}</span>` +
-        `<span class="diplomacy-civ">${p.id === acting && SPEC ? "◉ " : ""}${p.civ}</span>` +
-        `<span class="identity-separator" aria-hidden="true">·</span>` +
-        `<span class="diplomacy-leader">${leader}${agendaGlyph}</span></span>` +
-        `<span class="identity-separator" aria-hidden="true">·</span>` +
-        `<span class="diplomacy-player-line" title="${leagueTitle}">` +
-        `<span class="diplomacy-player">${playerName}</span><span class="identity-separator" aria-hidden="true">·</span>` +
-        `<span class="diplomacy-elo">${playerElo}</span><span class="identity-separator" aria-hidden="true">·</span>` +
-        `${expectPct === null ? "" : `<span class="diplomacy-expected" title="Elo-implied win estimate">${expectPct}%</span>` +
-          `<span class="identity-separator" aria-hidden="true">·</span>`}` +
-        `${activeStrategy}</span>` +
+        `<span class="diplomacy-identity-field"><span class="diplomacy-rank">#${rank}</span>` +
+        `<span class="diplomacy-civ">${p.id === acting && SPEC ? "◉ " : ""}${p.civ}</span></span>` +
+        `<span class="diplomacy-identity-field"><span class="diplomacy-leader-name">${leader}</span>${agendaGlyph}</span>` +
+        `<span class="diplomacy-identity-field" title="${leagueTitle}"><span class="diplomacy-player">${playerName}</span></span>` +
+        `<span class="diplomacy-identity-field diplomacy-elo" title="${playerEloLabel} · ${leagueTitle}">` +
+        `<span class="diplomacy-elo-value">${playerElo}</span></span>` +
+        `<span class="diplomacy-identity-field diplomacy-expected" title="Elo-implied win odds">` +
+        `<span class="diplomacy-expected-value">${expectPct === null ? "—" : `${expectPct}%`}</span></span>` +
+        `<span class="diplomacy-identity-field diplomacy-strategy">${activeStrategy}</span>` +
         `<span class="detail-caret">${expanded ? "▾" : "▸"}</span></button>` +
         `<button class="diplomacy-stats" data-hud-action="watch" data-hud-civ="${p.id}" title="${watchTitle}" aria-label="Watch ${p.civ}">` +
         stats.map(([kind, , value, label, marker = ""]) => {
