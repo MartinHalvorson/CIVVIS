@@ -39,7 +39,7 @@
     "eras": [3, 6],
     "triggers": { "corps_kill": 1, "army_kill": 2 },
     "normal": "+1 Era Score per Corps kill and +2 per Army kill, against non-Barbarians.",
-    "golden": "A special Casus Belli with 75% less warmongering penalty, usable immediately after denouncing. +15% Production toward military units."
+    "golden": "+50% combat experience for all units and +25% Production toward military units."
   },
   "heartbeat_of_steam": {
     "eras": [4, 5],
