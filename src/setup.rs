@@ -46,7 +46,8 @@ impl MapScript {
 
     /// Whether the script draws a fixed world instead of rolling a new one.
     /// Earth is the same Earth every game, so the seed moves its resources and
-    /// its rivers around but never its coastlines.
+    /// its rivers around but never its coastlines. Fixed geography is still
+    /// independent of shape: it can be sampled onto a flat atlas or a globe.
     pub const fn is_fixed_geography(self) -> bool {
         matches!(self, Self::TrueStartEarth)
     }
@@ -703,8 +704,8 @@ mod tests {
     }
 
     /// The world's shape and its poles are settings of their own, orthogonal to
-    /// what fills the world. Only Earth overrules the shape, because Earth is
-    /// drawn from real longitudes and latitudes and closes on itself.
+    /// what fills the world. This includes fixed geography: Earth's known
+    /// longitudes and latitudes work on either projection.
     #[test]
     fn the_world_shape_and_its_poles_are_asked_for_separately_from_the_world_type() {
         for spec in MAP_TOPOLOGIES {
@@ -726,8 +727,8 @@ mod tests {
         assert_eq!(MapPoles::default(), MapPoles::Poles);
         assert_eq!(MapScript::default(), MapScript::Pangaea);
 
-        // Only Earth is the same world every game, and it is the only type
-        // whose shape is not the lobby's to choose.
+        // Only Earth is the same world every game. That says how its land is
+        // chosen, not which of the independently selected shapes receives it.
         for spec in CIV6_MAP_SCRIPTS {
             assert_eq!(
                 spec.script.is_fixed_geography(),
