@@ -1736,7 +1736,7 @@ impl BasicAi {
             let mut founders: Vec<String> = [
                 "tithe",
                 "world_church",
-                "church_property",
+                "cross_cultural_dialogue",
                 "pilgrimage",
                 "religious_unity",
             ]
@@ -6500,7 +6500,7 @@ mod tests {
         assert!(game.players[2]
             .religion_beliefs
             .iter()
-            .any(|belief| belief == "church_property"));
+            .any(|belief| belief == "cross_cultural_dialogue"));
     }
 
     #[test]
