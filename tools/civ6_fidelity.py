@@ -1609,6 +1609,8 @@ def project_buildings(database: Database) -> dict[str, dict]:
             "maintenance": number(row.get("Maintenance")),
             "housing": number(row.get("Housing")),
             "amenity": number(row.get("Entertainment")),
+            # Every wall tier is 100; Georgia's Tsikhe is the one 200.
+            "outer_defense": number(row.get("OuterDefenseHitPoints")),
             "citizen_slots": number(row.get("CitizenSlots")),
             "yields": yields.get(name, {}),
             "regional_range": number(row.get("RegionalRange")),

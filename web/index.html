@@ -20720,13 +20720,22 @@ function tileTipLines(t, pos, tileKey) {
 
 // tooltip
 const tip = document.getElementById("tip");
-let tileTipPointer = null;
+const TILE_TIP_DELAY_MS = 350;
+let tileTipPointer = null, tileTipTimer = null, tileTipVisible = false;
 function hideTileTip(clearPointer = false) {
   tip.style.display = "none";
-  if (clearPointer) tileTipPointer = null;
+  tileTipVisible = false;
+  if (clearPointer) {
+    clearTimeout(tileTipTimer);
+    tileTipTimer = null;
+    tileTipPointer = null;
+  }
 }
-function refreshTileTip() {
-  if (!state || !tileTipPointer || dragState || mapTouches.size || rdrag) {
+function refreshTileTip(reveal = false) {
+  // Snapshot renders may refresh a tooltip which has already earned its way
+  // on-screen, but they must not reveal one while the rest timer is pending.
+  if ((!reveal && !tileTipVisible) || !state || !tileTipPointer ||
+      dragState || mapTouches.size || rdrag) {
     hideTileTip();
     return;
   }
@@ -20745,8 +20754,18 @@ function refreshTileTip() {
   const lines = tileTipLines(t, pos, key(pos));
   tip.innerHTML = lines.join("<br>");
   tip.style.display = "block";
+  tileTipVisible = true;
   tip.style.left = Math.min(clientX + 16, window.innerWidth - 290) + "px";
   tip.style.top = (clientY + 16) + "px";
+}
+function queueTileTip(clientX, clientY) {
+  const pointer = tileTipPointer = {clientX, clientY};
+  hideTileTip();
+  clearTimeout(tileTipTimer);
+  tileTipTimer = setTimeout(() => {
+    tileTipTimer = null;
+    if (tileTipPointer === pointer) refreshTileTip(true);
+  }, TILE_TIP_DELAY_MS);
 }
 // The overlays — player standings across the top, the victory rail, the
 // minimap — sit *on* the map, so the canvas never sees a pointer parked at the
@@ -20754,12 +20773,11 @@ function refreshTileTip() {
 window.addEventListener("mousemove", ev => updateEdgePan(ev.clientX, ev.clientY), {passive: true});
 window.addEventListener("mouseout", ev => { if (!ev.relatedTarget) edgePanVector = null; });
 cv.addEventListener("mousemove", ev => {
-  tileTipPointer = {clientX: ev.clientX, clientY: ev.clientY};
   // `dragMoved` outlives the drag: it is cleared by the click that follows, and
   // a drag released off the canvas never gets one. Hovering must ask whether a
   // gesture is happening *now*, or the first pan of the game kills the tooltip
   // for good.
-  refreshTileTip();
+  queueTileTip(ev.clientX, ev.clientY);
 });
 cv.addEventListener("mouseleave", () => hideTileTip(true));
 window.addEventListener("blur", () => { edgePanVector = null; hideTileTip(true); });
