@@ -5457,15 +5457,20 @@ mod tests {
         // the horizontal stage against its 8px left gutter. A missing widget
         // naturally leaves its screen edge in place, and the minimap is
         // deliberately absent from this calculation.
+        //
+        // The measurement takes the box it is asked about, because the map
+        // area's automatic fit asks it of the whole container while the camera
+        // asks it of the viewport that fit produced. One rule, two questions —
+        // see `the_map_area_is_a_rectangle_the_viewer_can_set`.
         assert!(EMBEDDED_INDEX.contains("function mapOverlayVisible(name)"));
         assert!(EMBEDDED_INDEX.contains(
             "document.body.classList.contains(\"sidebar-hidden\")"
         ));
-        assert!(EMBEDDED_INDEX.contains("function mapWidgetBox(name, areaRect)"));
+        assert!(EMBEDDED_INDEX.contains("function mapWidgetBox(name, origin)"));
         assert!(EMBEDDED_INDEX.contains("function mapFocusBounds()"));
         assert!(EMBEDDED_INDEX.contains("function mapFocusPoint()"));
         assert!(EMBEDDED_INDEX.contains(
-            "left = Math.max(0, Math.min(width, sideRect.right - areaRect.left));"
+            "left = Math.max(0, Math.min(width, sideRect.right - origin.left));"
         ));
         assert!(EMBEDDED_INDEX.contains(
             "if (players) top = Math.max(0, Math.min(height, players.bottom));"
@@ -7399,6 +7404,130 @@ mod tests {
             depth, 0,
             "every map overlay must close its own <section>; an unclosed one \
              hides the tooltip and every dialog after it inside #empire"
+        );
+    }
+
+    /// The map controls read left to right in the order a viewer reaches for
+    /// them: collapse the command deck, set the map area, face north, zoom in,
+    /// zoom out, dismiss. Dismissal is last because it is the only one that
+    /// removes the bar, and it hides itself while the deck is collapsed —
+    /// Display settings is the only way back and it lives inside the deck.
+    #[test]
+    fn the_map_controls_run_from_collapse_to_dismiss() {
+        let dock = EMBEDDED_INDEX
+            .split_once("<div id=\"zoomctl\">")
+            .expect("the map control dock")
+            .1
+            .split_once("</div>")
+            .expect("the end of the map control dock")
+            .0;
+        let mut previous = 0usize;
+        let mut last = "the start of the dock";
+        for control in [
+            "id=\"paneltoggle\"",
+            "id=\"mapareaset\"",
+            "id=\"compass\"",
+            "id=\"zin\"",
+            "id=\"zout\"",
+            "data-overlay-close=\"controls\"",
+        ] {
+            let at = dock
+                .find(control)
+                .unwrap_or_else(|| panic!("the map controls are missing {control}"));
+            assert!(
+                at > previous,
+                "the map controls run in reading order: {control} must follow {last}"
+            );
+            previous = at;
+            last = control;
+        }
+        assert!(
+            EMBEDDED_INDEX.contains(
+                r#"body.sidebar-hidden .overlay-close[data-overlay-close="controls"] { display: none; }"#
+            ),
+            "the dismiss control must go while the deck that restores it is collapsed"
+        );
+    }
+
+    /// The world is drawn into a rectangle of the map area rather than into
+    /// all of it, so a viewer moves the map out from under the panels instead
+    /// of dragging the world around underneath them. The canvas, the
+    /// vignettes and the editor's own edges take their box from one set of
+    /// custom properties, every renderer measures in `MAPW`/`MAPH` rather
+    /// than in the container, and the automatic fit is the same uncovered
+    /// rectangle the camera already composes into — one measurement, not two
+    /// that can disagree.
+    #[test]
+    fn the_map_area_is_a_rectangle_the_viewer_can_set() {
+        for piece in [
+            "--map-area-left: 0px;",
+            "--map-area-width: 100%;",
+            "function uncoveredMapBox(origin, width, height)",
+            "function syncMapViewport()",
+            "function refitMapAreaToChrome()",
+            "function moveMapAreaEdgeTo(edge, clientX, clientY)",
+            "civvis-map-area-v1",
+            "id=\"map-area-editor\"",
+            "id=\"map-area-apply\"",
+            "id=\"map-area-cancel\"",
+            "id=\"map-area-reset\"",
+            "body.map-area-inset #map",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(piece),
+                "the map area is missing {piece}"
+            );
+        }
+        for edge in ["top", "bottom", "left", "right"] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("data-map-edge=\"{edge}\"")),
+                "the map area must be set by dragging its {edge} edge"
+            );
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("data-shade=\"{edge}\"")),
+                "the ground outside the map area's {edge} edge must be dimmed"
+            );
+        }
+        // The canvas is placed by those properties rather than stretched to
+        // its container. `width: 100%` on #map is exactly what this replaces.
+        let map_rule = EMBEDDED_INDEX
+            .split_once("  #map {")
+            .expect("the map canvas rule")
+            .1
+            .split_once('}')
+            .expect("the end of the map canvas rule")
+            .0;
+        for property in [
+            "left: var(--map-area-left)",
+            "top: var(--map-area-top)",
+            "width: var(--map-area-width)",
+            "height: var(--map-area-height)",
+        ] {
+            assert!(
+                map_rule.contains(property),
+                "the map canvas must take its {property} from the map area"
+            );
+        }
+        assert!(
+            !map_rule.contains("width: 100%"),
+            "a canvas stretched to its container cannot be moved off the panels"
+        );
+        // Renderers and camera measure the viewport, never the container.
+        assert!(EMBEDDED_INDEX.contains("const vx = (sx - MAPW / 2) / cam.scale;"));
+        assert!(EMBEDDED_INDEX.contains("cv.width !== backingWidth"));
+        // The fit is on out of the box, in the stored default and in the
+        // switch that reports it, and moving an edge by hand turns it off.
+        assert!(EMBEDDED_INDEX.contains("const MAP_AREA_DEFAULT = {auto:true,"));
+        assert!(EMBEDDED_INDEX
+            .contains(r#"<input type="checkbox" id="map-area-auto" checked>"#));
+        assert!(EMBEDDED_INDEX.contains("if (!MAP_AREA.auto || mapAreaRefitDepth) return false;"));
+        // Every place a panel or an overlay moves refits a fitted area.
+        assert_eq!(
+            EMBEDDED_INDEX.matches("refitMapAreaToChrome();").count(),
+            4,
+            "a fitted map area follows the standings, the overlay switches, and \
+             both HUD layout paths — four call sites; a fifth means a new one \
+             belongs in this count, a third means one was dropped"
         );
     }
 
