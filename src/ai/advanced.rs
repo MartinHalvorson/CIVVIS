@@ -3965,7 +3965,7 @@ impl AdvancedAi {
                     cost,
                 } = &action
                 {
-                    if bank + f64::EPSILON < reserve + cost {
+                    if bank + f64::EPSILON < reserve + 200.0 + cost {
                         continue;
                     }
                     let tile = &g.map.tiles[pos];
@@ -4105,45 +4105,53 @@ impl AdvancedAi {
                     candidates.push((score, std::cmp::Reverse(format!("{action:?}")), action));
                 }
             }
-            plot_options.sort_by(|left, right| {
-                right
-                    .0
-                    .total_cmp(&left.0)
-                    .then_with(|| left.2.cmp(&right.2))
-            });
-            plot_options.truncate(4);
-            for (_, base_score, _, action) in plot_options {
-                let Action::BuyPlot { city, pos, .. } = &action else {
-                    unreachable!("plot shortlist contains only BuyPlot actions")
-                };
-                let mut after = g.clone();
-                if after.apply(pid, &action).is_err()
-                    || after.players[pid].gold + f64::EPSILON < reserve
-                {
-                    continue;
-                }
-                // Buying the right hex can be valuable even before a Citizen
-                // works it: ownership may expose a district or Wonder site.
-                let site_value = after
-                    .producible_items(pid, *city)
-                    .into_iter()
-                    .filter(|item| match item {
-                        Item::District { pos: site, .. } | Item::Wonder { pos: site, .. } => {
-                            site == pos
-                        }
-                        _ => false,
-                    })
-                    .map(|item| self.production_value(&after, pid, *city, &item, plan, &counts))
-                    .fold(0.0, f64::max)
-                    .max(0.0)
-                    * 0.35;
-                let score = base_score + site_value;
-                if score >= 120.0 {
-                    candidates.push((
-                        score,
-                        std::cmp::Reverse(format!("{action:?}")),
-                        action,
-                    ));
+            // A plot is a surplus purchase. Concrete units, buildings and
+            // Governor districts already proved an immediate strategic need,
+            // so they keep priority whenever one clears the score floor.
+            if candidates.is_empty() {
+                plot_options.sort_by(|left, right| {
+                    right
+                        .0
+                        .total_cmp(&left.0)
+                        .then_with(|| left.2.cmp(&right.2))
+                });
+                plot_options.truncate(4);
+                for (_, base_score, _, action) in plot_options {
+                    let Action::BuyPlot { city, pos, .. } = &action else {
+                        unreachable!("plot shortlist contains only BuyPlot actions")
+                    };
+                    let mut after = g.clone();
+                    if after.apply(pid, &action).is_err()
+                        || after.players[pid].gold + f64::EPSILON < reserve + 200.0
+                    {
+                        continue;
+                    }
+                    // Buying the right hex can be valuable even before a
+                    // Citizen works it: ownership may expose a district or
+                    // Wonder site.
+                    let site_value = after
+                        .producible_items(pid, *city)
+                        .into_iter()
+                        .filter(|item| match item {
+                            Item::District { pos: site, .. } | Item::Wonder { pos: site, .. } => {
+                                site == pos
+                            }
+                            _ => false,
+                        })
+                        .map(|item| {
+                            self.production_value(&after, pid, *city, &item, plan, &counts)
+                        })
+                        .fold(0.0, f64::max)
+                        .max(0.0)
+                        * 0.35;
+                    let score = base_score + site_value;
+                    if score >= 120.0 {
+                        candidates.push((
+                            score,
+                            std::cmp::Reverse(format!("{action:?}")),
+                            action,
+                        ));
+                    }
                 }
             }
             drop(memo);
@@ -14853,7 +14861,7 @@ mod tests {
         game.players[0]
             .explored
             .extend(game.map.tiles.keys().copied());
-        game.players[0].gold = 350.0;
+        game.players[0].gold = 550.0;
         let plan = StrategicPlan {
             strategy: GrandStrategy::Science,
             target_player: None,
@@ -14866,7 +14874,7 @@ mod tests {
         assert!(AdvancedAi::targeting(VictoryTarget::Science)
             .advanced_gold_spending(&mut game, 0, &plan));
         assert_eq!(game.map.tiles[&target].owner_city, Some(city));
-        assert_eq!(game.players[0].gold, 300.0);
+        assert_eq!(game.players[0].gold, 500.0);
     }
 
     #[test]

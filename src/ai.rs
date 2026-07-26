@@ -3127,11 +3127,14 @@ impl BasicAi {
             return true;
         }
 
-        if self.buy_gold_plot(g, pid, reserve) {
+        if self.buy_gold_infrastructure(g, pid, city_ids, reserve, at_major_war) {
             return true;
         }
 
-        if self.buy_gold_infrastructure(g, pid, city_ids, reserve, at_major_war) {
+        // Plots are a surplus investment after concrete unit and building
+        // gaps are filled. Keep another 200 Gold above the ordinary reserve
+        // so border appetite cannot crowd out next turn's Builder or upgrade.
+        if self.buy_gold_plot(g, pid, reserve + 200.0) {
             return true;
         }
 
