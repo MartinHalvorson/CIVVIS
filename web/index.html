@@ -13863,6 +13863,10 @@ function draw() {
     for (let i = 0; i < 6; i++) {
       if (!t.river_edges[i]) continue;
       const n = nbrTile(t.pos, DIRS[i]);
+      // Rivers occupy the shared edge between two land tiles. Their mouths
+      // end at a coastal vertex; a serialized legacy segment on a land/water
+      // boundary would otherwise be painted along the shore itself.
+      if (!n || isWater(t) || isWater(n)) continue;
       const edgeKey = n
         ? [key(t.pos), key(n.pos)].sort().join("|")
         : key(t.pos) + "|edge" + i;

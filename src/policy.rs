@@ -13,7 +13,7 @@
 //! randomly.
 use crate::action_space::{kind_name, legal_encoded};
 use crate::ai::{AdvancedAi, Ai, PlanReport, Weights};
-use crate::decision_features::{decision_features, WIDTH as DECISION_WIDTH};
+use crate::decision_features::{decision_features, CONTACT_TERMS, WIDTH as DECISION_WIDTH};
 use crate::evolve::features;
 use crate::game::{Action, Game};
 use crate::valuenet::ValueNet;
@@ -76,6 +76,16 @@ pub struct PolicyAi {
     /// *ranking* is a separate question from whether it can rank at all,
     /// and is what an evaluation of `policy_wide` measures.
     pub wide: bool,
+    /// Hold the contact terms at their pre-action values when scoring a
+    /// candidate, so the net cannot reward an action for moving them.
+    ///
+    /// This is a causal test of why `policy_wide` collapses, not a
+    /// proposed agent. If the correlation story is right — that the argmax
+    /// is chasing a symptom of strength rather than a cause — then denying
+    /// it that particular symptom should recover most of the loss. If the
+    /// loss survives, the story is incomplete and the remaining damage is
+    /// coming from somewhere else.
+    pub freeze_contact: bool,
     /// Restrict the net to action kinds where a one-ply value delta is
     /// meaningful. Multi-turn commitments (production, research, purchases)
     /// look near-free to a one-ply evaluator, which is how an unrestricted
@@ -128,6 +138,7 @@ impl PolicyAi {
             fallback: AdvancedAi::with_weights(weights),
             net: ValueNet::load_width("evolved", crate::evolve::FEATURE_WIDTH),
             wide: false,
+            freeze_contact: false,
             width: 48,
             depth: 10,
             margin: 1e-4,
@@ -146,14 +157,32 @@ impl PolicyAi {
         self
     }
 
+    /// [`Self::with_decision_features`] with the contact terms frozen.
+    pub fn with_frozen_contact(mut self) -> PolicyAi {
+        self = self.with_decision_features();
+        self.freeze_contact = true;
+        self
+    }
+
     fn value(&self, g: &Game, pid: usize) -> f64 {
+        self.value_against(g, pid, None)
+    }
+
+    /// `value`, optionally holding the contact terms at the values they had
+    /// in `baseline`.
+    fn value_against(&self, g: &Game, pid: usize, baseline: Option<&[f32]>) -> f64 {
         match &self.net {
             Some(net) => {
-                let x = if self.wide {
+                let mut x = if self.wide {
                     decision_features(g, pid)
                 } else {
                     features(g, pid)
                 };
+                if let Some(base) = baseline.filter(|_| self.freeze_contact && self.wide) {
+                    for index in CONTACT_TERMS {
+                        x[index] = base[index];
+                    }
+                }
                 net.eval(&x)
             }
             None => 0.0,
@@ -193,6 +222,7 @@ impl PolicyAi {
     pub fn best_action(&self, g: &Game, pid: usize) -> Option<(Action, f64)> {
         self.net.as_ref()?;
         let base = self.value(g, pid);
+        let frozen = (self.freeze_contact && self.wide).then(|| decision_features(g, pid));
         let mut best: Option<(Action, f64)> = None;
         for action in self.candidates(g, pid) {
             let mut sim = g.clone();
@@ -202,7 +232,7 @@ impl PolicyAi {
             let gain = match sim.winner {
                 Some(w) if w == pid => 1.0,
                 Some(_) => -1.0,
-                None => self.value(&sim, pid) - base,
+                None => self.value_against(&sim, pid, frozen.as_deref()) - base,
             };
             let better = best
                 .as_ref()
