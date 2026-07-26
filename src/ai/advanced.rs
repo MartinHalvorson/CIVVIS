@@ -403,9 +403,19 @@ pub struct AdvancedAi {
     pub scoped_relief_hold: bool,
     /// Exclude victory lanes the empire cannot finish before the game ends.
     ///
-    /// On by default: routing toward a lane that is arithmetically out of
-    /// reach is a defect rather than a preference. `advanced_anylane` turns it
-    /// off, so a paired run isolates this and nothing else.
+    /// **Off by default, on the pre-registered rule.** Routing toward a lane
+    /// that is arithmetically out of reach looked like a defect rather than a
+    /// preference, and the filter demonstrably fires — but at 120 mirrored
+    /// maps it measured no stronger than the permissive control: 49.6% paired
+    /// score (95% Wilson CI 40.8%..58.4%), Elo-equivalent -3, sign p=1.0000,
+    /// promotion gate INCONCLUSIVE. The pre-registration said a failure ships
+    /// the flag off with the null recorded, so it does.
+    ///
+    /// Reachable as the `advanced_lane_reachable` entrant, so it can be
+    /// re-measured once victory routing actually binds rather than re-derived
+    /// from scratch. Worth knowing before re-running it: in that eval 103 of
+    /// 120 `advanced` wins were religious, so the science lane the filter
+    /// exists to refuse was rarely the one being contested.
     pub refuse_unreachable_lanes: bool,
 }
 
@@ -451,7 +461,7 @@ impl AdvancedAi {
             force_groups: Vec::new(),
             force_groups_dirty: false,
             scoped_relief_hold: false,
-            refuse_unreachable_lanes: true,
+            refuse_unreachable_lanes: false,
         }
     }
 
@@ -12472,10 +12482,13 @@ mod tests {
         for seed in 0..3u64 {
             let mut game = Game::new(4, 60, 38, 42_000 + seed, 500, 6);
             let mut ais = AdvancedAi::fleet(&game);
-            let filtering = AdvancedAi::new();
-            let mut permissive = AdvancedAi::new();
-            permissive.refuse_unreachable_lanes = false;
-            assert!(filtering.refuse_unreachable_lanes, "the default must filter");
+            let mut filtering = AdvancedAi::new();
+            filtering.refuse_unreachable_lanes = true;
+            let permissive = AdvancedAi::new();
+            assert!(
+                !permissive.refuse_unreachable_lanes,
+                "the default is permissive: the filter measured no stronger"
+            );
 
             while game.winner.is_none() && game.turn <= 260 {
                 let pid = game.current;

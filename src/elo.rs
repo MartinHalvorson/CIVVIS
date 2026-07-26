@@ -39,7 +39,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
 pub const EVAL_ONLY_AIS: [&str; 16] = [
-    "advanced_anylane",
+    "advanced_lane_reachable",
     "advanced_relief_scoped",
     "strategic_score",
     "strategic_doctrine",
@@ -424,13 +424,16 @@ impl EloPool {
 pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
     match name {
         "advanced" => Box::new(AdvancedAi::new()),
-        // Frozen control for the lane-reachability axis: identical to
-        // `advanced` except that it will still route toward a victory lane it
-        // cannot finish inside the turn budget. Paired against `advanced` this
-        // isolates the filter and nothing else.
-        "advanced_anylane" => {
+        // Treatment for the lane-reachability axis: identical to `advanced`
+        // except that it refuses to route toward a victory lane it cannot
+        // finish inside the turn budget. Paired against `advanced` this
+        // isolates the filter and nothing else. Measured no stronger at 120
+        // mirrored maps -- 49.6% paired score, Elo-equivalent -3, sign
+        // p=1.0000, gate INCONCLUSIVE -- which is why it is an entrant and
+        // not the default.
+        "advanced_lane_reachable" => {
             let mut ai = AdvancedAi::new();
-            ai.refuse_unreachable_lanes = false;
+            ai.refuse_unreachable_lanes = true;
             Box::new(ai)
         }
         // Treatment for the relief-radius axis: identical to `advanced` in
@@ -807,7 +810,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
             if net { "production_net" } else { "production" },
         ),
         "advanced" => (Vec::new(), "advanced"),
-        "advanced_anylane" => (Vec::new(), "advanced_anylane"),
+        "advanced_lane_reachable" => (Vec::new(), "advanced_lane_reachable"),
         "advanced_v1" => (Vec::new(), "advanced_v1"),
         "advanced_relief_scoped" => (Vec::new(), "advanced_relief_scoped"),
         "random" => (Vec::new(), "random"),
@@ -1296,7 +1299,7 @@ mod tests {
             // needing a net.
             const SCRIPTED: [&str; 6] = [
                 "advanced",
-                "advanced_anylane",
+                "advanced_lane_reachable",
                 "advanced_relief_scoped",
                 "advanced_v1",
                 "basic",
