@@ -47127,6 +47127,43 @@ mod combat_scenarios {
     }
 
     #[test]
+    fn the_damage_curve_is_the_one_the_parameters_describe() {
+        // COMBAT_BASE_DAMAGE 24 with COMBAT_MAX_EXTRA_DAMAGE 12 is a roll of
+        // 24 to 36, which is what 30 * U(0.8, 1.2) gives. COMBAT_POWER_SCALING
+        // 0.04 is the 1/25 the strength difference is divided by, and
+        // COMBAT_MINIMUM_DAMAGE 1 and COMBAT_MAX_HIT_POINTS 100 are the clamp.
+        let mut rng = crate::rng::Rng::new(4_165);
+        let mut lowest = i32::MAX;
+        let mut highest = 0;
+        for _ in 0..20_000 {
+            let rolled = damage(50.0, 50.0, &mut rng);
+            lowest = lowest.min(rolled);
+            highest = highest.max(rolled);
+        }
+        // An even fight rolls the base band itself.
+        assert_eq!((lowest, highest), (24, 36));
+
+        // Every 25 points of advantage multiplies the roll by e, so a
+        // twenty-five point edge is worth about 2.718 times the damage.
+        let mut even = 0.0;
+        let mut ahead = 0.0;
+        for _ in 0..20_000 {
+            even += f64::from(damage(50.0, 50.0, &mut rng));
+            ahead += f64::from(damage(75.0, 50.0, &mut rng));
+        }
+        assert!(
+            (ahead / even - std::f64::consts::E).abs() < 0.05,
+            "25 strength should be worth e times the damage, got {}",
+            ahead / even
+        );
+
+        // The clamp holds at both ends: nothing does less than 1, and a
+        // hopeless mismatch still cannot exceed a full health bar.
+        assert_eq!(damage(1.0, 500.0, &mut rng), 1);
+        assert_eq!(damage(500.0, 1.0, &mut rng), 100);
+    }
+
+    #[test]
     fn walls_absorb_the_share_of_each_attack_its_parameter_names() {
         // COMBAT_DEFENSE_DAMAGE_PERCENT_MELEE 15, _RANGED 50, _BOMBARD 100.
         // A melee swing barely scratches Outer Defenses; a Bombard takes them
