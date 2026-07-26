@@ -10143,6 +10143,72 @@ mod district_building_wonder_runtime_tests {
     }
 
     #[test]
+    fn a_bridged_river_crossing_costs_its_route_and_never_returns_movement() {
+        let (mut game, _city, _) = one_city(88_2073);
+        let (a, b) = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| !game.rules.is_water(tile) && game.rules.is_passable(tile))
+            .find_map(|(position, _)| {
+                game.nbrs(*position).into_iter().find_map(|neighbor| {
+                    let ok = game.map.get(neighbor).is_some_and(|tile| {
+                        !game.rules.is_water(tile) && game.rules.is_passable(tile)
+                    }) && !game.crosses_river(*position, neighbor)
+                        && game.units_at(*position).is_empty()
+                        && game.units_at(neighbor).is_empty()
+                        && game.map.tiles[position].district.is_none()
+                        && game.map.tiles[&neighbor].district.is_none();
+                    ok.then_some((*position, neighbor))
+                })
+            })
+            .expect("test map has an adjacent riverless land pair");
+        for position in [a, b] {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = "plains".to_string();
+            tile.feature = None;
+            tile.hills = false;
+            tile.road = 2; // Medieval route: SupportsBridges
+        }
+        assert!(game.map.set_river_edge(a, b, true));
+        let warrior = game.spawn_unit("warrior", 0, a);
+
+        // A bridged crossing is charged its route, because bridging withholds
+        // the surcharge. It cannot be charged the route *minus* the surcharge:
+        // the route ladder has already discarded that, so subtracting it again
+        // prices the step below zero.
+        for (level, expected) in [(2, 1.0), (3, 0.75), (4, 0.5), (5, 0.25)] {
+            game.map.tiles.get_mut(&a).unwrap().road = level;
+            game.map.tiles.get_mut(&b).unwrap().road = level;
+            let cost = game.unit_step_cost(warrior, a, b);
+            assert!(
+                (cost - expected).abs() < 1e-9,
+                "a level {level} bridge costs {cost} MP, expected {expected}"
+            );
+        }
+
+        // The price is not why this matters. A step costing less than nothing
+        // *returns* movement, so a unit crossing a bridge and back regains MP
+        // on every crossing. `flow` and `path_to` terminate only because each
+        // relaxation leaves strictly less movement than it started with, so a
+        // refund unbounds them from the unit's budget and they relax the whole
+        // route network -- which is the memory fault, not a mispriced tile. A
+        // part-spent unit is where it shows, since the max-moves cap conceals
+        // a refund taken at full movement.
+        for level in [2u8, 5] {
+            game.map.tiles.get_mut(&a).unwrap().road = level;
+            game.map.tiles.get_mut(&b).unwrap().road = level;
+            for (position, remaining) in &game.flow(warrior, a, 1.0) {
+                assert!(
+                    *remaining <= 1.0 + 1e-9,
+                    "level {level}: {position:?} keeps {remaining} MP \
+                     after a step that began with 1 MP"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn golden_gate_is_a_modern_road_without_embarking_land_units() {
         let (mut game, city, _) = one_city(774_4031);
         let (bridge, left, right) = game
@@ -25301,7 +25367,20 @@ impl Game {
     fn unit_step_cost(&self, uid: u32, from: Pos, to: Pos) -> f64 {
         let unit = &self.units[&uid];
         let tile = &self.map.tiles[&to];
-        let mut cost = self.step_cost(from, to);
+        // Medieval and later routes bridge rivers (SupportsBridges); Ancient
+        // roads leave the crossing penalty in place. Bridging has to withhold
+        // the surcharge rather than refund it afterwards: the route ladder
+        // below caps the step at the route's own cost, which already discards
+        // the surcharge, so a refund taken after that cancels nothing and
+        // drives the step negative instead.
+        let bridged = self.crosses_river(from, to)
+            && self.map.tiles[&from].road >= 2
+            && tile.road >= 2;
+        let mut cost = if bridged {
+            self.rules.move_cost(tile)
+        } else {
+            self.step_cost(from, to)
+        };
         if self.map.tiles[&from].road > 0 && tile.road > 0 {
             let modern_bridge = self.map.tiles[&from].wonder.as_deref()
                 == Some("golden_gate_bridge")
@@ -25325,14 +25404,6 @@ impl Game {
             })
         {
             cost = 1.0;
-        }
-        if self.crosses_river(from, to)
-            && self.map.tiles[&from].road >= 2
-            && tile.road >= 2
-        {
-            // Medieval and later routes bridge rivers (SupportsBridges);
-            // Ancient roads leave the crossing penalty in place.
-            cost -= 2.0;
         }
         if self.promotion_effect(unit, "woods_move_cost") > 0.0
             && matches!(tile.feature.as_deref(), Some("forest" | "jungle"))
@@ -25358,7 +25429,17 @@ impl Game {
             // one otherwise-unaffordable step, as with other rough terrain.
             cost += 2.0;
         }
-        cost
+        // A step never grants movement. `flow` and `path_to` terminate because
+        // each relaxation leaves strictly less movement than it started with;
+        // a negative cost restores movement instead, so a two-tile route loop
+        // regains MP on every crossing and the search stops being bounded by
+        // the unit's budget. That is a memory fault, not a movement quirk, so
+        // the invariant is kept here rather than assumed of every rule above.
+        debug_assert!(
+            cost >= 0.0,
+            "step {from:?} -> {to:?} costs {cost}, which would grant movement"
+        );
+        cost.max(0.0)
     }
 
     /// Harbors and coastal City Centers remove the embark/disembark
