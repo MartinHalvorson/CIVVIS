@@ -777,6 +777,10 @@ fn chronicle_world_events(
 /// time whatever the player count. `0` means unlimited: no artificial wait at
 /// all, the simulation runs as fast as the machine allows.
 pub struct Shared {
+    /// The active world's identity without taking the simulation lock. This
+    /// keeps a successor probe from queuing behind an AI turn just to learn
+    /// whether the supervised process has changed.
+    pub current_seed: AtomicU64,
     pub session: Mutex<Session>,
     pub pace_ms: AtomicU64,
     pub paused: AtomicBool,
@@ -811,6 +815,9 @@ pub struct Shared {
 struct SpectatorFrame {
     seed: u64,
     turn: u32,
+    /// A victory may be decided by a seat in the middle of a round, without
+    /// advancing `turn`. That terminal state is still a distinct frame.
+    finished: bool,
 }
 
 /// One page, tracked apart from every other page.
@@ -1038,6 +1045,7 @@ impl Shared {
                 SpectatorFrame {
                     seed: session.game.seed,
                     turn: session.game.turn,
+                    finished: session.game.winner.is_some(),
                 }
             };
             if current != held {
@@ -1760,6 +1768,7 @@ impl Session {
             // Lets a long-running spectator notice that its server was
             // rebuilt/restarted between games and reload the latest UI.
             o["server_instance"] = json!(std::process::id());
+            o["server_commit"] = json!(option_env!("CIVVIS_COMMIT").unwrap_or("unknown"));
             return o;
         }
         let mut o = observation(&self.game, 0);
@@ -1777,6 +1786,7 @@ impl Session {
             .unwrap_or(Value::Null);
         o["legal_actions"] = serde_json::to_value(self.game.legal_actions(0)).unwrap();
         o["server_instance"] = json!(std::process::id());
+        o["server_commit"] = json!(option_env!("CIVVIS_COMMIT").unwrap_or("unknown"));
         o
     }
 
@@ -2307,15 +2317,27 @@ fn tile_mark(tile: &Value) -> u64 {
 }
 
 /// The frame a page says its own copy of the tiles is built from, written
-/// `world:turn`. Both halves matter: a patch is only meaningful against the
-/// exact array the server sent, and turn 5 of one world is not turn 5 of the
-/// next. Anything unparseable simply means no baseline, and the page is sent
-/// the whole map.
+/// `world:turn:finished`. All three parts matter: a victory may be decided
+/// during a seat's step without incrementing the turn, and the terminal map is
+/// not the non-terminal map from the same turn. Legacy two-part tokens remain
+/// valid non-terminal baselines. Anything unparseable simply means no
+/// baseline, and the page is sent the whole map.
 fn held_frame(token: &str) -> Option<SpectatorFrame> {
-    let (seed, turn) = token.split_once(':')?;
+    let mut fields = token.split(':');
+    let seed = fields.next()?.parse().ok()?;
+    let turn = fields.next()?.parse().ok()?;
+    let finished = match fields.next() {
+        None | Some("0") => false,
+        Some("1") => true,
+        Some(_) => return None,
+    };
+    if fields.next().is_some() {
+        return None;
+    }
     Some(SpectatorFrame {
-        seed: seed.parse().ok()?,
-        turn: turn.parse().ok()?,
+        seed,
+        turn,
+        finished,
     })
 }
 
@@ -2552,6 +2574,7 @@ fn auto_step_loop(sh: Arc<Shared>) {
             SpectatorFrame {
                 seed: s.game.seed,
                 turn: s.game.turn,
+                finished: s.game.winner.is_some(),
             }
         };
         sh.wait_for_turn_frame(current_frame);
@@ -2573,6 +2596,7 @@ fn auto_step_loop(sh: Arc<Shared>) {
                 sh.restart_in.store(left, Ordering::Relaxed);
                 if left == 0 {
                     s.start_automatic_next_game();
+                    sh.current_seed.store(s.game.seed, Ordering::Relaxed);
                     over_since = None;
                     watched_turn = None;
                     sh.restart_in.store(u64::MAX, Ordering::Relaxed);
@@ -2585,6 +2609,7 @@ fn auto_step_loop(sh: Arc<Shared>) {
                     completed_frame = Some(SpectatorFrame {
                         seed: s.game.seed,
                         turn: s.game.turn,
+                        finished: false,
                     });
                 }
                 delay = 200;
@@ -2593,14 +2618,20 @@ fn auto_step_loop(sh: Arc<Shared>) {
                 over_since = None;
                 sh.restart_in.store(u64::MAX, Ordering::Relaxed);
                 let step_started = Instant::now();
-                let turn_before = s.game.turn;
+                let frame_before = SpectatorFrame {
+                    seed: s.game.seed,
+                    turn: s.game.turn,
+                    finished: false,
+                };
                 let (pid, _) = s.step();
                 turn_compute_us += step_started.elapsed().as_micros() as u64;
-                if s.game.turn != turn_before {
-                    completed_frame = Some(SpectatorFrame {
-                        seed: s.game.seed,
-                        turn: s.game.turn,
-                    });
+                let frame_after = SpectatorFrame {
+                    seed: s.game.seed,
+                    turn: s.game.turn,
+                    finished: s.game.winner.is_some(),
+                };
+                if frame_after != frame_before {
+                    completed_frame = Some(frame_after);
                 }
                 // The step that ends a game has to hand the viewer its
                 // countdown in the same breath. Arming it on the next pass
@@ -2762,6 +2793,19 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         ("GET", "/assets/mountain-atlas.png") => {
             respond(stream, "200 OK", "image/png", &mountain_atlas());
         }
+        // A lock-free identity probe for supervised process handoffs. The
+        // browser used to fetch the multi-megabyte `/state` document here and
+        // could queue behind an AI step for its entire three-second timeout.
+        ("GET", "/runtime") => {
+            respond_json(
+                stream,
+                &json!({
+                    "server_instance": std::process::id(),
+                    "seed": sh.current_seed.load(Ordering::Relaxed),
+                    "commit": option_env!("CIVVIS_COMMIT").unwrap_or("unknown"),
+                }),
+            );
+        }
         ("GET", "/state") => {
             // A Planet world is a globe, and a client cannot draw one from tile
             // coordinates alone. It asks for the sphere's geometry the first
@@ -2800,8 +2844,18 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 let painted = match (
                     reported.parse::<u32>(),
                     query_value(&request_target, "world").map(str::parse::<u64>),
+                    query_value(&request_target, "finished"),
                 ) {
-                    (Ok(turn), Some(Ok(seed))) => Some(SpectatorFrame { seed, turn }),
+                    (Ok(turn), Some(Ok(seed)), Some("0") | None) => Some(SpectatorFrame {
+                        seed,
+                        turn,
+                        finished: false,
+                    }),
+                    (Ok(turn), Some(Ok(seed)), Some("1")) => Some(SpectatorFrame {
+                        seed,
+                        turn,
+                        finished: true,
+                    }),
                     _ => None, // a page that has painted nothing yet
                 };
                 sh.note_viewer_request(&viewer, painted);
@@ -2815,6 +2869,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 let frame = SpectatorFrame {
                     seed: session.game.seed,
                     turn: session.game.turn,
+                    finished: session.game.winner.is_some(),
                 };
                 let mut observed = session.state();
                 if wants_planet {
@@ -3000,6 +3055,8 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     let mut session = sh.session.lock().unwrap();
                     let params = session.params.clone();
                     *session = Session::from_game(params, game);
+                    sh.current_seed
+                        .store(session.game.seed, Ordering::Relaxed);
                     let mut out = session.state();
                     out["error"] = Value::Null;
                     drop(session);
@@ -3290,6 +3347,8 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             let mut session = sh.session.lock().unwrap();
             let result = session.start_new_game(&parsed);
             if result.is_ok() {
+                sh.current_seed
+                    .store(session.game.seed, Ordering::Relaxed);
                 let paused = parsed["paused"]
                     .as_bool()
                     .unwrap_or_else(|| sh.paused.load(Ordering::Relaxed));
@@ -3332,10 +3391,10 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::{
-        chronicle_world_events, final_countdown_ms, new_game_params, query_value, request_path,
-        save_path, seat_delay_ms, strategy_roster, tile_mark, ChronicleSnapshot, ChronicleState,
-        FrameDelivery, Params,
-        Session, SpectatorFrame, EMBEDDED_CINEMATIC_3D, EMBEDDED_INDEX, MIN_RESTART_MS,
+        chronicle_world_events, final_countdown_ms, held_frame, new_game_params, query_value,
+        request_path, save_path, seat_delay_ms, strategy_roster, tile_mark, ChronicleSnapshot,
+        ChronicleState, FrameDelivery, Params,
+        Session, Shared, SpectatorFrame, EMBEDDED_CINEMATIC_3D, EMBEDDED_INDEX, MIN_RESTART_MS,
         EMBEDDED_WORLD_WONDER_ATLAS, SAVE_DIR, STATE_LONG_POLL, VIEWER_ACTIVE,
     };
     use crate::game::{
@@ -3345,6 +3404,8 @@ mod tests {
     use serde_json::{json, Value};
     use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};
+    use std::sync::atomic::{AtomicBool, AtomicU64};
+    use std::sync::{mpsc, Arc, Condvar, Mutex};
     use std::time::{Duration, Instant};
 
     /// The pace a viewer picks is what a turn costs, so the seats' waits have
@@ -3379,11 +3440,97 @@ mod tests {
     }
 
     #[test]
+    fn a_mid_turn_victory_is_a_distinct_spectator_frame() {
+        let playing = SpectatorFrame {
+            seed: 41,
+            turn: 7,
+            finished: false,
+        };
+        let won = SpectatorFrame {
+            seed: 41,
+            turn: 7,
+            finished: true,
+        };
+        assert_ne!(playing, won);
+        assert_eq!(held_frame("41:7"), Some(playing));
+        assert_eq!(held_frame("41:7:0"), Some(playing));
+        assert_eq!(held_frame("41:7:1"), Some(won));
+        assert_eq!(held_frame("41:7:maybe"), None);
+    }
+
+    #[test]
+    fn a_mid_turn_victory_wakes_the_waiting_state_request_immediately() {
+        let mut session = Session::new(current());
+        session.game.turn = 7;
+        session.game.winner = None;
+        let seed = session.game.seed;
+        let shared = Arc::new(Shared {
+            current_seed: AtomicU64::new(seed),
+            session: Mutex::new(session),
+            pace_ms: AtomicU64::new(0),
+            paused: AtomicBool::new(false),
+            restart_in: AtomicU64::new(u64::MAX),
+            turn_us: AtomicU64::new(0),
+            turn_compute_us: AtomicU64::new(0),
+            frame_delivery: Mutex::new(FrameDelivery::default()),
+            frame_painted: Condvar::new(),
+            simulation_frame_gate: Mutex::new(()),
+            latest: Mutex::new(None),
+            turn_ready: Condvar::new(),
+        });
+        let playing = SpectatorFrame {
+            seed,
+            turn: 7,
+            finished: false,
+        };
+        let won = SpectatorFrame {
+            finished: true,
+            ..playing
+        };
+        let (sent, received) = mpsc::channel();
+        let waiter = shared.clone();
+        let started = Instant::now();
+        std::thread::spawn(move || {
+            waiter.wait_for_next_turn(Some(playing));
+            sent.send(started.elapsed()).unwrap();
+        });
+
+        std::thread::sleep(Duration::from_millis(40));
+        shared.session.lock().unwrap().game.winner = Some(0);
+        shared.note_turn_ready(won);
+
+        let elapsed = received
+            .recv_timeout(Duration::from_millis(300))
+            .expect("the terminal frame should wake the long poll");
+        assert!(
+            elapsed < Duration::from_millis(250),
+            "terminal state waited for the {:?} long-poll cap: {elapsed:?}",
+            STATE_LONG_POLL
+        );
+    }
+
+    #[test]
     fn every_turn_waits_for_its_frame_only_while_a_viewer_is_active() {
         let now = Instant::now();
-        let turn_7 = SpectatorFrame { seed: 41, turn: 7 };
-        let turn_8 = SpectatorFrame { seed: 41, turn: 8 };
-        let next_world = SpectatorFrame { seed: 42, turn: 7 };
+        let turn_7 = SpectatorFrame {
+            seed: 41,
+            turn: 7,
+            finished: false,
+        };
+        let turn_8 = SpectatorFrame {
+            seed: 41,
+            turn: 8,
+            finished: false,
+        };
+        let next_world = SpectatorFrame {
+            seed: 42,
+            turn: 7,
+            finished: false,
+        };
+        let final_turn_7 = SpectatorFrame {
+            finished: true,
+            ..turn_7
+        };
         let mut delivery = FrameDelivery::default();
 
         assert_eq!(delivery.wait_remaining(turn_7, now), None);
@@ -3404,6 +3551,7 @@ mod tests {
         assert_eq!(delivery.wait_remaining(turn_7, now), None);
         assert!(delivery.wait_remaining(turn_8, now).is_some());
         assert!(delivery.wait_remaining(next_world, now).is_some());
+        assert!(delivery.wait_remaining(final_turn_7, now).is_some());
 
         assert_eq!(
             delivery.wait_remaining(turn_8, now + Duration::from_millis(40) + VIEWER_ACTIVE),
@@ -3422,7 +3570,11 @@ mod tests {
     #[test]
     fn every_viewer_is_owed_the_turn_not_whichever_asks_first() {
         let now = Instant::now();
-        let turn_7 = SpectatorFrame { seed: 41, turn: 7 };
+        let turn_7 = SpectatorFrame {
+            seed: 41,
+            turn: 7,
+            finished: false,
+        };
         let mut delivery = FrameDelivery::default();
 
         delivery.viewer_request("one", None, now);
@@ -3449,7 +3601,11 @@ mod tests {
         // And a tab that closes stops holding turns open once it goes stale,
         // rather than costing the exhibition a wait for a page nobody has.
         let later = now + VIEWER_ACTIVE + Duration::from_millis(1);
-        let turn_8 = SpectatorFrame { seed: 41, turn: 8 };
+        let turn_8 = SpectatorFrame {
+            seed: 41,
+            turn: 8,
+            finished: false,
+        };
         delivery.viewer_request("one", None, later);
         delivery.frame_delivered("one", turn_8, later);
         delivery.viewer_request("one", Some(turn_8), later);
@@ -3460,9 +3616,21 @@ mod tests {
     #[test]
     fn only_the_exact_delivered_snapshot_can_acknowledge_a_complete_frame() {
         let now = Instant::now();
-        let turn_7 = SpectatorFrame { seed: 41, turn: 7 };
-        let turn_8 = SpectatorFrame { seed: 41, turn: 8 };
-        let other_world = SpectatorFrame { seed: 42, turn: 7 };
+        let turn_7 = SpectatorFrame {
+            seed: 41,
+            turn: 7,
+            finished: false,
+        };
+        let turn_8 = SpectatorFrame {
+            seed: 41,
+            turn: 8,
+            finished: false,
+        };
+        let other_world = SpectatorFrame {
+            seed: 42,
+            turn: 7,
+            finished: false,
+        };
         let mut delivery = FrameDelivery::default();
 
         delivery.viewer_request("one", None, now);
@@ -3482,7 +3650,13 @@ mod tests {
     /// cover for another that is dropping them.
     #[test]
     fn misses_are_counted_against_the_viewer_that_missed_them() {
-        let world = |turn| Some(SpectatorFrame { seed: 41, turn });
+        let world = |turn| {
+            Some(SpectatorFrame {
+                seed: 41,
+                turn,
+                finished: false,
+            })
+        };
         let mut now = Instant::now();
         let beat = Duration::from_millis(50);
         let mut delivery = FrameDelivery::default();
@@ -3506,7 +3680,13 @@ mod tests {
     /// rather than assumed not to exist.
     #[test]
     fn painting_reports_count_the_turns_no_viewer_ever_drew() {
-        let world = |turn| Some(SpectatorFrame { seed: 41, turn });
+        let world = |turn| {
+            Some(SpectatorFrame {
+                seed: 41,
+                turn,
+                finished: false,
+            })
+        };
         let mut now = Instant::now();
         let mut poll = |delivery: &mut FrameDelivery, painted, after: Duration| {
             now += after;
@@ -3541,9 +3721,33 @@ mod tests {
         // the turns before it belonged to another game. Nor is a repeated turn
         // a miss — the page redraws the same turn whenever it polls twice
         // inside one.
-        poll(&mut delivery, Some(SpectatorFrame { seed: 42, turn: 40 }), beat);
-        poll(&mut delivery, Some(SpectatorFrame { seed: 42, turn: 40 }), beat);
-        poll(&mut delivery, Some(SpectatorFrame { seed: 42, turn: 41 }), beat);
+        poll(
+            &mut delivery,
+            Some(SpectatorFrame {
+                seed: 42,
+                turn: 40,
+                finished: false,
+            }),
+            beat,
+        );
+        poll(
+            &mut delivery,
+            Some(SpectatorFrame {
+                seed: 42,
+                turn: 40,
+                finished: false,
+            }),
+            beat,
+        );
+        poll(
+            &mut delivery,
+            Some(SpectatorFrame {
+                seed: 42,
+                turn: 41,
+                finished: false,
+            }),
+            beat,
+        );
         assert_eq!(missed(&delivery), 3);
     }
 
@@ -3732,6 +3936,29 @@ mod tests {
             std::thread::sleep(Duration::from_millis(50));
         }
         port
+    }
+
+    #[test]
+    fn runtime_identity_is_a_small_successor_probe() {
+        let port = exhibition(20_260_726);
+        http_post(port, "/pace", "{\"paused\":true}").expect("pause the exhibition");
+        let runtime_body = http_get(port, "/runtime").expect("runtime identity");
+        let state_body = http_get(port, "/state").expect("full state");
+        let runtime: Value = serde_json::from_str(&runtime_body).expect("runtime is JSON");
+        let state: Value = serde_json::from_str(&state_body).expect("state is JSON");
+
+        assert_eq!(runtime["server_instance"], state["server_instance"]);
+        assert_eq!(runtime["seed"], state["seed"]);
+        assert_eq!(runtime["commit"], state["server_commit"]);
+        assert!(
+            runtime_body.len() < 256,
+            "successor identity should stay tiny, got {} bytes",
+            runtime_body.len()
+        );
+        assert!(
+            runtime_body.len() * 10 < state_body.len(),
+            "the identity probe should not resemble a full observation"
+        );
     }
 
     /// A result has to arrive with the window it promises, and that window has
@@ -4058,7 +4285,9 @@ mod tests {
         );
 
         let render = EMBEDDED_INDEX
-            .split_once("function render(st, recordChronicle = true) {")
+            .split_once(
+                "function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false) {",
+            )
             .expect("browser render function")
             .1
             .split_once("\nfunction drawCaptureChoice()")
@@ -4072,7 +4301,7 @@ mod tests {
             .expect("map, minimap, HUDs, and controls must repaint together");
         assert!(state_assignment < full_frame);
         let painted = render
-            .find("paintedFrame = {seed:st.seed, turn:st.turn};")
+            .find("paintedFrame = {seed:st.seed, turn:st.turn,")
             .expect("complete-frame acknowledgement");
         assert!(
             full_frame < painted,
@@ -4143,15 +4372,18 @@ mod tests {
         // And the page tells the server which turn it painted, both so that
         // only a painting page holds the simulation to a turn and so that
         // turns nobody drew can be counted instead of assumed away.
-        assert!(EMBEDDED_INDEX.contains("paintedFrame = {seed:st.seed, turn:st.turn};"));
+        assert!(EMBEDDED_INDEX.contains("paintedFrame = {seed:st.seed, turn:st.turn,"));
         assert!(EMBEDDED_INDEX
-            .contains("`?painted=${paintedFrame.turn}&world=${paintedFrame.seed}`"));
+            .contains("finished:st.winner !== null && st.winner !== undefined"));
+        assert!(EMBEDDED_INDEX
+            .contains("`&finished=${paintedFrame.finished ? 1 : 0}`"));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/state\" + paintedQuery())"));
         // Two tabs are two promises, so a page says which one it is, and what
         // it holds is asked separately from what it drew — a state can arrive,
         // patch the tiles and still fail to paint.
         assert!(EMBEDDED_INDEX.contains("&viewer=${VIEWER_ID}"));
-        assert!(EMBEDDED_INDEX.contains("&have=${tileStore.seed}:${tileStore.turn}"));
+        assert!(EMBEDDED_INDEX
+            .contains("&have=${tileStore.seed}:${tileStore.turn}:${tileStore.finished ? 1 : 0}"));
 
         // And it draws one turn per animation frame, on the display's clock
         // rather than a timer of its own. Two turns painted inside one refresh
@@ -4744,7 +4976,7 @@ mod tests {
         assert!(EMBEDDED_INDEX
             .contains("String(st?.seed) === String(worldTransitionHandoff.targetSeed)"));
         assert!(EMBEDDED_INDEX.contains("finishWorldTransition(st);"));
-        assert!(EMBEDDED_INDEX.contains("setTimeout(startFade, 500)"));
+        assert!(EMBEDDED_INDEX.contains("clearWorldTransition();"));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/next-game-settings\""));
         assert!(EMBEDDED_INDEX.contains("with selected settings"));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/supervisor-new\""));
@@ -4757,7 +4989,8 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "waitForSupervisedSuccessor(st.server_instance, st.seed)"
         ));
-        assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/state\", {cache: \"no-store\"}, 3000)"));
+        assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/runtime\", {cache: \"no-store\"}, 500)"));
+        assert!(EMBEDDED_INDEX.contains("render(adoptTiles(first), true, true);"));
         assert!(EMBEDDED_INDEX.contains("st.seed !== state.seed"));
         assert!(!EMBEDDED_INDEX.contains("id=\"head-newgame\""));
         assert!(EMBEDDED_INDEX.contains("spectate: gameMode === \"ai_sim\""));
@@ -7088,7 +7321,9 @@ pub fn serve_with_game(
     } else {
         println!("You are player 0. Ctrl+C to quit.");
     }
+    let current_seed = session.game.seed;
     let shared = Arc::new(Shared {
+        current_seed: AtomicU64::new(current_seed),
         session: Mutex::new(session),
         pace_ms: AtomicU64::new(1_000), // one second per turn by default
         paused: AtomicBool::new(initially_paused),

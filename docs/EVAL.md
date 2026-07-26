@@ -1720,3 +1720,89 @@ feature is the policy working — an agent that pushes its own material up is
 doing what it should. Heavy pressure on a *correlational* one is the
 failure. Telling those apart still needs judgement about the game; what
 this removes is the need to first suspect that something is wrong.
+
+## 2026-07-26 — the measured agent ladder
+
+`strategic_deep` was promoted on evidence gathered entirely against
+`strategic`. The fleet's default major agent is `advanced`, so the
+comparison an operator actually needs was missing. It is now measured, on
+the same seed set and settings as everything else (four players, 200
+turns, 120 mirrored maps, seed 70000):
+
+| pairing | games | maps for | against | sign p | e | gate |
+|---|---|---|---|---|---|---|
+| `strategic_deep` > `advanced` | 136/240 (56.7%) | **22** | 6 | **0.0037** | 89 (crossed at 112) | INCONCLUSIVE |
+| `strategic_deep` > `strategic` | 142/240 (59.2%) | 29 | 7 | 0.0003 | 335 (crossed at 91) | PASS |
+| `strategic` > `advanced` | 130/240 (54.2%) | 20 | 10 | 0.0987 | 2.9 | INCONCLUSIVE |
+
+Plus the pre-registered 300-map run that carried the promotion:
+`strategic_deep` over `strategic`, 339/600 games, 56 maps to 17, sign
+p=0.0000, e=3.14e4, `promotion gate: PASS`.
+
+The ordering is consistent across every pairing: **`strategic_deep` >
+`strategic` > `advanced`**, and the promoted agent beats the scripted
+default by sign test and by anytime-valid evidence. The gate still reads
+INCONCLUSIVE against `advanced` for the reason established earlier — at a
+56.7% effect the Wilson bound needs roughly 300 maps, and this run is 120.
+
+Two things worth taking from the table beyond the ranking.
+
+**`strategic` has never been shown to beat `advanced` at adequate power.**
+It leans ahead at 20 maps to 10, but p=0.0987 and an e-value of 2.9 are not
+a result, and the 41.7%-at-four-players figure in older entries predates
+every instrument fix made since. Anyone treating the existing search agent
+as a known improvement over the scripted one is relying on numbers that
+were never resolvable.
+
+**Terminal score is 49.1% here too**, as it has been for every arm this
+session. The promoted agent wins more games without out-scoring anyone,
+which is exactly the signature of a change to victory-lane routing rather
+than to economy — the same reading the direction-resolution line was added
+to make legible.
+
+## 2026-07-26 — action-conditioned value from expert logs inherits the confound
+
+The corrected recommendation two entries ago was action-conditioned value —
+Q or advantage on returns for actions actually taken — on the grounds that
+it scores a move into a losing fight by what it costs rather than by what
+it resembles. That reasoning has a hole, and this session's record on
+unmeasured reasoning is three retractions, so it was measured before anyone
+built on it.
+
+A Q fit to logged play can only order actions the log contains. Over 480
+expert decision points:
+
+| quantity | value |
+|---|---|
+| legal move candidates offered per decision | 25.2 |
+| of those, candidates that raise contact | 3.9 (15%) |
+| expert turns that raised contact | **36%** of decisions |
+| share of offered candidates that can appear as a taken action | **≤ 3.96%** |
+
+Two things follow, and they point the same way.
+
+**Coverage is about four percent.** Roughly 96% of the actions a learner
+would consider never appear in the log at all, so Q has no signal for them
+and must extrapolate — which is the situation that produced the −313 result
+in the first place, moved from states to actions.
+
+**The expert takes contact-raising moves at more than twice the base
+rate** — 36% of its turns against 15% of candidates. So the log does not
+say "contact is bad"; it says contact-taking accompanies good play, because
+the scripted agent enters contact when the fight is favourable and declines
+when it is not. A Q fit to that learns the same association the state-value
+net learned. It is the *declined* moves — contact in unfavourable positions
+— that carry the corrective signal, and by construction they are the ones
+the log does not contain.
+
+So action-conditioned value is not by itself the fix. What distinguishes a
+good contact move from a bad one is absent from any purely observational
+corpus of a competent agent, however it is labelled. Getting it requires
+data that contains the bad version of the action: **on-policy exploration**
+that actually takes the losing move and records the loss, or **search**
+that plays the candidate out counterfactually instead of recognising it.
+
+That is the same conclusion the whole session keeps arriving at from
+different directions, and it is now measured rather than argued: the macro
+search wins games because a rollout is an experiment, and every learned
+component that failed was reading a correlation.

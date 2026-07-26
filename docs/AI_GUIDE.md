@@ -398,6 +398,13 @@ describe a much smaller historical rules workload.
   `promotion gate: PASS` under the unmodified gate. Two earlier disjoint
   sets add 240 maps at 53 to 15, for 540 independent maps at 109 to 32.
 
+  Against the scripted default rather than its own parent it is also
+  ahead: 136/240 games, 22 mirrored maps to 6, sign p=0.0037, e=89. The
+  measured ordering is `strategic_deep` > `strategic` > `advanced`,
+  consistent across every pairing. Note that `strategic` itself has never
+  been shown to beat `advanced` at adequate power — it leans ahead 20 maps
+  to 10 at p=0.0987, which is not a result.
+
   Each doubling on its own clears the anytime-valid evidence but not the
   effect interval; only together do they clear both. Spending the same 4×
   on frequency alone (`strategic_r10`) is the weakest arm measured, so it
