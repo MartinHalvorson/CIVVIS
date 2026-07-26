@@ -337,9 +337,14 @@ error toast when pressed.
   your `end_turn` with "not your turn" — so the button says your civilization
   has fallen and the finale says so too.
 
-Both offer the one thing still useful: another game, started from the setup
-panel. A spectated finale keeps its countdown instead, because the supervisor
-owns that handoff.
+Both offer the one thing still useful: another game, on the settings currently
+in the setup panel. **Start another game** counts itself down from ten seconds
+and then starts, so a finished game does not sit on its result screen forever
+waiting for a click; the button carries the count. Any click, key press or
+scroll stops the countdown, because somebody who is still deciding has just
+proved they are there — as does choosing one of the ways to keep the world
+below. A spectated finale keeps the supervisor's countdown instead, because
+the supervisor owns that handoff.
 
 ### Continue after victory
 
@@ -350,9 +355,13 @@ empires from the turn on which victory was declared:
   pauses the exhibition before another AI turn can run. Resume whenever you
   are ready from the normal simulation controls. A human game already waits
   for its player's next action.
-- **Play until next victory condition** resumes immediately and stops when a
-  civilization earns a result other than the exact result on the finale.
-- **Play indefinitely** resumes immediately and ignores every later victory.
+- **Continue** resumes immediately and stops when a civilization earns a result
+  other than the exact result on the finale.
+- **To infinity and beyond** resumes immediately and ignores every later
+  victory.
+
+The two resuming choices are named for what the person wants, not for the
+stopping rule they select; each rule is spelled out on its button's tooltip.
 
 All three choices remove the turn cap from the continued world.
 

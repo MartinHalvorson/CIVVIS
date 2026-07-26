@@ -150,22 +150,41 @@
        display, while a smaller game still pays only for the rows it has. */
     --player-hud-max-height: min(38vh, 280px);
   }
+  /* The map area: the rectangle of #maparea the world is drawn into. It is the
+     whole of it until the panels crowd it or a viewer sets it by hand, and
+     everything that belongs to the world rather than to the chrome floating
+     over it — the canvas, the vignettes, the cinema grade — is laid out from
+     these four numbers. */
+  #maparea {
+    --map-area-left: 0px; --map-area-top: 0px;
+    --map-area-right: 0px; --map-area-bottom: 0px;
+    --map-area-width: 100%; --map-area-height: 100%;
+  }
   #maparea::before {
-    content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+    content: ""; position: absolute; z-index: 2; pointer-events: none;
+    left: var(--map-area-left); top: var(--map-area-top);
+    width: var(--map-area-width); height: var(--map-area-height);
     opacity: 0; transition: opacity .6s ease;
     background:
       radial-gradient(ellipse at 50% 46%, transparent 38%, #06100d26 70%, #020605a8 112%),
       linear-gradient(180deg, #07110f45 0%, transparent 19%, transparent 72%, #02060573 100%);
   }
   #maparea::after {
-    content: ""; position: absolute; inset: 0; z-index: 3; pointer-events: none;
+    content: ""; position: absolute; z-index: 3; pointer-events: none;
+    left: var(--map-area-left); top: var(--map-area-top);
+    width: var(--map-area-width); height: var(--map-area-height);
     box-shadow: inset 0 0 100px #0208079c;
   }
   canvas { display: block; }
   #map {
-    cursor: grab; width: 100%; height: 100%; position: relative; z-index: 1;
+    cursor: grab; position: absolute; z-index: 1;
+    left: var(--map-area-left); top: var(--map-area-top);
+    width: var(--map-area-width); height: var(--map-area-height);
     touch-action: none; user-select: none; -webkit-user-select: none;
   }
+  /* A world that no longer reaches the edge of its container needs a seam, or
+     the band left over reads as a rendering fault rather than as a frame. */
+  body.map-area-inset #map { box-shadow: 0 0 0 1px #ffffff0f, 0 22px 60px #0006; }
   #map:active { cursor: grabbing; }
 
   /* Command deck */
@@ -1041,15 +1060,24 @@
   }
   #zoomctl button { width: 34px; height: 34px; margin: 0; padding: 0; border: 0; background: transparent; font-size: 16px; }
   #zoomctl button + button { border-left: 1px solid #ffffff0c; border-radius: 0; }
+  /* The lens bar is a fixed frame around a strip that scrolls inside it. The
+     dismiss control is a sibling of that strip rather than its last item, so
+     it keeps its place at the right edge without ever coming to rest on top of
+     a lens the strip has scrolled under it. */
   #map-lenses {
-    position: relative; z-index: 1; display: flex; min-width: 0; max-width: 680px;
-    align-items: stretch; gap: 3px; padding: 4px; overflow-x: auto; overflow-y: hidden;
+    position: relative; z-index: 1; display: flex; min-width: 0; max-width: 707px;
+    align-items: stretch; overflow: hidden;
     border: 1px solid #3c554c; border-radius: 13px;
     background: #0a1512df; box-shadow: 0 12px 26px #0006;
     backdrop-filter: blur(12px);
-    pointer-events: auto; scrollbar-width: none;
+    pointer-events: auto;
   }
-  #map-lenses::-webkit-scrollbar { display: none; }
+  #map-lens-strip {
+    display: flex; flex: 1 1 auto; min-width: 0;
+    align-items: stretch; gap: 3px; padding: 4px;
+    overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+  }
+  #map-lens-strip::-webkit-scrollbar { display: none; }
   .map-lens-title {
     display: flex; align-items: center; padding: 0 8px 0 6px;
     color: #81958d; font-size: var(--type-caption); font-weight: 900; letter-spacing: .10em;
@@ -1071,6 +1099,19 @@
   #map-lens-exit { min-width: 58px; color: #d7b6ad; }
   #map-lens-exit[hidden] { display: none; }
   #map-lens-exit .map-lens-icon { color: #e4a49d; }
+  /* The glyph and the divider match the map controls' close alongside it, so
+     both halves of the dock are dismissed the same way. */
+  #map-lenses > button.overlay-close {
+    position: static; order: 20; flex: 0 0 27px;
+    width: 27px; min-width: 27px; height: auto; align-self: stretch;
+    display: grid; grid-template-columns: none; place-items: center;
+    padding: 0; border: 0; border-left: 1px solid #ffffff0c; border-radius: 0;
+    background: transparent; box-shadow: none;
+    color: #c9d5d0; font-size: var(--type-control); text-align: center;
+  }
+  #map-lenses > button.overlay-close:hover {
+    color: #fff; background: #35201e; border-left-color: #9b6c66;
+  }
   .map-lens-icon { color: #e6c978; font-size: 15px; line-height: 1; text-align: center; }
   #map-lenses button[data-map-lens="religion"] .map-lens-icon { color: #eadfbd; }
   #map-lenses button[data-map-lens="continent"] .map-lens-icon { color: #8bc5c1; }
@@ -1107,6 +1148,100 @@
     margin: -2px 0 0 -2px; border-radius: 50%; background: #ffffff38;
   }
   #paneltoggle, #collapsepause { background: transparent; }
+  #zoomctl #mapareaset[aria-pressed="true"] {
+    color: var(--gold-bright); background: #4b422699;
+  }
+  /* Setting the map area: four edges over the world with the ground outside
+     them dimmed, so the rectangle being set is the thing on screen. The world
+     redraws into it as an edge moves — the setting is judged on its result
+     rather than on a preview of it, which is why the map underneath stays live
+     and draggable. The overlay spans the whole area so its edges and shades
+     share one coordinate system, but only those edges and the tools take the
+     pointer; the world and the dock the mode was started from keep the rest. */
+  #map-area-editor { position: absolute; inset: 0; z-index: 15; pointer-events: none; }
+  #map-area-editor[hidden] { display: none; }
+  .map-area-shade {
+    position: absolute; background: #030907b8; pointer-events: none;
+    backdrop-filter: saturate(.4) blur(1px);
+  }
+  .map-area-shade[data-shade="top"] { left: 0; right: 0; top: 0; height: var(--map-area-top); }
+  .map-area-shade[data-shade="bottom"] { left: 0; right: 0; bottom: 0; height: var(--map-area-bottom); }
+  .map-area-shade[data-shade="left"] {
+    left: 0; width: var(--map-area-left);
+    top: var(--map-area-top); bottom: var(--map-area-bottom);
+  }
+  .map-area-shade[data-shade="right"] {
+    right: 0; width: var(--map-area-right);
+    top: var(--map-area-top); bottom: var(--map-area-bottom);
+  }
+  .map-area-outline {
+    position: absolute; pointer-events: none;
+    left: var(--map-area-left); top: var(--map-area-top);
+    width: var(--map-area-width); height: var(--map-area-height);
+    border: 1px dashed #d7b66ab8; box-shadow: 0 0 0 1px #04100c8c inset;
+  }
+  /* The grab band straddles the edge it moves, so the pointer finds it on
+     either side of a one-pixel line. */
+  .map-area-edge {
+    position: absolute; margin: 0; padding: 0; border: 0; border-radius: 0;
+    background: transparent; touch-action: none; pointer-events: auto;
+  }
+  .map-area-edge::after {
+    content: ""; position: absolute; border-radius: 999px; background: #d7b66a;
+    box-shadow: 0 0 10px #d7b66a8c;
+  }
+  .map-area-edge:hover::after, .map-area-edge:focus-visible::after { background: #ffe6ad; }
+  .map-area-edge:focus-visible { outline: 2px solid #ffe6ad; outline-offset: 2px; }
+  .map-area-edge[data-map-edge="left"], .map-area-edge[data-map-edge="right"] {
+    top: var(--map-area-top); height: var(--map-area-height);
+    width: 17px; cursor: ew-resize;
+  }
+  .map-area-edge[data-map-edge="left"] { left: calc(var(--map-area-left) - 8px); }
+  .map-area-edge[data-map-edge="right"] { right: calc(var(--map-area-right) - 8px); }
+  .map-area-edge[data-map-edge="left"]::after,
+  .map-area-edge[data-map-edge="right"]::after {
+    left: 7px; width: 3px; top: 12%; height: 76%;
+  }
+  .map-area-edge[data-map-edge="top"], .map-area-edge[data-map-edge="bottom"] {
+    left: var(--map-area-left); width: var(--map-area-width);
+    height: 17px; cursor: ns-resize;
+  }
+  .map-area-edge[data-map-edge="top"] { top: calc(var(--map-area-top) - 8px); }
+  .map-area-edge[data-map-edge="bottom"] { bottom: calc(var(--map-area-bottom) - 8px); }
+  .map-area-edge[data-map-edge="top"]::after,
+  .map-area-edge[data-map-edge="bottom"]::after {
+    top: 7px; height: 3px; left: 12%; width: 76%;
+  }
+  #map-area-tools {
+    position: absolute; display: flex; justify-content: center;
+    left: var(--map-area-left); width: var(--map-area-width);
+    top: calc(var(--map-area-top) + 16px); pointer-events: none;
+  }
+  #map-area-tools .map-area-panel {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+    max-width: calc(100% - 24px); padding: 9px 12px;
+    border: 1px solid #4d6b60; border-radius: 13px;
+    background: #0a1512ee; box-shadow: 0 14px 34px #0007; backdrop-filter: blur(12px);
+    pointer-events: auto;
+  }
+  #map-area-tools b { color: var(--gold-bright); font-size: var(--type-small); letter-spacing: .04em; }
+  #map-area-readout {
+    color: #8fa39b; font-size: var(--type-caption); font-variant-numeric: tabular-nums;
+  }
+  #map-area-tools label {
+    display: flex; align-items: center; gap: 6px; margin: 0;
+    color: #c3d2cb; font-size: var(--type-caption); white-space: nowrap;
+  }
+  /* `button.primary` is a full-width block elsewhere in the deck. This bar is
+     a row of controls, so the commit button takes the gold and not the width. */
+  #map-area-tools button {
+    flex: 0 0 auto; height: 28px; margin: 0; padding: 0 12px; border-radius: 8px;
+    font-size: var(--type-caption); font-weight: 800; white-space: nowrap;
+  }
+  #map-area-tools #map-area-apply {
+    color: #1b190f; border-color: #d7b66a;
+    background: linear-gradient(135deg, #f0d58f, #c99e4e);
+  }
   #collapsepause { display: none; }
   #ubar {
     position: absolute; z-index: 7; left: 50%; bottom: 22px; transform: translateX(-50%);
@@ -1405,6 +1540,8 @@
   .winner-again {
     width: auto; margin-top: 14px; padding: 10px 18px; border-radius: 10px;
     font-size: var(--type-control); letter-spacing: .04em;
+    /* The restart button carries a live count, so its digits hold still. */
+    font-variant-numeric: tabular-nums;
   }
   /* The result screen's answers keep their hierarchy: the offer that replaces
      the world spans the row, while the three ways to keep it sit side by side
@@ -2846,61 +2983,97 @@
   <aside id="playerhud" data-layout-widget="players" aria-label="Player stats"></aside>
   <div id="dossier-windows" aria-label="Open player dossiers"></div>
   <div id="map-controls-dock">
+    <!-- Left to right: collapse the deck, set the map area, face north, zoom
+         in, zoom out, and dismiss. Dismissal is last because it is the only
+         one that removes the bar, and it hides itself while the deck is
+         collapsed — Display settings is the way back and that is inside the
+         deck. -->
     <div id="zoomctl">
       <button id="paneltoggle" class="icon" title="Hide command deck" aria-label="Hide command deck">&lt;</button>
       <button id="collapsepause" hidden title="Pause simulation" aria-label="Pause simulation">⏸</button>
+      <button id="mapareaset" type="button" aria-pressed="false" title="Set map area — drag the four edges" aria-label="Set map area">⛶</button>
+      <button id="compass" type="button" title="Face north · R" aria-label="Face north"><span id="compass-needle"></span></button>
       <button id="zin" title="Zoom in" aria-label="Zoom in">＋</button>
       <button id="zout" title="Zoom out" aria-label="Zoom out">−</button>
-      <button id="compass" type="button" title="Face north · R" aria-label="Face north"><span id="compass-needle"></span></button>
       <button class="overlay-close" type="button" data-overlay-close="controls" aria-label="Hide map controls; restore them in Display settings" title="Hide map controls · restore in Display settings">✕</button>
     </div>
     <div id="map-lenses" role="toolbar" aria-label="Map lenses">
-      <span class="map-lens-title" aria-hidden="true">Lenses</span>
-      <button type="button" data-map-lens="religion" aria-pressed="false"
-        title="Religion lens — majority faith and religious pressure">
-        <span class="map-lens-icon" aria-hidden="true">✦</span>
-        <span class="map-lens-label">Religion</span>
-      </button>
-      <button type="button" data-map-lens="continent" aria-pressed="false"
-        title="Continent lens — geographic continent regions">
-        <span class="map-lens-icon" aria-hidden="true">◒</span>
-        <span class="map-lens-label">Continent</span>
-      </button>
-      <button type="button" data-map-lens="appeal" aria-pressed="false"
-        title="Appeal lens — Breathtaking through Disgusting tiles">
-        <span class="map-lens-icon" aria-hidden="true">❀</span>
-        <span class="map-lens-label">Appeal</span>
-      </button>
-      <button type="button" data-map-lens="settler" aria-pressed="false"
-        title="Settler lens — legal sites, quality, and water access (2)">
-        <span class="map-lens-icon" aria-hidden="true">⌂</span>
-        <span class="map-lens-label">Settler</span><kbd aria-hidden="true">2</kbd>
-      </button>
-      <button type="button" data-map-lens="government" aria-pressed="false"
-        title="Government lens — territory grouped by form of government">
-        <span class="map-lens-icon" aria-hidden="true">♜</span>
-        <span class="map-lens-label">Government</span>
-      </button>
-      <button type="button" data-map-lens="political" aria-pressed="false"
-        title="Political lens — territory grouped by civilization">
-        <span class="map-lens-icon" aria-hidden="true">◩</span>
-        <span class="map-lens-label">Political</span>
-      </button>
-      <button type="button" data-map-lens="tourism" aria-pressed="false"
-        title="Tourism lens — exact Tourism generated by each tile">
-        <span class="map-lens-icon" aria-hidden="true">♪</span>
-        <span class="map-lens-label">Tourism</span>
-      </button>
-      <button type="button" data-map-lens="empire" aria-pressed="false"
-        title="Empire lens — city borders, districts, adjacency, and wonders (4)">
-        <span class="map-lens-icon" aria-hidden="true">◈</span>
-        <span class="map-lens-label">Empire</span><kbd aria-hidden="true">4</kbd>
-      </button>
-      <button id="map-lens-exit" type="button" hidden
-        title="Exit the active map lens" aria-label="Exit the active map lens">
-        <span class="map-lens-icon" aria-hidden="true">×</span>
-        <span class="map-lens-label">Exit</span>
-      </button>
+      <div id="map-lens-strip" role="none">
+        <span class="map-lens-title" aria-hidden="true">Lenses</span>
+        <button type="button" data-map-lens="continent" aria-pressed="false"
+          title="Continent lens — geographic continent regions">
+          <span class="map-lens-icon" aria-hidden="true">◒</span>
+          <span class="map-lens-label">Continent</span>
+        </button>
+        <button type="button" data-map-lens="settler" aria-pressed="false"
+          title="Settler lens — legal sites, quality, and water access (2)">
+          <span class="map-lens-icon" aria-hidden="true">⌂</span>
+          <span class="map-lens-label">Settler</span><kbd aria-hidden="true">2</kbd>
+        </button>
+        <button type="button" data-map-lens="political" aria-pressed="false"
+          title="Political lens — territory grouped by civilization">
+          <span class="map-lens-icon" aria-hidden="true">◩</span>
+          <span class="map-lens-label">Political</span>
+        </button>
+        <button type="button" data-map-lens="empire" aria-pressed="false"
+          title="Empire lens — city borders, districts, adjacency, and wonders (4)">
+          <span class="map-lens-icon" aria-hidden="true">◈</span>
+          <span class="map-lens-label">Empire</span><kbd aria-hidden="true">4</kbd>
+        </button>
+        <button type="button" data-map-lens="religion" aria-pressed="false"
+          title="Religion lens — majority faith and religious pressure">
+          <span class="map-lens-icon" aria-hidden="true">✦</span>
+          <span class="map-lens-label">Religion</span>
+        </button>
+        <button type="button" data-map-lens="government" aria-pressed="false"
+          title="Government lens — territory grouped by form of government">
+          <span class="map-lens-icon" aria-hidden="true">♜</span>
+          <span class="map-lens-label">Government</span>
+        </button>
+        <button type="button" data-map-lens="appeal" aria-pressed="false"
+          title="Appeal lens — Breathtaking through Disgusting tiles">
+          <span class="map-lens-icon" aria-hidden="true">❀</span>
+          <span class="map-lens-label">Appeal</span>
+        </button>
+        <button type="button" data-map-lens="tourism" aria-pressed="false"
+          title="Tourism lens — exact Tourism generated by each tile">
+          <span class="map-lens-icon" aria-hidden="true">♪</span>
+          <span class="map-lens-label">Tourism</span>
+        </button>
+        <button id="map-lens-exit" type="button" hidden
+          title="Exit the active map lens" aria-label="Exit the active map lens">
+          <span class="map-lens-icon" aria-hidden="true">⊘</span>
+          <span class="map-lens-label">Exit</span>
+        </button>
+      </div>
+      <button class="overlay-close" type="button" data-overlay-close="lenses" aria-label="Hide map lenses; restore them in Display settings" title="Hide map lenses · restore in Display settings">✕</button>
+    </div>
+  </div>
+  <div id="map-area-editor" hidden aria-label="Set map area">
+    <div class="map-area-shade" data-shade="top"></div>
+    <div class="map-area-shade" data-shade="bottom"></div>
+    <div class="map-area-shade" data-shade="left"></div>
+    <div class="map-area-shade" data-shade="right"></div>
+    <div class="map-area-outline" aria-hidden="true"></div>
+    <button class="map-area-edge" type="button" data-map-edge="top"
+      aria-label="Map area top edge; drag or use the arrow keys" title="Drag · arrow keys also move"></button>
+    <button class="map-area-edge" type="button" data-map-edge="bottom"
+      aria-label="Map area bottom edge; drag or use the arrow keys" title="Drag · arrow keys also move"></button>
+    <button class="map-area-edge" type="button" data-map-edge="left"
+      aria-label="Map area left edge; drag or use the arrow keys" title="Drag · arrow keys also move"></button>
+    <button class="map-area-edge" type="button" data-map-edge="right"
+      aria-label="Map area right edge; drag or use the arrow keys" title="Drag · arrow keys also move"></button>
+    <div id="map-area-tools">
+      <div class="map-area-panel">
+        <b>Set map area</b>
+        <span id="map-area-readout" aria-live="polite">&mdash;</span>
+        <label title="Move the edges out to whatever the panels and overlays leave free, and keep them there as those move">
+          <input type="checkbox" id="map-area-auto" checked>Fit to panels automatically
+        </label>
+        <button type="button" id="map-area-reset">Reset</button>
+        <button type="button" id="map-area-cancel">Cancel</button>
+        <button type="button" id="map-area-apply">Set</button>
+      </div>
     </div>
   </div>
   <div id="ubar"></div>
@@ -3088,10 +3261,19 @@
       </summary>
       <div class="sec settings-sec" id="game-settings">
       <div id="newgame-options">
+        <label class="small">Base game ruleset<select id="baseruleset" style="margin-top:4px">
+          <option value="civ6" selected>Civ 6</option>
+        </select></label>
         <label class="small">Game mode<select id="gamemode" style="margin-top:4px">
           <option value="ai_sim" selected>AI-only simulation</option>
           <option value="single">Single player</option>
           <option disabled>Multiplayer · later</option>
+        </select></label>
+        <label class="small">Start eon<select id="starteon" style="margin-top:4px">
+          <option value="civilization" selected>Civilization</option>
+        </select></label>
+        <label class="small">Start era<select id="startera" style="margin-top:4px">
+          <option value="ancient" selected>Ancient</option>
         </select></label>
         <label class="small">Leader Pool<select id="leaderpool" style="margin-top:4px">
           <option value="civ6" selected>Civ 6 Leaders</option>
@@ -3866,6 +4048,8 @@ function setOverlayVisibility(name, visible) {
   if (checkbox) checkbox.checked = visible;
   try { localStorage.setItem(OVERLAY_STORAGE_KEY, JSON.stringify(OVERLAY_VISIBILITY)); }
   catch (_) {}
+  // An overlay that has just left the map hands its edge back to the world.
+  refitMapAreaToChrome();
   reframeCurrentMapFocus(priorFocus);
 }
 const OVERLAY_LABELS = {
@@ -3928,6 +4112,7 @@ function runOverlayDismiss(event) {
   const name = close.dataset.overlayClose;
   const source = name === "minimap" ? close.closest(".minimap-frame")
     : name === "controls" ? close.closest("#zoomctl")
+    : name === "lenses" ? close.closest("#map-lenses")
     : document.getElementById(name === "players" ? "playerhud" : "victoryhud");
   dismissOverlay(name, source);
   return true;
@@ -4023,8 +4208,8 @@ function syncCinemaFocusLighting() {
     return;
   }
   const [vx, vy] = mapPointToView(focus);
-  const x = Math.max(0, Math.min(area.clientWidth, area.clientWidth / 2 + vx * cam.scale));
-  const y = Math.max(0, Math.min(area.clientHeight, area.clientHeight / 2 + vy * cam.scale));
+  const x = Math.max(0, Math.min(MAPW, MAPW / 2 + vx * cam.scale));
+  const y = Math.max(0, Math.min(MAPH, MAPH / 2 + vy * cam.scale));
   lighting.style.setProperty("--cinema-focus-x", `${x.toFixed(1)}px`);
   lighting.style.setProperty("--cinema-focus-y", `${y.toFixed(1)}px`);
 }
@@ -4118,6 +4303,8 @@ function applyCinemaMode() {
   updateCameraFollowChip();
   updateCinemaAudioButton();
   if (cinemaAudioContext) syncCinemaAudioState();
+  // Presentation takes the whole area, so there is no rectangle left to set.
+  if (active && mapAreaEditorOpen()) closeMapAreaEditor(false);
   if (active !== wasActive) resize();
 }
 function setCinemaMode(on) {
@@ -4847,6 +5034,316 @@ const cv = document.getElementById("map");
 let cx = cv.getContext("2d");
 const mini = document.getElementById("mini"), mx2 = mini.getContext("2d");
 const area = document.getElementById("maparea");
+
+// ------------------------------------------------------------- map area
+// The world is drawn into a rectangle of `#maparea` rather than into all of
+// it. `MAPW`/`MAPH` are that rectangle's size and every renderer and camera
+// measurement below is taken in it, so moving the map area on screen moves the
+// map with it instead of asking a viewer to drag the world out from under the
+// command deck. `#maparea` keeps its own coordinates for the widgets that
+// float over the map — they are the reason the area moves, so they cannot be
+// allowed to chase it.
+let MAPW = 1, MAPH = 1;
+const MAP_AREA_STORAGE_KEY = "civvis-map-area-v1";
+// A hand-set area is stored as fractions of the window, so it survives a
+// resized window, a different display and the responsive breakpoints instead
+// of pinning pixel edges that only made sense on the screen it was set on.
+const MAP_AREA_DEFAULT = {auto:true, rect:{left:0, top:0, right:1, bottom:1}};
+// No edge may leave the world a sliver: an unreadable one is indistinguishable
+// from a broken page, and a drag has to stop somewhere.
+const MAP_AREA_MIN = 180;
+let MAP_AREA = loadMapArea();
+let mapAreaInsets = {left:0, top:0, right:0, bottom:0};
+
+function loadMapArea() {
+  const value = {auto:MAP_AREA_DEFAULT.auto, rect:{...MAP_AREA_DEFAULT.rect}};
+  try {
+    const saved = JSON.parse(localStorage.getItem(MAP_AREA_STORAGE_KEY) || "null");
+    if (saved && typeof saved === "object") {
+      if (typeof saved.auto === "boolean") value.auto = saved.auto;
+      const rect = saved.rect;
+      if (rect && ["left", "top", "right", "bottom"].every(edge => Number.isFinite(rect[edge])))
+        value.rect = {left:Math.max(0, Math.min(1, rect.left)), top:Math.max(0, Math.min(1, rect.top)),
+                      right:Math.max(0, Math.min(1, rect.right)), bottom:Math.max(0, Math.min(1, rect.bottom))};
+    }
+  } catch (error) {}
+  // A saved rectangle that no longer encloses anything is not a preference.
+  if (value.rect.right - value.rect.left < .06 || value.rect.bottom - value.rect.top < .06)
+    value.rect = {...MAP_AREA_DEFAULT.rect};
+  return value;
+}
+function saveMapArea() {
+  try { localStorage.setItem(MAP_AREA_STORAGE_KEY, JSON.stringify(MAP_AREA)); }
+  catch (error) {}
+}
+function mapAreaSize() {
+  return {width:Math.max(1, area.clientWidth), height:Math.max(1, area.clientHeight)};
+}
+function windowSize() {
+  return {width:Math.max(1, window.innerWidth || 1), height:Math.max(1, window.innerHeight || 1)};
+}
+// Where the four edges want to be, as pixels in from each side of `#maparea`.
+function wantedMapAreaInsets() {
+  const {width, height} = mapAreaSize();
+  // Presentation hides every panel it would otherwise fit around, and a matte
+  // inside a matte is not a composition. Cinema always takes the whole area.
+  if (cinemaActive()) return {left:0, top:0, right:0, bottom:0};
+  if (!MAP_AREA.auto) {
+    // A hand-set area is a rectangle on the screen, so it is stored against
+    // the window and not against `#maparea` — the container's own left edge
+    // moves whenever the command deck opens or closes, and an area anchored to
+    // that would slide across the screen at exactly the moment the viewer
+    // switched the automatic fit off to stop it moving. Edges the container
+    // cannot reach collapse to its own, which is what puts a map area set
+    // under a collapsed deck against the side of the window.
+    const rect = MAP_AREA.rect;
+    const view = windowSize();
+    const areaRect = area.getBoundingClientRect();
+    return {left:rect.left * view.width - areaRect.left,
+            top:rect.top * view.height - areaRect.top,
+            right:areaRect.right - rect.right * view.width,
+            bottom:areaRect.bottom - rect.bottom * view.height};
+  }
+  // Fitted: the edges stand against whatever chrome is on screen right now,
+  // which is the same rectangle the camera already composes into.
+  const box = uncoveredMapBox(area.getBoundingClientRect(), width, height);
+  return {left:box.left, top:box.top, right:width - box.right, bottom:height - box.bottom};
+}
+// Keep the viewport on screen and large enough to read. When both edges of an
+// axis ask for more than there is, they give ground in proportion rather than
+// one of them losing its whole claim.
+function clampMapAreaInsets(insets, width, height) {
+  const out = {left:Math.max(0, insets.left), top:Math.max(0, insets.top),
+               right:Math.max(0, insets.right), bottom:Math.max(0, insets.bottom)};
+  for (const [near, far, extent] of [["left", "right", width], ["top", "bottom", height]]) {
+    const budget = Math.max(0, extent - Math.min(MAP_AREA_MIN, extent));
+    const asked = out[near] + out[far];
+    if (asked > budget) {
+      const share = asked > 0 ? budget / asked : 0;
+      out[near] *= share; out[far] *= share;
+    }
+  }
+  return out;
+}
+// Put the canvas where the map area says and republish its geometry for the
+// renderers. Returns true when the viewport actually moved or changed size.
+function syncMapViewport() {
+  const {width, height} = mapAreaSize();
+  const insets = clampMapAreaInsets(wantedMapAreaInsets(), width, height);
+  const left = Math.round(insets.left), top = Math.round(insets.top);
+  const right = Math.round(insets.right), bottom = Math.round(insets.bottom);
+  const viewWidth = Math.max(1, Math.round(width) - left - right);
+  const viewHeight = Math.max(1, Math.round(height) - top - bottom);
+  let changed = viewWidth !== MAPW || viewHeight !== MAPH ||
+                left !== Math.round(mapAreaInsets.left) ||
+                top !== Math.round(mapAreaInsets.top);
+  mapAreaInsets = insets;
+  MAPW = viewWidth; MAPH = viewHeight;
+  const style = area.style;
+  style.setProperty("--map-area-left", `${left}px`);
+  style.setProperty("--map-area-top", `${top}px`);
+  style.setProperty("--map-area-right", `${right}px`);
+  style.setProperty("--map-area-bottom", `${bottom}px`);
+  style.setProperty("--map-area-width", `${viewWidth}px`);
+  style.setProperty("--map-area-height", `${viewHeight}px`);
+  document.body.classList.toggle("map-area-inset", left > 0 || top > 0 || right > 0 || bottom > 0);
+  // The backing store is native resolution, and it belongs to the viewport
+  // rather than to the container the viewport sits in. Resizing it also wipes
+  // the canvas, so a caller that repaints only on a change has to be told
+  // about a display whose pixel ratio moved under a viewport that did not.
+  const backingWidth = Math.max(1, Math.round(viewWidth * DPR));
+  const backingHeight = Math.max(1, Math.round(viewHeight * DPR));
+  if (cv.width !== backingWidth) { cv.width = backingWidth; changed = true; }
+  if (cv.height !== backingHeight) { cv.height = backingHeight; changed = true; }
+  syncMapAreaReadout();
+  return changed;
+}
+// Re-lay the map area and repaint into it. `resize()` owns the whole-window
+// path; this is for the smaller moves that change nothing else.
+function refreshMapArea() {
+  const changed = syncMapViewport();
+  if (changed) { draw(); if (state) drawMini(); }
+  return changed;
+}
+// Panels and overlays moved. A fitted map area follows them; one that was set
+// by hand stays where it was put, which is the whole point of setting it.
+let mapAreaRefitDepth = 0;
+function refitMapAreaToChrome() {
+  if (!MAP_AREA.auto || mapAreaRefitDepth) return false;
+  mapAreaRefitDepth++;
+  try { return refreshMapArea(); }
+  finally { mapAreaRefitDepth--; }
+}
+
+// ------------------------------------------------- setting the map area
+// Four edges over the world with the ground outside them dimmed, so the
+// rectangle being set is the thing on screen. Each edge redraws the world into
+// the new area as it moves: the setting is judged on its result rather than on
+// a preview of it, and `Cancel` puts back exactly what was there before.
+let mapAreaEditor = null;   // the state to restore on cancel, or null when shut
+let mapAreaDrag = null;
+
+function mapAreaEditorOpen() { return mapAreaEditor !== null; }
+function syncMapAreaReadout() {
+  const readout = document.getElementById("map-area-readout");
+  if (!readout || !mapAreaEditor) return;
+  readout.textContent = MAP_AREA.auto
+    ? `${MAPW} × ${MAPH} · fitted`
+    : `${MAPW} × ${MAPH}`;
+}
+// Freeze the edges where they are now. Turning the fit off, or grabbing one
+// edge while it is on, has to start from what is on screen — otherwise the
+// three edges nobody touched jump back to a rectangle saved for some other
+// window, and one drag rearranges the whole map area.
+function seedMapAreaRectFromViewport() {
+  const view = windowSize();
+  const rect = cv.getBoundingClientRect();
+  MAP_AREA.rect = {
+    left:rect.left / view.width, top:rect.top / view.height,
+    right:rect.right / view.width, bottom:rect.bottom / view.height,
+  };
+}
+function syncMapAreaAutoCheckbox() {
+  const checkbox = document.getElementById("map-area-auto");
+  if (checkbox) checkbox.checked = MAP_AREA.auto;
+}
+function setMapAreaAuto(on) {
+  if (!on && MAP_AREA.auto) seedMapAreaRectFromViewport();
+  MAP_AREA.auto = !!on;
+  syncMapAreaAutoCheckbox();
+  refreshMapArea();
+  syncMapAreaReadout();
+  if (!mapAreaEditorOpen()) saveMapArea();
+}
+function applyMapAreaRect(rect) {
+  MAP_AREA.rect = {
+    left:Math.max(0, Math.min(1, rect.left)), top:Math.max(0, Math.min(1, rect.top)),
+    right:Math.max(0, Math.min(1, rect.right)), bottom:Math.max(0, Math.min(1, rect.bottom)),
+  };
+  // Moving an edge by hand is what turns the automatic fit off. Saying so out
+  // loud in the checkbox beats silently ignoring the drag.
+  MAP_AREA.auto = false;
+  syncMapAreaAutoCheckbox();
+  refreshMapArea();
+  syncMapAreaReadout();
+}
+// Move one edge to a point on the page, keeping the rectangle at least
+// MAP_AREA_MIN across so the opposite edge is never pushed through.
+function moveMapAreaEdgeTo(edge, clientX, clientY) {
+  // The other three edges keep whatever the automatic fit had given them.
+  if (MAP_AREA.auto) seedMapAreaRectFromViewport();
+  const view = windowSize();
+  const gapX = Math.min(.9, MAP_AREA_MIN / view.width);
+  const gapY = Math.min(.9, MAP_AREA_MIN / view.height);
+  const fx = Math.max(0, Math.min(1, clientX / view.width));
+  const fy = Math.max(0, Math.min(1, clientY / view.height));
+  const next = {...MAP_AREA.rect};
+  if (edge === "left") next.left = Math.min(fx, next.right - gapX);
+  else if (edge === "right") next.right = Math.max(fx, next.left + gapX);
+  else if (edge === "top") next.top = Math.min(fy, next.bottom - gapY);
+  else if (edge === "bottom") next.bottom = Math.max(fy, next.top + gapY);
+  applyMapAreaRect(next);
+}
+// The keyboard equivalent. The edge is where the canvas says it is, which is
+// true of a fitted edge and a hand-set one alike.
+function nudgeMapAreaEdge(edge, pixels) {
+  const rect = cv.getBoundingClientRect();
+  const horizontal = edge === "left" || edge === "right";
+  const at = (edge === "left" ? rect.left : edge === "right" ? rect.right
+    : edge === "top" ? rect.top : rect.bottom) + pixels;
+  moveMapAreaEdgeTo(edge,
+    horizontal ? at : rect.left + rect.width / 2,
+    horizontal ? rect.top + rect.height / 2 : at);
+}
+function openMapAreaEditor() {
+  if (mapAreaEditorOpen()) return;
+  mapAreaEditor = {auto:MAP_AREA.auto, rect:{...MAP_AREA.rect}};
+  const editor = document.getElementById("map-area-editor");
+  editor.hidden = false;
+  document.body.classList.add("map-area-editing");
+  const button = document.getElementById("mapareaset");
+  button.setAttribute("aria-pressed", "true");
+  syncMapAreaAutoCheckbox();
+  syncMapViewport();
+  syncMapAreaReadout();
+  editor.querySelector('[data-map-edge="left"]')?.focus({preventScroll:true});
+}
+function closeMapAreaEditor(commit) {
+  if (!mapAreaEditorOpen()) return;
+  const before = mapAreaEditor;
+  mapAreaEditor = null;
+  mapAreaDrag = null;
+  if (commit) saveMapArea();
+  else { MAP_AREA.auto = before.auto; MAP_AREA.rect = {...before.rect}; }
+  syncMapAreaAutoCheckbox();
+  document.getElementById("map-area-editor").hidden = true;
+  document.body.classList.remove("map-area-editing");
+  const button = document.getElementById("mapareaset");
+  button.setAttribute("aria-pressed", "false");
+  refreshMapArea();
+  button.focus({preventScroll:true});
+}
+function toggleMapAreaEditor() {
+  if (mapAreaEditorOpen()) closeMapAreaEditor(true);
+  else openMapAreaEditor();
+}
+function resetMapArea() {
+  MAP_AREA.auto = MAP_AREA_DEFAULT.auto;
+  MAP_AREA.rect = {...MAP_AREA_DEFAULT.rect};
+  syncMapAreaAutoCheckbox();
+  refreshMapArea();
+  syncMapAreaReadout();
+  if (!mapAreaEditorOpen()) saveMapArea();
+}
+function bindMapAreaEditor() {
+  const editor = document.getElementById("map-area-editor");
+  editor.addEventListener("pointerdown", event => {
+    const handle = event.target.closest?.("[data-map-edge]");
+    if (!handle || (event.button !== 0 && event.pointerType !== "touch")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    handle.focus({preventScroll:true});
+    try { handle.setPointerCapture?.(event.pointerId); } catch (_) {}
+    mapAreaDrag = {edge:handle.dataset.mapEdge, pointerId:event.pointerId, handle};
+    moveMapAreaEdgeTo(mapAreaDrag.edge, event.clientX, event.clientY);
+  });
+  // An edge is dragged past the window all the time — that is how it is put
+  // against the screen. The gesture therefore belongs to the document, not to
+  // the 17px band it started in.
+  document.addEventListener("pointermove", event => {
+    if (!mapAreaDrag || event.pointerId !== mapAreaDrag.pointerId) return;
+    event.preventDefault();
+    moveMapAreaEdgeTo(mapAreaDrag.edge, event.clientX, event.clientY);
+  });
+  const endDrag = event => {
+    if (!mapAreaDrag || event.pointerId !== mapAreaDrag.pointerId) return;
+    try { mapAreaDrag.handle.releasePointerCapture?.(event.pointerId); } catch (_) {}
+    mapAreaDrag = null;
+  };
+  document.addEventListener("pointerup", endDrag);
+  document.addEventListener("pointercancel", endDrag);
+  editor.addEventListener("keydown", event => {
+    const handle = event.target.closest?.("[data-map-edge]");
+    if (!handle) return;
+    const step = event.shiftKey ? 16 : 1;
+    const edge = handle.dataset.mapEdge;
+    const horizontal = edge === "left" || edge === "right";
+    const delta = event.key === (horizontal ? "ArrowLeft" : "ArrowUp") ? -step
+      : event.key === (horizontal ? "ArrowRight" : "ArrowDown") ? step : null;
+    if (delta === null) return;
+    // The board pans on the arrow keys. An edge under the keyboard asked for
+    // them first, so the world must not walk out from under the rectangle.
+    event.preventDefault();
+    event.stopPropagation();
+    nudgeMapAreaEdge(edge, delta);
+  });
+  document.getElementById("map-area-auto").addEventListener("change", event =>
+    setMapAreaAuto(event.target.checked));
+  document.getElementById("map-area-reset").addEventListener("click", resetMapArea);
+  document.getElementById("map-area-cancel").addEventListener("click", () => closeMapAreaEditor(false));
+  document.getElementById("map-area-apply").addEventListener("click", () => closeMapAreaEditor(true));
+  document.getElementById("mapareaset").addEventListener("click", toggleMapAreaEditor);
+}
 // v3 retires the layouts saved against the previous arrangement — the standings
 // as a masthead across the top edge, the tracker standing the full height of
 // the right edge, the minimap in the lower-left corner — so a returning viewer
@@ -5210,6 +5707,7 @@ function applyHudWidgetMetrics(name, metrics, persist = false) {
   if (name === "victory" && state) syncVictoryLeaderCapacity(config.element);
   if (persist) saveHudLayout();
   if (name === "minimap") refreshMiniForLayout();
+  refitMapAreaToChrome();
   reframeIfMapFocusBoundsChanged(priorBounds, priorFocus);
 }
 
@@ -5243,6 +5741,7 @@ function resetHudWidget(name, persist = true) {
   if ((name === "players" || name === "victory") && state) drawPlayerHud();
   if (persist) saveHudLayout();
   if (name === "minimap") requestAnimationFrame(refreshMiniForLayout);
+  refitMapAreaToChrome();
   reframeIfMapFocusBoundsChanged(priorBounds, priorFocus);
 }
 
@@ -5859,8 +6358,8 @@ function chartDrawsGroundAt(q, r) {
 // affine function of column and row, so the corners of the frame bound it.
 function framedHexBounds(margin = 2) {
   let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
-  for (const [sx, sy] of [[0, 0], [area.clientWidth, 0],
-                          [area.clientWidth, area.clientHeight], [0, area.clientHeight]]) {
+  for (const [sx, sy] of [[0, 0], [MAPW, 0],
+                          [MAPW, MAPH], [0, MAPH]]) {
     const [wx, wy] = screenToWorld(sx, sy);
     const col = wx / (S * SQ3), row = wy / (S * 1.5);
     left = Math.min(left, col); right = Math.max(right, col);
@@ -5934,8 +6433,13 @@ function syncMiniCanvas() {
 
 function resize() {
   DPR = window.devicePixelRatio || 1;   // native-resolution backing store (4K crisp)
-  cv.width = area.clientWidth * DPR; cv.height = area.clientHeight * DPR;
-  applySavedHudLayouts();
+  // The widgets are placed first and the map area is measured against where
+  // they landed, so a fitted area is never one window size out of date. The
+  // suspend keeps each widget from re-fitting the area on its way past.
+  mapAreaRefitDepth++;
+  try { applySavedHudLayouts(); }
+  finally { mapAreaRefitDepth--; }
+  syncMapViewport();
   syncMiniCanvas();
   if (watchedEmpireAutoFrame && Number.isInteger(state?.view_player) && !directorGoal)
     setObservedPlayersView(false);
@@ -5945,8 +6449,8 @@ function resize() {
 window.addEventListener("resize", resize);
 
 function screenToWorld(sx, sy) {
-  const vx = (sx - area.clientWidth / 2) / cam.scale;
-  const vy = (sy - area.clientHeight / 2) / cam.scale / YS;
+  const vx = (sx - MAPW / 2) / cam.scale;
+  const vy = (sy - MAPH / 2) / cam.scale / YS;
   return [COSR * vx + SINR * vy + cam.x, -SINR * vx + COSR * vy + cam.y];
 }
 function axialRound(wx, wy) {
@@ -6102,6 +6606,65 @@ function cancelSupervisedSuccessorWatch() {
   supervisorReconnectTimer = null;
 }
 
+// A spectated finale is counted down by the supervisor, which owns that
+// handoff; a finished human game has nobody driving it at all, so its result
+// screen counts itself down to the next game instead of waiting on a click
+// that may never come. Ten seconds is long enough to read the verdict and
+// still reach one of the three ways to keep the world.
+//
+// Any click or key press stops it, because a person who is still deciding has
+// just proved they are there. That is the whole cancel affordance: the
+// countdown only ever fires for a screen nobody has touched.
+const FINALE_RESTART_SECONDS = 10;
+const FINALE_RESTART_LABEL = "Start another game";
+let finaleCountdownDeadline = 0;
+let finaleCountdownTimer = null;
+// The result this countdown belongs to. It is kept after a cancel so the same
+// finale cannot re-arm itself on the next poll, and cleared when the screen
+// goes away so a later result in the same world gets its own countdown.
+let finaleCountdownResult = null;
+
+function armFinaleCountdown(signature) {
+  if (SPEC || finaleCountdownResult === signature) return;
+  cancelFinaleCountdown();
+  finaleCountdownResult = signature;
+  finaleCountdownDeadline = Date.now() + FINALE_RESTART_SECONDS * 1000;
+  // Sub-second ticks so the number on the button is never a second stale, and
+  // so a throttled background tab cannot overshoot the start by a whole tick.
+  finaleCountdownTimer = setInterval(tickFinaleCountdown, 200);
+  tickFinaleCountdown();
+}
+
+function tickFinaleCountdown() {
+  const button = document.getElementById("finale-restart");
+  // The result screen was replaced or dismissed under the countdown. Nothing
+  // is left to count, and an interval with no button never stops on its own.
+  if (!button) { cancelFinaleCountdown(); return; }
+  const left = Math.max(0, Math.ceil((finaleCountdownDeadline - Date.now()) / 1000));
+  button.textContent = `${FINALE_RESTART_LABEL} (${left})`;
+  if (left > 0) return;
+  cancelFinaleCountdown();
+  startNewSimulation();
+}
+
+function cancelFinaleCountdown() {
+  if (finaleCountdownTimer === null) return;
+  clearInterval(finaleCountdownTimer);
+  finaleCountdownTimer = null;
+  const button = document.getElementById("finale-restart");
+  if (button) button.textContent = FINALE_RESTART_LABEL;
+}
+
+// Forget the result as well, so the next one counts down again.
+function clearFinaleCountdown() {
+  cancelFinaleCountdown();
+  finaleCountdownResult = null;
+}
+
+for (const gesture of ["pointerdown", "keydown", "wheel"])
+  window.addEventListener(gesture, () => cancelFinaleCountdown(),
+    {capture: true, passive: true});
+
 function worldTransitionPending() {
   return document.documentElement.classList.contains("world-loading");
 }
@@ -6201,6 +6764,29 @@ async function boot() {
   bootBusy = true;
   try {
     RULES = await fetchJSON("/rules");
+    // The outermost setting: which published game's rules everything below is
+    // expressed in. One is modeled, and the control still comes from the
+    // server rather than being spelled out here, so a second never means
+    // editing the markup.
+    if (Array.isArray(RULES.base_rulesets)) {
+      document.getElementById("baseruleset").innerHTML = RULES.base_rulesets.map(ruleset =>
+        `<option value="${ruleset.id}" title="${escapeAttr(ruleset.description)}">${ruleset.name}</option>`
+      ).join("");
+    }
+    if (Array.isArray(RULES.start_eons)) {
+      // Oldest first, exactly as the server lists them: the eons are a
+      // timeline, and Civilization sits at its own place on it. An eon that
+      // cannot be played yet is shown as what is coming rather than hidden,
+      // and cannot be chosen.
+      document.getElementById("starteon").innerHTML = RULES.start_eons.map(eon =>
+        `<option value="${eon.id}" title="${escapeAttr(eon.description)}"` +
+        `${eon.playable ? "" : " disabled"}>${eon.name}` +
+        `${eon.playable ? "" : " · later"}</option>`
+      ).join("");
+      const playable = RULES.start_eons.find(eon => eon.playable);
+      if (playable) document.getElementById("starteon").value = playable.id;
+      syncStartEon();
+    }
     if (Array.isArray(RULES.map_sizes)) {
       document.getElementById("np").innerHTML = RULES.map_sizes.map(size =>
         `<option value="${size.default_players}">${size.name} · ${size.default_players} civs · ${size.default_city_states} city-states · ${size.width}×${size.height}</option>`
@@ -6704,7 +7290,7 @@ function queueDirectorCue(cue) {
     if (!cue.silent && !chapterShown) nextGoal.story = cue;
     const targetX = wrapX(S * SQ3 * (nextGoal.pos[0] + nextGoal.pos[1] / 2));
     const targetY = wrapY(S * 1.5 * nextGoal.pos[1]);
-    const cutDistance = Math.max(560, area.clientWidth / Math.max(.25, cam.scale) * .62);
+    const cutDistance = Math.max(560, MAPW / Math.max(.25, cam.scale) * .62);
     const useCut = cinemaActive() && !tracksUnit &&
       (battle || cue.priority >= 7) &&
       Math.hypot(targetX - cam.x, targetY - cam.y) > (battle ? S * 3 : cutDistance);
@@ -6951,20 +7537,20 @@ function advanceDirector(now = performance.now()) {
     if (!trackedSubject) focusX = wrapX(focusX, gx);
     const focusY = trackedSubject
       ? trackedSubject.focusY : wrapY(S * 1.5 * directorGoal.focus[1], gy);
-    const screenX = area.clientWidth / 2 +
+    const screenX = MAPW / 2 +
       (COSR * (focusX - gx) - SINR * (focusY - gy)) * directorGoal.scale;
-    const screenY = area.clientHeight / 2 +
+    const screenY = MAPH / 2 +
       ((SINR * (focusX - gx) + COSR * (focusY - gy)) * YS -
        (trackedSubject?.focusLift || 0)) * directorGoal.scale;
     // City nameplates rise roughly forty pixels above their tile center, so
     // reserve more than the ribbon's literal height instead of merely keeping
     // the hex center out from underneath it.
-    const safeTop = Math.max(180, area.clientHeight * .17);
-    const safeBottom = area.clientHeight - Math.max(155, area.clientHeight * .18);
-    const wideComposition = area.clientWidth >= 820;
-    const desiredX = area.clientWidth * (wideComposition ? (directorGoal.frameX || .5) : .5);
-    const desiredY = area.clientHeight * (directorGoal.frameY || (trackedSubject ? .54 : .52));
-    const framedX = Math.max(84, Math.min(area.clientWidth - 84, desiredX));
+    const safeTop = Math.max(180, MAPH * .17);
+    const safeBottom = MAPH - Math.max(155, MAPH * .18);
+    const wideComposition = MAPW >= 820;
+    const desiredX = MAPW * (wideComposition ? (directorGoal.frameX || .5) : .5);
+    const desiredY = MAPH * (directorGoal.frameY || (trackedSubject ? .54 : .52));
+    const framedX = Math.max(84, Math.min(MAPW - 84, desiredX));
     const framedY = Math.max(safeTop, Math.min(safeBottom, desiredY));
     const correctionX = (screenX - framedX) / directorGoal.scale;
     const correctionY = (screenY - framedY) / (YS * directorGoal.scale);
@@ -7607,8 +8193,10 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
         <strong class="winner-title">${st.players[0].civ} is no more</strong>
         <span class="winner-verdict">Your last city has fallen</span>
         <span class="winner-meta">Turn ${st.turn} · the world plays on without you</span>
-        <button class="primary winner-again" onclick="startNewSimulation()">Start another game</button>
+        <button class="primary winner-again" onclick="startNewSimulation()" id="finale-restart"
+          title="Starts a new game when the count reaches zero. Any click or key press stops the countdown.">Start another game</button>
       </div>`;
+      armFinaleCountdown(signature);
     }
   }
   document.body.classList.toggle("cinema-finale", cinemaActive() && hasWinner);
@@ -7639,19 +8227,21 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
         <span class="winner-meta">Turn ${st.turn} · History remembers</span>
         ${SPEC ? `<span class="winner-countdown" id="respawn" role="timer"></span>` : ``}
         <span class="winner-actions">
-          ${SPEC ? `` : `<button class="primary winner-again" onclick="startNewSimulation()">Start another game</button>`}
+          ${SPEC ? `` : `<button class="primary winner-again" onclick="startNewSimulation()" id="finale-restart"
+            title="Starts a new game when the count reaches zero. Any click or key press stops the countdown.">Start another game</button>`}
           <button class="winner-again winner-playon" id="play-on-look-around"
             onclick="playOnPastVictory('until_next_victory', true)"
             title="Keep this world and pause before another turn runs, so you can inspect the final map.">Take a look around</button>
           <button class="winner-again winner-playon" id="play-on-next-victory"
             onclick="playOnPastVictory('until_next_victory', false)"
-            title="Keep this world without a turn limit. The exact result shown here will not repeat; the next distinct victory ends the game.">Play until next victory condition</button>
+            title="Keep playing this world without a turn limit. The exact result shown here will not repeat; the next distinct victory ends the game.">Continue</button>
           <button class="winner-again winner-playon" id="play-on-indefinite"
             onclick="playOnPastVictory('indefinite', false)"
-            title="Keep this world without a turn limit and ignore every later victory.">Play indefinitely</button>
+            title="Keep playing this world without a turn limit and ignore every later victory.">To infinity and beyond</button>
         </span>
       </div>`;
       playCinemaCue({priority:10, kicker:"History has a victor", title:winnerName});
+      armFinaleCountdown(signature);
     }
     const respawn = document.getElementById("respawn");
     if (respawn) {
@@ -7672,6 +8262,9 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     w.classList.remove("visible");
     w.style.removeProperty("--winner-color");
     if (w.dataset.signature) { delete w.dataset.signature; w.replaceChildren(); }
+    // Playing on takes the result screen away, and with it any countdown to
+    // the game that would have replaced this one.
+    clearFinaleCountdown();
   }
   draw(); drawSide(newWorld); drawMini(); drawPlayerHud(); drawUbar(); drawQuickDeals(); drawCaptureChoice();
   refreshTileTip();
@@ -11884,6 +12477,11 @@ async function ensurePlanetGeometry() {
     const full = await fetchJSON("/state?planet=1");
     if (full?.map?.planet) {
       PLANET = decodePlanet(full.map.planet);
+      // Only now can a tile be turned into a camera point, so an automatic
+      // frame taken before the cells arrived was the whole-world fallback.
+      // Take it again on the seat it was meant for.
+      if (watchedEmpireAutoFrame && Number.isInteger(state?.view_player) && !directorGoal)
+        setObservedPlayersView(false);
       draw(); drawMini();
     }
   } catch (error) {
@@ -12703,10 +13301,10 @@ function skyFocusBody() {
 // four times its width, but it is also six diameters off the edge of the
 // screen, so it is not what anyone is looking at.
 function skyGrip(body, radius, pan = SKY_PAN) {
-  const drawn = Math.max(body.floor || 0, body.size * radius);
+  const drawn = skyDrawnRadius(body, radius);
   const [px, py] = skyBodyPos(body);
   const away = Math.hypot(px - pan.x, py - pan.y) * radius;
-  const reach = Math.max(140, Math.min(area.clientWidth, area.clientHeight) * .55);
+  const reach = Math.max(140, Math.min(MAPW, MAPH) * .55);
   const near = Math.max(0, 1 - away / (reach + drawn));
   // Nothing claims the camera until it is at least half a stage wide. Set any
   // lower and the outermost body owns the full-system shot — it is the biggest
@@ -12721,14 +13319,24 @@ function skyGrip(body, radius, pan = SKY_PAN) {
 // and when none of them is, it eases back onto the shot that holds the whole
 // system, which is what makes zooming out of Mars return to the space view
 // rather than to an empty patch of sky where Mars used to be.
-function skySettledPan(pan, radius, zoom) {
+//
+// A named subject is the answer when there is one: the world the pointer asked
+// for is the one being collected, whether or not it is yet wide enough to grip
+// anything. The pull fades out as that world stops being a marble and starts
+// being the place underfoot, because `skyZoomAim`'s own hold is aiming at its
+// centre by then and a second pull on top of it would fight the lean.
+function skySettledPan(pan, radius, zoom, subject = null, grab = 1) {
   let best = null;
   for (const body of skyKnownWorlds()) {
     const grip = skyGrip(body, radius, pan);
     if (!best || grip > best.grip) best = {grip, at:skyBodyPos(body)};
   }
   let target, ease;
-  if (best && best.grip > .02) {
+  if (subject && zoom > 1) {
+    target = skyBodyPos(subject);
+    ease = grab * (.18 + .55 * skyGrip(subject, radius, pan));
+    if (!(ease > 0)) return {...pan};
+  } else if (best && best.grip > .02) {
     target = best.at;
     ease = .18 + .55 * best.grip;
   } else if (zoom < 1) {
@@ -12738,7 +13346,14 @@ function skySettledPan(pan, radius, zoom) {
     // the Moon — small enough to need a dozen steps — never arrives at all.
     const frame = skySystemFrame();
     target = [frame.x, frame.y];
-    ease = .60 * Math.max(0, Math.min(1, frame.radius * 2.2 / Math.max(1e-3, radius) - .55));
+    // Gentle on the way out and exact at the stop. The end of a zoom-out *is*
+    // the whole-system shot, so the last quarter of the way there frames it
+    // rather than leaning towards it: a wheel zoom-out with the pointer off in
+    // a corner otherwise holds that corner's world under the cursor to the very
+    // end and stops with the far side of the system pushed off the frame.
+    const held = Math.max(0, Math.min(1, frame.radius * 2.2 / Math.max(1e-3, radius) - .55));
+    const framed = Math.max(0, Math.min(1, (frame.radius * 1.25 / Math.max(1e-3, radius) - 1) * 4));
+    ease = Math.max(.60 * held, framed);
   } else return {...pan};
   const settled = {x:pan.x + (target[0] - pan.x) * ease,
                    y:pan.y + (target[1] - pan.y) * ease};
@@ -12757,6 +13372,155 @@ function skySettledPan(pan, radius, zoom) {
 function skyZoomAnchor(radius, stageX, stageY, pan = SKY_PAN) {
   const [px, py] = skyBodyPos(skyNearestWorld(pan));
   return [stageX + (px - pan.x) * radius, stageY + (py - pan.y) * radius];
+}
+
+// ------------------------------------------------ what a zoom is aiming at
+//
+// Putting the cursor near a world and scrolling in has to be the whole of the
+// gesture. It very nearly was not: the anchor held the raw point of *space*
+// under the pointer, and out in the system a world is a handful of pixels
+// across — on the whole-system shot the Moon is a four-pixel dot with the Earth
+// a fourteen-pixel one ninety pixels away — so the pointer had to land inside a
+// four-pixel disc or the zoom walked off between the worlds instead. Measured
+// on a 1250x1000 stage: twelve pixels wide of the Moon's centre and sixteen
+// wheel steps ended three thousand pixels from it with *nothing at all* on the
+// stage, and aiming at empty sky ran away from every world for ever. Nobody can
+// aim that well and nobody should have to.
+//
+// So a pointer names a world, not a pixel. Every world claims a halo about
+// itself and the strongest claim takes the pointer, which answers the empty-sky
+// case in the same breath: the roughly nearest world takes it, and a zoom
+// always arrives somewhere.
+function skyDrawnRadius(body, radius = planetEarthRadius()) {
+  return Math.max(body.floor || 0, body.size * radius);
+}
+function skyStageSpan() {
+  const frame = observedFrameRect();
+  return Math.max(160, Math.min(frame.right - frame.left, frame.bottom - frame.top));
+}
+function skyBodyScreen(body, radius, pan = SKY_PAN) {
+  const [stageX, stageY] = planetStageCenter();
+  const [px, py] = skyBodyPos(body);
+  return [stageX + (px - pan.x) * radius, stageY + (py - pan.y) * radius];
+}
+function skyPointerWorld(sx, sy, radius = planetEarthRadius(), pan = SKY_PAN) {
+  // Wide enough that the gaps between the worlds on the system shot are all
+  // claimed by one of them, so there is no dead sky to fall into, and equal for
+  // every world so the tie between two of them falls where they part company.
+  const halo = Math.max(64, skyStageSpan() * .12);
+  let best = null;
+  for (const body of skyKnownWorlds()) {
+    const [bx, by] = skyBodyScreen(body, radius, pan);
+    const claim = Math.hypot(bx - sx, by - sy) / (skyDrawnRadius(body, radius) + halo);
+    if (!best || claim < best.claim) best = {body, claim};
+  }
+  return best ? best.body : SKY_EARTH;
+}
+// How much of the pointer's authority a world takes for itself. A marble is a
+// destination — a pointer on it means *go there*, and there is no ground on a
+// four-pixel disc to mean anything else — while a world that fills the stage is
+// a place, where the pointer means that spot on it and holding the spot still
+// is the whole of a zoom. In between the authority is handed back gradually, so
+// an approach to the Earth turns into steering for the coast you are aiming at
+// without a line to cross.
+function skyWorldGrab(drawn) {
+  return Math.max(0, Math.min(1, (.55 - 2 * drawn / skyStageSpan()) / .37));
+}
+// The angle from the point facing the viewer to the ground under the pointer, or
+// null if the pointer is not on that world at all — out in the black beside a
+// marble, or inside the last one-and-a-half per cent before a limb, where the
+// ground is foreshortened so hard that inverting it is meaningless. Anywhere
+// else on the disc counts, including well out towards the edge: a globe that
+// nearly fills the stage is being pointed at, and an earlier .92 cut-off here
+// left exactly that case — 420 px out on a 440 px disc — with no lean at all.
+// A chart lays the angle down as a length instead, and honestly reaches out to
+// its own limit.
+function skySurfaceAngle(reach, drawn, chart) {
+  const across = reach / Math.max(1, drawn);
+  if (chart) return across <= CHART_LIMIT ? across : null;
+  return across <= .985 ? Math.asin(across) : null;
+}
+// The basis a world is being seen through. Only the Earth's is steered by the
+// camera proper, because it is the only one with tiles under it.
+function skyWorldBasis(body) {
+  return planetViewBasis(body.id === "earth" ? planetCamera() : skyBodyCamera(body.id));
+}
+// Which point of a world's surface is under the pointer, as a direction in
+// space. Straight inversion of `planetProject`: screen x is the component along
+// `right` and screen y the negated component along `up`, both times the spread.
+function skySurfacePoint(body, sx, sy, radius, pan = SKY_PAN) {
+  const basis = skyWorldBasis(body);
+  const drawn = skyDrawnRadius(body, radius);
+  const [bx, by] = skyBodyScreen(body, radius, pan);
+  const ox = sx - bx, oy = sy - by;
+  const reach = Math.hypot(ox, oy);
+  const angle = skySurfaceAngle(reach, drawn, body.id === "earth" && !knowsGlobe());
+  if (angle === null) return null;
+  if (!(reach > 1e-6)) return basis.out.slice();
+  const alongX = ox / reach, alongY = oy / reach;
+  const cos = Math.cos(angle), sin = Math.sin(angle);
+  return [0, 1, 2].map(index => basis.out[index] * cos +
+    (basis.right[index] * alongX - basis.up[index] * alongY) * sin);
+}
+// Everything a zoom needs to know about where it was aimed: the world, how much
+// of the aim is about travelling to it rather than about looking at part of it,
+// and the ground under the pointer if there is any.
+function skyZoomAim(sx, sy, radius = planetEarthRadius(), pan = SKY_PAN) {
+  const body = skyPointerWorld(sx, sy, radius, pan);
+  const grab = skyWorldGrab(skyDrawnRadius(body, radius));
+  // Only the world with tiles on it is leaned into. The others stop when they
+  // fill the frame, so there is no zoom left to spend on choosing a face of
+  // one — that is what dragging them is for.
+  const point = grab < 1 && body.id === "earth"
+    ? skySurfacePoint(body, sx, sy, radius, pan) : null;
+  return {id:body.id, grab, sx, sy, point};
+}
+// Leaning in — the half of a zoom that is not travel.
+//
+// On a flat map a wheel zoom holds the world point under the pointer exactly
+// still, which is what makes it feel like leaning towards the board. On a globe
+// the same gesture went through the sky pan alone and recovered **three per
+// cent** of that: measured from scale .6, a tile aimed at 420 px off centre
+// finished 1763 px away where no anchoring at all would have cost 1820. The
+// place you pointed at left the screen.
+//
+// So the world turns instead, by the one rotation of its own basis every other
+// way of moving it goes through, until the ground that was under the pointer is
+// back under the pointer. Being a rotation it works over a pole and needs no
+// case for one; being re-measured each frame it lands exactly however the eased
+// scale and pan get there. Returns the angle still owed, in radians.
+function skyLean(lean, ease) {
+  const body = skyBody(lean.id);
+  // Only the world with tiles on it is steered here, so a debt this cannot pay
+  // must never be reported as owed: the eased zoom waits for the lean to land
+  // before it calls itself finished.
+  if (!body || !lean.point || body.id !== "earth") return 0;
+  const radius = planetEarthRadius();
+  const basis = skyWorldBasis(body);
+  const [bx, by] = skyBodyScreen(body, radius);
+  const ox = lean.sx - bx, oy = lean.sy - by;
+  const reach = Math.hypot(ox, oy);
+  const angle = skySurfaceAngle(reach, skyDrawnRadius(body, radius),
+                                body.id === "earth" && !knowsGlobe());
+  // Zoomed far enough in that the pointer is past the limb of the world it is
+  // standing on, there is no direction left to ask for. Hold what we have.
+  if (angle === null) return 0;
+  let want;
+  if (reach > 1e-6) {
+    const alongX = ox / reach, alongY = oy / reach;
+    const cos = Math.cos(angle), sin = Math.sin(angle);
+    want = [0, 1, 2].map(index => basis.out[index] * cos +
+      (basis.right[index] * alongX - basis.up[index] * alongY) * sin);
+  } else want = basis.out.slice();
+  const axis = cross3(lean.point, want);
+  const length = Math.hypot(axis[0], axis[1], axis[2]);
+  const owed = Math.atan2(length, dot3(lean.point, want));
+  if (!(length > 1e-9) || !(owed > 1e-9)) return 0;
+  // The globe turns one way to send the ground the other: rotating the basis by
+  // the inverse of the rotation that would carry the point to where it belongs
+  // is what leaves the point sitting there.
+  applyPlanetBasis(planetSpin(basis, axis.map(value => value / length), -owed * ease));
+  return owed;
 }
 
 // A drag out here means whatever the camera is looking at. Over a world it
@@ -12821,10 +13585,12 @@ function skyDragApply(drag, dx, dy, now = performance.now()) {
 // once it is docked in the rail instead. The widgets are draggable and
 // resizable, so the only durable answer is their boxes.
 function skyWidgetBoxes() {
-  const areaRect = area.getBoundingClientRect();
+  // Sky positions are canvas coordinates, so the widgets have to be measured
+  // against the canvas rather than the map area it is inset into.
+  const viewRect = cv.getBoundingClientRect();
   const boxes = [];
   for (const name of Object.keys(HUD_WIDGETS)) {
-    const box = mapWidgetBox(name, areaRect);
+    const box = mapWidgetBox(name, viewRect);
     if (box) boxes.push(box);
   }
   return boxes;
@@ -12867,8 +13633,8 @@ function skySystemFrame() {
 const CHART_LIMIT = 1.75;
 function planetStageReach(centerX, centerY) {
   let corner = 0;
-  for (const x of [0, area.clientWidth])
-    for (const y of [0, area.clientHeight])
+  for (const x of [0, MAPW])
+    for (const y of [0, MAPH])
       corner = Math.max(corner, Math.hypot(x - centerX, y - centerY));
   return corner;
 }
@@ -12902,14 +13668,19 @@ function skyNearestWorld(pan = SKY_PAN) {
 // it. The others are things to look at: nothing lives under a Martian hexagon,
 // so the zoom stops with that world filling the frame rather than carrying on
 // until the camera is inside one ocean tile of somebody else's planet.
-function planetMaxScale(pan = SKY_PAN) {
-  const body = skyNearestWorld(pan);
+//
+// It is the world being *flown to* that sets the stop, which is not always the
+// one nearest the camera: from the whole-system shot the nearest world by this
+// reckoning is Mars, so before this took an argument every zoom in that picture
+// — including one aimed squarely at the Earth — carried Mars's ceiling until the
+// camera had drifted far enough along the chain to change its mind.
+function planetMaxScale(pan = SKY_PAN, body = skyNearestWorld(pan)) {
   if (body.id === "earth") return 3.2;
   // Past the flat map's own ceiling where it has to be: the Moon is a quarter
   // of the Earth, so filling the frame with it costs four times the Earth's
   // closest zoom, and stopping at 3.2 would leave the one body nobody can miss
   // permanently the smallest thing on screen.
-  const stage = Math.max(160, Math.min(area.clientWidth, area.clientHeight));
+  const stage = Math.max(160, Math.min(MAPW, MAPH));
   return Math.min(6, stage * .58 / body.size / Math.max(1, WW() / (2 * Math.PI)));
 }
 // Every path that sets a globe's zoom goes through here, so a world nobody has
@@ -12918,8 +13689,8 @@ function planetMaxScale(pan = SKY_PAN) {
 function planetScaleClamp(scale) {
   return planetScaleClampAt(scale, SKY_PAN);
 }
-function planetScaleClampAt(scale, pan) {
-  return Math.max(planetMinScale(), Math.min(planetMaxScale(pan), scale));
+function planetScaleClampAt(scale, pan, body = skyNearestWorld(pan)) {
+  return Math.max(planetMinScale(), Math.min(planetMaxScale(pan, body), scale));
 }
 // How much of the picture is space rather than surface: 0 while the globe still
 // fills the stage, 1 once it is a marble among others.
@@ -12954,8 +13725,8 @@ function skyPlacement(body, radius, centerX, centerY) {
 // runs both ways: it lets a body hang over the canvas edge, and it keeps one
 // off a widget by its own width so a caption does not slide under the rail.
 function skyOnStage(x, y, margin = 0) {
-  if (x < -margin || x > area.clientWidth + margin ||
-      y < -margin || y > area.clientHeight + margin) return false;
+  if (x < -margin || x > MAPW + margin ||
+      y < -margin || y > MAPH + margin) return false;
   return !skyWidgetBoxes().some(box =>
     x > box.left - margin && x < box.right + margin &&
     y > box.top - margin && y < box.bottom + margin);
@@ -12967,8 +13738,8 @@ function skyOnStage(x, y, margin = 0) {
 // corner the world map sits in. Dropping it there instead made it blink.
 function skyOnCanvas(place) {
   const margin = place.r + 40;
-  return place.x > -margin && place.x < area.clientWidth + margin &&
-         place.y > -margin && place.y < area.clientHeight + margin;
+  return place.x > -margin && place.x < MAPW + margin &&
+         place.y > -margin && place.y < MAPH + margin;
 }
 // The caption is the part that must stay clear: stacked text sliding under the
 // rail is unreadable in a way a half-covered disc is not.
@@ -12984,7 +13755,7 @@ function drawSkyStars(depth) {
   for (let i = 0; i < 130; i++) {
     const size = .5 + 1.2 * hash2(i, 31);
     cx.globalAlpha = depth * (.20 + .60 * hash2(i, 41));
-    cx.fillRect(hash2(i, 11) * area.clientWidth, hash2(i, 23) * area.clientHeight,
+    cx.fillRect(hash2(i, 11) * MAPW, hash2(i, 23) * MAPH,
                 size, size);
   }
   cx.restore();
@@ -13193,7 +13964,7 @@ function drawSkySatellites(crew, camera, radius, centerX, centerY, alpha, now) {
   // orbit going round the back.
   cx.save();
   cx.beginPath();
-  cx.rect(0, 0, area.clientWidth, area.clientHeight);
+  cx.rect(0, 0, MAPW, MAPH);
   cx.arc(centerX, centerY, radius, 0, 7, true);
   cx.clip();
   cx.globalAlpha = shown * .3; cx.lineWidth = .8;
@@ -14217,7 +14988,7 @@ function drawEmpireLensFlat(tiles) {
 function drawPlanetChartMarginalia() {
   if (!HIDDEN_MAP_MONSTER_ATLAS_READY) return;
   const [seedA, seedB] = hiddenMapSeedWords();
-  const width = area.clientWidth, height = area.clientHeight;
+  const width = MAPW, height = MAPH;
   // Screen-space seats are appropriate here: before the sphere is known, this
   // projection is a sheet whose uncharted paper runs to the frame. Projected
   // known cells are painted next and cover every part of a creature that no
@@ -14243,10 +15014,10 @@ function drawPlanetMap() {
     ensurePlanetGeometry();
     cx.setTransform(DPR, 0, 0, DPR, 0, 0);
     cx.fillStyle = "#050d14";
-    cx.fillRect(0, 0, area.clientWidth, area.clientHeight);
+    cx.fillRect(0, 0, MAPW, MAPH);
     cx.fillStyle = "#a7cfdf"; cx.textAlign = "center";
     cx.font = "14px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
-    cx.fillText("Building the globe…", area.clientWidth / 2, area.clientHeight / 2);
+    cx.fillText("Building the globe…", MAPW / 2, MAPH / 2);
     cx.setTransform(1, 0, 0, 1, 0, 0);
     return true;
   }
@@ -14264,18 +15035,18 @@ function drawPlanetMap() {
 
   cx.setTransform(DPR, 0, 0, DPR, 0, 0);
   const backdrop = cx.createRadialGradient(centerX, centerY, 0, centerX, centerY,
-                                           Math.max(area.clientWidth, area.clientHeight));
+                                           Math.max(MAPW, MAPH));
   backdrop.addColorStop(0, "#132a38");
   backdrop.addColorStop(.58, "#071018");
   backdrop.addColorStop(1, "#03070c");
   cx.fillStyle = backdrop;
-  cx.fillRect(0, 0, area.clientWidth, area.clientHeight);
+  cx.fillRect(0, 0, MAPW, MAPH);
   // Once the globe stops filling the stage, the wash behind it is no longer
   // the top of an atmosphere — it is the space the rest of the system is in.
   const depth = skyDepth(radius);
   if (depth > 0) {
     cx.fillStyle = `rgba(2,5,10,${(depth * .78).toFixed(3)})`;
-    cx.fillRect(0, 0, area.clientWidth, area.clientHeight);
+    cx.fillRect(0, 0, MAPW, MAPH);
     drawSkyStars(depth);
   }
 
@@ -14315,7 +15086,7 @@ function drawPlanetMap() {
     ocean.addColorStop(.88, "#141a20"); ocean.addColorStop(1, "#05090d");
   }
   cx.fillStyle = ocean;
-  if (camera.chart) cx.fillRect(0, 0, area.clientWidth, area.clientHeight);
+  if (camera.chart) cx.fillRect(0, 0, MAPW, MAPH);
   else { cx.beginPath(); cx.arc(centerX, centerY, radius, 0, 7); cx.fill(); }
   cx.restore();
 
@@ -14323,11 +15094,11 @@ function drawPlanetMap() {
     cx.save();
     cx.strokeStyle = PARCH_INK; cx.globalAlpha = .065; cx.lineWidth = .65;
     for (let i = 0; i < 15; i++) {
-      const y = area.clientHeight * (i + .45) / 15;
+      const y = MAPH * (i + .45) / 15;
       cx.beginPath(); cx.moveTo(0, y);
-      cx.bezierCurveTo(area.clientWidth * .32, y + (i % 2 ? 8 : -8),
-                       area.clientWidth * .67, y + (i % 2 ? -7 : 7),
-                       area.clientWidth, y);
+      cx.bezierCurveTo(MAPW * .32, y + (i % 2 ? 8 : -8),
+                       MAPW * .67, y + (i % 2 ? -7 : 7),
+                       MAPW, y);
       cx.stroke();
     }
     cx.restore();
@@ -14501,8 +15272,8 @@ function draw() {
     shakeY = Math.cos(now0 / 8.3) * a * 0.7;
   }
   const SC = DPR * cam.scale;
-  const OX = DPR * area.clientWidth / 2 + shakeX * DPR;
-  const OY = DPR * area.clientHeight / 2 + shakeY * DPR;
+  const OX = DPR * MAPW / 2 + shakeX * DPR;
+  const OY = DPR * MAPH / 2 + shakeY * DPR;
   const baseXf = () => cx.setTransform(SC, 0, 0, SC, OX, OY);
   baseXf();
   // Everything the eye can actually reach, projected once. The renderer used to
@@ -14510,9 +15281,9 @@ function draw() {
   // layers whatever the camera was pointed at; a survey screenful is nearer
   // three hundred. Culling here is worth more than every micro-optimisation in
   // the layers below put together.
-  const halfW = area.clientWidth / (2 * cam.scale) + S * 3;
-  const topY = -area.clientHeight / (2 * cam.scale) - S * 5;
-  const botY = area.clientHeight / (2 * cam.scale) + S * 3.5;
+  const halfW = MAPW / (2 * cam.scale) + S * 3;
+  const topY = -MAPH / (2 * cam.scale) - S * 5;
+  const botY = MAPH / (2 * cam.scale) + S * 3.5;
   // --- antique chart under undiscovered territory. This exists in Strategic
   // too: changing display detail must never turn the unknown back into a black
   // tactical mask. Known terrain is painted afterward and therefore clips the
@@ -16597,8 +17368,8 @@ function drawMini() {
     return miniHexCenter([qf, rf], layout);
   };
   // viewport quad (rotates with the camera)
-  const cs4 = [[0, 0], [area.clientWidth, 0],
-               [area.clientWidth, area.clientHeight], [0, area.clientHeight]];
+  const cs4 = [[0, 0], [MAPW, 0],
+               [MAPW, MAPH], [0, MAPH]];
   mx2.strokeStyle = "#f0c674"; mx2.lineWidth = 1;
   mx2.beginPath();
   cs4.forEach(([sx, sy], i) => {
@@ -17258,6 +18029,9 @@ function drawPlayerHud() {
   // innerHTML replaced the element the observer was watching.
   observePlayerRibbon();
   syncPlayerLockPins();
+  // The masthead is as tall as the table it holds, so a civilization met or
+  // destroyed moves the map area's top edge as surely as dragging it does.
+  refitMapAreaToChrome();
   reframeIfMapFocusBoundsChanged(priorBounds, priorFocus);
 }
 
@@ -19812,7 +20586,7 @@ function cameraYBounds(scale = cam.scale) {
   // map with empty background. At any other bearing the map's rows are not the
   // screen's, so there is no vertical span to clamp against and the view is left
   // alone — including a world still facing the way it was found.
-  if (!state || !area.clientHeight) return null;
+  if (!state || !MAPH) return null;
   // A globe turns to any latitude — that is what a globe is for — so the only
   // limit is the poles themselves. The framing rule below is about keeping a
   // flat map's empty background off the screen, which a sphere does not have.
@@ -19823,14 +20597,14 @@ function cameraYBounds(scale = cam.scale) {
   if (Math.abs(SINR) > 0.001) return null;
   const actualScale = Math.max(.01, scale);
   const focusBounds = mapFocusBounds();
-  const aboveFocus = (area.clientHeight / 2 - focusBounds.top) / (actualScale * YS);
-  const belowFocus = (focusBounds.bottom - area.clientHeight / 2) / (actualScale * YS);
+  const aboveFocus = (MAPH / 2 - focusBounds.top) / (actualScale * YS);
+  const belowFocus = (focusBounds.bottom - MAPH / 2) / (actualScale * YS);
   const top = -S;
   const bottom = S * 1.5 * Math.max(0, state.map.height - 1) + S + MODE.skirt / YS;
   if (bottom - top <= aboveFocus + belowFocus) {
     const middle = (top + bottom) / 2;
     const focus = (focusBounds.top + focusBounds.bottom) / 2;
-    const centered = middle - (focus - area.clientHeight / 2) / (actualScale * YS);
+    const centered = middle - (focus - MAPH / 2) / (actualScale * YS);
     return { min:centered, max:centered };
   }
   return { min:top + aboveFocus, max:bottom - belowFocus };
@@ -19897,20 +20671,22 @@ function mapOverlayVisible(name) {
   if (cinemaActive() && ["players", "minimap", "controls"].includes(name)) return false;
   return true;
 }
-// Area-local box of a HUD widget, or null when it is switched off, collapsed
-// or not laid out yet. An element hidden with `display: none` reports a zero
-// box, and that reading outranks the visibility flags.
-function mapWidgetBox(name, areaRect) {
+// Box of a HUD widget local to `origin`, or null when it is switched off,
+// collapsed or not laid out yet. An element hidden with `display: none`
+// reports a zero box, and that reading outranks the visibility flags.
+function mapWidgetBox(name, origin) {
   const element = mapOverlayVisible(name) ? HUD_WIDGETS[name]?.element : null;
   if (!element) return null;
   const rect = element.getBoundingClientRect();
   if (!rect.width || !rect.height) return null;
-  return {left:rect.left - areaRect.left, right:rect.right - areaRect.left,
-          top:rect.top - areaRect.top, bottom:rect.bottom - areaRect.top};
+  return {left:rect.left - origin.left, right:rect.right - origin.left,
+          top:rect.top - origin.top, bottom:rect.bottom - origin.top};
 }
-function mapFocusBounds() {
-  const width = Math.max(1, area.clientWidth), height = Math.max(1, area.clientHeight);
-  const areaRect = area.getBoundingClientRect();
+// The rectangle of a `width`x`height` box at page position `origin` that no
+// docked chrome stands on. Two callers want the same measurement against two
+// different boxes: the camera asks it of the map viewport, and the auto-fit
+// asks it of the whole map area to decide where that viewport's edges go.
+function uncoveredMapBox(origin, width, height) {
   let left = 0, right = width, top = 0, bottom = height;
   // On compact layouts the command deck floats over the canvas instead of
   // shrinking it, so its right edge has to be read off the page. Under the
@@ -19918,11 +20694,11 @@ function mapFocusBounds() {
   if (!document.body.classList.contains("sidebar-hidden") && !cinemaActive()) {
     const sideRect = document.getElementById("side").getBoundingClientRect();
     if (sideRect.width)
-      left = Math.max(0, Math.min(width, sideRect.right - areaRect.left));
+      left = Math.max(0, Math.min(width, sideRect.right - origin.left));
   }
-  const players = mapWidgetBox("players", areaRect);
+  const players = mapWidgetBox("players", origin);
   if (players) top = Math.max(0, Math.min(height, players.bottom));
-  const victory = mapWidgetBox("victory", areaRect);
+  const victory = mapWidgetBox("victory", origin);
   if (victory) {
     // At the 1100px responsive breakpoint the rail spans the map between 8px
     // gutters. Read the live box instead of duplicating that breakpoint so a
@@ -19938,6 +20714,12 @@ function mapFocusBounds() {
   if (right <= left) { left = 0; right = width; }
   if (bottom <= top) { top = 0; bottom = height; }
   return {left, right, top, bottom};
+}
+// Viewport-local. With the map area fitted to the panels this is the whole
+// viewport; a hand-set area parked under the masthead still composes around it.
+function mapFocusBounds() {
+  return uncoveredMapBox(cv.getBoundingClientRect(),
+                         Math.max(1, MAPW), Math.max(1, MAPH));
 }
 function mapFocusPoint() {
   const bounds = mapFocusBounds();
@@ -19955,13 +20737,13 @@ function cameraCenterForWorld(wx, wy, scale = cam.scale, focus = mapFocusPoint()
   // Use the actual fitted scale so this remains the inverse of screenToWorld
   // and a moving HUD edge keeps the same ground beneath the stage center.
   const actualScale = Math.max(.01, scale);
-  const vx = (focus.x - area.clientWidth / 2) / actualScale;
-  const vy = (focus.y - area.clientHeight / 2) / actualScale / YS;
+  const vx = (focus.x - MAPW / 2) / actualScale;
+  const vy = (focus.y - MAPH / 2) / actualScale / YS;
   return [wx - (COSR * vx + SINR * vy),
           wy - (-SINR * vx + COSR * vy)];
 }
 function currentMapFocusWorld() {
-  if (!state || cameraFlight || cameraZoom || !area.clientWidth || !area.clientHeight) return null;
+  if (!state || cameraFlight || cameraZoom || !MAPW || !MAPH) return null;
   const focus = mapFocusPoint();
   return screenToWorld(focus.x, focus.y);
 }
@@ -19986,8 +20768,8 @@ function cameraTargetFor(pos, scale = cam.scale) {
 function applyCameraAnchor(wx, wy, sx, sy, scale = cam.scale) {
   cam.scale = planetMap() ? planetScaleClamp(scale)
                           : Math.max(.25, Math.min(3.2, scale));
-  const vx = (sx - area.clientWidth / 2) / cam.scale;
-  const vy = (sy - area.clientHeight / 2) / cam.scale / YS;
+  const vx = (sx - MAPW / 2) / cam.scale;
+  const vy = (sy - MAPH / 2) / cam.scale / YS;
   cam.x = wx - (COSR * vx + SINR * vy);
   cam.y = clampCameraY(wy - (-SINR * vx + COSR * vy));
 }
@@ -20038,47 +20820,61 @@ function zoomAt(f, sx, sy, skyAnchor = null) {
     cameraFlight = null; clearCameraInertia();
     const [stageX, stageY] = planetStageCenter();
     const before = planetEarthRadius(base);
-    // A chart has no system to travel through. Everything below is about
-    // holding one body still under the pointer so the zoom walks toward it,
-    // and a people who have not proved their world round have exactly one
-    // sheet and nowhere to go: it stays under the middle of the stage.
-    if (!knowsGlobe()) {
-      const scale = planetScaleClampAt(base * f, {x:0, y:0});
-      const target = {kind:"planet", scale, pan:{x:0, y:0}};
-      if (REDUCED_MOTION_QUERY.matches) {
-        cameraZoom = null; cam.scale = scale; skyReturnHome();
-        draw(); drawMini();
-      } else cameraZoom = target;
-      return;
-    }
+    // With no pointer to aim by — the corner buttons, the keyboard — a zoom in
+    // still has to arrive somewhere, so it aims at the world the camera is
+    // heading for rather than at the middle of the stage, which out here is
+    // usually empty sky between two of them.
     if (sx === undefined)
       [sx, sy] = f > 1 ? skyZoomAnchor(before, stageX, stageY, basePan)
                        : [stageX, stageY];
-    // Which point of the system the pointer is over, in Earth radii from the
-    // Earth. Holding that point still across the step is what makes scrolling
-    // in over Mars a way of *going* to Mars: aim at a body and the zoom walks
-    // toward it, aim at empty sky and the zoom stays where you are looking.
-    const pointerX = skyAnchor?.x ?? basePan.x + (sx - stageX) / before;
-    const pointerY = skyAnchor?.y ?? basePan.y + (sy - stageY) / before;
+    // What this zoom is about: a world, and the ground of it under the pointer.
+    // A pinch keeps the world and the ground it started on, so its subject
+    // cannot change hands halfway through one gesture, but it holds them under
+    // wherever the fingers are *now* — which is what makes a two-finger drag
+    // with no pinch in it a translation.
+    const aim = skyAnchor
+      ? {...skyAnchor, sx, sy,
+         grab:skyWorldGrab(skyDrawnRadius(skyBody(skyAnchor.id) || SKY_EARTH, before))}
+      : skyZoomAim(sx, sy, before, basePan);
+    const subject = skyBody(aim.id) || SKY_EARTH;
     // A globe's zoom-out does not stop at the globe. It carries on until the
     // rest of the system is in frame, which is a fixed apparent size for the
     // Earth rather than a fixed number, because a bigger world starts bigger.
-    const scale = planetScaleClampAt(base * f, basePan);
+    // Zooming *in* never zooms out, though: a world the pointer has just named
+    // can stop closer than the one the camera is standing over, and clamping to
+    // it would answer a zoom-in with a jump backwards.
+    const ceiling = planetMaxScale(basePan, subject);
+    const scale = Math.max(planetMinScale(),
+                           Math.min(base * f, Math.max(ceiling, f > 1 ? base : 0)));
     const after = planetEarthRadius(scale);
-    const anchored = {x:pointerX - (sx - stageX) / after,
-                      y:pointerY - (sy - stageY) / after};
+    // Where that world should sit on the stage once the step is done: under the
+    // pointer while it is still a marble being approached — that is what makes
+    // scrolling in over Mars a way of *going* to Mars — and in the middle of the
+    // stage once it is the place you are standing on.
+    const holdX = stageX + (aim.sx - stageX) * aim.grab;
+    const holdY = stageY + (aim.sy - stageY) * aim.grab;
+    const [subjectX, subjectY] = skyBodyPos(subject);
+    // A people who have not proved their world round have one sheet and nowhere
+    // to travel to, so their stage centre stays over it. What they do get is the
+    // lean below: a chart leans towards the pointer exactly as a flat map does.
+    const anchored = knowsGlobe()
+      ? {x:subjectX - (holdX - stageX) / after, y:subjectY - (holdY - stageY) / after}
+      : {x:0, y:0};
     // A two-finger translation with no scale change is a deliberate pan, not
     // a request to recenter the nearest world. Once the pinch is zooming, the
     // same gentle body capture as the wheel keeps the approach intentional.
     const settling = !skyAnchor || Math.abs(Math.log(Math.max(1e-6, f))) > .003;
-    const pan = settling ? skySettledPan(anchored, after, f) : anchored;
+    const pan = settling ? skySettledPan(anchored, after, f, subject, aim.grab)
+                         : anchored;
+    const lean = aim.point ? {id:aim.id, point:aim.point, sx:aim.sx, sy:aim.sy} : null;
     if (REDUCED_MOTION_QUERY.matches) {
       cameraZoom = null; cam.scale = scale; SKY_PAN = pan;
+      if (lean) skyLean(lean, 1);
       draw(); drawMini();
-    } else cameraZoom = {kind:"planet", scale, pan};
+    } else cameraZoom = {kind:"planet", scale, pan, lean};
     return;
   }
-  if (sx === undefined) { sx = area.clientWidth / 2; sy = area.clientHeight / 2; }
+  if (sx === undefined) { sx = MAPW / 2; sy = MAPH / 2; }
   const [wx, wy] = screenToWorld(sx, sy);
   const base = cameraZoom?.scale || cam.scale;
   cameraFlight = null; clearCameraInertia();
@@ -20114,12 +20910,18 @@ function advanceUserCameraMotion(now = performance.now()) {
       cam.scale *= Math.exp(Math.log(cameraZoom.scale / Math.max(1e-6, cam.scale)) * ease);
       SKY_PAN = {x:SKY_PAN.x + (cameraZoom.pan.x - SKY_PAN.x) * ease,
                  y:SKY_PAN.y + (cameraZoom.pan.y - SKY_PAN.y) * ease};
+      // The lean turns on the same ease, and is re-measured against where the
+      // scale and pan have actually got to, so the ground it is holding arrives
+      // under the pointer rather than near it.
+      const leanLeft = cameraZoom.lean ? skyLean(cameraZoom.lean, ease) : 0;
       const scaleLeft = Math.abs(Math.log(cameraZoom.scale / Math.max(1e-6, cam.scale)));
       const panLeft = Math.hypot(cameraZoom.pan.x - SKY_PAN.x,
                                  cameraZoom.pan.y - SKY_PAN.y) * planetEarthRadius();
       active = true;
-      if (scaleLeft < .0008 && panLeft < .25) {
+      if (scaleLeft < .0008 && panLeft < .25 &&
+          leanLeft * planetEarthRadius() < 1) {
         cam.scale = cameraZoom.scale; SKY_PAN = {...cameraZoom.pan};
+        if (cameraZoom.lean) skyLean(cameraZoom.lean, 1);
         cameraZoom = null;
       }
     } else {
@@ -20204,7 +21006,7 @@ function advanceCameraFollow(now = performance.now()) {
   const subject = cinematicUnitMapPoint(unit, now);
   const desiredScreenY = mapFocusPoint().y;
   let gx = subject.x, gy = subject.y;
-  const screenY = area.clientHeight / 2 +
+  const screenY = MAPH / 2 +
     ((SINR * (subject.focusX - gx) + COSR * (subject.focusY - gy)) * YS -
      subject.focusLift) * cameraFollowScale;
   const correction = (screenY - desiredScreenY) /
@@ -20376,8 +21178,8 @@ function fitFullWorldView(preservePresentation = false) {
   cam.scale = Math.max(.01, scale);
   // The composition offset is a screen measurement, so it is taken off along
   // the camera's own axes before the centre is carried back into world space.
-  const focusX = (minX + maxX) / 2 - (desiredX - area.clientWidth / 2) / cam.scale;
-  const focusY = (minY + maxY) / 2 - (desiredY - area.clientHeight / 2) / (cam.scale * YS);
+  const focusX = (minX + maxX) / 2 - (desiredX - MAPW / 2) / cam.scale;
+  const focusY = (minY + maxY) / 2 - (desiredY - MAPH / 2) / (cam.scale * YS);
   cam.x = COSR * focusX + SINR * focusY;
   cam.y = clampCameraY(-SINR * focusX + COSR * focusY, cam.scale);
   return {x:cam.x, y:cam.y, scale:cam.scale};
@@ -20387,7 +21189,7 @@ function fitFullWorldView(preservePresentation = false) {
 // This rectangle controls scale only; mapFocusPoint controls the composition,
 // so a corner minimap cannot pull the world's focal point away from center.
 function observedFrameRect() {
-  const width = Math.max(1, area.clientWidth), height = Math.max(1, area.clientHeight);
+  const width = Math.max(1, MAPW), height = Math.max(1, MAPH);
   const narrow = width <= 720;
   const victoryVisible = mapOverlayVisible("victory");
   const topHudVisible = mapOverlayVisible("players") || victoryVisible;
@@ -20409,6 +21211,13 @@ function observedFrameRect() {
   let bottom = height - (minimapVisible
     ? (cinemaActive() ? Math.max(90, height * .1) : (narrow ? 218 : 72))
     : (controlsVisible ? 72 : 28));
+  // The map area has already stood clear of some of these widgets. Ground it
+  // gave up is reservation the framing must not pay for a second time, or a
+  // fitted viewer opens on a world twice as small as the one it can show.
+  left = Math.max(0, left - mapAreaInsets.left);
+  right = Math.min(width, right + mapAreaInsets.right);
+  top = Math.max(0, top - mapAreaInsets.top);
+  bottom = Math.min(height, bottom + mapAreaInsets.bottom);
   // Extremely small embedded viewers cannot honor every overlay reservation.
   // Retain a useful stage around the center rather than returning an inverted
   // rectangle and throwing the subjects off-screen.
@@ -20450,6 +21259,29 @@ function unwrapObservedPoints(anchors) {
   points = unwrapPointAxis(points, "x", WW(), mapWrapsX());
   return unwrapPointAxis(points, "y", WH(), mapWrapsY());
 }
+// Where subjects sit in the coordinates the camera itself is written in. A
+// round world keeps its own mapping from tile to camera point — the one every
+// go-to-this-tile path already uses — so framing an empire on a globe is the
+// same measurement as framing one on a flat sheet.
+function observedCameraPoints(anchors) {
+  if (!planetMap()) return unwrapObservedPoints(anchors);
+  const points = anchors
+    .map(anchor => planetCameraTargetFor(anchor.pos))
+    .filter(Boolean)
+    .map(([x, y]) => ({x, y}));
+  return unwrapPointAxis(points, "x", WW(), true);
+}
+// The stage an automatic frame has to work with, inset so its subjects do not
+// end up against the HUD's own edges.
+function observedStageFit() {
+  const frame = observedFrameRect();
+  const padding = Math.min(72, (frame.right - frame.left) * .12,
+                           (frame.bottom - frame.top) * .16);
+  return {
+    width:Math.max(90, frame.right - frame.left - padding * 2),
+    height:Math.max(90, frame.bottom - frame.top - padding * 2),
+  };
+}
 
 function observedViewGoal(anchors, oneEmpire = Number.isInteger(state?.view_player)) {
   if (!anchors.length) {
@@ -20457,6 +21289,9 @@ function observedViewGoal(anchors, oneEmpire = Number.isInteger(state?.view_play
     if (!fallback) return null;
     anchors = [fallback];
   }
+  const maximum = oneEmpire ? (cinemaActive() ? 1 : 1.12)
+                            : (cinemaActive() ? .76 : .82);
+  if (planetMap()) return observedPlanetViewGoal(anchors, maximum);
   const points = unwrapObservedPoints(anchors);
   const projected = points.map(point => ({
     x:COSR * point.x - SINR * point.y,
@@ -20465,20 +21300,14 @@ function observedViewGoal(anchors, oneEmpire = Number.isInteger(state?.view_play
   const xs = projected.map(point => point.x), ys = projected.map(point => point.y);
   const minX = Math.min(...xs), maxX = Math.max(...xs);
   const minY = Math.min(...ys), maxY = Math.max(...ys);
-  const frame = observedFrameRect();
-  const padding = Math.min(72, (frame.right - frame.left) * .12,
-                           (frame.bottom - frame.top) * .16);
-  const usableWidth = Math.max(90, frame.right - frame.left - padding * 2);
-  const usableHeight = Math.max(90, frame.bottom - frame.top - padding * 2);
+  const {width:usableWidth, height:usableHeight} = observedStageFit();
   const spanX = maxX - minX, spanY = (maxY - minY) * YS;
   const fitX = spanX > 0 ? usableWidth / spanX : Infinity;
   const fitY = spanY > 0 ? usableHeight / spanY : Infinity;
-  const maximum = oneEmpire ? (cinemaActive() ? 1 : 1.12)
-                            : (cinemaActive() ? .76 : .82);
   const scale = Math.max(.2, Math.min(maximum, fitX, fitY));
   const {x:desiredX, y:desiredY} = mapFocusPoint();
-  const desiredViewX = (desiredX - area.clientWidth / 2) / scale;
-  const desiredViewY = (desiredY - area.clientHeight / 2) / (scale * YS);
+  const desiredViewX = (desiredX - MAPW / 2) / scale;
+  const desiredViewY = (desiredY - MAPH / 2) / (scale * YS);
   const cameraViewX = (minX + maxX) / 2 - desiredViewX;
   const cameraViewY = (minY + maxY) / 2 - desiredViewY;
 
@@ -20489,12 +21318,50 @@ function observedViewGoal(anchors, oneEmpire = Number.isInteger(state?.view_play
   };
 }
 
+// The same frame on a round world. A globe is drawn about the stage's own
+// centre and turns under the bearing rather than sliding beneath it, so there
+// is no composition offset to take off along the camera's axes: the subjects'
+// midpoint is the camera point, and the zoom answers to the globe's own stops.
+function observedPlanetViewGoal(anchors, maximum) {
+  const points = observedCameraPoints(anchors);
+  if (!points.length) return null;
+  const xs = points.map(point => point.x), ys = points.map(point => point.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const {width:usableWidth, height:usableHeight} = observedStageFit();
+  const spanX = maxX - minX, spanY = (maxY - minY) * YS;
+  const fitX = spanX > 0 ? usableWidth / spanX : Infinity;
+  const fitY = spanY > 0 ? usableHeight / spanY : Infinity;
+  // An empire's span is measured across the unrolled sheet, so one with a
+  // scout on the far side of the world asks for a fit wider than the world is.
+  // The whole globe is the widest shot there is: past it the camera is leaving
+  // for the system, which is never what framing somebody's empire meant.
+  const projected = WW() / Math.PI;
+  const wholeWorld = Math.min(usableWidth / projected, usableHeight / projected);
+  const scale = planetScaleClamp(Math.max(wholeWorld, Math.min(maximum, fitX, fitY)));
+  return {
+    x:(minX + maxX) / 2,
+    y:clampCameraY((minY + maxY) / 2, scale),
+    scale,
+  };
+}
+
 function setObservedPlayersView(smooth = false) {
-  if (planetMap()) { fitPlanetView(); return; }
   const watched = Number.isInteger(state?.view_player);
+  // Framing the whole of a round world is the right shot only when the whole
+  // of it is being watched. A seat has seen the ground it walked and nothing
+  // else, so opening on the globe put a new single-player game on a stage with
+  // none of that seat's own ground anywhere on it — a blank map on turn one.
+  if (planetMap() && !watched) { fitPlanetView(); return; }
   const anchors = watched
     ? watchedEmpireSubjects(state.view_player) : observedPlayerAnchors();
+  // A tile is on the world, so framing one is also coming back from the system.
+  if (planetMap()) skyReturnHome();
   const goal = observedViewGoal(anchors);
+  // A globe whose geometry has not arrived yet cannot place a tile at all.
+  // Hold the whole-world shot until it can, and reframe from
+  // `ensurePlanetGeometry` once the cells are in.
+  if (!goal && planetMap()) { fitPlanetView(); return; }
   if (!goal) return;
   cameraZoom = null; clearCameraInertia();
   if (smooth && !REDUCED_MOTION_QUERY.matches) {
@@ -20860,13 +21727,10 @@ function beginTouchTransform() {
   const my = (points[0].y + points[1].y) / 2 - rect.top;
   const dx = points[1].x - points[0].x, dy = points[1].y - points[0].y;
   const [wx, wy] = screenToWorld(mx, my);
-  let skyAnchor = null;
-  if (planetMap()) {
-    const [stageX, stageY] = planetStageCenter();
-    const radius = Math.max(.001, planetEarthRadius());
-    skyAnchor = {x:SKY_PAN.x + (mx - stageX) / radius,
-                 y:SKY_PAN.y + (my - stageY) / radius};
-  }
+  // Whatever the pinch started on stays its subject for the whole gesture, so
+  // fingers passing over another world do not hand the camera to it.
+  const skyAnchor = planetMap()
+    ? skyZoomAim(mx, my, Math.max(.001, planetEarthRadius())) : null;
   touchGesture = {mode:"transform", mx, my, wx, wy, distance:Math.hypot(dx, dy),
                   angle:Math.atan2(dy, dx), scale:cam.scale, rot:cam.rot,
                   basis:planetBasisNow(), skyAnchor, controlled:false};
@@ -22221,6 +23085,11 @@ document.addEventListener("keydown", ev => {
   // not reach through an open panel, and neither do these. Escape closes the
   // topmost one, and the pedia's own key still closes the pedia.
   if (ev.key === "Escape" && closeTopmostScreen()) { ev.preventDefault(); return; }
+  // Setting the map area is a mode over the map rather than a screen of its
+  // own, and Escape leaves it exactly as it was found.
+  if (ev.key === "Escape" && mapAreaEditorOpen()) {
+    closeMapAreaEditor(false); ev.preventDefault(); return;
+  }
   if (screenHoldsKeyboard(ev)) return;
 
   // The spectator's cinema keys go first. They are live only while a cinema is
@@ -22452,13 +23321,16 @@ async function autoplay(turns) {
 document.getElementById("autoplaybtn").onclick = () => autoplay(autoplayRequest());
 document.getElementById("tradebtn").onclick = () => openTrade();
 document.getElementById("gamemode").addEventListener("change", syncSetupMode);
+document.getElementById("starteon").addEventListener("change", syncStartEon);
 document.getElementById("leaderpool").addEventListener("change", syncLeaderPool);
 document.getElementById("maptype").addEventListener("change", syncEarthShape);
 document.getElementById("savebtn").onclick = () => writeSave();
 syncSetupMode();
+syncStartEon();
 syncEarthShape();
 document.getElementById("diplomacybtn").onclick = () => openDiplomacy();
 document.getElementById("paneltoggle").onclick = () => togglePanel();
+bindMapAreaEditor();
 document.getElementById("collapsepause").onclick = toggleSpecPause;
 document.getElementById("cinema-director").onclick = () => setDirector(!DIRECTOR);
 document.getElementById("cinema-audio").onclick = () => setCinemaAudio(!CINEMA_AUDIO);
@@ -22509,6 +23381,9 @@ function selectedSimulationSettings() {
   const mapPoles = document.getElementById("mappoles").value;
   const gameSpeed = document.getElementById("gamespeed").value;
   const leaderPool = document.getElementById("leaderpool").value;
+  const baseRuleset = document.getElementById("baseruleset").value;
+  const startEon = document.getElementById("starteon").value;
+  const startEra = document.getElementById("startera").value;
   const victoryConditions = Object.fromEntries(VICTORY_TRACKS.map(track =>
     [track.id, document.getElementById(`victory-${track.id}`).checked]));
   const leader = (document.getElementById("leader") || {}).value || "";
@@ -22516,6 +23391,7 @@ function selectedSimulationSettings() {
   return {num_players: np, map_script: mapScript, map_topology: mapTopology,
           map_poles: mapPoles, game_speed: gameSpeed,
           leader_pool: leaderPool,
+          base_ruleset: baseRuleset, start_eon: startEon, start_era: startEra,
           victory_conditions: victoryConditions,
           spectate: gameMode === "ai_sim",
           // A spectated world has nobody to hand a leader or a handicap to.
@@ -22534,7 +23410,12 @@ function selectedSimulationSummary() {
   const size = selectedText("np").split(" · ")[0];
   const map = selectedText("maptype").split(" · ")[0];
   const speed = selectedText("gamespeed").split(" · ")[0];
-  return [mode, size, map, speed].filter(Boolean).join(" · ");
+  // The era is named only when it is not the stock start: every other setting
+  // on this line is one somebody chose, and "Ancient" is what you get by
+  // choosing nothing.
+  const eras = document.getElementById("startera");
+  const era = eras && eras.selectedIndex > 0 ? selectedText("startera") : "";
+  return [mode, size, map, speed, era].filter(Boolean).join(" · ");
 }
 function simulationSettingsKey(settings) {
   return JSON.stringify(settings);
@@ -22554,6 +23435,12 @@ function applyQueuedSimulationSettings(settings) {
   document.getElementById("gamespeed").value = settings.speed;
   document.getElementById("leaderpool").value = settings.leader_pool || "civ6";
   syncLeaderPool();
+  document.getElementById("baseruleset").value = settings.base_ruleset || "civ6";
+  // The eon has to land before the era, because it is what decides which
+  // ladder the era is a rung of.
+  document.getElementById("starteon").value = settings.eon || "civilization";
+  syncStartEon();
+  if (settings.start_era) document.getElementById("startera").value = settings.start_era;
   const victories = new Set(settings.victories || []);
   for (const track of VICTORY_TRACKS)
     document.getElementById(`victory-${track.id}`).checked = victories.has(track.id);
@@ -22659,6 +23546,24 @@ function syncLeaderPool() {
   if (leaders.some(entry => entry.civ === selected)) select.value = selected;
 }
 
+// An era only means something inside its own eon: "Ancient" is a rung of human
+// history and nothing at all under the dinosaurs. So the era control is the
+// selected eon's own ladder, rebuilt whenever that changes, and a rung is
+// never carried across from the previous one.
+function syncStartEon() {
+  const eons = document.getElementById("starteon");
+  const eras = document.getElementById("startera");
+  if (!eons || !eras || !RULES || !Array.isArray(RULES.start_eons)) return;
+  const eon = RULES.start_eons.find(entry => entry.id === eons.value);
+  const ladder = (eon && Array.isArray(eon.eras)) ? eon.eras : [];
+  if (!ladder.length) return;
+  const chosen = eras.value;
+  eras.innerHTML = ladder.map(era =>
+    `<option value="${era.id}" title="${escapeAttr(era.description)}">${era.name}</option>`
+  ).join("");
+  eras.value = ladder.some(era => era.id === chosen) ? chosen : ladder[0].id;
+}
+
 // Fixed geography chooses the coastline, not the projection. Keep the shape
 // control available for Earth just as it is for every generated map type.
 function syncEarthShape() {
@@ -22719,6 +23624,7 @@ async function writeSave() {
 
 async function startNewSimulation() {
   if (newSimulationBusy) return;
+  cancelFinaleCountdown();
   const wasPaused = specPaused;
   const payload = {...newSimulationPayload(), paused: wasPaused};
   const supervised = !!(state && state.supervised) && payload.spectate;
@@ -22795,6 +23701,7 @@ async function playOnPastVictory(mode, paused) {
   const buttons = [...document.querySelectorAll(".winner-playon")];
   for (const button of buttons) button.disabled = true;
   cancelSupervisedSuccessorWatch();
+  cancelFinaleCountdown();
   try {
     const next = await fetchJSON("/play-on", {method: "POST",
       headers: {"Content-Type": "application/json"}, body: JSON.stringify({mode, paused})});
