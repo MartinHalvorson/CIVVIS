@@ -3547,6 +3547,66 @@ mod river_tests {
     /// Every world type has to arrive on either shape, seat everybody, and —
     /// on a globe — close. The shape is a separate question from the type, and
     /// this is what makes that true rather than merely offered.
+    /// The one placement guarantee that holds whatever the world is made of.
+    ///
+    /// `Game::can_found_city` refuses a site within `MIN_START_SEPARATION` of a
+    /// city, so a layout that breaks the floor hands somebody a Settler that
+    /// cannot found where it stands and a city-state that `city_state_site`
+    /// teleports to the emptiest tile on the map — undoing, in one move, the
+    /// even spread the generator just worked for. Aiming at the shipped
+    /// distances instead of clearing them broke it on every ocean-separated
+    /// type: measured before this test existed, up to twenty-one pairs of
+    /// starts in a single Small Continents world.
+    ///
+    /// Every rolled world type, both shapes, both pole settings, every stock
+    /// size.
+    #[test]
+    fn no_world_type_ever_crowds_two_starts_inside_the_founding_radius() {
+        let rules = Rules::embedded();
+        for (index, script) in ROLLED_TYPES.into_iter().enumerate() {
+            for topology in [FLAT, GLOBE] {
+                for poles in [POLED, MapPoles::NoPoles] {
+                    for size in [&CIV6_MAP_SIZES[1], &CIV6_MAP_SIZES[3]] {
+                        let mut rng = Rng::new(
+                            41_000
+                                + index as u64 * 8
+                                + topology.is_globe() as u64 * 2
+                                + matches!(poles, MapPoles::NoPoles) as u64,
+                        );
+                        let (world, spawns) = generate_with_script(
+                            &rules,
+                            size.width,
+                            size.height,
+                            size.default_players,
+                            size.default_city_states,
+                            size.natural_wonders,
+                            size.continents,
+                            script,
+                            topology,
+                            poles,
+                            &mut rng,
+                        );
+                        let where_ = format!("{script:?} {topology:?} {poles:?} {}", size.id);
+                        assert_eq!(
+                            spawns.len(),
+                            size.default_players + size.default_city_states,
+                            "{where_}: not every seat was placed"
+                        );
+                        for (index, start) in spawns.iter().enumerate() {
+                            for other in &spawns[index + 1..] {
+                                let gap = world.distance(*start, *other);
+                                assert!(
+                                    gap >= MIN_START_SEPARATION,
+                                    "{where_}: two starts {gap} apart, inside the founding radius"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     fn every_world_type_lays_out_on_either_shape() {
         let rules = Rules::embedded();
@@ -4803,36 +4863,6 @@ mod river_tests {
                     }
                 }
             }
-        }
-    }
-    #[test]
-    #[ignore]
-    fn probe_small_fixture_maps() {
-        for (players, width, height, seed) in
-            [(3usize, 18, 10, 79_001u64), (1, 20, 14, 7_107), (2, 24, 16, 36)]
-        {
-            let game = crate::game::Game::new_full(players, width, height, seed, 200, 0, false);
-            let starts: Vec<Pos> = game
-                .units
-                .values()
-                .filter(|unit| unit.kind == "settler")
-                .map(|unit| unit.pos)
-                .collect();
-            let land = game
-                .map
-                .tiles
-                .values()
-                .filter(|tile| !game.rules.is_water(tile) && game.rules.is_passable(tile))
-                .count();
-            let mut gaps = Vec::new();
-            for (index, start) in starts.iter().enumerate() {
-                for other in &starts[index + 1..] {
-                    gaps.push(game.wdist(*start, *other));
-                }
-            }
-            println!(
-                "{players}p {width}x{height} seed {seed}: land {land} starts {starts:?} gaps {gaps:?}"
-            );
         }
     }
     /// Scratch measurement of how evenly a layout is spread. Prints rather than
