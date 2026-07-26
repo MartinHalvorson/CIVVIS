@@ -42,6 +42,20 @@ if os.name == "nt":
 MIN_FINAL_COUNTDOWN_SECONDS = 5.0
 FINAL_COUNTDOWN_SECONDS = MIN_FINAL_COUNTDOWN_SECONDS
 
+MAP_TYPES = (
+    "land_only",
+    "lakes",
+    "inland_sea",
+    "pangaea",
+    "continents",
+    "small_continents",
+    "islands",
+    "water_world",
+    "true_start_earth",
+)
+MAP_SHAPES = ("flat", "planet")
+MAP_POLES = ("poles", "no_poles")
+
 
 def final_countdown_seconds(requested: float) -> float:
     """Use five seconds by default while allowing a deliberate longer hold."""
@@ -835,6 +849,17 @@ def session_settings(state: dict[str, Any], defaults: dict[str, Any]) -> dict[st
         "speed": state.get("game_speed") or defaults["speed"],
         "leader_pool": state.get("leader_pool") or defaults.get("leader_pool", "civ6"),
     }
+    # Shape and climate are independent of the map script. They used to be
+    # omitted here and in `server_command`, so a selected Planet world made it
+    # across the HTTP handoff, then silently relaunched as Flat in the fresh
+    # process. Keep them optional only for compatibility with an older server
+    # that does not report either field yet.
+    shape = game_map.get("shape") or defaults.get("shape")
+    poles = game_map.get("poles") or defaults.get("poles")
+    if shape in MAP_SHAPES:
+        settings["shape"] = shape
+    if poles in MAP_POLES:
+        settings["poles"] = poles
     victory_conditions = state.get("victory_conditions")
     if isinstance(victory_conditions, dict):
         settings["victories"] = [
@@ -862,7 +887,7 @@ def normalized_simulation_settings(values: Any) -> dict[str, Any] | None:
         leader_pool = str(values.get("leader_pool", "civ6"))
         if leader_pool not in ("civ6", "expanded"):
             return None
-        return {
+        normalized = {
             "players": int(values["players"]),
             "width": int(values["width"]),
             "height": int(values["height"]),
@@ -873,6 +898,20 @@ def normalized_simulation_settings(values: Any) -> dict[str, Any] | None:
             "leader_pool": leader_pool,
             "victories": [str(value) for value in values["victories"]],
         }
+        # New servers always send both. Keeping them optional lets a promoted
+        # supervisor finish a handoff from the immediately preceding server
+        # version without rejecting the entire request.
+        if "shape" in values:
+            shape = str(values["shape"])
+            if shape not in MAP_SHAPES:
+                return None
+            normalized["shape"] = shape
+        if "poles" in values:
+            poles = str(values["poles"])
+            if poles not in MAP_POLES:
+                return None
+            normalized["poles"] = poles
+        return normalized
     except (KeyError, TypeError, ValueError):
         return None
 
@@ -1010,6 +1049,10 @@ def server_command(
         "--restart-ms",
         str(math.ceil(FINAL_COUNTDOWN_SECONDS * 1000)),
     ]
+    if "shape" in settings:
+        args.extend(("--shape", str(settings["shape"])))
+    if "poles" in settings:
+        args.extend(("--poles", str(settings["poles"])))
     if resume is not None:
         args.extend(("--resume", str(resume)))
     if initially_paused:
@@ -1267,9 +1310,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--turns", type=int, default=250)
     parser.add_argument(
         "--map",
-        choices=("pangaea", "continents", "small_continents", "inland_sea"),
+        choices=MAP_TYPES,
         default="pangaea",
     )
+    parser.add_argument("--shape", choices=MAP_SHAPES, default="flat")
+    parser.add_argument("--poles", choices=MAP_POLES, default="poles")
     parser.add_argument(
         "--speed",
         choices=("online", "quick", "standard", "epic", "marathon"),
@@ -1457,6 +1502,12 @@ def main() -> int:
         "speed": args.speed,
         "leader_pool": getattr(args, "leader_pool", "civ6"),
     }
+    # `getattr` keeps a self-updating supervisor able to adopt arguments from
+    # the immediately preceding version, whose Namespace had neither option.
+    if getattr(args, "shape", None) in MAP_SHAPES:
+        settings["shape"] = args.shape
+    if getattr(args, "poles", None) in MAP_POLES:
+        settings["poles"] = args.poles
     if getattr(args, "victories", None):
         settings["victories"] = list(args.victories)
     global LEAGUE_SPEC, LEAGUE_RECORD

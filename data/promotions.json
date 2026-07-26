@@ -73,7 +73,7 @@
 
   "boarding": {"class":"naval_raider","tier":1,"effects":{"gold_from_naval_kill_pct":100},"note":"Gain Gold equal to the defeated naval unit's full Combat Strength."},
   "homing_torpedoes": {"class":"naval_raider","tier":2,"effects":{"ranged_vs_naval":10},"note":"+10 Ranged Strength against naval units.","requires":["boarding","swift_keel"]},
-  "loot": {"class":"naval_raider","tier":1,"effects":{"coastal_raid_gold_pct":50},"note":"Gain additional Gold from coastal raids."},
+  "loot": {"class":"naval_raider","tier":1,"effects":{"coastal_raid_gold":50},"note":"Gain 50 Gold from coastal raids on Standard speed."},
   "silent_running": {"class":"naval_raider","tier":3,"requires":["homing_torpedoes"],"effects":{"move_after_attack":1},"note":"May move after attacking."},
   "observation": {"class":"naval_raider","tier":3,"requires":["swift_keel"],"effects":{"sight":1},"note":"+1 sight range."},
   "wolfpack": {"class":"naval_raider","tier":4,"requires":["observation","silent_running"],"effects":{"extra_attacks":1},"note":"+1 attack per turn."},

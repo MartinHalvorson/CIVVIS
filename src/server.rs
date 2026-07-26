@@ -2421,11 +2421,6 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     if let Some(v) = request["map_poles"].as_bool() {
         p.map_poles = if v { MapPoles::Poles } else { MapPoles::NoPoles };
     }
-    // Earth is drawn from real longitudes and latitudes and closes on itself,
-    // so it is always a globe whatever shape the lobby asked for.
-    if p.map_script.is_fixed_geography() {
-        p.map_topology = MapTopology::Planet;
-    }
     // A globe is stored in a rectangle of its own shape, so the chosen size is
     // re-expressed whenever either the size or the shape moves, and the lobby
     // always names the world it is about to build.
@@ -4564,17 +4559,41 @@ mod tests {
         // size's own rectangle.
         let flat = new_game_params(&stock, &json!({"map_topology": "flat"}));
         assert_eq!((flat.width, flat.height), (size.width, size.height));
-        // Earth is the exception, and overrules the shape it is handed.
+        // Fixed geography changes the coastline source, not the selected
+        // shape: Earth can be sampled onto a flat atlas too.
         let earth = new_game_params(
             &flat,
             &json!({"map_script": "true_start_earth", "map_topology": "flat"}),
         );
-        assert_eq!(earth.map_topology, MapTopology::Planet);
-        assert_eq!((earth.width, earth.height), (size.globe_width(), size.globe_height()));
+        assert_eq!(earth.map_topology, MapTopology::Flat);
+        assert_eq!((earth.width, earth.height), (size.width, size.height));
     }
 
     #[test]
     fn browser_orders_settings_event_log_and_strategy() {
+        // Readability is a shared interface contract, not a collection of
+        // one-off enlargements. Panels inherit one system stack and a named
+        // scale with a 9px floor; map labels use the same platform-native
+        // stack instead of depending on an unbundled webfont.
+        assert!(EMBEDDED_INDEX.contains("--font-ui: system-ui"));
+        assert!(EMBEDDED_INDEX.contains("--type-micro: 9px;"));
+        assert!(EMBEDDED_INDEX.contains("--type-body: 14px;"));
+        assert!(EMBEDDED_INDEX.contains("font: var(--type-body)/1.5 var(--font-ui);"));
+        assert!(EMBEDDED_INDEX.contains("text-size-adjust: 100%"));
+        assert!(EMBEDDED_INDEX.contains(
+            "9px system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
+        ));
+        for illegible in [
+            "font-size: 5.5px",
+            "font-size: 6px",
+            "font-size: 7px",
+            "font-size: 8px",
+        ] {
+            assert!(
+                !EMBEDDED_INDEX.contains(illegible),
+                "browser CSS should not restore the illegible {illegible} declaration"
+            );
+        }
         for players in [2, 4, 6, 8, 10, 12] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("<option value=\"{players}\"")),
@@ -4660,6 +4679,8 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("<option value=\"land_only\">Land Only</option>"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"water_world\">Water World</option>"));
         assert!(EMBEDDED_INDEX.contains("RULES.map_topologies"));
+        assert!(EMBEDDED_INDEX.contains("shape.disabled = false"));
+        assert!(!EMBEDDED_INDEX.contains("if (earth) shape.value = \"planet\""));
         assert!(EMBEDDED_INDEX.contains("id=\"gamespeed\""));
         for victory in [
             "science",
@@ -4796,8 +4817,8 @@ mod tests {
         );
         // The switches are a two-column grid, and the order they are written in
         // follows the map: the rail read top to bottom — standings, victory
-        // tracker, world minimap — and then the map controls, which are the one
-        // instrument still standing in the opposite corner.
+        // tracker, world minimap — and then the map controls and lenses docked
+        // together in the opposite corner.
         assert!(EMBEDDED_INDEX
             .contains(".overlay-option-grid { display: grid; grid-template-columns: 1fr 1fr;"));
         let switches = EMBEDDED_INDEX
@@ -4816,9 +4837,13 @@ mod tests {
             .collect();
         assert_eq!(
             corners,
-            ["players", "victory", "minimap", "controls"],
-            "the switches read down the rail, then the map controls in the far corner"
+            ["players", "victory", "minimap", "controls", "lenses"],
+            "the switches read down the rail, then the map dock in the far corner"
         );
+        assert!(EMBEDDED_INDEX.contains("id=\"map-lens-exit\""));
+        assert!(EMBEDDED_INDEX.contains("body.overlay-lenses-hidden #map-lenses"));
+        assert!(EMBEDDED_INDEX
+            .contains("document.getElementById(\"map-lens-exit\").onclick = () => setMapLens(null);"));
         // One instrument, one name. The switch, the title bar it is dragged by
         // and the label that follows it across the map all say "World minimap",
         // so nothing in the interface reads as a second, separate world map —
@@ -4867,10 +4892,11 @@ mod tests {
         // The standings grow from one consolidated row through eight readable
         // rows. A twelve-player exhibition then scrolls even on a tall screen
         // instead of continuing to consume the world below it.
-        assert!(EMBEDDED_INDEX.contains("--player-hud-max-height: min(34vh, 244px);"));
-        assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.34"));
+        assert!(EMBEDDED_INDEX.contains("--player-hud-max-height: min(38vh, 280px);"));
+        assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.38"));
+        assert!(EMBEDDED_INDEX.contains("const requestedHeight = Math.max(154, 50 + rows * 28);"));
         assert!(EMBEDDED_INDEX
-            .contains("const requestedWidth = 760 + Math.max(0, rows - 1) * 100;"));
+            .contains("const requestedWidth = 820 + Math.max(0, rows - 1) * 100;"));
         assert!(EMBEDDED_INDEX.contains(
             "mapArea.style.setProperty(\"--player-hud-width\", `${requestedWidth}px`);"
         ));
@@ -4899,18 +4925,21 @@ mod tests {
         ));
         assert!(EMBEDDED_INDEX.contains("data-victory-focus=\"${isFocus}\""));
         assert!(EMBEDDED_INDEX.contains("grid-auto-rows: var(--hud-row-height);"));
-        // A masthead row is one line: its map links, identity and ten values
-        // sit side by side under one set of column heads. Stacking them was
-        // what the rail needed and it costs the map 12px per civilization here.
+        // A masthead row is one line: its capital link, explicit watch action,
+        // identity and ten values sit side by side. Watch-as deliberately has
+        // no column heading; the button carries its own visible label.
         assert!(EMBEDDED_INDEX.contains(
-            "grid-template-columns: var(--hud-lock-column, 0px) var(--hud-map-links-column) \
-             var(--hud-identity-column) minmax(0, 1fr);"
+            "grid-template-columns: var(--hud-lock-column, 0px) var(--hud-map-links-column)\n      \
+             var(--hud-watch-column) var(--hud-identity-column) minmax(0, 1fr);"
         ));
-        assert!(EMBEDDED_INDEX.contains("data-hud-action=\"empire\""));
-        assert!(EMBEDDED_INDEX.contains("data-hud-action=\"capital\""));
-        assert!(EMBEDDED_INDEX.contains("function focusEmpire(pid)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "class=\"empire-link\" data-hud-action=\"capital\""
+        ));
+        assert!(EMBEDDED_INDEX.contains(">Empire</button>"));
+        assert!(!EMBEDDED_INDEX.contains("class=\"capital-link\""));
+        assert!(!EMBEDDED_INDEX.contains("data-hud-action=\"empire\""));
         assert!(EMBEDDED_INDEX.contains("function focusCapital(pid)"));
-        assert!(EMBEDDED_INDEX.contains("--hud-row-height: 23px;"));
+        assert!(EMBEDDED_INDEX.contains("--hud-row-height: 26px;"));
         assert!(EMBEDDED_INDEX.contains("function dismissOverlay(name, source)"));
         assert!(EMBEDDED_INDEX.contains("addEventListener(\"pointerdown\", event =>"));
         assert!(EMBEDDED_INDEX.contains("overlay-return-flash .24s ease-in-out 3"));
@@ -5109,8 +5138,11 @@ mod tests {
         // Default camera moves compose at the exact center of the rectangle
         // requested by the operator: the command deck's right edge to the
         // victory rail's left edge, and the player HUD's bottom edge to the
-        // screen bottom. A missing widget naturally leaves its screen edge in
-        // place, and the minimap is deliberately absent from this calculation.
+        // screen bottom. At the responsive breakpoint the victory rail becomes
+        // a top band, so its live box extends the top edge instead of collapsing
+        // the horizontal stage against its 8px left gutter. A missing widget
+        // naturally leaves its screen edge in place, and the minimap is
+        // deliberately absent from this calculation.
         assert!(EMBEDDED_INDEX.contains("function mapOverlayVisible(name)"));
         assert!(EMBEDDED_INDEX.contains(
             "document.body.classList.contains(\"sidebar-hidden\")"
@@ -5122,10 +5154,22 @@ mod tests {
             "left = Math.max(0, Math.min(width, sideRect.right - areaRect.left));"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "if (victory) right = Math.max(0, Math.min(width, victory.left));"
+            "if (players) top = Math.max(0, Math.min(height, players.bottom));"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "if (players) top = Math.max(0, Math.min(height, players.bottom));"
+            "const spansWidth = victory.left <= 16 && victory.right >= width - 16;"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (spansWidth) top = Math.max(top, Math.max(0, Math.min(height, victory.bottom)));"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "else right = Math.max(0, Math.min(width, victory.left));"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (right <= left) { left = 0; right = width; }"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (bottom <= top) { top = 0; bottom = height; }"
         ));
         assert!(!EMBEDDED_INDEX.contains(
             "if (minimap) left = Math.max(left, (minimap.left + minimap.right) / 2);"
@@ -5144,11 +5188,26 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "const {x:desiredX, y:desiredY} = mapFocusPoint();"
         ));
-        assert!(EMBEDDED_INDEX.contains("View as"));
+        assert!(EMBEDDED_INDEX.contains("<span>Terrain</span>"));
+        assert!(EMBEDDED_INDEX.contains("<span>Watch as</span>"));
+        assert_eq!(
+            EMBEDDED_INDEX
+                .matches("Spectator - Full Map Visablity")
+                .count(),
+            2,
+            "the initial and refreshed viewpoint menus should use the same spectator label"
+        );
+        assert!(EMBEDDED_INDEX.contains(
+            "Player ${p.id + 1} - ${p.civ} (${p.leader || \"Unknown leader\"})"
+        ));
         assert!(EMBEDDED_INDEX.contains("id=\"viewplayer\""));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/view\""));
         // The ribbon repaints under the cursor, so its buttons declare their
         // action as data and one delegated listener dispatches it.
+        assert!(EMBEDDED_INDEX.contains(
+            "class=\"watch-as-link\" data-hud-action=\"watch\""
+        ));
+        assert!(EMBEDDED_INDEX.contains(">Watch as</button>"));
         assert!(EMBEDDED_INDEX.contains("data-hud-action=\"watch\" data-hud-civ=\"${p.id}\""));
         assert!(EMBEDDED_INDEX.contains("data-hud-action=\"dossier\" data-hud-civ=\"${p.id}\""));
         assert!(EMBEDDED_INDEX.contains("else spectatePlayer(id);"));
@@ -6170,7 +6229,6 @@ mod tests {
         for piece in [
             "id=\"leader\"",
             "id=\"difficulty\"",
-            "id=\"startgame\"",
             "id=\"saves-group\"",
             "function syncSetupMode()",
             "async function refreshSaves()",
@@ -6198,11 +6256,10 @@ mod tests {
     /// Choosing single player and pressing the one start control on screen
     /// must open that game — on the supervised exhibition too, where every
     /// simulation is a fresh process but a human game takes this one over.
-    /// Which control that is follows the world on screen, never the pending
-    /// selection: keying the sidebar button to the mode select left a player
-    /// who picked AI-only with no way to launch anything at all.
+    /// The control itself persists when the world changes; only its presentation
+    /// transforms, so a second Start new game button never materializes.
     #[test]
-    fn browser_enters_single_player_from_whichever_start_control_is_showing() {
+    fn browser_transforms_restart_control_for_single_player() {
         assert!(EMBEDDED_INDEX
             .contains("const supervised = !!(state && state.supervised) && payload.spectate;"));
         assert!(EMBEDDED_INDEX.contains("const human = !selectedSimulationSettings().spectate;"));
@@ -6210,7 +6267,7 @@ mod tests {
         // rather than leaving "Restart sim" over a single-player subtitle.
         assert!(EMBEDDED_INDEX.contains("<span class=\"lbl\">Restart sim</span>"));
         assert!(EMBEDDED_INDEX.contains("button.classList.toggle(\"human-start\", human);"));
-        assert!(EMBEDDED_INDEX.contains("? \"Start Single Player Game\""));
+        assert!(EMBEDDED_INDEX.contains("? \"Start new game\""));
         assert!(EMBEDDED_INDEX
             .contains(".spec-controls #restart-sim.human-start::before { content: \"▶\";"));
         // It shares the row with Pause/Resume rather than displacing it: keep
@@ -6224,11 +6281,18 @@ mod tests {
         ));
         assert!(EMBEDDED_INDEX
             .contains(".spec-controls:has(#restart-sim.human-start) #specpause.primary {"));
-        assert!(EMBEDDED_INDEX.contains("body.watching-sim #startgame { display: none; }"));
+        assert!(EMBEDDED_INDEX.contains(
+            "document.getElementById(\"specbar\").style.display = \"block\";"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "syncSetupMode();\n  updateRestartSimulationButton();"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "body:not(.watching-sim) .spec-controls:has(#restart-sim) {"
+        ));
+        assert_eq!(EMBEDDED_INDEX.matches("id=\"restart-sim\"").count(), 1);
+        assert!(!EMBEDDED_INDEX.contains("id=\"startgame\""));
         assert!(EMBEDDED_INDEX.contains("document.body.classList.toggle(\"watching-sim\", SPEC);"));
-        // The start button belongs to the game being played, not to the mode
-        // the sidebar is staging for the next one.
-        assert!(!EMBEDDED_INDEX.contains("human-setting\" id=\"startgame\""));
         // Leader and difficulty still do follow the selection.
         assert!(EMBEDDED_INDEX.contains("body.spectating .human-setting { display: none; }"));
         assert!(EMBEDDED_INDEX.contains("class=\"small human-setting\">Leader"));
@@ -6826,7 +6890,7 @@ mod tests {
     }
 
     /// Hovering a tile reports it, the way Civ 6's plot tooltip does — and it
-    /// keeps doing so after the map has been panned.
+    /// keeps doing so after the map has been panned or the simulation advances.
     ///
     /// `dragMoved` outlives its gesture: the click that follows clears it, and
     /// a drag released off the canvas never produces one. A hover guard that
@@ -6834,10 +6898,16 @@ mod tests {
     /// exactly how the tooltip died. The guard has to ask whether a gesture is
     /// in flight *now*.
     #[test]
-    fn hovering_a_tile_reports_it_and_survives_a_pan() {
+    fn hovering_a_tile_reports_it_survives_a_pan_and_tracks_new_turns() {
         assert!(
-            EMBEDDED_INDEX.contains("if (!state || dragState || mapTouches.size || rdrag) {"),
+            EMBEDDED_INDEX.contains(
+                "if (!state || !tileTipPointer || dragState || mapTouches.size || rdrag) {"
+            ),
             "the hover guard must test a live gesture, never the stale dragMoved flag"
+        );
+        assert!(
+            EMBEDDED_INDEX.contains("drawCaptureChoice();\n  refreshTileTip();"),
+            "each delivered simulation snapshot must refresh the tile under the pointer"
         );
         for piece in [
             "function tileMoveCost(t)",

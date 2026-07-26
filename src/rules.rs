@@ -90,6 +90,10 @@ pub struct TerrainSpec {
 pub struct FeatureSpec {
     #[serde(default)]
     pub yields: Yields,
+    /// `Features.Appeal`: what standing beside this does to a tile. Most
+    /// natural wonders are +2, but the Cliffs of Dover and Uluru are +4.
+    #[serde(default)]
+    pub appeal: f64,
     /// Natural wonders whose Civilopedia entry reads "to adjacent tiles"
     /// project these yields onto each neighbouring tile instead of their own.
     #[serde(default)]
@@ -157,10 +161,26 @@ pub struct HarvestSpec {
     pub tech: Option<String>,
 }
 
+/// Additional Standard-speed spoils from a pillage modifier. Non-healing
+/// rewards scale with game speed and world era.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PillageReward {
+    #[serde(rename = "yield")]
+    pub yield_type: String,
+    pub amount: f64,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ImprovementSpec {
     #[serde(default)]
     pub tech: Option<String>,
+    /// `PlunderType` and `PlunderAmount`: which yield pillaging this pays and
+    /// how much. Gold and heal pay 50, Science, Culture and Faith pay 25.
+    #[serde(default)]
+    pub plunder_type: Option<String>,
+    #[serde(default)]
+    pub plunder_amount: f64,
     #[serde(default)]
     pub civic: Option<String>,
     #[serde(default)]
@@ -197,6 +217,13 @@ pub struct ImprovementSpec {
     pub unbuildable: bool,
     #[serde(default = "default_true")]
     pub builder_buildable: bool,
+    /// Some improvements (Great Walls, Corporations, and National Parks) may
+    /// be damaged by disasters but cannot be pillaged by units.
+    #[serde(default = "default_true")]
+    pub unit_pillageable: bool,
+    /// Ability-keyed extra spoils, currently Harald's improvement bonuses.
+    #[serde(default)]
+    pub bonus_pillage: BTreeMap<String, PillageReward>,
     #[serde(default)]
     pub effects: BTreeMap<String, f64>,
 }
@@ -331,6 +358,12 @@ impl UnitSpec {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct DistrictSpec {
     pub cost: f64,
+    /// `PlunderType` and `PlunderAmount`: which yield pillaging this pays and
+    /// how much. Gold and heal pay 50, Science, Culture and Faith pay 25.
+    #[serde(default)]
+    pub plunder_type: Option<String>,
+    #[serde(default)]
+    pub plunder_amount: f64,
     #[serde(default)]
     pub maintenance: f64,
     #[serde(default)]
@@ -957,6 +990,11 @@ pub struct DifficultySpec {
     /// Scales the size of barbarian raiding parties.
     #[serde(default = "done")]
     pub barb_force_scale: f64,
+    /// Scales how long a camp waits between spawns.
+    /// `BarbarianAttackForces.SpawnRate` is 2 for every band up to Emperor and
+    /// 1 from Immortal, so the top band assembles its forces twice as often.
+    #[serde(default = "done")]
+    pub barb_spawn_scale: f64,
 }
 
 /// A game speed: everything a civilization buys with a stockpiled yield scales
