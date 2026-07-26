@@ -14754,31 +14754,43 @@ mod tests {
 
     #[test]
     fn adaptive_turn_uses_its_live_plan_for_gold_purchases() {
-        let mut game = Game::new_full(1, 20, 14, 7_107, 160, 0, false);
-        let settler = game
-            .player_unit_ids(0)
-            .into_iter()
-            .find(|unit| game.units[unit].kind == "settler")
-            .unwrap();
-        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
-        let city = game.player_city_ids(0)[0];
-        game.turn = 10;
-        game.players[0].techs.insert("writing".to_string());
-        game.players[0].gold = 10_000.0;
-        game.players[0].governor_roster.insert(
-            "reyna".to_string(),
-            GovernorState {
-                city: Some(city),
-                assigned_turn: 0,
-                disabled_until: 0,
-                promotions: BTreeSet::from(["contractor".to_string()]),
-            },
-        );
-        assert!(game.legal_actions(0).iter().any(|action| matches!(
-            action,
-            Action::BuyDistrict { district, currency, .. }
-                if district == "campus" && currency == "gold"
-        )));
+        // The fixture needs a capital with somewhere to put a Campus, which is
+        // a fact about the map rather than the thing under test. Take the first
+        // seed that offers one instead of pinning a seed and trusting that map
+        // generation never moves again.
+        let (mut game, city) = (7_107..7_160u64)
+            .find_map(|seed| {
+                let mut game = Game::new_full(1, 20, 14, seed, 160, 0, false);
+                let settler = game
+                    .player_unit_ids(0)
+                    .into_iter()
+                    .find(|unit| game.units[unit].kind == "settler")?;
+                game.apply(0, &Action::FoundCity { unit: settler }).ok()?;
+                let city = *game.player_city_ids(0).first()?;
+                game.turn = 10;
+                game.players[0].techs.insert("writing".to_string());
+                game.players[0].gold = 10_000.0;
+                game.players[0].governor_roster.insert(
+                    "reyna".to_string(),
+                    GovernorState {
+                        city: Some(city),
+                        assigned_turn: 0,
+                        disabled_until: 0,
+                        promotions: BTreeSet::from(["contractor".to_string()]),
+                    },
+                );
+                game.legal_actions(0)
+                    .iter()
+                    .any(|action| {
+                        matches!(
+                            action,
+                            Action::BuyDistrict { district, currency, .. }
+                                if district == "campus" && currency == "gold"
+                        )
+                    })
+                    .then_some((game, city))
+            })
+            .expect("no seed offered a lone capital with room to buy a Campus");
 
         let mut ai = AdvancedAi::new();
         ai.base.book_pos = 4;

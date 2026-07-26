@@ -140,8 +140,8 @@
   h1 .brand-suffix {
     font-size: .58em; letter-spacing: .025em; text-transform: lowercase;
   }
-  /* One narrow column pinned to the corner: YouTube takes the bottom right and
-     GitHub sits directly above it, so the icons cost the title one 24px lane
+  /* One narrow column pinned to the corner: GitHub takes the bottom right and
+     YouTube sits directly above it, so the icons cost the title one 24px lane
      instead of the 55px a side-by-side row ate. */
   .brand-links {
     position: absolute; right: 10px; bottom: 9px;
@@ -372,6 +372,11 @@
   }
   .victory-turn .turn-total {
     color: #8fa29a; font-size: 10px; font-weight: 800; font-variant-numeric: tabular-nums;
+    line-height: 1; white-space: nowrap;
+  }
+  .turn-speed {
+    color: #aebeb7; font-size: clamp(6px, .58vw, 8px); font-weight: 800;
+    letter-spacing: 0;
     line-height: 1; white-space: nowrap;
   }
   /* Borrowed turns. It sits under the turn cap because that cap is the thing
@@ -2272,11 +2277,11 @@
         <div class="brand-title-row">
           <h1>CIVVIS<span class="brand-suffix">.ai</span></h1>
           <nav class="brand-links" aria-label="CIVVIS links">
-            <a href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noopener noreferrer" aria-label="CIVVIS on GitHub" title="CIVVIS on GitHub">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .7a11.5 11.5 0 0 0-3.64 22.41c.58.11.79-.25.79-.56v-2.23c-3.22.7-3.9-1.37-3.9-1.37-.52-1.34-1.28-1.69-1.28-1.69-1.05-.72.08-.71.08-.71 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.57-.29-5.27-1.28-5.27-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.16 1.18A10.94 10.94 0 0 1 12 6.12c.98 0 1.95.13 2.87.39 2.2-1.49 3.16-1.18 3.16-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.71 5.38-5.29 5.67.42.36.79 1.07.79 2.16v3.25c0 .31.21.68.8.56A11.5 11.5 0 0 0 12 .7Z"/></svg>
-            </a>
             <a href="https://www.youtube.com/@MartinHalvorson" target="_blank" rel="noopener noreferrer" aria-label="Martin Halvorson on YouTube" title="CIVVIS on YouTube">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M23.5 6.19a3.02 3.02 0 0 0-2.12-2.14C19.5 3.54 12 3.54 12 3.54s-7.5 0-9.38.51A3.02 3.02 0 0 0 .5 6.19C0 8.08 0 12 0 12s0 3.92.5 5.81a3.02 3.02 0 0 0 2.12 2.14c1.88.51 9.38.51 9.38.51s7.5 0 9.38-.51a3.02 3.02 0 0 0 2.12-2.14C24 15.92 24 12 24 12s0-3.92-.5-5.81ZM9.55 15.57V8.43L15.82 12l-6.27 3.57Z"/></svg>
+            </a>
+            <a href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noopener noreferrer" aria-label="CIVVIS on GitHub" title="CIVVIS on GitHub">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .7a11.5 11.5 0 0 0-3.64 22.41c.58.11.79-.25.79-.56v-2.23c-3.22.7-3.9-1.37-3.9-1.37-.52-1.34-1.28-1.69-1.28-1.69-1.05-.72.08-.71.08-.71 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.57-.29-5.27-1.28-5.27-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.16 1.18A10.94 10.94 0 0 1 12 6.12c.98 0 1.95.13 2.87.39 2.2-1.49 3.16-1.18 3.16-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.71 5.38-5.29 5.67.42.36.79 1.07.79 2.16v3.25c0 .31.21.68.8.56A11.5 11.5 0 0 0 12 .7Z"/></svg>
             </a>
           </nav>
         </div>
@@ -14500,6 +14505,14 @@ function hudTurnPlate() {
   const viewLabel = playerView ? "Player view" : SPEC ? "Observing" : "Your empire";
   const mapName = titleCase(state.map.script || "pangaea");
   const speedName = titleCase(state.game_speed || "standard");
+  // A watched simulation has two speeds: the world's rules speed and the
+  // viewer's turn-to-turn pace. The turn clock should name the pace a viewer
+  // actually experiences (Lightning, Blitz, and so on); a played game falls
+  // back to its rules speed because it has no spectator pace.
+  const paceOption = document.getElementById("specspeed")?.selectedOptions[0];
+  const turnSpeed = SPEC
+    ? `${paceOption?.textContent.trim() || "Blitz"} speed`
+    : `${speedName} speed`;
   // The world's shape and its poles are only worth a word when they are not
   // the ones a world arrives with by default.
   const shapeNote = planetMap() ? " · Planet" : "";
@@ -14526,9 +14539,10 @@ function hudTurnPlate() {
     ? `Playing on past ${decided.civ || "the winner"}'s ${titleCase(decided.victory_type || "score")} victory on turn ${decided.turn}`
     : "";
   const context = identityContext + (playOnLabel ? ` · ${playOnLabel}` : "");
-  return `<section class="victory-turn" title="${escapeAttr(context)}" aria-label="${escapeAttr(context)}; turn ${state.turn} of ${turnCapLabel()}; ${ageLabel}">` +
+  return `<section class="victory-turn" title="${escapeAttr(context)}" aria-label="${escapeAttr(context)}; turn ${state.turn} of ${turnCapLabel()}; ${turnSpeed}; ${ageLabel}">` +
     `<span class="turn-label">Turn</span><div class="turn-count"><strong>${state.turn}</strong>` +
     `<small class="turn-total">of ${turnCapLabel()}</small>` +
+    `<small class="turn-speed">(${turnSpeed})</small>` +
     (decided ? `<small class="turn-playon">Playing on</small>` : ``) +
     `</div><span class="turn-era">${ageLabel}</span></section>`;
 }
@@ -14715,10 +14729,11 @@ function drawPlayerHud() {
   // One line per row across the masthead — who this is and their ten values
   // side by side — so a row is only as tall as its medallion: 23px, plus the
   // 2px gap under it. The fixed 44px is the heading, the column heads, the
-  // gaps and the panel's padding; the floor keeps the turn plate beside it
-  // legible at a two-player table. Anything past the ceiling scrolls, so this
-  // is what the panel would *like* rather than what it is allowed to take.
-  const requestedHeight = Math.max(96, 44 + rows * 25);
+  // gaps and the panel's padding; the floor keeps the turn plate's count,
+  // watch pace, and age legible at a two-player table. Anything past the
+  // ceiling scrolls, so this is what the panel would *like* rather than what
+  // it is allowed to take.
+  const requestedHeight = Math.max(106, 44 + rows * 25);
   // A newly started human game usually knows only its own row; do not stretch
   // that one-row scorecard across the whole map. Each additional known player
   // buys the table another 100px until the available masthead width caps it.

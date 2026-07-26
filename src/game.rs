@@ -19633,6 +19633,12 @@ impl Game {
             multiplier += self.policy_effect(owner, "recon_xp_pct") / 100.0;
         }
         multiplier += self.policy_effect(owner, "unit_xp_pct") / 100.0;
+        // To Arms! pays its Golden Age half in two parts: POLICY_TO_ARMS_GA_XP
+        // is +50% experience beside POLICY_TO_ARMS_GA_PRODUCTION's +25%
+        // Production. Only the Production half was modelled, and at 15%.
+        if self.dedication_active(owner, "to_arms") {
+            multiplier += 0.5;
+        }
         multiplier += trained_bonus / 100.0;
         if spec.promotion_class == "ranged" && self.has_ability(owner, "ta_seti") {
             multiplier += 0.5;
@@ -19852,7 +19858,8 @@ impl Game {
                     bonus += 0.15;
                 }
                 if spec.class == "military" && self.dedication_active(pid, "to_arms") {
-                    bonus += 0.15;
+                    // POLICY_TO_ARMS_GA_PRODUCTION ships 25, not 15.
+                    bonus += 0.25;
                 }
                 if unit == "builder" {
                     bonus += self.policy_effect(pid, "builder_production_pct") / 100.0;
@@ -20343,16 +20350,20 @@ impl Game {
         )
     }
 
-    fn government_combat_bonus(&self, u: &Unit) -> f64 {
+    /// The government's Combat Strength, with the two conditions the shipped
+    /// abilities carry. Oligarchy's +4 reaches melee, anti-cavalry and naval
+    /// melee only. Fascism's is `FASCISM_ATTACK_BUFF`, whose
+    /// `FASCISM_REQUIREMENTS` is a single `REQUIREMENT_PLAYER_IS_ATTACKING` —
+    /// it is an attacking bonus, and paying it on defence made the domination
+    /// government strictly stronger than the one Civ VI ships.
+    fn government_combat_bonus(&self, u: &Unit, attacking: bool) -> f64 {
         let bonus = self.gov_effects(u.owner).combat_strength;
-        if self.players[u.owner].government.as_deref() == Some("oligarchy") {
-            if Self::oligarchy_applies(&self.rules.units[u.kind.as_str()]) {
-                bonus
-            } else {
+        match self.players[u.owner].government.as_deref() {
+            Some("oligarchy") if !Self::oligarchy_applies(&self.rules.units[u.kind.as_str()]) => {
                 0.0
             }
-        } else {
-            bonus
+            Some("fascism") if !attacking => 0.0,
+            _ => bonus,
         }
     }
 
@@ -20377,7 +20388,7 @@ impl Game {
 
     fn unit_unembarked_strength(&self, u: &Unit) -> f64 {
         let mut s = self.rules.units[u.kind.as_str()].strength.max(1.0)
-            + self.government_combat_bonus(u)
+            + self.government_combat_bonus(u, true)
             + self.unit_formation_bonus(u)
             + self.promotion_effect(u, "combat_all")
             + self.congress_military_strength_bonus(u)
@@ -20464,6 +20475,11 @@ impl Game {
         }
         let mut s = self.unit_unembarked_strength(u);
         if defending {
+            // `unit_unembarked_strength` is the attack-side value, so the
+            // attacking-only half of the government bonus comes back off.
+            // FASCISM_ATTACK_BUFF carries FASCISM_REQUIREMENTS, a single
+            // REQUIREMENT_PLAYER_IS_ATTACKING.
+            s -= self.government_combat_bonus(u, true) - self.government_combat_bonus(u, false);
             s += self.governor_unit_defense_bonus(u);
             s += 3.0 * u.fortify_turns.clamp(0, 2) as f64;
             s += self.promotion_effect(u, "defend_all");
@@ -20501,7 +20517,8 @@ impl Game {
         if rs <= 0.0 {
             return 0.0;
         }
-        rs + self.government_combat_bonus(u)
+        // Ranged Strength is what a unit attacks with.
+        rs + self.government_combat_bonus(u, true)
             + self.unit_formation_bonus(u)
             + self.congress_military_strength_bonus(u)
             + self.religious_combat_belief_bonus(u.owner, u.pos)
@@ -20521,7 +20538,8 @@ impl Game {
             return 0.0;
         }
         bs + self.adjacent_support_effect(u, "adjacent_siege_bombard")
-            + self.government_combat_bonus(u)
+            // Bombarding a city is an attack.
+            + self.government_combat_bonus(u, true)
             + self.unit_formation_bonus(u)
             + self.congress_military_strength_bonus(u)
             + self.religious_combat_belief_bonus(u.owner, u.pos)
@@ -34484,7 +34502,9 @@ impl Game {
         spec.anti_air_strength
             + self.unit_formation_bonus(unit)
             + if spec.class == "military" {
-                self.government_combat_bonus(unit) + self.congress_military_strength_bonus(unit)
+                // Intercepting an incoming strike is defending.
+                self.government_combat_bonus(unit, false)
+                    + self.congress_military_strength_bonus(unit)
             } else {
                 0.0
             }
@@ -45116,6 +45136,41 @@ mod combat_scenarios {
         (city, home)
     }
 
+    /// The shipped government Combat Strength abilities carry conditions, and
+    /// they are not the same condition. `ABILITY_OLIGARCHY_MELEE_BUFF` reaches
+    /// melee, anti-cavalry and naval melee; `FASCISM_ATTACK_BUFF` carries
+    /// `FASCISM_REQUIREMENTS`, a single `REQUIREMENT_PLAYER_IS_ATTACKING`, so
+    /// it is an attacking bonus. CIVVIS paid Fascism's on defence too, which
+    /// made the domination government stronger than the shipped one.
+    #[test]
+    fn fascism_pays_its_combat_strength_only_on_the_attack() {
+        let (mut game, center, _) = controlled_game(41_060);
+        let warrior = game.spawn_test_unit("warrior", 0, center);
+        let unit = game.units[&warrior].clone();
+        let bare_attack = game.unit_strength(&unit, false);
+        let bare_defend = game.unit_strength(&unit, true);
+
+        game.players[0].government = Some("fascism".to_string());
+        let unit = game.units[&warrior].clone();
+        assert_eq!(
+            game.unit_strength(&unit, false) - bare_attack,
+            5.0,
+            "FASCISM_ATTACK_BUFF is +5 when attacking"
+        );
+        assert_eq!(
+            game.unit_strength(&unit, true),
+            bare_defend,
+            "and nothing at all when defending"
+        );
+
+        // Oligarchy's is unconditional on attack/defence but restricted by
+        // promotion class, which is a different shipped condition.
+        game.players[0].government = Some("oligarchy".to_string());
+        let unit = game.units[&warrior].clone();
+        assert_eq!(game.unit_strength(&unit, false) - bare_attack, 4.0);
+        assert_eq!(game.unit_strength(&unit, true) - bare_defend, 4.0);
+    }
+
     /// `tile_defense_bonus` used to carry a hand-written list of features and
     /// none of the Natural Wonders, so Ha Long Bay's shipped +15, Gobustan's
     /// and Chocolate Hills' +3 and Ubsunur Hollow's -2 never reached a
@@ -52709,10 +52764,14 @@ mod district_mechanics {
         let mut religious_baseline = religion.clone();
         religious_baseline.players[0].alliances.clear();
         religious_baseline.players[1].alliances.clear();
-        assert_eq!(
-            religion.city_yields(own_city).faith - religious_baseline.city_yields(own_city).faith,
-            3.2,
-            "four allied-religion followers pass through the city's 80% yield modifier"
+        // A difference of two sums, so the last bit of the mantissa depends on
+        // what else the city happens to be producing. Compare the number, not
+        // its representation.
+        let allied_faith =
+            religion.city_yields(own_city).faith - religious_baseline.city_yields(own_city).faith;
+        assert!(
+            (allied_faith - 3.2).abs() < 1e-9,
+            "four allied-religion followers pass through the city's 80% yield modifier, got {allied_faith}"
         );
         religion.routes.push(TradeRoute {
             origin: own_city,
