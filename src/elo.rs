@@ -37,7 +37,7 @@ pub const BUILTIN_AIS: [&str; 9] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 11] = [
+pub const EVAL_ONLY_AIS: [&str; 12] = [
     "strategic_score",
     "strategic_doctrine",
     "strategic_r20",
@@ -49,6 +49,7 @@ pub const EVAL_ONLY_AIS: [&str; 11] = [
     "strategic_rot10",
     "strategic_deep",
     "production",
+    "production_net",
 ];
 
 /// On-disk schema for the shared player/leader/civilization rating ledger.
@@ -509,6 +510,17 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // Rollout search over what a city builds, rate-limited to one
         // decision every fifteen turns so the whole feature costs about
         // what the lane search costs.
+        // The same search judged by the trained value net rather than
+        // score share. It measured identically to `production` (109/240
+        // against 108/240), which is the evidence that a net over the same
+        // 25 features is a re-weighting of score share and not a second
+        // opinion. Kept so the comparison can be re-run.
+        "production_net" => Box::new(
+            crate::production::ProductionSearchAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            )
+            .with_value_net(),
+        ),
         "production" => Box::new(crate::production::ProductionSearchAi::with_weights(
             crate::evolve::load_champion("evolved").unwrap_or_default(),
         )),
@@ -711,6 +723,11 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         // The genome tunes both its rollout policy and its scripted
         // governor; it consults no net.
         "production" => (vec![genome], "production"),
+        // The net is definitional: without it this is exactly `production`.
+        "production_net" => (
+            vec![genome, value(true)],
+            if net { "production_net" } else { "production" },
+        ),
         "advanced" => (Vec::new(), "advanced"),
         "advanced_v1" => (Vec::new(), "advanced_v1"),
         "random" => (Vec::new(), "random"),
