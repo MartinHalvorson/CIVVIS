@@ -1782,9 +1782,13 @@ mod tests {
             strategic.adaptive_horizon = true;
             // The promoted deep budget, which is the one the saturation
             // measurement was taken at and the only one this can help: at
-            // horizon 40 the median spread between branches is 0.0045,
-            // under the 0.01 commitment margin, so the branches never
-            // separate and the search runs its full count regardless.
+            // horizon 40 the median spread between branches is 0.0045
+            // *over the undecided subset*, under the 0.01 commitment
+            // margin, so those branches never separate and the search runs
+            // its full count regardless. (Over all reviews the median is
+            // 0.031-0.085 and the margin is cleared 61-94% of the time; the
+            // two figures describe different populations. See
+            // docs/SUPERHUMAN.md.)
             strategic.horizon = 80;
             let mut ais = BasicAi::fleet(&g);
             for _ in 0..40 {

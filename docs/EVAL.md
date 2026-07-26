@@ -1940,3 +1940,56 @@ mechanism for `rotate_lanes` measuring null. Read the plan-commitment table
 before the win rate whenever a treatment touches the candidate set.
 
 See `docs/SUPERHUMAN.md` for the design reading these three runs support.
+
+## 2026-07-26 — branch spread: the mechanism behind the promotion, and a population correction
+
+The promotion above was argued from a mechanism that the numbers then
+contradicted — a cold branch reaching for the army finds an empty force-group
+table, so the militarised lanes should be *under*-projected and the promoted
+agent should take *more* domination. It takes less. This is the measured
+mechanism instead.
+
+**Method.** Play a `StrategicAi` seat forward to a real mid-game position,
+skip the ones a prior would answer, then call `rollout()` for the adaptive
+baseline and every enabled lane exactly as `review` does, and record
+`max − min` over those values. 16–18 positions per configuration.
+
+| config | median spread | max | share above the 0.01 margin |
+|---|---|---|---|
+| 4p 24×16, cold branches | 0.0311 | 0.73 | 61% |
+| 4p 24×16, **warm branches** | **0.0622** | 0.75 | **78%** |
+| 3p 20×14, cold branches | 0.0491 | 0.62 | 94% |
+| 3p 20×14, **warm branches** | **0.0850** | 0.72 | 94% |
+
+**Projecting from the plan in force roughly doubles the spread between branch
+values.** The counterfactual discriminates about twice as well between lanes,
+because a cold branch's first act is to re-plan, which partially washes out
+the very difference the branch exists to measure. That is a mechanism for +37
+Elo that does not require any claim about which lane benefits.
+
+### Population correction: 0.0045 and 0.031 are both right
+
+The horizon-saturation entry records a median branch spread of **0.00451** at
+horizon 40 with a **maximum of 0.01454**. The median in the table above is
+larger than that maximum, so the two cannot be measuring the same set.
+
+A branch that reaches a decided game returns exactly 1.0 or 0.0, and the same
+entry records that **22% of reviews are in that state at horizon 40**. The
+0.0045 figure therefore describes the **undecided** subset, where every branch
+is a live position judged by score share. Over all reviews the median is
+0.031–0.085.
+
+The distinction matters because a whole hypothesis was built on the smaller
+number: that an ordinary review cannot clear the 0.01 commitment margin, so
+only decided branches can act, and lowering the margin should therefore
+convert search into action. `strategic_m002` (margin 0.002) tested it:
+
+```
+uncommitted player-turns: 47.3% -> 41.9%     lane switches/game: 2.33 -> 2.47
+paired-map score: 50.0% over 60 maps, 2 map directions to 2, sign p=1.0000
+```
+
+The gate binds on a minority of reviews and moving it does a minority-sized
+thing. Not promoted, not pursued further. **When quoting a spread, say which
+population it is over** — the two differ by an order of magnitude and they
+support opposite conclusions.

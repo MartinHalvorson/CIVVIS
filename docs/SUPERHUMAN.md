@@ -134,12 +134,36 @@ It also supplies a mechanism for a null nobody had explained: `rotate_lanes`
 cuts seven branches to about three through the same argmax, and would have
 inherited exactly this bias.
 
-There is a second reason to suspect the constant. The **median spread between
-branches at horizon 40 is 0.0045** — less than half the margin. At the default
-budget the search's ordinary signal cannot clear its own threshold, so lane
-commitments are driven almost entirely by branches that *decide*. The doctrine
-axis hit the identical wall and had to drop its margin to 0.002 before it could
-ever choose.
+**A second reason to suspect the constant, and its refutation — read both.**
+The repository records a median branch spread of 0.0045 at horizon 40, less
+than half the margin, which reads as a search that cannot clear its own
+threshold. Measured directly over real mid-game reviews at the full horizon,
+calling `rollout()` the way the search does, it is not:
+
+| config | median spread | max | share above the 0.01 margin |
+|---|---|---|---|
+| 4p 24×16, cold branches | 0.0311 | 0.73 | 61% |
+| 4p 24×16, warm branches | 0.0622 | 0.75 | 78% |
+| 3p 20×14, cold branches | 0.0491 | 0.62 | 94% |
+| 3p 20×14, warm branches | 0.0850 | 0.72 | 94% |
+
+Both numbers are right about different populations. A branch that reaches a
+decided game returns exactly 1.0 or 0.0, and 22% of reviews are in that state
+at horizon 40, so the 0.0045 figure — whose reported *maximum*, 0.0145, is
+below the median above — describes the **undecided** subset. Over undecided
+reviews the gate is nearly unreachable; over all reviews it is cleared 61–94%
+of the time.
+
+So the gate binds on a minority, and moving it does a minority-sized thing.
+`strategic_m002` measured exactly that: uncommitted player-turns 47.3% → 41.9%,
+switches 2.33 → 2.47, paired score flat at 50.0% over 60 maps. **M1 is
+therefore demoted** — the doctrine axis needed its margin lowered because its
+spread really was 0.0044 across the *whole* population, and the lane axis is
+not in that position.
+
+The part that survives is the coupling: a review is a maximum over the
+surviving lanes, so any change to the candidate set moves the effective
+threshold, whatever the spread is.
 
 **Fires-check.** Commitment rate and lane distribution must not shift when the
 candidate set changes; the plan-commitment table is the instrument, not the win
@@ -157,7 +181,21 @@ the same but three priors answer first. The threshold moving with the
 candidate count is a standing property of the decision rule, independent of
 whatever produced the count.
 
-### M2 — Make the counterfactual an exact simulation of the decision
+### M2 — Make the counterfactual an exact simulation of the decision ★ LANDED
+
+> **Promoted 2026-07-26 and on by default.** Pre-registered 500 maps at seed
+> 132000: 55.3%, Wilson 50.9%–59.6%, 87 map directions to 34, sign p=0.0000,
+> e=6.6e4 crossing at map 209, Elo-equivalent **+37**, `promotion gate: PASS`.
+> Three disjoint seed sets total 860 maps, 140–58, p=5.2e-09.
+>
+> **The measured mechanism is spread, not the force-group story argued below.**
+> Projecting from the plan in force roughly *doubles* the spread between branch
+> values — 0.031 → 0.062 at four players, 0.049 → 0.085 at three — so the
+> counterfactual discriminates about twice as well between lanes. A cold
+> branch's first act is to re-plan, which partially washes out the very
+> difference the branch exists to measure. The lane shift went the opposite way
+> from the force-group prediction: the promoted agent takes *fewer* domination
+> seats (32 against 51), not more.
 
 **Mechanism.** Project each branch from the planner **in force**, not from a
 newly constructed one. Clone the agent and apply the branch's decision through
@@ -311,8 +349,10 @@ Each of these is falsified here, with the run that did it.
 
 ## 4. Sequencing
 
-**M2 → M1 → M4 → M6 → M5**, with M3 attempted only alongside its fires-check
-and M7 landed before M5 ships anything.
+**M2 (landed) → M4 → M6 → M5**, with M3 attempted only alongside its
+fires-check and M7 landed before M5 ships anything. **M1 is demoted out of the
+sequence** — measurement showed its premise held only for a minority of
+reviews, and the treatment moved the commitment rate without moving the score.
 
 Note what is *not* on the list: any further attempt to spend a review's budget
 more cleverly. That was the obvious first idea, it was measured twice from
