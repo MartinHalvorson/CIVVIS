@@ -1466,9 +1466,6 @@ impl Session {
     }
 
     fn set_view_player(&mut self, player: Option<usize>) -> Result<(), String> {
-        if !self.params.spectate && player.is_none() {
-            return Err("player views are only available in spectate mode".into());
-        }
         if let Some(pid) = player {
             let Some(candidate) = self.game.players.get(pid) else {
                 return Err(format!("unknown player {pid}"));
@@ -1476,12 +1473,12 @@ impl Session {
             if candidate.is_minor || candidate.is_barbarian {
                 return Err(format!("player {pid} is not a major civilization"));
             }
-            // Selecting a civilization from the HUD is also the handoff from
-            // an interactive match to AI-only observation. Keep the current
-            // world intact; the already-created AI fleet can take over every
-            // seat on the next spectator step.
-            self.params.spectate = true;
         }
+        // Selecting either a civilization or the all-player Spectator heading
+        // in the HUD is the handoff from an interactive match to AI-only
+        // observation. Keep the current world intact; the already-created AI
+        // fleet can take over every seat on the next spectator step.
+        self.params.spectate = true;
         self.view_player = player;
         Ok(())
     }
@@ -5441,8 +5438,16 @@ mod tests {
             "class=\"watch-as-link\" data-hud-action=\"watch\""
         ));
         assert!(EMBEDDED_INDEX.contains(">Watch as</button>"));
+        assert!(EMBEDDED_INDEX.contains(
+            "class=\"spectator-view-link\" data-hud-action=\"spectator\""
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "Spectator mode: see everyone with full map visibility"
+        ));
+        assert!(EMBEDDED_INDEX.contains(">All</button>"));
         assert!(EMBEDDED_INDEX.contains("data-hud-action=\"watch\" data-hud-civ=\"${p.id}\""));
         assert!(EMBEDDED_INDEX.contains("data-hud-action=\"dossier\" data-hud-civ=\"${p.id}\""));
+        assert!(EMBEDDED_INDEX.contains("spectatePlayer(null);"));
         assert!(EMBEDDED_INDEX.contains("else spectatePlayer(id);"));
         assert!(EMBEDDED_INDEX.contains("async function spectatePlayer(player)"));
         // Watching one civilization is a persistent empire portrait, not a
@@ -6205,6 +6210,23 @@ mod tests {
             assert_eq!(player_view["view_player"].as_u64(), Some(pid as u64));
             assert!(player_view["map"]["tiles"].as_array().unwrap().len() < omniscient_tile_count);
         }
+    }
+
+    #[test]
+    fn selecting_all_players_promotes_the_live_match_to_omniscient_spectator_mode() {
+        let mut session = Session::new(current());
+        assert!(!session.params.spectate);
+
+        session.set_view_player(None).unwrap();
+        let spectator_view = session.state();
+
+        assert!(session.params.spectate);
+        assert_eq!(spectator_view["spectate"].as_bool(), Some(true));
+        assert!(spectator_view["view_player"].is_null());
+        assert_eq!(
+            spectator_view["visible"].as_array().unwrap().len(),
+            session.game.map.tiles.len()
+        );
     }
 
     #[test]
