@@ -126,6 +126,98 @@ pub const CIV_NAMES: [&str; 100] = [
     "Australia",
     "Maori",
 ];
+
+/// Which modeled leaders can fill seats the lobby leaves random.
+///
+/// `Civ6` is deliberately the default: the broader historical roster is
+/// useful for very large worlds, but it is an explicit expansion of the game
+/// this simulator models. Explicit civilization picks are always honored;
+/// this setting governs only the random fill around them.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LeaderPool {
+    #[default]
+    Civ6,
+    Expanded,
+}
+
+impl LeaderPool {
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Civ6 => "civ6",
+            Self::Expanded => "expanded",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        match id {
+            "civ6" => Some(Self::Civ6),
+            "expanded" => Some(Self::Expanded),
+            _ => None,
+        }
+    }
+
+    pub const fn civilizations(self) -> &'static [&'static str] {
+        match self {
+            Self::Civ6 => &CIV6_LEADER_POOL,
+            Self::Expanded => &CIV_NAMES,
+        }
+    }
+}
+
+/// Civilizations in the modeled roster that Civilization VI itself ships.
+///
+/// Five Civ VI civilizations are not modeled yet (Babylon, Cree, Gran
+/// Colombia, Indonesia and Macedon), so they cannot enter this pool. Keep the
+/// remaining names in [`CIV_NAMES`] order: deterministic non-random callers
+/// have always relied on the head of that list.
+pub const CIV6_LEADER_POOL: [&str; 45] = [
+    "Rome",
+    "Egypt",
+    "Greece",
+    "China",
+    "Sumeria",
+    "Aztec",
+    "Nubia",
+    "Scythia",
+    "England",
+    "Germany",
+    "Russia",
+    "Korea",
+    "Maya",
+    "Mali",
+    "Phoenicia",
+    "Byzantium",
+    "Zulu",
+    "Gaul",
+    "Kongo",
+    "Vietnam",
+    "Brazil",
+    "France",
+    "Spain",
+    "Portugal",
+    "Netherlands",
+    "Sweden",
+    "Norway",
+    "Poland",
+    "Hungary",
+    "Scotland",
+    "Persia",
+    "Ottomans",
+    "Arabia",
+    "Georgia",
+    "Ethiopia",
+    "India",
+    "Japan",
+    "Mongolia",
+    "Khmer",
+    "America",
+    "Canada",
+    "Inca",
+    "Mapuche",
+    "Australia",
+    "Maori",
+];
 /// The city-states this ruleset can seat, in placement order. The first
 /// twelve carry bespoke Suzerain bonuses; the rest round out the largest
 /// map's hundred and fifty seats with their type bonuses alone. Every seat
@@ -2117,54 +2209,44 @@ mod city_name_tests {
 mod seating_tests {
     use super::*;
 
-    /// Determinism is sacred and every existing seed depends on this: with no
-    /// civilization chosen, the seats must come out exactly as
-    /// `CIV_NAMES[i % CIV_NAMES.len()]` produces them, and the head of that
-    /// list is the same eight in the same order it has always been.
+    /// The official pool is the default, while both rosters retain the stable
+    /// seating order established by `CIV_NAMES`.
     #[test]
-    fn stock_seating_is_untouched_when_nobody_is_chosen() {
+    fn civ6_seating_is_the_default_and_keeps_the_stable_head() {
         let known: BTreeSet<String> = Rules::shared().civs.keys().cloned().collect();
+        assert_eq!(
+            GameOptions::new(4, 20, 14, 1, 20, 0).leader_pool,
+            LeaderPool::Civ6
+        );
         assert_eq!(
             &CIV_NAMES[..8],
             ["Rome", "Egypt", "Greece", "China", "Sumeria", "Aztec", "Nubia", "Scythia"],
             "an existing seed seats its majors by position, so the roster only grows at the end"
         );
         for players in [1usize, 2, 4, 6, 8, 12] {
-            let seated = seat_civs(players, &[], &known);
+            let seated = seat_civs(players, &[], &known, LeaderPool::Civ6);
             let stock: Vec<String> = (0..players)
-                .map(|i| CIV_NAMES[i % CIV_NAMES.len()].to_string())
+                .map(|i| CIV6_LEADER_POOL[i % CIV6_LEADER_POOL.len()].to_string())
                 .collect();
-            assert_eq!(seated, stock, "stock seating changed at {players} players");
+            assert_eq!(seated, stock, "Civ VI seating changed at {players} players");
         }
     }
 
-    /// Nobody is handed a civilization another seat already has. A stock lobby
-    /// never sets that up on its own — two Trajans in one game share an
-    /// ability, an agenda, a unique unit and a city-name pool, and read as a
-    /// bug rather than a match-up — so the roster has to be at least as long
-    /// as the largest lobby the setup screen offers.
+    /// Neither pool repeats until every civilization it contains has a seat.
     #[test]
-    fn no_stock_lobby_seats_the_same_civilization_twice() {
+    fn each_leader_pool_uses_every_entry_before_it_repeats() {
         let known: BTreeSet<String> = Rules::shared().civs.keys().cloned().collect();
-        let largest = crate::setup::CIV6_MAP_SIZES
-            .iter()
-            .map(|size| size.max_players)
-            .max()
-            .unwrap();
-        assert!(
-            CIV_NAMES.len() >= largest,
-            "{largest} majors can be seated but only {} civilizations exist",
-            CIV_NAMES.len()
-        );
-        for players in 1..=largest {
-            let seated = seat_civs(players, &[], &known);
-            assert_eq!(
-                seated.iter().collect::<BTreeSet<_>>().len(),
-                players,
-                "duplicate civilization at {players} players: {seated:?}"
-            );
-            for civ in &seated {
-                assert!(known.contains(civ), "{civ} is not in the ruleset");
+        for pool in [LeaderPool::Civ6, LeaderPool::Expanded] {
+            for players in 1..=pool.civilizations().len() {
+                let seated = seat_civs(players, &[], &known, pool);
+                assert_eq!(
+                    seated.iter().collect::<BTreeSet<_>>().len(),
+                    players,
+                    "duplicate civilization in {pool:?} at {players} players: {seated:?}"
+                );
+                for civ in &seated {
+                    assert!(known.contains(civ), "{civ} is not in the ruleset");
+                }
             }
         }
     }
@@ -2175,7 +2257,7 @@ mod seating_tests {
     #[test]
     fn a_chosen_civilization_takes_its_seat_and_is_not_duplicated() {
         let known: BTreeSet<String> = Rules::shared().civs.keys().cloned().collect();
-        let seated = seat_civs(4, &["Egypt".to_string()], &known);
+        let seated = seat_civs(4, &["Egypt".to_string()], &known, LeaderPool::Civ6);
         assert_eq!(seated[0], "Egypt");
         assert_eq!(
             seated.iter().collect::<BTreeSet<_>>().len(),
@@ -2183,9 +2265,22 @@ mod seating_tests {
             "duplicate civilization in {seated:?}"
         );
 
-        let two = seat_civs(4, &["Nubia".to_string(), "Rome".to_string()], &known);
+        let two = seat_civs(
+            4,
+            &["Nubia".to_string(), "Rome".to_string()],
+            &known,
+            LeaderPool::Civ6,
+        );
         assert_eq!(&two[..2], ["Nubia".to_string(), "Rome".to_string()]);
         assert_eq!(two.iter().collect::<BTreeSet<_>>().len(), 4);
+
+        let expanded_pick = seat_civs(
+            3,
+            &["Denmark".to_string()],
+            &known,
+            LeaderPool::Civ6,
+        );
+        assert_eq!(expanded_pick[0], "Denmark");
     }
 
     /// A name from another ruleset seats a stock civilization rather than
@@ -2193,7 +2288,12 @@ mod seating_tests {
     #[test]
     fn an_unknown_civilization_falls_back_to_the_stock_roster() {
         let known: BTreeSet<String> = Rules::shared().civs.keys().cloned().collect();
-        let seated = seat_civs(3, &["Atlantis".to_string()], &known);
+        let seated = seat_civs(
+            3,
+            &["Atlantis".to_string()],
+            &known,
+            LeaderPool::Civ6,
+        );
         assert_eq!(seated[0], CIV_NAMES[0]);
         assert_eq!(seated.iter().collect::<BTreeSet<_>>().len(), 3);
     }
@@ -2204,7 +2304,12 @@ mod seating_tests {
     #[test]
     fn a_lobby_that_names_a_civilization_twice_seats_it_twice() {
         let known: BTreeSet<String> = Rules::shared().civs.keys().cloned().collect();
-        let twice = seat_civs(3, &["Egypt".to_string(), "Egypt".to_string()], &known);
+        let twice = seat_civs(
+            3,
+            &["Egypt".to_string(), "Egypt".to_string()],
+            &known,
+            LeaderPool::Civ6,
+        );
         assert_eq!(&twice[..2], ["Egypt".to_string(), "Egypt".to_string()]);
         // The seat nobody asked about still steers clear of the mirror match.
         assert_ne!(twice[2], "Egypt");
@@ -2215,11 +2320,17 @@ mod seating_tests {
     #[test]
     fn a_lobby_larger_than_the_roster_wraps_instead_of_failing() {
         let known: BTreeSet<String> = Rules::shared().civs.keys().cloned().collect();
-        let players = CIV_NAMES.len() + 3;
-        let seated = seat_civs(players, &[], &known);
+        let players = CIV6_LEADER_POOL.len() + 3;
+        let seated = seat_civs(players, &[], &known, LeaderPool::Civ6);
         assert_eq!(seated.len(), players);
-        assert_eq!(&seated[..CIV_NAMES.len()], &CIV_NAMES.map(String::from)[..]);
-        assert_eq!(&seated[CIV_NAMES.len()..], &CIV_NAMES.map(String::from)[..3]);
+        assert_eq!(
+            &seated[..CIV6_LEADER_POOL.len()],
+            &CIV6_LEADER_POOL.map(String::from)[..]
+        );
+        assert_eq!(
+            &seated[CIV6_LEADER_POOL.len()..],
+            &CIV6_LEADER_POOL.map(String::from)[..3]
+        );
     }
 
     #[test]
@@ -2228,8 +2339,10 @@ mod seating_tests {
         let chosen = ["Egypt".to_string()];
         let mut first_rng = Rng::new(71);
         let mut repeat_rng = Rng::new(71);
-        let first = seat_civs_randomized(8, &chosen, &known, &mut first_rng);
-        let repeat = seat_civs_randomized(8, &chosen, &known, &mut repeat_rng);
+        let first =
+            seat_civs_randomized(8, &chosen, &known, LeaderPool::Civ6, &mut first_rng);
+        let repeat =
+            seat_civs_randomized(8, &chosen, &known, LeaderPool::Civ6, &mut repeat_rng);
         assert_eq!(first, repeat);
         assert_eq!(first[0], "Egypt");
         assert_eq!(first.iter().collect::<BTreeSet<_>>().len(), 8);
@@ -2245,15 +2358,22 @@ mod seating_tests {
     }
 
     #[test]
-    fn every_stock_civilization_can_enter_the_random_pool() {
+    fn each_random_pool_contains_exactly_its_selected_roster() {
         let known: BTreeSet<String> = Rules::shared().civs.keys().cloned().collect();
-        let mut seen = BTreeSet::new();
-        for seed in 0..1_000 {
-            let mut rng = Rng::new(seed);
-            seen.extend(seat_civs_randomized(8, &[], &known, &mut rng));
+        for pool in [LeaderPool::Civ6, LeaderPool::Expanded] {
+            let mut seen = BTreeSet::new();
+            for seed in 0..1_000 {
+                let mut rng = Rng::new(seed);
+                seen.extend(seat_civs_randomized(8, &[], &known, pool, &mut rng));
+            }
+            assert_eq!(
+                seen,
+                pool.civilizations().iter().map(|civ| civ.to_string()).collect(),
+                "randomized {pool:?} roster differs from its declared pool"
+            );
         }
-        assert_eq!(seen.len(), CIV_NAMES.len());
-        assert!(seen.contains("Byzantium"));
+        assert!(CIV6_LEADER_POOL.contains(&"Byzantium"));
+        assert!(!CIV6_LEADER_POOL.contains(&"Denmark"));
     }
 }
 
@@ -12483,6 +12603,9 @@ pub struct GameOptions {
     /// chosen so no two majors share an identity by accident. Empty is the
     /// stock order.
     pub civs: Vec<String>,
+    /// Roster from which every unnamed seat is filled. The official Civ VI
+    /// civilizations are the default; the full modeled roster is opt-in.
+    pub leader_pool: LeaderPool,
     /// Shuffle every civilization seat the lobby did not name. Kept opt-in so
     /// simulations and old saves retain their seed-for-seed stock seating;
     /// the live server enables it for newly created games.
@@ -12516,6 +12639,7 @@ impl GameOptions {
             disaster_intensity: DEFAULT_DISASTER_INTENSITY,
             game_modes: BTreeSet::new(),
             civs: Vec::new(),
+            leader_pool: LeaderPool::default(),
             randomize_civs: false,
         }
     }
@@ -12535,7 +12659,12 @@ impl GameOptions {
 ///
 /// A name the ruleset does not know is ignored rather than fatal: a save or a
 /// client from another ruleset should seat a stock civilization, not panic.
-pub fn seat_civs(num_players: usize, chosen: &[String], known: &BTreeSet<String>) -> Vec<String> {
+pub fn seat_civs(
+    num_players: usize,
+    chosen: &[String],
+    known: &BTreeSet<String>,
+    leader_pool: LeaderPool,
+) -> Vec<String> {
     let mut seats: Vec<Option<String>> = vec![None; num_players];
     let mut taken: BTreeSet<String> = BTreeSet::new();
     for (seat, civ) in chosen.iter().enumerate().take(num_players) {
@@ -12544,7 +12673,8 @@ pub fn seat_civs(num_players: usize, chosen: &[String], known: &BTreeSet<String>
             seats[seat] = Some(civ.clone());
         }
     }
-    let mut stock = CIV_NAMES
+    let mut stock = leader_pool
+        .civilizations()
         .iter()
         .filter(|civ| !taken.contains(**civ))
         .cycle()
@@ -12562,6 +12692,7 @@ pub fn seat_civs_randomized(
     num_players: usize,
     chosen: &[String],
     known: &BTreeSet<String>,
+    leader_pool: LeaderPool,
     rng: &mut Rng,
 ) -> Vec<String> {
     let mut seats: Vec<Option<String>> = vec![None; num_players];
@@ -12572,7 +12703,8 @@ pub fn seat_civs_randomized(
             seats[seat] = Some(civ.clone());
         }
     }
-    let mut stock: Vec<String> = CIV_NAMES
+    let mut stock: Vec<String> = leader_pool
+        .civilizations()
         .iter()
         .filter(|civ| known.contains(**civ) && !taken.contains(**civ))
         .map(|civ| (*civ).to_string())
@@ -12809,6 +12941,9 @@ pub struct Game {
     /// unaffected by the setting unless a seat is declared human.
     pub human_seats: BTreeSet<usize>,
     pub map_script: MapScript,
+    /// Random-leader roster chosen when this world was created. It remains on
+    /// the save so a restart can faithfully offer the same setup.
+    pub leader_pool: LeaderPool,
     /// Whether the world was rolled with cold ends. The shape it was rolled on
     /// is on the map itself (`map.topology`), and the climate this chose is
     /// baked into the terrain — this is kept so that a loaded game can still
@@ -12984,6 +13119,8 @@ struct GameSer {
     events: Vec<Event>,
     #[serde(default)]
     map_script: MapScript,
+    #[serde(default)]
+    leader_pool: LeaderPool,
     /// Absent in saves written before the poles became a choice, which were
     /// all rolled with them.
     #[serde(default)]
@@ -13097,6 +13234,7 @@ impl From<GameSer> for Game {
             mods: s.mods,
             events: s.events.into(),
             map_script: s.map_script,
+            leader_pool: s.leader_pool,
             map_poles: s.map_poles,
             game_speed,
             max_turns: s.max_turns,
@@ -13247,6 +13385,7 @@ impl From<Game> for GameSer {
             mods: g.mods,
             events: g.events.into(),
             map_script: g.map_script,
+            leader_pool: g.leader_pool,
             map_poles: g.map_poles,
             game_speed: g.game_speed,
             max_turns: g.max_turns,
@@ -13372,6 +13511,7 @@ impl Game {
             disaster_intensity,
             game_modes,
             civs,
+            leader_pool,
             randomize_civs,
         } = options;
         assert!(
@@ -13415,6 +13555,7 @@ impl Game {
             speed,
             human_seats,
             map_script,
+            leader_pool,
             map_poles,
             game_speed,
             mods: crate::mods::active_names(),
@@ -13468,9 +13609,9 @@ impl Game {
         let known_civs = g.rules.civs.keys().cloned().collect::<BTreeSet<_>>();
         let seated = if randomize_civs {
             let mut roster_rng = Rng::new(seed ^ 0x4349_5656_4953_4349);
-            seat_civs_randomized(num_players, &civs, &known_civs, &mut roster_rng)
+            seat_civs_randomized(num_players, &civs, &known_civs, leader_pool, &mut roster_rng)
         } else {
-            seat_civs(num_players, &civs, &known_civs)
+            seat_civs(num_players, &civs, &known_civs, leader_pool)
         };
         // Civilization VI decides *which* start a civilization is given from
         // its shipped StartBias rows. Reorder the major sites to honour them

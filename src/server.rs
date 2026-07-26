@@ -15,7 +15,9 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Value};
 
 use crate::ai::{AdvancedAi, Ai, BasicAi};
-use crate::game::{Action, Game, GameOptions, VictoryConditions};
+use crate::game::{
+    Action, Game, GameOptions, LeaderPool, VictoryConditions, CIV6_LEADER_POOL,
+};
 use crate::rules::Rules;
 use crate::obs::{observation, observation_player_view, observation_spectator};
 use crate::setup::{
@@ -67,6 +69,8 @@ pub struct Params {
     pub difficulty: String,
     pub speed: String,
     pub teams: Vec<Option<usize>>,
+    /// Roster used for every major seat the setup did not name explicitly.
+    pub leader_pool: LeaderPool,
     /// Civilizations for the leading major seats, in seat order — seat 0 is
     /// the person's own. Empty is the stock roster; see `Game::seat_civs`.
     pub civs: Vec<String>,
@@ -1337,6 +1341,7 @@ impl Session {
             human_seats,
             teams: params.teams.clone(),
             civs: params.civs.clone(),
+            leader_pool: params.leader_pool,
             randomize_civs: true,
             ..GameOptions::new(
                 params.num_players,
@@ -1407,6 +1412,7 @@ impl Session {
         params.max_turns = game.max_turns;
         params.difficulty = game.difficulty.clone();
         params.speed = game.speed.clone();
+        params.leader_pool = game.leader_pool;
         params.victory_conditions = game.victory_conditions;
         params.teams = game
             .players
@@ -1742,6 +1748,7 @@ impl Session {
             o["supervised"] = json!(self.params.supervised);
             o["spectator_paused"] = json!(self.spectator_paused);
             o["view_player"] = json!(self.view_player);
+            o["leader_pool"] = json!(self.game.leader_pool.id());
             o["victory_conditions"] = json!(self.game.victory_conditions);
             o["supervisor_request"] = json!(self.supervisor_request);
             o["next_game_settings"] = self
@@ -1760,6 +1767,7 @@ impl Session {
         o["spectate"] = json!(false);
         o["supervised"] = json!(self.params.supervised);
         o["view_player"] = json!(0);
+        o["leader_pool"] = json!(self.game.leader_pool.id());
         o["victory_conditions"] = json!(self.game.victory_conditions);
         o["supervisor_request"] = json!(self.supervisor_request);
         o["next_game_settings"] = self
@@ -2333,6 +2341,7 @@ fn simulation_settings(params: &Params) -> Value {
         "shape": params.map_topology.id(),
         "poles": params.map_poles.id(),
         "speed": params.game_speed.id(),
+        "leader_pool": params.leader_pool.id(),
         "victories": victories,
     })
 }
@@ -2435,6 +2444,9 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     }
     if let Some(v) = request["max_turns"].as_u64() {
         p.max_turns = v as u32;
+    }
+    if let Some(v) = request["leader_pool"].as_str().and_then(LeaderPool::from_id) {
+        p.leader_pool = v;
     }
     // The two settings a Civ 6 lobby asks for that this protocol could not
     // carry: how hard the rivals play, and who the player is. Both are
@@ -3024,6 +3036,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "wonders": r.wonders,
                     "projects": r.projects,
                     "policies": r.policies, "beliefs": r.beliefs, "civs": r.civs,
+                    "civ6_leaders": CIV6_LEADER_POOL.as_slice(),
                     "great_people": r.great_people, "governors": r.governors,
                     "map_sizes": CIV6_MAP_SIZES,
                     "difficulties": r.difficulties, "speeds": r.speeds,
@@ -3325,7 +3338,7 @@ mod tests {
         Session, SpectatorFrame, EMBEDDED_CINEMATIC_3D, EMBEDDED_INDEX, MIN_RESTART_MS,
         EMBEDDED_WORLD_WONDER_ATLAS, SAVE_DIR, STATE_LONG_POLL, VIEWER_ACTIVE,
     };
-    use crate::game::{Action, Game, VictoryConditions};
+    use crate::game::{Action, Game, LeaderPool, VictoryConditions, CIV6_LEADER_POOL};
     use crate::setup::{GameSpeed, MapPoles, MapScript, MapTopology};
     use serde_json::{json, Value};
     use std::io::{Read, Write};
@@ -4187,6 +4200,7 @@ mod tests {
             difficulty: crate::game::default_difficulty(),
             speed: crate::game::default_speed(),
             teams: Vec::new(),
+            leader_pool: LeaderPool::Civ6,
             civs: Vec::new(),
             supervised: false,
             restart_ms: 5_000,
@@ -4265,7 +4279,9 @@ mod tests {
     /// agents; the serialized game keeps the authoritative RNG.
     #[test]
     fn a_saved_game_reloads_onto_the_same_turn() {
-        let mut session = Session::new(current());
+        let mut params = current();
+        params.leader_pool = LeaderPool::Expanded;
+        let mut session = Session::new(params);
         for _ in 0..3 {
             session.act(&json!({"type": "end_turn"}));
         }
@@ -4276,9 +4292,11 @@ mod tests {
             serde_json::from_value(serde_json::to_value(&session.game).unwrap()).unwrap();
         assert_eq!(round_tripped.turn, turn);
         assert_eq!(round_tripped.seed, session.game.seed);
+        assert_eq!(round_tripped.leader_pool, LeaderPool::Expanded);
 
         let mut restored = Session::from_game(session.params.clone(), round_tripped);
         assert_eq!(restored.game.turn, turn);
+        assert_eq!(restored.params.leader_pool, LeaderPool::Expanded);
         assert!(restored.act(&json!({"type": "end_turn"})).is_none());
         assert!(restored.game.turn > turn, "a loaded game plays on");
     }
@@ -4334,6 +4352,29 @@ mod tests {
         );
         assert_eq!(custom.game_speed, GameSpeed::Marathon);
         assert_eq!(custom.max_turns, 99);
+    }
+
+    #[test]
+    fn leader_pool_defaults_to_civ6_and_accepts_expanded_explicitly() {
+        let stock = current();
+        assert_eq!(stock.leader_pool, LeaderPool::Civ6);
+
+        let ignored = new_game_params(&stock, &json!({"leader_pool": "unknown"}));
+        assert_eq!(ignored.leader_pool, LeaderPool::Civ6);
+
+        let expanded = new_game_params(&stock, &json!({"leader_pool": "expanded"}));
+        assert_eq!(expanded.leader_pool, LeaderPool::Expanded);
+        let session = Session::new(expanded);
+        assert_eq!(session.game.leader_pool, LeaderPool::Expanded);
+        assert_eq!(session.state()["leader_pool"], "expanded");
+
+        let stock_session = Session::new(stock);
+        assert!(stock_session
+            .game
+            .players
+            .iter()
+            .filter(|player| !player.is_minor && !player.is_barbarian)
+            .all(|player| CIV6_LEADER_POOL.contains(&player.civ.as_str())));
     }
 
     #[test]
@@ -4526,6 +4567,12 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("RULES.map_scripts.map(script =>"));
         assert!(EMBEDDED_INDEX.contains("RULES.game_speeds.map(speed =>"));
         assert!(EMBEDDED_INDEX.contains("id=\"gamemode\""));
+        assert!(EMBEDDED_INDEX.contains("id=\"leaderpool\""));
+        assert!(EMBEDDED_INDEX.contains(">Civ 6 Leaders</option>"));
+        assert!(EMBEDDED_INDEX.contains(">Expanded</option>"));
+        assert!(EMBEDDED_INDEX.contains("leader_pool: leaderPool"));
+        assert!(EMBEDDED_INDEX.contains("function syncLeaderPool()"));
+        assert!(EMBEDDED_INDEX.contains("RULES.civ6_leaders"));
         assert!(EMBEDDED_INDEX.contains("id=\"maptype\""));
         // The globe has its own renderer, and it is the only one: both globe
         // scripts are drawn by it, so neither needs a projection of its own.
@@ -5497,6 +5544,7 @@ mod tests {
             session.params.num_city_states,
             session.params.map_script,
             session.params.game_speed,
+            session.params.leader_pool,
             session.params.spectate,
         );
 
@@ -5513,6 +5561,7 @@ mod tests {
                 session.params.num_city_states,
                 session.params.map_script,
                 session.params.game_speed,
+                session.params.leader_pool,
                 session.params.spectate,
             ),
             previous_settings
@@ -5533,6 +5582,7 @@ mod tests {
             "num_players": 6,
             "map_script": "continents",
             "game_speed": "quick",
+            "leader_pool": "expanded",
             "victory_conditions": {"culture": false, "score": false},
         }));
 
@@ -5551,6 +5601,7 @@ mod tests {
                 "shape": "flat",
                 "poles": "poles",
                 "speed": "quick",
+                "leader_pool": "expanded",
                 "victories": ["science", "religious", "diplomatic", "domination"],
             })
         );
@@ -5561,6 +5612,7 @@ mod tests {
         assert_eq!(session.params.num_players, 6);
         assert_eq!(session.params.map_script, MapScript::Continents);
         assert_eq!(session.params.game_speed, GameSpeed::Quick);
+        assert_eq!(session.params.leader_pool, LeaderPool::Expanded);
         assert!(!session.game.victory_conditions.culture);
         assert!(!session.game.victory_conditions.score);
         assert!(session.state()["next_game_settings"].is_null());
@@ -5581,6 +5633,7 @@ mod tests {
                 "num_players": 4,
                 "map_script": "continents",
                 "game_speed": "quick",
+                "leader_pool": "expanded",
                 "victory_conditions": {"culture": false, "score": false},
             }))
             .unwrap();
@@ -5606,6 +5659,7 @@ mod tests {
                 "shape": "flat",
                 "poles": "poles",
                 "speed": "quick",
+                "leader_pool": "expanded",
                 "victories": ["science", "religious", "diplomatic", "domination"],
             })
         );
