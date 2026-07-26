@@ -33,6 +33,22 @@ of it is still a scripted bot with garnish. Ranked, most impactful first:
    engine's actions. The ceiling of the current approach is "best possible
    scripted bot," which is nowhere near it.
 
+> **Measured update (2026-07-26).** Items 2 and 8 now have numbers rather
+> than plans. `StrategicAi`'s macro search reaches its rollouts about 1.5
+> times per seat per game — half its reviews are answered by cheap priors,
+> and in a *duel* the religious prior answers all of them, so every
+> published duel number for that agent measures a forced lane rather than
+> search. It is under-provisioned: doubling its compute, either as twice
+> the reviews (`strategic_r20`) or twice the horizon (`strategic_h80`),
+> wins significantly more maps at 120-map power (sign p=0.0023 and 0.0025).
+> Quadrupling reviews does not help further. Item 1's learned components,
+> by contrast, are measurably inert: the value net is calibrated
+> (grouped-holdout BCE 0.4058 vs 0.5636 constant) yet never changes a lane
+> choice, and `PolicyAi` ranks unit actions with 25 *empire* features that
+> a move cannot change, so its computed gain is exactly zero on 96% of the
+> candidates it clones. Search is where the returns are today; see
+> `docs/EVAL.md` from 2026-07-26 for the runs.
+
 2. **No search.** `NeuralAi::consider_war` is the only lookahead in the
    codebase — everything else is greedy. The roadmap's MCTS baseline was
    never built. Civ turns are combinatorial, so raw MCTS over unit-level
