@@ -274,6 +274,31 @@ fn directional_outcomes(scores: &[f64]) -> DirectionalOutcomes {
     outcomes
 }
 
+/// How much of the map set a direction statistic actually rests on.
+///
+/// A mirrored A/B between close agents splits most maps by construction, and
+/// a split carries no direction. The win statistic is therefore computed
+/// from only the maps that broke, while the terminal-score statistic — being
+/// continuous — breaks on nearly all of them. Reporting the two resolutions
+/// side by side is what stops a 5-0 win margin drawn from five maps being
+/// read as stronger evidence than a 10-8 score margin drawn from eighteen.
+fn resolved_maps(directions: &DirectionalOutcomes) -> usize {
+    directions.challenger_favored + directions.incumbent_favored
+}
+
+/// Sign of a direction: `Some(true)` favours the challenger, `Some(false)`
+/// the incumbent, `None` when the maps that broke split evenly.
+fn direction_sign(directions: &DirectionalOutcomes) -> Option<bool> {
+    match directions
+        .challenger_favored
+        .cmp(&directions.incumbent_favored)
+    {
+        std::cmp::Ordering::Greater => Some(true),
+        std::cmp::Ordering::Less => Some(false),
+        std::cmp::Ordering::Equal => None,
+    }
+}
+
 #[derive(Debug, Default, PartialEq, Eq)]
 struct PlanTrace {
     observations: usize,
@@ -797,6 +822,35 @@ fn main() {
         terminal_directions.neutral,
         terminal_directions.incumbent_favored,
     );
+    // Wins and terminal score are computed from the same games but measure
+    // different things: wins count victories, terminal score counts
+    // economy. An agent that routes to a victory better wins more games
+    // without out-scoring anyone, so the two disagreeing is a finding
+    // rather than a fault — it localizes the change to routing rather than
+    // development. What must not happen is reading whichever one looks
+    // better, so both directions and the number of maps each rests on are
+    // reported together.
+    let win_resolved = resolved_maps(&directions);
+    let terminal_resolved = resolved_maps(&terminal_directions);
+    println!(
+        "direction resolution: wins rest on {win_resolved} of {} maps that broke, terminal score on {terminal_resolved}",
+        inference.maps,
+    );
+    match (
+        direction_sign(&directions),
+        direction_sign(&terminal_directions),
+    ) {
+        (Some(win), Some(terminal)) if win != terminal => println!(
+            "note: wins favour {} and terminal score favours {}. Wins count victories and score counts economy, so this separates victory routing from development rather than contradicting itself",
+            if win { a } else { b },
+            if terminal { a } else { b },
+        ),
+        (Some(win), None) => println!(
+            "note: wins favour {} while terminal score is flat — a routing change without an economic one",
+            if win { a } else { b },
+        ),
+        _ => {}
+    }
     println!(
         "terminal-score anytime evidence (2.5% per direction after {PROMOTION_MIN_MAPS} maps): {a} peak e={:.3e}, p<={:.4}; {b} peak e={:.3e}, p<={:.4}",
         terminal_anytime.challenger_peak_e,
@@ -1065,6 +1119,33 @@ mod tests {
     /// folded in index order, so the only thing `--jobs` may change is how
     /// long the run takes. If this ever fails, the evaluator has started
     /// reporting a different answer depending on the machine it ran on.
+    /// A direction is only as strong as the number of maps that broke. The
+    /// win statistic and the terminal-score statistic run on the same games
+    /// and routinely rest on very different map counts, which is the fact
+    /// that stops a 5-0 win margin from five maps reading as stronger than
+    /// a 10-8 score margin from eighteen.
+    #[test]
+    fn resolution_counts_only_the_maps_that_broke() {
+        let mostly_neutral = [0.5, 0.5, 0.5, 1.0, 0.5, 0.0];
+        let directions = directional_outcomes(&mostly_neutral);
+        assert_eq!(directions.neutral, 4);
+        assert_eq!(resolved_maps(&directions), 2);
+        assert_eq!(
+            direction_sign(&directions),
+            None,
+            "one each way is no direction"
+        );
+
+        let decisive = [1.0, 1.0, 1.0, 0.5, 0.0];
+        assert_eq!(resolved_maps(&directional_outcomes(&decisive)), 4);
+        assert_eq!(direction_sign(&directional_outcomes(&decisive)), Some(true));
+
+        let against = [0.0, 0.0, 0.5];
+        assert_eq!(direction_sign(&directional_outcomes(&against)), Some(false));
+        assert_eq!(direction_sign(&directional_outcomes(&[0.5, 0.5])), None);
+        assert_eq!(resolved_maps(&directional_outcomes(&[])), 0);
+    }
+
     #[test]
     fn parallel_batches_match_a_serial_run() {
         let play = |jobs: usize| {
@@ -1072,7 +1153,13 @@ mod tests {
                 let seed = 52_000 + index as u64 / 2;
                 let swap = index % 2;
                 let seats: Vec<&str> = (0..2)
-                    .map(|pid| if (pid + swap) % 2 == 0 { "advanced" } else { "basic" })
+                    .map(|pid| {
+                        if (pid + swap) % 2 == 0 {
+                            "advanced"
+                        } else {
+                            "basic"
+                        }
+                    })
                     .collect();
                 let mut game = Game::new(2, 20, 14, seed, 40, 0);
                 let mut ais: Vec<Box<dyn Ai>> = game
