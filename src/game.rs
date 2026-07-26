@@ -7,8 +7,8 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashSet, VecDeque};
 
 use crate::rng::Rng;
 use crate::rules::{
-    AgendaSpec, BuildingSpec, DifficultySpec, DisasterSpec, FutureTreeLayout, Rules, SpeedSpec,
-    Yields, ERA_NAMES,
+    AgendaSpec, BuildingSpec, DifficultySpec, DisasterSpec, FutureTreeLayout, PillageReward, Rules,
+    SpeedSpec, Yields, ERA_NAMES,
 };
 use crate::specmap::SpecMap;
 
@@ -5467,14 +5467,18 @@ mod governor_runtime_tests {
         assert_eq!(air(&game, "bomber"), bomber + 0.5);
         assert_eq!(air(&game, "jet_bomber"), jet);
 
-        // Raid and Total War double pillage yields rather than adding half.
+        // Gathering Storm reduced Raid and Total War to +50%. Letters of
+        // Marque doubles trade-route plunder, not improvements or districts.
         for card in ["raid", "total_war"] {
             assert_eq!(
                 game.rules.policies[card].effects["pillage_yield_pct"],
-                100.0,
-                "{card} doubles pillage yields"
+                50.0,
+                "{card} adds half to pillage yields"
             );
         }
+        assert!(!game.rules.policies["letters_of_marque"]
+            .effects
+            .contains_key("pillage_yield_pct"));
     }
 
     #[test]
@@ -15479,30 +15483,41 @@ impl Game {
     }
 
     fn maybe_clear_camp(&mut self, uid: u32) {
-        let (pos, owner, kind) = {
-            let u = &self.units[&uid];
-            (u.pos, u.owner, u.kind.clone())
+        let pos = self.units[&uid].pos;
+        self.clear_barbarian_camp(uid, pos, false);
+    }
+
+    fn clear_barbarian_camp(&mut self, uid: u32, pos: Pos, coastal: bool) -> bool {
+        let (owner, kind) = {
+            let unit = &self.units[&uid];
+            (unit.owner, unit.kind.clone())
         };
-        if self.barb_camps.contains_key(&pos)
-            && Some(owner) != self.barb_pid
-            && self.rules.units[kind.as_str()].class == "military"
+        if !self.barb_camps.contains_key(&pos)
+            || Some(owner) == self.barb_pid
+            || self.rules.units[kind.as_str()].class != "military"
         {
-            self.barb_camps.remove(&pos);
-            self.barb_alerted_until.remove(&pos);
-            self.barb_camp_targets.remove(&pos);
-            self.barb_scout_homes.retain(|_, camp| *camp != pos);
-            let t = self.map.tiles.get_mut(&pos).unwrap();
-            if t.improvement.as_deref() == Some("barbarian_camp") {
-                t.improvement = None;
-            }
-            self.players[owner].gold += 50.0 + self.human_camp_gold(owner);
-            self.add_era_score(owner, self.barbarian_camp_era_score());
-            if self.has_ability(owner, "epic_quest") {
-                // Epic Quest: a full tribal village reward for the cleared camp.
-                self.roll_goody_reward(owner, uid, pos);
-            }
-            bump(&mut self.players[owner], "camps");
+            return false;
         }
+        self.barb_camps.remove(&pos);
+        self.barb_alerted_until.remove(&pos);
+        self.barb_camp_targets.remove(&pos);
+        self.barb_scout_homes.retain(|_, camp| *camp != pos);
+        let tile = self.map.tiles.get_mut(&pos).unwrap();
+        if tile.improvement.as_deref() == Some("barbarian_camp") {
+            tile.improvement = None;
+        }
+        self.players[owner].gold += 50.0 + self.human_camp_gold(owner);
+        if coastal {
+            let loot = self.promotion_effect(&self.units[&uid], "coastal_raid_gold");
+            self.players[owner].gold += self.game_speed.scale(loot);
+        }
+        self.add_era_score(owner, self.barbarian_camp_era_score());
+        if self.has_ability(owner, "epic_quest") {
+            // Epic Quest: a full tribal village reward for the cleared camp.
+            self.roll_goody_reward(owner, uid, pos);
+        }
+        bump(&mut self.players[owner], "camps");
+        true
     }
 
     // ------------------------------------------------------------- queries
@@ -16246,6 +16261,11 @@ impl Game {
     pub fn unit_heal_rate(&self, uid: u32) -> i32 {
         let unit = &self.units[&uid];
         let spec = &self.rules.units[unit.kind.as_str()];
+        // Barbarian units never recover passively in Civ VI. They can still
+        // receive an immediate healing plunder reward, such as from a Farm.
+        if self.players[unit.owner].is_barbarian {
+            return 0;
+        }
         // Nothing recovers in fallout. A blast that only cost yields would make
         // ground zero the safest place on the map to park a wounded army.
         if self.fallout_at(unit.pos) {
@@ -32053,7 +32073,7 @@ impl Game {
         {
             actions.push(Action::Pillage { unit: uid });
         }
-        if spec.promotion_class == "naval_raider" && u.moves_left > 0.0 && u.attacks_left > 0 {
+        if self.can_coastal_raid(pid, u) && u.moves_left > 0.0 {
             for target in self.nbrs(u.pos) {
                 if self.pillageable_at(pid, target) {
                     actions.push(Action::CoastalRaid { unit: uid, target });
@@ -32330,7 +32350,7 @@ impl Game {
             {
                 acts.push(Action::Pillage { unit: uid });
             }
-            if spec.promotion_class == "naval_raider" && u.moves_left > 0.0 && u.attacks_left > 0 {
+            if self.can_coastal_raid(pid, &u) && u.moves_left > 0.0 {
                 for target in self.nbrs(u.pos) {
                     if self.pillageable_at(pid, target) {
                         acts.push(Action::CoastalRaid { unit: uid, target });
@@ -35617,15 +35637,13 @@ impl Game {
         if city.owner == pid || !self.is_at_war(pid, city.owner) || self.city_at(pos).is_some() {
             return false;
         }
-        // Corporations may be pillaged by natural disasters, never by units.
-        if matches!(
-            tile.improvement.as_deref(),
-            Some("corporation" | "national_park" | "ski_resort")
-        ) {
-            return false;
-        }
-        if tile.improvement.is_some() && !tile.pillaged {
-            return true;
+        if let Some(improvement) = tile.improvement.as_deref() {
+            return !tile.pillaged
+                && self
+                    .rules
+                    .improvements
+                    .get(improvement)
+                    .is_some_and(|spec| spec.unit_pillageable);
         }
         let Some(district) = tile.district.as_deref() else {
             return false;
@@ -35665,63 +35683,93 @@ impl Game {
             && self.pillageable_at(pid, pos)
     }
 
-    fn grant_pillage_reward(&mut self, pid: usize, uid: u32, source: &str, coastal: bool) {
-        let amount = 25.0
+    fn scaled_pillage_amount(&self, pid: usize, reward: &PillageReward) -> f64 {
+        if reward.yield_type == "heal" {
+            return reward.amount;
+        }
+        self.game_speed.scale(reward.amount)
             * (self.world_era as f64 + 1.0)
-            * (1.0 + self.policy_effect(pid, "pillage_yield_pct") / 100.0);
-        let district_family = self
-            .rules
-            .districts
-            .get(source)
-            .map(|_| self.district_family(source))
-            .unwrap_or(source);
-        match district_family {
-            "farm" | "fishing_boats" => {
+            * (1.0 + self.policy_effect(pid, "pillage_yield_pct") / 100.0)
+    }
+
+    fn grant_pillage_yield(&mut self, pid: usize, uid: u32, reward: &PillageReward) {
+        let amount = self.scaled_pillage_amount(pid, reward);
+        match reward.yield_type.as_str() {
+            "" | "none" => {}
+            "heal" => {
                 if let Some(unit) = self.units.get_mut(&uid) {
-                    unit.hp = (unit.hp + 50).min(100);
+                    unit.hp = (unit.hp + amount.round() as i32).min(100);
                 }
             }
-            "campus" | "mine" | "quarry" | "oil_well" | "offshore_oil_rig" | "geothermal_plant"
-            | "solar_farm" | "wind_farm" | "offshore_wind_farm" => {
+            "science" => {
                 self.players[pid].research_overflow += amount;
             }
-            "holy_site" | "sphinx" | "kurgan" | "nubian_pyramid" => {
+            "faith" => {
                 self.players[pid].faith += amount;
             }
-            "theater_square"
-            | "great_wall"
-            | "seaside_resort"
-            | "ski_resort"
-            | "national_park"
-            | "archaeological_dig"
-            | "shipwreck_excavation" => {
+            "culture" => {
                 self.players[pid].civic_overflow += amount;
             }
-            "industrial_zone" | "aerodrome" => {
-                if let Some(cid) = self
-                    .player_city_ids(pid)
-                    .into_iter()
-                    .min_by_key(|cid| self.wdist(self.cities[cid].pos, self.units[&uid].pos))
-                {
-                    self.cities.get_mut(&cid).unwrap().production += amount;
-                }
+            "gold" => {
+                self.players[pid].gold += amount;
             }
-            _ => {
-                let bonus = if coastal {
-                    self.promotion_effect(&self.units[&uid], "coastal_raid_gold_pct")
-                } else {
-                    0.0
-                };
-                self.players[pid].gold += amount * (1.0 + bonus / 100.0);
+            unknown => panic!("unknown pillage yield {unknown:?}"),
+        }
+    }
+
+    fn grant_pillage_reward(
+        &mut self,
+        pid: usize,
+        uid: u32,
+        source: &str,
+        improvement: bool,
+        coastal: bool,
+    ) {
+        let (reward, bonuses) = if improvement {
+            let spec = &self.rules.improvements[source];
+            (spec.pillage.clone(), spec.bonus_pillage.clone())
+        } else {
+            let family = self.district_family(source);
+            (
+                self.rules.districts[family].pillage.clone(),
+                BTreeMap::new(),
+            )
+        };
+        self.grant_pillage_yield(pid, uid, &reward);
+        for (ability, bonus) in bonuses {
+            if self.has_ability(pid, &ability) {
+                self.grant_pillage_yield(pid, uid, &bonus);
             }
         }
-        let faith_pct = self
+
+        let chapel_effect = if improvement {
+            "pillage_improvement_faith"
+        } else {
+            "pillage_district_faith"
+        };
+        let chapel_faith = self
             .cities
             .values()
             .filter(|city| city.owner == pid)
-            .map(|city| self.city_building_effect(city, "pillaging_faith_pct"))
+            .map(|city| self.city_building_effect(city, chapel_effect))
             .sum::<f64>();
-        self.players[pid].faith += amount * faith_pct / 100.0;
+        if chapel_faith > 0.0 {
+            self.grant_pillage_yield(
+                pid,
+                uid,
+                &PillageReward {
+                    yield_type: "faith".to_string(),
+                    amount: chapel_faith,
+                },
+            );
+        }
+
+        // Loot is a flat Standard-speed +50 Gold from every coastal raid; it
+        // is not a percentage of a Gold reward and also applies to heal raids.
+        if coastal {
+            let loot = self.promotion_effect(&self.units[&uid], "coastal_raid_gold");
+            self.players[pid].gold += self.game_speed.scale(loot);
+        }
     }
 
     fn pillage_tile(
@@ -35744,54 +35792,53 @@ impl Game {
             self.record_war_unit_participation(&participant, enemy);
         }
         if self.map.tiles[&pos].improvement.as_deref() == Some("barbarian_camp") {
-            self.barb_camps.remove(&pos);
-            self.map.tiles.get_mut(&pos).unwrap().improvement = None;
-            self.players[pid].gold += 50.0;
-            self.add_era_score(pid, self.barbarian_camp_era_score());
-            bump(&mut self.players[pid], "camps");
-            return Ok(());
+            return self
+                .clear_barbarian_camp(uid, pos, coastal && award_spoils)
+                .then_some(())
+                .ok_or_else(|| "barbarian camp is no longer active".to_string());
         }
-        let source = if let Some(improvement) = self.map.tiles[&pos].improvement.clone() {
-            self.map.tiles.get_mut(&pos).unwrap().pillaged = true;
-            improvement
-        } else {
-            let district = self.map.tiles[&pos].district.clone().unwrap();
-            let cid = self.map.tiles[&pos].owner_city.unwrap();
-            let building = self.cities[&cid]
-                .buildings
-                .iter()
-                .filter(|building| !self.cities[&cid].pillaged_buildings.contains(*building))
-                .filter(|building| {
-                    self.rules.buildings[building.as_str()]
-                        .district
-                        .as_ref()
-                        .is_some_and(|family| self.district_is_family(&district, family))
-                })
-                .max_by(|a, b| {
-                    self.rules.buildings[a.as_str()]
-                        .cost
-                        .partial_cmp(&self.rules.buildings[b.as_str()].cost)
-                        .unwrap()
-                        .then(a.cmp(b))
-                })
-                .cloned();
-            if let Some(building) = building {
-                self.cities
-                    .get_mut(&cid)
-                    .unwrap()
-                    .pillaged_buildings
-                    .insert(building.clone());
-                building
-            } else if !self.map.tiles[&pos].pillaged {
+        let (source, improvement) =
+            if let Some(improvement) = self.map.tiles[&pos].improvement.clone() {
                 self.map.tiles.get_mut(&pos).unwrap().pillaged = true;
-                district
+                (improvement, true)
             } else {
-                return Err("district is already fully pillaged".to_string());
-            }
-        };
+                let district = self.map.tiles[&pos].district.clone().unwrap();
+                let cid = self.map.tiles[&pos].owner_city.unwrap();
+                let building = self.cities[&cid]
+                    .buildings
+                    .iter()
+                    .filter(|building| !self.cities[&cid].pillaged_buildings.contains(*building))
+                    .filter(|building| {
+                        self.rules.buildings[building.as_str()]
+                            .district
+                            .as_ref()
+                            .is_some_and(|family| self.district_is_family(&district, family))
+                    })
+                    .max_by(|a, b| {
+                        self.rules.buildings[a.as_str()]
+                            .cost
+                            .partial_cmp(&self.rules.buildings[b.as_str()].cost)
+                            .unwrap()
+                            .then(a.cmp(b))
+                    })
+                    .cloned();
+                if let Some(building) = building {
+                    self.cities
+                        .get_mut(&cid)
+                        .unwrap()
+                        .pillaged_buildings
+                        .insert(building);
+                    (district, false)
+                } else if !self.map.tiles[&pos].pillaged {
+                    self.map.tiles.get_mut(&pos).unwrap().pillaged = true;
+                    (district, false)
+                } else {
+                    return Err("district is already fully pillaged".to_string());
+                }
+            };
         self.scatter_aircraft_from(pos);
         if award_spoils {
-            self.grant_pillage_reward(pid, uid, &source, coastal);
+            self.grant_pillage_reward(pid, uid, &source, improvement, coastal);
         }
         Ok(())
     }
@@ -35844,10 +35891,8 @@ impl Game {
 
     fn do_coastal_raid(&mut self, pid: usize, uid: u32, target: Pos) -> Result<(), String> {
         let unit = self.own_unit(pid, uid)?;
-        let spec = &self.rules.units[unit.kind.as_str()];
-        if spec.promotion_class != "naval_raider"
+        if !self.can_coastal_raid(pid, &unit)
             || unit.moves_left <= 0.0
-            || unit.attacks_left <= 0
             || self.wdist(unit.pos, target) != 1
             || self
                 .map
@@ -35857,8 +35902,16 @@ impl Game {
             return Err("unit cannot coastal raid that tile".into());
         }
         self.pillage_tile(pid, uid, target, true, true)?;
-        self.consume_unit_attack(uid);
+        let unit = self.units.get_mut(&uid).unwrap();
+        unit.moves_left = (unit.moves_left - 3.0).max(0.0);
+        unit.acted = true;
         Ok(())
+    }
+
+    fn can_coastal_raid(&self, pid: usize, unit: &Unit) -> bool {
+        let spec = &self.rules.units[unit.kind.as_str()];
+        spec.promotion_class == "naval_raider"
+            || (spec.promotion_class == "naval_melee" && self.has_ability(pid, "knarr"))
     }
 
     fn air_capacity_at(&self, pid: usize, pos: Pos) -> i32 {
@@ -47106,6 +47159,18 @@ mod combat_scenarios {
         (city, home)
     }
 
+    fn set_controlled_district(game: &mut Game, city: u32, position: Pos, district: &str) {
+        let tile = game.map.tiles.get_mut(&position).unwrap();
+        tile.district = Some(district.to_string());
+        tile.improvement = None;
+        tile.pillaged = false;
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .districts
+            .insert(district.to_string(), position);
+    }
+
     /// The shipped government Combat Strength abilities carry conditions, and
     /// they are not the same condition. `ABILITY_OLIGARCHY_MELEE_BUFF` reaches
     /// melee, anti-cavalry and naval melee; `FASCISM_ATTACK_BUFF` carries
@@ -47441,6 +47506,303 @@ mod combat_scenarios {
         // zero: a ship away from a friendly city recovers nothing at all
         // unless a promotion says otherwise.
         assert!(HealingLocation::NeutralTerritory.rate() > 0);
+    }
+
+    #[test]
+    fn gathering_storm_pillage_rewards_are_data_driven_and_complete() {
+        let (game, _, _) = controlled_game(299);
+        let improvements = [
+            ("farm", "heal", 50.0),
+            ("fishery", "heal", 50.0),
+            ("city_park", "heal", 50.0),
+            ("fishing_boats", "heal", 50.0),
+            ("seastead", "heal", 50.0),
+            ("mine", "gold", 50.0),
+            ("lumber_mill", "gold", 50.0),
+            ("oil_well", "gold", 50.0),
+            ("offshore_oil_rig", "gold", 50.0),
+            ("wind_farm", "gold", 50.0),
+            ("geothermal_plant", "gold", 50.0),
+            ("solar_farm", "gold", 50.0),
+            ("offshore_wind_farm", "gold", 50.0),
+            ("seaside_resort", "gold", 50.0),
+            ("industry", "gold", 50.0),
+            ("great_wall", "gold", 50.0),
+            ("corporation", "gold", 50.0),
+            ("quarry", "faith", 25.0),
+            ("pasture", "faith", 25.0),
+            ("plantation", "faith", 25.0),
+            ("camp", "faith", 25.0),
+            ("sphinx", "faith", 25.0),
+            ("nubian_pyramid", "faith", 25.0),
+            ("kurgan", "faith", 25.0),
+        ];
+        for (improvement, yield_type, amount) in improvements {
+            let reward = &game.rules.improvements[improvement].pillage;
+            assert_eq!(reward.yield_type, yield_type, "{improvement}");
+            assert_eq!(reward.amount, amount, "{improvement}");
+        }
+        for improvement in [
+            "great_wall",
+            "corporation",
+            "national_park",
+            "ski_resort",
+            "mountain_tunnel",
+        ] {
+            assert!(
+                !game.rules.improvements[improvement].unit_pillageable,
+                "{improvement} is disaster-only or otherwise not unit-pillageable"
+            );
+        }
+        for improvement in ["fort", "airstrip", "missile_silo"] {
+            let spec = &game.rules.improvements[improvement];
+            assert!(spec.unit_pillageable, "{improvement}");
+            assert_eq!(spec.pillage, PillageReward::default(), "{improvement}");
+        }
+        assert_eq!(
+            game.rules.improvements["mine"].bonus_pillage["knarr"],
+            PillageReward {
+                yield_type: "science".to_string(),
+                amount: 15.0,
+            }
+        );
+        for improvement in ["quarry", "pasture", "plantation", "camp"] {
+            assert_eq!(
+                game.rules.improvements[improvement].bonus_pillage["knarr"],
+                PillageReward {
+                    yield_type: "culture".to_string(),
+                    amount: 15.0,
+                },
+                "{improvement}"
+            );
+        }
+
+        let districts = [
+            ("campus", "science", 25.0),
+            ("holy_site", "faith", 25.0),
+            ("commercial_hub", "gold", 50.0),
+            ("harbor", "gold", 50.0),
+            ("theater_square", "culture", 25.0),
+            ("industrial_zone", "science", 25.0),
+            ("entertainment_complex", "heal", 50.0),
+            ("water_park", "heal", 50.0),
+            ("aqueduct", "gold", 50.0),
+            ("neighborhood", "gold", 50.0),
+            ("canal", "gold", 50.0),
+            ("dam", "heal", 50.0),
+            ("aerodrome", "gold", 50.0),
+            ("spaceport", "science", 25.0),
+            ("government_plaza", "culture", 25.0),
+            ("diplomatic_quarter", "culture", 25.0),
+            ("preserve", "gold", 50.0),
+        ];
+        for (district, yield_type, amount) in districts {
+            let reward = &game.rules.districts[district].pillage;
+            assert_eq!(reward.yield_type, yield_type, "{district}");
+            assert_eq!(reward.amount, amount, "{district}");
+        }
+    }
+
+    #[test]
+    fn barbarians_do_not_heal_passively_but_healing_plunder_still_works() {
+        let (mut game, center, _) = controlled_game(2991);
+        let enemy_city = game.found_city_for(1, center, None);
+        let farm = game.cities[&enemy_city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != center)
+            .unwrap();
+        game.map.tiles.get_mut(&farm).unwrap().improvement = Some("farm".to_string());
+        game.players[0].is_barbarian = true;
+        game.players[0].policies.insert("raid".to_string());
+        game.world_era = 8;
+        let barbarian = game.spawn_test_unit("warrior", 0, farm);
+        game.units.get_mut(&barbarian).unwrap().hp = 40;
+
+        assert_eq!(game.unit_heal_rate(barbarian), 0);
+        game.begin_turn(0);
+        assert_eq!(game.units[&barbarian].hp, 40);
+
+        game.apply(0, &Action::Pillage { unit: barbarian })
+            .unwrap();
+        assert_eq!(
+            game.units[&barbarian].hp, 90,
+            "healing plunder is the fixed 50 HP even in the Future Era with Raid"
+        );
+    }
+
+    #[test]
+    fn pillage_rewards_scale_and_stack_with_norway_raid_and_the_chapel() {
+        let (mut game, center, _) = controlled_game(2992);
+        game.players[0].civ = "Norway".to_string();
+        game.players[0].policies.insert("raid".to_string());
+        game.world_era = 2;
+        game.game_speed = GameSpeed::Online;
+        assert_eq!(
+            game.scaled_pillage_amount(
+                0,
+                &PillageReward {
+                    yield_type: "gold".to_string(),
+                    amount: 50.0,
+                },
+            ),
+            112.5
+        );
+        game.game_speed = GameSpeed::Standard;
+
+        let home_center = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| {
+                game.wdist(center, *position) >= 6 && game.wdisk(*position, 1).len() == 7
+            })
+            .unwrap();
+        let home_city = game.found_city_for(0, home_center, None);
+        let plaza = game.cities[&home_city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != home_center)
+            .unwrap();
+        set_controlled_district(&mut game, home_city, plaza, "government_plaza");
+        game.cities
+            .get_mut(&home_city)
+            .unwrap()
+            .buildings
+            .push("grand_masters_chapel".to_string());
+
+        let enemy_city = game.found_city_for(1, center, None);
+        let mine = game.cities[&enemy_city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != center)
+            .unwrap();
+        game.map.tiles.get_mut(&mine).unwrap().improvement = Some("mine".to_string());
+        let raider = game.spawn_test_unit("warrior", 0, mine);
+        let (gold, science, faith) = (
+            game.players[0].gold,
+            game.players[0].research_overflow,
+            game.players[0].faith,
+        );
+
+        game.apply(0, &Action::Pillage { unit: raider }).unwrap();
+        assert_eq!(game.players[0].gold - gold, 225.0);
+        assert_eq!(game.players[0].research_overflow - science, 67.5);
+        assert_eq!(game.players[0].faith - faith, 67.5);
+    }
+
+    #[test]
+    fn every_district_layer_pays_the_district_reward() {
+        let (mut game, center, _) = controlled_game(2993);
+        let enemy_city = game.found_city_for(1, center, None);
+        let campus = game.cities[&enemy_city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != center)
+            .unwrap();
+        set_controlled_district(&mut game, enemy_city, campus, "campus");
+        game.cities
+            .get_mut(&enemy_city)
+            .unwrap()
+            .buildings
+            .extend(["library".to_string(), "university".to_string()]);
+        let raider = game.spawn_test_unit("horseman", 0, campus);
+        let science = game.players[0].research_overflow;
+
+        for (layer, expected_building) in
+            [(1, Some("university")), (2, Some("library")), (3, None)]
+        {
+            game.units.get_mut(&raider).unwrap().moves_left = 4.0;
+            game.apply(0, &Action::Pillage { unit: raider }).unwrap();
+            assert_eq!(
+                game.players[0].research_overflow - science,
+                25.0 * f64::from(layer),
+                "campus building and base layers all pay Science"
+            );
+            if let Some(building) = expected_building {
+                assert!(game.cities[&enemy_city]
+                    .pillaged_buildings
+                    .contains(building));
+            }
+        }
+        assert!(game.map.tiles[&campus].pillaged);
+    }
+
+    #[test]
+    fn coastal_raids_spend_movement_and_loot_is_flat_gold() {
+        let (mut game, center, _) = controlled_game(2994);
+        let enemy_city = game.found_city_for(1, center, None);
+        let target = game.cities[&enemy_city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != center)
+            .unwrap();
+        game.map.tiles.get_mut(&target).unwrap().improvement = Some("farm".to_string());
+        let origin = game
+            .nbrs(target)
+            .into_iter()
+            .find(|position| *position != center)
+            .unwrap();
+        game.map.tiles.get_mut(&origin).unwrap().terrain = "coast".to_string();
+        let privateer = game.spawn_test_unit("privateer", 0, origin);
+        game.units
+            .get_mut(&privateer)
+            .unwrap()
+            .promotions
+            .insert("loot".to_string());
+        game.units.get_mut(&privateer).unwrap().hp = 25;
+        let attacks = game.units[&privateer].attacks_left;
+        let gold = game.players[0].gold;
+
+        game.apply(
+            0,
+            &Action::CoastalRaid {
+                unit: privateer,
+                target,
+            },
+        )
+        .unwrap();
+        assert_eq!(game.units[&privateer].hp, 75);
+        assert_eq!(game.players[0].gold - gold, 50.0);
+        assert_eq!(game.units[&privateer].moves_left, 1.0);
+        assert_eq!(game.units[&privateer].attacks_left, attacks);
+
+        let (mut norway, center, _) = controlled_game(2995);
+        norway.players[0].civ = "Norway".to_string();
+        let enemy_city = norway.found_city_for(1, center, None);
+        let target = norway.cities[&enemy_city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != center)
+            .unwrap();
+        norway.map.tiles.get_mut(&target).unwrap().improvement = Some("mine".to_string());
+        let origin = norway
+            .nbrs(target)
+            .into_iter()
+            .find(|position| *position != center)
+            .unwrap();
+        norway.map.tiles.get_mut(&origin).unwrap().terrain = "coast".to_string();
+        let galley = norway.spawn_test_unit("galley", 0, origin);
+        norway.units.get_mut(&galley).unwrap().attacks_left = 0;
+        assert!(norway.can_coastal_raid(0, &norway.units[&galley]));
+        norway
+            .apply(
+                0,
+                &Action::CoastalRaid {
+                    unit: galley,
+                    target,
+                },
+            )
+            .unwrap();
+        assert_eq!(norway.players[0].research_overflow, 15.0);
+        assert_eq!(norway.units[&galley].moves_left, 0.0);
     }
 
     #[test]

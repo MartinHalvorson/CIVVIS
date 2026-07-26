@@ -157,6 +157,16 @@ pub struct HarvestSpec {
     pub tech: Option<String>,
 }
 
+/// The base Standard-speed spoils from pillaging one improvement or one
+/// district layer. Non-healing rewards scale with game speed and world era.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PillageReward {
+    #[serde(rename = "yield")]
+    pub yield_type: String,
+    pub amount: f64,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ImprovementSpec {
     #[serde(default)]
@@ -197,6 +207,15 @@ pub struct ImprovementSpec {
     pub unbuildable: bool,
     #[serde(default = "default_true")]
     pub builder_buildable: bool,
+    /// Some improvements (Great Walls, Corporations, and National Parks) may
+    /// be damaged by disasters but cannot be pillaged by units.
+    #[serde(default = "default_true")]
+    pub unit_pillageable: bool,
+    #[serde(default)]
+    pub pillage: PillageReward,
+    /// Ability-keyed extra spoils, currently Harald's improvement bonuses.
+    #[serde(default)]
+    pub bonus_pillage: BTreeMap<String, PillageReward>,
     #[serde(default)]
     pub effects: BTreeMap<String, f64>,
 }
@@ -389,6 +408,8 @@ pub struct DistrictSpec {
     pub appeal: f64,
     #[serde(default)]
     pub loyalty: f64,
+    #[serde(default)]
+    pub pillage: PillageReward,
     #[serde(default)]
     pub effects: BTreeMap<String, f64>,
 }

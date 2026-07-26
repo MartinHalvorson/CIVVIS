@@ -21,7 +21,8 @@
       "pamukkale": {"science": 2},
       "government_plaza": {"science": 1}
     },
-    "great_person_points": {"scientist": 1}
+    "great_person_points": {"scientist": 1},
+    "pillage": {"yield": "science", "amount": 25}
   },
   "holy_site": {
     "cost": 54,
@@ -38,7 +39,8 @@
       "government_plaza": {"faith": 1}
     },
     "great_person_points": {"prophet": 1},
-    "appeal": 1
+    "appeal": 1,
+    "pillage": {"yield": "faith", "amount": 25}
   },
   "encampment": {
     "cost": 54,
@@ -64,7 +66,8 @@
       "pamukkale": {"gold": 2},
       "government_plaza": {"gold": 1}
     },
-    "great_person_points": {"merchant": 1}
+    "great_person_points": {"merchant": 1},
+    "pillage": {"yield": "gold", "amount": 50}
   },
   "harbor": {
     "cost": 54,
@@ -79,7 +82,8 @@
       "city_center": {"gold": 2},
       "government_plaza": {"gold": 1}
     },
-    "great_person_points": {"admiral": 1}
+    "great_person_points": {"admiral": 1},
+    "pillage": {"yield": "gold", "amount": 50}
   },
   "theater_square": {
     "cost": 54,
@@ -96,7 +100,8 @@
       "government_plaza": {"culture": 1}
     },
     "great_person_points": {"writer": 1, "artist": 1, "musician": 1},
-    "appeal": 1
+    "appeal": 1,
+    "pillage": {"yield": "culture", "amount": 25}
   },
   "industrial_zone": {
     "cost": 54,
@@ -116,7 +121,8 @@
       "government_plaza": {"production": 1}
     },
     "great_person_points": {"engineer": 1},
-    "appeal": -1
+    "appeal": -1,
+    "pillage": {"yield": "science", "amount": 25}
   },
   "entertainment_complex": {
     "cost": 54,
@@ -125,7 +131,8 @@
     "yields": {},
     "amenity": 1,
     "appeal": 1,
-    "excludes": ["water_park"]
+    "excludes": ["water_park"],
+    "pillage": {"yield": "heal", "amount": 50}
   },
   "water_park": {
     "cost": 54,
@@ -136,7 +143,8 @@
     "yields": {},
     "amenity": 1,
     "appeal": 1,
-    "excludes": ["entertainment_complex"]
+    "excludes": ["entertainment_complex"],
+    "pillage": {"yield": "heal", "amount": 50}
   },
   "aqueduct": {
     "cost": 36,
@@ -147,7 +155,8 @@
     "effects": {
       "geothermal_amenity": 1,
       "drought_protection": 1
-    }
+    },
+    "pillage": {"yield": "gold", "amount": 50}
   },
   "neighborhood": {
     "cost": 54,
@@ -156,7 +165,8 @@
     "max_per_city": null,
     "placement": "land",
     "yields": {},
-    "effects": {"appeal_housing_max": 6}
+    "effects": {"appeal_housing_max": 6},
+    "pillage": {"yield": "gold", "amount": 50}
   },
   "canal": {
     "cost": 81,
@@ -166,7 +176,8 @@
     "placement": "canal",
     "yields": {},
     "appeal": 1,
-    "effects": {"naval_passage": 1}
+    "effects": {"naval_passage": 1},
+    "pillage": {"yield": "gold", "amount": 50}
   },
   "dam": {
     "cost": 81,
@@ -178,7 +189,8 @@
     "housing": 3,
     "amenity": 1,
     "appeal": 1,
-    "effects": {"flood_protection": 1, "drought_protection": 1}
+    "effects": {"flood_protection": 1, "drought_protection": 1},
+    "pillage": {"yield": "heal", "amount": 50}
   },
   "aerodrome": {
     "cost": 54,
@@ -187,7 +199,8 @@
     "placement": "flat_land",
     "yields": {},
     "air_slots": 2,
-    "appeal": -1
+    "appeal": -1,
+    "pillage": {"yield": "gold", "amount": 50}
   },
   "spaceport": {
     "cost": 1800,
@@ -196,7 +209,8 @@
     "max_per_city": null,
     "placement": "flat_land",
     "yields": {},
-    "appeal": -1
+    "appeal": -1,
+    "pillage": {"yield": "science", "amount": 25}
   },
   "government_plaza": {
     "cost": 30,
@@ -205,7 +219,8 @@
     "max_per_empire": 1,
     "yields": {},
     "loyalty": 8,
-    "effects": {"governor_titles": 1}
+    "effects": {"governor_titles": 1},
+    "pillage": {"yield": "culture", "amount": 25}
   },
   "diplomatic_quarter": {
     "cost": 30,
@@ -213,7 +228,8 @@
     "tech": "mathematics",
     "max_per_empire": 1,
     "yields": {},
-    "effects": {"envoy_if_adjacent_city_center": 1, "spy_defense_levels": 2}
+    "effects": {"envoy_if_adjacent_city_center": 1, "spy_defense_levels": 2},
+    "pillage": {"yield": "culture", "amount": 25}
   },
   "preserve": {
     "cost": 54,
@@ -221,7 +237,8 @@
     "placement": "not_adjacent_city",
     "yields": {},
     "appeal": 1,
-    "effects": {"appeal_housing_max": 3, "culture_bomb": 1}
+    "effects": {"appeal_housing_max": 3, "culture_bomb": 1},
+    "pillage": {"yield": "gold", "amount": 50}
   },
 
   "acropolis": {

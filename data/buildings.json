@@ -1405,7 +1405,8 @@
     "maintenance": 2,
     "effects": {
       "faith_purchase_land_units": 1,
-      "pillaging_faith_pct": 50
+      "pillage_improvement_faith": 15,
+      "pillage_district_faith": 30
     }
   },
   "queens_bibliotheque": {

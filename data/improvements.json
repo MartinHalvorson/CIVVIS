@@ -20,7 +20,8 @@
    "grassland_floodplains",
    "plains_floodplains",
    "volcanic_soil"
-  ]
+  ],
+  "pillage": {"yield": "heal", "amount": 50}
  },
  "fishery": {
   "yields": {
@@ -36,7 +37,8 @@
    "liang_production": 1
   },
   "housing": 0.5,
-  "tech": "sailing"
+  "tech": "sailing",
+  "pillage": {"yield": "heal", "amount": 50}
  },
  "city_park": {
   "yields": {
@@ -54,7 +56,8 @@
    "plains",
    "snow",
    "tundra"
-  ]
+  ],
+  "pillage": {"yield": "heal", "amount": 50}
  },
  "mine": {
   "tech": "mining",
@@ -88,7 +91,9 @@
   ],
   "effects": {
    "adjacent_appeal": -1
-  }
+  },
+  "pillage": {"yield": "gold", "amount": 50},
+  "bonus_pillage": {"knarr": {"yield": "science", "amount": 15}}
  },
  "quarry": {
   "tech": "mining",
@@ -103,7 +108,9 @@
   "resource_only": true,
   "effects": {
    "adjacent_appeal": -1
-  }
+  },
+  "pillage": {"yield": "faith", "amount": 25},
+  "bonus_pillage": {"knarr": {"yield": "culture", "amount": 15}}
  },
  "pasture": {
   "tech": "animal_husbandry",
@@ -116,7 +123,9 @@
    "horses",
    "sheep"
   ],
-  "resource_only": true
+  "resource_only": true,
+  "pillage": {"yield": "faith", "amount": 25},
+  "bonus_pillage": {"knarr": {"yield": "culture", "amount": 15}}
  },
  "plantation": {
   "tech": "irrigation",
@@ -140,7 +149,9 @@
    "tobacco",
    "wine"
   ],
-  "resource_only": true
+  "resource_only": true,
+  "pillage": {"yield": "faith", "amount": 25},
+  "bonus_pillage": {"knarr": {"yield": "culture", "amount": 15}}
  },
  "camp": {
   "tech": "animal_husbandry",
@@ -155,7 +166,9 @@
    "ivory",
    "truffles"
   ],
-  "resource_only": true
+  "resource_only": true,
+  "pillage": {"yield": "faith", "amount": 25},
+  "bonus_pillage": {"knarr": {"yield": "culture", "amount": 15}}
  },
  "fishing_boats": {
   "tech": "sailing",
@@ -172,7 +185,8 @@
    "whales"
   ],
   "resource_only": true,
-  "water": true
+  "water": true,
+  "pillage": {"yield": "heal", "amount": 50}
  },
  "lumber_mill": {
   "tech": "construction",
@@ -184,7 +198,8 @@
   ],
   "feature_after_civic": {
    "jungle": "mercantilism"
-  }
+  },
+  "pillage": {"yield": "gold", "amount": 50}
  },
  "oil_well": {
   "tech": "refining",
@@ -204,7 +219,8 @@
   ],
   "effects": {
    "adjacent_appeal": -1
-  }
+  },
+  "pillage": {"yield": "gold", "amount": 50}
  },
  "offshore_oil_rig": {
   "tech": "plastics",
@@ -222,7 +238,8 @@
   ],
   "effects": {
    "adjacent_appeal": -1
-  }
+  },
+  "pillage": {"yield": "gold", "amount": 50}
  },
  "wind_farm": {
   "tech": "composites",
@@ -240,7 +257,8 @@
    "plains",
    "snow",
    "tundra"
-  ]
+  ],
+  "pillage": {"yield": "gold", "amount": 50}
  },
  "geothermal_plant": {
   "tech": "synthetic_materials",
@@ -253,7 +271,8 @@
   ],
   "effects": {
    "power": 4
-  }
+  },
+  "pillage": {"yield": "gold", "amount": 50}
  },
  "solar_farm": {
   "tech": "satellites",
@@ -270,7 +289,8 @@
    "grassland",
    "plains",
    "tundra"
-  ]
+  ],
+  "pillage": {"yield": "gold", "amount": 50}
  },
  "offshore_wind_farm": {
   "tech": "predictive_systems",
@@ -284,7 +304,8 @@
   "water": true,
   "effects": {
    "power": 2
-  }
+  },
+  "pillage": {"yield": "gold", "amount": 50}
  },
  "seaside_resort": {
   "tech": "radio",
@@ -301,7 +322,8 @@
   "effects": {
    "appeal_gold": 1,
    "appeal_tourism": 1
-  }
+  },
+  "pillage": {"yield": "gold", "amount": 50}
  },
  "ski_resort": {
   "civic": "professional_sports",
@@ -313,7 +335,8 @@
    "appeal_tourism": 1,
    "amenity": 1,
    "unworkable": 1
-  }
+  },
+  "unit_pillageable": false
  },
  "seastead": {
   "tech": "seasteads",
@@ -331,7 +354,8 @@
    "adjacent_reef_culture": 1,
    "adjacent_reef_tourism": 1
   },
-  "housing": 2
+  "housing": 2,
+  "pillage": {"yield": "heal", "amount": 50}
  },
  "fort": {
   "tech": "siege_tactics",
@@ -392,7 +416,8 @@
   ],
   "effects": {
    "passage": 1
-  }
+  },
+  "unit_pillageable": false
  },
  "industry": {
   "tech": "currency",
@@ -409,7 +434,8 @@
   "resource_only": true,
   "effects": {
    "great_merchant_points": 1
-  }
+  },
+  "pillage": {"yield": "gold", "amount": 50}
  },
  "corporation": {
   "tech": "economics",
@@ -424,7 +450,9 @@
    "salt"
   ],
   "resource_only": true,
-  "unbuildable": true
+  "unbuildable": true,
+  "unit_pillageable": false,
+  "pillage": {"yield": "gold", "amount": 50}
  },
  "sphinx": {
   "civic": "craftsmanship",
@@ -448,7 +476,8 @@
    "floodplains_culture": 1,
    "adjacent_wonder_faith": 2,
    "adjacent_appeal": 1
-  }
+  },
+  "pillage": {"yield": "faith", "amount": 25}
  },
  "great_wall": {
   "tech": "masonry",
@@ -469,7 +498,9 @@
   ],
   "feature": [
    "volcanic_soil"
-  ]
+  ],
+  "unit_pillageable": false,
+  "pillage": {"yield": "gold", "amount": 50}
  },
  "nubian_pyramid": {
   "tech": "masonry",
@@ -484,7 +515,8 @@
   "feature": [
    "floodplains"
   ],
-  "requires_flat": false
+  "requires_flat": false,
+  "pillage": {"yield": "faith", "amount": 25}
  },
  "kurgan": {
   "tech": "animal_husbandry",
@@ -504,7 +536,8 @@
   "effects": {
    "adjacent_pasture_faith": 1,
    "adjacent_pasture_faith_after_stirrups": 2
-  }
+  },
+  "pillage": {"yield": "faith", "amount": 25}
  },
  "national_park": {
   "civic": "conservation",
@@ -515,7 +548,8 @@
    "host_city_amenity": 2,
    "nearby_city_amenity": 1,
    "nearby_city_count": 4
-  }
+  },
+  "unit_pillageable": false
  },
  "archaeological_dig": {
   "civic": "natural_history",
