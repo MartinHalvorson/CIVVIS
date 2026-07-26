@@ -21403,20 +21403,14 @@ function syncLeaderPool() {
   if (leaders.some(entry => entry.civ === selected)) select.value = selected;
 }
 
-// Earth is the one world type whose shape is not the lobby's to choose: it is
-// drawn from real longitudes and latitudes and it closes, so it is always the
-// globe. The control shows that rather than accepting an answer the server
-// would then overrule.
+// Fixed geography chooses the coastline, not the projection. Keep the shape
+// control available for Earth just as it is for every generated map type.
 function syncEarthShape() {
   const type = document.getElementById("maptype");
   const shape = document.getElementById("mapshape");
   if (!type || !shape) return;
-  const earth = type.value === "true_start_earth";
-  if (earth) shape.value = "planet";
-  shape.disabled = earth;
-  shape.title = earth
-    ? "Earth is drawn from real longitudes and latitudes, so it is always a globe."
-    : "";
+  shape.disabled = false;
+  shape.title = "";
 }
 
 // The saves this server is holding. A build without the save endpoints simply
