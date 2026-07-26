@@ -1392,3 +1392,37 @@ n=400 **failed** under the same rules, reaching an e-process of 1.97e4 with
 46 map directions to 12 and still reading INCONCLUSIVE, because its smaller
 54.2% effect needs roughly 540 maps to move the Wilson bound. Both
 pre-registrations are reported; only one succeeded.
+
+## 2026-07-26 — the value net can now train on features that see the decision
+
+`decision_features` measured 86.1% action visibility against
+`evolve::features`' 44.5%, but nothing could train on it: `ValueNet`
+hard-validated a 25-wide input and both the exporter and the Python trainer
+had the width baked in. This removes that.
+
+- `ValueNet::valid` now checks structure rather than a literal: four
+  layers, a pinned `[..., 64, 32, 1]` hidden shape so the Rust evaluator
+  and the trainer cannot disagree, and a free input width.
+- `ValueNet::input_width` and `ValueNet::load_width(dir, width)` resolve
+  the mismatch **at load time**. A directory can now hold either artifact,
+  and an agent that evaluated the wrong one would return numbers rather
+  than an error — the failure mode this codebase has spent the session
+  removing. Every existing consumer now asks for `evolve::FEATURE_WIDTH`
+  explicitly, so a 34-wide net dropped into `evolved/` is refused by the
+  25-wide agents instead of being silently mis-evaluated. `eval` panics on
+  a width mismatch, because reaching it means the load-time check was
+  skipped.
+- `civvis selfplay --decision-features` records the 34-wide vector;
+  `tools/train_valuenet.py` reads the width from the corpus instead of
+  assuming it, and warns if a file mixes widths.
+
+Verified end to end: a three-game smoke wrote 36 columns (34 features, a
+label, a game index) and the trainer reports the width it inferred.
+
+This is plumbing, deliberately shipped without a strength claim. The
+question it exists to answer — whether an evaluator that can see the
+decision changes one — needs a matched corpus and a trained artifact, and
+those are the next step, not this entry. Note in advance what a fair
+comparison requires: the 25-wide and 34-wide corpora must come from the
+same games and settings, or the comparison confounds representation with
+sampling.

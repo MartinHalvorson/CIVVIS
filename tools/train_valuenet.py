@@ -20,8 +20,31 @@ import math
 import os
 import random
 
-SIZES = [25, 64, 32, 1]
+# Input width is read from the corpus; the hidden shape is pinned so the
+# Rust evaluator (`ValueNet::valid`) and this trainer cannot disagree.
+HIDDEN = [64, 32, 1]
+SIZES = [25] + HIDDEN
 EPSILON = 1e-7
+
+
+def infer_width(path):
+    """Feature width of a corpus, from its widest well-formed row.
+
+    Rows are `width` features plus a label plus a game index. Two widths
+    are in use — 25 empire aggregates, and the 34-wide `decision_features`
+    that extends them — so the trainer reads it rather than assuming.
+    """
+    widths = {}
+    with open(path, newline="") as source:
+        for raw in csv.reader(source):
+            if len(raw) >= 3:
+                widths[len(raw) - 2] = widths.get(len(raw) - 2, 0) + 1
+    if not widths:
+        raise SystemExit(f"{path}: no rows with a feature/label/game layout")
+    width = max(widths, key=widths.get)
+    if len(widths) > 1:
+        print(f"warning: mixed row widths {sorted(widths)}; using {width}")
+    return width
 
 
 def load_rows(path):
@@ -354,7 +377,11 @@ def main():
     if args.epochs < 1:
         parser.error("--epochs must be at least 1")
 
-    rows = load_rows(os.path.join(args.dir, "dataset.csv"))
+    dataset = os.path.join(args.dir, "dataset.csv")
+    # Set the input width from the corpus before anything reads SIZES.
+    SIZES[0] = infer_width(dataset)
+    print(f"input width {SIZES[0]} from {dataset}")
+    rows = load_rows(dataset)
     train, validation, test, train_games, validation_games, test_games = split_by_game(
         rows, args.seed
     )
