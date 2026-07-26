@@ -334,29 +334,34 @@ Both offer the one thing still useful: another game, started from the setup
 panel. A spectated finale keeps its countdown instead, because the supervisor
 owns that handoff.
 
-### One more turn
+### Continue after victory
 
-A finale with a victor also offers to keep the world. **One more turn** puts
-the same map back into play for another 25 turns — the same seed, the same
-empires, from the turn the victory was declared on.
+A finale with a victor also offers three ways to keep the same map, seed, and
+empires from the turn on which victory was declared:
+
+- **Take a look around** returns the world under the next-victory rule but
+  pauses the exhibition before another AI turn can run. Resume whenever you
+  are ready from the normal simulation controls. A human game already waits
+  for its player's next action.
+- **Play until next victory condition** resumes immediately and stops when a
+  civilization earns a result other than the exact result on the finale.
+- **Play indefinitely** resumes immediately and ignores every later victory.
+
+All three choices remove the turn cap from the continued world.
 
 - The result is not thrown away. It is recorded as the game's verdict, the
   turn readout gains a *Playing on* line, and the league rating that was
   written when the victory landed is never written again.
-- No victory can be declared during borrowed turns, including the one that was
-  just won. A science victory is still won on the turn after it was won, so a
-  game that only cleared its winner would re-declare the same result
-  immediately and the button would do nothing.
-- When the extension runs out the original verdict is restored — not a fresh
-  score count, which would be free to name somebody else — and the finale
-  comes back with the offer again.
+- The exact winner and victory path shown on the finale cannot immediately
+  repeat. A genuinely later result can end the next-victory continuation;
+  indefinite play suppresses all of them.
 
 The offer is real on the exhibition too. Every result a browser can see is held
 for at least five seconds (`--restart-ms` may ask for longer, never shorter),
 the countdown is published on the same state that first carries the winner, and
-the supervisor re-reads the world after its cooldown: a world that was asked
-for more turns is left running instead of being retired. Borrowed turns are not
-a setting, so the raised turn limit is never carried into the next game.
+the supervisor re-reads the world after its cooldown: a continued world is not
+retired. Continuing is not a setup setting, so its uncapped turn rule is never
+carried into the next game.
 Headless simulation — `civvis sim`, soaks, the league — has no result screen and
 no viewer, and waits for nothing.
 

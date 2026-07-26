@@ -37,6 +37,8 @@ const EMBEDDED_NATURAL_WONDER_ATLAS: &[u8] =
 const EMBEDDED_WORLD_WONDER_ATLAS: &[u8] =
     include_bytes!("../web/assets/world-wonder-atlas.png");
 const EMBEDDED_MOUNTAIN_ATLAS: &[u8] = include_bytes!("../web/assets/mountain-atlas.png");
+const EMBEDDED_HIDDEN_MAP_MONSTERS: &[u8] =
+    include_bytes!("../web/assets/hidden-map-monsters.png");
 
 /// The agents that exist in every build, whether or not a league snapshot is
 /// on disk, with the handle the leaderboards give them. `make_send_ai`
@@ -1466,9 +1468,6 @@ impl Session {
     }
 
     fn set_view_player(&mut self, player: Option<usize>) -> Result<(), String> {
-        if !self.params.spectate && player.is_none() {
-            return Err("player views are only available in spectate mode".into());
-        }
         if let Some(pid) = player {
             let Some(candidate) = self.game.players.get(pid) else {
                 return Err(format!("unknown player {pid}"));
@@ -1476,12 +1475,12 @@ impl Session {
             if candidate.is_minor || candidate.is_barbarian {
                 return Err(format!("player {pid} is not a major civilization"));
             }
-            // Selecting a civilization from the HUD is also the handoff from
-            // an interactive match to AI-only observation. Keep the current
-            // world intact; the already-created AI fleet can take over every
-            // seat on the next spectator step.
-            self.params.spectate = true;
         }
+        // Selecting either a civilization or the all-player Spectator heading
+        // in the HUD is the handoff from an interactive match to AI-only
+        // observation. Keep the current world intact; the already-created AI
+        // fleet can take over every seat on the next spectator step.
+        self.params.spectate = true;
         self.view_player = player;
         Ok(())
     }
@@ -2123,6 +2122,11 @@ fn mountain_atlas() -> Vec<u8> {
         .unwrap_or_else(|_| EMBEDDED_MOUNTAIN_ATLAS.to_vec())
 }
 
+fn hidden_map_monsters() -> Vec<u8> {
+    std::fs::read("web/assets/hidden-map-monsters.png")
+        .unwrap_or_else(|_| EMBEDDED_HIDDEN_MAP_MONSTERS.to_vec())
+}
+
 /// Where a single-player game keeps its own saves, relative to the process's
 /// working directory. Files are named `*.save.json`, which `.gitignore`
 /// already covers, so a game played inside a checkout leaves the tree clean.
@@ -2569,6 +2573,17 @@ fn auto_step_loop(sh: Arc<Shared>) {
         // Once registered, its current frame must be painted before any more
         // simulation work starts.
         let simulation_frame_gate = sh.simulation_frame_gate.lock().unwrap();
+        // A request can pause while this loop is waiting for the frame gate.
+        // Check again after entering it so a play-on-and-pause transition can
+        // clear the winner without one already-admitted AI step slipping past
+        // the new pause.
+        if sh.paused.load(Ordering::Relaxed) {
+            over_since = None;
+            watched_turn = None;
+            drop(simulation_frame_gate);
+            std::thread::sleep(Duration::from_millis(150));
+            continue;
+        }
         let current_frame = {
             let s = sh.session.lock().unwrap();
             SpectatorFrame {
@@ -2792,6 +2807,9 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         }
         ("GET", "/assets/mountain-atlas.png") => {
             respond(stream, "200 OK", "image/png", &mountain_atlas());
+        }
+        ("GET", "/assets/hidden-map-monsters.png") => {
+            respond(stream, "200 OK", "image/png", &hidden_map_monsters());
         }
         // A lock-free identity probe for supervised process handoffs. The
         // browser used to fetch the multi-megabyte `/state` document here and
@@ -3272,10 +3290,10 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             decorate(&mut out, sh);
             respond_json(stream, &out);
         }
-        // "One more turn": carry the decided world on instead of retiring it.
-        // The countdown is cleared here rather than left to the stepper, so a
-        // state read between the press and the stepper's next pass never
-        // reports a restart that is no longer coming.
+        // Carry the decided world on instead of retiring it. `paused` is part
+        // of the same transition: the frame gate makes "look around" clear the
+        // winner and stop the stepper atomically, rather than racing a second
+        // request to /pace against the first continued turn.
         ("POST", "/play-on") => {
             let mode_name = parsed["mode"].as_str().unwrap_or("until_next_victory");
             let Some(mode) = PlayOnMode::parse(mode_name) else {
@@ -3285,8 +3303,19 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 );
                 return;
             };
+            let requested_pause = parsed.get("paused").and_then(Value::as_bool);
+            let simulation_frame_gate = sh.simulation_frame_gate.lock().unwrap();
             let mut session = sh.session.lock().unwrap();
             let played_on = session.play_on(mode);
+            if played_on {
+                if let Some(paused) = requested_pause {
+                    sh.paused.store(paused, Ordering::Relaxed);
+                    session.spectator_paused = paused;
+                }
+                // Clear this before taking the response snapshot, so it can
+                // never promise both a paused continuation and a new world.
+                sh.restart_in.store(u64::MAX, Ordering::Relaxed);
+            }
             let mut out = session.state();
             out["error"] = if played_on {
                 Value::Null
@@ -3294,9 +3323,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 json!("this game has no result to play on past")
             };
             drop(session);
-            if played_on {
-                sh.restart_in.store(u64::MAX, Ordering::Relaxed);
-            }
+            drop(simulation_frame_gate);
             decorate(&mut out, sh);
             respond_json(stream, &out);
         }
@@ -3395,7 +3422,8 @@ mod tests {
         request_path, save_path, seat_delay_ms, strategy_roster, tile_mark, ChronicleSnapshot,
         ChronicleState, FrameDelivery, Params,
         Session, Shared, SpectatorFrame, EMBEDDED_CINEMATIC_3D, EMBEDDED_INDEX, MIN_RESTART_MS,
-        EMBEDDED_WORLD_WONDER_ATLAS, SAVE_DIR, STATE_LONG_POLL, VIEWER_ACTIVE,
+        EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_WORLD_WONDER_ATLAS, SAVE_DIR, STATE_LONG_POLL,
+        VIEWER_ACTIVE,
     };
     use crate::game::{
         Action, Game, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL,
@@ -4015,9 +4043,9 @@ mod tests {
             &http_post(
                 port,
                 "/play-on",
-                "{\"mode\":\"until_next_victory\"}",
+                "{\"mode\":\"until_next_victory\",\"paused\":true}",
             )
-            .expect("play on"),
+            .expect("look around"),
         )
         .expect("play-on answers JSON");
         assert!(played_on["error"].is_null());
@@ -4037,8 +4065,18 @@ mod tests {
         assert!(played_on["turn_limit"].is_null(), "there is no new cap");
         assert_eq!(played_on["max_turns"], json!(3), "setup stays intact");
         assert_eq!(played_on["seed"], decided["seed"], "the same world");
+        assert_eq!(played_on["paused"], json!(true));
+        assert_eq!(played_on["spectator_paused"], json!(true));
 
-        http_post(port, "/pace", "{\"paused\":true}");
+        // "Take a look around" means the final map really is held. A pause
+        // posted separately from play-on could let the stepper claim one AI
+        // turn in between the two requests.
+        std::thread::sleep(Duration::from_millis(350));
+        let held = read("/state");
+        assert_eq!(held["seed"], decided["seed"]);
+        assert_eq!(held["turn"], played_on["turn"]);
+        assert!(held["winner"].is_null());
+        assert_eq!(held["paused"], json!(true));
     }
 
     /// Two tabs on one exhibition are two promises, not one.
@@ -5137,13 +5175,20 @@ mod tests {
             "const playerScroll = hud.querySelector(\".diplomacy-ribbon\")?.scrollTop || 0;"
         ));
         assert!(EMBEDDED_INDEX.contains("playerRibbon.scrollTop = playerScroll;"));
-        // The masthead grows toward the right rail but never beneath it. The
-        // tracker grows by the contender rows it shows but never through the
-        // minimap seam.
+        // The masthead grows toward the victory tracker but never beneath it,
+        // and the tracker is the only instrument beside it along the top edge.
+        // Measuring that seam against --hud-rail-width — the wider reservation
+        // the minimap needs in the bottom corner — left 192px of empty map
+        // between the two panels at 1600px while the values were squeezed to
+        // 27px each. The rail width still governs the minimap.
         assert!(EMBEDDED_INDEX.contains("--hud-rail-width:"));
         assert!(EMBEDDED_INDEX.contains(
             "width: min(var(--player-hud-width, 100%),\n      \
-             calc(100% - min(var(--hud-rail-width), var(--hud-rail-share)) - 32px));"
+             calc(100% - var(--victory-hud-width) - 20px));"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "width: min(var(--hud-rail-width), var(--hud-rail-share)); \
+             height: var(--minimap-height);"
         ));
         assert!(EMBEDDED_INDEX.contains(
             "height: min(var(--victory-hud-height, 100%),\n      \
@@ -5163,8 +5208,27 @@ mod tests {
         // no column heading; the button carries its own visible label.
         assert!(EMBEDDED_INDEX.contains(
             "grid-template-columns: var(--hud-lock-column, 0px) var(--hud-map-links-column)\n      \
-             var(--hud-watch-column) var(--hud-identity-column) minmax(0, 1fr);"
+             var(--hud-watch-column) var(--hud-identity-column) var(--hud-stats-column);"
         ));
+        // The values claim their width first and the identity block flexes, so a
+        // narrow masthead ellipsizes a name rather than running two figures
+        // together. A percentage identity column with a 300px floor never
+        // yielded, which left the ten values 27px each at 1600px.
+        assert!(EMBEDDED_INDEX.contains("--hud-identity-column: minmax(196px, 1fr);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "--hud-stats-column: minmax(\n      \
+             calc(var(--hud-stat-min) * 10 + var(--hud-stat-gap) * 9), 1.02fr);"
+        ));
+        // A gutter between adjacent figures, and no per-value hairline.
+        assert!(EMBEDDED_INDEX.contains("column-gap: var(--hud-stat-gap, 0px);"));
+        // The fitter has to measure the cell: the figure is centered content in
+        // its own grid, so its clientWidth and scrollWidth are always equal and
+        // it can never report the overflow that would shrink it.
+        assert!(EMBEDDED_INDEX.contains(
+            "{selector:\"#playerhud .ribbon-stat b\", min:10, max:15, parentWidth:true},"
+        ));
+        // No coloured bloom behind eighty figures at once.
+        assert!(!EMBEDDED_INDEX.contains("text-shadow: 0 1px 2px #000, 0 0 8px currentColor;"));
         assert!(EMBEDDED_INDEX.contains(
             "class=\"empire-link\" data-hud-action=\"capital\""
         ));
@@ -5441,8 +5505,16 @@ mod tests {
             "class=\"watch-as-link\" data-hud-action=\"watch\""
         ));
         assert!(EMBEDDED_INDEX.contains(">Watch as</button>"));
+        assert!(EMBEDDED_INDEX.contains(
+            "class=\"spectator-view-link\" data-hud-action=\"spectator\""
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "Spectator mode: see everyone with full map visibility"
+        ));
+        assert!(EMBEDDED_INDEX.contains(">All</button>"));
         assert!(EMBEDDED_INDEX.contains("data-hud-action=\"watch\" data-hud-civ=\"${p.id}\""));
         assert!(EMBEDDED_INDEX.contains("data-hud-action=\"dossier\" data-hud-civ=\"${p.id}\""));
+        assert!(EMBEDDED_INDEX.contains("spectatePlayer(null);"));
         assert!(EMBEDDED_INDEX.contains("else spectatePlayer(id);"));
         assert!(EMBEDDED_INDEX.contains("async function spectatePlayer(player)"));
         // Watching one civilization is a persistent empire portrait, not a
@@ -5468,6 +5540,22 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function drawWarLog()"));
         assert!(EMBEDDED_INDEX.contains("function warsForLog(wars)"));
         assert!(EMBEDDED_INDEX.contains("id=\"warsec\""));
+        assert!(EMBEDDED_INDEX.contains("function warTheaterSubjects(war)"));
+        assert!(EMBEDDED_INDEX.contains("function focusWarOnMap(warKey)"));
+        assert!(EMBEDDED_INDEX.contains("for (const site of war.theater || []) add(site?.pos);"));
+        assert!(EMBEDDED_INDEX.contains("data-war-key=\"${escapeAttr(warLogKey(war))}\""));
+        assert!(EMBEDDED_INDEX.contains(">${mapAction}</button></div>"));
+        assert!(EMBEDDED_INDEX.contains("const mapAction = over ? \"View aftermath\" : \"Watch\";"));
+        let war_focus = EMBEDDED_INDEX
+            .split("function focusWarOnMap(warKey)")
+            .nth(1)
+            .unwrap()
+            .split("function drawWarLog()")
+            .next()
+            .unwrap();
+        assert!(war_focus.contains("takeCameraControl();"));
+        assert!(war_focus.contains("flyCameraTo(subjects[subjects.length - 1].pos"));
+        assert!(war_focus.contains("const goal = observedViewGoal(subjects, true);"));
         assert!(EMBEDDED_INDEX.contains("function warBelligerentRows("));
         assert!(EMBEDDED_INDEX.contains("function warPartyIsCityState("));
         assert!(EMBEDDED_INDEX.contains("war-row-label\">Belligerents"));
@@ -5747,6 +5835,34 @@ mod tests {
         assert!(renderer.contains("!MODE.atmosphere"));
         assert!(renderer.contains("SHX * S * .42"));
         assert!(EMBEDDED_INDEX.contains("t.wonder && !drawWorldWonderSprite(t.wonder, x, y)"));
+    }
+
+    #[test]
+    fn undiscovered_ground_is_an_illustrated_fog_safe_chart() {
+        assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.starts_with(b"\x89PNG\r\n\x1a\n"));
+        assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.len() > 1_000_000);
+        assert!(EMBEDDED_INDEX
+            .contains("HIDDEN_MAP_MONSTER_ATLAS.src = \"/assets/hidden-map-monsters.png\""));
+
+        let parchment = EMBEDDED_INDEX
+            .split("function drawHiddenMapParchment")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawHiddenMapMonsters").next())
+            .expect("continuous hidden-map parchment renderer");
+        assert!(parchment.contains("for (const cell of layer.cells) appendHexPath"));
+        assert!(parchment.contains("cx.fillStyle = PARCH; cx.fill()"));
+        assert!(!parchment.contains("PARCH_GRID"), "the hidden sheet must not expose a hex grid");
+
+        let monsters = EMBEDDED_INDEX
+            .split("function drawHiddenMapMonsters")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawHiddenMapFrontier").next())
+            .expect("hidden-map monster placement");
+        assert!(monsters.contains("hiddenMapIsDeep"));
+        assert!(monsters.contains("MODE.painted ? .48 : .41"));
+        assert!(EMBEDDED_INDEX.contains("drawHiddenMapParchment(hiddenMap);\n  drawHiddenMapMonsters(hiddenMap);"));
+        assert!(EMBEDDED_INDEX.contains("drawHiddenMapFrontier(tiles);"));
+        assert!(EMBEDDED_INDEX.contains("if (camera.chart && !spectator)"));
     }
 
     #[test]
@@ -6205,6 +6321,23 @@ mod tests {
             assert_eq!(player_view["view_player"].as_u64(), Some(pid as u64));
             assert!(player_view["map"]["tiles"].as_array().unwrap().len() < omniscient_tile_count);
         }
+    }
+
+    #[test]
+    fn selecting_all_players_promotes_the_live_match_to_omniscient_spectator_mode() {
+        let mut session = Session::new(current());
+        assert!(!session.params.spectate);
+
+        session.set_view_player(None).unwrap();
+        let spectator_view = session.state();
+
+        assert!(session.params.spectate);
+        assert_eq!(spectator_view["spectate"].as_bool(), Some(true));
+        assert!(spectator_view["view_player"].is_null());
+        assert_eq!(
+            spectator_view["visible"].as_array().unwrap().len(),
+            session.game.map.tiles.len()
+        );
     }
 
     #[test]
@@ -6740,15 +6873,24 @@ mod tests {
         // countdown, because the supervisor owns that handoff.
         assert!(EMBEDDED_INDEX.contains("class=\"primary winner-again\" onclick=\"startNewSimulation()\""));
         assert!(EMBEDDED_INDEX.contains("id=\"respawn\" role=\"timer\""));
-        // Both finales also offer the other answer: keep this world. It is
-        // the reason the countdown has to be long enough to read — a button
-        // nobody can reach before the next world loads is not an offer.
+        // Both finales also offer three ways to keep this world. It is the
+        // reason the countdown has to be long enough to read — a button nobody
+        // can reach before the next world loads is not an offer.
+        assert!(EMBEDDED_INDEX.contains("id=\"play-on-look-around\""));
         assert!(EMBEDDED_INDEX.contains("id=\"play-on-next-victory\""));
         assert!(EMBEDDED_INDEX.contains("id=\"play-on-indefinite\""));
-        assert!(EMBEDDED_INDEX.contains("One more turn (play until next victory)"));
-        assert!(EMBEDDED_INDEX.contains("One more turn (play indefinitely)"));
-        assert!(EMBEDDED_INDEX.contains("async function playOnPastVictory(mode)"));
-        assert!(EMBEDDED_INDEX.contains("body: JSON.stringify({mode})"));
+        assert!(EMBEDDED_INDEX.contains("Take a look around"));
+        assert!(EMBEDDED_INDEX.contains("Play until next victory condition"));
+        assert!(EMBEDDED_INDEX.contains("Play indefinitely"));
+        assert!(EMBEDDED_INDEX.contains(
+            "playOnPastVictory('until_next_victory', true)"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "playOnPastVictory('until_next_victory', false)"
+        ));
+        assert!(EMBEDDED_INDEX.contains("playOnPastVictory('indefinite', false)"));
+        assert!(EMBEDDED_INDEX.contains("async function playOnPastVictory(mode, paused)"));
+        assert!(EMBEDDED_INDEX.contains("body: JSON.stringify({mode, paused})"));
         assert!(EMBEDDED_INDEX.contains("cancelSupervisedSuccessorWatch();"));
     }
 
