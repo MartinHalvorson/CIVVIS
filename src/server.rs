@@ -4861,6 +4861,87 @@ mod tests {
         }
     }
 
+    /// A setting can be left unanswered. Every one of them offers `?????`, the
+    /// mark is rolled among that setting's own options at the moment a game
+    /// starts, and the start control says so before it is pressed — so nobody
+    /// finds out what they agreed to only once the world is on screen.
+    #[test]
+    fn every_game_setting_can_be_left_to_chance() {
+        for setting in [
+            "baseruleset",
+            "gamemode",
+            "starteon",
+            "startera",
+            "leaderpool",
+            "leader",
+            "difficulty",
+            "maptype",
+            "mapshape",
+            "mappoles",
+            "np",
+            "gamespeed",
+        ] {
+            let select = format!("id=\"{setting}\"");
+            let at = EMBEDDED_INDEX
+                .find(&select)
+                .unwrap_or_else(|| panic!("browser setup is missing the {setting} select"));
+            let tail = &EMBEDDED_INDEX[at..];
+            let end = tail.find("</select>").expect("unterminated select");
+            assert!(
+                tail[..end].contains("<option value=\"?????\""),
+                "the {setting} setting cannot be left at ????? "
+            );
+        }
+        // A victory condition has no option list to hold a third entry, so its
+        // third state is the checkbox's own indeterminate flag, said out loud
+        // in the label beside it.
+        for victory in ["science", "culture", "religious", "diplomatic", "domination", "score"] {
+            assert!(EMBEDDED_INDEX.contains(&format!(
+                "id=\"victory-{victory}\" checked><span>"
+            )));
+        }
+        assert_eq!(
+            EMBEDDED_INDEX
+                .matches("<span class=\"victory-random\" aria-hidden=\"true\">?????</span>")
+                .count(),
+            6
+        );
+        assert!(EMBEDDED_INDEX
+            .contains(".victory-option input:indeterminate ~ .victory-random { display: inline; }"));
+        assert!(EMBEDDED_INDEX.contains("const RANDOM_SETTING = \"?????\""));
+        // The mark never leaves the lobby: staging and starting both resolve.
+        assert!(EMBEDDED_INDEX.contains("const payload = selectedSimulationSettings(true)"));
+        assert!(EMBEDDED_INDEX.contains("return {...selectedSimulationSettings(true),"));
+        // ...and the key the restart control compares against does not, or a
+        // ????? would read as the same world it just replaced.
+        assert!(EMBEDDED_INDEX.contains("const rolling = pendingRandomSettings().length > 0;"));
+        assert!(EMBEDDED_INDEX.contains("const changed = human || rolling ||"));
+        // A roll answers among that setting's own offers, never with a blank
+        // or a disabled entry.
+        assert!(EMBEDDED_INDEX
+            .contains("!option.disabled && option.value && option.value !== RANDOM_SETTING"));
+        // The note lives with the start control, not buried in the settings.
+        assert!(EMBEDDED_INDEX.contains("id=\"randomnote\""));
+        assert!(EMBEDDED_INDEX.contains("chosen at random among its own"));
+        assert!(EMBEDDED_INDEX.contains("id=\"luckybtn\""));
+        assert!(EMBEDDED_INDEX.contains("I'm Feeling Lucky"));
+        assert!(EMBEDDED_INDEX.contains("document.getElementById(\"luckybtn\").onclick = feelingLucky;"));
+        // A world arriving from the supervisor writes its own settings over
+        // the whole panel, and so do staged settings and the mode adopting the
+        // game on screen. A standing ????? has to survive all three.
+        assert!(EMBEDDED_INDEX.contains("const RANDOM_SETTINGS_KEY = \"civvis-random-settings-v1\""));
+        for restored in [
+            "applyQueuedSimulationSettings(st.next_game_settings);\n    // The world on screen",
+            "victory-${track.id}`).checked = victories.has(track.id);\n  applyRandomMarks();",
+            "select.value = SPEC ? \"ai_sim\" : \"single\";\n  applyRandomMarks();",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(restored),
+                "a standing ????? is lost when the panel is rewritten: {restored}"
+            );
+        }
+    }
+
     /// Planet is drawn from geometry the client cannot derive, so the
     /// protocol has to carry it — but only when asked, because the ordinary
     /// observation is polled every turn and is already large.
@@ -5214,7 +5295,12 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("render(adoptTiles(first), true, true);"));
         assert!(EMBEDDED_INDEX.contains("st.seed !== state.seed"));
         assert!(!EMBEDDED_INDEX.contains("id=\"head-newgame\""));
-        assert!(EMBEDDED_INDEX.contains("spectate: gameMode === \"ai_sim\""));
+        // The mode still decides whether anyone is watching or playing — but it
+        // is one more setting that can be left at ?????, and the flag the
+        // server is handed is never the mark itself.
+        assert!(EMBEDDED_INDEX.contains(
+            "spectate: gameMode === RANDOM_SETTING ? RANDOM_SETTING : gameMode === \"ai_sim\""
+        ));
         assert!(!EMBEDDED_INDEX.contains("id=\"specchk\""));
         assert!(!EMBEDDED_INDEX.contains("RULES.map_sizes.filter"));
 
@@ -6954,7 +7040,10 @@ mod tests {
     fn browser_transforms_restart_control_for_single_player() {
         assert!(EMBEDDED_INDEX
             .contains("const supervised = !!(state && state.supervised) && payload.spectate;"));
-        assert!(EMBEDDED_INDEX.contains("const human = !selectedSimulationSettings().spectate;"));
+        // Only a world that is definitely spectated leaves this a restart. A
+        // mode left at ????? may come up either way, so it reads as a start —
+        // the one label that is true whichever it rolls.
+        assert!(EMBEDDED_INDEX.contains("const human = settings.spectate !== true;"));
         // Choosing single player renames that control after the game it opens,
         // rather than leaving "Restart sim" over a single-player subtitle.
         assert!(EMBEDDED_INDEX.contains("<span class=\"lbl\">Restart sim</span>"));
@@ -6976,9 +7065,13 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "document.getElementById(\"specbar\").style.display = \"block\";"
         ));
+        // Adopting the running mode still re-reads the panel and relabels the
+        // control; it goes through the ????? restore, which syncs the mode, so
+        // a standing mark is not lost to the world that just arrived.
         assert!(EMBEDDED_INDEX.contains(
-            "syncSetupMode();\n  updateRestartSimulationButton();"
+            "applyRandomMarks();\n  updateRestartSimulationButton();"
         ));
+        assert!(EMBEDDED_INDEX.contains("  syncSetupMode();\n  updateRandomNote();\n}"));
         assert!(EMBEDDED_INDEX.contains(
             "body:not(.watching-sim) .spec-controls:has(#restart-sim) {"
         ));
