@@ -2363,6 +2363,12 @@
     display: flex; border-left: 0; border-top: 1px solid #ffffff0b;
   }
   #victoryhud[data-type-shape="rail"] .victory-track:first-child { border-top-color: transparent; }
+  #victoryhud[data-type-size="compact"] > .hud-section-heading { padding-left: 10px; }
+  #victoryhud[data-type-size="compact"] .victory-subheading {
+    grid-template-columns: minmax(0, 1fr) 56px; gap: 3px; margin-left: 6px;
+    letter-spacing: 0;
+  }
+  #victoryhud[data-type-size="compact"] .victory-value { width: 56px; }
 
   /* A dossier's former four-column grid followed the viewport, so a 300px
      dossier on a 4K screen still tried to render four 70px ledgers. These
@@ -4694,13 +4700,13 @@ const RESPONSIVE_TEXT_RULES = [
   {selector:"#playerhud .diplomacy-expected-value", min:9, max:13},
   {selector:"#playerhud .diplomacy-strategy .ai-plan", min:9, max:12},
   {selector:"#playerhud .ribbon-stat b", min:10, max:15},
-  {selector:"#playerhud .player-map-links button", min:9, max:12},
+  {selector:"#playerhud .player-map-links button, #playerhud .watch-as-link", min:9, max:12},
   {selector:"#playerhud .turn-era", min:12, max:17},
   {selector:"#playerhud .turn-label", min:11, max:14},
   {selector:"#playerhud .victory-turn strong", min:24, max:34},
   {selector:"#playerhud .turn-total", min:10, max:14},
   {selector:"#playerhud .turn-setting > span, #playerhud .turn-setting > b", min:9, max:13},
-  {selector:"#victoryhud > .hud-section-heading > span", min:10, max:14},
+  {selector:"#victoryhud > .hud-section-heading > span", min:9, max:14, parentWidth:true},
   {selector:"#victoryhud .victory-heading b", min:10, max:14},
   {selector:"#victoryhud .victory-subheading span", min:9, max:11},
   {selector:"#victoryhud .victory-civ", min:10, max:14},
@@ -4776,11 +4782,19 @@ function fitResponsiveType() {
     if (!element.isConnected || !element.textContent.trim()) continue;
     const width = element.clientWidth, height = element.clientHeight;
     if (width < 1 || height < 1) continue;
+    const parentStyle = rule.parentWidth && element.parentElement
+      ? getComputedStyle(element.parentElement) : null;
+    const availableWidth = parentStyle
+      ? Math.max(1, element.parentElement.clientWidth
+          - (parseFloat(parentStyle.paddingLeft) || 0)
+          - (parseFloat(parentStyle.paddingRight) || 0))
+      : width;
     const availableHeight = Math.max(height, element.parentElement?.clientHeight || 0);
     // Inline line boxes commonly report one extra device-rounded pixel even
     // when every glyph is visible. Treat only a larger difference as real
     // overflow so that harmless rounding cannot ratchet text below its ceiling.
-    const widthFit = element.scrollWidth > width + 1 ? width / element.scrollWidth * .985 : 1;
+    const widthFit = element.scrollWidth > availableWidth + 1
+      ? availableWidth / element.scrollWidth * .985 : 1;
     const heightFit = element.scrollHeight > availableHeight + 1
       ? availableHeight / element.scrollHeight * .985 : 1;
     const ideal = rule.max * Math.min(1, widthFit, heightFit);
@@ -15873,7 +15887,7 @@ function victoryTrackerSubheading(victory) {
   if (victory === "science") return `<span>Techs</span><span>Launches</span>`;
   if (victory === "culture") return `<span>Civics</span><span>Tourism</span>`;
   if (victory === "religious") return `<span></span><span>Civs</span>`;
-  if (victory === "diplomatic") return `<span></span><span>Diplo score</span>`;
+  if (victory === "diplomatic") return `<span></span><span>Score</span>`;
   if (victory === "domination") return `<span></span><span>HQs</span>`;
   return `Turns: ${state.turn}/${turnCapLabel()}`;
 }
