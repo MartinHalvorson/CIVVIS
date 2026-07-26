@@ -1921,6 +1921,58 @@ pub fn seat_by_civ(league: &League, civs: &[String]) -> Vec<usize> {
     seat_by_leader_civ(league, &combinations)
 }
 
+/// Sample each civilization's specialist from its best few rated strategies.
+/// Rank weighting (3:2:1 for the default top three) keeps the best entrant
+/// most common without making every game the same matchup.
+pub fn seat_by_civ_seeded(
+    league: &League,
+    civs: &[String],
+    seed: u64,
+    top_n: usize,
+) -> Vec<usize> {
+    let combinations: Vec<(String, String)> = civs
+        .iter()
+        .map(|civ| (default_leader(civ), civ.clone()))
+        .collect();
+    seat_by_leader_civ_seeded(league, &combinations, seed, top_n)
+}
+
+pub fn seat_by_leader_civ_seeded(
+    league: &League,
+    combinations: &[(String, String)],
+    seed: u64,
+    top_n: usize,
+) -> Vec<usize> {
+    let active = league.active();
+    assert!(!active.is_empty(), "league has no active strategies");
+    let mut rng = Rng::new(seed ^ 0x5350_4543_4941_4c49);
+    let mut used = BTreeSet::new();
+    combinations
+        .iter()
+        .map(|(leader, civ)| {
+            let mut pool: Vec<usize> = if used.len() < active.len() {
+                active
+                    .iter()
+                    .copied()
+                    .filter(|candidate| !used.contains(candidate))
+                    .collect()
+            } else {
+                active.clone()
+            };
+            pool.sort_by(|a, b| {
+                let ea = display_elo_for(&league.strategies[*a], leader, civ).0;
+                let eb = display_elo_for(&league.strategies[*b], leader, civ).0;
+                eb.partial_cmp(&ea).unwrap().then(a.cmp(b))
+            });
+            pool.truncate(top_n.max(1).min(pool.len()));
+            let weights: Vec<f64> = (1..=pool.len()).rev().map(|rank| rank as f64).collect();
+            let pick = pool[rng.weighted(&weights)];
+            used.insert(pick);
+            pick
+        })
+        .collect()
+}
+
 pub fn seat_by_leader_civ(league: &League, combinations: &[(String, String)]) -> Vec<usize> {
     let active = league.active();
     assert!(!active.is_empty(), "league has no active strategies");
@@ -2879,6 +2931,39 @@ mod tests {
         // below the evidence bar the global rating stands in
         let (elo, _, civ_specific) = display_elo(&league.strategies[1], "Egypt");
         assert!(!civ_specific && (elo - 1450.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn seeded_seating_varies_within_each_civilizations_top_few() {
+        let mut league = League {
+            round: 0,
+            strategies: (0..4)
+                .map(|index| {
+                    Strategy::new(
+                        &format!("candidate-{index}"),
+                        StrategyKind::Builtin {
+                            ai: "advanced".into(),
+                        },
+                        0,
+                    )
+                })
+                .collect(),
+            calibration: Calibration::default(),
+        };
+        for (index, strategy) in league.strategies.iter_mut().enumerate() {
+            strategy.rating = 1_800.0 - index as f64 * 100.0;
+        }
+        let mut seen = BTreeSet::new();
+        for seed in 0..128 {
+            seen.insert(seat_by_civ_seeded(&league, &["Byzantium".into()], seed, 3)[0]);
+        }
+        assert_eq!(seen, BTreeSet::from([0, 1, 2]));
+        assert!(!seen.contains(&3), "the fourth-rated strategy is outside the pool");
+        assert_eq!(
+            seat_by_civ_seeded(&league, &["Byzantium".into()], 17, 3),
+            seat_by_civ_seeded(&league, &["Byzantium".into()], 17, 3),
+            "a game seed must reproduce its specialist"
+        );
     }
 
     #[test]

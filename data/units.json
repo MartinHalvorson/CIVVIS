@@ -158,6 +158,27 @@
     "upgrade_to": "cuirassier",
     "obsolete_tech": "composites"
   },
+  "tagma": {
+    "class": "military",
+    "cost": 220,
+    "maintenance": 4,
+    "moves": 4,
+    "strength": 50,
+    "civic": "divine_right",
+    "unique_to": "Byzantium",
+    "replaces": "knight",
+    "requires_resource": "iron",
+    "resource_cost": 10,
+    "cavalry": true,
+    "promotion_class": "heavy_cavalry",
+    "zone_of_control": true,
+    "upgrade_to": "cuirassier",
+    "obsolete_tech": "composites",
+    "effects": {
+      "adjacent_combat_strength": 4,
+      "adjacent_religious_strength": 4
+    }
+  },
   "musketman": {
     "class": "military",
     "cost": 240,
