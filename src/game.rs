@@ -28526,9 +28526,28 @@ impl Game {
         ys.science += self.civ_effect(city.owner, "city_science");
         ys.culture += self.civ_effect(city.owner, "city_culture");
         ys.faith += self.civ_effect(city.owner, "city_faith");
-        if self.city_has_district_family(city, "neighborhood") {
-            ys.food += self.policy_effect(city.owner, "neighborhood_food");
-            ys.production += self.policy_effect(city.owner, "neighborhood_production");
+        // Public Transport pays per Neighborhood, not once per city, and its
+        // Food and Production are banded by that district's own tile Appeal:
+        // PUBLICTRANSPORT_NEIGHBORHOOD_GOLD is unconditional, the Charming
+        // rows need PLOT_IS_APPEAL_BETWEEN MinimumAppeal 2, and the
+        // Breathtaking rows another at 4, which stack.
+        for (district, position) in &city.districts {
+            if !self.district_is_family(district, "neighborhood")
+                || !self.district_is_active(city, district, *position)
+            {
+                continue;
+            }
+            ys.gold += self.policy_effect(city.owner, "neighborhood_gold");
+            let appeal = self.tile_appeal(*position);
+            if appeal >= 2 {
+                ys.food += self.policy_effect(city.owner, "neighborhood_food");
+                ys.production += self.policy_effect(city.owner, "neighborhood_production");
+            }
+            if appeal >= 4 {
+                ys.food += self.policy_effect(city.owner, "neighborhood_breathtaking_food");
+                ys.production +=
+                    self.policy_effect(city.owner, "neighborhood_breathtaking_production");
+            }
         }
         if self.city_has_palace(city) {
             let envoys: i64 = self.players[city.owner]
@@ -52421,6 +52440,51 @@ mod district_mechanics {
         game.map.tiles.get_mut(&ring[0]).unwrap().pillaged = true;
         assert_eq!(game.tile_appeal(position), 3);
         assert_eq!(game.district_housing("neighborhood", position), 5.0);
+    }
+
+    /// Public Transport pays per Neighborhood and bands its Food and
+    /// Production by that district's own tile Appeal.
+    /// PUBLICTRANSPORT_NEIGHBORHOOD_GOLD is unconditional; the Charming rows
+    /// require PLOT_IS_APPEAL_BETWEEN MinimumAppeal 2 and the Breathtaking
+    /// rows another at 4, and the two bands stack. CIVVIS used to pay a flat
+    /// +3 Food and +1 Production once per city with any Neighborhood,
+    /// whatever its Appeal, and no Gold at all.
+    #[test]
+    fn public_transport_pays_each_neighborhood_by_its_appeal() {
+        let (mut game, city, position, ring) = controlled_game();
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .districts
+            .insert("neighborhood".to_string(), position);
+        game.map.tiles.get_mut(&position).unwrap().district = Some("neighborhood".to_string());
+        let bare = game.city_yields(city);
+        game.players[0]
+            .policies
+            .insert("public_transport".to_string());
+
+        // Appeal 0 is below Charming: the Gold is still paid, the rest is not.
+        assert_eq!(game.tile_appeal(position), 0);
+        let plain = game.city_yields(city);
+        assert_eq!(plain.gold - bare.gold, 1.0);
+        assert_eq!(plain.food, bare.food);
+        assert_eq!(plain.production, bare.production);
+
+        // Four adjacent Woods lift it to Breathtaking, so both bands pay.
+        for neighbor in ring.iter().take(4) {
+            game.map.tiles.get_mut(neighbor).unwrap().feature = Some("forest".to_string());
+        }
+        assert_eq!(game.tile_appeal(position), 4);
+        let lifted = game.city_yields(city);
+        assert_eq!(lifted.food - bare.food, 4.0);
+        assert_eq!(lifted.production - bare.production, 2.0);
+
+        // Pillaging one drops it to Charming: the Breathtaking half goes.
+        game.map.tiles.get_mut(&ring[0]).unwrap().pillaged = true;
+        assert_eq!(game.tile_appeal(position), 3);
+        let charming = game.city_yields(city);
+        assert_eq!(charming.food - bare.food, 3.0);
+        assert_eq!(charming.production - bare.production, 1.0);
     }
 
     #[test]

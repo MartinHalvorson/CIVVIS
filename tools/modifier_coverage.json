@@ -115,7 +115,8 @@
     },
     "ADJUST_DISTRICT_YIELD_CHANGE": {
       "status": "implemented",
-      "note": "Flat district yield changes."
+      "verified": true,
+      "note": "Verified row by row against the cache: 16 rows, and it found Public Transport wrong in four ways, now fixed. The shipped card is five modifiers: PUBLICTRANSPORT_NEIGHBORHOOD_GOLD +1 unconditional, the Charming pair (+3 Food, +1 Production) behind PLOT_IS_APPEAL_BETWEEN MinimumAppeal 2, and the Breathtaking pair (+1, +1) behind another at 4, all four carrying DISTRICT_TYPE_MATCHES DISTRICT_NEIGHBORHOOD so they pay per district. CIVVIS paid a flat +3/+1 once per city with any Neighborhood, at any Appeal, and no Gold - a missing yield, an ungated condition, a missing band and the wrong granularity. Praetorian Guard's Encampment Production is a Dark Age card CIVVIS does not model; the remaining ten rows are city-state suzerain district yields (including their Papal Primacy variants), Nan Madol and the Exalted Goddess leader trait - content scope."
     },
     "TERRAIN_ADJACENCY": {
       "status": "implemented",

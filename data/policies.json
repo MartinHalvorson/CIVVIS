@@ -75,7 +75,7 @@
   "total_war": {"slot":"military","civic":"scorched_earth","replaces":"raid","note":"Doubles pillage yields, and adds trade-route plunder.","effects":{"pillage_yield_pct":100}},
   "force_modernization": {"slot":"military","civic":"urbanization","replaces":"professional_army","note":"50% Gold and resource discount on unit upgrades.","effects":{"upgrade_gold_discount_pct":50,"upgrade_resource_discount_pct":50}},
   "military_research": {"slot":"military","civic":"urbanization","note":"Military Academies, Seaports, and Renaissance Walls provide +2 Science.","effects":{"late_military_building_science":2}},
-  "public_transport": {"slot":"economic","civic":"urbanization","note":"Neighborhoods provide Food and Production by Appeal.","effects":{"neighborhood_food":3,"neighborhood_production":1}},
+  "public_transport": {"slot":"economic","civic":"urbanization","note":"Each Neighborhood provides +1 Gold, and +3 Food and +1 Production at Charming Appeal or better, with another +1 Food and +1 Production at Breathtaking.","effects":{"neighborhood_gold":1,"neighborhood_food":3,"neighborhood_production":1,"neighborhood_breathtaking_food":1,"neighborhood_breathtaking_production":1}},
   "resource_management": {"slot":"military","civic":"conservation","note":"Improved Aluminum and Oil accumulate one additional resource.","effects":{"modern_strategic_resource_rate":1}},
   "propaganda": {"slot":"military","civic":"mass_media","note":"25% less war weariness.","effects":{"war_weariness_reduction_pct":25}},
   "levee_en_masse": {"slot":"military","civic":"mobilization","replaces":"conscription","note":"Unit maintenance reduced by 2 Gold per unit.","effects":{"unit_maintenance_discount":2}},
