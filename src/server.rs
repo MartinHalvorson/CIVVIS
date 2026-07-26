@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Value};
 
 use crate::ai::{AdvancedAi, Ai, BasicAi};
-use crate::game::{Action, Game, GameOptions, VictoryConditions};
+use crate::game::{Action, Game, GameOptions, PlayOnMode, VictoryConditions};
 use crate::rules::Rules;
 use crate::obs::{observation, observation_player_view, observation_spectator};
 use crate::setup::{
@@ -1964,16 +1964,16 @@ impl Session {
     /// Seat 0 already has an agent built for it — in a human game it simply
     /// never gets asked — so this is a matter of asking it.
     ///
-    /// "Play the rest of it" is a turn count like any other: the bound is the
-    /// turns this game has left, because a game ends at its limit and the loop
-    /// already stops on a winner or a dead seat.
+    /// "Play the rest of it" is bounded by the live turn limit. A continued
+    /// game has no such limit, so a single HTTP request gets a generous finite
+    /// batch instead; the browser can keep requesting batches until the next
+    /// result or until the person stops an indefinite run.
     pub fn autoplay(&mut self, turns: u32) -> usize {
         let mut played = 0;
-        let remaining = self
-            .game
-            .max_turns
-            .saturating_sub(self.game.turn)
-            .saturating_add(1);
+        let remaining = self.game.turn_limit().map_or_else(
+            || turns.min(250),
+            |limit| limit.saturating_sub(self.game.turn).saturating_add(1),
+        );
         for _ in 0..turns.min(remaining) {
             if self.game.winner.is_some() || !self.game.players[0].alive {
                 break;
@@ -2009,8 +2009,8 @@ impl Session {
     /// would come back live on an AI seat, refusing every action the person
     /// tried to take. So the same catch-up `act` runs after an end-turn runs
     /// here, handing the round back to seat zero.
-    pub fn play_on(&mut self) -> bool {
-        if !self.game.play_on() {
+    pub fn play_on(&mut self, mode: PlayOnMode) -> bool {
+        if !self.game.play_on(mode) {
             return false;
         }
         if !self.params.spectate {
@@ -3033,9 +3033,6 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "game_speeds": CIV6_GAME_SPEEDS,
                     "strategies": strategy_roster(&session),
                     "seat_strategy": session.seated_strategy_name(0),
-                    // What one press of "one more turn" buys, so the result
-                    // screen can promise the number the engine actually grants.
-                    "play_on_turns": crate::game::PLAY_ON_TURNS,
                 }),
             );
         }
@@ -3215,8 +3212,16 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         // state read between the press and the stepper's next pass never
         // reports a restart that is no longer coming.
         ("POST", "/play-on") => {
+            let mode_name = parsed["mode"].as_str().unwrap_or("until_next_victory");
+            let Some(mode) = PlayOnMode::parse(mode_name) else {
+                respond_json(
+                    stream,
+                    &json!({"error": format!("unknown play-on mode {mode_name:?}")}),
+                );
+                return;
+            };
             let mut session = sh.session.lock().unwrap();
-            let played_on = session.play_on();
+            let played_on = session.play_on(mode);
             let mut out = session.state();
             out["error"] = if played_on {
                 Value::Null
@@ -3325,7 +3330,7 @@ mod tests {
         Session, SpectatorFrame, EMBEDDED_CINEMATIC_3D, EMBEDDED_INDEX, MIN_RESTART_MS,
         EMBEDDED_WORLD_WONDER_ATLAS, SAVE_DIR, STATE_LONG_POLL, VIEWER_ACTIVE,
     };
-    use crate::game::{Action, Game, VictoryConditions};
+    use crate::game::{Action, Game, PlayOnMode, VictoryConditions};
     use crate::setup::{GameSpeed, MapPoles, MapScript, MapTopology};
     use serde_json::{json, Value};
     use std::io::{Read, Write};
@@ -3769,9 +3774,15 @@ mod tests {
             "a result was published without the five seconds it is owed"
         );
 
-        let played_on: Value =
-            serde_json::from_str(&http_post(port, "/play-on", "{}").expect("play on"))
-                .expect("play-on answers JSON");
+        let played_on: Value = serde_json::from_str(
+            &http_post(
+                port,
+                "/play-on",
+                "{\"mode\":\"until_next_victory\"}",
+            )
+            .expect("play on"),
+        )
+        .expect("play-on answers JSON");
         assert!(played_on["error"].is_null());
         assert!(played_on["winner"].is_null(), "the world is live again");
         // The verdict survives the extension, and the countdown that was
@@ -3781,11 +3792,13 @@ mod tests {
             played_on["decided"]["victory_type"],
             decided["victory_type"]
         );
-        assert!(played_on["restart_in"].is_null());
         assert_eq!(
-            played_on["max_turns"].as_u64().expect("a raised limit"),
-            decided["turn"].as_u64().unwrap() + u64::from(crate::game::PLAY_ON_TURNS)
+            played_on["decided"]["mode"],
+            json!("until_next_victory")
         );
+        assert!(played_on["restart_in"].is_null());
+        assert!(played_on["turn_limit"].is_null(), "there is no new cap");
+        assert_eq!(played_on["max_turns"], json!(3), "setup stays intact");
         assert_eq!(played_on["seed"], decided["seed"], "the same world");
 
         http_post(port, "/pace", "{\"paused\":true}");
@@ -5680,17 +5693,20 @@ mod tests {
         session.game.winner = Some(1);
         session.game.victory_type = Some("science".to_string());
 
-        assert!(session.play_on());
+        assert!(session.play_on(PlayOnMode::UntilNextVictory));
         assert_eq!(session.game.current, 0);
         assert!(session.game.winner.is_none());
-        assert_eq!(session.game.max_turns, 12 + crate::game::PLAY_ON_TURNS);
+        assert_eq!(session.game.max_turns, 40);
+        assert_eq!(session.game.turn_limit(), None);
         let state = session.state();
         assert!(state["winner"].is_null());
         assert_eq!(state["decided"]["victory_type"], json!("science"));
         assert_eq!(state["decided"]["turn"], json!(12));
+        assert_eq!(state["decided"]["mode"], json!("until_next_victory"));
+        assert!(state["turn_limit"].is_null());
         // A live game has nothing to play on past, and says so rather than
         // quietly granting turns nobody won.
-        assert!(!session.play_on());
+        assert!(!session.play_on(PlayOnMode::Indefinite));
     }
 
     #[test]
@@ -6330,8 +6346,12 @@ mod tests {
         // Both finales also offer the other answer: keep this world. It is
         // the reason the countdown has to be long enough to read — a button
         // nobody can reach before the next world loads is not an offer.
-        assert!(EMBEDDED_INDEX.contains("id=\"play-on\" onclick=\"playOnPastVictory()\""));
-        assert!(EMBEDDED_INDEX.contains("async function playOnPastVictory()"));
+        assert!(EMBEDDED_INDEX.contains("id=\"play-on-next-victory\""));
+        assert!(EMBEDDED_INDEX.contains("id=\"play-on-indefinite\""));
+        assert!(EMBEDDED_INDEX.contains("One more turn (play until next victory)"));
+        assert!(EMBEDDED_INDEX.contains("One more turn (play indefinitely)"));
+        assert!(EMBEDDED_INDEX.contains("async function playOnPastVictory(mode)"));
+        assert!(EMBEDDED_INDEX.contains("body: JSON.stringify({mode})"));
         assert!(EMBEDDED_INDEX.contains("cancelSupervisedSuccessorWatch();"));
     }
 
