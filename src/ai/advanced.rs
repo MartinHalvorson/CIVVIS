@@ -1039,8 +1039,17 @@ impl AdvancedAi {
         if self.active_victory_target(g).is_some() {
             return None;
         }
-        let own_progress = self.victory_focus(g, pid).progress;
         let culture_pressures = self.rival_culture_pressures(g);
+        self.victory_denial_with_culture_pressures(g, pid, &culture_pressures)
+    }
+
+    fn victory_denial_with_culture_pressures(
+        &self,
+        g: &Game,
+        pid: usize,
+        culture_pressures: &BTreeMap<usize, i32>,
+    ) -> Option<(usize, GrandStrategy)> {
+        let own_progress = self.victory_focus(g, pid).progress;
         let (rival, pressure) = g
             .players
             .iter()
@@ -1187,14 +1196,23 @@ impl AdvancedAi {
             "Sumeria" | "Aztec" | "Nubia" | "Scythia"
         );
         let victory = self.victory_focus(g, pid);
-        let denial = self.victory_denial(g, pid);
+        // Target selection needs the same public culture-race totals as
+        // victory denial. Build them once for the assessment instead of
+        // repeating a whole-world tourism scan for every sort comparison.
+        let active_victory_target = self.active_victory_target(g);
+        let rival_culture_pressures = self.rival_culture_pressures(g);
+        let denial = if active_victory_target.is_some() {
+            None
+        } else {
+            self.victory_denial_with_culture_pressures(g, pid, &rival_culture_pressures)
+        };
         let emergency_objective = g.emergency_objective(pid).cloned();
         let strategy = if at_war && (threatened_city.is_some() || my_power * 1.25 < strongest_rival)
         {
             GrandStrategy::Recovery
         } else if emergency_objective.is_some() {
             GrandStrategy::Conquest
-        } else if let Some(target) = self.active_victory_target(g) {
+        } else if let Some(target) = active_victory_target {
             if target == VictoryTarget::Religion && g.players[pid].religion.is_none() {
                 GrandStrategy::Religion
             } else if cities.len() < desired_cities && has_site && g.turn < g.standard_duration(175)
@@ -1261,21 +1279,48 @@ impl AdvancedAi {
                                     .map(|player| player.id),
                             );
                         }
-                        candidates.into_iter().min_by(|a, b| {
-                            self.campaign_target_value(g, pid, *a)
-                                .partial_cmp(&self.campaign_target_value(g, pid, *b))
-                                .unwrap()
-                                .then(a.cmp(b))
-                        })
+                        candidates
+                            .into_iter()
+                            .map(|rival| {
+                                (
+                                    rival,
+                                    self.campaign_target_value_with_culture(
+                                        g,
+                                        pid,
+                                        rival,
+                                        rival_culture_pressures.get(&rival).copied(),
+                                    ),
+                                )
+                            })
+                            .min_by(|a, b| {
+                                a.1.partial_cmp(&b.1)
+                                    .unwrap()
+                                    .then(a.0.cmp(&b.0))
+                            })
+                            .map(|(rival, _)| rival)
                     })
             })
         } else {
-            wartime_rivals.iter().copied().min_by(|a, b| {
-                self.rival_value(g, pid, *a)
-                    .partial_cmp(&self.rival_value(g, pid, *b))
-                    .unwrap()
-                    .then(a.cmp(b))
-            })
+            wartime_rivals
+                .iter()
+                .copied()
+                .map(|rival| {
+                    (
+                        rival,
+                        self.rival_value_with_culture(
+                            g,
+                            pid,
+                            rival,
+                            rival_culture_pressures.get(&rival).copied(),
+                        ),
+                    )
+                })
+                .min_by(|a, b| {
+                    a.1.partial_cmp(&b.1)
+                        .unwrap()
+                        .then(a.0.cmp(&b.0))
+                })
+                .map(|(rival, _)| rival)
         };
         let target_city = emergency_objective
             .map(|emergency| emergency.city)
@@ -1312,7 +1357,18 @@ impl AdvancedAi {
 
     /// Lower is a more attractive rival: nearby, weak empires with valuable
     /// cities are preferable to distant low-power distractions.
+    #[cfg(test)]
     fn rival_value(&self, g: &Game, pid: usize, other: usize) -> f64 {
+        self.rival_value_with_culture(g, pid, other, None)
+    }
+
+    fn rival_value_with_culture(
+        &self,
+        g: &Game,
+        pid: usize,
+        other: usize,
+        culture_pressure: Option<i32>,
+    ) -> f64 {
         let mine = g.player_city_ids(pid);
         let theirs = g.player_city_ids(other);
         let distance = mine
@@ -1324,7 +1380,9 @@ impl AdvancedAi {
             })
             .min()
             .unwrap_or(40) as f64;
-        let victory_pressure = self.rival_victory_pressure(g, other).progress as f64;
+        let victory_pressure = self
+            .rival_victory_pressure_with_culture(g, other, culture_pressure)
+            .progress as f64;
         distance * 7.0 + g.military_power(other) * 1.5
             - g.score(other) as f64 * 0.35
             - victory_pressure * 2.4
@@ -1367,8 +1425,19 @@ impl AdvancedAi {
         true
     }
 
+    #[cfg(test)]
     fn campaign_target_value(&self, g: &Game, pid: usize, other: usize) -> f64 {
-        let mut value = self.rival_value(g, pid, other);
+        self.campaign_target_value_with_culture(g, pid, other, None)
+    }
+
+    fn campaign_target_value_with_culture(
+        &self,
+        g: &Game,
+        pid: usize,
+        other: usize,
+        culture_pressure: Option<i32>,
+    ) -> f64 {
+        let mut value = self.rival_value_with_culture(g, pid, other, culture_pressure);
         if !g.players[other].is_minor {
             // A leader marches on the civilizations their agenda disdains
             // before the ones it respects. Lower is a more attractive target,
@@ -11859,7 +11928,31 @@ mod tests {
             let individual = ai.rival_victory_pressure(&game, pid);
             assert_eq!(batched.strategy, individual.strategy, "player {pid}");
             assert_eq!(batched.progress, individual.progress, "player {pid}");
+            for rival in 0..4 {
+                if rival == pid {
+                    continue;
+                }
+                assert_eq!(
+                    ai.rival_value_with_culture(&game, pid, rival, bulk.get(&rival).copied()),
+                    ai.rival_value(&game, pid, rival),
+                    "rival score {pid} -> {rival}"
+                );
+                assert_eq!(
+                    ai.campaign_target_value_with_culture(
+                        &game,
+                        pid,
+                        rival,
+                        bulk.get(&rival).copied(),
+                    ),
+                    ai.campaign_target_value(&game, pid, rival),
+                    "campaign score {pid} -> {rival}"
+                );
+            }
         }
+        assert_eq!(
+            ai.victory_denial_with_culture_pressures(&game, 0, &bulk),
+            ai.victory_denial(&game, 0)
+        );
     }
 
     #[test]

@@ -937,9 +937,6 @@ impl BasicAi {
     /// unit per movement domain scouts at peace so the empire is not blind,
     /// while the rest remain available for patrol and defense.
     fn should_explore(&self, g: &Game, pid: usize, uid: u32, at_war: bool) -> bool {
-        if !self.has_exploration_target(g, pid, uid) {
-            return false;
-        }
         let doctrine = Self::unit_doctrine(g, uid);
         if doctrine == UnitDoctrine::Recon {
             return true;
