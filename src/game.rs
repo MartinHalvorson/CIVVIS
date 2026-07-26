@@ -47127,6 +47127,105 @@ mod combat_scenarios {
     }
 
     #[test]
+    fn the_tourism_multipliers_are_the_ones_the_parameters_name() {
+        // TOURISM_OPEN_BORDERS_BONUS 25, TOURISM_TRADE_ROUTE_BONUS 25 and
+        // TOURISM_DIFFERENT_RELIGION_REDUCTION 50. A culture victory is won
+        // and lost on these, and nothing held them.
+        let (mut g, centre, ring) = controlled_game(4_166);
+        g.found_city_for(0, centre, None);
+        g.found_city_for(1, ring[3], None);
+        let plain = g.international_tourism_multiplier(0, 1, false);
+        assert_eq!(plain, 1.0, "no borders, no route, no religion");
+
+        g.players[0].open_borders_until.insert(1, g.turn + 30);
+        g.players[1].open_borders_until.insert(0, g.turn + 30);
+        assert_eq!(g.international_tourism_multiplier(0, 1, false), 1.25);
+        g.players[0].open_borders_until.clear();
+        g.players[1].open_borders_until.clear();
+
+        // Religious Tourism is halved between two different religions, and
+        // only when both sides actually have one.
+        g.players[0].religion = Some("Ours".to_string());
+        assert_eq!(g.international_tourism_multiplier(0, 1, true), 1.0, "the target has none");
+        g.players[1].religion = Some("Theirs".to_string());
+        assert_eq!(g.international_tourism_multiplier(0, 1, true), 0.5);
+        g.players[1].religion = Some("Ours".to_string());
+        assert_eq!(g.international_tourism_multiplier(0, 1, true), 1.0, "the same faith is not reduced");
+
+        // TOURISM_CULTURE_PER_CITIZEN 100 and TOURISM_TOURISM_TO_MOVE_CITIZEN 200.
+        g.players[0].culture_lifetime = 950.0;
+        assert_eq!(g.domestic_tourists(0), 9);
+        assert_eq!(TOURISM_PER_VISITOR, 200.0);
+    }
+
+    #[test]
+    fn the_damage_curve_is_the_one_the_parameters_describe() {
+        // COMBAT_BASE_DAMAGE 24 with COMBAT_MAX_EXTRA_DAMAGE 12 is a roll of
+        // 24 to 36, which is what 30 * U(0.8, 1.2) gives. COMBAT_POWER_SCALING
+        // 0.04 is the 1/25 the strength difference is divided by, and
+        // COMBAT_MINIMUM_DAMAGE 1 and COMBAT_MAX_HIT_POINTS 100 are the clamp.
+        let mut rng = crate::rng::Rng::new(4_165);
+        let mut lowest = i32::MAX;
+        let mut highest = 0;
+        for _ in 0..20_000 {
+            let rolled = damage(50.0, 50.0, &mut rng);
+            lowest = lowest.min(rolled);
+            highest = highest.max(rolled);
+        }
+        // An even fight rolls the base band itself.
+        assert_eq!((lowest, highest), (24, 36));
+
+        // Every 25 points of advantage multiplies the roll by e, so a
+        // twenty-five point edge is worth about 2.718 times the damage.
+        let mut even = 0.0;
+        let mut ahead = 0.0;
+        for _ in 0..20_000 {
+            even += f64::from(damage(50.0, 50.0, &mut rng));
+            ahead += f64::from(damage(75.0, 50.0, &mut rng));
+        }
+        assert!(
+            (ahead / even - std::f64::consts::E).abs() < 0.05,
+            "25 strength should be worth e times the damage, got {}",
+            ahead / even
+        );
+
+        // The clamp holds at both ends: nothing does less than 1, and a
+        // hopeless mismatch still cannot exceed a full health bar.
+        assert_eq!(damage(1.0, 500.0, &mut rng), 1);
+        assert_eq!(damage(500.0, 1.0, &mut rng), 100);
+    }
+
+    #[test]
+    fn walls_absorb_the_share_of_each_attack_its_parameter_names() {
+        // COMBAT_DEFENSE_DAMAGE_PERCENT_MELEE 15, _RANGED 50, _BOMBARD 100.
+        // A melee swing barely scratches Outer Defenses; a Bombard takes them
+        // down at full rate. Behind healthy walls the city itself takes 1.
+        let (mut g, centre, _) = controlled_game(4_164);
+        let capital = g.found_city_for(1, centre, None);
+        g.cities.get_mut(&capital).unwrap().buildings.push("walls".to_string());
+        let max = g.city_max_wall_hp(&g.cities[&capital]);
+        assert!(max > 0);
+
+        let wall_after = |g: &Game, multiplier: f64| {
+            let mut probe = g.clone();
+            let city = probe.cities.get_mut(&capital).unwrap();
+            city.wall_hp = max;
+            probe.city_take_damage(0, capital, 20, multiplier, false);
+            max - probe.cities[&capital].wall_hp
+        };
+        assert_eq!(wall_after(&g, 0.15), 3, "melee puts 15% of the roll on walls");
+        assert_eq!(wall_after(&g, 0.5), 10, "ranged puts half");
+        assert_eq!(wall_after(&g, 1.0), 20, "a Bombard puts all of it");
+
+        // And the city behind full walls takes 1, not the roll.
+        let city = g.cities.get_mut(&capital).unwrap();
+        city.wall_hp = max;
+        let hp = city.hp;
+        g.city_take_damage(0, capital, 20, 0.15, false);
+        assert_eq!(g.cities[&capital].hp, hp - 1);
+    }
+
+    #[test]
     fn the_healing_rates_are_the_ones_the_parameters_name() {
         // COMBAT_HEAL_LAND_FRIENDLY 15, _NEUTRAL 10, _ENEMY 5 and
         // COMBAT_HEAL_CITY_GARRISON 20 for a unit standing in a district.
