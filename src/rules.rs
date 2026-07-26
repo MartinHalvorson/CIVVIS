@@ -710,6 +710,9 @@ pub struct GovEffects {
     pub district_city_amenity: f64,
     pub district_city_housing: f64,
     pub wall_level_housing: f64,
+    /// Diplomatic Favor per turn for every city holding Renaissance Walls,
+    /// which Gathering Storm ships as `BUILDING_STAR_FORT`. Monarchy alone.
+    pub walled_city_diplomatic_favor: f64,
     pub influence_pct: f64,
     pub great_people_pct: f64,
     pub production_per_pop: f64,
@@ -850,9 +853,17 @@ pub struct PolicySpec {
     pub effects: BTreeMap<String, f64>,
     /// Unit-Production cards apply only to units of these eras. Agoge boosts
     /// Ancient and Classical infantry and nothing later; an empty list means
-    /// the card is not era-gated.
+    /// the card is not era-gated. `ADJUST_UNIT_TAG_ERA_PRODUCTION` ships one
+    /// row per (era, promotion class) pair, and each card in a ladder repeats
+    /// its predecessor's eras rather than starting where that one stopped.
     #[serde(default)]
     pub unit_eras: Vec<usize>,
+    /// Eras a single promotion class is missing from an otherwise covered
+    /// window. Firaxis wrote the infantry ladder's rows one per era and left
+    /// Classical out of the ranged set for every card after Agoge, which is
+    /// invisible except to a Classical ranged unique.
+    #[serde(default)]
+    pub unit_era_gaps: BTreeMap<String, Vec<usize>>,
     /// Dark Age cards are not unlocked by a civic. They open a Wildcard slot
     /// to a civilization living through a Dark Age, and close again the moment
     /// it climbs out.

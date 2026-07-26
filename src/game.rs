@@ -8300,9 +8300,13 @@ mod maintenance_tests {
         assert_eq!(bonus(&game, "warrior"), warrior_before + 0.5);
         assert_eq!(bonus(&game, "infantry"), infantry_before);
 
-        // Military First is the Atomic/Information card at the other end.
+        // Military First sits at the far end of the same ladder, but it does
+        // not hand off from Grande Armee -- it repeats every era below it as
+        // well, so it boosts a Warrior just as readily as a Mechanized
+        // Infantry. See
+        // the_unit_ladders_repeat_their_predecessors_eras_instead_of_succeeding_them.
         game.players[0].policies = ["military_first".to_string()].into_iter().collect();
-        assert_eq!(bonus(&game, "warrior"), warrior_before);
+        assert_eq!(bonus(&game, "warrior"), warrior_before + 0.5);
         let mechanized_before = bonus(&game, "mechanized_infantry");
         game.players[0].policies.clear();
         assert_eq!(bonus(&game, "mechanized_infantry"), mechanized_before - 0.5);
@@ -8433,6 +8437,181 @@ mod government_runtime_tests {
             .alliances
             .insert(second, alliance.clone());
         game.players[second].alliances.insert(first, alliance);
+    }
+
+    #[test]
+    fn the_unit_ladders_repeat_their_predecessors_eras_instead_of_succeeding_them() {
+        let (mut game, city) = one_city(60_318);
+        let pct = |game: &Game, unit: &str| {
+            let item = Item::Unit {
+                unit: unit.to_string(),
+            };
+            ((game.item_prod_mult(0, city, Some(&item)) - 1.0) * 100.0).round()
+        };
+        let card = |game: &mut Game, policy: &str| {
+            game.players[0].policies = [policy.to_string()].into_iter().collect();
+        };
+
+        // Each ADJUST_UNIT_TAG_ERA_PRODUCTION card ships one row per era, and
+        // every card in a ladder REPEATS its predecessor's eras rather than
+        // starting where that one stopped. Agoge covers Ancient-Classical
+        // infantry; Feudal Contract covers those two AGAIN plus Medieval and
+        // Renaissance, and Military First covers every era there is.
+        card(&mut game, "agoge");
+        assert_eq!(pct(&game, "warrior"), 50.0);
+        assert_eq!(pct(&game, "man_at_arms"), 0.0);
+
+        card(&mut game, "feudal_contract");
+        assert_eq!(pct(&game, "warrior"), 50.0, "Ancient melee is still covered");
+        assert_eq!(pct(&game, "musketman"), 50.0);
+        assert_eq!(pct(&game, "line_infantry"), 0.0, "Industrial is past it");
+
+        card(&mut game, "military_first");
+        for unit in ["warrior", "man_at_arms", "line_infantry", "mechanized_infantry"] {
+            assert_eq!(pct(&game, unit), 50.0, "{unit}");
+        }
+
+        // The one hole Firaxis left: every infantry card after Agoge omits the
+        // Classical row for ranged units, which is invisible unless a
+        // civilization fields a Classical ranged unique.
+        card(&mut game, "agoge");
+        assert_eq!(pct(&game, "saka_horse_archer"), 50.0);
+        for policy in ["feudal_contract", "grande_armee", "military_first"] {
+            card(&mut game, policy);
+            assert_eq!(pct(&game, "archer"), 50.0, "{policy} covers Ancient ranged");
+            assert_eq!(pct(&game, "saka_horse_archer"), 0.0, "{policy} skips Classical ranged");
+        }
+
+        // The naval ladder runs the same way, and Press Gangs stops after the
+        // Industrial era rather than covering every later hull.
+        card(&mut game, "maritime_industries");
+        assert_eq!(pct(&game, "galley"), 100.0);
+        assert_eq!(pct(&game, "caravel"), 0.0);
+        card(&mut game, "press_gangs");
+        assert_eq!(pct(&game, "galley"), 100.0);
+        assert_eq!(pct(&game, "ironclad"), 100.0);
+        assert_eq!(pct(&game, "destroyer"), 0.0);
+
+        // Strategic Air Force is one card covering two classes over different
+        // windows: Information-era air, but Carriers from the Atomic era.
+        card(&mut game, "strategic_air_force");
+        assert_eq!(pct(&game, "fighter"), 0.0, "Atomic-era air is not covered");
+        assert_eq!(pct(&game, "jet_fighter"), 50.0);
+        assert_eq!(pct(&game, "jet_bomber"), 50.0);
+        assert_eq!(pct(&game, "aircraft_carrier"), 50.0);
+    }
+
+    #[test]
+    fn the_wonder_cards_stop_at_the_era_their_arguments_name() {
+        let (mut game, city) = one_city(33_812);
+        let at = |game: &Game, wonder: &str| {
+            let item = Item::Wonder {
+                wonder: wonder.to_string(),
+                pos: game.cities[&city].pos,
+            };
+            game.item_prod_mult(0, city, Some(&item))
+        };
+        // pyramids Ancient, colosseum Classical, hagia_sophia Medieval,
+        // taj_mahal Renaissance, big_ben Industrial.
+        let subjects = ["pyramids", "colosseum", "hagia_sophia", "taj_mahal", "big_ben"];
+        let base: Vec<f64> = subjects.iter().map(|w| at(&game, w)).collect();
+        let gain = |game: &Game| -> Vec<f64> {
+            subjects
+                .iter()
+                .enumerate()
+                .map(|(i, w)| ((at(game, w) - base[i]) * 100.0).round())
+                .collect()
+        };
+
+        // CORVEE_ANCIENTCLASSICALWONDER is StartEra ANCIENT, EndEra CLASSICAL.
+        game.players[0].policies = ["corvee".to_string()].into_iter().collect();
+        assert_eq!(gain(&game), vec![15.0, 15.0, 0.0, 0.0, 0.0]);
+
+        // GOTHICARCHITECTURE_MEDIEVALRENAISSANCEWONDER is named for a window it
+        // does not have: its StartEra is ANCIENT, so it also pays the Ancient
+        // and Classical wonders Corvee covered, through Renaissance.
+        game.players[0].policies = ["gothic_architecture".to_string()].into_iter().collect();
+        assert_eq!(gain(&game), vec![15.0, 15.0, 15.0, 15.0, 0.0]);
+
+        // SKYSCRAPERS_INDUSTRIALINFORMATION is likewise misnamed: ANCIENT to
+        // FUTURE is every wonder in the game, so it stays ungated.
+        game.players[0].policies = ["skyscrapers".to_string()].into_iter().collect();
+        assert_eq!(gain(&game), vec![15.0, 15.0, 15.0, 15.0, 15.0]);
+    }
+
+    #[test]
+    fn monarchy_pays_favor_for_each_walled_city_not_once() {
+        let (mut game, home, _) = two_cities(70_441);
+        game.players[0].government = Some("monarchy".to_string());
+        let favor = |game: &mut Game| {
+            game.players[0].diplomatic_favor = 0.0;
+            game.process_diplomacy(0);
+            game.players[0].diplomatic_favor
+        };
+        // Monarchy is Tier2, so the government itself pays 2 a turn.
+        let bare = favor(&mut game);
+        assert_eq!(bare, 2.0);
+
+        // MONARCHY_STARFORT_FAVOR is a PLAYER_CITIES modifier gated on
+        // BUILDING_STAR_FORT, which is Renaissance Walls. Earlier walls do not
+        // qualify, and the bonus lands once per city that does.
+        for building in ["walls", "medieval_walls"] {
+            game.cities
+                .get_mut(&home)
+                .unwrap()
+                .buildings
+                .push(building.to_string());
+            assert_eq!(favor(&mut game), bare, "{building} is not a Star Fort");
+        }
+        game.cities
+            .get_mut(&home)
+            .unwrap()
+            .buildings
+            .push("renaissance_walls".to_string());
+        assert_eq!(favor(&mut game), bare + 2.0);
+    }
+
+    #[test]
+    fn wisselbanken_and_collectivization_pay_only_the_routes_they_name() {
+        let (mut game, home, abroad) = two_cities(51_207);
+        game.routes.push(TradeRoute {
+            origin: home,
+            dest: abroad,
+            owner: 0,
+            ends: game.turn + 30,
+        });
+        let food = |game: &Game| game.city_yields(home).food;
+        let production = |game: &Game| game.city_yields(home).production;
+        let (base_food, base_production) = (food(&game), production(&game));
+
+        // WISSELBANKEN ships eight rows, and every one of them is
+        // _FOR_ALLY_ROUTE or _FOR_SUZERAIN_ROUTE. A route to a civilization
+        // that is neither pays nothing at all.
+        game.players[0].policies = ["wisselbanken".to_string()].into_iter().collect();
+        assert_eq!(food(&game), base_food);
+        assert_eq!(production(&game), base_production);
+
+        install_alliance(&mut game, 0, 1);
+        assert_eq!(food(&game), base_food + 2.0);
+        assert_eq!(production(&game), base_production + 2.0);
+
+        // COLLECTIVIZATION is ADJUST_TRADE_ROUTE_YIELD_FOR_DOMESTIC, so the
+        // same allied foreign route it just paid for earns it nothing.
+        game.players[0].policies = ["collectivization".to_string()].into_iter().collect();
+        assert_eq!(food(&game), base_food);
+        assert_eq!(production(&game), base_production);
+
+        game.routes.clear();
+        game.routes.push(TradeRoute {
+            origin: home,
+            dest: home,
+            owner: 0,
+            ends: game.turn + 30,
+        });
+        let (domestic_food, domestic_production) = (food(&game), production(&game));
+        game.players[0].policies.clear();
+        assert_eq!(domestic_food - food(&game), 4.0);
+        assert_eq!(domestic_production - production(&game), 2.0);
     }
 
     fn without_government(game: &Game) -> Game {
@@ -8743,7 +8922,7 @@ mod government_runtime_tests {
     }
 
     #[test]
-    fn fascism_applies_combat_production_and_weariness_bonuses() {
+    fn fascism_applies_combat_production_bonuses_and_a_weariness_penalty() {
         let (mut game, city) = one_city(774_508);
         game.players[0].government = Some("fascism".to_string());
         let baseline = without_government(&game);
@@ -8771,8 +8950,10 @@ mod government_runtime_tests {
                 .abs()
                 < 1e-9
         );
-        assert_eq!(game.war_weariness_multiplier(0, false), 0.85);
-        assert_eq!(game.war_weariness_multiplier(0, true), 0.85);
+        // FASCISM_WAR_WEARINESS is +20, a penalty — see
+        // fascism_endures_war_worse_than_every_other_government.
+        assert_eq!(game.war_weariness_multiplier(0, false), 1.2);
+        assert_eq!(game.war_weariness_multiplier(0, true), 1.2);
     }
 
     #[test]
@@ -10527,6 +10708,36 @@ pub const DIPLOMATIC_VICTORY_POINTS: i64 = 20;
 pub const GAME_MODES: [&str; 2] = ["apocalypse", "secret_societies"];
 
 pub const EXOPLANET_DESTINATION: f64 = 50.0;
+
+/// Every civilization's standing in every victory race, each as a percentage of
+/// what that race requires. Produced by [`Game::victory_races`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct VictoryRaces {
+    pub science: f64,
+    pub science_projects: usize,
+    pub science_project_target: usize,
+    pub exoplanet_distance: f64,
+    pub techs: usize,
+    pub tech_total: usize,
+    pub culture: f64,
+    pub foreign_tourists: i64,
+    pub culture_target: i64,
+    pub civics: usize,
+    pub civic_total: usize,
+    pub domestic_tourists: i64,
+    pub rival_domestic: i64,
+    pub leading_domestic: i64,
+    pub religious: f64,
+    pub converted_civs: usize,
+    pub religious_target: usize,
+    pub diplomatic: f64,
+    pub diplomatic_points: i64,
+    pub domination: f64,
+    pub controlled_capitals: usize,
+    pub capital_target: usize,
+    pub score: f64,
+    pub score_points: i64,
+}
 pub const TOURISM_PER_VISITOR: f64 = 200.0;
 const STANDARD_DEAL_TURNS: u32 = 30;
 /// Shipped `GOVERNMENT_BASE_ANARCHY_TURNS`: returning to a government the
@@ -15691,11 +15902,21 @@ impl Game {
             return 0.0;
         }
         let era = self.unit_era(unit);
+        let class = self
+            .rules
+            .units
+            .get(unit)
+            .map_or("", |unit| unit.promotion_class.as_str());
         self.players[pid]
             .policies
             .iter()
             .filter_map(|name| self.rules.policies.get(name))
             .filter(|spec| spec.unit_eras.is_empty() || spec.unit_eras.contains(&era))
+            .filter(|spec| {
+                !spec.unit_era_gaps
+                    .get(class)
+                    .is_some_and(|eras| eras.contains(&era))
+            })
             .filter_map(|spec| spec.effects.get(effect))
             .sum()
     }
@@ -20415,9 +20636,22 @@ impl Game {
                     bonus += self.policy_effect(pid, "military_port_production_pct") / 100.0;
                 }
             }
-            Some(Item::Wonder { pos, .. }) => {
+            Some(Item::Wonder { wonder, pos }) => {
                 bonus += self.policy_effect(pid, "wonder_production_pct") / 100.0;
                 bonus += self.gov_effects(pid).wonder_production_pct / 100.0;
+                // ADJUST_WONDER_ERA_PRODUCTION carries a StartEra/EndEra window,
+                // and two of the three cards using it are named after a window
+                // they do not have: GOTHICARCHITECTURE_MEDIEVALRENAISSANCEWONDER
+                // starts at ANCIENT, and SKYSCRAPERS_INDUSTRIALINFORMATION runs
+                // ANCIENT to FUTURE, which is every wonder in the game. Every
+                // shipped row starts at ANCIENT, so only the end ever varies.
+                let era = self.wonder_era(wonder);
+                if era <= 1 {
+                    bonus += self.policy_effect(pid, "classical_wonder_production_pct") / 100.0;
+                }
+                if era <= 3 {
+                    bonus += self.policy_effect(pid, "renaissance_wonder_production_pct") / 100.0;
+                }
                 if self.has_ability(pid, "iteru") && self.map.tiles[pos].has_river() {
                     bonus += 0.15; // Egypt: Iteru (river cities)
                 }
@@ -28766,6 +29000,13 @@ impl Game {
                 if self.government_trade_partner(city.owner, dc.owner) {
                     rys.food += government.allied_suzerain_trade_food;
                     rys.production += government.allied_suzerain_trade_production;
+                    // Wisselbanken is Democracy's policy twin at half rate: it
+                    // ships the same eight rows, ORIGIN and DESTINATION halves
+                    // of _FOR_ALLY_ROUTE and _FOR_SUZERAIN_ROUTE. This is the
+                    // origin half, paid to the city sending the route.
+                    rys.food += self.policy_effect(city.owner, "allied_suzerain_trade_food");
+                    rys.production +=
+                        self.policy_effect(city.owner, "allied_suzerain_trade_production");
                 }
                 ys.add(rys);
             }
@@ -28781,6 +29022,10 @@ impl Game {
             if self.government_trade_partner(route.owner, city.owner) {
                 ys.food += government.allied_suzerain_trade_food;
                 ys.production += government.allied_suzerain_trade_production;
+                // ...and the destination half, paid to the city receiving it.
+                ys.food += self.policy_effect(route.owner, "allied_suzerain_trade_food");
+                ys.production +=
+                    self.policy_effect(route.owner, "allied_suzerain_trade_production");
             }
             if let Some(alliance) = self.alliance_with(city.owner, route.owner) {
                 match alliance.kind.as_str() {
@@ -38974,7 +39219,21 @@ impl Game {
         let diplomatic_penalty = world_grievances / 100.0
             + 5.0 * occupied_original_capitals
             + self.carbon_favor_penalty(pid);
+        // MONARCHY_STARFORT_FAVOR is a PLAYER_CITIES modifier gated on
+        // REQUIREMENT_CITY_HAS_BUILDING BUILDING_STAR_FORT, so it pays per
+        // qualifying city rather than once. Star Fort is Renaissance Walls.
+        let walled_favor = self.gov_effects(pid).walled_city_diplomatic_favor;
+        let walled_cities = if walled_favor == 0.0 {
+            0.0
+        } else {
+            self.cities
+                .values()
+                .filter(|city| city.owner == pid)
+                .filter(|city| self.city_has_active_building_family(city, "renaissance_walls"))
+                .count() as f64
+        };
         let favor = government_favor
+            + walled_favor * walled_cities
             + suzerains * suzerain_multiplier
             + alliance_favor
             + buildings
@@ -44544,6 +44803,213 @@ impl Game {
         // stopped existing; close those records now so they carry the turn it
         // happened rather than the turn something else touched diplomacy.
         self.sync_war_log();
+    }
+
+    /// How far each civilization has come along every victory race, as a
+    /// percentage of what that race requires.
+    ///
+    /// This is the one implementation: `obs.rs` formats it for the victory
+    /// tracker and the AI reads it to decide who is worth fighting. Keeping two
+    /// copies of "how close is this player to winning" is how a HUD and an AI
+    /// end up disagreeing about who is about to win the game.
+    pub fn victory_races(&self, pid: usize, leading_score: i64) -> VictoryRaces {
+        let player = &self.players[pid];
+        let all_majors: Vec<usize> = self
+            .players
+            .iter()
+            .filter(|candidate| !candidate.is_minor && !candidate.is_barbarian)
+            .map(|candidate| candidate.id)
+            .collect();
+        let living_majors: Vec<usize> = all_majors
+            .iter()
+            .copied()
+            .filter(|candidate| self.players[*candidate].alive)
+            .collect();
+
+        let science_projects = [
+            "launch_earth_satellite",
+            "launch_moon_landing",
+            "launch_mars_colony",
+            "exoplanet_expedition",
+        ];
+        let completed_projects = science_projects
+            .iter()
+            .filter(|project| player.science_projects.contains(**project))
+            .count();
+        let science = if player.science_projects.contains("exoplanet_expedition") {
+            75.0 + 25.0 * player.exoplanet_distance / EXOPLANET_DESTINATION
+        } else {
+            match completed_projects {
+                0 => 0.0,
+                1 => 25.0,
+                2 => 45.0,
+                _ => 65.0,
+            }
+        }
+        .clamp(0.0, 100.0);
+
+        let rival_domestic = living_majors
+            .iter()
+            .filter(|candidate| **candidate != pid && !self.same_team(pid, **candidate))
+            .map(|candidate| self.domestic_tourists(*candidate))
+            .max()
+            .unwrap_or(0);
+        let culture_target = rival_domestic + 1;
+        let leading_domestic = all_majors
+            .iter()
+            .map(|candidate| self.domestic_tourists(*candidate))
+            .max()
+            .unwrap_or(0);
+        let foreign_tourists = self.foreign_tourists(pid);
+        let culture = if culture_target > 0 {
+            100.0 * foreign_tourists as f64 / culture_target as f64
+        } else {
+            0.0
+        }
+        .clamp(0.0, 100.0);
+
+        let team_religions = self
+            .team_members(pid)
+            .into_iter()
+            .filter_map(|member| self.players[member].religion.as_deref())
+            .collect::<Vec<_>>();
+        let religious_rivals = living_majors
+            .iter()
+            .copied()
+            .filter(|candidate| player.team.is_none() || !self.same_team(pid, *candidate))
+            .collect::<Vec<_>>();
+        let converted_civs = religious_rivals
+            .iter()
+            .filter(|candidate| {
+                let cities = self.player_city_ids(**candidate);
+                !cities.is_empty()
+                    && team_religions.iter().any(|religion| {
+                        cities
+                            .iter()
+                            .filter(|city| self.city_religion(&self.cities[city]) == Some(*religion))
+                            .count()
+                            * 2
+                            > cities.len()
+                    })
+            })
+            .count();
+        let religious_target = religious_rivals.len();
+        let religious = if religious_target > 0 {
+            100.0 * converted_civs as f64 / religious_target as f64
+        } else {
+            0.0
+        };
+
+        let capital_target = all_majors.len();
+        let controlled_capitals = if player.team.is_some() {
+            all_majors
+                .iter()
+                .filter(|original_owner| {
+                    let capital = self
+                        .cities
+                        .values()
+                        .find(|city| city.is_capital && city.original_owner == **original_owner);
+                    if **original_owner == pid || self.same_team(pid, **original_owner) {
+                        capital.is_some_and(|capital| capital.owner == **original_owner)
+                    } else {
+                        capital.is_none_or(|capital| capital.owner != **original_owner)
+                    }
+                })
+                .count()
+        } else {
+            all_majors
+                .iter()
+                .filter(|original_owner| {
+                    self.cities
+                        .values()
+                        .find(|city| city.is_capital && city.original_owner == **original_owner)
+                        .map_or(
+                            **original_owner == pid || !self.players[**original_owner].alive,
+                            |capital| capital.owner == pid,
+                        )
+                })
+                .count()
+        };
+        let domination = if capital_target > 0 {
+            100.0 * controlled_capitals as f64 / capital_target as f64
+        } else {
+            0.0
+        };
+
+        let diplomatic_points = player.dvp.max(0);
+        let diplomatic =
+            (100.0 * diplomatic_points as f64 / DIPLOMATIC_VICTORY_POINTS.max(1) as f64)
+                .clamp(0.0, 100.0);
+
+        let score_points = self.team_score_rank_key(pid).0;
+        let clock = self
+            .turn_limit()
+            .filter(|limit| *limit > 0 && *limit < 100_000)
+            .map_or(1.0, |limit| (self.turn as f64 / limit as f64).clamp(0.0, 1.0));
+        let score = if leading_score > 0 {
+            (100.0 * clock * score_points.max(0) as f64 / leading_score as f64).clamp(0.0, 100.0)
+        } else {
+            0.0
+        };
+
+        VictoryRaces {
+            science,
+            science_projects: completed_projects,
+            science_project_target: science_projects.len(),
+            exoplanet_distance: player.exoplanet_distance,
+            techs: player.techs.len(),
+            tech_total: self.rules.techs.len(),
+            culture,
+            foreign_tourists,
+            culture_target,
+            civics: player.civics.len(),
+            civic_total: self.rules.civics.len(),
+            domestic_tourists: self.domestic_tourists(pid),
+            rival_domestic,
+            leading_domestic,
+            religious,
+            converted_civs,
+            religious_target,
+            diplomatic,
+            diplomatic_points,
+            domination,
+            controlled_capitals,
+            capital_target,
+            score,
+            score_points,
+        }
+    }
+
+    /// How close `pid` is to winning by any enabled race another empire could
+    /// actually interfere with, as a percentage.
+    ///
+    /// Score is deliberately excluded. It is not a race to a threshold but a
+    /// standing measured when the clock runs out, so its meter fills for
+    /// everybody as the game ages and folding it in would turn this back into
+    /// "who has the biggest empire" — the signal the AI already had.
+    pub fn victory_threat(&self, pid: usize) -> f64 {
+        if !self.victory_eligible(pid) {
+            return 0.0;
+        }
+        let leading_score = self
+            .players
+            .iter()
+            .filter(|p| !p.is_minor && !p.is_barbarian)
+            .map(|p| self.team_score_rank_key(p.id).0)
+            .max()
+            .unwrap_or(0);
+        let races = self.victory_races(pid, leading_score);
+        let enabled = &self.victory_conditions;
+        [
+            (enabled.science, races.science),
+            (enabled.culture, races.culture),
+            (enabled.religious, races.religious),
+            (enabled.diplomatic, races.diplomatic),
+            (enabled.domination, races.domination),
+        ]
+        .into_iter()
+        .filter_map(|(on, progress)| on.then_some(progress))
+        .fold(0.0_f64, f64::max)
     }
 
     fn check_domination(&mut self) {
@@ -51119,6 +51585,32 @@ mod victory_conditions {
         g.at_war.remove(&pair(0, 1));
         g.process_diplomacy(0);
         assert_eq!(g.players[0].war_weariness, 950.0);
+    }
+
+    #[test]
+    fn fascism_endures_war_worse_than_every_other_government() {
+        // EFFECT_ADJUST_WAR_WEARINESS signs its Amount: TOWORLDSEND is -100 for
+        // "no war weariness", INCREASE_ENEMY is +100. FASCISM_WAR_WEARINESS is
+        // {Amount: 20, Overall: 1} — the +50% unit Production and +5 Combat
+        // Strength are paid for with a fifth MORE weariness, not less.
+        let mut g = game_with_capitals(2, 4_162, 300);
+        assert_eq!(g.war_weariness_multiplier(0, false), 1.0);
+
+        g.players[0].government = Some("fascism".to_string());
+        assert_eq!(g.war_weariness_multiplier(0, false), 1.2);
+        assert_eq!(g.war_weariness_multiplier(0, true), 1.2);
+
+        // The governments that really do reduce it still do, at their own rates:
+        // MARTIALLAW_OVERALLWARWEARINESS -25 anywhere, and
+        // DEFENSEOFMOTHERLAND_DOMESTICWARWEARINESS -100 with Domestic set, so
+        // that card is free only on home soil.
+        g.players[0].government = Some("oligarchy".to_string());
+        g.players[0].policies = ["martial_law".to_string()].into_iter().collect();
+        assert_eq!(g.war_weariness_multiplier(0, false), 0.75);
+        g.players[0].policies =
+            ["defense_of_motherland".to_string()].into_iter().collect();
+        assert_eq!(g.war_weariness_multiplier(0, true), 0.0);
+        assert_eq!(g.war_weariness_multiplier(0, false), 1.0);
     }
 
     #[test]
