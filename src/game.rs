@@ -15937,13 +15937,30 @@ impl Game {
     /// A military unit lost in a war it belongs to. Barbarian skirmishes are
     /// deliberately outside the ledger: that war never starts and never ends,
     /// so counting it would swamp the wars that were chosen.
+    /// Record one unit lost, and charge its owner for it.
+    /// `WAR_WEARINESS_PER_UNIT_KILLED` is 3 -- the largest per-event source
+    /// after a WMD launch, and the reason a grinding war turns a people
+    /// against it even when the fighting goes well. The weariness lands on the
+    /// side that lost the unit, and rides the same policy and government
+    /// reductions every other source does.
     fn record_war_unit_loss(
         &mut self,
         killer: usize,
         victim_owner: usize,
         kind: &str,
         formation: u8,
+        at: Pos,
     ) {
+        if self.at_war_with_any_civilization(victim_owner) {
+            let home = self
+                .map
+                .get(at)
+                .and_then(|tile| tile.owner_city)
+                .and_then(|cid| self.cities.get(&cid))
+                .is_some_and(|city| city.owner == victim_owner);
+            let multiplier = self.war_weariness_multiplier(victim_owner, home);
+            self.add_war_weariness(victim_owner, 3.0 * multiplier);
+        }
         if let Some((war, _, _)) = self.war_ledger(killer, victim_owner) {
             let label = format!(
                 "{}{}",
@@ -22086,7 +22103,7 @@ impl Game {
                     (unit.owner, unit.kind.clone(), unit.formation)
                 };
                 if let Some(killer) = culprit {
-                    self.record_war_unit_loss(killer, owner, &kind, formation);
+                    self.record_war_unit_loss(killer, owner, &kind, formation, position);
                 }
                 self.remove_unit(unit_id);
             } else {
@@ -43117,7 +43134,7 @@ impl Game {
                 self.check_religious_victory();
             }
         }
-        self.record_war_unit_loss(pid, victim.owner, &victim.kind, victim.formation);
+        self.record_war_unit_loss(pid, victim.owner, &victim.kind, victim.formation, victim.pos);
     }
 
     /// The era a wonder belongs to: the era of its unlocking node.
@@ -52116,6 +52133,38 @@ mod victory_conditions {
             g.players[1].counters["project_effect:thermonuclear_devices"],
             0
         );
+    }
+
+    #[test]
+    fn losing_a_unit_wearies_the_side_that_lost_it() {
+        // WAR_WEARINESS_PER_UNIT_KILLED is 3, and it lands on the owner of the
+        // dead unit rather than on the killer. CIVVIS charged only for the act
+        // of fighting -- 1 or 2 by whose ground it happened on -- so a war of
+        // attrition cost the losing side nothing extra for actually losing.
+        let mut g = game_with_capitals(2, 4_163, 300);
+        g.at_war.insert(pair(0, 1));
+        let position = g.cities[&g.player_city_ids(1)[0]].pos;
+        let victim = g.spawn_unit("warrior", 1, position);
+        g.players[0].war_weariness = 0.0;
+        g.players[1].war_weariness = 0.0;
+
+        g.record_war_unit_loss(0, 1, "warrior", 0, position);
+        assert_eq!(g.players[1].war_weariness, 3.0, "the loser pays");
+        assert_eq!(g.players[0].war_weariness, 0.0, "the killer does not");
+
+        // It rides the same reductions as every other source: Martial Law
+        // takes a quarter off.
+        g.players[1].war_weariness = 0.0;
+        g.players[1].policies = ["martial_law".to_string()].into_iter().collect();
+        g.record_war_unit_loss(0, 1, "warrior", 0, position);
+        assert_eq!(g.players[1].war_weariness, 2.25);
+
+        // And nothing accrues outside a war.
+        g.at_war.clear();
+        g.players[1].war_weariness = 0.0;
+        g.record_war_unit_loss(0, 1, "warrior", 0, position);
+        assert_eq!(g.players[1].war_weariness, 0.0);
+        let _ = victim;
     }
 
     #[test]
