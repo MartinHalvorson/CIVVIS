@@ -182,7 +182,7 @@
       "terrain": [
         "tundra"
       ],
-      "terrain_tier": 3
+      "terrain_tier": 2
     }
   },
   "Korea": {
@@ -199,11 +199,13 @@
     },
     "start_bias": {
       "terrain": [
+        "desert",
         "grassland",
-        "plains"
+        "plains",
+        "tundra"
       ],
       "terrain_hills": true,
-      "terrain_tier": 2
+      "terrain_tier": 3
     }
   },
   "Maya": {
@@ -219,15 +221,27 @@
       "city_science": 1
     },
     "start_bias": {
-      "feature": [
-        "jungle"
+      "terrain": [
+        "grassland",
+        "plains"
       ],
-      "feature_tier": 4,
+      "terrain_tier": 1,
       "resource": [
+        "citrus",
         "cocoa",
-        "maize"
+        "coffee",
+        "cotton",
+        "dyes",
+        "incense",
+        "olives",
+        "silk",
+        "spices",
+        "sugar",
+        "tea",
+        "tobacco",
+        "wine"
       ],
-      "resource_tier": 3
+      "resource_tier": 2
     }
   },
   "Mali": {
@@ -246,12 +260,20 @@
       "terrain": [
         "desert"
       ],
-      "terrain_tier": 3,
+      "terrain_tier": 1,
       "resource": [
+        "aluminum",
+        "coal",
+        "copper",
+        "diamonds",
+        "iron",
+        "jade",
+        "mercury",
+        "niter",
         "salt",
         "silver"
       ],
-      "resource_tier": 3
+      "resource_tier": 5
     }
   },
   "Phoenicia": {
@@ -313,9 +335,14 @@
     "start_bias": {
       "resource": [
         "copper",
-        "iron"
+        "diamonds",
+        "iron",
+        "jade",
+        "mercury",
+        "salt",
+        "silver"
       ],
-      "resource_tier": 3
+      "resource_tier": 2
     }
   },
   "Kongo": {
@@ -336,7 +363,7 @@
         "forest",
         "jungle"
       ],
-      "feature_tier": 3
+      "feature_tier": 2
     }
   },
   "Vietnam": {
@@ -354,11 +381,11 @@
     },
     "start_bias": {
       "feature": [
+        "forest",
         "jungle",
-        "marsh",
-        "forest"
+        "marsh"
       ],
-      "feature_tier": 2
+      "feature_tier": 1
     }
   },
   "Brazil": {
