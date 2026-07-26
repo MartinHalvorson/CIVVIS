@@ -35665,47 +35665,47 @@ impl Game {
             && self.pillageable_at(pid, pos)
     }
 
+    /// Districts and Improvements each carry a `PlunderType` and a
+    /// `PlunderAmount`: Gold and heal pay 50, Science, Culture and Faith pay
+    /// 25. Reading them beats a hand-written match, which had drifted on 24 of
+    /// the 48 entries -- an Industrial Zone paid Production where it ships
+    /// Science, a Mine paid Science where it ships Gold, and every
+    /// Entertainment Complex paid Gold where it ships a heal.
     fn grant_pillage_reward(&mut self, pid: usize, uid: u32, source: &str, coastal: bool) {
-        let amount = 25.0
-            * (self.world_era as f64 + 1.0)
-            * (1.0 + self.policy_effect(pid, "pillage_yield_pct") / 100.0);
-        let district_family = self
+        let family = self
             .rules
             .districts
             .get(source)
             .map(|_| self.district_family(source))
             .unwrap_or(source);
-        match district_family {
-            "farm" | "fishing_boats" => {
+        let plunder = self
+            .rules
+            .districts
+            .get(family)
+            .map(|spec| (spec.plunder_type.clone(), spec.plunder_amount))
+            .or_else(|| {
+                self.rules
+                    .improvements
+                    .get(source)
+                    .map(|spec| (spec.plunder_type.clone(), spec.plunder_amount))
+            });
+        let Some((Some(kind), base)) = plunder else {
+            return;
+        };
+        // The era curve and the pillage cards scale the shipped base.
+        let amount = base
+            * (self.world_era as f64 + 1.0)
+            * (1.0 + self.policy_effect(pid, "pillage_yield_pct") / 100.0);
+        match kind.as_str() {
+            // A heal is health, not a yield: the shipped 50 is 50 hit points.
+            "heal" => {
                 if let Some(unit) = self.units.get_mut(&uid) {
-                    unit.hp = (unit.hp + 50).min(100);
+                    unit.hp = (unit.hp + base as i32).min(100);
                 }
             }
-            "campus" | "mine" | "quarry" | "oil_well" | "offshore_oil_rig" | "geothermal_plant"
-            | "solar_farm" | "wind_farm" | "offshore_wind_farm" => {
-                self.players[pid].research_overflow += amount;
-            }
-            "holy_site" | "sphinx" | "kurgan" | "nubian_pyramid" => {
-                self.players[pid].faith += amount;
-            }
-            "theater_square"
-            | "great_wall"
-            | "seaside_resort"
-            | "ski_resort"
-            | "national_park"
-            | "archaeological_dig"
-            | "shipwreck_excavation" => {
-                self.players[pid].civic_overflow += amount;
-            }
-            "industrial_zone" | "aerodrome" => {
-                if let Some(cid) = self
-                    .player_city_ids(pid)
-                    .into_iter()
-                    .min_by_key(|cid| self.wdist(self.cities[cid].pos, self.units[&uid].pos))
-                {
-                    self.cities.get_mut(&cid).unwrap().production += amount;
-                }
-            }
+            "science" => self.players[pid].research_overflow += amount,
+            "faith" => self.players[pid].faith += amount,
+            "culture" => self.players[pid].civic_overflow += amount,
             _ => {
                 let bonus = if coastal {
                     self.promotion_effect(&self.units[&uid], "coastal_raid_gold_pct")
@@ -50331,6 +50331,50 @@ mod combat_scenarios {
         assert!(builders
             .iter()
             .any(|builder| builder.charges > g.rules.units["builder"].charges));
+    }
+
+    #[test]
+    fn pillaging_pays_the_yield_and_amount_its_row_ships() {
+        // Districts.PlunderType/PlunderAmount and the same pair on
+        // Improvements. Gold and heal pay 50, Science, Culture and Faith 25 --
+        // and the type is per entry, not per family guess. A hand-written
+        // match had 24 of the 48 wrong.
+        let rules = crate::rules::Rules::embedded();
+        for (district, kind, amount) in [
+            ("campus", "science", 25.0),
+            ("holy_site", "faith", 25.0),
+            ("theater_square", "culture", 25.0),
+            ("commercial_hub", "gold", 50.0),
+            ("harbor", "gold", 50.0),
+            // The three CIVVIS used to get wrong.
+            ("industrial_zone", "science", 25.0),
+            ("aerodrome", "gold", 50.0),
+            ("entertainment_complex", "heal", 50.0),
+            ("diplomatic_quarter", "culture", 25.0),
+            ("spaceport", "science", 25.0),
+        ] {
+            let spec = &rules.districts[district];
+            assert_eq!(spec.plunder_type.as_deref(), Some(kind), "{district}");
+            assert_eq!(spec.plunder_amount, amount, "{district}");
+        }
+        for (improvement, kind, amount) in [
+            ("farm", "heal", 50.0),
+            ("mine", "gold", 50.0),
+            ("quarry", "faith", 25.0),
+            ("camp", "faith", 25.0),
+            ("pasture", "faith", 25.0),
+            ("plantation", "faith", 25.0),
+        ] {
+            let spec = &rules.improvements[improvement];
+            assert_eq!(spec.plunder_type.as_deref(), Some(kind), "{improvement}");
+            assert_eq!(spec.plunder_amount, amount, "{improvement}");
+        }
+
+        // A unique district plunders as the district it replaces.
+        assert_eq!(
+            rules.districts["hansa"].plunder_type.as_deref().or(Some("science")),
+            Some("science")
+        );
     }
 
     #[test]
