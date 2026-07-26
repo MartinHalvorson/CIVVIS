@@ -4575,6 +4575,29 @@ mod tests {
 
     #[test]
     fn browser_orders_settings_event_log_and_strategy() {
+        // Readability is a shared interface contract, not a collection of
+        // one-off enlargements. Panels inherit one system stack and a named
+        // scale with a 9px floor; map labels use the same platform-native
+        // stack instead of depending on an unbundled webfont.
+        assert!(EMBEDDED_INDEX.contains("--font-ui: system-ui"));
+        assert!(EMBEDDED_INDEX.contains("--type-micro: 9px;"));
+        assert!(EMBEDDED_INDEX.contains("--type-body: 14px;"));
+        assert!(EMBEDDED_INDEX.contains("font: var(--type-body)/1.5 var(--font-ui);"));
+        assert!(EMBEDDED_INDEX.contains("text-size-adjust: 100%"));
+        assert!(EMBEDDED_INDEX.contains(
+            "9px system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
+        ));
+        for illegible in [
+            "font-size: 5.5px",
+            "font-size: 6px",
+            "font-size: 7px",
+            "font-size: 8px",
+        ] {
+            assert!(
+                !EMBEDDED_INDEX.contains(illegible),
+                "browser CSS should not restore the illegible {illegible} declaration"
+            );
+        }
         for players in [2, 4, 6, 8, 10, 12] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("<option value=\"{players}\"")),
@@ -4867,8 +4890,9 @@ mod tests {
         // The standings grow from one consolidated row through eight readable
         // rows. A twelve-player exhibition then scrolls even on a tall screen
         // instead of continuing to consume the world below it.
-        assert!(EMBEDDED_INDEX.contains("--player-hud-max-height: min(34vh, 244px);"));
-        assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.34"));
+        assert!(EMBEDDED_INDEX.contains("--player-hud-max-height: min(38vh, 280px);"));
+        assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.38"));
+        assert!(EMBEDDED_INDEX.contains("const requestedHeight = Math.max(154, 50 + rows * 28);"));
         assert!(EMBEDDED_INDEX
             .contains("const requestedWidth = 820 + Math.max(0, rows - 1) * 100;"));
         assert!(EMBEDDED_INDEX.contains(
@@ -4913,7 +4937,7 @@ mod tests {
         assert!(!EMBEDDED_INDEX.contains("class=\"capital-link\""));
         assert!(!EMBEDDED_INDEX.contains("data-hud-action=\"empire\""));
         assert!(EMBEDDED_INDEX.contains("function focusCapital(pid)"));
-        assert!(EMBEDDED_INDEX.contains("--hud-row-height: 23px;"));
+        assert!(EMBEDDED_INDEX.contains("--hud-row-height: 26px;"));
         assert!(EMBEDDED_INDEX.contains("function dismissOverlay(name, source)"));
         assert!(EMBEDDED_INDEX.contains("addEventListener(\"pointerdown\", event =>"));
         assert!(EMBEDDED_INDEX.contains("overlay-return-flash .24s ease-in-out 3"));
