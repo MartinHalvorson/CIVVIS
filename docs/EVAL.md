@@ -1123,3 +1123,45 @@ turn on the e-process alone is a policy question for whoever owns the gate,
 and deliberately not settled here: the agent proposing a change is the
 wrong party to widen the door it wants to walk through. The evidence needed
 to decide is now in one place.
+
+## 2026-07-26 — retraction: depth works too
+
+The entry "marginal search compute buys frequency, not depth" is **wrong**
+and is retracted here. It was measured at twenty maps. Re-run at 120 on the
+same seed set (70000, four players, 200 turns), now that `--jobs` makes
+that affordable:
+
+| arm | 2× compute spent on | maps for | against | decisive won | sign p | e |
+|---|---|---|---|---|---|---|
+| `strategic_r20` | frequency | 15 | 2 | 88% of 17 | 0.0023 | 73.4 (crossed at 108) |
+| `strategic_h80` | **depth** | **21** | **5** | 81% of 26 | **0.0025** | 57.9 (crossed at 118) |
+| `strategic_r10` | 4× frequency | 19 | 7 | 73% of 26 | 0.0290 | 7.1 (not crossed) |
+
+Doubling the horizon is a real improvement of the same size as doubling the
+review rate. Both cross the e-process; 88% of 17 decisive maps and 81% of
+26 are not distinguishable at this power. The twenty-map table that showed
+depth at 4–3 — "exactly what noise looks like" — was itself the noise.
+
+The mechanism offered for the retracted claim ("a 40-round projection
+already looks further ahead than the position stays valid, so the binding
+error is a stale commitment, not a short horizon") was a plausible story
+fitted to a null result. It should not have been written that confidently
+from 20 maps, and it is withdrawn with the claim.
+
+**What survives, and is now measured three times over:** the macro search
+is under-provisioned. It reaches the rollouts about 1.5 times per seat per
+game, and *any* doubling of its compute — more reviews, or longer
+projections — wins significantly more maps. Where the doubling goes appears
+not to matter much. Quadrupling does not help further: `strategic_r10` at
+4× reviews is the weakest of the three, so the returns bend well before
+that.
+
+**The methodological point, now demonstrated twice.** Two conclusions
+published this session from twenty-map runs have inverted at 120 maps:
+`strategic_r20` was called a replication failure on 60 maps and is real at
+216; `strategic_h80` was called noise on 20 maps and is significant at 120.
+Twenty-map runs on this evaluator are not weak evidence, they are
+anti-evidence — they produced two confident and opposite errors. The
+minimum useful size here is ~100 maps, which is one `--jobs 12` run of
+about half an hour. Nothing below that should be written down as a
+conclusion.
