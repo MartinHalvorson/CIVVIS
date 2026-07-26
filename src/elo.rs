@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 15] = [
+pub const EVAL_ONLY_AIS: [&str; 17] = [
     "advanced_relief_scoped",
     "strategic_score",
     "strategic_doctrine",
@@ -54,6 +54,8 @@ pub const EVAL_ONLY_AIS: [&str; 15] = [
     "production_net",
     "policy_wide",
     "policy_wide_frozen",
+    "strategic_adaptive",
+    "strategic_deep_adaptive",
 ];
 
 /// On-disk schema for the shared player/leader/civilization rating ledger.
@@ -565,6 +567,25 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         "production" => Box::new(crate::production::ProductionSearchAi::with_weights(
             crate::evolve::load_champion("evolved").unwrap_or_default(),
         )),
+        // The promoted budget's horizon, spent adaptively: project every
+        // branch in lockstep and stop at the first chunk where they
+        // separate, rather than always running the full count.
+        "strategic_adaptive" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.adaptive_horizon = true;
+            Box::new(ai)
+        }
+        "strategic_deep_adaptive" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.review_every = 20;
+            ai.horizon = 80;
+            ai.adaptive_horizon = true;
+            Box::new(ai)
+        }
         "strategic_rot20" => {
             let mut ai = crate::strategic::StrategicAi::with_weights(
                 crate::evolve::load_champion("evolved").unwrap_or_default(),
@@ -783,6 +804,8 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "strategic_r20h20" => (vec![genome, value(false)], "strategic_r20h20"),
         "strategic_h80" => (vec![genome, value(false)], "strategic_h80"),
         "strategic_rot20" => (vec![genome, value(false)], "strategic_rot20"),
+        "strategic_adaptive" => (vec![genome, value(false)], "strategic_adaptive"),
+        "strategic_deep_adaptive" => (vec![genome, value(false)], "strategic_deep_adaptive"),
         // Same artifact dependencies as `strategic`: the genome tunes it,
         // and the net is non-definitional because the search runs without
         // one. There is no separate published netless name to degrade to.

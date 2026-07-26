@@ -26,6 +26,10 @@ const VALUE_NET_WEIGHT: f64 = 0.25;
 /// amounts, and a margin larger than the spread is a search that can never
 /// choose.
 const DOCTRINE_COMMITMENT_MARGIN: f64 = 0.002;
+/// Rounds projected between separation checks under an adaptive horizon.
+/// Small enough to stop soon after the branches part, large enough that
+/// the check itself is not most of the work.
+const ADAPTIVE_CHUNK: u32 = 10;
 pub const FIRST_REVIEW_TURN: u32 = 30;
 
 /// One position on the exact distribution consumed by the Strategic value
@@ -221,6 +225,24 @@ pub struct StrategicAi {
     /// `strategic` is bit-identical to its published behaviour; the
     /// `strategic_doctrine` entrant turns it on, which makes the two an
     /// exact paired A/B of the second axis alone.
+    /// Project every branch together and stop as soon as they separate,
+    /// instead of running each for a fixed count of rounds.
+    ///
+    /// A fixed horizon averages two regimes that want opposite things. A
+    /// branch that reaches a decided game returns exactly 1.0 or 0.0, so
+    /// once every branch resolves inside the horizon they agree by
+    /// construction and the extra rounds bought agreement rather than
+    /// discrimination — 56% of reviews are in that state at horizon 80 and
+    /// 89% at 120. The reviews that do *not* saturate carry more the
+    /// longer they run, with the spread between branches growing from
+    /// 0.015 to 0.160 across the same range.
+    ///
+    /// Stepping the branches in lockstep and stopping at the first chunk
+    /// where they differ by more than the commitment margin spends rounds
+    /// only while they still buy something: short where the answer is
+    /// early, long where it is genuinely close, and never deep enough to
+    /// wash the difference out.
+    pub adaptive_horizon: bool,
     pub doctrine_search: bool,
     /// Whether a prior-driven interrupt postpones the next periodic review.
     /// True reproduces the shipped behaviour exactly.
@@ -264,6 +286,7 @@ impl StrategicAi {
             weights,
             net,
             census: ReviewCensus::default(),
+            adaptive_horizon: false,
             doctrine_search: false,
             defer_periodic_on_interrupt: true,
             rotate_lanes: false,
@@ -822,6 +845,99 @@ impl StrategicAi {
             .and_then(|(_, target)| target)
     }
 
+    /// Every branch's value, projected in lockstep and stopped as soon as
+    /// they separate.
+    ///
+    /// Returns the same `(value, target)` pairs a fixed-horizon review
+    /// produces, so `choose_rollout_target` is unchanged. Determinism is
+    /// preserved: the branches are stepped in a fixed order, the stopping
+    /// test reads only their values, and no clock or RNG is consulted.
+    fn lockstep_values(
+        &self,
+        g: &Game,
+        pid: usize,
+        targets: &[Option<VictoryTarget>],
+    ) -> Vec<(f64, Option<VictoryTarget>)> {
+        let mut branches: Vec<(Game, Vec<Box<dyn Ai>>)> = targets
+            .iter()
+            .map(|target| self.branch_state(g, pid, *target))
+            .collect();
+        let deadline = g.turn + self.horizon;
+        let mut projected = 0;
+        loop {
+            let chunk = ADAPTIVE_CHUNK.min(self.horizon.saturating_sub(projected));
+            if chunk == 0 {
+                break;
+            }
+            for (sim, ais) in branches.iter_mut() {
+                let stop = sim.turn + chunk;
+                while sim.winner.is_none() && sim.turn < stop && sim.turn < deadline {
+                    let current = sim.current;
+                    ais[current].take_turn(sim, current);
+                    if sim.winner.is_none() && sim.current == current {
+                        let _ = sim.apply(current, &Action::EndTurn);
+                    }
+                }
+            }
+            projected += chunk;
+            let values: Vec<f64> = branches
+                .iter()
+                .map(|(sim, _)| self.branch_value(sim, pid))
+                .collect();
+            let low = values.iter().copied().fold(f64::INFINITY, f64::min);
+            let high = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            // Separated enough to decide, or every branch has resolved and
+            // further rounds cannot change anything.
+            if high - low > TARGET_COMMITMENT_MARGIN
+                || branches.iter().all(|(sim, _)| sim.winner.is_some())
+            {
+                break;
+            }
+        }
+        branches
+            .iter()
+            .zip(targets)
+            .map(|((sim, _), target)| (self.branch_value(sim, pid), *target))
+            .collect()
+    }
+
+    fn branch_state(
+        &self,
+        g: &Game,
+        pid: usize,
+        target: Option<VictoryTarget>,
+    ) -> (Game, Vec<Box<dyn Ai>>) {
+        let sim = g.clone();
+        let ais: Vec<Box<dyn Ai>> = sim
+            .players
+            .iter()
+            .map(|p| {
+                if p.id == pid {
+                    match target {
+                        Some(target) => Box::new(AdvancedAi::with_weights_and_target(
+                            self.weights.clone(),
+                            target,
+                        )) as Box<dyn Ai>,
+                        None => {
+                            Box::new(AdvancedAi::with_weights(self.weights.clone())) as Box<dyn Ai>
+                        }
+                    }
+                } else {
+                    Box::new(AdvancedAi::new()) as Box<dyn Ai>
+                }
+            })
+            .collect();
+        (sim, ais)
+    }
+
+    fn branch_value(&self, sim: &Game, pid: usize) -> f64 {
+        match sim.winner {
+            Some(winner) if winner == pid => 1.0,
+            Some(_) => 0.0,
+            None => self.position_value(sim, pid),
+        }
+    }
+
     /// Compare the adaptive parent with every enabled victory lane. Deterministic:
     /// rollouts are seed-free clones and ties keep declaration order; an explicit
     /// lane must clear the adaptive value by `TARGET_COMMITMENT_MARGIN`.
@@ -848,10 +964,16 @@ impl StrategicAi {
                 ReviewPath::IrreversibleReligion,
             );
         }
-        let mut values = vec![(self.rollout(g, pid, None), None)];
-        for target in self.lane_candidates(g) {
-            values.push((self.rollout(g, pid, Some(target)), Some(target)));
-        }
+        let mut branches: Vec<Option<VictoryTarget>> = vec![None];
+        branches.extend(self.lane_candidates(g).into_iter().map(Some));
+        let values = if self.adaptive_horizon {
+            self.lockstep_values(g, pid, &branches)
+        } else {
+            branches
+                .into_iter()
+                .map(|target| (self.rollout(g, pid, target), target))
+                .collect()
+        };
         (self.choose_rollout_target(&values), ReviewPath::Rollouts)
     }
 
