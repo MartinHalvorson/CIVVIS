@@ -4771,23 +4771,40 @@ mod tests {
         // needs both offsets, staggered by one row per row held above it.
         assert!(EMBEDDED_INDEX.contains("top: calc(var(--pin-head, 0) * var(--hud-row-pitch));"));
         assert!(EMBEDDED_INDEX.contains("bottom: calc(var(--pin-tail, 0) * var(--hud-row-pitch));"));
-        // The standings never take more than their share of the map they head;
-        // rows past that scroll at a fixed height rather than being squeezed to
-        // fit, which is what keeps the world underneath them visible.
-        assert!(EMBEDDED_INDEX.contains("--player-hud-max-height: 34vh;"));
+        // The standings grow from one consolidated row through eight readable
+        // rows. A twelve-player exhibition then scrolls even on a tall screen
+        // instead of continuing to consume the world below it.
+        assert!(EMBEDDED_INDEX.contains("--player-hud-max-height: min(34vh, 244px);"));
         assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.34"));
-        // Two edges, not one column: the standings are the masthead across the
-        // whole top, and the right rail is the victory tracker from the top
-        // corner down to the world minimap in the bottom one. The masthead
-        // stops at the rail's width, and the tracker stops at the minimap's
-        // height, so neither seam can slide underneath its neighbour.
+        assert!(EMBEDDED_INDEX
+            .contains("const requestedWidth = 760 + Math.max(0, rows - 1) * 100;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "mapArea.style.setProperty(\"--player-hud-width\", `${requestedWidth}px`);"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const playerScroll = hud.querySelector(\".diplomacy-ribbon\")?.scrollTop || 0;"
+        ));
+        assert!(EMBEDDED_INDEX.contains("playerRibbon.scrollTop = playerScroll;"));
+        // The masthead grows toward the right rail but never beneath it. The
+        // tracker grows by the contender rows it shows but never through the
+        // minimap seam.
         assert!(EMBEDDED_INDEX.contains("--hud-rail-width:"));
         assert!(EMBEDDED_INDEX.contains(
-            "top: 10px; left: 12px; right: calc(min(var(--hud-rail-width), \
-             var(--hud-rail-share)) + 20px); width: auto;"
+            "width: min(var(--player-hud-width, 100%),\n      \
+             calc(100% - min(var(--hud-rail-width), var(--hud-rail-share)) - 32px));"
         ));
-        assert!(EMBEDDED_INDEX
-            .contains("top: 10px; bottom: calc(var(--minimap-height) + 22px);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "height: min(var(--victory-hud-height, 100%),\n      \
+             calc(100% - var(--minimap-height) - 32px));"
+        ));
+        // Every path keeps its top three plus the player's own civilization
+        // when that row is lower in this particular victory race.
+        assert!(EMBEDDED_INDEX.contains("const focusId = SPEC ? state.view_player : state.player;"));
+        assert!(EMBEDDED_INDEX.contains("focusRank >= DEFAULT_VICTORY_LEADERS ? 1 : 0"));
+        assert!(EMBEDDED_INDEX.contains(
+            "entry.hidden = index >= capacity && entry.dataset.victoryFocus !== \"true\";"
+        ));
+        assert!(EMBEDDED_INDEX.contains("data-victory-focus=\"${isFocus}\""));
         assert!(EMBEDDED_INDEX.contains("grid-auto-rows: var(--hud-row-height);"));
         // A masthead row is one line: identity and the ten values side by side,
         // under one set of column heads. Stacking them was what the rail needed
