@@ -146,11 +146,25 @@ expressed without building the interpreter.
    adding 2 to each, Aerospace Contractors' Spaceport 3) and three belong to
    Cardiff, a city-state CIVVIS does not model — content scope, not effect
    scope. Distinguishing those two failure modes is the point of the exercise.
-2. **Close the three `partial` entries.** `ADJUST_PLOT_YIELD`,
-   `ADJUST_BUILDING_YIELD_CHANGE` and `GRANT_ABILITY` are 340 rows between
-   them, and each is partial for the same reason: a fixed set of named sources
-   executes where the game takes an arbitrary one. They are the cheapest
-   rehearsal for a general effect table.
+2. **Close the three `partial` entries.** They are now
+   `ADJUST_BUILDING_YIELD_CHANGE`, `GRANT_ABILITY` and
+   `CITY_GRANT_RANDOM_RESOURCE_PRODUCT` — `ADJUST_PLOT_YIELD` was promoted to
+   `implemented` once its two condition defects were fixed and all 123 rows
+   checked.
+
+   The first two are partial for the same structural reason: a fixed set of
+   named sources executes where the game takes an arbitrary one. **Everything
+   they do model is verified correct**, so closing them is not bug-fixing but
+   generalisation — which makes them the cheapest rehearsal for the effect
+   table in step 3, not independent work.
+
+   `CITY_GRANT_RANDOM_RESOURCE_PRODUCT` is partial for a different reason and
+   should not be lumped in: the shipped `ResourceCorporations` effects are
+   **+40% modifiers** where CIVVIS pays flat yields. It is Monopolies &
+   Corporations content, which the CPL lobby disables with every game mode, so
+   it changes no tournament game — and a partial fix there (Wine is grouped
+   with Salt where the shipped table puts it with Silk) would leave it
+   differently wrong. Convert the whole flat-to-percentage model or leave it.
 3. **Then the interpreter**, in the shape phase 2 of FIDELITY.md describes:
    collections, effects, requirement sets, and a loader that reads the shipped
    `Modifiers` rows rather than transcribing them.
