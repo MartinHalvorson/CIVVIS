@@ -594,37 +594,20 @@
   .player-map-links {
     min-width: 0; display: flex; align-items: center; justify-content: center; gap: 4px;
   }
-  /* Two of these sit on every standings row, so at a twelve-player table there
-     are twenty-four of them. Filled with the civ's jersey colour they were the
-     loudest thing in the panel and competed with the figures they sit next to.
-     The colour is still the row's identity, carried as the border and a short
-     cap on the leading edge, over a dark fill — so the label reads as a control
-     and the numbers stay the brightest thing on the line. Hover and focus bring
-     the fill up, which is where emphasis belongs. */
   .empire-link, .watch-as-link {
     flex: 0 0 auto; display: grid; place-items: center; margin: 0; padding: 0;
-    height: 26px; border: 1px solid color-mix(in srgb, var(--civ-border) 62%, #0c1714);
-    border-radius: 999px;
-    color: #e6ede9;
-    background:
-      linear-gradient(90deg, var(--civ-border) 0 4px, transparent 4px 100%),
-      linear-gradient(180deg, #16261f 0%, #0e1a16 100%);
-    box-shadow: 0 0 0 1px #07110f, 0 2px 6px #0007;
-    font: 850 var(--type-micro)/1 var(--font-ui); letter-spacing: .015em; text-shadow: 0 1px 2px #000;
+    height: 26px; border: 1px solid var(--civ-border); border-radius: 999px;
+    color: #fff;
+    background: linear-gradient(90deg, var(--civ-border) 0 9px, var(--civ) 9px 100%);
+    box-shadow: 0 0 0 1px #07110f, 0 4px 12px #0008;
+    font: 850 var(--type-micro)/1 var(--font-ui); letter-spacing: .015em; text-shadow: 0 1px 3px #000;
     white-space: nowrap; cursor: pointer;
-    transition: background-color .12s ease, color .12s ease, border-color .12s ease;
   }
   .empire-link { width: 56px; }
   .watch-as-link { width: 56px; }
   .empire-link:hover, .empire-link:focus-visible,
   .watch-as-link:hover, .watch-as-link:focus-visible {
-    transform: none; color: #fff;
-    border-color: var(--civ-border);
-    background:
-      linear-gradient(90deg, var(--civ-border) 0 4px, transparent 4px 100%),
-      linear-gradient(180deg,
-        color-mix(in srgb, var(--civ) 52%, #16261f),
-        color-mix(in srgb, var(--civ) 34%, #0e1a16));
+    filter: brightness(1.16); transform: none;
   }
   .empire-link:disabled { opacity: .28; cursor: default; filter: none; }
   .empire-link:disabled:hover { transform: none; }
