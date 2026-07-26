@@ -20,6 +20,12 @@ use crate::valuenet::ValueNet;
 
 const TARGET_COMMITMENT_MARGIN: f64 = 0.01;
 const VALUE_NET_WEIGHT: f64 = 0.25;
+/// Improvement a rival doctrine must show over the one in force. Set from
+/// the measured spread between doctrine rollouts rather than copied from
+/// the lane margin: the two axes move the projected value by different
+/// amounts, and a margin larger than the spread is a search that can never
+/// choose.
+const DOCTRINE_COMMITMENT_MARGIN: f64 = 0.002;
 pub const FIRST_REVIEW_TURN: u32 = 30;
 
 /// One position on the exact distribution consumed by the Strategic value
@@ -37,6 +43,91 @@ pub struct CounterfactualValueSample {
     pub turn_fraction: f32,
     /// `None` is the adaptive parent; `Some` is a committed victory lane.
     pub target: Option<VictoryTarget>,
+}
+
+/// A named play style: a bounded perturbation of the strategy genome.
+///
+/// The rollout planner's one free variable has always been the victory
+/// lane — seven branches, re-decided about three to ten times a game. A
+/// lane says what the empire is playing *for*; a doctrine says how it
+/// plays, which is the dimension a strong human adapts to the map and the
+/// neighbours. Both are searched the same way, by rolling the position
+/// forward and reading the result, so neither depends on the learned
+/// evaluator being any good.
+///
+/// The perturbations are deliberately coarse and few. This is a search
+/// axis, not an optimizer: the genome is already tuned offline by
+/// `evolve`, and the question here is only whether *this* position wants a
+/// wider, tighter or more aggressive version of it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Doctrine {
+    /// The evolved genome exactly as tuned. Wins every tie, so a doctrine
+    /// is adopted only on evidence.
+    Incumbent,
+    /// More cities, sooner, closer together, with the builders to work
+    /// them.
+    Expand,
+    /// Fewer, better cities: stop settling early and spend on
+    /// infrastructure and wonders instead.
+    Consolidate,
+    /// A larger standing army and a lower bar for using it.
+    Militarize,
+}
+
+impl Doctrine {
+    pub const ALL: [Doctrine; 4] = [
+        Doctrine::Incumbent,
+        Doctrine::Expand,
+        Doctrine::Consolidate,
+        Doctrine::Militarize,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Doctrine::Incumbent => "incumbent",
+            Doctrine::Expand => "expand",
+            Doctrine::Consolidate => "consolidate",
+            Doctrine::Militarize => "militarize",
+        }
+    }
+
+    /// Apply this doctrine to a genome, clamped to the same per-gene bounds
+    /// evolution respects. Clamping matters: an unbounded multiple of an
+    /// already-extreme evolved gene is not a play style, it is a broken
+    /// agent, and the rollout would duly report that.
+    pub fn apply(self, base: &Weights) -> Weights {
+        let mut w = base.clone();
+        match self {
+            Doctrine::Incumbent => return w,
+            Doctrine::Expand => {
+                w.city_target *= 1.5;
+                w.settler_stop_turn *= 1.3;
+                w.settler_min_pop *= 0.7;
+                w.min_city_dist *= 0.85;
+                w.builder_per_city *= 1.2;
+            }
+            Doctrine::Consolidate => {
+                w.city_target *= 0.7;
+                w.settler_stop_turn *= 0.7;
+                w.builder_per_city *= 1.4;
+                w.wonder_min_bld *= 0.7;
+                w.settle_dist *= 1.3;
+            }
+            Doctrine::Militarize => {
+                w.mil_per_city *= 1.6;
+                w.war_ratio *= 0.85;
+                w.war_margin *= 0.7;
+                w.war_min_turn *= 0.7;
+                w.focus_fire *= 1.3;
+                w.local_superiority *= 0.8;
+            }
+        }
+        let mut genes = w.to_vec();
+        for (gene, (low, high)) in genes.iter_mut().zip(Weights::bounds()) {
+            *gene = gene.clamp(low, high);
+        }
+        Weights::from_vec(&genes)
+    }
 }
 
 /// Which branch of `review` produced a lane, recorded so a run can say
@@ -113,6 +204,13 @@ pub struct StrategicAi {
     pub review_every: u32,
     pub horizon: u32,
     next_review: u32,
+    /// Search the doctrine axis as well as the lane. Off by default so
+    /// `strategic` is bit-identical to its published behaviour; the
+    /// `strategic_doctrine` entrant turns it on, which makes the two an
+    /// exact paired A/B of the second axis alone.
+    pub doctrine_search: bool,
+    doctrine: Doctrine,
+    doctrine_switches: u32,
 }
 
 impl Default for StrategicAi {
@@ -144,6 +242,9 @@ impl StrategicAi {
             weights,
             net,
             census: ReviewCensus::default(),
+            doctrine_search: false,
+            doctrine: Doctrine::Incumbent,
+            doctrine_switches: 0,
             review_every: 40,
             horizon: 40,
             // The opening book plays itself; the first lane choice lands
@@ -464,6 +565,20 @@ impl StrategicAi {
         pid: usize,
         target: Option<VictoryTarget>,
     ) -> (Game, Vec<Box<dyn Ai>>) {
+        self.rollout_state_weighted(g, pid, target, &self.weights)
+    }
+
+    /// `rollout_state` with an explicit genome for the searching seat, so a
+    /// doctrine can be projected the same way a lane is. Rivals keep the
+    /// stock agent either way: the counterfactual asks what *this* empire
+    /// should do, not what the table would look like if everyone changed.
+    fn rollout_state_weighted(
+        &self,
+        g: &Game,
+        pid: usize,
+        target: Option<VictoryTarget>,
+        weights: &Weights,
+    ) -> (Game, Vec<Box<dyn Ai>>) {
         let mut sim = g.clone();
         let mut ais: Vec<Box<dyn Ai>> = sim
             .players
@@ -471,12 +586,10 @@ impl StrategicAi {
             .map(|p| {
                 if p.id == pid {
                     if let Some(target) = target {
-                        Box::new(AdvancedAi::with_weights_and_target(
-                            self.weights.clone(),
-                            target,
-                        )) as Box<dyn Ai>
+                        Box::new(AdvancedAi::with_weights_and_target(weights.clone(), target))
+                            as Box<dyn Ai>
                     } else {
-                        Box::new(AdvancedAi::with_weights(self.weights.clone())) as Box<dyn Ai>
+                        Box::new(AdvancedAi::with_weights(weights.clone())) as Box<dyn Ai>
                     }
                 } else {
                     // The counterfactual must preserve the opponent class the
@@ -501,12 +614,89 @@ impl StrategicAi {
     /// Projected value of staying adaptive (`None`) or committing to `target`
     /// for `horizon` rounds.
     fn rollout(&self, g: &Game, pid: usize, target: Option<VictoryTarget>) -> f64 {
-        let (sim, _) = self.rollout_state(g, pid, target);
+        self.rollout_weighted(g, pid, target, &self.weights)
+    }
+
+    fn rollout_weighted(
+        &self,
+        g: &Game,
+        pid: usize,
+        target: Option<VictoryTarget>,
+        weights: &Weights,
+    ) -> f64 {
+        let (sim, _) = self.rollout_state_weighted(g, pid, target, weights);
         match sim.winner {
             Some(w) if w == pid => 1.0,
             Some(_) => 0.0,
             None => self.position_value(&sim, pid),
         }
+    }
+
+    /// Second axis of the same search: with the lane fixed, project each
+    /// doctrine and keep the best.
+    ///
+    /// Coordinate descent rather than a product: four more rollouts a
+    /// review instead of seven times four. The lane is chosen first because
+    /// it is the coarser decision — what an empire is playing for changes
+    /// which doctrine suits it far more than the reverse.
+    ///
+    /// Every doctrine is derived from the *evolved* genome, never from the
+    /// one currently in play, so repeated reviews cannot ratchet a gene to
+    /// its bound. Switching requires clearing the incumbent by the same
+    /// margin a lane must clear its adaptive parent, so a doctrine is
+    /// adopted on evidence and otherwise the tuned genome stands.
+    pub fn review_doctrine(&self, g: &Game, pid: usize, target: Option<VictoryTarget>) -> Doctrine {
+        let values = self.doctrine_values(g, pid, target);
+        let current = values
+            .iter()
+            .find_map(|(doctrine, value)| (*doctrine == self.doctrine).then_some(*value))
+            .expect("the doctrine in force is always projected");
+        let best = values
+            .iter()
+            .copied()
+            .fold(None, |best: Option<(Doctrine, f64)>, candidate| {
+                match best.is_none_or(|best| candidate.1 > best.1) {
+                    true => Some(candidate),
+                    false => best,
+                }
+            })
+            .expect("Doctrine::ALL is not empty");
+        match best.1 > current + DOCTRINE_COMMITMENT_MARGIN {
+            true => best.0,
+            false => self.doctrine,
+        }
+    }
+
+    /// Projected value of every doctrine under a fixed lane, in
+    /// `Doctrine::ALL` order. Exposed because the spread between these
+    /// numbers is what decides whether the axis can act at all: if it is
+    /// smaller than the commitment margin, the search runs and can never
+    /// choose anything, which no win rate would reveal.
+    pub fn doctrine_values(
+        &self,
+        g: &Game,
+        pid: usize,
+        target: Option<VictoryTarget>,
+    ) -> Vec<(Doctrine, f64)> {
+        Doctrine::ALL
+            .into_iter()
+            .map(|doctrine| {
+                (
+                    doctrine,
+                    self.rollout_weighted(g, pid, target, &doctrine.apply(&self.weights)),
+                )
+            })
+            .collect()
+    }
+
+    /// The play style currently in force.
+    pub fn doctrine(&self) -> Doctrine {
+        self.doctrine
+    }
+
+    /// How many times the doctrine search changed the genome in play.
+    pub fn doctrine_switches(&self) -> u32 {
+        self.doctrine_switches
     }
 
     /// Export unresolved rollout endpoints with true terminal outcomes.
@@ -662,17 +852,24 @@ impl Ai for StrategicAi {
             // Public victory threats are cheap to inspect every turn and may
             // end the game before the next expensive six-lane review. Reuse
             // the already-computed counter rather than running rollouts.
-            let target = match counter {
-                Some((_, target)) => {
-                    self.census.record(ReviewPath::UrgentCounter);
-                    Some(target)
-                }
-                None => {
-                    let (target, path) = self.review_detailed(g, pid);
-                    self.census.record(path);
-                    target
-                }
+            let (target, path) = match counter {
+                Some((_, target)) => (Some(target), ReviewPath::UrgentCounter),
+                None => self.review_detailed(g, pid),
             };
+            self.census.record(path);
+            // Only search the second axis on a review that reached the
+            // first one. A prior short-circuits because the lane is already
+            // forced or the game is nearly decided; spending four more
+            // rollouts there buys a play style for a position that has
+            // stopped asking the question.
+            if self.doctrine_search && path == ReviewPath::Rollouts {
+                let doctrine = self.review_doctrine(g, pid, target);
+                if doctrine != self.doctrine {
+                    self.doctrine = doctrine;
+                    self.doctrine_switches += 1;
+                    self.inner.reweight(doctrine.apply(&self.weights));
+                }
+            }
             match (target, counter) {
                 (Some(target), Some((rival, _)))
                     if self.inner.victory_target() != Some(target)
@@ -705,8 +902,8 @@ impl Ai for StrategicAi {
 
 #[cfg(test)]
 mod tests {
-    use super::StrategicAi;
-    use crate::ai::{run_game, Ai, BasicAi, VictoryTarget};
+    use super::{Doctrine, StrategicAi};
+    use crate::ai::{run_game, Ai, BasicAi, VictoryTarget, Weights};
     use crate::game::{Action, Game};
     use crate::valuenet::ValueNet;
 
@@ -802,6 +999,98 @@ mod tests {
 
         let expected = score_share + 0.25 * (0.5 - score_share);
         assert!((strategic.position_value(&game, 0) - expected).abs() < 1e-12);
+    }
+
+    /// Every doctrine must stay inside the bounds evolution respects, so a
+    /// multiple of an already-extreme evolved gene cannot produce a genome
+    /// that is not a play style at all.
+    #[test]
+    fn doctrines_stay_inside_the_evolution_bounds() {
+        let extreme = Weights::from_vec(
+            &Weights::bounds()
+                .iter()
+                .map(|(_, high)| *high)
+                .collect::<Vec<f64>>(),
+        );
+        for base in [Weights::default(), extreme] {
+            for doctrine in Doctrine::ALL {
+                let genes = doctrine.apply(&base).to_vec();
+                for (index, (gene, (low, high))) in
+                    genes.iter().zip(Weights::bounds()).enumerate()
+                {
+                    assert!(
+                        *gene >= low && *gene <= high,
+                        "{} gene {index} = {gene} escaped [{low}, {high}]",
+                        doctrine.name()
+                    );
+                }
+            }
+        }
+    }
+
+    /// The incumbent must be the evolved genome untouched, so a tie leaves
+    /// the tuned agent exactly as it was.
+    #[test]
+    fn the_incumbent_doctrine_changes_nothing() {
+        let base = Weights::default();
+        assert_eq!(Doctrine::Incumbent.apply(&base).to_vec(), base.to_vec());
+        for doctrine in [Doctrine::Expand, Doctrine::Consolidate, Doctrine::Militarize] {
+            assert_ne!(
+                doctrine.apply(&base).to_vec(),
+                base.to_vec(),
+                "{} is indistinguishable from the incumbent",
+                doctrine.name()
+            );
+        }
+    }
+
+    /// The default agent must be untouched by this feature: `strategic` is
+    /// a published entrant and the A/B is only meaningful if the control
+    /// did not move.
+    #[test]
+    fn doctrine_search_is_off_by_default() {
+        let plain = StrategicAi::new();
+        assert!(!plain.doctrine_search);
+        assert_eq!(plain.doctrine(), Doctrine::Incumbent);
+        assert_eq!(plain.doctrine_switches(), 0);
+    }
+
+    /// With the axis on, a real game must reach the doctrine search and the
+    /// agent must still finish a legal game. Repeating the same seed must
+    /// give the same doctrine: the rollouts are seed-free clones, so the
+    /// second axis has to be as deterministic as the first.
+    #[test]
+    fn doctrine_search_runs_and_is_deterministic() {
+        let play = || {
+            let mut g = Game::new(4, 28, 18, 31, 130, 2);
+            let mut strategic = StrategicAi::new();
+            strategic.doctrine_search = true;
+            strategic.horizon = 4;
+            let mut others = BasicAi::fleet(&g);
+            while g.winner.is_none() && g.turn <= g.max_turns {
+                let pid = g.current;
+                if pid == 0 {
+                    strategic.take_turn(&mut g, pid);
+                } else {
+                    others[pid].take_turn(&mut g, pid);
+                }
+                if g.winner.is_none() && g.current == pid {
+                    let _ = g.apply(pid, &Action::EndTurn);
+                }
+            }
+            (
+                strategic.review_census(),
+                strategic.doctrine(),
+                strategic.doctrine_switches(),
+            )
+        };
+        let first = play();
+        assert!(
+            first.0.rollouts > 0,
+            "the lane search never ran, so the doctrine axis was never reached: {:?}",
+            first.0
+        );
+        assert_eq!(first, play(), "the doctrine axis must be deterministic");
     }
 
     /// A two-player game with religion enabled is answered by the duel
