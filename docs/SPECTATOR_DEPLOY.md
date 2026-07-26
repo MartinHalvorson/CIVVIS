@@ -137,15 +137,35 @@ carries:
   which is not the same as the promise being kept.
 - `viewers` — how many pages that promise is being kept to, and so how many
   paints a turn costs before the next one starts.
+- `autoplay_turns` — turns `POST /autoplay` has simulated, which is the count
+  auto-play's share of `frames_missed` is out of. Zero here means auto-play was
+  never used, not that it behaved.
+
+**Auto-play is measured separately, because for a long time it was not measured
+at all.** The three numbers above are all built out of a viewer's
+`/state?painted=` acknowledgements. A single-player game is not stepped by the
+exhibition loop and its page never sends those — it advances by posting to
+`/autoplay` — so nothing above could see it. It was batching up to ten turns
+into one request, returning only the state after the last, and reporting a
+perfectly clean `frames_missed: 0` while nine turns in ten reached no screen.
+A response carries one state, so `autoplayed - 1` is the shortfall exactly, and
+that is now charged to `frames_missed` where an operator will see it.
 
 ```bash
 python3 tools/civvis_frames.py watch --port 8766          # read a live exhibition
 python3 tools/civvis_frames.py probe --port 8766 --render-ms 400   # be a slow viewer
+python3 tools/civvis_frames.py autoplay --port 8912 --turns 30     # audit a human game
 ```
 
 `probe` polls the way the page does and names every turn that never arrived.
 Give `--render-ms` a cost a loaded machine would really spend on a repaint: a
 fast synthetic viewer proves much less than the browser it stands in for.
+
+`autoplay` hands a human seat to an agent one turn per request and checks each
+turn came back as its own state. It plays the game it is pointed at, so point it
+at a scratch `civvis play` server rather than one somebody is using. `--batch`
+above 1 reproduces the old behaviour deliberately, which is the quickest way to
+confirm the audit still has teeth.
 
 A viewer slower than the pace now sets the pace, by design — the alternative is
 turns nobody sees. A full-size map costs the page about 55ms a frame, well
