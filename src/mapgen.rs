@@ -1840,6 +1840,30 @@ pub fn generate_with_script(
                 cells[owner].push(*tile);
             }
         }
+        // A seat the region system could not place — the fallback filler put it
+        // somewhere the divisions never covered — has no cell at all, and so
+        // was handed no city-state region either, on an island with room for
+        // one. Give it the land it is nearest on its own landmass.
+        for (index, start) in spawns.iter().enumerate() {
+            if !cells[index].is_empty() {
+                continue;
+            }
+            let Some(here) = home_of(*start) else {
+                continue;
+            };
+            cells[index] = components[here]
+                .iter()
+                .copied()
+                .filter(|tile| {
+                    spawns
+                        .iter()
+                        .enumerate()
+                        .filter(|(other, _)| start_home[*other] == Some(here))
+                        .min_by_key(|(other, seat)| (wm.distance(*tile, **seat), *other))
+                        .is_some_and(|(other, _)| other == index)
+                })
+                .collect();
+        }
         for cell in cells.iter_mut() {
             cell.sort_unstable();
         }
@@ -1851,7 +1875,30 @@ pub fn generate_with_script(
                     .sum()
             })
             .collect();
-        let allocation = apportion(&weights, num_minor_spawns);
+        // Every civilization gets one before any gets two. Sharing them out in
+        // proportion alone is right where the cells are near enough equal — on
+        // a continent they are, by construction — but an archipelago's cells
+        // differ tenfold, and a tenth of a share rounds to nothing: a
+        // civilization on a small island was handed no city-state region at
+        // all, on an island with room for one, while a neighbour on the big
+        // island held three.
+        let seated_cells: Vec<usize> = (0..cells.len())
+            .filter(|index| !cells[*index].is_empty())
+            .collect();
+        let allocation = if num_minor_spawns >= seated_cells.len() && !seated_cells.is_empty() {
+            let mut given = vec![0_usize; cells.len()];
+            for index in &seated_cells {
+                given[*index] = 1;
+            }
+            let spare: Vec<i64> = seated_cells.iter().map(|index| weights[*index]).collect();
+            let extra = apportion(&spare, num_minor_spawns - seated_cells.len());
+            for (slot, index) in seated_cells.iter().enumerate() {
+                given[*index] += extra[slot];
+            }
+            given
+        } else {
+            apportion(&weights, num_minor_spawns)
+        };
         let mut cut = Vec::with_capacity(num_minor_spawns);
         for (cell, count) in cells.iter().zip(allocation) {
             if count == 0 {
@@ -5318,6 +5365,88 @@ mod river_tests {
             }
         }
     }
+    /// Why a civilization can open with no city-state near it, and the line
+    /// between that being the map and that being a bug.
+    ///
+    /// On an archipelago a civilization's island can be smaller than the radius
+    /// inside which `Game::can_found_city` refuses to build: every tile on it
+    /// is within `MIN_START_SEPARATION` of the capital, so there is nowhere on
+    /// that island for a second city of any kind and the city-state has to go
+    /// elsewhere. Measured over Islands worlds, that is the *only* reason it
+    /// ever happens — so the rule this pins is the sharp one: if an island has
+    /// room for a city-state at all, the civilization living there gets one.
+    #[test]
+    fn an_island_with_room_for_a_city_state_gets_one() {
+        let rules = Rules::embedded();
+        for (index, (script, size)) in [MapScript::Islands, MapScript::WaterWorld]
+            .into_iter()
+            .flat_map(|script| {
+                [&CIV6_MAP_SIZES[1], &CIV6_MAP_SIZES[3], &CIV6_MAP_SIZES[5]]
+                    .into_iter()
+                    .map(move |size| (script, size))
+            })
+            .enumerate()
+        {
+            for seed in 0..6u64 {
+                let mut rng = Rng::new(88_000 + seed * 17 + index as u64);
+                let (wm, spawns) = generate_with_script(
+                    &rules,
+                    size.width,
+                    size.height,
+                    size.default_players,
+                    size.default_city_states,
+                    size.natural_wonders,
+                    size.continents,
+                    script,
+                    MapTopology::Flat,
+                    MapPoles::Poles,
+                    &mut rng,
+                );
+                let passable: BTreeSet<Pos> = wm
+                    .tiles
+                    .iter()
+                    .filter(|(_, tile)| !rules.is_water(tile) && rules.is_passable(tile))
+                    .map(|(pos, _)| *pos)
+                    .collect();
+                let components = connected_components(&wm, &passable);
+                let island_of = |position: Pos| {
+                    components
+                        .iter()
+                        .position(|component| component.contains(&position))
+                };
+                let (majors, minors) = spawns.split_at(size.default_players);
+                for (seat, major) in majors.iter().enumerate() {
+                    let Some(island) = island_of(*major) else {
+                        continue;
+                    };
+                    // Somewhere on this island a second city could stand, and
+                    // no other civilization is sharing it.
+                    let room = components[island]
+                        .iter()
+                        .filter(|tile| {
+                            majors
+                                .iter()
+                                .all(|other| wm.distance(**tile, *other) >= MIN_START_SEPARATION)
+                        })
+                        .count();
+                    if room == 0 {
+                        continue;
+                    }
+                    let mine = minors
+                        .iter()
+                        .filter(|minor| island_of(**minor) == Some(island))
+                        .count();
+                    assert!(
+                        mine > 0,
+                        "{script:?} {} seed {seed}: civilization {seat} has an island with \
+                         {room} tiles clear enough for a city-state and was given none",
+                        size.id
+                    );
+                }
+            }
+        }
+    }
+
     /// Scratch measurement of how evenly a layout is spread. Prints rather than
     /// asserts; run with `--ignored --nocapture`.
     #[test]
