@@ -374,6 +374,11 @@
     color: #8fa29a; font-size: 10px; font-weight: 800; font-variant-numeric: tabular-nums;
     line-height: 1; white-space: nowrap;
   }
+  .turn-speed {
+    color: #aebeb7; font-size: clamp(6px, .58vw, 8px); font-weight: 800;
+    letter-spacing: 0;
+    line-height: 1; white-space: nowrap;
+  }
   /* Borrowed turns. It sits under the turn cap because that cap is the thing
      it explains: the number went up because somebody asked it to. */
   .turn-playon {
@@ -14497,6 +14502,14 @@ function hudTurnPlate() {
   const viewLabel = playerView ? "Player view" : SPEC ? "Observing" : "Your empire";
   const mapName = titleCase(state.map.script || "pangaea");
   const speedName = titleCase(state.game_speed || "standard");
+  // A watched simulation has two speeds: the world's rules speed and the
+  // viewer's turn-to-turn pace. The turn clock should name the pace a viewer
+  // actually experiences (Lightning, Blitz, and so on); a played game falls
+  // back to its rules speed because it has no spectator pace.
+  const paceOption = document.getElementById("specspeed")?.selectedOptions[0];
+  const turnSpeed = SPEC
+    ? `${paceOption?.textContent.trim() || "Blitz"} speed`
+    : `${speedName} speed`;
   // The world's shape and its poles are only worth a word when they are not
   // the ones a world arrives with by default.
   const shapeNote = planetMap() ? " · Planet" : "";
@@ -14523,9 +14536,10 @@ function hudTurnPlate() {
     ? `Playing on past ${decided.civ || "the winner"}'s ${titleCase(decided.victory_type || "score")} victory on turn ${decided.turn}`
     : "";
   const context = identityContext + (playOnLabel ? ` · ${playOnLabel}` : "");
-  return `<section class="victory-turn" title="${escapeAttr(context)}" aria-label="${escapeAttr(context)}; turn ${state.turn} of ${turnCapLabel()}; ${ageLabel}">` +
+  return `<section class="victory-turn" title="${escapeAttr(context)}" aria-label="${escapeAttr(context)}; turn ${state.turn} of ${turnCapLabel()}; ${turnSpeed}; ${ageLabel}">` +
     `<span class="turn-label">Turn</span><div class="turn-count"><strong>${state.turn}</strong>` +
     `<small class="turn-total">of ${turnCapLabel()}</small>` +
+    `<small class="turn-speed">(${turnSpeed})</small>` +
     (decided ? `<small class="turn-playon">Playing on</small>` : ``) +
     `</div><span class="turn-era">${ageLabel}</span></section>`;
 }
@@ -14712,10 +14726,11 @@ function drawPlayerHud() {
   // One line per row across the masthead — who this is and their ten values
   // side by side — so a row is only as tall as its medallion: 23px, plus the
   // 2px gap under it. The fixed 44px is the heading, the column heads, the
-  // gaps and the panel's padding; the floor keeps the turn plate beside it
-  // legible at a two-player table. Anything past the ceiling scrolls, so this
-  // is what the panel would *like* rather than what it is allowed to take.
-  const requestedHeight = Math.max(96, 44 + rows * 25);
+  // gaps and the panel's padding; the floor keeps the turn plate's count,
+  // watch pace, and age legible at a two-player table. Anything past the
+  // ceiling scrolls, so this is what the panel would *like* rather than what
+  // it is allowed to take.
+  const requestedHeight = Math.max(106, 44 + rows * 25);
   // A newly started human game usually knows only its own row; do not stretch
   // that one-row scorecard across the whole map. Each additional known player
   // buys the table another 100px until the available masthead width caps it.
