@@ -3794,6 +3794,34 @@ mod belief_runtime_tests {
     }
 
     #[test]
+    fn the_opening_camps_clear_a_start_that_has_not_founded_its_capital_yet() {
+        // At setup every major civilization is a Settler standing on the plot
+        // that becomes its capital next turn, and only the city-states have
+        // cities. Measuring the four-tile floor from *cities* alone therefore
+        // left the one place on the map a camp must never be — a start — with
+        // nothing but a Settler's own sight to protect it.
+        for seed in 0..10_u64 {
+            let game = Game::new_full(8, 44, 30, 4_180 + seed, 500, 0, true);
+            let starts: Vec<Pos> = game
+                .units
+                .values()
+                .filter(|unit| unit.kind == "settler" && !game.players[unit.owner].is_barbarian)
+                .map(|unit| unit.pos)
+                .collect();
+            assert!(!starts.is_empty(), "majors open holding Settlers");
+            for camp in game.barb_camps.keys() {
+                for start in &starts {
+                    assert!(
+                        game.wdist(*camp, *start) >= BARBARIAN_CAMP_MINIMUM_DISTANCE_CITY,
+                        "seed {seed}: camp {camp:?} sits {} from the start at {start:?}",
+                        game.wdist(*camp, *start)
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn a_camp_is_never_seated_where_a_civilization_is_already_looking() {
         // The shipped rule, and the one this engine had no notion of: an
         // outpost appears "in any tile that is outside of the visible range of
@@ -15597,6 +15625,19 @@ impl Game {
         let mut blocked: HashSet<Pos> = HashSet::new();
         for city in self.cities.values() {
             blocked.extend(self.wdisk(city.pos, BARBARIAN_CAMP_MINIMUM_DISTANCE_CITY - 1));
+        }
+        // A civilization that has not founded yet is still a civilization. At
+        // setup every major is a Settler standing on the plot that becomes its
+        // capital next turn and only the city-states hold cities, so a floor
+        // measured from cities alone left the starts — the one place on the
+        // map a camp must never be — guarded by nothing but a Settler's own
+        // sight, and opening camps duly landed three tiles off them. A Settler
+        // in the field is a city that has not happened yet, and it clears the
+        // same four tiles.
+        for unit in self.units.values() {
+            if unit.kind == "settler" && !self.players[unit.owner].is_barbarian {
+                blocked.extend(self.wdisk(unit.pos, BARBARIAN_CAMP_MINIMUM_DISTANCE_CITY - 1));
+            }
         }
         for camp in self.barb_camps.keys() {
             blocked.extend(self.wdisk(*camp, BARBARIAN_CAMP_MINIMUM_DISTANCE_ANOTHER_CAMP - 1));
