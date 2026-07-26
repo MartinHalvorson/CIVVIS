@@ -2421,11 +2421,6 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     if let Some(v) = request["map_poles"].as_bool() {
         p.map_poles = if v { MapPoles::Poles } else { MapPoles::NoPoles };
     }
-    // Earth is drawn from real longitudes and latitudes and closes on itself,
-    // so it is always a globe whatever shape the lobby asked for.
-    if p.map_script.is_fixed_geography() {
-        p.map_topology = MapTopology::Planet;
-    }
     // A globe is stored in a rectangle of its own shape, so the chosen size is
     // re-expressed whenever either the size or the shape moves, and the lobby
     // always names the world it is about to build.
@@ -4564,13 +4559,14 @@ mod tests {
         // size's own rectangle.
         let flat = new_game_params(&stock, &json!({"map_topology": "flat"}));
         assert_eq!((flat.width, flat.height), (size.width, size.height));
-        // Earth is the exception, and overrules the shape it is handed.
+        // Fixed geography changes the coastline source, not the selected
+        // shape: Earth can be sampled onto a flat atlas too.
         let earth = new_game_params(
             &flat,
             &json!({"map_script": "true_start_earth", "map_topology": "flat"}),
         );
-        assert_eq!(earth.map_topology, MapTopology::Planet);
-        assert_eq!((earth.width, earth.height), (size.globe_width(), size.globe_height()));
+        assert_eq!(earth.map_topology, MapTopology::Flat);
+        assert_eq!((earth.width, earth.height), (size.width, size.height));
     }
 
     #[test]
@@ -4683,6 +4679,8 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("<option value=\"land_only\">Land Only</option>"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"water_world\">Water World</option>"));
         assert!(EMBEDDED_INDEX.contains("RULES.map_topologies"));
+        assert!(EMBEDDED_INDEX.contains("shape.disabled = false"));
+        assert!(!EMBEDDED_INDEX.contains("if (earth) shape.value = \"planet\""));
         assert!(EMBEDDED_INDEX.contains("id=\"gamespeed\""));
         for victory in [
             "science",
