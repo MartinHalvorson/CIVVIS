@@ -86,6 +86,11 @@
       "verified": true,
       "note": "Verified row by row for the wonders, policies and governments CIVVIS models. Amundsen-Scott, Broadway, Casa de Contratacion and Kilwa Kisiwani carry their shipped percentages; Colonial Taxes was missing the +10% Production that accompanies its +25% Gold on foreign continents, now applied. Communism and Corporate Libertarianism yields, Disinformation Campaign and the Great Work rows remain content or systems CIVVIS scopes differently; POLICY_INQUISITION belongs to a game mode outside the baseline."
     },
+    "ADJUST_CITY_YIELD_PER_POPULATION": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified including the requirement sets, which is where the granularity lives. Prasat 0.5 Culture is unconditional, but Theocracy 0.5 Faith and Communism 0.6 Production are both gated on CITY_HAS_GOVERNOR -- and CIVVIS names those two keys governor_faith_per_pop and governor_production_per_pop while leaving Prasat's plain, so the gate survived the translation."
+    },
     "ADJUST_DISTRICT_GREAT_PERSON_POINTS": {
       "status": "implemented",
       "verified": true,
@@ -95,6 +100,11 @@
       "status": "implemented",
       "verified": true,
       "note": "Verified row by row, all matching. Ferris Wheel 2, Shopping Mall 4, Thermal Bath 3 gated on a Geothermal Fissure in the city, Stadium 2 at 10 Population and 5 at 20, Aquatics Center 2 for a coastal Wonder, and Conservation's wall Tourism at 1/2/3 for Ancient, Medieval and Renaissance Walls with the Tsikhe at 3."
+    },
+    "ADJUST_DISTRICT_YIELD_BASED_ON_ADJACENCY_BONUS": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified: the effect mirrors one district's adjacency into another yield. Work Ethic grants Production mirroring Holy Site adjacency behind its own requirement set, and Alchemical Society and Gilded Vault mirror Campus and Commercial Hub adjacency into Gold and Culture. All three match, though the latter two belong to Secret Societies and so are out of scope for the CPL ruleset."
     },
     "ADJUST_DISTRICT_YIELD_CHANGE": {
       "status": "implemented",
@@ -125,6 +135,11 @@
       "status": "implemented",
       "verified": true,
       "note": "Verified: Charismatic Leader +2, Gunboat Diplomacy +4, Consulate +2, Chancery +3."
+    },
+    "ADJUST_PLAYER_EXTRA_FAVOR_PER_TURN": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified. The Future Civic cards at 1 and 4 and the Pagoda at 1 already matched. MONARCHY_STARFORT_FAVOR was missing outright: it is a PLAYER_CITIES modifier gated on REQUIREMENT_CITY_HAS_BUILDING BUILDING_STAR_FORT, so it pays 2 per qualifying city rather than once. Star Fort is Renaissance Walls under its Gathering Storm name -- same TECH_SIEGE_TACTICS, same 300 cost, same 100 outer defense as CIVVIS' renaissance_walls, and BUILDING_CASTLE is likewise CIVVIS' medieval_walls. Added. Separately confirmed that CIVVIS' per-government favor ladder of 0/1/2/3/4 is exactly the Governments table's Tier column."
     },
     "ADJUST_PLAYER_GOVERNMENT_SLOT_TYPE": {
       "status": "implemented",
@@ -158,6 +173,21 @@
       "status": "implemented",
       "verified": true,
       "note": "Verified together with its ORIGIN and _FOR_SUZERAIN_ROUTE siblings, which only ever ship as a set of eight. Democracy pays 4 and Wisselbanken pays 2, each across both directions and both ally and suzerain routes. CIVVIS had the government half right via government_trade_partner, but Wisselbanken was on the ungated trade_food/trade_production keys and so paid every route, domestic ones included. Fixed by giving the policy the same allied_suzerain_ keys at both endpoints. Its own note field had said 'Alliance routes' all along."
+    },
+    "ADJUST_PLAYER_TRADE_ROUTE_DESTINATION_YIELD_FOR_SUZERAIN_ROUTE": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified as part of the eight-row ally/suzerain trade set, which Democracy and Wisselbanken only ever ship complete: ORIGIN and DESTINATION halves of _FOR_ALLY_ROUTE and _FOR_SUZERAIN_ROUTE, Democracy at 4 and Wisselbanken at 2. See ADJUST_PLAYER_TRADE_ROUTE_DESTINATION_YIELD_FOR_ALLY_ROUTE for the defect this found."
+    },
+    "ADJUST_PLAYER_TRADE_ROUTE_ORIGIN_YIELD_FOR_ALLY_ROUTE": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified as part of the eight-row ally/suzerain trade set, which Democracy and Wisselbanken only ever ship complete: ORIGIN and DESTINATION halves of _FOR_ALLY_ROUTE and _FOR_SUZERAIN_ROUTE, Democracy at 4 and Wisselbanken at 2. See ADJUST_PLAYER_TRADE_ROUTE_DESTINATION_YIELD_FOR_ALLY_ROUTE for the defect this found."
+    },
+    "ADJUST_PLAYER_TRADE_ROUTE_ORIGIN_YIELD_FOR_SUZERAIN_ROUTE": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified as part of the eight-row ally/suzerain trade set, which Democracy and Wisselbanken only ever ship complete: ORIGIN and DESTINATION halves of _FOR_ALLY_ROUTE and _FOR_SUZERAIN_ROUTE, Democracy at 4 and Wisselbanken at 2. See ADJUST_PLAYER_TRADE_ROUTE_DESTINATION_YIELD_FOR_ALLY_ROUTE for the defect this found."
     },
     "ADJUST_PLAYER_YIELD_CHANGE_PER_TRIBUTARY": {
       "status": "implemented",
@@ -204,6 +234,11 @@
       "verified": true,
       "note": "E-Commerce pays 10 Gold and 5 Production on international routes; CIVVIS carried the superseded base-game rows of 5 Gold and 2 Production on every route. Trade yields can now be declared international-only."
     },
+    "ADJUST_UNIT_BUILD_CHARGES": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified: Pyramids 1, Public Works 2 and Serfdom 2, each gated on UNIT_IS_BUILDER, all matching."
+    },
     "ADJUST_UNIT_CLEAR_TERRAIN_START_MOVEMENT": {
       "status": "implemented",
       "verified": true,
@@ -223,6 +258,11 @@
       "status": "implemented",
       "verified": true,
       "note": "Verified row by row. Chaplain's +20 adjacent heal matches. Auxiliary Ships, Supply Fleet and Supercarrier do not let a ship heal as if it were home: each pays 5 in enemy territory and 10 in neutral. CIVVIS modelled all three as a boolean 'heal anywhere' worth the full 20, which roughly doubled naval sustain in neutral water and quadrupled it in enemy water."
+    },
+    "ADJUST_UNIT_MAINTENANCE_DISCOUNT": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified: Conscription 1 and Levee en Masse 2 are discounts, and Elite Forces is -1, a surcharge -- CIVVIS carries that one on a separate unit_maintenance_surcharge key of 1, which is the same thing with the sign moved into the name."
     },
     "ADJUST_UNIT_MOVEMENT": {
       "status": "implemented",
@@ -258,6 +298,11 @@
       "status": "implemented",
       "verified": true,
       "note": "Verified row by row, and the sign is the whole story. The Amount is signed toward MORE weariness: TRAIT_TOWORLDSEND_NO_WAR_WEARINESS is -100 and TRAIT_INCREASE_ENEMY_WAR_WEARINESS is +100. Martial Law and Propaganda are -25 Overall and Defense of the Motherland is -100 Domestic, all of which CIVVIS had right. FASCISM_WAR_WEARINESS is {Amount 20, Overall 1} -- a fifth MORE weariness, the price of the +50% unit Production and +5 Combat Strength -- and CIVVIS was paying a 15% reduction instead. Fixed; war_weariness_multiplier reads -20 as 1.2 with no change to the formula. Rows for Joaquim Marques Lisboa, Trung Trac and the Backstab emergency belong to content CIVVIS does not model."
+    },
+    "ADJUST_WONDER_ERA_PRODUCTION": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row, and two of the three cards CIVVIS models are named after a window they do not have. Every shipped row starts at ERA_ANCIENT and only EndEra varies: CORVEE_ANCIENTCLASSICALWONDER ends at CLASSICAL as its name says, but GOTHICARCHITECTURE_MEDIEVALRENAISSANCEWONDER runs ANCIENT to RENAISSANCE and SKYSCRAPERS_INDUSTRIALINFORMATION runs ANCIENT to FUTURE, which is every wonder in the game. CIVVIS had all three ungated, so Corvee and Gothic Architecture paid wonders far past their windows; Skyscrapers was already right by accident. Fixed with two era-scoped keys. Trusting the ModifierId over its own arguments would have gated Skyscrapers to Industrial and Gothic Architecture to Medieval, making CIVVIS wrong in the other direction."
     },
     "ATTACH_MODIFIER": {
       "status": "unmodelled",

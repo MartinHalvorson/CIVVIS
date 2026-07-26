@@ -710,6 +710,9 @@ pub struct GovEffects {
     pub district_city_amenity: f64,
     pub district_city_housing: f64,
     pub wall_level_housing: f64,
+    /// Diplomatic Favor per turn for every city holding Renaissance Walls,
+    /// which Gathering Storm ships as `BUILDING_STAR_FORT`. Monarchy alone.
+    pub walled_city_diplomatic_favor: f64,
     pub influence_pct: f64,
     pub great_people_pct: f64,
     pub production_per_pop: f64,
