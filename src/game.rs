@@ -10705,6 +10705,18 @@ pub struct TraversalClass {
 pub struct RoutingCache {
     stamp: u64,
     zones: Vec<(TraversalClass, std::sync::Arc<Vec<u32>>)>,
+    paths: Vec<PlannedRoute>,
+}
+
+#[derive(Clone)]
+struct PlannedRoute {
+    unit: u32,
+    target: Pos,
+    range: i32,
+    /// Complete path including the position where it was planned and the
+    /// stopping tile. Looking up the unit's live position makes repeated
+    /// calls before a move harmless and advances naturally after one.
+    path: Vec<Pos>,
 }
 
 /// Everything a player's luxury access is counted from, taken once rather
@@ -25387,6 +25399,24 @@ impl Game {
         if !self.zone_connected(uid, to, range) {
             return None; // proven: no chain of traversable tiles links them
         }
+        let cached_next = {
+            let routing = self.routing.borrow();
+            routing
+                .paths
+                .iter()
+                .find(|route| route.unit == uid && route.target == to && route.range == range)
+                .and_then(|route| {
+                    route
+                        .path
+                        .iter()
+                        .position(|position| *position == start)
+                        .and_then(|index| route.path.get(index + 1))
+                        .copied()
+                })
+        };
+        if cached_next.is_some_and(|next| self.can_enter(uid, start, next)) {
+            return cached_next;
+        }
 
         // A* keeps known-target routing cheap enough for high-throughput
         // self-play: the zone check above has already rejected disconnected
@@ -25445,15 +25475,27 @@ impl Game {
                 frontier.push(Reverse((estimate, Reverse(next_distance), n)));
             }
         }
-        let mut step = goal?;
-        while parent[step] != start_index as u32 {
-            let previous = parent[step];
+        let mut cursor = goal?;
+        let mut reverse_path = vec![self.map.tiles.values().as_slice()[cursor].pos];
+        while cursor != start_index {
+            let previous = parent[cursor];
             if previous == NO_PARENT {
                 return None;
             }
-            step = previous as usize;
+            cursor = previous as usize;
+            reverse_path.push(self.map.tiles.values().as_slice()[cursor].pos);
         }
-        Some(self.map.tiles.values().as_slice()[step].pos)
+        reverse_path.reverse();
+        let step = *reverse_path.get(1)?;
+        let mut routing = self.routing.borrow_mut();
+        routing.paths.retain(|route| route.unit != uid);
+        routing.paths.push(PlannedRoute {
+            unit: uid,
+            target: to,
+            range,
+            path: reverse_path,
+        });
+        Some(step)
     }
 
     /// Terrain/domain legality for future route segments. Dynamic unit
@@ -25517,6 +25559,7 @@ impl Game {
             if cache.stamp != stamp {
                 cache.stamp = stamp;
                 cache.zones.clear();
+                cache.paths.clear();
             }
             if let Some((_, zones)) = cache.zones.iter().find(|(c, _)| *c == class) {
                 return zones.clone();
@@ -42205,9 +42248,18 @@ impl Game {
         city.extra_strikes_used = 0;
         city.encampment_struck = false;
         city.encampment_extra_strikes_used = 0;
-        let mut ys = self.city_yields(cid);
-        let housing = self.city_housing(&self.cities[&cid]);
-        let am = self.city_amenity_surplus(&self.cities[&cid]);
+        // Yield assignment asks for housing and amenities as part of its
+        // citizen strategy, then turn processing asks for both again to apply
+        // growth. Keep those immutable answers in one memo scope before any
+        // city state changes make them stale.
+        let (mut ys, housing, am) = {
+            let _memo = self.query_memo();
+            (
+                self.city_yields(cid),
+                self.city_housing(&self.cities[&cid]),
+                self.city_amenity_surplus(&self.cities[&cid]),
+            )
+        };
         let repair_project = matches!(
             self.cities[&cid].queue.first(),
             Some(Item::Project { project }) if project == "repair_outer_defenses"
@@ -47773,6 +47825,34 @@ mod combat_scenarios {
         g.players[0].techs.insert("cartography".to_string());
         assert!(g.can_move(galley, ocean));
         assert_eq!(g.route_step(galley, ocean, 0), Some(ocean));
+    }
+
+    #[test]
+    fn known_target_routes_reuse_the_planned_path_after_each_step() {
+        let (mut g, start, _) = controlled_game(3_202);
+        let target = g
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|position| g.wdist(start, *position) == 5)
+            .min()
+            .unwrap();
+        let warrior = g.spawn_unit("warrior", 0, start);
+
+        let first = g.route_step(warrior, target, 0).unwrap();
+        let planned = g.routing.borrow().paths[0].path.clone();
+        assert_eq!(planned.first(), Some(&start));
+        assert_eq!(planned.last(), Some(&target));
+        assert_eq!(planned.get(1), Some(&first));
+
+        g.relocate(warrior, first);
+        assert_eq!(g.route_step(warrior, target, 0), planned.get(2).copied());
+        assert_eq!(
+            g.routing.borrow().paths.len(),
+            1,
+            "advancing along a cached route must not launch and store a second plan",
+        );
     }
 
     #[test]

@@ -880,6 +880,15 @@ impl AdvancedAi {
     /// signal. Strong opponents must be judged by how close they are to ending
     /// the game, not only by how cheap their nearest city looks to capture.
     fn rival_victory_pressure(&self, g: &Game, pid: usize) -> VictoryFocus {
+        self.rival_victory_pressure_with_culture(g, pid, None)
+    }
+
+    fn rival_victory_pressure_with_culture(
+        &self,
+        g: &Game,
+        pid: usize,
+        culture_pressure: Option<i32>,
+    ) -> VictoryFocus {
         let player = &g.players[pid];
         let starting_majors: Vec<usize> = g
             .players
@@ -910,14 +919,16 @@ impl AdvancedAi {
             0
         };
 
-        let culture_target = living_majors
-            .iter()
-            .filter(|other| **other != pid)
-            .map(|other| g.domestic_tourists(*other))
-            .max()
-            .unwrap_or(1)
-            .max(1);
-        let culture = (100 * g.foreign_tourists(pid) / culture_target).clamp(0, 100) as i32;
+        let culture = culture_pressure.unwrap_or_else(|| {
+            let culture_target = living_majors
+                .iter()
+                .filter(|other| **other != pid)
+                .map(|other| g.domestic_tourists(*other))
+                .max()
+                .unwrap_or(1)
+                .max(1);
+            (100 * g.foreign_tourists(pid) / culture_target).clamp(0, 100) as i32
+        });
 
         let (converted, living_religious_rivals) = self.religious_conversion_tally(g, pid);
         let religion = if player.religion.is_some() {
@@ -988,18 +999,64 @@ impl AdvancedAi {
         })
     }
 
+    /// Compute every living rival's culture-race pressure in one table.
+    ///
+    /// A single `rival_victory_pressure` calculation asks for every rival's
+    /// domestic tourists, and `victory_denial` asks for that pressure for
+    /// every rival. Repeating those nested scans made the denial pass cubic in
+    /// civilization count. Domestic and foreign tourist totals are public
+    /// table state, so calculate each once and reuse them across the pass.
+    fn rival_culture_pressures(&self, g: &Game) -> BTreeMap<usize, i32> {
+        let living_majors: Vec<usize> = g
+            .players
+            .iter()
+            .filter(|player| player.alive && !player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .collect();
+        let domestic: BTreeMap<usize, i64> = living_majors
+            .iter()
+            .map(|pid| (*pid, g.domestic_tourists(*pid)))
+            .collect();
+        living_majors
+            .iter()
+            .map(|pid| {
+                let target = living_majors
+                    .iter()
+                    .filter(|other| *other != pid)
+                    .map(|other| domestic[other])
+                    .max()
+                    .unwrap_or(1)
+                    .max(1);
+                (
+                    *pid,
+                    (100 * g.foreign_tourists(*pid) / target).clamp(0, 100) as i32,
+                )
+            })
+            .collect()
+    }
+
     fn victory_denial(&self, g: &Game, pid: usize) -> Option<(usize, GrandStrategy)> {
         if self.active_victory_target(g).is_some() {
             return None;
         }
         let own_progress = self.victory_focus(g, pid).progress;
+        let culture_pressures = self.rival_culture_pressures(g);
         let (rival, pressure) = g
             .players
             .iter()
             .filter(|player| {
                 player.id != pid && player.alive && !player.is_minor && !player.is_barbarian
             })
-            .map(|player| (player.id, self.rival_victory_pressure(g, player.id)))
+            .map(|player| {
+                (
+                    player.id,
+                    self.rival_victory_pressure_with_culture(
+                        g,
+                        player.id,
+                        culture_pressures.get(&player.id).copied(),
+                    ),
+                )
+            })
             .max_by(|left, right| {
                 left.1
                     .progress
@@ -1522,6 +1579,7 @@ impl AdvancedAi {
     }
 
     fn product_layout_value(&self, g: &Game, pid: usize, strategy: GrandStrategy) -> f64 {
+        let _memo = g.query_memo();
         g.player_city_ids(pid)
             .into_iter()
             .map(|city_id| {
@@ -5534,34 +5592,43 @@ impl AdvancedAi {
             return;
         }
         let counts = self.counts(g, pid);
-        let mut best: Option<(f64, u32, String)> = None;
-        for city in g
-            .cities
-            .values()
-            .filter(|city| city.owner == pid && city.queue.is_empty())
-        {
-            for item in g.producible_items(pid, city.id) {
-                let Item::Unit { unit } = item else { continue };
-                if g.rules.units[unit.as_str()].class != "support" || unit == "military_engineer" {
-                    continue;
-                }
-                let value = self.production_value(
-                    g,
-                    pid,
-                    city.id,
-                    &Item::Unit { unit: unit.clone() },
-                    plan,
-                    &counts,
-                );
-                if best.as_ref().is_none_or(|(old, old_city, old_unit)| {
-                    value > *old + 1e-9
-                        || ((value - *old).abs() < 1e-9
-                            && (city.id, unit.as_str()) < (*old_city, old_unit.as_str()))
-                }) {
-                    best = Some((value, city.id, unit));
+        let best: Option<(f64, u32, String)> = {
+            let _memo = g.query_memo();
+            let mut best = None;
+            for city in g
+                .cities
+                .values()
+                .filter(|city| city.owner == pid && city.queue.is_empty())
+            {
+                for item in g.producible_items(pid, city.id) {
+                    let Item::Unit { unit } = item else { continue };
+                    if g.rules.units[unit.as_str()].class != "support"
+                        || unit == "military_engineer"
+                    {
+                        continue;
+                    }
+                    let value = self.production_value(
+                        g,
+                        pid,
+                        city.id,
+                        &Item::Unit { unit: unit.clone() },
+                        plan,
+                        &counts,
+                    );
+                    if best.as_ref().is_none_or(
+                        |(old, old_city, old_unit): &(f64, u32, String)| {
+                            value > *old + 1e-9
+                                || ((value - *old).abs() < 1e-9
+                                    && (city.id, unit.as_str())
+                                        < (*old_city, old_unit.as_str()))
+                        },
+                    ) {
+                        best = Some((value, city.id, unit));
+                    }
                 }
             }
-        }
+            best
+        };
         let Some((value, city, unit)) = best else {
             return;
         };
@@ -5613,27 +5680,29 @@ impl AdvancedAi {
             {
                 continue;
             }
-            let best = g
-                .producible_items(pid, cid)
-                .into_iter()
-                .filter(|item| {
-                    let Item::Unit { unit } = item else {
-                        return false;
-                    };
-                    let unit = &g.rules.units[unit];
-                    unit.class == "military"
-                        && unit.domain.as_deref() != Some("sea")
-                        && unit.domain.as_deref() != Some("air")
-                })
-                .map(|item| {
-                    let score = self.production_value(g, pid, cid, &item, plan, &counts);
-                    (score, std::cmp::Reverse(format!("{item:?}")), item)
-                })
-                .max_by(|left, right| {
-                    left.0
-                        .total_cmp(&right.0)
-                        .then_with(|| left.1.cmp(&right.1))
-                });
+            let best = {
+                let _memo = g.query_memo();
+                g.producible_items(pid, cid)
+                    .into_iter()
+                    .filter(|item| {
+                        let Item::Unit { unit } = item else {
+                            return false;
+                        };
+                        let unit = &g.rules.units[unit];
+                        unit.class == "military"
+                            && unit.domain.as_deref() != Some("sea")
+                            && unit.domain.as_deref() != Some("air")
+                    })
+                    .map(|item| {
+                        let score = self.production_value(g, pid, cid, &item, plan, &counts);
+                        (score, std::cmp::Reverse(format!("{item:?}")), item)
+                    })
+                    .max_by(|left, right| {
+                        left.0
+                            .total_cmp(&right.0)
+                            .then_with(|| left.1.cmp(&right.1))
+                    })
+            };
             if let Some((score, _, item)) = best {
                 if score > 0.0 {
                     let _ = g.apply(pid, &Action::Produce { city: cid, item });
@@ -5649,35 +5718,40 @@ impl AdvancedAi {
             if !g.cities[&cid].queue.is_empty() {
                 continue;
             }
-            let mut best: Option<(f64, String, Item)> = None;
-            for item in g.producible_items(pid, cid) {
-                if let Item::Project { project } = &item {
-                    let spec = &g.rules.projects[project];
-                    let already_queued_elsewhere = !spec.repeatable
-                        && g.cities.values().any(|city| {
-                            city.owner == pid
-                                && city.id != cid
-                                && matches!(
-                                    city.queue.first(),
-                                    Some(Item::Project { project: queued }) if queued == project
-                                )
-                        });
-                    if already_queued_elsewhere {
-                        continue;
+            let best: Option<(f64, String, Item)> = {
+                let _memo = g.query_memo();
+                let mut best = None;
+                for item in g.producible_items(pid, cid) {
+                    if let Item::Project { project } = &item {
+                        let spec = &g.rules.projects[project];
+                        let already_queued_elsewhere = !spec.repeatable
+                            && g.cities.values().any(|city| {
+                                city.owner == pid
+                                    && city.id != cid
+                                    && matches!(
+                                        city.queue.first(),
+                                        Some(Item::Project { project: queued }) if queued == project
+                                    )
+                            });
+                        if already_queued_elsewhere {
+                            continue;
+                        }
+                    }
+                    let score = self.production_value(g, pid, cid, &item, plan, &counts);
+                    let key = format!("{item:?}");
+                    let replace = best
+                        .as_ref()
+                        .map(|(old, old_key, _): &(f64, String, Item)| {
+                            score > *old + 1e-9
+                                || ((score - *old).abs() < 1e-9 && key < *old_key)
+                        })
+                        .unwrap_or(true);
+                    if replace {
+                        best = Some((score, key, item));
                     }
                 }
-                let score = self.production_value(g, pid, cid, &item, plan, &counts);
-                let key = format!("{item:?}");
-                let replace = best
-                    .as_ref()
-                    .map(|(old, old_key, _)| {
-                        score > *old + 1e-9 || ((score - *old).abs() < 1e-9 && key < *old_key)
-                    })
-                    .unwrap_or(true);
-                if replace {
-                    best = Some((score, key, item));
-                }
-            }
+                best
+            };
             if let Some((score, _, item)) = best {
                 if score > -1_000.0
                     && g.apply(
@@ -11761,6 +11835,31 @@ mod tests {
             ai.victory_focus(&culture, 0).strategy,
             GrandStrategy::Culture
         );
+    }
+
+    #[test]
+    fn bulk_rival_culture_pressure_matches_individual_victory_scans() {
+        let mut game = Game::new(4, 30, 18, 7_603, 300, 0);
+        for source in 0..4 {
+            game.players[source].culture_lifetime = 500.0 + source as f64 * 350.0;
+            for target in 0..4 {
+                if source != target {
+                    game.players[source]
+                        .tourism_pressure
+                        .insert(target, (source * 700 + target * 190) as f64);
+                }
+            }
+        }
+
+        let ai = AdvancedAi::new();
+        let bulk = ai.rival_culture_pressures(&game);
+        for pid in 0..4 {
+            let batched =
+                ai.rival_victory_pressure_with_culture(&game, pid, bulk.get(&pid).copied());
+            let individual = ai.rival_victory_pressure(&game, pid);
+            assert_eq!(batched.strategy, individual.strategy, "player {pid}");
+            assert_eq!(batched.progress, individual.progress, "player {pid}");
+        }
     }
 
     #[test]

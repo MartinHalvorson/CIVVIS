@@ -2392,6 +2392,24 @@ fn spawn_layout_score(
     }
 }
 
+fn spawn_territory_counts(
+    wm: &WorldMap,
+    landmass: &BTreeSet<Pos>,
+    layout: &[Pos],
+) -> BTreeMap<Pos, i32> {
+    let mut counts: BTreeMap<Pos, i32> =
+        layout.iter().copied().map(|start| (start, 0)).collect();
+    for tile in landmass {
+        if let Some(owner) = layout
+            .iter()
+            .min_by_key(|start| (wm.distance(*tile, **start), **start))
+        {
+            *counts.get_mut(owner).unwrap() += 1;
+        }
+    }
+    counts
+}
+
 fn layout_balance_percentages(
     score: SpawnLayoutScore,
     civilization_count: usize,
@@ -2504,27 +2522,38 @@ fn targeted_layout(
     count: usize,
 ) -> Vec<Pos> {
     let mut layout = vec![first];
+    let mut selected = BTreeSet::from([first]);
+    // The nearest selected start only ever gets closer as the layout grows.
+    // Carry that value forward instead of rescanning the whole partial layout
+    // for every candidate on every seat. The old search was
+    // O(candidates * seats^2), which made large-world setup dominate even a
+    // complete simulation; this is the same ordering in
+    // O(candidates * seats).
+    let mut nearest: Vec<i32> = candidates
+        .iter()
+        .map(|candidate| wm.distance(*candidate, first))
+        .collect();
     while layout.len() < count {
         let Some(next) = candidates
             .iter()
-            .filter(|candidate| !layout.contains(candidate))
-            .min_by_key(|candidate| {
-                let nearest = layout
-                    .iter()
-                    .map(|start| wm.distance(**candidate, *start))
-                    .min()
-                    .unwrap_or(0);
+            .enumerate()
+            .filter(|(_, candidate)| !selected.contains(candidate))
+            .min_by_key(|(index, candidate)| {
                 (
-                    start_distance_miss(nearest),
+                    start_distance_miss(nearest[*index]),
                     -qualities[*candidate],
                     **candidate,
                 )
             })
-            .copied()
+            .map(|(_, candidate)| *candidate)
         else {
             break;
         };
         layout.push(next);
+        selected.insert(next);
+        for (distance, candidate) in nearest.iter_mut().zip(candidates) {
+            *distance = (*distance).min(wm.distance(*candidate, next));
+        }
     }
     layout
 }
@@ -2635,12 +2664,22 @@ fn balanced_major_spawns(
     // seat ends up with a thin territory wedge. Hill-climb each start over its
     // immediate neighbourhood, keeping any single swap that lifts the balance
     // ranking, so no seat is left an outlier the sampler simply never offered.
+    //
+    // The exhaustive refinement scores every nearby replacement against every
+    // land tile and every other start. That is useful on shipped-size worlds,
+    // but grows cubically with seats and used to make Colossal and Ludicrous
+    // setup take minutes. Above twenty seats the sampled layout already has
+    // 80 independent anchors and the map's documented fairness threshold is
+    // intentionally coarser, so refine only its low-territory tail instead of
+    // spending more time on every seat than a full headless game takes.
     let rank = |layout: &[Pos]| {
         let score = spawn_layout_score(wm, landmass, layout, &qualities);
         let (territory_balance, neighbor_balance, quality_balance) =
             layout_balance_percentages(score, count, landmass.len());
         (
-            territory_balance.min(neighbor_balance).min(quality_balance),
+            territory_balance
+                .min(neighbor_balance)
+                .min(quality_balance),
             territory_balance + neighbor_balance + quality_balance,
             score.minimum_separation,
             score.minimum_territory,
@@ -2648,37 +2687,168 @@ fn balanced_major_spawns(
             score.total_quality,
         )
     };
-    let mut best_rank = rank(&layout);
-    for _ in 0..4 {
-        let mut improved = false;
-        for index in 0..layout.len() {
-            let current = layout[index];
-            let Some((candidate_rank, candidate)) = candidates
-                .iter()
-                .filter(|candidate| {
-                    wm.distance(**candidate, current) <= 3
-                        && !layout.contains(candidate)
-                })
-                .map(|candidate| {
-                    let mut trial = layout.clone();
-                    trial[index] = *candidate;
-                    (rank(&trial), *candidate)
-                })
-                // A balance win must not spend the separation the layout
-                // stage just guaranteed.
-                .filter(|((_, _, separation, _, _, _), _)| *separation >= separation_floor)
-                .max()
-            else {
-                continue;
-            };
-            if candidate_rank > best_rank {
-                best_rank = candidate_rank;
-                layout[index] = candidate;
-                improved = true;
+    if count <= 20 {
+        let mut best_rank = rank(&layout);
+        for _ in 0..4 {
+            let mut improved = false;
+            for index in 0..layout.len() {
+                let current = layout[index];
+                let Some((candidate_rank, candidate)) = candidates
+                    .iter()
+                    .filter(|candidate| {
+                        wm.distance(**candidate, current) <= 3
+                            && !layout.contains(candidate)
+                    })
+                    .map(|candidate| {
+                        let mut trial = layout.clone();
+                        trial[index] = *candidate;
+                        (rank(&trial), *candidate)
+                    })
+                    // A balance win must not spend the separation the layout
+                    // stage just guaranteed.
+                    .filter(|((_, _, separation, _, _, _), _)| *separation >= separation_floor)
+                    .max()
+                else {
+                    continue;
+                };
+                if candidate_rank > best_rank {
+                    best_rank = candidate_rank;
+                    layout[index] = candidate;
+                    improved = true;
+                }
+            }
+            if !improved {
+                break;
             }
         }
-        if !improved {
-            break;
+    } else {
+        // A large layout needs refinement only where its poorest Voronoi cells
+        // fall below the relaxed large-world floor. Find that low tail and its
+        // immediate competitors, estimate every nearby replacement in one
+        // landmass sweep, and run the exact global score only for the eight
+        // strongest estimates. This keeps the same separation and published
+        // balance floors while avoiding an exact O(land * seats) score for
+        // every neighbor of every seat.
+        for _ in 0..12 {
+            let score = spawn_layout_score(wm, landmass, &layout, &qualities);
+            let (territory_balance, neighbor_balance, quality_balance) =
+                layout_balance_percentages(score, count, landmass.len());
+            if territory_balance >= 40 && neighbor_balance >= 50 && quality_balance >= 50 {
+                break;
+            }
+            let territories = spawn_territory_counts(wm, landmass, &layout);
+            let mut poorest: Vec<(i32, Pos)> = territories
+                .iter()
+                .map(|(start, territory)| (*territory, *start))
+                .collect();
+            poorest.sort_unstable();
+            poorest.truncate(8);
+            let Some(current_territory) = poorest.first().map(|(territory, _)| *territory) else {
+                break;
+            };
+            let current_low_sum: i32 = poorest.iter().map(|(territory, _)| *territory).sum();
+            let mut target_indices = BTreeSet::new();
+            for (_, poor_start) in &poorest {
+                let mut neighbors: Vec<usize> = (0..layout.len()).collect();
+                neighbors.sort_unstable_by_key(|index| {
+                    (
+                        wm.distance(layout[*index], *poor_start),
+                        layout[*index],
+                        *index,
+                    )
+                });
+                target_indices.extend(neighbors.into_iter().take(5));
+            }
+
+            let mut nearby: Vec<(i32, i32, i32, Pos, usize)> = Vec::new();
+            for index in target_indices {
+                let current = layout[index];
+                let other_starts: Vec<Pos> = layout
+                    .iter()
+                    .enumerate()
+                    .filter(|(other, _)| *other != index)
+                    .map(|(_, start)| *start)
+                    .collect();
+                let nearest_other: Vec<(i32, Pos)> = landmass
+                    .iter()
+                    .map(|tile| {
+                        other_starts
+                            .iter()
+                            .map(|start| (wm.distance(*tile, *start), *start))
+                            .min()
+                            .unwrap()
+                })
+                .collect();
+                for candidate in candidates.iter().copied().filter(|candidate| {
+                    wm.distance(*candidate, current) <= 3
+                        && !layout.contains(candidate)
+                        && other_starts
+                            .iter()
+                            .all(|other| wm.distance(*candidate, *other) >= separation_floor)
+                }) {
+                    let mut counts: BTreeMap<Pos, i32> = other_starts
+                        .iter()
+                        .copied()
+                        .chain(std::iter::once(candidate))
+                        .map(|start| (start, 0))
+                        .collect();
+                    for (tile, nearest) in landmass.iter().zip(&nearest_other) {
+                        let owner = if (wm.distance(*tile, candidate), candidate) < *nearest {
+                            candidate
+                        } else {
+                            nearest.1
+                        };
+                        *counts.get_mut(&owner).unwrap() += 1;
+                    }
+                    let minimum = counts.values().copied().min().unwrap_or(0);
+                    let mut ordered_counts: Vec<i32> = counts.values().copied().collect();
+                    ordered_counts.sort_unstable();
+                    let low_sum = ordered_counts.iter().take(8).sum();
+                    nearby.push((minimum, low_sum, qualities[&candidate], candidate, index));
+                }
+            }
+            nearby.sort_unstable_by(|left, right| right.cmp(left));
+            nearby.truncate(8);
+
+            let replacement = nearby
+                .into_iter()
+                .map(|(minimum, low_sum, _, candidate, index)| {
+                    let mut trial = layout.clone();
+                    trial[index] = candidate;
+                    let score = spawn_layout_score(wm, landmass, &trial, &qualities);
+                    let balance = layout_balance_percentages(score, count, landmass.len());
+                    let candidate_rank = (
+                        balance.0.min(balance.1).min(balance.2),
+                        balance.0 + balance.1 + balance.2,
+                        score.minimum_separation,
+                        score.minimum_territory,
+                        score.minimum_quality,
+                        score.total_quality,
+                    );
+                    (
+                        candidate_rank,
+                        balance,
+                        low_sum,
+                        candidate,
+                        index,
+                        minimum,
+                    )
+                })
+                .filter(|((_, _, separation, _, _, _), _, _, _, _, _)| {
+                    *separation >= separation_floor
+                })
+                .filter(|(_, balance, low_sum, _, _, minimum)| {
+                    *minimum >= current_territory
+                        && balance.0 >= territory_balance
+                        && balance.1 >= 50
+                        && balance.2 >= 50
+                        && *low_sum > current_low_sum
+                })
+                .max();
+            let Some((_, _, _, candidate, index, _)) = replacement else {
+                break;
+            };
+            layout[index] = candidate;
         }
     }
 
@@ -4157,6 +4327,60 @@ mod river_tests {
         let score = spawn_layout_score(&wm, &landmass, &first, &qualities);
         assert!(score.minimum_separation >= 8, "{score:?}");
         assert!(score.negative_neighbor_range >= -2, "{score:?}");
+    }
+
+    #[test]
+    fn incremental_targeted_layout_preserves_the_exhaustive_choice_order() {
+        fn exhaustive_layout(
+            wm: &WorldMap,
+            candidates: &[Pos],
+            qualities: &BTreeMap<Pos, i32>,
+            first: Pos,
+            count: usize,
+        ) -> Vec<Pos> {
+            let mut layout = vec![first];
+            while layout.len() < count {
+                let Some(next) = candidates
+                    .iter()
+                    .filter(|candidate| !layout.contains(candidate))
+                    .min_by_key(|candidate| {
+                        let nearest = layout
+                            .iter()
+                            .map(|start| wm.distance(**candidate, *start))
+                            .min()
+                            .unwrap_or(0);
+                        (
+                            start_distance_miss(nearest),
+                            -qualities[*candidate],
+                            **candidate,
+                        )
+                    })
+                    .copied()
+                else {
+                    break;
+                };
+                layout.push(next);
+            }
+            layout
+        }
+
+        let rules = Rules::embedded();
+        let mut wm = WorldMap::new(24, 16);
+        let candidates: Vec<Pos> = wm.tiles.keys().copied().collect();
+        for tile in wm.tiles.values_mut() {
+            tile.terrain = "plains".to_string();
+        }
+        let qualities: BTreeMap<Pos, i32> = candidates
+            .iter()
+            .map(|candidate| (*candidate, start_quality(&rules, &wm, *candidate)))
+            .collect();
+
+        for first in candidates.iter().step_by(37).take(8) {
+            assert_eq!(
+                targeted_layout(&wm, &candidates, &qualities, *first, 18),
+                exhaustive_layout(&wm, &candidates, &qualities, *first, 18),
+            );
+        }
     }
 
     #[test]
