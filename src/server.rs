@@ -4187,6 +4187,18 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function worldFacing(seed)"));
         assert!(EMBEDDED_INDEX.contains("function adoptWorldFacing(st)"));
         assert!(EMBEDDED_INDEX.contains("found_north !== false"));
+        // A world's shape and its bearing are earned by going round it: until
+        // then the chart is unrolled about one fixed place instead of about the
+        // camera, so panning east does not hand back the coasts you started
+        // from, and the thumbnail frames the ground that is known rather than
+        // the whole rectangle.
+        assert!(EMBEDDED_INDEX.contains("function wentAround(st = state)"));
+        assert!(EMBEDDED_INDEX.contains("went_around !== false"));
+        assert!(EMBEDDED_INDEX.contains("function chartAnchorX()"));
+        assert!(EMBEDDED_INDEX.contains("function chartCovers(worldX)"));
+        assert!(EMBEDDED_INDEX.contains("function miniBounds()"));
+        assert!(EMBEDDED_INDEX.contains("function axisRot()"));
+        assert!(!EMBEDDED_INDEX.contains("Math.round((cam.x - x) / WW()) * WW()"));
         // The same rule one step out: a world is drawn as its own people draw
         // it. Until they have proved it round the viewer must keep the chart
         // projection, keep the zoom short of anything that would show them an
@@ -4871,7 +4883,11 @@ mod tests {
             "function advanceUserCameraMotion(now = performance.now())",
             "function advanceCameraFollow(now = performance.now())",
             "function startCameraFollow(unitId)",
-            "function unitMapPoint(p, nearX = cam.x)",
+            // The default is `null`, not `cam.x`: a chart that has not been
+            // round its world is unrolled about that civilization's own ground
+            // rather than about the camera, and only a caller chaining a path
+            // together names the point it wants a leg drawn beside.
+            "function unitMapPoint(p, nearX = null)",
             "function sampleUnitMove(mv, now = performance.now())",
             "function cinematicUnitMapPoint(unit, now = performance.now())",
             "function unitMoveDuration(unitId, steps)",

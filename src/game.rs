@@ -11653,6 +11653,12 @@ pub struct Player {
     #[serde(default)]
     pub co2_emissions: f64,
     pub explored: BTreeSet<Pos>,
+    /// Whether this civilization's own knowledge has ever run the whole way
+    /// round the world — see [`Game::update_world_lap`]. Once a people have
+    /// been around they know the shape they live on; until then they do not,
+    /// and their chart says so.
+    #[serde(default)]
+    pub went_around: bool,
     /// Per-tile last-known state. Unlike `explored`, this does not update
     /// while a tile is under fog, so improvements, ownership, disasters, and
     /// other changes cannot leak through a player observation.
@@ -11836,6 +11842,7 @@ impl Player {
             power_fuel_consumed: BTreeMap::new(),
             co2_emissions: 0.0,
             explored: BTreeSet::new(),
+            went_around: false,
             remembered_tiles: TileMemory::default(),
             remembered_cities: BTreeMap::new(),
             met: BTreeSet::new(),
@@ -12263,6 +12270,17 @@ fn pretty(id: &str) -> String {
 
 /// Events older than this are dropped, oldest first. Long games are long.
 const EVENT_LIMIT: usize = 2_000;
+
+/// How many longitudes a globe is cut into when asking whether a people have
+/// been round it — ten degrees apiece. Coarse enough that a ship crossing a
+/// band cannot pass through without seeing it, fine enough that a lap is a
+/// lap. A cylinder is asked about its own columns instead, since it has a
+/// countable number of them and each one is real ground.
+const GLOBE_LAP_BANDS: usize = 36;
+
+/// The latitude past which going round proves nothing, in radians: the Arctic
+/// Circle. See [`Game::update_world_lap`].
+const POLAR_LAP_LIMIT: f64 = 66.5 * std::f64::consts::PI / 180.0;
 
 pub fn default_difficulty() -> String {
     "prince".to_string()
@@ -24410,6 +24428,13 @@ impl Game {
             return;
         }
 
+        // Only ground nobody had seen can close the ring, so this is asked on
+        // the turns exploring actually got somewhere rather than on every
+        // refresh behind every move.
+        if !newly_explored.is_empty() {
+            self.update_world_lap(pid);
+        }
+
         let wonders: BTreeSet<String> = newly_explored
             .into_iter()
             .filter_map(|position| self.map.get(position))
@@ -24440,6 +24465,71 @@ impl Game {
                 self.grant_great_work(pid, "relic", era, "kandy");
             }
         }
+    }
+
+    /// Take note of the longitudes this seat's knowledge now reaches, and of
+    /// whether they have closed the ring.
+    ///
+    /// A civilization does not begin knowing what shape it lives on. The world
+    /// could be a plain that runs on forever, and every unknown quarter is
+    /// somewhere it might keep running. What settles it is going round: once a
+    /// people have seen ground at every longitude, with no gap left for the
+    /// world to continue through, the two ends of their chart have to be the
+    /// same ground. That is the moment the world is known to come back on
+    /// itself, and it is the moment one lap of exploring arrives at.
+    ///
+    /// Reported, never enforced — nothing in the simulation turns on this. It
+    /// decides what a civilization's own map has earned the right to show, and
+    /// reaches the client as `me.went_around` in [`crate::obs`].
+    fn update_world_lap(&mut self, pid: usize) {
+        if self.map.width <= 0 || self.players[pid].went_around {
+            return;
+        }
+        let globe = self.map.sphere();
+        let bands = if globe.is_some() {
+            GLOBE_LAP_BANDS
+        } else {
+            self.map.width as usize
+        };
+        // One tile can only account for one longitude, so most of a game is
+        // settled without looking at the ground at all.
+        if self.players[pid].explored.len() < bands {
+            return;
+        }
+        let mut seen = vec![false; bands];
+        let mut count = 0usize;
+        for position in &self.players[pid].explored {
+            let band = match globe {
+                Some(sphere) => {
+                    // Near a pole every longitude is a short walk from every
+                    // other, so a circuit of the ice says nothing about how
+                    // big the world is. A cylinder's rows are all one length,
+                    // so this is a globe's problem only.
+                    if sphere.latitude(*position).abs() > POLAR_LAP_LIMIT {
+                        continue;
+                    }
+                    let turns =
+                        (sphere.longitude(*position) / std::f64::consts::TAU).rem_euclid(1.0);
+                    ((turns * bands as f64) as usize).min(bands - 1)
+                }
+                None => crate::hex::axial_to_offset(position.0, position.1)
+                    .0
+                    .rem_euclid(self.map.width) as usize,
+            };
+            if !std::mem::replace(&mut seen[band], true) {
+                count += 1;
+            }
+        }
+        if count < bands {
+            return;
+        }
+        self.players[pid].went_around = true;
+        self.note_important(
+            pid,
+            "World",
+            "have been the whole way around the world: the two ends of the chart are the same ground",
+            None,
+        );
     }
 
     fn refresh_all_visibility(&mut self) {
@@ -24515,6 +24605,12 @@ impl Game {
         self.remembered_under
             .iter_mut()
             .for_each(|(stamp, _)| *stamp = 0);
+        // Allies pool what they know, and a ring closed between two of them is
+        // still a closed ring: each side has sailed its half and the charts
+        // agree where they meet.
+        for member in members {
+            self.update_world_lap(*member);
+        }
     }
 
     fn backfill_visibility_memory(&mut self) {
@@ -53217,5 +53313,107 @@ mod district_mechanics {
         assert_eq!(target, "legion");
         // Rome's Legion carries the shipped Swordsman upgrade path onward.
         assert_eq!(game.rules.units["legion"].upgrade_to.as_deref(), Some("man_at_arms"));
+    }
+}
+
+#[cfg(test)]
+mod world_lap_tests {
+    use super::*;
+
+    fn band_of(longitude: f64) -> usize {
+        let turns = (longitude / std::f64::consts::TAU).rem_euclid(1.0);
+        ((turns * GLOBE_LAP_BANDS as f64) as usize).min(GLOBE_LAP_BANDS - 1)
+    }
+
+    /// A people learn that their world comes back on itself by going round it,
+    /// and not one step before. Every longitude but one still leaves a gap,
+    /// and a gap is a direction the world might simply keep going in.
+    #[test]
+    fn a_world_is_known_to_come_back_on_itself_only_once_every_longitude_is_seen() {
+        let mut game = Game::new(2, 24, 16, 4_242, 25, 0);
+        let width = game.map.width;
+        game.players[0].explored.clear();
+        game.players[0].went_around = false;
+
+        for column in 0..width - 1 {
+            game.players[0]
+                .explored
+                .insert(crate::hex::offset_to_axial(column, 8));
+        }
+        game.update_world_lap(0);
+        assert!(
+            !game.players[0].went_around,
+            "one unseen longitude is a way the world might still continue",
+        );
+
+        game.players[0]
+            .explored
+            .insert(crate::hex::offset_to_axial(width - 1, 8));
+        game.update_world_lap(0);
+        assert!(game.players[0].went_around, "that was a lap");
+        assert!(
+            game.events
+                .iter()
+                .any(|event| event.player == 0 && event.text.contains("whole way around the world")),
+            "closing the ring is the sort of thing a chronicle records",
+        );
+
+        // Knowing the shape of your world is not something you can un-know:
+        // ground can be lost, and this cannot.
+        game.players[0].explored.clear();
+        game.update_world_lap(0);
+        assert!(game.players[0].went_around);
+    }
+
+    /// Near a pole every longitude is a few steps from every other, so a
+    /// circuit of the ice crosses all of them without going anywhere. It is
+    /// not a lap of the world and must not read as one.
+    #[test]
+    fn a_circuit_of_the_ice_is_not_a_lap_of_a_globe() {
+        let mut game = Game::new(2, 24, 16, 90_210, 25, 0);
+        game.map = crate::world::WorldMap::globe(16);
+        let cells: Vec<(Pos, f64, f64)> = {
+            let sphere = game.map.sphere().expect("a globe is laid out on a sphere");
+            sphere
+                .positions()
+                .map(|pos| (pos, sphere.latitude(pos), sphere.longitude(pos)))
+                .collect()
+        };
+        let polar: Vec<(Pos, f64)> = cells
+            .iter()
+            .filter(|(_, latitude, _)| latitude.abs() > 70f64.to_radians())
+            .map(|(pos, _, longitude)| (*pos, *longitude))
+            .collect();
+        assert_eq!(
+            polar
+                .iter()
+                .map(|(_, longitude)| band_of(*longitude))
+                .collect::<BTreeSet<_>>()
+                .len(),
+            GLOBE_LAP_BANDS,
+            "the fixture only tests anything if the ice does cross every longitude",
+        );
+
+        game.players[0].explored.clear();
+        game.players[0].went_around = false;
+        for (pos, _) in &polar {
+            game.players[0].explored.insert(*pos);
+        }
+        game.update_world_lap(0);
+        assert!(
+            !game.players[0].went_around,
+            "walking round the ice is not sailing round the world",
+        );
+
+        for (pos, latitude, _) in &cells {
+            if latitude.abs() < 20f64.to_radians() {
+                game.players[0].explored.insert(*pos);
+            }
+        }
+        game.update_world_lap(0);
+        assert!(
+            game.players[0].went_around,
+            "a way round at the equator is the real thing",
+        );
     }
 }
