@@ -188,14 +188,26 @@ whatever produced the count.
 > e=6.6e4 crossing at map 209, Elo-equivalent **+37**, `promotion gate: PASS`.
 > Three disjoint seed sets total 860 maps, 140–58, p=5.2e-09.
 >
-> **The measured mechanism is spread, not the force-group story argued below.**
-> Projecting from the plan in force roughly *doubles* the spread between branch
-> values — 0.031 → 0.062 at four players, 0.049 → 0.085 at three — so the
-> counterfactual discriminates about twice as well between lanes. A cold
-> branch's first act is to re-plan, which partially washes out the very
-> difference the branch exists to measure. The lane shift went the opposite way
-> from the force-group prediction: the promoted agent takes *fewer* domination
-> seats (32 against 51), not more.
+> **The mechanism is decision change, not dispersion, and not the force-group
+> story argued below.** Two mechanisms were proposed for this promotion and
+> both were wrong. The force-group argument predicted *more* domination; the
+> promoted agent takes less. The dispersion argument — that warm branches
+> roughly double the branch spread — rested on an **unpaired** measurement
+> comparing arms that played different games, and does not survive a paired
+> one: flipping the flag on one agent at one position, over 57 positions,
+> gives cold spread higher on 17 and lower on 20, sign p=0.7428.
+>
+> What survives is measured and modest: the two configurations **decide
+> differently on 14 of 57 positions — one review in four** — with the spread
+> distribution unchanged. Fidelity moves the search's answer rather than
+> sharpening its resolution, and those different answers win 87 mirrored map
+> directions to 34. Which lane benefits is still unexplained: the flip
+> direction is 5 toward a lane against 9 toward adaptive, p=0.4240.
+>
+> **The general lesson is about measurement, not about search.** An unpaired
+> comparison of two agents is a comparison of two *trajectories*, because each
+> agent steers itself into different positions. `search_probe` exists because
+> of this; its first run refuted a claim its author had merged an hour earlier.
 
 **Mechanism.** Project each branch from the planner **in force**, not from a
 newly constructed one. Clone the agent and apply the branch's decision through
