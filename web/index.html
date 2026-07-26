@@ -2520,6 +2520,14 @@
           </div>
           <button class="ghost overlay-layout-reset" id="reset-overlay-layout" type="button">Reset overlay positions &amp; sizes</button>
         </div>
+        <div class="overlay-options" id="flat-map-wrap-settings" role="group"
+             aria-labelledby="flat-map-wrap-title">
+          <h2 id="flat-map-wrap-title">Flat map wraparound</h2>
+          <div class="overlay-option-grid">
+            <label class="overlay-option"><input type="checkbox" id="wrapxchk" checked>Left–right wraparound</label>
+            <label class="overlay-option"><input type="checkbox" id="wrapychk">Top–bottom wraparound</label>
+          </div>
+        </div>
         <label class="setting-row"><span><input type="checkbox" id="yieldchk"> Show yields per tile</span><kbd>Y</kbd></label>
         <label class="setting-row"><span><input type="checkbox" id="gridchk"> Show the hex grid</span><kbd>G</kbd></label>
         <label class="setting-row"><span><input type="checkbox" id="reschk"> Show resource icons</span><kbd>Q</kbd></label>
@@ -3101,6 +3109,11 @@ let SHOW_ARTIFACT_SITES = localStorage.getItem("civvis-show-artifact-sites") ===
 // because that is the state Civ 6 starts in.
 let SHOW_GRID = localStorage.getItem("civvis-show-grid") === "1";
 let SHOW_RESOURCES = localStorage.getItem("civvis-show-resources") !== "0";
+// Flat-map wrapping is a viewer choice. Horizontal wrapping starts on, as a
+// world map normally does; vertical wrapping starts off so the polar rows keep
+// their literal top and bottom until somebody explicitly asks for a torus.
+let FLAT_MAP_WRAP_X = localStorage.getItem("civvis-flat-map-wrap-x") !== "0";
+let FLAT_MAP_WRAP_Y = localStorage.getItem("civvis-flat-map-wrap-y") === "1";
 // Civ 6's Gameplay > Edge Pan, which ships on: the camera walks when the
 // pointer reaches the edge of the map. It is a setting there and a setting
 // here, because a windowed browser map is a different proposition from a
@@ -3588,17 +3601,14 @@ function kick(amount) {
   shakeAmp = Math.min(7, Math.max(shakeUntil > now ? shakeAmp : 0, amount));
   shakeUntil = now + SHAKE_MS;
 }
-// A caller passing nearX is chaining a path together and wants each leg drawn
-// beside the last; everyone else wants the copy the map itself drew, which on
-// an open chart is not the one nearest the camera.
-function unitMapPoint(p, nearX = null) {
+// A caller passing a nearby point is chaining a path together and wants each
+// leg drawn beside the last across either seam; everyone else wants the copy
+// the map itself drew nearest the camera.
+function unitMapPoint(p, nearX = null, nearY = null) {
   const t = TMAP.get(key(p));
-  let x = S * SQ3 * (p[0] + p[1] / 2);
-  if (mapWrapsX()) {
-    const about = nearX === null ? (wentAround() ? cam.x : chartAnchorX()) : nearX;
-    x += Math.round((about - x) / WW()) * WW();
-  }
-  return {x, y:S * 1.5 * p[1], lift:t ? elev(t) : 0};
+  const x = wrapX(S * SQ3 * (p[0] + p[1] / 2), nearX);
+  const y = wrapY(S * 1.5 * p[1], nearY);
+  return {x, y, lift:t ? elev(t) : 0};
 }
 function mapPointToView(point) {
   const wx = point.x - cam.x, wy = point.y - cam.y;
@@ -3930,16 +3940,17 @@ function animateDiff(prev, next) {
       // across oceans or mountains even though every game step was legal.
       const hasRoute = Array.isArray(route) && route.length > 1;
       if (!hasRoute && hexDistUI(pu.pos, nu.pos) > 1) {
-        const start = unitMapPoint(pu.pos), end = unitMapPoint(nu.pos, start.x);
+        const start = unitMapPoint(pu.pos);
+        const end = unitMapPoint(nu.pos, start.x, start.y);
         unitHeadings.set(nu.id, {x:end.x - start.x, y:end.y - start.y, at:now});
         anim.moves.delete(nu.id);
       } else {
         const positions = hasRoute ? route : [pu.pos, nu.pos];
         const current = cur ? sampleUnitMove(cur, now) : null;
-        let nearX = current?.x ?? cam.x;
+        let nearX = current?.x ?? cam.x, nearY = current?.y ?? cam.y;
         const mapPoints = positions.map(pos => {
-          const point = unitMapPoint(pos, nearX);
-          nearX = point.x;
+          const point = unitMapPoint(pos, nearX, nearY);
+          nearX = point.x; nearY = point.y;
           return point;
         });
         if (current) mapPoints[0] = {x:current.x, y:current.y, lift:current.lift};
@@ -4222,6 +4233,9 @@ function refreshMiniForLayout() {
 function applyHudWidgetMetrics(name, metrics, persist = false) {
   const config = HUD_WIDGETS[name];
   if (!config?.element) return;
+  const affectsFocus = name === "players" || name === "victory";
+  const priorBounds = affectsFocus && state ? mapFocusBounds() : null;
+  const priorFocus = priorBounds ? currentMapFocusWorld() : null;
   const next = clampHudWidget(config, metrics);
   const style = config.element.style;
   style.left = `${next.x}px`; style.top = `${next.y}px`;
@@ -4242,6 +4256,7 @@ function applyHudWidgetMetrics(name, metrics, persist = false) {
   if (name === "victory" && state) syncVictoryLeaderCapacity(config.element);
   if (persist) saveHudLayout();
   if (name === "minimap") refreshMiniForLayout();
+  reframeIfMapFocusBoundsChanged(priorBounds, priorFocus);
 }
 
 function applySavedHudLayouts() {
@@ -4255,6 +4270,9 @@ function applySavedHudLayouts() {
 function resetHudWidget(name, persist = true) {
   const config = HUD_WIDGETS[name];
   if (!config?.element) return;
+  const affectsFocus = name === "players" || name === "victory";
+  const priorBounds = affectsFocus && state ? mapFocusBounds() : null;
+  const priorFocus = priorBounds ? currentMapFocusWorld() : null;
   delete HUD_LAYOUT[name];
   if (Number.isInteger(config.dossierId)) {
     applyHudWidgetMetrics(name, defaultDossierMetrics(config.dossierId));
@@ -4271,6 +4289,7 @@ function resetHudWidget(name, persist = true) {
   if ((name === "players" || name === "victory") && state) drawPlayerHud();
   if (persist) saveHudLayout();
   if (name === "minimap") requestAnimationFrame(refreshMiniForLayout);
+  reframeIfMapFocusBoundsChanged(priorBounds, priorFocus);
 }
 
 function resetAllHudWidgets() {
@@ -4523,10 +4542,20 @@ function cityBannerColor(owner) {
     : pcol(owner);
 }
 function WW() { return state ? S * SQ3 * state.map.width : 1e12; }
-function mapWrapsX() {
+function WH() { return state ? S * 1.5 * state.map.height : 1e12; }
+// The simulation's topology and the flat chart's presentation are separate
+// questions. A globe always follows the topology sent by the server; a flat
+// map follows these two display controls, including on a normally bounded map.
+function worldWrapsX() {
   if (!state) return true;
   if (typeof state.map.wrap_x === "boolean") return state.map.wrap_x;
   return state.map.script !== "inland_sea";
+}
+function mapWrapsX() {
+  return planetMap() ? worldWrapsX() : FLAT_MAP_WRAP_X;
+}
+function mapWrapsY() {
+  return !!state && !planetMap() && FLAT_MAP_WRAP_Y;
 }
 // Where the chart is unrolled about: the camera once the world is known to
 // come back on itself, and one fixed place until then.
@@ -4582,30 +4611,57 @@ function chartHomePos() {
 // Whether the open chart reaches this far. Past its ends the world does go on,
 // but this civilization has no sheet to draw it on.
 function chartCovers(worldX) {
-  if (!state || !mapWrapsX() || wentAround()) return true;
+  if (!chartIsOpen()) return true;
   return Math.abs(worldX - chartAnchorX()) <= WW() / 2 + S * SQ3;
 }
-function wrapX(x) {
+function wrapNear(value, about, period) {
+  return value + Math.round((about - value) / period) * period;
+}
+function wrapX(x, about = null) {
   if (!mapWrapsX()) return x;
-  const w = WW();
-  const about = wentAround() ? cam.x : chartAnchorX();
-  return x + Math.round((about - x) / w) * w;
+  return wrapNear(x, about === null ? cam.x : about, WW());
+}
+function wrapY(y, about = null) {
+  if (!mapWrapsY()) return y;
+  return wrapNear(y, about === null ? cam.y : about, WH());
+}
+function offsetColumn(pos) {
+  return pos[0] + Math.floor(pos[1] / 2);
+}
+function canonicalOffsetPos(pos, wrapHorizontal, wrapVertical) {
+  if (!state) return pos;
+  let row = pos[1], col = offsetColumn(pos);
+  if (wrapVertical) {
+    const height = state.map.height;
+    row = ((row % height) + height) % height;
+  }
+  if (wrapHorizontal) {
+    const width = state.map.width;
+    col = ((col % width) + width) % width;
+  }
+  return [col - Math.floor(row / 2), row];
+}
+function worldCanonPos(pos) {
+  return canonicalOffsetPos(pos, worldWrapsX(), false);
 }
 function canonPos(p) {
-  if (!state) return p;
-  if (!mapWrapsX()) return p;
-  const w = state.map.width;
-  const col = p[0] + ((p[1] - (p[1] & 1)) >> 1);
-  const m = ((col % w) + w) % w;
-  return [p[0] + (m - col), p[1]];
+  return canonicalOffsetPos(p, mapWrapsX(), mapWrapsY());
 }
 function nbrTile(pos, d) {
   return TMAP.get(key(canonPos([pos[0] + d[0], pos[1] + d[1]])));
 }
 function whexDist(a, b) {
-  if (!state || !mapWrapsX()) return hexDist(a, b);
-  const w = state.map.width;
-  return Math.min(hexDist(a, b), hexDist([a[0]-w, a[1]], b), hexDist([a[0]+w, a[1]], b));
+  if (!state || (!mapWrapsX() && !mapWrapsY())) return hexDist(a, b);
+  const cols = mapWrapsX() ? [-state.map.width, 0, state.map.width] : [0];
+  const rows = mapWrapsY() ? [-state.map.height, 0, state.map.height] : [0];
+  const bCol = offsetColumn(b);
+  let best = Infinity;
+  for (const dc of cols) for (const dr of rows) {
+    const row = b[1] + dr;
+    const copy = [bCol + dc - Math.floor(row / 2), row];
+    best = Math.min(best, hexDist(a, copy));
+  }
+  return best;
 }
 // --- rotating 3D camera: yaw about the camera point, world-fixed sun ---
 let COSR = 1, SINR = 0, LITF = 1;
@@ -4816,7 +4872,7 @@ function updateZoomOut() {
 // hexXY returns camera-relative view coords (rotate, then dimetric squash).
 function hexXY(q, r) {
   const wx = wrapX(S * SQ3 * (q + r / 2)) - cam.x;
-  const wy = S * 1.5 * r - cam.y;
+  const wy = wrapY(S * 1.5 * r) - cam.y;
   return [COSR * wx - SINR * wy, (SINR * wx + COSR * wy) * YS];
 }
 // The same, for a column that means itself rather than a tile of the world:
@@ -4830,7 +4886,7 @@ function hexXYRaw(q, r) {
 // Whether the world is still an open sheet: it comes back on itself and this
 // civilization has not been round to find that out.
 function chartIsOpen() {
-  return !!state && mapWrapsX() && !wentAround();
+  return !!state && worldWrapsX() && !mapWrapsX() && !wentAround();
 }
 // Whether real ground is drawn at this exact copy of a wrapping world. Every
 // tile is drawn once, in the copy the open chart folds it into; the rest of
@@ -4838,7 +4894,7 @@ function chartIsOpen() {
 function chartDrawsGroundAt(q, r) {
   const u = q + r / 2;
   if (Math.abs(chartUnrolledU(u) - u) > 1e-9) return false;
-  const canon = canonPos([q, r]);
+  const canon = worldCanonPos([q, r]);
   return TMAP.has(canon[0] + "," + canon[1]);
 }
 // The offset columns and rows the frame can reach. World coordinates are an
@@ -5574,9 +5630,8 @@ function queueDirectorCue(cue) {
     }, state?.turn || 0);
     const chapterShown = !cue.silent && cue.kicker === "A new age dawns" && showCinemaChapter(cue);
     if (!cue.silent && !chapterShown) nextGoal.story = cue;
-    let targetX = S * SQ3 * (nextGoal.pos[0] + nextGoal.pos[1] / 2);
-    if (mapWrapsX()) targetX += Math.round((cam.x - targetX) / WW()) * WW();
-    const targetY = S * 1.5 * nextGoal.pos[1];
+    const targetX = wrapX(S * SQ3 * (nextGoal.pos[0] + nextGoal.pos[1] / 2));
+    const targetY = wrapY(S * 1.5 * nextGoal.pos[1]);
     const cutDistance = Math.max(560, area.clientWidth / Math.max(.25, cam.scale) * .62);
     const useCut = cinemaActive() && !tracksUnit &&
       (battle || cue.priority >= 7) &&
@@ -5752,10 +5807,9 @@ function advanceDirector(now = performance.now()) {
     }
     if (!directorTransition.switched) {
       directorGoal = directorTransition.goal;
-      let targetX = S * SQ3 * (directorGoal.pos[0] + directorGoal.pos[1] / 2);
-      if (mapWrapsX()) targetX += Math.round((cam.x - targetX) / WW()) * WW();
+      const targetX = wrapX(S * SQ3 * (directorGoal.pos[0] + directorGoal.pos[1] / 2));
       cam.x = targetX;
-      cam.y = clampCameraY(S * 1.5 * directorGoal.pos[1], directorGoal.scale);
+      cam.y = clampCameraY(wrapY(S * 1.5 * directorGoal.pos[1]), directorGoal.scale);
       cam.scale = directorGoal.scale;
       if (directorGoal.rot !== undefined) setRot(directorGoal.rot, false);
       if (directorGoal.tilt !== undefined && VIEW === "cinematic") setTilt(directorGoal.tilt, false);
@@ -5785,7 +5839,8 @@ function advanceDirector(now = performance.now()) {
     const target = unitMapPoint(directorGoal.battleTarget);
     const attacker = state.units.find(unit => unit.id === directorGoal.battleAttackerId);
     const source = attacker ? cinematicUnitMapPoint(attacker, now) : target;
-    if (mapWrapsX()) target.x += Math.round((source.x - target.x) / WW()) * WW();
+    if (mapWrapsX()) target.x = wrapX(target.x, source.x);
+    if (mapWrapsY()) target.y = wrapY(target.y, source.y);
     // Track the midpoint so attacker, projectile path, and defender all remain
     // inside the close composition. This is the battle equivalent of leading
     // a moving character; following either endpoint alone loses the other.
@@ -5814,16 +5869,16 @@ function advanceDirector(now = performance.now()) {
     ? trackedSubject.x : (directorGoal.worldX ??
       wrapX(S * SQ3 * (directorGoal.pos[0] + directorGoal.pos[1] / 2)));
   let gy = trackedSubject ? trackedSubject.y :
-    (directorGoal.worldY ?? S * 1.5 * directorGoal.pos[1]);
+    (directorGoal.worldY ?? wrapY(S * 1.5 * directorGoal.pos[1]));
   if (cinemaActive() && directorGoal.focus) {
     // The land-biased viewing anchor may sit a few tiles away from the event.
     // Preserve that richer background, but keep the actual subject clear of
     // the top victory ribbon and the lower-third on every viewport height.
     let focusX = trackedSubject
       ? trackedSubject.focusX : S * SQ3 * (directorGoal.focus[0] + directorGoal.focus[1] / 2);
-    if (!trackedSubject && mapWrapsX()) focusX += Math.round((gx - focusX) / WW()) * WW();
+    if (!trackedSubject) focusX = wrapX(focusX, gx);
     const focusY = trackedSubject
-      ? trackedSubject.focusY : S * 1.5 * directorGoal.focus[1];
+      ? trackedSubject.focusY : wrapY(S * 1.5 * directorGoal.focus[1], gy);
     const screenX = area.clientWidth / 2 +
       (COSR * (focusX - gx) - SINR * (focusY - gy)) * directorGoal.scale;
     const screenY = area.clientHeight / 2 +
@@ -6338,6 +6393,7 @@ function render(st, recordChronicle = true) {
   }
   state = st;
   SPEC = !!st.spectate;
+  syncFlatMapWrapControls();
   syncFoundNorth(st);
   syncKnownWorld(st);
   syncCinemaPresentation(st);
@@ -14574,7 +14630,7 @@ function drawPlanetMini() {
 // A column measure unrolled onto the open chart — the same fold the main map
 // draws with, in the minimap's own units.
 function chartUnrolledU(u) {
-  if (!state || !mapWrapsX() || wentAround()) return u;
+  if (!chartIsOpen()) return u;
   const w = Math.max(1, state.map.width);
   return u + Math.round((chartAnchorX() / (S * SQ3) - u) / w) * w;
 }
@@ -14599,7 +14655,7 @@ function chartUnrolledU(u) {
 function miniBounds() {
   const mapWidth = Math.max(1, state.map.width), mapHeight = Math.max(1, state.map.height);
   const tiles = state.map?.tiles;
-  if (wentAround() || !mapWrapsX() || !tiles?.length) {
+  if (!chartIsOpen() || !tiles?.length) {
     // u = q + r/2 runs from 0 to mapWidth - 1 + half a column, the half coming
     // from the odd rows' offset.
     return {
@@ -14779,7 +14835,7 @@ mini.addEventListener("click", ev => {
     clickY = r.height / 2 - sin * dx + cos * dy;
   }
   let x = wrapX(S * (clickX - layout.originX) / layout.size);
-  let y = S * (clickY - layout.originY) / layout.size;
+  let y = wrapY(S * (clickY - layout.originY) / layout.size);
   [x, y] = cameraCenterForWorld(x, y);
   y = clampCameraY(y);
   if (REDUCED_MOTION_QUERY.matches) {
@@ -15170,6 +15226,8 @@ let hudHtml = "", victoryHudHtml = "";
 function drawPlayerHud() {
   const hud = document.getElementById("playerhud");
   const victoryHud = document.getElementById("victoryhud");
+  const priorBounds = mapFocusBounds();
+  const priorFocus = currentMapFocusWorld();
   // State updates are frequent in spectator mode. Preserve each rail's exact
   // reading position so a person can browse an off-screen victory path
   // without the next simulation frame snapping the HUD back to the leader.
@@ -15334,7 +15392,10 @@ function drawPlayerHud() {
         }).join("") + `</button></div>`;
     }).join("") + `</div>` + hudResizeHandles("player standings");
   drawDossierWindows(majors, rankById, relationById);
-  if (html === hudHtml || hudLayoutGesture?.name === "players") return;
+  if (html === hudHtml || hudLayoutGesture?.name === "players") {
+    reframeIfMapFocusBoundsChanged(priorBounds, priorFocus);
+    return;
+  }
   hudHtml = html;
   hud.innerHTML = html;
   const playerRibbon = hud.querySelector(".diplomacy-ribbon");
@@ -15342,6 +15403,7 @@ function drawPlayerHud() {
   // innerHTML replaced the element the observer was watching.
   observePlayerRibbon();
   syncPlayerLockPins();
+  reframeIfMapFocusBoundsChanged(priorBounds, priorFocus);
 }
 
 // Re-aim the size observer after a repaint. Kept apart from the sync so the
@@ -17761,15 +17823,21 @@ function cameraYBounds(scale = cam.scale) {
   if (planetMap()) {
     return {min:0, max:S * 1.5 * Math.max(1, state.map.height - 1)};
   }
+  if (mapWrapsY()) return null;
   if (Math.abs(SINR) > 0.001) return null;
-  const halfVisible = area.clientHeight / (2 * Math.max(0.25, scale) * YS);
+  const actualScale = Math.max(.01, scale);
+  const focusBounds = mapFocusBounds();
+  const aboveFocus = (area.clientHeight / 2 - focusBounds.top) / (actualScale * YS);
+  const belowFocus = (focusBounds.bottom - area.clientHeight / 2) / (actualScale * YS);
   const top = -S;
   const bottom = S * 1.5 * Math.max(0, state.map.height - 1) + S + MODE.skirt / YS;
-  if (bottom - top <= halfVisible * 2) {
+  if (bottom - top <= aboveFocus + belowFocus) {
     const middle = (top + bottom) / 2;
-    return { min: middle, max: middle };
+    const focus = (focusBounds.top + focusBounds.bottom) / 2;
+    const centered = middle - (focus - area.clientHeight / 2) / (actualScale * YS);
+    return { min:centered, max:centered };
   }
-  return { min: top + halfVisible, max: bottom - halfVisible };
+  return { min:top + aboveFocus, max:bottom - belowFocus };
 }
 function clampCameraY(y, scale = cam.scale) {
   const bounds = cameraYBounds(scale);
@@ -17822,17 +17890,11 @@ document.getElementById("cinema-follow").onclick = () => {
   else if (DIRECTOR && directorGoal?.kind === "character") setDirector(false);
 };
 
-// The map composes inside the rectangle the chrome actually leaves it, rather
-// than a guessed fraction of the window: below whichever of the two top
-// instruments hangs lower, down to the real bottom edge, right of the command
-// deck and the world map's own midpoint, and left of the victory rail.
-//
-// Every edge is measured, because all three instruments can be dragged and
-// resized and none of their positions may be assumed. A layout that leaves no
-// usable band on an axis — an instrument parked down the whole height, the
-// world map dragged left of the deck — hands that axis back its full extent
-// instead of aiming the camera off-screen.
-const MIN_MAP_FOCUS_BAND = 120;
+// The map composes at the exact midpoint of the uncovered central stage. Its
+// horizontal borders are the command deck's right edge and the victory
+// tracker's left edge; each missing widget hands its side back to the screen.
+// Vertically, the player HUD's bottom edge is the top border and the screen's
+// bottom is the other. No minimap or percentage heuristic gets a vote.
 function mapOverlayVisible(name) {
   if (OVERLAY_VISIBILITY[name] === false) return false;
   if (cinemaActive() && ["players", "minimap", "controls"].includes(name)) return false;
@@ -17861,29 +17923,30 @@ function mapFocusBounds() {
     if (sideRect.width)
       left = Math.max(0, Math.min(width, sideRect.right - areaRect.left));
   }
-  // The world map sits in the lower-left corner, so it gives up only half its
-  // width: reserving all of it would shove the world right for a widget nobody
-  // watches while the camera moves. The victory rail is not a corner widget at
-  // all — it stands the whole height of the right edge — so the world it leaves
-  // behind genuinely ends where the rail begins.
-  const minimap = mapWidgetBox("minimap", areaRect);
-  if (minimap) left = Math.max(left, (minimap.left + minimap.right) / 2);
   const victory = mapWidgetBox("victory", areaRect);
-  if (victory) right = Math.min(right, victory.left);
-  // Only the standings hang over the top of the map now.
+  if (victory) right = Math.max(0, Math.min(width, victory.left));
   const players = mapWidgetBox("players", areaRect);
-  if (players) top = Math.max(top, players.bottom);
-  if (right - left < MIN_MAP_FOCUS_BAND) { left = 0; right = width; }
-  if (bottom - top < MIN_MAP_FOCUS_BAND) { top = 0; bottom = height; }
+  if (players) top = Math.max(0, Math.min(height, players.bottom));
   return {left, right, top, bottom};
 }
 function mapFocusPoint() {
   const bounds = mapFocusBounds();
   return {x:(bounds.left + bounds.right) / 2, y:(bounds.top + bounds.bottom) / 2};
 }
+function reframeIfMapFocusBoundsChanged(before, world) {
+  if (!before || !world) return;
+  const after = mapFocusBounds();
+  if (["left", "right", "top", "bottom"].some(edge =>
+      Math.abs(after[edge] - before[edge]) > .5))
+    reframeCurrentMapFocus(world);
+}
 function cameraCenterForWorld(wx, wy, scale = cam.scale, focus = mapFocusPoint()) {
-  const vx = (focus.x - area.clientWidth / 2) / Math.max(.25, scale);
-  const vy = (focus.y - area.clientHeight / 2) / Math.max(.25, scale) / YS;
+  // Full-world framing may legitimately zoom below the interactive .25 floor.
+  // Use the actual fitted scale so this remains the inverse of screenToWorld
+  // and a moving HUD edge keeps the same ground beneath the stage center.
+  const actualScale = Math.max(.01, scale);
+  const vx = (focus.x - area.clientWidth / 2) / actualScale;
+  const vy = (focus.y - area.clientHeight / 2) / actualScale / YS;
   return [wx - (COSR * vx + SINR * vy),
           wy - (-SINR * vx + COSR * vy)];
 }
@@ -17907,7 +17970,8 @@ function cameraTargetFor(pos, scale = cam.scale) {
   // The copy the map actually drew, which on an open chart is not the one
   // nearest the camera.
   const x = wrapX(S * SQ3 * (pos[0] + pos[1] / 2));
-  return cameraCenterForWorld(x, S * 1.5 * pos[1], scale);
+  const y = wrapY(S * 1.5 * pos[1]);
+  return cameraCenterForWorld(x, y, scale);
 }
 function applyCameraAnchor(wx, wy, sx, sy, scale = cam.scale) {
   cam.scale = planetMap() ? planetScaleClamp(scale)
@@ -18223,7 +18287,7 @@ function fitFullWorldView(preservePresentation = false) {
 
   const centers = state.map.tiles.map(tile => ({
     x:wrapX(S * SQ3 * (tile.pos[0] + tile.pos[1] / 2)),
-    y:S * 1.5 * tile.pos[1],
+    y:wrapY(S * 1.5 * tile.pos[1]),
   }));
   // Fit in the frame the map is actually seen in. A world at any bearing then
   // lands inside the stage instead of having its corners cut off, and a hex
@@ -18295,31 +18359,35 @@ function observedFrameRect() {
   return {left, right, top, bottom};
 }
 
-// A cylindrical map has no privileged left edge. Cut it at the largest empty
-// longitude between observed civilizations, producing the shortest span that
-// contains their anchors instead of sometimes fitting almost two worlds.
+// A wrapped axis has no privileged edge. Cut it at the largest empty interval,
+// producing the shortest rectangle that contains the observed anchors instead
+// of sometimes fitting almost two copies of the world.
+function unwrapPointAxis(points, coordinate, period, wraps) {
+  if (!wraps || points.length < 2) return points;
+  const values = points.map((point, index) => ({
+    value:((point[coordinate] % period) + period) % period, index,
+  })).sort((a, b) => a.value - b.value);
+  let gapIndex = values.length - 1;
+  let largestGap = values[0].value + period - values[values.length - 1].value;
+  for (let index = 0; index < values.length - 1; index++) {
+    const gap = values[index + 1].value - values[index].value;
+    if (gap > largestGap) { largestGap = gap; gapIndex = index; }
+  }
+  const start = values[(gapIndex + 1) % values.length].value;
+  return points.map(point => {
+    const copy = {...point};
+    copy[coordinate] = ((point[coordinate] % period) + period) % period;
+    if (copy[coordinate] < start) copy[coordinate] += period;
+    return copy;
+  });
+}
 function unwrapObservedPoints(anchors) {
-  const points = anchors.map(anchor => ({
+  let points = anchors.map(anchor => ({
     x:S * SQ3 * (anchor.pos[0] + anchor.pos[1] / 2),
     y:S * 1.5 * anchor.pos[1],
   }));
-  if (!mapWrapsX() || points.length < 2) return points;
-  const width = WW();
-  const wrapped = points.map((point, index) => ({
-    x:((point.x % width) + width) % width, index,
-  })).sort((a, b) => a.x - b.x);
-  let gapIndex = wrapped.length - 1;
-  let largestGap = wrapped[0].x + width - wrapped[wrapped.length - 1].x;
-  for (let index = 0; index < wrapped.length - 1; index++) {
-    const gap = wrapped[index + 1].x - wrapped[index].x;
-    if (gap > largestGap) { largestGap = gap; gapIndex = index; }
-  }
-  const start = wrapped[(gapIndex + 1) % wrapped.length].x;
-  return points.map(point => {
-    let x = ((point.x % width) + width) % width;
-    if (x < start) x += width;
-    return {x, y:point.y};
-  });
+  points = unwrapPointAxis(points, "x", WW(), mapWrapsX());
+  return unwrapPointAxis(points, "y", WH(), mapWrapsY());
 }
 
 function observedViewGoal(anchors) {
@@ -19561,6 +19629,35 @@ function setEdgePan(on) {
   if (box) box.checked = EDGE_PAN;
   if (!EDGE_PAN) edgePanVector = null;
 }
+function syncFlatMapWrapControls() {
+  const group = document.getElementById("flat-map-wrap-settings");
+  if (group) group.hidden = !!state && planetMap();
+  const xBox = document.getElementById("wrapxchk");
+  const yBox = document.getElementById("wrapychk");
+  if (xBox) xBox.checked = FLAT_MAP_WRAP_X;
+  if (yBox) yBox.checked = FLAT_MAP_WRAP_Y;
+}
+function setFlatMapWrap(axis, on) {
+  if (axis !== "x" && axis !== "y") return;
+  const enabled = !!on;
+  if (axis === "x") {
+    FLAT_MAP_WRAP_X = enabled;
+    localStorage.setItem("civvis-flat-map-wrap-x", enabled ? "1" : "0");
+  } else {
+    FLAT_MAP_WRAP_Y = enabled;
+    localStorage.setItem("civvis-flat-map-wrap-y", enabled ? "1" : "0");
+  }
+  syncFlatMapWrapControls();
+  if (!state || planetMap()) return;
+  cameraFlight = null; cameraZoom = null; clearCameraInertia();
+  // A camera can be several copies away after a long wrapped pan. When that
+  // axis becomes bounded, carry it to the equivalent place in the base copy
+  // before clamping so the map cannot appear to vanish on toggle-off.
+  if (!enabled && axis === "x") cam.x = wrapNear(cam.x, WW() / 2, WW());
+  if (!enabled && axis === "y") cam.y = wrapNear(cam.y, WH() / 2, WH());
+  cam.y = clampCameraY(cam.y);
+  draw(); drawMini();
+}
 
 // ---- interface modes.
 // Civ 6's M, A and R do not act: they arm the next click. Clicking a tile
@@ -20452,6 +20549,13 @@ document.getElementById("newgame-options").addEventListener("change", stageSelec
   const edge = document.getElementById("edgepanchk");
   edge.checked = EDGE_PAN;
   edge.onchange = () => setEdgePan(edge.checked);
+}
+{
+  const wrapXBox = document.getElementById("wrapxchk");
+  const wrapYBox = document.getElementById("wrapychk");
+  wrapXBox.onchange = () => setFlatMapWrap("x", wrapXBox.checked);
+  wrapYBox.onchange = () => setFlatMapWrap("y", wrapYBox.checked);
+  syncFlatMapWrapControls();
 }
 {
   const artifacts = document.getElementById("artifactchk");
