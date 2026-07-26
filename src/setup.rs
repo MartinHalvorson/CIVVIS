@@ -6,6 +6,297 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Which published game's rules the world is played by.
+///
+/// This is the outermost setting on the lobby — it is asked before the game
+/// mode, because it decides what every other question means. CIVVIS models
+/// Civilization VI, so Civilization VI is the only answer today; the setting
+/// exists so that a second ruleset can be added without the first one having
+/// been an unstated assumption baked through the setup screen.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BaseRuleset {
+    #[default]
+    Civ6,
+}
+
+impl BaseRuleset {
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Civ6 => "civ6",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        BASE_RULESETS
+            .iter()
+            .find(|spec| spec.id == id)
+            .map(|spec| spec.ruleset)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct BaseRulesetSpec {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub description: &'static str,
+    #[serde(skip)]
+    pub ruleset: BaseRuleset,
+}
+
+pub const BASE_RULESETS: [BaseRulesetSpec; 1] = [BaseRulesetSpec {
+    id: "civ6",
+    name: "Civ 6",
+    description:
+        "Civilization VI with Rise & Fall and Gathering Storm — the rules every other setting on this screen is expressed in.",
+    ruleset: BaseRuleset::Civ6,
+}];
+
+/// Which sweep of time a game is played through.
+///
+/// An era says where inside a stretch of history you begin; an eon says which
+/// stretch of history that is. The list is a timeline, oldest first, and the
+/// order is enforced rather than commented — [`StartEonSpec::begins_years_ago`]
+/// is the single source and `setup::tests::the_eons_are_listed_oldest_first`
+/// fails if any entry begins later than the one below it.
+///
+/// Only [`StartEon::Civilization`] is playable today. The rest are declared
+/// here with their ladders written out, listed in the lobby as what is coming,
+/// and refused by the server rather than silently played as human history.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StartEon {
+    Dinosaur,
+    IceAge,
+    #[default]
+    Civilization,
+    Ai2028,
+}
+
+impl StartEon {
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Dinosaur => "dinosaur",
+            Self::IceAge => "ice_age",
+            Self::Civilization => "civilization",
+            Self::Ai2028 => "ai_2028",
+        }
+    }
+
+    pub fn spec(self) -> &'static StartEonSpec {
+        START_EONS.iter().find(|spec| spec.eon == self).expect("every eon is listed")
+    }
+
+    /// Whether a game can actually be played in this eon yet.
+    pub fn is_playable(self) -> bool {
+        self.spec().playable
+    }
+
+    /// The ages this eon is divided into, earliest first.
+    pub fn eras(self) -> &'static [StartEraSpec] {
+        self.spec().eras
+    }
+
+    /// The era this eon opens on when nobody chooses: always its first.
+    pub fn default_era(self) -> usize {
+        0
+    }
+
+    /// Resolve an era id inside this eon to its index. Era ids are only
+    /// unique within an eon — "ancient" means nothing under the dinosaurs —
+    /// so the eon is part of the question.
+    pub fn era_from_id(self, id: &str) -> Option<usize> {
+        self.eras().iter().position(|era| era.id == id)
+    }
+
+    pub fn era_id(self, era: usize) -> &'static str {
+        self.eras()
+            .get(era)
+            .map_or_else(|| self.eras()[0].id, |spec| spec.id)
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        START_EONS.iter().find(|spec| spec.id == id).map(|spec| spec.eon)
+    }
+}
+
+/// One age inside an eon.
+///
+/// For [`StartEon::Civilization`] the index of an entry in
+/// [`StartEonSpec::eras`] *is* its index into [`crate::rules::ERA_NAMES`], so
+/// a start era is directly the era the technology and civic trees are cut at.
+/// The other eons carry their own ladders and no tree behind them yet.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct StartEraSpec {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub description: &'static str,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct StartEonSpec {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub description: &'static str,
+    /// Roughly how long before the year 2000 this eon opens, which is the
+    /// order the list is in. Negative is the future.
+    pub begins_years_ago: i64,
+    /// Whether a game can be played in it yet. A declared-but-unplayable eon
+    /// is honest about being a plan; it is not quietly substituted.
+    pub playable: bool,
+    pub eras: &'static [StartEraSpec],
+    #[serde(skip)]
+    pub eon: StartEon,
+}
+
+/// The Mesozoic, from the greatest extinction the world has known to the one
+/// that ended the dinosaurs.
+const DINOSAUR_ERAS: [StartEraSpec; 3] = [
+    StartEraSpec {
+        id: "triassic",
+        name: "Triassic",
+        description: "One supercontinent and one desert at the middle of it, recovering from the worst extinction there has ever been — and the first dinosaurs walking out of it.",
+    },
+    StartEraSpec {
+        id: "jurassic",
+        name: "Jurassic",
+        description: "Pangaea splits, shallow seas flood the gaps, conifer forest reaches the poles, and the largest animals ever to walk on land feed on it.",
+    },
+    StartEraSpec {
+        id: "cretaceous",
+        name: "Cretaceous",
+        description: "Flowers, feathers and tyrants: the richest age the dinosaurs had, and the last one.",
+    },
+];
+
+/// The Pleistocene, when ice ran the world and the people in it followed the
+/// herds.
+const ICE_AGE_ERAS: [StartEraSpec; 3] = [
+    StartEraSpec {
+        id: "glacial_maximum",
+        name: "Glacial Maximum",
+        description: "Ice a mile deep over half a hemisphere and the sea a hundred metres low — every strait in the world is a land bridge and every coast is somewhere further out.",
+    },
+    StartEraSpec {
+        id: "mammoth_steppe",
+        name: "Mammoth Steppe",
+        description: "The largest biome the world has ever carried: cold grassland unbroken from Iberia to the Yukon, and the herds that fed everyone living on it.",
+    },
+    StartEraSpec {
+        id: "great_thaw",
+        name: "The Great Thaw",
+        description: "The ice pulls back, the coasts drown, the megafauna go with them, and what is left of the hunters has to learn to farm.",
+    },
+];
+
+/// Human history: the eras Civilization VI itself is divided into, and the
+/// only ladder with a technology tree behind it. Future is deliberately not
+/// offered as a *start* — a game that opens there has nothing left to
+/// research and nowhere to go.
+const CIVILIZATION_ERAS: [StartEraSpec; 8] = [
+    StartEraSpec {
+        id: "ancient",
+        name: "Ancient",
+        description: "The stock start: a Settler, a Warrior, an empty tree and the whole of history in front of you.",
+    },
+    StartEraSpec {
+        id: "classical",
+        name: "Classical",
+        description: "Begin with the Ancient era already learned — writing, bronze, and the first cities worth taking.",
+    },
+    StartEraSpec {
+        id: "medieval",
+        name: "Medieval",
+        description: "Begin past antiquity: everything up to the Classical era is known, and the world opens on castles and faith.",
+    },
+    StartEraSpec {
+        id: "renaissance",
+        name: "Renaissance",
+        description: "Begin with the Medieval era behind you, on the edge of gunpowder and the open ocean.",
+    },
+    StartEraSpec {
+        id: "industrial",
+        name: "Industrial",
+        description: "Begin with the Renaissance learned: rifles, railways and coal are the next thing, not a distant one.",
+    },
+    StartEraSpec {
+        id: "modern",
+        name: "Modern",
+        description: "Begin with the Industrial era done — flight, radio and the first world war's worth of army.",
+    },
+    StartEraSpec {
+        id: "atomic",
+        name: "Atomic",
+        description: "Begin with the Modern era known, at the point where a single unit can end a city.",
+    },
+    StartEraSpec {
+        id: "information",
+        name: "Information",
+        description: "Begin with everything up to the Atomic era researched: a short, sharp game decided by satellites, robots and points.",
+    },
+];
+
+/// The near future, taken seriously enough to be worth playing: what happens
+/// to a civilization when the research is no longer done by the civilization.
+const AI_2028_ERAS: [StartEraSpec; 3] = [
+    StartEraSpec {
+        id: "takeoff",
+        name: "Takeoff · 2028",
+        description: "The first systems that improve themselves faster than anyone can review the work, in six datacentres on three continents.",
+    },
+    StartEraSpec {
+        id: "agent_economy",
+        name: "Agent Economy · 2031",
+        description: "Most of the work in the world is done by something nobody interviewed, and the constraint on a nation is power and silicon rather than people.",
+    },
+    StartEraSpec {
+        id: "successor",
+        name: "Successor · 2035",
+        description: "The civilizations on the board are no longer the only ones playing.",
+    },
+];
+
+/// The eons, oldest first. Civilization sits where it belongs on that
+/// timeline rather than at the top, which is the point of the list.
+pub const START_EONS: [StartEonSpec; 4] = [
+    StartEonSpec {
+        id: "dinosaur",
+        name: "Age of Dinosaurs",
+        description: "The Mesozoic: no people, no cities, and a hundred and eighty million years of somebody else's world.",
+        begins_years_ago: 252_000_000,
+        playable: false,
+        eras: &DINOSAUR_ERAS,
+        eon: StartEon::Dinosaur,
+    },
+    StartEonSpec {
+        id: "ice_age",
+        name: "Ice Age",
+        description: "The Pleistocene: ice runs the map, the coastlines are somewhere else, and a people is a band that follows the herd.",
+        begins_years_ago: 2_580_000,
+        playable: false,
+        eras: &ICE_AGE_ERAS,
+        eon: StartEon::IceAge,
+    },
+    StartEonSpec {
+        id: "civilization",
+        name: "Civilization",
+        description: "Human history from the first cities onward — the eight eras Civilization VI is played through.",
+        begins_years_ago: 12_000,
+        playable: true,
+        eras: &CIVILIZATION_ERAS,
+        eon: StartEon::Civilization,
+    },
+    StartEonSpec {
+        id: "ai_2028",
+        name: "AI 2028",
+        description: "The near future, from the year the research stops being done by people.",
+        begins_years_ago: -28,
+        playable: false,
+        eras: &AI_2028_ERAS,
+        eon: StartEon::Ai2028,
+    },
+];
+
 /// What the world is made of, ordered from all land to all water.
 ///
 /// The list is a spectrum rather than a menu: each entry down it leaves less
@@ -654,12 +945,196 @@ impl MapSize {
 mod tests {
     use std::collections::BTreeSet;
 
-    use crate::game::{Action, Game, Item};
+    use crate::game::{Action, Game, GameOptions, Item};
 
     use super::{
-        GameSpeed, MapPoles, MapScript, MapSize, MapTopology, CIV6_GAME_SPEEDS, CIV6_MAP_SCRIPTS,
-        CIV6_MAP_SIZES, MAP_POLES, MAP_TOPOLOGIES,
+        BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, MapTopology, StartEon,
+        BASE_RULESETS, CIV6_GAME_SPEEDS, CIV6_MAP_SCRIPTS, CIV6_MAP_SIZES, MAP_POLES,
+        MAP_TOPOLOGIES, START_EONS,
     };
+
+    /// One ruleset is offered, and the setting still has to behave like a
+    /// setting: it resolves by id, it round-trips, and an id from some other
+    /// game is refused rather than quietly played as Civilization VI.
+    #[test]
+    fn the_base_ruleset_is_civ6_and_nothing_else_resolves() {
+        assert_eq!(BASE_RULESETS.len(), 1);
+        for spec in BASE_RULESETS {
+            assert_eq!(BaseRuleset::from_id(spec.id), Some(spec.ruleset));
+            assert_eq!(spec.ruleset.id(), spec.id);
+        }
+        assert_eq!(BaseRuleset::default(), BaseRuleset::Civ6);
+        assert_eq!(BaseRuleset::Civ6.id(), "civ6");
+        assert_eq!(BaseRuleset::from_id("civ5"), None);
+        assert_eq!(BaseRuleset::from_id(""), None);
+    }
+
+    /// The eon list is a timeline, so its order is a claim: each entry begins
+    /// before the one under it. Civilization is not at the top of that list
+    /// and is not meant to be — it is one stretch of time among several, and
+    /// putting it in its place is the whole reason the setting exists.
+    #[test]
+    fn the_eons_are_listed_oldest_first() {
+        let mut seen = BTreeSet::new();
+        for pair in START_EONS.windows(2) {
+            assert!(
+                pair[0].begins_years_ago > pair[1].begins_years_ago,
+                "{} begins after {}",
+                pair[0].id,
+                pair[1].id
+            );
+        }
+        for spec in START_EONS {
+            assert_eq!(StartEon::from_id(spec.id), Some(spec.eon));
+            assert_eq!(spec.eon.id(), spec.id);
+            assert_eq!(spec.eon.spec().id, spec.id);
+            assert!(seen.insert(spec.id), "{} is listed twice", spec.id);
+            // Every eon carries a ladder, and every rung of it resolves both
+            // ways within its own eon.
+            assert!(!spec.eras.is_empty(), "{} has no eras", spec.id);
+            for (index, era) in spec.eras.iter().enumerate() {
+                assert_eq!(spec.eon.era_from_id(era.id), Some(index), "{}", era.id);
+                assert_eq!(spec.eon.era_id(index), era.id);
+            }
+            // An era id from another eon, or off the end of this one, falls
+            // back to the eon's own opening age rather than to whatever index
+            // happens to be in range.
+            assert_eq!(spec.eon.era_id(spec.eras.len()), spec.eras[0].id);
+            assert_eq!(spec.eon.default_era(), 0);
+        }
+        assert_eq!(StartEon::from_id("holocene"), None);
+        assert_eq!(StartEon::default(), StartEon::Civilization);
+    }
+
+    /// A world set up to open in a later age of human history, built through
+    /// the one real constructor rather than described in the lobby.
+    fn world_opening_in(eon: StartEon, era: usize) -> Game {
+        let size = MapSize::for_players(2);
+        Game::new_with(GameOptions {
+            barbarians: false,
+            start_eon: eon,
+            start_era: era,
+            city_states: size.default_city_states,
+            ..GameOptions::new(2, size.width, size.height, 909, 250, size.default_city_states)
+        })
+    }
+
+    /// The start era is the setting that actually changes the game: a world
+    /// that opens in the Renaissance opens with everything before it known,
+    /// by everyone on the board, with an army to match — and it says it is in
+    /// the Renaissance from its first turn, rather than reporting the era it
+    /// has just finished.
+    #[test]
+    fn a_game_that_opens_past_the_first_age_starts_with_the_earlier_eras_behind_it() {
+        let ancient = world_opening_in(StartEon::Civilization, 0);
+        assert_eq!(ancient.world_era, 0);
+        assert_eq!(ancient.start_era, 0);
+        assert!(ancient.players.iter().all(|player| player.techs.is_empty()));
+
+        let era = StartEon::Civilization.era_from_id("renaissance").unwrap();
+        let renaissance = world_opening_in(StartEon::Civilization, era);
+        assert_eq!(renaissance.start_era, era);
+        assert_eq!(renaissance.world_era, era);
+        let earlier: BTreeSet<&String> = renaissance
+            .rules
+            .techs
+            .iter()
+            .filter(|(_, spec)| spec.era < era)
+            .map(|(name, _)| name)
+            .collect();
+        assert!(!earlier.is_empty());
+        // Majors and city-states alike: a minor still holding Ancient spears
+        // in a Renaissance world is free conquest, not a setting.
+        for player in renaissance.players.iter().filter(|player| !player.is_barbarian) {
+            for tech in &earlier {
+                assert!(player.techs.contains(*tech), "{} lacks {tech}", player.civ);
+            }
+            assert!(
+                player
+                    .techs
+                    .iter()
+                    .all(|tech| renaissance.rules.techs[tech].era < era),
+                "{} was handed a technology of its own era or later",
+                player.civ
+            );
+            assert!(
+                player
+                    .civics
+                    .iter()
+                    .all(|civic| renaissance.rules.civics[civic].era < era),
+                "{} was handed a civic of its own era or later",
+                player.civ
+            );
+            // Nothing may be left researching what it already knows.
+            assert!(player
+                .research
+                .as_ref()
+                .is_none_or(|tech| !player.techs.contains(tech)));
+        }
+        // The starting army came up its own upgrade chain with the research.
+        let kinds: BTreeSet<&str> = renaissance
+            .units
+            .values()
+            .map(|unit| unit.kind.as_str())
+            .collect();
+        assert!(!kinds.contains("warrior"), "a Renaissance world still opens on Warriors: {kinds:?}");
+        assert!(kinds.contains("settler"), "the Settler is not an upgradeable unit: {kinds:?}");
+
+        // The whole setup survives a save, or a reloaded world would quietly
+        // fall back to the Ancient era and undo its own floor.
+        let restored: Game =
+            serde_json::from_str(&serde_json::to_string(&renaissance).unwrap()).unwrap();
+        assert_eq!(restored.start_eon, StartEon::Civilization);
+        assert_eq!(restored.start_era, era);
+        assert_eq!(restored.base_ruleset, BaseRuleset::Civ6);
+    }
+
+    /// An era only means something inside an eon that has a tree behind it,
+    /// and a rung past the end of the ladder is clamped rather than fatal:
+    /// neither may produce a world that claims an era it cannot play.
+    #[test]
+    fn an_unplayable_eon_and_an_impossible_rung_both_open_at_the_stock_start() {
+        for eon in [StartEon::Dinosaur, StartEon::IceAge, StartEon::Ai2028] {
+            let world = world_opening_in(eon, 2);
+            assert_eq!(world.start_eon, eon);
+            assert_eq!(world.start_era, 0, "{} kept an era it cannot play", eon.id());
+            assert_eq!(world.world_era, 0);
+            assert!(world.players.iter().all(|player| player.techs.is_empty()));
+        }
+        let last = StartEon::Civilization.eras().len() - 1;
+        let beyond = world_opening_in(StartEon::Civilization, last + 5);
+        assert_eq!(beyond.start_era, last);
+        assert_eq!(beyond.world_era, last);
+    }
+
+    /// Human history is the one eon with a technology tree behind it, so its
+    /// ladder is not a separate table of names: rung `n` *is* era `n` of the
+    /// ruleset, which is what lets a start era cut the trees. Future is
+    /// excluded on purpose — a game that opens there has nothing to research.
+    #[test]
+    fn the_civilization_eon_is_the_rulesets_own_eras_and_is_the_only_one_playable() {
+        let eras = StartEon::Civilization.eras();
+        assert_eq!(eras.len(), crate::rules::ERA_NAMES.len() - 1);
+        for (index, era) in eras.iter().enumerate() {
+            assert_eq!(era.id, crate::rules::ERA_NAMES[index], "era {index}");
+        }
+        assert_eq!(StartEon::Civilization.era_from_id("ancient"), Some(0));
+        assert_eq!(StartEon::Civilization.era_from_id("future"), None);
+
+        assert!(StartEon::Civilization.is_playable());
+        for eon in [StartEon::Dinosaur, StartEon::IceAge, StartEon::Ai2028] {
+            assert!(!eon.is_playable(), "{} is not finished", eon.id());
+            // An unplayable eon still has to be described, or the lobby has
+            // nothing honest to show for it.
+            assert!(!eon.spec().description.is_empty());
+            assert!(eon.eras().iter().all(|era| !era.description.is_empty()));
+            // Its ladder is its own: no rung of it collides with an era of
+            // human history, so an id can never be read against the wrong eon.
+            for era in eon.eras() {
+                assert_eq!(StartEon::Civilization.era_from_id(era.id), None, "{}", era.id);
+            }
+        }
+    }
 
     /// The world types are a spectrum, and the lobby lists them along it: the
     /// first entry is the one with the most land and the last rolled entry the

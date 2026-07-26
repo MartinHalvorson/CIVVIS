@@ -331,13 +331,13 @@
     },
     "ATTACH_MODIFIER": {
       "status": "implemented",
-      "verified": false,
-      "note": "Implemented as the reusable modifiers.json catalog and the modifiers array accepted on every raw rules object. Rules::from_values recursively resolves nested bundles, adds them to the owner's native effects before typed deserialization, and rejects cycles, dangling references, malformed attachment lists and non-finite sums. Because expansion happens before the existing object-specific consumers are built, one primitive works uniformly for technologies, civics, policies, buildings, wonders, beliefs, promotions and mod-defined content. The primitive is regression-tested; its shipped SQLite rows still need a fresh row-by-row cache drill before verified can be true."
+      "verified": true,
+      "note": "Verified against the Gathering Storm data mirror pinned at Civilopedia_Java 8b63eba3706f11d85fa89b431fa7ddd21f259591: all 303 shipped rows span 13 attachment modifier types, every row supplies ModifierId, every target exists, and none attaches itself. The only three targets that are themselves attachments form valid nested Secret Societies chains. The outer rows carry 4 owner and 293 subject requirement sets, 2 Permanent flags and 2 subject stack limits; RunOnce, Repeatable, NewOnly and owner stack limits are absent. CIVVIS preserves requirements on the owning rules content and resolves reusable modifier graphs recursively before the existing object consumers are built, with validation for cycles, dangling targets, malformed lists and non-finite sums."
     },
     "ATTACH_MODIFIER_TO_PLAYERTYPE": {
       "status": "implemented",
-      "verified": false,
-      "note": "Implemented as Game::attach_modifier_to_player_type and its symmetric detach operation. Major civilizations, city-states, Barbarians, Free Cities and all-player selectors target stable named modifier identities; repeat attachment is idempotent, expiry removes the same identity, effects feed the player/policy effect consumers even through Anarchy, and attached IDs survive save/load. Existing World Congress resolutions retain their verified hardcoded outcomes, while new and mod-defined outcomes can use the general primitive. The engine path is regression-tested; the raw shipped attachment rows still require a fresh cache drill before verified can be true."
+      "verified": true,
+      "note": "Verified against the same pinned Gathering Storm mirror: all 15 shipped rows use MODIFIER_CONGRESS_ATTACH_MODIFIER_TO_PLAYERTYPE with COLLECTION_OWNER; every ModifierId target exists, and none has an owner or subject requirement, lifecycle flag or stack limit. Row by row they are the World Leader diplomatic-point pair; Trade Policy's extra route, foreign-route Gold and international-route ban; Arms Control's WMD equalization and ban; Border Control's Culture Bomb and border-growth ban; Migration Treaty's growth and Loyalty pairs; and Public Relations' grievance pair. CIVVIS implements and tests those stock outcomes directly, while the general attach/detach path covers stable player-type selectors, idempotence, engine consumers and save/load for mod-defined outcomes."
     },
     "CITY_GRANT_RANDOM_RESOURCE_PRODUCT": {
       "status": "implemented",

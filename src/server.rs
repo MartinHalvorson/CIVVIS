@@ -21,8 +21,8 @@ use crate::game::{
 use crate::obs::{observation, observation_player_view, observation_spectator};
 use crate::rules::Rules;
 use crate::setup::{
-    GameSpeed, MapPoles, MapScript, MapSize, MapTopology, CIV6_GAME_SPEEDS, CIV6_MAP_SCRIPTS,
-    CIV6_MAP_SIZES, MAP_POLES, MAP_TOPOLOGIES,
+    BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, MapTopology, StartEon, BASE_RULESETS,
+    CIV6_GAME_SPEEDS, CIV6_MAP_SCRIPTS, CIV6_MAP_SIZES, MAP_POLES, MAP_TOPOLOGIES, START_EONS,
 };
 use crate::Pos;
 
@@ -57,6 +57,14 @@ pub struct Params {
     pub width: i32,
     pub height: i32,
     pub seed: u64,
+    /// Which published game's rules the world is played by — the first thing
+    /// the lobby asks, because it decides what every later answer means.
+    pub base_ruleset: BaseRuleset,
+    /// The sweep of time the game is played through, and how far into it the
+    /// world opens. Only a playable eon is ever stored here; see
+    /// [`new_game_params`].
+    pub start_eon: StartEon,
+    pub start_era: usize,
     pub map_script: MapScript,
     /// What shape the world is, chosen independently of what fills it.
     pub map_topology: MapTopology,
@@ -1343,6 +1351,9 @@ impl Session {
             BTreeSet::from([0usize])
         };
         let mut game = Game::new_with(GameOptions {
+            base_ruleset: params.base_ruleset,
+            start_eon: params.start_eon,
+            start_era: params.start_era,
             map_script: params.map_script,
             map_topology: params.map_topology,
             map_poles: params.map_poles,
@@ -1411,6 +1422,9 @@ impl Session {
         params.width = game.map.width;
         params.height = game.map.height;
         params.seed = game.seed;
+        params.base_ruleset = game.base_ruleset;
+        params.start_eon = game.start_eon;
+        params.start_era = game.start_era;
         params.map_script = game.map_script;
         params.map_topology = if game.map.topology == crate::world::Topology::Cylinder {
             MapTopology::Flat
@@ -2363,6 +2377,9 @@ fn simulation_settings(params: &Params) -> Value {
         "height": params.height,
         "city_states": params.num_city_states,
         "turns": params.max_turns,
+        "base_ruleset": params.base_ruleset.id(),
+        "eon": params.start_eon.id(),
+        "start_era": params.start_eon.era_id(params.start_era),
         "map": params.map_script.id(),
         "shape": params.map_topology.id(),
         "poles": params.map_poles.id(),
@@ -2428,6 +2445,27 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     }
     if let Some(v) = request["seed"].as_u64() {
         p.seed = v;
+    }
+    if let Some(v) = request["base_ruleset"].as_str().and_then(BaseRuleset::from_id) {
+        p.base_ruleset = v;
+    }
+    // An eon nobody can play yet is refused rather than substituted: a lobby
+    // that asks for the Mesozoic and is quietly handed human history has been
+    // lied to. The era is read inside whichever eon ends up selected, because
+    // era ids are only unique within one — and a change of eon that does not
+    // name an era lands on that eon's own first age rather than keeping a
+    // rung from the previous ladder.
+    if let Some(eon) = request["start_eon"].as_str().and_then(StartEon::from_id) {
+        if eon.is_playable() && eon != p.start_eon {
+            p.start_eon = eon;
+            p.start_era = eon.default_era();
+        }
+    }
+    if let Some(era) = request["start_era"]
+        .as_str()
+        .and_then(|id| p.start_eon.era_from_id(id))
+    {
+        p.start_era = era;
     }
     if let Some(v) = request["map_script"].as_str().and_then(MapScript::from_id) {
         p.map_script = v;
@@ -3110,6 +3148,8 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "great_people": r.great_people, "governors": r.governors,
                     "map_sizes": CIV6_MAP_SIZES,
                     "difficulties": r.difficulties, "speeds": r.speeds,
+                    "base_rulesets": BASE_RULESETS,
+                    "start_eons": START_EONS,
                     "map_scripts": CIV6_MAP_SCRIPTS,
                     "map_topologies": MAP_TOPOLOGIES,
                     "map_poles": MAP_POLES,
@@ -3428,7 +3468,8 @@ mod tests {
     use crate::game::{
         Action, Game, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL,
     };
-    use crate::setup::{GameSpeed, MapPoles, MapScript, MapTopology};
+    use crate::server::simulation_settings;
+    use crate::setup::{BaseRuleset, GameSpeed, MapPoles, MapScript, MapTopology, StartEon};
     use serde_json::{json, Value};
     use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};
@@ -4470,6 +4511,9 @@ mod tests {
         Params {
             map_topology: MapTopology::Flat,
             map_poles: MapPoles::Poles,
+            base_ruleset: BaseRuleset::Civ6,
+            start_eon: StartEon::Civilization,
+            start_era: 0,
             num_players: 2,
             width: 20,
             height: 14,
@@ -4635,6 +4679,86 @@ mod tests {
         );
         assert_eq!(custom.game_speed, GameSpeed::Marathon);
         assert_eq!(custom.max_turns, 99);
+    }
+
+    /// The first question the lobby asks. One ruleset is modeled, so the
+    /// setting has exactly one legal answer, and an id from some other game
+    /// leaves it on Civilization VI rather than being taken at face value.
+    #[test]
+    fn the_base_ruleset_setting_accepts_only_the_game_this_models() {
+        let stock = current();
+        assert_eq!(stock.base_ruleset, BaseRuleset::Civ6);
+        assert_eq!(
+            new_game_params(&stock, &json!({"base_ruleset": "civ5"})).base_ruleset,
+            BaseRuleset::Civ6
+        );
+        let asked = new_game_params(&stock, &json!({"base_ruleset": "civ6"}));
+        assert_eq!(asked.base_ruleset, BaseRuleset::Civ6);
+        assert_eq!(simulation_settings(&asked)["base_ruleset"], "civ6");
+        assert_eq!(Session::new(asked).game.base_ruleset, BaseRuleset::Civ6);
+    }
+
+    /// An eon that is declared but not finished is refused, not substituted:
+    /// a lobby that asks for the Mesozoic and is quietly handed human history
+    /// has been lied to about what it is about to play. And an era is read
+    /// inside whichever eon is selected, because era ids are only unique
+    /// within one.
+    #[test]
+    fn an_unplayable_eon_is_refused_and_an_era_is_read_inside_its_own_eon() {
+        let stock = current();
+        assert_eq!(stock.start_eon, StartEon::Civilization);
+        assert_eq!(stock.start_era, 0);
+
+        for refused in ["dinosaur", "ice_age", "ai_2028", "holocene"] {
+            let asked = new_game_params(&stock, &json!({"start_eon": refused}));
+            assert_eq!(asked.start_eon, StartEon::Civilization, "{refused}");
+            assert_eq!(asked.start_era, 0, "{refused}");
+        }
+
+        let medieval = new_game_params(&stock, &json!({"start_era": "medieval"}));
+        assert_eq!(
+            medieval.start_era,
+            StartEon::Civilization.era_from_id("medieval").unwrap()
+        );
+        assert_eq!(simulation_settings(&medieval)["start_era"], "medieval");
+        assert_eq!(simulation_settings(&medieval)["eon"], "civilization");
+
+        // A rung of somebody else's ladder, and the era human history does not
+        // offer as a start, both leave the setting where it was.
+        for foreign in ["jurassic", "mammoth_steppe", "takeoff", "future"] {
+            let asked = new_game_params(&medieval, &json!({"start_era": foreign}));
+            assert_eq!(
+                asked.start_era, medieval.start_era,
+                "{foreign} moved the start era"
+            );
+        }
+    }
+
+    /// The setting has to reach the world, survive being read back off it, and
+    /// be what the lobby is offered again next time.
+    #[test]
+    fn a_started_game_opens_in_the_era_the_lobby_asked_for() {
+        let asked = new_game_params(&current(), &json!({"start_era": "medieval"}));
+        let era = StartEon::Civilization.era_from_id("medieval").unwrap();
+        let session = Session::new(asked);
+        assert_eq!(session.game.start_era, era);
+        assert_eq!(session.game.world_era, era);
+        // Everyone on the board opens with the earlier eras researched.
+        assert!(session
+            .game
+            .players
+            .iter()
+            .filter(|player| !player.is_barbarian)
+            .all(|player| !player.techs.is_empty()));
+
+        // A world restored from that game offers its own setup back, not the
+        // default one — this is the lobby's only source of truth for what is
+        // on screen.
+        let params = current();
+        let restored = Session::from_game(params, session.game.clone());
+        assert_eq!(restored.params.start_eon, StartEon::Civilization);
+        assert_eq!(restored.params.start_era, era);
+        assert_eq!(restored.params.base_ruleset, BaseRuleset::Civ6);
     }
 
     #[test]
@@ -4874,6 +4998,29 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("RULES.map_scripts.map(script =>"));
         assert!(EMBEDDED_INDEX.contains("RULES.game_speeds.map(speed =>"));
         assert!(EMBEDDED_INDEX.contains("id=\"gamemode\""));
+        // The ruleset is asked before the mode and the eon before the era,
+        // because each decides what the next question means. Both lists come
+        // from the server, so a new ruleset or a finished eon never means
+        // editing the markup — and the era control is rebuilt from whichever
+        // eon is selected rather than being a fixed ladder.
+        assert!(EMBEDDED_INDEX.contains("id=\"baseruleset\""));
+        assert!(EMBEDDED_INDEX.contains(">Base game ruleset<"));
+        assert!(EMBEDDED_INDEX.contains("RULES.base_rulesets.map(ruleset =>"));
+        assert!(EMBEDDED_INDEX.contains("id=\"starteon\""));
+        assert!(EMBEDDED_INDEX.contains(">Start eon<"));
+        assert!(EMBEDDED_INDEX.contains("id=\"startera\""));
+        assert!(EMBEDDED_INDEX.contains(">Start era<"));
+        assert!(EMBEDDED_INDEX.contains("RULES.start_eons.map(eon =>"));
+        assert!(EMBEDDED_INDEX.contains("function syncStartEon()"));
+        assert!(EMBEDDED_INDEX.contains("base_ruleset: baseRuleset, start_eon: startEon, start_era: startEra,"));
+        assert!(
+            EMBEDDED_INDEX.find(">Base game ruleset<") < EMBEDDED_INDEX.find(">Game mode<"),
+            "the ruleset must be asked before the game mode"
+        );
+        assert!(
+            EMBEDDED_INDEX.find(">Start eon<") < EMBEDDED_INDEX.find(">Start era<"),
+            "the eon must be asked before the era it contains"
+        );
         assert!(EMBEDDED_INDEX.contains("id=\"leaderpool\""));
         assert!(EMBEDDED_INDEX.contains(">Civ 6 Leaders</option>"));
         assert!(EMBEDDED_INDEX.contains(">Expanded</option>"));
@@ -4937,6 +5084,42 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("applyPlanetBasis(planetTurn(touchGesture.basis, dx, dy))"));
         assert!(EMBEDDED_INDEX.contains("applyPlanetBasis(planetTurn(basis, -screenX, -screenY))"));
         assert!(EMBEDDED_INDEX.contains("spin:planetGlide(released.vpx, released.vpy)"));
+        // Zooming shares that turn too, and it aims at a world rather than at a
+        // pixel. Out in the system a body is a few pixels across — the Moon is
+        // four on the whole-system shot — so an anchor held to the raw point of
+        // space under the pointer demanded an aim nobody can manage and walked
+        // off into empty sky when it was missed: measured at twelve pixels wide
+        // of the Moon, sixteen wheel steps finished three thousand pixels away
+        // with nothing at all on the stage. So every world claims a halo, the
+        // strongest claim takes the pointer, and a pointer on nothing is
+        // therefore taken by the roughly nearest world. What the pointer's aim
+        // is *for* changes with how big that world is drawn: travel while it is
+        // a marble, and once it is the place underfoot the world turns until the
+        // ground that was under the pointer is back under it, which is the same
+        // lean a flat map has always had and which the globe recovered three per
+        // cent of before this. The ceiling comes from the world being flown to,
+        // not from whichever marble happens to be nearest the frame's middle.
+        assert!(EMBEDDED_INDEX.contains("function skyPointerWorld(sx, sy, radius = planetEarthRadius(), pan = SKY_PAN)"));
+        assert!(EMBEDDED_INDEX.contains("function skyWorldGrab(drawn)"));
+        assert!(EMBEDDED_INDEX.contains("function skyZoomAim(sx, sy, radius = planetEarthRadius(), pan = SKY_PAN)"));
+        assert!(EMBEDDED_INDEX.contains("function skySurfacePoint(body, sx, sy, radius, pan = SKY_PAN)"));
+        assert!(EMBEDDED_INDEX.contains("function skyLean(lean, ease)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "applyPlanetBasis(planetSpin(basis, axis.map(value => value / length), -owed * ease));",
+        ));
+        assert!(EMBEDDED_INDEX.contains("if (!body || !lean.point || body.id !== \"earth\") return 0;"));
+        assert!(EMBEDDED_INDEX
+            .contains("function planetMaxScale(pan = SKY_PAN, body = skyNearestWorld(pan))"));
+        assert!(EMBEDDED_INDEX.contains("const ceiling = planetMaxScale(basePan, subject);"));
+        assert!(EMBEDDED_INDEX.contains("const aim = skyAnchor"));
+        assert!(EMBEDDED_INDEX.contains("cameraZoom = {kind:\"planet\", scale, pan, lean};"));
+        assert!(EMBEDDED_INDEX
+            .contains("const leanLeft = cameraZoom.lean ? skyLean(cameraZoom.lean, ease) : 0;"));
+        // The old raw-point anchor, and the early return that left a chart with
+        // no lean at all, must both be gone: a chart has no system to travel
+        // through, but it leans towards the pointer exactly as a flat map does.
+        assert!(!EMBEDDED_INDEX.contains("const pointerX = skyAnchor?.x ??"));
+        assert!(!EMBEDDED_INDEX.contains("const scale = planetScaleClampAt(base * f, {x:0, y:0});"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"planet\">Planet</option>"));
         assert!(EMBEDDED_INDEX
             .contains("<option value=\"true_start_earth\">True Start Earth</option>"));
@@ -5074,7 +5257,7 @@ mod tests {
             "left panel should show game settings, display settings, and the two logs first"
         );
         assert!(EMBEDDED_INDEX.contains("<span>Display settings</span>"));
-        for overlay in ["players", "victory", "minimap", "controls"] {
+        for overlay in ["players", "victory", "minimap", "controls", "lenses"] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("data-overlay-close=\"{overlay}\"")),
                 "map overlay {overlay} should have a close control"
@@ -5113,6 +5296,23 @@ mod tests {
         );
         assert!(EMBEDDED_INDEX.contains("id=\"map-lens-exit\""));
         assert!(EMBEDDED_INDEX.contains("body.overlay-lenses-hidden #map-lenses"));
+        // The lenses scroll sideways inside the bar. Their dismiss control is a
+        // sibling of that scroller, not its last item, so it neither rides away
+        // with the buttons nor comes to rest on top of one.
+        let lens_bar = EMBEDDED_INDEX
+            .split_once("<div id=\"map-lenses\"")
+            .expect("map lens bar")
+            .1;
+        let strip = lens_bar.find("<div id=\"map-lens-strip\"").expect("lens scroller");
+        let strip_end = lens_bar.find("</div>").expect("end of lens scroller");
+        let close = lens_bar
+            .find("data-overlay-close=\"lenses\"")
+            .expect("lens dismiss control");
+        assert!(
+            strip < strip_end && strip_end < close,
+            "the lens bar's close control belongs outside the strip that scrolls"
+        );
+        assert!(EMBEDDED_INDEX.contains("#map-lens-strip::-webkit-scrollbar { display: none; }"));
         assert!(EMBEDDED_INDEX
             .contains("document.getElementById(\"map-lens-exit\").onclick = () => setMapLens(null);"));
         // One instrument, one name. The switch, the title bar it is dragged by
@@ -5440,15 +5640,20 @@ mod tests {
         // the horizontal stage against its 8px left gutter. A missing widget
         // naturally leaves its screen edge in place, and the minimap is
         // deliberately absent from this calculation.
+        //
+        // The measurement takes the box it is asked about, because the map
+        // area's automatic fit asks it of the whole container while the camera
+        // asks it of the viewport that fit produced. One rule, two questions —
+        // see `the_map_area_is_a_rectangle_the_viewer_can_set`.
         assert!(EMBEDDED_INDEX.contains("function mapOverlayVisible(name)"));
         assert!(EMBEDDED_INDEX.contains(
             "document.body.classList.contains(\"sidebar-hidden\")"
         ));
-        assert!(EMBEDDED_INDEX.contains("function mapWidgetBox(name, areaRect)"));
+        assert!(EMBEDDED_INDEX.contains("function mapWidgetBox(name, origin)"));
         assert!(EMBEDDED_INDEX.contains("function mapFocusBounds()"));
         assert!(EMBEDDED_INDEX.contains("function mapFocusPoint()"));
         assert!(EMBEDDED_INDEX.contains(
-            "left = Math.max(0, Math.min(width, sideRect.right - areaRect.left));"
+            "left = Math.max(0, Math.min(width, sideRect.right - origin.left));"
         ));
         assert!(EMBEDDED_INDEX.contains(
             "if (players) top = Math.max(0, Math.min(height, players.bottom));"
@@ -5526,6 +5731,28 @@ mod tests {
             "function observedViewGoal(anchors, oneEmpire = Number.isInteger(state?.view_player))"
         ));
         assert!(EMBEDDED_INDEX.contains("watchedEmpireAutoFrame"));
+        // The same portrait on a round world. Framing the whole globe is the
+        // right shot only when the whole of it is being watched: a seat has
+        // seen the ground it walked and nothing else, so a globe-wide opening
+        // frame left a new single-player game staring at blank ocean with its
+        // own settler nowhere on the stage.
+        let observed_view = EMBEDDED_INDEX
+            .split("function setObservedPlayersView(smooth = false)")
+            .nth(1)
+            .unwrap()
+            .split("function actionViewingAnchor(focus)")
+            .next()
+            .unwrap();
+        assert!(observed_view.contains("if (planetMap() && !watched) { fitPlanetView(); return; }"));
+        assert!(observed_view.contains("if (planetMap()) skyReturnHome();"));
+        assert!(EMBEDDED_INDEX.contains("function observedCameraPoints(anchors)"));
+        assert!(EMBEDDED_INDEX.contains("function observedPlanetViewGoal(anchors, maximum)"));
+        assert!(EMBEDDED_INDEX
+            .contains("if (planetMap()) return observedPlanetViewGoal(anchors, maximum);"));
+        // A far-flung scout must not zoom the empire shot out past the world
+        // itself and off into the system.
+        assert!(EMBEDDED_INDEX
+            .contains("planetScaleClamp(Math.max(wholeWorld, Math.min(maximum, fitX, fitY)))"));
         assert!(EMBEDDED_INDEX.contains("const EMPIRE_RECON_UNITS"));
         assert!(EMBEDDED_INDEX.contains("const atWarFront"));
         assert!(EMBEDDED_INDEX.contains("Number(unit.formation) > 0"));
@@ -6077,6 +6304,9 @@ mod tests {
                 "height": 46,
                 "city_states": 9,
                 "turns": 330,
+                "base_ruleset": "civ6",
+                "eon": "civilization",
+                "start_era": "ancient",
                 "map": "continents",
                 "shape": "flat",
                 "poles": "poles",
@@ -6135,6 +6365,9 @@ mod tests {
                 "height": 38,
                 "city_states": 6,
                 "turns": 330,
+                "base_ruleset": "civ6",
+                "eon": "civilization",
+                "start_era": "ancient",
                 "map": "continents",
                 "shape": "flat",
                 "poles": "poles",
@@ -6880,8 +7113,19 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("id=\"play-on-next-victory\""));
         assert!(EMBEDDED_INDEX.contains("id=\"play-on-indefinite\""));
         assert!(EMBEDDED_INDEX.contains("Take a look around"));
-        assert!(EMBEDDED_INDEX.contains("Play until next victory condition"));
-        assert!(EMBEDDED_INDEX.contains("Play indefinitely"));
+        // The two rules that resume play are named for what the person wants
+        // rather than for the rule they select; the rule itself is on the
+        // tooltip, which is why both buttons still have to carry one.
+        assert!(EMBEDDED_INDEX.contains(">Continue</button>"));
+        assert!(EMBEDDED_INDEX.contains(">To infinity and beyond</button>"));
+        assert!(EMBEDDED_INDEX.contains(
+            "title=\"Keep playing this world without a turn limit. The exact result shown \
+             here will not repeat; the next distinct victory ends the game.\">Continue<"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "title=\"Keep playing this world without a turn limit and ignore every later \
+             victory.\">To infinity and beyond<"
+        ));
         assert!(EMBEDDED_INDEX.contains(
             "playOnPastVictory('until_next_victory', true)"
         ));
@@ -6892,6 +7136,34 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("async function playOnPastVictory(mode, paused)"));
         assert!(EMBEDDED_INDEX.contains("body: JSON.stringify({mode, paused})"));
         assert!(EMBEDDED_INDEX.contains("cancelSupervisedSuccessorWatch();"));
+    }
+
+    /// A spectated finale is counted down by the supervisor. A finished human
+    /// game has nobody driving it, so its own result screen counts down to the
+    /// next game — and every way of saying "I am still here" has to stop it,
+    /// or the offer to keep the world is only an offer for ten seconds.
+    #[test]
+    fn a_human_finale_counts_itself_down_to_the_next_game() {
+        assert!(EMBEDDED_INDEX.contains("const FINALE_RESTART_SECONDS = 10;"));
+        assert!(EMBEDDED_INDEX.contains("id=\"finale-restart\""));
+        assert!(EMBEDDED_INDEX
+            .contains("button.textContent = `${FINALE_RESTART_LABEL} (${left})`;"));
+        // The supervisor owns the exhibition's handoff, so a spectated finale
+        // never arms this one on top of the countdown it already publishes.
+        assert!(EMBEDDED_INDEX
+            .contains("if (SPEC || finaleCountdownResult === signature) return;"));
+        // Both human endings count down: a victory and a last city lost.
+        assert_eq!(EMBEDDED_INDEX.matches("armFinaleCountdown(signature);").count(), 2);
+        // Any input stops it, the three ways to keep the world stop it, and a
+        // result screen that goes away takes it with it.
+        assert!(EMBEDDED_INDEX.contains(
+            "for (const gesture of [\"pointerdown\", \"keydown\", \"wheel\"])"
+        ));
+        assert!(EMBEDDED_INDEX.contains("cancelFinaleCountdown(),\n    {capture: true, passive: true});"));
+        assert!(EMBEDDED_INDEX.contains("cancelSupervisedSuccessorWatch();\n  cancelFinaleCountdown();"));
+        assert!(EMBEDDED_INDEX.contains("clearFinaleCountdown();"));
+        // And reaching zero is the same act as pressing the button.
+        assert!(EMBEDDED_INDEX.contains("cancelFinaleCountdown();\n  startNewSimulation();"));
     }
 
     /// Auto-play used to be one button that ran whichever agent the fleet
@@ -7382,6 +7654,130 @@ mod tests {
             depth, 0,
             "every map overlay must close its own <section>; an unclosed one \
              hides the tooltip and every dialog after it inside #empire"
+        );
+    }
+
+    /// The map controls read left to right in the order a viewer reaches for
+    /// them: collapse the command deck, set the map area, face north, zoom in,
+    /// zoom out, dismiss. Dismissal is last because it is the only one that
+    /// removes the bar, and it hides itself while the deck is collapsed —
+    /// Display settings is the only way back and it lives inside the deck.
+    #[test]
+    fn the_map_controls_run_from_collapse_to_dismiss() {
+        let dock = EMBEDDED_INDEX
+            .split_once("<div id=\"zoomctl\">")
+            .expect("the map control dock")
+            .1
+            .split_once("</div>")
+            .expect("the end of the map control dock")
+            .0;
+        let mut previous = 0usize;
+        let mut last = "the start of the dock";
+        for control in [
+            "id=\"paneltoggle\"",
+            "id=\"mapareaset\"",
+            "id=\"compass\"",
+            "id=\"zin\"",
+            "id=\"zout\"",
+            "data-overlay-close=\"controls\"",
+        ] {
+            let at = dock
+                .find(control)
+                .unwrap_or_else(|| panic!("the map controls are missing {control}"));
+            assert!(
+                at > previous,
+                "the map controls run in reading order: {control} must follow {last}"
+            );
+            previous = at;
+            last = control;
+        }
+        assert!(
+            EMBEDDED_INDEX.contains(
+                r#"body.sidebar-hidden .overlay-close[data-overlay-close="controls"] { display: none; }"#
+            ),
+            "the dismiss control must go while the deck that restores it is collapsed"
+        );
+    }
+
+    /// The world is drawn into a rectangle of the map area rather than into
+    /// all of it, so a viewer moves the map out from under the panels instead
+    /// of dragging the world around underneath them. The canvas, the
+    /// vignettes and the editor's own edges take their box from one set of
+    /// custom properties, every renderer measures in `MAPW`/`MAPH` rather
+    /// than in the container, and the automatic fit is the same uncovered
+    /// rectangle the camera already composes into — one measurement, not two
+    /// that can disagree.
+    #[test]
+    fn the_map_area_is_a_rectangle_the_viewer_can_set() {
+        for piece in [
+            "--map-area-left: 0px;",
+            "--map-area-width: 100%;",
+            "function uncoveredMapBox(origin, width, height)",
+            "function syncMapViewport()",
+            "function refitMapAreaToChrome()",
+            "function moveMapAreaEdgeTo(edge, clientX, clientY)",
+            "civvis-map-area-v1",
+            "id=\"map-area-editor\"",
+            "id=\"map-area-apply\"",
+            "id=\"map-area-cancel\"",
+            "id=\"map-area-reset\"",
+            "body.map-area-inset #map",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(piece),
+                "the map area is missing {piece}"
+            );
+        }
+        for edge in ["top", "bottom", "left", "right"] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("data-map-edge=\"{edge}\"")),
+                "the map area must be set by dragging its {edge} edge"
+            );
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("data-shade=\"{edge}\"")),
+                "the ground outside the map area's {edge} edge must be dimmed"
+            );
+        }
+        // The canvas is placed by those properties rather than stretched to
+        // its container. `width: 100%` on #map is exactly what this replaces.
+        let map_rule = EMBEDDED_INDEX
+            .split_once("  #map {")
+            .expect("the map canvas rule")
+            .1
+            .split_once('}')
+            .expect("the end of the map canvas rule")
+            .0;
+        for property in [
+            "left: var(--map-area-left)",
+            "top: var(--map-area-top)",
+            "width: var(--map-area-width)",
+            "height: var(--map-area-height)",
+        ] {
+            assert!(
+                map_rule.contains(property),
+                "the map canvas must take its {property} from the map area"
+            );
+        }
+        assert!(
+            !map_rule.contains("width: 100%"),
+            "a canvas stretched to its container cannot be moved off the panels"
+        );
+        // Renderers and camera measure the viewport, never the container.
+        assert!(EMBEDDED_INDEX.contains("const vx = (sx - MAPW / 2) / cam.scale;"));
+        assert!(EMBEDDED_INDEX.contains("cv.width !== backingWidth"));
+        // The fit is on out of the box, in the stored default and in the
+        // switch that reports it, and moving an edge by hand turns it off.
+        assert!(EMBEDDED_INDEX.contains("const MAP_AREA_DEFAULT = {auto:true,"));
+        assert!(EMBEDDED_INDEX
+            .contains(r#"<input type="checkbox" id="map-area-auto" checked>"#));
+        assert!(EMBEDDED_INDEX.contains("if (!MAP_AREA.auto || mapAreaRefitDepth) return false;"));
+        // Every place a panel or an overlay moves refits a fitted area.
+        assert_eq!(
+            EMBEDDED_INDEX.matches("refitMapAreaToChrome();").count(),
+            4,
+            "a fitted map area follows the standings, the overlay switches, and \
+             both HUD layout paths — four call sites; a fifth means a new one \
+             belongs in this count, a third means one was dropped"
         );
     }
 

@@ -77,6 +77,7 @@ fn per_unit_purchase_discount_is_shared_by_quotes_actions_and_execution() {
     let action = Action::Buy {
         city,
         unit: "warrior".to_string(),
+        formation: 0,
         currency: "gold".to_string(),
     };
     assert!(game.legal_actions(0).contains(&action));

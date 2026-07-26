@@ -39,6 +39,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
 pub const EVAL_ONLY_AIS: [&str; 17] = [
+    "advanced_lane_reachable",
     "advanced_relief_scoped",
     "strategic_score",
     "strategic_doctrine",
@@ -55,7 +56,6 @@ pub const EVAL_ONLY_AIS: [&str; 17] = [
     "policy_wide",
     "policy_wide_frozen",
     "strategic_deep_adaptive",
-    "strategic_focus",
 ];
 
 /// On-disk schema for the shared player/leader/civilization rating ledger.
@@ -425,6 +425,18 @@ impl EloPool {
 pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
     match name {
         "advanced" => Box::new(AdvancedAi::new()),
+        // Treatment for the lane-reachability axis: identical to `advanced`
+        // except that it refuses to route toward a victory lane it cannot
+        // finish inside the turn budget. Paired against `advanced` this
+        // isolates the filter and nothing else. Measured no stronger at 120
+        // mirrored maps -- 49.6% paired score, Elo-equivalent -3, sign
+        // p=1.0000, gate INCONCLUSIVE -- which is why it is an entrant and
+        // not the default.
+        "advanced_lane_reachable" => {
+            let mut ai = AdvancedAi::new();
+            ai.refuse_unreachable_lanes = true;
+            Box::new(ai)
+        }
         // Treatment for the relief-radius axis: identical to `advanced` in
         // every other respect, holding only the force groups that could
         // reach a threatened city instead of every group in the empire.
@@ -587,18 +599,6 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             ai.review_every = 20;
             ai.horizon = 80;
             ai.adaptive_horizon = true;
-            Box::new(ai)
-        }
-        // The same review budget `strategic` already spends, allocated to
-        // the branches still in contention instead of split evenly across
-        // all seven. Survivors reach about twice the fixed horizon at the
-        // same cost, so the paired control is `strategic` itself and the
-        // A/B isolates allocation from compute.
-        "strategic_focus" => {
-            let mut ai = crate::strategic::StrategicAi::with_weights(
-                crate::evolve::load_champion("evolved").unwrap_or_default(),
-            );
-            ai.focused_deepening = true;
             Box::new(ai)
         }
         "strategic_rot20" => {
@@ -820,7 +820,6 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "strategic_h80" => (vec![genome, value(false)], "strategic_h80"),
         "strategic_rot20" => (vec![genome, value(false)], "strategic_rot20"),
         "strategic_deep_adaptive" => (vec![genome, value(false)], "strategic_deep_adaptive"),
-        "strategic_focus" => (vec![genome, value(false)], "strategic_focus"),
         // Same artifact dependencies as `strategic`: the genome tunes it,
         // and the net is non-definitional because the search runs without
         // one. There is no separate published netless name to degrade to.
@@ -835,6 +834,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
             if net { "production_net" } else { "production" },
         ),
         "advanced" => (Vec::new(), "advanced"),
+        "advanced_lane_reachable" => (Vec::new(), "advanced_lane_reachable"),
         "advanced_v1" => (Vec::new(), "advanced_v1"),
         "advanced_relief_scoped" => (Vec::new(), "advanced_relief_scoped"),
         "random" => (Vec::new(), "random"),
@@ -1321,8 +1321,9 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 5] = [
+            const SCRIPTED: [&str; 6] = [
                 "advanced",
+                "advanced_lane_reachable",
                 "advanced_relief_scoped",
                 "advanced_v1",
                 "basic",

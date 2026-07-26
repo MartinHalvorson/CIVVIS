@@ -401,6 +401,22 @@ pub struct AdvancedAi {
     /// `advanced_relief_scoped` entrant, so it can be re-measured once the
     /// conversion bottleneck moves rather than re-derived from scratch.
     pub scoped_relief_hold: bool,
+    /// Exclude victory lanes the empire cannot finish before the game ends.
+    ///
+    /// **Off by default, on the pre-registered rule.** Routing toward a lane
+    /// that is arithmetically out of reach looked like a defect rather than a
+    /// preference, and the filter demonstrably fires — but at 120 mirrored
+    /// maps it measured no stronger than the permissive control: 49.6% paired
+    /// score (95% Wilson CI 40.8%..58.4%), Elo-equivalent -3, sign p=1.0000,
+    /// promotion gate INCONCLUSIVE. The pre-registration said a failure ships
+    /// the flag off with the null recorded, so it does.
+    ///
+    /// Reachable as the `advanced_lane_reachable` entrant, so it can be
+    /// re-measured once victory routing actually binds rather than re-derived
+    /// from scratch. Worth knowing before re-running it: in that eval 103 of
+    /// 120 `advanced` wins were religious, so the science lane the filter
+    /// exists to refuse was rarely the one being contested.
+    pub refuse_unreachable_lanes: bool,
 }
 
 impl Default for AdvancedAi {
@@ -445,6 +461,7 @@ impl AdvancedAi {
             force_groups: Vec::new(),
             force_groups_dirty: false,
             scoped_relief_hold: false,
+            refuse_unreachable_lanes: false,
         }
     }
 
@@ -872,6 +889,61 @@ impl AdvancedAi {
         (converted, living_majors.len())
     }
 
+    /// Whether a Science victory can still be finished before the game stops.
+    ///
+    /// A Science win needs the tech tree and then the four-stage launch, and
+    /// `docs/AI_GUIDE.md` records unassisted science victories landing on
+    /// turns 1021 and 940. The stock Standard budget is 500. So on a normal
+    /// game the lane is not merely difficult, it is arithmetically out of
+    /// reach — and `ablate --mode best-lane` measured exactly that: a seat
+    /// committed to Science from turn one won **0 of 50**, as did Culture,
+    /// Domination and Score, while committed Religion won 29 and the adaptive
+    /// agent won 14.
+    ///
+    /// That matters because `victory_focus` is an argmax over per-lane
+    /// progress and Science is the only lane with an unearned floor: it opens
+    /// at 25 and climbs to 55 on tech count alone, which every empire
+    /// accumulates whatever it is playing for. Religion scores 0 until its
+    /// opening is viable. So the argmax leans toward the one lane that cannot
+    /// finish, and keeps leaning as the game goes on.
+    ///
+    /// The estimate deliberately uses the empire's own achieved rate rather
+    /// than a table: an empire researching quickly on a fast speed setting
+    /// genuinely may finish, and should not be talked out of it by a constant.
+    /// Before any tech is in, nothing is claimed — an empire cannot be judged
+    /// on a rate it has not had the chance to set.
+    fn science_reachable(&self, g: &Game, pid: usize) -> bool {
+        let researched = g.players[pid].techs.len();
+        let total = g.rules.techs.len();
+        if researched == 0 || researched >= total || g.turn == 0 {
+            return true;
+        }
+        let remaining = (total - researched) as u64;
+        // Turns per tech achieved so far, kept in integer arithmetic so the
+        // estimate is exactly reproducible across platforms.
+        let eta_research = g.turn as u64 * remaining / researched as u64;
+        // The launch chain still has to be built and run after the last tech.
+        let launch = g.standard_duration(60) as u64;
+        let budget = g.max_turns.saturating_sub(g.turn) as u64;
+        eta_research.saturating_add(launch) <= budget
+    }
+
+    /// Lanes this empire could still finish, applied to the adaptive planner
+    /// only.
+    ///
+    /// An explicitly targeted agent keeps its target whatever this says:
+    /// `victory_eval` asks for a named victory and must be free to spend as
+    /// many turns as that takes.
+    fn lane_reachable(&self, g: &Game, pid: usize, strategy: GrandStrategy) -> bool {
+        if !self.refuse_unreachable_lanes {
+            return true;
+        }
+        match strategy {
+            GrandStrategy::Science => self.science_reachable(g, pid),
+            _ => true,
+        }
+    }
+
     fn victory_focus(&self, g: &Game, pid: usize) -> VictoryFocus {
         if let Some(target) = self.active_victory_target(g) {
             return VictoryFocus {
@@ -985,6 +1057,14 @@ impl AdvancedAi {
             .count() as i64;
         let diplomacy = (player.dvp * 5 + suzerain * 6).clamp(0, 100) as i32;
 
+        // A lane that cannot finish inside the remaining turns scores zero
+        // rather than its raw progress. Zero rather than a discount because
+        // the question is not how far along the empire is, it is whether the
+        // finish line arrives before the game ends.
+        let science = match self.lane_reachable(g, pid, GrandStrategy::Science) {
+            true => science,
+            false => 0,
+        };
         let candidates = [
             VictoryFocus {
                 strategy: GrandStrategy::Science,
@@ -1021,6 +1101,20 @@ impl AdvancedAi {
         for candidate in enabled {
             if candidate.progress > best.progress {
                 best = candidate;
+            }
+        }
+        // The scan seeds on the first enabled candidate and only moves on a
+        // strict improvement, and Science is first in the table. Zeroing an
+        // unreachable Science therefore is not enough on its own: when every
+        // lane scores zero the argmax still returns it. Fall through to the
+        // first reachable lane instead, so refusing a lane actually refuses
+        // it.
+        if best.progress == 0 && !self.lane_reachable(g, pid, best.strategy) {
+            if let Some(fallback) = candidates.into_iter().find(|candidate| {
+                Self::victory_strategy_enabled(g, candidate.strategy)
+                    && self.lane_reachable(g, pid, candidate.strategy)
+            }) {
+                best = fallback;
             }
         }
         best
@@ -4323,8 +4417,20 @@ impl AdvancedAi {
                     Action::Buy {
                         city,
                         unit,
+                        formation,
                         currency,
-                    } => (*city, Item::Unit { unit: unit.clone() }, currency.as_str()),
+                    } => (
+                        *city,
+                        if *formation == 0 {
+                            Item::Unit { unit: unit.clone() }
+                        } else {
+                            Item::Formation {
+                                unit: unit.clone(),
+                                formation: *formation,
+                            }
+                        },
+                        currency.as_str(),
+                    ),
                     Action::BuyBuilding {
                         city,
                         building,
@@ -4664,6 +4770,7 @@ impl AdvancedAi {
                 &Action::Buy {
                     city: cid,
                     unit: "missionary".to_string(),
+                    formation: 0,
                     currency: "faith".to_string(),
                 },
             )
@@ -4856,6 +4963,7 @@ impl AdvancedAi {
                     &Action::Buy {
                         city: cid,
                         unit: (*unit).to_string(),
+                        formation: 0,
                         currency: "faith".to_string(),
                     },
                 )
@@ -4883,6 +4991,7 @@ impl AdvancedAi {
                     &Action::Buy {
                         city,
                         unit: "naturalist".to_string(),
+                        formation: 0,
                         currency: "faith".to_string(),
                     },
                 )
@@ -4909,6 +5018,7 @@ impl AdvancedAi {
                 &Action::Buy {
                     city,
                     unit: "rock_band".to_string(),
+                    formation: 0,
                     currency: "faith".to_string(),
                 },
             )
@@ -5329,6 +5439,7 @@ impl AdvancedAi {
             let Action::Buy {
                 city,
                 unit,
+                formation,
                 currency,
             } = &action
             else {
@@ -5346,13 +5457,25 @@ impl AdvancedAi {
             let combat = spec
                 .strength
                 .max(spec.ranged_strength)
-                .max(spec.bombard_strength);
+                .max(spec.bombard_strength)
+                + match *formation {
+                    1 => 10.0,
+                    2.. => 17.0,
+                    _ => 0.0,
+                };
             let strategic = self
                 .production_value(
                     g,
                     pid,
                     *city,
-                    &Item::Unit { unit: unit.clone() },
+                    &if *formation == 0 {
+                        Item::Unit { unit: unit.clone() }
+                    } else {
+                        Item::Formation {
+                            unit: unit.clone(),
+                            formation: *formation,
+                        }
+                    },
                     plan,
                     &counts,
                 )
@@ -12338,6 +12461,67 @@ mod tests {
             ai.victory_denial(&game, 0),
             Some((1, GrandStrategy::Conquest)),
             "a one-conversion match point must interrupt even a close own race"
+        );
+    }
+
+    /// The check this whole change rests on: does the filter ever fire in a
+    /// real game?
+    ///
+    /// A treatment that does nothing reports a null for the wrong reason. The
+    /// expansion-ceiling experiment cost a 240-game run to learn that, so this
+    /// is asserted before any evaluation rather than after one: across ordinary
+    /// four-player games Science must actually become unreachable, and the
+    /// adaptive planner must actually stop choosing it.
+    #[test]
+    fn the_reachability_filter_fires_in_ordinary_games() {
+        let mut refused = 0usize;
+        let mut science_turns_with = 0usize;
+        let mut science_turns_without = 0usize;
+        let mut sampled = 0usize;
+
+        for seed in 0..3u64 {
+            let mut game = Game::new(4, 60, 38, 42_000 + seed, 500, 6);
+            let mut ais = AdvancedAi::fleet(&game);
+            let mut filtering = AdvancedAi::new();
+            filtering.refuse_unreachable_lanes = true;
+            let permissive = AdvancedAi::new();
+            assert!(
+                !permissive.refuse_unreachable_lanes,
+                "the default is permissive: the filter measured no stronger"
+            );
+
+            while game.winner.is_none() && game.turn <= 260 {
+                let pid = game.current;
+                if pid == 0 {
+                    sampled += 1;
+                    if !filtering.science_reachable(&game, 0) {
+                        refused += 1;
+                    }
+                    if filtering.victory_focus(&game, 0).strategy == GrandStrategy::Science {
+                        science_turns_with += 1;
+                    }
+                    if permissive.victory_focus(&game, 0).strategy == GrandStrategy::Science {
+                        science_turns_without += 1;
+                    }
+                }
+                ais[pid].take_turn(&mut game, pid);
+                if game.winner.is_none() && game.current == pid {
+                    let _ = game.apply(pid, &Action::EndTurn);
+                }
+            }
+        }
+        assert!(sampled > 100, "only {sampled} turns sampled");
+        assert!(
+            refused > 0,
+            "Science was reachable on all {sampled} sampled turns, so the \
+             filter never fires and any evaluation of it would measure the \
+             stock agent under another name"
+        );
+        assert!(
+            science_turns_with < science_turns_without,
+            "the filter fired on {refused} turns but the adaptive planner still \
+             chose Science as often as before ({science_turns_with} against \
+             {science_turns_without}), so refusing the lane changed no decision"
         );
     }
 
