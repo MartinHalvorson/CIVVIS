@@ -4575,6 +4575,29 @@ mod tests {
 
     #[test]
     fn browser_orders_settings_event_log_and_strategy() {
+        // Readability is a shared interface contract, not a collection of
+        // one-off enlargements. Panels inherit one system stack and a named
+        // scale with a 9px floor; map labels use the same platform-native
+        // stack instead of depending on an unbundled webfont.
+        assert!(EMBEDDED_INDEX.contains("--font-ui: system-ui"));
+        assert!(EMBEDDED_INDEX.contains("--type-micro: 9px;"));
+        assert!(EMBEDDED_INDEX.contains("--type-body: 14px;"));
+        assert!(EMBEDDED_INDEX.contains("font: var(--type-body)/1.5 var(--font-ui);"));
+        assert!(EMBEDDED_INDEX.contains("text-size-adjust: 100%"));
+        assert!(EMBEDDED_INDEX.contains(
+            "9px system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
+        ));
+        for illegible in [
+            "font-size: 5.5px",
+            "font-size: 6px",
+            "font-size: 7px",
+            "font-size: 8px",
+        ] {
+            assert!(
+                !EMBEDDED_INDEX.contains(illegible),
+                "browser CSS should not restore the illegible {illegible} declaration"
+            );
+        }
         for players in [2, 4, 6, 8, 10, 12] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("<option value=\"{players}\"")),
@@ -4871,8 +4894,9 @@ mod tests {
         // The standings grow from one consolidated row through eight readable
         // rows. A twelve-player exhibition then scrolls even on a tall screen
         // instead of continuing to consume the world below it.
-        assert!(EMBEDDED_INDEX.contains("--player-hud-max-height: min(34vh, 244px);"));
-        assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.34"));
+        assert!(EMBEDDED_INDEX.contains("--player-hud-max-height: min(38vh, 280px);"));
+        assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.38"));
+        assert!(EMBEDDED_INDEX.contains("const requestedHeight = Math.max(154, 50 + rows * 28);"));
         assert!(EMBEDDED_INDEX
             .contains("const requestedWidth = 760 + Math.max(0, rows - 1) * 100;"));
         assert!(EMBEDDED_INDEX.contains(
@@ -4914,7 +4938,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("data-hud-action=\"capital\""));
         assert!(EMBEDDED_INDEX.contains("function focusEmpire(pid)"));
         assert!(EMBEDDED_INDEX.contains("function focusCapital(pid)"));
-        assert!(EMBEDDED_INDEX.contains("--hud-row-height: 23px;"));
+        assert!(EMBEDDED_INDEX.contains("--hud-row-height: 26px;"));
         assert!(EMBEDDED_INDEX.contains("function dismissOverlay(name, source)"));
         assert!(EMBEDDED_INDEX.contains("addEventListener(\"pointerdown\", event =>"));
         assert!(EMBEDDED_INDEX.contains("overlay-return-flash .24s ease-in-out 3"));
@@ -5113,8 +5137,11 @@ mod tests {
         // Default camera moves compose at the exact center of the rectangle
         // requested by the operator: the command deck's right edge to the
         // victory rail's left edge, and the player HUD's bottom edge to the
-        // screen bottom. A missing widget naturally leaves its screen edge in
-        // place, and the minimap is deliberately absent from this calculation.
+        // screen bottom. At the responsive breakpoint the victory rail becomes
+        // a top band, so its live box extends the top edge instead of collapsing
+        // the horizontal stage against its 8px left gutter. A missing widget
+        // naturally leaves its screen edge in place, and the minimap is
+        // deliberately absent from this calculation.
         assert!(EMBEDDED_INDEX.contains("function mapOverlayVisible(name)"));
         assert!(EMBEDDED_INDEX.contains(
             "document.body.classList.contains(\"sidebar-hidden\")"
@@ -5126,10 +5153,22 @@ mod tests {
             "left = Math.max(0, Math.min(width, sideRect.right - areaRect.left));"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "if (victory) right = Math.max(0, Math.min(width, victory.left));"
+            "if (players) top = Math.max(0, Math.min(height, players.bottom));"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "if (players) top = Math.max(0, Math.min(height, players.bottom));"
+            "const spansWidth = victory.left <= 16 && victory.right >= width - 16;"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (spansWidth) top = Math.max(top, Math.max(0, Math.min(height, victory.bottom)));"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "else right = Math.max(0, Math.min(width, victory.left));"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (right <= left) { left = 0; right = width; }"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (bottom <= top) { top = 0; bottom = height; }"
         ));
         assert!(!EMBEDDED_INDEX.contains(
             "if (minimap) left = Math.max(left, (minimap.left + minimap.right) / 2);"
