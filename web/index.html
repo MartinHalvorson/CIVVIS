@@ -13201,7 +13201,7 @@ function skyFocusBody() {
 // four times its width, but it is also six diameters off the edge of the
 // screen, so it is not what anyone is looking at.
 function skyGrip(body, radius, pan = SKY_PAN) {
-  const drawn = Math.max(body.floor || 0, body.size * radius);
+  const drawn = skyDrawnRadius(body, radius);
   const [px, py] = skyBodyPos(body);
   const away = Math.hypot(px - pan.x, py - pan.y) * radius;
   const reach = Math.max(140, Math.min(MAPW, MAPH) * .55);
@@ -13219,14 +13219,24 @@ function skyGrip(body, radius, pan = SKY_PAN) {
 // and when none of them is, it eases back onto the shot that holds the whole
 // system, which is what makes zooming out of Mars return to the space view
 // rather than to an empty patch of sky where Mars used to be.
-function skySettledPan(pan, radius, zoom) {
+//
+// A named subject is the answer when there is one: the world the pointer asked
+// for is the one being collected, whether or not it is yet wide enough to grip
+// anything. The pull fades out as that world stops being a marble and starts
+// being the place underfoot, because `skyZoomAim`'s own hold is aiming at its
+// centre by then and a second pull on top of it would fight the lean.
+function skySettledPan(pan, radius, zoom, subject = null, grab = 1) {
   let best = null;
   for (const body of skyKnownWorlds()) {
     const grip = skyGrip(body, radius, pan);
     if (!best || grip > best.grip) best = {grip, at:skyBodyPos(body)};
   }
   let target, ease;
-  if (best && best.grip > .02) {
+  if (subject && zoom > 1) {
+    target = skyBodyPos(subject);
+    ease = grab * (.18 + .55 * skyGrip(subject, radius, pan));
+    if (!(ease > 0)) return {...pan};
+  } else if (best && best.grip > .02) {
     target = best.at;
     ease = .18 + .55 * best.grip;
   } else if (zoom < 1) {
@@ -13236,7 +13246,14 @@ function skySettledPan(pan, radius, zoom) {
     // the Moon — small enough to need a dozen steps — never arrives at all.
     const frame = skySystemFrame();
     target = [frame.x, frame.y];
-    ease = .60 * Math.max(0, Math.min(1, frame.radius * 2.2 / Math.max(1e-3, radius) - .55));
+    // Gentle on the way out and exact at the stop. The end of a zoom-out *is*
+    // the whole-system shot, so the last quarter of the way there frames it
+    // rather than leaning towards it: a wheel zoom-out with the pointer off in
+    // a corner otherwise holds that corner's world under the cursor to the very
+    // end and stops with the far side of the system pushed off the frame.
+    const held = Math.max(0, Math.min(1, frame.radius * 2.2 / Math.max(1e-3, radius) - .55));
+    const framed = Math.max(0, Math.min(1, (frame.radius * 1.25 / Math.max(1e-3, radius) - 1) * 4));
+    ease = Math.max(.60 * held, framed);
   } else return {...pan};
   const settled = {x:pan.x + (target[0] - pan.x) * ease,
                    y:pan.y + (target[1] - pan.y) * ease};
@@ -13255,6 +13272,155 @@ function skySettledPan(pan, radius, zoom) {
 function skyZoomAnchor(radius, stageX, stageY, pan = SKY_PAN) {
   const [px, py] = skyBodyPos(skyNearestWorld(pan));
   return [stageX + (px - pan.x) * radius, stageY + (py - pan.y) * radius];
+}
+
+// ------------------------------------------------ what a zoom is aiming at
+//
+// Putting the cursor near a world and scrolling in has to be the whole of the
+// gesture. It very nearly was not: the anchor held the raw point of *space*
+// under the pointer, and out in the system a world is a handful of pixels
+// across — on the whole-system shot the Moon is a four-pixel dot with the Earth
+// a fourteen-pixel one ninety pixels away — so the pointer had to land inside a
+// four-pixel disc or the zoom walked off between the worlds instead. Measured
+// on a 1250x1000 stage: twelve pixels wide of the Moon's centre and sixteen
+// wheel steps ended three thousand pixels from it with *nothing at all* on the
+// stage, and aiming at empty sky ran away from every world for ever. Nobody can
+// aim that well and nobody should have to.
+//
+// So a pointer names a world, not a pixel. Every world claims a halo about
+// itself and the strongest claim takes the pointer, which answers the empty-sky
+// case in the same breath: the roughly nearest world takes it, and a zoom
+// always arrives somewhere.
+function skyDrawnRadius(body, radius = planetEarthRadius()) {
+  return Math.max(body.floor || 0, body.size * radius);
+}
+function skyStageSpan() {
+  const frame = observedFrameRect();
+  return Math.max(160, Math.min(frame.right - frame.left, frame.bottom - frame.top));
+}
+function skyBodyScreen(body, radius, pan = SKY_PAN) {
+  const [stageX, stageY] = planetStageCenter();
+  const [px, py] = skyBodyPos(body);
+  return [stageX + (px - pan.x) * radius, stageY + (py - pan.y) * radius];
+}
+function skyPointerWorld(sx, sy, radius = planetEarthRadius(), pan = SKY_PAN) {
+  // Wide enough that the gaps between the worlds on the system shot are all
+  // claimed by one of them, so there is no dead sky to fall into, and equal for
+  // every world so the tie between two of them falls where they part company.
+  const halo = Math.max(64, skyStageSpan() * .12);
+  let best = null;
+  for (const body of skyKnownWorlds()) {
+    const [bx, by] = skyBodyScreen(body, radius, pan);
+    const claim = Math.hypot(bx - sx, by - sy) / (skyDrawnRadius(body, radius) + halo);
+    if (!best || claim < best.claim) best = {body, claim};
+  }
+  return best ? best.body : SKY_EARTH;
+}
+// How much of the pointer's authority a world takes for itself. A marble is a
+// destination — a pointer on it means *go there*, and there is no ground on a
+// four-pixel disc to mean anything else — while a world that fills the stage is
+// a place, where the pointer means that spot on it and holding the spot still
+// is the whole of a zoom. In between the authority is handed back gradually, so
+// an approach to the Earth turns into steering for the coast you are aiming at
+// without a line to cross.
+function skyWorldGrab(drawn) {
+  return Math.max(0, Math.min(1, (.55 - 2 * drawn / skyStageSpan()) / .37));
+}
+// The angle from the point facing the viewer to the ground under the pointer, or
+// null if the pointer is not on that world at all — out in the black beside a
+// marble, or inside the last one-and-a-half per cent before a limb, where the
+// ground is foreshortened so hard that inverting it is meaningless. Anywhere
+// else on the disc counts, including well out towards the edge: a globe that
+// nearly fills the stage is being pointed at, and an earlier .92 cut-off here
+// left exactly that case — 420 px out on a 440 px disc — with no lean at all.
+// A chart lays the angle down as a length instead, and honestly reaches out to
+// its own limit.
+function skySurfaceAngle(reach, drawn, chart) {
+  const across = reach / Math.max(1, drawn);
+  if (chart) return across <= CHART_LIMIT ? across : null;
+  return across <= .985 ? Math.asin(across) : null;
+}
+// The basis a world is being seen through. Only the Earth's is steered by the
+// camera proper, because it is the only one with tiles under it.
+function skyWorldBasis(body) {
+  return planetViewBasis(body.id === "earth" ? planetCamera() : skyBodyCamera(body.id));
+}
+// Which point of a world's surface is under the pointer, as a direction in
+// space. Straight inversion of `planetProject`: screen x is the component along
+// `right` and screen y the negated component along `up`, both times the spread.
+function skySurfacePoint(body, sx, sy, radius, pan = SKY_PAN) {
+  const basis = skyWorldBasis(body);
+  const drawn = skyDrawnRadius(body, radius);
+  const [bx, by] = skyBodyScreen(body, radius, pan);
+  const ox = sx - bx, oy = sy - by;
+  const reach = Math.hypot(ox, oy);
+  const angle = skySurfaceAngle(reach, drawn, body.id === "earth" && !knowsGlobe());
+  if (angle === null) return null;
+  if (!(reach > 1e-6)) return basis.out.slice();
+  const alongX = ox / reach, alongY = oy / reach;
+  const cos = Math.cos(angle), sin = Math.sin(angle);
+  return [0, 1, 2].map(index => basis.out[index] * cos +
+    (basis.right[index] * alongX - basis.up[index] * alongY) * sin);
+}
+// Everything a zoom needs to know about where it was aimed: the world, how much
+// of the aim is about travelling to it rather than about looking at part of it,
+// and the ground under the pointer if there is any.
+function skyZoomAim(sx, sy, radius = planetEarthRadius(), pan = SKY_PAN) {
+  const body = skyPointerWorld(sx, sy, radius, pan);
+  const grab = skyWorldGrab(skyDrawnRadius(body, radius));
+  // Only the world with tiles on it is leaned into. The others stop when they
+  // fill the frame, so there is no zoom left to spend on choosing a face of
+  // one — that is what dragging them is for.
+  const point = grab < 1 && body.id === "earth"
+    ? skySurfacePoint(body, sx, sy, radius, pan) : null;
+  return {id:body.id, grab, sx, sy, point};
+}
+// Leaning in — the half of a zoom that is not travel.
+//
+// On a flat map a wheel zoom holds the world point under the pointer exactly
+// still, which is what makes it feel like leaning towards the board. On a globe
+// the same gesture went through the sky pan alone and recovered **three per
+// cent** of that: measured from scale .6, a tile aimed at 420 px off centre
+// finished 1763 px away where no anchoring at all would have cost 1820. The
+// place you pointed at left the screen.
+//
+// So the world turns instead, by the one rotation of its own basis every other
+// way of moving it goes through, until the ground that was under the pointer is
+// back under the pointer. Being a rotation it works over a pole and needs no
+// case for one; being re-measured each frame it lands exactly however the eased
+// scale and pan get there. Returns the angle still owed, in radians.
+function skyLean(lean, ease) {
+  const body = skyBody(lean.id);
+  // Only the world with tiles on it is steered here, so a debt this cannot pay
+  // must never be reported as owed: the eased zoom waits for the lean to land
+  // before it calls itself finished.
+  if (!body || !lean.point || body.id !== "earth") return 0;
+  const radius = planetEarthRadius();
+  const basis = skyWorldBasis(body);
+  const [bx, by] = skyBodyScreen(body, radius);
+  const ox = lean.sx - bx, oy = lean.sy - by;
+  const reach = Math.hypot(ox, oy);
+  const angle = skySurfaceAngle(reach, skyDrawnRadius(body, radius),
+                                body.id === "earth" && !knowsGlobe());
+  // Zoomed far enough in that the pointer is past the limb of the world it is
+  // standing on, there is no direction left to ask for. Hold what we have.
+  if (angle === null) return 0;
+  let want;
+  if (reach > 1e-6) {
+    const alongX = ox / reach, alongY = oy / reach;
+    const cos = Math.cos(angle), sin = Math.sin(angle);
+    want = [0, 1, 2].map(index => basis.out[index] * cos +
+      (basis.right[index] * alongX - basis.up[index] * alongY) * sin);
+  } else want = basis.out.slice();
+  const axis = cross3(lean.point, want);
+  const length = Math.hypot(axis[0], axis[1], axis[2]);
+  const owed = Math.atan2(length, dot3(lean.point, want));
+  if (!(length > 1e-9) || !(owed > 1e-9)) return 0;
+  // The globe turns one way to send the ground the other: rotating the basis by
+  // the inverse of the rotation that would carry the point to where it belongs
+  // is what leaves the point sitting there.
+  applyPlanetBasis(planetSpin(basis, axis.map(value => value / length), -owed * ease));
+  return owed;
 }
 
 // A drag out here means whatever the camera is looking at. Over a world it
@@ -13402,8 +13568,13 @@ function skyNearestWorld(pan = SKY_PAN) {
 // it. The others are things to look at: nothing lives under a Martian hexagon,
 // so the zoom stops with that world filling the frame rather than carrying on
 // until the camera is inside one ocean tile of somebody else's planet.
-function planetMaxScale(pan = SKY_PAN) {
-  const body = skyNearestWorld(pan);
+//
+// It is the world being *flown to* that sets the stop, which is not always the
+// one nearest the camera: from the whole-system shot the nearest world by this
+// reckoning is Mars, so before this took an argument every zoom in that picture
+// — including one aimed squarely at the Earth — carried Mars's ceiling until the
+// camera had drifted far enough along the chain to change its mind.
+function planetMaxScale(pan = SKY_PAN, body = skyNearestWorld(pan)) {
   if (body.id === "earth") return 3.2;
   // Past the flat map's own ceiling where it has to be: the Moon is a quarter
   // of the Earth, so filling the frame with it costs four times the Earth's
@@ -13418,8 +13589,8 @@ function planetMaxScale(pan = SKY_PAN) {
 function planetScaleClamp(scale) {
   return planetScaleClampAt(scale, SKY_PAN);
 }
-function planetScaleClampAt(scale, pan) {
-  return Math.max(planetMinScale(), Math.min(planetMaxScale(pan), scale));
+function planetScaleClampAt(scale, pan, body = skyNearestWorld(pan)) {
+  return Math.max(planetMinScale(), Math.min(planetMaxScale(pan, body), scale));
 }
 // How much of the picture is space rather than surface: 0 while the globe still
 // fills the stage, 1 once it is a marble among others.
@@ -20549,44 +20720,58 @@ function zoomAt(f, sx, sy, skyAnchor = null) {
     cameraFlight = null; clearCameraInertia();
     const [stageX, stageY] = planetStageCenter();
     const before = planetEarthRadius(base);
-    // A chart has no system to travel through. Everything below is about
-    // holding one body still under the pointer so the zoom walks toward it,
-    // and a people who have not proved their world round have exactly one
-    // sheet and nowhere to go: it stays under the middle of the stage.
-    if (!knowsGlobe()) {
-      const scale = planetScaleClampAt(base * f, {x:0, y:0});
-      const target = {kind:"planet", scale, pan:{x:0, y:0}};
-      if (REDUCED_MOTION_QUERY.matches) {
-        cameraZoom = null; cam.scale = scale; skyReturnHome();
-        draw(); drawMini();
-      } else cameraZoom = target;
-      return;
-    }
+    // With no pointer to aim by — the corner buttons, the keyboard — a zoom in
+    // still has to arrive somewhere, so it aims at the world the camera is
+    // heading for rather than at the middle of the stage, which out here is
+    // usually empty sky between two of them.
     if (sx === undefined)
       [sx, sy] = f > 1 ? skyZoomAnchor(before, stageX, stageY, basePan)
                        : [stageX, stageY];
-    // Which point of the system the pointer is over, in Earth radii from the
-    // Earth. Holding that point still across the step is what makes scrolling
-    // in over Mars a way of *going* to Mars: aim at a body and the zoom walks
-    // toward it, aim at empty sky and the zoom stays where you are looking.
-    const pointerX = skyAnchor?.x ?? basePan.x + (sx - stageX) / before;
-    const pointerY = skyAnchor?.y ?? basePan.y + (sy - stageY) / before;
+    // What this zoom is about: a world, and the ground of it under the pointer.
+    // A pinch keeps the world and the ground it started on, so its subject
+    // cannot change hands halfway through one gesture, but it holds them under
+    // wherever the fingers are *now* — which is what makes a two-finger drag
+    // with no pinch in it a translation.
+    const aim = skyAnchor
+      ? {...skyAnchor, sx, sy,
+         grab:skyWorldGrab(skyDrawnRadius(skyBody(skyAnchor.id) || SKY_EARTH, before))}
+      : skyZoomAim(sx, sy, before, basePan);
+    const subject = skyBody(aim.id) || SKY_EARTH;
     // A globe's zoom-out does not stop at the globe. It carries on until the
     // rest of the system is in frame, which is a fixed apparent size for the
     // Earth rather than a fixed number, because a bigger world starts bigger.
-    const scale = planetScaleClampAt(base * f, basePan);
+    // Zooming *in* never zooms out, though: a world the pointer has just named
+    // can stop closer than the one the camera is standing over, and clamping to
+    // it would answer a zoom-in with a jump backwards.
+    const ceiling = planetMaxScale(basePan, subject);
+    const scale = Math.max(planetMinScale(),
+                           Math.min(base * f, Math.max(ceiling, f > 1 ? base : 0)));
     const after = planetEarthRadius(scale);
-    const anchored = {x:pointerX - (sx - stageX) / after,
-                      y:pointerY - (sy - stageY) / after};
+    // Where that world should sit on the stage once the step is done: under the
+    // pointer while it is still a marble being approached — that is what makes
+    // scrolling in over Mars a way of *going* to Mars — and in the middle of the
+    // stage once it is the place you are standing on.
+    const holdX = stageX + (aim.sx - stageX) * aim.grab;
+    const holdY = stageY + (aim.sy - stageY) * aim.grab;
+    const [subjectX, subjectY] = skyBodyPos(subject);
+    // A people who have not proved their world round have one sheet and nowhere
+    // to travel to, so their stage centre stays over it. What they do get is the
+    // lean below: a chart leans towards the pointer exactly as a flat map does.
+    const anchored = knowsGlobe()
+      ? {x:subjectX - (holdX - stageX) / after, y:subjectY - (holdY - stageY) / after}
+      : {x:0, y:0};
     // A two-finger translation with no scale change is a deliberate pan, not
     // a request to recenter the nearest world. Once the pinch is zooming, the
     // same gentle body capture as the wheel keeps the approach intentional.
     const settling = !skyAnchor || Math.abs(Math.log(Math.max(1e-6, f))) > .003;
-    const pan = settling ? skySettledPan(anchored, after, f) : anchored;
+    const pan = settling ? skySettledPan(anchored, after, f, subject, aim.grab)
+                         : anchored;
+    const lean = aim.point ? {id:aim.id, point:aim.point, sx:aim.sx, sy:aim.sy} : null;
     if (REDUCED_MOTION_QUERY.matches) {
       cameraZoom = null; cam.scale = scale; SKY_PAN = pan;
+      if (lean) skyLean(lean, 1);
       draw(); drawMini();
-    } else cameraZoom = {kind:"planet", scale, pan};
+    } else cameraZoom = {kind:"planet", scale, pan, lean};
     return;
   }
   if (sx === undefined) { sx = MAPW / 2; sy = MAPH / 2; }
@@ -20625,12 +20810,18 @@ function advanceUserCameraMotion(now = performance.now()) {
       cam.scale *= Math.exp(Math.log(cameraZoom.scale / Math.max(1e-6, cam.scale)) * ease);
       SKY_PAN = {x:SKY_PAN.x + (cameraZoom.pan.x - SKY_PAN.x) * ease,
                  y:SKY_PAN.y + (cameraZoom.pan.y - SKY_PAN.y) * ease};
+      // The lean turns on the same ease, and is re-measured against where the
+      // scale and pan have actually got to, so the ground it is holding arrives
+      // under the pointer rather than near it.
+      const leanLeft = cameraZoom.lean ? skyLean(cameraZoom.lean, ease) : 0;
       const scaleLeft = Math.abs(Math.log(cameraZoom.scale / Math.max(1e-6, cam.scale)));
       const panLeft = Math.hypot(cameraZoom.pan.x - SKY_PAN.x,
                                  cameraZoom.pan.y - SKY_PAN.y) * planetEarthRadius();
       active = true;
-      if (scaleLeft < .0008 && panLeft < .25) {
+      if (scaleLeft < .0008 && panLeft < .25 &&
+          leanLeft * planetEarthRadius() < 1) {
         cam.scale = cameraZoom.scale; SKY_PAN = {...cameraZoom.pan};
+        if (cameraZoom.lean) skyLean(cameraZoom.lean, 1);
         cameraZoom = null;
       }
     } else {
@@ -21436,13 +21627,10 @@ function beginTouchTransform() {
   const my = (points[0].y + points[1].y) / 2 - rect.top;
   const dx = points[1].x - points[0].x, dy = points[1].y - points[0].y;
   const [wx, wy] = screenToWorld(mx, my);
-  let skyAnchor = null;
-  if (planetMap()) {
-    const [stageX, stageY] = planetStageCenter();
-    const radius = Math.max(.001, planetEarthRadius());
-    skyAnchor = {x:SKY_PAN.x + (mx - stageX) / radius,
-                 y:SKY_PAN.y + (my - stageY) / radius};
-  }
+  // Whatever the pinch started on stays its subject for the whole gesture, so
+  // fingers passing over another world do not hand the camera to it.
+  const skyAnchor = planetMap()
+    ? skyZoomAim(mx, my, Math.max(.001, planetEarthRadius())) : null;
   touchGesture = {mode:"transform", mx, my, wx, wy, distance:Math.hypot(dx, dy),
                   angle:Math.atan2(dy, dx), scale:cam.scale, rot:cam.rot,
                   basis:planetBasisNow(), skyAnchor, controlled:false};
