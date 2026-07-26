@@ -1032,6 +1032,9 @@
     background: linear-gradient(135deg, #4b4226cc, #173128e8);
     box-shadow: inset 0 1px #ffffff16, 0 0 13px #d7b66a1c;
   }
+  #map-lens-exit { min-width: 58px; color: #d7b6ad; }
+  #map-lens-exit[hidden] { display: none; }
+  #map-lens-exit .map-lens-icon { color: #e4a49d; }
   .map-lens-icon { color: #e6c978; font-size: 15px; line-height: 1; text-align: center; }
   #map-lenses button[data-map-lens="empire"] .map-lens-icon { color: #9ed8ca; }
   #map-lenses kbd {
@@ -2191,7 +2194,7 @@
   body.overlay-victory-hidden #victoryhud,
   body.overlay-minimap-hidden .minimap-frame,
   body.overlay-controls-hidden #zoomctl,
-  body.overlay-controls-hidden #map-lenses { display: none !important; }
+  body.overlay-lenses-hidden #map-lenses { display: none !important; }
   body.sidebar-hidden #collapsepause:not([hidden]) { display: block; }
   #collapsepause[hidden] { display: none; }
 
@@ -2391,6 +2394,11 @@
         title="Empire lens — isolate land, water, and civilization frontiers (4)">
         <span class="map-lens-icon" aria-hidden="true">◈</span>
         <span class="map-lens-label">Empire</span><kbd aria-hidden="true">4</kbd>
+      </button>
+      <button id="map-lens-exit" type="button" hidden
+        title="Exit the active map lens" aria-label="Exit the active map lens">
+        <span class="map-lens-icon" aria-hidden="true">×</span>
+        <span class="map-lens-label">Exit</span>
       </button>
     </div>
   </div>
@@ -2693,6 +2701,7 @@
             <label class="overlay-option"><input type="checkbox" data-overlay="victory" checked>Victory tracker</label>
             <label class="overlay-option"><input type="checkbox" data-overlay="minimap" checked>World minimap</label>
             <label class="overlay-option"><input type="checkbox" data-overlay="controls" checked>Map controls</label>
+            <label class="overlay-option"><input type="checkbox" data-overlay="lenses" checked>Map lenses</label>
           </div>
           <button class="ghost overlay-layout-reset" id="reset-overlay-layout" type="button">Reset overlay positions &amp; sizes</button>
         </div>
@@ -3323,7 +3332,7 @@ let FLAT_MAP_WRAP_Y = localStorage.getItem("civvis-flat-map-wrap-y") === "1";
 // fullscreen game and some players will want it off.
 let EDGE_PAN = localStorage.getItem("civvis-edge-pan") !== "0";
 const OVERLAY_STORAGE_KEY = "civvis-map-overlays-v1";
-const OVERLAY_NAMES = ["players", "victory", "minimap", "controls"];
+const OVERLAY_NAMES = ["players", "victory", "minimap", "controls", "lenses"];
 let OVERLAY_VISIBILITY = Object.fromEntries(OVERLAY_NAMES.map(name => [name, true]));
 try {
   const savedOverlays = JSON.parse(localStorage.getItem(OVERLAY_STORAGE_KEY) || "{}");
@@ -3341,6 +3350,7 @@ function setOverlayVisibility(name, visible) {
   const priorFocus = currentMapFocusWorld();
   OVERLAY_VISIBILITY[name] = visible;
   applyOverlayVisibility();
+  if (name === "lenses" && !visible && mapLens) setMapLens(null);
   const checkbox = document.querySelector(`[data-overlay="${name}"]`);
   if (checkbox) checkbox.checked = visible;
   try { localStorage.setItem(OVERLAY_STORAGE_KEY, JSON.stringify(OVERLAY_VISIBILITY)); }
@@ -3349,7 +3359,7 @@ function setOverlayVisibility(name, visible) {
 }
 const OVERLAY_LABELS = {
   players:"Player standings", victory:"Victory tracker",
-  minimap:"World minimap", controls:"Map controls",
+  minimap:"World minimap", controls:"Map controls", lenses:"Map lenses",
 };
 function flashDisplaySettingsHeader() {
   const header = document.getElementById("display-settings-header");
@@ -18263,6 +18273,8 @@ function syncMapLensControls() {
     button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", active ? "true" : "false");
   }
+  const exit = document.getElementById("map-lens-exit");
+  if (exit) exit.hidden = !mapLens;
 }
 function setMapLens(next) {
   mapLens = mapLens === next ? null : next;
@@ -18272,6 +18284,7 @@ function setMapLens(next) {
 }
 for (const button of document.querySelectorAll("[data-map-lens]"))
   button.onclick = () => setMapLens(button.dataset.mapLens);
+document.getElementById("map-lens-exit").onclick = () => setMapLens(null);
 function modeline() {
   const m = [];
   if (mapLens === "settler")
