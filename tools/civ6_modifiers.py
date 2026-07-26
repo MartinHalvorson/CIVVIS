@@ -212,6 +212,110 @@ def load(install: Path) -> Modifiers:
     return modifiers
 
 
+# The compiled gameplay database the game leaves behind carries the same
+# modifier tables the XML load order builds, so the census can run on a machine
+# where Civilization VI is no longer installed — the same route
+# ``civ6_fidelity.py --cache`` takes. The two are not guaranteed identical: the
+# XML route reconstructs a chosen content set in a chosen order, the cache is
+# whatever the game last compiled for itself. Where they disagree, that
+# disagreement is itself a finding.
+CACHE_PATHS = (
+    "~/Library/Application Support/Sid Meier's Civilization VI/Cache/DebugGameplay.sqlite",
+    "~/AppData/Local/Firaxis Games/Sid Meier's Civilization VI/Cache/DebugGameplay.sqlite",
+)
+
+# The owner tables bind a modifier to the object that grants it. Reading them is
+# what lets a drill say *which* policy or belief does something rather than
+# "some policy does".
+OWNER_TABLES = (
+    "BuildingModifiers", "TraitModifiers", "BeliefModifiers", "PolicyModifiers",
+    "UnitPromotionModifiers", "GovernmentModifiers", "DistrictModifiers",
+    "ImprovementModifiers", "FeatureModifiers", "GreatPersonIndividualActionModifiers",
+    "GreatPersonIndividualBirthModifiers", "UnitAbilityModifiers", "CivicModifiers",
+    "TechnologyModifiers", "ProjectModifiers", "ResourceModifiers", "WonderModifiers",
+    "GovernorPromotionModifiers", "LeaderTraitModifiers", "CityStateModifiers",
+)
+
+
+def find_cache(explicit: str | None) -> Path:
+    if explicit:
+        path = Path(explicit).expanduser()
+        if not path.is_file():
+            raise SystemExit(f"no compiled gameplay database at {path}")
+        return path
+    for candidate in CACHE_PATHS:
+        path = Path(candidate).expanduser()
+        if path.is_file():
+            return path
+    raise SystemExit("no compiled gameplay database found; pass --cache <path>")
+
+
+def load_cache(path: Path) -> Modifiers:
+    import sqlite3
+    import urllib.parse
+
+    uri = "file:" + urllib.parse.quote(str(path)) + "?mode=ro&immutable=1"
+    connection = sqlite3.connect(uri, uri=True)
+    connection.row_factory = sqlite3.Row
+    present = {
+        row[0]
+        for row in connection.execute(
+            "select name from sqlite_master where type = 'table'"
+        )
+    }
+
+    def rows(table: str) -> list[dict]:
+        if table not in present:
+            return []
+        return [
+            {k: ("" if v is None else str(v)) for k, v in dict(row).items()}
+            for row in connection.execute(f"select * from {table}")
+        ]
+
+    modifiers = Modifiers()
+    for row in rows("DynamicModifiers"):
+        if row.get("ModifierType"):
+            modifiers.dynamic[row["ModifierType"]] = row
+    for row in rows("Modifiers"):
+        if row.get("ModifierId"):
+            modifiers.rows.setdefault(row["ModifierId"], {}).update(row)
+    for row in rows("ModifierArguments"):
+        if row.get("ModifierId") and row.get("Name"):
+            modifiers.arguments[row["ModifierId"]][row["Name"]] = row.get("Value", "")
+    for row in rows("Requirements"):
+        if row.get("RequirementId"):
+            modifiers.requirements.setdefault(row["RequirementId"], {}).update(row)
+    for row in rows("RequirementArguments"):
+        if row.get("RequirementId") and row.get("Name"):
+            modifiers.requirement_arguments[row["RequirementId"]][row["Name"]] = row.get(
+                "Value", ""
+            )
+    for row in rows("RequirementSets"):
+        if row.get("RequirementSetId"):
+            modifiers.set_kinds[row["RequirementSetId"]] = row.get("RequirementSetType", "")
+    for row in rows("RequirementSetRequirements"):
+        set_id, requirement = row.get("RequirementSetId"), row.get("RequirementId")
+        if set_id and requirement:
+            members = modifiers.requirement_sets[set_id]
+            if requirement not in members:
+                members.append(requirement)
+    for table in OWNER_TABLES:
+        for row in rows(table):
+            if not row.get("ModifierId"):
+                continue
+            owner = next(
+                (
+                    value
+                    for key, value in row.items()
+                    if key not in ("ModifierId", "Name", "Id")
+                ),
+                "",
+            )
+            modifiers.attachments[row["ModifierId"]].append(table)
+            modifiers.owners[row["ModifierId"]].append(owner)
+    return modifiers
+
+
 def shipped_text(install: Path, tag_fragment: str) -> list[tuple[str, str]]:
     """Localised descriptions matching a tag fragment, Gathering Storm first.
 
@@ -350,6 +454,13 @@ def report(entries: list[dict], modifiers: Modifiers, install: Path, limit: int)
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--civ6", help="path to the Civilization VI install")
+    parser.add_argument(
+        "--cache",
+        nargs="?",
+        const=True,
+        help="read the compiled gameplay database the game leaves in its Cache "
+        "directory instead of an install; give a path or let it be found",
+    )
     parser.add_argument("--json", help="write the full census here")
     parser.add_argument("--out", help="write the markdown report here instead of stdout")
     parser.add_argument("--limit", type=int, default=40, help="rows in the backlog table")
@@ -371,10 +482,19 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    install = find_install(args.civ6)
-    modifiers = load(install)
+    if args.cache:
+        install = find_cache(None if args.cache is True else args.cache)
+        modifiers = load_cache(install)
+    else:
+        install = find_install(args.civ6)
+        modifiers = load(install)
 
     if args.sweep:
+        if args.cache:
+            raise SystemExit(
+                "--sweep needs an install: it prints the game's own wording "
+                "beside each entry, and the cache has no localised text"
+            )
         # Every entry of one CIVVIS data file beside the wording the game
         # shows for it. Descriptions state clauses the effect rows only imply,
         # which is how the Lumber Mill's Mercantilism gate and four wrong
@@ -409,6 +529,15 @@ def main() -> int:
         return 0
 
     if args.describe:
+        if args.cache:
+            # The compiled gameplay database carries the rules tables and not
+            # the localised text, which lives in a separate localization
+            # database. Say so rather than printing nothing and reading as
+            # "no descriptions match".
+            raise SystemExit(
+                "--describe needs an install: the compiled gameplay database "
+                "has no localised text"
+            )
         for tag, text in shipped_text(install, args.describe):
             marker = "GS  " if "EXPANSION2" in tag else "base"
             print(f"{marker} {tag}")
