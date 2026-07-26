@@ -1259,6 +1259,15 @@ ENGINE_PARAMETERS = {
     "COMBAT_HEAL_NAVAL_NEUTRAL": 0,
     "COMBAT_HEAL_NAVAL_ENEMY": 0,
     "COMBAT_HEAL_CITY_GARRISON": 20,
+    # game.rs city_take_damage: the multiplier each attack puts on walls.
+    "COMBAT_DEFENSE_DAMAGE_PERCENT_MELEE": 15,
+    "COMBAT_DEFENSE_DAMAGE_PERCENT_RANGED": 50,
+    "COMBAT_DEFENSE_DAMAGE_PERCENT_BOMBARD": 100,
+    "CITY_POPULATION_LOSS_TO_CONQUEST_PERCENTAGE": 0.25,  # capture keeps 75%
+    "LOYALTY_AFTER_TRANSFERRED_BY_COMBAT": 50,  # game.rs capture_city
+    "LOYALTY_MAXIMUM": 100,
+    "LOYALTY_START": 100,
+    "DISTRICT_POPULATION_REQUIRED_PER": 3,  # one specialty per three Population
     "WAR_WEARINESS_PER_UNIT_KILLED": 3,  # game.rs record_war_unit_loss
     "WAR_WEARINESS_PER_COMBAT_IN_ALLIED_LANDS": 1,  # accrue_combat_weariness
     "WAR_WEARINESS_PER_COMBAT_IN_FOREIGN_LANDS": 2,

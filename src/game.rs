@@ -47108,6 +47108,36 @@ mod combat_scenarios {
     }
 
     #[test]
+    fn walls_absorb_the_share_of_each_attack_its_parameter_names() {
+        // COMBAT_DEFENSE_DAMAGE_PERCENT_MELEE 15, _RANGED 50, _BOMBARD 100.
+        // A melee swing barely scratches Outer Defenses; a Bombard takes them
+        // down at full rate. Behind healthy walls the city itself takes 1.
+        let (mut g, centre, _) = controlled_game(4_164);
+        let capital = g.found_city_for(1, centre, None);
+        g.cities.get_mut(&capital).unwrap().buildings.push("walls".to_string());
+        let max = g.city_max_wall_hp(&g.cities[&capital]);
+        assert!(max > 0);
+
+        let wall_after = |g: &Game, multiplier: f64| {
+            let mut probe = g.clone();
+            let city = probe.cities.get_mut(&capital).unwrap();
+            city.wall_hp = max;
+            probe.city_take_damage(0, capital, 20, multiplier, false);
+            max - probe.cities[&capital].wall_hp
+        };
+        assert_eq!(wall_after(&g, 0.15), 3, "melee puts 15% of the roll on walls");
+        assert_eq!(wall_after(&g, 0.5), 10, "ranged puts half");
+        assert_eq!(wall_after(&g, 1.0), 20, "a Bombard puts all of it");
+
+        // And the city behind full walls takes 1, not the roll.
+        let city = g.cities.get_mut(&capital).unwrap();
+        city.wall_hp = max;
+        let hp = city.hp;
+        g.city_take_damage(0, capital, 20, 0.15, false);
+        assert_eq!(g.cities[&capital].hp, hp - 1);
+    }
+
+    #[test]
     fn the_healing_rates_are_the_ones_the_parameters_name() {
         // COMBAT_HEAL_LAND_FRIENDLY 15, _NEUTRAL 10, _ENEMY 5 and
         // COMBAT_HEAL_CITY_GARRISON 20 for a unit standing in a district.
