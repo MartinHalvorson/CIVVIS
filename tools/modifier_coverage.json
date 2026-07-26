@@ -314,6 +314,21 @@
       "verified": true,
       "note": "Verified row by row, and two of the three cards CIVVIS models are named after a window they do not have. Every shipped row starts at ERA_ANCIENT and only EndEra varies: CORVEE_ANCIENTCLASSICALWONDER ends at CLASSICAL as its name says, but GOTHICARCHITECTURE_MEDIEVALRENAISSANCEWONDER runs ANCIENT to RENAISSANCE and SKYSCRAPERS_INDUSTRIALINFORMATION runs ANCIENT to FUTURE, which is every wonder in the game. CIVVIS had all three ungated, so Corvee and Gothic Architecture paid wonders far past their windows; Skyscrapers was already right by accident. Fixed with two era-scoped keys. Trusting the ModifierId over its own arguments would have gated Skyscrapers to Industrial and Gothic Architecture to Medieval, making CIVVIS wrong in the other direction."
     },
+    "ALLIANCE_CULTURE_SHARING": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified: 10 percent of the ally's Culture at Level 3, which CIVVIS already had right. Its Research twin did not -- see ALLIANCE_SCIENCE_SHARING."
+    },
+    "ALLIANCE_SCIENCE_SHARING": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified against its two siblings, which is what settled it. AllianceEffects ships three Level 3 sharing rows of identical shape -- MODIFIER_ALLIANCE_PLAYERS_SCIENCE_FROM_ALLY at 10, _CULTURE_FROM_ALLY at 10 and _TOURISM_FROM_ALLY at 20 -- none of them carrying a requirement set. CIVVIS read the Cultural pair correctly as a tenth of the ALLY's Culture and a fifth of the ally's Tourism, but read the Research one as a tenth added to the player's OWN cities, gated on researching the same technology as the ally or the ally already holding it. No such requirement ships. Replaced with the ally-share its siblings already used."
+    },
+    "ALLIANCE_TOURISM_SHARING": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified: 20 percent of the ally's Tourism at Level 3, already exact."
+    },
     "ATTACH_MODIFIER": {
       "status": "unmodelled",
       "note": "The interpreter primitive: attach another modifier to a collection. CIVVIS hardcodes effects per object, so it has no general way to express this. Implementing it is phase 2 itself, and it gates the long tail behind it."
@@ -330,6 +345,11 @@
     "DIPLOMACY_SIMPLE_EFFECT": {
       "status": "out-of-scope",
       "note": "Bespoke leader agendas, which MECHANICS.md scopes out deliberately. Almost every row is a TraitModifier on a leader CIVVIS does not model."
+    },
+    "District_TradeRouteYields (table)": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Not a modifier effect but a data table, recorded here because it governs every trade route in the game. All 44 rows verified against route_yields: the City Center's own row is the base (domestic 1 Food and 1 Production, international 3 Gold), Campus/Holy Site/Theater pay a domestic Food and an international Science/Faith/Culture, Commercial Hub and Harbor pay a domestic Production and 3 international Gold, Government Plaza pays 2 international Gold and the Diplomatic Quarter pays Culture, and Encampment, Industrial Zone and Entertainment Complex are the three that pay the SAME yield either way. Every unique district in the table repeats its parent's numbers exactly, and district_family resolves all sixteen of them. Now pinned by a test rather than left to inspection."
     },
     "ENABLE_UNIT_FAITH_PURCHASE": {
       "status": "implemented",

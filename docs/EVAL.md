@@ -1018,3 +1018,66 @@ The practical consequence: the twenty-map runs in the entries above were
 never a considered choice of sample size. Re-run anything worth deciding at
 a hundred maps or more.
 ||||||| b07a0ea
+
+## 2026-07-26 — the cadence effect is real; two corrections to get there
+
+With `ai_eval --jobs` making large runs affordable, `strategic_r20` was
+re-measured at 120 maps on a fresh seed (70000, four players, 200 turns).
+Every independent seed set run this session, pooled:
+
+| seed | maps | maps for | maps against | sign p |
+|---|---|---|---|---|
+| 41000 | 12 | 1 | 0 | 1.0000 |
+| 52000 | 24 | 5 | 1 | 0.2188 |
+| 60000 | 60 | 6 | 4 | 0.7539 |
+| 70000 | 120 | **15** | **2** | **0.0023** |
+| **pooled** | **216** | **27** | **7** | **0.00082** |
+
+At 120 maps the anytime-valid e-process reached **73.4 and crossed at map
+108** (p≤0.0136). Pooled over 216 independent maps the sign test is
+p=0.00082. Reviewing the victory lane every 20 turns instead of 40 is a
+real improvement.
+
+**Correction 1.** The previous entry called this a replication failure on
+the strength of the 60-map run (6–4). That was an over-correction from a
+single seed set, made while treating one run as decisive — the same error
+in the opposite direction to the one it was correcting. Seed-set variance
+here is large enough that nothing below ~100 maps should be called either
+way.
+
+**Correction 2, and the more useful one.** The terminal-score share is flat
+for every arm measured this session, 48.6%–50.8%, including this one
+(50.1%; direction 55 for, 59 against, p=0.7789). That looked like proof the
+win margins were noise. It is not, because wins and terminal score measure
+different things: **wins count victories, terminal score counts economy.**
+Cadence changes how often the agent re-picks its victory lane. It does not
+change the genome, the play style, or the economy — so flat score with
+better wins is precisely the signature a routing improvement should leave,
+not a contradiction. The right reading of a disagreement is that it
+localizes the change to routing rather than development.
+
+`ai_eval` now prints how many maps each direction rests on, and says so
+when they disagree:
+
+```
+direction resolution: wins rest on 5 of 20 maps that broke, terminal score on 18
+note: wins favour X and terminal score favours Y. Wins count victories and
+score counts economy, so this separates victory routing from development
+rather than contradicting itself
+```
+
+That line is what makes the two statistics comparable. On seed 52000 the
+win direction was 5–0 and the score direction 10–8 on the *same* twenty
+maps: five maps against eighteen, which is why the 5–0 looked stronger than
+it was.
+
+**On the gate.** At 120 maps the verdict is still INCONCLUSIVE, because
+promotion needs the Wilson interval to clear parity as well as the
+e-process, and the interval is 46.5%–64.0%. That interval treats every map
+as a maximum-variance Bernoulli draw, but 103 of these 120 maps scored
+exactly 0.5, so the realised per-map variance is far below the assumed
+worst case and the interval is correspondingly too wide. The gate is
+conservative by construction for this data shape. **That is written down
+here rather than fixed**: loosening a promotion rule to admit one's own
+change is the wrong way round, and the choice belongs to whoever owns the
+gate.
