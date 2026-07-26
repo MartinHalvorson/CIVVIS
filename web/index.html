@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html class="world-loading">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -37,6 +37,81 @@
     content: ""; position: fixed; inset: 0; z-index: 100; pointer-events: none;
     opacity: .035; mix-blend-mode: soft-light;
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.7'/%3E%3C/svg%3E");
+  }
+  /* Loading and restarting are one deliberate visual state. A supervised
+     restart crosses a process boundary, so the old page and its replacement
+     both show this same veil until the replacement has painted one complete
+     world frame. That keeps default form values, an empty canvas, and stale
+     last-world chrome from ever becoming the handoff screen. */
+  #world-transition {
+    position: fixed; inset: 0; z-index: 1000; display: none; place-items: center;
+    padding: 28px; overflow: hidden; isolation: isolate;
+    color: #edf2e9; background:
+      radial-gradient(circle at 50% 42%, #28483c 0, #132720 25%, transparent 52%),
+      linear-gradient(145deg, #0b1814 0%, #07110f 58%, #040a08 100%);
+    opacity: 1; transition: opacity .22s ease;
+  }
+  html.world-loading #world-transition { display: grid; }
+  html.world-transition-ready #world-transition { opacity: 0; }
+  #world-transition::before {
+    content: ""; position: absolute; inset: -35%; z-index: -1;
+    opacity: .18; transform: rotate(-8deg);
+    background-image:
+      linear-gradient(30deg, transparent 49.7%, #d7b66a22 50%, transparent 50.3%),
+      linear-gradient(150deg, transparent 49.7%, #d7b66a16 50%, transparent 50.3%);
+    background-size: 86px 50px;
+    animation: worldTransitionDrift 18s linear infinite;
+  }
+  .world-transition-card {
+    width: min(520px, 100%); padding: 42px 36px 38px; text-align: center;
+    border: 1px solid #897443; border-radius: 22px;
+    background: linear-gradient(155deg, #142822f2, #091511f7);
+    box-shadow: 0 32px 100px #000c, inset 0 1px #fff2;
+    backdrop-filter: blur(18px);
+  }
+  .world-transition-mark {
+    position: relative; width: 78px; height: 78px; margin: 0 auto 24px;
+    display: grid; place-items: center; border-radius: 50%;
+    color: #172119; background: linear-gradient(145deg, #f2dc9f, #bd8d38);
+    border: 1px solid #ffe8ad; box-shadow: 0 0 0 7px #d7b66a14, 0 12px 34px #0008;
+    font: 700 31px/1 Georgia, serif;
+  }
+  .world-transition-mark::before, .world-transition-mark::after {
+    content: ""; position: absolute; border-radius: 50%; border: 1px solid #d7b66a55;
+  }
+  .world-transition-mark::before {
+    inset: -15px; border-left-color: #f0d28c; animation: worldTransitionOrbit 2.2s linear infinite;
+  }
+  .world-transition-mark::after {
+    inset: -8px; border-right-color: transparent; animation: worldTransitionOrbit 1.45s linear infinite reverse;
+  }
+  .world-transition-kicker {
+    color: #d7b66a; font-size: 9px; font-weight: 850; letter-spacing: .24em;
+    text-transform: uppercase;
+  }
+  #world-transition-title {
+    margin-top: 8px; color: #f5eedc; font: 600 clamp(25px, 5vw, 34px)/1.08 Georgia, serif;
+    letter-spacing: .015em;
+  }
+  #world-transition-summary {
+    min-height: 1.45em; margin-top: 13px; color: #c8d4ce; font-size: 12px;
+  }
+  .world-transition-rule {
+    width: min(250px, 75%); height: 1px; margin: 24px auto 17px;
+    background: linear-gradient(90deg, transparent, #d7b66a, transparent);
+  }
+  #world-transition-stage {
+    color: #91a79e; font-size: 9px; font-weight: 750; letter-spacing: .13em;
+    text-transform: uppercase;
+  }
+  #world-transition-stage::after {
+    content: ""; display: inline-block; width: 1.5em; text-align: left;
+    animation: worldTransitionDots 1.35s steps(4, end) infinite;
+  }
+  @keyframes worldTransitionOrbit { to { transform: rotate(360deg); } }
+  @keyframes worldTransitionDrift { to { transform: translate3d(86px, 50px, 0) rotate(-8deg); } }
+  @keyframes worldTransitionDots {
+    0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75%, 100% { content: "..."; }
   }
   button, select, input { font: inherit; }
   button { -webkit-tap-highlight-color: transparent; }
@@ -501,29 +576,14 @@
   .diplomacy-identity { min-width: 0; }
   .diplomacy-identity:hover .diplomacy-civ, .diplomacy-identity:focus-visible .diplomacy-civ { color: #fff; }
   .detail-caret { flex: 0 0 auto; margin-left: 2px; color: #93aca1; font-size: 9px; vertical-align: 1px; }
-  .diplomacy-name {
-    min-width: 0; display: flex; align-items: baseline; gap: 3px; overflow: hidden;
-    color: #f1f4ed; font-size: 11px; font-weight: 800; white-space: nowrap;
-  }
-  .diplomacy-civ, .diplomacy-leader, .diplomacy-player {
+  .diplomacy-civ, .diplomacy-player {
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .diplomacy-civ { color: #f1f4ed; }
   .diplomacy-rank { margin-right: 4px; color: var(--gold-bright); font: 700 10px Georgia, serif; }
-  .diplomacy-leader {
-    flex: 1 1 auto; color: var(--muted); font-size: .82em; font-weight: 650;
-  }
-  /* Competitive identity reads in one stable order: themed player handle,
-     rating, Elo-implied win estimate, then the strategy in use right now. */
-  .diplomacy-player-line {
-    min-width: 0; display: flex; align-items: baseline; gap: 3px; margin-top: 2px;
-    overflow: hidden; color: #9fb0a9; font-size: 9px; line-height: 1.15;
-    white-space: nowrap;
-  }
   .diplomacy-elo { flex: 0 0 auto; color: var(--gold-bright); font-weight: 850; }
   .diplomacy-expected { flex: 0 0 auto; color: #8fd6a4; font-weight: 850; }
   .diplomacy-player { flex: 1 1 auto; color: #d9e1dc; font-weight: 750; }
-  .identity-separator { flex: 0 0 auto; color: #667a72; font-weight: 500; }
   .agenda-mark { margin-left: 3px; font-size: 8px; vertical-align: 1px; }
   .agenda-mark.up { color: #8fd6a4; }
   .agenda-mark.down { color: #f2a09b; }
@@ -557,16 +617,35 @@
     background: color-mix(in srgb, var(--stat-color) 17%, transparent);
     box-shadow: inset 0 0 6px color-mix(in srgb, var(--stat-color) 10%, transparent);
   }
-  /* The dossier is one card opened up — about three cards tall, one
-     civilization at a time. It hangs off the bottom of its own card so the
-     ribbon still reads as a single ranked column. */
-  .diplomacy-card.expanded { border-color: #8ba79b; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+  /* An open dossier leaves a quiet highlight on its player row. The dossier
+     itself is a separate map window, so several civilizations can stay open
+     without changing the height or scroll position of the standings. */
+  .diplomacy-card.expanded { border-color: #8ba79b; }
+  #dossier-windows {
+    position: absolute; inset: 0; z-index: 12; overflow: hidden;
+    pointer-events: none;
+  }
+  .dossier-window {
+    position: absolute; z-index: 1; width: min(720px, calc(100% - 8px));
+    height: min(304px, calc(100% - 8px)); min-width: 300px; min-height: 190px;
+    display: flex; flex-direction: column; overflow: hidden; pointer-events: auto;
+    border: 1px solid #8ba79b; border-radius: 10px;
+    background: linear-gradient(180deg, #0b1a16fa, #08120ff5);
+    box-shadow: 0 18px 48px #000c, inset 0 1px #ffffff0b;
+    backdrop-filter: blur(16px) saturate(130%);
+  }
+  .dossier-window .dossier-head {
+    position: relative; flex: none; min-height: 30px; display: flex;
+    align-items: center; gap: 7px; margin: 0; padding: 4px 30px 4px 8px;
+    border-bottom: 1px solid #ffffff12; background: #10221cf2;
+  }
+  .dossier-drag { flex: 1 1 auto; align-self: stretch; }
+  .dossier-window .overlay-close { top: 4px; right: 4px; }
   .civ-dossier {
-    margin-top: -3px; padding: 7px 8px 8px; border: 1px solid #8ba79b; border-top: 0;
-    border-radius: 0 0 9px 9px; background: linear-gradient(180deg, #0b1a16f7, #08120fef);
+    flex: 1 1 auto; min-height: 0; margin: 0; padding: 7px 8px 8px;
+    overflow: auto; background: linear-gradient(180deg, #0b1a16f7, #08120fef);
     box-shadow: inset 0 -1px #ffffff08;
   }
-  .dossier-head { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; }
   .dossier-title { flex: 0 1 auto; overflow: hidden; color: #f1f4ed; font-size: 12px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
   .dossier-tags { display: flex; flex: 1; flex-wrap: wrap; gap: 4px; min-width: 0; }
   .dossier-tag {
@@ -795,7 +874,8 @@
   body.cinema-mode.cinema-idle #playerhud { opacity: .62; }
   body.cinema-mode #playerhud .leader-region { display: none; }
   body.cinema-mode #playerhud .victory-track { min-height: 60px; padding-top: 4px; }
-  body.cinema-mode #zoomctl, body.cinema-mode #ubar, body.cinema-mode #modeline,
+  body.cinema-mode #zoomctl, body.cinema-mode #map-lenses,
+  body.cinema-mode #ubar, body.cinema-mode #modeline,
   body.cinema-mode .minimap-frame { display: none !important; }
   body.cinema-mode #cinema-story {
     position: absolute; z-index: 10; left: clamp(34px, 4.5vw, 82px); bottom: clamp(68px, 7vh, 96px);
@@ -867,6 +947,7 @@
      camera movement and explicit exit remain over the 3D map. */
   body.cinema-mode #playerhud, body.cinema-mode #victoryhud,
   body.cinema-mode .minimap-frame, body.cinema-mode #zoomctl,
+  body.cinema-mode #map-lenses,
   body.cinema-mode #ubar, body.cinema-mode #modeline, body.cinema-mode #tip,
   body.cinema-mode #cinema-prologue, body.cinema-mode #cinema-frame,
   body.cinema-mode #cinema-story, body.cinema-mode #cinema-follow { display: none !important; }
@@ -886,6 +967,38 @@
   }
   #zoomctl button { width: 34px; height: 34px; margin: 0; padding: 0; border: 0; background: transparent; font-size: 16px; }
   #zoomctl button + button { border-left: 1px solid #ffffff0c; border-radius: 0; }
+  #map-lenses {
+    position: absolute; z-index: 14; bottom: 67px; left: 16px;
+    display: flex; align-items: stretch; gap: 3px; padding: 4px;
+    border: 1px solid #3c554c; border-radius: 13px;
+    background: #0a1512df; box-shadow: 0 12px 26px #0006;
+    backdrop-filter: blur(12px);
+  }
+  .map-lens-title {
+    display: flex; align-items: center; padding: 0 8px 0 6px;
+    color: #81958d; font-size: 7px; font-weight: 900; letter-spacing: .15em;
+    text-transform: uppercase;
+  }
+  #map-lenses button {
+    position: relative; width: auto; min-width: 80px; height: 34px;
+    display: grid; grid-template-columns: 18px 1fr 15px; align-items: center; gap: 5px;
+    margin: 0; padding: 0 7px; border: 1px solid transparent; border-radius: 8px;
+    background: transparent; color: #b8c7c0; font-size: 9px; font-weight: 800;
+    text-align: left;
+  }
+  #map-lenses button:hover { transform: none; border-color: #4d6b60; background: #183027; }
+  #map-lenses button.active {
+    border-color: #d7b66a9c; color: #fff6dc;
+    background: linear-gradient(135deg, #4b4226cc, #173128e8);
+    box-shadow: inset 0 1px #ffffff16, 0 0 13px #d7b66a1c;
+  }
+  .map-lens-icon { color: #e6c978; font-size: 15px; line-height: 1; text-align: center; }
+  #map-lenses button[data-map-lens="empire"] .map-lens-icon { color: #9ed8ca; }
+  #map-lenses kbd {
+    min-width: 15px; height: 15px; margin: 0; padding: 0;
+    border-color: #ffffff16; color: #899b94; font-size: 7px;
+  }
+  #map-lenses button.active kbd { color: #fff0c5; border-color: #d7b66a55; }
   /* The compass reads the map's bearing, so it is an instrument rather than a
      label: the needle turns with the world and the dial stays put. A
      civilization that cannot yet find north has the dial and no needle. */
@@ -1650,8 +1763,6 @@
   @media (min-width: 2200px) {
     .diplomacy-card { flex-basis: 330px; grid-template-columns: 36px minmax(88px, .75fr) minmax(164px, 1.35fr); }
     .leader-medallion { width: 36px; height: 36px; font-size: 15px; }
-    .diplomacy-name { font-size: 12px; }
-    .diplomacy-leader { font-size: 9px; }
     .ribbon-stat b { font-size: 11px; }
     .ribbon-stat em { font-size: 7px; }
     /* Four dossier columns need about 480px to stay readable; below that they
@@ -1668,6 +1779,9 @@
     #side { position: fixed; inset: 132px auto 8px 8px; width: min(390px, calc(100% - 16px)); min-width: 0; height: auto; max-height: calc(100dvh - 140px); border: 1px solid #40584f; border-radius: 16px; }
     body.sidebar-hidden #side { width: min(390px, calc(100% - 16px)); transform: translateX(calc(-100% - 16px)); opacity: 0; }
     #zoomctl { left: 12px; bottom: 12px; }
+    #map-lenses { left: 12px; bottom: 63px; }
+    .map-lens-title, .map-lens-label { display: none; }
+    #map-lenses button { min-width: 44px; grid-template-columns: 20px 15px; padding: 0 5px; }
     #ubar { min-width: 0; width: calc(100% - 28px); bottom: 18px; }
     #trade { inset: 2% 8px; }
     .trade-balance { display: none; }
@@ -1693,8 +1807,6 @@
     .hud-region { padding-inline: 2px; }
     .diplomacy-card { flex-basis: 286px; grid-template-columns: 31px minmax(76px, .7fr) minmax(155px, 1.45fr); gap: 4px; padding: 4px; }
     .leader-medallion { width: 29px; height: 29px; font-size: 12px; }
-    .diplomacy-name { font-size: 10px; }
-    .diplomacy-leader { margin-top: 1px; font-size: 8px; }
     .ribbon-stat { padding-inline: 0; }
     .ribbon-stat b { font-size: 8px; }
     .ribbon-stat em { font-size: 6px; letter-spacing: 0; }
@@ -1716,6 +1828,8 @@
       calc(100% - min(var(--hud-rail-width), var(--hud-rail-share)) - 32px));
     height: min(var(--player-hud-height, 200px), var(--player-hud-max-height));
     --hud-medallion-column: 21px; --hud-identity-column: minmax(300px, 42%); --hud-column-gap: 6px;
+    --hud-identity-tracks: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1fr)
+      minmax(0, .55fr) minmax(0, .55fr) minmax(0, 1.1fr);
     --hud-lock-column: 13px; --hud-row-height: 23px; --hud-row-gap: 2px;
     --hud-row-pitch: calc(var(--hud-row-height) + var(--hud-row-gap));
     display: grid; grid-template-columns: 108px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
@@ -1751,6 +1865,17 @@
     grid-template-columns: var(--hud-lock-column, 0px) var(--hud-medallion-column) var(--hud-identity-column) minmax(0, 1fr);
     align-items: stretch; gap: var(--hud-column-gap); padding: 0 4px 0 3px;
   }
+  .diplomacy-identity-head {
+    min-width: 0; display: grid; grid-column: 3;
+    grid-template-columns: var(--hud-identity-tracks); overflow: hidden;
+    color: #a9bbb4; font-size: 6px; font-weight: 950; letter-spacing: .025em;
+  }
+  .diplomacy-identity-head span {
+    min-width: 0; overflow: hidden; padding-inline: 3px;
+    border-left: 1px solid #ffffff10; text-overflow: clip; white-space: nowrap;
+  }
+  .diplomacy-identity-head span:first-child { border-left-color: transparent; }
+  .diplomacy-identity-head .numeric { text-align: right; }
   .diplomacy-stat-head {
     min-width: 0; display: grid; grid-column: 4;
     grid-template-columns: repeat(10, minmax(0, 1fr));
@@ -1813,38 +1938,37 @@
     border-width: 1px; box-shadow: 0 0 0 1px #07110f, 0 3px 8px #0008;
     font-size: 10px;
   }
-  /* Rank, civilization, leader, league handle, rating and active plan are one
-     sentence about one player, so they stay on one line — the row's second line
-     belongs to the values. Everything after the civilization gives way, then
-     truncates, as the rail narrows. */
+  /* Every identity fact uses the same six tracks as the heading above it.
+     Variable-length names can ellipsize inside their own cell without moving
+     ELO, win odds or strategy to a different horizontal position on each row. */
   #playerhud .diplomacy-identity {
-    min-width: 0; display: flex; align-items: baseline; gap: 3px; padding-block: 0;
+    position: relative; min-width: 0; display: grid;
+    grid-template-columns: var(--hud-identity-tracks); align-items: stretch;
+    gap: 0; overflow: hidden; padding-block: 0;
   }
-  #playerhud .diplomacy-name {
-    flex: 0 1 auto; min-width: 0; gap: 3px; font-size: 9px; line-height: 1.1;
-    white-space: nowrap;
-  }
-  #playerhud .diplomacy-rank { flex: 0 0 auto; margin-right: 0; font-size: 8px; }
-  /* When the line is too long for its column the leader, the handle and the
-     plan give way. The civilization is what the row is ranked, coloured and
-     locked by, so it does not shrink at all — "Chi…" cost the row the one word
-     it is read by while the tail of the line still had characters to spare. */
-  #playerhud .diplomacy-civ { flex: 0 0 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  #playerhud .detail-caret { flex: 0 0 auto; margin-left: 1px; font-size: 7px; }
-  #playerhud .diplomacy-leader {
-    flex: 0 1 auto; min-width: 0; overflow: hidden; font-size: 8px; line-height: 1.1;
-    text-overflow: ellipsis;
-  }
-  #playerhud .diplomacy-identity .identity-separator { flex: 0 0 auto; }
-  /* The league facts continue the same line rather than starting a new one. */
-  #playerhud .diplomacy-player-line {
-    flex: 1 1 auto; min-width: 0; gap: 3px; margin-top: 0; overflow: hidden;
+  #playerhud .diplomacy-identity-field {
+    min-width: 0; display: flex; align-items: center; gap: 3px;
+    overflow: hidden; padding-inline: 3px; border-left: 1px solid #ffffff0b;
     font-size: 8px; line-height: 1.1; white-space: nowrap;
   }
-  #playerhud .diplomacy-player { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  #playerhud .diplomacy-elo, #playerhud .diplomacy-expected { flex: 0 0 auto; }
-  #playerhud .diplomacy-player-line .ai-plan {
-    flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  #playerhud .diplomacy-identity-field:first-child { border-left-color: transparent; }
+  #playerhud .diplomacy-rank { flex: 0 0 auto; margin-right: 0; font-size: 8px; }
+  #playerhud .diplomacy-civ { flex: 1 1 auto; }
+  #playerhud .diplomacy-leader-name { color: var(--muted); font-weight: 650; }
+  #playerhud .diplomacy-player { color: #d9e1dc; font-weight: 750; }
+  #playerhud .diplomacy-civ, #playerhud .diplomacy-leader-name,
+  #playerhud .diplomacy-player, #playerhud .diplomacy-elo-value,
+  #playerhud .diplomacy-expected-value, #playerhud .diplomacy-strategy .ai-plan {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #playerhud .diplomacy-elo, #playerhud .diplomacy-expected {
+    justify-content: flex-end; text-align: right; font-variant-numeric: tabular-nums;
+  }
+  #playerhud .diplomacy-strategy { padding-right: 11px; }
+  #playerhud .diplomacy-strategy .ai-plan { display: block; }
+  #playerhud .detail-caret {
+    position: absolute; right: 1px; top: 50%; margin: 0; transform: translateY(-50%);
+    font-size: 7px;
   }
   #playerhud .diplomacy-stats {
     align-self: stretch; display: grid; grid-template-columns: repeat(10, minmax(0, 1fr));
@@ -1860,14 +1984,6 @@
     font-size: clamp(9px, .8vw, 13px); font-weight: 950; letter-spacing: -.025em;
     line-height: 1; text-shadow: 0 1px 2px #000, 0 0 8px currentColor;
   }
-  #playerhud .civ-dossier {
-    position: absolute; z-index: 2; top: calc(100% + 6px); right: 0;
-    width: min(760px, calc(100vw - 28px)); max-height: calc(66.667vh - 24px);
-    margin: 0; overflow-y: auto; border-top: 1px solid #8ba79b; border-radius: 9px;
-    box-shadow: 0 18px 48px #000c;
-  }
-  #playerhud .diplomacy-card.expanded { border-radius: 7px; }
-
   /* Victory progress starts in the right corner and grows down with the rows
      it actually shows, never past the world minimap. Six races read one under
      the other, each keeping the rail's full width for civilization names. If
@@ -1902,7 +2018,8 @@
   #victoryhud .hud-rail { overflow-x: hidden; overflow-y: auto; }
   #victoryhud .hud-rail::-webkit-scrollbar { width: 3px; height: 3px; }
 
-  body.cinema-mode #playerhud, body.cinema-mode #victoryhud { display: none !important; }
+  body.cinema-mode #playerhud, body.cinema-mode #victoryhud,
+  body.cinema-mode #dossier-windows { display: none !important; }
   body.cinema-mode #victoryhud {
     top: clamp(37px, 4.6vh, 54px); left: 50%; right: auto;
     width: min(960px, calc(100% - 168px)); height: 112px;
@@ -1950,6 +2067,9 @@
     background: transparent; box-shadow: none; font-size: 13px;
   }
   #zoomctl .overlay-close:hover { color: #fff; background: #6b302b66; }
+  /* The controls' restore switch lives in the command deck. Do not offer to
+     dismiss the controls while that switch is unavailable. */
+  body.sidebar-hidden .overlay-close[data-overlay-close="controls"] { display: none; }
   .overlay-collapsing { opacity: 0 !important; pointer-events: none !important; }
   .overlay-collapse-ghost {
     position: fixed; z-index: 90; display: flex; align-items: flex-start;
@@ -2018,7 +2138,8 @@
   body.overlay-players-hidden #playerhud,
   body.overlay-victory-hidden #victoryhud,
   body.overlay-minimap-hidden .minimap-frame,
-  body.overlay-controls-hidden #zoomctl { display: none !important; }
+  body.overlay-controls-hidden #zoomctl,
+  body.overlay-controls-hidden #map-lenses { display: none !important; }
   body.sidebar-hidden #collapsepause:not([hidden]) { display: block; }
   #collapsepause[hidden] { display: none; }
 
@@ -2033,7 +2154,7 @@
     #playerhud { grid-template-columns: 128px minmax(0, 1fr); --hud-identity-column: minmax(340px, 40%); }
   }
   @media (max-width: 1580px) {
-    #playerhud { grid-template-columns: 98px minmax(0, 1fr); --hud-identity-column: minmax(150px, 30%); }
+    #playerhud { grid-template-columns: 98px minmax(0, 1fr); --hud-identity-column: minmax(330px, 50%); }
     #maparea { --hud-rail-width: clamp(240px, 20vw, 300px); }
   }
   /* Ten value columns, a turn plate and a standing rail stop fitting side by
@@ -2041,7 +2162,7 @@
   @media (max-width: 1300px) {
     #playerhud {
       grid-template-columns: 84px minmax(0, 1fr);
-      --hud-identity-column: minmax(118px, 26%); --hud-column-gap: 4px;
+      --hud-identity-column: minmax(250px, 50%); --hud-column-gap: 4px;
     }
     #maparea { --hud-rail-width: 224px; }
   }
@@ -2049,7 +2170,7 @@
     #maparea { --hud-rail-width: 200px; --minimap-height: 158px; }
     #playerhud {
       grid-template-columns: 74px minmax(0, 1fr);
-      --hud-identity-column: minmax(92px, 22%); --hud-column-gap: 3px;
+      --hud-identity-column: minmax(210px, 48%); --hud-column-gap: 3px;
       --hud-medallion-column: 19px;
     }
     #playerhud .leader-medallion { width: 19px; height: 19px; }
@@ -2063,14 +2184,14 @@
     #maparea { --hud-rail-width: 182px; --minimap-height: 138px; }
     #playerhud { --hud-medallion-column: 23px; --hud-identity-column: minmax(112px, 142px); }
   }
-  @media (max-width: 620px) {
-    /* Too narrow for a rail beside the masthead at all: the instruments give up
-       the column and stack as bands across the top, with the tracker's paths in
-       columns because there is no height left to stack them into. */
+  @media (max-width: 1100px) {
+    /* Six identity columns plus ten value columns need the map's full width at
+       this point. The instruments stack as bands across the top, with the
+       tracker's paths in columns because there is no height left to stack them. */
     #playerhud, body.overlay-victory-hidden #playerhud {
       top: 8px; left: 8px; right: 8px; width: auto; padding: 4px;
       --hud-lock-column: 11px;
-      --hud-medallion-column: 21px; --hud-identity-column: minmax(150px, 42%);
+      --hud-medallion-column: 21px; --hud-identity-column: minmax(270px, 52%);
     }
     #victoryhud, body.overlay-minimap-hidden #victoryhud {
       top: calc(min(var(--player-hud-height, 200px), var(--player-hud-max-height)) + 14px);
@@ -2093,8 +2214,13 @@
     #playerhud .diplomacy-card { padding-inline: 2px; }
     .ribbon-heading { padding-inline: 2px; }
     .diplomacy-stat-head { font-size: 5.5px; }
+  }
+  @media (max-width: 720px) {
+    #playerhud { --hud-identity-column: minmax(160px, 48%); }
+  }
+  @media (max-width: 620px) {
+    #playerhud { --hud-identity-column: minmax(150px, 48%); }
     #playerhud .ribbon-stat b { font-size: 13px; }
-    #playerhud .diplomacy-name { font-size: 8px; }
   }
   /* Ten screens at full size need 487px and the bar has (height − 292) to give,
      so below 780px it would hide its last button behind a scrollbar that is
@@ -2111,10 +2237,51 @@
   }
   @media (prefers-reduced-motion: reduce) {
     .section-label.overlay-return-flash { animation-duration: .01ms; }
+    #world-transition::before, .world-transition-mark::before,
+    .world-transition-mark::after, #world-transition-stage::after { animation: none; }
   }
 </style>
+<script>
+  // Read this before the replacement document can paint. The old page writes
+  // the handoff before asking the supervisor to replace it; the new page then
+  // starts behind the same veil instead of flashing its static default setup.
+  try {
+    const raw = sessionStorage.getItem("civvis-world-transition-v1");
+    const handoff = raw ? JSON.parse(raw) : null;
+    const fresh = handoff && Number.isFinite(handoff.requestedAt) &&
+      Date.now() - handoff.requestedAt < 120000;
+    if (fresh) {
+      window.CIVVIS_RESTART_HANDOFF = handoff;
+      document.documentElement.classList.add("world-restarting");
+    } else if (raw) {
+      sessionStorage.removeItem("civvis-world-transition-v1");
+      sessionStorage.removeItem("civvis-restart-paused-v1");
+    }
+  } catch (e) {
+    try { sessionStorage.removeItem("civvis-world-transition-v1"); } catch (_) {}
+  }
+</script>
 </head>
-<body>
+<body aria-busy="true">
+<div id="world-transition" role="status" aria-live="polite" aria-atomic="true">
+  <div class="world-transition-card">
+    <div class="world-transition-mark" aria-hidden="true">V</div>
+    <div class="world-transition-kicker" id="world-transition-kicker">CIVVIS</div>
+    <h2 id="world-transition-title">Joining the world</h2>
+    <div id="world-transition-summary">Loading the current simulation</div>
+    <div class="world-transition-rule"></div>
+    <div id="world-transition-stage">Connecting</div>
+  </div>
+</div>
+<script>
+  if (window.CIVVIS_RESTART_HANDOFF) {
+    document.getElementById("world-transition-kicker").textContent = "Starting simulation";
+    document.getElementById("world-transition-title").textContent = "Building a new world";
+    document.getElementById("world-transition-summary").textContent =
+      window.CIVVIS_RESTART_HANDOFF.summary || "Applying the selected settings";
+    document.getElementById("world-transition-stage").textContent = "Reconnecting";
+  }
+</script>
 <div id="maparea">
   <canvas id="map"></canvas>
   <div id="cinema-atmosphere" aria-hidden="true"></div>
@@ -2150,6 +2317,7 @@
   </div>
   <aside id="victoryhud" data-layout-widget="victory" aria-label="Turn and victory tracker"></aside>
   <aside id="playerhud" data-layout-widget="players" aria-label="Player stats"></aside>
+  <div id="dossier-windows" aria-label="Open player dossiers"></div>
   <div id="zoomctl">
     <button id="paneltoggle" class="icon" title="Hide command deck" aria-label="Hide command deck">&lt;</button>
     <button id="collapsepause" hidden title="Pause simulation" aria-label="Pause simulation">⏸</button>
@@ -2157,6 +2325,19 @@
     <button id="zout" title="Zoom out" aria-label="Zoom out">−</button>
     <button id="compass" type="button" title="Face north · R" aria-label="Face north"><span id="compass-needle"></span></button>
     <button class="overlay-close" type="button" data-overlay-close="controls" aria-label="Hide map controls; restore them in Display settings" title="Hide map controls · restore in Display settings">✕</button>
+  </div>
+  <div id="map-lenses" role="toolbar" aria-label="Map lenses">
+    <span class="map-lens-title" aria-hidden="true">Lenses</span>
+    <button type="button" data-map-lens="settler" aria-pressed="false"
+      title="Settler lens — compare legal city sites (2)">
+      <span class="map-lens-icon" aria-hidden="true">⌂</span>
+      <span class="map-lens-label">Settler</span><kbd aria-hidden="true">2</kbd>
+    </button>
+    <button type="button" data-map-lens="empire" aria-pressed="false"
+      title="Empire lens — isolate land, water, and civilization frontiers (4)">
+      <span class="map-lens-icon" aria-hidden="true">◈</span>
+      <span class="map-lens-label">Empire</span><kbd aria-hidden="true">4</kbd>
+    </button>
   </div>
   <div id="ubar"></div>
   <div id="notify" aria-label="Notifications" aria-live="polite"></div>
@@ -2327,10 +2508,11 @@
           // beside the button so the default Pause text is never painted while
           // a paused simulation is coming back as paused.
           try {
-            const paused = sessionStorage.getItem("civvis-restart-paused-v1");
+            const paused = window.CIVVIS_RESTART_HANDOFF?.paused ??
+              (sessionStorage.getItem("civvis-restart-paused-v1") === "1" ? true : null);
             if (paused !== null)
               document.getElementById("specpause").textContent =
-                paused === "1" ? "▶ Resume" : "⏸ Pause";
+                paused ? "▶ Resume" : "⏸ Pause";
           } catch (e) {}
         </script>
       </div>
@@ -2455,6 +2637,14 @@
           </div>
           <button class="ghost overlay-layout-reset" id="reset-overlay-layout" type="button">Reset overlay positions &amp; sizes</button>
         </div>
+        <div class="overlay-options" id="flat-map-wrap-settings" role="group"
+             aria-labelledby="flat-map-wrap-title">
+          <h2 id="flat-map-wrap-title">Flat map wraparound</h2>
+          <div class="overlay-option-grid">
+            <label class="overlay-option"><input type="checkbox" id="wrapxchk" checked>Left–right wraparound</label>
+            <label class="overlay-option"><input type="checkbox" id="wrapychk">Top–bottom wraparound</label>
+          </div>
+        </div>
         <label class="setting-row"><span><input type="checkbox" id="yieldchk"> Show yields per tile</span><kbd>Y</kbd></label>
         <label class="setting-row"><span><input type="checkbox" id="gridchk"> Show the hex grid</span><kbd>G</kbd></label>
         <label class="setting-row"><span><input type="checkbox" id="reschk"> Show resource icons</span><kbd>Q</kbd></label>
@@ -2541,7 +2731,7 @@
       <span><kbd>Middle-click</kbd>Centre on that tile</span><span><kbd>Scroll</kbd>Zoom · double-click to dive</span>
       <span class="shortcut-head">CIVVIS additions</span>
       <span><kbd>1</kbd>Next action</span><span><kbd>2</kbd>Settler lens</span>
-      <span><kbd>3</kbd>Map tacks</span><span><kbd>Esc</kbd>Close · cancel</span>
+      <span><kbd>3</kbd>Map tacks</span><span><kbd>4</kbd>Empire lens</span>
       <span><kbd>F8</kbd>Diplomacy</span><span><kbd>^ D</kbd>Quick Deals</span>
       <span><kbd>^ A</kbd>Auto-play</span><span><kbd>^ U</kbd>Hide the command deck</span>
       <span><kbd>= / −</kbd>Zoom without a keypad</span><span><kbd>Tab</kbd>Next unit needing orders</span>
@@ -2856,7 +3046,7 @@ const VICTORY_TRACKS = [
 ];
 // ---------------------------------------------------------------- state
 let state = null, sel = null, selCity = null, RULES = null;
-let lensOn = false, tackMode = false, tacks = [], lastSeed = null, cycleIdx = -1;
+let mapLens = null, tackMode = false, tacks = [], lastSeed = null, cycleIdx = -1;
 // Civ 6's M, A and R arm the next click rather than acting on the spot. The
 // flag lives up here with the other map modes because `modeline()` reads it
 // and runs long before the key bindings further down are defined.
@@ -2866,12 +3056,18 @@ const INTERFACE_MODE_NOTE = {
   attack: "ATTACK — click the unit or city to strike (Esc to cancel)",
   ranged: "RANGED ATTACK — click a target in range (Esc to cancel)",
 };
-let restartPaused = null;
+let worldTransitionHandoff = window.CIVVIS_RESTART_HANDOFF || null;
+let worldTransitionFinishing = false;
+let worldTransitionGeneration = 0;
+let restartPaused = typeof worldTransitionHandoff?.paused === "boolean"
+  ? worldTransitionHandoff.paused : null;
 try {
-  restartPaused = sessionStorage.getItem("civvis-restart-paused-v1");
-  sessionStorage.removeItem("civvis-restart-paused-v1");
+  if (restartPaused === null) {
+    const storedPause = sessionStorage.getItem("civvis-restart-paused-v1");
+    restartPaused = storedPause === null ? null : storedPause === "1";
+  }
 } catch (e) {}
-let SPEC = false, specPaused = restartPaused === "1", specTimer = null;
+let SPEC = false, specPaused = restartPaused === true, specTimer = null;
 let viewChanging = false;
 let eventLogs = new Map(), nextEventId = 1, lastLeaderByView = new Map(), lastSidePaint = 0;
 // The world and turn of the last state this page drew in full, and the turn
@@ -2880,9 +3076,10 @@ let eventLogs = new Map(), nextEventId = 1, lastLeaderByView = new Map(), lastSi
 let paintedFrame = null, lastSideTurn = null;
 let TMAP = new Map();
 let tradeFilter = "all", tradeBusy = false;
-// The leader ribbon opens one civilization at a time — this is whose dossier
-// is showing, or null for the consolidated ribbon alone.
-let hudExpanded = null;
+// Open dossiers are ordered from oldest to newest. Keeping the collection
+// separate from the standings lets several civilizations remain open for a
+// side-by-side comparison; the last entry is also the one Escape closes.
+let hudOpenDossiers = [];
 
 // Locked civilizations. A locked row keeps its place in the ranking until the
 // table would scroll it out of sight, then holds at the edge it was about to
@@ -3035,6 +3232,11 @@ let SHOW_ARTIFACT_SITES = localStorage.getItem("civvis-show-artifact-sites") ===
 // because that is the state Civ 6 starts in.
 let SHOW_GRID = localStorage.getItem("civvis-show-grid") === "1";
 let SHOW_RESOURCES = localStorage.getItem("civvis-show-resources") !== "0";
+// Flat-map wrapping is a viewer choice. Horizontal wrapping starts on, as a
+// world map normally does; vertical wrapping starts off so the polar rows keep
+// their literal top and bottom until somebody explicitly asks for a torus.
+let FLAT_MAP_WRAP_X = localStorage.getItem("civvis-flat-map-wrap-x") !== "0";
+let FLAT_MAP_WRAP_Y = localStorage.getItem("civvis-flat-map-wrap-y") === "1";
 // Civ 6's Gameplay > Edge Pan, which ships on: the camera walks when the
 // pointer reaches the edge of the map. It is a setting there and a setting
 // here, because a windowed browser map is a different proposition from a
@@ -3500,7 +3702,8 @@ document.addEventListener("fullscreenchange", () => { wakeCinema(); resize(); })
 // seconds, the whole frame, and a different picture in every map style.
 const anim = { moves: new Map(), floats: [], sparks: [], deaths: [],
                claims: [], strike: null, shots: [], bursts: [], motes: [],
-               scars: [], battles: [], lunges: new Map(), blasts: [] };
+               scars: [], battles: [], lunges: new Map(), blasts: [],
+               skyLaunches: [] };
 // Detonations already shown. The engine gives every strike a unique id
 // precisely so a client can answer this without comparing fields: two devices
 // can land on one tile on one turn, and a re-poll of the same state must not
@@ -3521,17 +3724,14 @@ function kick(amount) {
   shakeAmp = Math.min(7, Math.max(shakeUntil > now ? shakeAmp : 0, amount));
   shakeUntil = now + SHAKE_MS;
 }
-// A caller passing nearX is chaining a path together and wants each leg drawn
-// beside the last; everyone else wants the copy the map itself drew, which on
-// an open chart is not the one nearest the camera.
-function unitMapPoint(p, nearX = null) {
+// A caller passing a nearby point is chaining a path together and wants each
+// leg drawn beside the last across either seam; everyone else wants the copy
+// the map itself drew nearest the camera.
+function unitMapPoint(p, nearX = null, nearY = null) {
   const t = TMAP.get(key(p));
-  let x = S * SQ3 * (p[0] + p[1] / 2);
-  if (mapWrapsX()) {
-    const about = nearX === null ? (wentAround() ? cam.x : chartAnchorX()) : nearX;
-    x += Math.round((about - x) / WW()) * WW();
-  }
-  return {x, y:S * 1.5 * p[1], lift:t ? elev(t) : 0};
+  const x = wrapX(S * SQ3 * (p[0] + p[1] / 2), nearX);
+  const y = wrapY(S * 1.5 * p[1], nearY);
+  return {x, y, lift:t ? elev(t) : 0};
 }
 function mapPointToView(point) {
   const wx = point.x - cam.x, wy = point.y - cam.y;
@@ -3612,6 +3812,7 @@ function resetAnim() {
   anim.scars.length = 0;
   anim.battles.length = 0;
   anim.blasts.length = 0;
+  anim.skyLaunches.length = 0;
   seenBlasts = new Set();
   anim.strike = null;
   pendingStrike = null;
@@ -3838,8 +4039,10 @@ function stageAttack(victimPos, dmg, next, prevU, now, isCity) {
   return battle;
 }
 function animateDiff(prev, next) {
-  if (!prev || !prev.units) return;
+  if (!prev) return;
   const now = performance.now();
+  queueSkyLaunches(prev, next, now);
+  if (!prev.units || !next.units) return;
   // A lunge is retired by the unit that owns it when it next draws, so one
   // belonging to a unit that died in the same exchange would otherwise sit in
   // the map forever. Nothing reads it after its duration; sweep it.
@@ -3860,16 +4063,17 @@ function animateDiff(prev, next) {
       // across oceans or mountains even though every game step was legal.
       const hasRoute = Array.isArray(route) && route.length > 1;
       if (!hasRoute && hexDistUI(pu.pos, nu.pos) > 1) {
-        const start = unitMapPoint(pu.pos), end = unitMapPoint(nu.pos, start.x);
+        const start = unitMapPoint(pu.pos);
+        const end = unitMapPoint(nu.pos, start.x, start.y);
         unitHeadings.set(nu.id, {x:end.x - start.x, y:end.y - start.y, at:now});
         anim.moves.delete(nu.id);
       } else {
         const positions = hasRoute ? route : [pu.pos, nu.pos];
         const current = cur ? sampleUnitMove(cur, now) : null;
-        let nearX = current?.x ?? cam.x;
+        let nearX = current?.x ?? cam.x, nearY = current?.y ?? cam.y;
         const mapPoints = positions.map(pos => {
-          const point = unitMapPoint(pos, nearX);
-          nearX = point.x;
+          const point = unitMapPoint(pos, nearX, nearY);
+          nearX = point.x; nearY = point.y;
           return point;
         });
         if (current) mapPoints[0] = {x:current.x, y:current.y, lift:current.lift};
@@ -4018,7 +4222,11 @@ function animateDiff(prev, next) {
 const easeIO = e => e < 0.5 ? 2 * e * e : 1 - (1 - e) * (2 - 2 * e);
 const cam = { x: 0, y: 0, scale: 1 };
 let cameraFlight = null, cameraZoom = null;
-let cameraInertia = {vx:0, vy:0, vrot:0, vtilt:0, spin:null};
+function stoppedCameraInertia(extra = {}) {
+  return {vx:0, vy:0, vrot:0, vtilt:0, spin:null,
+          skyPan:null, skyTurn:null, ...extra};
+}
+let cameraInertia = stoppedCameraInertia();
 let cameraMotionLast = performance.now();
 let cameraFollowUnitId = null, cameraFollowManual = false, cameraFollowScale = 1.18;
 // Choosing a civilization to watch is also an explicit request for a living
@@ -4054,6 +4262,7 @@ const HUD_WIDGETS = {
   victory: {element:document.getElementById("victoryhud"), minWidth:150, minHeight:88},
   minimap: {element:document.querySelector(".minimap-frame"), minWidth:130, minHeight:96},
 };
+const dossierWidgetName = id => `dossier-${id}`;
 const HUD_RESIZE_EDGES = [
   ["n", "top edge"], ["e", "right edge"], ["s", "bottom edge"], ["w", "left edge"],
   ["ne", "top-right corner"], ["se", "bottom-right corner"],
@@ -4151,6 +4360,9 @@ function refreshMiniForLayout() {
 function applyHudWidgetMetrics(name, metrics, persist = false) {
   const config = HUD_WIDGETS[name];
   if (!config?.element) return;
+  const affectsFocus = name === "players" || name === "victory";
+  const priorBounds = affectsFocus && state ? mapFocusBounds() : null;
+  const priorFocus = priorBounds ? currentMapFocusWorld() : null;
   const next = clampHudWidget(config, metrics);
   const style = config.element.style;
   style.left = `${next.x}px`; style.top = `${next.y}px`;
@@ -4171,6 +4383,7 @@ function applyHudWidgetMetrics(name, metrics, persist = false) {
   if (name === "victory" && state) syncVictoryLeaderCapacity(config.element);
   if (persist) saveHudLayout();
   if (name === "minimap") refreshMiniForLayout();
+  reframeIfMapFocusBoundsChanged(priorBounds, priorFocus);
 }
 
 function applySavedHudLayouts() {
@@ -4184,7 +4397,15 @@ function applySavedHudLayouts() {
 function resetHudWidget(name, persist = true) {
   const config = HUD_WIDGETS[name];
   if (!config?.element) return;
+  const affectsFocus = name === "players" || name === "victory";
+  const priorBounds = affectsFocus && state ? mapFocusBounds() : null;
+  const priorFocus = priorBounds ? currentMapFocusWorld() : null;
   delete HUD_LAYOUT[name];
+  if (Number.isInteger(config.dossierId)) {
+    applyHudWidgetMetrics(name, defaultDossierMetrics(config.dossierId));
+    if (persist) saveHudLayout();
+    return;
+  }
   for (const property of ["left", "top", "right", "bottom", "width", "height",
                           "max-width", "max-height", "transform"])
     config.element.style.removeProperty(property);
@@ -4195,6 +4416,7 @@ function resetHudWidget(name, persist = true) {
   if ((name === "players" || name === "victory") && state) drawPlayerHud();
   if (persist) saveHudLayout();
   if (name === "minimap") requestAnimationFrame(refreshMiniForLayout);
+  reframeIfMapFocusBoundsChanged(priorBounds, priorFocus);
 }
 
 function resetAllHudWidgets() {
@@ -4242,7 +4464,7 @@ function finishHudLayoutGesture(event) {
   if (!hudLayoutGesture || (event && event.pointerId !== hudLayoutGesture.pointerId)) return;
   const gesture = hudLayoutGesture;
   hudLayoutGesture = null;
-  HUD_WIDGETS[gesture.name].element.classList.remove("layout-widget-active");
+  HUD_WIDGETS[gesture.name]?.element.classList.remove("layout-widget-active");
   document.body.classList.remove("hud-layout-active", "layout-resizing");
   document.body.style.removeProperty("--layout-resize-cursor");
   if (gesture.moved) saveHudLayout();
@@ -4261,17 +4483,27 @@ window.addEventListener("pointermove", event => {
   if (!gesture.moved) return;
   const next = {...gesture.start};
   if (gesture.mode === "move") { next.x += dx; next.y += dy; }
-  else Object.assign(next, resizeHudWidget(HUD_WIDGETS[gesture.name], gesture.start,
-                                           gesture.edge, dx, dy));
+  else {
+    const config = HUD_WIDGETS[gesture.name];
+    if (!config) return;
+    Object.assign(next, resizeHudWidget(config, gesture.start, gesture.edge, dx, dy));
+  }
   applyHudWidgetMetrics(gesture.name, next);
 }, {passive:false});
 window.addEventListener("pointerup", finishHudLayoutGesture);
 window.addEventListener("pointercancel", finishHudLayoutGesture);
 
-for (const [name, config] of Object.entries(HUD_WIDGETS)) {
+// Static overlays and dynamically-created dossier windows share the same
+// movement, resizing and keyboard controls. Binding through one function also
+// means a dossier can be destroyed and recreated without leaving global
+// listeners or a second writer for its layout behind.
+function bindHudWidget(name, config) {
+  if (config.layoutBound) return;
   const element = config.element;
-  if (!element) continue;
+  if (!element) return;
+  config.layoutBound = true;
   element.addEventListener("pointerdown", event => {
+    if (Number.isInteger(config.dossierId)) raiseDossierWindow(element);
     const resizeHandle = event.target.closest?.("[data-widget-resize]");
     if (resizeHandle)
       beginHudLayoutGesture(event, name, "resize", resizeHandle.dataset.widgetResize);
@@ -4299,6 +4531,69 @@ for (const [name, config] of Object.entries(HUD_WIDGETS)) {
     applyHudWidgetMetrics(name, next, true);
   });
 }
+
+let dossierWindowZ = 1;
+
+function defaultDossierMetrics(id) {
+  const margin = 10, gap = 10;
+  const index = Math.max(0, hudOpenDossiers.indexOf(id));
+  // On a desktop, two dossiers open directly beside one another for an
+  // immediate comparison. Narrow maps cascade them instead, while retaining
+  // enough width for the dossier's two-column responsive layout.
+  const columns = area.clientWidth >= 980 ? 2 : 1;
+  const width = columns === 2
+    ? Math.min(620, (area.clientWidth - margin * 2 - gap) / 2)
+    : Math.min(720, area.clientWidth - margin * 2);
+  const height = Math.min(304, area.clientHeight - 8);
+  const areaRect = area.getBoundingClientRect();
+  const playersRect = document.getElementById("playerhud")?.getBoundingClientRect();
+  const belowPlayers = playersRect ? playersRect.bottom - areaRect.top + 8 : 44;
+  const row = Math.floor(index / columns);
+  return clampHudWidget(HUD_WIDGETS[dossierWidgetName(id)], {
+    x:margin + (index % columns) * (width + gap),
+    y:belowPlayers + row * 32,
+    width, height,
+  });
+}
+
+function raiseDossierWindow(element) {
+  if (!element) return;
+  if (dossierWindowZ >= 15) {
+    dossierWindowZ = 1;
+    for (const id of hudOpenDossiers) {
+      const open = document.querySelector(`[data-dossier-window="${id}"]`);
+      if (open) open.style.zIndex = `${dossierWindowZ++}`;
+    }
+  }
+  element.style.zIndex = `${++dossierWindowZ}`;
+}
+
+function registerDossierWidget(id, element) {
+  const name = dossierWidgetName(id);
+  if (HUD_WIDGETS[name]?.element === element) return;
+  const config = {element, minWidth:300, minHeight:190, dossierId:id};
+  HUD_WIDGETS[name] = config;
+  bindHudWidget(name, config);
+  const saved = HUD_LAYOUT[name];
+  applyHudWidgetMetrics(name, saved && typeof saved === "object"
+    ? metricsFromSaved(config, saved)
+    : defaultDossierMetrics(id));
+  raiseDossierWindow(element);
+}
+
+function unregisterDossierWidget(id) {
+  const name = dossierWidgetName(id);
+  const element = HUD_WIDGETS[name]?.element;
+  if (hudLayoutGesture?.name === name) {
+    hudLayoutGesture = null;
+    document.body.classList.remove("hud-layout-active", "layout-resizing");
+    document.body.style.removeProperty("--layout-resize-cursor");
+  }
+  delete HUD_WIDGETS[name];
+  element?.remove();
+}
+
+for (const [name, config] of Object.entries(HUD_WIDGETS)) bindHudWidget(name, config);
 document.getElementById("reset-overlay-layout").addEventListener("click", resetAllHudWidgets);
 let DPR = window.devicePixelRatio || 1;
 applySavedHudLayouts();
@@ -4374,10 +4669,20 @@ function cityBannerColor(owner) {
     : pcol(owner);
 }
 function WW() { return state ? S * SQ3 * state.map.width : 1e12; }
-function mapWrapsX() {
+function WH() { return state ? S * 1.5 * state.map.height : 1e12; }
+// The simulation's topology and the flat chart's presentation are separate
+// questions. A globe always follows the topology sent by the server; a flat
+// map follows these two display controls, including on a normally bounded map.
+function worldWrapsX() {
   if (!state) return true;
   if (typeof state.map.wrap_x === "boolean") return state.map.wrap_x;
   return state.map.script !== "inland_sea";
+}
+function mapWrapsX() {
+  return planetMap() ? worldWrapsX() : FLAT_MAP_WRAP_X;
+}
+function mapWrapsY() {
+  return !!state && !planetMap() && FLAT_MAP_WRAP_Y;
 }
 // Where the chart is unrolled about: the camera once the world is known to
 // come back on itself, and one fixed place until then.
@@ -4433,30 +4738,57 @@ function chartHomePos() {
 // Whether the open chart reaches this far. Past its ends the world does go on,
 // but this civilization has no sheet to draw it on.
 function chartCovers(worldX) {
-  if (!state || !mapWrapsX() || wentAround()) return true;
+  if (!chartIsOpen()) return true;
   return Math.abs(worldX - chartAnchorX()) <= WW() / 2 + S * SQ3;
 }
-function wrapX(x) {
+function wrapNear(value, about, period) {
+  return value + Math.round((about - value) / period) * period;
+}
+function wrapX(x, about = null) {
   if (!mapWrapsX()) return x;
-  const w = WW();
-  const about = wentAround() ? cam.x : chartAnchorX();
-  return x + Math.round((about - x) / w) * w;
+  return wrapNear(x, about === null ? cam.x : about, WW());
+}
+function wrapY(y, about = null) {
+  if (!mapWrapsY()) return y;
+  return wrapNear(y, about === null ? cam.y : about, WH());
+}
+function offsetColumn(pos) {
+  return pos[0] + Math.floor(pos[1] / 2);
+}
+function canonicalOffsetPos(pos, wrapHorizontal, wrapVertical) {
+  if (!state) return pos;
+  let row = pos[1], col = offsetColumn(pos);
+  if (wrapVertical) {
+    const height = state.map.height;
+    row = ((row % height) + height) % height;
+  }
+  if (wrapHorizontal) {
+    const width = state.map.width;
+    col = ((col % width) + width) % width;
+  }
+  return [col - Math.floor(row / 2), row];
+}
+function worldCanonPos(pos) {
+  return canonicalOffsetPos(pos, worldWrapsX(), false);
 }
 function canonPos(p) {
-  if (!state) return p;
-  if (!mapWrapsX()) return p;
-  const w = state.map.width;
-  const col = p[0] + ((p[1] - (p[1] & 1)) >> 1);
-  const m = ((col % w) + w) % w;
-  return [p[0] + (m - col), p[1]];
+  return canonicalOffsetPos(p, mapWrapsX(), mapWrapsY());
 }
 function nbrTile(pos, d) {
   return TMAP.get(key(canonPos([pos[0] + d[0], pos[1] + d[1]])));
 }
 function whexDist(a, b) {
-  if (!state || !mapWrapsX()) return hexDist(a, b);
-  const w = state.map.width;
-  return Math.min(hexDist(a, b), hexDist([a[0]-w, a[1]], b), hexDist([a[0]+w, a[1]], b));
+  if (!state || (!mapWrapsX() && !mapWrapsY())) return hexDist(a, b);
+  const cols = mapWrapsX() ? [-state.map.width, 0, state.map.width] : [0];
+  const rows = mapWrapsY() ? [-state.map.height, 0, state.map.height] : [0];
+  const bCol = offsetColumn(b);
+  let best = Infinity;
+  for (const dc of cols) for (const dr of rows) {
+    const row = b[1] + dr;
+    const copy = [bCol + dc - Math.floor(row / 2), row];
+    best = Math.min(best, hexDist(a, copy));
+  }
+  return best;
 }
 // --- rotating 3D camera: yaw about the camera point, world-fixed sun ---
 let COSR = 1, SINR = 0, LITF = 1;
@@ -4667,7 +4999,7 @@ function updateZoomOut() {
 // hexXY returns camera-relative view coords (rotate, then dimetric squash).
 function hexXY(q, r) {
   const wx = wrapX(S * SQ3 * (q + r / 2)) - cam.x;
-  const wy = S * 1.5 * r - cam.y;
+  const wy = wrapY(S * 1.5 * r) - cam.y;
   return [COSR * wx - SINR * wy, (SINR * wx + COSR * wy) * YS];
 }
 // The same, for a column that means itself rather than a tile of the world:
@@ -4681,7 +5013,7 @@ function hexXYRaw(q, r) {
 // Whether the world is still an open sheet: it comes back on itself and this
 // civilization has not been round to find that out.
 function chartIsOpen() {
-  return !!state && mapWrapsX() && !wentAround();
+  return !!state && worldWrapsX() && !mapWrapsX() && !wentAround();
 }
 // Whether real ground is drawn at this exact copy of a wrapping world. Every
 // tile is drawn once, in the copy the open chart folds it into; the rest of
@@ -4689,7 +5021,7 @@ function chartIsOpen() {
 function chartDrawsGroundAt(q, r) {
   const u = q + r / 2;
   if (Math.abs(chartUnrolledU(u) - u) > 1e-9) return false;
-  const canon = canonPos([q, r]);
+  const canon = worldCanonPos([q, r]);
   return TMAP.has(canon[0] + "," + canon[1]);
 }
 // The offset columns and rows the frame can reach. World coordinates are an
@@ -4822,6 +5154,10 @@ function pixelToHex(sx, sy) {
 // ---------------------------------------------------------------- net
 async function fetchJSON(url, opts = {}, timeoutMs = 15000) {
   const controller = new AbortController();
+  const callerSignal = opts.signal;
+  const abortForCaller = () => controller.abort();
+  if (callerSignal?.aborted) controller.abort();
+  else callerSignal?.addEventListener("abort", abortForCaller, {once:true});
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, {...opts, signal: controller.signal});
@@ -4829,6 +5165,7 @@ async function fetchJSON(url, opts = {}, timeoutMs = 15000) {
     return await response.json();
   } finally {
     clearTimeout(timer);
+    callerSignal?.removeEventListener("abort", abortForCaller);
   }
 }
 let firstLoad = true;
@@ -4842,6 +5179,7 @@ let supervisorReloading = false;
 function reloadForSupervisedWorld(instance, seed) {
   if (supervisorReloading) return;
   supervisorReloading = true;
+  setWorldTransitionStage("Opening the new world");
   clearTimeout(supervisorReconnectTimer);
   supervisorReconnectTimer = null;
   // Give each promoted process and same-process successor a distinct URL.
@@ -4875,9 +5213,12 @@ function waitForSupervisedSuccessor(finishedInstance, finishedSeed) {
         reloadForSupervisedWorld(successor.server_instance, successor.seed);
         return;
       }
+      if (successor.supervisor_request)
+        setWorldTransitionStage("Restart accepted · changing worlds");
     } catch (e) {
       // A short connection failure is expected while the listening socket is
       // handed from the completed process to its successor.
+      setWorldTransitionStage("Server handoff · reconnecting");
     } finally {
       supervisorReconnectBusy = false;
     }
@@ -4897,6 +5238,96 @@ function cancelSupervisedSuccessorWatch() {
   supervisorReconnectWanted = false;
   clearTimeout(supervisorReconnectTimer);
   supervisorReconnectTimer = null;
+}
+
+function worldTransitionPending() {
+  return document.documentElement.classList.contains("world-loading");
+}
+
+function setWorldTransitionStage(stage) {
+  const label = document.getElementById("world-transition-stage");
+  if (label && stage) label.textContent = stage;
+}
+
+function showWorldTransition(handoff) {
+  worldTransitionGeneration++;
+  worldTransitionFinishing = false;
+  worldTransitionHandoff = handoff;
+  window.CIVVIS_RESTART_HANDOFF = handoff;
+  document.documentElement.classList.remove("world-transition-ready");
+  document.documentElement.classList.add("world-loading", "world-restarting");
+  document.body.setAttribute("aria-busy", "true");
+  document.getElementById("world-transition-kicker").textContent = "Starting simulation";
+  document.getElementById("world-transition-title").textContent = "Building a new world";
+  document.getElementById("world-transition-summary").textContent =
+    handoff.summary || "Applying the selected settings";
+  setWorldTransitionStage("Saving selected settings");
+  // Stop the long poll that belongs to the old world. Leaving it alive can
+  // consume the browser's one spectator-fetch slot for the full 15-second
+  // request timeout, while the new server waits for this viewer to acknowledge
+  // its first frame. Aborting here lets the successor be acknowledged as soon
+  // as the veil has revealed it.
+  specFetchGeneration++;
+  specFetchAbort?.abort();
+  specFetchAbort = null;
+  specFetching = false;
+  specPending = null;
+  try {
+    sessionStorage.setItem("civvis-world-transition-v1", JSON.stringify(handoff));
+    // Keep the older key for a page crossing onto a runtime from before the
+    // richer handoff existed. The replacement clears both only after painting.
+    sessionStorage.setItem("civvis-restart-paused-v1", handoff.paused ? "1" : "0");
+  } catch (e) {}
+}
+
+function clearWorldTransition() {
+  worldTransitionGeneration++;
+  worldTransitionFinishing = false;
+  worldTransitionHandoff = null;
+  window.CIVVIS_RESTART_HANDOFF = null;
+  document.documentElement.classList.remove(
+    "world-loading", "world-restarting", "world-transition-ready");
+  document.body.setAttribute("aria-busy", "false");
+  try {
+    sessionStorage.removeItem("civvis-world-transition-v1");
+    sessionStorage.removeItem("civvis-restart-paused-v1");
+  } catch (e) {}
+}
+
+// Reveal only the requested successor. An old /state request may finish after
+// the restart click; accepting that frame would dismiss the veil onto exactly
+// the stale, frozen screen this transition exists to hide.
+function finishWorldTransition(st) {
+  if (!worldTransitionPending() || worldTransitionFinishing) return;
+  if (worldTransitionHandoff) {
+    // An in-process /new uses the browser's requested seed exactly. The
+    // supervisor deliberately does not: it launches the next process from its
+    // normalized settings, and that process chooses the seed. Across that
+    // boundary, changed process/world identity is the authoritative match.
+    const successor = worldTransitionHandoff.supervised
+      ? supervisedSuccessorChanged(st, worldTransitionHandoff.finishedInstance,
+                                   worldTransitionHandoff.finishedSeed)
+      : String(st?.seed) === String(worldTransitionHandoff.targetSeed);
+    if (!successor) return;
+  }
+  worldTransitionFinishing = true;
+  setWorldTransitionStage(st?.turn === undefined ? "World ready" : `World ready · turn ${st.turn}`);
+  const generation = worldTransitionGeneration;
+  let fadeStarted = false;
+  const startFade = () => {
+    if (fadeStarted || generation !== worldTransitionGeneration) return;
+    fadeStarted = true;
+    document.documentElement.classList.add("world-transition-ready");
+    setTimeout(() => {
+      if (generation === worldTransitionGeneration) clearWorldTransition();
+    }, 240);
+  };
+  // One frame commits the freshly drawn canvas and HUD under the veil; the
+  // next begins the veil's fade. Background tabs can suspend animation frames
+  // entirely, so the timeout is a fallback: when that tab is shown again the
+  // already-complete DOM and canvas are what its first paint contains.
+  requestAnimationFrame(() => requestAnimationFrame(startFade));
+  setTimeout(startFade, 500);
 }
 
 function syncViewPlayer() {
@@ -5425,9 +5856,8 @@ function queueDirectorCue(cue) {
     }, state?.turn || 0);
     const chapterShown = !cue.silent && cue.kicker === "A new age dawns" && showCinemaChapter(cue);
     if (!cue.silent && !chapterShown) nextGoal.story = cue;
-    let targetX = S * SQ3 * (nextGoal.pos[0] + nextGoal.pos[1] / 2);
-    if (mapWrapsX()) targetX += Math.round((cam.x - targetX) / WW()) * WW();
-    const targetY = S * 1.5 * nextGoal.pos[1];
+    const targetX = wrapX(S * SQ3 * (nextGoal.pos[0] + nextGoal.pos[1] / 2));
+    const targetY = wrapY(S * 1.5 * nextGoal.pos[1]);
     const cutDistance = Math.max(560, area.clientWidth / Math.max(.25, cam.scale) * .62);
     const useCut = cinemaActive() && !tracksUnit &&
       (battle || cue.priority >= 7) &&
@@ -5603,10 +6033,9 @@ function advanceDirector(now = performance.now()) {
     }
     if (!directorTransition.switched) {
       directorGoal = directorTransition.goal;
-      let targetX = S * SQ3 * (directorGoal.pos[0] + directorGoal.pos[1] / 2);
-      if (mapWrapsX()) targetX += Math.round((cam.x - targetX) / WW()) * WW();
+      const targetX = wrapX(S * SQ3 * (directorGoal.pos[0] + directorGoal.pos[1] / 2));
       cam.x = targetX;
-      cam.y = clampCameraY(S * 1.5 * directorGoal.pos[1], directorGoal.scale);
+      cam.y = clampCameraY(wrapY(S * 1.5 * directorGoal.pos[1]), directorGoal.scale);
       cam.scale = directorGoal.scale;
       if (directorGoal.rot !== undefined) setRot(directorGoal.rot, false);
       if (directorGoal.tilt !== undefined && VIEW === "cinematic") setTilt(directorGoal.tilt, false);
@@ -5636,7 +6065,8 @@ function advanceDirector(now = performance.now()) {
     const target = unitMapPoint(directorGoal.battleTarget);
     const attacker = state.units.find(unit => unit.id === directorGoal.battleAttackerId);
     const source = attacker ? cinematicUnitMapPoint(attacker, now) : target;
-    if (mapWrapsX()) target.x += Math.round((source.x - target.x) / WW()) * WW();
+    if (mapWrapsX()) target.x = wrapX(target.x, source.x);
+    if (mapWrapsY()) target.y = wrapY(target.y, source.y);
     // Track the midpoint so attacker, projectile path, and defender all remain
     // inside the close composition. This is the battle equivalent of leading
     // a moving character; following either endpoint alone loses the other.
@@ -5665,16 +6095,16 @@ function advanceDirector(now = performance.now()) {
     ? trackedSubject.x : (directorGoal.worldX ??
       wrapX(S * SQ3 * (directorGoal.pos[0] + directorGoal.pos[1] / 2)));
   let gy = trackedSubject ? trackedSubject.y :
-    (directorGoal.worldY ?? S * 1.5 * directorGoal.pos[1]);
+    (directorGoal.worldY ?? wrapY(S * 1.5 * directorGoal.pos[1]));
   if (cinemaActive() && directorGoal.focus) {
     // The land-biased viewing anchor may sit a few tiles away from the event.
     // Preserve that richer background, but keep the actual subject clear of
     // the top victory ribbon and the lower-third on every viewport height.
     let focusX = trackedSubject
       ? trackedSubject.focusX : S * SQ3 * (directorGoal.focus[0] + directorGoal.focus[1] / 2);
-    if (!trackedSubject && mapWrapsX()) focusX += Math.round((gx - focusX) / WW()) * WW();
+    if (!trackedSubject) focusX = wrapX(focusX, gx);
     const focusY = trackedSubject
-      ? trackedSubject.focusY : S * 1.5 * directorGoal.focus[1];
+      ? trackedSubject.focusY : wrapY(S * 1.5 * directorGoal.focus[1], gy);
     const screenX = area.clientWidth / 2 +
       (COSR * (focusX - gx) - SINR * (focusY - gy)) * directorGoal.scale;
     const screenY = area.clientHeight / 2 +
@@ -5830,13 +6260,31 @@ function paintedQuery() {
 // is holding, so the queue cannot grow behind it.
 let specPending = null;  // fetched, not yet drawn
 let specFetching = false;
+let specFetchAbort = null;
+let specFetchGeneration = 0;
 function specFetch() {
-  if (!SPEC || specFetching || specPending) return;
+  if (!SPEC || specFetching || specPending || worldTransitionPending()) return;
+  const generation = specFetchGeneration;
+  const controller = new AbortController();
+  specFetchAbort = controller;
   specFetching = true;
-  fetchJSON("/state" + paintedQuery())
-    .then(st => { specPending = st; })
-    .catch(() => { tileStore = null; }) // hiccup: take the next state whole
-    .finally(() => { specFetching = false; });
+  fetchJSON("/state" + paintedQuery(), {signal:controller.signal})
+    .then(st => {
+      if (generation === specFetchGeneration && !worldTransitionPending()) specPending = st;
+    })
+    .catch(() => {
+      // The caller abort is the deliberate restart suspension. A timeout from
+      // fetchJSON aborts only its own controller and still drops the tile base,
+      // preserving the old recovery behavior for a genuine network hiccup.
+      if (!controller.signal.aborted && generation === specFetchGeneration)
+        tileStore = null; // hiccup: take the next state whole
+    })
+    .finally(() => {
+      if (generation === specFetchGeneration) {
+        specFetching = false;
+        specFetchAbort = null;
+      }
+    });
 }
 (function specFrame() {
   requestAnimationFrame(specFrame);
@@ -6189,6 +6637,7 @@ function render(st, recordChronicle = true) {
   }
   state = st;
   SPEC = !!st.spectate;
+  syncFlatMapWrapControls();
   syncFoundNorth(st);
   syncKnownWorld(st);
   syncCinemaPresentation(st);
@@ -6358,6 +6807,7 @@ function render(st, recordChronicle = true) {
   // successor world painted nothing, and must not claim it did.
   if (st.turn !== undefined && st.seed !== undefined)
     paintedFrame = {seed:st.seed, turn:st.turn};
+  finishWorldTransition(st);
 }
 
 function drawCaptureChoice() {
@@ -10740,17 +11190,21 @@ function planetLaneEnd(lane, edge, cornerId, px, py, off) {
 function drawPlanetFrontiers(cells) {
   const lanes = planetFrontierLanes(cells);
   if (!lanes.size) return;
+  const empire = mapLens === "empire";
   cx.lineCap = "round"; cx.lineJoin = "round";
   for (const [owner, lane] of lanes) {
     const [dark, light] = jerseyLanes(owner);
+    const minor = !!state.players[owner]?.is_minor;
+    const presence = empire && minor ? .22 : 1;
     // The globe's ground is the same compact strategic terrain the flat view
     // has, so it takes the flat view's treatment: a near-black keyline reaching
     // back across the seam for a stable silhouette, then the seam lane, then
     // the light lane furthest inside the empire that owns it.
-    for (const [w, alpha, color, off] of [[7.6, .78, "#090d12", 1.5],
-                                          [2.8, 1, dark, 1.5],
-                                          [2.8, 1, light, 4.2]]) {
-      cx.strokeStyle = color; cx.globalAlpha = alpha;
+    const passes = empire
+      ? [[10.2, .86, "#070b0d", 1.5], [4.1, 1, dark, 1.5], [4.1, 1, light, 5.3]]
+      : [[7.6, .78, "#090d12", 1.5], [2.8, 1, dark, 1.5], [2.8, 1, light, 4.2]];
+    for (const [w, alpha, color, off] of passes) {
+      cx.strokeStyle = color; cx.globalAlpha = alpha * presence;
       for (const [weight, edges] of lane.weights) {
         cx.lineWidth = w * weight;
         cx.beginPath();
@@ -10869,6 +11323,47 @@ const SKY_CHAIN = {
   satellite:"launch_earth_satellite", moon:"launch_moon_landing",
   mars:"launch_mars_colony", expedition:"exoplanet_expedition",
 };
+// The standing sky above is permanent state. These three missions also need a
+// beginning: when a completed project first appears between two live frames,
+// its craft leaves Earth before the permanent landing or voyage takes over.
+// Satellite already supplies its own perpetual orbital motion, so it does not
+// need a second launch layer here.
+const SKY_LAUNCH_FLIGHTS = {
+  moon:{project:SKY_CHAIN.moon, duration:2800, body:"moon"},
+  mars:{project:SKY_CHAIN.mars, duration:3600, body:"mars"},
+  expedition:{project:SKY_CHAIN.expedition, duration:3000, body:"exo"},
+};
+function queueSkyLaunches(prev, next, now = performance.now()) {
+  if (!prev || !next || prev.seed !== next.seed || REDUCED_MOTION_QUERY.matches) return;
+  const before = new Map((prev.players || []).map(player => [player.id, player]));
+  for (const player of next.players || []) {
+    if (player.is_minor || player.is_barbarian) continue;
+    const old = before.get(player.id);
+    if (!old) continue;
+    const oldProjects = old.science_projects || [];
+    const newProjects = player.science_projects || [];
+    for (const [mission, flight] of Object.entries(SKY_LAUNCH_FLIGHTS)) {
+      if (oldProjects.includes(flight.project) || !newProjects.includes(flight.project)) continue;
+      // Repeated snapshots of one transition must restart neither the flight
+      // nor its exhaust. A project is permanent, but keeping the guard here
+      // also makes synthetic/recovery state streams harmless.
+      if (anim.skyLaunches.some(launch =>
+          launch.playerId === player.id && launch.mission === mission)) continue;
+      anim.skyLaunches.push({playerId:player.id, mission, t0:now,
+                            duration:flight.duration});
+    }
+  }
+}
+function activeSkyLaunches(now = performance.now()) {
+  for (let index = anim.skyLaunches.length - 1; index >= 0; index--)
+    if (now >= anim.skyLaunches[index].t0 + anim.skyLaunches[index].duration)
+      anim.skyLaunches.splice(index, 1);
+  return anim.skyLaunches;
+}
+function skyLaunchInFlight(playerId, mission, now = performance.now()) {
+  return activeSkyLaunches(now).some(launch =>
+    launch.playerId === playerId && launch.mission === mission);
+}
 // When a body stops being a marble and starts being a place. Its own ground
 // fades in over the painted ball, and the threshold cannot be one number for
 // all three: a tile is about `2 * r / frequency` across, so a world carrying
@@ -11156,10 +11651,10 @@ function skyFocusBody() {
 // middle of it. Size alone cannot decide — zoom in on the Moon and the Earth is
 // four times its width, but it is also six diameters off the edge of the
 // screen, so it is not what anyone is looking at.
-function skyGrip(body, radius, stageX, stageY) {
+function skyGrip(body, radius, pan = SKY_PAN) {
   const drawn = Math.max(body.floor || 0, body.size * radius);
   const [px, py] = skyBodyPos(body);
-  const away = Math.hypot(px - SKY_PAN.x, py - SKY_PAN.y) * radius;
+  const away = Math.hypot(px - pan.x, py - pan.y) * radius;
   const reach = Math.max(140, Math.min(area.clientWidth, area.clientHeight) * .55);
   const near = Math.max(0, 1 - away / (reach + drawn));
   // Nothing claims the camera until it is at least half a stage wide. Set any
@@ -11175,11 +11670,10 @@ function skyGrip(body, radius, stageX, stageY) {
 // and when none of them is, it eases back onto the shot that holds the whole
 // system, which is what makes zooming out of Mars return to the space view
 // rather than to an empty patch of sky where Mars used to be.
-function skySettleCamera(radius, zoom) {
-  const [stageX, stageY] = planetStageCenter();
+function skySettledPan(pan, radius, zoom) {
   let best = null;
   for (const body of skyKnownWorlds()) {
-    const grip = skyGrip(body, radius, stageX, stageY);
+    const grip = skyGrip(body, radius, pan);
     if (!best || grip > best.grip) best = {grip, at:skyBodyPos(body)};
   }
   let target, ease;
@@ -11194,13 +11688,14 @@ function skySettleCamera(radius, zoom) {
     const frame = skySystemFrame();
     target = [frame.x, frame.y];
     ease = .60 * Math.max(0, Math.min(1, frame.radius * 2.2 / Math.max(1e-3, radius) - .55));
-  } else return;
-  SKY_PAN = {x:SKY_PAN.x + (target[0] - SKY_PAN.x) * ease,
-             y:SKY_PAN.y + (target[1] - SKY_PAN.y) * ease};
+  } else return {...pan};
+  const settled = {x:pan.x + (target[0] - pan.x) * ease,
+                   y:pan.y + (target[1] - pan.y) * ease};
   // Within a pixel of the mark, sit on it exactly: a globe that fills the stage
   // has to be centred on it, not a third of a pixel off for ever.
-  if (Math.abs(SKY_PAN.x - target[0]) * radius < 1) SKY_PAN.x = target[0];
-  if (Math.abs(SKY_PAN.y - target[1]) * radius < 1) SKY_PAN.y = target[1];
+  if (Math.abs(settled.x - target[0]) * radius < 1) settled.x = target[0];
+  if (Math.abs(settled.y - target[1]) * radius < 1) settled.y = target[1];
+  return settled;
 }
 
 // With no pointer to aim by — the corner buttons, the keyboard — a zoom still
@@ -11208,9 +11703,9 @@ function skySettleCamera(radius, zoom) {
 // between Mars and the exoplanet. Aim at the nearest world instead, counting a
 // large one as nearer than a pebble at the same distance, so zooming in always
 // arrives somewhere rather than magnifying the dark.
-function skyZoomAnchor(radius, stageX, stageY) {
-  const [px, py] = skyBodyPos(skyNearestWorld());
-  return [stageX + (px - SKY_PAN.x) * radius, stageY + (py - SKY_PAN.y) * radius];
+function skyZoomAnchor(radius, stageX, stageY, pan = SKY_PAN) {
+  const [px, py] = skyBodyPos(skyNearestWorld(pan));
+  return [stageX + (px - pan.x) * radius, stageY + (py - pan.y) * radius];
 }
 
 // A drag out here means whatever the camera is looking at. Over a world it
@@ -11218,23 +11713,54 @@ function skyZoomAnchor(radius, stageX, stageY) {
 // on Mars — and out in the space view, where no world fills the stage, it moves
 // the camera through the system instead. The Earth is the one case this hands
 // back: it is steered through `cam.x` and `cam.y` because units stand on it.
-function skyDragApply(drag, dx, dy) {
+function skyDragApply(drag, dx, dy, now = performance.now()) {
   if (!planetMap()) return false;
-  const focus = skyFocusBody();
-  if (focus && focus.body.id === "earth") return false;
-  if (focus) {
-    const view = skyView(focus.body.id);
-    if (!drag.skyTurn) drag.skyTurn = {longitude:view.longitude, latitude:view.latitude};
+  // Decide what was grabbed once. Without this capture, a space pan that
+  // crossed a large world changed into a globe turn halfway through the same
+  // gesture, while a world dragged off centre abruptly changed back to a pan.
+  if (!drag.skyMode) {
+    const focus = skyFocusBody();
+    if (focus) {
+      const view = skyView(focus.body.id);
+      drag.skyMode = {kind:focus.body.id === "earth" ? "earth" : "turn",
+                      bodyId:focus.body.id, drawn:focus.drawn,
+                      longitude:view.longitude, latitude:view.latitude,
+                      lastLongitude:view.longitude, lastLatitude:view.latitude,
+                      vlongitude:0, vlatitude:0};
+    } else {
+      drag.skyMode = {kind:"pan", x:SKY_PAN.x, y:SKY_PAN.y,
+                      lastX:SKY_PAN.x, lastY:SKY_PAN.y, vx:0, vy:0};
+    }
+  }
+  const mode = drag.skyMode;
+  if (mode.kind === "earth") return false;
+  const dt = Math.max(1, now - (drag.lastT || now - 16));
+  if (mode.kind === "turn") {
+    const view = skyView(mode.bodyId);
     // A pixel at the middle of a ball of this size is one over its radius in
     // radians, so the ground keeps up with the pointer instead of sliding.
-    const turn = 1 / Math.max(12, focus.drawn);
-    view.longitude = drag.skyTurn.longitude - dx * turn;
-    view.latitude = Math.max(-1.45, Math.min(1.45, drag.skyTurn.latitude + dy * turn));
+    const turn = 1 / Math.max(12, mode.drawn);
+    view.longitude = mode.longitude - dx * turn;
+    view.latitude = Math.max(-1.45, Math.min(1.45, mode.latitude + dy * turn));
+    const dl = Math.atan2(Math.sin(view.longitude - mode.lastLongitude),
+                          Math.cos(view.longitude - mode.lastLongitude)) / dt;
+    const da = (view.latitude - mode.lastLatitude) / dt;
+    mode.vlongitude = mode.vlongitude * .55 + dl * .45;
+    mode.vlatitude = mode.vlatitude * .55 + da * .45;
+    mode.lastLongitude = view.longitude; mode.lastLatitude = view.latitude;
+    drag.skyMotion = {kind:"turn", bodyId:mode.bodyId,
+                      vlongitude:mode.vlongitude, vlatitude:mode.vlatitude};
+    drag.lastT = now;
     return true;
   }
   const radius = Math.max(.001, planetEarthRadius());
-  if (!drag.skyPan) drag.skyPan = {x:SKY_PAN.x, y:SKY_PAN.y};
-  SKY_PAN = {x:drag.skyPan.x - dx / radius, y:drag.skyPan.y - dy / radius};
+  SKY_PAN = {x:mode.x - dx / radius, y:mode.y - dy / radius};
+  const vx = (SKY_PAN.x - mode.lastX) / dt, vy = (SKY_PAN.y - mode.lastY) / dt;
+  mode.vx = mode.vx * .55 + vx * .45;
+  mode.vy = mode.vy * .55 + vy * .45;
+  mode.lastX = SKY_PAN.x; mode.lastY = SKY_PAN.y;
+  drag.skyMotion = {kind:"pan", vx:mode.vx, vy:mode.vy};
+  drag.lastT = now;
   return true;
 }
 // Every HUD widget the sky has to stay clear of, measured where it actually
@@ -11311,11 +11837,11 @@ function planetMinScale() {
 }
 // The world the camera is heading for, by the same reckoning the buttons aim
 // by: nearest, with a large world counting as nearer than a pebble beside it.
-function skyNearestWorld() {
+function skyNearestWorld(pan = SKY_PAN) {
   let best = null;
   for (const body of skyKnownWorlds()) {
     const [px, py] = skyBodyPos(body);
-    const away = Math.hypot(px - SKY_PAN.x, py - SKY_PAN.y) / (body.size + 2);
+    const away = Math.hypot(px - pan.x, py - pan.y) / (body.size + 2);
     if (!best || away < best.away) best = {away, body};
   }
   return best ? best.body : SKY_EARTH;
@@ -11325,8 +11851,8 @@ function skyNearestWorld() {
 // it. The others are things to look at: nothing lives under a Martian hexagon,
 // so the zoom stops with that world filling the frame rather than carrying on
 // until the camera is inside one ocean tile of somebody else's planet.
-function planetMaxScale() {
-  const body = skyNearestWorld();
+function planetMaxScale(pan = SKY_PAN) {
+  const body = skyNearestWorld(pan);
   if (body.id === "earth") return 3.2;
   // Past the flat map's own ceiling where it has to be: the Moon is a quarter
   // of the Earth, so filling the frame with it costs four times the Earth's
@@ -11339,7 +11865,10 @@ function planetMaxScale() {
 // proved round cannot be zoomed out of by any other route: an opening fit, a
 // flight to a city, a pinch, or a director's shot.
 function planetScaleClamp(scale) {
-  return Math.max(planetMinScale(), Math.min(planetMaxScale(), scale));
+  return planetScaleClampAt(scale, SKY_PAN);
+}
+function planetScaleClampAt(scale, pan) {
+  return Math.max(planetMinScale(), Math.min(planetMaxScale(pan), scale));
 }
 // How much of the picture is space rather than surface: 0 while the globe still
 // fills the stage, 1 once it is a marble among others.
@@ -11650,24 +12179,32 @@ function drawSkySatellites(crew, camera, radius, centerX, centerY, alpha, now) {
 
 // The expedition is the only one of the four that is still moving, and the
 // engine already knows how far it has come. Its lane is the line from here to
-// there, and the ship sits on it at exactly that fraction.
-function drawSkyExpeditions(crew, exo, radius, centerX, centerY, alpha, now) {
-  if (!crew.length) return;
+// there, and the ship sits on it at exactly that fraction. Launch injection
+// uses this same calculation so the temporary rocket hands off to the real
+// ship without changing lanes.
+function skyExpeditionRoute(player, index, count, exo, radius, centerX, centerY) {
   const dx = exo.x - centerX, dy = exo.y - centerY;
   const span = Math.hypot(dx, dy) || 1;
   const ux = dx / span, uy = dy / span;
   const lane = Math.max(7, radius * .9);
+  const target = +player.victories?.science?.distance_target || 50;
+  const travelled = Math.max(0, Math.min(1, (+player.exoplanet_distance || 0) / target));
+  const offset = (index - (count - 1) / 2) * lane;
+  const ox = -uy * offset, oy = ux * offset;
+  const from = radius * 1.6 + 6, to = span - exo.r - 5;
+  const startX = centerX + ux * from + ox, startY = centerY + uy * from + oy;
+  const endX = centerX + ux * to + ox, endY = centerY + uy * to + oy;
+  return {ux, uy, travelled, startX, startY, endX, endY,
+          shipX:startX + (endX - startX) * travelled,
+          shipY:startY + (endY - startY) * travelled};
+}
+function drawSkyExpeditions(crew, exo, radius, centerX, centerY, alpha, now) {
+  if (!crew.length) return;
   cx.save();
   crew.forEach((player, index) => {
-    const target = +player.victories?.science?.distance_target || 50;
-    const travelled = Math.max(0, Math.min(1, (+player.exoplanet_distance || 0) / target));
-    const offset = (index - (crew.length - 1) / 2) * lane;
-    const ox = -uy * offset, oy = ux * offset;
-    const from = radius * 1.6 + 6, to = span - exo.r - 5;
-    const startX = centerX + ux * from + ox, startY = centerY + uy * from + oy;
-    const endX = centerX + ux * to + ox, endY = centerY + uy * to + oy;
-    const shipX = startX + (endX - startX) * travelled;
-    const shipY = startY + (endY - startY) * travelled;
+    if (skyLaunchInFlight(player.id, "expedition", now)) return;
+    const {ux, uy, travelled, startX, startY, endX, endY, shipX, shipY} =
+      skyExpeditionRoute(player, index, crew.length, exo, radius, centerX, centerY);
     // Zoomed in close, the whole lane is off in the dark and all that reaches
     // the stage is a line leaving the frame with nothing on it. Wait until the
     // ship itself is in the picture; that is the thing worth drawing.
@@ -11701,6 +12238,131 @@ function drawSkyExpeditions(crew, exo, radius, centerX, centerY, alpha, now) {
     cx.closePath(); cx.fill(); cx.stroke();
   });
   cx.restore();
+}
+
+function skyLaunchStart(player, place, radius, centerX, centerY) {
+  const dx = place.x - centerX, dy = place.y - centerY;
+  const span = Math.hypot(dx, dy) || 1, ux = dx / span, uy = dy / span;
+  const offset = (hash2(player.id, 83) - .5) * Math.min(18, radius * .18);
+  return {x:centerX + ux * (radius * 1.04 + 3) - uy * offset,
+          y:centerY + uy * (radius * 1.04 + 3) + ux * offset};
+}
+
+function skyLaunchEnd(launch, player, place, crews,
+                      radius, centerX, centerY) {
+  if (launch.mission === "expedition") {
+    const index = crews.expedition.findIndex(candidate => candidate.id === player.id);
+    if (index >= 0) {
+      const route = skyExpeditionRoute(player, index, crews.expedition.length,
+                                       place, radius, centerX, centerY);
+      return {x:route.shipX, y:route.shipY};
+    }
+  }
+  const crew = launch.mission === "moon" ? crews.moon : crews.mars;
+  const seat = skyLandingSeats(place, crew).find(entry => entry.player.id === player.id);
+  if (seat) return {x:seat.x, y:seat.y};
+  // A stable landing site can be around the back of a close-up world. Aim for
+  // the Earth-facing limb in that case: the rocket disappears behind the body
+  // and the permanent marker remains correctly hidden with its site.
+  const dx = place.x - centerX, dy = place.y - centerY;
+  const span = Math.hypot(dx, dy) || 1;
+  return {x:place.x - dx / span * place.r * .82,
+          y:place.y - dy / span * place.r * .82};
+}
+
+function skyLaunchPoint(start, end, progress, bend) {
+  const eased = easeIO(Math.max(0, Math.min(1, progress)));
+  const dx = end.x - start.x, dy = end.y - start.y;
+  const span = Math.hypot(dx, dy) || 1;
+  const arc = Math.min(span * .18, 46) * Math.sin(Math.PI * eased) * bend;
+  return {x:start.x + dx * eased - dy / span * arc,
+          y:start.y + dy * eased + dx / span * arc};
+}
+
+function drawSkyLaunches(crews, placements, radius, centerX, centerY, now) {
+  const launches = activeSkyLaunches(now);
+  if (!launches.length) return;
+  for (const launch of launches) {
+    const player = (state.players || []).find(candidate => candidate.id === launch.playerId);
+    const flight = SKY_LAUNCH_FLIGHTS[launch.mission];
+    const place = flight && placements.get(flight.body);
+    if (!player || !place) continue;
+    const progress = Math.max(0, Math.min(1, (now - launch.t0) / launch.duration));
+    const start = skyLaunchStart(player, place, radius, centerX, centerY);
+    const end = skyLaunchEnd(launch, player, place, crews,
+                             radius, centerX, centerY);
+    const bend = hash2(player.id, flight.body.length * 17) < .5 ? -.72 : .72;
+    const at = skyLaunchPoint(start, end, progress, bend);
+    if (!skyOnStage(at.x, at.y, 36)) continue;
+    const ahead = skyLaunchPoint(start, end, Math.min(1, progress + .004), bend);
+    const behind = skyLaunchPoint(start, end, Math.max(0, progress - .004), bend);
+    const angle = Math.atan2(ahead.y - behind.y, ahead.x - behind.x);
+    const colour = pcol(player.id), dark = pcol2(player.id);
+    const size = Math.max(3, Math.min(7, radius * .065));
+    cx.save();
+    // The complete flight plan is quiet; the travelled part is a continuous
+    // bright stroke, so the eye can read both destination and motion at once.
+    cx.globalAlpha = .22; cx.strokeStyle = colour; cx.lineWidth = 1;
+    cx.setLineDash([2, 6]); cx.beginPath();
+    for (let step = 0; step <= 32; step++) {
+      const point = skyLaunchPoint(start, end, step / 32, bend);
+      step ? cx.lineTo(point.x, point.y) : cx.moveTo(point.x, point.y);
+    }
+    cx.stroke(); cx.setLineDash([]);
+    cx.globalAlpha = .7; cx.lineWidth = 1.6; cx.beginPath();
+    const travelledSteps = Math.max(1, Math.ceil(progress * 32));
+    for (let step = 0; step <= travelledSteps; step++) {
+      const point = skyLaunchPoint(start, end,
+        progress * step / travelledSteps, bend);
+      step ? cx.lineTo(point.x, point.y) : cx.moveTo(point.x, point.y);
+    }
+    cx.stroke();
+
+    // Ignition expands off Earth's limb; landings answer it with a smaller
+    // arrival ring. The expedition instead hands straight into its live lane.
+    if (progress < .22) {
+      cx.globalAlpha = (1 - progress / .22) * .65;
+      cx.strokeStyle = colour; cx.lineWidth = 1.5;
+      cx.beginPath(); cx.arc(start.x, start.y, size * (1 + progress * 12), 0, 7); cx.stroke();
+    } else if (launch.mission !== "expedition" && progress > .82) {
+      cx.globalAlpha = (progress - .82) / .18 * .52;
+      cx.strokeStyle = colour; cx.lineWidth = 1.2;
+      cx.beginPath(); cx.arc(end.x, end.y, size * (2.2 - progress), 0, 7); cx.stroke();
+    }
+
+    // A flickering plume points opposite the actual curved-flight tangent.
+    const flicker = size * (1.5 + .35 * Math.sin(now / 75 + player.id));
+    cx.translate(at.x, at.y); cx.rotate(angle);
+    const plume = cx.createLinearGradient(-size - flicker, 0, -size * .3, 0);
+    plume.addColorStop(0, "rgba(255,173,69,0)");
+    plume.addColorStop(.62, "rgba(255,176,70,.68)");
+    plume.addColorStop(1, "rgba(255,244,191,.92)");
+    cx.globalAlpha = .9; cx.fillStyle = plume;
+    cx.beginPath(); cx.moveTo(-size * .45, 0);
+    cx.lineTo(-size - flicker, -size * .42);
+    cx.lineTo(-size - flicker * .82, size * .42); cx.closePath(); cx.fill();
+    cx.globalAlpha = 1; cx.fillStyle = colour; cx.strokeStyle = "#071018"; cx.lineWidth = 1;
+    cx.beginPath(); cx.moveTo(size * 1.35, 0);
+    cx.lineTo(-size * .55, -size * .62); cx.lineTo(-size * .2, 0);
+    cx.lineTo(-size * .55, size * .62); cx.closePath(); cx.fill(); cx.stroke();
+    cx.fillStyle = dark;
+    cx.beginPath(); cx.moveTo(-size * .12, -size * .48);
+    cx.lineTo(-size * .75, -size * 1.02); cx.lineTo(-size * .55, -.08); cx.closePath(); cx.fill();
+    cx.beginPath(); cx.moveTo(-size * .12, size * .48);
+    cx.lineTo(-size * .75, size * 1.02); cx.lineTo(-size * .55, .08); cx.closePath(); cx.fill();
+    cx.restore();
+
+    if (size >= 4.2) {
+      cx.save(); cx.globalAlpha = .8; cx.font = "800 7px Inter,sans-serif";
+      cx.textAlign = "center"; cx.textBaseline = "bottom";
+      cx.strokeStyle = "#03070c"; cx.lineWidth = 3;
+      const label = launch.mission === "expedition" ? "EXOPLANET LAUNCH"
+        : `${launch.mission.toUpperCase()} LAUNCH`;
+      cx.strokeText(label, at.x, at.y - size * 1.8);
+      cx.fillStyle = "#e9f4f5"; cx.fillText(label, at.x, at.y - size * 1.8);
+      cx.restore();
+    }
+  }
 }
 
 // A body nobody could name is just a light. The caption carries the name and,
@@ -11748,8 +12410,10 @@ function drawPlanetSky(camera, radius, centerX, centerY) {
   const crews = skyCrews();
   const now = performance.now();
   let exo = null;
+  const placements = new Map();
   for (const body of visibleSkyBodies()) {
     const place = skyPlacement(body, radius, centerX, centerY);
+    placements.set(body.id, place);
     if (body.id === "exo") exo = place;
     if (!skyOnCanvas(place)) continue;
     // Under a pixel a body is noise, so it arrives by fading up rather than by
@@ -11765,7 +12429,9 @@ function drawPlanetSky(camera, radius, centerX, centerY) {
       cx.save(); cx.globalAlpha = alpha; cx.fillStyle = halo;
       cx.beginPath(); cx.arc(place.x, place.y, place.r * 6, 0, 7); cx.fill(); cx.restore();
     }
-    const crew = skyCrewFor(crews, body);
+    const mission = body.id === "moon" ? "moon" : body.id === "mars" ? "mars" : null;
+    const crew = skyCrewFor(crews, body).filter(player =>
+      !mission || !skyLaunchInFlight(player.id, mission, now));
     drawSkyBall(place, alpha);
     // Its own ground, once there is enough of the body on screen to hold it.
     const ground = skyGroundFade(place);
@@ -11787,6 +12453,7 @@ function drawPlanetSky(camera, radius, centerX, centerY) {
   }
   if (exo) drawSkyExpeditions(crews.expedition, exo, radius, centerX, centerY, 1, now);
   drawSkySatellites(crews.satellite, camera, radius, centerX, centerY, 1, now);
+  drawSkyLaunches(crews, placements, radius, centerX, centerY, now);
   // Far enough out, home is a dot among dots and needs saying so. The names
   // out here are the engine's own — its four projects are the Earth satellite,
   // the Moon landing, the Mars colony and the exoplanet expedition — so the
@@ -11801,7 +12468,12 @@ function drawPlanetSky(camera, radius, centerX, centerY) {
 // perfectly still between turns. While the sky is open and something up there
 // is under way, the map keeps painting.
 function planetSkyAnimating() {
-  if (!state || !planetReady() || planetEarthRadius() > SKY_SURFACE) return false;
+  if (!state || !planetReady()) return false;
+  // A launch begins at Earth's limb and must move even while the camera is
+  // still close to home. The permanent orbit/voyage loops remain limited to
+  // the open-sky view as before.
+  if (activeSkyLaunches().length > 0) return true;
+  if (planetEarthRadius() > SKY_SURFACE) return false;
   const crews = skyCrews();
   return crews.satellite.length > 0 || crews.expedition.length > 0;
 }
@@ -11833,22 +12505,25 @@ function planetTerrainPatterns(camera, scale) {
 function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
                           visible, spectator) {
   const painted = MODE.painted;
+  const empire = mapLens === "empire";
   const known = cell => spectator || visible.has(key(cell.tile.pos));
 
   // Opaque, slightly overlapping underpaint is the tiling invariant. Every
   // later translucent layer can miss an antialiased edge without exposing the
   // ocean sphere through a land seam.
   for (const cell of cells) {
-    const base = TERRAIN[cell.tile.terrain] || "#4b5960";
+    const base = empire
+      ? (isWater(cell.tile) ? "#173846" : "#687068")
+      : (TERRAIN[cell.tile.terrain] || "#4b5960");
     const light = camera.chart ? 1 : .70 + .34 * Math.max(0, cell.center.z);
     planetPaintPath(cx, cell, .8);
     cx.fillStyle = known(cell)
-      ? shade(base, painted ? .92 + light * .12 : light)
+      ? shade(base, empire ? .82 + light * .18 : painted ? .92 + light * .12 : light)
       : shade(base, .30);
     cx.fill();
   }
 
-  if (painted) {
+  if (painted && !empire) {
     // One compound path per biome: neighboring grass cells sample one field
     // and neighboring ocean cells sample one sea. Repainting the atlas from
     // each tile centre is the checkerboard this renderer exists to avoid.
@@ -11905,7 +12580,9 @@ function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
     const owner = cell.tile.owner;
     if (owner === null || owner === undefined) continue;
     planetPaintPath(cx, cell, .22);
-    cx.globalAlpha = painted ? (MODE.atmosphere ? .14 : .17) : .28;
+    const minor = !!state.players[owner]?.is_minor;
+    cx.globalAlpha = empire ? (minor ? .07 : .42)
+      : painted ? (MODE.atmosphere ? .14 : .17) : .28;
     cx.fillStyle = pcol(owner);
     cx.fill();
   }
@@ -11913,7 +12590,7 @@ function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
 
   // Strategic owns the always-on cell diagram. Painted and Cinematic dissolve
   // the honeycomb unless the player explicitly asks for the G grid overlay.
-  if (radius >= SKY_MARKERS && (!painted || SHOW_GRID)) {
+  if (!empire && radius >= SKY_MARKERS && (!painted || SHOW_GRID)) {
     cx.strokeStyle = painted
       ? (MODE.atmosphere ? "rgba(234,242,231,.19)" : "rgba(33,29,20,.22)")
       : "rgba(214,235,231,.075)";
@@ -11999,6 +12676,133 @@ function drawPlanetSurfaceDetail(cell) {
   cx.globalAlpha = 1;
 }
 
+function settleLensColor(quality, alpha) {
+  const q = Math.max(0, Math.min(1, quality));
+  const red = Math.round(205 - q * 142);
+  const green = Math.round(151 + q * 91);
+  const blue = Math.round(72 + q * 42);
+  return `rgba(${red},${green},${blue},${alpha})`;
+}
+function settleWaterColor(water) {
+  return water === "fresh" ? "#72d9ff" : water === "coast" ? "#89d8c7" : "#d2af68";
+}
+function drawPlanetSettlerLens(cells) {
+  const lens = settlerLensSites();
+  for (const cell of cells) {
+    const site = lens.sites.get(key(cell.tile.pos));
+    if (!site) {
+      if (isWater(cell.tile)) continue;
+      planetPaintPath(cx, cell, .15);
+      cx.fillStyle = "rgba(38,24,30,.48)"; cx.fill();
+      continue;
+    }
+    const quality = settleSiteQuality(site, lens);
+    planetPaintPath(cx, cell, .15);
+    cx.fillStyle = settleLensColor(quality, .26 + quality * .38); cx.fill();
+    planetPath(cx, cell.points);
+    cx.strokeStyle = settleWaterColor(site.water);
+    cx.lineWidth = quality > .76 ? 2.2 : 1.15;
+    cx.globalAlpha = .58 + quality * .4; cx.stroke(); cx.globalAlpha = 1;
+  }
+}
+
+function drawSettlerLensFlat(tiles) {
+  const lens = settlerLensSites();
+  cx.save();
+  for (const tile of tiles) {
+    const [x, yy] = hexXY(tile.pos[0], tile.pos[1]);
+    const y = yy - elev(tile);
+    const site = lens.sites.get(key(tile.pos));
+    if (!site) {
+      if (isWater(tile)) continue;
+      hexPath(x, y, S + .2); cx.fillStyle = "rgba(38,24,30,.48)"; cx.fill();
+      continue;
+    }
+    const quality = settleSiteQuality(site, lens);
+    hexPath(x, y, S + .2);
+    cx.fillStyle = settleLensColor(quality, .25 + quality * .42); cx.fill();
+    cx.strokeStyle = settleWaterColor(site.water);
+    cx.lineWidth = (quality > .76 ? 2.7 : 1.5) * UI_K();
+    cx.globalAlpha = .58 + quality * .4; cx.stroke(); cx.globalAlpha = 1;
+    if (quality > .84) {
+      cx.fillStyle = "#f8f0c8";
+      cx.beginPath(); cx.arc(x, y, 2.6 * UI_K(), 0, 7); cx.fill();
+    }
+  }
+  cx.restore();
+}
+
+// Empire lens is deliberately a replacement ground pass. Painting it after
+// terrain, routes, improvements, resources and yields means every map style
+// collapses to the same two land/water materials without changing hit-testing
+// or the normal renderer. Major territory remains saturated; minor territory
+// is present at a fraction of that weight so the eye reads civilization-scale
+// frontiers first.
+function drawEmpireLensFlat(tiles) {
+  cx.save();
+  for (const tile of tiles) {
+    const [x, yy] = hexXY(tile.pos[0], tile.pos[1]);
+    const y = yy - elev(tile);
+    hexPath(x, y, S + .85);
+    cx.fillStyle = isWater(tile) ? "#173846" : "#687068"; cx.fill();
+    if (tile.owner === null || tile.owner === undefined) continue;
+    hexPath(x, y, S + .45);
+    cx.fillStyle = pcol(tile.owner);
+    cx.globalAlpha = state.players[tile.owner]?.is_minor ? .07 : .42;
+    cx.fill(); cx.globalAlpha = 1;
+  }
+
+  const axis = [];
+  for (let i = 0; i < 6; i++) {
+    const [c1, c2] = EDGE_CORNERS[i];
+    const [ax, ay] = corner(0, 0, S, c1), [bx, by] = corner(0, 0, S, c2);
+    let ex = bx - ax, ey = by - ay;
+    const length = Math.hypot(ex, ey) || 1; ex /= length; ey /= length;
+    let nx = -ey, ny = ex;
+    if (nx * (ax + bx) + ny * (ay + by) > 0) { nx = -nx; ny = -ny; }
+    axis.push([nx, ny]);
+  }
+  const borders = new Map();
+  for (const tile of tiles) {
+    const owner = tile.owner;
+    if (owner === null || owner === undefined) continue;
+    const [x, yy] = hexXY(tile.pos[0], tile.pos[1]);
+    const y = yy - elev(tile);
+    for (let i = 0; i < 6; i++) {
+      const neighbor = nbrTile(tile.pos, DIRS[i]);
+      if (neighbor?.owner === owner) continue;
+      const [c1, c2] = EDGE_CORNERS[i];
+      const segment = [...corner(x, y, S, c1), ...corner(x, y, S, c2), i];
+      const group = borders.get(owner);
+      if (group) group.push(segment); else borders.set(owner, [segment]);
+    }
+  }
+  const pathLane = (segments, distance) => {
+    cx.beginPath();
+    for (const [ax, ay, bx, by, side] of segments) {
+      const [nx, ny] = axis[side];
+      cx.moveTo(ax + nx * distance, ay + ny * distance);
+      cx.lineTo(bx + nx * distance, by + ny * distance);
+    }
+  };
+  const k = UI_K();
+  cx.lineCap = "round"; cx.lineJoin = "round";
+  for (const [owner, segments] of borders) {
+    const [dark, light] = jerseyLanes(owner);
+    const presence = state.players[owner]?.is_minor ? .22 : 1;
+    for (const [width, alpha, color, distance] of [
+      [10.2 * k, .88, "#070b0d", 1.4 * k],
+      [4.2 * k, 1, dark, 1.4 * k],
+      [4.2 * k, 1, light, 5.5 * k],
+    ]) {
+      pathLane(segments, distance);
+      cx.strokeStyle = color; cx.lineWidth = width; cx.globalAlpha = alpha * presence;
+      cx.stroke();
+    }
+  }
+  cx.restore();
+}
+
 function drawPlanetMap() {
   if (!planetMap()) return false;
   if (!planetReady()) {
@@ -12020,6 +12824,7 @@ function drawPlanetMap() {
   const [centerX, centerY] = planetEarthCenter(radius);
   const visible = new Set(state.visible.map(key));
   const spectator = !Number.isInteger(state.view_player);
+  const empireLens = mapLens === "empire";
   PLANET_HIT_CELLS = [];
 
   cx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -12108,13 +12913,13 @@ function drawPlanetMap() {
 
   // Strategic keeps the compact command-map symbols. Painted and Cinematic
   // use landform paint clipped to each real spherical face instead.
-  if (MODE.painted && radius >= SKY_MARKERS) {
+  if (!empireLens && MODE.painted && radius >= SKY_MARKERS) {
     for (const cell of cells) {
       if ((!spectator && !visible.has(key(cell.tile.pos))) ||
           cell.center.z < (onSheet ?? .04)) continue;
       drawPlanetSurfaceDetail(cell);
     }
-  } else if (scale > .42) {
+  } else if (!empireLens && scale > .42) {
     cx.textAlign = "center"; cx.textBaseline = "middle";
     cx.font = `${Math.max(7, Math.min(13, 8 * scale))}px serif`;
     for (const cell of cells) {
@@ -12124,6 +12929,7 @@ function drawPlanetMap() {
       cx.fillText(glyph, cell.center.x, cell.center.y); cx.globalAlpha = 1;
     }
   }
+  if (mapLens === "settler") drawPlanetSettlerLens(cells);
   // Cities and armies are drawn at a floor size so they stay clickable, and a
   // four-pixel dot on a world the size of a coin is no longer a city on it.
   // Past that the globe is one object among several and only reads as one.
@@ -12133,6 +12939,8 @@ function drawPlanetMap() {
   for (const city of state.cities) {
     const cell = cellByKey.get(key(city.pos));
     if (!cell || cell.center.z < (onSheet ?? .02)) continue;
+    const minorLens = empireLens && !!state.players[city.owner]?.is_minor;
+    if (minorLens) { cx.save(); cx.globalAlpha = .28; }
     const r = Math.max(4, Math.min(8, 5 * Math.sqrt(scale)));
     cx.fillStyle = cityBannerColor(city.owner); cx.strokeStyle = "#f7e5b1"; cx.lineWidth = 1.2;
     cx.beginPath(); cx.arc(cell.center.x, cell.center.y, r, 0, 7); cx.fill(); cx.stroke();
@@ -12142,8 +12950,9 @@ function drawPlanetMap() {
       cx.strokeText(city.name, cell.center.x, cell.center.y - r - 5);
       cx.fillText(city.name, cell.center.x, cell.center.y - r - 5);
     }
+    if (minorLens) cx.restore();
   }
-  for (const unit of state.units) {
+  for (const unit of empireLens ? [] : state.units) {
     const cell = cellByKey.get(key(unit.pos));
     if (!cell || cell.center.z < (onSheet ?? .025)) continue;
     const r = Math.max(3.5, Math.min(7, 4.5 * Math.sqrt(scale)));
@@ -12151,7 +12960,7 @@ function drawPlanetMap() {
     cx.lineWidth = sel?.id === unit.id ? 2.3 : 1.2;
     cx.beginPath(); cx.arc(cell.center.x + r * .7, cell.center.y + r * .6, r, 0, 7); cx.fill(); cx.stroke();
   }
-  for (const tack of tacks) {
+  for (const tack of empireLens ? [] : tacks) {
     const cell = cellByKey.get(key(tack));
     if (!cell) continue;
     cx.fillStyle = "#ffd86b"; cx.font = "bold 13px serif"; cx.fillText("◆", cell.center.x, cell.center.y);
@@ -12923,27 +13732,18 @@ function draw() {
     if (t.wonder && !drawWorldWonderSprite(t.wonder, x, y)) drawWonder(x, y);
     if (SHOW_YIELDS && !t.district && !t.wonder) drawTileYields(t, x, y, workedSet.has(k));
   }
-  // --- settler lens
-  if (lensOn) {
-    const vals = [];
-    for (const t of tiles) if (validSettle(t)) vals.push([t.pos, settleValue(t.pos)]);
-    const mxv = Math.max(1, ...vals.map(v => v[1]));
-    for (const [p2, v] of vals) {
-      const t2 = TMAP.get(key(p2));
-      const [x, yy] = hexXY(p2[0], p2[1]);
-      const y = yy - (t2 ? elev(t2) : 0);
-      hexPath(x, y);
-      cx.fillStyle = `rgba(80,255,120,${(0.12 + 0.5 * v / mxv).toFixed(2)})`;
-      cx.fill();
-    }
-  }
+  // Lens passes replace or grade the finished ground while leaving the map's
+  // geometry and controls alone. Empire goes first because Settler's site
+  // marks are meant to sit over terrain, never over another lens.
+  if (mapLens === "empire") drawEmpireLensFlat(tiles);
+  else if (mapLens === "settler") drawSettlerLensFlat(tiles);
   // --- raids in the making. A barbarian camp that finds a city goes on alert
   // and starts throwing raiders at it, and the wire has said so all along —
   // which camp, which city, and for how long — while the map drew a tent
   // identical to every other tent. This is the one threat on the board that
   // arrives with no declaration and no border to watch, so it is exactly the
   // thing a glance should catch.
-  for (const al of state.barbarian_alerts || []) {
+  for (const al of mapLens === "empire" ? [] : (state.barbarian_alerts || [])) {
     if (!al || !al.camp) continue;
     const ct = TMAP.get(key(al.camp));
     const [ax, ayy] = hexXY(al.camp[0], al.camp[1]);
@@ -12979,7 +13779,7 @@ function draw() {
   // --- land changing hands: a ring in the claiming empire's color, opening out
   // of the tile and fading. A city growing sends up one; a conquest sends up a
   // wave of them, which is exactly the difference the eye should register.
-  for (let i = anim.claims.length - 1; i >= 0; i--) {
+  for (let i = mapLens === "empire" ? -1 : anim.claims.length - 1; i >= 0; i--) {
     const cl = anim.claims[i];
     const e = (performance.now() - cl.t0) / (cl.big ? 1500 : 1050);
     if (e >= 1) { anim.claims.splice(i, 1); continue; }
@@ -13069,10 +13869,10 @@ function draw() {
     cx.setLineDash([]);
     hexPath(x2, y2); cx.stroke();
   }
-  drawCinematicDisasterField(sceneTime);
+  if (mapLens !== "empire") drawCinematicDisasterField(sceneTime);
   // --- tacks
   cx.font = "16px sans-serif";
-  for (const tk of tacks) {
+  for (const tk of mapLens === "empire" ? [] : tacks) {
     const tt = TMAP.get(key(tk));
     const [x, yy] = hexXY(tk[0], tk[1]);
     cx.fillText("📍", x, yy - (tt ? elev(tt) : 0) - 6);
@@ -13084,6 +13884,8 @@ function draw() {
     const ct = TMAP.get(key(c.pos));
     const [x, yy] = hexXY(c.pos[0], c.pos[1]);
     const y = yy - (ct ? elev(ct) : 0);
+    const minorLens = mapLens === "empire" && !!state.players[c.owner]?.is_minor;
+    if (minorLens) { cx.save(); cx.globalAlpha = .28; }
     // A city bleeding loyalty defects — it changes hands without a shot fired,
     // which is among the most consequential things that can happen to a border
     // and gave no warning at all on the map. Only cities actually slipping draw
@@ -13229,6 +14031,7 @@ function draw() {
     if (selCity && selCity.id === c.id) {
       hexPath(x, y); cx.strokeStyle = "#f0c674"; cx.lineWidth = 3; cx.stroke();
     }
+    if (minorLens) cx.restore();
   }
   // --- espionage in progress. A spy is the only piece on the board with no
   // presence on it at all: it sits inside a city, runs a mission with a known
@@ -13237,7 +14040,7 @@ function draw() {
   // left before the job lands.
   // The server sends only spies the observer owns or has captured (a spectator
   // sees every side), so drawing them reveals nothing that was hidden.
-  for (const sp of state.spies || []) {
+  for (const sp of mapLens === "empire" ? [] : (state.spies || [])) {
     const m = sp && sp.mission;
     if (!m || !m.target) continue;
     const mt = TMAP.get(key(m.target));
@@ -13274,7 +14077,7 @@ function draw() {
   // --- what a fight leaves on the ground. Scorched earth in the fallen side's
   // colour, laid on the board plane and under the living, so a contested tile
   // still looks contested a few seconds after the bodies are gone.
-  for (let i = anim.scars.length - 1; i >= 0; i--) {
+  for (let i = mapLens === "empire" ? -1 : anim.scars.length - 1; i >= 0; i--) {
     const sc = anim.scars[i];
     const e = (now0 - sc.t0) / sc.dur;
     if (e < 0) continue;
@@ -13292,7 +14095,7 @@ function draw() {
   for (let i = anim.battles.length - 1; i >= 0; i--)
     if (now0 >= anim.battles[i].endsAt) anim.battles.splice(i, 1);
   const cinemaSurvey = cinemaActive() && cam.scale < 1.08;
-  const sorted = [...cinematicSurveyUnits(state.units)].sort((a, b) =>
+  const sorted = [...cinematicSurveyUnits(mapLens === "empire" ? [] : state.units)].sort((a, b) =>
     (hexXY(a.pos[0], a.pos[1])[1] - hexXY(b.pos[0], b.pos[1])[1]) ||
     (CIVILIAN_UNITS.has(a.type) ? -1 : 1));
   const now = performance.now();
@@ -13486,7 +14289,8 @@ function draw() {
   // The deposits the figures were standing on. Held back above so a badge is
   // not a third hidden behind the unit occupying its tile; drawn here, in the
   // same seat and at the same weight, only after the figures are down.
-  for (const [t, x, y] of occupiedResourceTiles) drawResourceBadge(t, x, y);
+  if (mapLens !== "empire")
+    for (const [t, x, y] of occupiedResourceTiles) drawResourceBadge(t, x, y);
   // --- projectiles. Everything above happens on the ground; a shot happens
   // over it, so it is drawn after the figures and before the numbers. The path
   // is a parabola between the two hexes — a lobbed stone climbs and drops, a
@@ -14105,7 +14909,7 @@ function drawPlanetMini() {
 // A column measure unrolled onto the open chart — the same fold the main map
 // draws with, in the minimap's own units.
 function chartUnrolledU(u) {
-  if (!state || !mapWrapsX() || wentAround()) return u;
+  if (!chartIsOpen()) return u;
   const w = Math.max(1, state.map.width);
   return u + Math.round((chartAnchorX() / (S * SQ3) - u) / w) * w;
 }
@@ -14130,7 +14934,7 @@ function chartUnrolledU(u) {
 function miniBounds() {
   const mapWidth = Math.max(1, state.map.width), mapHeight = Math.max(1, state.map.height);
   const tiles = state.map?.tiles;
-  if (wentAround() || !mapWrapsX() || !tiles?.length) {
+  if (!chartIsOpen() || !tiles?.length) {
     // u = q + r/2 runs from 0 to mapWidth - 1 + half a column, the half coming
     // from the odd rows' offset.
     return {
@@ -14310,7 +15114,7 @@ mini.addEventListener("click", ev => {
     clickY = r.height / 2 - sin * dx + cos * dy;
   }
   let x = wrapX(S * (clickX - layout.originX) / layout.size);
-  let y = S * (clickY - layout.originY) / layout.size;
+  let y = wrapY(S * (clickY - layout.originY) / layout.size);
   [x, y] = cameraCenterForWorld(x, y);
   y = clampCameraY(y);
   if (REDUCED_MOTION_QUERY.matches) {
@@ -14701,6 +15505,8 @@ let hudHtml = "", victoryHudHtml = "";
 function drawPlayerHud() {
   const hud = document.getElementById("playerhud");
   const victoryHud = document.getElementById("victoryhud");
+  const priorBounds = mapFocusBounds();
+  const priorFocus = currentMapFocusWorld();
   // State updates are frequent in spectator mode. Preserve each rail's exact
   // reading position so a person can browse an off-screen victory path
   // without the next simulation frame snapping the HUD back to the leader.
@@ -14748,6 +15554,7 @@ function drawPlayerHud() {
     const numericValue = Number(value) || 0;
     highestByStat.set(kind, Math.max(highestByStat.get(kind) ?? -Infinity, numericValue));
   }));
+  const relationById = new Map();
   const html =
     `<button class="overlay-close" type="button" data-overlay-close="players" aria-label="Hide player standings; restore them in Display settings" title="Hide player standings · restore in Display settings">✕</button>` +
     hudTurnPlate() +
@@ -14755,7 +15562,12 @@ function drawPlayerHud() {
     `<div class="ribbon-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
     `aria-label="Move player stats; use arrow keys or drag" title="Drag to move · arrow keys also move" id="player-stats-title">` +
     `<span>Player stats</span></div>` +
-    `<div class="ribbon-stat-heading" aria-hidden="true"><span class="diplomacy-stat-head">` +
+    `<div class="ribbon-stat-heading" aria-hidden="true">` +
+    `<span class="diplomacy-identity-head">` +
+    `<span title="Civilization">CIV</span><span>LEADER</span><span>PLAYER</span>` +
+    `<span class="numeric">ELO</span><span class="numeric" title="Win odds">WIN ODDS</span>` +
+    `<span title="AI active strategy">AI STRATEGY</span></span>` +
+    `<span class="diplomacy-stat-head">` +
     [["production", "PROD"], ["science", "SCI"], ["culture", "CUL"], ["faith", "FPT"], ["gold", "GPT"],
       ["military", "MIL"], ["cities", "CITY"], ["suzerain", "SUZ"], ["wonders", "WNDR"], ["score", "SCORE"]]
       .map(([kind, label]) => `<span class="${kind}">${label}</span>`).join("") + `</span></div>` +
@@ -14774,6 +15586,7 @@ function drawPlayerHud() {
         : alliance ? `${titleCase(alliance.kind)} Alliance · Level ${alliance.level}`
         : p.friend ? "Declared Friend"
         : "Neutral standing";
+      relationById.set(p.id, relation);
       const relationSummary = strategyText ? `${strategyText} · ${relation}` : relation;
       // A leader's agenda is public once you have met them, and so is roughly
       // how they feel about you. The glyph is the quick read; the tooltip
@@ -14800,9 +15613,14 @@ function drawPlayerHud() {
       const playedGames = +p.player_games || 0;
       // A new player has no record to show yet, and 1500 is the number every
       // unrated player would wear. Say unrated until they have finished one.
-      const playerElo = p.player_username
+      const playerEloLabel = p.player_username
         ? (playedGames ? `${p.player_elo} ELO` : "Unrated")
         : Number.isFinite(+p.ai_elo) ? `${p.ai_elo} ELO` : "Unrated";
+      // The column heading already supplies the unit, so keep its cells to the
+      // rating itself. This makes a four-digit ELO fit without truncation.
+      const playerElo = p.player_username
+        ? (playedGames ? `${p.player_elo}` : "—")
+        : Number.isFinite(+p.ai_elo) ? `${p.ai_elo}` : "—";
       const humanTitle = `You · new league player ${p.player_username}` +
         ` · ${playedGames ? `${p.player_elo} ±${p.player_elo_rd} over ${playedGames} rated ` +
           `${playedGames === 1 ? "game" : "games"}` : "unrated until this game is decided"}` +
@@ -14817,7 +15635,7 @@ function drawPlayerHud() {
       const stateClass = `${relationClass} ${p.at_war_with_me ? "at-war" : ""} ${p.alive ? "" : "dead"}`;
       const stats = statsByPlayer.get(p.id);
       const watchTitle = `Watch ${p.civ} through its fog of war · ${relationSummary}${agendaText}`;
-      const expanded = hudExpanded === p.id;
+      const expanded = hudOpenDossiers.includes(p.id);
       // Which rows actually hold at an edge, and how they stagger, depends on
       // how tall the ribbon is right now; syncPlayerLockPins() settles that
       // against the rendered box. The markup only records the choice.
@@ -14835,30 +15653,28 @@ function drawPlayerHud() {
         `<button class="diplomacy-identity" data-hud-action="dossier" data-hud-civ="${p.id}" aria-expanded="${expanded}" ` +
         `title="${expanded ? "Close" : "Open"} the ${p.civ} dossier · ${relationSummary}${agendaText}" ` +
         `aria-label="${expanded ? "Close" : "Open"} dossier for ${p.civ}, rank ${rank}, ${relationSummary}">` +
-        // Rank, civilization, leader, league handle, rating and plan are one
-        // sentence about one player, so they run along one line and the caret
-        // closes it. Only the two names may grow; the rest holds its width.
-        `<span class="diplomacy-name"><span class="diplomacy-rank">#${rank}</span>` +
-        `<span class="diplomacy-civ">${p.id === acting && SPEC ? "◉ " : ""}${p.civ}</span>` +
-        `<span class="identity-separator" aria-hidden="true">·</span>` +
-        `<span class="diplomacy-leader">${leader}${agendaGlyph}</span></span>` +
-        `<span class="identity-separator" aria-hidden="true">·</span>` +
-        `<span class="diplomacy-player-line" title="${leagueTitle}">` +
-        `<span class="diplomacy-player">${playerName}</span><span class="identity-separator" aria-hidden="true">·</span>` +
-        `<span class="diplomacy-elo">${playerElo}</span><span class="identity-separator" aria-hidden="true">·</span>` +
-        `${expectPct === null ? "" : `<span class="diplomacy-expected" title="Elo-implied win estimate">${expectPct}%</span>` +
-          `<span class="identity-separator" aria-hidden="true">·</span>`}` +
-        `${activeStrategy}</span>` +
+        `<span class="diplomacy-identity-field"><span class="diplomacy-rank">#${rank}</span>` +
+        `<span class="diplomacy-civ">${p.id === acting && SPEC ? "◉ " : ""}${p.civ}</span></span>` +
+        `<span class="diplomacy-identity-field"><span class="diplomacy-leader-name">${leader}</span>${agendaGlyph}</span>` +
+        `<span class="diplomacy-identity-field" title="${leagueTitle}"><span class="diplomacy-player">${playerName}</span></span>` +
+        `<span class="diplomacy-identity-field diplomacy-elo" title="${playerEloLabel} · ${leagueTitle}">` +
+        `<span class="diplomacy-elo-value">${playerElo}</span></span>` +
+        `<span class="diplomacy-identity-field diplomacy-expected" title="Elo-implied win odds">` +
+        `<span class="diplomacy-expected-value">${expectPct === null ? "—" : `${expectPct}%`}</span></span>` +
+        `<span class="diplomacy-identity-field diplomacy-strategy">${activeStrategy}</span>` +
         `<span class="detail-caret">${expanded ? "▾" : "▸"}</span></button>` +
         `<button class="diplomacy-stats" data-hud-action="watch" data-hud-civ="${p.id}" title="${watchTitle}" aria-label="Watch ${p.civ}">` +
         stats.map(([kind, , value, label, marker = ""]) => {
           const isLeader = highestByStat.get(kind) !== 0 && Number(value || 0) === highestByStat.get(kind);
           return `<span class="ribbon-stat ${kind}${isLeader ? " category-leader" : ""}" ` +
             `title="${label}${isLeader ? " · Category leader" : ""}"><b>${ribbonStat(value)}${marker}</b></span>`;
-        }).join("") + `</button></div>` +
-        (expanded ? civDossier(p, rank, relation) : "");
+        }).join("") + `</button></div>`;
     }).join("") + `</div>` + hudResizeHandles("player standings");
-  if (html === hudHtml || hudLayoutGesture?.name === "players") return;
+  drawDossierWindows(majors, rankById, relationById);
+  if (html === hudHtml || hudLayoutGesture?.name === "players") {
+    reframeIfMapFocusBoundsChanged(priorBounds, priorFocus);
+    return;
+  }
   hudHtml = html;
   hud.innerHTML = html;
   const playerRibbon = hud.querySelector(".diplomacy-ribbon");
@@ -14866,6 +15682,7 @@ function drawPlayerHud() {
   // innerHTML replaced the element the observer was watching.
   observePlayerRibbon();
   syncPlayerLockPins();
+  reframeIfMapFocusBoundsChanged(priorBounds, priorFocus);
 }
 
 // Re-aim the size observer after a repaint. Kept apart from the sync so the
@@ -14940,7 +15757,9 @@ const victoryHudSizeObserver = typeof ResizeObserver === "function"
 victoryHudSizeObserver?.observe(document.getElementById("victoryhud"));
 
 function toggleCivDossier(id) {
-  hudExpanded = hudExpanded === id ? null : id;
+  const index = hudOpenDossiers.indexOf(id);
+  if (index >= 0) hudOpenDossiers.splice(index, 1);
+  else hudOpenDossiers.push(id);
   drawPlayerHud();
 }
 
@@ -14969,6 +15788,18 @@ hudRibbon.addEventListener("click", ev => {
   if (target) runHudAction(target);
 });
 
+const dossierWindows = document.getElementById("dossier-windows");
+dossierWindows.addEventListener("mousedown", ev => {
+  if (ev.button !== 0) return;
+  const target = ev.target.closest?.("[data-hud-action]");
+  if (target) runHudAction(target);
+});
+dossierWindows.addEventListener("click", ev => {
+  if (ev.detail !== 0) return;
+  const target = ev.target.closest?.("[data-hud-action]");
+  if (target) runHudAction(target);
+});
+
 function civName(id) {
   return state.players.find(player => player.id === id)?.civ || `Player ${id}`;
 }
@@ -14992,10 +15823,50 @@ function activeWarsFor(pid) {
     .sort((a, b) => b.turns - a.turns);
 }
 
-// The dossier is one ribbon card opened up: about three cards tall, and only
-// ever one at a time. The ribbon answers "who is winning"; this answers "what
-// is this civilization actually trying to do", which is the question a
-// spectator asks next and which no single row of numbers can carry.
+function drawDossierWindows(majors, rankById, relationById) {
+  const playersById = new Map(majors.map(player => [player.id, player]));
+  // Meeting visibility can change after a reload or a new game. Do not leave
+  // a stale window describing a seat that is no longer in this standings set.
+  const visibleIds = hudOpenDossiers.filter(id => playersById.has(id));
+  const visibleSet = new Set(visibleIds);
+  for (const element of [...dossierWindows.querySelectorAll("[data-dossier-window]")]) {
+    const id = +element.dataset.dossierWindow;
+    if (!visibleSet.has(id)) unregisterDossierWidget(id);
+  }
+  hudOpenDossiers = visibleIds;
+
+  for (const id of hudOpenDossiers) {
+    const player = playersById.get(id);
+    const name = dossierWidgetName(id);
+    let element = dossierWindows.querySelector(`[data-dossier-window="${id}"]`);
+    if (!element) {
+      element = document.createElement("aside");
+      element.className = "dossier-window";
+      element.dataset.dossierWindow = id;
+      element.dataset.layoutWidget = name;
+      element.setAttribute("role", "dialog");
+      element.setAttribute("aria-modal", "false");
+      element.setAttribute("aria-labelledby", `dossier-title-${id}`);
+      dossierWindows.appendChild(element);
+      registerDossierWidget(id, element);
+    }
+    const next = civDossier(player, rankById.get(id), relationById.get(id)) +
+      hudResizeHandles(`${player.civ} dossier`);
+    // Keep the pointer-owning title/edge attached for the whole gesture. Live
+    // state can still update every other dossier while one window is moving.
+    if (hudLayoutGesture?.name === name || element.dossierHtml === next) continue;
+    const scrollTop = element.querySelector(".civ-dossier")?.scrollTop || 0;
+    element.dossierHtml = next;
+    element.style.setProperty("--civ", pcol(id));
+    element.innerHTML = next;
+    const body = element.querySelector(".civ-dossier");
+    if (body) body.scrollTop = scrollTop;
+  }
+}
+
+// A dossier answers "what is this civilization actually trying to do", which
+// no single standings row can carry. It is rendered into an independent live
+// window so another player's answer can remain beside it for comparison.
 function civDossier(p, rank, relation) {
   const plan = p.ai_plan || null;
   const y = p.yields || {};
@@ -15117,12 +15988,15 @@ function civDossier(p, rank, relation) {
     p.alive ? "" : `<span class="dossier-tag war">Defeated</span>`,
   ].filter(Boolean).join("");
 
-  return `<div class="civ-dossier" style="--civ:${pcol(p.id)}">` +
-    `<div class="dossier-head">` +
-    `<span class="dossier-title">${p.civ} · ${p.leader || "Unknown leader"}</span>` +
-    `<span class="dossier-tags">${tags}</span>` +
+  return `<div class="dossier-head">` +
+    `<div class="dossier-drag widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
+    `aria-label="Move ${p.civ} dossier; use arrow keys or drag" title="Drag to move · arrow keys also move">` +
+    `<span class="dossier-title" id="dossier-title-${p.id}">${p.civ} · ${p.leader || "Unknown leader"}</span>` +
+    `<span class="dossier-tags">${tags}</span></div>` +
     `<button class="dossier-btn" data-hud-action="watch" data-hud-civ="${p.id}">◉ Watch</button>` +
-    `<button class="dossier-btn" data-hud-action="dossier" data-hud-civ="${p.id}" aria-label="Close dossier">✕</button></div>` +
+    `<button class="overlay-close" type="button" data-hud-action="dossier" data-hud-civ="${p.id}" ` +
+    `aria-label="Close ${p.civ} dossier" title="Close ${p.civ} dossier">✕</button></div>` +
+    `<div class="civ-dossier">` +
     `<div class="dossier-grid">` +
     `<section class="dossier-section"><h4>Grand strategy</h4>${strategyBody}</section>` +
     `<section class="dossier-section"><h4>Victory tracker</h4>${tracks}</section>` +
@@ -16068,6 +16942,9 @@ function drawCityScreen() {
   const buys = state.legal_actions.filter(a =>
     (a.type === "buy" || a.type === "buy_building" || a.type === "buy_district") &&
     a.city === city.id);
+  const plotBuys = state.legal_actions.filter(a =>
+    a.type === "buy_plot" && a.city === city.id)
+    .sort((a, b) => a.cost - b.cost || a.pos[0] - b.pos[0] || a.pos[1] - b.pos[1]);
   const entries = new Map();
   for (const action of produce) {
     const key = itemKey(action.item);
@@ -16092,6 +16969,24 @@ function drawCityScreen() {
   const order = ["Districts", "Buildings", "Units", "Wonders", "Projects"];
   const currentKey = current ? itemKey(current) : null;
   let build = "";
+  if (plotBuys.length) {
+    build += `<div class="city-group"><div class="city-group-head">Buy plots` +
+      `<span>${plotBuys.length} affordable</span></div><div class="build-list">` +
+      plotBuys.map(action => {
+        const tile = TMAP.get(key(action.pos));
+        const name = tile
+          ? titleCase(tile.resource || tile.feature || tile.terrain || "plot")
+          : "Plot";
+        const yieldNote = tile ? yieldWords(tileYieldFull(tile)).join(" · ") : "";
+        return `<div class="build-item"><div class="build-row">` +
+          `<span class="build-name">${name} @ ${action.pos.join(",")}</span>` +
+          `<span class="build-cost">${Math.round(action.cost)} 💰</span></div>` +
+          (yieldNote ? `<div class="build-note">${yieldNote}</div>` : "") +
+          `<div class="build-actions">` + cityAct(action,
+            `Buy · ${Math.round(action.cost)} Gold`, "primary",
+            "Annex this adjacent plot immediately") + `</div></div>`;
+      }).join("") + `</div></div>`;
+  }
   if (current) {
     const cost = city.queue_cost || itemCost(current);
     const turns = turnsFor(cost, perTurn, banked);
@@ -17097,22 +17992,65 @@ const CONTINENT_NAMES = ["Africa", "Amasia", "America", "Antarctica", "Arctica",
   "North America", "Novopangaea", "Nuna", "Oceania", "Pangaea",
   "Pangaea Ultima", "Pannotia", "Rodinia", "Siberia", "South America",
   "Terra Australis", "Ur"];
+const SETTLE_DISK = [];
+for (let q = -2; q <= 2; q++) for (let r = -2; r <= 2; r++)
+  if (Math.max(Math.abs(q), Math.abs(r), Math.abs(q + r)) <= 2)
+    SETTLE_DISK.push([q, r]);
+function settleWaterAccess(t) {
+  if (t.river || DIRS.some(d => nbrTile(t.pos, d)?.feature === "oasis")) return "fresh";
+  if (DIRS.some(d => { const n = nbrTile(t.pos, d); return n && isWater(n); })) return "coast";
+  return "dry";
+}
 function settleValue(pos) {
-  let v = 0;
-  const D = [[0,0],[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];
-  for (const dd of D) {
+  let value = 0;
+  for (const dd of SETTLE_DISK) {
     const t = nbrTile(pos, dd);
-    if (!t) continue;
+    if (!t || (t.owner !== null && t.owner !== undefined && t.owner !== state.player)) continue;
+    const distance = Math.max(Math.abs(dd[0]), Math.abs(dd[1]), Math.abs(dd[0] + dd[1]));
+    const weight = distance <= 1 ? 1 : .45;
     const y = tileYieldFull(t);
-    v += y.food * 1.2 + y.production + y.gold * 0.3;
+    value += weight * (y.food * 2 + y.production * 2.2 + y.gold * .7 +
+      y.science * 1.2 + y.culture * 1.2 + y.faith * .4);
+    const resource = ruleSpec("resources", t.resource);
+    if (resource) value += weight * (resource.class === "luxury" ? 5
+      : resource.class === "strategic" ? 4 : 1.5);
   }
-  return v;
+  const tile = TMAP.get(key(pos));
+  const water = tile ? settleWaterAccess(tile) : "dry";
+  value += water === "fresh" ? 14 : water === "coast" ? 6 : -5;
+  if (tile && Number.isFinite(tile.appeal)) value += Math.max(-3, tile.appeal) * .7;
+  const enemyDistance = Math.min(20, ...state.cities
+    .filter(city => city.owner !== state.player && !state.players[city.owner]?.is_barbarian)
+    .map(city => whexDist(pos, city.pos)));
+  if (enemyDistance < 6) value -= (6 - enemyDistance) * 6;
+  return value;
 }
 function validSettle(t) {
-  if (isWater(t) || t.terrain === "mountain") return false;
+  if (isWater(t) || t.terrain === "mountain" || tileImpassable(t)) return false;
   if (t.owner !== null && t.owner !== undefined && t.owner !== state.player) return false;
   for (const c of state.cities) if (whexDist(t.pos, c.pos) < 4) return false;
   return true;
+}
+let settleLensCache = { state:null, rules:null, sites:new Map(), low:0, high:1 };
+function settlerLensSites() {
+  if (settleLensCache.state === state && settleLensCache.rules === RULES) return settleLensCache;
+  const sites = new Map();
+  const values = [];
+  for (const tile of state.map.tiles) {
+    if (!validSettle(tile)) continue;
+    const value = settleValue(tile.pos);
+    const site = {tile, value, water:settleWaterAccess(tile)};
+    sites.set(key(tile.pos), site); values.push(value);
+  }
+  values.sort((a, b) => a - b);
+  const at = fraction => values[Math.min(values.length - 1,
+    Math.max(0, Math.floor((values.length - 1) * fraction)))] ?? 0;
+  const low = at(.12), high = Math.max(low + 1, at(.92));
+  settleLensCache = {state, rules:RULES, sites, low, high};
+  return settleLensCache;
+}
+function settleSiteQuality(site, lens = settlerLensSites()) {
+  return Math.max(0, Math.min(1, (site.value - lens.low) / (lens.high - lens.low)));
 }
 function tackStoreKey() { return "civvis-tacks-" + (lastSeed === null ? "x" : lastSeed); }
 function loadTacks() {
@@ -17120,15 +18058,34 @@ function loadTacks() {
   catch { tacks = []; }
 }
 function saveTacks() { localStorage.setItem(tackStoreKey(), JSON.stringify(tacks)); }
+function syncMapLensControls() {
+  for (const button of document.querySelectorAll("[data-map-lens]")) {
+    const active = button.dataset.mapLens === mapLens;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  }
+}
+function setMapLens(next) {
+  mapLens = mapLens === next ? null : next;
+  tackMode = false;
+  syncMapLensControls(); modeline();
+  if (state) { draw(); drawMini(); }
+}
+for (const button of document.querySelectorAll("[data-map-lens]"))
+  button.onclick = () => setMapLens(button.dataset.mapLens);
 function modeline() {
   const m = [];
-  if (lensOn) m.push("SETTLER LENS — greener is better (2 to exit)");
+  if (mapLens === "settler")
+    m.push("SETTLER LENS — green is stronger · blue edge has fresh water (2 to exit)");
+  if (mapLens === "empire")
+    m.push("EMPIRE LENS — major frontiers emphasized · city-states translucent (4 to exit)");
   if (tackMode) m.push("TACK MODE — click to place/remove a 📍 (3 to exit)");
   if (interfaceMode && INTERFACE_MODE_NOTE[interfaceMode]) m.push(INTERFACE_MODE_NOTE[interfaceMode]);
   const el = document.getElementById("modeline");
   el.textContent = m.join("   ");
   el.style.display = m.length ? "block" : "none";
 }
+syncMapLensControls();
 modeline();
 
 // ---------------------------------------------------------------- camera
@@ -17145,22 +18102,28 @@ function cameraYBounds(scale = cam.scale) {
   if (planetMap()) {
     return {min:0, max:S * 1.5 * Math.max(1, state.map.height - 1)};
   }
+  if (mapWrapsY()) return null;
   if (Math.abs(SINR) > 0.001) return null;
-  const halfVisible = area.clientHeight / (2 * Math.max(0.25, scale) * YS);
+  const actualScale = Math.max(.01, scale);
+  const focusBounds = mapFocusBounds();
+  const aboveFocus = (area.clientHeight / 2 - focusBounds.top) / (actualScale * YS);
+  const belowFocus = (focusBounds.bottom - area.clientHeight / 2) / (actualScale * YS);
   const top = -S;
   const bottom = S * 1.5 * Math.max(0, state.map.height - 1) + S + MODE.skirt / YS;
-  if (bottom - top <= halfVisible * 2) {
+  if (bottom - top <= aboveFocus + belowFocus) {
     const middle = (top + bottom) / 2;
-    return { min: middle, max: middle };
+    const focus = (focusBounds.top + focusBounds.bottom) / 2;
+    const centered = middle - (focus - area.clientHeight / 2) / (actualScale * YS);
+    return { min:centered, max:centered };
   }
-  return { min: top + halfVisible, max: bottom - halfVisible };
+  return { min:top + aboveFocus, max:bottom - belowFocus };
 }
 function clampCameraY(y, scale = cam.scale) {
   const bounds = cameraYBounds(scale);
   return bounds ? Math.max(bounds.min, Math.min(bounds.max, y)) : y;
 }
 function clearCameraInertia() {
-  cameraInertia = {vx:0, vy:0, vrot:0, vtilt:0, spin:null};
+  cameraInertia = stoppedCameraInertia();
 }
 function updateCameraFollowChip() {
   const chip = document.getElementById("cinema-follow");
@@ -17206,17 +18169,11 @@ document.getElementById("cinema-follow").onclick = () => {
   else if (DIRECTOR && directorGoal?.kind === "character") setDirector(false);
 };
 
-// The map composes inside the rectangle the chrome actually leaves it, rather
-// than a guessed fraction of the window: below whichever of the two top
-// instruments hangs lower, down to the real bottom edge, right of the command
-// deck and the world map's own midpoint, and left of the victory rail.
-//
-// Every edge is measured, because all three instruments can be dragged and
-// resized and none of their positions may be assumed. A layout that leaves no
-// usable band on an axis — an instrument parked down the whole height, the
-// world map dragged left of the deck — hands that axis back its full extent
-// instead of aiming the camera off-screen.
-const MIN_MAP_FOCUS_BAND = 120;
+// The map composes at the exact midpoint of the uncovered central stage. Its
+// horizontal borders are the command deck's right edge and the victory
+// tracker's left edge; each missing widget hands its side back to the screen.
+// Vertically, the player HUD's bottom edge is the top border and the screen's
+// bottom is the other. No minimap or percentage heuristic gets a vote.
 function mapOverlayVisible(name) {
   if (OVERLAY_VISIBILITY[name] === false) return false;
   if (cinemaActive() && ["players", "minimap", "controls"].includes(name)) return false;
@@ -17245,29 +18202,30 @@ function mapFocusBounds() {
     if (sideRect.width)
       left = Math.max(0, Math.min(width, sideRect.right - areaRect.left));
   }
-  // The world map sits in the lower-left corner, so it gives up only half its
-  // width: reserving all of it would shove the world right for a widget nobody
-  // watches while the camera moves. The victory rail is not a corner widget at
-  // all — it stands the whole height of the right edge — so the world it leaves
-  // behind genuinely ends where the rail begins.
-  const minimap = mapWidgetBox("minimap", areaRect);
-  if (minimap) left = Math.max(left, (minimap.left + minimap.right) / 2);
   const victory = mapWidgetBox("victory", areaRect);
-  if (victory) right = Math.min(right, victory.left);
-  // Only the standings hang over the top of the map now.
+  if (victory) right = Math.max(0, Math.min(width, victory.left));
   const players = mapWidgetBox("players", areaRect);
-  if (players) top = Math.max(top, players.bottom);
-  if (right - left < MIN_MAP_FOCUS_BAND) { left = 0; right = width; }
-  if (bottom - top < MIN_MAP_FOCUS_BAND) { top = 0; bottom = height; }
+  if (players) top = Math.max(0, Math.min(height, players.bottom));
   return {left, right, top, bottom};
 }
 function mapFocusPoint() {
   const bounds = mapFocusBounds();
   return {x:(bounds.left + bounds.right) / 2, y:(bounds.top + bounds.bottom) / 2};
 }
+function reframeIfMapFocusBoundsChanged(before, world) {
+  if (!before || !world) return;
+  const after = mapFocusBounds();
+  if (["left", "right", "top", "bottom"].some(edge =>
+      Math.abs(after[edge] - before[edge]) > .5))
+    reframeCurrentMapFocus(world);
+}
 function cameraCenterForWorld(wx, wy, scale = cam.scale, focus = mapFocusPoint()) {
-  const vx = (focus.x - area.clientWidth / 2) / Math.max(.25, scale);
-  const vy = (focus.y - area.clientHeight / 2) / Math.max(.25, scale) / YS;
+  // Full-world framing may legitimately zoom below the interactive .25 floor.
+  // Use the actual fitted scale so this remains the inverse of screenToWorld
+  // and a moving HUD edge keeps the same ground beneath the stage center.
+  const actualScale = Math.max(.01, scale);
+  const vx = (focus.x - area.clientWidth / 2) / actualScale;
+  const vy = (focus.y - area.clientHeight / 2) / actualScale / YS;
   return [wx - (COSR * vx + SINR * vy),
           wy - (-SINR * vx + COSR * vy)];
 }
@@ -17291,7 +18249,8 @@ function cameraTargetFor(pos, scale = cam.scale) {
   // The copy the map actually drew, which on an open chart is not the one
   // nearest the camera.
   const x = wrapX(S * SQ3 * (pos[0] + pos[1] / 2));
-  return cameraCenterForWorld(x, S * 1.5 * pos[1], scale);
+  const y = wrapY(S * 1.5 * pos[1]);
+  return cameraCenterForWorld(x, y, scale);
 }
 function applyCameraAnchor(wx, wy, sx, sy, scale = cam.scale) {
   cam.scale = planetMap() ? planetScaleClamp(scale)
@@ -17340,38 +18299,52 @@ function nudgeCamera(screenX, screenY) {
   const dx = COSR * vx + SINR * vy, dy = -SINR * vx + COSR * vy;
   cameraFlight = {x:cam.x + dx, y:clampCameraY(cam.y + dy), scale:cam.scale};
 }
-function zoomAt(f, sx, sy) {
+function zoomAt(f, sx, sy, skyAnchor = null) {
   if (planetMap()) {
-    const base = cameraZoom?.scale || cam.scale;
-    cameraFlight = null; cameraZoom = null; clearCameraInertia();
+    const pending = cameraZoom?.kind === "planet" ? cameraZoom : null;
+    const base = pending?.scale || cam.scale;
+    const basePan = pending?.pan || SKY_PAN;
+    cameraFlight = null; clearCameraInertia();
     const [stageX, stageY] = planetStageCenter();
-    const before = planetEarthRadius(cam.scale);
+    const before = planetEarthRadius(base);
     // A chart has no system to travel through. Everything below is about
     // holding one body still under the pointer so the zoom walks toward it,
     // and a people who have not proved their world round have exactly one
     // sheet and nowhere to go: it stays under the middle of the stage.
     if (!knowsGlobe()) {
-      skyReturnHome();
-      cam.scale = planetScaleClamp(base * f);
-      draw(); drawMini();
+      const scale = planetScaleClampAt(base * f, {x:0, y:0});
+      const target = {kind:"planet", scale, pan:{x:0, y:0}};
+      if (REDUCED_MOTION_QUERY.matches) {
+        cameraZoom = null; cam.scale = scale; skyReturnHome();
+        draw(); drawMini();
+      } else cameraZoom = target;
       return;
     }
     if (sx === undefined)
-      [sx, sy] = f > 1 ? skyZoomAnchor(before, stageX, stageY) : [stageX, stageY];
+      [sx, sy] = f > 1 ? skyZoomAnchor(before, stageX, stageY, basePan)
+                       : [stageX, stageY];
     // Which point of the system the pointer is over, in Earth radii from the
     // Earth. Holding that point still across the step is what makes scrolling
     // in over Mars a way of *going* to Mars: aim at a body and the zoom walks
     // toward it, aim at empty sky and the zoom stays where you are looking.
-    const pointerX = SKY_PAN.x + (sx - stageX) / before;
-    const pointerY = SKY_PAN.y + (sy - stageY) / before;
+    const pointerX = skyAnchor?.x ?? basePan.x + (sx - stageX) / before;
+    const pointerY = skyAnchor?.y ?? basePan.y + (sy - stageY) / before;
     // A globe's zoom-out does not stop at the globe. It carries on until the
     // rest of the system is in frame, which is a fixed apparent size for the
     // Earth rather than a fixed number, because a bigger world starts bigger.
-    cam.scale = planetScaleClamp(base * f);
-    const after = planetEarthRadius(cam.scale);
-    SKY_PAN = {x:pointerX - (sx - stageX) / after, y:pointerY - (sy - stageY) / after};
-    skySettleCamera(after, f);
-    draw(); drawMini();
+    const scale = planetScaleClampAt(base * f, basePan);
+    const after = planetEarthRadius(scale);
+    const anchored = {x:pointerX - (sx - stageX) / after,
+                      y:pointerY - (sy - stageY) / after};
+    // A two-finger translation with no scale change is a deliberate pan, not
+    // a request to recenter the nearest world. Once the pinch is zooming, the
+    // same gentle body capture as the wheel keeps the approach intentional.
+    const settling = !skyAnchor || Math.abs(Math.log(Math.max(1e-6, f))) > .003;
+    const pan = settling ? skySettledPan(anchored, after, f) : anchored;
+    if (REDUCED_MOTION_QUERY.matches) {
+      cameraZoom = null; cam.scale = scale; SKY_PAN = pan;
+      draw(); drawMini();
+    } else cameraZoom = {kind:"planet", scale, pan};
     return;
   }
   if (sx === undefined) { sx = area.clientWidth / 2; sy = area.clientHeight / 2; }
@@ -17402,12 +18375,31 @@ function advanceUserCameraMotion(now = performance.now()) {
   }
   if (cameraZoom) {
     const ease = 1 - Math.pow(.012, dt / 1000);
-    const nextScale = cam.scale + (cameraZoom.scale - cam.scale) * ease;
-    applyCameraAnchor(cameraZoom.wx, cameraZoom.wy, cameraZoom.sx, cameraZoom.sy, nextScale);
-    active = true;
-    if (Math.abs(cameraZoom.scale - cam.scale) < .001) {
-      applyCameraAnchor(cameraZoom.wx, cameraZoom.wy, cameraZoom.sx, cameraZoom.sy, cameraZoom.scale);
-      cameraZoom = null;
+    if (cameraZoom.kind === "planet") {
+      // Scale is multiplicative, so interpolate it logarithmically: travelling
+      // from a tile to the full system keeps one visual pace instead of racing
+      // through the small worlds and crawling over the last large one. Pan and
+      // scale share the same ease, which keeps the chosen world on one path.
+      cam.scale *= Math.exp(Math.log(cameraZoom.scale / Math.max(1e-6, cam.scale)) * ease);
+      SKY_PAN = {x:SKY_PAN.x + (cameraZoom.pan.x - SKY_PAN.x) * ease,
+                 y:SKY_PAN.y + (cameraZoom.pan.y - SKY_PAN.y) * ease};
+      const scaleLeft = Math.abs(Math.log(cameraZoom.scale / Math.max(1e-6, cam.scale)));
+      const panLeft = Math.hypot(cameraZoom.pan.x - SKY_PAN.x,
+                                 cameraZoom.pan.y - SKY_PAN.y) * planetEarthRadius();
+      active = true;
+      if (scaleLeft < .0008 && panLeft < .25) {
+        cam.scale = cameraZoom.scale; SKY_PAN = {...cameraZoom.pan};
+        cameraZoom = null;
+      }
+    } else {
+      const nextScale = cam.scale + (cameraZoom.scale - cam.scale) * ease;
+      applyCameraAnchor(cameraZoom.wx, cameraZoom.wy, cameraZoom.sx, cameraZoom.sy, nextScale);
+      active = true;
+      if (Math.abs(cameraZoom.scale - cam.scale) < .001) {
+        applyCameraAnchor(cameraZoom.wx, cameraZoom.wy,
+                          cameraZoom.sx, cameraZoom.sy, cameraZoom.scale);
+        cameraZoom = null;
+      }
     }
   } else if (cameraFlight) {
     const ease = 1 - Math.pow(.018, dt / 1000);
@@ -17437,13 +18429,26 @@ function advanceUserCameraMotion(now = performance.now()) {
   if (!dragState && !cameraFlight && !cameraZoom) {
     // A globe glides as a turn about a fixed axis rather than as a drift in
     // columns and rows, so it coasts over a pole the same way the drag did.
-    const spin = cameraInertia.spin;
+    const spin = cameraInertia.spin, skyPan = cameraInertia.skyPan;
+    const skyTurn = cameraInertia.skyTurn;
     const speed = Math.abs(cameraInertia.vx) + Math.abs(cameraInertia.vy) +
       Math.abs(cameraInertia.vrot) * 80 + Math.abs(cameraInertia.vtilt) * 80 +
-      (spin ? Math.abs(spin.rate) * 80 : 0);
+      (spin ? Math.abs(spin.rate) * 80 : 0) +
+      (skyPan ? Math.hypot(skyPan.vx, skyPan.vy) * planetEarthRadius() : 0) +
+      (skyTurn ? Math.hypot(skyTurn.vlongitude, skyTurn.vlatitude) * 80 : 0);
     if (speed > .002) {
       const basis = spin && planetBasisNow();
       if (basis) applyPlanetBasis(planetSpin(basis, spin.axis, spin.rate * dt));
+      if (skyPan) {
+        SKY_PAN.x += skyPan.vx * dt;
+        SKY_PAN.y += skyPan.vy * dt;
+      }
+      if (skyTurn) {
+        const view = skyView(skyTurn.bodyId);
+        view.longitude += skyTurn.vlongitude * dt;
+        view.latitude = Math.max(-1.45, Math.min(1.45,
+          view.latitude + skyTurn.vlatitude * dt));
+      }
       cam.x += cameraInertia.vx * dt; cam.y += cameraInertia.vy * dt;
       if (Math.abs(cameraInertia.vrot) > .00001) setRot(cam.rot + cameraInertia.vrot * dt);
       if (Math.abs(cameraInertia.vtilt) > .00001) setTilt(cinematicYS + cameraInertia.vtilt * dt);
@@ -17452,6 +18457,10 @@ function advanceUserCameraMotion(now = performance.now()) {
       cameraInertia.vx *= decay; cameraInertia.vy *= decay;
       cameraInertia.vrot *= decay; cameraInertia.vtilt *= decay;
       if (spin) spin.rate *= decay;
+      if (skyPan) { skyPan.vx *= decay; skyPan.vy *= decay; }
+      if (skyTurn) {
+        skyTurn.vlongitude *= decay; skyTurn.vlatitude *= decay;
+      }
       active = true;
     } else clearCameraInertia();
   }
@@ -17607,7 +18616,7 @@ function fitFullWorldView(preservePresentation = false) {
 
   const centers = state.map.tiles.map(tile => ({
     x:wrapX(S * SQ3 * (tile.pos[0] + tile.pos[1] / 2)),
-    y:S * 1.5 * tile.pos[1],
+    y:wrapY(S * 1.5 * tile.pos[1]),
   }));
   // Fit in the frame the map is actually seen in. A world at any bearing then
   // lands inside the stage instead of having its corners cut off, and a hex
@@ -17679,31 +18688,35 @@ function observedFrameRect() {
   return {left, right, top, bottom};
 }
 
-// A cylindrical map has no privileged left edge. Cut it at the largest empty
-// longitude between observed civilizations, producing the shortest span that
-// contains their anchors instead of sometimes fitting almost two worlds.
+// A wrapped axis has no privileged edge. Cut it at the largest empty interval,
+// producing the shortest rectangle that contains the observed anchors instead
+// of sometimes fitting almost two copies of the world.
+function unwrapPointAxis(points, coordinate, period, wraps) {
+  if (!wraps || points.length < 2) return points;
+  const values = points.map((point, index) => ({
+    value:((point[coordinate] % period) + period) % period, index,
+  })).sort((a, b) => a.value - b.value);
+  let gapIndex = values.length - 1;
+  let largestGap = values[0].value + period - values[values.length - 1].value;
+  for (let index = 0; index < values.length - 1; index++) {
+    const gap = values[index + 1].value - values[index].value;
+    if (gap > largestGap) { largestGap = gap; gapIndex = index; }
+  }
+  const start = values[(gapIndex + 1) % values.length].value;
+  return points.map(point => {
+    const copy = {...point};
+    copy[coordinate] = ((point[coordinate] % period) + period) % period;
+    if (copy[coordinate] < start) copy[coordinate] += period;
+    return copy;
+  });
+}
 function unwrapObservedPoints(anchors) {
-  const points = anchors.map(anchor => ({
+  let points = anchors.map(anchor => ({
     x:S * SQ3 * (anchor.pos[0] + anchor.pos[1] / 2),
     y:S * 1.5 * anchor.pos[1],
   }));
-  if (!mapWrapsX() || points.length < 2) return points;
-  const width = WW();
-  const wrapped = points.map((point, index) => ({
-    x:((point.x % width) + width) % width, index,
-  })).sort((a, b) => a.x - b.x);
-  let gapIndex = wrapped.length - 1;
-  let largestGap = wrapped[0].x + width - wrapped[wrapped.length - 1].x;
-  for (let index = 0; index < wrapped.length - 1; index++) {
-    const gap = wrapped[index + 1].x - wrapped[index].x;
-    if (gap > largestGap) { largestGap = gap; gapIndex = index; }
-  }
-  const start = wrapped[(gapIndex + 1) % wrapped.length].x;
-  return points.map(point => {
-    let x = ((point.x % width) + width) % width;
-    if (x < start) x += width;
-    return {x, y:point.y};
-  });
+  points = unwrapPointAxis(points, "x", WW(), mapWrapsX());
+  return unwrapPointAxis(points, "y", WH(), mapWrapsY());
 }
 
 function observedViewGoal(anchors) {
@@ -18045,15 +19058,24 @@ function endMapPointer(ev) {
     dragState = null;
     if (released && dragMoved && performance.now() - released.lastT < 90 &&
         !REDUCED_MOTION_QUERY.matches) {
-      // `turned` rather than `basis`: out in the system the sky took the drag,
-      // and the globe it left alone must not glide off on its own afterwards.
+      // Each captured surface keeps the motion it actually received: Earth
+      // spins about its final 3D axis, another world keeps turning, and an
+      // empty-sky drag coasts the camera through the system.
       cameraInertia = released.rotate
-        ? {vx:0, vy:0, vrot:released.vrot * .32, vtilt:released.vtilt * .25}
+        ? stoppedCameraInertia({vrot:released.vrot * .32,
+                                vtilt:released.vtilt * .25})
+        : released.skyMotion?.kind === "pan"
+        ? stoppedCameraInertia({skyPan:{vx:released.skyMotion.vx,
+                                        vy:released.skyMotion.vy}})
+        : released.skyMotion?.kind === "turn"
+        ? stoppedCameraInertia({skyTurn:{bodyId:released.skyMotion.bodyId,
+                                         vlongitude:released.skyMotion.vlongitude,
+                                         vlatitude:released.skyMotion.vlatitude}})
         : released.turned
-        ? {vx:0, vy:0, vrot:0, vtilt:0, spin:planetGlide(released.vpx, released.vpy)}
+        ? stoppedCameraInertia({spin:planetGlide(released.vpx, released.vpy)})
         : released.basis
-        ? {vx:0, vy:0, vrot:0, vtilt:0, spin:null}
-        : {vx:released.vx, vy:released.vy, vrot:0, vtilt:0};
+        ? stoppedCameraInertia()
+        : stoppedCameraInertia({vx:released.vx, vy:released.vy});
     }
     return;
   }
@@ -18095,9 +19117,16 @@ function beginTouchTransform() {
   const my = (points[0].y + points[1].y) / 2 - rect.top;
   const dx = points[1].x - points[0].x, dy = points[1].y - points[0].y;
   const [wx, wy] = screenToWorld(mx, my);
+  let skyAnchor = null;
+  if (planetMap()) {
+    const [stageX, stageY] = planetStageCenter();
+    const radius = Math.max(.001, planetEarthRadius());
+    skyAnchor = {x:SKY_PAN.x + (mx - stageX) / radius,
+                 y:SKY_PAN.y + (my - stageY) / radius};
+  }
   touchGesture = {mode:"transform", mx, my, wx, wy, distance:Math.hypot(dx, dy),
                   angle:Math.atan2(dy, dx), scale:cam.scale, rot:cam.rot,
-                  basis:planetBasisNow(), controlled:false};
+                  basis:planetBasisNow(), skyAnchor, controlled:false};
   clearCameraInertia(); cameraFlight = null; cameraZoom = null;
 }
 cv.addEventListener("pointerdown", ev => {
@@ -18140,7 +19169,8 @@ cv.addEventListener("pointermove", ev => {
         // A globe has no world plane to anchor a pinch against, and its zoom
         // runs far below the flat map's floor, so it goes through the same path
         // the wheel does and reaches the rest of the system the same way.
-        zoomAt(want / Math.max(1e-4, cam.scale), mx, my);
+        const base = cameraZoom?.kind === "planet" ? cameraZoom.scale : cam.scale;
+        zoomAt(want / Math.max(1e-4, base), mx, my, touchGesture.skyAnchor);
       } else {
         applyCameraAnchor(touchGesture.wx, touchGesture.wy, mx, my,
                           Math.max(.25, Math.min(3.2, want)));
@@ -18185,11 +19215,18 @@ function endMapTouch(ev) {
   mapTouches.delete(ev.pointerId);
   if (!mapTouches.size) {
     if (released?.mode === "pan" && released.controlled && !REDUCED_MOTION_QUERY.matches)
-      cameraInertia = released.turned
-        ? {vx:0, vy:0, vrot:0, vtilt:0, spin:planetGlide(released.vpx, released.vpy)}
+      cameraInertia = released.skyMotion?.kind === "pan"
+        ? stoppedCameraInertia({skyPan:{vx:released.skyMotion.vx,
+                                        vy:released.skyMotion.vy}})
+        : released.skyMotion?.kind === "turn"
+        ? stoppedCameraInertia({skyTurn:{bodyId:released.skyMotion.bodyId,
+                                         vlongitude:released.skyMotion.vlongitude,
+                                         vlatitude:released.skyMotion.vlatitude}})
+        : released.turned
+        ? stoppedCameraInertia({spin:planetGlide(released.vpx, released.vpy)})
         : released.basis
-        ? {vx:0, vy:0, vrot:0, vtilt:0, spin:null}
-        : {vx:released.vx, vy:released.vy, vrot:0, vtilt:0};
+        ? stoppedCameraInertia()
+        : stoppedCameraInertia({vx:released.vx, vy:released.vy});
     touchGesture = null;
     setTimeout(() => { if (!mapTouches.size) dragMoved = false; }, 60);
   } else if (mapTouches.size === 1) {
@@ -18910,9 +19947,9 @@ function togglePanel(force, persist = true) {
 // CIVVIS has nothing to bind to, and the CIVVIS-only extras, which live only
 // on keys and chords Civ 6 leaves free.
 //
-// Three keys are deliberate overrides that keep their CIVVIS meaning: 1 is
-// next action, 2 is the settler lens and 3 places a tack. Civ 6 spends 1, 2
-// and 3 on the religion, continent and appeal lenses, none of which exist here.
+// Four keys are deliberate overrides that keep their CIVVIS meaning: 1 is
+// next action, 2 is the settler lens, 3 places a tack and 4 is the empire
+// lens. Civ 6 spends 1–4 on lenses CIVVIS does not otherwise expose.
 // ===================================================================
 
 // ---- map overlays. Each setter is the one place that writes the flag, the
@@ -18944,6 +19981,35 @@ function setEdgePan(on) {
   const box = document.getElementById("edgepanchk");
   if (box) box.checked = EDGE_PAN;
   if (!EDGE_PAN) edgePanVector = null;
+}
+function syncFlatMapWrapControls() {
+  const group = document.getElementById("flat-map-wrap-settings");
+  if (group) group.hidden = !!state && planetMap();
+  const xBox = document.getElementById("wrapxchk");
+  const yBox = document.getElementById("wrapychk");
+  if (xBox) xBox.checked = FLAT_MAP_WRAP_X;
+  if (yBox) yBox.checked = FLAT_MAP_WRAP_Y;
+}
+function setFlatMapWrap(axis, on) {
+  if (axis !== "x" && axis !== "y") return;
+  const enabled = !!on;
+  if (axis === "x") {
+    FLAT_MAP_WRAP_X = enabled;
+    localStorage.setItem("civvis-flat-map-wrap-x", enabled ? "1" : "0");
+  } else {
+    FLAT_MAP_WRAP_Y = enabled;
+    localStorage.setItem("civvis-flat-map-wrap-y", enabled ? "1" : "0");
+  }
+  syncFlatMapWrapControls();
+  if (!state || planetMap()) return;
+  cameraFlight = null; cameraZoom = null; clearCameraInertia();
+  // A camera can be several copies away after a long wrapped pan. When that
+  // axis becomes bounded, carry it to the equivalent place in the base copy
+  // before clamping so the map cannot appear to vanish on toggle-off.
+  if (!enabled && axis === "x") cam.x = wrapNear(cam.x, WW() / 2, WW());
+  if (!enabled && axis === "y") cam.y = wrapNear(cam.y, WH() / 2, WH());
+  cam.y = clampCameraY(cam.y);
+  draw(); drawMini();
 }
 
 // ---- interface modes.
@@ -19241,8 +20307,11 @@ const CIV6_BINDINGS = [
 // here can shadow a binding somebody arrived with.
 const CIVVIS_BINDINGS = [
   {id: "NextAction", key: "1", run: () => nextAction()},
-  {id: "SettlerLens", key: "2", run: () => { lensOn = !lensOn; tackMode = false; modeline(); draw(); }},
-  {id: "PlaceTack", key: "3", spectator: true, run: () => { tackMode = !tackMode; lensOn = false; modeline(); draw(); }},
+  {id: "SettlerLens", key: "2", spectator: true, run: () => setMapLens("settler")},
+  {id: "PlaceTack", key: "3", spectator: true, run: () => {
+    tackMode = !tackMode; mapLens = null; syncMapLensControls(); modeline(); draw();
+  }},
+  {id: "EmpireLens", key: "4", spectator: true, run: () => setMapLens("empire")},
   {id: "Diplomacy", key: "F8", run: () => toggleDiplomacy()},
   {id: "QuickDeals", key: "d", ctrl: true, run: () => toggleTrade()},
   {id: "NextUnitTab", key: "Tab", run: () => advanceToNextUnit(true)},
@@ -19314,13 +20383,19 @@ document.addEventListener("keydown", ev => {
     return;
   }
   if (ev.key === "Escape") {
-    // The dossier is the topmost thing Escape can close, so it goes first.
-    if (hudExpanded !== null) { hudExpanded = null; drawPlayerHud(); return; }
+    // Dossiers are non-modal, but Escape still dismisses the most recently
+    // opened comparison window before unwinding map modes.
+    if (hudOpenDossiers.length) {
+      hudOpenDossiers.pop();
+      drawPlayerHud();
+      return;
+    }
     if (clearInterfaceMode()) return;
     if (cameraFollowManual) { stopCameraFollow(); return; }
     if (fullscreenMapRestore) { toggleFullscreenMap(); return; }
     if (cinemaActive()) { setCinemaMode(false); return; }
-    sel = null; selCity = null; lensOn = false; tackMode = false;
+    sel = null; selCity = null; mapLens = null; tackMode = false;
+    syncMapLensControls();
     modeline(); draw(); drawSide(); drawUbar();
   }
 });
@@ -19561,6 +20636,21 @@ function selectedSimulationSettings() {
           // A spectated world has nobody to hand a leader or a handicap to.
           ...(gameMode === "ai_sim" ? {} : {civs: leader ? [leader] : [], difficulty})};
 }
+function selectedSimulationSummary() {
+  const selectedText = id => {
+    const select = document.getElementById(id);
+    return (select?.selectedOptions?.[0]?.textContent || select?.value || "").trim();
+  };
+  const mode = document.getElementById("gamemode").value === "ai_sim"
+    ? "AI simulation" : "Single player";
+  // The world-size option already includes its dimensions and seat count; the
+  // compact first clause is enough to identify the choice without turning the
+  // handoff screen into a settings table.
+  const size = selectedText("np").split(" · ")[0];
+  const map = selectedText("maptype").split(" · ")[0];
+  const speed = selectedText("gamespeed").split(" · ")[0];
+  return [mode, size, map, speed].filter(Boolean).join(" · ");
+}
 function simulationSettingsKey(settings) {
   return JSON.stringify(settings);
 }
@@ -19618,9 +20708,25 @@ function newSimulationPayload() {
   return {...selectedSimulationSettings(),
           seed: Math.floor(Math.random() * 1e9), force: true};
 }
+const simulationBusyControls = new Map();
 function setNewSimulationBusy(busy) {
   newSimulationBusy = busy;
-  document.getElementById("restart-sim").disabled = busy;
+  const controls = [
+    ...document.querySelectorAll("#newgame-options select, #newgame-options input, #newgame-options button"),
+    document.getElementById("restart-sim"), document.getElementById("specpause"),
+    document.getElementById("collapsepause"),
+  ].filter(Boolean);
+  if (busy) {
+    for (const control of controls) {
+      if (!simulationBusyControls.has(control))
+        simulationBusyControls.set(control, control.disabled);
+      control.disabled = true;
+    }
+  } else {
+    for (const [control, disabled] of simulationBusyControls) control.disabled = disabled;
+    simulationBusyControls.clear();
+    syncEarthShape();
+  }
 }
 function showNewSimulationError(error, action = "start simulation") {
   const errEl = document.getElementById("err");
@@ -19714,14 +20820,27 @@ async function writeSave() {
 async function startNewSimulation() {
   if (newSimulationBusy) return;
   const wasPaused = specPaused;
+  const payload = {...newSimulationPayload(), paused: wasPaused};
+  const supervised = !!(state && state.supervised) && payload.spectate;
+  const handoff = {
+    requestedAt: Date.now(), paused: wasPaused, targetSeed: payload.seed,
+    supervised,
+    finishedInstance: state?.server_instance ?? null,
+    finishedSeed: state?.seed ?? null,
+    summary: selectedSimulationSummary(),
+  };
   setNewSimulationBusy(true);
+  showWorldTransition(handoff);
   try {
-    const payload = {...newSimulationPayload(), paused: wasPaused};
+    // A change event stages settings immediately. Let every already-issued
+    // settings write finish before the process handoff so none can arrive late
+    // and accidentally queue itself on the successor as *its* next game.
+    await settingsStageChain.catch(() => {});
+    setWorldTransitionStage("Starting the selected world");
     // The supervisor owns the AI exhibition — each simulation is a fresh
     // process on freshly built code. A single-player game is not part of that
     // cycle: it takes over this process in place, so sitting down to play
     // starts immediately instead of waiting out a process handoff.
-    const supervised = !!(state && state.supervised) && payload.spectate;
     sel = null; selCity = null;
     clearTimeout(specTimer);
     if (supervised) {
@@ -19733,9 +20852,7 @@ async function startNewSimulation() {
       if (requested.error) throw new Error(requested.error);
       const respawn = document.getElementById("respawn");
       if (respawn) respawn.textContent = "restarting sim on existing code";
-      try {
-        sessionStorage.setItem("civvis-restart-paused-v1", wasPaused ? "1" : "0");
-      } catch (e) {}
+      setWorldTransitionStage("Restart accepted · changing worlds");
       waitForSupervisedSuccessor(finishedInstance, finishedSeed);
       return;
     }
@@ -19752,6 +20869,8 @@ async function startNewSimulation() {
     scheduleSpec(state);
     setNewSimulationBusy(false);
   } catch (error) {
+    cancelSupervisedSuccessorWatch();
+    clearWorldTransition();
     specPaused = wasPaused;
     updateSpecPauseButtons();
     reportSpecStatus();
@@ -19827,6 +20946,13 @@ document.getElementById("newgame-options").addEventListener("change", stageSelec
   const edge = document.getElementById("edgepanchk");
   edge.checked = EDGE_PAN;
   edge.onchange = () => setEdgePan(edge.checked);
+}
+{
+  const wrapXBox = document.getElementById("wrapxchk");
+  const wrapYBox = document.getElementById("wrapychk");
+  wrapXBox.onchange = () => setFlatMapWrap("x", wrapXBox.checked);
+  wrapYBox.onchange = () => setFlatMapWrap("y", wrapYBox.checked);
+  syncFlatMapWrapControls();
 }
 {
   const artifacts = document.getElementById("artifactchk");

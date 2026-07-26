@@ -116,6 +116,13 @@ impl<T: Ai + ?Sized> Ai for Box<T> {
 /// never fires first, because `set_winner` runs inside `do_end_turn` before
 /// this condition is tested again.
 pub fn run_game<A: Ai>(g: &mut Game, ais: &mut [A]) {
+    // A headless rollout never serializes a player observation between
+    // actions. Explored ground, contacts and Natural-Wonder discovery remain
+    // gameplay state and are still maintained; only the large last-seen tile
+    // and city copies used to render fog are omitted. Interactive server
+    // stepping does not use `run_game`, so spectator and player displays keep
+    // complete observation memory.
+    g.set_fog_memory(false);
     while g.winner.is_none() && g.turn <= g.max_turns {
         let pid = g.current;
         ais[pid].take_turn(g, pid);
@@ -141,6 +148,12 @@ impl RandomAi {
 
 impl Ai for RandomAi {
     fn take_turn(&mut self, g: &mut Game, pid: usize) {
+        g.with_deferred_visibility(|g| self.take_turn_inner(g, pid));
+    }
+}
+
+impl RandomAi {
+    fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
         for _ in 0..60 {
             let acts: Vec<Action> = g
                 .legal_actions(pid)
@@ -924,9 +937,6 @@ impl BasicAi {
     /// unit per movement domain scouts at peace so the empire is not blind,
     /// while the rest remain available for patrol and defense.
     fn should_explore(&self, g: &Game, pid: usize, uid: u32, at_war: bool) -> bool {
-        if !self.has_exploration_target(g, pid, uid) {
-            return false;
-        }
         let doctrine = Self::unit_doctrine(g, uid);
         if doctrine == UnitDoctrine::Recon {
             return true;
@@ -1304,6 +1314,12 @@ impl BasicAi {
 
 impl Ai for BasicAi {
     fn take_turn(&mut self, g: &mut Game, pid: usize) {
+        g.with_deferred_visibility(|g| self.take_turn_inner(g, pid));
+    }
+}
+
+impl BasicAi {
+    fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
         self.minor = g.players[pid].is_minor;
         // Free Cities are diplomatically hostile like barbarians, but unlike
         // camps they keep developing their inherited cities and training
@@ -1470,7 +1486,7 @@ impl BasicAi {
 
     pub(crate) fn corporations(&self, g: &mut Game, pid: usize) {
         if let Some(action) = g
-            .legal_actions_within(pid, ActionFamilies::CHEAP)
+            .legal_actions_within(pid, ActionFamilies::CORPORATIONS)
             .into_iter()
             .find(|action| matches!(action, Action::FoundCorporation { .. }))
         {
@@ -2362,7 +2378,7 @@ impl BasicAi {
         });
         if has_ready_encampment {
             let strikes: Vec<Action> = g
-                .legal_actions_within(pid, ActionFamilies::CHEAP)
+                .legal_actions_within(pid, ActionFamilies::CORE)
                 .into_iter()
                 .filter(|action| matches!(action, Action::EncampmentStrike { .. }))
                 .collect();
@@ -2992,6 +3008,76 @@ impl BasicAi {
         .is_ok()
     }
 
+    /// Annex a genuinely useful plot instead of treating every affordable
+    /// border hex as equivalent. Resources, Natural Wonders, and strong raw
+    /// yields can justify the immediate tempo spend; a reserve still protects
+    /// unit upgrades and emergency purchases.
+    fn buy_gold_plot(&self, g: &mut Game, pid: usize, reserve: f64) -> bool {
+        let bank = g.players[pid].gold;
+        let mut best: Option<(f64, std::cmp::Reverse<(u32, Pos)>, Action)> = None;
+        for action in g.legal_actions_within(pid, ActionFamilies::PURCHASES) {
+            let Action::BuyPlot { city, pos, cost } = action else {
+                continue;
+            };
+            if bank + f64::EPSILON < reserve + cost {
+                continue;
+            }
+            let tile = &g.map.tiles[&pos];
+            let resource = tile
+                .resource
+                .as_ref()
+                .and_then(|name| g.rules.resources.get(name))
+                .filter(|spec| {
+                    spec.tech
+                        .as_ref()
+                        .is_none_or(|tech| g.players[pid].techs.contains(tech))
+                        && spec
+                            .civic
+                            .as_ref()
+                            .is_none_or(|civic| g.players[pid].civics.contains(civic))
+                });
+            let mut visible_tile = tile.clone();
+            if tile.resource.is_some() && resource.is_none() {
+                visible_tile.resource = None;
+            }
+            let yields = g.rules.tile_yields(&visible_tile);
+            let resource = resource
+                .map(|spec| match spec.class.as_str() {
+                    "luxury" => 220.0,
+                    "strategic" => 190.0,
+                    "bonus" => 55.0,
+                    _ => 0.0,
+                })
+                .unwrap_or(0.0);
+            let wonder = tile
+                .feature
+                .as_ref()
+                .and_then(|name| g.rules.features.get(name))
+                .is_some_and(|feature| feature.natural_wonder) as u8 as f64
+                * 280.0;
+            let value = yields.food * 28.0
+                + yields.production * 42.0
+                + yields.gold * 22.0
+                + yields.science * 40.0
+                + yields.culture * 38.0
+                + yields.faith * 26.0
+                + resource
+                + wonder;
+            let score = value - cost * 0.75;
+            if value + f64::EPSILON < cost * 1.35 || score < 35.0 {
+                continue;
+            }
+            let candidate = (score, std::cmp::Reverse((city, pos)), action);
+            if best
+                .as_ref()
+                .is_none_or(|old| candidate.0 > old.0 + 1e-9 || (candidate.0 - old.0).abs() < 1e-9 && candidate.1 > old.1)
+            {
+                best = Some(candidate);
+            }
+        }
+        best.is_some_and(|(_, _, action)| g.apply(pid, &action).is_ok())
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn spend_gold(
         &self,
@@ -3058,6 +3144,13 @@ impl BasicAi {
         }
 
         if self.buy_gold_infrastructure(g, pid, city_ids, reserve, at_major_war) {
+            return true;
+        }
+
+        // Plots are a surplus investment after concrete unit and building
+        // gaps are filled. Keep another 200 Gold above the ordinary reserve
+        // so border appetite cannot crowd out next turn's Builder or upgrade.
+        if self.buy_gold_plot(g, pid, reserve + 200.0) {
             return true;
         }
 
@@ -3770,7 +3863,7 @@ impl BasicAi {
                     break;
                 }
                 let action = g
-                    .legal_actions_within(pid, ActionFamilies::CHEAP)
+                    .legal_actions_within(pid, ActionFamilies::FORMATIONS)
                     .into_iter()
                     .find(|action| matches!(action, Action::CombineUnits { .. }));
                 let Some(action) = action else { break };
@@ -3806,7 +3899,7 @@ impl BasicAi {
         };
         while has_link_candidate(g) {
             let action = g
-                .legal_actions_within(pid, ActionFamilies::CHEAP)
+                .legal_actions_within(pid, ActionFamilies::FORMATIONS)
                 .into_iter()
                 .find(|action| match action {
                     Action::LinkUnits { unit, with } => {
@@ -7772,6 +7865,49 @@ mod tests {
             Action::BuyBuilding { building, currency, .. }
                 if building == "monument" && currency == "gold"
         )));
+    }
+
+    #[test]
+    fn gold_spending_annexes_a_luxury_without_breaking_its_reserve() {
+        let mut game = Game::new_full(1, 20, 14, 321, 30, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let center = game.cities[&city].pos;
+        for position in game.wdisk(center, 3) {
+            if game.map.tiles[&position].owner_city.is_none() {
+                let tile = game.map.tiles.get_mut(&position).unwrap();
+                tile.terrain = "plains".to_string();
+                tile.hills = false;
+                tile.feature = None;
+                tile.resource = None;
+            }
+        }
+        let target = game
+            .wdisk(center, 2)
+            .into_iter()
+            .find(|position| {
+                game.wdist(*position, center) == 2
+                    && game.map.tiles[position].owner_city.is_none()
+                    && game
+                        .nbrs(*position)
+                        .into_iter()
+                        .any(|neighbor| game.map.tiles[&neighbor].owner_city == Some(city))
+            })
+            .unwrap();
+        game.map.tiles.get_mut(&target).unwrap().resource = Some("diamonds".to_string());
+        game.players[0]
+            .explored
+            .extend(game.map.tiles.keys().copied());
+        game.players[0].gold = 175.0;
+
+        assert!(BasicAi::new().buy_gold_plot(&mut game, 0, 125.0));
+        assert_eq!(game.map.tiles[&target].owner_city, Some(city));
+        assert_eq!(game.players[0].gold, 125.0);
     }
 
     #[test]
