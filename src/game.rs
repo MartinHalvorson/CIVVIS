@@ -12211,6 +12211,15 @@ pub struct SiegeCensus {
     /// state a melee unit can walk into. A barbarian never captures and leaves
     /// the city at 1 instead.
     pub left_depleted: u64,
+    /// Of those, how many had a melee-capable unit of the depleting side already
+    /// adjacent **with movement remaining** — that is, a capture that was
+    /// available that same turn and simply was not taken.
+    ///
+    /// This is the count that separates the two remaining explanations. Doubling
+    /// the number of cities left depleted cut captures by 61%, so opening cities
+    /// is not what is missing; either the AI declines captures it could make, or
+    /// the piece that could make them is always already spent.
+    pub depleted_with_a_taker_ready: u64,
     /// Of those reductions, how many happened with a melee-capable unit of the
     /// attacking side already standing next to the city, so occupying it was
     /// available that turn.
@@ -34561,6 +34570,16 @@ impl Game {
                 // capture it. The depleting shot earns the city final-blow XP.
                 self.cities.get_mut(&cid).unwrap().hp = 0;
                 self.siege.left_depleted += 1;
+                let city_pos = self.cities[&cid].pos;
+                let taker_ready = self.units.values().any(|unit| {
+                    unit.owner == pid
+                        && unit.moves_left > 0.0
+                        && self.wdist(unit.pos, city_pos) <= 1
+                        && self.rules.units[unit.kind.as_str()].is_melee_capable()
+                });
+                if taker_ready {
+                    self.siege.depleted_with_a_taker_ready += 1;
+                }
                 self.award_initiated_combat_xp(uid, 10.0);
             } else {
                 // Ordinary ranged attacks cannot reduce Garrison Health
