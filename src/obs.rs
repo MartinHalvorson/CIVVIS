@@ -312,6 +312,10 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
     json!({
         "turn": g.turn,
         "max_turns": g.max_turns,
+        // `max_turns` remains the setup value a successor game should inherit.
+        // This nullable field is the live rule: playing on explicitly removes
+        // that cap, so clients must display infinity rather than a stale turn.
+        "turn_limit": g.turn_limit(),
         "seed": g.seed,
         "game_speed": g.game_speed.id(),
         // The handicap the game is being played on. The save list has always
@@ -667,12 +671,13 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         // The result this world was already given, if it was asked for one
         // more turn. The game is live again, so `winner` is empty; this is how
         // a viewer is still told whose victory the extra turns are borrowed
-        // from, and how long they run.
+        // from, and what can end the continuation.
         "decided": g.decided.as_ref().map(|decided| json!({
             "winner": decided.winner,
             "civ": g.players.get(decided.winner).map(|player| player.civ.clone()),
             "victory_type": decided.victory_type,
             "turn": decided.turn,
+            "mode": decided.mode.as_str(),
         })),
         // What has happened to this civilization lately, newest last. An
         // omniscient viewer watches whichever seat it is observing, so the
@@ -1094,11 +1099,12 @@ fn victory_progress_json(g: &Game, pid: usize, leading_score: i64) -> Value {
     // leader is full and a civilization on half their score is at half. A game
     // with no turn limit has no clock to fill, so its meter stays purely
     // relative to the leader.
-    let clock = if g.max_turns > 0 && g.max_turns < 100_000 {
-        (g.turn as f64 / g.max_turns as f64).clamp(0.0, 1.0)
-    } else {
-        1.0
-    };
+    let clock = g
+        .turn_limit()
+        .filter(|limit| *limit > 0 && *limit < 100_000)
+        .map_or(1.0, |limit| {
+            (g.turn as f64 / limit as f64).clamp(0.0, 1.0)
+        });
     let score_progress = if leading_score > 0 {
         100.0 * clock * score.max(0) as f64 / leading_score as f64
     } else {
