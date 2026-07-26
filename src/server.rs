@@ -5186,7 +5186,18 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "const {x:desiredX, y:desiredY} = mapFocusPoint();"
         ));
-        assert!(EMBEDDED_INDEX.contains("View as"));
+        assert!(EMBEDDED_INDEX.contains("<span>Terrain</span>"));
+        assert!(EMBEDDED_INDEX.contains("<span>Watch as</span>"));
+        assert_eq!(
+            EMBEDDED_INDEX
+                .matches("Spectator - Full Map Visablity")
+                .count(),
+            2,
+            "the initial and refreshed viewpoint menus should use the same spectator label"
+        );
+        assert!(EMBEDDED_INDEX.contains(
+            "Player ${p.id + 1} - ${p.civ} (${p.leader || \"Unknown leader\"})"
+        ));
         assert!(EMBEDDED_INDEX.contains("id=\"viewplayer\""));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/view\""));
         // The ribbon repaints under the cursor, so its buttons declare their

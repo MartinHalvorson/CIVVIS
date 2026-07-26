@@ -2882,7 +2882,7 @@
       </summary>
       <div class="sec settings-sec" id="display-settings">
       <div class="utility-group">
-        <div class="view-row"><span>Display</span>
+        <div class="view-row"><span>Terrain</span>
           <select id="viewsel" aria-label="Map style">
             <option value="strategic">Strategic</option>
             <option value="balanced">Painted 2D</option>
@@ -2890,9 +2890,9 @@
           </select>
         </div>
         <div class="observer-settings" id="observer-settings">
-          <div class="view-row"><span>View as</span>
+          <div class="view-row"><span>Watch as</span>
             <select id="viewplayer" aria-label="Observation perspective">
-              <option value="spectator">Spectator · full map</option>
+              <option value="spectator">Spectator - Full Map Visablity</option>
             </select>
           </div>
           <div class="speed-row"><span>Watch pace</span>
@@ -5640,11 +5640,11 @@ function syncViewPlayer() {
   const select = document.getElementById("viewplayer");
   if (!select || !state) return;
   const majors = state.players.filter(p => !p.is_minor && !p.is_barbarian);
-  const signature = `${state.seed}|${majors.map(p => `${p.id}:${p.civ}`).join("|")}`;
+  const signature = `${state.seed}|${majors.map(p => `${p.id}:${p.civ}:${p.leader || ""}`).join("|")}`;
   if (select.dataset.signature !== signature) {
     select.dataset.signature = signature;
-    select.innerHTML = `<option value="spectator">Spectator · full map</option>` +
-      majors.map(p => `<option value="${p.id}">${p.civ} · player ${p.id + 1}</option>`).join("");
+    select.innerHTML = `<option value="spectator">Spectator - Full Map Visablity</option>` +
+      majors.map(p => `<option value="${p.id}">Player ${p.id + 1} - ${p.civ} (${p.leader || "Unknown leader"})</option>`).join("");
   }
   select.value = state.view_player === null || state.view_player === undefined
     ? "spectator" : String(state.view_player);
