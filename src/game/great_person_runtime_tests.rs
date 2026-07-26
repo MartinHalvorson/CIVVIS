@@ -516,6 +516,13 @@ fn named_admirals_apply_exact_unit_trade_building_and_flanking_effects() {
         "military_tradition".to_string(),
     ]);
 
+    let formation_ship = game.spawn_unit("galley", 0, harbor);
+    assert_eq!(
+        recruit_current_military_person(&mut game, "admiral"),
+        "gaius_duilius"
+    );
+    assert_eq!(game.units[&formation_ship].formation, 1);
+
     let quadrireme = Item::Unit {
         unit: "quadrireme".to_string(),
     };
@@ -572,6 +579,12 @@ fn named_admirals_apply_exact_unit_trade_building_and_flanking_effects() {
     );
     assert!((game.city_yields(foreign_city).gold - origin_gold - 2.0).abs() < 1e-9);
     assert!((game.city_yields(admiral_city).gold - destination_gold - 2.0).abs() < 1e-9);
+
+    assert_eq!(
+        recruit_current_military_person(&mut game, "admiral"),
+        "santa_cruz"
+    );
+    assert_eq!(game.units[&formation_ship].formation, 2);
 
     let target = game
         .map

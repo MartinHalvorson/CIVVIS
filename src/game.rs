@@ -3469,6 +3469,7 @@ mod national_park_tests {
                 &Action::Buy {
                     city,
                     unit: "naturalist".to_string(),
+                    formation: 0,
                     currency: "gold".to_string(),
                 },
             )
@@ -3479,6 +3480,7 @@ mod national_park_tests {
                 &Action::Buy {
                     city,
                     unit: "naturalist".to_string(),
+                    formation: 0,
                     currency: "faith".to_string(),
                 },
             )
@@ -3490,6 +3492,7 @@ mod national_park_tests {
             &Action::Buy {
                 city,
                 unit: "naturalist".to_string(),
+                formation: 0,
                 currency: "faith".to_string(),
             },
         )
@@ -9795,14 +9798,10 @@ mod district_building_wonder_runtime_tests {
     #[test]
     fn military_infrastructure_builds_discounted_formations_with_real_strength() {
         let (mut game, city, position) = one_city(774_401);
+        game.players[0].civ = "Zulu".to_string();
         install_district(&mut game, city, position, "ikanda");
-        game.cities
-            .get_mut(&city)
-            .unwrap()
-            .buildings
-            .push("military_academy".to_string());
+        game.players[0].civics.insert("mercenaries".to_string());
         game.players[0].civics.insert("nationalism".to_string());
-        game.players[0].civics.insert("mobilization".to_string());
 
         let corps = Item::Formation {
             unit: "warrior".to_string(),
@@ -9819,9 +9818,9 @@ mod district_building_wonder_runtime_tests {
         // would charge.
         assert_eq!(game.item_cost(&corps), 60.0);
         assert_eq!(game.item_cost(&army), 80.0);
-        // +25% from the Academy and an effective +33⅓% for Ikanda's 25%
-        // cost reduction.
-        assert!((game.item_prod_mult(0, city, Some(&corps)) - 1.5833333333333333).abs() < 1e-9);
+        // Ikanda alone authorizes direct formations and its 25% discount is
+        // an effective +33⅓% Production multiplier.
+        assert!((game.item_prod_mult(0, city, Some(&corps)) - 1.3333333333333333).abs() < 1e-9);
 
         let before: BTreeSet<u32> = game.player_unit_ids(0).into_iter().collect();
         assert!(game.complete_item(0, city, &army));
@@ -9831,7 +9830,104 @@ mod district_building_wonder_runtime_tests {
             .find(|unit| !before.contains(unit))
             .unwrap();
         assert_eq!(game.units[&trained].formation, 2);
-        assert_eq!(game.unit_formation_bonus(&game.units[&trained]), 17.0);
+        assert_eq!(game.unit_formation_bonus(&game.units[&trained]), 22.0);
+    }
+
+    #[test]
+    fn formations_can_be_bought_directly_for_full_constituent_cost() {
+        let (mut game, city, _) = one_city(774_406);
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .push("military_academy".to_string());
+        game.players[0].civics.insert("nationalism".to_string());
+        game.players[0].civics.insert("mobilization".to_string());
+
+        assert_eq!(game.unit_purchase_price(0, city, "warrior", 1, "gold"), 320.0);
+        assert_eq!(game.unit_purchase_price(0, city, "warrior", 2, "gold"), 480.0);
+        game.players[0].gold = 320.0;
+        let action = Action::Buy {
+            city,
+            unit: "warrior".to_string(),
+            formation: 1,
+            currency: "gold".to_string(),
+        };
+        assert!(game.legal_actions(0).contains(&action));
+        let before: BTreeSet<u32> = game.player_unit_ids(0).into_iter().collect();
+        game.apply(0, &action).unwrap();
+        let bought = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| !before.contains(unit))
+            .unwrap();
+        assert_eq!(game.units[&bought].formation, 1);
+        assert!(game.players[0].gold.abs() < 1e-9);
+
+        game.players[0].government = Some("theocracy".to_string());
+        assert_eq!(game.unit_purchase_price(0, city, "warrior", 2, "faith"), 204.0);
+        game.players[0].faith = 204.0;
+        let army = Action::Buy {
+            city,
+            unit: "warrior".to_string(),
+            formation: 2,
+            currency: "faith".to_string(),
+        };
+        assert!(game.legal_actions(0).contains(&army));
+        game.apply(0, &army).unwrap();
+        assert!(game.players[0].faith.abs() < 1e-9);
+        assert!(game
+            .units
+            .values()
+            .any(|unit| unit.owner == 0 && unit.kind == "warrior" && unit.formation == 2));
+
+        let legacy: Action = serde_json::from_value(serde_json::json!({
+            "type": "buy", "city": city, "unit": "warrior", "currency": "gold"
+        }))
+        .unwrap();
+        assert!(matches!(legacy, Action::Buy { formation: 0, .. }));
+
+        game.players[0].is_minor = true;
+        assert!(!game.can_produce(
+            0,
+            city,
+            &Item::Formation {
+                unit: "warrior".to_string(),
+                formation: 1,
+            },
+        ));
+    }
+
+    #[test]
+    fn carriers_train_as_formations_but_never_merge_in_the_field() {
+        let (mut game, city, position) = one_city(774_407);
+        let coast = game.nbrs(game.cities[&city].pos)[0];
+        game.map.tiles.get_mut(&coast).unwrap().terrain = "coast".to_string();
+        install_district(&mut game, city, position, "harbor");
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .push("seaport".to_string());
+        game.players[0].techs.insert("combined_arms".to_string());
+        game.players[0].civics.insert("nationalism".to_string());
+        let fleet = Item::Formation {
+            unit: "aircraft_carrier".to_string(),
+            formation: 1,
+        };
+        assert!(game.rules.units["aircraft_carrier"].can_formations);
+        assert!(!game.rules.units["aircraft_carrier"].can_combine);
+        assert!(game.can_produce(0, city, &fleet));
+
+        let first = game.spawn_unit("aircraft_carrier", 0, coast);
+        let second_coast = game
+            .nbrs(coast)
+            .into_iter()
+            .find(|neighbor| game.map.get(*neighbor).is_some())
+            .unwrap();
+        game.map.tiles.get_mut(&second_coast).unwrap().terrain = "coast".to_string();
+        let second = game.spawn_unit("aircraft_carrier", 0, second_coast);
+        assert_eq!(game.can_combine_units(0, first, second), None);
     }
 
     #[test]
@@ -13240,6 +13336,10 @@ pub enum Action {
     Buy {
         city: u32,
         unit: String,
+        /// Zero buys a normal unit; one and two buy a Corps/Fleet or
+        /// Army/Armada directly. Missing fields in older saves remain normal.
+        #[serde(default)]
+        formation: u8,
         #[serde(default = "gold_s")]
         currency: String,
     },
@@ -16432,6 +16532,22 @@ impl Game {
         formation: u8,
         at: Pos,
     ) {
+        let naval = self
+            .rules
+            .units
+            .get(kind)
+            .is_some_and(|spec| spec.domain.as_deref() == Some("sea"));
+        let label = format!(
+            "{}{}",
+            kind,
+            match (naval, formation) {
+                (false, 1) => " corps",
+                (false, 2) => " army",
+                (true, 1) => " fleet",
+                (true, 2) => " armada",
+                _ => "",
+            }
+        );
         if self.at_war_with_any_civilization(victim_owner) {
             let home = self
                 .map
@@ -16445,15 +16561,6 @@ impl Game {
         let turn = self.turn;
         if let Some((war, _, _)) = self.war_ledger(killer, victim_owner) {
             war.record_theater_site(turn, at);
-            let label = format!(
-                "{}{}",
-                kind,
-                match formation {
-                    1 => " corps/fleet",
-                    2 => " army/armada",
-                    _ => "",
-                }
-            );
             let losses = war.losses.entry(victim_owner).or_default();
             losses.units += 1;
             *losses.unit_kinds.entry(label).or_insert(0) += 1;
@@ -17016,8 +17123,8 @@ impl Game {
         let gold = base_gold
             * match unit.formation {
                 0 => 1.0,
-                1 => 1.5,
-                _ => 2.0,
+                1 => 2.0,
+                _ => 3.0,
             };
         let resources = base_resources
             * match unit.formation {
@@ -20216,12 +20323,19 @@ impl Game {
         {
             return Err("this Great General requires a promotable military land unit".into());
         }
-        if let Some(formation) = spec.effects.get("land_unit_formation") {
-            if self
-                .great_person_formation_unit(pid, *formation as u8)
-                .is_none()
-            {
-                return Err("this Great General requires a military land unit".into());
+        for (effect, domain, title) in [
+            ("land_unit_formation", "land", "General"),
+            ("naval_unit_formation", "sea", "Admiral"),
+        ] {
+            if let Some(formation) = spec.effects.get(effect) {
+                if self
+                    .great_person_formation_unit(pid, *formation as u8, domain)
+                    .is_none()
+                {
+                    return Err(format!(
+                        "this Great {title} requires a military {domain} unit"
+                    ));
+                }
             }
         }
         for (effect, work) in [
@@ -20401,10 +20515,18 @@ impl Game {
                     Self::promotion_threshold(level).max(self.units[&unit].xp);
             }
         }
-        if let Some(formation) = spec.effects.get("land_unit_formation") {
-            let formation = (*formation as u8).min(2);
-            if let Some(unit) = self.great_person_formation_unit(pid, formation) {
-                self.units.get_mut(&unit).unwrap().formation = formation;
+        for (effect, domain) in [
+            ("land_unit_formation", "land"),
+            ("naval_unit_formation", "sea"),
+        ] {
+            if let Some(formation) = spec.effects.get(effect) {
+                let formation = (*formation as u8).min(2);
+                if let Some(unit) = self.great_person_formation_unit(pid, formation, domain) {
+                    self.units.get_mut(&unit).unwrap().formation = formation;
+                    if formation == 1 {
+                        bump(&mut self.players[pid], "corps");
+                    }
+                }
             }
         }
         if let Some(amount) = spec.effects.get("tech_boosts") {
@@ -20580,11 +20702,35 @@ impl Game {
         }))
     }
 
-    fn great_person_formation_unit(&self, pid: usize, formation: u8) -> Option<u32> {
-        self.strongest_great_person_land_unit(
-            self.great_person_land_units(pid)
-                .filter(|unit| self.units[unit].formation < formation),
-        )
+    fn great_person_formation_unit(
+        &self,
+        pid: usize,
+        formation: u8,
+        domain: &str,
+    ) -> Option<u32> {
+        self.units
+            .values()
+            .filter(|unit| {
+                let spec = &self.rules.units[unit.kind.as_str()];
+                let domain_matches = if domain == "sea" {
+                    spec.domain.as_deref() == Some("sea")
+                } else {
+                    !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                };
+                unit.owner == pid
+                    && spec.class == "military"
+                    && spec.can_formations
+                    && domain_matches
+                    && unit.formation < formation
+            })
+            .max_by_key(|unit| {
+                let spec = &self.rules.units[unit.kind.as_str()];
+                (
+                    (spec.strength + self.unit_formation_bonus(unit)).round() as i64,
+                    Reverse(unit.id),
+                )
+            })
+            .map(|unit| unit.id)
     }
 
     fn grant_free_building_family(&mut self, pid: usize, city_id: u32, family: &str) {
@@ -21360,11 +21506,55 @@ impl Game {
         available
     }
 
+    /// Whether this civilization has reached the civic for a particular
+    /// formation tier. Spain and Shaka replace the ordinary civic gates for
+    /// naval and land formations respectively.
+    fn formation_unlocked(&self, pid: usize, unit: &str, formation: u8) -> bool {
+        let Some(spec) = self.rules.units.get(unit) else {
+            return false;
+        };
+        let standard = match formation {
+            1 => self.tree_effect(pid, "corps_fleets") > 0.0,
+            2 => self.tree_effect(pid, "armies_armadas") > 0.0,
+            _ => false,
+        };
+        if standard {
+            return true;
+        }
+        if spec.domain.as_deref() == Some("sea")
+            && self.civ_effect(pid, "naval_formation_civic_mercantilism") > 0.0
+        {
+            return self.players[pid].civics.contains("mercantilism");
+        }
+        if !matches!(spec.domain.as_deref(), Some("sea" | "air")) {
+            return match formation {
+                1 if self.civ_effect(pid, "land_corps_civic_mercenaries") > 0.0 => {
+                    self.players[pid].civics.contains("mercenaries")
+                }
+                2 if self.civ_effect(pid, "land_army_civic_nationalism") > 0.0 => {
+                    self.players[pid].civics.contains("nationalism")
+                }
+                _ => false,
+            };
+        }
+        false
+    }
+
     fn unit_formation_bonus(&self, unit: &Unit) -> f64 {
-        match unit.formation {
+        let base = match unit.formation {
             1 => 10.0,
             2.. => 17.0,
             _ => 0.0,
+        };
+        if base > 0.0
+            && !matches!(
+                self.rules.units[unit.kind.as_str()].domain.as_deref(),
+                Some("sea" | "air")
+            )
+        {
+            base + self.civ_effect(unit.owner, "formation_combat_strength")
+        } else {
+            base
         }
     }
 
@@ -24329,7 +24519,11 @@ impl Game {
         self.units
             .values()
             .filter(|u| u.owner == pid)
-            .map(|u| self.rules.units[u.kind.as_str()].strength * u.hp as f64 / 100.0)
+            .map(|u| {
+                (self.rules.units[u.kind.as_str()].strength + self.unit_formation_bonus(u))
+                    * u.hp as f64
+                    / 100.0
+            })
             .sum()
     }
 
@@ -31863,21 +32057,25 @@ impl Game {
                 let Some(spec) = self.rules.units.get(unit) else {
                     return false;
                 };
-                if !matches!(formation, 1 | 2)
+                if self.players[pid].is_minor
+                    || !matches!(formation, 1 | 2)
                     || spec.class != "military"
                     || spec.domain.as_deref() == Some("air")
                     || !spec.can_formations
-                    || (*formation == 1 && self.tree_effect(pid, "corps_fleets") <= 0.0)
-                    || (*formation == 2 && self.tree_effect(pid, "armies_armadas") <= 0.0)
+                    || !self.formation_unlocked(pid, unit, *formation)
                 {
                     return false;
                 }
                 let infrastructure = if spec.domain.as_deref() == Some("sea") {
-                    "seaport"
+                    self.city_has_building_family(city, "seaport")
                 } else {
-                    "military_academy"
+                    self.city_has_building_family(city, "military_academy")
+                        || city.districts.iter().any(|(district, position)| {
+                            district == "ikanda"
+                                && self.district_is_active(city, district, *position)
+                        })
                 };
-                if !self.city_has_building_family(city, infrastructure) {
+                if !infrastructure {
                     return false;
                 }
                 let committed = self.unit_resource_is_committed(cid, item);
@@ -33022,36 +33220,46 @@ impl Game {
                 }
             }
             for utype in &purchasable_units {
-                let it = Item::Unit {
-                    unit: utype.clone(),
-                };
-                if self.can_produce(pid, cid, &it) {
-                    let cost = self.item_cost_for(pid, &it);
-                    if p.gold >= cost * 4.0 {
-                        acts.push(Action::Buy {
-                            city: cid,
+                for formation in 0..=2 {
+                    let item = if formation == 0 {
+                        Item::Unit {
                             unit: utype.clone(),
-                            currency: "gold".to_string(),
-                        });
+                        }
+                    } else {
+                        Item::Formation {
+                            unit: utype.clone(),
+                            formation,
+                        }
+                    };
+                    if !self.can_produce(pid, cid, &item) {
+                        continue;
                     }
-                    let spec = &self.rules.units[utype.as_str()];
-                    let civilian = matches!(utype.as_str(), "builder" | "settler") && monumentality;
-                    let land_combat = spec.class == "military"
-                        && spec.domain.as_deref().is_none()
-                        && spec.faith_purchasable
-                        && faith_land_units;
-                    let faith_discount = if civilian { 30.0 } else { 0.0 }
-                        + if p.government.as_deref() == Some("theocracy") {
-                            15.0
-                        } else {
-                            0.0
-                        };
-                    if (civilian || land_combat)
-                        && p.faith >= cost * 2.0 * (1.0 - faith_discount / 100.0)
+                    if p.gold + f64::EPSILON
+                        >= self.unit_purchase_price(pid, cid, utype, formation, "gold")
                     {
                         acts.push(Action::Buy {
                             city: cid,
                             unit: utype.clone(),
+                            formation,
+                            currency: "gold".to_string(),
+                        });
+                    }
+                    let spec = &self.rules.units[utype.as_str()];
+                    let civilian = formation == 0
+                        && matches!(utype.as_str(), "builder" | "settler")
+                        && monumentality;
+                    let land_combat = spec.class == "military"
+                        && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                        && spec.faith_purchasable
+                        && faith_land_units;
+                    if (civilian || land_combat)
+                        && p.faith + f64::EPSILON
+                            >= self.unit_purchase_price(pid, cid, utype, formation, "faith")
+                    {
+                        acts.push(Action::Buy {
+                            city: cid,
+                            unit: utype.clone(),
+                            formation,
                             currency: "faith".to_string(),
                         });
                     }
@@ -33064,6 +33272,7 @@ impl Game {
                 acts.push(Action::Buy {
                     city: cid,
                     unit: "rock_band".to_string(),
+                    formation: 0,
                     currency: "faith".to_string(),
                 });
             }
@@ -33074,6 +33283,7 @@ impl Game {
                 acts.push(Action::Buy {
                     city: cid,
                     unit: "naturalist".to_string(),
+                    formation: 0,
                     currency: "faith".to_string(),
                 });
             }
@@ -33443,12 +33653,7 @@ impl Game {
                         .is_none_or(|name| self.city_has_building_family(&self.cities[&cid], name));
                     let inquisition = unit != "inquisitor"
                         || p.counters.get("inquisition").copied().unwrap_or(0) > 0;
-                    let cost = self.item_cost_for(
-                        pid,
-                        &Item::Unit {
-                            unit: unit.to_string(),
-                        },
-                    ) * 2.0;
+                    let cost = self.unit_purchase_price(pid, cid, unit, 0, "faith");
                     if building
                         && inquisition
                         && p.faith >= cost
@@ -33459,6 +33664,7 @@ impl Game {
                         acts.push(Action::Buy {
                             city: cid,
                             unit: unit.to_string(),
+                            formation: 0,
                             currency: "faith".to_string(),
                         });
                     }
@@ -33875,8 +34081,9 @@ impl Game {
             Action::Buy {
                 city,
                 unit,
+                formation,
                 currency,
-            } => self.do_buy(pid, *city, unit, currency),
+            } => self.do_buy_formation(pid, *city, unit, *formation, currency),
             Action::BuyBuilding {
                 city,
                 building,
@@ -34921,6 +35128,7 @@ impl Game {
                     } else {
                         self.award_initiated_combat_xp(uid, 10.0);
                         self.capture_city(cid, pid);
+                        self.apply_capture_formation_upgrade(pid, uid);
                         self.enter_tile(uid, target);
                     }
                 } else {
@@ -34933,6 +35141,7 @@ impl Game {
                 // health. The melee unit captures it but earns no XP for an
                 // attack made after the city was already at 0 HP.
                 self.capture_city(cid, pid);
+                self.apply_capture_formation_upgrade(pid, uid);
                 self.enter_tile(uid, target);
             }
         }
@@ -36455,8 +36664,10 @@ impl Game {
         } else {
             0.0
         };
+        // Since the Maya & Gran Colombia update, both formation tiers add a
+        // flat +7 Anti-Air Strength rather than their +10/+17 combat bonus.
         spec.anti_air_strength
-            + self.unit_formation_bonus(unit)
+            + if unit.formation > 0 { 7.0 } else { 0.0 }
             + if spec.class == "military" {
                 // Intercepting an incoming strike is defending.
                 self.government_combat_bonus(unit, false)
@@ -37028,37 +37239,122 @@ impl Game {
         )
     }
 
+    fn unit_purchase_price(
+        &self,
+        pid: usize,
+        cid: u32,
+        unit: &str,
+        formation: u8,
+        currency: &str,
+    ) -> f64 {
+        let religious = self.rules.units[unit].class == "religious";
+        let rock_band = unit == "rock_band";
+        let naturalist = unit == "naturalist";
+        let mut discount =
+            self.city_district_effect(&self.cities[&cid], "gold_faith_purchase_discount_pct");
+        discount += if currency == "gold" {
+            self.gov_effects(pid).gold_purchase_discount_pct
+        } else {
+            self.gov_effects(pid).faith_purchase_discount_pct
+        };
+        if religious && currency == "faith" {
+            if let Some(religion) = self.city_religion(&self.cities[&cid]) {
+                discount +=
+                    self.religion_belief_effect(religion, "religious_unit_faith_discount_pct");
+            }
+            if unit == "guru" {
+                discount += self.empire_wonder_effect(pid, "guru_purchase_discount_pct");
+            }
+        }
+        if currency == "faith"
+            && matches!(unit, "builder" | "settler")
+            && self.dedication_active(pid, "monumentality")
+        {
+            discount += 30.0;
+        }
+        let base = if rock_band {
+            self.rock_band_purchase_cost(pid)
+        } else if naturalist {
+            self.naturalist_purchase_cost(pid)
+        } else {
+            self.item_cost_for(
+                pid,
+                &Item::Unit {
+                    unit: unit.to_string(),
+                },
+            )
+        };
+        let currency_multiplier = if rock_band || naturalist {
+            1.0
+        } else if currency == "gold" {
+            4.0
+        } else {
+            2.0
+        };
+        // Buying pays for every constituent; direct Production instead uses
+        // its separate 150%/200% formation cost.
+        let formation_multiplier = match formation {
+            1 => 2.0,
+            2.. => 3.0,
+            _ => 1.0,
+        };
+        let mut cost =
+            base * currency_multiplier * formation_multiplier * (1.0 - discount / 100.0).max(0.0);
+        if self.rules.units[unit].class == "military" {
+            if self.congress_effect_active("mercenary_companies", "A", currency) {
+                cost *= 2.0;
+            } else if self.congress_effect_active("mercenary_companies", "B", currency) {
+                cost *= 0.5;
+            }
+        }
+        cost
+    }
+
+    #[cfg(test)]
     fn do_buy(&mut self, pid: usize, cid: u32, unit: &str, currency: &str) -> Result<(), String> {
+        self.do_buy_formation(pid, cid, unit, 0, currency)
+    }
+
+    fn do_buy_formation(
+        &mut self,
+        pid: usize,
+        cid: u32,
+        unit: &str,
+        formation: u8,
+        currency: &str,
+    ) -> Result<(), String> {
         match self.cities.get(&cid) {
-            Some(c) if c.owner == pid => {}
+            Some(city) if city.owner == pid => {}
             _ => return Err("not your city".into()),
         }
-        let religious = self
-            .rules
-            .units
-            .get(unit)
-            .map(|s| s.class == "religious")
-            .unwrap_or(false);
+        let Some(spec) = self.rules.units.get(unit) else {
+            return Err("no such unit".into());
+        };
+        let religious = spec.class == "religious";
+        let rock_band = unit == "rock_band";
+        let naturalist = unit == "naturalist";
+        if !matches!(currency, "gold" | "faith") {
+            return Err("unknown purchase currency".into());
+        }
+        if formation > 2 {
+            return Err("unknown formation tier".into());
+        }
         if unit == "spy" {
             return Err("Spies cannot be purchased with Gold or Faith".into());
         }
-        if !matches!(currency, "gold" | "faith") {
-            return Err("unknown purchase currency".into());
+        if formation > 0 && (rock_band || naturalist || religious) {
+            return Err("that unit cannot be purchased as a formation".into());
         }
         // Isolationism closes the frontier to Gold and Faith as well as to
         // Production, which is what makes it a real cost rather than a detour.
         if unit == "settler" && self.policy_effect(pid, "no_settling") > 0.0 {
             return Err("Isolationism forbids buying Settlers".into());
         }
-        let rock_band = unit == "rock_band";
-        let naturalist = unit == "naturalist";
         if rock_band || naturalist {
-            let spec = &self.rules.units[unit];
             if currency != "faith" || !self.unlocked(pid, &spec.tech, &spec.civic) {
                 return Err(format!("{unit} is unlocked and purchased with faith"));
             }
         } else if religious {
-            // Religious units adopt the majority religion of their purchase city.
             if currency != "faith" {
                 return Err("religious units are bought with faith".into());
             }
@@ -37068,8 +37364,7 @@ impl Game {
             if self.city_religion(&self.cities[&cid]).is_none() {
                 return Err("city has no majority religion".into());
             }
-            let spec = &self.rules.units[unit];
-            if !self.unlocked(pid, &spec.tech.clone(), &spec.civic.clone()) {
+            if !self.unlocked(pid, &spec.tech, &spec.civic) {
                 return Err("not unlocked".into());
             }
             if spec.requires_building.as_ref().is_some_and(|building| {
@@ -37088,18 +37383,24 @@ impl Game {
                 return Err("inquisition has not been launched".into());
             }
         } else {
-            let it = Item::Unit {
-                unit: unit.to_string(),
+            let item = if formation == 0 {
+                Item::Unit {
+                    unit: unit.to_string(),
+                }
+            } else {
+                Item::Formation {
+                    unit: unit.to_string(),
+                    formation,
+                }
             };
-            if !self.can_produce(pid, cid, &it) {
+            if !self.can_produce(pid, cid, &item) {
                 return Err("cannot buy that".into());
             }
             if currency == "faith" {
-                let spec = &self.rules.units[unit];
                 let monumentality = matches!(unit, "builder" | "settler")
                     && self.dedication_active(pid, "monumentality");
                 let faith_land_combat = spec.class == "military"
-                    && spec.domain.as_deref().is_none()
+                    && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
                     && spec.faith_purchasable
                     && (self.players[pid].government.as_deref() == Some("theocracy")
                         || self
@@ -37119,66 +37420,23 @@ impl Game {
         if unit == "settler" && self.cities[&cid].pop < 2 {
             return Err("city too small for settler".into());
         }
-        let mult = if rock_band || naturalist {
-            1.0
-        } else if currency == "gold" {
-            4.0
+        let item = if formation == 0 {
+            Item::Unit {
+                unit: unit.to_string(),
+            }
         } else {
-            2.0
+            Item::Formation {
+                unit: unit.to_string(),
+                formation,
+            }
         };
-        let item = Item::Unit {
-            unit: unit.to_string(),
-        };
-        let mut purchase_discount =
-            self.city_district_effect(&self.cities[&cid], "gold_faith_purchase_discount_pct");
-        if currency == "gold" {
-            purchase_discount += self.gov_effects(pid).gold_purchase_discount_pct;
-        }
-        if currency == "faith" {
-            // Theocracy ships GOVERNMENTBONUS_FAITH_PURCHASES 15 beside
-            // Democracy's GOVERNMENTBONUS_GOLD_PURCHASES 15; only the Gold half
-            // was wired up.
-            purchase_discount += self.gov_effects(pid).faith_purchase_discount_pct;
-        }
-        if religious && currency == "faith" {
-            if let Some(religion) = self.city_religion(&self.cities[&cid]) {
-                purchase_discount +=
-                    self.religion_belief_effect(religion, "religious_unit_faith_discount_pct");
-            }
-            if unit == "guru" {
-                purchase_discount += self.empire_wonder_effect(pid, "guru_purchase_discount_pct");
-            }
-        }
-        if currency == "faith" {
-            if matches!(unit, "builder" | "settler") && self.dedication_active(pid, "monumentality")
-            {
-                purchase_discount += 30.0;
-            }
-            if self.players[pid].government.as_deref() == Some("theocracy") {
-                purchase_discount += 15.0;
-            }
-        }
-        let base_cost = if rock_band {
-            self.rock_band_purchase_cost(pid)
-        } else if naturalist {
-            self.naturalist_purchase_cost(pid)
-        } else {
-            self.item_cost_for(pid, &item)
-        };
-        let mut cost = base_cost * mult * (1.0 - purchase_discount / 100.0).max(0.0);
-        if self.rules.units[unit].class == "military" {
-            if self.congress_effect_active("mercenary_companies", "A", currency) {
-                cost *= 2.0;
-            } else if self.congress_effect_active("mercenary_companies", "B", currency) {
-                cost *= 0.5;
-            }
-        }
+        let cost = self.unit_purchase_price(pid, cid, unit, formation, currency);
         let bank = if currency == "gold" {
             self.players[pid].gold
         } else {
             self.players[pid].faith
         };
-        if bank < cost {
+        if bank + f64::EPSILON < cost {
             return Err("cannot afford".into());
         }
         let strategic_payment = self.rules.units[unit]
@@ -37186,18 +37444,16 @@ impl Game {
             .as_ref()
             .map(|resource| (resource.clone(), self.unit_resource_cost(cid, &item)))
             .filter(|(_, amount)| *amount > 0.0);
-        if strategic_payment
-            .as_ref()
-            .is_some_and(|(resource, amount)| {
-                self.strategic_stockpile(pid, resource) + f64::EPSILON < *amount
-            })
-        {
+        if strategic_payment.as_ref().is_some_and(|(resource, amount)| {
+            self.strategic_stockpile(pid, resource) + f64::EPSILON < *amount
+        }) {
             return Err("insufficient strategic resources".into());
         }
         let pos = self.cities[&cid].pos;
         let placed = self
             .place_new_unit(unit, pid, pos)
             .ok_or_else(|| "no space to place unit".to_string())?;
+        self.units.get_mut(&placed).unwrap().formation = formation;
         self.apply_training_district_effects(cid, placed);
         if unit == "builder" {
             self.units.get_mut(&placed).unwrap().charges +=
@@ -37222,6 +37478,9 @@ impl Game {
             self.cities.get_mut(&cid).unwrap().pop -= 1;
         }
         bump(&mut self.players[pid], &format!("trained:{unit}"));
+        if formation == 1 {
+            bump(&mut self.players[pid], "corps");
+        }
         if rock_band {
             bump(&mut self.players[pid], "purchased:rock_band");
         }
@@ -37616,19 +37875,24 @@ impl Game {
             || b.owner != pid
             || a.id == b.id
             || a.kind != b.kind
+            || self.players[pid].is_minor
+            || a.levied_from.is_some()
+            || b.levied_from.is_some()
             || a.linked_to.is_some()
             || b.linked_to.is_some()
             || a.moves_left <= 0.0
             || b.moves_left <= 0.0
             || self.wdist(a.pos, b.pos) > 1
             || self.rules.units[a.kind.as_str()].class != "military"
+            || self.rules.units[a.kind.as_str()].domain.as_deref() == Some("air")
             || !self.rules.units[a.kind.as_str()].can_formations
+            || !self.rules.units[a.kind.as_str()].can_combine
         {
             return None;
         }
         match (a.formation, b.formation) {
-            (0, 0) if self.tree_effect(pid, "corps_fleets") > 0.0 => Some(1),
-            (0, 1) | (1, 0) if self.tree_effect(pid, "armies_armadas") > 0.0 => Some(2),
+            (0, 0) if self.formation_unlocked(pid, &a.kind, 1) => Some(1),
+            (0, 1) | (1, 0) if self.formation_unlocked(pid, &a.kind, 2) => Some(2),
             _ => None,
         }
     }
@@ -37639,13 +37903,19 @@ impl Game {
             .ok_or_else(|| "units cannot form a Corps or Army".to_string())?;
         let ua = self.units[&a].clone();
         let ub = self.units[&b].clone();
-        // Civilopedia rule: preserve the XP and promotions of the most
-        // experienced constituent. Stable ID resolves an exact tie.
-        let a_key = (ua.xp, ua.promotions.len(), Reverse(ua.id));
-        let b_key = (ub.xp, ub.promotions.len(), Reverse(ub.id));
+        // The most experienced constituent keeps the identity, level and XP;
+        // Gathering Storm unions both promotion trees and keeps the highest
+        // training-city XP modifier.
+        let a_key = (ua.xp, ua.level, ua.promotions.len(), Reverse(ua.id));
+        let b_key = (ub.xp, ub.level, ub.promotions.len(), Reverse(ub.id));
         let (survivor, consumed) = if a_key >= b_key { (a, b) } else { (b, a) };
         let destination = ub.pos;
-        let hp = ua.hp.max(ub.hp);
+        let a_constituents = ua.formation as i32 + 1;
+        let b_constituents = ub.formation as i32 + 1;
+        let hp = (ua.hp * a_constituents + ub.hp * b_constituents)
+            / (a_constituents + b_constituents);
+        let promotions = ua.promotions.union(&ub.promotions).cloned().collect();
+        let xp_bonus_pct = ua.xp_bonus_pct.max(ub.xp_bonus_pct);
         self.remove_unit(consumed);
         if self.units[&survivor].pos != destination {
             self.relocate(survivor, destination);
@@ -37653,6 +37923,8 @@ impl Game {
         let unit = self.units.get_mut(&survivor).unwrap();
         unit.formation = formation;
         unit.hp = hp;
+        unit.promotions = promotions;
+        unit.xp_bonus_pct = xp_bonus_pct;
         unit.moves_left = 0.0;
         unit.attacks_left = 0;
         unit.acted = true;
@@ -37660,6 +37932,38 @@ impl Game {
             bump(&mut self.players[pid], "corps");
         }
         Ok(())
+    }
+
+    /// Isibongo upgrades the unit which actually takes a city to the highest
+    /// formation tier Shaka's current civics permit.
+    fn apply_capture_formation_upgrade(&mut self, pid: usize, uid: u32) {
+        if self.civ_effect(pid, "capture_formation_upgrade") <= 0.0 {
+            return;
+        }
+        let Some(unit) = self.units.get(&uid) else {
+            return;
+        };
+        let spec = &self.rules.units[unit.kind.as_str()];
+        if spec.class != "military"
+            || spec.domain.as_deref() == Some("air")
+            || !spec.can_formations
+        {
+            return;
+        }
+        let target = if self.formation_unlocked(pid, &unit.kind, 2) {
+            2
+        } else if self.formation_unlocked(pid, &unit.kind, 1) {
+            1
+        } else {
+            0
+        };
+        let old = unit.formation;
+        if target > old {
+            self.units.get_mut(&uid).unwrap().formation = target;
+            if old == 0 && target == 1 {
+                bump(&mut self.players[pid], "corps");
+            }
+        }
     }
 
     fn can_link_units(&self, pid: usize, a: u32, b: u32) -> bool {
@@ -40849,12 +41153,23 @@ impl Game {
                 delta += self.governor_effect(pid, victor_city, "nearby_city_loyalty");
             }
         }
-        let garrisoned = self.units_at(cpos).into_iter().any(|uid| {
-            self.units[&uid].owner == pid
-                && self.rules.units[self.units[&uid].kind.as_str()].class == "military"
-        });
-        if garrisoned {
+        let garrison_formation = self
+            .units_at(cpos)
+            .into_iter()
+            .filter(|uid| {
+                self.units[uid].owner == pid
+                    && self.rules.units[self.units[uid].kind.as_str()].class == "military"
+            })
+            .map(|uid| self.units[&uid].formation)
+            .max();
+        let garrisoned = garrison_formation.is_some();
+        if let Some(formation) = garrison_formation {
             delta += self.policy_effect(pid, "garrison_loyalty");
+            delta += if formation > 0 {
+                self.civ_effect(pid, "formation_garrison_loyalty")
+            } else {
+                self.civ_effect(pid, "garrison_loyalty")
+            };
         }
         let occupied = city
             .occupied_from
@@ -47816,7 +48131,8 @@ mod combat_scenarios {
         game.players[0]
             .policies
             .extend(["professional_army".to_string(), "retinues".to_string()]);
-        game.players[0].gold = 110.0;
+        // 110 base, halved by Professional Army, then tripled for an Army.
+        game.players[0].gold = 165.0;
         game.players[0]
             .strategic_resources
             .insert("iron".to_string(), 30.0);
@@ -49648,10 +49964,11 @@ mod combat_scenarios {
         );
 
         let (mut naval, center, ring) = controlled_game(31_437);
-        naval.spawn_unit("battleship", 0, ring[0]);
+        let battleship = naval.spawn_unit("battleship", 0, ring[0]);
+        naval.units.get_mut(&battleship).unwrap().formation = 1;
         let bomber = naval.spawn_unit("bomber", 1, center);
         let bomber_state = naval.units[&bomber].clone();
-        assert_eq!(naval.air_interception_strength(&bomber_state, center), 90.0);
+        assert_eq!(naval.air_interception_strength(&bomber_state, center), 97.0);
 
         let (mut future, center, ring) = controlled_game(31_438);
         future.spawn_unit("giant_death_robot", 0, ring[0]);
@@ -49689,7 +50006,8 @@ mod combat_scenarios {
                 "{kind} promotion class"
             );
         }
-        assert!(!game.rules.units["aircraft_carrier"].can_formations);
+        assert!(game.rules.units["aircraft_carrier"].can_formations);
+        assert!(!game.rules.units["aircraft_carrier"].can_combine);
 
         let fighter = game.spawn_unit("fighter", 0, center);
         assert_eq!(game.unit_attack_range(fighter), 5);
@@ -50461,11 +50779,20 @@ mod combat_scenarios {
         let veteran = g.spawn_unit("warrior", 0, center);
         let recruit = g.spawn_unit("warrior", 0, ring[0]);
         g.units.get_mut(&veteran).unwrap().xp = 20;
+        g.units.get_mut(&veteran).unwrap().hp = 40;
+        g.units.get_mut(&veteran).unwrap().xp_bonus_pct = 10.0;
         g.units
             .get_mut(&veteran)
             .unwrap()
             .promotions
             .insert("battlecry".to_string());
+        g.units.get_mut(&recruit).unwrap().hp = 80;
+        g.units.get_mut(&recruit).unwrap().xp_bonus_pct = 25.0;
+        g.units
+            .get_mut(&recruit)
+            .unwrap()
+            .promotions
+            .insert("tortoise".to_string());
         g.apply(
             0,
             &Action::CombineUnits {
@@ -50476,13 +50803,22 @@ mod combat_scenarios {
         .unwrap();
         assert!(!g.units.contains_key(&recruit));
         assert_eq!(g.units[&veteran].formation, 1);
+        assert_eq!(g.units[&veteran].hp, 60);
         assert_eq!(g.units[&veteran].xp, 20);
         assert!(g.units[&veteran].promotions.contains("battlecry"));
+        assert!(g.units[&veteran].promotions.contains("tortoise"));
+        assert_eq!(g.units[&veteran].xp_bonus_pct, 25.0);
         assert_eq!(g.unit_unembarked_strength(&g.units[&veteran]), 30.0);
 
         g.begin_turn(0);
         g.players[0].civics.insert("mobilization".to_string());
         let third = g.spawn_unit("warrior", 0, ring[1]);
+        g.units.get_mut(&third).unwrap().hp = 90;
+        g.units
+            .get_mut(&third)
+            .unwrap()
+            .promotions
+            .insert("amphibious".to_string());
         g.apply(
             0,
             &Action::CombineUnits {
@@ -50492,6 +50828,8 @@ mod combat_scenarios {
         )
         .unwrap();
         assert_eq!(g.units[&veteran].formation, 2);
+        assert_eq!(g.units[&veteran].hp, 70);
+        assert!(g.units[&veteran].promotions.contains("amphibious"));
         assert_eq!(g.unit_unembarked_strength(&g.units[&veteran]), 37.0);
 
         let (mut g, center, ring) = controlled_game(3162);
@@ -50520,6 +50858,104 @@ mod combat_scenarios {
         g.apply(0, &Action::UnlinkUnits { unit: escort }).unwrap();
         assert_eq!(g.units[&escort].linked_to, None);
         assert_eq!(g.units[&builder].linked_to, None);
+    }
+
+    #[test]
+    fn unique_formation_unlocks_and_city_state_exclusions_match_gathering_storm() {
+        let (mut spain, center, ring) = controlled_game(3166);
+        spain.players[0].civ = "Spain".to_string();
+        spain.players[0].civics.insert("mercantilism".to_string());
+        let galley = spain.spawn_unit("galley", 0, center);
+        let second = spain.spawn_unit("galley", 0, ring[0]);
+        assert_eq!(spain.can_combine_units(0, galley, second), Some(1));
+        spain.do_combine_units(0, galley, second).unwrap();
+        spain.begin_turn(0);
+        let third = spain.spawn_unit("galley", 0, ring[1]);
+        assert_eq!(spain.can_combine_units(0, galley, third), Some(2));
+
+        let (mut zulu, center, ring) = controlled_game(3167);
+        zulu.players[0].civ = "Zulu".to_string();
+        zulu.players[0].civics.insert("mercenaries".to_string());
+        let warrior = zulu.spawn_unit("warrior", 0, center);
+        let second = zulu.spawn_unit("warrior", 0, ring[0]);
+        assert_eq!(zulu.can_combine_units(0, warrior, second), Some(1));
+        zulu.do_combine_units(0, warrior, second).unwrap();
+        assert_eq!(zulu.unit_formation_bonus(&zulu.units[&warrior]), 15.0);
+        zulu.begin_turn(0);
+        zulu.players[0].civics.insert("nationalism".to_string());
+        let third = zulu.spawn_unit("warrior", 0, ring[1]);
+        assert_eq!(zulu.can_combine_units(0, warrior, third), Some(2));
+        zulu.do_combine_units(0, warrior, third).unwrap();
+        assert_eq!(zulu.unit_formation_bonus(&zulu.units[&warrior]), 22.0);
+
+        let (mut levied, center, ring) = controlled_game(3168);
+        levied.players[0].civics.insert("nationalism".to_string());
+        let regular = levied.spawn_unit("warrior", 0, center);
+        let city_state_unit = levied.spawn_unit("warrior", 0, ring[0]);
+        levied.units.get_mut(&city_state_unit).unwrap().levied_from = Some(2);
+        assert_eq!(levied.can_combine_units(0, regular, city_state_unit), None);
+        levied.units.get_mut(&city_state_unit).unwrap().levied_from = None;
+        levied.players[0].is_minor = true;
+        assert_eq!(levied.can_combine_units(0, regular, city_state_unit), None);
+    }
+
+    #[test]
+    fn isibongo_capture_upgrade_and_garrison_loyalty_are_formation_aware() {
+        let (mut game, city_pos, ring) = controlled_game(3169);
+        game.players[0].civ = "Zulu".to_string();
+        game.players[0].civics.insert("mercenaries".to_string());
+        let city = game.found_city_for(1, city_pos, None);
+        game.cities.get_mut(&city).unwrap().hp = 0;
+        let captor = game.spawn_unit("warrior", 0, ring[0]);
+        game.apply(
+            0,
+            &Action::Attack {
+                unit: captor,
+                target: city_pos,
+            },
+        )
+        .unwrap();
+        assert_eq!(game.cities[&city].owner, 0);
+        assert_eq!(game.units[&captor].formation, 1);
+
+        let with_corps = game.city_loyalty_per_turn(&game.cities[&city]);
+        game.units.get_mut(&captor).unwrap().formation = 0;
+        let with_single = game.city_loyalty_per_turn(&game.cities[&city]);
+        assert!((with_corps - with_single - 2.0).abs() < 1e-9);
+
+        let (mut carrier_capture, city_pos, ring) = controlled_game(3171);
+        carrier_capture.players[0].civ = "Zulu".to_string();
+        carrier_capture.players[0]
+            .civics
+            .insert("nationalism".to_string());
+        carrier_capture.map.tiles.get_mut(&city_pos).unwrap().terrain = "coast".to_string();
+        carrier_capture.map.tiles.get_mut(&ring[0]).unwrap().terrain = "coast".to_string();
+        let city = carrier_capture.found_city_for(1, city_pos, None);
+        carrier_capture.cities.get_mut(&city).unwrap().hp = 0;
+        let carrier = carrier_capture.spawn_unit("aircraft_carrier", 0, ring[0]);
+        carrier_capture
+            .apply(
+                0,
+                &Action::Attack {
+                    unit: carrier,
+                    target: city_pos,
+                },
+            )
+            .unwrap();
+        assert_eq!(carrier_capture.units[&carrier].formation, 1);
+    }
+
+    #[test]
+    fn formation_great_admirals_create_fleets_and_armadas() {
+        let (mut game, center, _) = controlled_game(3170);
+        let ship = game.spawn_unit("galley", 0, center);
+        let duilius = game.rules.great_people["gaius_duilius"].clone();
+        game.named_great_person_effect(0, &duilius);
+        assert_eq!(game.units[&ship].formation, 1);
+
+        let santa_cruz = game.rules.great_people["santa_cruz"].clone();
+        game.named_great_person_effect(0, &santa_cruz);
+        assert_eq!(game.units[&ship].formation, 2);
     }
 
     #[test]

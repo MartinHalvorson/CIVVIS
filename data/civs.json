@@ -309,15 +309,19 @@
   "Zulu": {
     "leader": "Shaka",
     "ability": "isibongo",
-    "note": "Isibongo: +25% combat experience, and +20% production toward units",
+    "note": "Isibongo and Amabutho: early Corps/Armies, stronger formations, capture upgrades, and garrison Loyalty",
     "agenda": "ingoma_yenkosi",
     "traits": [
       "aggressive_military",
       "expansionist"
     ],
     "effects": {
-      "unit_xp_pct": 25,
-      "unit_production_pct": 20
+      "land_corps_civic_mercenaries": 1,
+      "land_army_civic_nationalism": 1,
+      "formation_combat_strength": 5,
+      "capture_formation_upgrade": 1,
+      "garrison_loyalty": 3,
+      "formation_garrison_loyalty": 5
     }
   },
   "Gaul": {
@@ -426,9 +430,10 @@
     "agenda": "counter_reformation",
     "effects": {
       "city_gold": 1,
-      "city_faith": 1
+      "city_faith": 1,
+      "naval_formation_civic_mercantilism": 1
     },
-    "note": "Treasure Fleet: +1 gold and +1 faith in every city",
+    "note": "Treasure Fleet: Fleets and Armadas at Mercantilism, plus current trade-economy bonuses",
     "traits": [
       "religious_major_civ"
     ]

@@ -239,10 +239,15 @@ pub struct UnitSpec {
     /// False for units which only enter play through a special effect.
     #[serde(default = "default_true")]
     pub buildable: bool,
-    /// Some super-units cannot combine into Corps/Armies or earn ordinary
-    /// experience and promotion-tree upgrades.
+    /// False only for units which can never exist as a Corps/Fleet or
+    /// Army/Armada, including the Giant Death Robot.
     #[serde(default = "default_true")]
     pub can_formations: bool,
+    /// Whether two copies may be combined in the field. Aircraft Carriers are
+    /// the Civ VI exception: formations can be trained or purchased directly,
+    /// but existing carriers cannot merge.
+    #[serde(default = "default_true")]
+    pub can_combine: bool,
     #[serde(default = "default_true")]
     pub earns_xp: bool,
     /// Theocracy and the Grand Master's Chapel enable Faith purchase by unit

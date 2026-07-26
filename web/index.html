@@ -18278,7 +18278,7 @@ function drawCityScreen() {
     entries.get(key).sites.push(action);
   }
   for (const action of buys) {
-    const item = action.unit ? {unit: action.unit}
+    const item = action.unit ? {unit: action.unit, formation: action.formation || 0}
       : action.building ? {building: action.building}
       : action.district ? {district: action.district, pos: action.pos}
       : null;
@@ -18368,7 +18368,7 @@ function drawUbar() {
   const u = sel;
   let h = `<b>${u.type}</b> <span class="small">hp ${u.hp} · mp ${u.moves_left}` +
     (u.level > 1 ? ` · lvl ${u.level}` : "") + (u.fortified ? " · ⛨ fortified" : "") +
-    (u.formation === 1 ? " · Corps/Fleet" : u.formation === 2 ? " · Army/Armada" : "") +
+    (u.formation ? ` · ${formationName(u.type, u.formation)}` : "") +
     (u.linked_to ? ` · linked #${u.linked_to}` : "") +
     (u.religion ? ` · ${titleCase(u.religion)}` : "") +
     (u.charges ? ` · ${u.charges} charges` : "") +
@@ -18412,7 +18412,7 @@ function drawUbar() {
     if (a.type === "upgrade")
       h += `<button class="primary" onclick='send(${JSON.stringify(a)})'>⬆ Upgrade to ${titleCase(a.to)}</button>`;
     if (a.type === "combine_units")
-      h += `<button onclick='send(${JSON.stringify(a)})'>⚔ Form ${u.formation === 1 ? "Army/Armada" : "Corps/Fleet"} with #${a.unit === u.id ? a.with : a.unit}</button>`;
+      h += `<button onclick='send(${JSON.stringify(a)})'>⚔ Form ${formationName(u.type, u.formation === 1 ? 2 : 1)} with #${a.unit === u.id ? a.with : a.unit}</button>`;
     if (a.type === "link_units")
       h += `<button onclick='send(${JSON.stringify(a)})'>🔗 Link with #${a.unit === u.id ? a.with : a.unit}</button>`;
     if (a.type === "unlink_units")
@@ -18484,7 +18484,7 @@ function hook(id, fn) {
 }
 function itemName(it) {
   if (it.unit && it.formation) {
-    return (it.unit + (it.formation >= 2 ? " army/armada" : " corps/fleet")).replaceAll("_", " ");
+    return (it.unit + " " + formationName(it.unit, it.formation)).replaceAll("_", " ");
   }
   return (it.unit || it.building || it.project || (it.wonder ? it.wonder + " @" + it.pos : it.district + " @" + it.pos)).replaceAll("_", " ");
 }
@@ -18497,12 +18497,18 @@ function prodGlyph(it) {
 function itemCost(it) {
   if (!RULES) return "?";
   let standard;
-  if (it.unit) standard = RULES.units[it.unit].cost * (it.formation ? (it.formation >= 2 ? 2.25 : 1.5) : 1);
+  if (it.unit) standard = RULES.units[it.unit].cost * (it.formation ? (it.formation >= 2 ? 2 : 1.5) : 1);
   else if (it.building) standard = RULES.buildings[it.building].cost;
   else if (it.wonder) standard = RULES.wonders[it.wonder].cost;
   else if (it.project) standard = RULES.projects[it.project].cost;
   else standard = RULES.districts[it.district].cost;
   return standard * gameSpeedPercent() / 100;
+}
+function formationName(unit, formation) {
+  const naval = RULES?.units?.[unit]?.domain === "sea";
+  if (formation >= 2) return naval ? "Armada" : "Army";
+  if (formation === 1) return naval ? "Fleet" : "Corps";
+  return "";
 }
 function gameSpeedPercent() {
   if (!RULES || !Array.isArray(RULES.game_speeds)) return 100;
@@ -18693,7 +18699,7 @@ const WAR_LOSS_CATEGORY_INDEX = new Map(WAR_LOSS_CATEGORIES.map(([kind], index) 
 const WAR_LOSS_CIVILIAN_ORDER = new Map([["settler", 0], ["builder", 1], ["trader", 2]]);
 
 function warLossUnitInfo(kind) {
-  const formationMatch = kind.match(/ (corps\/fleet|army\/armada)$/);
+  const formationMatch = kind.match(/ (corps\/fleet|army\/armada|corps|fleet|army|armada)$/);
   const formation = formationMatch ? formationMatch[1] : "";
   const unit = formationMatch ? kind.slice(0, -formationMatch[0].length) : kind;
   const rule = RULES?.units?.[unit] || {};
@@ -18711,7 +18717,8 @@ function warLossUnitInfo(kind) {
     Number(anchorRule.ranged_strength) || 0, Number(anchorRule.bombard_strength) || 0);
   return {
     kind, unit, rule, unique, anchor, formation, category, anchorIndex, power,
-    formationRank: formation === "army/armada" ? 2 : formation === "corps/fleet" ? 1 : 0,
+    formationRank: ["army", "armada", "army/armada"].includes(formation) ? 2
+      : ["corps", "fleet", "corps/fleet"].includes(formation) ? 1 : 0,
   };
 }
 
@@ -19195,7 +19202,7 @@ function drawCityPanel() {
     `</select>`;
   const buys = state.legal_actions.filter(a => a.type === "buy" && a.city === c.id);
   if (buys.length) h += `<div style="margin-top:7px">` + buys.map(a =>
-    `<button onclick='send(${JSON.stringify(a)})'>Buy ${titleCase(a.unit)} · ${titleCase(a.currency)}</button>`).join("") + `</div>`;
+    `<button onclick='send(${JSON.stringify(a)})'>Buy ${titleCase(itemName({unit: a.unit, formation: a.formation || 0}))} · ${titleCase(a.currency)}</button>`).join("") + `</div>`;
   if (state.legal_actions.some(a => a.type === "city_strike" && a.city === c.id)) {
     h += `<button class="danger" onclick='selCity._striking=true'>🏹 Choose ranged target</button>`;
   }

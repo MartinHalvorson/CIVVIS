@@ -2639,6 +2639,7 @@ impl BasicAi {
                 &Action::Buy {
                     city: city_ids[0],
                     unit: "builder".to_string(),
+                    formation: 0,
                     currency: "faith".to_string(),
                 },
             );
@@ -2660,6 +2661,7 @@ impl BasicAi {
                             &Action::Buy {
                                 city: *cid,
                                 unit: "missionary".to_string(),
+                                formation: 0,
                                 currency: "faith".to_string(),
                             },
                         );
@@ -2977,6 +2979,7 @@ impl BasicAi {
                 &Action::Buy {
                     city: *cid,
                     unit: unit.to_string(),
+                    formation: 0,
                     currency: "gold".to_string(),
                 },
             )
@@ -3048,6 +3051,7 @@ impl BasicAi {
             &Action::Buy {
                 city,
                 unit,
+                formation: 0,
                 currency: "gold".to_string(),
             },
         )
@@ -8725,6 +8729,7 @@ mod tests {
             &Action::Buy {
                 city: home,
                 unit: "battering_ram".to_string(),
+                formation: 0,
                 currency: "gold".to_string(),
             },
         )
