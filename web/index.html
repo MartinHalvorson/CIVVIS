@@ -573,16 +573,35 @@
     background: color-mix(in srgb, var(--stat-color) 17%, transparent);
     box-shadow: inset 0 0 6px color-mix(in srgb, var(--stat-color) 10%, transparent);
   }
-  /* The dossier is one card opened up — about three cards tall, one
-     civilization at a time. It hangs off the bottom of its own card so the
-     ribbon still reads as a single ranked column. */
-  .diplomacy-card.expanded { border-color: #8ba79b; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+  /* An open dossier leaves a quiet highlight on its player row. The dossier
+     itself is a separate map window, so several civilizations can stay open
+     without changing the height or scroll position of the standings. */
+  .diplomacy-card.expanded { border-color: #8ba79b; }
+  #dossier-windows {
+    position: absolute; inset: 0; z-index: 12; overflow: hidden;
+    pointer-events: none;
+  }
+  .dossier-window {
+    position: absolute; z-index: 1; width: min(720px, calc(100% - 8px));
+    height: min(304px, calc(100% - 8px)); min-width: 300px; min-height: 190px;
+    display: flex; flex-direction: column; overflow: hidden; pointer-events: auto;
+    border: 1px solid #8ba79b; border-radius: 10px;
+    background: linear-gradient(180deg, #0b1a16fa, #08120ff5);
+    box-shadow: 0 18px 48px #000c, inset 0 1px #ffffff0b;
+    backdrop-filter: blur(16px) saturate(130%);
+  }
+  .dossier-window .dossier-head {
+    position: relative; flex: none; min-height: 30px; display: flex;
+    align-items: center; gap: 7px; margin: 0; padding: 4px 30px 4px 8px;
+    border-bottom: 1px solid #ffffff12; background: #10221cf2;
+  }
+  .dossier-drag { flex: 1 1 auto; align-self: stretch; }
+  .dossier-window .overlay-close { top: 4px; right: 4px; }
   .civ-dossier {
-    margin-top: -3px; padding: 7px 8px 8px; border: 1px solid #8ba79b; border-top: 0;
-    border-radius: 0 0 9px 9px; background: linear-gradient(180deg, #0b1a16f7, #08120fef);
+    flex: 1 1 auto; min-height: 0; margin: 0; padding: 7px 8px 8px;
+    overflow: auto; background: linear-gradient(180deg, #0b1a16f7, #08120fef);
     box-shadow: inset 0 -1px #ffffff08;
   }
-  .dossier-head { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; }
   .dossier-title { flex: 0 1 auto; overflow: hidden; color: #f1f4ed; font-size: 12px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
   .dossier-tags { display: flex; flex: 1; flex-wrap: wrap; gap: 4px; min-width: 0; }
   .dossier-tag {
@@ -1919,14 +1938,6 @@
     font-size: clamp(9px, .8vw, 13px); font-weight: 950; letter-spacing: -.025em;
     line-height: 1; text-shadow: 0 1px 2px #000, 0 0 8px currentColor;
   }
-  #playerhud .civ-dossier {
-    position: absolute; z-index: 2; top: calc(100% + 6px); right: 0;
-    width: min(760px, calc(100vw - 28px)); max-height: calc(66.667vh - 24px);
-    margin: 0; overflow-y: auto; border-top: 1px solid #8ba79b; border-radius: 9px;
-    box-shadow: 0 18px 48px #000c;
-  }
-  #playerhud .diplomacy-card.expanded { border-radius: 7px; }
-
   /* Victory progress starts in the right corner and grows down with the rows
      it actually shows, never past the world minimap. Six races read one under
      the other, each keeping the rail's full width for civilization names. If
@@ -1961,7 +1972,8 @@
   #victoryhud .hud-rail { overflow-x: hidden; overflow-y: auto; }
   #victoryhud .hud-rail::-webkit-scrollbar { width: 3px; height: 3px; }
 
-  body.cinema-mode #playerhud, body.cinema-mode #victoryhud { display: none !important; }
+  body.cinema-mode #playerhud, body.cinema-mode #victoryhud,
+  body.cinema-mode #dossier-windows { display: none !important; }
   body.cinema-mode #victoryhud {
     top: clamp(37px, 4.6vh, 54px); left: 50%; right: auto;
     width: min(960px, calc(100% - 168px)); height: 112px;
@@ -2214,6 +2226,7 @@
   </div>
   <aside id="victoryhud" data-layout-widget="victory" aria-label="Turn and victory tracker"></aside>
   <aside id="playerhud" data-layout-widget="players" aria-label="Player stats"></aside>
+  <div id="dossier-windows" aria-label="Open player dossiers"></div>
   <div id="zoomctl">
     <button id="paneltoggle" class="icon" title="Hide command deck" aria-label="Hide command deck">&lt;</button>
     <button id="collapsepause" hidden title="Pause simulation" aria-label="Pause simulation">⏸</button>
@@ -2957,9 +2970,10 @@ let eventLogs = new Map(), nextEventId = 1, lastLeaderByView = new Map(), lastSi
 let paintedFrame = null, lastSideTurn = null;
 let TMAP = new Map();
 let tradeFilter = "all", tradeBusy = false;
-// The leader ribbon opens one civilization at a time — this is whose dossier
-// is showing, or null for the consolidated ribbon alone.
-let hudExpanded = null;
+// Open dossiers are ordered from oldest to newest. Keeping the collection
+// separate from the standings lets several civilizations remain open for a
+// side-by-side comparison; the last entry is also the one Escape closes.
+let hudOpenDossiers = [];
 
 // Locked civilizations. A locked row keeps its place in the ranking until the
 // table would scroll it out of sight, then holds at the edge it was about to
@@ -4131,6 +4145,7 @@ const HUD_WIDGETS = {
   victory: {element:document.getElementById("victoryhud"), minWidth:150, minHeight:88},
   minimap: {element:document.querySelector(".minimap-frame"), minWidth:130, minHeight:96},
 };
+const dossierWidgetName = id => `dossier-${id}`;
 const HUD_RESIZE_EDGES = [
   ["n", "top edge"], ["e", "right edge"], ["s", "bottom edge"], ["w", "left edge"],
   ["ne", "top-right corner"], ["se", "bottom-right corner"],
@@ -4262,6 +4277,11 @@ function resetHudWidget(name, persist = true) {
   const config = HUD_WIDGETS[name];
   if (!config?.element) return;
   delete HUD_LAYOUT[name];
+  if (Number.isInteger(config.dossierId)) {
+    applyHudWidgetMetrics(name, defaultDossierMetrics(config.dossierId));
+    if (persist) saveHudLayout();
+    return;
+  }
   for (const property of ["left", "top", "right", "bottom", "width", "height",
                           "max-width", "max-height", "transform"])
     config.element.style.removeProperty(property);
@@ -4319,7 +4339,7 @@ function finishHudLayoutGesture(event) {
   if (!hudLayoutGesture || (event && event.pointerId !== hudLayoutGesture.pointerId)) return;
   const gesture = hudLayoutGesture;
   hudLayoutGesture = null;
-  HUD_WIDGETS[gesture.name].element.classList.remove("layout-widget-active");
+  HUD_WIDGETS[gesture.name]?.element.classList.remove("layout-widget-active");
   document.body.classList.remove("hud-layout-active", "layout-resizing");
   document.body.style.removeProperty("--layout-resize-cursor");
   if (gesture.moved) saveHudLayout();
@@ -4338,17 +4358,27 @@ window.addEventListener("pointermove", event => {
   if (!gesture.moved) return;
   const next = {...gesture.start};
   if (gesture.mode === "move") { next.x += dx; next.y += dy; }
-  else Object.assign(next, resizeHudWidget(HUD_WIDGETS[gesture.name], gesture.start,
-                                           gesture.edge, dx, dy));
+  else {
+    const config = HUD_WIDGETS[gesture.name];
+    if (!config) return;
+    Object.assign(next, resizeHudWidget(config, gesture.start, gesture.edge, dx, dy));
+  }
   applyHudWidgetMetrics(gesture.name, next);
 }, {passive:false});
 window.addEventListener("pointerup", finishHudLayoutGesture);
 window.addEventListener("pointercancel", finishHudLayoutGesture);
 
-for (const [name, config] of Object.entries(HUD_WIDGETS)) {
+// Static overlays and dynamically-created dossier windows share the same
+// movement, resizing and keyboard controls. Binding through one function also
+// means a dossier can be destroyed and recreated without leaving global
+// listeners or a second writer for its layout behind.
+function bindHudWidget(name, config) {
+  if (config.layoutBound) return;
   const element = config.element;
-  if (!element) continue;
+  if (!element) return;
+  config.layoutBound = true;
   element.addEventListener("pointerdown", event => {
+    if (Number.isInteger(config.dossierId)) raiseDossierWindow(element);
     const resizeHandle = event.target.closest?.("[data-widget-resize]");
     if (resizeHandle)
       beginHudLayoutGesture(event, name, "resize", resizeHandle.dataset.widgetResize);
@@ -4376,6 +4406,69 @@ for (const [name, config] of Object.entries(HUD_WIDGETS)) {
     applyHudWidgetMetrics(name, next, true);
   });
 }
+
+let dossierWindowZ = 1;
+
+function defaultDossierMetrics(id) {
+  const margin = 10, gap = 10;
+  const index = Math.max(0, hudOpenDossiers.indexOf(id));
+  // On a desktop, two dossiers open directly beside one another for an
+  // immediate comparison. Narrow maps cascade them instead, while retaining
+  // enough width for the dossier's two-column responsive layout.
+  const columns = area.clientWidth >= 980 ? 2 : 1;
+  const width = columns === 2
+    ? Math.min(620, (area.clientWidth - margin * 2 - gap) / 2)
+    : Math.min(720, area.clientWidth - margin * 2);
+  const height = Math.min(304, area.clientHeight - 8);
+  const areaRect = area.getBoundingClientRect();
+  const playersRect = document.getElementById("playerhud")?.getBoundingClientRect();
+  const belowPlayers = playersRect ? playersRect.bottom - areaRect.top + 8 : 44;
+  const row = Math.floor(index / columns);
+  return clampHudWidget(HUD_WIDGETS[dossierWidgetName(id)], {
+    x:margin + (index % columns) * (width + gap),
+    y:belowPlayers + row * 32,
+    width, height,
+  });
+}
+
+function raiseDossierWindow(element) {
+  if (!element) return;
+  if (dossierWindowZ >= 15) {
+    dossierWindowZ = 1;
+    for (const id of hudOpenDossiers) {
+      const open = document.querySelector(`[data-dossier-window="${id}"]`);
+      if (open) open.style.zIndex = `${dossierWindowZ++}`;
+    }
+  }
+  element.style.zIndex = `${++dossierWindowZ}`;
+}
+
+function registerDossierWidget(id, element) {
+  const name = dossierWidgetName(id);
+  if (HUD_WIDGETS[name]?.element === element) return;
+  const config = {element, minWidth:300, minHeight:190, dossierId:id};
+  HUD_WIDGETS[name] = config;
+  bindHudWidget(name, config);
+  const saved = HUD_LAYOUT[name];
+  applyHudWidgetMetrics(name, saved && typeof saved === "object"
+    ? metricsFromSaved(config, saved)
+    : defaultDossierMetrics(id));
+  raiseDossierWindow(element);
+}
+
+function unregisterDossierWidget(id) {
+  const name = dossierWidgetName(id);
+  const element = HUD_WIDGETS[name]?.element;
+  if (hudLayoutGesture?.name === name) {
+    hudLayoutGesture = null;
+    document.body.classList.remove("hud-layout-active", "layout-resizing");
+    document.body.style.removeProperty("--layout-resize-cursor");
+  }
+  delete HUD_WIDGETS[name];
+  element?.remove();
+}
+
+for (const [name, config] of Object.entries(HUD_WIDGETS)) bindHudWidget(name, config);
 document.getElementById("reset-overlay-layout").addEventListener("click", resetAllHudWidgets);
 let DPR = window.devicePixelRatio || 1;
 applySavedHudLayouts();
@@ -14972,6 +15065,7 @@ function drawPlayerHud() {
     const numericValue = Number(value) || 0;
     highestByStat.set(kind, Math.max(highestByStat.get(kind) ?? -Infinity, numericValue));
   }));
+  const relationById = new Map();
   const html =
     `<button class="overlay-close" type="button" data-overlay-close="players" aria-label="Hide player standings; restore them in Display settings" title="Hide player standings · restore in Display settings">✕</button>` +
     hudTurnPlate() +
@@ -15005,6 +15099,7 @@ function drawPlayerHud() {
         : alliance ? `${titleCase(alliance.kind)} Alliance · Level ${alliance.level}`
         : p.friend ? "Declared Friend"
         : "Neutral standing";
+      relationById.set(p.id, relation);
       const relationSummary = strategyText ? `${strategyText} · ${relation}` : relation;
       // A leader's agenda is public once you have met them, and so is roughly
       // how they feel about you. The glyph is the quick read; the tooltip
@@ -15048,7 +15143,7 @@ function drawPlayerHud() {
       const stateClass = `${relationClass} ${p.at_war_with_me ? "at-war" : ""} ${p.alive ? "" : "dead"}`;
       const stats = statsByPlayer.get(p.id);
       const watchTitle = `Watch ${p.civ} through its fog of war · ${relationSummary}${agendaText}`;
-      const expanded = hudExpanded === p.id;
+      const expanded = hudOpenDossiers.includes(p.id);
       // Which rows actually hold at an edge, and how they stagger, depends on
       // how tall the ribbon is right now; syncPlayerLockPins() settles that
       // against the rendered box. The markup only records the choice.
@@ -15091,9 +15186,9 @@ function drawPlayerHud() {
           const isLeader = highestByStat.get(kind) !== 0 && Number(value || 0) === highestByStat.get(kind);
           return `<span class="ribbon-stat ${kind}${isLeader ? " category-leader" : ""}" ` +
             `title="${label}${isLeader ? " · Category leader" : ""}"><b>${ribbonStat(value)}${marker}</b></span>`;
-        }).join("") + `</button></div>` +
-        (expanded ? civDossier(p, rank, relation) : "");
+        }).join("") + `</button></div>`;
     }).join("") + `</div>` + hudResizeHandles("player standings");
+  drawDossierWindows(majors, rankById, relationById);
   if (html === hudHtml || hudLayoutGesture?.name === "players") return;
   hudHtml = html;
   hud.innerHTML = html;
@@ -15176,7 +15271,9 @@ const victoryHudSizeObserver = typeof ResizeObserver === "function"
 victoryHudSizeObserver?.observe(document.getElementById("victoryhud"));
 
 function toggleCivDossier(id) {
-  hudExpanded = hudExpanded === id ? null : id;
+  const index = hudOpenDossiers.indexOf(id);
+  if (index >= 0) hudOpenDossiers.splice(index, 1);
+  else hudOpenDossiers.push(id);
   drawPlayerHud();
 }
 
@@ -15207,6 +15304,18 @@ hudRibbon.addEventListener("click", ev => {
   if (target) runHudAction(target);
 });
 
+const dossierWindows = document.getElementById("dossier-windows");
+dossierWindows.addEventListener("mousedown", ev => {
+  if (ev.button !== 0) return;
+  const target = ev.target.closest?.("[data-hud-action]");
+  if (target) runHudAction(target);
+});
+dossierWindows.addEventListener("click", ev => {
+  if (ev.detail !== 0) return;
+  const target = ev.target.closest?.("[data-hud-action]");
+  if (target) runHudAction(target);
+});
+
 function civName(id) {
   return state.players.find(player => player.id === id)?.civ || `Player ${id}`;
 }
@@ -15230,10 +15339,50 @@ function activeWarsFor(pid) {
     .sort((a, b) => b.turns - a.turns);
 }
 
-// The dossier is one ribbon card opened up: about three cards tall, and only
-// ever one at a time. The ribbon answers "who is winning"; this answers "what
-// is this civilization actually trying to do", which is the question a
-// spectator asks next and which no single row of numbers can carry.
+function drawDossierWindows(majors, rankById, relationById) {
+  const playersById = new Map(majors.map(player => [player.id, player]));
+  // Meeting visibility can change after a reload or a new game. Do not leave
+  // a stale window describing a seat that is no longer in this standings set.
+  const visibleIds = hudOpenDossiers.filter(id => playersById.has(id));
+  const visibleSet = new Set(visibleIds);
+  for (const element of [...dossierWindows.querySelectorAll("[data-dossier-window]")]) {
+    const id = +element.dataset.dossierWindow;
+    if (!visibleSet.has(id)) unregisterDossierWidget(id);
+  }
+  hudOpenDossiers = visibleIds;
+
+  for (const id of hudOpenDossiers) {
+    const player = playersById.get(id);
+    const name = dossierWidgetName(id);
+    let element = dossierWindows.querySelector(`[data-dossier-window="${id}"]`);
+    if (!element) {
+      element = document.createElement("aside");
+      element.className = "dossier-window";
+      element.dataset.dossierWindow = id;
+      element.dataset.layoutWidget = name;
+      element.setAttribute("role", "dialog");
+      element.setAttribute("aria-modal", "false");
+      element.setAttribute("aria-labelledby", `dossier-title-${id}`);
+      dossierWindows.appendChild(element);
+      registerDossierWidget(id, element);
+    }
+    const next = civDossier(player, rankById.get(id), relationById.get(id)) +
+      hudResizeHandles(`${player.civ} dossier`);
+    // Keep the pointer-owning title/edge attached for the whole gesture. Live
+    // state can still update every other dossier while one window is moving.
+    if (hudLayoutGesture?.name === name || element.dossierHtml === next) continue;
+    const scrollTop = element.querySelector(".civ-dossier")?.scrollTop || 0;
+    element.dossierHtml = next;
+    element.style.setProperty("--civ", pcol(id));
+    element.innerHTML = next;
+    const body = element.querySelector(".civ-dossier");
+    if (body) body.scrollTop = scrollTop;
+  }
+}
+
+// A dossier answers "what is this civilization actually trying to do", which
+// no single standings row can carry. It is rendered into an independent live
+// window so another player's answer can remain beside it for comparison.
 function civDossier(p, rank, relation) {
   const plan = p.ai_plan || null;
   const y = p.yields || {};
@@ -15355,12 +15504,15 @@ function civDossier(p, rank, relation) {
     p.alive ? "" : `<span class="dossier-tag war">Defeated</span>`,
   ].filter(Boolean).join("");
 
-  return `<div class="civ-dossier" style="--civ:${pcol(p.id)}">` +
-    `<div class="dossier-head">` +
-    `<span class="dossier-title">${p.civ} · ${p.leader || "Unknown leader"}</span>` +
-    `<span class="dossier-tags">${tags}</span>` +
+  return `<div class="dossier-head">` +
+    `<div class="dossier-drag widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
+    `aria-label="Move ${p.civ} dossier; use arrow keys or drag" title="Drag to move · arrow keys also move">` +
+    `<span class="dossier-title" id="dossier-title-${p.id}">${p.civ} · ${p.leader || "Unknown leader"}</span>` +
+    `<span class="dossier-tags">${tags}</span></div>` +
     `<button class="dossier-btn" data-hud-action="watch" data-hud-civ="${p.id}">◉ Watch</button>` +
-    `<button class="dossier-btn" data-hud-action="dossier" data-hud-civ="${p.id}" aria-label="Close dossier">✕</button></div>` +
+    `<button class="overlay-close" type="button" data-hud-action="dossier" data-hud-civ="${p.id}" ` +
+    `aria-label="Close ${p.civ} dossier" title="Close ${p.civ} dossier">✕</button></div>` +
+    `<div class="civ-dossier">` +
     `<div class="dossier-grid">` +
     `<section class="dossier-section"><h4>Grand strategy</h4>${strategyBody}</section>` +
     `<section class="dossier-section"><h4>Victory tracker</h4>${tracks}</section>` +
@@ -19684,8 +19836,13 @@ document.addEventListener("keydown", ev => {
     return;
   }
   if (ev.key === "Escape") {
-    // The dossier is the topmost thing Escape can close, so it goes first.
-    if (hudExpanded !== null) { hudExpanded = null; drawPlayerHud(); return; }
+    // Dossiers are non-modal, but Escape still dismisses the most recently
+    // opened comparison window before unwinding map modes.
+    if (hudOpenDossiers.length) {
+      hudOpenDossiers.pop();
+      drawPlayerHud();
+      return;
+    }
     if (clearInterfaceMode()) return;
     if (cameraFollowManual) { stopCameraFollow(); return; }
     if (fullscreenMapRestore) { toggleFullscreenMap(); return; }
