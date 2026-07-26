@@ -92,11 +92,14 @@ lasts; it never promised that anybody managed to read it, and a page that
 paints slower than the budget used to lose turns silently.
 
 Only a page that paints holds the simulation to a turn. The browser reports the
-turn it last drew on each `/state` poll (`?painted=<turn>&world=<seed>`), so the
-keeper's refresh check and any `curl` read the same state without dragging the
-exhibition down to their own cadence. A viewer that stops asking is dropped
-after a few seconds and costs the unattended exhibition exactly one turn's
-delay.
+frame it last drew on each `/state` poll
+(`?painted=<turn>&world=<seed>&finished=<0-or-1>`), so the keeper's refresh check
+and any `curl` read the same state without dragging the exhibition down to their
+own cadence. The terminal bit matters because a seat can decide a victory in
+the middle of a round without incrementing the turn; that result must wake and
+paint as a distinct frame rather than wait for the long-poll timeout. A viewer
+that stops asking is dropped after a few seconds and costs the unattended
+exhibition exactly one turn's delay.
 
 **Every viewer is owed every turn, and each paint is waited for on its own.** Two tabs
 on one exhibition used to take alternate turns: the stepper released a turn as
@@ -115,12 +118,13 @@ between polls, which was a ceiling of ten turns a second however fast the world
 could be played.
 
 **The map is sent as a patch.** A page says which tile array it is holding
-(`&have=<world>:<turn>`) and is sent only the tiles that changed — about a dozen
-of 2252 on a standard turn, so a poll costs ~157 KB instead of ~1.36 MB, an 89%
-saving. Saying so is also what parks the poll until there *is* a next turn, so a
-finished turn is written to a socket the moment it exists rather than at the
-page's next tick. A page that reports no baseline, including every health check,
-is answered immediately with the whole map.
+(`&have=<world>:<turn>:<finished>`) and is sent only the tiles that changed —
+about a dozen of 2252 on a standard turn, so a poll costs ~157 KB instead of
+~1.36 MB, an 89% saving. Saying so is also what parks the poll until there *is*
+a next frame, so a finished turn or same-turn victory is written to a socket
+the moment it exists rather than at the page's next tick. A page that reports
+no baseline, including every health check, is answered immediately with the
+whole map.
 
 That report is also what makes the promise auditable while it runs. `/status`
 carries:
