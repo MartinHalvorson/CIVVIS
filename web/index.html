@@ -589,28 +589,48 @@
   .diplomacy-card.at-war { border-color: #a65450; box-shadow: inset 3px 0 var(--danger), inset 0 1px #fff1; }
   .diplomacy-card.dead { opacity: .42; filter: grayscale(.75); }
   /* Empire is the literal capital-map link. Watching through a civilization's
-     fog is a separate, equally visible action instead of being hidden behind
-     all ten of its values. The identity still opens the dossier. */
+     fog is a separate action beside the player whose perspective it selects.
+     Both controls stay quiet enough to read as row tools, while the identity
+     remains the primary route into the dossier. */
   .player-map-links {
     min-width: 0; display: flex; align-items: center; justify-content: center; gap: 4px;
   }
   .empire-link, .watch-as-link {
-    flex: 0 0 auto; display: grid; place-items: center; margin: 0; padding: 0;
-    height: 26px; border: 1px solid var(--civ-border); border-radius: 999px;
-    color: #fff;
-    background: linear-gradient(90deg, var(--civ-border) 0 9px, var(--civ) 9px 100%);
-    box-shadow: 0 0 0 1px #07110f, 0 4px 12px #0008;
-    font: 850 var(--type-micro)/1 var(--font-ui); letter-spacing: .015em; text-shadow: 0 1px 3px #000;
-    white-space: nowrap; cursor: pointer;
+    flex: 0 0 auto; display: flex; align-items: center; justify-content: center; gap: 3px;
+    margin: 0; padding: 0 5px; height: 26px;
+    border: 1px solid color-mix(in srgb, var(--civ-border) 42%, #52665e);
+    border-radius: 6px; color: #dce6e1;
+    background: linear-gradient(180deg, #18241ff2, #0a1311f2);
+    box-shadow: inset 0 1px #ffffff0c, 0 2px 6px #0006;
+    font: 850 var(--type-micro)/1 var(--font-ui); letter-spacing: .025em;
+    text-shadow: 0 1px 2px #000; white-space: nowrap; cursor: pointer;
+    transition: color .12s ease, border-color .12s ease, background .12s ease,
+                box-shadow .12s ease;
   }
+  .empire-link::before, .watch-as-link::before {
+    color: var(--civ-border); font-size: .82em; line-height: 1;
+    text-shadow: 0 0 7px color-mix(in srgb, var(--civ) 55%, transparent);
+  }
+  .empire-link::before { content: "◆"; }
+  .watch-as-link::before { content: "●"; }
   .empire-link { width: 56px; }
   .watch-as-link { width: 56px; }
   .empire-link:hover, .empire-link:focus-visible,
   .watch-as-link:hover, .watch-as-link:focus-visible {
-    filter: brightness(1.16); transform: none;
+    color: #fff; border-color: var(--civ-border);
+    background: linear-gradient(180deg, #21312bf5, #0d1916f5);
+    box-shadow: inset 0 1px #ffffff16, 0 3px 8px #0008;
+    filter: none; transform: none;
+  }
+  .empire-link:focus-visible, .watch-as-link:focus-visible {
+    outline: 2px solid var(--gold-bright); outline-offset: 1px;
   }
   .empire-link:disabled { opacity: .28; cursor: default; filter: none; }
-  .empire-link:disabled:hover { transform: none; }
+  .empire-link:disabled:hover {
+    color: #dce6e1; border-color: color-mix(in srgb, var(--civ-border) 42%, #52665e);
+    background: linear-gradient(180deg, #18241ff2, #0a1311f2);
+    box-shadow: inset 0 1px #ffffff0c, 0 2px 6px #0006; transform: none;
+  }
   .diplomacy-identity, .diplomacy-stats {
     margin: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit;
     text-align: left; cursor: pointer;
@@ -1384,13 +1404,13 @@
     font-size: var(--type-control); letter-spacing: .04em;
   }
   /* The result screen's answers keep their hierarchy: the offer that replaces
-     the world spans the row, while the two ways to keep it sit side by side
+     the world spans the row, while the three ways to keep it sit side by side
      underneath.
      `.winner-content > *` sets every child to `display: block` further down
      this sheet at the same specificity, so the grid has to be named through
      its parent to survive. */
   .winner-content > .winner-actions {
-    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px;
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px;
     margin-top: 14px;
   }
   .winner-actions .winner-again { margin: 0; }
@@ -1912,8 +1932,8 @@
     height: min(var(--player-hud-height, 200px), var(--player-hud-max-height));
     --hud-map-links-column: 58px; --hud-watch-column: 56px;
     --hud-identity-column: minmax(300px, 42%); --hud-column-gap: 6px;
-    --hud-identity-tracks: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1fr)
-      minmax(0, .55fr) minmax(0, .55fr) minmax(0, 1.1fr);
+    --hud-identity-tracks: minmax(0, 1.1fr) minmax(0, 1fr) var(--hud-watch-column)
+      minmax(0, 1fr) minmax(0, .55fr) minmax(0, .55fr) minmax(0, 1.1fr);
     --hud-lock-column: 13px; --hud-row-height: 26px; --hud-row-gap: 2px;
     --hud-row-pitch: calc(var(--hud-row-height) + var(--hud-row-gap));
     display: grid; grid-template-columns: 140px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
@@ -1951,7 +1971,7 @@
     align-items: stretch; gap: var(--hud-column-gap); padding: 0 4px 0 3px;
   }
   .diplomacy-identity-head {
-    min-width: 0; display: grid; grid-column: 4;
+    min-width: 0; display: grid; grid-column: 3 / 5;
     grid-template-columns: var(--hud-identity-tracks); overflow: hidden;
     color: #a9bbb4; font-size: var(--type-micro); font-weight: 950; letter-spacing: .025em;
   }
@@ -1961,6 +1981,31 @@
   }
   .diplomacy-identity-head span:first-child { border-left-color: transparent; }
   .diplomacy-identity-head .numeric { text-align: right; }
+  /* The Watch-as column's heading is the inverse of every action below it:
+     leave any one civilization's fog and return to the omniscient table.
+     Keeping it in the column makes that relationship visible, while the
+     pressed state says when the full spectator view is already active. */
+  #playerhud .spectator-view-link {
+    min-width: 0; width: calc(100% - 2px); height: 14px; align-self: center;
+    margin: 0 1px; padding: 0 2px; overflow: hidden;
+    border: 1px solid #52665e; border-radius: 4px; color: #c5d1cc;
+    background: linear-gradient(180deg, #1a2521, #0b1311);
+    box-shadow: inset 0 1px #ffffff0c; font-size: var(--type-micro);
+    font-weight: 900; line-height: 1; letter-spacing: 0; white-space: nowrap;
+  }
+  #playerhud .spectator-view-link:hover,
+  #playerhud .spectator-view-link:focus-visible {
+    color: #fff; border-color: #91a79e;
+    background: linear-gradient(180deg, #26372f, #101c18); transform: none;
+  }
+  #playerhud .spectator-view-link:focus-visible {
+    outline: 2px solid var(--gold-bright); outline-offset: 1px;
+  }
+  #playerhud .spectator-view-link[aria-pressed="true"] {
+    color: #17130c; border-color: #d8b763;
+    background: linear-gradient(180deg, #dfc477, #b98c3d);
+    box-shadow: inset 0 1px #fff5;
+  }
   .diplomacy-stat-head {
     min-width: 0; display: grid; grid-column: 5;
     grid-template-columns: repeat(10, minmax(0, 1fr));
@@ -1982,9 +2027,10 @@
   }
   #playerhud .diplomacy-ribbon::-webkit-scrollbar { width: 3px; }
   #playerhud .diplomacy-ribbon::-webkit-scrollbar-thumb { background: #476057; border-radius: 4px; }
-  /* One line, five cells: the lock, the Empire/capital link, an explicit
-     Watch-as action, who this is, and their ten values. The masthead has the
-     width to run them side by side, which keeps every readable row compact. */
+  /* One line, five regions: the lock, the Empire/capital link, identity and
+     its adjacent Watch-as action, then the ten values. The parent template is
+     kept stable while the identity region places Watch as directly before the
+     player name it affects. */
   #playerhud .diplomacy-card {
     width: auto; height: auto; min-height: 0; display: grid;
     grid-template-columns: var(--hud-lock-column, 0px) var(--hud-map-links-column)
@@ -1994,8 +2040,13 @@
     overflow: hidden; border-radius: 7px;
   }
   #playerhud .player-map-links { grid-column: 2; grid-row: 1; }
-  #playerhud .watch-as-link { grid-column: 3; grid-row: 1; }
-  #playerhud .diplomacy-identity { grid-column: 4; grid-row: 1; }
+  #playerhud .diplomacy-identity-grid {
+    min-width: 0; display: grid; grid-column: 3 / 5; grid-row: 1;
+    grid-template-columns: var(--hud-identity-tracks); align-items: stretch; overflow: hidden;
+  }
+  #playerhud .watch-as-link { grid-column: 3; grid-row: 1; align-self: center; justify-self: center; }
+  #playerhud .diplomacy-identity-primary { grid-column: 1 / 3; grid-row: 1; }
+  #playerhud .diplomacy-identity-secondary { grid-column: 4 / 8; grid-row: 1; }
   #playerhud .diplomacy-stats { grid-column: 5; grid-row: 1; }
 
   /* Locking a seat keeps its row in view while the rest of the table scrolls
@@ -2024,7 +2075,7 @@
   #playerhud .player-map-links { justify-content: center; gap: 0; }
   #playerhud .empire-link {
     width: 56px; height: 22px;
-    border-width: 1px; box-shadow: 0 0 0 1px #07110f, 0 3px 8px #0008;
+    border-width: 1px; box-shadow: inset 0 1px #ffffff0c, 0 2px 5px #0006;
     font-size: var(--type-micro);
   }
   #playerhud .watch-as-link {
@@ -2035,15 +2086,22 @@
      ELO, win odds or strategy to a different horizontal position on each row. */
   #playerhud .diplomacy-identity {
     position: relative; min-width: 0; display: grid;
-    grid-template-columns: var(--hud-identity-tracks); align-items: stretch;
-    gap: 0; overflow: hidden; padding-block: 0;
+    align-items: stretch; gap: 0; overflow: hidden; padding-block: 0;
+  }
+  #playerhud .diplomacy-identity-primary {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  }
+  #playerhud .diplomacy-identity-secondary {
+    grid-template-columns: minmax(0, 1fr) minmax(0, .55fr) minmax(0, .55fr) minmax(0, 1.1fr);
   }
   #playerhud .diplomacy-identity-field {
     min-width: 0; display: flex; align-items: center; gap: 3px;
     overflow: hidden; padding-inline: 3px; border-left: 1px solid #ffffff0b;
     font-size: var(--type-label); line-height: 1.1; white-space: nowrap;
   }
-  #playerhud .diplomacy-identity-field:first-child { border-left-color: transparent; }
+  #playerhud .diplomacy-identity-primary .diplomacy-identity-field:first-child {
+    border-left-color: transparent;
+  }
   #playerhud .diplomacy-rank { flex: 0 0 auto; margin-right: 0; font-size: var(--type-label); }
   #playerhud .diplomacy-civ { flex: 1 1 auto; }
   #playerhud .diplomacy-leader-name { color: var(--muted); font-weight: 650; }
@@ -4755,6 +4813,7 @@ const RESPONSIVE_TEXT_RULES = [
   {selector:"#restart-sim .sub", min:9, max:11},
   {selector:"#playerhud .ribbon-heading > span", min:10, max:14},
   {selector:"#playerhud .diplomacy-identity-head span", min:9, max:11},
+  {selector:"#playerhud .spectator-view-link", min:9, max:10},
   {selector:"#playerhud .diplomacy-stat-head span", min:9, max:11},
   {selector:"#playerhud .diplomacy-rank", min:9, max:11},
   {selector:"#playerhud .diplomacy-civ", min:9, max:13},
@@ -7501,12 +7560,15 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
         ${SPEC ? `<span class="winner-countdown" id="respawn" role="timer"></span>` : ``}
         <span class="winner-actions">
           ${SPEC ? `` : `<button class="primary winner-again" onclick="startNewSimulation()">Start another game</button>`}
+          <button class="winner-again winner-playon" id="play-on-look-around"
+            onclick="playOnPastVictory('until_next_victory', true)"
+            title="Keep this world and pause before another turn runs, so you can inspect the final map.">Take a look around</button>
           <button class="winner-again winner-playon" id="play-on-next-victory"
-            onclick="playOnPastVictory('until_next_victory')"
-            title="Keep this world without a turn limit. The exact result shown here will not repeat; the next distinct victory ends the game.">One more turn (play until next victory)</button>
+            onclick="playOnPastVictory('until_next_victory', false)"
+            title="Keep this world without a turn limit. The exact result shown here will not repeat; the next distinct victory ends the game.">Play until next victory condition</button>
           <button class="winner-again winner-playon" id="play-on-indefinite"
-            onclick="playOnPastVictory('indefinite')"
-            title="Keep this world without a turn limit and ignore every later victory.">One more turn (play indefinitely)</button>
+            onclick="playOnPastVictory('indefinite', false)"
+            title="Keep this world without a turn limit and ignore every later victory.">Play indefinitely</button>
         </span>
       </div>`;
       playCinemaCue({priority:10, kicker:"History has a victor", title:winnerName});
@@ -13239,7 +13301,12 @@ function planetTerrainPatterns(camera, scale) {
     const pattern = biomePattern(terrain, PLANET_BIOME_PATTERNS);
     if (!pattern) continue;
     if (typeof pattern.setTransform === "function" && typeof DOMMatrix !== "undefined") {
-      const materialScale = Math.max(.62, Math.min(1.35, .72 + scale * .12));
+      // A flat tile is large enough to hold the atlas at almost source scale.
+      // A globe is a whole world in the same frame: carrying that scale over
+      // made one ocean swell span a continent and one grass blade read as a
+      // hedge. Keep the material fine at survey distance, then let it resolve
+      // gradually as the camera approaches the surface.
+      const materialScale = Math.max(.36, Math.min(.82, .34 + scale * .085));
       const matrix = new DOMMatrix();
       matrix.translateSelf(-camera.longitude * 74, camera.latitude * 58);
       matrix.rotateSelf(-(camera.roll || 0) * 180 / Math.PI);
@@ -13249,6 +13316,57 @@ function planetTerrainPatterns(camera, scale) {
     patterns.set(terrain, pattern);
   }
   return patterns;
+}
+
+// A painted globe is not a strategic hex map wrapped round a ball. Its opaque
+// foundation distinguishes land from water — the geography that must remain
+// exact — but leaves biome and water-depth colour to the feathered paint above.
+// Otherwise every translucent edge exposes a differently coloured polygon and
+// rebuilds the honeycomb the painted view is meant to dissolve.
+function planetTerrainUnderpaint(tile) {
+  return isWater(tile) ? "#174b61" : "#747655";
+}
+
+// The shoreline is the one terrain boundary that should survive the painted
+// blend. Draw it as one continuous surf network after the ground is lit: the
+// dark wet edge seats the land, the blue shelf carries the coast, and the fine
+// warm line keeps snow, sand and grass equally legible against water.
+function drawPlanetShoreline(cells) {
+  const reaches = [];
+  const painted = new Set(cells.map(cell => key(cell.tile.pos)));
+  for (const {tile, cell, points} of cells) {
+    if (isWater(tile) || !cell) continue;
+    for (let side = 0; side < points.length; side++) {
+      const neighbor = TMAP.get(cell.nbrs[side]);
+      if (!neighbor || !painted.has(cell.nbrs[side]) || !isWater(neighbor)) continue;
+      const a = points[side], b = points[(side + 1) % points.length];
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const length = Math.hypot(dx, dy) || 1;
+      const variation = hash2(cell.ids[side] * 17 + 3,
+                              cell.ids[(side + 1) % points.length] * 23 + 5) - .5;
+      reaches.push([a.x, a.y,
+                    (a.x + b.x) / 2 - dy / length * variation * length * .16,
+                    (a.y + b.y) / 2 + dx / length * variation * length * .16,
+                    b.x, b.y]);
+    }
+  }
+  if (!reaches.length) return;
+  cx.save();
+  cx.lineCap = "round"; cx.lineJoin = "round";
+  const depth = MODE.atmosphere ? 1 : .78;
+  for (const [color, width, alpha] of [
+    ["#071a1d", 3.8, .42 * depth],
+    ["#68b9c0", 2.1, .46 * depth],
+    ["#f2e4bd", .72, .64 * depth],
+  ]) {
+    cx.strokeStyle = color; cx.lineWidth = width; cx.globalAlpha = alpha;
+    cx.beginPath();
+    for (const [ax, ay, mx, my, bx, by] of reaches) {
+      cx.moveTo(ax, ay); cx.quadraticCurveTo(mx, my, bx, by);
+    }
+    cx.stroke();
+  }
+  cx.restore();
 }
 
 function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
@@ -13263,6 +13381,7 @@ function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
   for (const cell of cells) {
     const base = empire
       ? (isWater(cell.tile) ? "#173846" : "#687068")
+      : painted ? planetTerrainUnderpaint(cell.tile)
       : (TERRAIN[cell.tile.terrain] || "#4b5960");
     const light = camera.chart ? 1 : .70 + .34 * Math.max(0, cell.center.z);
     planetPaintPath(cx, cell, .8);
@@ -13283,9 +13402,38 @@ function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
       const group = byTerrain.get(terrain);
       if (group) group.push(cell); else byTerrain.set(terrain, [cell]);
     }
+    const knownCells = cells.filter(known);
+    const blend = Math.max(1.2, Math.min(5.2, 1.35 + scale * 1.75));
+    // Biome colour is paint too. Lay it through a feather before the material
+    // so grass can dry into plains, plains into desert, and shelf water into
+    // deep sea without exposing the storage cell at every change.
+    cx.save();
+    cx.beginPath();
+    for (const cell of knownCells) appendPlanetPaintPath(cx, cell, .15);
+    cx.clip();
+    cx.filter = `blur(${blend.toFixed(2)}px)`;
+    cx.globalAlpha = MODE.atmosphere ? .92 : .88;
+    for (const [terrain, group] of byTerrain) {
+      cx.beginPath();
+      for (const cell of group) appendPlanetPaintPath(cx, cell, .35);
+      cx.fillStyle = TERRAIN[terrain] || "#4b5960";
+      cx.fill();
+    }
+    cx.restore();
+
     const patterns = planetTerrainPatterns(camera, scale);
     cx.save();
-    cx.globalAlpha = MODE.atmosphere ? .82 : .68;
+    // A small, screen-space feather is enough to turn the tessellation into a
+    // painted transition while retaining terrain identity at every cell
+    // centre. Soft-light carries the atlas' grain and value into the averaged
+    // underpaint without pasting its source photograph and pale coast colour
+    // wholesale across the sphere.
+    cx.beginPath();
+    for (const cell of knownCells) appendPlanetPaintPath(cx, cell, .15);
+    cx.clip();
+    cx.filter = `blur(${blend.toFixed(2)}px)`;
+    cx.globalCompositeOperation = "soft-light";
+    cx.globalAlpha = MODE.atmosphere ? .72 : .62;
     for (const [terrain, group] of byTerrain) {
       const pattern = patterns.get(terrain);
       if (!pattern) continue;
@@ -13320,6 +13468,8 @@ function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
     cx.fillRect(centerX - radius * 1.1, centerY - radius * 1.1,
                 radius * 2.2, radius * 2.2);
     cx.restore();
+
+    drawPlanetShoreline(knownCells);
   }
 
   // Ownership is a transparent map layer over finished ground. Painted modes
@@ -16695,9 +16845,14 @@ function drawPlayerHud() {
     `<div class="ribbon-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
     `aria-label="Move player stats; use arrow keys or drag" title="Drag to move · arrow keys also move" id="player-stats-title">` +
     `<span>Player stats</span></div>` +
-    `<div class="ribbon-stat-heading" aria-hidden="true">` +
+    `<div class="ribbon-stat-heading">` +
     `<span class="diplomacy-identity-head">` +
-    `<span title="Civilization">CIV</span><span>LEADER</span><span>PLAYER</span>` +
+    `<span title="Civilization">CIV</span><span>LEADER</span>` +
+    `<button type="button" class="spectator-view-link" data-hud-action="spectator" ` +
+    `aria-pressed="${state.view_player === null || state.view_player === undefined}" ` +
+    `title="Spectator mode · see everyone with full map visibility" ` +
+    `aria-label="Spectator mode: see everyone with full map visibility">All</button>` +
+    `<span>PLAYER</span>` +
     `<span class="numeric">ELO</span><span class="numeric" title="Win odds">WIN ODDS</span>` +
     `<span title="AI active strategy">AI STRATEGY</span></span>` +
     `<span class="diplomacy-stat-head">` +
@@ -16789,21 +16944,26 @@ function drawPlayerHud() {
         `<button class="empire-link" data-hud-action="capital" data-hud-civ="${p.id}" ` +
         `title="${escapeAttr(empireTitle)}" aria-label="Empire: ${escapeAttr(empireTitle)}"${capital ? "" : " disabled"}>Empire</button>` +
         `</span>` +
-        `<button class="watch-as-link" data-hud-action="watch" data-hud-civ="${p.id}" ` +
-        `title="${escapeAttr(watchTitle)}" aria-label="Watch as ${escapeAttr(p.civ)}">Watch as</button>` +
-        `<button class="diplomacy-identity" data-hud-action="dossier" data-hud-civ="${p.id}" aria-expanded="${expanded}" ` +
+        `<span class="diplomacy-identity-grid">` +
+        `<button class="diplomacy-identity diplomacy-identity-primary" data-hud-action="dossier" data-hud-civ="${p.id}" aria-expanded="${expanded}" ` +
         `title="${expanded ? "Close" : "Open"} the ${p.civ} dossier · ${relationSummary}${agendaText}" ` +
         `aria-label="${expanded ? "Close" : "Open"} dossier for ${p.civ}, rank ${rank}, ${relationSummary}">` +
         `<span class="diplomacy-identity-field"><span class="diplomacy-rank">#${rank}</span>` +
         `<span class="diplomacy-civ">${p.id === acting && highlightActing ? "◉ " : ""}${p.civ}</span></span>` +
         `<span class="diplomacy-identity-field"><span class="diplomacy-leader-name">${leader}</span>${agendaGlyph}</span>` +
+        `</button>` +
+        `<button class="watch-as-link" data-hud-action="watch" data-hud-civ="${p.id}" ` +
+        `title="${escapeAttr(watchTitle)}" aria-label="Watch as ${escapeAttr(p.civ)}">Watch as</button>` +
+        `<button class="diplomacy-identity diplomacy-identity-secondary" data-hud-action="dossier" data-hud-civ="${p.id}" aria-expanded="${expanded}" ` +
+        `title="${expanded ? "Close" : "Open"} the ${p.civ} dossier · ${relationSummary}${agendaText}" ` +
+        `aria-label="${expanded ? "Close" : "Open"} dossier for ${p.civ}, rank ${rank}, ${relationSummary}">` +
         `<span class="diplomacy-identity-field" title="${leagueTitle}"><span class="diplomacy-player">${playerName}</span></span>` +
         `<span class="diplomacy-identity-field diplomacy-elo" title="${playerEloLabel} · ${leagueTitle}">` +
         `<span class="diplomacy-elo-value">${playerElo}</span></span>` +
         `<span class="diplomacy-identity-field diplomacy-expected" title="Elo-implied win odds">` +
         `<span class="diplomacy-expected-value">${expectPct === null ? "—" : `${expectPct}%`}</span></span>` +
         `<span class="diplomacy-identity-field diplomacy-strategy">${activeStrategy}</span>` +
-        `<span class="detail-caret">${expanded ? "▾" : "▸"}</span></button>` +
+        `<span class="detail-caret">${expanded ? "▾" : "▸"}</span></button></span>` +
         `<button class="diplomacy-stats" data-hud-action="watch" data-hud-civ="${p.id}" title="${watchTitle}" aria-label="Watch ${p.civ}">` +
         stats.map(([kind, , value, label, marker = ""]) => {
           const isLeader = highestByStat.get(kind) !== 0 && Number(value || 0) === highestByStat.get(kind);
@@ -16909,6 +17069,10 @@ function toggleCivDossier(id) {
 }
 
 function runHudAction(target) {
+  if (target.dataset.hudAction === "spectator") {
+    spectatePlayer(null);
+    return;
+  }
   const id = +target.dataset.hudCiv;
   if (!Number.isInteger(id)) return;
   if (target.dataset.hudAction === "lock") toggleSeatLock(id);
@@ -22315,16 +22479,17 @@ async function startNewSimulation() {
     showNewSimulationError(error);
   }
 }
-// "One more turn": keep the world that just ended instead of taking the next
-// one. Both choices remove the turn cap; one stops for the next distinct
-// victory and the other suppresses every later result.
+// Keep the world that just ended instead of taking the next one. Looking
+// around uses the next-victory rule but holds the world on its final frame;
+// the two play choices resume immediately and either stop for the next
+// distinct victory or suppress every later result.
 //
 // This has to outrun nothing, but it does have to *stop* things: the countdown
 // on screen, the successor watcher armed when the result appeared, and — on the
 // exhibition — the supervisor's own cooldown, which reads the cleared winner
 // out of `/state` and stands down.
 let playOnBusy = false;
-async function playOnPastVictory(mode) {
+async function playOnPastVictory(mode, paused) {
   if (playOnBusy) return;
   playOnBusy = true;
   const buttons = [...document.querySelectorAll(".winner-playon")];
@@ -22332,7 +22497,7 @@ async function playOnPastVictory(mode) {
   cancelSupervisedSuccessorWatch();
   try {
     const next = await fetchJSON("/play-on", {method: "POST",
-      headers: {"Content-Type": "application/json"}, body: JSON.stringify({mode})});
+      headers: {"Content-Type": "application/json"}, body: JSON.stringify({mode, paused})});
     if (next.error) throw new Error(next.error);
     render(next);
     scheduleSpec(state);

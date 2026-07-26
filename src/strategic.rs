@@ -202,6 +202,19 @@ pub struct StrategicAi {
     net: Option<ValueNet>,
     census: ReviewCensus,
     pub review_every: u32,
+    /// Rounds each branch is projected before it is judged.
+    ///
+    /// Longer is not monotonically better, and the ceiling is closer than
+    /// it looks. A branch that reaches a decided game returns exactly 1.0
+    /// or 0.0, so once every branch resolves inside the horizon they agree
+    /// by construction rather than by judgement and the search is blind.
+    /// Measured on four-player 200-turn games, the share of reviews where
+    /// every branch is already decided runs 22% at horizon 40, **56% at
+    /// 80**, and 89% at 120. `strategic_deep` uses 80 — it wins, but it is
+    /// already over half saturated, and pushing further mostly buys
+    /// agreement rather than discrimination. The threshold scales with how
+    /// much game is left, so it bites sooner in short games and later in
+    /// long ones.
     pub horizon: u32,
     next_review: u32,
     /// Search the doctrine axis as well as the lane. Off by default so

@@ -1466,9 +1466,6 @@ impl Session {
     }
 
     fn set_view_player(&mut self, player: Option<usize>) -> Result<(), String> {
-        if !self.params.spectate && player.is_none() {
-            return Err("player views are only available in spectate mode".into());
-        }
         if let Some(pid) = player {
             let Some(candidate) = self.game.players.get(pid) else {
                 return Err(format!("unknown player {pid}"));
@@ -1476,12 +1473,12 @@ impl Session {
             if candidate.is_minor || candidate.is_barbarian {
                 return Err(format!("player {pid} is not a major civilization"));
             }
-            // Selecting a civilization from the HUD is also the handoff from
-            // an interactive match to AI-only observation. Keep the current
-            // world intact; the already-created AI fleet can take over every
-            // seat on the next spectator step.
-            self.params.spectate = true;
         }
+        // Selecting either a civilization or the all-player Spectator heading
+        // in the HUD is the handoff from an interactive match to AI-only
+        // observation. Keep the current world intact; the already-created AI
+        // fleet can take over every seat on the next spectator step.
+        self.params.spectate = true;
         self.view_player = player;
         Ok(())
     }
@@ -2569,6 +2566,17 @@ fn auto_step_loop(sh: Arc<Shared>) {
         // Once registered, its current frame must be painted before any more
         // simulation work starts.
         let simulation_frame_gate = sh.simulation_frame_gate.lock().unwrap();
+        // A request can pause while this loop is waiting for the frame gate.
+        // Check again after entering it so a play-on-and-pause transition can
+        // clear the winner without one already-admitted AI step slipping past
+        // the new pause.
+        if sh.paused.load(Ordering::Relaxed) {
+            over_since = None;
+            watched_turn = None;
+            drop(simulation_frame_gate);
+            std::thread::sleep(Duration::from_millis(150));
+            continue;
+        }
         let current_frame = {
             let s = sh.session.lock().unwrap();
             SpectatorFrame {
@@ -3272,10 +3280,10 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             decorate(&mut out, sh);
             respond_json(stream, &out);
         }
-        // "One more turn": carry the decided world on instead of retiring it.
-        // The countdown is cleared here rather than left to the stepper, so a
-        // state read between the press and the stepper's next pass never
-        // reports a restart that is no longer coming.
+        // Carry the decided world on instead of retiring it. `paused` is part
+        // of the same transition: the frame gate makes "look around" clear the
+        // winner and stop the stepper atomically, rather than racing a second
+        // request to /pace against the first continued turn.
         ("POST", "/play-on") => {
             let mode_name = parsed["mode"].as_str().unwrap_or("until_next_victory");
             let Some(mode) = PlayOnMode::parse(mode_name) else {
@@ -3285,8 +3293,19 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 );
                 return;
             };
+            let requested_pause = parsed.get("paused").and_then(Value::as_bool);
+            let simulation_frame_gate = sh.simulation_frame_gate.lock().unwrap();
             let mut session = sh.session.lock().unwrap();
             let played_on = session.play_on(mode);
+            if played_on {
+                if let Some(paused) = requested_pause {
+                    sh.paused.store(paused, Ordering::Relaxed);
+                    session.spectator_paused = paused;
+                }
+                // Clear this before taking the response snapshot, so it can
+                // never promise both a paused continuation and a new world.
+                sh.restart_in.store(u64::MAX, Ordering::Relaxed);
+            }
             let mut out = session.state();
             out["error"] = if played_on {
                 Value::Null
@@ -3294,9 +3313,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 json!("this game has no result to play on past")
             };
             drop(session);
-            if played_on {
-                sh.restart_in.store(u64::MAX, Ordering::Relaxed);
-            }
+            drop(simulation_frame_gate);
             decorate(&mut out, sh);
             respond_json(stream, &out);
         }
@@ -4015,9 +4032,9 @@ mod tests {
             &http_post(
                 port,
                 "/play-on",
-                "{\"mode\":\"until_next_victory\"}",
+                "{\"mode\":\"until_next_victory\",\"paused\":true}",
             )
-            .expect("play on"),
+            .expect("look around"),
         )
         .expect("play-on answers JSON");
         assert!(played_on["error"].is_null());
@@ -4037,8 +4054,18 @@ mod tests {
         assert!(played_on["turn_limit"].is_null(), "there is no new cap");
         assert_eq!(played_on["max_turns"], json!(3), "setup stays intact");
         assert_eq!(played_on["seed"], decided["seed"], "the same world");
+        assert_eq!(played_on["paused"], json!(true));
+        assert_eq!(played_on["spectator_paused"], json!(true));
 
-        http_post(port, "/pace", "{\"paused\":true}");
+        // "Take a look around" means the final map really is held. A pause
+        // posted separately from play-on could let the stepper claim one AI
+        // turn in between the two requests.
+        std::thread::sleep(Duration::from_millis(350));
+        let held = read("/state");
+        assert_eq!(held["seed"], decided["seed"]);
+        assert_eq!(held["turn"], played_on["turn"]);
+        assert!(held["winner"].is_null());
+        assert_eq!(held["paused"], json!(true));
     }
 
     /// Two tabs on one exhibition are two promises, not one.
@@ -5441,8 +5468,16 @@ mod tests {
             "class=\"watch-as-link\" data-hud-action=\"watch\""
         ));
         assert!(EMBEDDED_INDEX.contains(">Watch as</button>"));
+        assert!(EMBEDDED_INDEX.contains(
+            "class=\"spectator-view-link\" data-hud-action=\"spectator\""
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "Spectator mode: see everyone with full map visibility"
+        ));
+        assert!(EMBEDDED_INDEX.contains(">All</button>"));
         assert!(EMBEDDED_INDEX.contains("data-hud-action=\"watch\" data-hud-civ=\"${p.id}\""));
         assert!(EMBEDDED_INDEX.contains("data-hud-action=\"dossier\" data-hud-civ=\"${p.id}\""));
+        assert!(EMBEDDED_INDEX.contains("spectatePlayer(null);"));
         assert!(EMBEDDED_INDEX.contains("else spectatePlayer(id);"));
         assert!(EMBEDDED_INDEX.contains("async function spectatePlayer(player)"));
         // Watching one civilization is a persistent empire portrait, not a
@@ -5872,6 +5907,38 @@ mod tests {
     }
 
     #[test]
+    fn painted_planet_blends_terrain_without_revealing_the_hex_mesh() {
+        let underpaint = EMBEDDED_INDEX
+            .split("function planetTerrainUnderpaint")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawPlanetShoreline").next())
+            .expect("painted planet terrain foundation");
+        assert!(underpaint.contains("isWater(tile)"));
+        assert!(underpaint.contains("#174b61"));
+        assert!(underpaint.contains("#747655"));
+
+        let ground = EMBEDDED_INDEX
+            .split("function drawPlanetGround")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawPlanetSurfaceDetail").next())
+            .expect("planet terrain renderer");
+        assert!(ground.contains("painted ? planetTerrainUnderpaint(cell.tile)"));
+        assert!(ground.contains("const blend = Math.max(1.2, Math.min(5.2"));
+        assert!(ground.contains("cx.filter = `blur(${blend.toFixed(2)}px)`"));
+        assert!(ground.contains("cx.globalCompositeOperation = \"soft-light\""));
+        assert!(ground.contains("drawPlanetShoreline(knownCells)"));
+
+        let shoreline = EMBEDDED_INDEX
+            .split("function drawPlanetShoreline")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawPlanetGround").next())
+            .expect("painted planet shoreline renderer");
+        assert!(shoreline.contains("const painted = new Set(cells.map"));
+        assert!(shoreline.contains("painted.has(cell.nbrs[side])"));
+        assert!(shoreline.contains("cx.quadraticCurveTo(mx, my, bx, by)"));
+    }
+
+    #[test]
     fn instance_tagged_spectator_url_routes_to_the_embedded_page() {
         assert_eq!(request_path("/"), "/");
         assert_eq!(request_path("/?instance=9232"), "/");
@@ -6189,6 +6256,23 @@ mod tests {
             assert_eq!(player_view["view_player"].as_u64(), Some(pid as u64));
             assert!(player_view["map"]["tiles"].as_array().unwrap().len() < omniscient_tile_count);
         }
+    }
+
+    #[test]
+    fn selecting_all_players_promotes_the_live_match_to_omniscient_spectator_mode() {
+        let mut session = Session::new(current());
+        assert!(!session.params.spectate);
+
+        session.set_view_player(None).unwrap();
+        let spectator_view = session.state();
+
+        assert!(session.params.spectate);
+        assert_eq!(spectator_view["spectate"].as_bool(), Some(true));
+        assert!(spectator_view["view_player"].is_null());
+        assert_eq!(
+            spectator_view["visible"].as_array().unwrap().len(),
+            session.game.map.tiles.len()
+        );
     }
 
     #[test]
@@ -6724,15 +6808,24 @@ mod tests {
         // countdown, because the supervisor owns that handoff.
         assert!(EMBEDDED_INDEX.contains("class=\"primary winner-again\" onclick=\"startNewSimulation()\""));
         assert!(EMBEDDED_INDEX.contains("id=\"respawn\" role=\"timer\""));
-        // Both finales also offer the other answer: keep this world. It is
-        // the reason the countdown has to be long enough to read — a button
-        // nobody can reach before the next world loads is not an offer.
+        // Both finales also offer three ways to keep this world. It is the
+        // reason the countdown has to be long enough to read — a button nobody
+        // can reach before the next world loads is not an offer.
+        assert!(EMBEDDED_INDEX.contains("id=\"play-on-look-around\""));
         assert!(EMBEDDED_INDEX.contains("id=\"play-on-next-victory\""));
         assert!(EMBEDDED_INDEX.contains("id=\"play-on-indefinite\""));
-        assert!(EMBEDDED_INDEX.contains("One more turn (play until next victory)"));
-        assert!(EMBEDDED_INDEX.contains("One more turn (play indefinitely)"));
-        assert!(EMBEDDED_INDEX.contains("async function playOnPastVictory(mode)"));
-        assert!(EMBEDDED_INDEX.contains("body: JSON.stringify({mode})"));
+        assert!(EMBEDDED_INDEX.contains("Take a look around"));
+        assert!(EMBEDDED_INDEX.contains("Play until next victory condition"));
+        assert!(EMBEDDED_INDEX.contains("Play indefinitely"));
+        assert!(EMBEDDED_INDEX.contains(
+            "playOnPastVictory('until_next_victory', true)"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "playOnPastVictory('until_next_victory', false)"
+        ));
+        assert!(EMBEDDED_INDEX.contains("playOnPastVictory('indefinite', false)"));
+        assert!(EMBEDDED_INDEX.contains("async function playOnPastVictory(mode, paused)"));
+        assert!(EMBEDDED_INDEX.contains("body: JSON.stringify({mode, paused})"));
         assert!(EMBEDDED_INDEX.contains("cancelSupervisedSuccessorWatch();"));
     }
 
