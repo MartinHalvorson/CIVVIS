@@ -886,6 +886,10 @@ struct FrameDelivery {
     /// record. A seat is retired six seconds after its page stops asking; the
     /// audit is for the whole run.
     missed: u64,
+    /// Every turn `POST /autoplay` has simulated since this server started.
+    /// The denominator `missed` is otherwise missing: see
+    /// [`FrameDelivery::turns_simulated_without_a_frame`].
+    autoplayed: u64,
 }
 
 impl FrameDelivery {
@@ -952,6 +956,34 @@ impl FrameDelivery {
         }
         seat.painted = Some(frame);
         self.missed += lost;
+    }
+
+    /// Turns a single request simulated that no page could ever have drawn.
+    ///
+    /// Everything above counts a *viewer's* gaps: a page says which turn it
+    /// painted, and the turns between that and its previous acknowledgement
+    /// were simulated behind its back. Auto-play never has that conversation.
+    /// The browser asks for `n` turns over `POST /autoplay`, the engine plays
+    /// all of them, and exactly one state comes back — the one after the last.
+    /// The other `n - 1` were played, were never serialised, and reached no
+    /// screen. Nobody missed them; there was never a frame to miss.
+    ///
+    /// So they are counted here, at the only place that knows: the response is
+    /// one state, and `played` says how many turns went into it. `played - 1`
+    /// is the shortfall exactly, and it is the difference between a promise
+    /// somebody remembered to keep in the client and one this server can be
+    /// held to. `/status` reported a clean `frames_missed: 0` through a run
+    /// that dropped nine turns in ten, because the only thing it knew how to
+    /// count was an acknowledgement auto-play does not send.
+    ///
+    /// The turns are totalled as well as the shortfall, for the reason
+    /// `frames_painted` exists: no misses is not the same claim as no misses
+    /// *out of something*. A run of two hundred clean turns and a game where
+    /// auto-play was never pressed both report zero, and only the total tells
+    /// them apart.
+    fn turns_simulated_without_a_frame(&mut self, played: usize) {
+        self.autoplayed += played as u64;
+        self.missed += played.saturating_sub(1) as u64;
     }
 
     /// How long the stepper must still hold this turn: the longest wait owed
@@ -1090,8 +1122,10 @@ impl Shared {
     /// one reported drawing, and how many pages are watching. The second reads
     /// the first: no painted turn at all means nobody was watching, which is a
     /// different thing from a promise being kept. The third says how many
-    /// pages that "no turns missed" is a promise to.
-    fn frame_audit(&self) -> (u64, Option<u32>, usize) {
+    /// pages that "no turns missed" is a promise to. The fourth is auto-play's
+    /// own denominator: turns it has simulated, so that its zero can be told
+    /// apart from a game where nobody ever pressed it.
+    fn frame_audit(&self) -> (u64, Option<u32>, usize, u64) {
         let mut delivery = self.frame_delivery.lock().unwrap();
         delivery.retire_departed(Instant::now());
         let missed = delivery.missed;
@@ -1100,7 +1134,7 @@ impl Shared {
             .values()
             .filter_map(|seat| seat.painted.map(|frame| frame.turn))
             .max();
-        (missed, painted, delivery.seats.len())
+        (missed, painted, delivery.seats.len(), delivery.autoplayed)
     }
 
     /// Replace the tile array in `o` with just the tiles that have changed
@@ -2977,7 +3011,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         // few seconds to read one field spends the server's time on rendering
         // a view nobody looks at.
         ("GET", "/status") => {
-            let (frames_missed, frames_painted, viewers) = sh.frame_audit();
+            let (frames_missed, frames_painted, viewers, autoplay_turns) = sh.frame_audit();
             let session = sh.session.lock().unwrap();
             let game = &session.game;
             respond_json(
@@ -3001,6 +3035,15 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     // waited for separately, so this is also the number of
                     // paints a turn now costs before the next one starts.
                     "viewers": viewers,
+                    // Turns `POST /autoplay` has simulated. A human game is
+                    // not stepped by the exhibition loop and its page sends no
+                    // painted acknowledgements, so auto-play contributes
+                    // nothing to `frames_painted` and used to contribute
+                    // nothing to `frames_missed` either — it could drop nine
+                    // turns in ten and still read clean. This is the count
+                    // those misses are out of: zero here means auto-play was
+                    // never pressed, not that it behaved.
+                    "autoplay_turns": autoplay_turns,
                     // Which code is actually playing. A binary swap only
                     // happens between games, so a running server is always
                     // somewhat behind origin/main and there was no way to see
@@ -3244,6 +3287,16 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             out["autoplayed"] = json!(played);
             out["autoplay_strategy"] = json!(session.seated_strategy_name(0));
             drop(session);
+            // One response carries one state, so every turn in this batch past
+            // the first was played where nobody could see it. Recorded after
+            // the session lock is released, and only on the path that actually
+            // simulated: the retry arm above answers from
+            // `last_autoplay_request` without playing anything, and counting
+            // there would charge a dropped response twice.
+            sh.frame_delivery
+                .lock()
+                .unwrap()
+                .turns_simulated_without_a_frame(played);
             decorate(&mut out, sh);
             respond_json(stream, &out);
         }
@@ -3737,6 +3790,132 @@ mod tests {
         delivery.viewer_request("one", Some(turn_7), now);
         assert_eq!(delivery.seats["one"].painted, Some(turn_7));
         assert_eq!(delivery.wait_remaining(turn_7, now), None);
+    }
+
+    /// A batch of `n` turns answers with one state, so `n - 1` of them were
+    /// played where no page could draw them.
+    ///
+    /// This is arithmetic on the response, not an inference about a viewer:
+    /// whatever the browser does with the state it gets, the turns that never
+    /// became a state cannot be drawn by anybody. One turn per request is the
+    /// only shape that costs nothing.
+    #[test]
+    fn a_batch_of_turns_answers_with_one_state_and_owes_the_rest() {
+        let mut delivery = FrameDelivery::default();
+
+        // The shape the browser is supposed to use.
+        for _ in 0..5 {
+            delivery.turns_simulated_without_a_frame(1);
+        }
+        assert_eq!(delivery.missed, 0, "one turn per response is one frame each");
+        assert_eq!(delivery.autoplayed, 5);
+
+        // The shape that lost them: ten turns, one state.
+        delivery.turns_simulated_without_a_frame(10);
+        assert_eq!(delivery.missed, 9, "nine of the ten turns had no state");
+        assert_eq!(delivery.autoplayed, 15);
+
+        // A request that ran out of game played nothing and owes nothing.
+        delivery.turns_simulated_without_a_frame(0);
+        assert_eq!(delivery.missed, 9);
+        assert_eq!(delivery.autoplayed, 15);
+    }
+
+    /// `/status` has to be able to see auto-play, which it could not.
+    ///
+    /// `frames_missed` is built out of the gaps between a viewer's
+    /// `/state?painted=` acknowledgements. A single-player page advances over
+    /// `POST /autoplay` and sends none, and the exhibition stepper does not
+    /// touch a game somebody is playing — so auto-play could drop nine turns
+    /// in ten and every number on the audit still read clean. That is why this
+    /// went unnoticed for as long as it did, so the audit is what gets the
+    /// test: one turn per request must cost nothing, a batch must be charged
+    /// for what it swallowed, and a retried request must not be charged twice.
+    #[test]
+    fn the_audit_can_see_the_turns_auto_play_never_shows() {
+        let port = TcpListener::bind(("127.0.0.1", 0))
+            .expect("a free port")
+            .local_addr()
+            .unwrap()
+            .port();
+        let mut params = current();
+        params.num_players = 3;
+        params.num_city_states = 0;
+        params.width = 24;
+        params.height = 16;
+        params.seed = 20_260_726;
+        assert!(!params.spectate, "auto-play is the human-game path");
+        std::thread::spawn(move || super::serve_with_game(port, false, params, None, false));
+
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while http_get(port, "/status").is_none() {
+            assert!(Instant::now() < deadline, "single-player server never came up");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let audit = |port| -> Value {
+            serde_json::from_str(&http_get(port, "/status").expect("status")).expect("status JSON")
+        };
+        let ask = |turns: u32, id: &str| {
+            json!({
+                "turns": turns,
+                "strategy": "basic",
+                "request_id": id,
+                "seed": 20_260_726,
+                "server_instance": std::process::id(),
+            })
+            .to_string()
+        };
+
+        assert_eq!(
+            audit(port)["autoplay_turns"],
+            json!(0),
+            "nothing has been auto-played yet, and that is a different claim from a clean run"
+        );
+
+        // The shape the browser uses: one turn, one state, one frame.
+        for n in 1..=5 {
+            let body = ask(1, &format!("viewer-1-autoplay-{n}"));
+            let played: Value =
+                serde_json::from_str(&http_post(port, "/autoplay", &body).expect("a response"))
+                    .expect("response is JSON");
+            assert_eq!(played["autoplayed"], json!(1), "request {n} played one turn");
+        }
+        let clean = audit(port);
+        assert_eq!(clean["autoplay_turns"], json!(5));
+        assert_eq!(
+            clean["frames_missed"],
+            json!(0),
+            "five turns arrived as five states and none of them was owed a frame"
+        );
+
+        // The shape that lost them. Nine of these ten turns are simulated into
+        // a state that is thrown away before it is ever serialised.
+        let batch = ask(10, "viewer-1-autoplay-batch");
+        let swallowed: Value =
+            serde_json::from_str(&http_post(port, "/autoplay", &batch).expect("batch response"))
+                .expect("batch response is JSON");
+        assert_eq!(swallowed["autoplayed"], json!(10));
+        let charged = audit(port);
+        assert_eq!(charged["autoplay_turns"], json!(15));
+        assert_eq!(
+            charged["frames_missed"],
+            json!(9),
+            "a ten-turn batch answers with one state, so nine turns had none"
+        );
+
+        // A dropped response is replayed from `last_autoplay_request` without
+        // simulating anything, so the retry arm must not be charged.
+        let retry: Value =
+            serde_json::from_str(&http_post(port, "/autoplay", &batch).expect("retry response"))
+                .expect("retry response is JSON");
+        assert_eq!(retry["turn"], swallowed["turn"], "the retry replayed the batch");
+        let after_retry = audit(port);
+        assert_eq!(
+            after_retry["autoplay_turns"],
+            json!(15),
+            "the retry played no turns, so it owes none"
+        );
+        assert_eq!(after_retry["frames_missed"], json!(9));
     }
 
     /// Each viewer's misses are its own. One page catching every turn does not
@@ -4885,6 +5064,87 @@ mod tests {
         }
     }
 
+    /// A setting can be left unanswered. Every one of them offers `?????`, the
+    /// mark is rolled among that setting's own options at the moment a game
+    /// starts, and the start control says so before it is pressed — so nobody
+    /// finds out what they agreed to only once the world is on screen.
+    #[test]
+    fn every_game_setting_can_be_left_to_chance() {
+        for setting in [
+            "baseruleset",
+            "gamemode",
+            "starteon",
+            "startera",
+            "leaderpool",
+            "leader",
+            "difficulty",
+            "maptype",
+            "mapshape",
+            "mappoles",
+            "np",
+            "gamespeed",
+        ] {
+            let select = format!("id=\"{setting}\"");
+            let at = EMBEDDED_INDEX
+                .find(&select)
+                .unwrap_or_else(|| panic!("browser setup is missing the {setting} select"));
+            let tail = &EMBEDDED_INDEX[at..];
+            let end = tail.find("</select>").expect("unterminated select");
+            assert!(
+                tail[..end].contains("<option value=\"?????\""),
+                "the {setting} setting cannot be left at ????? "
+            );
+        }
+        // A victory condition has no option list to hold a third entry, so its
+        // third state is the checkbox's own indeterminate flag, said out loud
+        // in the label beside it.
+        for victory in ["science", "culture", "religious", "diplomatic", "domination", "score"] {
+            assert!(EMBEDDED_INDEX.contains(&format!(
+                "id=\"victory-{victory}\" checked><span>"
+            )));
+        }
+        assert_eq!(
+            EMBEDDED_INDEX
+                .matches("<span class=\"victory-random\" aria-hidden=\"true\">?????</span>")
+                .count(),
+            6
+        );
+        assert!(EMBEDDED_INDEX
+            .contains(".victory-option input:indeterminate ~ .victory-random { display: inline; }"));
+        assert!(EMBEDDED_INDEX.contains("const RANDOM_SETTING = \"?????\""));
+        // The mark never leaves the lobby: staging and starting both resolve.
+        assert!(EMBEDDED_INDEX.contains("const payload = selectedSimulationSettings(true)"));
+        assert!(EMBEDDED_INDEX.contains("return {...selectedSimulationSettings(true),"));
+        // ...and the key the restart control compares against does not, or a
+        // ????? would read as the same world it just replaced.
+        assert!(EMBEDDED_INDEX.contains("const rolling = pendingRandomSettings().length > 0;"));
+        assert!(EMBEDDED_INDEX.contains("const changed = human || rolling ||"));
+        // A roll answers among that setting's own offers, never with a blank
+        // or a disabled entry.
+        assert!(EMBEDDED_INDEX
+            .contains("!option.disabled && option.value && option.value !== RANDOM_SETTING"));
+        // The note lives with the start control, not buried in the settings.
+        assert!(EMBEDDED_INDEX.contains("id=\"randomnote\""));
+        assert!(EMBEDDED_INDEX.contains("chosen at random among its own"));
+        assert!(EMBEDDED_INDEX.contains("id=\"luckybtn\""));
+        assert!(EMBEDDED_INDEX.contains("I'm Feeling Lucky"));
+        assert!(EMBEDDED_INDEX.contains("document.getElementById(\"luckybtn\").onclick = feelingLucky;"));
+        // A world arriving from the supervisor writes its own settings over
+        // the whole panel, and so do staged settings and the mode adopting the
+        // game on screen. A standing ????? has to survive all three.
+        assert!(EMBEDDED_INDEX.contains("const RANDOM_SETTINGS_KEY = \"civvis-random-settings-v1\""));
+        for restored in [
+            "applyQueuedSimulationSettings(st.next_game_settings);\n    // The world on screen",
+            "victory-${track.id}`).checked = victories.has(track.id);\n  applyRandomMarks();",
+            "select.value = SPEC ? \"ai_sim\" : \"single\";\n  applyRandomMarks();",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(restored),
+                "a standing ????? is lost when the panel is rewritten: {restored}"
+            );
+        }
+    }
+
     /// Planet is drawn from geometry the client cannot derive, so the
     /// protocol has to carry it — but only when asked, because the ordinary
     /// observation is polled every turn and is already large.
@@ -5238,7 +5498,12 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("render(adoptTiles(first), true, true);"));
         assert!(EMBEDDED_INDEX.contains("st.seed !== state.seed"));
         assert!(!EMBEDDED_INDEX.contains("id=\"head-newgame\""));
-        assert!(EMBEDDED_INDEX.contains("spectate: gameMode === \"ai_sim\""));
+        // The mode still decides whether anyone is watching or playing — but it
+        // is one more setting that can be left at ?????, and the flag the
+        // server is handed is never the mark itself.
+        assert!(EMBEDDED_INDEX.contains(
+            "spectate: gameMode === RANDOM_SETTING ? RANDOM_SETTING : gameMode === \"ai_sim\""
+        ));
         assert!(!EMBEDDED_INDEX.contains("id=\"specchk\""));
         assert!(!EMBEDDED_INDEX.contains("RULES.map_sizes.filter"));
 
@@ -5438,13 +5703,74 @@ mod tests {
         // narrow masthead ellipsizes a name rather than running two figures
         // together. A percentage identity column with a 300px floor never
         // yielded, which left the ten values 27px each at 1600px.
-        assert!(EMBEDDED_INDEX.contains("--hud-identity-column: minmax(196px, 1fr);"));
+        //
+        // Every data column is now a share rather than a pixel count, and each
+        // of these two enclosing tracks is the exact *sum* of the columns
+        // inside it — 6 identity columns totalling 9.804 against 10 value
+        // columns of 1. That identity is not decoration: it is what lets the
+        // bar between the two blocks move width across itself, and it is the
+        // ratio origin/main rendered (1fr against 1.02fr) to the tenth of a
+        // pixel at 1280, 1600, 1920 and 2400. Changing one number here without
+        // the other silently re-weights the whole masthead.
+        assert!(EMBEDDED_INDEX.contains(
+            "--hud-identity-column: minmax(\n      \
+             calc(var(--hud-ident-min) * 4 + var(--hud-ident-num-min) * 2), 9.804fr);"
+        ));
         assert!(EMBEDDED_INDEX.contains(
             "--hud-stats-column: minmax(\n      \
-             calc(var(--hud-stat-min) * 10 + var(--hud-stat-gap) * 9), 1.02fr);"
+             calc(var(--hud-stat-min) * 10 + var(--hud-stat-gap) * 9), 10fr);"
         ));
+        // The floors stay in the stylesheet so the width breakpoints can lower
+        // them; the shares belong to the viewer. A breakpoint that rewrote a
+        // share would undo a dragged column on the next window resize, so no
+        // media rule may set either track list or either enclosing track.
+        assert!(EMBEDDED_INDEX.contains("--hud-ident-min: 30px; --hud-ident-num-min: 38px;"));
+        assert_eq!(EMBEDDED_INDEX.matches("--hud-ident-num-min:").count(), 1,
+            "the figure floor is declared once and holds at every width: four \
+             digits need the same room on a laptop as on a wall");
+        assert_eq!(EMBEDDED_INDEX.matches("--hud-identity-column:").count(), 1,
+            "the identity track is written once and then only from the column model");
+        assert_eq!(EMBEDDED_INDEX.matches("--hud-stats-column:").count(), 1,
+            "the value track is written once and then only from the column model");
         // A gutter between adjacent figures, and no per-value hairline.
         assert!(EMBEDDED_INDEX.contains("column-gap: var(--hud-stat-gap, 0px);"));
+        // Heading and rows read the same two track lists, which is the only
+        // reason a dragged column moves the figures under it as well as its
+        // own head.
+        assert_eq!(EMBEDDED_INDEX.matches("grid-template-columns: var(--hud-stat-tracks);").count(), 2,
+            "the value heads and the value cells are the same ten tracks");
+        assert_eq!(EMBEDDED_INDEX.matches("grid-template-columns: var(--hud-identity-tracks);").count(), 2,
+            "the identity heads and the identity cells are the same tracks");
+        // `clip`, not `ellipsis`: the fitter compares integral scrollWidth with
+        // integral clientWidth while the browser applies text-overflow on any
+        // sub-pixel overflow, so ellipsis spends a character on a head that
+        // renders whole. Measured at 1600px: WIN% in its 38px column.
+        assert!(EMBEDDED_INDEX.contains(
+            "border-left: 1px solid #ffffff10; text-overflow: clip; white-space: nowrap;"
+        ));
+
+        // One bar per seam between two adjacent data columns, dragged to move
+        // width from the column on its left into the column on its right.
+        assert!(EMBEDDED_INDEX.contains("const HUD_COLUMN_STORAGE_KEY = \"civvis-hud-columns-v1\";"));
+        assert!(EMBEDDED_INDEX.contains("const PLAYER_HUD_COLUMN_SEAMS = PLAYER_HUD_COLUMNS.slice(0, -1)"));
+        assert!(EMBEDDED_INDEX.contains("function aimPlayerHudSeam(seam, targetWidth)"));
+        assert!(EMBEDDED_INDEX.contains("class=\"hud-col-grip\" type=\"button\" data-hud-column-seam="));
+        assert!(EMBEDDED_INDEX.contains("role=\"separator\" aria-orientation=\"vertical\""));
+        // The bar takes the pointer; the layer over the heads does not, or the
+        // heads lose their tooltips and the All button loses its click.
+        assert!(EMBEDDED_INDEX.contains(
+            ".hud-col-grips { position: absolute; inset: 0; z-index: 2; pointer-events: none; }"
+        ));
+        assert!(EMBEDDED_INDEX.contains("cursor: col-resize; pointer-events: auto; touch-action: none;"));
+        // A repaint mid-gesture would take the bar out from under the pointer
+        // along with its pointer capture.
+        assert!(EMBEDDED_INDEX.contains(
+            "if (html === hudHtml || hudLayoutGesture?.name === \"players\" || playerHudColumnGesture) {"
+        ));
+        // The bars are placed from the rendered heading, so they cannot drift
+        // from the columns they name.
+        assert!(EMBEDDED_INDEX.contains("function syncPlayerHudColumnGrips()"));
+        assert!(EMBEDDED_INDEX.contains("grip.style.left = `${Math.round(left.right - origin)}px`;"));
         // The fitter has to measure the cell: the figure is centered content in
         // its own grid, so its clientWidth and scrollWidth are always equal and
         // it can never report the overflow that would shrink it.
@@ -6917,7 +7243,10 @@ mod tests {
     fn browser_transforms_restart_control_for_single_player() {
         assert!(EMBEDDED_INDEX
             .contains("const supervised = !!(state && state.supervised) && payload.spectate;"));
-        assert!(EMBEDDED_INDEX.contains("const human = !selectedSimulationSettings().spectate;"));
+        // Only a world that is definitely spectated leaves this a restart. A
+        // mode left at ????? may come up either way, so it reads as a start —
+        // the one label that is true whichever it rolls.
+        assert!(EMBEDDED_INDEX.contains("const human = settings.spectate !== true;"));
         // Choosing single player renames that control after the game it opens,
         // rather than leaving "Restart sim" over a single-player subtitle.
         assert!(EMBEDDED_INDEX.contains("<span class=\"lbl\">Restart sim</span>"));
@@ -6939,9 +7268,13 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "document.getElementById(\"specbar\").style.display = \"block\";"
         ));
+        // Adopting the running mode still re-reads the panel and relabels the
+        // control; it goes through the ????? restore, which syncs the mode, so
+        // a standing mark is not lost to the world that just arrived.
         assert!(EMBEDDED_INDEX.contains(
-            "syncSetupMode();\n  updateRestartSimulationButton();"
+            "applyRandomMarks();\n  updateRestartSimulationButton();"
         ));
+        assert!(EMBEDDED_INDEX.contains("  syncSetupMode();\n  updateRandomNote();\n}"));
         assert!(EMBEDDED_INDEX.contains(
             "body:not(.watching-sim) .spec-controls:has(#restart-sim) {"
         ));
