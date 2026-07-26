@@ -1,6 +1,7 @@
 //! Ruleset loaded from the shared JSON data files (embedded at compile time).
 use serde::{Deserialize, Serialize};
 
+use crate::rng::Rng;
 use crate::specmap::SpecMap;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, OnceLock};
@@ -616,6 +617,14 @@ pub struct TechSpec {
     /// Zero-based historical era: Ancient through Future.
     pub era: usize,
     pub requires: Vec<String>,
+    /// Gathering Storm asks the game core to draw this node's prerequisites
+    /// when the game is created instead of shipping fixed prerequisite rows.
+    #[serde(default)]
+    pub random_prereqs: bool,
+    /// The costs the shipped database permits for the randomized columns.
+    /// Empty for the fixed-cost gateway and repeatable terminal nodes.
+    #[serde(default)]
+    pub random_costs: Vec<f64>,
     #[serde(default)]
     pub boost: Option<BoostSpec>,
     /// Indexed from the reverse gates in the rules catalog at load time.
@@ -630,6 +639,41 @@ pub struct TechSpec {
     /// one each; technologies carry none.
     #[serde(default)]
     pub governor_title: usize,
+}
+
+/// The part of a randomized research node that the game core decides at
+/// setup. Keeping it separate from [`TechSpec`] lets every clone of one game
+/// share a complete immutable rules snapshot while saves retain the exact
+/// tree they were created with.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TreeLayoutEntry {
+    pub cost: f64,
+    pub requires: Vec<String>,
+}
+
+/// Gathering Storm randomizes the Future-era technology and civic graphs once
+/// per game. Both trees are global to the match, never per-player.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct FutureTreeLayout {
+    pub techs: BTreeMap<String, TreeLayoutEntry>,
+    pub civics: BTreeMap<String, TreeLayoutEntry>,
+}
+
+impl FutureTreeLayout {
+    fn generate(rules: &Rules, seed: u64) -> Result<Self, String> {
+        // Dedicated streams keep the map, runtime RNG, and the other tree
+        // stable if one catalog gains content in a mod or later rules pass.
+        let mut tech_rng = Rng::new(seed ^ 0x5445_4348_5452_4545);
+        let mut civic_rng = Rng::new(seed ^ 0x4349_5649_4354_5245);
+        Ok(Self {
+            techs: random_tree_layout("technology", &rules.techs, &mut tech_rng)?,
+            civics: random_tree_layout("civic", &rules.civics, &mut civic_rng)?,
+        })
+    }
+
+    fn is_empty(&self) -> bool {
+        self.techs.is_empty() && self.civics.is_empty()
+    }
 }
 
 #[derive(Deserialize)]
@@ -976,6 +1020,326 @@ pub struct Rules {
     pub civic_ancestors: SpecMap<BTreeSet<String>>,
 }
 
+fn shuffle_strings(values: &mut [String], rng: &mut Rng) {
+    for index in (1..values.len()).rev() {
+        let other = rng.below(index + 1);
+        values.swap(index, other);
+    }
+}
+
+/// Join two adjacent randomized columns with the smallest bipartite graph
+/// that gives every node on both sides an edge. This is the shape the shipped
+/// Future trees expose: no branch is orphaned and no breakthrough is free.
+fn connect_random_layers(
+    parents: &[String],
+    children: &[String],
+    rng: &mut Rng,
+    requirements: &mut BTreeMap<String, Vec<String>>,
+) -> Result<(), String> {
+    if parents.is_empty() || children.is_empty() {
+        return Err("a randomized research column is empty".to_string());
+    }
+    let mut parents = parents.to_vec();
+    let mut children = children.to_vec();
+    shuffle_strings(&mut parents, rng);
+    shuffle_strings(&mut children, rng);
+    for index in 0..parents.len().max(children.len()) {
+        let parent = &parents[index % parents.len()];
+        let child = &children[index % children.len()];
+        let prerequisites = requirements
+            .get_mut(child)
+            .ok_or_else(|| format!("randomized child {child:?} is not in the layout"))?;
+        if !prerequisites.contains(parent) {
+            prerequisites.push(parent.clone());
+        }
+    }
+    Ok(())
+}
+
+fn random_tree_layout(
+    kind: &str,
+    tree: &SpecMap<TechSpec>,
+    rng: &mut Rng,
+) -> Result<BTreeMap<String, TreeLayoutEntry>, String> {
+    let randomized: Vec<String> = tree
+        .iter()
+        .filter(|(_, spec)| spec.random_prereqs)
+        .map(|(name, _)| name.clone())
+        .collect();
+    if randomized.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+
+    let eras: BTreeSet<usize> = randomized.iter().map(|name| tree[name].era).collect();
+    if eras.len() != 1 {
+        return Err(format!(
+            "randomized {kind} nodes span more than one era: {eras:?}"
+        ));
+    }
+    let randomized_era = *eras.iter().next().unwrap();
+    let previous_era = tree
+        .values()
+        .filter(|spec| spec.era < randomized_era)
+        .map(|spec| spec.era)
+        .max()
+        .ok_or_else(|| format!("randomized {kind} tree has no preceding era"))?;
+
+    let mut regular = Vec::new();
+    let mut gateways = Vec::new();
+    let mut terminals = Vec::new();
+    for name in &randomized {
+        let spec = &tree[name];
+        if !spec.requires.is_empty() {
+            return Err(format!(
+                "randomized {kind} {name:?} also carries fixed prerequisites"
+            ));
+        }
+        if spec.repeatable {
+            if !spec.random_costs.is_empty() {
+                return Err(format!(
+                    "repeatable randomized {kind} {name:?} carries column costs"
+                ));
+            }
+            terminals.push(name.clone());
+        } else if spec.random_costs.is_empty() {
+            gateways.push(name.clone());
+        } else if spec.random_costs.len() == 2 {
+            regular.push(name.clone());
+        } else {
+            return Err(format!(
+                "randomized {kind} {name:?} needs exactly two column costs"
+            ));
+        }
+    }
+    if regular.len() < 2 {
+        return Err(format!(
+            "randomized {kind} tree needs at least two column nodes"
+        ));
+    }
+    if gateways.len() > 1 || terminals.len() != 1 {
+        return Err(format!(
+            "randomized {kind} tree needs one repeatable terminal and at most one gateway"
+        ));
+    }
+
+    // A previous-era leaf is a node with no fixed child. Every one feeds the
+    // first randomized column, just as every visible Information-era branch
+    // reaches the Future-era samples shipped by the game.
+    let fixed_parents: BTreeSet<String> = tree
+        .iter()
+        .filter(|(_, spec)| !spec.random_prereqs)
+        .flat_map(|(_, spec)| spec.requires.iter().cloned())
+        .collect();
+    let previous_leaves: Vec<String> = tree
+        .iter()
+        .filter(|(name, spec)| spec.era == previous_era && !fixed_parents.contains(*name))
+        .map(|(name, _)| name.clone())
+        .collect();
+    if previous_leaves.is_empty() {
+        return Err(format!(
+            "randomized {kind} tree has no leaves in its preceding era"
+        ));
+    }
+
+    shuffle_strings(&mut regular, rng);
+    // The shipped samples use two non-empty random-cost columns. With more
+    // than two nodes the first contains at least two; its upper bound leaves
+    // at least one node for the second.
+    let first_len = if regular.len() == 2 {
+        1
+    } else {
+        2 + rng.below(regular.len() - 2)
+    };
+    let (first, second) = regular.split_at(first_len);
+    let mut requirements: BTreeMap<String, Vec<String>> = randomized
+        .iter()
+        .map(|name| (name.clone(), Vec::new()))
+        .collect();
+    connect_random_layers(&previous_leaves, first, rng, &mut requirements)?;
+    connect_random_layers(first, second, rng, &mut requirements)?;
+
+    let terminal = terminals.pop().unwrap();
+    if let Some(gateway) = gateways.pop() {
+        requirements.insert(gateway.clone(), second.to_vec());
+        requirements.insert(terminal.clone(), vec![gateway]);
+    } else {
+        requirements.insert(terminal.clone(), second.to_vec());
+    }
+
+    let first: BTreeSet<&str> = first.iter().map(String::as_str).collect();
+    let mut layout = BTreeMap::new();
+    for name in randomized {
+        let spec = &tree[&name];
+        let cost = if spec.random_costs.is_empty() {
+            spec.cost
+        } else if first.contains(name.as_str()) {
+            spec.random_costs[0]
+        } else {
+            spec.random_costs[1]
+        };
+        let mut requires = requirements.remove(&name).unwrap_or_default();
+        requires.sort();
+        requires.dedup();
+        layout.insert(name, TreeLayoutEntry { cost, requires });
+    }
+    Ok(layout)
+}
+
+fn apply_tree_layout(
+    kind: &str,
+    tree: &mut SpecMap<TechSpec>,
+    layout: &BTreeMap<String, TreeLayoutEntry>,
+) -> Result<(), String> {
+    let expected: BTreeSet<String> = tree
+        .iter()
+        .filter(|(_, spec)| spec.random_prereqs)
+        .map(|(name, _)| name.clone())
+        .collect();
+    let actual: BTreeSet<String> = layout.keys().cloned().collect();
+    if expected != actual {
+        return Err(format!(
+            "saved randomized {kind} nodes do not match the active ruleset"
+        ));
+    }
+
+    let randomized_era = expected
+        .iter()
+        .map(|name| tree[name].era)
+        .max()
+        .ok_or_else(|| format!("saved randomized {kind} tree is empty"))?;
+    let previous_era = tree
+        .values()
+        .filter(|spec| spec.era < randomized_era)
+        .map(|spec| spec.era)
+        .max()
+        .ok_or_else(|| format!("saved randomized {kind} tree has no preceding era"))?;
+    let fixed_parents: BTreeSet<&str> = tree
+        .iter()
+        .filter(|(_, spec)| !spec.random_prereqs)
+        .flat_map(|(_, spec)| spec.requires.iter().map(String::as_str))
+        .collect();
+    let previous_leaves: BTreeSet<String> = tree
+        .iter()
+        .filter(|(name, spec)| {
+            spec.era == previous_era && !fixed_parents.contains(name.as_str())
+        })
+        .map(|(name, _)| name.clone())
+        .collect();
+
+    let mut first = BTreeSet::new();
+    let mut second = BTreeSet::new();
+    let mut gateways = Vec::new();
+    let mut terminals = Vec::new();
+    for (name, entry) in layout {
+        let spec = tree
+            .get(name)
+            .ok_or_else(|| format!("saved randomized {kind} {name:?} is unknown"))?;
+        if entry.cost <= 0.0 {
+            return Err(format!(
+                "saved randomized {kind} {name:?} has invalid cost {}",
+                entry.cost
+            ));
+        }
+        if spec.repeatable {
+            if entry.cost != spec.cost {
+                return Err(format!(
+                    "saved randomized {kind} terminal {name:?} has invalid cost {}",
+                    entry.cost
+                ));
+            }
+            terminals.push(name.clone());
+        } else if spec.random_costs.is_empty() {
+            if entry.cost != spec.cost {
+                return Err(format!(
+                    "saved randomized {kind} gateway {name:?} has invalid cost {}",
+                    entry.cost
+                ));
+            }
+            gateways.push(name.clone());
+        } else if spec.random_costs.len() != 2 {
+            return Err(format!(
+                "randomized {kind} {name:?} does not define exactly two column costs"
+            ));
+        } else if entry.cost == spec.random_costs[0] {
+            first.insert(name.clone());
+        } else if entry.cost == spec.random_costs[1] {
+            second.insert(name.clone());
+        } else {
+            return Err(format!(
+                "saved randomized {kind} {name:?} has invalid cost {}",
+                entry.cost
+            ));
+        }
+        let unique: BTreeSet<&str> = entry.requires.iter().map(String::as_str).collect();
+        if unique.len() != entry.requires.len() {
+            return Err(format!(
+                "saved randomized {kind} {name:?} repeats a prerequisite"
+            ));
+        }
+        for prerequisite in &entry.requires {
+            if prerequisite == name || !tree.contains_key(prerequisite) {
+                return Err(format!(
+                    "saved randomized {kind} {name:?} has invalid prerequisite {prerequisite:?}"
+                ));
+            }
+        }
+    }
+    if first.is_empty() || second.is_empty() || terminals.len() != 1 || gateways.len() > 1 {
+        return Err(format!(
+            "saved randomized {kind} tree does not contain two columns, one terminal, and at most one gateway"
+        ));
+    }
+
+    let validate_layer = |children: &BTreeSet<String>,
+                          parents: &BTreeSet<String>,
+                          label: &str|
+     -> Result<(), String> {
+        let mut used = BTreeSet::new();
+        for child in children {
+            let requires: BTreeSet<String> = layout[child].requires.iter().cloned().collect();
+            if requires.is_empty() || !requires.is_subset(parents) {
+                return Err(format!(
+                    "saved randomized {kind} {label} node {child:?} has prerequisites outside the preceding column"
+                ));
+            }
+            used.extend(requires);
+        }
+        if used != *parents {
+            return Err(format!(
+                "saved randomized {kind} {label} column leaves a preceding node disconnected"
+            ));
+        }
+        Ok(())
+    };
+    validate_layer(&first, &previous_leaves, "first-column")?;
+    validate_layer(&second, &first, "second-column")?;
+
+    let terminal = terminals.pop().unwrap();
+    let terminal_requires: BTreeSet<String> = layout[&terminal].requires.iter().cloned().collect();
+    if let Some(gateway) = gateways.pop() {
+        let gateway_requires: BTreeSet<String> =
+            layout[&gateway].requires.iter().cloned().collect();
+        if gateway_requires != second || terminal_requires != BTreeSet::from([gateway]) {
+            return Err(format!(
+                "saved randomized {kind} gateway and terminal do not close the second column"
+            ));
+        }
+    } else if terminal_requires != second {
+        return Err(format!(
+            "saved randomized {kind} terminal does not close the second column"
+        ));
+    }
+
+    for (name, entry) in layout {
+        let spec = tree
+            .get_mut(name)
+            .expect("the randomized tree entry was just checked");
+        spec.cost = entry.cost;
+        spec.requires = entry.requires.clone();
+    }
+    Ok(())
+}
+
 /// The transitive prerequisites of every node in a tree.
 fn ancestry(nodes: &SpecMap<TechSpec>) -> SpecMap<BTreeSet<String>> {
     let mut ancestry: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
@@ -1199,6 +1563,54 @@ impl Rules {
         SHARED
             .get_or_init(|| Arc::new(ACTIVE.get_or_init(Rules::shipped).clone()))
             .clone()
+    }
+
+    /// Build the immutable rules snapshot for one match. Gathering Storm's
+    /// Future trees are the only rules rows that vary by game seed; cloning
+    /// once here keeps that variation out of every hot-path query, while
+    /// tactical/search clones continue to share the resulting [`Arc`].
+    pub fn for_game(seed: u64, saved: Option<&FutureTreeLayout>) -> Arc<Rules> {
+        let shared = Self::shared();
+        let layout = match saved {
+            Some(layout) => layout.clone(),
+            None => FutureTreeLayout::generate(&shared, seed)
+                .unwrap_or_else(|error| panic!("cannot generate Future research trees: {error}")),
+        };
+        if layout.is_empty() {
+            return shared;
+        }
+        let mut rules = (*shared).clone();
+        apply_tree_layout("technology", &mut rules.techs, &layout.techs)
+            .unwrap_or_else(|error| panic!("cannot install Future technology tree: {error}"));
+        apply_tree_layout("civic", &mut rules.civics, &layout.civics)
+            .unwrap_or_else(|error| panic!("cannot install Future civic tree: {error}"));
+        rules.tech_ancestors = ancestry(&rules.techs);
+        rules.civic_ancestors = ancestry(&rules.civics);
+        Arc::new(rules)
+    }
+
+    /// Extract the generated part of a live rules snapshot for save/restore.
+    /// Persisting the concrete graph means a future engine update cannot
+    /// silently reroll an in-progress match.
+    pub fn future_tree_layout(&self) -> FutureTreeLayout {
+        let extract = |tree: &SpecMap<TechSpec>| {
+            tree.iter()
+                .filter(|(_, spec)| spec.random_prereqs)
+                .map(|(name, spec)| {
+                    (
+                        name.clone(),
+                        TreeLayoutEntry {
+                            cost: spec.cost,
+                            requires: spec.requires.clone(),
+                        },
+                    )
+                })
+                .collect()
+        };
+        FutureTreeLayout {
+            techs: extract(&self.techs),
+            civics: extract(&self.civics),
+        }
     }
 
     /// The shipped ruleset, ignoring any installed mods.
@@ -1535,6 +1947,173 @@ mod tests {
         let rules = Rules::embedded();
         assert_complete_tree(&rules.techs, TECHS, [11, 8, 8, 9, 8, 8, 8, 9, 8]);
         assert_complete_tree(&rules.civics, CIVICS, [7, 7, 7, 6, 7, 9, 5, 7, 6]);
+    }
+
+    fn assert_randomized_tree_shape(
+        tree: &SpecMap<TechSpec>,
+        ancestors: &SpecMap<BTreeSet<String>>,
+        previous: &[&str],
+        gateway: Option<&str>,
+        terminal: &str,
+    ) {
+        let regular: Vec<&str> = tree
+            .iter()
+            .filter(|(_, spec)| spec.random_costs.len() == 2)
+            .map(|(name, _)| name.as_str())
+            .collect();
+        let first: BTreeSet<&str> = regular
+            .iter()
+            .copied()
+            .filter(|name| tree[*name].cost == tree[*name].random_costs[0])
+            .collect();
+        let second: BTreeSet<&str> = regular
+            .iter()
+            .copied()
+            .filter(|name| tree[*name].cost == tree[*name].random_costs[1])
+            .collect();
+        assert_eq!(first.len() + second.len(), regular.len());
+        assert!(first.len() >= 2 && first.len() < regular.len());
+        assert!(!second.is_empty());
+
+        let previous: BTreeSet<&str> = previous.iter().copied().collect();
+        let first_parents: BTreeSet<&str> = first
+            .iter()
+            .flat_map(|name| tree[*name].requires.iter().map(String::as_str))
+            .collect();
+        assert_eq!(first_parents, previous);
+        for name in &first {
+            assert!(!tree[*name].requires.is_empty());
+            assert!(tree[*name]
+                .requires
+                .iter()
+                .all(|parent| previous.contains(parent.as_str())));
+        }
+
+        let second_parents: BTreeSet<&str> = second
+            .iter()
+            .flat_map(|name| tree[*name].requires.iter().map(String::as_str))
+            .collect();
+        assert_eq!(second_parents, first);
+        for name in &second {
+            assert!(!tree[*name].requires.is_empty());
+            assert!(tree[*name]
+                .requires
+                .iter()
+                .all(|parent| first.contains(parent.as_str())));
+        }
+
+        let second_owned: BTreeSet<String> = second.iter().map(|name| (*name).to_string()).collect();
+        match gateway {
+            Some(gateway) => {
+                assert_eq!(
+                    tree[gateway].requires.iter().cloned().collect::<BTreeSet<_>>(),
+                    second_owned
+                );
+                assert_eq!(tree[terminal].requires, [gateway.to_string()]);
+            }
+            None => assert_eq!(
+                tree[terminal]
+                    .requires
+                    .iter()
+                    .cloned()
+                    .collect::<BTreeSet<_>>(),
+                second_owned
+            ),
+        }
+        for node in previous
+            .iter()
+            .copied()
+            .chain(regular.iter().copied())
+            .chain(gateway)
+        {
+            assert!(
+                ancestors[terminal].contains(node),
+                "{terminal} does not descend from {node}"
+            );
+        }
+    }
+
+    #[test]
+    fn future_research_trees_use_the_shipped_two_column_shape() {
+        let base = Rules::embedded();
+        assert!(base
+            .techs
+            .iter()
+            .filter(|(_, spec)| spec.random_prereqs)
+            .all(|(_, spec)| spec.requires.is_empty()));
+        assert!(base
+            .civics
+            .iter()
+            .filter(|(_, spec)| spec.random_prereqs)
+            .all(|(_, spec)| spec.requires.is_empty()));
+
+        let mut layouts = BTreeSet::new();
+        for seed in 0..64 {
+            let rules = Rules::for_game(seed, None);
+            assert_randomized_tree_shape(
+                &rules.techs,
+                &rules.tech_ancestors,
+                &[
+                    "nanotechnology",
+                    "nuclear_fusion",
+                    "robotics",
+                    "stealth_technology",
+                    "telecommunications",
+                ],
+                Some("offworld_mission"),
+                "future_tech",
+            );
+            assert_randomized_tree_shape(
+                &rules.civics,
+                &rules.civic_ancestors,
+                &[
+                    "corporate_libertarianism",
+                    "digital_democracy",
+                    "near_future_governance",
+                    "synthetic_technocracy",
+                ],
+                None,
+                "future_civic",
+            );
+            let layout = rules.future_tree_layout();
+            let restored = Rules::for_game(seed, Some(&layout));
+            assert_eq!(restored.future_tree_layout(), layout);
+            layouts.insert(format!("{layout:?}"));
+        }
+        assert!(
+            layouts.len() > 32,
+            "64 seeds produced only {} Future-tree layouts",
+            layouts.len()
+        );
+    }
+
+    #[test]
+    fn malformed_saved_future_tree_is_rejected_before_installation() {
+        let mut rules = Rules::embedded();
+        let mut layout = FutureTreeLayout::generate(&rules, 919_191).unwrap();
+        let first = layout
+            .techs
+            .iter()
+            .find(|(name, entry)| {
+                !rules.techs[*name].random_costs.is_empty()
+                    && entry.cost == rules.techs[*name].random_costs[0]
+            })
+            .map(|(name, _)| name.clone())
+            .unwrap();
+        layout.techs.get_mut(&first).unwrap().requires = vec!["future_tech".to_string()];
+        let error = apply_tree_layout("technology", &mut rules.techs, &layout.techs).unwrap_err();
+        assert!(error.contains("outside the preceding column"), "{error}");
+
+        let mut layout = FutureTreeLayout::generate(&rules, 919_191).unwrap();
+        let prerequisite = layout.techs[&first].requires[0].clone();
+        layout
+            .techs
+            .get_mut(&first)
+            .unwrap()
+            .requires
+            .push(prerequisite);
+        let error = apply_tree_layout("technology", &mut rules.techs, &layout.techs).unwrap_err();
+        assert!(error.contains("repeats a prerequisite"), "{error}");
     }
 
     #[test]

@@ -334,7 +334,7 @@ produces a clean-looking but false report:
   `_Major` pass applies afterwards.
 
 **Result of the first run:** 55 real divergences across units, technologies,
-civics, buildings and districts. All are now resolved — 31 by correcting
+civics, buildings and districts. All are now resolved — 45 by correcting
 CIVVIS' data, the rest by recording them as deliberate:
 
 | Fixed | Examples |
@@ -343,14 +343,16 @@ CIVVIS' data, the rest by recording them as deliberate:
 | Modern-era building costs, uniformly overstated | Factory/Stock Exchange/Military Academy 390→330, Research Lab/Seaport/Broadcast Center/Film Studio/Shopping Mall 580→440, Stadium 660→480, Airport 600→480, Zoo/Aquarium 445→360, Hangar/Food Market 465→380 |
 | Sight radii left at the default | Spy, Naturalist, Helicopter, Rocket Artillery, Giant Death Robot all see 3 tiles, not 2 |
 | Missing prerequisites | Cartography and Mass Production both require Shipbuilding |
+| Future-era research frozen into one representative layout | Technology and civic nodes now carry the shipped `RandomPrereqs` flags and 2200/2300 or 3200/3300 column costs. Each match draws one connected two-column graph from its seed, shares it across every player, and stores the concrete graph in saves. |
 
 `tools/fidelity_waivers.json` holds the accepted divergences, each with a
-reason — Future-era techs and civics draw randomized prerequisites in
-Gathering Storm, purchase-only units store a Faith price where the database
-stores an unpayable production cost, the City Center is placed rather than
-produced. **That file is the fidelity roadmap: shrinking it is the work.**
-Anything not listed there counts against the ratchet, which now stands at
-zero for these five tables.
+reason — purchase-only units store a Faith price where the database stores an
+unpayable production cost, and the City Center is placed rather than produced.
+Future-era randomization is no longer waived: the audit reads
+`Technologies_XP2`, `Civics_XP2`, `TechnologyRandomCosts`, and
+`CivicRandomCosts` directly. **That file is the fidelity roadmap: shrinking it
+is the work.** Anything not listed there counts against the ratchet, which now
+stands at zero for these five tables.
 
 **Second wave (terrain layer):** the audit now also projects `Terrains`,
 `Features`, `Resources` and `Improvements` — yields, movement, defense
