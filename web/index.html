@@ -3702,7 +3702,8 @@ document.addEventListener("fullscreenchange", () => { wakeCinema(); resize(); })
 // seconds, the whole frame, and a different picture in every map style.
 const anim = { moves: new Map(), floats: [], sparks: [], deaths: [],
                claims: [], strike: null, shots: [], bursts: [], motes: [],
-               scars: [], battles: [], lunges: new Map(), blasts: [] };
+               scars: [], battles: [], lunges: new Map(), blasts: [],
+               skyLaunches: [] };
 // Detonations already shown. The engine gives every strike a unique id
 // precisely so a client can answer this without comparing fields: two devices
 // can land on one tile on one turn, and a re-poll of the same state must not
@@ -3811,6 +3812,7 @@ function resetAnim() {
   anim.scars.length = 0;
   anim.battles.length = 0;
   anim.blasts.length = 0;
+  anim.skyLaunches.length = 0;
   seenBlasts = new Set();
   anim.strike = null;
   pendingStrike = null;
@@ -4037,8 +4039,10 @@ function stageAttack(victimPos, dmg, next, prevU, now, isCity) {
   return battle;
 }
 function animateDiff(prev, next) {
-  if (!prev || !prev.units) return;
+  if (!prev) return;
   const now = performance.now();
+  queueSkyLaunches(prev, next, now);
+  if (!prev.units || !next.units) return;
   // A lunge is retired by the unit that owns it when it next draws, so one
   // belonging to a unit that died in the same exchange would otherwise sit in
   // the map forever. Nothing reads it after its duration; sweep it.
@@ -11315,6 +11319,47 @@ const SKY_CHAIN = {
   satellite:"launch_earth_satellite", moon:"launch_moon_landing",
   mars:"launch_mars_colony", expedition:"exoplanet_expedition",
 };
+// The standing sky above is permanent state. These three missions also need a
+// beginning: when a completed project first appears between two live frames,
+// its craft leaves Earth before the permanent landing or voyage takes over.
+// Satellite already supplies its own perpetual orbital motion, so it does not
+// need a second launch layer here.
+const SKY_LAUNCH_FLIGHTS = {
+  moon:{project:SKY_CHAIN.moon, duration:2800, body:"moon"},
+  mars:{project:SKY_CHAIN.mars, duration:3600, body:"mars"},
+  expedition:{project:SKY_CHAIN.expedition, duration:3000, body:"exo"},
+};
+function queueSkyLaunches(prev, next, now = performance.now()) {
+  if (!prev || !next || prev.seed !== next.seed || REDUCED_MOTION_QUERY.matches) return;
+  const before = new Map((prev.players || []).map(player => [player.id, player]));
+  for (const player of next.players || []) {
+    if (player.is_minor || player.is_barbarian) continue;
+    const old = before.get(player.id);
+    if (!old) continue;
+    const oldProjects = old.science_projects || [];
+    const newProjects = player.science_projects || [];
+    for (const [mission, flight] of Object.entries(SKY_LAUNCH_FLIGHTS)) {
+      if (oldProjects.includes(flight.project) || !newProjects.includes(flight.project)) continue;
+      // Repeated snapshots of one transition must restart neither the flight
+      // nor its exhaust. A project is permanent, but keeping the guard here
+      // also makes synthetic/recovery state streams harmless.
+      if (anim.skyLaunches.some(launch =>
+          launch.playerId === player.id && launch.mission === mission)) continue;
+      anim.skyLaunches.push({playerId:player.id, mission, t0:now,
+                            duration:flight.duration});
+    }
+  }
+}
+function activeSkyLaunches(now = performance.now()) {
+  for (let index = anim.skyLaunches.length - 1; index >= 0; index--)
+    if (now >= anim.skyLaunches[index].t0 + anim.skyLaunches[index].duration)
+      anim.skyLaunches.splice(index, 1);
+  return anim.skyLaunches;
+}
+function skyLaunchInFlight(playerId, mission, now = performance.now()) {
+  return activeSkyLaunches(now).some(launch =>
+    launch.playerId === playerId && launch.mission === mission);
+}
 // When a body stops being a marble and starts being a place. Its own ground
 // fades in over the painted ball, and the threshold cannot be one number for
 // all three: a tile is about `2 * r / frequency` across, so a world carrying
@@ -12096,24 +12141,32 @@ function drawSkySatellites(crew, camera, radius, centerX, centerY, alpha, now) {
 
 // The expedition is the only one of the four that is still moving, and the
 // engine already knows how far it has come. Its lane is the line from here to
-// there, and the ship sits on it at exactly that fraction.
-function drawSkyExpeditions(crew, exo, radius, centerX, centerY, alpha, now) {
-  if (!crew.length) return;
+// there, and the ship sits on it at exactly that fraction. Launch injection
+// uses this same calculation so the temporary rocket hands off to the real
+// ship without changing lanes.
+function skyExpeditionRoute(player, index, count, exo, radius, centerX, centerY) {
   const dx = exo.x - centerX, dy = exo.y - centerY;
   const span = Math.hypot(dx, dy) || 1;
   const ux = dx / span, uy = dy / span;
   const lane = Math.max(7, radius * .9);
+  const target = +player.victories?.science?.distance_target || 50;
+  const travelled = Math.max(0, Math.min(1, (+player.exoplanet_distance || 0) / target));
+  const offset = (index - (count - 1) / 2) * lane;
+  const ox = -uy * offset, oy = ux * offset;
+  const from = radius * 1.6 + 6, to = span - exo.r - 5;
+  const startX = centerX + ux * from + ox, startY = centerY + uy * from + oy;
+  const endX = centerX + ux * to + ox, endY = centerY + uy * to + oy;
+  return {ux, uy, travelled, startX, startY, endX, endY,
+          shipX:startX + (endX - startX) * travelled,
+          shipY:startY + (endY - startY) * travelled};
+}
+function drawSkyExpeditions(crew, exo, radius, centerX, centerY, alpha, now) {
+  if (!crew.length) return;
   cx.save();
   crew.forEach((player, index) => {
-    const target = +player.victories?.science?.distance_target || 50;
-    const travelled = Math.max(0, Math.min(1, (+player.exoplanet_distance || 0) / target));
-    const offset = (index - (crew.length - 1) / 2) * lane;
-    const ox = -uy * offset, oy = ux * offset;
-    const from = radius * 1.6 + 6, to = span - exo.r - 5;
-    const startX = centerX + ux * from + ox, startY = centerY + uy * from + oy;
-    const endX = centerX + ux * to + ox, endY = centerY + uy * to + oy;
-    const shipX = startX + (endX - startX) * travelled;
-    const shipY = startY + (endY - startY) * travelled;
+    if (skyLaunchInFlight(player.id, "expedition", now)) return;
+    const {ux, uy, travelled, startX, startY, endX, endY, shipX, shipY} =
+      skyExpeditionRoute(player, index, crew.length, exo, radius, centerX, centerY);
     // Zoomed in close, the whole lane is off in the dark and all that reaches
     // the stage is a line leaving the frame with nothing on it. Wait until the
     // ship itself is in the picture; that is the thing worth drawing.
@@ -12147,6 +12200,131 @@ function drawSkyExpeditions(crew, exo, radius, centerX, centerY, alpha, now) {
     cx.closePath(); cx.fill(); cx.stroke();
   });
   cx.restore();
+}
+
+function skyLaunchStart(player, place, radius, centerX, centerY) {
+  const dx = place.x - centerX, dy = place.y - centerY;
+  const span = Math.hypot(dx, dy) || 1, ux = dx / span, uy = dy / span;
+  const offset = (hash2(player.id, 83) - .5) * Math.min(18, radius * .18);
+  return {x:centerX + ux * (radius * 1.04 + 3) - uy * offset,
+          y:centerY + uy * (radius * 1.04 + 3) + ux * offset};
+}
+
+function skyLaunchEnd(launch, player, place, crews,
+                      radius, centerX, centerY) {
+  if (launch.mission === "expedition") {
+    const index = crews.expedition.findIndex(candidate => candidate.id === player.id);
+    if (index >= 0) {
+      const route = skyExpeditionRoute(player, index, crews.expedition.length,
+                                       place, radius, centerX, centerY);
+      return {x:route.shipX, y:route.shipY};
+    }
+  }
+  const crew = launch.mission === "moon" ? crews.moon : crews.mars;
+  const seat = skyLandingSeats(place, crew).find(entry => entry.player.id === player.id);
+  if (seat) return {x:seat.x, y:seat.y};
+  // A stable landing site can be around the back of a close-up world. Aim for
+  // the Earth-facing limb in that case: the rocket disappears behind the body
+  // and the permanent marker remains correctly hidden with its site.
+  const dx = place.x - centerX, dy = place.y - centerY;
+  const span = Math.hypot(dx, dy) || 1;
+  return {x:place.x - dx / span * place.r * .82,
+          y:place.y - dy / span * place.r * .82};
+}
+
+function skyLaunchPoint(start, end, progress, bend) {
+  const eased = easeIO(Math.max(0, Math.min(1, progress)));
+  const dx = end.x - start.x, dy = end.y - start.y;
+  const span = Math.hypot(dx, dy) || 1;
+  const arc = Math.min(span * .18, 46) * Math.sin(Math.PI * eased) * bend;
+  return {x:start.x + dx * eased - dy / span * arc,
+          y:start.y + dy * eased + dx / span * arc};
+}
+
+function drawSkyLaunches(crews, placements, radius, centerX, centerY, now) {
+  const launches = activeSkyLaunches(now);
+  if (!launches.length) return;
+  for (const launch of launches) {
+    const player = (state.players || []).find(candidate => candidate.id === launch.playerId);
+    const flight = SKY_LAUNCH_FLIGHTS[launch.mission];
+    const place = flight && placements.get(flight.body);
+    if (!player || !place) continue;
+    const progress = Math.max(0, Math.min(1, (now - launch.t0) / launch.duration));
+    const start = skyLaunchStart(player, place, radius, centerX, centerY);
+    const end = skyLaunchEnd(launch, player, place, crews,
+                             radius, centerX, centerY);
+    const bend = hash2(player.id, flight.body.length * 17) < .5 ? -.72 : .72;
+    const at = skyLaunchPoint(start, end, progress, bend);
+    if (!skyOnStage(at.x, at.y, 36)) continue;
+    const ahead = skyLaunchPoint(start, end, Math.min(1, progress + .004), bend);
+    const behind = skyLaunchPoint(start, end, Math.max(0, progress - .004), bend);
+    const angle = Math.atan2(ahead.y - behind.y, ahead.x - behind.x);
+    const colour = pcol(player.id), dark = pcol2(player.id);
+    const size = Math.max(3, Math.min(7, radius * .065));
+    cx.save();
+    // The complete flight plan is quiet; the travelled part is a continuous
+    // bright stroke, so the eye can read both destination and motion at once.
+    cx.globalAlpha = .22; cx.strokeStyle = colour; cx.lineWidth = 1;
+    cx.setLineDash([2, 6]); cx.beginPath();
+    for (let step = 0; step <= 32; step++) {
+      const point = skyLaunchPoint(start, end, step / 32, bend);
+      step ? cx.lineTo(point.x, point.y) : cx.moveTo(point.x, point.y);
+    }
+    cx.stroke(); cx.setLineDash([]);
+    cx.globalAlpha = .7; cx.lineWidth = 1.6; cx.beginPath();
+    const travelledSteps = Math.max(1, Math.ceil(progress * 32));
+    for (let step = 0; step <= travelledSteps; step++) {
+      const point = skyLaunchPoint(start, end,
+        progress * step / travelledSteps, bend);
+      step ? cx.lineTo(point.x, point.y) : cx.moveTo(point.x, point.y);
+    }
+    cx.stroke();
+
+    // Ignition expands off Earth's limb; landings answer it with a smaller
+    // arrival ring. The expedition instead hands straight into its live lane.
+    if (progress < .22) {
+      cx.globalAlpha = (1 - progress / .22) * .65;
+      cx.strokeStyle = colour; cx.lineWidth = 1.5;
+      cx.beginPath(); cx.arc(start.x, start.y, size * (1 + progress * 12), 0, 7); cx.stroke();
+    } else if (launch.mission !== "expedition" && progress > .82) {
+      cx.globalAlpha = (progress - .82) / .18 * .52;
+      cx.strokeStyle = colour; cx.lineWidth = 1.2;
+      cx.beginPath(); cx.arc(end.x, end.y, size * (2.2 - progress), 0, 7); cx.stroke();
+    }
+
+    // A flickering plume points opposite the actual curved-flight tangent.
+    const flicker = size * (1.5 + .35 * Math.sin(now / 75 + player.id));
+    cx.translate(at.x, at.y); cx.rotate(angle);
+    const plume = cx.createLinearGradient(-size - flicker, 0, -size * .3, 0);
+    plume.addColorStop(0, "rgba(255,173,69,0)");
+    plume.addColorStop(.62, "rgba(255,176,70,.68)");
+    plume.addColorStop(1, "rgba(255,244,191,.92)");
+    cx.globalAlpha = .9; cx.fillStyle = plume;
+    cx.beginPath(); cx.moveTo(-size * .45, 0);
+    cx.lineTo(-size - flicker, -size * .42);
+    cx.lineTo(-size - flicker * .82, size * .42); cx.closePath(); cx.fill();
+    cx.globalAlpha = 1; cx.fillStyle = colour; cx.strokeStyle = "#071018"; cx.lineWidth = 1;
+    cx.beginPath(); cx.moveTo(size * 1.35, 0);
+    cx.lineTo(-size * .55, -size * .62); cx.lineTo(-size * .2, 0);
+    cx.lineTo(-size * .55, size * .62); cx.closePath(); cx.fill(); cx.stroke();
+    cx.fillStyle = dark;
+    cx.beginPath(); cx.moveTo(-size * .12, -size * .48);
+    cx.lineTo(-size * .75, -size * 1.02); cx.lineTo(-size * .55, -.08); cx.closePath(); cx.fill();
+    cx.beginPath(); cx.moveTo(-size * .12, size * .48);
+    cx.lineTo(-size * .75, size * 1.02); cx.lineTo(-size * .55, .08); cx.closePath(); cx.fill();
+    cx.restore();
+
+    if (size >= 4.2) {
+      cx.save(); cx.globalAlpha = .8; cx.font = "800 7px Inter,sans-serif";
+      cx.textAlign = "center"; cx.textBaseline = "bottom";
+      cx.strokeStyle = "#03070c"; cx.lineWidth = 3;
+      const label = launch.mission === "expedition" ? "EXOPLANET LAUNCH"
+        : `${launch.mission.toUpperCase()} LAUNCH`;
+      cx.strokeText(label, at.x, at.y - size * 1.8);
+      cx.fillStyle = "#e9f4f5"; cx.fillText(label, at.x, at.y - size * 1.8);
+      cx.restore();
+    }
+  }
 }
 
 // A body nobody could name is just a light. The caption carries the name and,
@@ -12194,8 +12372,10 @@ function drawPlanetSky(camera, radius, centerX, centerY) {
   const crews = skyCrews();
   const now = performance.now();
   let exo = null;
+  const placements = new Map();
   for (const body of visibleSkyBodies()) {
     const place = skyPlacement(body, radius, centerX, centerY);
+    placements.set(body.id, place);
     if (body.id === "exo") exo = place;
     if (!skyOnCanvas(place)) continue;
     // Under a pixel a body is noise, so it arrives by fading up rather than by
@@ -12211,7 +12391,9 @@ function drawPlanetSky(camera, radius, centerX, centerY) {
       cx.save(); cx.globalAlpha = alpha; cx.fillStyle = halo;
       cx.beginPath(); cx.arc(place.x, place.y, place.r * 6, 0, 7); cx.fill(); cx.restore();
     }
-    const crew = skyCrewFor(crews, body);
+    const mission = body.id === "moon" ? "moon" : body.id === "mars" ? "mars" : null;
+    const crew = skyCrewFor(crews, body).filter(player =>
+      !mission || !skyLaunchInFlight(player.id, mission, now));
     drawSkyBall(place, alpha);
     // Its own ground, once there is enough of the body on screen to hold it.
     const ground = skyGroundFade(place);
@@ -12233,6 +12415,7 @@ function drawPlanetSky(camera, radius, centerX, centerY) {
   }
   if (exo) drawSkyExpeditions(crews.expedition, exo, radius, centerX, centerY, 1, now);
   drawSkySatellites(crews.satellite, camera, radius, centerX, centerY, 1, now);
+  drawSkyLaunches(crews, placements, radius, centerX, centerY, now);
   // Far enough out, home is a dot among dots and needs saying so. The names
   // out here are the engine's own — its four projects are the Earth satellite,
   // the Moon landing, the Mars colony and the exoplanet expedition — so the
@@ -12247,7 +12430,12 @@ function drawPlanetSky(camera, radius, centerX, centerY) {
 // perfectly still between turns. While the sky is open and something up there
 // is under way, the map keeps painting.
 function planetSkyAnimating() {
-  if (!state || !planetReady() || planetEarthRadius() > SKY_SURFACE) return false;
+  if (!state || !planetReady()) return false;
+  // A launch begins at Earth's limb and must move even while the camera is
+  // still close to home. The permanent orbit/voyage loops remain limited to
+  // the open-sky view as before.
+  if (activeSkyLaunches().length > 0) return true;
+  if (planetEarthRadius() > SKY_SURFACE) return false;
   const crews = skyCrews();
   return crews.satellite.length > 0 || crews.expedition.length > 0;
 }
