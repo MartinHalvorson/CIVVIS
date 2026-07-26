@@ -2992,6 +2992,76 @@ impl BasicAi {
         .is_ok()
     }
 
+    /// Annex a genuinely useful plot instead of treating every affordable
+    /// border hex as equivalent. Resources, Natural Wonders, and strong raw
+    /// yields can justify the immediate tempo spend; a reserve still protects
+    /// unit upgrades and emergency purchases.
+    fn buy_gold_plot(&self, g: &mut Game, pid: usize, reserve: f64) -> bool {
+        let bank = g.players[pid].gold;
+        let mut best: Option<(f64, std::cmp::Reverse<(u32, Pos)>, Action)> = None;
+        for action in g.legal_actions_within(pid, ActionFamilies::PURCHASES) {
+            let Action::BuyPlot { city, pos, cost } = action else {
+                continue;
+            };
+            if bank + f64::EPSILON < reserve + cost {
+                continue;
+            }
+            let tile = &g.map.tiles[&pos];
+            let resource = tile
+                .resource
+                .as_ref()
+                .and_then(|name| g.rules.resources.get(name))
+                .filter(|spec| {
+                    spec.tech
+                        .as_ref()
+                        .is_none_or(|tech| g.players[pid].techs.contains(tech))
+                        && spec
+                            .civic
+                            .as_ref()
+                            .is_none_or(|civic| g.players[pid].civics.contains(civic))
+                });
+            let mut visible_tile = tile.clone();
+            if tile.resource.is_some() && resource.is_none() {
+                visible_tile.resource = None;
+            }
+            let yields = g.rules.tile_yields(&visible_tile);
+            let resource = resource
+                .map(|spec| match spec.class.as_str() {
+                    "luxury" => 220.0,
+                    "strategic" => 190.0,
+                    "bonus" => 55.0,
+                    _ => 0.0,
+                })
+                .unwrap_or(0.0);
+            let wonder = tile
+                .feature
+                .as_ref()
+                .and_then(|name| g.rules.features.get(name))
+                .is_some_and(|feature| feature.natural_wonder) as u8 as f64
+                * 280.0;
+            let value = yields.food * 28.0
+                + yields.production * 42.0
+                + yields.gold * 22.0
+                + yields.science * 40.0
+                + yields.culture * 38.0
+                + yields.faith * 26.0
+                + resource
+                + wonder;
+            let score = value - cost * 0.75;
+            if value + f64::EPSILON < cost * 1.35 || score < 35.0 {
+                continue;
+            }
+            let candidate = (score, std::cmp::Reverse((city, pos)), action);
+            if best
+                .as_ref()
+                .is_none_or(|old| candidate.0 > old.0 + 1e-9 || (candidate.0 - old.0).abs() < 1e-9 && candidate.1 > old.1)
+            {
+                best = Some(candidate);
+            }
+        }
+        best.is_some_and(|(_, _, action)| g.apply(pid, &action).is_ok())
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn spend_gold(
         &self,
@@ -3054,6 +3124,10 @@ impl BasicAi {
             && self.has_practical_settle_site(g, pid)
             && self.buy_gold_unit(g, pid, city_ids, "settler", reserve)
         {
+            return true;
+        }
+
+        if self.buy_gold_plot(g, pid, reserve) {
             return true;
         }
 
@@ -7756,6 +7830,49 @@ mod tests {
             Action::BuyBuilding { building, currency, .. }
                 if building == "monument" && currency == "gold"
         )));
+    }
+
+    #[test]
+    fn gold_spending_annexes_a_luxury_without_breaking_its_reserve() {
+        let mut game = Game::new_full(1, 20, 14, 321, 30, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let center = game.cities[&city].pos;
+        for position in game.wdisk(center, 3) {
+            if game.map.tiles[&position].owner_city.is_none() {
+                let tile = game.map.tiles.get_mut(&position).unwrap();
+                tile.terrain = "plains".to_string();
+                tile.hills = false;
+                tile.feature = None;
+                tile.resource = None;
+            }
+        }
+        let target = game
+            .wdisk(center, 2)
+            .into_iter()
+            .find(|position| {
+                game.wdist(*position, center) == 2
+                    && game.map.tiles[position].owner_city.is_none()
+                    && game
+                        .nbrs(*position)
+                        .into_iter()
+                        .any(|neighbor| game.map.tiles[&neighbor].owner_city == Some(city))
+            })
+            .unwrap();
+        game.map.tiles.get_mut(&target).unwrap().resource = Some("diamonds".to_string());
+        game.players[0]
+            .explored
+            .extend(game.map.tiles.keys().copied());
+        game.players[0].gold = 175.0;
+
+        assert!(BasicAi::new().buy_gold_plot(&mut game, 0, 125.0));
+        assert_eq!(game.map.tiles[&target].owner_city, Some(city));
+        assert_eq!(game.players[0].gold, 125.0);
     }
 
     #[test]

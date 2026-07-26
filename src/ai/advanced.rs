@@ -3949,6 +3949,7 @@ impl AdvancedAi {
             let bank = g.players[pid].gold;
             let counts = self.counts(g, pid);
             let mut candidates = Vec::new();
+            let mut plot_options = Vec::new();
             // Every candidate asks its city for the same yields, twice — once
             // here and once inside `production_value`. The guard borrows the
             // game immutably, so those answers cannot go stale before it is
@@ -3958,6 +3959,87 @@ impl AdvancedAi {
                 pid,
                 ActionFamilies::PURCHASES | ActionFamilies::EMPIRE,
             ) {
+                if let Action::BuyPlot {
+                    city: _,
+                    pos,
+                    cost,
+                } = &action
+                {
+                    if bank + f64::EPSILON < reserve + cost {
+                        continue;
+                    }
+                    let tile = &g.map.tiles[pos];
+                    let resource = tile
+                        .resource
+                        .as_ref()
+                        .and_then(|name| g.rules.resources.get(name))
+                        .filter(|spec| {
+                            spec.tech
+                                .as_ref()
+                                .is_none_or(|tech| g.players[pid].techs.contains(tech))
+                                && spec
+                                    .civic
+                                    .as_ref()
+                                    .is_none_or(|civic| g.players[pid].civics.contains(civic))
+                        });
+                    let mut visible_tile = tile.clone();
+                    if tile.resource.is_some() && resource.is_none() {
+                        visible_tile.resource = None;
+                    }
+                    let yields = self
+                        .yield_value(g.rules.tile_yields(&visible_tile), plan.strategy)
+                        * 24.0;
+                    let resource = resource
+                        .map(|spec| match spec.class.as_str() {
+                            "luxury" => 260.0,
+                            "strategic" => 230.0,
+                            "bonus" => 70.0,
+                            _ => 0.0,
+                        })
+                        .unwrap_or(0.0);
+                    let wonder = tile
+                        .feature
+                        .as_ref()
+                        .and_then(|name| g.rules.features.get(name))
+                        .is_some_and(|feature| feature.natural_wonder) as u8 as f64
+                        * 320.0;
+                    let base_score = yields + resource + wonder - cost * 0.70;
+                    // Use adjacency as a cheap shortlist signal. Exact site
+                    // legality and full production value are evaluated below
+                    // for only the strongest four plots, avoiding a full game
+                    // clone for every border hex in a large empire.
+                    let adjacency_hint = g
+                        .rules
+                        .districts
+                        .iter()
+                        .filter(|(_, spec)| {
+                            spec.buildable
+                                && spec
+                                    .unique_to
+                                    .as_ref()
+                                    .is_none_or(|civ| civ == &g.players[pid].civ)
+                                && spec
+                                    .tech
+                                    .as_ref()
+                                    .is_none_or(|tech| g.players[pid].techs.contains(tech))
+                                && spec
+                                    .civic
+                                    .as_ref()
+                                    .is_none_or(|civic| g.players[pid].civics.contains(civic))
+                        })
+                        .map(|(district, _)| {
+                            self.yield_value(g.district_yields(district, *pos), plan.strategy)
+                        })
+                        .fold(0.0, f64::max)
+                        * 10.0;
+                    plot_options.push((
+                        base_score + adjacency_hint,
+                        base_score,
+                        std::cmp::Reverse(format!("{action:?}")),
+                        action,
+                    ));
+                    continue;
+                }
                 let (city, item, currency) = match &action {
                     Action::Buy {
                         city,
@@ -4021,6 +4103,47 @@ impl AdvancedAi {
                 let score = positional + turns.clamp(0.0, 20.0) * 6.0 - cost * 0.30;
                 if score >= 120.0 {
                     candidates.push((score, std::cmp::Reverse(format!("{action:?}")), action));
+                }
+            }
+            plot_options.sort_by(|left, right| {
+                right
+                    .0
+                    .total_cmp(&left.0)
+                    .then_with(|| left.2.cmp(&right.2))
+            });
+            plot_options.truncate(4);
+            for (_, base_score, _, action) in plot_options {
+                let Action::BuyPlot { city, pos, .. } = &action else {
+                    unreachable!("plot shortlist contains only BuyPlot actions")
+                };
+                let mut after = g.clone();
+                if after.apply(pid, &action).is_err()
+                    || after.players[pid].gold + f64::EPSILON < reserve
+                {
+                    continue;
+                }
+                // Buying the right hex can be valuable even before a Citizen
+                // works it: ownership may expose a district or Wonder site.
+                let site_value = after
+                    .producible_items(pid, *city)
+                    .into_iter()
+                    .filter(|item| match item {
+                        Item::District { pos: site, .. } | Item::Wonder { pos: site, .. } => {
+                            site == pos
+                        }
+                        _ => false,
+                    })
+                    .map(|item| self.production_value(&after, pid, *city, &item, plan, &counts))
+                    .fold(0.0, f64::max)
+                    .max(0.0)
+                    * 0.35;
+                let score = base_score + site_value;
+                if score >= 120.0 {
+                    candidates.push((
+                        score,
+                        std::cmp::Reverse(format!("{action:?}")),
+                        action,
+                    ));
                 }
             }
             drop(memo);
@@ -14692,6 +14815,58 @@ mod tests {
             .buildings
             .contains(&"library".to_string()));
         assert!(game.players[0].gold >= 300.0);
+    }
+
+    #[test]
+    fn strategic_gold_purchase_annexes_a_luxury_and_preserves_the_reserve() {
+        let mut game = Game::new_full(1, 20, 14, 7_106_002, 160, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let center = game.cities[&city].pos;
+        for position in game.wdisk(center, 3) {
+            if game.map.tiles[&position].owner_city.is_none() {
+                let tile = game.map.tiles.get_mut(&position).unwrap();
+                tile.terrain = "plains".to_string();
+                tile.hills = false;
+                tile.feature = None;
+                tile.resource = None;
+            }
+        }
+        let target = game
+            .wdisk(center, 2)
+            .into_iter()
+            .find(|position| {
+                game.wdist(*position, center) == 2
+                    && game.map.tiles[position].owner_city.is_none()
+                    && game
+                        .nbrs(*position)
+                        .into_iter()
+                        .any(|neighbor| game.map.tiles[&neighbor].owner_city == Some(city))
+            })
+            .unwrap();
+        game.map.tiles.get_mut(&target).unwrap().resource = Some("diamonds".to_string());
+        game.players[0]
+            .explored
+            .extend(game.map.tiles.keys().copied());
+        game.players[0].gold = 350.0;
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Science,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 1,
+            assessed_turn: game.turn,
+        };
+
+        assert!(AdvancedAi::targeting(VictoryTarget::Science)
+            .advanced_gold_spending(&mut game, 0, &plan));
+        assert_eq!(game.map.tiles[&target].owner_city, Some(city));
+        assert_eq!(game.players[0].gold, 300.0);
     }
 
     #[test]

@@ -6178,7 +6178,13 @@ mod tests {
             );
         }
         // Both purchases the client never offered, and production itself.
-        for action in ["\"buy\"", "\"buy_building\"", "\"buy_district\"", "\"produce\""] {
+        for action in [
+            "\"buy\"",
+            "\"buy_building\"",
+            "\"buy_district\"",
+            "\"buy_plot\"",
+            "\"produce\"",
+        ] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("a.type === {action}")),
                 "the city screen does not offer {action}"
