@@ -1192,8 +1192,13 @@ ENGINE_PARAMETERS = {
     "CULTURE_COST_LATER_PLOT_MULTIPLIER": 6,
     "CULTURE_COST_LATER_PLOT_EXPONENT": 1.3,
     "GOVERNMENT_BASE_ANARCHY_TURNS": 2,  # game.rs do_government / process_anarchy
+    "DIPLOMACY_ALLIANCE_TIME_LIMIT": 30,  # game.rs STANDARD_DEAL_TURNS
+    "DIPLOMACY_DENOUNCE_TIME_LIMIT": 30,  # game.rs process_diplomacy
+    "DIPLOMACY_DENOUNCE_WAR_DELAY": 5,
     "DIPLOMACY_PEACE_MIN_TURNS": 10,  # game.rs PEACE_TREATY_TURNS
     "DIPLOMACY_WAR_MIN_TURNS": 10,  # game.rs WAR_MIN_TURNS
+    "TRADE_ROUTE_BASE_RANGE": 15,  # game.rs can_establish_trade_route
+    "TRADE_ROUTE_TURN_DURATION_BASE": 20,  # game.rs trade_route_duration
     "BARBARIAN_CAMP_MINIMUM_DISTANCE_CITY": 4,  # game.rs spawn_camp
     "BARBARIAN_CAMP_MINIMUM_DISTANCE_ANOTHER_CAMP": 7,
     "BARBARIAN_TECH_PERCENT": 50,  # game.rs barbarian_phase unit pool
