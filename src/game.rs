@@ -3493,6 +3493,47 @@ mod belief_runtime_tests {
     }
 
     #[test]
+    fn difficulty_scales_the_standing_barbarian_force() {
+        // BarbarianAttackForces bands its forces on difficulty and the bands
+        // are what barb_force_scale carries: Settler and Chieftain at 0.5,
+        // Warlord through Emperor at 1.0, Immortal and Deity at 1.5. Those
+        // boundaries are exactly the shipped MinTargetDifficulty/
+        // MaxTargetDifficulty pairs.
+        let rules = crate::rules::Rules::embedded();
+        for (difficulty, scale) in [
+            ("settler", 0.5),
+            ("chieftain", 0.5),
+            ("warlord", 1.0),
+            ("prince", 1.0),
+            ("king", 1.0),
+            ("emperor", 1.0),
+            ("immortal", 1.5),
+            ("deity", 1.5),
+        ] {
+            assert_eq!(rules.difficulties[difficulty].barb_force_scale, scale, "{difficulty}");
+        }
+
+        // And the scale reaches the field rather than sitting in the data: the
+        // same world run at three difficulties fields three different numbers
+        // of barbarians.
+        let count = |difficulty: &str| {
+            let mut game = Game::new_full(2, 40, 26, 4_171, 200, 0, true);
+            game.difficulty = difficulty.to_string();
+            // Camps re-arm on a turn counter, so the clock has to move.
+            for _ in 0..60 {
+                game.turn += 1;
+                game.barbarian_phase();
+            }
+            game.barb_pid
+                .map(|bpid| game.player_unit_ids(bpid).len())
+                .unwrap_or(0)
+        };
+        let (low, standard, high) = (count("settler"), count("prince"), count("deity"));
+        assert!(low < standard, "Settler fields fewer than Prince: {low} vs {standard}");
+        assert!(standard < high, "Deity fields more than Prince: {standard} vs {high}");
+    }
+
+    #[test]
     fn barbarian_camps_field_half_the_leaders_technology() {
         let mut game = Game::new_full(2, 24, 16, 91_805, 200, 0, true);
         // Ancient leaders: the camps make do with tech-free units.
@@ -14918,7 +14959,14 @@ impl Game {
             self.spawn_camp();
         }
         let alerted = self.barb_alerted_until.len();
-        let cap = 2 + 2 * self.barb_camps.len() + 2 * alerted;
+        // BarbarianAttackForces bands its force sizes on difficulty: at or
+        // below Chieftain a raid is one melee unit, from Warlord to Emperor
+        // two melee and a ranged, and at Immortal or above three and two. The
+        // Attack forces widen the same way. `barb_force_scale` carries those
+        // three bands as 0.5, 1.0 and 1.5, and the standing barbarian
+        // population is where a force size lives in this engine.
+        let scale = self.difficulty_spec().barb_force_scale;
+        let cap = (((2 + 2 * self.barb_camps.len() + 2 * alerted) as f64) * scale).round() as usize;
         let mut n_barb = self.player_unit_ids(bpid).len();
         let pool = self.barbarian_unit_pool();
         let camps: Vec<(Pos, u32)> = self.barb_camps.iter().map(|(p, n)| (*p, *n)).collect();
