@@ -575,8 +575,8 @@
   .victory-meter { height: 3px; margin: 0 0 0 9px; border-radius: 3px; }
   .diplomacy-ribbon { min-width: max-content; display: flex; align-items: stretch; gap: 4px; padding-bottom: 1px; }
   .diplomacy-card {
-    flex: 0 0 clamp(282px, 19vw, 315px); display: grid;
-    grid-template-columns: 48px minmax(74px, .75fr) minmax(148px, 1.35fr);
+    flex: 0 0 clamp(350px, 24vw, 390px); display: grid;
+    grid-template-columns: 58px 56px minmax(74px, .75fr) minmax(148px, 1.35fr);
     align-items: center; gap: 5px; height: 78px; margin: 0; padding: 4px 5px;
     overflow: hidden; border-radius: 8px; color: var(--text);
     background: linear-gradient(105deg, #0b1714f5, #142720ee);
@@ -588,32 +588,29 @@
   .diplomacy-card.friend { border-color: #708d62; box-shadow: inset 3px 0 #9dbb7d, inset 0 1px #fff1; }
   .diplomacy-card.at-war { border-color: #a65450; box-shadow: inset 3px 0 var(--danger), inset 0 1px #fff1; }
   .diplomacy-card.dead { opacity: .42; filter: grayscale(.75); }
-  /* Each row has two literal map links now: the jersey circle frames the
-     empire and the crown goes straight to its capital. The identity still
-     opens the dossier, while the values retain the existing watch action. */
+  /* Empire is the literal capital-map link. Watching through a civilization's
+     fog is a separate, equally visible action instead of being hidden behind
+     all ten of its values. The identity still opens the dossier. */
   .player-map-links {
     min-width: 0; display: flex; align-items: center; justify-content: center; gap: 4px;
   }
-  .empire-link, .capital-link {
+  .empire-link, .watch-as-link {
     flex: 0 0 auto; display: grid; place-items: center; margin: 0; padding: 0;
-    cursor: pointer;
-  }
-  .empire-link {
-    width: 32px; height: 32px; border-radius: 50%;
+    height: 26px; border: 1px solid var(--civ-border); border-radius: 999px;
     color: #fff;
-    background: radial-gradient(circle, var(--civ-border) 0 23%, var(--civ) 26% 100%);
-    border: 2px solid var(--civ-border); box-shadow: 0 0 0 2px #07110f, 0 4px 12px #0008;
+    background: linear-gradient(90deg, var(--civ-border) 0 9px, var(--civ) 9px 100%);
+    box-shadow: 0 0 0 1px #07110f, 0 4px 12px #0008;
+    font: 850 var(--type-micro)/1 var(--font-ui); letter-spacing: .015em; text-shadow: 0 1px 3px #000;
+    white-space: nowrap; cursor: pointer;
   }
-  .capital-link {
-    width: 12px; height: 24px; border: 0; border-radius: 4px;
-    color: var(--gold-bright); background: transparent; box-shadow: none;
-    font: 700 15px/1 var(--font-display); text-shadow: 0 1px 3px #000, 0 0 7px #d7b66a66;
+  .empire-link { width: 56px; }
+  .watch-as-link { width: 56px; }
+  .empire-link:hover, .empire-link:focus-visible,
+  .watch-as-link:hover, .watch-as-link:focus-visible {
+    filter: brightness(1.16); transform: none;
   }
-  .capital-link:hover, .capital-link:focus-visible {
-    color: #fff4c7; background: #d7b66a18; transform: none;
-  }
-  .empire-link:disabled, .capital-link:disabled { opacity: .28; cursor: default; }
-  .empire-link:disabled:hover, .capital-link:disabled:hover { transform: none; }
+  .empire-link:disabled { opacity: .28; cursor: default; filter: none; }
+  .empire-link:disabled:hover { transform: none; }
   .diplomacy-identity, .diplomacy-stats {
     margin: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit;
     text-align: left; cursor: pointer;
@@ -1826,9 +1823,8 @@
   /* A wide desktop can show more civilizations without changing the HUD's
      hierarchy or pushing it farther down the map. */
   @media (min-width: 2200px) {
-    .diplomacy-card { flex-basis: 330px; grid-template-columns: 52px minmax(88px, .75fr) minmax(164px, 1.35fr); }
-    .empire-link { width: 36px; height: 36px; }
-    .capital-link { font-size: 15px; }
+    .diplomacy-card { flex-basis: 410px; grid-template-columns: 62px 60px minmax(88px, .75fr) minmax(164px, 1.35fr); }
+    .empire-link, .watch-as-link { width: 60px; height: 30px; font-size: var(--type-caption); }
     .ribbon-stat b { font-size: var(--type-control); }
     .ribbon-stat em { font-size: var(--type-caption); }
     /* Four dossier columns need about 480px to stay readable; below that they
@@ -1875,9 +1871,8 @@
   }
   @media (max-width: 430px) {
     .hud-region { padding-inline: 2px; }
-    .diplomacy-card { flex-basis: 286px; grid-template-columns: 44px minmax(76px, .7fr) minmax(155px, 1.45fr); gap: 4px; padding: 4px; }
-    .empire-link { width: 29px; height: 29px; }
-    .capital-link { font-size: var(--type-body); }
+    .diplomacy-card { flex-basis: 350px; grid-template-columns: 54px 52px minmax(76px, .7fr) minmax(155px, 1.45fr); gap: 4px; padding: 4px; }
+    .empire-link, .watch-as-link { width: 52px; height: 24px; }
     .ribbon-stat { padding-inline: 0; }
     .ribbon-stat b { font-size: var(--type-label); }
     .ribbon-stat em { font-size: var(--type-micro); letter-spacing: 0; }
@@ -1898,7 +1893,8 @@
     width: min(var(--player-hud-width, 100%),
       calc(100% - min(var(--hud-rail-width), var(--hud-rail-share)) - 32px));
     height: min(var(--player-hud-height, 200px), var(--player-hud-max-height));
-    --hud-map-links-column: 38px; --hud-identity-column: minmax(300px, 42%); --hud-column-gap: 6px;
+    --hud-map-links-column: 58px; --hud-watch-column: 56px;
+    --hud-identity-column: minmax(300px, 42%); --hud-column-gap: 6px;
     --hud-identity-tracks: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1fr)
       minmax(0, .55fr) minmax(0, .55fr) minmax(0, 1.1fr);
     --hud-lock-column: 13px; --hud-row-height: 26px; --hud-row-gap: 2px;
@@ -1933,11 +1929,12 @@
   .ribbon-heading.widget-drag-handle::before { position: absolute; left: 4px; }
   .ribbon-stat-heading {
     min-height: 12px; display: grid;
-    grid-template-columns: var(--hud-lock-column, 0px) var(--hud-map-links-column) var(--hud-identity-column) minmax(0, 1fr);
+    grid-template-columns: var(--hud-lock-column, 0px) var(--hud-map-links-column)
+      var(--hud-watch-column) var(--hud-identity-column) minmax(0, 1fr);
     align-items: stretch; gap: var(--hud-column-gap); padding: 0 4px 0 3px;
   }
   .diplomacy-identity-head {
-    min-width: 0; display: grid; grid-column: 3;
+    min-width: 0; display: grid; grid-column: 4;
     grid-template-columns: var(--hud-identity-tracks); overflow: hidden;
     color: #a9bbb4; font-size: var(--type-micro); font-weight: 950; letter-spacing: .025em;
   }
@@ -1948,7 +1945,7 @@
   .diplomacy-identity-head span:first-child { border-left-color: transparent; }
   .diplomacy-identity-head .numeric { text-align: right; }
   .diplomacy-stat-head {
-    min-width: 0; display: grid; grid-column: 4;
+    min-width: 0; display: grid; grid-column: 5;
     grid-template-columns: repeat(10, minmax(0, 1fr));
     color: #a9bbb4; font-size: var(--type-caption); font-weight: 950; letter-spacing: .015em;
   }
@@ -1968,19 +1965,21 @@
   }
   #playerhud .diplomacy-ribbon::-webkit-scrollbar { width: 3px; }
   #playerhud .diplomacy-ribbon::-webkit-scrollbar-thumb { background: #476057; border-radius: 4px; }
-  /* One line, four cells: the lock, two map links, who this is, and their ten
-     values. The masthead has the width to run them side by side, which keeps
-     a readable row compact instead of doubling its height. */
+  /* One line, five cells: the lock, the Empire/capital link, an explicit
+     Watch-as action, who this is, and their ten values. The masthead has the
+     width to run them side by side, which keeps every readable row compact. */
   #playerhud .diplomacy-card {
     width: auto; height: auto; min-height: 0; display: grid;
-    grid-template-columns: var(--hud-lock-column, 0px) var(--hud-map-links-column) var(--hud-identity-column) minmax(0, 1fr);
+    grid-template-columns: var(--hud-lock-column, 0px) var(--hud-map-links-column)
+      var(--hud-watch-column) var(--hud-identity-column) minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
     align-items: center; gap: var(--hud-column-gap); margin: 0; padding: 1px 4px 1px 3px;
     overflow: hidden; border-radius: 7px;
   }
   #playerhud .player-map-links { grid-column: 2; grid-row: 1; }
-  #playerhud .diplomacy-identity { grid-column: 3; grid-row: 1; }
-  #playerhud .diplomacy-stats { grid-column: 4; grid-row: 1; }
+  #playerhud .watch-as-link { grid-column: 3; grid-row: 1; }
+  #playerhud .diplomacy-identity { grid-column: 4; grid-row: 1; }
+  #playerhud .diplomacy-stats { grid-column: 5; grid-row: 1; }
 
   /* Locking a seat keeps its row in view while the rest of the table scrolls
      past it — one row, even when the table seats two of that civilization. The
@@ -2005,13 +2004,14 @@
                 0 var(--hud-row-gap) 0 #0b1714, 0 5px 14px #0009;
   }
   #playerhud .diplomacy-card:hover { transform: none; }
-  #playerhud .player-map-links { justify-content: space-between; gap: 2px; }
+  #playerhud .player-map-links { justify-content: center; gap: 0; }
   #playerhud .empire-link {
-    width: 21px; height: 21px;
+    width: 56px; height: 22px;
     border-width: 1px; box-shadow: 0 0 0 1px #07110f, 0 3px 8px #0008;
+    font-size: var(--type-micro);
   }
-  #playerhud .capital-link {
-    width: 14px; height: 19px; font-size: var(--type-body);
+  #playerhud .watch-as-link {
+    width: 54px; height: 22px; font-size: var(--type-micro);
   }
   /* Every identity fact uses the same six tracks as the heading above it.
      Variable-length names can ellipsize inside their own cell without moving
@@ -2253,10 +2253,9 @@
     #playerhud {
       grid-template-columns: 132px minmax(0, 1fr);
       --hud-identity-column: minmax(210px, 48%); --hud-column-gap: 3px;
-      --hud-map-links-column: 34px;
+      --hud-map-links-column: 52px; --hud-watch-column: 52px;
     }
-    #playerhud .empire-link { width: 19px; height: 19px; }
-    #playerhud .capital-link { width: 12px; font-size: var(--type-control); }
+    #playerhud .empire-link, #playerhud .watch-as-link { width: 50px; }
     /* The masthead can take the value columns under 19px here. Keep a
        four-digit figure whole: a clipped number is a wrong number. */
     #playerhud .ribbon-stat b { font-size: clamp(10px, .8vw, 14px); }
@@ -2264,7 +2263,10 @@
   @media (max-width: 720px) {
     #side { inset-block-start: 132px; }
     #maparea { --hud-rail-width: 182px; --minimap-height: 138px; }
-    #playerhud { --hud-map-links-column: 38px; --hud-identity-column: minmax(112px, 142px); }
+    #playerhud {
+      --hud-map-links-column: 50px; --hud-watch-column: 50px;
+      --hud-identity-column: minmax(112px, 142px);
+    }
   }
   @media (max-width: 1100px) {
     /* Six identity columns plus ten value columns need the map's full width at
@@ -2275,7 +2277,8 @@
     #playerhud, body.overlay-victory-hidden #playerhud {
       top: 8px; left: 8px; right: 8px; width: auto; padding: 4px;
       --hud-lock-column: 11px;
-      --hud-map-links-column: 36px; --hud-identity-column: minmax(270px, 52%);
+      --hud-map-links-column: 52px; --hud-watch-column: 52px;
+      --hud-identity-column: minmax(270px, 52%);
     }
     #victoryhud, body.overlay-minimap-hidden #victoryhud {
       top: calc(min(var(--player-hud-height, 200px), var(--player-hud-max-height)) + 14px);
@@ -2317,7 +2320,7 @@
     .launch-badge { min-width: 15px; height: 15px; font-size: var(--type-label); }
   }
   @media (max-height: 650px) {
-    #playerhud .empire-link { width: 20px; height: 20px; }
+    #playerhud .empire-link, #playerhud .watch-as-link { height: 18px; }
   }
 
   /* Neutral charcoal shell. Green remains a semantic game color, but it no
@@ -13627,6 +13630,18 @@ function drawPlanetMap() {
       cx.strokeStyle = "#07100f"; cx.lineWidth = cityState ? 2.4 : 3.5;
       cx.strokeText(city.name, cell.center.x, cell.center.y - r - 5);
       cx.fillText(city.name, cell.center.x, cell.center.y - r - 5);
+      const governor = cityGovernor(city);
+      if (governor) {
+        const waiting = governor.status === "established"
+          ? "" : ` · ${governor.turns_remaining}T`;
+        const posting = `⚑ ${governor.name}${waiting}`;
+        cx.font = `750 ${Math.max(9, Math.min(12, 9 * scale))}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
+        cx.strokeStyle = "#07100f"; cx.lineWidth = 3;
+        cx.strokeText(posting, cell.center.x, cell.center.y + r + 10);
+        cx.fillStyle = governor.status === "disabled" ? "#f08b82"
+          : governor.status === "establishing" ? "#8ed9ec" : "#f5d27a";
+        cx.fillText(posting, cell.center.x, cell.center.y + r + 10);
+      }
     }
     if (cityState) cx.restore();
   }
@@ -14176,6 +14191,10 @@ function draw() {
     for (let i = 0; i < 6; i++) {
       if (!t.river_edges[i]) continue;
       const n = nbrTile(t.pos, DIRS[i]);
+      // Rivers occupy the shared edge between two land tiles. Their mouths
+      // end at a coastal vertex; a serialized legacy segment on a land/water
+      // boundary would otherwise be painted along the shore itself.
+      if (!n || isWater(t) || isWater(n)) continue;
       const edgeKey = n
         ? [key(t.pos), key(n.pos)].sort().join("|")
         : key(t.pos) + "|edge" + i;
@@ -14668,6 +14687,7 @@ function draw() {
       const bannerColor = cityBannerColor(c.owner);
       const cityOwner = state.players[c.owner];
       const minorPlate = Boolean(cityOwner && cityOwner.is_minor);
+      const governor = cityGovernor(c);
       const bannerHeight = minorPlate ? 16 : 21;
       const popWidth = minorPlate ? 14 : 19;
       cx.font = `${minorPlate ? 700 : 800} ${minorPlate ? 10 : 12}px Georgia, serif`;
@@ -14698,6 +14718,17 @@ function draw() {
       cx.textAlign = "left";
       cx.fillText(name, bx + popWidth + 7, by + bannerHeight / 2 + .5);
       cx.textAlign = "center";
+      if (governor) {
+        const waiting = governor.status === "established"
+          ? "" : ` · ${governor.turns_remaining}T`;
+        const posting = `⚑ ${governor.name.toUpperCase()}${waiting}`;
+        cx.font = `800 ${minorPlate ? 9 : 10}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
+        cx.strokeStyle = "#10151d"; cx.lineWidth = 2.8;
+        cx.strokeText(posting, x, by - 5);
+        cx.fillStyle = governor.status === "disabled" ? "#f08b82"
+          : governor.status === "establishing" ? "#8ed9ec" : "#f5d27a";
+        cx.fillText(posting, x, by - 5);
+      }
       let statusY = by + bannerHeight + 1;
       if (c.hp < 200) {
         const hpFraction = Math.max(0, Math.min(1, c.hp / 200));
@@ -16278,7 +16309,7 @@ function drawPlayerHud() {
   // that one-row scorecard across the whole map. Each additional known player
   // buys the table another 100px until the available masthead width caps it.
   // Twelve-player spectator mode consequently reaches the full masthead.
-  const requestedWidth = 760 + Math.max(0, rows - 1) * 100;
+  const requestedWidth = 820 + Math.max(0, rows - 1) * 100;
   const mapArea = document.getElementById("maparea");
   if (!HUD_LAYOUT.players) {
     mapArea.style.setProperty("--player-hud-height", `${requestedHeight}px`);
@@ -16287,16 +16318,10 @@ function drawPlayerHud() {
   const rankById = new Map(majors.map((p, index) => [p.id, index + 1]));
   const statsByPlayer = new Map(majors.map(p => [p.id, playerHudStats(p, rankById.get(p.id))]));
   const capitalsByOwner = new Map();
-  const empireOwnerIds = new Set();
   for (const city of state.cities || []) {
-    empireOwnerIds.add(city.owner);
     if (city.is_capital && !capitalsByOwner.has(city.owner))
       capitalsByOwner.set(city.owner, city);
   }
-  for (const tile of state.map?.tiles || []) {
-    if (Number.isInteger(tile.owner)) empireOwnerIds.add(tile.owner);
-  }
-  for (const unit of state.units || []) empireOwnerIds.add(unit.owner);
   const highestByStat = new Map();
   statsByPlayer.forEach(stats => stats.forEach(([kind, , value]) => {
     const numericValue = Number(value) || 0;
@@ -16325,13 +16350,9 @@ function drawPlayerHud() {
       const leader = p.leader || "Unknown leader";
       const rank = rankById.get(p.id);
       const capital = capitalsByOwner.get(p.id);
-      const hasEmpire = empireOwnerIds.has(p.id);
-      const empireTitle = hasEmpire
-        ? `Focus map on ${p.civ}'s empire`
-        : `${p.civ} has no empire left to focus`;
-      const capitalTitle = capital
-        ? `Focus map on ${p.civ}'s capital, ${capital.name}`
-        : `${p.civ} has no capital to focus`;
+      const empireTitle = capital
+        ? `View ${p.civ}'s empire from its capital, ${capital.name}`
+        : `${p.civ} has no capital to view`;
       const alliance = p.alliance;
       const strategy = p.ai_strategy || "";
       const strategyText = strategy ? `${titleCase(strategy)} plan` : "";
@@ -16404,12 +16425,12 @@ function drawPlayerHud() {
       return `<div class="diplomacy-card ${stateClass} ${expanded ? "expanded" : ""}${locked ? " locked" : ""}" style="--civ:${color};--civ-border:${pcol2(p.id)}" role="listitem">` +
         `<button class="lock-toggle" data-hud-action="lock" data-hud-civ="${p.id}" aria-pressed="${locked}" ` +
         `title="${lockTitle}" aria-label="${lockTitle}">${locked ? "◉" : "○"}</button>` +
-        `<span class="player-map-links" role="group" aria-label="${escapeAttr(p.civ)} map links">` +
-        `<button class="empire-link" data-hud-action="empire" data-hud-civ="${p.id}" ` +
-        `title="${escapeAttr(empireTitle)}" aria-label="${escapeAttr(empireTitle)}"${hasEmpire ? "" : " disabled"}></button>` +
-        `<button class="capital-link" data-hud-action="capital" data-hud-civ="${p.id}" ` +
-        `title="${escapeAttr(capitalTitle)}" aria-label="${escapeAttr(capitalTitle)}"${capital ? "" : " disabled"}>♛</button>` +
+        `<span class="player-map-links" role="group" aria-label="${escapeAttr(p.civ)} capital view">` +
+        `<button class="empire-link" data-hud-action="capital" data-hud-civ="${p.id}" ` +
+        `title="${escapeAttr(empireTitle)}" aria-label="Empire: ${escapeAttr(empireTitle)}"${capital ? "" : " disabled"}>Empire</button>` +
         `</span>` +
+        `<button class="watch-as-link" data-hud-action="watch" data-hud-civ="${p.id}" ` +
+        `title="${escapeAttr(watchTitle)}" aria-label="Watch as ${escapeAttr(p.civ)}">Watch as</button>` +
         `<button class="diplomacy-identity" data-hud-action="dossier" data-hud-civ="${p.id}" aria-expanded="${expanded}" ` +
         `title="${expanded ? "Close" : "Open"} the ${p.civ} dossier · ${relationSummary}${agendaText}" ` +
         `aria-label="${expanded ? "Close" : "Open"} dossier for ${p.civ}, rank ${rank}, ${relationSummary}">` +
@@ -16533,7 +16554,6 @@ function runHudAction(target) {
   if (target.dataset.hudAction === "lock") toggleSeatLock(id);
   else if (target.dataset.hudAction === "dossier") toggleCivDossier(id);
   else if (target.dataset.hudAction === "capital") focusCapital(id);
-  else if (target.dataset.hudAction === "empire") focusEmpire(id);
   else spectatePlayer(id);
 }
 
@@ -17020,6 +17040,7 @@ function empireCities() {
       second.pop - first.pop)
     .map(city => {
       const yields = city.yields || {};
+      const governor = cityGovernor(city);
       const perTurn = yields.production || 0;
       const current = (city.queue || [])[0];
       const cost = city.queue_cost || (current ? itemCost(current) : 0);
@@ -17034,7 +17055,7 @@ function empireCities() {
       if (city.loyalty_state && city.loyalty_state !== "loyal") trouble.push(titleCase(city.loyalty_state));
       return empireCard({
         title: `${city.name}${city.is_capital ? " ♛" : ""}`,
-        kind: `Population ${city.pop}${city.governor ? " · Governor" : ""}`,
+        kind: `Population ${city.pop}${governor ? ` · ⚑ ${governor.name}` : ""}`,
         cls: idle(city) ? "empty" : "filled",
         note: `<div class="empire-meter"><b>${Math.round(yields.food)}</b> 🌾 ` +
           `<b>${Math.round(yields.production)}</b> ⚙ <b>${Math.round(yields.gold)}</b> 💰 ` +
@@ -17044,6 +17065,7 @@ function empireCities() {
             ? `Building ${titleCase(itemName(current))}${left ? ` · ${left} turn${left === 1 ? "" : "s"}` : ""}`
             : `<b>Building nothing</b>`) +
           (growth ? ` · grows in ${growth}` : "") +
+          (governor ? `<div class="empire-meter">${governor.title} · ${governorStatus(governor)}</div>` : "") +
           (trouble.length
             ? `<div class="empire-meter" style="color:var(--danger)">${trouble.join(" · ")}</div>` : ""),
         actions: [`<button class="${idle(city) ? "primary" : ""}" ` +
@@ -17229,7 +17251,13 @@ function empireGovernors() {
   const cityName = id => (state.cities.find(city => city.id === id) || {}).name || `city ${id}`;
   const roster = Object.entries(specs).map(([id, spec]) => {
     const posting = (me.governor_roster || {})[id];
-    const mine = (me.governors || []).includes(id) || posting !== undefined;
+    const mine = posting !== undefined;
+    const city = posting && posting.city !== null
+      ? state.cities.find(candidate => candidate.id === posting.city) : null;
+    const assignment = city ? cityGovernor(city) : null;
+    const postingNote = !posting ? ""
+      : posting.city === null ? "Awaiting a city assignment.<br>"
+      : `${assignment ? governorStatus(assignment) : "Assigned"} in ${cityName(posting.city)}.<br>`;
     const promotions = promote.filter(a => a.governor === id).map(a =>
       empireAct(a, `⬆ ${titleCase(a.promotion)}`));
     const appointHere = appoint.filter(a => a.governor === id)
@@ -17237,9 +17265,12 @@ function empireGovernors() {
     const moveHere = reassign.filter(a => a.governor === id)
       .map(a => empireAct(a, `Move to ${cityName(a.city)}`));
     return empireCard({
-      title: spec.name || titleCase(id), kind: mine ? "Appointed" : "Available",
+      title: spec.name || titleCase(id),
+      kind: mine ? (assignment ? governorStatus(assignment) : "Appointed") : "Available",
       cls: mine ? "filled" : "",
-      note: (posting !== undefined ? `Established in ${cityName(posting)}.<br>` : "") +
+      note: postingNote +
+        (posting && posting.promotions && posting.promotions.length
+          ? `${posting.promotions.length} promotion${posting.promotions.length === 1 ? "" : "s"}.<br>` : "") +
         Object.keys(spec.effects || {}).map(effect => titleCase(effect)).join(" · "),
       actions: appointHere.concat(moveHere, promotions),
     });
@@ -17646,12 +17677,13 @@ function drawCityScreen() {
   const perTurn = yields.production || 0;
   const current = (city.queue || [])[0];
   const banked = city.production || 0;
+  const governor = cityGovernor(city);
 
   document.getElementById("cityscreen-name").textContent =
     city.name + (city.is_capital ? " ♛" : "");
   document.getElementById("cityscreen-sub").textContent =
     `Population ${city.pop} · ${titleCase(city.happiness || "content")}` +
-    (city.governor ? " · Governor established" : "") +
+    (governor ? ` · ⚑ ${governor.name}` : "") +
     (city.religion ? ` · ${titleCase(city.religion)}` : "");
 
   const yieldTile = (label, value, suffix = "") =>
@@ -17672,7 +17704,9 @@ function drawCityScreen() {
     `<b>${city.amenities} of ${city.amenities_required} needed</b></div>` +
     `<div class="row"><span class="small">Loyalty</span>` +
     `<b>${Math.round(city.loyalty)} · ${titleCase(city.loyalty_state || "")}` +
-    ` (${city.loyalty_per_turn >= 0 ? "+" : ""}${Math.round(city.loyalty_per_turn)})</b></div>`;
+    ` (${city.loyalty_per_turn >= 0 ? "+" : ""}${Math.round(city.loyalty_per_turn)})</b></div>` +
+    (governor ? `<div class="row"><span class="small">Governor</span>` +
+      `<b>${governor.name} · ${governor.title} · ${governorStatus(governor)}</b></div>` : "");
 
   const districts = Object.keys(city.districts || {});
   const buildings = city.buildings || [];
@@ -17953,6 +17987,23 @@ function gameSpeedPercent() {
 }
 function techCost(t) { return RULES ? RULES.techs[t].cost * gameSpeedPercent() / 100 : 100; }
 function civicCost(c) { return RULES ? RULES.civics[c].cost * gameSpeedPercent() / 100 : 100; }
+// Governor assignments are private player knowledge. The engine attaches the
+// viewer's posting to the city it belongs to; spectator mode deliberately
+// stays with the uncluttered public city presentation.
+function cityGovernor(city) {
+  if (!state || SPEC || !city) return null;
+  const governor = city.governor_assignment;
+  return governor && governor.id ? governor : null;
+}
+function governorStatus(governor) {
+  if (!governor) return "";
+  const turns = Number.isFinite(governor.turns_remaining) ? governor.turns_remaining : 0;
+  if (governor.status === "disabled")
+    return `Disabled${turns ? ` · ${turns} turn${turns === 1 ? "" : "s"}` : ""}`;
+  if (governor.status === "establishing")
+    return `Establishing${turns ? ` · ${turns} turn${turns === 1 ? "" : "s"}` : ""}`;
+  return "Established";
+}
 function titleCase(n) { return (n || "").replaceAll("_", " ").replace(/\b\w/g, c => c.toUpperCase()); }
 function researchCard(kind, name, progress, total, perTurn, boosted) {
   const eta = perTurn > 0 ? Math.max(1, Math.ceil((total - progress) / perTurn)) : "∞";
@@ -18508,12 +18559,18 @@ function drawCityPanel() {
   selCity = c; selCity._striking = striking; selCity._encampmentStriking = encampmentStriking;
   secEl.style.display = "block";
   const owner = state.players[c.owner];
+  const governor = cityGovernor(c);
   let h = `<div class="city-hero"><div><div class="city-name">${c.name}${c.is_capital ? " ♛" : ""}</div>` +
-    `<div class="small" style="margin-top:4px">${owner.civ}${c.religion ? ` · ${titleCase(c.religion)}` : ""}</div></div>` +
+    `<div class="small" style="margin-top:4px">${owner.civ}${c.religion ? ` · ${titleCase(c.religion)}` : ""}` +
+    `${governor ? ` · ⚑ ${governor.name}` : ""}</div></div>` +
     `<div class="city-pop" title="Population">${c.pop}</div></div>` +
     `<div class="city-stats"><div class="metric"><b>${c.hp} / 200</b><span>Health</span></div>` +
     `<div class="metric"><b>${c.wall_hp || 0} / ${c.wall_max || 0}</b><span>Walls</span></div>` +
     `<div class="metric"><b>${c.housing === undefined ? "—" : c.housing}</b><span>Housing</span></div></div>`;
+  if (governor) {
+    h += `<div class="row"><span class="small">Governor</span>` +
+      `<b>${governor.title} · ${governorStatus(governor)}</b></div>`;
+  }
   if (c.districts && c.districts.encampment) {
     h += `<div class="row"><span class="small">Encampment defenses</span><b>${c.encampment_pillaged ? "Pillaged" : `${c.encampment_hp} HP · ${Math.max(0, c.encampment_wall_hp)} walls`}</b></div>`;
   }
@@ -19699,9 +19756,9 @@ function setDirector(on) {
   if (on && (!SPEC || VIEW !== "cinematic")) return;
   setCinemaMode(!!on);
 }
-// The player HUD offers two map links with deliberately different scales.
-// The crown is an exact city target; the jersey circle fits the durable shape
-// of the civilization without also changing whose fog of war is being viewed.
+// The Empire button is the stable way into a civilization's capital view. It
+// moves the map without also changing whose fog of war is being viewed; that
+// distinct transition belongs to the adjacent Watch-as button.
 function focusCapital(pid) {
   if (!state) return;
   const capital = state.cities.find(city => city.owner === pid && city.is_capital);
@@ -19709,61 +19766,6 @@ function focusCapital(pid) {
   takeCameraControl();
   centerWorld(capital.pos);
   if (SPEC) { selCity = capital; drawSide(); }
-}
-
-// A globe cannot use the flat map's rectangular longitude bounds. Aim its
-// centre at the empire's spherical centroid, then use the farthest owned
-// subject to choose a regional scale that keeps the whole realm on stage.
-function planetEmpireGoal(subjects) {
-  const located = subjects.map(subject => ({
-    subject,
-    point:PLANET?.cells.get(key(subject.pos))?.center,
-  })).filter(item => item.point);
-  if (!located.length) return null;
-  const sum = located.reduce((total, item) => [
-    total[0] + item.point[0], total[1] + item.point[1], total[2] + item.point[2],
-  ], [0, 0, 0]);
-  const length = Math.hypot(...sum);
-  const center = length > 1e-6
-    ? sum.map(value => value / length)
-    : located[0].point;
-  const middle = located.reduce((best, item) =>
-    dot3(item.point, center) > dot3(best.point, center) ? item : best,
-  located[0]);
-  const extent = located.reduce((largest, item) => Math.max(largest,
-    Math.acos(Math.max(-1, Math.min(1, dot3(item.point, center))))), 0);
-  const frame = observedFrameRect();
-  const padding = Math.min(72, (frame.right - frame.left) * .12,
-                           (frame.bottom - frame.top) * .16);
-  const usableRadius = Math.max(72,
-    Math.min(frame.right - frame.left, frame.bottom - frame.top) / 2 - padding);
-  // Add roughly one cell of breathing room. A chart lays angular distance
-  // straight down; a discovered globe foreshortens it at the hemisphere.
-  const angle = Math.min(Math.PI / 2, extent + .06);
-  const projectedExtent = knowsGlobe() ? Math.sin(angle) : angle;
-  const radius = Math.max(1, WW() / (2 * Math.PI));
-  const fit = usableRadius / (radius * Math.max(.12, projectedExtent));
-  const maximum = cinemaActive() ? 1 : 1.12;
-  return {pos:middle.subject.pos, scale:planetScaleClamp(Math.min(maximum, fit))};
-}
-
-function focusEmpire(pid) {
-  if (!state) return;
-  const subjects = watchedEmpireSubjects(pid);
-  if (!subjects.length) return;
-  takeCameraControl();
-  if (planetMap()) {
-    skyReturnHome();
-    const goal = planetEmpireGoal(subjects);
-    if (goal) flyCameraTo(goal.pos, goal.scale);
-    return;
-  }
-  const goal = observedViewGoal(subjects, true);
-  if (!goal) return;
-  if (REDUCED_MOTION_QUERY.matches) {
-    cam.x = goal.x; cam.y = goal.y; cam.scale = goal.scale;
-    cameraFlight = null; draw(); drawMini();
-  } else cameraFlight = goal;
 }
 
 function focusPlayer(pid) {
