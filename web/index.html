@@ -7128,11 +7128,21 @@ function includeServerEventInGameLog(event, text) {
   if (event.category === "Diplomacy" && /\b(?:approves|disapproves) of\b/i.test(text)) return false;
   return true;
 }
-function chronicleServer(next) {
+// A founding reaches the log down two paths: the engine notes it for the
+// observed seat, and the city diff below spots the new city for every seat.
+// Both fired, so the seat being watched saw its own cities founded twice, one
+// line apart, differing only by the full stop the diff writes. The diff is the
+// one that covers every civilization, so it owns a founding whenever there is
+// a previous state to diff against; on the first frame there is none, and the
+// engine's notes are what give a viewer who just arrived any history at all.
+const SERVER_FOUNDING = /^.+ founded .+$/;
+function chronicleServer(next, foundingsFromDiff = false) {
   const events = Array.isArray(next.events) ? next.events : [];
   const viewKey = eventViewKey(next);
   for (const event of events) {
     const text = civilizationEventText(event.text, next);
+    if (foundingsFromDiff && event.category === "Cities" && SERVER_FOUNDING.test(text))
+      continue;
     const key = `${viewKey}|${event.turn}|${event.category}|${text}`;
     if (seenServerEvents.has(key)) continue;
     seenServerEvents.add(key);
@@ -7216,7 +7226,11 @@ function chronicle(prev, next) {
     eventLogs = new Map();
     lastLeaderByView = new Map();
     seenServerEvents = new Set();
-    addEvent("✦", `A new world begins with seed ${next.seed}.`, next.turn, next, false, 5);
+    // A world begins on turn 1, whatever turn the viewer arrived on. Stamping
+    // this with the turn of the first frame dated the founding of the world to
+    // the moment the browser connected, which put it below entries from turns
+    // that had already happened and read as a world that began late.
+    addEvent("✦", `A new world begins with seed ${next.seed}.`, 1, next, false, 5);
     chronicleServer(next);
     return;
   }
@@ -7264,7 +7278,7 @@ function chronicle(prev, next) {
     if (majors.length) lastLeaderByView.set(viewKey, majors[0].id);
     chronicleWorldEvents(next);
   }
-  chronicleServer(next);
+  chronicleServer(next, true);
 }
 
 function render(st, recordChronicle = true) {
