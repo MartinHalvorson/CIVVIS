@@ -131,7 +131,7 @@ impl ProductionSearchAi {
     /// Judge rollout endpoints with the trained value net instead of score
     /// share. Falls back to score share when no net is on disk.
     pub fn with_value_net(mut self) -> ProductionSearchAi {
-        self.net = ValueNet::load("evolved");
+        self.net = ValueNet::load_width("evolved", crate::evolve::FEATURE_WIDTH);
         self
     }
 

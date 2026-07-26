@@ -4705,8 +4705,14 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "sessionStorage.setItem(\"civvis-restart-paused-v1\", handoff.paused ? \"1\" : \"0\")"
         ));
-        assert!(EMBEDDED_INDEX.contains("<html class=\"world-loading\">"));
+        assert!(EMBEDDED_INDEX.contains("<html>"));
+        assert!(!EMBEDDED_INDEX.contains("<html class=\"world-loading\">"));
+        assert!(EMBEDDED_INDEX.contains("<body aria-busy=\"false\">"));
+        assert!(!EMBEDDED_INDEX.contains("Joining the world"));
         assert!(EMBEDDED_INDEX.contains("id=\"world-transition\""));
+        assert!(EMBEDDED_INDEX.contains(
+            "document.documentElement.classList.add(\"world-loading\", \"world-restarting\")"
+        ));
         assert!(EMBEDDED_INDEX.contains("sessionStorage.setItem(\"civvis-world-transition-v1\""));
         assert!(EMBEDDED_INDEX.contains("await settingsStageChain.catch(() => {})"));
         assert!(EMBEDDED_INDEX.contains("specFetching || specPending || worldTransitionPending()"));
