@@ -7122,8 +7122,8 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function wakeSleepers()"));
     }
 
-    /// Hovering a tile reports it, the way Civ 6's plot tooltip does — and it
-    /// keeps doing so after the map has been panned or the simulation advances.
+    /// Resting over a tile reports it, the way Civ 6's plot tooltip does — and
+    /// it keeps doing so after the map has been panned or the simulation advances.
     ///
     /// `dragMoved` outlives its gesture: the click that follows clears it, and
     /// a drag released off the canvas never produces one. A hover guard that
@@ -7131,16 +7131,22 @@ mod tests {
     /// exactly how the tooltip died. The guard has to ask whether a gesture is
     /// in flight *now*.
     #[test]
-    fn hovering_a_tile_reports_it_survives_a_pan_and_tracks_new_turns() {
+    fn resting_over_a_tile_delays_details_survives_a_pan_and_tracks_new_turns() {
         assert!(
             EMBEDDED_INDEX.contains(
-                "if (!state || !tileTipPointer || dragState || mapTouches.size || rdrag) {"
+                "dragState || mapTouches.size || rdrag) {"
             ),
             "the hover guard must test a live gesture, never the stale dragMoved flag"
         );
         assert!(
+            EMBEDDED_INDEX.contains("const TILE_TIP_DELAY_MS = 350;")
+                && EMBEDDED_INDEX.contains("(!reveal && !tileTipVisible)")
+                && EMBEDDED_INDEX.contains("}, TILE_TIP_DELAY_MS);"),
+            "tile details must wait for the pointer to rest, even across snapshot renders"
+        );
+        assert!(
             EMBEDDED_INDEX.contains("drawCaptureChoice();\n  refreshTileTip();"),
-            "each delivered simulation snapshot must refresh the tile under the pointer"
+            "each delivered simulation snapshot must refresh an open tile tooltip"
         );
         for piece in [
             "function tileMoveCost(t)",
