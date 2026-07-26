@@ -5084,6 +5084,42 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("applyPlanetBasis(planetTurn(touchGesture.basis, dx, dy))"));
         assert!(EMBEDDED_INDEX.contains("applyPlanetBasis(planetTurn(basis, -screenX, -screenY))"));
         assert!(EMBEDDED_INDEX.contains("spin:planetGlide(released.vpx, released.vpy)"));
+        // Zooming shares that turn too, and it aims at a world rather than at a
+        // pixel. Out in the system a body is a few pixels across — the Moon is
+        // four on the whole-system shot — so an anchor held to the raw point of
+        // space under the pointer demanded an aim nobody can manage and walked
+        // off into empty sky when it was missed: measured at twelve pixels wide
+        // of the Moon, sixteen wheel steps finished three thousand pixels away
+        // with nothing at all on the stage. So every world claims a halo, the
+        // strongest claim takes the pointer, and a pointer on nothing is
+        // therefore taken by the roughly nearest world. What the pointer's aim
+        // is *for* changes with how big that world is drawn: travel while it is
+        // a marble, and once it is the place underfoot the world turns until the
+        // ground that was under the pointer is back under it, which is the same
+        // lean a flat map has always had and which the globe recovered three per
+        // cent of before this. The ceiling comes from the world being flown to,
+        // not from whichever marble happens to be nearest the frame's middle.
+        assert!(EMBEDDED_INDEX.contains("function skyPointerWorld(sx, sy, radius = planetEarthRadius(), pan = SKY_PAN)"));
+        assert!(EMBEDDED_INDEX.contains("function skyWorldGrab(drawn)"));
+        assert!(EMBEDDED_INDEX.contains("function skyZoomAim(sx, sy, radius = planetEarthRadius(), pan = SKY_PAN)"));
+        assert!(EMBEDDED_INDEX.contains("function skySurfacePoint(body, sx, sy, radius, pan = SKY_PAN)"));
+        assert!(EMBEDDED_INDEX.contains("function skyLean(lean, ease)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "applyPlanetBasis(planetSpin(basis, axis.map(value => value / length), -owed * ease));",
+        ));
+        assert!(EMBEDDED_INDEX.contains("if (!body || !lean.point || body.id !== \"earth\") return 0;"));
+        assert!(EMBEDDED_INDEX
+            .contains("function planetMaxScale(pan = SKY_PAN, body = skyNearestWorld(pan))"));
+        assert!(EMBEDDED_INDEX.contains("const ceiling = planetMaxScale(basePan, subject);"));
+        assert!(EMBEDDED_INDEX.contains("const aim = skyAnchor"));
+        assert!(EMBEDDED_INDEX.contains("cameraZoom = {kind:\"planet\", scale, pan, lean};"));
+        assert!(EMBEDDED_INDEX
+            .contains("const leanLeft = cameraZoom.lean ? skyLean(cameraZoom.lean, ease) : 0;"));
+        // The old raw-point anchor, and the early return that left a chart with
+        // no lean at all, must both be gone: a chart has no system to travel
+        // through, but it leans towards the pointer exactly as a flat map does.
+        assert!(!EMBEDDED_INDEX.contains("const pointerX = skyAnchor?.x ??"));
+        assert!(!EMBEDDED_INDEX.contains("const scale = planetScaleClampAt(base * f, {x:0, y:0});"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"planet\">Planet</option>"));
         assert!(EMBEDDED_INDEX
             .contains("<option value=\"true_start_earth\">True Start Earth</option>"));
@@ -5221,7 +5257,7 @@ mod tests {
             "left panel should show game settings, display settings, and the two logs first"
         );
         assert!(EMBEDDED_INDEX.contains("<span>Display settings</span>"));
-        for overlay in ["players", "victory", "minimap", "controls"] {
+        for overlay in ["players", "victory", "minimap", "controls", "lenses"] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("data-overlay-close=\"{overlay}\"")),
                 "map overlay {overlay} should have a close control"
@@ -5260,6 +5296,23 @@ mod tests {
         );
         assert!(EMBEDDED_INDEX.contains("id=\"map-lens-exit\""));
         assert!(EMBEDDED_INDEX.contains("body.overlay-lenses-hidden #map-lenses"));
+        // The lenses scroll sideways inside the bar. Their dismiss control is a
+        // sibling of that scroller, not its last item, so it neither rides away
+        // with the buttons nor comes to rest on top of one.
+        let lens_bar = EMBEDDED_INDEX
+            .split_once("<div id=\"map-lenses\"")
+            .expect("map lens bar")
+            .1;
+        let strip = lens_bar.find("<div id=\"map-lens-strip\"").expect("lens scroller");
+        let strip_end = lens_bar.find("</div>").expect("end of lens scroller");
+        let close = lens_bar
+            .find("data-overlay-close=\"lenses\"")
+            .expect("lens dismiss control");
+        assert!(
+            strip < strip_end && strip_end < close,
+            "the lens bar's close control belongs outside the strip that scrolls"
+        );
+        assert!(EMBEDDED_INDEX.contains("#map-lens-strip::-webkit-scrollbar { display: none; }"));
         assert!(EMBEDDED_INDEX
             .contains("document.getElementById(\"map-lens-exit\").onclick = () => setMapLens(null);"));
         // One instrument, one name. The switch, the title bar it is dragged by
@@ -5587,15 +5640,20 @@ mod tests {
         // the horizontal stage against its 8px left gutter. A missing widget
         // naturally leaves its screen edge in place, and the minimap is
         // deliberately absent from this calculation.
+        //
+        // The measurement takes the box it is asked about, because the map
+        // area's automatic fit asks it of the whole container while the camera
+        // asks it of the viewport that fit produced. One rule, two questions —
+        // see `the_map_area_is_a_rectangle_the_viewer_can_set`.
         assert!(EMBEDDED_INDEX.contains("function mapOverlayVisible(name)"));
         assert!(EMBEDDED_INDEX.contains(
             "document.body.classList.contains(\"sidebar-hidden\")"
         ));
-        assert!(EMBEDDED_INDEX.contains("function mapWidgetBox(name, areaRect)"));
+        assert!(EMBEDDED_INDEX.contains("function mapWidgetBox(name, origin)"));
         assert!(EMBEDDED_INDEX.contains("function mapFocusBounds()"));
         assert!(EMBEDDED_INDEX.contains("function mapFocusPoint()"));
         assert!(EMBEDDED_INDEX.contains(
-            "left = Math.max(0, Math.min(width, sideRect.right - areaRect.left));"
+            "left = Math.max(0, Math.min(width, sideRect.right - origin.left));"
         ));
         assert!(EMBEDDED_INDEX.contains(
             "if (players) top = Math.max(0, Math.min(height, players.bottom));"
@@ -5673,6 +5731,28 @@ mod tests {
             "function observedViewGoal(anchors, oneEmpire = Number.isInteger(state?.view_player))"
         ));
         assert!(EMBEDDED_INDEX.contains("watchedEmpireAutoFrame"));
+        // The same portrait on a round world. Framing the whole globe is the
+        // right shot only when the whole of it is being watched: a seat has
+        // seen the ground it walked and nothing else, so a globe-wide opening
+        // frame left a new single-player game staring at blank ocean with its
+        // own settler nowhere on the stage.
+        let observed_view = EMBEDDED_INDEX
+            .split("function setObservedPlayersView(smooth = false)")
+            .nth(1)
+            .unwrap()
+            .split("function actionViewingAnchor(focus)")
+            .next()
+            .unwrap();
+        assert!(observed_view.contains("if (planetMap() && !watched) { fitPlanetView(); return; }"));
+        assert!(observed_view.contains("if (planetMap()) skyReturnHome();"));
+        assert!(EMBEDDED_INDEX.contains("function observedCameraPoints(anchors)"));
+        assert!(EMBEDDED_INDEX.contains("function observedPlanetViewGoal(anchors, maximum)"));
+        assert!(EMBEDDED_INDEX
+            .contains("if (planetMap()) return observedPlanetViewGoal(anchors, maximum);"));
+        // A far-flung scout must not zoom the empire shot out past the world
+        // itself and off into the system.
+        assert!(EMBEDDED_INDEX
+            .contains("planetScaleClamp(Math.max(wholeWorld, Math.min(maximum, fitX, fitY)))"));
         assert!(EMBEDDED_INDEX.contains("const EMPIRE_RECON_UNITS"));
         assert!(EMBEDDED_INDEX.contains("const atWarFront"));
         assert!(EMBEDDED_INDEX.contains("Number(unit.formation) > 0"));
@@ -7535,6 +7615,130 @@ mod tests {
             depth, 0,
             "every map overlay must close its own <section>; an unclosed one \
              hides the tooltip and every dialog after it inside #empire"
+        );
+    }
+
+    /// The map controls read left to right in the order a viewer reaches for
+    /// them: collapse the command deck, set the map area, face north, zoom in,
+    /// zoom out, dismiss. Dismissal is last because it is the only one that
+    /// removes the bar, and it hides itself while the deck is collapsed —
+    /// Display settings is the only way back and it lives inside the deck.
+    #[test]
+    fn the_map_controls_run_from_collapse_to_dismiss() {
+        let dock = EMBEDDED_INDEX
+            .split_once("<div id=\"zoomctl\">")
+            .expect("the map control dock")
+            .1
+            .split_once("</div>")
+            .expect("the end of the map control dock")
+            .0;
+        let mut previous = 0usize;
+        let mut last = "the start of the dock";
+        for control in [
+            "id=\"paneltoggle\"",
+            "id=\"mapareaset\"",
+            "id=\"compass\"",
+            "id=\"zin\"",
+            "id=\"zout\"",
+            "data-overlay-close=\"controls\"",
+        ] {
+            let at = dock
+                .find(control)
+                .unwrap_or_else(|| panic!("the map controls are missing {control}"));
+            assert!(
+                at > previous,
+                "the map controls run in reading order: {control} must follow {last}"
+            );
+            previous = at;
+            last = control;
+        }
+        assert!(
+            EMBEDDED_INDEX.contains(
+                r#"body.sidebar-hidden .overlay-close[data-overlay-close="controls"] { display: none; }"#
+            ),
+            "the dismiss control must go while the deck that restores it is collapsed"
+        );
+    }
+
+    /// The world is drawn into a rectangle of the map area rather than into
+    /// all of it, so a viewer moves the map out from under the panels instead
+    /// of dragging the world around underneath them. The canvas, the
+    /// vignettes and the editor's own edges take their box from one set of
+    /// custom properties, every renderer measures in `MAPW`/`MAPH` rather
+    /// than in the container, and the automatic fit is the same uncovered
+    /// rectangle the camera already composes into — one measurement, not two
+    /// that can disagree.
+    #[test]
+    fn the_map_area_is_a_rectangle_the_viewer_can_set() {
+        for piece in [
+            "--map-area-left: 0px;",
+            "--map-area-width: 100%;",
+            "function uncoveredMapBox(origin, width, height)",
+            "function syncMapViewport()",
+            "function refitMapAreaToChrome()",
+            "function moveMapAreaEdgeTo(edge, clientX, clientY)",
+            "civvis-map-area-v1",
+            "id=\"map-area-editor\"",
+            "id=\"map-area-apply\"",
+            "id=\"map-area-cancel\"",
+            "id=\"map-area-reset\"",
+            "body.map-area-inset #map",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(piece),
+                "the map area is missing {piece}"
+            );
+        }
+        for edge in ["top", "bottom", "left", "right"] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("data-map-edge=\"{edge}\"")),
+                "the map area must be set by dragging its {edge} edge"
+            );
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("data-shade=\"{edge}\"")),
+                "the ground outside the map area's {edge} edge must be dimmed"
+            );
+        }
+        // The canvas is placed by those properties rather than stretched to
+        // its container. `width: 100%` on #map is exactly what this replaces.
+        let map_rule = EMBEDDED_INDEX
+            .split_once("  #map {")
+            .expect("the map canvas rule")
+            .1
+            .split_once('}')
+            .expect("the end of the map canvas rule")
+            .0;
+        for property in [
+            "left: var(--map-area-left)",
+            "top: var(--map-area-top)",
+            "width: var(--map-area-width)",
+            "height: var(--map-area-height)",
+        ] {
+            assert!(
+                map_rule.contains(property),
+                "the map canvas must take its {property} from the map area"
+            );
+        }
+        assert!(
+            !map_rule.contains("width: 100%"),
+            "a canvas stretched to its container cannot be moved off the panels"
+        );
+        // Renderers and camera measure the viewport, never the container.
+        assert!(EMBEDDED_INDEX.contains("const vx = (sx - MAPW / 2) / cam.scale;"));
+        assert!(EMBEDDED_INDEX.contains("cv.width !== backingWidth"));
+        // The fit is on out of the box, in the stored default and in the
+        // switch that reports it, and moving an edge by hand turns it off.
+        assert!(EMBEDDED_INDEX.contains("const MAP_AREA_DEFAULT = {auto:true,"));
+        assert!(EMBEDDED_INDEX
+            .contains(r#"<input type="checkbox" id="map-area-auto" checked>"#));
+        assert!(EMBEDDED_INDEX.contains("if (!MAP_AREA.auto || mapAreaRefitDepth) return false;"));
+        // Every place a panel or an overlay moves refits a fitted area.
+        assert_eq!(
+            EMBEDDED_INDEX.matches("refitMapAreaToChrome();").count(),
+            4,
+            "a fitted map area follows the standings, the overlay switches, and \
+             both HUD layout paths — four call sites; a fifth means a new one \
+             belongs in this count, a third means one was dropped"
         );
     }
 
