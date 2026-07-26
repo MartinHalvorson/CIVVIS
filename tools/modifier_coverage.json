@@ -76,6 +76,16 @@
       "verified": true,
       "note": "Verified row by row, all matching. Heritage Tourism doubles Artifact, Landscape, Portrait, Religious and Sculpture works and not Writing or Music, which is exactly CIVVIS' art-and-artifact grouping. Curator doubles all six object types. Cristo Redentor doubles Seaside Resort Tourism. Curator's placement looked wrong -- its id is GOVERNOR_PROMOTION_MERCHANT_CURATOR and Rise and Fall gives it to Reyna -- but Gathering Storm's override of Expansion1_Governors.xml, shipped inside the Expansion2 folder, moves it to Pingala while keeping the old id. CIVVIS has it on Pingala and is right."
     },
+    "ADJUST_CITY_TRADE_ROUTE_YIELD_PER_DESTINATION_LUXURY_RESOURCE_FOR_INTERNATIONAL": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified. Torre de Belem's 2 Gold per destination luxury already matched exactly. Market Economy's row did not: CIVVIS paid it as a flat trade_gold of 2, where it ships as 1 Gold PER luxury resource the destination city owns, alongside a matching STRATEGIC row at 1. The card is therefore worth nothing into a bare city and a great deal into a resource-rich one, which a flat 2 cannot express in either direction."
+    },
+    "ADJUST_CITY_TRADE_ROUTE_YIELD_PER_DESTINATION_STRATEGIC_RESOURCE_FOR_INTERNATIONAL": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified together with its LUXURY twin -- Market Economy is the only owner CIVVIS models, at 1 Gold per strategic resource the destination owns. Bonus and artifact resources pay nothing, which the test pins."
+    },
     "ADJUST_CITY_YIELD_CHANGE": {
       "status": "implemented",
       "verified": true,
@@ -232,7 +242,7 @@
     "ADJUST_TRADE_ROUTE_YIELD_FOR_INTERNATIONAL": {
       "status": "implemented",
       "verified": true,
-      "note": "E-Commerce pays 10 Gold and 5 Production on international routes; CIVVIS carried the superseded base-game rows of 5 Gold and 2 Production on every route. Trade yields can now be declared international-only."
+      "note": "Verified. Both policy owners were paying every route: Trade Confederation's +1 Culture and +1 Science and Market Economy's +2 of each sat on the ungated trade_culture and trade_science keys. Those two cards are the ONLY owners of either key anywhere in the policy tree, so the fix was to rename them international_ and move them inside the existing !domestic block -- nothing else could regress. Both cards' own notes already said 'international'. The remaining owners are Treasure Fleet, Mediterranean and Radio Oranje, which are civilization and leader traits outside CIVVIS' modelled roster."
     },
     "ADJUST_UNIT_BUILD_CHARGES": {
       "status": "implemented",

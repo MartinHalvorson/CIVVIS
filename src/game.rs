@@ -8440,6 +8440,65 @@ mod government_runtime_tests {
     }
 
     #[test]
+    fn market_economy_is_worth_what_the_far_city_owns() {
+        let (mut game, home, abroad) = two_cities(88_206);
+        game.routes.push(TradeRoute {
+            origin: home,
+            dest: abroad,
+            owner: 0,
+            ends: game.turn + 30,
+        });
+        let yields = |game: &Game| game.city_yields(home);
+        let base = yields(&game);
+
+        // Both cards ship as ADJUST_TRADE_ROUTE_YIELD_FOR_INTERNATIONAL, so a
+        // route to another civilization earns them and a domestic one does not.
+        game.players[0].policies = ["trade_confederation".to_string()].into_iter().collect();
+        assert_eq!(yields(&game).culture - base.culture, 1.0);
+        assert_eq!(yields(&game).science - base.science, 1.0);
+
+        game.players[0].policies = ["market_economy".to_string()].into_iter().collect();
+        assert_eq!(yields(&game).culture - base.culture, 2.0);
+        assert_eq!(yields(&game).science - base.science, 2.0);
+
+        // Its Gold is one per luxury and one per strategic resource the
+        // DESTINATION owns, so it is worth nothing into a bare city and grows
+        // with what the far city actually holds.
+        let gold_for = |game: &mut Game, resources: &[&str]| {
+            let tiles: Vec<_> = game.cities[&abroad].owned_tiles.iter().copied().collect();
+            for position in &tiles {
+                game.map.tiles.get_mut(position).unwrap().resource = None;
+            }
+            for (position, resource) in tiles.iter().zip(resources) {
+                game.map.tiles.get_mut(position).unwrap().resource = Some(resource.to_string());
+            }
+            game.query_memo();
+            game.city_yields(home).gold
+        };
+        let bare = gold_for(&mut game, &[]);
+        assert_eq!(gold_for(&mut game, &["wine"]) - bare, 1.0, "one luxury");
+        assert_eq!(gold_for(&mut game, &["wine", "iron"]) - bare, 2.0, "plus one strategic");
+        assert_eq!(
+            gold_for(&mut game, &["wine", "iron", "rice"]) - bare,
+            2.0,
+            "a bonus resource is worth nothing"
+        );
+
+        // A domestic route earns none of it.
+        game.routes.clear();
+        game.routes.push(TradeRoute {
+            origin: home,
+            dest: home,
+            owner: 0,
+            ends: game.turn + 30,
+        });
+        let domestic = yields(&game);
+        game.players[0].policies.clear();
+        assert_eq!(yields(&game).culture, domestic.culture);
+        assert_eq!(yields(&game).science, domestic.science);
+    }
+
+    #[test]
     fn the_unit_ladders_repeat_their_predecessors_eras_instead_of_succeeding_them() {
         let (mut game, city) = one_city(60_318);
         let pct = |game: &Game, unit: &str| {
@@ -28874,9 +28933,34 @@ impl Game {
                     rys.gold += self.policy_effect(city.owner, "international_trade_gold");
                     rys.production +=
                         self.policy_effect(city.owner, "international_trade_production");
+                    // Trade Confederation and Market Economy both ship as
+                    // ADJUST_TRADE_ROUTE_YIELD_FOR_INTERNATIONAL, and they are
+                    // the only owners of these two yields anywhere in the
+                    // policy tree, so no domestic route earns either.
+                    rys.culture += self.policy_effect(city.owner, "international_trade_culture");
+                    rys.science += self.policy_effect(city.owner, "international_trade_science");
+                    // Market Economy's Gold is not a flat amount: it ships as
+                    // PER_DESTINATION_LUXURY_RESOURCE and
+                    // PER_DESTINATION_STRATEGIC_RESOURCE, one Gold each, so it
+                    // is worth what the far city actually owns.
+                    let luxury = self.policy_effect(city.owner, "international_luxury_gold");
+                    let strategic = self.policy_effect(city.owner, "international_strategic_gold");
+                    if luxury != 0.0 || strategic != 0.0 {
+                        let owned = |class: &str| {
+                            dc.owned_tiles
+                                .iter()
+                                .filter(|position| {
+                                    self.map.tiles[position].resource.as_ref().is_some_and(
+                                        |resource| {
+                                            self.rules.resources[resource.as_str()].class == class
+                                        },
+                                    )
+                                })
+                                .count() as f64
+                        };
+                        rys.gold += luxury * owned("luxury") + strategic * owned("strategic");
+                    }
                 }
-                rys.science += self.policy_effect(city.owner, "trade_science");
-                rys.culture += self.policy_effect(city.owner, "trade_culture");
                 rys.faith += self.policy_effect(city.owner, "trade_faith");
                 rys.food += self.governor_effect(dc.owner, dc.id, "incoming_trade_food");
                 if !domestic && self.city_has_active_district_family(city, "holy_site") {
