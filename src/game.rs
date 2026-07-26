@@ -10,6 +10,7 @@ use crate::rules::{
     AgendaSpec, BuildingSpec, DifficultySpec, DisasterSpec, Rules, SpeedSpec, Yields, ERA_NAMES,
 };
 use crate::specmap::SpecMap;
+
 use crate::setup::{GameSpeed, MapPoles, MapScript, MapSize, MapTopology};
 use crate::world::{DistrictFoundation, RememberedTile, Tile, TileBits, TileMemory, WorldMap};
 use crate::{hex, mapgen, Pos};
@@ -12526,9 +12527,11 @@ pub struct Game {
     #[serde(skip)]
     query_memo: QueryCache,
     /// The state of the world each seat's remembered map was last taken
-    /// under, and the tiles it was taken over. Empty means "assume nothing".
+    /// under — the whole of it, then the narrower part the tile memory is
+    /// drawn from — and the tiles it was taken over. Empty means "assume
+    /// nothing".
     #[serde(skip)]
-    remembered_under: Vec<(u64, TileBits)>,
+    remembered_under: Vec<(u64, u64, TileBits)>,
     /// Whether to keep each player's remembered map of fogged tiles and
     /// cities up to date.
     ///
@@ -24230,12 +24233,37 @@ impl Game {
     /// again over the same world — or over fewer tiles than last time —
     /// writes nothing. Establishing that is worth doing because merely
     /// reaching for a seat mutably copies it.
+    /// Everything the *tile* half of the snapshot is drawn from, and nothing
+    /// else.
+    ///
+    /// `remembered_tile_is_current` reads a tile's contents and the seat that
+    /// owns the hex — not a city's population, its walls, its religion or
+    /// anybody's research. Those all live in `memory_stamp`, which is what
+    /// decides whether the whole pass can be skipped; folding them in here too
+    /// would throw away a seat's reconciled ground every time any city
+    /// anywhere gained a point of pressure.
+    fn tile_memory_stamp(&self, pid: usize) -> u64 {
+        let seat = &self.players[pid];
+        let mut key = vision_key(&[
+            self.map.tiles.epoch(),
+            self.turn as u64,
+            self.track_fog_memory as u64,
+            seat.explored.len() as u64,
+            seat.remembered_tiles.len() as u64,
+        ]);
+        for city in self.cities.values() {
+            key = vision_key(&[key, city.id as u64, city.owner as u64]);
+        }
+        key
+    }
+
     fn memory_stamp(&self, pid: usize) -> u64 {
         let seat = &self.players[pid];
         let mut key = vision_key(&[
             self.map.tiles.epoch(),
             self.turn as u64,
             self.world_era as u64,
+            self.track_fog_memory as u64,
             seat.explored.len() as u64,
             seat.remembered_tiles.len() as u64,
             seat.remembered_cities.len() as u64,
@@ -24281,26 +24309,50 @@ impl Game {
     fn refresh_visibility_snapshot(&mut self, pid: usize, visible: &TileBits) {
         if self.remembered_under.len() < self.players.len() {
             self.remembered_under
-                .resize(self.players.len(), (0, TileBits::default()));
+                .resize(self.players.len(), (0, 0, TileBits::default()));
         }
         // A move reveals over a wider set than the refresh that follows it, so
         // the second of the pair is the common case rather than a corner of
         // one: everything it would record was recorded a moment ago.
         let stamp = self.memory_stamp(pid);
-        if let Some((under, covered)) = self.remembered_under.get(pid) {
+        // When the stamp still matches, every tile the last pass covered was
+        // reconciled then and nothing it reads has moved since — the stamp is
+        // exactly the statement that the map, the cities and this seat's
+        // memory are as they were. So a wider sight is not a reason to walk
+        // the whole of it again: only the hexes that were not covered can
+        // differ, and a step reveals a handful of those out of a few hundred.
+        let tile_stamp = self.tile_memory_stamp(pid);
+        let mut reconciled: Option<TileBits> = None;
+        if let Some((under, tiles_under, covered)) = self.remembered_under.get(pid) {
             if *under == stamp && visible.is_subset_of(covered) {
                 return;
             }
+            if *tiles_under == tile_stamp {
+                reconciled = Some(covered.clone());
+            }
         }
         let taken = visible.clone();
+        let fresh = match &reconciled {
+            Some(covered) => {
+                let mut bits = TileBits::with_capacity(self.map.tiles.len());
+                for index in visible.iter() {
+                    if !covered.contains(index) {
+                        bits.insert(index);
+                    }
+                }
+                self.tiles_of(&bits)
+            }
+            None => self.tiles_of(visible),
+        };
         let visible: BTreeSet<Pos> = self.tiles_of(visible);
-        self.refresh_visibility_snapshot_inner(pid, &visible);
+        self.refresh_visibility_snapshot_inner(pid, &visible, &fresh);
         // Record the world as it stands *after* the snapshot: taking one grows
         // what the seat has explored, which is itself part of the stamp the
         // next call will compute.
         let settled = self.memory_stamp(pid);
+        let settled_tiles = self.tile_memory_stamp(pid);
         if let Some(slot) = self.remembered_under.get_mut(pid) {
-            *slot = (settled, taken);
+            *slot = (settled, settled_tiles, taken);
         }
     }
 
@@ -24351,8 +24403,16 @@ impl Game {
         }
     }
 
-    fn refresh_visibility_snapshot_inner(&mut self, pid: usize, visible: &BTreeSet<Pos>) {
-        let newly_explored: Vec<Pos> = visible
+    /// `visible` is everything the seat can see; `fresh` is the part of it
+    /// that still has to be reconciled with the world. They differ only when
+    /// the caller has proved the rest was reconciled under the same stamp.
+    fn refresh_visibility_snapshot_inner(
+        &mut self,
+        pid: usize,
+        visible: &BTreeSet<Pos>,
+        fresh: &BTreeSet<Pos>,
+    ) {
+        let newly_explored: Vec<Pos> = fresh
             .difference(&self.players[pid].explored)
             .copied()
             .collect();
@@ -24368,7 +24428,7 @@ impl Game {
         let observed_seat = !self.players[pid].is_minor && !self.players[pid].is_barbarian;
         if self.track_fog_memory && observed_seat {
             let turn = self.turn;
-            let tiles: Vec<(Pos, RememberedTile)> = visible
+            let tiles: Vec<(Pos, RememberedTile)> = fresh
                 .iter()
                 .filter(|position| !self.remembered_tile_is_current(pid, **position))
                 .filter_map(|position| self.snapshot_tile(*position).map(|tile| (*position, tile)))
@@ -24384,7 +24444,7 @@ impl Game {
             // Only reach for the memory mutably when a stamp actually has to
             // move: taking it mutably is what copies it, and after the first
             // refresh of a turn every visible tile already carries this turn.
-            for position in visible.iter() {
+            for position in fresh.iter() {
                 player.remembered_tiles.mark_seen(*position, turn);
             }
             player.explored.extend(newly_explored.iter().copied());
@@ -24512,9 +24572,10 @@ impl Game {
         }
         // Memory just arrived from somewhere other than a sweep, so no seat's
         // last snapshot can be assumed to still describe it.
-        self.remembered_under
-            .iter_mut()
-            .for_each(|(stamp, _)| *stamp = 0);
+        self.remembered_under.iter_mut().for_each(|(stamp, tiles, _)| {
+            *stamp = 0;
+            *tiles = 0;
+        });
     }
 
     fn backfill_visibility_memory(&mut self) {
