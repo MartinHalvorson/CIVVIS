@@ -5440,15 +5440,20 @@ mod tests {
         // the horizontal stage against its 8px left gutter. A missing widget
         // naturally leaves its screen edge in place, and the minimap is
         // deliberately absent from this calculation.
+        //
+        // The measurement takes the box it is asked about, because the map
+        // area's automatic fit asks it of the whole container while the camera
+        // asks it of the viewport that fit produced. One rule, two questions —
+        // see `the_map_area_is_a_rectangle_the_viewer_can_set`.
         assert!(EMBEDDED_INDEX.contains("function mapOverlayVisible(name)"));
         assert!(EMBEDDED_INDEX.contains(
             "document.body.classList.contains(\"sidebar-hidden\")"
         ));
-        assert!(EMBEDDED_INDEX.contains("function mapWidgetBox(name, areaRect)"));
+        assert!(EMBEDDED_INDEX.contains("function mapWidgetBox(name, origin)"));
         assert!(EMBEDDED_INDEX.contains("function mapFocusBounds()"));
         assert!(EMBEDDED_INDEX.contains("function mapFocusPoint()"));
         assert!(EMBEDDED_INDEX.contains(
-            "left = Math.max(0, Math.min(width, sideRect.right - areaRect.left));"
+            "left = Math.max(0, Math.min(width, sideRect.right - origin.left));"
         ));
         assert!(EMBEDDED_INDEX.contains(
             "if (players) top = Math.max(0, Math.min(height, players.bottom));"

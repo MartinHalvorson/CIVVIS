@@ -5097,9 +5097,9 @@ function syncMapViewport() {
   const right = Math.round(insets.right), bottom = Math.round(insets.bottom);
   const viewWidth = Math.max(1, Math.round(width) - left - right);
   const viewHeight = Math.max(1, Math.round(height) - top - bottom);
-  const changed = viewWidth !== MAPW || viewHeight !== MAPH ||
-                  left !== Math.round(mapAreaInsets.left) ||
-                  top !== Math.round(mapAreaInsets.top);
+  let changed = viewWidth !== MAPW || viewHeight !== MAPH ||
+                left !== Math.round(mapAreaInsets.left) ||
+                top !== Math.round(mapAreaInsets.top);
   mapAreaInsets = insets;
   MAPW = viewWidth; MAPH = viewHeight;
   const style = area.style;
@@ -5111,11 +5111,13 @@ function syncMapViewport() {
   style.setProperty("--map-area-height", `${viewHeight}px`);
   document.body.classList.toggle("map-area-inset", left > 0 || top > 0 || right > 0 || bottom > 0);
   // The backing store is native resolution, and it belongs to the viewport
-  // rather than to the container the viewport sits in.
+  // rather than to the container the viewport sits in. Resizing it also wipes
+  // the canvas, so a caller that repaints only on a change has to be told
+  // about a display whose pixel ratio moved under a viewport that did not.
   const backingWidth = Math.max(1, Math.round(viewWidth * DPR));
   const backingHeight = Math.max(1, Math.round(viewHeight * DPR));
-  if (cv.width !== backingWidth) cv.width = backingWidth;
-  if (cv.height !== backingHeight) cv.height = backingHeight;
+  if (cv.width !== backingWidth) { cv.width = backingWidth; changed = true; }
+  if (cv.height !== backingHeight) { cv.height = backingHeight; changed = true; }
   syncMapAreaReadout();
   return changed;
 }
