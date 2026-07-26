@@ -97,7 +97,8 @@
     },
     "ADJUST_CITY_GREATWORK_YIELD": {
       "status": "implemented",
-      "note": "Great Work yields, slots and Culture/Tourism output execute."
+      "verified": true,
+      "note": "Verified row by row against the cache: 28 rows, of which CIVVIS models exactly one and models it correctly. Kandy's MINOR_CIV_KANDY_BETTER_RELIC_BONUS is ScalingFactor 150 on Relic Faith, and city_yields raises relic_faith from 4 to 6 under grants_city_state_unique_bonus(\"Kandy\") - both halves of that suzerain bonus are present, the Relic grant on discovering a Natural Wonder and the Faith scaling. The base Great Work yields themselves (Relic 4 Faith, Writing 2 Culture, Art/Artifact 3, Music 4) are audited separately and exactly by civ6_fidelity.py's GreatWorkValues table. The other 27 rows belong to Babylon (3, a city-state outside the modelled 12), the Reliquaries belief (CIVVIS models 6 of 9 followers), Heroes & Legends relic content the CPL lobby disables with all game modes, and the Lithuania, Kongo and Nkisi traits - content scope, measured by civ6_fidelity.py."
     },
     "ADJUST_PLAYER_GOVERNOR_POINTS": {
       "status": "implemented",
