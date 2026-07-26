@@ -173,6 +173,24 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             _ => None,
         })
         .collect();
+    // A seated player gets only their own Tourism sources, matching Civ VI's
+    // Tourism lens. The omniscient spectator combines every major empire so
+    // the same lens remains useful while watching the whole world.
+    let mut tourism_by_tile = BTreeMap::new();
+    let tourism_players: Vec<usize> = if omniscient {
+        g.players
+            .iter()
+            .filter(|player| !player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .collect()
+    } else {
+        vec![pid]
+    };
+    for player in tourism_players {
+        for (position, amount) in g.tourism_by_tile(player) {
+            *tourism_by_tile.entry(position).or_default() += amount;
+        }
+    }
     let tiles: Vec<Value> = explored
         .iter()
         .filter_map(|pos| {
@@ -205,6 +223,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                 owner,
                 omniscient,
                 live,
+                &tourism_by_tile,
                 planned.get(pos).copied().filter(|_| live),
             ))
         })
@@ -1004,6 +1023,7 @@ fn tile_json(
     owner: Option<usize>,
     omniscient: bool,
     live: bool,
+    tourism_by_tile: &BTreeMap<Pos, f64>,
     planned: Option<&str>,
 ) -> Value {
     let resource = tile
@@ -1062,6 +1082,7 @@ fn tile_json(
         "pos": [tile.pos.0, tile.pos.1],
         "terrain": tile.terrain,
         "appeal": appeal,
+        "tourism": live.then(|| round1(tourism_by_tile.get(&tile.pos).copied().unwrap_or(0.0))),
         "feature": tile.feature,
         "hills": tile.hills,
         "resource": resource,
@@ -1155,6 +1176,46 @@ fn remembered_city_json(city: &RememberedCity) -> Value {
     })
 }
 
+/// The Governor this viewer has posted to a city, including whether that
+/// Governor's local effects are live yet. Assignments belong to the player
+/// rather than to public map knowledge, so the omniscient spectator does not
+/// need a city-by-city copy of them; a player does, including Amani's posting
+/// to a city-state the player can currently see.
+fn viewer_governor_json(g: &Game, pid: usize, city: u32, omniscient: bool) -> Value {
+    if omniscient {
+        return Value::Null;
+    }
+    let Some((id, state)) = g.players[pid]
+        .governor_roster
+        .iter()
+        .find(|(_, governor)| governor.city == Some(city))
+    else {
+        return Value::Null;
+    };
+    let Some(spec) = g.rules.governors.get(id) else {
+        return Value::Null;
+    };
+    let establishes_turn = state.assigned_turn + g.standard_duration(spec.establish_turns);
+    let active_turn = establishes_turn.max(state.disabled_until);
+    let status = if state.disabled_until > g.turn {
+        "disabled"
+    } else if establishes_turn > g.turn {
+        "establishing"
+    } else {
+        "established"
+    };
+    json!({
+        "id": id,
+        "name": spec.name,
+        "title": spec.title,
+        "status": status,
+        "established": status == "established",
+        "active_turn": active_turn,
+        "turns_remaining": active_turn.saturating_sub(g.turn),
+        "promotions": state.promotions,
+    })
+}
+
 fn live_city_json(g: &Game, pid: usize, city: &City, omniscient: bool) -> Value {
     let mut value = public_city_json(PublicCity {
         id: city.id,
@@ -1174,6 +1235,14 @@ fn live_city_json(g: &Game, pid: usize, city: &City, omniscient: bool) -> Value 
         encampment_pillaged: city.encampment_pillaged,
         religion: g.city_religion(city),
     });
+    // Religious pressure is visible with the city itself. Remembered cities
+    // intentionally omit it, so a lens never reveals conversions under fog.
+    value["religious_pressure"] = json!(city.pressure);
+    value["atheist_pressure"] = json!(round1(city.atheist_pressure));
+    let governor_assignment = viewer_governor_json(g, pid, city.id, omniscient);
+    if !governor_assignment.is_null() {
+        value["governor_assignment"] = governor_assignment;
+    }
     if city.owner != pid && !omniscient {
         return value;
     }
@@ -1262,18 +1331,66 @@ mod tests {
         let city_id = game.found_city_for(0, capital_position, None);
         let city = &game.cities[&city_id];
         let tile = &game.map.tiles[&city.pos];
-        let live = tile_json(&game, 0, tile, Some(0), true, true, None);
+        let tourism = game.tourism_by_tile(0);
+        let live = tile_json(&game, 0, tile, Some(0), true, true, &tourism, None);
         assert_eq!(live["owner_city"], json!(city_id));
         assert_eq!(live["owner_city_name"], json!(city.name));
+        assert!(live["tourism"].is_number());
 
-        let remembered = tile_json(&game, 0, tile, Some(0), false, false, None);
+        let remembered = tile_json(&game, 0, tile, Some(0), false, false, &tourism, None);
         assert_eq!(remembered["owner_city"], json!(city_id));
+        assert!(remembered["tourism"].is_null());
         assert!(
             remembered["owner_city_name"].is_null(),
             "current city names must not leak through a remembered tile"
         );
 
+        game.cities
+            .get_mut(&city_id)
+            .unwrap()
+            .pressure
+            .insert("Test Faith".to_string(), 240.0);
+        let observed = observation_spectator(&game, 0);
+        let observed_city = observed["cities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|candidate| candidate["id"] == city_id)
+            .unwrap();
+        assert_eq!(observed_city["religious_pressure"]["Test Faith"], 240.0);
+        assert!(observed_city["atheist_pressure"].is_number());
+
         const INDEX: &str = include_str!("../web/index.html");
+        assert!(INDEX.contains("id=\"map-controls-dock\""));
+        for lens in [
+            "religion",
+            "continent",
+            "appeal",
+            "settler",
+            "government",
+            "political",
+            "tourism",
+            "empire",
+        ] {
+            assert!(
+                INDEX.contains(&format!("data-map-lens=\"{lens}\"")),
+                "the base-game {lens} lens must be available in the map toolbar"
+            );
+        }
+        for renderer in [
+            "function drawReligiousPressureRing(",
+            "function drawFlatLensGroupLabels(",
+            "function drawPlanetLensGroupLabels(",
+            "function drawThematicLensFlat(",
+            "function drawThematicLensPlanet(",
+            "function drawEmpireDetailsFlat(",
+            "function drawEmpireDetailsPlanet(",
+        ] {
+            assert!(
+                INDEX.contains(renderer),
+                "the lens toolbar is missing renderer {renderer}"
+            );
+        }
         let start = INDEX
             .find("function tileTipLines(t, pos, tileKey)")
             .expect("the tile hover has one ordered builder");
@@ -1312,6 +1429,104 @@ mod tests {
         assert!(INDEX.contains(
             "<span class=\"tip-unit\">● ${civAdjective(civ)} ${titleCase(unit.type)}"
         ));
+    }
+
+    #[test]
+    fn player_cities_name_their_governor_and_spectator_cities_do_not() {
+        let mut game = Game::new(2, 18, 12, 70_126, 25, 0);
+        let capital_position = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find_map(|unit| {
+                let unit = &game.units[&unit];
+                (unit.kind == "settler").then_some(unit.pos)
+            })
+            .expect("the player starts with a settler");
+        let city_id = game.found_city_for(0, capital_position, Some("Academia".to_string()));
+        game.players[0].civics.insert("early_empire".to_string());
+        game.apply(
+            0,
+            &crate::game::Action::AppointGovernor {
+                governor: "pingala".to_string(),
+                city: city_id,
+            },
+        )
+        .expect("the earned title appoints Pingala");
+
+        let active_turn =
+            game.turn + game.standard_duration(game.rules.governors["pingala"].establish_turns);
+        let observed = observation(&game, 0);
+        let city = observed["cities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|city| city["id"] == json!(city_id))
+            .unwrap();
+        assert_eq!(city["governor_assignment"]["id"], json!("pingala"));
+        assert_eq!(city["governor_assignment"]["name"], json!("Pingala"));
+        assert_eq!(city["governor_assignment"]["title"], json!("The Educator"));
+        assert_eq!(city["governor_assignment"]["status"], json!("establishing"));
+        assert_eq!(
+            city["governor_assignment"]["turns_remaining"],
+            json!(active_turn - game.turn)
+        );
+        assert_eq!(city["governor_assignment"]["established"], json!(false));
+
+        let watched = observation_player_view(&game, 0);
+        let watched_city = watched["cities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|city| city["id"] == json!(city_id))
+            .unwrap();
+        assert_eq!(
+            watched_city["governor_assignment"]["name"],
+            json!("Pingala"),
+            "a read-only player perspective retains that player's private posting"
+        );
+
+        let spectated = observation_spectator(&game, 0);
+        let spectator_city = spectated["cities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|city| city["id"] == json!(city_id))
+            .unwrap();
+        assert!(
+            spectator_city.get("governor_assignment").is_none(),
+            "omniscient spectator city records stay free of player-only Governor labels"
+        );
+
+        game.turn = active_turn;
+        let established = observation(&game, 0);
+        let established_city = established["cities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|city| city["id"] == json!(city_id))
+            .unwrap();
+        assert_eq!(
+            established_city["governor_assignment"]["status"],
+            json!("established")
+        );
+        assert_eq!(
+            established_city["governor_assignment"]["turns_remaining"],
+            json!(0)
+        );
+        assert_eq!(
+            established_city["governor_assignment"]["established"],
+            json!(true)
+        );
+
+        const INDEX: &str = include_str!("../web/index.html");
+        assert!(INDEX.contains("function cityGovernor(city)"));
+        assert!(INDEX.contains("if (!state || SPEC || !city) return null;"));
+        assert!(INDEX.contains("const posting = `⚑ ${governor.name.toUpperCase()}${waiting}`;"));
+        assert!(INDEX.contains(
+            "`<b>${governor.name} · ${governor.title} · ${governorStatus(governor)}</b>"
+        ));
+        assert!(INDEX.contains("const mine = posting !== undefined;"));
+        assert!(INDEX.contains("posting.city === null ? \"Awaiting a city assignment.<br>\""));
     }
 
     /// The player HUD and the victory tracker are drawn from `players`, so an

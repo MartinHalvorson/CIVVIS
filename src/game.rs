@@ -5513,6 +5513,43 @@ mod governor_runtime_tests {
     }
 
     #[test]
+    fn the_cliffs_of_dover_are_worth_twice_an_ordinary_natural_wonder() {
+        // Features.Appeal is +2 for most natural wonders but +4 for the Cliffs
+        // of Dover and Uluru, which CIVVIS flattened to a single +2 for every
+        // wonder. Woods and an Oasis are +1; Rainforest, Marsh and Floodplains
+        // are -1.
+        let rules = crate::rules::Rules::embedded();
+        assert_eq!(rules.features["cliffs_of_dover"].appeal, 4.0);
+        assert_eq!(rules.features["uluru"].appeal, 4.0);
+        for wonder in ["yosemite", "matterhorn", "pamukkale", "great_barrier_reef"] {
+            assert_eq!(rules.features[wonder].appeal, 2.0, "{wonder}");
+        }
+        assert_eq!(rules.features["forest"].appeal, 1.0);
+        assert_eq!(rules.features["oasis"].appeal, 1.0);
+        for drab in ["jungle", "marsh", "floodplains"] {
+            assert_eq!(rules.features[drab].appeal, -1.0, "{drab}");
+        }
+
+        // And the difference reaches a tile: the Cliffs are worth two more
+        // than Yosemite to the same neighbour.
+        let mut game = Game::new_full(1, 24, 16, 91_972, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let centre = game.cities[&city].pos;
+        let site = game.nbrs(centre)[0];
+        for position in [centre, site] {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.feature = None;
+            tile.improvement = None;
+            tile.pillaged = false;
+        }
+        let bare = game.tile_appeal(centre);
+        game.map.tiles.get_mut(&site).unwrap().feature = Some("yosemite".to_string());
+        assert_eq!(game.tile_appeal(centre), bare + 2);
+        game.map.tiles.get_mut(&site).unwrap().feature = Some("cliffs_of_dover".to_string());
+        assert_eq!(game.tile_appeal(centre), bare + 4);
+    }
+
+    #[test]
     fn mines_and_quarries_lower_the_appeal_of_their_neighbours() {
         let mut game = Game::new_full(1, 24, 16, 91_971, 200, 0, false);
         let city = found_capital(&mut game, 0);
@@ -5527,8 +5564,10 @@ mod governor_runtime_tests {
         let before = game.tile_appeal(centre);
         game.map.tiles.get_mut(&site).unwrap().improvement = Some("mine".to_string());
         assert_eq!(game.tile_appeal(centre), before - 1);
+        // Improvements.Appeal for the Sphinx is +2, the same as a City Park
+        // and an Ice Hockey Rink; the +1 tier is the Chateau and Golf Course.
         game.map.tiles.get_mut(&site).unwrap().improvement = Some("sphinx".to_string());
-        assert_eq!(game.tile_appeal(centre), before + 1);
+        assert_eq!(game.tile_appeal(centre), before + 2);
         // Pillaging stops the grant and costs the tile its own Appeal point.
         game.map.tiles.get_mut(&site).unwrap().pillaged = true;
         assert_eq!(game.tile_appeal(centre), before - 1);
@@ -10358,6 +10397,12 @@ mod district_building_wonder_runtime_tests {
             appeal as f64
         );
         assert_eq!(game.tourism_per_turn(0) - tourism_before, appeal as f64);
+        let tourism_map = game.tourism_by_tile(0);
+        assert_eq!(tourism_map[&resort], appeal as f64);
+        assert!(
+            (tourism_map.values().sum::<f64>() - game.tourism_per_turn(0)).abs() < 1e-9,
+            "the Tourism lens ledger must reconcile to the culture-victory total"
+        );
         game.map.tiles.get_mut(&resort).unwrap().pillaged = true;
         assert_eq!(game.tourism_per_turn(0), tourism_before);
 
@@ -27524,17 +27569,14 @@ impl Game {
             if matches!(adjacent.terrain.as_str(), "mountain" | "coast" | "lake") {
                 appeal += 1;
             }
-            match adjacent.feature.as_deref() {
-                Some("forest" | "oasis") => appeal += 1,
-                Some(
-                    "jungle"
-                    | "marsh"
-                    | "floodplains"
-                    | "grassland_floodplains"
-                    | "plains_floodplains",
-                ) => appeal -= 1,
-                _ => {}
-            }
+            // Features.Appeal, read rather than listed: Woods and an Oasis are
+            // +1, Rainforest, Marsh and Floodplains -1, and a natural wonder is
+            // +2 -- except the Cliffs of Dover and Uluru, which are +4.
+            appeal += adjacent
+                .feature
+                .as_deref()
+                .and_then(|feature| self.rules.features.get(feature))
+                .map_or(0, |spec| spec.appeal.round() as i32);
             if adjacent.owner_city == owner_city_id
                 && adjacent.improvement.is_none()
                 && adjacent.feature.is_some()
@@ -27548,14 +27590,7 @@ impl Game {
             if biosphere != 0 && matches!(adjacent.feature.as_deref(), Some("jungle" | "marsh")) {
                 appeal += biosphere;
             }
-            if adjacent.feature.as_ref().is_some_and(|feature| {
-                self.rules
-                    .features
-                    .get(feature.as_str())
-                    .is_some_and(|spec| spec.natural_wonder)
-            }) {
-                appeal += 2;
-            }
+
             if adjacent.wonder.is_some() {
                 appeal += 1;
             }
@@ -42370,7 +42405,33 @@ impl Game {
     ///
     /// Named Great Works occupy compatible active building/wonder slots;
     /// legacy generic-Artist saves retain their former three-work fallback.
-    fn tourism_components_per_turn(&self, pid: usize) -> (f64, f64) {
+    fn add_tourism_source(
+        total: &mut f64,
+        by_tile: &mut Option<&mut BTreeMap<Pos, f64>>,
+        position: Pos,
+        amount: f64,
+    ) {
+        *total += amount;
+        Self::record_tourism_source(by_tile, position, amount);
+    }
+
+    fn record_tourism_source(
+        by_tile: &mut Option<&mut BTreeMap<Pos, f64>>,
+        position: Pos,
+        amount: f64,
+    ) {
+        if amount != 0.0 {
+            if let Some(sources) = by_tile.as_deref_mut() {
+                *sources.entry(position).or_default() += amount;
+            }
+        }
+    }
+
+    fn tourism_components_per_turn_with_sources(
+        &self,
+        pid: usize,
+        mut by_tile: Option<&mut BTreeMap<Pos, f64>>,
+    ) -> (f64, f64) {
         // A sweep of every city the empire owns, each of which is asked for
         // its full yields to read one figure out of them.
         let _memo = self.query_memo();
@@ -42380,8 +42441,15 @@ impl Game {
         let housed_pieces = self.housed_great_work_pieces(pid);
         for city in self.cities.values().filter(|city| city.owner == pid) {
             let city_tourism_start = tourism;
-            tourism += 2.0 * city.wonders.len() as f64;
-            tourism += city.products.len().min(self.product_capacity(city)) as f64;
+            for position in city.wonders.values() {
+                Self::add_tourism_source(&mut tourism, &mut by_tile, *position, 2.0);
+            }
+            Self::add_tourism_source(
+                &mut tourism,
+                &mut by_tile,
+                city.pos,
+                city.products.len().min(self.product_capacity(city)) as f64,
+            );
             let (_, _, theming_tourism) = self.city_theming(
                 pid,
                 city.id,
@@ -42390,7 +42458,12 @@ impl Game {
                     .map(Vec::as_slice)
                     .unwrap_or(&[]),
             );
-            tourism += theming_tourism;
+            Self::add_tourism_source(
+                &mut tourism,
+                &mut by_tile,
+                city.pos,
+                theming_tourism,
+            );
             for (kind, count) in housed_works.get(&city.id).into_iter().flatten() {
                 let mut value = self.great_work_tourism(pid, kind) * *count as f64;
                 if matches!(
@@ -42409,7 +42482,7 @@ impl Game {
                             .unwrap_or(0.0)
                             / 100.0;
                 }
-                tourism += value;
+                Self::add_tourism_source(&mut tourism, &mut by_tile, city.pos, value);
             }
             if self.tree_effect(pid, "improvement_culture_tourism") > 0.0 {
                 for (district, position) in &city.districts {
@@ -42422,13 +42495,23 @@ impl Game {
                         .copied()
                         .unwrap_or(0.0);
                     if multiplier > 0.0 {
-                        tourism += self.district_yields(district, *position).culture * multiplier;
+                        Self::add_tourism_source(
+                            &mut tourism,
+                            &mut by_tile,
+                            *position,
+                            self.district_yields(district, *position).culture * multiplier,
+                        );
                     }
                 }
             }
-            for wonder in city.wonders.keys() {
+            for (wonder, position) in &city.wonders {
                 let spec = &self.rules.wonders[wonder.as_str()];
-                tourism += spec.effects.get("tourism").copied().unwrap_or(0.0);
+                Self::add_tourism_source(
+                    &mut tourism,
+                    &mut by_tile,
+                    *position,
+                    spec.effects.get("tourism").copied().unwrap_or(0.0),
+                );
             }
             for building in city.buildings.iter().filter(|building| {
                 !city.pillaged_buildings.contains(*building)
@@ -42456,15 +42539,17 @@ impl Game {
                         .copied()
                         .unwrap_or(0.0);
                     if per_feature != 0.0 {
-                        tourism += per_feature
-                            * city
-                                .owned_tiles
-                                .iter()
-                                .filter(|position| {
-                                    let tile = &self.map.tiles[position];
-                                    tile.feature.is_some() && self.rules.is_passable(tile)
-                                })
-                                .count() as f64;
+                        for position in city.owned_tiles.iter().filter(|position| {
+                            let tile = &self.map.tiles[position];
+                            tile.feature.is_some() && self.rules.is_passable(tile)
+                        }) {
+                            Self::add_tourism_source(
+                                &mut tourism,
+                                &mut by_tile,
+                                *position,
+                                per_feature,
+                            );
+                        }
                     }
                     building_tourism += if city.pop >= 20 {
                         spec.effects
@@ -42521,15 +42606,17 @@ impl Game {
                     .copied()
                     .unwrap_or(0.0);
                 if geothermal != 0.0 {
-                    tourism += geothermal
-                        * city
-                            .owned_tiles
-                            .iter()
-                            .filter(|position| {
-                                self.map.tiles[position].feature.as_deref()
-                                    == Some("geothermal_fissure")
-                            })
-                            .count() as f64;
+                    for position in city.owned_tiles.iter().filter(|position| {
+                        self.map.tiles[position].feature.as_deref()
+                            == Some("geothermal_fissure")
+                    }) {
+                        Self::add_tourism_source(
+                            &mut tourism,
+                            &mut by_tile,
+                            *position,
+                            geothermal,
+                        );
+                    }
                 }
                 if matches!(self.players[pid].age.as_str(), "golden" | "heroic") {
                     building_tourism *= 1.0
@@ -42540,7 +42627,12 @@ impl Game {
                             .unwrap_or(0.0)
                             / 100.0;
                 }
-                tourism += building_tourism;
+                Self::add_tourism_source(
+                    &mut tourism,
+                    &mut by_tile,
+                    city.pos,
+                    building_tourism,
+                );
             }
             for pos in &city.owned_tiles {
                 let tile = &self.map.tiles[pos];
@@ -42587,7 +42679,12 @@ impl Game {
                             .unwrap_or(0.0)
                             / 100.0;
                 }
-                tourism += improvement_tourism;
+                Self::add_tourism_source(
+                    &mut tourism,
+                    &mut by_tile,
+                    *pos,
+                    improvement_tourism,
+                );
                 let mut renewable_power = self.rules.improvements[improvement]
                     .effects
                     .get("power")
@@ -42599,15 +42696,26 @@ impl Game {
                 ) {
                     renewable_power += self.governor_effect(pid, city.id, "renewable_power_bonus");
                 }
-                tourism += renewable_power
-                    * (1.0 + self.empire_wonder_effect(pid, "renewable_power_pct") / 100.0)
-                    * self.empire_wonder_effect(pid, "renewable_power_tourism");
+                Self::add_tourism_source(
+                    &mut tourism,
+                    &mut by_tile,
+                    *pos,
+                    renewable_power
+                        * (1.0
+                            + self.empire_wonder_effect(pid, "renewable_power_pct") / 100.0)
+                        * self.empire_wonder_effect(pid, "renewable_power_tourism"),
+                );
                 if self.tree_effect(pid, "improvement_culture_tourism") > 0.0 {
                     let improved = self.player_tile_yields(pid, *pos, &self.map.tiles[pos]);
                     let mut bare = self.map.tiles[pos].clone();
                     bare.improvement = None;
                     let unimproved = self.player_tile_yields(pid, *pos, &bare);
-                    tourism += (improved.culture - unimproved.culture).max(0.0);
+                    Self::add_tourism_source(
+                        &mut tourism,
+                        &mut by_tile,
+                        *pos,
+                        (improved.culture - unimproved.culture).max(0.0),
+                    );
                 }
             }
             let mut building_renewable_power = city
@@ -42629,19 +42737,34 @@ impl Game {
                 building_renewable_power +=
                     self.governor_effect(pid, city.id, "renewable_power_bonus");
             }
-            tourism += building_renewable_power
-                * (1.0 + self.empire_wonder_effect(pid, "renewable_power_pct") / 100.0)
-                * self.empire_wonder_effect(pid, "renewable_power_tourism");
+            Self::add_tourism_source(
+                &mut tourism,
+                &mut by_tile,
+                city.pos,
+                building_renewable_power
+                    * (1.0 + self.empire_wonder_effect(pid, "renewable_power_pct") / 100.0)
+                    * self.empire_wonder_effect(pid, "renewable_power_tourism"),
+            );
             film_studio_bonus += (tourism - city_tourism_start)
                 * self.city_building_effect(city, "modern_civ_tourism_pct")
                 / 100.0;
         }
 
+        // Preserve the total's original arithmetic order — a few gameplay
+        // callers compare exact floating-point deltas — while allocating its
+        // Culture component to the cities that produced it for the map ledger.
         let culture = self
             .player_city_ids(pid)
             .into_iter()
-            .map(|cid| self.city_yields(cid).culture)
+            .map(|city_id| self.city_yields(city_id).culture)
             .sum::<f64>();
+        for city in self.cities.values().filter(|city| city.owner == pid) {
+            Self::record_tourism_source(
+                &mut by_tile,
+                city.pos,
+                0.15 * self.city_yields(city.id).culture,
+            );
+        }
         let mut holy_city_tourism = 0.0;
         for city_id in self
             .players
@@ -42650,6 +42773,11 @@ impl Game {
             .filter(|city| self.cities.get(city).is_some_and(|city| city.owner == pid))
         {
             holy_city_tourism += 8.0;
+            Self::record_tourism_source(
+                &mut by_tile,
+                self.cities[&city_id].pos,
+                8.0,
+            );
             film_studio_bonus += 8.0
                 * self.city_building_effect(&self.cities[&city_id], "modern_civ_tourism_pct")
                 / 100.0;
@@ -42659,10 +42787,28 @@ impl Game {
                 + self.monopoly_bonuses(pid).1
                 + self.gov_effects(pid).tourism_pct)
                 / 100.0;
+        if let Some(sources) = by_tile.as_deref_mut() {
+            for amount in sources.values_mut() {
+                *amount *= global_multiplier;
+            }
+        }
         (
             (tourism + holy_city_tourism + 0.15 * culture) * global_multiplier,
             film_studio_bonus * global_multiplier,
         )
+    }
+
+    fn tourism_components_per_turn(&self, pid: usize) -> (f64, f64) {
+        self.tourism_components_per_turn_with_sources(pid, None)
+    }
+
+    /// Exact current Tourism source value at every map tile. Values sum to
+    /// [`Game::tourism_per_turn`]; the map lens can therefore explain the
+    /// culture race without reimplementing its rules in JavaScript.
+    pub fn tourism_by_tile(&self, pid: usize) -> BTreeMap<Pos, f64> {
+        let mut sources = BTreeMap::new();
+        self.tourism_components_per_turn_with_sources(pid, Some(&mut sources));
+        sources
     }
 
     pub fn tourism_per_turn(&self, pid: usize) -> f64 {

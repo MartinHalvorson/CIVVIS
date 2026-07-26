@@ -6229,7 +6229,6 @@ mod tests {
         for piece in [
             "id=\"leader\"",
             "id=\"difficulty\"",
-            "id=\"startgame\"",
             "id=\"saves-group\"",
             "function syncSetupMode()",
             "async function refreshSaves()",
@@ -6257,11 +6256,10 @@ mod tests {
     /// Choosing single player and pressing the one start control on screen
     /// must open that game — on the supervised exhibition too, where every
     /// simulation is a fresh process but a human game takes this one over.
-    /// Which control that is follows the world on screen, never the pending
-    /// selection: keying the sidebar button to the mode select left a player
-    /// who picked AI-only with no way to launch anything at all.
+    /// The control itself persists when the world changes; only its presentation
+    /// transforms, so a second Start new game button never materializes.
     #[test]
-    fn browser_enters_single_player_from_whichever_start_control_is_showing() {
+    fn browser_transforms_restart_control_for_single_player() {
         assert!(EMBEDDED_INDEX
             .contains("const supervised = !!(state && state.supervised) && payload.spectate;"));
         assert!(EMBEDDED_INDEX.contains("const human = !selectedSimulationSettings().spectate;"));
@@ -6269,7 +6267,7 @@ mod tests {
         // rather than leaving "Restart sim" over a single-player subtitle.
         assert!(EMBEDDED_INDEX.contains("<span class=\"lbl\">Restart sim</span>"));
         assert!(EMBEDDED_INDEX.contains("button.classList.toggle(\"human-start\", human);"));
-        assert!(EMBEDDED_INDEX.contains("? \"Start Single Player Game\""));
+        assert!(EMBEDDED_INDEX.contains("? \"Start new game\""));
         assert!(EMBEDDED_INDEX
             .contains(".spec-controls #restart-sim.human-start::before { content: \"▶\";"));
         // It shares the row with Pause/Resume rather than displacing it: keep
@@ -6283,11 +6281,18 @@ mod tests {
         ));
         assert!(EMBEDDED_INDEX
             .contains(".spec-controls:has(#restart-sim.human-start) #specpause.primary {"));
-        assert!(EMBEDDED_INDEX.contains("body.watching-sim #startgame { display: none; }"));
+        assert!(EMBEDDED_INDEX.contains(
+            "document.getElementById(\"specbar\").style.display = \"block\";"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "syncSetupMode();\n  updateRestartSimulationButton();"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "body:not(.watching-sim) .spec-controls:has(#restart-sim) {"
+        ));
+        assert_eq!(EMBEDDED_INDEX.matches("id=\"restart-sim\"").count(), 1);
+        assert!(!EMBEDDED_INDEX.contains("id=\"startgame\""));
         assert!(EMBEDDED_INDEX.contains("document.body.classList.toggle(\"watching-sim\", SPEC);"));
-        // The start button belongs to the game being played, not to the mode
-        // the sidebar is staging for the next one.
-        assert!(!EMBEDDED_INDEX.contains("human-setting\" id=\"startgame\""));
         // Leader and difficulty still do follow the selection.
         assert!(EMBEDDED_INDEX.contains("body.spectating .human-setting { display: none; }"));
         assert!(EMBEDDED_INDEX.contains("class=\"small human-setting\">Leader"));
