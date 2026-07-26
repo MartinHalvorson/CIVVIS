@@ -41188,14 +41188,16 @@ impl Game {
     }
 
     /// Which Normal-Age Dedication triggers a finished building pays out.
-    /// Civ VI names three building shapes: one with a Great Work slot, one
-    /// that yields Science, and any building of the Industrial era or later.
+    /// Civ VI names three building shapes, and the first two are named the
+    /// same way as each other: PER_CULTURE_BUILDING_CONSTRUCTED and
+    /// PER_SCIENCE_BUILDING_CONSTRUCTED, which is a building that yields that
+    /// yield. The third is any building of the Industrial era or later.
     fn note_dedicated_building(&mut self, pid: usize, building: &str, spec: &BuildingSpec) {
         if spec.wonder {
             return;
         }
-        if spec.great_work_slots.values().any(|slots| *slots > 0) {
-            self.dedication_trigger(pid, "great_work_building", 1);
+        if spec.yields.culture > 0.0 {
+            self.dedication_trigger(pid, "culture_building", 1);
         }
         if spec.yields.science > 0.0 {
             self.dedication_trigger(pid, "science_building", 1);
@@ -44002,9 +44004,12 @@ impl Game {
                     .unwrap()
                     .districts
                     .insert(district.clone(), *pos);
-                if spec.specialty {
-                    self.dedication_trigger(pid, "specialty_district", 1);
-                }
+                // PER_DISTRICT_CONSTRUCTED, not specialty: the database has a
+                // SPECIALTY_DISTRICT_CONSTRUCTED vocabulary and uses it for the
+                // free-building effects, so leaving it off here is deliberate.
+                // The City Center is placed at founding rather than built, so
+                // it never reaches this path.
+                self.dedication_trigger(pid, "district", 1);
                 if self.district_is_family(district, "aerodrome") {
                     self.dedication_trigger(pid, "aerodrome", 1);
                 }
