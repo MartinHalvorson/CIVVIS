@@ -734,3 +734,54 @@ evaluator is good and inert.
 Recommended settings for anything that claims to measure this agent's
 search or evaluator: `--players 4` at minimum, and read the exposure line
 before the win rate.
+
+## 2026-07-26 — the tactical policy cannot see 96% of what it evaluates
+
+`PolicyAi` scores each legal tactical action by applying it to a clone and
+asking the value net how the position changed. The net's input is
+`evolve::features`: twenty-five *empire aggregates* — cities, population,
+owned tiles, techs, civics, military power, unit count, three yields, Gold
+and score, mirrored for the leading rival, plus turn fraction. Repositioning
+a unit changes none of them, so the gain is not noisy. It is exactly zero.
+
+Measured over four 120-turn four-player games, 11,347 candidate evaluations:
+
+| tactical kind | evaluated | changed the value | share |
+|---|---|---|---|
+| `attack` | 225 | 225 | **100.0%** |
+| `move` | 9,481 | 185 | 2.0% |
+| `fortify` | 1,445 | 0 | 0.0% |
+| `ranged` | 152 | 0 | 0.0% |
+| `city_strike` | 44 | 0 | 0.0% |
+| **total** | **11,347** | **410** | **3.6%** |
+
+A separate probe of the agent's actual decision points (648 turn starts, 5
+games, mean 32.6 candidates each) found the best available action's gain to
+be **exactly 0.0 at the median and at the 75th percentile**, with 560/648
+below 1e-3 and only 109 clearing the 1e-4 commitment margin. So the agent
+declines to act at 83% of its decision points and falls through to the
+scripted layer. That, and not the net's calibration, is why the learned
+tactical policy measures at parity: it is an attack selector wearing the
+name of a policy.
+
+This also reframes 2026-07-23's design rule. "Give the net the decisions
+whose consequences it can actually observe" was applied at the wrong
+granularity: `TACTICAL_KINDS` selects actions whose effects *land this
+turn*, which is not the same property as actions the *features* respond to.
+Ten of its twelve kinds fail the second test.
+
+`fortify`, `air_patrol` and `air_rebase` are now dropped before the
+candidate cap. They cannot change unit count, ownership, yields, Gold,
+research or score, so no game state exists in which they move a feature —
+pinned by `excluded_kinds_cannot_move_a_single_feature`, which walks every
+legal candidate of three real games and asserts bit-identical features. A
+zero gain can never clear the margin, so play is unchanged; what changes is
+that ~13% of candidates no longer consume a clone *and a slot in the
+`width` budget*. On a busy turn the stride that enforces that cap is what
+decides which candidates survive, so a blind candidate does not merely cost
+time — it displaces an attack.
+
+The remaining gap is not fixable by training a better net on these inputs.
+An evaluator whose inputs do not respond to an action cannot rank that
+action at any level of calibration, which is AI_GAPS item 3 stated as a
+measurement rather than a plan.
