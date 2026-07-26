@@ -4226,7 +4226,11 @@ function animateDiff(prev, next) {
 const easeIO = e => e < 0.5 ? 2 * e * e : 1 - (1 - e) * (2 - 2 * e);
 const cam = { x: 0, y: 0, scale: 1 };
 let cameraFlight = null, cameraZoom = null;
-let cameraInertia = {vx:0, vy:0, vrot:0, vtilt:0, spin:null};
+function stoppedCameraInertia(extra = {}) {
+  return {vx:0, vy:0, vrot:0, vtilt:0, spin:null,
+          skyPan:null, skyTurn:null, ...extra};
+}
+let cameraInertia = stoppedCameraInertia();
 let cameraMotionLast = performance.now();
 let cameraFollowUnitId = null, cameraFollowManual = false, cameraFollowScale = 1.18;
 // Choosing a civilization to watch is also an explicit request for a living
@@ -11647,10 +11651,10 @@ function skyFocusBody() {
 // middle of it. Size alone cannot decide — zoom in on the Moon and the Earth is
 // four times its width, but it is also six diameters off the edge of the
 // screen, so it is not what anyone is looking at.
-function skyGrip(body, radius, stageX, stageY) {
+function skyGrip(body, radius, pan = SKY_PAN) {
   const drawn = Math.max(body.floor || 0, body.size * radius);
   const [px, py] = skyBodyPos(body);
-  const away = Math.hypot(px - SKY_PAN.x, py - SKY_PAN.y) * radius;
+  const away = Math.hypot(px - pan.x, py - pan.y) * radius;
   const reach = Math.max(140, Math.min(area.clientWidth, area.clientHeight) * .55);
   const near = Math.max(0, 1 - away / (reach + drawn));
   // Nothing claims the camera until it is at least half a stage wide. Set any
@@ -11666,11 +11670,10 @@ function skyGrip(body, radius, stageX, stageY) {
 // and when none of them is, it eases back onto the shot that holds the whole
 // system, which is what makes zooming out of Mars return to the space view
 // rather than to an empty patch of sky where Mars used to be.
-function skySettleCamera(radius, zoom) {
-  const [stageX, stageY] = planetStageCenter();
+function skySettledPan(pan, radius, zoom) {
   let best = null;
   for (const body of skyKnownWorlds()) {
-    const grip = skyGrip(body, radius, stageX, stageY);
+    const grip = skyGrip(body, radius, pan);
     if (!best || grip > best.grip) best = {grip, at:skyBodyPos(body)};
   }
   let target, ease;
@@ -11685,13 +11688,14 @@ function skySettleCamera(radius, zoom) {
     const frame = skySystemFrame();
     target = [frame.x, frame.y];
     ease = .60 * Math.max(0, Math.min(1, frame.radius * 2.2 / Math.max(1e-3, radius) - .55));
-  } else return;
-  SKY_PAN = {x:SKY_PAN.x + (target[0] - SKY_PAN.x) * ease,
-             y:SKY_PAN.y + (target[1] - SKY_PAN.y) * ease};
+  } else return {...pan};
+  const settled = {x:pan.x + (target[0] - pan.x) * ease,
+                   y:pan.y + (target[1] - pan.y) * ease};
   // Within a pixel of the mark, sit on it exactly: a globe that fills the stage
   // has to be centred on it, not a third of a pixel off for ever.
-  if (Math.abs(SKY_PAN.x - target[0]) * radius < 1) SKY_PAN.x = target[0];
-  if (Math.abs(SKY_PAN.y - target[1]) * radius < 1) SKY_PAN.y = target[1];
+  if (Math.abs(settled.x - target[0]) * radius < 1) settled.x = target[0];
+  if (Math.abs(settled.y - target[1]) * radius < 1) settled.y = target[1];
+  return settled;
 }
 
 // With no pointer to aim by — the corner buttons, the keyboard — a zoom still
@@ -11699,9 +11703,9 @@ function skySettleCamera(radius, zoom) {
 // between Mars and the exoplanet. Aim at the nearest world instead, counting a
 // large one as nearer than a pebble at the same distance, so zooming in always
 // arrives somewhere rather than magnifying the dark.
-function skyZoomAnchor(radius, stageX, stageY) {
-  const [px, py] = skyBodyPos(skyNearestWorld());
-  return [stageX + (px - SKY_PAN.x) * radius, stageY + (py - SKY_PAN.y) * radius];
+function skyZoomAnchor(radius, stageX, stageY, pan = SKY_PAN) {
+  const [px, py] = skyBodyPos(skyNearestWorld(pan));
+  return [stageX + (px - pan.x) * radius, stageY + (py - pan.y) * radius];
 }
 
 // A drag out here means whatever the camera is looking at. Over a world it
@@ -11709,23 +11713,54 @@ function skyZoomAnchor(radius, stageX, stageY) {
 // on Mars — and out in the space view, where no world fills the stage, it moves
 // the camera through the system instead. The Earth is the one case this hands
 // back: it is steered through `cam.x` and `cam.y` because units stand on it.
-function skyDragApply(drag, dx, dy) {
+function skyDragApply(drag, dx, dy, now = performance.now()) {
   if (!planetMap()) return false;
-  const focus = skyFocusBody();
-  if (focus && focus.body.id === "earth") return false;
-  if (focus) {
-    const view = skyView(focus.body.id);
-    if (!drag.skyTurn) drag.skyTurn = {longitude:view.longitude, latitude:view.latitude};
+  // Decide what was grabbed once. Without this capture, a space pan that
+  // crossed a large world changed into a globe turn halfway through the same
+  // gesture, while a world dragged off centre abruptly changed back to a pan.
+  if (!drag.skyMode) {
+    const focus = skyFocusBody();
+    if (focus) {
+      const view = skyView(focus.body.id);
+      drag.skyMode = {kind:focus.body.id === "earth" ? "earth" : "turn",
+                      bodyId:focus.body.id, drawn:focus.drawn,
+                      longitude:view.longitude, latitude:view.latitude,
+                      lastLongitude:view.longitude, lastLatitude:view.latitude,
+                      vlongitude:0, vlatitude:0};
+    } else {
+      drag.skyMode = {kind:"pan", x:SKY_PAN.x, y:SKY_PAN.y,
+                      lastX:SKY_PAN.x, lastY:SKY_PAN.y, vx:0, vy:0};
+    }
+  }
+  const mode = drag.skyMode;
+  if (mode.kind === "earth") return false;
+  const dt = Math.max(1, now - (drag.lastT || now - 16));
+  if (mode.kind === "turn") {
+    const view = skyView(mode.bodyId);
     // A pixel at the middle of a ball of this size is one over its radius in
     // radians, so the ground keeps up with the pointer instead of sliding.
-    const turn = 1 / Math.max(12, focus.drawn);
-    view.longitude = drag.skyTurn.longitude - dx * turn;
-    view.latitude = Math.max(-1.45, Math.min(1.45, drag.skyTurn.latitude + dy * turn));
+    const turn = 1 / Math.max(12, mode.drawn);
+    view.longitude = mode.longitude - dx * turn;
+    view.latitude = Math.max(-1.45, Math.min(1.45, mode.latitude + dy * turn));
+    const dl = Math.atan2(Math.sin(view.longitude - mode.lastLongitude),
+                          Math.cos(view.longitude - mode.lastLongitude)) / dt;
+    const da = (view.latitude - mode.lastLatitude) / dt;
+    mode.vlongitude = mode.vlongitude * .55 + dl * .45;
+    mode.vlatitude = mode.vlatitude * .55 + da * .45;
+    mode.lastLongitude = view.longitude; mode.lastLatitude = view.latitude;
+    drag.skyMotion = {kind:"turn", bodyId:mode.bodyId,
+                      vlongitude:mode.vlongitude, vlatitude:mode.vlatitude};
+    drag.lastT = now;
     return true;
   }
   const radius = Math.max(.001, planetEarthRadius());
-  if (!drag.skyPan) drag.skyPan = {x:SKY_PAN.x, y:SKY_PAN.y};
-  SKY_PAN = {x:drag.skyPan.x - dx / radius, y:drag.skyPan.y - dy / radius};
+  SKY_PAN = {x:mode.x - dx / radius, y:mode.y - dy / radius};
+  const vx = (SKY_PAN.x - mode.lastX) / dt, vy = (SKY_PAN.y - mode.lastY) / dt;
+  mode.vx = mode.vx * .55 + vx * .45;
+  mode.vy = mode.vy * .55 + vy * .45;
+  mode.lastX = SKY_PAN.x; mode.lastY = SKY_PAN.y;
+  drag.skyMotion = {kind:"pan", vx:mode.vx, vy:mode.vy};
+  drag.lastT = now;
   return true;
 }
 // Every HUD widget the sky has to stay clear of, measured where it actually
@@ -11802,11 +11837,11 @@ function planetMinScale() {
 }
 // The world the camera is heading for, by the same reckoning the buttons aim
 // by: nearest, with a large world counting as nearer than a pebble beside it.
-function skyNearestWorld() {
+function skyNearestWorld(pan = SKY_PAN) {
   let best = null;
   for (const body of skyKnownWorlds()) {
     const [px, py] = skyBodyPos(body);
-    const away = Math.hypot(px - SKY_PAN.x, py - SKY_PAN.y) / (body.size + 2);
+    const away = Math.hypot(px - pan.x, py - pan.y) / (body.size + 2);
     if (!best || away < best.away) best = {away, body};
   }
   return best ? best.body : SKY_EARTH;
@@ -11816,8 +11851,8 @@ function skyNearestWorld() {
 // it. The others are things to look at: nothing lives under a Martian hexagon,
 // so the zoom stops with that world filling the frame rather than carrying on
 // until the camera is inside one ocean tile of somebody else's planet.
-function planetMaxScale() {
-  const body = skyNearestWorld();
+function planetMaxScale(pan = SKY_PAN) {
+  const body = skyNearestWorld(pan);
   if (body.id === "earth") return 3.2;
   // Past the flat map's own ceiling where it has to be: the Moon is a quarter
   // of the Earth, so filling the frame with it costs four times the Earth's
@@ -11830,7 +11865,10 @@ function planetMaxScale() {
 // proved round cannot be zoomed out of by any other route: an opening fit, a
 // flight to a city, a pinch, or a director's shot.
 function planetScaleClamp(scale) {
-  return Math.max(planetMinScale(), Math.min(planetMaxScale(), scale));
+  return planetScaleClampAt(scale, SKY_PAN);
+}
+function planetScaleClampAt(scale, pan) {
+  return Math.max(planetMinScale(), Math.min(planetMaxScale(pan), scale));
 }
 // How much of the picture is space rather than surface: 0 while the globe still
 // fills the stage, 1 once it is a marble among others.
@@ -18085,7 +18123,7 @@ function clampCameraY(y, scale = cam.scale) {
   return bounds ? Math.max(bounds.min, Math.min(bounds.max, y)) : y;
 }
 function clearCameraInertia() {
-  cameraInertia = {vx:0, vy:0, vrot:0, vtilt:0, spin:null};
+  cameraInertia = stoppedCameraInertia();
 }
 function updateCameraFollowChip() {
   const chip = document.getElementById("cinema-follow");
@@ -18261,38 +18299,52 @@ function nudgeCamera(screenX, screenY) {
   const dx = COSR * vx + SINR * vy, dy = -SINR * vx + COSR * vy;
   cameraFlight = {x:cam.x + dx, y:clampCameraY(cam.y + dy), scale:cam.scale};
 }
-function zoomAt(f, sx, sy) {
+function zoomAt(f, sx, sy, skyAnchor = null) {
   if (planetMap()) {
-    const base = cameraZoom?.scale || cam.scale;
-    cameraFlight = null; cameraZoom = null; clearCameraInertia();
+    const pending = cameraZoom?.kind === "planet" ? cameraZoom : null;
+    const base = pending?.scale || cam.scale;
+    const basePan = pending?.pan || SKY_PAN;
+    cameraFlight = null; clearCameraInertia();
     const [stageX, stageY] = planetStageCenter();
-    const before = planetEarthRadius(cam.scale);
+    const before = planetEarthRadius(base);
     // A chart has no system to travel through. Everything below is about
     // holding one body still under the pointer so the zoom walks toward it,
     // and a people who have not proved their world round have exactly one
     // sheet and nowhere to go: it stays under the middle of the stage.
     if (!knowsGlobe()) {
-      skyReturnHome();
-      cam.scale = planetScaleClamp(base * f);
-      draw(); drawMini();
+      const scale = planetScaleClampAt(base * f, {x:0, y:0});
+      const target = {kind:"planet", scale, pan:{x:0, y:0}};
+      if (REDUCED_MOTION_QUERY.matches) {
+        cameraZoom = null; cam.scale = scale; skyReturnHome();
+        draw(); drawMini();
+      } else cameraZoom = target;
       return;
     }
     if (sx === undefined)
-      [sx, sy] = f > 1 ? skyZoomAnchor(before, stageX, stageY) : [stageX, stageY];
+      [sx, sy] = f > 1 ? skyZoomAnchor(before, stageX, stageY, basePan)
+                       : [stageX, stageY];
     // Which point of the system the pointer is over, in Earth radii from the
     // Earth. Holding that point still across the step is what makes scrolling
     // in over Mars a way of *going* to Mars: aim at a body and the zoom walks
     // toward it, aim at empty sky and the zoom stays where you are looking.
-    const pointerX = SKY_PAN.x + (sx - stageX) / before;
-    const pointerY = SKY_PAN.y + (sy - stageY) / before;
+    const pointerX = skyAnchor?.x ?? basePan.x + (sx - stageX) / before;
+    const pointerY = skyAnchor?.y ?? basePan.y + (sy - stageY) / before;
     // A globe's zoom-out does not stop at the globe. It carries on until the
     // rest of the system is in frame, which is a fixed apparent size for the
     // Earth rather than a fixed number, because a bigger world starts bigger.
-    cam.scale = planetScaleClamp(base * f);
-    const after = planetEarthRadius(cam.scale);
-    SKY_PAN = {x:pointerX - (sx - stageX) / after, y:pointerY - (sy - stageY) / after};
-    skySettleCamera(after, f);
-    draw(); drawMini();
+    const scale = planetScaleClampAt(base * f, basePan);
+    const after = planetEarthRadius(scale);
+    const anchored = {x:pointerX - (sx - stageX) / after,
+                      y:pointerY - (sy - stageY) / after};
+    // A two-finger translation with no scale change is a deliberate pan, not
+    // a request to recenter the nearest world. Once the pinch is zooming, the
+    // same gentle body capture as the wheel keeps the approach intentional.
+    const settling = !skyAnchor || Math.abs(Math.log(Math.max(1e-6, f))) > .003;
+    const pan = settling ? skySettledPan(anchored, after, f) : anchored;
+    if (REDUCED_MOTION_QUERY.matches) {
+      cameraZoom = null; cam.scale = scale; SKY_PAN = pan;
+      draw(); drawMini();
+    } else cameraZoom = {kind:"planet", scale, pan};
     return;
   }
   if (sx === undefined) { sx = area.clientWidth / 2; sy = area.clientHeight / 2; }
@@ -18323,12 +18375,31 @@ function advanceUserCameraMotion(now = performance.now()) {
   }
   if (cameraZoom) {
     const ease = 1 - Math.pow(.012, dt / 1000);
-    const nextScale = cam.scale + (cameraZoom.scale - cam.scale) * ease;
-    applyCameraAnchor(cameraZoom.wx, cameraZoom.wy, cameraZoom.sx, cameraZoom.sy, nextScale);
-    active = true;
-    if (Math.abs(cameraZoom.scale - cam.scale) < .001) {
-      applyCameraAnchor(cameraZoom.wx, cameraZoom.wy, cameraZoom.sx, cameraZoom.sy, cameraZoom.scale);
-      cameraZoom = null;
+    if (cameraZoom.kind === "planet") {
+      // Scale is multiplicative, so interpolate it logarithmically: travelling
+      // from a tile to the full system keeps one visual pace instead of racing
+      // through the small worlds and crawling over the last large one. Pan and
+      // scale share the same ease, which keeps the chosen world on one path.
+      cam.scale *= Math.exp(Math.log(cameraZoom.scale / Math.max(1e-6, cam.scale)) * ease);
+      SKY_PAN = {x:SKY_PAN.x + (cameraZoom.pan.x - SKY_PAN.x) * ease,
+                 y:SKY_PAN.y + (cameraZoom.pan.y - SKY_PAN.y) * ease};
+      const scaleLeft = Math.abs(Math.log(cameraZoom.scale / Math.max(1e-6, cam.scale)));
+      const panLeft = Math.hypot(cameraZoom.pan.x - SKY_PAN.x,
+                                 cameraZoom.pan.y - SKY_PAN.y) * planetEarthRadius();
+      active = true;
+      if (scaleLeft < .0008 && panLeft < .25) {
+        cam.scale = cameraZoom.scale; SKY_PAN = {...cameraZoom.pan};
+        cameraZoom = null;
+      }
+    } else {
+      const nextScale = cam.scale + (cameraZoom.scale - cam.scale) * ease;
+      applyCameraAnchor(cameraZoom.wx, cameraZoom.wy, cameraZoom.sx, cameraZoom.sy, nextScale);
+      active = true;
+      if (Math.abs(cameraZoom.scale - cam.scale) < .001) {
+        applyCameraAnchor(cameraZoom.wx, cameraZoom.wy,
+                          cameraZoom.sx, cameraZoom.sy, cameraZoom.scale);
+        cameraZoom = null;
+      }
     }
   } else if (cameraFlight) {
     const ease = 1 - Math.pow(.018, dt / 1000);
@@ -18358,13 +18429,26 @@ function advanceUserCameraMotion(now = performance.now()) {
   if (!dragState && !cameraFlight && !cameraZoom) {
     // A globe glides as a turn about a fixed axis rather than as a drift in
     // columns and rows, so it coasts over a pole the same way the drag did.
-    const spin = cameraInertia.spin;
+    const spin = cameraInertia.spin, skyPan = cameraInertia.skyPan;
+    const skyTurn = cameraInertia.skyTurn;
     const speed = Math.abs(cameraInertia.vx) + Math.abs(cameraInertia.vy) +
       Math.abs(cameraInertia.vrot) * 80 + Math.abs(cameraInertia.vtilt) * 80 +
-      (spin ? Math.abs(spin.rate) * 80 : 0);
+      (spin ? Math.abs(spin.rate) * 80 : 0) +
+      (skyPan ? Math.hypot(skyPan.vx, skyPan.vy) * planetEarthRadius() : 0) +
+      (skyTurn ? Math.hypot(skyTurn.vlongitude, skyTurn.vlatitude) * 80 : 0);
     if (speed > .002) {
       const basis = spin && planetBasisNow();
       if (basis) applyPlanetBasis(planetSpin(basis, spin.axis, spin.rate * dt));
+      if (skyPan) {
+        SKY_PAN.x += skyPan.vx * dt;
+        SKY_PAN.y += skyPan.vy * dt;
+      }
+      if (skyTurn) {
+        const view = skyView(skyTurn.bodyId);
+        view.longitude += skyTurn.vlongitude * dt;
+        view.latitude = Math.max(-1.45, Math.min(1.45,
+          view.latitude + skyTurn.vlatitude * dt));
+      }
       cam.x += cameraInertia.vx * dt; cam.y += cameraInertia.vy * dt;
       if (Math.abs(cameraInertia.vrot) > .00001) setRot(cam.rot + cameraInertia.vrot * dt);
       if (Math.abs(cameraInertia.vtilt) > .00001) setTilt(cinematicYS + cameraInertia.vtilt * dt);
@@ -18373,6 +18457,10 @@ function advanceUserCameraMotion(now = performance.now()) {
       cameraInertia.vx *= decay; cameraInertia.vy *= decay;
       cameraInertia.vrot *= decay; cameraInertia.vtilt *= decay;
       if (spin) spin.rate *= decay;
+      if (skyPan) { skyPan.vx *= decay; skyPan.vy *= decay; }
+      if (skyTurn) {
+        skyTurn.vlongitude *= decay; skyTurn.vlatitude *= decay;
+      }
       active = true;
     } else clearCameraInertia();
   }
@@ -18970,15 +19058,24 @@ function endMapPointer(ev) {
     dragState = null;
     if (released && dragMoved && performance.now() - released.lastT < 90 &&
         !REDUCED_MOTION_QUERY.matches) {
-      // `turned` rather than `basis`: out in the system the sky took the drag,
-      // and the globe it left alone must not glide off on its own afterwards.
+      // Each captured surface keeps the motion it actually received: Earth
+      // spins about its final 3D axis, another world keeps turning, and an
+      // empty-sky drag coasts the camera through the system.
       cameraInertia = released.rotate
-        ? {vx:0, vy:0, vrot:released.vrot * .32, vtilt:released.vtilt * .25}
+        ? stoppedCameraInertia({vrot:released.vrot * .32,
+                                vtilt:released.vtilt * .25})
+        : released.skyMotion?.kind === "pan"
+        ? stoppedCameraInertia({skyPan:{vx:released.skyMotion.vx,
+                                        vy:released.skyMotion.vy}})
+        : released.skyMotion?.kind === "turn"
+        ? stoppedCameraInertia({skyTurn:{bodyId:released.skyMotion.bodyId,
+                                         vlongitude:released.skyMotion.vlongitude,
+                                         vlatitude:released.skyMotion.vlatitude}})
         : released.turned
-        ? {vx:0, vy:0, vrot:0, vtilt:0, spin:planetGlide(released.vpx, released.vpy)}
+        ? stoppedCameraInertia({spin:planetGlide(released.vpx, released.vpy)})
         : released.basis
-        ? {vx:0, vy:0, vrot:0, vtilt:0, spin:null}
-        : {vx:released.vx, vy:released.vy, vrot:0, vtilt:0};
+        ? stoppedCameraInertia()
+        : stoppedCameraInertia({vx:released.vx, vy:released.vy});
     }
     return;
   }
@@ -19020,9 +19117,16 @@ function beginTouchTransform() {
   const my = (points[0].y + points[1].y) / 2 - rect.top;
   const dx = points[1].x - points[0].x, dy = points[1].y - points[0].y;
   const [wx, wy] = screenToWorld(mx, my);
+  let skyAnchor = null;
+  if (planetMap()) {
+    const [stageX, stageY] = planetStageCenter();
+    const radius = Math.max(.001, planetEarthRadius());
+    skyAnchor = {x:SKY_PAN.x + (mx - stageX) / radius,
+                 y:SKY_PAN.y + (my - stageY) / radius};
+  }
   touchGesture = {mode:"transform", mx, my, wx, wy, distance:Math.hypot(dx, dy),
                   angle:Math.atan2(dy, dx), scale:cam.scale, rot:cam.rot,
-                  basis:planetBasisNow(), controlled:false};
+                  basis:planetBasisNow(), skyAnchor, controlled:false};
   clearCameraInertia(); cameraFlight = null; cameraZoom = null;
 }
 cv.addEventListener("pointerdown", ev => {
@@ -19065,7 +19169,8 @@ cv.addEventListener("pointermove", ev => {
         // A globe has no world plane to anchor a pinch against, and its zoom
         // runs far below the flat map's floor, so it goes through the same path
         // the wheel does and reaches the rest of the system the same way.
-        zoomAt(want / Math.max(1e-4, cam.scale), mx, my);
+        const base = cameraZoom?.kind === "planet" ? cameraZoom.scale : cam.scale;
+        zoomAt(want / Math.max(1e-4, base), mx, my, touchGesture.skyAnchor);
       } else {
         applyCameraAnchor(touchGesture.wx, touchGesture.wy, mx, my,
                           Math.max(.25, Math.min(3.2, want)));
@@ -19110,11 +19215,18 @@ function endMapTouch(ev) {
   mapTouches.delete(ev.pointerId);
   if (!mapTouches.size) {
     if (released?.mode === "pan" && released.controlled && !REDUCED_MOTION_QUERY.matches)
-      cameraInertia = released.turned
-        ? {vx:0, vy:0, vrot:0, vtilt:0, spin:planetGlide(released.vpx, released.vpy)}
+      cameraInertia = released.skyMotion?.kind === "pan"
+        ? stoppedCameraInertia({skyPan:{vx:released.skyMotion.vx,
+                                        vy:released.skyMotion.vy}})
+        : released.skyMotion?.kind === "turn"
+        ? stoppedCameraInertia({skyTurn:{bodyId:released.skyMotion.bodyId,
+                                         vlongitude:released.skyMotion.vlongitude,
+                                         vlatitude:released.skyMotion.vlatitude}})
+        : released.turned
+        ? stoppedCameraInertia({spin:planetGlide(released.vpx, released.vpy)})
         : released.basis
-        ? {vx:0, vy:0, vrot:0, vtilt:0, spin:null}
-        : {vx:released.vx, vy:released.vy, vrot:0, vtilt:0};
+        ? stoppedCameraInertia()
+        : stoppedCameraInertia({vx:released.vx, vy:released.vy});
     touchGesture = null;
     setTimeout(() => { if (!mapTouches.size) dragMoved = false; }, 60);
   } else if (mapTouches.size === 1) {
