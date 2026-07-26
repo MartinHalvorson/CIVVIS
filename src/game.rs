@@ -3890,6 +3890,98 @@ mod belief_runtime_tests {
         position
     }
 
+    #[test]
+    fn every_district_pays_the_route_yields_its_shipped_row_names() {
+        // District_TradeRouteYields, all 44 rows. The City Center's own row is
+        // the base every route starts from; each further district adds its own.
+        // Unique districts carry their own rows in the table and every one of
+        // them repeats its parent's numbers, so testing the families covers
+        // them once district_family has resolved the replacement.
+        let (mut game, cities) = game_with_capitals(24_907);
+        let dest = cities[1];
+        let base_domestic = game.route_yields(dest, true);
+        let base_international = game.route_yields(dest, false);
+        assert_eq!((base_domestic.food, base_domestic.production), (1.0, 1.0));
+        assert_eq!(base_international.gold, 3.0);
+
+        // (district, domestic food/production, international by yield)
+        let rows: &[(&str, f64, f64, f64, f64, f64, f64)] = &[
+            // district        dom food  dom prod  intl gold  sci  faith  culture
+            ("campus", 1.0, 0.0, 0.0, 1.0, 0.0, 0.0),
+            ("holy_site", 1.0, 0.0, 0.0, 0.0, 1.0, 0.0),
+            ("theater_square", 1.0, 0.0, 0.0, 0.0, 0.0, 1.0),
+            ("commercial_hub", 0.0, 1.0, 3.0, 0.0, 0.0, 0.0),
+            ("harbor", 0.0, 1.0, 3.0, 0.0, 0.0, 0.0),
+            ("government_plaza", 1.0, 1.0, 2.0, 0.0, 0.0, 0.0),
+            ("diplomatic_quarter", 1.0, 1.0, 0.0, 0.0, 0.0, 1.0),
+        ];
+        for &(district, food, production, gold, science, faith, culture) in rows {
+            let mut probe = game.clone();
+            place_district(&mut probe, dest, district);
+            let domestic = probe.route_yields(dest, true);
+            assert_eq!(domestic.food - base_domestic.food, food, "{district} domestic Food");
+            assert_eq!(
+                domestic.production - base_domestic.production,
+                production,
+                "{district} domestic Production"
+            );
+            let abroad = probe.route_yields(dest, false);
+            assert_eq!(abroad.gold - base_international.gold, gold, "{district} Gold");
+            assert_eq!(abroad.science, science, "{district} Science");
+            assert_eq!(abroad.faith, faith, "{district} Faith");
+            assert_eq!(abroad.culture, culture, "{district} Culture");
+        }
+
+        // Encampment, Industrial Zone and Entertainment Complex are the three
+        // that pay the SAME yield to both kinds of route rather than splitting
+        // a domestic yield from an international one.
+        for (district, food, production) in [
+            ("encampment", 0.0, 1.0),
+            ("industrial_zone", 0.0, 1.0),
+            ("entertainment_complex", 1.0, 0.0),
+        ] {
+            let mut probe = game.clone();
+            place_district(&mut probe, dest, district);
+            for domestic in [true, false] {
+                let base = if domestic {
+                    &base_domestic
+                } else {
+                    &base_international
+                };
+                let got = probe.route_yields(dest, domestic);
+                assert_eq!(got.food - base.food, food, "{district} Food domestic={domestic}");
+                assert_eq!(
+                    got.production - base.production,
+                    production,
+                    "{district} Production domestic={domestic}"
+                );
+            }
+        }
+
+        // A unique district is worth exactly what it replaces.
+        for (unique, parent) in [
+            ("acropolis", "theater_square"),
+            ("cothon", "harbor"),
+            ("suguba", "commercial_hub"),
+            ("observatory", "campus"),
+            ("lavra", "holy_site"),
+            ("hansa", "industrial_zone"),
+            ("ikanda", "encampment"),
+            ("hippodrome", "entertainment_complex"),
+        ] {
+            let (mut a, mut b) = (game.clone(), game.clone());
+            place_district(&mut a, dest, unique);
+            place_district(&mut b, dest, parent);
+            for domestic in [true, false] {
+                assert_eq!(
+                    a.route_yields(dest, domestic),
+                    b.route_yields(dest, domestic),
+                    "{unique} should pay what {parent} pays"
+                );
+            }
+        }
+    }
+
     fn establish_religion(game: &mut Game, city: u32, beliefs: &[&str]) -> String {
         let religion = "Test Faith".to_string();
         game.players[0].religion = Some(religion.clone());
@@ -29461,9 +29553,6 @@ impl Game {
         ys.science *= m;
         ys.culture *= m;
         ys.faith *= m;
-        if self.research_alliance_science_bonus(city.owner) {
-            ys.science *= 1.10;
-        }
         if self.grants_city_state_unique_bonus(city.owner, "Geneva")
             && !self.at_war_with_any_civilization(city.owner)
         {
@@ -37406,21 +37495,6 @@ impl Game {
         })
     }
 
-    fn research_alliance_science_bonus(&self, pid: usize) -> bool {
-        let Some(partner) = self.alliance_partner(pid, "research", 3) else {
-            return false;
-        };
-        match (
-            self.players[pid].research.as_deref(),
-            self.players[partner].research.as_deref(),
-        ) {
-            (Some(own), Some(theirs)) if own == theirs => true,
-            (Some(own), _) => self.players[partner].techs.contains(own),
-            (_, Some(theirs)) => self.players[pid].techs.contains(theirs),
-            _ => false,
-        }
-    }
-
     fn religious_alliance_blocks_pressure(&self, city: &City, incoming: &str) -> bool {
         let Some(dominant) = self.city_religion(city) else {
             return false;
@@ -42398,6 +42472,16 @@ impl Game {
                 .player_city_ids(partner)
                 .into_iter()
                 .map(|city| self.city_yields(city).culture)
+                .sum::<f64>()
+                * 0.10;
+        }
+        // ALLIANCE_SCIENCE_SHARING_FROM_ALLY is the Research tier's twin of the
+        // Cultural one above, at the same Level 3 and the same 10 percent.
+        if let Some(partner) = self.alliance_partner(pid, "research", 3) {
+            sci += self
+                .player_city_ids(partner)
+                .into_iter()
+                .map(|city| self.city_yields(city).science)
                 .sum::<f64>()
                 * 0.10;
         }
@@ -54124,15 +54208,37 @@ mod district_mechanics {
         game.process_diplomacy(0);
         assert!(game.players[0].boosted_techs.contains("writing"));
 
-        game.players[0].research = Some("writing".to_string());
-        game.players[1].research = Some("writing".to_string());
+        // ALLIANCE_SCIENCE_SHARING_FROM_ALLY is MODIFIER_ALLIANCE_PLAYERS_
+        // SCIENCE_FROM_ALLY at 10 with NO requirement set -- the exact shape of
+        // the Cultural tier's CULTURE_FROM_ALLY 10 and TOURISM_FROM_ALLY 20. It
+        // is a tenth of what the ALLY makes, unconditionally, not a tenth added
+        // to your own cities and not gated on researching the same technology.
+        let copied = game
+            .player_city_ids(1)
+            .into_iter()
+            .map(|city| game.city_yields(city).science)
+            .sum::<f64>()
+            * 0.10;
+        assert!(copied > 0.0);
+        // Level is re-derived from points every turn, so raise both: the
+        // shipped ALLIANCE_LEVEL_THREE_XP is 960, which is 240 of these.
+        for (holder, partner) in [(0usize, 1usize), (1, 0)] {
+            let alliance = game.players[holder].alliances.get_mut(&partner).unwrap();
+            alliance.level = 3;
+            alliance.points = 240.0;
+        }
         let mut baseline = game.clone();
         baseline.players[0].alliances.clear();
         baseline.players[1].alliances.clear();
-        let base_science = baseline.city_yields(city).science;
-        game.players[0].alliances.get_mut(&1).unwrap().level = 3;
-        game.players[1].alliances.get_mut(&0).unwrap().level = 3;
-        assert!((game.city_yields(city).science - base_science * 1.10).abs() < 1e-9);
+
+        // The ally's Science does not touch the allied player's own cities.
+        assert_eq!(game.city_yields(city).science, baseline.city_yields(city).science);
+
+        game.begin_turn(0);
+        baseline.begin_turn(0);
+        let gained = game.players[0].research_progress + game.players[0].research_overflow;
+        let without = baseline.players[0].research_progress + baseline.players[0].research_overflow;
+        assert!((gained - without - copied).abs() < 1e-9, "{gained} - {without} != {copied}");
     }
 
     #[test]
