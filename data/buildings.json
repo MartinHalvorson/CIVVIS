@@ -45,7 +45,7 @@
     },
     "effects": {
       "requires_river_city": 1,
-      "farmable_bonus_resource_food": 1
+      "cereal_resource_food": 1
     }
   },
   "walls": {
@@ -1185,7 +1185,8 @@
     "maintenance": 2,
     "regional_range": 9,
     "effects": {
-      "coast_lake_feature_science": 1,
+      "reef_science": 1,
+      "coast_resource_science": 1,
       "rock_concert_tourism": 500
     }
   },
