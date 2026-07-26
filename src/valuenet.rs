@@ -22,8 +22,32 @@ impl ValueNet {
             .filter(ValueNet::valid)
     }
 
+    /// Input width this net expects. Feeding it any other width is a
+    /// programming error, not a data condition, so callers resolve it at
+    /// load time with [`ValueNet::load_width`] rather than at eval time.
+    pub fn input_width(&self) -> usize {
+        self.sizes[0]
+    }
+
+    /// Load only if the net expects `width` inputs.
+    ///
+    /// The 25-wide `evolve::features` and the 34-wide
+    /// `decision_features::decision_features` are both trainable through
+    /// the same pipeline, so a directory can hold either. An agent that
+    /// silently evaluated the wrong one would produce numbers rather than
+    /// an error, which is the failure mode this codebase has spent a lot
+    /// of effort removing.
+    pub fn load_width(dir: &str, width: usize) -> Option<ValueNet> {
+        Self::load(dir).filter(|net| net.input_width() == width)
+    }
+
     fn valid(&self) -> bool {
-        if self.sizes != [25, 64, 32, 1]
+        // The hidden shape stays pinned so the Rust evaluator and the
+        // Python trainer cannot disagree about it; only the input width is
+        // free, because that is what a richer feature set changes.
+        if self.sizes.len() != 4
+            || self.sizes[0] == 0
+            || self.sizes[1..] != [64, 32, 1]
             || self.weights.len() + 1 != self.sizes.len()
             || self.biases.len() != self.weights.len()
         {
@@ -32,16 +56,27 @@ impl ValueNet {
         self.weights.iter().enumerate().all(|(layer, weights)| {
             weights.len() == self.sizes[layer]
                 && weights.iter().all(|row| {
-                    row.len() == self.sizes[layer + 1]
-                        && row.iter().all(|value| value.is_finite())
+                    row.len() == self.sizes[layer + 1] && row.iter().all(|value| value.is_finite())
                 })
                 && self.biases[layer].len() == self.sizes[layer + 1]
                 && self.biases[layer].iter().all(|value| value.is_finite())
         })
     }
 
-    /// Win probability for a position (features from `evolve::features`).
+    /// Win probability for a position.
+    ///
+    /// # Panics
+    /// If `x` is not [`ValueNet::input_width`] long. Use
+    /// [`ValueNet::load_width`] so a mismatch is caught when the artifact
+    /// is resolved instead of mid-turn.
     pub fn eval(&self, x: &[f32]) -> f64 {
+        assert_eq!(
+            x.len(),
+            self.input_width(),
+            "value net expects {} features, got {}",
+            self.input_width(),
+            x.len()
+        );
         let mut a: Vec<f64> = x.iter().map(|v| *v as f64).collect();
         let last = self.weights.len() - 1;
         for l in 0..=last {

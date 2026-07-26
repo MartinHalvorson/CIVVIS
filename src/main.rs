@@ -828,6 +828,7 @@ fn main() {
                 scalar_only: args.iter().any(|arg| arg == "--scalar-only"),
                 counterfactual,
                 counterfactual_roots: arg(&args, "--counterfactual-roots", 0).max(0) as usize,
+                decision_features: args.iter().any(|arg| arg == "--decision-features"),
                 jobs: jobs_arg(&args),
             };
             match civvis::selfplay::export(&cfg) {
