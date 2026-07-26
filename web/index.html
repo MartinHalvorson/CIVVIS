@@ -40,13 +40,10 @@
   }
   button, select, input { font: inherit; }
   button { -webkit-tap-highlight-color: transparent; }
-  /* Two instruments, two edges. The standings are the map's masthead and run
-     across the whole top; the victory tracker and the world minimap share the
-     right-hand rail, the tracker from the top corner down to the map in the
-     bottom corner. These three numbers are the seams: the rail's width, which
-     is also where the masthead stops, and the two panel heights that fix where
-     the tracker starts and stops. Dragging a panel writes its own measurement
-     inline here, so both sides of a seam always agree. */
+  /* Two instruments, two edges. The standings grow across the map's masthead
+     as players appear; the victory tracker and the world minimap share the
+     right-hand rail. These numbers are their seams and caps. Dragging a panel
+     writes its own measurement inline here, so a custom layout remains exact. */
   #maparea {
     flex: 1; min-width: 0; position: relative; overflow: hidden; background: #07110f;
     --hud-rail-width: clamp(258px, 20vw, 320px);
@@ -60,7 +57,10 @@
        asks for, so a table of twelve cannot swallow the world underneath it.
        Rows past it scroll inside the ribbon, which is what the row locks are
        for. */
-    --player-hud-max-height: 34vh;
+    /* Eight rows are the readable masthead before it becomes a table to
+       browse. A twelve-player exhibition therefore scrolls even on a tall
+       display, while a smaller game still pays only for the rows it has. */
+    --player-hud-max-height: min(34vh, 244px);
   }
   #maparea::before {
     content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none;
@@ -445,6 +445,12 @@
   .victory-list { display: flex; flex-direction: column; gap: 3px; }
   .victory-entry { min-width: 0; }
   .victory-entry[hidden] { display: none; }
+  /* The civilization whose perspective is on screen remains identifiable
+     when it is appended below the three leaders for this path. */
+  .victory-entry.focus-player .victory-civ { color: var(--gold-bright); }
+  .victory-entry.focus-player .victory-civ-dot {
+    box-shadow: 0 0 0 1px var(--gold-bright), 0 0 6px color-mix(in srgb, var(--civ) 70%, transparent);
+  }
   /* The rows are already printed in rank order, so a leading rank number
      spent 13px per line restating the order. In a narrower victory rail that width
      is worth more as civilization name, which is what actually truncates. */
@@ -916,10 +922,18 @@
      that merely happened stays in the event log. Blockers are chips too —
      they are the ones that also gate the End Turn button. */
   #notify {
-    position: absolute; z-index: 8; right: 14px; top: 196px; bottom: 200px;
+    position: absolute; z-index: 8; top: 196px; bottom: 200px;
+    /* Inside the rail, not on top of it. The victory tracker took the right
+       edge of the map, and these chips are drawn above it, so at the edge they
+       covered its whole values column — tourism, civilizations converted,
+       diplomatic points, score. This is the offset the player standings
+       already use to clear the same rail, and both fall back to the edge when
+       the viewer hides the tracker in Display settings. */
+    right: calc(min(var(--hud-rail-width), var(--hud-rail-share)) + 20px);
     display: none; flex-direction: column; align-items: flex-end; gap: 6px;
     overflow: hidden auto; scrollbar-width: none; pointer-events: none;
   }
+  body.overlay-victory-hidden #notify { right: 14px; }
   #notify::-webkit-scrollbar { display: none; }
   #notify.on { display: flex; }
   .notice {
@@ -1684,17 +1698,17 @@
     body.cinema-mode #cinema-story { left: 18px; width: calc(100% - 36px); }
   }
 
-  /* The standings are the map's masthead: they run across the whole top edge,
-     stopping where the victory rail begins, with the turn plate as the left
-     cell and the table filling the rest. Every civilization keeps one
-     full-width row of the same height; the requested height is calculated from
-     the player count in drawPlayerHud(), then capped so a large table does not
-     swallow the map underneath it. A row is one line here rather than two —
-     who this is, then their ten values, side by side. That is what the width
-     is for; stacking them would spend height the map wants back. */
+  /* The standings are the map's masthead, with the turn plate as the left cell
+     and the table filling the rest. Both preferred dimensions come from the
+     visible player count: a one-row human game stays consolidated, then the
+     panel grows toward the victory rail as more civilizations appear. Every
+     civilization keeps one fixed-height row; after eight rows the table
+     scrolls instead of swallowing the map. */
   #playerhud {
     position: absolute; z-index: 7; pointer-events: auto;
-    top: 10px; left: 12px; right: calc(min(var(--hud-rail-width), var(--hud-rail-share)) + 20px); width: auto;
+    top: 10px; left: 12px; right: auto;
+    width: min(var(--player-hud-width, 100%),
+      calc(100% - min(var(--hud-rail-width), var(--hud-rail-share)) - 32px));
     height: min(var(--player-hud-height, 200px), var(--player-hud-max-height));
     --hud-medallion-column: 21px; --hud-identity-column: minmax(300px, 42%); --hud-column-gap: 6px;
     --hud-lock-column: 13px; --hud-row-height: 23px; --hud-row-gap: 2px;
@@ -1708,7 +1722,9 @@
     backdrop-filter: blur(16px) saturate(130%);
   }
   /* Hiding the victory rail hands its column back to the masthead. */
-  body.overlay-victory-hidden #playerhud { right: 12px; }
+  body.overlay-victory-hidden #playerhud {
+    right: auto; width: min(var(--player-hud-width, 100%), calc(100% - 24px));
+  }
   /* Across the masthead the plate stacks in its own left cell, which is the one
      place in the panel where height is cheaper than width. */
   #playerhud > .victory-turn { grid-column: 1; grid-row: 1; }
@@ -1847,18 +1863,17 @@
   }
   #playerhud .diplomacy-card.expanded { border-radius: 7px; }
 
-  /* Victory progress owns the right rail from the top corner down, stopping
-     above the world minimap so the corner instrument is never buried under it.
-     The masthead runs beside it rather than above it, so the tracker gets the
-     whole height of the map minus one map: six races read one under the other,
-     each keeping the rail's full width for its civilization names, and the
-     rail's height rather than a 116px column decides how many contenders each
-     of them shows. The bottom seam is the minimap's own height, which is what
-     lets dragging the map taller push the tracker up without overlapping. */
+  /* Victory progress starts in the right corner and grows down with the rows
+     it actually shows, never past the world minimap. Six races read one under
+     the other, each keeping the rail's full width for civilization names. If
+     the required top-three-plus-viewer rows reach the minimap seam, the rail
+     scrolls instead of overlapping it. */
   #victoryhud {
     position: absolute; z-index: 7; right: 12px; left: auto;
-    top: 10px; bottom: calc(var(--minimap-height) + 22px);
-    width: min(var(--hud-rail-width), var(--hud-rail-share)); height: auto;
+    top: 10px; bottom: auto;
+    width: min(var(--hud-rail-width), var(--hud-rail-share));
+    height: min(var(--victory-hud-height, 100%),
+      calc(100% - var(--minimap-height) - 32px));
     display: grid; grid-template-columns: minmax(0, 1fr);
     grid-template-rows: 18px minmax(0, 1fr);
     align-items: stretch; gap: 5px; min-width: 0; padding: 5px;
@@ -1867,9 +1882,11 @@
     box-shadow: 0 14px 38px #000a, inset 0 1px #ffffff0a;
     backdrop-filter: blur(16px) saturate(130%); pointer-events: auto;
   }
-  /* Switching the minimap off hands the corner back and the tracker runs to
-     the floor. */
-  body.overlay-minimap-hidden #victoryhud { bottom: 16px; }
+  /* Switching the minimap off raises the tracker's height ceiling to the
+     floor; a compact tracker still keeps only the height its rows need. */
+  body.overlay-minimap-hidden #victoryhud {
+    bottom: auto; height: min(var(--victory-hud-height, 100%), calc(100% - 26px));
+  }
   #victoryhud > .hud-section-heading {
     position: relative; grid-column: 1; grid-row: 1; min-height: 18px;
     justify-content: center; margin: 0 3px; color: #c7d3ce; font-size: 10px;
@@ -5762,8 +5779,11 @@ function adoptTiles(st) {
   map.tiles = tiles;
   return st;
 }
-// Every turn is owed one complete frame, and the server holds a finished turn
-// until an active viewer has been handed it. Only a page that actually paints
+// Martin-requested simulation requirement: every turn is owed at least one
+// complete frame from one snapshot — updated HUD, victory tracker, map,
+// minimap, units, sidebars, controls, and everything else bound to that turn.
+// The server holds a finished turn until an active viewer acknowledges that
+// complete paint. Only a page that actually paints
 // counts as one: the keeper's refresh check and any curl read /state as well,
 // and a reader that draws nothing must not slow the simulation to its own
 // cadence. Saying which turn was last painted is how this page announces
@@ -5783,11 +5803,11 @@ function paintedQuery() {
 }
 // One turn, one frame on the glass.
 //
-// The server holds a finished turn until this page has been handed it, so the
-// exhibition runs at whatever rate this page reads — which quietly made the
-// page's own polling delay the simulation's speed limit. A fixed 100ms between
-// polls is a ceiling of ten turns a second however fast the world could
-// actually be played, and it was costing more than that: measured against the
+// The server holds a finished turn until this page acknowledges painting it,
+// so the exhibition runs at whatever rate this page paints — which quietly
+// made the page's own polling delay the simulation's speed limit. A fixed
+// 100ms between polls is a ceiling of ten turns a second however fast the
+// world could actually be played, and it was costing more than that: measured against the
 // live exhibition a turn took 584ms, of which only 318ms was simulating
 // anything.
 //
@@ -5798,11 +5818,11 @@ function paintedQuery() {
 //
 // So the loop runs on the display's own clock. At most one turn is painted per
 // animation frame, which is what makes each turn a frame somebody can see; the
-// fetch for the next one goes out as soon as this one is off the queue, so the
-// network and the server's next turn overlap this paint instead of following
-// it. Nothing is ever dropped — a state that has arrived is always painted —
-// and the gate upstream will not simulate past the turn this page is holding,
-// so the queue cannot grow behind it.
+// fetch for the next one is the paint acknowledgement: it goes out only after
+// render() has updated the map, HUD, victory tracker, and all other turn-bound
+// surfaces. Nothing is ever dropped — a state that has arrived is always
+// painted — and the gate upstream will not simulate past the turn this page
+// is holding, so the queue cannot grow behind it.
 let specPending = null;  // fetched, not yet drawn
 let specFetching = false;
 function specFetch() {
@@ -5822,9 +5842,9 @@ function specFetch() {
     const fresh = st.seed !== undefined && lastSeed2 !== null && st.seed !== lastSeed2;
     lastSeed2 = st.seed;
     adoptTiles(st);
-    specFetch(); // ask for the next turn before spending this frame drawing
     render(st);
     if (fresh) { sel = null; selCity = null; } // new game
+    specFetch(); // acknowledge this complete frame, then ask for the next turn
   } catch (e) {
     // A patch that could not be applied, or a draw that threw. Give up this
     // page's copy of the world rather than keep painting a wrong one; the next
@@ -6326,7 +6346,9 @@ function render(st, recordChronicle = true) {
   }
   openTurnIfNew();
   drawDiplomacy();
-  // Everything above draws this state, so this turn has now had its frame.
+  // Everything above draws this same snapshot, so this turn has now had its
+  // Martin-required complete frame: updated HUD, victory tracker, map,
+  // minimap, units, sidebars, controls, and every other turn-bound surface.
   // The reload paths return before here on purpose: a page on its way to a
   // successor world painted nothing, and must not claim it did.
   if (st.turn !== undefined && st.seed !== undefined)
@@ -14454,7 +14476,10 @@ function syncVictoryLeaderCapacity(victoryHud = document.getElementById("victory
   const capacity = victoryLeaderCapacity(victoryHud);
   for (const track of tracks) {
     for (const [index, entry] of [...track.querySelectorAll(".victory-entry")].entries())
-      entry.hidden = index >= capacity;
+      // A player looking through their own fog should never disappear merely
+      // because three rivals lead a path. Keep that one row in addition to
+      // the capacity the panel can otherwise show.
+      entry.hidden = index >= capacity && entry.dataset.victoryFocus !== "true";
   }
 }
 
@@ -14508,6 +14533,11 @@ function hudTurnPlate() {
 function playerHudOverview() {
   const contenders = state.players
     .filter(p => p.alive && !p.is_minor && !p.is_barbarian && metPlayer(p));
+  const focusId = SPEC ? state.view_player : state.player;
+  const focusPlayer = Number.isInteger(focusId)
+    ? contenders.find(player => player.id === focusId)
+    : null;
+  let defaultVictoryRows = Math.min(DEFAULT_VICTORY_LEADERS, contenders.length);
   const enabledVictoryTracks = VICTORY_TRACKS
     .filter(track => state.victory_conditions?.[track.id] !== false);
   const victoryTracks = enabledVictoryTracks.map(track => {
@@ -14522,13 +14552,21 @@ function playerHudOverview() {
           || (researchField ? (+bm[researchField] || 0) - (+am[researchField] || 0) : 0)
           || b.score - a.score || a.id - b.id;
       });
+    const focusRank = focusPlayer
+      ? ranked.findIndex(player => player.id === focusPlayer.id)
+      : -1;
+    defaultVictoryRows = Math.max(defaultVictoryRows,
+      Math.min(DEFAULT_VICTORY_LEADERS, ranked.length) + (focusRank >= DEFAULT_VICTORY_LEADERS ? 1 : 0));
     return `<section class="victory-track" style="--track:${track.color}" aria-label="${track.label} victory leaders">` +
       `<div class="victory-heading"><span>${track.icon}</span><b>${track.label}</b></div>` +
       `<div class="victory-subheading${track.id === "score" ? " score" : ""}">${victoryTrackerSubheading(track.id)}</div>` +
       `<div class="victory-list">` + ranked.map((player, index) => {
         const metric = victoryMetric(player, track.id);
         const progress = Math.max(0, Math.min(100, +metric.progress || 0));
-        return `<div class="victory-entry" style="--civ:${pcol(player.id)}" title="#${index + 1} ${player.civ}: ${victoryDescription(track.id, metric)}">` +
+        const isFocus = player.id === focusPlayer?.id;
+        const focusLabel = isFocus ? (SPEC ? "Viewed civilization · " : "Your civilization · ") : "";
+        return `<div class="victory-entry${isFocus ? " focus-player" : ""}" data-victory-focus="${isFocus}" ` +
+          `style="--civ:${pcol(player.id)}" title="${focusLabel}#${index + 1} ${player.civ}: ${victoryDescription(track.id, metric)}">` +
           `<div class="victory-line"><span class="victory-civ-dot"></span>` +
           `<span class="victory-civ">${player.civ}</span><span class="victory-value${track.id === "score" ? " single" : ""}">${victoryTrackerStats(track.id, metric)}</span></div>` +
           victoryMeter(track.id, metric, progress) + `</div>`;
@@ -14546,8 +14584,14 @@ function playerHudOverview() {
   const victoryCount = Math.max(1, enabledVictoryTracks.length);
   // Two floors for two orientations: one band per row down the rail, and one
   // row of columns on a viewport too narrow to have a rail at all.
-  const victoryMinHeight = victoryCount * 66 + Math.max(0, victoryCount - 1) * 2;
+  // One contender needs only a compact band. Three leaders take a taller one,
+  // and a watched player outside them adds exactly one more row. The outer
+  // tracker follows that content until the map/minimap seam caps it.
+  const victoryTrackHeight = Math.max(56, 46 + defaultVictoryRows * 16);
+  const victoryMinHeight = victoryCount * victoryTrackHeight + Math.max(0, victoryCount - 1) * 2;
   const victoryMinWidth = victoryCount * 116 + Math.max(0, victoryCount - 1) * 2;
+  const victoryHudHeight = victoryMinHeight + 35;
+  document.getElementById("maparea").style.setProperty("--victory-hud-height", `${victoryHudHeight}px`);
   const overview =
     `<div class="hud-section-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
     `aria-label="Move victory tracker; use arrow keys or drag" title="Drag to move · arrow keys also move" id="victory-tracker-title">` +
@@ -14647,6 +14691,7 @@ function drawPlayerHud() {
   // reading position so a person can browse an off-screen victory path
   // without the next simulation frame snapping the HUD back to the leader.
   const victoryScroll = victoryHud.querySelector(".hud-rail")?.scrollTop || 0;
+  const playerScroll = hud.querySelector(".diplomacy-ribbon")?.scrollTop || 0;
   const overview = playerHudOverview();
   if (overview !== victoryHudHtml && hudLayoutGesture?.name !== "victory") {
     victoryHudHtml = overview;
@@ -14671,9 +14716,16 @@ function drawPlayerHud() {
   // legible at a two-player table. Anything past the ceiling scrolls, so this
   // is what the panel would *like* rather than what it is allowed to take.
   const requestedHeight = Math.max(96, 44 + rows * 25);
+  // A newly started human game usually knows only its own row; do not stretch
+  // that one-row scorecard across the whole map. Each additional known player
+  // buys the table another 100px until the available masthead width caps it.
+  // Twelve-player spectator mode consequently reaches the full masthead.
+  const requestedWidth = 760 + Math.max(0, rows - 1) * 100;
   const mapArea = document.getElementById("maparea");
-  if (!HUD_LAYOUT.players)
+  if (!HUD_LAYOUT.players) {
     mapArea.style.setProperty("--player-hud-height", `${requestedHeight}px`);
+    mapArea.style.setProperty("--player-hud-width", `${requestedWidth}px`);
+  }
   const rankById = new Map(majors.map((p, index) => [p.id, index + 1]));
   const statsByPlayer = new Map(majors.map(p => [p.id, playerHudStats(p, rankById.get(p.id), state.cities)]));
   const highestByStat = new Map();
@@ -14794,6 +14846,8 @@ function drawPlayerHud() {
   if (html === hudHtml || hudLayoutGesture?.name === "players") return;
   hudHtml = html;
   hud.innerHTML = html;
+  const playerRibbon = hud.querySelector(".diplomacy-ribbon");
+  if (playerRibbon) playerRibbon.scrollTop = playerScroll;
   // innerHTML replaced the element the observer was watching.
   observePlayerRibbon();
   syncPlayerLockPins();
@@ -19302,6 +19356,8 @@ document.getElementById("endturn").onclick = ev => advanceTurn(ev.shiftKey);
 // many turns are both choices, so both are selects rather than modifier keys.
 let autoplaying = false, autoplayStop = false;
 const AUTOPLAY_STRATEGY_KEY = "civvis-autoplay-strategy-v1";
+const AUTOPLAY_BATCH_TIMEOUT_MS = 120000;
+let autoplayRequestSequence = 0;
 // Fill the agent picker from the roster the server offers. Every entrant is
 // one of ours, named by the handle its leaderboard uses and carrying the
 // rating it is defending, so the choice is between strategies and not between
@@ -19335,6 +19391,38 @@ function setAutoplayNote(text) {
   const note = document.getElementById("autoplaynote");
   if (note) note.textContent = text || "";
 }
+function retryableAutoplayFetch(error) {
+  return error && (error.name === "AbortError" || error instanceof TypeError);
+}
+// A turn batch mutates the world before its large state response reaches the
+// page. If that socket is dropped, blindly posting it again would play the
+// same turns twice. Give the batch a page-unique id and retry that id once:
+// the server remembers the completed result and turns the retry into an
+// acknowledgement. The generous timeout is deliberate too — the generic
+// request budget is 15 seconds, but a late-game batch can exceed that on a
+// machine compiling several CIVVIS branches without being stuck.
+async function autoplayBatch(turns, strategy) {
+  const requestId = `${VIEWER_ID}-autoplay-${++autoplayRequestSequence}`;
+  const body = JSON.stringify({
+    turns, strategy, request_id: requestId,
+    seed: (state || {}).seed,
+    server_instance: (state || {}).server_instance,
+  });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const next = await fetchJSON("/autoplay", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body,
+      }, AUTOPLAY_BATCH_TIMEOUT_MS);
+      if (attempt) setAutoplayNote("");
+      return next;
+    } catch (error) {
+      if (attempt || !retryableAutoplayFetch(error)) throw error;
+      setAutoplayNote("Connection interrupted · confirming the completed turns…");
+    }
+  }
+}
 // Played in batches rather than in one request: a full game is over a minute
 // of engine work, and a person who asked for 250 turns still wants to watch
 // them happen and still wants to be able to stop. The batch grows only while
@@ -19361,11 +19449,7 @@ async function autoplay(turns) {
       button.textContent = `⏹ Stop · ${left} turn${left === 1 ? "" : "s"} left`;
       const started = performance.now();
       sel = null;
-      const next = await fetchJSON("/autoplay", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({turns: ask, strategy}),
-      });
+      const next = await autoplayBatch(ask, strategy);
       if (next.error) throw new Error(next.error);
       const played = +next.autoplayed || 0;
       render(next);

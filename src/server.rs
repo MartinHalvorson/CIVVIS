@@ -123,6 +123,11 @@ pub struct Session {
     /// separately from `seat_strategy[0]` because the roster it came from is
     /// not always the roster this game is rated against.
     autoplay_strategy: Option<String>,
+    /// The last browser batch that borrowed the human seat, and how many
+    /// turns it played. A client retries the same id after a dropped socket;
+    /// remembering one completed batch makes that retry an acknowledgement,
+    /// not a second run.
+    last_autoplay_request: Option<(String, usize)>,
     /// Set once this game's result has been rated, so a winner that is
     /// stepped past more than once is only ever counted for one game.
     league_recorded: bool,
@@ -777,7 +782,13 @@ pub struct Shared {
     /// The same turn with the sleeps taken out: what the unlimited pace costs.
     pub turn_compute_us: AtomicU64,
     frame_delivery: Mutex<FrameDelivery>,
-    frame_delivered: Condvar,
+    frame_painted: Condvar,
+    /// Serializes a displayed-state handoff with the start of an automatic AI
+    /// step. If a new viewer arrives between the old frame check and the step,
+    /// its first snapshot could otherwise be replaced before it paints. The
+    /// request either wins and installs the paint obligation first, or the
+    /// in-flight step wins and the viewer's first snapshot is the result.
+    simulation_frame_gate: Mutex<()>,
     /// The most recent turn the stepper finished, and a bell rung when it
     /// changes. A page asks for whatever comes *after* the frame it is
     /// holding, and waits here until there is one.
@@ -903,6 +914,14 @@ impl FrameDelivery {
             seat.painted = None;
             return;
         };
+        // A query parameter is only an acknowledgement when this server
+        // actually handed that exact snapshot to this exact page. Besides
+        // rejecting fabricated/future acknowledgements, this keeps a request
+        // issued before a slow render from releasing the turn it has not
+        // finished painting yet.
+        if seat.delivered != Some(frame) {
+            return;
+        }
         let mut lost = 0;
         if let Some(previous) = seat.painted {
             if attached && previous.seed == frame.seed && frame.turn > previous.turn {
@@ -915,12 +934,14 @@ impl FrameDelivery {
     }
 
     /// How long the stepper must still hold this turn: the longest wait owed
-    /// to any attached viewer that has not been handed it yet. `None` once
-    /// every viewer present has had it — or when nobody is watching at all.
+    /// to any attached viewer that has not acknowledged painting its complete
+    /// snapshot yet. Delivery alone is not enough: a socket is not a screen.
+    /// `None` once every viewer present has painted it — or when nobody is
+    /// watching at all.
     fn wait_remaining(&self, frame: SpectatorFrame, now: Instant) -> Option<Duration> {
         self.seats
             .values()
-            .filter(|seat| seat.delivered != Some(frame))
+            .filter(|seat| seat.painted != Some(frame))
             .filter_map(|seat| {
                 VIEWER_ACTIVE
                     .checked_sub(now.saturating_duration_since(seat.last_request))
@@ -1030,7 +1051,6 @@ impl Shared {
             .lock()
             .unwrap()
             .frame_delivered(viewer, frame, Instant::now());
-        self.frame_delivered.notify_all();
     }
 
     fn note_viewer_request(&self, viewer: &str, painted: Option<SpectatorFrame>) {
@@ -1038,6 +1058,10 @@ impl Shared {
             .lock()
             .unwrap()
             .viewer_request(viewer, painted, Instant::now());
+        // This is the only event that can satisfy Martin's complete-frame
+        // simulation gate. Merely writing the state to a socket must never
+        // advance the simulation.
+        self.frame_painted.notify_all();
     }
 
     /// Turns this server simulated that some viewer never drew, the last turn
@@ -1122,27 +1146,26 @@ impl Shared {
         seat.tiles = Some((frame, marks));
     }
 
-    /// Hold the stepper until every active viewer has been handed `frame`.
+    /// Hold the stepper until every active viewer has painted `frame`.
     ///
     /// A turn budget is a floor on how long a turn takes. It was being relied
     /// on as something it never was — a promise that a browser could read the
     /// turn before it was replaced. A page that needs longer to paint a
     /// megabyte of observation than the budget allows loses turns outright,
     /// and loses them silently: five of twenty-eight on the default Blitz pace
-    /// with a slow paint. Every turn owes the viewer one frame, so every pace
-    /// waits for one. With no viewer inside `VIEWER_ACTIVE` there is nothing
-    /// to wait for and an unattended exhibition still runs flat out.
+    /// with a slow paint. Martin's simulation requirement is stricter than
+    /// delivery: the updated map, HUD, victory tracker, and every other
+    /// turn-bound surface must complete one shared-snapshot render before the
+    /// next turn begins. With no viewer inside `VIEWER_ACTIVE` there is
+    /// nothing to wait for and an unattended exhibition still runs flat out.
     fn wait_for_turn_frame(&self, frame: SpectatorFrame) {
         let mut delivery = self.frame_delivery.lock().unwrap();
         loop {
-            if self.paused.load(Ordering::Relaxed) {
-                return;
-            }
             let Some(remaining) = delivery.wait_remaining(frame, Instant::now()) else {
                 return;
             };
             let result = self
-                .frame_delivered
+                .frame_painted
                 .wait_timeout(delivery, remaining.min(FRAME_WAIT_RECHECK))
                 .unwrap();
             delivery = result.0;
@@ -1177,7 +1200,12 @@ impl Session {
             if seat_from_roster && !l.active().is_empty() {
                 let civs: Vec<String> =
                     majors.iter().map(|id| game.players[*id].civ.clone()).collect();
-                for (id, pick) in majors.iter().zip(crate::league::seat_by_civ(l, &civs)) {
+                for (id, pick) in majors.iter().zip(crate::league::seat_by_civ_seeded(
+                    l,
+                    &civs,
+                    game.seed,
+                    3,
+                )) {
                     seat_strategy[*id] = Some(pick);
                 }
             } else if let Some(default_entrant) =
@@ -1309,6 +1337,7 @@ impl Session {
             human_seats,
             teams: params.teams.clone(),
             civs: params.civs.clone(),
+            randomize_civs: true,
             ..GameOptions::new(
                 params.num_players,
                 params.width,
@@ -1341,6 +1370,7 @@ impl Session {
             seat_strategy,
             roster,
             autoplay_strategy: None,
+            last_autoplay_request: None,
             league_recorded: false,
             human_players,
         }
@@ -1415,6 +1445,7 @@ impl Session {
             seat_strategy,
             roster,
             autoplay_strategy: None,
+            last_autoplay_request: None,
             league_recorded,
             human_players,
         }
@@ -2169,7 +2200,8 @@ fn prune_autosaves() {
 
 /// Write one complete HTTP response, returning whether it reached the socket.
 /// Callers normally have nothing useful to do with a disconnected client, but
-/// completed-turn delivery uses the result as its release acknowledgement.
+/// completed-turn delivery uses the result to record which exact snapshot the
+/// page is later allowed to acknowledge painting.
 fn respond(stream: &mut TcpStream, code: &str, ctype: &str, body: &[u8]) -> bool {
     // Nothing this server sends is worth reusing from a cache. The page and
     // its art are compiled into the binary, so a build swap changes them
@@ -2501,6 +2533,21 @@ fn auto_step_loop(sh: Arc<Shared>) {
             std::thread::sleep(Duration::from_millis(150));
             continue;
         }
+        // Close the first-viewer race as well as the steady-state one. A page
+        // attaching to the current turn must either finish registering and
+        // receive that snapshot before this step begins, or wait until the
+        // step completes and receive the next snapshot as its first frame.
+        // Once registered, its current frame must be painted before any more
+        // simulation work starts.
+        let simulation_frame_gate = sh.simulation_frame_gate.lock().unwrap();
+        let current_frame = {
+            let s = sh.session.lock().unwrap();
+            SpectatorFrame {
+                seed: s.game.seed,
+                turn: s.game.turn,
+            }
+        };
+        sh.wait_for_turn_frame(current_frame);
         let cadence_started = Instant::now();
         let delay; // this seat's slice of the turn budget
         let mut waiting = false; // between games nothing is being simulated
@@ -2587,11 +2634,12 @@ fn auto_step_loop(sh: Arc<Shared>) {
                 }
             }
         }
-        // An active browser consumes exactly one completed-turn state before
-        // the next round starts, at every pace. This makes Lightning as fast
-        // as the viewer can paint without letting it skip whole turns, and it
-        // stops the paced settings from skipping them too — a turn budget
-        // says how long a turn lasts, not that anyone managed to read it.
+        // An active browser paints exactly one complete, same-snapshot frame
+        // before the next round starts, at every pace. This makes Lightning as
+        // fast as the viewer can paint without letting it skip whole turns,
+        // and it stops the paced settings from skipping them too — a turn
+        // budget says how long a turn lasts, not that anyone saw its updated
+        // HUD, victory tracker, map, and remaining turn-bound surfaces.
         //
         // The wait comes before the cadence sleep on purpose. `elapsed_ms`
         // below measures from the top of the step, so a viewer who answers
@@ -2605,6 +2653,7 @@ fn auto_step_loop(sh: Arc<Shared>) {
             sh.note_turn_ready(frame);
             sh.wait_for_turn_frame(frame);
         }
+        drop(simulation_frame_gate);
         if pace == 0 && !waiting {
             // Unlimited: no wait between steps. Yield anyway, and give the
             // single-threaded accept loop a real slot a few times a second,
@@ -2730,6 +2779,16 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             // page holding turn 5 of the world before this one must not be
             // handed a patch against turn 5 of this one.
             let have = query_value(&request_target, "have").and_then(held_frame);
+            // A first snapshot and the start of an automatic step are atomic
+            // with respect to one another. Holding this only for a page that
+            // reports it has painted nothing yet avoids blocking ordinary
+            // long polls and full-map resyncs: those must reach the server
+            // carrying the painted acknowledgement that releases it.
+            let _first_frame = if painting_viewer == Some("") && have.is_none() {
+                Some(sh.simulation_frame_gate.lock().unwrap())
+            } else {
+                None
+            };
             if let Some(reported) = painting_viewer {
                 let painted = match (
                     reported.parse::<u32>(),
@@ -2763,9 +2822,10 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 sh.deliver_tiles(&viewer, frame, have, &mut o);
             }
             if respond_json(stream, &o) && painting_viewer.is_some() {
-                // Release the stepper only after the completed-turn snapshot
-                // is on the wire. The browser renders every successful
-                // `/state` response as one synchronous map + HUD update.
+                // Remember which exact snapshot this page is allowed to
+                // acknowledge. Delivery does not release the stepper: only
+                // the page's next request, after its synchronous map + HUD +
+                // victory-tracker render completes, can do that.
                 sh.note_frame_delivered(&viewer, frame);
             }
         }
@@ -2989,6 +3049,38 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 respond_json(stream, &json!({"error": "a spectated game is already playing itself"}));
                 return;
             }
+            // A stale page must never hand a seat in the successor world to an
+            // agent. The identifiers are optional for old clients, but every
+            // current browser sends both with each retryable batch.
+            if parsed["seed"]
+                .as_u64()
+                .is_some_and(|seed| seed != session.game.seed)
+                || parsed["server_instance"]
+                    .as_u64()
+                    .is_some_and(|instance| instance != std::process::id() as u64)
+            {
+                drop(session);
+                respond_json(stream, &json!({"error": "the game changed before auto-play began"}));
+                return;
+            }
+            let request_id = parsed["request_id"]
+                .as_str()
+                .filter(|id| !id.is_empty() && id.len() <= 128);
+            if let Some((_, played)) = request_id.and_then(|id| {
+                session
+                    .last_autoplay_request
+                    .as_ref()
+                    .filter(|(completed, _)| completed == id)
+            }) {
+                let played = *played;
+                let mut out = session.state();
+                out["autoplayed"] = json!(played);
+                out["autoplay_strategy"] = json!(session.seated_strategy_name(0));
+                drop(session);
+                decorate(&mut out, sh);
+                respond_json(stream, &out);
+                return;
+            }
             if let Some(name) = parsed["strategy"].as_str() {
                 if let Err(error) = session.seat_strategy_at(0, name) {
                     drop(session);
@@ -3001,6 +3093,9 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 _ => parsed["turns"].as_u64().unwrap_or(1).clamp(1, u32::MAX as u64) as u32,
             };
             let played = session.autoplay(turns);
+            if let Some(request_id) = request_id {
+                session.last_autoplay_request = Some((request_id.to_string(), played));
+            }
             let mut out = session.state();
             out["autoplayed"] = json!(played);
             out["autoplay_strategy"] = json!(session.seated_strategy_name(0));
@@ -3282,16 +3377,25 @@ mod tests {
         assert_eq!(delivery.wait_remaining(turn_7, now), Some(VIEWER_ACTIVE));
 
         delivery.frame_delivered("one", turn_7, now + Duration::from_millis(20));
+        assert!(
+            delivery.wait_remaining(turn_7, now).is_some(),
+            "delivery to a socket is not a painted frame"
+        );
+        delivery.viewer_request(
+            "one",
+            Some(turn_7),
+            now + Duration::from_millis(40),
+        );
         assert_eq!(delivery.wait_remaining(turn_7, now), None);
         assert!(delivery.wait_remaining(turn_8, now).is_some());
         assert!(delivery.wait_remaining(next_world, now).is_some());
 
         assert_eq!(
-            delivery.wait_remaining(turn_8, now + Duration::from_millis(20) + VIEWER_ACTIVE),
+            delivery.wait_remaining(turn_8, now + Duration::from_millis(40) + VIEWER_ACTIVE),
             None
         );
         assert_eq!(
-            delivery.wait_remaining(turn_8, now + VIEWER_ACTIVE + Duration::from_millis(21)),
+            delivery.wait_remaining(turn_8, now + VIEWER_ACTIVE + Duration::from_millis(41)),
             None
         );
     }
@@ -3312,9 +3416,19 @@ mod tests {
         delivery.frame_delivered("one", turn_7, now);
         assert!(
             delivery.wait_remaining(turn_7, now).is_some(),
-            "the second tab has not been handed this turn yet"
+            "neither delivered snapshot has been painted yet"
         );
         delivery.frame_delivered("two", turn_7, now);
+        assert!(
+            delivery.wait_remaining(turn_7, now).is_some(),
+            "both sockets have the turn, but neither screen has acknowledged it"
+        );
+        delivery.viewer_request("one", Some(turn_7), now);
+        assert!(
+            delivery.wait_remaining(turn_7, now).is_some(),
+            "the second tab has not painted this turn yet"
+        );
+        delivery.viewer_request("two", Some(turn_7), now);
         assert_eq!(delivery.wait_remaining(turn_7, now), None);
 
         // And a tab that closes stops holding turns open once it goes stale,
@@ -3323,8 +3437,30 @@ mod tests {
         let turn_8 = SpectatorFrame { seed: 41, turn: 8 };
         delivery.viewer_request("one", None, later);
         delivery.frame_delivered("one", turn_8, later);
+        delivery.viewer_request("one", Some(turn_8), later);
         assert_eq!(delivery.wait_remaining(turn_8, later), None);
         assert_eq!(delivery.seats.len(), 1, "the departed tab was retired");
+    }
+
+    #[test]
+    fn only_the_exact_delivered_snapshot_can_acknowledge_a_complete_frame() {
+        let now = Instant::now();
+        let turn_7 = SpectatorFrame { seed: 41, turn: 7 };
+        let turn_8 = SpectatorFrame { seed: 41, turn: 8 };
+        let other_world = SpectatorFrame { seed: 42, turn: 7 };
+        let mut delivery = FrameDelivery::default();
+
+        delivery.viewer_request("one", None, now);
+        delivery.frame_delivered("one", turn_7, now);
+
+        delivery.viewer_request("one", Some(turn_8), now);
+        delivery.viewer_request("one", Some(other_world), now);
+        assert_eq!(delivery.seats["one"].painted, None);
+        assert!(delivery.wait_remaining(turn_7, now).is_some());
+
+        delivery.viewer_request("one", Some(turn_7), now);
+        assert_eq!(delivery.seats["one"].painted, Some(turn_7));
+        assert_eq!(delivery.wait_remaining(turn_7, now), None);
     }
 
     /// Each viewer's misses are its own. One page catching every turn does not
@@ -3338,8 +3474,12 @@ mod tests {
 
         for turn in 7..=10 {
             now += beat;
-            delivery.viewer_request("steady", world(turn), now);
-            delivery.viewer_request("skipping", world(7 + (turn - 7) * 3), now);
+            let steady = world(turn);
+            let skipping = world(7 + (turn - 7) * 3);
+            delivery.frame_delivered("steady", steady.unwrap(), now);
+            delivery.viewer_request("steady", steady, now);
+            delivery.frame_delivered("skipping", skipping.unwrap(), now);
+            delivery.viewer_request("skipping", skipping, now);
         }
         let seat = |id: &str| delivery.seats[id].missed;
         assert_eq!(seat("steady"), 0);
@@ -3355,6 +3495,9 @@ mod tests {
         let mut now = Instant::now();
         let mut poll = |delivery: &mut FrameDelivery, painted, after: Duration| {
             now += after;
+            if let Some(frame) = painted {
+                delivery.frame_delivered("tab", frame, now);
+            }
             delivery.viewer_request("tab", painted, now);
         };
         let mut delivery = FrameDelivery::default();
@@ -3508,6 +3651,49 @@ mod tests {
             .expect("status is JSON");
         assert_eq!(status["frames_missed"], json!(0));
         assert_eq!(status["frames_painted"], json!(last));
+    }
+
+    /// Martin's requirement is a simulation gate, not merely an audit after
+    /// the fact. Once a turn has reached the socket, the game must remain on
+    /// that turn until the viewer reports that the complete frame rendered.
+    #[test]
+    fn simulation_cannot_advance_from_delivery_without_a_paint_acknowledgement() {
+        let port = exhibition(20_260_729);
+        http_post(port, "/pace", "{\"paused\":true}").expect("pause before attaching");
+        std::thread::sleep(Duration::from_millis(300));
+
+        let first: Value = serde_json::from_str(
+            &http_get(port, "/state?painted=&viewer=paint-gate").expect("a state to draw"),
+        )
+        .expect("state is JSON");
+        let seed = first["seed"].as_u64().expect("a world");
+        let turn = first["turn"].as_u64().expect("a turn") as u32;
+        http_post(port, "/pace", "{\"ms\":0,\"paused\":false}").expect("set unlimited pace");
+
+        // The response has been delivered, but the test viewer deliberately
+        // has not claimed to paint it. Unlimited pace must still stay put.
+        std::thread::sleep(Duration::from_millis(300));
+        let waiting: Value =
+            serde_json::from_str(&http_get(port, "/status").expect("status")).expect("status JSON");
+        assert_eq!(
+            waiting["turn"],
+            json!(turn),
+            "the simulation advanced on socket delivery instead of complete paint"
+        );
+
+        // The next browser poll is the acknowledgement. It also asks for the
+        // next turn, which must now be exactly one turn later because that new
+        // turn is itself gated until another complete-frame acknowledgement.
+        let next: Value = serde_json::from_str(
+            &http_get(
+                port,
+                &format!("/state?painted={turn}&world={seed}&viewer=paint-gate&have={seed}:{turn}"),
+            )
+            .expect("the next state"),
+        )
+        .expect("state is JSON");
+        assert_eq!(next["turn"], json!(turn + 1));
+        http_post(port, "/pace", "{\"paused\":true}");
     }
 
     /// Start a spectator on its own port and wait for it to answer.
@@ -3839,6 +4025,15 @@ mod tests {
 
     #[test]
     fn browser_renders_each_delivered_state_as_one_complete_frame() {
+        let requirement = include_str!("../docs/SPECTATOR_DEPLOY.md");
+        assert!(
+            requirement.contains("**Martin-requested simulation requirement:**")
+                && requirement.contains("must be shown in at least one complete frame")
+                && requirement.contains("HUD, player")
+                && requirement.contains("victory tracker, world map, minimap"),
+            "the named complete-frame simulation requirement must remain explicit"
+        );
+
         let render = EMBEDDED_INDEX
             .split_once("function render(st, recordChronicle = true) {")
             .expect("browser render function")
@@ -3853,6 +4048,13 @@ mod tests {
             )
             .expect("map, minimap, HUDs, and controls must repaint together");
         assert!(state_assignment < full_frame);
+        let painted = render
+            .find("paintedFrame = {seed:st.seed, turn:st.turn};")
+            .expect("complete-frame acknowledgement");
+        assert!(
+            full_frame < painted,
+            "the frame cannot be acknowledged before its turn-bound surfaces draw"
+        );
 
         let victory_hud = EMBEDDED_INDEX
             .split_once("function playerHudOverview() {")
@@ -3949,6 +4151,14 @@ mod tests {
         assert!(
             frame_loop.contains("render(st);"),
             "every state taken off the queue is drawn"
+        );
+        let render_done = frame_loop.find("render(st);").unwrap();
+        let acknowledge = frame_loop
+            .find("specFetch(); // acknowledge this complete frame")
+            .expect("the next request acknowledges the completed render");
+        assert!(
+            render_done < acknowledge,
+            "delivery must not be acknowledged before map, HUD, victory tracker, and controls render"
         );
         // Nothing may be dropped: the gate released that turn on the strength
         // of this page drawing it, so a state already in hand has to be
@@ -4567,23 +4777,40 @@ mod tests {
         // needs both offsets, staggered by one row per row held above it.
         assert!(EMBEDDED_INDEX.contains("top: calc(var(--pin-head, 0) * var(--hud-row-pitch));"));
         assert!(EMBEDDED_INDEX.contains("bottom: calc(var(--pin-tail, 0) * var(--hud-row-pitch));"));
-        // The standings never take more than their share of the map they head;
-        // rows past that scroll at a fixed height rather than being squeezed to
-        // fit, which is what keeps the world underneath them visible.
-        assert!(EMBEDDED_INDEX.contains("--player-hud-max-height: 34vh;"));
+        // The standings grow from one consolidated row through eight readable
+        // rows. A twelve-player exhibition then scrolls even on a tall screen
+        // instead of continuing to consume the world below it.
+        assert!(EMBEDDED_INDEX.contains("--player-hud-max-height: min(34vh, 244px);"));
         assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.34"));
-        // Two edges, not one column: the standings are the masthead across the
-        // whole top, and the right rail is the victory tracker from the top
-        // corner down to the world minimap in the bottom one. The masthead
-        // stops at the rail's width, and the tracker stops at the minimap's
-        // height, so neither seam can slide underneath its neighbour.
+        assert!(EMBEDDED_INDEX
+            .contains("const requestedWidth = 760 + Math.max(0, rows - 1) * 100;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "mapArea.style.setProperty(\"--player-hud-width\", `${requestedWidth}px`);"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const playerScroll = hud.querySelector(\".diplomacy-ribbon\")?.scrollTop || 0;"
+        ));
+        assert!(EMBEDDED_INDEX.contains("playerRibbon.scrollTop = playerScroll;"));
+        // The masthead grows toward the right rail but never beneath it. The
+        // tracker grows by the contender rows it shows but never through the
+        // minimap seam.
         assert!(EMBEDDED_INDEX.contains("--hud-rail-width:"));
         assert!(EMBEDDED_INDEX.contains(
-            "top: 10px; left: 12px; right: calc(min(var(--hud-rail-width), \
-             var(--hud-rail-share)) + 20px); width: auto;"
+            "width: min(var(--player-hud-width, 100%),\n      \
+             calc(100% - min(var(--hud-rail-width), var(--hud-rail-share)) - 32px));"
         ));
-        assert!(EMBEDDED_INDEX
-            .contains("top: 10px; bottom: calc(var(--minimap-height) + 22px);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "height: min(var(--victory-hud-height, 100%),\n      \
+             calc(100% - var(--minimap-height) - 32px));"
+        ));
+        // Every path keeps its top three plus the player's own civilization
+        // when that row is lower in this particular victory race.
+        assert!(EMBEDDED_INDEX.contains("const focusId = SPEC ? state.view_player : state.player;"));
+        assert!(EMBEDDED_INDEX.contains("focusRank >= DEFAULT_VICTORY_LEADERS ? 1 : 0"));
+        assert!(EMBEDDED_INDEX.contains(
+            "entry.hidden = index >= capacity && entry.dataset.victoryFocus !== \"true\";"
+        ));
+        assert!(EMBEDDED_INDEX.contains("data-victory-focus=\"${isFocus}\""));
         assert!(EMBEDDED_INDEX.contains("grid-auto-rows: var(--hud-row-height);"));
         // A masthead row is one line: identity and the ten values side by side,
         // under one set of column heads. Stacking them was what the rail needed
@@ -6233,6 +6460,68 @@ mod tests {
         assert!(played >= 12, "only played {played} turns of a 12-turn game");
     }
 
+    /// A browser can lose the response after the agent has already played the
+    /// turns. Retrying that POST must acknowledge the completed batch rather
+    /// than silently playing it twice.
+    #[test]
+    fn an_autoplay_batch_is_idempotent_across_a_dropped_response() {
+        let port = TcpListener::bind(("127.0.0.1", 0))
+            .expect("a free port")
+            .local_addr()
+            .unwrap()
+            .port();
+        let mut params = current();
+        params.num_players = 3;
+        params.num_city_states = 0;
+        params.width = 24;
+        params.height = 16;
+        params.seed = 20_260_726;
+        std::thread::spawn(move || super::serve_with_game(port, false, params, None, false));
+
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while http_get(port, "/status").is_none() {
+            assert!(Instant::now() < deadline, "single-player server never came up");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let stale = json!({
+            "turns": 3,
+            "strategy": "basic",
+            "request_id": "viewer-1-stale",
+            "seed": 20_260_726,
+            "server_instance": u64::from(std::process::id()) + 1,
+        })
+        .to_string();
+        let refused: Value =
+            serde_json::from_str(&http_post(port, "/autoplay", &stale).expect("stale response"))
+                .expect("stale response is JSON");
+        assert_eq!(
+            refused["error"],
+            json!("the game changed before auto-play began")
+        );
+
+        let body = json!({
+            "turns": 3,
+            "strategy": "basic",
+            "request_id": "viewer-1-autoplay-1",
+            "seed": 20_260_726,
+            "server_instance": std::process::id(),
+        })
+        .to_string();
+        let first: Value =
+            serde_json::from_str(&http_post(port, "/autoplay", &body).expect("first response"))
+                .expect("first response is JSON");
+        let retry: Value =
+            serde_json::from_str(&http_post(port, "/autoplay", &body).expect("retry response"))
+                .expect("retry response is JSON");
+
+        assert_eq!(first["autoplayed"], json!(3));
+        assert_eq!(retry["autoplayed"], json!(3));
+        assert_eq!(
+            retry["turn"], first["turn"],
+            "the retry played the completed batch a second time"
+        );
+    }
+
     /// The control that drives the two decisions above. The turn counts are
     /// the ones offered, and the loop that runs them has to be interruptible:
     /// a full game is over a minute of engine work, and a person watching it
@@ -6267,7 +6556,10 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("fillStrategies(RULES)"));
         // The choice rides on every request, so a run continued in batches
         // cannot change agent halfway through.
-        assert!(EMBEDDED_INDEX.contains("body: JSON.stringify({turns: ask, strategy})"));
+        assert!(EMBEDDED_INDEX.contains("async function autoplayBatch(turns, strategy)"));
+        assert!(EMBEDDED_INDEX.contains("request_id: requestId"));
+        assert!(EMBEDDED_INDEX.contains("AUTOPLAY_BATCH_TIMEOUT_MS = 120000"));
+        assert!(EMBEDDED_INDEX.contains("const next = await autoplayBatch(ask, strategy)"));
         // Pressing it again stops, rather than queueing a second run.
         assert!(EMBEDDED_INDEX.contains("if (autoplaying) { autoplayStop = true; return; }"));
         assert!(EMBEDDED_INDEX.contains("while (left > 0 && !autoplayStop)"));
@@ -6567,7 +6859,8 @@ pub fn serve_with_game(
         turn_us: AtomicU64::new(0),
         turn_compute_us: AtomicU64::new(0),
         frame_delivery: Mutex::new(FrameDelivery::default()),
-        frame_delivered: Condvar::new(),
+        frame_painted: Condvar::new(),
+        simulation_frame_gate: Mutex::new(()),
         latest: Mutex::new(None),
         turn_ready: Condvar::new(),
     });
