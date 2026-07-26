@@ -18,6 +18,11 @@ const FIRST_MOVE_SCORE_BONUS: f64 = 4.0;
 /// use the major civilization's unrestricted tactical doctrine instead.
 const MINOR_DEFENSE_RADIUS: i32 = 6;
 
+/// Railroads are valuable infrastructure, but every tile consumes one Iron
+/// and one Coal. Keep enough of each material for an emergency unit upgrade
+/// instead of letting an idle Engineer pave the stockpile down to zero.
+const RAILROAD_RESOURCE_RESERVE: f64 = 4.0;
+
 mod advanced;
 pub use advanced::{
     AdvancedAi, ForceDomain, ForceGroup, ForcePosture, GrandStrategy, StrategicPlan,
@@ -1677,6 +1682,14 @@ impl BasicAi {
                 let _ = g.apply(pid, &Action::Civic { civic: pick });
             }
         }
+        // Great People are not awarded automatically when the points cross
+        // the threshold: recruitment is a legal player action. Patronage had
+        // a strategic buyer, but the free action had no AI consumer at all,
+        // so a winning Scientist or Prophet could remain on the board while
+        // every headless civilization waited forever. Claim every earned and
+        // currently activatable person before founding a Religion or valuing
+        // paid patronage later in the turn.
+        Self::claim_free_great_people(g, pid);
         if choose_government {
             for gname in GOV_PRIORITY {
                 if let Some(spec) = g.rules.governments.get(gname) {
@@ -1828,6 +1841,12 @@ impl BasicAi {
                     }
                     continue;
                 }
+                // A modded ruleset can replace every stock Governor name.
+                // Keep the generic assignment tool as the data-driven
+                // fallback instead of leaving all of those titles idle.
+                if g.apply(pid, &Action::AssignGovernor { city: c }).is_ok() {
+                    continue;
+                }
             }
             let promotion = [
                 "pingala", "magnus", "liang", "reyna", "victor", "moksha", "amani",
@@ -1854,6 +1873,12 @@ impl BasicAi {
                 break;
             }
         }
+        // Appointment is not the end of governor play. If an ungoverned city
+        // is already close to revolt, move an idle Governor there, or pull one
+        // from a completely loyal city. AdvancedAI runs its plan-aware
+        // governor pass first, so this is an emergency backstop rather than a
+        // second strategy fighting the first one.
+        Self::reassign_governor_for_loyalty(g, pid);
         while g.players[pid].envoys_free > 0 {
             // consolidate on the city-state we already lead in (suzerain push)
             let target = g
@@ -1871,6 +1896,89 @@ impl BasicAi {
                 None => break,
             }
         }
+    }
+
+    /// Take every no-cost Great Person claim the empire has earned.
+    ///
+    /// The action list is authoritative about activation requirements: a
+    /// Scientist still needs a Campus, a Writer needs enough work slots, and a
+    /// Prophet needs an active Holy Site or Stonehenge. Applying the actions
+    /// rather than duplicating those conditions keeps the AI on the same tool
+    /// protocol as a human or learned policy.
+    fn claim_free_great_people(g: &mut Game, pid: usize) -> usize {
+        let threshold_reached = g.players[pid]
+            .gpp
+            .iter()
+            .any(|(kind, points)| *points + f64::EPSILON >= g.gp_cost(pid, kind));
+        if !threshold_reached {
+            return 0;
+        }
+        let mut recruits: Vec<Action> = g
+            .legal_actions_within(pid, ActionFamilies::EMPIRE)
+            .into_iter()
+            .filter(|action| matches!(action, Action::RecruitGreatPerson { .. }))
+            .collect();
+        // Determinism matters for same-seed evaluation. The rules map order is
+        // stable today, but make the intended order explicit at this boundary.
+        recruits.sort_by(|left, right| format!("{left:?}").cmp(&format!("{right:?}")));
+        recruits
+            .into_iter()
+            .filter(|action| g.apply(pid, action).is_ok())
+            .count()
+    }
+
+    /// Relocate one Governor to a city in immediate Loyalty danger.
+    fn reassign_governor_for_loyalty(g: &mut Game, pid: usize) -> bool {
+        let target = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter(|city| !g.players[pid].governors.contains(city))
+            .filter(|city| g.cities[city].loyalty < 70.0)
+            .min_by(|left, right| {
+                g.cities[left]
+                    .loyalty
+                    .total_cmp(&g.cities[right].loyalty)
+                    .then(left.cmp(right))
+            });
+        let Some(target) = target else { return false };
+        let target_loyalty = g.cities[&target].loyalty;
+        let action = g
+            .legal_actions_within(pid, ActionFamilies::EMPIRE)
+            .into_iter()
+            .filter_map(|action| {
+                let Action::ReassignGovernor { governor, city } = &action else {
+                    return None;
+                };
+                if *city != target {
+                    return None;
+                }
+                let state = &g.players[pid].governor_roster[governor];
+                let source_loyalty = state
+                    .city
+                    .and_then(|city| g.cities.get(&city))
+                    .map_or(101.0, |city| city.loyalty);
+                // An unassigned Governor is free to move. An established one
+                // only leaves a city with a substantial Loyalty cushion.
+                (state.city.is_none()
+                    || (source_loyalty >= 90.0
+                        && source_loyalty - target_loyalty >= 20.0))
+                    .then_some((
+                        state.city.is_none(),
+                        governor == "victor",
+                        source_loyalty,
+                        std::cmp::Reverse(governor.clone()),
+                        action,
+                    ))
+            })
+            .max_by(|left, right| {
+                left.0
+                    .cmp(&right.0)
+                    .then(left.1.cmp(&right.1))
+                    .then(left.2.total_cmp(&right.2))
+                    .then(left.3.cmp(&right.3))
+            })
+            .map(|(_, _, _, _, action)| action);
+        action.is_some_and(|action| g.apply(pid, &action).is_ok())
     }
 
     fn diplomacy(&self, g: &mut Game, pid: usize) {
@@ -2614,11 +2722,46 @@ impl BasicAi {
                     best = Some((value, gold, uid));
                 }
             }
-            let Some((_, _, uid)) = best else { return };
+            let Some((_, _, uid)) = best else { break };
             if g.apply(pid, &Action::UpgradeUnit { unit: uid }).is_err() {
-                return;
+                break;
             }
         }
+        Self::use_opportunistic_unit_tools(g, pid);
+    }
+
+    /// Execute rare, unambiguously beneficial unit tools before ordinary
+    /// movement consumes the acting unit's turn.
+    ///
+    /// `AdvancedAi` deliberately calls this shared pre-movement pass, so these
+    /// actions are part of the default strategic agent as well as BasicAI.
+    fn use_opportunistic_unit_tools(g: &mut Game, pid: usize) -> usize {
+        let conversion_ready = g.barb_pid.is_some()
+            && g.player_unit_ids(pid).into_iter().any(|unit| {
+                let unit = &g.units[&unit];
+                unit.kind == "apostle"
+                    && unit.moves_left > 0.0
+                    && unit.charges > 0
+                    && unit.promotions.iter().any(|promotion| {
+                        g.rules
+                            .promotions
+                            .get(promotion)
+                            .and_then(|spec| spec.effects.get("convert_barbarians"))
+                            .is_some_and(|value| *value > 0.0)
+                    })
+            });
+        if !conversion_ready {
+            return 0;
+        }
+        let conversions: Vec<Action> = g
+            .legal_actions_within(pid, ActionFamilies::UNITS)
+            .into_iter()
+            .filter(|action| matches!(action, Action::ConvertBarbarians { .. }))
+            .collect();
+        conversions
+            .into_iter()
+            .filter(|action| g.apply(pid, action).is_ok())
+            .count()
     }
 
     fn best_military(
@@ -4078,7 +4221,16 @@ impl BasicAi {
         if reverses_last_step {
             return false;
         }
-        if g.apply(pid, &Action::Move { unit: uid, to }).is_err() {
+        // Settlers use the shared route-order tool exposed to network clients
+        // and learned agents. The AI has already selected and validated this
+        // adjacent step, so it remains behaviorally identical to Move without
+        // making every military step pay for route reconstruction.
+        let movement = if g.units[&uid].kind == "settler" {
+            Action::MoveTo { unit: uid, to }
+        } else {
+            Action::Move { unit: uid, to }
+        };
+        if g.apply(pid, &movement).is_err() {
             return false;
         }
         self.last_path_step_from
@@ -4731,15 +4883,44 @@ impl BasicAi {
                 Some((g.wdist(current, position), position, city))
             })
             .min();
-        let Some((_, position, city)) = target else {
-            return self.military_step(g, pid, uid);
-        };
-        if current == position && g.can_contribute_district(pid, uid, city) {
-            return g
-                .apply(pid, &Action::ContributeDistrict { unit: uid, city })
-                .is_ok();
+        if let Some((_, position, city)) = target {
+            if current == position && g.can_contribute_district(pid, uid, city) {
+                return g
+                    .apply(pid, &Action::ContributeDistrict { unit: uid, city })
+                    .is_ok();
+            }
+            return self.step_toward(g, pid, uid, position);
         }
-        self.step_toward(g, pid, uid, position)
+
+        // Once Steam Power arrives, connect city centers with a continuous
+        // Railroad. The current tile is laid before movement, then the next
+        // turn continues toward the nearest center that is not connected yet.
+        // District contributions remain the higher priority above: finishing
+        // a Dam, Aqueduct, or Canal is worth an Engineer charge immediately.
+        let has_rail_material = g.strategic_stockpile(pid, "iron")
+            >= RAILROAD_RESOURCE_RESERVE + 1.0
+            && g.strategic_stockpile(pid, "coal") >= RAILROAD_RESOURCE_RESERVE + 1.0;
+        let railroad_target = has_rail_material
+            .then(|| {
+                g.player_city_ids(pid)
+                    .into_iter()
+                    .map(|city| g.cities[&city].pos)
+                    .filter(|position| g.map.tiles[position].road < 5)
+                    .filter(|position| {
+                        *position == current || g.route_step(uid, *position, 0).is_some()
+                    })
+                    .min_by_key(|position| (g.wdist(current, *position), *position))
+            })
+            .flatten();
+        if let Some(position) = railroad_target {
+            if g.can_build_railroad(pid, uid) {
+                return g.apply(pid, &Action::BuildRailroad { unit: uid }).is_ok();
+            }
+            if current != position {
+                return self.step_toward(g, pid, uid, position);
+            }
+        }
+        self.military_step(g, pid, uid)
     }
 
     fn naturalist_step(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
@@ -6032,6 +6213,99 @@ mod tests {
 
         assert_eq!(game.units[&slinger].kind, "archer");
         assert_eq!(game.players[0].gold, 120.0);
+    }
+
+    #[test]
+    fn ai_claims_an_earned_great_person_instead_of_leaving_it_pending() {
+        let mut game = Game::new_full(1, 20, 14, 41_006, 80, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let campus = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&city].pos)
+            .unwrap();
+        game.map.tiles.get_mut(&campus).unwrap().district = Some("campus".to_string());
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .districts
+            .insert("campus".to_string(), campus);
+        let cost = game.gp_cost(0, "scientist");
+        game.players[0].gpp.insert("scientist".to_string(), cost);
+        assert!(game.legal_actions(0).iter().any(
+            |action| matches!(action, Action::RecruitGreatPerson { kind } if kind == "scientist")
+        ));
+
+        assert_eq!(BasicAi::claim_free_great_people(&mut game, 0), 1);
+        assert_eq!(game.players[0].gp_claimed["scientist"], 1);
+        assert!(game.players[0].great_people.iter().any(|person| person == "hypatia"));
+    }
+
+    #[test]
+    fn ai_reassigns_a_governor_from_a_safe_city_to_a_loyalty_emergency() {
+        let (mut game, source, target) = island_colony_game(1);
+        let second_settler = game.spawn_test_unit("settler", 0, target);
+        let second = game.found_city_for(0, game.units[&second_settler].pos, None);
+        let first = game.city_at(source).unwrap();
+        game.players[0]
+            .counters
+            .insert("district_governor_titles".to_string(), 1);
+        game.apply(
+            0,
+            &Action::AppointGovernor {
+                governor: "victor".to_string(),
+                city: first,
+            },
+        )
+        .unwrap();
+        game.cities.get_mut(&first).unwrap().loyalty = 100.0;
+        game.cities.get_mut(&second).unwrap().loyalty = 35.0;
+
+        assert!(BasicAi::reassign_governor_for_loyalty(&mut game, 0));
+        assert_eq!(
+            game.players[0].governor_roster["victor"].city,
+            Some(second)
+        );
+    }
+
+    #[test]
+    fn ai_uses_heathen_conversion_before_the_apostle_moves() {
+        let mut game = Game::new_full(1, 20, 14, 41_007, 80, 0, true);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let center = game.cities[&game.player_city_ids(0)[0]].pos;
+        let adjacent = game
+            .nbrs(center)
+            .into_iter()
+            .find(|position| {
+                game.map.get(*position).is_some_and(|tile| {
+                    game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                })
+            })
+            .unwrap();
+        let apostle = game.spawn_test_unit("apostle", 0, center);
+        game.units
+            .get_mut(&apostle)
+            .unwrap()
+            .promotions
+            .insert("heathen_conversion".to_string());
+        let barbarian = game.barb_pid.unwrap();
+        let converted = game.spawn_test_unit("warrior", barbarian, adjacent);
+
+        assert_eq!(BasicAi::use_opportunistic_unit_tools(&mut game, 0), 1);
+        assert_eq!(game.units[&converted].owner, 0);
+        assert_eq!(game.units[&apostle].moves_left, 0.0);
     }
 
     #[test]
@@ -8787,6 +9061,47 @@ mod tests {
         );
         assert_eq!(game.units[&engineer].charges, 1);
         assert_eq!(game.units[&engineer].moves_left, 0.0);
+    }
+
+    #[test]
+    fn idle_military_engineer_starts_a_stockpile_safe_railroad() {
+        let mut game = Game::new_full(1, 20, 14, 36_002, 80, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let center = game.cities[&city].pos;
+        game.players[0].techs.insert("steam_power".to_string());
+        game.players[0]
+            .strategic_resources
+            .insert("iron".to_string(), 8.0);
+        game.players[0]
+            .strategic_resources
+            .insert("coal".to_string(), 8.0);
+        let engineer = game.spawn_test_unit("military_engineer", 0, center);
+        let mut ai = BasicAi::new();
+
+        assert!(ai.military_engineer_step(&mut game, 0, engineer));
+        assert_eq!(game.map.tiles[&center].road, 5);
+        assert_eq!(game.strategic_stockpile(0, "iron"), 7.0);
+        assert_eq!(game.strategic_stockpile(0, "coal"), 7.0);
+
+        // Once either reserve reaches the floor, the Engineer stops spending
+        // and remains available for a Dam/Aqueduct/Canal contribution.
+        game.map.tiles.get_mut(&center).unwrap().road = 1;
+        game.players[0]
+            .strategic_resources
+            .insert("coal".to_string(), RAILROAD_RESOURCE_RESERVE);
+        game.units.get_mut(&engineer).unwrap().moves_left = 2.0;
+        let _ = ai.military_engineer_step(&mut game, 0, engineer);
+        assert_ne!(game.map.tiles[&center].road, 5);
+        assert_eq!(
+            game.strategic_stockpile(0, "coal"),
+            RAILROAD_RESOURCE_RESERVE
+        );
     }
 
     #[test]
