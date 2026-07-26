@@ -2002,6 +2002,7 @@ pub fn generate_with_script(
     // draws from the stream, so a world that needed no top-up is unmoved.
     place_strategic_quotas(rules, &mut wm, &land, num_major_spawns, &occupied, rng);
     place_artifact_quotas(rules, &mut wm, num_major_spawns, &occupied, rng);
+    remove_water_boundary_rivers(&mut wm);
     (wm, spawns)
 }
 
@@ -3625,6 +3626,19 @@ fn river_edge_depth(
         .unwrap_or(0)
 }
 
+#[cfg(test)]
+fn river_edge_has_outlet(
+    wm: &WorldMap,
+    edge: RiverEdge,
+    is_water: &impl Fn(Pos) -> bool,
+) -> bool {
+    !is_water(edge.0)
+        && !is_water(edge.1)
+        && connected_river_edges(wm, edge)
+            .into_iter()
+            .any(|next| is_water(next.0) != is_water(next.1))
+}
+
 fn generate_rivers(wm: &mut WorldMap, land: &[Pos], rng: &mut Rng) {
     let water_tiles: Vec<Pos> = wm
         .tiles
@@ -3715,6 +3729,30 @@ fn generate_rivers(wm: &mut WorldMap, land: &[Pos], rng: &mut Rng) {
 
     for (a, b) in rivers {
         wm.set_river_edge(a, b, true);
+    }
+}
+
+/// Move every river mouth off the shoreline edge and onto its inland reach.
+///
+/// Generation traces a river from a land/water boundary so the existing seed
+/// stream, lakes, features, resources and starts remain unchanged. Once those
+/// decisions are complete, the boundary segment is removed: the next segment
+/// already ends at the same coastal vertex, producing a proper river mouth
+/// without a river running along an ocean or lake side.
+fn remove_water_boundary_rivers(wm: &mut WorldMap) {
+    let water = |position: Pos| {
+        matches!(
+            wm.tiles[&position].terrain.as_str(),
+            "ocean" | "coast" | "lake"
+        )
+    };
+    let shoreline: Vec<RiverEdge> = all_shared_edges(wm)
+        .into_iter()
+        .filter(|edge| wm.has_river_edge(edge.0, edge.1))
+        .filter(|edge| water(edge.0) || water(edge.1))
+        .collect();
+    for (a, b) in shoreline {
+        wm.set_river_edge(a, b, false);
     }
 }
 
@@ -5106,7 +5144,7 @@ mod river_tests {
     }
 
     #[test]
-    fn generated_rivers_are_mirrored_connected_edge_chains_with_outlets() {
+    fn generated_rivers_are_mirrored_connected_land_edge_chains_with_outlets() {
         let mut wm = WorldMap::new(24, 16);
         let mut land = Vec::new();
         for row in 3..13 {
@@ -5118,17 +5156,21 @@ mod river_tests {
         }
         let mut rng = Rng::new(73);
         generate_rivers(&mut wm, &land, &mut rng);
+        remove_water_boundary_rivers(&mut wm);
         let river_edges: BTreeSet<RiverEdge> = all_shared_edges(&wm)
             .into_iter()
             .filter(|(a, b)| wm.has_river_edge(*a, *b))
             .collect();
         assert!(!river_edges.is_empty());
-        assert!(
-            river_edges.iter().any(|(a, b)| {
-                wm.tiles[a].terrain == "plains" && wm.tiles[b].terrain == "plains"
-            }),
-            "a generated river should extend inland from its coastal outlet"
-        );
+        let is_water = |p: Pos| {
+            matches!(wm.tiles[&p].terrain.as_str(), "ocean" | "coast" | "lake")
+        };
+        for edge in &river_edges {
+            assert!(
+                !is_water(edge.0) && !is_water(edge.1),
+                "river edge {edge:?} borders water on one side"
+            );
+        }
 
         // Every serialized tile mask agrees with the neighbor's opposite edge.
         for (pos, tile) in &wm.tiles {
@@ -5146,15 +5188,15 @@ mod river_tests {
             }
         }
 
-        // Each edge-connected river component reaches a land/water boundary.
-        let is_water = |p: Pos| wm.tiles[&p].terrain == "ocean";
+        // Each edge-connected river component ends at a shoreline vertex,
+        // while every segment itself remains between two land tiles.
         let mut unseen = river_edges.clone();
         while let Some(start) = unseen.iter().next().copied() {
             let mut stack = vec![start];
             let mut has_outlet = false;
             unseen.remove(&start);
             while let Some(edge) = stack.pop() {
-                has_outlet |= is_water(edge.0) != is_water(edge.1);
+                has_outlet |= river_edge_has_outlet(&wm, edge, &is_water);
                 for next in connected_river_edges(&wm, edge) {
                     if river_edges.contains(&next) && unseen.remove(&next) {
                         stack.push(next);
@@ -5165,6 +5207,27 @@ mod river_tests {
                 has_outlet,
                 "every generated river component needs a coastal outlet"
             );
+        }
+    }
+
+    #[test]
+    fn completed_map_scripts_never_put_a_river_on_a_water_boundary() {
+        let rules = Rules::embedded();
+        for (index, script) in ROLLED_TYPES.into_iter().enumerate() {
+            let mut rng = Rng::new(73_100 + index as u64);
+            let (world, _) = generate_with_script(
+                &rules, 42, 28, 4, 5, 2, 3, script, FLAT, POLED, &mut rng,
+            );
+            for edge in all_shared_edges(&world)
+                .into_iter()
+                .filter(|edge| world.has_river_edge(edge.0, edge.1))
+            {
+                assert!(
+                    !rules.is_water(&world.tiles[&edge.0])
+                        && !rules.is_water(&world.tiles[&edge.1]),
+                    "{script:?} put river edge {edge:?} on an ocean or lake boundary"
+                );
+            }
         }
     }
 
