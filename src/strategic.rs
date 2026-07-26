@@ -858,6 +858,19 @@ impl StrategicAi {
         pid: usize,
         targets: &[Option<VictoryTarget>],
     ) -> Vec<(f64, Option<VictoryTarget>)> {
+        self.lockstep_values_projected(g, pid, targets).0
+    }
+
+    /// The same search, also reporting how many rounds it actually spent.
+    /// A treatment has to be shown to fire before it is worth evaluating,
+    /// and the rounds it declines to project are the only direct evidence
+    /// that this one does anything at all.
+    fn lockstep_values_projected(
+        &self,
+        g: &Game,
+        pid: usize,
+        targets: &[Option<VictoryTarget>],
+    ) -> (Vec<(f64, Option<VictoryTarget>)>, u32) {
         let mut branches: Vec<(Game, Vec<Box<dyn Ai>>)> = targets
             .iter()
             .map(|target| self.branch_state(g, pid, *target))
@@ -894,11 +907,14 @@ impl StrategicAi {
                 break;
             }
         }
-        branches
-            .iter()
-            .zip(targets)
-            .map(|((sim, _), target)| (self.branch_value(sim, pid), *target))
-            .collect()
+        (
+            branches
+                .iter()
+                .zip(targets)
+                .map(|((sim, _), target)| (self.branch_value(sim, pid), *target))
+                .collect(),
+            projected,
+        )
     }
 
     fn branch_state(
@@ -1588,6 +1604,60 @@ mod tests {
 
         game.victory_conditions.religious = false;
         assert!(!StrategicAi::duel_religious_race(&game, 0));
+    }
+
+    /// A treatment has to be shown to fire before it is worth evaluating.
+    /// #380 spent a 240-game run to discover its treatment was inert, with
+    /// every diagnostic identical to the digit. This asserts the adaptive
+    /// horizon actually declines rounds in ordinary positions, so that a
+    /// pre-registered evaluation is measuring something that happens.
+    #[test]
+    fn the_adaptive_horizon_stops_early_in_ordinary_games() {
+        let mut checked = 0;
+        let mut fired = 0;
+        for seed in [31u64, 57, 83] {
+            // Three players: a duel is answered by the religion prior and
+            // never reaches the rollouts this measures.
+            let mut g = Game::new(3, 20, 14, seed, 200, 0);
+            let mut strategic = StrategicAi::with_weights(Default::default());
+            strategic.adaptive_horizon = true;
+            // The promoted deep budget, which is the one the saturation
+            // measurement was taken at and the only one this can help: at
+            // horizon 40 the median spread between branches is 0.0045,
+            // under the 0.01 commitment margin, so the branches never
+            // separate and the search runs its full count regardless.
+            strategic.horizon = 80;
+            let mut ais = BasicAi::fleet(&g);
+            for _ in 0..40 {
+                if g.winner.is_some() {
+                    break;
+                }
+                for pid in 0..g.players.len() {
+                    if g.winner.is_some() {
+                        break;
+                    }
+                    ais[pid].take_turn(&mut g, pid);
+                }
+            }
+            if g.winner.is_some() {
+                continue;
+            }
+            let mut targets: Vec<Option<VictoryTarget>> = vec![None];
+            targets.extend(strategic.lane_candidates(&g).into_iter().map(Some));
+            let (values, projected) = strategic.lockstep_values_projected(&g, 0, &targets);
+            assert_eq!(values.len(), targets.len());
+            assert!(values.iter().all(|(value, _)| value.is_finite()));
+            checked += 1;
+            if projected < strategic.horizon {
+                fired += 1;
+            }
+        }
+        assert!(checked > 0, "no ordinary mid-game position was reached");
+        assert!(
+            fired > 0,
+            "the adaptive horizon projected every round in all {checked} positions, \
+             so it is inert and an evaluation would measure nothing"
+        );
     }
 
     #[test]
