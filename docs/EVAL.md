@@ -1853,3 +1853,90 @@ compute, and it is untested.
 
 The threshold scales with how much game remains, so these percentages are
 specific to 200-turn four-player games and will bite later in longer ones.
+
+## 2026-07-26 — ★ PROMOTED: branches project from the plan in force
+
+`StrategicAi` handed every branch of its macro search a **freshly
+constructed** `AdvancedAi`. That discards the strategic plan, settler and
+builder assignments, `major_war_since`, the `peace_until` cooldown and the
+whole force-group table — so the projection answered *"what happens if I
+restart my planner and commit to this lane"* while standing in for *"what
+happens if I commit to this lane from here."*
+
+`branch_agent` now clones the agent in force and applies the branch's
+decision through the same three calls `take_turn` makes after a review
+(`retarget` / `adapt` / `reweight`), and only when they would change
+something. All three preserve campaign and unit-role memory by contract and
+drop only the plan, so a branch re-assesses under its new lane without
+amnesia. The counterfactual becomes an exact simulation of the decision being
+considered.
+
+**Pre-registered confirmation, fresh seed 132000, `--players 4 --pairs 500
+--turns 200`:**
+
+```
+game-win share: strategic_warm 553/1000 (55.3%)  strategic 447/1000 (44.7%)
+paired-map score: 55.3% (95% Wilson CI 50.9%..59.6%), Elo-equivalent +37 (CI +6..+68)
+paired direction: warm 87, neutral 379, strategic 34; sign p=0.0000
+anytime evidence: warm peak e=6.623e4, crossed at map 209; strategic peak e=1.000e0
+terminal-score direction: warm 271, neutral 23, strategic 206; sign p=0.0033
+promotion gate: PASS
+```
+
+Three disjoint seed sets:
+
+| seed | maps | for | against | sign p |
+|---|---|---|---|---|
+| 130000 | 120 | 17 | 10 | 0.2478 |
+| 131000 | 240 | 36 | 14 | 0.0026 |
+| 132000 | 500 | 87 | 34 | 0.0000 |
+| **pooled** | **860** | **140** | **58** | **5.2e-09** |
+
+**On by default, unlike `strategic_deep`.** That one costs 4× the macro-search
+compute on every game and therefore had to be opt-in; this costs one clone of
+a small struct where there was one construction of it, so every caller gets
+it — `strategic`, `strategic_deep`, `strategic_score`, soak, the fleet and the
+exhibition. `strategic_cold` is the frozen control that keeps every published
+pre-promotion `strategic` number reproducible. The league is unaffected: it
+rates `Weights` genomes over `AdvancedAi` and never constructs a `StrategicAi`.
+
+**What moved was routing, not the economy.** The promoted agent took 32
+domination seats against the control's 51, and 148 religious against 112,
+while terminal score moved 0.8 points. Domination converts at 3–8%, the worst
+lane on the board. This also refutes the mechanism originally proposed for the
+change — that a cold branch finds an empty force-group table and therefore
+*under*-projects the militarised lanes, which predicted more domination, not
+less. The run cannot separate which piece of retained state is responsible.
+
+### Two negative results that bracket it
+
+Both were pre-registered, both failed, and together they close a family of
+ideas rather than one idea.
+
+| change | what it does to a review | result |
+|---|---|---|
+| `strategic_h80` | 2× depth on **every** branch | 21 map directions to 5, p=0.0025 |
+| `adaptive_horizon` | stop as soon as the branches separate | 39.2%, Elo −76, p=0.0000 |
+| `focused_deepening` | same budget, concentrated on the leaders | 49.2%, p=0.8318 |
+
+Depth on all branches wins; depth on the branches that look best does nothing;
+stopping when they separate loses badly. **A shallow estimate is not
+rank-preserving with respect to the deep one** — a lane behind the adaptive
+baseline at depth 12 can be the best lane at depth 84 — so any within-review
+pruning discards real signal. That retires rotation, adaptive stopping,
+focused deepening, progressive widening and sequential halving together. The
+only lever that has ever worked on this search is raising the total.
+
+`focused_deepening`'s first run is worth recording separately because its
+headline was misleading. It scored 46.2% while **terminal score was a dead
+heat** (49.4%, 56 map directions to 57, p=1.0000): it built an equally good
+empire and stopped committing — 58.4% of player-turns uncommitted against the
+control's 44.9%, religious commitment 24.5% against 29.0%. Cause: a review is
+a *maximum over the surviving lanes*, and a maximum over one draw clears a
+fixed margin far less often than a maximum over six. **The commitment margin
+is calibrated to the size of the candidate set the argmax ranges over**, so
+any change to that set silently moves the decision threshold. That is also a
+mechanism for `rotate_lanes` measuring null. Read the plan-commitment table
+before the win rate whenever a treatment touches the candidate set.
+
+See `docs/SUPERHUMAN.md` for the design reading these three runs support.

@@ -244,6 +244,28 @@ pub struct StrategicAi {
     ///
     /// Costs nothing: the same number of branches, the same horizon, one
     /// clone of a small struct in place of one construction of it.
+    ///
+    /// **★ PROMOTED — on by default.** Earned on a pre-registered 500-map
+    /// run at fresh seed 132000: 553/1000 games (55.3%), 87 map directions
+    /// to 34, sign p=0.0000, Wilson 50.9%–59.6%, Elo-equivalent +37,
+    /// anytime-valid evidence 6.6e4 crossing at map 209, and
+    /// `promotion gate: PASS` under the unmodified gate. Terminal score
+    /// agrees independently (271 to 206, p=0.0033). Three disjoint seed sets
+    /// total **860 maps, 140 map-directions to 58, sign p=5.2e-09**.
+    ///
+    /// Unlike `strategic_deep`, which costs 4x the macro-search compute and
+    /// therefore had to be opt-in, this costs nothing, so every caller gets
+    /// it: `strategic`, `strategic_deep`, `strategic_score`, soak, the fleet
+    /// and the exhibition. `strategic_cold` is the frozen control that keeps
+    /// every published pre-promotion number reproducible.
+    ///
+    /// One caution for anyone reading the older numbers: what shifted was
+    /// victory *routing*, not the economy. The promoted agent took 32
+    /// domination seats against the control's 51 and 148 religious against
+    /// 112, while terminal score moved only 0.8 points. Domination converts
+    /// at 3-8%, the worst lane on the board. The run cannot separate which
+    /// piece of retained state does it -- the force groups, the peace
+    /// cooldown, or simply the plan surviving.
     pub continue_from_plan: bool,
     /// Search the doctrine axis as well as the lane. Off by default so
     /// `strategic` is bit-identical to its published behaviour; the
@@ -324,7 +346,7 @@ impl StrategicAi {
             weights,
             net,
             census: ReviewCensus::default(),
-            continue_from_plan: false,
+            continue_from_plan: true,
             adaptive_horizon: false,
             doctrine_search: false,
             defer_periodic_on_interrupt: true,

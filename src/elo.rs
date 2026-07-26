@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 18] = [
+pub const EVAL_ONLY_AIS: [&str; 19] = [
     "advanced_lane_reachable",
     "advanced_relief_scoped",
     "strategic_score",
@@ -56,6 +56,7 @@ pub const EVAL_ONLY_AIS: [&str; 18] = [
     "policy_wide",
     "policy_wide_frozen",
     "strategic_warm",
+    "strategic_cold",
     "strategic_deep_adaptive",
 ];
 
@@ -580,10 +581,20 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         "production" => Box::new(crate::production::ProductionSearchAi::with_weights(
             crate::evolve::load_champion("evolved").unwrap_or_default(),
         )),
-        // Every branch projected from the plan actually in force instead of
-        // from a freshly constructed planner. Same branch count, same
-        // horizon, same cadence and same genome as `strategic`, so the
-        // paired A/B isolates the fidelity of the counterfactual.
+        // The frozen pre-promotion control: branches projected from a newly
+        // constructed planner, which is what every `strategic` number
+        // published before 2026-07-26 was measured on. Kept so those numbers
+        // stay reproducible now that the promoted behaviour is the default.
+        "strategic_cold" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.continue_from_plan = false;
+            Box::new(ai)
+        }
+        // Retained as an explicit name for the promoted behaviour, which is
+        // now what `strategic` already does. Kept so the pre-registered runs
+        // that earned the promotion can be re-run by name.
         "strategic_warm" => {
             let mut ai = crate::strategic::StrategicAi::with_weights(
                 crate::evolve::load_champion("evolved").unwrap_or_default(),
@@ -832,6 +843,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "strategic_h80" => (vec![genome, value(false)], "strategic_h80"),
         "strategic_rot20" => (vec![genome, value(false)], "strategic_rot20"),
         "strategic_warm" => (vec![genome, value(false)], "strategic_warm"),
+        "strategic_cold" => (vec![genome, value(false)], "strategic_cold"),
         "strategic_deep_adaptive" => (vec![genome, value(false)], "strategic_deep_adaptive"),
         // Same artifact dependencies as `strategic`: the genome tunes it,
         // and the net is non-definitional because the search runs without
