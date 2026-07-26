@@ -38,7 +38,8 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 13] = [
+pub const EVAL_ONLY_AIS: [&str; 14] = [
+    "advanced_global_hold",
     "strategic_score",
     "strategic_doctrine",
     "strategic_r20",
@@ -421,6 +422,15 @@ impl EloPool {
 pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
     match name {
         "advanced" => Box::new(AdvancedAi::new()),
+        // Control for the relief-radius change: identical in every other
+        // respect, but holds every force group whenever any city in the
+        // empire is threatened, however far away. Paired against `advanced`
+        // this isolates the scoped hold and nothing else.
+        "advanced_global_hold" => {
+            let mut ai = AdvancedAi::new();
+            ai.global_threat_hold = true;
+            Box::new(ai)
+        }
         "advanced_evolved" => Box::new(
             crate::evolve::load_champion("evolved")
                 .map(AdvancedAi::with_weights)
@@ -771,6 +781,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         ),
         "advanced" => (Vec::new(), "advanced"),
         "advanced_v1" => (Vec::new(), "advanced_v1"),
+        "advanced_global_hold" => (Vec::new(), "advanced_global_hold"),
         "random" => (Vec::new(), "random"),
         // `builtin_ai` answers every other name with the lightweight agent.
         "basic" => (Vec::new(), "basic"),
