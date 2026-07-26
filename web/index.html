@@ -132,6 +132,9 @@
   #maparea {
     flex: 1; min-width: 0; position: relative; overflow: hidden; background: #07110f;
     --hud-rail-width: clamp(258px, 20vw, 320px);
+    /* The tracker is intentionally half the old 320px desktop rail. Keep the
+       authored default independent from the wider minimap below it. */
+    --victory-hud-width: min(160px, 50%);
     /* Whatever the width steps ask for, the rail never takes more than this
        share of the map it floats over. Between 620px and 980px the command
        deck is still a column of its own, and without the cap the rail and the
@@ -1003,11 +1006,11 @@
     body.cinema-mode #cinema-transition.active { animation: none; opacity: 0; }
     body.cinema-mode #cinema-lighting::before, .cinema-frame-brand i { animation: none; }
   }
-  #map-controls-row {
+  #map-controls-dock {
     position: absolute; z-index: 14;
-    right: calc(min(var(--hud-rail-width), var(--hud-rail-share)) + 24px);
-    bottom: 16px; left: 16px;
-    display: flex; align-items: stretch; gap: 8px; min-width: 0;
+    right: calc(min(var(--hud-rail-width), var(--hud-rail-share)) + 6px);
+    bottom: 0; left: 0;
+    display: flex; align-items: stretch; gap: 6px; min-width: 0;
     pointer-events: none;
   }
   #zoomctl {
@@ -1045,6 +1048,9 @@
     background: linear-gradient(135deg, #4b4226cc, #173128e8);
     box-shadow: inset 0 1px #ffffff16, 0 0 13px #d7b66a1c;
   }
+  #map-lens-exit { min-width: 58px; color: #d7b6ad; }
+  #map-lens-exit[hidden] { display: none; }
+  #map-lens-exit .map-lens-icon { color: #e4a49d; }
   .map-lens-icon { color: #e6c978; font-size: 15px; line-height: 1; text-align: center; }
   #map-lenses button[data-map-lens="religion"] .map-lens-icon { color: #eadfbd; }
   #map-lenses button[data-map-lens="continent"] .map-lens-icon { color: #8bc5c1; }
@@ -1416,7 +1422,7 @@
   /* The foot of the rail. It stands in the lower-right corner, under the
      victory tracker, and its height is the seam the tracker stops at. */
   .minimap-frame {
-    position: absolute; z-index: 6; left: auto; right: 12px; bottom: 16px;
+    position: absolute; z-index: 6; left: auto; right: 0; bottom: 0;
     width: min(var(--hud-rail-width), var(--hud-rail-share)); height: var(--minimap-height);
     display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 6px; border-radius: 12px;
     background: #091310e6; border: 1px solid #40584f; box-shadow: 0 14px 35px #0008;
@@ -1842,9 +1848,8 @@
     #maparea { height: 100%; }
     #side { position: fixed; inset: 132px auto 8px 8px; width: min(390px, calc(100% - 16px)); min-width: 0; height: auto; max-height: calc(100dvh - 140px); border: 1px solid #40584f; border-radius: 16px; }
     body.sidebar-hidden #side { width: min(390px, calc(100% - 16px)); transform: translateX(calc(-100% - 16px)); opacity: 0; }
-    #map-controls-row { right: 12px; bottom: 12px; left: 12px; gap: 6px; }
-    #zoomctl { left: auto; bottom: auto; }
-    #map-lenses { left: auto; bottom: auto; flex: 1 1 auto; }
+    #map-controls-dock { right: 0; }
+    #map-lenses { flex: 1 1 auto; }
     .map-lens-title, .map-lens-label { display: none; }
     #map-lenses button { min-width: 44px; grid-template-columns: 20px 15px; padding: 0 5px; }
     #ubar { min-width: 0; width: calc(100% - 28px); bottom: 18px; }
@@ -1889,7 +1894,7 @@
      scrolls instead of swallowing the map. */
   #playerhud {
     position: absolute; z-index: 7; pointer-events: auto;
-    top: 10px; left: 12px; right: auto;
+    top: 0; left: 0; right: auto;
     width: min(var(--player-hud-width, 100%),
       calc(100% - min(var(--hud-rail-width), var(--hud-rail-share)) - 32px));
     height: min(var(--player-hud-height, 200px), var(--player-hud-max-height));
@@ -2067,9 +2072,9 @@
      the required top-three-plus-viewer rows reach the minimap seam, the rail
      scrolls instead of overlapping it. */
   #victoryhud {
-    position: absolute; z-index: 7; right: 12px; left: auto;
-    top: 10px; bottom: auto;
-    width: min(var(--hud-rail-width), var(--hud-rail-share));
+    position: absolute; z-index: 7; right: 0; left: auto;
+    top: 0; bottom: auto;
+    width: var(--victory-hud-width);
     height: min(var(--victory-hud-height, 100%),
       calc(100% - var(--minimap-height) - 32px));
     display: grid; grid-template-columns: minmax(0, 1fr);
@@ -2083,7 +2088,7 @@
   /* Switching the minimap off raises the tracker's height ceiling to the
      floor; a compact tracker still keeps only the height its rows need. */
   body.overlay-minimap-hidden #victoryhud {
-    bottom: auto; height: min(var(--victory-hud-height, 100%), calc(100% - 26px));
+    bottom: auto; height: min(var(--victory-hud-height, 100%), 100%);
   }
   #victoryhud > .hud-section-heading {
     position: relative; grid-column: 1; grid-row: 1; min-height: 22px;
@@ -2216,7 +2221,7 @@
   body.overlay-victory-hidden #victoryhud,
   body.overlay-minimap-hidden .minimap-frame,
   body.overlay-controls-hidden #zoomctl,
-  body.overlay-controls-hidden #map-lenses { display: none !important; }
+  body.overlay-lenses-hidden #map-lenses { display: none !important; }
   body.sidebar-hidden #collapsepause:not([hidden]) { display: block; }
   #collapsepause[hidden] { display: none; }
 
@@ -2265,7 +2270,8 @@
     /* Six identity columns plus ten value columns need the map's full width at
        this point. The instruments stack as bands across the top, with the
        tracker's paths in columns because there is no height left to stack them. */
-    #map-controls-row { right: 12px; }
+    #map-controls-dock { right: 0; }
+    #map-lenses { flex: 1 1 auto; }
     #playerhud, body.overlay-victory-hidden #playerhud {
       top: 8px; left: 8px; right: 8px; width: auto; padding: 4px;
       --hud-lock-column: 11px;
@@ -2276,7 +2282,7 @@
       left: 8px; right: 8px; bottom: auto; width: auto; height: 132px;
       grid-template-columns: minmax(0, 1fr); padding: 4px;
     }
-    .minimap-frame { left: 8px; right: auto; bottom: 62px; width: 174px; }
+    .minimap-frame { left: 0; right: auto; bottom: 50px; width: 174px; }
     #victoryhud .hud-rail { overflow-x: auto; overflow-y: hidden; }
     #victoryhud .victory-ribbon {
       min-height: 0; width: max(100%, var(--victory-min-width, 514px));
@@ -2614,7 +2620,7 @@
   <aside id="victoryhud" data-layout-widget="victory" aria-label="Turn and victory tracker"></aside>
   <aside id="playerhud" data-layout-widget="players" aria-label="Player stats"></aside>
   <div id="dossier-windows" aria-label="Open player dossiers"></div>
-  <div id="map-controls-row">
+  <div id="map-controls-dock">
     <div id="zoomctl">
       <button id="paneltoggle" class="icon" title="Hide command deck" aria-label="Hide command deck">&lt;</button>
       <button id="collapsepause" hidden title="Pause simulation" aria-label="Pause simulation">⏸</button>
@@ -2664,6 +2670,11 @@
         title="Empire lens — city borders, districts, adjacency, and wonders (4)">
         <span class="map-lens-icon" aria-hidden="true">◈</span>
         <span class="map-lens-label">Empire</span><kbd aria-hidden="true">4</kbd>
+      </button>
+      <button id="map-lens-exit" type="button" hidden
+        title="Exit the active map lens" aria-label="Exit the active map lens">
+        <span class="map-lens-icon" aria-hidden="true">×</span>
+        <span class="map-lens-label">Exit</span>
       </button>
     </div>
   </div>
@@ -2966,6 +2977,7 @@
             <label class="overlay-option"><input type="checkbox" data-overlay="victory" checked>Victory tracker</label>
             <label class="overlay-option"><input type="checkbox" data-overlay="minimap" checked>World minimap</label>
             <label class="overlay-option"><input type="checkbox" data-overlay="controls" checked>Map controls</label>
+            <label class="overlay-option"><input type="checkbox" data-overlay="lenses" checked>Map lenses</label>
           </div>
           <button class="ghost overlay-layout-reset" id="reset-overlay-layout" type="button">Reset overlay positions &amp; sizes</button>
         </div>
@@ -3596,7 +3608,7 @@ let FLAT_MAP_WRAP_Y = localStorage.getItem("civvis-flat-map-wrap-y") === "1";
 // fullscreen game and some players will want it off.
 let EDGE_PAN = localStorage.getItem("civvis-edge-pan") !== "0";
 const OVERLAY_STORAGE_KEY = "civvis-map-overlays-v1";
-const OVERLAY_NAMES = ["players", "victory", "minimap", "controls"];
+const OVERLAY_NAMES = ["players", "victory", "minimap", "controls", "lenses"];
 let OVERLAY_VISIBILITY = Object.fromEntries(OVERLAY_NAMES.map(name => [name, true]));
 try {
   const savedOverlays = JSON.parse(localStorage.getItem(OVERLAY_STORAGE_KEY) || "{}");
@@ -3614,6 +3626,7 @@ function setOverlayVisibility(name, visible) {
   const priorFocus = currentMapFocusWorld();
   OVERLAY_VISIBILITY[name] = visible;
   applyOverlayVisibility();
+  if (name === "lenses" && !visible && mapLens) setMapLens(null);
   const checkbox = document.querySelector(`[data-overlay="${name}"]`);
   if (checkbox) checkbox.checked = visible;
   try { localStorage.setItem(OVERLAY_STORAGE_KEY, JSON.stringify(OVERLAY_VISIBILITY)); }
@@ -3622,7 +3635,7 @@ function setOverlayVisibility(name, visible) {
 }
 const OVERLAY_LABELS = {
   players:"Player standings", victory:"Victory tracker",
-  minimap:"World minimap", controls:"Map controls",
+  minimap:"World minimap", controls:"Map controls", lenses:"Map lenses",
 };
 function flashDisplaySettingsHeader() {
   const header = document.getElementById("display-settings-header");
@@ -18841,6 +18854,8 @@ function syncMapLensControls() {
     button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", active ? "true" : "false");
   }
+  const exit = document.getElementById("map-lens-exit");
+  if (exit) exit.hidden = !mapLens;
 }
 function setMapLens(next) {
   mapLens = mapLens === next ? null : next;
@@ -18850,6 +18865,7 @@ function setMapLens(next) {
 }
 for (const button of document.querySelectorAll("[data-map-lens]"))
   button.onclick = () => setMapLens(button.dataset.mapLens);
+document.getElementById("map-lens-exit").onclick = () => setMapLens(null);
 function modeline() {
   const m = [];
   if (mapLens && MAP_LENS_INFO[mapLens]) m.push(MAP_LENS_INFO[mapLens]);
