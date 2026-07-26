@@ -674,11 +674,14 @@
   .ribbon-stat.wonders { --stat-color: #e9d88e; }
   .ribbon-stat.score { --stat-color: var(--gold-bright); }
   .ribbon-stat b { color: var(--stat-color); }
+  /* Leading a category is a quiet wash behind the figure, not a boxed chip.
+     With ten categories and one leader each, a 70% border plus an inset glow
+     put nine bright rectangles on the table at once and they read as the
+     subject rather than as an annotation on it. */
   .ribbon-stat.category-leader {
-    border: 1px solid color-mix(in srgb, var(--stat-color) 70%, transparent);
-    border-radius: 4px;
-    background: color-mix(in srgb, var(--stat-color) 17%, transparent);
-    box-shadow: inset 0 0 6px color-mix(in srgb, var(--stat-color) 10%, transparent);
+    border: 0; border-radius: 5px;
+    background: color-mix(in srgb, var(--stat-color) 13%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--stat-color) 26%, transparent);
   }
   /* An open dossier leaves a quiet highlight on its player row. The dossier
      itself is a separate map window, so several civilizations can stay open
@@ -1927,13 +1930,35 @@
   #playerhud {
     position: absolute; z-index: 7; pointer-events: auto;
     top: 0; left: 0; right: auto;
+    /* The masthead stops at the victory tracker, which is the only instrument
+       beside it up here — not at --hud-rail-width, which is the wider
+       reservation the minimap needs down in the corner. Measuring the seam
+       against the rail left 192px of empty map between the two panels at
+       1600px and squeezed the ten value columns to 27px each, narrower than a
+       four-digit figure. */
     width: min(var(--player-hud-width, 100%),
-      calc(100% - min(var(--hud-rail-width), var(--hud-rail-share)) - 32px));
+      calc(100% - var(--victory-hud-width) - 20px));
     height: min(var(--player-hud-height, 200px), var(--player-hud-max-height));
     --hud-map-links-column: 58px; --hud-watch-column: 56px;
-    --hud-identity-column: minmax(300px, 42%); --hud-column-gap: 6px;
+    /* The ten value columns claim their width first and the identity block is
+       the flexible one, because a clipped name still reads and a clipped number
+       lies. The old arrangement was the other way round — identity held
+       minmax(300px, 42%) and the numbers took the remainder — so the figures
+       got 27px each and ran together into one digit run. --hud-stat-gap is the
+       gutter that keeps two adjacent numbers from reading as one. */
+    --hud-stat-min: 37px;
+    --hud-stat-gap: 3px;
+    /* Ten cells and the nine gutters between them. */
+    --hud-stats-column: minmax(
+      calc(var(--hud-stat-min) * 10 + var(--hud-stat-gap) * 9), 1.02fr);
+    --hud-identity-column: minmax(196px, 1fr); --hud-column-gap: 6px;
+    /* Civilization, leader, the spectator link, player and strategy are labels
+       and may ellipsize. ELO and win odds are figures, so they carry a floor
+       instead of a bare fraction: at .55fr with no minimum they collapsed on a
+       1440px screen and rendered "1792" as "179" and "11%" as "1" — a truncated
+       number that reads as a different, smaller number. */
     --hud-identity-tracks: minmax(0, 1.1fr) minmax(0, 1fr) var(--hud-watch-column)
-      minmax(0, 1fr) minmax(0, .55fr) minmax(0, .55fr) minmax(0, 1.1fr);
+      minmax(0, 1fr) minmax(38px, .55fr) minmax(38px, .55fr) minmax(0, 1.1fr);
     --hud-lock-column: 13px; --hud-row-height: 26px; --hud-row-gap: 2px;
     --hud-row-pitch: calc(var(--hud-row-height) + var(--hud-row-gap));
     display: grid; grid-template-columns: 140px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
@@ -1967,7 +1992,7 @@
   .ribbon-stat-heading {
     min-height: 12px; display: grid;
     grid-template-columns: var(--hud-lock-column, 0px) var(--hud-map-links-column)
-      var(--hud-watch-column) var(--hud-identity-column) minmax(0, 1fr);
+      var(--hud-watch-column) var(--hud-identity-column) var(--hud-stats-column);
     align-items: stretch; gap: var(--hud-column-gap); padding: 0 4px 0 3px;
   }
   .diplomacy-identity-head {
@@ -2009,11 +2034,14 @@
   .diplomacy-stat-head {
     min-width: 0; display: grid; grid-column: 5;
     grid-template-columns: repeat(10, minmax(0, 1fr));
+    column-gap: var(--hud-stat-gap, 0px);
     color: #a9bbb4; font-size: var(--type-caption); font-weight: 950; letter-spacing: .015em;
   }
+  /* The gutter separates the columns, so the heads do not also need a rule
+     between every pair — ten hairlines over ten short words read as a fence. */
   .diplomacy-stat-head span {
     min-width: 0; display: grid; place-items: center; overflow: hidden;
-    border-left: 1px solid #ffffff10; text-overflow: clip;
+    text-overflow: clip;
   }
   /* Every row keeps the same readable height instead of being squeezed to fit
      the panel, so a large table scrolls rather than shrinking into illegibility. */
@@ -2034,7 +2062,7 @@
   #playerhud .diplomacy-card {
     width: auto; height: auto; min-height: 0; display: grid;
     grid-template-columns: var(--hud-lock-column, 0px) var(--hud-map-links-column)
-      var(--hud-watch-column) var(--hud-identity-column) minmax(0, 1fr);
+      var(--hud-watch-column) var(--hud-identity-column) var(--hud-stats-column);
     grid-template-rows: minmax(0, 1fr);
     align-items: center; gap: var(--hud-column-gap); margin: 0; padding: 1px 4px 1px 3px;
     overflow: hidden; border-radius: 7px;
@@ -2122,24 +2150,39 @@
   }
   #playerhud .diplomacy-stats {
     align-self: stretch; display: grid; grid-template-columns: repeat(10, minmax(0, 1fr));
-    grid-template-rows: minmax(0, 1fr); gap: 0;
+    grid-template-rows: minmax(0, 1fr); row-gap: 0;
+    column-gap: var(--hud-stat-gap, 0px);
   }
+  /* No hairline between values: the gutter above already separates them, and a
+     grid of 80 ruled cells reads as a spreadsheet rather than a scoreboard.
+     The cell is the positioning context for the religion marker. */
   #playerhud .ribbon-stat {
+    position: relative;
     min-height: 0; display: grid; place-content: center; padding: 0;
+    border-left: 0; border-top: 0;
   }
   /* A truncated name still reads; a truncated number lies. The identity column
      is allowed to ellipsize and gives up width first, so four digits stay whole
      down to a narrow desktop. */
+  /* A flat number on a dark panel is easier to read than a glowing one. The
+     8px currentColor bloom this used to carry haloed every figure in its own
+     hue, and eighty of them at once turned the table into a smear — the colour
+     already says which column this is. A plain drop shadow keeps the digits
+     legible over the map without lighting them up. */
   #playerhud .ribbon-stat b {
     position: relative; overflow: visible;
     font-size: clamp(11px, .8vw, 14px); font-weight: 900; letter-spacing: -.015em;
-    line-height: 1; text-shadow: 0 1px 2px #000, 0 0 8px currentColor;
+    line-height: 1; text-shadow: 0 1px 2px #000c;
   }
-  /* The marker is out of flow: it follows the FPT value without changing the
-     centered number's width or moving that number away from the other rows. */
+  /* The marker is out of flow so it cannot change the centered number's width
+     or move that number off the line the other rows sit on. It is anchored to
+     its own cell rather than to the end of the digits: hung off the number it
+     landed in the gutter between FPT and GPT, where a mark that belongs to one
+     column appears to sit between two. */
   #playerhud .founded-religion-marker {
-    position: absolute; inset-inline-start: calc(100% + 1px); top: -.18em;
-    font-size: .72em; letter-spacing: 0; text-shadow: 0 1px 2px #000;
+    position: absolute; inset-inline-end: 1px; top: 0;
+    color: var(--stat-color); font-size: .78em; line-height: 1;
+    letter-spacing: 0; text-shadow: 0 1px 2px #000;
   }
   /* Victory progress starts in the right corner and grows down with the rows
      it actually shows, never past the world minimap. Six races read one under
@@ -2307,11 +2350,21 @@
      squeezed the ten value columns into 64px. The masthead gives up the
      identity first — it ellipsizes and keeps its tooltip — so that every value
      stays whole, and the rail narrows alongside it. */
+  /* Each step narrows the identity block's floor and the per-value floor
+     together. Both are minima now rather than percentages: a percentage with a
+     300px minimum never actually yields, which is why the identity column used
+     to hold its full width while the values it was starving fell to 27px. */
   @media (min-width: 2200px) {
-    #playerhud { grid-template-columns: 140px minmax(0, 1fr); --hud-identity-column: minmax(340px, 40%); }
+    #playerhud {
+      grid-template-columns: 140px minmax(0, 1fr);
+      --hud-identity-column: minmax(340px, 1.3fr); --hud-stat-min: 44px;
+    }
   }
   @media (max-width: 1580px) {
-    #playerhud { grid-template-columns: 132px minmax(0, 1fr); --hud-identity-column: minmax(330px, 50%); }
+    #playerhud {
+      grid-template-columns: 132px minmax(0, 1fr);
+      --hud-identity-column: minmax(240px, 1fr); --hud-stat-min: 36px;
+    }
     #maparea { --hud-rail-width: clamp(240px, 20vw, 300px); }
   }
   /* Ten value columns, a turn plate and a standing rail stop fitting side by
@@ -2319,7 +2372,8 @@
   @media (max-width: 1300px) {
     #playerhud {
       grid-template-columns: 132px minmax(0, 1fr);
-      --hud-identity-column: minmax(250px, 50%); --hud-column-gap: 4px;
+      --hud-identity-column: minmax(210px, 1fr); --hud-column-gap: 4px;
+      --hud-stat-min: 34px;
     }
     #maparea { --hud-rail-width: 224px; }
   }
@@ -2327,8 +2381,9 @@
     #maparea { --hud-rail-width: 200px; --minimap-height: 158px; }
     #playerhud {
       grid-template-columns: 132px minmax(0, 1fr);
-      --hud-identity-column: minmax(210px, 48%); --hud-column-gap: 3px;
+      --hud-identity-column: minmax(186px, 1fr); --hud-column-gap: 3px;
       --hud-map-links-column: 52px; --hud-watch-column: 52px;
+      --hud-stat-min: 32px; --hud-stat-gap: 2px;
     }
     #playerhud .empire-link, #playerhud .watch-as-link { width: 50px; }
     /* The masthead can take the value columns under 19px here. Keep a
@@ -2341,6 +2396,7 @@
     #playerhud {
       --hud-map-links-column: 50px; --hud-watch-column: 50px;
       --hud-identity-column: minmax(112px, 142px);
+      --hud-stat-min: 30px; --hud-stat-gap: 2px;
     }
   }
   @media (max-width: 1100px) {
@@ -2353,7 +2409,7 @@
       top: 8px; left: 8px; right: 8px; width: auto; padding: 4px;
       --hud-lock-column: 11px;
       --hud-map-links-column: 52px; --hud-watch-column: 52px;
-      --hud-identity-column: minmax(270px, 52%);
+      --hud-identity-column: minmax(200px, 1fr);
     }
     #victoryhud, body.overlay-minimap-hidden #victoryhud {
       top: calc(min(var(--player-hud-height, 200px), var(--player-hud-max-height)) + 14px);
@@ -2378,10 +2434,10 @@
     .diplomacy-stat-head { font-size: var(--type-micro); }
   }
   @media (max-width: 720px) {
-    #playerhud { --hud-identity-column: minmax(160px, 48%); }
+    #playerhud { --hud-identity-column: minmax(160px, 1fr); }
   }
   @media (max-width: 620px) {
-    #playerhud { --hud-identity-column: minmax(150px, 48%); }
+    #playerhud { --hud-identity-column: minmax(150px, 1fr); --hud-stat-min: 28px; }
     #playerhud .ribbon-stat b { font-size: var(--type-label); }
   }
   /* Ten screens at full size need 487px and the bar has (height − 292) to give,
@@ -2405,7 +2461,8 @@
      to be floating over. */
   #playerhud[data-type-size="compact"] {
     grid-template-columns: clamp(132px, 32%, 148px) minmax(0, 1fr);
-    --hud-identity-column: minmax(250px, 46%); --hud-column-gap: 4px;
+    --hud-identity-column: minmax(176px, 1fr); --hud-column-gap: 4px;
+    --hud-stat-min: 32px; --hud-stat-gap: 2px;
   }
   #playerhud[data-type-size="compact"] > .player-standings {
     overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain;
@@ -2420,12 +2477,15 @@
   }
   /* Ten complete numeric columns have a real minimum width. When a custom or
      phone-sized box cannot supply it, keep a readable type floor and scroll the
-     table inside its own panel instead of crushing or spilling its cells. */
+     table inside its own panel instead of crushing or spilling its cells.
+     740px is what the floors above actually add up to: 176px of identity, ten
+     32px values with 2px gutters, and 150px of lock, links, watch and padding. */
   #playerhud[data-type-size="compact"] .ribbon-stat-heading,
-  #playerhud[data-type-size="compact"] .diplomacy-ribbon { min-width: 720px; }
+  #playerhud[data-type-size="compact"] .diplomacy-ribbon { min-width: 740px; }
   #playerhud[data-type-size="roomy"] {
     grid-template-columns: 148px minmax(0, 1fr);
-    --hud-identity-column: minmax(350px, 40%); --hud-column-gap: 7px;
+    --hud-identity-column: minmax(320px, 1.25fr); --hud-column-gap: 7px;
+    --hud-stat-min: 42px;
     --hud-row-height: 30px;
   }
 
@@ -4824,9 +4884,12 @@ const RESPONSIVE_TEXT_RULES = [
   {selector:"#restart-sim .lbl", min:10, max:14},
   {selector:"#restart-sim .sub", min:9, max:11},
   {selector:"#playerhud .ribbon-heading > span", min:10, max:14},
-  {selector:"#playerhud .diplomacy-identity-head span", min:9, max:11},
+  {selector:"#playerhud .diplomacy-identity-head span", min:8.5, max:11},
   {selector:"#playerhud .spectator-view-link", min:9, max:10},
-  {selector:"#playerhud .diplomacy-stat-head span", min:9, max:11},
+  // 8.5px floor, not 9: WNDR and SCORE are the two longest heads and at a
+  // 32px column they were each a pixel or two over at 9px, which cuts the last
+  // letter off. Half a point of type is invisible; a clipped head is not.
+  {selector:"#playerhud .diplomacy-stat-head span", min:8.5, max:11},
   {selector:"#playerhud .diplomacy-rank", min:9, max:11},
   {selector:"#playerhud .diplomacy-civ", min:9, max:13},
   {selector:"#playerhud .diplomacy-leader-name", min:9, max:13},
@@ -4834,7 +4897,12 @@ const RESPONSIVE_TEXT_RULES = [
   {selector:"#playerhud .diplomacy-elo-value", min:9, max:13},
   {selector:"#playerhud .diplomacy-expected-value", min:9, max:13},
   {selector:"#playerhud .diplomacy-strategy .ai-plan", min:9, max:12},
-  {selector:"#playerhud .ribbon-stat b", min:10, max:15},
+  // Measured against the cell, not against itself. The figure sits in a grid
+  // with place-content:center, so it is sized to its own text: clientWidth and
+  // scrollWidth are always equal, the fitter could never detect overflow, and
+  // every number kept the full 15px and spilled over its neighbours instead of
+  // shrinking. This is the rule that made "666 1187 658" render as "6661187658".
+  {selector:"#playerhud .ribbon-stat b", min:10, max:15, parentWidth:true},
   {selector:"#playerhud .player-map-links button, #playerhud .watch-as-link", min:9, max:12},
   {selector:"#playerhud .turn-era", min:12, max:17},
   {selector:"#playerhud .turn-label", min:11, max:14},
@@ -17031,18 +17099,28 @@ function drawPlayerHud() {
     `<span>Player stats</span></div>` +
     `<div class="ribbon-stat-heading">` +
     `<span class="diplomacy-identity-head">` +
+    // WIN% and PLAN, not WIN ODDS and AI STRATEGY. These heads clip rather than
+    // ellipsize, so an overlong one is not shortened but corrupted: "WIN ODDS"
+    // rendered as "WIN ODI" and "AI STRATEGY" as "AI STRATEG". Both of these fit
+    // whole at every width the masthead supports, and PLAN is the word the rest
+    // of the client already uses for this field. The full wording is in the
+    // tooltip on each head.
     `<span title="Civilization">CIV</span><span>LEADER</span>` +
     `<button type="button" class="spectator-view-link" data-hud-action="spectator" ` +
     `aria-pressed="${state.view_player === null || state.view_player === undefined}" ` +
     `title="Spectator mode · see everyone with full map visibility" ` +
     `aria-label="Spectator mode: see everyone with full map visibility">All</button>` +
     `<span>PLAYER</span>` +
-    `<span class="numeric">ELO</span><span class="numeric" title="Win odds">WIN ODDS</span>` +
-    `<span title="AI active strategy">AI STRATEGY</span></span>` +
+    `<span class="numeric" title="Elo rating">ELO</span>` +
+    `<span class="numeric" title="Elo-implied win odds, per cent">WIN%</span>` +
+    `<span title="AI active strategy">PLAN</span></span>` +
     `<span class="diplomacy-stat-head">` +
-    [["production", "PROD"], ["science", "SCI"], ["culture", "CUL"], ["faith", "FPT"], ["gold", "GPT"],
-      ["military", "MIL"], ["cities", "CITY"], ["suzerain", "SUZ"], ["wonders", "WNDR"], ["score", "SCORE"]]
-      .map(([kind, label]) => `<span class="${kind}">${label}</span>`).join("") + `</span></div>` +
+    [["production", "PROD", "Production per turn"], ["science", "SCI", "Science per turn"],
+      ["culture", "CUL", "Culture per turn"], ["faith", "FPT", "Faith per turn"],
+      ["gold", "GPT", "Net Gold per turn"], ["military", "MIL", "Military strength"],
+      ["cities", "CITY", "Cities controlled"], ["suzerain", "SUZ", "City-states under suzerainty"],
+      ["wonders", "WNDR", "World wonders controlled"], ["score", "SCORE", "Score"]]
+      .map(([kind, label, title]) => `<span class="${kind}" title="${title}">${label}</span>`).join("") + `</span></div>` +
     `<div class="diplomacy-ribbon" role="list" aria-labelledby="player-stats-title" ` +
     `style="--hud-rows:${rows}">` + majors.map(p => {
       const color = pcol(p.id);
@@ -17144,8 +17222,13 @@ function drawPlayerHud() {
         `<span class="diplomacy-identity-field" title="${leagueTitle}"><span class="diplomacy-player">${playerName}</span></span>` +
         `<span class="diplomacy-identity-field diplomacy-elo" title="${playerEloLabel} · ${leagueTitle}">` +
         `<span class="diplomacy-elo-value">${playerElo}</span></span>` +
+        // The per-cent sign lives in the WIN% column head, not in eight or
+        // twelve repetitions of the value. It cost about seven pixels a row, and
+        // because the value ellipsizes rather than shrinks, going one pixel over
+        // dropped two characters: "12%" rendered as "1…", a win probability of
+        // twelve per cent shown as the digit one.
         `<span class="diplomacy-identity-field diplomacy-expected" title="Elo-implied win odds">` +
-        `<span class="diplomacy-expected-value">${expectPct === null ? "—" : `${expectPct}%`}</span></span>` +
+        `<span class="diplomacy-expected-value">${expectPct === null ? "—" : expectPct}</span></span>` +
         `<span class="diplomacy-identity-field diplomacy-strategy">${activeStrategy}</span>` +
         `<span class="detail-caret">${expanded ? "▾" : "▸"}</span></button></span>` +
         `<button class="diplomacy-stats" data-hud-action="watch" data-hud-civ="${p.id}" title="${watchTitle}" aria-label="Watch ${p.civ}">` +
@@ -17154,9 +17237,13 @@ function drawPlayerHud() {
           const markerHtml = marker
             ? `<span class="founded-religion-marker" aria-hidden="true">${marker}</span>`
             : "";
+          // The marker is a sibling of the figure, not a child of it: inside
+          // <b> its absolute box still counts toward that element's scrollWidth,
+          // so the type fitter shrank the number to make room for a mark that
+          // is not even in flow.
           return `<span class="ribbon-stat ${kind}${isLeader ? " category-leader" : ""}" ` +
             `title="${label}${marker ? " · Founded religion still followed" : ""}${isLeader ? " · Category leader" : ""}">` +
-            `<b>${kind === "score" ? ribbonScore(value) : ribbonStat(value)}${markerHtml}</b></span>`;
+            `<b>${kind === "score" ? ribbonScore(value) : ribbonStat(value)}</b>${markerHtml}</span>`;
         }).join("") + `</button></div>`;
     }).join("") + `</div>` + hudResizeHandles("player standings");
   drawDossierWindows(majors, rankById, relationById);
