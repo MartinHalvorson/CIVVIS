@@ -1631,3 +1631,31 @@ safe to hand to an argmax — and `policy_wide` is left in the tree as the
 demonstration.
 
 Both variants remain eval-only, and no default changed.
+
+## 2026-07-26 — an audit for what the argmax exploits
+
+The rule from the previous entry — that every feature handed to an argmax
+must be one you would be content for the agent to maximise — is only useful
+if someone remembers it. `PolicyAi::feature_pressure` makes it measurable:
+for each feature it reports the mean change the *chosen* action makes,
+beside the mean change an average legal candidate makes. A feature the
+policy is exploiting shows a chosen-delta far above the field's.
+
+That ratio is exactly how `policy_wide`'s collapse was found — contact at
+0.137 against the field's 0.002, seventy-eight times, while the agent lost
+material and 86% of its games. None of the instruments already in the
+repository would have shown it: the win rate said "bad" without saying
+why, the calibration check said the net was accurate, and the visibility
+table said the features were working as designed. All three were correct.
+
+`the_audit_detects_a_feature_the_argmax_exploits` pins it as a regression
+check: with the contact terms free the audit must flag them, and with them
+frozen it must not. A future feature set can be run through the same
+measurement before it is wired to an argmax rather than after it loses 300
+Elo.
+
+The audit reports a question, not a verdict. Heavy pressure on a *causal*
+feature is the policy working — an agent that pushes its own material up is
+doing what it should. Heavy pressure on a *correlational* one is the
+failure. Telling those apart still needs judgement about the game; what
+this removes is the need to first suspect that something is wrong.

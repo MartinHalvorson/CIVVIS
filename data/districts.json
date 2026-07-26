@@ -191,6 +191,8 @@
     "effects": {"naval_passage": 1}
   },
   "dam": {
+    "plunder_type": "heal",
+    "plunder_amount": 50,
     "cost": 81,
     "tech": "buttress",
     "specialty": false,
