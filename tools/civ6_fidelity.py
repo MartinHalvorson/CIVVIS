@@ -483,6 +483,16 @@ def project_units(database: Database) -> dict[str, dict]:
                 number(row.get("ReligiousHealCharges")),
             ),
             "zone_of_control": truthy(row.get("ZoneOfControl")),
+            # Theological combat: the strength an Apostle brings to it, and the
+            # share of rival pressure the unit strips when it acts. CIVVIS
+            # spends the Inquisitor's through Remove Heresy rather than Spread,
+            # so its 75 shows up as pressure retained at a quarter.
+            "religious_strength": number(row.get("ReligiousStrength")),
+            # There is no spread-strength column: RELIGION_SPREAD_STRENGTH_
+            # MULTIPLIER is 200, so a unit spreads at twice its Religious
+            # Strength. CIVVIS stores the product, which is why an Apostle
+            # carries 110 and 220.
+            "religious_spread": number(row.get("ReligiousStrength")) * 2,
             # UnitUpgrades is a separate table; MandatoryObsoleteTech is the
             # column that closes a unit's production menu for good.
             "upgrade_to": upgrades.get(slug(row["UnitType"], "UNIT_")),
@@ -1260,6 +1270,8 @@ ENGINE_PARAMETERS = {
     "COMBAT_HEAL_NAVAL_ENEMY": 0,
     "COMBAT_HEAL_CITY_GARRISON": 20,
     # game.rs tourism_multiplier, domestic_tourists and tourism_components.
+    "RELIGION_SPREAD_STRENGTH_MULTIPLIER": 200,  # religious_spread is 2x strength
+    "RELIGION_INITIAL_BELIEFS": 2,  # game.rs do_found_religion
     "TOURISM_OPEN_BORDERS_BONUS": 25,
     "TOURISM_TRADE_ROUTE_BONUS": 25,
     "TOURISM_DIFFERENT_RELIGION_REDUCTION": 50,

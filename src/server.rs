@@ -2421,11 +2421,6 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     if let Some(v) = request["map_poles"].as_bool() {
         p.map_poles = if v { MapPoles::Poles } else { MapPoles::NoPoles };
     }
-    // Earth is drawn from real longitudes and latitudes and closes on itself,
-    // so it is always a globe whatever shape the lobby asked for.
-    if p.map_script.is_fixed_geography() {
-        p.map_topology = MapTopology::Planet;
-    }
     // A globe is stored in a rectangle of its own shape, so the chosen size is
     // re-expressed whenever either the size or the shape moves, and the lobby
     // always names the world it is about to build.
@@ -4564,13 +4559,14 @@ mod tests {
         // size's own rectangle.
         let flat = new_game_params(&stock, &json!({"map_topology": "flat"}));
         assert_eq!((flat.width, flat.height), (size.width, size.height));
-        // Earth is the exception, and overrules the shape it is handed.
+        // Fixed geography changes the coastline source, not the selected
+        // shape: Earth can be sampled onto a flat atlas too.
         let earth = new_game_params(
             &flat,
             &json!({"map_script": "true_start_earth", "map_topology": "flat"}),
         );
-        assert_eq!(earth.map_topology, MapTopology::Planet);
-        assert_eq!((earth.width, earth.height), (size.globe_width(), size.globe_height()));
+        assert_eq!(earth.map_topology, MapTopology::Flat);
+        assert_eq!((earth.width, earth.height), (size.width, size.height));
     }
 
     #[test]
@@ -4683,6 +4679,8 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("<option value=\"land_only\">Land Only</option>"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"water_world\">Water World</option>"));
         assert!(EMBEDDED_INDEX.contains("RULES.map_topologies"));
+        assert!(EMBEDDED_INDEX.contains("shape.disabled = false"));
+        assert!(!EMBEDDED_INDEX.contains("if (earth) shape.value = \"planet\""));
         assert!(EMBEDDED_INDEX.contains("id=\"gamespeed\""));
         for victory in [
             "science",
@@ -5133,8 +5131,11 @@ mod tests {
         // Default camera moves compose at the exact center of the rectangle
         // requested by the operator: the command deck's right edge to the
         // victory rail's left edge, and the player HUD's bottom edge to the
-        // screen bottom. A missing widget naturally leaves its screen edge in
-        // place, and the minimap is deliberately absent from this calculation.
+        // screen bottom. At the responsive breakpoint the victory rail becomes
+        // a top band, so its live box extends the top edge instead of collapsing
+        // the horizontal stage against its 8px left gutter. A missing widget
+        // naturally leaves its screen edge in place, and the minimap is
+        // deliberately absent from this calculation.
         assert!(EMBEDDED_INDEX.contains("function mapOverlayVisible(name)"));
         assert!(EMBEDDED_INDEX.contains(
             "document.body.classList.contains(\"sidebar-hidden\")"
@@ -5146,10 +5147,22 @@ mod tests {
             "left = Math.max(0, Math.min(width, sideRect.right - areaRect.left));"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "if (victory) right = Math.max(0, Math.min(width, victory.left));"
+            "if (players) top = Math.max(0, Math.min(height, players.bottom));"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "if (players) top = Math.max(0, Math.min(height, players.bottom));"
+            "const spansWidth = victory.left <= 16 && victory.right >= width - 16;"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (spansWidth) top = Math.max(top, Math.max(0, Math.min(height, victory.bottom)));"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "else right = Math.max(0, Math.min(width, victory.left));"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (right <= left) { left = 0; right = width; }"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (bottom <= top) { top = 0; bottom = height; }"
         ));
         assert!(!EMBEDDED_INDEX.contains(
             "if (minimap) left = Math.max(left, (minimap.left + minimap.right) / 2);"
@@ -5168,7 +5181,18 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "const {x:desiredX, y:desiredY} = mapFocusPoint();"
         ));
-        assert!(EMBEDDED_INDEX.contains("View as"));
+        assert!(EMBEDDED_INDEX.contains("<span>Terrain</span>"));
+        assert!(EMBEDDED_INDEX.contains("<span>Watch as</span>"));
+        assert_eq!(
+            EMBEDDED_INDEX
+                .matches("Spectator - Full Map Visablity")
+                .count(),
+            2,
+            "the initial and refreshed viewpoint menus should use the same spectator label"
+        );
+        assert!(EMBEDDED_INDEX.contains(
+            "Player ${p.id + 1} - ${p.civ} (${p.leader || \"Unknown leader\"})"
+        ));
         assert!(EMBEDDED_INDEX.contains("id=\"viewplayer\""));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/view\""));
         // The ribbon repaints under the cursor, so its buttons declare their
@@ -6850,7 +6874,7 @@ mod tests {
     }
 
     /// Hovering a tile reports it, the way Civ 6's plot tooltip does — and it
-    /// keeps doing so after the map has been panned.
+    /// keeps doing so after the map has been panned or the simulation advances.
     ///
     /// `dragMoved` outlives its gesture: the click that follows clears it, and
     /// a drag released off the canvas never produces one. A hover guard that
@@ -6858,10 +6882,16 @@ mod tests {
     /// exactly how the tooltip died. The guard has to ask whether a gesture is
     /// in flight *now*.
     #[test]
-    fn hovering_a_tile_reports_it_and_survives_a_pan() {
+    fn hovering_a_tile_reports_it_survives_a_pan_and_tracks_new_turns() {
         assert!(
-            EMBEDDED_INDEX.contains("if (!state || dragState || mapTouches.size || rdrag) {"),
+            EMBEDDED_INDEX.contains(
+                "if (!state || !tileTipPointer || dragState || mapTouches.size || rdrag) {"
+            ),
             "the hover guard must test a live gesture, never the stale dragMoved flag"
+        );
+        assert!(
+            EMBEDDED_INDEX.contains("drawCaptureChoice();\n  refreshTileTip();"),
+            "each delivered simulation snapshot must refresh the tile under the pointer"
         );
         for piece in [
             "function tileMoveCost(t)",
