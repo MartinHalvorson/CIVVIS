@@ -1259,3 +1259,49 @@ A future attempt at production search needs a terminal value that credits
 unfinished compounding — a trained value net, or continuing the branch to a
 real result the way `counterfactual_value_samples` already does — rather
 than a longer fixed horizon, which only moves the cliff.
+
+## 2026-07-26 — a value net over the same features is not a second opinion
+
+The previous entry blamed the production search's loss on its horizon: a
+building's payoff arrives after the projection ends, so the terminal value
+cannot see it. The stated fix was a value function, which is precisely the
+tool for estimating what happens beyond a horizon. `production_net` is that
+agent with the trained net as its terminal evaluator instead of score
+share, run on the same 120 maps:
+
+| variant | terminal value | games | maps for | against | sign p |
+|---|---|---|---|---|---|
+| `production` | score share | 108/240 (45.0%) | 9 | 21 | 0.0428 |
+| `production_net` | trained value net | 109/240 (45.4%) | 9 | 20 | 0.0614 |
+
+**The hypothesis is wrong.** One game changed hands.
+
+The reason is more useful than the fix would have been. The net's inputs
+*are* `evolve::features` — the 25 empire aggregates — and Civilization
+score is one of them, next to the yields and population that generate it.
+A win probability regressed on those numbers is a re-weighting of what
+score share already reports, not an independent judgement. It cannot tell
+an empire whose infrastructure is about to compound from one with the same
+current yields, because nothing in its input distinguishes them.
+Substituting it therefore cannot repair an information problem, however
+well calibrated it is — and it is well calibrated: grouped-holdout BCE
+0.4058 against a 0.5636 constant baseline, ECE 0.0355.
+
+That is the same root cause as `PolicyAi` and the inert lane-value blend,
+now a third time, and it sharpens the table from the previous entry. Three
+of those four rows are not four problems but one: **the learned evaluator
+is a function of 25 empire scalars, and every decision it has been asked to
+rank is invisible in them.** The fourth row, the doctrine axis, is the only
+one that was a tuning error.
+
+What this rules out, concretely: training a better net on
+`evolve::features` cannot help any of these agents, so the training loop is
+not the bottleneck and neither is data volume. What it points at is
+`obs_tensor` — the 25 fog-honest spatial planes that already exist and that
+no Rust agent can consume, because `tools/train_spatial.py` writes a
+PyTorch checkpoint and nothing loads it. That gap, not calibration, is what
+stands between this codebase and a learned component that changes a
+decision.
+
+The scripted governor remains the better production policy, and both
+entrants stay eval-only.

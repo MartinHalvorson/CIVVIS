@@ -17,13 +17,29 @@
 //! choice, and the governor's long-horizon sequencing — reserved
 //! Spaceports, district families, wonder timing — is what gets discarded.
 //!
-//! That is the same failure that made `PolicyAi` inert, one level up: not
-//! an evaluator blind to the action, but an evaluator whose *horizon* is
-//! shorter than the decision's payoff. A future attempt needs a terminal
-//! value that credits unfinished compounding — a trained value net, or
-//! continuing the branch to a real result the way
-//! `counterfactual_value_samples` does — rather than a longer fixed
-//! horizon, which only moves the cliff.
+//! **That hypothesis was tested and is wrong.** `production_net` is this
+//! agent with the trained value net as its terminal evaluator instead of
+//! score share — the textbook fix, since estimating value beyond the
+//! horizon is exactly a value function's job. It changed nothing: 109/240
+//! games against 108/240, 9 map directions to 20 against 9 to 21, on the
+//! same 120 maps.
+//!
+//! The reason is worth more than the fix would have been. The net's inputs
+//! *are* the 25 empire aggregates, and Civilization score is one of them,
+//! alongside the yields and population that produce it. A win probability
+//! regressed on those numbers is a re-weighting of what score share
+//! already reports, not a second opinion — it cannot distinguish an empire
+//! whose infrastructure is about to compound from one with identical
+//! current yields, because nothing in its input says so. Substituting it
+//! cannot repair an information problem.
+//!
+//! So this is the same root cause as `PolicyAi`, a third time:
+//! representation, not calibration and not horizon. A production search
+//! worth building needs a terminal value that sees something score share
+//! does not — a spatial or per-city observation, or branches continued to
+//! a real result the way `counterfactual_value_samples` does — and until
+//! then the scripted governor's long-horizon sequencing is the better
+//! policy.
 //!
 //! `StrategicAi` is the one learned-or-searched component in this codebase
 //! that measurably wins games, and the reason is that a rollout is an
@@ -54,7 +70,9 @@
 //!    keeps the whole feature in the same cost class as the search that is
 //!    already known to pay for itself.
 use crate::ai::{AdvancedAi, Ai, PlanReport, VictoryTarget, Weights};
+use crate::evolve::features;
 use crate::game::{Action, Game, Item};
+use crate::valuenet::ValueNet;
 
 /// Turns between production searches. One search every fifteen turns puts a
 /// 200-turn game at about thirteen, which is the same order as the lane
@@ -72,6 +90,11 @@ const COMMITMENT_MARGIN: f64 = 0.002;
 pub struct ProductionSearchAi {
     inner: AdvancedAi,
     weights: Weights,
+    /// Terminal evaluator for a rollout endpoint. Kept configurable
+    /// because swapping it was the obvious fix for the loss above, and
+    /// measuring that swap is what showed the loss is not about the
+    /// terminal value at all — see the module note.
+    net: Option<ValueNet>,
     /// Most candidate items projected per decision.
     pub width: usize,
     /// Turns between searches.
@@ -96,11 +119,38 @@ impl ProductionSearchAi {
         ProductionSearchAi {
             inner: AdvancedAi::with_weights(weights.clone()),
             weights,
+            net: None,
             width: 5,
             search_every: DEFAULT_SEARCH_EVERY,
             next_search: 0,
             searches: 0,
             overrides: 0,
+        }
+    }
+
+    /// Judge rollout endpoints with the trained value net instead of score
+    /// share. Falls back to score share when no net is on disk.
+    pub fn with_value_net(mut self) -> ProductionSearchAi {
+        self.net = ValueNet::load("evolved");
+        self
+    }
+
+    pub fn has_net(&self) -> bool {
+        self.net.is_some()
+    }
+
+    fn terminal_value(&self, g: &Game, pid: usize) -> f64 {
+        let share = score_share(g, pid);
+        match &self.net {
+            Some(net) => {
+                let learned = net.eval(&features(g, pid));
+                if learned.is_finite() {
+                    learned
+                } else {
+                    share
+                }
+            }
+            None => share,
         }
     }
 
@@ -192,7 +242,7 @@ impl ProductionSearchAi {
         Some(match sim.winner {
             Some(winner) if winner == pid => 1.0,
             Some(_) => 0.0,
-            None => score_share(&sim, pid),
+            None => self.terminal_value(&sim, pid),
         })
     }
 
