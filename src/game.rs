@@ -13,7 +13,7 @@ use crate::rules::{
 };
 use crate::specmap::SpecMap;
 
-use crate::setup::{GameSpeed, MapPoles, MapScript, MapSize, MapTopology};
+use crate::setup::{BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, MapTopology, StartEon};
 use crate::world::{DistrictFoundation, RememberedTile, Tile, TileBits, TileMemory, WorldMap};
 use crate::{hex, mapgen, Pos};
 
@@ -13750,6 +13750,19 @@ pub struct GameOptions {
     pub max_turns: u32,
     pub city_states: usize,
     pub barbarians: bool,
+    /// Which published game's rules this world is played by. Civilization VI
+    /// is the only one modeled, and the only one this can be.
+    pub base_ruleset: BaseRuleset,
+    /// Which sweep of time the game is played through. Only
+    /// [`StartEon::Civilization`] has a technology tree behind it today, so
+    /// only human history reaches the engine.
+    pub start_eon: StartEon,
+    /// How far into [`Self::start_eon`] the game opens, as an index into that
+    /// eon's ladder. In human history that index is the era of
+    /// [`crate::rules::ERA_NAMES`] every civilization starts in: zero is the
+    /// stock Ancient start, and anything above it is Civilization VI's
+    /// Advanced Start — the earlier eras are already researched.
+    pub start_era: usize,
     pub map_script: MapScript,
     /// What shape the world is, asked separately from what fills it: every
     /// world type can be laid out flat or closed into a globe.
@@ -13802,6 +13815,9 @@ impl GameOptions {
             max_turns,
             city_states,
             barbarians: true,
+            base_ruleset: BaseRuleset::default(),
+            start_eon: StartEon::default(),
+            start_era: 0,
             map_script: MapScript::Pangaea,
             map_topology: MapTopology::default(),
             map_poles: MapPoles::default(),
@@ -14138,6 +14154,18 @@ pub struct Game {
     /// all-agent game leaves this empty, which is why headless simulation is
     /// unaffected by the setting unless a seat is declared human.
     pub human_seats: BTreeSet<usize>,
+    /// The published game whose rules this world is played by. Kept on the
+    /// save alongside the rest of the setup so a restart offers what was
+    /// actually played, rather than today's default.
+    #[serde(default)]
+    pub base_ruleset: BaseRuleset,
+    /// The sweep of time this world was set up in, and how far into it the
+    /// game opened. `start_era` is an index into `start_eon`'s ladder, which
+    /// for human history is an era of [`crate::rules::ERA_NAMES`].
+    #[serde(default)]
+    pub start_eon: StartEon,
+    #[serde(default)]
+    pub start_era: usize,
     pub map_script: MapScript,
     /// Random-leader roster chosen when this world was created. It remains on
     /// the save so a restart can faithfully offer the same setup.
@@ -14319,6 +14347,14 @@ struct GameSer {
     #[serde(default)]
     events: Vec<Event>,
     #[serde(default)]
+    base_ruleset: BaseRuleset,
+    /// Absent in saves written before a game could open anywhere but the
+    /// Ancient era of human history, which is exactly what the defaults are.
+    #[serde(default)]
+    start_eon: StartEon,
+    #[serde(default)]
+    start_era: usize,
+    #[serde(default)]
     map_script: MapScript,
     #[serde(default)]
     leader_pool: LeaderPool,
@@ -14434,6 +14470,9 @@ impl From<GameSer> for Game {
             human_seats: s.human_seats,
             mods: s.mods,
             events: s.events.into(),
+            base_ruleset: s.base_ruleset,
+            start_eon: s.start_eon,
+            start_era: s.start_era,
             map_script: s.map_script,
             leader_pool: s.leader_pool,
             map_poles: s.map_poles,
@@ -14586,6 +14625,9 @@ impl From<Game> for GameSer {
             human_seats: g.human_seats,
             mods: g.mods,
             events: g.events.into(),
+            base_ruleset: g.base_ruleset,
+            start_eon: g.start_eon,
+            start_era: g.start_era,
             map_script: g.map_script,
             leader_pool: g.leader_pool,
             map_poles: g.map_poles,
@@ -14703,6 +14745,9 @@ impl Game {
             max_turns,
             city_states: num_city_states,
             barbarians,
+            base_ruleset,
+            start_eon,
+            start_era,
             map_script,
             map_topology,
             map_poles,
@@ -14716,6 +14761,16 @@ impl Game {
             leader_pool,
             randomize_civs,
         } = options;
+        // The eon is what makes a start era mean anything: only human history
+        // has trees to cut at it, so every other eon opens at its own first
+        // age however it was asked for. A rung past the end of the ladder is
+        // clamped rather than fatal — a client from a later build must not be
+        // able to construct a world that reads as a later era than exists.
+        let start_era = if start_eon == StartEon::Civilization {
+            start_era.min(StartEon::Civilization.eras().len() - 1)
+        } else {
+            start_eon.default_era()
+        };
         assert!(
             teams.is_empty() || teams.len() == num_players,
             "team assignments must be empty or contain one entry per major player"
@@ -14756,6 +14811,9 @@ impl Game {
             difficulty,
             speed,
             human_seats,
+            base_ruleset,
+            start_eon,
+            start_era,
             map_script,
             leader_pool,
             map_poles,
@@ -14787,7 +14845,7 @@ impl Game {
             barb_camp_targets: BTreeMap::new(),
             barb_alerted_until: BTreeMap::new(),
             routes: Vec::new(),
-            world_era: 0,
+            world_era: start_era,
             climate_phase: 0,
             meteor_strikes: 0,
             disaster_intensity,
@@ -14902,9 +14960,100 @@ impl Game {
                 g.spawn_camp();
             }
         }
+        g.open_in_start_era();
         g.refresh_great_person_offers();
         g.refresh_all_visibility();
         g
+    }
+
+    /// Civilization VI's Advanced Start: a game set to open past the first age
+    /// of its eon begins with the earlier ages already behind it.
+    ///
+    /// This is where the eon stops being a label and becomes a rule, and only
+    /// human history has trees to cut, so only human history reaches here —
+    /// `new_with` has already pinned `start_era` to zero for every other eon.
+    ///
+    /// Every civilization on the board is handed it: majors and city-states
+    /// alike get every technology and civic of an earlier era, and each of
+    /// their starting units is walked as far up its own upgrade chain as that
+    /// knowledge reaches. A world where the majors have rifles and the minors
+    /// have slings is not the setting anybody asked for, and neither is a
+    /// Modern-era start defended by Warriors. Barbarians are left alone
+    /// deliberately: their camps spawn against the world era, which this
+    /// moves, so they arrive era-appropriate without being handed a start.
+    ///
+    /// What this does not do is grant the extra Settlers, gold and finished
+    /// districts a shipped Advanced Start also hands out. Those are balance
+    /// dials; an era's worth of research is the part that decides what the
+    /// game *is*.
+    fn open_in_start_era(&mut self) {
+        if self.start_era == 0 {
+            return;
+        }
+        let era = self.start_era;
+        let techs: Vec<String> = self
+            .rules
+            .techs
+            .iter()
+            .filter(|(_, spec)| spec.era < era)
+            .map(|(name, _)| name.clone())
+            .collect();
+        let civics: Vec<String> = self
+            .rules
+            .civics
+            .iter()
+            .filter(|(_, spec)| spec.era < era)
+            .map(|(name, _)| name.clone())
+            .collect();
+        for pid in 0..self.players.len() {
+            if self.players[pid].is_barbarian {
+                continue;
+            }
+            self.players[pid].techs.extend(techs.iter().cloned());
+            self.players[pid].civics.extend(civics.iter().cloned());
+            // Nothing may be left researching something it already knows.
+            if self.players[pid]
+                .research
+                .as_deref()
+                .is_some_and(|tech| techs.iter().any(|known| known == tech))
+            {
+                self.players[pid].research = None;
+                self.players[pid].research_progress = 0.0;
+            }
+            if self.players[pid]
+                .civic
+                .as_deref()
+                .is_some_and(|civic| civics.iter().any(|known| known == civic))
+            {
+                self.players[pid].civic = None;
+                self.players[pid].civic_progress = 0.0;
+            }
+        }
+        self.world_era = era;
+
+        // Re-spawn rather than rewrite: `spawn_unit` owns charges, religion
+        // and the strongest-built counters, so a Musketman that arrives this
+        // way is the same unit as one that was trained.
+        let starting: Vec<(u32, usize, Pos, String)> = self
+            .units
+            .values()
+            .filter(|unit| !self.players[unit.owner].is_barbarian)
+            .map(|unit| (unit.id, unit.owner, unit.pos, unit.kind.clone()))
+            .collect();
+        for (uid, owner, pos, kind) in starting {
+            let mut upgraded = kind.clone();
+            // The chain is acyclic and every rung is checked against what the
+            // owner now knows, so this walks to the newest unit the start era
+            // reaches and stops.
+            while let Some(next) = self.unit_upgrade_target(owner, &upgraded) {
+                upgraded = next;
+            }
+            if upgraded == kind {
+                continue;
+            }
+            self.remove_unit(uid);
+            self.spawn_unit(&upgraded, owner, pos);
+        }
     }
 
     fn ensure_free_city_player(&mut self) -> usize {
@@ -42821,6 +42970,12 @@ impl Game {
             )
             .max()
             .unwrap_or(0)
+            // Nothing is ever before the era the world was set up to open in.
+            // An Advanced Start hands out every tech of the eras *below* the
+            // chosen one, so the most advanced thing known is one era short of
+            // it until the first new tech lands; without this floor a Medieval
+            // game would call itself Classical on its opening turn.
+            .max(self.start_era)
     }
 
     fn era_from_progress(&self) -> usize {
