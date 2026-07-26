@@ -5548,6 +5548,28 @@ mod tests {
             "function observedViewGoal(anchors, oneEmpire = Number.isInteger(state?.view_player))"
         ));
         assert!(EMBEDDED_INDEX.contains("watchedEmpireAutoFrame"));
+        // The same portrait on a round world. Framing the whole globe is the
+        // right shot only when the whole of it is being watched: a seat has
+        // seen the ground it walked and nothing else, so a globe-wide opening
+        // frame left a new single-player game staring at blank ocean with its
+        // own settler nowhere on the stage.
+        let observed_view = EMBEDDED_INDEX
+            .split("function setObservedPlayersView(smooth = false)")
+            .nth(1)
+            .unwrap()
+            .split("function actionViewingAnchor(focus)")
+            .next()
+            .unwrap();
+        assert!(observed_view.contains("if (planetMap() && !watched) { fitPlanetView(); return; }"));
+        assert!(observed_view.contains("if (planetMap()) skyReturnHome();"));
+        assert!(EMBEDDED_INDEX.contains("function observedCameraPoints(anchors)"));
+        assert!(EMBEDDED_INDEX.contains("function observedPlanetViewGoal(anchors, maximum)"));
+        assert!(EMBEDDED_INDEX
+            .contains("if (planetMap()) return observedPlanetViewGoal(anchors, maximum);"));
+        // A far-flung scout must not zoom the empire shot out past the world
+        // itself and off into the system.
+        assert!(EMBEDDED_INDEX
+            .contains("planetScaleClamp(Math.max(wholeWorld, Math.min(maximum, fitX, fitY)))"));
         assert!(EMBEDDED_INDEX.contains("const EMPIRE_RECON_UNITS"));
         assert!(EMBEDDED_INDEX.contains("const atWarFront"));
         assert!(EMBEDDED_INDEX.contains("Number(unit.formation) > 0"));
