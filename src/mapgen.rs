@@ -265,7 +265,7 @@ fn earth_is_land(longitude: f64, latitude: f64) -> bool {
 /// point on a peninsula or a river delta thinner than the sampling would come
 /// out at sea and seat the civilization on whatever coast the search found
 /// first. `every_homeland_is_on_land` holds the line.
-const EARTH_HOMELANDS: [(f64, f64); 100] = [
+const EARTH_HOMELANDS: [(f64, f64); 105] = [
     (12.5, 41.9),     // Rome
     (31.2, 30.0),     // Egypt
     (23.7, 38.0),     // Greece
@@ -366,6 +366,11 @@ const EARTH_HOMELANDS: [(f64, f64); 100] = [
     (-63.5, -32.5),   // Argentina
     (134.0, -24.5),   // Australia
     (175.0, -39.5),   // Maori
+    (48.0, 32.0),     // Babylon
+    (-114.5, 49.0),   // Cree
+    (-68.0, 7.5),     // Gran Colombia
+    (106.8, -6.2),    // Indonesia
+    (22.5, 40.6),     // Macedon
 ];
 
 /// The unit vector a longitude and latitude in degrees point at.
