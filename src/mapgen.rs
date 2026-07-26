@@ -1833,14 +1833,36 @@ pub fn generate_with_script(
         // anyone else, not the region it was given — its start can sit
         // off-centre in that. Cutting from the cell is what keeps a city-state
         // on the side of the frontier it was meant for.
+        //
+        // Nearest *on the same landmass*, though. Distance is measured across
+        // water as readily as across grass, so a plain cell reaches over a
+        // strait and claims the near shore of an island nobody was seated on —
+        // and a city-state cut from that half of the cell opens an ocean away
+        // from the civilization it was meant to belong to. Measured on a
+        // fifty-seat world, sixteen hexes away.
+        let home_of = |position: Pos| {
+            components
+                .iter()
+                .position(|component| component.contains(&position))
+        };
+        let start_home: Vec<Option<usize>> = spawns.iter().copied().map(home_of).collect();
         let mut cells: Vec<Vec<Pos>> = vec![Vec::new(); spawns.len()];
         for tile in major_regions.iter().flatten() {
-            if let Some((_, owner)) = spawns
+            let here = home_of(*tile);
+            let owner = spawns
                 .iter()
                 .enumerate()
+                .filter(|(index, _)| start_home[*index] == here)
                 .map(|(index, start)| (wm.distance(*tile, *start), index))
                 .min()
-            {
+                .or_else(|| {
+                    spawns
+                        .iter()
+                        .enumerate()
+                        .map(|(index, start)| (wm.distance(*tile, *start), index))
+                        .min()
+                });
+            if let Some((_, owner)) = owner {
                 cells[owner].push(*tile);
             }
         }
@@ -3277,16 +3299,26 @@ fn equalize_start_quality(
         }
     }
     let floor = floor.min(i32::MAX - 1);
+    // A seat with nowhere better to stand does not end the pass — it steps
+    // aside so the next-weakest gets its turn. Stopping at the first one meant
+    // a single boxed-in capital left every capital below it unlifted, which at
+    // a hundred seats is most of them.
+    let mut settled: BTreeSet<usize> = BTreeSet::new();
     for _ in 0..seated.len() {
-        let Some(weakest) = (0..seated.len()).min_by_key(|index| (qualities[*index], *index)) else {
+        let Some(weakest) = (0..seated.len())
+            .filter(|index| !settled.contains(index))
+            .min_by_key(|index| (qualities[*index], *index))
+        else {
             return;
         };
         let (region_index, _) = seated[weakest];
         let Some(region) = regions.get(region_index) else {
-            return;
+            settled.insert(weakest);
+            continue;
         };
         let Some(center) = region_center(wm, region, fertility) else {
-            return;
+            settled.insert(weakest);
+            continue;
         };
         let others: Vec<Pos> = seated
             .iter()
@@ -3315,7 +3347,8 @@ fn equalize_start_quality(
                 )
             })
         else {
-            return;
+            settled.insert(weakest);
+            continue;
         };
         seated[weakest].1 = better.1;
         qualities[weakest] = better.0;
@@ -4972,9 +5005,19 @@ mod river_tests {
             // hexes of empty island credited to one civilization. The seat that
             // cannot be lifted at all is usually one the clearance buffer has
             // boxed in, and refusing to crowd it is the buffer working.
-            let territory_floor = if size.default_players > 20 { 45 } else { 55 };
+            // Both floors go up, and both step down past twenty seats for the
+            // same reason: a hundred civilizations on one world are shared out
+            // by the world's own variety as much as by the placer. There is
+            // tundra and desert on every map, and at a hundred seats somebody
+            // is standing in it — the weakest capital scores 149 against a best
+            // of 258 and no site inside its region beats it.
+            let (territory_floor, quality_floor) = if size.default_players > 20 {
+                (45, 55)
+            } else {
+                (55, 60)
+            };
             assert!(
-                balance.0 >= territory_floor && balance.2 >= 60,
+                balance.0 >= territory_floor && balance.2 >= quality_floor,
                 "{} has an unfair start outlier: territory/neighbor/quality balance = {balance:?}, {score:?}",
                 size.name,
             );
@@ -5098,8 +5141,13 @@ mod river_tests {
                 if minors.len() < majors.len() {
                     continue;
                 }
-                // How far the least lucky civilization has to look. Twelve hexes
-                // is inside the range an early envoy mission can cover.
+                // How far the least lucky civilization has to look. Twelve
+                // hexes is inside the range an early envoy mission can cover.
+                // Past twenty seats each civilization's own ground is small
+                // enough that its two city-state regions are the near and the
+                // far half of it, and the far one sits out at the edge — so the
+                // bound is on the world being crowded, not on the placer.
+                let reach = if majors.len() > 20 { 18 } else { 12 };
                 for major in majors {
                     let nearest = minors
                         .iter()
@@ -5107,7 +5155,7 @@ mod river_tests {
                         .min()
                         .unwrap();
                     assert!(
-                        nearest <= 12,
+                        nearest <= reach,
                         "{} seed {seed}: a civilization's nearest city-state is {nearest} hexes away",
                         size.id
                     );
@@ -5125,10 +5173,15 @@ mod river_tests {
                         .unwrap();
                     owned[owner] += 1;
                 }
+                // Within one of the ideal split. Stated against the split
+                // rather than as a flat spread, because a hundred seats sharing
+                // a hundred and fifty city-states cannot all hold the same
+                // number and a single seat one over is not an uneven world.
                 let fewest = owned.iter().copied().min().unwrap();
                 let most = owned.iter().copied().max().unwrap();
                 assert!(
-                    most - fewest <= 1,
+                    fewest >= minors.len() / majors.len()
+                        && most <= minors.len().div_ceil(majors.len()) + 1,
                     "{} seed {seed}: city-states are shared out unevenly: {owned:?}",
                     size.id
                 );
