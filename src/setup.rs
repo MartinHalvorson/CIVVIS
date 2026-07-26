@@ -330,8 +330,50 @@ impl GameSpeed {
         standard * self.cost_percent() as f64 / 100.0
     }
 
+    /// Percentage a turn *duration* scales by, which is not the cost curve.
+    /// `GameSpeed_Scalings` keeps a separate SCALING_HALF row per speed for
+    /// exactly this, and it is far gentler: Marathon doubles a duration where
+    /// it triples a cost, and Online keeps two thirds of one where it pays
+    /// half of the other.
+    pub const fn duration_percent(self) -> u32 {
+        match self {
+            Self::Online => 66,
+            Self::Quick => 87,
+            Self::Standard => 100,
+            Self::Epic => 125,
+            Self::Marathon => 200,
+        }
+    }
+
+    /// Turns a duration of `standard` Standard-speed turns lasts at this
+    /// speed. `GameSpeed_Durations` spells out every duration the shipped
+    /// rules actually use and does not always agree with the multiplier -- 30
+    /// turns becomes 25 on Quick where 87% would give 26 -- so the table wins
+    /// and `duration_percent` covers anything outside it.
     pub fn scale_turns(self, standard: u32) -> u32 {
-        (standard as u64 * self.cost_percent() as u64).div_ceil(100).max(1) as u32
+        // NumberOfTurnsOnStandard, then Online / Quick / Standard / Epic /
+        // Marathon. Standard is the key itself; the table ships no row for it.
+        const DURATIONS: [(u32, [u32; 5]); 6] = [
+            (5, [5, 5, 5, 10, 15]),
+            (10, [8, 9, 10, 15, 25]),
+            (15, [10, 12, 15, 20, 30]),
+            (29, [19, 24, 29, 39, 59]),
+            (30, [20, 25, 30, 40, 60]),
+            (60, [40, 50, 60, 80, 120]),
+        ];
+        let column = match self {
+            Self::Online => 0,
+            Self::Quick => 1,
+            Self::Standard => 2,
+            Self::Epic => 3,
+            Self::Marathon => 4,
+        };
+        if let Some((_, scaled)) = DURATIONS.iter().find(|(turns, _)| *turns == standard) {
+            return scaled[column];
+        }
+        (standard as u64 * self.duration_percent() as u64)
+            .div_ceil(100)
+            .max(1) as u32
     }
 
     pub fn from_id(id: &str) -> Option<Self> {
@@ -723,20 +765,57 @@ mod tests {
 
     #[test]
     fn stock_game_speeds_scale_costs_durations_and_turn_limits() {
+        // CostMultiplier and the GameSpeed_Turns increments summed, then the
+        // SCALING_HALF DefaultCostMultiplier, then the GameSpeed_Durations row
+        // for a 30-turn duration -- the length of an alliance and of a World
+        // Congress session, so the one that matters most.
         let expected = [
-            (GameSpeed::Online, 50, 250),
-            (GameSpeed::Quick, 67, 330),
-            (GameSpeed::Standard, 100, 500),
-            (GameSpeed::Epic, 150, 750),
-            (GameSpeed::Marathon, 300, 1500),
+            (GameSpeed::Online, 50, 250, 66, 20),
+            (GameSpeed::Quick, 67, 330, 87, 25),
+            (GameSpeed::Standard, 100, 500, 100, 30),
+            (GameSpeed::Epic, 150, 750, 125, 40),
+            (GameSpeed::Marathon, 300, 1500, 200, 60),
         ];
         assert_eq!(CIV6_GAME_SPEEDS.len(), expected.len());
-        for (speed, percent, turns) in expected {
+        for (speed, percent, turns, duration_percent, thirty) in expected {
             assert_eq!(speed.cost_percent(), percent);
             assert_eq!(speed.turn_limit(), turns);
             assert_eq!(speed.scale(100.0), percent as f64);
-            assert_eq!(speed.scale_turns(30), (30 * percent).div_ceil(100));
+            assert_eq!(speed.duration_percent(), duration_percent);
+            assert_eq!(speed.scale_turns(30), thirty);
             assert_eq!(GameSpeed::from_id(speed.id()), Some(speed));
+        }
+
+        // A duration is not a cost. Marathon triples what a Settler costs but
+        // only doubles how long a peace treaty holds, and Online halves the
+        // cost while keeping two thirds of the duration.
+        assert_eq!(GameSpeed::Marathon.scale(100.0), 300.0);
+        assert_eq!(GameSpeed::Marathon.scale_turns(60), 120);
+        assert_eq!(GameSpeed::Online.scale(100.0), 50.0);
+        assert_eq!(GameSpeed::Online.scale_turns(60), 40);
+
+        // Every row of GameSpeed_Durations, which does not follow the
+        // multiplier: 87% of 29 is 26 but the table says 24, and no speed
+        // shortens a 5-turn duration at all.
+        let rows: [(u32, [u32; 5]); 6] = [
+            (5, [5, 5, 5, 10, 15]),
+            (10, [8, 9, 10, 15, 25]),
+            (15, [10, 12, 15, 20, 30]),
+            (29, [19, 24, 29, 39, 59]),
+            (30, [20, 25, 30, 40, 60]),
+            (60, [40, 50, 60, 80, 120]),
+        ];
+        let order = [
+            GameSpeed::Online,
+            GameSpeed::Quick,
+            GameSpeed::Standard,
+            GameSpeed::Epic,
+            GameSpeed::Marathon,
+        ];
+        for (standard, scaled) in rows {
+            for (speed, want) in order.iter().zip(scaled) {
+                assert_eq!(speed.scale_turns(standard), want, "{speed:?} for {standard}");
+            }
         }
     }
 
@@ -779,6 +858,7 @@ mod tests {
                 game.rules.techs["pottery"].cost * multiplier
             );
             assert_eq!(game.growth_cost(1), 15.0 * multiplier);
+            // Durations ride the separate SCALING_HALF curve, not `multiplier`.
             assert_eq!(game.standard_duration(30), speed.scale_turns(30));
             assert_eq!(
                 game.item_cost_for_city(0, city, &monument),
