@@ -1259,6 +1259,15 @@ ENGINE_PARAMETERS = {
     "COMBAT_HEAL_NAVAL_NEUTRAL": 0,
     "COMBAT_HEAL_NAVAL_ENEMY": 0,
     "COMBAT_HEAL_CITY_GARRISON": 20,
+    # game.rs `damage`: 30 * exp((att - def) / 25) * U(0.8, 1.2), clamped.
+    # 30 * 0.8 is the base 24 and 30 * 1.2 is 24 + the 12 of extra, and
+    # dividing the strength difference by 25 is the same as scaling it by 0.04.
+    "COMBAT_MAX_EXTRA_DAMAGE": 12,
+    "COMBAT_MINIMUM_DAMAGE": 1,
+    "COMBAT_MAX_HIT_POINTS": 100,
+    "COMBAT_POWER_SCALING": 0.04,
+    "COMBAT_FLANKING_BONUS_MODIFIER": 2,  # game.rs flanking_bonus
+    "COMBAT_SUPPORT_BONUS_MODIFIER": 2,  # game.rs support_bonus
     # game.rs city_take_damage: the multiplier each attack puts on walls.
     "COMBAT_DEFENSE_DAMAGE_PERCENT_MELEE": 15,
     "COMBAT_DEFENSE_DAMAGE_PERCENT_RANGED": 50,
