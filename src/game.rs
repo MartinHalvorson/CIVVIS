@@ -41789,10 +41789,16 @@ impl Game {
     }
 
     fn process_eras(&mut self) {
-        let era = self.era_from_progress();
-        if era <= self.world_era {
+        let progress_era = self.era_from_progress();
+        if progress_era <= self.world_era {
             return;
         }
+        // A late unlock can put the leader several columns ahead of the
+        // world's current age (for example after restoring an older save or
+        // receiving a rules-driven research grant). Each intervening era is
+        // still a real age with its own thresholds and Dedication choice, so
+        // never collapse all of those transitions into one.
+        let era = self.world_era.saturating_add(1).min(progress_era);
         self.world_era = era;
         let majors: Vec<usize> = self
             .players
@@ -51328,8 +51334,8 @@ mod victory_conditions {
         g.players[0].techs.insert("smart_materials".to_string());
         g.process_eras();
         assert_eq!(
-            g.world_era, 8,
-            "late research must not stay capped at Renaissance"
+            g.world_era, 4,
+            "late research advances the world without skipping Industrial"
         );
     }
 
