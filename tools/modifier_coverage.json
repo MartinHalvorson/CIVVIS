@@ -66,6 +66,11 @@
       "verified": true,
       "note": "Verified row by row, all matching. Heritage Tourism doubles Artifact, Landscape, Portrait, Religious and Sculpture works and not Writing or Music, which is exactly CIVVIS' art-and-artifact grouping. Curator doubles all six object types. Cristo Redentor doubles Seaside Resort Tourism. Curator's placement looked wrong -- its id is GOVERNOR_PROMOTION_MERCHANT_CURATOR and Rise and Fall gives it to Reyna -- but Gathering Storm's override of Expansion1_Governors.xml, shipped inside the Expansion2 folder, moves it to Pingala while keeping the old id. CIVVIS has it on Pingala and is right."
     },
+    "ADJUST_CITY_YIELD_CHANGE": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row against the cache. God King 1 Gold and 1 Faith in the Capital, Urban Planning 1 Production in all cities, and the Monument's 1 Culture - which CIVVIS carries as the building's own yields rather than an effect, so it reads as absent from the effects map and is not. The Old God Obelisk is Secret Societies content the CPL lobby disables."
+    },
     "ADJUST_CITY_YIELD_MODIFIER": {
       "status": "implemented",
       "verified": true,
@@ -96,6 +101,16 @@
       "verified": true,
       "note": "Verified row by row, and it found three wrong policy cards. Laissez-Faire is +4 Great Merchant empire-wide plus 2 per Bank, 4 per Stock Exchange, 4 Great Admiral per Seaport and 2 per Shipyard; Nobel Prize is +4 Great Scientist plus 2 per University, 4 per Research Lab, 2 Great Engineer per Factory and 4 per Power Plant; Military Organization was missing its flat +4 Great General. CIVVIS had collapsed the first two into one flat number per building tier. Strategos, Inspiration, Revelation, Literary Tradition, Navigation, Traveling Merchants, Frescoes, Invention and Symphonies were already exact. Divine Spark and the Commemoration/Zhangye Danxia rows are pantheon and content scope."
     },
+    "ADJUST_IMPROVEMENT_AMENITY": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row against the cache: 10 rows. The Camp, Pasture and Plantation rows look at first like base improvements granting an Amenity, which Civ VI does not do - they are the TEMPLE OF ARTEMIS', gated on PLOT_ADJACENT_BUILDING_TYPE_MATCHES BUILDING_TEMPLE_ARTEMIS at range 4. CIVVIS carries exactly that as improvement_amenity_range 4, counting owned unpillaged Camps, Pastures and Plantations in the disk. City Park's water Amenity (adjacent to Coast, Lake or River) and the Ski Resort's are also carried. Golf Course, Ice Hockey Rink and Mound are improvements CIVVIS does not model."
+    },
+    "ADJUST_PLAYER_GOVERNMENT_SLOT_TYPE": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row against the cache: 4 rows and all four match. The Alhambra grants SLOT_MILITARY, Potala Palace SLOT_DIPLOMATIC, Forbidden City SLOT_WILDCARD and Big Ben SLOT_ECONOMIC, and CIVVIS carries each as the matching *_policy_slots effect."
+    },
     "ADJUST_PLAYER_GOVERNOR_POINTS": {
       "status": "implemented",
       "verified": true,
@@ -108,6 +123,11 @@
       "status": "implemented",
       "verified": true,
       "note": "Verified row by row against the cache: 6 rows, +1 accumulation each. They pair by era exactly as CIVVIS groups them: Equestrian Orders on Horses and Iron (early_strategic_resource_rate), Drill Manuals on Niter and Coal (industrial), Resource Management on Aluminum and Oil (modern). The era grouping is not a simplification - it reproduces the shipped pairs."
+    },
+    "ADJUST_PLAYER_RESOURCE_STOCKPILE_CAP": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row against the cache: 6 rows at +10 each, and all six match - Barracks, Stable, Armory, Military Academy, and the Ordu and Basilikoi Paides uniques, each carrying strategic_stockpile 10."
     },
     "ADJUST_PLAYER_STRENGTH_MODIFIER": {
       "status": "implemented",
