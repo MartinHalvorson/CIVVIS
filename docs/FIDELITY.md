@@ -272,6 +272,35 @@ of **180/272** and 8-tech/11-civic prices of **204/308**. The forged-price test
 also posts a zero quote and proves the engine still charges its recomputed live
 price, so the browser's quote is never trusted as authority.
 
+## Swept clean: the systematic comparisons already run
+
+These are whole-axis comparisons, not spot checks. Each was run against every
+shipped row whose owner CIVVIS models, and each came back with the divergences
+listed — so re-running them is unlikely to pay unless the shipped database or
+CIVVIS' content changes. Recorded here so the next pass starts somewhere new.
+
+| Sweep | Scope | Found |
+|---|---|---|
+| Effect arguments | every `Modifiers` row on a modelled owner | the modifier census, see [MODIFIERS.md](MODIFIERS.md) |
+| `Inverse` on effect modifiers | 809 rows, 76 inverted | Monasticism only |
+| `Inverse` on `ATTACH_MODIFIER` wrappers | 2 on modelled owners | Just War and Defender of the Faith |
+| `RequirementSetType` (`TEST_ANY` vs `TEST_ALL`) | 22 multi-requirement sets | none |
+| `OwnerRequirementSetId` | 0 on modelled owners | not a live axis here |
+| Requirements on `ATTACH` inner modifiers | 19 | none |
+| `GlobalParameters` | 115 tracked of 500 shipped | see the ratchet |
+| Ruleset fields with no consumer | 262 fields | `barb_force_scale` |
+| `effects` keys with no consumer | 640 keys, 44 flagged | none — all read via prefix match, `format!` lookup or struct field |
+
+Two lessons worth carrying forward.
+
+**Read `Inverse` first.** It has produced three separate defects — Monasticism's
+Culture penalty, and both army combat beliefs reaching Apostles. Every time,
+CIVVIS had the elaborate part of the condition right and dropped the negation.
+
+**A requirement can sit on either level of an `ATTACH_MODIFIER` pair.** Just War
+carries its unit-class exclusions on the wrapper and its yield on the inner
+modifier; a sweep that reads only the effect-bearing row sees neither.
+
 ## What exactness can mean
 
 Civilization VI's rules live in a closed DLL. Bit-identical random streams are

@@ -234,7 +234,7 @@ impl StrategicAi {
     }
 
     pub fn with_weights(weights: Weights) -> StrategicAi {
-        let net = ValueNet::load("evolved");
+        let net = ValueNet::load_width("evolved", crate::evolve::FEATURE_WIDTH);
         Self::configured(weights, net)
     }
 
