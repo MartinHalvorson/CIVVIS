@@ -3740,6 +3740,102 @@ mod belief_runtime_tests {
     }
 
     #[test]
+    fn the_rest_of_the_camps_arrive_over_the_opening_turns_not_once_a_decade() {
+        // BARBARIAN_CAMP_ODDS_OF_NEW_CAMP_SPAWNING is 2, and it is rolled
+        // every turn: the world walks from its opening third toward the full
+        // target within the first dozens of turns, so the camps a civilization
+        // runs into early are ones that appeared while it was exploring. The
+        // engine used to try once every ten turns, which on this eight-player
+        // lobby is one camp per decade against a target of 24 — 220 turns of
+        // an empty map, i.e. never, in a 500-turn game.
+        let mut arrivals: Vec<u32> = Vec::new();
+        let mut growth: Vec<usize> = Vec::new();
+        for seed in 0..8_u64 {
+            let mut game = Game::new_full(8, 44, 30, 4_171 + seed, 500, 0, true);
+            let opening = game.barb_camps.len();
+            let mut first = None;
+            for _ in 0..12 {
+                game.turn += 1;
+                game.barbarian_phase();
+                if first.is_none() && game.barb_camps.len() > opening {
+                    first = Some(game.turn);
+                }
+            }
+            arrivals.push(first.expect("a new camp inside the opening twelve turns"));
+            // Twelve turns of the ten-turn schedule this replaced were one new
+            // camp, always on turn ten. Twelve 1-in-2 rolls are six, and what
+            // holds the real figure under that is not the cadence but the map:
+            // camps stand seven tiles apart and out of everybody's sight, and
+            // on a 44x30 world with eight majors and their city-states there
+            // is only so much dark ground left that far from everything.
+            assert!(
+                game.barb_camps.len() >= opening + 2,
+                "seed {seed} seated only {} camps in twelve turns",
+                game.barb_camps.len() - opening
+            );
+            assert!(
+                game.barb_camps.len() <= game.barbarian_camp_target(),
+                "the target is a ceiling"
+            );
+            growth.push(game.barb_camps.len() - opening);
+        }
+        // A 1-in-2 roll first lands two turns in on average. Anything that
+        // schedules camps by the decade instead cannot average under ten.
+        let mean_arrival = f64::from(arrivals.iter().sum::<u32>()) / arrivals.len() as f64;
+        assert!(
+            mean_arrival < 5.0,
+            "the first new camp averaged turn {mean_arrival:.1} across {arrivals:?}"
+        );
+        let mean_growth = growth.iter().sum::<usize>() as f64 / growth.len() as f64;
+        assert!(
+            mean_growth >= 3.0,
+            "twelve turns averaged {mean_growth:.1} new camps: {growth:?}"
+        );
+    }
+
+    #[test]
+    fn a_camp_is_never_seated_where_a_civilization_is_already_looking() {
+        // The shipped rule, and the one this engine had no notion of: an
+        // outpost appears "in any tile that is outside of the visible range of
+        // any non-Barbarian unit or city". Distance floors alone let a camp
+        // materialise five tiles from a capital in a Warrior's plain sight.
+        let mut game = Game::new_full(6, 44, 30, 4_173, 500, 0, true);
+        let barbarian = game.barb_pid.expect("a barbarian seat");
+        let watchers: Vec<usize> = (0..game.players.len())
+            .filter(|pid| *pid != barbarian)
+            .collect();
+        let mut checked = 0;
+        for _ in 0..60 {
+            game.turn += 1;
+            game.barbarian_phase();
+            for camp in game.barb_camps.keys().copied().collect::<Vec<_>>() {
+                for pid in &watchers {
+                    assert!(
+                        !game.player_can_see(*pid, camp),
+                        "camp {camp:?} is seated in plain sight of player {pid}"
+                    );
+                }
+                for city in game.cities.values() {
+                    assert!(
+                        game.wdist(camp, city.pos) >= BARBARIAN_CAMP_MINIMUM_DISTANCE_CITY,
+                        "camp {camp:?} sits {} from a city",
+                        game.wdist(camp, city.pos)
+                    );
+                }
+                for other in game.barb_camps.keys().filter(|other| **other != camp) {
+                    assert!(
+                        game.wdist(camp, *other) >= BARBARIAN_CAMP_MINIMUM_DISTANCE_ANOTHER_CAMP,
+                        "camps {camp:?} and {other:?} sit {} apart",
+                        game.wdist(camp, *other)
+                    );
+                }
+                checked += 1;
+            }
+        }
+        assert!(checked > 0, "no camps were placed to check");
+    }
+
+    #[test]
     fn the_top_difficulties_also_spawn_barbarians_twice_as_often() {
         // BarbarianAttackForces carries SpawnRate alongside its force sizes,
         // and it is 2 for every band up to Emperor and 1 from Immortal. The
@@ -11606,6 +11702,17 @@ const PEACE_TREATY_TURNS: u32 = 10;
 /// Shipped `DIPLOMACY_WAR_MIN_TURNS`: a war runs ten turns before either side
 /// may sue for peace. Declaring is a commitment, not a gesture.
 const WAR_MIN_TURNS: u32 = 10;
+/// Shipped `BARBARIAN_CAMP_MINIMUM_DISTANCE_CITY`: no camp is seated within
+/// four tiles of a city, anybody's.
+const BARBARIAN_CAMP_MINIMUM_DISTANCE_CITY: i32 = 4;
+/// Shipped `BARBARIAN_CAMP_MINIMUM_DISTANCE_ANOTHER_CAMP`: camps stand seven
+/// tiles apart, so a region that already has one is done.
+const BARBARIAN_CAMP_MINIMUM_DISTANCE_ANOTHER_CAMP: i32 = 7;
+/// Shipped `BARBARIAN_CAMP_ODDS_OF_NEW_CAMP_SPAWNING`: every turn the world is
+/// under its camp target it rolls one in this many to seat one more. It is a
+/// per-turn roll, not a schedule — the first camps a civilization has not seen
+/// yet appear over the opening handful of turns, not once a decade.
+const BARBARIAN_CAMP_ODDS_OF_NEW_CAMP_SPAWNING: usize = 2;
 
 pub fn effective_strength(base: f64, hp: i32) -> f64 {
     let wounded_penalty = (10.0 - hp.clamp(0, 100) as f64 / 10.0).round();
@@ -14896,10 +15003,14 @@ impl Game {
             g.barb_pid = Some(pid);
             // BARBARIAN_CAMP_FIRST_TURN_PERCENT_OF_TARGET_TO_ADD: a third of
             // the world's camp target is already on the map when the game
-            // opens, rather than a flat pair regardless of player count.
+            // opens, rather than a flat pair regardless of player count. Every
+            // one of them lands in the dark beyond the starting positions —
+            // nothing has moved yet, so the world's sight is worked out once
+            // and the whole opening is placed against it.
             let opening = g.barbarian_camp_target() * 33 / 100;
+            let watched = g.watched_by_the_living();
             for _ in 0..opening.max(1) {
-                g.spawn_camp();
+                g.spawn_camp_unwatched(&watched);
             }
         }
         g.refresh_great_person_offers();
@@ -15444,7 +15555,35 @@ impl Game {
         3 * self.players.iter().filter(|p| !p.is_minor).count()
     }
 
+    /// Everything any non-Barbarian unit or city can currently see.
+    ///
+    /// The engine's own terrain-aware sight rather than a disk around each
+    /// pair of eyes, so a camp seated outside it really is out of sight — and
+    /// within one state of the world the per-unit answers come back from the
+    /// vision cache the turn already filled.
+    fn watched_by_the_living(&self) -> TileBits {
+        let mut heights = self.height_field();
+        let mut watched = TileBits::with_capacity(self.map.tiles.len());
+        for pid in 0..self.players.len() {
+            if Some(pid) == self.barb_pid {
+                continue;
+            }
+            watched.union_with(&self.player_vision(&mut heights, pid));
+        }
+        watched
+    }
+
     fn spawn_camp(&mut self) {
+        let watched = self.watched_by_the_living();
+        self.spawn_camp_unwatched(&watched);
+    }
+
+    /// Seat one camp, given what the world can already see. Setup places a
+    /// third of the target in one go and nothing moves between those
+    /// placements, so it works the sight out once and passes it in rather
+    /// than re-sweeping the whole world per camp — the difference between one
+    /// visibility pass and twenty on a globe seating twenty-one civilizations.
+    fn spawn_camp_unwatched(&mut self, watched: &TileBits) {
         // The shipped placement floors: 4 tiles from any city, 7 from another
         // camp. Both are clearance radii, so they are read off a disk around
         // each city and camp rather than measured from every tile on the map.
@@ -15457,11 +15596,19 @@ impl Game {
         // the sphere's precomputed rings, so it is a table lookup either way.
         let mut blocked: HashSet<Pos> = HashSet::new();
         for city in self.cities.values() {
-            blocked.extend(self.wdisk(city.pos, 3));
+            blocked.extend(self.wdisk(city.pos, BARBARIAN_CAMP_MINIMUM_DISTANCE_CITY - 1));
         }
         for camp in self.barb_camps.keys() {
-            blocked.extend(self.wdisk(*camp, 6));
+            blocked.extend(self.wdisk(*camp, BARBARIAN_CAMP_MINIMUM_DISTANCE_ANOTHER_CAMP - 1));
         }
+        // And the rule that decides where a camp may be at all: nowhere any
+        // non-Barbarian unit or city is looking. A camp is seated in the fog
+        // and found by exploring; it is never watched into existence next to
+        // a Warrior standing in the open, which is what a placement that only
+        // measured distance to *cities* allowed. It is also what keeps the
+        // world's camp count honest as the map fills — Civ VI seats fewer
+        // camps late not because it wants to but because there is less dark
+        // ground left to seat them on.
         let mut cands: Vec<Pos> = Vec::new();
         for (pos, t) in &self.map.tiles {
             if self.rules.is_water(t) || !self.rules.is_passable(t) {
@@ -15473,7 +15620,7 @@ impl Game {
             {
                 continue;
             }
-            if blocked.contains(pos) {
+            if blocked.contains(pos) || self.sees(watched, *pos) {
                 continue;
             }
             cands.push(*pos);
@@ -15606,7 +15753,18 @@ impl Game {
         self.barb_camp_targets
             .retain(|camp, _| self.barb_camps.contains_key(camp));
         self.barbarian_scout_phase(bpid);
-        if self.turn.is_multiple_of(10) && self.barb_camps.len() < self.barbarian_camp_target() {
+        // Setup puts a third of the target on the map before turn one
+        // (BARBARIAN_CAMP_FIRST_TURN_PERCENT_OF_TARGET_TO_ADD); from there the
+        // shipped world rolls one in `BARBARIAN_CAMP_ODDS_OF_NEW_CAMP_SPAWNING`
+        // *every* turn for one more, so the rest of the target arrives over the
+        // opening dozens of turns and the first camps a civilization meets are
+        // ones that appeared while it was walking toward them. This engine used
+        // to try once every ten turns instead, which asked the eight-player
+        // lobby to reach a target of 24 camps in 220 turns — in a 500-turn game
+        // the map effectively never left its opening pair.
+        if self.barb_camps.len() < self.barbarian_camp_target()
+            && self.rng.below(BARBARIAN_CAMP_ODDS_OF_NEW_CAMP_SPAWNING) == 0
+        {
             self.spawn_camp();
         }
         let alerted = self.barb_alerted_until.len();
