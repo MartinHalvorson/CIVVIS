@@ -7025,7 +7025,7 @@ async function fetchJSON(url, opts = {}, timeoutMs = 15000) {
 }
 let firstLoad = true;
 let serverInstance = null;
-let bootBusy = false, bootTimer = null;
+let bootBusy = false, bootTimer = null, bootAttempts = 0;
 let supervisorReconnectTimer = null;
 let supervisorReconnectBusy = false;
 let supervisorReconnectWanted = false;
@@ -7271,6 +7271,29 @@ function syncViewPlayer() {
     ? "spectator" : String(state.view_player);
   select.disabled = viewChanging;
 }
+// A boot that cannot finish leaves the static shell painted over a black
+// canvas: the panels, the title and the buttons all look right while no world
+// ever arrives. This page has shipped in exactly that state before, and every
+// process-level check — port listening, server alive, turns advancing, window
+// present — read green throughout. The retry below wins most of these races on
+// its own (a request that lost a race with a busy server, a server restarting
+// underneath the page), so the point of saying so is to make the waiting
+// visible rather than to fix it: a black map is then never the only evidence.
+function showBootRetrying(attempt) {
+  const el = document.getElementById("err");
+  if (!el) return;
+  el.dataset.boot = "1";
+  el.textContent = attempt > 1
+    ? `Connecting to the server — retrying (attempt ${attempt})`
+    : "Connecting to the server…";
+  el.style.display = "block";
+}
+function clearBootRetrying() {
+  const el = document.getElementById("err");
+  if (!el || el.dataset.boot !== "1") return;
+  el.dataset.boot = "";
+  el.style.display = "none";
+}
 async function boot() {
   if (bootBusy) return;
   bootBusy = true;
@@ -7343,6 +7366,7 @@ async function boot() {
     applyRandomMarks();
     fillStrategies(RULES);
     render(adoptTiles(await fetchJSON("/state" + paintedQuery())));
+    if (bootAttempts) { bootAttempts = 0; clearBootRetrying(); }
     if (firstLoad) {
       firstLoad = false;
       adoptRunningMode();
@@ -7352,6 +7376,7 @@ async function boot() {
     }
   } catch (e) {
     console.error("CIVVIS boot failed", e);
+    showBootRetrying(++bootAttempts);
     clearTimeout(bootTimer);
     bootTimer = setTimeout(boot, 2000);
   } finally {

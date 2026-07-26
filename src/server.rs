@@ -4556,6 +4556,30 @@ mod tests {
     }
 
     #[test]
+    fn a_page_that_cannot_boot_says_so_instead_of_showing_a_black_map() {
+        // The failure this pins is invisible from outside the browser: the
+        // shell paints, the title is right, the server is healthy, and the map
+        // is simply never drawn. A page that is still retrying must say which
+        // attempt it is on, and must take the notice down once a world arrives.
+        let boot = EMBEDDED_INDEX
+            .split_once("async function boot() {")
+            .expect("browser boot function")
+            .1
+            .split_once("\nasync function send(action) {")
+            .expect("end of browser boot function")
+            .0;
+        assert!(
+            boot.contains("showBootRetrying(++bootAttempts);"),
+            "a failed boot must report itself on screen, not only to the console"
+        );
+        assert!(
+            boot.contains("if (bootAttempts) { bootAttempts = 0; clearBootRetrying(); }"),
+            "a boot that finally succeeds must clear its own notice"
+        );
+        assert!(EMBEDDED_INDEX.contains("Connecting to the server — retrying (attempt ${attempt})"));
+    }
+
+    #[test]
     fn browser_renders_each_delivered_state_as_one_complete_frame() {
         let requirement = include_str!("../docs/SPECTATOR_DEPLOY.md");
         assert!(
