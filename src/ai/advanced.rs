@@ -52,6 +52,21 @@ pub struct StrategyCensus {
     pub diplomacy: u32,
     pub conquest: u32,
     pub recovery: u32,
+    /// Force-group turns by posture. A different denominator from the strategy
+    /// counts above — one turn contributes one strategy and as many postures as
+    /// the empire had force groups — because deciding to conquer and actually
+    /// advancing on a city are separate failures and only the second one shows
+    /// up as a captured city.
+    pub muster: u32,
+    pub advance: u32,
+    pub engage: u32,
+    pub hold: u32,
+    pub recover: u32,
+    /// Which disjunct sent a group to `Hold`. The threatened-city test is
+    /// empire-global, so one city under pressure anywhere holds every force
+    /// group, including one already standing at a rival's gates.
+    pub hold_threatened: u32,
+    pub hold_weak: u32,
 }
 
 impl StrategyCensus {
@@ -63,6 +78,22 @@ impl StrategyCensus {
             + self.diplomacy
             + self.conquest
             + self.recovery
+    }
+
+    fn count_posture(&mut self, posture: ForcePosture) {
+        let slot = match posture {
+            ForcePosture::Muster => &mut self.muster,
+            ForcePosture::Advance => &mut self.advance,
+            ForcePosture::Engage => &mut self.engage,
+            ForcePosture::Hold => &mut self.hold,
+            ForcePosture::Recover => &mut self.recover,
+        };
+        *slot += 1;
+    }
+
+    /// Force-group turns counted, which is not [`StrategyCensus::total`].
+    pub fn posture_total(&self) -> u32 {
+        self.muster + self.advance + self.engage + self.hold + self.recover
     }
 
     fn count(&mut self, strategy: GrandStrategy) {
@@ -87,6 +118,13 @@ impl StrategyCensus {
         self.diplomacy += other.diplomacy;
         self.conquest += other.conquest;
         self.recovery += other.recovery;
+        self.muster += other.muster;
+        self.advance += other.advance;
+        self.engage += other.engage;
+        self.hold += other.hold;
+        self.recover += other.recover;
+        self.hold_threatened += other.hold_threatened;
+        self.hold_weak += other.hold_weak;
     }
 }
 
@@ -8274,6 +8312,17 @@ impl AdvancedAi {
             });
         }
         self.force_groups.sort_by_key(|group| group.id);
+        let threatened = plan.threatened_city.is_some();
+        for group in &self.force_groups {
+            self.census.count_posture(group.posture);
+            if group.posture == ForcePosture::Hold {
+                if threatened {
+                    self.census.hold_threatened += 1;
+                } else {
+                    self.census.hold_weak += 1;
+                }
+            }
+        }
     }
 
     fn coordinated_tactical_step(

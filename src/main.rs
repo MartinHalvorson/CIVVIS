@@ -577,6 +577,22 @@ fn main() {
                             share(census.religion),
                             share(census.diplomacy),
                         ));
+                        let posture_total = census.posture_total().max(1);
+                        let pshare = |turns: u32| 100 * turns / posture_total;
+                        flags.push_str(&format!(
+                            " FORCE engage={}% advance={}% hold={}% muster={}% recover={}%",
+                            pshare(census.engage),
+                            pshare(census.advance),
+                            pshare(census.hold),
+                            pshare(census.muster),
+                            pshare(census.recover),
+                        ));
+                        let held = (census.hold_threatened + census.hold_weak).max(1);
+                        flags.push_str(&format!(
+                            " HELD_BY threatened_city={}% locally_weak={}%",
+                            100 * census.hold_threatened / held,
+                            100 * census.hold_weak / held,
+                        ));
                         Some(format!(
                             "seed {:3}  t{:<4} {:<10} {:<8} majors_alive={}/{} cities={:<2} cs_alive={}/{} [{:.2}s]{}",
                             seed,
