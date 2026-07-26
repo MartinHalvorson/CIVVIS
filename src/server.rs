@@ -1200,7 +1200,12 @@ impl Session {
             if seat_from_roster && !l.active().is_empty() {
                 let civs: Vec<String> =
                     majors.iter().map(|id| game.players[*id].civ.clone()).collect();
-                for (id, pick) in majors.iter().zip(crate::league::seat_by_civ(l, &civs)) {
+                for (id, pick) in majors.iter().zip(crate::league::seat_by_civ_seeded(
+                    l,
+                    &civs,
+                    game.seed,
+                    3,
+                )) {
                     seat_strategy[*id] = Some(pick);
                 }
             } else if let Some(default_entrant) =
@@ -1332,6 +1337,7 @@ impl Session {
             human_seats,
             teams: params.teams.clone(),
             civs: params.civs.clone(),
+            randomize_civs: true,
             ..GameOptions::new(
                 params.num_players,
                 params.width,

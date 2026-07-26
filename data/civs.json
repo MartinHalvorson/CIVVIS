@@ -271,14 +271,17 @@
   "Byzantium": {
     "leader": "Basil II",
     "ability": "taxis",
-    "note": "Taxis: +2 combat strength for every unit",
+    "note": "Taxis: +3 combat and religious strength per Holy City following Byzantium's religion; unit kills spread it",
     "agenda": "trial_by_combat",
+    "unique_unit": "tagma",
     "traits": [
       "aggressive_military",
+      "religious",
       "low_city_state_preference_war"
     ],
     "effects": {
-      "combat_strength": 2
+      "holy_city_combat_strength": 3,
+      "unit_kill_religious_pressure": 250
     }
   },
   "Zulu": {
