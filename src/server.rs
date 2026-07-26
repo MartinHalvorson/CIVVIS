@@ -4896,7 +4896,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.38"));
         assert!(EMBEDDED_INDEX.contains("const requestedHeight = Math.max(154, 50 + rows * 28);"));
         assert!(EMBEDDED_INDEX
-            .contains("const requestedWidth = 760 + Math.max(0, rows - 1) * 100;"));
+            .contains("const requestedWidth = 820 + Math.max(0, rows - 1) * 100;"));
         assert!(EMBEDDED_INDEX.contains(
             "mapArea.style.setProperty(\"--player-hud-width\", `${requestedWidth}px`);"
         ));
@@ -4925,16 +4925,19 @@ mod tests {
         ));
         assert!(EMBEDDED_INDEX.contains("data-victory-focus=\"${isFocus}\""));
         assert!(EMBEDDED_INDEX.contains("grid-auto-rows: var(--hud-row-height);"));
-        // A masthead row is one line: its map links, identity and ten values
-        // sit side by side under one set of column heads. Stacking them was
-        // what the rail needed and it costs the map 12px per civilization here.
+        // A masthead row is one line: its capital link, explicit watch action,
+        // identity and ten values sit side by side. Watch-as deliberately has
+        // no column heading; the button carries its own visible label.
         assert!(EMBEDDED_INDEX.contains(
-            "grid-template-columns: var(--hud-lock-column, 0px) var(--hud-map-links-column) \
-             var(--hud-identity-column) minmax(0, 1fr);"
+            "grid-template-columns: var(--hud-lock-column, 0px) var(--hud-map-links-column)\n      \
+             var(--hud-watch-column) var(--hud-identity-column) minmax(0, 1fr);"
         ));
-        assert!(EMBEDDED_INDEX.contains("data-hud-action=\"empire\""));
-        assert!(EMBEDDED_INDEX.contains("data-hud-action=\"capital\""));
-        assert!(EMBEDDED_INDEX.contains("function focusEmpire(pid)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "class=\"empire-link\" data-hud-action=\"capital\""
+        ));
+        assert!(EMBEDDED_INDEX.contains(">Empire</button>"));
+        assert!(!EMBEDDED_INDEX.contains("class=\"capital-link\""));
+        assert!(!EMBEDDED_INDEX.contains("data-hud-action=\"empire\""));
         assert!(EMBEDDED_INDEX.contains("function focusCapital(pid)"));
         assert!(EMBEDDED_INDEX.contains("--hud-row-height: 26px;"));
         assert!(EMBEDDED_INDEX.contains("function dismissOverlay(name, source)"));
@@ -5201,6 +5204,10 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/view\""));
         // The ribbon repaints under the cursor, so its buttons declare their
         // action as data and one delegated listener dispatches it.
+        assert!(EMBEDDED_INDEX.contains(
+            "class=\"watch-as-link\" data-hud-action=\"watch\""
+        ));
+        assert!(EMBEDDED_INDEX.contains(">Watch as</button>"));
         assert!(EMBEDDED_INDEX.contains("data-hud-action=\"watch\" data-hud-civ=\"${p.id}\""));
         assert!(EMBEDDED_INDEX.contains("data-hud-action=\"dossier\" data-hud-civ=\"${p.id}\""));
         assert!(EMBEDDED_INDEX.contains("else spectatePlayer(id);"));
