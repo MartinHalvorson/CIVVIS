@@ -1812,13 +1812,21 @@ def main() -> int:
             # single-player start takes the process outright. Either way the
             # server stays up and the exhibition resumes when that game ends.
             #
-            # The two are told apart by the seed. "One more turn" is the *same*
-            # world still going; a takeover is a *different* game, which is the
-            # distinction that matters, because a finished single-player game
-            # keeps answering `spectate: false` forever — asking only that
-            # question hands the process back to the game that already ended on
-            # every poll, re-archiving the same save and never promoting a
-            # newer build.
+            # The two are told apart by the world's identity. "One more turn"
+            # is the *same* world still going; a takeover is a game whose
+            # (instance, seed) differs from the one that just finished. That
+            # second test has to be the pair, not `played_by_hand` alone,
+            # because a finished single-player game keeps answering
+            # `spectate: false` forever — asking only that question hands the
+            # process back to the game that already ended on every poll,
+            # re-archiving the same save and never promoting a newer build.
+            #
+            # The two are very nearly disjoint but not quite: a new process on
+            # the same seed — a checkpoint resume during this cooldown — that
+            # somebody is playing, with a result already recorded, satisfies
+            # both. That is why the order here is deliberate rather than
+            # incidental. It costs nothing either way: the two bodies below are
+            # identical apart from the line they log.
             latest = read_state(args.port)
             if playing_on(latest, finished_seed):
                 log("the finished world was asked for more turns; letting it play on")
