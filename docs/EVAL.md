@@ -884,3 +884,52 @@ Note on reading these runs: a mirrored seat-swapped A/B between agents that
 differ slightly is close to powerless, because identical agents split every
 map by construction. The count of maps that break neutral — and their
 direction — carries the signal long before the win rate does.
+
+## 2026-07-26 — marginal search compute buys frequency, not depth
+
+The cadence result raised an obvious objection: `strategic_r20` spends
+**twice** the search compute of `strategic`, so the gain might be compute
+rather than frequency. Three arms answer it, all run on the *same maps*
+(`--pairs 20 --players 4 --seed 52000 --turns 200`) so they are directly
+comparable:
+
+| arm | search compute | decisions | depth | games | maps for | maps against | sign p | e |
+|---|---|---|---|---|---|---|---|---|
+| `strategic_r20` | 2× | **2×** | 1× | 25/40 (62.5%) | **5** | **0** | 0.0625 | **6.99** |
+| `strategic_r20h20` | **1×** | 2× | 0.5× | 22/40 (55.0%) | 4 | 2 | 0.6875 | 1.07 |
+| `strategic_h80` | 2× | 1× | **2×** | 21/40 (52.5%) | 4 | 3 | 1.0000 | 1.00 |
+
+`strategic_r20` and `strategic_h80` spend the identical doubling. Frequency
+takes 5 maps and loses none; depth takes 4 and loses 3, which is exactly
+what noise looks like. `strategic_r20h20` holds total rounds per game equal
+to the baseline by halving the horizon, and still leans positive at 4–2 —
+so frequency is worth something even when depth pays for it, though weakly.
+
+Ordering, from best to worst use of a marginal unit of search compute:
+**more reviews at the same depth > more reviews at less depth > more
+depth**. The mechanism is unsurprising once stated: a 40-round projection
+already looks further ahead than the position stays valid, so the binding
+error is a commitment left stale, not a horizon left short. Lengthening the
+projection refines an answer to a question the agent asked too long ago.
+
+Three cautions on reading the table:
+
+1. Nothing here clears the promotion gate; `strategic` is unchanged and all
+   three are eval-only entrants.
+2. The `strategic_r20` row shares its seed set with the 24-map run in the
+   previous entry (5 for, 1 against). They are the same experiment at two
+   sample sizes, **not** independent confirmations, and must not be pooled.
+   Independent `strategic_r20` evidence remains seed 41000 (12 maps, 1–0)
+   and seed 52000 (24 maps, 5–1).
+3. A doubling is one point on a curve. `strategic_r10` quadruples reviews
+   for 3.0× the rollout count and did not beat `strategic_r20` by a margin
+   this design could resolve, so the returns are visibly not linear.
+
+The practical consequence for anything built on this search: spend on how
+often it runs, and treat the horizon as already long enough. The open idea
+that follows is rotation — always project the adaptive baseline and the
+incumbent lane, rotate one challenger per review — which cuts a review from
+seven branches to three and buys frequency at *negative* compute cost.
+`victory_progress` cannot do that pruning, because it deliberately scores
+only concrete endgame progress and is zero for every lane in the early game
+where most reviews happen.
