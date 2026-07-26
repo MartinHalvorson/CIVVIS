@@ -71,7 +71,7 @@
   "proximity_fuses": {"class":"naval_ranged","tier":3,"requires":["preparatory_fire","rolling_barrage"],"effects":{"defend_air":7},"note":"+7 Combat Strength when defending against air attacks."},
   "coincidence_rangefinding": {"class":"naval_ranged","tier":4,"requires":["supply_fleet","proximity_fuses"],"effects":{"range":1},"note":"+1 attack range."},
 
-  "boarding": {"class":"naval_raider","tier":1,"effects":{"gold_from_naval_kill_pct":50},"note":"Gain Gold after defeating a naval unit."},
+  "boarding": {"class":"naval_raider","tier":1,"effects":{"gold_from_naval_kill_pct":100},"note":"Gain Gold equal to the defeated naval unit's full Combat Strength."},
   "homing_torpedoes": {"class":"naval_raider","tier":2,"effects":{"ranged_vs_naval":10},"note":"+10 Ranged Strength against naval units.","requires":["boarding","swift_keel"]},
   "loot": {"class":"naval_raider","tier":1,"effects":{"coastal_raid_gold_pct":50},"note":"Gain additional Gold from coastal raids."},
   "silent_running": {"class":"naval_raider","tier":3,"requires":["homing_torpedoes"],"effects":{"move_after_attack":1},"note":"May move after attacking."},
@@ -119,7 +119,7 @@
   "debater": {"class":"religious_apostle","tier":1,"effects":{"religious_strength":20},"note":"+20 Religious Strength in theological combat."},
   "orator": {"class":"religious_apostle","tier":1,"effects":{"religious_charges":2},"note":"May spread Religion 2 extra times."},
   "translator": {"class":"religious_apostle","tier":1,"effects":{"foreign_spread_pct":200},"note":"Triple strength when spreading to cities of other civilizations."},
-  "proselytizer": {"class":"religious_apostle","tier":1,"effects":{"rival_pressure_removed_pct":75},"note":"Eliminates 75% of other religions' pressure when spreading."},
+  "proselytizer": {"class":"religious_apostle","tier":1,"effects":{"rival_pressure_removed_pct":50},"note":"Eliminates 50% of other religions' pressure when spreading."},
   "pilgrim": {"class":"religious_apostle","tier":1,"effects":{"natural_wonder_charges":3},"note":"Gains 3 spreads after moving adjacent to a natural wonder."},
   "indulgence_vendor": {"class":"religious_apostle","tier":1,"effects":{"gold_per_conversion":100},"note":"Gain Gold when this unit first converts a city."},
   "martyr": {"class":"religious_apostle","tier":1,"effects":{"relic_on_death":1},"note":"Creates a Relic if defeated in theological combat."},

@@ -49069,7 +49069,9 @@ mod combat_scenarios {
         )
         .unwrap();
         assert!(!g.units.contains_key(&victim));
-        assert_eq!(g.players[0].gold, gold + 15.0);
+        // BOARDING_GOLD_FROM_NAVAL_VICTORY is PercentDefeatedStrength 100, so a
+        // sunk Galley pays its whole Combat Strength of 30 rather than half.
+        assert_eq!(g.players[0].gold, gold + 30.0);
     }
 
     #[test]
@@ -49727,6 +49729,34 @@ mod combat_scenarios {
         assert!(builders
             .iter()
             .any(|builder| builder.charges > g.rules.units["builder"].charges));
+    }
+
+    #[test]
+    fn proselytizer_evicts_the_half_its_row_ships() {
+        // APOSTLE_EVICT_ALL is 50, and CIVVIS takes the greater of the unit's
+        // own eviction and the promotion's. A bare Apostle evicts a quarter;
+        // Proselytizer takes half instead, not the three quarters CIVVIS used
+        // to pay. El Escorial's inquisitor trait is 25 on the same effect, so
+        // the scale is real rather than nominal.
+        let (mut g, city_pos, ring) = controlled_game(318);
+        let cid = g.found_city_for(1, city_pos, None);
+        let evicted = |g: &mut Game, ring_index: usize, promotion: Option<&str>| {
+            g.cities
+                .get_mut(&cid)
+                .unwrap()
+                .pressure
+                .insert("Rival".to_string(), 400.0);
+            let apostle = g.spawn_unit("apostle", 0, ring[ring_index]);
+            let unit = g.units.get_mut(&apostle).unwrap();
+            unit.religion = Some("Our".to_string());
+            if let Some(promotion) = promotion {
+                unit.promotions.insert(promotion.to_string());
+            }
+            g.apply(0, &Action::Spread { unit: apostle }).unwrap();
+            g.cities[&cid].pressure["Rival"]
+        };
+        assert_eq!(evicted(&mut g, 0, None), 300.0);
+        assert_eq!(evicted(&mut g, 1, Some("proselytizer")), 200.0);
     }
 
     #[test]
