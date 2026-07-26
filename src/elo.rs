@@ -37,7 +37,7 @@ pub const BUILTIN_AIS: [&str; 9] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 1] = ["strategic_score"];
+pub const EVAL_ONLY_AIS: [&str; 2] = ["strategic_score", "strategic_doctrine"];
 
 /// On-disk schema for the shared player/leader/civilization rating ledger.
 pub const ELO_SCHEMA_VERSION: u32 = 2;
@@ -434,6 +434,18 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         "strategic_score" => Box::new(crate::strategic::StrategicAi::score_only_with_weights(
             crate::evolve::load_champion("evolved").unwrap_or_default(),
         )),
+        // Treatment for the doctrine axis: identical to `strategic` in
+        // weights, horizon, lane policy and priors, differing only in that
+        // a review which reaches the rollouts also projects the four play
+        // styles. Paired against `strategic` this isolates the second
+        // search axis and nothing else.
+        "strategic_doctrine" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.doctrine_search = true;
+            Box::new(ai)
+        }
         _ => Box::new(BasicAi::new()),
     }
 }
@@ -584,6 +596,11 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         // The control refuses a net by construction, so it is never
         // degraded — only untrained when the genome is absent.
         "strategic_score" => (vec![genome], "strategic_score"),
+        // Unlike `strategic`, its netless form has no separate published
+        // name to degrade *to*: the doctrine axis runs either way. A
+        // missing net therefore leaves it untrained rather than renamed,
+        // which the provenance line says in those words.
+        "strategic_doctrine" => (vec![genome, value(false)], "strategic_doctrine"),
         "advanced" => (Vec::new(), "advanced"),
         "advanced_v1" => (Vec::new(), "advanced_v1"),
         "random" => (Vec::new(), "random"),

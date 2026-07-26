@@ -785,3 +785,54 @@ The remaining gap is not fixable by training a better net on these inputs.
 An evaluator whose inputs do not respond to an action cannot rank that
 action at any level of calibration, which is AI_GAPS item 3 stated as a
 measurement rather than a plan.
+
+## 2026-07-26 — a second search axis, and the ceiling it ran into
+
+The rollout planner has always had exactly one free variable: the victory
+lane. `Doctrine` adds a second — `incumbent`, `expand`, `consolidate`,
+`militarize`, each a bounded perturbation of the evolved genome, clamped to
+the per-gene bounds evolution respects. With the lane fixed, each is
+projected the same way a lane is and the best is adopted; the incumbent wins
+ties, so the tuned genome stands unless the rollout says otherwise. This is
+coordinate descent, four extra rollouts per review rather than seven times
+four, and it depends on no learned evaluator: a rollout is simulation.
+
+`AdvancedAi::reweight` swaps a running agent's genome while preserving
+campaign, settler, builder and unit-role memory — the same contract as
+`retarget`, one level down. Doctrines are always derived from the evolved
+genome, never compounded onto the one in play, so repeated reviews cannot
+ratchet a gene to its bound.
+
+**Result: no measured effect.** `ai_eval strategic_doctrine strategic
+--pairs 14 --players 4 --seed 31000 --turns 200` gave 14 neutral splits on
+14 maps, with near-identical search exposure (86/182 against 88/184). The
+axis is wired, live and deterministic; it simply does not fire often enough
+to matter, for a reason worth recording:
+
+- The projected spread between the best and worst doctrine is **0.0044 at
+  the median** (max 0.0376, min 0.0) over 11 sampled reviews. The lane
+  margin is 0.01, so a second axis reusing it can *never* choose:
+  `DOCTRINE_COMMITMENT_MARGIN` is 0.002, set from that measurement. At 0.01
+  the axis switched 0 times in 16 rollout reviews; at 0.002, 3 times in 19.
+- Doctrine values frequently tie in pairs, because at a given review only
+  one axis is live — a 40-round projection in which no settling decision
+  arises leaves `expand` and `consolidate` bit-identical, and one with no
+  war decision leaves `incumbent` and `militarize` identical.
+- When they do differ, `militarize` was the argmax on 7 of 11 samples,
+  `consolidate` 3, `expand` 1.
+
+**The ceiling this ran into is the real finding.** Across the 14-map A/B,
+86 reviews reached the rollouts over 28 games × 2 seats — about **1.5
+rollout reviews per seat per game**. Half of all reviews are consumed by
+priors (`urgent_counter` alone took 72 of 182), and reviews only start at
+turn 30 and recur every 40. A macro search that makes one or two decisions
+a game bounds every improvement hung off it: a better evaluator, a better
+lane policy and a second axis all divide into the same tiny number of
+decisions. Raising the search's decision count — cadence, or reducing prior
+dominance — is worth more than improving any single decision, and should be
+measured before more axes are added.
+
+`strategic_doctrine` is eval-only and `doctrine_search` is off by default,
+so `strategic` is unchanged. `StrategicAi::doctrine_values` exposes the
+per-doctrine projections, because the spread between them is what decides
+whether the axis can act at all — which no win rate would reveal.

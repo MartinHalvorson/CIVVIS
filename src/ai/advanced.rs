@@ -346,6 +346,22 @@ impl AdvancedAi {
         self.plan = None;
     }
 
+    /// Swap the strategy genome of a running agent without discarding
+    /// campaign, settler, builder or unit-role memory — the same contract as
+    /// `retarget`, one level down. `retarget` changes *what* the agent is
+    /// playing for; this changes *how* it plays, which is the second free
+    /// variable a rollout planner can search over. The strategic plan is
+    /// dropped so the next turn re-assesses under the new genome.
+    pub fn reweight(&mut self, weights: Weights) {
+        self.base.w = weights;
+        self.plan = None;
+    }
+
+    /// The genome this agent is currently playing.
+    pub fn weights(&self) -> &Weights {
+        &self.base.w
+    }
+
     /// Return a previously targeted agent to its adaptive victory planner
     /// without discarding campaign and unit-role memory. StrategicAi uses this
     /// when an explicit lane no longer beats the parent policy in rollout.
