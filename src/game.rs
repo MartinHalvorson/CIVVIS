@@ -32255,23 +32255,23 @@ impl Game {
         Ok(())
     }
 
-    fn tile_defense_bonus(&self, pos: Pos) -> f64 {
+    pub(crate) fn tile_defense_bonus(&self, pos: Pos) -> f64 {
         let t = &self.map.tiles[&pos];
         let mut bonus = 0.0;
         if t.hills {
             bonus += 3.0;
         }
-        match t.feature.as_deref() {
-            Some(
-                "forest" | "jungle" | "reef" | "burning_forest" | "burning_jungle"
-                | "burnt_forest" | "burnt_jungle",
-            ) => bonus += 3.0,
-            Some(
-                "marsh" | "floodplains" | "grassland_floodplains" | "plains_floodplains"
-                | "pantanal",
-            ) => bonus -= 2.0,
-            _ => {}
-        }
+        // The shipped `Features.DefenseModifier`, read from the ruleset rather
+        // than listed here. The hand-written match this replaces carried the
+        // ordinary features and none of the Natural Wonders, so Ha Long Bay's
+        // +15 and Gobustan's, Chocolate Hills' and Ubsunur Hollow's rows never
+        // reached a defender.
+        bonus += t
+            .feature
+            .as_deref()
+            .and_then(|feature| self.rules.features.get(feature))
+            .map(|spec| spec.defense)
+            .unwrap_or(0.0);
         if t.wonder.as_deref().is_some_and(|wonder| {
             self.rules.wonders[wonder]
                 .effects
@@ -45114,6 +45114,41 @@ mod combat_scenarios {
             .find(|position| *position != center)
             .expect("new city owns a non-center tile");
         (city, home)
+    }
+
+    /// `tile_defense_bonus` used to carry a hand-written list of features and
+    /// none of the Natural Wonders, so Ha Long Bay's shipped +15, Gobustan's
+    /// and Chocolate Hills' +3 and Ubsunur Hollow's -2 never reached a
+    /// defender. It reads `Features.DefenseModifier` from the ruleset now.
+    #[test]
+    fn every_shipped_feature_defense_modifier_reaches_the_defender() {
+        let (mut game, center, _) = controlled_game(41_050);
+        let flat = game.tile_defense_bonus(center);
+        assert_eq!(flat, 0.0, "featureless plains carry no modifier");
+
+        for (feature, expected) in [
+            ("forest", 3.0),
+            ("jungle", 3.0),
+            ("reef", 3.0),
+            ("marsh", -2.0),
+            ("floodplains", -2.0),
+            ("ha_long_bay", 15.0),
+            ("gobustan", 3.0),
+            ("chocolate_hills", 3.0),
+            ("ubsunur_hollow", -2.0),
+        ] {
+            game.map.tiles.get_mut(&center).unwrap().feature = Some(feature.to_string());
+            assert_eq!(
+                game.tile_defense_bonus(center),
+                expected,
+                "{feature} must carry its shipped DefenseModifier"
+            );
+        }
+
+        // Hills and a feature are two separate shipped rows and both apply.
+        game.map.tiles.get_mut(&center).unwrap().feature = Some("forest".to_string());
+        game.map.tiles.get_mut(&center).unwrap().hills = true;
+        assert_eq!(game.tile_defense_bonus(center), 6.0);
     }
 
     #[test]

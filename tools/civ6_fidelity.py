@@ -417,6 +417,23 @@ ALIASES = {
     "water_street_carnival": "copacabana",
     "beach_resort": "seaside_resort",
     "pyramid": "nubian_pyramid",
+    # Rows that were reported "Only in CIVVIS" — i.e. compared against nothing.
+    "byzantine_tagma": "tagma",
+    "rembrandt_van_rijn": "rembrandt",
+    "defender_of_faith": "defender_of_the_faith",
+    # District projects ship as ENHANCE_DISTRICT_<district>; the space-race and
+    # laser projects are named for the launch rather than the payload.
+    "enhance_district_campus": "campus_research_grants",
+    "enhance_district_commercial_hub": "commercial_hub_investment",
+    "enhance_district_encampment": "encampment_training",
+    "enhance_district_harbor": "harbor_shipping",
+    "enhance_district_holy_site": "holy_site_prayers",
+    "enhance_district_industrial_zone": "industrial_zone_logistics",
+    "enhance_district_theater": "theater_square_festival",
+    "launch_exoplanet_expedition": "exoplanet_expedition",
+    "launch_mars_base": "launch_mars_colony",
+    "orbital_laser": "lagrange_laser_station",
+    "terrestrial_laser": "terrestrial_laser_station",
 }
 
 
@@ -484,17 +501,33 @@ def project_units(database: Database) -> dict[str, dict]:
     return projected
 
 
+# `Technologies_XP2` / `Civics_XP2` in the compiled cache carry 74 and 66 rows,
+# and *every* row has both RandomPrereqs and HiddenUntilPrereqComplete set to 1,
+# spread evenly across all nine eras (8 technologies per era). Civilization VI
+# randomizes the Future era and nothing else — an Ancient tree that shuffled
+# Archery behind Astrology would be a different game. So the column cannot mean
+# per-entry randomization here; the cache appears to store a default for every
+# row the expansion touched. Read it for the Future era only, which is both what
+# the game does and what the engine implements.
+FUTURE_ERA = "ERA_FUTURE"
+
+
 def project_techs(database: Database) -> dict[str, dict]:
     prereqs: dict[str, set[str]] = {}
     for row in database.rows("TechnologyPrereqs"):
         prereqs.setdefault(slug(row["Technology"], "TECH_"), set()).add(
             slug(row["PrereqTech"], "TECH_")
         )
+    future = {
+        slug(row["TechnologyType"], "TECH_")
+        for row in database.rows("Technologies")
+        if row.get("EraType") == FUTURE_ERA
+    }
     randomized = {
         slug(row["TechnologyType"], "TECH_")
         for row in database.rows("Technologies_XP2")
         if truthy(row.get("RandomPrereqs"))
-    }
+    } & future
     random_costs: dict[str, list] = {}
     for row in database.rows("TechnologyRandomCosts"):
         random_costs.setdefault(slug(row["TechnologyType"], "TECH_"), []).append(
@@ -507,9 +540,11 @@ def project_techs(database: Database) -> dict[str, dict]:
         projected[name] = {
             "cost": number(row.get("Cost")),
             "era": ERAS.index(era) if era in ERAS else -1,
-            "requires": prereqs.get(name, set()),
+            # See the civics projection below: a randomized entry has no
+            # static prerequisite set to compare.
+            "requires": set() if name in randomized else prereqs.get(name, set()),
             "random_prereqs": name in randomized,
-            "random_costs": sorted(random_costs.get(name, [])),
+            "random_costs": sorted(random_costs.get(name, [])) if name in future else [],
         }
     return projected
 
@@ -520,11 +555,16 @@ def project_civics(database: Database) -> dict[str, dict]:
         prereqs.setdefault(slug(row["Civic"], "CIVIC_"), set()).add(
             slug(row["PrereqCivic"], "CIVIC_")
         )
+    future = {
+        slug(row["CivicType"], "CIVIC_")
+        for row in database.rows("Civics")
+        if row.get("EraType") == FUTURE_ERA
+    }
     randomized = {
         slug(row["CivicType"], "CIVIC_")
         for row in database.rows("Civics_XP2")
         if truthy(row.get("RandomPrereqs"))
-    }
+    } & future
     random_costs: dict[str, list] = {}
     for row in database.rows("CivicRandomCosts"):
         random_costs.setdefault(slug(row["CivicType"], "CIVIC_"), []).append(
@@ -537,9 +577,13 @@ def project_civics(database: Database) -> dict[str, dict]:
         projected[name] = {
             "cost": number(row.get("Cost")),
             "era": ERAS.index(era) if era in ERAS else -1,
-            "requires": prereqs.get(name, set()),
+            # A randomized entry has no static prerequisite set to compare:
+            # the shipped rows are the seed the game shuffles, and the engine
+            # deliberately stores none. Comparing them would push static
+            # prereqs onto a civic whose whole point is that they move.
+            "requires": set() if name in randomized else prereqs.get(name, set()),
             "random_prereqs": name in randomized,
-            "random_costs": sorted(random_costs.get(name, [])),
+            "random_costs": sorted(random_costs.get(name, [])) if name in future else [],
         }
     return projected
 
@@ -567,6 +611,15 @@ FEATURE_ALIASES = {
     "barrier_reef": "great_barrier_reef",
     "everest": "mount_everest",
     "forest": "forest",
+    # Five more Natural Wonders whose shipped name is not their display name.
+    # Without these the Features audit compared *nothing* for them, which is
+    # exactly the blind spot the wonder and unique-unit aliases above exist to
+    # close — and it hid wrong yields on all five until they were found by hand.
+    "cliffs_dover": "cliffs_of_dover",
+    "galapagos": "galapagos_islands",
+    "ikkil": "ik_kil",
+    "chocolatehills": "chocolate_hills",
+    "devilstower": "mato_tipila",
 }
 
 
@@ -1145,6 +1198,58 @@ ENGINE_PARAMETERS = {
     "BARBARIAN_CAMP_MINIMUM_DISTANCE_ANOTHER_CAMP": 7,
     "BARBARIAN_TECH_PERCENT": 50,  # game.rs barbarian_phase unit pool
     "BARBARIAN_NUM_RANDOM_UNIT_CHOICES": 3,
+    # Verified against the engine during the 2026-07-26 tournament-rules sweep.
+    # Each one is a value the engine reads today; pinning them here turns a
+    # one-off audit into a standing gate, which is what the entries above are
+    # for. Several were divergent when the sweep began and are named in the
+    # commits that fixed them.
+    "RELIGION_SPREAD_ADJACENT_CITY_DISTANCE": 10,  # game.rs process_pressure
+    "RELIGION_SPREAD_ADJACENT_PER_TURN_PRESSURE": 1,
+    "RELIGION_SPREAD_HOLY_SITE_PRESSURE_MULTIPLIER": 2,
+    "RELIGION_SPREAD_HOLY_CITY_PRESSURE_MULTIPLIER": 4,
+    "RELIGION_SPREAD_ATHEISM_PRESSURE_PER_POP": 50,  # starting_atheist_pressure
+    # A Trade Route is directional: the city the Trader travels *to* takes
+    # twice the pressure it sends back.
+    "RELIGION_SPREAD_TRADE_ROUTE_PRESSURE_FOR_DESTINATION": 1.0,
+    "RELIGION_SPREAD_TRADE_ROUTE_PRESSURE_FOR_ORIGIN": 0.5,
+    "RELIGION_SPREAD_COMBAT_VICTORY": 250,  # religious_combat_pressure
+    "RELIGION_SPREAD_UNIT_CAPTURE": 125,
+    "RELIGION_SPREAD_RANGE_COMBAT_VICTORY": 6,
+    "RELIGION_SPREAD_RANGE_UNIT_CAPTURE": 6,
+    "RELIGION_PANTHEON_MIN_FAITH": 25,
+    "TRADE_ROUTE_BASE_RANGE": 15,  # validate_trade_route_destination
+    "TRADE_ROUTE_TURN_DURATION_BASE": 20,  # trade_route_duration
+    "MOVEMENT_EMBARK_COST": 2,  # unit_step_cost, on top of the terrain cost
+    "MOVEMENT_RIVER_COST": 2,
+    "MOVEMENT_WHILE_EMBARKED_BASE": 2,  # unit_base_max_moves_at
+    "UPGRADE_BASE_COST": 10,  # unit_upgrade_price: (10 + 2*(new - old)).max(15)
+    "UPGRADE_MINIMUM_COST": 15,
+    "PILLAGE_MOVEMENT_COST": 3,  # do_pillage, 1 with the promotion
+    "PILLAGE_ADVANCED_MOVEMENT_COST": 1,
+    # The two bankruptcy penalties start on different lines: an Amenity the
+    # moment the balance goes negative, a unit only ten Gold later.
+    "GOLD_NEGATIVE_BALANCE_AMENITY_LOSS_LINE": 0,  # settle_gold_budget
+    "GOLD_NEGATIVE_BALANCE_SUBSEQUENT_AMENITY_LOSS": -10,
+    "GOLD_NEGATIVE_BALANCE_DISBAND_UNIT_LINE": -10,
+    "GOLD_NEGATIVE_BALANCE_SUBSEQUENT_DISBAND_UNIT": -10,
+    "ESPIONAGE_FABRICATE_SCANDAL_BASE_ENVOYS_REMOVED": 2,  # apply_spy_mission_effect
+    "ESPIONAGE_FABRICATE_SCANDAL_LEVEL_ENVOYS_REMOVED": 1,
+    "ESPIONAGE_NEUTRALIZE_GOVERNOR_BASE_TURNS": 6,  # flat: no _LEVEL_ row ships
+    "ESPIONAGE_FOMENT_UNREST_BASE_LOYALTY_CHANGE": -15,
+    "ESPIONAGE_FOMENT_UNREST_LEVEL_LOYALTY_CHANGE": -5,
+    "ARCHAEOLOGY_SITES_PER_CIV_LAND": 6,  # mapgen.rs place_artifact_quotas
+    "ARCHAEOLOGY_SITES_PER_CIV_SEA": 2,
+    "BARBARIAN_CAMP_MAX_PER_MAJOR_CIV": 3,  # barbarian_camp_target
+    "UNIT_MAX_STR_REDUCTION_INSUFFICIENT_RESOURCES": 20,  # strategic_shortage_penalty
+    # Favor income. The two zeros matter as much as the ones: Civ VI pays
+    # nothing for a bare turn and nothing for a trade partner, so a term for
+    # either would be invention.
+    "WORLD_CONGRESS_SUZERAIN_FAVOR_PER_TURN": 1,  # process_diplomacy
+    "WORLD_CONGRESS_ALLIANCE_FAVOR_PER_TURN": 1,  # per alliance level
+    "WORLD_CONGRESS_BASELINE_FAVOR_PER_TURN": 0,
+    "WORLD_CONGRESS_TRADE_PARTNER_FAVOR_PER_TURN": 0,
+    "CITY_POPULATION_AQUEDUCT_BOOST": 2,  # city_housing: +2, or up to a floor of 6
+    "CITY_POPULATION_AQUEDUCT_MIN": 6,
 }
 
 
@@ -1709,20 +1814,6 @@ def ours_tree(name: str, key: str) -> dict[str, dict]:
 # Rules CIVVIS hardcodes in the engine rather than in data. Each mirrors a
 # specific site in src/: change one side, change the other.
 ENGINE_HILLS = {"yield_delta": {"production": 1}, "move_cost": 2, "defense": 3}  # rules.rs tile_yields/move_cost, game.rs tile_defense_bonus
-ENGINE_FEATURE_DEFENSE = {  # game.rs tile_defense_bonus
-    "forest": 3,
-    "jungle": 3,
-    "reef": 3,
-    "burning_forest": 3,
-    "burning_jungle": 3,
-    "burnt_forest": 3,
-    "burnt_jungle": 3,
-    "marsh": -2,
-    "floodplains": -2,
-    "grassland_floodplains": -2,
-    "plains_floodplains": -2,
-    "pantanal": -2,
-}
 
 
 def ours_terrains() -> dict[str, dict]:
@@ -1746,7 +1837,7 @@ def ours_features() -> dict[str, dict]:
             "move_cost": entry.get("move_cost", 0),
             "impassable": entry.get("impassable", False),
             "natural_wonder": entry.get("natural_wonder", False),
-            "defense": ENGINE_FEATURE_DEFENSE.get(name, 0),
+            "defense": entry.get("defense", 0),
             "chop": entry.get("chop", {}),
         }
         if entry.get("adjacent_yields"):

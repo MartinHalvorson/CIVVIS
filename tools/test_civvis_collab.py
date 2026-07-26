@@ -436,6 +436,42 @@ class ShipTests(unittest.TestCase):
             )
         self.assertEqual(result["headRefOid"], "new")
 
+    def test_pr_head_wait_stops_when_auto_merge_closes_the_pr(self):
+        branch = "agent/m/a/task-20260723T210500Z-a31f"
+        merged = {
+            "number": 9,
+            "state": "MERGED",
+            "headRefOid": "old",
+            "mergeCommit": {"oid": "squash123"},
+        }
+        with (
+            patch.object(collab, "current_pr", return_value=merged),
+            patch.object(collab, "remote_heads") as remote_heads,
+        ):
+            result = collab.wait_for_pr_head(
+                Path.cwd(),
+                branch,
+                "new",
+                deadline=collab.time.monotonic() + 1,
+                poll_seconds=0,
+            )
+        self.assertEqual(result, merged)
+        remote_heads.assert_not_called()
+
+    def test_only_a_merged_pr_exposes_its_squash_commit(self):
+        self.assertEqual(
+            collab.pr_merge_sha(
+                {"state": "MERGED", "mergeCommit": {"oid": "squash123"}}
+            ),
+            "squash123",
+        )
+        self.assertEqual(
+            collab.pr_merge_sha(
+                {"state": "OPEN", "mergeCommit": {"oid": "premature"}}
+            ),
+            "",
+        )
+
     def test_ship_requires_a_finished_summary_and_every_checkbox(self):
         draft = {
             "state": "OPEN",

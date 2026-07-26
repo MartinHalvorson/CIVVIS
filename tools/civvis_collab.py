@@ -551,11 +551,21 @@ def current_pr(repo: Path) -> Dict[str, Any]:
                 REPOSITORY,
                 "--json",
                 "number,url,state,isDraft,body,headRefName,headRefOid,baseRefOid,"
-                "mergeStateStatus,statusCheckRollup,title",
+                "mergeCommit,mergeStateStatus,mergedAt,statusCheckRollup,title",
             ),
             cwd=repo,
         )
     )
+
+
+def pr_merge_sha(pr: Dict[str, Any]) -> str:
+    """The squash commit of a PR GitHub has already auto-merged, if any."""
+    if str(pr.get("state") or "").upper() != "MERGED":
+        return ""
+    commit = pr.get("mergeCommit") or {}
+    if isinstance(commit, dict):
+        return str(commit.get("oid") or "")
+    return str(commit)
 
 
 def wait_for_pr_head(
@@ -570,6 +580,12 @@ def wait_for_pr_head(
     while True:
         pr = current_pr(repo)
         if str(pr.get("headRefOid") or "") == local_head:
+            return pr
+        # Armed auto-merge can close the PR between the push and this read.
+        # A closed PR's head is immutable and its branch may already be
+        # deleted, so waiting for it to observe a later local ref can only
+        # time out after a successful shipment.
+        if pr_merge_sha(pr):
             return pr
         remote_head = remote_heads(repo).get(branch, "")
         if remote_head != local_head:
@@ -657,6 +673,37 @@ def wait_for_local_live_build(
     return False
 
 
+def finish_ship(
+    repo: Path,
+    *,
+    number: int,
+    branch: str,
+    merged_sha: str,
+    live_url: str,
+    live_timeout_seconds: float,
+    poll_seconds: float,
+) -> int:
+    """Clean up and verify a PR merged manually or by armed auto-merge."""
+    if not merged_sha:
+        raise CommandError(f"merged PR #{number} did not report its merge commit")
+    print(f"PR #{number} squash-merged as {merged_sha[:7]}")
+    deletion = run(
+        ("git", "-C", str(repo), "push", "origin", "--delete", branch),
+        check=False,
+    )
+    if deletion.returncode:
+        print("remote branch was already deleted or could not be deleted")
+    fetch_main(repo)
+    wait_for_local_live_build(
+        repo,
+        merged_sha,
+        url=live_url,
+        timeout_seconds=live_timeout_seconds,
+        poll_seconds=poll_seconds,
+    )
+    return 0
+
+
 def ship_task(args: argparse.Namespace) -> int:
     """Push a finished task, wait for green CI, squash-merge, and verify live."""
     root = repo_root()
@@ -685,9 +732,32 @@ def ship_task(args: argparse.Namespace) -> int:
     deadline = time.monotonic() + max(1.0, args.timeout_seconds)
     ready_thresholds: Dict[str, str] = {}
     auto_merge_armed = False
+
+    def finish_merged(pr: Dict[str, Any]) -> Optional[int]:
+        merged_sha = pr_merge_sha(pr)
+        if not merged_sha:
+            return None
+        return finish_ship(
+            root,
+            number=int(pr["number"]),
+            branch=branch,
+            merged_sha=merged_sha,
+            live_url=args.live_url,
+            live_timeout_seconds=args.live_timeout_seconds,
+            poll_seconds=args.poll_seconds,
+        )
+
     while True:
         if time.monotonic() >= deadline:
             raise CommandError("timed out waiting for the task to reach main")
+
+        # Auto-merge may have fired after the preceding poll. Detect that
+        # before comparing commit ancestry: a squash commit deliberately does
+        # not contain the task branch's commits, so ancestry cannot identify
+        # this successful terminal state.
+        pr = current_pr(root)
+        if (finished := finish_merged(pr)) is not None:
+            return finished
 
         merged_main = merge_current_main(root)
         if merged_main and git(root, "status", "--porcelain"):
@@ -703,6 +773,8 @@ def ship_task(args: argparse.Namespace) -> int:
             deadline=deadline,
             poll_seconds=args.poll_seconds,
         )
+        if (finished := finish_merged(pr)) is not None:
+            return finished
         errors = ship_pr_errors(pr, branch)
         if errors:
             raise CommandError("; ".join(errors))
@@ -723,10 +795,14 @@ def ship_task(args: argparse.Namespace) -> int:
             if time.monotonic() >= deadline:
                 raise CommandError("timed out waiting for required checks")
             pr = current_pr(root)
+            if (finished := finish_merged(pr)) is not None:
+                return finished
             if str(pr.get("state") or "").upper() != "OPEN":
                 raise CommandError("the PR closed before ship completed")
             if str(pr.get("headRefOid") or "") != local_head:
-                raise CommandError("the PR head changed outside this task's one-writer worktree")
+                raise CommandError(
+                    "the PR head changed outside this task's one-writer worktree"
+                )
 
             if not auto_merge_armed:
                 # Armed auto-merge fires the instant a green run coincides with
@@ -747,6 +823,15 @@ def ship_task(args: argparse.Namespace) -> int:
                     print(f"auto-merge armed on PR #{pr['number']}")
 
             fetch_main(root)
+            # Auto-merge can fire during the fetch itself. Re-read the PR
+            # before trying to update a branch GitHub may just have deleted.
+            pr = current_pr(root)
+            if (finished := finish_merged(pr)) is not None:
+                return finished
+            if str(pr.get("state") or "").upper() != "OPEN":
+                raise CommandError("the PR closed before ship completed")
+            if str(pr.get("headRefOid") or "") != local_head:
+                raise CommandError("the PR head changed outside this task's one-writer worktree")
             if not ref_contains(root, "origin/main"):
                 # Update the branch through GitHub rather than rebuilding the
                 # task locally. This merges `main` into the head server-side,
@@ -789,22 +874,15 @@ def ship_task(args: argparse.Namespace) -> int:
                         + str(merge_result.get("message") or "unknown reason")
                     )
                 merged_sha = str(merge_result.get("sha") or "")
-                print(f"PR #{pr['number']} squash-merged as {merged_sha[:7]}")
-                deletion = run(
-                    ("git", "-C", str(root), "push", "origin", "--delete", branch),
-                    check=False,
-                )
-                if deletion.returncode:
-                    print("remote branch was already deleted or could not be deleted")
-                fetch_main(root)
-                wait_for_local_live_build(
+                return finish_ship(
                     root,
-                    merged_sha,
-                    url=args.live_url,
-                    timeout_seconds=args.live_timeout_seconds,
+                    number=int(pr["number"]),
+                    branch=branch,
+                    merged_sha=merged_sha,
+                    live_url=args.live_url,
+                    live_timeout_seconds=args.live_timeout_seconds,
                     poll_seconds=args.poll_seconds,
                 )
-                return 0
 
             print("waiting on: " + ", ".join(names))
             time.sleep(max(0.1, args.poll_seconds))
