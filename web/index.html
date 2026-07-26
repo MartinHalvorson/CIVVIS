@@ -17209,14 +17209,19 @@ function cameraYBounds(scale = cam.scale) {
   }
   if (mapWrapsY()) return null;
   if (Math.abs(SINR) > 0.001) return null;
-  const halfVisible = area.clientHeight / (2 * Math.max(0.25, scale) * YS);
+  const actualScale = Math.max(.01, scale);
+  const focusBounds = mapFocusBounds();
+  const aboveFocus = (area.clientHeight / 2 - focusBounds.top) / (actualScale * YS);
+  const belowFocus = (focusBounds.bottom - area.clientHeight / 2) / (actualScale * YS);
   const top = -S;
   const bottom = S * 1.5 * Math.max(0, state.map.height - 1) + S + MODE.skirt / YS;
-  if (bottom - top <= halfVisible * 2) {
+  if (bottom - top <= aboveFocus + belowFocus) {
     const middle = (top + bottom) / 2;
-    return { min: middle, max: middle };
+    const focus = (focusBounds.top + focusBounds.bottom) / 2;
+    const centered = middle - (focus - area.clientHeight / 2) / (actualScale * YS);
+    return { min:centered, max:centered };
   }
-  return { min: top + halfVisible, max: bottom - halfVisible };
+  return { min:top + aboveFocus, max:bottom - belowFocus };
 }
 function clampCameraY(y, scale = cam.scale) {
   const bounds = cameraYBounds(scale);

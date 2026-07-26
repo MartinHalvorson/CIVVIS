@@ -4993,6 +4993,8 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(".diplomacy-card.allied"));
         assert!(EMBEDDED_INDEX.contains("function cameraYBounds"));
         assert!(EMBEDDED_INDEX.contains("cam.y = clampCameraY(cam.y)"));
+        assert!(EMBEDDED_INDEX.contains("const focusBounds = mapFocusBounds();"));
+        assert!(EMBEDDED_INDEX.contains("return { min:centered, max:centered };"));
         // Flat charts expose both wrapping axes as persistent display choices.
         // East-west starts on, north-south starts off, and both the projected
         // tile positions and canonical hit-test positions consume the choice.
