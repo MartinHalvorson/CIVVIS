@@ -602,22 +602,48 @@ fn conservative_order(league: &League, indices: &mut [usize]) {
     });
 }
 
-/// Pick the currently least-represented evolutionary niche. Ties rotate by
-/// selection generation, so missing lanes are restored deterministically and
-/// repeated selection does not always favour the enum's first lane.
+/// One birth in every `DIVERSITY_BIRTH_PERIOD` is spent on the thinnest niche
+/// even when it is losing; the rest refine the strongest one. See `next_niche`.
+const DIVERSITY_BIRTH_PERIOD: usize = 3;
+
+/// Pick the evolutionary niche to breed into. An unoccupied niche is always
+/// repopulated first, and one birth in `DIVERSITY_BIRTH_PERIOD` goes to the
+/// thinnest niche; every other birth refines the niche whose best active member
+/// is conservatively strongest. Ties rotate by selection generation, so missing
+/// lanes are restored deterministically and repeated selection does not always
+/// favour the enum's first lane.
+///
+/// Spending *every* birth on the least populated niche starves the winner. A
+/// niche is thin precisely when its members keep getting retired for losing,
+/// while a winning niche stays full of durable members that retirement
+/// protects, so its population is never the minimum. Over 382 live rounds that
+/// sent 281 of 285 births into lanes rating 1315-1722 and only 4 into the
+/// generalist niche that held every top-rated offspring, and no offspring ever
+/// overtook the built-in defaults.
 fn next_niche(league: &League, cfg: &LeagueCfg, birth: usize) -> usize {
     let mut counts = [0usize; EVOLUTION_NICHES];
+    let mut strength = [f64::NEG_INFINITY; EVOLUTION_NICHES];
     for i in league.active() {
         if let Some(niche) = evolution_niche(&league.strategies[i].kind) {
             counts[niche] += 1;
+            strength[niche] = strength[niche].max(lower_confidence(&league.strategies[i]));
         }
     }
     let least = *counts.iter().min().unwrap();
     let generation = league.round / cfg.evolve_every.max(1);
     let start = (generation as usize + birth) % EVOLUTION_NICHES;
-    (0..EVOLUTION_NICHES)
-        .map(|offset| (start + offset) % EVOLUTION_NICHES)
-        .find(|niche| counts[*niche] == least)
+    let mut rotated = (0..EVOLUTION_NICHES).map(|offset| (start + offset) % EVOLUTION_NICHES);
+    if least == 0 || birth % DIVERSITY_BIRTH_PERIOD == DIVERSITY_BIRTH_PERIOD - 1 {
+        return rotated.find(|niche| counts[*niche] == least).unwrap();
+    }
+    rotated
+        .reduce(|best, niche| {
+            if strength[niche] > strength[best] {
+                niche
+            } else {
+                best
+            }
+        })
         .unwrap()
 }
 
@@ -3317,6 +3343,62 @@ mod tests {
 
         assert_eq!(retired_names, vec!["science-duplicate"]);
         assert!(!league.strategies[0].retired);
+    }
+
+    #[test]
+    fn breeding_refines_the_strongest_niche_once_every_lane_is_occupied() {
+        let advanced = |target: Option<&str>| StrategyKind::Advanced {
+            weights: Weights::default(),
+            target: target.map(str::to_string),
+        };
+        let mut league = League {
+            round: 0,
+            strategies: Vec::new(),
+            calibration: Calibration::default(),
+        };
+        // Every lane occupied, so no niche is empty and the diversity floor is
+        // not what decides. The generalist niche is both the strongest and the
+        // most populated: the old least-populated rule could never breed it.
+        for lane in VictoryTarget::ALL {
+            league.strategies.push(Strategy::new(
+                &format!("lane-{}", lane.as_str()),
+                advanced(Some(lane.as_str())),
+                0,
+            ));
+        }
+        for name in ["general-a", "general-b"] {
+            league
+                .strategies
+                .push(Strategy::new(name, advanced(None), 0));
+        }
+        for strategy in &mut league.strategies {
+            strategy.rating = 1400.0;
+            strategy.rd = 30.0;
+        }
+        let generalists = league.strategies.len() - 2;
+        league.strategies[generalists].rating = 1900.0;
+        league.strategies[generalists + 1].rating = 1850.0;
+        ensure_usernames(&mut league);
+
+        let cfg = LeagueCfg {
+            max_pop: 32,
+            ..LeagueCfg::default()
+        };
+        let mut rng = Rng::new(33);
+        let (born, _) = evolve_league(&mut league, &cfg, &mut rng);
+        let lanes: Vec<Option<String>> = league
+            .strategies
+            .iter()
+            .filter(|s| born.contains(&s.username))
+            .map(|s| target_of(&s.kind))
+            .collect();
+
+        // max_pop 32 gives eight births: DIVERSITY_BIRTH_PERIOD reserves every
+        // third one for the thinnest niche, and the other six refine the
+        // winning generalists.
+        assert_eq!(lanes.len(), 8);
+        assert_eq!(lanes.iter().filter(|lane| lane.is_none()).count(), 6);
+        assert!(lanes.iter().filter(|lane| lane.is_some()).count() == 2);
     }
 
     #[test]
