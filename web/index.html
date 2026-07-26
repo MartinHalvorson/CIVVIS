@@ -1544,9 +1544,25 @@
   .war-list > * { flex: 0 0 auto; }
   .war-card { overflow: hidden; border: 1px solid #6c514b; border-radius: 5px; background: #0b1613; box-shadow: inset 0 0 0 1px #0007; }
   .war-card.ended { border-color: #435e54; }
-  .war-period { display: grid; grid-template-columns: 1fr 1fr; padding: 6px 8px; background: linear-gradient(90deg, #3a1917, #261817 50%, #16251f); border-bottom: 1px solid #79594f; color: #d6c5bd; font-size: var(--type-label); font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
-  .war-period span:last-child { text-align: right; }
+  .war-period { display: grid; grid-template-columns: minmax(58px, 1fr) auto minmax(72px, 1fr); align-items: center; padding: 6px 8px; background: linear-gradient(90deg, #3a1917, #261817 50%, #16251f); border-bottom: 1px solid #79594f; color: #d6c5bd; font-size: var(--type-label); font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+  .war-period > span:last-of-type { text-align: right; }
   .war-period b { display: block; color: #fff0e9; font: 700 var(--type-control)/1.2 var(--font-display); letter-spacing: 0; text-transform: none; }
+  .war-map-action {
+    grid-column: 2; grid-row: 1; min-height: 27px; margin: 0 6px; padding: 4px 8px;
+    border-color: #d8ad5e99; border-radius: 5px; color: #ffe8ad;
+    background: linear-gradient(180deg, #57421f, #332713); box-shadow: inset 0 1px #fff2;
+    font-size: var(--type-caption); font-weight: 900; letter-spacing: .055em; line-height: 1.1;
+    text-transform: uppercase; white-space: nowrap;
+  }
+  .war-map-action:hover, .war-map-action:focus-visible {
+    color: #fff4ce; border-color: #f0cf82; background: linear-gradient(180deg, #745a2c, #44351c);
+  }
+  .war-map-action.aftermath {
+    border-color: #678b7c; color: #bfe3d2; background: linear-gradient(180deg, #29443a, #1a2f28);
+  }
+  .war-map-action.aftermath:hover, .war-map-action.aftermath:focus-visible {
+    color: #e0f7ec; border-color: #8bbca7; background: linear-gradient(180deg, #365b4d, #223c33);
+  }
   .war-card.ended .war-period { background: linear-gradient(90deg, #1c2924, #14211c); border-bottom-color: #435e54; }
   .war-infobox-row { border-top: 1px solid #ffffff0d; }
   .war-infobox-row:first-of-type { border-top: 0; }
@@ -18729,6 +18745,62 @@ const WAR_MOMENT_TONE = {
   peace: "peace",
   coalition: "peace",
 };
+
+function warLogKey(war) {
+  return String(war.conflict ?? cinematicWarKey(war));
+}
+
+// A live map keeps changing after the armistice.  Prefer the engine's durable
+// tail of battlefield sites, then degrade gracefully for older saves by using
+// named captured cities or the same live-front heuristic as the cinema
+// director.  The result is a current view of that ground, never a false rewind
+// to the units and borders that existed on the final turn of the war.
+function warTheaterSubjects(war) {
+  const subjects = [], seen = new Set();
+  const add = pos => {
+    if (!Array.isArray(pos) || pos.length !== 2) return;
+    const signature = key(pos);
+    if (seen.has(signature)) return;
+    seen.add(signature);
+    subjects.push({pos:[pos[0], pos[1]]});
+  };
+  for (const site of war.theater || []) add(site?.pos);
+  if (!subjects.length) {
+    for (const moment of war.highlights || []) {
+      if (!moment.city) continue;
+      add(state.cities.find(city => city.name === moment.city)?.pos);
+    }
+  }
+  if (!subjects.length) add(cinematicWarFront(state, war)?.pos);
+  if (!subjects.length) add(playerAnchor(war.defender)?.pos);
+  if (!subjects.length) add(playerAnchor(war.aggressor)?.pos);
+  return subjects;
+}
+
+function focusWarOnMap(warKey) {
+  if (!state) return;
+  const war = (state.wars || []).find(candidate => warLogKey(candidate) === String(warKey));
+  if (!war) return;
+  const subjects = warTheaterSubjects(war);
+  if (!subjects.length) return;
+  takeCameraControl();
+  if (planetMap()) {
+    // A globe has no rectangular world-space frame.  Face the most recent
+    // recorded site and use the ordinary close regional scale instead.
+    flyCameraTo(subjects[subjects.length - 1].pos, planetScaleClamp(1.08));
+  } else {
+    const goal = observedViewGoal(subjects, true);
+    if (!goal) return;
+    cameraZoom = null; clearCameraInertia();
+    if (REDUCED_MOTION_QUERY.matches) {
+      cameraFlight = null;
+      cam.x = goal.x; cam.y = goal.y; cam.scale = goal.scale;
+      draw(); drawMini();
+    } else cameraFlight = goal;
+  }
+  wakeCinema();
+}
+
 function drawWarLog() {
   const el = document.getElementById("wars");
   const scope = document.getElementById("warscope");
@@ -18774,10 +18846,17 @@ function drawWarLog() {
       ? `<span class="war-nuclear-badge" title="Nuclear devices detonated in this war">` +
         `☢ ${detonations} nuclear</span>`
       : "";
+    const mapAction = over ? "View aftermath" : "Watch";
+    const mapActionTitle = over
+      ? "View what became of this war's final battlefield"
+      : "Focus the map on this war's active theater";
     return `<div class="war-card${over ? " ended" : ""}${conquest ? " conquest" : ""}` +
       `${detonations ? " nuclear" : ""}">` +
       `<div class="war-period"><span>Started<b>Turn ${war.started}</b></span>` +
-      `<span>${over ? "Ended" : "Status"}<b>${over ? `Turn ${war.ended}` : `Ongoing · ${length} turn${length === 1 ? "" : "s"}`}</b>${nuclearBadge}</span></div>` +
+      `<span>${over ? "Ended" : "Status"}<b>${over ? `Turn ${war.ended}` : `Ongoing · ${length} turn${length === 1 ? "" : "s"}`}</b>${nuclearBadge}</span>` +
+      `<button type="button" class="war-map-action${over ? " aftermath" : ""}" ` +
+      `data-war-key="${escapeAttr(warLogKey(war))}" title="${escapeAttr(mapActionTitle)}" ` +
+      `aria-label="${escapeAttr(mapActionTitle)}">${mapAction}</button></div>` +
       `<div class="war-infobox-row"><div class="war-row-label">Belligerents</div>` +
       `<div class="war-columns">${warBelligerentRows(war, true, "aggressor", maxSawAction)}` +
       `${warBelligerentRows(war, false, "defender", maxSawAction)}</div></div>` +
@@ -18789,6 +18868,11 @@ function drawWarLog() {
       `<div class="war-moments">${moments || `<span class="war-loss-none">No recorded events</span>`}</div></div></div>`;
   }).join("");
 }
+
+document.getElementById("wars")?.addEventListener("click", event => {
+  const button = event.target.closest(".war-map-action");
+  if (button) focusWarOnMap(button.dataset.warKey);
+});
 
 function drawSide(force = true) {
   const now = performance.now();

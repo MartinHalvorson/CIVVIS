@@ -12550,6 +12550,15 @@ pub struct WarHighlight {
     pub city: Option<String>,
 }
 
+/// A place where a war was fought.  Unlike the units and borders on the live
+/// map, these sites survive peace, conquest, later rebuilding and a reload, so
+/// a client can return to the battlefield and show what became of it.
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Debug)]
+pub struct WarTheaterSite {
+    pub turn: u32,
+    pub pos: Pos,
+}
+
 /// One detonation, recorded on the game rather than reconstructed from its
 /// consequences.
 ///
@@ -12611,6 +12620,11 @@ pub struct WarRecord {
     #[serde(default)]
     pub peace_terms: Vec<WarPeace>,
     pub highlights: Vec<WarHighlight>,
+    /// Recent places where this front saw action, oldest first.  The bounded
+    /// tail describes the current theater while a war is active and becomes a
+    /// durable aftermath target once it is over.
+    #[serde(default)]
+    pub theater: Vec<WarTheaterSite>,
 }
 
 impl WarRecord {
@@ -12644,6 +12658,25 @@ impl WarRecord {
                 })
                 .into_iter()
                 .collect(),
+            theater: Vec::new(),
+        }
+    }
+
+    fn record_theater_site(&mut self, turn: u32, pos: Pos) {
+        if self
+            .theater
+            .iter()
+            .rev()
+            .take_while(|site| site.turn == turn)
+            .any(|site| site.pos == pos)
+        {
+            return;
+        }
+        self.theater.push(WarTheaterSite { turn, pos });
+        const THEATER_SITES_KEPT: usize = 64;
+        if self.theater.len() > THEATER_SITES_KEPT {
+            self.theater
+                .drain(..self.theater.len() - THEATER_SITES_KEPT);
         }
     }
 
@@ -15886,18 +15919,38 @@ impl Game {
         if self.wars.contains_key(&key) {
             return;
         }
-        self.wars.insert(
-            key,
-            WarRecord::new(
-                conflict,
-                declarer,
-                target,
-                aggressor,
-                defender,
-                self.turn,
-                declared_front,
-            ),
+        // Before the first armies meet, the named target's capital is the
+        // intelligible theater of the declaration.  Only the declared front
+        // contributes this seed; alliance fronts will add their own real
+        // action sites if and when fighting reaches them.
+        let opening_site = if declared_front {
+            self.cities
+                .values()
+                .find(|city| city.owner == target && city.is_capital)
+                .or_else(|| self.cities.values().find(|city| city.owner == target))
+                .map(|city| city.pos)
+                .or_else(|| {
+                    self.units
+                        .values()
+                        .find(|unit| unit.owner == target)
+                        .map(|unit| unit.pos)
+                })
+        } else {
+            None
+        };
+        let mut record = WarRecord::new(
+            conflict,
+            declarer,
+            target,
+            aggressor,
+            defender,
+            self.turn,
+            declared_front,
         );
+        if let Some(pos) = opening_site {
+            record.record_theater_site(self.turn, pos);
+        }
+        self.wars.insert(key, record);
         self.sync_war_participants_for(key);
     }
 
@@ -16006,15 +16059,16 @@ impl Game {
             .round() as i64;
         let current_strength = self.military_power(owner).round() as i64;
         let key = pair(first, second);
+        let turn = self.turn;
         self.open_war_record(first, second);
-        if let Some(participant) = self
-            .wars
-            .get_mut(&key)
-            .and_then(|war| {
-                war.participants
-                    .iter_mut()
-                    .find(|participant| participant.player == owner && participant.exited.is_none())
-            })
+        let Some(war) = self.wars.get_mut(&key) else {
+            return;
+        };
+        war.record_theater_site(turn, unit.pos);
+        if let Some(participant) = war
+            .participants
+            .iter_mut()
+            .find(|participant| participant.player == owner && participant.exited.is_none())
         {
             participant.peak_strength = Some(
                 participant
@@ -16243,7 +16297,9 @@ impl Game {
             let multiplier = self.war_weariness_multiplier(victim_owner, home);
             self.add_war_weariness(victim_owner, 3.0 * multiplier);
         }
+        let turn = self.turn;
         if let Some((war, _, _)) = self.war_ledger(killer, victim_owner) {
+            war.record_theater_site(turn, at);
             let label = format!(
                 "{}{}",
                 kind,
@@ -16262,10 +16318,20 @@ impl Game {
     /// A moment worth naming in the war it belongs to. Silently dropped when
     /// the two are not at war — a Barbarian raid or a strike in peacetime has
     /// no war to be part of.
-    fn record_war_moment(&mut self, actor: usize, subject: usize, kind: &str, city: Option<String>) {
+    fn record_war_moment(
+        &mut self,
+        actor: usize,
+        subject: usize,
+        kind: &str,
+        city: Option<String>,
+        at: Option<Pos>,
+    ) {
         let turn = self.turn;
         let kind = kind.to_string();
         if let Some((war, _, _)) = self.war_ledger(actor, subject) {
+            if let Some(pos) = at {
+                war.record_theater_site(turn, pos);
+            }
             war.highlights.push(WarHighlight {
                 turn,
                 kind,
@@ -16279,7 +16345,14 @@ impl Game {
     /// A city changing hands under arms — the one event a war log should
     /// never summarize away. A capital is called out by name: losing one is
     /// the moment a war turns.
-    fn record_war_city_loss(&mut self, taker: usize, loser: usize, city: &str, capital: bool) {
+    fn record_war_city_loss(
+        &mut self,
+        taker: usize,
+        loser: usize,
+        city: &str,
+        capital: bool,
+        at: Pos,
+    ) {
         if let Some((war, _, _)) = self.war_ledger(taker, loser) {
             let losses = war.losses.entry(loser).or_default();
             losses.cities += 1;
@@ -16290,7 +16363,7 @@ impl Game {
         } else {
             "city_captured"
         };
-        self.record_war_moment(taker, loser, kind, Some(city.to_string()));
+        self.record_war_moment(taker, loser, kind, Some(city.to_string()), Some(at));
     }
 
     /// Classify a tile from a unit owner's perspective for passive healing.
@@ -37689,11 +37762,23 @@ impl Game {
         for (_, owner, name) in struck_cities {
             struck_owners.insert(owner);
             struck_names.push(name.clone());
-            self.record_war_moment(pid, owner, "nuclear_strike", Some(name));
+            self.record_war_moment(
+                pid,
+                owner,
+                "nuclear_strike",
+                Some(name),
+                Some(target),
+            );
         }
         for owner in &aggrieved {
             if !struck_owners.contains(owner) {
-                self.record_war_moment(pid, *owner, "nuclear_strike", None);
+                self.record_war_moment(
+                    pid,
+                    *owner,
+                    "nuclear_strike",
+                    None,
+                    Some(target),
+                );
             }
         }
         let units_destroyed = exposed
@@ -45186,7 +45271,7 @@ impl Game {
             self.note(new_owner, "War", message.clone(), Some(pos));
             self.note(old, "War", message, Some(pos));
             if conquest {
-                self.record_war_city_loss(new_owner, old, &name, capital);
+                self.record_war_city_loss(new_owner, old, &name, capital, pos);
             }
         }
         let captured_works = self
@@ -45532,7 +45617,13 @@ impl Game {
             return Err("that captured city cannot be razed".into());
         }
         self.capture_rewards(pid, defeated, 150.0);
-        self.record_war_moment(pid, defeated, "city_razed", Some(city.name.clone()));
+        self.record_war_moment(
+            pid,
+            defeated,
+            "city_razed",
+            Some(city.name.clone()),
+            Some(city.pos),
+        );
 
         for position in &city.owned_tiles {
             if let Some(tile) = self.map.tiles.get_mut(position) {
@@ -56401,19 +56492,37 @@ mod district_mechanics {
 
         let key = pair(0, 1);
         let war = game.wars.get(&key).expect("the declaration opened a war");
+        let defender_capital = game
+            .cities
+            .values()
+            .find(|city| city.owner == 1 && city.is_capital)
+            .unwrap()
+            .pos;
         assert_eq!((war.aggressor, war.defender, war.started), (0, 1, 40));
         assert_eq!((war.declarer, war.target), (0, 1));
         assert_eq!(war.participants.len(), 2);
         assert_eq!(war.participants[0].strength, opening_strength[0]);
         assert_eq!(war.participants[1].strength, opening_strength[1]);
         assert_eq!(war.highlights[0].kind, "declared");
+        assert_eq!(
+            war.theater,
+            [WarTheaterSite {
+                turn: 40,
+                pos: defender_capital,
+            }],
+            "the Watch action has a useful target before the first battle"
+        );
+        game.players[2].explored.remove(&defender_capital);
+        let third_party_view = crate::obs::observation(&game, 2);
+        let public_war = third_party_view["wars"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["aggressor"] == 0 && entry["defender"] == 1)
+            .expect("a war is public knowledge to the civilizations watching it");
         assert!(
-            crate::obs::observation(&game, 2)["wars"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|entry| entry["aggressor"] == 0 && entry["defender"] == 1),
-            "a war is public knowledge to the civilizations watching it"
+            public_war["theater"].as_array().unwrap().is_empty(),
+            "the public declaration must not reveal an unexplored battlefield"
         );
 
         // A casualty on each side, then a city taken, is the whole vocabulary
@@ -56482,6 +56591,19 @@ mod district_mechanics {
             .collect::<Vec<_>>();
         assert!(turns.windows(2).all(|pair| pair[0] <= pair[1]));
         assert_eq!(entry["peace_terms"][0]["turn"], 52);
+        let aftermath = crate::obs::observation_spectator(&game, 0)["wars"][0]["theater"].clone();
+        assert!(
+            aftermath
+                .as_array()
+                .is_some_and(|sites| !sites.is_empty()),
+            "a concluded war exposes its durable battlefield to the full-map spectator"
+        );
+        game.turn = 92;
+        assert_eq!(
+            crate::obs::observation_spectator(&game, 0)["wars"][0]["theater"],
+            aftermath,
+            "later history must not move the View aftermath target"
+        );
     }
 
     #[test]
