@@ -384,3 +384,48 @@ fn heartbeat_of_steam_pays_one_era_score_per_industrial_building() {
     game.note_dedicated_building(0, "factory", &factory);
     assert_eq!(game.players[0].era_score, before + 1);
 }
+
+#[test]
+fn era_score_moments_pay_what_the_moments_table_ships() {
+    // Moments carries an EraScore per moment, and several of CIVVIS' awards had
+    // drifted from it. The first-in-world variants are separate rows, which is
+    // why the plain ones are worth less than CIVVIS was paying.
+    let mut game = two_player_game();
+    let score = |game: &Game, pid: usize| game.players[pid].era_score;
+
+    // MOMENT_PANTHEON_FOUNDED 1, _FIRST_IN_WORLD 2.
+    let before = score(&game, 0);
+    game.players[0].faith = 1_000.0;
+    game.do_choose_pantheon(0, "god_of_the_forge").unwrap();
+    assert_eq!(score(&game, 0) - before, 2, "the world's first Pantheon");
+    let before = score(&game, 1);
+    game.players[1].faith = 1_000.0;
+    game.do_choose_pantheon(1, "divine_spark").unwrap();
+    assert_eq!(score(&game, 1) - before, 1, "the second is worth one");
+
+    // MOMENT_BARBARIAN_CAMP_DESTROYED is 2, and its window is ANCIENT through
+    // MEDIEVAL -- the only Moment CIVVIS models that stops paying.
+    game.world_era = 0;
+    assert_eq!(game.barbarian_camp_era_score(), 2);
+    game.world_era = 2;
+    assert_eq!(game.barbarian_camp_era_score(), 2, "Medieval still pays");
+    game.world_era = 3;
+    assert_eq!(game.barbarian_camp_era_score(), 0, "the Renaissance does not");
+}
+
+#[test]
+fn a_wonder_is_worth_more_while_it_is_still_current() {
+    // MOMENT_BUILDING_CONSTRUCTED_GAME_ERA_WONDER is 4 and _PAST_ERA_WONDER is
+    // 3. CIVVIS paid a flat 3 for every wonder.
+    let rules = crate::rules::Rules::embedded();
+    // pyramids unlock in the Ancient era, big_ben in the Industrial.
+    let mut game = two_player_game();
+    assert_eq!(game.wonder_era("pyramids"), 0);
+    assert_eq!(game.wonder_era("big_ben"), 4);
+
+    game.world_era = 0;
+    assert!(game.wonder_era("pyramids") >= game.world_era, "current era");
+    game.world_era = 4;
+    assert!(game.wonder_era("pyramids") < game.world_era, "long past");
+    let _ = rules;
+}

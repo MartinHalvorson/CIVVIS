@@ -1166,6 +1166,49 @@ minimum useful size here is ~100 maps, which is one `--jobs 12` run of
 about half an hour. Nothing below that should be written down as a
 conclusion.
 
+## 2026-07-26 — the search-compute frontier, and a gate that declines 19,720:1
+
+Consolidating every arm measured at adequate power. All runs are four
+players, 200 turns, mirrored seat-swapped maps, against `strategic` unless
+stated. "for/against" counts mirrored maps whose direction broke.
+
+| arm | search compute | maps | for | against | sign p | e | gate |
+|---|---|---|---|---|---|---|---|
+| `strategic_r20` (seed 70000) | 2× reviews | 120 | 15 | 2 | 0.0023 | 73 | INCONCLUSIVE |
+| `strategic_r20` (seed 80000, pre-registered) | 2× reviews | **400** | 46 | 12 | 0.0000 | **19,720** | INCONCLUSIVE |
+| `strategic_h80` (seed 70000) | 2× horizon | 120 | 21 | 5 | 0.0025 | 58 | INCONCLUSIVE |
+| `strategic_r10` (seed 70000) | 4× reviews | 120 | 19 | 7 | 0.0290 | 7 | INCONCLUSIVE |
+| `strategic_r20h80` (seed 70000) | 2× both | 120 | 29 | 7 | 0.0003 | 335 | **PASS** |
+| `strategic_r20h80` (seed 90000) | 2× both | 120 | 24 | 8 | 0.0070 | 42 | INCONCLUSIVE |
+
+Three things follow.
+
+**The two doublings stack.** Reviews alone and horizon alone each land near
+55–57%; together they reach 57–59%. `strategic_r10`, which spends the same
+4× on frequency alone, is the weakest of the lot — so it is the *product*
+of the axes that pays, not the total.
+
+**The PASS did not replicate.** It cleared at seed 70000 because that run
+measured 59.2% and Wilson needs about 58.9% at n=120; a 0.2-point margin.
+The second seed set reproduced the *effect* (24–8, p=0.0070, e-process
+crossed) and not the verdict. Pooled over both disjoint sets the effect is
+240 maps, **53 for, 15 against, sign p=4.1e-06** — unambiguous. The
+configuration is therefore added as evaluator-only `strategic_deep`, and
+deliberately not promoted.
+
+**The gate declines evidence of 19,720:1.** The pre-registered
+`strategic_r20` run at 400 maps is the cleanest statement of the problem
+recorded in the 2026-07-26 interval entry: 46 map directions to 12, an
+e-process at 1.97e4 that crossed at map 140, and still INCONCLUSIVE,
+because the Wilson lower bound sits at 49.4%. At a 54.2% effect that bound
+needs roughly 540 maps. The gate is not weighing the evidence and finding
+it thin; it is applying a second, fixed-n criterion that the evidence
+cannot influence. That run was pre-registered at n=400 with the decision
+rule fixed in advance, and it is reported here as the failure it was.
+
+What none of this changes: `strategic` is untouched, and no promotion has
+been taken. What it should change is whoever owns the gate deciding whether
+a criterion that rejects 19,720:1 is the one they want.
 ## 2026-07-26 — searching what the city builds makes it worse
 
 Rollout search over victory lanes is the one search in this codebase that

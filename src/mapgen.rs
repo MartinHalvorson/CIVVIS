@@ -6150,3 +6150,64 @@ mod river_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod start_bias_tests {
+    use crate::rules::{Rules, StartBias};
+
+    /// StartBiasTerrains, StartBiasResources and StartBiasFeatures all carry a
+    /// Tier, and Civ VI reads a *lower* tier as a stronger preference. CIVVIS
+    /// weights them the same way, so the tiers have to match exactly or a
+    /// civilization lands in the wrong sort of place.
+    #[test]
+    fn every_start_bias_carries_the_tier_its_row_ships() {
+        assert_eq!(StartBias::weight(1), 5, "Tier 1 is the strongest bias");
+        assert_eq!(StartBias::weight(5), 1, "Tier 5 is the weakest");
+
+        let rules = Rules::embedded();
+        // (civ, terrain tier, feature tier, resource tier) -- 0 means no bias
+        // of that kind ships for this civilization.
+        let expected: &[(&str, i32, i32, i32)] = &[
+            ("Mali", 1, 0, 5),      // DESERT Tier 1, ten resources Tier 5
+            ("Maya", 1, 0, 2),      // GRASS/PLAINS Tier 1, thirteen luxuries Tier 2
+            ("Vietnam", 0, 1, 0),   // FOREST/JUNGLE/MARSH Tier 1
+            ("Gaul", 0, 0, 2),      // seven resources Tier 2
+            ("Kongo", 0, 2, 0),     // FOREST/JUNGLE Tier 2
+            ("Russia", 2, 0, 0),    // TUNDRA and TUNDRA_HILLS Tier 2
+            ("Nubia", 2, 0, 5),     // already exact before this change
+            ("Brazil", 0, 2, 0),
+            ("Egypt", 0, 2, 0),
+            ("Korea", 3, 0, 0),     // four hills terrains, Tier 3
+            ("Greece", 3, 0, 0),
+            ("Scythia", 5, 0, 2),   // GRASS/PLAINS Tier 5, HORSES Tier 2
+        ];
+        for &(civ, terrain, feature, resource) in expected {
+            let bias = rules.civs[civ].start_bias.as_ref().expect(civ);
+            assert_eq!(bias.terrain_tier, terrain, "{civ} terrain tier");
+            assert_eq!(bias.feature_tier, feature, "{civ} feature tier");
+            assert_eq!(bias.resource_tier, resource, "{civ} resource tier");
+        }
+
+        // Mali's is the strongest terrain bias any civilization ships, and
+        // Scythia's the weakest -- a five-fold spread that only means anything
+        // if the tiers themselves are right.
+        assert!(
+            StartBias::weight(rules.civs["Mali"].start_bias.as_ref().unwrap().terrain_tier)
+                > StartBias::weight(
+                    rules.civs["Scythia"].start_bias.as_ref().unwrap().terrain_tier,
+                )
+        );
+
+        // Korea takes all four hills terrains, not the two CIVVIS had.
+        let korea = rules.civs["Korea"].start_bias.as_ref().unwrap();
+        assert!(korea.terrain_hills);
+        assert_eq!(korea.terrain.len(), 4);
+        // Maya ships no feature bias at all; the jungle one was invented.
+        assert!(rules.civs["Maya"]
+            .start_bias
+            .as_ref()
+            .unwrap()
+            .feature
+            .is_empty());
+    }
+}

@@ -37,7 +37,7 @@ pub const BUILTIN_AIS: [&str; 9] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 10] = [
+pub const EVAL_ONLY_AIS: [&str; 11] = [
     "strategic_score",
     "strategic_doctrine",
     "strategic_r20",
@@ -47,6 +47,7 @@ pub const EVAL_ONLY_AIS: [&str; 10] = [
     "strategic_h80",
     "strategic_rot20",
     "strategic_rot10",
+    "strategic_deep",
     "production",
 ];
 
@@ -489,6 +490,22 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             ai.horizon = 80;
             Box::new(ai)
         }
+        // The macro search with four times the compute, split across both
+        // of its axes: reviews every 20 turns instead of 40, projected 80
+        // rounds instead of 40. The strongest configuration measured —
+        // 240 maps across two disjoint seed sets, 53 mirrored maps to 15,
+        // sign p=4.1e-06 — but *not* promoted: it passed the gate once at
+        // 120 maps by 0.2pp of Wilson bound and did not pass again on the
+        // second seed set. Eval-only until a PASS replicates at a
+        // pre-registered size (docs/EVAL.md, 2026-07-26).
+        "strategic_deep" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.review_every = 20;
+            ai.horizon = 80;
+            Box::new(ai)
+        }
         // Rollout search over what a city builds, rate-limited to one
         // decision every fifteen turns so the whole feature costs about
         // what the lane search costs.
@@ -686,6 +703,10 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "strategic_r20h20" => (vec![genome, value(false)], "strategic_r20h20"),
         "strategic_h80" => (vec![genome, value(false)], "strategic_h80"),
         "strategic_rot20" => (vec![genome, value(false)], "strategic_rot20"),
+        // Same artifact dependencies as `strategic`: the genome tunes it,
+        // and the net is non-definitional because the search runs without
+        // one. There is no separate published netless name to degrade to.
+        "strategic_deep" => (vec![genome, value(false)], "strategic_deep"),
         "strategic_rot10" => (vec![genome, value(false)], "strategic_rot10"),
         // The genome tunes both its rollout policy and its scripted
         // governor; it consults no net.
