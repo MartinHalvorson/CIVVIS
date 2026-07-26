@@ -2257,7 +2257,7 @@
      while the seam is still following it. */
   body.hud-columns-resizing { cursor: col-resize; }
   body.hud-columns-resizing * { cursor: col-resize !important; }
-  body.hud-columns-resizing #playerhud .diplomacy-card { user-select: none; }
+  body.hud-columns-resizing #playerhud { user-select: none; }
   /* Every row keeps the same readable height instead of being squeezed to fit
      the panel, so a large table scrolls rather than shrinking into illegibility. */
   #playerhud .diplomacy-ribbon {
@@ -2593,7 +2593,7 @@
   @media (max-width: 1300px) {
     #playerhud {
       grid-template-columns: 132px minmax(0, 1fr);
-      --hud-ident-min: 33px; --hud-column-gap: 4px; --hud-stat-min: 34px;
+      --hud-ident-min: 33.5px; --hud-column-gap: 4px; --hud-stat-min: 34px;
     }
     #maparea { --hud-rail-width: 224px; }
   }
@@ -2601,7 +2601,7 @@
     #maparea { --hud-rail-width: 200px; --minimap-height: 158px; }
     #playerhud {
       grid-template-columns: 132px minmax(0, 1fr);
-      --hud-ident-min: 27px; --hud-column-gap: 3px;
+      --hud-ident-min: 27.5px; --hud-column-gap: 3px;
       --hud-map-links-column: 52px; --hud-watch-column: 52px;
       --hud-stat-min: 32px; --hud-stat-gap: 2px;
     }
@@ -2656,7 +2656,7 @@
     #playerhud { --hud-ident-min: 21px; }
   }
   @media (max-width: 620px) {
-    #playerhud { --hud-ident-min: 18px; --hud-stat-min: 28px; }
+    #playerhud { --hud-ident-min: 18.5px; --hud-stat-min: 28px; }
     #playerhud .ribbon-stat b { font-size: var(--type-label); }
   }
   /* Ten screens at full size need 487px and the bar has (height − 292) to give,
