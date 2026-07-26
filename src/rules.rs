@@ -957,6 +957,11 @@ pub struct DifficultySpec {
     /// Scales the size of barbarian raiding parties.
     #[serde(default = "done")]
     pub barb_force_scale: f64,
+    /// Scales how long a camp waits between spawns.
+    /// `BarbarianAttackForces.SpawnRate` is 2 for every band up to Emperor and
+    /// 1 from Immortal, so the top band assembles its forces twice as often.
+    #[serde(default = "done")]
+    pub barb_spawn_scale: f64,
 }
 
 /// A game speed: everything a civilization buys with a stockpiled yield scales

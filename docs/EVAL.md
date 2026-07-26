@@ -1426,3 +1426,105 @@ those are the next step, not this entry. Note in advance what a fair
 comparison requires: the 25-wide and 34-wide corpora must come from the
 same games and settings, or the comparison confounds representation with
 sampling.
+
+## 2026-07-26 — wider features do not predict better, and that is not the point
+
+With the width plumbing in place, a 34-wide corpus was exported and trained,
+and — because the earlier 25-wide corpus predates several rules PRs — a
+matched 25-wide corpus was regenerated on the same commit, same seed, same
+settings. Identical games, identical splits (15,578 rows, 144/48/48 games):
+
+| features | test BCE | Brier | ECE |
+|---|---|---|---|
+| 25-wide `evolve::features` | **0.4529** | 0.1477 | 0.0164 |
+| 34-wide `decision_features` | 0.4655 | 0.1475 | 0.0199 |
+
+**The wider net predicts slightly worse.** Brier is a wash, calibration is a
+wash, and cross-entropy is marginally against it — plausibly 34 inputs
+fitting the same 64→32 hidden layers on the same 9,343 training rows.
+
+Read carefully, because the obvious reading is wrong. Global predictive
+accuracy is **not** what the extra terms are for, and improving it was never
+the claim. The 25-wide vector returns *literally the same number* for 96% of
+the candidate actions a tactical agent clones, so it cannot rank them at any
+accuracy; the 34-wide vector moves for 69% of unit moves. A net can be a
+marginally worse global predictor while being the only one of the two
+capable of ordering the choices an agent actually faces.
+
+That distinction is worth stating plainly because a reviewer checking BCE
+alone would conclude the representation work failed, and a reviewer checking
+only the visibility table would conclude it succeeded. Neither is the
+question. The question is whether the agent plays better, and `policy_wide`
+— `PolicyAi` scoring with `decision_features` and a net trained on it — is
+the entrant that answers it.
+
+Two defects were caught while wiring this, both by guards added earlier in
+the session, and both worth recording because they are the failure modes
+this work exists to prevent.
+
+`ValueNet::eval`'s width assertion fired across six tests as soon as a
+34-wide net was placed in `evolved/`: the previous change had shipped
+`load_width` but wired only some of its callers, so `strategic` and
+`production` still loaded any net they found and fed it 25 features. The
+assertion turned a silent mis-evaluation into a loud failure, which is
+exactly what it is for; all consumers now name the width they feed.
+
+And `policy_wide` initially fell through to the provenance catch-all and
+announced "scripted, no artifacts required" while quietly depending on a
+34-wide net. That is the precise failure this repository's
+provenance layer exists to prevent, so the coverage test now asserts that
+only the four genuinely scripted agents may report no artifacts.
+
+## 2026-07-26 — the blindness was protecting it
+
+`policy_wide` is `PolicyAi` scoring with the 34-wide `decision_features`
+and a net trained on it: the configuration the whole representation thread
+was building toward, and the first in which the tactical evaluator can tell
+its candidate actions apart.
+
+`ai_eval policy_wide advanced --pairs 120 --players 4 --seed 70000
+--turns 200`:
+
+| entrant | games | maps for | against | Elo-equivalent |
+|---|---|---|---|---|
+| `policy` (25-wide, blind) | 108/240 (45.0%) | 9 | 21 | −35 |
+| `policy_wide` (34-wide, sighted) | **34/240 (14.2%)** | **1** | **87** | **−313** |
+
+Sight made it catastrophically worse, and the reason is the most useful
+thing this line of work has produced.
+
+With the 25-wide vector the computed gain is exactly zero on 96% of
+candidates, so the agent cannot clear its commitment margin, declines to
+act, and falls through to the scripted layer. That is why it measured near
+parity: it was mostly *not playing*. The wider vector lets it distinguish
+candidates, so it commits — and its ranking is far worse than the scripted
+doctrine it displaces. **The blindness was not why it failed to win. It was
+why it failed to lose.**
+
+The mechanism is standard and worth naming rather than rediscovering. The
+net is trained on states that `advanced` self-play visits. Greedily
+maximising it one ply at a time walks immediately off that distribution,
+into positions the training data never covered, where the estimate carries
+no information — and the argmax is precisely the point where the estimate
+is most likely to be wrong, because it selects for optimistic error. A
+better-calibrated net does not fix this; the earlier measurement that the
+34-wide net's BCE is *worse* than the 25-wide one's is irrelevant to it
+either way.
+
+What this rules in, for the next attempt:
+
+- **Iterated self-play.** Retrain on states the agent itself visits, so the
+  distribution follows the policy.
+- **Staying near the data.** Constrain the learned policy to the
+  neighbourhood of the scripted one that generated the corpus, rather than
+  letting it maximise freely.
+- **Search instead of a greedy argmax.** Rollouts evaluate a commitment by
+  playing it out, which is why the macro search is the one search here that
+  wins games — it never trusts a point estimate off-distribution.
+
+What it rules out: widening the input further. Representation was a real
+and necessary fix — 44.5% to 86.1% action visibility, measured — and it was
+not the binding constraint on strength. Both facts are now established, and
+this entry exists so the next attempt starts from the second one.
+
+`policy` and `policy_wide` both remain eval-only; no default changed.

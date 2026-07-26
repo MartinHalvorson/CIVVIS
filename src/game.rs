@@ -24,7 +24,7 @@ use crate::{hex, mapgen, Pos};
 /// The order is fixed history: seat *i* of a game nobody customised has been
 /// `CIV_NAMES[i]` since the first seed, so new civilizations are appended and
 /// never inserted.
-pub const CIV_NAMES: [&str; 100] = [
+pub const CIV_NAMES: [&str; 105] = [
     "Rome",
     "Egypt",
     "Greece",
@@ -125,6 +125,11 @@ pub const CIV_NAMES: [&str; 100] = [
     "Argentina",
     "Australia",
     "Maori",
+    "Babylon",
+    "Cree",
+    "Gran Colombia",
+    "Indonesia",
+    "Macedon",
 ];
 
 /// Which modeled leaders can fill seats the lobby leaves random.
@@ -165,13 +170,10 @@ impl LeaderPool {
     }
 }
 
-/// Civilizations in the modeled roster that Civilization VI itself ships.
-///
-/// Five Civ VI civilizations are not modeled yet (Babylon, Cree, Gran
-/// Colombia, Indonesia and Macedon), so they cannot enter this pool. Keep the
-/// remaining names in [`CIV_NAMES`] order: deterministic non-random callers
+/// All fifty civilizations shipped by Civilization VI and its official DLC.
+/// Keep the names in [`CIV_NAMES`] order: deterministic non-random callers
 /// have always relied on the head of that list.
-pub const CIV6_LEADER_POOL: [&str; 45] = [
+pub const CIV6_LEADER_POOL: [&str; 50] = [
     "Rome",
     "Egypt",
     "Greece",
@@ -217,6 +219,11 @@ pub const CIV6_LEADER_POOL: [&str; 45] = [
     "Mapuche",
     "Australia",
     "Maori",
+    "Babylon",
+    "Cree",
+    "Gran Colombia",
+    "Indonesia",
+    "Macedon",
 ];
 /// The city-states this ruleset can seat, in placement order. The first
 /// twelve carry bespoke Suzerain bonuses; the rest round out the largest
@@ -2180,6 +2187,96 @@ fn city_names(civ: &str) -> &'static [&'static str] {
             "Opotiki",
             "Kawhia",
         ],
+        "Babylon" => &[
+            "Babylon",
+            "Ur",
+            "Uruk",
+            "Sippar",
+            "Nippur",
+            "Borsippa",
+            "Kish",
+            "Lagash",
+            "Adab",
+            "Akkad",
+            "Dur-Kurigalzu",
+            "Isin",
+            "Larsa",
+            "Umma",
+            "Shuruppak",
+            "Eridu",
+        ],
+        "Cree" => &[
+            "Mikisiw-Wacihk",
+            "Mistawasis",
+            "Okanese",
+            "Peepeekisis",
+            "Sakimay",
+            "Cowessess",
+            "Kahkewistahaw",
+            "Star Blanket",
+            "Muskowekwan",
+            "Pasqua",
+            "George Gordon",
+            "Day Star",
+            "Beardy's",
+            "Little Pine",
+            "Sweetgrass",
+            "Thunderchild",
+        ],
+        "Gran Colombia" => &[
+            "Bogota",
+            "Caracas",
+            "Quito",
+            "Panama City",
+            "Guayaquil",
+            "Cali",
+            "Medellin",
+            "Cartagena",
+            "Cucuta",
+            "Bucaramanga",
+            "Maracaibo",
+            "Barquisimeto",
+            "Valencia",
+            "Santa Marta",
+            "Popayan",
+            "Tunja",
+        ],
+        "Indonesia" => &[
+            "Jakarta",
+            "Surabaya",
+            "Medan",
+            "Makassar",
+            "Palembang",
+            "Bandung",
+            "Banjarmasin",
+            "Denpasar",
+            "Yogyakarta",
+            "Semarang",
+            "Ternate",
+            "Tidore",
+            "Malang",
+            "Padang",
+            "Manado",
+            "Kupang",
+        ],
+        "Macedon" => &[
+            "Pella",
+            "Aigai",
+            "Amphipolis",
+            "Dion",
+            "Mygdonia",
+            "Cassandreia",
+            "Thessalonica",
+            "Philippi",
+            "Heraclea Lyncestis",
+            "Stobi",
+            "Edessa",
+            "Beroea",
+            "Olynthus",
+            "Potidaea",
+            "Methone",
+            "Eion",
+        ],
         _ => &[],
     }
 }
@@ -2373,6 +2470,11 @@ mod seating_tests {
             );
         }
         assert!(CIV6_LEADER_POOL.contains(&"Byzantium"));
+        assert!(CIV6_LEADER_POOL.contains(&"Babylon"));
+        assert!(CIV6_LEADER_POOL.contains(&"Cree"));
+        assert!(CIV6_LEADER_POOL.contains(&"Gran Colombia"));
+        assert!(CIV6_LEADER_POOL.contains(&"Indonesia"));
+        assert!(CIV6_LEADER_POOL.contains(&"Macedon"));
         assert!(!CIV6_LEADER_POOL.contains(&"Denmark"));
     }
 }
@@ -3493,6 +3595,41 @@ mod belief_runtime_tests {
     }
 
     #[test]
+    fn the_top_difficulties_also_spawn_barbarians_twice_as_often() {
+        // BarbarianAttackForces carries SpawnRate alongside its force sizes,
+        // and it is 2 for every band up to Emperor and 1 from Immortal. The
+        // top band does not just field bigger parties -- it assembles them
+        // twice as often, on the same band boundary the force scale uses.
+        let rules = crate::rules::Rules::embedded();
+        for difficulty in ["settler", "chieftain", "warlord", "prince", "king", "emperor"] {
+            assert_eq!(rules.difficulties[difficulty].barb_spawn_scale, 1.0, "{difficulty}");
+        }
+        for difficulty in ["immortal", "deity"] {
+            assert_eq!(rules.difficulties[difficulty].barb_spawn_scale, 0.5, "{difficulty}");
+        }
+
+        // And it reaches the map: a camp that has just spawned waits half as
+        // long to spawn again at Deity as it does at Prince.
+        let rearm = |difficulty: &str| {
+            let mut game = Game::new_full(2, 40, 26, 4_172, 200, 0, true);
+            game.difficulty = difficulty.to_string();
+            game.turn = 1;
+            let before: Vec<u32> = game.barb_camps.values().copied().collect();
+            for _ in 0..12 {
+                game.turn += 1;
+                game.barbarian_phase();
+            }
+            let after: Vec<u32> = game.barb_camps.values().copied().collect();
+            let _ = before;
+            after.into_iter().max().unwrap_or(0)
+        };
+        assert!(
+            rearm("deity") < rearm("prince"),
+            "Deity re-arms sooner than Prince"
+        );
+    }
+
+    #[test]
     fn difficulty_scales_the_standing_barbarian_force() {
         // BarbarianAttackForces bands its forces on difficulty and the bands
         // are what barb_force_scale carries: Settler and Chieftain at 0.5,
@@ -4300,6 +4437,47 @@ mod belief_runtime_tests {
             0.5,
             "the origin of a route takes back only half"
         );
+    }
+
+    #[test]
+    fn the_army_combat_beliefs_do_not_reach_an_apostle() {
+        // JUST_WAR_REQUIREMENTS and DEFENDER_OF_FAITH_REQUIREMENTS are the same
+        // TEST_ALL set bar one argument, and both open with NOT CLASS_RELIGIOUS
+        // and NOT CLASS_SUPPORT. They are army beliefs: an Apostle carries
+        // nothing from either into theological combat, where CIVVIS was paying
+        // both.
+        let (mut game, cities) = game_with_capitals(91_765);
+        let religion = establish_religion(&mut game, cities[0], &[]);
+        for city in [cities[0], cities[1]] {
+            let city = game.cities.get_mut(&city).unwrap();
+            city.pressure = BTreeMap::from([(religion.clone(), 100.0)]);
+            city.atheist_pressure = 0.0;
+        }
+        let foreign = game.cities[&cities[1]].pos;
+
+        let apostle = game.spawn_unit("apostle", 0, foreign);
+        game.units.get_mut(&apostle).unwrap().religion = Some(religion.clone());
+        let bare = game.theological_strength(&game.units[&apostle]);
+
+        game.players[0].religion_beliefs = vec!["just_war".to_string()];
+        assert_eq!(
+            game.theological_strength(&game.units[&apostle]),
+            bare,
+            "Just War is an army belief"
+        );
+        game.players[0].religion_beliefs = vec!["defender_of_the_faith".to_string()];
+        assert_eq!(
+            game.theological_strength(&game.units[&apostle]),
+            bare,
+            "so is Defender of the Faith"
+        );
+
+        // The army still gets it, so the exclusion is narrow rather than a
+        // blanket removal.
+        let warrior = game.spawn_unit("warrior", 0, foreign);
+        let plain = game.unit_unembarked_strength(&game.units[&warrior]);
+        game.players[0].religion_beliefs = vec!["just_war".to_string()];
+        assert_eq!(game.unit_unembarked_strength(&game.units[&warrior]), plain + 10.0);
     }
 
     #[test]
@@ -14978,6 +15156,7 @@ impl Game {
         // three bands as 0.5, 1.0 and 1.5, and the standing barbarian
         // population is where a force size lives in this engine.
         let scale = self.difficulty_spec().barb_force_scale;
+        let spawn_scale = self.difficulty_spec().barb_spawn_scale;
         let cap = (((2 + 2 * self.barb_camps.len() + 2 * alerted) as f64) * scale).round() as usize;
         let mut n_barb = self.player_unit_ids(bpid).len();
         let pool = self.barbarian_unit_pool();
@@ -15015,8 +15194,13 @@ impl Game {
                     .barb_alerted_until
                     .get(&pos)
                     .is_some_and(|until| *until > self.turn);
-                self.barb_camps
-                    .insert(pos, self.turn + if rapid { 2 } else { 6 });
+                // BarbarianAttackForces.SpawnRate is 2 up to Emperor and 1
+                // from Immortal, so the top band assembles forces twice as
+                // often as well as fielding bigger ones.
+                let wait = (f64::from(if rapid { 2 } else { 6 }) * spawn_scale)
+                    .round()
+                    .max(1.0) as u32;
+                self.barb_camps.insert(pos, self.turn + wait);
             }
         }
     }
@@ -18104,7 +18288,18 @@ impl Game {
         }
     }
 
-    fn religious_combat_belief_bonus(&self, owner: usize, position: Pos) -> f64 {
+    /// Just War and Defender of the Faith, which ship the same requirement set
+    /// bar one argument: both are TEST_ALL of NOT `CLASS_RELIGIOUS`, NOT
+    /// `CLASS_SUPPORT`, founding the religion, and standing near a city that
+    /// follows it -- `FriendlyCity` 0 for Just War and 1 for Defender. The two
+    /// inverted tags matter: these are army beliefs, and an Apostle gets
+    /// nothing from either in theological combat.
+    fn religious_combat_belief_bonus(&self, unit: &Unit) -> f64 {
+        let (owner, position) = (unit.owner, unit.pos);
+        let class = self.rules.units[unit.kind.as_str()].class.as_str();
+        if matches!(class, "religious" | "religious_apostle" | "support") {
+            return 0.0;
+        }
         let Some(religion) = self.players[owner].religion.as_deref() else {
             return 0.0;
         };
@@ -18402,7 +18597,7 @@ impl Game {
         {
             strength += self.policy_effect(unit.owner, "home_religious_strength");
         }
-        strength += self.religious_combat_belief_bonus(unit.owner, unit.pos);
+        strength += self.religious_combat_belief_bonus(unit);
         if let Some(city) = self
             .map
             .get(unit.pos)
@@ -21416,7 +21611,7 @@ impl Game {
             + self.unit_formation_bonus(u)
             + self.promotion_effect(u, "combat_all")
             + self.congress_military_strength_bonus(u)
-            + self.religious_combat_belief_bonus(u.owner, u.pos)
+            + self.religious_combat_belief_bonus(u)
             + self.handicap_combat_strength(u.owner);
         if !matches!(
             self.rules.units[u.kind.as_str()].domain.as_deref(),
@@ -21545,7 +21740,7 @@ impl Game {
         rs + self.government_combat_bonus(u, true)
             + self.unit_formation_bonus(u)
             + self.congress_military_strength_bonus(u)
-            + self.religious_combat_belief_bonus(u.owner, u.pos)
+            + self.religious_combat_belief_bonus(u)
             + (10.0 - u.hp.clamp(0, 100) as f64 / 10.0).round()
                 * self.policy_effect(u.owner, "wounded_penalty_reduction_pct")
                 / 100.0
@@ -21566,7 +21761,7 @@ impl Game {
             + self.government_combat_bonus(u, true)
             + self.unit_formation_bonus(u)
             + self.congress_military_strength_bonus(u)
-            + self.religious_combat_belief_bonus(u.owner, u.pos)
+            + self.religious_combat_belief_bonus(u)
             + (10.0 - u.hp.clamp(0, 100) as f64 / 10.0).round()
                 * self.policy_effect(u.owner, "wounded_penalty_reduction_pct")
                 / 100.0

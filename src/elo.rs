@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 12] = [
+pub const EVAL_ONLY_AIS: [&str; 13] = [
     "strategic_score",
     "strategic_doctrine",
     "strategic_r20",
@@ -51,6 +51,7 @@ pub const EVAL_ONLY_AIS: [&str; 12] = [
     "strategic_deep",
     "production",
     "production_net",
+    "policy_wide",
 ];
 
 /// On-disk schema for the shared player/leader/civilization rating ledger.
@@ -434,11 +435,22 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         ),
         "neural" => {
             let w = crate::evolve::load_champion("evolved").unwrap_or_default();
-            match crate::valuenet::ValueNet::load("evolved") {
+            match crate::valuenet::ValueNet::load_width("evolved", crate::evolve::FEATURE_WIDTH) {
                 Some(n) => Box::new(crate::neural::NeuralAi::new(w, n)),
                 None => Box::new(BasicAi::with_weights(w)),
             }
         }
+        // `policy` scored with the 34-wide `decision_features` and a net
+        // trained on it. The 25-wide vector is unchanged by 96% of the
+        // candidates this agent clones; the wide one moves for 69% of unit
+        // moves, so this is the first configuration where the tactical
+        // evaluator can distinguish the actions it is ranking at all.
+        "policy_wide" => Box::new(
+            crate::policy::PolicyAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            )
+            .with_decision_features(),
+        ),
         "policy" => Box::new(crate::policy::PolicyAi::with_weights(
             crate::evolve::load_champion("evolved").unwrap_or_default(),
         )),
@@ -658,7 +670,7 @@ impl AgentProvenance {
 /// so reporting it as present would restate the bug it is meant to catch.
 pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
     let champion = crate::evolve::load_champion(dir).is_some();
-    let net = crate::valuenet::ValueNet::load(dir).is_some();
+    let net = crate::valuenet::ValueNet::load_width(dir, crate::evolve::FEATURE_WIDTH).is_some();
     let genome = ArtifactStatus {
         file: CHAMPION_FILE,
         found: champion,
@@ -699,6 +711,29 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "policy" => (
             vec![genome, value(true)],
             if net { "policy" } else { "advanced" },
+        ),
+        // The *wide* net is definitional and is a different artifact from
+        // the one `policy` wants: `load_width` refuses each to the other,
+        // so without a 34-wide net in place this is the scripted agent.
+        "policy_wide" => (
+            vec![
+                genome,
+                ArtifactStatus {
+                    file: VALUENET_FILE,
+                    found: crate::valuenet::ValueNet::load_width(
+                        dir,
+                        crate::decision_features::WIDTH,
+                    )
+                    .is_some(),
+                    definitional: true,
+                },
+            ],
+            if crate::valuenet::ValueNet::load_width(dir, crate::decision_features::WIDTH).is_some()
+            {
+                "policy_wide"
+            } else {
+                "advanced"
+            },
         ),
         // Strategic keeps its lane rollouts without a net; what it loses is
         // the learned terminal evaluator, which is exactly the published
@@ -1198,7 +1233,11 @@ mod tests {
     }
 
     /// Every selectable entrant name must have an explicit provenance row,
-    /// so adding a builtin cannot quietly inherit the catch-all.
+    /// so adding a builtin cannot quietly inherit the catch-all. The
+    /// catch-all reports "no artifacts required", which for a learned
+    /// entrant is a false statement rather than a missing one — exactly
+    /// what this module exists to prevent, and it happened once
+    /// (`policy_wide`) before this assertion was tightened.
     #[test]
     fn every_selectable_name_resolves_to_itself_or_a_named_fallback() {
         let dir = "target/test-provenance-names";
@@ -1211,6 +1250,15 @@ mod tests {
                     || EVAL_ONLY_AIS.contains(&resolved.effective),
                 "{name} resolved to unknown {}",
                 resolved.effective
+            );
+            // Only the genuinely scripted agents may report no artifacts.
+            // Anything else reaching that state fell through to the
+            // catch-all and is claiming to need nothing while quietly
+            // needing a net.
+            const SCRIPTED: [&str; 4] = ["advanced", "advanced_v1", "basic", "random"];
+            assert!(
+                !resolved.artifacts.is_empty() || SCRIPTED.contains(name),
+                "{name} has no provenance row and inherited the catch-all"
             );
         }
         fs::remove_dir_all(dir).unwrap();
