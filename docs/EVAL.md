@@ -1426,3 +1426,51 @@ those are the next step, not this entry. Note in advance what a fair
 comparison requires: the 25-wide and 34-wide corpora must come from the
 same games and settings, or the comparison confounds representation with
 sampling.
+
+## 2026-07-26 — wider features do not predict better, and that is not the point
+
+With the width plumbing in place, a 34-wide corpus was exported and trained,
+and — because the earlier 25-wide corpus predates several rules PRs — a
+matched 25-wide corpus was regenerated on the same commit, same seed, same
+settings. Identical games, identical splits (15,578 rows, 144/48/48 games):
+
+| features | test BCE | Brier | ECE |
+|---|---|---|---|
+| 25-wide `evolve::features` | **0.4529** | 0.1477 | 0.0164 |
+| 34-wide `decision_features` | 0.4655 | 0.1475 | 0.0199 |
+
+**The wider net predicts slightly worse.** Brier is a wash, calibration is a
+wash, and cross-entropy is marginally against it — plausibly 34 inputs
+fitting the same 64→32 hidden layers on the same 9,343 training rows.
+
+Read carefully, because the obvious reading is wrong. Global predictive
+accuracy is **not** what the extra terms are for, and improving it was never
+the claim. The 25-wide vector returns *literally the same number* for 96% of
+the candidate actions a tactical agent clones, so it cannot rank them at any
+accuracy; the 34-wide vector moves for 69% of unit moves. A net can be a
+marginally worse global predictor while being the only one of the two
+capable of ordering the choices an agent actually faces.
+
+That distinction is worth stating plainly because a reviewer checking BCE
+alone would conclude the representation work failed, and a reviewer checking
+only the visibility table would conclude it succeeded. Neither is the
+question. The question is whether the agent plays better, and `policy_wide`
+— `PolicyAi` scoring with `decision_features` and a net trained on it — is
+the entrant that answers it.
+
+Two defects were caught while wiring this, both by guards added earlier in
+the session, and both worth recording because they are the failure modes
+this work exists to prevent.
+
+`ValueNet::eval`'s width assertion fired across six tests as soon as a
+34-wide net was placed in `evolved/`: the previous change had shipped
+`load_width` but wired only some of its callers, so `strategic` and
+`production` still loaded any net they found and fed it 25 features. The
+assertion turned a silent mis-evaluation into a loud failure, which is
+exactly what it is for; all consumers now name the width they feed.
+
+And `policy_wide` initially fell through to the provenance catch-all and
+announced "scripted, no artifacts required" while quietly depending on a
+34-wide net. That is the precise failure this repository's
+provenance layer exists to prevent, so the coverage test now asserts that
+only the four genuinely scripted agents may report no artifacts.
