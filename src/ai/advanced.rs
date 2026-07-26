@@ -273,6 +273,7 @@ pub struct AdvancedAi {
     victory_target: Option<VictoryTarget>,
     forced_target_player: Option<usize>,
     force_groups: Vec<ForceGroup>,
+    force_groups_dirty: bool,
 }
 
 impl Default for AdvancedAi {
@@ -314,6 +315,7 @@ impl AdvancedAi {
             victory_target,
             forced_target_player: None,
             force_groups: Vec::new(),
+            force_groups_dirty: false,
         }
     }
 
@@ -878,6 +880,15 @@ impl AdvancedAi {
     /// signal. Strong opponents must be judged by how close they are to ending
     /// the game, not only by how cheap their nearest city looks to capture.
     fn rival_victory_pressure(&self, g: &Game, pid: usize) -> VictoryFocus {
+        self.rival_victory_pressure_with_culture(g, pid, None)
+    }
+
+    fn rival_victory_pressure_with_culture(
+        &self,
+        g: &Game,
+        pid: usize,
+        culture_pressure: Option<i32>,
+    ) -> VictoryFocus {
         let player = &g.players[pid];
         let starting_majors: Vec<usize> = g
             .players
@@ -908,14 +919,16 @@ impl AdvancedAi {
             0
         };
 
-        let culture_target = living_majors
-            .iter()
-            .filter(|other| **other != pid)
-            .map(|other| g.domestic_tourists(*other))
-            .max()
-            .unwrap_or(1)
-            .max(1);
-        let culture = (100 * g.foreign_tourists(pid) / culture_target).clamp(0, 100) as i32;
+        let culture = culture_pressure.unwrap_or_else(|| {
+            let culture_target = living_majors
+                .iter()
+                .filter(|other| **other != pid)
+                .map(|other| g.domestic_tourists(*other))
+                .max()
+                .unwrap_or(1)
+                .max(1);
+            (100 * g.foreign_tourists(pid) / culture_target).clamp(0, 100) as i32
+        });
 
         let (converted, living_religious_rivals) = self.religious_conversion_tally(g, pid);
         let religion = if player.religion.is_some() {
@@ -986,10 +999,56 @@ impl AdvancedAi {
         })
     }
 
+    /// Compute every living rival's culture-race pressure in one table.
+    ///
+    /// A single `rival_victory_pressure` calculation asks for every rival's
+    /// domestic tourists, and `victory_denial` asks for that pressure for
+    /// every rival. Repeating those nested scans made the denial pass cubic in
+    /// civilization count. Domestic and foreign tourist totals are public
+    /// table state, so calculate each once and reuse them across the pass.
+    fn rival_culture_pressures(&self, g: &Game) -> BTreeMap<usize, i32> {
+        let living_majors: Vec<usize> = g
+            .players
+            .iter()
+            .filter(|player| player.alive && !player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .collect();
+        let domestic: BTreeMap<usize, i64> = living_majors
+            .iter()
+            .map(|pid| (*pid, g.domestic_tourists(*pid)))
+            .collect();
+        living_majors
+            .iter()
+            .map(|pid| {
+                let target = living_majors
+                    .iter()
+                    .filter(|other| *other != pid)
+                    .map(|other| domestic[other])
+                    .max()
+                    .unwrap_or(1)
+                    .max(1);
+                (
+                    *pid,
+                    (100 * g.foreign_tourists(*pid) / target).clamp(0, 100) as i32,
+                )
+            })
+            .collect()
+    }
+
     fn victory_denial(&self, g: &Game, pid: usize) -> Option<(usize, GrandStrategy)> {
         if self.active_victory_target(g).is_some() {
             return None;
         }
+        let culture_pressures = self.rival_culture_pressures(g);
+        self.victory_denial_with_culture_pressures(g, pid, &culture_pressures)
+    }
+
+    fn victory_denial_with_culture_pressures(
+        &self,
+        g: &Game,
+        pid: usize,
+        culture_pressures: &BTreeMap<usize, i32>,
+    ) -> Option<(usize, GrandStrategy)> {
         let own_progress = self.victory_focus(g, pid).progress;
         let (rival, pressure) = g
             .players
@@ -997,7 +1056,16 @@ impl AdvancedAi {
             .filter(|player| {
                 player.id != pid && player.alive && !player.is_minor && !player.is_barbarian
             })
-            .map(|player| (player.id, self.rival_victory_pressure(g, player.id)))
+            .map(|player| {
+                (
+                    player.id,
+                    self.rival_victory_pressure_with_culture(
+                        g,
+                        player.id,
+                        culture_pressures.get(&player.id).copied(),
+                    ),
+                )
+            })
             .max_by(|left, right| {
                 left.1
                     .progress
@@ -1131,7 +1199,16 @@ impl AdvancedAi {
             && (g.players[pid].religion.is_some()
                 || g.players[pid].civics.contains("divine_right"));
         let victory = self.victory_focus(g, pid);
-        let denial = self.victory_denial(g, pid);
+        // Target selection needs the same public culture-race totals as
+        // victory denial. Build them once for the assessment instead of
+        // repeating a whole-world tourism scan for every sort comparison.
+        let active_victory_target = self.active_victory_target(g);
+        let rival_culture_pressures = self.rival_culture_pressures(g);
+        let denial = if active_victory_target.is_some() {
+            None
+        } else {
+            self.victory_denial_with_culture_pressures(g, pid, &rival_culture_pressures)
+        };
         let emergency_objective = g.emergency_objective(pid).cloned();
         let strategy = if at_war && (threatened_city.is_some() || my_power * 1.25 < strongest_rival)
         {
@@ -1140,7 +1217,7 @@ impl AdvancedAi {
             GrandStrategy::Conquest
         } else if basil_tagma_timing {
             GrandStrategy::Conquest
-        } else if let Some(target) = self.active_victory_target(g) {
+        } else if let Some(target) = active_victory_target {
             if target == VictoryTarget::Religion && g.players[pid].religion.is_none() {
                 GrandStrategy::Religion
             } else if cities.len() < desired_cities && has_site && g.turn < g.standard_duration(175)
@@ -1207,21 +1284,48 @@ impl AdvancedAi {
                                     .map(|player| player.id),
                             );
                         }
-                        candidates.into_iter().min_by(|a, b| {
-                            self.campaign_target_value(g, pid, *a)
-                                .partial_cmp(&self.campaign_target_value(g, pid, *b))
-                                .unwrap()
-                                .then(a.cmp(b))
-                        })
+                        candidates
+                            .into_iter()
+                            .map(|rival| {
+                                (
+                                    rival,
+                                    self.campaign_target_value_with_culture(
+                                        g,
+                                        pid,
+                                        rival,
+                                        rival_culture_pressures.get(&rival).copied(),
+                                    ),
+                                )
+                            })
+                            .min_by(|a, b| {
+                                a.1.partial_cmp(&b.1)
+                                    .unwrap()
+                                    .then(a.0.cmp(&b.0))
+                            })
+                            .map(|(rival, _)| rival)
                     })
             })
         } else {
-            wartime_rivals.iter().copied().min_by(|a, b| {
-                self.rival_value(g, pid, *a)
-                    .partial_cmp(&self.rival_value(g, pid, *b))
-                    .unwrap()
-                    .then(a.cmp(b))
-            })
+            wartime_rivals
+                .iter()
+                .copied()
+                .map(|rival| {
+                    (
+                        rival,
+                        self.rival_value_with_culture(
+                            g,
+                            pid,
+                            rival,
+                            rival_culture_pressures.get(&rival).copied(),
+                        ),
+                    )
+                })
+                .min_by(|a, b| {
+                    a.1.partial_cmp(&b.1)
+                        .unwrap()
+                        .then(a.0.cmp(&b.0))
+                })
+                .map(|(rival, _)| rival)
         };
         let target_city = emergency_objective
             .map(|emergency| emergency.city)
@@ -1258,7 +1362,18 @@ impl AdvancedAi {
 
     /// Lower is a more attractive rival: nearby, weak empires with valuable
     /// cities are preferable to distant low-power distractions.
+    #[cfg(test)]
     fn rival_value(&self, g: &Game, pid: usize, other: usize) -> f64 {
+        self.rival_value_with_culture(g, pid, other, None)
+    }
+
+    fn rival_value_with_culture(
+        &self,
+        g: &Game,
+        pid: usize,
+        other: usize,
+        culture_pressure: Option<i32>,
+    ) -> f64 {
         let mine = g.player_city_ids(pid);
         let theirs = g.player_city_ids(other);
         let distance = mine
@@ -1270,7 +1385,9 @@ impl AdvancedAi {
             })
             .min()
             .unwrap_or(40) as f64;
-        let victory_pressure = self.rival_victory_pressure(g, other).progress as f64;
+        let victory_pressure = self
+            .rival_victory_pressure_with_culture(g, other, culture_pressure)
+            .progress as f64;
         distance * 7.0 + g.military_power(other) * 1.5
             - g.score(other) as f64 * 0.35
             - victory_pressure * 2.4
@@ -1313,8 +1430,19 @@ impl AdvancedAi {
         true
     }
 
+    #[cfg(test)]
     fn campaign_target_value(&self, g: &Game, pid: usize, other: usize) -> f64 {
-        let mut value = self.rival_value(g, pid, other);
+        self.campaign_target_value_with_culture(g, pid, other, None)
+    }
+
+    fn campaign_target_value_with_culture(
+        &self,
+        g: &Game,
+        pid: usize,
+        other: usize,
+        culture_pressure: Option<i32>,
+    ) -> f64 {
+        let mut value = self.rival_value_with_culture(g, pid, other, culture_pressure);
         if !g.players[other].is_minor {
             // A leader marches on the civilizations their agenda disdains
             // before the ones it respects. Lower is a more attractive target,
@@ -1525,6 +1653,7 @@ impl AdvancedAi {
     }
 
     fn product_layout_value(&self, g: &Game, pid: usize, strategy: GrandStrategy) -> f64 {
+        let _memo = g.query_memo();
         g.player_city_ids(pid)
             .into_iter()
             .map(|city_id| {
@@ -1554,7 +1683,7 @@ impl AdvancedAi {
     /// free relocation from oscillating between equivalent slots.
     fn advanced_products(&self, g: &mut Game, pid: usize, strategy: GrandStrategy) {
         let candidates: BTreeSet<(u32, u32, String)> = g
-            .legal_actions_within(pid, ActionFamilies::CHEAP)
+            .legal_actions_within(pid, ActionFamilies::PRODUCTS)
             .into_iter()
             .filter_map(|action| match action {
                 Action::MoveProduct { from, to, product } => Some((from, to, product)),
@@ -3325,7 +3454,7 @@ impl AdvancedAi {
     /// on the brink of victory, where five setup turns can lose the game.
     /// City-states cannot be denounced and therefore remain direct targets.
     fn preferred_war_opening(&self, g: &Game, pid: usize, target: usize) -> Option<Action> {
-        let legal = g.legal_actions_within(pid, ActionFamilies::CHEAP);
+        let legal = g.legal_actions_within(pid, ActionFamilies::CORE);
         let casus_belli = legal
             .iter()
             .filter_map(|action| match action {
@@ -5551,34 +5680,43 @@ impl AdvancedAi {
             return;
         }
         let counts = self.counts(g, pid);
-        let mut best: Option<(f64, u32, String)> = None;
-        for city in g
-            .cities
-            .values()
-            .filter(|city| city.owner == pid && city.queue.is_empty())
-        {
-            for item in g.producible_items(pid, city.id) {
-                let Item::Unit { unit } = item else { continue };
-                if g.rules.units[unit.as_str()].class != "support" || unit == "military_engineer" {
-                    continue;
-                }
-                let value = self.production_value(
-                    g,
-                    pid,
-                    city.id,
-                    &Item::Unit { unit: unit.clone() },
-                    plan,
-                    &counts,
-                );
-                if best.as_ref().is_none_or(|(old, old_city, old_unit)| {
-                    value > *old + 1e-9
-                        || ((value - *old).abs() < 1e-9
-                            && (city.id, unit.as_str()) < (*old_city, old_unit.as_str()))
-                }) {
-                    best = Some((value, city.id, unit));
+        let best: Option<(f64, u32, String)> = {
+            let _memo = g.query_memo();
+            let mut best = None;
+            for city in g
+                .cities
+                .values()
+                .filter(|city| city.owner == pid && city.queue.is_empty())
+            {
+                for item in g.producible_items(pid, city.id) {
+                    let Item::Unit { unit } = item else { continue };
+                    if g.rules.units[unit.as_str()].class != "support"
+                        || unit == "military_engineer"
+                    {
+                        continue;
+                    }
+                    let value = self.production_value(
+                        g,
+                        pid,
+                        city.id,
+                        &Item::Unit { unit: unit.clone() },
+                        plan,
+                        &counts,
+                    );
+                    if best.as_ref().is_none_or(
+                        |(old, old_city, old_unit): &(f64, u32, String)| {
+                            value > *old + 1e-9
+                                || ((value - *old).abs() < 1e-9
+                                    && (city.id, unit.as_str())
+                                        < (*old_city, old_unit.as_str()))
+                        },
+                    ) {
+                        best = Some((value, city.id, unit));
+                    }
                 }
             }
-        }
+            best
+        };
         let Some((value, city, unit)) = best else {
             return;
         };
@@ -5630,27 +5768,29 @@ impl AdvancedAi {
             {
                 continue;
             }
-            let best = g
-                .producible_items(pid, cid)
-                .into_iter()
-                .filter(|item| {
-                    let Item::Unit { unit } = item else {
-                        return false;
-                    };
-                    let unit = &g.rules.units[unit];
-                    unit.class == "military"
-                        && unit.domain.as_deref() != Some("sea")
-                        && unit.domain.as_deref() != Some("air")
-                })
-                .map(|item| {
-                    let score = self.production_value(g, pid, cid, &item, plan, &counts);
-                    (score, std::cmp::Reverse(format!("{item:?}")), item)
-                })
-                .max_by(|left, right| {
-                    left.0
-                        .total_cmp(&right.0)
-                        .then_with(|| left.1.cmp(&right.1))
-                });
+            let best = {
+                let _memo = g.query_memo();
+                g.producible_items(pid, cid)
+                    .into_iter()
+                    .filter(|item| {
+                        let Item::Unit { unit } = item else {
+                            return false;
+                        };
+                        let unit = &g.rules.units[unit];
+                        unit.class == "military"
+                            && unit.domain.as_deref() != Some("sea")
+                            && unit.domain.as_deref() != Some("air")
+                    })
+                    .map(|item| {
+                        let score = self.production_value(g, pid, cid, &item, plan, &counts);
+                        (score, std::cmp::Reverse(format!("{item:?}")), item)
+                    })
+                    .max_by(|left, right| {
+                        left.0
+                            .total_cmp(&right.0)
+                            .then_with(|| left.1.cmp(&right.1))
+                    })
+            };
             if let Some((score, _, item)) = best {
                 if score > 0.0 {
                     let _ = g.apply(pid, &Action::Produce { city: cid, item });
@@ -5666,35 +5806,40 @@ impl AdvancedAi {
             if !g.cities[&cid].queue.is_empty() {
                 continue;
             }
-            let mut best: Option<(f64, String, Item)> = None;
-            for item in g.producible_items(pid, cid) {
-                if let Item::Project { project } = &item {
-                    let spec = &g.rules.projects[project];
-                    let already_queued_elsewhere = !spec.repeatable
-                        && g.cities.values().any(|city| {
-                            city.owner == pid
-                                && city.id != cid
-                                && matches!(
-                                    city.queue.first(),
-                                    Some(Item::Project { project: queued }) if queued == project
-                                )
-                        });
-                    if already_queued_elsewhere {
-                        continue;
+            let best: Option<(f64, String, Item)> = {
+                let _memo = g.query_memo();
+                let mut best = None;
+                for item in g.producible_items(pid, cid) {
+                    if let Item::Project { project } = &item {
+                        let spec = &g.rules.projects[project];
+                        let already_queued_elsewhere = !spec.repeatable
+                            && g.cities.values().any(|city| {
+                                city.owner == pid
+                                    && city.id != cid
+                                    && matches!(
+                                        city.queue.first(),
+                                        Some(Item::Project { project: queued }) if queued == project
+                                    )
+                            });
+                        if already_queued_elsewhere {
+                            continue;
+                        }
+                    }
+                    let score = self.production_value(g, pid, cid, &item, plan, &counts);
+                    let key = format!("{item:?}");
+                    let replace = best
+                        .as_ref()
+                        .map(|(old, old_key, _): &(f64, String, Item)| {
+                            score > *old + 1e-9
+                                || ((score - *old).abs() < 1e-9 && key < *old_key)
+                        })
+                        .unwrap_or(true);
+                    if replace {
+                        best = Some((score, key, item));
                     }
                 }
-                let score = self.production_value(g, pid, cid, &item, plan, &counts);
-                let key = format!("{item:?}");
-                let replace = best
-                    .as_ref()
-                    .map(|(old, old_key, _)| {
-                        score > *old + 1e-9 || ((score - *old).abs() < 1e-9 && key < *old_key)
-                    })
-                    .unwrap_or(true);
-                if replace {
-                    best = Some((score, key, item));
-                }
-            }
+                best
+            };
             if let Some((score, _, item)) = best {
                 if score > -1_000.0
                     && g.apply(
@@ -8914,6 +9059,7 @@ impl AdvancedAi {
         true
     }
 
+    #[cfg(test)]
     fn advanced_military_step(
         &mut self,
         g: &mut Game,
@@ -8921,12 +9067,23 @@ impl AdvancedAi {
         uid: u32,
         plan: &StrategicPlan,
     ) -> bool {
+        let decline_settlers = self.counts(g, pid).settlers > 0
+            || !self.base.has_practical_settle_site(g, pid);
+        self.advanced_military_step_with_decline(g, pid, uid, plan, decline_settlers)
+    }
+
+    fn advanced_military_step_with_decline(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        plan: &StrategicPlan,
+        decline_settlers: bool,
+    ) -> bool {
         let unit = g.units[&uid].clone();
         let rules = std::sync::Arc::clone(&g.rules);
         let spec = &rules.units[unit.kind.as_str()];
         let doctrine = BasicAi::unit_doctrine(g, uid);
-        let decline_settlers = self.counts(g, pid).settlers > 0
-            || !self.base.has_practical_settle_site(g, pid);
         let unwanted_settler_adjacent = decline_settlers
             && g.nbrs(unit.pos).into_iter().any(|position| {
                 g.units_at(position).iter().any(|other| {
@@ -8960,12 +9117,28 @@ impl AdvancedAi {
             return true;
         }
         if matches!(doctrine, UnitDoctrine::AirDefense | UnitDoctrine::AirStrike) {
-            return self
-                .advanced_air_action(g, pid, uid, plan)
-                .is_some_and(|action| g.apply(pid, &action).is_ok());
+            let Some(action) = self.advanced_air_action(g, pid, uid, plan) else {
+                return false;
+            };
+            let changes_force_picture = matches!(
+                &action,
+                Action::AirStrike { .. } | Action::PriorityTarget { .. }
+            );
+            let acted = g.apply(pid, &action).is_ok();
+            self.force_groups_dirty |= acted && changes_force_picture;
+            return acted;
         }
         if let Some(action) = self.base.doctrine_action(g, pid, uid) {
-            return g.apply(pid, &action).is_ok();
+            let changes_force_picture = matches!(
+                &action,
+                Action::Attack { .. }
+                    | Action::Ranged { .. }
+                    | Action::AirStrike { .. }
+                    | Action::PriorityTarget { .. }
+            );
+            let acted = g.apply(pid, &action).is_ok();
+            self.force_groups_dirty |= acted && changes_force_picture;
+            return acted;
         }
         if !unwanted_settler_adjacent {
             if let Some(city) = self.occupation_garrison_target(g, pid, uid) {
@@ -9001,12 +9174,14 @@ impl AdvancedAi {
             }
             return self.base.military_step(g, pid, uid);
         }
-        // Combat can change occupancy, local power, line of sight, and the
-        // best focus target after every action. Replan before each unit step
-        // so later units exploit the new position instead of following the
-        // turn-start snapshot.
-        if self.victory_planning {
+        // Combat can change occupancy, local power and the best focus target.
+        // Movement cannot change the opposing force, so keep the existing
+        // orders until an attack actually dirties them. The former
+        // unconditional rebuild before every step made a turn with `n` units
+        // repeatedly regroup and rescore all `n` after each unit moved.
+        if self.victory_planning && self.force_groups_dirty {
             self.rebuild_force_groups(g, pid, plan);
+            self.force_groups_dirty = false;
         }
         let group = self
             .force_groups
@@ -9090,6 +9265,7 @@ impl AdvancedAi {
         if let Some((score, _, action)) = best {
             let required_margin = if unit.hp < 55 { 12.0 } else { 0.0 };
             if score > required_margin && g.apply(pid, &action).is_ok() {
+                self.force_groups_dirty = true;
                 return true;
             }
         }
@@ -9408,7 +9584,7 @@ impl AdvancedAi {
             return;
         }
         let mut best: BTreeMap<u32, (f64, Pos)> = BTreeMap::new();
-        for action in g.legal_actions_within(pid, ActionFamilies::CHEAP) {
+        for action in g.legal_actions_within(pid, ActionFamilies::CORE) {
             let Action::EncampmentStrike { city, target } = action else {
                 continue;
             };
@@ -9434,7 +9610,7 @@ impl AdvancedAi {
     fn advanced_city_strikes(&self, g: &mut Game, pid: usize) {
         loop {
             let candidates: Vec<Action> = g
-                .legal_actions_within(pid, ActionFamilies::CHEAP)
+                .legal_actions_within(pid, ActionFamilies::CORE)
                 .into_iter()
                 .filter(|action| matches!(action, Action::CityStrike { .. }))
                 .collect();
@@ -9528,7 +9704,13 @@ impl AdvancedAi {
         } else {
             self.force_groups.clear();
         }
+        self.force_groups_dirty = false;
         let religious_offensive = self.religious_offensive_posture(g, pid, plan.strategy);
+        // Settlement feasibility is an empire/map question, not a unit
+        // question. It used to rescan the known world and recompute empire
+        // counts up to eight times for every military unit in the same turn.
+        let decline_settlers = self.counts(g, pid).settlers > 0
+            || !self.base.has_practical_settle_site(g, pid);
         let mut ids = g.player_unit_ids(pid);
         ids.sort_by_key(|uid| {
             let u = &g.units[uid];
@@ -9576,7 +9758,13 @@ impl AdvancedAi {
                             uid,
                             religious_offensive,
                         ),
-                    _ => self.advanced_military_step(g, pid, uid, plan),
+                    _ => self.advanced_military_step_with_decline(
+                        g,
+                        pid,
+                        uid,
+                        plan,
+                        decline_settlers,
+                    ),
                 };
                 if !acted {
                     break;
@@ -10001,6 +10189,12 @@ impl Ai for AdvancedAi {
     }
 
     fn take_turn(&mut self, g: &mut Game, pid: usize) {
+        g.with_deferred_visibility(|g| self.take_turn_inner(g, pid));
+    }
+}
+
+impl AdvancedAi {
+    fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
         self.base.minor = g.players[pid].is_minor;
         self.base.barb = g.players[pid].is_barbarian;
         let active_victory_target = self.active_victory_target(g);
@@ -11841,6 +12035,55 @@ mod tests {
         assert_eq!(
             ai.victory_focus(&culture, 0).strategy,
             GrandStrategy::Culture
+        );
+    }
+
+    #[test]
+    fn bulk_rival_culture_pressure_matches_individual_victory_scans() {
+        let mut game = Game::new(4, 30, 18, 7_603, 300, 0);
+        for source in 0..4 {
+            game.players[source].culture_lifetime = 500.0 + source as f64 * 350.0;
+            for target in 0..4 {
+                if source != target {
+                    game.players[source]
+                        .tourism_pressure
+                        .insert(target, (source * 700 + target * 190) as f64);
+                }
+            }
+        }
+
+        let ai = AdvancedAi::new();
+        let bulk = ai.rival_culture_pressures(&game);
+        for pid in 0..4 {
+            let batched =
+                ai.rival_victory_pressure_with_culture(&game, pid, bulk.get(&pid).copied());
+            let individual = ai.rival_victory_pressure(&game, pid);
+            assert_eq!(batched.strategy, individual.strategy, "player {pid}");
+            assert_eq!(batched.progress, individual.progress, "player {pid}");
+            for rival in 0..4 {
+                if rival == pid {
+                    continue;
+                }
+                assert_eq!(
+                    ai.rival_value_with_culture(&game, pid, rival, bulk.get(&rival).copied()),
+                    ai.rival_value(&game, pid, rival),
+                    "rival score {pid} -> {rival}"
+                );
+                assert_eq!(
+                    ai.campaign_target_value_with_culture(
+                        &game,
+                        pid,
+                        rival,
+                        bulk.get(&rival).copied(),
+                    ),
+                    ai.campaign_target_value(&game, pid, rival),
+                    "campaign score {pid} -> {rival}"
+                );
+            }
+        }
+        assert_eq!(
+            ai.victory_denial_with_culture_pressures(&game, 0, &bulk),
+            ai.victory_denial(&game, 0)
         );
     }
 
