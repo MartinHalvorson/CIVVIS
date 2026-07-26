@@ -3035,6 +3035,27 @@ const CITY_STATE_TYPE_COLORS = {
   scientific:"#4aa3df", cultural:"#a46bd4", religious:"#eee7cf",
   militaristic:"#c94b45", industrial:"#e67e22", trade:"#e2c04a"
 };
+// Major civilizations are the strategic subjects of the map; city-states are
+// landmarks within that story. Keep the ratio explicit and shared by flat,
+// globe and minimap renderers so switching views never reverses that hierarchy.
+// Type colour still identifies a city-state, but it no longer gives one small
+// enclave the same visual weight as a civilization-scale empire.
+const MAP_CIV_HIERARCHY = Object.freeze({
+  flatWashMajorStrategic:.15,
+  flatWashMajorPainted:.11,
+  flatWashCityState:.025,
+  planetWashMajorStrategic:.32,
+  planetWashMajorBalanced:.18,
+  planetWashMajorCinematic:.14,
+  planetWashCityState:.035,
+  frontierCityState:.34,
+  frontierCityStateScale:.72,
+  empireFrontierCityState:.20,
+  cityStateMarker:.64,
+  empireCityStateMarker:.28,
+  minimapMajor:.76,
+  minimapCityState:.18,
+});
 const EDGE_CORNERS = [[0,1],[5,0],[4,5],[3,4],[2,3],[1,2]]; // matches DIRS order
 const DIRS = [[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];
 const ERA_NAMES = ["ancient", "classical", "medieval", "renaissance",
@@ -4638,6 +4659,10 @@ function pcol(id) {
   if (p && p.is_barbarian) return "#30262a";
   if (p && p.is_minor) return CITY_STATE_TINT;
   return playerJerseys()[id]?.[0] || PCOLORS[id % PCOLORS.length];
+}
+function ownerIsCityState(owner) {
+  const p = state?.players?.[owner];
+  return Boolean(p && p.is_minor && !p.is_barbarian);
 }
 // The jersey partner. City-states get their type colour — black-on-type is
 // exactly how Civ 6 dresses them, and their near-black primary needs the help.
@@ -11197,8 +11222,12 @@ function drawPlanetFrontiers(cells) {
   cx.lineCap = "round"; cx.lineJoin = "round";
   for (const [owner, lane] of lanes) {
     const [dark, light] = jerseyLanes(owner);
-    const minor = !!state.players[owner]?.is_minor;
-    const presence = empire && minor ? .22 : 1;
+    const cityState = ownerIsCityState(owner);
+    const presence = cityState
+      ? (empire ? MAP_CIV_HIERARCHY.empireFrontierCityState
+                : MAP_CIV_HIERARCHY.frontierCityState)
+      : 1;
+    const hierarchyScale = cityState ? MAP_CIV_HIERARCHY.frontierCityStateScale : 1;
     // The globe's ground is the same compact strategic terrain the flat view
     // has, so it takes the flat view's treatment: a near-black keyline reaching
     // back across the seam for a stable silhouette, then the seam lane, then
@@ -11209,11 +11238,13 @@ function drawPlanetFrontiers(cells) {
     for (const [w, alpha, color, off] of passes) {
       cx.strokeStyle = color; cx.globalAlpha = alpha * presence;
       for (const [weight, edges] of lane.weights) {
-        cx.lineWidth = w * weight;
+        cx.lineWidth = w * weight * hierarchyScale;
         cx.beginPath();
         for (const edge of edges) {
-          const [x1, y1] = planetLaneEnd(lane, edge, edge.ia, edge.ax, edge.ay, off);
-          const [x2, y2] = planetLaneEnd(lane, edge, edge.ib, edge.bx, edge.by, off);
+          const [x1, y1] = planetLaneEnd(lane, edge, edge.ia, edge.ax, edge.ay,
+                                        off * hierarchyScale);
+          const [x2, y2] = planetLaneEnd(lane, edge, edge.ib, edge.bx, edge.by,
+                                        off * hierarchyScale);
           cx.moveTo(x1, y1); cx.lineTo(x2, y2);
         }
         cx.stroke();
@@ -12583,9 +12614,14 @@ function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
     const owner = cell.tile.owner;
     if (owner === null || owner === undefined) continue;
     planetPaintPath(cx, cell, .22);
-    const minor = !!state.players[owner]?.is_minor;
-    cx.globalAlpha = empire ? (minor ? .07 : .42)
-      : painted ? (MODE.atmosphere ? .14 : .17) : .28;
+    const cityState = ownerIsCityState(owner);
+    cx.globalAlpha = empire
+      ? (cityState ? .055 : .45)
+      : cityState ? MAP_CIV_HIERARCHY.planetWashCityState
+      : painted ? (MODE.atmosphere
+          ? MAP_CIV_HIERARCHY.planetWashMajorCinematic
+          : MAP_CIV_HIERARCHY.planetWashMajorBalanced)
+      : MAP_CIV_HIERARCHY.planetWashMajorStrategic;
     cx.fillStyle = pcol(owner);
     cx.fill();
   }
@@ -12751,7 +12787,7 @@ function drawEmpireLensFlat(tiles) {
     if (tile.owner === null || tile.owner === undefined) continue;
     hexPath(x, y, S + .45);
     cx.fillStyle = pcol(tile.owner);
-    cx.globalAlpha = state.players[tile.owner]?.is_minor ? .07 : .42;
+    cx.globalAlpha = ownerIsCityState(tile.owner) ? .055 : .45;
     cx.fill(); cx.globalAlpha = 1;
   }
 
@@ -12792,14 +12828,17 @@ function drawEmpireLensFlat(tiles) {
   cx.lineCap = "round"; cx.lineJoin = "round";
   for (const [owner, segments] of borders) {
     const [dark, light] = jerseyLanes(owner);
-    const presence = state.players[owner]?.is_minor ? .22 : 1;
+    const cityState = ownerIsCityState(owner);
+    const presence = cityState ? MAP_CIV_HIERARCHY.empireFrontierCityState : 1;
+    const hierarchyScale = cityState ? MAP_CIV_HIERARCHY.frontierCityStateScale : 1;
     for (const [width, alpha, color, distance] of [
       [10.2 * k, .88, "#070b0d", 1.4 * k],
       [4.2 * k, 1, dark, 1.4 * k],
       [4.2 * k, 1, light, 5.5 * k],
     ]) {
-      pathLane(segments, distance);
-      cx.strokeStyle = color; cx.lineWidth = width; cx.globalAlpha = alpha * presence;
+      pathLane(segments, distance * hierarchyScale);
+      cx.strokeStyle = color; cx.lineWidth = width * hierarchyScale;
+      cx.globalAlpha = alpha * presence;
       cx.stroke();
     }
   }
@@ -12942,18 +12981,36 @@ function drawPlanetMap() {
   for (const city of state.cities) {
     const cell = cellByKey.get(key(city.pos));
     if (!cell || cell.center.z < (onSheet ?? .02)) continue;
-    const minorLens = empireLens && !!state.players[city.owner]?.is_minor;
-    if (minorLens) { cx.save(); cx.globalAlpha = .28; }
-    const r = Math.max(4, Math.min(8, 5 * Math.sqrt(scale)));
-    cx.fillStyle = cityBannerColor(city.owner); cx.strokeStyle = "#f7e5b1"; cx.lineWidth = 1.2;
+    const cityState = ownerIsCityState(city.owner);
+    if (cityState) {
+      cx.save();
+      cx.globalAlpha = empireLens ? MAP_CIV_HIERARCHY.empireCityStateMarker
+                                  : MAP_CIV_HIERARCHY.cityStateMarker;
+    }
+    const r = cityState
+      ? Math.max(3, Math.min(5.8, 3.8 * Math.sqrt(scale)))
+      : Math.max(5.5, Math.min(10.5, 6.6 * Math.sqrt(scale)));
+    const bannerColor = cityBannerColor(city.owner);
+    cx.fillStyle = bannerColor;
+    cx.strokeStyle = cityState ? "#10151d" : pcol2(city.owner);
+    cx.lineWidth = cityState ? .9 : 2.4;
+    if (!cityState) { cx.shadowColor = bannerColor; cx.shadowBlur = 7; }
     cx.beginPath(); cx.arc(cell.center.x, cell.center.y, r, 0, 7); cx.fill(); cx.stroke();
-    if (scale > .65) {
-      cx.font = `700 ${Math.max(8, Math.min(12, 8 * scale))}px Inter,sans-serif`;
-      cx.textAlign = "center"; cx.fillStyle = "#fff4d4"; cx.strokeStyle = "#07100f"; cx.lineWidth = 3;
+    cx.shadowBlur = 0;
+    if (!cityState) {
+      cx.strokeStyle = bannerColor; cx.lineWidth = 1.2;
+      cx.beginPath(); cx.arc(cell.center.x, cell.center.y, r + 3, 0, 7); cx.stroke();
+    }
+    if (scale > (cityState ? .95 : .52)) {
+      cx.font = `${cityState ? 650 : 800} ${cityState
+        ? Math.max(7, Math.min(9.5, 6.8 * scale))
+        : Math.max(9, Math.min(13.5, 9 * scale))}px Inter,sans-serif`;
+      cx.textAlign = "center"; cx.fillStyle = cityState ? "#d8ddd9" : "#fff4d4";
+      cx.strokeStyle = "#07100f"; cx.lineWidth = cityState ? 2.4 : 3.5;
       cx.strokeText(city.name, cell.center.x, cell.center.y - r - 5);
       cx.fillText(city.name, cell.center.x, cell.center.y - r - 5);
     }
-    if (minorLens) cx.restore();
+    if (cityState) cx.restore();
   }
   for (const unit of empireLens ? [] : state.units) {
     const cell = cellByKey.get(key(unit.pos));
@@ -13293,7 +13350,10 @@ function draw() {
     const [x, yy] = hexXY(t.pos[0], t.pos[1]);
     hexPath(x, yy - elev(t), S - 0.5);
     cx.fillStyle = pcol(t.owner);
-    cx.globalAlpha = 0.085;
+    cx.globalAlpha = ownerIsCityState(t.owner)
+      ? MAP_CIV_HIERARCHY.flatWashCityState
+      : beau ? MAP_CIV_HIERARCHY.flatWashMajorPainted
+             : MAP_CIV_HIERARCHY.flatWashMajorStrategic;
     cx.fill();
   }
   cx.globalAlpha = 1;
@@ -13383,6 +13443,9 @@ function draw() {
   // steals, the other still draws the line.
   for (const [owner, segs] of borderSegs) {
     const [dark, light] = jerseyLanes(owner);
+    const cityState = ownerIsCityState(owner);
+    const presence = cityState ? MAP_CIV_HIERARCHY.frontierCityState : 1;
+    const hierarchyScale = cityState ? MAP_CIV_HIERARCHY.frontierCityStateScale : 1;
     // Flat strategic terrain has a dark hex grid, roads, and compact symbols
     // competing for the same pixels. A near-black keyline gives its border a
     // stable silhouette before the two jersey colours identify the owner, and
@@ -13397,8 +13460,9 @@ function draw() {
          [2.8 * borderK, 1.0,  dark,      1.5 * borderK],
          [2.8 * borderK, 1.0,  light,     4.2 * borderK]];
     for (const [w, a, c, d] of passes) {
-      cx.strokeStyle = c; cx.lineWidth = w; cx.globalAlpha = a;
-      pathBorderLane(segs, d);
+      cx.strokeStyle = c; cx.lineWidth = w * hierarchyScale;
+      cx.globalAlpha = a * presence;
+      pathBorderLane(segs, d * hierarchyScale);
       cx.stroke();
     }
   }
@@ -13887,8 +13951,13 @@ function draw() {
     const ct = TMAP.get(key(c.pos));
     const [x, yy] = hexXY(c.pos[0], c.pos[1]);
     const y = yy - (ct ? elev(ct) : 0);
-    const minorLens = mapLens === "empire" && !!state.players[c.owner]?.is_minor;
-    if (minorLens) { cx.save(); cx.globalAlpha = .28; }
+    const cityState = ownerIsCityState(c.owner);
+    if (cityState) {
+      cx.save();
+      cx.globalAlpha = mapLens === "empire"
+        ? MAP_CIV_HIERARCHY.empireCityStateMarker
+        : MAP_CIV_HIERARCHY.cityStateMarker;
+    }
     // A city bleeding loyalty defects — it changes hands without a shot fired,
     // which is among the most consequential things that can happen to a border
     // and gave no warning at all on the map. Only cities actually slipping draw
@@ -13970,26 +14039,45 @@ function draw() {
       cx.restore();
     }
     {
-      // parchment-style nameplate
+      // Major-city plates carry both jersey colours, a larger type scale and a
+      // soft colour key. City-states keep a compact single-colour plate. The
+      // difference survives terrain, zoom and colour-blind viewing because it
+      // is expressed in size, line weight and silhouette as well as hue.
       const name = (c.is_capital ? "★ " : "") + c.name.toUpperCase();
-      cx.font = "bold 10px Georgia, serif";
-      const tw = Math.max(cx.measureText(name).width + 28, 48);
-      const bx = x - tw / 2, by = y - S - 6;
       const bannerColor = cityBannerColor(c.owner);
       const cityOwner = state.players[c.owner];
-      cx.fillStyle = cityOwner && cityOwner.is_minor
-        ? shade(bannerColor, 0.48) : "#1c2418ee";
-      cx.beginPath(); cx.roundRect(bx, by, tw, 16, 8); cx.fill();
-      cx.strokeStyle = bannerColor; cx.lineWidth = 1.6; cx.stroke();
+      const minorPlate = Boolean(cityOwner && cityOwner.is_minor);
+      const bannerHeight = minorPlate ? 13 : 18;
+      const popWidth = minorPlate ? 12 : 16;
+      cx.font = `${minorPlate ? 700 : 800} ${minorPlate ? 8.2 : 10.5}px Georgia, serif`;
+      const tw = Math.max(cx.measureText(name).width + (minorPlate ? 23 : 33),
+                          minorPlate ? 40 : 54);
+      const bx = x - tw / 2, by = y - S - (minorPlate ? 3 : 8);
+      cx.fillStyle = shade(bannerColor, minorPlate ? .43 : .31);
+      if (!minorPlate) { cx.shadowColor = bannerColor; cx.shadowBlur = 7; }
+      cx.beginPath(); cx.roundRect(bx, by, tw, bannerHeight, bannerHeight / 2); cx.fill();
+      cx.strokeStyle = minorPlate ? bannerColor : pcol2(c.owner);
+      cx.lineWidth = minorPlate ? 1 : 2.5; cx.stroke();
+      cx.shadowBlur = 0;
+      if (!minorPlate) {
+        cx.strokeStyle = bannerColor; cx.lineWidth = 1;
+        cx.beginPath();
+        cx.roundRect(bx + 2, by + 2, tw - 4, bannerHeight - 4, (bannerHeight - 4) / 2);
+        cx.stroke();
+      }
       cx.fillStyle = bannerColor;
-      cx.beginPath(); cx.roundRect(bx + 2, by + 2, 14, 12, 6); cx.fill();
-      cx.fillStyle = "#10151d"; cx.font = "bold 10px Georgia, serif";
-      cx.fillText(c.pop, bx + 9, by + 8.5);
-      cx.fillStyle = "#f0ead8"; cx.font = "bold 9.5px Georgia, serif";
+      cx.beginPath();
+      cx.roundRect(bx + 2, by + 2, popWidth, bannerHeight - 4, (bannerHeight - 4) / 2);
+      cx.fill();
+      cx.fillStyle = "#10151d";
+      cx.font = `bold ${minorPlate ? 8 : 10.5}px Georgia, serif`;
+      cx.fillText(c.pop, bx + 2 + popWidth / 2, by + bannerHeight / 2 + .5);
+      cx.fillStyle = minorPlate ? "#d8ddd9" : "#fff3cf";
+      cx.font = `${minorPlate ? 700 : 800} ${minorPlate ? 8.2 : 10.2}px Georgia, serif`;
       cx.textAlign = "left";
-      cx.fillText(name, bx + 20, by + 8.5);
+      cx.fillText(name, bx + popWidth + 7, by + bannerHeight / 2 + .5);
       cx.textAlign = "center";
-      let statusY = by + 17;
+      let statusY = by + bannerHeight + 1;
       if (c.hp < 200) {
         const hpFraction = Math.max(0, Math.min(1, c.hp / 200));
         cx.fillStyle = "#2b0908"; cx.fillRect(bx, statusY, tw, 3);
@@ -14011,7 +14099,8 @@ function draw() {
       // observed seat, and an owner gate makes it blink with them.
       if (c.queue && c.queue.length && c.queue_cost) {
         const it = c.queue[0];
-        const mx = bx + tw + 8, my = by + 8, mr = 9.5;
+        const mx = bx + tw + (minorPlate ? 6.5 : 9);
+        const my = by + bannerHeight / 2, mr = minorPlate ? 7.2 : 10;
         cx.fillStyle = "#1c2418f2";
         cx.beginPath(); cx.arc(mx, my, mr, 0, 7); cx.fill();
         cx.strokeStyle = "#0d1117"; cx.lineWidth = 2.6;   // unfilled track
@@ -14027,14 +14116,14 @@ function draw() {
         // family fallback here too, so the twenty-seven districts with no color
         // of their own stop coming off the queue as the same plain cream glyph
         cx.fillStyle = it.district ? districtColor(it.district) : "#f0ead8";
-        cx.font = "10px 'Segoe UI Symbol', 'Segoe UI Emoji', sans-serif";
+        cx.font = `${minorPlate ? 8 : 10.5}px 'Segoe UI Symbol', 'Segoe UI Emoji', sans-serif`;
         cx.fillText(prodGlyph(it), mx, my + 0.5);
       }
     }
     if (selCity && selCity.id === c.id) {
       hexPath(x, y); cx.strokeStyle = "#f0c674"; cx.lineWidth = 3; cx.stroke();
     }
-    if (minorLens) cx.restore();
+    if (cityState) cx.restore();
   }
   // --- espionage in progress. A spy is the only piece on the board with no
   // presence on it at all: it sits inside a city, runs a mission with a known
@@ -14888,7 +14977,9 @@ function drawPlanetMini() {
     mx2.fillStyle = spectator || visible.has(key(cell.tile.pos)) ? base : shade(base, .35);
     mx2.fill();
     if (cell.tile.owner !== null && cell.tile.owner !== undefined) {
-      mx2.globalAlpha = .68; mx2.fillStyle = cityBannerColor(cell.tile.owner); mx2.fill();
+      mx2.globalAlpha = ownerIsCityState(cell.tile.owner)
+        ? MAP_CIV_HIERARCHY.minimapCityState : MAP_CIV_HIERARCHY.minimapMajor;
+      mx2.fillStyle = cityBannerColor(cell.tile.owner); mx2.fill();
       mx2.globalAlpha = 1;
     }
   }
@@ -14902,8 +14993,15 @@ function drawPlanetMini() {
     const cell = planetCellGeometry(tile, camera, scale, centerX, centerY);
     if (!cell || cell.center.z <=
         (camera.chart ? planetChartHorizon(camera, scale, reach) : 0)) continue;
+    const cityState = ownerIsCityState(city.owner);
+    const cityRadius = cityState ? 1.15 : 2.35;
+    mx2.globalAlpha = cityState ? MAP_CIV_HIERARCHY.cityStateMarker : 1;
     mx2.fillStyle = cityBannerColor(city.owner);
-    mx2.fillRect(cell.center.x - 1.5, cell.center.y - 1.5, 3, 3);
+    mx2.beginPath(); mx2.arc(cell.center.x, cell.center.y, cityRadius, 0, 7); mx2.fill();
+    if (!cityState) {
+      mx2.strokeStyle = "#f8edca"; mx2.lineWidth = .75; mx2.stroke();
+    }
+    mx2.globalAlpha = 1;
   }
   mx2.setTransform(1, 0, 0, 1, 0, 0);
   return true;
@@ -15027,7 +15125,6 @@ function drawMini() {
   // frontier is moving. The main map keeps its territory wash deliberately
   // faint so the ground shows through; here ownership is the point and terrain
   // is the backdrop, so it goes on heavier.
-  mx2.globalAlpha = 0.7;
   for (const t of tiles) {
     if (t.owner === null || t.owner === undefined) continue;
     const [x, y] = miniHexCenter(t.pos, layout);
@@ -15036,17 +15133,25 @@ function drawMini() {
     // ground at minimap strength. The banner colour carries their TYPE instead,
     // and matches the hex already drawn for their capital.
     mx2.fillStyle = cityBannerColor(t.owner);
+    mx2.globalAlpha = ownerIsCityState(t.owner)
+      ? MAP_CIV_HIERARCHY.minimapCityState : MAP_CIV_HIERARCHY.minimapMajor;
     miniHexPath(x, y, layout.size + 0.12); mx2.fill();
   }
   mx2.globalAlpha = 1;
   for (const c of state.cities) {
     const [x, y] = miniHexCenter(c.pos, layout);
-    const citySize = layout.size + Math.min(1.25, Math.max(0.55, layout.size * 0.45));
+    const cityState = ownerIsCityState(c.owner);
+    const citySize = layout.size + (cityState
+      ? Math.min(.45, Math.max(.18, layout.size * .16))
+      : Math.min(1.75, Math.max(.8, layout.size * .58)));
+    mx2.globalAlpha = cityState ? MAP_CIV_HIERARCHY.cityStateMarker : 1;
     mx2.fillStyle = cityBannerColor(c.owner);
     miniHexPath(x, y, citySize); mx2.fill();
     // a dark keyline keeps a city legible now that it sits on its own colour
-    mx2.strokeStyle = "#0b0e13"; mx2.lineWidth = 0.7;
+    mx2.strokeStyle = cityState ? "#0b0e13" : "#f8edca";
+    mx2.lineWidth = cityState ? .45 : .9;
     miniHexPath(x, y, citySize - 0.35); mx2.stroke();
+    mx2.globalAlpha = 1;
   }
   // Detonations. The minimap is the only view that always holds the whole
   // world, so it is the only place a strike on the far side of the map is
