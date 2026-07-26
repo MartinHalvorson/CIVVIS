@@ -22373,10 +22373,26 @@ async function autoplayBatch(turns, strategy) {
     }
   }
 }
-// Played in batches rather than in one request: a full game is over a minute
-// of engine work, and a person who asked for 250 turns still wants to watch
-// them happen and still wants to be able to stop. The batch grows only while
-// batches come back quickly, so a handful of turns stays turn-by-turn.
+// Draw one auto-played turn, and do not ask for the next until the browser has
+// taken this one. Two states rendered inside a single display refresh are
+// composited into one, so a turn drawn without waiting for a frame is a turn
+// that was simulated, delivered, drawn — and still never seen. This is the same
+// one-turn-per-presented-frame rule the exhibition's own loop keeps.
+function autoplayFrame(st) {
+  return new Promise(drawn => requestAnimationFrame(() => { render(st); drawn(); }));
+}
+// Played one turn per request, because a batch is turns nobody watches: the
+// engine simulates every turn in it but only the state *after the last one*
+// ever comes back, so asking for ten turns draws one frame and silently
+// discards nine. That is what "auto-play skips turns" was. Every turn now gets
+// its own request and its own animation frame.
+//
+// Throughput survives the change because the next turn is asked for *before*
+// the current one is painted: the engine plays turn N+1 while the browser draws
+// turn N, so a turn costs the frame or the engine, never the sum of both. A run
+// in a tab that is not being presented pauses rather than racing ahead unseen,
+// and resumes by itself — deliberately, and not to be "fixed" with a
+// document.hidden guard, which is how this guarantee was lost once already.
 async function autoplay(turns) {
   if (SPEC) return;
   if (autoplaying) { autoplayStop = true; return; }
@@ -22392,25 +22408,26 @@ async function autoplay(turns) {
   // what the agent playing is actually doing.
   for (const field of ["autoplaystrategy", "autoplayturns"])
     document.getElementById(field).disabled = true;
-  let left = Math.max(1, turns | 0), batch = 1;
+  let left = Math.max(1, turns | 0);
+  let inFlight = null;
   try {
-    while (left > 0 && !autoplayStop) {
-      const ask = Math.min(batch, left);
-      button.textContent = `⏹ Stop · ${left} turn${left === 1 ? "" : "s"} left`;
-      const started = performance.now();
-      sel = null;
-      const next = await autoplayBatch(ask, strategy);
+    // A turn is in flight from here to the end of the run. The loop paints
+    // whatever it asked for before it looks at why it should stop, so a run
+    // ended by the Stop button still shows the turn the engine had already
+    // played rather than dropping it on the floor.
+    inFlight = autoplayBatch(1, strategy);
+    while (inFlight) {
+      const next = await inFlight;
       if (next.error) throw new Error(next.error);
       const played = +next.autoplayed || 0;
-      render(next);
       left -= played;
-      // Fewer turns played than asked for means the game ran out: somebody
-      // won, or this seat is no longer in it.
-      if (played < ask) break;
-      const elapsed = performance.now() - started;
-      batch = elapsed < 250 ? Math.min(batch * 2, 10)
-        : elapsed > 900 ? Math.max(1, batch >> 1) : batch;
-      await new Promise(resume => setTimeout(resume, 0));
+      // Nothing played means the game ran out: somebody won, or this seat is
+      // no longer in it. Otherwise ask for the next turn now, so it is being
+      // simulated while this one is on its way to the glass.
+      inFlight = played > 0 && left > 0 && !autoplayStop ? autoplayBatch(1, strategy) : null;
+      button.textContent = `⏹ Stop · ${left} turn${left === 1 ? "" : "s"} left`;
+      sel = null;
+      await autoplayFrame(next);
     }
     setAutoplayNote(autoplayStop && left > 0 ? `Stopped · ${left} turns unplayed` : "");
   } catch (e) {
@@ -22419,6 +22436,11 @@ async function autoplay(turns) {
     errEl.style.display = "block";
     setTimeout(() => errEl.style.display = "none", 2500);
   } finally {
+    // A run that ended on an error can leave the turn it had already asked for
+    // with nobody waiting on it. The error above is the one worth reporting;
+    // this only keeps the abandoned request from surfacing a second time as an
+    // unhandled rejection.
+    if (inFlight) inFlight.catch(() => {});
     button.textContent = label;
     if (bar) bar.classList.remove("running");
     for (const field of ["autoplaystrategy", "autoplayturns"])

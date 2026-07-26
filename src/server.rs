@@ -2566,6 +2566,26 @@ fn auto_step_loop(sh: Arc<Shared>) {
             std::thread::sleep(Duration::from_millis(150));
             continue;
         }
+        // A game somebody is playing is not stepped from here, and this loop
+        // must not hold the frame gate while it idles past it.
+        //
+        // The gate orders this loop against a viewer's *first* snapshot, so
+        // the opening `/state?painted=` of every page blocks on it. Taking it,
+        // sleeping 300ms and immediately retaking it leaves a window too narrow
+        // to win against a thread that is already parked on the mutex, and a
+        // single-player page then never finishes booting: its opening read is
+        // starved until the page gives up at fifteen seconds, retries, and is
+        // starved again. So decide before taking the gate, not after.
+        //
+        // Read it into a bool first: a guard built in an `if` condition lives
+        // until the end of the whole `if`, so testing the lock inline would
+        // hold the *session* across the sleep below and stall every request
+        // that needs it.
+        let being_played_by_hand = !sh.session.lock().unwrap().params.spectate;
+        if being_played_by_hand {
+            std::thread::sleep(Duration::from_millis(300));
+            continue;
+        }
         // Close the first-viewer race as well as the steady-state one. A page
         // attaching to the current turn must either finish registering and
         // receive that snapshot before this step begins, or wait until the
@@ -2600,7 +2620,11 @@ fn auto_step_loop(sh: Arc<Shared>) {
         {
             let mut s = sh.session.lock().unwrap();
             if !s.params.spectate {
+                // Seating can change between the check above and this one, so
+                // this stays as the authority — but it releases the gate
+                // before idling, for the same reason.
                 drop(s);
+                drop(simulation_frame_gate);
                 std::thread::sleep(Duration::from_millis(300));
                 continue;
             }
@@ -7066,6 +7090,59 @@ mod tests {
         assert!(played >= 12, "only played {played} turns of a 12-turn game");
     }
 
+    /// A single-player page has to be able to read its own first state.
+    ///
+    /// The opening `/state?painted=` of every page takes
+    /// `simulation_frame_gate` — that is how a page attaching mid-turn is
+    /// ordered against the stepper. The stepper does not step a game somebody
+    /// is playing, but it used to take that gate *first* and only then notice,
+    /// sleeping 300ms with the gate held and retaking it the moment it let go.
+    /// The window left for the page was too narrow to win, so a browser opening
+    /// a single-player game was starved out of its first snapshot: boot aborts
+    /// at fifteen seconds, retries, and is starved again. The map never
+    /// appears, and auto-play has nothing to draw a frame from.
+    #[test]
+    fn a_single_player_page_gets_its_first_state_at_once() {
+        let port = TcpListener::bind(("127.0.0.1", 0))
+            .expect("a free port")
+            .local_addr()
+            .unwrap()
+            .port();
+        let mut params = current();
+        params.num_players = 3;
+        params.num_city_states = 0;
+        params.width = 24;
+        params.height = 16;
+        params.seed = 20_260_726;
+        assert!(!params.spectate, "this test is about the human-game path");
+        std::thread::spawn(move || super::serve_with_game(port, false, params, None, false));
+
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while http_get(port, "/status").is_none() {
+            assert!(Instant::now() < deadline, "single-player server never came up");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        // Exactly what boot asks for: a viewer that has painted nothing yet.
+        // Asked repeatedly, because starvation is a race and one lucky read
+        // proves nothing.
+        for attempt in 1..=5 {
+            let started = Instant::now();
+            let body = http_get(port, "/state?painted=&viewer=boot-probe")
+                .unwrap_or_else(|| panic!("read {attempt}: the opening state never arrived"));
+            let elapsed = started.elapsed();
+            let state: Value = serde_json::from_str(&body)
+                .unwrap_or_else(|e| panic!("read {attempt}: opening state is not JSON: {e}"));
+            assert!(
+                state["turn"].is_number(),
+                "read {attempt}: the opening state carries no turn"
+            );
+            assert!(
+                elapsed < Duration::from_secs(5),
+                "read {attempt}: the opening state took {elapsed:?}, and a page gives up at 15s"
+            );
+        }
+    }
+
     /// A browser can lose the response after the agent has already played the
     /// turns. Retrying that POST must acknowledge the completed batch rather
     /// than silently playing it twice.
@@ -7160,17 +7237,55 @@ mod tests {
         assert!(EMBEDDED_INDEX
             .contains("const roster = Array.isArray(rules.strategies) ? rules.strategies : []"));
         assert!(EMBEDDED_INDEX.contains("fillStrategies(RULES)"));
-        // The choice rides on every request, so a run continued in batches
+        // The choice rides on every request, so a run continued turn by turn
         // cannot change agent halfway through.
         assert!(EMBEDDED_INDEX.contains("async function autoplayBatch(turns, strategy)"));
         assert!(EMBEDDED_INDEX.contains("request_id: requestId"));
         assert!(EMBEDDED_INDEX.contains("AUTOPLAY_BATCH_TIMEOUT_MS = 120000"));
-        assert!(EMBEDDED_INDEX.contains("const next = await autoplayBatch(ask, strategy)"));
         // Pressing it again stops, rather than queueing a second run.
         assert!(EMBEDDED_INDEX.contains("if (autoplaying) { autoplayStop = true; return; }"));
-        assert!(EMBEDDED_INDEX.contains("while (left > 0 && !autoplayStop)"));
-        // Short of the turns asked for means the game ended under it.
-        assert!(EMBEDDED_INDEX.contains("if (played < ask) break;"));
+        assert!(EMBEDDED_INDEX.contains("while (inFlight)"));
+    }
+
+    /// Every turn auto-play simulates has to reach the screen as a frame.
+    ///
+    /// This is Martin's standing requirement, and auto-play was the one loop
+    /// that broke it. It asked the engine for a *batch* of turns and got back
+    /// only the state after the last one, so a batch of ten played ten turns
+    /// and drew one — nine turns simulated, delivered to nobody, gone. The
+    /// batch doubled while responses were quick, which is why it looked like
+    /// turns were skipped "sometimes": the run began at one turn per request
+    /// and grew away from it within a second.
+    ///
+    /// Two properties fix it and both are load-bearing. The request is for one
+    /// turn, so every turn has a state of its own. And the paint happens inside
+    /// an animation frame, because two states rendered inside one display
+    /// refresh are composited into a single frame — a turn can otherwise be
+    /// simulated, delivered, drawn, and still never appear on a screen.
+    #[test]
+    fn auto_play_draws_a_frame_for_every_turn_it_plays() {
+        // One turn per request, both the first and every one after it.
+        assert!(EMBEDDED_INDEX.contains("inFlight = autoplayBatch(1, strategy);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "inFlight = played > 0 && left > 0 && !autoplayStop ? autoplayBatch(1, strategy) : null;"
+        ));
+        // One presented frame per turn.
+        assert!(EMBEDDED_INDEX.contains(
+            "return new Promise(drawn => requestAnimationFrame(() => { render(st); drawn(); }));"
+        ));
+        assert!(EMBEDDED_INDEX.contains("await autoplayFrame(next);"));
+        // The adaptive batch is what dropped the turns. It must not come back,
+        // in any of the three shapes it had.
+        for gone in [
+            "batch = elapsed < 250",
+            "const ask = Math.min(batch, left)",
+            "await autoplayBatch(ask, strategy)",
+        ] {
+            assert!(
+                !EMBEDDED_INDEX.contains(gone),
+                "auto-play is batching turns again, so turns go unseen: {gone}"
+            );
+        }
     }
 
     /// Which named Great Person a kind is offering is a world fact — it
