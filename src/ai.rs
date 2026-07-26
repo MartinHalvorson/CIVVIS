@@ -7208,11 +7208,11 @@ mod tests {
         );
     }
 
-    #[test]
-    fn most_wartime_troops_advance_when_a_campaign_route_exists() {
-        let mut g = Game::new_full(2, 24, 16, 36, 30, 0, false);
-        g.at_war.insert((0, 1));
-        let (target, staging) = g
+    /// The open stretch of land `most_wartime_troops_advance_when_a_campaign_route_exists`
+    /// needs: a target well clear of every starting unit, with six tiles three
+    /// to six hexes out that troops can stage on and march off.
+    fn arena(g: &Game) -> Option<(Pos, Vec<Pos>)> {
+        g
             .map
             .tiles
             .iter()
@@ -7250,7 +7250,23 @@ mod tests {
                     .collect();
                 (staging.len() == 6).then_some((*target, staging))
             })
-            .expect("test map needs an open land campaign");
+    }
+
+    #[test]
+    fn most_wartime_troops_advance_when_a_campaign_route_exists() {
+        // The fixture needs an arena: a stretch of open land well clear of
+        // everybody's starting units, with room to stage six warriors around
+        // one target. That is a fact about the map rather than the thing under
+        // test, so take the first seed that offers one instead of naming a seed
+        // and trusting that starts never move again.
+        let (mut g, target, staging) = (36..96u64)
+            .find_map(|seed| {
+                let mut g = Game::new_full(2, 24, 16, seed, 30, 0, false);
+                g.at_war.insert((0, 1));
+                let found = arena(&g)?;
+                Some((g, found.0, found.1))
+            })
+            .expect("no seed offered a map with an open land campaign");
         g.spawn_test_unit("warrior", 1, target);
         let army: Vec<u32> = staging
             .into_iter()
