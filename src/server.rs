@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Value};
 
 use crate::ai::{AdvancedAi, Ai, BasicAi};
-use crate::game::{Action, Game, GameOptions, VictoryConditions};
+use crate::game::{Action, Game, GameOptions, PlayOnMode, VictoryConditions};
 use crate::rules::Rules;
 use crate::obs::{observation, observation_player_view, observation_spectator};
 use crate::setup::{
@@ -1964,16 +1964,16 @@ impl Session {
     /// Seat 0 already has an agent built for it — in a human game it simply
     /// never gets asked — so this is a matter of asking it.
     ///
-    /// "Play the rest of it" is a turn count like any other: the bound is the
-    /// turns this game has left, because a game ends at its limit and the loop
-    /// already stops on a winner or a dead seat.
+    /// "Play the rest of it" is bounded by the live turn limit. A continued
+    /// game has no such limit, so a single HTTP request gets a generous finite
+    /// batch instead; the browser can keep requesting batches until the next
+    /// result or until the person stops an indefinite run.
     pub fn autoplay(&mut self, turns: u32) -> usize {
         let mut played = 0;
-        let remaining = self
-            .game
-            .max_turns
-            .saturating_sub(self.game.turn)
-            .saturating_add(1);
+        let remaining = self.game.turn_limit().map_or_else(
+            || turns.min(250),
+            |limit| limit.saturating_sub(self.game.turn).saturating_add(1),
+        );
         for _ in 0..turns.min(remaining) {
             if self.game.winner.is_some() || !self.game.players[0].alive {
                 break;
@@ -2009,8 +2009,8 @@ impl Session {
     /// would come back live on an AI seat, refusing every action the person
     /// tried to take. So the same catch-up `act` runs after an end-turn runs
     /// here, handing the round back to seat zero.
-    pub fn play_on(&mut self) -> bool {
-        if !self.game.play_on() {
+    pub fn play_on(&mut self, mode: PlayOnMode) -> bool {
+        if !self.game.play_on(mode) {
             return false;
         }
         if !self.params.spectate {
@@ -3033,9 +3033,6 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "game_speeds": CIV6_GAME_SPEEDS,
                     "strategies": strategy_roster(&session),
                     "seat_strategy": session.seated_strategy_name(0),
-                    // What one press of "one more turn" buys, so the result
-                    // screen can promise the number the engine actually grants.
-                    "play_on_turns": crate::game::PLAY_ON_TURNS,
                 }),
             );
         }
@@ -3215,8 +3212,16 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         // state read between the press and the stepper's next pass never
         // reports a restart that is no longer coming.
         ("POST", "/play-on") => {
+            let mode_name = parsed["mode"].as_str().unwrap_or("until_next_victory");
+            let Some(mode) = PlayOnMode::parse(mode_name) else {
+                respond_json(
+                    stream,
+                    &json!({"error": format!("unknown play-on mode {mode_name:?}")}),
+                );
+                return;
+            };
             let mut session = sh.session.lock().unwrap();
-            let played_on = session.play_on();
+            let played_on = session.play_on(mode);
             let mut out = session.state();
             out["error"] = if played_on {
                 Value::Null

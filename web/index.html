@@ -1337,8 +1337,8 @@
     font-size: 11px; letter-spacing: .06em;
   }
   /* The result screen's answers, stacked. The offer that replaces the world
-     keeps the full-width gold it has always had; the offer that keeps it sits
-     compact underneath, so the two never read as a pair of equals.
+     keeps the full-width gold it has always had; the two ways to keep it sit
+     compact underneath.
      `.winner-content > *` sets every child to `display: block` further down
      this sheet at the same specificity, so the column has to be named through
      its parent to survive. */
@@ -1346,17 +1346,12 @@
     display: flex; flex-direction: column; gap: 9px; margin-top: 14px;
   }
   .winner-actions .winner-again { margin-top: 0; }
-  /* Playing on is the quieter of the two answers: it keeps what is already on
-     screen, so it does not compete with the button that replaces the world. */
+  /* Playing on is quieter than replacing the world, while both continuation
+     rules remain equally legible choices. */
   .winner-playon {
-    align-self: center; display: flex; flex-direction: column; gap: 2px;
+    align-self: center;
     border-color: color-mix(in srgb, var(--winner-color, #d7b66a) 55%, #4a635a);
   }
-  .winner-playon small {
-    color: var(--muted); font-size: 9px; font-weight: 800; letter-spacing: .12em;
-    text-transform: uppercase;
-  }
-  .winner-playon:hover small { color: inherit; }
   #tip {
     position: fixed; z-index: 30; display: none; max-width: 290px; padding: 10px 13px;
     color: var(--text); border: 1px solid #4a635a; border-radius: 11px;
@@ -6702,9 +6697,12 @@ function render(st, recordChronicle = true) {
         ${SPEC ? `<span class="winner-countdown" id="respawn" role="timer"></span>` : ``}
         <span class="winner-actions">
           ${SPEC ? `` : `<button class="primary winner-again" onclick="startNewSimulation()">Start another game</button>`}
-          <button class="winner-again winner-playon" id="play-on" onclick="playOnPastVictory()"
-            title="Keep this world and play ${playOnTurns()} more turns. The result stands; no further victory is declared.">
-            One more turn<small>+${playOnTurns()} turns</small></button>
+          <button class="winner-again winner-playon" id="play-on-next-victory"
+            onclick="playOnPastVictory('until_next_victory')"
+            title="Keep this world without a turn limit. The exact result shown here will not repeat; the next distinct victory ends the game.">One more turn (play until next victory)</button>
+          <button class="winner-again winner-playon" id="play-on-indefinite"
+            onclick="playOnPastVictory('indefinite')"
+            title="Keep this world without a turn limit and ignore every later victory.">One more turn (play indefinitely)</button>
         </span>
       </div>`;
       playCinemaCue({priority:10, kicker:"History has a victor", title:winnerName});
@@ -14847,17 +14845,9 @@ function victoryMetric(player, victory) {
   return player.victories?.[victory] || { progress: 0 };
 }
 
-// The turn limit decides the score victory, and a game can be set to run
-// without one.
-// What one press of "one more turn" is worth. The ruleset is the authority;
-// the fallback only has to keep the button honest before /rules has landed.
-function playOnTurns() {
-  const turns = +(RULES && RULES.play_on_turns);
-  return turns > 0 ? turns : 25;
-}
-
 function turnCapLabel() {
-  const cap = +state.max_turns;
+  if (state.turn_limit === null) return "∞";
+  const cap = +(state.turn_limit ?? state.max_turns);
   return cap > 0 && cap < 100000 ? String(cap) : "∞";
 }
 
@@ -15052,12 +15042,13 @@ function hudTurnPlate() {
   const identityContext = `${viewLabel}: ${identity.civ} · ${profile.role} · ${meta}` +
     (actor.id !== identity.id ? ` · Acting civilization: ${actor.civ}` : "");
   const ageLabel = `${titleCase(era)} Age`;
-  // A world playing on past its result still has a victor, and the clock it
-  // now runs against is borrowed. Say both, or the raised turn cap reads as
-  // the game having been set up that long in the first place.
+  // A world playing on past its result still has a victor and no turn cap.
+  // Name the selected stopping rule so "Playing on" never conceals whether a
+  // later victory will finish it.
   const decided = state.decided;
   const playOnLabel = decided
-    ? `Playing on past ${decided.civ || "the winner"}'s ${titleCase(decided.victory_type || "score")} victory on turn ${decided.turn}`
+    ? `Playing on past ${decided.civ || "the winner"}'s ${titleCase(decided.victory_type || "score")} victory on turn ${decided.turn}` +
+      (decided.mode === "indefinite" ? " indefinitely" : " until the next victory")
     : "";
   const context = identityContext + (playOnLabel ? ` · ${playOnLabel}` : "");
   return `<section class="victory-turn" title="${escapeAttr(context)}" aria-label="${escapeAttr(context)}; turn ${state.turn} of ${turnCapLabel()}; ${turnSpeed}; ${ageLabel}">` +
@@ -20070,11 +20061,14 @@ function fillStrategies(rules) {
     .find(name => name && roster.some(entry => entry.name === name));
   select.value = wanted || roster[0].name;
 }
-// "All" is the turns this game has left, and the server bounds it the same
-// way, so a stopped or finished game cannot leave the loop below spinning.
+// "All" is the turns this game has left. A continued game deliberately has no
+// cap, so use a stop-button-sized horizon: a next-victory run will finish when
+// the engine declares it, and an indefinite run continues until stopped.
 function autoplayRequest() {
   const pick = (document.getElementById("autoplayturns") || {}).value || "1";
-  const left = Math.max(1, (+(state || {}).max_turns || 0) - (+(state || {}).turn || 0) + 1);
+  if (pick === "all" && (state || {}).turn_limit === null) return 1000000000;
+  const cap = +(state || {}).turn_limit || +(state || {}).max_turns || 0;
+  const left = Math.max(1, cap - (+(state || {}).turn || 0) + 1);
   return pick === "all" ? left : Math.min(+pick, left);
 }
 function setAutoplayNote(text) {
@@ -20480,23 +20474,23 @@ async function startNewSimulation() {
   }
 }
 // "One more turn": keep the world that just ended instead of taking the next
-// one. The result stands and is remembered; the map simply becomes live again
-// for another block of turns, and no victory can be declared during them.
+// one. Both choices remove the turn cap; one stops for the next distinct
+// victory and the other suppresses every later result.
 //
 // This has to outrun nothing, but it does have to *stop* things: the countdown
 // on screen, the successor watcher armed when the result appeared, and — on the
 // exhibition — the supervisor's own cooldown, which reads the cleared winner
 // out of `/state` and stands down.
 let playOnBusy = false;
-async function playOnPastVictory() {
+async function playOnPastVictory(mode) {
   if (playOnBusy) return;
   playOnBusy = true;
-  const button = document.getElementById("play-on");
-  if (button) button.disabled = true;
+  const buttons = [...document.querySelectorAll(".winner-playon")];
+  for (const button of buttons) button.disabled = true;
   cancelSupervisedSuccessorWatch();
   try {
     const next = await fetchJSON("/play-on", {method: "POST",
-      headers: {"Content-Type": "application/json"}, body: "{}"});
+      headers: {"Content-Type": "application/json"}, body: JSON.stringify({mode})});
     if (next.error) throw new Error(next.error);
     render(next);
     scheduleSpec(state);
@@ -20508,7 +20502,7 @@ async function playOnPastVictory() {
       waitForSupervisedSuccessor(state.server_instance, state.seed);
   } finally {
     playOnBusy = false;
-    if (button) button.disabled = false;
+    for (const button of buttons) button.disabled = false;
   }
 }
 document.getElementById("restart-sim").onclick = startNewSimulation;
