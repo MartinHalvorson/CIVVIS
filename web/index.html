@@ -1354,20 +1354,22 @@
     width: auto; margin-top: 14px; padding: 10px 18px; border-radius: 10px;
     font-size: 11px; letter-spacing: .06em;
   }
-  /* The result screen's answers, stacked. The offer that replaces the world
-     keeps the full-width gold it has always had; the two ways to keep it sit
-     compact underneath.
+  /* The result screen's answers keep their hierarchy: the offer that replaces
+     the world spans the row, while the two ways to keep it sit side by side
+     underneath.
      `.winner-content > *` sets every child to `display: block` further down
-     this sheet at the same specificity, so the column has to be named through
+     this sheet at the same specificity, so the grid has to be named through
      its parent to survive. */
   .winner-content > .winner-actions {
-    display: flex; flex-direction: column; gap: 9px; margin-top: 14px;
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px;
+    margin-top: 14px;
   }
-  .winner-actions .winner-again { margin-top: 0; }
+  .winner-actions .winner-again { margin: 0; }
+  .winner-actions .primary { grid-column: 1 / -1; justify-self: center; }
   /* Playing on is quieter than replacing the world, while both continuation
      rules remain equally legible choices. */
   .winner-playon {
-    align-self: center;
+    width: 100%;
     border-color: color-mix(in srgb, var(--winner-color, #d7b66a) 55%, #4a635a);
   }
   #tip {
