@@ -613,6 +613,23 @@ def played_by_hand(state: dict[str, Any]) -> bool:
     return state.get("spectate") is False
 
 
+def playing_on(state: dict[str, Any] | None, finished_seed: Any) -> bool:
+    """Whether this world was asked for more turns rather than retired.
+
+    A live world with a recorded result is one somebody pressed "one more
+    turn" on. The seed has to match as well: a server whose own cooldown
+    elapsed first has already rolled into the *next* world, which is live and
+    unrecorded but is emphatically not the same game, and must still be handed
+    over to a freshly built process.
+    """
+    return (
+        state is not None
+        and state.get("winner") is None
+        and state.get("decided") is not None
+        and state.get("seed") == finished_seed
+    )
+
+
 def should_nudge(state: dict[str, Any], stalled_for: float, timeout: float) -> bool:
     """Distinguish a dead spectator loop from an intentional GUI pause.
 
@@ -785,7 +802,13 @@ def session_settings(state: dict[str, Any], defaults: dict[str, Any]) -> dict[st
         "width": int(game_map.get("width") or defaults["width"]),
         "height": int(game_map.get("height") or defaults["height"]),
         "city_states": defaults["city_states"],
-        "turns": int(state.get("max_turns") or defaults["turns"]),
+        # Turns borrowed by "one more turn" are not a setting. A played-on
+        # world carries a raised `max_turns`, and feeding that back as the next
+        # `--turns` would ratchet the exhibition longer with every press, the
+        # same way counting visible majors once ratcheted the seat count down.
+        "turns": defaults["turns"]
+        if state.get("decided") is not None
+        else int(state.get("max_turns") or defaults["turns"]),
         "map": game_map.get("script") or defaults["map"],
         "speed": state.get("game_speed") or defaults["speed"],
     }
@@ -1761,10 +1784,21 @@ def main() -> int:
             remaining = FINAL_COUNTDOWN_SECONDS - (time.monotonic() - finished_seen_at)
             if remaining > 0:
                 time.sleep(remaining)
-            # It does accept a single-player game, which is exactly what the
-            # result screen offers. Somebody who takes the seat during the
-            # cooldown keeps it; the exhibition resumes when that game ends.
+            # The result screen is interactive, so the world may not be the one
+            # this branch started on. The same re-read answers both offers it
+            # makes: "one more turn" puts this world back into play, and the
+            # single-player start takes the process outright. Either way the
+            # server stays up and the exhibition resumes when that game ends.
             latest = read_state(args.port)
+            if playing_on(latest, finished_seed):
+                log("the finished world was asked for more turns; letting it play on")
+                state = latest
+                finished_key = None
+                last_progress = progress_marker(state)
+                progress_at = time.monotonic()
+                checkpointed_progress = None
+                time.sleep(args.poll)
+                continue
             if latest is not None and played_by_hand(latest):
                 log("a single-player game took this process; leaving it to the player")
                 state = latest
