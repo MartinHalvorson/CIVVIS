@@ -2547,6 +2547,17 @@ fn auto_step_loop(sh: Arc<Shared>) {
         // Once registered, its current frame must be painted before any more
         // simulation work starts.
         let simulation_frame_gate = sh.simulation_frame_gate.lock().unwrap();
+        // A request can pause while this loop is waiting for the frame gate.
+        // Check again after entering it so a play-on-and-pause transition can
+        // clear the winner without one already-admitted AI step slipping past
+        // the new pause.
+        if sh.paused.load(Ordering::Relaxed) {
+            over_since = None;
+            watched_turn = None;
+            drop(simulation_frame_gate);
+            std::thread::sleep(Duration::from_millis(150));
+            continue;
+        }
         let current_frame = {
             let s = sh.session.lock().unwrap();
             SpectatorFrame {
@@ -3215,10 +3226,10 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             decorate(&mut out, sh);
             respond_json(stream, &out);
         }
-        // "One more turn": carry the decided world on instead of retiring it.
-        // The countdown is cleared here rather than left to the stepper, so a
-        // state read between the press and the stepper's next pass never
-        // reports a restart that is no longer coming.
+        // Carry the decided world on instead of retiring it. `paused` is part
+        // of the same transition: the frame gate makes "look around" clear the
+        // winner and stop the stepper atomically, rather than racing a second
+        // request to /pace against the first continued turn.
         ("POST", "/play-on") => {
             let mode_name = parsed["mode"].as_str().unwrap_or("until_next_victory");
             let Some(mode) = PlayOnMode::parse(mode_name) else {
@@ -3228,8 +3239,19 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 );
                 return;
             };
+            let requested_pause = parsed.get("paused").and_then(Value::as_bool);
+            let simulation_frame_gate = sh.simulation_frame_gate.lock().unwrap();
             let mut session = sh.session.lock().unwrap();
             let played_on = session.play_on(mode);
+            if played_on {
+                if let Some(paused) = requested_pause {
+                    sh.paused.store(paused, Ordering::Relaxed);
+                    session.spectator_paused = paused;
+                }
+                // Clear this before taking the response snapshot, so it can
+                // never promise both a paused continuation and a new world.
+                sh.restart_in.store(u64::MAX, Ordering::Relaxed);
+            }
             let mut out = session.state();
             out["error"] = if played_on {
                 Value::Null
@@ -3237,9 +3259,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 json!("this game has no result to play on past")
             };
             drop(session);
-            if played_on {
-                sh.restart_in.store(u64::MAX, Ordering::Relaxed);
-            }
+            drop(simulation_frame_gate);
             decorate(&mut out, sh);
             respond_json(stream, &out);
         }
@@ -3788,9 +3808,9 @@ mod tests {
             &http_post(
                 port,
                 "/play-on",
-                "{\"mode\":\"until_next_victory\"}",
+                "{\"mode\":\"until_next_victory\",\"paused\":true}",
             )
-            .expect("play on"),
+            .expect("look around"),
         )
         .expect("play-on answers JSON");
         assert!(played_on["error"].is_null());
@@ -3810,8 +3830,18 @@ mod tests {
         assert!(played_on["turn_limit"].is_null(), "there is no new cap");
         assert_eq!(played_on["max_turns"], json!(3), "setup stays intact");
         assert_eq!(played_on["seed"], decided["seed"], "the same world");
+        assert_eq!(played_on["paused"], json!(true));
+        assert_eq!(played_on["spectator_paused"], json!(true));
 
-        http_post(port, "/pace", "{\"paused\":true}");
+        // "Take a look around" means the final map really is held. A pause
+        // posted separately from play-on could let the stepper claim one AI
+        // turn in between the two requests.
+        std::thread::sleep(Duration::from_millis(350));
+        let held = read("/state");
+        assert_eq!(held["seed"], decided["seed"]);
+        assert_eq!(held["turn"], played_on["turn"]);
+        assert!(held["winner"].is_null());
+        assert_eq!(held["paused"], json!(true));
     }
 
     /// Two tabs on one exhibition are two promises, not one.
@@ -6475,15 +6505,24 @@ mod tests {
         // countdown, because the supervisor owns that handoff.
         assert!(EMBEDDED_INDEX.contains("class=\"primary winner-again\" onclick=\"startNewSimulation()\""));
         assert!(EMBEDDED_INDEX.contains("id=\"respawn\" role=\"timer\""));
-        // Both finales also offer the other answer: keep this world. It is
-        // the reason the countdown has to be long enough to read — a button
-        // nobody can reach before the next world loads is not an offer.
+        // Both finales also offer three ways to keep this world. It is the
+        // reason the countdown has to be long enough to read — a button nobody
+        // can reach before the next world loads is not an offer.
+        assert!(EMBEDDED_INDEX.contains("id=\"play-on-look-around\""));
         assert!(EMBEDDED_INDEX.contains("id=\"play-on-next-victory\""));
         assert!(EMBEDDED_INDEX.contains("id=\"play-on-indefinite\""));
-        assert!(EMBEDDED_INDEX.contains("One more turn (play until next victory)"));
-        assert!(EMBEDDED_INDEX.contains("One more turn (play indefinitely)"));
-        assert!(EMBEDDED_INDEX.contains("async function playOnPastVictory(mode)"));
-        assert!(EMBEDDED_INDEX.contains("body: JSON.stringify({mode})"));
+        assert!(EMBEDDED_INDEX.contains("Take a look around"));
+        assert!(EMBEDDED_INDEX.contains("Play until next victory condition"));
+        assert!(EMBEDDED_INDEX.contains("Play indefinitely"));
+        assert!(EMBEDDED_INDEX.contains(
+            "playOnPastVictory('until_next_victory', true)"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "playOnPastVictory('until_next_victory', false)"
+        ));
+        assert!(EMBEDDED_INDEX.contains("playOnPastVictory('indefinite', false)"));
+        assert!(EMBEDDED_INDEX.contains("async function playOnPastVictory(mode, paused)"));
+        assert!(EMBEDDED_INDEX.contains("body: JSON.stringify({mode, paused})"));
         assert!(EMBEDDED_INDEX.contains("cancelSupervisedSuccessorWatch();"));
     }
 
