@@ -5297,6 +5297,62 @@ mod river_tests {
         let repeat = divide_into_regions(&wm, &land, &fertility, 6);
         assert_eq!(regions, repeat, "region division must not depend on chance");
     }
+    /// The measuring instrument for any change that moves map generation.
+    ///
+    /// The two spread tests each assert their property at one seed per map
+    /// size, so a change that shifts the RNG can fail them by luck. This runs
+    /// the same property over 400 worlds and reports how often it fails, which
+    /// is what tells you whether a failure is the change or the draw. Ignored
+    /// because it takes about two minutes.
+    ///
+    /// Baseline as of this commit: **5 failures in 400**, a 1.25% natural rate.
+    #[test]
+    #[ignore]
+    fn experiment_start_spacing_failure_rate() {
+        let rules = Rules::embedded();
+        let mut checked = 0usize;
+        let mut failed = 0usize;
+        for (index, size) in CIV6_MAP_SIZES.iter().enumerate() {
+            for seed in 0..40u64 {
+                let mut rng = Rng::new(700_000 + seed * 977 + index as u64);
+                let (wm, spawns) = generate(
+                    &rules,
+                    size.width,
+                    size.height,
+                    size.default_players,
+                    size.default_city_states,
+                    size.natural_wonders,
+                    size.continents,
+                    &mut rng,
+                );
+                let majors = &spawns[..size.default_players];
+                if majors.len() < 2 {
+                    continue;
+                }
+                let mut nearest: Vec<i32> = majors
+                    .iter()
+                    .map(|start| {
+                        majors
+                            .iter()
+                            .filter(|other| *other != start)
+                            .map(|other| wm.distance(*start, *other))
+                            .min()
+                            .unwrap_or(START_DISTANCE_MAJOR)
+                    })
+                    .collect();
+                let closest = nearest.iter().copied().min().unwrap();
+                let farthest = nearest.iter().copied().max().unwrap();
+                nearest.sort_unstable();
+                let typical = nearest[nearest.len() / 2].max(1);
+                checked += 1;
+                if !(closest * 100 / typical >= 70 && farthest * 100 / typical <= 200) {
+                    failed += 1;
+                }
+            }
+        }
+        eprintln!("SPACING checked={checked} failed={failed}");
+    }
+
     #[test]
     fn stock_map_profiles_produce_spread_and_complete_spawn_sets() {
         let rules = Rules::embedded();
