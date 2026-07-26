@@ -725,7 +725,7 @@ fn main() {
                 players_per_game: players as usize,
                 width: auto_dimension(&args, "--width", players, true),
                 height: auto_dimension(&args, "--height", players, false),
-                max_turns: arg(&args, "--turns", 250).max(1) as u32,
+                max_turns: arg(&args, "--turns", i64::from(defaults.max_turns)).max(1) as u32,
                 num_city_states: auto_cs(&args, players),
                 seed: arg(&args, "--seed", 1) as u64,
                 jobs: jobs_arg(&args),
