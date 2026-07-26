@@ -116,6 +116,13 @@ impl<T: Ai + ?Sized> Ai for Box<T> {
 /// never fires first, because `set_winner` runs inside `do_end_turn` before
 /// this condition is tested again.
 pub fn run_game<A: Ai>(g: &mut Game, ais: &mut [A]) {
+    // A headless rollout never serializes a player observation between
+    // actions. Explored ground, contacts and Natural-Wonder discovery remain
+    // gameplay state and are still maintained; only the large last-seen tile
+    // and city copies used to render fog are omitted. Interactive server
+    // stepping does not use `run_game`, so spectator and player displays keep
+    // complete observation memory.
+    g.set_fog_memory(false);
     while g.winner.is_none() && g.turn <= g.max_turns {
         let pid = g.current;
         ais[pid].take_turn(g, pid);
@@ -141,6 +148,12 @@ impl RandomAi {
 
 impl Ai for RandomAi {
     fn take_turn(&mut self, g: &mut Game, pid: usize) {
+        g.with_deferred_visibility(|g| self.take_turn_inner(g, pid));
+    }
+}
+
+impl RandomAi {
+    fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
         for _ in 0..60 {
             let acts: Vec<Action> = g
                 .legal_actions(pid)
@@ -924,9 +937,6 @@ impl BasicAi {
     /// unit per movement domain scouts at peace so the empire is not blind,
     /// while the rest remain available for patrol and defense.
     fn should_explore(&self, g: &Game, pid: usize, uid: u32, at_war: bool) -> bool {
-        if !self.has_exploration_target(g, pid, uid) {
-            return false;
-        }
         let doctrine = Self::unit_doctrine(g, uid);
         if doctrine == UnitDoctrine::Recon {
             return true;
@@ -1304,6 +1314,12 @@ impl BasicAi {
 
 impl Ai for BasicAi {
     fn take_turn(&mut self, g: &mut Game, pid: usize) {
+        g.with_deferred_visibility(|g| self.take_turn_inner(g, pid));
+    }
+}
+
+impl BasicAi {
+    fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
         self.minor = g.players[pid].is_minor;
         // Free Cities are diplomatically hostile like barbarians, but unlike
         // camps they keep developing their inherited cities and training
@@ -1470,7 +1486,7 @@ impl BasicAi {
 
     pub(crate) fn corporations(&self, g: &mut Game, pid: usize) {
         if let Some(action) = g
-            .legal_actions_within(pid, ActionFamilies::CHEAP)
+            .legal_actions_within(pid, ActionFamilies::CORPORATIONS)
             .into_iter()
             .find(|action| matches!(action, Action::FoundCorporation { .. }))
         {
@@ -2362,7 +2378,7 @@ impl BasicAi {
         });
         if has_ready_encampment {
             let strikes: Vec<Action> = g
-                .legal_actions_within(pid, ActionFamilies::CHEAP)
+                .legal_actions_within(pid, ActionFamilies::CORE)
                 .into_iter()
                 .filter(|action| matches!(action, Action::EncampmentStrike { .. }))
                 .collect();
@@ -3847,7 +3863,7 @@ impl BasicAi {
                     break;
                 }
                 let action = g
-                    .legal_actions_within(pid, ActionFamilies::CHEAP)
+                    .legal_actions_within(pid, ActionFamilies::FORMATIONS)
                     .into_iter()
                     .find(|action| matches!(action, Action::CombineUnits { .. }));
                 let Some(action) = action else { break };
@@ -3883,7 +3899,7 @@ impl BasicAi {
         };
         while has_link_candidate(g) {
             let action = g
-                .legal_actions_within(pid, ActionFamilies::CHEAP)
+                .legal_actions_within(pid, ActionFamilies::FORMATIONS)
                 .into_iter()
                 .find(|action| match action {
                     Action::LinkUnits { unit, with } => {

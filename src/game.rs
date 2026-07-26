@@ -5650,6 +5650,11 @@ mod action_family_tests {
         ActionFamilies::EMPIRE,
         ActionFamilies::DEALS,
     ];
+    const OPTIONAL_FAMILIES: [ActionFamilies; 3] = [
+        ActionFamilies::CORPORATIONS,
+        ActionFamilies::PRODUCTS,
+        ActionFamilies::FORMATIONS,
+    ];
 
     fn labels(actions: &[Action]) -> Vec<String> {
         actions.iter().map(|action| format!("{action:?}")).collect()
@@ -5729,7 +5734,7 @@ mod action_family_tests {
             labels(&game.legal_actions_within(pid, ActionFamilies::CHEAP))
                 .into_iter()
                 .collect();
-        for family in FAMILIES {
+        for family in FAMILIES.into_iter().chain(OPTIONAL_FAMILIES) {
             covered.extend(labels(&game.legal_actions_within(pid, family)));
         }
         assert_eq!(covered, all.into_iter().collect::<BTreeSet<_>>());
@@ -5742,16 +5747,12 @@ mod action_family_tests {
         let game = played_in_game();
         let pid = game.current;
         let all = game.legal_actions(pid);
-        let cases: [(ActionFamilies, fn(&Action) -> bool); 5] = [
+        let cases: [(ActionFamilies, fn(&Action) -> bool); 8] = [
             (ActionFamilies::CHEAP, |action| {
                 matches!(
                     action,
-                    Action::FoundCorporation { .. }
-                        | Action::MoveProduct { .. }
-                        | Action::CityStrike { .. }
+                    Action::CityStrike { .. }
                         | Action::EncampmentStrike { .. }
-                        | Action::CombineUnits { .. }
-                        | Action::LinkUnits { .. }
                         | Action::DeclareWar { .. }
                         | Action::DeclareWarWithCasusBelli { .. }
                 )
@@ -5785,6 +5786,18 @@ mod action_family_tests {
             (ActionFamilies::DEALS, |action| {
                 matches!(action, Action::Trade { .. } | Action::CongressVote { .. })
             }),
+            (ActionFamilies::CORPORATIONS, |action| {
+                matches!(action, Action::FoundCorporation { .. })
+            }),
+            (ActionFamilies::PRODUCTS, |action| {
+                matches!(action, Action::MoveProduct { .. })
+            }),
+            (ActionFamilies::FORMATIONS, |action| {
+                matches!(
+                    action,
+                    Action::CombineUnits { .. } | Action::LinkUnits { .. }
+                )
+            }),
         ];
         for (families, wanted) in cases {
             let narrow: Vec<String> = labels(
@@ -5801,6 +5814,53 @@ mod action_family_tests {
                     .collect::<Vec<_>>(),
             );
             assert_eq!(narrow, full, "{families:?} lost an action it promised");
+        }
+    }
+}
+
+#[cfg(test)]
+mod agenda_cache_tests {
+    use super::*;
+
+    #[test]
+    fn batched_agenda_metrics_preserve_every_pairwise_stance() {
+        let mut game = Game::new_with(GameOptions::new(6, 32, 22, 90_003, 80, 0));
+        let majors: Vec<usize> = game
+            .players
+            .iter()
+            .filter(|player| player.alive && !player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .collect();
+        let mut expected = Vec::new();
+        for observer in majors.iter().copied() {
+            if game.agenda_of(observer).is_none() {
+                continue;
+            }
+            for subject in majors.iter().copied().filter(|subject| *subject != observer) {
+                let opinion = game.agenda_opinion(observer, subject);
+                let stance = if opinion >= 15.0 {
+                    1
+                } else if opinion <= -15.0 {
+                    -1
+                } else {
+                    0
+                };
+                expected.push((observer, subject, stance));
+            }
+        }
+
+        game.process_agendas();
+
+        for (observer, subject, stance) in expected {
+            assert_eq!(
+                game.players[observer]
+                    .agenda_view
+                    .get(&subject)
+                    .copied()
+                    .unwrap_or(0),
+                stance,
+                "cached agenda metric changed {observer}'s stance toward {subject}"
+            );
         }
     }
 }
@@ -10556,6 +10616,11 @@ pub struct QueryCache {
     yields: std::cell::RefCell<Option<BTreeMap<u32, Yields>>>,
     traversal: std::cell::RefCell<Option<BTreeMap<u32, TraversalClass>>>,
     amenities: std::cell::RefCell<Option<BTreeMap<u32, i64>>>,
+    // Ownership-filtered ids are requested throughout AI evaluation. A
+    // 100-seat game otherwise rescans every world entity for each request,
+    // even when a read-only phase asks for the same empire repeatedly.
+    unit_ids: std::cell::RefCell<Option<BTreeMap<usize, Vec<u32>>>>,
+    city_ids: std::cell::RefCell<Option<BTreeMap<usize, Vec<u32>>>>,
     // Three empire-wide derivations that callers reach for one city at a
     // time. Each is keyed by player, because that is the scope it is
     // computed over, not the scope it is read at.
@@ -10600,6 +10665,8 @@ impl Drop for QueryMemo<'_> {
             *self.game.query_memo.yields.borrow_mut() = None;
             *self.game.query_memo.traversal.borrow_mut() = None;
             *self.game.query_memo.amenities.borrow_mut() = None;
+            *self.game.query_memo.unit_ids.borrow_mut() = None;
+            *self.game.query_memo.city_ids.borrow_mut() = None;
             *self.game.query_memo.lux_alloc.borrow_mut() = None;
             *self.game.query_memo.lux_names.borrow_mut() = None;
             *self.game.query_memo.housed_works.borrow_mut() = None;
@@ -10689,6 +10756,18 @@ pub struct TraversalClass {
 pub struct RoutingCache {
     stamp: u64,
     zones: Vec<(TraversalClass, std::sync::Arc<Vec<u32>>)>,
+    paths: Vec<PlannedRoute>,
+}
+
+#[derive(Clone)]
+struct PlannedRoute {
+    unit: u32,
+    target: Pos,
+    range: i32,
+    /// Complete path including the position where it was planned and the
+    /// stopping tile. Looking up the unit's live position makes repeated
+    /// calls before a move harmless and advances naturally after one.
+    path: Vec<Pos>,
 }
 
 /// Everything a player's luxury access is counted from, taken once rather
@@ -10843,6 +10922,25 @@ impl From<EventLog> for Vec<Event> {
 #[allow(dead_code)]
 fn yes() -> bool {
     true
+}
+
+/// Runtime-only coalescing state for observation maintenance.
+///
+/// A game clone is a new simulation branch, not a continuation of the
+/// caller's stack frame, so it deliberately starts outside any surrounding
+/// batch. The ordinary `Game` clone can therefore stay derived while tactical
+/// lookahead never inherits an unfinished refresh.
+#[derive(Default)]
+struct VisibilityBatch {
+    depth: usize,
+    refresh_all: bool,
+    refresh_teams: BTreeSet<usize>,
+}
+
+impl Clone for VisibilityBatch {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
 }
 
 fn bump(p: &mut Player, key: &str) {
@@ -12492,12 +12590,15 @@ pub fn seat_civs_randomized(
         .collect()
 }
 
-/// Which of the expensive families of legal action to enumerate.
+/// Which families of legal action to enumerate.
 ///
-/// Everything outside these four is cheap and always enumerated: unit
-/// upgrades, spy missions, links, fortifying, corporations, product moves,
-/// levies, research and civic choices, city strikes, and war, peace and
-/// denouncement. The four families are the blocks worth skipping.
+/// The zero-bit core is always enumerated: unit upgrades, spy missions,
+/// fortifying, levies, research and civic choices, city strikes, and war,
+/// peace and denouncement. The named families are blocks worth skipping when
+/// a caller only wants a different kind. Products, corporations and
+/// formations are individually small in a new game but scale with every city
+/// or pair of units, so repeatedly treating them as free made otherwise
+/// narrowed AI queries quadratic in a developed empire.
 ///
 /// `Buy` and `BuyBuilding` are produced by both `PURCHASES` and `EMPIRE` —
 /// the latter sells Naturalists, Rock Bands and Great Person patronage — so
@@ -12507,9 +12608,9 @@ pub fn seat_civs_randomized(
 pub struct ActionFamilies(u8);
 
 impl ActionFamilies {
-    /// Only the cheap blocks: no unit orders, purchases, empire management
-    /// or offers.
-    pub const CHEAP: ActionFamilies = ActionFamilies(0);
+    /// The always-enumerated core and no optional family. Useful to a caller
+    /// looking only for strikes or diplomatic declarations.
+    pub const CORE: ActionFamilies = ActionFamilies(0);
     /// Everything a unit can be ordered to do: movement, attacks, promotions,
     /// improvements, religious missions, air operations, settling.
     pub const UNITS: ActionFamilies = ActionFamilies(1);
@@ -12521,7 +12622,16 @@ impl ActionFamilies {
     /// Incoming deals, offers to make, dedications and congress ballots.
     /// Valuing offers is the single most expensive block of the enumeration.
     pub const DEALS: ActionFamilies = ActionFamilies(8);
-    pub const ALL: ActionFamilies = ActionFamilies(15);
+    /// Founding an industry-backed corporation on an owned tile.
+    pub const CORPORATIONS: ActionFamilies = ActionFamilies(16);
+    /// Moving products between slots in the empire's cities.
+    pub const PRODUCTS: ActionFamilies = ActionFamilies(32);
+    /// Combining Corps/Armies and linking support or naval escorts.
+    pub const FORMATIONS: ActionFamilies = ActionFamilies(64);
+    /// The historical "cheap" query: the core plus every small optional
+    /// family, but no unit orders, purchases, empire management or offers.
+    pub const CHEAP: ActionFamilies = ActionFamilies(112);
+    pub const ALL: ActionFamilies = ActionFamilies(127);
 
     pub fn has(self, family: ActionFamilies) -> bool {
         self.0 & family.0 == family.0
@@ -12679,6 +12789,11 @@ pub struct Game {
     /// memory turns it off for a faster clone-and-step.
     #[serde(skip, default = "yes")]
     track_fog_memory: bool,
+    /// AI turns apply many actions synchronously, with no observer able to
+    /// read the half-finished position. Coalesce their full-empire visibility
+    /// refreshes and publish the same final observation once at the boundary.
+    #[serde(skip)]
+    visibility_batch: VisibilityBatch,
     pub rng: Rng,
     pub seed: u64,
     /// Key into `rules.difficulties`. Prince is the unhandicapped reference.
@@ -12973,6 +13088,7 @@ impl From<GameSer> for Game {
             query_memo: QueryCache::default(),
             remembered_under: Vec::new(),
             track_fog_memory: true,
+            visibility_batch: VisibilityBatch::default(),
             rng: s.rng,
             seed: s.seed,
             difficulty: s.difficulty,
@@ -13292,6 +13408,7 @@ impl Game {
             query_memo: QueryCache::default(),
             remembered_under: Vec::new(),
             track_fog_memory: true,
+            visibility_batch: VisibilityBatch::default(),
             rng,
             seed,
             difficulty,
@@ -13772,6 +13889,16 @@ impl Game {
         score.clamp(-1.0, 1.0)
     }
 
+    fn relational_agenda_measure(measure: &str) -> bool {
+        matches!(
+            measure,
+            "city_state_rivalry"
+                | "loyalty_to_friends"
+                | "shared_luxuries"
+                | "trustworthiness"
+        )
+    }
+
     /// Announce agenda stances that have changed since last turn. A leader
     /// says nothing while merely indifferent, which keeps the log to the
     /// moments a relationship actually turned.
@@ -13783,15 +13910,62 @@ impl Game {
             .filter(|player| player.alive && !player.is_minor && !player.is_barbarian)
             .map(|player| player.id)
             .collect();
-        for observer in majors.clone() {
-            if self.agenda_of(observer).is_none() {
-                continue;
+        // Comparative agendas read the same empire metric for every
+        // observer/subject pair. Snapshot each distinct metric once, then
+        // reproduce the original peer-order sum for each possible subject.
+        // Without this, 100 civilizations turn four cheap empire scans into
+        // roughly a million full-world scans at every round boundary.
+        let comparative_measures: BTreeSet<String> = majors
+            .iter()
+            .filter_map(|observer| self.agenda_of(*observer))
+            .map(|agenda| agenda.measure.clone())
+            .filter(|measure| !Self::relational_agenda_measure(measure))
+            .collect();
+        let mut comparative_raw: BTreeMap<(String, usize), f64> = BTreeMap::new();
+        for measure in comparative_measures {
+            let values: Vec<(usize, f64)> = majors
+                .iter()
+                .map(|subject| (*subject, self.agenda_measure(*subject, &measure)))
+                .collect();
+            for (subject, value) in &values {
+                let peers: Vec<f64> = values
+                    .iter()
+                    .filter(|(other, _)| other != subject)
+                    .map(|(_, value)| *value)
+                    .collect();
+                if peers.is_empty() {
+                    continue;
+                }
+                let reference = peers.iter().sum::<f64>() / peers.len() as f64;
+                comparative_raw.insert(
+                    (measure.clone(), *subject),
+                    (*value - reference) / reference.max(1.0),
+                );
             }
-            for subject in majors.clone() {
+        }
+
+        for observer in majors.iter().copied() {
+            let Some(agenda) = self.agenda_of(observer) else {
+                continue;
+            };
+            let agenda_name = agenda.name.clone();
+            let measure = agenda.measure.clone();
+            let direction = if agenda.approves_of == "less" { -1.0 } else { 1.0 };
+            for subject in majors.iter().copied() {
                 if subject == observer {
                     continue;
                 }
-                let opinion = self.agenda_opinion(observer, subject);
+                let raw = match measure.as_str() {
+                    "city_state_rivalry" => self.city_state_rivalry(observer, subject),
+                    "loyalty_to_friends" => self.loyalty_to_friends(observer, subject),
+                    "shared_luxuries" => self.shared_luxuries(observer, subject),
+                    "trustworthiness" => self.trustworthiness(observer, subject),
+                    _ => comparative_raw
+                        .get(&(measure.clone(), subject))
+                        .copied()
+                        .unwrap_or(0.0),
+                };
+                let opinion = (direction * raw * 30.0).clamp(-30.0, 30.0);
                 let stance = if opinion >= THRESHOLD {
                     1_i8
                 } else if opinion <= -THRESHOLD {
@@ -13810,13 +13984,9 @@ impl Game {
                 self.players[observer].agenda_view.insert(subject, stance);
                 let observer_civ = self.civ_name(observer);
                 let subject_civ = self.civ_name(subject);
-                let agenda = self
-                    .agenda_of(observer)
-                    .map(|spec| spec.name.clone())
-                    .unwrap_or_default();
                 let message = match stance {
-                    1 => format!("{observer_civ} approves of {subject_civ} ({agenda})"),
-                    -1 => format!("{observer_civ} disapproves of {subject_civ} ({agenda})"),
+                    1 => format!("{observer_civ} approves of {subject_civ} ({agenda_name})"),
+                    -1 => format!("{observer_civ} disapproves of {subject_civ} ({agenda_name})"),
                     _ => format!("{observer_civ}'s view of {subject_civ} has cooled"),
                 };
                 self.note(subject, "Diplomacy", message.clone(), None);
@@ -14438,19 +14608,47 @@ impl Game {
     }
 
     pub fn player_unit_ids(&self, pid: usize) -> Vec<u32> {
-        self.units
+        if let Some(ids) = self
+            .query_memo
+            .unit_ids
+            .borrow()
+            .as_ref()
+            .and_then(|memo| memo.get(&pid))
+        {
+            return ids.clone();
+        }
+        let ids: Vec<u32> = self
+            .units
             .values()
             .filter(|u| u.owner == pid)
             .map(|u| u.id)
-            .collect()
+            .collect();
+        if let Some(memo) = self.query_memo.unit_ids.borrow_mut().as_mut() {
+            memo.insert(pid, ids.clone());
+        }
+        ids
     }
 
     pub fn player_city_ids(&self, pid: usize) -> Vec<u32> {
-        self.cities
+        if let Some(ids) = self
+            .query_memo
+            .city_ids
+            .borrow()
+            .as_ref()
+            .and_then(|memo| memo.get(&pid))
+        {
+            return ids.clone();
+        }
+        let ids: Vec<u32> = self
+            .cities
             .values()
             .filter(|c| c.owner == pid)
             .map(|c| c.id)
-            .collect()
+            .collect();
+        if let Some(memo) = self.query_memo.city_ids.borrow_mut().as_mut() {
+            memo.insert(pid, ids.clone());
+        }
+        ids
     }
 
     /// Whether `viewer` has made contact with `other` and may therefore be
@@ -23504,16 +23702,23 @@ impl Game {
             return;
         }
         let mut heights = self.height_field();
-        let mut visible = self.player_vision(&mut heights, pid);
         let height = self.see_from_level(pos);
-        visible.union_with(&self.visible_tiles_from(
+        let visible = self.visible_tiles_from(
             &mut heights,
             pos,
             radius,
             height,
             false,
             false,
-        ));
+        );
+        // `apply` refreshes the complete team view after an ordinary action.
+        // Here only the sight just revealed by this mutation is needed. In
+        // particular, a moving unit must keep ground and Wonders seen en route
+        // even when it ends the turn somewhere else; recomputing every other
+        // unit's unchanged sight at every step merely duplicates the refresh
+        // below. Recording contacts locally preserves the same mid-turn
+        // diplomacy unlocks while an AI turn is being coalesced.
+        self.record_contacts_in_sight(pid, &visible);
         self.refresh_visibility_snapshot(pid, &visible);
     }
 
@@ -24467,16 +24672,28 @@ impl Game {
 
     /// Refresh one player's last-known map from exactly the tiles currently
     /// visible to that player. Nothing under fog is touched.
+    #[cfg(test)]
     fn refresh_player_visibility(&mut self, pid: usize) {
+        let memory_world = self.snapshot_world_stamp(pid);
+        let mut heights = self.height_field();
+        self.refresh_player_visibility_via(pid, &mut heights, memory_world);
+    }
+
+    fn refresh_player_visibility_via(
+        &mut self,
+        pid: usize,
+        heights: &mut HeightField,
+        memory_world: u64,
+    ) {
         if pid >= self.players.len() {
             return;
         }
-        let visible = self.player_vision(&mut self.height_field(), pid);
+        let visible = self.player_vision(heights, pid);
         // Ahead of the snapshot's early-out rather than inside it: that guard
         // is keyed on the seat's own memory and the world's cities, so a rival
         // unit walking into a standing scout's sight would not disturb it.
         self.record_contacts_in_sight(pid, &visible);
-        self.refresh_visibility_snapshot(pid, &visible);
+        self.refresh_visibility_snapshot_with_world(pid, &visible, memory_world);
     }
 
     /// Whether a player's memory of one tile already matches what is there.
@@ -24497,18 +24714,12 @@ impl Game {
         remembered.owner == owner && &remembered.tile == tile
     }
 
-    /// Everything a seat's remembered map is drawn from.
-    ///
-    /// The snapshot below is idempotent and only ever adds, so taking it
-    /// again over the same world — or over fewer tiles than last time —
-    /// writes nothing. Establishing that is worth doing because merely
-    /// reaching for a seat mutably copies it.
     /// Everything the *tile* half of the snapshot is drawn from, and nothing
     /// else.
     ///
     /// `remembered_tile_is_current` reads a tile's contents and the seat that
     /// owns the hex — not a city's population, its walls, its religion or
-    /// anybody's research. Those all live in `memory_stamp`, which is what
+    /// anybody's research. Those all live in `memory_world_stamp`, which is what
     /// decides whether the whole pass can be skipped; folding them in here too
     /// would throw away a seat's reconciled ground every time any city
     /// anywhere gained a point of pressure.
@@ -24527,16 +24738,17 @@ impl Game {
         key
     }
 
-    fn memory_stamp(&self, pid: usize) -> u64 {
-        let seat = &self.players[pid];
+    /// Everything shared by every seat's remembered map.
+    ///
+    /// Full team/all-player refreshes compute this once, then add the three
+    /// seat-local collection lengths below. This avoids walking every city's
+    /// defenses and religious pressures once per player in the same sweep.
+    fn memory_world_stamp(&self) -> u64 {
         let mut key = vision_key(&[
             self.map.tiles.epoch(),
             self.turn as u64,
             self.world_era as u64,
             self.track_fog_memory as u64,
-            seat.explored.len() as u64,
-            seat.remembered_tiles.len() as u64,
-            seat.remembered_cities.len() as u64,
         ]);
         for other in self.players.iter() {
             // A city's outer defenses are read from the trees.
@@ -24570,13 +24782,108 @@ impl Game {
         key
     }
 
+    fn snapshot_world_stamp(&self, pid: usize) -> u64 {
+        let keeps_observation_memory = self.track_fog_memory
+            && self
+                .players
+                .get(pid)
+                .is_some_and(|player| !player.is_minor && !player.is_barbarian);
+        if keeps_observation_memory {
+            self.memory_world_stamp()
+        } else {
+            // With last-seen observation memory disabled, a snapshot only
+            // grows explored ground and discovers Natural Wonders. Both are
+            // determined by the map, not by every city's population,
+            // religion, defenses or every civilization's tree lengths.
+            vision_key(&[
+                self.map.tiles.epoch(),
+                self.turn as u64,
+                self.world_era as u64,
+                self.track_fog_memory as u64,
+            ])
+        }
+    }
+
+    fn memory_stamp_with_world(&self, pid: usize, world: u64) -> u64 {
+        let seat = &self.players[pid];
+        vision_key(&[
+            world,
+            seat.explored.len() as u64,
+            seat.remembered_tiles.len() as u64,
+            seat.remembered_cities.len() as u64,
+        ])
+    }
+
     /// Stop (or resume) maintaining the remembered map of fogged tiles and
     /// cities. Outcomes are unchanged either way; only observations are.
     pub fn set_fog_memory(&mut self, track: bool) {
         self.track_fog_memory = track;
     }
 
+    /// Run a synchronous action sequence while coalescing full visibility
+    /// maintenance at its boundary.
+    ///
+    /// Built-in agents expose no intermediate state: a server call enters
+    /// `take_turn`, receives control back after the seat has finished, and
+    /// only then can serialize another frame. The old path nevertheless
+    /// rebuilt that seat's complete sight after every purchase, policy swap,
+    /// production choice and unit step, then rebuilt every seat again at End
+    /// Turn. This preserves the exact boundary state while doing those full
+    /// sweeps once. Local `reveal` calls still record explored ground, Wonders
+    /// and newly met civilizations immediately because agents can consult
+    /// those gameplay facts later in the same turn.
+    pub fn with_deferred_visibility<R>(
+        &mut self,
+        actions: impl FnOnce(&mut Game) -> R,
+    ) -> R {
+        self.visibility_batch.depth += 1;
+        let result = actions(self);
+        self.visibility_batch.depth -= 1;
+        if self.visibility_batch.depth == 0 {
+            self.flush_deferred_visibility();
+        }
+        result
+    }
+
+    fn flush_deferred_visibility(&mut self) {
+        if self.visibility_batch.refresh_all {
+            self.visibility_batch.refresh_all = false;
+            self.visibility_batch.refresh_teams.clear();
+            self.refresh_all_visibility();
+            return;
+        }
+        let teams = std::mem::take(&mut self.visibility_batch.refresh_teams);
+        for pid in teams {
+            self.refresh_team_visibility(pid);
+        }
+    }
+
+    fn defer_or_refresh_visibility(&mut self, pid: usize, all: bool) {
+        if self.visibility_batch.depth > 0 {
+            if all {
+                self.visibility_batch.refresh_all = true;
+                self.visibility_batch.refresh_teams.clear();
+            } else if !self.visibility_batch.refresh_all {
+                self.visibility_batch.refresh_teams.insert(pid);
+            }
+        } else if all {
+            self.refresh_all_visibility();
+        } else {
+            self.refresh_team_visibility(pid);
+        }
+    }
+
     fn refresh_visibility_snapshot(&mut self, pid: usize, visible: &TileBits) {
+        let memory_world = self.snapshot_world_stamp(pid);
+        self.refresh_visibility_snapshot_with_world(pid, visible, memory_world);
+    }
+
+    fn refresh_visibility_snapshot_with_world(
+        &mut self,
+        pid: usize,
+        visible: &TileBits,
+        memory_world: u64,
+    ) {
         if self.remembered_under.len() < self.players.len() {
             self.remembered_under
                 .resize(self.players.len(), (0, 0, TileBits::default()));
@@ -24584,7 +24891,7 @@ impl Game {
         // A move reveals over a wider set than the refresh that follows it, so
         // the second of the pair is the common case rather than a corner of
         // one: everything it would record was recorded a moment ago.
-        let stamp = self.memory_stamp(pid);
+        let stamp = self.memory_stamp_with_world(pid, memory_world);
         // When the stamp still matches, every tile the last pass covered was
         // reconciled then and nothing it reads has moved since — the stamp is
         // exactly the statement that the map, the cities and this seat's
@@ -24619,7 +24926,7 @@ impl Game {
         // Record the world as it stands *after* the snapshot: taking one grows
         // what the seat has explored, which is itself part of the stamp the
         // next call will compute.
-        let settled = self.memory_stamp(pid);
+        let settled = self.memory_stamp_with_world(pid, memory_world);
         let settled_tiles = self.tile_memory_stamp(pid);
         if let Some(slot) = self.remembered_under.get_mut(pid) {
             *slot = (settled, settled_tiles, taken);
@@ -24845,16 +25152,28 @@ impl Game {
     }
 
     fn refresh_all_visibility(&mut self) {
+        let memory_world = if self.track_fog_memory {
+            self.memory_world_stamp()
+        } else {
+            self.snapshot_world_stamp(0)
+        };
+        let mut heights = self.height_field();
         for pid in 0..self.players.len() {
-            self.refresh_player_visibility(pid);
+            self.refresh_player_visibility_via(pid, &mut heights, memory_world);
         }
     }
 
     fn refresh_team_visibility(&mut self, pid: usize) {
         let members = self.team_members(pid);
+        let memory_world = if self.track_fog_memory {
+            self.memory_world_stamp()
+        } else {
+            self.snapshot_world_stamp(pid)
+        };
+        let mut heights = self.height_field();
         for member in members {
             if self.players[member].alive {
-                self.refresh_player_visibility(member);
+                self.refresh_player_visibility_via(member, &mut heights, memory_world);
             }
         }
     }
@@ -25395,6 +25714,24 @@ impl Game {
         if !self.zone_connected(uid, to, range) {
             return None; // proven: no chain of traversable tiles links them
         }
+        let cached_next = {
+            let routing = self.routing.borrow();
+            routing
+                .paths
+                .iter()
+                .find(|route| route.unit == uid && route.target == to && route.range == range)
+                .and_then(|route| {
+                    route
+                        .path
+                        .iter()
+                        .position(|position| *position == start)
+                        .and_then(|index| route.path.get(index + 1))
+                        .copied()
+                })
+        };
+        if cached_next.is_some_and(|next| self.can_enter(uid, start, next)) {
+            return cached_next;
+        }
 
         // A* keeps known-target routing cheap enough for high-throughput
         // self-play: the zone check above has already rejected disconnected
@@ -25453,15 +25790,27 @@ impl Game {
                 frontier.push(Reverse((estimate, Reverse(next_distance), n)));
             }
         }
-        let mut step = goal?;
-        while parent[step] != start_index as u32 {
-            let previous = parent[step];
+        let mut cursor = goal?;
+        let mut reverse_path = vec![self.map.tiles.values().as_slice()[cursor].pos];
+        while cursor != start_index {
+            let previous = parent[cursor];
             if previous == NO_PARENT {
                 return None;
             }
-            step = previous as usize;
+            cursor = previous as usize;
+            reverse_path.push(self.map.tiles.values().as_slice()[cursor].pos);
         }
-        Some(self.map.tiles.values().as_slice()[step].pos)
+        reverse_path.reverse();
+        let step = *reverse_path.get(1)?;
+        let mut routing = self.routing.borrow_mut();
+        routing.paths.retain(|route| route.unit != uid);
+        routing.paths.push(PlannedRoute {
+            unit: uid,
+            target: to,
+            range,
+            path: reverse_path,
+        });
+        Some(step)
     }
 
     /// Terrain/domain legality for future route segments. Dynamic unit
@@ -25525,6 +25874,7 @@ impl Game {
             if cache.stamp != stamp {
                 cache.stamp = stamp;
                 cache.zones.clear();
+                cache.paths.clear();
             }
             if let Some((_, zones)) = cache.zones.iter().find(|(c, _)| *c == class) {
                 return zones.clone();
@@ -27682,6 +28032,8 @@ impl Game {
             *self.query_memo.yields.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.traversal.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.amenities.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.unit_ids.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.city_ids.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.lux_alloc.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.lux_names.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.housed_works.borrow_mut() = Some(BTreeMap::new());
@@ -31036,44 +31388,52 @@ impl Game {
                 acts.push(Action::ConvertBarbarians { unit: uid });
             }
         }
-        for city in self.cities.values().filter(|city| city.owner == pid) {
-            for position in &city.owned_tiles {
-                if self.can_found_corporation(pid, *position) {
-                    acts.push(Action::FoundCorporation { pos: *position });
-                }
-            }
-            for product in &city.products {
-                for target in self.cities.values().filter(|target| {
-                    target.owner == pid
-                        && target.id != city.id
-                        && target.products.len() < self.product_capacity(target)
-                }) {
-                    acts.push(Action::MoveProduct {
-                        from: city.id,
-                        to: target.id,
-                        product: product.clone(),
-                    });
+        if families.has(ActionFamilies::CORPORATIONS) {
+            for city in self.cities.values().filter(|city| city.owner == pid) {
+                for position in &city.owned_tiles {
+                    if self.can_found_corporation(pid, *position) {
+                        acts.push(Action::FoundCorporation { pos: *position });
+                    }
                 }
             }
         }
-        let owned_units = self.player_unit_ids(pid);
-        for (index, &uid) in owned_units.iter().enumerate() {
-            for &other in &owned_units[index + 1..] {
-                if self.can_combine_units(pid, uid, other).is_some() {
-                    acts.push(Action::CombineUnits {
-                        unit: uid,
-                        with: other,
-                    });
+        if families.has(ActionFamilies::PRODUCTS) {
+            for city in self.cities.values().filter(|city| city.owner == pid) {
+                for product in &city.products {
+                    for target in self.cities.values().filter(|target| {
+                        target.owner == pid
+                            && target.id != city.id
+                            && target.products.len() < self.product_capacity(target)
+                    }) {
+                        acts.push(Action::MoveProduct {
+                            from: city.id,
+                            to: target.id,
+                            product: product.clone(),
+                        });
+                    }
                 }
-                if self.can_link_units(pid, uid, other) {
-                    let uid_military =
-                        self.rules.units[self.units[&uid].kind.as_str()].class == "military";
-                    let (unit, with) = if uid_military {
-                        (uid, other)
-                    } else {
-                        (other, uid)
-                    };
-                    acts.push(Action::LinkUnits { unit, with });
+            }
+        }
+        if families.has(ActionFamilies::FORMATIONS) {
+            let owned_units = self.player_unit_ids(pid);
+            for (index, &uid) in owned_units.iter().enumerate() {
+                for &other in &owned_units[index + 1..] {
+                    if self.can_combine_units(pid, uid, other).is_some() {
+                        acts.push(Action::CombineUnits {
+                            unit: uid,
+                            with: other,
+                        });
+                    }
+                    if self.can_link_units(pid, uid, other) {
+                        let uid_military =
+                            self.rules.units[self.units[&uid].kind.as_str()].class == "military";
+                        let (unit, with) = if uid_military {
+                            (uid, other)
+                        } else {
+                            (other, uid)
+                        };
+                        acts.push(Action::LinkUnits { unit, with });
+                    }
                 }
             }
         }
@@ -32191,11 +32551,7 @@ impl Game {
             ) {
                 self.sync_war_log();
             }
-            if matches!(action, Action::EndTurn) {
-                self.refresh_all_visibility();
-            } else {
-                self.refresh_team_visibility(pid);
-            }
+            self.defer_or_refresh_visibility(pid, matches!(action, Action::EndTurn));
             self.log.push(pid, action.clone());
         }
         r
@@ -41411,7 +41767,8 @@ impl Game {
         self.record_emergency_presence(pid);
         self.process_influence(pid);
         self.irradiate_units(pid);
-        for uid in self.player_unit_ids(pid) {
+        let turn_unit_ids = self.player_unit_ids(pid);
+        for uid in turn_unit_ids.iter().copied() {
             let (kind, hp, acted, attacks_left, air_patrol) = {
                 let u = &self.units[&uid];
                 (u.kind.clone(), u.hp, u.acted, u.attacks_left, u.air_patrol)
@@ -41461,7 +41818,7 @@ impl Game {
         }
         // Snapshot ZOC after every per-turn stop flag has been cleared. This
         // distinguishes beginning a turn in ZOC from entering one mid-turn.
-        for uid in self.player_unit_ids(pid) {
+        for uid in turn_unit_ids.iter().copied() {
             let started_in_zoc =
                 !self.unit_ignores_zoc(uid) && self.in_enemy_zoc_for(uid, self.units[&uid].pos);
             self.units.get_mut(&uid).unwrap().started_turn_in_zoc = started_in_zoc;
@@ -41470,7 +41827,8 @@ impl Game {
         let mut cul = 0.0;
         let mut gold = 0.0;
         let mut faith = 0.0;
-        for cid in self.player_city_ids(pid) {
+        let turn_city_ids = self.player_city_ids(pid);
+        for cid in turn_city_ids.iter().copied() {
             let ys = self.process_city(pid, cid);
             sci += ys.science;
             cul += ys.culture;
@@ -41546,7 +41904,7 @@ impl Game {
             if first {
                 self.share_team_technology_boost(pid, &node);
             }
-            for city in self.player_city_ids(pid) {
+            for city in turn_city_ids.iter().copied() {
                 self.modernize_unit_queue(pid, city);
             }
             self.drop_obsolete_production(pid);
@@ -42287,9 +42645,18 @@ impl Game {
         city.extra_strikes_used = 0;
         city.encampment_struck = false;
         city.encampment_extra_strikes_used = 0;
-        let mut ys = self.city_yields(cid);
-        let housing = self.city_housing(&self.cities[&cid]);
-        let am = self.city_amenity_surplus(&self.cities[&cid]);
+        // Yield assignment asks for housing and amenities as part of its
+        // citizen strategy, then turn processing asks for both again to apply
+        // growth. Keep those immutable answers in one memo scope before any
+        // city state changes make them stale.
+        let (mut ys, housing, am) = {
+            let _memo = self.query_memo();
+            (
+                self.city_yields(cid),
+                self.city_housing(&self.cities[&cid]),
+                self.city_amenity_surplus(&self.cities[&cid]),
+            )
+        };
         let repair_project = matches!(
             self.cities[&cid].queue.first(),
             Some(Item::Project { project }) if project == "repair_outer_defenses"
@@ -45265,6 +45632,53 @@ mod visibility_tests {
         assert_eq!(revealed_city["name"], "Changed Under Fog");
         assert_eq!(revealed_city["pop"], 9);
     }
+
+    #[test]
+    fn deferred_ai_visibility_publishes_the_same_seat_boundary_state() {
+        let (mut immediate, origin) = controlled_game(91_009);
+        let scout = immediate.spawn_unit("scout", 0, origin);
+        let first = along(&immediate, origin, 1);
+        let second = along(&immediate, origin, 2);
+        let enemy = along(&immediate, origin, 4);
+        immediate.spawn_unit("warrior", 1, enemy);
+        immediate.refresh_all_visibility();
+        let mut deferred = immediate.clone();
+
+        let play = |game: &mut Game| {
+            game.apply(
+                0,
+                &Action::Move {
+                    unit: scout,
+                    to: first,
+                },
+            )
+            .unwrap();
+            game.apply(
+                0,
+                &Action::Move {
+                    unit: scout,
+                    to: second,
+                },
+            )
+            .unwrap();
+            game.apply(0, &Action::EndTurn).unwrap();
+        };
+        play(&mut immediate);
+        deferred.with_deferred_visibility(play);
+
+        assert_eq!(
+            serde_json::to_value(&deferred).unwrap(),
+            serde_json::to_value(&immediate).unwrap(),
+            "coalescing may change when visibility is derived, never the game or fog memory published at the seat boundary"
+        );
+        for pid in 0..immediate.players.len() {
+            assert_eq!(
+                crate::obs::observation(&deferred, pid),
+                crate::obs::observation(&immediate, pid),
+                "seat {pid} must receive the same observation"
+            );
+        }
+    }
 }
 
 #[cfg(test)]
@@ -48059,6 +48473,34 @@ mod combat_scenarios {
         g.players[0].techs.insert("cartography".to_string());
         assert!(g.can_move(galley, ocean));
         assert_eq!(g.route_step(galley, ocean, 0), Some(ocean));
+    }
+
+    #[test]
+    fn known_target_routes_reuse_the_planned_path_after_each_step() {
+        let (mut g, start, _) = controlled_game(3_202);
+        let target = g
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|position| g.wdist(start, *position) == 5)
+            .min()
+            .unwrap();
+        let warrior = g.spawn_unit("warrior", 0, start);
+
+        let first = g.route_step(warrior, target, 0).unwrap();
+        let planned = g.routing.borrow().paths[0].path.clone();
+        assert_eq!(planned.first(), Some(&start));
+        assert_eq!(planned.last(), Some(&target));
+        assert_eq!(planned.get(1), Some(&first));
+
+        g.relocate(warrior, first);
+        assert_eq!(g.route_step(warrior, target, 0), planned.get(2).copied());
+        assert_eq!(
+            g.routing.borrow().paths.len(),
+            1,
+            "advancing along a cached route must not launch and store a second plan",
+        );
     }
 
     #[test]
