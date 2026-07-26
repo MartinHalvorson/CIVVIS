@@ -1305,3 +1305,53 @@ decision.
 
 The scripted governor remains the better production policy, and both
 entrants stay eval-only.
+
+## 2026-07-26 — features that respond to the decision being ranked
+
+Three of this session's four failed learned components share one cause: the
+evaluator's inputs do not change when the action is taken. That is a
+measurable property, and nobody had measured it. Over 37,900 candidate
+actions across three four-player games, comparing `evolve::features`
+against a 34-wide extension (`decision_features`):
+
+| action kind | n | `evolve::features` | extended |
+|---|---|---|---|
+| `attack` | 136 | 100.0% | 100.0% |
+| `move` | 6,842 | **2.1%** | **69.2%** |
+| `produce` | 11,869 | **11.6%** | **91.5%** |
+| `fortify` | 1,170 | 0.0% | **100%** |
+| `ranged` | 57 | 0.0% | **100%** |
+| `city_strike` | 18 | 0.0% | **100%** |
+| `research` | 316 | 0.0% | **100%** |
+| `slot_policy` | 272 | 0.0% | 0.0% |
+| **total** | **37,900** | **44.5%** | **86.1%** |
+
+The nine added terms are cheap scalars, not a tensor: HP-weighted material
+for both sides, wounded and fortified counts, adjacency count and mean gap
+to the nearest enemy, building and district counts, and total queued
+production cost. Each was added to close a specific measured hole —
+`fortify` scored zero until fortification was represented, `ranged` until
+enemy health was, and `produce` sat at 11.6% because the queue's *length*
+rarely changes when one item replaces another, while its *cost* does.
+
+Two design notes. The original vector is preserved as a prefix, so a model
+trained on 25 and one trained on 34 differ in exactly one thing. And these
+are scalars deliberately: `obs_tensor` already renders 25 fog-honest
+spatial planes that no Rust agent can consume, because
+`tools/train_spatial.py` writes a PyTorch checkpoint nothing loads, so a
+plane-based evaluator is blocked on inference machinery that does not
+exist. This is not.
+
+**What this is not.** Visibility is necessary, not sufficient: a feature
+that moves under an action does not thereby rank actions correctly. The
+claim established is the stronger negative one — that the previous set made
+correct ranking *impossible* for the decisions these agents were asked to
+make. No agent uses this yet and no net is trained on it; `ValueNet`
+hard-validates a 25-wide input, which has to be generalized first. Policy
+cards and diplomacy remain invisible at 0%, since nothing here encodes slot
+contents.
+
+`the_decisions_that_were_invisible_are_visible` pins the measurement with
+thresholds set well below what was observed and far above what
+`evolve::features` reaches, so the property is a regression test rather
+than a number in a document.
