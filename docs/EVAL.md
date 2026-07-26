@@ -1464,6 +1464,43 @@ single fixed lane is not the fix: it is the evidence that the routing decision
 is worth an enormous amount and is currently being made badly.
 
 
+## 2026-07-26 — the expansion ceiling is not what limits expansion
+
+The oracle ablation put the leverage in the economy, and city count is the
+largest single multiplier on one, so the obvious suspect was the hardcoded
+`.min(6)` sitting on top of a `map_capacity` that reaches 9. Across 48
+six-player games the agent finished on 6.4 cities per empire, apparently
+resting on that ceiling.
+
+`ai_eval advanced_wide advanced --pairs 120 --players 4 --width 60 --height 38
+--city-states 6 --turns 500 --seed 520000`, where `advanced_wide` lets
+`map_capacity` decide:
+
+- 120/240 against 120/240, paired-map score 50.0%, Elo-equivalent +0
+- **0 maps favoured either side, 120 neutral, sign p=1.0000**
+- every diagnostic identical to the digit — cities 4.86 vs 4.86, score 519.4 vs
+  519.4, settlers 0.18 vs 0.18
+
+Identical diagnostics mean the same games were played. The treatment was inert,
+and the arithmetic says why: `desired_cities` is `(3 + turn/90).min(capacity)
+.min(ceiling)`, so the ceiling first binds past turn ~450, these games average
+323 turns, and at 323 the target is 6 while the agent reaches **4.86**. It
+never arrives at its own target, so raising the target cannot matter. The 6.4
+that motivated this came from six-player games running to ~405 turns and did
+not transfer to the four-player profile.
+
+**What it relocates.** Expansion is limited by execution rather than by
+ambition: the agent wants six cities and settles five. Whatever binds sits in
+settler production, site availability, or the expansion window.
+
+**And a process note worth more than the result.** Every grant in `oracle.rs`
+carries a test asserting it actually fires, because a treatment that does
+nothing produces a null for the wrong reason — two of those tests caught
+exactly that during development. That discipline was not applied here, and a
+240-game run bought what one line of arithmetic would have said first. A
+treatment needs a fires-check before it needs an evaluation.
+
+
 ## 2026-07-26 — strategic_deep promoted on a pre-registered 300-map run
 
 `strategic_r20h80` passed the gate once at 120 maps by 0.2 points of Wilson
