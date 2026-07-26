@@ -1,5 +1,5 @@
 //! Map generation (mirrors civvis/mapgen.py).
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::fractal::Fractal;
 use crate::rng::Rng;
@@ -707,9 +707,10 @@ const ISLAND_CHANNEL: i32 = 3;
 /// than the exact share of land, and the scatter keeps going a little past its
 /// target rather than leave a civilization without a shore.
 ///
-/// The attempt cap is what ends it either way. As the water fills up, more and
-/// more seeds land in gaps too small to grow anything, and the run has to stop
-/// on that rather than on a target it can no longer reach.
+/// Every possible seed is shuffled once. As the water fills up, seeds in the
+/// moat of an earlier body are skipped and an isolated pocket smaller than the
+/// minimum is removed as water. That makes the work proportional to the field
+/// instead of repeatedly rebuilding and sampling an ever-more-exhausted pool.
 fn scatter_islands(
     wm: &WorldMap,
     open: &mut BTreeSet<Pos>,
@@ -721,15 +722,18 @@ fn scatter_islands(
     rng: &mut Rng,
 ) -> BTreeSet<Pos> {
     let span = (max_size + 1).saturating_sub(min_size).max(1);
-    let attempt_cap = 12 * (target / min_size.max(1) + min_bodies + 1);
+    let mut seeds: Vec<Pos> = open.iter().copied().collect();
+    for index in (1..seeds.len()).rev() {
+        let other = rng.below(index + 1);
+        seeds.swap(index, other);
+    }
     let mut land = BTreeSet::new();
     let mut bodies = 0;
-    let mut attempts = 0;
-    while (land.len() < target || bodies < min_bodies) && !open.is_empty() && attempts < attempt_cap
-    {
-        attempts += 1;
-        let pool: Vec<Pos> = open.iter().copied().collect();
-        let seed = pool[rng.below(pool.len())];
+    while (land.len() < target || bodies < min_bodies) && !open.is_empty() {
+        let Some(seed) = seeds.pop() else { break };
+        if !open.contains(&seed) {
+            continue;
+        }
         // Once the land target is met and only the island count is still
         // owed, the remaining islands are kept to the smallest size that can
         // still hold a capital, so meeting the count costs the world as
@@ -737,14 +741,19 @@ fn scatter_islands(
         let wanted = if land.len() >= target {
             min_size
         } else {
-            (min_size + rng.below(span)).min(target - land.len()).max(1)
+            (min_size + rng.below(span)).min((target - land.len()).max(min_size))
         };
         let island = grow_blob(wm, open, seed, wanted.max(1), rng);
-        // A seed with nowhere to grow is not an island; it is the scatter
-        // running out of room, and it must not count towards the quota.
-        if island.len() >= min_size.min(3) {
-            bodies += 1;
+        // A gap that cannot hold the promised minimum stays water. Committing
+        // it as a one-plot "island" made the body quota look satisfied while
+        // leaving a civilization with nowhere to found its capital.
+        if island.len() < min_size {
+            for pos in island {
+                open.remove(&pos);
+            }
+            continue;
         }
+        bodies += 1;
         close_off(wm, open, &island, channel);
         land.extend(island);
     }
@@ -796,7 +805,7 @@ fn scatter_bodies(
             let candidate = pool[rng.below(pool.len())];
             if seeds
                 .iter()
-                .all(|seed| wm.distance(candidate, *seed) >= separation)
+                .all(|seed| wm.distance(*seed, candidate) >= separation)
             {
                 seeds.push(candidate);
                 placed = true;
@@ -1467,7 +1476,7 @@ pub fn generate_with_script(
         let far_enough = |position: Pos, separation: i32| {
             placed_wonder_tiles
                 .iter()
-                .all(|placed| wm.distance(position, *placed) >= separation)
+                .all(|placed| wm.distance(*placed, position) >= separation)
         };
         let cluster_from = |anchor: Pos, preferred_only: bool, separation: i32| {
             let mut cluster = vec![anchor];
@@ -2951,13 +2960,27 @@ fn generate_rivers(wm: &mut WorldMap, land: &[Pos], rng: &mut Rng) {
             .get(&pos)
             .is_some_and(|tile| matches!(tile.terrain.as_str(), "ocean" | "coast"))
     };
-    let distance_to_water = |pos: Pos| {
-        water_tiles
-            .iter()
-            .map(|water| wm.distance(pos, *water))
-            .min()
-            .unwrap_or(0)
-    };
+    // One breadth-first wave answers the distance to the nearest water for
+    // every tile. Asking each land tile about every water tile was equivalent
+    // on a flat map but catastrophic on a globe, where it materialized or
+    // searched thousands of unrelated long-distance rows.
+    let mut water_distance: BTreeMap<Pos, i32> = water_tiles
+        .iter()
+        .copied()
+        .map(|position| (position, 0))
+        .collect();
+    let mut water_frontier: VecDeque<Pos> = water_tiles.iter().copied().collect();
+    while let Some(position) = water_frontier.pop_front() {
+        let next_distance = water_distance[&position] + 1;
+        for neighbor in wm.neighbors(position) {
+            if let std::collections::btree_map::Entry::Vacant(entry) = water_distance.entry(neighbor)
+            {
+                entry.insert(next_distance);
+                water_frontier.push_back(neighbor);
+            }
+        }
+    }
+    let distance_to_water = |pos: Pos| water_distance.get(&pos).copied().unwrap_or(0);
     let mut outlets: Vec<RiverEdge> = all_shared_edges(wm)
         .into_iter()
         .filter(|(a, b)| is_water(*a) != is_water(*b))
@@ -3201,7 +3224,7 @@ fn assign_continents(wm: &mut WorldMap, land: &BTreeSet<Pos>, requested: usize, 
             .max_by_key(|p| {
                 let nearest = centers
                     .iter()
-                    .map(|c| wm.distance(**p, *c))
+                    .map(|c| wm.distance(*c, **p))
                     .min()
                     .unwrap_or(0);
                 (nearest, **p)
@@ -3213,7 +3236,7 @@ fn assign_continents(wm: &mut WorldMap, land: &BTreeSet<Pos>, requested: usize, 
         let continent = centers
             .iter()
             .enumerate()
-            .min_by_key(|(id, center)| (wm.distance(*pos, **center), *id))
+            .min_by_key(|(id, center)| (wm.distance(**center, *pos), *id))
             .map(|(id, _)| id);
         wm.tiles.get_mut(pos).unwrap().continent = continent;
     }
@@ -3295,6 +3318,74 @@ mod river_tests {
             .map(|(position, _)| *position)
             .collect();
         connected_components(world, &land)
+    }
+
+    /// An archipelago's body count is only useful when those bodies are large
+    /// enough to settle. Exercise the topology pass directly so a failure here
+    /// cannot be hidden by the start placer's last-resort fallback.
+    #[test]
+    fn islands_build_a_settleable_archipelago_on_every_stock_planet() {
+        let mut failures = Vec::new();
+        for (index, size) in CIV6_MAP_SIZES.iter().enumerate() {
+            let wm = WorldMap::globe(size.globe_frequency);
+            let mut rng = Rng::new(83_000 + index as u64);
+            let land = generate_land(
+                &wm,
+                MapScript::Islands,
+                POLED,
+                size.default_players,
+                size.default_city_states,
+                &mut rng,
+            );
+            let components = connected_components(&wm, &land);
+            let seats = size.default_players + size.default_city_states;
+            let settleable = components
+                .iter()
+                .filter(|component| component.len() >= 8)
+                .count();
+            let target = wm.tiles.len() * MapScript::Islands.land_percent() as usize / 100;
+            let sizes = components.iter().map(BTreeSet::len).collect::<Vec<_>>();
+            if land.len().abs_diff(target) >= 8 {
+                failures.push(format!(
+                    "{} has {} land tiles instead of about {target}; bodies {sizes:?}",
+                    size.name,
+                    land.len()
+                ));
+            }
+            if settleable < seats {
+                failures.push(format!(
+                    "{} needs {seats} settleable islands, got {settleable}; bodies {sizes:?}",
+                    size.name
+                ));
+            }
+            if components.iter().any(|component| component.len() < 8) {
+                failures.push(format!(
+                    "{} generated island fragments smaller than the promised minimum: {sizes:?}",
+                    size.name
+                ));
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    #[test]
+    fn island_scatter_leaves_subminimum_pockets_as_water() {
+        let wm = WorldMap::new(20, 12);
+        let large: BTreeSet<Pos> = (2..10)
+            .map(|column| hex::offset_to_axial(column, 3))
+            .collect();
+        let tiny: BTreeSet<Pos> = (14..17)
+            .map(|column| hex::offset_to_axial(column, 8))
+            .collect();
+        let mut field: BTreeSet<Pos> = large.union(&tiny).copied().collect();
+        let mut rng = Rng::new(92_041);
+        let land = scatter_islands(&wm, &mut field, 11, 8, 8, 1, 2, &mut rng);
+        let components = connected_components(&wm, &land);
+        assert_eq!(components.iter().map(BTreeSet::len).collect::<Vec<_>>(), vec![8]);
+        assert!(
+            tiny.is_disjoint(&land),
+            "a pocket too small to settle was committed as land"
+        );
     }
 
     /// Lakes were modeled everywhere except on the map. `terrains.json` has
