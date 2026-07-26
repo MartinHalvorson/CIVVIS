@@ -375,3 +375,54 @@ fn raising_the_intensity_raises_what_actually_happens() {
         "Hyperreal produced {hyperreal} storms against Light's {light}"
     );
 }
+
+#[test]
+fn every_disaster_covers_the_tile_count_its_hexes_column_ships() {
+    // RandomEvents.Hexes is a tile count, and CIVVIS stores a hex-disk radius,
+    // so the two line up exactly wherever Hexes is a ring size: 1, 7 or 19.
+    let game = quiet_game();
+    let rules = crate::rules::Rules::embedded();
+    let centre: Pos = (12, 8);
+    let tiles = |radius: i32| game.wdisk(centre, radius).len();
+    assert_eq!((tiles(0), tiles(1), tiles(2)), (1, 7, 19));
+
+    // (disaster, severity, shipped Hexes)
+    let expected: &[(&str, u8, usize)] = &[
+        // HURRICANE_CAT_4 7, CAT_5 19.
+        ("hurricane", 1, 7),
+        ("hurricane", 2, 19),
+        // BLIZZARD_SIGNIFICANT 7, CRIPPLING 19.
+        ("blizzard", 1, 7),
+        ("blizzard", 2, 19),
+        // TORNADO_FAMILY is a single tile.
+        ("tornado", 1, 1),
+        // DUST_STORM_HABOOB is 7, not the 19 CIVVIS used to cover.
+        ("dust_storm", 2, 7),
+        // DROUGHT_MAJOR and _EXTREME are both 7.
+        ("drought", 1, 7),
+        ("drought", 2, 7),
+    ];
+    for &(disaster, severity, hexes) in expected {
+        let spec = &rules.disasters[disaster];
+        assert_eq!(
+            tiles(spec.radius(severity)),
+            hexes,
+            "{disaster} severity {severity}"
+        );
+    }
+
+    // Drought ships two levels, not three -- RANDOM_EVENT_DROUGHT_MAJOR at
+    // Severity 0 and _EXTREME at Severity 1 -- and their Durations are 5 and
+    // 10, where CIVVIS carried an invented third level running 8/12/16.
+    let drought = &rules.disasters["drought"];
+    assert_eq!(drought.severities, 2);
+    assert_eq!(drought.duration(1), 5);
+    assert_eq!(drought.duration(2), 10);
+
+    // Every storm system ships Duration 3.
+    for storm in ["hurricane", "blizzard", "tornado", "dust_storm"] {
+        for severity in 1..=2 {
+            assert_eq!(rules.disasters[storm].duration(severity), 3, "{storm}");
+        }
+    }
+}
