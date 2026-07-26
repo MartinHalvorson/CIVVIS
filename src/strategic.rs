@@ -18,6 +18,23 @@ use crate::game::{Action, Game, Item};
 use crate::obs_tensor::obs_tensor;
 use crate::valuenet::ValueNet;
 
+/// Default improvement a victory lane must show over the adaptive parent
+/// before the agent commits to it.
+///
+/// **This constant, not the horizon, is what converts search into action.**
+/// The median spread between branches at horizon 40 is 0.0045 — less than
+/// half of it — so an ordinary review, where every branch is still an
+/// undecided position judged by score share, *cannot* clear it. What can
+/// clear it is a branch that reaches a decided game and returns exactly 1.0
+/// or 0.0. So the lane the agent plays is chosen almost entirely by the
+/// reviews in which somebody won or lost inside the projection.
+///
+/// That reading also says what raising the horizon actually buys. The share
+/// of reviews where every branch is decided runs 22% at horizon 40, 56% at
+/// 80 and 89% at 120, and `strategic_deep` — horizon 80 — is the promoted
+/// agent. Depth does not make the estimates finer; it makes more branches
+/// *resolve*, and a resolved branch is the only kind that gets past this
+/// number.
 const TARGET_COMMITMENT_MARGIN: f64 = 0.01;
 const VALUE_NET_WEIGHT: f64 = 0.25;
 /// Improvement a rival doctrine must show over the one in force. Set from
@@ -221,6 +238,16 @@ pub struct StrategicAi {
     /// long ones.
     pub horizon: u32,
     next_review: u32,
+    /// Improvement a lane must show over the adaptive parent to be adopted.
+    ///
+    /// Exposed so the threshold can be measured rather than assumed. See
+    /// [`TARGET_COMMITMENT_MARGIN`] for why it is load-bearing: it is the
+    /// gate between a search that ran and a decision that changed, and every
+    /// treatment this repository has measured that *reduced* the commitment
+    /// rate has lost — adaptive stopping at Elo −76, rank-pruned focused
+    /// deepening at 46.2% with its terminal score a dead heat. Nothing has
+    /// yet tested moving the gate itself.
+    pub commitment_margin: f64,
     /// Search the doctrine axis as well as the lane. Off by default so
     /// `strategic` is bit-identical to its published behaviour; the
     /// `strategic_doctrine` entrant turns it on, which makes the two an
@@ -269,6 +296,7 @@ pub struct StrategicAi {
     rotation: usize,
     doctrine: Doctrine,
     doctrine_switches: u32,
+    rollout_commitments: u32,
 }
 
 impl Default for StrategicAi {
@@ -301,12 +329,14 @@ impl StrategicAi {
             net,
             census: ReviewCensus::default(),
             adaptive_horizon: false,
+            commitment_margin: TARGET_COMMITMENT_MARGIN,
             doctrine_search: false,
             defer_periodic_on_interrupt: true,
             rotate_lanes: false,
             rotation: 0,
             doctrine: Doctrine::Incumbent,
             doctrine_switches: 0,
+            rollout_commitments: 0,
             review_every: 40,
             horizon: 40,
             // The opening book plays itself; the first lane choice lands
@@ -855,7 +885,7 @@ impl StrategicAi {
             }
         }
         best_target
-            .filter(|(value, _)| *value > adaptive + TARGET_COMMITMENT_MARGIN)
+            .filter(|(value, _)| *value > adaptive + self.commitment_margin)
             .and_then(|(_, target)| target)
     }
 
@@ -1047,6 +1077,17 @@ impl StrategicAi {
         self.rotation = self.rotation.wrapping_add(1);
     }
 
+    /// Reviews where the rollouts ran *and* chose a lane.
+    ///
+    /// `ReviewCensus::rollouts` counts reviews that reached the evaluator,
+    /// which includes every review that projected seven branches and then
+    /// declined all of them. This counts the ones that changed something,
+    /// and it is the direct instrument for any change to the commitment
+    /// margin.
+    pub fn rollout_commitments(&self) -> u32 {
+        self.rollout_commitments
+    }
+
     /// How this agent's reviews were resolved so far.
     pub fn review_census(&self) -> ReviewCensus {
         self.census
@@ -1081,6 +1122,14 @@ impl Ai for StrategicAi {
                 None => self.review_detailed(g, pid),
             };
             self.census.record(path);
+            // Count the reviews where the *search* chose a lane, as opposed
+            // to running and declining. A treatment that moves the margin is
+            // aimed at exactly this number, and nothing else in the census
+            // reports it: `rollouts` counts reviews that reached the
+            // evaluator, including every one that then returned to adaptive.
+            if path == ReviewPath::Rollouts && target.is_some() {
+                self.rollout_commitments += 1;
+            }
             // Advance the cursor on every projected review, not only when
             // the challenger was adopted, so each lane comes up for
             // examination on a fixed cycle rather than a lucky one.
@@ -1132,7 +1181,7 @@ impl Ai for StrategicAi {
 
 #[cfg(test)]
 mod tests {
-    use super::{Doctrine, StrategicAi};
+    use super::{Doctrine, StrategicAi, TARGET_COMMITMENT_MARGIN};
     use crate::ai::{run_game, Ai, BasicAi, VictoryTarget, Weights};
     use crate::game::{Action, Game};
     use crate::valuenet::ValueNet;
@@ -1671,6 +1720,62 @@ mod tests {
             fired > 0,
             "the adaptive horizon projected every round in all {checked} positions, \
              so it is inert and an evaluation would measure nothing"
+        );
+    }
+
+    /// The fires-check for a margin change, and the direct measurement of
+    /// the claim that motivates it: an ordinary review cannot clear 0.01, so
+    /// lowering the gate must let the search act more often. If it does not,
+    /// the search is already acting whenever it has anything to say and the
+    /// margin is not the binding constraint — which would refute the whole
+    /// idea before a single game is played for it.
+    #[test]
+    fn a_lower_margin_lets_the_search_commit_more_often() {
+        fn play(seed: u64, margin: f64) -> (u32, u32) {
+            let mut g = Game::new(4, 24, 16, seed, 200, 0);
+            let mut strategic = StrategicAi::with_weights(Default::default());
+            strategic.commitment_margin = margin;
+            let mut rivals = BasicAi::fleet(&g);
+            for _ in 0..120 {
+                if g.winner.is_some() {
+                    break;
+                }
+                for pid in 0..g.players.len() {
+                    if g.winner.is_some() {
+                        break;
+                    }
+                    if pid == 0 {
+                        strategic.take_turn(&mut g, pid);
+                    } else {
+                        rivals[pid].take_turn(&mut g, pid);
+                    }
+                    if g.winner.is_none() && g.current == pid {
+                        let _ = g.apply(pid, &Action::EndTurn);
+                    }
+                }
+            }
+            (
+                strategic.review_census().rollouts,
+                strategic.rollout_commitments(),
+            )
+        }
+
+        let mut shipped = 0;
+        let mut lowered = 0;
+        let mut reviews = 0;
+        for seed in [31u64, 57, 83] {
+            let (ran, committed) = play(seed, TARGET_COMMITMENT_MARGIN);
+            reviews += ran;
+            shipped += committed;
+            let (_, committed) = play(seed, 0.002);
+            lowered += committed;
+        }
+        assert!(reviews > 0, "the search never reached its rollouts");
+        assert!(
+            lowered > shipped,
+            "{lowered} commitments at margin 0.002 against {shipped} at \
+             {TARGET_COMMITMENT_MARGIN} over {reviews} rollout reviews: the gate is not \
+             what is holding the search back, so moving it can change nothing"
         );
     }
 

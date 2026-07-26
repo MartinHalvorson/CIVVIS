@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 17] = [
+pub const EVAL_ONLY_AIS: [&str; 18] = [
     "advanced_lane_reachable",
     "advanced_relief_scoped",
     "strategic_score",
@@ -55,6 +55,7 @@ pub const EVAL_ONLY_AIS: [&str; 17] = [
     "production_net",
     "policy_wide",
     "policy_wide_frozen",
+    "strategic_m002",
     "strategic_deep_adaptive",
 ];
 
@@ -601,6 +602,17 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             ai.adaptive_horizon = true;
             Box::new(ai)
         }
+        // The same agent with the lane-commitment gate lowered from 0.01 to
+        // 0.002 -- the value the doctrine axis had to be calibrated to
+        // before it could ever choose. Everything else is identical to
+        // `strategic`, so the paired A/B isolates the decision threshold.
+        "strategic_m002" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.commitment_margin = 0.002;
+            Box::new(ai)
+        }
         "strategic_rot20" => {
             let mut ai = crate::strategic::StrategicAi::with_weights(
                 crate::evolve::load_champion("evolved").unwrap_or_default(),
@@ -819,6 +831,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "strategic_r20h20" => (vec![genome, value(false)], "strategic_r20h20"),
         "strategic_h80" => (vec![genome, value(false)], "strategic_h80"),
         "strategic_rot20" => (vec![genome, value(false)], "strategic_rot20"),
+        "strategic_m002" => (vec![genome, value(false)], "strategic_m002"),
         "strategic_deep_adaptive" => (vec![genome, value(false)], "strategic_deep_adaptive"),
         // Same artifact dependencies as `strategic`: the genome tunes it,
         // and the net is non-definitional because the search runs without
