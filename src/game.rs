@@ -8149,6 +8149,48 @@ mod power_tests {
 mod maintenance_tests {
     use super::*;
 
+    #[test]
+    fn replaceable_parts_replaces_the_feudalism_farm_rule_rather_than_stacking() {
+        let (mut game, city) = one_city();
+        let centre = game.cities[&city].pos;
+        // A farm with four farmed neighbours, on flat workable ground.
+        let ring: Vec<Pos> = game.nbrs(centre).iter().copied().collect();
+        let subject = ring[0];
+        let neighbours: Vec<Pos> = game
+            .nbrs(subject)
+            .iter()
+            .copied()
+            .filter(|position| *position != centre && game.map.tiles.contains_key(position))
+            .take(4)
+            .collect();
+        assert_eq!(neighbours.len(), 4);
+        for position in std::iter::once(subject).chain(neighbours.iter().copied()) {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = "grassland".to_string();
+            tile.feature = None;
+            tile.resource = None;
+            tile.hills = false;
+            tile.pillaged = false;
+            tile.improvement = Some("farm".to_string());
+        }
+        let food = |game: &Game| game.player_tile_yields(0, subject, &game.map.tiles[&subject]).food;
+        let bare = food(&game);
+
+        // Before Feudalism a Farm gets nothing from its neighbours.
+        assert_eq!(food(&game), bare);
+
+        // Farms_MedievalAdjacency: +1 Food per TWO adjacent Farms, so four
+        // neighbours are worth two Food.
+        game.players[0].civics.insert("feudalism".to_string());
+        assert_eq!(food(&game) - bare, 2.0);
+
+        // Farms_MechanizedAdjacency: +1 per Farm. It carries PrereqTech
+        // REPLACEABLE_PARTS and the Medieval row carries the same tech as its
+        // ObsoleteTech, so the total is four rather than four plus two.
+        game.players[0].techs.insert("replaceable_parts".to_string());
+        assert_eq!(food(&game) - bare, 4.0, "the Feudalism rule is obsolete, not additive");
+    }
+
     fn one_city() -> (Game, u32) {
         let mut game = Game::new_full(1, 24, 16, 73_101, 120, 0, false);
         let settler = game
@@ -28296,9 +28338,18 @@ impl Game {
                             && !self.map.tiles[neighbor].pillaged
                     })
                     .count() as f64;
-                yields.food += (adjacent_farms / 2.0).floor()
-                    * self.tree_effect(pid, "farm_pair_adjacency_food");
-                yields.food += adjacent_farms * self.tree_effect(pid, "farm_adjacency_food");
+                // Farms_MedievalAdjacency pays Feudalism +1 Food per TWO
+                // adjacent Farms and carries ObsoleteTech
+                // TECH_REPLACEABLE_PARTS; Farms_MechanizedAdjacency then pays
+                // +1 per Farm. The second replaces the first rather than
+                // stacking with it, exactly as Stirrups does to the Kurgan.
+                let mechanized = self.tree_effect(pid, "farm_adjacency_food");
+                if mechanized > 0.0 {
+                    yields.food += adjacent_farms * mechanized;
+                } else {
+                    yields.food += (adjacent_farms / 2.0).floor()
+                        * self.tree_effect(pid, "farm_pair_adjacency_food");
+                }
             }
             Some("sphinx") => {
                 let effects = &self.rules.improvements["sphinx"].effects;
