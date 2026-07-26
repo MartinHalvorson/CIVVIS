@@ -916,10 +916,18 @@
      that merely happened stays in the event log. Blockers are chips too —
      they are the ones that also gate the End Turn button. */
   #notify {
-    position: absolute; z-index: 8; right: 14px; top: 196px; bottom: 200px;
+    position: absolute; z-index: 8; top: 196px; bottom: 200px;
+    /* Inside the rail, not on top of it. The victory tracker took the right
+       edge of the map, and these chips are drawn above it, so at the edge they
+       covered its whole values column — tourism, civilizations converted,
+       diplomatic points, score. This is the offset the player standings
+       already use to clear the same rail, and both fall back to the edge when
+       the viewer hides the tracker in Display settings. */
+    right: calc(min(var(--hud-rail-width), var(--hud-rail-share)) + 20px);
     display: none; flex-direction: column; align-items: flex-end; gap: 6px;
     overflow: hidden auto; scrollbar-width: none; pointer-events: none;
   }
+  body.overlay-victory-hidden #notify { right: 14px; }
   #notify::-webkit-scrollbar { display: none; }
   #notify.on { display: flex; }
   .notice {
