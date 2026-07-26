@@ -551,7 +551,6 @@
     "range": 1,
     "tech": "machinery",
     "unique_to": "China",
-    "replaces": "crossbowman",
     "promotion_class": "ranged",
     "upgrade_to": "field_cannon",
     "obsolete_tech": "advanced_ballistics"
