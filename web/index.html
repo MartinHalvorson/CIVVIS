@@ -3302,10 +3302,11 @@ const RES_ICON = { wheat:"🌾", cattle:"🐄", sheep:"🐑", stone:"🪨", deer
                    sugar:"🍬", tea:"🍵", tobacco:"🚬", toys:"🧸",
                    truffles:"🍄", turtles:"🐢", whales:"🐋",
                    antiquity_site:"🏺", shipwreck:"⚓" };
-// Which hex corner a class sits in: strategics lower-left, bonuses at the
-// bottom point, luxuries lower-right. Class becomes a position, so it is
-// readable at a range where neither the rim colour nor the symbol is.
-const RESOURCE_CORNER = { strategic:3, bonus:2, luxury:1 };
+// Which screen-relative badge slot a class uses: strategics lower-left,
+// bonuses at the bottom, luxuries lower-right. These are annotation positions,
+// not geographic corners: the world can open at an unknown bearing or turn
+// under the camera without scrambling the positional class cue.
+const RESOURCE_BADGE_SLOT = { strategic:3, bonus:2, luxury:1 };
 // The badge was drawn at a radius of 8.2 with a 12px symbol inside it, which is
 // a 16px disc holding an emoji on a hex 62 across: legible only if you already
 // knew what you were looking for. Everything about the badge — disc, rim, the
@@ -5714,6 +5715,14 @@ function corner(x, y, s, i) {
   const a = Math.PI / 180 * (60 * i - 30) + cam.rot;
   return [x + s * Math.cos(a), y + s * Math.sin(a) * YS];
 }
+// Resource badges are labels over the board, so their three class slots stay
+// aligned with the screen while the world-facing geometry above rotates. The
+// vertical component still follows the active projection so a badge remains
+// seated inside the visible tile at every tilt.
+function resourceBadgeSlot(x, y, s, i) {
+  const a = Math.PI / 180 * (60 * i - 30);
+  return [x + s * Math.cos(a), y + s * Math.sin(a) * YS];
+}
 function hexDist(a, b) {
   const dq = a[0]-b[0], dr = a[1]-b[1];
   return Math.max(Math.abs(dq), Math.abs(dr), Math.abs(dq+dr));
@@ -7097,11 +7106,21 @@ function includeServerEventInGameLog(event, text) {
   if (event.category === "Diplomacy" && /\b(?:approves|disapproves) of\b/i.test(text)) return false;
   return true;
 }
-function chronicleServer(next) {
+// A founding reaches the log down two paths: the engine notes it for the
+// observed seat, and the city diff below spots the new city for every seat.
+// Both fired, so the seat being watched saw its own cities founded twice, one
+// line apart, differing only by the full stop the diff writes. The diff is the
+// one that covers every civilization, so it owns a founding whenever there is
+// a previous state to diff against; on the first frame there is none, and the
+// engine's notes are what give a viewer who just arrived any history at all.
+const SERVER_FOUNDING = /^.+ founded .+$/;
+function chronicleServer(next, foundingsFromDiff = false) {
   const events = Array.isArray(next.events) ? next.events : [];
   const viewKey = eventViewKey(next);
   for (const event of events) {
     const text = civilizationEventText(event.text, next);
+    if (foundingsFromDiff && event.category === "Cities" && SERVER_FOUNDING.test(text))
+      continue;
     const key = `${viewKey}|${event.turn}|${event.category}|${text}`;
     if (seenServerEvents.has(key)) continue;
     seenServerEvents.add(key);
@@ -7185,7 +7204,11 @@ function chronicle(prev, next) {
     eventLogs = new Map();
     lastLeaderByView = new Map();
     seenServerEvents = new Set();
-    addEvent("✦", `A new world begins with seed ${next.seed}.`, next.turn, next, false, 5);
+    // A world begins on turn 1, whatever turn the viewer arrived on. Stamping
+    // this with the turn of the first frame dated the founding of the world to
+    // the moment the browser connected, which put it below entries from turns
+    // that had already happened and read as a world that began late.
+    addEvent("✦", `A new world begins with seed ${next.seed}.`, 1, next, false, 5);
     chronicleServer(next);
     return;
   }
@@ -7233,7 +7256,7 @@ function chronicle(prev, next) {
     if (majors.length) lastLeaderByView.set(viewKey, majors[0].id);
     chronicleWorldEvents(next);
   }
-  chronicleServer(next);
+  chronicleServer(next, true);
 }
 
 function render(st, recordChronicle = true) {
@@ -10891,12 +10914,12 @@ function drawResourceBadge(t, x, y) {
     ? RULES.resources[t.resource].class : "bonus";
   const rim = rc === "strategic" ? "#ff9d5c"
     : rc === "luxury" ? "#d9a0f0" : "#e6ddbd";
-  // Seated toward its class's corner rather than always at the same lower-right
-  // spot, and rotated with the board like every other mark on a hex, seated
-  // where RES_BADGE_SEAT says the badge still clears the two edges that meet at
-  // that corner.
-  const [rx, ry] = corner(x, y, S * RES_BADGE_SEAT,
-    RESOURCE_CORNER[rc] === undefined ? 2 : RESOURCE_CORNER[rc]);
+  // The class cue belongs to the annotation layer rather than the world's
+  // unknown bearing: strategics remain lower-left, bonuses bottom, and
+  // luxuries lower-right however the board is facing.
+  const slot = RESOURCE_BADGE_SLOT[rc] === undefined
+    ? RESOURCE_BADGE_SLOT.bonus : RESOURCE_BADGE_SLOT[rc];
+  const [rx, ry] = resourceBadgeSlot(x, y, S * RES_BADGE_SEAT, slot);
   // A cinema establishing shot covers a continent: rendering every deposit as a
   // full dark badge there freckles the landscape with hundreds of holes. Detail
   // resolves with the camera instead. Manual/player views keep the established
@@ -20799,13 +20822,22 @@ function tileTipLines(t, pos, tileKey) {
 
 // tooltip
 const tip = document.getElementById("tip");
-let tileTipPointer = null;
+const TILE_TIP_DELAY_MS = 350;
+let tileTipPointer = null, tileTipTimer = null, tileTipVisible = false;
 function hideTileTip(clearPointer = false) {
   tip.style.display = "none";
-  if (clearPointer) tileTipPointer = null;
+  tileTipVisible = false;
+  if (clearPointer) {
+    clearTimeout(tileTipTimer);
+    tileTipTimer = null;
+    tileTipPointer = null;
+  }
 }
-function refreshTileTip() {
-  if (!state || !tileTipPointer || dragState || mapTouches.size || rdrag) {
+function refreshTileTip(reveal = false) {
+  // Snapshot renders may refresh a tooltip which has already earned its way
+  // on-screen, but they must not reveal one while the rest timer is pending.
+  if ((!reveal && !tileTipVisible) || !state || !tileTipPointer ||
+      dragState || mapTouches.size || rdrag) {
     hideTileTip();
     return;
   }
@@ -20824,8 +20856,18 @@ function refreshTileTip() {
   const lines = tileTipLines(t, pos, key(pos));
   tip.innerHTML = lines.join("<br>");
   tip.style.display = "block";
+  tileTipVisible = true;
   tip.style.left = Math.min(clientX + 16, window.innerWidth - 290) + "px";
   tip.style.top = (clientY + 16) + "px";
+}
+function queueTileTip(clientX, clientY) {
+  const pointer = tileTipPointer = {clientX, clientY};
+  hideTileTip();
+  clearTimeout(tileTipTimer);
+  tileTipTimer = setTimeout(() => {
+    tileTipTimer = null;
+    if (tileTipPointer === pointer) refreshTileTip(true);
+  }, TILE_TIP_DELAY_MS);
 }
 // The overlays — player standings across the top, the victory rail, the
 // minimap — sit *on* the map, so the canvas never sees a pointer parked at the
@@ -20833,12 +20875,11 @@ function refreshTileTip() {
 window.addEventListener("mousemove", ev => updateEdgePan(ev.clientX, ev.clientY), {passive: true});
 window.addEventListener("mouseout", ev => { if (!ev.relatedTarget) edgePanVector = null; });
 cv.addEventListener("mousemove", ev => {
-  tileTipPointer = {clientX: ev.clientX, clientY: ev.clientY};
   // `dragMoved` outlives the drag: it is cleared by the click that follows, and
   // a drag released off the canvas never gets one. Hovering must ask whether a
   // gesture is happening *now*, or the first pan of the game kills the tooltip
   // for good.
-  refreshTileTip();
+  queueTileTip(ev.clientX, ev.clientY);
 });
 cv.addEventListener("mouseleave", () => hideTileTip(true));
 window.addEventListener("blur", () => { edgePanVector = null; hideTileTip(true); });

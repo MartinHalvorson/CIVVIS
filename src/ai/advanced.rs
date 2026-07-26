@@ -9,6 +9,18 @@ use crate::rules::Yields;
 use crate::Pos;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
+/// Local strength ratio a force group needs before it will advance or press an
+/// attack unsupported. Below it the group holds on its own account, whatever
+/// else is happening in the empire.
+const LOCAL_SUPERIORITY_FLOOR: f64 = 0.72;
+/// Radius `threatened_city` scores hostiles in. A group already inside it is
+/// part of the defence rather than a column marching to it.
+const THREAT_RELIEF_RADIUS: i32 = 6;
+/// Turns of march a group is allowed in order to count as a relief force. Long
+/// enough to cover a neighbouring front, short enough that an army on the far
+/// side of the map keeps prosecuting its own campaign.
+const RELIEF_MARCH_TURNS: f64 = 3.0;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GrandStrategy {
     Expansion,
@@ -62,9 +74,11 @@ pub struct StrategyCensus {
     pub engage: u32,
     pub hold: u32,
     pub recover: u32,
-    /// Which disjunct sent a group to `Hold`. The threatened-city test is
-    /// empire-global, so one city under pressure anywhere holds every force
-    /// group, including one already standing at a rival's gates.
+    /// Which disjunct sent a group to `Hold`, attributed causally: a group
+    /// below [`LOCAL_SUPERIORITY_FLOOR`] holds on its own weakness whether or
+    /// not a city is threatened, and is counted as `hold_weak` even when one
+    /// is. Only a group strong enough to advance, halted to relieve a city it
+    /// can actually reach, counts as `hold_threatened`.
     pub hold_threatened: u32,
     pub hold_weak: u32,
 }
@@ -369,6 +383,24 @@ pub struct AdvancedAi {
     forced_target_player: Option<usize>,
     force_groups: Vec<ForceGroup>,
     force_groups_dirty: bool,
+    /// Hold only the force groups that could actually reach the threatened
+    /// city, instead of every group in the empire.
+    ///
+    /// **Off by default, on measurement.** It does what it says — over eight
+    /// six-player games it cut holds by a group strong enough to advance from
+    /// 19.0% of force-group turns to 10.4%, and the ones left standing were
+    /// 8.8 hexes from the emergency rather than 13.2 — and that bought
+    /// nothing. Pre-registered at 120 mirrored maps against the shipped
+    /// behaviour it scored 49.2% (Wilson 40.4%..58.0%, Elo-equivalent -6,
+    /// sign p=0.8555), `promotion gate: INCONCLUSIVE`.
+    ///
+    /// The reading that survives is that mobility is not the binding
+    /// constraint: an army freed to march still arrives with 81% of its
+    /// units three eras stale and converts a spent garrison into a capture
+    /// 22% of the time. Kept behind this flag, and reachable as the
+    /// `advanced_relief_scoped` entrant, so it can be re-measured once the
+    /// conversion bottleneck moves rather than re-derived from scratch.
+    pub scoped_relief_hold: bool,
 }
 
 impl Default for AdvancedAi {
@@ -412,6 +444,7 @@ impl AdvancedAi {
             forced_target_player: None,
             force_groups: Vec::new(),
             force_groups_dirty: false,
+            scoped_relief_hold: false,
         }
     }
 
@@ -8275,24 +8308,38 @@ impl AdvancedAi {
                 });
                 low_hp_unit || capturable_city
             });
+            // `threatened_city` is an empire-wide fact, so every force group
+            // in every domain stands still whenever any city anywhere is
+            // under pressure — including columns far too distant to affect
+            // the siege. `scoped_relief_hold` restricts the hold to groups
+            // that could actually arrive. It is off by default: it changes
+            // the behaviour as intended and measured no stronger, so the
+            // shipped agent keeps the old rule until the constraint it
+            // exposes is worth spending on. See the field's documentation.
+            // The Engage disjuncts deliberately keep reading the raw flag
+            // either way: a group already in contact should press regardless
+            // of which city is in trouble.
+            let relieving = plan.threatened_city.is_some_and(|city| {
+                !self.scoped_relief_hold || Self::can_relieve(g, &units, anchor, city)
+            });
             let posture = if average_hp <= self.base.w.withdraw_hp + 10.0 {
                 ForcePosture::Recover
             } else if (focus_target.is_some()
-                && (local_strength_ratio >= 0.72
+                && (local_strength_ratio >= LOCAL_SUPERIORITY_FLOOR
                     || plan.threatened_city.is_some()
                     || forcing_focus))
                 || (units.iter().any(|uid| {
                     g.units.values().any(|enemy| {
                         enemies.contains(&enemy.owner)
                             && g.wdist(g.units[uid].pos, enemy.pos) <= 2
-                            && (local_strength_ratio >= 0.72
+                            && (local_strength_ratio >= LOCAL_SUPERIORITY_FLOOR
                                 || plan.threatened_city.is_some()
                                 || enemy.hp <= 35)
                     })
                 }))
             {
                 ForcePosture::Engage
-            } else if plan.threatened_city.is_some() || local_strength_ratio < 0.72 {
+            } else if relieving || local_strength_ratio < LOCAL_SUPERIORITY_FLOOR {
                 ForcePosture::Hold
             } else if units.len() > 1 && readiness + 1e-9 < self.base.w.muster_readiness {
                 ForcePosture::Muster
@@ -8312,17 +8359,44 @@ impl AdvancedAi {
             });
         }
         self.force_groups.sort_by_key(|group| group.id);
-        let threatened = plan.threatened_city.is_some();
         for group in &self.force_groups {
             self.census.count_posture(group.posture);
             if group.posture == ForcePosture::Hold {
-                if threatened {
-                    self.census.hold_threatened += 1;
-                } else {
+                // Attribute the disjunct that actually held the group, not
+                // whichever flag happened to be set. A group below the
+                // superiority floor holds on its own account whether or not
+                // a city is threatened, so counting it as threat-held
+                // overstated the threat term: measured against the shipped
+                // census it read 61% where the causal share was 34%.
+                if group.local_strength_ratio < LOCAL_SUPERIORITY_FLOOR {
                     self.census.hold_weak += 1;
+                } else {
+                    self.census.hold_threatened += 1;
                 }
             }
         }
+    }
+
+    /// Whether this force group could plausibly reach `city` before its siege
+    /// resolves, and is therefore worth halting to defend it.
+    ///
+    /// [`AdvancedAi::threatened_city`] scores hostiles within six hexes of the
+    /// city, so a group already inside that ring is in the fight. Outside it
+    /// the group has to march, and it marches at the pace of its slowest
+    /// member — a siege train does not keep up with horse. Allow it the ground
+    /// it can cover in [`RELIEF_MARCH_TURNS`] and no more.
+    fn can_relieve(g: &Game, units: &[u32], anchor: Pos, city: u32) -> bool {
+        let Some(city) = g.cities.get(&city) else {
+            return false;
+        };
+        let pace = units
+            .iter()
+            .filter_map(|uid| g.units.get(uid))
+            .map(|unit| g.rules.units[unit.kind.as_str()].moves)
+            .fold(f64::INFINITY, f64::min);
+        let pace = if pace.is_finite() { pace.max(1.0) } else { 1.0 };
+        let reach = THREAT_RELIEF_RADIUS + (pace * RELIEF_MARCH_TURNS).round() as i32;
+        g.wdist(anchor, city.pos) <= reach
     }
 
     fn coordinated_tactical_step(
@@ -13952,6 +14026,165 @@ mod tests {
                 .posture,
             ForcePosture::Engage,
             "a forcing city capture must override the otherwise inferior local ratio"
+        );
+    }
+
+    /// Build a game with player 0's capital founded, every other unit of its
+    /// cleared away, and a declared war so force orders are built at all.
+    fn empire_with_a_capital(seed: u64) -> (Game, u32, Pos) {
+        let mut game = Game::new_full(2, 74, 46, seed, 200, 0, false);
+        game.current = 0;
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let home = game.cities[&city].pos;
+        for unit in game.player_unit_ids(0) {
+            game.remove_unit(unit);
+        }
+        game.at_war.insert((0, 1));
+        (game, city, home)
+    }
+
+    /// A tile at exactly `distance` from `home`, chosen deterministically so
+    /// the assertion is about the radius and not about map iteration order.
+    fn anchor_at(game: &Game, home: Pos, distance: i32) -> Pos {
+        let mut candidates: Vec<Pos> = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|position| game.wdist(*position, home) == distance)
+            .collect();
+        candidates.sort_unstable();
+        *candidates.first().unwrap_or_else(|| {
+            panic!("no tile sits exactly {distance} hexes from the capital")
+        })
+    }
+
+    /// The relief radius must scale with the force's pace: cavalry can answer
+    /// a call a siege train cannot, and a mixed column marches at the speed of
+    /// its slowest member.
+    #[test]
+    fn relief_reach_scales_with_the_slowest_unit_in_the_group() {
+        let (mut game, city, home) = empire_with_a_capital(71_100);
+        let staging = anchor_at(&game, home, 2);
+        let warrior = game.spawn_test_unit("warrior", 0, staging);
+        let horseman = game.spawn_test_unit("horseman", 0, anchor_at(&game, home, 3));
+
+        // Warrior: 2 moves -> 6 + 3*2 = 12 hexes of reach.
+        assert!(AdvancedAi::can_relieve(
+            &game,
+            &[warrior],
+            anchor_at(&game, home, 12),
+            city
+        ));
+        assert!(!AdvancedAi::can_relieve(
+            &game,
+            &[warrior],
+            anchor_at(&game, home, 13),
+            city
+        ));
+
+        // Horseman: 4 moves -> 6 + 3*4 = 18.
+        assert!(AdvancedAi::can_relieve(
+            &game,
+            &[horseman],
+            anchor_at(&game, home, 18),
+            city
+        ));
+        assert!(!AdvancedAi::can_relieve(
+            &game,
+            &[horseman],
+            anchor_at(&game, home, 19),
+            city
+        ));
+
+        // Together they march at the warrior's pace, not the horseman's.
+        assert!(!AdvancedAi::can_relieve(
+            &game,
+            &[horseman, warrior],
+            anchor_at(&game, home, 13),
+            city
+        ));
+
+        // A city that no longer exists cannot be relieved.
+        assert!(!AdvancedAi::can_relieve(&game, &[warrior], home, u32::MAX));
+    }
+
+    /// The behaviour this exists for: a locally superior force far from the
+    /// emergency keeps prosecuting its campaign, while one close enough to
+    /// matter halts. Before this, one threatened city anywhere held every
+    /// force group in the empire.
+    #[test]
+    fn a_force_that_cannot_reach_the_threat_no_longer_halts_for_it() {
+        let posture_at = |distance: i32| {
+            let (mut game, city, home) = empire_with_a_capital(71_101);
+            let warrior = game.spawn_test_unit("warrior", 0, anchor_at(&game, home, distance));
+            let plan = StrategicPlan {
+                strategy: GrandStrategy::Conquest,
+                target_player: Some(1),
+                target_city: None,
+                threatened_city: Some(city),
+                desired_cities: 3,
+                assessed_turn: game.turn,
+            };
+            let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+            ai.scoped_relief_hold = true;
+            ai.rebuild_force_groups(&game, 0, &plan);
+            let group = ai
+                .force_groups
+                .iter()
+                .find(|group| group.units.contains(&warrior))
+                .expect("the lone warrior must form a force group");
+            assert!(
+                group.local_strength_ratio >= LOCAL_SUPERIORITY_FLOOR,
+                "the setup must leave the group strong enough to advance: {}",
+                group.local_strength_ratio
+            );
+            group.posture
+        };
+
+        assert_eq!(
+            posture_at(8),
+            ForcePosture::Hold,
+            "a force inside the relief radius must still answer the call"
+        );
+        assert_ne!(
+            posture_at(20),
+            ForcePosture::Hold,
+            "a force twenty hexes away cannot defend the capital by standing still"
+        );
+    }
+
+    /// The shipped agent is unchanged. The scoped hold measured no stronger
+    /// than the global one, so it stays behind its flag, and a paired
+    /// evaluation is only meaningful if the control really is the incumbent.
+    #[test]
+    fn the_default_agent_still_holds_for_a_threat_it_cannot_reach() {
+        let (mut game, city, home) = empire_with_a_capital(71_102);
+        let warrior = game.spawn_test_unit("warrior", 0, anchor_at(&game, home, 20));
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: None,
+            threatened_city: Some(city),
+            desired_cities: 3,
+            assessed_turn: game.turn,
+        };
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        assert!(!ai.scoped_relief_hold, "the shipped default must be unchanged");
+        ai.rebuild_force_groups(&game, 0, &plan);
+        assert_eq!(
+            ai.force_groups
+                .iter()
+                .find(|group| group.units.contains(&warrior))
+                .unwrap()
+                .posture,
+            ForcePosture::Hold,
         );
     }
 

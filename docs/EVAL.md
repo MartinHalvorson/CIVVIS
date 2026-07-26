@@ -1356,6 +1356,67 @@ thresholds set well below what was observed and far above what
 `evolve::features` reaches, so the property is a regression test rather
 than a number in a document.
 
+## 2026-07-26 — freeing the frozen armies changes the behaviour and not the result
+
+`plan.threatened_city` is an empire-wide fact and `force_orders` sent every
+force group to `Hold` whenever any city anywhere was under pressure. The
+shipped census reported 61% of holds as threat-held, but it counted a hold
+that way whenever the flag was *set*, including groups below the
+local-superiority floor that would have held regardless. Attributed to the
+disjunct that actually fired, the causal share is **34%**.
+
+Measured over 6,568 force-group turns in eight six-player games (74x46, 250
+turns, seeds 7000-7007), those holds were not a defensive posture at all:
+
+- `Hold` was **56.4%** of all force-group turns
+- **33.6% of holds** were groups that cleared the superiority floor and were
+  stopped only by the global flag — **19.0% of all group turns**
+- they stood a mean **13.2 hexes** from the emergency, and **83.1%** were
+  outside the six-hex radius that defines the threat, so they could not have
+  affected it whatever they did
+- **4.4 units** frozen per order
+
+Scoping the hold to groups that could plausibly arrive (the six-hex radius
+plus three turns of march at the slowest member's pace) does exactly what it
+was designed to do. Same eight seeds:
+
+| | before | after |
+|---|---|---|
+| `Hold` | 56.4% | 50.7% |
+| `Advance` | 17% | 23.5% |
+| holds by a group strong enough to advance | 19.0% | **10.4%** |
+| their mean distance from the emergency | 13.2 | **8.8** |
+
+**And it bought nothing.** Pre-registered before the run — challenger,
+control, settings, n and decision rule fixed in writing — `ai_eval
+advanced_relief_scoped advanced --pairs 120 --players 4 --width 60 --height
+38 --city-states 6 --turns 500 --seed 220000`:
+
+- 118/240 games (49.2%) for the scoped hold, paired-map score 49.2%
+- 14 map directions for, 16 against, exact sign **p=0.8555**
+- Wilson **40.4%..58.0%**, Elo-equivalent **-6** (CI -68..+85)
+- anytime e-process peak 1.00 for the treatment; not crossed
+- **`promotion gate: INCONCLUSIVE`**
+
+60x38 rather than the 24x16 default because the default map's maximum
+separation is below the relief radius, which would have made treatment and
+control nearly the same agent; 500 turns because a cap changes which agent
+wins (#282/#285) and this is a military change that pays late.
+
+The reading that survives is that **mobility was not the binding
+constraint.** An army freed to march still arrives with 81% of its units
+three or more eras stale and converts a spent garrison into a capture 22% of
+the time. Freeing 9% of force-group turns to advance moves nothing while
+what they advance *into* is unchanged.
+
+So the behaviour stays behind `AdvancedAi::scoped_relief_hold`, off by
+default, reachable as the `advanced_relief_scoped` entrant. It is worth
+re-running, unchanged, once siege conversion moves — which is the point of
+keeping it rather than reverting it. The census attribution fix lands
+regardless: it was reporting 61% where the truth is 34%, and that number is
+what made this look like the biggest available lever in the first place.
+
+
 ## 2026-07-26 — strategic_deep promoted on a pre-registered 300-map run
 
 `strategic_r20h80` passed the gate once at 120 maps by 0.2 points of Wilson
@@ -1659,3 +1720,42 @@ feature is the policy working — an agent that pushes its own material up is
 doing what it should. Heavy pressure on a *correlational* one is the
 failure. Telling those apart still needs judgement about the game; what
 this removes is the need to first suspect that something is wrong.
+
+## 2026-07-26 — the measured agent ladder
+
+`strategic_deep` was promoted on evidence gathered entirely against
+`strategic`. The fleet's default major agent is `advanced`, so the
+comparison an operator actually needs was missing. It is now measured, on
+the same seed set and settings as everything else (four players, 200
+turns, 120 mirrored maps, seed 70000):
+
+| pairing | games | maps for | against | sign p | e | gate |
+|---|---|---|---|---|---|---|
+| `strategic_deep` > `advanced` | 136/240 (56.7%) | **22** | 6 | **0.0037** | 89 (crossed at 112) | INCONCLUSIVE |
+| `strategic_deep` > `strategic` | 142/240 (59.2%) | 29 | 7 | 0.0003 | 335 (crossed at 91) | PASS |
+| `strategic` > `advanced` | 130/240 (54.2%) | 20 | 10 | 0.0987 | 2.9 | INCONCLUSIVE |
+
+Plus the pre-registered 300-map run that carried the promotion:
+`strategic_deep` over `strategic`, 339/600 games, 56 maps to 17, sign
+p=0.0000, e=3.14e4, `promotion gate: PASS`.
+
+The ordering is consistent across every pairing: **`strategic_deep` >
+`strategic` > `advanced`**, and the promoted agent beats the scripted
+default by sign test and by anytime-valid evidence. The gate still reads
+INCONCLUSIVE against `advanced` for the reason established earlier — at a
+56.7% effect the Wilson bound needs roughly 300 maps, and this run is 120.
+
+Two things worth taking from the table beyond the ranking.
+
+**`strategic` has never been shown to beat `advanced` at adequate power.**
+It leans ahead at 20 maps to 10, but p=0.0987 and an e-value of 2.9 are not
+a result, and the 41.7%-at-four-players figure in older entries predates
+every instrument fix made since. Anyone treating the existing search agent
+as a known improvement over the scripted one is relying on numbers that
+were never resolvable.
+
+**Terminal score is 49.1% here too**, as it has been for every arm this
+session. The promoted agent wins more games without out-scoring anyone,
+which is exactly the signature of a change to victory-lane routing rather
+than to economy — the same reading the direction-resolution line was added
+to make legible.

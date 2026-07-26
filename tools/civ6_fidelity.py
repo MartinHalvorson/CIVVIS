@@ -1609,6 +1609,8 @@ def project_buildings(database: Database) -> dict[str, dict]:
             "maintenance": number(row.get("Maintenance")),
             "housing": number(row.get("Housing")),
             "amenity": number(row.get("Entertainment")),
+            # Every wall tier is 100; Georgia's Tsikhe is the one 200.
+            "outer_defense": number(row.get("OuterDefenseHitPoints")),
             "citizen_slots": number(row.get("CitizenSlots")),
             "yields": yields.get(name, {}),
             "regional_range": number(row.get("RegionalRange")),
@@ -1828,9 +1830,18 @@ def project_projects(database: Database) -> dict[str, dict]:
 def project_districts(database: Database) -> dict[str, dict]:
     projected = {}
     for row in database.rows("Districts"):
-        projected[slug(row["DistrictType"], "DISTRICT_")] = {
+        entry = {
             "cost": number(row.get("Cost")),
+            "maintenance": number(row.get("Maintenance")),
+            "appeal": number(row.get("Appeal")),
+            "air_slots": number(row.get("AirSlots")),
         }
+        # MaxPerPlayer is -1 for "as many as you like"; CIVVIS leaves the field
+        # off. Only the Government Plaza and the Diplomatic Quarter carry a 1.
+        limit = number(row.get("MaxPerPlayer"))
+        if limit > 0:
+            entry["max_per_empire"] = limit
+        projected[slug(row["DistrictType"], "DISTRICT_")] = entry
     return projected
 
 
