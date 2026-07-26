@@ -680,6 +680,7 @@ mod tests {
                     city: None,
                 },
             ],
+            theater: Vec::new(),
         }
     }
 

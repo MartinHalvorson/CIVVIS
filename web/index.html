@@ -1564,9 +1564,25 @@
   .war-list > * { flex: 0 0 auto; }
   .war-card { overflow: hidden; border: 1px solid #6c514b; border-radius: 5px; background: #0b1613; box-shadow: inset 0 0 0 1px #0007; }
   .war-card.ended { border-color: #435e54; }
-  .war-period { display: grid; grid-template-columns: 1fr 1fr; padding: 6px 8px; background: linear-gradient(90deg, #3a1917, #261817 50%, #16251f); border-bottom: 1px solid #79594f; color: #d6c5bd; font-size: var(--type-label); font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
-  .war-period span:last-child { text-align: right; }
+  .war-period { display: grid; grid-template-columns: minmax(58px, 1fr) auto minmax(72px, 1fr); align-items: center; padding: 6px 8px; background: linear-gradient(90deg, #3a1917, #261817 50%, #16251f); border-bottom: 1px solid #79594f; color: #d6c5bd; font-size: var(--type-label); font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+  .war-period > span:last-of-type { text-align: right; }
   .war-period b { display: block; color: #fff0e9; font: 700 var(--type-control)/1.2 var(--font-display); letter-spacing: 0; text-transform: none; }
+  .war-map-action {
+    grid-column: 2; grid-row: 1; min-height: 27px; margin: 0 6px; padding: 4px 8px;
+    border-color: #d8ad5e99; border-radius: 5px; color: #ffe8ad;
+    background: linear-gradient(180deg, #57421f, #332713); box-shadow: inset 0 1px #fff2;
+    font-size: var(--type-caption); font-weight: 900; letter-spacing: .055em; line-height: 1.1;
+    text-transform: uppercase; white-space: nowrap;
+  }
+  .war-map-action:hover, .war-map-action:focus-visible {
+    color: #fff4ce; border-color: #f0cf82; background: linear-gradient(180deg, #745a2c, #44351c);
+  }
+  .war-map-action.aftermath {
+    border-color: #678b7c; color: #bfe3d2; background: linear-gradient(180deg, #29443a, #1a2f28);
+  }
+  .war-map-action.aftermath:hover, .war-map-action.aftermath:focus-visible {
+    color: #e0f7ec; border-color: #8bbca7; background: linear-gradient(180deg, #365b4d, #223c33);
+  }
   .war-card.ended .war-period { background: linear-gradient(90deg, #1c2924, #14211c); border-bottom-color: #435e54; }
   .war-infobox-row { border-top: 1px solid #ffffff0d; }
   .war-infobox-row:first-of-type { border-top: 0; }
@@ -3329,7 +3345,19 @@ const MOUNTAIN_ATLAS = new Image();
 let MOUNTAIN_ATLAS_READY = false;
 MOUNTAIN_ATLAS.onload = () => { MOUNTAIN_ATLAS_READY = true; if (state) draw(); };
 MOUNTAIN_ATLAS.src = "/assets/mountain-atlas.png";
-const PARCH = "#c7b58a", PARCH_GRID = "#8a795533", PARCH_INK = "#6d5c3a";
+// The blank reaches of a player's chart are an illustrated object, not a dark
+// mask. Four period-map creatures share one transparent atlas cell apiece and
+// are always painted *under* known ground, so decoration can never disclose a
+// hidden coast, biome or resource.
+const HIDDEN_MAP_MONSTER_ATLAS = new Image();
+let HIDDEN_MAP_MONSTER_ATLAS_READY = false;
+HIDDEN_MAP_MONSTER_ATLAS.onload = () => {
+  HIDDEN_MAP_MONSTER_ATLAS_READY = true; if (state) draw();
+};
+HIDDEN_MAP_MONSTER_ATLAS.src = "/assets/hidden-map-monsters.png";
+const HIDDEN_MAP_MONSTER_CELL = 627;
+const PARCH = "#c7b58a", PARCH_LIGHT = "#dfcea2",
+      PARCH_GRID = "#8a795533", PARCH_INK = "#6d5c3a";
 const FEATURE_LABEL = {
   forest:"Woods", jungle:"Rainforest", marsh:"Marsh", oasis:"Oasis",
   floodplains:"Desert Floodplains", grassland_floodplains:"Grassland Floodplains",
@@ -7639,6 +7667,167 @@ function hexPath(x, y, s) {
   s = s || S;
   cx.beginPath();
   appendHexPath(x, y, s);
+}
+
+function positiveMod(value, period) {
+  return ((value % period) + period) % period;
+}
+
+// Whether a coordinate belongs to blank chart rather than known ground. An
+// open chart deliberately treats everything beyond its surveyed copy as
+// parchment too: outlining the storage rectangle would reveal the world's
+// width before anybody had sailed it. Once the chart closes, physical map
+// edges stop being mistaken for undiscovered territory.
+function hiddenMapCellAt(q, r, open = chartIsOpen()) {
+  if (!state) return false;
+  if (open) return !chartDrawsGroundAt(q, r);
+  const pos = mapWrapsX() || mapWrapsY() ? canonPos([q, r]) : [q, r];
+  const col = offsetColumn(pos);
+  if (pos[1] < 0 || pos[1] >= state.map.height ||
+      col < 0 || col >= state.map.width) return false;
+  return !TMAP.has(key(pos));
+}
+
+function hiddenMapViewport(halfWidth, top, bottom) {
+  if (!state) return {open:false, cells:[]};
+  const open = chartIsOpen();
+  const span = open
+    ? framedHexBounds(3)
+    : {left:0, right:state.map.width - 1, top:0, bottom:state.map.height - 1};
+  const cells = [];
+  for (let row = span.top; row <= span.bottom; row++) {
+    for (let col = span.left; col <= span.right; col++) {
+      const q = col - ((row - (row & 1)) >> 1);
+      if (!hiddenMapCellAt(q, row, open)) continue;
+      const [x, y] = open ? hexXYRaw(q, row) : hexXY(q, row);
+      if (x < -halfWidth || x > halfWidth || y < top || y > bottom) continue;
+      cells.push({q, r:row, col, x, y});
+    }
+  }
+  return {open, cells};
+}
+
+function hiddenMapSeedWords() {
+  const seed = Number(state?.seed) || 0;
+  return [seed | 0, Math.floor(seed / 4294967296) | 0];
+}
+
+function hiddenMapIsDeep(q, r, open, radius = 3) {
+  for (let dq = -radius; dq <= radius; dq++) {
+    const from = Math.max(-radius, -dq - radius);
+    const to = Math.min(radius, -dq + radius);
+    for (let dr = from; dr <= to; dr++)
+      if (!hiddenMapCellAt(q + dq, r + dr, open)) return false;
+  }
+  return true;
+}
+
+function drawHiddenMapMonster(x, y, size, variant, angle, mirrored, alpha) {
+  if (!HIDDEN_MAP_MONSTER_ATLAS_READY) return;
+  const sourceX = (variant & 1) * HIDDEN_MAP_MONSTER_CELL;
+  const sourceY = (variant >> 1) * HIDDEN_MAP_MONSTER_CELL;
+  cx.save();
+  cx.translate(x, y); cx.rotate(angle);
+  if (mirrored) cx.scale(-1, 1);
+  // Multiplication makes the pale body stock become the vellum underneath it,
+  // leaving the generated engraving as ink rather than a pasted-on sticker.
+  cx.globalCompositeOperation = "multiply";
+  cx.globalAlpha = alpha;
+  cx.drawImage(HIDDEN_MAP_MONSTER_ATLAS,
+    sourceX, sourceY, HIDDEN_MAP_MONSTER_CELL, HIDDEN_MAP_MONSTER_CELL,
+    -size / 2, -size / 2, size, size);
+  cx.restore();
+}
+
+function drawHiddenMapParchment(layer) {
+  if (!layer.cells.length) return;
+  const xs = layer.cells.map(cell => cell.x), ys = layer.cells.map(cell => cell.y);
+  const minX = Math.min(...xs) - S, maxX = Math.max(...xs) + S;
+  const minY = Math.min(...ys) - S, maxY = Math.max(...ys) + S;
+  cx.save();
+  // One compound fill, with overlapping faces, is the important difference
+  // from the former pale honeycomb. The sheet is continuous; hexes begin only
+  // where a player has actual terrain to count.
+  cx.beginPath();
+  for (const cell of layer.cells) appendHexPath(cell.x, cell.y, S + 1.15);
+  cx.fillStyle = PARCH; cx.fill();
+  const age = cx.createLinearGradient(minX, minY, maxX, maxY);
+  age.addColorStop(0, "rgba(245,231,191,.20)");
+  age.addColorStop(.46, "rgba(182,153,99,.03)");
+  age.addColorStop(1, "rgba(91,67,35,.14)");
+  cx.fillStyle = age; cx.fill();
+
+  // Long, faint fibres cross many cells at once. They texture the paper
+  // without turning the hidden area back into a tile diagram.
+  cx.clip();
+  cx.strokeStyle = PARCH_INK; cx.lineWidth = .55; cx.globalAlpha = .075;
+  const [seedA, seedB] = hiddenMapSeedWords();
+  const span = Math.max(S, maxY - minY);
+  for (let i = 0; i < 13; i++) {
+    const y = minY + span * (i + .35 + hash2(seedA + i * 17, seedB + 31) * .3) / 13;
+    const bend = (hash2(seedB + i * 23, seedA + 7) - .5) * S * .8;
+    cx.beginPath(); cx.moveTo(minX, y);
+    cx.bezierCurveTo(minX + (maxX - minX) * .32, y + bend,
+                     minX + (maxX - minX) * .68, y - bend, maxX, y);
+    cx.stroke();
+  }
+  cx.restore();
+}
+
+function drawHiddenMapMonsters(layer) {
+  if (!HIDDEN_MAP_MONSTER_ATLAS_READY || !layer.cells.length) return;
+  const [seedA, seedB] = hiddenMapSeedWords();
+  // Exactly one possible seat per coarse chart block keeps the creatures
+  // reliably present in an ordinary camera view while the spacing itself
+  // prevents an atlas full of monsters from becoming a wallpaper pattern.
+  const strideColumns = 8, strideRows = 5;
+  const phaseColumn = Math.floor(hash2(seedA, seedB + 41) * strideColumns);
+  const phaseRow = Math.floor(hash2(seedB, seedA + 53) * strideRows);
+  for (const cell of layer.cells) {
+    if (positiveMod(cell.col - phaseColumn, strideColumns) ||
+        positiveMod(cell.r - phaseRow, strideRows)) continue;
+    if (!hiddenMapIsDeep(cell.q, cell.r, layer.open)) continue;
+    // At an atlas-scale zoom, thin the fixed seats rather than shrinking every
+    // engraving into visual grit. Close views keep the fuller old-chart read.
+    const lod = hash2(cell.col + seedA * 3, cell.r + seedB * 5);
+    if (cam.scale < .45 ? lod < .68 : cam.scale < .72 && lod < .38) continue;
+    const detail = hash2(cell.col * 17 + seedB, cell.r * 19 + seedA);
+    drawHiddenMapMonster(
+      cell.x, cell.y, S * (4.8 + detail * 1.15),
+      Math.floor(hash2(cell.col * 29 + seedA, cell.r * 31 + seedB) * 4),
+      (hash2(cell.col * 7 + seedB, cell.r * 11 + seedA) - .5) * .28,
+      hash2(cell.col * 37 + seedA, cell.r * 41 + seedB) > .5,
+      MODE.painted ? .48 : .41
+    );
+  }
+}
+
+function drawHiddenMapFrontier(tiles) {
+  const segments = [];
+  const open = chartIsOpen();
+  for (const tile of tiles) {
+    const [x, yy] = hexXY(tile.pos[0], tile.pos[1]);
+    const y = yy - elev(tile);
+    for (let side = 0; side < 6; side++) {
+      const q = tile.pos[0] + DIRS[side][0];
+      const r = tile.pos[1] + DIRS[side][1];
+      if (!hiddenMapCellAt(q, r, open)) continue;
+      const [first, second] = EDGE_CORNERS[side];
+      segments.push([...corner(x, y, S + .25, first),
+                     ...corner(x, y, S + .25, second)]);
+    }
+  }
+  if (!segments.length) return;
+  const path = () => {
+    cx.beginPath();
+    for (const [ax, ay, bx, by] of segments) {
+      cx.moveTo(ax, ay); cx.lineTo(bx, by);
+    }
+  };
+  cx.save(); cx.lineCap = "round"; cx.lineJoin = "round";
+  path(); cx.strokeStyle = "rgba(231,213,167,.86)"; cx.lineWidth = 5.6; cx.stroke();
+  path(); cx.strokeStyle = "rgba(84,65,37,.70)"; cx.lineWidth = 1.25; cx.stroke();
+  cx.restore();
 }
 
 // Atlas art has one geometric contract with the board. Ground art is clipped
@@ -13957,6 +14146,29 @@ function drawEmpireLensFlat(tiles) {
   cx.restore();
 }
 
+function drawPlanetChartMarginalia() {
+  if (!HIDDEN_MAP_MONSTER_ATLAS_READY) return;
+  const [seedA, seedB] = hiddenMapSeedWords();
+  const width = area.clientWidth, height = area.clientHeight;
+  // Screen-space seats are appropriate here: before the sphere is known, this
+  // projection is a sheet whose uncharted paper runs to the frame. Projected
+  // known cells are painted next and cover every part of a creature that no
+  // longer belongs to the unknown.
+  const seats = [[.17,.27],[.78,.24],[.25,.75],[.74,.72]];
+  for (let i = 0; i < seats.length; i++) {
+    const [ux, uy] = seats[i];
+    const h = hash2(seedA + i * 37, seedB + i * 43);
+    const size = Math.max(104, Math.min(210, Math.min(width, height) * (.19 + h * .055)));
+    drawHiddenMapMonster(
+      ux * width + (hash2(seedB + i * 11, seedA) - .5) * width * .08,
+      uy * height + (hash2(seedA + i * 13, seedB) - .5) * height * .07,
+      size, Math.floor(hash2(seedB + i * 23, seedA + 17) * 4),
+      (hash2(seedA + i * 29, seedB + 19) - .5) * .2,
+      hash2(seedB + i * 31, seedA + 29) > .5, .38
+    );
+  }
+}
+
 function drawPlanetMap() {
   if (!planetMap()) return false;
   if (!planetReady()) {
@@ -14022,7 +14234,10 @@ function drawPlanetMap() {
   }
   const ocean = cx.createRadialGradient(centerX - sheet * .32, centerY - sheet * .36,
                                         sheet * .05, centerX, centerY, sheet);
-  if (spectator) {
+  if (camera.chart && !spectator) {
+    ocean.addColorStop(0, PARCH_LIGHT); ocean.addColorStop(.52, PARCH);
+    ocean.addColorStop(.88, "#aa9364"); ocean.addColorStop(1, "#77623f");
+  } else if (spectator) {
     ocean.addColorStop(0, "#477f9b"); ocean.addColorStop(.52, "#163f57");
     ocean.addColorStop(.88, "#082437"); ocean.addColorStop(1, "#020b13");
   } else {
@@ -14035,6 +14250,21 @@ function drawPlanetMap() {
   if (camera.chart) cx.fillRect(0, 0, area.clientWidth, area.clientHeight);
   else { cx.beginPath(); cx.arc(centerX, centerY, radius, 0, 7); cx.fill(); }
   cx.restore();
+
+  if (camera.chart && !spectator) {
+    cx.save();
+    cx.strokeStyle = PARCH_INK; cx.globalAlpha = .065; cx.lineWidth = .65;
+    for (let i = 0; i < 15; i++) {
+      const y = area.clientHeight * (i + .45) / 15;
+      cx.beginPath(); cx.moveTo(0, y);
+      cx.bezierCurveTo(area.clientWidth * .32, y + (i % 2 ? 8 : -8),
+                       area.clientWidth * .67, y + (i % 2 ? -7 : 7),
+                       area.clientWidth, y);
+      cx.stroke();
+    }
+    cx.restore();
+    drawPlanetChartMarginalia();
+  }
 
   const cells = earthInFrame ? planetCells(camera, scale, centerX, centerY) : [];
   drawPlanetGround(cells, camera, scale, radius, centerX, centerY, visible, spectator);
@@ -14215,47 +14445,13 @@ function draw() {
   const halfW = area.clientWidth / (2 * cam.scale) + S * 3;
   const topY = -area.clientHeight / (2 * cam.scale) - S * 5;
   const botY = area.clientHeight / (2 * cam.scale) + S * 3.5;
-  // --- antique-map parchment for the unexplored world
-  if (beau0 && state) {
-    cx.textAlign = "center"; cx.textBaseline = "middle";
-    // Parchment is what the world is made of where nobody has been, so on an
-    // open chart it does not stop at the rectangle the world happens to be
-    // stored in: it is laid over whatever the frame can reach, and the sheet
-    // keeps going in every direction the way an unmeasured world does. Once a
-    // people have been round, the parchment ends where their world does.
-    const open = chartIsOpen();
-    const span = open
-      ? framedHexBounds()
-      : {left:0, right:state.map.width - 1, top:0, bottom:state.map.height - 1};
-    for (let row = span.top; row <= span.bottom; row++) {
-      for (let col = span.left; col <= span.right; col++) {
-        const q = col - ((row - (row & 1)) >> 1);
-        if (open ? chartDrawsGroundAt(q, row) : TMAP.has(q + "," + row)) continue;
-        const [x, y] = open ? hexXYRaw(q, row) : hexXY(q, row);
-        if (x < -halfW || x > halfW || y < topY || y > botY) continue;
-        hexPath(x, y, S + 0.6);
-        cx.fillStyle = shade(PARCH, 0.96 + 0.08 * hash2(q, row));
-        cx.fill();
-        cx.strokeStyle = PARCH_GRID; cx.lineWidth = 1.2; cx.stroke();
-        const h = hash2(q * 7 + 3, row * 5 + 1);
-        if (h > 0.965) { // sparse hand-drawn flourishes
-          cx.strokeStyle = PARCH_INK; cx.globalAlpha = 0.28; cx.lineWidth = 1.3;
-          if (h > 0.988) { // little sea-serpent curl
-            cx.beginPath();
-            cx.arc(x, y, 7, 0.3, 4.2); cx.arc(x + 4, y - 2, 3.4, 3.6, 6.9);
-            cx.stroke();
-          } else { // hatch marks
-            cx.beginPath();
-            for (let i = -1; i <= 1; i++) {
-              cx.moveTo(x - 6 + i * 5, y + 4); cx.lineTo(x - 1 + i * 5, y - 4);
-            }
-            cx.stroke();
-          }
-          cx.globalAlpha = 1;
-        }
-      }
-    }
-  }
+  // --- antique chart under undiscovered territory. This exists in Strategic
+  // too: changing display detail must never turn the unknown back into a black
+  // tactical mask. Known terrain is painted afterward and therefore clips the
+  // parchment and its monsters without consulting anything hidden.
+  const hiddenMap = hiddenMapViewport(halfW, topY, botY);
+  drawHiddenMapParchment(hiddenMap);
+  drawHiddenMapMonsters(hiddenMap);
   // painter's order by view depth (changes as the camera rotates)
   const onscreen = [];
   for (const t of state.map.tiles) {
@@ -15037,12 +15233,12 @@ function draw() {
   // fades from surveyed coast into empty paper. Feathering outward from the
   // unknown side, rather than inward per edge, is what keeps it a soft front
   // instead of a row of chevrons.
-  if (beau) {
+  if (hiddenMap.cells.length) {
     const haloed = new Set();
     for (const t of tiles) {
       for (let i = 0; i < 6; i++) {
-        if (nbrTile(t.pos, DIRS[i])) continue;       // that way lies known land
         const nq = t.pos[0] + DIRS[i][0], nr = t.pos[1] + DIRS[i][1];
+        if (!hiddenMapCellAt(nq, nr, hiddenMap.open)) continue;
         const hk = nq + "," + nr;
         if (haloed.has(hk)) continue;
         haloed.add(hk);
@@ -15058,6 +15254,10 @@ function draw() {
         cx.beginPath(); cx.arc(px, py, rr2, 0, 7); cx.fill();
       }
     }
+    // A fine engraved survey line sits over the soft paper fade. It gives the
+    // frontier a deliberate hand-drawn edge without outlining every hidden
+    // hex, and disappears one segment at a time as that ground is explored.
+    drawHiddenMapFrontier(tiles);
   }
   // --- right-drag order line
   if (rdrag && rdragTo && sel) {
@@ -18893,6 +19093,62 @@ const WAR_MOMENT_TONE = {
   peace: "peace",
   coalition: "peace",
 };
+
+function warLogKey(war) {
+  return String(war.conflict ?? cinematicWarKey(war));
+}
+
+// A live map keeps changing after the armistice.  Prefer the engine's durable
+// tail of battlefield sites, then degrade gracefully for older saves by using
+// named captured cities or the same live-front heuristic as the cinema
+// director.  The result is a current view of that ground, never a false rewind
+// to the units and borders that existed on the final turn of the war.
+function warTheaterSubjects(war) {
+  const subjects = [], seen = new Set();
+  const add = pos => {
+    if (!Array.isArray(pos) || pos.length !== 2) return;
+    const signature = key(pos);
+    if (seen.has(signature)) return;
+    seen.add(signature);
+    subjects.push({pos:[pos[0], pos[1]]});
+  };
+  for (const site of war.theater || []) add(site?.pos);
+  if (!subjects.length) {
+    for (const moment of war.highlights || []) {
+      if (!moment.city) continue;
+      add(state.cities.find(city => city.name === moment.city)?.pos);
+    }
+  }
+  if (!subjects.length) add(cinematicWarFront(state, war)?.pos);
+  if (!subjects.length) add(playerAnchor(war.defender)?.pos);
+  if (!subjects.length) add(playerAnchor(war.aggressor)?.pos);
+  return subjects;
+}
+
+function focusWarOnMap(warKey) {
+  if (!state) return;
+  const war = (state.wars || []).find(candidate => warLogKey(candidate) === String(warKey));
+  if (!war) return;
+  const subjects = warTheaterSubjects(war);
+  if (!subjects.length) return;
+  takeCameraControl();
+  if (planetMap()) {
+    // A globe has no rectangular world-space frame.  Face the most recent
+    // recorded site and use the ordinary close regional scale instead.
+    flyCameraTo(subjects[subjects.length - 1].pos, planetScaleClamp(1.08));
+  } else {
+    const goal = observedViewGoal(subjects, true);
+    if (!goal) return;
+    cameraZoom = null; clearCameraInertia();
+    if (REDUCED_MOTION_QUERY.matches) {
+      cameraFlight = null;
+      cam.x = goal.x; cam.y = goal.y; cam.scale = goal.scale;
+      draw(); drawMini();
+    } else cameraFlight = goal;
+  }
+  wakeCinema();
+}
+
 function drawWarLog() {
   const el = document.getElementById("wars");
   const scope = document.getElementById("warscope");
@@ -18938,10 +19194,17 @@ function drawWarLog() {
       ? `<span class="war-nuclear-badge" title="Nuclear devices detonated in this war">` +
         `☢ ${detonations} nuclear</span>`
       : "";
+    const mapAction = over ? "View aftermath" : "Watch";
+    const mapActionTitle = over
+      ? "View what became of this war's final battlefield"
+      : "Focus the map on this war's active theater";
     return `<div class="war-card${over ? " ended" : ""}${conquest ? " conquest" : ""}` +
       `${detonations ? " nuclear" : ""}">` +
       `<div class="war-period"><span>Started<b>Turn ${war.started}</b></span>` +
-      `<span>${over ? "Ended" : "Status"}<b>${over ? `Turn ${war.ended}` : `Ongoing · ${length} turn${length === 1 ? "" : "s"}`}</b>${nuclearBadge}</span></div>` +
+      `<span>${over ? "Ended" : "Status"}<b>${over ? `Turn ${war.ended}` : `Ongoing · ${length} turn${length === 1 ? "" : "s"}`}</b>${nuclearBadge}</span>` +
+      `<button type="button" class="war-map-action${over ? " aftermath" : ""}" ` +
+      `data-war-key="${escapeAttr(warLogKey(war))}" title="${escapeAttr(mapActionTitle)}" ` +
+      `aria-label="${escapeAttr(mapActionTitle)}">${mapAction}</button></div>` +
       `<div class="war-infobox-row"><div class="war-row-label">Belligerents</div>` +
       `<div class="war-columns">${warBelligerentRows(war, true, "aggressor", maxSawAction)}` +
       `${warBelligerentRows(war, false, "defender", maxSawAction)}</div></div>` +
@@ -18953,6 +19216,11 @@ function drawWarLog() {
       `<div class="war-moments">${moments || `<span class="war-loss-none">No recorded events</span>`}</div></div></div>`;
   }).join("");
 }
+
+document.getElementById("wars")?.addEventListener("click", event => {
+  const button = event.target.closest(".war-map-action");
+  if (button) focusWarOnMap(button.dataset.warKey);
+});
 
 function drawSide(force = true) {
   const now = performance.now();
