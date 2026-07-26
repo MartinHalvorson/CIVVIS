@@ -383,12 +383,24 @@ pub struct AdvancedAi {
     forced_target_player: Option<usize>,
     force_groups: Vec<ForceGroup>,
     force_groups_dirty: bool,
-    /// Hold *every* force group whenever any city in the empire is
-    /// threatened, however far away it is — the behaviour before the relief
-    /// radius. Off in play. The `advanced_global_hold` evaluator entrant
-    /// turns it on, which makes the two an exact paired A/B of this change
-    /// and nothing else.
-    pub global_threat_hold: bool,
+    /// Hold only the force groups that could actually reach the threatened
+    /// city, instead of every group in the empire.
+    ///
+    /// **Off by default, on measurement.** It does what it says — over eight
+    /// six-player games it cut holds by a group strong enough to advance from
+    /// 19.0% of force-group turns to 10.4%, and the ones left standing were
+    /// 8.8 hexes from the emergency rather than 13.2 — and that bought
+    /// nothing. Pre-registered at 120 mirrored maps against the shipped
+    /// behaviour it scored 49.2% (Wilson 40.4%..58.0%, Elo-equivalent -6,
+    /// sign p=0.8555), `promotion gate: INCONCLUSIVE`.
+    ///
+    /// The reading that survives is that mobility is not the binding
+    /// constraint: an army freed to march still arrives with 81% of its
+    /// units three eras stale and converts a spent garrison into a capture
+    /// 22% of the time. Kept behind this flag, and reachable as the
+    /// `advanced_relief_scoped` entrant, so it can be re-measured once the
+    /// conversion bottleneck moves rather than re-derived from scratch.
+    pub scoped_relief_hold: bool,
 }
 
 impl Default for AdvancedAi {
@@ -432,7 +444,7 @@ impl AdvancedAi {
             forced_target_player: None,
             force_groups: Vec::new(),
             force_groups_dirty: false,
-            global_threat_hold: false,
+            scoped_relief_hold: false,
         }
     }
 
@@ -8296,16 +8308,19 @@ impl AdvancedAi {
                 });
                 low_hp_unit || capturable_city
             });
-            // `threatened_city` is an empire-wide fact, so before this test
-            // every force group in every domain stood still whenever any city
-            // anywhere was under pressure. Hold only the groups that could
-            // actually arrive; a column that cannot reach the siege is not
-            // defending the city by halting, it is only abandoning its own
-            // campaign. The Engage disjuncts above keep reading the raw flag:
-            // a group already in contact should press regardless of which
-            // city is in trouble.
+            // `threatened_city` is an empire-wide fact, so every force group
+            // in every domain stands still whenever any city anywhere is
+            // under pressure — including columns far too distant to affect
+            // the siege. `scoped_relief_hold` restricts the hold to groups
+            // that could actually arrive. It is off by default: it changes
+            // the behaviour as intended and measured no stronger, so the
+            // shipped agent keeps the old rule until the constraint it
+            // exposes is worth spending on. See the field's documentation.
+            // The Engage disjuncts deliberately keep reading the raw flag
+            // either way: a group already in contact should press regardless
+            // of which city is in trouble.
             let relieving = plan.threatened_city.is_some_and(|city| {
-                self.global_threat_hold || Self::can_relieve(g, &units, anchor, city)
+                !self.scoped_relief_hold || Self::can_relieve(g, &units, anchor, city)
             });
             let posture = if average_hp <= self.base.w.withdraw_hp + 10.0 {
                 ForcePosture::Recover
@@ -14118,6 +14133,7 @@ mod tests {
                 assessed_turn: game.turn,
             };
             let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+            ai.scoped_relief_hold = true;
             ai.rebuild_force_groups(&game, 0, &plan);
             let group = ai
                 .force_groups
@@ -14141,6 +14157,34 @@ mod tests {
             posture_at(20),
             ForcePosture::Hold,
             "a force twenty hexes away cannot defend the capital by standing still"
+        );
+    }
+
+    /// The shipped agent is unchanged. The scoped hold measured no stronger
+    /// than the global one, so it stays behind its flag, and a paired
+    /// evaluation is only meaningful if the control really is the incumbent.
+    #[test]
+    fn the_default_agent_still_holds_for_a_threat_it_cannot_reach() {
+        let (mut game, city, home) = empire_with_a_capital(71_102);
+        let warrior = game.spawn_test_unit("warrior", 0, anchor_at(&game, home, 20));
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: None,
+            threatened_city: Some(city),
+            desired_cities: 3,
+            assessed_turn: game.turn,
+        };
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        assert!(!ai.scoped_relief_hold, "the shipped default must be unchanged");
+        ai.rebuild_force_groups(&game, 0, &plan);
+        assert_eq!(
+            ai.force_groups
+                .iter()
+                .find(|group| group.units.contains(&warrior))
+                .unwrap()
+                .posture,
+            ForcePosture::Hold,
         );
     }
 
