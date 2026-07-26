@@ -78,6 +78,11 @@ pub struct TerrainSpec {
     pub passable: bool,
     #[serde(default = "done")]
     pub move_cost: f64,
+    /// The shipped ``Terrains.DefenseModifier``, added to a defender's Combat
+    /// Strength. Every Hills terrain ships 3 and everything else 0, so CIVVIS'
+    /// hills flag carries it.
+    #[serde(default)]
+    pub defense: f64,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -102,6 +107,10 @@ pub struct FeatureSpec {
     pub sight_through: i32,
     #[serde(default)]
     pub impassable: bool,
+    /// The shipped ``Features.DefenseModifier``, added to a defender's Combat
+    /// Strength: Woods, Rainforest and Reef 3, Floodplains and Marsh -2.
+    #[serde(default)]
+    pub defense: f64,
     /// The shipped Feature_Removes yields a Builder collects for clearing
     /// this feature (base values; the payout scales with the era).
     #[serde(default)]
