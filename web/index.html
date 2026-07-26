@@ -2552,6 +2552,10 @@
           <option value="single">Single player</option>
           <option disabled>Multiplayer · later</option>
         </select></label>
+        <label class="small">Leader Pool<select id="leaderpool" style="margin-top:4px">
+          <option value="civ6" selected>Civ 6 Leaders</option>
+          <option value="expanded">Expanded</option>
+        </select></label>
         <label class="small human-setting">Leader<select id="leader" style="margin-top:4px">
           <option value="">Random</option>
         </select></label>
@@ -5419,13 +5423,7 @@ async function boot() {
     // A leader is a civilization plus the person who leads it; the ruleset
     // knows both, and their agendas, so the setup screen never invents names.
     if (RULES.civs && typeof RULES.civs === "object") {
-      const leaders = Object.entries(RULES.civs)
-        .map(([civ, spec]) => ({civ, leader: spec.leader || civ, note: spec.note || ""}))
-        .sort((first, second) => first.leader.localeCompare(second.leader));
-      document.getElementById("leader").innerHTML =
-        `<option value="">Random leader</option>` + leaders.map(entry =>
-          `<option value="${entry.civ}" title="${escapeAttr(entry.note)}">` +
-          `${entry.leader} of ${entry.civ}</option>`).join("");
+      syncLeaderPool();
     }
     if (RULES.difficulties && typeof RULES.difficulties === "object") {
       const ladder = Object.entries(RULES.difficulties)
@@ -6715,6 +6713,8 @@ function render(st, recordChronicle = true) {
     document.getElementById("mappoles").value = st.map.poles || "poles";
     syncEarthShape();
     document.getElementById("gamespeed").value = st.game_speed || "standard";
+    document.getElementById("leaderpool").value = st.leader_pool || "civ6";
+    syncLeaderPool();
     // The seat a person is playing and the handicap they are playing it on are
     // settings of this world too, so the panel adopts them alongside the map
     // and the speed. Without this a reloaded page read "Random leader" and
@@ -20790,6 +20790,7 @@ async function autoplay(turns) {
 document.getElementById("autoplaybtn").onclick = () => autoplay(autoplayRequest());
 document.getElementById("tradebtn").onclick = () => openTrade();
 document.getElementById("gamemode").addEventListener("change", syncSetupMode);
+document.getElementById("leaderpool").addEventListener("change", syncLeaderPool);
 document.getElementById("maptype").addEventListener("change", syncEarthShape);
 document.getElementById("startgame").onclick = () => startNewSimulation();
 document.getElementById("savebtn").onclick = () => writeSave();
@@ -20845,12 +20846,14 @@ function selectedSimulationSettings() {
   const mapTopology = document.getElementById("mapshape").value;
   const mapPoles = document.getElementById("mappoles").value;
   const gameSpeed = document.getElementById("gamespeed").value;
+  const leaderPool = document.getElementById("leaderpool").value;
   const victoryConditions = Object.fromEntries(VICTORY_TRACKS.map(track =>
     [track.id, document.getElementById(`victory-${track.id}`).checked]));
   const leader = (document.getElementById("leader") || {}).value || "";
   const difficulty = (document.getElementById("difficulty") || {}).value || "";
   return {num_players: np, map_script: mapScript, map_topology: mapTopology,
           map_poles: mapPoles, game_speed: gameSpeed,
+          leader_pool: leaderPool,
           victory_conditions: victoryConditions,
           spectate: gameMode === "ai_sim",
           // A spectated world has nobody to hand a leader or a handicap to.
@@ -20887,6 +20890,8 @@ function applyQueuedSimulationSettings(settings) {
   if (settings.poles) document.getElementById("mappoles").value = settings.poles;
   syncEarthShape();
   document.getElementById("gamespeed").value = settings.speed;
+  document.getElementById("leaderpool").value = settings.leader_pool || "civ6";
+  syncLeaderPool();
   const victories = new Set(settings.victories || []);
   for (const track of VICTORY_TRACKS)
     document.getElementById(`victory-${track.id}`).checked = victories.has(track.id);
@@ -20971,6 +20976,26 @@ function adoptRunningMode() {
 function syncSetupMode() {
   const mode = (document.getElementById("gamemode") || {}).value || "ai_sim";
   document.body.classList.toggle("spectating", mode === "ai_sim");
+}
+
+// The broad historical ruleset remains available, but a normal lobby offers
+// only civilizations that Civilization VI itself ships. The same pool fills
+// random AI seats on the server and filters the person's explicit leader
+// choice here, so "Random leader" and a named pick describe one roster.
+function syncLeaderPool() {
+  const select = document.getElementById("leader");
+  const pool = document.getElementById("leaderpool");
+  if (!select || !pool || !RULES || !RULES.civs || typeof RULES.civs !== "object") return;
+  const selected = select.value;
+  const civ6 = new Set(Array.isArray(RULES.civ6_leaders) ? RULES.civ6_leaders : []);
+  const leaders = Object.entries(RULES.civs)
+    .filter(([civ]) => pool.value === "expanded" || civ6.has(civ))
+    .map(([civ, spec]) => ({civ, leader: spec.leader || civ, note: spec.note || ""}))
+    .sort((first, second) => first.leader.localeCompare(second.leader));
+  select.innerHTML = `<option value="">Random leader</option>` + leaders.map(entry =>
+    `<option value="${entry.civ}" title="${escapeAttr(entry.note)}">` +
+    `${entry.leader} of ${entry.civ}</option>`).join("");
+  if (leaders.some(entry => entry.civ === selected)) select.value = selected;
 }
 
 // Earth is the one world type whose shape is not the lobby's to choose: it is

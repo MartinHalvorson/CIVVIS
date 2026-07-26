@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use civvis::ai::{run_game, AdvancedAi, Ai};
 use civvis::game::{
-    default_difficulty, default_speed, Game, GameOptions, VictoryConditions,
+    default_difficulty, default_speed, Game, GameOptions, LeaderPool, VictoryConditions,
     DEFAULT_DISASTER_INTENSITY, GAME_MODES,
 };
 use civvis::rules::Rules;
@@ -196,6 +196,13 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
             .filter_map(|seat| seat.trim().parse().ok())
             .collect(),
         teams,
+        leader_pool: {
+            let id = arg_text(args, "--leader-pool", LeaderPool::default().id());
+            LeaderPool::from_id(&id).unwrap_or_else(|| {
+                eprintln!("unknown leader pool {id:?}; choose civ6 or expanded");
+                std::process::exit(2);
+            })
+        },
         // Who the player is. `--civ Egypt` seats Egypt at seat 0; `--civs
         // Egypt,Rome` names the leading seats in order. Anything unnamed
         // falls back to the stock roster, and a name the ruleset does not
@@ -831,6 +838,7 @@ fn main() {
                     difficulty: play_options.difficulty,
                     speed: play_options.speed,
                     teams: play_options.teams,
+                    leader_pool: play_options.leader_pool,
                     civs: play_options.civs,
                     supervised: args.iter().any(|a| a == "--supervised"),
                     restart_ms: arg(&args, "--restart-ms", 5_000).max(5_000) as u64,
@@ -962,6 +970,7 @@ fn main() {
                       [--speed online|quick|standard|epic|marathon] \
                       [--disasters 0|1|2|3|4] [--barbarians on|off] \
                       [--game-modes apocalypse,secret_societies] \
+                      [--leader-pool civ6|expanded] \
                       [--human-seats 0,1] [--teams 0,0,1,1] [--mods path/to/mod,path/to/other] \
                       [--victories science,culture,religious,diplomatic,domination,score] \
                       [--spectate] [--supervised] [--restart-ms N] [--resume checkpoint.json] [--strict] \
