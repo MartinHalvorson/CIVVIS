@@ -651,7 +651,7 @@ fn people(check: &mut Check) {
     // engine that reads it, or the civilization silently has no ability at
     // all — a misspelt key is indistinguishable from a fair one until someone
     // measures a whole game against the note in the ruleset.
-    const CIV_EFFECTS: [&str; 13] = [
+    const CIV_EFFECTS: [&str; 15] = [
         "city_food",
         "city_production",
         "city_gold",
@@ -664,6 +664,8 @@ fn people(check: &mut Check) {
         "district_production_pct",
         "wonder_production_pct",
         "combat_strength",
+        "holy_city_combat_strength",
+        "unit_kill_religious_pressure",
         "unit_xp_pct",
     ];
     let units = check.rules.units.clone();
