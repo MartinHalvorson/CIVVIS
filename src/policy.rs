@@ -218,6 +218,69 @@ impl PolicyAi {
         out
     }
 
+    /// Per-feature pressure the argmax puts on the feature vector.
+    ///
+    /// Returns, for each feature index, the mean change the *chosen* action
+    /// makes to it and the mean change an average legal candidate makes.
+    /// A feature the policy is exploiting shows a chosen-delta far larger
+    /// than the field's.
+    ///
+    /// This exists because the ratio is how `policy_wide`'s collapse was
+    /// diagnosed, and the diagnosis generalizes past that agent. Fitting a
+    /// value net to outcomes teaches it correlations; an argmax over
+    /// sibling actions then optimises whichever correlate is cheapest to
+    /// move, whether or not moving it is good. The contact terms scored
+    /// 0.137 against the field's 0.002 — seventy-eight times — while the
+    /// agent lost material and 86% of its games. Nothing in a win rate,
+    /// a calibration curve or a visibility table shows that; this does.
+    ///
+    /// Read it as a question, not a verdict: a feature under heavy
+    /// pressure is one to ask "would I be content for the agent to
+    /// maximise this?" about. Material and health earn a yes. Proximity to
+    /// the enemy earns a no, because in the training games it is a symptom
+    /// of a strong empire pressing an attack rather than a cause of one.
+    pub fn feature_pressure(&self, g: &Game, pid: usize) -> Option<Vec<(f64, f64)>> {
+        self.net.as_ref()?;
+        let before = self.features_for(g, pid);
+        let (action, _) = self.best_action(g, pid)?;
+        let mut chosen = g.clone();
+        chosen.apply(pid, &action).ok()?;
+        let after = self.features_for(&chosen, pid);
+
+        let mut field = vec![0.0f64; before.len()];
+        let mut counted = 0.0f64;
+        for candidate in self.candidates(g, pid) {
+            let mut sim = g.clone();
+            if sim.apply(pid, &candidate).is_err() {
+                continue;
+            }
+            let f = self.features_for(&sim, pid);
+            for (slot, (now, was)) in field.iter_mut().zip(f.iter().zip(before.iter())) {
+                *slot += (*now - *was) as f64;
+            }
+            counted += 1.0;
+        }
+        if counted == 0.0 {
+            return None;
+        }
+        Some(
+            before
+                .iter()
+                .zip(after.iter())
+                .zip(field.iter())
+                .map(|((was, now), total)| ((*now - *was) as f64, total / counted))
+                .collect(),
+        )
+    }
+
+    fn features_for(&self, g: &Game, pid: usize) -> Vec<f32> {
+        if self.wide {
+            decision_features(g, pid)
+        } else {
+            features(g, pid)
+        }
+    }
+
     /// One net-guided decision: returns the best improving action, if any.
     pub fn best_action(&self, g: &Game, pid: usize) -> Option<(Action, f64)> {
         self.net.as_ref()?;
@@ -289,6 +352,7 @@ mod tests {
     use super::{PolicyAi, TACTICAL_KINDS, UNOBSERVABLE_KINDS};
     use crate::action_space::{kind_name, legal_encoded};
     use crate::ai::{run_game, Ai, BasicAi};
+    use crate::decision_features::ADJACENT_ENEMIES;
     use crate::evolve::features;
     use crate::game::{Action, Game};
 
@@ -360,6 +424,60 @@ mod tests {
                 "{kind} is excluded from a set it was never in"
             );
         }
+    }
+
+    /// The audit must reproduce the diagnosis it was built from: with the
+    /// contact terms free, the argmax moves them far harder than the field
+    /// does; with them frozen, it cannot. This pins the design rule as a
+    /// regression check rather than a paragraph — a future feature set can
+    /// be run through the same measurement before it is handed to an
+    /// argmax.
+    #[test]
+    fn the_audit_detects_a_feature_the_argmax_exploits() {
+        let free = PolicyAi::new().with_decision_features();
+        if !free.has_net() {
+            return; // no 34-wide artifact on disk; nothing to audit
+        }
+        let frozen = PolicyAi::new().with_frozen_contact();
+        let mut free_pressure = 0.0;
+        let mut field_pressure = 0.0;
+        let mut frozen_pressure = 0.0;
+        let mut samples = 0.0;
+        for seed in 0..2u64 {
+            let mut g = Game::new(4, 28, 18, 55_000 + seed, 90, 2);
+            let mut ais = BasicAi::fleet(&g);
+            while g.winner.is_none() && g.turn <= g.max_turns {
+                let pid = g.current;
+                if pid == 0 {
+                    if let Some(rows) = free.feature_pressure(&g, 0) {
+                        free_pressure += rows[ADJACENT_ENEMIES].0;
+                        field_pressure += rows[ADJACENT_ENEMIES].1;
+                        samples += 1.0;
+                    }
+                    if let Some(rows) = frozen.feature_pressure(&g, 0) {
+                        frozen_pressure += rows[ADJACENT_ENEMIES].0;
+                    }
+                }
+                ais[pid].take_turn(&mut g, pid);
+                if g.winner.is_none() && g.current == pid {
+                    let _ = g.apply(pid, &Action::EndTurn);
+                }
+            }
+        }
+        assert!(samples > 20.0, "only {samples} decisions sampled");
+        let free_mean = free_pressure / samples;
+        let field_mean = field_pressure / samples;
+        let frozen_mean = frozen_pressure / samples;
+        assert!(
+            free_mean > field_mean.abs() * 5.0 + 0.01,
+            "the audit failed to flag a known-exploited feature: chosen \
+             {free_mean:.5} against field {field_mean:.5}"
+        );
+        assert!(
+            frozen_mean < free_mean,
+            "freezing the term did not reduce the pressure on it: \
+             {frozen_mean:.5} against {free_mean:.5}"
+        );
     }
 
     /// With no trained net on disk the agent must still play a full legal
