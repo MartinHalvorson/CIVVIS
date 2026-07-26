@@ -312,6 +312,10 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
     json!({
         "turn": g.turn,
         "max_turns": g.max_turns,
+        // `max_turns` remains the setup value a successor game should inherit.
+        // This nullable field is the live rule: playing on explicitly removes
+        // that cap, so clients must display infinity rather than a stale turn.
+        "turn_limit": g.turn_limit(),
         "seed": g.seed,
         "game_speed": g.game_speed.id(),
         // The handicap the game is being played on. The save list has always
@@ -667,12 +671,13 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         // The result this world was already given, if it was asked for one
         // more turn. The game is live again, so `winner` is empty; this is how
         // a viewer is still told whose victory the extra turns are borrowed
-        // from, and how long they run.
+        // from, and what can end the continuation.
         "decided": g.decided.as_ref().map(|decided| json!({
             "winner": decided.winner,
             "civ": g.players.get(decided.winner).map(|player| player.civ.clone()),
             "victory_type": decided.victory_type,
             "turn": decided.turn,
+            "mode": decided.mode.as_str(),
         })),
         // What has happened to this civilization lately, newest last. An
         // omniscient viewer watches whichever seat it is observing, so the
@@ -1094,11 +1099,12 @@ fn victory_progress_json(g: &Game, pid: usize, leading_score: i64) -> Value {
     // leader is full and a civilization on half their score is at half. A game
     // with no turn limit has no clock to fill, so its meter stays purely
     // relative to the leader.
-    let clock = if g.max_turns > 0 && g.max_turns < 100_000 {
-        (g.turn as f64 / g.max_turns as f64).clamp(0.0, 1.0)
-    } else {
-        1.0
-    };
+    let clock = g
+        .turn_limit()
+        .filter(|limit| *limit > 0 && *limit < 100_000)
+        .map_or(1.0, |limit| {
+            (g.turn as f64 / limit as f64).clamp(0.0, 1.0)
+        });
     let score_progress = if leading_score > 0 {
         100.0 * clock * score.max(0) as f64 / leading_score as f64
     } else {
@@ -1199,6 +1205,16 @@ fn tile_json(
     } else {
         Value::Null
     };
+    // A visible border identifies the city that owns it. Remembered tiles
+    // retain only the city id, so a client may join it to a city the viewer
+    // already knows without learning a current name through fog of war.
+    let owner_city_name = live
+        .then(|| {
+            tile.owner_city
+                .and_then(|city| g.cities.get(&city))
+                .map(|city| city.name.as_str())
+        })
+        .flatten();
     json!({
         "pos": [tile.pos.0, tile.pos.1],
         "terrain": tile.terrain,
@@ -1214,6 +1230,8 @@ fn tile_json(
         "planned_district": planned,
         "wonder": tile.wonder,
         "owner": owner,
+        "owner_city": tile.owner_city,
+        "owner_city_name": owner_city_name,
         "river": tile.has_river(),
         "river_edges": tile.river_edges,
         "road": tile.road,
@@ -1386,6 +1404,72 @@ fn merge(base: &mut Value, ext: Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tile_hover_identifies_the_owning_city_and_orders_each_gameplay_layer() {
+        let mut game = Game::new_full(2, 20, 14, 19_067, 120, 1, false);
+        let capital_position = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find_map(|unit| {
+                let unit = &game.units[&unit];
+                (unit.kind == "settler").then_some(unit.pos)
+            })
+            .expect("the player starts with a settler");
+        let city_id = game.found_city_for(0, capital_position, None);
+        let city = &game.cities[&city_id];
+        let tile = &game.map.tiles[&city.pos];
+        let live = tile_json(&game, 0, tile, Some(0), true, true, None);
+        assert_eq!(live["owner_city"], json!(city_id));
+        assert_eq!(live["owner_city_name"], json!(city.name));
+
+        let remembered = tile_json(&game, 0, tile, Some(0), false, false, None);
+        assert_eq!(remembered["owner_city"], json!(city_id));
+        assert!(
+            remembered["owner_city_name"].is_null(),
+            "current city names must not leak through a remembered tile"
+        );
+
+        const INDEX: &str = include_str!("../web/index.html");
+        let start = INDEX
+            .find("function tileTipLines(t, pos, tileKey)")
+            .expect("the tile hover has one ordered builder");
+        let end = INDEX[start..]
+            .find("\n// tooltip")
+            .map(|offset| start + offset)
+            .expect("the tile hover builder ends before its event handler");
+        let hover = &INDEX[start..end];
+        let ordered = [
+            "tileOwnershipTipLine(t)",
+            "lines.push(\"Terrain: \"",
+            "if (t.resource)",
+            "if (t.improvement",
+            "if (yieldText)",
+            "const movement = []",
+            "if (t.road > 0)",
+            "if (t.district)",
+            "if (t.wonder)",
+            "const city = state.cities.find",
+            "for (const unit of state.units)",
+        ];
+        let mut previous = 0;
+        for marker in ordered {
+            let at = hover
+                .find(marker)
+                .unwrap_or_else(|| panic!("the tile hover is missing {marker}"));
+            assert!(
+                at >= previous,
+                "tile hover layer {marker} is out of the requested order"
+            );
+            previous = at;
+        }
+        assert!(INDEX.contains(".tip-primary, .tip-unit"));
+        assert!(INDEX.contains("font-size: 13px; font-weight: 850"));
+        assert!(INDEX.contains("Rome:\"Roman\""));
+        assert!(INDEX.contains(
+            "<span class=\"tip-unit\">● ${civAdjective(civ)} ${titleCase(unit.type)}"
+        ));
+    }
 
     /// The player HUD and the victory tracker are drawn from `players`, so an
     /// empire nobody has met has to be missing from it rather than merely
