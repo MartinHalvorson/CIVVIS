@@ -7,6 +7,15 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='16' fill='%2307110f'/%3E%3Ccircle cx='16' cy='16' r='12.5' fill='%23d7b66a' stroke='%23f6e4ac'/%3E%3Ctext x='16' y='21' text-anchor='middle' font-family='Georgia,serif' font-size='15' font-weight='700' fill='%2315221c'%3EV%3C/text%3E%3C/svg%3E">
 <style>
   :root {
+    --font-ui: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --type-micro: 9px;
+    --type-caption: 9.5px;
+    --type-label: 10px;
+    --type-small: 11px;
+    --type-secondary: 12px;
+    --type-control: 13px;
+    --type-body: 14px;
     --ink: #07110f;
     --panel: #0d1817;
     --panel-2: #132220;
@@ -14,8 +23,8 @@
     --line: #29413b;
     --line-soft: #1d302c;
     --text: #edf2e9;
-    --muted: #97aaa3;
-    --faint: #62746e;
+    --muted: #a9bbb4;
+    --faint: #82958e;
     --gold: #d7b66a;
     --gold-bright: #f0d28c;
     --gold-deep: #8b6b2d;
@@ -28,10 +37,12 @@
   }
   * { box-sizing: border-box; margin: 0; }
   html, body { height: 100%; }
+  html { text-size-adjust: 100%; -webkit-text-size-adjust: 100%; }
   body {
-    font: 13px/1.45 Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font: var(--type-body)/1.5 var(--font-ui);
     background: var(--ink); color: var(--text); display: flex; overflow: hidden;
-    letter-spacing: .01em;
+    font-kerning: normal; font-optical-sizing: auto; letter-spacing: .005em;
+    text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased;
   }
   body::after {
     content: ""; position: fixed; inset: 0; z-index: 100; pointer-events: none;
@@ -85,7 +96,7 @@
     inset: -8px; border-right-color: transparent; animation: worldTransitionOrbit 1.45s linear infinite reverse;
   }
   .world-transition-kicker {
-    color: #d7b66a; font-size: 9px; font-weight: 850; letter-spacing: .24em;
+    color: #d7b66a; font-size: var(--type-small); font-weight: 850; letter-spacing: .16em;
     text-transform: uppercase;
   }
   #world-transition-title {
@@ -93,14 +104,14 @@
     letter-spacing: .015em;
   }
   #world-transition-summary {
-    min-height: 1.45em; margin-top: 13px; color: #c8d4ce; font-size: 12px;
+    min-height: 1.45em; margin-top: 13px; color: #c8d4ce; font-size: var(--type-body);
   }
   .world-transition-rule {
     width: min(250px, 75%); height: 1px; margin: 24px auto 17px;
     background: linear-gradient(90deg, transparent, #d7b66a, transparent);
   }
   #world-transition-stage {
-    color: #91a79e; font-size: 9px; font-weight: 750; letter-spacing: .13em;
+    color: #91a79e; font-size: var(--type-small); font-weight: 750; letter-spacing: .09em;
     text-transform: uppercase;
   }
   #world-transition-stage::after {
@@ -112,7 +123,7 @@
   @keyframes worldTransitionDots {
     0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75%, 100% { content: "..."; }
   }
-  button, select, input { font: inherit; }
+  button, select, input, textarea { font: inherit; }
   button { -webkit-tap-highlight-color: transparent; }
   /* Two instruments, two edges. The standings grow across the map's masthead
      as players appear; the victory tracker and the world minimap share the
@@ -134,7 +145,7 @@
     /* Eight rows are the readable masthead before it becomes a table to
        browse. A twelve-player exhibition therefore scrolls even on a tall
        display, while a smaller game still pays only for the rows it has. */
-    --player-hud-max-height: min(34vh, 244px);
+    --player-hud-max-height: min(38vh, 280px);
   }
   #maparea::before {
     content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none;
@@ -156,7 +167,7 @@
 
   /* Command deck */
   #side {
-    order: -1; width: 340px; min-width: 340px; height: 100%; max-height: 100vh; max-height: 100dvh;
+    order: -1; width: 350px; min-width: 350px; height: 100%; max-height: 100vh; max-height: 100dvh;
     min-height: 0; position: relative; z-index: 12;
     display: flex; flex-direction: column; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain;
     scrollbar-color: #385148 transparent; scrollbar-width: thin;
@@ -169,7 +180,7 @@
   body.cinema-mode #side { width: 0; min-width: 0; opacity: 0; pointer-events: none; }
   body.cinema-mode #maparea::before { opacity: 1; }
   .side-head {
-    position: relative; flex: 0 0 auto; min-height: 108px; padding: 18px 15px 18px;
+    position: relative; flex: 0 0 auto; min-height: 116px; padding: 19px 16px;
     border-bottom: 1px solid #415348;
     background:
       radial-gradient(circle at 9% 16%, #d7b66a13, transparent 27%),
@@ -206,7 +217,7 @@
   h1 {
     width: max-content; color: var(--gold-bright);
     font: 650 36px/.95 "Iowan Old Style", "Palatino Linotype", Georgia, serif;
-    letter-spacing: .095em; text-transform: uppercase;
+    letter-spacing: .08em; text-transform: uppercase;
     background: linear-gradient(100deg, #f6dfaa 8%, #d7b66a 66%, #a9823b);
     -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
     text-shadow: 0 4px 16px #0008;
@@ -233,7 +244,7 @@
   .brand-links a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
   .brand-links svg { width: 14px; height: 14px; fill: currentColor; }
   .tagline {
-    max-width: 225px; margin-top: 9px; color: #dde6e2; font-size: 12.5px;
+    max-width: 225px; margin-top: 9px; color: #dde6e2; font-size: var(--type-body);
     font-weight: 650; letter-spacing: .015em; line-height: 1.36;
   }
   .tagline span { display: block; white-space: nowrap; }
@@ -266,8 +277,8 @@
   .sec::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; box-shadow: inset 1px 0 #ffffff05; }
   .sec h2 {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
-    margin-bottom: 9px; color: var(--muted); font-size: 9px; font-weight: 800;
-    letter-spacing: .18em; text-transform: uppercase;
+    margin-bottom: 9px; color: var(--muted); font-size: var(--type-small); font-weight: 800;
+    letter-spacing: .12em; text-transform: uppercase;
   }
   .sidebar-section { flex: 0 0 auto; margin: 0 0 10px; }
   #eventsec[open], #warsec[open] { display: flex; flex-direction: column; min-height: 0; }
@@ -294,10 +305,10 @@
   }
   #eventsec[open] > .sec, #warsec[open] > .sec { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
   .section-label {
-    min-height: 39px; display: flex; align-items: center; gap: 9px; padding: 7px 8px 7px 9px;
+    min-height: 43px; display: flex; align-items: center; gap: 9px; padding: 8px 9px;
     color: #bac8c2; background: linear-gradient(135deg, #162622, #101c19);
     border: 1px solid var(--line); border-radius: 13px 13px 0 0; cursor: pointer;
-    font-size: 9px; font-weight: 850; letter-spacing: .16em; text-transform: uppercase;
+    font-size: var(--type-small); font-weight: 850; letter-spacing: .11em; text-transform: uppercase;
     box-shadow: inset 0 1px #ffffff08; list-style: none; user-select: none;
     transition: color .15s ease, border-color .15s ease, background .15s ease;
   }
@@ -308,7 +319,7 @@
   .section-icon {
     width: 22px; height: 22px; display: grid; place-items: center; border-radius: 7px;
     color: var(--gold-bright); background: #d7b66a10; border: 1px solid #d7b66a24;
-    font-size: 11px; line-height: 1; letter-spacing: 0;
+    font-size: var(--type-control); line-height: 1; letter-spacing: 0;
   }
   .section-meta { min-width: 0; flex: 1; display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
   .section-label .rule { height: 1px; min-width: 12px; flex: 1; background: linear-gradient(90deg, var(--line), transparent); }
@@ -333,7 +344,7 @@
   .strategy-track + .strategy-track { border-top: 1px solid var(--line-soft); }
   .strategy-heading {
     display: flex; align-items: center; justify-content: space-between; min-height: 23px; margin-bottom: 4px;
-    color: var(--muted); font-size: 8px; font-weight: 850; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--muted); font-size: var(--type-label); font-weight: 850; letter-spacing: .11em; text-transform: uppercase;
   }
   .strategy-heading span { display: flex; align-items: center; gap: 7px; }
   .strategy-heading span::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--blue); box-shadow: 0 0 9px #76cde477; }
@@ -353,10 +364,10 @@
   .shortcut-panel summary {
     min-height: 43px; padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
     color: var(--muted); cursor: pointer; list-style: none;
-    font-size: 9px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase;
+    font-size: var(--type-small); font-weight: 800; letter-spacing: .11em; text-transform: uppercase;
   }
   .shortcut-panel summary::-webkit-details-marker { display: none; }
-  .shortcut-panel summary::after { content: "+"; float: right; color: var(--gold); font-size: 13px; line-height: 1; }
+  .shortcut-panel summary::after { content: "+"; float: right; color: var(--gold); font-size: var(--type-body); line-height: 1; }
   .shortcut-panel[open] summary::after { content: "−"; }
   .shortcut-panel[open] > .utility-body {
     position: absolute; left: 8px; right: 8px; bottom: calc(100% + 8px);
@@ -367,12 +378,12 @@
   }
   .utility-body { padding: 12px 13px 13px; }
   .utility-group + .utility-group { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--line-soft); }
-  .event-scope { overflow: hidden; color: var(--gold); font-size: 8px; letter-spacing: .04em; text-overflow: ellipsis; white-space: nowrap; text-transform: none; }
+  .event-scope { overflow: hidden; color: var(--gold); font-size: var(--type-label); letter-spacing: .04em; text-overflow: ellipsis; white-space: nowrap; text-transform: none; }
 
   button {
     color: var(--text); background: linear-gradient(180deg, #263c36, #1b2e2a);
     border: 1px solid #3b584f; border-radius: 9px; padding: 7px 10px; margin: 2px;
-    cursor: pointer; font-size: 11px; font-weight: 650; letter-spacing: .02em;
+    cursor: pointer; font-size: var(--type-control); font-weight: 650; letter-spacing: .02em;
     transition: transform .12s ease, background .12s ease, border-color .12s ease, color .12s ease;
   }
   button:hover { transform: translateY(-1px); background: linear-gradient(180deg, #315048, #223a34); border-color: #57776d; }
@@ -381,13 +392,13 @@
   button.primary {
     width: 100%; padding: 12px 14px; margin: 0; border-radius: 11px;
     color: #17160f; background: linear-gradient(135deg, #f0d58f, #c99e4e);
-    border-color: #efd184; font-size: 12px; font-weight: 850; letter-spacing: .08em;
+    border-color: #efd184; font-size: var(--type-body); font-weight: 850; letter-spacing: .05em;
     text-transform: uppercase; box-shadow: 0 7px 22px #0005, inset 0 1px #fff7;
   }
   button.primary:hover { color: #11140f; background: linear-gradient(135deg, #ffe3a0, #dbae58); border-color: #ffe4a0; }
   button.ghost { background: transparent; border-color: var(--line); color: var(--muted); }
   button.icon { width: 36px; height: 36px; padding: 0; display: grid; place-items: center; }
-  button.mini { margin: 0 0 0 auto; padding: 3px 7px; border-radius: 7px; font-size: 9px; font-weight: 700; }
+  button.mini { margin: 0 0 0 auto; padding: 3px 7px; border-radius: 7px; font-size: var(--type-small); font-weight: 700; }
   button.danger { color: #f3a7a4; border-color: #69423e; background: #331f1d; }
   select {
     max-width: 100%; width: 100%; padding: 8px 30px 8px 10px; border-radius: 8px;
@@ -395,7 +406,7 @@
   }
   select:focus { border-color: var(--gold); box-shadow: 0 0 0 3px #d7b66a1d; }
   input[type="checkbox"] { accent-color: var(--gold); }
-  .small { color: var(--muted); font-size: 10px; line-height: 1.45; }
+  .small { color: var(--muted); font-size: var(--type-secondary); line-height: 1.45; }
   .obsolete { color: #f0b070; }
   .muted { color: var(--muted); }
   .boost { color: var(--blue); text-shadow: 0 0 12px #76cde477; }
@@ -415,7 +426,7 @@
   .hud-section-heading {
     min-height: 13px; display: flex; align-items: center; justify-content: space-between;
     gap: 8px; margin: 0 3px 3px; overflow: hidden; color: #b9c8c2;
-    font-size: 8px; font-weight: 900; letter-spacing: .15em; line-height: 1;
+    font-size: var(--type-label); font-weight: 900; letter-spacing: .10em; line-height: 1;
     text-transform: uppercase; white-space: nowrap;
   }
   .hud-rail {
@@ -433,10 +444,10 @@
     border: 1px solid #d7b66a30; text-align: center;
   }
   .turn-label, .victory-heading {
-    color: #aebeb7; font-size: 9px; font-weight: 900; letter-spacing: .14em;
+    color: #aebeb7; font-size: var(--type-small); font-weight: 900; letter-spacing: .10em;
     line-height: 1; text-transform: uppercase;
   }
-  .turn-label { font-size: 11px; }
+  .turn-label { font-size: var(--type-control); }
   .turn-count {
     min-width: 0; display: grid; place-content: center; gap: 1px; margin: 4px 0 5px;
   }
@@ -447,7 +458,7 @@
   .turn-progress { gap: 4px; white-space: nowrap; }
   .turn-era {
     min-width: 0; overflow: hidden; color: #e1e8e4;
-    font-size: clamp(13px, 1vw, 14px); font-weight: 850; letter-spacing: -.01em;
+    font-size: clamp(14px, 1vw, 15px); font-weight: 850; letter-spacing: -.01em;
     line-height: 1.05; text-overflow: ellipsis; white-space: nowrap;
   }
   .victory-turn strong {
@@ -455,13 +466,13 @@
     font-variant-numeric: tabular-nums; text-shadow: 0 2px 10px #0009;
   }
   .victory-turn .turn-total {
-    color: #8fa29a; font-size: 11px; font-weight: 800; font-variant-numeric: tabular-nums;
+    color: #8fa29a; font-size: var(--type-control); font-weight: 800; font-variant-numeric: tabular-nums;
     line-height: 1; white-space: nowrap;
   }
   .turn-settings {
     align-self: stretch; min-width: 0; display: grid; align-content: start; gap: 2px;
     padding-top: 4px; color: #9fb0a9; border-top: 1px solid #d7b66a24;
-    font-size: 9px; font-weight: 700; letter-spacing: -.015em; line-height: 1.18;
+    font-size: var(--type-small); font-weight: 700; letter-spacing: -.015em; line-height: 1.18;
   }
   .turn-setting {
     min-width: 0; display: flex; align-items: baseline; justify-content: space-between;
@@ -478,7 +489,7 @@
   /* Borrowed turns. It sits under the turn cap because that cap is the thing
      it explains: the number went up because somebody asked it to. */
   .turn-playon {
-    color: #f0d99c; font-size: 7px; font-weight: 900; letter-spacing: .08em;
+    color: #f0d99c; font-size: var(--type-caption); font-weight: 900; letter-spacing: .05em;
     line-height: 1; text-transform: uppercase; white-space: nowrap;
   }
   .victory-meter { overflow: hidden; background: #020706b3; box-shadow: inset 0 1px 2px #000b; }
@@ -514,7 +525,7 @@
      does it scroll. */
   .victory-ribbon {
     min-height: max(100%, var(--victory-min-height, 396px)); display: grid;
-    grid-template-rows: repeat(var(--victory-rows, 6), minmax(56px, 1fr));
+    grid-template-rows: repeat(var(--victory-rows, 6), minmax(64px, 1fr));
     align-items: stretch; gap: 2px;
   }
   .victory-track {
@@ -524,14 +535,14 @@
   }
   .victory-track:first-child { border-top-color: transparent; }
   .victory-heading { display: flex; align-items: center; gap: 4px; margin-bottom: 2px; color: var(--track); }
-  .victory-heading b { overflow: hidden; color: #dde5e1; font-size: 9px; letter-spacing: .03em; text-overflow: ellipsis; white-space: nowrap; }
+  .victory-heading b { overflow: hidden; color: #dde5e1; font-size: var(--type-small); letter-spacing: .03em; text-overflow: ellipsis; white-space: nowrap; }
   .victory-none-note {
-    margin: 3px 0 0 9px; color: #8ea099; font-size: 9px; font-weight: 650;
+    margin: 3px 0 0 9px; color: #8ea099; font-size: var(--type-small); font-weight: 650;
     line-height: 1.45; text-wrap: pretty;
   }
   .victory-subheading {
     min-height: 9px; display: grid; grid-template-columns: minmax(0, 1fr) 42px; gap: 6px;
-    margin: 0 0 3px 9px; color: #80938b; font-size: 6.5px; font-weight: 900;
+    margin: 0 0 3px 9px; color: #80938b; font-size: var(--type-caption); font-weight: 900;
     letter-spacing: .04em; line-height: 1; text-transform: uppercase; white-space: nowrap;
   }
   .victory-subheading span { overflow: hidden; text-overflow: ellipsis; }
@@ -550,14 +561,14 @@
   /* The rows are already printed in rank order, so a leading rank number
      spent 13px per line restating the order. In a narrower victory rail that width
      is worth more as civilization name, which is what actually truncates. */
-  .victory-line { display: grid; grid-template-columns: 6px minmax(0, 1fr) auto; align-items: center; gap: 3px; min-width: 0; height: 13px; }
+  .victory-line { display: grid; grid-template-columns: 6px minmax(0, 1fr) auto; align-items: center; gap: 4px; min-width: 0; height: 15px; }
   .victory-civ-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--civ); box-shadow: 0 0 5px color-mix(in srgb, var(--civ) 70%, transparent); }
-  .victory-civ { overflow: hidden; color: #e6ede9; font-size: 10px; font-weight: 750; line-height: 1; text-overflow: ellipsis; white-space: nowrap; }
+  .victory-civ { overflow: hidden; color: #e6ede9; font-size: var(--type-secondary); font-weight: 750; line-height: 1; text-overflow: ellipsis; white-space: nowrap; }
   .victory-value {
-    width: 42px; color: #c2d0ca; font-size: 9px; line-height: 1; text-align: right;
+    width: 42px; color: #c2d0ca; font-size: var(--type-small); line-height: 1; text-align: right;
     font-variant-numeric: tabular-nums; white-space: nowrap;
   }
-  .victory-value.single { font-size: 10px; }
+  .victory-value.single { font-size: var(--type-secondary); }
   .victory-meter { height: 3px; margin: 0 0 0 9px; border-radius: 3px; }
   .diplomacy-ribbon { min-width: max-content; display: flex; align-items: stretch; gap: 4px; padding-bottom: 1px; }
   .diplomacy-card {
@@ -593,7 +604,7 @@
   .capital-link {
     width: 12px; height: 24px; border: 0; border-radius: 4px;
     color: var(--gold-bright); background: transparent; box-shadow: none;
-    font: 700 14px/1 Georgia, serif; text-shadow: 0 1px 3px #000, 0 0 7px #d7b66a66;
+    font: 700 15px/1 var(--font-display); text-shadow: 0 1px 3px #000, 0 0 7px #d7b66a66;
   }
   .capital-link:hover, .capital-link:focus-visible {
     color: #fff4c7; background: #d7b66a18; transform: none;
@@ -603,20 +614,20 @@
   .diplomacy-identity, .diplomacy-stats {
     margin: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit;
     text-align: left; cursor: pointer;
-    font: 700 13px/1 Georgia, serif; text-shadow: 0 1px 3px #000;
+    font: 700 var(--type-body)/1 var(--font-display); text-shadow: 0 1px 3px #000;
   }
   .diplomacy-identity { min-width: 0; }
   .diplomacy-identity:hover .diplomacy-civ, .diplomacy-identity:focus-visible .diplomacy-civ { color: #fff; }
-  .detail-caret { flex: 0 0 auto; margin-left: 2px; color: #93aca1; font-size: 9px; vertical-align: 1px; }
+  .detail-caret { flex: 0 0 auto; margin-left: 2px; color: #93aca1; font-size: var(--type-small); vertical-align: 1px; }
   .diplomacy-civ, .diplomacy-player {
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .diplomacy-civ { color: #f1f4ed; }
-  .diplomacy-rank { margin-right: 4px; color: var(--gold-bright); font: 700 10px Georgia, serif; }
+  .diplomacy-rank { margin-right: 4px; color: var(--gold-bright); font: 700 var(--type-secondary)/1.1 var(--font-display); }
   .diplomacy-elo { flex: 0 0 auto; color: var(--gold-bright); font-weight: 850; }
   .diplomacy-expected { flex: 0 0 auto; color: #8fd6a4; font-weight: 850; }
   .diplomacy-player { flex: 1 1 auto; color: #d9e1dc; font-weight: 750; }
-  .agenda-mark { margin-left: 3px; font-size: 8px; vertical-align: 1px; }
+  .agenda-mark { margin-left: 3px; font-size: var(--type-label); vertical-align: 1px; }
   .agenda-mark.up { color: #8fd6a4; }
   .agenda-mark.down { color: #f2a09b; }
   .ai-plan { font-weight: 850; }
@@ -630,8 +641,8 @@
   .diplomacy-stats { align-self: stretch; display: grid; grid-template-columns: repeat(5, minmax(27px, 1fr)); grid-template-rows: repeat(2, 1fr); gap: 0; }
   .ribbon-stat { min-width: 0; display: grid; place-content: center; padding: 2px 0 1px; text-align: center; border-left: 1px solid #ffffff0b; border-top: 1px solid #ffffff0b; }
   .ribbon-stat:nth-child(-n+5) { border-top-color: transparent; }
-  .ribbon-stat b { display: block; overflow: hidden; font-size: 10px; line-height: 1.05; text-overflow: ellipsis; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .ribbon-stat em { display: block; margin-top: 2px; color: #82958e; font-size: 6px; font-style: normal; font-weight: 850; letter-spacing: .02em; line-height: 1; }
+  .ribbon-stat b { display: block; overflow: hidden; font-size: var(--type-secondary); line-height: 1.05; text-overflow: ellipsis; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .ribbon-stat em { display: block; margin-top: 2px; color: #82958e; font-size: var(--type-micro); font-style: normal; font-weight: 850; letter-spacing: .02em; line-height: 1; }
   .ribbon-stat.production { --stat-color: #e9ad74; }
   .ribbon-stat.science { --stat-color: var(--blue); }
   .ribbon-stat.culture { --stat-color: var(--violet); }
@@ -678,32 +689,32 @@
     overflow: auto; background: linear-gradient(180deg, #0b1a16f7, #08120fef);
     box-shadow: inset 0 -1px #ffffff08;
   }
-  .dossier-title { flex: 0 1 auto; overflow: hidden; color: #f1f4ed; font-size: 12px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+  .dossier-title { flex: 0 1 auto; overflow: hidden; color: #f1f4ed; font-size: var(--type-body); font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
   .dossier-tags { display: flex; flex: 1; flex-wrap: wrap; gap: 4px; min-width: 0; }
   .dossier-tag {
     padding: 1px 6px; border: 1px solid #ffffff1c; border-radius: 999px; background: #ffffff0d;
-    color: #c6d4ce; font-size: 8px; font-weight: 850; letter-spacing: .1em; text-transform: uppercase;
+    color: #c6d4ce; font-size: var(--type-label); font-weight: 850; letter-spacing: .07em; text-transform: uppercase;
   }
   .dossier-tag.civ { border-color: color-mix(in srgb, var(--civ) 55%, transparent); color: color-mix(in srgb, var(--civ) 45%, #eef4f1); }
   .dossier-tag.war { border-color: #a6545080; color: #f2a09b; }
   .dossier-btn {
     flex: none; margin: 0; padding: 3px 8px; border: 1px solid #4c655c; border-radius: 6px;
-    background: #0d1a16; color: #d8e2dd; font-size: 10px; font-weight: 800; cursor: pointer;
+    background: #0d1a16; color: #d8e2dd; font-size: var(--type-secondary); font-weight: 800; cursor: pointer;
   }
   .dossier-btn:hover { border-color: #7fa294; color: #fff; }
   .dossier-grid { display: grid; grid-template-columns: 1.1fr .85fr 1fr 1.15fr; gap: 6px; }
   .dossier-section { min-width: 0; padding: 6px 7px; border: 1px solid #ffffff0d; border-radius: 7px; background: #04100db8; }
-  .dossier-section h4 { margin: 0 0 4px; color: #93a79f; font-size: 8px; font-weight: 850; letter-spacing: .14em; text-transform: uppercase; }
-  .dossier-row { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; padding: 1px 0; font-size: 10px; line-height: 1.35; }
+  .dossier-section h4 { margin: 0 0 4px; color: #93a79f; font-size: var(--type-label); font-weight: 850; letter-spacing: .10em; text-transform: uppercase; }
+  .dossier-row { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; padding: 1px 0; font-size: var(--type-secondary); line-height: 1.35; }
   .dossier-row > span { flex: none; color: #8ba098; white-space: nowrap; }
   .dossier-row > b { flex: 1; min-width: 0; overflow: hidden; color: #e7efea; text-align: right; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .dossier-note { margin-top: 4px; color: #9db0a8; font-size: 9px; line-height: 1.4; }
-  .dossier-empty { color: #708379; font-size: 9px; font-style: italic; }
+  .dossier-note { margin-top: 4px; color: #9db0a8; font-size: var(--type-small); line-height: 1.4; }
+  .dossier-empty { color: #708379; font-size: var(--type-small); font-style: italic; }
   .dossier-track { margin-bottom: 3px; color: var(--track); }
-  .dossier-track-line { display: flex; align-items: baseline; justify-content: space-between; gap: 4px; font-size: 9px; font-weight: 750; }
+  .dossier-track-line { display: flex; align-items: baseline; justify-content: space-between; gap: 4px; font-size: var(--type-small); font-weight: 750; }
   .dossier-track-line b { color: #dfe8e3; font-variant-numeric: tabular-nums; }
   .civ-dossier .victory-meter { height: 4px; margin: 2px 0 0; border-radius: 3px; }
-  .force-chip { display: inline-block; margin: 2px 3px 0 0; padding: 1px 5px; border-radius: 5px; background: #ffffff10; color: #d5e0da; font-size: 9px; font-weight: 750; }
+  .force-chip { display: inline-block; margin: 2px 3px 0 0; padding: 1px 5px; border-radius: 5px; background: #ffffff10; color: #d5e0da; font-size: var(--type-small); font-weight: 750; }
   .force-chip.engage { background: #7a30293d; color: #f2a09b; }
   .force-chip.advance { background: #7a5f2740; color: #e9c07c; }
   .force-chip.muster { background: #2a4a6b3d; color: #9fc7e6; }
@@ -826,7 +837,7 @@
     box-shadow: 0 0 18px #d9bd7566;
   }
   .cinema-prologue-kicker {
-    color: #ead9a7; font-size: 10px; font-weight: 900; letter-spacing: .4em; text-transform: uppercase;
+    color: #ead9a7; font-size: var(--type-secondary); font-weight: 900; letter-spacing: .22em; text-transform: uppercase;
   }
   .cinema-prologue-title {
     margin-top: 18px; color: #fffaf0;
@@ -835,8 +846,8 @@
   }
   #cinema-prologue.chapter .cinema-prologue-title { font-size: clamp(40px, 5vw, 76px); }
   .cinema-prologue-detail {
-    margin-top: 22px; color: #cbd4ce; font-size: 9px; font-weight: 800;
-    letter-spacing: .2em; line-height: 1.6; text-transform: uppercase;
+    margin-top: 22px; color: #cbd4ce; font-size: var(--type-small); font-weight: 800;
+    letter-spacing: .14em; line-height: 1.6; text-transform: uppercase;
   }
   @keyframes cinema-prologue-curtain {
     0%, 62% { opacity: 1; }
@@ -877,11 +888,11 @@
   }
   .cinema-frame-brand, .cinema-frame-era, .cinema-frame-shot {
     position: absolute; display: flex; align-items: center; gap: 9px;
-    font-size: 7px; font-weight: 900; letter-spacing: .2em; line-height: 1;
+    font-size: var(--type-caption); font-weight: 900; letter-spacing: .14em; line-height: 1;
     text-transform: uppercase; white-space: nowrap;
   }
   .cinema-frame-brand { top: 8px; left: clamp(22px, 2.2vw, 44px); }
-  .cinema-frame-brand b { color: #f0d28c; font: 700 10px/1 Georgia, serif; letter-spacing: .22em; }
+  .cinema-frame-brand b { color: #f0d28c; font: 700 var(--type-secondary)/1 var(--font-display); letter-spacing: .22em; }
   .cinema-frame-brand span, .cinema-frame-era span, .cinema-frame-shot span { color: #73867f; }
   .cinema-frame-brand i {
     width: 5px; height: 5px; border-radius: 50%; background: #79dc9b;
@@ -930,7 +941,7 @@
   }
   body.cinema-mode #cinema-story.visible { opacity: 1; transform: translateY(0); }
   .cinema-kicker {
-    color: #ead18b; font-size: 9px; font-weight: 900; letter-spacing: .28em;
+    color: #ead18b; font-size: var(--type-small); font-weight: 900; letter-spacing: .18em;
     text-transform: uppercase; text-shadow: 0 2px 10px #000;
   }
   .cinema-headline {
@@ -939,7 +950,7 @@
   }
   .cinema-detail {
     max-width: 540px; margin-top: 7px; overflow: hidden; color: #d0d8d3;
-    font-size: 10px; font-weight: 700; letter-spacing: .12em; line-height: 1.45;
+    font-size: var(--type-secondary); font-weight: 700; letter-spacing: .08em; line-height: 1.45;
     text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap;
     text-shadow: 0 2px 8px #000;
   }
@@ -950,7 +961,7 @@
     transform: translateX(-50%);
     color: #e7eee9; background: #06100dd6; border: 1px solid #d8bd7948;
     border-radius: 999px; box-shadow: 0 9px 28px #000a; backdrop-filter: blur(14px);
-    font-size: 9px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
+    font-size: var(--type-small); font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
   }
   #cinema-follow::before {
     content: ""; width: 7px; height: 7px; flex: 0 0 auto; border: 1px solid #f1d58d;
@@ -970,7 +981,7 @@
   #cinema-exit {
     width: auto; height: 34px; margin: 0; padding: 0 13px; border: 0;
     border-radius: 999px; background: transparent; color: #f5e8c3;
-    font-size: 10px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase;
+    font-size: var(--type-secondary); font-weight: 900; letter-spacing: .08em; text-transform: uppercase;
   }
   #cinema-exit:hover, #cinema-exit:focus-visible {
     background: #d7b66a1f; color: #fff8e7; outline: none;
@@ -1008,14 +1019,14 @@
   }
   .map-lens-title {
     display: flex; align-items: center; padding: 0 8px 0 6px;
-    color: #81958d; font-size: 7px; font-weight: 900; letter-spacing: .15em;
+    color: #81958d; font-size: var(--type-caption); font-weight: 900; letter-spacing: .10em;
     text-transform: uppercase;
   }
   #map-lenses button {
     position: relative; width: auto; min-width: 80px; height: 34px;
     display: grid; grid-template-columns: 18px 1fr 15px; align-items: center; gap: 5px;
     margin: 0; padding: 0 7px; border: 1px solid transparent; border-radius: 8px;
-    background: transparent; color: #b8c7c0; font-size: 9px; font-weight: 800;
+    background: transparent; color: #b8c7c0; font-size: var(--type-small); font-weight: 800;
     text-align: left;
   }
   #map-lenses button:hover { transform: none; border-color: #4d6b60; background: #183027; }
@@ -1028,7 +1039,7 @@
   #map-lenses button[data-map-lens="empire"] .map-lens-icon { color: #9ed8ca; }
   #map-lenses kbd {
     min-width: 15px; height: 15px; margin: 0; padding: 0;
-    border-color: #ffffff16; color: #899b94; font-size: 7px;
+    border-color: #ffffff16; color: #899b94; font-size: var(--type-caption);
   }
   #map-lenses button.active kbd { color: #fff0c5; border-color: #d7b66a55; }
   /* The compass reads the map's bearing, so it is an instrument rather than a
@@ -1065,7 +1076,7 @@
   #modeline {
     position: absolute; z-index: 6; left: 16px; bottom: 176px; max-width: 360px;
     display: none; padding: 8px 12px; border-radius: 999px; color: #1b190f;
-    background: var(--gold-bright); box-shadow: 0 7px 20px #0007; font-size: 9px; font-weight: 900; letter-spacing: .1em;
+    background: var(--gold-bright); box-shadow: 0 7px 20px #0007; font-size: var(--type-small); font-weight: 900; letter-spacing: .07em;
   }
   /* Civ 6's notification rail: a column of small chips down the map's inner
      edge. Anything the player may still want to act on is a chip; anything
@@ -1111,12 +1122,12 @@
     position: absolute; right: -4px; top: -4px; min-width: 17px; height: 17px;
     display: grid; place-items: center; padding: 0 4px; border-radius: 9px;
     color: #17160f; background: var(--gold-bright); box-shadow: 0 2px 6px #0007;
-    font-size: 9px; font-weight: 900;
+    font-size: var(--type-small); font-weight: 900;
   }
   .notice-dismiss {
     position: absolute; left: -5px; top: -5px; width: 16px; height: 16px;
     display: none; place-items: center; padding: 0; margin: 0; border-radius: 50%;
-    border: 1px solid #56706691; background: #0c1a16; color: var(--muted); font-size: 9px;
+    border: 1px solid #56706691; background: #0c1a16; color: var(--muted); font-size: var(--type-small);
   }
   .notice:hover .notice-dismiss { display: grid; }
   /* A notification that sends the player to a sidebar section marks where it
@@ -1134,8 +1145,8 @@
   }
   #endturn.blocked:hover { color: #fff3d5; background: linear-gradient(135deg, #4a4129, #2f3a34); border-color: #a08a52; }
   #endturn .endturn-hint {
-    display: block; margin-top: 3px; font-size: 8px; font-weight: 700;
-    letter-spacing: .09em; opacity: .72; text-transform: uppercase;
+    display: block; margin-top: 3px; font-size: var(--type-label); font-weight: 700;
+    letter-spacing: .06em; opacity: .72; text-transform: uppercase;
   }
   /* Civ 6's launch bar: the empire's standing decisions, one click away and
      always in the same place, plus the two screens where it deals with anyone
@@ -1175,14 +1186,14 @@
     position: absolute; right: -4px; top: -4px; min-width: 17px; height: 17px;
     display: grid; place-items: center; padding: 0 4px; border-radius: 9px;
     color: #17160f; background: var(--gold-bright); box-shadow: 0 2px 6px #0007;
-    font-size: 9px; font-weight: 900;
+    font-size: var(--type-small); font-weight: 900;
   }
   .launch-badge[hidden] { display: none; }
   /* These two carried their shortcut in the old sidebar label. An icon has no
      room for "· D", so the key stays as a corner mark rather than being lost. */
   .launch-key {
     position: absolute; right: 4px; bottom: 3px; color: #8ba79b;
-    font-size: 7.5px; font-weight: 850; letter-spacing: 0; line-height: 1; opacity: .85;
+    font-size: var(--type-caption); font-weight: 850; letter-spacing: 0; line-height: 1; opacity: .85;
   }
   .launch:hover .launch-key { color: var(--gold); }
   #empire {
@@ -1198,7 +1209,7 @@
   }
   .empire-title { color: var(--gold-bright); font: 600 22px/1 Georgia, serif; }
   .empire-tabs { display: flex; flex-wrap: wrap; gap: 5px; margin-left: auto; }
-  .empire-tabs button { margin: 0; padding: 7px 11px; border-radius: 999px; font-size: 10px; }
+  .empire-tabs button { margin: 0; padding: 7px 11px; border-radius: 999px; font-size: var(--type-secondary); }
   .empire-tabs button.on {
     color: #17160f; background: linear-gradient(135deg, #f0d58f, #c99e4e); border-color: #efd184;
   }
@@ -1206,7 +1217,7 @@
   .empire-group + .empire-group { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line-soft); }
   .empire-heading {
     display: flex; align-items: baseline; gap: 9px; margin-bottom: 9px;
-    color: var(--gold); font-size: 10px; font-weight: 850; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--gold); font-size: var(--type-secondary); font-weight: 850; letter-spacing: .08em; text-transform: uppercase;
   }
   .empire-heading span { color: var(--muted); font-weight: 600; letter-spacing: .02em; text-transform: none; }
   .empire-grid { display: grid; gap: 9px; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); }
@@ -1216,28 +1227,28 @@
   }
   .empire-card.filled { border-color: #4a805d; background: #14261fcc; }
   .empire-card.empty { border-color: var(--gold-deep); border-style: dashed; }
-  .empire-card-title { color: var(--gold-bright); font: 600 13px Georgia, serif; }
-  .empire-card-kind { color: var(--muted); font-size: 8px; font-weight: 850; letter-spacing: .12em; text-transform: uppercase; }
-  .empire-card-note { color: #c1cfc9; font-size: 10px; line-height: 1.5; }
+  .empire-card-title { color: var(--gold-bright); font: 600 var(--type-body)/1.2 var(--font-display); }
+  .empire-card-kind { color: var(--muted); font-size: var(--type-label); font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
+  .empire-card-note { color: #c1cfc9; font-size: var(--type-secondary); line-height: 1.5; }
   .empire-card-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: auto; padding-top: 4px; }
-  .empire-card-actions button { margin: 0; padding: 6px 9px; font-size: 10px; }
+  .empire-card-actions button { margin: 0; padding: 6px 9px; font-size: var(--type-secondary); }
   .empire-slot-military { --slot: #eb807b; }
   .empire-slot-economic { --slot: #d7b66a; }
   .empire-slot-diplomatic { --slot: #76cde4; }
   .empire-slot-wildcard { --slot: #c49be8; }
   .empire-card[class*="empire-slot-"] { border-left: 3px solid var(--slot); }
-  .empire-meter { display: flex; align-items: center; gap: 8px; font-size: 10px; color: var(--muted); }
+  .empire-meter { display: flex; align-items: center; gap: 8px; font-size: var(--type-secondary); color: var(--muted); }
   .empire-meter b { color: var(--text); font-variant-numeric: tabular-nums; }
   .save-row { display: flex; gap: 5px; margin-top: 7px; }
   .save-row input { flex: 1; min-width: 0; padding: 7px 9px; border-radius: 8px;
-    color: var(--text); background: #0d1816; border: 1px solid #385149; outline: none; font-size: 11px; }
+    color: var(--text); background: #0d1816; border: 1px solid #385149; outline: none; font-size: var(--type-control); }
   .save-row input:focus { border-color: var(--gold); box-shadow: 0 0 0 3px #d7b66a1d; }
   .save-row button { margin: 0; }
   .save-entry { display: flex; align-items: center; gap: 7px; padding: 5px 0; border-bottom: 1px solid var(--line-soft); }
   .save-entry:last-child { border-bottom: 0; }
-  .save-entry b { color: var(--text); font-size: 11px; font-weight: 650; }
-  .save-entry span { color: var(--muted); font-size: 9px; }
-  .save-entry button { margin: 0 0 0 auto; padding: 4px 8px; font-size: 9px; }
+  .save-entry b { color: var(--text); font-size: var(--type-control); font-weight: 650; }
+  .save-entry span { color: var(--muted); font-size: var(--type-small); }
+  .save-entry button { margin: 0 0 0 auto; padding: 4px 8px; font-size: var(--type-small); }
   /* Leader and difficulty only mean anything with somebody at the keyboard. */
   body.spectating .human-setting { display: none; }
   /* Exactly one control starts the next world, and which one it is follows the
@@ -1263,7 +1274,7 @@
     border-bottom: 1px solid #4b3f37;
   }
   .diplo-title { color: var(--gold-bright); font: 600 22px/1 Georgia, serif; }
-  .diplo-subtitle { margin-top: 5px; color: var(--muted); font-size: 9px; letter-spacing: .08em; }
+  .diplo-subtitle { margin-top: 5px; color: var(--muted); font-size: var(--type-small); letter-spacing: .05em; }
   .diplo-body { flex: 1; overflow: auto; padding: 16px 20px 20px; }
   .diplo-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
   .leader {
@@ -1274,31 +1285,31 @@
   .leader.allied { border-color: #4a805d; background: #14261fbb; }
   .leader-head { display: flex; align-items: baseline; gap: 9px; }
   .leader-name { color: var(--gold-bright); font: 600 17px Georgia, serif; }
-  .leader-civ { color: var(--muted); font-size: 10px; }
+  .leader-civ { color: var(--muted); font-size: var(--type-secondary); }
   .leader-stance {
-    margin-left: auto; padding: 3px 9px; border-radius: 999px; font-size: 9px;
-    font-weight: 850; letter-spacing: .08em; text-transform: uppercase;
+    margin-left: auto; padding: 3px 9px; border-radius: 999px; font-size: var(--type-small);
+    font-weight: 850; letter-spacing: .05em; text-transform: uppercase;
     color: #cfe0d8; background: #14231f; border: 1px solid #365046;
   }
   .leader-stance.war { color: #f3a7a4; background: #2a1614; border-color: #6b3f3c; }
   .leader-stance.friend { color: #9bd8ae; background: #14261f; border-color: #4a805d; }
-  .leader-agenda { color: #c1cfc9; font-size: 10px; line-height: 1.5; }
+  .leader-agenda { color: #c1cfc9; font-size: var(--type-secondary); line-height: 1.5; }
   .leader-agenda b { color: var(--gold); }
   .leader-meters { display: grid; gap: 4px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .leader-meter {
     display: flex; justify-content: space-between; gap: 8px; padding: 4px 7px;
-    border-radius: 8px; background: #0b1512; font-size: 10px; color: var(--muted);
+    border-radius: 8px; background: #0b1512; font-size: var(--type-secondary); color: var(--muted);
   }
   .leader-meter b { color: var(--text); font-variant-numeric: tabular-nums; }
   .leader-meter b.good { color: var(--green); }
   .leader-meter b.bad { color: var(--danger); }
   .leader-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: auto; padding-top: 3px; }
-  .leader-actions button { margin: 0; padding: 6px 9px; font-size: 10px; }
+  .leader-actions button { margin: 0; padding: 6px 9px; font-size: var(--type-secondary); }
   .diplo-proposal {
     display: flex; flex-direction: column; gap: 7px; padding: 12px 13px; margin-bottom: 9px;
     border: 1px solid var(--gold-deep); border-radius: 12px; background: #1b1a12aa;
   }
-  .diplo-proposal-title { color: var(--gold-bright); font: 600 13px Georgia, serif; }
+  .diplo-proposal-title { color: var(--gold-bright); font: 600 var(--type-body)/1.2 var(--font-display); }
   /* The city screen. The sidebar panel is the glance; this is the desk you
      work at — everything the city is, and everything it could build, in one
      place, the way Civ 6 opens a city rather than a dropdown. */
@@ -1311,7 +1322,7 @@
   #cityscreen.open { display: flex; animation: rise .18s ease-out; }
   .city-head { display: flex; align-items: center; gap: 14px; padding: 16px 20px 12px; border-bottom: 1px solid #40534b; }
   .city-head-name { color: var(--gold-bright); font: 600 23px/1 Georgia, serif; }
-  .city-head-sub { margin-top: 5px; color: var(--muted); font-size: 9px; letter-spacing: .08em; }
+  .city-head-sub { margin-top: 5px; color: var(--muted); font-size: var(--type-small); letter-spacing: .05em; }
   .city-cols { flex: 1; display: grid; grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); gap: 0; overflow: hidden; }
   .city-dossier { overflow: auto; padding: 15px 18px 20px; border-right: 1px solid #26372f; }
   .city-build { overflow: auto; padding: 15px 18px 20px; }
@@ -1321,16 +1332,16 @@
     background: #0c1815; border: 1px solid #26372f;
   }
   .city-yield b { color: var(--text); font-size: 14px; font-variant-numeric: tabular-nums; }
-  .city-yield span { color: var(--muted); font-size: 8px; font-weight: 850; letter-spacing: .1em; text-transform: uppercase; }
+  .city-yield span { color: var(--muted); font-size: var(--type-label); font-weight: 850; letter-spacing: .07em; text-transform: uppercase; }
   .city-group { margin-top: 14px; }
   .city-group-head {
     display: flex; align-items: baseline; gap: 8px; margin-bottom: 7px;
-    color: var(--gold); font-size: 9px; font-weight: 850; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--gold); font-size: var(--type-small); font-weight: 850; letter-spacing: .08em; text-transform: uppercase;
   }
   .city-group-head span { color: var(--muted); font-weight: 600; letter-spacing: .02em; text-transform: none; }
   .city-tags { display: flex; flex-wrap: wrap; gap: 4px; }
   .city-tag {
-    padding: 4px 8px; border-radius: 999px; font-size: 10px;
+    padding: 4px 8px; border-radius: 999px; font-size: var(--type-secondary);
     color: #c6d6cf; background: #0f1c19; border: 1px solid #2d443d;
   }
   .city-tag.district { color: var(--gold-bright); border-color: var(--gold-deep); }
@@ -1342,16 +1353,16 @@
   }
   .build-item.current { border-color: var(--gold); background: #1b241bcc; }
   .build-row { display: flex; align-items: baseline; gap: 8px; }
-  .build-name { color: var(--text); font-size: 12px; font-weight: 700; }
-  .build-cost { margin-left: auto; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .build-note { color: var(--muted); font-size: 9px; line-height: 1.5; }
+  .build-name { color: var(--text); font-size: var(--type-body); font-weight: 700; }
+  .build-cost { margin-left: auto; color: var(--muted); font-size: var(--type-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .build-note { color: var(--muted); font-size: var(--type-small); line-height: 1.5; }
   .build-actions { display: flex; flex-wrap: wrap; gap: 4px; }
-  .build-actions button { margin: 0; padding: 5px 8px; font-size: 10px; }
+  .build-actions button { margin: 0; padding: 5px 8px; font-size: var(--type-secondary); }
   .build-sites { display: flex; flex-wrap: wrap; gap: 3px; }
-  .build-sites button { margin: 0; padding: 4px 7px; border-radius: 7px; font-size: 9px; }
+  .build-sites button { margin: 0; padding: 4px 7px; border-radius: 7px; font-size: var(--type-small); }
   .winner-again {
     width: auto; margin-top: 14px; padding: 10px 18px; border-radius: 10px;
-    font-size: 11px; letter-spacing: .06em;
+    font-size: var(--type-control); letter-spacing: .04em;
   }
   /* The result screen's answers keep their hierarchy: the offer that replaces
      the world spans the row, while the two ways to keep it sit side by side
@@ -1375,14 +1386,14 @@
     position: fixed; z-index: 30; display: none; max-width: 290px; padding: 10px 13px;
     color: var(--text); border: 1px solid #4a635a; border-radius: 11px;
     background: #091310f2; box-shadow: var(--shadow); pointer-events: none;
-    font-size: 11px; line-height: 1.6; backdrop-filter: blur(14px);
+    font-size: var(--type-control); line-height: 1.6; backdrop-filter: blur(14px);
   }
   .tip-primary, .tip-unit {
-    display: inline-block; color: #fffaf0; font-size: 13px; font-weight: 850; line-height: 1.45;
+    display: inline-block; color: #fffaf0; font-size: var(--type-body); font-weight: 850; line-height: 1.45;
   }
   /* The adjacency ledger is a list under the district line: a heading in the
      yield's own voice, then one indented row per source that pays. */
-  .tip-adj-head { color: var(--muted); font-size: 9px; font-weight: 850; letter-spacing: .1em; text-transform: uppercase; }
+  .tip-adj-head { color: var(--muted); font-size: var(--type-small); font-weight: 850; letter-spacing: .07em; text-transform: uppercase; }
   .tip-adj { color: #c6d6cf; }
   .tip-adj-count { display: inline-block; min-width: 20px; color: var(--muted); }
   .tip-adj-part { color: var(--muted); }
@@ -1396,14 +1407,14 @@
   }
   .minimap-label {
     position: relative; display: flex; justify-content: center; padding: 1px 3px 5px;
-    color: #b9c8c2; font-size: 10px; font-weight: 900; letter-spacing: .15em;
+    color: #b9c8c2; font-size: var(--type-secondary); font-weight: 900; letter-spacing: .10em;
     text-transform: uppercase;
   }
   .minimap-label.widget-drag-handle::before { position: absolute; left: 3px; }
   .minimap-hint {
     position: absolute; z-index: 1; right: 10px; bottom: 9px; padding: 2px 4px;
     color: #9aac9f; background: #07110fb8; border-radius: 4px; pointer-events: none;
-    font-size: 7px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase;
+    font-size: var(--type-caption); font-weight: 850; letter-spacing: .05em; text-transform: uppercase;
   }
   #mini { width: 100%; height: 100%; min-height: 0; flex: 1; border-radius: 7px; background: #07110f; cursor: pointer; }
   #err {
@@ -1421,14 +1432,14 @@
   #winner.visible { display: block; }
   .winner-content > * { display: block; }
   .winner-kicker, .winner-meta, .winner-countdown {
-    color: #cbd3ce; font: 800 9px/1.5 Inter, sans-serif; letter-spacing: .2em; text-transform: uppercase;
+    color: #cbd3ce; font: 800 var(--type-small)/1.5 var(--font-ui); letter-spacing: .14em; text-transform: uppercase;
   }
   .winner-mark { margin: 10px 0 4px; color: var(--winner-color, var(--gold-bright)); font-size: 22px; }
   .winner-title { color: var(--gold-bright); font: 600 32px/1.05 Georgia, serif; }
   .winner-verdict { margin-top: 8px; color: #f3e5bd; font: 600 17px/1.2 Georgia, serif; }
   .winner-meta { margin-top: 13px; }
   .winner-countdown {
-    margin-top: 16px; color: #f6edcf; font-size: 11px; letter-spacing: .14em;
+    margin-top: 16px; color: #f6edcf; font-size: var(--type-control); letter-spacing: .10em;
     text-shadow: 0 2px 10px #000, 0 0 18px color-mix(in srgb, var(--winner-color, #d7b66a) 40%, transparent);
   }
   .winner-countdown-time {
@@ -1460,14 +1471,14 @@
     box-shadow: 0 0 16px color-mix(in srgb, var(--winner-color, #d7b66a) 55%, transparent);
   }
   body.cinema-mode #winner .winner-content::after { margin: 24px auto 0; opacity: .65; }
-  body.cinema-mode #winner .winner-kicker { color: #e7d7aa; font-size: 10px; letter-spacing: .38em; }
+  body.cinema-mode #winner .winner-kicker { color: #e7d7aa; font-size: var(--type-secondary); letter-spacing: .22em; }
   body.cinema-mode #winner .winner-mark { margin: 18px 0 8px; font-size: 34px; text-shadow: 0 0 28px var(--winner-color, #d7b66a); }
   body.cinema-mode #winner .winner-title {
     color: #fffaf0; font-size: clamp(56px, 7vw, 108px); letter-spacing: .025em;
   }
   body.cinema-mode #winner .winner-verdict { margin-top: 12px; color: #f0d99c; font-size: clamp(21px, 2.1vw, 34px); }
-  body.cinema-mode #winner .winner-meta { margin-top: 26px; color: #d1d8d3; font-size: 10px; }
-  body.cinema-mode #winner .winner-countdown { margin-top: 20px; font-size: 12px; }
+  body.cinema-mode #winner .winner-meta { margin-top: 26px; color: #d1d8d3; font-size: var(--type-secondary); }
+  body.cinema-mode #winner .winner-countdown { margin-top: 20px; font-size: var(--type-body); }
   body.cinema-mode #winner .winner-countdown-time { font-size: clamp(48px, 6vw, 76px); }
   @keyframes cinema-finale-reveal {
     from { opacity: 0; transform: translateY(14px) scale(.985); filter: blur(5px); }
@@ -1479,14 +1490,14 @@
   .research-icon { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 9px; background: #76cde412; border: 1px solid #76cde42c; font-size: 15px; }
   .research-card.culture .research-icon { background: #c49be812; border-color: #c49be82c; }
   .research-title { overflow: hidden; font-weight: 750; text-transform: capitalize; text-overflow: ellipsis; white-space: nowrap; }
-  .research-turns { width: 36px; text-align: right; color: var(--gold-bright); font: 600 12px Georgia, serif; font-variant-numeric: tabular-nums; }
+  .research-turns { width: 40px; text-align: right; color: var(--gold-bright); font: 600 var(--type-body)/1.2 var(--font-display); font-variant-numeric: tabular-nums; }
   .city-hero { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
   .city-name { color: var(--gold-bright); font: 600 20px/1.1 Georgia, serif; }
   .city-pop { min-width: 42px; height: 42px; display: grid; place-items: center; border-radius: 50%; background: #d7b66a12; border: 1px solid #d7b66a47; color: var(--gold-bright); font: 600 16px Georgia, serif; }
   .city-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 10px 0; }
   .metric { padding: 7px 6px; text-align: center; border-radius: 8px; background: #091310; border: 1px solid #1e332e; }
-  .metric b { display: block; color: var(--text); font-size: 12px; }
-  .metric span { color: var(--faint); font-size: 7px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+  .metric b { display: block; color: var(--text); font-size: var(--type-body); }
+  .metric span { color: var(--faint); font-size: var(--type-caption); font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
   .event-list { flex: 1 1 auto; min-height: 168px; display: flex; flex-direction: column; gap: 7px; overflow-y: auto; overflow-anchor: none; scrollbar-gutter: stable; }
   .event-list > * { flex: 0 0 auto; }
   .event-item { min-height: 42px; display: grid; grid-template-columns: 25px 1fr; gap: 8px; padding: 8px; border-left: 2px solid #49645a; background: #0b1613; border-radius: 4px 9px 9px 4px; }
@@ -1505,22 +1516,22 @@
   }
   @media (prefers-reduced-motion: reduce) { .event-item.nuclear { animation: none; } }
   .event-icon { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 7px; background: #ffffff08; }
-  .event-text { color: #cad5cf; font-size: 10px; }
-  .event-turn { color: var(--faint); font-size: 8px; letter-spacing: .1em; text-transform: uppercase; }
-  .empty-state { padding: 10px 0 2px; color: var(--faint); font-size: 10px; text-align: center; }
+  .event-text { color: #cad5cf; font-size: var(--type-secondary); }
+  .event-turn { color: var(--faint); font-size: var(--type-label); letter-spacing: .07em; text-transform: uppercase; }
+  .empty-state { padding: 10px 0 2px; color: var(--faint); font-size: var(--type-secondary); text-align: center; }
 
   /* War log — compact conflict infoboxes, one per declaration */
   .war-list { flex: 1 1 auto; min-height: 132px; display: flex; flex-direction: column; gap: 7px; overflow-y: auto; overflow-anchor: none; scrollbar-gutter: stable; }
   .war-list > * { flex: 0 0 auto; }
   .war-card { overflow: hidden; border: 1px solid #6c514b; border-radius: 5px; background: #0b1613; box-shadow: inset 0 0 0 1px #0007; }
   .war-card.ended { border-color: #435e54; }
-  .war-period { display: grid; grid-template-columns: 1fr 1fr; padding: 6px 8px; background: linear-gradient(90deg, #3a1917, #261817 50%, #16251f); border-bottom: 1px solid #79594f; color: #d6c5bd; font-size: 8px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+  .war-period { display: grid; grid-template-columns: 1fr 1fr; padding: 6px 8px; background: linear-gradient(90deg, #3a1917, #261817 50%, #16251f); border-bottom: 1px solid #79594f; color: #d6c5bd; font-size: var(--type-label); font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
   .war-period span:last-child { text-align: right; }
-  .war-period b { display: block; color: #fff0e9; font: 700 11px Georgia, serif; letter-spacing: 0; text-transform: none; }
+  .war-period b { display: block; color: #fff0e9; font: 700 var(--type-control)/1.2 var(--font-display); letter-spacing: 0; text-transform: none; }
   .war-card.ended .war-period { background: linear-gradient(90deg, #1c2924, #14211c); border-bottom-color: #435e54; }
   .war-infobox-row { border-top: 1px solid #ffffff0d; }
   .war-infobox-row:first-of-type { border-top: 0; }
-  .war-row-label { padding: 3px 7px; background: #ffffff06; color: #8fa098; font-size: 7px; font-weight: 850; letter-spacing: .14em; text-align: center; text-transform: uppercase; }
+  .war-row-label { padding: 3px 7px; background: #ffffff06; color: #8fa098; font-size: var(--type-caption); font-weight: 850; letter-spacing: .10em; text-align: center; text-transform: uppercase; }
   .war-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .war-side { min-width: 0; padding: 5px 0 6px; border-right: 1px solid #ffffff10; }
   .war-side:last-child { border-right: 0; text-align: right; }
@@ -1530,15 +1541,15 @@
      46px, and a nowrap cell with nothing clipping it paints the overrun into
      its neighbour — on the defender side, where that heading comes first, it
      read as SAW ACTIONPEAK MIL with no gap at all. */
-  .war-strength-head { margin-bottom: 3px; color: #81948c; font-size: 6px; font-weight: 850; letter-spacing: .06em; line-height: 1.25; text-transform: uppercase; }
+  .war-strength-head { margin-bottom: 3px; color: #81948c; font-size: var(--type-micro); font-weight: 850; letter-spacing: .04em; line-height: 1.25; text-transform: uppercase; }
   .war-strength-head span { min-width: 0; overflow-wrap: break-word; }
   .war-belligerent { min-width: 0; padding: 4px 0; }
   .war-belligerent + .war-belligerent { border-top: 1px solid #ffffff0a; }
   .war-belligerent-bar { display: block; width: var(--war-effort, 0%); height: 4px; margin-bottom: 4px; border-radius: 2px; box-shadow: 0 0 4px #0008; }
   .war-side.aggressor .war-belligerent-bar { margin-left: auto; }
   .war-side.defender .war-belligerent-bar { margin-right: auto; }
-  .war-party { min-width: 0; margin: 2px 7px; color: #e7ece7; font-size: 9px; font-weight: 750; }
-  .war-belligerent.city-state .war-party { color: #b9c8c1; font-size: 8px; font-weight: 650; }
+  .war-party { min-width: 0; margin: 2px 7px; color: #e7ece7; font-size: var(--type-small); font-weight: 750; }
+  .war-belligerent.city-state .war-party { color: #b9c8c1; font-size: var(--type-label); font-weight: 650; }
   .war-side.aggressor .war-belligerent.city-state .war-party { margin-left: 14px; padding-left: 5px; border-left: 1px solid #62756d66; }
   .war-side.defender .war-belligerent.city-state .war-party { margin-right: 14px; padding-right: 5px; border-right: 1px solid #62756d66; }
   .war-party-copy { min-width: 0; }
@@ -1560,19 +1571,19 @@
     transform: none; text-decoration-color: currentColor;
   }
   .war-entity-link:active { transform: none; }
-  .war-party-note { display: block; color: #a8948c; font-size: 7px; font-style: italic; font-weight: 600; }
-  .war-strength-values { margin-top: 3px; color: #f1d9ad; font-size: 10px; font-variant-numeric: tabular-nums; }
+  .war-party-note { display: block; color: #a8948c; font-size: var(--type-caption); font-style: italic; font-weight: 600; }
+  .war-strength-values { margin-top: 3px; color: #f1d9ad; font-size: var(--type-secondary); font-variant-numeric: tabular-nums; }
   .war-strength-values b { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  .war-loss-ledger { font-size: 8px; }
+  .war-loss-ledger { font-size: var(--type-label); }
   .war-loss-sides, .war-loss-unit-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .war-loss-side-head, .war-loss-unit-cell { min-width: 0; padding: 5px 7px; border-right: 1px solid #ffffff10; }
   .war-loss-side-head:last-child, .war-loss-unit-cell:last-child { border-right: 0; text-align: right; }
   .war-loss-side-head { color: #c7d1cc; }
-  .war-loss-side-head .war-entity-link { display: block; width: 100%; overflow-wrap: anywhere; font-size: 8px; font-weight: 750; }
+  .war-loss-side-head .war-entity-link { display: block; width: 100%; overflow-wrap: anywhere; font-size: var(--type-label); font-weight: 750; }
   .war-loss-side-head:last-child .war-entity-link { text-align: right; }
-  .war-loss-side-head .city-state { color: #b9c8c1; font-size: 7px; }
+  .war-loss-side-head .city-state { color: #b9c8c1; font-size: var(--type-caption); }
   .war-loss-cities { display: block; margin-top: 3px; color: #c6aaa4; line-height: 1.35; }
-  .war-loss-category { padding: 3px 7px; border-top: 1px solid #ffffff0d; border-bottom: 1px solid #ffffff08; background: #ffffff05; color: #8fa098; font-size: 6px; font-weight: 850; letter-spacing: .12em; text-align: center; text-transform: uppercase; }
+  .war-loss-category { padding: 3px 7px; border-top: 1px solid #ffffff0d; border-bottom: 1px solid #ffffff08; background: #ffffff05; color: #8fa098; font-size: var(--type-micro); font-weight: 850; letter-spacing: .08em; text-align: center; text-transform: uppercase; }
   .war-loss-unit-row { min-height: 21px; }
   .war-loss-unit-row + .war-loss-unit-row { border-top: 1px solid #ffffff08; }
   .war-loss-unit-cell { display: flex; align-items: center; color: #c6aaa4; line-height: 1.3; }
@@ -1584,17 +1595,17 @@
   .war-loss-unit-cell:last-child .war-loss-specialty-mark { order: 2; margin-right: 0; margin-left: 3px; }
   .war-loss-none { color: var(--faint); font-style: italic; }
   .war-moments { padding: 6px 8px 7px; display: flex; flex-direction: column; gap: 3px; }
-  .war-moment { display: grid; grid-template-columns: 34px 1fr; gap: 6px; color: #cad5cf; font-size: 8px; }
-  .war-moment em { color: var(--faint); font-style: normal; font-weight: 800; letter-spacing: .06em; }
+  .war-moment { display: grid; grid-template-columns: 34px 1fr; gap: 6px; color: #cad5cf; font-size: var(--type-label); }
+  .war-moment em { color: var(--faint); font-style: normal; font-weight: 800; letter-spacing: .04em; }
   .war-moment.capture { color: #f2c0b8; }
   .war-moment.nuclear { color: #ffc9a8; font-weight: 800; }
   .war-moment.nuclear span::before { content: "☢ "; color: #ffb04a; }
   /* A war that used the atom says so at the top of its own card. */
-  .war-nuclear-badge { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; padding: 0 4px; border-radius: 3px; border: 1px solid #ff6a3c66; background: #ff6a3c1f; color: #ffc06a; font-size: 7px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
+  .war-nuclear-badge { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; padding: 0 4px; border-radius: 3px; border: 1px solid #ff6a3c66; background: #ff6a3c1f; color: #ffc06a; font-size: var(--type-caption); font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
   .war-card.nuclear { border-color: #a2543c; }
   .war-moment.conquest { color: #ffb4a6; font-weight: 750; }
   .war-moment.peace { color: #9fd9bd; }
-  .war-terms { padding: 6px 8px 7px; color: #b9c7c0; font-size: 8px; }
+  .war-terms { padding: 6px 8px 7px; color: #b9c7c0; font-size: var(--type-label); }
   .war-settlement + .war-settlement { margin-top: 5px; padding-top: 5px; border-top: 1px solid #ffffff0d; }
   .war-settlement b { color: #9fd9bd; }
   .war-settlement ul { margin: 2px 0 0 14px; padding: 0; }
@@ -1604,10 +1615,10 @@
   .spec-controls #restart-sim {
     width: 100%; min-height: 46px; padding: 8px 12px; line-height: 1.15;
     color: #c2cec8; background: linear-gradient(180deg, #243530, #192823);
-    border-color: #3b5049; font-size: 11px; font-weight: 800;
-    letter-spacing: .08em; text-transform: uppercase;
+    border-color: #3b5049; font-size: var(--type-control); font-weight: 800;
+    letter-spacing: .05em; text-transform: uppercase;
   }
-  .spec-controls #restart-sim::before { content: "↻"; margin-right: 5px; font-size: 13px; }
+  .spec-controls #restart-sim::before { content: "↻"; margin-right: 5px; font-size: var(--type-body); }
   /* Choosing single player turns this one control into the way into that game,
      so it says which game it starts instead of leaving "Restart sim" over a
      single-player subtitle. A start is not a restart: the glyph changes too.
@@ -1618,14 +1629,14 @@
      the start takes everything left, which is enough for two lines. */
   .spec-controls:has(#restart-sim.human-start) { grid-template-columns: 96px minmax(0, 1fr); }
   .spec-controls #restart-sim.human-start { text-wrap: balance; }
-  .spec-controls #restart-sim.human-start::before { content: "▶"; font-size: 11px; }
+  .spec-controls #restart-sim.human-start::before { content: "▶"; font-size: var(--type-control); }
   /* Side by side the two would be gold together and neither would read as the
      one to press. Pausing the simulation you are about to leave is not the
      point, so Pause steps back to the plain treatment while the start is
      staged — and to a narrow column, which its label only survives at the
      smaller type the plain buttons already use. */
   .spec-controls:has(#restart-sim.human-start) #specpause.primary {
-    padding: 12px 6px; color: #c2cec8; font-size: 11px; letter-spacing: .04em;
+    padding: 12px 6px; color: #c2cec8; font-size: var(--type-control); letter-spacing: .04em;
     background: linear-gradient(180deg, #243530, #192823);
     border-color: #3b5049; box-shadow: none;
   }
@@ -1634,7 +1645,7 @@
     border-color: #57776d;
   }
   .spec-controls #restart-sim .sub {
-    display: block; margin-top: 3px; color: var(--muted); font-size: 8px;
+    display: block; margin-top: 3px; color: var(--muted); font-size: var(--type-label);
     font-weight: 700; letter-spacing: .07em; white-space: nowrap;
   }
   .spec-controls #restart-sim .sub::before { content: "with "; }
@@ -1645,23 +1656,23 @@
   .spec-controls #restart-sim.primary .sub::before { content: ""; }
   .spec-controls #restart-sim.primary .sub { color: #51401f; }
   .speed-row, .view-row { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 10px; margin-top: 9px; }
-  .speed-row span, .view-row span { color: var(--muted); font-size: 9px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
-  .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; color: var(--muted); font-size: 10px; cursor: pointer; }
+  .speed-row span, .view-row span { color: var(--muted); font-size: var(--type-small); font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+  .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; color: var(--muted); font-size: var(--type-secondary); cursor: pointer; }
   .setting-row span { display: flex; align-items: center; gap: 7px; }
   .setting-row kbd { margin: 0; }
   .shortcut-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
-  .shortcut-grid span { color: var(--muted); font-size: 9px; }
+  .shortcut-grid span { color: var(--muted); font-size: var(--type-small); }
   /* A four-group legend needs its groups named, and a heading is the one row
      that spans both columns. */
-  .shortcut-grid .shortcut-head { grid-column: 1 / -1; margin-top: 7px; color: var(--gold); font: 700 9px Inter, sans-serif; letter-spacing: .07em; text-transform: uppercase; }
+  .shortcut-grid .shortcut-head { grid-column: 1 / -1; margin-top: 7px; color: var(--gold); font: 700 var(--type-small)/1.2 var(--font-ui); letter-spacing: .07em; text-transform: uppercase; }
   .shortcut-grid .shortcut-head:first-child { margin-top: 0; }
-  kbd { display: inline-grid; min-width: 19px; height: 18px; place-items: center; margin-right: 5px; padding: 0 4px; border-radius: 5px; color: #cbd5d0; background: #091310; border: 1px solid #354c44; box-shadow: inset 0 -1px #000; font: 700 8px Inter, sans-serif; }
+  kbd { display: inline-grid; min-width: 19px; height: 18px; place-items: center; margin-right: 5px; padding: 0 4px; border-radius: 5px; color: #cbd5d0; background: #091310; border: 1px solid #354c44; box-shadow: inset 0 -1px #000; font: 700 var(--type-label)/1 var(--font-ui); }
   #newgame-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: end; }
   #newgame-options button { margin: 0; }
   .victory-options { grid-column: 1 / -1; padding: 9px 10px 10px; border: 1px solid var(--line-soft); border-radius: 9px; background: #09131080; }
   .victory-options h2 { margin-bottom: 8px; }
   .victory-option-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px 9px; }
-  .victory-option { display: flex; align-items: center; gap: 5px; min-width: 0; color: var(--muted); font-size: 9px; cursor: pointer; }
+  .victory-option { display: flex; align-items: center; gap: 5px; min-width: 0; color: var(--muted); font-size: var(--type-small); cursor: pointer; }
   .victory-option input { margin: 0; }
 
   /* Tech and civic overlay */
@@ -1681,7 +1692,7 @@
   #pediabody { display: grid; flex: 1; grid-template-columns: minmax(180px, 1fr) 2fr; gap: 14px; min-height: 0; }
   #pedialist { overflow-y: auto; padding-right: 4px; }
   #pedialist .pedia-cat {
-    margin: 10px 0 4px; color: #82968f; font-size: 9px; font-weight: 850; letter-spacing: .12em;
+    margin: 10px 0 4px; color: #82968f; font-size: var(--type-small); font-weight: 850; letter-spacing: .08em;
   }
   #pedialist button {
     display: block; width: 100%; padding: 4px 7px; border: 0; border-radius: 6px;
@@ -1696,7 +1707,7 @@
   #pediadetail .pedia-links { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 6px; }
   #pediadetail .pedia-links button {
     padding: 3px 9px; border: 1px solid #3d5850; border-radius: 999px;
-    background: none; color: inherit; font: inherit; font-size: 11px; cursor: pointer;
+    background: none; color: inherit; font: inherit; font-size: var(--type-control); cursor: pointer;
   }
   #tree {
     position: absolute; z-index: 15; inset: 4% 3%; display: none; flex-direction: column;
@@ -1710,14 +1721,14 @@
   #treetitle { color: var(--gold-bright); font: 600 20px Georgia, serif; }
   #treecols { display: flex; gap: 18px; flex: 1; overflow: auto; align-items: flex-start; }
   .tcol { display: flex; flex-direction: column; gap: 10px; min-width: 180px; }
-  .tera { position: sticky; top: 0; z-index: 1; padding: 7px 9px; color: var(--gold-bright); background: #12221fef; border-bottom: 1px solid #536c63; border-radius: 7px; font: 700 10px Inter, sans-serif; letter-spacing: .1em; text-transform: uppercase; }
-  .tnode { padding: 10px 11px; color: #bcc9c3; background: #101d1a; border: 1px solid #2d443d; border-radius: 10px; font-size: 11px; transition: .12s; }
+  .tera { position: sticky; top: 0; z-index: 1; padding: 7px 9px; color: var(--gold-bright); background: #12221fef; border-bottom: 1px solid #536c63; border-radius: 7px; font: 700 var(--type-secondary)/1.2 var(--font-ui); letter-spacing: .07em; text-transform: uppercase; }
+  .tnode { padding: 10px 11px; color: #bcc9c3; background: #101d1a; border: 1px solid #2d443d; border-radius: 10px; font-size: var(--type-control); transition: .12s; }
   .tnode.done { color: #9bd8ae; border-color: #4a805d; background: #183124; }
   .tnode.cur { color: #bcecf5; border-color: var(--blue); box-shadow: 0 0 18px #76cde42e; }
   .tnode.avail { color: var(--gold-bright); border-color: var(--gold); cursor: pointer; }
   .tnode.avail:hover { transform: translateY(-2px); background: #24372e; }
   .tnode.locked { opacity: .38; }
-  .tnode .req { color: var(--faint); font-size: 8px; margin-top: 3px; }
+  .tnode .req { color: var(--faint); font-size: var(--type-label); margin-top: 3px; }
 
   /* Quick Deals: compare every acceptable AI quote without leader-by-leader
      haggling. The engine still revalues both sides when Accept is clicked. */
@@ -1730,28 +1741,28 @@
   #trade.open { display: flex; animation: rise .18s ease-out; }
   .trade-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 20px 14px; border-bottom: 1px solid #40534b; }
   .trade-title { color: var(--gold-bright); font: 600 23px/1 Georgia, serif; }
-  .trade-subtitle { margin-top: 5px; color: var(--muted); font-size: 9px; letter-spacing: .08em; }
+  .trade-subtitle { margin-top: 5px; color: var(--muted); font-size: var(--type-small); letter-spacing: .05em; }
   .trade-balance { display: flex; gap: 7px; margin-left: auto; }
-  .trade-balance span { padding: 7px 10px; border-radius: 999px; color: #dbe4df; background: #0c1815; border: 1px solid #32473f; font-size: 10px; font-variant-numeric: tabular-nums; }
+  .trade-balance span { padding: 7px 10px; border-radius: 999px; color: #dbe4df; background: #0c1815; border: 1px solid #32473f; font-size: var(--type-secondary); font-variant-numeric: tabular-nums; }
   .trade-toolbar { display: flex; align-items: center; gap: 7px; padding: 11px 20px; border-bottom: 1px solid #283c35; background: #0b1714b8; }
-  .trade-filter { width: auto; margin: 0; padding: 7px 12px; border-radius: 999px; background: #12221e; border-color: #344c43; font-size: 9px; }
+  .trade-filter { width: auto; margin: 0; padding: 7px 12px; border-radius: 999px; background: #12221e; border-color: #344c43; font-size: var(--type-small); }
   .trade-filter.active { color: #201b0e; background: var(--gold-bright); border-color: var(--gold-bright); }
-  #tradecount { margin-left: auto; color: var(--faint); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; }
+  #tradecount { margin-left: auto; color: var(--faint); font-size: var(--type-small); letter-spacing: .07em; text-transform: uppercase; }
   #tradelist { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 10px; padding: 14px 20px 24px; overflow-y: auto; }
   .quick-deal { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 11px; align-items: center; min-height: 92px; padding: 12px; border: 1px solid #344d43; border-radius: 14px; background: linear-gradient(135deg, #12241f, #0c1714); box-shadow: inset 0 1px #ffffff08; }
   .quick-deal:hover { border-color: #7b8263; background: linear-gradient(135deg, #182d26, #101d19); }
   .deal-icon { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 12px; background: #d7b66a12; border: 1px solid #d7b66a35; font-size: 22px; }
   .deal-main { min-width: 0; }
   .deal-name { color: #f4eee0; font: 600 15px Georgia, serif; text-transform: capitalize; }
-  .deal-partner { margin-top: 3px; color: var(--muted); font-size: 9px; }
+  .deal-partner { margin-top: 3px; color: var(--muted); font-size: var(--type-small); }
   .deal-terms { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 9px; }
-  .term { padding: 4px 7px; border-radius: 6px; color: #dce6df; background: #08120f; border: 1px solid #2c4239; font-size: 9px; }
+  .term { padding: 4px 7px; border-radius: 6px; color: #dce6df; background: #08120f; border: 1px solid #2c4239; font-size: var(--type-small); }
   .term.give { color: #ffc0b7; border-color: #603c37; }
   .term.get { color: #aee9c0; border-color: #315b40; }
-  .term-arrow { color: var(--gold); font-size: 11px; }
+  .term-arrow { color: var(--gold); font-size: var(--type-control); }
   .deal-action { min-width: 90px; text-align: right; }
   .deal-action button { width: 100%; margin: 0; padding: 8px 10px; }
-  .mutual-gain { margin-top: 6px; color: #86b997; font-size: 8px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .mutual-gain { margin-top: 6px; color: #86b997; font-size: var(--type-label); white-space: nowrap; font-variant-numeric: tabular-nums; }
   .trade-empty { grid-column: 1 / -1; padding: 54px 20px; color: var(--muted); text-align: center; border: 1px dashed #34493f; border-radius: 14px; }
   /* What is left in the deck is the turn itself: end it, or hand the seat to a
      strategy. Diplomacy and Quick Deals moved to the launch bar on the map,
@@ -1767,13 +1778,13 @@
   .autoplay-fields { display: grid; grid-template-columns: minmax(0, 1fr) 92px; gap: 5px; }
   .autoplay-field { display: grid; gap: 3px; min-width: 0; }
   .autoplay-field > span {
-    color: var(--muted); font-size: 8px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--muted); font-size: var(--type-label); letter-spacing: .07em; text-transform: uppercase;
   }
   .autoplay-bar select { width: 100%; margin: 0; }
   .autoplay-bar button { width: 100%; margin: 0; }
   .autoplay-bar.running button { border-color: #9f8050; color: var(--gold); }
   .autoplay-note {
-    color: var(--muted); font-size: 9px; text-align: center; font-variant-numeric: tabular-nums;
+    color: var(--muted); font-size: var(--type-small); text-align: center; font-variant-numeric: tabular-nums;
   }
 
   #capture-choice {
@@ -1784,9 +1795,9 @@
     box-shadow: 0 32px 120px #000f, inset 0 1px #ffffff17; backdrop-filter: blur(22px);
   }
   #capture-choice.open { display: block; animation: rise .18s ease-out; }
-  .capture-kicker { color: var(--gold); font-size: 9px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+  .capture-kicker { color: var(--gold); font-size: var(--type-small); font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
   .capture-title { margin-top: 7px; color: var(--gold-bright); font: 600 26px/1.1 Georgia, serif; }
-  .capture-copy { margin: 9px 0 17px; color: var(--muted); font-size: 11px; line-height: 1.55; }
+  .capture-copy { margin: 9px 0 17px; color: var(--muted); font-size: var(--type-control); line-height: 1.55; }
   .capture-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(125px, 1fr)); gap: 8px; }
   .capture-actions button { margin: 0; min-height: 43px; }
 
@@ -1796,14 +1807,14 @@
     .diplomacy-card { flex-basis: 330px; grid-template-columns: 52px minmax(88px, .75fr) minmax(164px, 1.35fr); }
     .empire-link { width: 36px; height: 36px; }
     .capital-link { font-size: 15px; }
-    .ribbon-stat b { font-size: 11px; }
-    .ribbon-stat em { font-size: 7px; }
+    .ribbon-stat b { font-size: var(--type-control); }
+    .ribbon-stat em { font-size: var(--type-caption); }
     /* Four dossier columns need about 480px to stay readable; below that they
        stack two by two rather than shedding sections. */
     .dossier-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
   @media (max-width: 980px) {
-    #side { width: 320px; min-width: 320px; }
+    #side { width: 340px; min-width: 340px; }
     #ubar { max-width: calc(100% - 70px); }
   }
   @media (max-width: 720px) {
@@ -1840,12 +1851,12 @@
     .hud-region { padding-inline: 2px; }
     .diplomacy-card { flex-basis: 286px; grid-template-columns: 44px minmax(76px, .7fr) minmax(155px, 1.45fr); gap: 4px; padding: 4px; }
     .empire-link { width: 29px; height: 29px; }
-    .capital-link { font-size: 12px; }
+    .capital-link { font-size: var(--type-body); }
     .ribbon-stat { padding-inline: 0; }
-    .ribbon-stat b { font-size: 8px; }
-    .ribbon-stat em { font-size: 6px; letter-spacing: 0; }
+    .ribbon-stat b { font-size: var(--type-label); }
+    .ribbon-stat em { font-size: var(--type-micro); letter-spacing: 0; }
     .dossier-grid { grid-template-columns: minmax(0, 1fr); }
-    .ribbon-stat b { font-size: 9px; }
+    .ribbon-stat b { font-size: var(--type-small); }
     body.cinema-mode #cinema-story { left: 18px; width: calc(100% - 36px); }
   }
 
@@ -1864,7 +1875,7 @@
     --hud-map-links-column: 38px; --hud-identity-column: minmax(300px, 42%); --hud-column-gap: 6px;
     --hud-identity-tracks: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1fr)
       minmax(0, .55fr) minmax(0, .55fr) minmax(0, 1.1fr);
-    --hud-lock-column: 13px; --hud-row-height: 23px; --hud-row-gap: 2px;
+    --hud-lock-column: 13px; --hud-row-height: 26px; --hud-row-gap: 2px;
     --hud-row-pitch: calc(var(--hud-row-height) + var(--hud-row-gap));
     display: grid; grid-template-columns: 140px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
     align-items: stretch; gap: 5px; min-width: 0; padding: 5px;
@@ -1888,21 +1899,21 @@
     display: flex; flex-direction: column; gap: 3px;
   }
   .ribbon-heading {
-    position: relative; min-height: 17px; display: flex; align-items: center;
+    position: relative; min-height: 20px; display: flex; align-items: center;
     justify-content: center; padding: 0 4px; overflow: hidden; color: #c7d3ce;
-    font-size: 10px; font-weight: 900; letter-spacing: .15em; line-height: 1;
+    font-size: var(--type-secondary); font-weight: 900; letter-spacing: .10em; line-height: 1;
     text-transform: uppercase; white-space: nowrap; text-shadow: 0 2px 5px #000;
   }
   .ribbon-heading.widget-drag-handle::before { position: absolute; left: 4px; }
   .ribbon-stat-heading {
-    min-height: 9px; display: grid;
+    min-height: 12px; display: grid;
     grid-template-columns: var(--hud-lock-column, 0px) var(--hud-map-links-column) var(--hud-identity-column) minmax(0, 1fr);
     align-items: stretch; gap: var(--hud-column-gap); padding: 0 4px 0 3px;
   }
   .diplomacy-identity-head {
     min-width: 0; display: grid; grid-column: 3;
     grid-template-columns: var(--hud-identity-tracks); overflow: hidden;
-    color: #a9bbb4; font-size: 6px; font-weight: 950; letter-spacing: .025em;
+    color: #a9bbb4; font-size: var(--type-micro); font-weight: 950; letter-spacing: .025em;
   }
   .diplomacy-identity-head span {
     min-width: 0; overflow: hidden; padding-inline: 3px;
@@ -1913,7 +1924,7 @@
   .diplomacy-stat-head {
     min-width: 0; display: grid; grid-column: 4;
     grid-template-columns: repeat(10, minmax(0, 1fr));
-    color: #a9bbb4; font-size: 7px; font-weight: 950; letter-spacing: .015em;
+    color: #a9bbb4; font-size: var(--type-caption); font-weight: 950; letter-spacing: .015em;
   }
   .diplomacy-stat-head span {
     min-width: 0; display: grid; place-items: center; overflow: hidden;
@@ -1932,8 +1943,8 @@
   #playerhud .diplomacy-ribbon::-webkit-scrollbar { width: 3px; }
   #playerhud .diplomacy-ribbon::-webkit-scrollbar-thumb { background: #476057; border-radius: 4px; }
   /* One line, four cells: the lock, two map links, who this is, and their ten
-     values. The masthead has the width to run them side by side, which is what
-     keeps a row 23px instead of 35px. */
+     values. The masthead has the width to run them side by side, which keeps
+     a readable row compact instead of doubling its height. */
   #playerhud .diplomacy-card {
     width: auto; height: auto; min-height: 0; display: grid;
     grid-template-columns: var(--hud-lock-column, 0px) var(--hud-map-links-column) var(--hud-identity-column) minmax(0, 1fr);
@@ -1952,7 +1963,7 @@
   #playerhud .lock-toggle {
     grid-column: 1; width: 13px; height: 13px; display: grid; place-items: center;
     margin: 0; padding: 0; border: 0; border-radius: 4px; box-shadow: none;
-    color: #43594f; background: transparent; font-size: 8px; line-height: 1;
+    color: #43594f; background: transparent; font-size: var(--type-label); line-height: 1;
     transition: color .12s ease, background .12s ease;
   }
   #playerhud .lock-toggle:hover { color: #dce6e1; background: #ffffff14; transform: none; }
@@ -1974,7 +1985,7 @@
     border-width: 1px; box-shadow: 0 0 0 1px #07110f, 0 3px 8px #0008;
   }
   #playerhud .capital-link {
-    width: 14px; height: 19px; font-size: 12px;
+    width: 14px; height: 19px; font-size: var(--type-body);
   }
   /* Every identity fact uses the same six tracks as the heading above it.
      Variable-length names can ellipsize inside their own cell without moving
@@ -1987,10 +1998,10 @@
   #playerhud .diplomacy-identity-field {
     min-width: 0; display: flex; align-items: center; gap: 3px;
     overflow: hidden; padding-inline: 3px; border-left: 1px solid #ffffff0b;
-    font-size: 8px; line-height: 1.1; white-space: nowrap;
+    font-size: var(--type-label); line-height: 1.1; white-space: nowrap;
   }
   #playerhud .diplomacy-identity-field:first-child { border-left-color: transparent; }
-  #playerhud .diplomacy-rank { flex: 0 0 auto; margin-right: 0; font-size: 8px; }
+  #playerhud .diplomacy-rank { flex: 0 0 auto; margin-right: 0; font-size: var(--type-label); }
   #playerhud .diplomacy-civ { flex: 1 1 auto; }
   #playerhud .diplomacy-leader-name { color: var(--muted); font-weight: 650; }
   #playerhud .diplomacy-player { color: #d9e1dc; font-weight: 750; }
@@ -2006,7 +2017,7 @@
   #playerhud .diplomacy-strategy .ai-plan { display: block; }
   #playerhud .detail-caret {
     position: absolute; right: 1px; top: 50%; margin: 0; transform: translateY(-50%);
-    font-size: 7px;
+    font-size: var(--type-caption);
   }
   #playerhud .diplomacy-stats {
     align-self: stretch; display: grid; grid-template-columns: repeat(10, minmax(0, 1fr));
@@ -2020,7 +2031,7 @@
      down to a narrow desktop. */
   #playerhud .ribbon-stat b {
     position: relative; overflow: visible;
-    font-size: clamp(9px, .8vw, 13px); font-weight: 950; letter-spacing: -.025em;
+    font-size: clamp(11px, .8vw, 14px); font-weight: 900; letter-spacing: -.015em;
     line-height: 1; text-shadow: 0 1px 2px #000, 0 0 8px currentColor;
   }
   /* The marker is out of flow: it follows the FPT value without changing the
@@ -2041,7 +2052,7 @@
     height: min(var(--victory-hud-height, 100%),
       calc(100% - var(--minimap-height) - 32px));
     display: grid; grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: 18px minmax(0, 1fr);
+    grid-template-rows: 22px minmax(0, 1fr);
     align-items: stretch; gap: 5px; min-width: 0; padding: 5px;
     overflow: hidden; border: 1px solid #526a618f; border-radius: 12px;
     background: linear-gradient(195deg, #091411ed, #0d1a17e6 54%, #0a1512ed);
@@ -2054,8 +2065,8 @@
     bottom: auto; height: min(var(--victory-hud-height, 100%), calc(100% - 26px));
   }
   #victoryhud > .hud-section-heading {
-    position: relative; grid-column: 1; grid-row: 1; min-height: 18px;
-    justify-content: center; margin: 0 3px; color: #c7d3ce; font-size: 10px;
+    position: relative; grid-column: 1; grid-row: 1; min-height: 22px;
+    justify-content: center; margin: 0 3px; color: #c7d3ce; font-size: var(--type-secondary);
   }
   #victoryhud > .hud-section-heading.widget-drag-handle::before { position: absolute; left: 3px; }
   #victoryhud > .victory-region { grid-column: 1; grid-row: 2; min-height: 0; }
@@ -2087,7 +2098,7 @@
   .overlay-option-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 8px; }
   .overlay-option {
     min-width: 0; display: flex; align-items: center; gap: 6px; color: var(--muted);
-    font-size: 9px; line-height: 1.25; cursor: pointer;
+    font-size: var(--type-small); line-height: 1.25; cursor: pointer;
   }
   .overlay-option input { flex: 0 0 auto; margin: 0; }
   .overlay-layout-help { margin-top: 9px; }
@@ -2101,7 +2112,7 @@
     width: 20px; height: 20px; display: grid; place-items: center;
     margin: 0; padding: 0; border: 1px solid #5b6f67; border-radius: 7px;
     color: #c9d5d0; background: #091310dc; box-shadow: 0 3px 10px #0007;
-    font-size: 11px; font-weight: 700; line-height: 1;
+    font-size: var(--type-control); font-weight: 700; line-height: 1;
   }
   .overlay-close:hover { color: #fff; border-color: #9b6c66; background: #35201e; }
   #playerhud .player-standings > .ribbon-heading, #victoryhud > .hud-section-heading,
@@ -2109,7 +2120,7 @@
   #zoomctl .overlay-close {
     position: static; order: 20; width: 28px; height: 34px; flex: 0 0 28px;
     border: 0; border-left: 1px solid #ffffff0c; border-radius: 0;
-    background: transparent; box-shadow: none; font-size: 13px;
+    background: transparent; box-shadow: none; font-size: var(--type-body);
   }
   #zoomctl .overlay-close:hover { color: #fff; background: #6b302b66; }
   /* The controls' restore switch lives in the command deck. Do not offer to
@@ -2122,7 +2133,7 @@
     color: var(--gold-bright); border: 1px solid #d7b66a9c; border-radius: 12px;
     background: linear-gradient(135deg, #172a25f2, #091310e8);
     box-shadow: 0 16px 42px #000b, inset 0 1px #ffffff12;
-    font-size: 8px; font-weight: 900; letter-spacing: .14em;
+    font-size: var(--type-label); font-weight: 900; letter-spacing: .10em;
     text-transform: uppercase; white-space: nowrap;
   }
   .section-label.overlay-return-flash {
@@ -2149,7 +2160,7 @@
   .minimap-label.widget-drag-handle { width: 100%; }
   .widget-drag-handle:active { cursor: grabbing; }
   .widget-drag-handle::before {
-    content: "\22ee"; flex: 0 0 auto; color: #d7b66aa6; font-size: 11px;
+    content: "\22ee"; flex: 0 0 auto; color: #d7b66aa6; font-size: var(--type-control);
     letter-spacing: 0; line-height: .7;
   }
   .widget-drag-handle:focus-visible, .widget-resize-handle:focus-visible {
@@ -2219,11 +2230,10 @@
       --hud-map-links-column: 34px;
     }
     #playerhud .empire-link { width: 19px; height: 19px; }
-    #playerhud .capital-link { width: 12px; font-size: 11px; }
-    /* The masthead can take the value columns under 19px here, and a four-digit
-       figure needs the extra point of room more than it needs the ninth pixel
-       of type: a clipped number is a wrong number. */
-    #playerhud .ribbon-stat b { font-size: clamp(8px, .8vw, 13px); }
+    #playerhud .capital-link { width: 12px; font-size: var(--type-control); }
+    /* The masthead can take the value columns under 19px here. Keep a
+       four-digit figure whole: a clipped number is a wrong number. */
+    #playerhud .ribbon-stat b { font-size: clamp(10px, .8vw, 14px); }
   }
   @media (max-width: 720px) {
     #side { inset-block-start: 132px; }
@@ -2259,14 +2269,14 @@
     }
     #playerhud .diplomacy-card { padding-inline: 2px; }
     .ribbon-heading { padding-inline: 2px; }
-    .diplomacy-stat-head { font-size: 5.5px; }
+    .diplomacy-stat-head { font-size: var(--type-micro); }
   }
   @media (max-width: 720px) {
     #playerhud { --hud-identity-column: minmax(160px, 48%); }
   }
   @media (max-width: 620px) {
     #playerhud { --hud-identity-column: minmax(150px, 48%); }
-    #playerhud .ribbon-stat b { font-size: 13px; }
+    #playerhud .ribbon-stat b { font-size: var(--type-label); }
   }
   /* Ten screens at full size need 487px and the bar has (height − 292) to give,
      so below 780px it would hide its last button behind a scrollbar that is
@@ -2276,7 +2286,7 @@
     #launchbar, #launchtabs { gap: 4px; }
     .launch { width: 36px; height: 36px; font-size: 15px; }
     .launch-rule { width: 36px; margin: 2px 0; }
-    .launch-badge { min-width: 15px; height: 15px; font-size: 8px; }
+    .launch-badge { min-width: 15px; height: 15px; font-size: var(--type-label); }
   }
   @media (max-height: 650px) {
     #playerhud .empire-link { width: 20px; height: 20px; }
@@ -4543,11 +4553,11 @@ const HUD_LAYOUT_STORAGE_KEY = "civvis-hud-layout-v3";
 const HUD_WIDGETS = {
   // A player row is one line: the turn plate, an identity and ten fixed metric
   // columns side by side, which is why the standings want the map's width and
-  // very little of its height. They are capped at a third of that height
+  // very little of its height. They are capped below two-fifths of that height
   // however they are sized — by the player count, by a dragged edge, or by a
   // layout saved earlier — so a large table never swallows the world.
-  players: {element:document.getElementById("playerhud"), minWidth:420, minHeight:144,
-            maxHeightRatio:.34},
+  players: {element:document.getElementById("playerhud"), minWidth:420, minHeight:154,
+            maxHeightRatio:.38},
   victory: {element:document.getElementById("victoryhud"), minWidth:150, minHeight:88},
   minimap: {element:document.querySelector(".minimap-frame"), minWidth:130, minHeight:96},
 };
@@ -8606,10 +8616,10 @@ function yieldPipCount(px, py, r, n) {
   cx.save();
   const bx = px + r * .82, by = py + r * .78;
   cx.fillStyle = "#0d120bea";
-  cx.beginPath(); cx.roundRect(bx - 5, by - 4, 10, 8, 3); cx.fill();
+  cx.beginPath(); cx.roundRect(bx - 6, by - 5, 12, 10, 4); cx.fill();
   cx.strokeStyle = "#e8dfc077"; cx.lineWidth = .7; cx.stroke();
   cx.fillStyle = "#f4ecd6";
-  cx.font = "bold 7px Inter, sans-serif";
+  cx.font = "700 9px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
   cx.textAlign = "center"; cx.textBaseline = "middle";
   cx.fillText(String(n), bx, by + .5);
   cx.restore();
@@ -11041,8 +11051,8 @@ function drawUnitFormationBadge(u, x, y) {
   const k = UNIT_K(), bx = x + 9.5 * k, by = y + 1;
   const label = `×${count}`;
   cx.save();
-  cx.font = `bold ${(7.6 * k).toFixed(1)}px Inter, sans-serif`;
-  const w = Math.max(15 * k, cx.measureText(label).width + 7 * k), h = 11.5 * k;
+  cx.font = `700 ${(9.5 * k).toFixed(1)}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
+  const w = Math.max(18 * k, cx.measureText(label).width + 8 * k), h = 14 * k;
   cx.fillStyle = "#0b1210eb";
   cx.beginPath(); cx.roundRect(bx - w / 2, by - h / 2, w, h, h / 2); cx.fill();
   cx.strokeStyle = pcol(u.owner); cx.lineWidth = 1.6; cx.stroke();
@@ -12651,7 +12661,8 @@ function drawSkyLaunches(crews, placements, radius, centerX, centerY, now) {
     cx.restore();
 
     if (size >= 4.2) {
-      cx.save(); cx.globalAlpha = .8; cx.font = "800 7px Inter,sans-serif";
+      cx.save(); cx.globalAlpha = .84;
+      cx.font = "800 9px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
       cx.textAlign = "center"; cx.textBaseline = "bottom";
       cx.strokeStyle = "#03070c"; cx.lineWidth = 3;
       const label = launch.mission === "expedition" ? "EXOPLANET LAUNCH"
@@ -12672,21 +12683,21 @@ function drawSkyCaption(place, crew, alpha, note, above) {
   // A caption normally hangs under its body. The Moon is the exception: pulled
   // right back it sits a few pixels off the Earth, and both captions land in
   // the same place — so that one goes above instead.
-  const stack = 11 * ((note ? 1 : 0) + (crew.length ? 1 : 0));
+  const stack = 14 * ((note ? 1 : 0) + (crew.length ? 1 : 0));
   const top = above ? place.y - place.r - 9 - stack : place.y + place.r + 7;
-  cx.font = "800 9px Inter,sans-serif";
+  cx.font = "800 11px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
   cx.strokeStyle = "#04080cd9"; cx.lineWidth = 3;
   cx.strokeText(place.name.toUpperCase(), place.x, top);
   cx.fillStyle = "#d7e6ef";
   cx.fillText(place.name.toUpperCase(), place.x, top);
   if (note) {
-    cx.font = "600 8px Inter,sans-serif";
-    cx.strokeText(note, place.x, top + 11);
+    cx.font = "650 10px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+    cx.strokeText(note, place.x, top + 14);
     cx.fillStyle = "#8fa6b3";
-    cx.fillText(note, place.x, top + 11);
+    cx.fillText(note, place.x, top + 14);
   }
   if (crew.length) {
-    const row = top + (note ? 22 : 11), gap = 6;
+    const row = top + (note ? 28 : 14), gap = 7;
     crew.forEach((player, index) => {
       const x = place.x + (index - (crew.length - 1) / 2) * gap;
       cx.fillStyle = pcol(player.id);
@@ -13116,7 +13127,8 @@ function drawPlanetMap() {
     cx.setTransform(DPR, 0, 0, DPR, 0, 0);
     cx.fillStyle = "#050d14";
     cx.fillRect(0, 0, area.clientWidth, area.clientHeight);
-    cx.fillStyle = "#8fb8cc"; cx.textAlign = "center"; cx.font = "13px Inter,sans-serif";
+    cx.fillStyle = "#a7cfdf"; cx.textAlign = "center";
+    cx.font = "14px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
     cx.fillText("Building the globe…", area.clientWidth / 2, area.clientHeight / 2);
     cx.setTransform(1, 0, 0, 1, 0, 0);
     return true;
@@ -13227,7 +13239,7 @@ function drawPlanetMap() {
     }
   } else if (!empireLens && scale > .42) {
     cx.textAlign = "center"; cx.textBaseline = "middle";
-    cx.font = `${Math.max(7, Math.min(13, 8 * scale))}px serif`;
+    cx.font = `${Math.max(9, Math.min(15, 10 * scale))}px serif`;
     for (const cell of cells) {
       const glyph = planetFeatureGlyph(cell.tile);
       if (!glyph || cell.center.z < (onSheet ?? .08)) continue;
@@ -13267,8 +13279,8 @@ function drawPlanetMap() {
     }
     if (scale > (cityState ? .95 : .52)) {
       cx.font = `${cityState ? 650 : 800} ${cityState
-        ? Math.max(7, Math.min(9.5, 6.8 * scale))
-        : Math.max(9, Math.min(13.5, 9 * scale))}px Inter,sans-serif`;
+        ? Math.max(9, Math.min(11, 8 * scale))
+        : Math.max(11, Math.min(15, 10.5 * scale))}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
       cx.textAlign = "center"; cx.fillStyle = cityState ? "#d8ddd9" : "#fff4d4";
       cx.strokeStyle = "#07100f"; cx.lineWidth = cityState ? 2.4 : 3.5;
       cx.strokeText(city.name, cell.center.x, cell.center.y - r - 5);
@@ -14253,7 +14265,7 @@ function draw() {
       hexPath(x, y, S * 0.84); cx.stroke();
       cx.setLineDash([]);
       cx.globalAlpha = 1;
-      cx.font = "bold " + (9 * k).toFixed(1) + "px sans-serif";
+      cx.font = "700 " + (11 * k).toFixed(1) + "px system-ui, sans-serif";
       cx.textAlign = "center"; cx.textBaseline = "middle";
       cx.strokeStyle = "#10151d"; cx.lineWidth = 3;
       // below the ring, not above it: above is where the nameplate lives and
@@ -14297,7 +14309,7 @@ function draw() {
       // the initial rather than a glyph: symbol fonts are not guaranteed here,
       // and an empty disc says less than a letter does
       cx.fillStyle = "#12161d";
-      cx.font = "bold " + (8.4 * k).toFixed(1) + "px sans-serif";
+      cx.font = "700 " + (10 * k).toFixed(1) + "px system-ui, sans-serif";
       cx.textAlign = "center"; cx.textBaseline = "middle";
       cx.fillText(c.religion[0].toUpperCase(), fx, fy + 0.4 * k);
       cx.restore();
@@ -14311,11 +14323,11 @@ function draw() {
       const bannerColor = cityBannerColor(c.owner);
       const cityOwner = state.players[c.owner];
       const minorPlate = Boolean(cityOwner && cityOwner.is_minor);
-      const bannerHeight = minorPlate ? 13 : 18;
-      const popWidth = minorPlate ? 12 : 16;
-      cx.font = `${minorPlate ? 700 : 800} ${minorPlate ? 8.2 : 10.5}px Georgia, serif`;
-      const tw = Math.max(cx.measureText(name).width + (minorPlate ? 23 : 33),
-                          minorPlate ? 40 : 54);
+      const bannerHeight = minorPlate ? 16 : 21;
+      const popWidth = minorPlate ? 14 : 19;
+      cx.font = `${minorPlate ? 700 : 800} ${minorPlate ? 10 : 12}px Georgia, serif`;
+      const tw = Math.max(cx.measureText(name).width + (minorPlate ? 27 : 38),
+                          minorPlate ? 48 : 62);
       const bx = x - tw / 2, by = y - S - (minorPlate ? 3 : 8);
       cx.fillStyle = shade(bannerColor, minorPlate ? .43 : .31);
       if (!minorPlate) { cx.shadowColor = bannerColor; cx.shadowBlur = 7; }
@@ -14334,10 +14346,10 @@ function draw() {
       cx.roundRect(bx + 2, by + 2, popWidth, bannerHeight - 4, (bannerHeight - 4) / 2);
       cx.fill();
       cx.fillStyle = "#10151d";
-      cx.font = `bold ${minorPlate ? 8 : 10.5}px Georgia, serif`;
+      cx.font = `700 ${minorPlate ? 10 : 12}px Georgia, serif`;
       cx.fillText(c.pop, bx + 2 + popWidth / 2, by + bannerHeight / 2 + .5);
       cx.fillStyle = minorPlate ? "#d8ddd9" : "#fff3cf";
-      cx.font = `${minorPlate ? 700 : 800} ${minorPlate ? 8.2 : 10.2}px Georgia, serif`;
+      cx.font = `${minorPlate ? 700 : 800} ${minorPlate ? 10 : 12}px Georgia, serif`;
       cx.textAlign = "left";
       cx.fillText(name, bx + popWidth + 7, by + bannerHeight / 2 + .5);
       cx.textAlign = "center";
@@ -14363,8 +14375,8 @@ function draw() {
       // observed seat, and an owner gate makes it blink with them.
       if (c.queue && c.queue.length && c.queue_cost) {
         const it = c.queue[0];
-        const mx = bx + tw + (minorPlate ? 6.5 : 9);
-        const my = by + bannerHeight / 2, mr = minorPlate ? 7.2 : 10;
+        const mx = bx + tw + (minorPlate ? 8 : 10.5);
+        const my = by + bannerHeight / 2, mr = minorPlate ? 8.5 : 11;
         cx.fillStyle = "#1c2418f2";
         cx.beginPath(); cx.arc(mx, my, mr, 0, 7); cx.fill();
         cx.strokeStyle = "#0d1117"; cx.lineWidth = 2.6;   // unfilled track
@@ -14380,7 +14392,7 @@ function draw() {
         // family fallback here too, so the twenty-seven districts with no color
         // of their own stop coming off the queue as the same plain cream glyph
         cx.fillStyle = it.district ? districtColor(it.district) : "#f0ead8";
-        cx.font = `${minorPlate ? 8 : 10.5}px 'Segoe UI Symbol', 'Segoe UI Emoji', sans-serif`;
+        cx.font = `${minorPlate ? 10 : 12}px 'Segoe UI Symbol', 'Segoe UI Emoji', sans-serif`;
         cx.fillText(prodGlyph(it), mx, my + 0.5);
       }
     }
@@ -14422,7 +14434,7 @@ function draw() {
     cx.lineTo(bx + 2 * k, by + 3.8 * k); cx.lineTo(bx - 2 * k, by + 3.8 * k);
     cx.closePath(); cx.fill();
     if (left > 0) {
-      cx.font = "bold " + (8 * k).toFixed(1) + "px sans-serif";
+      cx.font = "700 " + (10 * k).toFixed(1) + "px system-ui, sans-serif";
       cx.textAlign = "center"; cx.textBaseline = "middle";
       cx.strokeStyle = "#10151d"; cx.lineWidth = 2.6;
       cx.strokeText(left + "t", bx, by + 11 * k);
@@ -15779,9 +15791,9 @@ function playerHudOverview() {
   // One contender needs only a compact band. Three leaders take a taller one,
   // and a watched player outside them adds exactly one more row. The outer
   // tracker follows that content until the map/minimap seam caps it.
-  const victoryTrackHeight = Math.max(56, 46 + defaultVictoryRows * 16);
+  const victoryTrackHeight = Math.max(64, 50 + defaultVictoryRows * 18);
   const victoryMinHeight = victoryCount * victoryTrackHeight + Math.max(0, victoryCount - 1) * 2;
-  const victoryMinWidth = victoryCount * 116 + Math.max(0, victoryCount - 1) * 2;
+  const victoryMinWidth = victoryCount * 128 + Math.max(0, victoryCount - 1) * 2;
   const victoryHudHeight = victoryMinHeight + 35;
   document.getElementById("maparea").style.setProperty("--victory-hud-height", `${victoryHudHeight}px`);
   const overview =
@@ -15909,13 +15921,13 @@ function drawPlayerHud() {
   seedOwnSeatLock(seats);
   const lockedKeys = lockedSeats();
   // One line per row across the masthead — who this is and their ten values
-  // side by side — so a row is only as tall as its medallion: 23px, plus the
-  // 2px gap under it. The fixed 44px is the heading, the column heads, the
+  // side by side — so a row is only as tall as its medallion: 26px, plus the
+  // 2px gap under it. The fixed 50px is the heading, the column heads, the
   // gaps and the panel's padding; the floor keeps the turn plate's age, count,
   // and two settings groups legible at a two-player table. Anything past the
   // ceiling scrolls, so this is what the panel would *like* rather than what
   // it is allowed to take.
-  const requestedHeight = Math.max(144, 44 + rows * 25);
+  const requestedHeight = Math.max(154, 50 + rows * 28);
   // A newly started human game usually knows only its own row; do not stretch
   // that one-row scorecard across the whole map. Each additional known player
   // buys the table another 100px until the available masthead width caps it.
