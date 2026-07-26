@@ -24675,7 +24675,13 @@ impl Game {
         }
     }
 
-    fn relocate(&mut self, uid: u32, pos: Pos) {
+    /// Move a unit and keep the occupancy index and revealed ground with it.
+    ///
+    /// Crate-visible because `oracle.rs` places units directly. Writing
+    /// `unit.pos` instead leaves `occ` holding the unit at its old tile, and
+    /// `units_at` then hands out an id that `units` no longer contains — the
+    /// panic surfaces much later, in whatever next reads a neighbouring tile.
+    pub(crate) fn relocate(&mut self, uid: u32, pos: Pos) {
         let (old, owner) = {
             let u = &self.units[&uid];
             (u.pos, u.owner)

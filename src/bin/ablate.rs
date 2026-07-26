@@ -69,18 +69,18 @@ fn wilson(wins: f64, n: f64) -> (f64, f64) {
     ((center - spread).max(0.0), (center + spread).min(1.0))
 }
 
-/// Exact two-sided sign test over the maps that broke one way or the other.
-/// Ties carry no directional information and are excluded, which is what
-/// makes this a statement about direction rather than about how many maps
-/// happened to be decisive.
-fn sign_p(favor: u32, against: u32) -> f64 {
-    let n = favor + against;
+/// Exact two-sided binomial tail for `hits` of `n` at p=1/2.
+///
+/// Used for McNemar's test over discordant pairs: under the null that the
+/// grant changes nothing, a pair that disagrees is equally likely to
+/// disagree either way.
+fn exact_two_sided(hits: u32, n: u32) -> f64 {
     if n == 0 {
         return 1.0;
     }
     let mut coefficient = 1.0_f64;
     let mut tail = 0.0_f64;
-    let extreme = favor.min(against);
+    let extreme = hits.min(n - hits);
     for k in 0..=n {
         if k > 0 {
             coefficient *= (n - k + 1) as f64 / k as f64;
@@ -92,7 +92,14 @@ fn sign_p(favor: u32, against: u32) -> f64 {
     (tail / 2f64.powi(n as i32)).min(1.0)
 }
 
-fn run(grant: Grant, args: &[String]) {
+/// One (map, seat) cell: the same game played with the grant and without it.
+#[derive(Clone, Copy)]
+struct Cell {
+    map: usize,
+    seat: usize,
+}
+
+fn run(grants: &[Grant], args: &[String]) {
     let pairs = number(args, "--pairs", 40).max(1) as usize;
     let players = number(args, "--players", 4).max(2) as usize;
     let seed = number(args, "--seed", 310_000).max(0) as u64;
@@ -108,71 +115,98 @@ fn run(grant: Grant, args: &[String]) {
     let (default_width, default_height) = size.dimensions(Default::default());
     let width = number(args, "--width", default_width as i64).max(8) as i32;
     let height = number(args, "--height", default_height as i64).max(8) as i32;
-    let city_states = number(args, "--city-states", size.default_city_states as i64).max(0) as usize;
+    let city_states =
+        number(args, "--city-states", size.default_city_states as i64).max(0) as usize;
 
-    // Each map is played twice with the grant on different seats, so a map
-    // that simply favours one start cannot be counted as evidence about the
-    // grant. A pair is only directional when the two halves disagree.
-    let results = civvis::parallel::map(pairs * 2, jobs, |index| {
-        let map = index / 2;
-        let half = index % 2;
-        let options = GameOptions::new(
-            players,
-            width,
-            height,
-            seed + map as u64,
-            turns,
-            city_states,
-        );
-        let seat = if half == 0 { 0 } else { players - 1 };
-        play(options, seat, grant)
-    });
+    // Every map is played from two different seats so a map that simply
+    // favours one start cannot be read as evidence about a grant.
+    let cells: Vec<Cell> = (0..pairs)
+        .flat_map(|map| {
+            [0usize, players - 1]
+                .into_iter()
+                .map(move |seat| Cell { map, seat })
+        })
+        .collect();
 
-    let mut wins = 0u32;
-    let mut fired = 0u64;
-    let (mut favor, mut against, mut neutral) = (0u32, 0u32, 0u32);
-    for map in 0..pairs {
-        let (first, first_fired) = results[map * 2];
-        let (second, second_fired) = results[map * 2 + 1];
-        wins += u32::from(first) + u32::from(second);
-        fired += first_fired + second_fired;
-        match (first, second) {
-            (true, true) => favor += 1,
-            (false, false) => against += 1,
-            _ => neutral += 1,
-        }
-    }
-    let games = (pairs * 2) as f64;
-    let share = wins as f64 / games;
-    let (low, high) = wilson(wins as f64, games);
-    let p = sign_p(favor, against);
-    // The granted seat is one of `players`, so parity is 1/players, not 1/2.
-    let parity = 1.0 / players as f64;
-
-    println!("grant {:<10} {pairs} maps, {} games, {players} players, {turns} turns",
-        grant.name(), pairs * 2);
-    println!("  granted-seat wins   {wins}/{} = {:.1}%  (parity {:.1}%)",
-        pairs * 2, 100.0 * share, 100.0 * parity);
-    println!("  Wilson 95%          {:.1}%..{:.1}%", 100.0 * low, 100.0 * high);
-    println!("  paired direction    for {favor}, against {against}, neutral {neutral}; \
-        exact sign p={p:.4}");
-    println!("  grant fired         {fired} times ({:.1} per game)", fired as f64 / games);
-    if grant != Grant::None && fired == 0 {
-        println!("  WARNING: the grant never fired, so this run measured the \
-            stock agent under an oracle's name and says nothing about {}",
-            grant.name());
-    }
-    let verdict = if low > parity {
-        "HEADROOM — the subsystem limits this agent; work on it can pay"
-    } else if high < parity {
-        "HARMFUL — free perfection here loses, which means the grant is \
-         mis-specified, not that the subsystem is good"
-    } else {
-        "NO MEASURABLE HEADROOM at this sample size — perfecting this \
-         subsystem is worth less than the run can resolve"
+    let options_for = |cell: Cell| {
+        GameOptions::new(players, width, height, seed + cell.map as u64, turns, city_states)
     };
-    println!("  verdict             {verdict}");
-    println!();
+
+    // The control is played once and shared by every grant. Each grant is then
+    // compared against it cell by cell — same map, same seat, same seed — so
+    // the comparison is matched and map variance drops out instead of being
+    // averaged over. Comparing a granted seat's raw win rate against 1/players
+    // instead would have to carry all of that variance, which at these sample
+    // sizes is most of the signal.
+    println!("playing {} control games...", cells.len());
+    let control: Vec<bool> = civvis::parallel::map(cells.len(), jobs, |index| {
+        play(options_for(cells[index]), cells[index].seat, Grant::None).0
+    });
+    let control_wins = control.iter().filter(|won| **won).count();
+    println!(
+        "control: granted seat won {control_wins}/{} = {:.1}% (parity {:.1}%)\n",
+        cells.len(),
+        100.0 * control_wins as f64 / cells.len() as f64,
+        100.0 / players as f64
+    );
+
+    for &grant in grants {
+        let played = civvis::parallel::map(cells.len(), jobs, |index| {
+            play(options_for(cells[index]), cells[index].seat, grant)
+        });
+        let treated: Vec<bool> = played.iter().map(|(won, _)| *won).collect();
+        let fired: u64 = played.iter().map(|(_, fired)| *fired).sum();
+
+        let wins = treated.iter().filter(|won| **won).count();
+        // McNemar: only the cells where the grant changed the outcome carry
+        // information about the grant.
+        let mut helped = 0u32;
+        let mut hurt = 0u32;
+        for (with, without) in treated.iter().zip(&control) {
+            match (with, without) {
+                (true, false) => helped += 1,
+                (false, true) => hurt += 1,
+                _ => {}
+            }
+        }
+        let discordant = helped + hurt;
+        let p = exact_two_sided(helped, discordant);
+        let n = cells.len() as f64;
+
+        println!("grant {:<10} {pairs} maps x 2 seats, {players} players, {turns} turns",
+            grant.name());
+        println!("  granted seat won    {wins}/{} = {:.1}%   (control {control_wins} = {:.1}%)",
+            cells.len(), 100.0 * wins as f64 / n, 100.0 * control_wins as f64 / n);
+        println!("  matched pairs       grant won where control lost: {helped}; \
+lost where control won: {hurt}; unchanged: {}", cells.len() as u32 - discordant);
+        println!("  McNemar exact       p={p:.4} over {discordant} discordant cells");
+        println!("  grant fired         {fired} times ({:.1} per game)", fired as f64 / n);
+        if grant != Grant::None && fired == 0 {
+            println!("  WARNING: the grant never fired, so this measured the stock \
+agent under an oracle's name and says nothing about {}", grant.name());
+        }
+        let verdict = if grant == Grant::None {
+            if discordant == 0 {
+                "SANITY OK — the null grant reproduced the control exactly, so \
+the harness is deterministic and adds nothing of its own"
+            } else {
+                "BROKEN — the null grant changed outcomes, so every number \
+here includes harness noise and none of it can be trusted"
+            }
+        } else if discordant < 8 {
+            "TOO FEW DISCORDANT CELLS to say anything — raise --pairs"
+        } else if p >= 0.05 {
+            "NO MEASURABLE HEADROOM — perfecting this subsystem is worth less \
+than this run can resolve"
+        } else if helped > hurt {
+            "HEADROOM — this subsystem limits the agent; work on it can pay"
+        } else {
+            "HARMFUL — free perfection here loses, so the grant is \
+mis-specified rather than the subsystem being fine"
+        };
+        println!("  verdict             {verdict}");
+        println!();
+    }
 }
 
 fn main() {
@@ -198,7 +232,5 @@ fn main() {
          UPPER BOUND on what honest work on that subsystem could be worth, never a\n\
          playable agent. `none` is the control and must land at parity.\n"
     );
-    for grant in grants {
-        run(grant, &args);
-    }
+    run(&grants, &args);
 }

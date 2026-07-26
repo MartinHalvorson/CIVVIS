@@ -55,16 +55,31 @@ pub enum Grant {
     /// one by teleporting the nearest melee unit into position, so what the
     /// win rate does next distinguishes them.
     Taker,
+    /// Every unit starts every turn at full health.
+    ///
+    /// Bounds combat micro — `AI_GAPS.md` item 4, which its own re-sequencing
+    /// leaves explicitly unmeasured: "treat it as unknown rather than cheap".
+    /// Retreat-and-heal cycling, refusing an unfavourable trade, and pulling a
+    /// wounded unit out before it is killed all cash out as the same thing:
+    /// health a better player would still have. This grants the outcome
+    /// without granting the skill, so the win rate says what the skill is
+    /// worth at most.
+    ///
+    /// It does not make units immortal. A blow large enough to kill still
+    /// kills; what disappears is accumulated damage.
+    Attrition,
 }
 
 impl Grant {
-    pub const ALL: [Grant; 3] = [Grant::None, Grant::Modernity, Grant::Taker];
+    pub const ALL: [Grant; 4] =
+        [Grant::None, Grant::Modernity, Grant::Taker, Grant::Attrition];
 
     pub fn name(self) -> &'static str {
         match self {
             Grant::None => "none",
             Grant::Modernity => "modernity",
             Grant::Taker => "taker",
+            Grant::Attrition => "attrition",
         }
     }
 
@@ -136,6 +151,22 @@ impl<A: Ai> Oracle<A> {
         }
     }
 
+    /// Restore every unit to full health.
+    ///
+    /// Deliberately health only: no movement refresh, no extra attacks, no
+    /// promotions. Those would grant tempo and experience alongside
+    /// preservation and the measured headroom would belong to the bundle.
+    fn grant_attrition(&mut self, g: &mut Game, pid: usize) {
+        for uid in g.player_unit_ids(pid) {
+            if let Some(unit) = g.units.get_mut(&uid) {
+                if unit.hp < 100 {
+                    unit.hp = 100;
+                    self.fired += 1;
+                }
+            }
+        }
+    }
+
     /// Every enemy city this empire is actually reducing gets the nearest
     /// melee unit placed beside it.
     ///
@@ -198,16 +229,20 @@ impl<A: Ai> Oracle<A> {
             let Some((_, uid)) = candidates.first().copied() else {
                 continue;
             };
-            // Placed, not marched. Visibility in this engine is derived from
-            // unit positions rather than cached, so moving one is a write to
-            // `pos` and nothing else needs invalidating. Movement for the
-            // turn is already refreshed at this point, so the unit arrives
-            // able to act — which is the whole point: the constraint being
-            // removed is "the piece that could take the city is not there or
-            // is already spent".
-            if let Some(unit) = g.units.get_mut(&uid) {
-                unit.pos = landing;
-            }
+            // Placed, not marched, and through `relocate` rather than by
+            // writing `pos`. The engine keeps a tile->units occupancy index;
+            // a bare `pos` write leaves the unit listed at its old tile, and
+            // `units_at` then returns an id `units` no longer holds. That
+            // panics, but only much later and in unrelated code — combat
+            // resolution, disaster damage, support auras — which is how the
+            // first version of this grant crashed eight worker threads in
+            // four different files.
+            //
+            // Movement for the turn is already refreshed at this point, so
+            // the unit arrives able to act. That is the whole point: the
+            // constraint being removed is "the piece that could take the city
+            // is not there, or is already spent".
+            g.relocate(uid, landing);
             self.fired += 1;
         }
     }
@@ -220,6 +255,7 @@ impl<A: Ai> Ai for Oracle<A> {
                 Grant::None => {}
                 Grant::Modernity => self.grant_modernity(g, pid),
                 Grant::Taker => self.grant_taker(g, pid),
+                Grant::Attrition => self.grant_attrition(g, pid),
             }
         }
         self.inner.take_turn(g, pid);
@@ -331,6 +367,36 @@ mod tests {
             "the taker grant never positioned anybody, so the run would have \
              measured the stock agent under an oracle's name"
         );
+    }
+
+    /// Attrition must fire too, and must grant health and nothing else.
+    #[test]
+    fn the_attrition_grant_fires_and_only_heals() {
+        let mut g = Game::new(4, 28, 18, 8_104, 200, 2);
+        let mut oracle = Oracle::new(AdvancedAi::new(), Grant::Attrition);
+        let mut others = AdvancedAi::fleet(&g);
+        while g.winner.is_none() && g.turn <= 160 {
+            let pid = g.current;
+            if pid == 0 {
+                let mut probe = g.clone();
+                let before: Vec<u32> = probe.player_unit_ids(0);
+                let gold = probe.players[0].gold;
+                oracle.grant_attrition(&mut probe, 0);
+                assert_eq!(before, probe.player_unit_ids(0), "the grant changed the roster");
+                assert_eq!(gold, probe.players[0].gold, "the grant moved the treasury");
+                assert!(
+                    probe.player_unit_ids(0).iter().all(|uid| probe.units[uid].hp == 100),
+                    "a healed empire must have no wounded units left"
+                );
+                oracle.take_turn(&mut g, pid);
+            } else {
+                others[pid].take_turn(&mut g, pid);
+            }
+            if g.winner.is_none() && g.current == pid {
+                let _ = g.apply(pid, &crate::game::Action::EndTurn);
+            }
+        }
+        assert!(oracle.fired() > 0, "the attrition grant never healed anything");
     }
 
     /// The grant must be modernization and nothing else: no Gold, no health,
