@@ -168,43 +168,48 @@
   },
   "eye_of_the_sahara": {
     "yields": {
-      "science": 3,
-      "gold": 1
+      "production": 2,
+      "science": 1
     },
     "natural_wonder": true
   },
   "zhangye_danxia": {
-    "yields": {
-      "culture": 3
-    },
-    "natural_wonder": true
+    "yields": {},
+    "natural_wonder": true,
+    "impassable": true,
+    "sight_through": 2
   },
   "ha_long_bay": {
     "yields": {
-      "food": 2,
-      "gold": 2
+      "food": 3,
+      "production": 1,
+      "culture": 1
     },
     "natural_wonder": true
   },
   "cliffs_of_dover": {
     "yields": {
-      "culture": 2,
-      "gold": 1
+      "food": 2,
+      "gold": 3,
+      "culture": 3
     },
     "natural_wonder": true
   },
   "giants_causeway": {
-    "yields": {
-      "faith": 2,
-      "science": 1
+    "yields": {},
+    "adjacent_yields": {
+      "culture": 1
     },
-    "natural_wonder": true
+    "natural_wonder": true,
+    "impassable": true
   },
   "galapagos_islands": {
-    "yields": {
-      "science": 3
+    "yields": {},
+    "adjacent_yields": {
+      "science": 2
     },
-    "natural_wonder": true
+    "natural_wonder": true,
+    "impassable": true
   },
   "matterhorn": {
     "yields": {},
@@ -236,44 +241,50 @@
     "sight_through": 2
   },
   "ik_kil": {
-    "yields": {
-      "faith": 3,
-      "food": 1
-    },
-    "natural_wonder": true
+    "yields": {},
+    "natural_wonder": true,
+    "impassable": true
   },
   "gobustan": {
     "yields": {
-      "culture": 2,
-      "production": 1
+      "production": 1,
+      "culture": 3
     },
     "natural_wonder": true
   },
   "ubsunur_hollow": {
     "yields": {
       "food": 1,
-      "science": 2
+      "production": 1,
+      "faith": 2
     },
     "natural_wonder": true
   },
   "mato_tipila": {
-    "yields": {
-      "faith": 2,
-      "culture": 1
-    },
-    "natural_wonder": true
-  },
-  "delicate_arch": {
-    "yields": {
-      "culture": 2,
+    "yields": {},
+    "adjacent_yields": {
+      "production": 1,
       "faith": 1
     },
-    "natural_wonder": true
+    "natural_wonder": true,
+    "impassable": true,
+    "sight_through": 2
+  },
+  "delicate_arch": {
+    "yields": {},
+    "adjacent_yields": {
+      "gold": 1,
+      "faith": 2
+    },
+    "natural_wonder": true,
+    "impassable": true,
+    "sight_through": 1
   },
   "chocolate_hills": {
     "yields": {
-      "food": 2,
-      "culture": 1
+      "food": 1,
+      "production": 2,
+      "science": 1
     },
     "natural_wonder": true
   },
@@ -289,7 +300,9 @@
   },
   "lake_retba": {
     "yields": {
-      "gold": 3
+      "production": 1,
+      "gold": 2,
+      "culture": 2
     },
     "natural_wonder": true
   }
