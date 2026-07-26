@@ -1987,6 +1987,9 @@
     background: transparent; box-shadow: none; font-size: 13px;
   }
   #zoomctl .overlay-close:hover { color: #fff; background: #6b302b66; }
+  /* The controls' restore switch lives in the command deck. Do not offer to
+     dismiss the controls while that switch is unavailable. */
+  body.sidebar-hidden .overlay-close[data-overlay-close="controls"] { display: none; }
   .overlay-collapsing { opacity: 0 !important; pointer-events: none !important; }
   .overlay-collapse-ghost {
     position: fixed; z-index: 90; display: flex; align-items: flex-start;
