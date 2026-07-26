@@ -50,7 +50,9 @@
 //! geometry is a pure function of its frequency, so it is built once per
 //! frequency and shared by every map and every cloned game that uses it.
 
-use std::collections::HashMap;
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap, VecDeque};
+use std::sync::atomic::{AtomicU16, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock, RwLock};
 
 use crate::hex;
@@ -61,6 +63,13 @@ use crate::Pos;
 /// district adjacency, unit sight — so the common query is a binary search
 /// over a small shared table rather than a search of the map.
 const RING_RADIUS: i32 = 6;
+
+/// Full distance rows are valuable when one tile is compared with many
+/// others, but one row per tile turns a frequency-76 globe into an all-pairs
+/// table of more than six gigabytes. Keep only the genuinely hot sources.
+const DISTANCE_ROW_CACHE_MAX: usize = 512;
+const DISTANCE_ROW_CACHE_BYTES: usize = 64 * 1024 * 1024;
+const DISTANCE_ROW_ADMISSION_HITS: u16 = 8;
 
 /// Lattice points are matched between rhombi by rounding to this grid. The
 /// closest two distinct tiles ever come is about `2/n` radians of arc, which
@@ -111,11 +120,18 @@ pub struct Sphere {
     /// search over one contiguous run, and a disk is a single pass over it
     /// that comes out already in map order.
     rings: Vec<Box<[(Pos, u8)]>>,
-    /// Full distance rows, searched out the first time a tile is asked about
-    /// something further away than the rings reach and kept afterwards. One
-    /// byte per tile per filled row, and only rows that were actually asked
-    /// for are ever filled.
-    rows: Vec<OnceLock<Box<[u8]>>>,
+    /// Exact rows from the twelve evenly distributed pentagons. Their triangle
+    /// inequalities are an admissible A* heuristic for any other pair.
+    landmarks: Vec<Box<[u16]>>,
+    /// Full rows retained for reused endpoints. Each row has its own lock-free
+    /// read path; a single global read lock here added measurable overhead to
+    /// every long-distance comparison in map generation.
+    distance_rows: Vec<OnceLock<Box<[u16]>>>,
+    /// Long-distance misses observed at each endpoint. Waiting for repeated
+    /// use keeps one-off candidates from consuming the bounded row cache.
+    distance_hits: Vec<AtomicU16>,
+    /// Number of initialized rows, capped by [`DISTANCE_ROW_CACHE_BYTES`].
+    distance_row_count: AtomicUsize,
 }
 
 const EMPTY: u32 = u32::MAX;
@@ -257,7 +273,85 @@ impl Sphere {
         if let Ok(at) = ring.binary_search_by_key(&b, |(pos, _)| *pos) {
             return ring[at].1 as i32;
         }
-        self.row(from)[to as usize] as i32
+        if let Some(distance) = self.cached_distance(from, to) {
+            return distance as i32;
+        }
+
+        if let Some(source) = self.cache_source(from, to) {
+            let row = self.search_all(source);
+            let distance = row[if source == from { to } else { from } as usize];
+            self.cache_row(source, row);
+            return distance as i32;
+        }
+
+        self.search_between(from, to) as i32
+    }
+
+    /// One exact, caller-owned distance row for algorithms that deliberately
+    /// compare a known anchor with most of the world. Unlike [`Sphere::distance`]
+    /// this does not consume a slot in the shared opportunistic cache; callers
+    /// keep the row only for the bulk pass that asked for it.
+    pub(crate) fn distance_row(&self, from: Pos) -> Box<[u16]> {
+        self.index_of(from)
+            .map(|index| self.search_all(index))
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn row_distance(&self, row: &[u16], to: Pos) -> i32 {
+        self.index_of(to)
+            .and_then(|index| row.get(index as usize))
+            .copied()
+            .map_or(i32::MAX, i32::from)
+    }
+
+    /// Exact distances to a known target set. The search stops when the last
+    /// target is reached, which is much cheaper than a full row when all
+    /// targets occupy one small map region.
+    pub(crate) fn distances_to(&self, from: Pos, targets: &[Pos]) -> Vec<i32> {
+        let Some(source) = self.index_of(from) else {
+            return vec![i32::MAX; targets.len()];
+        };
+        let mut wanted = vec![false; self.len()];
+        let mut remaining = 0usize;
+        for target in targets {
+            if let Some(index) = self.index_of(*target) {
+                if !wanted[index as usize] {
+                    wanted[index as usize] = true;
+                    remaining += 1;
+                }
+            }
+        }
+        if remaining == 0 {
+            return vec![i32::MAX; targets.len()];
+        }
+        let mut distance = vec![u16::MAX; self.len()];
+        distance[source as usize] = 0;
+        let mut queue = VecDeque::from([source]);
+        while let Some(cell) = queue.pop_front() {
+            let at = cell as usize;
+            if wanted[at] {
+                wanted[at] = false;
+                remaining -= 1;
+                if remaining == 0 {
+                    break;
+                }
+            }
+            let next = distance[at] + 1;
+            for neighbor in &self.adjacent[at][..self.degree[at] as usize] {
+                if distance[*neighbor as usize] == u16::MAX {
+                    distance[*neighbor as usize] = next;
+                    queue.push_back(*neighbor);
+                }
+            }
+        }
+        targets
+            .iter()
+            .map(|target| {
+                self.index_of(*target)
+                    .map(|index| i32::from(distance[index as usize]))
+                    .unwrap_or(i32::MAX)
+            })
+            .collect()
     }
 
     /// The middle of a tile, as a unit vector.
@@ -287,34 +381,87 @@ impl Sphere {
                 .map(|(pos, _)| *pos)
                 .collect();
         }
-        let mut out: Vec<Pos> = self
-            .row(from)
-            .iter()
-            .enumerate()
-            .filter(|(_, distance)| **distance as i32 <= radius)
-            .map(|(index, _)| self.pos[index])
-            .collect();
+        let mut out = self.search_disk(from, radius);
         out.sort();
         out
     }
 
-    /// Distances from one tile to the whole globe, searched once and kept.
-    fn row(&self, from: u32) -> &[u8] {
-        self.rows[from as usize].get_or_init(|| self.search(from))
+    fn cached_distance(&self, from: u32, to: u32) -> Option<u16> {
+        self.distance_rows[from as usize]
+            .get()
+            .map(|row| row[to as usize])
+            .or_else(|| {
+                self.distance_rows[to as usize]
+                    .get()
+                    .map(|row| row[from as usize])
+            })
     }
 
-    fn search(&self, from: u32) -> Box<[u8]> {
-        let mut distance = vec![u8::MAX; self.len()];
+    fn cache_source(&self, from: u32, to: u32) -> Option<u32> {
+        let observe = |index: u32| {
+            self.distance_hits[index as usize]
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |hits| {
+                    (hits != u16::MAX).then_some(hits.saturating_add(1))
+                })
+                .unwrap_or(u16::MAX)
+                .saturating_add(1)
+        };
+        let from_hits = observe(from);
+        let to_hits = observe(to);
+        if self.distance_row_count.load(Ordering::Relaxed) >= self.distance_row_capacity() {
+            return None;
+        }
+        // Prefer the more frequently reused side. Choosing `to` on a tie also
+        // matches the common candidate-to-anchor loops in map generation.
+        let endpoints = if to_hits >= from_hits {
+            [(to, to_hits), (from, from_hits)]
+        } else {
+            [(from, from_hits), (to, to_hits)]
+        };
+        endpoints.into_iter().find_map(|(source, hits)| {
+            (hits >= DISTANCE_ROW_ADMISSION_HITS
+                && self.distance_rows[source as usize].get().is_none())
+            .then_some(source)
+        })
+    }
+
+    fn cache_row(&self, source: u32, row: Box<[u16]>) {
+        if self.distance_rows[source as usize].get().is_some() {
+            return;
+        }
+        let reserved = self.distance_row_count.fetch_update(
+            Ordering::AcqRel,
+            Ordering::Relaxed,
+            |count| (count < self.distance_row_capacity()).then_some(count + 1),
+        );
+        if reserved.is_err() {
+            return;
+        }
+        if self.distance_rows[source as usize].set(row).is_err() {
+            self.distance_row_count.fetch_sub(1, Ordering::AcqRel);
+        }
+    }
+
+    fn distance_row_capacity(&self) -> usize {
+        let row_bytes = self.len().saturating_mul(std::mem::size_of::<u16>()).max(1);
+        (DISTANCE_ROW_CACHE_BYTES / row_bytes).clamp(1, DISTANCE_ROW_CACHE_MAX)
+    }
+
+    /// Exact distances from one tile to the whole globe. Rows use two bytes:
+    /// the public constructor accepts frequencies up to 128, whose diameter is
+    /// wider than an eight-bit distance even though the stock sizes stop at 76.
+    fn search_all(&self, from: u32) -> Box<[u16]> {
+        let mut distance = vec![u16::MAX; self.len()];
         distance[from as usize] = 0;
         let mut frontier = vec![from];
         let mut next = Vec::new();
-        let mut step = 0u8;
+        let mut step = 0u16;
         while !frontier.is_empty() {
-            step = step.saturating_add(1);
+            step += 1;
             for cell in frontier.drain(..) {
                 let cell = cell as usize;
                 for neighbor in &self.adjacent[cell][..self.degree[cell] as usize] {
-                    if distance[*neighbor as usize] == u8::MAX {
+                    if distance[*neighbor as usize] == u16::MAX {
                         distance[*neighbor as usize] = step;
                         next.push(*neighbor);
                     }
@@ -323,6 +470,66 @@ impl Sphere {
             std::mem::swap(&mut frontier, &mut next);
         }
         distance.into_boxed_slice()
+    }
+
+    /// Exact point-to-point distance without materializing an all-world row.
+    /// Landmark differences are lower bounds by the triangle inequality, so A*
+    /// visits only tiles that can still lie on a shortest path.
+    fn search_between(&self, from: u32, to: u32) -> u16 {
+        let mut best = vec![u16::MAX; self.len()];
+        best[from as usize] = 0;
+        let mut open = BinaryHeap::from([Reverse((self.lower_bound(from, to), 0u16, from))]);
+        while let Some(Reverse((_, distance, cell))) = open.pop() {
+            if cell == to {
+                return distance;
+            }
+            if best[cell as usize] != distance {
+                continue;
+            }
+            let next_distance = distance + 1;
+            let at = cell as usize;
+            for neighbor in &self.adjacent[at][..self.degree[at] as usize] {
+                let neighbor = *neighbor;
+                if next_distance >= best[neighbor as usize] {
+                    continue;
+                }
+                best[neighbor as usize] = next_distance;
+                let estimate = next_distance + self.lower_bound(neighbor, to);
+                open.push(Reverse((estimate, next_distance, neighbor)));
+            }
+        }
+        u16::MAX
+    }
+
+    fn lower_bound(&self, from: u32, to: u32) -> u16 {
+        self.landmarks
+            .iter()
+            .map(|row| row[from as usize].abs_diff(row[to as usize]))
+            .max()
+            .unwrap_or(0)
+    }
+
+    fn search_disk(&self, from: u32, radius: i32) -> Vec<Pos> {
+        let radius = radius.clamp(0, u16::MAX as i32) as u16;
+        let mut distance = vec![u16::MAX; self.len()];
+        distance[from as usize] = 0;
+        let mut queue = VecDeque::from([from]);
+        let mut out = Vec::new();
+        while let Some(cell) = queue.pop_front() {
+            let step = distance[cell as usize];
+            out.push(self.pos[cell as usize]);
+            if step >= radius {
+                continue;
+            }
+            let at = cell as usize;
+            for neighbor in &self.adjacent[at][..self.degree[at] as usize] {
+                if distance[*neighbor as usize] == u16::MAX {
+                    distance[*neighbor as usize] = step + 1;
+                    queue.push_back(*neighbor);
+                }
+            }
+        }
+        out
     }
 }
 
@@ -606,7 +813,10 @@ fn build(frequency: i32) -> Sphere {
         frequency: n,
         width,
         height,
-        rows: (0..pos.len()).map(|_| OnceLock::new()).collect(),
+        landmarks: Vec::new(),
+        distance_rows: (0..pos.len()).map(|_| OnceLock::new()).collect(),
+        distance_hits: (0..pos.len()).map(|_| AtomicU16::new(0)).collect(),
+        distance_row_count: AtomicUsize::new(0),
         pos,
         around,
         adjacent,
@@ -615,6 +825,13 @@ fn build(frequency: i32) -> Sphere {
         slot,
         rings: Vec::new(),
     };
+    sphere.landmarks = sphere
+        .degree
+        .iter()
+        .enumerate()
+        .filter(|(_, degree)| **degree == 5)
+        .map(|(index, _)| sphere.search_all(index as u32))
+        .collect();
     sphere.rings = (0..sphere.len())
         .map(|index| sphere.ring_of(index as u32))
         .collect();
@@ -780,6 +997,9 @@ mod tests {
             for (pos, steps) in &walked {
                 assert_eq!(globe.distance(from, *pos), *steps, "{from:?} -> {pos:?}");
             }
+            let targets: Vec<Pos> = globe.positions().step_by(11).collect();
+            let expected: Vec<i32> = targets.iter().map(|target| walked[target]).collect();
+            assert_eq!(globe.distances_to(from, &targets), expected);
             for radius in [0, 1, 3, RING_RADIUS, RING_RADIUS + 4] {
                 let disk = globe.disk(from, radius);
                 let expected = walked.values().filter(|steps| **steps <= radius).count();
@@ -787,6 +1007,49 @@ mod tests {
                 assert!(disk.windows(2).all(|pair| pair[0] < pair[1]));
             }
         }
+    }
+
+    #[test]
+    fn long_distance_rows_are_bounded_and_reserved_for_reused_endpoints() {
+        let globe = sphere(32);
+        let positions: Vec<Pos> = globe.positions().collect();
+        // Each source makes a long query against a target no other source
+        // uses. An unbounded per-source cache would retain all 600 rows.
+        let mut used_targets = HashSet::new();
+        for source in 0..600usize {
+            let expected = globe.search_all(source as u32);
+            let targets: Vec<usize> = expected
+                .iter()
+                .enumerate()
+                .filter(|(index, distance)| {
+                    *index >= 600
+                        && **distance > RING_RADIUS as u16
+                        && used_targets.insert(*index)
+                })
+                .map(|(index, _)| index)
+                .take(DISTANCE_ROW_ADMISSION_HITS as usize)
+                .collect();
+            for target in targets {
+                let distance = globe.distance(positions[source], positions[target]);
+                assert_eq!(distance, expected[target] as i32);
+            }
+        }
+        let rows = globe
+            .distance_rows
+            .iter()
+            .filter(|row| row.get().is_some())
+            .count();
+        assert!(
+            rows <= globe.distance_row_capacity(),
+            "{} full rows escaped a cache capped at {}",
+            rows,
+            globe.distance_row_capacity()
+        );
+        assert_eq!(
+            rows,
+            globe.distance_row_capacity(),
+            "the workload did not exercise the cache boundary"
+        );
     }
 
     #[test]
