@@ -2062,4 +2062,46 @@ mod tests {
             }
         }
     }
+
+    /// Civ VI splits its Natural Wonders cleanly: a wonder a Citizen can stand
+    /// on pays tile yields, and one that is Impassable cannot be worked at all,
+    /// so it pays its neighbours instead — or, for Ik-Kil and Zhangye Danxia,
+    /// nothing but Appeal. Six wonders used to be passable *and* pay tile
+    /// yields nobody in the shipped game ever collects.
+    #[test]
+    fn an_impassable_natural_wonder_pays_its_neighbours_not_its_own_tile() {
+        let rules = Rules::embedded();
+        let wonders = rules
+            .features
+            .iter()
+            .filter(|(_, spec)| spec.natural_wonder);
+        let mut passable = 0;
+        let mut blocked = 0;
+        for (name, spec) in wonders {
+            if spec.impassable {
+                assert_eq!(
+                    spec.yields,
+                    Yields::default(),
+                    "{name} is impassable, so no Citizen can ever work its tile"
+                );
+                blocked += 1;
+            } else {
+                assert_ne!(
+                    spec.yields,
+                    Yields::default(),
+                    "{name} is workable and must be worth working"
+                );
+                assert_eq!(
+                    spec.adjacent_yields,
+                    Yields::default(),
+                    "{name} is workable, so the shipped data pays its own tile"
+                );
+                passable += 1;
+            }
+        }
+        assert!(
+            passable > 0 && blocked > 0,
+            "both halves of the split must be represented"
+        );
+    }
 }
