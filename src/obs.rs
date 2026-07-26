@@ -173,6 +173,24 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             _ => None,
         })
         .collect();
+    // A seated player gets only their own Tourism sources, matching Civ VI's
+    // Tourism lens. The omniscient spectator combines every major empire so
+    // the same lens remains useful while watching the whole world.
+    let mut tourism_by_tile = BTreeMap::new();
+    let tourism_players: Vec<usize> = if omniscient {
+        g.players
+            .iter()
+            .filter(|player| !player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .collect()
+    } else {
+        vec![pid]
+    };
+    for player in tourism_players {
+        for (position, amount) in g.tourism_by_tile(player) {
+            *tourism_by_tile.entry(position).or_default() += amount;
+        }
+    }
     let tiles: Vec<Value> = explored
         .iter()
         .filter_map(|pos| {
@@ -205,6 +223,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                 owner,
                 omniscient,
                 live,
+                &tourism_by_tile,
                 planned.get(pos).copied().filter(|_| live),
             ))
         })
@@ -1004,6 +1023,7 @@ fn tile_json(
     owner: Option<usize>,
     omniscient: bool,
     live: bool,
+    tourism_by_tile: &BTreeMap<Pos, f64>,
     planned: Option<&str>,
 ) -> Value {
     let resource = tile
@@ -1062,6 +1082,7 @@ fn tile_json(
         "pos": [tile.pos.0, tile.pos.1],
         "terrain": tile.terrain,
         "appeal": appeal,
+        "tourism": live.then(|| round1(tourism_by_tile.get(&tile.pos).copied().unwrap_or(0.0))),
         "feature": tile.feature,
         "hills": tile.hills,
         "resource": resource,
@@ -1174,6 +1195,10 @@ fn live_city_json(g: &Game, pid: usize, city: &City, omniscient: bool) -> Value 
         encampment_pillaged: city.encampment_pillaged,
         religion: g.city_religion(city),
     });
+    // Religious pressure is visible with the city itself. Remembered cities
+    // intentionally omit it, so a lens never reveals conversions under fog.
+    value["religious_pressure"] = json!(city.pressure);
+    value["atheist_pressure"] = json!(round1(city.atheist_pressure));
     if city.owner != pid && !omniscient {
         return value;
     }
@@ -1262,18 +1287,66 @@ mod tests {
         let city_id = game.found_city_for(0, capital_position, None);
         let city = &game.cities[&city_id];
         let tile = &game.map.tiles[&city.pos];
-        let live = tile_json(&game, 0, tile, Some(0), true, true, None);
+        let tourism = game.tourism_by_tile(0);
+        let live = tile_json(&game, 0, tile, Some(0), true, true, &tourism, None);
         assert_eq!(live["owner_city"], json!(city_id));
         assert_eq!(live["owner_city_name"], json!(city.name));
+        assert!(live["tourism"].is_number());
 
-        let remembered = tile_json(&game, 0, tile, Some(0), false, false, None);
+        let remembered = tile_json(&game, 0, tile, Some(0), false, false, &tourism, None);
         assert_eq!(remembered["owner_city"], json!(city_id));
+        assert!(remembered["tourism"].is_null());
         assert!(
             remembered["owner_city_name"].is_null(),
             "current city names must not leak through a remembered tile"
         );
 
+        game.cities
+            .get_mut(&city_id)
+            .unwrap()
+            .pressure
+            .insert("Test Faith".to_string(), 240.0);
+        let observed = observation_spectator(&game, 0);
+        let observed_city = observed["cities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|candidate| candidate["id"] == city_id)
+            .unwrap();
+        assert_eq!(observed_city["religious_pressure"]["Test Faith"], 240.0);
+        assert!(observed_city["atheist_pressure"].is_number());
+
         const INDEX: &str = include_str!("../web/index.html");
+        assert!(INDEX.contains("id=\"map-controls-row\""));
+        for lens in [
+            "religion",
+            "continent",
+            "appeal",
+            "settler",
+            "government",
+            "political",
+            "tourism",
+            "empire",
+        ] {
+            assert!(
+                INDEX.contains(&format!("data-map-lens=\"{lens}\"")),
+                "the base-game {lens} lens must be available in the map toolbar"
+            );
+        }
+        for renderer in [
+            "function drawReligiousPressureRing(",
+            "function drawFlatLensGroupLabels(",
+            "function drawPlanetLensGroupLabels(",
+            "function drawThematicLensFlat(",
+            "function drawThematicLensPlanet(",
+            "function drawEmpireDetailsFlat(",
+            "function drawEmpireDetailsPlanet(",
+        ] {
+            assert!(
+                INDEX.contains(renderer),
+                "the lens toolbar is missing renderer {renderer}"
+            );
+        }
         let start = INDEX
             .find("function tileTipLines(t, pos, tileKey)")
             .expect("the tile hover has one ordered builder");
