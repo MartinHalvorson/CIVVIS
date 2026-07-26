@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html class="world-loading">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -37,6 +37,81 @@
     content: ""; position: fixed; inset: 0; z-index: 100; pointer-events: none;
     opacity: .035; mix-blend-mode: soft-light;
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.7'/%3E%3C/svg%3E");
+  }
+  /* Loading and restarting are one deliberate visual state. A supervised
+     restart crosses a process boundary, so the old page and its replacement
+     both show this same veil until the replacement has painted one complete
+     world frame. That keeps default form values, an empty canvas, and stale
+     last-world chrome from ever becoming the handoff screen. */
+  #world-transition {
+    position: fixed; inset: 0; z-index: 1000; display: none; place-items: center;
+    padding: 28px; overflow: hidden; isolation: isolate;
+    color: #edf2e9; background:
+      radial-gradient(circle at 50% 42%, #28483c 0, #132720 25%, transparent 52%),
+      linear-gradient(145deg, #0b1814 0%, #07110f 58%, #040a08 100%);
+    opacity: 1; transition: opacity .22s ease;
+  }
+  html.world-loading #world-transition { display: grid; }
+  html.world-transition-ready #world-transition { opacity: 0; }
+  #world-transition::before {
+    content: ""; position: absolute; inset: -35%; z-index: -1;
+    opacity: .18; transform: rotate(-8deg);
+    background-image:
+      linear-gradient(30deg, transparent 49.7%, #d7b66a22 50%, transparent 50.3%),
+      linear-gradient(150deg, transparent 49.7%, #d7b66a16 50%, transparent 50.3%);
+    background-size: 86px 50px;
+    animation: worldTransitionDrift 18s linear infinite;
+  }
+  .world-transition-card {
+    width: min(520px, 100%); padding: 42px 36px 38px; text-align: center;
+    border: 1px solid #897443; border-radius: 22px;
+    background: linear-gradient(155deg, #142822f2, #091511f7);
+    box-shadow: 0 32px 100px #000c, inset 0 1px #fff2;
+    backdrop-filter: blur(18px);
+  }
+  .world-transition-mark {
+    position: relative; width: 78px; height: 78px; margin: 0 auto 24px;
+    display: grid; place-items: center; border-radius: 50%;
+    color: #172119; background: linear-gradient(145deg, #f2dc9f, #bd8d38);
+    border: 1px solid #ffe8ad; box-shadow: 0 0 0 7px #d7b66a14, 0 12px 34px #0008;
+    font: 700 31px/1 Georgia, serif;
+  }
+  .world-transition-mark::before, .world-transition-mark::after {
+    content: ""; position: absolute; border-radius: 50%; border: 1px solid #d7b66a55;
+  }
+  .world-transition-mark::before {
+    inset: -15px; border-left-color: #f0d28c; animation: worldTransitionOrbit 2.2s linear infinite;
+  }
+  .world-transition-mark::after {
+    inset: -8px; border-right-color: transparent; animation: worldTransitionOrbit 1.45s linear infinite reverse;
+  }
+  .world-transition-kicker {
+    color: #d7b66a; font-size: 9px; font-weight: 850; letter-spacing: .24em;
+    text-transform: uppercase;
+  }
+  #world-transition-title {
+    margin-top: 8px; color: #f5eedc; font: 600 clamp(25px, 5vw, 34px)/1.08 Georgia, serif;
+    letter-spacing: .015em;
+  }
+  #world-transition-summary {
+    min-height: 1.45em; margin-top: 13px; color: #c8d4ce; font-size: 12px;
+  }
+  .world-transition-rule {
+    width: min(250px, 75%); height: 1px; margin: 24px auto 17px;
+    background: linear-gradient(90deg, transparent, #d7b66a, transparent);
+  }
+  #world-transition-stage {
+    color: #91a79e; font-size: 9px; font-weight: 750; letter-spacing: .13em;
+    text-transform: uppercase;
+  }
+  #world-transition-stage::after {
+    content: ""; display: inline-block; width: 1.5em; text-align: left;
+    animation: worldTransitionDots 1.35s steps(4, end) infinite;
+  }
+  @keyframes worldTransitionOrbit { to { transform: rotate(360deg); } }
+  @keyframes worldTransitionDrift { to { transform: translate3d(86px, 50px, 0) rotate(-8deg); } }
+  @keyframes worldTransitionDots {
+    0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75%, 100% { content: "..."; }
   }
   button, select, input { font: inherit; }
   button { -webkit-tap-highlight-color: transparent; }
@@ -2165,10 +2240,51 @@
   }
   @media (prefers-reduced-motion: reduce) {
     .section-label.overlay-return-flash { animation-duration: .01ms; }
+    #world-transition::before, .world-transition-mark::before,
+    .world-transition-mark::after, #world-transition-stage::after { animation: none; }
   }
 </style>
+<script>
+  // Read this before the replacement document can paint. The old page writes
+  // the handoff before asking the supervisor to replace it; the new page then
+  // starts behind the same veil instead of flashing its static default setup.
+  try {
+    const raw = sessionStorage.getItem("civvis-world-transition-v1");
+    const handoff = raw ? JSON.parse(raw) : null;
+    const fresh = handoff && Number.isFinite(handoff.requestedAt) &&
+      Date.now() - handoff.requestedAt < 120000;
+    if (fresh) {
+      window.CIVVIS_RESTART_HANDOFF = handoff;
+      document.documentElement.classList.add("world-restarting");
+    } else if (raw) {
+      sessionStorage.removeItem("civvis-world-transition-v1");
+      sessionStorage.removeItem("civvis-restart-paused-v1");
+    }
+  } catch (e) {
+    try { sessionStorage.removeItem("civvis-world-transition-v1"); } catch (_) {}
+  }
+</script>
 </head>
-<body>
+<body aria-busy="true">
+<div id="world-transition" role="status" aria-live="polite" aria-atomic="true">
+  <div class="world-transition-card">
+    <div class="world-transition-mark" aria-hidden="true">V</div>
+    <div class="world-transition-kicker" id="world-transition-kicker">CIVVIS</div>
+    <h2 id="world-transition-title">Joining the world</h2>
+    <div id="world-transition-summary">Loading the current simulation</div>
+    <div class="world-transition-rule"></div>
+    <div id="world-transition-stage">Connecting</div>
+  </div>
+</div>
+<script>
+  if (window.CIVVIS_RESTART_HANDOFF) {
+    document.getElementById("world-transition-kicker").textContent = "Starting simulation";
+    document.getElementById("world-transition-title").textContent = "Building a new world";
+    document.getElementById("world-transition-summary").textContent =
+      window.CIVVIS_RESTART_HANDOFF.summary || "Applying the selected settings";
+    document.getElementById("world-transition-stage").textContent = "Reconnecting";
+  }
+</script>
 <div id="maparea">
   <canvas id="map"></canvas>
   <div id="cinema-atmosphere" aria-hidden="true"></div>
@@ -2395,10 +2511,11 @@
           // beside the button so the default Pause text is never painted while
           // a paused simulation is coming back as paused.
           try {
-            const paused = sessionStorage.getItem("civvis-restart-paused-v1");
+            const paused = window.CIVVIS_RESTART_HANDOFF?.paused ??
+              (sessionStorage.getItem("civvis-restart-paused-v1") === "1" ? true : null);
             if (paused !== null)
               document.getElementById("specpause").textContent =
-                paused === "1" ? "▶ Resume" : "⏸ Pause";
+                paused ? "▶ Resume" : "⏸ Pause";
           } catch (e) {}
         </script>
       </div>
@@ -2942,12 +3059,18 @@ const INTERFACE_MODE_NOTE = {
   attack: "ATTACK — click the unit or city to strike (Esc to cancel)",
   ranged: "RANGED ATTACK — click a target in range (Esc to cancel)",
 };
-let restartPaused = null;
+let worldTransitionHandoff = window.CIVVIS_RESTART_HANDOFF || null;
+let worldTransitionFinishing = false;
+let worldTransitionGeneration = 0;
+let restartPaused = typeof worldTransitionHandoff?.paused === "boolean"
+  ? worldTransitionHandoff.paused : null;
 try {
-  restartPaused = sessionStorage.getItem("civvis-restart-paused-v1");
-  sessionStorage.removeItem("civvis-restart-paused-v1");
+  if (restartPaused === null) {
+    const storedPause = sessionStorage.getItem("civvis-restart-paused-v1");
+    restartPaused = storedPause === null ? null : storedPause === "1";
+  }
 } catch (e) {}
-let SPEC = false, specPaused = restartPaused === "1", specTimer = null;
+let SPEC = false, specPaused = restartPaused === true, specTimer = null;
 let viewChanging = false;
 let eventLogs = new Map(), nextEventId = 1, lastLeaderByView = new Map(), lastSidePaint = 0;
 // The world and turn of the last state this page drew in full, and the turn
@@ -4102,7 +4225,11 @@ function animateDiff(prev, next) {
 const easeIO = e => e < 0.5 ? 2 * e * e : 1 - (1 - e) * (2 - 2 * e);
 const cam = { x: 0, y: 0, scale: 1 };
 let cameraFlight = null, cameraZoom = null;
-let cameraInertia = {vx:0, vy:0, vrot:0, vtilt:0, spin:null};
+function stoppedCameraInertia(extra = {}) {
+  return {vx:0, vy:0, vrot:0, vtilt:0, spin:null,
+          skyPan:null, skyTurn:null, ...extra};
+}
+let cameraInertia = stoppedCameraInertia();
 let cameraMotionLast = performance.now();
 let cameraFollowUnitId = null, cameraFollowManual = false, cameraFollowScale = 1.18;
 // Choosing a civilization to watch is also an explicit request for a living
@@ -5030,6 +5157,10 @@ function pixelToHex(sx, sy) {
 // ---------------------------------------------------------------- net
 async function fetchJSON(url, opts = {}, timeoutMs = 15000) {
   const controller = new AbortController();
+  const callerSignal = opts.signal;
+  const abortForCaller = () => controller.abort();
+  if (callerSignal?.aborted) controller.abort();
+  else callerSignal?.addEventListener("abort", abortForCaller, {once:true});
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, {...opts, signal: controller.signal});
@@ -5037,6 +5168,7 @@ async function fetchJSON(url, opts = {}, timeoutMs = 15000) {
     return await response.json();
   } finally {
     clearTimeout(timer);
+    callerSignal?.removeEventListener("abort", abortForCaller);
   }
 }
 let firstLoad = true;
@@ -5050,6 +5182,7 @@ let supervisorReloading = false;
 function reloadForSupervisedWorld(instance, seed) {
   if (supervisorReloading) return;
   supervisorReloading = true;
+  setWorldTransitionStage("Opening the new world");
   clearTimeout(supervisorReconnectTimer);
   supervisorReconnectTimer = null;
   // Give each promoted process and same-process successor a distinct URL.
@@ -5083,9 +5216,12 @@ function waitForSupervisedSuccessor(finishedInstance, finishedSeed) {
         reloadForSupervisedWorld(successor.server_instance, successor.seed);
         return;
       }
+      if (successor.supervisor_request)
+        setWorldTransitionStage("Restart accepted · changing worlds");
     } catch (e) {
       // A short connection failure is expected while the listening socket is
       // handed from the completed process to its successor.
+      setWorldTransitionStage("Server handoff · reconnecting");
     } finally {
       supervisorReconnectBusy = false;
     }
@@ -5105,6 +5241,96 @@ function cancelSupervisedSuccessorWatch() {
   supervisorReconnectWanted = false;
   clearTimeout(supervisorReconnectTimer);
   supervisorReconnectTimer = null;
+}
+
+function worldTransitionPending() {
+  return document.documentElement.classList.contains("world-loading");
+}
+
+function setWorldTransitionStage(stage) {
+  const label = document.getElementById("world-transition-stage");
+  if (label && stage) label.textContent = stage;
+}
+
+function showWorldTransition(handoff) {
+  worldTransitionGeneration++;
+  worldTransitionFinishing = false;
+  worldTransitionHandoff = handoff;
+  window.CIVVIS_RESTART_HANDOFF = handoff;
+  document.documentElement.classList.remove("world-transition-ready");
+  document.documentElement.classList.add("world-loading", "world-restarting");
+  document.body.setAttribute("aria-busy", "true");
+  document.getElementById("world-transition-kicker").textContent = "Starting simulation";
+  document.getElementById("world-transition-title").textContent = "Building a new world";
+  document.getElementById("world-transition-summary").textContent =
+    handoff.summary || "Applying the selected settings";
+  setWorldTransitionStage("Saving selected settings");
+  // Stop the long poll that belongs to the old world. Leaving it alive can
+  // consume the browser's one spectator-fetch slot for the full 15-second
+  // request timeout, while the new server waits for this viewer to acknowledge
+  // its first frame. Aborting here lets the successor be acknowledged as soon
+  // as the veil has revealed it.
+  specFetchGeneration++;
+  specFetchAbort?.abort();
+  specFetchAbort = null;
+  specFetching = false;
+  specPending = null;
+  try {
+    sessionStorage.setItem("civvis-world-transition-v1", JSON.stringify(handoff));
+    // Keep the older key for a page crossing onto a runtime from before the
+    // richer handoff existed. The replacement clears both only after painting.
+    sessionStorage.setItem("civvis-restart-paused-v1", handoff.paused ? "1" : "0");
+  } catch (e) {}
+}
+
+function clearWorldTransition() {
+  worldTransitionGeneration++;
+  worldTransitionFinishing = false;
+  worldTransitionHandoff = null;
+  window.CIVVIS_RESTART_HANDOFF = null;
+  document.documentElement.classList.remove(
+    "world-loading", "world-restarting", "world-transition-ready");
+  document.body.setAttribute("aria-busy", "false");
+  try {
+    sessionStorage.removeItem("civvis-world-transition-v1");
+    sessionStorage.removeItem("civvis-restart-paused-v1");
+  } catch (e) {}
+}
+
+// Reveal only the requested successor. An old /state request may finish after
+// the restart click; accepting that frame would dismiss the veil onto exactly
+// the stale, frozen screen this transition exists to hide.
+function finishWorldTransition(st) {
+  if (!worldTransitionPending() || worldTransitionFinishing) return;
+  if (worldTransitionHandoff) {
+    // An in-process /new uses the browser's requested seed exactly. The
+    // supervisor deliberately does not: it launches the next process from its
+    // normalized settings, and that process chooses the seed. Across that
+    // boundary, changed process/world identity is the authoritative match.
+    const successor = worldTransitionHandoff.supervised
+      ? supervisedSuccessorChanged(st, worldTransitionHandoff.finishedInstance,
+                                   worldTransitionHandoff.finishedSeed)
+      : String(st?.seed) === String(worldTransitionHandoff.targetSeed);
+    if (!successor) return;
+  }
+  worldTransitionFinishing = true;
+  setWorldTransitionStage(st?.turn === undefined ? "World ready" : `World ready · turn ${st.turn}`);
+  const generation = worldTransitionGeneration;
+  let fadeStarted = false;
+  const startFade = () => {
+    if (fadeStarted || generation !== worldTransitionGeneration) return;
+    fadeStarted = true;
+    document.documentElement.classList.add("world-transition-ready");
+    setTimeout(() => {
+      if (generation === worldTransitionGeneration) clearWorldTransition();
+    }, 240);
+  };
+  // One frame commits the freshly drawn canvas and HUD under the veil; the
+  // next begins the veil's fade. Background tabs can suspend animation frames
+  // entirely, so the timeout is a fallback: when that tab is shown again the
+  // already-complete DOM and canvas are what its first paint contains.
+  requestAnimationFrame(() => requestAnimationFrame(startFade));
+  setTimeout(startFade, 500);
 }
 
 function syncViewPlayer() {
@@ -6037,13 +6263,31 @@ function paintedQuery() {
 // is holding, so the queue cannot grow behind it.
 let specPending = null;  // fetched, not yet drawn
 let specFetching = false;
+let specFetchAbort = null;
+let specFetchGeneration = 0;
 function specFetch() {
-  if (!SPEC || specFetching || specPending) return;
+  if (!SPEC || specFetching || specPending || worldTransitionPending()) return;
+  const generation = specFetchGeneration;
+  const controller = new AbortController();
+  specFetchAbort = controller;
   specFetching = true;
-  fetchJSON("/state" + paintedQuery())
-    .then(st => { specPending = st; })
-    .catch(() => { tileStore = null; }) // hiccup: take the next state whole
-    .finally(() => { specFetching = false; });
+  fetchJSON("/state" + paintedQuery(), {signal:controller.signal})
+    .then(st => {
+      if (generation === specFetchGeneration && !worldTransitionPending()) specPending = st;
+    })
+    .catch(() => {
+      // The caller abort is the deliberate restart suspension. A timeout from
+      // fetchJSON aborts only its own controller and still drops the tile base,
+      // preserving the old recovery behavior for a genuine network hiccup.
+      if (!controller.signal.aborted && generation === specFetchGeneration)
+        tileStore = null; // hiccup: take the next state whole
+    })
+    .finally(() => {
+      if (generation === specFetchGeneration) {
+        specFetching = false;
+        specFetchAbort = null;
+      }
+    });
 }
 (function specFrame() {
   requestAnimationFrame(specFrame);
@@ -6566,6 +6810,7 @@ function render(st, recordChronicle = true) {
   // successor world painted nothing, and must not claim it did.
   if (st.turn !== undefined && st.seed !== undefined)
     paintedFrame = {seed:st.seed, turn:st.turn};
+  finishWorldTransition(st);
 }
 
 function drawCaptureChoice() {
@@ -11409,10 +11654,10 @@ function skyFocusBody() {
 // middle of it. Size alone cannot decide — zoom in on the Moon and the Earth is
 // four times its width, but it is also six diameters off the edge of the
 // screen, so it is not what anyone is looking at.
-function skyGrip(body, radius, stageX, stageY) {
+function skyGrip(body, radius, pan = SKY_PAN) {
   const drawn = Math.max(body.floor || 0, body.size * radius);
   const [px, py] = skyBodyPos(body);
-  const away = Math.hypot(px - SKY_PAN.x, py - SKY_PAN.y) * radius;
+  const away = Math.hypot(px - pan.x, py - pan.y) * radius;
   const reach = Math.max(140, Math.min(area.clientWidth, area.clientHeight) * .55);
   const near = Math.max(0, 1 - away / (reach + drawn));
   // Nothing claims the camera until it is at least half a stage wide. Set any
@@ -11428,11 +11673,10 @@ function skyGrip(body, radius, stageX, stageY) {
 // and when none of them is, it eases back onto the shot that holds the whole
 // system, which is what makes zooming out of Mars return to the space view
 // rather than to an empty patch of sky where Mars used to be.
-function skySettleCamera(radius, zoom) {
-  const [stageX, stageY] = planetStageCenter();
+function skySettledPan(pan, radius, zoom) {
   let best = null;
   for (const body of skyKnownWorlds()) {
-    const grip = skyGrip(body, radius, stageX, stageY);
+    const grip = skyGrip(body, radius, pan);
     if (!best || grip > best.grip) best = {grip, at:skyBodyPos(body)};
   }
   let target, ease;
@@ -11447,13 +11691,14 @@ function skySettleCamera(radius, zoom) {
     const frame = skySystemFrame();
     target = [frame.x, frame.y];
     ease = .60 * Math.max(0, Math.min(1, frame.radius * 2.2 / Math.max(1e-3, radius) - .55));
-  } else return;
-  SKY_PAN = {x:SKY_PAN.x + (target[0] - SKY_PAN.x) * ease,
-             y:SKY_PAN.y + (target[1] - SKY_PAN.y) * ease};
+  } else return {...pan};
+  const settled = {x:pan.x + (target[0] - pan.x) * ease,
+                   y:pan.y + (target[1] - pan.y) * ease};
   // Within a pixel of the mark, sit on it exactly: a globe that fills the stage
   // has to be centred on it, not a third of a pixel off for ever.
-  if (Math.abs(SKY_PAN.x - target[0]) * radius < 1) SKY_PAN.x = target[0];
-  if (Math.abs(SKY_PAN.y - target[1]) * radius < 1) SKY_PAN.y = target[1];
+  if (Math.abs(settled.x - target[0]) * radius < 1) settled.x = target[0];
+  if (Math.abs(settled.y - target[1]) * radius < 1) settled.y = target[1];
+  return settled;
 }
 
 // With no pointer to aim by — the corner buttons, the keyboard — a zoom still
@@ -11461,9 +11706,9 @@ function skySettleCamera(radius, zoom) {
 // between Mars and the exoplanet. Aim at the nearest world instead, counting a
 // large one as nearer than a pebble at the same distance, so zooming in always
 // arrives somewhere rather than magnifying the dark.
-function skyZoomAnchor(radius, stageX, stageY) {
-  const [px, py] = skyBodyPos(skyNearestWorld());
-  return [stageX + (px - SKY_PAN.x) * radius, stageY + (py - SKY_PAN.y) * radius];
+function skyZoomAnchor(radius, stageX, stageY, pan = SKY_PAN) {
+  const [px, py] = skyBodyPos(skyNearestWorld(pan));
+  return [stageX + (px - pan.x) * radius, stageY + (py - pan.y) * radius];
 }
 
 // A drag out here means whatever the camera is looking at. Over a world it
@@ -11471,23 +11716,54 @@ function skyZoomAnchor(radius, stageX, stageY) {
 // on Mars — and out in the space view, where no world fills the stage, it moves
 // the camera through the system instead. The Earth is the one case this hands
 // back: it is steered through `cam.x` and `cam.y` because units stand on it.
-function skyDragApply(drag, dx, dy) {
+function skyDragApply(drag, dx, dy, now = performance.now()) {
   if (!planetMap()) return false;
-  const focus = skyFocusBody();
-  if (focus && focus.body.id === "earth") return false;
-  if (focus) {
-    const view = skyView(focus.body.id);
-    if (!drag.skyTurn) drag.skyTurn = {longitude:view.longitude, latitude:view.latitude};
+  // Decide what was grabbed once. Without this capture, a space pan that
+  // crossed a large world changed into a globe turn halfway through the same
+  // gesture, while a world dragged off centre abruptly changed back to a pan.
+  if (!drag.skyMode) {
+    const focus = skyFocusBody();
+    if (focus) {
+      const view = skyView(focus.body.id);
+      drag.skyMode = {kind:focus.body.id === "earth" ? "earth" : "turn",
+                      bodyId:focus.body.id, drawn:focus.drawn,
+                      longitude:view.longitude, latitude:view.latitude,
+                      lastLongitude:view.longitude, lastLatitude:view.latitude,
+                      vlongitude:0, vlatitude:0};
+    } else {
+      drag.skyMode = {kind:"pan", x:SKY_PAN.x, y:SKY_PAN.y,
+                      lastX:SKY_PAN.x, lastY:SKY_PAN.y, vx:0, vy:0};
+    }
+  }
+  const mode = drag.skyMode;
+  if (mode.kind === "earth") return false;
+  const dt = Math.max(1, now - (drag.lastT || now - 16));
+  if (mode.kind === "turn") {
+    const view = skyView(mode.bodyId);
     // A pixel at the middle of a ball of this size is one over its radius in
     // radians, so the ground keeps up with the pointer instead of sliding.
-    const turn = 1 / Math.max(12, focus.drawn);
-    view.longitude = drag.skyTurn.longitude - dx * turn;
-    view.latitude = Math.max(-1.45, Math.min(1.45, drag.skyTurn.latitude + dy * turn));
+    const turn = 1 / Math.max(12, mode.drawn);
+    view.longitude = mode.longitude - dx * turn;
+    view.latitude = Math.max(-1.45, Math.min(1.45, mode.latitude + dy * turn));
+    const dl = Math.atan2(Math.sin(view.longitude - mode.lastLongitude),
+                          Math.cos(view.longitude - mode.lastLongitude)) / dt;
+    const da = (view.latitude - mode.lastLatitude) / dt;
+    mode.vlongitude = mode.vlongitude * .55 + dl * .45;
+    mode.vlatitude = mode.vlatitude * .55 + da * .45;
+    mode.lastLongitude = view.longitude; mode.lastLatitude = view.latitude;
+    drag.skyMotion = {kind:"turn", bodyId:mode.bodyId,
+                      vlongitude:mode.vlongitude, vlatitude:mode.vlatitude};
+    drag.lastT = now;
     return true;
   }
   const radius = Math.max(.001, planetEarthRadius());
-  if (!drag.skyPan) drag.skyPan = {x:SKY_PAN.x, y:SKY_PAN.y};
-  SKY_PAN = {x:drag.skyPan.x - dx / radius, y:drag.skyPan.y - dy / radius};
+  SKY_PAN = {x:mode.x - dx / radius, y:mode.y - dy / radius};
+  const vx = (SKY_PAN.x - mode.lastX) / dt, vy = (SKY_PAN.y - mode.lastY) / dt;
+  mode.vx = mode.vx * .55 + vx * .45;
+  mode.vy = mode.vy * .55 + vy * .45;
+  mode.lastX = SKY_PAN.x; mode.lastY = SKY_PAN.y;
+  drag.skyMotion = {kind:"pan", vx:mode.vx, vy:mode.vy};
+  drag.lastT = now;
   return true;
 }
 // Every HUD widget the sky has to stay clear of, measured where it actually
@@ -11564,11 +11840,11 @@ function planetMinScale() {
 }
 // The world the camera is heading for, by the same reckoning the buttons aim
 // by: nearest, with a large world counting as nearer than a pebble beside it.
-function skyNearestWorld() {
+function skyNearestWorld(pan = SKY_PAN) {
   let best = null;
   for (const body of skyKnownWorlds()) {
     const [px, py] = skyBodyPos(body);
-    const away = Math.hypot(px - SKY_PAN.x, py - SKY_PAN.y) / (body.size + 2);
+    const away = Math.hypot(px - pan.x, py - pan.y) / (body.size + 2);
     if (!best || away < best.away) best = {away, body};
   }
   return best ? best.body : SKY_EARTH;
@@ -11578,8 +11854,8 @@ function skyNearestWorld() {
 // it. The others are things to look at: nothing lives under a Martian hexagon,
 // so the zoom stops with that world filling the frame rather than carrying on
 // until the camera is inside one ocean tile of somebody else's planet.
-function planetMaxScale() {
-  const body = skyNearestWorld();
+function planetMaxScale(pan = SKY_PAN) {
+  const body = skyNearestWorld(pan);
   if (body.id === "earth") return 3.2;
   // Past the flat map's own ceiling where it has to be: the Moon is a quarter
   // of the Earth, so filling the frame with it costs four times the Earth's
@@ -11592,7 +11868,10 @@ function planetMaxScale() {
 // proved round cannot be zoomed out of by any other route: an opening fit, a
 // flight to a city, a pinch, or a director's shot.
 function planetScaleClamp(scale) {
-  return Math.max(planetMinScale(), Math.min(planetMaxScale(), scale));
+  return planetScaleClampAt(scale, SKY_PAN);
+}
+function planetScaleClampAt(scale, pan) {
+  return Math.max(planetMinScale(), Math.min(planetMaxScale(pan), scale));
 }
 // How much of the picture is space rather than surface: 0 while the globe still
 // fills the stage, 1 once it is a marble among others.
@@ -17847,7 +18126,7 @@ function clampCameraY(y, scale = cam.scale) {
   return bounds ? Math.max(bounds.min, Math.min(bounds.max, y)) : y;
 }
 function clearCameraInertia() {
-  cameraInertia = {vx:0, vy:0, vrot:0, vtilt:0, spin:null};
+  cameraInertia = stoppedCameraInertia();
 }
 function updateCameraFollowChip() {
   const chip = document.getElementById("cinema-follow");
@@ -18023,38 +18302,52 @@ function nudgeCamera(screenX, screenY) {
   const dx = COSR * vx + SINR * vy, dy = -SINR * vx + COSR * vy;
   cameraFlight = {x:cam.x + dx, y:clampCameraY(cam.y + dy), scale:cam.scale};
 }
-function zoomAt(f, sx, sy) {
+function zoomAt(f, sx, sy, skyAnchor = null) {
   if (planetMap()) {
-    const base = cameraZoom?.scale || cam.scale;
-    cameraFlight = null; cameraZoom = null; clearCameraInertia();
+    const pending = cameraZoom?.kind === "planet" ? cameraZoom : null;
+    const base = pending?.scale || cam.scale;
+    const basePan = pending?.pan || SKY_PAN;
+    cameraFlight = null; clearCameraInertia();
     const [stageX, stageY] = planetStageCenter();
-    const before = planetEarthRadius(cam.scale);
+    const before = planetEarthRadius(base);
     // A chart has no system to travel through. Everything below is about
     // holding one body still under the pointer so the zoom walks toward it,
     // and a people who have not proved their world round have exactly one
     // sheet and nowhere to go: it stays under the middle of the stage.
     if (!knowsGlobe()) {
-      skyReturnHome();
-      cam.scale = planetScaleClamp(base * f);
-      draw(); drawMini();
+      const scale = planetScaleClampAt(base * f, {x:0, y:0});
+      const target = {kind:"planet", scale, pan:{x:0, y:0}};
+      if (REDUCED_MOTION_QUERY.matches) {
+        cameraZoom = null; cam.scale = scale; skyReturnHome();
+        draw(); drawMini();
+      } else cameraZoom = target;
       return;
     }
     if (sx === undefined)
-      [sx, sy] = f > 1 ? skyZoomAnchor(before, stageX, stageY) : [stageX, stageY];
+      [sx, sy] = f > 1 ? skyZoomAnchor(before, stageX, stageY, basePan)
+                       : [stageX, stageY];
     // Which point of the system the pointer is over, in Earth radii from the
     // Earth. Holding that point still across the step is what makes scrolling
     // in over Mars a way of *going* to Mars: aim at a body and the zoom walks
     // toward it, aim at empty sky and the zoom stays where you are looking.
-    const pointerX = SKY_PAN.x + (sx - stageX) / before;
-    const pointerY = SKY_PAN.y + (sy - stageY) / before;
+    const pointerX = skyAnchor?.x ?? basePan.x + (sx - stageX) / before;
+    const pointerY = skyAnchor?.y ?? basePan.y + (sy - stageY) / before;
     // A globe's zoom-out does not stop at the globe. It carries on until the
     // rest of the system is in frame, which is a fixed apparent size for the
     // Earth rather than a fixed number, because a bigger world starts bigger.
-    cam.scale = planetScaleClamp(base * f);
-    const after = planetEarthRadius(cam.scale);
-    SKY_PAN = {x:pointerX - (sx - stageX) / after, y:pointerY - (sy - stageY) / after};
-    skySettleCamera(after, f);
-    draw(); drawMini();
+    const scale = planetScaleClampAt(base * f, basePan);
+    const after = planetEarthRadius(scale);
+    const anchored = {x:pointerX - (sx - stageX) / after,
+                      y:pointerY - (sy - stageY) / after};
+    // A two-finger translation with no scale change is a deliberate pan, not
+    // a request to recenter the nearest world. Once the pinch is zooming, the
+    // same gentle body capture as the wheel keeps the approach intentional.
+    const settling = !skyAnchor || Math.abs(Math.log(Math.max(1e-6, f))) > .003;
+    const pan = settling ? skySettledPan(anchored, after, f) : anchored;
+    if (REDUCED_MOTION_QUERY.matches) {
+      cameraZoom = null; cam.scale = scale; SKY_PAN = pan;
+      draw(); drawMini();
+    } else cameraZoom = {kind:"planet", scale, pan};
     return;
   }
   if (sx === undefined) { sx = area.clientWidth / 2; sy = area.clientHeight / 2; }
@@ -18085,12 +18378,31 @@ function advanceUserCameraMotion(now = performance.now()) {
   }
   if (cameraZoom) {
     const ease = 1 - Math.pow(.012, dt / 1000);
-    const nextScale = cam.scale + (cameraZoom.scale - cam.scale) * ease;
-    applyCameraAnchor(cameraZoom.wx, cameraZoom.wy, cameraZoom.sx, cameraZoom.sy, nextScale);
-    active = true;
-    if (Math.abs(cameraZoom.scale - cam.scale) < .001) {
-      applyCameraAnchor(cameraZoom.wx, cameraZoom.wy, cameraZoom.sx, cameraZoom.sy, cameraZoom.scale);
-      cameraZoom = null;
+    if (cameraZoom.kind === "planet") {
+      // Scale is multiplicative, so interpolate it logarithmically: travelling
+      // from a tile to the full system keeps one visual pace instead of racing
+      // through the small worlds and crawling over the last large one. Pan and
+      // scale share the same ease, which keeps the chosen world on one path.
+      cam.scale *= Math.exp(Math.log(cameraZoom.scale / Math.max(1e-6, cam.scale)) * ease);
+      SKY_PAN = {x:SKY_PAN.x + (cameraZoom.pan.x - SKY_PAN.x) * ease,
+                 y:SKY_PAN.y + (cameraZoom.pan.y - SKY_PAN.y) * ease};
+      const scaleLeft = Math.abs(Math.log(cameraZoom.scale / Math.max(1e-6, cam.scale)));
+      const panLeft = Math.hypot(cameraZoom.pan.x - SKY_PAN.x,
+                                 cameraZoom.pan.y - SKY_PAN.y) * planetEarthRadius();
+      active = true;
+      if (scaleLeft < .0008 && panLeft < .25) {
+        cam.scale = cameraZoom.scale; SKY_PAN = {...cameraZoom.pan};
+        cameraZoom = null;
+      }
+    } else {
+      const nextScale = cam.scale + (cameraZoom.scale - cam.scale) * ease;
+      applyCameraAnchor(cameraZoom.wx, cameraZoom.wy, cameraZoom.sx, cameraZoom.sy, nextScale);
+      active = true;
+      if (Math.abs(cameraZoom.scale - cam.scale) < .001) {
+        applyCameraAnchor(cameraZoom.wx, cameraZoom.wy,
+                          cameraZoom.sx, cameraZoom.sy, cameraZoom.scale);
+        cameraZoom = null;
+      }
     }
   } else if (cameraFlight) {
     const ease = 1 - Math.pow(.018, dt / 1000);
@@ -18120,13 +18432,26 @@ function advanceUserCameraMotion(now = performance.now()) {
   if (!dragState && !cameraFlight && !cameraZoom) {
     // A globe glides as a turn about a fixed axis rather than as a drift in
     // columns and rows, so it coasts over a pole the same way the drag did.
-    const spin = cameraInertia.spin;
+    const spin = cameraInertia.spin, skyPan = cameraInertia.skyPan;
+    const skyTurn = cameraInertia.skyTurn;
     const speed = Math.abs(cameraInertia.vx) + Math.abs(cameraInertia.vy) +
       Math.abs(cameraInertia.vrot) * 80 + Math.abs(cameraInertia.vtilt) * 80 +
-      (spin ? Math.abs(spin.rate) * 80 : 0);
+      (spin ? Math.abs(spin.rate) * 80 : 0) +
+      (skyPan ? Math.hypot(skyPan.vx, skyPan.vy) * planetEarthRadius() : 0) +
+      (skyTurn ? Math.hypot(skyTurn.vlongitude, skyTurn.vlatitude) * 80 : 0);
     if (speed > .002) {
       const basis = spin && planetBasisNow();
       if (basis) applyPlanetBasis(planetSpin(basis, spin.axis, spin.rate * dt));
+      if (skyPan) {
+        SKY_PAN.x += skyPan.vx * dt;
+        SKY_PAN.y += skyPan.vy * dt;
+      }
+      if (skyTurn) {
+        const view = skyView(skyTurn.bodyId);
+        view.longitude += skyTurn.vlongitude * dt;
+        view.latitude = Math.max(-1.45, Math.min(1.45,
+          view.latitude + skyTurn.vlatitude * dt));
+      }
       cam.x += cameraInertia.vx * dt; cam.y += cameraInertia.vy * dt;
       if (Math.abs(cameraInertia.vrot) > .00001) setRot(cam.rot + cameraInertia.vrot * dt);
       if (Math.abs(cameraInertia.vtilt) > .00001) setTilt(cinematicYS + cameraInertia.vtilt * dt);
@@ -18135,6 +18460,10 @@ function advanceUserCameraMotion(now = performance.now()) {
       cameraInertia.vx *= decay; cameraInertia.vy *= decay;
       cameraInertia.vrot *= decay; cameraInertia.vtilt *= decay;
       if (spin) spin.rate *= decay;
+      if (skyPan) { skyPan.vx *= decay; skyPan.vy *= decay; }
+      if (skyTurn) {
+        skyTurn.vlongitude *= decay; skyTurn.vlatitude *= decay;
+      }
       active = true;
     } else clearCameraInertia();
   }
@@ -18732,15 +19061,24 @@ function endMapPointer(ev) {
     dragState = null;
     if (released && dragMoved && performance.now() - released.lastT < 90 &&
         !REDUCED_MOTION_QUERY.matches) {
-      // `turned` rather than `basis`: out in the system the sky took the drag,
-      // and the globe it left alone must not glide off on its own afterwards.
+      // Each captured surface keeps the motion it actually received: Earth
+      // spins about its final 3D axis, another world keeps turning, and an
+      // empty-sky drag coasts the camera through the system.
       cameraInertia = released.rotate
-        ? {vx:0, vy:0, vrot:released.vrot * .32, vtilt:released.vtilt * .25}
+        ? stoppedCameraInertia({vrot:released.vrot * .32,
+                                vtilt:released.vtilt * .25})
+        : released.skyMotion?.kind === "pan"
+        ? stoppedCameraInertia({skyPan:{vx:released.skyMotion.vx,
+                                        vy:released.skyMotion.vy}})
+        : released.skyMotion?.kind === "turn"
+        ? stoppedCameraInertia({skyTurn:{bodyId:released.skyMotion.bodyId,
+                                         vlongitude:released.skyMotion.vlongitude,
+                                         vlatitude:released.skyMotion.vlatitude}})
         : released.turned
-        ? {vx:0, vy:0, vrot:0, vtilt:0, spin:planetGlide(released.vpx, released.vpy)}
+        ? stoppedCameraInertia({spin:planetGlide(released.vpx, released.vpy)})
         : released.basis
-        ? {vx:0, vy:0, vrot:0, vtilt:0, spin:null}
-        : {vx:released.vx, vy:released.vy, vrot:0, vtilt:0};
+        ? stoppedCameraInertia()
+        : stoppedCameraInertia({vx:released.vx, vy:released.vy});
     }
     return;
   }
@@ -18782,9 +19120,16 @@ function beginTouchTransform() {
   const my = (points[0].y + points[1].y) / 2 - rect.top;
   const dx = points[1].x - points[0].x, dy = points[1].y - points[0].y;
   const [wx, wy] = screenToWorld(mx, my);
+  let skyAnchor = null;
+  if (planetMap()) {
+    const [stageX, stageY] = planetStageCenter();
+    const radius = Math.max(.001, planetEarthRadius());
+    skyAnchor = {x:SKY_PAN.x + (mx - stageX) / radius,
+                 y:SKY_PAN.y + (my - stageY) / radius};
+  }
   touchGesture = {mode:"transform", mx, my, wx, wy, distance:Math.hypot(dx, dy),
                   angle:Math.atan2(dy, dx), scale:cam.scale, rot:cam.rot,
-                  basis:planetBasisNow(), controlled:false};
+                  basis:planetBasisNow(), skyAnchor, controlled:false};
   clearCameraInertia(); cameraFlight = null; cameraZoom = null;
 }
 cv.addEventListener("pointerdown", ev => {
@@ -18827,7 +19172,8 @@ cv.addEventListener("pointermove", ev => {
         // A globe has no world plane to anchor a pinch against, and its zoom
         // runs far below the flat map's floor, so it goes through the same path
         // the wheel does and reaches the rest of the system the same way.
-        zoomAt(want / Math.max(1e-4, cam.scale), mx, my);
+        const base = cameraZoom?.kind === "planet" ? cameraZoom.scale : cam.scale;
+        zoomAt(want / Math.max(1e-4, base), mx, my, touchGesture.skyAnchor);
       } else {
         applyCameraAnchor(touchGesture.wx, touchGesture.wy, mx, my,
                           Math.max(.25, Math.min(3.2, want)));
@@ -18872,11 +19218,18 @@ function endMapTouch(ev) {
   mapTouches.delete(ev.pointerId);
   if (!mapTouches.size) {
     if (released?.mode === "pan" && released.controlled && !REDUCED_MOTION_QUERY.matches)
-      cameraInertia = released.turned
-        ? {vx:0, vy:0, vrot:0, vtilt:0, spin:planetGlide(released.vpx, released.vpy)}
+      cameraInertia = released.skyMotion?.kind === "pan"
+        ? stoppedCameraInertia({skyPan:{vx:released.skyMotion.vx,
+                                        vy:released.skyMotion.vy}})
+        : released.skyMotion?.kind === "turn"
+        ? stoppedCameraInertia({skyTurn:{bodyId:released.skyMotion.bodyId,
+                                         vlongitude:released.skyMotion.vlongitude,
+                                         vlatitude:released.skyMotion.vlatitude}})
+        : released.turned
+        ? stoppedCameraInertia({spin:planetGlide(released.vpx, released.vpy)})
         : released.basis
-        ? {vx:0, vy:0, vrot:0, vtilt:0, spin:null}
-        : {vx:released.vx, vy:released.vy, vrot:0, vtilt:0};
+        ? stoppedCameraInertia()
+        : stoppedCameraInertia({vx:released.vx, vy:released.vy});
     touchGesture = null;
     setTimeout(() => { if (!mapTouches.size) dragMoved = false; }, 60);
   } else if (mapTouches.size === 1) {
@@ -20335,6 +20688,21 @@ function selectedSimulationSettings() {
           // A spectated world has nobody to hand a leader or a handicap to.
           ...(gameMode === "ai_sim" ? {} : {civs: leader ? [leader] : [], difficulty})};
 }
+function selectedSimulationSummary() {
+  const selectedText = id => {
+    const select = document.getElementById(id);
+    return (select?.selectedOptions?.[0]?.textContent || select?.value || "").trim();
+  };
+  const mode = document.getElementById("gamemode").value === "ai_sim"
+    ? "AI simulation" : "Single player";
+  // The world-size option already includes its dimensions and seat count; the
+  // compact first clause is enough to identify the choice without turning the
+  // handoff screen into a settings table.
+  const size = selectedText("np").split(" · ")[0];
+  const map = selectedText("maptype").split(" · ")[0];
+  const speed = selectedText("gamespeed").split(" · ")[0];
+  return [mode, size, map, speed].filter(Boolean).join(" · ");
+}
 function simulationSettingsKey(settings) {
   return JSON.stringify(settings);
 }
@@ -20392,9 +20760,25 @@ function newSimulationPayload() {
   return {...selectedSimulationSettings(),
           seed: Math.floor(Math.random() * 1e9), force: true};
 }
+const simulationBusyControls = new Map();
 function setNewSimulationBusy(busy) {
   newSimulationBusy = busy;
-  document.getElementById("restart-sim").disabled = busy;
+  const controls = [
+    ...document.querySelectorAll("#newgame-options select, #newgame-options input, #newgame-options button"),
+    document.getElementById("restart-sim"), document.getElementById("specpause"),
+    document.getElementById("collapsepause"),
+  ].filter(Boolean);
+  if (busy) {
+    for (const control of controls) {
+      if (!simulationBusyControls.has(control))
+        simulationBusyControls.set(control, control.disabled);
+      control.disabled = true;
+    }
+  } else {
+    for (const [control, disabled] of simulationBusyControls) control.disabled = disabled;
+    simulationBusyControls.clear();
+    syncEarthShape();
+  }
 }
 function showNewSimulationError(error, action = "start simulation") {
   const errEl = document.getElementById("err");
@@ -20488,14 +20872,27 @@ async function writeSave() {
 async function startNewSimulation() {
   if (newSimulationBusy) return;
   const wasPaused = specPaused;
+  const payload = {...newSimulationPayload(), paused: wasPaused};
+  const supervised = !!(state && state.supervised) && payload.spectate;
+  const handoff = {
+    requestedAt: Date.now(), paused: wasPaused, targetSeed: payload.seed,
+    supervised,
+    finishedInstance: state?.server_instance ?? null,
+    finishedSeed: state?.seed ?? null,
+    summary: selectedSimulationSummary(),
+  };
   setNewSimulationBusy(true);
+  showWorldTransition(handoff);
   try {
-    const payload = {...newSimulationPayload(), paused: wasPaused};
+    // A change event stages settings immediately. Let every already-issued
+    // settings write finish before the process handoff so none can arrive late
+    // and accidentally queue itself on the successor as *its* next game.
+    await settingsStageChain.catch(() => {});
+    setWorldTransitionStage("Starting the selected world");
     // The supervisor owns the AI exhibition — each simulation is a fresh
     // process on freshly built code. A single-player game is not part of that
     // cycle: it takes over this process in place, so sitting down to play
     // starts immediately instead of waiting out a process handoff.
-    const supervised = !!(state && state.supervised) && payload.spectate;
     sel = null; selCity = null;
     clearTimeout(specTimer);
     if (supervised) {
@@ -20507,9 +20904,7 @@ async function startNewSimulation() {
       if (requested.error) throw new Error(requested.error);
       const respawn = document.getElementById("respawn");
       if (respawn) respawn.textContent = "restarting sim on existing code";
-      try {
-        sessionStorage.setItem("civvis-restart-paused-v1", wasPaused ? "1" : "0");
-      } catch (e) {}
+      setWorldTransitionStage("Restart accepted · changing worlds");
       waitForSupervisedSuccessor(finishedInstance, finishedSeed);
       return;
     }
@@ -20526,6 +20921,8 @@ async function startNewSimulation() {
     scheduleSpec(state);
     setNewSimulationBusy(false);
   } catch (error) {
+    cancelSupervisedSuccessorWatch();
+    clearWorldTransition();
     specPaused = wasPaused;
     updateSpecPauseButtons();
     reportSpecStatus();
