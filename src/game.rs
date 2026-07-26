@@ -12098,6 +12098,27 @@ pub struct Emergency {
     pub ends: u32,
 }
 
+/// Every blow that has landed on a city this game.
+///
+/// A war ledger says who declared and who lost units; it cannot say whether an
+/// army ever reached a city at all. Measured over 12 full-length six-player
+/// games the AI chooses Conquest about 26% of its turns and its forces engage
+/// about 22% of theirs, yet roughly 0.3 cities fall per game and no capital has
+/// ever fallen — so the question is which link between engaging and capturing
+/// is missing, and only the city-damage funnel can answer it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SiegeCensus {
+    /// Times a city took damage from anyone.
+    pub blows: u64,
+    /// Total health struck off cities, walls excluded.
+    pub damage: i64,
+    /// Times a wall was knocked from standing to flat.
+    pub walls_breached: u64,
+    /// Times a city was driven to zero health, whether or not it was then
+    /// occupied — a barbarian leaves it at 1 instead of capturing.
+    pub cities_reduced: u64,
+}
+
 /// What one belligerent has had taken from it in a war — never what it
 /// inflicted, so the two sides of a war read as two columns of the same
 /// ledger rather than two versions of it.
@@ -13409,6 +13430,9 @@ pub struct Game {
     pub peace_treaties: BTreeMap<(usize, usize), u32>,
     /// Running chronicle of every war in progress, keyed by belligerent pair.
     pub wars: BTreeMap<(usize, usize), WarRecord>,
+    /// What has actually landed on cities this game, for evaluators.
+    #[serde(default)]
+    pub siege: SiegeCensus,
     /// The wars that ended, oldest first and bounded — long enough for a
     /// client to show what a peace cost, short enough not to grow forever.
     pub concluded_wars: Vec<WarRecord>,
@@ -13688,6 +13712,7 @@ impl From<GameSer> for Game {
             at_war: s.at_war.into_iter().collect(),
             peace_treaties: s.peace_treaties.into_iter().collect(),
             wars: s.wars.into_iter().collect(),
+            siege: SiegeCensus::default(),
             concluded_wars: s.concluded_wars,
             nuclear_strikes: s.nuclear_strikes,
             barb_pid: s.barb_pid,
@@ -14010,6 +14035,7 @@ impl Game {
             at_war: BTreeSet::new(),
             peace_treaties: BTreeMap::new(),
             wars: BTreeMap::new(),
+            siege: SiegeCensus::default(),
             concluded_wars: Vec::new(),
             nuclear_strikes: Vec::new(),
             barb_pid: None,
@@ -23378,6 +23404,7 @@ impl Game {
         };
         let c = self.cities.get_mut(&cid).unwrap();
         c.last_attacked = self.turn;
+        let before_hp = c.hp;
         if wall > 0 && max > 0 {
             let frac = wall as f64 / max as f64;
             let through = if bypass_walls {
@@ -23393,6 +23420,15 @@ impl Game {
             c.hp -= through.max(1);
         } else {
             c.hp -= dmg;
+        }
+        let (after_hp, after_wall) = (c.hp, c.wall_hp);
+        self.siege.blows += 1;
+        self.siege.damage += i64::from(before_hp - after_hp);
+        if wall > 0 && after_wall == 0 {
+            self.siege.walls_breached += 1;
+        }
+        if before_hp > 0 && after_hp <= 0 {
+            self.siege.cities_reduced += 1;
         }
     }
 
