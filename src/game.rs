@@ -12650,23 +12650,48 @@ impl std::ops::BitOr for ActionFamilies {
     }
 }
 
-/// A result the game already reached. Kept verbatim when a world is asked to
-/// play on past it, so the verdict survives the extension that follows.
+/// What should end a world after somebody chooses "one more turn".
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlayOnMode {
+    /// Keep playing until somebody earns a result other than the exact result
+    /// that just stopped the game.
+    #[default]
+    UntilNextVictory,
+    /// Keep the world live no matter which later victory requirements are met.
+    Indefinite,
+}
+
+impl PlayOnMode {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "until_next_victory" => Some(Self::UntilNextVictory),
+            "indefinite" => Some(Self::Indefinite),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::UntilNextVictory => "until_next_victory",
+            Self::Indefinite => "indefinite",
+        }
+    }
+}
+
+/// The result a game most recently played on past. Keeping its exact winner
+/// and path prevents a persistent victory condition from immediately stopping
+/// the resumed world on the same verdict.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Decided {
     pub winner: usize,
     pub victory_type: String,
     /// The turn the victory was declared on, not the turn play resumed.
     pub turn: u32,
+    /// Whether this continuation stops at the next distinct result or never.
+    #[serde(default)]
+    pub mode: PlayOnMode,
 }
-
-/// How many turns one press of "one more turn" is worth.
-///
-/// The extension is bounded on purpose. A person at the keyboard can ask for
-/// another block whenever this one runs out, but the unattended exhibition has
-/// nobody to ask, and a world that plays on forever would be the last world it
-/// ever shows.
-pub const PLAY_ON_TURNS: u32 = 25;
 
 /// Victory paths that can end the game. All paths are enabled by default so
 /// existing callers and saves retain the traditional rules unless a new-game
@@ -18189,8 +18214,7 @@ impl Game {
                                     > cities.len()
                             })
                     });
-                if all_opponents_converted {
-                    self.set_winner(p, "religious");
+                if all_opponents_converted && self.set_winner(p, "religious") {
                     return;
                 }
                 continue;
@@ -18227,8 +18251,7 @@ impl Game {
                     break;
                 }
             }
-            if all {
-                self.set_winner(p, "religious");
+            if all && self.set_winner(p, "religious") {
                 return;
             }
         }
@@ -41617,8 +41640,9 @@ impl Game {
                 .filter(|oid| *oid != pid && !self.same_team(*pid, **oid))
                 .map(|oid| self.domestic_tourists(*oid))
                 .max();
-            if target.is_some_and(|target| foreign > target) {
-                self.set_winner(*pid, "culture");
+            if target.is_some_and(|target| foreign > target)
+                && self.set_winner(*pid, "culture")
+            {
                 return;
             }
         }
@@ -41660,10 +41684,9 @@ impl Game {
             self.check_culture_victory();
             // A score victory is only a turn-limit tiebreak, never an
             // immediate win for crossing an arbitrary score threshold.
-            if self.turn > self.max_turns && self.winner.is_none() && self.played_on() {
-                // These were borrowed turns, and they have run out.
-                self.close_extension();
-            } else if self.turn > self.max_turns && self.winner.is_none() {
+            if self.turn_limit().is_some_and(|limit| self.turn > limit)
+                && self.winner.is_none()
+            {
                 // Ties resolve through the shipped chain (civics, cities,
                 // districts, Population, Great People, religion,
                 // technologies, wonders) before falling back to seat order.
@@ -44415,38 +44438,50 @@ impl Game {
         self.decided.is_some()
     }
 
+    /// A played-on world has explicitly left its original turn cap behind.
+    /// Keep the configured cap itself intact so a save or successor world can
+    /// still recover the game settings that created this one.
+    pub fn turn_limit(&self) -> Option<u32> {
+        (!self.played_on()).then_some(self.max_turns)
+    }
+
     /// Carry on past the result this game already reached: "one more turn".
     ///
-    /// The verdict is kept in `decided` and the world becomes live again for
-    /// another block of turns. The path that was already won cannot be won a
-    /// second time — nor can any other, or a science victory one turn from its
-    /// launch would simply re-declare itself and the button would do nothing.
-    /// The turn limit is the one ending that still lands, which is what stops
-    /// an extension from running forever.
+    /// The verdict is kept in `decided` and the world becomes live again with
+    /// no turn limit. `UntilNextVictory` suppresses only that exact winner and
+    /// path, so an already-satisfied Culture or Domination condition cannot
+    /// instantly re-declare the same result; every genuinely later result can
+    /// still land. `Indefinite` suppresses every later result.
     ///
     /// Returns `false` when there is no result to play on past.
-    pub fn play_on(&mut self) -> bool {
+    pub fn play_on(&mut self, mode: PlayOnMode) -> bool {
         let (Some(winner), Some(victory_type)) = (self.winner, self.victory_type.clone()) else {
             return false;
         };
-        // Only the first press records the verdict; later ones extend the same
-        // continuation, so the game still remembers who actually won it.
-        self.decided.get_or_insert(Decided {
+        // Replace rather than retain an older verdict: a world can reach a new
+        // victory after `UntilNextVictory`, and another press must continue
+        // past the result currently on its finish screen.
+        self.decided = Some(Decided {
             winner,
             victory_type: victory_type.clone(),
             turn: self.turn,
+            mode,
         });
         self.winner = None;
         self.victory_type = None;
-        self.max_turns = self.turn.saturating_add(PLAY_ON_TURNS);
         let seats: Vec<usize> = self.players.iter().map(|player| player.id).collect();
         for seat in seats {
             self.note(
                 seat,
                 "General",
                 // A note is a predicate: the chronicle prints it after the
-                // seat's own name, so "Rome plays on for 25 more turns".
-                format!("plays on for {PLAY_ON_TURNS} more turns"),
+                // seat's own name, so "Rome plays on until the next victory".
+                match mode {
+                    PlayOnMode::UntilNextVictory => {
+                        "plays on until the next victory".to_string()
+                    }
+                    PlayOnMode::Indefinite => "plays on indefinitely".to_string(),
+                },
                 None,
             );
         }
@@ -44457,38 +44492,14 @@ impl Game {
         true
     }
 
-    /// Hand a played-on world back the result it was already given.
-    ///
-    /// The extension ends on the verdict that granted it rather than on a
-    /// fresh score count: the game was won on its own terms and a tiebreak
-    /// would be free to name somebody else. It also cannot lean on the score
-    /// path, which a lobby is allowed to switch off entirely — an extension
-    /// with no ending at all would leave the exhibition on one world forever.
-    fn close_extension(&mut self) {
-        let Some(decided) = self.decided.clone() else {
-            return;
-        };
-        self.winner = Some(decided.winner);
-        self.victory_type = Some(decided.victory_type.clone());
-        let name = self.civ_name(decided.winner);
-        let vtype = decided.victory_type;
-        let seats: Vec<usize> = self.players.iter().map(|player| player.id).collect();
-        for seat in seats {
-            self.note(
-                seat,
-                "General",
-                format!("runs out of extra turns; {name} keeps the {vtype} victory"),
-                None,
-            );
-        }
-    }
-
-    fn set_winner(&mut self, pid: usize, vtype: &str) {
-        // A world playing on past its result cannot be won again. The ending
-        // it already has is restored when the extension runs out; see
-        // `close_extension`.
-        if self.played_on() {
-            return;
+    fn set_winner(&mut self, pid: usize, vtype: &str) -> bool {
+        if self.decided.as_ref().is_some_and(|decided| match decided.mode {
+            PlayOnMode::Indefinite => true,
+            PlayOnMode::UntilNextVictory => {
+                decided.winner == pid && decided.victory_type == vtype
+            }
+        }) {
+            return false;
         }
         if self.winner.is_none()
             && self.victory_eligible(pid)
@@ -44516,6 +44527,9 @@ impl Game {
                     None,
                 );
             }
+            true
+        } else {
+            false
         }
     }
 }
@@ -48954,65 +48968,74 @@ mod victory_conditions {
         }
     }
 
-    /// "One more turn": the world goes back into play, no path can be won
-    /// during the extension, and the ending it already had is what closes it.
-    ///
-    /// Suppressing the other paths is not tidiness. A science victory is still
-    /// won on the turn after it was won, so a game that merely cleared its
-    /// winner would re-declare the same result on the next end of turn and the
-    /// button would do nothing at all.
+    /// "One more turn" has no turn cap. Its bounded form stops only for a
+    /// genuinely subsequent result; its indefinite form stops for none.
     #[test]
-    fn playing_on_borrows_turns_and_gives_the_result_back() {
+    fn playing_on_can_wait_for_the_next_victory_or_run_indefinitely() {
         let mut game = game_with_capitals(2, 90_100, 40);
         game.turn = 30;
-        game.set_winner(1, "science");
+        game.set_winner(1, "diplomatic");
         assert_eq!(game.winner, Some(1));
 
-        assert!(game.play_on());
+        assert!(game.play_on(PlayOnMode::UntilNextVictory));
         assert_eq!(game.winner, None);
-        assert_eq!(game.max_turns, 30 + PLAY_ON_TURNS);
+        assert_eq!(game.max_turns, 40, "the configured game setting is retained");
+        assert_eq!(game.turn_limit(), None, "playing on has no turn cap");
         assert_eq!(game.decided.as_ref().map(|d| d.winner), Some(1));
         assert_eq!(
             game.decided.as_ref().map(|d| d.victory_type.as_str()),
-            Some("science")
+            Some("diplomatic")
         );
         assert_eq!(game.decided.as_ref().map(|d| d.turn), Some(30));
+        assert_eq!(
+            game.decided.as_ref().map(|d| d.mode),
+            Some(PlayOnMode::UntilNextVictory)
+        );
 
-        // Nothing can be won during borrowed turns, including the path that
-        // granted them and including a lobby's score tiebreak.
-        for victory_type in VictoryConditions::NAMES {
-            game.set_winner(0, victory_type);
-            assert_eq!(game.winner, None, "{victory_type} ended an extension");
-        }
+        // Crossing the old cap does not manufacture a score result.
+        game.turn = game.max_turns;
+        game.current = 1;
+        game.do_end_turn();
+        assert!(game.turn > game.max_turns);
+        assert_eq!(game.winner, None);
+
+        // A persistent requirement may try to repeat the verdict that opened
+        // the continuation. That exact result is not a next victory.
+        assert!(!game.set_winner(1, "diplomatic"));
+        assert_eq!(game.winner, None);
 
         // The exhibition checkpoints and resumes mid-game, so the verdict has
-        // to survive a save. One that forgot it would be a live world with
-        // every victory path armed again, and would re-declare the result it
-        // was granted the extension from on the next end of turn.
+        // to survive a save together with the requested stopping rule.
         let raw = serde_json::to_string(&game).expect("a played-on game saves");
         let reloaded: Game = serde_json::from_str(&raw).expect("and loads");
         assert_eq!(reloaded.decided, game.decided);
         assert_eq!(reloaded.max_turns, game.max_turns);
         assert!(reloaded.played_on());
 
+        // A different civilization can win through the same lane, and the
+        // original winner can still win through a different one: either is a
+        // genuinely later result. Use the former here so the same-lane case is
+        // covered explicitly.
+        assert!(game.set_winner(0, "diplomatic"));
+        assert_eq!(game.winner, Some(0));
+
+        // The second finish screen can choose the other answer. It records the
+        // result on that screen, not the older result that preceded it.
+        assert!(game.play_on(PlayOnMode::Indefinite));
+        assert_eq!(game.decided.as_ref().map(|d| d.winner), Some(0));
+        assert_eq!(
+            game.decided.as_ref().map(|d| d.mode),
+            Some(PlayOnMode::Indefinite)
+        );
+        for victory_type in VictoryConditions::NAMES {
+            assert!(!game.set_winner(1, victory_type));
+            assert_eq!(game.winner, None, "{victory_type} ended indefinite play");
+        }
+
         // A live game has nothing to play on past.
         let mut untouched = game_with_capitals(2, 90_101, 40);
-        assert!(!untouched.play_on());
+        assert!(!untouched.play_on(PlayOnMode::UntilNextVictory));
         assert!(untouched.decided.is_none());
-
-        // Past the raised limit the original verdict is restored rather than
-        // recounted — the game was won on its own terms, and a score tiebreak
-        // would be free to name somebody else.
-        game.turn = game.max_turns + 1;
-        game.close_extension();
-        assert_eq!(game.winner, Some(1));
-        assert_eq!(game.victory_type.as_deref(), Some("science"));
-
-        // And it can be asked again, from the new result, without losing the
-        // turn the victory was actually won on.
-        assert!(game.play_on());
-        assert_eq!(game.decided.as_ref().map(|d| d.turn), Some(30));
-        assert_eq!(game.max_turns, game.turn + PLAY_ON_TURNS);
     }
 
     /// The Civilization Players League publishes the lobby it plays
