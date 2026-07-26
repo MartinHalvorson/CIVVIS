@@ -21,7 +21,7 @@ use crate::rng::Rng;
 use crate::rules::Rules;
 use crate::setup::MapSize;
 
-pub const BUILTIN_AIS: [&str; 9] = [
+pub const BUILTIN_AIS: [&str; 10] = [
     "advanced",
     "advanced_evolved",
     "advanced_v1",
@@ -30,6 +30,7 @@ pub const BUILTIN_AIS: [&str; 9] = [
     "evolved",
     "neural",
     "strategic",
+    "strategic_deep",
     "policy",
 ];
 
@@ -494,11 +495,16 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // The macro search with four times the compute, split across both
         // of its axes: reviews every 20 turns instead of 40, projected 80
         // rounds instead of 40. The strongest configuration measured —
-        // 240 maps across two disjoint seed sets, 53 mirrored maps to 15,
-        // sign p=4.1e-06 — but *not* promoted: it passed the gate once at
-        // 120 maps by 0.2pp of Wilson bound and did not pass again on the
-        // second seed set. Eval-only until a PASS replicates at a
-        // pre-registered size (docs/EVAL.md, 2026-07-26).
+        // Promoted on a pre-registered 300-map run at a fresh seed:
+        // 56 mirrored maps to 17, sign p=0.0000, e-process 3.14e4 crossing
+        // at map 127, Wilson 50.8%..62.0% clearing parity — `promotion
+        // gate: PASS` under the unmodified gate. With the two earlier
+        // disjoint sets that is 540 independent maps, 109 to 32.
+        //
+        // `strategic` is deliberately unchanged: it is the frozen control
+        // for further search work, the way `advanced_v1` is for
+        // `advanced`, and this costs four times the macro-search compute,
+        // which batch callers should adopt on purpose rather than inherit.
         "strategic_deep" => {
             let mut ai = crate::strategic::StrategicAi::with_weights(
                 crate::evolve::load_champion("evolved").unwrap_or_default(),
