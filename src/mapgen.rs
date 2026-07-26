@@ -1597,12 +1597,6 @@ pub fn generate_with_script(
                 .resources
                 .iter()
                 .filter(|(_, s)| {
-                    // Antiquity Sites and Shipwrecks are not part of the
-                    // resource lottery: the game allocates them per
-                    // civilization, in `place_artifact_quotas` below.
-                    if s.class == "artifact" {
-                        return false;
-                    }
                     // The shipped placement is a union: a listed feature on
                     // the tile, or a listed terrain on a featureless tile —
                     // and hills-only spawns (Sheep) respect the tile's form.
@@ -1623,7 +1617,6 @@ pub fn generate_with_script(
     }
 
     place_strategic_quotas(rules, &mut wm, &land, num_major_spawns, &BTreeSet::new(), rng);
-    place_artifact_quotas(rules, &mut wm, num_major_spawns, &BTreeSet::new(), rng);
 
     assign_continents(&mut wm, &land, num_continents, rng);
 
@@ -3102,9 +3095,17 @@ fn place_strategic_quotas(
 /// Antiquity Sites and Shipwrecks are allocated per civilization rather than
 /// rolled per tile: the shipped `ARCHAEOLOGY_SITES_PER_CIV_LAND` is **6** and
 /// `ARCHAEOLOGY_SITES_PER_CIV_SEA` is **2**, so a standard eight-player map
-/// carries 48 dig sites and 16 wrecks. They are placed after the lottery, on
-/// the same eligibility test every other resource uses, so this changes how
-/// many appear and never where they are allowed to appear.
+/// carries 48 dig sites and 16 wrecks. The per-tile lottery still rolls them
+/// as before and this tops the map up to the quota afterwards, on the same
+/// eligibility test every other resource uses — so this changes how many
+/// appear and never where they are allowed to appear.
+///
+/// It runs **after the seats are chosen**, and deliberately so. Every earlier
+/// pass feeds the start-placement search: freeing tiles that the lottery would
+/// have filled lets `place_strategic_quotas` seat more deposits, which draws
+/// more from the shared stream, which moves the spawns. A Tiny map lost the
+/// shipped 10-14 separation band that way. Nothing after this point reads the
+/// stream, so the quota is invisible to the layout.
 fn place_artifact_quotas(
     rules: &Rules,
     wm: &mut WorldMap,
@@ -3129,12 +3130,22 @@ fn place_artifact_quotas(
             .iter()
             .all(|terrain| matches!(terrain.as_str(), "coast" | "ocean" | "lake"));
         let per_civ = if sea { 2 } else { 6 };
-        let placed = wm
-            .tiles
-            .values()
-            .filter(|tile| tile.resource.as_deref() == Some(resource.as_str()))
-            .count();
-        let mut wanted = (per_civ * num_major_spawns).saturating_sub(placed);
+        let quota = per_civ * num_major_spawns;
+        let mut standing: Vec<Pos> = all
+            .iter()
+            .copied()
+            .filter(|pos| wm.tiles[pos].resource.as_deref() == Some(resource.as_str()))
+            .collect();
+        // The lottery rolls Artifacts like any other resource, which undershoots
+        // on an ocean-heavy map and overshoots badly on a land-heavy one — a
+        // Land Only world rolled 66 dig sites against a quota of 48. Trim as
+        // readily as top up, so the map ends on the shipped number either way.
+        while standing.len() > quota {
+            let pick = rng.below(standing.len());
+            let pos = standing.swap_remove(pick);
+            wm.tiles.get_mut(&pos).unwrap().resource = None;
+        }
+        let mut wanted = quota - standing.len();
         if wanted == 0 {
             continue;
         }
