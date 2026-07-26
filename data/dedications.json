@@ -1,14 +1,14 @@
 {
   "monumentality": {
     "eras": [1, 3],
-    "triggers": { "specialty_district": 1 },
-    "normal": "+1 Era Score each time you construct a new specialty District.",
+    "triggers": { "district": 1 },
+    "normal": "+1 Era Score each time you construct a District.",
     "golden": "+2 Movement for Builders. Civilian units may be purchased with Faith, and Builders and Settlers are 30% cheaper."
   },
   "pen_brush_and_voice": {
     "eras": [1, 2],
-    "triggers": { "inspiration": 1, "great_work_building": 1 },
-    "normal": "+1 Era Score each time you trigger an Inspiration, and for constructing a building with a Great Work slot.",
+    "triggers": { "inspiration": 1, "culture_building": 1 },
+    "normal": "+1 Era Score each time you trigger an Inspiration, and for constructing a building that yields Culture.",
     "golden": "Inspirations provide an additional 10% of civic costs. Each city receives +1 Culture for each specialty district."
   },
   "free_inquiry": {
@@ -43,8 +43,8 @@
   },
   "heartbeat_of_steam": {
     "eras": [4, 6],
-    "triggers": { "industrial_building": 2 },
-    "normal": "+2 Era Score for each Industrial or later building constructed.",
+    "triggers": { "industrial_building": 1 },
+    "normal": "+1 Era Score for each Industrial or later building constructed.",
     "golden": "+10% Production toward Industrial-era and later wonders. Campus Science adjacency also provides Production."
   },
   "bodyguard_of_lies": {

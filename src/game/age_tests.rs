@@ -96,7 +96,8 @@ fn a_dark_age_dedication_pays_the_same_score_but_not_the_golden_bonus() {
         .insert("monumentality".to_string());
     let before = game.players[0].era_score;
 
-    game.dedication_trigger(0, "specialty_district", 1);
+    // PER_DISTRICT_CONSTRUCTED, not specialty -- see note_dedicated_building.
+    game.dedication_trigger(0, "district", 1);
 
     assert_eq!(
         game.players[0].era_score,
@@ -330,4 +331,56 @@ fn robber_barons_costs_amenities_everywhere_it_pays() {
         before - 2,
         "-2 Amenities in every city is what the Gold and Production cost"
     );
+}
+
+#[test]
+fn a_building_pays_the_dedication_its_yields_name_not_its_slots() {
+    // PER_CULTURE_BUILDING_CONSTRUCTED and PER_SCIENCE_BUILDING_CONSTRUCTED are
+    // named the same way as each other, so they must be read the same way: a
+    // building that yields that yield. CIVVIS read the Culture one as "has a
+    // Great Work slot", and the two sets differ in both directions -- a
+    // Monument yields Culture with no slot, a Temple has a slot and no Culture.
+    let mut game = two_player_game();
+    let rules = crate::rules::Rules::embedded();
+    let culture = |name: &str| rules.buildings[name].yields.culture > 0.0;
+    let slotted = |name: &str| {
+        rules.buildings[name]
+            .great_work_slots
+            .values()
+            .any(|slots| *slots > 0)
+    };
+    assert!(culture("monument") && !slotted("monument"));
+    assert!(slotted("temple") && !culture("temple"));
+
+    game.players[0]
+        .dedications
+        .insert("pen_brush_and_voice".to_string());
+    let score = |game: &Game| game.players[0].era_score;
+    let before = score(&game);
+    let monument = rules.buildings["monument"].clone();
+    game.note_dedicated_building(0, "monument", &monument);
+    assert_eq!(score(&game), before + 1, "a Monument yields Culture");
+    let temple = rules.buildings["temple"].clone();
+    game.note_dedicated_building(0, "temple", &temple);
+    assert_eq!(score(&game), before + 1, "a Temple does not");
+}
+
+#[test]
+fn heartbeat_of_steam_pays_one_era_score_per_industrial_building() {
+    // ADJUST_PLAYER_ERA_SCORE_PER_INDUSTRIAL_BUILDING_CONSTRUCTED is 1. Every
+    // other building-shaped dedication trigger ships 1 as well; only Religious
+    // conversions and Army kills pay 2.
+    let rules = crate::rules::Rules::embedded();
+    assert_eq!(rules.dedications["heartbeat_of_steam"].triggers["industrial_building"], 1);
+    assert_eq!(rules.dedications["exodus_of_the_evangelists"].triggers["city_converted"], 2);
+    assert_eq!(rules.dedications["to_arms"].triggers["army_kill"], 2);
+
+    let mut game = two_player_game();
+    game.players[0]
+        .dedications
+        .insert("heartbeat_of_steam".to_string());
+    let before = game.players[0].era_score;
+    let factory = rules.buildings["factory"].clone();
+    game.note_dedicated_building(0, "factory", &factory);
+    assert_eq!(game.players[0].era_score, before + 1);
 }
