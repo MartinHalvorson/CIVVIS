@@ -5231,13 +5231,74 @@ mod tests {
         // narrow masthead ellipsizes a name rather than running two figures
         // together. A percentage identity column with a 300px floor never
         // yielded, which left the ten values 27px each at 1600px.
-        assert!(EMBEDDED_INDEX.contains("--hud-identity-column: minmax(196px, 1fr);"));
+        //
+        // Every data column is now a share rather than a pixel count, and each
+        // of these two enclosing tracks is the exact *sum* of the columns
+        // inside it — 6 identity columns totalling 9.804 against 10 value
+        // columns of 1. That identity is not decoration: it is what lets the
+        // bar between the two blocks move width across itself, and it is the
+        // ratio origin/main rendered (1fr against 1.02fr) to the tenth of a
+        // pixel at 1280, 1600, 1920 and 2400. Changing one number here without
+        // the other silently re-weights the whole masthead.
+        assert!(EMBEDDED_INDEX.contains(
+            "--hud-identity-column: minmax(\n      \
+             calc(var(--hud-ident-min) * 4 + var(--hud-ident-num-min) * 2), 9.804fr);"
+        ));
         assert!(EMBEDDED_INDEX.contains(
             "--hud-stats-column: minmax(\n      \
-             calc(var(--hud-stat-min) * 10 + var(--hud-stat-gap) * 9), 1.02fr);"
+             calc(var(--hud-stat-min) * 10 + var(--hud-stat-gap) * 9), 10fr);"
         ));
+        // The floors stay in the stylesheet so the width breakpoints can lower
+        // them; the shares belong to the viewer. A breakpoint that rewrote a
+        // share would undo a dragged column on the next window resize, so no
+        // media rule may set either track list or either enclosing track.
+        assert!(EMBEDDED_INDEX.contains("--hud-ident-min: 30px; --hud-ident-num-min: 38px;"));
+        assert_eq!(EMBEDDED_INDEX.matches("--hud-ident-num-min:").count(), 1,
+            "the figure floor is declared once and holds at every width: four \
+             digits need the same room on a laptop as on a wall");
+        assert_eq!(EMBEDDED_INDEX.matches("--hud-identity-column:").count(), 1,
+            "the identity track is written once and then only from the column model");
+        assert_eq!(EMBEDDED_INDEX.matches("--hud-stats-column:").count(), 1,
+            "the value track is written once and then only from the column model");
         // A gutter between adjacent figures, and no per-value hairline.
         assert!(EMBEDDED_INDEX.contains("column-gap: var(--hud-stat-gap, 0px);"));
+        // Heading and rows read the same two track lists, which is the only
+        // reason a dragged column moves the figures under it as well as its
+        // own head.
+        assert_eq!(EMBEDDED_INDEX.matches("grid-template-columns: var(--hud-stat-tracks);").count(), 2,
+            "the value heads and the value cells are the same ten tracks");
+        assert_eq!(EMBEDDED_INDEX.matches("grid-template-columns: var(--hud-identity-tracks);").count(), 2,
+            "the identity heads and the identity cells are the same tracks");
+        // `clip`, not `ellipsis`: the fitter compares integral scrollWidth with
+        // integral clientWidth while the browser applies text-overflow on any
+        // sub-pixel overflow, so ellipsis spends a character on a head that
+        // renders whole. Measured at 1600px: WIN% in its 38px column.
+        assert!(EMBEDDED_INDEX.contains(
+            "border-left: 1px solid #ffffff10; text-overflow: clip; white-space: nowrap;"
+        ));
+
+        // One bar per seam between two adjacent data columns, dragged to move
+        // width from the column on its left into the column on its right.
+        assert!(EMBEDDED_INDEX.contains("const HUD_COLUMN_STORAGE_KEY = \"civvis-hud-columns-v1\";"));
+        assert!(EMBEDDED_INDEX.contains("const PLAYER_HUD_COLUMN_SEAMS = PLAYER_HUD_COLUMNS.slice(0, -1)"));
+        assert!(EMBEDDED_INDEX.contains("function aimPlayerHudSeam(seam, targetWidth)"));
+        assert!(EMBEDDED_INDEX.contains("class=\"hud-col-grip\" type=\"button\" data-hud-column-seam="));
+        assert!(EMBEDDED_INDEX.contains("role=\"separator\" aria-orientation=\"vertical\""));
+        // The bar takes the pointer; the layer over the heads does not, or the
+        // heads lose their tooltips and the All button loses its click.
+        assert!(EMBEDDED_INDEX.contains(
+            ".hud-col-grips { position: absolute; inset: 0; z-index: 2; pointer-events: none; }"
+        ));
+        assert!(EMBEDDED_INDEX.contains("cursor: col-resize; pointer-events: auto; touch-action: none;"));
+        // A repaint mid-gesture would take the bar out from under the pointer
+        // along with its pointer capture.
+        assert!(EMBEDDED_INDEX.contains(
+            "if (html === hudHtml || hudLayoutGesture?.name === \"players\" || playerHudColumnGesture) {"
+        ));
+        // The bars are placed from the rendered heading, so they cannot drift
+        // from the columns they name.
+        assert!(EMBEDDED_INDEX.contains("function syncPlayerHudColumnGrips()"));
+        assert!(EMBEDDED_INDEX.contains("grip.style.left = `${Math.round(left.right - origin)}px`;"));
         // The fitter has to measure the cell: the figure is centered content in
         // its own grid, so its clientWidth and scrollWidth are always equal and
         // it can never report the overflow that would shrink it.

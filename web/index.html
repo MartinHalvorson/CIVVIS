@@ -2083,17 +2083,49 @@
        gutter that keeps two adjacent numbers from reading as one. */
     --hud-stat-min: 37px;
     --hud-stat-gap: 3px;
+    /* Every data column is a *share* of the panel, never a pixel count, so the
+       table refills whatever width it is given and a window resize simply
+       re-divides the same shares among the same columns. What follows are the
+       defaults; once the page has booted, syncPlayerHudColumns() rewrites all
+       five of these properties from the viewer's own column model, which is why
+       the flex values here are that model's numbers rather than round ones.
+       Two invariants make a dragged bar behave: every column carries its floor
+       as a custom property, so the width breakpoints below can still lower it
+       without disturbing the shares; and each enclosing track is the exact sum
+       of the columns inside it, which is what lets one bar move width out of
+       the last identity column and into the first value column. */
+    /* The label floor narrows with the screen; the figure floor does not. Elo
+       and win odds are four digits and a per cent, and 38px is what those need
+       whatever size the window is — a label that gives up width ellipsizes and
+       keeps its tooltip, where a figure that gives up width becomes a smaller
+       number that is simply wrong. Each breakpoint below moves the label floor
+       only, and keeps 4 labels + 2 figures adding up to what the identity block
+       has always claimed at that width. */
+    --hud-ident-min: 30px; --hud-ident-num-min: 38px;
+    /* How much of the flexible width the identity block asks for relative to
+       the values, over and above the sum of its own columns. A wide panel can
+       afford whole names; a narrow one gives the identity up first, because a
+       clipped name still reads and a clipped number lies. */
+    --hud-identity-bias: 1;
+    --hud-identity-column: minmax(
+      calc(var(--hud-ident-min) * 4 + var(--hud-ident-num-min) * 2), 9.804fr);
     /* Ten cells and the nine gutters between them. */
     --hud-stats-column: minmax(
-      calc(var(--hud-stat-min) * 10 + var(--hud-stat-gap) * 9), 1.02fr);
-    --hud-identity-column: minmax(196px, 1fr); --hud-column-gap: 6px;
-    /* Civilization, leader, the spectator link, player and strategy are labels
-       and may ellipsize. ELO and win odds are figures, so they carry a floor
-       instead of a bare fraction: at .55fr with no minimum they collapsed on a
-       1440px screen and rendered "1792" as "179" and "11%" as "1" — a truncated
-       number that reads as a different, smaller number. */
-    --hud-identity-tracks: minmax(0, 1.1fr) minmax(0, 1fr) var(--hud-watch-column)
-      minmax(0, 1fr) minmax(38px, .55fr) minmax(38px, .55fr) minmax(0, 1.1fr);
+      calc(var(--hud-stat-min) * 10 + var(--hud-stat-gap) * 9), 10fr);
+    --hud-column-gap: 6px;
+    /* Civilization, leader, player and the plan are labels, and their cells
+       ellipsize. Elo and win odds are figures on the taller floor: with no
+       minimum at all they collapsed on a 1440px screen and rendered "1792" as
+       "179" and "11%" as "1" — a truncated number that reads as a different,
+       smaller number. Watch-as keeps its fixed track between Leader and
+       Player, which is why the bar for that seam is drawn on Leader's edge. */
+    --hud-identity-tracks:
+      minmax(var(--hud-ident-min), 2.035fr) minmax(var(--hud-ident-min), 1.85fr)
+      var(--hud-watch-column) minmax(var(--hud-ident-min), 1.85fr)
+      minmax(var(--hud-ident-num-min), 1.017fr)
+      minmax(var(--hud-ident-num-min), 1.017fr)
+      minmax(var(--hud-ident-min), 2.035fr);
+    --hud-stat-tracks: repeat(10, minmax(var(--hud-stat-min), 1fr));
     --hud-lock-column: 13px; --hud-row-height: 26px; --hud-row-gap: 2px;
     --hud-row-pitch: calc(var(--hud-row-height) + var(--hud-row-gap));
     display: grid; grid-template-columns: 140px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
@@ -2124,8 +2156,9 @@
     text-transform: uppercase; white-space: nowrap; text-shadow: 0 2px 5px #000;
   }
   .ribbon-heading.widget-drag-handle::before { position: absolute; left: 4px; }
+  /* The heading is the positioning context for the column bars laid over it. */
   .ribbon-stat-heading {
-    min-height: 12px; display: grid;
+    position: relative; min-height: 12px; display: grid;
     grid-template-columns: var(--hud-lock-column, 0px) var(--hud-map-links-column)
       var(--hud-watch-column) var(--hud-identity-column) var(--hud-stats-column);
     align-items: stretch; gap: var(--hud-column-gap); padding: 0 4px 0 3px;
@@ -2135,6 +2168,14 @@
     grid-template-columns: var(--hud-identity-tracks); overflow: hidden;
     color: #a9bbb4; font-size: var(--type-micro); font-weight: 950; letter-spacing: .025em;
   }
+  /* `clip`, not `ellipsis`, and a dragged column is not a reason to change it.
+     The fitter sizes these heads by comparing scrollWidth with clientWidth,
+     which are integers, while the browser applies text-overflow on any
+     sub-pixel overflow at all — so a head the fitter has correctly settled at
+     its exact width overflows by a third of a pixel, and `ellipsis` spends a
+     whole character saying so. Measured at 1600px: WIN% in its 38px column
+     renders whole under `clip` and as "WIN…" under `ellipsis`. Every head is
+     short enough to stand at its own floor, and each carries a title. */
   .diplomacy-identity-head span {
     min-width: 0; overflow: hidden; padding-inline: 3px;
     border-left: 1px solid #ffffff10; text-overflow: clip; white-space: nowrap;
@@ -2168,7 +2209,7 @@
   }
   .diplomacy-stat-head {
     min-width: 0; display: grid; grid-column: 5;
-    grid-template-columns: repeat(10, minmax(0, 1fr));
+    grid-template-columns: var(--hud-stat-tracks);
     column-gap: var(--hud-stat-gap, 0px);
     color: #a9bbb4; font-size: var(--type-caption); font-weight: 950; letter-spacing: .015em;
   }
@@ -2178,6 +2219,43 @@
     min-width: 0; display: grid; place-items: center; overflow: hidden;
     text-overflow: clip;
   }
+
+  /* One thin bar stands on each seam between two data columns, and dragging it
+     moves width from the column on its left into the column on its right. The
+     layer is inert and only the bars themselves take the pointer, so the heads
+     underneath keep their tooltips and the All button keeps its click. Each bar
+     is 9px of grab for 1px of rule: a seam has to be easy to catch without
+     drawing a fence across a heading that is already ruled. */
+  .hud-col-grips { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+  .hud-col-grip {
+    position: absolute; top: -5px; bottom: -6px; width: 9px; margin: 0 0 0 -4px;
+    padding: 0; border: 0; border-radius: 0; box-shadow: none; background: none;
+    cursor: col-resize; pointer-events: auto; touch-action: none;
+    transform: none; transition: none;
+  }
+  /* The rule is a child of the bar rather than its border so that widening the
+     grab area never widens the line, and it is inert so the visible seam is
+     never the thing that swallows a click. */
+  .hud-col-grip::before {
+    content: ""; position: absolute; inset: 0 auto 0 4px; width: 1px;
+    background: #ffffff1f; pointer-events: none;
+    transition: background .12s ease, box-shadow .12s ease;
+  }
+  .hud-col-grip:hover::before, .hud-col-grip:focus-visible::before,
+  .hud-col-grip.dragging::before {
+    width: 2px; background: var(--gold-bright);
+    box-shadow: 0 0 6px #d7b66a80;
+  }
+  .hud-col-grip:hover, .hud-col-grip:focus-visible, .hud-col-grip.dragging {
+    background: none; transform: none;
+  }
+  .hud-col-grip:focus-visible { outline: 1px solid #d7b66a80; outline-offset: 0; }
+  /* A column drag keeps the resize cursor over the whole page, so crossing off
+     the 9px bar mid-gesture does not make the pointer flicker back to an arrow
+     while the seam is still following it. */
+  body.hud-columns-resizing { cursor: col-resize; }
+  body.hud-columns-resizing * { cursor: col-resize !important; }
+  body.hud-columns-resizing #playerhud .diplomacy-card { user-select: none; }
   /* Every row keeps the same readable height instead of being squeezed to fit
      the panel, so a large table scrolls rather than shrinking into illegibility. */
   #playerhud .diplomacy-ribbon {
@@ -2284,7 +2362,7 @@
     font-size: var(--type-caption);
   }
   #playerhud .diplomacy-stats {
-    align-self: stretch; display: grid; grid-template-columns: repeat(10, minmax(0, 1fr));
+    align-self: stretch; display: grid; grid-template-columns: var(--hud-stat-tracks);
     grid-template-rows: minmax(0, 1fr); row-gap: 0;
     column-gap: var(--hud-stat-gap, 0px);
   }
@@ -2485,20 +2563,26 @@
      squeezed the ten value columns into 64px. The masthead gives up the
      identity first — it ellipsizes and keeps its tooltip — so that every value
      stays whole, and the rail narrows alongside it. */
-  /* Each step narrows the identity block's floor and the per-value floor
-     together. Both are minima now rather than percentages: a percentage with a
+  /* Each step narrows the per-identity-column floor and the per-value floor
+     together. These are minima rather than percentages: a percentage with a
      300px minimum never actually yields, which is why the identity column used
-     to hold its full width while the values it was starving fell to 27px. */
+     to hold its full width while the values it was starving fell to 27px.
+     Every step keeps the four label floors and the two figure floors adding up
+     to what the identity block has always claimed at that width (4a + 76),
+     because the enclosing track's own floor is written from exactly that sum.
+     Only the floors move here — the shares belong to the viewer now, and a
+     breakpoint that rewrote them would undo a dragged column on the next
+     window resize. */
   @media (min-width: 2200px) {
     #playerhud {
       grid-template-columns: 140px minmax(0, 1fr);
-      --hud-identity-column: minmax(340px, 1.3fr); --hud-stat-min: 44px;
+      --hud-ident-min: 66px; --hud-identity-bias: 1.3; --hud-stat-min: 44px;
     }
   }
   @media (max-width: 1580px) {
     #playerhud {
       grid-template-columns: 132px minmax(0, 1fr);
-      --hud-identity-column: minmax(240px, 1fr); --hud-stat-min: 36px;
+      --hud-ident-min: 41px; --hud-stat-min: 36px;
     }
     #maparea { --hud-rail-width: clamp(240px, 20vw, 300px); }
   }
@@ -2507,8 +2591,7 @@
   @media (max-width: 1300px) {
     #playerhud {
       grid-template-columns: 132px minmax(0, 1fr);
-      --hud-identity-column: minmax(210px, 1fr); --hud-column-gap: 4px;
-      --hud-stat-min: 34px;
+      --hud-ident-min: 33px; --hud-column-gap: 4px; --hud-stat-min: 34px;
     }
     #maparea { --hud-rail-width: 224px; }
   }
@@ -2516,7 +2599,7 @@
     #maparea { --hud-rail-width: 200px; --minimap-height: 158px; }
     #playerhud {
       grid-template-columns: 132px minmax(0, 1fr);
-      --hud-identity-column: minmax(186px, 1fr); --hud-column-gap: 3px;
+      --hud-ident-min: 27px; --hud-column-gap: 3px;
       --hud-map-links-column: 52px; --hud-watch-column: 52px;
       --hud-stat-min: 32px; --hud-stat-gap: 2px;
     }
@@ -2530,7 +2613,6 @@
     #maparea { --hud-rail-width: 182px; --minimap-height: 138px; }
     #playerhud {
       --hud-map-links-column: 50px; --hud-watch-column: 50px;
-      --hud-identity-column: minmax(112px, 142px);
       --hud-stat-min: 30px; --hud-stat-gap: 2px;
     }
   }
@@ -2544,7 +2626,7 @@
       top: 8px; left: 8px; right: 8px; width: auto; padding: 4px;
       --hud-lock-column: 11px;
       --hud-map-links-column: 52px; --hud-watch-column: 52px;
-      --hud-identity-column: minmax(200px, 1fr);
+      --hud-ident-min: 31px;
     }
     #victoryhud, body.overlay-minimap-hidden #victoryhud {
       top: calc(min(var(--player-hud-height, 200px), var(--player-hud-max-height)) + 14px);
@@ -2569,10 +2651,10 @@
     .diplomacy-stat-head { font-size: var(--type-micro); }
   }
   @media (max-width: 720px) {
-    #playerhud { --hud-identity-column: minmax(160px, 1fr); }
+    #playerhud { --hud-ident-min: 21px; }
   }
   @media (max-width: 620px) {
-    #playerhud { --hud-identity-column: minmax(150px, 1fr); --hud-stat-min: 28px; }
+    #playerhud { --hud-ident-min: 18px; --hud-stat-min: 28px; }
     #playerhud .ribbon-stat b { font-size: var(--type-label); }
   }
   /* Ten screens at full size need 487px and the bar has (height − 292) to give,
@@ -2596,7 +2678,7 @@
      to be floating over. */
   #playerhud[data-type-size="compact"] {
     grid-template-columns: clamp(132px, 32%, 148px) minmax(0, 1fr);
-    --hud-identity-column: minmax(176px, 1fr); --hud-column-gap: 4px;
+    --hud-ident-min: 25px; --hud-column-gap: 4px;
     --hud-stat-min: 32px; --hud-stat-gap: 2px;
   }
   #playerhud[data-type-size="compact"] > .player-standings {
@@ -2619,8 +2701,8 @@
   #playerhud[data-type-size="compact"] .diplomacy-ribbon { min-width: 740px; }
   #playerhud[data-type-size="roomy"] {
     grid-template-columns: 148px minmax(0, 1fr);
-    --hud-identity-column: minmax(320px, 1.25fr); --hud-column-gap: 7px;
-    --hud-stat-min: 42px;
+    --hud-ident-min: 61px; --hud-column-gap: 7px;
+    --hud-identity-bias: 1.25; --hud-stat-min: 42px;
     --hud-row-height: 30px;
   }
 
@@ -3364,7 +3446,7 @@
         <div class="overlay-options" role="group" aria-labelledby="overlay-options-title">
           <h2 id="overlay-options-title">Map overlays</h2>
           <div class="small overlay-layout-help">Drag a title bar to move an overlay; drag any edge or corner to resize. Your layout saves automatically.</div>
-          <div class="small overlay-layout-help">In the standings, ◉ locks a row: it stays in view while the rest of the table scrolls past it. Two seats of the same civilization lock separately, and a lock is remembered into the next game.</div>
+          <div class="small overlay-layout-help">In the standings, drag a thin bar in the column heading to divide two columns differently; double-click one to put that pair back. Widths are shares of the panel, so they follow it as the window resizes. ◉ locks a row: it stays in view while the rest of the table scrolls past it. Two seats of the same civilization lock separately, and a lock is remembered into the next game.</div>
           <div class="overlay-option-grid">
             <label class="overlay-option"><input type="checkbox" data-overlay="players" checked>Player standings</label>
             <label class="overlay-option"><input type="checkbox" data-overlay="victory" checked>Victory tracker</label>
@@ -3372,7 +3454,7 @@
             <label class="overlay-option"><input type="checkbox" data-overlay="controls" checked>Map controls</label>
             <label class="overlay-option"><input type="checkbox" data-overlay="lenses" checked>Map lenses</label>
           </div>
-          <button class="ghost overlay-layout-reset" id="reset-overlay-layout" type="button">Reset overlay positions &amp; sizes</button>
+          <button class="ghost overlay-layout-reset" id="reset-overlay-layout" type="button">Reset overlay positions, sizes &amp; columns</button>
         </div>
         <div class="overlay-options" id="flat-map-wrap-settings" role="group"
              aria-labelledby="flat-map-wrap-title">
@@ -5356,6 +5438,352 @@ const HUD_RESIZE_EDGES = [
   ["sw", "bottom-left corner"], ["nw", "top-left corner"],
 ];
 
+// ── The width of every column across the masthead ──────────────────────────
+//
+// Each data column in the standings is a *share* of the panel, never a pixel
+// count, and two things the viewer can feel fall straight out of that:
+//
+//  * The table always exactly fills the width it is given. Resizing the window,
+//    collapsing the command deck, dragging the masthead's own edge, hiding the
+//    victory rail — each simply re-divides the same shares over the new width.
+//    There is no second measurement to keep in step and nothing to recompute,
+//    which is why a window resize cannot leave a ragged end to the row.
+//  * A dragged bar is a *transfer*. It takes share from the column on its left
+//    and hands exactly that much to the column on its right, so the total the
+//    table asks for never changes. No gesture can push a column off the panel,
+//    open a gap at the end of the row, or make the table start scrolling.
+//    Fourteen of the fifteen bars therefore move their own two columns and
+//    nothing else. The fifteenth is the bar between the identity block and the
+//    ten values, and moving it moves width between those two blocks — so the
+//    columns inside each one take up the slack in their own proportion, which
+//    is what "give the numbers more room" has to mean.
+//
+// The floors are the other half of the contract and stay in the stylesheet,
+// where the width breakpoints can lower them together: a column may be dragged
+// down to its floor and no further, so four digits stay four digits.
+const HUD_COLUMN_STORAGE_KEY = "civvis-hud-columns-v1";
+// Reading order, left to right. `min` names the custom property carrying this
+// column's floor, and `head` is its index among the heading cells of the block
+// it sits in — which is how a column is *measured* during a drag rather than
+// predicted from the track list. The heading cells are the columns; anything
+// derived from the stylesheet instead can drift from what is on the screen.
+const PLAYER_HUD_COLUMNS = [
+  {key:"civ", label:"Civilization", block:"identity", head:0, min:"--hud-ident-min", width:2.035},
+  // Watch-as keeps a fixed track between Leader and Player, so that seam is
+  // drawn on Leader's edge and slides the button along with it.
+  {key:"leader", label:"Leader", block:"identity", head:1, min:"--hud-ident-min", width:1.85},
+  {key:"player", label:"Player", block:"identity", head:3, min:"--hud-ident-min", width:1.85},
+  {key:"elo", label:"Elo rating", block:"identity", head:4, min:"--hud-ident-num-min", width:1.017},
+  {key:"win", label:"Win odds", block:"identity", head:5, min:"--hud-ident-num-min", width:1.017},
+  {key:"plan", label:"Plan", block:"identity", head:6, min:"--hud-ident-min", width:2.035},
+  ...[["production", "Production"], ["science", "Science"], ["culture", "Culture"],
+      ["faith", "Faith"], ["gold", "Gold"], ["military", "Military"], ["cities", "Cities"],
+      ["suzerain", "Suzerainty"], ["wonders", "Wonders"], ["score", "Score"]]
+    .map(([key, label], head) => ({key, label, block:"stats", head, min:"--hud-stat-min", width:1})),
+];
+// One bar per seam between two adjacent data columns, including the seam where
+// the identity block hands over to the ten values.
+const PLAYER_HUD_COLUMN_SEAMS = PLAYER_HUD_COLUMNS.slice(0, -1).map((left, index) =>
+  ({left, right:PLAYER_HUD_COLUMNS[index + 1], index}));
+const playerHudColumnWidths = new Map(PLAYER_HUD_COLUMNS.map(c => [c.key, c.width]));
+let playerHudColumnGesture = null;
+let playerHudColumnTap = {seam:-1, at:0};
+let playerHudColumnCss = "";
+try {
+  const saved = JSON.parse(localStorage.getItem(HUD_COLUMN_STORAGE_KEY) || "{}");
+  // Only a positive, finite share is a width. A key this build no longer has is
+  // ignored, and so is a saved zero — it would divide by nothing on the next
+  // drag and take the column it belongs to out of the table for good.
+  if (saved && typeof saved === "object")
+    for (const column of PLAYER_HUD_COLUMNS) {
+      const width = Number(saved[column.key]);
+      if (Number.isFinite(width) && width > .02)
+        playerHudColumnWidths.set(column.key, Math.min(width, 40));
+    }
+} catch (_) {}
+
+function savePlayerHudColumns() {
+  try {
+    localStorage.setItem(HUD_COLUMN_STORAGE_KEY,
+      JSON.stringify(Object.fromEntries(playerHudColumnWidths)));
+  } catch (_) {}
+}
+
+// A wide masthead lets the identity block ask for more than the sum of its own
+// columns. That multiplier is applied to the block's track *and* to every
+// column inside it, so "an enclosing track is the sum of the columns in it"
+// stays literally true — which is what lets the one seam that spans both
+// blocks trade width across it a pixel at a time like every other seam.
+function playerHudColumnBias(hud) {
+  const bias = parseFloat(getComputedStyle(hud).getPropertyValue("--hud-identity-bias"));
+  return Number.isFinite(bias) && bias > 0 ? bias : 1;
+}
+
+function playerHudColumnFlex(column, bias) {
+  return (playerHudColumnWidths.get(column.key) ?? column.width) *
+    (column.block === "identity" ? bias : 1);
+}
+
+// Write the model out as the five track lists the stylesheet reads. The
+// emitted text is cached because this runs from a ResizeObserver: re-setting
+// an inline custom property that has not changed would invalidate style on
+// every observed frame for no reason.
+function syncPlayerHudColumns(placeGrips = true) {
+  const hud = document.getElementById("playerhud");
+  if (!hud) return;
+  const bias = playerHudColumnBias(hud);
+  const flex = new Map(PLAYER_HUD_COLUMNS.map(c => [c.key, playerHudColumnFlex(c, bias)]));
+  const track = column => `minmax(var(${column.min}), ${flex.get(column.key).toFixed(4)}fr)`;
+  const identity = PLAYER_HUD_COLUMNS.filter(c => c.block === "identity");
+  const stats = PLAYER_HUD_COLUMNS.filter(c => c.block === "stats");
+  const total = columns => columns.reduce((sum, c) => sum + flex.get(c.key), 0);
+  const tracks = [
+    // The Watch-as button holds its fixed track in the middle of the identity
+    // block, exactly where the markup places it.
+    `${track(identity[0])} ${track(identity[1])} var(--hud-watch-column) ` +
+      identity.slice(2).map(track).join(" "),
+    stats.map(track).join(" "),
+    `minmax(calc(var(--hud-ident-min) * 4 + var(--hud-ident-num-min) * 2), ` +
+      `${total(identity).toFixed(4)}fr)`,
+    `minmax(calc(var(--hud-stat-min) * 10 + var(--hud-stat-gap) * 9), ` +
+      `${total(stats).toFixed(4)}fr)`,
+  ];
+  if (tracks.join("|") !== playerHudColumnCss) {
+    playerHudColumnCss = tracks.join("|");
+    hud.style.setProperty("--hud-identity-tracks", tracks[0]);
+    hud.style.setProperty("--hud-stat-tracks", tracks[1]);
+    hud.style.setProperty("--hud-identity-column", tracks[2]);
+    hud.style.setProperty("--hud-stats-column", tracks[3]);
+    scheduleResponsiveType(hud);
+  }
+  if (placeGrips) syncPlayerHudColumnGrips();
+}
+
+function playerHudHeadingCells(heading) {
+  const identity = heading.querySelectorAll(".diplomacy-identity-head > *");
+  const stats = heading.querySelectorAll(".diplomacy-stat-head > *");
+  return column => (column.block === "identity" ? identity : stats)[column.head];
+}
+
+// Bars are placed from the rendered heading rather than from the track list,
+// for the same reason a drag measures it: a heading cell *is* its column, so
+// there is no arithmetic between the reading and what the viewer sees.
+function syncPlayerHudColumnGrips() {
+  const heading = document.getElementById("playerhud")?.querySelector(".ribbon-stat-heading");
+  const layer = heading?.querySelector(".hud-col-grips");
+  if (!layer) return;
+  const cellOf = playerHudHeadingCells(heading);
+  const origin = heading.getBoundingClientRect().left;
+  for (const grip of layer.children) {
+    const seam = PLAYER_HUD_COLUMN_SEAMS[Number(grip.dataset.hudColumnSeam)];
+    const left = seam && cellOf(seam.left)?.getBoundingClientRect();
+    const right = seam && cellOf(seam.right)?.getBoundingClientRect();
+    // A hidden masthead, or one whose heading has not been laid out yet,
+    // measures zero everywhere. Leave those bars where they are instead of
+    // stacking all fifteen of them against the left edge.
+    if (!left?.width || !right?.width) continue;
+    grip.style.left = `${Math.round(left.right - origin)}px`;
+    grip.setAttribute("aria-valuenow",
+      `${Math.round(left.width / (left.width + right.width) * 100)}`);
+  }
+}
+
+// Both sides of a seam as they are rendering right now, with the floors
+// neither of them may cross.
+function playerHudSeamMetrics(seam) {
+  const hud = document.getElementById("playerhud");
+  const heading = hud?.querySelector(".ribbon-stat-heading");
+  if (!heading) return null;
+  const cellOf = playerHudHeadingCells(heading);
+  const left = cellOf(seam.left)?.getBoundingClientRect();
+  const right = cellOf(seam.right)?.getBoundingClientRect();
+  if (!left?.width || !right?.width) return null;
+  const style = getComputedStyle(hud);
+  const floor = column => Math.max(8, parseFloat(style.getPropertyValue(column.min)) || 8);
+  const bias = playerHudColumnBias(hud);
+  return {
+    leftWidth:left.width, rightWidth:right.width,
+    leftFlex:playerHudColumnFlex(seam.left, bias),
+    rightFlex:playerHudColumnFlex(seam.right, bias),
+    leftFloor:floor(seam.left), rightFloor:floor(seam.right), bias,
+  };
+}
+
+// Put the seam where it has been asked to go: whatever share the left column
+// gains, the right one gives up, so the pair's combined share is exactly
+// constant and the total the table asks for never moves.
+//
+// Fourteen of the fifteen seams divide two columns of one block, and there the
+// share a column holds and the width it renders at are proportional — the first
+// guess below lands and the loop exits on its first pass. The fifteenth is the
+// seam between the identity block and the values, and it is not proportional:
+// when the value block is sitting on its own floor, share taken out of Plan is
+// partly picked up by the identity columns beside it instead, and a step sized
+// from the pair's current average overshoots one way and then the other without
+// ever arriving. What grid does guarantee is that the width is *monotonic* in
+// the share, and monotonic is all a bisection needs — so the same routine
+// serves both cases and neither has to know which one it is in.
+//
+// This is why the seam is aimed at an absolute width rather than nudged by a
+// delta: a target can be re-solved from scratch on every pointer move, where an
+// accumulated nudge would carry each step's error into the next one.
+function aimPlayerHudSeam(seam, targetWidth) {
+  const hud = document.getElementById("playerhud");
+  const heading = hud?.querySelector(".ribbon-stat-heading");
+  const start = playerHudSeamMetrics(seam);
+  if (!start) return false;
+  const cellOf = playerHudHeadingCells(heading);
+  const combined = start.leftFlex + start.rightFlex;
+  const span = start.leftWidth + start.rightWidth;
+  const ceiling = span - start.rightFloor;
+  // Both columns are already on their floors: this seam has nothing to divide.
+  if (!(span > 0) || ceiling <= start.leftFloor) return false;
+  const target = Math.max(start.leftFloor, Math.min(ceiling, targetWidth));
+  const unbias = column => (column.block === "identity" ? start.bias : 1);
+  const place = flex => {
+    playerHudColumnWidths.set(seam.left.key, Math.max(.02, flex / unbias(seam.left)));
+    playerHudColumnWidths.set(seam.right.key,
+      Math.max(.02, (combined - flex) / unbias(seam.right)));
+    syncPlayerHudColumns(false);
+    return cellOf(seam.left).getBoundingClientRect().width;
+  };
+  // The bracket starts at the share the column holds now, on the side the
+  // target lies: monotonicity makes that a valid bound and a much tighter one
+  // than the full range.
+  let lo = target < start.leftWidth ? .02 : start.leftFlex;
+  let hi = target < start.leftWidth ? start.leftFlex : combined - .02;
+  let flex = Math.max(lo, Math.min(hi, combined * (target / span)));
+  for (let pass = 0; pass < 7; pass++) {
+    const width = place(flex);
+    if (Math.abs(width - target) < .5 || hi - lo < 1e-4) break;
+    if (width < target) lo = flex; else hi = flex;
+    flex = (lo + hi) / 2;
+  }
+  syncPlayerHudColumnGrips();
+  return true;
+}
+
+// Double-click, or Home, hands one seam back to the division it shipped with
+// while keeping the pair's combined width — so resetting the seam you are
+// looking at never shifts the columns on either side of it.
+function resetPlayerHudSeam(seam) {
+  const combined = (playerHudColumnWidths.get(seam.left.key) ?? seam.left.width) +
+    (playerHudColumnWidths.get(seam.right.key) ?? seam.right.width);
+  const share = seam.left.width / (seam.left.width + seam.right.width);
+  playerHudColumnWidths.set(seam.left.key, combined * share);
+  playerHudColumnWidths.set(seam.right.key, combined * (1 - share));
+  syncPlayerHudColumns();
+  savePlayerHudColumns();
+}
+
+function resetPlayerHudColumns(persist = true) {
+  for (const column of PLAYER_HUD_COLUMNS)
+    playerHudColumnWidths.set(column.key, column.width);
+  syncPlayerHudColumns();
+  if (persist) savePlayerHudColumns();
+}
+
+// Rebuilt with the heading it rides in, so a repaint can never leave a stale
+// bar standing where its columns no longer meet.
+function playerHudColumnGrips() {
+  return `<div class="hud-col-grips">` + PLAYER_HUD_COLUMN_SEAMS.map(seam =>
+    `<button class="hud-col-grip" type="button" data-hud-column-seam="${seam.index}" ` +
+    `role="separator" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="100" ` +
+    `title="Drag to divide ${seam.left.label} and ${seam.right.label} · ` +
+    `arrow keys also move it · double-click to reset" ` +
+    `aria-label="Width divider between the ${seam.left.label} and ${seam.right.label} ` +
+    `columns; drag or use the arrow keys"></button>`).join("") + `</div>`;
+}
+
+function beginPlayerHudColumnGesture(event, grip) {
+  if (event.button !== 0 && event.pointerType !== "touch") return;
+  const seam = PLAYER_HUD_COLUMN_SEAMS[Number(grip.dataset.hudColumnSeam)];
+  const start = seam && playerHudSeamMetrics(seam);
+  if (!start) return;
+  // Cancelling pointerdown is what stops the gesture from selecting the
+  // heading text and from starting a native drag — and cancelling it also
+  // suppresses the compatibility mouse events, so there is no dblclick on a
+  // bar to listen for. Two presses on the same bar inside the double-click
+  // window are the reset instead.
+  event.preventDefault();
+  event.stopPropagation();
+  const doubled = playerHudColumnTap.seam === seam.index &&
+    event.timeStamp - playerHudColumnTap.at < 400;
+  playerHudColumnTap = {seam:seam.index, at:event.timeStamp};
+  if (doubled) {
+    playerHudColumnTap = {seam:-1, at:0};
+    resetPlayerHudSeam(seam);
+    return;
+  }
+  playerHudColumnGesture =
+    {seam, start, grip, pointerId:event.pointerId, startX:event.clientX, moved:false};
+  try { grip.setPointerCapture?.(event.pointerId); } catch (_) {}
+  grip.classList.add("dragging");
+  document.body.classList.add("hud-columns-resizing");
+}
+
+function finishPlayerHudColumnGesture(event) {
+  if (!playerHudColumnGesture ||
+      (event && event.pointerId !== playerHudColumnGesture.pointerId)) return;
+  const gesture = playerHudColumnGesture;
+  playerHudColumnGesture = null;
+  gesture.grip.classList.remove("dragging");
+  document.body.classList.remove("hud-columns-resizing");
+  if (gesture.moved) savePlayerHudColumns();
+  // Spectator updates that arrived mid-gesture were held back so the bar under
+  // the pointer would survive the repaint. Catch the table up now.
+  if (state) drawPlayerHud();
+}
+
+window.addEventListener("pointermove", event => {
+  const gesture = playerHudColumnGesture;
+  if (!gesture || event.pointerId !== gesture.pointerId) return;
+  event.preventDefault();
+  const dx = event.clientX - gesture.startX;
+  if (!gesture.moved && Math.abs(dx) < 1) return;
+  gesture.moved = true;
+  // Where the seam started plus how far the pointer has travelled — an
+  // absolute target, re-solved from the live table on every move, so a gesture
+  // through a region where a floor is binding still arrives exactly where the
+  // pointer is let go.
+  aimPlayerHudSeam(gesture.seam, gesture.start.leftWidth + dx);
+}, {passive:false});
+window.addEventListener("pointerup", finishPlayerHudColumnGesture);
+window.addEventListener("pointercancel", finishPlayerHudColumnGesture);
+// A media query can change the identity block's share without changing the
+// masthead's own box — a panel dragged to a fixed width crossing 2200px does
+// exactly that — so the observers on the panel would never see it.
+window.addEventListener("resize", () => syncPlayerHudColumns());
+
+// Delegated from the panel rather than bound per bar, because the heading is
+// rebuilt on every repaint and fifteen re-bindings a turn is fifteen chances to
+// leave a listener behind on a node nobody can reach any more.
+const playerHudPanel = document.getElementById("playerhud");
+if (playerHudPanel) {
+  playerHudPanel.addEventListener("pointerdown", event => {
+    const grip = event.target.closest?.(".hud-col-grip");
+    if (grip) beginPlayerHudColumnGesture(event, grip);
+  });
+  playerHudPanel.addEventListener("keydown", event => {
+    const grip = event.target.closest?.(".hud-col-grip");
+    const seam = grip && PLAYER_HUD_COLUMN_SEAMS[Number(grip.dataset.hudColumnSeam)];
+    if (!seam) return;
+    if (event.key === "Home") {
+      event.preventDefault();
+      event.stopPropagation();
+      resetPlayerHudSeam(seam);
+      return;
+    }
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    // The arrow keys pan the map. A bar holding focus is what is being aimed.
+    event.preventDefault();
+    event.stopPropagation();
+    const live = playerHudSeamMetrics(seam);
+    const step = (event.shiftKey ? 16 : 4) * (event.key === "ArrowLeft" ? -1 : 1);
+    if (live && aimPlayerHudSeam(seam, live.leftWidth + step)) savePlayerHudColumns();
+  });
+}
+
 // Text belongs to the box that contains it, not to the viewport. Each rule
 // gives a one-line text cell a readable floor and a generous ceiling. The
 // fitter measures the live cell at that ceiling, then uses the largest size
@@ -5431,7 +5859,14 @@ function responsiveTypeBand(root, width) {
 }
 
 function syncResponsiveTypeBox(root, width, height) {
-  root.dataset.typeSize = responsiveTypeBand(root, width);
+  const band = responsiveTypeBand(root, width);
+  const rebanded = root.dataset.typeSize !== band;
+  root.dataset.typeSize = band;
+  // A roomy masthead lets the identity block claim a larger share, and that
+  // multiplier is baked into the shares the columns are emitted at — so the
+  // band changing has to rewrite them. Reading the new band from the observer
+  // that set it is what keeps the two out of a race.
+  if (rebanded && root.id === "playerhud") syncPlayerHudColumns();
   if (root.id === "victoryhud") {
     const ratio = width / Math.max(1, height);
     root.dataset.typeShape = width >= 300 && (ratio >= 2.15 || (width >= 520 && height <= 260))
@@ -5736,6 +6171,8 @@ function resetHudWidget(name, persist = true) {
 
 function resetAllHudWidgets() {
   for (const name of Object.keys(HUD_WIDGETS)) resetHudWidget(name, false);
+  resetPlayerHudColumns(false);
+  savePlayerHudColumns();
   saveHudLayout();
 }
 
@@ -5912,6 +6349,7 @@ for (const [name, config] of Object.entries(HUD_WIDGETS)) bindHudWidget(name, co
 document.getElementById("reset-overlay-layout").addEventListener("click", resetAllHudWidgets);
 let DPR = window.devicePixelRatio || 1;
 applySavedHudLayouts();
+syncPlayerHudColumns();
 
 // The map tilt is represented by its vertical projection: 1 is directly
 // overhead and smaller values lower the camera toward the horizon. Keep the
@@ -17615,7 +18053,10 @@ function drawPlayerHud() {
       ["gold", "GPT", "Net Gold per turn"], ["military", "MIL", "Military strength"],
       ["cities", "CITY", "Cities controlled"], ["suzerain", "SUZ", "City-states under suzerainty"],
       ["wonders", "WNDR", "World wonders controlled"], ["score", "SCORE", "Score"]]
-      .map(([kind, label, title]) => `<span class="${kind}" title="${title}">${label}</span>`).join("") + `</span></div>` +
+      .map(([kind, label, title]) => `<span class="${kind}" title="${title}">${label}</span>`).join("") + `</span>` +
+    // The bars stand on the seams of the heading they are laid over, and are
+    // rebuilt with it so that a repaint can never orphan one.
+    playerHudColumnGrips() + `</div>` +
     `<div class="diplomacy-ribbon" role="list" aria-labelledby="player-stats-title" ` +
     `style="--hud-rows:${rows}">` + majors.map(p => {
       const color = pcol(p.id);
@@ -17742,7 +18183,10 @@ function drawPlayerHud() {
         }).join("") + `</button></div>`;
     }).join("") + `</div>` + hudResizeHandles("player standings");
   drawDossierWindows(majors, rankById, relationById);
-  if (html === hudHtml || hudLayoutGesture?.name === "players") {
+  // A repaint mid-gesture would take the bar out from under the pointer along
+  // with its pointer capture, so a column drag holds the table exactly as a
+  // widget drag does. finishPlayerHudColumnGesture() catches it up on release.
+  if (html === hudHtml || hudLayoutGesture?.name === "players" || playerHudColumnGesture) {
     reframeIfMapFocusBoundsChanged(priorBounds, priorFocus);
     return;
   }
@@ -17750,9 +18194,10 @@ function drawPlayerHud() {
   hud.innerHTML = html;
   const playerRibbon = hud.querySelector(".diplomacy-ribbon");
   if (playerRibbon) playerRibbon.scrollTop = playerScroll;
-  // innerHTML replaced the element the observer was watching.
+  // innerHTML replaced the elements the observer was watching.
   observePlayerRibbon();
   syncPlayerLockPins();
+  syncPlayerHudColumnGrips();
   // The masthead is as tall as the table it holds, so a civilization met or
   // destroyed moves the map area's top edge as surely as dragging it does.
   refitMapAreaToChrome();
@@ -17761,11 +18206,19 @@ function drawPlayerHud() {
 
 // Re-aim the size observer after a repaint. Kept apart from the sync so the
 // observer's own initial callback cannot re-enter this and loop.
+//
+// The heading is watched alongside the table because that is the box the
+// column bars are positioned against: the deck collapsing, the victory rail
+// being hidden or a dragged panel edge all move the seams without the table
+// itself ever changing height.
 function observePlayerRibbon() {
-  const ribbon = document.getElementById("playerhud")?.querySelector(".diplomacy-ribbon");
+  const hud = document.getElementById("playerhud");
+  const ribbon = hud?.querySelector(".diplomacy-ribbon");
+  const heading = hud?.querySelector(".ribbon-stat-heading");
   if (!ribbon || !playerRibbonSizeObserver) return;
   playerRibbonSizeObserver.disconnect();
   playerRibbonSizeObserver.observe(ribbon);
+  if (heading) playerRibbonSizeObserver.observe(heading);
 }
 
 // Settle which locked rows hold at an edge and where they stack.
@@ -17818,7 +18271,7 @@ function syncPlayerLockPins() {
 // cannot feed itself: the pins are `position: sticky`, so they take their own
 // space in the flow either way and toggling one never resizes the ribbon.
 const playerRibbonSizeObserver = typeof ResizeObserver === "function"
-  ? new ResizeObserver(() => syncPlayerLockPins())
+  ? new ResizeObserver(() => { syncPlayerLockPins(); syncPlayerHudColumns(); })
   : null;
 
 // CSS mode changes and showing a previously hidden overlay can resize the
