@@ -1743,7 +1743,25 @@ pub fn generate_with_script(
     };
 
     let major_pool = pool_clear_of_wonders(START_DISTANCE_MAJOR_NATURAL_WONDER, num_major_spawns);
-    let major_regions = regions_for_seats(&wm, &components, &fertility, num_major_spawns);
+    let major_regions = if script == MapScript::Islands {
+        // An archipelago's fair share is a slice of the whole island field,
+        // not simply one of its largest rocks. `regions_for_seats` apportions
+        // seats to landmasses by fertility, which is right when those
+        // landmasses are continents. Here it picked the eight richest islands
+        // without regard to where they were, leaving the other thirty or forty
+        // islands outside every start region and sometimes putting one major's
+        // nearest neighbour three times farther away than another's.
+        //
+        // Divide the complete archipelago instead. A region may contain more
+        // than one island on this script: that is the maritime territory its
+        // civilization opens into. The farthest-point seeds spread the regions
+        // over the map, while the capacity pass still gives each one a roughly
+        // equal share of land and fertility.
+        let archipelago: Vec<Pos> = passable.iter().copied().collect();
+        divide_into_regions(&wm, &archipelago, &fertility, num_major_spawns)
+    } else {
+        regions_for_seats(&wm, &components, &fertility, num_major_spawns)
+    };
     let mut spawns = if script == MapScript::TrueStartEarth {
         // Earth does not divide into regions: the whole point of the script is
         // that Rome opens in Italy and the Aztecs open in Mexico, however
@@ -1800,7 +1818,15 @@ pub fn generate_with_script(
     // worlds, every stock profile left at least one civilization with none
     // within ten hexes while another had eighteen.
     let minor_pool = pool_clear_of_wonders(START_DISTANCE_MINOR_NATURAL_WONDER, num_minor_spawns);
-    let minor_regions = if major_regions.is_empty() || spawns.is_empty() {
+    let minor_regions = if script == MapScript::Islands && !spawns.is_empty() {
+        archipelago_minor_regions(
+            &wm,
+            &passable,
+            &fertility,
+            &spawns,
+            num_minor_spawns,
+        )
+    } else if major_regions.is_empty() || spawns.is_empty() {
         regions_for_seats(&wm, &components, &fertility, num_minor_spawns)
     } else {
         // A civilization's own ground means the land nearer to it than to
@@ -2859,6 +2885,96 @@ fn regions_for_seats(
         }
         let land: Vec<Pos> = components[*index].iter().copied().collect();
         regions.extend(divide_into_regions(wm, &land, fertility, allocation[slot]));
+    }
+    regions
+}
+
+/// Give an Islands civilization its own share of the city-states without
+/// throwing the unoccupied islands away.
+///
+/// The general minor pass cuts regions from the major regions. That is right
+/// on a continent, where the region is the land the civilization can expand
+/// through, but an Islands major region deliberately spans several islands.
+/// Its nearest-start cell is the maritime equivalent: every island belongs to
+/// the civilization it is nearest, including islands without a major start.
+///
+/// City-states are apportioned evenly rather than by cell fertility. With the
+/// stock 3:2 minor/major ratio this means one per civilization first and the
+/// remaining half-share on the roomiest cells, never zero for one empire and
+/// three for another. The first round uses the shipped two-buffer reach around
+/// its major so everybody has one nearby; later rounds use the ordinary
+/// capacity-balanced subdivision of the full cell.
+fn archipelago_minor_regions(
+    wm: &WorldMap,
+    land: &BTreeSet<Pos>,
+    fertility: &BTreeMap<Pos, i32>,
+    majors: &[Pos],
+    seats: usize,
+) -> Vec<Vec<Pos>> {
+    if seats == 0 || majors.is_empty() {
+        return Vec::new();
+    }
+    let mut cells: Vec<Vec<Pos>> = vec![Vec::new(); majors.len()];
+    for tile in land {
+        let owner = majors
+            .iter()
+            .enumerate()
+            .map(|(index, major)| (wm.distance(*tile, *major), index))
+            .min()
+            .unwrap()
+            .1;
+        cells[owner].push(*tile);
+    }
+    for cell in &mut cells {
+        cell.sort_unstable();
+    }
+
+    let weights: Vec<i64> = cells
+        .iter()
+        .map(|cell| {
+            cell.iter()
+                .map(|position| fertility.get(position).copied().unwrap_or(1) as i64)
+                .sum()
+        })
+        .collect();
+    let baseline = seats / majors.len();
+    let mut allocation = vec![baseline; majors.len()];
+    let mut order: Vec<usize> = (0..majors.len()).collect();
+    order.sort_by_key(|index| (std::cmp::Reverse(weights[*index]), *index));
+    for index in order.into_iter().take(seats % majors.len()) {
+        allocation[index] += 1;
+    }
+
+    let divided: Vec<Vec<Vec<Pos>>> = cells
+        .iter()
+        .zip(&allocation)
+        .map(|(cell, count)| divide_into_regions(wm, cell, fertility, *count))
+        .collect();
+    let mut regions = Vec::with_capacity(seats);
+    let rounds = allocation.iter().copied().max().unwrap_or(0);
+    for round in 0..rounds {
+        for (owner, count) in allocation.iter().copied().enumerate() {
+            if round >= count {
+                continue;
+            }
+            if round == 0 {
+                let nearby: Vec<Pos> = cells[owner]
+                    .iter()
+                    .copied()
+                    .filter(|position| {
+                        wm.distance(*position, majors[owner])
+                            <= 2 * START_DISTANCE_MINOR_MAJOR
+                    })
+                    .collect();
+                if !nearby.is_empty() {
+                    regions.push(nearby);
+                    continue;
+                }
+            }
+            if let Some(region) = divided[owner].get(round) {
+                regions.push(region.clone());
+            }
+        }
     }
     regions
 }
@@ -5019,6 +5135,105 @@ mod river_tests {
             }
         }
     }
+
+    /// Islands used to apply the continental region rule twice: majors were
+    /// placed on whichever disconnected islands had the most fertility, then
+    /// minor regions were cut only from those major-bearing islands. On a
+    /// Standard flat world that left most of the archipelago outside every
+    /// start region, clustered twenty starts onto as few as eight islands, and
+    /// gave one civilization three city-states while another received one.
+    #[test]
+    fn islands_flat_poles_spread_starts_across_the_whole_archipelago() {
+        let rules = Rules::embedded();
+        for size_index in [1_usize, 3, 5] {
+            let size = &CIV6_MAP_SIZES[size_index];
+            for seed in 0..6u64 {
+                let mut rng = Rng::new(90_000 + seed * 31 + size_index as u64);
+                let (world, spawns) = generate_with_script(
+                    &rules,
+                    size.width,
+                    size.height,
+                    size.default_players,
+                    size.default_city_states,
+                    size.natural_wonders,
+                    size.continents,
+                    MapScript::Islands,
+                    FLAT,
+                    POLED,
+                    &mut rng,
+                );
+                let where_ = format!("{} seed {seed}", size.id);
+                assert_eq!(
+                    spawns.len(),
+                    size.default_players + size.default_city_states,
+                    "{where_}"
+                );
+                let (majors, minors) = spawns.split_at(size.default_players);
+
+                let mut nearest_major: Vec<i32> = majors
+                    .iter()
+                    .map(|major| {
+                        majors
+                            .iter()
+                            .filter(|other| *other != major)
+                            .map(|other| world.distance(*major, *other))
+                            .min()
+                            .unwrap()
+                    })
+                    .collect();
+                let closest = nearest_major.iter().copied().min().unwrap();
+                nearest_major.sort_unstable();
+                let typical = nearest_major[nearest_major.len() / 2];
+                let farthest = nearest_major.last().copied().unwrap();
+                assert!(
+                    closest > MAJOR_START_BUFFER
+                        && closest * 100 / typical >= 65
+                        && farthest * 100 / typical <= 200,
+                    "{where_}: major starts are irregular around {typical}: {nearest_major:?}"
+                );
+
+                let mut owned = vec![0_usize; majors.len()];
+                let mut nearest_minor = vec![i32::MAX; majors.len()];
+                for minor in minors {
+                    let owner = majors
+                        .iter()
+                        .enumerate()
+                        .map(|(index, major)| (world.distance(*minor, *major), index))
+                        .min()
+                        .unwrap()
+                        .1;
+                    owned[owner] += 1;
+                    for (index, major) in majors.iter().enumerate() {
+                        nearest_minor[index] =
+                            nearest_minor[index].min(world.distance(*minor, *major));
+                    }
+                }
+                let fewest = owned.iter().copied().min().unwrap();
+                let most = owned.iter().copied().max().unwrap();
+                assert!(
+                    fewest >= 1 && most - fewest <= 1,
+                    "{where_}: city-states are shared out unevenly: {owned:?}"
+                );
+                assert!(
+                    nearest_minor.iter().all(|distance| *distance <= 12),
+                    "{where_}: a civilization cannot reach a city-state: {nearest_minor:?}"
+                );
+
+                let islands = land_components(&world, &rules);
+                let occupied = islands
+                    .iter()
+                    .filter(|island| spawns.iter().any(|spawn| island.contains(spawn)))
+                    .count();
+                assert!(
+                    occupied * 100 / spawns.len() >= 70,
+                    "{where_}: {} starts occupy only {occupied} of {} islands",
+                    spawns.len(),
+                    islands.len()
+                );
+            }
+        }
+    }
+
     #[test]
     fn varied_seeds_keep_major_start_outliers_within_a_roughly_equal_band() {
         let rules = Rules::embedded();
