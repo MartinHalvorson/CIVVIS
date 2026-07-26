@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 13] = [
+pub const EVAL_ONLY_AIS: [&str; 14] = [
     "strategic_score",
     "strategic_doctrine",
     "strategic_r20",
@@ -52,6 +52,7 @@ pub const EVAL_ONLY_AIS: [&str; 13] = [
     "production",
     "production_net",
     "policy_wide",
+    "policy_wide_frozen",
 ];
 
 /// On-disk schema for the shared player/leader/civilization rating ledger.
@@ -445,6 +446,15 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // candidates this agent clones; the wide one moves for 69% of unit
         // moves, so this is the first configuration where the tactical
         // evaluator can distinguish the actions it is ranking at all.
+        // `policy_wide` denied the one correlate it was measured to be
+        // exploiting. A causal test of the ranking failure, not a proposed
+        // agent.
+        "policy_wide_frozen" => Box::new(
+            crate::policy::PolicyAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            )
+            .with_frozen_contact(),
+        ),
         "policy_wide" => Box::new(
             crate::policy::PolicyAi::with_weights(
                 crate::evolve::load_champion("evolved").unwrap_or_default(),
@@ -715,7 +725,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         // The *wide* net is definitional and is a different artifact from
         // the one `policy` wants: `load_width` refuses each to the other,
         // so without a 34-wide net in place this is the scripted agent.
-        "policy_wide" => (
+        "policy_wide" | "policy_wide_frozen" => (
             vec![
                 genome,
                 ArtifactStatus {
@@ -730,7 +740,11 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
             ],
             if crate::valuenet::ValueNet::load_width(dir, crate::decision_features::WIDTH).is_some()
             {
-                "policy_wide"
+                if name == "policy_wide" {
+                    "policy_wide"
+                } else {
+                    "policy_wide_frozen"
+                }
             } else {
                 "advanced"
             },
