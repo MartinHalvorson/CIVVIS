@@ -15624,6 +15624,12 @@ function ribbonStat(value) {
   return `${Math.round(n / divisor)}${suffix}`;
 }
 
+// Score is the standings' exact comparison value, so never discard its lower
+// digits just to make it match the abbreviated resource columns.
+function ribbonScore(value) {
+  return String(Math.round(Number(value) || 0));
+}
+
 // Tooltips retain thousands separators while following the HUD's whole-number
 // presentation.
 function exactStat(value) {
@@ -15850,7 +15856,7 @@ function drawPlayerHud() {
             : "";
           return `<span class="ribbon-stat ${kind}${isLeader ? " category-leader" : ""}" ` +
             `title="${label}${marker ? " · Founded religion still followed" : ""}${isLeader ? " · Category leader" : ""}">` +
-            `<b>${ribbonStat(value)}${markerHtml}</b></span>`;
+            `<b>${kind === "score" ? ribbonScore(value) : ribbonStat(value)}${markerHtml}</b></span>`;
         }).join("") + `</button></div>`;
     }).join("") + `</div>` + hudResizeHandles("player standings");
   drawDossierWindows(majors, rankById, relationById);
