@@ -1283,11 +1283,30 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 4] = ["advanced", "advanced_v1", "basic", "random"];
+            const SCRIPTED: [&str; 5] = [
+                "advanced",
+                "advanced_relief_scoped",
+                "advanced_v1",
+                "basic",
+                "random",
+            ];
             assert!(
                 !resolved.artifacts.is_empty() || SCRIPTED.contains(name),
                 "{name} has no provenance row and inherited the catch-all"
             );
+            // The whitelist above is a list of names, so it grows every time
+            // a scripted entrant is added and stops discriminating as it
+            // does. This does not: the catch-all answers `basic`, so any
+            // name that needs no artifacts and still does not resolve to
+            // itself reached that arm rather than a row of its own.
+            if resolved.artifacts.is_empty() {
+                assert_eq!(
+                    resolved.effective, *name,
+                    "{name} needs no artifacts yet resolves to {}, which only \
+                     the catch-all does",
+                    resolved.effective
+                );
+            }
         }
         fs::remove_dir_all(dir).unwrap();
     }
