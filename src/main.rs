@@ -587,6 +587,13 @@ fn main() {
                             pshare(census.muster),
                             pshare(census.recover),
                         ));
+                        flags.push_str(&format!(
+                            " SIEGE blows={} damage={} walls_breached={} cities_reduced={}",
+                            g.siege.blows,
+                            g.siege.damage,
+                            g.siege.walls_breached,
+                            g.siege.cities_reduced,
+                        ));
                         let held = (census.hold_threatened + census.hold_weak).max(1);
                         flags.push_str(&format!(
                             " HELD_BY threatened_city={}% locally_weak={}%",
