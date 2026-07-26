@@ -6880,7 +6880,12 @@ mod espionage_runtime_tests {
         // Shipped -15 base, -5 per Spy level, off a full-Loyalty city.
         assert_eq!(game.cities[&target].loyalty, 80.0);
         game.apply_spy_mission_effect(spy_id, &mission("neutralize_governor", target_center), true);
-        assert!(game.players[1].governor_roster["pingala"].disabled_until > game.turn);
+        // Shipped ESPIONAGE_NEUTRALIZE_GOVERNOR_BASE_TURNS is a flat 6; unlike
+        // Foment Unrest and Fabricate Scandal it ships no per-level row.
+        assert_eq!(
+            game.players[1].governor_roster["pingala"].disabled_until,
+            game.turn + game.standard_duration(6)
+        );
         game.cities.get_mut(&target).unwrap().queue = vec![Item::Project {
             project: "launch_earth_satellite".to_string(),
         }];
@@ -6950,7 +6955,11 @@ mod espionage_runtime_tests {
         game.spies.get_mut(&spy_id).unwrap().city = Some(city_state);
         game.spies.get_mut(&spy_id).unwrap().mission = None;
         game.apply_spy_mission_effect(spy_id, &scandal, true);
-        assert_eq!(game.envoys_at(1, minor), 2);
+        // Shipped ESPIONAGE_FABRICATE_SCANDAL_BASE_ENVOYS_REMOVED 2 plus
+        // _LEVEL_ENVOYS_REMOVED 1 per Spy level, taken off the rival holding
+        // the most Envoys there and nobody else.
+        let removed = 2 + game.spies[&spy_id].level.max(0);
+        assert_eq!(game.envoys_at(1, minor), 7 - removed);
         assert_eq!(game.envoys_at(0, minor), 3);
     }
 
@@ -16121,7 +16130,12 @@ impl Game {
                     (city.loyalty - 15.0 - 5.0 * spy.level.max(0) as f64).max(0.0);
             }
             "neutralize_governor" => {
-                let until = self.turn + self.standard_duration(7 + spy.level.max(0) as u32);
+                // Shipped ESPIONAGE_NEUTRALIZE_GOVERNOR_BASE_TURNS is 6 flat.
+                // Every mission whose effect scales with the Spy's level has
+                // its own _LEVEL_ parameter beside the base — Foment Unrest and
+                // Fabricate Scandal both do; this one has no such row, so the
+                // level term was invention.
+                let until = self.turn + self.standard_duration(6);
                 for state in self.players[defender]
                     .governor_roster
                     .values_mut()
@@ -16178,7 +16192,10 @@ impl Game {
                     .max_by_key(|(envoys, player)| (*envoys, std::cmp::Reverse(*player)))
                     .map(|(_, player)| player);
                 if let Some(victim) = victim {
-                    let remove = 3 + spy.level.max(0);
+                    // Shipped ESPIONAGE_FABRICATE_SCANDAL_BASE_ENVOYS_REMOVED 2
+                    // plus _LEVEL_ENVOYS_REMOVED 1 per level — the same
+                    // base-plus-level shape Foment Unrest already follows.
+                    let remove = 2 + spy.level.max(0);
                     if let Some((_, envoys)) = self.players[victim]
                         .envoys
                         .iter_mut()
