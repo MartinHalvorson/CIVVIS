@@ -8436,6 +8436,76 @@ mod government_runtime_tests {
     }
 
     #[test]
+    fn the_wonder_cards_stop_at_the_era_their_arguments_name() {
+        let (mut game, city) = one_city(33_812);
+        let at = |game: &Game, wonder: &str| {
+            let item = Item::Wonder {
+                wonder: wonder.to_string(),
+                pos: game.cities[&city].pos,
+            };
+            game.item_prod_mult(0, city, Some(&item))
+        };
+        // pyramids Ancient, colosseum Classical, hagia_sophia Medieval,
+        // taj_mahal Renaissance, big_ben Industrial.
+        let subjects = ["pyramids", "colosseum", "hagia_sophia", "taj_mahal", "big_ben"];
+        let base: Vec<f64> = subjects.iter().map(|w| at(&game, w)).collect();
+        let gain = |game: &Game| -> Vec<f64> {
+            subjects
+                .iter()
+                .enumerate()
+                .map(|(i, w)| ((at(game, w) - base[i]) * 100.0).round())
+                .collect()
+        };
+
+        // CORVEE_ANCIENTCLASSICALWONDER is StartEra ANCIENT, EndEra CLASSICAL.
+        game.players[0].policies = ["corvee".to_string()].into_iter().collect();
+        assert_eq!(gain(&game), vec![15.0, 15.0, 0.0, 0.0, 0.0]);
+
+        // GOTHICARCHITECTURE_MEDIEVALRENAISSANCEWONDER is named for a window it
+        // does not have: its StartEra is ANCIENT, so it also pays the Ancient
+        // and Classical wonders Corvee covered, through Renaissance.
+        game.players[0].policies = ["gothic_architecture".to_string()].into_iter().collect();
+        assert_eq!(gain(&game), vec![15.0, 15.0, 15.0, 15.0, 0.0]);
+
+        // SKYSCRAPERS_INDUSTRIALINFORMATION is likewise misnamed: ANCIENT to
+        // FUTURE is every wonder in the game, so it stays ungated.
+        game.players[0].policies = ["skyscrapers".to_string()].into_iter().collect();
+        assert_eq!(gain(&game), vec![15.0, 15.0, 15.0, 15.0, 15.0]);
+    }
+
+    #[test]
+    fn monarchy_pays_favor_for_each_walled_city_not_once() {
+        let (mut game, home, _) = two_cities(70_441);
+        game.players[0].government = Some("monarchy".to_string());
+        let favor = |game: &mut Game| {
+            game.players[0].diplomatic_favor = 0.0;
+            game.process_diplomacy(0);
+            game.players[0].diplomatic_favor
+        };
+        // Monarchy is Tier2, so the government itself pays 2 a turn.
+        let bare = favor(&mut game);
+        assert_eq!(bare, 2.0);
+
+        // MONARCHY_STARFORT_FAVOR is a PLAYER_CITIES modifier gated on
+        // BUILDING_STAR_FORT, which is Renaissance Walls. Earlier walls do not
+        // qualify, and the bonus lands once per city that does.
+        for building in ["walls", "medieval_walls"] {
+            game.cities
+                .get_mut(&home)
+                .unwrap()
+                .buildings
+                .push(building.to_string());
+            assert_eq!(favor(&mut game), bare, "{building} is not a Star Fort");
+        }
+        game.cities
+            .get_mut(&home)
+            .unwrap()
+            .buildings
+            .push("renaissance_walls".to_string());
+        assert_eq!(favor(&mut game), bare + 2.0);
+    }
+
+    #[test]
     fn wisselbanken_and_collectivization_pay_only_the_routes_they_name() {
         let (mut game, home, abroad) = two_cities(51_207);
         game.routes.push(TradeRoute {
@@ -20490,9 +20560,22 @@ impl Game {
                     bonus += self.policy_effect(pid, "military_port_production_pct") / 100.0;
                 }
             }
-            Some(Item::Wonder { pos, .. }) => {
+            Some(Item::Wonder { wonder, pos }) => {
                 bonus += self.policy_effect(pid, "wonder_production_pct") / 100.0;
                 bonus += self.gov_effects(pid).wonder_production_pct / 100.0;
+                // ADJUST_WONDER_ERA_PRODUCTION carries a StartEra/EndEra window,
+                // and two of the three cards using it are named after a window
+                // they do not have: GOTHICARCHITECTURE_MEDIEVALRENAISSANCEWONDER
+                // starts at ANCIENT, and SKYSCRAPERS_INDUSTRIALINFORMATION runs
+                // ANCIENT to FUTURE, which is every wonder in the game. Every
+                // shipped row starts at ANCIENT, so only the end ever varies.
+                let era = self.wonder_era(wonder);
+                if era <= 1 {
+                    bonus += self.policy_effect(pid, "classical_wonder_production_pct") / 100.0;
+                }
+                if era <= 3 {
+                    bonus += self.policy_effect(pid, "renaissance_wonder_production_pct") / 100.0;
+                }
                 if self.has_ability(pid, "iteru") && self.map.tiles[pos].has_river() {
                     bonus += 0.15; // Egypt: Iteru (river cities)
                 }
@@ -39060,7 +39143,21 @@ impl Game {
         let diplomatic_penalty = world_grievances / 100.0
             + 5.0 * occupied_original_capitals
             + self.carbon_favor_penalty(pid);
+        // MONARCHY_STARFORT_FAVOR is a PLAYER_CITIES modifier gated on
+        // REQUIREMENT_CITY_HAS_BUILDING BUILDING_STAR_FORT, so it pays per
+        // qualifying city rather than once. Star Fort is Renaissance Walls.
+        let walled_favor = self.gov_effects(pid).walled_city_diplomatic_favor;
+        let walled_cities = if walled_favor == 0.0 {
+            0.0
+        } else {
+            self.cities
+                .values()
+                .filter(|city| city.owner == pid)
+                .filter(|city| self.city_has_active_building_family(city, "renaissance_walls"))
+                .count() as f64
+        };
         let favor = government_favor
+            + walled_favor * walled_cities
             + suzerains * suzerain_multiplier
             + alliance_favor
             + buildings
