@@ -5517,6 +5517,43 @@ mod governor_runtime_tests {
     }
 
     #[test]
+    fn the_cliffs_of_dover_are_worth_twice_an_ordinary_natural_wonder() {
+        // Features.Appeal is +2 for most natural wonders but +4 for the Cliffs
+        // of Dover and Uluru, which CIVVIS flattened to a single +2 for every
+        // wonder. Woods and an Oasis are +1; Rainforest, Marsh and Floodplains
+        // are -1.
+        let rules = crate::rules::Rules::embedded();
+        assert_eq!(rules.features["cliffs_of_dover"].appeal, 4.0);
+        assert_eq!(rules.features["uluru"].appeal, 4.0);
+        for wonder in ["yosemite", "matterhorn", "pamukkale", "great_barrier_reef"] {
+            assert_eq!(rules.features[wonder].appeal, 2.0, "{wonder}");
+        }
+        assert_eq!(rules.features["forest"].appeal, 1.0);
+        assert_eq!(rules.features["oasis"].appeal, 1.0);
+        for drab in ["jungle", "marsh", "floodplains"] {
+            assert_eq!(rules.features[drab].appeal, -1.0, "{drab}");
+        }
+
+        // And the difference reaches a tile: the Cliffs are worth two more
+        // than Yosemite to the same neighbour.
+        let mut game = Game::new_full(1, 24, 16, 91_972, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let centre = game.cities[&city].pos;
+        let site = game.nbrs(centre)[0];
+        for position in [centre, site] {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.feature = None;
+            tile.improvement = None;
+            tile.pillaged = false;
+        }
+        let bare = game.tile_appeal(centre);
+        game.map.tiles.get_mut(&site).unwrap().feature = Some("yosemite".to_string());
+        assert_eq!(game.tile_appeal(centre), bare + 2);
+        game.map.tiles.get_mut(&site).unwrap().feature = Some("cliffs_of_dover".to_string());
+        assert_eq!(game.tile_appeal(centre), bare + 4);
+    }
+
+    #[test]
     fn mines_and_quarries_lower_the_appeal_of_their_neighbours() {
         let mut game = Game::new_full(1, 24, 16, 91_971, 200, 0, false);
         let city = found_capital(&mut game, 0);
@@ -5531,8 +5568,10 @@ mod governor_runtime_tests {
         let before = game.tile_appeal(centre);
         game.map.tiles.get_mut(&site).unwrap().improvement = Some("mine".to_string());
         assert_eq!(game.tile_appeal(centre), before - 1);
+        // Improvements.Appeal for the Sphinx is +2, the same as a City Park
+        // and an Ice Hockey Rink; the +1 tier is the Chateau and Golf Course.
         game.map.tiles.get_mut(&site).unwrap().improvement = Some("sphinx".to_string());
-        assert_eq!(game.tile_appeal(centre), before + 1);
+        assert_eq!(game.tile_appeal(centre), before + 2);
         // Pillaging stops the grant and costs the tile its own Appeal point.
         game.map.tiles.get_mut(&site).unwrap().pillaged = true;
         assert_eq!(game.tile_appeal(centre), before - 1);
@@ -27544,17 +27583,14 @@ impl Game {
             if matches!(adjacent.terrain.as_str(), "mountain" | "coast" | "lake") {
                 appeal += 1;
             }
-            match adjacent.feature.as_deref() {
-                Some("forest" | "oasis") => appeal += 1,
-                Some(
-                    "jungle"
-                    | "marsh"
-                    | "floodplains"
-                    | "grassland_floodplains"
-                    | "plains_floodplains",
-                ) => appeal -= 1,
-                _ => {}
-            }
+            // Features.Appeal, read rather than listed: Woods and an Oasis are
+            // +1, Rainforest, Marsh and Floodplains -1, and a natural wonder is
+            // +2 -- except the Cliffs of Dover and Uluru, which are +4.
+            appeal += adjacent
+                .feature
+                .as_deref()
+                .and_then(|feature| self.rules.features.get(feature))
+                .map_or(0, |spec| spec.appeal.round() as i32);
             if adjacent.owner_city == owner_city_id
                 && adjacent.improvement.is_none()
                 && adjacent.feature.is_some()
@@ -27568,14 +27604,7 @@ impl Game {
             if biosphere != 0 && matches!(adjacent.feature.as_deref(), Some("jungle" | "marsh")) {
                 appeal += biosphere;
             }
-            if adjacent.feature.as_ref().is_some_and(|feature| {
-                self.rules
-                    .features
-                    .get(feature.as_str())
-                    .is_some_and(|spec| spec.natural_wonder)
-            }) {
-                appeal += 2;
-            }
+
             if adjacent.wonder.is_some() {
                 appeal += 1;
             }

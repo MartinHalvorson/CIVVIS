@@ -90,6 +90,10 @@ pub struct TerrainSpec {
 pub struct FeatureSpec {
     #[serde(default)]
     pub yields: Yields,
+    /// `Features.Appeal`: what standing beside this does to a tile. Most
+    /// natural wonders are +2, but the Cliffs of Dover and Uluru are +4.
+    #[serde(default)]
+    pub appeal: f64,
     /// Natural wonders whose Civilopedia entry reads "to adjacent tiles"
     /// project these yields onto each neighbouring tile instead of their own.
     #[serde(default)]
