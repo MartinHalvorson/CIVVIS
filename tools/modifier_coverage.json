@@ -37,9 +37,9 @@
       ]
     },
     "ADJUST_BUILDING_YIELD_CHANGE": {
-      "status": "partial",
+      "status": "implemented",
       "verified": true,
-      "note": "Verified row by row. Third Alternative, Military Research, the Electronics Factory Culture, the Tsikhe Faith, Choral Music, Feed the World and Isaac Newton's University Science all match. City-state Envoy bonuses also match, and are the trap in this effect: the database ships TWO ladders. The base rows pay the Capital at 1 Envoy, the tier-1 building at 3 and the tier-2 building at 6, all at a flat 2. The Ethiopia-pack rows -- the final-patch structure CIVVIS implements, and the one a Gathering Storm game actually runs -- pay Capital and tier-1 at 1 Envoy, tier-2 plus the Consulate at 3, and tier-3 plus the Chancery at 6, with amounts 1/2/3 doubled for Trade. Reading the base rows and 'correcting' CIVVIS to them is wrong; the two are distinguished only by the _ETHIOPIA suffix on the attaching modifier. Still partial for the structural reason: an arbitrary modifier cannot adjust an arbitrary building's yield, only the named sources here."
+      "note": "Verified row by row. Third Alternative, Military Research, the Electronics Factory Culture, the Tsikhe Faith, Choral Music, Feed the World and Isaac Newton's University Science all match. City-state Envoy bonuses also match, including the final-patch Ethiopia ladder rather than the superseded base rows. The former structural gap is closed: a named modifier now declares building_yields for any exact building, replacement family, or wildcard; the loader compiles those selectors through nested ATTACH_MODIFIER composition, and the city-yield consumer combines active player, policy, tree, civilization, infrastructure, belief, pantheon and Governor sources. Regression tests exercise two arbitrary buildings including a unique replacement family."
     },
     "ADJUST_BUILDING_YIELD_MODIFIERS_FOR_DISTRICT": {
       "status": "implemented",
@@ -290,9 +290,9 @@
       "note": "Verified row by row: all six owners CIVVIS models carry the shipped Amount and UnitType. Colonization and Expropriation +50% Settler, Ilkum and Public Works +30% Builder, Machiavellianism +50% Spy, Future Victory Domination +50% Giant Death Robot."
     },
     "ADJUST_UNIT_PURCHASE_COST": {
-      "status": "partial",
+      "status": "implemented",
       "verified": true,
-      "note": "Verified row by row against the cache, and absent from this file before. 49 rows. CIVVIS executes the discounts it models: Holy Order's 30% off Apostles and Missionaries as religious_unit_faith_discount_pct, the Meenakshi Temple's 30% off Gurus, and Monumentality's 30% off Builders and Settlers in a Golden Age. Partial because the Prasat and the Oracle carry 12 rows each - a per-unit-type discount table CIVVIS expresses only as the named great_person_faith_patronage_discount_pct - and because Flower Power's Rock Band discount is a policy outside the modelled set. Nothing modelled is wrong; the gap is generality, as with ADJUST_BUILDING_YIELD_CHANGE and GRANT_ABILITY."
+      "note": "Verified row by row against the cache: 49 rows. Holy Order's Apostles and Missionaries, Meenakshi Temple Gurus, Monumentality Builders and Settlers, and the modeled Great Person patronage paths retain their shipped discounts. The former generality gap is closed: named modifiers declare unit_purchase_discount_pct by exact unit, replacement family, or wildcard. One authoritative unit_purchase_cost quote combines those selectors with religion, district, government, dedication and Congress modifiers; both AI-visible legal action enumeration and execution use the quote, so a newly affordable purchase is no longer hidden from strategy. Rock Bands and Naturalists use the same path."
     },
     "ADJUST_UNIT_SPY_OPERATION_CHANCE": {
       "status": "implemented",
@@ -340,9 +340,9 @@
       "note": "Implemented as Game::attach_modifier_to_player_type and its symmetric detach operation. Major civilizations, city-states, Barbarians, Free Cities and all-player selectors target stable named modifier identities; repeat attachment is idempotent, expiry removes the same identity, effects feed the player/policy effect consumers even through Anarchy, and attached IDs survive save/load. Existing World Congress resolutions retain their verified hardcoded outcomes, while new and mod-defined outcomes can use the general primitive. The engine path is regression-tested; the raw shipped attachment rows still require a fresh cache drill before verified can be true."
     },
     "CITY_GRANT_RANDOM_RESOURCE_PRODUCT": {
-      "status": "partial",
+      "status": "implemented",
       "verified": true,
-      "note": "Verified row by row against the cache: 28 rows, one per luxury, each a Corporation Product project completion. This is Monopolies & Corporations content, which the CPL lobby disables along with all game modes, so none of it reaches a tournament game. CIVVIS models the chain - FoundCorporation, city products, product_capacity - and three product yields, and the modelling diverges structurally rather than numerically, which is why it stays partial and is not half-fixed here. ResourceCorporations gives each luxury one of eight effects and they are PERCENTAGE modifiers: CORPORATION_CULTURE_YIELD_BONUS and its Faith, Gold and Science siblings are +40% city yield, CORPORATION_CITY_GROWTH is +40% growth, and the rest are unit and building discounts. CIVVIS pays flat amounts instead - Silk +3 Culture, Wine and Salt +3 Food. Two faults: the magnitude is a flat yield where the shipped effect is a 40% modifier, and Wine is grouped with Salt when the shipped ResourceCorporations puts Wine with Silk on CORPORATION_CULTURE_YIELD_BONUS and only Salt on CITY_GROWTH. Correcting the yield type alone would leave it differently wrong, so the fix is the whole flat-to-percentage conversion or nothing."
+      "note": "Verified row by row against the cache: 28 rows, one per map Luxury, each a Corporation Product project completion. This remains Monopolies & Corporations content and therefore does not enter a CPL tournament lobby, but the optional-mode engine is now complete rather than approximate. Resource data carries all 28 Product Great Work flat yields and each Product modifier separately from its Industry modifier. City yield percentages, growth, Housing, military-unit Production, civilian-unit Production and building Production all execute; Industries apply one bundle and Corporations the shipped doubled bundle. Wine now grants flat Food plus Culture percentage, Salt alone uses the original growth group, and the previous three-resource switch is gone."
     },
     "DIPLOMACY_SIMPLE_EFFECT": {
       "status": "out-of-scope",
@@ -359,9 +359,9 @@
       "note": "Verified row by row. Theocracy and the Grand Master's Chapel enable Faith purchase for exactly ten land combat classes -- melee, ranged, anti-cavalry, light/heavy cavalry, light/heavy chariot, ranged cavalry, recon and siege. CIVVIS admitted every land military unit, which also let Theocracy Faith-buy a Giant Death Robot; the GDR is its own class outside the list, and is now excluded. The naval and Archaeologist rows are leader traits, and the Spy row is Wu Zetian -- content CIVVIS does not model."
     },
     "GRANT_ABILITY": {
-      "status": "partial",
+      "status": "implemented",
       "verified": true,
-      "note": "Verified row by row against the cache: 139 rows, the second-largest effect. Twenty owners are content CIVVIS models and every one of them checks out. Most were already confirmed through other drills - the Barracks, Stable, Armory, Military Academy, Lighthouse, Shipyard, Seaport, Hangar and Airport XP abilities under ADJUST_UNIT_EXPERIENCE_MODIFIER, and Oligarchy, Fascism, Theocracy, Digital Democracy, Finest Hour, Future counter-domination, Inquisition and Religious Orders under ADJUST_PLAYER_STRENGTH_MODIFIER. Ordu grants ABILITY_ORDU_INCREASED_MOVEMENT +1 and ORDU_TRAINED_XP 25, both carried as cavalry_movement and cavalry_siege_xp_pct. MILITARYORGANIZATION_GREATGENERAL_MOVEMENT is +2 Movement gated on UNIT_TYPE_MATCHES UNIT_GREAT_GENERAL, and CIVVIS has no such effect - but that is a MODELLING BOUNDARY, not a gap: there is no great_general unit in units.json at all, because Great Generals are an activation that promotes every eligible military unit a level rather than a unit that walks the map. Adding the movement would be a value no code path could read. Status stays partial for the unmodelled remainder - unique units, leaders and game-mode abilities - not for anything wrong in what is modelled."
+      "note": "Verified row by row against the cache: 139 rows, the second-largest effect. Every owner whose content CIVVIS models remains checked through its real consumer: training XP buildings, governments and policies, Ordu movement/XP, Inquisition and Religious Orders. The fixed owner-list limitation is removed: a named modifier can now grant any ability identity, nested attachments compile it into the numeric effect graph, and has_ability resolves active runtime, policy, tree, civilization, building, wonder and religion sources. Unrepresented unique units, leaders, game modes and the nonexistent walking Great General unit remain content/model boundaries rather than an effect-family gap."
     },
     "GRANT_UNIT_IN_CITY": {
       "status": "implemented",
