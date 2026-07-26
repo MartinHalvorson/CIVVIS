@@ -4167,7 +4167,10 @@ mod tests {
             .split_once("function specFetch() {")
             .expect("the spectator's fetch")
             .1;
-        assert!(fetching.contains("if (!SPEC || specFetching || specPending) return;"));
+        assert!(fetching.contains(
+            "if (!SPEC || specFetching || specPending || worldTransitionPending()) return;"
+        ));
+        assert!(fetching.contains("generation === specFetchGeneration"));
     }
 
     fn current() -> Params {
@@ -4640,9 +4643,19 @@ mod tests {
             .contains("const payload = {...newSimulationPayload(), paused: wasPaused}"));
         assert!(EMBEDDED_INDEX.contains("setPace({paused: wasPaused})"));
         assert!(EMBEDDED_INDEX.contains(
-            "sessionStorage.setItem(\"civvis-restart-paused-v1\", wasPaused ? \"1\" : \"0\")"
+            "sessionStorage.setItem(\"civvis-restart-paused-v1\", handoff.paused ? \"1\" : \"0\")"
         ));
-        assert!(EMBEDDED_INDEX.contains("specPaused = restartPaused === \"1\""));
+        assert!(EMBEDDED_INDEX.contains("<html class=\"world-loading\">"));
+        assert!(EMBEDDED_INDEX.contains("id=\"world-transition\""));
+        assert!(EMBEDDED_INDEX.contains("sessionStorage.setItem(\"civvis-world-transition-v1\""));
+        assert!(EMBEDDED_INDEX.contains("await settingsStageChain.catch(() => {})"));
+        assert!(EMBEDDED_INDEX.contains("specFetching || specPending || worldTransitionPending()"));
+        assert!(EMBEDDED_INDEX.contains("specFetchAbort?.abort()"));
+        assert!(EMBEDDED_INDEX.contains("worldTransitionHandoff.supervised"));
+        assert!(EMBEDDED_INDEX
+            .contains("String(st?.seed) === String(worldTransitionHandoff.targetSeed)"));
+        assert!(EMBEDDED_INDEX.contains("finishWorldTransition(st);"));
+        assert!(EMBEDDED_INDEX.contains("setTimeout(startFade, 500)"));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/next-game-settings\""));
         assert!(EMBEDDED_INDEX.contains("with selected settings"));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/supervisor-new\""));
@@ -4999,12 +5012,33 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(".diplomacy-card.allied"));
         assert!(EMBEDDED_INDEX.contains("function cameraYBounds"));
         assert!(EMBEDDED_INDEX.contains("cam.y = clampCameraY(cam.y)"));
-        // Default camera moves compose inside the rectangle the chrome leaves
-        // the map, measured rather than guessed: below whichever top
-        // instrument hangs lower, down to the real bottom edge, right of both
-        // the command deck and the world map's own midline, and left of the
-        // victory rail. Every instrument is draggable, so each edge comes off
-        // the live boxes.
+        assert!(EMBEDDED_INDEX.contains("const focusBounds = mapFocusBounds();"));
+        assert!(EMBEDDED_INDEX.contains("return { min:centered, max:centered };"));
+        // Flat charts expose both wrapping axes as persistent display choices.
+        // East-west starts on, north-south starts off, and both the projected
+        // tile positions and canonical hit-test positions consume the choice.
+        assert!(EMBEDDED_INDEX.contains("id=\"wrapxchk\" checked"));
+        assert!(EMBEDDED_INDEX.contains("id=\"wrapychk\""));
+        assert!(EMBEDDED_INDEX.contains(
+            "let FLAT_MAP_WRAP_X = localStorage.getItem(\"civvis-flat-map-wrap-x\") !== \"0\";"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "let FLAT_MAP_WRAP_Y = localStorage.getItem(\"civvis-flat-map-wrap-y\") === \"1\";"
+        ));
+        assert!(EMBEDDED_INDEX.contains("function mapWrapsY()"));
+        assert!(EMBEDDED_INDEX.contains("function wrapY(y, about = null)"));
+        assert!(EMBEDDED_INDEX.contains("const wy = wrapY(S * 1.5 * r) - cam.y;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "return canonicalOffsetPos(p, mapWrapsX(), mapWrapsY());"
+        ));
+        assert!(EMBEDDED_INDEX.contains("setFlatMapWrap(\"x\", wrapXBox.checked)"));
+        assert!(EMBEDDED_INDEX.contains("setFlatMapWrap(\"y\", wrapYBox.checked)"));
+
+        // Default camera moves compose at the exact center of the rectangle
+        // requested by the operator: the command deck's right edge to the
+        // victory rail's left edge, and the player HUD's bottom edge to the
+        // screen bottom. A missing widget naturally leaves its screen edge in
+        // place, and the minimap is deliberately absent from this calculation.
         assert!(EMBEDDED_INDEX.contains("function mapOverlayVisible(name)"));
         assert!(EMBEDDED_INDEX.contains(
             "document.body.classList.contains(\"sidebar-hidden\")"
@@ -5012,25 +5046,27 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function mapWidgetBox(name, areaRect)"));
         assert!(EMBEDDED_INDEX.contains("function mapFocusBounds()"));
         assert!(EMBEDDED_INDEX.contains("function mapFocusPoint()"));
-        // The world map sits in the lower-left corner, so it takes width off the
-        // left and gives up only half of it. The victory rail is not a corner
-        // widget — it stands the whole right edge — so the band ends where the
-        // rail begins, and the standings alone hang over the top.
-        assert!(EMBEDDED_INDEX
-            .contains("if (minimap) left = Math.max(left, (minimap.left + minimap.right) / 2);"));
-        assert!(EMBEDDED_INDEX.contains("if (victory) right = Math.min(right, victory.left);"));
-        assert!(EMBEDDED_INDEX.contains("if (players) top = Math.max(top, players.bottom);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "left = Math.max(0, Math.min(width, sideRect.right - areaRect.left));"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (victory) right = Math.max(0, Math.min(width, victory.left));"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (players) top = Math.max(0, Math.min(height, players.bottom));"
+        ));
+        assert!(!EMBEDDED_INDEX.contains(
+            "if (minimap) left = Math.max(left, (minimap.left + minimap.right) / 2);"
+        ));
         assert!(EMBEDDED_INDEX.contains(
             "return {x:(bounds.left + bounds.right) / 2, y:(bounds.top + bounds.bottom) / 2};"
         ));
-        // A widget parked over a whole axis must hand that axis back rather
-        // than aiming the camera off-screen.
-        assert!(EMBEDDED_INDEX.contains("const MIN_MAP_FOCUS_BAND = 120;"));
-        assert!(EMBEDDED_INDEX
-            .contains("if (right - left < MIN_MAP_FOCUS_BAND) { left = 0; right = width; }"));
-        assert!(EMBEDDED_INDEX
-            .contains("if (bottom - top < MIN_MAP_FOCUS_BAND) { top = 0; bottom = height; }"));
+        assert!(EMBEDDED_INDEX.contains("function reframeIfMapFocusBoundsChanged("));
+        assert!(EMBEDDED_INDEX.contains(
+            "reframeIfMapFocusBoundsChanged(priorBounds, priorFocus);"
+        ));
         assert!(EMBEDDED_INDEX.contains("function cameraCenterForWorld("));
+        assert!(EMBEDDED_INDEX.contains("const actualScale = Math.max(.01, scale);"));
         assert!(EMBEDDED_INDEX.contains("function currentMapFocusWorld()"));
         assert!(EMBEDDED_INDEX.contains("function reframeCurrentMapFocus(world)"));
         assert!(EMBEDDED_INDEX.contains(
@@ -5256,11 +5292,10 @@ mod tests {
             "function advanceUserCameraMotion(now = performance.now())",
             "function advanceCameraFollow(now = performance.now())",
             "function startCameraFollow(unitId)",
-            // The default is `null`, not `cam.x`: a chart that has not been
-            // round its world is unrolled about that civilization's own ground
-            // rather than about the camera, and only a caller chaining a path
-            // together names the point it wants a leg drawn beside.
-            "function unitMapPoint(p, nearX = null)",
+            // Both defaults are `null`: a standalone subject uses the copies
+            // nearest the camera, while a caller chaining a path can name the
+            // point it wants the next leg drawn beside across either seam.
+            "function unitMapPoint(p, nearX = null, nearY = null)",
             "function sampleUnitMove(mv, now = performance.now())",
             "function cinematicUnitMapPoint(unit, now = performance.now())",
             "function unitMoveDuration(unitId, steps)",

@@ -4830,16 +4830,22 @@ mod governor_runtime_tests {
             let baseline = collect(BTreeSet::new());
             collect([card.to_string()].into_iter().collect()) - baseline
         };
-        // 4 empire-wide, 2 from the Bank, 4 from the Stock Exchange.
-        assert_eq!(earned(&mut game, "laissez_faire", "merchant"), 10.0);
-        // 4 from the Seaport and 2 from the Shipyard, with no flat grant.
+        // None of these three cards grants a flat, empire-wide point. Every
+        // modifier they carry is a MODIFIER_PLAYER_CITIES_ADJUST_GREAT_PERSON_POINT
+        // behind a CITY_HAS_BUILDING requirement — the whole chain from each
+        // policy was walked to be sure, including chained ATTACH_MODIFIER.
+        // Inspiration, Strategos and Revelation are the cards that really are
+        // flat, and they ship as flat.
+        // 2 from the Bank and 4 from the Stock Exchange.
+        assert_eq!(earned(&mut game, "laissez_faire", "merchant"), 6.0);
+        // 4 from the Seaport and 2 from the Shipyard.
         assert_eq!(earned(&mut game, "laissez_faire", "admiral"), 6.0);
-        // 4 empire-wide, 2 from the University, 4 from the Research Lab.
-        assert_eq!(earned(&mut game, "nobel_prize", "scientist"), 10.0);
+        // 2 from the University and 4 from the Research Lab.
+        assert_eq!(earned(&mut game, "nobel_prize", "scientist"), 6.0);
         // 2 from the Factory and 4 from the Coal Power Plant.
         assert_eq!(earned(&mut game, "nobel_prize", "engineer"), 6.0);
-        // 4 empire-wide, 2 from the Armory, 4 from the Military Academy.
-        assert_eq!(earned(&mut game, "military_organization", "general"), 10.0);
+        // 2 from the Armory and 4 from the Military Academy.
+        assert_eq!(earned(&mut game, "military_organization", "general"), 6.0);
     }
 
     #[test]
@@ -28784,24 +28790,32 @@ impl Game {
         // Dark Age cards buy their strength with an empire-wide penalty.
         ys.science *= 1.0 + self.policy_effect(city.owner, "city_science_pct") / 100.0;
         ys.culture *= 1.0 + self.policy_effect(city.owner, "city_culture_pct") / 100.0;
+        // Monasticism's two halves carry the *same* Holy Site requirement, but
+        // the Culture one is inverted: MONASTICISM_HOLYSITE_SCIENCE tests
+        // REQUIREMENT_CITY_HAS_DISTRICT with Inverse 0 and
+        // MONASTICISM_CULTURE_MODIFIER tests it with Inverse 1. So the Science
+        // is paid where there is a Holy Site and the Culture is docked where
+        // there is not — the card pushes Culture out of the cities it makes
+        // Scientific, rather than taxing the same city twice.
         if self.city_has_active_district_family(city, "holy_site") {
-            // Monasticism's Culture penalty carries the same Holy Site
-            // requirement as its Science bonus: it is not empire-wide.
             ys.science *=
                 1.0 + self.policy_effect(city.owner, "holy_site_city_science_pct") / 100.0;
+        } else {
             ys.culture *=
-                1.0 + self.policy_effect(city.owner, "holy_site_city_culture_pct") / 100.0;
+                1.0 + self.policy_effect(city.owner, "no_holy_site_city_culture_pct") / 100.0;
         }
-        if city.buildings.iter().any(|building| building == "stock_exchange")
-            && !city.pillaged_buildings.contains("stock_exchange")
+        // Robber Barons pays both halves on the same condition, and it is a
+        // TEST_ANY over two buildings: ROBBERBARONS_BANK_OR_SHIPYARD_GOLD and
+        // ..._PRODUCTION each require a Bank *or* a Shipyard. CIVVIS keyed the
+        // Gold on a Stock Exchange and the Production on a Factory, so the card
+        // paid in the wrong cities and at the wrong point in the game.
+        if self.city_has_active_building_family(city, "bank")
+            || self.city_has_active_building_family(city, "shipyard")
         {
-            ys.gold *= 1.0 + self.policy_effect(city.owner, "stock_exchange_city_gold_pct") / 100.0;
-        }
-        if city.buildings.iter().any(|building| building == "factory")
-            && !city.pillaged_buildings.contains("factory")
-        {
-            ys.production *=
-                1.0 + self.policy_effect(city.owner, "factory_city_production_pct") / 100.0;
+            ys.gold *=
+                1.0 + self.policy_effect(city.owner, "bank_or_shipyard_city_gold_pct") / 100.0;
+            ys.production *= 1.0
+                + self.policy_effect(city.owner, "bank_or_shipyard_city_production_pct") / 100.0;
         }
         let local_wonder_effect = |effect: &str| {
             city.wonders
