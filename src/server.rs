@@ -5503,6 +5503,22 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function drawWarLog()"));
         assert!(EMBEDDED_INDEX.contains("function warsForLog(wars)"));
         assert!(EMBEDDED_INDEX.contains("id=\"warsec\""));
+        assert!(EMBEDDED_INDEX.contains("function warTheaterSubjects(war)"));
+        assert!(EMBEDDED_INDEX.contains("function focusWarOnMap(warKey)"));
+        assert!(EMBEDDED_INDEX.contains("for (const site of war.theater || []) add(site?.pos);"));
+        assert!(EMBEDDED_INDEX.contains("data-war-key=\"${escapeAttr(warLogKey(war))}\""));
+        assert!(EMBEDDED_INDEX.contains(">${mapAction}</button></div>"));
+        assert!(EMBEDDED_INDEX.contains("const mapAction = over ? \"View aftermath\" : \"Watch\";"));
+        let war_focus = EMBEDDED_INDEX
+            .split("function focusWarOnMap(warKey)")
+            .nth(1)
+            .unwrap()
+            .split("function drawWarLog()")
+            .next()
+            .unwrap();
+        assert!(war_focus.contains("takeCameraControl();"));
+        assert!(war_focus.contains("flyCameraTo(subjects[subjects.length - 1].pos"));
+        assert!(war_focus.contains("const goal = observedViewGoal(subjects, true);"));
         assert!(EMBEDDED_INDEX.contains("function warBelligerentRows("));
         assert!(EMBEDDED_INDEX.contains("function warPartyIsCityState("));
         assert!(EMBEDDED_INDEX.contains("war-row-label\">Belligerents"));

@@ -678,7 +678,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         // part of the world every civilization can see from the outside, and
         // the diplomacy panel above already names every player, so this is
         // shown whole rather than through the viewer's fog.
-        "wars": wars_json(g),
+        "wars": wars_json(g, &explored),
         // Every detonation, newest last. Shown whole for the same reason wars
         // are: a mushroom cloud is not a thing one civilization keeps to
         // itself, and a client needs the account to place the blast on the map
@@ -710,7 +710,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
 /// fronts through teams and defensive alliances; `WarRecord::conflict` folds
 /// those fronts into one durable, Wikipedia-style account here rather than
 /// asking each browser to guess which records belong together.
-fn wars_json(g: &Game) -> Vec<Value> {
+fn wars_json(g: &Game, explored: &BTreeSet<Pos>) -> Vec<Value> {
     const RECENT_CONFLICTS: usize = 12;
     let mut grouped: BTreeMap<u32, Vec<&crate::game::WarRecord>> = BTreeMap::new();
     for war in g.wars.values().chain(g.concluded_wars.iter()) {
@@ -878,6 +878,40 @@ fn wars_json(g: &Game) -> Vec<Value> {
                     .entry((peace.turn, peace.first, peace.second, peace.terms.join("\u{1f}")))
                     .or_insert(peace);
             }
+            // The ledger's bounded action tail remains in the save, but the
+            // browser needs the current/final theater rather than a map-wide
+            // tour of every place a long war ever touched.  Keep the last
+            // visit to each explored site, then the last eight turns of action
+            // overall; after the war ends this exact tail remains stable while
+            // the world continues around it.
+            let mut theater_by_pos = BTreeMap::new();
+            for site in records
+                .iter()
+                .flat_map(|war| war.theater.iter().copied())
+                // A public war is not public reconnaissance.  A seated player
+                // may return only to battlefield ground their civilization has
+                // actually explored; the omniscient spectator's explored set
+                // already contains the complete world.
+                .filter(|site| explored.contains(&site.pos))
+            {
+                theater_by_pos
+                    .entry(site.pos)
+                    .and_modify(|turn: &mut u32| *turn = (*turn).max(site.turn))
+                    .or_insert(site.turn);
+            }
+            let mut theater = theater_by_pos
+                .into_iter()
+                .map(|(pos, turn)| crate::game::WarTheaterSite { turn, pos })
+                .collect::<Vec<_>>();
+            theater.sort_by_key(|site| (site.turn, site.pos));
+            if let Some(latest) = theater.last().map(|site| site.turn) {
+                let cutoff = latest.saturating_sub(8);
+                theater.retain(|site| site.turn >= cutoff);
+            }
+            const THEATER_SITES_SENT: usize = 24;
+            if theater.len() > THEATER_SITES_SENT {
+                theater.drain(..theater.len() - THEATER_SITES_SENT);
+            }
             json!({
                 "conflict": anchor.conflict,
                 "aggressor": anchor.declarer,
@@ -887,6 +921,10 @@ fn wars_json(g: &Game) -> Vec<Value> {
                 "turns": ended.unwrap_or(g.turn).saturating_sub(started),
                 "outcome": outcome,
                 "victor": victor,
+                "theater": theater.into_iter().map(|site| json!({
+                    "turn": site.turn,
+                    "pos": [site.pos.0, site.pos.1],
+                })).collect::<Vec<_>>(),
                 "sides": [
                     {"player": anchor.declarer, "units_lost": side_losses[0].units,
                      "cities_lost": side_losses[0].cities},
