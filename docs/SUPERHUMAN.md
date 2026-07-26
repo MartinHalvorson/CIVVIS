@@ -78,6 +78,21 @@ separable fixes.
 
 Two further constraints bound any fix:
 
+- **A shallow estimate is not rank-preserving with respect to the deep one.**
+  This is the strongest constraint on the list, and three separate runs are
+  three faces of it. `strategic_h80` doubles the depth of *every* branch and
+  wins 21 map directions to 5. Stopping as soon as the branches separate
+  (`adaptive_horizon`) scores 39.2%, Elo −76, sign p=0.0000. Concentrating the
+  same budget on the branches that look best after a short chunk
+  (`focused_deepening`) scores 49.2%, p=0.8318 — exactly nothing. A lane behind
+  the adaptive baseline at depth 12 can be the best lane at depth 84, so *any*
+  within-review pruning discards real signal.
+
+  **This retires a whole family of ideas as predicted-null**: rotation,
+  adaptive stopping, focused deepening, progressive widening, sequential
+  halving — every scheme that re-allocates a fixed review budget using an
+  early ranking. The only lever on this search that has ever worked is raising
+  the total.
 - **The horizon saturates.** A branch that reaches a decided game returns
   exactly 1.0 or 0.0, so once every branch resolves they agree *by
   construction*. Share of reviews in that state: 22% at horizon 40, 56% at 80,
@@ -295,6 +310,11 @@ Each of these is falsified here, with the run that did it.
 
 **M2 → M1 → M4 → M6 → M5**, with M3 attempted only alongside its fires-check
 and M7 landed before M5 ships anything.
+
+Note what is *not* on the list: any further attempt to spend a review's budget
+more cleverly. That was the obvious first idea, it was measured twice from
+opposite directions, and both times it lost or drew. Depth has to be bought,
+not re-allocated.
 
 M2 first because it is free and strictly increases fidelity. M1 second because
 it is a precondition for evaluating *any* later change to the candidate set —
