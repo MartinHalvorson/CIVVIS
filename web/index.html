@@ -3088,10 +3088,19 @@
       </summary>
       <div class="sec settings-sec" id="game-settings">
       <div id="newgame-options">
+        <label class="small">Base game ruleset<select id="baseruleset" style="margin-top:4px">
+          <option value="civ6" selected>Civ 6</option>
+        </select></label>
         <label class="small">Game mode<select id="gamemode" style="margin-top:4px">
           <option value="ai_sim" selected>AI-only simulation</option>
           <option value="single">Single player</option>
           <option disabled>Multiplayer · later</option>
+        </select></label>
+        <label class="small">Start eon<select id="starteon" style="margin-top:4px">
+          <option value="civilization" selected>Civilization</option>
+        </select></label>
+        <label class="small">Start era<select id="startera" style="margin-top:4px">
+          <option value="ancient" selected>Ancient</option>
         </select></label>
         <label class="small">Leader Pool<select id="leaderpool" style="margin-top:4px">
           <option value="civ6" selected>Civ 6 Leaders</option>
@@ -6201,6 +6210,29 @@ async function boot() {
   bootBusy = true;
   try {
     RULES = await fetchJSON("/rules");
+    // The outermost setting: which published game's rules everything below is
+    // expressed in. One is modeled, and the control still comes from the
+    // server rather than being spelled out here, so a second never means
+    // editing the markup.
+    if (Array.isArray(RULES.base_rulesets)) {
+      document.getElementById("baseruleset").innerHTML = RULES.base_rulesets.map(ruleset =>
+        `<option value="${ruleset.id}" title="${escapeAttr(ruleset.description)}">${ruleset.name}</option>`
+      ).join("");
+    }
+    if (Array.isArray(RULES.start_eons)) {
+      // Oldest first, exactly as the server lists them: the eons are a
+      // timeline, and Civilization sits at its own place on it. An eon that
+      // cannot be played yet is shown as what is coming rather than hidden,
+      // and cannot be chosen.
+      document.getElementById("starteon").innerHTML = RULES.start_eons.map(eon =>
+        `<option value="${eon.id}" title="${escapeAttr(eon.description)}"` +
+        `${eon.playable ? "" : " disabled"}>${eon.name}` +
+        `${eon.playable ? "" : " · later"}</option>`
+      ).join("");
+      const playable = RULES.start_eons.find(eon => eon.playable);
+      if (playable) document.getElementById("starteon").value = playable.id;
+      syncStartEon();
+    }
     if (Array.isArray(RULES.map_sizes)) {
       document.getElementById("np").innerHTML = RULES.map_sizes.map(size =>
         `<option value="${size.default_players}">${size.name} · ${size.default_players} civs · ${size.default_city_states} city-states · ${size.width}×${size.height}</option>`
@@ -22430,10 +22462,12 @@ async function autoplay(turns) {
 document.getElementById("autoplaybtn").onclick = () => autoplay(autoplayRequest());
 document.getElementById("tradebtn").onclick = () => openTrade();
 document.getElementById("gamemode").addEventListener("change", syncSetupMode);
+document.getElementById("starteon").addEventListener("change", syncStartEon);
 document.getElementById("leaderpool").addEventListener("change", syncLeaderPool);
 document.getElementById("maptype").addEventListener("change", syncEarthShape);
 document.getElementById("savebtn").onclick = () => writeSave();
 syncSetupMode();
+syncStartEon();
 syncEarthShape();
 document.getElementById("diplomacybtn").onclick = () => openDiplomacy();
 document.getElementById("paneltoggle").onclick = () => togglePanel();
@@ -22487,6 +22521,9 @@ function selectedSimulationSettings() {
   const mapPoles = document.getElementById("mappoles").value;
   const gameSpeed = document.getElementById("gamespeed").value;
   const leaderPool = document.getElementById("leaderpool").value;
+  const baseRuleset = document.getElementById("baseruleset").value;
+  const startEon = document.getElementById("starteon").value;
+  const startEra = document.getElementById("startera").value;
   const victoryConditions = Object.fromEntries(VICTORY_TRACKS.map(track =>
     [track.id, document.getElementById(`victory-${track.id}`).checked]));
   const leader = (document.getElementById("leader") || {}).value || "";
@@ -22494,6 +22531,7 @@ function selectedSimulationSettings() {
   return {num_players: np, map_script: mapScript, map_topology: mapTopology,
           map_poles: mapPoles, game_speed: gameSpeed,
           leader_pool: leaderPool,
+          base_ruleset: baseRuleset, start_eon: startEon, start_era: startEra,
           victory_conditions: victoryConditions,
           spectate: gameMode === "ai_sim",
           // A spectated world has nobody to hand a leader or a handicap to.
@@ -22512,7 +22550,12 @@ function selectedSimulationSummary() {
   const size = selectedText("np").split(" · ")[0];
   const map = selectedText("maptype").split(" · ")[0];
   const speed = selectedText("gamespeed").split(" · ")[0];
-  return [mode, size, map, speed].filter(Boolean).join(" · ");
+  // The era is named only when it is not the stock start: every other setting
+  // on this line is one somebody chose, and "Ancient" is what you get by
+  // choosing nothing.
+  const eras = document.getElementById("startera");
+  const era = eras && eras.selectedIndex > 0 ? selectedText("startera") : "";
+  return [mode, size, map, speed, era].filter(Boolean).join(" · ");
 }
 function simulationSettingsKey(settings) {
   return JSON.stringify(settings);
@@ -22532,6 +22575,12 @@ function applyQueuedSimulationSettings(settings) {
   document.getElementById("gamespeed").value = settings.speed;
   document.getElementById("leaderpool").value = settings.leader_pool || "civ6";
   syncLeaderPool();
+  document.getElementById("baseruleset").value = settings.base_ruleset || "civ6";
+  // The eon has to land before the era, because it is what decides which
+  // ladder the era is a rung of.
+  document.getElementById("starteon").value = settings.eon || "civilization";
+  syncStartEon();
+  if (settings.start_era) document.getElementById("startera").value = settings.start_era;
   const victories = new Set(settings.victories || []);
   for (const track of VICTORY_TRACKS)
     document.getElementById(`victory-${track.id}`).checked = victories.has(track.id);
@@ -22635,6 +22684,24 @@ function syncLeaderPool() {
     `<option value="${entry.civ}" title="${escapeAttr(entry.note)}">` +
     `${entry.leader} of ${entry.civ}</option>`).join("");
   if (leaders.some(entry => entry.civ === selected)) select.value = selected;
+}
+
+// An era only means something inside its own eon: "Ancient" is a rung of human
+// history and nothing at all under the dinosaurs. So the era control is the
+// selected eon's own ladder, rebuilt whenever that changes, and a rung is
+// never carried across from the previous one.
+function syncStartEon() {
+  const eons = document.getElementById("starteon");
+  const eras = document.getElementById("startera");
+  if (!eons || !eras || !RULES || !Array.isArray(RULES.start_eons)) return;
+  const eon = RULES.start_eons.find(entry => entry.id === eons.value);
+  const ladder = (eon && Array.isArray(eon.eras)) ? eon.eras : [];
+  if (!ladder.length) return;
+  const chosen = eras.value;
+  eras.innerHTML = ladder.map(era =>
+    `<option value="${era.id}" title="${escapeAttr(era.description)}">${era.name}</option>`
+  ).join("");
+  eras.value = ladder.some(era => era.id === chosen) ? chosen : ladder[0].id;
 }
 
 // Fixed geography chooses the coastline, not the projection. Keep the shape
