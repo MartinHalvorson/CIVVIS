@@ -7121,6 +7121,7 @@ function render(st, recordChronicle = true) {
     if (w.dataset.signature) { delete w.dataset.signature; w.replaceChildren(); }
   }
   draw(); drawSide(newWorld); drawMini(); drawPlayerHud(); drawUbar(); drawQuickDeals(); drawCaptureChoice();
+  refreshTileTip();
   drawLaunchBar(); drawEmpire();
   drawCityScreen();
   if (newWorld) {
@@ -20059,33 +20060,49 @@ function tileTipLines(t, pos, tileKey) {
 
 // tooltip
 const tip = document.getElementById("tip");
+let tileTipPointer = null;
+function hideTileTip(clearPointer = false) {
+  tip.style.display = "none";
+  if (clearPointer) tileTipPointer = null;
+}
+function refreshTileTip() {
+  if (!state || !tileTipPointer || dragState || mapTouches.size || rdrag) {
+    hideTileTip();
+    return;
+  }
+  const r = cv.getBoundingClientRect();
+  const {clientX, clientY} = tileTipPointer;
+  if (clientX < r.left || clientX > r.right || clientY < r.top || clientY > r.bottom) {
+    hideTileTip(true);
+    return;
+  }
+  const pos = pixelToHex(clientX - r.left, clientY - r.top);
+  const t = pos && TMAP.get(key(pos));
+  if (!t) {
+    hideTileTip();
+    return;
+  }
+  const lines = tileTipLines(t, pos, key(pos));
+  tip.innerHTML = lines.join("<br>");
+  tip.style.display = "block";
+  tip.style.left = Math.min(clientX + 16, window.innerWidth - 290) + "px";
+  tip.style.top = (clientY + 16) + "px";
+}
 // The overlays — player standings across the top, the victory rail, the
 // minimap — sit *on* the map, so the canvas never sees a pointer parked at the
 // edges that matter. Watch the window and measure against the map's own box.
 window.addEventListener("mousemove", ev => updateEdgePan(ev.clientX, ev.clientY), {passive: true});
 window.addEventListener("mouseout", ev => { if (!ev.relatedTarget) edgePanVector = null; });
 cv.addEventListener("mousemove", ev => {
+  tileTipPointer = {clientX: ev.clientX, clientY: ev.clientY};
   // `dragMoved` outlives the drag: it is cleared by the click that follows, and
   // a drag released off the canvas never gets one. Hovering must ask whether a
   // gesture is happening *now*, or the first pan of the game kills the tooltip
   // for good.
-  if (!state || dragState || mapTouches.size || rdrag) {
-    tip.style.display = "none";
-    return;
-  }
-  const r = cv.getBoundingClientRect();
-  const pos = pixelToHex(ev.clientX - r.left, ev.clientY - r.top);
-  const t = pos && TMAP.get(key(pos));
-  if (!t) { tip.style.display = "none"; return; }
-  const k = key(pos);
-  const lines = tileTipLines(t, pos, k);
-  tip.innerHTML = lines.join("<br>");
-  tip.style.display = "block";
-  tip.style.left = Math.min(ev.clientX + 16, window.innerWidth - 290) + "px";
-  tip.style.top = (ev.clientY + 16) + "px";
+  refreshTileTip();
 });
-cv.addEventListener("mouseleave", () => { tip.style.display = "none"; });
-window.addEventListener("blur", () => { edgePanVector = null; });
+cv.addEventListener("mouseleave", () => hideTileTip(true));
+window.addEventListener("blur", () => { edgePanVector = null; hideTileTip(true); });
 
 // ----------------------------------------------------------- the turn loop
 // A Civ 6 turn is a loop around one button: the game names what it is waiting
