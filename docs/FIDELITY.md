@@ -272,6 +272,42 @@ of **180/272** and 8-tech/11-civic prices of **204/308**. The forged-price test
 also posts a zero quote and proves the engine still charges its recomputed live
 price, so the browser's quote is never trusted as authority.
 
+## Open, and needing a judgement call: resource placement frequency
+
+`Resources.Frequency` and `SeaFrequency` weight the shipped placement lottery.
+CIVVIS picks **uniformly** among the resources valid for a tile:
+
+```rust
+let pick = valid[rng.below(valid.len())].clone();
+```
+
+The shipped weights are not close to uniform. On land, Stone and Wheat are 10
+against Copper, Deer, Sheep and Bananas at 4 — two and a half times as likely.
+At sea it is starker: Fish 23, Crabs 17, Turtles 5, and Amber, Pearls and Whales
+1 apiece, so a Whale should be a twenty-third as common as a Fish and CIVVIS
+makes them equally likely. Land luxuries are the one group that really is
+uniform, all at 2, which CIVVIS gets right by accident.
+
+**Why this is not simply fixed.** The lottery runs before start selection and
+feeds it: resources are part of what scores a start, through
+`StartBias::weight(resource_tier)`. Weighting the lottery therefore moves
+starts. Implementing it made two of roughly a hundred sampled (size, seed)
+combinations miss the start-spacing tolerance in
+`stock_map_profiles_produce_spread_and_complete_spawn_sets` and
+`islands_flat_poles_spread_starts_across_the_whole_archipelago` — both
+marginally, 207% against a 200% cap and 64.7% against a 65% floor.
+
+One or two marginal misses in a hundred is consistent with ordinary variance
+around a tight threshold, and it is also consistent with a small real
+degradation. n=1 does not separate them, and even start spacing is a
+tournament-fairness property this project cares about. Loosening the tolerance
+or reseeding until the sample passes would settle the argument in the change's
+favour without evidence, so the code is not in the tree.
+
+What would settle it: run the spacing property over a few hundred seeds with and
+without the weighting and compare failure rates. If they match, the weighting is
+correct and the thresholds simply sit close to the natural spread.
+
 ## Swept clean: the systematic comparisons already run
 
 These are whole-axis comparisons, not spot checks. Each was run against every
