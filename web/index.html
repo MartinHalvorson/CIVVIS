@@ -16472,6 +16472,9 @@ function drawCityScreen() {
   const buys = state.legal_actions.filter(a =>
     (a.type === "buy" || a.type === "buy_building" || a.type === "buy_district") &&
     a.city === city.id);
+  const plotBuys = state.legal_actions.filter(a =>
+    a.type === "buy_plot" && a.city === city.id)
+    .sort((a, b) => a.cost - b.cost || a.pos[0] - b.pos[0] || a.pos[1] - b.pos[1]);
   const entries = new Map();
   for (const action of produce) {
     const key = itemKey(action.item);
@@ -16496,6 +16499,24 @@ function drawCityScreen() {
   const order = ["Districts", "Buildings", "Units", "Wonders", "Projects"];
   const currentKey = current ? itemKey(current) : null;
   let build = "";
+  if (plotBuys.length) {
+    build += `<div class="city-group"><div class="city-group-head">Buy plots` +
+      `<span>${plotBuys.length} affordable</span></div><div class="build-list">` +
+      plotBuys.map(action => {
+        const tile = TMAP.get(key(action.pos));
+        const name = tile
+          ? titleCase(tile.resource || tile.feature || tile.terrain || "plot")
+          : "Plot";
+        const yieldNote = tile ? yieldWords(tileYieldFull(tile)).join(" · ") : "";
+        return `<div class="build-item"><div class="build-row">` +
+          `<span class="build-name">${name} @ ${action.pos.join(",")}</span>` +
+          `<span class="build-cost">${Math.round(action.cost)} 💰</span></div>` +
+          (yieldNote ? `<div class="build-note">${yieldNote}</div>` : "") +
+          `<div class="build-actions">` + cityAct(action,
+            `Buy · ${Math.round(action.cost)} Gold`, "primary",
+            "Annex this adjacent plot immediately") + `</div></div>`;
+      }).join("") + `</div></div>`;
+  }
   if (current) {
     const cost = city.queue_cost || itemCost(current);
     const turns = turnsFor(cost, perTurn, banked);
