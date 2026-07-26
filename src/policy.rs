@@ -41,6 +41,27 @@ pub const TACTICAL_KINDS: [&str; 12] = [
     "condemn_heretic",
 ];
 
+/// Action kinds the evaluator is structurally blind to.
+///
+/// `evolve::features` is twenty-five empire aggregates — cities, population,
+/// owned tiles, techs, civics, military power, unit count, three yields,
+/// Gold and score, mirrored for the leading rival, plus turn fraction.
+/// Repositioning a unit changes none of them, so the value of the position
+/// after the action is *bit-identical* to the value before it and the
+/// computed gain is exactly zero.
+///
+/// Measured over four 120-turn four-player games (11,347 candidate
+/// evaluations): `fortify` moved the value on 0 of 1,445 candidates,
+/// `ranged` 0 of 152, `city_strike` 0 of 44, and `move` on 2.0% of 9,481 —
+/// the exceptions being moves that capture a civilian or claim a tile.
+/// Only `attack` was always visible, at 225 of 225.
+///
+/// These three kinds are excluded a priori rather than by that sample:
+/// none of them can change unit count, ownership, yields, Gold, research or
+/// score, so no game state exists in which they move a feature.
+/// `moves_no_feature` pins that as a property.
+pub const UNOBSERVABLE_KINDS: [&str; 3] = ["fortify", "air_patrol", "air_rebase"];
+
 impl Default for PolicyAi {
     fn default() -> Self {
         Self::new()
@@ -77,12 +98,21 @@ impl PolicyAi {
     /// Candidate actions worth spending a clone on. EndTurn is excluded (it
     /// is the loop's exit, not a move) and the set is capped at `width` so a
     /// turn with hundreds of legal actions stays affordable.
+    ///
+    /// Kinds the evaluator cannot see are dropped before the cap rather than
+    /// scored and discarded. They can never clear `margin` — their gain is
+    /// exactly zero — so removing them cannot change which action is chosen,
+    /// but leaving them in spends both a clone each and a share of the
+    /// `width` budget that visible candidates need. On a busy turn the
+    /// stride below is what decides which candidates survive, so a blind
+    /// candidate does not merely cost time: it displaces an attack.
     fn candidates(&self, g: &Game, pid: usize) -> Vec<Action> {
         let encoded = legal_encoded(g, pid);
         let mut out: Vec<Action> = encoded
             .actions
             .into_iter()
             .filter(|a| !matches!(a, Action::EndTurn))
+            .filter(|a| !UNOBSERVABLE_KINDS.contains(&kind_name(a)))
             .filter(|a| !self.tactical_only || TACTICAL_KINDS.contains(&kind_name(a)))
             .collect();
         if out.len() > self.width {
@@ -161,9 +191,81 @@ impl Ai for PolicyAi {
 
 #[cfg(test)]
 mod tests {
-    use super::PolicyAi;
+    use super::{PolicyAi, TACTICAL_KINDS, UNOBSERVABLE_KINDS};
+    use crate::action_space::{kind_name, legal_encoded};
     use crate::ai::{run_game, Ai, BasicAi};
-    use crate::game::Game;
+    use crate::evolve::features;
+    use crate::game::{Action, Game};
+
+    /// Play a real four-player game and hand every legal tactical candidate
+    /// to `probe` at the start of each of player 0's turns.
+    fn walk_tactical_candidates(seeds: u64, turns: u32, mut probe: impl FnMut(&Game, &Action)) {
+        for seed in 0..seeds {
+            let mut g = Game::new(4, 28, 18, seed + 900, turns, 2);
+            let mut ais = BasicAi::fleet(&g);
+            while g.winner.is_none() && g.turn <= g.max_turns {
+                let pid = g.current;
+                if pid == 0 {
+                    for action in legal_encoded(&g, 0).actions {
+                        if matches!(action, Action::EndTurn)
+                            || !TACTICAL_KINDS.contains(&kind_name(&action))
+                        {
+                            continue;
+                        }
+                        probe(&g, &action);
+                    }
+                }
+                ais[pid].take_turn(&mut g, pid);
+                if g.winner.is_none() && g.current == pid {
+                    let _ = g.apply(pid, &Action::EndTurn);
+                }
+            }
+        }
+    }
+
+    /// The excluded kinds must be provably invisible, not merely unobserved.
+    /// None of them can change unit count, ownership, yields, Gold, research
+    /// or score, so the twenty-five empire features are bit-identical after
+    /// the action and the computed gain is exactly zero. If a rules change
+    /// ever gives one of them a feature-visible effect, this fails and the
+    /// exclusion must be revisited rather than the assertion relaxed.
+    #[test]
+    fn excluded_kinds_cannot_move_a_single_feature() {
+        let mut checked = 0usize;
+        walk_tactical_candidates(3, 110, |g, action| {
+            if !UNOBSERVABLE_KINDS.contains(&kind_name(action)) {
+                return;
+            }
+            let before = features(g, 0);
+            let mut sim = g.clone();
+            if sim.apply(0, action).is_err() {
+                return;
+            }
+            checked += 1;
+            assert_eq!(
+                before,
+                features(&sim, 0),
+                "{} changed a feature: {action:?}",
+                kind_name(action)
+            );
+        });
+        assert!(checked > 100, "only {checked} candidates exercised");
+    }
+
+    /// Dropping them cannot change the chosen action, because a zero gain
+    /// never clears the commitment margin. This is the safety half of the
+    /// exclusion: the speedup is only worth having if play is unchanged.
+    #[test]
+    fn an_excluded_candidate_could_never_have_been_committed() {
+        let policy = PolicyAi::new();
+        assert!(policy.margin > 0.0, "a zero gain must be below the margin");
+        for kind in UNOBSERVABLE_KINDS {
+            assert!(
+                TACTICAL_KINDS.contains(&kind),
+                "{kind} is excluded from a set it was never in"
+            );
+        }
+    }
 
     /// With no trained net on disk the agent must still play a full legal
     /// game by falling back to the scripted agent.

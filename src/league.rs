@@ -275,6 +275,17 @@ fn default_worker_id() -> String {
     format!("{machine}:{}", std::process::id())
 }
 
+/// Turns the shipped ruleset gives the league's game speed. Read from the rules
+/// rather than pinned here, so a speed retune moves the league with it.
+pub fn stock_turns() -> u32 {
+    let rules = crate::rules::Rules::embedded();
+    rules
+        .speeds
+        .get(&crate::game::default_speed())
+        .map(|speed| speed.turns)
+        .unwrap_or(500)
+}
+
 impl Default for LeagueCfg {
     fn default() -> Self {
         let size = MapSize::for_players(4);
@@ -284,10 +295,19 @@ impl Default for LeagueCfg {
             players_per_game: 4,
             width: size.width,
             height: size.height,
-            // Full natural length: at 150 the turn cap converts most games
-            // into score victories, which structurally favors score-lane
-            // strategies; at 250 every victory lane can actually fire.
-            max_turns: 250,
+            // The stock budget for the speed the league plays, so games are
+            // decided by winning rather than by whoever led on score when the
+            // clock ran out. 150 turns made almost everything a score victory
+            // and 250 was not enough either: over 9336 six-seat league games
+            // at 250, 81.8% ended on the cap, no game ever ended on a natural
+            // score victory, and domination and science never happened at all
+            // -- so three of the seven bred niches were chasing outcomes that
+            // could not occur. On six matched seeds a 250 cap ends 6 of 6
+            // games on score at t251 while the stock budget ends all six
+            // naturally between t288 and t369 (three diplomatic, three
+            // religious) and changes who won in two of them, for 2.3x the
+            // compute. See docs/EVAL.md.
+            max_turns: stock_turns(),
             num_city_states: size.default_city_states,
             seed: 1,
             jobs: crate::parallel::default_jobs(),

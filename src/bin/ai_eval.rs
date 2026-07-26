@@ -6,6 +6,7 @@ use civvis::elo::{
 };
 use civvis::game::{default_difficulty, Action, Game, GameOptions};
 use civvis::rules::Rules;
+use civvis::strategic::ReviewCensus;
 use std::collections::{BTreeMap, BTreeSet};
 
 const PROMOTION_MIN_MAPS: usize = 20;
@@ -384,6 +385,13 @@ struct Metrics {
     plan_turns: BTreeMap<String, usize>,
     plan_observations: usize,
     plan_switches: usize,
+    /// Reviews summed over every seat this entrant played, so a run can say
+    /// whether the macro search ever ran. Stays zero for agents that do not
+    /// search, which is honest rather than missing.
+    census: ReviewCensus,
+    /// Seats whose agent reports a search at all, distinguishing "searched
+    /// zero times" from "has no search to report".
+    searching_seats: usize,
 }
 
 impl Metrics {
@@ -611,6 +619,11 @@ fn main() {
             // wins. The paired promotion score above records it as a draw.
             for (pid, name) in seats.iter().enumerate() {
                 let target = plan_target(ais[pid].as_ref());
+                if let Some(census) = ais[pid].review_census() {
+                    let metrics = totals.get_mut(*name).unwrap();
+                    metrics.census.merge(census);
+                    metrics.searching_seats += 1;
+                }
                 totals.get_mut(*name).unwrap().record(
                     &g,
                     pid,
@@ -803,6 +816,46 @@ fn main() {
             metrics.plan_switches as f64 / metrics.games.max(1) as f64,
             target_shares(metrics)
         );
+    }
+    // A searching entrant that never reached its search is a scripted agent
+    // under a searching agent's name. Say so beside the win rate, because
+    // the win rate cannot.
+    if [a, b].iter().any(|name| totals[*name].searching_seats > 0) {
+        println!("\nMacro search exposure (reviews that reached the rollouts):");
+        for name in [a, b] {
+            let metrics = &totals[name];
+            if metrics.searching_seats == 0 {
+                println!("  {name:<11} no search to report");
+                continue;
+            }
+            let census = metrics.census;
+            match census.search_exposure() {
+                None => println!(
+                    "  {name:<11} never reviewed ({} seats; games ended before turn {})",
+                    metrics.searching_seats,
+                    civvis::strategic::FIRST_REVIEW_TURN
+                ),
+                Some(share) => println!(
+                    "  {name:<11} {}/{} ({:.0}%) reached the rollouts; priors: \
+                     duel-religion {}, urgent-counter {}, irreversible-religion {}",
+                    census.rollouts,
+                    census.total(),
+                    100.0 * share,
+                    census.duel_religion,
+                    census.urgent_counter,
+                    census.irreversible_religion
+                ),
+            }
+        }
+        if [a, b]
+            .iter()
+            .all(|name| totals[*name].searching_seats > 0 && totals[*name].census.rollouts == 0)
+        {
+            println!(
+                "  warning: neither entrant reached its macro search, so this run \
+                 compares priors and the scripted parent, not search or evaluator"
+            );
+        }
     }
     println!("\nFinal plan targets:");
     for name in [a, b] {

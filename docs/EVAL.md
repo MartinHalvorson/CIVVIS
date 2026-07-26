@@ -685,3 +685,103 @@ advanced against itself and says nothing about either name
 collapse warning is the load-bearing half: a missing artifact is only a
 problem when it makes two entrants the same agent, and that is precisely
 the case a win rate cannot show you.
+
+## 2026-07-26 — a duel never reaches the macro search
+
+`ai_eval strategic strategic_score --pairs 20 --seed 21000 --turns 180`
+returned **20 neutral splits on 20 maps** — not parity but bit-identical
+play, which is what a value net that never runs looks like. The cause is
+structural, not statistical: `review` answers from three priors before the
+economic rollouts, and in a two-player game `duel_religious_race` is true
+for essentially the whole game. `StrategicAi` in a duel is `AdvancedAi`
+hard-targeted at Religion.
+
+`StrategicAi` now keeps a `ReviewCensus` — reviews resolved by each prior
+versus reviews that reached the rollouts — exposed through
+`Ai::review_census()` and reported by `ai_eval`:
+
+```
+Macro search exposure (reviews that reached the rollouts):
+  strategic   0/20 (0%) reached the rollouts; priors: duel-religion 8,
+              urgent-counter 12, irreversible-religion 0
+  strategic_score 0/20 (0%) ... (identical)
+  warning: neither entrant reached its macro search, so this run compares
+  priors and the scripted parent, not search or evaluator
+```
+
+Two consequences for the recorded baselines above:
+
+1. **Every two-player `strategic` number measures a forced religious lane,
+   not macro search.** The 2026-07-24 duel results (32/50 and the 31/50
+   holdout, both with ~30 religious wins) are real improvements to the
+   *priors* — which is what changed in that batch — but they are not
+   evidence about rollout routing or about the evaluator. The four-player
+   rows in that same entry are the ones that measured search.
+2. `urgent_counter` fires on 12 of 20 duel reviews on its own, so removing
+   only the religious prior would still leave the search mostly bypassed.
+
+At four players the search does run — 26/44 (59%) and 22/43 (51%) exposure
+on `--pairs 3 --players 4 --seed 11000 --turns 200` — and the A/B is
+*still* exactly neutral: `--pairs 10` at those settings gave 10 neutral
+splits on 10 maps. So with the search running and a calibrated net loaded
+(grouped-holdout test BCE 0.4058 vs 0.5636 constant), the net never changed
+a lane choice. `VALUE_NET_WEIGHT = 0.25` regularizes the learned estimate
+toward score share hard enough that the blended argmax appears to equal the
+score-share argmax on every review observed so far. That is the next thing
+to measure directly, and it is a separate question from calibration: the
+evaluator is good and inert.
+
+Recommended settings for anything that claims to measure this agent's
+search or evaluator: `--players 4` at minimum, and read the exposure line
+before the win rate.
+
+## 2026-07-26 — the tactical policy cannot see 96% of what it evaluates
+
+`PolicyAi` scores each legal tactical action by applying it to a clone and
+asking the value net how the position changed. The net's input is
+`evolve::features`: twenty-five *empire aggregates* — cities, population,
+owned tiles, techs, civics, military power, unit count, three yields, Gold
+and score, mirrored for the leading rival, plus turn fraction. Repositioning
+a unit changes none of them, so the gain is not noisy. It is exactly zero.
+
+Measured over four 120-turn four-player games, 11,347 candidate evaluations:
+
+| tactical kind | evaluated | changed the value | share |
+|---|---|---|---|
+| `attack` | 225 | 225 | **100.0%** |
+| `move` | 9,481 | 185 | 2.0% |
+| `fortify` | 1,445 | 0 | 0.0% |
+| `ranged` | 152 | 0 | 0.0% |
+| `city_strike` | 44 | 0 | 0.0% |
+| **total** | **11,347** | **410** | **3.6%** |
+
+A separate probe of the agent's actual decision points (648 turn starts, 5
+games, mean 32.6 candidates each) found the best available action's gain to
+be **exactly 0.0 at the median and at the 75th percentile**, with 560/648
+below 1e-3 and only 109 clearing the 1e-4 commitment margin. So the agent
+declines to act at 83% of its decision points and falls through to the
+scripted layer. That, and not the net's calibration, is why the learned
+tactical policy measures at parity: it is an attack selector wearing the
+name of a policy.
+
+This also reframes 2026-07-23's design rule. "Give the net the decisions
+whose consequences it can actually observe" was applied at the wrong
+granularity: `TACTICAL_KINDS` selects actions whose effects *land this
+turn*, which is not the same property as actions the *features* respond to.
+Ten of its twelve kinds fail the second test.
+
+`fortify`, `air_patrol` and `air_rebase` are now dropped before the
+candidate cap. They cannot change unit count, ownership, yields, Gold,
+research or score, so no game state exists in which they move a feature —
+pinned by `excluded_kinds_cannot_move_a_single_feature`, which walks every
+legal candidate of three real games and asserts bit-identical features. A
+zero gain can never clear the margin, so play is unchanged; what changes is
+that ~13% of candidates no longer consume a clone *and a slot in the
+`width` budget*. On a busy turn the stride that enforces that cap is what
+decides which candidates survive, so a blind candidate does not merely cost
+time — it displaces an attack.
+
+The remaining gap is not fixable by training a better net on these inputs.
+An evaluator whose inputs do not respond to an action cannot rank that
+action at any level of calibration, which is AI_GAPS item 3 stated as a
+measurement rather than a plan.
