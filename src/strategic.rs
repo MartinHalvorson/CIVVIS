@@ -196,6 +196,28 @@ impl ReviewCensus {
     }
 }
 
+/// What one focused review actually spent, and what it bought.
+///
+/// A budget-neutral reallocation is only worth evaluating if it reallocates,
+/// and the win it claims is depth. Both are invisible in a win rate and
+/// neither shows up in the lane the review returns, so the search reports
+/// them directly: `branch_rounds` against `budget` is the cost claim, and
+/// `depth` against `horizon` is the benefit claim.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct FocusReport {
+    /// Branch-rounds actually projected across every branch and stage.
+    pub branch_rounds: u32,
+    /// Branch-rounds a fixed-horizon review of the same branches would have
+    /// spent. `branch_rounds` never exceeds this.
+    pub budget: u32,
+    /// Rounds the deepest surviving branch was projected. This is the number
+    /// the scheme exists to raise above `horizon`.
+    pub depth: u32,
+    /// Branches still live at the last stage; only these are eligible to be
+    /// chosen.
+    pub survivors: usize,
+}
+
 pub struct StrategicAi {
     inner: AdvancedAi,
     weights: Weights,
@@ -217,6 +239,29 @@ pub struct StrategicAi {
     /// long ones.
     pub horizon: u32,
     next_review: u32,
+    /// Spend the review's whole budget, but on the branches that are still
+    /// close, instead of an equal share on every branch.
+    ///
+    /// A review projects the adaptive baseline plus each enabled lane —
+    /// seven branches at a fixed horizon, so it costs `7 x horizon`
+    /// branch-rounds and every branch gets exactly `horizon` of them,
+    /// including the ones that were hopeless after ten. Focused deepening
+    /// steps every branch a short chunk, drops the weakest half of the
+    /// lanes, doubles the chunk, and repeats. Same total branch-rounds; the
+    /// survivors reach roughly **twice** the fixed horizon. At the default
+    /// budget that is 84 projected rounds instead of 40, for the compute
+    /// `strategic` already spends.
+    ///
+    /// This is the direction the repository's strongest measured result
+    /// points: every doubling of macro-search compute has won significantly
+    /// more maps, and the promoted `strategic_deep` bought its win with 4x
+    /// the compute on every game. Depth is what the search is short of, and
+    /// an equal split spends most of it on branches that stopped competing.
+    ///
+    /// The adaptive baseline is never dropped: `choose_rollout_target`
+    /// measures every lane against it, so pruning it would leave the review
+    /// with nothing to clear.
+    pub focused_deepening: bool,
     /// Search the doctrine axis as well as the lane. Off by default so
     /// `strategic` is bit-identical to its published behaviour; the
     /// `strategic_doctrine` entrant turns it on, which makes the two an
@@ -264,6 +309,7 @@ impl StrategicAi {
             weights,
             net,
             census: ReviewCensus::default(),
+            focused_deepening: false,
             doctrine_search: false,
             defer_periodic_on_interrupt: true,
             rotate_lanes: false,
@@ -822,6 +868,189 @@ impl StrategicAi {
             .and_then(|(_, target)| target)
     }
 
+    /// A branch of the review at its root: a clone of the position and the
+    /// agents that will carry it forward, ready to be stepped in chunks
+    /// rather than run straight to a fixed horizon.
+    fn branch_state(
+        &self,
+        g: &Game,
+        pid: usize,
+        target: Option<VictoryTarget>,
+    ) -> (Game, Vec<Box<dyn Ai>>) {
+        let sim = g.clone();
+        let ais: Vec<Box<dyn Ai>> = sim
+            .players
+            .iter()
+            .map(|p| {
+                if p.id == pid {
+                    match target {
+                        Some(target) => Box::new(AdvancedAi::with_weights_and_target(
+                            self.weights.clone(),
+                            target,
+                        )) as Box<dyn Ai>,
+                        None => {
+                            Box::new(AdvancedAi::with_weights(self.weights.clone())) as Box<dyn Ai>
+                        }
+                    }
+                } else {
+                    Box::new(AdvancedAi::new()) as Box<dyn Ai>
+                }
+            })
+            .collect();
+        (sim, ais)
+    }
+
+    fn branch_value(&self, sim: &Game, pid: usize) -> f64 {
+        match sim.winner {
+            Some(winner) if winner == pid => 1.0,
+            Some(_) => 0.0,
+            None => self.position_value(sim, pid),
+        }
+    }
+
+    /// How many branches survive each stage of a focused review, starting
+    /// with all of them and halving down to the adaptive baseline plus one
+    /// lane.
+    ///
+    /// Halving rather than dropping straight to the leader: at the default
+    /// horizon the median spread between branches is 0.0045, so an early
+    /// ranking is a weak signal and cutting to one arm would commit on
+    /// almost no evidence. Halving keeps the runner-up alive to be
+    /// re-examined at twice the depth, which is the whole point.
+    fn stage_sizes(branches: usize) -> Vec<usize> {
+        let mut sizes = vec![branches];
+        let mut live = branches;
+        while live > 2 {
+            live = live.div_ceil(2);
+            sizes.push(live);
+        }
+        sizes
+    }
+
+    /// Rounds each stage projects, given the stage sizes and the branch-round
+    /// budget a fixed-horizon review of the same branches would have spent.
+    ///
+    /// Chunks double per stage, so a survivor's depth is `chunk x (2^k - 1)`
+    /// over `k` stages while the cost stays `sum(size_i x chunk x 2^i)`.
+    /// Solving that against `branches x horizon` is the whole scheme: for
+    /// seven branches at horizon 40 it yields chunks of 12, 24 and 48 — 276
+    /// of the 280 branch-rounds the fixed review spends, and 84 rounds of
+    /// depth for the two branches still in contention.
+    fn stage_chunks(sizes: &[usize], budget: u32) -> Vec<u32> {
+        let unit: u32 = sizes
+            .iter()
+            .enumerate()
+            .map(|(stage, size)| *size as u32 * (1u32 << stage))
+            .sum();
+        let chunk = (budget / unit.max(1)).max(1);
+        (0..sizes.len())
+            .map(|stage| chunk * (1u32 << stage))
+            .collect()
+    }
+
+    /// Every branch's value under focused deepening, plus what the review
+    /// spent and how deep it reached.
+    ///
+    /// Only the branches that survive to the last stage are returned. That is
+    /// deliberate: a pruned branch's value was measured at a shallower depth
+    /// than the survivors' and the two are not comparable, so letting a stale
+    /// number win the argmax would be worse than not projecting it at all.
+    /// The adaptive baseline always survives, so the caller always has the
+    /// reference it needs.
+    ///
+    /// Deterministic: branches are stepped in a fixed order, ranked by a
+    /// stable sort so ties keep declaration order, and the budget is a
+    /// function of the branch count and the horizon alone — no clock, no RNG.
+    fn focused_values(
+        &self,
+        g: &Game,
+        pid: usize,
+        targets: &[Option<VictoryTarget>],
+    ) -> (Vec<(f64, Option<VictoryTarget>)>, FocusReport) {
+        let budget = targets.len() as u32 * self.horizon;
+        let sizes = Self::stage_sizes(targets.len());
+        let chunks = Self::stage_chunks(&sizes, budget);
+        // `live` holds indices into `targets`, in declaration order, so the
+        // returned values are ordered the same way a fixed review's are.
+        let mut live: Vec<usize> = (0..targets.len()).collect();
+        let mut branches: Vec<(Game, Vec<Box<dyn Ai>>)> = targets
+            .iter()
+            .map(|target| self.branch_state(g, pid, *target))
+            .collect();
+        let mut spent = 0;
+        let root = g.turn;
+        for (stage, chunk) in chunks.iter().enumerate() {
+            for &index in &live {
+                let (sim, ais) = &mut branches[index];
+                let stop = sim.turn + chunk;
+                while sim.winner.is_none() && sim.turn < stop && spent < budget {
+                    let before = sim.turn;
+                    let current = sim.current;
+                    ais[current].take_turn(sim, current);
+                    if sim.winner.is_none() && sim.current == current {
+                        let _ = sim.apply(current, &Action::EndTurn);
+                    }
+                    spent += sim.turn.saturating_sub(before);
+                }
+            }
+            // Nothing left to learn: every live branch has resolved, so more
+            // rounds would return the same exact 1.0/0.0 they already do.
+            if live.iter().all(|index| branches[*index].0.winner.is_some()) {
+                break;
+            }
+            let Some(keep) = sizes.get(stage + 1) else {
+                break;
+            };
+            // Rank the lanes only. The adaptive baseline is the reference
+            // every lane is measured against and is never dropped.
+            let mut lanes: Vec<usize> = live
+                .iter()
+                .copied()
+                .filter(|index| targets[*index].is_some())
+                .collect();
+            lanes.sort_by(|a, b| {
+                let value = |index: usize| self.branch_value(&branches[index].0, pid);
+                value(*b)
+                    .partial_cmp(&value(*a))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            lanes.truncate(keep.saturating_sub(1));
+            live.retain(|index| targets[*index].is_none() || lanes.contains(index));
+        }
+        let report = FocusReport {
+            branch_rounds: spent,
+            budget,
+            depth: live
+                .iter()
+                .map(|index| branches[*index].0.turn.saturating_sub(root))
+                .max()
+                .unwrap_or(0),
+            survivors: live.len(),
+        };
+        (
+            live.iter()
+                .map(|index| (self.branch_value(&branches[*index].0, pid), targets[*index]))
+                .collect(),
+            report,
+        )
+    }
+
+    /// Run one focused review from this position and report what it cost and
+    /// how deep it reached.
+    ///
+    /// Exposed for the same reason `doctrine_values` is: the claim this
+    /// scheme makes is about *how* a review spends its budget, and a win rate
+    /// cannot distinguish a reallocation that happened from one that did not.
+    pub fn focused_review(
+        &self,
+        g: &Game,
+        pid: usize,
+    ) -> (Vec<(f64, Option<VictoryTarget>)>, FocusReport) {
+        let mut branches: Vec<Option<VictoryTarget>> = vec![None];
+        branches.extend(self.lane_candidates(g).into_iter().map(Some));
+        self.focused_values(g, pid, &branches)
+    }
+
     /// Compare the adaptive parent with every enabled victory lane. Deterministic:
     /// rollouts are seed-free clones and ties keep declaration order; an explicit
     /// lane must clear the adaptive value by `TARGET_COMMITMENT_MARGIN`.
@@ -848,10 +1077,15 @@ impl StrategicAi {
                 ReviewPath::IrreversibleReligion,
             );
         }
-        let mut values = vec![(self.rollout(g, pid, None), None)];
-        for target in self.lane_candidates(g) {
-            values.push((self.rollout(g, pid, Some(target)), Some(target)));
-        }
+        let values = if self.focused_deepening {
+            self.focused_review(g, pid).0
+        } else {
+            let mut values = vec![(self.rollout(g, pid, None), None)];
+            for target in self.lane_candidates(g) {
+                values.push((self.rollout(g, pid, Some(target)), Some(target)));
+            }
+            values
+        };
         (self.choose_rollout_target(&values), ReviewPath::Rollouts)
     }
 
@@ -1466,6 +1700,93 @@ mod tests {
 
         game.victory_conditions.religious = false;
         assert!(!StrategicAi::duel_religious_race(&game, 0));
+    }
+
+    /// The arithmetic the whole scheme rests on, checked without running a
+    /// game: seven branches at horizon 40 must cost no more than the 280
+    /// branch-rounds a fixed review spends, and must leave the survivors
+    /// materially deeper than 40.
+    #[test]
+    fn focused_stages_buy_depth_at_the_fixed_budget() {
+        for (branches, horizon) in [(7usize, 40u32), (7, 80), (5, 40), (3, 40)] {
+            let budget = branches as u32 * horizon;
+            let sizes = StrategicAi::stage_sizes(branches);
+            let chunks = StrategicAi::stage_chunks(&sizes, budget);
+            let cost: u32 = sizes
+                .iter()
+                .zip(&chunks)
+                .map(|(size, chunk)| *size as u32 * chunk)
+                .sum();
+            let depth: u32 = chunks.iter().sum();
+            assert!(
+                cost <= budget,
+                "{branches} branches at horizon {horizon}: {cost} branch-rounds exceeds \
+                 the {budget} a fixed review spends"
+            );
+            assert!(
+                depth > horizon,
+                "{branches} branches at horizon {horizon}: survivors reach {depth} rounds, \
+                 no deeper than the fixed horizon, so the reallocation buys nothing"
+            );
+        }
+        // The default budget, stated exactly, because it is the number the
+        // pre-registration quotes: 84 rounds of depth for 276 of the 280
+        // branch-rounds `strategic` already spends.
+        let sizes = StrategicAi::stage_sizes(7);
+        assert_eq!(sizes, vec![7, 4, 2]);
+        assert_eq!(StrategicAi::stage_chunks(&sizes, 7 * 40), vec![12, 24, 48]);
+    }
+
+    /// A treatment has to be shown to fire before it is worth evaluating —
+    /// #380 cost a 240-game run to discover its treatment was inert, with
+    /// every diagnostic identical to the digit. This asserts a real mid-game
+    /// review projects past the fixed horizon and stays inside its budget.
+    #[test]
+    fn focused_deepening_reaches_past_the_fixed_horizon_in_ordinary_games() {
+        let mut checked = 0;
+        let mut deepened = 0;
+        for seed in [31u64, 57, 83] {
+            // Three players: a duel is answered by the religion prior and
+            // never reaches the rollouts this measures.
+            let mut g = Game::new(3, 20, 14, seed, 200, 0);
+            let mut strategic = StrategicAi::with_weights(Default::default());
+            strategic.focused_deepening = true;
+            let mut ais = BasicAi::fleet(&g);
+            for _ in 0..40 {
+                if g.winner.is_some() {
+                    break;
+                }
+                for pid in 0..g.players.len() {
+                    if g.winner.is_some() {
+                        break;
+                    }
+                    ais[pid].take_turn(&mut g, pid);
+                }
+            }
+            if g.winner.is_some() {
+                continue;
+            }
+            let (values, report) = strategic.focused_review(&g, 0);
+            checked += 1;
+            assert!(values.iter().any(|(_, target)| target.is_none()));
+            assert!(values.iter().all(|(value, _)| value.is_finite()));
+            assert!(
+                report.branch_rounds <= report.budget,
+                "focused review spent {} branch-rounds against a budget of {}",
+                report.branch_rounds,
+                report.budget
+            );
+            assert!(report.survivors >= 2);
+            if report.depth > strategic.horizon {
+                deepened += 1;
+            }
+        }
+        assert!(checked > 0, "no ordinary mid-game position was reached");
+        assert!(
+            deepened > 0,
+            "focused deepening never projected past the fixed horizon in {checked} positions, \
+             so it is inert and an evaluation would measure nothing"
+        );
     }
 
     #[test]
