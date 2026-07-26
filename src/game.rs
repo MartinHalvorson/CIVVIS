@@ -7,8 +7,9 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashSet, VecDeque};
 
 use crate::rng::Rng;
 use crate::rules::{
-    AgendaSpec, BuildingSpec, DifficultySpec, DisasterSpec, FutureTreeLayout, Rules, SpeedSpec,
-    Yields, ERA_NAMES,
+    building_yield_effect_key, grant_ability_effect_key, unit_purchase_discount_effect_key,
+    AgendaSpec, BuildingSpec, DifficultySpec, DisasterSpec, FutureTreeLayout,
+    ResourceIndustryEffects, Rules, SpeedSpec, Yields, ERA_NAMES,
 };
 use crate::specmap::SpecMap;
 
@@ -2480,6 +2481,144 @@ mod seating_tests {
 }
 
 #[cfg(test)]
+mod modifier_attachment_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn game_with_capitals(players: usize, seed: u64, max_turns: u32) -> Game {
+        let mut game = Game::new_full(players, 26, 16, seed, max_turns, 0, false);
+        for pid in 0..players {
+            let position = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find_map(|unit| {
+                    let unit = &game.units[&unit];
+                    (unit.kind == "settler").then_some(unit.pos)
+                })
+                .unwrap();
+            game.found_city_for(pid, position, None);
+        }
+        game
+    }
+
+    fn rules_with_runtime_modifier() -> Rules {
+        let mut files = Rules::shipped_values();
+        files.insert(
+            "modifiers".to_string(),
+            json!({
+                "congress_public_works": {
+                    "effects": {"builder_production_pct": 25}
+                }
+            }),
+        );
+        Rules::from_values(files).unwrap()
+    }
+
+    fn install_runtime_modifier(game: &mut Game) {
+        let modifiers = rules_with_runtime_modifier().modifiers;
+        let mut rules = (*game.rules).clone();
+        rules.modifiers = modifiers;
+        game.rules = Arc::new(rules);
+    }
+
+    #[test]
+    fn player_type_attachment_targets_only_that_class_and_reaches_engine_consumers() {
+        let mut game = game_with_capitals(2, 86_001, 80);
+        install_runtime_modifier(&mut game);
+        let city = game.player_city_ids(0)[0];
+        let builder = Item::Unit {
+            unit: "builder".to_string(),
+        };
+        let baseline = game.item_prod_mult(0, city, Some(&builder));
+
+        assert_eq!(
+            game.attach_modifier_to_player_type(
+                "PLAYERTYPE_MAJOR",
+                "congress_public_works"
+            )
+            .unwrap(),
+            2
+        );
+        assert_eq!(game.player_modifier_effect(0, "builder_production_pct"), 25.0);
+        assert_eq!(game.policy_effect(0, "builder_production_pct"), 25.0);
+        assert_eq!(game.item_prod_mult(0, city, Some(&builder)), baseline + 0.25);
+        for player in game.players.iter().filter(|player| {
+            player.is_minor || player.is_barbarian || player.is_free_city
+        }) {
+            assert!(player.attached_modifiers.is_empty());
+        }
+
+        // Modifier identity is stable: applying one resolution twice does
+        // not stack it, and expiry removes exactly the original targets.
+        assert_eq!(
+            game.attach_modifier_to_player_type("major", "congress_public_works")
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            game.detach_modifier_from_player_type("player_major", "congress_public_works")
+                .unwrap(),
+            2
+        );
+        assert_eq!(game.item_prod_mult(0, city, Some(&builder)), baseline);
+    }
+
+    #[test]
+    fn player_type_attachment_supports_minor_barbarian_and_free_city_seats() {
+        let mut game = Game::new_full(2, 24, 16, 86_002, 80, 1, true);
+        install_runtime_modifier(&mut game);
+        let count = |game: &Game, kind: &str| {
+            game.players
+                .iter()
+                .filter(|player| Game::player_has_type(player, kind))
+                .count()
+        };
+
+        for (selector, kind) in [
+            ("city_state", "minor"),
+            ("barbarian", "barbarian"),
+            ("free_cities", "free_cities"),
+        ] {
+            let expected = count(&game, kind);
+            assert!(expected > 0, "test game has no {kind} seat");
+            assert_eq!(
+                game.attach_modifier_to_player_type(selector, "congress_public_works")
+                    .unwrap(),
+                expected
+            );
+            assert_eq!(
+                game.detach_modifier_from_player_type(selector, "congress_public_works")
+                    .unwrap(),
+                expected
+            );
+        }
+        assert!(game
+            .attach_modifier_to_player_type("spectator", "congress_public_works")
+            .unwrap_err()
+            .contains("unknown player type"));
+        assert!(game
+            .attach_modifier_to_player_type("major", "missing")
+            .unwrap_err()
+            .contains("unknown modifier"));
+    }
+
+    #[test]
+    fn runtime_modifier_attachments_survive_save_round_trip() {
+        let mut game = game_with_capitals(2, 86_003, 80);
+        install_runtime_modifier(&mut game);
+        game.attach_modifier_to_player(0, "congress_public_works")
+            .unwrap();
+
+        let restored: Game =
+            serde_json::from_str(&serde_json::to_string(&game).unwrap()).unwrap();
+        assert!(restored.players[0]
+            .attached_modifiers
+            .contains("congress_public_works"));
+        assert!(restored.players[1].attached_modifiers.is_empty());
+    }
+}
+
+#[cfg(test)]
 fn install_test_district(game: &mut Game, city: u32, district: &str) -> Pos {
     let center = game.cities[&city].pos;
     let position = game.cities[&city]
@@ -2506,6 +2645,9 @@ fn install_test_district(game: &mut Game, city: u32, district: &str) -> Pos {
 
 #[cfg(test)]
 mod city_state_unique_tests;
+
+#[cfg(test)]
+mod modifier_tests;
 
 #[cfg(test)]
 mod age_tests;
@@ -3331,6 +3473,7 @@ mod national_park_tests {
                 &Action::Buy {
                     city,
                     unit: "naturalist".to_string(),
+                    formation: 0,
                     currency: "gold".to_string(),
                 },
             )
@@ -3341,6 +3484,7 @@ mod national_park_tests {
                 &Action::Buy {
                     city,
                     unit: "naturalist".to_string(),
+                    formation: 0,
                     currency: "faith".to_string(),
                 },
             )
@@ -3352,6 +3496,7 @@ mod national_park_tests {
             &Action::Buy {
                 city,
                 unit: "naturalist".to_string(),
+                formation: 0,
                 currency: "faith".to_string(),
             },
         )
@@ -6664,6 +6809,27 @@ mod trade_deal_tests {
             .insert("gunboat_diplomacy".to_string());
         assert!(game.has_open_borders(0, minor));
         assert!(!game.has_open_borders(1, minor));
+
+        game.players[0].policies.clear();
+        game.players[0].civ = "Portugal".to_string();
+        assert!(
+            game.has_open_borders(0, minor),
+            "João III has Open Borders with every city-state"
+        );
+    }
+
+    #[test]
+    fn bilateral_open_borders_wait_for_both_early_empire_civics() {
+        let mut game = trade_game();
+        game.players[1].civics.remove("early_empire");
+        assert_eq!(
+            game.do_propose_deal(0, 1, 0.0, 0.0, true, false, false, None),
+            Err("invalid diplomatic deal".to_string())
+        );
+        game.players[1].civics.insert("early_empire".to_string());
+        assert!(game
+            .do_propose_deal(0, 1, 0.0, 0.0, true, false, false, None)
+            .is_ok());
     }
 
     #[test]
@@ -9657,14 +9823,10 @@ mod district_building_wonder_runtime_tests {
     #[test]
     fn military_infrastructure_builds_discounted_formations_with_real_strength() {
         let (mut game, city, position) = one_city(774_401);
+        game.players[0].civ = "Zulu".to_string();
         install_district(&mut game, city, position, "ikanda");
-        game.cities
-            .get_mut(&city)
-            .unwrap()
-            .buildings
-            .push("military_academy".to_string());
+        game.players[0].civics.insert("mercenaries".to_string());
         game.players[0].civics.insert("nationalism".to_string());
-        game.players[0].civics.insert("mobilization".to_string());
 
         let corps = Item::Formation {
             unit: "warrior".to_string(),
@@ -9681,9 +9843,9 @@ mod district_building_wonder_runtime_tests {
         // would charge.
         assert_eq!(game.item_cost(&corps), 60.0);
         assert_eq!(game.item_cost(&army), 80.0);
-        // +25% from the Academy and an effective +33⅓% for Ikanda's 25%
-        // cost reduction.
-        assert!((game.item_prod_mult(0, city, Some(&corps)) - 1.5833333333333333).abs() < 1e-9);
+        // Ikanda alone authorizes direct formations and its 25% discount is
+        // an effective +33⅓% Production multiplier.
+        assert!((game.item_prod_mult(0, city, Some(&corps)) - 1.3333333333333333).abs() < 1e-9);
 
         let before: BTreeSet<u32> = game.player_unit_ids(0).into_iter().collect();
         assert!(game.complete_item(0, city, &army));
@@ -9693,7 +9855,113 @@ mod district_building_wonder_runtime_tests {
             .find(|unit| !before.contains(unit))
             .unwrap();
         assert_eq!(game.units[&trained].formation, 2);
-        assert_eq!(game.unit_formation_bonus(&game.units[&trained]), 17.0);
+        assert_eq!(game.unit_formation_bonus(&game.units[&trained]), 22.0);
+    }
+
+    #[test]
+    fn formations_can_be_bought_directly_for_full_constituent_cost() {
+        let (mut game, city, _) = one_city(774_406);
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .push("military_academy".to_string());
+        game.players[0].civics.insert("nationalism".to_string());
+        game.players[0].civics.insert("mobilization".to_string());
+
+        assert_eq!(
+            game.unit_purchase_cost_for_formation(0, city, "warrior", 1, "gold"),
+            Some(320.0)
+        );
+        assert_eq!(
+            game.unit_purchase_cost_for_formation(0, city, "warrior", 2, "gold"),
+            Some(480.0)
+        );
+        game.players[0].gold = 320.0;
+        let action = Action::Buy {
+            city,
+            unit: "warrior".to_string(),
+            formation: 1,
+            currency: "gold".to_string(),
+        };
+        assert!(game.legal_actions(0).contains(&action));
+        let before: BTreeSet<u32> = game.player_unit_ids(0).into_iter().collect();
+        game.apply(0, &action).unwrap();
+        let bought = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| !before.contains(unit))
+            .unwrap();
+        assert_eq!(game.units[&bought].formation, 1);
+        assert!(game.players[0].gold.abs() < 1e-9);
+
+        game.players[0].government = Some("theocracy".to_string());
+        assert_eq!(
+            game.unit_purchase_cost_for_formation(0, city, "warrior", 2, "faith"),
+            Some(204.0)
+        );
+        game.players[0].faith = 204.0;
+        let army = Action::Buy {
+            city,
+            unit: "warrior".to_string(),
+            formation: 2,
+            currency: "faith".to_string(),
+        };
+        assert!(game.legal_actions(0).contains(&army));
+        game.apply(0, &army).unwrap();
+        assert!(game.players[0].faith.abs() < 1e-9);
+        assert!(game
+            .units
+            .values()
+            .any(|unit| unit.owner == 0 && unit.kind == "warrior" && unit.formation == 2));
+
+        let legacy: Action = serde_json::from_value(serde_json::json!({
+            "type": "buy", "city": city, "unit": "warrior", "currency": "gold"
+        }))
+        .unwrap();
+        assert!(matches!(legacy, Action::Buy { formation: 0, .. }));
+
+        game.players[0].is_minor = true;
+        assert!(!game.can_produce(
+            0,
+            city,
+            &Item::Formation {
+                unit: "warrior".to_string(),
+                formation: 1,
+            },
+        ));
+    }
+
+    #[test]
+    fn carriers_train_as_formations_but_never_merge_in_the_field() {
+        let (mut game, city, position) = one_city(774_407);
+        let coast = game.nbrs(game.cities[&city].pos)[0];
+        game.map.tiles.get_mut(&coast).unwrap().terrain = "coast".to_string();
+        install_district(&mut game, city, position, "harbor");
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .push("seaport".to_string());
+        game.players[0].techs.insert("combined_arms".to_string());
+        game.players[0].civics.insert("nationalism".to_string());
+        let fleet = Item::Formation {
+            unit: "aircraft_carrier".to_string(),
+            formation: 1,
+        };
+        assert!(game.rules.units["aircraft_carrier"].can_formations);
+        assert!(!game.rules.units["aircraft_carrier"].can_combine);
+        assert!(game.can_produce(0, city, &fleet));
+
+        let first = game.spawn_unit("aircraft_carrier", 0, coast);
+        let second_coast = game
+            .nbrs(coast)
+            .into_iter()
+            .find(|neighbor| game.map.get(*neighbor).is_some())
+            .unwrap();
+        game.map.tiles.get_mut(&second_coast).unwrap().terrain = "coast".to_string();
+        let second = game.spawn_unit("aircraft_carrier", 0, second_coast);
+        assert_eq!(game.can_combine_units(0, first, second), None);
     }
 
     #[test]
@@ -9977,6 +10245,72 @@ mod district_building_wonder_runtime_tests {
         assert_eq!(game.units[&engineer].charges, charges);
         assert_eq!(game.units[&engineer].moves_left, 0.0);
         assert!(!game.can_build_railroad(0, engineer));
+    }
+
+    #[test]
+    fn a_bridged_river_crossing_costs_its_route_and_never_returns_movement() {
+        let (mut game, _city, _) = one_city(88_2073);
+        let (a, b) = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| !game.rules.is_water(tile) && game.rules.is_passable(tile))
+            .find_map(|(position, _)| {
+                game.nbrs(*position).into_iter().find_map(|neighbor| {
+                    let ok = game.map.get(neighbor).is_some_and(|tile| {
+                        !game.rules.is_water(tile) && game.rules.is_passable(tile)
+                    }) && !game.crosses_river(*position, neighbor)
+                        && game.units_at(*position).is_empty()
+                        && game.units_at(neighbor).is_empty()
+                        && game.map.tiles[position].district.is_none()
+                        && game.map.tiles[&neighbor].district.is_none();
+                    ok.then_some((*position, neighbor))
+                })
+            })
+            .expect("test map has an adjacent riverless land pair");
+        for position in [a, b] {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = "plains".to_string();
+            tile.feature = None;
+            tile.hills = false;
+            tile.road = 2; // Medieval route: SupportsBridges
+        }
+        assert!(game.map.set_river_edge(a, b, true));
+        let warrior = game.spawn_unit("warrior", 0, a);
+
+        // A bridged crossing is charged its route, because bridging withholds
+        // the surcharge. It cannot be charged the route *minus* the surcharge:
+        // the route ladder has already discarded that, so subtracting it again
+        // prices the step below zero.
+        for (level, expected) in [(2, 1.0), (3, 0.75), (4, 0.5), (5, 0.25)] {
+            game.map.tiles.get_mut(&a).unwrap().road = level;
+            game.map.tiles.get_mut(&b).unwrap().road = level;
+            let cost = game.unit_step_cost(warrior, a, b);
+            assert!(
+                (cost - expected).abs() < 1e-9,
+                "a level {level} bridge costs {cost} MP, expected {expected}"
+            );
+        }
+
+        // The price is not why this matters. A step costing less than nothing
+        // *returns* movement, so a unit crossing a bridge and back regains MP
+        // on every crossing. `flow` and `path_to` terminate only because each
+        // relaxation leaves strictly less movement than it started with, so a
+        // refund unbounds them from the unit's budget and they relax the whole
+        // route network -- which is the memory fault, not a mispriced tile. A
+        // part-spent unit is where it shows, since the max-moves cap conceals
+        // a refund taken at full movement.
+        for level in [2u8, 5] {
+            game.map.tiles.get_mut(&a).unwrap().road = level;
+            game.map.tiles.get_mut(&b).unwrap().road = level;
+            for (position, remaining) in &game.flow(warrior, a, 1.0) {
+                assert!(
+                    *remaining <= 1.0 + 1e-9,
+                    "level {level}: {position:?} keeps {remaining} MP \
+                     after a step that began with 1 MP"
+                );
+            }
+        }
     }
 
     #[test]
@@ -11624,6 +11958,11 @@ struct PlannedRoute {
     unit: u32,
     target: Pos,
     range: i32,
+    /// Diplomatic and city-ownership state which made the path legal. The
+    /// routing cache already expires at every new turn and map mutation; this
+    /// compact key catches same-turn deals, wars, civics, and city transfers
+    /// without rescanning the complete remaining path before every step.
+    access_key: u64,
     /// Complete path including the position where it was planned and the
     /// stopping tile. Looking up the unit's live position makes repeated
     /// calls before a move harmless and advances naturally after one.
@@ -12550,6 +12889,15 @@ pub struct WarHighlight {
     pub city: Option<String>,
 }
 
+/// A place where a war was fought.  Unlike the units and borders on the live
+/// map, these sites survive peace, conquest, later rebuilding and a reload, so
+/// a client can return to the battlefield and show what became of it.
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Debug)]
+pub struct WarTheaterSite {
+    pub turn: u32,
+    pub pos: Pos,
+}
+
 /// One detonation, recorded on the game rather than reconstructed from its
 /// consequences.
 ///
@@ -12611,6 +12959,11 @@ pub struct WarRecord {
     #[serde(default)]
     pub peace_terms: Vec<WarPeace>,
     pub highlights: Vec<WarHighlight>,
+    /// Recent places where this front saw action, oldest first.  The bounded
+    /// tail describes the current theater while a war is active and becomes a
+    /// durable aftermath target once it is over.
+    #[serde(default)]
+    pub theater: Vec<WarTheaterSite>,
 }
 
 impl WarRecord {
@@ -12644,6 +12997,25 @@ impl WarRecord {
                 })
                 .into_iter()
                 .collect(),
+            theater: Vec::new(),
+        }
+    }
+
+    fn record_theater_site(&mut self, turn: u32, pos: Pos) {
+        if self
+            .theater
+            .iter()
+            .rev()
+            .take_while(|site| site.turn == turn)
+            .any(|site| site.pos == pos)
+        {
+            return;
+        }
+        self.theater.push(WarTheaterSite { turn, pos });
+        const THEATER_SITES_KEPT: usize = 64;
+        if self.theater.len() > THEATER_SITES_KEPT {
+            self.theater
+                .drain(..self.theater.len() - THEATER_SITES_KEPT);
         }
     }
 
@@ -12756,6 +13128,12 @@ pub struct Player {
     pub anarchy_turns: u32,
     #[serde(default)]
     pub policies: BTreeSet<String>,
+    /// Runtime modifier bundles attached directly to this player. World
+    /// Congress and mod-defined systems use this for Civ VI's
+    /// `ATTACH_MODIFIER_TO_PLAYERTYPE`; the IDs resolve through
+    /// `rules.modifiers` and survive save/load.
+    #[serde(default)]
+    pub attached_modifiers: BTreeSet<String>,
     #[serde(default)]
     pub influence: f64,
     #[serde(default)]
@@ -12914,6 +13292,7 @@ impl Player {
             pending_government: None,
             anarchy_turns: 0,
             policies: BTreeSet::new(),
+            attached_modifiers: BTreeSet::new(),
             influence: 0.0,
             envoys_free: 0,
             gpp: BTreeMap::new(),
@@ -13062,6 +13441,10 @@ pub enum Action {
     Buy {
         city: u32,
         unit: String,
+        /// Zero buys a normal unit; one and two buy a Corps/Fleet or
+        /// Army/Armada directly. Missing fields in older saves remain normal.
+        #[serde(default)]
+        formation: u8,
         #[serde(default = "gold_s")]
         currency: String,
     },
@@ -15886,18 +16269,38 @@ impl Game {
         if self.wars.contains_key(&key) {
             return;
         }
-        self.wars.insert(
-            key,
-            WarRecord::new(
-                conflict,
-                declarer,
-                target,
-                aggressor,
-                defender,
-                self.turn,
-                declared_front,
-            ),
+        // Before the first armies meet, the named target's capital is the
+        // intelligible theater of the declaration.  Only the declared front
+        // contributes this seed; alliance fronts will add their own real
+        // action sites if and when fighting reaches them.
+        let opening_site = if declared_front {
+            self.cities
+                .values()
+                .find(|city| city.owner == target && city.is_capital)
+                .or_else(|| self.cities.values().find(|city| city.owner == target))
+                .map(|city| city.pos)
+                .or_else(|| {
+                    self.units
+                        .values()
+                        .find(|unit| unit.owner == target)
+                        .map(|unit| unit.pos)
+                })
+        } else {
+            None
+        };
+        let mut record = WarRecord::new(
+            conflict,
+            declarer,
+            target,
+            aggressor,
+            defender,
+            self.turn,
+            declared_front,
         );
+        if let Some(pos) = opening_site {
+            record.record_theater_site(self.turn, pos);
+        }
+        self.wars.insert(key, record);
         self.sync_war_participants_for(key);
     }
 
@@ -16006,15 +16409,16 @@ impl Game {
             .round() as i64;
         let current_strength = self.military_power(owner).round() as i64;
         let key = pair(first, second);
+        let turn = self.turn;
         self.open_war_record(first, second);
-        if let Some(participant) = self
-            .wars
-            .get_mut(&key)
-            .and_then(|war| {
-                war.participants
-                    .iter_mut()
-                    .find(|participant| participant.player == owner && participant.exited.is_none())
-            })
+        let Some(war) = self.wars.get_mut(&key) else {
+            return;
+        };
+        war.record_theater_site(turn, unit.pos);
+        if let Some(participant) = war
+            .participants
+            .iter_mut()
+            .find(|participant| participant.player == owner && participant.exited.is_none())
         {
             participant.peak_strength = Some(
                 participant
@@ -16233,6 +16637,22 @@ impl Game {
         formation: u8,
         at: Pos,
     ) {
+        let naval = self
+            .rules
+            .units
+            .get(kind)
+            .is_some_and(|spec| spec.domain.as_deref() == Some("sea"));
+        let label = format!(
+            "{}{}",
+            kind,
+            match (naval, formation) {
+                (false, 1) => " corps",
+                (false, 2) => " army",
+                (true, 1) => " fleet",
+                (true, 2) => " armada",
+                _ => "",
+            }
+        );
         if self.at_war_with_any_civilization(victim_owner) {
             let home = self
                 .map
@@ -16243,16 +16663,9 @@ impl Game {
             let multiplier = self.war_weariness_multiplier(victim_owner, home);
             self.add_war_weariness(victim_owner, 3.0 * multiplier);
         }
+        let turn = self.turn;
         if let Some((war, _, _)) = self.war_ledger(killer, victim_owner) {
-            let label = format!(
-                "{}{}",
-                kind,
-                match formation {
-                    1 => " corps/fleet",
-                    2 => " army/armada",
-                    _ => "",
-                }
-            );
+            war.record_theater_site(turn, at);
             let losses = war.losses.entry(victim_owner).or_default();
             losses.units += 1;
             *losses.unit_kinds.entry(label).or_insert(0) += 1;
@@ -16262,10 +16675,20 @@ impl Game {
     /// A moment worth naming in the war it belongs to. Silently dropped when
     /// the two are not at war — a Barbarian raid or a strike in peacetime has
     /// no war to be part of.
-    fn record_war_moment(&mut self, actor: usize, subject: usize, kind: &str, city: Option<String>) {
+    fn record_war_moment(
+        &mut self,
+        actor: usize,
+        subject: usize,
+        kind: &str,
+        city: Option<String>,
+        at: Option<Pos>,
+    ) {
         let turn = self.turn;
         let kind = kind.to_string();
         if let Some((war, _, _)) = self.war_ledger(actor, subject) {
+            if let Some(pos) = at {
+                war.record_theater_site(turn, pos);
+            }
             war.highlights.push(WarHighlight {
                 turn,
                 kind,
@@ -16279,7 +16702,14 @@ impl Game {
     /// A city changing hands under arms — the one event a war log should
     /// never summarize away. A capital is called out by name: losing one is
     /// the moment a war turns.
-    fn record_war_city_loss(&mut self, taker: usize, loser: usize, city: &str, capital: bool) {
+    fn record_war_city_loss(
+        &mut self,
+        taker: usize,
+        loser: usize,
+        city: &str,
+        capital: bool,
+        at: Pos,
+    ) {
         if let Some((war, _, _)) = self.war_ledger(taker, loser) {
             let losses = war.losses.entry(loser).or_default();
             losses.cities += 1;
@@ -16290,7 +16720,7 @@ impl Game {
         } else {
             "city_captured"
         };
-        self.record_war_moment(taker, loser, kind, Some(city.to_string()));
+        self.record_war_moment(taker, loser, kind, Some(city.to_string()), Some(at));
     }
 
     /// Classify a tile from a unit owner's perspective for passive healing.
@@ -16504,18 +16934,197 @@ impl Game {
         !self.in_anarchy(pid) && self.players[pid].policies.contains(name)
     }
 
-    /// Sum a numeric primitive across all currently slotted policy cards.
-    /// Policy rules remain data-driven while callers provide the game context
-    /// (unit class, district family, city state, and so on).
-    pub fn policy_effect(&self, pid: usize, effect: &str) -> f64 {
-        if self.in_anarchy(pid) {
-            return 0.0; // the cards come out of their slots in Anarchy
+    /// Sum a reusable modifier bundle attached directly to one player.
+    pub fn player_modifier_effect(&self, pid: usize, effect: &str) -> f64 {
+        self.players
+            .get(pid)
+            .into_iter()
+            .flat_map(|player| player.attached_modifiers.iter())
+            .filter_map(|modifier| self.rules.modifiers.get(modifier)?.effects.get(effect))
+            .sum()
+    }
+
+    /// Attach one named modifier to one player. Repeating the same attachment
+    /// is idempotent, matching Civ VI's stable modifier identity.
+    pub fn attach_modifier_to_player(
+        &mut self,
+        pid: usize,
+        modifier: &str,
+    ) -> Result<bool, String> {
+        if !self.rules.modifiers.contains_key(modifier) {
+            return Err(format!("unknown modifier {modifier}"));
         }
-        self.players[pid]
+        let player = self
+            .players
+            .get_mut(pid)
+            .ok_or_else(|| format!("unknown player {pid}"))?;
+        Ok(player.attached_modifiers.insert(modifier.to_string()))
+    }
+
+    /// Remove one named runtime attachment from one player.
+    pub fn detach_modifier_from_player(&mut self, pid: usize, modifier: &str) -> bool {
+        self.players
+            .get_mut(pid)
+            .is_some_and(|player| player.attached_modifiers.remove(modifier))
+    }
+
+    fn normalized_player_type(player_type: &str) -> Result<&'static str, String> {
+        match player_type.trim().to_ascii_lowercase().as_str() {
+            "all" | "player_all" | "playertype_all" => Ok("all"),
+            "major" | "major_civilization" | "player_major" | "playertype_major" => {
+                Ok("major")
+            }
+            "minor" | "minor_civilization" | "city_state" | "player_minor"
+            | "playertype_minor" => Ok("minor"),
+            "barbarian" | "player_barbarian" | "playertype_barbarian" => Ok("barbarian"),
+            "free_city" | "free_cities" | "player_free_cities"
+            | "playertype_free_cities" => Ok("free_cities"),
+            _ => Err(format!("unknown player type {player_type}")),
+        }
+    }
+
+    fn player_has_type(player: &Player, player_type: &str) -> bool {
+        match player_type {
+            "all" => true,
+            "major" => !player.is_minor && !player.is_barbarian && !player.is_free_city,
+            "minor" => player.is_minor && !player.is_barbarian && !player.is_free_city,
+            "barbarian" => player.is_barbarian,
+            "free_cities" => player.is_free_city,
+            _ => false,
+        }
+    }
+
+    /// Attach a modifier to every seat in a Civ VI player class. This is the
+    /// runtime primitive used by World Congress-style effects; callers keep
+    /// the returned count for diagnostics and can remove the same attachment
+    /// when the resolution expires.
+    pub fn attach_modifier_to_player_type(
+        &mut self,
+        player_type: &str,
+        modifier: &str,
+    ) -> Result<usize, String> {
+        if !self.rules.modifiers.contains_key(modifier) {
+            return Err(format!("unknown modifier {modifier}"));
+        }
+        let player_type = Self::normalized_player_type(player_type)?;
+        let targets: Vec<usize> = self
+            .players
+            .iter()
+            .filter(|player| Self::player_has_type(player, player_type))
+            .map(|player| player.id)
+            .collect();
+        let mut attached = 0;
+        for pid in targets {
+            attached += usize::from(self.attach_modifier_to_player(pid, modifier)?);
+        }
+        Ok(attached)
+    }
+
+    /// Remove a class-wide runtime attachment, for example when the next
+    /// regular Congress session replaces the previous outcomes.
+    pub fn detach_modifier_from_player_type(
+        &mut self,
+        player_type: &str,
+        modifier: &str,
+    ) -> Result<usize, String> {
+        let player_type = Self::normalized_player_type(player_type)?;
+        let targets: Vec<usize> = self
+            .players
+            .iter()
+            .filter(|player| Self::player_has_type(player, player_type))
+            .map(|player| player.id)
+            .collect();
+        Ok(targets
+            .into_iter()
+            .filter(|pid| self.detach_modifier_from_player(*pid, modifier))
+            .count())
+    }
+
+    /// Sum a numeric primitive across all currently slotted policy cards and
+    /// runtime player attachments. Policy rules remain data-driven while
+    /// callers provide the game context (unit class, district family, city
+    /// state, and so on). Anarchy suppresses cards but not external modifiers.
+    pub fn policy_effect(&self, pid: usize, effect: &str) -> f64 {
+        let attached = self.player_modifier_effect(pid, effect);
+        if self.in_anarchy(pid) {
+            return attached; // the cards come out; external modifiers remain
+        }
+        attached
+            + self.players[pid]
             .policies
             .iter()
             .filter_map(|name| self.rules.policies.get(name)?.effects.get(effect))
+            .sum::<f64>()
+    }
+
+    /// A numeric modifier whose subject is this city. This is the common
+    /// collection path for typed selector effects: runtime attachments,
+    /// policies, researched nodes and civilization traits are empire-wide;
+    /// infrastructure, beliefs and Governors contribute only where active.
+    fn city_modifier_effect(&self, city: &City, effect: &str) -> f64 {
+        let pid = city.owner;
+        self.policy_effect(pid, effect)
+            + self.tree_effect(pid, effect)
+            + self.civ_effect(pid, effect)
+            + self.city_building_effect(city, effect)
+            + self.city_district_effect(city, effect)
+            + self.empire_wonder_effect(pid, effect)
+            + self.city_religion_belief_effect(city, effect)
+            + self.pantheon_effect(pid, effect)
+            + self.governor_effect(pid, city.id, effect)
+    }
+
+    fn building_modifier_yields(&self, city: &City, building: &str) -> Yields {
+        let mut selectors = vec![building, "*"];
+        if let Some(replaced) = self.rules.buildings[building].replaces.as_deref() {
+            selectors.push(replaced);
+        }
+        let effect = |yield_type: &str| {
+            selectors
+                .iter()
+                .map(|selector| {
+                    self.city_modifier_effect(
+                        city,
+                        &building_yield_effect_key(selector, yield_type),
+                    )
+                })
+                .sum()
+        };
+        Yields {
+            food: effect("food"),
+            production: effect("production"),
+            gold: effect("gold"),
+            science: effect("science"),
+            culture: effect("culture"),
+            faith: effect("faith"),
+        }
+    }
+
+    fn unit_purchase_modifier_discount(&self, city: &City, unit: &str) -> f64 {
+        let mut selectors = vec![unit, "*"];
+        if let Some(replaced) = self.rules.units[unit].replaces.as_deref() {
+            selectors.push(replaced);
+        }
+        selectors
+            .into_iter()
+            .map(|selector| {
+                self.city_modifier_effect(city, &unit_purchase_discount_effect_key(selector))
+            })
             .sum()
+    }
+
+    fn modifier_grants_ability(&self, pid: usize, ability: &str) -> bool {
+        let effect = grant_ability_effect_key(ability);
+        let religion = self.players.get(pid).and_then(|player| player.religion.as_deref());
+        self.policy_effect(pid, &effect)
+            + self.tree_effect(pid, &effect)
+            + self.civ_effect(pid, &effect)
+            + self.empire_wonder_effect(pid, &effect)
+            + self.empire_building_sum(pid, |building| {
+                building.effects.get(&effect).copied().unwrap_or(0.0)
+            })
+            + religion.map_or(0.0, |religion| self.religion_belief_effect(religion, &effect))
+            > 0.0
     }
 
     /// The era a unit belongs to, taken from the node that unlocks it. Unit
@@ -16534,8 +17143,9 @@ impl Game {
 
     /// Sums a policy effect over the cards whose era window admits `era`.
     fn policy_effect_for_unit(&self, pid: usize, effect: &str, unit: &str) -> f64 {
+        let attached = self.player_modifier_effect(pid, effect);
         if self.in_anarchy(pid) {
-            return 0.0;
+            return attached;
         }
         let era = self.unit_era(unit);
         let class = self
@@ -16543,18 +17153,20 @@ impl Game {
             .units
             .get(unit)
             .map_or("", |unit| unit.promotion_class.as_str());
-        self.players[pid]
-            .policies
-            .iter()
-            .filter_map(|name| self.rules.policies.get(name))
-            .filter(|spec| spec.unit_eras.is_empty() || spec.unit_eras.contains(&era))
-            .filter(|spec| {
-                !spec.unit_era_gaps
-                    .get(class)
-                    .is_some_and(|eras| eras.contains(&era))
-            })
-            .filter_map(|spec| spec.effects.get(effect))
-            .sum()
+        attached
+            + self.players[pid]
+                .policies
+                .iter()
+                .filter_map(|name| self.rules.policies.get(name))
+                .filter(|spec| spec.unit_eras.is_empty() || spec.unit_eras.contains(&era))
+                .filter(|spec| {
+                    !spec
+                        .unit_era_gaps
+                        .get(class)
+                        .is_some_and(|eras| eras.contains(&era))
+                })
+                .filter_map(|spec| spec.effects.get(effect))
+                .sum::<f64>()
     }
 
     /// Stock Gold price of a plot whose ring base is `base` (50 through ring
@@ -16686,8 +17298,8 @@ impl Game {
         let gold = base_gold
             * match unit.formation {
                 0 => 1.0,
-                1 => 1.5,
-                _ => 2.0,
+                1 => 2.0,
+                _ => 3.0,
             };
         let resources = base_resources
             * match unit.formation {
@@ -17750,6 +18362,7 @@ impl Game {
             .get(&self.players[pid].civ)
             .map(|c| c.ability == ability)
             .unwrap_or(false)
+            || self.modifier_grants_ability(pid, ability)
     }
 
     /// What this player's signature ability is worth under a named modifier,
@@ -19886,12 +20499,19 @@ impl Game {
         {
             return Err("this Great General requires a promotable military land unit".into());
         }
-        if let Some(formation) = spec.effects.get("land_unit_formation") {
-            if self
-                .great_person_formation_unit(pid, *formation as u8)
-                .is_none()
-            {
-                return Err("this Great General requires a military land unit".into());
+        for (effect, domain, title) in [
+            ("land_unit_formation", "land", "General"),
+            ("naval_unit_formation", "sea", "Admiral"),
+        ] {
+            if let Some(formation) = spec.effects.get(effect) {
+                if self
+                    .great_person_formation_unit(pid, *formation as u8, domain)
+                    .is_none()
+                {
+                    return Err(format!(
+                        "this Great {title} requires a military {domain} unit"
+                    ));
+                }
             }
         }
         for (effect, work) in [
@@ -20071,10 +20691,18 @@ impl Game {
                     Self::promotion_threshold(level).max(self.units[&unit].xp);
             }
         }
-        if let Some(formation) = spec.effects.get("land_unit_formation") {
-            let formation = (*formation as u8).min(2);
-            if let Some(unit) = self.great_person_formation_unit(pid, formation) {
-                self.units.get_mut(&unit).unwrap().formation = formation;
+        for (effect, domain) in [
+            ("land_unit_formation", "land"),
+            ("naval_unit_formation", "sea"),
+        ] {
+            if let Some(formation) = spec.effects.get(effect) {
+                let formation = (*formation as u8).min(2);
+                if let Some(unit) = self.great_person_formation_unit(pid, formation, domain) {
+                    self.units.get_mut(&unit).unwrap().formation = formation;
+                    if formation == 1 {
+                        bump(&mut self.players[pid], "corps");
+                    }
+                }
             }
         }
         if let Some(amount) = spec.effects.get("tech_boosts") {
@@ -20250,11 +20878,35 @@ impl Game {
         }))
     }
 
-    fn great_person_formation_unit(&self, pid: usize, formation: u8) -> Option<u32> {
-        self.strongest_great_person_land_unit(
-            self.great_person_land_units(pid)
-                .filter(|unit| self.units[unit].formation < formation),
-        )
+    fn great_person_formation_unit(
+        &self,
+        pid: usize,
+        formation: u8,
+        domain: &str,
+    ) -> Option<u32> {
+        self.units
+            .values()
+            .filter(|unit| {
+                let spec = &self.rules.units[unit.kind.as_str()];
+                let domain_matches = if domain == "sea" {
+                    spec.domain.as_deref() == Some("sea")
+                } else {
+                    !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                };
+                unit.owner == pid
+                    && spec.class == "military"
+                    && spec.can_formations
+                    && domain_matches
+                    && unit.formation < formation
+            })
+            .max_by_key(|unit| {
+                let spec = &self.rules.units[unit.kind.as_str()];
+                (
+                    (spec.strength + self.unit_formation_bonus(unit)).round() as i64,
+                    Reverse(unit.id),
+                )
+            })
+            .map(|unit| unit.id)
     }
 
     fn grant_free_building_family(&mut self, pid: usize, city_id: u32, family: &str) {
@@ -21030,11 +21682,55 @@ impl Game {
         available
     }
 
+    /// Whether this civilization has reached the civic for a particular
+    /// formation tier. Spain and Shaka replace the ordinary civic gates for
+    /// naval and land formations respectively.
+    fn formation_unlocked(&self, pid: usize, unit: &str, formation: u8) -> bool {
+        let Some(spec) = self.rules.units.get(unit) else {
+            return false;
+        };
+        let standard = match formation {
+            1 => self.tree_effect(pid, "corps_fleets") > 0.0,
+            2 => self.tree_effect(pid, "armies_armadas") > 0.0,
+            _ => false,
+        };
+        if standard {
+            return true;
+        }
+        if spec.domain.as_deref() == Some("sea")
+            && self.civ_effect(pid, "naval_formation_civic_mercantilism") > 0.0
+        {
+            return self.players[pid].civics.contains("mercantilism");
+        }
+        if !matches!(spec.domain.as_deref(), Some("sea" | "air")) {
+            return match formation {
+                1 if self.civ_effect(pid, "land_corps_civic_mercenaries") > 0.0 => {
+                    self.players[pid].civics.contains("mercenaries")
+                }
+                2 if self.civ_effect(pid, "land_army_civic_nationalism") > 0.0 => {
+                    self.players[pid].civics.contains("nationalism")
+                }
+                _ => false,
+            };
+        }
+        false
+    }
+
     fn unit_formation_bonus(&self, unit: &Unit) -> f64 {
-        match unit.formation {
+        let base = match unit.formation {
             1 => 10.0,
             2.. => 17.0,
             _ => 0.0,
+        };
+        if base > 0.0
+            && !matches!(
+                self.rules.units[unit.kind.as_str()].domain.as_deref(),
+                Some("sea" | "air")
+            )
+        {
+            base + self.civ_effect(unit.owner, "formation_combat_strength")
+        } else {
+            base
         }
     }
 
@@ -21144,10 +21840,17 @@ impl Game {
     /// Colonization, Feudal Contract, Limes).
     fn item_prod_mult(&self, pid: usize, cid: u32, item: Option<&Item>) -> f64 {
         let mut bonus: f64 = 0.0;
+        let economic = self.city_resource_industry_effects(&self.cities[&cid]);
         match item {
             Some(Item::Unit { unit }) | Some(Item::Formation { unit, .. }) => {
                 let spec = &self.rules.units[unit.as_str()];
                 bonus += self.gov_effects(pid).unit_production_pct / 100.0;
+                if spec.class == "military" {
+                    bonus += economic.military_unit_production_pct / 100.0;
+                }
+                if matches!(unit.as_str(), "builder" | "settler" | "trader") {
+                    bonus += economic.civilian_unit_production_pct / 100.0;
+                }
                 if spec.class == "military"
                     && self
                         .alliance_partner(pid, "military", 2)
@@ -21258,6 +21961,7 @@ impl Game {
             }
             Some(Item::Building { building }) => {
                 let spec = &self.rules.buildings[building.as_str()];
+                bonus += economic.building_production_pct / 100.0;
                 let district = spec
                     .district
                     .as_deref()
@@ -21523,7 +22227,13 @@ impl Game {
     /// Whether this unit type has learned how to embark onto Coast tiles.
     /// Sailing unlocks Builders, Celestial Navigation unlocks Traders, and
     /// Shipbuilding unlocks every remaining land unit (Gathering Storm).
+    /// Māori Mana starts with the complete embarkation package even though
+    /// this compact ruleset does not inject its two free technologies into the
+    /// player's research ledger.
     fn has_embarkation(&self, owner: usize, kind: &str) -> bool {
+        if self.has_ability(owner, "mana") {
+            return true;
+        }
         match kind {
             "builder" => self.tree_effect(owner, "builder_embark") > 0.0,
             "trader" => self.tree_effect(owner, "trader_embark") > 0.0,
@@ -21572,10 +22282,19 @@ impl Game {
         let spec = &self.rules.units[unit.kind.as_str()];
         let sea = spec.domain.as_deref() == Some("sea");
         let wading_giant = unit.kind == "giant_death_robot";
+        // Cartography is the stock gate for every naval and embarked unit.
+        // Knarr substitutes Shipbuilding for Norway; Mana lets Māori cross
+        // Ocean from the opening turn.
+        let ocean = wading_giant
+            || self.has_ability(unit.owner, "mana")
+            || self.tree_effect(unit.owner, "ocean_navigation") > 0.0
+            || (sea
+                && self.has_ability(unit.owner, "knarr")
+                && self.players[unit.owner].techs.contains("shipbuilding"));
         TraversalClass {
             sea,
             embark: !sea && (wading_giant || self.has_embarkation(unit.owner, &unit.kind)),
-            ocean: wading_giant || self.tree_effect(unit.owner, "ocean_navigation") > 0.0,
+            ocean,
             mountain: (unit.kind == "builder"
                 && self.unlocked(
                     unit.owner,
@@ -21969,18 +22688,7 @@ impl Game {
         if self.city_governor_active(city.owner, city.id) {
             h += self.policy_effect(city.owner, "governor_housing");
         }
-        let mut salt_industry_units = city
-            .products
-            .iter()
-            .take(self.product_capacity(city))
-            .filter(|product| product.as_str() == "salt")
-            .count() as f64;
-        if let Some((resource, corporation)) = self.city_active_economic_improvement(city) {
-            if resource == "salt" {
-                salt_industry_units += if corporation { 2.0 } else { 1.0 };
-            }
-        }
-        h += 3.0 * salt_industry_units;
+        h += self.city_resource_industry_effects(city).housing;
         let government = self.gov_effects(city.owner);
         h += government.housing;
         if !city.districts.is_empty() {
@@ -23999,7 +24707,11 @@ impl Game {
         self.units
             .values()
             .filter(|u| u.owner == pid)
-            .map(|u| self.rules.units[u.kind.as_str()].strength * u.hp as f64 / 100.0)
+            .map(|u| {
+                (self.rules.units[u.kind.as_str()].strength + self.unit_formation_bonus(u))
+                    * u.hp as f64
+                    / 100.0
+            })
             .sum()
     }
 
@@ -24401,6 +25113,34 @@ impl Game {
                     )
             })
         })
+    }
+
+    /// Complete city effect of Industries, Corporations and housed Products.
+    /// The improvement is one Industry bundle (two for a Corporation); each
+    /// active Product contributes its own shipped Product modifier bundle.
+    fn city_resource_industry_effects(&self, city: &City) -> ResourceIndustryEffects {
+        let mut effects = ResourceIndustryEffects::default();
+        for product in city.products.iter().take(self.product_capacity(city)) {
+            if let Some(resource) = self.rules.resources.get(product) {
+                effects.add_scaled(resource.product_effects, 1.0);
+            }
+        }
+        if let Some((resource, corporation)) = self.city_active_economic_improvement(city) {
+            if let Some(resource) = self.rules.resources.get(&resource) {
+                effects.add_scaled(resource.industry_effects, if corporation { 2.0 } else { 1.0 });
+            }
+        }
+        effects
+    }
+
+    fn city_product_yields(&self, city: &City) -> Yields {
+        let mut yields = Yields::default();
+        for product in city.products.iter().take(self.product_capacity(city)) {
+            if let Some(resource) = self.rules.resources.get(product) {
+                yields.add(resource.product_yields);
+            }
+        }
+        yields
     }
 
     fn empire_has_economic_improvement(&self, pid: usize, resource: &str) -> bool {
@@ -24830,7 +25570,20 @@ impl Game {
     fn unit_step_cost(&self, uid: u32, from: Pos, to: Pos) -> f64 {
         let unit = &self.units[&uid];
         let tile = &self.map.tiles[&to];
-        let mut cost = self.step_cost(from, to);
+        // Medieval and later routes bridge rivers (SupportsBridges); Ancient
+        // roads leave the crossing penalty in place. Bridging has to withhold
+        // the surcharge rather than refund it afterwards: the route ladder
+        // below caps the step at the route's own cost, which already discards
+        // the surcharge, so a refund taken after that cancels nothing and
+        // drives the step negative instead.
+        let bridged = self.crosses_river(from, to)
+            && self.map.tiles[&from].road >= 2
+            && tile.road >= 2;
+        let mut cost = if bridged {
+            self.rules.move_cost(tile)
+        } else {
+            self.step_cost(from, to)
+        };
         if self.map.tiles[&from].road > 0 && tile.road > 0 {
             let modern_bridge = self.map.tiles[&from].wonder.as_deref()
                 == Some("golden_gate_bridge")
@@ -24855,14 +25608,6 @@ impl Game {
         {
             cost = 1.0;
         }
-        if self.crosses_river(from, to)
-            && self.map.tiles[&from].road >= 2
-            && tile.road >= 2
-        {
-            // Medieval and later routes bridge rivers (SupportsBridges);
-            // Ancient roads leave the crossing penalty in place.
-            cost -= 2.0;
-        }
         if self.promotion_effect(unit, "woods_move_cost") > 0.0
             && matches!(tile.feature.as_deref(), Some("forest" | "jungle"))
         {
@@ -24878,6 +25623,7 @@ impl Game {
             self.unit_is_embarked_at(unit, from) != self.unit_is_embarked_at(unit, to);
         if changes_embarkation
             && self.promotion_effect(unit, "amphibious") <= 0.0
+            && !self.has_ability(unit.owner, "knarr")
             && !self.embarkation_facility_at(from)
             && !self.embarkation_facility_at(to)
         {
@@ -24886,7 +25632,17 @@ impl Game {
             // one otherwise-unaffordable step, as with other rough terrain.
             cost += 2.0;
         }
-        cost
+        // A step never grants movement. `flow` and `path_to` terminate because
+        // each relaxation leaves strictly less movement than it started with;
+        // a negative cost restores movement instead, so a two-tile route loop
+        // regains MP on every crossing and the search stops being bounded by
+        // the unit's budget. That is a memory fault, not a movement quirk, so
+        // the invariant is kept here rather than assumed of every rule above.
+        debug_assert!(
+            cost >= 0.0,
+            "step {from:?} -> {to:?} costs {cost}, which would grant movement"
+        );
+        cost.max(0.0)
     }
 
     /// Harbors and coastal City Centers remove the embark/disembark
@@ -25363,6 +26119,9 @@ impl Game {
         }
         if embarked {
             moves += self.tree_effect(u.owner, "embarked_movement");
+            if self.has_ability(u.owner, "mana") {
+                moves += 2.0;
+            }
         }
         if spec.domain.as_deref() == Some("sea") || embarked {
             moves += self.empire_wonder_effect(u.owner, "naval_movement");
@@ -26659,6 +27418,36 @@ impl Game {
                 || unit.moves_left >= self.unit_step_cost(uid, from, to))
     }
 
+    fn territory_owner_at(&self, pos: Pos) -> Option<usize> {
+        self.map
+            .get(pos)
+            .and_then(|tile| tile.owner_city)
+            .and_then(|city| self.cities.get(&city))
+            .map(|city| city.owner)
+    }
+
+    /// Units which Gathering Storm lets cross an enforced border without a
+    /// diplomatic grant. Traders and religious units always ignore closed
+    /// borders; Rock Bands use Music Censorship instead; Terracotta Army gives
+    /// the same exception to Archaeologists.
+    fn unit_ignores_closed_borders(&self, unit: &Unit) -> bool {
+        let spec = &self.rules.units[unit.kind.as_str()];
+        spec.class == "religious"
+            || unit.kind == "trader"
+            || unit.kind == "rock_band"
+            || (unit.kind == "archaeologist"
+                && self.empire_wonder_effect(unit.owner, "archaeologist_open_borders") > 0.0)
+    }
+
+    /// The complete territory gate shared by immediate movement, future route
+    /// segments, and displacement when a temporary grant ends.
+    fn unit_has_territory_access(&self, unit: &Unit, territory_owner: usize) -> bool {
+        territory_owner == unit.owner
+            || self.unit_ignores_closed_borders(unit)
+            || self.is_at_war(unit.owner, territory_owner)
+            || self.has_open_borders(unit.owner, territory_owner)
+    }
+
     fn can_enter(&self, uid: u32, from: Pos, pos: Pos) -> bool {
         let u = &self.units[&uid];
         if self.wdist(from, pos) != 1 {
@@ -26696,23 +27485,11 @@ impl Game {
         {
             return false;
         }
-        let archaeologist_ignores_borders = u.kind == "archaeologist"
-            && self.empire_wonder_effect(u.owner, "archaeologist_open_borders") > 0.0;
-        // Rock Bands use their own Music Censorship gate above; ordinary Open
-        // Borders are deliberately not required to enter a concert market.
-        let ignores_borders = archaeologist_ignores_borders || u.kind == "rock_band";
-        if spec.class != "religious" && !ignores_borders {
-            let territory_owner = self.map.tiles[&pos]
-                .owner_city
-                .and_then(|city| self.cities.get(&city))
-                .map(|city| city.owner);
-            if territory_owner.is_some_and(|owner| {
-                owner != u.owner
-                    && !self.is_at_war(u.owner, owner)
-                    && !self.has_open_borders(u.owner, owner)
-            }) {
-                return false;
-            }
+        if self
+            .territory_owner_at(pos)
+            .is_some_and(|owner| !self.unit_has_territory_access(u, owner))
+        {
+            return false;
         }
         for oid in self.units_at(pos) {
             let o = &self.units[&oid];
@@ -26757,6 +27534,171 @@ impl Game {
             }
         }
         true
+    }
+
+    /// Whether one unit can be displaced to `pos` without capturing anything,
+    /// entering a hostile district, or violating the ordinary stacking layer.
+    /// Border expulsion is a teleport, not a move or attack, so enemy units are
+    /// never resolved as casualties along the way.
+    fn legal_border_displacement(
+        &self,
+        uid: u32,
+        pos: Pos,
+        moving: &BTreeSet<u32>,
+        forbidden_owner: Option<usize>,
+    ) -> bool {
+        let unit = &self.units[&uid];
+        let spec = &self.rules.units[unit.kind.as_str()];
+        if spec.domain.as_deref() == Some("air") || !self.unit_can_traverse(uid, pos) {
+            return false;
+        }
+        if let Some(owner) = self.territory_owner_at(pos) {
+            if Some(owner) == forbidden_owner
+                || (owner != unit.owner
+                    && (self.is_at_war(unit.owner, owner)
+                        || !self.unit_has_territory_access(unit, owner)))
+            {
+                return false;
+            }
+        }
+        if self
+            .city_at(pos)
+            .is_some_and(|city| self.cities[&city].owner != unit.owner)
+            || self
+                .encampment_at(pos)
+                .is_some_and(|city| self.cities[&city].owner != unit.owner)
+        {
+            return false;
+        }
+        self.units_at(pos).into_iter().all(|other_id| {
+            if moving.contains(&other_id) {
+                return true;
+            }
+            let other = &self.units[&other_id];
+            let other_spec = &self.rules.units[other.kind.as_str()];
+            if other_spec.domain.as_deref() == Some("air") {
+                return true;
+            }
+            if other.owner != unit.owner {
+                return false;
+            }
+            if other_spec.class != spec.class {
+                return true;
+            }
+            spec.class == "military"
+                && (spec.domain.as_deref() == Some("sea"))
+                    != (other_spec.domain.as_deref() == Some("sea"))
+        })
+    }
+
+    fn border_displacement_destination(
+        &self,
+        uid: u32,
+        forbidden_owner: Option<usize>,
+    ) -> Option<Pos> {
+        let unit = self.units.get(&uid)?;
+        let mut moving = BTreeSet::from([uid]);
+        if let Some(peer) = unit.linked_to {
+            moving.insert(peer);
+        }
+        self.map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|position| {
+                moving.iter().all(|member| {
+                    self.legal_border_displacement(
+                        *member,
+                        *position,
+                        &moving,
+                        forbidden_owner,
+                    )
+                })
+            })
+            .map(|position| {
+                let rank = match self.territory_owner_at(position) {
+                    Some(owner)
+                        if owner == unit.owner
+                            || self.same_team(unit.owner, owner)
+                            || (self.players[owner].is_minor
+                                && self.suzerain_of(owner) == Some(unit.owner)) =>
+                    {
+                        0
+                    }
+                    None => 1,
+                    Some(_) => 2,
+                };
+                (rank, self.wdist(unit.pos, position), position)
+            })
+            .min()
+            .map(|(_, _, position)| position)
+    }
+
+    fn displace_unit_from_closed_border(
+        &mut self,
+        uid: u32,
+        forbidden_owner: Option<usize>,
+    ) {
+        let Some(unit) = self.units.get(&uid) else {
+            return;
+        };
+        if unit.linked_to.is_some() && !self.is_linked_leader(uid) {
+            return;
+        }
+        let Some(destination) = self.border_displacement_destination(uid, forbidden_owner) else {
+            return;
+        };
+        let peer = self.units[&uid].linked_to;
+        let carried_aircraft: Vec<u32> = if self.units[&uid].kind == "aircraft_carrier" {
+            self.units_at(self.units[&uid].pos)
+                .into_iter()
+                .filter(|other| {
+                    *other != uid
+                        && self.units[other].owner == self.units[&uid].owner
+                        && self.rules.units[self.units[other].kind.as_str()]
+                            .domain
+                            .as_deref()
+                            == Some("air")
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        self.relocate(uid, destination);
+        if let Some(peer) = peer {
+            self.relocate(peer, destination);
+            let maximum = self.unit_max_moves(peer);
+            self.units.get_mut(&peer).unwrap().moves_left =
+                self.units[&peer].moves_left.min(maximum);
+        }
+        for aircraft in carried_aircraft {
+            self.relocate(aircraft, destination);
+        }
+        let maximum = self.unit_max_moves(uid);
+        self.units.get_mut(&uid).unwrap().moves_left = self.units[&uid].moves_left.min(maximum);
+    }
+
+    /// Civ VI expels units when an access grant lapses. Reconcile one mover at
+    /// the start of its turn, and all movers when Early Empire first changes a
+    /// territory owner's borders from universally open to enforced.
+    fn reconcile_closed_border_units(&mut self, mover: Option<usize>) {
+        let mut displaced: Vec<(u32, usize)> = self
+            .units
+            .values()
+            .filter(|unit| mover.is_none_or(|owner| unit.owner == owner))
+            .filter(|unit| {
+                self.rules.units[unit.kind.as_str()].domain.as_deref() != Some("air")
+            })
+            .filter_map(|unit| {
+                let territory_owner = self.territory_owner_at(unit.pos)?;
+                (!self.unit_has_territory_access(unit, territory_owner))
+                    .then_some((unit.id, territory_owner))
+            })
+            .collect();
+        displaced.sort_unstable();
+        for (uid, territory_owner) in displaced {
+            self.displace_unit_from_closed_border(uid, Some(territory_owner));
+        }
     }
 
     fn is_linked_leader(&self, uid: u32) -> bool {
@@ -26808,23 +27750,36 @@ impl Game {
         if !self.zone_connected(uid, to, range) {
             return None; // proven: no chain of traversable tiles links them
         }
-        let cached_next = {
+        let territory_access = self.unit_territory_access(unit);
+        if range == 0
+            && self
+                .territory_owner_at(to)
+                .is_some_and(|owner| !territory_access[owner])
+        {
+            return None;
+        }
+        let access_key = self.route_access_key(unit, &territory_access);
+        let cached_step = {
             let routing = self.routing.borrow();
             routing
                 .paths
                 .iter()
-                .find(|route| route.unit == uid && route.target == to && route.range == range)
+                .find(|route| {
+                    route.unit == uid
+                        && route.target == to
+                        && route.range == range
+                        && route.access_key == access_key
+                })
                 .and_then(|route| {
                     route
                         .path
                         .iter()
                         .position(|position| *position == start)
-                        .and_then(|index| route.path.get(index + 1))
-                        .copied()
+                        .and_then(|index| route.path.get(index + 1).copied())
                 })
         };
-        if cached_next.is_some_and(|next| self.can_enter(uid, start, next)) {
-            return cached_next;
+        if cached_step.is_some_and(|next| self.can_enter(uid, start, next)) {
+            return cached_step;
         }
 
         // A* keeps known-target routing cheap enough for high-throughput
@@ -26866,7 +27821,7 @@ impl Game {
                 let enterable = if cur == start {
                     self.can_enter(uid, cur, n)
                 } else {
-                    self.can_path_through(uid, cur, n)
+                    self.can_path_through(uid, cur, n, &territory_access)
                 };
                 if !enterable {
                     continue;
@@ -26902,9 +27857,31 @@ impl Game {
             unit: uid,
             target: to,
             range,
+            access_key,
             path: reverse_path,
         });
         Some(step)
+    }
+
+    /// Everything which can change whether this unit may cross a border
+    /// without changing the map itself. Player access is already the complete
+    /// shared predicate; city owners distinguish a same-turn city transfer
+    /// whose tiles retain their existing owner-city ids.
+    fn route_access_key(&self, unit: &Unit, territory_access: &[bool]) -> u64 {
+        let mut key = vision_key(&[unit.owner as u64, self.players.len() as u64]);
+        for (owner, access) in territory_access.iter().enumerate() {
+            key = vision_key(&[key, owner as u64, *access as u64]);
+        }
+        for city in self.cities.values() {
+            key = vision_key(&[key, city.id as u64, city.owner as u64]);
+        }
+        key
+    }
+
+    fn unit_territory_access(&self, unit: &Unit) -> Vec<bool> {
+        (0..self.players.len())
+            .map(|owner| self.unit_has_territory_access(unit, owner))
+            .collect()
     }
 
     /// Terrain/domain legality for future route segments. Dynamic unit
@@ -26912,12 +27889,24 @@ impl Game {
     /// in the plan avoids expensive scans and lets moving units clear before
     /// the traveler arrives. Routes are recalculated whenever the immediate
     /// step remains blocked.
-    fn can_path_through(&self, uid: u32, from: Pos, pos: Pos) -> bool {
+    fn can_path_through(
+        &self,
+        uid: u32,
+        from: Pos,
+        pos: Pos,
+        territory_access: &[bool],
+    ) -> bool {
         if self.wdist(from, pos) != 1 {
             return false;
         }
         let unit = &self.units[&uid];
         if !self.unit_can_traverse(uid, pos) {
+            return false;
+        }
+        if self
+            .territory_owner_at(pos)
+            .is_some_and(|owner| !territory_access[owner])
+        {
             return false;
         }
         self.city_at(pos)
@@ -27045,6 +28034,7 @@ impl Game {
             return None;
         }
         let _memo = self.query_memo();
+        let territory_access = self.unit_territory_access(unit);
 
         // Same breadth-first walk in the same neighbour order, but the map
         // already numbers its tiles, so the frontier's bookkeeping is two
@@ -27068,7 +28058,7 @@ impl Game {
                 let enterable = if cur == start {
                     self.can_enter(uid, cur, n)
                 } else {
-                    self.can_path_through(uid, cur, n)
+                    self.can_path_through(uid, cur, n, &territory_access)
                 };
                 if !enterable {
                     continue;
@@ -27105,6 +28095,7 @@ impl Game {
         if self.formation_movement_locked_by_zoc(uid) {
             return BTreeMap::new();
         }
+        let _memo = self.query_memo();
         let mut best: BTreeMap<Pos, f64> = BTreeMap::new();
         best.insert(start, moves);
         let mut queue = vec![start];
@@ -27143,10 +28134,17 @@ impl Game {
         if start == to {
             return Some(vec![]);
         }
+        // MoveTo is also the protocol used for an AI route's already chosen
+        // adjacent step. Do not flood the unit's whole remaining movement
+        // area merely to rediscover that one-edge path.
+        if self.wdist(start, to) == 1 {
+            return self.can_move(uid, to).then_some(vec![to]);
+        }
         let max_moves = self.unit_max_moves(uid);
         if self.formation_movement_locked_by_zoc(uid) {
             return None;
         }
+        let _memo = self.query_memo();
         let mut best: BTreeMap<Pos, f64> = BTreeMap::new();
         let mut parent: BTreeMap<Pos, Pos> = BTreeMap::new();
         best.insert(start, moves);
@@ -29419,6 +30417,7 @@ impl Game {
                     .copied()
                     .unwrap_or(0.0);
             }
+            yields.add(self.building_modifier_yields(city, b));
             ys.add(yields);
         }
         ys.add(self.regional_building_effects(city).0);
@@ -29431,13 +30430,7 @@ impl Game {
         ys.add(self.regional_wonder_effects(city).0);
         // Products are economic Great Works: only Products backed by active
         // Stock Exchange/Seaport slots yield or confer their Industry effect.
-        for product in city.products.iter().take(self.product_capacity(city)) {
-            match product.as_str() {
-                "silk" => ys.culture += 3.0,
-                "wine" | "salt" => ys.food += 3.0,
-                _ => {}
-            }
-        }
+        ys.add(self.city_product_yields(city));
         let relic_faith = if self.grants_city_state_unique_bonus(city.owner, "Kandy") {
             6.0
         } else {
@@ -30059,18 +31052,13 @@ impl Game {
             1.0 + suzerains * self.policy_effect(city.owner, "science_pct_per_suzerain") / 100.0;
         ys.culture *=
             1.0 + suzerains * self.policy_effect(city.owner, "culture_pct_per_suzerain") / 100.0;
-        let mut culture_industry_units = city
-            .products
-            .iter()
-            .take(self.product_capacity(city))
-            .filter(|product| matches!(product.as_str(), "silk" | "wine"))
-            .count() as f64;
-        if let Some((resource, corporation)) = self.city_active_economic_improvement(city) {
-            if matches!(resource.as_str(), "silk" | "wine") {
-                culture_industry_units += if corporation { 2.0 } else { 1.0 };
-            }
-        }
-        ys.culture *= 1.0 + 0.20 * culture_industry_units;
+        let economic_yields = self.city_resource_industry_effects(city).city_yield_pct;
+        ys.food *= 1.0 + economic_yields.food / 100.0;
+        ys.production *= 1.0 + economic_yields.production / 100.0;
+        ys.gold *= 1.0 + economic_yields.gold / 100.0;
+        ys.science *= 1.0 + economic_yields.science / 100.0;
+        ys.culture *= 1.0 + economic_yields.culture / 100.0;
+        ys.faith *= 1.0 + economic_yields.faith / 100.0;
         if self.dedication_active(city.owner, "sky_and_stars")
             && (self.city_has_district_family(city, "aerodrome")
                 || self.city_has_district_family(city, "spaceport"))
@@ -31533,21 +32521,25 @@ impl Game {
                 let Some(spec) = self.rules.units.get(unit) else {
                     return false;
                 };
-                if !matches!(formation, 1 | 2)
+                if self.players[pid].is_minor
+                    || !matches!(formation, 1 | 2)
                     || spec.class != "military"
                     || spec.domain.as_deref() == Some("air")
                     || !spec.can_formations
-                    || (*formation == 1 && self.tree_effect(pid, "corps_fleets") <= 0.0)
-                    || (*formation == 2 && self.tree_effect(pid, "armies_armadas") <= 0.0)
+                    || !self.formation_unlocked(pid, unit, *formation)
                 {
                     return false;
                 }
                 let infrastructure = if spec.domain.as_deref() == Some("sea") {
-                    "seaport"
+                    self.city_has_building_family(city, "seaport")
                 } else {
-                    "military_academy"
+                    self.city_has_building_family(city, "military_academy")
+                        || city.districts.iter().any(|(district, position)| {
+                            district == "ikanda"
+                                && self.district_is_active(city, district, *position)
+                        })
                 };
-                if !self.city_has_building_family(city, infrastructure) {
+                if !infrastructure {
                     return false;
                 }
                 let committed = self.unit_resource_is_committed(cid, item);
@@ -32602,16 +33594,6 @@ impl Game {
             }
         }
         let want_purchases = families.has(ActionFamilies::PURCHASES);
-        let faith_land_units = want_purchases
-            && (p.government.as_deref() == Some("theocracy")
-                || self
-                    .cities
-                    .values()
-                    .filter(|city| city.owner == pid)
-                    .map(|city| self.city_building_effect(city, "faith_purchase_land_units"))
-                    .sum::<f64>()
-                    > 0.0);
-        let monumentality = want_purchases && self.dedication_active(pid, "monumentality");
         let purchasable_units: Vec<String> = if want_purchases {
             self.rules.units.keys().cloned().collect()
         } else {
@@ -32691,61 +33673,24 @@ impl Game {
                     }
                 }
             }
-            for utype in &purchasable_units {
-                let it = Item::Unit {
-                    unit: utype.clone(),
-                };
-                if self.can_produce(pid, cid, &it) {
-                    let cost = self.item_cost_for(pid, &it);
-                    if p.gold >= cost * 4.0 {
-                        acts.push(Action::Buy {
-                            city: cid,
-                            unit: utype.clone(),
-                            currency: "gold".to_string(),
-                        });
-                    }
-                    let spec = &self.rules.units[utype.as_str()];
-                    let civilian = matches!(utype.as_str(), "builder" | "settler") && monumentality;
-                    let land_combat = spec.class == "military"
-                        && spec.domain.as_deref().is_none()
-                        && spec.faith_purchasable
-                        && faith_land_units;
-                    let faith_discount = if civilian { 30.0 } else { 0.0 }
-                        + if p.government.as_deref() == Some("theocracy") {
-                            15.0
-                        } else {
-                            0.0
-                        };
-                    if (civilian || land_combat)
-                        && p.faith >= cost * 2.0 * (1.0 - faith_discount / 100.0)
-                    {
-                        acts.push(Action::Buy {
-                            city: cid,
-                            unit: utype.clone(),
-                            currency: "faith".to_string(),
-                        });
+            for unit in &purchasable_units {
+                for formation in 0..=2 {
+                    for (currency, bank) in [("gold", p.gold), ("faith", p.faith)] {
+                        if self
+                            .unit_purchase_cost_for_formation(
+                                pid, cid, unit, formation, currency,
+                            )
+                            .is_some_and(|cost| bank + f64::EPSILON >= cost)
+                        {
+                            acts.push(Action::Buy {
+                                city: cid,
+                                unit: unit.clone(),
+                                formation,
+                                currency: currency.to_string(),
+                            });
+                        }
                     }
                 }
-            }
-            let rock_band = &self.rules.units["rock_band"];
-            if self.unlocked(pid, &rock_band.tech, &rock_band.civic)
-                && p.faith + f64::EPSILON >= self.rock_band_purchase_cost(pid)
-            {
-                acts.push(Action::Buy {
-                    city: cid,
-                    unit: "rock_band".to_string(),
-                    currency: "faith".to_string(),
-                });
-            }
-            let naturalist = &self.rules.units["naturalist"];
-            if self.unlocked(pid, &naturalist.tech, &naturalist.civic)
-                && p.faith + f64::EPSILON >= self.naturalist_purchase_cost(pid)
-            {
-                acts.push(Action::Buy {
-                    city: cid,
-                    unit: "naturalist".to_string(),
-                    currency: "faith".to_string(),
-                });
             }
         }
         for city_state in self.players.iter().filter(|player| {
@@ -33106,29 +34051,14 @@ impl Game {
             }
             for cid in self.player_city_ids(pid) {
                 for unit in ["missionary", "apostle", "guru", "inquisitor"] {
-                    let spec = &self.rules.units[unit];
-                    let building = spec
-                        .requires_building
-                        .as_ref()
-                        .is_none_or(|name| self.city_has_building_family(&self.cities[&cid], name));
-                    let inquisition = unit != "inquisitor"
-                        || p.counters.get("inquisition").copied().unwrap_or(0) > 0;
-                    let cost = self.item_cost_for(
-                        pid,
-                        &Item::Unit {
-                            unit: unit.to_string(),
-                        },
-                    ) * 2.0;
-                    if building
-                        && inquisition
-                        && p.faith >= cost
-                        && self.unlocked(pid, &spec.tech, &spec.civic)
-                        && self.city_has_district_family(&self.cities[&cid], "holy_site")
-                        && self.city_religion(&self.cities[&cid]).is_some()
+                    if self
+                        .unit_purchase_cost(pid, cid, unit, "faith")
+                        .is_some_and(|cost| p.faith + f64::EPSILON >= cost)
                     {
                         acts.push(Action::Buy {
                             city: cid,
                             unit: unit.to_string(),
+                            formation: 0,
                             currency: "faith".to_string(),
                         });
                     }
@@ -33545,8 +34475,9 @@ impl Game {
             Action::Buy {
                 city,
                 unit,
+                formation,
                 currency,
-            } => self.do_buy(pid, *city, unit, currency),
+            } => self.do_buy_formation(pid, *city, unit, *formation, currency),
             Action::BuyBuilding {
                 city,
                 building,
@@ -34591,6 +35522,7 @@ impl Game {
                     } else {
                         self.award_initiated_combat_xp(uid, 10.0);
                         self.capture_city(cid, pid);
+                        self.apply_capture_formation_upgrade(pid, uid);
                         self.enter_tile(uid, target);
                     }
                 } else {
@@ -34603,6 +35535,7 @@ impl Game {
                 // health. The melee unit captures it but earns no XP for an
                 // attack made after the city was already at 0 HP.
                 self.capture_city(cid, pid);
+                self.apply_capture_formation_upgrade(pid, uid);
                 self.enter_tile(uid, target);
             }
         }
@@ -36125,8 +37058,10 @@ impl Game {
         } else {
             0.0
         };
+        // Since the Maya & Gran Colombia update, both formation tiers add a
+        // flat +7 Anti-Air Strength rather than their +10/+17 combat bonus.
         spec.anti_air_strength
-            + self.unit_formation_bonus(unit)
+            + if unit.formation > 0 { 7.0 } else { 0.0 }
             + if spec.class == "military" {
                 // Intercepting an incoming strike is defending.
                 self.government_combat_bonus(unit, false)
@@ -36698,37 +37633,204 @@ impl Game {
         )
     }
 
+    /// Authoritative Gold/Faith quote for a unit purchase. Action enumeration
+    /// and execution share this path, so an AI can see an action made
+    /// affordable by Holy Order, Monumentality, a Product, or a generic
+    /// per-unit modifier instead of learning about the discount only after it
+    /// tries to apply the action.
+    pub fn unit_purchase_cost(
+        &self,
+        pid: usize,
+        cid: u32,
+        unit: &str,
+        currency: &str,
+    ) -> Option<f64> {
+        self.unit_purchase_cost_for_formation(pid, cid, unit, 0, currency)
+    }
+
+    fn unit_purchase_cost_for_formation(
+        &self,
+        pid: usize,
+        cid: u32,
+        unit: &str,
+        formation: u8,
+        currency: &str,
+    ) -> Option<f64> {
+        let player = self.players.get(pid)?;
+        let city = self.cities.get(&cid).filter(|city| city.owner == pid)?;
+        let spec = self.rules.units.get(unit)?;
+        if unit == "spy" || formation > 2 || !matches!(currency, "gold" | "faith") {
+            return None;
+        }
+        if unit == "settler"
+            && (city.pop < 2 || self.policy_effect(pid, "no_settling") > 0.0)
+        {
+            return None;
+        }
+
+        let religious = spec.class == "religious";
+        let rock_band = unit == "rock_band";
+        let naturalist = unit == "naturalist";
+        if formation > 0 && (religious || rock_band || naturalist) {
+            return None;
+        }
+        if rock_band || naturalist {
+            if currency != "faith" || !self.unlocked(pid, &spec.tech, &spec.civic) {
+                return None;
+            }
+        } else if religious {
+            if currency != "faith"
+                || !self.city_has_district_family(city, "holy_site")
+                || self.city_religion(city).is_none()
+                || !self.unlocked(pid, &spec.tech, &spec.civic)
+                || spec
+                    .requires_building
+                    .as_ref()
+                    .is_some_and(|building| !self.city_has_building_family(city, building))
+                || (unit == "inquisitor"
+                    && player.counters.get("inquisition").copied().unwrap_or(0) == 0)
+            {
+                return None;
+            }
+        } else {
+            let item = if formation == 0 {
+                Item::Unit {
+                    unit: unit.to_string(),
+                }
+            } else {
+                Item::Formation {
+                    unit: unit.to_string(),
+                    formation,
+                }
+            };
+            if !self.can_produce(pid, cid, &item) {
+                return None;
+            }
+            if currency == "faith" {
+                let monumentality = matches!(unit, "builder" | "settler")
+                    && self.dedication_active(pid, "monumentality");
+                let faith_land_combat = spec.class == "military"
+                    && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                    && spec.faith_purchasable
+                    && (player.government.as_deref() == Some("theocracy")
+                        || self
+                            .cities
+                            .values()
+                            .filter(|city| city.owner == pid)
+                            .map(|city| {
+                                self.city_building_effect(city, "faith_purchase_land_units")
+                            })
+                            .sum::<f64>()
+                            > 0.0);
+                if !monumentality && !faith_land_combat {
+                    return None;
+                }
+            }
+        }
+
+        let mut purchase_discount =
+            self.city_district_effect(city, "gold_faith_purchase_discount_pct")
+                + self.unit_purchase_modifier_discount(city, unit);
+        if currency == "gold" {
+            purchase_discount += self.gov_effects(pid).gold_purchase_discount_pct;
+        } else {
+            purchase_discount += self.gov_effects(pid).faith_purchase_discount_pct;
+        }
+        if religious && currency == "faith" {
+            if let Some(religion) = self.city_religion(city) {
+                purchase_discount +=
+                    self.religion_belief_effect(religion, "religious_unit_faith_discount_pct");
+            }
+            if unit == "guru" {
+                purchase_discount += self.empire_wonder_effect(pid, "guru_purchase_discount_pct");
+            }
+        }
+        if currency == "faith"
+            && matches!(unit, "builder" | "settler")
+            && self.dedication_active(pid, "monumentality")
+        {
+            purchase_discount += 30.0;
+        }
+
+        let (base_cost, multiplier) = if rock_band {
+            (self.rock_band_purchase_cost(pid), 1.0)
+        } else if naturalist {
+            (self.naturalist_purchase_cost(pid), 1.0)
+        } else {
+            let item = Item::Unit {
+                unit: unit.to_string(),
+            };
+            (
+                self.item_cost_for(pid, &item),
+                if currency == "gold" { 4.0 } else { 2.0 },
+            )
+        };
+        // Buying a formation pays for every constituent. Direct Production
+        // instead uses the separate 150%/200% formation cost.
+        let formation_multiplier = match formation {
+            1 => 2.0,
+            2.. => 3.0,
+            _ => 1.0,
+        };
+        let mut cost = base_cost
+            * multiplier
+            * formation_multiplier
+            * (1.0 - purchase_discount / 100.0).max(0.0);
+        if spec.class == "military" {
+            if self.congress_effect_active("mercenary_companies", "A", currency) {
+                cost *= 2.0;
+            } else if self.congress_effect_active("mercenary_companies", "B", currency) {
+                cost *= 0.5;
+            }
+        }
+        Some(cost)
+    }
+
+    #[cfg(test)]
     fn do_buy(&mut self, pid: usize, cid: u32, unit: &str, currency: &str) -> Result<(), String> {
+        self.do_buy_formation(pid, cid, unit, 0, currency)
+    }
+
+    fn do_buy_formation(
+        &mut self,
+        pid: usize,
+        cid: u32,
+        unit: &str,
+        formation: u8,
+        currency: &str,
+    ) -> Result<(), String> {
         match self.cities.get(&cid) {
-            Some(c) if c.owner == pid => {}
+            Some(city) if city.owner == pid => {}
             _ => return Err("not your city".into()),
         }
-        let religious = self
-            .rules
-            .units
-            .get(unit)
-            .map(|s| s.class == "religious")
-            .unwrap_or(false);
+        let Some(spec) = self.rules.units.get(unit) else {
+            return Err("no such unit".into());
+        };
+        let religious = spec.class == "religious";
+        let rock_band = unit == "rock_band";
+        let naturalist = unit == "naturalist";
+        if !matches!(currency, "gold" | "faith") {
+            return Err("unknown purchase currency".into());
+        }
+        if formation > 2 {
+            return Err("unknown formation tier".into());
+        }
         if unit == "spy" {
             return Err("Spies cannot be purchased with Gold or Faith".into());
         }
-        if !matches!(currency, "gold" | "faith") {
-            return Err("unknown purchase currency".into());
+        if formation > 0 && (rock_band || naturalist || religious) {
+            return Err("that unit cannot be purchased as a formation".into());
         }
         // Isolationism closes the frontier to Gold and Faith as well as to
         // Production, which is what makes it a real cost rather than a detour.
         if unit == "settler" && self.policy_effect(pid, "no_settling") > 0.0 {
             return Err("Isolationism forbids buying Settlers".into());
         }
-        let rock_band = unit == "rock_band";
-        let naturalist = unit == "naturalist";
         if rock_band || naturalist {
-            let spec = &self.rules.units[unit];
             if currency != "faith" || !self.unlocked(pid, &spec.tech, &spec.civic) {
                 return Err(format!("{unit} is unlocked and purchased with faith"));
             }
         } else if religious {
-            // Religious units adopt the majority religion of their purchase city.
             if currency != "faith" {
                 return Err("religious units are bought with faith".into());
             }
@@ -36738,8 +37840,7 @@ impl Game {
             if self.city_religion(&self.cities[&cid]).is_none() {
                 return Err("city has no majority religion".into());
             }
-            let spec = &self.rules.units[unit];
-            if !self.unlocked(pid, &spec.tech.clone(), &spec.civic.clone()) {
+            if !self.unlocked(pid, &spec.tech, &spec.civic) {
                 return Err("not unlocked".into());
             }
             if spec.requires_building.as_ref().is_some_and(|building| {
@@ -36758,18 +37859,24 @@ impl Game {
                 return Err("inquisition has not been launched".into());
             }
         } else {
-            let it = Item::Unit {
-                unit: unit.to_string(),
+            let item = if formation == 0 {
+                Item::Unit {
+                    unit: unit.to_string(),
+                }
+            } else {
+                Item::Formation {
+                    unit: unit.to_string(),
+                    formation,
+                }
             };
-            if !self.can_produce(pid, cid, &it) {
+            if !self.can_produce(pid, cid, &item) {
                 return Err("cannot buy that".into());
             }
             if currency == "faith" {
-                let spec = &self.rules.units[unit];
                 let monumentality = matches!(unit, "builder" | "settler")
                     && self.dedication_active(pid, "monumentality");
                 let faith_land_combat = spec.class == "military"
-                    && spec.domain.as_deref().is_none()
+                    && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
                     && spec.faith_purchasable
                     && (self.players[pid].government.as_deref() == Some("theocracy")
                         || self
@@ -36789,66 +37896,25 @@ impl Game {
         if unit == "settler" && self.cities[&cid].pop < 2 {
             return Err("city too small for settler".into());
         }
-        let mult = if rock_band || naturalist {
-            1.0
-        } else if currency == "gold" {
-            4.0
+        let item = if formation == 0 {
+            Item::Unit {
+                unit: unit.to_string(),
+            }
         } else {
-            2.0
+            Item::Formation {
+                unit: unit.to_string(),
+                formation,
+            }
         };
-        let item = Item::Unit {
-            unit: unit.to_string(),
-        };
-        let mut purchase_discount =
-            self.city_district_effect(&self.cities[&cid], "gold_faith_purchase_discount_pct");
-        if currency == "gold" {
-            purchase_discount += self.gov_effects(pid).gold_purchase_discount_pct;
-        }
-        if currency == "faith" {
-            // Theocracy ships GOVERNMENTBONUS_FAITH_PURCHASES 15 beside
-            // Democracy's GOVERNMENTBONUS_GOLD_PURCHASES 15; only the Gold half
-            // was wired up.
-            purchase_discount += self.gov_effects(pid).faith_purchase_discount_pct;
-        }
-        if religious && currency == "faith" {
-            if let Some(religion) = self.city_religion(&self.cities[&cid]) {
-                purchase_discount +=
-                    self.religion_belief_effect(religion, "religious_unit_faith_discount_pct");
-            }
-            if unit == "guru" {
-                purchase_discount += self.empire_wonder_effect(pid, "guru_purchase_discount_pct");
-            }
-        }
-        if currency == "faith" {
-            if matches!(unit, "builder" | "settler") && self.dedication_active(pid, "monumentality")
-            {
-                purchase_discount += 30.0;
-            }
-            if self.players[pid].government.as_deref() == Some("theocracy") {
-                purchase_discount += 15.0;
-            }
-        }
-        let base_cost = if rock_band {
-            self.rock_band_purchase_cost(pid)
-        } else if naturalist {
-            self.naturalist_purchase_cost(pid)
-        } else {
-            self.item_cost_for(pid, &item)
-        };
-        let mut cost = base_cost * mult * (1.0 - purchase_discount / 100.0).max(0.0);
-        if self.rules.units[unit].class == "military" {
-            if self.congress_effect_active("mercenary_companies", "A", currency) {
-                cost *= 2.0;
-            } else if self.congress_effect_active("mercenary_companies", "B", currency) {
-                cost *= 0.5;
-            }
-        }
+        let cost = self
+            .unit_purchase_cost_for_formation(pid, cid, unit, formation, currency)
+            .ok_or_else(|| "unit cannot be purchased that way".to_string())?;
         let bank = if currency == "gold" {
             self.players[pid].gold
         } else {
             self.players[pid].faith
         };
-        if bank < cost {
+        if bank + f64::EPSILON < cost {
             return Err("cannot afford".into());
         }
         let strategic_payment = self.rules.units[unit]
@@ -36856,18 +37922,16 @@ impl Game {
             .as_ref()
             .map(|resource| (resource.clone(), self.unit_resource_cost(cid, &item)))
             .filter(|(_, amount)| *amount > 0.0);
-        if strategic_payment
-            .as_ref()
-            .is_some_and(|(resource, amount)| {
-                self.strategic_stockpile(pid, resource) + f64::EPSILON < *amount
-            })
-        {
+        if strategic_payment.as_ref().is_some_and(|(resource, amount)| {
+            self.strategic_stockpile(pid, resource) + f64::EPSILON < *amount
+        }) {
             return Err("insufficient strategic resources".into());
         }
         let pos = self.cities[&cid].pos;
         let placed = self
             .place_new_unit(unit, pid, pos)
             .ok_or_else(|| "no space to place unit".to_string())?;
+        self.units.get_mut(&placed).unwrap().formation = formation;
         self.apply_training_district_effects(cid, placed);
         if unit == "builder" {
             self.units.get_mut(&placed).unwrap().charges +=
@@ -36892,6 +37956,9 @@ impl Game {
             self.cities.get_mut(&cid).unwrap().pop -= 1;
         }
         bump(&mut self.players[pid], &format!("trained:{unit}"));
+        if formation == 1 {
+            bump(&mut self.players[pid], "corps");
+        }
         if rock_band {
             bump(&mut self.players[pid], "purchased:rock_band");
         }
@@ -37286,19 +38353,24 @@ impl Game {
             || b.owner != pid
             || a.id == b.id
             || a.kind != b.kind
+            || self.players[pid].is_minor
+            || a.levied_from.is_some()
+            || b.levied_from.is_some()
             || a.linked_to.is_some()
             || b.linked_to.is_some()
             || a.moves_left <= 0.0
             || b.moves_left <= 0.0
             || self.wdist(a.pos, b.pos) > 1
             || self.rules.units[a.kind.as_str()].class != "military"
+            || self.rules.units[a.kind.as_str()].domain.as_deref() == Some("air")
             || !self.rules.units[a.kind.as_str()].can_formations
+            || !self.rules.units[a.kind.as_str()].can_combine
         {
             return None;
         }
         match (a.formation, b.formation) {
-            (0, 0) if self.tree_effect(pid, "corps_fleets") > 0.0 => Some(1),
-            (0, 1) | (1, 0) if self.tree_effect(pid, "armies_armadas") > 0.0 => Some(2),
+            (0, 0) if self.formation_unlocked(pid, &a.kind, 1) => Some(1),
+            (0, 1) | (1, 0) if self.formation_unlocked(pid, &a.kind, 2) => Some(2),
             _ => None,
         }
     }
@@ -37309,13 +38381,19 @@ impl Game {
             .ok_or_else(|| "units cannot form a Corps or Army".to_string())?;
         let ua = self.units[&a].clone();
         let ub = self.units[&b].clone();
-        // Civilopedia rule: preserve the XP and promotions of the most
-        // experienced constituent. Stable ID resolves an exact tie.
-        let a_key = (ua.xp, ua.promotions.len(), Reverse(ua.id));
-        let b_key = (ub.xp, ub.promotions.len(), Reverse(ub.id));
+        // The most experienced constituent keeps the identity, level and XP;
+        // Gathering Storm unions both promotion trees and keeps the highest
+        // training-city XP modifier.
+        let a_key = (ua.xp, ua.level, ua.promotions.len(), Reverse(ua.id));
+        let b_key = (ub.xp, ub.level, ub.promotions.len(), Reverse(ub.id));
         let (survivor, consumed) = if a_key >= b_key { (a, b) } else { (b, a) };
         let destination = ub.pos;
-        let hp = ua.hp.max(ub.hp);
+        let a_constituents = ua.formation as i32 + 1;
+        let b_constituents = ub.formation as i32 + 1;
+        let hp = (ua.hp * a_constituents + ub.hp * b_constituents)
+            / (a_constituents + b_constituents);
+        let promotions = ua.promotions.union(&ub.promotions).cloned().collect();
+        let xp_bonus_pct = ua.xp_bonus_pct.max(ub.xp_bonus_pct);
         self.remove_unit(consumed);
         if self.units[&survivor].pos != destination {
             self.relocate(survivor, destination);
@@ -37323,6 +38401,8 @@ impl Game {
         let unit = self.units.get_mut(&survivor).unwrap();
         unit.formation = formation;
         unit.hp = hp;
+        unit.promotions = promotions;
+        unit.xp_bonus_pct = xp_bonus_pct;
         unit.moves_left = 0.0;
         unit.attacks_left = 0;
         unit.acted = true;
@@ -37330,6 +38410,38 @@ impl Game {
             bump(&mut self.players[pid], "corps");
         }
         Ok(())
+    }
+
+    /// Isibongo upgrades the unit which actually takes a city to the highest
+    /// formation tier Shaka's current civics permit.
+    fn apply_capture_formation_upgrade(&mut self, pid: usize, uid: u32) {
+        if self.civ_effect(pid, "capture_formation_upgrade") <= 0.0 {
+            return;
+        }
+        let Some(unit) = self.units.get(&uid) else {
+            return;
+        };
+        let spec = &self.rules.units[unit.kind.as_str()];
+        if spec.class != "military"
+            || spec.domain.as_deref() == Some("air")
+            || !spec.can_formations
+        {
+            return;
+        }
+        let target = if self.formation_unlocked(pid, &unit.kind, 2) {
+            2
+        } else if self.formation_unlocked(pid, &unit.kind, 1) {
+            1
+        } else {
+            0
+        };
+        let old = unit.formation;
+        if target > old {
+            self.units.get_mut(&uid).unwrap().formation = target;
+            if old == 0 && target == 1 {
+                bump(&mut self.players[pid], "corps");
+            }
+        }
     }
 
     fn can_link_units(&self, pid: usize, a: u32, b: u32) -> bool {
@@ -37689,11 +38801,23 @@ impl Game {
         for (_, owner, name) in struck_cities {
             struck_owners.insert(owner);
             struck_names.push(name.clone());
-            self.record_war_moment(pid, owner, "nuclear_strike", Some(name));
+            self.record_war_moment(
+                pid,
+                owner,
+                "nuclear_strike",
+                Some(name),
+                Some(target),
+            );
         }
         for owner in &aggrieved {
             if !struck_owners.contains(owner) {
-                self.record_war_moment(pid, *owner, "nuclear_strike", None);
+                self.record_war_moment(
+                    pid,
+                    *owner,
+                    "nuclear_strike",
+                    None,
+                    Some(target),
+                );
             }
         }
         let units_destroyed = exposed
@@ -38389,7 +39513,9 @@ impl Game {
             || (peace && self.emergency_war_pair(pid, other))
             || (peace && self.peace_available_at(pid, other).is_some())
             || ((friendship || open_borders || alliance.is_some()) && self.is_at_war(pid, other))
-            || (open_borders && self.tree_effect(pid, "open_borders") <= 0.0)
+            || (open_borders
+                && (self.tree_effect(pid, "open_borders") <= 0.0
+                    || self.tree_effect(other, "open_borders") <= 0.0))
             || (friendship
                 && (self.players[pid]
                     .denounced_until
@@ -40049,7 +41175,10 @@ impl Game {
             || self.tree_effect(territory_owner, "open_borders") <= 0.0
             || (self.players[territory_owner].is_minor
                 && (self.suzerain_of(territory_owner) == Some(mover)
-                    || self.policy_effect(mover, "open_city_state_borders") > 0.0))
+                    || self.policy_effect(mover, "open_city_state_borders") > 0.0
+                    // João III's Porta do Cerco is folded into Portugal's
+                    // modeled Casa da Índia ability record.
+                    || self.has_ability(mover, "casa_da_india")))
             || self.players[mover]
                 .alliances
                 .get(&territory_owner)
@@ -40507,12 +41636,23 @@ impl Game {
                 delta += self.governor_effect(pid, victor_city, "nearby_city_loyalty");
             }
         }
-        let garrisoned = self.units_at(cpos).into_iter().any(|uid| {
-            self.units[&uid].owner == pid
-                && self.rules.units[self.units[&uid].kind.as_str()].class == "military"
-        });
-        if garrisoned {
+        let garrison_formation = self
+            .units_at(cpos)
+            .into_iter()
+            .filter(|uid| {
+                self.units[uid].owner == pid
+                    && self.rules.units[self.units[uid].kind.as_str()].class == "military"
+            })
+            .map(|uid| self.units[&uid].formation)
+            .max();
+        let garrisoned = garrison_formation.is_some();
+        if let Some(formation) = garrison_formation {
             delta += self.policy_effect(pid, "garrison_loyalty");
+            delta += if formation > 0 {
+                self.civ_effect(pid, "formation_garrison_loyalty")
+            } else {
+                self.civ_effect(pid, "garrison_loyalty")
+            };
         }
         let occupied = city
             .occupied_from
@@ -41801,10 +42941,16 @@ impl Game {
     }
 
     fn process_eras(&mut self) {
-        let era = self.era_from_progress();
-        if era <= self.world_era {
+        let progress_era = self.era_from_progress();
+        if progress_era <= self.world_era {
             return;
         }
+        // A late unlock can put the leader several columns ahead of the
+        // world's current age (for example after restoring an older save or
+        // receiving a rules-driven research grant). Each intervening era is
+        // still a real age with its own thresholds and Dedication choice, so
+        // never collapse all of those transitions into one.
+        let era = self.world_era.saturating_add(1).min(progress_era);
         self.world_era = era;
         let majors: Vec<usize> = self
             .players
@@ -43077,6 +44223,7 @@ impl Game {
         self.process_strategic_resources(pid);
         self.process_reactors(pid);
         self.process_diplomacy(pid);
+        self.reconcile_closed_border_units(Some(pid));
         self.process_routes(pid);
         self.process_great_people(pid);
         self.process_pressure(pid);
@@ -43304,6 +44451,9 @@ impl Game {
             .counters
             .entry(format!("tree_completions:{node}"))
             .or_insert(0) += 1;
+        if !technology && first && node == "early_empire" {
+            self.reconcile_closed_border_units(None);
+        }
         if first {
             self.players[pid].envoys_free +=
                 effects.get("free_envoys").copied().unwrap_or(0.0) as i64;
@@ -44032,20 +45182,9 @@ impl Game {
             growth_bonus += self.policy_effect(pid, "foreign_continent_growth_pct");
         }
         growth_bonus += self.pantheon_effect(pid, "growth_pct");
-        growth_bonus += 20.0
-            * self.cities[&cid]
-                .products
-                .iter()
-                .take(self.product_capacity(&self.cities[&cid]))
-                .filter(|product| product.as_str() == "salt")
-                .count() as f64;
-        if let Some((resource, corporation)) =
-            self.city_active_economic_improvement(&self.cities[&cid])
-        {
-            if resource == "salt" {
-                growth_bonus += if corporation { 40.0 } else { 20.0 };
-            }
-        }
+        growth_bonus += self
+            .city_resource_industry_effects(&self.cities[&cid])
+            .growth_pct;
         if self.congress_effect_active("migration_treaty", "A", &pid.to_string()) {
             growth_bonus += 20.0;
         } else if self.congress_effect_active("migration_treaty", "B", &pid.to_string()) {
@@ -45180,7 +46319,7 @@ impl Game {
             self.note(new_owner, "War", message.clone(), Some(pos));
             self.note(old, "War", message, Some(pos));
             if conquest {
-                self.record_war_city_loss(new_owner, old, &name, capital);
+                self.record_war_city_loss(new_owner, old, &name, capital, pos);
             }
         }
         let captured_works = self
@@ -45526,7 +46665,13 @@ impl Game {
             return Err("that captured city cannot be razed".into());
         }
         self.capture_rewards(pid, defeated, 150.0);
-        self.record_war_moment(pid, defeated, "city_razed", Some(city.name.clone()));
+        self.record_war_moment(
+            pid,
+            defeated,
+            "city_razed",
+            Some(city.name.clone()),
+            Some(city.pos),
+        );
 
         for position in &city.owned_tiles {
             if let Some(tile) = self.map.tiles.get_mut(position) {
@@ -47462,7 +48607,8 @@ mod combat_scenarios {
         game.players[0]
             .policies
             .extend(["professional_army".to_string(), "retinues".to_string()]);
-        game.players[0].gold = 110.0;
+        // 110 base, halved by Professional Army, then tripled for an Army.
+        game.players[0].gold = 165.0;
         game.players[0]
             .strategic_resources
             .insert("iron".to_string(), 30.0);
@@ -49294,10 +50440,11 @@ mod combat_scenarios {
         );
 
         let (mut naval, center, ring) = controlled_game(31_437);
-        naval.spawn_unit("battleship", 0, ring[0]);
+        let battleship = naval.spawn_unit("battleship", 0, ring[0]);
+        naval.units.get_mut(&battleship).unwrap().formation = 1;
         let bomber = naval.spawn_unit("bomber", 1, center);
         let bomber_state = naval.units[&bomber].clone();
-        assert_eq!(naval.air_interception_strength(&bomber_state, center), 90.0);
+        assert_eq!(naval.air_interception_strength(&bomber_state, center), 97.0);
 
         let (mut future, center, ring) = controlled_game(31_438);
         future.spawn_unit("giant_death_robot", 0, ring[0]);
@@ -49335,7 +50482,8 @@ mod combat_scenarios {
                 "{kind} promotion class"
             );
         }
-        assert!(!game.rules.units["aircraft_carrier"].can_formations);
+        assert!(game.rules.units["aircraft_carrier"].can_formations);
+        assert!(!game.rules.units["aircraft_carrier"].can_combine);
 
         let fighter = game.spawn_unit("fighter", 0, center);
         assert_eq!(game.unit_attack_range(fighter), 5);
@@ -50107,11 +51255,20 @@ mod combat_scenarios {
         let veteran = g.spawn_unit("warrior", 0, center);
         let recruit = g.spawn_unit("warrior", 0, ring[0]);
         g.units.get_mut(&veteran).unwrap().xp = 20;
+        g.units.get_mut(&veteran).unwrap().hp = 40;
+        g.units.get_mut(&veteran).unwrap().xp_bonus_pct = 10.0;
         g.units
             .get_mut(&veteran)
             .unwrap()
             .promotions
             .insert("battlecry".to_string());
+        g.units.get_mut(&recruit).unwrap().hp = 80;
+        g.units.get_mut(&recruit).unwrap().xp_bonus_pct = 25.0;
+        g.units
+            .get_mut(&recruit)
+            .unwrap()
+            .promotions
+            .insert("tortoise".to_string());
         g.apply(
             0,
             &Action::CombineUnits {
@@ -50122,13 +51279,22 @@ mod combat_scenarios {
         .unwrap();
         assert!(!g.units.contains_key(&recruit));
         assert_eq!(g.units[&veteran].formation, 1);
+        assert_eq!(g.units[&veteran].hp, 60);
         assert_eq!(g.units[&veteran].xp, 20);
         assert!(g.units[&veteran].promotions.contains("battlecry"));
+        assert!(g.units[&veteran].promotions.contains("tortoise"));
+        assert_eq!(g.units[&veteran].xp_bonus_pct, 25.0);
         assert_eq!(g.unit_unembarked_strength(&g.units[&veteran]), 30.0);
 
         g.begin_turn(0);
         g.players[0].civics.insert("mobilization".to_string());
         let third = g.spawn_unit("warrior", 0, ring[1]);
+        g.units.get_mut(&third).unwrap().hp = 90;
+        g.units
+            .get_mut(&third)
+            .unwrap()
+            .promotions
+            .insert("amphibious".to_string());
         g.apply(
             0,
             &Action::CombineUnits {
@@ -50138,6 +51304,8 @@ mod combat_scenarios {
         )
         .unwrap();
         assert_eq!(g.units[&veteran].formation, 2);
+        assert_eq!(g.units[&veteran].hp, 70);
+        assert!(g.units[&veteran].promotions.contains("amphibious"));
         assert_eq!(g.unit_unembarked_strength(&g.units[&veteran]), 37.0);
 
         let (mut g, center, ring) = controlled_game(3162);
@@ -50166,6 +51334,104 @@ mod combat_scenarios {
         g.apply(0, &Action::UnlinkUnits { unit: escort }).unwrap();
         assert_eq!(g.units[&escort].linked_to, None);
         assert_eq!(g.units[&builder].linked_to, None);
+    }
+
+    #[test]
+    fn unique_formation_unlocks_and_city_state_exclusions_match_gathering_storm() {
+        let (mut spain, center, ring) = controlled_game(3166);
+        spain.players[0].civ = "Spain".to_string();
+        spain.players[0].civics.insert("mercantilism".to_string());
+        let galley = spain.spawn_unit("galley", 0, center);
+        let second = spain.spawn_unit("galley", 0, ring[0]);
+        assert_eq!(spain.can_combine_units(0, galley, second), Some(1));
+        spain.do_combine_units(0, galley, second).unwrap();
+        spain.begin_turn(0);
+        let third = spain.spawn_unit("galley", 0, ring[1]);
+        assert_eq!(spain.can_combine_units(0, galley, third), Some(2));
+
+        let (mut zulu, center, ring) = controlled_game(3167);
+        zulu.players[0].civ = "Zulu".to_string();
+        zulu.players[0].civics.insert("mercenaries".to_string());
+        let warrior = zulu.spawn_unit("warrior", 0, center);
+        let second = zulu.spawn_unit("warrior", 0, ring[0]);
+        assert_eq!(zulu.can_combine_units(0, warrior, second), Some(1));
+        zulu.do_combine_units(0, warrior, second).unwrap();
+        assert_eq!(zulu.unit_formation_bonus(&zulu.units[&warrior]), 15.0);
+        zulu.begin_turn(0);
+        zulu.players[0].civics.insert("nationalism".to_string());
+        let third = zulu.spawn_unit("warrior", 0, ring[1]);
+        assert_eq!(zulu.can_combine_units(0, warrior, third), Some(2));
+        zulu.do_combine_units(0, warrior, third).unwrap();
+        assert_eq!(zulu.unit_formation_bonus(&zulu.units[&warrior]), 22.0);
+
+        let (mut levied, center, ring) = controlled_game(3168);
+        levied.players[0].civics.insert("nationalism".to_string());
+        let regular = levied.spawn_unit("warrior", 0, center);
+        let city_state_unit = levied.spawn_unit("warrior", 0, ring[0]);
+        levied.units.get_mut(&city_state_unit).unwrap().levied_from = Some(2);
+        assert_eq!(levied.can_combine_units(0, regular, city_state_unit), None);
+        levied.units.get_mut(&city_state_unit).unwrap().levied_from = None;
+        levied.players[0].is_minor = true;
+        assert_eq!(levied.can_combine_units(0, regular, city_state_unit), None);
+    }
+
+    #[test]
+    fn isibongo_capture_upgrade_and_garrison_loyalty_are_formation_aware() {
+        let (mut game, city_pos, ring) = controlled_game(3169);
+        game.players[0].civ = "Zulu".to_string();
+        game.players[0].civics.insert("mercenaries".to_string());
+        let city = game.found_city_for(1, city_pos, None);
+        game.cities.get_mut(&city).unwrap().hp = 0;
+        let captor = game.spawn_unit("warrior", 0, ring[0]);
+        game.apply(
+            0,
+            &Action::Attack {
+                unit: captor,
+                target: city_pos,
+            },
+        )
+        .unwrap();
+        assert_eq!(game.cities[&city].owner, 0);
+        assert_eq!(game.units[&captor].formation, 1);
+
+        let with_corps = game.city_loyalty_per_turn(&game.cities[&city]);
+        game.units.get_mut(&captor).unwrap().formation = 0;
+        let with_single = game.city_loyalty_per_turn(&game.cities[&city]);
+        assert!((with_corps - with_single - 2.0).abs() < 1e-9);
+
+        let (mut carrier_capture, city_pos, ring) = controlled_game(3171);
+        carrier_capture.players[0].civ = "Zulu".to_string();
+        carrier_capture.players[0]
+            .civics
+            .insert("nationalism".to_string());
+        carrier_capture.map.tiles.get_mut(&city_pos).unwrap().terrain = "coast".to_string();
+        carrier_capture.map.tiles.get_mut(&ring[0]).unwrap().terrain = "coast".to_string();
+        let city = carrier_capture.found_city_for(1, city_pos, None);
+        carrier_capture.cities.get_mut(&city).unwrap().hp = 0;
+        let carrier = carrier_capture.spawn_unit("aircraft_carrier", 0, ring[0]);
+        carrier_capture
+            .apply(
+                0,
+                &Action::Attack {
+                    unit: carrier,
+                    target: city_pos,
+                },
+            )
+            .unwrap();
+        assert_eq!(carrier_capture.units[&carrier].formation, 1);
+    }
+
+    #[test]
+    fn formation_great_admirals_create_fleets_and_armadas() {
+        let (mut game, center, _) = controlled_game(3170);
+        let ship = game.spawn_unit("galley", 0, center);
+        let duilius = game.rules.great_people["gaius_duilius"].clone();
+        game.named_great_person_effect(0, &duilius);
+        assert_eq!(game.units[&ship].formation, 1);
+
+        let santa_cruz = game.rules.great_people["santa_cruz"].clone();
+        game.named_great_person_effect(0, &santa_cruz);
+        assert_eq!(game.units[&ship].formation, 2);
     }
 
     #[test]
@@ -50489,8 +51755,191 @@ mod combat_scenarios {
     }
 
     #[test]
+    fn norway_and_maori_use_their_stock_early_ocean_rules() {
+        let (mut g, land, ring) = controlled_game(3_201);
+        let coast = ring[0];
+        let ocean = g
+            .nbrs(coast)
+            .into_iter()
+            .find(|position| *position != land)
+            .unwrap();
+        g.map.tiles.get_mut(&coast).unwrap().terrain = "coast".to_string();
+        g.map.tiles.get_mut(&ocean).unwrap().terrain = "ocean".to_string();
+
+        g.players[0].civ = "Norway".to_string();
+        let longship = g.spawn_unit("galley", 0, coast);
+        assert!(!g.can_move(longship, ocean));
+        g.players[0].techs.insert("shipbuilding".to_string());
+        assert!(
+            g.can_move(longship, ocean),
+            "Knarr substitutes Shipbuilding for Cartography"
+        );
+        g.remove_unit(longship);
+
+        let warrior = g.spawn_unit("warrior", 0, land);
+        g.relocate(warrior, coast);
+        assert!(
+            !g.can_move(warrior, ocean),
+            "Knarr's early Ocean access is restricted to naval units"
+        );
+        g.remove_unit(warrior);
+
+        g.players[0].techs.clear();
+        g.players[0].civ = "Maori".to_string();
+        let warrior = g.spawn_unit("warrior", 0, land);
+        assert!(
+            g.can_move(warrior, coast),
+            "Mana gives the starting Shipbuilding embarkation package"
+        );
+        g.relocate(warrior, coast);
+        assert!(
+            g.can_move(warrior, ocean),
+            "Mana permits Ocean movement without Cartography"
+        );
+        assert_eq!(
+            g.unit_max_moves(warrior),
+            4.0,
+            "Mana gives embarked units +2 Movement"
+        );
+    }
+
+    #[test]
+    fn enforced_borders_share_one_rule_across_steps_and_routes() {
+        let (mut g, start, ring) = controlled_game(3_202);
+        g.at_war.clear();
+        let target = ring[0];
+        let foreign_city_position = g
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| g.wdist(start, *position) > 5)
+            .unwrap();
+        let foreign_city = g.found_city_for(1, foreign_city_position, None);
+        g.map.tiles.get_mut(&target).unwrap().owner_city = Some(foreign_city);
+        let warrior = g.spawn_unit("warrior", 0, start);
+
+        assert!(
+            g.can_move(warrior, target),
+            "borders remain open before their owner adopts Early Empire"
+        );
+        g.players[1].civics.insert("early_empire".to_string());
+        assert!(!g.can_move(warrior, target));
+
+        g.players[0].friends_until.insert(1, 40);
+        g.players[1].friends_until.insert(0, 40);
+        assert!(!g.can_move(warrior, target), "friendship is not Open Borders");
+        g.players[0].open_borders_until.insert(1, 40);
+        assert!(
+            !g.can_move(warrior, target),
+            "granting our borders is the wrong direction"
+        );
+        g.players[1].open_borders_until.insert(0, 40);
+        assert!(g.can_move(warrior, target));
+
+        g.players[0].open_borders_until.clear();
+        g.players[1].open_borders_until.clear();
+        let alliance = AllianceState {
+            kind: "military".to_string(),
+            points: 0.0,
+            level: 1,
+            ends: 40,
+        };
+        g.players[0].alliances.insert(1, alliance.clone());
+        g.players[1].alliances.insert(0, alliance);
+        assert!(g.can_move(warrior, target));
+
+        g.players[0].alliances.clear();
+        g.players[1].alliances.clear();
+        g.at_war.insert(pair(0, 1));
+        assert!(g.can_move(warrior, target));
+
+        g.at_war.clear();
+        g.remove_unit(warrior);
+        let trader = g.spawn_unit("trader", 0, start);
+        assert!(g.can_move(trader, target), "Traders ignore closed borders");
+        g.remove_unit(trader);
+        let missionary = g.spawn_unit("missionary", 0, start);
+        assert!(
+            g.can_move(missionary, target),
+            "religious units ignore closed borders"
+        );
+
+        g.remove_unit(missionary);
+        g.map.tiles.get_mut(&target).unwrap().owner_city = None;
+        for tile in g.map.tiles.values_mut() {
+            tile.terrain = "mountain".to_string();
+        }
+        let first = hex::canon((start.0 + 1, start.1), g.map.width);
+        let closed = hex::canon((start.0 + 2, start.1), g.map.width);
+        let goal = hex::canon((start.0 + 3, start.1), g.map.width);
+        for position in [start, first, closed, goal] {
+            g.map.tiles.get_mut(&position).unwrap().terrain = "plains".to_string();
+            g.map.tiles.get_mut(&position).unwrap().owner_city = None;
+        }
+        g.map.tiles.get_mut(&closed).unwrap().owner_city = Some(foreign_city);
+        let scout = g.spawn_unit("warrior", 0, start);
+        assert_eq!(
+            g.route_step(scout, goal, 0),
+            None,
+            "future route segments may not plan through closed territory"
+        );
+        g.players[1].open_borders_until.insert(0, 40);
+        assert_eq!(g.route_step(scout, goal, 0), Some(first));
+        g.players[1].open_borders_until.clear();
+        assert_eq!(
+            g.route_step(scout, goal, 0),
+            None,
+            "a cached route must be invalidated when access expires"
+        );
+    }
+
+    #[test]
+    fn enforced_or_expired_borders_expel_only_units_that_need_access() {
+        let setup = |seed| {
+            let (mut game, start, ring) = controlled_game(seed);
+            game.at_war.clear();
+            let foreign_city_position = game
+                .map
+                .tiles
+                .keys()
+                .copied()
+                .find(|position| game.wdist(start, *position) > 5)
+                .unwrap();
+            let city = game.found_city_for(1, foreign_city_position, None);
+            let foreign = ring[0];
+            game.map.tiles.get_mut(&foreign).unwrap().owner_city = Some(city);
+            (game, foreign)
+        };
+
+        let (mut expired, foreign) = setup(3_204);
+        expired.players[1].civics.insert("early_empire".to_string());
+        expired.players[1].open_borders_until.insert(0, 5);
+        let warrior = expired.spawn_unit("warrior", 0, foreign);
+        let trader = expired.spawn_unit("trader", 0, foreign);
+        expired.turn = 5;
+        expired.begin_turn(0);
+        assert_ne!(expired.units[&warrior].pos, foreign);
+        assert_ne!(expired.territory_owner_at(expired.units[&warrior].pos), Some(1));
+        assert_eq!(
+            expired.units[&trader].pos, foreign,
+            "a Trader remains legal when ordinary Open Borders expires"
+        );
+
+        let (mut enforced, foreign) = setup(3_205);
+        let scout = enforced.spawn_unit("warrior", 0, foreign);
+        assert!(enforced.has_open_borders(0, 1));
+        enforced.players[1].civics.insert("early_empire".to_string());
+        enforced.apply_tree_completion(1, false, "early_empire", true);
+        assert_ne!(
+            enforced.units[&scout].pos, foreign,
+            "adopting Early Empire immediately expels existing intruders"
+        );
+    }
+
+    #[test]
     fn known_target_routes_reuse_the_planned_path_after_each_step() {
-        let (mut g, start, _) = controlled_game(3_202);
+        let (mut g, start, _) = controlled_game(3_206);
         let target = g
             .map
             .tiles
@@ -51340,8 +52789,8 @@ mod victory_conditions {
         g.players[0].techs.insert("smart_materials".to_string());
         g.process_eras();
         assert_eq!(
-            g.world_era, 8,
-            "late research must not stay capped at Renaissance"
+            g.world_era, 4,
+            "late research advances the world without skipping Industrial"
         );
     }
 
@@ -56395,19 +57844,37 @@ mod district_mechanics {
 
         let key = pair(0, 1);
         let war = game.wars.get(&key).expect("the declaration opened a war");
+        let defender_capital = game
+            .cities
+            .values()
+            .find(|city| city.owner == 1 && city.is_capital)
+            .unwrap()
+            .pos;
         assert_eq!((war.aggressor, war.defender, war.started), (0, 1, 40));
         assert_eq!((war.declarer, war.target), (0, 1));
         assert_eq!(war.participants.len(), 2);
         assert_eq!(war.participants[0].strength, opening_strength[0]);
         assert_eq!(war.participants[1].strength, opening_strength[1]);
         assert_eq!(war.highlights[0].kind, "declared");
+        assert_eq!(
+            war.theater,
+            [WarTheaterSite {
+                turn: 40,
+                pos: defender_capital,
+            }],
+            "the Watch action has a useful target before the first battle"
+        );
+        game.players[2].explored.remove(&defender_capital);
+        let third_party_view = crate::obs::observation(&game, 2);
+        let public_war = third_party_view["wars"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["aggressor"] == 0 && entry["defender"] == 1)
+            .expect("a war is public knowledge to the civilizations watching it");
         assert!(
-            crate::obs::observation(&game, 2)["wars"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|entry| entry["aggressor"] == 0 && entry["defender"] == 1),
-            "a war is public knowledge to the civilizations watching it"
+            public_war["theater"].as_array().unwrap().is_empty(),
+            "the public declaration must not reveal an unexplored battlefield"
         );
 
         // A casualty on each side, then a city taken, is the whole vocabulary
@@ -56476,6 +57943,19 @@ mod district_mechanics {
             .collect::<Vec<_>>();
         assert!(turns.windows(2).all(|pair| pair[0] <= pair[1]));
         assert_eq!(entry["peace_terms"][0]["turn"], 52);
+        let aftermath = crate::obs::observation_spectator(&game, 0)["wars"][0]["theater"].clone();
+        assert!(
+            aftermath
+                .as_array()
+                .is_some_and(|sites| !sites.is_empty()),
+            "a concluded war exposes its durable battlefield to the full-map spectator"
+        );
+        game.turn = 92;
+        assert_eq!(
+            crate::obs::observation_spectator(&game, 0)["wars"][0]["theater"],
+            aftermath,
+            "later history must not move the View aftermath target"
+        );
     }
 
     #[test]

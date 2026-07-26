@@ -51,6 +51,15 @@ impl Yields {
     pub fn total(&self) -> f64 {
         self.food + self.production + self.gold + self.science + self.culture + self.faith
     }
+
+    pub fn add_scaled(&mut self, other: Yields, scale: f64) {
+        self.food += other.food * scale;
+        self.production += other.production * scale;
+        self.gold += other.gold * scale;
+        self.science += other.science * scale;
+        self.culture += other.culture * scale;
+        self.faith += other.faith * scale;
+    }
 }
 
 fn dtrue() -> bool {
@@ -150,6 +159,46 @@ pub struct ResourceSpec {
     /// Cosmetics — manufactured, never map-placed).
     #[serde(default)]
     pub improvement: String,
+    /// The city effect associated with an Industry on this Luxury. A
+    /// Corporation applies it twice and every housed Product applies it once.
+    /// Keeping the selector on the resource makes all 28 Product projects use
+    /// one execution path instead of a hardcoded resource-name switch.
+    #[serde(default)]
+    pub industry_effects: ResourceIndustryEffects,
+    /// Effect attached to each housed Product. Usually this is one Industry
+    /// bundle, but it is kept explicit because shipped Product modifiers are
+    /// their own rows (Coffee is the notable distinct value).
+    #[serde(default)]
+    pub product_effects: ResourceIndustryEffects,
+    /// Flat Great Work yields of one housed Product. These are distinct from
+    /// the percentage/production/growth effect above and both apply.
+    #[serde(default)]
+    pub product_yields: Yields,
+}
+
+/// One Industry-sized economic effect for a Luxury resource. Civ VI doubles
+/// this bundle for the Corporation improvement and attaches one bundle to
+/// each Product housed in a Stock Exchange or Seaport.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ResourceIndustryEffects {
+    pub city_yield_pct: Yields,
+    pub growth_pct: f64,
+    pub housing: f64,
+    pub military_unit_production_pct: f64,
+    pub civilian_unit_production_pct: f64,
+    pub building_production_pct: f64,
+}
+
+impl ResourceIndustryEffects {
+    pub fn add_scaled(&mut self, other: Self, scale: f64) {
+        self.city_yield_pct.add_scaled(other.city_yield_pct, scale);
+        self.growth_pct += other.growth_pct * scale;
+        self.housing += other.housing * scale;
+        self.military_unit_production_pct += other.military_unit_production_pct * scale;
+        self.civilian_unit_production_pct += other.civilian_unit_production_pct * scale;
+        self.building_production_pct += other.building_production_pct * scale;
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -239,10 +288,15 @@ pub struct UnitSpec {
     /// False for units which only enter play through a special effect.
     #[serde(default = "default_true")]
     pub buildable: bool,
-    /// Some super-units cannot combine into Corps/Armies or earn ordinary
-    /// experience and promotion-tree upgrades.
+    /// False only for units which can never exist as a Corps/Fleet or
+    /// Army/Armada, including the Giant Death Robot.
     #[serde(default = "default_true")]
     pub can_formations: bool,
+    /// Whether two copies may be combined in the field. Aircraft Carriers are
+    /// the Civ VI exception: formations can be trained or purchased directly,
+    /// but existing carriers cannot merge.
+    #[serde(default = "default_true")]
+    pub can_combine: bool,
     #[serde(default = "default_true")]
     pub earns_xp: bool,
     /// Theocracy and the Grand Master's Chapel enable Faith purchase by unit
@@ -937,6 +991,95 @@ pub struct PromotionSpec {
     pub note: String,
 }
 
+/// A reusable bundle of numeric engine effects.
+///
+/// Civ VI's `ATTACH_MODIFIER` effect composes named modifiers rather than
+/// copying every argument onto every owning object. A rules object opts into
+/// the same model with a `modifiers: ["name"]` field. The loader resolves the
+/// graph once, adds the resulting values to that object's ordinary `effects`
+/// map, and rejects dangling references or cycles before a game can start.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct ModifierSpec {
+    #[serde(default)]
+    pub effects: BTreeMap<String, f64>,
+    /// Flat yield changes keyed by the building or replacement family they
+    /// target. `"*"` targets every building. The loader compiles these into
+    /// ordinary numeric effects so nested attachments retain additive
+    /// composition and any effect-bearing rules object can consume them.
+    #[serde(default)]
+    pub building_yields: BTreeMap<String, Yields>,
+    /// Percentage purchase discounts keyed by unit or replacement family.
+    /// `"*"` targets every unit and the same modifier applies to Gold and
+    /// Faith, matching `ADJUST_UNIT_PURCHASE_COST`.
+    #[serde(default)]
+    pub unit_purchase_discount_pct: BTreeMap<String, f64>,
+    /// Ability identities granted while this modifier is active. Ability
+    /// semantics remain in their normal engine consumers; this removes the
+    /// fixed owner list from `GRANT_ABILITY` itself.
+    #[serde(default)]
+    pub abilities: BTreeSet<String>,
+    /// Other named bundles this modifier attaches, in application order.
+    #[serde(default)]
+    pub modifiers: Vec<String>,
+}
+
+const BUILDING_YIELD_EFFECT_PREFIX: &str = "building_yield:";
+const UNIT_PURCHASE_EFFECT_PREFIX: &str = "unit_purchase_discount_pct:";
+const GRANT_ABILITY_EFFECT_PREFIX: &str = "grant_ability:";
+
+pub fn building_yield_effect_key(building: &str, yield_type: &str) -> String {
+    format!("{BUILDING_YIELD_EFFECT_PREFIX}{building}:{yield_type}")
+}
+
+pub fn unit_purchase_discount_effect_key(unit: &str) -> String {
+    format!("{UNIT_PURCHASE_EFFECT_PREFIX}{unit}")
+}
+
+pub fn grant_ability_effect_key(ability: &str) -> String {
+    format!("{GRANT_ABILITY_EFFECT_PREFIX}{ability}")
+}
+
+fn compile_modifier_selectors(
+    name: &str,
+    spec: &ModifierSpec,
+    effects: &mut BTreeMap<String, f64>,
+) -> Result<(), String> {
+    for (building, yields) in &spec.building_yields {
+        if building.is_empty() || building.contains(':') {
+            return Err(format!("modifier {name} has invalid building selector {building:?}"));
+        }
+        for (yield_type, value) in [
+            ("food", yields.food),
+            ("production", yields.production),
+            ("gold", yields.gold),
+            ("science", yields.science),
+            ("culture", yields.culture),
+            ("faith", yields.faith),
+        ] {
+            if value != 0.0 {
+                *effects
+                    .entry(building_yield_effect_key(building, yield_type))
+                    .or_insert(0.0) += value;
+            }
+        }
+    }
+    for (unit, value) in &spec.unit_purchase_discount_pct {
+        if unit.is_empty() || unit.contains(':') {
+            return Err(format!("modifier {name} has invalid unit selector {unit:?}"));
+        }
+        *effects
+            .entry(unit_purchase_discount_effect_key(unit))
+            .or_insert(0.0) += value;
+    }
+    for ability in &spec.abilities {
+        if ability.is_empty() || ability.contains(':') {
+            return Err(format!("modifier {name} has invalid ability {ability:?}"));
+        }
+        *effects.entry(grant_ability_effect_key(ability)).or_insert(0.0) += 1.0;
+    }
+    Ok(())
+}
+
 /// A leader's historical agenda: the standing opinion they hold about how
 /// other civilizations ought to behave.
 ///
@@ -1038,6 +1181,9 @@ pub struct Rules {
     pub governments: SpecMap<GovSpec>,
     pub policies: SpecMap<PolicySpec>,
     pub promotions: SpecMap<PromotionSpec>,
+    /// Named, recursively composable modifier bundles. Entries are flattened
+    /// and cycle-free by the time a [`Rules`] value is constructed.
+    pub modifiers: SpecMap<ModifierSpec>,
     pub beliefs: BeliefsData,
     pub civs: SpecMap<CivSpec>,
     pub agendas: SpecMap<AgendaSpec>,
@@ -1561,7 +1707,7 @@ impl DedicationSpec {
 }
 
 /// Every ruleset file the engine ships, by the name a mod overlay uses.
-pub const DATA_FILES: [(&str, &str); 27] = [
+pub const DATA_FILES: [(&str, &str); 28] = [
     ("terrains", include_str!("../data/terrains.json")),
     ("features", include_str!("../data/features.json")),
     ("resources", include_str!("../data/resources.json")),
@@ -1578,6 +1724,7 @@ pub const DATA_FILES: [(&str, &str); 27] = [
     ("governments", include_str!("../data/governments.json")),
     ("policies", include_str!("../data/policies.json")),
     ("promotions", include_str!("../data/promotions.json")),
+    ("modifiers", include_str!("../data/modifiers.json")),
     ("beliefs", include_str!("../data/beliefs.json")),
     ("civs", include_str!("../data/civs.json")),
     ("agendas", include_str!("../data/agendas.json")),
@@ -1590,6 +1737,126 @@ pub const DATA_FILES: [(&str, &str); 27] = [
     ("disasters", include_str!("../data/disasters.json")),
     ("dedications", include_str!("../data/dedications.json")),
 ];
+
+fn add_effects(target: &mut BTreeMap<String, f64>, source: &BTreeMap<String, f64>) {
+    for (effect, value) in source {
+        *target.entry(effect.clone()).or_insert(0.0) += value;
+    }
+}
+
+/// Resolve the modifier graph into bundles that contain no further links.
+fn resolve_modifiers(
+    source: &SpecMap<ModifierSpec>,
+) -> Result<SpecMap<ModifierSpec>, String> {
+    fn resolve_one(
+        name: &str,
+        source: &SpecMap<ModifierSpec>,
+        resolved: &mut SpecMap<ModifierSpec>,
+        stack: &mut Vec<String>,
+    ) -> Result<ModifierSpec, String> {
+        if let Some(spec) = resolved.get(name) {
+            return Ok(spec.clone());
+        }
+        let Some(spec) = source.get(name) else {
+            let owner = stack.last().map(String::as_str).unwrap_or("ruleset");
+            return Err(format!("modifier {owner} attaches missing modifier {name}"));
+        };
+        if let Some(start) = stack.iter().position(|entry| entry == name) {
+            let mut cycle = stack[start..].to_vec();
+            cycle.push(name.to_string());
+            return Err(format!("modifier attachment cycle: {}", cycle.join(" -> ")));
+        }
+
+        stack.push(name.to_string());
+        let mut effects = spec.effects.clone();
+        compile_modifier_selectors(name, spec, &mut effects)?;
+        for attached in &spec.modifiers {
+            let nested = resolve_one(attached, source, resolved, stack)?;
+            add_effects(&mut effects, &nested.effects);
+        }
+        stack.pop();
+
+        let flat = ModifierSpec {
+            effects,
+            building_yields: BTreeMap::new(),
+            unit_purchase_discount_pct: BTreeMap::new(),
+            abilities: BTreeSet::new(),
+            modifiers: Vec::new(),
+        };
+        resolved.insert(name.to_string(), flat.clone());
+        Ok(flat)
+    }
+
+    let mut resolved = SpecMap::new();
+    for name in source.keys() {
+        resolve_one(name, source, &mut resolved, &mut Vec::new())?;
+    }
+    Ok(resolved)
+}
+
+/// Expand `modifiers: [..]` on any rules object into its local effect map.
+/// Walking raw JSON keeps the primitive available uniformly to buildings,
+/// policies, technologies, beliefs, promotions, and mod-defined content
+/// without adding a parallel attachment field to every individual spec.
+fn expand_modifier_attachments(
+    file: &str,
+    value: &mut serde_json::Value,
+    modifiers: &SpecMap<ModifierSpec>,
+) -> Result<(), String> {
+    fn walk(
+        value: &mut serde_json::Value,
+        path: &str,
+        modifiers: &SpecMap<ModifierSpec>,
+    ) -> Result<(), String> {
+        match value {
+            serde_json::Value::Array(values) => {
+                for (index, value) in values.iter_mut().enumerate() {
+                    walk(value, &format!("{path}[{index}]"), modifiers)?;
+                }
+            }
+            serde_json::Value::Object(object) => {
+                let attached = object.remove("modifiers");
+                for (name, value) in object.iter_mut() {
+                    walk(value, &format!("{path}.{name}"), modifiers)?;
+                }
+                let Some(attached) = attached else {
+                    return Ok(());
+                };
+                let serde_json::Value::Array(attached) = attached else {
+                    return Err(format!("{path}.modifiers must be an array of names"));
+                };
+                let effects = object
+                    .entry("effects".to_string())
+                    .or_insert_with(|| serde_json::Value::Object(Default::default()));
+                let Some(effects) = effects.as_object_mut() else {
+                    return Err(format!("{path}.effects must be an object"));
+                };
+                for reference in attached {
+                    let Some(name) = reference.as_str() else {
+                        return Err(format!("{path}.modifiers must contain only names"));
+                    };
+                    let Some(modifier) = modifiers.get(name) else {
+                        return Err(format!("{path} attaches missing modifier {name}"));
+                    };
+                    for (effect, value) in &modifier.effects {
+                        let previous = effects
+                            .get(effect)
+                            .and_then(serde_json::Value::as_f64)
+                            .unwrap_or(0.0);
+                        let Some(sum) = serde_json::Number::from_f64(previous + value) else {
+                            return Err(format!("{path}.{effect} is not a finite effect"));
+                        };
+                        effects.insert(effect.clone(), serde_json::Value::Number(sum));
+                    }
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    walk(value, &format!("{file}.json"), modifiers)
+}
 
 /// The ruleset every `Rules::embedded()` call sees. It is the shipped data
 /// until a mod overlay is installed, which can only happen once, before a
@@ -1703,6 +1970,10 @@ impl Rules {
                 .ok_or_else(|| format!("ruleset is missing {name}.json"))?;
             serde_json::from_value(value).map_err(|error| format!("{name}.json: {error}"))
         }
+        let modifiers = resolve_modifiers(&take(&mut files, "modifiers")?)?;
+        for (name, value) in files.iter_mut() {
+            expand_modifier_attachments(name, value, &modifiers)?;
+        }
         let mut rules = Rules {
             terrains: take(&mut files, "terrains")?,
             features: take(&mut files, "features")?,
@@ -1720,6 +1991,7 @@ impl Rules {
             governments: take(&mut files, "governments")?,
             policies: take(&mut files, "policies")?,
             promotions: take(&mut files, "promotions")?,
+            modifiers,
             beliefs: take(&mut files, "beliefs")?,
             civs: take(&mut files, "civs")?,
             agendas: take(&mut files, "agendas")?,
@@ -1737,18 +2009,18 @@ impl Rules {
         };
         let effects: TreeEffectsData = take(&mut files, "tree_effects")?;
         for (node, values) in effects.techs {
-            rules
+            let spec = rules
                 .techs
                 .get_mut(&node)
-                .ok_or_else(|| format!("tree_effects.json references missing technology {node}"))?
-                .effects = values;
+                .ok_or_else(|| format!("tree_effects.json references missing technology {node}"))?;
+            add_effects(&mut spec.effects, &values);
         }
         for (node, values) in effects.civics {
-            rules
+            let spec = rules
                 .civics
                 .get_mut(&node)
-                .ok_or_else(|| format!("tree_effects.json references missing civic {node}"))?
-                .effects = values;
+                .ok_or_else(|| format!("tree_effects.json references missing civic {node}"))?;
+            add_effects(&mut spec.effects, &values);
         }
         rules.index_tree_unlocks();
         rules.tech_effects = effect_sources(&rules.techs);
@@ -1888,6 +2160,7 @@ impl Rules {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     use std::collections::BTreeSet;
 
     const TECHS: &str = "
@@ -1950,6 +2223,106 @@ mod tests {
         st_basils_cathedral statue_of_liberty statue_of_zeus stonehenge sydney_opera_house
         taj_mahal temple_artemis terracotta_army torre_de_belem university_of_sankore
         venetian_arsenal";
+
+    #[test]
+    fn named_modifiers_compose_and_attach_to_any_effect_bearing_spec() {
+        let mut files = Rules::shipped_values();
+        files.insert(
+            "modifiers".to_string(),
+            json!({
+                "production_seed": {
+                    "effects": {"city_production": 2, "builder_production_pct": 12},
+                    "building_yields": {"library": {"science": 2}},
+                    "unit_purchase_discount_pct": {"builder": 15},
+                    "abilities": ["public_engineering"]
+                },
+                "production_bundle": {
+                    "effects": {"builder_production_pct": 8},
+                    "building_yields": {"library": {"science": 1}},
+                    "unit_purchase_discount_pct": {"builder": 5},
+                    "modifiers": ["production_seed"]
+                }
+            }),
+        );
+        files.get_mut("policies").unwrap()["urban_planning"]["modifiers"] =
+            json!(["production_bundle"]);
+
+        let rules = Rules::from_values(files).unwrap();
+        // Urban Planning already carries one city Production. Attached values
+        // add to local values rather than silently replacing them.
+        assert_eq!(rules.policies["urban_planning"].effects["city_production"], 3.0);
+        assert_eq!(
+            rules.policies["urban_planning"].effects["builder_production_pct"],
+            20.0
+        );
+        assert!(rules.modifiers["production_bundle"].modifiers.is_empty());
+        assert_eq!(
+            rules.modifiers["production_bundle"].effects["builder_production_pct"],
+            20.0
+        );
+        assert_eq!(
+            rules.modifiers["production_bundle"].effects
+                [&building_yield_effect_key("library", "science")],
+            3.0
+        );
+        assert_eq!(
+            rules.modifiers["production_bundle"].effects
+                [&unit_purchase_discount_effect_key("builder")],
+            20.0
+        );
+        assert_eq!(
+            rules.modifiers["production_bundle"].effects
+                [&grant_ability_effect_key("public_engineering")],
+            1.0
+        );
+        assert_eq!(
+            rules.policies["urban_planning"].effects
+                [&building_yield_effect_key("library", "science")],
+            3.0
+        );
+        assert!(rules.modifiers["production_bundle"].building_yields.is_empty());
+        assert!(rules.modifiers["production_bundle"]
+            .unit_purchase_discount_pct
+            .is_empty());
+        assert!(rules.modifiers["production_bundle"].abilities.is_empty());
+    }
+
+    #[test]
+    fn modifier_graph_rejects_dangling_references_and_cycles() {
+        let mut dangling = Rules::shipped_values();
+        dangling.insert(
+            "modifiers".to_string(),
+            json!({"outer": {"modifiers": ["missing"]}}),
+        );
+        let error = Rules::from_values(dangling).err().unwrap();
+        assert!(error.contains("outer attaches missing modifier missing"), "{error}");
+
+        let mut cycle = Rules::shipped_values();
+        cycle.insert(
+            "modifiers".to_string(),
+            json!({
+                "first": {"modifiers": ["second"]},
+                "second": {"modifiers": ["first"]}
+            }),
+        );
+        let error = Rules::from_values(cycle).err().unwrap();
+        assert!(
+            error.contains("modifier attachment cycle: first -> second -> first"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn rules_objects_cannot_attach_an_unknown_modifier() {
+        let mut files = Rules::shipped_values();
+        files.get_mut("policies").unwrap()["urban_planning"]["modifiers"] =
+            json!(["missing"]);
+        let error = Rules::from_values(files).err().unwrap();
+        assert!(
+            error.contains("policies.json.urban_planning attaches missing modifier missing"),
+            "{error}"
+        );
+    }
 
     fn assert_complete_tree(
         tree: &SpecMap<TechSpec>,

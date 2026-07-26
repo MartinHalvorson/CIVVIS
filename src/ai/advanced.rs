@@ -4407,8 +4407,20 @@ impl AdvancedAi {
                     Action::Buy {
                         city,
                         unit,
+                        formation,
                         currency,
-                    } => (*city, Item::Unit { unit: unit.clone() }, currency.as_str()),
+                    } => (
+                        *city,
+                        if *formation == 0 {
+                            Item::Unit { unit: unit.clone() }
+                        } else {
+                            Item::Formation {
+                                unit: unit.clone(),
+                                formation: *formation,
+                            }
+                        },
+                        currency.as_str(),
+                    ),
                     Action::BuyBuilding {
                         city,
                         building,
@@ -4748,6 +4760,7 @@ impl AdvancedAi {
                 &Action::Buy {
                     city: cid,
                     unit: "missionary".to_string(),
+                    formation: 0,
                     currency: "faith".to_string(),
                 },
             )
@@ -4940,6 +4953,7 @@ impl AdvancedAi {
                     &Action::Buy {
                         city: cid,
                         unit: (*unit).to_string(),
+                        formation: 0,
                         currency: "faith".to_string(),
                     },
                 )
@@ -4967,6 +4981,7 @@ impl AdvancedAi {
                     &Action::Buy {
                         city,
                         unit: "naturalist".to_string(),
+                        formation: 0,
                         currency: "faith".to_string(),
                     },
                 )
@@ -4993,6 +5008,7 @@ impl AdvancedAi {
                 &Action::Buy {
                     city,
                     unit: "rock_band".to_string(),
+                    formation: 0,
                     currency: "faith".to_string(),
                 },
             )
@@ -5413,6 +5429,7 @@ impl AdvancedAi {
             let Action::Buy {
                 city,
                 unit,
+                formation,
                 currency,
             } = &action
             else {
@@ -5430,13 +5447,25 @@ impl AdvancedAi {
             let combat = spec
                 .strength
                 .max(spec.ranged_strength)
-                .max(spec.bombard_strength);
+                .max(spec.bombard_strength)
+                + match *formation {
+                    1 => 10.0,
+                    2.. => 17.0,
+                    _ => 0.0,
+                };
             let strategic = self
                 .production_value(
                     g,
                     pid,
                     *city,
-                    &Item::Unit { unit: unit.clone() },
+                    &if *formation == 0 {
+                        Item::Unit { unit: unit.clone() }
+                    } else {
+                        Item::Formation {
+                            unit: unit.clone(),
+                            formation: *formation,
+                        }
+                    },
                     plan,
                     &counts,
                 )
