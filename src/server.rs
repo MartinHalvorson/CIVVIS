@@ -37,6 +37,8 @@ const EMBEDDED_NATURAL_WONDER_ATLAS: &[u8] =
 const EMBEDDED_WORLD_WONDER_ATLAS: &[u8] =
     include_bytes!("../web/assets/world-wonder-atlas.png");
 const EMBEDDED_MOUNTAIN_ATLAS: &[u8] = include_bytes!("../web/assets/mountain-atlas.png");
+const EMBEDDED_HIDDEN_MAP_MONSTERS: &[u8] =
+    include_bytes!("../web/assets/hidden-map-monsters.png");
 
 /// The agents that exist in every build, whether or not a league snapshot is
 /// on disk, with the handle the leaderboards give them. `make_send_ai`
@@ -2123,6 +2125,11 @@ fn mountain_atlas() -> Vec<u8> {
         .unwrap_or_else(|_| EMBEDDED_MOUNTAIN_ATLAS.to_vec())
 }
 
+fn hidden_map_monsters() -> Vec<u8> {
+    std::fs::read("web/assets/hidden-map-monsters.png")
+        .unwrap_or_else(|_| EMBEDDED_HIDDEN_MAP_MONSTERS.to_vec())
+}
+
 /// Where a single-player game keeps its own saves, relative to the process's
 /// working directory. Files are named `*.save.json`, which `.gitignore`
 /// already covers, so a game played inside a checkout leaves the tree clean.
@@ -2793,6 +2800,9 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         ("GET", "/assets/mountain-atlas.png") => {
             respond(stream, "200 OK", "image/png", &mountain_atlas());
         }
+        ("GET", "/assets/hidden-map-monsters.png") => {
+            respond(stream, "200 OK", "image/png", &hidden_map_monsters());
+        }
         // A lock-free identity probe for supervised process handoffs. The
         // browser used to fetch the multi-megabyte `/state` document here and
         // could queue behind an AI step for its entire three-second timeout.
@@ -3395,7 +3405,8 @@ mod tests {
         request_path, save_path, seat_delay_ms, strategy_roster, tile_mark, ChronicleSnapshot,
         ChronicleState, FrameDelivery, Params,
         Session, Shared, SpectatorFrame, EMBEDDED_CINEMATIC_3D, EMBEDDED_INDEX, MIN_RESTART_MS,
-        EMBEDDED_WORLD_WONDER_ATLAS, SAVE_DIR, STATE_LONG_POLL, VIEWER_ACTIVE,
+        EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_WORLD_WONDER_ATLAS, SAVE_DIR, STATE_LONG_POLL,
+        VIEWER_ACTIVE,
     };
     use crate::game::{
         Action, Game, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL,
@@ -5747,6 +5758,34 @@ mod tests {
         assert!(renderer.contains("!MODE.atmosphere"));
         assert!(renderer.contains("SHX * S * .42"));
         assert!(EMBEDDED_INDEX.contains("t.wonder && !drawWorldWonderSprite(t.wonder, x, y)"));
+    }
+
+    #[test]
+    fn undiscovered_ground_is_an_illustrated_fog_safe_chart() {
+        assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.starts_with(b"\x89PNG\r\n\x1a\n"));
+        assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.len() > 1_000_000);
+        assert!(EMBEDDED_INDEX
+            .contains("HIDDEN_MAP_MONSTER_ATLAS.src = \"/assets/hidden-map-monsters.png\""));
+
+        let parchment = EMBEDDED_INDEX
+            .split("function drawHiddenMapParchment")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawHiddenMapMonsters").next())
+            .expect("continuous hidden-map parchment renderer");
+        assert!(parchment.contains("for (const cell of layer.cells) appendHexPath"));
+        assert!(parchment.contains("cx.fillStyle = PARCH; cx.fill()"));
+        assert!(!parchment.contains("PARCH_GRID"), "the hidden sheet must not expose a hex grid");
+
+        let monsters = EMBEDDED_INDEX
+            .split("function drawHiddenMapMonsters")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawHiddenMapFrontier").next())
+            .expect("hidden-map monster placement");
+        assert!(monsters.contains("hiddenMapIsDeep"));
+        assert!(monsters.contains("MODE.painted ? .48 : .41"));
+        assert!(EMBEDDED_INDEX.contains("drawHiddenMapParchment(hiddenMap);\n  drawHiddenMapMonsters(hiddenMap);"));
+        assert!(EMBEDDED_INDEX.contains("drawHiddenMapFrontier(tiles);"));
+        assert!(EMBEDDED_INDEX.contains("if (camera.chart && !spectator)"));
     }
 
     #[test]
