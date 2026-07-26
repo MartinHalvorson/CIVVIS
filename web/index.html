@@ -1998,8 +1998,15 @@
      is allowed to ellipsize and gives up width first, so four digits stay whole
      down to a narrow desktop. */
   #playerhud .ribbon-stat b {
+    position: relative; overflow: visible;
     font-size: clamp(9px, .8vw, 13px); font-weight: 950; letter-spacing: -.025em;
     line-height: 1; text-shadow: 0 1px 2px #000, 0 0 8px currentColor;
+  }
+  /* The marker is out of flow: it follows the FPT value without changing the
+     centered number's width or moving that number away from the other rows. */
+  #playerhud .founded-religion-marker {
+    position: absolute; inset-inline-start: calc(100% + 1px); top: -.18em;
+    font-size: .72em; letter-spacing: 0; text-shadow: 0 1px 2px #000;
   }
   /* Victory progress starts in the right corner and grows down with the rows
      it actually shows, never past the world minimap. Six races read one under
@@ -15605,19 +15612,18 @@ function exactStat(value) {
   return Math.round(n).toLocaleString();
 }
 
-function foundedReligionMarker(player, cities) {
-  if (!player.religion) return "";
-  return cities.some(city => city.religion === player.religion) ? "*" : "";
+function foundedReligionMarker(player) {
+  return player.founded_religion_exists ? "*" : "";
 }
 
-function playerHudStats(player, rank, cities) {
+function playerHudStats(player, rank) {
   const y = player.yields || {};
   const goldPerTurn = Number.isFinite(+player.gold_per_turn) ? +player.gold_per_turn : +(y.gold || 0);
   return [
     ["production", "PROD", y.production, `Production: ${exactStat(y.production)} per turn`],
     ["science", "SCI", y.science, `Science: ${exactStat(y.science)} per turn`],
     ["culture", "CUL", y.culture, `Culture: ${exactStat(y.culture)} per turn`],
-    ["faith", "FPT", y.faith, `Faith: ${exactStat(y.faith)} per turn · ${exactStat(player.faith)} banked`, foundedReligionMarker(player, cities)],
+    ["faith", "FPT", y.faith, `Faith: ${exactStat(y.faith)} per turn · ${exactStat(player.faith)} banked`, foundedReligionMarker(player)],
     ["gold", "GPT", goldPerTurn, `Net Gold: ${exactStat(goldPerTurn)} per turn · ${exactStat(player.gold)} banked`],
     ["military", "MIL", player.military, `Military strength: ${exactStat(player.military)}`],
     ["cities", "CITY", player.cities, `Cities controlled: ${exactStat(player.cities)}`],
@@ -15679,7 +15685,7 @@ function drawPlayerHud() {
     mapArea.style.setProperty("--player-hud-width", `${requestedWidth}px`);
   }
   const rankById = new Map(majors.map((p, index) => [p.id, index + 1]));
-  const statsByPlayer = new Map(majors.map(p => [p.id, playerHudStats(p, rankById.get(p.id), state.cities)]));
+  const statsByPlayer = new Map(majors.map(p => [p.id, playerHudStats(p, rankById.get(p.id))]));
   const highestByStat = new Map();
   statsByPlayer.forEach(stats => stats.forEach(([kind, , value]) => {
     const numericValue = Number(value) || 0;
@@ -15797,8 +15803,12 @@ function drawPlayerHud() {
         `<button class="diplomacy-stats" data-hud-action="watch" data-hud-civ="${p.id}" title="${watchTitle}" aria-label="Watch ${p.civ}">` +
         stats.map(([kind, , value, label, marker = ""]) => {
           const isLeader = highestByStat.get(kind) !== 0 && Number(value || 0) === highestByStat.get(kind);
+          const markerHtml = marker
+            ? `<span class="founded-religion-marker" aria-hidden="true">${marker}</span>`
+            : "";
           return `<span class="ribbon-stat ${kind}${isLeader ? " category-leader" : ""}" ` +
-            `title="${label}${isLeader ? " · Category leader" : ""}"><b>${ribbonStat(value)}${marker}</b></span>`;
+            `title="${label}${marker ? " · Founded religion still followed" : ""}${isLeader ? " · Category leader" : ""}">` +
+            `<b>${ribbonStat(value)}${markerHtml}</b></span>`;
         }).join("") + `</button></div>`;
     }).join("") + `</div>` + hudResizeHandles("player standings");
   drawDossierWindows(majors, rankById, relationById);
