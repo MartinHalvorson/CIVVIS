@@ -1660,9 +1660,14 @@ pub fn generate_with_script(
         }
     }
 
-    // --- spawns. Pangaea and Inland Sea share one primary landmass; the
-    // ocean-separated scripts deliberately seed majors across their viable
-    // components so their geography affects play from turn one.
+    // --- spawns. Civilization VI does not search for good plots and hope they
+    // come out spread: `AssignStartingPlots` calls
+    // `StartPositioner.DivideMapIntoMajorRegions` before it considers a single
+    // plot, cuts the map into one region per civilization of roughly equal
+    // fertility, and gives each region a start. So does this. Which landmass a
+    // seat lands on falls out of the division rather than being allocated by
+    // script, so an ocean-separated world seats every continent it can afford
+    // to seat and a continuous one is divided just the same way.
     let passable: BTreeSet<Pos> = land
         .iter()
         .filter(|pos| rules.is_passable(&wm.tiles[pos]))
@@ -1699,96 +1704,179 @@ pub fn generate_with_script(
         candidates
     };
     let components = connected_components(&wm, &passable);
-    let primary = components.first().cloned().unwrap_or_default();
-    let mut all_candidates = candidates_for(&passable, total_spawns);
-    let mut spawns = if script == MapScript::TrueStartEarth {
-        // Earth does not allocate seats by landmass: the whole point of the
-        // script is that Rome opens in Italy and the Aztecs open in Mexico,
-        // however lopsided that leaves the continents.
-        historic_major_spawns(&wm, &all_candidates, num_major_spawns)
-    } else if matches!(
-        script,
-        MapScript::Continents
-            | MapScript::SmallContinents
-            | MapScript::Islands
-            | MapScript::WaterWorld
-    ) {
-        let viable: Vec<(BTreeSet<Pos>, Vec<Pos>)> = components
-            .into_iter()
-            .map(|component| {
-                let candidates = candidates_for(&component, 1);
-                (component, candidates)
+    let fertility: BTreeMap<Pos, i32> = passable
+        .iter()
+        .map(|position| (*position, tile_fertility(rules, &wm.tiles[position])))
+        .collect();
+    let wonders: Vec<Pos> = wm
+        .tiles
+        .iter()
+        .filter(|(_, tile)| {
+            tile.feature
+                .as_deref()
+                .and_then(|feature| rules.features.get(feature))
+                .is_some_and(|feature| feature.natural_wonder)
+        })
+        .map(|(position, _)| *position)
+        .collect();
+    let all_candidates = candidates_for(&passable, total_spawns);
+    // Standing beside a Natural Wonder costs a capital the tiles it cannot work
+    // from its first turn, so the shipped standoffs are applied to the pool a
+    // region picks from. That was the wrong place for it while a search over
+    // the pool decided the *spacing* too; now the regions fix the spacing and
+    // the pool only decides where inside a region a start stands.
+    let pool_clear_of_wonders = |floor: i32, needed: usize| -> BTreeSet<Pos> {
+        let clear: BTreeSet<Pos> = all_candidates
+            .iter()
+            .copied()
+            .filter(|position| {
+                wonders
+                    .iter()
+                    .all(|wonder| wm.distance(*position, *wonder) >= floor)
             })
-            .filter(|(_, candidates)| !candidates.is_empty())
             .collect();
-        let mut allocations = vec![0usize; viable.len()];
-        for _ in 0..num_major_spawns {
-            let Some(index) = (0..viable.len())
-                .filter(|index| allocations[*index] < viable[*index].1.len())
-                .min_by_key(|index| {
-                    // Fill every landmass once, then distribute proportionally
-                    // to its available capital sites.
-                    (
-                        allocations[*index] > 0,
-                        allocations[*index] * 1_000_000 / viable[*index].1.len().max(1),
-                        *index,
-                    )
-                })
-            else {
-                break;
-            };
-            allocations[index] += 1;
+        if clear.len() >= needed {
+            clear
+        } else {
+            all_candidates.iter().copied().collect()
         }
-        let mut starts = Vec::new();
-        for ((component, candidates), count) in viable.iter().zip(allocations) {
-            starts.extend(balanced_major_spawns(
-                rules, &wm, component, candidates, count, rng,
-            ));
-        }
+    };
+
+    let major_pool = pool_clear_of_wonders(START_DISTANCE_MAJOR_NATURAL_WONDER, num_major_spawns);
+    let major_regions = regions_for_seats(&wm, &components, &fertility, num_major_spawns);
+    let mut spawns = if script == MapScript::TrueStartEarth {
+        // Earth does not divide into regions: the whole point of the script is
+        // that Rome opens in Italy and the Aztecs open in Mexico, however
+        // lopsided that leaves the continents.
+        historic_major_spawns(&wm, &all_candidates, num_major_spawns)
+    } else {
+        let mut seated = regional_starts(
+            rules,
+            &wm,
+            &major_regions,
+            &major_pool,
+            &fertility,
+            &[],
+            MAJOR_START_BUFFER,
+            MAJOR_START_BUFFER,
+        );
+        equalize_start_quality(
+            rules,
+            &wm,
+            &major_regions,
+            &major_pool,
+            &fertility,
+            &mut seated,
+            &[],
+        );
+        let reachable: Vec<Pos> = major_regions.iter().flatten().copied().collect();
+        balance_territory(
+            rules,
+            &wm,
+            &reachable,
+            &major_regions,
+            &major_pool,
+            &mut seated,
+        );
+        let mut starts: Vec<Pos> = seated.into_iter().map(|(_, start)| start).collect();
+        // Seat order should not correlate with the order the regions were cut.
         for index in (1..starts.len()).rev() {
             let other = rng.below(index + 1);
             starts.swap(index, other);
         }
-        // Every landmass offers its own best sites to the city-states as well.
-        // The global pool asks for grassland or plains before it will settle
-        // for anything else, and on a world of many small islands that filter
-        // can be satisfied several times over on four islands while leaving
-        // eight with nothing in the pool at all — so the placer, having no
-        // tile it is allowed to use on an empty island, doubles up on a
-        // populated one. Unioning in what each landmass already offered its
-        // capitals costs nothing here and gives every island a seat.
-        for (_, candidates) in &viable {
-            all_candidates.extend(candidates.iter().copied());
-        }
-        all_candidates.sort();
-        all_candidates.dedup();
         starts
-    } else {
-        let primary_candidates = candidates_for(&primary, total_spawns);
-        all_candidates = primary_candidates.clone();
-        balanced_major_spawns(
-            rules,
-            &wm,
-            &primary,
-            &primary_candidates,
-            num_major_spawns,
-            rng,
-        )
     };
-    // Defensive completion for unusually mountain-heavy seeds, followed by
-    // city-state placement in the largest remaining gaps on eligible land.
     if spawns.len() < num_major_spawns {
         let missing = num_major_spawns - spawns.len();
-        complete_major_spawns(rules, &wm, &all_candidates, &mut spawns, missing);
+        fill_remaining_starts(rules, &wm, &major_pool, &passable, &mut spawns, missing);
     }
-    add_minor_spawns(
+
+    // City-states get a second, finer set of regions once the majors are down,
+    // the way `StartPositioner.DivideMapIntoMinorRegions` cuts one. Here they
+    // are cut *inside* each civilization's own cell and apportioned across
+    // them, so every civilization has city-states of its own to court. Taking
+    // the best-scoring remaining gap one at a time instead chained four of them
+    // around whichever civilization had the best ground: measured over 72
+    // worlds, every stock profile left at least one civilization with none
+    // within ten hexes while another had eighteen.
+    let minor_pool = pool_clear_of_wonders(START_DISTANCE_MINOR_NATURAL_WONDER, num_minor_spawns);
+    let minor_regions = if major_regions.is_empty() || spawns.is_empty() {
+        regions_for_seats(&wm, &components, &fertility, num_minor_spawns)
+    } else {
+        // A civilization's own ground means the land nearer to it than to
+        // anyone else, not the region it was given — its start can sit
+        // off-centre in that. Cutting from the cell is what keeps a city-state
+        // on the side of the frontier it was meant for.
+        //
+        // Nearest *on the same landmass*, though. Distance is measured across
+        // water as readily as across grass, so a plain cell reaches over a
+        // strait and claims the near shore of an island nobody was seated on —
+        // and a city-state cut from that half of the cell opens an ocean away
+        // from the civilization it was meant to belong to. Measured on a
+        // fifty-seat world, sixteen hexes away.
+        let home_of = |position: Pos| {
+            components
+                .iter()
+                .position(|component| component.contains(&position))
+        };
+        let start_home: Vec<Option<usize>> = spawns.iter().copied().map(home_of).collect();
+        let mut cells: Vec<Vec<Pos>> = vec![Vec::new(); spawns.len()];
+        for tile in major_regions.iter().flatten() {
+            let here = home_of(*tile);
+            let owner = spawns
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| start_home[*index] == here)
+                .map(|(index, start)| (wm.distance(*tile, *start), index))
+                .min()
+                .or_else(|| {
+                    spawns
+                        .iter()
+                        .enumerate()
+                        .map(|(index, start)| (wm.distance(*tile, *start), index))
+                        .min()
+                });
+            if let Some((_, owner)) = owner {
+                cells[owner].push(*tile);
+            }
+        }
+        for cell in cells.iter_mut() {
+            cell.sort_unstable();
+        }
+        let weights: Vec<i64> = cells
+            .iter()
+            .map(|cell| {
+                cell.iter()
+                    .map(|position| fertility.get(position).copied().unwrap_or(1) as i64)
+                    .sum()
+            })
+            .collect();
+        let allocation = apportion(&weights, num_minor_spawns);
+        let mut cut = Vec::with_capacity(num_minor_spawns);
+        for (cell, count) in cells.iter().zip(allocation) {
+            if count == 0 {
+                continue;
+            }
+            cut.extend(divide_into_regions(&wm, cell, &fertility, count));
+        }
+        cut
+    };
+    let majors: Vec<Pos> = spawns.clone();
+    let minors = regional_starts(
         rules,
         &wm,
-        &all_candidates,
-        &mut spawns,
-        num_minor_spawns,
-        num_major_spawns,
+        &minor_regions,
+        &minor_pool,
+        &fertility,
+        &majors,
+        MINOR_MAJOR_BUFFER,
+        MINOR_MINOR_BUFFER,
     );
+    spawns.extend(minors.into_iter().map(|(_, start)| start));
+    if spawns.len() < total_spawns {
+        let missing = total_spawns - spawns.len();
+        fill_remaining_starts(rules, &wm, &minor_pool, &passable, &mut spawns, missing);
+    }
     let occupied: BTreeSet<Pos> = spawns.iter().copied().collect();
     for s in &occupied {
         let t = wm.tiles.get_mut(s).unwrap();
@@ -2144,6 +2232,10 @@ fn add_features(wm: &mut WorldMap, land: &BTreeSet<Pos>, rng: &mut Rng) {
     }
 }
 
+/// How even a finished layout came out. Nothing in the generator consults it —
+/// region division is what produces the spread — but it is the vocabulary the
+/// tests hold that spread to, so it lives beside the placer it grades.
+#[cfg(test)]
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct SpawnLayoutScore {
     /// No two civilizations should begin unavoidably crowded.
@@ -2322,6 +2414,7 @@ pub fn assign_starts_by_bias(rules: &Rules, wm: &WorldMap, sites: &mut [Pos], ci
     }
 }
 
+#[cfg(test)]
 fn spawn_layout_score(
     wm: &WorldMap,
     landmass: &BTreeSet<Pos>,
@@ -2393,6 +2486,7 @@ fn spawn_layout_score(
     }
 }
 
+#[cfg(test)]
 fn layout_balance_percentages(
     score: SpawnLayoutScore,
     civilization_count: usize,
@@ -2424,8 +2518,9 @@ pub(crate) const START_DISTANCE_MINOR_MAJOR: i32 = 6;
 /// Shipped `START_DISTANCE_MINOR_CIVILIZATION_START`: and this far from
 /// another city-state.
 pub(crate) const START_DISTANCE_MINOR_MINOR: i32 = 5;
-/// Shipped `START_DISTANCE_RANGE_MINOR`.
-pub(crate) const START_RANGE_MINOR: i32 = 3;
+// `START_DISTANCE_RANGE_MINOR` is declared in `GlobalParameters.xml` and used
+// by no shipped map script, so there is no minor band to model — the two minor
+// distances below are plain buffers.
 /// Shipped `START_DISTANCE_MINOR_NATURAL_WONDER`: a city-state keeps this much
 /// clear of a Natural Wonder. (`START_DISTANCE_MAJOR_NATURAL_WONDER` is 2, and
 /// major placement already satisfies it — measured 0 violations in 96 starts —
@@ -2450,435 +2545,697 @@ pub(crate) const START_DISTANCE_MAJOR_NATURAL_WONDER: i32 = 2;
 /// away above an empty island ten tiles away, and takes it.
 pub(crate) const MIN_START_SEPARATION: i32 = 4;
 
-/// The candidates that keep [`MIN_START_SEPARATION`] from every start already
-/// placed, or all of them when no tile on the map does — a crowded start is
-/// still better than a missing civilization.
-fn far_enough_from_starts<'a>(
-    wm: &WorldMap,
-    pool: &'a [Pos],
-    spawns: &[Pos],
-    scratch: &'a mut Vec<Pos>,
-) -> &'a [Pos] {
-    scratch.clear();
-    scratch.extend(pool.iter().copied().filter(|candidate| {
-        spawns
-            .iter()
-            .all(|start| wm.distance(*candidate, *start) >= MIN_START_SEPARATION)
-    }));
-    if scratch.is_empty() {
-        pool
-    } else {
-        scratch.as_slice()
+/// Every *other* start distance is a floor too, not a target.
+///
+/// Civilization VI reads them in `AssignStartingPlots:__MajorCivBuffer`, which
+/// rejects a major site when any major already placed is within
+/// `START_DISTANCE_MAJOR_CIVILIZATION - START_DISTANCE_RANGE_MAJOR` — so 12 and
+/// 2 describe eleven hexes of clearance, not a band centred on twelve. CIVVIS
+/// read them as an aim and pulled every start back toward it, which left a map
+/// with room to spare unused and, worse, let the pull overrule the floor above:
+/// measured over 72 generated worlds, starts landed as close as 2 hexes apart
+/// on Continents, Small Continents and Planet.
+pub(crate) const MAJOR_START_BUFFER: i32 = START_DISTANCE_MAJOR - START_RANGE_MAJOR;
+/// `__MinorMajorCivBuffer`: a city-state may not sit within
+/// `START_DISTANCE_MINOR_MAJOR_CIVILIZATION` of a major civilization.
+pub(crate) const MINOR_MAJOR_BUFFER: i32 = START_DISTANCE_MINOR_MAJOR;
+/// `__MinorMinorCivBuffer`: nor within `START_DISTANCE_MINOR_CIVILIZATION_START`
+/// of another city-state.
+pub(crate) const MINOR_MINOR_BUFFER: i32 = START_DISTANCE_MINOR_MINOR;
+
+/// How much one tile is worth to whoever ends up working it. Civilization VI
+/// scores every plot's fertility before it considers a single start and then
+/// divides the map into one region per civilization of roughly equal total
+/// fertility (`StartPositioner.DivideMapIntoMajorRegions`, called from
+/// `AssignStartingPlots` before any plot is chosen). The regions are what makes
+/// a layout even; the buffers only keep two regions' best sites from touching.
+///
+/// What bare ground is worth before anything grows on it, and so how the
+/// division trades **area against quality**. The yield term above runs from 0
+/// on snow to about 8 on a grassland hill, so this constant sets the ratio
+/// between the emptiest tile and the richest: at 1 a region of desert is five
+/// times the size of a region of grassland and the split is even in fertility
+/// but wildly uneven in *space*, which is what "evenly distributed" means to
+/// somebody looking at the map. Measured at 100 seats, 1 gave regions of
+/// 144-361 tiles; 8 halves that spread while still preferring good land.
+const LAND_IS_WORTH: i32 = 8;
+
+fn tile_fertility(rules: &Rules, tile: &crate::world::Tile) -> i32 {
+    if rules.is_water(tile) || !rules.is_passable(tile) {
+        return 0;
     }
+    let yields = rules.tile_yields(tile);
+    LAND_IS_WORTH
+        + (yields.food * 2.0
+            + yields.production * 2.0
+            + yields.gold
+            + yields.science
+            + yields.culture
+            + yields.faith) as i32
 }
 
-/// How badly one distance misses a shipped target band. Zero inside the band,
-/// growing outside it, and counting crowding double — two starts on top of
-/// each other is worse than two a little too far apart.
-pub(crate) fn distance_miss(distance: i32, target: i32, range: i32) -> i32 {
-    let low = target - range;
-    let high = target + range;
-    if distance < low {
-        2 * (low - distance)
-    } else if distance > high {
-        distance - high
-    } else {
-        0
+/// Lloyd passes the region division is allowed. The loop leaves early once the
+/// centres stop moving, which on the stock sizes happens well inside six.
+const REGION_PASSES: usize = 6;
+/// A region's centre is measured against an even sample of it rather than all
+/// of it, because weighing every pair is quadratic and a huge world's region
+/// runs to hundreds of tiles.
+const REGION_SAMPLE: usize = 48;
+/// How much a hex away from its region's centre costs a candidate site, in the
+/// units `start_quality` returns. A start should be good *and* in the middle of
+/// the land it is being given; without the pull the best tile in a region is
+/// routinely on its border, facing a neighbour across a shared frontier while
+/// its own half of the region goes unclaimed and the territory it actually
+/// holds collapses. Sites inside a region differ by roughly 50 points, so 20 a
+/// hex buys a genuinely better capital two or three hexes out and no further.
+const REGION_CENTRALITY_PULL: i32 = 20;
+
+/// The middle of a region: the tile whose fertility-weighted distance to the
+/// rest of the region is smallest. A hex globe has no arithmetic mean, so this
+/// is a medoid over an evenly-strided sample — a stride and not a draw, so it
+/// never touches the map's random stream.
+fn region_center(wm: &WorldMap, region: &[Pos], fertility: &BTreeMap<Pos, i32>) -> Option<Pos> {
+    if region.is_empty() {
+        return None;
     }
-}
-
-/// The major-civilization band, 10..=14.
-pub(crate) fn start_distance_miss(distance: i32) -> i32 {
-    distance_miss(distance, START_DISTANCE_MAJOR, START_RANGE_MAJOR)
-}
-
-/// Place each start at the shipped distance from its nearest neighbour rather
-/// than at the greatest distance available. The old farthest-point rule put
-/// every civilization on the tournament map 17-23 tiles from its neighbour
-/// where Civilization VI aims for 10-14, which moves settling races, border
-/// friction, and the Loyalty and religious pressure that depend on proximity.
-fn targeted_layout(
-    wm: &WorldMap,
-    candidates: &[Pos],
-    qualities: &BTreeMap<Pos, i32>,
-    first: Pos,
-    count: usize,
-) -> Vec<Pos> {
-    let mut layout = vec![first];
-    while layout.len() < count {
-        let Some(next) = candidates
+    let stride = region.len().div_ceil(REGION_SAMPLE).max(1);
+    let sample: Vec<Pos> = region.iter().copied().step_by(stride).collect();
+    region.iter().copied().min_by_key(|position| {
+        let cost: i64 = sample
             .iter()
-            .filter(|candidate| !layout.contains(candidate))
-            .min_by_key(|candidate| {
-                let nearest = layout
-                    .iter()
-                    .map(|start| wm.distance(**candidate, *start))
-                    .min()
-                    .unwrap_or(0);
-                (
-                    start_distance_miss(nearest),
-                    -qualities[*candidate],
-                    **candidate,
-                )
+            .map(|other| {
+                wm.distance(*position, *other) as i64 * fertility.get(other).copied().unwrap_or(1) as i64
             })
-            .copied()
-        else {
-            break;
-        };
-        layout.push(next);
-    }
-    layout
+            .sum();
+        (cost, *position)
+    })
 }
 
-/// Try farthest-point layouts from seeds spread throughout the candidate set,
-/// then retain the layout with the best spacing, coverage, territory balance
-/// and site quality. This removes the large positional bias caused by making
-/// a single random tile the permanent anchor for every other civilization.
-fn balanced_major_spawns(
-    rules: &Rules,
+/// Divide the viable land into `count` regions of roughly equal fertility, one
+/// per seat. This is CIVVIS's `DivideMapIntoMajorRegions`: seeds are spread by
+/// farthest-point sampling — which lands them on separate continents without
+/// being told the continents exist — and then a capacity-constrained Lloyd
+/// relaxation trades tiles between neighbouring regions until each holds about
+/// the same fertility.
+///
+/// The capacity is what makes the result *even* rather than merely spread. A
+/// plain nearest-centre Voronoi over an irregular coastline hands one seat a
+/// third of a continent and another a peninsula; refusing a region more than
+/// its share forces the overflow into its neighbours and moves the centres
+/// apart on the next pass.
+fn divide_into_regions(
     wm: &WorldMap,
-    landmass: &BTreeSet<Pos>,
-    candidates: &[Pos],
+    land: &[Pos],
+    fertility: &BTreeMap<Pos, i32>,
     count: usize,
-    rng: &mut Rng,
-) -> Vec<Pos> {
-    if count == 0 || candidates.is_empty() {
+) -> Vec<Vec<Pos>> {
+    if count == 0 || land.is_empty() {
         return Vec::new();
     }
-    let count = count.min(candidates.len());
-    let qualities: BTreeMap<Pos, i32> = candidates
+    let count = count.min(land.len());
+    let mut centers: Vec<Pos> = Vec::with_capacity(count);
+    if let Some(first) = land
         .iter()
-        .map(|candidate| (*candidate, start_quality(rules, wm, *candidate)))
-        .collect();
-    let mut quality_values: Vec<i32> = qualities.values().copied().collect();
-    quality_values.sort_unstable();
-    let quality_floor = quality_values[quality_values.len() / 4];
-    let preferred_candidates: Vec<Pos> = candidates
-        .iter()
-        .filter(|candidate| qualities[*candidate] >= quality_floor)
-        .copied()
-        .collect();
-
-    let mut layouts = Vec::with_capacity(82);
-    for (pool, trial_limit) in [
-        (candidates, 64_usize),
-        (preferred_candidates.as_slice(), 16_usize),
-    ] {
-        if pool.len() < count {
-            continue;
-        }
-        let trial_count = pool.len().min(trial_limit);
-        let mut seeds = Vec::with_capacity(trial_count + 1);
-        for index in 0..trial_count {
-            let candidate_index = index * pool.len() / trial_count;
-            if seeds.last() != pool.get(candidate_index) {
-                seeds.push(pool[candidate_index]);
-            }
-        }
-        if let Some(best_site) = pool
-            .iter()
-            .max_by_key(|candidate| (qualities[*candidate], **candidate))
-            .copied()
-        {
-            if !seeds.contains(&best_site) {
-                seeds.push(best_site);
-            }
-        }
-        for seed in seeds {
-            let layout = targeted_layout(wm, pool, &qualities, seed, count);
-            let score = spawn_layout_score(wm, landmass, &layout, &qualities);
-            layouts.push((score, layout));
-        }
+        .max_by_key(|position| (fertility.get(*position).copied().unwrap_or(1), **position))
+    {
+        centers.push(*first);
     }
-    let best_separation = layouts
-        .iter()
-        .map(|(score, _)| score.minimum_separation)
-        .max()
-        .unwrap();
-    // One hex off the theoretical maximum can buy more even neighbors,
-    // territory and capital quality — but only while every seat still starts
-    // comfortably apart. Below that, distance is the fairness that matters.
-    let separation_floor = if best_separation > 10 {
-        best_separation - 1
-    } else {
-        best_separation
-    };
-    layouts.retain(|(score, _)| score.minimum_separation >= separation_floor);
-    let best_coverage = layouts
-        .iter()
-        .map(|(score, _)| score.negative_coverage_radius)
-        .max()
-        .unwrap();
-    layouts.retain(|(score, _)| score.negative_coverage_radius >= best_coverage - 1);
-    let mut layout = layouts
-        .into_iter()
-        .max_by_key(|(score, _)| {
-            let (territory_balance, neighbor_balance, quality_balance) =
-                layout_balance_percentages(*score, count, landmass.len());
-            let worst_balance = territory_balance.min(neighbor_balance).min(quality_balance);
-            (
-                worst_balance,
-                territory_balance + neighbor_balance + quality_balance,
-                score.minimum_territory,
-                score.negative_neighbor_range,
-                score.minimum_quality,
-                score.negative_territory_range,
-                score.negative_quality_range,
-                score.total_quality,
-                score.minimum_separation,
-                score.negative_coverage_radius,
-            )
-        })
-        .unwrap()
-        .1;
-
-    // Farthest-point sampling fixes the coarse grid but cannot see that one
-    // seat ends up with a thin territory wedge. Hill-climb each start over its
-    // immediate neighbourhood, keeping any single swap that lifts the balance
-    // ranking, so no seat is left an outlier the sampler simply never offered.
-    let rank = |layout: &[Pos]| {
-        let score = spawn_layout_score(wm, landmass, layout, &qualities);
-        let (territory_balance, neighbor_balance, quality_balance) =
-            layout_balance_percentages(score, count, landmass.len());
-        (
-            territory_balance.min(neighbor_balance).min(quality_balance),
-            territory_balance + neighbor_balance + quality_balance,
-            score.minimum_separation,
-            score.minimum_territory,
-            score.minimum_quality,
-            score.total_quality,
-        )
-    };
-    let mut best_rank = rank(&layout);
-    for _ in 0..4 {
-        let mut improved = false;
-        for index in 0..layout.len() {
-            let current = layout[index];
-            let Some((candidate_rank, candidate)) = candidates
-                .iter()
-                .filter(|candidate| {
-                    wm.distance(**candidate, current) <= 3
-                        && !layout.contains(candidate)
-                })
-                .map(|candidate| {
-                    let mut trial = layout.clone();
-                    trial[index] = *candidate;
-                    (rank(&trial), *candidate)
-                })
-                // A balance win must not spend the separation the layout
-                // stage just guaranteed.
-                .filter(|((_, _, separation, _, _, _), _)| *separation >= separation_floor)
-                .max()
-            else {
-                continue;
-            };
-            if candidate_rank > best_rank {
-                best_rank = candidate_rank;
-                layout[index] = candidate;
-                improved = true;
-            }
-        }
-        if !improved {
-            break;
-        }
-    }
-
-    // Then the shipped Natural Wonder standoff, as a repair rather than a
-    // filter. A wonder's own tiles are never candidates, which is why majors
-    // were taken to keep their distance already — but that only rules out
-    // standing *on* one, and a capital sharing a border with a wonder is short
-    // the tiles it cannot work from its first turn. Filtering the pool up front
-    // is the obvious fix and is the wrong one: it changes which layouts the
-    // spacing search ever sees, and cost the Large map its shipped 10-14
-    // separation band. Repairing the finished layout leaves that search alone
-    // and moves a start by a tile or two, keeping the separation it just won.
-    let wonders: Vec<Pos> = wm
-        .tiles
-        .iter()
-        .filter(|(_, tile)| {
-            tile.feature
-                .as_deref()
-                .and_then(|feature| rules.features.get(feature))
-                .is_some_and(|feature| feature.natural_wonder)
-        })
-        .map(|(position, _)| *position)
-        .collect();
-    let crowds_a_wonder = |position: Pos| {
-        wonders.iter().any(|wonder| {
-            wm.distance(position, *wonder) < START_DISTANCE_MAJOR_NATURAL_WONDER
-        })
-    };
-    for index in 0..layout.len() {
-        if !crowds_a_wonder(layout[index]) {
-            continue;
-        }
-        let replacement = candidates
+    while centers.len() < count {
+        let Some(next) = land
             .iter()
-            .copied()
-            .filter(|candidate| !crowds_a_wonder(*candidate) && !layout.contains(candidate))
-            .filter(|candidate| {
-                layout
-                    .iter()
-                    .enumerate()
-                    .filter(|(other, _)| *other != index)
-                    .all(|(_, other)| {
-                        wm.distance(*candidate, *other) >= separation_floor
-                    })
-            })
-            .min_by_key(|candidate| {
+            .filter(|position| !centers.contains(position))
+            .max_by_key(|position| {
                 (
-                    wm.distance(*candidate, layout[index]),
-                    std::cmp::Reverse(qualities[candidate]),
-                    *candidate,
-                )
-            });
-        // A map whose wonders leave nowhere to stand keeps the start it had:
-        // a capital beside a wonder beats no capital at all.
-        if let Some(position) = replacement {
-            layout[index] = position;
-        }
-    }
-
-    // Seat order should not correlate with an anchor, edge, or the order in
-    // which farthest-point sampling filled the landmass.
-    for index in (1..layout.len()).rev() {
-        let other = rng.below(index + 1);
-        layout.swap(index, other);
-    }
-    layout
-}
-
-/// City-states fill the remaining largest gaps after major civilizations are
-/// fixed, so they cannot pull a major start away from an otherwise fair grid.
-/// Place city-states at the shipped distances rather than in the largest
-/// remaining gaps: `START_DISTANCE_MINOR_MAJOR_CIVILIZATION` 6 from the nearest
-/// major and `START_DISTANCE_MINOR_CIVILIZATION_START` 5 from another
-/// city-state, both within `START_DISTANCE_RANGE_MINOR` 3. Filling the gaps
-/// instead put them roughly twice as far out as Civilization VI does, which
-/// changes envoy competition and how early a suzerain is worth contesting.
-///
-/// `major_count` is how many of `spawns` are major civilizations; the rest are
-/// city-states already placed by this pass.
-fn add_minor_spawns(
-    rules: &Rules,
-    wm: &WorldMap,
-    candidates: &[Pos],
-    spawns: &mut Vec<Pos>,
-    count: usize,
-    major_count: usize,
-) {
-    let qualities: BTreeMap<Pos, i32> = candidates
-        .iter()
-        .map(|candidate| (*candidate, start_quality(rules, wm, *candidate)))
-        .collect();
-    let wonders: Vec<Pos> = wm
-        .tiles
-        .iter()
-        .filter(|(_, tile)| {
-            tile.feature
-                .as_ref()
-                .and_then(|feature| rules.features.get(feature))
-                .is_some_and(|feature| feature.natural_wonder)
-        })
-        .map(|(position, _)| *position)
-        .collect();
-    // Keep the shipped standoff where the map allows it, and fall back rather
-    // than fail on a wonder-dense seed.
-    let clear_of_wonders: Vec<Pos> = candidates
-        .iter()
-        .copied()
-        .filter(|candidate| {
-            wonders
-                .iter()
-                .all(|wonder| {
-                    wm.distance(*candidate, *wonder)
-                        >= START_DISTANCE_MINOR_NATURAL_WONDER
-                })
-        })
-        .collect();
-    let target = spawns.len() + count;
-    let mut scratch = Vec::new();
-    while spawns.len() < target {
-        let pool: &[Pos] = if clear_of_wonders.len() >= count {
-            &clear_of_wonders
-        } else {
-            candidates
-        };
-        let pool = far_enough_from_starts(wm, pool, spawns, &mut scratch);
-        let Some(next) = pool
-            .iter()
-            .filter(|candidate| !spawns.contains(candidate))
-            .min_by_key(|candidate| {
-                let nearest = |group: &[Pos]| {
-                    group
+                    centers
                         .iter()
-                        .map(|start| wm.distance(**candidate, *start))
+                        .map(|center| wm.distance(**position, *center))
                         .min()
-                };
-                // Aim at the target, not merely inside the band. The minor
-                // bands are wide (3..=9 and 2..=8), so scoring band membership
-                // alone leaves most candidates tied at zero and hands the
-                // choice to the quality tiebreak, which clusters city-states
-                // against their neighbours at the near edge.
-                let deviation = |distance: i32, target: i32| {
-                    distance_miss(distance, target, START_RANGE_MINOR) + (distance - target).abs()
-                };
-                let major_miss = nearest(&spawns[..major_count.min(spawns.len())])
-                    .map(|d| deviation(d, START_DISTANCE_MINOR_MAJOR))
-                    .unwrap_or(0);
-                let minor_miss = nearest(&spawns[major_count.min(spawns.len())..])
-                    .map(|d| deviation(d, START_DISTANCE_MINOR_MINOR))
-                    .unwrap_or(0);
-                (
-                    major_miss + minor_miss,
-                    -qualities[*candidate],
-                    **candidate,
+                        .unwrap_or(0),
+                    **position,
                 )
             })
             .copied()
         else {
+            break;
+        };
+        centers.push(next);
+    }
+
+    let total: i64 = land
+        .iter()
+        .map(|position| fertility.get(position).copied().unwrap_or(1) as i64)
+        .sum();
+    // A little slack keeps the last region from being handed a ring of
+    // leftovers on the far side of the map purely to top its quota up.
+    let capacity = (total * 102 / (100 * centers.len().max(1) as i64)).max(1);
+
+    let mut regions: Vec<Vec<Pos>> = Vec::new();
+    for _ in 0..REGION_PASSES {
+        let mut reach: Vec<(i32, Pos, usize)> = Vec::with_capacity(land.len() * centers.len());
+        for position in land {
+            for (index, center) in centers.iter().enumerate() {
+                reach.push((wm.distance(*position, *center), *position, index));
+            }
+        }
+        reach.sort_unstable();
+        let mut owner: BTreeMap<Pos, usize> = BTreeMap::new();
+        let mut load = vec![0_i64; centers.len()];
+        for (_, position, index) in &reach {
+            if owner.contains_key(position) || load[*index] >= capacity {
+                continue;
+            }
+            owner.insert(*position, *index);
+            load[*index] += fertility.get(position).copied().unwrap_or(1) as i64;
+        }
+        // Anything whose every region filled up joins its nearest one anyway;
+        // `reach` is sorted by distance, so the first entry for a tile is it.
+        for (_, position, index) in &reach {
+            owner.entry(*position).or_insert(*index);
+        }
+        regions = vec![Vec::new(); centers.len()];
+        for (position, index) in owner {
+            regions[index].push(position);
+        }
+
+        let moved: Vec<Pos> = regions
+            .iter()
+            .zip(&centers)
+            .map(|(region, center)| region_center(wm, region, fertility).unwrap_or(*center))
+            .collect();
+        if moved == centers {
+            break;
+        }
+        centers = moved;
+    }
+    regions
+}
+
+/// Ground one start needs to itself before a landmass can be said to hold
+/// another: a capital works a radius-3 disk, and two of them must keep
+/// `MIN_START_SEPARATION` apart.
+const LAND_PER_START: usize = 24;
+/// And below this a landmass cannot carry a capital's working radius at all,
+/// so it is never a start however many seats are looking for a home.
+const MIN_LANDMASS_FOR_A_START: usize = 12;
+
+/// Hand `seats` out over `weights` by largest remainder — the apportionment
+/// rule that gives each landmass its fair share of the world's seats and lets
+/// rounding fall where the shortfall is largest, rather than where the list
+/// happens to start — with each landmass capped at what it has room for, and
+/// the overflow re-apportioned among those with slack.
+fn apportion_capped(weights: &[i64], caps: &[usize], seats: usize) -> Vec<usize> {
+    let mut given = vec![0_usize; weights.len()];
+    let mut left = seats.min(caps.iter().sum());
+    while left > 0 {
+        let open: Vec<usize> = (0..weights.len())
+            .filter(|index| given[*index] < caps[*index])
+            .collect();
+        if open.is_empty() {
+            break;
+        }
+        let shares: Vec<i64> = open.iter().map(|index| weights[*index]).collect();
+        let round = apportion(&shares, left);
+        let mut handed = 0;
+        for (slot, index) in open.iter().enumerate() {
+            let take = round[slot].min(caps[*index] - given[*index]);
+            given[*index] += take;
+            handed += take;
+        }
+        if handed == 0 {
+            // Every open landmass rounded to nothing; give the next seat to
+            // the largest one with room rather than loop forever.
+            let Some(index) = open
+                .iter()
+                .copied()
+                .max_by_key(|index| (weights[*index], std::cmp::Reverse(*index)))
+            else {
+                break;
+            };
+            given[index] += 1;
+            handed = 1;
+        }
+        left -= handed.min(left);
+    }
+    given
+}
+
+fn apportion(weights: &[i64], seats: usize) -> Vec<usize> {
+    let total: i64 = weights.iter().sum();
+    if total <= 0 || weights.is_empty() {
+        return vec![0; weights.len()];
+    }
+    let mut given: Vec<usize> = weights
+        .iter()
+        .map(|weight| (seats as i64 * weight / total) as usize)
+        .collect();
+    let mut order: Vec<usize> = (0..weights.len()).collect();
+    order.sort_by_key(|index| {
+        let remainder = seats as i64 * weights[*index] - given[*index] as i64 * total;
+        (std::cmp::Reverse(remainder), *index)
+    });
+    let mut left = seats.saturating_sub(given.iter().sum::<usize>());
+    while left > 0 {
+        let before = left;
+        for index in &order {
+            if left == 0 {
+                break;
+            }
+            given[*index] += 1;
+            left -= 1;
+        }
+        if left == before {
+            break;
+        }
+    }
+    given
+}
+
+/// Cut one region per seat out of the world, landmass by landmass. Seats are
+/// apportioned to landmasses by fertility first, so a region never spans an
+/// ocean — a region that did would put its centre in open water and its start
+/// on whichever shore happened to score best, which is how a civilization ends
+/// up wedged against a neighbour with a fifth of anyone else's land.
+///
+/// A landmass worth less than half a seat's share is not somewhere to start.
+/// It keeps its terrain and its resources and stays on the map as unclaimed
+/// ground worth sailing to; it just does not get handed a civilization whose
+/// whole game would be a different game from everyone else's.
+fn regions_for_seats(
+    wm: &WorldMap,
+    components: &[BTreeSet<Pos>],
+    fertility: &BTreeMap<Pos, i32>,
+    seats: usize,
+) -> Vec<Vec<Pos>> {
+    if seats == 0 || components.is_empty() {
+        return Vec::new();
+    }
+    let weights: Vec<i64> = components
+        .iter()
+        .map(|component| {
+            component
+                .iter()
+                .map(|position| fertility.get(position).copied().unwrap_or(1) as i64)
+                .sum()
+        })
+        .collect();
+    let total: i64 = weights.iter().sum();
+    // Every landmass big enough to carry a capital at all.
+    let habitable: Vec<usize> = (0..components.len())
+        .filter(|index| components[*index].len() >= MIN_LANDMASS_FOR_A_START)
+        .collect();
+    let room = |set: &[usize]| -> usize {
+        set.iter()
+            .map(|index| (components[*index].len() / LAND_PER_START).max(1))
+            .sum()
+    };
+    // Prefer landmasses worth at least half a seat's share of the world, so a
+    // seat is not spent on a sandbar while a continent goes short...
+    let fair = total / (2 * seats as i64).max(1);
+    let generous: Vec<usize> = habitable
+        .iter()
+        .copied()
+        .filter(|index| weights[*index] >= fair)
+        .collect();
+    // ...but an archipelago has no landmass that rich, and holding out for one
+    // crowds every seat onto the three biggest islands while twenty stand
+    // empty. When the rich ones cannot seat the world, every habitable one is
+    // in play.
+    let mut eligible = if room(&generous) >= seats {
+        generous
+    } else {
+        habitable
+    };
+    if eligible.is_empty() {
+        eligible = vec![0];
+    }
+    let shares: Vec<i64> = eligible.iter().map(|index| weights[*index]).collect();
+    let caps: Vec<usize> = eligible
+        .iter()
+        .map(|index| (components[*index].len() / LAND_PER_START).max(1))
+        .collect();
+    let allocation = apportion_capped(&shares, &caps, seats);
+    let mut regions = Vec::with_capacity(seats);
+    for (slot, index) in eligible.iter().enumerate() {
+        if allocation[slot] == 0 {
+            continue;
+        }
+        let land: Vec<Pos> = components[*index].iter().copied().collect();
+        regions.extend(divide_into_regions(wm, &land, fertility, allocation[slot]));
+    }
+    regions
+}
+
+/// Whether a site keeps `buffer` hexes of clearance from every start in `from`.
+/// Civilization VI's buffers reject a plot *at* the distance, so clearance is
+/// strictly greater than the parameter.
+fn clear_of(wm: &WorldMap, position: Pos, from: &[Pos], buffer: i32) -> bool {
+    from.iter().all(|start| wm.distance(position, *start) > buffer)
+}
+
+/// Give each region its start: the site that is both good and central, subject
+/// to the shipped clearance buffers against everything already on the map.
+///
+/// A region that cannot honour its buffer relaxes it a hex at a time rather
+/// than failing, down to `MIN_START_SEPARATION` — the radius inside which a
+/// city cannot be founded at all, which is never given up. Clearance outranks
+/// the tile: at each rung the whole region is searched before the next hex is
+/// surrendered, so a start stands on a hill with proper spacing rather than on
+/// grassland jammed against its neighbour. A region with no site even that
+/// clear is left to the caller's fallback rather than handed a start the game
+/// would silently move somewhere else.
+fn regional_starts(
+    rules: &Rules,
+    wm: &WorldMap,
+    regions: &[Vec<Pos>],
+    candidates: &BTreeSet<Pos>,
+    fertility: &BTreeMap<Pos, i32>,
+    foreign: &[Pos],
+    foreign_buffer: i32,
+    own_buffer: i32,
+) -> Vec<(usize, Pos)> {
+    let mut seated: Vec<(usize, Pos)> = Vec::with_capacity(regions.len());
+    let mut placed: Vec<Pos> = Vec::with_capacity(regions.len());
+    for (index, region) in regions.iter().enumerate() {
+        let Some(center) = region_center(wm, region, fertility) else {
+            continue;
+        };
+        let preferred: Vec<Pos> = region
+            .iter()
+            .copied()
+            .filter(|position| candidates.contains(position))
+            .collect();
+        let worth = |position: &Pos| {
+            start_quality(rules, wm, *position)
+                - REGION_CENTRALITY_PULL * wm.distance(*position, center)
+        };
+        let mut chosen = None;
+        'search: for relaxed in 0..=foreign_buffer.max(own_buffer) {
+            let foreign_want = (foreign_buffer - relaxed).max(MIN_START_SEPARATION - 1);
+            let own_want = (own_buffer - relaxed).max(MIN_START_SEPARATION - 1);
+            for pool in [preferred.as_slice(), region.as_slice()] {
+                chosen = pool
+                    .iter()
+                    .filter(|position| {
+                        clear_of(wm, **position, foreign, foreign_want)
+                            && clear_of(wm, **position, &placed, own_want)
+                    })
+                    .max_by_key(|position| (worth(position), **position))
+                    .copied();
+                if chosen.is_some() {
+                    break 'search;
+                }
+            }
+        }
+        if let Some(position) = chosen {
+            seated.push((index, position));
+            placed.push(position);
+        }
+    }
+    seated
+}
+
+/// Fill seats no region could seat, on a map whose land is too broken or too
+/// crowded for one start apiece. Takes the site with the most room left, which
+/// is the same rule `Game::city_state_site` would apply afterwards — applying
+/// it here keeps the choice inside the generator, where the map is still
+/// visible.
+///
+/// A capital site is preferred, but not at the price of `MIN_START_SEPARATION`:
+/// a fistful of grassland tiles bunched in one corner is exactly the shape of
+/// pool that made this pass hand out a start three hexes from its neighbour,
+/// which the game then refuses to found on. Any passable ground with the room
+/// beats good ground without it.
+fn fill_remaining_starts(
+    rules: &Rules,
+    wm: &WorldMap,
+    candidates: &BTreeSet<Pos>,
+    land: &BTreeSet<Pos>,
+    spawns: &mut Vec<Pos>,
+    count: usize,
+) {
+    let room = |spawns: &[Pos], position: Pos| {
+        spawns
+            .iter()
+            .map(|start| wm.distance(position, *start))
+            .min()
+            .unwrap_or(i32::MAX)
+    };
+    for _ in 0..count {
+        let pick = |pool: &BTreeSet<Pos>, spawns: &[Pos], floor: i32| {
+            pool.iter()
+                .filter(|position| !spawns.contains(position) && room(spawns, **position) >= floor)
+                .max_by_key(|position| {
+                    (
+                        room(spawns, **position),
+                        start_quality(rules, wm, **position),
+                        **position,
+                    )
+                })
+                .copied()
+        };
+        let next = pick(candidates, spawns, MIN_START_SEPARATION)
+            .or_else(|| pick(land, spawns, MIN_START_SEPARATION))
+            .or_else(|| pick(candidates, spawns, 0))
+            .or_else(|| pick(land, spawns, 0));
+        let Some(next) = next else {
             break;
         };
         spawns.push(next);
     }
 }
 
-/// Finish a major layout the sampler could not complete on a mountain-heavy
-/// seed, using the major band rather than the city-state one.
-fn complete_major_spawns(
+/// How much of a capital's quality the territory pass may trade away to even
+/// the land out. A tenth moves a start a hex or two onto slightly worse ground;
+/// more than that and the pass is solving the wrong problem.
+const TERRITORY_QUALITY_TOLERANCE: i32 = 10;
+
+/// Even out the land each civilization can actually reach. Region division
+/// balances the ground a seat is *given*; what a seat *holds* is decided by
+/// where its neighbours ended up standing, and a start that terrain pushed to
+/// one end of its region keeps only a fraction of it. This walks the poorest
+/// seat back toward the middle until no single move lifts the worst share.
+///
+/// A move is refused if it would spend clearance the layout already has, and
+/// refused if it would cost that capital more than
+/// `TERRITORY_QUALITY_TOLERANCE` per cent of its site — there is no fairness
+/// in giving a seat a fair share of bad ground.
+fn balance_territory(
     rules: &Rules,
     wm: &WorldMap,
-    candidates: &[Pos],
-    spawns: &mut Vec<Pos>,
-    count: usize,
+    land: &[Pos],
+    regions: &[Vec<Pos>],
+    candidates: &BTreeSet<Pos>,
+    seated: &mut [(usize, Pos)],
 ) {
-    let qualities: BTreeMap<Pos, i32> = candidates
-        .iter()
-        .map(|candidate| (*candidate, start_quality(rules, wm, *candidate)))
-        .collect();
-    let target = spawns.len() + count;
-    let mut scratch = Vec::new();
-    while spawns.len() < target {
-        let pool = far_enough_from_starts(wm, candidates, spawns, &mut scratch);
-        let Some(next) = pool
+    if seated.len() < 2 || land.is_empty() {
+        return;
+    }
+    let mut starts: Vec<Pos> = seated.iter().map(|(_, start)| *start).collect();
+    let mut floor = i32::MAX;
+    for (index, start) in starts.iter().enumerate() {
+        for other in &starts[index + 1..] {
+            floor = floor.min(wm.distance(*start, *other));
+        }
+    }
+    // Which start each tile belongs to and which it would fall to next. With
+    // this table a trial move costs one pass over the land instead of one pass
+    // per start per tile, which is what lets the walk below run once per seat
+    // rather than a fixed handful of times — and at a hundred seats that is the
+    // difference between the pass working and the pass being decorative.
+    let survey = |starts: &[Pos]| -> Vec<(i32, usize, i32, usize)> {
+        land.iter()
+            .map(|tile| {
+                let mut best = (i32::MAX, 0_usize);
+                let mut next = (i32::MAX, 0_usize);
+                for (index, start) in starts.iter().enumerate() {
+                    let distance = wm.distance(*tile, *start);
+                    if distance < best.0 {
+                        next = best;
+                        best = (distance, index);
+                    } else if distance < next.0 {
+                        next = (distance, index);
+                    }
+                }
+                (best.0, best.1, next.0, next.1)
+            })
+            .collect()
+    };
+    let seats = seated.len();
+    let tally = |nearest: &[(i32, usize, i32, usize)]| -> Vec<usize> {
+        let mut held = vec![0_usize; seats];
+        for (_, owner, _, _) in nearest {
+            held[*owner] += 1;
+        }
+        held
+    };
+    // What the tally becomes if seat `mover` stands on `site` instead. Exact:
+    // a tile it loses falls to the start it was already second-nearest to, and
+    // a tile it gains comes from the start that held it.
+    let after = |nearest: &[(i32, usize, i32, usize)],
+                 held: &[usize],
+                 mover: usize,
+                 site: Pos|
+     -> Vec<usize> {
+        let mut moved = held.to_vec();
+        for (tile, (own, owner, next, runner)) in land.iter().zip(nearest) {
+            let distance = wm.distance(*tile, site);
+            if *owner == mover {
+                if distance > *next {
+                    moved[mover] -= 1;
+                    moved[*runner] += 1;
+                }
+            } else if distance < *own {
+                moved[*owner] -= 1;
+                moved[mover] += 1;
+            }
+        }
+        moved
+    };
+    // The worst-off seat first, then the gap between best and worst: raising
+    // the floor is the point, narrowing the spread is the tiebreak.
+    let rank = |held: &[usize]| -> (usize, i64) {
+        let fewest = held.iter().copied().min().unwrap_or(0);
+        let most = held.iter().copied().max().unwrap_or(0);
+        (fewest, -((most - fewest) as i64))
+    };
+    for _ in 0..seated.len() {
+        let nearest = survey(&starts);
+        let held = tally(&nearest);
+        let best = rank(&held);
+        let Some(poorest) = (0..starts.len()).min_by_key(|index| (held[*index], *index)) else {
+            return;
+        };
+        let Some(region) = regions.get(seated[poorest].0) else {
+            return;
+        };
+        let current = starts[poorest];
+        let keep = start_quality(rules, wm, current) * (100 - TERRITORY_QUALITY_TOLERANCE) / 100;
+        let others: Vec<Pos> = starts
             .iter()
-            .filter(|candidate| !spawns.contains(candidate))
-            .min_by_key(|candidate| {
-                let nearest = spawns
-                    .iter()
-                    .map(|start| wm.distance(**candidate, *start))
-                    .min();
+            .enumerate()
+            .filter(|(index, _)| *index != poorest)
+            .map(|(_, start)| *start)
+            .collect();
+        let mut trials: Vec<Pos> = region
+            .iter()
+            .copied()
+            .filter(|position| {
+                *position != current
+                    && candidates.contains(position)
+                    && wm.distance(*position, current) <= 6
+                    && clear_of(wm, *position, &others, floor - 1)
+                    && start_quality(rules, wm, *position) >= keep
+            })
+            .collect();
+        trials.sort_by_key(|position| (wm.distance(*position, current), *position));
+        trials.truncate(32);
+        let Some((score, site)) = trials
+            .into_iter()
+            .map(|trial| (rank(&after(&nearest, &held, poorest, trial)), trial))
+            .max()
+        else {
+            return;
+        };
+        if score <= best {
+            return;
+        }
+        starts[poorest] = site;
+    }
+    for (slot, (_, position)) in seated.iter_mut().enumerate() {
+        *position = starts[slot];
+    }
+}
+
+/// Lift the least fortunate start once every seat has one, and keep lifting
+/// until nothing can be lifted. Region division equalizes the *land* each
+/// civilization is given; it cannot equalize what is growing on the tile each
+/// one actually stands on, and a capital's first twenty turns are decided by
+/// that tile and its ring.
+///
+/// A start may only move inside its own region, so the even division survives
+/// the pass, and only to a site that keeps the clearance the layout already
+/// has — measured, not assumed, so a crowded map cannot be made more crowded
+/// in the name of a better capital.
+fn equalize_start_quality(
+    rules: &Rules,
+    wm: &WorldMap,
+    regions: &[Vec<Pos>],
+    candidates: &BTreeSet<Pos>,
+    fertility: &BTreeMap<Pos, i32>,
+    seated: &mut [(usize, Pos)],
+    foreign: &[Pos],
+) {
+    if seated.len() < 2 {
+        return;
+    }
+    let mut qualities: Vec<i32> = seated
+        .iter()
+        .map(|(_, start)| start_quality(rules, wm, *start))
+        .collect();
+    // The clearance already achieved, which no swap is allowed to spend.
+    let mut floor = i32::MAX;
+    for (index, (_, start)) in seated.iter().enumerate() {
+        for (_, other) in &seated[index + 1..] {
+            floor = floor.min(wm.distance(*start, *other));
+        }
+        for other in foreign {
+            floor = floor.min(wm.distance(*start, *other));
+        }
+    }
+    let floor = floor.min(i32::MAX - 1);
+    // A seat with nowhere better to stand does not end the pass — it steps
+    // aside so the next-weakest gets its turn. Stopping at the first one meant
+    // a single boxed-in capital left every capital below it unlifted, which at
+    // a hundred seats is most of them.
+    let mut settled: BTreeSet<usize> = BTreeSet::new();
+    for _ in 0..seated.len() {
+        let Some(weakest) = (0..seated.len())
+            .filter(|index| !settled.contains(index))
+            .min_by_key(|index| (qualities[*index], *index))
+        else {
+            return;
+        };
+        let (region_index, _) = seated[weakest];
+        let Some(region) = regions.get(region_index) else {
+            settled.insert(weakest);
+            continue;
+        };
+        let Some(center) = region_center(wm, region, fertility) else {
+            settled.insert(weakest);
+            continue;
+        };
+        let others: Vec<Pos> = seated
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| *index != weakest)
+            .map(|(_, (_, start))| *start)
+            .collect();
+        let current = qualities[weakest];
+        // The same centrality pull the first pick used, so lifting the weakest
+        // capital cannot quietly push it into a corner of its own region and
+        // hand the territory the division just balanced to its neighbours.
+        let Some(better) = region
+            .iter()
+            .copied()
+            .filter(|position| candidates.contains(position))
+            .filter(|position| {
+                clear_of(wm, *position, &others, floor - 1)
+                    && clear_of(wm, *position, foreign, floor - 1)
+            })
+            .map(|position| (start_quality(rules, wm, position), position))
+            .filter(|(quality, _)| *quality > current)
+            .max_by_key(|(quality, position)| {
                 (
-                    nearest.map(start_distance_miss).unwrap_or(0),
-                    -qualities[*candidate],
-                    **candidate,
+                    quality - REGION_CENTRALITY_PULL * wm.distance(*position, center),
+                    *position,
                 )
             })
-            .copied()
         else {
-            break;
+            settled.insert(weakest);
+            continue;
         };
-        spawns.push(next);
+        seated[weakest].1 = better.1;
+        qualities[weakest] = better.0;
     }
 }
 
@@ -3498,6 +3855,66 @@ mod river_tests {
     /// Every world type has to arrive on either shape, seat everybody, and —
     /// on a globe — close. The shape is a separate question from the type, and
     /// this is what makes that true rather than merely offered.
+    /// The one placement guarantee that holds whatever the world is made of.
+    ///
+    /// `Game::can_found_city` refuses a site within `MIN_START_SEPARATION` of a
+    /// city, so a layout that breaks the floor hands somebody a Settler that
+    /// cannot found where it stands and a city-state that `city_state_site`
+    /// teleports to the emptiest tile on the map — undoing, in one move, the
+    /// even spread the generator just worked for. Aiming at the shipped
+    /// distances instead of clearing them broke it on every ocean-separated
+    /// type: measured before this test existed, up to twenty-one pairs of
+    /// starts in a single Small Continents world.
+    ///
+    /// Every rolled world type, both shapes, both pole settings, every stock
+    /// size.
+    #[test]
+    fn no_world_type_ever_crowds_two_starts_inside_the_founding_radius() {
+        let rules = Rules::embedded();
+        for (index, script) in ROLLED_TYPES.into_iter().enumerate() {
+            for topology in [FLAT, GLOBE] {
+                for poles in [POLED, MapPoles::NoPoles] {
+                    for size in [&CIV6_MAP_SIZES[1], &CIV6_MAP_SIZES[3]] {
+                        let mut rng = Rng::new(
+                            41_000
+                                + index as u64 * 8
+                                + topology.is_globe() as u64 * 2
+                                + matches!(poles, MapPoles::NoPoles) as u64,
+                        );
+                        let (world, spawns) = generate_with_script(
+                            &rules,
+                            size.width,
+                            size.height,
+                            size.default_players,
+                            size.default_city_states,
+                            size.natural_wonders,
+                            size.continents,
+                            script,
+                            topology,
+                            poles,
+                            &mut rng,
+                        );
+                        let where_ = format!("{script:?} {topology:?} {poles:?} {}", size.id);
+                        assert_eq!(
+                            spawns.len(),
+                            size.default_players + size.default_city_states,
+                            "{where_}: not every seat was placed"
+                        );
+                        for (index, start) in spawns.iter().enumerate() {
+                            for other in &spawns[index + 1..] {
+                                let gap = world.distance(*start, *other);
+                                assert!(
+                                    gap >= MIN_START_SEPARATION,
+                                    "{where_}: two starts {gap} apart, inside the founding radius"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     fn every_world_type_lays_out_on_either_shape() {
         let rules = Rules::embedded();
@@ -4279,8 +4696,14 @@ mod river_tests {
         }
     }
 
+    /// Uniform ground is the case with a right answer: six regions cut out of
+    /// one flat rectangle of plains must come out the same size, and their six
+    /// starts must sit the same distance apart. Anything the placer does that
+    /// is arbitrary — an anchor tile, a seed order, a greedy chain — shows up
+    /// here as a spread that has no business existing, because the map itself
+    /// offers no reason to prefer one tile over another.
     #[test]
-    fn balanced_layout_is_independent_of_a_random_first_anchor() {
+    fn one_flat_landmass_is_divided_into_equal_regions_with_evenly_spaced_starts() {
         let rules = Rules::embedded();
         let mut wm = WorldMap::new(32, 18);
         let mut landmass = BTreeSet::new();
@@ -4291,26 +4714,62 @@ mod river_tests {
                 landmass.insert(pos);
             }
         }
-        let candidates: Vec<Pos> = landmass.iter().copied().collect();
-        let mut first_rng = Rng::new(1);
-        let mut second_rng = Rng::new(999);
-        let first = balanced_major_spawns(&rules, &wm, &landmass, &candidates, 6, &mut first_rng);
-        let second = balanced_major_spawns(&rules, &wm, &landmass, &candidates, 6, &mut second_rng);
-
-        assert_eq!(
-            first.iter().copied().collect::<BTreeSet<_>>(),
-            second.iter().copied().collect(),
-            "RNG may randomize seats, but must not anchor the spatial layout"
-        );
-        let qualities = candidates
+        let land: Vec<Pos> = landmass.iter().copied().collect();
+        let fertility: BTreeMap<Pos, i32> = land
             .iter()
-            .map(|candidate| (*candidate, start_quality(&rules, &wm, *candidate)))
+            .map(|position| (*position, tile_fertility(&rules, &wm.tiles[position])))
             .collect();
-        let score = spawn_layout_score(&wm, &landmass, &first, &qualities);
-        assert!(score.minimum_separation >= 8, "{score:?}");
-        assert!(score.negative_neighbor_range >= -2, "{score:?}");
-    }
+        let regions = divide_into_regions(&wm, &land, &fertility, 6);
+        assert_eq!(regions.len(), 6);
+        assert_eq!(
+            regions.iter().map(|region| region.len()).sum::<usize>(),
+            land.len(),
+            "every tile belongs to exactly one region"
+        );
+        let sizes: Vec<usize> = regions.iter().map(|region| region.len()).collect();
+        let smallest = sizes.iter().copied().min().unwrap();
+        let largest = sizes.iter().copied().max().unwrap();
+        assert!(
+            smallest * 100 / largest >= 75,
+            "regions of flat ground came out uneven: {sizes:?}"
+        );
 
+        let candidates: BTreeSet<Pos> = landmass.clone();
+        let seated = regional_starts(
+            &rules,
+            &wm,
+            &regions,
+            &candidates,
+            &fertility,
+            &[],
+            MAJOR_START_BUFFER,
+            MAJOR_START_BUFFER,
+        );
+        assert_eq!(seated.len(), 6, "every region seated a civilization");
+        let starts: Vec<Pos> = seated.iter().map(|(_, start)| *start).collect();
+        let nearest: Vec<i32> = starts
+            .iter()
+            .map(|start| {
+                starts
+                    .iter()
+                    .filter(|other| *other != start)
+                    .map(|other| wm.distance(*start, *other))
+                    .min()
+                    .unwrap()
+            })
+            .collect();
+        let closest = nearest.iter().copied().min().unwrap();
+        let farthest = nearest.iter().copied().max().unwrap();
+        assert!(
+            closest >= 8 && farthest - closest <= 2,
+            "starts on flat ground are not evenly spaced: {nearest:?}"
+        );
+
+        // And none of it comes from the random stream: the same map divides the
+        // same way every time, whatever seed the game was rolled with.
+        let repeat = divide_into_regions(&wm, &land, &fertility, 6);
+        assert_eq!(regions, repeat, "region division must not depend on chance");
+    }
     #[test]
     fn stock_map_profiles_produce_spread_and_complete_spawn_sets() {
         let rules = Rules::embedded();
@@ -4339,9 +4798,28 @@ mod river_tests {
                 .filter(|(_, tile)| !rules.is_water(tile) && rules.is_passable(tile))
                 .map(|(pos, _)| *pos)
                 .collect();
-            let landmass = largest_component(&wm, &passable);
             let majors = &spawns[..size.default_players];
-            assert!(majors.iter().all(|start| landmass.contains(start)));
+            // Nobody is marooned. This used to read "every major is on the
+            // largest landmass", which was the old placer's behaviour rather
+            // than a fairness rule, and it stopped being true once a hundred
+            // seats made even Pangaea's second island worth a share of the
+            // world. What matters is that the landmass a civilization is put
+            // on can carry a fair share of the world's land — see
+            // `regions_for_seats`, which is where the rule lives.
+            let components = connected_components(&wm, &passable);
+            let fair_share = passable.len() / (2 * size.default_players.max(1));
+            for start in majors {
+                let home = components
+                    .iter()
+                    .find(|component| component.contains(start))
+                    .expect("a start is on land");
+                assert!(
+                    home.len() >= fair_share.max(MIN_LANDMASS_FOR_A_START),
+                    "{}: a civilization opens on a {}-tile landmass, short of a {fair_share}-tile share",
+                    size.name,
+                    home.len()
+                );
+            }
             assert_eq!(
                 spawns.iter().copied().collect::<BTreeSet<_>>().len(),
                 spawns.len(),
@@ -4361,43 +4839,80 @@ mod river_tests {
                 .iter()
                 .map(|start| (*start, start_quality(&rules, &wm, *start)))
                 .collect();
-            let score = spawn_layout_score(&wm, &landmass, majors, &qualities);
-            let balance = layout_balance_percentages(score, size.default_players, landmass.len());
-            // Every start sits inside the shipped band, not merely apart.
+            // Every tile a civilization could reach, not just the biggest
+            // landmass's: seats are apportioned to landmasses now, so measuring
+            // one of them scores a civilization seated on another at zero.
+            let score = spawn_layout_score(&wm, &passable, majors, &qualities);
+            let balance = layout_balance_percentages(score, size.default_players, passable.len());
+            // `__MajorCivBuffer` clearance, which is a floor and not a band:
+            // a map with room to spare is allowed to use it.
             assert!(
-                score.minimum_separation >= START_DISTANCE_MAJOR - START_RANGE_MAJOR,
-                "{} crowds a start inside the shipped band: {score:?}",
+                score.minimum_separation > MAJOR_START_BUFFER,
+                "{} crowds a start inside the shipped buffer: {score:?}",
                 size.name
             );
-            for start in majors {
-                let nearest = majors
-                    .iter()
-                    .filter(|other| *other != start)
-                    .map(|other| wm.distance(*start, *other))
-                    .min()
-                    .unwrap_or(START_DISTANCE_MAJOR);
-                assert!(
-                    start_distance_miss(nearest) <= START_RANGE_MAJOR,
-                    "{} places a start {nearest} from its neighbour, far outside 10..=14",
-                    size.name
-                );
-            }
-            // Past about twenty seats on one landmass the division cannot stay
-            // as even as a dozen seats manage. The starts are still held 10-14
-            // hexes apart, so the ones against a coast take smaller cells than
-            // the ones inland, and the more seats there are the more of them
-            // are coastal — the worst-off civilization ends up with a smaller
-            // share of an equal split than it would on a Huge map. Spacing and
-            // start quality still sit in the shipped band, and the worst seat
-            // still clears about ninety workable tiles, which is a playable
-            // empire; it is evenness alone that gives. Making the distribution
-            // itself better is #207's work rather than this table's.
-            let territory_floor = if size.default_players > 20 { 40 } else { 50 };
+            // What replaces the old upper bound. Regular means the nearest
+            // neighbour is about the same distance for everyone, so nobody
+            // fights two neighbours for land while somebody else fights none.
+            //
+            // Measured against the typical seat rather than the extreme one,
+            // because the extreme is not scale-fair: holding the closest pair
+            // to a fraction of the farthest asks a hundred seats to do
+            // something eight seats never had to, since one coastline oddity
+            // among a hundred is not an irregular layout. Both ends of the
+            // spread are held, which is the property itself.
+            let mut nearest: Vec<i32> = majors
+                .iter()
+                .map(|start| {
+                    majors
+                        .iter()
+                        .filter(|other| *other != start)
+                        .map(|other| wm.distance(*start, *other))
+                        .min()
+                        .unwrap_or(START_DISTANCE_MAJOR)
+                })
+                .collect();
+            let closest = nearest.iter().copied().min().unwrap();
+            let farthest = nearest.iter().copied().max().unwrap();
+            nearest.sort_unstable();
+            let typical = nearest[nearest.len() / 2].max(1);
             assert!(
-                balance.0 >= territory_floor && balance.1 >= 50 && balance.2 >= 50,
+                closest * 100 / typical >= 70 && farthest * 100 / typical <= 200,
+                "{} spaces its starts irregularly around a typical {typical}: {nearest:?}",
+                size.name
+            );
+            // Both floors go up: 50 to 55 up to twenty seats, and 40 to 45
+            // above it. What still holds the top end down is not the placement
+            // but the wilderness — a landmass too small to be given a seat is
+            // still land, and every tile of it counts toward whichever seat
+            // happens to be nearest, which on a fifty-seat world can be thirty
+            // hexes of empty island credited to one civilization. The seat that
+            // cannot be lifted at all is usually one the clearance buffer has
+            // boxed in, and refusing to crowd it is the buffer working.
+            // Both floors go up, and both step down past twenty seats for the
+            // same reason: a hundred civilizations on one world are shared out
+            // by the world's own variety as much as by the placer. There is
+            // tundra and desert on every map, and at a hundred seats somebody
+            // is standing in it — the weakest capital scores 149 against a best
+            // of 258 and no site inside its region beats it.
+            let (territory_floor, quality_floor) = if size.default_players > 20 {
+                (45, 55)
+            } else {
+                (55, 60)
+            };
+            assert!(
+                balance.0 >= territory_floor && balance.2 >= quality_floor,
                 "{} has an unfair start outlier: territory/neighbor/quality balance = {balance:?}, {score:?}",
                 size.name,
             );
+            // `balance.1` is deliberately not asserted here. It is the closest
+            // pair over the farthest pair, the same min-over-max that the
+            // regularity check above replaced, and it fails for the same
+            // reason: one civilization seated on an island of its own — which
+            // the apportionment above does on purpose, and which leaves it a
+            // fair share of land — is 28 hexes from anybody on a hundred-seat
+            // world and drags the ratio to 39 while every other seat is even.
+            // The clearance floor and the median spread are the honest pair.
         }
     }
 
@@ -4444,12 +4959,13 @@ mod river_tests {
         }
     }
 
+    /// `__MinorMajorCivBuffer` rejects a city-state site within
+    /// `START_DISTANCE_MINOR_MAJOR_CIVILIZATION` 6 of a major and
+    /// `__MinorMinorCivBuffer` within `START_DISTANCE_MINOR_CIVILIZATION_START`
+    /// 5 of another city-state. Both are clearances; neither has an upper
+    /// bound, and `START_DISTANCE_RANGE_MINOR` is used by no shipped script.
     #[test]
-    fn city_states_sit_at_the_shipped_distance_from_civilizations_and_each_other() {
-        // START_DISTANCE_MINOR_MAJOR_CIVILIZATION 6 and
-        // START_DISTANCE_MINOR_CIVILIZATION_START 5, both within
-        // START_DISTANCE_RANGE_MINOR 3. Filling the largest remaining gaps
-        // instead put city-states roughly twice as far out as the game does.
+    fn city_states_keep_the_shipped_clearance_from_civilizations_and_each_other() {
         let rules = Rules::embedded();
         for seed in 0..6u64 {
             let mut rng = Rng::new(52_000 + seed);
@@ -4463,8 +4979,8 @@ mod river_tests {
                     .min()
                     .unwrap();
                 assert!(
-                    distance_miss(to_major, START_DISTANCE_MINOR_MAJOR, START_RANGE_MINOR) == 0,
-                    "seed {seed}: city-state {to_major} from the nearest major, outside 3..=9"
+                    to_major > MINOR_MAJOR_BUFFER,
+                    "seed {seed}: city-state {to_major} from the nearest major, inside {MINOR_MAJOR_BUFFER}"
                 );
                 if let Some(to_minor) = minors
                     .iter()
@@ -4474,14 +4990,88 @@ mod river_tests {
                     .min()
                 {
                     assert!(
-                        distance_miss(to_minor, START_DISTANCE_MINOR_MINOR, START_RANGE_MINOR) == 0,
-                        "seed {seed}: city-states {to_minor} apart, outside 2..=8"
+                        to_minor > MINOR_MINOR_BUFFER,
+                        "seed {seed}: city-states {to_minor} apart, inside {MINOR_MINOR_BUFFER}"
                     );
                 }
             }
         }
     }
 
+    /// A city-state is only worth contesting if it is somewhere near you.
+    /// Filling the largest-scoring gaps one at a time chained city-states
+    /// around whichever civilization happened to have the best ground, and
+    /// measured over 72 worlds *every* stock profile left at least one
+    /// civilization with none within ten hexes while another had up to
+    /// eighteen. Dividing the map a second time, one region per city-state,
+    /// is what fixes it.
+    #[test]
+    fn every_civilization_has_city_states_within_reach() {
+        let rules = Rules::embedded();
+        for (index, size) in CIV6_MAP_SIZES.iter().enumerate() {
+            for seed in 0..3u64 {
+                let mut rng = Rng::new(77_000 + seed * 13 + index as u64);
+                let (wm, spawns) = generate(
+                    &rules,
+                    size.width,
+                    size.height,
+                    size.default_players,
+                    size.default_city_states,
+                    size.natural_wonders,
+                    size.continents,
+                    &mut rng,
+                );
+                let (majors, minors) = spawns.split_at(size.default_players);
+                if minors.len() < majors.len() {
+                    continue;
+                }
+                // How far the least lucky civilization has to look. Twelve
+                // hexes is inside the range an early envoy mission can cover.
+                // Past twenty seats each civilization's own ground is small
+                // enough that its two city-state regions are the near and the
+                // far half of it, and the far one sits out at the edge — so the
+                // bound is on the world being crowded, not on the placer.
+                let reach = if majors.len() > 20 { 18 } else { 12 };
+                for major in majors {
+                    let nearest = minors
+                        .iter()
+                        .map(|minor| wm.distance(*major, *minor))
+                        .min()
+                        .unwrap();
+                    assert!(
+                        nearest <= reach,
+                        "{} seed {seed}: a civilization's nearest city-state is {nearest} hexes away",
+                        size.id
+                    );
+                }
+                // And how the envoy race is actually shared out: a city-state
+                // belongs to whichever civilization is nearest it.
+                let mut owned = vec![0_usize; majors.len()];
+                for minor in minors {
+                    let owner = majors
+                        .iter()
+                        .enumerate()
+                        .map(|(index, major)| (wm.distance(*minor, *major), index))
+                        .min()
+                        .map(|(_, index)| index)
+                        .unwrap();
+                    owned[owner] += 1;
+                }
+                // Within one of the ideal split. Stated against the split
+                // rather than as a flat spread, because a hundred seats sharing
+                // a hundred and fifty city-states cannot all hold the same
+                // number and a single seat one over is not an uneven world.
+                let fewest = owned.iter().copied().min().unwrap();
+                let most = owned.iter().copied().max().unwrap();
+                assert!(
+                    fewest >= minors.len() / majors.len()
+                        && most <= minors.len().div_ceil(majors.len()) + 1,
+                    "{} seed {seed}: city-states are shared out unevenly: {owned:?}",
+                    size.id
+                );
+            }
+        }
+    }
     #[test]
     fn varied_seeds_keep_major_start_outliers_within_a_roughly_equal_band() {
         let rules = Rules::embedded();
@@ -4724,6 +5314,182 @@ mod river_tests {
                             );
                         }
                     }
+                }
+            }
+        }
+    }
+    /// Scratch measurement of how evenly a layout is spread. Prints rather than
+    /// asserts; run with `--ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn measure_start_spread() {
+        let rules = Rules::embedded();
+        for (script, topology) in [
+            (MapScript::Pangaea, MapTopology::Flat),
+            (MapScript::Continents, MapTopology::Flat),
+            (MapScript::SmallContinents, MapTopology::Flat),
+            (MapScript::Islands, MapTopology::Flat),
+            (MapScript::WaterWorld, MapTopology::Flat),
+            (MapScript::SmallContinents, MapTopology::Planet),
+        ] {
+            for size_index in [1usize, 3, 5] {
+                let size = &CIV6_MAP_SIZES[size_index];
+                let mut rows: Vec<String> = Vec::new();
+                for seed in 0..6u64 {
+                    let mut rng = Rng::new(90_000 + seed * 31 + size_index as u64);
+                    let (wm, spawns) = generate_with_script(
+                        &rules,
+                        size.width,
+                        size.height,
+                        size.default_players,
+                        size.default_city_states,
+                        size.natural_wonders,
+                        size.continents,
+                        script,
+                        topology,
+                        MapPoles::Poles,
+                        &mut rng,
+                    );
+                    let passable: BTreeSet<Pos> = wm
+                        .tiles
+                        .iter()
+                        .filter(|(_, tile)| !rules.is_water(tile) && rules.is_passable(tile))
+                        .map(|(pos, _)| *pos)
+                        .collect();
+                    let majors = &spawns[..size.default_players.min(spawns.len())];
+                    let minors = &spawns[size.default_players.min(spawns.len())..];
+
+                    let nn = |group: &[Pos]| -> Vec<i32> {
+                        group
+                            .iter()
+                            .map(|start| {
+                                group
+                                    .iter()
+                                    .filter(|other| *other != start)
+                                    .map(|other| wm.distance(*start, *other))
+                                    .min()
+                                    .unwrap_or(0)
+                            })
+                            .collect()
+                    };
+                    let spread = |values: &[i32]| -> (i32, i32, f64) {
+                        let min = values.iter().copied().min().unwrap_or(0);
+                        let max = values.iter().copied().max().unwrap_or(0);
+                        let mean =
+                            values.iter().copied().sum::<i32>() as f64 / values.len().max(1) as f64;
+                        (min, max, mean)
+                    };
+                    let major_nn = nn(majors);
+                    let minor_nn = nn(minors);
+                    let (major_min, major_max, major_mean) = spread(&major_nn);
+                    let (minor_min, minor_max, minor_mean) = spread(&minor_nn);
+
+                    let mut territory = vec![0i32; majors.len()];
+                    let mut coverage = 0;
+                    for tile in &passable {
+                        let (distance, owner) = majors
+                            .iter()
+                            .enumerate()
+                            .map(|(index, start)| (wm.distance(*tile, *start), index))
+                            .min()
+                            .unwrap();
+                        coverage = coverage.max(distance);
+                        territory[owner] += 1;
+                    }
+                    let (territory_min, territory_max, _) = spread(&territory);
+
+                    // How many city-states each civilization has within reach,
+                    // and how far the nearest one is: an envoy race is not fair
+                    // if one capital has four neighbours and another has none.
+                    let neighbours: Vec<i32> = majors
+                        .iter()
+                        .map(|major| {
+                            minors
+                                .iter()
+                                .filter(|minor| wm.distance(*major, **minor) <= 10)
+                                .count() as i32
+                        })
+                        .collect();
+                    let (neighbours_min, neighbours_max, _) = spread(&neighbours);
+                    // City-states counted by which civilization is nearest,
+                    // which is what an envoy race actually turns on.
+                    let mut owned = vec![0i32; majors.len()];
+                    let mut nearest_minor = vec![i32::MAX; majors.len()];
+                    for minor in minors {
+                        if let Some((_, owner)) = majors
+                            .iter()
+                            .enumerate()
+                            .map(|(index, major)| (wm.distance(*minor, *major), index))
+                            .min()
+                        {
+                            owned[owner] += 1;
+                        }
+                        for (index, major) in majors.iter().enumerate() {
+                            nearest_minor[index] =
+                                nearest_minor[index].min(wm.distance(*minor, *major));
+                        }
+                    }
+                    let (owned_min, owned_max, _) = spread(&owned);
+                    let lonely = nearest_minor.iter().copied().max().unwrap_or(0);
+
+                    let qualities: Vec<i32> = majors
+                        .iter()
+                        .map(|start| start_quality(&rules, &wm, *start))
+                        .collect();
+                    let (quality_min, quality_max, _) = spread(&qualities);
+
+                    let mut closest_pair = i32::MAX;
+                    for (index, start) in spawns.iter().enumerate() {
+                        for other in &spawns[index + 1..] {
+                            closest_pair = closest_pair.min(wm.distance(*start, *other));
+                        }
+                    }
+
+                    // How many landmasses hold a start, out of how many could.
+                    let components = connected_components(&wm, &passable);
+                    let usable = components
+                        .iter()
+                        .filter(|component| component.len() >= 12)
+                        .count();
+                    let occupied = components
+                        .iter()
+                        .filter(|component| {
+                            component.len() >= 12
+                                && spawns.iter().any(|spawn| component.contains(spawn))
+                        })
+                        .count();
+
+                    let crowded = {
+                        let mut count = 0;
+                        for (index, start) in spawns.iter().enumerate() {
+                            for other in &spawns[index + 1..] {
+                                if wm.distance(*start, *other) < MIN_START_SEPARATION {
+                                    count += 1;
+                                }
+                            }
+                        }
+                        count
+                    };
+                    rows.push(format!(
+                        "  seed {seed}: major nn {major_min}-{major_max} (mean {major_mean:.1}) \
+                         terr {territory_min}-{territory_max} qual {quality_min}-{quality_max} \
+                         | minor nn {minor_min}-{minor_max} (mean {minor_mean:.1}) \
+                         nbrs {neighbours_min}-{neighbours_max} \
+                         own {owned_min}-{owned_max} lonely {lonely} \
+                         | closest {closest_pair} crowded {crowded} cover {coverage} \
+                         land {occupied}/{usable}"
+                    ));
+                }
+                println!(
+                    "{script:?} {topology:?} {} ({}x{}, {} civs, {} city-states)",
+                    size.id,
+                    size.width,
+                    size.height,
+                    size.default_players,
+                    size.default_city_states
+                );
+                for row in rows {
+                    println!("{row}");
                 }
             }
         }
