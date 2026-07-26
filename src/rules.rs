@@ -692,6 +692,10 @@ pub struct GovEffects {
     pub governor_faith_per_pop: f64,
     pub governor_production_per_pop: f64,
     pub gold_purchase_discount_pct: f64,
+    /// Theocracy's GOVERNMENTBONUS_FAITH_PURCHASES, the Faith-side twin of the
+    /// Gold discount above.
+    #[serde(default)]
+    pub faith_purchase_discount_pct: f64,
     pub district_production_pct: f64,
     pub wonder_production_pct: f64,
     pub unit_production_pct: f64,

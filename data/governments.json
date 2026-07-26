@@ -61,7 +61,7 @@
     "influence_threshold": 150,
     "envoys_per_threshold": 2,
     "diplomatic_favor_per_turn": 2,
-    "effects": {"religious_strength": 5, "governor_faith_per_pop": 0.5},
+    "effects": {"religious_strength": 5, "governor_faith_per_pop": 0.5, "faith_purchase_discount_pct": 15},
     "slots": {"military": 2, "economic": 2, "diplomatic": 1, "wildcard": 1}
   },
   "communism": {

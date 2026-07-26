@@ -836,3 +836,100 @@ measured before more axes are added.
 so `strategic` is unchanged. `StrategicAi::doctrine_values` exposes the
 per-doctrine projections, because the spread between them is what decides
 whether the axis can act at all — which no win rate would reveal.
+
+## 2026-07-26 — search cadence: more decisions beat better decisions
+
+The previous entry ended on a ceiling: the macro search reached the rollouts
+about 1.5 times per seat per game, which bounds every improvement hung off
+it. Cadence is the cheapest way to raise that — `review_every` is already a
+field — so it was measured as a dose, with everything else (weights,
+horizon, lane policy, priors) held equal. All runs are four-player,
+`--turns 200`.
+
+**Dose (seed 41000, 12 maps each, against `strategic`):**
+
+| entrant | period | rollout reviews | games | maps for | maps against |
+|---|---|---|---|---|---|
+| `strategic` | 40 | 105 | — | — | — |
+| `strategic_r20` | 20 | 158 (1.5×) | 13/24 (54.2%) | 1 | 0 |
+| `strategic_r10` | 10 | 316 (3.0×) | 14/24 (58.3%) | 2 | 0 |
+
+Monotone in the dose, and across those 24 maps not one broke *against* the
+denser search.
+
+**Confirmation on a disjoint seed set (52000, 24 maps, `strategic_r20`):**
+28/48 games (58.3%), paired score 58.3%, Elo-equivalent +58 (CI −79..+196),
+**5 maps swept to 1**, exact sign p=0.2188, anytime-valid e=6.993
+(p≤0.1430). Rollout reviews 251 against 160 (1.57×).
+
+Pooled over the two disjoint `strategic_r20` seed sets: 36 maps, 41/72 games
+(56.9%), direction **6 for, 1 against, 29 neutral**.
+
+**This is not promoted.** The gate requires the anytime-valid evidence to
+cross, and e=6.993 is well short of the 40 that 2.5% needs. `strategic` is
+unchanged and the cadences ship as eval-only entrants. The e-process is
+anytime-valid, so more maps on `strategic_r20 strategic --players 4` can be
+added to this evidence without inflating the error budget — that is the
+cheapest open path to a promotion in this codebase right now.
+
+**A falsified hypothesis, recorded so it is not retried.** An interrupt sets
+`next_review = turn + review_every`, so a cheap prior read off the victory
+screen appeared to postpone the expensive periodic projection it was never
+meant to replace. `strategic_nodefer` holds the periodic schedule instead.
+It changed the decision count by **one review** (95 against 96) and lost a
+map. Interrupts do not meaningfully displace periodic searches; whatever
+suppresses the decision count, this is not it.
+
+Note on reading these runs: a mirrored seat-swapped A/B between agents that
+differ slightly is close to powerless, because identical agents split every
+map by construction. The count of maps that break neutral — and their
+direction — carries the signal long before the win rate does.
+
+## 2026-07-26 — marginal search compute buys frequency, not depth
+
+The cadence result raised an obvious objection: `strategic_r20` spends
+**twice** the search compute of `strategic`, so the gain might be compute
+rather than frequency. Three arms answer it, all run on the *same maps*
+(`--pairs 20 --players 4 --seed 52000 --turns 200`) so they are directly
+comparable:
+
+| arm | search compute | decisions | depth | games | maps for | maps against | sign p | e |
+|---|---|---|---|---|---|---|---|---|
+| `strategic_r20` | 2× | **2×** | 1× | 25/40 (62.5%) | **5** | **0** | 0.0625 | **6.99** |
+| `strategic_r20h20` | **1×** | 2× | 0.5× | 22/40 (55.0%) | 4 | 2 | 0.6875 | 1.07 |
+| `strategic_h80` | 2× | 1× | **2×** | 21/40 (52.5%) | 4 | 3 | 1.0000 | 1.00 |
+
+`strategic_r20` and `strategic_h80` spend the identical doubling. Frequency
+takes 5 maps and loses none; depth takes 4 and loses 3, which is exactly
+what noise looks like. `strategic_r20h20` holds total rounds per game equal
+to the baseline by halving the horizon, and still leans positive at 4–2 —
+so frequency is worth something even when depth pays for it, though weakly.
+
+Ordering, from best to worst use of a marginal unit of search compute:
+**more reviews at the same depth > more reviews at less depth > more
+depth**. The mechanism is unsurprising once stated: a 40-round projection
+already looks further ahead than the position stays valid, so the binding
+error is a commitment left stale, not a horizon left short. Lengthening the
+projection refines an answer to a question the agent asked too long ago.
+
+Three cautions on reading the table:
+
+1. Nothing here clears the promotion gate; `strategic` is unchanged and all
+   three are eval-only entrants.
+2. The `strategic_r20` row shares its seed set with the 24-map run in the
+   previous entry (5 for, 1 against). They are the same experiment at two
+   sample sizes, **not** independent confirmations, and must not be pooled.
+   Independent `strategic_r20` evidence remains seed 41000 (12 maps, 1–0)
+   and seed 52000 (24 maps, 5–1).
+3. A doubling is one point on a curve. `strategic_r10` quadruples reviews
+   for 3.0× the rollout count and did not beat `strategic_r20` by a margin
+   this design could resolve, so the returns are visibly not linear.
+
+The practical consequence for anything built on this search: spend on how
+often it runs, and treat the horizon as already long enough. The open idea
+that follows is rotation — always project the adaptive baseline and the
+incumbent lane, rotate one challenger per review — which cuts a review from
+seven branches to three and buys frequency at *negative* compute cost.
+`victory_progress` cannot do that pruning, because it deliberately scores
+only concrete endgame progress and is zero for every lane in the early game
+where most reviews happen.

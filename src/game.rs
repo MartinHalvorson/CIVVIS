@@ -35838,6 +35838,12 @@ impl Game {
         if currency == "gold" {
             purchase_discount += self.gov_effects(pid).gold_purchase_discount_pct;
         }
+        if currency == "faith" {
+            // Theocracy ships GOVERNMENTBONUS_FAITH_PURCHASES 15 beside
+            // Democracy's GOVERNMENTBONUS_GOLD_PURCHASES 15; only the Gold half
+            // was wired up.
+            purchase_discount += self.gov_effects(pid).faith_purchase_discount_pct;
+        }
         if religious && currency == "faith" {
             if let Some(religion) = self.city_religion(&self.cities[&cid]) {
                 purchase_discount +=

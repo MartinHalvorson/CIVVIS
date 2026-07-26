@@ -37,7 +37,15 @@ pub const BUILTIN_AIS: [&str; 9] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 2] = ["strategic_score", "strategic_doctrine"];
+pub const EVAL_ONLY_AIS: [&str; 7] = [
+    "strategic_score",
+    "strategic_doctrine",
+    "strategic_r20",
+    "strategic_r10",
+    "strategic_nodefer",
+    "strategic_r20h20",
+    "strategic_h80",
+];
 
 /// On-disk schema for the shared player/leader/civilization rating ledger.
 pub const ELO_SCHEMA_VERSION: u32 = 2;
@@ -439,6 +447,52 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // a review which reaches the rollouts also projects the four play
         // styles. Paired against `strategic` this isolates the second
         // search axis and nothing else.
+        // Search-cadence doses. Everything else — weights, horizon, lane
+        // policy, priors — matches `strategic`, so a pair isolates how
+        // often the search runs and nothing about how well it runs.
+        "strategic_r20" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.review_every = 20;
+            Box::new(ai)
+        }
+        "strategic_r10" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.review_every = 10;
+            Box::new(ai)
+        }
+        // Compute-matched cadence: twice the reviews at half the horizon,
+        // so total simulated rounds per game match `strategic`. Paired
+        // against it, this separates "more decisions" from "more compute".
+        "strategic_r20h20" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.review_every = 20;
+            ai.horizon = 20;
+            Box::new(ai)
+        }
+        // The other way to spend the doubling `strategic_r20` spends on
+        // frequency: same decisions, twice the lookahead. Run on the same
+        // maps, the pair asks where a marginal unit of search compute is
+        // worth more.
+        "strategic_h80" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.horizon = 80;
+            Box::new(ai)
+        }
+        "strategic_nodefer" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.defer_periodic_on_interrupt = false;
+            Box::new(ai)
+        }
         "strategic_doctrine" => {
             let mut ai = crate::strategic::StrategicAi::with_weights(
                 crate::evolve::load_champion("evolved").unwrap_or_default(),
@@ -601,6 +655,11 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         // missing net therefore leaves it untrained rather than renamed,
         // which the provenance line says in those words.
         "strategic_doctrine" => (vec![genome, value(false)], "strategic_doctrine"),
+        "strategic_r20" => (vec![genome, value(false)], "strategic_r20"),
+        "strategic_r10" => (vec![genome, value(false)], "strategic_r10"),
+        "strategic_nodefer" => (vec![genome, value(false)], "strategic_nodefer"),
+        "strategic_r20h20" => (vec![genome, value(false)], "strategic_r20h20"),
+        "strategic_h80" => (vec![genome, value(false)], "strategic_h80"),
         "advanced" => (Vec::new(), "advanced"),
         "advanced_v1" => (Vec::new(), "advanced_v1"),
         "random" => (Vec::new(), "random"),

@@ -209,6 +209,9 @@ pub struct StrategicAi {
     /// `strategic_doctrine` entrant turns it on, which makes the two an
     /// exact paired A/B of the second axis alone.
     pub doctrine_search: bool,
+    /// Whether a prior-driven interrupt postpones the next periodic review.
+    /// True reproduces the shipped behaviour exactly.
+    pub defer_periodic_on_interrupt: bool,
     doctrine: Doctrine,
     doctrine_switches: u32,
 }
@@ -243,6 +246,7 @@ impl StrategicAi {
             net,
             census: ReviewCensus::default(),
             doctrine_search: false,
+            defer_periodic_on_interrupt: true,
             doctrine: Doctrine::Incumbent,
             doctrine_switches: 0,
             review_every: 40,
@@ -847,8 +851,18 @@ impl Ai for StrategicAi {
             self.inner.victory_target() != Some(*target)
                 || self.inner.forced_target_player() != Some(*rival)
         });
-        if major && g.winner.is_none() && (g.turn >= self.next_review || interrupted) {
-            self.next_review = g.turn + self.review_every;
+        let due = g.turn >= self.next_review;
+        if major && g.winner.is_none() && (due || interrupted) {
+            // An interrupt is a cheap prior read off the victory screen, not
+            // the periodic six-lane search. Letting it push `next_review`
+            // forward lets a free decision consume the budget of an
+            // expensive one: a counter at turn 35 postpones to turn 75 the
+            // projection that was due at 35. `defer_periodic_on_interrupt`
+            // keeps the shipped behaviour; turning it off lets the periodic
+            // search hold its own schedule.
+            if due || self.defer_periodic_on_interrupt {
+                self.next_review = g.turn + self.review_every;
+            }
             // Public victory threats are cheap to inspect every turn and may
             // end the game before the next expensive six-lane review. Reuse
             // the already-computed counter rather than running rollouts.
@@ -999,6 +1013,79 @@ mod tests {
 
         let expected = score_share + 0.25 * (0.5 - score_share);
         assert!((strategic.position_value(&game, 0) - expected).abs() < 1e-12);
+    }
+
+    /// Halving the review period must actually buy reviews. This is the
+    /// mechanism behind the cadence result: if the counter never moved, the
+    /// dose would be nominal and the measured win difference would have to
+    /// come from somewhere else.
+    #[test]
+    fn a_shorter_review_period_reaches_the_search_more_often() {
+        let census = |review_every: u32| {
+            let mut g = Game::new(4, 28, 18, 41000, 160, 2);
+            let mut strategic = StrategicAi::new();
+            strategic.review_every = review_every;
+            strategic.horizon = 4;
+            let mut others = BasicAi::fleet(&g);
+            while g.winner.is_none() && g.turn <= g.max_turns {
+                let pid = g.current;
+                if pid == 0 {
+                    strategic.take_turn(&mut g, pid);
+                } else {
+                    others[pid].take_turn(&mut g, pid);
+                }
+                if g.winner.is_none() && g.current == pid {
+                    let _ = g.apply(pid, &Action::EndTurn);
+                }
+            }
+            strategic.review_census()
+        };
+        let sparse = census(40);
+        let dense = census(10);
+        assert!(
+            dense.rollouts > sparse.rollouts,
+            "cadence 10 reached the rollouts {} times against 40's {}",
+            dense.rollouts,
+            sparse.rollouts
+        );
+    }
+
+    /// A prior-driven interrupt must not postpone the periodic search when
+    /// the agent has opted out of deferring. The shipped default still
+    /// defers, so this is a behaviour switch and not a silent change.
+    #[test]
+    fn an_interrupt_need_not_postpone_the_periodic_search() {
+        assert!(
+            StrategicAi::new().defer_periodic_on_interrupt,
+            "the shipped default must be unchanged"
+        );
+        let census = |defer: bool| {
+            let mut g = Game::new(4, 28, 18, 41003, 170, 2);
+            let mut strategic = StrategicAi::new();
+            strategic.defer_periodic_on_interrupt = defer;
+            strategic.horizon = 4;
+            let mut others = BasicAi::fleet(&g);
+            while g.winner.is_none() && g.turn <= g.max_turns {
+                let pid = g.current;
+                if pid == 0 {
+                    strategic.take_turn(&mut g, pid);
+                } else {
+                    others[pid].take_turn(&mut g, pid);
+                }
+                if g.winner.is_none() && g.current == pid {
+                    let _ = g.apply(pid, &Action::EndTurn);
+                }
+            }
+            strategic.review_census()
+        };
+        let deferring = census(true);
+        let holding = census(false);
+        assert!(
+            holding.total() >= deferring.total(),
+            "holding the schedule reviewed {} times against {}",
+            holding.total(),
+            deferring.total()
+        );
     }
 
     /// Every doctrine must stay inside the bounds evolution respects, so a
