@@ -4041,7 +4041,7 @@ mod belief_runtime_tests {
         assert_eq!(game.players[0].envoys, vec![(1, 1)]);
 
         let warrior = game.spawn_unit("warrior", 0, game.cities[&cities[1]].pos);
-        game.players[0].religion_beliefs = vec!["crusade".to_string()];
+        game.players[0].religion_beliefs = vec!["just_war".to_string()];
         assert_eq!(game.unit_unembarked_strength(&game.units[&warrior]), 30.0);
         game.relocate(warrior, game.cities[&cities[0]].pos);
         game.players[0].religion_beliefs = vec!["defender_of_the_faith".to_string()];
@@ -17006,6 +17006,8 @@ impl Game {
                 + effect("gold_per_foreign_city") * foreign_following,
             culture: (effect("culture_per_followers") * followers).floor()
                 + (effect("culture_per_foreign_followers") * foreign_followers).floor(),
+            // Cross-Cultural Dialogue counts followers abroad only.
+            science: (effect("science_per_foreign_followers") * foreign_followers).floor(),
             faith: effect("faith_per_city") * following
                 + effect("faith_per_foreign_city") * foreign_following,
             ..Yields::default()
