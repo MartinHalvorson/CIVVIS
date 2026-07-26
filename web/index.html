@@ -13256,7 +13256,12 @@ function planetTerrainPatterns(camera, scale) {
     const pattern = biomePattern(terrain, PLANET_BIOME_PATTERNS);
     if (!pattern) continue;
     if (typeof pattern.setTransform === "function" && typeof DOMMatrix !== "undefined") {
-      const materialScale = Math.max(.62, Math.min(1.35, .72 + scale * .12));
+      // A flat tile is large enough to hold the atlas at almost source scale.
+      // A globe is a whole world in the same frame: carrying that scale over
+      // made one ocean swell span a continent and one grass blade read as a
+      // hedge. Keep the material fine at survey distance, then let it resolve
+      // gradually as the camera approaches the surface.
+      const materialScale = Math.max(.36, Math.min(.82, .34 + scale * .085));
       const matrix = new DOMMatrix();
       matrix.translateSelf(-camera.longitude * 74, camera.latitude * 58);
       matrix.rotateSelf(-(camera.roll || 0) * 180 / Math.PI);
@@ -13266,6 +13271,57 @@ function planetTerrainPatterns(camera, scale) {
     patterns.set(terrain, pattern);
   }
   return patterns;
+}
+
+// A painted globe is not a strategic hex map wrapped round a ball. Its opaque
+// foundation distinguishes land from water — the geography that must remain
+// exact — but leaves biome and water-depth colour to the feathered paint above.
+// Otherwise every translucent edge exposes a differently coloured polygon and
+// rebuilds the honeycomb the painted view is meant to dissolve.
+function planetTerrainUnderpaint(tile) {
+  return isWater(tile) ? "#174b61" : "#747655";
+}
+
+// The shoreline is the one terrain boundary that should survive the painted
+// blend. Draw it as one continuous surf network after the ground is lit: the
+// dark wet edge seats the land, the blue shelf carries the coast, and the fine
+// warm line keeps snow, sand and grass equally legible against water.
+function drawPlanetShoreline(cells) {
+  const reaches = [];
+  const painted = new Set(cells.map(cell => key(cell.tile.pos)));
+  for (const {tile, cell, points} of cells) {
+    if (isWater(tile) || !cell) continue;
+    for (let side = 0; side < points.length; side++) {
+      const neighbor = TMAP.get(cell.nbrs[side]);
+      if (!neighbor || !painted.has(cell.nbrs[side]) || !isWater(neighbor)) continue;
+      const a = points[side], b = points[(side + 1) % points.length];
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const length = Math.hypot(dx, dy) || 1;
+      const variation = hash2(cell.ids[side] * 17 + 3,
+                              cell.ids[(side + 1) % points.length] * 23 + 5) - .5;
+      reaches.push([a.x, a.y,
+                    (a.x + b.x) / 2 - dy / length * variation * length * .16,
+                    (a.y + b.y) / 2 + dx / length * variation * length * .16,
+                    b.x, b.y]);
+    }
+  }
+  if (!reaches.length) return;
+  cx.save();
+  cx.lineCap = "round"; cx.lineJoin = "round";
+  const depth = MODE.atmosphere ? 1 : .78;
+  for (const [color, width, alpha] of [
+    ["#071a1d", 3.8, .42 * depth],
+    ["#68b9c0", 2.1, .46 * depth],
+    ["#f2e4bd", .72, .64 * depth],
+  ]) {
+    cx.strokeStyle = color; cx.lineWidth = width; cx.globalAlpha = alpha;
+    cx.beginPath();
+    for (const [ax, ay, mx, my, bx, by] of reaches) {
+      cx.moveTo(ax, ay); cx.quadraticCurveTo(mx, my, bx, by);
+    }
+    cx.stroke();
+  }
+  cx.restore();
 }
 
 function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
@@ -13280,6 +13336,7 @@ function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
   for (const cell of cells) {
     const base = empire
       ? (isWater(cell.tile) ? "#173846" : "#687068")
+      : painted ? planetTerrainUnderpaint(cell.tile)
       : (TERRAIN[cell.tile.terrain] || "#4b5960");
     const light = camera.chart ? 1 : .70 + .34 * Math.max(0, cell.center.z);
     planetPaintPath(cx, cell, .8);
@@ -13300,9 +13357,38 @@ function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
       const group = byTerrain.get(terrain);
       if (group) group.push(cell); else byTerrain.set(terrain, [cell]);
     }
+    const knownCells = cells.filter(known);
+    const blend = Math.max(1.2, Math.min(5.2, 1.35 + scale * 1.75));
+    // Biome colour is paint too. Lay it through a feather before the material
+    // so grass can dry into plains, plains into desert, and shelf water into
+    // deep sea without exposing the storage cell at every change.
+    cx.save();
+    cx.beginPath();
+    for (const cell of knownCells) appendPlanetPaintPath(cx, cell, .15);
+    cx.clip();
+    cx.filter = `blur(${blend.toFixed(2)}px)`;
+    cx.globalAlpha = MODE.atmosphere ? .92 : .88;
+    for (const [terrain, group] of byTerrain) {
+      cx.beginPath();
+      for (const cell of group) appendPlanetPaintPath(cx, cell, .35);
+      cx.fillStyle = TERRAIN[terrain] || "#4b5960";
+      cx.fill();
+    }
+    cx.restore();
+
     const patterns = planetTerrainPatterns(camera, scale);
     cx.save();
-    cx.globalAlpha = MODE.atmosphere ? .82 : .68;
+    // A small, screen-space feather is enough to turn the tessellation into a
+    // painted transition while retaining terrain identity at every cell
+    // centre. Soft-light carries the atlas' grain and value into the averaged
+    // underpaint without pasting its source photograph and pale coast colour
+    // wholesale across the sphere.
+    cx.beginPath();
+    for (const cell of knownCells) appendPlanetPaintPath(cx, cell, .15);
+    cx.clip();
+    cx.filter = `blur(${blend.toFixed(2)}px)`;
+    cx.globalCompositeOperation = "soft-light";
+    cx.globalAlpha = MODE.atmosphere ? .72 : .62;
     for (const [terrain, group] of byTerrain) {
       const pattern = patterns.get(terrain);
       if (!pattern) continue;
@@ -13337,6 +13423,8 @@ function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
     cx.fillRect(centerX - radius * 1.1, centerY - radius * 1.1,
                 radius * 2.2, radius * 2.2);
     cx.restore();
+
+    drawPlanetShoreline(knownCells);
   }
 
   // Ownership is a transparent map layer over finished ground. Painted modes
