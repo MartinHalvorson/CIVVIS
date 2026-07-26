@@ -1355,3 +1355,40 @@ contents.
 thresholds set well below what was observed and far above what
 `evolve::features` reaches, so the property is a regression test rather
 than a number in a document.
+
+## 2026-07-26 — strategic_deep promoted on a pre-registered 300-map run
+
+`strategic_r20h80` passed the gate once at 120 maps by 0.2 points of Wilson
+bound and failed to pass again on a second seed set, so it was added as an
+evaluator-only entrant and explicitly not promoted. The deciding run was
+pre-registered before it started — challenger, incumbent, settings, sample
+size and decision rule fixed in writing — because the gate's Wilson
+interval is a fixed-n statistic and stopping when it happens to clear would
+be optional stopping on a statistic that does not permit it. n=300 came
+from a power calculation on the pooled effect, not from watching the run.
+
+`ai_eval strategic_r20h80 strategic --pairs 300 --players 4 --seed 100000
+--turns 200`:
+
+- 339/600 games (56.5%), paired-map score 56.5%
+- **56 mirrored maps for, 17 against**, exact sign p=0.0000
+- anytime e-process **3.14e4**, crossing at map 127
+- Wilson 50.8%..62.0% — clears parity
+- Elo-equivalent **+45** (CI +6..+85)
+- **`promotion gate: PASS`**, under the unmodified gate
+
+Across all three disjoint seed sets: **540 independent maps, 109 map
+directions to 32.** `strategic_deep` is therefore promoted from
+evaluator-only to a builtin agent.
+
+Two things it does not change. `strategic` keeps its original settings and
+is not deprecated: it is the frozen control for measuring further search
+work, the way `advanced_v1` is for `advanced`. And the promotion costs four
+times the macro-search compute, so batch callers — soak, league, the
+spectator fleet — should adopt it deliberately rather than inherit it.
+
+For the record, alongside it: the pre-registered `strategic_r20` attempt at
+n=400 **failed** under the same rules, reaching an e-process of 1.97e4 with
+46 map directions to 12 and still reading INCONCLUSIVE, because its smaller
+54.2% effect needs roughly 540 maps to move the Wilson bound. Both
+pre-registrations are reported; only one succeeded.
