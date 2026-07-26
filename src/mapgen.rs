@@ -5247,7 +5247,7 @@ mod river_tests {
         let rules = Rules::embedded();
         for size_index in [1_usize, 3, 5] {
             let size = &CIV6_MAP_SIZES[size_index];
-            for seed in 0..6u64 {
+            for seed in 0..16u64 {
                 let mut rng = Rng::new(90_000 + seed * 31 + size_index as u64);
                 let (world, spawns) = generate_with_script(
                     &rules,
@@ -5583,21 +5583,28 @@ mod river_tests {
     /// Why a civilization can open with no city-state near it, and the line
     /// between that being the map and that being a bug.
     ///
-    /// On an archipelago a civilization's island can be smaller than the radius
+    /// On a water world a civilization's island can be smaller than the radius
     /// inside which `Game::can_found_city` refuses to build: every tile on it
     /// is within `MIN_START_SEPARATION` of the capital, so there is nowhere on
     /// that island for a second city of any kind and the city-state has to go
-    /// elsewhere. Measured over Islands worlds, that is the *only* reason it
-    /// ever happens — so the rule this pins is the sharp one: if an island has
-    /// room for a city-state at all, the civilization living there gets one.
+    /// elsewhere. Measured, that is the *only* reason it ever happens — so the
+    /// rule pinned here is the sharp one: if an island has room for a
+    /// city-state at all, the civilization living there gets one.
+    ///
+    /// Islands is deliberately excluded. #250 gave that script its own model, in
+    /// which a region spans several islands on purpose — a civilization's
+    /// maritime territory — so its city-state belonging to a neighbouring
+    /// island is the design rather than a miss. Every other script, Water World
+    /// included, still cuts city-state regions from the civilization's own
+    /// cell, and there "its own island" is exactly the promise.
     #[test]
     fn an_island_with_room_for_a_city_state_gets_one() {
         let rules = Rules::embedded();
-        for (index, (script, size)) in [MapScript::Islands, MapScript::WaterWorld]
+        for (index, (script, size)) in [MapScript::WaterWorld]
             .into_iter()
             .flat_map(|script| {
-                [&CIV6_MAP_SIZES[1], &CIV6_MAP_SIZES[3], &CIV6_MAP_SIZES[5]]
-                    .into_iter()
+                CIV6_MAP_SIZES
+                    .iter()
                     .map(move |size| (script, size))
             })
             .enumerate()
