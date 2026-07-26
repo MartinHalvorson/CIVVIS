@@ -15164,7 +15164,7 @@ impl Game {
                 t.improvement = None;
             }
             self.players[owner].gold += 50.0 + self.human_camp_gold(owner);
-            self.add_era_score(owner, 1);
+            self.add_era_score(owner, self.barbarian_camp_era_score());
             if self.has_ability(owner, "epic_quest") {
                 // Epic Quest: a full tribal village reward for the cleared camp.
                 self.roll_goody_reward(owner, uid, pos);
@@ -18037,7 +18037,12 @@ impl Game {
                 }
             }
         }
-        self.add_era_score(pid, 1);
+        // MOMENT_PANTHEON_FOUNDED is 1, _FIRST_IN_WORLD is 2.
+        let first_in_world = !self
+            .players
+            .iter()
+            .any(|other| other.id != pid && other.pantheon.is_some());
+        self.add_era_score(pid, if first_in_world { 2 } else { 1 });
         Ok(())
     }
 
@@ -18108,7 +18113,12 @@ impl Game {
         self.players[pid].prophet_pending = false;
         self.players[pid].religion = Some(name.clone());
         self.players[pid].holy_city = Some(holy);
-        self.add_era_score(pid, 3);
+        // MOMENT_RELIGION_FOUNDED is 2; only the world's first is 3.
+        let first_in_world = !self
+            .players
+            .iter()
+            .any(|other| other.id != pid && other.religion.is_some());
+        self.add_era_score(pid, if first_in_world { 3 } else { 2 });
         self.players[pid].religion_beliefs = vec![follower.to_string(), founder.to_string()];
         for cid in holy_site_cities {
             self.cities
@@ -19267,7 +19277,7 @@ impl Game {
             .gp_claimed
             .entry("merchant".to_string())
             .or_insert(0) += 1;
-        self.add_era_score(pid, 2);
+        self.add_era_score(pid, 1);
         self.dedication_trigger(pid, "great_person", 1);
         bump(&mut self.players[pid], "great_people");
         self.apply_great_person_district_effects(pid);
@@ -19496,7 +19506,9 @@ impl Game {
             .gp_claimed
             .entry(kind.to_string())
             .or_insert(0) += 1;
-        self.add_era_score(pid, 2);
+        // MOMENT_GREAT_PERSON_CREATED_GAME_ERA and _PAST_ERA are both 1. Only
+        // the two patronage-over-half moments pay 3, and neither is modelled.
+        self.add_era_score(pid, 1);
         self.dedication_trigger(pid, "great_person", 1);
         bump(&mut self.players[pid], "great_people");
         let activations = spec.charges
@@ -21606,6 +21618,18 @@ impl Game {
     /// Taj Mahal adds one Era Score to Historic Moments whose base value is
     /// at least two. Keeping the rule here prevents individual event sites
     /// from silently forgetting the wonder modifier.
+    /// MOMENT_BARBARIAN_CAMP_DESTROYED is 2, and unlike almost every other
+    /// Moment it carries a window: MinimumGameEra ANCIENT through
+    /// MaximumGameEra MEDIEVAL. Clearing camps stops paying Era Score once the
+    /// world reaches the Renaissance, so late-game camp farming earns nothing.
+    pub(crate) fn barbarian_camp_era_score(&self) -> i64 {
+        if self.world_era <= 2 {
+            2
+        } else {
+            0
+        }
+    }
+
     fn add_era_score(&mut self, pid: usize, amount: i64) {
         let bonus = if amount >= 2 && self.empire_wonder_effect(pid, "historic_moment_bonus") > 0.0
         {
@@ -35328,7 +35352,7 @@ impl Game {
             self.barb_camps.remove(&pos);
             self.map.tiles.get_mut(&pos).unwrap().improvement = None;
             self.players[pid].gold += 50.0;
-            self.add_era_score(pid, 1);
+            self.add_era_score(pid, self.barbarian_camp_era_score());
             bump(&mut self.players[pid], "camps");
             return Ok(());
         }
