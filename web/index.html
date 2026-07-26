@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html class="world-loading">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -37,6 +37,81 @@
     content: ""; position: fixed; inset: 0; z-index: 100; pointer-events: none;
     opacity: .035; mix-blend-mode: soft-light;
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.7'/%3E%3C/svg%3E");
+  }
+  /* Loading and restarting are one deliberate visual state. A supervised
+     restart crosses a process boundary, so the old page and its replacement
+     both show this same veil until the replacement has painted one complete
+     world frame. That keeps default form values, an empty canvas, and stale
+     last-world chrome from ever becoming the handoff screen. */
+  #world-transition {
+    position: fixed; inset: 0; z-index: 1000; display: none; place-items: center;
+    padding: 28px; overflow: hidden; isolation: isolate;
+    color: #edf2e9; background:
+      radial-gradient(circle at 50% 42%, #28483c 0, #132720 25%, transparent 52%),
+      linear-gradient(145deg, #0b1814 0%, #07110f 58%, #040a08 100%);
+    opacity: 1; transition: opacity .22s ease;
+  }
+  html.world-loading #world-transition { display: grid; }
+  html.world-transition-ready #world-transition { opacity: 0; }
+  #world-transition::before {
+    content: ""; position: absolute; inset: -35%; z-index: -1;
+    opacity: .18; transform: rotate(-8deg);
+    background-image:
+      linear-gradient(30deg, transparent 49.7%, #d7b66a22 50%, transparent 50.3%),
+      linear-gradient(150deg, transparent 49.7%, #d7b66a16 50%, transparent 50.3%);
+    background-size: 86px 50px;
+    animation: worldTransitionDrift 18s linear infinite;
+  }
+  .world-transition-card {
+    width: min(520px, 100%); padding: 42px 36px 38px; text-align: center;
+    border: 1px solid #897443; border-radius: 22px;
+    background: linear-gradient(155deg, #142822f2, #091511f7);
+    box-shadow: 0 32px 100px #000c, inset 0 1px #fff2;
+    backdrop-filter: blur(18px);
+  }
+  .world-transition-mark {
+    position: relative; width: 78px; height: 78px; margin: 0 auto 24px;
+    display: grid; place-items: center; border-radius: 50%;
+    color: #172119; background: linear-gradient(145deg, #f2dc9f, #bd8d38);
+    border: 1px solid #ffe8ad; box-shadow: 0 0 0 7px #d7b66a14, 0 12px 34px #0008;
+    font: 700 31px/1 Georgia, serif;
+  }
+  .world-transition-mark::before, .world-transition-mark::after {
+    content: ""; position: absolute; border-radius: 50%; border: 1px solid #d7b66a55;
+  }
+  .world-transition-mark::before {
+    inset: -15px; border-left-color: #f0d28c; animation: worldTransitionOrbit 2.2s linear infinite;
+  }
+  .world-transition-mark::after {
+    inset: -8px; border-right-color: transparent; animation: worldTransitionOrbit 1.45s linear infinite reverse;
+  }
+  .world-transition-kicker {
+    color: #d7b66a; font-size: 9px; font-weight: 850; letter-spacing: .24em;
+    text-transform: uppercase;
+  }
+  #world-transition-title {
+    margin-top: 8px; color: #f5eedc; font: 600 clamp(25px, 5vw, 34px)/1.08 Georgia, serif;
+    letter-spacing: .015em;
+  }
+  #world-transition-summary {
+    min-height: 1.45em; margin-top: 13px; color: #c8d4ce; font-size: 12px;
+  }
+  .world-transition-rule {
+    width: min(250px, 75%); height: 1px; margin: 24px auto 17px;
+    background: linear-gradient(90deg, transparent, #d7b66a, transparent);
+  }
+  #world-transition-stage {
+    color: #91a79e; font-size: 9px; font-weight: 750; letter-spacing: .13em;
+    text-transform: uppercase;
+  }
+  #world-transition-stage::after {
+    content: ""; display: inline-block; width: 1.5em; text-align: left;
+    animation: worldTransitionDots 1.35s steps(4, end) infinite;
+  }
+  @keyframes worldTransitionOrbit { to { transform: rotate(360deg); } }
+  @keyframes worldTransitionDrift { to { transform: translate3d(86px, 50px, 0) rotate(-8deg); } }
+  @keyframes worldTransitionDots {
+    0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75%, 100% { content: "..."; }
   }
   button, select, input { font: inherit; }
   button { -webkit-tap-highlight-color: transparent; }
@@ -2162,10 +2237,51 @@
   }
   @media (prefers-reduced-motion: reduce) {
     .section-label.overlay-return-flash { animation-duration: .01ms; }
+    #world-transition::before, .world-transition-mark::before,
+    .world-transition-mark::after, #world-transition-stage::after { animation: none; }
   }
 </style>
+<script>
+  // Read this before the replacement document can paint. The old page writes
+  // the handoff before asking the supervisor to replace it; the new page then
+  // starts behind the same veil instead of flashing its static default setup.
+  try {
+    const raw = sessionStorage.getItem("civvis-world-transition-v1");
+    const handoff = raw ? JSON.parse(raw) : null;
+    const fresh = handoff && Number.isFinite(handoff.requestedAt) &&
+      Date.now() - handoff.requestedAt < 120000;
+    if (fresh) {
+      window.CIVVIS_RESTART_HANDOFF = handoff;
+      document.documentElement.classList.add("world-restarting");
+    } else if (raw) {
+      sessionStorage.removeItem("civvis-world-transition-v1");
+      sessionStorage.removeItem("civvis-restart-paused-v1");
+    }
+  } catch (e) {
+    try { sessionStorage.removeItem("civvis-world-transition-v1"); } catch (_) {}
+  }
+</script>
 </head>
-<body>
+<body aria-busy="true">
+<div id="world-transition" role="status" aria-live="polite" aria-atomic="true">
+  <div class="world-transition-card">
+    <div class="world-transition-mark" aria-hidden="true">V</div>
+    <div class="world-transition-kicker" id="world-transition-kicker">CIVVIS</div>
+    <h2 id="world-transition-title">Joining the world</h2>
+    <div id="world-transition-summary">Loading the current simulation</div>
+    <div class="world-transition-rule"></div>
+    <div id="world-transition-stage">Connecting</div>
+  </div>
+</div>
+<script>
+  if (window.CIVVIS_RESTART_HANDOFF) {
+    document.getElementById("world-transition-kicker").textContent = "Starting simulation";
+    document.getElementById("world-transition-title").textContent = "Building a new world";
+    document.getElementById("world-transition-summary").textContent =
+      window.CIVVIS_RESTART_HANDOFF.summary || "Applying the selected settings";
+    document.getElementById("world-transition-stage").textContent = "Reconnecting";
+  }
+</script>
 <div id="maparea">
   <canvas id="map"></canvas>
   <div id="cinema-atmosphere" aria-hidden="true"></div>
@@ -2392,10 +2508,11 @@
           // beside the button so the default Pause text is never painted while
           // a paused simulation is coming back as paused.
           try {
-            const paused = sessionStorage.getItem("civvis-restart-paused-v1");
+            const paused = window.CIVVIS_RESTART_HANDOFF?.paused ??
+              (sessionStorage.getItem("civvis-restart-paused-v1") === "1" ? true : null);
             if (paused !== null)
               document.getElementById("specpause").textContent =
-                paused === "1" ? "▶ Resume" : "⏸ Pause";
+                paused ? "▶ Resume" : "⏸ Pause";
           } catch (e) {}
         </script>
       </div>
@@ -2943,12 +3060,18 @@ const INTERFACE_MODE_NOTE = {
   attack: "ATTACK — click the unit or city to strike (Esc to cancel)",
   ranged: "RANGED ATTACK — click a target in range (Esc to cancel)",
 };
-let restartPaused = null;
+let worldTransitionHandoff = window.CIVVIS_RESTART_HANDOFF || null;
+let worldTransitionFinishing = false;
+let worldTransitionGeneration = 0;
+let restartPaused = typeof worldTransitionHandoff?.paused === "boolean"
+  ? worldTransitionHandoff.paused : null;
 try {
-  restartPaused = sessionStorage.getItem("civvis-restart-paused-v1");
-  sessionStorage.removeItem("civvis-restart-paused-v1");
+  if (restartPaused === null) {
+    const storedPause = sessionStorage.getItem("civvis-restart-paused-v1");
+    restartPaused = storedPause === null ? null : storedPause === "1";
+  }
 } catch (e) {}
-let SPEC = false, specPaused = restartPaused === "1", specTimer = null;
+let SPEC = false, specPaused = restartPaused === true, specTimer = null;
 let viewChanging = false;
 let eventLogs = new Map(), nextEventId = 1, lastLeaderByView = new Map(), lastSidePaint = 0;
 // The world and turn of the last state this page drew in full, and the turn
@@ -3583,7 +3706,8 @@ document.addEventListener("fullscreenchange", () => { wakeCinema(); resize(); })
 // seconds, the whole frame, and a different picture in every map style.
 const anim = { moves: new Map(), floats: [], sparks: [], deaths: [],
                claims: [], strike: null, shots: [], bursts: [], motes: [],
-               scars: [], battles: [], lunges: new Map(), blasts: [] };
+               scars: [], battles: [], lunges: new Map(), blasts: [],
+               skyLaunches: [] };
 // Detonations already shown. The engine gives every strike a unique id
 // precisely so a client can answer this without comparing fields: two devices
 // can land on one tile on one turn, and a re-poll of the same state must not
@@ -3692,6 +3816,7 @@ function resetAnim() {
   anim.scars.length = 0;
   anim.battles.length = 0;
   anim.blasts.length = 0;
+  anim.skyLaunches.length = 0;
   seenBlasts = new Set();
   anim.strike = null;
   pendingStrike = null;
@@ -3918,8 +4043,10 @@ function stageAttack(victimPos, dmg, next, prevU, now, isCity) {
   return battle;
 }
 function animateDiff(prev, next) {
-  if (!prev || !prev.units) return;
+  if (!prev) return;
   const now = performance.now();
+  queueSkyLaunches(prev, next, now);
+  if (!prev.units || !next.units) return;
   // A lunge is retired by the unit that owns it when it next draws, so one
   // belonging to a unit that died in the same exchange would otherwise sit in
   // the map forever. Nothing reads it after its duration; sweep it.
@@ -5027,6 +5154,10 @@ function pixelToHex(sx, sy) {
 // ---------------------------------------------------------------- net
 async function fetchJSON(url, opts = {}, timeoutMs = 15000) {
   const controller = new AbortController();
+  const callerSignal = opts.signal;
+  const abortForCaller = () => controller.abort();
+  if (callerSignal?.aborted) controller.abort();
+  else callerSignal?.addEventListener("abort", abortForCaller, {once:true});
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, {...opts, signal: controller.signal});
@@ -5034,6 +5165,7 @@ async function fetchJSON(url, opts = {}, timeoutMs = 15000) {
     return await response.json();
   } finally {
     clearTimeout(timer);
+    callerSignal?.removeEventListener("abort", abortForCaller);
   }
 }
 let firstLoad = true;
@@ -5047,6 +5179,7 @@ let supervisorReloading = false;
 function reloadForSupervisedWorld(instance, seed) {
   if (supervisorReloading) return;
   supervisorReloading = true;
+  setWorldTransitionStage("Opening the new world");
   clearTimeout(supervisorReconnectTimer);
   supervisorReconnectTimer = null;
   // Give each promoted process and same-process successor a distinct URL.
@@ -5080,9 +5213,12 @@ function waitForSupervisedSuccessor(finishedInstance, finishedSeed) {
         reloadForSupervisedWorld(successor.server_instance, successor.seed);
         return;
       }
+      if (successor.supervisor_request)
+        setWorldTransitionStage("Restart accepted · changing worlds");
     } catch (e) {
       // A short connection failure is expected while the listening socket is
       // handed from the completed process to its successor.
+      setWorldTransitionStage("Server handoff · reconnecting");
     } finally {
       supervisorReconnectBusy = false;
     }
@@ -5102,6 +5238,96 @@ function cancelSupervisedSuccessorWatch() {
   supervisorReconnectWanted = false;
   clearTimeout(supervisorReconnectTimer);
   supervisorReconnectTimer = null;
+}
+
+function worldTransitionPending() {
+  return document.documentElement.classList.contains("world-loading");
+}
+
+function setWorldTransitionStage(stage) {
+  const label = document.getElementById("world-transition-stage");
+  if (label && stage) label.textContent = stage;
+}
+
+function showWorldTransition(handoff) {
+  worldTransitionGeneration++;
+  worldTransitionFinishing = false;
+  worldTransitionHandoff = handoff;
+  window.CIVVIS_RESTART_HANDOFF = handoff;
+  document.documentElement.classList.remove("world-transition-ready");
+  document.documentElement.classList.add("world-loading", "world-restarting");
+  document.body.setAttribute("aria-busy", "true");
+  document.getElementById("world-transition-kicker").textContent = "Starting simulation";
+  document.getElementById("world-transition-title").textContent = "Building a new world";
+  document.getElementById("world-transition-summary").textContent =
+    handoff.summary || "Applying the selected settings";
+  setWorldTransitionStage("Saving selected settings");
+  // Stop the long poll that belongs to the old world. Leaving it alive can
+  // consume the browser's one spectator-fetch slot for the full 15-second
+  // request timeout, while the new server waits for this viewer to acknowledge
+  // its first frame. Aborting here lets the successor be acknowledged as soon
+  // as the veil has revealed it.
+  specFetchGeneration++;
+  specFetchAbort?.abort();
+  specFetchAbort = null;
+  specFetching = false;
+  specPending = null;
+  try {
+    sessionStorage.setItem("civvis-world-transition-v1", JSON.stringify(handoff));
+    // Keep the older key for a page crossing onto a runtime from before the
+    // richer handoff existed. The replacement clears both only after painting.
+    sessionStorage.setItem("civvis-restart-paused-v1", handoff.paused ? "1" : "0");
+  } catch (e) {}
+}
+
+function clearWorldTransition() {
+  worldTransitionGeneration++;
+  worldTransitionFinishing = false;
+  worldTransitionHandoff = null;
+  window.CIVVIS_RESTART_HANDOFF = null;
+  document.documentElement.classList.remove(
+    "world-loading", "world-restarting", "world-transition-ready");
+  document.body.setAttribute("aria-busy", "false");
+  try {
+    sessionStorage.removeItem("civvis-world-transition-v1");
+    sessionStorage.removeItem("civvis-restart-paused-v1");
+  } catch (e) {}
+}
+
+// Reveal only the requested successor. An old /state request may finish after
+// the restart click; accepting that frame would dismiss the veil onto exactly
+// the stale, frozen screen this transition exists to hide.
+function finishWorldTransition(st) {
+  if (!worldTransitionPending() || worldTransitionFinishing) return;
+  if (worldTransitionHandoff) {
+    // An in-process /new uses the browser's requested seed exactly. The
+    // supervisor deliberately does not: it launches the next process from its
+    // normalized settings, and that process chooses the seed. Across that
+    // boundary, changed process/world identity is the authoritative match.
+    const successor = worldTransitionHandoff.supervised
+      ? supervisedSuccessorChanged(st, worldTransitionHandoff.finishedInstance,
+                                   worldTransitionHandoff.finishedSeed)
+      : String(st?.seed) === String(worldTransitionHandoff.targetSeed);
+    if (!successor) return;
+  }
+  worldTransitionFinishing = true;
+  setWorldTransitionStage(st?.turn === undefined ? "World ready" : `World ready · turn ${st.turn}`);
+  const generation = worldTransitionGeneration;
+  let fadeStarted = false;
+  const startFade = () => {
+    if (fadeStarted || generation !== worldTransitionGeneration) return;
+    fadeStarted = true;
+    document.documentElement.classList.add("world-transition-ready");
+    setTimeout(() => {
+      if (generation === worldTransitionGeneration) clearWorldTransition();
+    }, 240);
+  };
+  // One frame commits the freshly drawn canvas and HUD under the veil; the
+  // next begins the veil's fade. Background tabs can suspend animation frames
+  // entirely, so the timeout is a fallback: when that tab is shown again the
+  // already-complete DOM and canvas are what its first paint contains.
+  requestAnimationFrame(() => requestAnimationFrame(startFade));
+  setTimeout(startFade, 500);
 }
 
 function syncViewPlayer() {
@@ -6028,13 +6254,31 @@ function paintedQuery() {
 // is holding, so the queue cannot grow behind it.
 let specPending = null;  // fetched, not yet drawn
 let specFetching = false;
+let specFetchAbort = null;
+let specFetchGeneration = 0;
 function specFetch() {
-  if (!SPEC || specFetching || specPending) return;
+  if (!SPEC || specFetching || specPending || worldTransitionPending()) return;
+  const generation = specFetchGeneration;
+  const controller = new AbortController();
+  specFetchAbort = controller;
   specFetching = true;
-  fetchJSON("/state" + paintedQuery())
-    .then(st => { specPending = st; })
-    .catch(() => { tileStore = null; }) // hiccup: take the next state whole
-    .finally(() => { specFetching = false; });
+  fetchJSON("/state" + paintedQuery(), {signal:controller.signal})
+    .then(st => {
+      if (generation === specFetchGeneration && !worldTransitionPending()) specPending = st;
+    })
+    .catch(() => {
+      // The caller abort is the deliberate restart suspension. A timeout from
+      // fetchJSON aborts only its own controller and still drops the tile base,
+      // preserving the old recovery behavior for a genuine network hiccup.
+      if (!controller.signal.aborted && generation === specFetchGeneration)
+        tileStore = null; // hiccup: take the next state whole
+    })
+    .finally(() => {
+      if (generation === specFetchGeneration) {
+        specFetching = false;
+        specFetchAbort = null;
+      }
+    });
 }
 (function specFrame() {
   requestAnimationFrame(specFrame);
@@ -6559,6 +6803,7 @@ function render(st, recordChronicle = true) {
   // successor world painted nothing, and must not claim it did.
   if (st.turn !== undefined && st.seed !== undefined)
     paintedFrame = {seed:st.seed, turn:st.turn};
+  finishWorldTransition(st);
 }
 
 function drawCaptureChoice() {
@@ -11074,6 +11319,47 @@ const SKY_CHAIN = {
   satellite:"launch_earth_satellite", moon:"launch_moon_landing",
   mars:"launch_mars_colony", expedition:"exoplanet_expedition",
 };
+// The standing sky above is permanent state. These three missions also need a
+// beginning: when a completed project first appears between two live frames,
+// its craft leaves Earth before the permanent landing or voyage takes over.
+// Satellite already supplies its own perpetual orbital motion, so it does not
+// need a second launch layer here.
+const SKY_LAUNCH_FLIGHTS = {
+  moon:{project:SKY_CHAIN.moon, duration:2800, body:"moon"},
+  mars:{project:SKY_CHAIN.mars, duration:3600, body:"mars"},
+  expedition:{project:SKY_CHAIN.expedition, duration:3000, body:"exo"},
+};
+function queueSkyLaunches(prev, next, now = performance.now()) {
+  if (!prev || !next || prev.seed !== next.seed || REDUCED_MOTION_QUERY.matches) return;
+  const before = new Map((prev.players || []).map(player => [player.id, player]));
+  for (const player of next.players || []) {
+    if (player.is_minor || player.is_barbarian) continue;
+    const old = before.get(player.id);
+    if (!old) continue;
+    const oldProjects = old.science_projects || [];
+    const newProjects = player.science_projects || [];
+    for (const [mission, flight] of Object.entries(SKY_LAUNCH_FLIGHTS)) {
+      if (oldProjects.includes(flight.project) || !newProjects.includes(flight.project)) continue;
+      // Repeated snapshots of one transition must restart neither the flight
+      // nor its exhaust. A project is permanent, but keeping the guard here
+      // also makes synthetic/recovery state streams harmless.
+      if (anim.skyLaunches.some(launch =>
+          launch.playerId === player.id && launch.mission === mission)) continue;
+      anim.skyLaunches.push({playerId:player.id, mission, t0:now,
+                            duration:flight.duration});
+    }
+  }
+}
+function activeSkyLaunches(now = performance.now()) {
+  for (let index = anim.skyLaunches.length - 1; index >= 0; index--)
+    if (now >= anim.skyLaunches[index].t0 + anim.skyLaunches[index].duration)
+      anim.skyLaunches.splice(index, 1);
+  return anim.skyLaunches;
+}
+function skyLaunchInFlight(playerId, mission, now = performance.now()) {
+  return activeSkyLaunches(now).some(launch =>
+    launch.playerId === playerId && launch.mission === mission);
+}
 // When a body stops being a marble and starts being a place. Its own ground
 // fades in over the painted ball, and the threshold cannot be one number for
 // all three: a tile is about `2 * r / frequency` across, so a world carrying
@@ -11855,24 +12141,32 @@ function drawSkySatellites(crew, camera, radius, centerX, centerY, alpha, now) {
 
 // The expedition is the only one of the four that is still moving, and the
 // engine already knows how far it has come. Its lane is the line from here to
-// there, and the ship sits on it at exactly that fraction.
-function drawSkyExpeditions(crew, exo, radius, centerX, centerY, alpha, now) {
-  if (!crew.length) return;
+// there, and the ship sits on it at exactly that fraction. Launch injection
+// uses this same calculation so the temporary rocket hands off to the real
+// ship without changing lanes.
+function skyExpeditionRoute(player, index, count, exo, radius, centerX, centerY) {
   const dx = exo.x - centerX, dy = exo.y - centerY;
   const span = Math.hypot(dx, dy) || 1;
   const ux = dx / span, uy = dy / span;
   const lane = Math.max(7, radius * .9);
+  const target = +player.victories?.science?.distance_target || 50;
+  const travelled = Math.max(0, Math.min(1, (+player.exoplanet_distance || 0) / target));
+  const offset = (index - (count - 1) / 2) * lane;
+  const ox = -uy * offset, oy = ux * offset;
+  const from = radius * 1.6 + 6, to = span - exo.r - 5;
+  const startX = centerX + ux * from + ox, startY = centerY + uy * from + oy;
+  const endX = centerX + ux * to + ox, endY = centerY + uy * to + oy;
+  return {ux, uy, travelled, startX, startY, endX, endY,
+          shipX:startX + (endX - startX) * travelled,
+          shipY:startY + (endY - startY) * travelled};
+}
+function drawSkyExpeditions(crew, exo, radius, centerX, centerY, alpha, now) {
+  if (!crew.length) return;
   cx.save();
   crew.forEach((player, index) => {
-    const target = +player.victories?.science?.distance_target || 50;
-    const travelled = Math.max(0, Math.min(1, (+player.exoplanet_distance || 0) / target));
-    const offset = (index - (crew.length - 1) / 2) * lane;
-    const ox = -uy * offset, oy = ux * offset;
-    const from = radius * 1.6 + 6, to = span - exo.r - 5;
-    const startX = centerX + ux * from + ox, startY = centerY + uy * from + oy;
-    const endX = centerX + ux * to + ox, endY = centerY + uy * to + oy;
-    const shipX = startX + (endX - startX) * travelled;
-    const shipY = startY + (endY - startY) * travelled;
+    if (skyLaunchInFlight(player.id, "expedition", now)) return;
+    const {ux, uy, travelled, startX, startY, endX, endY, shipX, shipY} =
+      skyExpeditionRoute(player, index, crew.length, exo, radius, centerX, centerY);
     // Zoomed in close, the whole lane is off in the dark and all that reaches
     // the stage is a line leaving the frame with nothing on it. Wait until the
     // ship itself is in the picture; that is the thing worth drawing.
@@ -11906,6 +12200,131 @@ function drawSkyExpeditions(crew, exo, radius, centerX, centerY, alpha, now) {
     cx.closePath(); cx.fill(); cx.stroke();
   });
   cx.restore();
+}
+
+function skyLaunchStart(player, place, radius, centerX, centerY) {
+  const dx = place.x - centerX, dy = place.y - centerY;
+  const span = Math.hypot(dx, dy) || 1, ux = dx / span, uy = dy / span;
+  const offset = (hash2(player.id, 83) - .5) * Math.min(18, radius * .18);
+  return {x:centerX + ux * (radius * 1.04 + 3) - uy * offset,
+          y:centerY + uy * (radius * 1.04 + 3) + ux * offset};
+}
+
+function skyLaunchEnd(launch, player, place, crews,
+                      radius, centerX, centerY) {
+  if (launch.mission === "expedition") {
+    const index = crews.expedition.findIndex(candidate => candidate.id === player.id);
+    if (index >= 0) {
+      const route = skyExpeditionRoute(player, index, crews.expedition.length,
+                                       place, radius, centerX, centerY);
+      return {x:route.shipX, y:route.shipY};
+    }
+  }
+  const crew = launch.mission === "moon" ? crews.moon : crews.mars;
+  const seat = skyLandingSeats(place, crew).find(entry => entry.player.id === player.id);
+  if (seat) return {x:seat.x, y:seat.y};
+  // A stable landing site can be around the back of a close-up world. Aim for
+  // the Earth-facing limb in that case: the rocket disappears behind the body
+  // and the permanent marker remains correctly hidden with its site.
+  const dx = place.x - centerX, dy = place.y - centerY;
+  const span = Math.hypot(dx, dy) || 1;
+  return {x:place.x - dx / span * place.r * .82,
+          y:place.y - dy / span * place.r * .82};
+}
+
+function skyLaunchPoint(start, end, progress, bend) {
+  const eased = easeIO(Math.max(0, Math.min(1, progress)));
+  const dx = end.x - start.x, dy = end.y - start.y;
+  const span = Math.hypot(dx, dy) || 1;
+  const arc = Math.min(span * .18, 46) * Math.sin(Math.PI * eased) * bend;
+  return {x:start.x + dx * eased - dy / span * arc,
+          y:start.y + dy * eased + dx / span * arc};
+}
+
+function drawSkyLaunches(crews, placements, radius, centerX, centerY, now) {
+  const launches = activeSkyLaunches(now);
+  if (!launches.length) return;
+  for (const launch of launches) {
+    const player = (state.players || []).find(candidate => candidate.id === launch.playerId);
+    const flight = SKY_LAUNCH_FLIGHTS[launch.mission];
+    const place = flight && placements.get(flight.body);
+    if (!player || !place) continue;
+    const progress = Math.max(0, Math.min(1, (now - launch.t0) / launch.duration));
+    const start = skyLaunchStart(player, place, radius, centerX, centerY);
+    const end = skyLaunchEnd(launch, player, place, crews,
+                             radius, centerX, centerY);
+    const bend = hash2(player.id, flight.body.length * 17) < .5 ? -.72 : .72;
+    const at = skyLaunchPoint(start, end, progress, bend);
+    if (!skyOnStage(at.x, at.y, 36)) continue;
+    const ahead = skyLaunchPoint(start, end, Math.min(1, progress + .004), bend);
+    const behind = skyLaunchPoint(start, end, Math.max(0, progress - .004), bend);
+    const angle = Math.atan2(ahead.y - behind.y, ahead.x - behind.x);
+    const colour = pcol(player.id), dark = pcol2(player.id);
+    const size = Math.max(3, Math.min(7, radius * .065));
+    cx.save();
+    // The complete flight plan is quiet; the travelled part is a continuous
+    // bright stroke, so the eye can read both destination and motion at once.
+    cx.globalAlpha = .22; cx.strokeStyle = colour; cx.lineWidth = 1;
+    cx.setLineDash([2, 6]); cx.beginPath();
+    for (let step = 0; step <= 32; step++) {
+      const point = skyLaunchPoint(start, end, step / 32, bend);
+      step ? cx.lineTo(point.x, point.y) : cx.moveTo(point.x, point.y);
+    }
+    cx.stroke(); cx.setLineDash([]);
+    cx.globalAlpha = .7; cx.lineWidth = 1.6; cx.beginPath();
+    const travelledSteps = Math.max(1, Math.ceil(progress * 32));
+    for (let step = 0; step <= travelledSteps; step++) {
+      const point = skyLaunchPoint(start, end,
+        progress * step / travelledSteps, bend);
+      step ? cx.lineTo(point.x, point.y) : cx.moveTo(point.x, point.y);
+    }
+    cx.stroke();
+
+    // Ignition expands off Earth's limb; landings answer it with a smaller
+    // arrival ring. The expedition instead hands straight into its live lane.
+    if (progress < .22) {
+      cx.globalAlpha = (1 - progress / .22) * .65;
+      cx.strokeStyle = colour; cx.lineWidth = 1.5;
+      cx.beginPath(); cx.arc(start.x, start.y, size * (1 + progress * 12), 0, 7); cx.stroke();
+    } else if (launch.mission !== "expedition" && progress > .82) {
+      cx.globalAlpha = (progress - .82) / .18 * .52;
+      cx.strokeStyle = colour; cx.lineWidth = 1.2;
+      cx.beginPath(); cx.arc(end.x, end.y, size * (2.2 - progress), 0, 7); cx.stroke();
+    }
+
+    // A flickering plume points opposite the actual curved-flight tangent.
+    const flicker = size * (1.5 + .35 * Math.sin(now / 75 + player.id));
+    cx.translate(at.x, at.y); cx.rotate(angle);
+    const plume = cx.createLinearGradient(-size - flicker, 0, -size * .3, 0);
+    plume.addColorStop(0, "rgba(255,173,69,0)");
+    plume.addColorStop(.62, "rgba(255,176,70,.68)");
+    plume.addColorStop(1, "rgba(255,244,191,.92)");
+    cx.globalAlpha = .9; cx.fillStyle = plume;
+    cx.beginPath(); cx.moveTo(-size * .45, 0);
+    cx.lineTo(-size - flicker, -size * .42);
+    cx.lineTo(-size - flicker * .82, size * .42); cx.closePath(); cx.fill();
+    cx.globalAlpha = 1; cx.fillStyle = colour; cx.strokeStyle = "#071018"; cx.lineWidth = 1;
+    cx.beginPath(); cx.moveTo(size * 1.35, 0);
+    cx.lineTo(-size * .55, -size * .62); cx.lineTo(-size * .2, 0);
+    cx.lineTo(-size * .55, size * .62); cx.closePath(); cx.fill(); cx.stroke();
+    cx.fillStyle = dark;
+    cx.beginPath(); cx.moveTo(-size * .12, -size * .48);
+    cx.lineTo(-size * .75, -size * 1.02); cx.lineTo(-size * .55, -.08); cx.closePath(); cx.fill();
+    cx.beginPath(); cx.moveTo(-size * .12, size * .48);
+    cx.lineTo(-size * .75, size * 1.02); cx.lineTo(-size * .55, .08); cx.closePath(); cx.fill();
+    cx.restore();
+
+    if (size >= 4.2) {
+      cx.save(); cx.globalAlpha = .8; cx.font = "800 7px Inter,sans-serif";
+      cx.textAlign = "center"; cx.textBaseline = "bottom";
+      cx.strokeStyle = "#03070c"; cx.lineWidth = 3;
+      const label = launch.mission === "expedition" ? "EXOPLANET LAUNCH"
+        : `${launch.mission.toUpperCase()} LAUNCH`;
+      cx.strokeText(label, at.x, at.y - size * 1.8);
+      cx.fillStyle = "#e9f4f5"; cx.fillText(label, at.x, at.y - size * 1.8);
+      cx.restore();
+    }
+  }
 }
 
 // A body nobody could name is just a light. The caption carries the name and,
@@ -11953,8 +12372,10 @@ function drawPlanetSky(camera, radius, centerX, centerY) {
   const crews = skyCrews();
   const now = performance.now();
   let exo = null;
+  const placements = new Map();
   for (const body of visibleSkyBodies()) {
     const place = skyPlacement(body, radius, centerX, centerY);
+    placements.set(body.id, place);
     if (body.id === "exo") exo = place;
     if (!skyOnCanvas(place)) continue;
     // Under a pixel a body is noise, so it arrives by fading up rather than by
@@ -11970,7 +12391,9 @@ function drawPlanetSky(camera, radius, centerX, centerY) {
       cx.save(); cx.globalAlpha = alpha; cx.fillStyle = halo;
       cx.beginPath(); cx.arc(place.x, place.y, place.r * 6, 0, 7); cx.fill(); cx.restore();
     }
-    const crew = skyCrewFor(crews, body);
+    const mission = body.id === "moon" ? "moon" : body.id === "mars" ? "mars" : null;
+    const crew = skyCrewFor(crews, body).filter(player =>
+      !mission || !skyLaunchInFlight(player.id, mission, now));
     drawSkyBall(place, alpha);
     // Its own ground, once there is enough of the body on screen to hold it.
     const ground = skyGroundFade(place);
@@ -11992,6 +12415,7 @@ function drawPlanetSky(camera, radius, centerX, centerY) {
   }
   if (exo) drawSkyExpeditions(crews.expedition, exo, radius, centerX, centerY, 1, now);
   drawSkySatellites(crews.satellite, camera, radius, centerX, centerY, 1, now);
+  drawSkyLaunches(crews, placements, radius, centerX, centerY, now);
   // Far enough out, home is a dot among dots and needs saying so. The names
   // out here are the engine's own — its four projects are the Earth satellite,
   // the Moon landing, the Mars colony and the exoplanet expedition — so the
@@ -12006,7 +12430,12 @@ function drawPlanetSky(camera, radius, centerX, centerY) {
 // perfectly still between turns. While the sky is open and something up there
 // is under way, the map keeps painting.
 function planetSkyAnimating() {
-  if (!state || !planetReady() || planetEarthRadius() > SKY_SURFACE) return false;
+  if (!state || !planetReady()) return false;
+  // A launch begins at Earth's limb and must move even while the camera is
+  // still close to home. The permanent orbit/voyage loops remain limited to
+  // the open-sky view as before.
+  if (activeSkyLaunches().length > 0) return true;
+  if (planetEarthRadius() > SKY_SURFACE) return false;
   const crews = skyCrews();
   return crews.satellite.length > 0 || crews.expedition.length > 0;
 }
@@ -20098,6 +20527,21 @@ function selectedSimulationSettings() {
           // A spectated world has nobody to hand a leader or a handicap to.
           ...(gameMode === "ai_sim" ? {} : {civs: leader ? [leader] : [], difficulty})};
 }
+function selectedSimulationSummary() {
+  const selectedText = id => {
+    const select = document.getElementById(id);
+    return (select?.selectedOptions?.[0]?.textContent || select?.value || "").trim();
+  };
+  const mode = document.getElementById("gamemode").value === "ai_sim"
+    ? "AI simulation" : "Single player";
+  // The world-size option already includes its dimensions and seat count; the
+  // compact first clause is enough to identify the choice without turning the
+  // handoff screen into a settings table.
+  const size = selectedText("np").split(" · ")[0];
+  const map = selectedText("maptype").split(" · ")[0];
+  const speed = selectedText("gamespeed").split(" · ")[0];
+  return [mode, size, map, speed].filter(Boolean).join(" · ");
+}
 function simulationSettingsKey(settings) {
   return JSON.stringify(settings);
 }
@@ -20157,9 +20601,25 @@ function newSimulationPayload() {
   return {...selectedSimulationSettings(),
           seed: Math.floor(Math.random() * 1e9), force: true};
 }
+const simulationBusyControls = new Map();
 function setNewSimulationBusy(busy) {
   newSimulationBusy = busy;
-  document.getElementById("restart-sim").disabled = busy;
+  const controls = [
+    ...document.querySelectorAll("#newgame-options select, #newgame-options input, #newgame-options button"),
+    document.getElementById("restart-sim"), document.getElementById("specpause"),
+    document.getElementById("collapsepause"),
+  ].filter(Boolean);
+  if (busy) {
+    for (const control of controls) {
+      if (!simulationBusyControls.has(control))
+        simulationBusyControls.set(control, control.disabled);
+      control.disabled = true;
+    }
+  } else {
+    for (const [control, disabled] of simulationBusyControls) control.disabled = disabled;
+    simulationBusyControls.clear();
+    syncEarthShape();
+  }
 }
 function showNewSimulationError(error, action = "start simulation") {
   const errEl = document.getElementById("err");
@@ -20273,14 +20733,27 @@ async function writeSave() {
 async function startNewSimulation() {
   if (newSimulationBusy) return;
   const wasPaused = specPaused;
+  const payload = {...newSimulationPayload(), paused: wasPaused};
+  const supervised = !!(state && state.supervised) && payload.spectate;
+  const handoff = {
+    requestedAt: Date.now(), paused: wasPaused, targetSeed: payload.seed,
+    supervised,
+    finishedInstance: state?.server_instance ?? null,
+    finishedSeed: state?.seed ?? null,
+    summary: selectedSimulationSummary(),
+  };
   setNewSimulationBusy(true);
+  showWorldTransition(handoff);
   try {
-    const payload = {...newSimulationPayload(), paused: wasPaused};
+    // A change event stages settings immediately. Let every already-issued
+    // settings write finish before the process handoff so none can arrive late
+    // and accidentally queue itself on the successor as *its* next game.
+    await settingsStageChain.catch(() => {});
+    setWorldTransitionStage("Starting the selected world");
     // The supervisor owns the AI exhibition — each simulation is a fresh
     // process on freshly built code. A single-player game is not part of that
     // cycle: it takes over this process in place, so sitting down to play
     // starts immediately instead of waiting out a process handoff.
-    const supervised = !!(state && state.supervised) && payload.spectate;
     sel = null; selCity = null;
     clearTimeout(specTimer);
     if (supervised) {
@@ -20292,9 +20765,7 @@ async function startNewSimulation() {
       if (requested.error) throw new Error(requested.error);
       const respawn = document.getElementById("respawn");
       if (respawn) respawn.textContent = "restarting sim on existing code";
-      try {
-        sessionStorage.setItem("civvis-restart-paused-v1", wasPaused ? "1" : "0");
-      } catch (e) {}
+      setWorldTransitionStage("Restart accepted · changing worlds");
       waitForSupervisedSuccessor(finishedInstance, finishedSeed);
       return;
     }
@@ -20311,6 +20782,8 @@ async function startNewSimulation() {
     scheduleSpec(state);
     setNewSimulationBusy(false);
   } catch (error) {
+    cancelSupervisedSuccessorWatch();
+    clearWorldTransition();
     specPaused = wasPaused;
     updateSpecPauseButtons();
     reportSpecStatus();

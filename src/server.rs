@@ -4180,7 +4180,10 @@ mod tests {
             .split_once("function specFetch() {")
             .expect("the spectator's fetch")
             .1;
-        assert!(fetching.contains("if (!SPEC || specFetching || specPending) return;"));
+        assert!(fetching.contains(
+            "if (!SPEC || specFetching || specPending || worldTransitionPending()) return;"
+        ));
+        assert!(fetching.contains("generation === specFetchGeneration"));
     }
 
     fn current() -> Params {
@@ -4687,9 +4690,19 @@ mod tests {
             .contains("const payload = {...newSimulationPayload(), paused: wasPaused}"));
         assert!(EMBEDDED_INDEX.contains("setPace({paused: wasPaused})"));
         assert!(EMBEDDED_INDEX.contains(
-            "sessionStorage.setItem(\"civvis-restart-paused-v1\", wasPaused ? \"1\" : \"0\")"
+            "sessionStorage.setItem(\"civvis-restart-paused-v1\", handoff.paused ? \"1\" : \"0\")"
         ));
-        assert!(EMBEDDED_INDEX.contains("specPaused = restartPaused === \"1\""));
+        assert!(EMBEDDED_INDEX.contains("<html class=\"world-loading\">"));
+        assert!(EMBEDDED_INDEX.contains("id=\"world-transition\""));
+        assert!(EMBEDDED_INDEX.contains("sessionStorage.setItem(\"civvis-world-transition-v1\""));
+        assert!(EMBEDDED_INDEX.contains("await settingsStageChain.catch(() => {})"));
+        assert!(EMBEDDED_INDEX.contains("specFetching || specPending || worldTransitionPending()"));
+        assert!(EMBEDDED_INDEX.contains("specFetchAbort?.abort()"));
+        assert!(EMBEDDED_INDEX.contains("worldTransitionHandoff.supervised"));
+        assert!(EMBEDDED_INDEX
+            .contains("String(st?.seed) === String(worldTransitionHandoff.targetSeed)"));
+        assert!(EMBEDDED_INDEX.contains("finishWorldTransition(st);"));
+        assert!(EMBEDDED_INDEX.contains("setTimeout(startFade, 500)"));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/next-game-settings\""));
         assert!(EMBEDDED_INDEX.contains("with selected settings"));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/supervisor-new\""));
