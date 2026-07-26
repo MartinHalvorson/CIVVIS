@@ -557,6 +557,15 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                 output.add(g.city_yields(cid));
             }
             let military = g.military_power(o.id).round() as i64;
+            // Founding is permanent history, but the standings marker is
+            // about a faith that is still present now. Compute that from the
+            // whole current world so fogged or merely remembered cities do
+            // not make the browser hide a public religion marker.
+            let founded_religion_exists = o.religion.as_deref().is_some_and(|religion| {
+                g.cities
+                    .values()
+                    .any(|city| g.city_religion(city) == Some(religion))
+            });
             json!({
                 "id": o.id, "civ": o.civ,
                 "met": true,
@@ -608,6 +617,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                 "gold_per_turn": round1(o.gold_per_turn),
                 "bankruptcy_amenity_penalty": o.bankruptcy_amenity_penalty,
                 "faith": round1(o.faith),
+                "founded_religion_exists": founded_religion_exists,
                 "yields": yields_json(&output),
                 "military": military,
                 "team": o.team,
@@ -1859,6 +1869,51 @@ mod tests {
         ] {
             assert!(victories[victory]["progress"].is_number(), "{victory}");
         }
+    }
+
+    #[test]
+    fn observation_marks_only_founded_religions_still_followed_by_a_city() {
+        let mut game = Game::new_full(3, 22, 16, 81_005, 120, 0, false);
+        for pid in 0..3 {
+            let settler_position = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find_map(|unit| {
+                    let unit = &game.units[&unit];
+                    (unit.kind == "settler").then_some(unit.pos)
+                })
+                .unwrap();
+            game.found_city_for(pid, settler_position, None);
+        }
+
+        game.players[0].religion = Some("Living Faith".to_string());
+        game.players[1].religion = Some("Extinct Faith".to_string());
+        let living_city = game.player_city_ids(0)[0];
+        let city = game.cities.get_mut(&living_city).unwrap();
+        city.atheist_pressure = 0.0;
+        city.pressure.insert("Living Faith".to_string(), 100.0);
+
+        let observed = observation_spectator(&game, 0);
+        let marker = |pid| {
+            observed["players"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|player| player["id"] == json!(pid))
+                .unwrap()["founded_religion_exists"]
+                .clone()
+        };
+        assert_eq!(marker(0), json!(true), "a followed founded faith is marked");
+        assert_eq!(
+            marker(1),
+            json!(false),
+            "an extinct founded faith is not marked"
+        );
+        assert_eq!(
+            marker(2),
+            json!(false),
+            "a civilization that never founded is not marked"
+        );
     }
 
     /// The victory ribbon carries the researched technology and civic counts
