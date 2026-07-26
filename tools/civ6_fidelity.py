@@ -91,6 +91,10 @@ TABLE_KEYS = {
     "UnitUpgrades": ("Unit", "UpgradeUnit"),
     "Technologies": "TechnologyType",
     "Civics": "CivicType",
+    "Technologies_XP2": "TechnologyType",
+    "Civics_XP2": "CivicType",
+    "TechnologyRandomCosts": ("TechnologyType", "Cost"),
+    "CivicRandomCosts": ("CivicType", "Cost"),
     "Buildings": "BuildingType",
     "Districts": "DistrictType",
     "TechnologyPrereqs": ("Technology", "PrereqTech"),
@@ -486,6 +490,16 @@ def project_techs(database: Database) -> dict[str, dict]:
         prereqs.setdefault(slug(row["Technology"], "TECH_"), set()).add(
             slug(row["PrereqTech"], "TECH_")
         )
+    randomized = {
+        slug(row["TechnologyType"], "TECH_")
+        for row in database.rows("Technologies_XP2")
+        if truthy(row.get("RandomPrereqs"))
+    }
+    random_costs: dict[str, list] = {}
+    for row in database.rows("TechnologyRandomCosts"):
+        random_costs.setdefault(slug(row["TechnologyType"], "TECH_"), []).append(
+            number(row.get("Cost"))
+        )
     projected = {}
     for row in database.rows("Technologies"):
         name = slug(row["TechnologyType"], "TECH_")
@@ -494,6 +508,8 @@ def project_techs(database: Database) -> dict[str, dict]:
             "cost": number(row.get("Cost")),
             "era": ERAS.index(era) if era in ERAS else -1,
             "requires": prereqs.get(name, set()),
+            "random_prereqs": name in randomized,
+            "random_costs": sorted(random_costs.get(name, [])),
         }
     return projected
 
@@ -504,6 +520,16 @@ def project_civics(database: Database) -> dict[str, dict]:
         prereqs.setdefault(slug(row["Civic"], "CIVIC_"), set()).add(
             slug(row["PrereqCivic"], "CIVIC_")
         )
+    randomized = {
+        slug(row["CivicType"], "CIVIC_")
+        for row in database.rows("Civics_XP2")
+        if truthy(row.get("RandomPrereqs"))
+    }
+    random_costs: dict[str, list] = {}
+    for row in database.rows("CivicRandomCosts"):
+        random_costs.setdefault(slug(row["CivicType"], "CIVIC_"), []).append(
+            number(row.get("Cost"))
+        )
     projected = {}
     for row in database.rows("Civics"):
         name = slug(row["CivicType"], "CIVIC_")
@@ -512,6 +538,8 @@ def project_civics(database: Database) -> dict[str, dict]:
             "cost": number(row.get("Cost")),
             "era": ERAS.index(era) if era in ERAS else -1,
             "requires": prereqs.get(name, set()),
+            "random_prereqs": name in randomized,
+            "random_costs": sorted(random_costs.get(name, [])),
         }
     return projected
 
@@ -1672,6 +1700,8 @@ def ours_tree(name: str, key: str) -> dict[str, dict]:
             "cost": entry.get("cost", 0),
             "era": entry.get("era", -1),
             "requires": set(entry.get("requires", [])),
+            "random_prereqs": entry.get("random_prereqs", False),
+            "random_costs": sorted(entry.get("random_costs", [])),
         }
     return out
 

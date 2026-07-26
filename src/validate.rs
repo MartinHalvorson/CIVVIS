@@ -266,6 +266,46 @@ fn trees(check: &mut Check) {
         let tree = tree.clone();
         for (id, spec) in &tree {
             let subject = format!("{tree_name}/{id}");
+            if spec.random_prereqs {
+                if !spec.requires.is_empty() {
+                    check.error(
+                        &subject,
+                        "has randomized prerequisites and fixed prerequisites at the same time",
+                    );
+                }
+                if spec.repeatable && !spec.random_costs.is_empty() {
+                    check.error(&subject, "is repeatable but carries randomized column costs");
+                } else if !spec.repeatable
+                    && !spec.random_costs.is_empty()
+                    && spec.random_costs.len() != 2
+                {
+                    check.error(
+                        &subject,
+                        format!(
+                            "has {} randomized costs instead of the two Future-era columns",
+                            spec.random_costs.len()
+                        ),
+                    );
+                }
+                if spec.random_costs.iter().any(|cost| *cost <= 0.0)
+                    || spec.random_costs.windows(2).any(|pair| pair[0] >= pair[1])
+                {
+                    check.error(&subject, "has non-positive or unordered randomized costs");
+                }
+                if let Some(first) = spec.random_costs.first() {
+                    if *first != spec.cost {
+                        check.error(
+                            &subject,
+                            "base cost is not the first randomized-column cost",
+                        );
+                    }
+                }
+            } else if !spec.random_costs.is_empty() {
+                check.error(
+                    &subject,
+                    "carries randomized costs without randomized prerequisites",
+                );
+            }
             for prerequisite in &spec.requires {
                 if !tree.contains_key(prerequisite) {
                     check.error(
@@ -310,6 +350,39 @@ fn trees(check: &mut Check) {
                         format!("unlocks {} {:?}, which does not exist", unlock.kind, unlock.id),
                     );
                 }
+            }
+        }
+        let randomized: Vec<_> = tree
+            .iter()
+            .filter(|(_, spec)| spec.random_prereqs)
+            .collect();
+        if !randomized.is_empty() {
+            let eras: BTreeSet<_> = randomized.iter().map(|(_, spec)| spec.era).collect();
+            let terminals = randomized
+                .iter()
+                .filter(|(_, spec)| spec.repeatable)
+                .count();
+            let gateways = randomized
+                .iter()
+                .filter(|(_, spec)| !spec.repeatable && spec.random_costs.is_empty())
+                .count();
+            let columns = randomized
+                .iter()
+                .filter(|(_, spec)| spec.random_costs.len() == 2)
+                .count();
+            if eras.len() != 1 {
+                check.error(
+                    format!("{tree_name}/randomized"),
+                    "randomized nodes span more than one era",
+                );
+            }
+            if terminals != 1 || gateways > 1 || columns < 2 {
+                check.error(
+                    format!("{tree_name}/randomized"),
+                    format!(
+                        "needs one repeatable terminal, at most one gateway, and at least two column nodes; found {terminals}, {gateways}, and {columns}"
+                    ),
+                );
             }
         }
         // A prerequisite cycle would hang any traversal of the tree.
@@ -883,5 +956,27 @@ mod tests {
             .any(|finding| finding.subject == "difficulties" && finding.severity == Severity::Error));
         assert!(findings.iter().any(|finding| finding.subject == "difficulties/king"
             && finding.message.contains("trebuchet_of_theseus")));
+    }
+
+    #[test]
+    fn malformed_randomized_research_metadata_is_an_error() {
+        let mut rules = Rules::embedded();
+        let advanced_ai = rules.techs.get_mut("advanced_ai").unwrap();
+        advanced_ai.requires.push("robotics".to_string());
+        advanced_ai.random_costs = vec![2300.0, 2200.0];
+        rules.civics.get_mut("future_civic").unwrap().repeatable = false;
+        let findings = validate(&rules);
+        assert!(findings.iter().any(|finding| {
+            finding.subject == "techs/advanced_ai"
+                && finding.message.contains("fixed prerequisites")
+        }));
+        assert!(findings.iter().any(|finding| {
+            finding.subject == "techs/advanced_ai"
+                && finding.message.contains("unordered randomized costs")
+        }));
+        assert!(findings.iter().any(|finding| {
+            finding.subject == "civics/randomized"
+                && finding.message.contains("one repeatable terminal")
+        }));
     }
 }
