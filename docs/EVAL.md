@@ -685,3 +685,52 @@ advanced against itself and says nothing about either name
 collapse warning is the load-bearing half: a missing artifact is only a
 problem when it makes two entrants the same agent, and that is precisely
 the case a win rate cannot show you.
+
+## 2026-07-26 — a duel never reaches the macro search
+
+`ai_eval strategic strategic_score --pairs 20 --seed 21000 --turns 180`
+returned **20 neutral splits on 20 maps** — not parity but bit-identical
+play, which is what a value net that never runs looks like. The cause is
+structural, not statistical: `review` answers from three priors before the
+economic rollouts, and in a two-player game `duel_religious_race` is true
+for essentially the whole game. `StrategicAi` in a duel is `AdvancedAi`
+hard-targeted at Religion.
+
+`StrategicAi` now keeps a `ReviewCensus` — reviews resolved by each prior
+versus reviews that reached the rollouts — exposed through
+`Ai::review_census()` and reported by `ai_eval`:
+
+```
+Macro search exposure (reviews that reached the rollouts):
+  strategic   0/20 (0%) reached the rollouts; priors: duel-religion 8,
+              urgent-counter 12, irreversible-religion 0
+  strategic_score 0/20 (0%) ... (identical)
+  warning: neither entrant reached its macro search, so this run compares
+  priors and the scripted parent, not search or evaluator
+```
+
+Two consequences for the recorded baselines above:
+
+1. **Every two-player `strategic` number measures a forced religious lane,
+   not macro search.** The 2026-07-24 duel results (32/50 and the 31/50
+   holdout, both with ~30 religious wins) are real improvements to the
+   *priors* — which is what changed in that batch — but they are not
+   evidence about rollout routing or about the evaluator. The four-player
+   rows in that same entry are the ones that measured search.
+2. `urgent_counter` fires on 12 of 20 duel reviews on its own, so removing
+   only the religious prior would still leave the search mostly bypassed.
+
+At four players the search does run — 26/44 (59%) and 22/43 (51%) exposure
+on `--pairs 3 --players 4 --seed 11000 --turns 200` — and the A/B is
+*still* exactly neutral: `--pairs 10` at those settings gave 10 neutral
+splits on 10 maps. So with the search running and a calibrated net loaded
+(grouped-holdout test BCE 0.4058 vs 0.5636 constant), the net never changed
+a lane choice. `VALUE_NET_WEIGHT = 0.25` regularizes the learned estimate
+toward score share hard enough that the blended argmax appears to equal the
+score-share argmax on every review observed so far. That is the next thing
+to measure directly, and it is a separate question from calibration: the
+evaluator is good and inert.
+
+Recommended settings for anything that claims to measure this agent's
+search or evaluator: `--players 4` at minimum, and read the exposure line
+before the win rate.

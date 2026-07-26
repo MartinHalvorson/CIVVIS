@@ -92,6 +92,15 @@ pub trait Ai {
     fn plan_report(&self) -> Option<PlanReport> {
         None
     }
+
+    /// How many of this agent's macro reviews reached its search, for
+    /// evaluators only. An agent that searches must be able to say when it
+    /// did not: a cheap prior answering every review leaves a scripted
+    /// agent under a searching agent's name, and a win rate cannot tell the
+    /// difference. Agents without a search return `None`.
+    fn review_census(&self) -> Option<crate::strategic::ReviewCensus> {
+        None
+    }
 }
 
 impl<T: Ai + ?Sized> Ai for Box<T> {
@@ -105,6 +114,10 @@ impl<T: Ai + ?Sized> Ai for Box<T> {
 
     fn plan_report(&self) -> Option<PlanReport> {
         (**self).plan_report()
+    }
+
+    fn review_census(&self) -> Option<crate::strategic::ReviewCensus> {
+        (**self).review_census()
     }
 }
 

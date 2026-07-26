@@ -39,10 +39,77 @@ pub struct CounterfactualValueSample {
     pub target: Option<VictoryTarget>,
 }
 
+/// Which branch of `review` produced a lane, recorded so a run can say
+/// whether the macro search ran at all.
+///
+/// Three priors deliberately answer before the economic rollouts, because a
+/// bounded projection cannot discover an irreversible or already-decided
+/// race in time. Each is cheap and each is correct in isolation — but a
+/// prior that fires on every review turns the search agent into a scripted
+/// one wearing its name, and nothing in a win rate distinguishes the two.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReviewPath {
+    /// Two living majors and an open religious race: the lane is forced.
+    DuelReligion,
+    /// A rival is about to win; the counter-target is read off the
+    /// victory screen rather than projected.
+    UrgentCounter,
+    /// Prophet investment already made and a slot still open.
+    IrreversibleReligion,
+    /// The economic rollouts actually ran and the evaluator was consulted.
+    Rollouts,
+}
+
+/// How a run's reviews were resolved, aggregated over one agent's lifetime.
+///
+/// `rollouts` is the load-bearing number: it counts the reviews where the
+/// value evaluator was consulted, so `0` says the run measured priors and
+/// the scripted parent, whatever the entrant was called.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ReviewCensus {
+    pub duel_religion: u32,
+    pub urgent_counter: u32,
+    pub irreversible_religion: u32,
+    pub rollouts: u32,
+}
+
+impl ReviewCensus {
+    pub fn total(&self) -> u32 {
+        self.duel_religion + self.urgent_counter + self.irreversible_religion + self.rollouts
+    }
+
+    /// Accumulate another agent's reviews into this total.
+    pub fn merge(&mut self, other: ReviewCensus) {
+        self.duel_religion += other.duel_religion;
+        self.urgent_counter += other.urgent_counter;
+        self.irreversible_religion += other.irreversible_religion;
+        self.rollouts += other.rollouts;
+    }
+
+    fn record(&mut self, path: ReviewPath) {
+        match path {
+            ReviewPath::DuelReligion => self.duel_religion += 1,
+            ReviewPath::UrgentCounter => self.urgent_counter += 1,
+            ReviewPath::IrreversibleReligion => self.irreversible_religion += 1,
+            ReviewPath::Rollouts => self.rollouts += 1,
+        }
+    }
+
+    /// Share of reviews that reached the evaluator, or `None` when the agent
+    /// never reviewed at all (a game too short to reach `FIRST_REVIEW_TURN`).
+    pub fn search_exposure(&self) -> Option<f64> {
+        match self.total() {
+            0 => None,
+            total => Some(self.rollouts as f64 / total as f64),
+        }
+    }
+}
+
 pub struct StrategicAi {
     inner: AdvancedAi,
     weights: Weights,
     net: Option<ValueNet>,
+    census: ReviewCensus,
     pub review_every: u32,
     pub horizon: u32,
     next_review: u32,
@@ -76,6 +143,7 @@ impl StrategicAi {
             inner: AdvancedAi::with_weights(weights.clone()),
             weights,
             net,
+            census: ReviewCensus::default(),
             review_every: 40,
             horizon: 40,
             // The opening book plays itself; the first lane choice lands
@@ -543,14 +611,27 @@ impl StrategicAi {
     /// rollouts are seed-free clones and ties keep declaration order; an explicit
     /// lane must clear the adaptive value by `TARGET_COMMITMENT_MARGIN`.
     pub fn review(&self, g: &Game, pid: usize) -> Option<VictoryTarget> {
+        self.review_detailed(g, pid).0
+    }
+
+    /// `review`, plus which branch answered.
+    ///
+    /// Callers that record evidence need the second half: a lane chosen by a
+    /// prior and a lane chosen by forty rounds of projection are the same
+    /// value with entirely different provenance, and only the second one is
+    /// evidence about the search or the evaluator.
+    pub fn review_detailed(&self, g: &Game, pid: usize) -> (Option<VictoryTarget>, ReviewPath) {
         if Self::duel_religious_race(g, pid) {
-            return Some(VictoryTarget::Religion);
+            return (Some(VictoryTarget::Religion), ReviewPath::DuelReligion);
         }
         if let Some(counter) = self.urgent_counter_target(g, pid) {
-            return Some(counter);
+            return (Some(counter), ReviewPath::UrgentCounter);
         }
         if Self::viable_religious_commitment(g, pid) {
-            return Some(VictoryTarget::Religion);
+            return (
+                Some(VictoryTarget::Religion),
+                ReviewPath::IrreversibleReligion,
+            );
         }
         let mut values = vec![(self.rollout(g, pid, None), None)];
         for target in VictoryTarget::ALL
@@ -559,7 +640,12 @@ impl StrategicAi {
         {
             values.push((self.rollout(g, pid, Some(target)), Some(target)));
         }
-        self.choose_rollout_target(&values)
+        (self.choose_rollout_target(&values), ReviewPath::Rollouts)
+    }
+
+    /// How this agent's reviews were resolved so far.
+    pub fn review_census(&self) -> ReviewCensus {
+        self.census
     }
 }
 
@@ -576,9 +662,17 @@ impl Ai for StrategicAi {
             // Public victory threats are cheap to inspect every turn and may
             // end the game before the next expensive six-lane review. Reuse
             // the already-computed counter rather than running rollouts.
-            let target = counter
-                .map(|(_, target)| Some(target))
-                .unwrap_or_else(|| self.review(g, pid));
+            let target = match counter {
+                Some((_, target)) => {
+                    self.census.record(ReviewPath::UrgentCounter);
+                    Some(target)
+                }
+                None => {
+                    let (target, path) = self.review_detailed(g, pid);
+                    self.census.record(path);
+                    target
+                }
+            };
             match (target, counter) {
                 (Some(target), Some((rival, _)))
                     if self.inner.victory_target() != Some(target)
@@ -602,6 +696,10 @@ impl Ai for StrategicAi {
 
     fn plan_report(&self) -> Option<PlanReport> {
         self.inner.plan_report()
+    }
+
+    fn review_census(&self) -> Option<ReviewCensus> {
+        Some(self.census)
     }
 }
 
@@ -704,6 +802,93 @@ mod tests {
 
         let expected = score_share + 0.25 * (0.5 - score_share);
         assert!((strategic.position_value(&game, 0) - expected).abs() < 1e-12);
+    }
+
+    /// A two-player game with religion enabled is answered by the duel
+    /// prior, so the economic rollouts — and the value evaluator with them —
+    /// never run. Every published duel number for this agent measures a
+    /// forced religious lane rather than macro search, which is exactly what
+    /// the census exists to say out loud.
+    #[test]
+    fn a_duel_never_reaches_the_rollouts() {
+        let mut g = Game::new(2, 20, 14, 21, 200, 0);
+        assert!(g.victory_conditions.religious);
+        let mut strategic = StrategicAi::new();
+        strategic.horizon = 4;
+        let mut ais = BasicAi::fleet(&g);
+        for _ in 0..70 {
+            if g.winner.is_some() {
+                break;
+            }
+            for pid in 0..g.players.len() {
+                if g.winner.is_some() {
+                    break;
+                }
+                if pid == 0 {
+                    strategic.take_turn(&mut g, pid);
+                } else {
+                    ais[pid].take_turn(&mut g, pid);
+                }
+            }
+        }
+        let census = strategic.review_census();
+        assert!(census.total() > 0, "the agent must have reviewed at all");
+        assert_eq!(
+            census.rollouts, 0,
+            "a duel reached the rollouts {} times: {census:?}",
+            census.rollouts
+        );
+        assert_eq!(census.search_exposure(), Some(0.0));
+        assert_eq!(strategic.current_target(), Some(VictoryTarget::Religion));
+    }
+
+    /// With religion switched off the duel prior cannot fire, so the same
+    /// two-player position does reach the search. This is the control that
+    /// keeps the test above a statement about the prior rather than about
+    /// two-player games.
+    #[test]
+    fn a_duel_without_a_religious_race_does_reach_the_rollouts() {
+        let mut g = Game::new(2, 20, 14, 21, 200, 0);
+        g.victory_conditions.religious = false;
+        let mut strategic = StrategicAi::new();
+        strategic.horizon = 3;
+        let mut ais = BasicAi::fleet(&g);
+        for _ in 0..40 {
+            if g.winner.is_some() {
+                break;
+            }
+            for pid in 0..g.players.len() {
+                if g.winner.is_some() {
+                    break;
+                }
+                if pid == 0 {
+                    strategic.take_turn(&mut g, pid);
+                } else {
+                    ais[pid].take_turn(&mut g, pid);
+                }
+            }
+        }
+        let census = strategic.review_census();
+        assert!(
+            census.rollouts > 0,
+            "the search never ran without a religious race: {census:?}"
+        );
+        assert_eq!(census.duel_religion, 0);
+    }
+
+    /// An agent with no search reports none, so an evaluator can tell
+    /// "searched zero times" from "has nothing to search".
+    #[test]
+    fn a_scripted_agent_reports_no_census() {
+        assert_eq!(BasicAi::new().review_census(), None);
+        assert_eq!(
+            crate::ai::AdvancedAi::new().review_census(),
+            None,
+            "the scripted parent has no macro search of its own"
+        );
+        // Reached through the trait, where an evaluator sees it: the
+        // inherent method returns the census itself.
+        assert!(Ai::review_census(&StrategicAi::new()).is_some());
     }
 
     /// The review must pick a lane deterministically and commit it to the
