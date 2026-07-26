@@ -434,7 +434,7 @@
     ]
   },
   "Portugal": {
-    "leader": "John II",
+    "leader": "João III",
     "ability": "casa_da_india",
     "agenda": "navigators_school",
     "effects": {
@@ -1099,14 +1099,14 @@
     ]
   },
   "India": {
-    "leader": "Ashoka",
-    "ability": "edicts_of_dharma",
-    "agenda": "pillars_of_ashoka",
+    "leader": "Gandhi",
+    "ability": "dharma",
+    "agenda": "peacekeeper",
     "effects": {
       "city_faith": 1,
       "city_food": 1
     },
-    "note": "Edicts of Dharma: +1 faith and +1 food in every city",
+    "note": "Dharma: +1 faith and +1 food in every city",
     "traits": [
       "religious_major_civ"
     ]
@@ -1418,6 +1418,75 @@
     "note": "Mana: +1 culture and +1 food in every city",
     "traits": [
       "cultural_major_civ"
+    ]
+  },
+  "Babylon": {
+    "leader": "Hammurabi",
+    "ability": "enuma_anu_enlil",
+    "agenda": "cradle_of_civilization",
+    "effects": {
+      "city_science": 1
+    },
+    "note": "Enuma Anu Enlil: +1 science in every city",
+    "traits": [
+      "science_major_civ"
+    ],
+    "start_bias": {
+      "river_tier": 3
+    }
+  },
+  "Cree": {
+    "leader": "Poundmaker",
+    "ability": "nihithaw",
+    "agenda": "iron_confederacy",
+    "effects": {
+      "city_food": 1,
+      "city_gold": 1
+    },
+    "note": "Nihithaw: +1 food and +1 gold in every city",
+    "traits": [
+      "expansionist",
+      "pursue_diplomatic_victory"
+    ]
+  },
+  "Gran Colombia": {
+    "leader": "Simón Bolívar",
+    "ability": "ejercito_patriota",
+    "agenda": "carabobo",
+    "effects": {
+      "combat_strength": 2,
+      "unit_xp_pct": 25
+    },
+    "note": "Ejercito Patriota: +2 combat strength and +25% combat experience",
+    "traits": [
+      "aggressive_military",
+      "expansionist"
+    ]
+  },
+  "Indonesia": {
+    "leader": "Gitarja",
+    "ability": "great_nusantara",
+    "agenda": "archipelagic_state",
+    "effects": {
+      "city_faith": 1,
+      "city_food": 1
+    },
+    "note": "Great Nusantara: +1 faith and +1 food in every city",
+    "traits": [
+      "religious_major_civ"
+    ]
+  },
+  "Macedon": {
+    "leader": "Alexander",
+    "ability": "hellenistic_fusion",
+    "agenda": "short_life_of_glory",
+    "effects": {
+      "unit_production_pct": 20,
+      "unit_xp_pct": 25
+    },
+    "note": "Hellenistic Fusion: +20% production toward units and +25% combat experience",
+    "traits": [
+      "aggressive_military"
     ]
   }
 }
