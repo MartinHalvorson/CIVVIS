@@ -45406,6 +45406,62 @@ impl Game {
 }
 
 #[cfg(test)]
+mod dedication_era_tests {
+    use super::*;
+
+    #[test]
+    fn every_dedication_opens_in_the_eras_its_commemoration_ships_for() {
+        // CommemorationTypes carries MinimumGameEra/MaximumGameEra per
+        // category, and Policies_XP1 carries the same window again for each
+        // Golden Age card. The two agree wherever both exist -- Free Enquiry
+        // and SCIENTIFIC both Classical-Medieval, To Arms and MILITARY both
+        // Industrial-Atomic, and four more -- which is what makes these
+        // windows trustworthy rather than inferred.
+        let expected: &[(&str, usize, usize)] = &[
+            ("free_inquiry", 1, 2),          // SCIENTIFIC / POLICY_FREE_ENQUIRY
+            ("pen_brush_and_voice", 1, 2),   // CULTURAL
+            ("monumentality", 1, 3),         // INFRASTRUCTURE / POLICY_MONUMENTALITY
+            ("exodus_of_the_evangelists", 1, 3), // RELIGIOUS / same-named card
+            ("hic_sunt_dracones", 3, 5),     // EXPLORATION
+            ("reform_the_coinage", 3, 5),    // ECONOMIC / same-named card
+            ("heartbeat_of_steam", 4, 6),    // INDUSTRIAL / same-named card
+            ("to_arms", 4, 6),               // MILITARY / POLICY_TO_ARMS
+            ("wish_you_were_here", 6, 8),    // TOURISM / same-named card
+            ("bodyguard_of_lies", 6, 8),     // ESPIONAGE
+            ("sky_and_stars", 6, 8),         // POLICY_SKY_AND_STARS
+            ("automaton_warfare", 7, 8),     // AUTOMATON
+        ];
+        let mut game = Game::new_full(1, 24, 16, 22_508, 120, 0, false);
+        assert_eq!(game.rules.dedications.len(), expected.len());
+        game.players[0].dedication_choices = 1;
+
+        for &(name, first, last) in expected {
+            let spec = &game.rules.dedications[name];
+            assert_eq!((spec.eras.0, spec.eras.1), (first, last), "{name}");
+        }
+
+        // And the windows are what the chooser actually offers: no dedication
+        // appears before its first era or after its last.
+        for era in 0..=8 {
+            game.world_era = era;
+            let offered = game.available_dedications(0);
+            for &(name, first, last) in expected {
+                let inside = era >= first && era <= last;
+                assert_eq!(
+                    offered.contains(&name.to_string()),
+                    inside,
+                    "{name} in era {era}"
+                );
+            }
+        }
+
+        // The Ancient era offers nothing at all -- every category starts at
+        // Classical or later, so the first Age is never a dedication choice.
+        game.world_era = 0;
+        assert!(game.available_dedications(0).is_empty());
+    }
+}
+
 mod team_tests {
     use super::*;
 
