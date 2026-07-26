@@ -40,13 +40,10 @@
   }
   button, select, input { font: inherit; }
   button { -webkit-tap-highlight-color: transparent; }
-  /* Two instruments, two edges. The standings are the map's masthead and run
-     across the whole top; the victory tracker and the world minimap share the
-     right-hand rail, the tracker from the top corner down to the map in the
-     bottom corner. These three numbers are the seams: the rail's width, which
-     is also where the masthead stops, and the two panel heights that fix where
-     the tracker starts and stops. Dragging a panel writes its own measurement
-     inline here, so both sides of a seam always agree. */
+  /* Two instruments, two edges. The standings grow across the map's masthead
+     as players appear; the victory tracker and the world minimap share the
+     right-hand rail. These numbers are their seams and caps. Dragging a panel
+     writes its own measurement inline here, so a custom layout remains exact. */
   #maparea {
     flex: 1; min-width: 0; position: relative; overflow: hidden; background: #07110f;
     --hud-rail-width: clamp(258px, 20vw, 320px);
@@ -60,7 +57,10 @@
        asks for, so a table of twelve cannot swallow the world underneath it.
        Rows past it scroll inside the ribbon, which is what the row locks are
        for. */
-    --player-hud-max-height: 34vh;
+    /* Eight rows are the readable masthead before it becomes a table to
+       browse. A twelve-player exhibition therefore scrolls even on a tall
+       display, while a smaller game still pays only for the rows it has. */
+    --player-hud-max-height: min(34vh, 244px);
   }
   #maparea::before {
     content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none;
@@ -374,6 +374,12 @@
     color: #8fa29a; font-size: 10px; font-weight: 800; font-variant-numeric: tabular-nums;
     line-height: 1; white-space: nowrap;
   }
+  /* Borrowed turns. It sits under the turn cap because that cap is the thing
+     it explains: the number went up because somebody asked it to. */
+  .turn-playon {
+    color: #f0d99c; font-size: 8px; font-weight: 900; letter-spacing: .12em;
+    line-height: 1; text-transform: uppercase; white-space: nowrap;
+  }
   .turn-era {
     padding-top: 5px; color: #d4ddd9; border-top: 1px solid #d7b66a1c;
     font-size: 10px; font-weight: 800; letter-spacing: .015em; line-height: 1;
@@ -439,6 +445,12 @@
   .victory-list { display: flex; flex-direction: column; gap: 3px; }
   .victory-entry { min-width: 0; }
   .victory-entry[hidden] { display: none; }
+  /* The civilization whose perspective is on screen remains identifiable
+     when it is appended below the three leaders for this path. */
+  .victory-entry.focus-player .victory-civ { color: var(--gold-bright); }
+  .victory-entry.focus-player .victory-civ-dot {
+    box-shadow: 0 0 0 1px var(--gold-bright), 0 0 6px color-mix(in srgb, var(--civ) 70%, transparent);
+  }
   /* The rows are already printed in rank order, so a leading rank number
      spent 13px per line restating the order. In a narrower victory rail that width
      is worth more as civilization name, which is what actually truncates. */
@@ -910,10 +922,18 @@
      that merely happened stays in the event log. Blockers are chips too —
      they are the ones that also gate the End Turn button. */
   #notify {
-    position: absolute; z-index: 8; right: 14px; top: 196px; bottom: 200px;
+    position: absolute; z-index: 8; top: 196px; bottom: 200px;
+    /* Inside the rail, not on top of it. The victory tracker took the right
+       edge of the map, and these chips are drawn above it, so at the edge they
+       covered its whole values column — tourism, civilizations converted,
+       diplomatic points, score. This is the offset the player standings
+       already use to clear the same rail, and both fall back to the edge when
+       the viewer hides the tracker in Display settings. */
+    right: calc(min(var(--hud-rail-width), var(--hud-rail-share)) + 20px);
     display: none; flex-direction: column; align-items: flex-end; gap: 6px;
     overflow: hidden auto; scrollbar-width: none; pointer-events: none;
   }
+  body.overlay-victory-hidden #notify { right: 14px; }
   #notify::-webkit-scrollbar { display: none; }
   #notify.on { display: flex; }
   .notice {
@@ -1183,6 +1203,27 @@
     width: auto; margin-top: 14px; padding: 10px 18px; border-radius: 10px;
     font-size: 11px; letter-spacing: .06em;
   }
+  /* The result screen's answers, stacked. The offer that replaces the world
+     keeps the full-width gold it has always had; the offer that keeps it sits
+     compact underneath, so the two never read as a pair of equals.
+     `.winner-content > *` sets every child to `display: block` further down
+     this sheet at the same specificity, so the column has to be named through
+     its parent to survive. */
+  .winner-content > .winner-actions {
+    display: flex; flex-direction: column; gap: 9px; margin-top: 14px;
+  }
+  .winner-actions .winner-again { margin-top: 0; }
+  /* Playing on is the quieter of the two answers: it keeps what is already on
+     screen, so it does not compete with the button that replaces the world. */
+  .winner-playon {
+    align-self: center; display: flex; flex-direction: column; gap: 2px;
+    border-color: color-mix(in srgb, var(--winner-color, #d7b66a) 55%, #4a635a);
+  }
+  .winner-playon small {
+    color: var(--muted); font-size: 9px; font-weight: 800; letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+  .winner-playon:hover small { color: inherit; }
   #tip {
     position: fixed; z-index: 30; display: none; max-width: 290px; padding: 10px 13px;
     color: var(--text); border: 1px solid #4a635a; border-radius: 11px;
@@ -1657,17 +1698,17 @@
     body.cinema-mode #cinema-story { left: 18px; width: calc(100% - 36px); }
   }
 
-  /* The standings are the map's masthead: they run across the whole top edge,
-     stopping where the victory rail begins, with the turn plate as the left
-     cell and the table filling the rest. Every civilization keeps one
-     full-width row of the same height; the requested height is calculated from
-     the player count in drawPlayerHud(), then capped so a large table does not
-     swallow the map underneath it. A row is one line here rather than two —
-     who this is, then their ten values, side by side. That is what the width
-     is for; stacking them would spend height the map wants back. */
+  /* The standings are the map's masthead, with the turn plate as the left cell
+     and the table filling the rest. Both preferred dimensions come from the
+     visible player count: a one-row human game stays consolidated, then the
+     panel grows toward the victory rail as more civilizations appear. Every
+     civilization keeps one fixed-height row; after eight rows the table
+     scrolls instead of swallowing the map. */
   #playerhud {
     position: absolute; z-index: 7; pointer-events: auto;
-    top: 10px; left: 12px; right: calc(min(var(--hud-rail-width), var(--hud-rail-share)) + 20px); width: auto;
+    top: 10px; left: 12px; right: auto;
+    width: min(var(--player-hud-width, 100%),
+      calc(100% - min(var(--hud-rail-width), var(--hud-rail-share)) - 32px));
     height: min(var(--player-hud-height, 200px), var(--player-hud-max-height));
     --hud-medallion-column: 21px; --hud-identity-column: minmax(300px, 42%); --hud-column-gap: 6px;
     --hud-lock-column: 13px; --hud-row-height: 23px; --hud-row-gap: 2px;
@@ -1681,7 +1722,9 @@
     backdrop-filter: blur(16px) saturate(130%);
   }
   /* Hiding the victory rail hands its column back to the masthead. */
-  body.overlay-victory-hidden #playerhud { right: 12px; }
+  body.overlay-victory-hidden #playerhud {
+    right: auto; width: min(var(--player-hud-width, 100%), calc(100% - 24px));
+  }
   /* Across the masthead the plate stacks in its own left cell, which is the one
      place in the panel where height is cheaper than width. */
   #playerhud > .victory-turn { grid-column: 1; grid-row: 1; }
@@ -1820,18 +1863,17 @@
   }
   #playerhud .diplomacy-card.expanded { border-radius: 7px; }
 
-  /* Victory progress owns the right rail from the top corner down, stopping
-     above the world minimap so the corner instrument is never buried under it.
-     The masthead runs beside it rather than above it, so the tracker gets the
-     whole height of the map minus one map: six races read one under the other,
-     each keeping the rail's full width for its civilization names, and the
-     rail's height rather than a 116px column decides how many contenders each
-     of them shows. The bottom seam is the minimap's own height, which is what
-     lets dragging the map taller push the tracker up without overlapping. */
+  /* Victory progress starts in the right corner and grows down with the rows
+     it actually shows, never past the world minimap. Six races read one under
+     the other, each keeping the rail's full width for civilization names. If
+     the required top-three-plus-viewer rows reach the minimap seam, the rail
+     scrolls instead of overlapping it. */
   #victoryhud {
     position: absolute; z-index: 7; right: 12px; left: auto;
-    top: 10px; bottom: calc(var(--minimap-height) + 22px);
-    width: min(var(--hud-rail-width), var(--hud-rail-share)); height: auto;
+    top: 10px; bottom: auto;
+    width: min(var(--hud-rail-width), var(--hud-rail-share));
+    height: min(var(--victory-hud-height, 100%),
+      calc(100% - var(--minimap-height) - 32px));
     display: grid; grid-template-columns: minmax(0, 1fr);
     grid-template-rows: 18px minmax(0, 1fr);
     align-items: stretch; gap: 5px; min-width: 0; padding: 5px;
@@ -1840,9 +1882,11 @@
     box-shadow: 0 14px 38px #000a, inset 0 1px #ffffff0a;
     backdrop-filter: blur(16px) saturate(130%); pointer-events: auto;
   }
-  /* Switching the minimap off hands the corner back and the tracker runs to
-     the floor. */
-  body.overlay-minimap-hidden #victoryhud { bottom: 16px; }
+  /* Switching the minimap off raises the tracker's height ceiling to the
+     floor; a compact tracker still keeps only the height its rows need. */
+  body.overlay-minimap-hidden #victoryhud {
+    bottom: auto; height: min(var(--victory-hud-height, 100%), calc(100% - 26px));
+  }
   #victoryhud > .hud-section-heading {
     position: relative; grid-column: 1; grid-row: 1; min-height: 18px;
     justify-content: center; margin: 0 3px; color: #c7d3ce; font-size: 10px;
@@ -4787,6 +4831,7 @@ let serverInstance = null;
 let bootBusy = false, bootTimer = null;
 let supervisorReconnectTimer = null;
 let supervisorReconnectBusy = false;
+let supervisorReconnectWanted = false;
 let supervisorReloading = false;
 
 function reloadForSupervisedWorld(instance, seed) {
@@ -4815,6 +4860,7 @@ function supervisedSuccessorChanged(successor, finishedInstance, finishedSeed) {
 
 function waitForSupervisedSuccessor(finishedInstance, finishedSeed) {
   if (supervisorReconnectBusy || supervisorReconnectTimer) return;
+  supervisorReconnectWanted = true;
   const poll = async () => {
     supervisorReconnectTimer = null;
     supervisorReconnectBusy = true;
@@ -4830,9 +4876,22 @@ function waitForSupervisedSuccessor(finishedInstance, finishedSeed) {
     } finally {
       supervisorReconnectBusy = false;
     }
-    supervisorReconnectTimer = setTimeout(poll, 400);
+    // A poll that was in flight when the watch was called off must not put it
+    // back: cancelling has to mean cancelled, not "one more request".
+    if (supervisorReconnectWanted)
+      supervisorReconnectTimer = setTimeout(poll, 400);
   };
   supervisorReconnectTimer = setTimeout(poll, 200);
+}
+
+// Stop watching for a successor world. The watcher is armed the moment a
+// result appears, and "one more turn" is the one answer that means no
+// successor is coming: this world is the successor. The finale that ends the
+// extension arms it again.
+function cancelSupervisedSuccessorWatch() {
+  supervisorReconnectWanted = false;
+  clearTimeout(supervisorReconnectTimer);
+  supervisorReconnectTimer = null;
 }
 
 function syncViewPlayer() {
@@ -5720,8 +5779,11 @@ function adoptTiles(st) {
   map.tiles = tiles;
   return st;
 }
-// Every turn is owed one complete frame, and the server holds a finished turn
-// until an active viewer has been handed it. Only a page that actually paints
+// Martin-requested simulation requirement: every turn is owed at least one
+// complete frame from one snapshot — updated HUD, victory tracker, map,
+// minimap, units, sidebars, controls, and everything else bound to that turn.
+// The server holds a finished turn until an active viewer acknowledges that
+// complete paint. Only a page that actually paints
 // counts as one: the keeper's refresh check and any curl read /state as well,
 // and a reader that draws nothing must not slow the simulation to its own
 // cadence. Saying which turn was last painted is how this page announces
@@ -5741,11 +5803,11 @@ function paintedQuery() {
 }
 // One turn, one frame on the glass.
 //
-// The server holds a finished turn until this page has been handed it, so the
-// exhibition runs at whatever rate this page reads — which quietly made the
-// page's own polling delay the simulation's speed limit. A fixed 100ms between
-// polls is a ceiling of ten turns a second however fast the world could
-// actually be played, and it was costing more than that: measured against the
+// The server holds a finished turn until this page acknowledges painting it,
+// so the exhibition runs at whatever rate this page paints — which quietly
+// made the page's own polling delay the simulation's speed limit. A fixed
+// 100ms between polls is a ceiling of ten turns a second however fast the
+// world could actually be played, and it was costing more than that: measured against the
 // live exhibition a turn took 584ms, of which only 318ms was simulating
 // anything.
 //
@@ -5756,11 +5818,11 @@ function paintedQuery() {
 //
 // So the loop runs on the display's own clock. At most one turn is painted per
 // animation frame, which is what makes each turn a frame somebody can see; the
-// fetch for the next one goes out as soon as this one is off the queue, so the
-// network and the server's next turn overlap this paint instead of following
-// it. Nothing is ever dropped — a state that has arrived is always painted —
-// and the gate upstream will not simulate past the turn this page is holding,
-// so the queue cannot grow behind it.
+// fetch for the next one is the paint acknowledgement: it goes out only after
+// render() has updated the map, HUD, victory tracker, and all other turn-bound
+// surfaces. Nothing is ever dropped — a state that has arrived is always
+// painted — and the gate upstream will not simulate past the turn this page
+// is holding, so the queue cannot grow behind it.
 let specPending = null;  // fetched, not yet drawn
 let specFetching = false;
 function specFetch() {
@@ -5780,9 +5842,9 @@ function specFetch() {
     const fresh = st.seed !== undefined && lastSeed2 !== null && st.seed !== lastSeed2;
     lastSeed2 = st.seed;
     adoptTiles(st);
-    specFetch(); // ask for the next turn before spending this frame drawing
     render(st);
     if (fresh) { sel = null; selCity = null; } // new game
+    specFetch(); // acknowledge this complete frame, then ask for the next turn
   } catch (e) {
     // A patch that could not be applied, or a draw that threw. Give up this
     // page's copy of the world rather than keep painting a wrong one; the next
@@ -6245,8 +6307,13 @@ function render(st, recordChronicle = true) {
         <strong class="winner-title">${winnerName}</strong>
         <span class="winner-verdict">${verdict}</span>
         <span class="winner-meta">Turn ${st.turn} · History remembers</span>
-        ${SPEC ? `<span class="winner-countdown" id="respawn" role="timer"></span>`
-          : `<button class="primary winner-again" onclick="startNewSimulation()">Start another game</button>`}
+        ${SPEC ? `<span class="winner-countdown" id="respawn" role="timer"></span>` : ``}
+        <span class="winner-actions">
+          ${SPEC ? `` : `<button class="primary winner-again" onclick="startNewSimulation()">Start another game</button>`}
+          <button class="winner-again winner-playon" id="play-on" onclick="playOnPastVictory()"
+            title="Keep this world and play ${playOnTurns()} more turns. The result stands; no further victory is declared.">
+            One more turn<small>+${playOnTurns()} turns</small></button>
+        </span>
       </div>`;
       playCinemaCue({priority:10, kicker:"History has a victor", title:winnerName});
     }
@@ -6279,7 +6346,9 @@ function render(st, recordChronicle = true) {
   }
   openTurnIfNew();
   drawDiplomacy();
-  // Everything above draws this state, so this turn has now had its frame.
+  // Everything above draws this same snapshot, so this turn has now had its
+  // Martin-required complete frame: updated HUD, victory tracker, map,
+  // minimap, units, sidebars, controls, and every other turn-bound surface.
   // The reload paths return before here on purpose: a page on its way to a
   // successor world painted nothing, and must not claim it did.
   if (st.turn !== undefined && st.seed !== undefined)
@@ -6742,11 +6811,13 @@ function shieldPart(sx, sy, r, col, dir, type) {
 // radial mask turns that crop into a broad dab rather than a hex-shaped decal.
 // The dabs are allowed to overlap compatible neighboring faces below, making
 // grass into a field and ocean into a body of water instead of a tile set.
-const BIOME_STAMPS = {}, BIOME_PATTERNS = {};
-function biomePattern(terrain) {
-  if (BIOME_PATTERNS[terrain]) return BIOME_PATTERNS[terrain];
+const BIOME_STAMPS = {}, BIOME_PATTERNS = {}, PLANET_BIOME_PATTERNS = {};
+function biomePattern(terrain, cache = BIOME_PATTERNS) {
+  if (cache[terrain]) return cache[terrain];
   if (!ATLAS_READY) return null;
-  const [col, row] = ATLAS_CELL[terrain];
+  const cell = ATLAS_CELL[terrain];
+  if (!cell) return null;
+  const [col, row] = cell;
   const cw = TERRAIN_ATLAS.naturalWidth / 4;
   const ch = TERRAIN_ATLAS.naturalHeight / 2;
   const inset = 2, D = 224;
@@ -6767,8 +6838,8 @@ function biomePattern(terrain) {
   };
   paint(0, 0, false, false); paint(D, 0, true, false);
   paint(0, D, false, true); paint(D, D, true, true);
-  BIOME_PATTERNS[terrain] = cx.createPattern(c, "repeat");
-  return BIOME_PATTERNS[terrain];
+  cache[terrain] = cx.createPattern(c, "repeat");
+  return cache[terrain];
 }
 
 function biomeStamp(terrain, variant) {
@@ -10535,6 +10606,40 @@ function planetPath(context, points) {
                                          : context.moveTo(point.x, point.y));
   context.closePath();
 }
+// Canvas antialiases both sides of every separately-filled polygon. Exact
+// shared coordinates therefore still leave a hairline of the sphere showing
+// between two cells, especially once the limb crushes one of them to a sliver.
+// Ground paint overlaps by one physical pixel; hit testing, borders and the
+// optional grid continue to use the exact topology above.
+function appendPlanetPaintPath(context, cell, bleed = 0.8) {
+  const {points, center} = cell;
+  for (let index = 0; index < points.length; index++) {
+    const point = points[index];
+    const dx = point.x - center.x, dy = point.y - center.y;
+    const distance = Math.hypot(dx, dy) || 1;
+    const x = point.x + dx / distance * bleed;
+    const y = point.y + dy / distance * bleed;
+    index ? context.lineTo(x, y) : context.moveTo(x, y);
+  }
+  context.closePath();
+}
+function planetPaintPath(context, cell, bleed = 0.8) {
+  context.beginPath();
+  appendPlanetPaintPath(context, cell, bleed);
+}
+function planetCellInradius(cell) {
+  const {points, center} = cell;
+  let inradius = Infinity;
+  for (let index = 0; index < points.length; index++) {
+    const a = points[index], b = points[(index + 1) % points.length];
+    const ex = b.x - a.x, ey = b.y - a.y;
+    const length = Math.hypot(ex, ey);
+    if (length < 1e-6) continue;
+    inradius = Math.min(inradius,
+      Math.abs((a.x - center.x) * ey - (a.y - center.y) * ex) / length);
+  }
+  return Number.isFinite(inradius) ? inradius : 0;
+}
 function pointInsidePlanetCell(x, y, points) {
   let inside = false;
   for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
@@ -10573,14 +10678,7 @@ function planetFrontierLanes(cells) {
     // quantized so the layer stays a handful of strokes instead of one per
     // edge; four steps is finer than the eye follows a border foreshortening
     // into the horizon.
-    let inradius = Infinity;
-    for (let i = 0; i < sides; i++) {
-      const a = points[i], b = points[(i + 1) % sides];
-      const ex = b.x - a.x, ey = b.y - a.y;
-      const len = Math.hypot(ex, ey);
-      if (len < 1e-6) continue;
-      inradius = Math.min(inradius, Math.abs((a.x - center.x) * ey - (a.y - center.y) * ex) / len);
-    }
+    const inradius = planetCellInradius({points, center});
     if (!(inradius > PLANET_LANE_TILE / 8)) continue;
     const weight = Math.min(1, Math.round(4 * inradius / PLANET_LANE_TILE) / 4);
     for (let i = 0; i < sides; i++) {
@@ -11703,6 +11801,199 @@ function planetSkyAnimating() {
   return crews.satellite.length > 0 || crews.expedition.length > 0;
 }
 
+// The flat board and the globe share the same terrain atlas, but not the same
+// tile shape. Stretching one baked hex over every projected cell makes
+// pentagons visibly wrong and restarts the photograph at every tile. Globe
+// material is instead one continuous pattern per biome, clipped by the real
+// spherical cells. Its private pattern cache can follow the globe camera
+// without changing the flat board's world-space patterns.
+function planetTerrainPatterns(camera, scale) {
+  const patterns = new Map();
+  for (const terrain of Object.keys(ATLAS_CELL)) {
+    const pattern = biomePattern(terrain, PLANET_BIOME_PATTERNS);
+    if (!pattern) continue;
+    if (typeof pattern.setTransform === "function" && typeof DOMMatrix !== "undefined") {
+      const materialScale = Math.max(.62, Math.min(1.35, .72 + scale * .12));
+      const matrix = new DOMMatrix();
+      matrix.translateSelf(-camera.longitude * 74, camera.latitude * 58);
+      matrix.rotateSelf(-(camera.roll || 0) * 180 / Math.PI);
+      matrix.scaleSelf(materialScale, materialScale);
+      pattern.setTransform(matrix);
+    }
+    patterns.set(terrain, pattern);
+  }
+  return patterns;
+}
+
+function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
+                          visible, spectator) {
+  const painted = MODE.painted;
+  const known = cell => spectator || visible.has(key(cell.tile.pos));
+
+  // Opaque, slightly overlapping underpaint is the tiling invariant. Every
+  // later translucent layer can miss an antialiased edge without exposing the
+  // ocean sphere through a land seam.
+  for (const cell of cells) {
+    const base = TERRAIN[cell.tile.terrain] || "#4b5960";
+    const light = camera.chart ? 1 : .70 + .34 * Math.max(0, cell.center.z);
+    planetPaintPath(cx, cell, .8);
+    cx.fillStyle = known(cell)
+      ? shade(base, painted ? .92 + light * .12 : light)
+      : shade(base, .30);
+    cx.fill();
+  }
+
+  if (painted) {
+    // One compound path per biome: neighboring grass cells sample one field
+    // and neighboring ocean cells sample one sea. Repainting the atlas from
+    // each tile centre is the checkerboard this renderer exists to avoid.
+    const byTerrain = new Map();
+    for (const cell of cells) {
+      if (!known(cell)) continue;
+      const terrain = cell.tile.terrain;
+      const group = byTerrain.get(terrain);
+      if (group) group.push(cell); else byTerrain.set(terrain, [cell]);
+    }
+    const patterns = planetTerrainPatterns(camera, scale);
+    cx.save();
+    cx.globalAlpha = MODE.atmosphere ? .82 : .68;
+    for (const [terrain, group] of byTerrain) {
+      const pattern = patterns.get(terrain);
+      if (!pattern) continue;
+      cx.beginPath();
+      for (const cell of group) appendPlanetPaintPath(cx, cell, .35);
+      cx.fillStyle = pattern;
+      cx.fill();
+    }
+    cx.restore();
+
+    // Lighting is continuous over the hemisphere, not reset inside every
+    // polygon. Painted 2D keeps a gentle wash; Cinematic gives the same sphere
+    // a real terminator and a warm shoulder.
+    cx.save();
+    cx.beginPath();
+    for (const cell of cells) appendPlanetPaintPath(cx, cell, .15);
+    cx.clip();
+    let light;
+    if (camera.chart) {
+      light = cx.createLinearGradient(centerX - radius, centerY - radius,
+                                      centerX + radius, centerY + radius);
+      light.addColorStop(0, MODE.atmosphere ? "rgba(255,239,194,.10)" : "rgba(255,246,216,.06)");
+      light.addColorStop(1, MODE.atmosphere ? "rgba(8,15,27,.24)" : "rgba(15,20,25,.10)");
+    } else {
+      light = cx.createRadialGradient(centerX - radius * .34, centerY - radius * .38,
+                                      radius * .05, centerX, centerY, radius * 1.04);
+      light.addColorStop(0, MODE.atmosphere ? "rgba(255,239,197,.16)" : "rgba(255,247,222,.08)");
+      light.addColorStop(.48, "rgba(255,255,255,0)");
+      light.addColorStop(1, MODE.atmosphere ? "rgba(1,7,15,.58)" : "rgba(3,10,16,.34)");
+    }
+    cx.fillStyle = light;
+    cx.fillRect(centerX - radius * 1.1, centerY - radius * 1.1,
+                radius * 2.2, radius * 2.2);
+    cx.restore();
+  }
+
+  // Ownership is a transparent map layer over finished ground. Painted modes
+  // leave more material showing; Strategic keeps the stronger command-map
+  // wash it had before.
+  for (const cell of cells) {
+    const owner = cell.tile.owner;
+    if (owner === null || owner === undefined) continue;
+    planetPaintPath(cx, cell, .22);
+    cx.globalAlpha = painted ? (MODE.atmosphere ? .14 : .17) : .28;
+    cx.fillStyle = pcol(owner);
+    cx.fill();
+  }
+  cx.globalAlpha = 1;
+
+  // Strategic owns the always-on cell diagram. Painted and Cinematic dissolve
+  // the honeycomb unless the player explicitly asks for the G grid overlay.
+  if (radius >= SKY_MARKERS && (!painted || SHOW_GRID)) {
+    cx.strokeStyle = painted
+      ? (MODE.atmosphere ? "rgba(234,242,231,.19)" : "rgba(33,29,20,.22)")
+      : "rgba(214,235,231,.075)";
+    cx.lineWidth = painted ? 1 : Math.max(.3, Math.min(1, scale * .75));
+    for (const cell of cells) {
+      planetPath(cx, cell.points);
+      cx.stroke();
+    }
+  }
+}
+
+// Close enough to read individual cells, Painted gets illustrated landform
+// marks and Cinematic gets the same forms with deeper occlusion and highlights.
+// These are clipped to the exact five- or six-sided top face, so relief never
+// reintroduces rectangular or hexagonal art at the twelve pentagons.
+function drawPlanetSurfaceDetail(cell) {
+  if (!MODE.painted) return;
+  const tile = cell.tile;
+  const r = planetCellInradius(cell);
+  if (r < 1.6) return;
+  const x = cell.center.x, y = cell.center.y;
+  const depth = MODE.atmosphere ? 1 : .62;
+  const seed = hash2(tile.pos[0] * 31 + 7, tile.pos[1] * 37 + 11);
+  cx.save();
+  planetPath(cx, cell.points); cx.clip();
+
+  if (isWater(tile)) {
+    if (seed > .48 && r > 2.2) {
+      cx.globalAlpha = .10 + depth * .08;
+      cx.strokeStyle = "#dff7ff";
+      cx.lineWidth = Math.max(.45, r * .10);
+      cx.beginPath();
+      cx.moveTo(x - r * .58, y + (seed - .5) * r);
+      cx.quadraticCurveTo(x, y - r * .18, x + r * .58, y + (seed - .5) * r);
+      cx.stroke();
+    }
+  } else if (tile.terrain === "mountain" || tile.feature === "volcano") {
+    const peak = r * (tile.feature === "volcano" ? .78 : .92);
+    cx.globalAlpha = .48 + depth * .24;
+    cx.fillStyle = "#18201d";
+    cx.beginPath();
+    cx.moveTo(x - r * .72, y + r * .58);
+    cx.lineTo(x + r * .15, y - peak);
+    cx.lineTo(x + r * .74, y + r * .58);
+    cx.closePath(); cx.fill();
+    cx.fillStyle = tile.feature === "volcano" ? "#d98942" : "#e8e1ca";
+    cx.globalAlpha = .52 + depth * .24;
+    cx.beginPath();
+    cx.moveTo(x + r * .15, y - peak);
+    cx.lineTo(x + r * .08, y + r * .15);
+    cx.lineTo(x + r * .48, y + r * .50);
+    cx.closePath(); cx.fill();
+  } else if (tile.hills) {
+    const mound = cx.createRadialGradient(x - r * .24, y - r * .30, r * .05,
+                                          x, y, r * .95);
+    mound.addColorStop(0, `rgba(255,244,207,${(.16 + depth * .12).toFixed(2)})`);
+    mound.addColorStop(.55, "rgba(255,255,255,0)");
+    mound.addColorStop(1, `rgba(8,12,12,${(.15 + depth * .17).toFixed(2)})`);
+    cx.fillStyle = mound;
+    cx.beginPath(); cx.ellipse(x, y + r * .12, r * .80, r * .58, 0, 0, 7); cx.fill();
+  }
+
+  if (tile.feature === "forest" || tile.feature === "jungle") {
+    const jungle = tile.feature === "jungle";
+    const color = jungle ? "#173f2c" : "#234a31";
+    cx.fillStyle = color;
+    cx.globalAlpha = .56 + depth * .20;
+    const crown = r * (jungle ? .34 : .29);
+    for (const [dx, dy, size] of [[-.34,.18,.88],[.06,-.18,1.08],[.38,.20,.82]]) {
+      cx.beginPath(); cx.arc(x + dx * r, y + dy * r, crown * size, 0, 7); cx.fill();
+    }
+    cx.fillStyle = "rgba(228,235,190,.22)";
+    cx.beginPath(); cx.arc(x - r * .06, y - r * .31, crown * .46, 0, 7); cx.fill();
+  } else if (tile.feature === "ice") {
+    cx.globalAlpha = .52 + depth * .24;
+    cx.fillStyle = "#d9f3f5";
+    cx.beginPath();
+    cx.moveTo(x - r * .68, y + r * .18); cx.lineTo(x - r * .18, y - r * .52);
+    cx.lineTo(x + r * .66, y - r * .12); cx.lineTo(x + r * .18, y + r * .48);
+    cx.closePath(); cx.fill();
+  }
+  cx.restore();
+  cx.globalAlpha = 1;
+}
+
 function drawPlanetMap() {
   if (!planetMap()) return false;
   if (!planetReady()) {
@@ -11781,31 +12072,9 @@ function drawPlanetMap() {
   cx.restore();
 
   const cells = earthInFrame ? planetCells(camera, scale, centerX, centerY) : [];
-  for (const cell of cells) {
-    const {tile, points, center} = cell;
-    planetPath(cx, points);
-    const base = TERRAIN[tile.terrain] || "#4b5960";
-    // Lit from the direction the camera is looking, so the world reads as a
-    // ball rather than as a flat disc of tiles — which is exactly why a chart
-    // is lit evenly instead. Shading that falls away toward the rim is the
-    // roundness itself, drawn.
-    const light = camera.chart ? 1 : .70 + .34 * Math.max(0, center.z);
-    cx.fillStyle = spectator || visible.has(key(tile.pos))
-      ? shade(base, light)
-      : shade(base, .30);
-    cx.fill();
-    if (tile.owner !== null && tile.owner !== undefined) {
-      cx.globalAlpha = .28;
-      cx.fillStyle = pcol(tile.owner); cx.fill(); cx.globalAlpha = 1;
-    }
-    // Below a coin-sized world the grid is finer than a pixel, and drawing it
-    // anyway turns the marble grey.
-    if (radius >= SKY_MARKERS) {
-      cx.strokeStyle = "rgba(214,235,231,.075)";
-      cx.lineWidth = Math.max(.3, Math.min(1, scale * .75)); cx.stroke();
-    }
+  drawPlanetGround(cells, camera, scale, radius, centerX, centerY, visible, spectator);
+  for (const {tile, points, center} of cells)
     PLANET_HIT_CELLS.push({pos:tile.pos, points, z:center.z});
-  }
 
   // Frontiers go over the finished ground, the way they do on a flat board, and
   // below everything a viewer clicks. Under a coin-sized world a tile is a
@@ -11832,9 +12101,15 @@ function drawPlanetMap() {
     ? planetChartHorizon(camera, scale, planetStageReach(centerX, centerY))
     : null;
 
-  // Features stay restrained at survey scale; cities and armies carry the
-  // strategic layer and grow only enough to stay clickable while zoomed out.
-  if (scale > .42) {
+  // Strategic keeps the compact command-map symbols. Painted and Cinematic
+  // use landform paint clipped to each real spherical face instead.
+  if (MODE.painted && radius >= SKY_MARKERS) {
+    for (const cell of cells) {
+      if ((!spectator && !visible.has(key(cell.tile.pos))) ||
+          cell.center.z < (onSheet ?? .04)) continue;
+      drawPlanetSurfaceDetail(cell);
+    }
+  } else if (scale > .42) {
     cx.textAlign = "center"; cx.textBaseline = "middle";
     cx.font = `${Math.max(7, Math.min(13, 8 * scale))}px serif`;
     for (const cell of cells) {
@@ -14045,6 +14320,13 @@ function victoryMetric(player, victory) {
 
 // The turn limit decides the score victory, and a game can be set to run
 // without one.
+// What one press of "one more turn" is worth. The ruleset is the authority;
+// the fallback only has to keep the button honest before /rules has landed.
+function playOnTurns() {
+  const turns = +(RULES && RULES.play_on_turns);
+  return turns > 0 ? turns : 25;
+}
+
 function turnCapLabel() {
   const cap = +state.max_turns;
   return cap > 0 && cap < 100000 ? String(cap) : "∞";
@@ -14194,7 +14476,10 @@ function syncVictoryLeaderCapacity(victoryHud = document.getElementById("victory
   const capacity = victoryLeaderCapacity(victoryHud);
   for (const track of tracks) {
     for (const [index, entry] of [...track.querySelectorAll(".victory-entry")].entries())
-      entry.hidden = index >= capacity;
+      // A player looking through their own fog should never disappear merely
+      // because three rivals lead a path. Keep that one row in addition to
+      // the capacity the panel can otherwise show.
+      entry.hidden = index >= capacity && entry.dataset.victoryFocus !== "true";
   }
 }
 
@@ -14230,14 +14515,29 @@ function hudTurnPlate() {
   const identityContext = `${viewLabel}: ${identity.civ} · ${profile.role} · ${meta}` +
     (actor.id !== identity.id ? ` · Acting civilization: ${actor.civ}` : "");
   const ageLabel = `${titleCase(era)} Age`;
-  return `<section class="victory-turn" title="${identityContext}" aria-label="${identityContext}; turn ${state.turn} of ${turnCapLabel()}; ${ageLabel}">` +
+  // A world playing on past its result still has a victor, and the clock it
+  // now runs against is borrowed. Say both, or the raised turn cap reads as
+  // the game having been set up that long in the first place.
+  const decided = state.decided;
+  const playOnLabel = decided
+    ? `Playing on past ${decided.civ || "the winner"}'s ${titleCase(decided.victory_type || "score")} victory on turn ${decided.turn}`
+    : "";
+  const context = identityContext + (playOnLabel ? ` · ${playOnLabel}` : "");
+  return `<section class="victory-turn" title="${escapeAttr(context)}" aria-label="${escapeAttr(context)}; turn ${state.turn} of ${turnCapLabel()}; ${ageLabel}">` +
     `<span class="turn-label">Turn</span><div class="turn-count"><strong>${state.turn}</strong>` +
-    `<small class="turn-total">of ${turnCapLabel()}</small></div><span class="turn-era">${ageLabel}</span></section>`;
+    `<small class="turn-total">of ${turnCapLabel()}</small>` +
+    (decided ? `<small class="turn-playon">Playing on</small>` : ``) +
+    `</div><span class="turn-era">${ageLabel}</span></section>`;
 }
 
 function playerHudOverview() {
   const contenders = state.players
     .filter(p => p.alive && !p.is_minor && !p.is_barbarian && metPlayer(p));
+  const focusId = SPEC ? state.view_player : state.player;
+  const focusPlayer = Number.isInteger(focusId)
+    ? contenders.find(player => player.id === focusId)
+    : null;
+  let defaultVictoryRows = Math.min(DEFAULT_VICTORY_LEADERS, contenders.length);
   const enabledVictoryTracks = VICTORY_TRACKS
     .filter(track => state.victory_conditions?.[track.id] !== false);
   const victoryTracks = enabledVictoryTracks.map(track => {
@@ -14252,13 +14552,21 @@ function playerHudOverview() {
           || (researchField ? (+bm[researchField] || 0) - (+am[researchField] || 0) : 0)
           || b.score - a.score || a.id - b.id;
       });
+    const focusRank = focusPlayer
+      ? ranked.findIndex(player => player.id === focusPlayer.id)
+      : -1;
+    defaultVictoryRows = Math.max(defaultVictoryRows,
+      Math.min(DEFAULT_VICTORY_LEADERS, ranked.length) + (focusRank >= DEFAULT_VICTORY_LEADERS ? 1 : 0));
     return `<section class="victory-track" style="--track:${track.color}" aria-label="${track.label} victory leaders">` +
       `<div class="victory-heading"><span>${track.icon}</span><b>${track.label}</b></div>` +
       `<div class="victory-subheading${track.id === "score" ? " score" : ""}">${victoryTrackerSubheading(track.id)}</div>` +
       `<div class="victory-list">` + ranked.map((player, index) => {
         const metric = victoryMetric(player, track.id);
         const progress = Math.max(0, Math.min(100, +metric.progress || 0));
-        return `<div class="victory-entry" style="--civ:${pcol(player.id)}" title="#${index + 1} ${player.civ}: ${victoryDescription(track.id, metric)}">` +
+        const isFocus = player.id === focusPlayer?.id;
+        const focusLabel = isFocus ? (SPEC ? "Viewed civilization · " : "Your civilization · ") : "";
+        return `<div class="victory-entry${isFocus ? " focus-player" : ""}" data-victory-focus="${isFocus}" ` +
+          `style="--civ:${pcol(player.id)}" title="${focusLabel}#${index + 1} ${player.civ}: ${victoryDescription(track.id, metric)}">` +
           `<div class="victory-line"><span class="victory-civ-dot"></span>` +
           `<span class="victory-civ">${player.civ}</span><span class="victory-value${track.id === "score" ? " single" : ""}">${victoryTrackerStats(track.id, metric)}</span></div>` +
           victoryMeter(track.id, metric, progress) + `</div>`;
@@ -14276,8 +14584,14 @@ function playerHudOverview() {
   const victoryCount = Math.max(1, enabledVictoryTracks.length);
   // Two floors for two orientations: one band per row down the rail, and one
   // row of columns on a viewport too narrow to have a rail at all.
-  const victoryMinHeight = victoryCount * 66 + Math.max(0, victoryCount - 1) * 2;
+  // One contender needs only a compact band. Three leaders take a taller one,
+  // and a watched player outside them adds exactly one more row. The outer
+  // tracker follows that content until the map/minimap seam caps it.
+  const victoryTrackHeight = Math.max(56, 46 + defaultVictoryRows * 16);
+  const victoryMinHeight = victoryCount * victoryTrackHeight + Math.max(0, victoryCount - 1) * 2;
   const victoryMinWidth = victoryCount * 116 + Math.max(0, victoryCount - 1) * 2;
+  const victoryHudHeight = victoryMinHeight + 35;
+  document.getElementById("maparea").style.setProperty("--victory-hud-height", `${victoryHudHeight}px`);
   const overview =
     `<div class="hud-section-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
     `aria-label="Move victory tracker; use arrow keys or drag" title="Drag to move · arrow keys also move" id="victory-tracker-title">` +
@@ -14377,6 +14691,7 @@ function drawPlayerHud() {
   // reading position so a person can browse an off-screen victory path
   // without the next simulation frame snapping the HUD back to the leader.
   const victoryScroll = victoryHud.querySelector(".hud-rail")?.scrollTop || 0;
+  const playerScroll = hud.querySelector(".diplomacy-ribbon")?.scrollTop || 0;
   const overview = playerHudOverview();
   if (overview !== victoryHudHtml && hudLayoutGesture?.name !== "victory") {
     victoryHudHtml = overview;
@@ -14401,9 +14716,16 @@ function drawPlayerHud() {
   // legible at a two-player table. Anything past the ceiling scrolls, so this
   // is what the panel would *like* rather than what it is allowed to take.
   const requestedHeight = Math.max(96, 44 + rows * 25);
+  // A newly started human game usually knows only its own row; do not stretch
+  // that one-row scorecard across the whole map. Each additional known player
+  // buys the table another 100px until the available masthead width caps it.
+  // Twelve-player spectator mode consequently reaches the full masthead.
+  const requestedWidth = 760 + Math.max(0, rows - 1) * 100;
   const mapArea = document.getElementById("maparea");
-  if (!HUD_LAYOUT.players)
+  if (!HUD_LAYOUT.players) {
     mapArea.style.setProperty("--player-hud-height", `${requestedHeight}px`);
+    mapArea.style.setProperty("--player-hud-width", `${requestedWidth}px`);
+  }
   const rankById = new Map(majors.map((p, index) => [p.id, index + 1]));
   const statsByPlayer = new Map(majors.map(p => [p.id, playerHudStats(p, rankById.get(p.id), state.cities)]));
   const highestByStat = new Map();
@@ -14524,6 +14846,8 @@ function drawPlayerHud() {
   if (html === hudHtml || hudLayoutGesture?.name === "players") return;
   hudHtml = html;
   hud.innerHTML = html;
+  const playerRibbon = hud.querySelector(".diplomacy-ribbon");
+  if (playerRibbon) playerRibbon.scrollTop = playerScroll;
   // innerHTML replaced the element the observer was watching.
   observePlayerRibbon();
   syncPlayerLockPins();
@@ -19032,6 +19356,8 @@ document.getElementById("endturn").onclick = ev => advanceTurn(ev.shiftKey);
 // many turns are both choices, so both are selects rather than modifier keys.
 let autoplaying = false, autoplayStop = false;
 const AUTOPLAY_STRATEGY_KEY = "civvis-autoplay-strategy-v1";
+const AUTOPLAY_BATCH_TIMEOUT_MS = 120000;
+let autoplayRequestSequence = 0;
 // Fill the agent picker from the roster the server offers. Every entrant is
 // one of ours, named by the handle its leaderboard uses and carrying the
 // rating it is defending, so the choice is between strategies and not between
@@ -19065,6 +19391,38 @@ function setAutoplayNote(text) {
   const note = document.getElementById("autoplaynote");
   if (note) note.textContent = text || "";
 }
+function retryableAutoplayFetch(error) {
+  return error && (error.name === "AbortError" || error instanceof TypeError);
+}
+// A turn batch mutates the world before its large state response reaches the
+// page. If that socket is dropped, blindly posting it again would play the
+// same turns twice. Give the batch a page-unique id and retry that id once:
+// the server remembers the completed result and turns the retry into an
+// acknowledgement. The generous timeout is deliberate too — the generic
+// request budget is 15 seconds, but a late-game batch can exceed that on a
+// machine compiling several CIVVIS branches without being stuck.
+async function autoplayBatch(turns, strategy) {
+  const requestId = `${VIEWER_ID}-autoplay-${++autoplayRequestSequence}`;
+  const body = JSON.stringify({
+    turns, strategy, request_id: requestId,
+    seed: (state || {}).seed,
+    server_instance: (state || {}).server_instance,
+  });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const next = await fetchJSON("/autoplay", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body,
+      }, AUTOPLAY_BATCH_TIMEOUT_MS);
+      if (attempt) setAutoplayNote("");
+      return next;
+    } catch (error) {
+      if (attempt || !retryableAutoplayFetch(error)) throw error;
+      setAutoplayNote("Connection interrupted · confirming the completed turns…");
+    }
+  }
+}
 // Played in batches rather than in one request: a full game is over a minute
 // of engine work, and a person who asked for 250 turns still wants to watch
 // them happen and still wants to be able to stop. The batch grows only while
@@ -19091,11 +19449,7 @@ async function autoplay(turns) {
       button.textContent = `⏹ Stop · ${left} turn${left === 1 ? "" : "s"} left`;
       const started = performance.now();
       sel = null;
-      const next = await fetchJSON("/autoplay", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({turns: ask, strategy}),
-      });
+      const next = await autoplayBatch(ask, strategy);
       if (next.error) throw new Error(next.error);
       const played = +next.autoplayed || 0;
       render(next);
@@ -19389,6 +19743,38 @@ async function startNewSimulation() {
     scheduleSpec(state);
     setNewSimulationBusy(false);
     showNewSimulationError(error);
+  }
+}
+// "One more turn": keep the world that just ended instead of taking the next
+// one. The result stands and is remembered; the map simply becomes live again
+// for another block of turns, and no victory can be declared during them.
+//
+// This has to outrun nothing, but it does have to *stop* things: the countdown
+// on screen, the successor watcher armed when the result appeared, and — on the
+// exhibition — the supervisor's own cooldown, which reads the cleared winner
+// out of `/state` and stands down.
+let playOnBusy = false;
+async function playOnPastVictory() {
+  if (playOnBusy) return;
+  playOnBusy = true;
+  const button = document.getElementById("play-on");
+  if (button) button.disabled = true;
+  cancelSupervisedSuccessorWatch();
+  try {
+    const next = await fetchJSON("/play-on", {method: "POST",
+      headers: {"Content-Type": "application/json"}, body: "{}"});
+    if (next.error) throw new Error(next.error);
+    render(next);
+    scheduleSpec(state);
+  } catch (error) {
+    showNewSimulationError(error, "play on");
+    // The world is being retired after all, so put the watcher back or a
+    // supervised page would sit on a dead result until somebody reloads it.
+    if (state && state.supervised && SPEC)
+      waitForSupervisedSuccessor(state.server_instance, state.seed);
+  } finally {
+    playOnBusy = false;
+    if (button) button.disabled = false;
   }
 }
 document.getElementById("restart-sim").onclick = startNewSimulation;

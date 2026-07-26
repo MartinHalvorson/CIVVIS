@@ -613,6 +613,45 @@ def played_by_hand(state: dict[str, Any]) -> bool:
     return state.get("spectate") is False
 
 
+def takes_over_the_seat(
+    latest: dict[str, Any] | None, finished_key: tuple[Any, Any]
+) -> bool:
+    """Whether `latest` is a *new* single-player game holding this process.
+
+    The exhibition offers the seat from the result screen of the game that has
+    just ended, so the handoff has to tell "somebody took it during the
+    cooldown" from "nothing happened". `played_by_hand` alone cannot: a
+    finished game stays reachable and, if a person played it, keeps answering
+    `spectate: false` forever. Asking only that question hands the process back
+    to the game that already ended, on every poll — the loop re-detects the
+    same finish, re-archives the same save every few seconds, and no newer
+    build is ever promoted. Only a different game, and one still in play, is
+    somebody's seat to protect.
+    """
+    if latest is None or not played_by_hand(latest):
+        return False
+    if latest.get("winner") is not None:
+        return False
+    return (latest.get("server_instance"), latest.get("seed")) != finished_key
+
+
+def playing_on(state: dict[str, Any] | None, finished_seed: Any) -> bool:
+    """Whether this world was asked for more turns rather than retired.
+
+    A live world with a recorded result is one somebody pressed "one more
+    turn" on. The seed has to match as well: a server whose own cooldown
+    elapsed first has already rolled into the *next* world, which is live and
+    unrecorded but is emphatically not the same game, and must still be handed
+    over to a freshly built process.
+    """
+    return (
+        state is not None
+        and state.get("winner") is None
+        and state.get("decided") is not None
+        and state.get("seed") == finished_seed
+    )
+
+
 def should_nudge(state: dict[str, Any], stalled_for: float, timeout: float) -> bool:
     """Distinguish a dead spectator loop from an intentional GUI pause.
 
@@ -785,7 +824,13 @@ def session_settings(state: dict[str, Any], defaults: dict[str, Any]) -> dict[st
         "width": int(game_map.get("width") or defaults["width"]),
         "height": int(game_map.get("height") or defaults["height"]),
         "city_states": defaults["city_states"],
-        "turns": int(state.get("max_turns") or defaults["turns"]),
+        # Turns borrowed by "one more turn" are not a setting. A played-on
+        # world carries a raised `max_turns`, and feeding that back as the next
+        # `--turns` would ratchet the exhibition longer with every press, the
+        # same way counting visible majors once ratcheted the seat count down.
+        "turns": defaults["turns"]
+        if state.get("decided") is not None
+        else int(state.get("max_turns") or defaults["turns"]),
         "map": game_map.get("script") or defaults["map"],
         "speed": state.get("game_speed") or defaults["speed"],
     }
@@ -1761,11 +1806,38 @@ def main() -> int:
             remaining = FINAL_COUNTDOWN_SECONDS - (time.monotonic() - finished_seen_at)
             if remaining > 0:
                 time.sleep(remaining)
-            # It does accept a single-player game, which is exactly what the
-            # result screen offers. Somebody who takes the seat during the
-            # cooldown keeps it; the exhibition resumes when that game ends.
+            # The result screen is interactive, so the world may not be the one
+            # this branch started on. The same re-read answers both offers it
+            # makes: "one more turn" puts this world back into play, and the
+            # single-player start takes the process outright. Either way the
+            # server stays up and the exhibition resumes when that game ends.
+            #
+            # The two are told apart by the world's identity. "One more turn"
+            # is the *same* world still going; a takeover is a game whose
+            # (instance, seed) differs from the one that just finished. That
+            # second test has to be the pair, not `played_by_hand` alone,
+            # because a finished single-player game keeps answering
+            # `spectate: false` forever — asking only that question hands the
+            # process back to the game that already ended on every poll,
+            # re-archiving the same save and never promoting a newer build.
+            #
+            # The two are very nearly disjoint but not quite: a new process on
+            # the same seed — a checkpoint resume during this cooldown — that
+            # somebody is playing, with a result already recorded, satisfies
+            # both. That is why the order here is deliberate rather than
+            # incidental. It costs nothing either way: the two bodies below are
+            # identical apart from the line they log.
             latest = read_state(args.port)
-            if latest is not None and played_by_hand(latest):
+            if playing_on(latest, finished_seed):
+                log("the finished world was asked for more turns; letting it play on")
+                state = latest
+                finished_key = None
+                last_progress = progress_marker(state)
+                progress_at = time.monotonic()
+                checkpointed_progress = None
+                time.sleep(args.poll)
+                continue
+            if takes_over_the_seat(latest, current_finished_key):
                 log("a single-player game took this process; leaving it to the player")
                 state = latest
                 finished_key = None

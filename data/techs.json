@@ -68,12 +68,12 @@
   "nanotechnology": {"cost": 2155, "era": 7, "requires": ["composites"], "boost": {"trigger": "improve_resource:aluminum"}},
   "nuclear_fusion": {"cost": 2155, "era": 7, "requires": ["lasers"], "boost": {"trigger": "building:nuclear_power_plant"}},
   "robotics": {"cost": 2155, "era": 7, "requires": ["computers", "satellites", "guidance_systems", "lasers"], "boost": {"trigger": "civic:globalization"}},
-  "seasteads": {"cost": 2200, "era": 8, "requires": ["nanotechnology"]},
-  "advanced_ai": {"cost": 2200, "era": 8, "requires": ["robotics"]},
-  "advanced_power_cells": {"cost": 2200, "era": 8, "requires": ["nuclear_fusion"]},
-  "cybernetics": {"cost": 2200, "era": 8, "requires": ["robotics"]},
-  "smart_materials": {"cost": 2200, "era": 8, "requires": ["nanotechnology"]},
-  "predictive_systems": {"cost": 2200, "era": 8, "requires": ["telecommunications"]},
-  "offworld_mission": {"cost": 2500, "era": 8, "requires": ["smart_materials"]},
-  "future_tech": {"cost": 2600, "era": 8, "requires": ["offworld_mission"], "repeatable": true}
+  "seasteads": {"cost": 2200, "era": 8, "requires": [], "random_prereqs": true, "random_costs": [2200, 2300]},
+  "advanced_ai": {"cost": 2200, "era": 8, "requires": [], "random_prereqs": true, "random_costs": [2200, 2300]},
+  "advanced_power_cells": {"cost": 2200, "era": 8, "requires": [], "random_prereqs": true, "random_costs": [2200, 2300]},
+  "cybernetics": {"cost": 2200, "era": 8, "requires": [], "random_prereqs": true, "random_costs": [2200, 2300]},
+  "smart_materials": {"cost": 2200, "era": 8, "requires": [], "random_prereqs": true, "random_costs": [2200, 2300]},
+  "predictive_systems": {"cost": 2200, "era": 8, "requires": [], "random_prereqs": true, "random_costs": [2200, 2300]},
+  "offworld_mission": {"cost": 2500, "era": 8, "requires": [], "random_prereqs": true},
+  "future_tech": {"cost": 2600, "era": 8, "requires": [], "random_prereqs": true, "repeatable": true}
 }

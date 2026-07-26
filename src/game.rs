@@ -7,9 +7,11 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashSet, VecDeque};
 
 use crate::rng::Rng;
 use crate::rules::{
-    AgendaSpec, BuildingSpec, DifficultySpec, DisasterSpec, Rules, SpeedSpec, Yields, ERA_NAMES,
+    AgendaSpec, BuildingSpec, DifficultySpec, DisasterSpec, FutureTreeLayout, Rules, SpeedSpec,
+    Yields, ERA_NAMES,
 };
 use crate::specmap::SpecMap;
+
 use crate::setup::{GameSpeed, MapPoles, MapScript, MapSize, MapTopology};
 use crate::world::{DistrictFoundation, RememberedTile, Tile, TileBits, TileMemory, WorldMap};
 use crate::{hex, mapgen, Pos};
@@ -2219,6 +2221,40 @@ mod seating_tests {
         assert_eq!(&seated[..CIV_NAMES.len()], &CIV_NAMES.map(String::from)[..]);
         assert_eq!(&seated[CIV_NAMES.len()..], &CIV_NAMES.map(String::from)[..3]);
     }
+
+    #[test]
+    fn randomized_seating_is_seeded_unique_and_preserves_explicit_picks() {
+        let known: BTreeSet<String> = Rules::shared().civs.keys().cloned().collect();
+        let chosen = ["Egypt".to_string()];
+        let mut first_rng = Rng::new(71);
+        let mut repeat_rng = Rng::new(71);
+        let first = seat_civs_randomized(8, &chosen, &known, &mut first_rng);
+        let repeat = seat_civs_randomized(8, &chosen, &known, &mut repeat_rng);
+        assert_eq!(first, repeat);
+        assert_eq!(first[0], "Egypt");
+        assert_eq!(first.iter().collect::<BTreeSet<_>>().len(), 8);
+        let stock_tail: Vec<String> = CIV_NAMES[1..8]
+            .iter()
+            .map(|civilization| (*civilization).to_string())
+            .collect();
+        assert_ne!(
+            &first[1..],
+            stock_tail,
+            "open seats should not silently retain stock order"
+        );
+    }
+
+    #[test]
+    fn every_stock_civilization_can_enter_the_random_pool() {
+        let known: BTreeSet<String> = Rules::shared().civs.keys().cloned().collect();
+        let mut seen = BTreeSet::new();
+        for seed in 0..1_000 {
+            let mut rng = Rng::new(seed);
+            seen.extend(seat_civs_randomized(8, &[], &known, &mut rng));
+        }
+        assert_eq!(seen.len(), CIV_NAMES.len());
+        assert!(seen.contains("Byzantium"));
+    }
 }
 
 #[cfg(test)]
@@ -4041,7 +4077,7 @@ mod belief_runtime_tests {
         assert_eq!(game.players[0].envoys, vec![(1, 1)]);
 
         let warrior = game.spawn_unit("warrior", 0, game.cities[&cities[1]].pos);
-        game.players[0].religion_beliefs = vec!["crusade".to_string()];
+        game.players[0].religion_beliefs = vec!["just_war".to_string()];
         assert_eq!(game.unit_unembarked_strength(&game.units[&warrior]), 30.0);
         game.relocate(warrior, game.cities[&cities[0]].pos);
         game.players[0].religion_beliefs = vec!["defender_of_the_faith".to_string()];
@@ -6940,7 +6976,12 @@ mod espionage_runtime_tests {
         // Shipped -15 base, -5 per Spy level, off a full-Loyalty city.
         assert_eq!(game.cities[&target].loyalty, 80.0);
         game.apply_spy_mission_effect(spy_id, &mission("neutralize_governor", target_center), true);
-        assert!(game.players[1].governor_roster["pingala"].disabled_until > game.turn);
+        // Shipped ESPIONAGE_NEUTRALIZE_GOVERNOR_BASE_TURNS is a flat 6; unlike
+        // Foment Unrest and Fabricate Scandal it ships no per-level row.
+        assert_eq!(
+            game.players[1].governor_roster["pingala"].disabled_until,
+            game.turn + game.standard_duration(6)
+        );
         game.cities.get_mut(&target).unwrap().queue = vec![Item::Project {
             project: "launch_earth_satellite".to_string(),
         }];
@@ -7010,7 +7051,11 @@ mod espionage_runtime_tests {
         game.spies.get_mut(&spy_id).unwrap().city = Some(city_state);
         game.spies.get_mut(&spy_id).unwrap().mission = None;
         game.apply_spy_mission_effect(spy_id, &scandal, true);
-        assert_eq!(game.envoys_at(1, minor), 2);
+        // Shipped ESPIONAGE_FABRICATE_SCANDAL_BASE_ENVOYS_REMOVED 2 plus
+        // _LEVEL_ENVOYS_REMOVED 1 per Spy level, taken off the rival holding
+        // the most Envoys there and nobody else.
+        let removed = 2 + game.spies[&spy_id].level.max(0);
+        assert_eq!(game.envoys_at(1, minor), 7 - removed);
         assert_eq!(game.envoys_at(0, minor), 3);
     }
 
@@ -8154,10 +8199,13 @@ mod maintenance_tests {
             .insert("colosseum".to_string(), center);
         assert_eq!(loyalty(&mut game), baseline + 5.0);
 
-        // Martial Law pays 2 for a garrison, not 4.
+        // Martial Law's shipped MARTIALLAW_GARRISONIDENTITY is +4, gated on
+        // REQUIREMENT_CITY_HAS_GARRISON_UNIT. Limitanei is the +2 card.
         game.cities.get_mut(&city).unwrap().wonders.clear();
         game.spawn_unit("warrior", 0, game.cities[&city].pos);
         game.players[0].policies = ["martial_law".to_string()].into_iter().collect();
+        assert_eq!(loyalty(&mut game), baseline + 4.0);
+        game.players[0].policies = ["limitanei".to_string()].into_iter().collect();
         assert_eq!(loyalty(&mut game), baseline + 2.0);
     }
 
@@ -12424,6 +12472,10 @@ pub struct GameOptions {
     /// chosen so no two majors share an identity by accident. Empty is the
     /// stock order.
     pub civs: Vec<String>,
+    /// Shuffle every civilization seat the lobby did not name. Kept opt-in so
+    /// simulations and old saves retain their seed-for-seed stock seating;
+    /// the live server enables it for newly created games.
+    pub randomize_civs: bool,
 }
 
 impl GameOptions {
@@ -12453,6 +12505,7 @@ impl GameOptions {
             disaster_intensity: DEFAULT_DISASTER_INTENSITY,
             game_modes: BTreeSet::new(),
             civs: Vec::new(),
+            randomize_civs: false,
         }
     }
 }
@@ -12488,6 +12541,41 @@ pub fn seat_civs(num_players: usize, chosen: &[String], known: &BTreeSet<String>
     seats
         .into_iter()
         .map(|seat| seat.unwrap_or_else(|| stock.next().unwrap_or(CIV_NAMES[0]).to_string()))
+        .collect()
+}
+
+/// Seat explicitly chosen civilizations in place, then uniformly shuffle the
+/// known stock roster for every open seat. The independent roster RNG keeps
+/// map generation stable when random seating is enabled.
+pub fn seat_civs_randomized(
+    num_players: usize,
+    chosen: &[String],
+    known: &BTreeSet<String>,
+    rng: &mut Rng,
+) -> Vec<String> {
+    let mut seats: Vec<Option<String>> = vec![None; num_players];
+    let mut taken: BTreeSet<String> = BTreeSet::new();
+    for (seat, civ) in chosen.iter().enumerate().take(num_players) {
+        if known.contains(civ) {
+            taken.insert(civ.clone());
+            seats[seat] = Some(civ.clone());
+        }
+    }
+    let mut stock: Vec<String> = CIV_NAMES
+        .iter()
+        .filter(|civ| known.contains(**civ) && !taken.contains(**civ))
+        .map(|civ| (*civ).to_string())
+        .collect();
+    for i in (1..stock.len()).rev() {
+        stock.swap(i, rng.below(i + 1));
+    }
+    if stock.is_empty() {
+        stock.push(CIV_NAMES[0].to_string());
+    }
+    let mut stock = stock.into_iter().cycle();
+    seats
+        .into_iter()
+        .map(|civ| civ.unwrap_or_else(|| stock.next().unwrap()))
         .collect()
 }
 
@@ -12549,6 +12637,24 @@ impl std::ops::BitOr for ActionFamilies {
         ActionFamilies(self.0 | other.0)
     }
 }
+
+/// A result the game already reached. Kept verbatim when a world is asked to
+/// play on past it, so the verdict survives the extension that follows.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Decided {
+    pub winner: usize,
+    pub victory_type: String,
+    /// The turn the victory was declared on, not the turn play resumed.
+    pub turn: u32,
+}
+
+/// How many turns one press of "one more turn" is worth.
+///
+/// The extension is bounded on purpose. A person at the keyboard can ask for
+/// another block whenever this one runs out, but the unattended exhibition has
+/// nobody to ask, and a world that plays on forever would be the last world it
+/// ever shows.
+pub const PLAY_ON_TURNS: u32 = 25;
 
 /// Victory paths that can end the game. All paths are enabled by default so
 /// existing callers and saves retain the traditional rules unless a new-game
@@ -12637,8 +12743,9 @@ impl Default for VictoryConditions {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(from = "GameSer", into = "GameSer")]
 pub struct Game {
-    /// Shared with every other game in the process: nothing plays a game by
-    /// rewriting its own rules, and copying them per search branch is not free.
+    /// Shared with every clone/search branch of this game. A match gets one
+    /// immutable snapshot because Gathering Storm randomizes its Future trees
+    /// at setup; no rule changes after the first turn.
     pub rules: Arc<Rules>,
     /// Derived from the rest of the game, never saved, and safe to drop at
     /// any moment — it is only ever a shortcut to an answer the sweep would
@@ -12654,9 +12761,11 @@ pub struct Game {
     #[serde(skip)]
     query_memo: QueryCache,
     /// The state of the world each seat's remembered map was last taken
-    /// under, and the tiles it was taken over. Empty means "assume nothing".
+    /// under — the whole of it, then the narrower part the tile memory is
+    /// drawn from — and the tiles it was taken over. Empty means "assume
+    /// nothing".
     #[serde(skip)]
-    remembered_under: Vec<(u64, TileBits)>,
+    remembered_under: Vec<(u64, u64, TileBits)>,
     /// Whether to keep each player's remembered map of fogged tiles and
     /// cities up to date.
     ///
@@ -12699,6 +12808,11 @@ pub struct Game {
     pub current: usize,
     pub winner: Option<usize>,
     pub victory_type: Option<String>,
+    /// The result of the game that was already decided, kept when somebody
+    /// chose to play on past it. History still has its victor even though the
+    /// world is live again; `winner` is `None` while the extension runs.
+    #[serde(default)]
+    pub decided: Option<Decided>,
     pub victory_conditions: VictoryConditions,
     pub next_id: u32,
     pub map: WorldMap,
@@ -12839,6 +12953,11 @@ fn default_disaster_intensity() -> u8 {
 #[derive(Clone, Serialize, Deserialize)]
 struct GameSer {
     seed: u64,
+    /// The concrete Future-era graph rolled at setup. Old saves did not carry
+    /// it and deterministically regenerate from their seed; new saves keep it
+    /// so an engine update cannot reroll a match in progress.
+    #[serde(default)]
+    future_tree_layout: Option<FutureTreeLayout>,
     /// Zero means the save predates persistent last-seen snapshots. Current
     /// saves must load their memories verbatim so deserialization is pure.
     #[serde(default)]
@@ -12866,6 +12985,8 @@ struct GameSer {
     current: usize,
     winner: Option<usize>,
     victory_type: Option<String>,
+    #[serde(default)]
+    decided: Option<Decided>,
     #[serde(default)]
     victory_conditions: VictoryConditions,
     next_id: u32,
@@ -12938,6 +13059,7 @@ struct GameSer {
 impl From<GameSer> for Game {
     fn from(s: GameSer) -> Game {
         let needs_visibility_backfill = s.visibility_memory_version == 0;
+        let rules = Rules::for_game(s.seed, s.future_tree_layout.as_ref());
         // Both speed representations exist for save compatibility. Prefer an
         // explicit ruleset speed, except when loading an older map-script save
         // whose absent string field defaulted to Standard.
@@ -12948,7 +13070,7 @@ impl From<GameSer> for Game {
             (game_speed.id().to_string(), game_speed)
         };
         let mut g = Game {
-            rules: Rules::shared(),
+            rules,
             vision: std::cell::RefCell::new(VisionCache::default()),
             routing: std::cell::RefCell::new(RoutingCache::default()),
             query_memo: QueryCache::default(),
@@ -12970,6 +13092,7 @@ impl From<GameSer> for Game {
             current: s.current,
             winner: s.winner,
             victory_type: s.victory_type,
+            decided: s.decided,
             victory_conditions: s.victory_conditions,
             next_id: s.next_id,
             map: s.map,
@@ -13101,6 +13224,7 @@ impl From<Game> for GameSer {
     fn from(g: Game) -> GameSer {
         GameSer {
             seed: g.seed,
+            future_tree_layout: Some(g.rules.future_tree_layout()),
             visibility_memory_version: 1,
             difficulty: g.difficulty,
             // `game_speed` is the live, typed setting used by every rules
@@ -13118,6 +13242,7 @@ impl From<Game> for GameSer {
             current: g.current,
             winner: g.winner,
             victory_type: g.victory_type,
+            decided: g.decided,
             victory_conditions: g.victory_conditions,
             next_id: g.next_id,
             rng: g.rng,
@@ -13235,12 +13360,13 @@ impl Game {
             disaster_intensity,
             game_modes,
             civs,
+            randomize_civs,
         } = options;
         assert!(
             teams.is_empty() || teams.len() == num_players,
             "team assignments must be empty or contain one entry per major player"
         );
-        let rules = Rules::shared();
+        let rules = Rules::for_game(seed, None);
         assert!(
             rules.difficulties.contains_key(&difficulty),
             "unknown difficulty {difficulty}"
@@ -13285,6 +13411,7 @@ impl Game {
             current: 0,
             winner: None,
             victory_type: None,
+            decided: None,
             victory_conditions: VictoryConditions::default(),
             next_id: 1,
             map,
@@ -13326,11 +13453,13 @@ impl Game {
             log: crate::actionlog::ActionLog::new(),
             events: EventLog::default(),
         };
-        let seated = seat_civs(
-            num_players,
-            &civs,
-            &g.rules.civs.keys().cloned().collect::<BTreeSet<_>>(),
-        );
+        let known_civs = g.rules.civs.keys().cloned().collect::<BTreeSet<_>>();
+        let seated = if randomize_civs {
+            let mut roster_rng = Rng::new(seed ^ 0x4349_5656_4953_4349);
+            seat_civs_randomized(num_players, &civs, &known_civs, &mut roster_rng)
+        } else {
+            seat_civs(num_players, &civs, &known_civs)
+        };
         // Civilization VI decides *which* start a civilization is given from
         // its shipped StartBias rows. Reorder the major sites to honour them
         // before any seat is handed one; generation itself is untouched.
@@ -16337,7 +16466,12 @@ impl Game {
                     (city.loyalty - 15.0 - 5.0 * spy.level.max(0) as f64).max(0.0);
             }
             "neutralize_governor" => {
-                let until = self.turn + self.standard_duration(7 + spy.level.max(0) as u32);
+                // Shipped ESPIONAGE_NEUTRALIZE_GOVERNOR_BASE_TURNS is 6 flat.
+                // Every mission whose effect scales with the Spy's level has
+                // its own _LEVEL_ parameter beside the base — Foment Unrest and
+                // Fabricate Scandal both do; this one has no such row, so the
+                // level term was invention.
+                let until = self.turn + self.standard_duration(6);
                 for state in self.players[defender]
                     .governor_roster
                     .values_mut()
@@ -16394,7 +16528,10 @@ impl Game {
                     .max_by_key(|(envoys, player)| (*envoys, std::cmp::Reverse(*player)))
                     .map(|(_, player)| player);
                 if let Some(victim) = victim {
-                    let remove = 3 + spy.level.max(0);
+                    // Shipped ESPIONAGE_FABRICATE_SCANDAL_BASE_ENVOYS_REMOVED 2
+                    // plus _LEVEL_ENVOYS_REMOVED 1 per level — the same
+                    // base-plus-level shape Foment Unrest already follows.
+                    let remove = 2 + spy.level.max(0);
                     if let Some((_, envoys)) = self.players[victim]
                         .envoys
                         .iter_mut()
@@ -17156,6 +17293,8 @@ impl Game {
                 + effect("gold_per_foreign_city") * foreign_following,
             culture: (effect("culture_per_followers") * followers).floor()
                 + (effect("culture_per_foreign_followers") * foreign_followers).floor(),
+            // Cross-Cultural Dialogue counts followers abroad only.
+            science: (effect("science_per_foreign_followers") * foreign_followers).floor(),
             faith: effect("faith_per_city") * following
                 + effect("faith_per_foreign_city") * foreign_following,
             ..Yields::default()
@@ -17437,8 +17576,10 @@ impl Game {
     fn theological_strength(&self, unit: &Unit) -> f64 {
         let mut strength = self.rules.units[unit.kind.as_str()].religious_strength
             + self.promotion_effect(unit, "religious_strength");
+        strength += self.adjacent_friendly_unit_effect(unit, "adjacent_religious_strength");
         strength += self.gov_effects(unit.owner).religious_strength;
         strength += self.policy_effect(unit.owner, "religious_strength");
+        strength += self.taxis_holy_city_strength(unit.owner);
         if self
             .map
             .get(unit.pos)
@@ -20440,6 +20581,13 @@ impl Game {
             + self.congress_military_strength_bonus(u)
             + self.religious_combat_belief_bonus(u.owner, u.pos)
             + self.handicap_combat_strength(u.owner);
+        if !matches!(
+            self.rules.units[u.kind.as_str()].domain.as_deref(),
+            Some("sea" | "air")
+        ) {
+            s += self.adjacent_friendly_unit_effect(u, "adjacent_combat_strength");
+        }
+        s += self.taxis_holy_city_strength(u.owner);
         if u.kind == "giant_death_robot" {
             s += self.tree_effect(u.owner, "gdr_armor");
         }
@@ -24145,6 +24293,43 @@ impl Game {
             .fold(0.0, f64::max)
     }
 
+    /// Strongest aura supplied by any adjacent same-owner unit. Unlike the
+    /// support-only family above, unique-unit formation bonuses such as the
+    /// Tagma's apply from an ordinary military unit and never to itself.
+    fn adjacent_friendly_unit_effect(&self, unit: &Unit, effect: &str) -> f64 {
+        self.wdisk(unit.pos, 1)
+            .into_iter()
+            .flat_map(|position| self.units_at(position))
+            .filter(|other| *other != unit.id && self.units[other].owner == unit.owner)
+            .map(|other| {
+                self.rules.units[self.units[&other].kind.as_str()]
+                    .effects
+                    .get(effect)
+                    .copied()
+                    .unwrap_or(0.0)
+            })
+            .fold(0.0, f64::max)
+    }
+
+    /// Taxis scales with converted Holy Cities, including an enemy founder's
+    /// Holy City after it adopts Byzantium's founded religion.
+    fn taxis_holy_city_strength(&self, pid: usize) -> f64 {
+        if !self.has_ability(pid, "taxis") {
+            return 0.0;
+        }
+        let Some(religion) = self.players[pid].religion.as_deref() else {
+            return 0.0;
+        };
+        let converted = self
+            .players
+            .iter()
+            .filter_map(|player| player.holy_city)
+            .filter_map(|city| self.cities.get(&city))
+            .filter(|city| self.city_religion(city) == Some(religion))
+            .count() as f64;
+        converted * self.civ_effect(pid, "holy_city_combat_strength")
+    }
+
     pub fn unit_attack_range(&self, uid: u32) -> i32 {
         let unit = &self.units[&uid];
         let spec = &self.rules.units[unit.kind.as_str()];
@@ -24459,17 +24644,41 @@ impl Game {
         remembered.owner == owner && &remembered.tile == tile
     }
 
-    /// Everything a seat's remembered map is drawn from.
+    /// Everything the *tile* half of the snapshot is drawn from, and nothing
+    /// else.
     ///
-    /// The snapshot below is idempotent and only ever adds, so taking it
-    /// again over the same world — or over fewer tiles than last time —
-    /// writes nothing. Establishing that is worth doing because merely
-    /// reaching for a seat mutably copies it.
+    /// `remembered_tile_is_current` reads a tile's contents and the seat that
+    /// owns the hex — not a city's population, its walls, its religion or
+    /// anybody's research. Those all live in `memory_world_stamp`, which is what
+    /// decides whether the whole pass can be skipped; folding them in here too
+    /// would throw away a seat's reconciled ground every time any city
+    /// anywhere gained a point of pressure.
+    fn tile_memory_stamp(&self, pid: usize) -> u64 {
+        let seat = &self.players[pid];
+        let mut key = vision_key(&[
+            self.map.tiles.epoch(),
+            self.turn as u64,
+            self.track_fog_memory as u64,
+            seat.explored.len() as u64,
+            seat.remembered_tiles.len() as u64,
+        ]);
+        for city in self.cities.values() {
+            key = vision_key(&[key, city.id as u64, city.owner as u64]);
+        }
+        key
+    }
+
+    /// Everything shared by every seat's remembered map.
+    ///
+    /// Full team/all-player refreshes compute this once, then add the three
+    /// seat-local collection lengths below. This avoids walking every city's
+    /// defenses and religious pressures once per player in the same sweep.
     fn memory_world_stamp(&self) -> u64 {
         let mut key = vision_key(&[
             self.map.tiles.epoch(),
             self.turn as u64,
             self.world_era as u64,
+            self.track_fog_memory as u64,
         ]);
         for other in self.players.iter() {
             // A city's outer defenses are read from the trees.
@@ -24520,6 +24729,7 @@ impl Game {
                 self.map.tiles.epoch(),
                 self.turn as u64,
                 self.world_era as u64,
+                self.track_fog_memory as u64,
             ])
         }
     }
@@ -24606,26 +24816,50 @@ impl Game {
     ) {
         if self.remembered_under.len() < self.players.len() {
             self.remembered_under
-                .resize(self.players.len(), (0, TileBits::default()));
+                .resize(self.players.len(), (0, 0, TileBits::default()));
         }
         // A move reveals over a wider set than the refresh that follows it, so
         // the second of the pair is the common case rather than a corner of
         // one: everything it would record was recorded a moment ago.
         let stamp = self.memory_stamp_with_world(pid, memory_world);
-        if let Some((under, covered)) = self.remembered_under.get(pid) {
+        // When the stamp still matches, every tile the last pass covered was
+        // reconciled then and nothing it reads has moved since — the stamp is
+        // exactly the statement that the map, the cities and this seat's
+        // memory are as they were. So a wider sight is not a reason to walk
+        // the whole of it again: only the hexes that were not covered can
+        // differ, and a step reveals a handful of those out of a few hundred.
+        let tile_stamp = self.tile_memory_stamp(pid);
+        let mut reconciled: Option<TileBits> = None;
+        if let Some((under, tiles_under, covered)) = self.remembered_under.get(pid) {
             if *under == stamp && visible.is_subset_of(covered) {
                 return;
             }
+            if *tiles_under == tile_stamp {
+                reconciled = Some(covered.clone());
+            }
         }
         let taken = visible.clone();
+        let fresh = match &reconciled {
+            Some(covered) => {
+                let mut bits = TileBits::with_capacity(self.map.tiles.len());
+                for index in visible.iter() {
+                    if !covered.contains(index) {
+                        bits.insert(index);
+                    }
+                }
+                self.tiles_of(&bits)
+            }
+            None => self.tiles_of(visible),
+        };
         let visible: BTreeSet<Pos> = self.tiles_of(visible);
-        self.refresh_visibility_snapshot_inner(pid, &visible);
+        self.refresh_visibility_snapshot_inner(pid, &visible, &fresh);
         // Record the world as it stands *after* the snapshot: taking one grows
         // what the seat has explored, which is itself part of the stamp the
         // next call will compute.
         let settled = self.memory_stamp_with_world(pid, memory_world);
+        let settled_tiles = self.tile_memory_stamp(pid);
         if let Some(slot) = self.remembered_under.get_mut(pid) {
-            *slot = (settled, taken);
+            *slot = (settled, settled_tiles, taken);
         }
     }
 
@@ -24676,8 +24910,16 @@ impl Game {
         }
     }
 
-    fn refresh_visibility_snapshot_inner(&mut self, pid: usize, visible: &BTreeSet<Pos>) {
-        let newly_explored: Vec<Pos> = visible
+    /// `visible` is everything the seat can see; `fresh` is the part of it
+    /// that still has to be reconciled with the world. They differ only when
+    /// the caller has proved the rest was reconciled under the same stamp.
+    fn refresh_visibility_snapshot_inner(
+        &mut self,
+        pid: usize,
+        visible: &BTreeSet<Pos>,
+        fresh: &BTreeSet<Pos>,
+    ) {
+        let newly_explored: Vec<Pos> = fresh
             .difference(&self.players[pid].explored)
             .copied()
             .collect();
@@ -24693,7 +24935,7 @@ impl Game {
         let observed_seat = !self.players[pid].is_minor && !self.players[pid].is_barbarian;
         if self.track_fog_memory && observed_seat {
             let turn = self.turn;
-            let tiles: Vec<(Pos, RememberedTile)> = visible
+            let tiles: Vec<(Pos, RememberedTile)> = fresh
                 .iter()
                 .filter(|position| !self.remembered_tile_is_current(pid, **position))
                 .filter_map(|position| self.snapshot_tile(*position).map(|tile| (*position, tile)))
@@ -24709,7 +24951,7 @@ impl Game {
             // Only reach for the memory mutably when a stamp actually has to
             // move: taking it mutably is what copies it, and after the first
             // refresh of a turn every visible tile already carries this turn.
-            for position in visible.iter() {
+            for position in fresh.iter() {
                 player.remembered_tiles.mark_seen(*position, turn);
             }
             player.explored.extend(newly_explored.iter().copied());
@@ -24923,7 +25165,10 @@ impl Game {
         // last snapshot can be assumed to still describe it.
         self.remembered_under
             .iter_mut()
-            .for_each(|(stamp, _)| *stamp = 0);
+            .for_each(|(stamp, tiles, _)| {
+                *stamp = 0;
+                *tiles = 0;
+            });
         // Allies pool what they know, and a ring closed between two of them is
         // still a closed ring: each side has sailed its half and the charts
         // agree where they meet.
@@ -28120,9 +28365,10 @@ impl Game {
                 rys.food += self.policy_effect(city.owner, "trade_food");
                 rys.production += self.policy_effect(city.owner, "trade_production");
                 if domestic {
-                    // Isolationism pays only at home.
+                    // Isolationism pays only at home, and pays all three.
                     rys.food += self.policy_effect(city.owner, "domestic_trade_food");
                     rys.production += self.policy_effect(city.owner, "domestic_trade_production");
+                    rys.gold += self.policy_effect(city.owner, "domestic_trade_gold");
                 }
                 if !domestic {
                     // E-Commerce pays only on international routes.
@@ -28469,8 +28715,12 @@ impl Game {
         ys.science *= 1.0 + self.policy_effect(city.owner, "city_science_pct") / 100.0;
         ys.culture *= 1.0 + self.policy_effect(city.owner, "city_culture_pct") / 100.0;
         if self.city_has_active_district_family(city, "holy_site") {
+            // Monasticism's Culture penalty carries the same Holy Site
+            // requirement as its Science bonus: it is not empire-wide.
             ys.science *=
                 1.0 + self.policy_effect(city.owner, "holy_site_city_science_pct") / 100.0;
+            ys.culture *=
+                1.0 + self.policy_effect(city.owner, "holy_site_city_culture_pct") / 100.0;
         }
         if city.buildings.iter().any(|building| building == "stock_exchange")
             && !city.pillaged_buildings.contains("stock_exchange")
@@ -29105,10 +29355,16 @@ impl Game {
             }) {
                 continue;
             }
-            if t.resource
-                .as_ref()
-                .is_some_and(|resource| self.rules.resources[resource.as_str()].class != "bonus")
-            {
+            // Antiquity Sites and Shipwrecks are buried, not deposits: they
+            // are invisible until Natural History or Cultural Heritage and
+            // never reserve a tile. Building over one destroys it, exactly as
+            // a Bonus resource is destroyed.
+            if t.resource.as_ref().is_some_and(|resource| {
+                !matches!(
+                    self.rules.resources[resource.as_str()].class.as_str(),
+                    "bonus" | "artifact"
+                )
+            }) {
                 continue;
             }
             let removal_tech = match t.feature.as_deref() {
@@ -29276,7 +29532,11 @@ impl Game {
                     .as_ref()
                     .is_some_and(|feature| self.rules.features[feature.as_str()].natural_wonder)
                 || tile.resource.as_ref().is_some_and(|resource| {
-                    self.rules.resources[resource.as_str()].class != "bonus"
+                    // A buried Artifact reserves nothing — see `district_sites`.
+                    !matches!(
+                        self.rules.resources[resource.as_str()].class.as_str(),
+                        "bonus" | "artifact"
+                    )
                 })
             {
                 continue;
@@ -32351,23 +32611,23 @@ impl Game {
         Ok(())
     }
 
-    fn tile_defense_bonus(&self, pos: Pos) -> f64 {
+    pub(crate) fn tile_defense_bonus(&self, pos: Pos) -> f64 {
         let t = &self.map.tiles[&pos];
         let mut bonus = 0.0;
         if t.hills {
             bonus += 3.0;
         }
-        match t.feature.as_deref() {
-            Some(
-                "forest" | "jungle" | "reef" | "burning_forest" | "burning_jungle"
-                | "burnt_forest" | "burnt_jungle",
-            ) => bonus += 3.0,
-            Some(
-                "marsh" | "floodplains" | "grassland_floodplains" | "plains_floodplains"
-                | "pantanal",
-            ) => bonus -= 2.0,
-            _ => {}
-        }
+        // The shipped `Features.DefenseModifier`, read from the ruleset rather
+        // than listed here. The hand-written match this replaces carried the
+        // ordinary features and none of the Natural Wonders, so Ha Long Bay's
+        // +15 and Gobustan's, Chocolate Hills' and Ubsunur Hollow's rows never
+        // reached a defender.
+        bonus += t
+            .feature
+            .as_deref()
+            .and_then(|feature| self.rules.features.get(feature))
+            .map(|spec| spec.defense)
+            .unwrap_or(0.0);
         if t.wonder.as_deref().is_some_and(|wonder| {
             self.rules.wonders[wonder]
                 .effects
@@ -33056,7 +33316,12 @@ impl Game {
                 // siege tower: only melee/anti-cavalry pour through the walls
                 let (ram, tower) =
                     self.siege_support_effects(pid, cid, target, &spec.promotion_class);
-                let mult = if ram { 1.0 } else { 0.15 };
+                let basil_cavalry = self.has_ability(pid, "taxis")
+                    && spec.cavalry
+                    && self.players[pid].religion.as_deref().is_some_and(|religion| {
+                        self.city_religion(&self.cities[&cid]) == Some(religion)
+                    });
+                let mult = if ram || basil_cavalry { 1.0 } else { 0.15 };
                 self.city_take_damage(pid, cid, dmg_out, mult, tower);
                 self.units.get_mut(&uid).unwrap().hp -= dmg_in;
                 if self.units[&uid].hp <= 0 {
@@ -41288,7 +41553,10 @@ impl Game {
             self.check_culture_victory();
             // A score victory is only a turn-limit tiebreak, never an
             // immediate win for crossing an arbitrary score threshold.
-            if self.turn > self.max_turns && self.winner.is_none() {
+            if self.turn > self.max_turns && self.winner.is_none() && self.played_on() {
+                // These were borrowed turns, and they have run out.
+                self.close_extension();
+            } else if self.turn > self.max_turns && self.winner.is_none() {
                 // Ties resolve through the shipped chain (civics, cities,
                 // districts, Population, Great People, religion,
                 // technologies, wonders) before falling back to seat order.
@@ -41841,6 +42109,28 @@ impl Game {
             }
             if weapon == Some("giant_death_robot") {
                 self.dedication_trigger(pid, "robot_kill", 1);
+            }
+        }
+        if !self.players[victim.owner].is_barbarian && self.has_ability(pid, "taxis") {
+            if let Some(religion) = self.players[pid].religion.clone() {
+                let pressure = self.civ_effect(pid, "unit_kill_religious_pressure");
+                let targets: Vec<u32> = self
+                    .cities
+                    .values()
+                    .filter(|city| self.wdist(city.pos, victim.pos) <= 10)
+                    .map(|city| city.id)
+                    .collect();
+                for city_id in targets {
+                    if !self.city_ignores_foreign_religion(&self.cities[&city_id], &religion) {
+                        *self.cities
+                            .get_mut(&city_id)
+                            .unwrap()
+                            .pressure
+                            .entry(religion.clone())
+                            .or_insert(0.0) += pressure;
+                    }
+                }
+                self.check_religious_victory();
             }
         }
         self.record_war_unit_loss(pid, victim.owner, &victim.kind, victim.formation);
@@ -43211,6 +43501,7 @@ impl Game {
             .iter()
             .filter(|(_, spec)| spec.promotion_class == "heavy_cavalry")
             .filter(|(_, spec)| self.unlocked(pid, &spec.tech, &spec.civic))
+            .filter(|(name, _)| self.player_unit_replacement(pid, name) == **name)
             .filter(|(_, spec)| {
                 spec.unique_to
                     .as_deref()
@@ -43404,7 +43695,12 @@ impl Game {
             }
             if self.wdist(neighbor, city_pos) <= 3
                 && adjacent.resource.as_ref().is_some_and(|resource| {
-                    self.rules.resources[resource.as_str()].class != "bonus"
+                    // Borders are not drawn toward a resource nobody can see,
+                    // and an Antiquity Site stays buried until Natural History.
+                    !matches!(
+                        self.rules.resources[resource.as_str()].class.as_str(),
+                        "bonus" | "artifact"
+                    )
                 })
             {
                 cost -= 1.0;
@@ -44007,7 +44303,86 @@ impl Game {
             .is_some_and(|p| p.alive && !p.is_minor && !p.is_barbarian)
     }
 
+    /// Whether the game has been asked to carry on past a decided result.
+    pub fn played_on(&self) -> bool {
+        self.decided.is_some()
+    }
+
+    /// Carry on past the result this game already reached: "one more turn".
+    ///
+    /// The verdict is kept in `decided` and the world becomes live again for
+    /// another block of turns. The path that was already won cannot be won a
+    /// second time — nor can any other, or a science victory one turn from its
+    /// launch would simply re-declare itself and the button would do nothing.
+    /// The turn limit is the one ending that still lands, which is what stops
+    /// an extension from running forever.
+    ///
+    /// Returns `false` when there is no result to play on past.
+    pub fn play_on(&mut self) -> bool {
+        let (Some(winner), Some(victory_type)) = (self.winner, self.victory_type.clone()) else {
+            return false;
+        };
+        // Only the first press records the verdict; later ones extend the same
+        // continuation, so the game still remembers who actually won it.
+        self.decided.get_or_insert(Decided {
+            winner,
+            victory_type: victory_type.clone(),
+            turn: self.turn,
+        });
+        self.winner = None;
+        self.victory_type = None;
+        self.max_turns = self.turn.saturating_add(PLAY_ON_TURNS);
+        let seats: Vec<usize> = self.players.iter().map(|player| player.id).collect();
+        for seat in seats {
+            self.note(
+                seat,
+                "General",
+                // A note is a predicate: the chronicle prints it after the
+                // seat's own name, so "Rome plays on for 25 more turns".
+                format!("plays on for {PLAY_ON_TURNS} more turns"),
+                None,
+            );
+        }
+        // A decided game stopped mid-turn: whoever is up has to be given their
+        // turn again, or the extension opens on a seat that cannot act.
+        self.begin_turn(self.current);
+        self.sync_war_log();
+        true
+    }
+
+    /// Hand a played-on world back the result it was already given.
+    ///
+    /// The extension ends on the verdict that granted it rather than on a
+    /// fresh score count: the game was won on its own terms and a tiebreak
+    /// would be free to name somebody else. It also cannot lean on the score
+    /// path, which a lobby is allowed to switch off entirely — an extension
+    /// with no ending at all would leave the exhibition on one world forever.
+    fn close_extension(&mut self) {
+        let Some(decided) = self.decided.clone() else {
+            return;
+        };
+        self.winner = Some(decided.winner);
+        self.victory_type = Some(decided.victory_type.clone());
+        let name = self.civ_name(decided.winner);
+        let vtype = decided.victory_type;
+        let seats: Vec<usize> = self.players.iter().map(|player| player.id).collect();
+        for seat in seats {
+            self.note(
+                seat,
+                "General",
+                format!("runs out of extra turns; {name} keeps the {vtype} victory"),
+                None,
+            );
+        }
+    }
+
     fn set_winner(&mut self, pid: usize, vtype: &str) {
+        // A world playing on past its result cannot be won again. The ending
+        // it already has is restored when the extension runs out; see
+        // `close_extension`.
+        if self.played_on() {
+            return;
+        }
         if self.winner.is_none()
             && self.victory_eligible(pid)
             && self.victory_conditions.is_enabled(vtype)
@@ -45153,6 +45528,41 @@ mod combat_scenarios {
             .find(|position| *position != center)
             .expect("new city owns a non-center tile");
         (city, home)
+    }
+
+    /// `tile_defense_bonus` used to carry a hand-written list of features and
+    /// none of the Natural Wonders, so Ha Long Bay's shipped +15, Gobustan's
+    /// and Chocolate Hills' +3 and Ubsunur Hollow's -2 never reached a
+    /// defender. It reads `Features.DefenseModifier` from the ruleset now.
+    #[test]
+    fn every_shipped_feature_defense_modifier_reaches_the_defender() {
+        let (mut game, center, _) = controlled_game(41_050);
+        let flat = game.tile_defense_bonus(center);
+        assert_eq!(flat, 0.0, "featureless plains carry no modifier");
+
+        for (feature, expected) in [
+            ("forest", 3.0),
+            ("jungle", 3.0),
+            ("reef", 3.0),
+            ("marsh", -2.0),
+            ("floodplains", -2.0),
+            ("ha_long_bay", 15.0),
+            ("gobustan", 3.0),
+            ("chocolate_hills", 3.0),
+            ("ubsunur_hollow", -2.0),
+        ] {
+            game.map.tiles.get_mut(&center).unwrap().feature = Some(feature.to_string());
+            assert_eq!(
+                game.tile_defense_bonus(center),
+                expected,
+                "{feature} must carry its shipped DefenseModifier"
+            );
+        }
+
+        // Hills and a feature are two separate shipped rows and both apply.
+        game.map.tiles.get_mut(&center).unwrap().feature = Some("forest".to_string());
+        game.map.tiles.get_mut(&center).unwrap().hills = true;
+        assert_eq!(game.tile_defense_bonus(center), 6.0);
     }
 
     #[test]
@@ -48306,6 +48716,67 @@ mod victory_conditions {
         }
     }
 
+    /// "One more turn": the world goes back into play, no path can be won
+    /// during the extension, and the ending it already had is what closes it.
+    ///
+    /// Suppressing the other paths is not tidiness. A science victory is still
+    /// won on the turn after it was won, so a game that merely cleared its
+    /// winner would re-declare the same result on the next end of turn and the
+    /// button would do nothing at all.
+    #[test]
+    fn playing_on_borrows_turns_and_gives_the_result_back() {
+        let mut game = game_with_capitals(2, 90_100, 40);
+        game.turn = 30;
+        game.set_winner(1, "science");
+        assert_eq!(game.winner, Some(1));
+
+        assert!(game.play_on());
+        assert_eq!(game.winner, None);
+        assert_eq!(game.max_turns, 30 + PLAY_ON_TURNS);
+        assert_eq!(game.decided.as_ref().map(|d| d.winner), Some(1));
+        assert_eq!(
+            game.decided.as_ref().map(|d| d.victory_type.as_str()),
+            Some("science")
+        );
+        assert_eq!(game.decided.as_ref().map(|d| d.turn), Some(30));
+
+        // Nothing can be won during borrowed turns, including the path that
+        // granted them and including a lobby's score tiebreak.
+        for victory_type in VictoryConditions::NAMES {
+            game.set_winner(0, victory_type);
+            assert_eq!(game.winner, None, "{victory_type} ended an extension");
+        }
+
+        // The exhibition checkpoints and resumes mid-game, so the verdict has
+        // to survive a save. One that forgot it would be a live world with
+        // every victory path armed again, and would re-declare the result it
+        // was granted the extension from on the next end of turn.
+        let raw = serde_json::to_string(&game).expect("a played-on game saves");
+        let reloaded: Game = serde_json::from_str(&raw).expect("and loads");
+        assert_eq!(reloaded.decided, game.decided);
+        assert_eq!(reloaded.max_turns, game.max_turns);
+        assert!(reloaded.played_on());
+
+        // A live game has nothing to play on past.
+        let mut untouched = game_with_capitals(2, 90_101, 40);
+        assert!(!untouched.play_on());
+        assert!(untouched.decided.is_none());
+
+        // Past the raised limit the original verdict is restored rather than
+        // recounted — the game was won on its own terms, and a score tiebreak
+        // would be free to name somebody else.
+        game.turn = game.max_turns + 1;
+        game.close_extension();
+        assert_eq!(game.winner, Some(1));
+        assert_eq!(game.victory_type.as_deref(), Some("science"));
+
+        // And it can be asked again, from the new result, without losing the
+        // turn the victory was actually won on.
+        assert!(game.play_on());
+        assert_eq!(game.decided.as_ref().map(|d| d.turn), Some(30));
+        assert_eq!(game.max_turns, game.turn + PLAY_ON_TURNS);
+    }
+
     /// The Civilization Players League publishes the lobby it plays
     /// (https://cpl.gg/rules/in-game-rules/), and `docs/COMPETITIVE.md` maps
     /// every line of it onto the setting that pins it here. This asserts the
@@ -48670,6 +49141,39 @@ mod victory_conditions {
         g.apply_tree_completion(0, false, "future_civic", false);
         assert_eq!(g.players[0].counters["district_governor_titles"], 1);
         assert_eq!(g.players[0].counters["diplomatic_favor"], 50);
+    }
+
+    #[test]
+    fn save_restore_preserves_the_games_randomized_future_trees() {
+        let game = Game::new_full(2, 24, 16, 818_181, 80, 0, false);
+        let expected = game.rules.future_tree_layout();
+        let value = serde_json::to_value(&game).unwrap();
+        assert_eq!(
+            value["future_tree_layout"]["techs"].as_object().unwrap().len(),
+            8
+        );
+        assert_eq!(
+            value["future_tree_layout"]["civics"]
+                .as_object()
+                .unwrap()
+                .len(),
+            6
+        );
+
+        let restored: Game = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(restored.rules.future_tree_layout(), expected);
+
+        // Saves written before this field existed regenerate through a
+        // domain-separated stream, so loading one cannot perturb the saved
+        // runtime RNG and the same seed still recovers the same graph.
+        let mut legacy = value;
+        legacy
+            .as_object_mut()
+            .unwrap()
+            .remove("future_tree_layout");
+        let restored_legacy: Game = serde_json::from_value(legacy).unwrap();
+        assert_eq!(restored_legacy.rules.future_tree_layout(), expected);
+        assert_eq!(restored_legacy.rng, game.rng);
     }
 
     #[test]
@@ -53755,6 +54259,82 @@ mod district_mechanics {
         assert_eq!(target, "legion");
         // Rome's Legion carries the shipped Swordsman upgrade path onward.
         assert_eq!(game.rules.units["legion"].upgrade_to.as_deref(), Some("man_at_arms"));
+    }
+
+    #[test]
+    fn tagma_replaces_knights_buffs_its_formation_and_is_the_hippodrome_reward() {
+        let mut game = emergency_game_with_capitals(2, 5_505, 300);
+        game.players[0].civ = "Byzantium".to_string();
+        game.players[0].civics.insert("divine_right".to_string());
+        game.players[0]
+            .strategic_resources
+            .insert("iron".to_string(), 100.0);
+        let city = game.player_city_ids(0)[0];
+        assert!(!game.can_produce(
+            0,
+            city,
+            &Item::Unit {
+                unit: "knight".to_string(),
+            },
+        ));
+        assert!(game.can_produce(
+            0,
+            city,
+            &Item::Unit {
+                unit: "tagma".to_string(),
+            },
+        ));
+
+        let warrior = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "warrior")
+            .unwrap();
+        let baseline = game.unit_unembarked_strength(&game.units[&warrior]);
+        let adjacent = game
+            .nbrs(game.units[&warrior].pos)
+            .into_iter()
+            .find(|position| {
+                game.rules.is_passable(&game.map.tiles[position])
+                    && !game.rules.is_water(&game.map.tiles[position])
+                    && game.units_at(*position).is_empty()
+            })
+            .unwrap();
+        game.spawn_test_unit("tagma", 0, adjacent);
+        assert_eq!(
+            game.unit_unembarked_strength(&game.units[&warrior]),
+            baseline + 4.0
+        );
+
+        let before = game.player_unit_ids(0).len();
+        game.grant_heavy_cavalry(0, city);
+        let granted: Vec<_> = game
+            .player_unit_ids(0)
+            .into_iter()
+            .skip(before)
+            .map(|unit| game.units[&unit].kind.as_str())
+            .collect();
+        assert_eq!(granted, vec!["tagma"]);
+    }
+
+    #[test]
+    fn taxis_counts_every_holy_city_following_byzantiums_religion() {
+        let mut game = emergency_game_with_capitals(2, 5_506, 300);
+        game.players[0].civ = "Byzantium".to_string();
+        game.players[0].religion = Some("Eastern Orthodoxy".to_string());
+        game.players[1].religion = Some("Rival Faith".to_string());
+        let byzantine_city = game.player_city_ids(0)[0];
+        let rival_city = game.player_city_ids(1)[0];
+        game.players[0].holy_city = Some(byzantine_city);
+        game.players[1].holy_city = Some(rival_city);
+        for city in [byzantine_city, rival_city] {
+            game.cities
+                .get_mut(&city)
+                .unwrap()
+                .pressure
+                .insert("Eastern Orthodoxy".to_string(), 1_000.0);
+        }
+        assert_eq!(game.taxis_holy_city_strength(0), 6.0);
     }
 }
 

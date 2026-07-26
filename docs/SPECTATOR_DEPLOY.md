@@ -76,13 +76,20 @@ systemd unit or a `while` wrapper works the same way.
 
 ## One complete frame per turn
 
-Every turn the exhibition plays is owed at least one frame, and that frame has
-to carry the whole turn: player stats, victory tracker, map and units, all out
-of the same snapshot. The server keeps the first half by holding a finished
-turn until an active viewer has been handed it — at **every** pace, not only at
-Lightning. A turn budget says how long a turn lasts; it never promised that
-anybody managed to read it, and a page that paints slower than the budget used
-to lose turns silently.
+**Martin-requested simulation requirement:** every turn the exhibition plays
+must be shown in at least one complete frame before the simulation advances.
+That frame must carry the whole updated turn from one snapshot: HUD, player
+stats, victory tracker, world map, minimap, units, sidebars, controls, overlays,
+and every other turn-bound surface. A partial update, a state merely delivered
+to a socket, or two turns composited into one visible refresh does not satisfy
+the requirement.
+
+The server enforces the requirement by holding a finished turn until every
+active viewer acknowledges painting that exact snapshot — at **every** pace,
+not only at Lightning. It accepts an acknowledgement only for a snapshot
+previously delivered to that same viewer. A turn budget says how long a turn
+lasts; it never promised that anybody managed to read it, and a page that
+paints slower than the budget used to lose turns silently.
 
 Only a page that paints holds the simulation to a turn. The browser reports the
 turn it last drew on each `/state` poll (`?painted=<turn>&world=<seed>`), so the
@@ -91,13 +98,14 @@ exhibition down to their own cadence. A viewer that stops asking is dropped
 after a few seconds and costs the unattended exhibition exactly one turn's
 delay.
 
-**Every viewer is owed every turn, and each is waited for on its own.** Two tabs
+**Every viewer is owed every turn, and each paint is waited for on its own.** Two tabs
 on one exhibition used to take alternate turns: the stepper released a turn as
 soon as either had been handed it, so each saw half the game — and the audit,
 reading the same single cursor, called it perfect, because between them they had
 seen it all. A page names itself with `?viewer=<id>` and gets a seat of its own.
-The cost is that a turn now waits for the slowest tab watching, which is the
-promise working rather than failing.
+The cost is that a turn now waits for the slowest tab watching to acknowledge
+its completed same-snapshot render, which is the promise working rather than
+failing.
 
 **A turn reaches the glass, not just the socket.** The page draws at most one
 turn per animation frame. Two turns drawn inside one display refresh are

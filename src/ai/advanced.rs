@@ -1193,8 +1193,11 @@ impl AdvancedAi {
 
         let military_civ = matches!(
             g.players[pid].civ.as_str(),
-            "Sumeria" | "Aztec" | "Nubia" | "Scythia"
+            "Sumeria" | "Aztec" | "Nubia" | "Scythia" | "Byzantium"
         );
+        let basil_tagma_timing = g.has_ability(pid, "taxis")
+            && (g.players[pid].religion.is_some()
+                || g.players[pid].civics.contains("divine_right"));
         let victory = self.victory_focus(g, pid);
         // Target selection needs the same public culture-race totals as
         // victory denial. Build them once for the assessment instead of
@@ -1211,6 +1214,8 @@ impl AdvancedAi {
         {
             GrandStrategy::Recovery
         } else if emergency_objective.is_some() {
+            GrandStrategy::Conquest
+        } else if basil_tagma_timing {
             GrandStrategy::Conquest
         } else if let Some(target) = active_victory_target {
             if target == VictoryTarget::Religion && g.players[pid].religion.is_none() {
@@ -1731,6 +1736,12 @@ impl AdvancedAi {
             let science_commitment = objective == GrandStrategy::Science
                 || self.diplomatic_science_backup(g, pid, plan);
             let forced_goal = match objective {
+                _ if g.has_ability(pid, "taxis")
+                    && g.players[pid].religion.is_none()
+                    && !g.players[pid].techs.contains("astrology") =>
+                {
+                    Some("astrology")
+                }
                 _ if science_commitment => [
                     "rocketry",
                     "satellites",
@@ -1779,6 +1790,11 @@ impl AdvancedAi {
         if g.players[pid].civic.is_none() {
             let available = g.available_civics(pid);
             let forced_goal = match objective {
+                _ if g.has_ability(pid, "taxis")
+                    && !g.players[pid].civics.contains("divine_right") =>
+                {
+                    Some("divine_right")
+                }
                 GrandStrategy::Culture => [
                     "humanism",
                     "conservation",
@@ -2194,6 +2210,9 @@ impl AdvancedAi {
                 "public_works",
             ],
         };
+        if g.has_ability(pid, "taxis") && objective == GrandStrategy::Conquest {
+            desired.splice(0..0, ["chivalry", "maneuver", "raid", "conscription"]);
+        }
 
         let city_ids = g.player_city_ids(pid);
         let unit_ids = g.player_unit_ids(pid);
@@ -5838,6 +5857,114 @@ impl AdvancedAi {
         }
     }
 
+    /// Basil II's timing attack: bank Hippodrome production just short of
+    /// completion, finish the empire-wide batch when Divine Right unlocks the
+    /// Tagma, then exploit Chivalry to build a decisive second wave.
+    fn byzantium_tagma_production(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        if !g.has_ability(pid, "taxis") {
+            return;
+        }
+        if g.players[pid].religion.is_none() {
+            self.religious_production(g, pid);
+            return;
+        }
+        let divine_right = g.players[pid].civics.contains("divine_right");
+        let city_ids = g.player_city_ids(pid);
+        let tagma = Item::Unit {
+            unit: "tagma".to_string(),
+        };
+        let existing_tagmata = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter(|unit| g.units[unit].kind == "tagma")
+            .count();
+        let queued_tagmata = city_ids
+            .iter()
+            .filter(|city| g.cities[city].queue.first() == Some(&tagma))
+            .count();
+        let target_tagmata = city_ids.len().saturating_mul(2).saturating_add(2);
+        let mut committed_tagmata = existing_tagmata + queued_tagmata;
+
+        for city in city_ids {
+            let has_hippodrome = g.city_has_district_family(&g.cities[&city], "hippodrome");
+            if !has_hippodrome {
+                let hippodrome = g
+                    .producible_items(pid, city)
+                    .into_iter()
+                    .find(|item| {
+                        matches!(item, Item::District { district, .. } if district == "hippodrome")
+                    });
+                if let Some(hippodrome) = hippodrome {
+                    let production = g.city_yields(city).production.max(1.0);
+                    let remaining = g.item_remaining_cost_for_city(pid, city, &hippodrome);
+                    let staged = !divine_right && remaining <= production * 1.15;
+                    let building_hippodrome =
+                        g.cities[&city].queue.first() == Some(&hippodrome);
+                    if divine_right || !staged {
+                        if !building_hippodrome {
+                            let _ = g.apply(
+                                pid,
+                                &Action::Produce {
+                                    city,
+                                    item: hippodrome,
+                                },
+                            );
+                        }
+                        continue;
+                    }
+                    if building_hippodrome {
+                        let counts = self.counts(g, pid);
+                        let alternate = g
+                            .producible_items(pid, city)
+                            .into_iter()
+                            .filter(|item| {
+                                !matches!(
+                                    item,
+                                    Item::District { district, .. } if district == "hippodrome"
+                                )
+                            })
+                            .map(|item| {
+                                let cavalry = matches!(
+                                    &item,
+                                    Item::Unit { unit }
+                                        if g.rules.units[unit].promotion_class == "heavy_cavalry"
+                                );
+                                let value =
+                                    self.production_value(g, pid, city, &item, plan, &counts)
+                                        + if cavalry { 500.0 } else { 0.0 };
+                                (value, std::cmp::Reverse(format!("{item:?}")), item)
+                            })
+                            .max_by(|left, right| {
+                                left.0
+                                    .total_cmp(&right.0)
+                                    .then_with(|| left.1.cmp(&right.1))
+                            });
+                        if let Some((_, _, item)) = alternate {
+                            let _ = g.apply(pid, &Action::Produce { city, item });
+                        }
+                    }
+                }
+                continue;
+            }
+            if divine_right
+                && committed_tagmata < target_tagmata
+                && g.can_produce(pid, city, &tagma)
+                && g.cities[&city].queue.first() != Some(&tagma)
+                && g
+                    .apply(
+                        pid,
+                        &Action::Produce {
+                            city,
+                            item: tagma.clone(),
+                        },
+                    )
+                    .is_ok()
+            {
+                committed_tagmata += 1;
+            }
+        }
+    }
+
     fn production_value(
         &self,
         g: &Game,
@@ -7388,10 +7515,13 @@ impl AdvancedAi {
         }
 
         if unit.kind == "apostle" && g.players[pid].religion_beliefs.len() < 4 {
-            let objective = self
-                .victory_target
-                .map(VictoryTarget::strategy)
-                .unwrap_or(GrandStrategy::Religion);
+            let objective = if g.has_ability(pid, "taxis") {
+                GrandStrategy::Conquest
+            } else {
+                self.victory_target
+                    .map(VictoryTarget::strategy)
+                    .unwrap_or(GrandStrategy::Religion)
+            };
             let evangelize = legal
                 .iter()
                 .filter_map(|action| match action {
@@ -7400,7 +7530,7 @@ impl AdvancedAi {
                             (GrandStrategy::Science, "wat")
                             | (GrandStrategy::Culture, "cathedral")
                             | (GrandStrategy::Diplomacy, "pagoda")
-                            | (GrandStrategy::Conquest, "crusade")
+                            | (GrandStrategy::Conquest, "just_war")
                             | (GrandStrategy::Expansion, "religious_colonization")
                             | (GrandStrategy::Religion, "holy_order") => 300,
                             (GrandStrategy::Conquest, "meeting_house")
@@ -10068,7 +10198,8 @@ impl AdvancedAi {
         self.base.minor = g.players[pid].is_minor;
         self.base.barb = g.players[pid].is_barbarian;
         let active_victory_target = self.active_victory_target(g);
-        self.base.pursue_religion = active_victory_target.is_none()
+        self.base.pursue_religion = g.has_ability(pid, "taxis")
+            || active_victory_target.is_none()
             || active_victory_target == Some(VictoryTarget::Religion);
         if self.base.minor || self.base.barb {
             self.base.take_turn(g, pid);
@@ -10127,6 +10258,7 @@ impl AdvancedAi {
         self.strategic_policies(g, pid, plan.strategy);
         self.advanced_diplomacy(g, pid, &plan);
         self.advanced_spies(g, pid, &plan);
+        self.byzantium_tagma_production(g, pid, &plan);
 
         // Preserve the proven four-build opening before switching every city
         // to utility planning. This also keeps the frozen baseline comparable.
@@ -17027,6 +17159,70 @@ mod tests {
                 .as_ref()
                 .map(|mission| mission.kind.as_str()),
             Some("steal_tech_boost")
+        );
+    }
+
+    #[test]
+    fn basil_stages_hippodromes_then_resumes_them_at_divine_right() {
+        let mut game = Game::new_full(2, 24, 16, 110, 200, 0, false);
+        game.players[0].civ = "Byzantium".to_string();
+        game.players[0].religion = Some("Eastern Orthodoxy".to_string());
+        game.players[0].civics.insert("games_recreation".to_string());
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        let city = game.found_city_for(0, game.units[&settler].pos, None);
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: game.turn,
+        };
+        let ai = AdvancedAi::new();
+        ai.byzantium_tagma_production(&mut game, 0, &plan);
+        assert!(matches!(
+            game.cities[&city].queue.first(),
+            Some(Item::District { district, .. }) if district == "hippodrome"
+        ));
+
+        let cost = game.rules.districts["hippodrome"].cost;
+        game.cities.get_mut(&city).unwrap().production = cost - 0.5;
+        ai.byzantium_tagma_production(&mut game, 0, &plan);
+        assert!(
+            !matches!(
+                game.cities[&city].queue.first(),
+                Some(Item::District { district, .. }) if district == "hippodrome"
+            ),
+            "the one-turn Hippodrome must be banked until the Tagma civic"
+        );
+
+        game.players[0].civics.insert("divine_right".to_string());
+        ai.byzantium_tagma_production(&mut game, 0, &plan);
+        assert!(matches!(
+            game.cities[&city].queue.first(),
+            Some(Item::District { district, .. }) if district == "hippodrome"
+        ));
+    }
+
+    #[test]
+    fn a_religious_basil_commits_to_conquest_and_divine_right() {
+        let mut game = Game::new_full(2, 24, 16, 111, 200, 0, false);
+        game.players[0].civ = "Byzantium".to_string();
+        game.players[0].religion = Some("Eastern Orthodoxy".to_string());
+        let ai = AdvancedAi::new();
+        let plan = ai.assess(&game, 0);
+        assert_eq!(plan.strategy, GrandStrategy::Conquest);
+        assert_eq!(plan.target_player, Some(1));
+
+        ai.advanced_research(&mut game, 0, &plan);
+        let civic = game.players[0].civic.as_deref().unwrap();
+        assert!(
+            ai.civic_leads_to(&game, civic, "divine_right"),
+            "{civic} should be on the direct Divine Right beeline"
         );
     }
 }

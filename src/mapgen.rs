@@ -1803,6 +1803,7 @@ pub fn generate_with_script(
     // difference between an iron age and a bronze one. Nothing after this
     // draws from the stream, so a world that needed no top-up is unmoved.
     place_strategic_quotas(rules, &mut wm, &land, num_major_spawns, &occupied, rng);
+    place_artifact_quotas(rules, &mut wm, num_major_spawns, &occupied, rng);
     (wm, spawns)
 }
 
@@ -3261,6 +3262,97 @@ fn place_strategic_quotas(
     }
 }
 
+/// Antiquity Sites and Shipwrecks are allocated per civilization rather than
+/// rolled per tile: the shipped `ARCHAEOLOGY_SITES_PER_CIV_LAND` is **6** and
+/// `ARCHAEOLOGY_SITES_PER_CIV_SEA` is **2**, so a standard eight-player map
+/// carries 48 dig sites and 16 wrecks. The per-tile lottery still rolls them
+/// as before and this tops the map up to the quota afterwards, on the same
+/// eligibility test every other resource uses — so this changes how many
+/// appear and never where they are allowed to appear.
+///
+/// It runs **after the seats are chosen**, and deliberately so. Every earlier
+/// pass feeds the start-placement search: freeing tiles that the lottery would
+/// have filled lets `place_strategic_quotas` seat more deposits, which draws
+/// more from the shared stream, which moves the spawns. A Tiny map lost the
+/// shipped 10-14 separation band that way. Nothing after this point reads the
+/// stream, so the quota is invisible to the layout.
+fn place_artifact_quotas(
+    rules: &Rules,
+    wm: &mut WorldMap,
+    num_major_spawns: usize,
+    reserved: &BTreeSet<Pos>,
+    rng: &mut Rng,
+) {
+    let artifacts: Vec<String> = rules
+        .resources
+        .iter()
+        .filter(|(_, spec)| spec.class == "artifact")
+        .map(|(name, _)| name.clone())
+        .collect();
+    let all: Vec<Pos> = wm.tiles.keys().copied().collect();
+    for resource in artifacts {
+        let spec = &rules.resources[resource.as_str()];
+        // A wreck lies in the water and a dig site on land; the resource's own
+        // terrain list is what says which, so a future artifact needs no new
+        // branch here.
+        let sea = spec
+            .terrain
+            .iter()
+            .all(|terrain| matches!(terrain.as_str(), "coast" | "ocean" | "lake"));
+        let per_civ = if sea { 2 } else { 6 };
+        let quota = per_civ * num_major_spawns;
+        let mut standing: Vec<Pos> = all
+            .iter()
+            .copied()
+            .filter(|pos| wm.tiles[pos].resource.as_deref() == Some(resource.as_str()))
+            .collect();
+        // The lottery rolls Artifacts like any other resource, which undershoots
+        // on an ocean-heavy map and overshoots badly on a land-heavy one — a
+        // Land Only world rolled 66 dig sites against a quota of 48. Trim as
+        // readily as top up, so the map ends on the shipped number either way.
+        while standing.len() > quota {
+            let pick = rng.below(standing.len());
+            let pos = standing.swap_remove(pick);
+            wm.tiles.get_mut(&pos).unwrap().resource = None;
+        }
+        let mut wanted = quota - standing.len();
+        if wanted == 0 {
+            continue;
+        }
+        let mut candidates: Vec<Pos> = all
+            .iter()
+            .copied()
+            .filter(|pos| !reserved.contains(pos))
+            .filter(|pos| {
+                let tile = &wm.tiles[pos];
+                if tile.resource.is_some() {
+                    return false;
+                }
+                let natural_wonder = tile
+                    .feature
+                    .as_deref()
+                    .and_then(|feature| rules.features.get(feature))
+                    .is_some_and(|feature| feature.natural_wonder);
+                if natural_wonder {
+                    return false;
+                }
+                let by_feature = tile
+                    .feature
+                    .as_ref()
+                    .is_some_and(|feature| spec.feature.contains(feature));
+                let by_terrain = tile.feature.is_none() && spec.terrain.contains(&tile.terrain);
+                (by_feature || by_terrain) && spec.hills.is_none_or(|want| want == tile.hills)
+            })
+            .collect();
+        while wanted > 0 && !candidates.is_empty() {
+            let pick = rng.below(candidates.len());
+            let pos = candidates.swap_remove(pick);
+            wm.tiles.get_mut(&pos).unwrap().resource = Some(resource.clone());
+            wanted -= 1;
+        }
+    }
+}
+
 /// Divide land into the stock number of named geographic regions. Civ VI's
 /// continent count is not a promise of disconnected landmasses; a large
 /// landmass can span several continents, so farthest-point Voronoi regions
@@ -4229,6 +4321,66 @@ mod river_tests {
                 assert!(
                     count >= 7,
                     "{script:?} placed only {count} {resource} for six civilizations"
+                );
+            }
+        }
+    }
+
+    /// Antiquity Sites and Shipwrecks are allocated per civilization, not
+    /// rolled per tile. `ARCHAEOLOGY_SITES_PER_CIV_LAND` is 6 and
+    /// `ARCHAEOLOGY_SITES_PER_CIV_SEA` is 2, so the eight-player tournament map
+    /// carries 48 dig sites and 16 wrecks. Under the old lottery it averaged
+    /// 17.8 and 9.0 — barely a third of the Artifacts Archaeology and the
+    /// Culture victory are balanced around.
+    #[test]
+    fn artifacts_are_allocated_per_civilization_not_rolled_per_tile() {
+        let rules = Rules::embedded();
+        for (index, script) in ROLLED_TYPES.into_iter().enumerate() {
+            let majors = 8;
+            let mut rng = Rng::new(82_000 + index as u64);
+            let (world, _) = generate_with_script(
+                &rules, 84, 54, majors, 12, 5, 4, script, FLAT, POLED, &mut rng,
+            );
+            // A quota is a ceiling, not a promise: a water-poor script can run
+            // out of eligible Coast and a land-only one out of unclaimed dig
+            // terrain. So assert the quota is met *or* that nothing eligible is
+            // left over — never that some tiles were simply skipped.
+            for (resource, per_civ) in [("antiquity_site", 6), ("shipwreck", 2)] {
+                let spec = &rules.resources[resource];
+                let placed = world
+                    .tiles
+                    .values()
+                    .filter(|tile| tile.resource.as_deref() == Some(resource))
+                    .count();
+                let quota = per_civ * majors;
+                assert!(
+                    placed <= quota,
+                    "{script:?} placed {placed} {resource}, over the {quota} quota"
+                );
+                if placed == quota {
+                    continue;
+                }
+                let spare = world
+                    .tiles
+                    .values()
+                    .filter(|tile| {
+                        if tile.resource.is_some() {
+                            return false;
+                        }
+                        let by_feature = tile
+                            .feature
+                            .as_ref()
+                            .is_some_and(|feature| spec.feature.contains(feature));
+                        let by_terrain =
+                            tile.feature.is_none() && spec.terrain.contains(&tile.terrain);
+                        (by_feature || by_terrain)
+                            && spec.hills.is_none_or(|want| want == tile.hills)
+                    })
+                    .count();
+                assert_eq!(
+                    spare, 0,
+                    "{script:?} placed only {placed} of {quota} {resource} \
+                     with {spare} eligible tiles still free"
                 );
             }
         }

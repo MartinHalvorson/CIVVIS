@@ -1752,7 +1752,7 @@ impl BasicAi {
             let mut founders: Vec<String> = [
                 "tithe",
                 "world_church",
-                "church_property",
+                "cross_cultural_dialogue",
                 "pilgrimage",
                 "religious_unity",
             ]
@@ -6516,7 +6516,7 @@ mod tests {
         assert!(game.players[2]
             .religion_beliefs
             .iter()
-            .any(|belief| belief == "church_property"));
+            .any(|belief| belief == "cross_cultural_dialogue"));
     }
 
     #[test]
@@ -8655,6 +8655,18 @@ mod tests {
             .buildings
             .push("archaeological_museum".to_string());
         g.players[0].civics.insert("natural_history".to_string());
+        // The generator now lays down the shipped six dig sites per
+        // civilization, so this fixture has to be the only Artifact on the map
+        // or the routing assertion is really asserting which site is nearest.
+        for position in g.map.tiles.keys().copied().collect::<Vec<_>>() {
+            let is_artifact = g.map.tiles[&position]
+                .resource
+                .as_deref()
+                .is_some_and(|resource| g.rules.resources[resource].class == "artifact");
+            if is_artifact {
+                g.map.tiles.get_mut(&position).unwrap().resource = None;
+            }
+        }
         // One `archaeologist_step` is one movement step, so the dig has to
         // border the city for the route to finish inside it. Taking the first
         // owned tile instead left that to the shape of the generated map.

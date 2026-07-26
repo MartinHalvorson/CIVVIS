@@ -91,6 +91,10 @@ TABLE_KEYS = {
     "UnitUpgrades": ("Unit", "UpgradeUnit"),
     "Technologies": "TechnologyType",
     "Civics": "CivicType",
+    "Technologies_XP2": "TechnologyType",
+    "Civics_XP2": "CivicType",
+    "TechnologyRandomCosts": ("TechnologyType", "Cost"),
+    "CivicRandomCosts": ("CivicType", "Cost"),
     "Buildings": "BuildingType",
     "Districts": "DistrictType",
     "TechnologyPrereqs": ("Technology", "PrereqTech"),
@@ -413,6 +417,23 @@ ALIASES = {
     "water_street_carnival": "copacabana",
     "beach_resort": "seaside_resort",
     "pyramid": "nubian_pyramid",
+    # Rows that were reported "Only in CIVVIS" — i.e. compared against nothing.
+    "byzantine_tagma": "tagma",
+    "rembrandt_van_rijn": "rembrandt",
+    "defender_of_faith": "defender_of_the_faith",
+    # District projects ship as ENHANCE_DISTRICT_<district>; the space-race and
+    # laser projects are named for the launch rather than the payload.
+    "enhance_district_campus": "campus_research_grants",
+    "enhance_district_commercial_hub": "commercial_hub_investment",
+    "enhance_district_encampment": "encampment_training",
+    "enhance_district_harbor": "harbor_shipping",
+    "enhance_district_holy_site": "holy_site_prayers",
+    "enhance_district_industrial_zone": "industrial_zone_logistics",
+    "enhance_district_theater": "theater_square_festival",
+    "launch_exoplanet_expedition": "exoplanet_expedition",
+    "launch_mars_base": "launch_mars_colony",
+    "orbital_laser": "lagrange_laser_station",
+    "terrestrial_laser": "terrestrial_laser_station",
 }
 
 
@@ -486,6 +507,16 @@ def project_techs(database: Database) -> dict[str, dict]:
         prereqs.setdefault(slug(row["Technology"], "TECH_"), set()).add(
             slug(row["PrereqTech"], "TECH_")
         )
+    randomized = {
+        slug(row["TechnologyType"], "TECH_")
+        for row in database.rows("Technologies_XP2")
+        if truthy(row.get("RandomPrereqs"))
+    }
+    random_costs: dict[str, list] = {}
+    for row in database.rows("TechnologyRandomCosts"):
+        random_costs.setdefault(slug(row["TechnologyType"], "TECH_"), []).append(
+            number(row.get("Cost"))
+        )
     projected = {}
     for row in database.rows("Technologies"):
         name = slug(row["TechnologyType"], "TECH_")
@@ -494,6 +525,8 @@ def project_techs(database: Database) -> dict[str, dict]:
             "cost": number(row.get("Cost")),
             "era": ERAS.index(era) if era in ERAS else -1,
             "requires": prereqs.get(name, set()),
+            "random_prereqs": name in randomized,
+            "random_costs": sorted(random_costs.get(name, [])),
         }
     return projected
 
@@ -504,6 +537,16 @@ def project_civics(database: Database) -> dict[str, dict]:
         prereqs.setdefault(slug(row["Civic"], "CIVIC_"), set()).add(
             slug(row["PrereqCivic"], "CIVIC_")
         )
+    randomized = {
+        slug(row["CivicType"], "CIVIC_")
+        for row in database.rows("Civics_XP2")
+        if truthy(row.get("RandomPrereqs"))
+    }
+    random_costs: dict[str, list] = {}
+    for row in database.rows("CivicRandomCosts"):
+        random_costs.setdefault(slug(row["CivicType"], "CIVIC_"), []).append(
+            number(row.get("Cost"))
+        )
     projected = {}
     for row in database.rows("Civics"):
         name = slug(row["CivicType"], "CIVIC_")
@@ -512,6 +555,8 @@ def project_civics(database: Database) -> dict[str, dict]:
             "cost": number(row.get("Cost")),
             "era": ERAS.index(era) if era in ERAS else -1,
             "requires": prereqs.get(name, set()),
+            "random_prereqs": name in randomized,
+            "random_costs": sorted(random_costs.get(name, [])),
         }
     return projected
 
@@ -539,6 +584,15 @@ FEATURE_ALIASES = {
     "barrier_reef": "great_barrier_reef",
     "everest": "mount_everest",
     "forest": "forest",
+    # Five more Natural Wonders whose shipped name is not their display name.
+    # Without these the Features audit compared *nothing* for them, which is
+    # exactly the blind spot the wonder and unique-unit aliases above exist to
+    # close — and it hid wrong yields on all five until they were found by hand.
+    "cliffs_dover": "cliffs_of_dover",
+    "galapagos": "galapagos_islands",
+    "ikkil": "ik_kil",
+    "chocolatehills": "chocolate_hills",
+    "devilstower": "mato_tipila",
 }
 
 
@@ -1672,6 +1726,8 @@ def ours_tree(name: str, key: str) -> dict[str, dict]:
             "cost": entry.get("cost", 0),
             "era": entry.get("era", -1),
             "requires": set(entry.get("requires", [])),
+            "random_prereqs": entry.get("random_prereqs", False),
+            "random_costs": sorted(entry.get("random_costs", [])),
         }
     return out
 
@@ -1679,20 +1735,6 @@ def ours_tree(name: str, key: str) -> dict[str, dict]:
 # Rules CIVVIS hardcodes in the engine rather than in data. Each mirrors a
 # specific site in src/: change one side, change the other.
 ENGINE_HILLS = {"yield_delta": {"production": 1}, "move_cost": 2, "defense": 3}  # rules.rs tile_yields/move_cost, game.rs tile_defense_bonus
-ENGINE_FEATURE_DEFENSE = {  # game.rs tile_defense_bonus
-    "forest": 3,
-    "jungle": 3,
-    "reef": 3,
-    "burning_forest": 3,
-    "burning_jungle": 3,
-    "burnt_forest": 3,
-    "burnt_jungle": 3,
-    "marsh": -2,
-    "floodplains": -2,
-    "grassland_floodplains": -2,
-    "plains_floodplains": -2,
-    "pantanal": -2,
-}
 
 
 def ours_terrains() -> dict[str, dict]:
@@ -1716,7 +1758,7 @@ def ours_features() -> dict[str, dict]:
             "move_cost": entry.get("move_cost", 0),
             "impassable": entry.get("impassable", False),
             "natural_wonder": entry.get("natural_wonder", False),
-            "defense": ENGINE_FEATURE_DEFENSE.get(name, 0),
+            "defense": entry.get("defense", 0),
             "chop": entry.get("chop", {}),
         }
         if entry.get("adjacent_yields"):
