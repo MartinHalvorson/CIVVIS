@@ -2220,6 +2220,40 @@ mod seating_tests {
         assert_eq!(&seated[..CIV_NAMES.len()], &CIV_NAMES.map(String::from)[..]);
         assert_eq!(&seated[CIV_NAMES.len()..], &CIV_NAMES.map(String::from)[..3]);
     }
+
+    #[test]
+    fn randomized_seating_is_seeded_unique_and_preserves_explicit_picks() {
+        let known: BTreeSet<String> = Rules::shared().civs.keys().cloned().collect();
+        let chosen = ["Egypt".to_string()];
+        let mut first_rng = Rng::new(71);
+        let mut repeat_rng = Rng::new(71);
+        let first = seat_civs_randomized(8, &chosen, &known, &mut first_rng);
+        let repeat = seat_civs_randomized(8, &chosen, &known, &mut repeat_rng);
+        assert_eq!(first, repeat);
+        assert_eq!(first[0], "Egypt");
+        assert_eq!(first.iter().collect::<BTreeSet<_>>().len(), 8);
+        let stock_tail: Vec<String> = CIV_NAMES[1..8]
+            .iter()
+            .map(|civilization| (*civilization).to_string())
+            .collect();
+        assert_ne!(
+            &first[1..],
+            stock_tail,
+            "open seats should not silently retain stock order"
+        );
+    }
+
+    #[test]
+    fn every_stock_civilization_can_enter_the_random_pool() {
+        let known: BTreeSet<String> = Rules::shared().civs.keys().cloned().collect();
+        let mut seen = BTreeSet::new();
+        for seed in 0..1_000 {
+            let mut rng = Rng::new(seed);
+            seen.extend(seat_civs_randomized(8, &[], &known, &mut rng));
+        }
+        assert_eq!(seen.len(), CIV_NAMES.len());
+        assert!(seen.contains("Byzantium"));
+    }
 }
 
 #[cfg(test)]
@@ -12339,6 +12373,10 @@ pub struct GameOptions {
     /// chosen so no two majors share an identity by accident. Empty is the
     /// stock order.
     pub civs: Vec<String>,
+    /// Shuffle every civilization seat the lobby did not name. Kept opt-in so
+    /// simulations and old saves retain their seed-for-seed stock seating;
+    /// the live server enables it for newly created games.
+    pub randomize_civs: bool,
 }
 
 impl GameOptions {
@@ -12368,6 +12406,7 @@ impl GameOptions {
             disaster_intensity: DEFAULT_DISASTER_INTENSITY,
             game_modes: BTreeSet::new(),
             civs: Vec::new(),
+            randomize_civs: false,
         }
     }
 }
@@ -12403,6 +12442,41 @@ pub fn seat_civs(num_players: usize, chosen: &[String], known: &BTreeSet<String>
     seats
         .into_iter()
         .map(|seat| seat.unwrap_or_else(|| stock.next().unwrap_or(CIV_NAMES[0]).to_string()))
+        .collect()
+}
+
+/// Seat explicitly chosen civilizations in place, then uniformly shuffle the
+/// known stock roster for every open seat. The independent roster RNG keeps
+/// map generation stable when random seating is enabled.
+pub fn seat_civs_randomized(
+    num_players: usize,
+    chosen: &[String],
+    known: &BTreeSet<String>,
+    rng: &mut Rng,
+) -> Vec<String> {
+    let mut seats: Vec<Option<String>> = vec![None; num_players];
+    let mut taken: BTreeSet<String> = BTreeSet::new();
+    for (seat, civ) in chosen.iter().enumerate().take(num_players) {
+        if known.contains(civ) {
+            taken.insert(civ.clone());
+            seats[seat] = Some(civ.clone());
+        }
+    }
+    let mut stock: Vec<String> = CIV_NAMES
+        .iter()
+        .filter(|civ| known.contains(**civ) && !taken.contains(**civ))
+        .map(|civ| (*civ).to_string())
+        .collect();
+    for i in (1..stock.len()).rev() {
+        stock.swap(i, rng.below(i + 1));
+    }
+    if stock.is_empty() {
+        stock.push(CIV_NAMES[0].to_string());
+    }
+    let mut stock = stock.into_iter().cycle();
+    seats
+        .into_iter()
+        .map(|civ| civ.unwrap_or_else(|| stock.next().unwrap()))
         .collect()
 }
 
@@ -13161,6 +13235,7 @@ impl Game {
             disaster_intensity,
             game_modes,
             civs,
+            randomize_civs,
         } = options;
         assert!(
             teams.is_empty() || teams.len() == num_players,
@@ -13252,11 +13327,13 @@ impl Game {
             log: crate::actionlog::ActionLog::new(),
             events: EventLog::default(),
         };
-        let seated = seat_civs(
-            num_players,
-            &civs,
-            &g.rules.civs.keys().cloned().collect::<BTreeSet<_>>(),
-        );
+        let known_civs = g.rules.civs.keys().cloned().collect::<BTreeSet<_>>();
+        let seated = if randomize_civs {
+            let mut roster_rng = Rng::new(seed ^ 0x4349_5656_4953_4349);
+            seat_civs_randomized(num_players, &civs, &known_civs, &mut roster_rng)
+        } else {
+            seat_civs(num_players, &civs, &known_civs)
+        };
         // Civilization VI decides *which* start a civilization is given from
         // its shipped StartBias rows. Reorder the major sites to honour them
         // before any seat is handed one; generation itself is untouched.
@@ -17292,8 +17369,10 @@ impl Game {
     fn theological_strength(&self, unit: &Unit) -> f64 {
         let mut strength = self.rules.units[unit.kind.as_str()].religious_strength
             + self.promotion_effect(unit, "religious_strength");
+        strength += self.adjacent_friendly_unit_effect(unit, "adjacent_religious_strength");
         strength += self.gov_effects(unit.owner).religious_strength;
         strength += self.policy_effect(unit.owner, "religious_strength");
+        strength += self.taxis_holy_city_strength(unit.owner);
         if self
             .map
             .get(unit.pos)
@@ -20295,6 +20374,13 @@ impl Game {
             + self.congress_military_strength_bonus(u)
             + self.religious_combat_belief_bonus(u.owner, u.pos)
             + self.handicap_combat_strength(u.owner);
+        if !matches!(
+            self.rules.units[u.kind.as_str()].domain.as_deref(),
+            Some("sea" | "air")
+        ) {
+            s += self.adjacent_friendly_unit_effect(u, "adjacent_combat_strength");
+        }
+        s += self.taxis_holy_city_strength(u.owner);
         if u.kind == "giant_death_robot" {
             s += self.tree_effect(u.owner, "gdr_armor");
         }
@@ -23991,6 +24077,43 @@ impl Game {
                     .then(|| support.effects.get(effect).copied().unwrap_or(0.0))
             })
             .fold(0.0, f64::max)
+    }
+
+    /// Strongest aura supplied by any adjacent same-owner unit. Unlike the
+    /// support-only family above, unique-unit formation bonuses such as the
+    /// Tagma's apply from an ordinary military unit and never to itself.
+    fn adjacent_friendly_unit_effect(&self, unit: &Unit, effect: &str) -> f64 {
+        self.wdisk(unit.pos, 1)
+            .into_iter()
+            .flat_map(|position| self.units_at(position))
+            .filter(|other| *other != unit.id && self.units[other].owner == unit.owner)
+            .map(|other| {
+                self.rules.units[self.units[&other].kind.as_str()]
+                    .effects
+                    .get(effect)
+                    .copied()
+                    .unwrap_or(0.0)
+            })
+            .fold(0.0, f64::max)
+    }
+
+    /// Taxis scales with converted Holy Cities, including an enemy founder's
+    /// Holy City after it adopts Byzantium's founded religion.
+    fn taxis_holy_city_strength(&self, pid: usize) -> f64 {
+        if !self.has_ability(pid, "taxis") {
+            return 0.0;
+        }
+        let Some(religion) = self.players[pid].religion.as_deref() else {
+            return 0.0;
+        };
+        let converted = self
+            .players
+            .iter()
+            .filter_map(|player| player.holy_city)
+            .filter_map(|city| self.cities.get(&city))
+            .filter(|city| self.city_religion(city) == Some(religion))
+            .count() as f64;
+        converted * self.civ_effect(pid, "holy_city_combat_strength")
     }
 
     pub fn unit_attack_range(&self, uid: u32) -> i32 {
@@ -32828,7 +32951,12 @@ impl Game {
                 // siege tower: only melee/anti-cavalry pour through the walls
                 let (ram, tower) =
                     self.siege_support_effects(pid, cid, target, &spec.promotion_class);
-                let mult = if ram { 1.0 } else { 0.15 };
+                let basil_cavalry = self.has_ability(pid, "taxis")
+                    && spec.cavalry
+                    && self.players[pid].religion.as_deref().is_some_and(|religion| {
+                        self.city_religion(&self.cities[&cid]) == Some(religion)
+                    });
+                let mult = if ram || basil_cavalry { 1.0 } else { 0.15 };
                 self.city_take_damage(pid, cid, dmg_out, mult, tower);
                 self.units.get_mut(&uid).unwrap().hp -= dmg_in;
                 if self.units[&uid].hp <= 0 {
@@ -41616,6 +41744,28 @@ impl Game {
                 self.dedication_trigger(pid, "robot_kill", 1);
             }
         }
+        if !self.players[victim.owner].is_barbarian && self.has_ability(pid, "taxis") {
+            if let Some(religion) = self.players[pid].religion.clone() {
+                let pressure = self.civ_effect(pid, "unit_kill_religious_pressure");
+                let targets: Vec<u32> = self
+                    .cities
+                    .values()
+                    .filter(|city| self.wdist(city.pos, victim.pos) <= 10)
+                    .map(|city| city.id)
+                    .collect();
+                for city_id in targets {
+                    if !self.city_ignores_foreign_religion(&self.cities[&city_id], &religion) {
+                        *self.cities
+                            .get_mut(&city_id)
+                            .unwrap()
+                            .pressure
+                            .entry(religion.clone())
+                            .or_insert(0.0) += pressure;
+                    }
+                }
+                self.check_religious_victory();
+            }
+        }
         self.record_war_unit_loss(pid, victim.owner, &victim.kind, victim.formation);
     }
 
@@ -42975,6 +43125,7 @@ impl Game {
             .iter()
             .filter(|(_, spec)| spec.promotion_class == "heavy_cavalry")
             .filter(|(_, spec)| self.unlocked(pid, &spec.tech, &spec.civic))
+            .filter(|(name, _)| self.player_unit_replacement(pid, name) == **name)
             .filter(|(_, spec)| {
                 spec.unique_to
                     .as_deref()
@@ -53589,6 +53740,82 @@ mod district_mechanics {
         assert_eq!(target, "legion");
         // Rome's Legion carries the shipped Swordsman upgrade path onward.
         assert_eq!(game.rules.units["legion"].upgrade_to.as_deref(), Some("man_at_arms"));
+    }
+
+    #[test]
+    fn tagma_replaces_knights_buffs_its_formation_and_is_the_hippodrome_reward() {
+        let mut game = emergency_game_with_capitals(2, 5_505, 300);
+        game.players[0].civ = "Byzantium".to_string();
+        game.players[0].civics.insert("divine_right".to_string());
+        game.players[0]
+            .strategic_resources
+            .insert("iron".to_string(), 100.0);
+        let city = game.player_city_ids(0)[0];
+        assert!(!game.can_produce(
+            0,
+            city,
+            &Item::Unit {
+                unit: "knight".to_string(),
+            },
+        ));
+        assert!(game.can_produce(
+            0,
+            city,
+            &Item::Unit {
+                unit: "tagma".to_string(),
+            },
+        ));
+
+        let warrior = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "warrior")
+            .unwrap();
+        let baseline = game.unit_unembarked_strength(&game.units[&warrior]);
+        let adjacent = game
+            .nbrs(game.units[&warrior].pos)
+            .into_iter()
+            .find(|position| {
+                game.rules.is_passable(&game.map.tiles[position])
+                    && !game.rules.is_water(&game.map.tiles[position])
+                    && game.units_at(*position).is_empty()
+            })
+            .unwrap();
+        game.spawn_test_unit("tagma", 0, adjacent);
+        assert_eq!(
+            game.unit_unembarked_strength(&game.units[&warrior]),
+            baseline + 4.0
+        );
+
+        let before = game.player_unit_ids(0).len();
+        game.grant_heavy_cavalry(0, city);
+        let granted: Vec<_> = game
+            .player_unit_ids(0)
+            .into_iter()
+            .skip(before)
+            .map(|unit| game.units[&unit].kind.as_str())
+            .collect();
+        assert_eq!(granted, vec!["tagma"]);
+    }
+
+    #[test]
+    fn taxis_counts_every_holy_city_following_byzantiums_religion() {
+        let mut game = emergency_game_with_capitals(2, 5_506, 300);
+        game.players[0].civ = "Byzantium".to_string();
+        game.players[0].religion = Some("Eastern Orthodoxy".to_string());
+        game.players[1].religion = Some("Rival Faith".to_string());
+        let byzantine_city = game.player_city_ids(0)[0];
+        let rival_city = game.player_city_ids(1)[0];
+        game.players[0].holy_city = Some(byzantine_city);
+        game.players[1].holy_city = Some(rival_city);
+        for city in [byzantine_city, rival_city] {
+            game.cities
+                .get_mut(&city)
+                .unwrap()
+                .pressure
+                .insert("Eastern Orthodoxy".to_string(), 1_000.0);
+        }
+        assert_eq!(game.taxis_holy_city_strength(0), 6.0);
     }
 }
 
