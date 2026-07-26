@@ -1581,3 +1581,53 @@ Q or advantage, trained on returns for actions actually taken — not a
 state-value regression read greedily. The self-play loop is still required,
 but as the thing that generates action-conditioned returns rather than as a
 distribution fix.
+
+## 2026-07-26 — freeze the symptom: a causal test, and a design rule
+
+The previous entry blamed `policy_wide`'s collapse on the net's contact
+terms: an argmax optimising a *symptom* of strength rather than a cause.
+That was inferred from a correlation between chosen actions and one
+feature, and this session has already retracted two mechanisms inferred
+that way. So it was tested by denying the agent that specific symptom —
+`policy_wide_frozen` holds the two contact terms at their pre-action values
+while scoring candidates, so the net cannot reward an action for moving
+them. Nothing else changes: same net, same features, same everything.
+
+Same 120 maps as the collapse:
+
+| variant | games | maps for | against | Elo-equivalent |
+|---|---|---|---|---|
+| `policy` (25-wide, blind) | 108/240 (45.0%) | 9 | 21 | −35 |
+| `policy_wide` (contact free) | 34/240 (14.2%) | 1 | 87 | **−313** |
+| `policy_wide_frozen` (contact frozen) | **120/240 (50.0%)** | 16 | 16 | **0** |
+
+**Two features accounted for the entire collapse.** Denying them recovers
+−313 Elo to exact parity, and the recovered agent is better than the blind
+one it started as (50.0% against 45.0%) while genuinely acting — 16 maps
+won against 9, on 32 maps that broke against 30.
+
+That confirms the mechanism causally rather than by association, and it
+yields a design rule the earlier entries missed:
+
+> **A feature that makes a decision visible can simultaneously make it
+> exploitable. In any feature set consumed by an argmax over actions, every
+> feature must be one you would be content for the agent to maximise.**
+
+The 34-wide vector was designed for *visibility* — measured, and correct on
+its own terms: action visibility 44.5% → 86.1%. But visibility and safety
+are different properties, and the terms divide cleanly along that line.
+Material, HP, fortification and city fabric are **causal**: more of them is
+genuinely better, and an agent that maximises them is doing something
+sensible. Adjacency and gap are **correlational**: they are high in won
+games because a strong empire presses attacks, and an agent that maximises
+them charges into fights it loses. The visibility work needed both kinds;
+the ranking work can only survive the first.
+
+This is the cheapest available statement of what an action-conditioned
+value would buy. Q or advantage learns the return of *taking* the action,
+so a move into a losing fight is scored by what it costs, not by what it
+resembles. Until that exists, a feature audited only for visibility is not
+safe to hand to an argmax — and `policy_wide` is left in the tree as the
+demonstration.
+
+Both variants remain eval-only, and no default changed.
