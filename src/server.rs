@@ -5175,13 +5175,20 @@ mod tests {
             "const playerScroll = hud.querySelector(\".diplomacy-ribbon\")?.scrollTop || 0;"
         ));
         assert!(EMBEDDED_INDEX.contains("playerRibbon.scrollTop = playerScroll;"));
-        // The masthead grows toward the right rail but never beneath it. The
-        // tracker grows by the contender rows it shows but never through the
-        // minimap seam.
+        // The masthead grows toward the victory tracker but never beneath it,
+        // and the tracker is the only instrument beside it along the top edge.
+        // Measuring that seam against --hud-rail-width — the wider reservation
+        // the minimap needs in the bottom corner — left 192px of empty map
+        // between the two panels at 1600px while the values were squeezed to
+        // 27px each. The rail width still governs the minimap.
         assert!(EMBEDDED_INDEX.contains("--hud-rail-width:"));
         assert!(EMBEDDED_INDEX.contains(
             "width: min(var(--player-hud-width, 100%),\n      \
-             calc(100% - min(var(--hud-rail-width), var(--hud-rail-share)) - 32px));"
+             calc(100% - var(--victory-hud-width) - 20px));"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "width: min(var(--hud-rail-width), var(--hud-rail-share)); \
+             height: var(--minimap-height);"
         ));
         assert!(EMBEDDED_INDEX.contains(
             "height: min(var(--victory-hud-height, 100%),\n      \
@@ -5201,8 +5208,27 @@ mod tests {
         // no column heading; the button carries its own visible label.
         assert!(EMBEDDED_INDEX.contains(
             "grid-template-columns: var(--hud-lock-column, 0px) var(--hud-map-links-column)\n      \
-             var(--hud-watch-column) var(--hud-identity-column) minmax(0, 1fr);"
+             var(--hud-watch-column) var(--hud-identity-column) var(--hud-stats-column);"
         ));
+        // The values claim their width first and the identity block flexes, so a
+        // narrow masthead ellipsizes a name rather than running two figures
+        // together. A percentage identity column with a 300px floor never
+        // yielded, which left the ten values 27px each at 1600px.
+        assert!(EMBEDDED_INDEX.contains("--hud-identity-column: minmax(196px, 1fr);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "--hud-stats-column: minmax(\n      \
+             calc(var(--hud-stat-min) * 10 + var(--hud-stat-gap) * 9), 1.02fr);"
+        ));
+        // A gutter between adjacent figures, and no per-value hairline.
+        assert!(EMBEDDED_INDEX.contains("column-gap: var(--hud-stat-gap, 0px);"));
+        // The fitter has to measure the cell: the figure is centered content in
+        // its own grid, so its clientWidth and scrollWidth are always equal and
+        // it can never report the overflow that would shrink it.
+        assert!(EMBEDDED_INDEX.contains(
+            "{selector:\"#playerhud .ribbon-stat b\", min:10, max:15, parentWidth:true},"
+        ));
+        // No coloured bloom behind eighty figures at once.
+        assert!(!EMBEDDED_INDEX.contains("text-shadow: 0 1px 2px #000, 0 0 8px currentColor;"));
         assert!(EMBEDDED_INDEX.contains(
             "class=\"empire-link\" data-hud-action=\"capital\""
         ));
