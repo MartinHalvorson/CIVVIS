@@ -951,204 +951,47 @@ fn nuclear_strikes_json(g: &Game) -> Vec<Value> {
 /// 0..100 for sorting and meter width, while the underlying counts let the UI
 /// describe the actual victory requirement instead of showing a vague percent.
 fn victory_progress_json(g: &Game, pid: usize, leading_score: i64) -> Value {
-    let player = &g.players[pid];
-    let all_majors: Vec<usize> = g
-        .players
-        .iter()
-        .filter(|candidate| !candidate.is_minor && !candidate.is_barbarian)
-        .map(|candidate| candidate.id)
-        .collect();
-    let living_majors: Vec<usize> = all_majors
-        .iter()
-        .copied()
-        .filter(|candidate| g.players[*candidate].alive)
-        .collect();
-
-    let science_projects = [
-        "launch_earth_satellite",
-        "launch_moon_landing",
-        "launch_mars_colony",
-        "exoplanet_expedition",
-    ];
-    let completed_projects = science_projects
-        .iter()
-        .filter(|project| player.science_projects.contains(**project))
-        .count();
-    let science_progress = if player.science_projects.contains("exoplanet_expedition") {
-        75.0 + 25.0 * player.exoplanet_distance / EXOPLANET_DESTINATION
-    } else {
-        match completed_projects {
-            0 => 0.0,
-            1 => 25.0,
-            2 => 45.0,
-            _ => 65.0,
-        }
-    }
-    .clamp(0.0, 100.0);
-    // The space race is the last stretch of a road that starts at the first
-    // technology, and for most of a game the tree is the only part of it a
-    // watcher can see moving.
-    let techs_known = player.techs.len();
-    let tech_total = g.rules.techs.len();
-    let civics_known = player.civics.len();
-    let civic_total = g.rules.civics.len();
-
-    let rival_domestic = living_majors
-        .iter()
-        .filter(|candidate| **candidate != pid && !g.same_team(pid, **candidate))
-        .map(|candidate| g.domestic_tourists(*candidate))
-        .max()
-        .unwrap_or(0);
-    let culture_target = rival_domestic + 1;
-    let domestic_tourists = g.domestic_tourists(pid);
-    // The culture a civilization keeps at home is the other half of this
-    // race: it is what every rival's tourism has to out-run.
-    let leading_domestic = all_majors
-        .iter()
-        .map(|candidate| g.domestic_tourists(*candidate))
-        .max()
-        .unwrap_or(0);
-    let foreign_tourists = g.foreign_tourists(pid);
-    let culture_progress = if culture_target > 0 {
-        100.0 * foreign_tourists as f64 / culture_target as f64
-    } else {
-        0.0
-    }
-    .clamp(0.0, 100.0);
-
-    let team_religions = g
-        .team_members(pid)
-        .into_iter()
-        .filter_map(|member| g.players[member].religion.as_deref())
-        .collect::<Vec<_>>();
-    let religious_rivals = living_majors
-        .iter()
-        .copied()
-        .filter(|candidate| player.team.is_none() || !g.same_team(pid, *candidate))
-        .collect::<Vec<_>>();
-    let converted_civs = religious_rivals
-        .iter()
-        .filter(|candidate| {
-            let cities = g.player_city_ids(**candidate);
-            !cities.is_empty()
-                && team_religions.iter().any(|religion| {
-                    cities
-                        .iter()
-                        .filter(|city| g.city_religion(&g.cities[city]) == Some(*religion))
-                        .count()
-                        * 2
-                        > cities.len()
-                })
-        })
-        .count();
-    let religious_target = religious_rivals.len();
-    let religious_progress = if religious_target > 0 {
-        100.0 * converted_civs as f64 / religious_target as f64
-    } else {
-        0.0
-    };
-
-    // Domination counts every original capital in the world, a civilization's
-    // own included — it starts the race holding exactly that one, and losing
-    // it costs a step here just as it costs the victory in
-    // `check_domination`.
-    let capital_target = all_majors.len();
-    let controlled_capitals = if player.team.is_some() {
-        all_majors
-            .iter()
-            .filter(|original_owner| {
-                let capital = g
-                    .cities
-                    .values()
-                    .find(|city| city.is_capital && city.original_owner == **original_owner);
-                if **original_owner == pid || g.same_team(pid, **original_owner) {
-                    capital.is_some_and(|capital| capital.owner == **original_owner)
-                } else {
-                    capital.is_none_or(|capital| capital.owner != **original_owner)
-                }
-            })
-            .count()
-    } else {
-        all_majors
-            .iter()
-            .filter(|original_owner| {
-                g.cities
-                    .values()
-                    .find(|city| city.is_capital && city.original_owner == **original_owner)
-                    .map_or(
-                        **original_owner == pid || !g.players[**original_owner].alive,
-                        |capital| capital.owner == pid,
-                    )
-            })
-            .count()
-    };
-    let domination_progress = if capital_target > 0 {
-        100.0 * controlled_capitals as f64 / capital_target as f64
-    } else {
-        0.0
-    };
-
-    let diplomatic_points = player.dvp.max(0);
-    let diplomatic_progress =
-        100.0 * diplomatic_points as f64 / DIPLOMATIC_VICTORY_POINTS.max(1) as f64;
-    let score = g.team_score_rank_key(pid).0;
-    // The score race is run against the clock, not against a threshold: it is
-    // decided the turn the limit runs out, so the leader's meter is simply how
-    // much of the game has been played, and everyone else sits at their share
-    // of the leader's score along that same clock. On the final turn the
-    // leader is full and a civilization on half their score is at half. A game
-    // with no turn limit has no clock to fill, so its meter stays purely
-    // relative to the leader.
-    let clock = g
-        .turn_limit()
-        .filter(|limit| *limit > 0 && *limit < 100_000)
-        .map_or(1.0, |limit| {
-            (g.turn as f64 / limit as f64).clamp(0.0, 1.0)
-        });
-    let score_progress = if leading_score > 0 {
-        100.0 * clock * score.max(0) as f64 / leading_score as f64
-    } else {
-        0.0
-    };
-
+    // The arithmetic lives on `Game` so the victory tracker and the AI read the
+    // same standings; this only formats them.
+    let r = g.victory_races(pid, leading_score);
     json!({
         "science": {
-            "progress": round1(science_progress),
-            "projects": completed_projects,
-            "project_target": science_projects.len(),
-            "distance": round1(player.exoplanet_distance),
+            "progress": round1(r.science),
+            "projects": r.science_projects,
+            "project_target": r.science_project_target,
+            "distance": round1(r.exoplanet_distance),
             "distance_target": EXOPLANET_DESTINATION,
-            "techs": techs_known,
-            "tech_total": tech_total,
+            "techs": r.techs,
+            "tech_total": r.tech_total,
         },
         "culture": {
-            "progress": round1(culture_progress),
-            "tourists": foreign_tourists,
-            "target": culture_target,
-            "civics": civics_known,
-            "civic_total": civic_total,
-            "domestic": domestic_tourists,
-            "rival_domestic": rival_domestic,
-            "leading_domestic": leading_domestic,
+            "progress": round1(r.culture),
+            "tourists": r.foreign_tourists,
+            "target": r.culture_target,
+            "civics": r.civics,
+            "civic_total": r.civic_total,
+            "domestic": r.domestic_tourists,
+            "rival_domestic": r.rival_domestic,
+            "leading_domestic": r.leading_domestic,
         },
         "religious": {
-            "progress": round1(religious_progress),
-            "converted": converted_civs,
-            "target": religious_target,
+            "progress": round1(r.religious),
+            "converted": r.converted_civs,
+            "target": r.religious_target,
         },
         "diplomatic": {
-            "progress": round1(diplomatic_progress.clamp(0.0, 100.0)),
-            "points": diplomatic_points,
+            "progress": round1(r.diplomatic),
+            "points": r.diplomatic_points,
             "target": DIPLOMATIC_VICTORY_POINTS,
         },
         "domination": {
-            "progress": round1(domination_progress),
-            "capitals": controlled_capitals,
-            "target": capital_target,
+            "progress": round1(r.domination),
+            "capitals": r.controlled_capitals,
+            "target": r.capital_target,
         },
         "score": {
-            "progress": round1(score_progress.clamp(0.0, 100.0)),
-            "points": score,
+            "progress": round1(r.score),
+            "points": r.score_points,
             "leader": leading_score,
         },
     })

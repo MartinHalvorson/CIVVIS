@@ -279,6 +279,9 @@ pub struct Weights {
     pub local_superiority: f64,  // caution when local hostile power is greater
     pub withdraw_hp: f64,        // enter persistent recovery at or below this HP
     pub rejoin_hp: f64,          // leave recovery at or above this HP
+    /// How much cheapness to trade for hitting the rival nearest a victory when
+    /// choosing who to fight. 0 keeps the historical "attack the weakest" rule.
+    pub contest_leader: f64,
 }
 
 pub const OPENING_MENU: [&str; 6] = [
@@ -327,6 +330,7 @@ impl Default for Weights {
             objective_progress: 2.5,
             local_superiority: 6.0,
             withdraw_hp: 45.0,
+            contest_leader: 0.0,
             rejoin_hp: 80.0,
         }
     }
@@ -375,6 +379,7 @@ impl Weights {
             self.local_superiority,
             self.withdraw_hp,
             self.rejoin_hp,
+            self.contest_leader,
         ]
     }
 
@@ -420,11 +425,12 @@ impl Weights {
             local_superiority: v[37],
             withdraw_hp: v[38],
             rejoin_hp: v[39],
+            contest_leader: v[40],
         }
     }
 
     /// (lo, hi) clamp per gene, same order as to_vec.
-    pub fn bounds() -> [(f64, f64); 40] {
+    pub fn bounds() -> [(f64, f64); 41] {
         [
             (2.0, 12.0),
             (1.0, 5.0),
@@ -466,6 +472,7 @@ impl Weights {
             (0.0, 16.0),
             (20.0, 65.0),
             (60.0, 100.0),
+            (0.0, 4.0),
         ]
     }
 }
@@ -2101,14 +2108,51 @@ impl BasicAi {
             && g.player_city_ids(pid).len() >= 2
             && !others.is_empty()
         {
+            // Who to fight. The weakest rival is the cheapest war, which is not
+            // the same as the war worth having: a rival closing on a victory
+            // wins whether or not anybody could have stopped it, and over 12
+            // full-length six-player games the winner was the score leader only
+            // 42% of the time while diplomatic winners averaged score rank 4.4
+            // of 6, unopposed. `contest_leader` is how much of that cheapness
+            // this empire will trade for hitting the rival that is actually
+            // closest to winning; at 0 it picks the weakest, as it always did.
+            let power_of = |other: usize| g.military_power(other);
             let weakest = *others
                 .iter()
-                .min_by(|a, b| {
-                    g.military_power(**a)
-                        .partial_cmp(&g.military_power(**b))
-                        .unwrap()
-                })
+                .min_by(|a, b| power_of(**a).partial_cmp(&power_of(**b)).unwrap())
                 .unwrap();
+            let target = if self.w.contest_leader > 0.0 {
+                let beatable: Vec<usize> = others
+                    .iter()
+                    .copied()
+                    .filter(|other| {
+                        my_power > self.w.war_ratio * power_of(*other) + self.w.war_margin
+                    })
+                    .collect();
+                // Both terms are on a 0..100 scale so the gene is a real
+                // exchange rate and not just a switch: cheapness is how far
+                // below the strongest beatable rival this one sits, and threat
+                // is how much of a victory it has already banked.
+                let dearest = beatable
+                    .iter()
+                    .map(|other| power_of(*other))
+                    .fold(0.0_f64, f64::max)
+                    .max(1.0);
+                beatable
+                    .iter()
+                    .copied()
+                    .max_by(|a, b| {
+                        let value = |other: usize| {
+                            let cheapness = 100.0 * (1.0 - power_of(other) / dearest);
+                            cheapness + self.w.contest_leader * g.victory_threat(other)
+                        };
+                        value(*a).partial_cmp(&value(*b)).unwrap()
+                    })
+                    .unwrap_or(weakest)
+            } else {
+                weakest
+            };
+            let weakest = target;
             if my_power > self.w.war_ratio * g.military_power(weakest) + self.w.war_margin {
                 let formal = g.players[pid]
                     .denounced_until
