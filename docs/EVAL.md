@@ -1356,6 +1356,61 @@ thresholds set well below what was observed and far above what
 `evolve::features` reaches, so the property is a regression test rather
 than a number in a document.
 
+## 2026-07-26 — three free military superpowers, all worth nothing
+
+Oracle ablation: hand one seat a free, cheating version of one subsystem and
+play it against stock agents on matched cells — same map, same seat, once with
+the grant and once without — then run McNemar's exact test over the cells the
+grant changed. The maximum over such grants is an upper bound on everything
+any amount of honest work on that subsystem could ever be worth.
+
+`ablate --grant all --pairs 50 --players 4 --turns 500 --seed 420000`, 60x38/6,
+100 cells per grant:
+
+| grant | fired/game | helped | hurt | McNemar p | verdict |
+|---|---|---|---|---|---|
+| `none` (control) | 0 | 0 | 0 | 1.0000 | **0 discordant of 100** |
+| `modernity` — every unit free at the top of its upgrade chain, every turn | 92.4 | 16 | 16 | 1.0000 | no headroom |
+| `taker` — a melee unit placed beside every enemy city | 476.8 | 15 | 13 | 0.8506 | no headroom |
+| `attrition` — every unit starts each turn at full health | 111.5 | 11 | 14 | 0.6900 | no headroom |
+| **`treasury`** — 200 Gold and 100 Faith per turn | 147.7 | **62** | **0** | **0.0000** | **headroom** |
+
+**The calibration is what licenses reading the rest.** A null is otherwise
+ambiguous between "this subsystem does not limit the agent" and "this
+instrument cannot resolve anything", and those call for opposite next steps.
+`treasury` is not a subsystem and is not realistic — it hands over more Gold in
+ten turns than these empires accumulate in a game. At the same 100 cells where
+the military grants produced 16/16, 15/13 and 11/14, it produced **62 to 0**.
+The instrument detects an advantage. The military grants are not one.
+
+The control returning **0 discordant cells out of 100** is the other half: the
+same game played twice is bit-identical, so none of the above is harness noise.
+It reproduced 26/100 across two independent runs.
+
+**Military capability is not on the critical path in this simulator.** That
+contradicts `AI_GAPS.md` item 4 — "the single biggest per-system win
+available" — which its own re-sequencing admits had never been measured. It has
+now been measured three ways, each an upper bound, each null. It is consistent
+with everything else on record: 0 of 48 games ended in domination, 60% ended
+diplomatic and 27% religious, while the agent spent 26% of its turns planning
+Conquest and 21% in Recovery.
+
+What this does **not** say. `treasury` grants a currency, not a decision, so it
+shows the agent converts resources into wins efficiently — not that its
+economic decisions are poor. What it relocates is the question: the leverage is
+in the economy, and the open part is whether the *generation* of that economy
+is what the agent is bad at. That is also where `ProductionSearchAi` failed
+(9 maps to 21), diagnosed at the time as a horizon shorter than the decision's
+payoff rather than as production not mattering. Those two findings now point the
+same way.
+
+Power: ~30 discordant cells resolves roughly a 70/30 split. A real 60/40 effect
+would not have been detected, so these are "worth less than this run can
+resolve", not "exactly zero". The calibration bounds how much that matters —
+whatever the military grants are worth, it is a small fraction of what the
+economy is worth.
+
+
 ## 2026-07-26 — strategic_deep promoted on a pre-registered 300-map run
 
 `strategic_r20h80` passed the gate once at 120 maps by 0.2 points of Wilson
