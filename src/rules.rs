@@ -51,6 +51,15 @@ impl Yields {
     pub fn total(&self) -> f64 {
         self.food + self.production + self.gold + self.science + self.culture + self.faith
     }
+
+    pub fn add_scaled(&mut self, other: Yields, scale: f64) {
+        self.food += other.food * scale;
+        self.production += other.production * scale;
+        self.gold += other.gold * scale;
+        self.science += other.science * scale;
+        self.culture += other.culture * scale;
+        self.faith += other.faith * scale;
+    }
 }
 
 fn dtrue() -> bool {
@@ -150,6 +159,46 @@ pub struct ResourceSpec {
     /// Cosmetics — manufactured, never map-placed).
     #[serde(default)]
     pub improvement: String,
+    /// The city effect associated with an Industry on this Luxury. A
+    /// Corporation applies it twice and every housed Product applies it once.
+    /// Keeping the selector on the resource makes all 28 Product projects use
+    /// one execution path instead of a hardcoded resource-name switch.
+    #[serde(default)]
+    pub industry_effects: ResourceIndustryEffects,
+    /// Effect attached to each housed Product. Usually this is one Industry
+    /// bundle, but it is kept explicit because shipped Product modifiers are
+    /// their own rows (Coffee is the notable distinct value).
+    #[serde(default)]
+    pub product_effects: ResourceIndustryEffects,
+    /// Flat Great Work yields of one housed Product. These are distinct from
+    /// the percentage/production/growth effect above and both apply.
+    #[serde(default)]
+    pub product_yields: Yields,
+}
+
+/// One Industry-sized economic effect for a Luxury resource. Civ VI doubles
+/// this bundle for the Corporation improvement and attaches one bundle to
+/// each Product housed in a Stock Exchange or Seaport.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ResourceIndustryEffects {
+    pub city_yield_pct: Yields,
+    pub growth_pct: f64,
+    pub housing: f64,
+    pub military_unit_production_pct: f64,
+    pub civilian_unit_production_pct: f64,
+    pub building_production_pct: f64,
+}
+
+impl ResourceIndustryEffects {
+    pub fn add_scaled(&mut self, other: Self, scale: f64) {
+        self.city_yield_pct.add_scaled(other.city_yield_pct, scale);
+        self.growth_pct += other.growth_pct * scale;
+        self.housing += other.housing * scale;
+        self.military_unit_production_pct += other.military_unit_production_pct * scale;
+        self.civilian_unit_production_pct += other.civilian_unit_production_pct * scale;
+        self.building_production_pct += other.building_production_pct * scale;
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -948,9 +997,82 @@ pub struct PromotionSpec {
 pub struct ModifierSpec {
     #[serde(default)]
     pub effects: BTreeMap<String, f64>,
+    /// Flat yield changes keyed by the building or replacement family they
+    /// target. `"*"` targets every building. The loader compiles these into
+    /// ordinary numeric effects so nested attachments retain additive
+    /// composition and any effect-bearing rules object can consume them.
+    #[serde(default)]
+    pub building_yields: BTreeMap<String, Yields>,
+    /// Percentage purchase discounts keyed by unit or replacement family.
+    /// `"*"` targets every unit and the same modifier applies to Gold and
+    /// Faith, matching `ADJUST_UNIT_PURCHASE_COST`.
+    #[serde(default)]
+    pub unit_purchase_discount_pct: BTreeMap<String, f64>,
+    /// Ability identities granted while this modifier is active. Ability
+    /// semantics remain in their normal engine consumers; this removes the
+    /// fixed owner list from `GRANT_ABILITY` itself.
+    #[serde(default)]
+    pub abilities: BTreeSet<String>,
     /// Other named bundles this modifier attaches, in application order.
     #[serde(default)]
     pub modifiers: Vec<String>,
+}
+
+const BUILDING_YIELD_EFFECT_PREFIX: &str = "building_yield:";
+const UNIT_PURCHASE_EFFECT_PREFIX: &str = "unit_purchase_discount_pct:";
+const GRANT_ABILITY_EFFECT_PREFIX: &str = "grant_ability:";
+
+pub fn building_yield_effect_key(building: &str, yield_type: &str) -> String {
+    format!("{BUILDING_YIELD_EFFECT_PREFIX}{building}:{yield_type}")
+}
+
+pub fn unit_purchase_discount_effect_key(unit: &str) -> String {
+    format!("{UNIT_PURCHASE_EFFECT_PREFIX}{unit}")
+}
+
+pub fn grant_ability_effect_key(ability: &str) -> String {
+    format!("{GRANT_ABILITY_EFFECT_PREFIX}{ability}")
+}
+
+fn compile_modifier_selectors(
+    name: &str,
+    spec: &ModifierSpec,
+    effects: &mut BTreeMap<String, f64>,
+) -> Result<(), String> {
+    for (building, yields) in &spec.building_yields {
+        if building.is_empty() || building.contains(':') {
+            return Err(format!("modifier {name} has invalid building selector {building:?}"));
+        }
+        for (yield_type, value) in [
+            ("food", yields.food),
+            ("production", yields.production),
+            ("gold", yields.gold),
+            ("science", yields.science),
+            ("culture", yields.culture),
+            ("faith", yields.faith),
+        ] {
+            if value != 0.0 {
+                *effects
+                    .entry(building_yield_effect_key(building, yield_type))
+                    .or_insert(0.0) += value;
+            }
+        }
+    }
+    for (unit, value) in &spec.unit_purchase_discount_pct {
+        if unit.is_empty() || unit.contains(':') {
+            return Err(format!("modifier {name} has invalid unit selector {unit:?}"));
+        }
+        *effects
+            .entry(unit_purchase_discount_effect_key(unit))
+            .or_insert(0.0) += value;
+    }
+    for ability in &spec.abilities {
+        if ability.is_empty() || ability.contains(':') {
+            return Err(format!("modifier {name} has invalid ability {ability:?}"));
+        }
+        *effects.entry(grant_ability_effect_key(ability)).or_insert(0.0) += 1.0;
+    }
+    Ok(())
 }
 
 /// A leader's historical agenda: the standing opinion they hold about how
@@ -1642,6 +1764,7 @@ fn resolve_modifiers(
 
         stack.push(name.to_string());
         let mut effects = spec.effects.clone();
+        compile_modifier_selectors(name, spec, &mut effects)?;
         for attached in &spec.modifiers {
             let nested = resolve_one(attached, source, resolved, stack)?;
             add_effects(&mut effects, &nested.effects);
@@ -1650,6 +1773,9 @@ fn resolve_modifiers(
 
         let flat = ModifierSpec {
             effects,
+            building_yields: BTreeMap::new(),
+            unit_purchase_discount_pct: BTreeMap::new(),
+            abilities: BTreeSet::new(),
             modifiers: Vec::new(),
         };
         resolved.insert(name.to_string(), flat.clone());
@@ -2100,10 +2226,15 @@ mod tests {
             "modifiers".to_string(),
             json!({
                 "production_seed": {
-                    "effects": {"city_production": 2, "builder_production_pct": 12}
+                    "effects": {"city_production": 2, "builder_production_pct": 12},
+                    "building_yields": {"library": {"science": 2}},
+                    "unit_purchase_discount_pct": {"builder": 15},
+                    "abilities": ["public_engineering"]
                 },
                 "production_bundle": {
                     "effects": {"builder_production_pct": 8},
+                    "building_yields": {"library": {"science": 1}},
+                    "unit_purchase_discount_pct": {"builder": 5},
                     "modifiers": ["production_seed"]
                 }
             }),
@@ -2124,6 +2255,31 @@ mod tests {
             rules.modifiers["production_bundle"].effects["builder_production_pct"],
             20.0
         );
+        assert_eq!(
+            rules.modifiers["production_bundle"].effects
+                [&building_yield_effect_key("library", "science")],
+            3.0
+        );
+        assert_eq!(
+            rules.modifiers["production_bundle"].effects
+                [&unit_purchase_discount_effect_key("builder")],
+            20.0
+        );
+        assert_eq!(
+            rules.modifiers["production_bundle"].effects
+                [&grant_ability_effect_key("public_engineering")],
+            1.0
+        );
+        assert_eq!(
+            rules.policies["urban_planning"].effects
+                [&building_yield_effect_key("library", "science")],
+            3.0
+        );
+        assert!(rules.modifiers["production_bundle"].building_yields.is_empty());
+        assert!(rules.modifiers["production_bundle"]
+            .unit_purchase_discount_pct
+            .is_empty());
+        assert!(rules.modifiers["production_bundle"].abilities.is_empty());
     }
 
     #[test]

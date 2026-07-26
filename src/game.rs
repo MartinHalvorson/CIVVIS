@@ -7,8 +7,9 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashSet, VecDeque};
 
 use crate::rng::Rng;
 use crate::rules::{
-    AgendaSpec, BuildingSpec, DifficultySpec, DisasterSpec, FutureTreeLayout, Rules, SpeedSpec,
-    Yields, ERA_NAMES,
+    building_yield_effect_key, grant_ability_effect_key, unit_purchase_discount_effect_key,
+    AgendaSpec, BuildingSpec, DifficultySpec, DisasterSpec, FutureTreeLayout,
+    ResourceIndustryEffects, Rules, SpeedSpec, Yields, ERA_NAMES,
 };
 use crate::specmap::SpecMap;
 
@@ -2644,6 +2645,9 @@ fn install_test_district(game: &mut Game, city: u32, district: &str) -> Pos {
 
 #[cfg(test)]
 mod city_state_unique_tests;
+
+#[cfg(test)]
+mod modifier_tests;
 
 #[cfg(test)]
 mod age_tests;
@@ -16871,6 +16875,76 @@ impl Game {
             .sum::<f64>()
     }
 
+    /// A numeric modifier whose subject is this city. This is the common
+    /// collection path for typed selector effects: runtime attachments,
+    /// policies, researched nodes and civilization traits are empire-wide;
+    /// infrastructure, beliefs and Governors contribute only where active.
+    fn city_modifier_effect(&self, city: &City, effect: &str) -> f64 {
+        let pid = city.owner;
+        self.policy_effect(pid, effect)
+            + self.tree_effect(pid, effect)
+            + self.civ_effect(pid, effect)
+            + self.city_building_effect(city, effect)
+            + self.city_district_effect(city, effect)
+            + self.empire_wonder_effect(pid, effect)
+            + self.city_religion_belief_effect(city, effect)
+            + self.pantheon_effect(pid, effect)
+            + self.governor_effect(pid, city.id, effect)
+    }
+
+    fn building_modifier_yields(&self, city: &City, building: &str) -> Yields {
+        let mut selectors = vec![building, "*"];
+        if let Some(replaced) = self.rules.buildings[building].replaces.as_deref() {
+            selectors.push(replaced);
+        }
+        let effect = |yield_type: &str| {
+            selectors
+                .iter()
+                .map(|selector| {
+                    self.city_modifier_effect(
+                        city,
+                        &building_yield_effect_key(selector, yield_type),
+                    )
+                })
+                .sum()
+        };
+        Yields {
+            food: effect("food"),
+            production: effect("production"),
+            gold: effect("gold"),
+            science: effect("science"),
+            culture: effect("culture"),
+            faith: effect("faith"),
+        }
+    }
+
+    fn unit_purchase_modifier_discount(&self, city: &City, unit: &str) -> f64 {
+        let mut selectors = vec![unit, "*"];
+        if let Some(replaced) = self.rules.units[unit].replaces.as_deref() {
+            selectors.push(replaced);
+        }
+        selectors
+            .into_iter()
+            .map(|selector| {
+                self.city_modifier_effect(city, &unit_purchase_discount_effect_key(selector))
+            })
+            .sum()
+    }
+
+    fn modifier_grants_ability(&self, pid: usize, ability: &str) -> bool {
+        let effect = grant_ability_effect_key(ability);
+        let religion = self.players.get(pid).and_then(|player| player.religion.as_deref());
+        self.policy_effect(pid, &effect)
+            + self.tree_effect(pid, &effect)
+            + self.civ_effect(pid, &effect)
+            + self.empire_wonder_effect(pid, &effect)
+            + self.empire_building_sum(pid, |building| {
+                building.effects.get(&effect).copied().unwrap_or(0.0)
+            })
+            + religion.map_or(0.0, |religion| self.religion_belief_effect(religion, &effect))
+            > 0.0
+    }
+
     /// The era a unit belongs to, taken from the node that unlocks it. Unit
     /// Production policy cards are gated on it: Agoge boosts Ancient and
     /// Classical infantry, not every Infantry ever built.
@@ -18106,6 +18180,7 @@ impl Game {
             .get(&self.players[pid].civ)
             .map(|c| c.ability == ability)
             .unwrap_or(false)
+            || self.modifier_grants_ability(pid, ability)
     }
 
     /// What this player's signature ability is worth under a named modifier,
@@ -21500,10 +21575,17 @@ impl Game {
     /// Colonization, Feudal Contract, Limes).
     fn item_prod_mult(&self, pid: usize, cid: u32, item: Option<&Item>) -> f64 {
         let mut bonus: f64 = 0.0;
+        let economic = self.city_resource_industry_effects(&self.cities[&cid]);
         match item {
             Some(Item::Unit { unit }) | Some(Item::Formation { unit, .. }) => {
                 let spec = &self.rules.units[unit.as_str()];
                 bonus += self.gov_effects(pid).unit_production_pct / 100.0;
+                if spec.class == "military" {
+                    bonus += economic.military_unit_production_pct / 100.0;
+                }
+                if matches!(unit.as_str(), "builder" | "settler" | "trader") {
+                    bonus += economic.civilian_unit_production_pct / 100.0;
+                }
                 if spec.class == "military"
                     && self
                         .alliance_partner(pid, "military", 2)
@@ -21614,6 +21696,7 @@ impl Game {
             }
             Some(Item::Building { building }) => {
                 let spec = &self.rules.buildings[building.as_str()];
+                bonus += economic.building_production_pct / 100.0;
                 let district = spec
                     .district
                     .as_deref()
@@ -22340,18 +22423,7 @@ impl Game {
         if self.city_governor_active(city.owner, city.id) {
             h += self.policy_effect(city.owner, "governor_housing");
         }
-        let mut salt_industry_units = city
-            .products
-            .iter()
-            .take(self.product_capacity(city))
-            .filter(|product| product.as_str() == "salt")
-            .count() as f64;
-        if let Some((resource, corporation)) = self.city_active_economic_improvement(city) {
-            if resource == "salt" {
-                salt_industry_units += if corporation { 2.0 } else { 1.0 };
-            }
-        }
-        h += 3.0 * salt_industry_units;
+        h += self.city_resource_industry_effects(city).housing;
         let government = self.gov_effects(city.owner);
         h += government.housing;
         if !city.districts.is_empty() {
@@ -24772,6 +24844,34 @@ impl Game {
                     )
             })
         })
+    }
+
+    /// Complete city effect of Industries, Corporations and housed Products.
+    /// The improvement is one Industry bundle (two for a Corporation); each
+    /// active Product contributes its own shipped Product modifier bundle.
+    fn city_resource_industry_effects(&self, city: &City) -> ResourceIndustryEffects {
+        let mut effects = ResourceIndustryEffects::default();
+        for product in city.products.iter().take(self.product_capacity(city)) {
+            if let Some(resource) = self.rules.resources.get(product) {
+                effects.add_scaled(resource.product_effects, 1.0);
+            }
+        }
+        if let Some((resource, corporation)) = self.city_active_economic_improvement(city) {
+            if let Some(resource) = self.rules.resources.get(&resource) {
+                effects.add_scaled(resource.industry_effects, if corporation { 2.0 } else { 1.0 });
+            }
+        }
+        effects
+    }
+
+    fn city_product_yields(&self, city: &City) -> Yields {
+        let mut yields = Yields::default();
+        for product in city.products.iter().take(self.product_capacity(city)) {
+            if let Some(resource) = self.rules.resources.get(product) {
+                yields.add(resource.product_yields);
+            }
+        }
+        yields
     }
 
     fn empire_has_economic_improvement(&self, pid: usize, resource: &str) -> bool {
@@ -30033,6 +30133,7 @@ impl Game {
                     .copied()
                     .unwrap_or(0.0);
             }
+            yields.add(self.building_modifier_yields(city, b));
             ys.add(yields);
         }
         ys.add(self.regional_building_effects(city).0);
@@ -30045,13 +30146,7 @@ impl Game {
         ys.add(self.regional_wonder_effects(city).0);
         // Products are economic Great Works: only Products backed by active
         // Stock Exchange/Seaport slots yield or confer their Industry effect.
-        for product in city.products.iter().take(self.product_capacity(city)) {
-            match product.as_str() {
-                "silk" => ys.culture += 3.0,
-                "wine" | "salt" => ys.food += 3.0,
-                _ => {}
-            }
-        }
+        ys.add(self.city_product_yields(city));
         let relic_faith = if self.grants_city_state_unique_bonus(city.owner, "Kandy") {
             6.0
         } else {
@@ -30673,18 +30768,13 @@ impl Game {
             1.0 + suzerains * self.policy_effect(city.owner, "science_pct_per_suzerain") / 100.0;
         ys.culture *=
             1.0 + suzerains * self.policy_effect(city.owner, "culture_pct_per_suzerain") / 100.0;
-        let mut culture_industry_units = city
-            .products
-            .iter()
-            .take(self.product_capacity(city))
-            .filter(|product| matches!(product.as_str(), "silk" | "wine"))
-            .count() as f64;
-        if let Some((resource, corporation)) = self.city_active_economic_improvement(city) {
-            if matches!(resource.as_str(), "silk" | "wine") {
-                culture_industry_units += if corporation { 2.0 } else { 1.0 };
-            }
-        }
-        ys.culture *= 1.0 + 0.20 * culture_industry_units;
+        let economic_yields = self.city_resource_industry_effects(city).city_yield_pct;
+        ys.food *= 1.0 + economic_yields.food / 100.0;
+        ys.production *= 1.0 + economic_yields.production / 100.0;
+        ys.gold *= 1.0 + economic_yields.gold / 100.0;
+        ys.science *= 1.0 + economic_yields.science / 100.0;
+        ys.culture *= 1.0 + economic_yields.culture / 100.0;
+        ys.faith *= 1.0 + economic_yields.faith / 100.0;
         if self.dedication_active(city.owner, "sky_and_stars")
             && (self.city_has_district_family(city, "aerodrome")
                 || self.city_has_district_family(city, "spaceport"))
@@ -33216,16 +33306,6 @@ impl Game {
             }
         }
         let want_purchases = families.has(ActionFamilies::PURCHASES);
-        let faith_land_units = want_purchases
-            && (p.government.as_deref() == Some("theocracy")
-                || self
-                    .cities
-                    .values()
-                    .filter(|city| city.owner == pid)
-                    .map(|city| self.city_building_effect(city, "faith_purchase_land_units"))
-                    .sum::<f64>()
-                    > 0.0);
-        let monumentality = want_purchases && self.dedication_active(pid, "monumentality");
         let purchasable_units: Vec<String> = if want_purchases {
             self.rules.units.keys().cloned().collect()
         } else {
@@ -33305,61 +33385,19 @@ impl Game {
                     }
                 }
             }
-            for utype in &purchasable_units {
-                let it = Item::Unit {
-                    unit: utype.clone(),
-                };
-                if self.can_produce(pid, cid, &it) {
-                    let cost = self.item_cost_for(pid, &it);
-                    if p.gold >= cost * 4.0 {
-                        acts.push(Action::Buy {
-                            city: cid,
-                            unit: utype.clone(),
-                            currency: "gold".to_string(),
-                        });
-                    }
-                    let spec = &self.rules.units[utype.as_str()];
-                    let civilian = matches!(utype.as_str(), "builder" | "settler") && monumentality;
-                    let land_combat = spec.class == "military"
-                        && spec.domain.as_deref().is_none()
-                        && spec.faith_purchasable
-                        && faith_land_units;
-                    let faith_discount = if civilian { 30.0 } else { 0.0 }
-                        + if p.government.as_deref() == Some("theocracy") {
-                            15.0
-                        } else {
-                            0.0
-                        };
-                    if (civilian || land_combat)
-                        && p.faith >= cost * 2.0 * (1.0 - faith_discount / 100.0)
+            for unit in &purchasable_units {
+                for (currency, bank) in [("gold", p.gold), ("faith", p.faith)] {
+                    if self
+                        .unit_purchase_cost(pid, cid, unit, currency)
+                        .is_some_and(|cost| bank + f64::EPSILON >= cost)
                     {
                         acts.push(Action::Buy {
                             city: cid,
-                            unit: utype.clone(),
-                            currency: "faith".to_string(),
+                            unit: unit.clone(),
+                            currency: currency.to_string(),
                         });
                     }
                 }
-            }
-            let rock_band = &self.rules.units["rock_band"];
-            if self.unlocked(pid, &rock_band.tech, &rock_band.civic)
-                && p.faith + f64::EPSILON >= self.rock_band_purchase_cost(pid)
-            {
-                acts.push(Action::Buy {
-                    city: cid,
-                    unit: "rock_band".to_string(),
-                    currency: "faith".to_string(),
-                });
-            }
-            let naturalist = &self.rules.units["naturalist"];
-            if self.unlocked(pid, &naturalist.tech, &naturalist.civic)
-                && p.faith + f64::EPSILON >= self.naturalist_purchase_cost(pid)
-            {
-                acts.push(Action::Buy {
-                    city: cid,
-                    unit: "naturalist".to_string(),
-                    currency: "faith".to_string(),
-                });
             }
         }
         for city_state in self.players.iter().filter(|player| {
@@ -37312,6 +37350,128 @@ impl Game {
         )
     }
 
+    /// Authoritative Gold/Faith quote for a unit purchase. Action enumeration
+    /// and execution share this path, so an AI can see an action made
+    /// affordable by Holy Order, Monumentality, a Product, or a generic
+    /// per-unit modifier instead of learning about the discount only after it
+    /// tries to apply the action.
+    pub fn unit_purchase_cost(
+        &self,
+        pid: usize,
+        cid: u32,
+        unit: &str,
+        currency: &str,
+    ) -> Option<f64> {
+        let player = self.players.get(pid)?;
+        let city = self.cities.get(&cid).filter(|city| city.owner == pid)?;
+        let spec = self.rules.units.get(unit)?;
+        if unit == "spy" || !matches!(currency, "gold" | "faith") {
+            return None;
+        }
+        if unit == "settler"
+            && (city.pop < 2 || self.policy_effect(pid, "no_settling") > 0.0)
+        {
+            return None;
+        }
+
+        let religious = spec.class == "religious";
+        let rock_band = unit == "rock_band";
+        let naturalist = unit == "naturalist";
+        if rock_band || naturalist {
+            if currency != "faith" || !self.unlocked(pid, &spec.tech, &spec.civic) {
+                return None;
+            }
+        } else if religious {
+            if currency != "faith"
+                || !self.city_has_district_family(city, "holy_site")
+                || self.city_religion(city).is_none()
+                || !self.unlocked(pid, &spec.tech, &spec.civic)
+                || spec
+                    .requires_building
+                    .as_ref()
+                    .is_some_and(|building| !self.city_has_building_family(city, building))
+                || (unit == "inquisitor"
+                    && player.counters.get("inquisition").copied().unwrap_or(0) == 0)
+            {
+                return None;
+            }
+        } else {
+            let item = Item::Unit {
+                unit: unit.to_string(),
+            };
+            if !self.can_produce(pid, cid, &item) {
+                return None;
+            }
+            if currency == "faith" {
+                let monumentality = matches!(unit, "builder" | "settler")
+                    && self.dedication_active(pid, "monumentality");
+                let faith_land_combat = spec.class == "military"
+                    && spec.domain.as_deref().is_none()
+                    && spec.faith_purchasable
+                    && (player.government.as_deref() == Some("theocracy")
+                        || self
+                            .cities
+                            .values()
+                            .filter(|city| city.owner == pid)
+                            .map(|city| {
+                                self.city_building_effect(city, "faith_purchase_land_units")
+                            })
+                            .sum::<f64>()
+                            > 0.0);
+                if !monumentality && !faith_land_combat {
+                    return None;
+                }
+            }
+        }
+
+        let mut purchase_discount =
+            self.city_district_effect(city, "gold_faith_purchase_discount_pct")
+                + self.unit_purchase_modifier_discount(city, unit);
+        if currency == "gold" {
+            purchase_discount += self.gov_effects(pid).gold_purchase_discount_pct;
+        } else {
+            purchase_discount += self.gov_effects(pid).faith_purchase_discount_pct;
+        }
+        if religious && currency == "faith" {
+            if let Some(religion) = self.city_religion(city) {
+                purchase_discount +=
+                    self.religion_belief_effect(religion, "religious_unit_faith_discount_pct");
+            }
+            if unit == "guru" {
+                purchase_discount += self.empire_wonder_effect(pid, "guru_purchase_discount_pct");
+            }
+        }
+        if currency == "faith"
+            && matches!(unit, "builder" | "settler")
+            && self.dedication_active(pid, "monumentality")
+        {
+            purchase_discount += 30.0;
+        }
+
+        let (base_cost, multiplier) = if rock_band {
+            (self.rock_band_purchase_cost(pid), 1.0)
+        } else if naturalist {
+            (self.naturalist_purchase_cost(pid), 1.0)
+        } else {
+            let item = Item::Unit {
+                unit: unit.to_string(),
+            };
+            (
+                self.item_cost_for(pid, &item),
+                if currency == "gold" { 4.0 } else { 2.0 },
+            )
+        };
+        let mut cost = base_cost * multiplier * (1.0 - purchase_discount / 100.0).max(0.0);
+        if spec.class == "military" {
+            if self.congress_effect_active("mercenary_companies", "A", currency) {
+                cost *= 2.0;
+            } else if self.congress_effect_active("mercenary_companies", "B", currency) {
+                cost *= 0.5;
+            }
+        }
+        Some(cost)
+    }
+
     fn do_buy(&mut self, pid: usize, cid: u32, unit: &str, currency: &str) -> Result<(), String> {
         match self.cities.get(&cid) {
             Some(c) if c.owner == pid => {}
@@ -37403,60 +37563,12 @@ impl Game {
         if unit == "settler" && self.cities[&cid].pop < 2 {
             return Err("city too small for settler".into());
         }
-        let mult = if rock_band || naturalist {
-            1.0
-        } else if currency == "gold" {
-            4.0
-        } else {
-            2.0
-        };
         let item = Item::Unit {
             unit: unit.to_string(),
         };
-        let mut purchase_discount =
-            self.city_district_effect(&self.cities[&cid], "gold_faith_purchase_discount_pct");
-        if currency == "gold" {
-            purchase_discount += self.gov_effects(pid).gold_purchase_discount_pct;
-        }
-        if currency == "faith" {
-            // Theocracy ships GOVERNMENTBONUS_FAITH_PURCHASES 15 beside
-            // Democracy's GOVERNMENTBONUS_GOLD_PURCHASES 15; only the Gold half
-            // was wired up.
-            purchase_discount += self.gov_effects(pid).faith_purchase_discount_pct;
-        }
-        if religious && currency == "faith" {
-            if let Some(religion) = self.city_religion(&self.cities[&cid]) {
-                purchase_discount +=
-                    self.religion_belief_effect(religion, "religious_unit_faith_discount_pct");
-            }
-            if unit == "guru" {
-                purchase_discount += self.empire_wonder_effect(pid, "guru_purchase_discount_pct");
-            }
-        }
-        if currency == "faith" {
-            if matches!(unit, "builder" | "settler") && self.dedication_active(pid, "monumentality")
-            {
-                purchase_discount += 30.0;
-            }
-            if self.players[pid].government.as_deref() == Some("theocracy") {
-                purchase_discount += 15.0;
-            }
-        }
-        let base_cost = if rock_band {
-            self.rock_band_purchase_cost(pid)
-        } else if naturalist {
-            self.naturalist_purchase_cost(pid)
-        } else {
-            self.item_cost_for(pid, &item)
-        };
-        let mut cost = base_cost * mult * (1.0 - purchase_discount / 100.0).max(0.0);
-        if self.rules.units[unit].class == "military" {
-            if self.congress_effect_active("mercenary_companies", "A", currency) {
-                cost *= 2.0;
-            } else if self.congress_effect_active("mercenary_companies", "B", currency) {
-                cost *= 0.5;
-            }
-        }
+        let cost = self
+            .unit_purchase_cost(pid, cid, unit, currency)
+            .ok_or_else(|| "unit cannot be purchased that way".to_string())?;
         let bank = if currency == "gold" {
             self.players[pid].gold
         } else {
@@ -44673,20 +44785,9 @@ impl Game {
             growth_bonus += self.policy_effect(pid, "foreign_continent_growth_pct");
         }
         growth_bonus += self.pantheon_effect(pid, "growth_pct");
-        growth_bonus += 20.0
-            * self.cities[&cid]
-                .products
-                .iter()
-                .take(self.product_capacity(&self.cities[&cid]))
-                .filter(|product| product.as_str() == "salt")
-                .count() as f64;
-        if let Some((resource, corporation)) =
-            self.city_active_economic_improvement(&self.cities[&cid])
-        {
-            if resource == "salt" {
-                growth_bonus += if corporation { 40.0 } else { 20.0 };
-            }
-        }
+        growth_bonus += self
+            .city_resource_industry_effects(&self.cities[&cid])
+            .growth_pct;
         if self.congress_effect_active("migration_treaty", "A", &pid.to_string()) {
             growth_bonus += 20.0;
         } else if self.congress_effect_active("migration_treaty", "B", &pid.to_string()) {
