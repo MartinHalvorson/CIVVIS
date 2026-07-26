@@ -3302,10 +3302,11 @@ const RES_ICON = { wheat:"🌾", cattle:"🐄", sheep:"🐑", stone:"🪨", deer
                    sugar:"🍬", tea:"🍵", tobacco:"🚬", toys:"🧸",
                    truffles:"🍄", turtles:"🐢", whales:"🐋",
                    antiquity_site:"🏺", shipwreck:"⚓" };
-// Which hex corner a class sits in: strategics lower-left, bonuses at the
-// bottom point, luxuries lower-right. Class becomes a position, so it is
-// readable at a range where neither the rim colour nor the symbol is.
-const RESOURCE_CORNER = { strategic:3, bonus:2, luxury:1 };
+// Which screen-relative badge slot a class uses: strategics lower-left,
+// bonuses at the bottom, luxuries lower-right. These are annotation positions,
+// not geographic corners: the world can open at an unknown bearing or turn
+// under the camera without scrambling the positional class cue.
+const RESOURCE_BADGE_SLOT = { strategic:3, bonus:2, luxury:1 };
 // The badge was drawn at a radius of 8.2 with a 12px symbol inside it, which is
 // a 16px disc holding an emoji on a hex 62 across: legible only if you already
 // knew what you were looking for. Everything about the badge — disc, rim, the
@@ -5712,6 +5713,14 @@ function elev(t) {
 }
 function corner(x, y, s, i) {
   const a = Math.PI / 180 * (60 * i - 30) + cam.rot;
+  return [x + s * Math.cos(a), y + s * Math.sin(a) * YS];
+}
+// Resource badges are labels over the board, so their three class slots stay
+// aligned with the screen while the world-facing geometry above rotates. The
+// vertical component still follows the active projection so a badge remains
+// seated inside the visible tile at every tilt.
+function resourceBadgeSlot(x, y, s, i) {
+  const a = Math.PI / 180 * (60 * i - 30);
   return [x + s * Math.cos(a), y + s * Math.sin(a) * YS];
 }
 function hexDist(a, b) {
@@ -10910,12 +10919,12 @@ function drawResourceBadge(t, x, y) {
     ? RULES.resources[t.resource].class : "bonus";
   const rim = rc === "strategic" ? "#ff9d5c"
     : rc === "luxury" ? "#d9a0f0" : "#e6ddbd";
-  // Seated toward its class's corner rather than always at the same lower-right
-  // spot, and rotated with the board like every other mark on a hex, seated
-  // where RES_BADGE_SEAT says the badge still clears the two edges that meet at
-  // that corner.
-  const [rx, ry] = corner(x, y, S * RES_BADGE_SEAT,
-    RESOURCE_CORNER[rc] === undefined ? 2 : RESOURCE_CORNER[rc]);
+  // The class cue belongs to the annotation layer rather than the world's
+  // unknown bearing: strategics remain lower-left, bonuses bottom, and
+  // luxuries lower-right however the board is facing.
+  const slot = RESOURCE_BADGE_SLOT[rc] === undefined
+    ? RESOURCE_BADGE_SLOT.bonus : RESOURCE_BADGE_SLOT[rc];
+  const [rx, ry] = resourceBadgeSlot(x, y, S * RES_BADGE_SEAT, slot);
   // A cinema establishing shot covers a continent: rendering every deposit as a
   // full dark badge there freckles the landscape with hundreds of holes. Detail
   // resolves with the camera instead. Manual/player views keep the established
