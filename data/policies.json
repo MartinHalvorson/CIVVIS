@@ -104,7 +104,7 @@
   "integrated_space_cell": {"slot":"military","civic":"space_race","note":"+15% Space Race project Production with a Military Academy or Seaport.","effects":{"space_project_production_pct":15}},
   "music_censorship": {"slot":"diplomatic","civic":"space_race","note":"Foreign Rock Bands cannot enter; large cities lose 1 Amenity.","effects":{"block_foreign_rock_bands":1,"large_city_amenity":-1}},
   "satellite_broadcasts": {"slot":"economic","civic":"space_race","note":"+200% Tourism from Great Works of Music.","effects":{"music_tourism_pct":200}},
-  "ecommerce": {"slot":"economic","civic":"globalization","replaces":"triangular_trade","note":"+10 Gold and +5 Production from international Trade Routes.","effects":{"international_trade_gold":10,"international_trade_production":5}},
+  "ecommerce": {"slot":"economic","civic":"globalization","replaces":"triangular_trade","note":"+5 Gold and +2 Production from all Trade Routes.","effects":{"trade_gold":5,"trade_production":2}},
   "international_space_agency": {"slot":"diplomatic","civic":"globalization","note":"+5% Science per city-state you are Suzerain of.","effects":{"science_pct_per_suzerain":5}},
   "strategic_air_force": {"slot":"military","civic":"globalization","note":"+50% Production toward air units and Carriers.","effects":{"air_production_pct":50,"carrier_production_pct":50},"unit_eras":[6, 7]},
   "collective_activism": {"slot":"diplomatic","civic":"social_media","note":"+5% Culture per city-state you are Suzerain of.","effects":{"culture_pct_per_suzerain":5}},
