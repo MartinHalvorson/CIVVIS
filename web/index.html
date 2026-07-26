@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html class="world-loading">
+<html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -38,11 +38,10 @@
     opacity: .035; mix-blend-mode: soft-light;
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.7'/%3E%3C/svg%3E");
   }
-  /* Loading and restarting are one deliberate visual state. A supervised
-     restart crosses a process boundary, so the old page and its replacement
-     both show this same veil until the replacement has painted one complete
-     world frame. That keeps default form values, an empty canvas, and stale
-     last-world chrome from ever becoming the handoff screen. */
+  /* A supervised restart crosses a process boundary, so the old page and its
+     replacement both show this same veil until the replacement has painted
+     one complete world frame. Ordinary page loads render the interface
+     directly; this transition exists only for an active restart handoff. */
   #world-transition {
     position: fixed; inset: 0; z-index: 1000; display: none; place-items: center;
     padding: 28px; overflow: hidden; isolation: isolate;
@@ -2297,7 +2296,7 @@
       Date.now() - handoff.requestedAt < 120000;
     if (fresh) {
       window.CIVVIS_RESTART_HANDOFF = handoff;
-      document.documentElement.classList.add("world-restarting");
+      document.documentElement.classList.add("world-loading", "world-restarting");
     } else if (raw) {
       sessionStorage.removeItem("civvis-world-transition-v1");
       sessionStorage.removeItem("civvis-restart-paused-v1");
@@ -2307,24 +2306,22 @@
   }
 </script>
 </head>
-<body aria-busy="true">
+<body aria-busy="false">
 <div id="world-transition" role="status" aria-live="polite" aria-atomic="true">
   <div class="world-transition-card">
     <div class="world-transition-mark" aria-hidden="true">V</div>
-    <div class="world-transition-kicker" id="world-transition-kicker">CIVVIS</div>
-    <h2 id="world-transition-title">Joining the world</h2>
-    <div id="world-transition-summary">Loading the current simulation</div>
+    <div class="world-transition-kicker" id="world-transition-kicker">Starting simulation</div>
+    <h2 id="world-transition-title">Building a new world</h2>
+    <div id="world-transition-summary">Applying the selected settings</div>
     <div class="world-transition-rule"></div>
-    <div id="world-transition-stage">Connecting</div>
+    <div id="world-transition-stage">Reconnecting</div>
   </div>
 </div>
 <script>
   if (window.CIVVIS_RESTART_HANDOFF) {
-    document.getElementById("world-transition-kicker").textContent = "Starting simulation";
-    document.getElementById("world-transition-title").textContent = "Building a new world";
+    document.body.setAttribute("aria-busy", "true");
     document.getElementById("world-transition-summary").textContent =
       window.CIVVIS_RESTART_HANDOFF.summary || "Applying the selected settings";
-    document.getElementById("world-transition-stage").textContent = "Reconnecting";
   }
 </script>
 <div id="maparea">
