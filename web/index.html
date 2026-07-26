@@ -4803,6 +4803,25 @@ function scheduleResponsiveType(root) {
   if (!responsiveTypeFrame) responsiveTypeFrame = requestAnimationFrame(fitResponsiveType);
 }
 
+// A state update can replace both live HUDs between two paints. Waiting for a
+// later animation frame in that case lets the new nodes appear once at their
+// stylesheet size and then move when the fitter runs, which reads as the whole
+// interface shaking at fast spectator speeds. MutationObserver callbacks
+// already run at the end of the update task, before rendering; fit those roots
+// there. Size-observer updates still use the scheduled path above so a genuine
+// resize cannot create a synchronous ResizeObserver feedback cycle.
+function flushResponsiveType(roots = []) {
+  for (const root of roots) {
+    if (root?.isConnected) responsiveTypeRoots.add(root);
+  }
+  if (!responsiveTypeRoots.size) return;
+  if (responsiveTypeFrame) {
+    cancelAnimationFrame(responsiveTypeFrame);
+    responsiveTypeFrame = 0;
+  }
+  fitResponsiveType();
+}
+
 function responsiveTextTargets(root) {
   const targets = new Map();
   for (const rule of RESPONSIVE_TEXT_RULES) {
@@ -4895,7 +4914,10 @@ const responsiveTypeMutationObserver = new MutationObserver(records => {
         registerResponsiveTypeRoot(root);
     }
   }
-  for (const root of changedRoots) scheduleResponsiveType(root);
+  // Keep semantic content replacement and its fitted presentation in one
+  // paint. registerResponsiveTypeRoot() may also have queued a newly inserted
+  // dossier, so flush the shared root set rather than only changedRoots.
+  flushResponsiveType(changedRoots);
 });
 for (const root of [document.getElementById("side"), document.getElementById("playerhud"),
                     document.getElementById("victoryhud"), document.getElementById("dossier-windows"),
