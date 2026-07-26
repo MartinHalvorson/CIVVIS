@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 16] = [
+pub const EVAL_ONLY_AIS: [&str; 17] = [
     "advanced_lane_reachable",
     "advanced_relief_scoped",
     "strategic_score",
@@ -55,6 +55,7 @@ pub const EVAL_ONLY_AIS: [&str; 16] = [
     "production_net",
     "policy_wide",
     "policy_wide_frozen",
+    "strategic_warm",
 ];
 
 /// On-disk schema for the shared player/leader/civilization rating ledger.
@@ -578,6 +579,17 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         "production" => Box::new(crate::production::ProductionSearchAi::with_weights(
             crate::evolve::load_champion("evolved").unwrap_or_default(),
         )),
+        // Every branch projected from the plan actually in force instead of
+        // from a freshly constructed planner. Same branch count, same
+        // horizon, same cadence and same genome as `strategic`, so the
+        // paired A/B isolates the fidelity of the counterfactual.
+        "strategic_warm" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.continue_from_plan = true;
+            Box::new(ai)
+        }
         "strategic_rot20" => {
             let mut ai = crate::strategic::StrategicAi::with_weights(
                 crate::evolve::load_champion("evolved").unwrap_or_default(),
@@ -796,6 +808,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "strategic_r20h20" => (vec![genome, value(false)], "strategic_r20h20"),
         "strategic_h80" => (vec![genome, value(false)], "strategic_h80"),
         "strategic_rot20" => (vec![genome, value(false)], "strategic_rot20"),
+        "strategic_warm" => (vec![genome, value(false)], "strategic_warm"),
         // Same artifact dependencies as `strategic`: the genome tunes it,
         // and the net is non-definitional because the search runs without
         // one. There is no separate published netless name to degrade to.

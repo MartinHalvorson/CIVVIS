@@ -368,6 +368,7 @@ impl EmpireCounts {
     }
 }
 
+#[derive(Clone)]
 pub struct AdvancedAi {
     base: BasicAi,
     plan: Option<StrategicPlan>,

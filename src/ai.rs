@@ -492,6 +492,7 @@ pub(crate) enum UnitDoctrine {
     Carrier,
 }
 
+#[derive(Clone)]
 pub struct BasicAi {
     minor: bool,
     barb: bool,
