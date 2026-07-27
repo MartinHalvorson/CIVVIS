@@ -22,6 +22,32 @@
 //! information about the treatment, because the two arms met on the same
 //! ground from both sides.
 //!
+//! ## Why "wins both halves" is unbiased *here*
+//!
+//! PR #366 found that scoring a map by whether a granted seat won both
+//! mirrored halves is an artifact generator: it grants **one** seat of four,
+//! so under the null P(wins both) is about 0.06 against P(neither) about 0.56,
+//! and a control arm dutifully reported p=0.0000 having measured nothing.
+//!
+//! This harness is not exposed to that, because the two arms are a symmetric
+//! **partition** of the table rather than one seat against three. Two treated
+//! seats of four, and the arms swap sides between directions. Write `q` for
+//! the chance the even-seat pair wins under the null; then the treatment takes
+//! direction 0 with probability `q` and direction 1 with probability `1-q`, so
+//!
+//! - P(treatment wins both) = `q(1-q)`
+//! - P(control wins both) = `(1-q)q`
+//!
+//! — identical, for every `q`. So the sign test is valid **even though the civ
+//! effect is large** (`docs/RATING.md`: Rome takes 37.7% of wins, Sumeria
+//! 14.6%) and even though civs are fixed per seat index. The mirroring cancels
+//! it exactly rather than averaging over it.
+//!
+//! That argument is checked empirically, not just asserted: run
+//! `--treatment legacy --control legacy`. Identical arms must land near parity
+//! with a non-significant sign test. If they do not, every number this harness
+//! has produced is its own noise.
+//!
 //! ```text
 //! policy_eval --players 4 --maps 120
 //! policy_eval --players 4 --maps 120 --treatment legacy --control empty
