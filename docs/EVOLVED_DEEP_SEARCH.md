@@ -45,4 +45,26 @@ default.
 
 ## Result
 
+### Development screen
+
+Across 60 fresh mirrored maps (120 games), the evolved deep agent lost 57-63:
+
+- paired score 47.5%, 95% Wilson interval 35.4%-59.9%, and -17 Elo point
+  estimate for deep;
+- map directions seven deep-favorable, 43 neutral, and ten `strategic`-
+  favorable (`p = 0.6291`);
+- terminal score exactly 50.0%, with directions 27-4-29 (`p = 0.8939`);
+- deep won 41 religious games to `strategic`'s 46, while aggregate score and
+  economy were nearly equal.
+
+The budget changed behavior substantially without improving the terminal
+position. Deep switched plans 2.85 times per game versus 2.18 and reached 690
+rollout reviews versus 454; `strategic` spent more observed turns committed to
+Religion (33.1% versus 31.1%) and retained more faith (329.9 versus 301.6).
+
+The shallow incumbent's win direction is favorable, although unresolved, so
+it earns the pre-registered disjoint 240-map reversal gate at seed 114000.
+
+### Disjoint reversal gate
+
 Pending.
