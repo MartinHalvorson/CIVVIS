@@ -95,6 +95,70 @@ pub struct TerrainSpec {
     pub defense: f64,
 }
 
+/// Where on the map a Natural Wonder is allowed to appear.
+///
+/// This is the shipped placement rule, transcribed from the game database:
+/// `Feature_ValidTerrains` for the ground it stands on, `Feature_AdjacentTerrains`
+/// / `Feature_NotAdjacentTerrains` (plus the `Coast` and `NoCoast` columns) for
+/// the ground around it, `Feature_AdjacentFeatures` / `Feature_NotNearFeatures`
+/// for the vegetation, `Features.Tiles` for how many hexes it covers, and
+/// `MinDistanceLand` / `MaxDistanceLand` for how far offshore a water wonder
+/// sits. It is what decides whether a wonder is eligible to be *rolled* for a
+/// given map at all, so it is the input to the generation odds rather than a
+/// cosmetic hint.
+#[derive(Clone, Default, Serialize, Deserialize)]
+pub struct FeaturePlacement {
+    /// Base terrains the wonder can stand on. `mountain` covers every coloured
+    /// `TERRAIN_*_MOUNTAIN` variant, which CIVVIS spells as one terrain.
+    #[serde(default)]
+    pub terrain: Vec<String>,
+    /// `Some(true)` for the hills-only wonders (the Cliffs of Dover),
+    /// `Some(false)` for the flat-only ones (Crater Lake, Pantanal, Yosemite,
+    /// the Dead Sea, Lake Retba, the Giant's Causeway), `None` when the shipped
+    /// valid-terrain rows list both forms.
+    #[serde(default)]
+    pub hills: Option<bool>,
+    /// `Features.Tiles`: the size of the wonder's footprint. Absent in the
+    /// database means one hex.
+    #[serde(default = "one_tile")]
+    pub tiles: usize,
+    /// How many of those hexes are water rather than land. Only the Giant's
+    /// Causeway, whose columns step off a headland into the sea, sets this.
+    #[serde(default)]
+    pub water_tiles: usize,
+    /// At least one neighbour must be one of these terrains. Carries the
+    /// `Coast` column for the shore wonders and `Feature_AdjacentTerrains` for
+    /// the peaks, which must not be walled in by their own mountain range.
+    #[serde(default)]
+    pub adjacent_terrain: Vec<String>,
+    /// No neighbour may be one of these. Carries `NoCoast` as `coast`.
+    #[serde(default)]
+    pub not_adjacent_terrain: Vec<String>,
+    /// At least one neighbour must carry one of these features (Yosemite wants
+    /// Woods, Ik-Kil wants Rainforest).
+    #[serde(default)]
+    pub adjacent_feature: Vec<String>,
+    /// `Feature_NotNearFeatures`: no neighbour may carry one of these. Every
+    /// shipped row names Sea Ice, keeping the water wonders out of the pack.
+    #[serde(default)]
+    pub avoid_feature: Vec<String>,
+    /// `NoAdjacentFeatures`: no neighbour may carry *any* feature.
+    #[serde(default)]
+    pub no_adjacent_features: bool,
+    /// `NoRiver`: the hex may not have a river on it.
+    #[serde(default)]
+    pub no_river: bool,
+    /// `MinDistanceLand` / `MaxDistanceLand`: how many hexes of open water lie
+    /// between this wonder and the nearest land. The Great Barrier Reef and Ha
+    /// Long Bay hug the shore at 1, the Galapagos sit 2-3 hexes out.
+    #[serde(default)]
+    pub land_distance: Option<[i32; 2]>,
+}
+
+fn one_tile() -> usize {
+    1
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct FeatureSpec {
     #[serde(default)]
@@ -113,6 +177,10 @@ pub struct FeatureSpec {
     pub move_cost: f64,
     #[serde(default)]
     pub natural_wonder: bool,
+    /// Present on every Natural Wonder and on nothing else: the ground the map
+    /// generator is allowed to seat it on.
+    #[serde(default)]
+    pub placement: FeaturePlacement,
     /// How much this feature adds to the height of the terrain under it for
     /// line of sight, the game database's ``SightThroughModifier``: Woods and
     /// Rainforest 1 — burnt over as well as standing — Everest and Yosemite 2,
@@ -3318,6 +3386,13 @@ mod tests {
     /// so it pays its neighbours instead — or, for Ik-Kil and Zhangye Danxia,
     /// nothing but Appeal. Six wonders used to be passable *and* pay tile
     /// yields nobody in the shipped game ever collects.
+    ///
+    /// The Bermuda Triangle is the shipped exception on the other side, and it
+    /// is deliberate rather than sloppy: its plots are ordinary Ocean a Citizen
+    /// *can* work, it pays nothing for standing there, and its whole yield is
+    /// the +5 Science it gives every neighbour. `Feature_UnitMovements` bars
+    /// passage through it while allowing a unit to end on it, which is a third
+    /// state neither half of the split describes.
     #[test]
     fn an_impassable_natural_wonder_pays_its_neighbours_not_its_own_tile() {
         let rules = Rules::embedded();
@@ -3335,6 +3410,14 @@ mod tests {
                     "{name} is impassable, so no Citizen can ever work its tile"
                 );
                 blocked += 1;
+            } else if name == "bermuda_triangle" {
+                assert_eq!(spec.yields, Yields::default(), "{name} pays no tile yield");
+                assert_ne!(
+                    spec.adjacent_yields,
+                    Yields::default(),
+                    "{name} exists to pay its neighbours"
+                );
+                passable += 1;
             } else {
                 assert_ne!(
                     spec.yields,
