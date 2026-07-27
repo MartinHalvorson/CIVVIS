@@ -2526,3 +2526,62 @@ The general form, which has now cost this session twice: **a number is true
 inside the conditions that produced it.** The first instance was a working
 directory, the second is a map density, and both were invisible to every
 statistic computed on top of them.
+
+## 2026-07-27 — REFUTED: the genome transfers to the deployment configuration
+
+The pre-registration above predicted that the shipped genome would
+**under-expand** at 6 players on 74×46, because it moved `city_target` −40% and
+`settler_min_pop` +123% while being evolved at one sixth the density. The run
+it named has reported.
+
+```
+ai_eval advanced_evolved advanced --players 6 --width 74 --height 46 \
+        --city-states 9 --pairs 200 --seed 190000 --turns 500
+
+mirrored head-to-head: 200 maps, 400 games, 6 players, average 388.3 turns
+game-win share: advanced_evolved 217/400 (54.2%)  advanced 183/400 (45.8%)
+paired-map score: 54.2% (95% Wilson CI 47.3%..61.0%), Elo-equivalent +30
+paired direction: evolved 58, neutral 101, advanced 41; sign p=0.1074
+terminal-score direction: evolved 131, neutral 0, advanced 69; sign p=0.0000
+promotion gate: INCONCLUSIVE
+```
+
+**The prediction is wrong, and wrong on its own mechanism.**
+
+| | cities | pop | score |
+|---|---|---|---|
+| `advanced_evolved` | **5.39** | 65.1 | 548.9 |
+| `advanced` (defaults) | 4.76 | 59.5 | 501.3 |
+
+The champion builds **13% more cities** at deployment density, not fewer. Its
+paired score there (54.2%) is within noise of its score at the configuration it
+was evolved on (54.6% over 1300 maps), and terminal score separates decisively
+in its favour, 131–69 at p=0.0000. The gate reads INCONCLUSIVE only on the
+fixed-*n* Wilson bound at 200 maps, which is a power statement, not a null.
+
+### Why the reasoning failed
+
+`city_target` is a *target*, not a rate. Reading one gene's direction and
+inferring a behaviour ignored the rest of the genome it operates with —
+`settle_dist` moved +73% in the same champion, and the settling decision is a
+joint function of several weights plus the map. **A 40% cut to one parameter
+produced 13% more cities.**
+
+The general lesson is narrower than "check your deployment config", which the
+pre-registration got right, and it is this: **genome parameters interact, so
+behaviour cannot be read off a single weight's direction.** The mechanism was
+invented from a table of deltas and it did not survive contact with a
+measurement of the behaviour itself.
+
+What made this a clean refutation rather than a story was pre-registering the
+prediction, the seed and the size before the run, in a commit that predates it.
+
+### What stands
+
+- The genome is favourable at **both** densities measured: 54.6% at 4p/24×16
+  over 1300 maps (gate PASS), 54.2% at 6p/74×46 over 200 maps (underpowered).
+- `docs/EVAL.md`'s "not established" list loses the map-size entry and keeps
+  the rest.
+- The **harness-wide** caveat from the previous entry is untouched: 19 of 20
+  recorded runs still used one density, and this is the first result checked
+  across two. It came out well; that is one data point, not a general licence.
