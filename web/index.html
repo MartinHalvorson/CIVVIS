@@ -654,7 +654,18 @@
   .diplomacy-elo { flex: 0 0 auto; color: var(--gold-bright); font-weight: 850; }
   .diplomacy-expected { flex: 0 0 auto; color: #8fd6a4; font-weight: 850; }
   .diplomacy-player { flex: 1 1 auto; color: #d9e1dc; font-weight: 750; }
-  .agenda-mark { margin-left: 3px; font-size: var(--type-label); vertical-align: 1px; }
+  /* The mark leads the CIV cell from a gutter of its own. It is emitted on
+     every row, empty where there is no stance to report, so that the rank
+     numbers behind it still start at one x down the whole column.
+
+     The gutter gives back the 3px flex gap that the cell puts after every one
+     of its items, so it costs the civilization's name 10px rather than 13 —
+     that name is the first thing the standings give up when the masthead is
+     narrow, and the `#` beside it carries its own left bearing anyway. */
+  .agenda-mark {
+    flex: 0 0 auto; display: inline-block; width: 10px; margin-right: -3px;
+    font-size: var(--type-label); line-height: 1; text-align: center; vertical-align: 1px;
+  }
   .agenda-mark.up { color: #8fd6a4; }
   .agenda-mark.down { color: #f2a09b; }
   .ai-plan { font-weight: 850; }
@@ -1712,6 +1723,16 @@
     color: #e0f7ec; border-color: #8bbca7; background: linear-gradient(180deg, #365b4d, #223c33);
   }
   .war-card.ended .war-period { background: linear-gradient(90deg, #1c2924, #14211c); border-bottom-color: #435e54; }
+  /* A watched war is held still while the rest of the chronicle slides past it,
+     and a still card in a moving list is only honest if it says it is the one
+     being held. These rules follow `.ended` deliberately: they share its
+     specificity, so a concluded war that is being watched still reads as held. */
+  .war-card.watched { border-color: #d8ad5e; box-shadow: inset 0 0 0 1px #0007, 0 0 0 1px #d8ad5e55, 0 6px 18px #0004; }
+  .war-card.watched .war-period { background: linear-gradient(90deg, #4a3417, #2c2418 50%, #1c2a20); border-bottom-color: #a5813f; }
+  .war-map-action.watching, .war-map-action.aftermath.watching {
+    color: #fff6d8; border-color: #f0cf82; background: linear-gradient(180deg, #7a5f2e, #4a381c);
+    box-shadow: inset 0 1px #fff3, 0 0 0 1px #d8ad5e44;
+  }
   .war-infobox-row { border-top: 1px solid #ffffff0d; }
   .war-infobox-row:first-of-type { border-top: 0; }
   .war-row-label { padding: 3px 7px; background: #ffffff06; color: #8fa098; font-size: var(--type-caption); font-weight: 850; letter-spacing: .10em; text-align: center; text-transform: uppercase; }
@@ -19460,13 +19481,20 @@ function drawPlayerHud() {
       // says which agenda is doing the judging.
       const opinion = +p.opinion_of_me || 0;
       const stance = opinion >= 15 ? "approves" : opinion <= -15 ? "disapproves" : "";
-      const agendaGlyph = p.id === acting && !SPEC ? ""
-        : stance === "approves" ? `<span class="agenda-mark up" title="Approves of you">▲</span>`
-        : stance === "disapproves" ? `<span class="agenda-mark down" title="Disapproves of you">▼</span>`
-        : "";
+      // Nobody reports how they feel about themselves, so the seat you are
+      // playing wears no mark of its own.
+      const shownStance = p.id === acting && !SPEC ? "" : stance;
+      // The glyph rides in the CIV cell ahead of the rank, and the empty span
+      // holds that gutter open on the rows that have nothing to say — without
+      // it every marked row would push its own `#3` a glyph's width right.
+      const agendaGlyph =
+        shownStance === "approves" ? `<span class="agenda-mark up" title="Approves of you">▲</span>`
+        : shownStance === "disapproves" ? `<span class="agenda-mark down" title="Disapproves of you">▼</span>`
+        : `<span class="agenda-mark" aria-hidden="true"></span>`;
       const agendaText = p.agenda
         ? ` · ${p.agenda.name}${stance ? ` (${stance} of you)` : ""}: ${p.agenda.description}`
         : "";
+      const civTitle = `${empireTitle}${shownStance ? ` · ${leader} ${shownStance} of you` : ""}`;
       const activeStrategy = strategy
         ? `<span class="ai-plan ${strategy}">${titleCase(strategy)}</span>`
         : `<span class="ai-plan">No active strategy</span>`;
@@ -19517,14 +19545,18 @@ function drawPlayerHud() {
         `<button class="lock-toggle" data-hud-action="lock" data-hud-civ="${p.id}" aria-pressed="${locked}" ` +
         `title="${lockTitle}" aria-label="${lockTitle}">${locked ? "◉" : "○"}</button>` +
         `<span class="diplomacy-identity-grid">` +
+        // A civilization with no capital leaves this button disabled, and a
+        // disabled control answers no hover — so the cell that now carries the
+        // agenda mark says the stance in words too, rather than resting on a
+        // tooltip that half the rows cannot show.
         `<button class="diplomacy-identity diplomacy-civ-link" data-hud-action="capital" data-hud-civ="${p.id}" ` +
-        `title="${escapeAttr(empireTitle)}" aria-label="${escapeAttr(empireTitle)}"${capital ? "" : " disabled"}>` +
-        `<span class="diplomacy-identity-field"><span class="diplomacy-rank">#${rank}</span>` +
+        `title="${escapeAttr(civTitle)}" aria-label="${escapeAttr(civTitle)}"${capital ? "" : " disabled"}>` +
+        `<span class="diplomacy-identity-field">${agendaGlyph}<span class="diplomacy-rank">#${rank}</span>` +
         `<span class="diplomacy-civ">${p.id === acting && highlightActing ? "◉ " : ""}${p.civ}</span></span></button>` +
         `<button class="diplomacy-identity diplomacy-leader-link" data-hud-action="dossier" data-hud-civ="${p.id}" aria-expanded="${expanded}" ` +
         `title="${expanded ? "Close" : "Open"} the ${p.civ} dossier · ${relationSummary}${agendaText}" ` +
         `aria-label="${expanded ? "Close" : "Open"} dossier for ${p.civ}, rank ${rank}, ${relationSummary}">` +
-        `<span class="diplomacy-identity-field"><span class="diplomacy-leader-name">${leader}</span>${agendaGlyph}</span>` +
+        `<span class="diplomacy-identity-field"><span class="diplomacy-leader-name">${leader}</span></span>` +
         `</button>` +
         `<button class="watch-as-link" data-hud-action="watch" data-hud-civ="${p.id}" ` +
         `title="${escapeAttr(watchTitle)}" aria-label="Watch as ${escapeAttr(p.civ)}">Watch as</button>` +
@@ -21581,6 +21613,67 @@ function focusWarOnMap(warKey) {
   wakeCinema();
 }
 
+// Watching a war is a reading position, not only a camera move. This log
+// re-sorts itself every turn — an ongoing conflict grows another chronology
+// line, a rival war ends and drops out of the ongoing block into the concluded
+// one below — so the card a viewer is deliberately reading slides out from
+// under them. A watched war is therefore held at the exact offset it had inside
+// the list's own viewport, and the scroll is moved by however much the rest of
+// the chronicle shifted above it. The order is never touched: this panel is a
+// chronicle, and a concluded war must not sit among the ongoing ones merely
+// because somebody is watching it. Everything above and below keeps updating.
+let watchedWar = null;
+
+function warCardFor(el, warKey) {
+  for (const card of el.children)
+    if (card.dataset && card.dataset.warKey === warKey) return card;
+  return null;
+}
+
+// Where the held card sits below the top edge of the list's own viewport. This
+// is read before every repaint, which is what makes the hold follow the viewer:
+// wherever they scroll the card to is where it is held next.
+function measureWatchedWar(el) {
+  if (!watchedWar || !el.clientHeight) return;
+  const card = warCardFor(el, watchedWar.key);
+  if (card) watchedWar.offset = card.getBoundingClientRect().top - el.getBoundingClientRect().top;
+}
+
+// Put the held card back on that offset by paying for the shift with the
+// scroll. A list too short to place it there keeps the target rather than
+// adopting the clamped position, so the card returns to its own place as soon
+// as the chronicle grows enough to allow it again.
+function holdWatchedWar(el) {
+  if (!watchedWar || !el.clientHeight) return;
+  const card = warCardFor(el, watchedWar.key);
+  if (!card) return;
+  const within = card.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
+  const reach = Math.max(0, el.scrollHeight - el.clientHeight);
+  const target = Math.max(0, Math.min(reach, within - watchedWar.offset));
+  if (Math.abs(el.scrollTop - target) > 0.5) el.scrollTop = target;
+}
+
+function watchWar(warKey) {
+  const el = document.getElementById("wars");
+  if (!el || !state) return;
+  const key = String(warKey);
+  // Lock it exactly where the viewer clicked it: starting to watch a war must
+  // not itself move the card.
+  const card = warCardFor(el, key);
+  const offset = card
+    ? card.getBoundingClientRect().top - el.getBoundingClientRect().top
+    : (watchedWar ? watchedWar.offset : 0);
+  watchedWar = {key, seed: state.seed, offset};
+  drawWarLog();
+  focusWarOnMap(key);
+}
+
+function releaseWatchedWar() {
+  if (!watchedWar) return;
+  watchedWar = null;
+  if (state) drawWarLog();
+}
+
 function drawWarLog() {
   const el = document.getElementById("wars");
   const scope = document.getElementById("warscope");
@@ -21591,14 +21684,23 @@ function drawWarLog() {
   scope.textContent = ongoing.length
     ? `${ongoing.length} ongoing`
     : (wars.length ? "At peace" : "");
-  const signature = JSON.stringify(wars) + `|${state.turn}`;
+  // Conflict numbering restarts with the world, so a watch cannot outlive the
+  // game it was placed in — it would hold a stranger's card.
+  if (watchedWar && watchedWar.seed !== state.seed) watchedWar = null;
+  const signature = JSON.stringify(wars) + `|${state.turn}|${watchedWar ? watchedWar.key : ""}`;
   if (el.dataset.signature === signature) return;
+  // Read where the held card is sitting right now — including wherever the
+  // viewer has scrolled it to since the last repaint — before the list is
+  // rebuilt underneath it.
+  measureWatchedWar(el);
   el.dataset.signature = signature;
   if (!wars.length) {
     el.innerHTML = `<div class="empty-state">No war has been declared.</div>`;
+    watchedWar = null;
     return;
   }
   el.innerHTML = wars.map(war => {
+    const watched = watchedWar !== null && watchedWar.key === warLogKey(war);
     const over = war.ended !== null && war.ended !== undefined;
     const conquest = war.outcome === "conquest";
     const length = Math.max(0, (over ? war.ended : state.turn) - war.started);
@@ -21626,16 +21728,20 @@ function drawWarLog() {
       ? `<span class="war-nuclear-badge" title="Nuclear devices detonated in this war">` +
         `☢ ${detonations} nuclear</span>`
       : "";
-    const mapAction = over ? "View aftermath" : "Watch";
-    const mapActionTitle = over
-      ? "View what became of this war's final battlefield"
-      : "Focus the map on this war's active theater";
+    const mapAction = watched ? "Watching" : (over ? "View aftermath" : "Watch");
+    const mapActionTitle = watched
+      ? "Held in place while the rest of the log moves around it — click to release"
+      : (over
+        ? "View what became of this war's final battlefield, and hold this entry in place"
+        : "Focus the map on this war's active theater, and hold this entry in place");
     return `<div class="war-card${over ? " ended" : ""}${conquest ? " conquest" : ""}` +
-      `${detonations ? " nuclear" : ""}">` +
+      `${detonations ? " nuclear" : ""}${watched ? " watched" : ""}" ` +
+      `data-war-key="${escapeAttr(warLogKey(war))}">` +
       `<div class="war-period"><span>Started<b>Turn ${war.started}</b></span>` +
       `<span>${over ? "Ended" : "Status"}<b>${over ? `Turn ${war.ended}` : `Ongoing · ${length} turn${length === 1 ? "" : "s"}`}</b>${nuclearBadge}</span>` +
-      `<button type="button" class="war-map-action${over ? " aftermath" : ""}" ` +
-      `data-war-key="${escapeAttr(warLogKey(war))}" title="${escapeAttr(mapActionTitle)}" ` +
+      `<button type="button" class="war-map-action${over ? " aftermath" : ""}${watched ? " watching" : ""}" ` +
+      `data-war-key="${escapeAttr(warLogKey(war))}" aria-pressed="${watched ? "true" : "false"}" ` +
+      `title="${escapeAttr(mapActionTitle)}" ` +
       `aria-label="${escapeAttr(mapActionTitle)}">${mapAction}</button></div>` +
       `<div class="war-infobox-row"><div class="war-row-label">Belligerents</div>` +
       `<div class="war-columns">${warBelligerentRows(war, true, "aggressor", maxSawAction)}` +
@@ -21647,11 +21753,21 @@ function drawWarLog() {
       `<div class="war-infobox-row"><div class="war-row-label">Chronology</div>` +
       `<div class="war-moments">${moments || `<span class="war-loss-none">No recorded events</span>`}</div></div></div>`;
   }).join("");
+  // A conflict that has aged off the tail of the log, or a world that ended,
+  // cannot be held: drop the watch rather than keep an offset against a card
+  // that no longer exists.
+  if (watchedWar && !warCardFor(el, watchedWar.key)) watchedWar = null;
+  holdWatchedWar(el);
 }
 
 document.getElementById("wars")?.addEventListener("click", event => {
   const button = event.target.closest(".war-map-action");
-  if (button) focusWarOnMap(button.dataset.warKey);
+  if (!button) return;
+  const key = String(button.dataset.warKey);
+  // The same control releases the hold, so watching is never a trap: a viewer
+  // who wants the log to flow again presses the button that stopped it.
+  if (watchedWar && watchedWar.key === key) releaseWatchedWar();
+  else watchWar(key);
 });
 
 function drawSide(force = true) {
