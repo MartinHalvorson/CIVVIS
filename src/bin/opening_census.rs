@@ -151,6 +151,13 @@ struct Seat {
     /// are far, the terrain slow, or the settler re-targeting; the ratio of
     /// steps to straight-line distance separates the third from the first two.
     live_settlers: BTreeMap<u32, (u32, (i32, i32), (i32, i32), u32)>,
+    /// Target this settler was marching to when last seen, and how many times
+    /// that target changed over its life. §14 left exactly one question: bad
+    /// path, or changing destination?
+    settler_aim: BTreeMap<u32, (i32, i32)>,
+    aim_changes: u32,
+    aim_samples: u32,
+    aim_lost: u32,
     /// Finished journeys: (turns alive, steps taken, straight-line distance).
     settler_trips: Vec<(u32, u32, u32)>,
     /// Turns short of the city target with no settler anywhere.
@@ -478,6 +485,12 @@ fn main() {
                     .filter(|u| u.owner == pid && u.kind == "settler")
                     .map(|u| (u.id, (u.pos.0, u.pos.1)))
                     .collect();
+                let aims_now: Vec<(u32, Option<(i32, i32)>)> = settlers_now
+                    .iter()
+                    .map(|(id, _)| {
+                        (*id, fleet[pid].settler_target(*id).map(|p| (p.0, p.1)))
+                    })
+                    .collect();
                 let building = game.cities.values().any(|c| {
                     c.owner == pid
                         && matches!(
@@ -518,6 +531,27 @@ fn main() {
                         }
                     }
                     seat.last_settler_pos = settler_pos;
+                    for (id, aim) in &aims_now {
+                        seat.aim_samples += 1;
+                        match (seat.settler_aim.get(id), aim) {
+                            (Some(was), Some(now)) if was != now => {
+                                seat.aim_changes += 1;
+                                seat.settler_aim.insert(*id, *now);
+                            }
+                            (Some(_), None) => {
+                                // The agent dropped this settler's target --
+                                // one failed move does exactly that. Keep the
+                                // old value rather than forgetting it: if the
+                                // next target differs, that is a real
+                                // re-targeting and must be counted as one.
+                                seat.aim_lost += 1;
+                            }
+                            (None, Some(now)) => {
+                                seat.settler_aim.insert(*id, *now);
+                            }
+                            _ => {}
+                        }
+                    }
                     for (id, pos) in &settlers_now {
                         let entry = seat
                             .live_settlers
@@ -1017,6 +1051,23 @@ fn main() {
             trips.len(),
             steps_m / dist_m.max(0.01),
             steps_m / turns_m.max(0.01)
+        );
+    }
+    let aim_changes: u32 = seats.iter().map(|s| s.aim_changes).sum();
+    let aim_lost: u32 = seats.iter().map(|s| s.aim_lost).sum();
+    let aim_samples: u32 = seats.iter().map(|s| s.aim_samples).sum();
+    if aim_samples > 0 {
+        println!(
+            "\nsettler destination stability over {aim_samples} settler-turns:\n  \
+             {aim_changes} turns ended aimed SOMEWHERE ELSE than the turn before ({:.1}%)\n  \
+             {aim_lost} turns ended holding NO destination, having held one ({:.1}%)\n\
+             A settler that chose a site and walked to it would show zero of both. \
+             `AdvancedAi::settler_step` discards the target on any turn the unit fails to \
+             move (src/ai/advanced.rs, `if !moved`), so the second row is a commitment \
+             failure rather than a re-plan. Re-acquiring the same site costs only a search; \
+             the first row is the one that costs distance.",
+            100.0 * aim_changes as f64 / aim_samples as f64,
+            100.0 * aim_lost as f64 / aim_samples as f64
         );
     }
     let moved: Vec<f64> = seats.iter().map(|s| s.settler_moved_turns as f64).collect();

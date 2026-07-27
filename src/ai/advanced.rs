@@ -523,6 +523,16 @@ impl AdvancedAi {
         &self.base.journal
     }
 
+    /// The tile this settler is currently marching to, if it holds one.
+    ///
+    /// Read-only, for instruments. `docs/OPENINGS.md` §14 measured that a
+    /// settler walks 2.32x its straight-line distance; whether that is a bad
+    /// path or a changing destination cannot be told from the outside without
+    /// this, and the two want completely different repairs.
+    pub fn settler_target(&self, uid: u32) -> Option<Pos> {
+        self.settler_targets.get(&uid).copied()
+    }
+
     pub fn targeting(target: VictoryTarget) -> AdvancedAi {
         Self::configured(BasicAi::new(), true, Some(target))
     }

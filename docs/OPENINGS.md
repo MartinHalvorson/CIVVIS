@@ -736,3 +736,62 @@ the path is bad and the fix is pathing. That is one field and it decides between
 two entirely different repairs — and, unlike everything in §§5–12, it is a
 movement question, where this repository's ledger of what works is untested
 rather than uniformly zero.
+
+## 15. The settler does not keep a destination
+
+§14 posed a binary: bad path, or changing destination? `AdvancedAi` keeps a
+`settler_targets` map, so the question is answerable directly by sampling what
+each settler was aimed at, every turn it lived.
+
+17,701 settler-turns, 60 maps, 4 players, 32×22:
+
+| | count | share of settler-turns |
+|---|---|---|
+| ended aimed **somewhere else** than the turn before | 625 | **3.5%** |
+| ended holding **no destination**, having held one | 4,799 | **27.1%** |
+
+**A settler that chose a site and walked to it would show zero of both.**
+
+The mechanism is one line, and it is not a re-plan — it is a dropped
+commitment. `AdvancedAi::settler_step`:
+
+```rust
+let moved = self.base.settler_step_toward(g, pid, uid, target);
+if !moved {
+    self.settler_targets.remove(&uid);   // any blocked turn forgets the site
+}
+```
+
+The target is also filtered out whenever `g.route_step(uid, target, 0)` is
+momentarily `None` — a friendly unit in the way, a zone of control, a tile not
+yet revealed. Neither condition means the site got worse. Both throw the
+decision away and re-run the search from scratch next turn.
+
+That squares with §14's other column: 19% of settler-turns are spent standing
+still, and standing still is exactly the condition that discards the target.
+
+### ⚠ How much of the 2.32× detour this explains — not established
+
+3.5% of 15 turns is about **half a re-target per journey**. A single mid-course
+change does inflate the ratio badly, because §14's straight line is measured
+spawn-to-*end* and therefore misses the first leg entirely — so half a change
+per journey is compatible with a 2.32 mean ratio. It is not proof of it.
+
+The 27.1% column mostly costs searches rather than distance: dropping a target
+and re-acquiring *the same* site wastes compute, not movement. Only the 3.5%
+moves the unit somewhere new.
+
+**So: the destination is measurably unstable, the mechanism is identified and
+is a commitment failure rather than a judgement, and it is a plausible but
+unproven cause of the detour.** What would settle it is recording the aim at
+spawn and the founding site per journey and correlating change-count against
+that journey's own detour ratio — a per-journey join the census does not do yet.
+
+### ⚠ An instrument bug this caught, worth recording
+
+The first version of this measurement removed the settler's remembered aim when
+the agent dropped it. A different site acquired afterwards therefore compared
+against nothing and was never counted as a change. It read **1.9% changes and
+10.6% drops**; retaining the aim across a drop gives **3.5% and 27.1%**. Both
+published numbers would have understated the instability by roughly half, in
+the direction that made the agent look better.
