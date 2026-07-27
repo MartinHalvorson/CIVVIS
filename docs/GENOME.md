@@ -485,7 +485,9 @@ positive on the second.
 
 **Lane progress is the only statistic whose reading on the known null is
 statistically indistinguishable from zero while still reporting a positive on
-the known positive.** Its separation between the two cases is 9.0×, against
+the known positive.** ⚠ **This is superseded — see the refutation below. Both
+tests were non-adversarial, and the statistic does not survive a search that
+optimises it.** Its separation between the two cases is 9.0×, against
 2.4× for mean score share.
 
 The score functionals are not useless — `share⁴` and `top of table` do point
@@ -588,6 +590,62 @@ is not. Breeding on score selects for padding; breeding on league rating
 selected for something −98 Elo. `Game::victory_threat` is the one statistic
 validated against both a known null and a known positive, and it is the only
 one worth pointing a search at.
+
+## ★★★ REFUTED: lane progress is also a correlate, and a search finds that out
+
+This document claimed `Game::victory_threat` is a validated cheap fitness. It
+is not, and the refutation is stronger than a null.
+
+A GA over all forty genes, selecting on lane progress against the shipped
+genome, produced a champion at **+0.0886 ± 0.0280 (3.2 SE) on 48 disjoint
+maps** — three times the lane-progress edge of the one change known to win.
+Pre-registered, then decided on wins over 100 fresh mirrored maps:
+
+```
+decisive games   78/200 (39.0%)
+map directions   8 for / 30 against / 62 neutral
+sign test        p = 0.0005   SIGNIFICANT AGAINST the champion
+```
+
+**The bred genome is significantly worse.**
+
+### Why the validation was insufficient
+
+Lane progress passed two tests: parity on a change whose wins answer is parity,
+a positive on a change whose wins answer is positive. Both were
+**non-adversarial** — natural interventions not designed to exploit the
+statistic. It failed the first **adversarial** one: a search over forty genes
+for whatever maximises it.
+
+> **A statistic validated against interventions you did not design to exploit
+> it is not validated against a search that does.** Optimisation pressure is a
+> different test from correlation, and only the former is the one a fitness has
+> to survive.
+
+### The mechanism, which is specific
+
+The champion is a military build — `mil_per_city` 1.00→3.98, `attack_floor`
+0→10.5, `focus_fire` 2.50→4.50, `builder_per_city` halved. `victory_threat`
+rewards *progress toward* a victory condition, and domination is the lane this
+engine converts worst (3–8%, and 0/7 in the league-transfer diagnostics). So
+the search found the cheapest correlate to move — domination progress — and
+moved it, at the cost of winning.
+
+That is exactly `policy_wide`, one level up again. There, a value net's argmax
+over actions found the contact terms and went to −313 Elo. Here a GA's argmax
+over genomes found domination progress and went to 8 map directions against 30.
+**Same mechanism, third layer.**
+
+### What survives
+
+Every cheap end-of-game statistic tested here — score share under four
+functionals, and now lane progress — is a correlate that a search will exploit.
+The repository's original conclusion stands unweakened and now has one more
+independent confirmation:
+
+> **Only a counterfactual survives optimisation pressure.** Rollouts win;
+> regressions on outcomes do not; and no summary statistic of a finished game
+> is safe to breed against.
 
 ## The conclusion this all points at
 

@@ -151,6 +151,113 @@ fn main() {
 
     let bounds = Weights::bounds();
     let shipped = Weights::default().to_vec();
+
+    // --wins <40 comma-separated genes>: decide a champion on map directions
+    // and a sign test over WINS, which is what lane progress only nominates.
+    if let Some(spec) = args
+        .iter()
+        .position(|arg| arg == "--wins")
+        .and_then(|index| args.get(index + 1))
+    {
+        let genes: Vec<f64> = spec
+            .split(',')
+            .filter_map(|piece| piece.trim().parse().ok())
+            .collect();
+        if genes.len() != shipped.len() {
+            eprintln!(
+                "genome_breed: --wins needs {} comma-separated genes, got {}",
+                shipped.len(),
+                genes.len()
+            );
+            std::process::exit(2);
+        }
+        let champion = Weights::from_vec(&genes);
+        println!(
+            "wins verdict: champion vs shipped, {maps} maps x 2 directions, {players}p,              {turns} turns, seed {seed0}"
+        );
+        let results = parallel::map(maps, jobs, move |index| {
+            let seed = seed0 + index as u64;
+            let mut out = [None, None];
+            for (slot, treated) in (0..2usize).enumerate() {
+                let mut game = Game::new(players, width, height, seed, turns, 0);
+                let stock = Weights::default();
+                let mut mine: Vec<AdvancedAi> = AdvancedAi::fleet_weighted(&game, &champion);
+                let mut rivals: Vec<AdvancedAi> = AdvancedAi::fleet_weighted(&game, &stock);
+                let is_treated = |pid: usize| pid % 2 == treated;
+                for _ in 0..turns {
+                    if game.winner.is_some() {
+                        break;
+                    }
+                    for pid in 0..game.players.len() {
+                        if game.winner.is_some() {
+                            break;
+                        }
+                        if is_treated(pid) {
+                            mine[pid].take_turn(&mut game, pid);
+                        } else {
+                            rivals[pid].take_turn(&mut game, pid);
+                        }
+                        if game.winner.is_none() && game.current == pid {
+                            let _ = game.apply(pid, &Action::EndTurn);
+                        }
+                    }
+                }
+                // A capped game with no victor says nothing about either arm.
+                out[slot] = game.winner.map(is_treated);
+            }
+            out
+        });
+        let (mut up, mut down, mut neutral, mut won, mut decisive) = (0u32, 0u32, 0u32, 0u32, 0u32);
+        for pair in &results {
+            for arm in pair.iter() {
+                match arm {
+                    Some(true) => {
+                        decisive += 1;
+                        won += 1;
+                    }
+                    Some(false) => decisive += 1,
+                    None => {}
+                }
+            }
+            match (pair[0], pair[1]) {
+                (Some(true), Some(true)) => up += 1,
+                (Some(false), Some(false)) => down += 1,
+                _ => neutral += 1,
+            }
+        }
+        // Exact two-sided sign test over the maps that broke.
+        let n = up + down;
+        let p = if n == 0 {
+            1.0
+        } else {
+            let extreme = up.min(down);
+            let mut log_c = 0.0f64;
+            let mut tail = 0.0f64;
+            for k in 0..=extreme {
+                if k > 0 {
+                    log_c += ((n - k + 1) as f64).ln() - (k as f64).ln();
+                }
+                tail += (log_c - (n as f64) * std::f64::consts::LN_2).exp();
+            }
+            (2.0 * tail).min(1.0)
+        };
+        println!(
+            "  decisive games   {won}/{decisive} ({:.1}%)",
+            100.0 * won as f64 / decisive.max(1) as f64
+        );
+        println!("  map directions   {up} for / {down} against / {neutral} neutral");
+        println!("  sign test        p = {p:.4}");
+        println!(
+            "
+  {}",
+            if up > down && p < 0.05 {
+                "PASS under the pre-registered rule. Confirm at the strategic_deep budget next."
+            } else {
+                "NULL under the pre-registered rule. The shipped genome stands, and a lane-progress                  edge that does not convert is exactly what score share did."
+            }
+        );
+        return;
+    }
     let names = Weights::gene_names();
     let mut rng = Rng::new(seed0 ^ 0x5DEE_CE66_D1EB_51DA);
 
