@@ -119,258 +119,421 @@ fn noise_cell(wm: &WorldMap, pos: Pos) -> (i32, i32) {
     )
 }
 
-/// Even-odd point-in-polygon in degrees. No ring below crosses the
-/// antimeridian, so the test needs no wrapping to be exact.
-fn point_in_polygon(longitude: f64, latitude: f64, polygon: &[(f64, f64)]) -> bool {
-    let mut inside = false;
-    let mut previous = polygon.len() - 1;
-    for current in 0..polygon.len() {
-        let (xi, yi) = polygon[current];
-        let (xj, yj) = polygon[previous];
-        if ((yi > latitude) != (yj > latitude))
-            && longitude < (xj - xi) * (latitude - yi) / (yj - yi) + xi
-        {
-            inside = !inside;
+/// Earth's real surface, on a half-degree grid.
+///
+/// `data/earth_surface.txt` is 720 by 360 cells built by
+/// `tools/earth_surface.py` out of Natural Earth's 1:50m coastlines and lakes,
+/// SRTM15+ elevation and the Koeppen-Geiger climate classification. Every cell
+/// carries what is actually there: sea, lake or one of the land terrains, plus
+/// whether it stands high enough to be hills or a mountain and what grows on
+/// it. Nothing about this world is rolled, which is the whole point of a
+/// true-start map — the seed still decides the rivers, the resources and the
+/// scatter inside each biome, and never the geography.
+///
+/// Half a degree is chosen against the finest world the engine builds:
+/// Ludicrous averages about 1.6 degrees to a tile, so the source out-resolves
+/// even that by three to one, and anything finer would be bytes no sampler
+/// could see.
+const EARTH_SURFACE: &str = include_str!("../data/earth_surface.txt");
+const EARTH_GRID_WIDTH: usize = 720;
+const EARTH_GRID_HEIGHT: usize = 360;
+const EARTH_CELL_DEGREES: f64 = 0.5;
+
+/// The surface classes a cell can hold, in the order the asset encodes them.
+const EARTH_SEA: u8 = 0;
+const EARTH_LAKE: u8 = 1;
+const EARTH_MOUNTAIN: u8 = 7;
+/// The terrain each land class names, indexed by the class itself. Sea and
+/// lake are water and never read from here.
+const EARTH_TERRAIN: [&str; 8] = [
+    "ocean",
+    "lake",
+    "grassland",
+    "plains",
+    "desert",
+    "tundra",
+    "snow",
+    "mountain",
+];
+/// What grows on a cell, indexed by its vegetation field.
+const EARTH_VEGETATION: [Option<&str>; 4] = [None, Some("forest"), Some("jungle"), Some("marsh")];
+
+/// The decoded grid, one packed byte per cell, row 0 running east from 180W
+/// along 90N..89.5N.
+fn earth_grid() -> &'static [u8] {
+    static GRID: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+    GRID.get_or_init(|| {
+        let mut cells = Vec::with_capacity(EARTH_GRID_WIDTH * EARTH_GRID_HEIGHT);
+        for line in EARTH_SURFACE.lines() {
+            if line.starts_with('#') || line.is_empty() {
+                continue;
+            }
+            for token in line.split_whitespace() {
+                let (count, value) = token
+                    .split_once(':')
+                    .expect("earth_surface.txt run is `count:value`");
+                let count = usize::from_str_radix(count, 36).expect("run length is base 36");
+                let value = u8::from_str_radix(value, 36).expect("cell value is base 36");
+                cells.extend(std::iter::repeat_n(value, count));
+            }
         }
-        previous = current;
-    }
-    inside
+        assert_eq!(
+            cells.len(),
+            EARTH_GRID_WIDTH * EARTH_GRID_HEIGHT,
+            "earth_surface.txt must decode to the full grid"
+        );
+        cells
+    })
 }
 
-/// Earth as a deliberately low-frequency silhouette, one ring of
-/// `(longitude, latitude)` degrees per landmass.
-///
-/// The coastlines are coarse on purpose. A globe at the sizes this engine
-/// plays holds a few thousand tiles, so one tile spans several hundred
-/// kilometres and any detail finer than a peninsula would vanish in the
-/// sampling. What has to survive that resolution is the shape a player
-/// recognises and the shape that decides play: the Mediterranean, the Sahara's
-/// width, the gap at Panama, the fact that the Americas are reached by sea.
-fn earth_is_land(longitude: f64, latitude: f64) -> bool {
-    const NORTH_AMERICA: &[(f64, f64)] = &[
-        (-168.0, 71.0),
-        (-142.0, 72.0),
-        (-126.0, 59.0),
-        (-123.0, 49.0),
-        (-105.0, 48.0),
-        (-82.0, 25.0),
-        (-97.0, 16.0),
-        (-112.0, 28.0),
-        (-126.0, 43.0),
-        (-151.0, 58.0),
-        (-168.0, 60.0),
-    ];
-    const SOUTH_AMERICA: &[(f64, f64)] = &[
-        (-81.0, 12.0),
-        (-61.0, 11.0),
-        (-49.0, 2.0),
-        (-35.0, -7.0),
-        (-52.0, -35.0),
-        (-68.0, -55.0),
-        (-76.0, -38.0),
-        (-81.0, -5.0),
-    ];
-    const EURASIA: &[(f64, f64)] = &[
-        (-11.0, 36.0),
-        (-10.0, 59.0),
-        (5.0, 71.0),
-        (44.0, 72.0),
-        (82.0, 75.0),
-        (126.0, 70.0),
-        (169.0, 64.0),
-        (179.0, 52.0),
-        (145.0, 43.0),
-        (128.0, 31.0),
-        (121.0, 19.0),
-        (105.0, 7.0),
-        (93.0, 21.0),
-        (78.0, 8.0),
-        (66.0, 25.0),
-        (49.0, 29.0),
-        (35.0, 36.0),
-        (20.0, 35.0),
-        (8.0, 43.0),
-    ];
-    const AFRICA: &[(f64, f64)] = &[
-        (-17.0, 36.0),
-        (12.0, 37.0),
-        (34.0, 31.0),
-        (51.0, 12.0),
-        (42.0, -12.0),
-        (31.0, -35.0),
-        (17.0, -35.0),
-        (8.0, -18.0),
-        (-10.0, 5.0),
-    ];
-    const ARABIA_INDIA: &[(f64, f64)] = &[
-        (34.0, 31.0),
-        (67.0, 29.0),
-        (91.0, 24.0),
-        (83.0, 7.0),
-        (73.0, 8.0),
-        (61.0, 25.0),
-        (52.0, 13.0),
-        (42.0, 14.0),
-    ];
-    const SOUTHEAST_ASIA: &[(f64, f64)] = &[
-        (91.0, 25.0),
-        (121.0, 21.0),
-        (132.0, 4.0),
-        (118.0, -9.0),
-        (103.0, -7.0),
-        (97.0, 9.0),
-    ];
-    const AUSTRALIA: &[(f64, f64)] = &[
-        (112.0, -11.0),
-        (154.0, -10.0),
-        (153.0, -39.0),
-        (132.0, -44.0),
-        (113.0, -34.0),
-    ];
-    const GREENLAND: &[(f64, f64)] = &[(-73.0, 59.0), (-18.0, 60.0), (-14.0, 82.0), (-54.0, 84.0)];
-    const ISLANDS: &[&[(f64, f64)]] = &[
-        &[(-10.0, 50.0), (2.0, 51.0), (1.0, 59.0), (-8.0, 58.0)],
-        &[(129.0, 31.0), (145.0, 33.0), (146.0, 46.0), (137.0, 43.0)],
-        &[(43.0, -12.0), (51.0, -13.0), (50.0, -26.0), (44.0, -25.0)],
-        &[
-            (166.0, -34.0),
-            (179.0, -37.0),
-            (178.0, -48.0),
-            (168.0, -47.0),
-        ],
-    ];
-    const CONTINENTS: &[&[(f64, f64)]] = &[
-        NORTH_AMERICA,
-        SOUTH_AMERICA,
-        EURASIA,
-        AFRICA,
-        ARABIA_INDIA,
-        SOUTHEAST_ASIA,
-        AUSTRALIA,
-        GREENLAND,
-    ];
-    CONTINENTS
-        .iter()
-        .chain(ISLANDS.iter())
-        .any(|polygon| point_in_polygon(longitude, latitude, polygon))
+/// One cell of the grid: three fields packed into a byte.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct EarthCell(u8);
+
+impl EarthCell {
+    fn surface(self) -> u8 {
+        self.0 & 0b111
+    }
+    fn hills(self) -> bool {
+        self.0 & 0b1000 != 0
+    }
+    fn vegetation(self) -> usize {
+        ((self.0 >> 4) & 0b11) as usize
+    }
+    fn is_land(self) -> bool {
+        !matches!(self.surface(), EARTH_SEA | EARTH_LAKE)
+    }
 }
+
+/// The cell a point in degrees falls in. Longitude wraps; latitude clamps,
+/// because there is nothing past a pole to read.
+fn earth_cell(longitude: f64, latitude: f64) -> EarthCell {
+    let column = ((longitude + 180.0) / EARTH_CELL_DEGREES)
+        .floor()
+        .rem_euclid(EARTH_GRID_WIDTH as f64) as usize;
+    let row = (((90.0 - latitude) / EARTH_CELL_DEGREES).floor() as i64)
+        .clamp(0, EARTH_GRID_HEIGHT as i64 - 1) as usize;
+    EarthCell(earth_grid()[row * EARTH_GRID_WIDTH + column])
+}
+
+/// How much of the world one tile covers, as half-widths in degrees at the
+/// equator.
+///
+/// A globe's tiles are equal-area, so the one number that describes them is
+/// the angular radius of a cap holding a tile's share of the sphere: from
+/// `2*pi*(1 - cos r) = 4*pi / tiles`, `r` is very nearly `2 / sqrt(tiles)`.
+/// Away from the equator that cap spans more longitude than it does latitude,
+/// which [`earth_tile`] corrects for. A flat map has no such stretch — its
+/// columns are meridians spread evenly whatever the row — so its span is read
+/// straight off the rectangle.
+fn earth_tile_span(wm: &WorldMap) -> (f64, f64) {
+    if wm.sphere().is_some() {
+        let radius = (4.0 / wm.tiles.len().max(1) as f64).sqrt().to_degrees();
+        (radius, radius)
+    } else {
+        (
+            180.0 / wm.width.max(1) as f64,
+            90.0 / (wm.height - 1).max(1) as f64,
+        )
+    }
+}
+
+/// What Earth puts under one tile.
+struct EarthTile {
+    /// Water of some kind, so not part of the world's land.
+    water: bool,
+    terrain: &'static str,
+    hills: bool,
+    vegetation: Option<&'static str>,
+}
+
+/// The share of a tile's land that has to be mountain before the tile is one,
+/// and the share that has to be raised at all before it is hills.
+///
+/// A majority would be wrong for both. Ranges are narrow — the Alps are two or
+/// three cells across where a Standard tile is seven — so a tile that is a
+/// third mountain is a tile the range runs through, and demanding half of it
+/// would flatten every range on the map into foothills.
+const EARTH_MOUNTAIN_SHARE: usize = 30;
+const EARTH_HILL_SHARE: usize = 40;
+/// The share of a tile's land one plant has to cover before it grows there.
+const EARTH_VEGETATION_SHARE: usize = 40;
+
+/// Earth, under one tile, decided by every grid cell the tile covers.
+///
+/// A tile is far wider than a cell at every size the engine plays, so reading
+/// the single cell under its centre would be a coin toss on every coastline
+/// and would drop whole ranges between samples. Sampling the tile's own
+/// footprint and letting the cells vote is what makes the same silhouette come
+/// out right on a 1,144-tile Duel world and a 58,000-tile Ludicrous one.
+fn earth_tile(wm: &WorldMap, pos: Pos) -> EarthTile {
+    let (longitude, latitude) = wm.lon_lat(pos);
+    let (span_longitude, span_latitude) = earth_tile_span(wm);
+    let stretch = if wm.sphere().is_some() {
+        1.0 / latitude.to_radians().cos().abs().max(0.02)
+    } else {
+        1.0
+    };
+    let span_longitude = (span_longitude * stretch).min(180.0);
+
+    let steps = |span: f64| ((2.0 * span / EARTH_CELL_DEGREES).round() as usize).clamp(1, 9);
+    let (columns, rows) = (steps(span_longitude), steps(span_latitude));
+
+    let mut surfaces = [0usize; 8];
+    let mut vegetation = [0usize; 4];
+    let (mut raised, mut total) = (0usize, 0usize);
+    for row in 0..rows {
+        // Sample centres, so a one-sample axis reads the tile's own middle.
+        let offset = |index: usize, count: usize, span: f64| {
+            if count == 1 {
+                0.0
+            } else {
+                span * (2.0 * index as f64 / (count - 1) as f64 - 1.0)
+            }
+        };
+        let sample_latitude =
+            (latitude + offset(row, rows, span_latitude)).clamp(-89.999, 89.999);
+        for column in 0..columns {
+            let cell = earth_cell(
+                longitude + offset(column, columns, span_longitude),
+                sample_latitude,
+            );
+            surfaces[cell.surface() as usize] += 1;
+            if cell.is_land() {
+                vegetation[cell.vegetation()] += 1;
+                if cell.hills() {
+                    raised += 1;
+                }
+            }
+            total += 1;
+        }
+    }
+
+    let land = total - surfaces[EARTH_SEA as usize] - surfaces[EARTH_LAKE as usize];
+    if land * 2 < total {
+        // Enclosed water is still water here; `classify_lakes` sorts every
+        // body the coastline encloses into lakes and inland seas by area,
+        // and it does that for a read coastline exactly as for a grown one.
+        return EarthTile {
+            water: true,
+            terrain: "ocean",
+            hills: false,
+            vegetation: None,
+        };
+    }
+
+    let peaks = surfaces[EARTH_MOUNTAIN as usize];
+    let mountain = peaks * 100 >= land * EARTH_MOUNTAIN_SHARE;
+    let hills = !mountain && (raised + peaks) * 100 >= land * EARTH_HILL_SHARE;
+    // The terrain is whichever land class holds most of the tile. Mountain is
+    // decided by its own share above, so it is not a candidate here, and a
+    // tile that is nothing but peaks keeps the grassland default it will never
+    // show.
+    let terrain = (2..EARTH_MOUNTAIN as usize)
+        .max_by_key(|class| surfaces[*class])
+        .filter(|class| surfaces[*class] > 0)
+        .map_or("grassland", |class| EARTH_TERRAIN[class]);
+    let plant = (1..EARTH_VEGETATION.len())
+        .max_by_key(|kind| vegetation[*kind])
+        .filter(|kind| !mountain && vegetation[*kind] * 100 >= land * EARTH_VEGETATION_SHARE)
+        .and_then(|kind| EARTH_VEGETATION[kind]);
+    EarthTile {
+        water: false,
+        terrain: if mountain { "mountain" } else { terrain },
+        hills,
+        vegetation: plant,
+    }
+}
+
+/// Islands a tile-wide vote would lose, and that a map of Earth should not be
+/// without: every one of them is smaller than a tile at most map sizes, so
+/// the cells that carry them are outvoted by the sea around them.
+///
+/// Each is seated on the single tile nearest it. Most of the list is
+/// consequential in play — a civilization begins on Britain, Japan, Java,
+/// Luzon, Sri Lanka, Madagascar and New Zealand — and the rest are the
+/// stepping stones that decide whether an ocean can be crossed at all.
+const EARTH_ISLANDS: &[(f64, f64)] = &[
+    (-4.0, 54.0),     // Britain
+    (-8.0, 53.3),     // Ireland
+    (-19.0, 64.9),    // Iceland
+    (-7.0, 62.0),     // Faroes
+    (-25.7, 37.8),    // Azores
+    (-15.6, 28.1),    // Canaries
+    (-23.6, 15.1),    // Cape Verde
+    (14.3, 40.7),     // Sicily and the Italian south
+    (9.0, 40.1),      // Sardinia
+    (25.0, 35.3),     // Crete
+    (33.3, 35.1),     // Cyprus
+    (28.2, 36.4),     // Rhodes
+    (-77.0, 21.5),    // Cuba
+    (-71.0, 19.0),    // Hispaniola
+    (-66.5, 18.2),    // Puerto Rico
+    (-61.0, 13.5),    // the Lesser Antilles
+    (-59.5, 13.2),    // Barbados
+    (-90.4, -0.6),    // Galapagos
+    (-109.4, -27.1),  // Rapa Nui
+    (-149.5, -17.6),  // Tahiti
+    (-171.8, -13.8),  // Samoa
+    (178.4, -17.8),   // Fiji
+    (166.5, -21.5),   // New Caledonia
+    (168.0, -16.5),   // Vanuatu
+    (159.9, -9.4),    // the Solomons
+    (150.0, -6.0),    // the Bismarcks
+    (-157.9, 21.3),   // Hawaii
+    (145.7, 15.2),    // the Marianas
+    (134.5, 7.5),     // Palau
+    (168.7, 7.1),     // the Marshalls
+    (172.9, 1.4),     // Kiribati
+    (121.0, 23.7),    // Taiwan
+    (127.8, 26.3),    // Okinawa
+    (140.0, 37.5),    // Japan
+    (142.0, 45.0),    // Hokkaido and the Kurils
+    (124.0, 11.0),    // the Visayas
+    (121.0, 14.5),    // Luzon
+    (110.0, -7.3),    // Java
+    (115.2, -8.4),    // Bali
+    (98.9, 3.6),      // Sumatra
+    (80.7, 7.9),      // Sri Lanka
+    (73.0, 4.2),      // the Maldives
+    (55.5, -4.6),     // the Seychelles
+    (57.5, -20.3),    // Mauritius
+    (47.5, -19.0),    // Madagascar
+    (43.3, -11.7),    // the Comoros
+    (39.3, -6.1),     // Zanzibar
+    (54.0, 24.5),     // Bahrain and the Gulf
+    (174.8, -41.0),   // New Zealand, north
+    (170.5, -45.0),   // New Zealand, south
+    (147.0, -42.0),   // Tasmania
+    (-59.5, -51.7),   // the Falklands
+    (-73.5, -42.5),   // Chiloe
+    (-53.0, 47.5),    // Newfoundland
+    (-63.0, 45.0),    // Nova Scotia
+    (-45.0, 61.0),    // Greenland's south cape
+    (-133.0, 54.0),   // Haida Gwaii
+    (-135.5, 57.5),   // the Alexander Archipelago
+];
 
 /// Where each civilization actually began, in `(longitude, latitude)` degrees.
 ///
 /// One entry per seat in `CIV_NAMES`, in that same order, so a True Start map
-/// is true in play and not merely Earth-shaped in the setup preview.
+/// is true in play and not merely Earth-shaped in the setup preview. Each is
+/// the civilization's own seat of power where one is known — Rome, Cusco,
+/// Angkor, Karakorum — and its heartland where the polity had no single
+/// capital.
 ///
-/// A globe of this size gives each tile some three degrees, so a homeland is
-/// the civilization's heartland rather than the exact site of its capital: a
-/// point on a peninsula or a river delta thinner than the sampling would come
-/// out at sea and seat the civilization on whatever coast the search found
-/// first. `every_homeland_is_on_land` holds the line.
+/// A globe of this size gives each tile a degree or more, so two civilizations
+/// whose capitals stood within a tile of each other cannot both have theirs:
+/// Sumeria and Babylon are 150km apart and Byzantium sat where the Ottomans
+/// later did. [`historic_major_spawns`] settles that by moving one of them the
+/// shortest distance that frees a hex, which is why the table names the true
+/// site rather than a site pre-nudged to survive the sampling.
 const EARTH_HOMELANDS: [(f64, f64); 105] = [
     (12.5, 41.9),     // Rome
-    (31.2, 30.0),     // Egypt
-    (23.7, 38.0),     // Greece
-    (116.4, 39.9),    // China
-    (44.4, 32.5),     // Sumeria
-    (-99.1, 19.4),    // Aztec
-    (32.5, 19.6),     // Nubia
-    (64.0, 48.0),     // Scythia
+    (31.25, 29.85),   // Egypt: Memphis
+    (23.73, 37.98),   // Greece: Athens
+    (108.94, 34.34),  // China: Xi'an
+    (45.64, 31.32),   // Sumeria: Uruk
+    (-99.13, 19.43),  // Aztec: Tenochtitlan
+    (31.83, 18.53),   // Nubia: Napata
+    (55.0, 47.5),     // Scythia: the Pontic-Caspian steppe
     (-1.5, 52.5),     // England
-    (9.0, 50.1),      // Germany
-    (37.6, 55.8),     // Russia
-    (128.0, 36.5),    // Korea
-    (-89.0, 21.0),    // Maya
-    (-8.4, 13.5),     // Mali
-    (36.0, 35.0),     // Phoenicia
-    (31.5, 39.8),     // Byzantium
-    (30.5, -27.5),    // Zulu
-    (3.5, 46.5),      // Gaul
-    (16.0, -6.0),     // Kongo
-    (105.5, 21.5),    // Vietnam
-    (-45.0, -20.0),   // Brazil
-    (2.8, 49.8),      // France
-    (-4.0, 40.4),     // Spain
-    (-8.0, 39.9),     // Portugal
-    (5.9, 52.6),      // Netherlands
-    (15.6, 59.6),     // Sweden
-    (9.5, 61.0),      // Norway
-    (9.5, 56.2),      // Denmark
-    (19.9, 51.8),     // Poland
-    (20.0, 47.3),     // Hungary
-    (15.0, 47.0),     // Austria
-    (14.6, 50.4),     // Bohemia
-    (-4.2, 56.8),     // Scotland
-    (-8.0, 53.3),     // Ireland
-    (8.0, 46.9),      // Switzerland
-    (11.5, 45.2),     // Venice
-    (20.8, 43.8),     // Serbia
-    (25.05, 41.8),    // Bulgaria
-    (24.3, 55.2),     // Lithuania
-    (31.5, 49.5),     // Ukraine
-    (25.5, 62.0),     // Finland
-    (25.0, 45.6),     // Romania
-    (32.5, 58.3),     // Novgorod
-    (13.2, 53.4),     // Prussia
-    (1.4, 41.8),      // Catalonia
-    (72.0, 22.5),     // Gujarat
-    (43.2, 36.4),     // Assyria
-    (53.0, 30.5),     // Persia
-    (47.5, 34.8),     // Media
-    (125.0, 45.0),    // Manchuria
-    (27.8, 38.3),     // Lydia
-    (57.5, 36.5),     // Parthia
-    (67.5, 40.5),     // Sogdiana
-    (35.5, 41.5),     // Ottomans
-    (44.0, 24.5),     // Arabia
-    (34.7, 28.75),    // Israel
-    (44.8, 39.6),     // Armenia
-    (43.0, 42.05),    // Georgia
-    (62.5, 36.5),     // Timurids
-    (69.0, 47.5),     // Kazakh
-    (67.0, 36.6),     // Bactria
-    (38.7, 9.5),      // Ethiopia
-    (38.9, 14.1),     // Axum
-    (-6.0, 32.0),     // Morocco
-    (6.0, 34.5),      // Numidia
-    (0.5, 16.5),      // Songhai
-    (-9.5, 17.0),     // Ghana
-    (5.6, 6.6),       // Benin
-    (-1.6, 6.7),      // Ashanti
-    (38.5, -6.5),     // Swahili
-    (30.5, -19.5),    // Great Zimbabwe
-    (32.3, 0.5),      // Buganda
-    (3.5, 9.5),       // Oyo
-    (5.5, 23.0),      // Tuareg
-    (47.0, -19.5),    // Madagascar
-    (78.0, 25.5),     // India
-    (136.0, 35.5),    // Japan
-    (106.0, 47.5),    // Mongolia
-    (90.0, 30.5),     // Tibet
-    (83.0, 28.25),    // Nepal
-    (85.5, 20.5),     // Kalinga
-    (79.2, 10.9),     // Chola
-    (89.0, 24.0),     // Bengal
-    (74.0, 18.5),     // Maratha
-    (104.0, 13.4),    // Khmer
-    (100.5, 16.5),    // Siam
-    (95.5, 21.5),     // Burma
-    (112.5, -7.5),    // Majapahit
-    (108.5, 13.5),    // Champa
-    (-95.75, 35.25),  // America
-    (-106.5, 45.75),  // Canada
-    (-107.5, 35.5),   // Pueblo
-    (-100.0, 34.0),   // Comanche
-    (-103.75, 43.0),  // Sioux
-    (-72.5, -13.5),   // Inca
-    (-73.8, 5.2),     // Muisca
-    (-71.5, -38.5),   // Mapuche
-    (-63.5, -32.5),   // Argentina
-    (134.0, -24.5),   // Australia
-    (175.0, -39.5),   // Maori
-    (48.0, 32.0),     // Babylon
-    (-114.5, 49.0),   // Cree
-    (-68.0, 7.5),     // Gran Colombia
-    (106.8, -6.2),    // Indonesia
-    (22.5, 40.6),     // Macedon
+    (6.08, 50.78),    // Germany: Aachen
+    (37.62, 55.75),   // Russia: Moscow
+    (129.22, 35.83),  // Korea: Gyeongju
+    (-89.62, 17.22),  // Maya: Tikal
+    (-8.44, 11.42),   // Mali: Niani
+    (35.2, 33.27),    // Phoenicia: Tyre
+    (28.98, 41.01),   // Byzantium: Constantinople
+    (31.42, -28.31),  // Zulu: Ulundi
+    (4.03, 46.92),    // Gaul: Bibracte
+    (14.25, -6.27),   // Kongo: Mbanza Kongo
+    (105.84, 21.03),  // Vietnam: Hanoi
+    (-43.2, -22.91),  // Brazil: Rio de Janeiro
+    (2.35, 48.86),    // France: Paris
+    (-3.7, 40.42),    // Spain: Madrid
+    (-8.42, 40.21),   // Portugal: Coimbra
+    (4.9, 52.37),     // Netherlands: Amsterdam
+    (17.64, 59.86),   // Sweden: Uppsala
+    (10.75, 59.91),   // Norway: Oslo
+    (9.42, 55.76),    // Denmark: Jelling
+    (17.6, 52.54),    // Poland: Gniezno
+    (19.04, 47.5),    // Hungary: Budapest
+    (16.37, 48.21),   // Austria: Vienna
+    (14.42, 50.09),   // Bohemia: Prague
+    (-4.25, 56.8),    // Scotland
+    (-6.61, 53.58),   // Ireland: Tara
+    (7.45, 46.95),    // Switzerland: Bern
+    (12.33, 45.44),   // Venice
+    (20.46, 44.79),   // Serbia: Belgrade
+    (27.13, 43.38),   // Bulgaria: Pliska
+    (25.28, 54.69),   // Lithuania: Vilnius
+    (30.52, 50.45),   // Ukraine: Kyiv
+    (22.27, 60.45),   // Finland: Turku
+    (25.46, 44.93),   // Romania: Targoviste
+    (31.28, 58.52),   // Novgorod
+    (20.51, 54.71),   // Prussia: Konigsberg
+    (2.17, 41.39),    // Catalonia: Barcelona
+    (72.25, 22.52),   // Gujarat: Lothal
+    (43.15, 36.36),   // Assyria: Nineveh
+    (52.89, 29.94),   // Persia: Persepolis
+    (48.51, 34.8),    // Media: Ecbatana
+    (123.43, 41.8),   // Manchuria: Mukden
+    (28.04, 38.49),   // Lydia: Sardis
+    (58.2, 37.96),    // Parthia: Nisa
+    (66.98, 39.65),   // Sogdiana: Samarkand
+    (29.06, 40.19),   // Ottomans: Bursa
+    (39.83, 21.42),   // Arabia: Mecca
+    (35.22, 31.78),   // Israel: Jerusalem
+    (44.51, 40.18),   // Armenia: Yerevan
+    (44.79, 41.72),   // Georgia: Tbilisi
+    (62.2, 34.35),    // Timurids: Herat
+    (68.25, 43.3),    // Kazakh: Turkestan
+    (66.9, 36.76),    // Bactria: Balkh
+    (37.47, 12.6),    // Ethiopia: Gondar
+    (38.72, 14.13),   // Axum
+    (-4.99, 34.03),   // Morocco: Fez
+    (6.61, 36.36),    // Numidia: Cirta
+    (0.04, 16.27),    // Songhai: Gao
+    (-7.97, 15.77),   // Ghana: Koumbi Saleh
+    (5.62, 6.34),     // Benin City
+    (-1.62, 6.69),    // Ashanti: Kumasi
+    (39.5, -8.96),    // Swahili: Kilwa
+    (30.93, -20.27),  // Great Zimbabwe
+    (32.58, 0.32),    // Buganda: Kampala
+    (3.93, 8.89),     // Oyo Ile
+    (5.53, 22.79),    // Tuareg: the Hoggar
+    (47.52, -18.88),  // Madagascar: Antananarivo
+    (77.23, 28.61),   // India: Delhi
+    (135.77, 35.01),  // Japan: Kyoto
+    (102.83, 47.2),   // Mongolia: Karakorum
+    (91.1, 29.65),    // Tibet: Lhasa
+    (85.32, 27.71),   // Nepal: Kathmandu
+    (85.83, 20.27),   // Kalinga: Bhubaneswar
+    (79.13, 10.79),   // Chola: Thanjavur
+    (88.13, 24.87),   // Bengal: Gaur
+    (73.86, 18.52),   // Maratha: Pune
+    (103.87, 13.41),  // Khmer: Angkor
+    (99.7, 17.01),    // Siam: Sukhothai
+    (94.86, 21.17),   // Burma: Bagan
+    (112.38, -7.55),  // Majapahit: Trowulan
+    (109.05, 13.77),  // Champa: Vijaya
+    (-77.04, 38.91),  // America: Washington
+    (-75.7, 45.42),   // Canada: Ottawa
+    (-107.96, 36.06), // Pueblo: Chaco Canyon
+    (-100.0, 34.0),   // Comanche: the southern plains
+    (-103.75, 43.9),  // Sioux: the Black Hills
+    (-71.98, -13.53), // Inca: Cusco
+    (-74.07, 4.71),   // Muisca: Bogota
+    (-72.6, -37.47),  // Mapuche: the Araucania
+    (-58.38, -34.6),  // Argentina: Buenos Aires
+    (151.21, -33.87), // Australia: Sydney
+    (175.5, -39.5),   // Maori: the Waikato
+    (44.42, 32.54),   // Babylon
+    (-100.0, 53.5),   // Cree: the Saskatchewan
+    (-66.9, 10.49),   // Gran Colombia: Caracas
+    (106.83, -6.18),  // Indonesia: Jakarta
+    (22.52, 40.76),   // Macedon: Pella
 ];
 
 /// The unit vector a longitude and latitude in degrees point at.
@@ -387,47 +550,206 @@ fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
 
-/// Earth's land, sampled onto the globe's tiles.
+/// Earth's land, sampled onto the world's tiles.
 ///
-/// Nothing here is generated: each tile asks the sphere where it is and the
-/// silhouette answers, so every game of this script is played on the same
-/// coastlines. The seed still moves the rivers, the resources and the terrain
-/// inside them, which is where a true-start map should differ between games.
+/// Nothing here is generated: each tile asks the world where it is and the
+/// grid answers, so every game of this script is played on the same
+/// coastlines. The seed still moves the rivers, the resources and the scatter
+/// inside each biome, which is where a true-start map should differ between
+/// games.
+///
+/// The islands in [`EARTH_ISLANDS`] are added after the vote. A tile-wide vote
+/// necessarily loses anything smaller than a tile, and an Earth without
+/// Britain, Java or Hawaii is not the Earth anyone means, so each is seated on
+/// the one tile nearest it.
 ///
 /// The twelve pentagons are left wherever Earth puts them. Planet holds its
 /// twelve under water so that every land tile has six neighbours, and H3 turns
 /// its icosahedron until all twelve fall in open ocean — but neither option is
-/// open to Earth. The ten off-pole corners sit on two rings at ±26.57°, five to
-/// a ring and 72° apart, and at 26.57°N the ocean comes in gaps of only 65° and
-/// 127° of longitude; a 127° gap holds two of those five points and a 65° gap
-/// holds one, so no spin of the globe can seat all five at sea. Since a true
-/// Earth may not be rotated to suit its lattice anyway, the two that land on
-/// Earth — one in the Sahara near 0°E, one in the Indus near 72°E — stay land
-/// and simply have five neighbours. Adjacency, rings and distance all read the
-/// tile graph, so those two tiles are irregular, not special-cased.
+/// open to Earth. Antarctica takes the south polar corner outright. The ten
+/// off-pole corners sit on two rings at ±26.57°, five to a ring and 72° apart,
+/// and no whole-degree spin seats more than nine of them at sea, because at
+/// that latitude the ocean simply does not come in five gaps 72° apart. Since a
+/// true Earth may not be rotated to suit its lattice anyway, the three that
+/// land on it — the Sahara near 0°E, the Indus near 72°E and the pole — stay
+/// land and simply have five neighbours. Adjacency, rings and distance all read
+/// the tile graph, so those three tiles are irregular, not special-cased.
 /// A flat Earth is the same silhouette read through the same longitudes and
 /// latitudes, which is exactly what a paper world map is: the globe rolled
 /// flat. The two pentagons stay a globe's problem, because a flat map has no
 /// pentagons to begin with.
 fn earth_land(wm: &WorldMap) -> BTreeSet<Pos> {
+    let mut land: BTreeSet<Pos> = wm
+        .tiles
+        .keys()
+        .copied()
+        .filter(|pos| !earth_tile(wm, *pos).water)
+        .collect();
+    for (longitude, latitude) in EARTH_ISLANDS {
+        if let Some(pos) = nearest_tile(wm, *longitude, *latitude) {
+            land.insert(pos);
+        }
+    }
+    land
+}
+
+/// Earth under a tile the world has already decided is land.
+///
+/// [`earth_tile`] can call a tile water and [`earth_land`] still keep it: an
+/// island from [`EARTH_ISLANDS`] is smaller than the tile that carries it, so
+/// the sea around it wins the vote. The island is still made of something, so
+/// widen the search until a land cell turns up and let that speak for it.
+fn earth_ground(wm: &WorldMap, pos: Pos) -> EarthTile {
+    let sampled = earth_tile(wm, pos);
+    if !sampled.water {
+        return sampled;
+    }
+    let (longitude, latitude) = wm.lon_lat(pos);
+    for ring in 1..=6 {
+        let reach = ring as f64 * EARTH_CELL_DEGREES;
+        for step in 0..(8 * ring) {
+            let angle = std::f64::consts::TAU * step as f64 / (8 * ring) as f64;
+            let cell = earth_cell(
+                longitude + reach * angle.cos() / latitude.to_radians().cos().abs().max(0.02),
+                (latitude + reach * angle.sin()).clamp(-89.999, 89.999),
+            );
+            if cell.is_land() {
+                return EarthTile {
+                    water: false,
+                    terrain: EARTH_TERRAIN[cell.surface() as usize],
+                    hills: cell.hills(),
+                    vegetation: EARTH_VEGETATION[cell.vegetation()],
+                };
+            }
+        }
+    }
+    EarthTile {
+        water: false,
+        terrain: "grassland",
+        hills: false,
+        vegetation: None,
+    }
+}
+
+/// Earth's relief, climate and vegetation, painted onto the world's land.
+///
+/// This is what replaces `MountainsCliffs.lua` and `TerrainGenerator.lua` on a
+/// true-start map. The Alps, the Andes, the Himalaya and the Rockies are where
+/// they are because the elevation grid says so; the Sahara, the Amazon and the
+/// Siberian taiga are where they are because the climate grid says so. Both
+/// arrive together, per tile, because both describe the same tile.
+///
+/// The one setting still worth honouring is the poles. `Poles` is Earth's own
+/// answer and takes the real climate. A world asked for **no** cold ends, or
+/// for cold ends somewhere else, is being asked for a climate Earth does not
+/// have, so those two hand the terrain back to the latitude bands and keep
+/// only the relief — which is the part of Earth the setting was never about.
+fn paint_earth(wm: &mut WorldMap, land: &BTreeSet<Pos>, poles: MapPoles, rng: &mut Rng) {
+    let painted: Vec<(Pos, EarthTile)> = land
+        .iter()
+        .map(|pos| (*pos, earth_ground(wm, *pos)))
+        .collect();
+    for (pos, earth) in &painted {
+        let tile = wm.tiles.get_mut(pos).unwrap();
+        tile.terrain = earth.terrain.into();
+        tile.hills = earth.hills;
+    }
+
+    if !poles.has_poles() {
+        let land_list: Vec<Pos> = land.iter().copied().collect();
+        assign_biomes(wm, &land_list, poles, rng);
+    }
+
+    // Earth's real coastal ranges stay: Norway, Chile and Honshu are
+    // mountainous down to the water and should read that way. What cannot
+    // stay is a landmass made of nothing but rock, because no unit can stand
+    // on it and no city can be founded there — the tile would be land that is
+    // not land. Any such island is brought down to its own foothills.
+    let mut seen: BTreeSet<Pos> = BTreeSet::new();
+    let mut levelled: Vec<Pos> = Vec::new();
+    for start in land {
+        if !seen.insert(*start) {
+            continue;
+        }
+        let mut body = vec![*start];
+        let mut frontier = VecDeque::from([*start]);
+        while let Some(pos) = frontier.pop_front() {
+            for neighbor in wm.neighbors(pos) {
+                if land.contains(&neighbor) && seen.insert(neighbor) {
+                    body.push(neighbor);
+                    frontier.push_back(neighbor);
+                }
+            }
+        }
+        if body.iter().all(|pos| wm.tiles[pos].terrain == "mountain") {
+            levelled.extend(body);
+        }
+    }
+    for pos in levelled {
+        let tile = wm.tiles.get_mut(&pos).unwrap();
+        tile.terrain = "plains".into();
+        tile.hills = true;
+    }
+
+    // Vegetation last, and only where the terrain it landed on can carry it:
+    // the grid's rainforest belongs to the tropics it was read from, and a
+    // world without poles has moved those tropics somewhere else.
+    for (pos, earth) in painted {
+        let Some(plant) = earth.vegetation else {
+            continue;
+        };
+        let tile = wm.tiles.get_mut(&pos).unwrap();
+        let suits = match plant {
+            "jungle" => matches!(tile.terrain.as_str(), "grassland" | "plains"),
+            "marsh" => matches!(tile.terrain.as_str(), "grassland" | "plains" | "tundra"),
+            _ => !matches!(tile.terrain.as_str(), "mountain" | "desert" | "snow"),
+        };
+        if suits && tile.feature.is_none() {
+            if plant == "jungle" {
+                // Rainforest leaves the ground beneath it Plains, as it does
+                // everywhere else the generator lays it down.
+                tile.terrain = "plains".into();
+            }
+            tile.feature = Some(plant.into());
+        }
+    }
+}
+
+/// The tile whose centre points nearest a place on Earth.
+fn nearest_tile(wm: &WorldMap, longitude: f64, latitude: f64) -> Option<Pos> {
+    let target = earth_direction(longitude, latitude);
     wm.tiles
         .keys()
         .copied()
-        .filter(|pos| {
-            let (longitude, latitude) = wm.lon_lat(*pos);
-            earth_is_land(longitude, latitude)
+        .max_by(|a, b| {
+            dot(wm.direction(*a), target)
+                .partial_cmp(&dot(wm.direction(*b), target))
+                .unwrap_or(std::cmp::Ordering::Equal)
         })
-        .collect()
 }
+
+/// Elbow room a true start asks for between two capitals before it starts
+/// giving ground, and it gives ground readily. A rolled map spreads its seats
+/// because nothing says where they belong; a true-start map has an answer for
+/// every seat and the spacing is only there to stop two civilizations landing
+/// on the same hex.
+const TRUE_START_SEPARATION: i32 = 3;
 
 /// Seat each civilization on the viable tile closest to its homeland.
 ///
 /// Closeness is measured on the globe, not in the storage rectangle: the tile
 /// whose centre points nearest the homeland's direction wins. Sites are handed
-/// out in `CIV_NAMES` order, and a start keeps clear of the ones already
-/// placed by the widest margin that still leaves every remaining seat a tile —
-/// so Rome and Greece stay distinct neighbours rather than collapsing onto the
-/// same Aegean plain.
+/// out in `CIV_NAMES` order.
+///
+/// Spacing is a preference and being home is the requirement, which is the
+/// opposite of how a rolled map is laid out and the whole difference between a
+/// true start and a balanced one. Each seat asks for [`TRUE_START_SEPARATION`]
+/// hexes of clearance and accepts less the moment holding out would push it
+/// further from home than the clearance is worth — down to a plain refusal to
+/// share a hex, which is the one rule that never bends. Europe therefore comes
+/// out crowded, because Europe *is* crowded: Rome, Greece and Macedon stand
+/// where they stood rather than being fanned out across the Mediterranean to
+/// satisfy a spacing rule none of them ever obeyed.
 fn historic_major_spawns(wm: &WorldMap, candidates: &[Pos], count: usize) -> Vec<Pos> {
     let mut available: Vec<Pos> = candidates.to_vec();
     let mut starts: Vec<Pos> = Vec::new();
@@ -437,34 +759,73 @@ fn historic_major_spawns(wm: &WorldMap, candidates: &[Pos], count: usize) -> Vec
         }
         let (longitude, latitude) = EARTH_HOMELANDS[index % EARTH_HOMELANDS.len()];
         let target = earth_direction(longitude, latitude);
-        let seats_left = count - index;
-        let separation = (0..=4)
-            .rev()
-            .find(|separation| {
-                let taken = taken_within(wm, &starts, *separation);
-                available
-                    .iter()
-                    .filter(|candidate| !taken.contains(candidate))
-                    .count()
-                    >= seats_left
-            })
-            .unwrap_or(0);
-        let taken = taken_within(wm, &starts, separation);
-        let selected = available
-            .iter()
-            .enumerate()
-            .filter(|(_, candidate)| !taken.contains(candidate))
-            .max_by(|(_, a), (_, b)| {
-                let toward = |pos: &Pos| dot(wm.direction(*pos), target);
+        let toward = |pos: &Pos| dot(wm.direction(*pos), target);
+        let closest = |pool: &mut dyn Iterator<Item = (usize, &Pos)>| {
+            pool.max_by(|(_, a), (_, b)| {
                 toward(a)
                     .partial_cmp(&toward(b))
                     .unwrap_or(std::cmp::Ordering::Equal)
             })
             .map(|(candidate_index, _)| candidate_index)
-            .unwrap_or(0);
+        };
+        // Where this civilization would sit if nobody else were on the map,
+        // and then the best seat each width of clearance still allows. The one
+        // that moves it least off home wins, and clearance only breaks a tie —
+        // which is the whole difference between a true start and a balanced
+        // one. Clearance of one is a plain refusal to share a hex, and that is
+        // the floor: it is always available, so a seat is always found.
+        let home = closest(&mut available.iter().enumerate()).unwrap_or(0);
+        let mut selected = home;
+        let mut best: Option<(i32, i32)> = None;
+        for separation in 1..=TRUE_START_SEPARATION {
+            let taken = taken_within(wm, &starts, separation - 1);
+            let Some(candidate) = closest(
+                &mut available
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, candidate)| !taken.contains(candidate)),
+            ) else {
+                continue;
+            };
+            let cost = (wm.distance(available[candidate], available[home]), -separation);
+            if best.is_none_or(|previous| cost < previous) {
+                best = Some(cost);
+                selected = candidate;
+            }
+        }
         starts.push(available.swap_remove(selected));
     }
-    starts
+
+    // Seats are handed out in `CIV_NAMES` order, so an early civilization can
+    // take the hex a later one wanted and leave it walking. Nothing about the
+    // list says Rome should outrank Venice for Italian ground, so trade any
+    // pair of seats that both civilizations would rather have the other way.
+    // The occupied hexes never change, only who is on which, so every spacing
+    // the pass above bought survives untouched.
+    let homes: Vec<[f64; 3]> = (0..starts.len())
+        .map(|index| {
+            let (longitude, latitude) = EARTH_HOMELANDS[index % EARTH_HOMELANDS.len()];
+            earth_direction(longitude, latitude)
+        })
+        .collect();
+    let seats: Vec<[f64; 3]> = starts.iter().map(|start| wm.direction(*start)).collect();
+    let mut order: Vec<usize> = (0..starts.len()).collect();
+    let mut traded = true;
+    while traded {
+        traded = false;
+        for first in 0..order.len() {
+            for second in (first + 1)..order.len() {
+                let cost = |civ: usize, seat: usize| 1.0 - dot(seats[order[seat]], homes[civ]);
+                let now = cost(first, first) + cost(second, second);
+                let swapped = cost(first, second) + cost(second, first);
+                if swapped < now - f64::EPSILON {
+                    order.swap(first, second);
+                    traded = true;
+                }
+            }
+        }
+    }
+    order.into_iter().map(|seat| starts[seat]).collect()
 }
 
 /// Every tile within `radius` steps of a start already placed.
@@ -962,7 +1323,14 @@ fn globe_land(
 /// inland sea, and a supercontinent whose only water is its own shoreline
 /// plays as a flat expanse. The island types keep the stock zero — an island
 /// has no interior to put a lake in, and the enclosure rule would refuse one
-/// anyway. Earth's interiors are the ones that earned the rule.
+/// anyway.
+///
+/// Earth asks for none, but for a third reason again: it already has its own.
+/// The Caspian, the Great Lakes, Victoria, Baikal, Balkhash and the Aral are
+/// in the grid the coastlines come from, so they arrive as enclosed water and
+/// `classify_lakes` sorts them by area exactly as it sorts a grown one. Adding
+/// a rolled lake on top would be inventing a body of water on a map whose
+/// whole promise is that its water is real.
 ///
 /// Land Only asks for none for the opposite reason: the water it already has
 /// is inland by construction, so the pass would be spreading lakes through a
@@ -971,8 +1339,9 @@ fn large_lake_budget(script: MapScript, num_continents: usize) -> usize {
     match script {
         MapScript::Lakes => num_continents * 4,
         MapScript::Pangaea | MapScript::InlandSea => num_continents,
-        MapScript::Continents | MapScript::TrueStartEarth => num_continents / 2,
-        MapScript::LandOnly
+        MapScript::Continents => num_continents / 2,
+        MapScript::TrueStartEarth
+        | MapScript::LandOnly
         | MapScript::SmallContinents
         | MapScript::Islands
         | MapScript::WaterWorld => 0,
@@ -1148,8 +1517,15 @@ pub fn generate_with_script(
     // --- relief, then climate. The stock generator settles elevation first
     // (MountainsCliffs.lua) and only then paints biomes over it, because the
     // mountain fractal has to be free of the latitude bands to run across them.
-    apply_tectonics(&mut wm, &land, rng);
-    assign_biomes(&mut wm, &land_list, poles, rng);
+    // A fixed-geography world skips both: its ranges and its climates are as
+    // real as its coastlines and are read from the same grid, so there is no
+    // fractal to cut and no latitude band to paint.
+    if script.is_fixed_geography() {
+        paint_earth(&mut wm, &land, poles, rng);
+    } else {
+        apply_tectonics(&mut wm, &land, rng);
+        assign_biomes(&mut wm, &land_list, poles, rng);
+    }
 
     // --- coast. A shelf is one tile of shallow water plus the stock's three
     // expansion passes, each giving a quarter of the Ocean tiles that already
@@ -1225,7 +1601,14 @@ pub fn generate_with_script(
     // creates water; `classify_lakes` then sorts every enclosed body on the
     // map — the ones it just made and the ones the coastline enclosed by
     // itself — into lakes and inland seas by area.
-    {
+    //
+    // A fixed-geography world floods nothing. Its lakes are in the grid its
+    // coastline came from, so the one-in-forty pond roll would be putting
+    // water in the middle of the Sahara on a map whose whole promise is that
+    // its water is real. `classify_lakes` still runs: the Caspian, the Great
+    // Lakes, Victoria and Baikal arrive as water the coastline encloses, and
+    // sorting those by area is exactly what it is for.
+    if !script.is_fixed_geography() {
         add_lakes(
             &mut wm,
             &mut land,
@@ -1443,8 +1826,36 @@ pub fn generate_with_script(
             | "cliffs_of_dover" | "giants_causeway" => 2,
             _ => 1,
         };
+        // Which medium the wonder lives in. Everything else about it is a
+        // biome preference the search may give up on; this it may not, because
+        // a reef on a hillside is not the same wonder with a worse view.
+        let wants_coast = matches!(
+            *wonder,
+            "great_barrier_reef"
+                | "ha_long_bay"
+                | "galapagos_islands"
+                | "cliffs_of_dover"
+                | "giants_causeway"
+        );
+        // A tile a wonder may take. Ordinarily that means bare ground: the
+        // generator will not erase a forest to seat one. A true-start world
+        // arrives with Earth's own forests and rainforest already down, so on
+        // that map the test is only that nothing *else* irreplaceable is
+        // there — a wonder may grow through woods, and may not grow through
+        // another wonder.
+        let vacant = |t: &crate::world::Tile| {
+            t.resource.is_none()
+                && if script.is_fixed_geography() {
+                    t.feature
+                        .as_deref()
+                        .and_then(|feature| rules.features.get(feature))
+                        .is_none_or(|feature| !feature.natural_wonder)
+                } else {
+                    t.feature.is_none()
+                }
+        };
         let preferred = |t: &crate::world::Tile| {
-            if t.feature.is_some() || t.resource.is_some() {
+            if !vacant(t) {
                 return false;
             }
             match *wonder {
@@ -1509,14 +1920,10 @@ pub fn generate_with_script(
                         let tile = &wm.tiles[position];
                         if preferred_only {
                             preferred(tile)
-                        } else if *wonder == "great_barrier_reef" {
-                            tile.terrain == "coast"
-                                && tile.feature.is_none()
-                                && tile.resource.is_none()
+                        } else if wants_coast {
+                            tile.terrain == "coast" && vacant(tile)
                         } else {
-                            !matches!(tile.terrain.as_str(), "ocean" | "coast")
-                                && tile.feature.is_none()
-                                && tile.resource.is_none()
+                            !matches!(tile.terrain.as_str(), "ocean" | "coast") && vacant(tile)
                         }
                     })
                     .collect();
@@ -1542,11 +1949,11 @@ pub fn generate_with_script(
             .tiles
             .iter()
             .filter(|(_, t)| {
-                ((*wonder == "great_barrier_reef" && t.terrain == "coast")
-                    || (*wonder != "great_barrier_reef"
-                        && !matches!(t.terrain.as_str(), "ocean" | "coast")))
-                    && t.feature.is_none()
-                    && t.resource.is_none()
+                if wants_coast {
+                    t.terrain == "coast" && vacant(t)
+                } else {
+                    !matches!(t.terrain.as_str(), "ocean" | "coast") && vacant(t)
+                }
             })
             .map(|(p, _)| *p)
             .collect();
@@ -1568,7 +1975,34 @@ pub fn generate_with_script(
             attempts.push((sites, preferred_only, 1));
         }
         let mut footprint_tiles = None;
+        // On a true-start map a natural wonder is not placed, it is found.
+        // Every one of the roster is a real place with a real address, so the
+        // search starts at the tile nearest that address and walks outward
+        // only as far as it must to fit the wonder's footprint. The biome
+        // ladder below is not consulted at all: Uluru's own ground is already
+        // desert and the Great Barrier Reef's is already coast, and where the
+        // grid and the roster disagree the grid is the one that is real.
+        if script.is_fixed_geography() {
+            if let Some((longitude, latitude)) = earth_wonder_site(wonder) {
+                let target = earth_direction(longitude, latitude);
+                let mut by_distance = shaped_sites.clone();
+                by_distance.sort_by(|a, b| {
+                    dot(wm.direction(*b), target)
+                        .partial_cmp(&dot(wm.direction(*a), target))
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+                for anchor in by_distance.into_iter().take(EARTH_WONDER_SEARCH) {
+                    footprint_tiles = cluster_from(anchor, false, 1);
+                    if footprint_tiles.is_some() {
+                        break;
+                    }
+                }
+            }
+        }
         for (sites, preferred_only, separation) in attempts {
+            if footprint_tiles.is_some() {
+                break;
+            }
             let mut cands: Vec<Pos> = sites
                 .iter()
                 .copied()
@@ -1793,7 +2227,15 @@ pub fn generate_with_script(
         // Earth does not divide into regions: the whole point of the script is
         // that Rome opens in Italy and the Aztecs open in Mexico, however
         // lopsided that leaves the continents.
-        historic_major_spawns(&wm, &all_candidates, num_major_spawns)
+        //
+        // Nor does a homeland have to be bare grassland to be a homeland. The
+        // pool every other script draws from wants open ground and only widens
+        // when it runs short, which on this map would move Rome out of its own
+        // wooded hills and Cusco off its own mountainside to find some. Asking
+        // for more seats than the world has tiles takes the wider pool
+        // outright: every passable tile that is not a wonder or a village.
+        let homelands = candidates_for(&passable, usize::MAX);
+        historic_major_spawns(&wm, &homelands, num_major_spawns)
     } else {
         let mut seated = regional_starts(
             rules,
@@ -2010,6 +2452,54 @@ pub fn generate_with_script(
 const PREFERRED_WONDER_SEPARATION: i32 = 6;
 const MIN_WONDER_SEPARATION: i32 = 3;
 
+/// Where every natural wonder in the roster actually is, in
+/// `(longitude, latitude)` degrees, for the one map script that can put them
+/// there. A true-start Earth still draws only its map size's allowance, so
+/// which wonders a game gets is still rolled — but each one it gets is where
+/// it belongs, not on the first patch of the right biome the search found.
+const EARTH_WONDERS: [(&str, f64, f64); 26] = [
+    ("great_barrier_reef", 146.8, -18.3),
+    ("crater_lake", -122.11, 42.94),
+    ("pantanal", -56.8, -17.5),
+    ("uluru", 131.04, -25.34),
+    ("yosemite", -119.54, 37.75),
+    ("dead_sea", 35.5, 31.5),
+    ("mount_everest", 86.93, 27.99),
+    ("pamukkale", 29.12, 37.92),
+    ("torres_del_paine", -73.0, -50.98),
+    ("eye_of_the_sahara", -11.4, 21.12),
+    ("zhangye_danxia", 100.13, 38.92),
+    ("ha_long_bay", 107.05, 20.9),
+    ("cliffs_of_dover", 1.35, 51.13),
+    ("giants_causeway", -6.51, 55.24),
+    ("galapagos_islands", -90.4, -0.6),
+    ("matterhorn", 7.66, 45.98),
+    ("kilimanjaro", 37.35, -3.07),
+    ("piopiotahi", 167.92, -44.62),
+    ("ik_kil", -88.57, 20.68),
+    ("gobustan", 49.4, 40.1),
+    ("ubsunur_hollow", 92.8, 50.3),
+    ("mato_tipila", -104.72, 44.59),
+    ("delicate_arch", -109.5, 38.74),
+    ("chocolate_hills", 124.14, 9.92),
+    ("vesuvius", 14.43, 40.82),
+    ("lake_retba", -17.23, 14.84),
+];
+
+/// How many tiles out from a wonder's true address the search will walk before
+/// giving up and falling back to the biome ladder. A wonder whose own tile is
+/// already taken by another wonder, or is too small to hold its footprint,
+/// should move to the next hill along and no further.
+const EARTH_WONDER_SEARCH: usize = 24;
+
+/// Where a natural wonder is on Earth, if it is one of the ones that is.
+fn earth_wonder_site(wonder: &str) -> Option<(f64, f64)> {
+    EARTH_WONDERS
+        .iter()
+        .find(|(name, _, _)| *name == wonder)
+        .map(|(_, longitude, latitude)| (*longitude, *latitude))
+}
+
 /// World Age, which the stock scripts pass to every elevation percentile.
 /// Continents.lua's "normal" is 3; a younger world raises more mountains.
 const WORLD_AGE: i32 = 3;
@@ -2218,7 +2708,19 @@ fn add_features(wm: &mut WorldMap, land: &BTreeSet<Pos>, rng: &mut Rng) {
 
     let mut considered_land = 0;
     let mut jungle_candidates = 0;
-    let (mut jungles, mut forests, mut marshes, mut oases) = (0, 0, 0, 0);
+    // Start each counter at what the world already carries, so the shipped
+    // share caps measure the whole map rather than only this pass. Nothing a
+    // rolled script places before now is vegetation, so those worlds start at
+    // zero exactly as they always did; a true-start world arrives with its own
+    // real forests and rainforest already down, and this is what stops a
+    // second, fractal Amazon being grown on top of the real one.
+    let count = |feature: &str| {
+        land.iter()
+            .filter(|pos| wm.tiles[*pos].feature.as_deref() == Some(feature))
+            .count()
+    };
+    let (mut jungles, mut forests, mut marshes, mut oases) =
+        (count("jungle"), count("forest"), count("marsh"), 0);
 
     for row in 0..height {
         for col in 0..width {
@@ -4970,9 +5472,45 @@ mod river_tests {
             ("the Indian Ocean", 75.0, -25.0),
             ("the Southern Ocean", 100.0, -60.0),
             ("the north pole", 0.0, 90.0),
+            ("the Mediterranean", 18.0, 34.5),
+            ("the Gulf of Mexico", -91.0, 25.0),
+            ("the Bay of Bengal", 88.0, 15.0),
+            ("Hudson Bay", -85.0, 58.5),
         ] {
             let pos = nearest(longitude, latitude);
             assert!(rules.is_water(&world.tiles[&pos]), "{name} came out as land");
+        }
+
+        // And it is made of what it is made of. Relief and climate are read
+        // from the same grid as the coastline, so the ranges, the deserts, the
+        // rainforest and the ice are all where a player expects to find them
+        // rather than wherever a fractal happened to cut.
+        for (name, longitude, latitude, wanted) in [
+            ("the Himalaya", 86.9, 30.5, "mountain"),
+            ("the Andes", -68.0, -21.0, "mountain"),
+            ("the Sahara", 12.0, 23.0, "desert"),
+            ("the Arabian desert", 46.0, 21.0, "desert"),
+            ("the Australian interior", 132.0, -24.0, "desert"),
+            ("Antarctica", 60.0, -78.0, "snow"),
+            ("the Greenland ice", -42.0, 72.0, "snow"),
+            ("northern Siberia", 105.0, 70.0, "tundra"),
+        ] {
+            let tile = &world.tiles[&nearest(longitude, latitude)];
+            assert_eq!(tile.terrain, wanted, "{name} came out as {}", tile.terrain);
+        }
+        for (name, longitude, latitude) in [
+            ("the Amazon", -62.0, -4.0),
+            ("the Congo", 22.0, 0.0),
+            ("Borneo", 114.0, 0.5),
+        ] {
+            let tile = &world.tiles[&nearest(longitude, latitude)];
+            assert_eq!(
+                tile.feature.as_deref(),
+                Some("jungle"),
+                "{name} came out as {} / {:?}",
+                tile.terrain,
+                tile.feature
+            );
         }
 
         // Earth is about a third land, in several separate bodies — the Old
@@ -5007,27 +5545,39 @@ mod river_tests {
         }
     }
 
-    /// Every seat's homeland is dry land on the sampled globe, and no two
-    /// share a tile.
+    /// Every one of the 105 civilizations opens on its own homeland, all at
+    /// once, on a world seating the whole roster.
     ///
-    /// A homeland that samples as ocean does not fail loudly — the search
-    /// simply seats that civilization on the nearest viable land, which can be
-    /// a continent away — so a True Start map would quietly stop being true
-    /// for whichever civilization was added last. Two homelands on one tile
-    /// are the same silent failure by another route.
+    /// This is the assertion a true-start map lives or dies by, and the one
+    /// that fails silently: a homeland the search cannot seat does not raise
+    /// anything, it just puts that civilization on the nearest ground it can
+    /// find, which may be a continent away. The bound is in tiles rather than
+    /// degrees because that is the unit the displacement is paid in — a seat
+    /// moved two tiles is a seat moved two tiles whatever the map size.
+    ///
+    /// Perfection is not the bar and cannot be: Europe holds thirty of these
+    /// seats inside a few dozen tiles, and two of them cannot stand on one
+    /// hex. What is checked is that the crowding is paid locally — nobody is
+    /// exiled — and that the great majority are exactly where they belong.
     #[test]
-    fn every_homeland_is_on_land_and_has_it_to_itself() {
+    fn every_civilization_opens_on_its_own_homeland() {
         let rules = Rules::embedded();
         let size = CIV6_MAP_SIZES
             .iter()
             .find(|size| size.id == "huge")
             .unwrap();
+        assert_eq!(
+            EARTH_HOMELANDS.len(),
+            crate::game::CIV_NAMES.len(),
+            "every civilization needs a homeland of its own"
+        );
+        let seats = crate::game::CIV_NAMES.len();
         let mut rng = Rng::new(9_133);
-        let (world, _) = generate_with_script(
+        let (world, spawns) = generate_with_script(
             &rules,
             size.width,
             size.height,
-            8,
+            seats,
             12,
             size.natural_wonders,
             size.continents,
@@ -5036,43 +5586,207 @@ mod river_tests {
             POLED,
             &mut rng,
         );
-        let sphere = world.sphere().unwrap();
+        // The majors lead the spawn list; the city-states follow it.
+        let spawns = &spawns[..seats];
         assert_eq!(
-            EARTH_HOMELANDS.len(),
-            crate::game::CIV_NAMES.len(),
-            "every civilization needs a homeland of its own"
+            spawns.iter().collect::<BTreeSet<_>>().len(),
+            seats,
+            "no two civilizations may share a hex"
         );
-        let mut seen: BTreeMap<Pos, &str> = BTreeMap::new();
-        let mut adrift: Vec<String> = Vec::new();
-        for (civilization, (longitude, latitude)) in
-            crate::game::CIV_NAMES.iter().zip(EARTH_HOMELANDS)
-        {
+
+        let mut drift: Vec<(i32, &str)> = Vec::new();
+        for (index, civilization) in crate::game::CIV_NAMES.iter().enumerate() {
+            let start = spawns[index];
+            assert!(
+                !rules.is_water(&world.tiles[&start]),
+                "{civilization} opened at sea"
+            );
+            // Measured against the nearest *land*, because a capital on a
+            // coast can have open water as its literal nearest hex and there
+            // is nothing a seating rule could do about that.
+            let (longitude, latitude) = EARTH_HOMELANDS[index];
             let target = earth_direction(longitude, latitude);
-            let home = sphere
-                .positions()
+            let home = world
+                .tiles
+                .iter()
+                .filter(|(_, tile)| !rules.is_water(tile))
+                .map(|(pos, _)| *pos)
                 .max_by(|a, b| {
-                    let toward = |pos: &Pos| {
-                        let center = sphere.center(*pos).unwrap();
-                        center[0] * target[0] + center[1] * target[1] + center[2] * target[2]
-                    };
-                    toward(a).partial_cmp(&toward(b)).unwrap()
+                    dot(world.direction(*a), target)
+                        .partial_cmp(&dot(world.direction(*b), target))
+                        .unwrap()
                 })
                 .unwrap();
-            if rules.is_water(&world.tiles[&home]) {
-                adrift.push(format!("{civilization} ({longitude}, {latitude}) is at sea"));
+            drift.push((world.distance(home, start), civilization));
+        }
+        drift.sort();
+        let (worst, exile) = *drift.last().unwrap();
+        assert!(
+            worst <= 2,
+            "{exile} opened {worst} tiles from its homeland; \
+             the full spread was {drift:?}"
+        );
+        let home_exactly = drift.iter().filter(|(steps, _)| *steps == 0).count();
+        assert!(
+            home_exactly * 5 >= seats * 4,
+            "only {home_exactly} of {seats} civilizations opened on their own hex"
+        );
+    }
+
+    /// Every natural wonder a true-start world draws stands where it stands.
+    ///
+    /// The roster is the same 26 every other script rolls from, and the map
+    /// size still decides how many of them a game gets. What changes is that
+    /// none of them is *placed*: Everest is on Everest, Uluru is in the Red
+    /// Centre and the Great Barrier Reef is off Queensland, because each one
+    /// is looked up rather than fitted to the first patch of the right biome
+    /// the search happened to find.
+    #[test]
+    fn true_start_earth_finds_every_natural_wonder_where_it_really_is() {
+        let rules = Rules::embedded();
+        let size = CIV6_MAP_SIZES
+            .iter()
+            .find(|size| size.id == "huge")
+            .unwrap();
+        let mut rng = Rng::new(20_260_727);
+        let (world, _) = generate_with_script(
+            &rules,
+            size.width,
+            size.height,
+            8,
+            12,
+            // Ask for the whole catalogue, so this checks all 26 rather than
+            // the handful a single map size would happen to draw.
+            EARTH_WONDERS.len(),
+            size.continents,
+            MapScript::TrueStartEarth,
+            GLOBE,
+            POLED,
+            &mut rng,
+        );
+
+        let mut missing: Vec<&str> = Vec::new();
+        let mut misplaced: Vec<String> = Vec::new();
+        for (wonder, longitude, latitude) in EARTH_WONDERS {
+            let footprint: Vec<Pos> = world
+                .tiles
+                .iter()
+                .filter(|(_, tile)| tile.feature.as_deref() == Some(wonder))
+                .map(|(pos, _)| *pos)
+                .collect();
+            if footprint.is_empty() {
+                missing.push(wonder);
+                continue;
             }
-            if let Some(other) = seen.insert(home, civilization) {
-                adrift.push(format!("{civilization} shares {other}'s homeland tile"));
+            let site = nearest_tile(&world, longitude, latitude).unwrap();
+            let steps = footprint
+                .iter()
+                .map(|pos| world.distance(*pos, site))
+                .min()
+                .unwrap();
+            // Wide enough for a wonder whose own hex is water on this globe,
+            // or is already taken by the wonder before it, to step to the next
+            // one along — and far too narrow to reach the wrong continent.
+            if steps > 3 {
+                misplaced.push(format!("{wonder} is {steps} tiles from its real site"));
             }
         }
-        assert!(adrift.is_empty(), "{}", adrift.join("; "));
+        assert!(missing.is_empty(), "wonders never drawn: {missing:?}");
+        assert!(misplaced.is_empty(), "{}", misplaced.join("; "));
+    }
+
+    /// True Start Earth is offered at every size the lobby lists, on both
+    /// world shapes, and comes out as Earth at all of them.
+    ///
+    /// A fixed-geography script has a failure mode a rolled one does not: it
+    /// is written against whatever size it was developed at and quietly stops
+    /// resolving at the others — the sampler loses the Mediterranean on a
+    /// small world, or the vote flips a continent on a large one. Duel holds
+    /// 1,144 tiles and Ludicrous 57,950, a factor of fifty, and the same
+    /// world has to survive the whole range on a globe and on a flat atlas.
+    #[test]
+    fn true_start_earth_is_the_same_earth_at_every_map_size() {
+        let rules = Rules::embedded();
+        for size in CIV6_MAP_SIZES {
+            for shape in [GLOBE, MapTopology::Flat] {
+                let mut rng = Rng::new(7_303);
+                // A stock seat count whatever the size: what is under test is
+                // the geography, and the big rows' seat counts are minutes of
+                // spawn search that would tell us nothing about it.
+                let (world, spawns) = generate_with_script(
+                    &rules,
+                    size.width,
+                    size.height,
+                    6,
+                    9,
+                    size.natural_wonders,
+                    size.continents,
+                    MapScript::TrueStartEarth,
+                    shape,
+                    POLED,
+                    &mut rng,
+                );
+                let where_ = format!("{} on {}", size.id, shape.id());
+                assert_eq!(spawns.len(), 15, "{where_}: not every seat was filled");
+
+                let land = world
+                    .tiles
+                    .values()
+                    .filter(|tile| !rules.is_water(tile))
+                    .count();
+                let share = land * 100 / world.tiles.len();
+                // A globe's tiles are equal-area, so its share is Earth's own
+                // 29% give or take the sampling. A flat map is an
+                // equirectangular projection, which stretches the poles across
+                // whole rows and hands Antarctica and the Arctic far more of
+                // the rectangle than they own — hence the wider band.
+                let band = if shape == GLOBE { 24..34 } else { 24..40 };
+                assert!(band.contains(&share), "{where_}: {share}% land");
+
+                let probe = |longitude: f64, latitude: f64| {
+                    &world.tiles[&nearest_tile(&world, longitude, latitude).unwrap()]
+                };
+                for (name, longitude, latitude) in [
+                    ("central Eurasia", 60.0, 50.0),
+                    ("the Sahara", 15.0, 22.0),
+                    ("the Amazon", -60.0, -5.0),
+                    ("central north America", -100.0, 40.0),
+                    ("the Australian interior", 133.0, -24.0),
+                    ("Antarctica", 90.0, -78.0),
+                ] {
+                    assert!(
+                        !rules.is_water(probe(longitude, latitude)),
+                        "{where_}: {name} came out at sea"
+                    );
+                }
+                for (name, longitude, latitude) in [
+                    ("the mid-Pacific", -150.0, 0.0),
+                    ("the mid-Atlantic", -30.0, 5.0),
+                    ("the Indian Ocean", 75.0, -25.0),
+                    ("the Arctic", 0.0, 88.0),
+                ] {
+                    assert!(
+                        rules.is_water(probe(longitude, latitude)),
+                        "{where_}: {name} came out as land"
+                    );
+                }
+                // The four continents a player steers by are still separate
+                // bodies, however coarse the sampling gets.
+                let components = land_components(&world, &rules);
+                assert!(
+                    components.iter().filter(|body| body.len() >= 8).count() >= 3,
+                    "{where_}: Earth needs several landmasses, got {:?}",
+                    components.iter().map(|body| body.len()).collect::<Vec<_>>()
+                );
+            }
+        }
     }
 
     /// Earth may not be spun to suit its lattice, so unlike Planet it cannot
-    /// keep all twelve pentagons at sea. Exactly two fall on land, and this
-    /// pins both the count and the reason no rotation about the pole fixes it.
+    /// keep all twelve pentagons at sea. Three fall on land, and this pins
+    /// both the count and the reason no rotation about the pole fixes it.
     #[test]
-    fn earth_keeps_the_two_pentagons_that_land_on_it() {
+    fn earth_keeps_the_three_pentagons_that_land_on_it() {
         let ring = (0.5f64).atan().to_degrees();
         let corners: Vec<(f64, f64)> = (0..5)
             .map(|k| (72.0 * k as f64, ring))
@@ -5089,28 +5803,36 @@ mod river_tests {
             longitude
         };
 
-        // Both poles are at sea: the Arctic is ocean and this Earth carries no
-        // Antarctica, so only the ten off-pole corners are ever in question.
-        assert!(!earth_is_land(0.0, 90.0) && !earth_is_land(0.0, -90.0));
+        let land_at = |longitude: f64, latitude: f64| earth_cell(longitude, latitude).is_land();
+
+        // One polar pentagon is at sea and one is not: the Arctic is ocean and
+        // Antarctica is a continent, so the south pole is the third land
+        // pentagon before the off-pole ring is even considered.
+        assert!(!land_at(0.0, 90.0), "the Arctic is ocean");
+        assert!(land_at(0.0, -90.0), "Antarctica is land");
         let on_land: Vec<(f64, f64)> = corners
             .iter()
             .copied()
-            .filter(|(longitude, latitude)| earth_is_land(wrap(*longitude), *latitude))
+            .filter(|(longitude, latitude)| land_at(wrap(*longitude), *latitude))
             .collect();
-        assert_eq!(on_land.len(), 2, "expected two land pentagons, got {on_land:?}");
+        assert_eq!(on_land.len(), 2, "expected two land corners, got {on_land:?}");
         assert_eq!(on_land[0].0, 0.0, "the Saharan corner");
         assert_eq!(on_land[1].0, 72.0, "the Indus corner");
 
-        // And no spin of the globe does better, at any whole degree.
-        for spin in 0..360 {
-            let at_sea = corners
-                .iter()
-                .filter(|(longitude, latitude)| {
-                    !earth_is_land(wrap(*longitude + spin as f64), *latitude)
-                })
-                .count();
-            assert!(at_sea < 10, "a spin of {spin}° would seat every pentagon at sea");
-        }
+        // And no spin of the globe seats the whole ring at sea, at any whole
+        // degree. The best any spin manages is nine of the ten.
+        let best = (0..360)
+            .map(|spin| {
+                corners
+                    .iter()
+                    .filter(|(longitude, latitude)| {
+                        !land_at(wrap(*longitude + spin as f64), *latitude)
+                    })
+                    .count()
+            })
+            .max()
+            .unwrap();
+        assert_eq!(best, 9, "no spin should seat all ten off-pole corners at sea");
     }
 
     /// The seed moves what grows on Earth, never Earth itself. The two runs
