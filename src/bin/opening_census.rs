@@ -317,10 +317,12 @@ fn main() {
     // is the one-flag experiment that says whether that is the barbarians or
     // the rivals, so it is a flag rather than a separate tool.
     let barbarians = number(&args, "--barbarians", 1) != 0;
+    let parallel_settlers = args.iter().any(|arg| arg == "--parallel-settlers");
 
     println!(
         "opening_census: {maps} maps x {players} players, {width}x{height}, {turns} turns, \
-         window {window}, depth {depth}, seed {seed0}, barbarians {barbarians}"
+         window {window}, depth {depth}, seed {seed0}, barbarians {barbarians}, \
+         parallel_settlers {parallel_settlers}"
     );
 
     let games = parallel::map(maps, jobs, move |index| {
@@ -336,6 +338,11 @@ fn main() {
             ..GameOptions::new(players, width, height, seed, turns, 0)
         });
         let mut fleet: Vec<AdvancedAi> = AdvancedAi::fleet(&game);
+        // Fires-check for the treatment: the cadence table above is what it
+        // is meant to move, so it is the right place to prove it moves.
+        for agent in fleet.iter_mut() {
+            agent.parallel_settlers = parallel_settlers;
+        }
         let majors: Vec<usize> = (0..game.players.len())
             .filter(|pid| !game.players[*pid].is_minor)
             .collect();

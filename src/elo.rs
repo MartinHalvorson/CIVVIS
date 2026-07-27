@@ -38,8 +38,9 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 30] = [
+pub const EVAL_ONLY_AIS: [&str; 31] = [
     "advanced_lane_reachable",
+    "advanced_parallel_settlers",
     "advanced_relief_scoped",
     "strategic_score",
     "strategic_doctrine",
@@ -471,6 +472,17 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // mirrored maps -- 49.6% paired score, Elo-equivalent -3, sign
         // p=1.0000, gate INCONCLUSIVE -- which is why it is an entrant and
         // not the default.
+        // Treatment for the expansion-rate axis: identical to `advanced`
+        // except that it may hold more than one settler at a time, up to its
+        // shortfall against the city target. Paired against `advanced` this
+        // isolates the empire-wide `counts.settlers == 0` serialization and
+        // nothing else. See `docs/OPENINGS.md` for the measurement that
+        // motivated it and for what would refute it.
+        "advanced_parallel_settlers" => {
+            let mut ai = AdvancedAi::new();
+            ai.parallel_settlers = true;
+            Box::new(ai)
+        }
         "advanced_lane_reachable" => {
             let mut ai = AdvancedAi::new();
             ai.refuse_unreachable_lanes = true;
@@ -1066,6 +1078,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         ),
         "advanced" => (Vec::new(), "advanced"),
         "advanced_lane_reachable" => (Vec::new(), "advanced_lane_reachable"),
+        "advanced_parallel_settlers" => (Vec::new(), "advanced_parallel_settlers"),
         "advanced_v1" => (Vec::new(), "advanced_v1"),
         "advanced_relief_scoped" => (Vec::new(), "advanced_relief_scoped"),
         "random" => (Vec::new(), "random"),
@@ -1552,9 +1565,10 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 6] = [
+            const SCRIPTED: [&str; 7] = [
                 "advanced",
                 "advanced_lane_reachable",
+                "advanced_parallel_settlers",
                 "advanced_relief_scoped",
                 "advanced_v1",
                 "basic",

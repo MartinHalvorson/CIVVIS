@@ -232,29 +232,87 @@ argmax to something else).
 So roughly **half** of all time-below-target is attributable to this one
 clause, and the other half needs its own diagnosis.
 
+## 7. ⚠ The serialization story is wrong — the fires-check killed it
+
+§6's attribution was tested and does not survive. `advanced_parallel_settlers`
+lifts `counts.settlers == 0` to the shortfall against the target. Over the same
+60 maps at 4 players on 32×22:
+
+| metric | control | parallel settlers |
+|---|---|---|
+| cities at turn 50 | 1.95 ± 0.05 | 1.95 ± 0.05 |
+| peak cities ever | 4.42 ± 0.15 | 4.53 ± 0.16 |
+| first held 2 cities | 37.0 | 37.6 |
+| 3 | 71.0 (+34.0) | 71.0 (+33.4) |
+| 4 | 89.5 (+18.5) | 89.1 (+18.1) |
+| 5 | 118.7 (+29.2) | 117.6 (+28.5) |
+| 6 | 150.2 (+31.5) | 148.7 (+31.1) |
+| turns short with a settler walking | 60.8 | 58.6 |
+
+**Near-inert.** It was not taken to an eval; an inert treatment cannot change a
+decision, and this repository's convention is to screen before spending forty
+minutes of `ai_eval`.
+
+**Why it is inert.** `counts.settlers == 0` is redundant on top of engine rules
+that bind harder. A settler requires `pop >= 2` and **consumes a population**
+when it completes, and successive settlers cost 80, then 110, then 140
+production. A one- or two-city empire cannot *afford* a second settler whether
+or not the AI permits one — the capital has to regrow the population it spent
+before it may spend another.
+
+So the 60.8 ± 3.8 turns a seat spends short of target with a settler already
+walking are **not** turns the clause forbids a second settler. They are turns
+the empire could not pay for one. The measurement was right; the attribution
+was mine and it was wrong.
+
+**What this reframes.** The slow expansion in §5 is not an AI serialization
+bug. It is the settler economy — which is faithful to Civilization VI, where
+expansion is likewise paid for in population and escalating cost. The open
+question is no longer "why won't the AI queue a second settler" but **"why is
+the capital not growing fast enough to afford one"**, which is a food, tile-
+improvement and district-timing question, not a build-order one.
+
+The entrant is kept with its null recorded, on the `advanced_lane_reachable`
+precedent, so the axis can be re-measured if the settler economy ever changes.
+
+### ⚠ The obvious objection, and why it does not land
+
+`docs/GENOME.md` records that **`city_target` saturates above six** — swept a
+point at a time, 7 through 12 buy nothing. It is fair to ask whether that
+already settles expansion.
+
+It does not, because it is a different lever. `city_target` sets *how many*
+cities the empire wants; `counts.settlers == 0` sets *how fast* it may acquire
+them. An empire that reaches six cities on turn 150 and one that reaches six on
+turn 90 have the same target and very different games — the second compounds
+those yields for sixty more turns. Nothing in the `city_target` sweep varies
+rate, and nothing in it could have.
+
+Two further reasons the sweep does not transfer: it ran at **20 mirrored maps a
+point**, and this repository's own rule is that twenty-map runs on this
+evaluator are anti-evidence (two published conclusions inverted at 120 maps).
+And `city_target` is only consulted by `AdvancedAi` as a *fallback* when no
+plan exists (`src/ai/advanced.rs:2602`); with a plan in force the hard-coded
+`desired_cities` is what binds.
+
 ## What to measure next, in order
 
-1. **Relax `counts.settlers == 0`, causally.** Allow settlers in flight up to
-   the shortfall (the outer clause already caps the total), and run a paired,
-   seat-mirrored `ai_eval` on wins at the promotion gate's population. This is
-   the first hypothesis in this line of work with a measured gap (1.95 cities
-   against a target of 3), a named mechanism (§6), a passing fires-check (flat
-   founding gaps) and a quantified ceiling (60.8 turns per seat). It touches
-   `src/ai/advanced.rs`, which the version-control policy names a conflict
-   hotspot — extend the ownership claim and check open PRs before editing.
-
-   **What would refute it:** settlers cost population, so two in flight from a
-   young empire may stall the cities producing them. If terminal score falls
-   while city count rises, the extra cities are not paying for themselves and
-   the clause was load-bearing.
-2. **Lift `.min(6)`, separately.** Do not bundle it with (1): they are
-   independent, and `docs/GENOME.md`'s rule about candidate-set changes moving
-   effective thresholds applies to expansion targets too.
-3. **Bound the civilization-aware channels by ablation, on wins.** Strip the
+1. ~~Relax `counts.settlers == 0`.~~ **Done, and null — see §7.** Kept as an
+   entrant with the null recorded.
+2. **Ask why the capital cannot afford a settler.** This is where §7 leaves
+   the tempo question. A settler costs a population and 80/110/140 production;
+   the binding constraint is capital growth, so the diagnostic is food yield,
+   tile improvement timing and how early the first builder's charges land —
+   not which unit sits in the queue. Measure before proposing: instrument
+   capital population against turn, and the share of worked tiles improved.
+3. **Lift `.min(6)`, separately.** Independent of the above, and
+   `docs/GENOME.md`'s rule about candidate-set changes moving effective
+   thresholds applies to expansion targets too.
+4. **Bound the civilization-aware channels by ablation, on wins.** Strip the
    unique-unit tech bonus and the unique-district preference and play it paired
    against stock. The 8.88-way divergence in §1 says the channel *fires*;
    reachability is not leverage.
-4. **Only then, per-civilization openings.** If (3) returns null the way the
+5. **Only then, per-civilization openings.** If (4) returns null the way the
    opening book did, a `leader_trait`-aware opening is very likely null too.
 
 Note the ordering has changed since the first draft: (1) and (2) are about

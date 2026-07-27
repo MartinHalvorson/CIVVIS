@@ -420,6 +420,48 @@ pub struct AdvancedAi {
     /// 120 `advanced` wins were religious, so the science lane the filter
     /// exists to refuse was rarely the one being contested.
     pub refuse_unreachable_lanes: bool,
+    /// Let more than one settler exist at a time, up to the shortfall against
+    /// the city target.
+    ///
+    /// The settler production gate carries `counts.settlers == 0` on an
+    /// `EmpireCounts`, so today at most one settler may exist in the whole
+    /// empire. The conjunct beside it already caps cities-plus-settlers at
+    /// `desired_cities`, so this one adds no cap — it is purely serialization,
+    /// and a four-city empire therefore expands no faster than a one-city one.
+    ///
+    /// Measured before building (`docs/OPENINGS.md` §6): over 60 maps at 4
+    /// players on 32×22 the seat first holds 2/3/4/5/6 cities on turns
+    /// 37.0/71.0/89.5/118.7/150.2 — gaps of +34.0/+18.5/+29.2/+31.5 that **do
+    /// not shrink as the empire grows**, which is what serialization looks
+    /// like and is not what compounding expansion looks like. A seat spends
+    /// 60.8 ± 3.8 turns short of its city target with a settler already
+    /// walking, against 68.5 ± 4.2 turns short with none.
+    ///
+    /// This is a *rate* lever and is not the `city_target` sweep in
+    /// `docs/GENOME.md`, which is a *target* lever and saturates above six.
+    /// Reaching six cities on turn 90 rather than turn 150 compounds those
+    /// yields for sixty turns at the same target.
+    ///
+    /// ⚠ **Measured near-INERT by its own fires-check, and never taken to an
+    /// eval.** Over the same 60 maps, turning it on moves the founding cadence
+    /// from 37.0/71.0/89.5/118.7/150.2 to 37.6/71.0/89.1/117.6/148.7 and
+    /// leaves cities-at-turn-50 at 1.95 either way.
+    ///
+    /// The mechanism story above was wrong. `counts.settlers == 0` is
+    /// redundant on top of engine rules that already bind harder: a settler
+    /// requires `pop >= 2` and **consumes a population** on completion
+    /// (`Game` at the `settler_no_population` governor check), and successive
+    /// settlers cost 80, 110, 140 production. A one- or two-city empire
+    /// therefore cannot afford a second settler whether or not the AI permits
+    /// one, so lifting the permission buys nothing. The 60.8 ± 3.8 turns a
+    /// seat spends short of target with a settler walking are not turns this
+    /// clause forbids a second — they are turns the empire could not pay for
+    /// one.
+    ///
+    /// Kept as the `advanced_parallel_settlers` entrant with the null
+    /// recorded, on the `advanced_lane_reachable` precedent, so the axis can
+    /// be re-measured rather than re-derived if the settler economy changes.
+    pub parallel_settlers: bool,
 }
 
 impl Default for AdvancedAi {
@@ -475,6 +517,7 @@ impl AdvancedAi {
             force_groups_dirty: false,
             scoped_relief_hold: false,
             refuse_unreachable_lanes: false,
+            parallel_settlers: false,
         }
     }
 
@@ -6695,8 +6738,17 @@ impl AdvancedAi {
                 } else {
                     Self::expansion_window_open(g)
                 };
+                // One settler at a time empire-wide unless the treatment is
+                // on. The clause above already caps cities-plus-settlers at
+                // the target, so `parallel_settlers` widens the *rate* and
+                // never the total: a seat two cities short may walk two.
+                let in_flight_allowed = if self.parallel_settlers {
+                    plan.desired_cities.saturating_sub(city_count).max(1)
+                } else {
+                    1
+                };
                 if city_count + counts.settlers < plan.desired_cities
-                    && counts.settlers == 0
+                    && counts.settlers < in_flight_allowed
                     && city.pop >= 2
                     && expansion_open
                     && site.is_some()
