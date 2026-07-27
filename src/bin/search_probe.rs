@@ -1114,6 +1114,32 @@ fn audit_selection(
     // A stand-in for `evolve::mutate`, which is crate-private: perturb each
     // gene and clamp to the same per-gene bounds evolution respects, so every
     // member is a play style rather than a broken agent.
+    /// Build half the population by independent per-gene noise and half by
+    /// scaled movement along the four `Doctrine` axes, so the two mutation
+    /// operators are measured on the same games with the same seeds.
+    ///
+    /// `evolve::mutate` is crate-private, so the random arm is a stand-in for
+    /// it: ±25% on about a third of genes, clamped to evolution's own bounds.
+    /// The structured arm moves several related genes together, which is what
+    /// a play style is and what a single-gene walk cannot reach in one step.
+    fn structured(index: usize) -> Weights {
+        let base = Weights::default();
+        let doctrine = Doctrine::ALL[1 + index % 3];
+        let full = doctrine.apply(&base).to_vec();
+        let start = base.to_vec();
+        // Scale the whole coordinated move, so the arm spans magnitudes rather
+        // than repeating four fixed points.
+        let scale = 0.4 + 0.6 * ((index / 3) % 5) as f64 / 4.0;
+        let mut genes = start.clone();
+        for (i, gene) in genes.iter_mut().enumerate() {
+            *gene += scale * (full[i] - start[i]);
+        }
+        for (gene, (low, high)) in genes.iter_mut().zip(Weights::bounds()) {
+            *gene = gene.clamp(low, high);
+        }
+        Weights::from_vec(&genes)
+    }
+
     fn perturbed(index: usize) -> Weights {
         let base = Weights::default();
         if index == 0 {
@@ -1152,8 +1178,15 @@ fn audit_selection(
     };
     let opponents = vec![Weights::default()];
 
+    // Even indices: random per-gene noise. Odd indices: coordinated movement
+    // along a doctrine axis. Same games, same seeds, so the two operators'
+    // spreads are directly comparable.
     let results = parallel::map(population, jobs, move |index| {
-        let genome = perturbed(index);
+        let genome = if index % 2 == 1 {
+            structured(index)
+        } else {
+            perturbed(index)
+        };
         // Common random numbers: `fitness_observations` derives its seeds from
         // (cfg.seed, gen, game index) only, so every genome sees the same maps,
         // seats and turn budgets. The comparison across the population is paired.
@@ -1167,10 +1200,31 @@ fn audit_selection(
             .sum::<f64>()
             / obs.len() as f64;
         let wins = obs.iter().filter(|o| o.won).count() as f64 / obs.len() as f64;
-        Some((selection, wins))
+        Some((selection, wins, index % 2 == 1))
     });
 
-    let pairs: Vec<(f64, f64)> = results.into_iter().flatten().collect();
+    let all: Vec<(f64, f64, bool)> = results.into_iter().flatten().collect();
+    // The operator comparison: which mutation produces candidates a gate can
+    // actually tell apart?
+    let spread_of = |structured_arm: bool| -> (f64, usize) {
+        let arm: Vec<f64> = all
+            .iter()
+            .filter(|(_, _, s)| *s == structured_arm)
+            .map(|(_, w, _)| *w)
+            .collect();
+        if arm.len() < 2 {
+            return (0.0, arm.len());
+        }
+        let m = arm.iter().sum::<f64>() / arm.len() as f64;
+        (
+            (arm.iter().map(|w| (w - m).powi(2)).sum::<f64>() / arm.len() as f64).sqrt(),
+            arm.len(),
+        )
+    };
+    let (sd_random, n_random) = spread_of(false);
+    let (sd_structured, n_structured) = spread_of(true);
+
+    let pairs: Vec<(f64, f64)> = all.iter().map(|(s, w, _)| (*s, *w)).collect();
     if pairs.len() < 3 {
         println!("population too small to correlate");
         std::process::exit(1);
@@ -1309,6 +1363,33 @@ fn audit_selection(
          term has expectation zero. This is what a statistic of unknown monotonicity is \
          safe to be used for."
     );
+    // The operator result. This is the one a breeder can act on: an operator
+    // whose candidates differ by more than the gate's resolution is searchable;
+    // one whose candidates differ by less is a random walk with a filter on the
+    // end.
+    let win_se_arm = (mw * (1.0 - mw) / games as f64).sqrt();
+    let signal = |sd: f64| (sd * sd - win_se_arm * win_se_arm).max(0.0).sqrt();
+    println!();
+    println!("  MUTATION OPERATOR, same games and seeds for both arms:");
+    println!(
+        "    random per-gene ({n_random} genomes)   observed sd {sd_random:.3}  -> true spread ~{:.3}",
+        signal(sd_random)
+    );
+    println!(
+        "    coordinated axis ({n_structured} genomes)  observed sd {sd_structured:.3}  -> true spread ~{:.3}",
+        signal(sd_structured)
+    );
+    let (a, b) = (signal(sd_random), signal(sd_structured));
+    if b > 0.0 && a > 0.0 {
+        println!("    -> coordinated moves are {:.1}x wider than random ones", b / a);
+    }
+    println!(
+        "    A gate resolving a gap of g needs about {:.0} games per candidate at the \
+         random arm's spread and {:.0} at the coordinated arm's.",
+        if a > 0.0 { mw * (1.0 - mw) / (a / 2.0).powi(2) } else { f64::NAN },
+        if b > 0.0 { mw * (1.0 - mw) / (b / 2.0).powi(2) } else { f64::NAN }
+    );
+
     println!(
         "\nNo genome is selected here and both numbers come from the same games, so this \
          carries no winner's curse — unlike a comparison of generation champions."
