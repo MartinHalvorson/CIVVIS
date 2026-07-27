@@ -9832,6 +9832,38 @@ function drawNaturalWonderSprite(feature, t, x, y, footprint) {
   return true;
 }
 
+// The edges this tile shares with terrain of its own kind, as the offset to
+// each neighbouring centre in the map's unrotated world plane — the model
+// renderer applies the camera itself — plus a seed belonging to the *edge*
+// rather than to either tile, and which of the pair builds what stands on it.
+// Both neighbours hash the same unordered pair and agree on the same owner, so
+// the seam carries exactly one saddle and the two tiles meet as one landform
+// instead of as two models that happen to touch. Every edge is reported even
+// when this tile does not own it, because the direction a range runs is a
+// property of all of them.
+function terrainRidge(t, accepts) {
+  const ridge = [];
+  for (const direction of DIRS) {
+    const neighbor = nbrTile(t.pos, direction);
+    if (!neighbor || !accepts(neighbor)) continue;
+    const owns = t.pos[1] < neighbor.pos[1] ||
+      (t.pos[1] === neighbor.pos[1] && t.pos[0] < neighbor.pos[0]);
+    ridge.push([S * SQ3 * (direction[0] + direction[1] / 2), S * 1.5 * direction[1],
+                Math.imul(t.pos[0] + neighbor.pos[0] + 8192, 374761393) ^
+                Math.imul(t.pos[1] + neighbor.pos[1] + 8192, 668265263),
+                owns ? 1 : 0]);
+  }
+  return ridge;
+}
+const isMountainTile = t => t.terrain === "mountain";
+const isHillTile = t => !!t.hills && t.terrain !== "mountain";
+function environmentRidge(kind, t) {
+  if (kind === "mountain" || kind === "mount_everest")
+    return terrainRidge(t, isMountainTile);
+  if (kind === "hills") return terrainRidge(t, isHillTile);
+  return null;
+}
+
 // Cinematic environment art is projected from real mesh vertices in world
 // space. Passing the map camera through to the model renderer is what makes a
 // tree reveal a different side, a mountain turn its ridgeline, and every cast
@@ -9846,6 +9878,7 @@ function drawEnvironment3D(kind, t, x, y, span = 1) {
   const drawn = Cinematic3D.drawEnvironment({
     ctx:cx,
     kind,
+    ridge:environmentRidge(kind, t),
     terrain:t.terrain,
     seed:Math.imul(t.pos[0] + 4096, 73856093) ^ Math.imul(t.pos[1] + 4096, 19349663),
     hills:!!t.hills && t.terrain !== "mountain",
@@ -10505,18 +10538,51 @@ function drawTileYields(t, x, y, worked) {
   cx.restore();
 }
 
+// Rock is chosen per REGION, not per tile. Rolling it independently for each
+// hex stood grey and sandstone massifs shoulder to shoulder inside a single
+// ridge, which broke the range back into its tiles even though the sprites
+// overlap generously enough to hide the seams. A range is one geology; only
+// the height jitter varies hex to hex. Six hexes to a region rather than
+// three: a range is nine or ten tiles long, so the finer grain still cut a
+// typical one in half and put a sandstone massif against a granite one.
+function mountainRockColumn(t) {
+  const polar = state &&
+    (t.pos[1] < state.map.height * 0.2 || t.pos[1] > state.map.height * 0.8);
+  const hv = hash2(Math.floor(t.pos[0] / 6) * 31, Math.floor(t.pos[1] / 6) * 37);
+  return polar ? (hv > 0.3 ? 1 : 0) : (hv > 0.62 ? 2 : 0);
+}
+
+// One massif per hex, plus a lower one standing on every edge shared with
+// another mountain. The saddle is a property of the edge — its cell, its
+// mirroring and its size all come from the unordered pair of tiles — so the
+// neighbour paints the identical rock in the identical place and the seam ends
+// up buried inside a col rather than showing as the gap between two scoops.
+function drawMountainSaddles(t, x, y, cw, ch) {
+  for (const [worldDX, worldDY, edgeSeed, owns] of terrainRidge(t, isMountainTile)) {
+    // Raised once per seam, by the tile that owns it. The art carries an alpha
+    // edge, so stamping the same col from both sides would double it.
+    if (!owns) continue;
+    const mx = x + (COSR * worldDX - SINR * worldDY) / 2;
+    const my = y + (SINR * worldDX + COSR * worldDY) * YS / 2;
+    const eh = hash2(edgeSeed & 1023, (edgeSeed >>> 11) & 1023);
+    const eh2 = hash2((edgeSeed >>> 5) & 1023, (edgeSeed >>> 17) & 1023);
+    const sw = S * (1.62 + eh * 0.2), sh = S * (1.24 + eh2 * 0.22);
+    cx.save();
+    cx.translate(mx, my);
+    if (eh > 0.5) cx.scale(-1, 1);
+    // The owner also lends the col its geology, so a saddle can never be the
+    // one sandstone block standing in a granite range.
+    cx.drawImage(MOUNTAIN_ATLAS, mountainRockColumn(t) * cw, 0, cw, ch,
+                 -sw / 2, -sh + S * 0.3, sw, sh);
+    cx.restore();
+  }
+}
+
 function drawMountainSprite(t, x, y) {
   if (!MOUNTAIN_ATLAS_READY) return false;
   const cw = MOUNTAIN_ATLAS.naturalWidth / 3;
   const ch = MOUNTAIN_ATLAS.naturalHeight;
-  const polar = state && (t.pos[1] < state.map.height * 0.2 || t.pos[1] > state.map.height * 0.8);
-  // Rock is chosen per REGION, not per tile. Rolling it independently for each
-  // hex stood grey and sandstone massifs shoulder to shoulder inside a single
-  // ridge, which broke the range back into its tiles even though the sprites
-  // overlap generously enough to hide the seams. A range is one geology; only
-  // the height jitter below still varies hex to hex.
-  const hv = hash2(Math.floor(t.pos[0] / 3) * 31, Math.floor(t.pos[1] / 3) * 37);
-  const col = polar ? (hv > 0.3 ? 1 : 0) : (hv > 0.62 ? 2 : 0);
+  const col = mountainRockColumn(t);
   // Geology stays regional, but silhouette does not. Mirroring and independent
   // width/height variation break the telltale row of identical peaks without
   // mixing snow, granite, and sandstone inside one connected massif.
@@ -10526,6 +10592,7 @@ function drawMountainSprite(t, x, y) {
   const flip = hash2(t.pos[0] * 29 + 1, t.pos[1] * 31 + 9) > 0.5;
   const footprint = blendedTileFootprint(t, x, y, neighbor =>
     neighbor.terrain === "mountain");
+  cx.save();
   cx.save();
   tileArtPath([{x, y}], true, 3.0); cx.clip();
   // The massif throws its shadow away from the world sun, so a range's shadow
@@ -10538,17 +10605,44 @@ function drawMountainSprite(t, x, y) {
   cx.ellipse(x + SHX * w * 0.30 * rk, y + S * 0.22 + SHY * S * 0.30 * rk,
              w * (0.4 + 0.1 * rk), S * 0.18, 0, 0, 7);
   cx.fill();
+  cx.restore();
+  // A second clip only ever narrows the first, so the blended footprint this
+  // function has always computed did nothing while it followed the single-hex
+  // clip the shadow needs: the art was cut off at the tile boundary and a
+  // range came out as a row of hexagonal stamps. The shadow keeps its own
+  // clip, released above, and the rock now spreads across the whole massif.
   tileArtPath(footprint, true, 3.0); cx.clip();
   cx.fillStyle = "#00000042";
   cx.beginPath(); cx.ellipse(x + 2, y + S * 0.22, w * 0.4, S * 0.18, 0, 0, 7); cx.fill();
   cx.imageSmoothingEnabled = true;
   cx.imageSmoothingQuality = "high";
+  drawMountainSaddles(t, x, y, cw, ch);
   cx.translate(x, y);
   if (flip) cx.scale(-1, 1);
   cx.drawImage(MOUNTAIN_ATLAS, col * cw, 0, cw, ch,
                -w / 2, -h + S * 0.34, w, h);
   cx.restore();
   return true;
+}
+
+// One swell of ground: shadow under it, sunlit flank over the texture, a crest
+// that catches the light and the line where it breaks. Relief, not repaint —
+// it is laid over the photographic material rather than filling in the terrain
+// colour, so a grassland hill keeps its grass and a desert hill its sand.
+function drawHillSwell(px, py, hw2, hh2) {
+  cx.fillStyle = "rgba(22,15,6,.28)";                 // cast shadow
+  cx.beginPath(); cx.ellipse(px, py + 2.6, hw2, hh2, 0, Math.PI, 0);
+  cx.fill();
+  cx.fillStyle = "rgba(255,246,216,.15)";             // lit flank
+  cx.beginPath(); cx.ellipse(px, py, hw2, hh2, 0, Math.PI, 0);
+  cx.fill();
+  cx.fillStyle = "rgba(255,250,230,.22)";             // crest catches the sun
+  cx.beginPath(); cx.ellipse(px - 2 * LITF, py - 1,
+                             hw2 * 0.55, hh2 * 0.5, 0, Math.PI, 0);
+  cx.fill();
+  cx.strokeStyle = "rgba(0,0,0,.32)"; cx.lineWidth = 1.3;   // crest line
+  cx.beginPath(); cx.ellipse(px, py, hw2, hh2, 0, Math.PI, 0);
+  cx.stroke();
 }
 
 function tri(ax, ay, bx, by, ccx, ccy) {
@@ -17121,7 +17215,37 @@ function draw() {
   strokeRivers("#429bca", 4.6, 0.98);
   strokeRivers("#c3eff8", 1.15, 0.58);
   cx.globalAlpha = 1; cx.lineCap = "butt"; cx.lineJoin = "miter";
+  // The figures this frame will actually put on the board. Settled before the
+  // decorations so a massif can know whether anything is standing behind it;
+  // the units pass draws exactly this list, so the two can never disagree.
+  const drawnUnits = cinematicSurveyUnits(mapLens === "empire" ? [] : state.units);
   // --- decorations
+  // A cinematic massif is a solid object, and until now it was not: every
+  // figure on the map was painted in a later pass and therefore appeared
+  // *through* the mountain standing in front of it. Mountains with somebody
+  // behind them are held back here and drawn during the units pass at their
+  // real place in the depth order, which is what makes the range block the
+  // view. Only those few tiles wait, so nothing else changes layer.
+  const heldMassifs = [];
+  const massifHeld = new Set();
+  if (beau && MODE.relief && VIEW === "cinematic" && globalThis.Cinematic3D) {
+    const figures = drawnUnits.map(u => hexXY(u.pos[0], u.pos[1]));
+    for (const t of tiles) {
+      if (t.terrain !== "mountain" || NATURAL_WONDER_CELL[t.feature]) continue;
+      // A held massif is drawn after the fog wash, so only ever hold one the
+      // player can currently see. A tile with a figure beside it is visible in
+      // every case that matters, so this costs nothing real.
+      if (!visSet.has(key(t.pos))) continue;
+      const [mx, my] = hexXY(t.pos[0], t.pos[1]);
+      // The band is the massif's own silhouette in world-plane pixels: it
+      // stands about 50 above its base and 14 below it, and a figure rises 40
+      // off ground that sits 16 lower, so anything further back than ~80 is
+      // already above the skyline and nothing in front is ever hidden.
+      if (figures.some(([ux, uy]) => Math.abs(ux - mx) < 58 &&
+                       uy < my - 0.5 && uy > my - 82))
+        massifHeld.add(key(t.pos));
+    }
+  }
   cx.textAlign = "center"; cx.textBaseline = "middle";
   for (const t of tiles) {
     const [x, yy] = hexXY(t.pos[0], t.pos[1]);
@@ -17160,7 +17284,8 @@ function draw() {
     }
     if (t.terrain === "mountain") {
       if (beau) {
-        if (!drawEnvironment3D("mountain", t, x, y) && !drawMountainSprite(t, x, y))
+        if (massifHeld.has(k)) heldMassifs.push({t, x, y, row:yy});
+        else if (!drawEnvironment3D("mountain", t, x, y) && !drawMountainSprite(t, x, y))
           drawMountainRange(t, x, y);
       } else {
         cx.fillStyle = "#6f747c";
@@ -17187,20 +17312,17 @@ function draw() {
       // Two fifths as tall as they were, and the same width: relief the tile
       // wears rather than domes standing on it.
       for (const [hx, hy, hw2, hh2] of [
-        [-8, 2, 12, 3], [7, -5, 11, 2.7], [1, 5, 13.5, 3.3]]) {
-        cx.fillStyle = "rgba(22,15,6,.28)";               // cast shadow
-        cx.beginPath(); cx.ellipse(x + hx, y + hy + 2.6, hw2, hh2, 0, Math.PI, 0);
-        cx.fill();
-        cx.fillStyle = "rgba(255,246,216,.15)";           // lit flank
-        cx.beginPath(); cx.ellipse(x + hx, y + hy, hw2, hh2, 0, Math.PI, 0);
-        cx.fill();
-        cx.fillStyle = "rgba(255,250,230,.22)";           // crest catches the sun
-        cx.beginPath(); cx.ellipse(x + hx - 2 * LITF, y + hy - 1,
-                                   hw2 * 0.55, hh2 * 0.5, 0, Math.PI, 0);
-        cx.fill();
-        cx.strokeStyle = "rgba(0,0,0,.32)"; cx.lineWidth = 1.3;  // crest line
-        cx.beginPath(); cx.ellipse(x + hx, y + hy, hw2, hh2, 0, Math.PI, 0);
-        cx.stroke();
+        [-8, 2, 12, 3], [7, -5, 11, 2.7], [1, 5, 13.5, 3.3]])
+        drawHillSwell(x + hx, y + hy, hw2, hh2);
+      // Hill country rolls across its tiles. A swell standing on every seam
+      // this tile owns carries the ground into the next hex instead of letting
+      // it drop flat at the boundary and rise again on the other side.
+      for (const [worldDX, worldDY, edgeSeed, owns] of terrainRidge(t, isHillTile)) {
+        if (!owns) continue;
+        const eh = hash2(edgeSeed & 1023, (edgeSeed >>> 13) & 1023);
+        drawHillSwell(x + (COSR * worldDX - SINR * worldDY) / 2,
+                      y + (SINR * worldDX + COSR * worldDY) * YS / 2,
+                      11 + eh * 3, 2.6 + eh * 0.8);
       }
     } else if (t.hills && !beau) {
       // Centred, and low: two half-circles stood up like croquet hoops and
@@ -17732,11 +17854,25 @@ function draw() {
   for (let i = anim.battles.length - 1; i >= 0; i--)
     if (now0 >= anim.battles[i].endsAt) anim.battles.splice(i, 1);
   const cinemaSurvey = cinemaActive() && cam.scale < 1.08;
-  const sorted = [...cinematicSurveyUnits(mapLens === "empire" ? [] : state.units)].sort((a, b) =>
+  const sorted = [...drawnUnits].sort((a, b) =>
     (hexXY(a.pos[0], a.pos[1])[1] - hexXY(b.pos[0], b.pos[1])[1]) ||
     (CIVILIAN_UNITS.has(a.type) ? -1 : 1));
+  // The massifs held back by the decorations pass, released as the figures
+  // reach them: everything standing further back is already on the board, so
+  // the mountain paints over exactly what it should be hiding and over nothing
+  // that is nearer the camera. Each is still drawn exactly once — held, not
+  // repeated — so no outline is laid down twice and no shadow doubles.
+  let nextMassif = 0;
+  const releaseMassifs = untilRow => {
+    while (nextMassif < heldMassifs.length &&
+           heldMassifs[nextMassif].row <= untilRow) {
+      const m = heldMassifs[nextMassif++];
+      drawEnvironment3D("mountain", m.t, m.x, m.y);
+    }
+  };
   const now = performance.now();
   for (const u of sorted) {
+    releaseMassifs(hexXY(u.pos[0], u.pos[1])[1]);
     let [x, y] = worldXY(u.pos);
     let moving = false;
     let moveSample = null, trailPoints = null;
@@ -17921,6 +18057,8 @@ function draw() {
       cx.setLineDash([]);
     }
   }
+  // Whatever the figures never reached: a massif is never simply dropped.
+  releaseMassifs(Infinity);
   // The deposits the figures were standing on. Held back above so a badge is
   // not a third hidden behind the unit occupying its tile; drawn here, in the
   // same seat and at the same weight, only after the figures are down.
