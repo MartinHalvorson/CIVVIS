@@ -17334,6 +17334,21 @@ impl Game {
     }
 
     /// Sum a reusable modifier bundle attached directly to one player.
+    /// Whether a seat carries no runtime modifier bundle.
+    ///
+    /// [`crate::rules::EffectIndex`] speaks for the ruleset, and the ruleset
+    /// is fixed once a game begins — but `Rules::modifiers` is swapped in
+    /// wholesale when a resolution installs a bundle, so an indexed answer
+    /// about it could be stale. Every collection path that consults the index
+    /// pairs it with this, and a seat carrying an attachment simply takes the
+    /// unoptimized route. The overwhelming majority of seats carry none.
+    #[inline]
+    fn has_no_attachments(&self, pid: usize) -> bool {
+        self.players
+            .get(pid)
+            .is_none_or(|player| player.attached_modifiers.is_empty())
+    }
+
     pub fn player_modifier_effect(&self, pid: usize, effect: &str) -> f64 {
         self.players
             .get(pid)
@@ -17444,6 +17459,12 @@ impl Game {
     /// callers provide the game context (unit class, district family, city
     /// state, and so on). Anarchy suppresses cards but not external modifiers.
     pub fn policy_effect(&self, pid: usize, effect: &str) -> f64 {
+        // A runtime attachment can carry any key at all, and the table it
+        // comes from is swapped in after the ruleset is indexed, so the
+        // index only settles this for a seat carrying no attachments.
+        if !self.rules.effect_index.policies(effect) && self.has_no_attachments(pid) {
+            return 0.0;
+        }
         let attached = self.player_modifier_effect(pid, effect);
         if self.in_anarchy(pid) {
             return attached; // the cards come out; external modifiers remain
@@ -17461,6 +17482,15 @@ impl Game {
     /// policies, researched nodes and civilization traits are empire-wide;
     /// infrastructure, beliefs and Governors contribute only where active.
     fn city_modifier_effect(&self, city: &City, effect: &str) -> f64 {
+        // Nine sweeps follow, over the player's policies, trees, traits,
+        // buildings, districts, wonders, beliefs, pantheon and Governors.
+        // Every one of them ends in `spec.effects.get(effect)`, so if nothing
+        // in the ruleset grants this key they all add up to the same nothing
+        // — unless the owner carries a runtime attachment, which the index
+        // cannot speak for.
+        if !self.rules.effect_index.any(effect) && self.has_no_attachments(city.owner) {
+            return 0.0;
+        }
         let pid = city.owner;
         self.policy_effect(pid, effect)
             + self.tree_effect(pid, effect)
@@ -17477,6 +17507,17 @@ impl Game {
         let mut selectors = vec![building, "*"];
         if let Some(replaced) = self.rules.buildings[building].replaces.as_deref() {
             selectors.push(replaced);
+        }
+        // Each surviving selector costs six assembled keys and six collection
+        // sweeps. A selector no modifier anywhere names contributes zero to
+        // all six, so it is dropped before a key is built for it — but only
+        // where the index speaks for every source, which excludes a seat
+        // carrying runtime attachments.
+        if self.has_no_attachments(city.owner) {
+            selectors.retain(|selector| self.rules.effect_index.modifies_building_yields(selector));
+            if selectors.is_empty() {
+                return Yields::default();
+            }
         }
         let effect = |yield_type: &str| {
             selectors
@@ -17504,6 +17545,9 @@ impl Game {
         if let Some(replaced) = self.rules.units[unit].replaces.as_deref() {
             selectors.push(replaced);
         }
+        if self.has_no_attachments(city.owner) {
+            selectors.retain(|selector| self.rules.effect_index.discounts_unit_purchase(selector));
+        }
         selectors
             .into_iter()
             .map(|selector| {
@@ -17513,6 +17557,11 @@ impl Game {
     }
 
     fn modifier_grants_ability(&self, pid: usize, ability: &str) -> bool {
+        // Assembling the key allocates, and this is asked behind every
+        // `has_ability` call, so rule the question out on the borrowed name.
+        if !self.rules.effect_index.grants_ability(ability) && self.has_no_attachments(pid) {
+            return false;
+        }
         let effect = grant_ability_effect_key(ability);
         let religion = self.players.get(pid).and_then(|player| player.religion.as_deref());
         self.policy_effect(pid, &effect)
@@ -19316,6 +19365,9 @@ impl Game {
     }
 
     fn religion_belief_effect(&self, religion: &str, effect: &str) -> f64 {
+        if !self.rules.effect_index.beliefs(effect) {
+            return 0.0;
+        }
         let Some(founder) = self.religion_founder(religion) else {
             return 0.0;
         };
@@ -23176,6 +23228,9 @@ impl Game {
     }
 
     fn city_building_effect(&self, city: &City, effect: &str) -> f64 {
+        if !self.rules.effect_index.buildings(effect) {
+            return 0.0;
+        }
         city.buildings
             .iter()
             .filter_map(|building| {
@@ -23196,6 +23251,12 @@ impl Game {
     }
 
     fn empire_wonder_effect(&self, pid: usize, effect: &str) -> f64 {
+        // No wonder in the ruleset grants anything towards this, so no
+        // arrangement of built wonders can either — and the alternative is
+        // walking every city in the world to reach that same zero.
+        if !self.rules.effect_index.wonders(effect) {
+            return 0.0;
+        }
         self.cities
             .values()
             .filter(|city| city.owner == pid)
@@ -28938,6 +28999,9 @@ impl Game {
     }
 
     fn city_district_effect(&self, city: &City, effect: &str) -> f64 {
+        if !self.rules.effect_index.districts(effect) {
+            return 0.0;
+        }
         city.districts
             .iter()
             .filter(|(district, position)| self.district_is_active(city, district, **position))
@@ -41872,6 +41936,11 @@ impl Game {
     }
 
     fn governor_effect(&self, pid: usize, cid: u32, effect: &str) -> f64 {
+        // Deciding whether a Governor is established walks the roster and the
+        // city; no title or promotion granting this makes that moot.
+        if !self.rules.effect_index.governors(effect) {
+            return 0.0;
+        }
         self.players[pid]
             .governor_roster
             .iter()
@@ -42055,9 +42124,21 @@ impl Game {
         let mut foreign_pressure = 0.0;
         let mut pressure_by_civ: BTreeMap<usize, f64> = BTreeMap::new();
         for source in self.cities.values() {
-            // City-states and ordinary Free Cities do not exert population
-            // Loyalty pressure in the standard Gathering Storm ruleset.
-            if self.players[source.owner].is_minor || self.players[source.owner].is_barbarian {
+            let owner = &self.players[source.owner];
+            // A true barbarian speaks for nobody. The Free Cities seat carries
+            // the same hostile flag so that everyone is at war with it, so it
+            // has to be named apart from them here.
+            if owner.is_barbarian && !owner.is_free_city {
+                continue;
+            }
+            // A minor civilization projects no pressure onto its neighbours:
+            // the shipped population tooltip drops the "also applies to other
+            // cities within 9 tiles" clause for minors. Its own Citizens still
+            // speak for the city they live in, and that is the whole domestic
+            // side of a city-state's or Free City's own balance. Skipping them
+            // outright left every city-state comparing 0 against its
+            // neighbours and reading a permanent -20.
+            if (owner.is_minor || owner.is_free_city) && source.id != cid {
                 continue;
             }
             let distance = self.wdist(source.pos, cpos);
@@ -42092,8 +42173,14 @@ impl Game {
         let mut delta = (10.0 * (domestic_pressure - foreign_pressure)
             / (domestic_pressure.min(foreign_pressure) + 0.5))
             .clamp(-20.0, 20.0);
+        // `IDENTITY_PER_TURN_FROM_FREE_CITIES` 10 and
+        // `IDENTITY_PER_TURN_FROM_CITY_STATES` 20 — a Free City's desire for
+        // independence and a city-state's base strength as itself. The Free
+        // Cities seat is also a minor, so it answers first.
         if self.players[pid].is_free_city {
             delta += 10.0;
+        } else if self.players[pid].is_minor {
+            delta += 20.0;
         }
         delta += Self::happiness_loyalty_delta(self.city_amenity_surplus(city));
         if self.city_yields(cid).food + f64::EPSILON < 2.0 * city.pop as f64 {
@@ -42134,11 +42221,28 @@ impl Game {
                 self.civ_effect(pid, "garrison_loyalty")
             };
         }
-        let occupied = city
+        // Occupation. Rise & Fall charged a flat -1 to -5; Gathering Storm
+        // rescaled it to "Loyalty penalties based on the conqueror's
+        // Grievances caused against the city's original owner" —
+        // `IDENTITY_PER_TURN_FROM_OCCUPATION_MULTIPLIER` 25 percent of those
+        // Grievances, held between `_MIN` 0 and `_MAX` 10. The penalty is
+        // charged whether or not a garrison stands there; what a garrison buys
+        // is `IDENTITY_PER_TURN_FROM_MARTIAL_LAW` +8, which is why holding a
+        // fresh conquest down with troops raises its Loyalty rather than
+        // merely stopping the bleed.
+        let occupier = city
             .occupied_from
-            .is_some_and(|former| self.players.get(former).is_some_and(|player| player.alive));
-        if occupied && !garrisoned {
-            delta -= 5.0;
+            .filter(|former| self.players.get(*former).is_some_and(|player| player.alive));
+        if let Some(former) = occupier {
+            let grievances = self.players[former]
+                .grievances
+                .get(&pid)
+                .copied()
+                .unwrap_or(0.0);
+            delta -= (0.25 * grievances).clamp(0.0, 10.0);
+            if garrisoned {
+                delta += 8.0;
+            }
         }
         if let Some(founded_religion) = self.players[pid].religion.as_deref() {
             if let Some(city_religion) = self.city_religion(city) {
@@ -42247,8 +42351,17 @@ impl Game {
     /// first revolts into the hostile Free Cities seat at 100 Loyalty. A Free
     /// City at zero then joins the living major that accumulated the greatest
     /// population pressure during its independence.
+    ///
+    /// A city-state runs the same rules as anybody else. It is not exempt —
+    /// what keeps it in place is the +20 base strength it carries and the fact
+    /// that its own Citizens are the whole domestic side of its balance. An
+    /// overwhelmed city-state revolts into a Free City like a major's city
+    /// does. Barbarians hold no Loyalty at all — but the Free Cities seat is
+    /// flagged as one so that everybody is at war with it, so it is named
+    /// apart from them.
     fn process_loyalty(&mut self, pid: usize) {
-        if self.players[pid].is_minor && !self.players[pid].is_free_city {
+        let player = &self.players[pid];
+        if player.is_barbarian && !player.is_free_city {
             return;
         }
 
@@ -53948,14 +54061,28 @@ mod victory_conditions {
         assert_eq!(g.cities[&city].captured_from, None);
         assert_eq!(g.cities[&city].occupied_from, Some(1));
 
+        // The capture left player 1 aggrieved, and Gathering Storm charges
+        // 25% of those Grievances (capped at 10) for as long as the city is
+        // occupied. A garrison does not cancel that penalty; it pays the
+        // separate +8 of Martial Law on top of it.
+        let grievances = g.players[1].grievances[&0];
         let mut without_garrison = g.clone();
         let before = without_garrison.cities[&city].loyalty;
         without_garrison.process_loyalty(0);
         let ungarrisoned_gain = without_garrison.cities[&city].loyalty - before;
+        let mut unoccupied = g.clone();
+        unoccupied.cities.get_mut(&city).unwrap().occupied_from = None;
+        let before = unoccupied.cities[&city].loyalty;
+        unoccupied.process_loyalty(0);
+        assert_eq!(
+            unoccupied.cities[&city].loyalty - before,
+            ungarrisoned_gain + (0.25 * grievances).clamp(0.0, 10.0),
+            "occupation charges 25% of the founder's Grievances"
+        );
         g.spawn_test_unit("warrior", 0, position);
         let before = g.cities[&city].loyalty;
         g.process_loyalty(0);
-        assert_eq!(g.cities[&city].loyalty - before, ungarrisoned_gain + 5.0);
+        assert_eq!(g.cities[&city].loyalty - before, ungarrisoned_gain + 8.0);
     }
 
     #[test]
@@ -54276,6 +54403,68 @@ mod victory_conditions {
         assert_eq!(g.cities[&capital].loyalty, 100.0);
         assert!(g.cities[&capital].free_city_pressure.is_empty());
         assert!(!g.players[free_cities].alive);
+    }
+
+    #[test]
+    fn a_city_state_weighs_its_own_citizens_and_carries_its_base_strength() {
+        let mut g = game_with_capitals(2, 4_245, 300);
+        g.players[1].is_minor = true;
+        let state = g.player_city_ids(1)[0];
+        let major = g.player_city_ids(0)[0];
+        let neighbor = g.nbrs(g.cities[&state].pos)[0];
+        g.cities.get_mut(&major).unwrap().pos = neighbor;
+        g.cities.get_mut(&major).unwrap().pop = 6;
+        g.cities.get_mut(&state).unwrap().pop = 6;
+
+        // Its own Citizens are the whole domestic side of the balance. Before
+        // they counted, a city-state compared 0 against its neighbours and read
+        // a permanent -20 that nothing ever applied. Here it holds its ground
+        // against an equally sized Capital one tile away, whose Citizens press
+        // at double rate, and the +20 base carries it clear.
+        let change = g.city_loyalty_per_turn(&g.cities[&state].clone());
+        assert!(
+            change > 0.0,
+            "a city-state that counts nothing for itself reads a permanent -20; got {change}"
+        );
+        // And that domestic side really is its own Population.
+        g.cities.get_mut(&state).unwrap().pop = 12;
+        assert!(
+            g.city_loyalty_per_turn(&g.cities[&state].clone()) > change,
+            "its own Citizens have to move the balance"
+        );
+
+        // And it is not exempt from the rules: swamp it and it revolts into a
+        // Free City exactly as a major's city does.
+        g.cities.get_mut(&major).unwrap().pop = 60;
+        g.cities.get_mut(&state).unwrap().pop = 1;
+        g.cities.get_mut(&state).unwrap().loyalty = 1.0;
+        g.process_loyalty(1);
+        let free_cities = g
+            .players
+            .iter()
+            .find(|player| player.is_free_city)
+            .unwrap()
+            .id;
+        assert_eq!(g.cities[&state].owner, free_cities);
+        assert_eq!(g.cities[&state].loyalty, 100.0);
+    }
+
+    #[test]
+    fn a_minor_city_projects_no_pressure_onto_its_neighbours() {
+        let mut g = game_with_capitals(3, 4_246, 300);
+        g.players[2].is_minor = true;
+        let target = g.player_city_ids(0)[0];
+        let minor = g.player_city_ids(2)[0];
+        let neighbor = g.nbrs(g.cities[&target].pos)[0];
+        g.cities.get_mut(&minor).unwrap().pos = neighbor;
+
+        let baseline = g.city_loyalty_per_turn(&g.cities[&target].clone());
+        g.cities.get_mut(&minor).unwrap().pop = 40;
+        assert_eq!(
+            g.city_loyalty_per_turn(&g.cities[&target].clone()),
+            baseline,
+            "a city-state next door must not press a major's city"
+        );
     }
 
     #[test]

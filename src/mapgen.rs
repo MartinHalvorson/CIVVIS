@@ -860,10 +860,17 @@ fn generate_land(
         // are allowed to stay there.
         return earth_land(wm);
     }
+    if script == MapScript::GrandCanals {
+        // Answered before the shape is dispatched on, the way Earth is: the
+        // six canals are one piece of geometry that a world of either shape
+        // reads the same way, and the ground they leave is filled in once for
+        // both. See [`canal_world`].
+        return canal_world(wm, poles, rng);
+    }
     if wm.sphere().is_some() {
         return globe_land(wm, script, poles, num_major_spawns, num_minor_spawns, rng);
     }
-    flat_land(wm, script, num_major_spawns, num_minor_spawns, rng)
+    flat_land(wm, script, poles, num_major_spawns, num_minor_spawns, rng)
 }
 
 /// The land of a flat world: a rectangle that wraps east to west and ends at a
@@ -877,6 +884,7 @@ fn generate_land(
 fn flat_land(
     wm: &WorldMap,
     script: MapScript,
+    poles: MapPoles,
     num_major_spawns: usize,
     num_minor_spawns: usize,
     rng: &mut Rng,
@@ -1051,6 +1059,10 @@ fn flat_land(
         // coastlines are read rather than rolled and are the same coastlines
         // on either shape.
         MapScript::TrueStartEarth => earth_land(wm),
+        // Likewise: a canal is cut at an angle to an axis of the world, which
+        // is a question neither shape answers differently. [`generate_land`]
+        // sends it to [`canal_world`] before it reaches here.
+        MapScript::GrandCanals => canal_world(wm, poles, rng),
     }
 }
 
@@ -1314,6 +1326,159 @@ fn globe_land(
     }
 }
 
+/// The three axes a Grand Canals world is cut around: the polar one, and the
+/// two through the equator at longitude 0 and longitude 90.
+const CANAL_AXES: [[f64; 3]; 3] = [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+
+/// How far off square to its axis each of an axis's two canals is cut.
+///
+/// Square to the axis would be one canal where the world wants two, and two
+/// canals sharing a line is one canal. Twenty degrees is far enough apart that
+/// the ground between a pair is a band a civilization can live in, and near
+/// enough to the middle that neither canal is a small ring around a pole.
+const CANAL_OFFSET_DEGREES: f64 = 20.0;
+
+/// How much of a lap one tile of canal width is worth. Two tiles is the floor
+/// — one is a ditch a fleet queues in rather than a canal — and six the
+/// ceiling, past which the lanes are wider than the ground between them.
+const CANAL_TILES_PER_LAP: f64 = 55.0;
+const CANAL_MIN_TILES: f64 = 2.0;
+const CANAL_MAX_TILES: f64 = 6.0;
+
+/// The six canals of a Grand Canals world, as the tiles they take.
+///
+/// Two canals circle each of the world's three axes, cut
+/// [`CANAL_OFFSET_DEGREES`] to either side of the great circle square to it.
+/// Around the polar axis that reads as the parallels 20°N and 20°S, and the
+/// other two pairs are the same construction turned a quarter turn: on Earth's
+/// longitudes they cross the equator at 20°/160°, 200°/340°, 70°/290° and
+/// 110°/250°. A tile belongs to a canal when its angle out of an axis's
+/// equatorial plane is within half a canal's width of ±20°, which is a
+/// question about where the tile is on the world rather than about the grid it
+/// is stored in — so a globe and a flat map are cut by the same six lanes, and
+/// every one of them closes on itself on either shape.
+///
+/// Because no two axes are parallel, every canal crosses all four belonging to
+/// the other two axes, twice each: twenty-four junctions, and one connected
+/// network rather than six separate rings. That is the point of the world —
+/// the ground arrives already divided into blocks, and a ship can reach every
+/// one of them.
+fn grand_canals(wm: &WorldMap) -> BTreeSet<Pos> {
+    let half = canal_half_width(wm);
+    let offset = CANAL_OFFSET_DEGREES.to_radians();
+    wm.tiles
+        .keys()
+        .copied()
+        .filter(|pos| {
+            let point = wm.direction(*pos);
+            CANAL_AXES.iter().any(|axis| {
+                let out_of_plane = dot(point, *axis).clamp(-1.0, 1.0).asin();
+                (out_of_plane - offset).abs() <= half || (out_of_plane + offset).abs() <= half
+            })
+        })
+        .collect()
+}
+
+/// Half a canal's width, as the angle it subtends at the centre of the world.
+///
+/// A canal is measured in tiles, because what matters about one is how many
+/// ships fit abreast in it, and a tile is what the world is counted in. It is
+/// widened with the world so that the six lanes take about the same share of a
+/// Duel map as of a Ludicrous one: one tile of width for every
+/// [`CANAL_TILES_PER_LAP`] tiles of the lap a canal makes, never fewer than
+/// two and never more than six.
+fn canal_half_width(wm: &WorldMap) -> f64 {
+    let step = tile_arc(wm);
+    let lap = std::f64::consts::TAU / step;
+    let tiles = (lap / CANAL_TILES_PER_LAP)
+        .round()
+        .clamp(CANAL_MIN_TILES, CANAL_MAX_TILES);
+    tiles * step / 2.0
+}
+
+/// The angle one step between neighbouring tiles subtends at the centre of the
+/// world, which is what turns a width in tiles into a width on the world.
+fn tile_arc(wm: &WorldMap) -> f64 {
+    match wm.sphere() {
+        // A geodesic's cells are equal-area to within a few percent, so the
+        // distance between two centres is the side of a hexagon holding
+        // `4π/n` of the sphere.
+        Some(_) => {
+            let per_tile = 4.0 * std::f64::consts::PI / wm.tiles.len().max(1) as f64;
+            (2.0 * per_tile / 3f64.sqrt()).sqrt()
+        }
+        // A flat map is read as the equirectangular projection it looks like,
+        // and its columns and its rows are not the same width apart. Take the
+        // coarser of the two, so a canal counted in tiles is never thinner
+        // than that count whichever way it happens to be running.
+        None => (std::f64::consts::TAU / wm.width.max(1) as f64)
+            .max(std::f64::consts::PI / (wm.height - 1).max(1) as f64),
+    }
+}
+
+/// The land of a Grand Canals world: solid ground, less the six canals, less
+/// whatever natural sea the world's land share still leaves room for.
+///
+/// The canals are cut first because they are geometry rather than luck — the
+/// same six lanes on every seed — and what they take is then counted against
+/// the water the world type asks for instead of being added on top of it.
+/// A world small enough that the canals alone are more water than the share
+/// allows gets no natural sea at all rather than a share it cannot honour: on
+/// a Duel globe a lap is under sixty tiles, so six two-tile lanes are most of
+/// the water there is room for.
+///
+/// What is held out of the field is what each shape holds out of it elsewhere:
+/// a globe keeps its twelve pentagons and, when the world has poles, its caps;
+/// a flat map keeps the top and bottom rows, which are its edge rather than
+/// its climate.
+fn canal_world(wm: &WorldMap, poles: MapPoles, rng: &mut Rng) -> BTreeSet<Pos> {
+    let canals = grand_canals(wm);
+    let pentagons: BTreeSet<Pos> = wm
+        .sphere()
+        .map(|sphere| sphere.pentagons().into_iter().collect())
+        .unwrap_or_default();
+    let globe = wm.sphere().is_some();
+    let cap = if globe && poles.has_poles() {
+        0.93
+    } else {
+        f64::MAX
+    };
+    let reserved = |pos: Pos| {
+        if pentagons.contains(&pos) || wm.polar_fraction(pos) >= cap {
+            return true;
+        }
+        let (_, row) = hex::axial_to_offset(pos.0, pos.1);
+        !globe && (row == 0 || row == wm.height - 1)
+    };
+
+    let mut field: BTreeSet<Pos> = wm
+        .tiles
+        .keys()
+        .copied()
+        .filter(|pos| !canals.contains(pos) && !reserved(*pos))
+        .collect();
+
+    let tiles = wm.tiles.len();
+    let wanted_water = tiles * (100 - MapScript::GrandCanals.land_percent() as usize) / 100;
+    let spent = tiles - field.len();
+    let sea = match wanted_water.checked_sub(spent) {
+        Some(remaining) if remaining > 0 => {
+            // Few and large. A canal world is read by its lanes, and a scatter
+            // of ponds across the blocks between them would make it hard to
+            // tell which water was dug and which was always there.
+            let seas = (tiles / 900).clamp(2, 12);
+            scatter_bodies(wm, &mut field, seas, remaining, rng)
+        }
+        _ => BTreeSet::new(),
+    };
+
+    wm.tiles
+        .keys()
+        .copied()
+        .filter(|pos| !canals.contains(pos) && !sea.contains(pos) && !reserved(*pos))
+        .collect()
+}
+
 /// How many bodies a world type may spread past a single plot.
 ///
 /// `Lakes.lua` asks for four per continent region; every other stock script
@@ -1338,7 +1503,10 @@ fn globe_land(
 fn large_lake_budget(script: MapScript, num_continents: usize) -> usize {
     match script {
         MapScript::Lakes => num_continents * 4,
-        MapScript::Pangaea | MapScript::InlandSea => num_continents,
+        // The blocks a canal world is cut into are broad enough to hold one,
+        // and a lake is the water a canal world does not already have: fresh,
+        // enclosed, and nothing a ship arrives by.
+        MapScript::Pangaea | MapScript::InlandSea | MapScript::GrandCanals => num_continents,
         MapScript::Continents => num_continents / 2,
         MapScript::TrueStartEarth
         | MapScript::LandOnly
@@ -1562,6 +1730,25 @@ pub fn generate_with_script(
         for pos in expansion {
             if rng.below(4) == 0 {
                 wm.tiles.get_mut(&pos).unwrap().terrain = "coast".into();
+            }
+        }
+    }
+
+    // A canal is a cut, not an abyss. The shelf pass reaches the banks of one
+    // from the land on either side, but the middle of a wide canal is far
+    // enough from both to have been left as open ocean, and a lane a fleet
+    // cannot enter until it has the technology for the deep sea is not a
+    // canal. Every tile of one is therefore shallow water, sailable from the
+    // first turn — which is the whole reason the world is cut this way.
+    if script == MapScript::GrandCanals {
+        // The canals are the same geometry every time they are asked for, and
+        // asking again costs nothing and moves no RNG, so the pass does not
+        // have to be threaded through the land generator to get here.
+        for pos in grand_canals(&wm) {
+            if let Some(tile) = wm.tiles.get_mut(&pos) {
+                if tile.terrain == "ocean" {
+                    tile.terrain = "coast".into();
+                }
             }
         }
     }
@@ -4521,10 +4708,11 @@ mod river_tests {
 
     /// Every world type but Earth, in the order the lobby lists them: most
     /// land first, most water last.
-    const ROLLED_TYPES: [MapScript; 8] = [
+    const ROLLED_TYPES: [MapScript; 9] = [
         MapScript::LandOnly,
         MapScript::Lakes,
         MapScript::InlandSea,
+        MapScript::GrandCanals,
         MapScript::Pangaea,
         MapScript::Continents,
         MapScript::SmallContinents,
@@ -4872,6 +5060,154 @@ mod river_tests {
                 "Water World came out {}% land on {topology:?}",
                 measured[measured.len() - 1].1
             );
+        }
+    }
+
+    /// Where a tile stands around one of the world's axes, as a twelfth of a
+    /// turn: 0 through 11, counting round the plane square to the axis. A lane
+    /// that reaches all twelve has been all the way round the world.
+    fn sector_around(world: &WorldMap, axis: [f64; 3], pos: Pos) -> usize {
+        // Every canal axis is one of the world's own, so the plane square to
+        // it is spanned by the other two coordinates and the angle round it is
+        // read straight off them.
+        let along = axis.iter().position(|part| *part != 0.0).unwrap();
+        let point = world.direction(pos);
+        let angle = point[(along + 2) % 3].atan2(point[(along + 1) % 3]);
+        let turns = angle.rem_euclid(std::f64::consts::TAU) / std::f64::consts::TAU;
+        ((turns * 12.0) as usize).min(11)
+    }
+
+    /// The claim the Grand Canals world is named for: six canals, two around
+    /// each of the world's three axes, and every one of them a lane that comes
+    /// back to where it started.
+    ///
+    /// "Circumnavigating" is checked as the thing a fleet would do rather than
+    /// as a property of the arithmetic — the lane's own tiles have to be one
+    /// connected body of water that appears in all twelve sectors of a turn
+    /// around its axis, so a ship can follow it the whole way without ever
+    /// coming ashore. A canal that broke into two arcs, or that stopped short
+    /// of closing, would pass every share and spacing test in this file and
+    /// fail here, which is the only place it would show.
+    ///
+    /// Both shapes, because a canal is cut at an angle to an axis of the world
+    /// and neither the globe nor the flat map gets to answer that differently.
+    /// Both climates and the two ends of the size table, because the smallest
+    /// world is where a canal is widest against the world it circles — a Duel
+    /// lap is under sixty tiles — and so where its far reach comes nearest the
+    /// latitude at which a poled world grows sea ice.
+    #[test]
+    fn six_grand_canals_each_circle_the_world_and_meet_one_another() {
+        let rules = Rules::embedded();
+        for (index, size) in [&CIV6_MAP_SIZES[0], &CIV6_MAP_SIZES[3]].into_iter().enumerate() {
+            for topology in [FLAT, GLOBE] {
+                for poles in [POLED, SCATTERED] {
+                    let mut rng = Rng::new(
+                        52_000
+                            + index as u64 * 4
+                            + topology.is_globe() as u64 * 2
+                            + poles.has_poles() as u64,
+                    );
+                    let (world, _) = generate_with_script(
+                        &rules,
+                        size.width,
+                        size.height,
+                        size.default_players,
+                        size.default_city_states,
+                        size.natural_wonders,
+                        size.continents,
+                        MapScript::GrandCanals,
+                        topology,
+                        poles,
+                        &mut rng,
+                    );
+                    let canals = grand_canals(&world);
+                    let where_ = format!("{} {topology:?}/{poles:?}", size.id);
+                    assert!(!canals.is_empty(), "{where_}: no canal was cut at all");
+
+                    // Nothing dug is dry, and nothing dug is deep: the whole
+                    // network is shallow water a fleet can enter on turn one.
+                    for pos in &canals {
+                        let tile = &world.tiles[pos];
+                        assert!(rules.is_water(tile), "{where_}: dry land in a canal at {pos:?}");
+                        assert_eq!(
+                            tile.terrain, "coast",
+                            "{where_}: the canal at {pos:?} is {} rather than shallow water",
+                            tile.terrain
+                        );
+                    }
+
+                    // Each of the six lanes on its own, split back out of the
+                    // set by which band it belongs to — and counted as a fleet
+                    // would count it, so a tile the polar band has frozen over
+                    // is not part of the lane that has to close.
+                    let half = canal_half_width(&world);
+                    let offset = CANAL_OFFSET_DEGREES.to_radians();
+                    let mut lanes = 0;
+                    for direction in CANAL_AXES {
+                        for sign in [1.0f64, -1.0] {
+                            let lane: BTreeSet<Pos> = canals
+                                .iter()
+                                .copied()
+                                .filter(|pos| {
+                                    world.tiles[pos].feature.as_deref() != Some("ice")
+                                })
+                                .filter(|pos| {
+                                    let out_of_plane = dot(world.direction(*pos), direction)
+                                        .clamp(-1.0, 1.0)
+                                        .asin();
+                                    (out_of_plane - sign * offset).abs() <= half
+                                })
+                                .collect();
+                            let named = format!(
+                                "{where_}: the canal {} of axis {direction:?}",
+                                if sign > 0.0 { "above" } else { "below" }
+                            );
+                            let mut bodies = connected_components(&world, &lane);
+                            bodies.sort_by_key(|body| std::cmp::Reverse(body.len()));
+                            let lap = bodies.first().cloned().unwrap_or_default();
+                            assert!(
+                                lap.len() * 4 >= lane.len() * 3,
+                                "{named} is not one lane: {} open tiles in {} pieces, largest {}",
+                                lane.len(),
+                                bodies.len(),
+                                lap.len()
+                            );
+                            let reached: BTreeSet<usize> = lap
+                                .iter()
+                                .map(|pos| sector_around(&world, direction, *pos))
+                                .collect();
+                            assert_eq!(
+                                reached.len(),
+                                12,
+                                "{named} stops short of closing: it reaches {} of the twelve \
+                                 sectors of a lap around its axis",
+                                reached.len()
+                            );
+                            lanes += 1;
+                        }
+                    }
+                    assert_eq!(lanes, 6, "{where_}: six canals, two around each of three axes");
+
+                    // And the six are one network, not six rings: no two axes
+                    // are parallel, so every lane crosses the four belonging to
+                    // the other two axes and a ship can get from any of them to
+                    // any other without portage.
+                    let water: BTreeSet<Pos> = world
+                        .tiles
+                        .iter()
+                        .filter(|(_, tile)| rules.is_water(tile))
+                        .map(|(pos, _)| *pos)
+                        .collect();
+                    let sea = connected_components(&world, &water)
+                        .into_iter()
+                        .max_by_key(|body| body.len())
+                        .unwrap_or_default();
+                    assert!(
+                        canals.iter().all(|pos| sea.contains(pos)),
+                        "{where_}: part of the canal network cannot be sailed to from the rest"
+                    );
+                }
+            }
         }
     }
 
@@ -5232,6 +5568,15 @@ mod river_tests {
                 MapScript::Islands | MapScript::WaterWorld => assert!(
                     components.len() >= 8 && components[0].len() * 4 <= total,
                     "{script:?} needs many small islands and no continent, got {:?}",
+                    components.iter().map(|c| c.len()).collect::<Vec<_>>()
+                ),
+                // Six canals cross into twenty-four junctions, so the ground
+                // they leave arrives already divided: many blocks, and no one
+                // of them the world. A single dominant landmass here would
+                // mean a canal had failed to close somewhere.
+                MapScript::GrandCanals => assert!(
+                    components.len() >= 8 && components[0].len() * 3 <= total,
+                    "Grand Canals should cut the world into blocks, got {:?}",
                     components.iter().map(|c| c.len()).collect::<Vec<_>>()
                 ),
                 MapScript::TrueStartEarth => {

@@ -1848,14 +1848,6 @@
   }
   .spec-controls #restart-sim.primary .sub::before { content: ""; }
   .spec-controls #restart-sim.primary .sub { color: #51401f; }
-  /* A start control that is about to roll dice has to say so before it is
-     pressed, not after. The note sits directly under the control it qualifies
-     and names the settings that are still unanswered. */
-  .random-note {
-    margin-top: 7px; padding: 6px 9px; border: 1px dashed #6f5c2c; border-radius: 8px;
-    background: #241d0d80; color: var(--gold); font-size: var(--type-small); line-height: 1.4;
-  }
-  .random-note[hidden] { display: none; }
   .speed-row, .view-row { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 10px; margin-top: 9px; }
   .speed-row span, .view-row span { color: var(--muted); font-size: var(--type-small); font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
   .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; color: var(--muted); font-size: var(--type-secondary); cursor: pointer; }
@@ -1874,21 +1866,8 @@
   .victory-options { grid-column: 1 / -1; padding: 9px 10px 10px; border: 1px solid var(--line-soft); border-radius: 9px; background: #09131080; }
   .victory-options h2 { margin-bottom: 8px; }
   .victory-option-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px 9px; }
-  .victory-option { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 5px; min-width: 0; color: var(--muted); font-size: var(--type-small); cursor: pointer; }
+  .victory-option { display: flex; align-items: center; gap: 5px; min-width: 0; color: var(--muted); font-size: var(--type-small); cursor: pointer; }
   .victory-option input { margin: 0; }
-  .victory-option-help { margin: -3px 0 8px; }
-  /* Off and ????? both leave the box unticked, so the third state has to be
-     legible in the label as well as in the box's own dash. The name stays: it
-     is the only thing that says *which* condition is being left to chance, so
-     the marker wraps under it rather than crowding it out. */
-  .victory-option .victory-random { display: none; color: var(--gold); font-weight: 800; letter-spacing: .06em; }
-  .victory-option input:indeterminate ~ .victory-random { display: inline; }
-  .victory-option:has(input:indeterminate) { color: var(--gold); }
-  /* The roll is an action on the whole settings block, so it gets the block's
-     full width under the last group rather than a half column beside one. */
-  .lucky-group { grid-column: 1 / -1; }
-  .lucky-group button { width: 100%; }
-  .lucky-help { margin-top: 5px; }
 
   /* Tech and civic overlay */
   #pedia {
@@ -3332,7 +3311,6 @@
           <button class="primary" id="specpause">⏸ Pause</button>
           <button id="restart-sim" title="Restart with the same settings"><span class="lbl">Restart sim</span><span class="sub">same settings</span></button>
         </div>
-        <div class="random-note" id="randomnote" hidden></div>
         <script>
           // A supervised restart replaces this whole page. Restore the label
           // beside the button so the default Pause text is never painted while
@@ -3355,42 +3333,34 @@
       <div class="sec settings-sec" id="game-settings">
       <div id="newgame-options">
         <label class="small">Base game ruleset<select id="baseruleset" style="margin-top:4px">
-          <option value="?????" title="Rolled among this setting's own options when the game starts">?????</option>
           <option value="civ6" selected>Civ 6</option>
         </select></label>
         <label class="small">Game mode<select id="gamemode" style="margin-top:4px">
-          <option value="?????" title="Rolled among this setting's own options when the game starts">?????</option>
           <option value="ai_sim" selected>AI-only simulation</option>
           <option value="single">Single player</option>
           <option disabled>Multiplayer · later</option>
         </select></label>
         <label class="small">Start era<select id="startera" style="margin-top:4px">
-          <option value="?????" title="Rolled among this setting's own options when the game starts">?????</option>
           <option value="stone_age" disabled>Stone Age · later</option>
           <option value="ancient" selected>Ancient</option>
         </select></label>
         <label class="small">Leader Pool<select id="leaderpool" style="margin-top:4px">
-          <option value="?????" title="Rolled among this setting's own options when the game starts">?????</option>
           <option value="civ6" selected>Civ 6 Leaders</option>
           <option value="expanded">Expanded</option>
         </select></label>
         <label class="small human-setting">Leader<select id="leader" style="margin-top:4px">
-          <option value="?????" title="Rolled among this setting's own options when the game starts">?????</option>
           <option value="">Random</option>
         </select></label>
-        <label class="small human-setting">Difficulty<select id="difficulty" style="margin-top:4px">
-          <option value="?????" title="Rolled among this setting's own options when the game starts">?????</option>
-        </select></label>
+        <label class="small human-setting">Difficulty<select id="difficulty" style="margin-top:4px"></select></label>
         <label class="small">World shape<select id="mapshape" style="margin-top:4px">
-          <option value="?????" title="Rolled among this setting's own options when the game starts">?????</option>
           <option value="flat">Flat</option>
           <option value="planet">Planet</option>
         </select></label>
         <label class="small">Map<select id="maptype" style="margin-top:4px">
-          <option value="?????" title="Rolled among this setting's own options when the game starts">?????</option>
           <option value="land_only">Land Only</option>
           <option value="lakes">Lakes</option>
           <option value="inland_sea">Inland Sea</option>
+          <option value="grand_canals">Grand Canals</option>
           <option value="pangaea">Pangaea</option>
           <option value="continents">Continents</option>
           <option value="small_continents">Small Continents</option>
@@ -3399,12 +3369,10 @@
           <option value="true_start_earth">True Start Earth</option>
         </select></label>
         <label class="small">Thermal distribution<select id="mappoles" style="margin-top:4px">
-          <option value="?????" title="Rolled among this setting's own options when the game starts">?????</option>
           <option value="poles">Hot equator, cold poles</option>
           <option value="randomized">Randomized</option>
         </select></label>
         <label class="small">World size<select id="np" style="margin-top:4px">
-          <option value="?????" title="Rolled among this setting's own options when the game starts">?????</option>
           <option value="2">Duel · 2 civs · 3 city-states · 44×26</option>
           <option value="4" selected>Tiny · 4 civs · 6 city-states · 60×38</option>
           <option value="6">Small · 6 civs · 9 city-states · 74×46</option>
@@ -3413,7 +3381,6 @@
           <option value="12">Huge · 12 civs · 18 city-states · 106×66</option>
         </select></label>
         <label class="small">Game speed<select id="gamespeed" style="margin-top:4px">
-          <option value="?????" title="Rolled among this setting's own options when the game starts">?????</option>
           <option value="online" selected>Online · 250 turns</option>
           <option value="quick">Quick · 330 turns</option>
           <option value="standard">Standard · 500 turns</option>
@@ -3431,19 +3398,14 @@
         </div>
         <div class="victory-options" role="group" aria-labelledby="victory-options-title">
           <h2 id="victory-options-title">Victory conditions</h2>
-          <div class="small victory-option-help">A condition has three states: click it once for off, again for ?????.</div>
           <div class="victory-option-grid">
-            <label class="victory-option"><input type="checkbox" id="victory-science" checked><span>Science</span><span class="victory-random" aria-hidden="true">?????</span></label>
-            <label class="victory-option"><input type="checkbox" id="victory-culture" checked><span>Culture</span><span class="victory-random" aria-hidden="true">?????</span></label>
-            <label class="victory-option"><input type="checkbox" id="victory-religious" checked><span>Religion</span><span class="victory-random" aria-hidden="true">?????</span></label>
-            <label class="victory-option"><input type="checkbox" id="victory-diplomatic" checked><span>Diplomacy</span><span class="victory-random" aria-hidden="true">?????</span></label>
-            <label class="victory-option"><input type="checkbox" id="victory-domination" checked><span>Domination</span><span class="victory-random" aria-hidden="true">?????</span></label>
-            <label class="victory-option"><input type="checkbox" id="victory-score" checked><span>Score</span><span class="victory-random" aria-hidden="true">?????</span></label>
+            <label class="victory-option"><input type="checkbox" id="victory-science" checked>Science</label>
+            <label class="victory-option"><input type="checkbox" id="victory-culture" checked>Culture</label>
+            <label class="victory-option"><input type="checkbox" id="victory-religious" checked>Religion</label>
+            <label class="victory-option"><input type="checkbox" id="victory-diplomatic" checked>Diplomacy</label>
+            <label class="victory-option"><input type="checkbox" id="victory-domination" checked>Domination</label>
+            <label class="victory-option"><input type="checkbox" id="victory-score" checked>Score</label>
           </div>
-        </div>
-        <div class="lucky-group">
-          <button id="luckybtn" type="button" title="Roll every setting left at ????? and show what came up">🎲 I'm Feeling Lucky</button>
-          <div class="small lucky-help" id="luckyhelp"></div>
         </div>
       </div>
       </div>
@@ -3720,35 +3682,39 @@ const FEATURE_LABEL = {
   pantanal:"Pantanal", uluru:"Uluru", yosemite:"Yosemite",
   dead_sea:"Dead Sea", mount_everest:"Mount Everest", pamukkale:"Pamukkale"
 };
-// One symbol for every resource in data/resources.json. Fourteen of the
-// fifty-two used to be named here and the other thirty-eight all came out as
-// the same "●", so the map could tell you a deposit existed and what class it
-// was but not what it was — diamonds, dyes and truffles were one dot.
-const RES_ICON = { wheat:"🌾", cattle:"🐄", sheep:"🐑", stone:"🪨", deer:"🦌",
-                   fish:"🐟", bananas:"🍌", copper:"🥉", crabs:"🦀",
-                   maize:"🌽", rice:"🍚",
-                   horses:"🐎", iron:"⚒️", niter:"🧨", coal:"⛏", oil:"🛢",
-                   aluminum:"🛩", uranium:"☢",
-                   silk:"🧵", wine:"🍷", salt:"🧂", amber:"🔶", citrus:"🍊",
-                   cocoa:"🍫", coffee:"☕", cosmetics:"💄", cotton:"🧶",
-                   diamonds:"💎", dyes:"🎨", furs:"🦫", gypsum:"🧱",
-                   honey:"🍯", incense:"🪔", ivory:"🐘", jade:"🟢",
-                   jeans:"👖", marble:"🏛", mercury:"🌡", olives:"🫒",
-                   pearls:"🦪", perfume:"🧴", silver:"🥈", spices:"🌶",
-                   sugar:"🍬", tea:"🍵", tobacco:"🚬", toys:"🧸",
-                   truffles:"🍄", turtles:"🐢", whales:"🐋",
-                   antiquity_site:"🏺", shipwreck:"⚓" };
+// Every resource has a code-native pictogram. These names describe what grows,
+// grazes or lies in the ground — not the modern product somebody eventually
+// makes from it. Mercury is cinnabar crystals rather than a thermometer; niter
+// is a pale mineral bloom rather than dynamite; wine begins as grapes, and
+// cocoa as a pod. The renderer below gives related resources a shared visual
+// grammar while the per-resource descriptor keeps the whole catalogue audited.
+const RESOURCE_PICTOGRAM = {
+  wheat:"grain", cattle:"cattle", sheep:"sheep", stone:"stone", deer:"antler",
+  fish:"fish", bananas:"bananas", copper:"copper_ore", crabs:"crab",
+  maize:"maize", rice:"rice",
+  horses:"horse", iron:"iron_ore", niter:"niter_crystal", coal:"coal",
+  oil:"oil_seep", aluminum:"bauxite", uranium:"uraninite",
+  silk:"cocoon", wine:"grapes", salt:"salt_crystal", amber:"amber",
+  citrus:"citrus", cocoa:"cocoa_pod", coffee:"coffee_branch",
+  cosmetics:"pigment_flower", cotton:"cotton", diamonds:"diamond",
+  dyes:"dye_flower", furs:"pelt", gypsum:"gypsum_crystal", honey:"honeycomb",
+  incense:"resin_branch", ivory:"tusks", jade:"jade_stone", jeans:"indigo_cloth",
+  marble:"marble_block", mercury:"cinnabar", olives:"olive_branch",
+  pearls:"pearl_shell", perfume:"lavender", silver:"silver_ore",
+  spices:"spice_pods", sugar:"sugar_cane", tea:"tea_branch",
+  tobacco:"tobacco_leaf", toys:"wooden_top", truffles:"truffles",
+  turtles:"turtle", whales:"whale", antiquity_site:"amphora",
+  shipwreck:"wreck"
+};
 // Which screen-relative badge slot a class uses: strategics lower-left,
 // bonuses at the bottom, luxuries lower-right. These are annotation positions,
 // not geographic corners: the world can open at an unknown bearing or turn
 // under the camera without scrambling the positional class cue.
 const RESOURCE_BADGE_SLOT = { strategic:3, bonus:2, luxury:1 };
 // The badge was drawn at a radius of 8.2 with a 12px symbol inside it, which is
-// a 16px disc holding an emoji on a hex 62 across: legible only if you already
-// knew what you were looking for. Everything about the badge — disc, rim, the
-// survey-zoom dot it collapses to, and the symbol's baseline nudge — is one
-// factor off that original size, so the badge stays the same drawing and only
-// its scale changed.
+// a 16px disc on a hex 62 across: legible only if you already knew what you
+// were looking for. Disc, rim, survey dot and pictogram share one scale, so the
+// badge remains one coherent annotation rather than independently sized parts.
 const RES_BADGE_K = 1.5;
 const RES_BADGE_R = 8.2 * RES_BADGE_K;
 // How far out along its class's corner ray the badge is seated, as a fraction
@@ -3759,55 +3725,61 @@ const RES_BADGE_R = 8.2 * RES_BADGE_K;
 // small; at this size it decides whether the badge leans into the next hex.
 const RES_BADGE_SEAT = 1 - (RES_BADGE_R + 1.2) / (S * SQ3 / 2);
 const ARTIFACT_RESOURCES = new Set(["antiquity_site", "shipwreck"]);
-// One symbol per unit in data/units.json — the production medallion and the
-// strategic-view discs both read from here, and a unit without an entry falls
-// back to its first letter, which tells you nothing. Grouped by promotion
-// class so a line reads as a family at a glance.
+// One compact silhouette per unit in data/units.json. The value is a drawing
+// vocabulary entry, not a Unicode character, so a platform font cannot turn a
+// crossbowman into a bullseye or a trebuchet into a meteor. Closely related
+// replacements deliberately share their weapon while truly different machines
+// keep different outlines.
 // Units that cannot fight — captured rather than killed, and the things an
 // empire has to escort. They carry their own plate shape so a glance separates
 // an army from what it is protecting.
 const CIVILIAN_UNITS = new Set(["settler", "builder", "trader", "naturalist",
   "archaeologist", "rock_band", "spy", "missionary", "apostle", "guru",
   "inquisitor"]);
-const UNIT_ICON = {
+const UNIT_PICTOGRAM = {
   // civilians & specialists
-  settler:"🏕", builder:"🔨", trader:"🐫", naturalist:"🏞", archaeologist:"🏺",
-  rock_band:"🎸", spy:"🕵",
+  settler:"camp", builder:"hammer", trader:"caravan", naturalist:"leaf",
+  archaeologist:"trowel", rock_band:"guitar", spy:"keyhole",
   // religious
-  missionary:"🕊", apostle:"✝", guru:"☯", inquisitor:"🔥", warrior_monk:"🥋",
+  missionary:"pilgrim_staff", apostle:"sun_staff", guru:"lotus",
+  inquisitor:"flame", warrior_monk:"fist",
   // support
-  battering_ram:"🪵", siege_tower:"🏗", military_engineer:"🛠",
-  observation_balloon:"🎈", medic:"✚", supply_convoy:"📦", anti_air_gun:"🔺",
-  mobile_sam:"📡", drone:"🛰",
+  battering_ram:"battering_ram", siege_tower:"siege_tower",
+  military_engineer:"tools", observation_balloon:"balloon", medic:"medical",
+  supply_convoy:"crate_truck", anti_air_gun:"anti_air", mobile_sam:"missile_radar",
+  drone:"drone",
   // recon
-  scout:"👁", skirmisher:"🪃", ranger:"🌿", spec_ops:"🥷",
+  scout:"compass", skirmisher:"javelin", ranger:"rifle", spec_ops:"suppressed_rifle",
   // melee
-  warrior:"⚔", swordsman:"🗡", man_at_arms:"🛡", musketman:"💂",
-  line_infantry:"🎖", infantry:"🪖", mechanized_infantry:"🚚",
+  warrior:"axe", swordsman:"sword", man_at_arms:"sword_shield", musketman:"musket",
+  line_infantry:"long_rifle", infantry:"rifle_helmet", mechanized_infantry:"ifv",
   // anti-cavalry
-  spearman:"🔱", pikeman:"🚧", pike_and_shot:"⚜", at_crew:"🧨", modern_at:"⛔",
+  spearman:"spear", pikeman:"pike", pike_and_shot:"pike_musket",
+  at_crew:"anti_tank", modern_at:"guided_missile",
   // light cavalry
-  horseman:"🐎", courser:"🐴", cavalry:"🏇", helicopter:"🚁",
+  horseman:"horse", courser:"horse_sword", cavalry:"horse_rifle", helicopter:"helicopter",
   // heavy cavalry
-  heavy_chariot:"☸", knight:"♞", cuirassier:"♘", tank:"🚜", modern_armor:"🚙",
+  heavy_chariot:"chariot", knight:"horse_lance", cuirassier:"horse_sabre",
+  tank:"tank", modern_armor:"modern_tank",
   // ranged
-  slinger:"🪨", archer:"🏹", crossbowman:"🎯", field_cannon:"💣",
-  machine_gun:"🔫",
+  slinger:"sling", archer:"bow", crossbowman:"crossbow", field_cannon:"field_cannon",
+  machine_gun:"machine_gun",
   // siege
-  catapult:"☄", trebuchet:"🌠", bombard:"💥", artillery:"🎆",
-  rocket_artillery:"🚀",
+  catapult:"catapult", trebuchet:"trebuchet", bombard:"bombard",
+  artillery:"howitzer", rocket_artillery:"rocket_rack",
   // air & orbital
-  biplane:"🪁", fighter:"✈", jet_fighter:"🛫", bomber:"🛩", jet_bomber:"🛬",
-  giant_death_robot:"🤖",
+  biplane:"biplane", fighter:"fighter", jet_fighter:"jet", bomber:"bomber",
+  jet_bomber:"stealth_bomber", giant_death_robot:"robot",
   // naval melee / ranged / raider / carrier
-  galley:"🛶", caravel:"🧭", ironclad:"🚢", destroyer:"⚓",
-  quadrireme:"⛵", frigate:"⛴", battleship:"🛳", missile_cruiser:"⚡",
-  privateer:"☠", submarine:"🐋", nuclear_submarine:"☢",
-  aircraft_carrier:"🛥",
+  galley:"galley", caravel:"caravel", ironclad:"ironclad", destroyer:"destroyer",
+  quadrireme:"quadrireme", frigate:"frigate", battleship:"battleship",
+  missile_cruiser:"missile_cruiser", privateer:"privateer", submarine:"submarine",
+  nuclear_submarine:"nuclear_submarine", aircraft_carrier:"carrier",
   // civilization uniques
-  legion:"🎺", hoplite:"Ω", eagle_warrior:"🦅", war_cart:"🐂",
-  pitati_archer:"🪶", maryannu_chariot_archer:"☥", saka_horse_archer:"🎠",
-  crouching_tiger:"🐅" };
+  legion:"gladius_shield", hoplite:"hoplon_spear", eagle_warrior:"macuahuitl",
+  war_cart:"war_cart", pitati_archer:"bow", maryannu_chariot_archer:"chariot_bow",
+  saka_horse_archer:"horse_bow", crouching_tiger:"crossbow", tagma:"horse_lance"
+};
 const BLDG_ICON = { monument:"🗿", granary:"🌾", walls:"🧱", medieval_walls:"🧱",
                     shrine:"⛩", library:"📜", market:"⚖", barracks:"🛡",
                     lighthouse:"🗼", amphitheater:"🎭", aqueduct:"⛲", arena:"🎪",
@@ -3934,40 +3906,6 @@ const VICTORY_TRACKS = [
   { id:"domination", label:"Domination", icon:"⚔", color:"#f2a09b" },
   { id:"score", label:"Score", icon:"♛", color:"#f0d28c" },
 ];
-// ------------------------------------------------- settings left to chance
-// ????? is not a value a setting can be started with: it is the absence of a
-// decision, and every one of them is answered from that setting's own options
-// at the moment a game starts. The mark therefore lives in the lobby and never
-// travels — the server is only ever told what came up.
-const RANDOM_SETTING = "?????";
-// In panel order, which is also dependency order: the ruleset decides which
-// eras exist, the mode decides whether a seat exists at all, and the leader
-// pool decides who may fill it.
-const RANDOM_SELECT_IDS = ["baseruleset", "gamemode", "startera",
-  "leaderpool", "leader", "difficulty",
-  "mapshape", "maptype", "mappoles", "np", "gamespeed"];
-const RANDOM_VICTORY_IDS = VICTORY_TRACKS.map(track => `victory-${track.id}`);
-const RANDOM_SETTING_LABELS = {
-  baseruleset: "Base game ruleset", gamemode: "Game mode",
-  startera: "Start era",
-  leaderpool: "Leader pool", leader: "Leader",
-  difficulty: "Difficulty", mapshape: "World shape", maptype: "Map",
-  mappoles: "Thermal distribution", np: "World size", gamespeed: "Game speed",
-  ...Object.fromEntries(VICTORY_TRACKS.map(track =>
-    [`victory-${track.id}`, `${track.label} victory`])),
-};
-const RANDOM_SETTINGS_KEY = "civvis-random-settings-v1";
-// A world arriving from the supervisor overwrites the whole panel with its own
-// settings, so a ????? that lived only in the DOM would survive about a minute
-// on the exhibition page. It is a standing instruction, not a selection, and
-// it is remembered as one.
-let randomSettings = new Set();
-try {
-  const saved = JSON.parse(localStorage.getItem(RANDOM_SETTINGS_KEY) || "[]");
-  if (Array.isArray(saved))
-    randomSettings = new Set(saved.filter(id =>
-      RANDOM_SELECT_IDS.includes(id) || RANDOM_VICTORY_IDS.includes(id)));
-} catch (_) {}
 // ---------------------------------------------------------------- state
 let state = null, sel = null, selCity = null, RULES = null;
 let mapLens = null, tackMode = false, tacks = [], lastSeed = null, cycleIdx = -1;
@@ -7350,10 +7288,6 @@ async function boot() {
       ).join("");
       document.getElementById("gamespeed").value = "online";
     }
-    // Every list above was just rewritten from the ruleset, so the ????? that
-    // belongs to each one goes back on now — and any standing mark with it.
-    ensureRandomOptions();
-    applyRandomMarks();
     fillStrategies(RULES);
     render(adoptTiles(await fetchJSON("/state" + paintedQuery())));
     if (bootAttempts) { bootAttempts = 0; clearBootRetrying(); }
@@ -8683,15 +8617,6 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     }
     activeSimulationSettingsKey = simulationSettingsKey(selectedSimulationSettings());
     applyQueuedSimulationSettings(st.next_game_settings);
-    // The world on screen has just written its own answer into every control.
-    // A standing ????? outranks that: it was a decision about the *next* game.
-    applyRandomMarks();
-    // The exhibition starts its own successors from the staged settings, which
-    // were rolled once when they were staged. Re-roll them now, so a standing
-    // ????? gives every world in the cycle a fresh answer instead of repeating
-    // the one that happened to come up the last time somebody touched a
-    // control.
-    if (pendingRandomSettings().length) stageSelectedSimulationSettings();
     updateRestartSimulationButton();
   }
   if (SPEC) sel = null;
@@ -12398,10 +12323,384 @@ const FINE = () => cam.scale >= 0.8;
 // Called from the tile loop for an empty tile and again after the figures for
 // an occupied one, so it cannot inherit the tile loop's ambient text state the
 // way it did when it was inline — `textAlign`/`textBaseline` are set here or
-// the deferred badges paint off their seat. The glyph's fill is deliberately
-// left at the disc's own colour, which is what the inline version drew with:
-// color-emoji fonts ignore it, and changing it here would quietly restyle the
-// "●" fallback rather than move a badge, which is all this is meant to do.
+// the deferred badges paint off their seat. Pictograms save their own drawing
+// state, so their natural material colours cannot leak into later tile passes.
+function pictogramLeaf(x, y, rx, ry, angle, fill, edge = "#151b18") {
+  cx.save();
+  cx.translate(x, y); cx.rotate(angle);
+  cx.fillStyle = fill; cx.strokeStyle = edge; cx.lineWidth = 0.85;
+  cx.beginPath();
+  cx.moveTo(-rx, 0);
+  cx.quadraticCurveTo(0, -ry, rx, 0);
+  cx.quadraticCurveTo(0, ry, -rx, 0);
+  cx.closePath(); cx.fill(); cx.stroke();
+  cx.strokeStyle = "rgba(245,244,218,.5)"; cx.lineWidth = 0.55;
+  cx.beginPath(); cx.moveTo(-rx * .72, 0); cx.lineTo(rx * .7, 0); cx.stroke();
+  cx.restore();
+}
+
+function pictogramRock(base, vein, crystal = false) {
+  cx.fillStyle = base; cx.strokeStyle = "#101713"; cx.lineWidth = 1.15;
+  cx.beginPath();
+  cx.moveTo(-9, 6); cx.lineTo(-7, -2); cx.lineTo(-2, -8);
+  cx.lineTo(5, -6); cx.lineTo(9, 1); cx.lineTo(6, 7); cx.lineTo(-3, 9);
+  cx.closePath(); cx.fill(); cx.stroke();
+  cx.fillStyle = vein;
+  cx.beginPath();
+  if (crystal) {
+    cx.moveTo(-4, 4); cx.lineTo(-2, -4); cx.lineTo(1, -7);
+    cx.lineTo(2, -2); cx.lineTo(6, -5); cx.lineTo(5, 2);
+    cx.lineTo(1, 6); cx.closePath();
+  } else {
+    cx.moveTo(-7, 3); cx.lineTo(-2, 1); cx.lineTo(0, -4);
+    cx.lineTo(3, -1); cx.lineTo(8, -2); cx.lineTo(4, 2);
+    cx.lineTo(1, 2); cx.lineTo(-2, 7); cx.closePath();
+  }
+  cx.fill();
+  cx.strokeStyle = "rgba(255,255,240,.48)"; cx.lineWidth = .7;
+  cx.beginPath(); cx.moveTo(-5, -1); cx.lineTo(-1, -6); cx.lineTo(4, -5); cx.stroke();
+}
+
+function pictogramCrystal(base, light, variant = 0) {
+  cx.strokeStyle = "#111815"; cx.lineWidth = 1;
+  const shards = variant === 1
+    ? [[-7,7,-5,-4,-2,-8,0,7],[-2,7,0,-7,3,-10,4,7],[3,7,5,-3,8,-6,9,7]]
+    : [[-8,7,-6,-2,-2,-7,0,7],[-3,7,0,-8,3,-10,4,7],[2,7,6,-5,9,-2,8,7]];
+  for (let i = 0; i < shards.length; i++) {
+    const [x1,y1,x2,y2,x3,y3,x4,y4] = shards[i];
+    cx.fillStyle = i === 1 ? light : base;
+    cx.beginPath(); cx.moveTo(x1,y1); cx.lineTo(x2,y2);
+    cx.lineTo(x3,y3); cx.lineTo(x4,y4); cx.closePath(); cx.fill(); cx.stroke();
+  }
+  cx.strokeStyle = "rgba(255,255,246,.62)"; cx.lineWidth = .7;
+  cx.beginPath(); cx.moveTo(0,-7); cx.lineTo(1,5); cx.stroke();
+}
+
+function pictogramSprig(fruit, leaf = "#75a94a", elongated = false) {
+  cx.strokeStyle = "#b18a54"; cx.lineWidth = 1.35;
+  cx.beginPath(); cx.moveTo(-7, 8); cx.quadraticCurveTo(-1, 1, 6, -8); cx.stroke();
+  pictogramLeaf(-3, 3, elongated ? 4.7 : 3.8, elongated ? 1.7 : 2.3,
+                -.55, leaf);
+  pictogramLeaf(3, -3, elongated ? 4.7 : 3.8, elongated ? 1.7 : 2.3,
+                2.55, leaf);
+  cx.fillStyle = fruit; cx.strokeStyle = "#111713"; cx.lineWidth = .75;
+  for (const [x,y,r] of [[0,1,2.1],[3,0,1.9],[1,-2.5,1.8],[-2,-1.3,1.7]]) {
+    cx.beginPath(); cx.arc(x, y, r, 0, 7); cx.fill(); cx.stroke();
+  }
+}
+
+// The same compact mark is also used beside a resource's written name in
+// tooltips and trade rows. It stays monochrome and categorical there because
+// the full natural pictogram is canvas art, not a font glyph.
+function resourceTextMark(resource) {
+  const kind = RESOURCE_PICTOGRAM[resource] || "";
+  if (/(ore|stone|crystal|coal|oil|bauxite|uraninite|cinnabar|diamond|amber|marble)/.test(kind))
+    return "◆";
+  if (/(fish|crab|cattle|sheep|horse|antler|turtle|whale|tusks|pelt|pearl|cocoon|honeycomb)/.test(kind))
+    return "◌";
+  if (/(amphora|wreck|cloth|top)/.test(kind)) return "◇";
+  return "♧";
+}
+
+function drawResourcePictogram(resource, x, y, size) {
+  const kind = RESOURCE_PICTOGRAM[resource] || "stone";
+  cx.save();
+  cx.translate(x, y); cx.scale(size / 24, size / 24);
+  cx.lineCap = "round"; cx.lineJoin = "round";
+
+  if (["stone", "copper_ore", "iron_ore", "coal", "bauxite", "uraninite",
+       "jade_stone", "cinnabar", "silver_ore", "amber"].includes(kind)) {
+    const ores = {
+      stone:["#8a877d", "#cbc6b5", false], copper_ore:["#72543e", "#e08a4d", false],
+      iron_ore:["#65544d", "#c75c3e", false], coal:["#292d2b", "#68706a", false],
+      bauxite:["#8c4c3c", "#d9b28c", false], uraninite:["#30372d", "#a7c64b", true],
+      jade_stone:["#315b4a", "#74c69a", false], cinnabar:["#4c3734", "#d64b3f", true],
+      silver_ore:["#575f63", "#dce7e8", false], amber:["#89521f", "#f3b744", true]
+    };
+    pictogramRock(...ores[kind]);
+    if (kind === "cinnabar") {
+      // Mercury occurs here as bright cinnabar crystals in host rock — a
+      // geological mark, with no laboratory thermometer implied.
+      cx.fillStyle = "#ff7763";
+      for (const [px,py,r] of [[-2,-3,1.1],[2,0,1.3],[4,-3,1]]) {
+        cx.beginPath(); cx.arc(px, py, r, 0, 7); cx.fill();
+      }
+    }
+    cx.restore(); return;
+  }
+  if (["niter_crystal", "salt_crystal", "gypsum_crystal", "diamond"].includes(kind)) {
+    const crystals = {
+      niter_crystal:["#c7c6ae", "#f5f0cf", 1], salt_crystal:["#d7d4c7", "#fffdf0", 0],
+      gypsum_crystal:["#cfb998", "#f0dfbd", 1], diamond:["#83c7d7", "#dffaff", 0]
+    };
+    pictogramCrystal(...crystals[kind]); cx.restore(); return;
+  }
+
+  switch (kind) {
+    case "oil_seep": {
+      cx.fillStyle = "#202925"; cx.strokeStyle = "#0d1311"; cx.lineWidth = 1;
+      cx.beginPath();
+      cx.moveTo(0,-10); cx.bezierCurveTo(7,-2,8,2,7,5);
+      cx.bezierCurveTo(5,11,-5,11,-7,5); cx.bezierCurveTo(-8,1,-4,-4,0,-10);
+      cx.closePath(); cx.fill(); cx.stroke();
+      cx.strokeStyle = "#758a7e"; cx.lineWidth = .8;
+      cx.beginPath(); cx.arc(-1,4,3.6,.1,Math.PI*.9); cx.stroke();
+      cx.strokeStyle = "#37463f";
+      cx.beginPath(); cx.ellipse(0,9,10,2.2,0,0,7); cx.stroke();
+      break;
+    }
+    case "grain":
+    case "rice": {
+      cx.strokeStyle = kind === "grain" ? "#d7b348" : "#c8d083";
+      cx.lineWidth = 1.35;
+      for (const dx of [-4,0,4]) {
+        cx.beginPath(); cx.moveTo(dx, 9); cx.quadraticCurveTo(dx - 1, 0, dx + 1, -8); cx.stroke();
+        for (const sy of [-5,-2,1]) {
+          cx.fillStyle = kind === "grain" ? "#edcf67" : "#e7e3b0";
+          cx.beginPath(); cx.ellipse(dx - 1.2, sy, 1.6, .75, -.45, 0, 7); cx.fill();
+          cx.beginPath(); cx.ellipse(dx + 1.3, sy + 1, 1.6, .75, .45, 0, 7); cx.fill();
+        }
+      }
+      break;
+    }
+    case "cattle":
+    case "sheep":
+    case "horse":
+    case "antler": {
+      cx.fillStyle = kind === "sheep" ? "#dfdbc7" : kind === "horse" ? "#a86f43" : "#b48758";
+      cx.strokeStyle = "#141916"; cx.lineWidth = 1.15;
+      if (kind === "antler") {
+        cx.strokeStyle = "#d7bd8f"; cx.lineWidth = 1.8;
+        for (const side of [-1,1]) {
+          cx.beginPath(); cx.moveTo(side * 2, 8); cx.quadraticCurveTo(side * 4, 0, side * 7, -9);
+          cx.moveTo(side * 4, 1); cx.lineTo(side * 8, -2);
+          cx.moveTo(side * 5.5, -4); cx.lineTo(side * 9, -6); cx.stroke();
+        }
+        cx.fillStyle = "#a8794f";
+        cx.beginPath(); cx.ellipse(0, 5, 4, 5, 0, 0, 7); cx.fill();
+      } else if (kind === "horse") {
+        cx.beginPath();
+        cx.moveTo(-5,8); cx.lineTo(-4,-2); cx.lineTo(-1,-8); cx.lineTo(5,-5);
+        cx.lineTo(8,0); cx.lineTo(4,5); cx.lineTo(2,9); cx.closePath(); cx.fill(); cx.stroke();
+        cx.fillStyle = "#1b211d"; cx.beginPath(); cx.arc(4,-2,1,0,7); cx.fill();
+      } else {
+        if (kind === "sheep") {
+          for (const [px,py] of [[-4,1],[-1,-2],[3,-1],[5,2],[-1,3]]) {
+            cx.beginPath(); cx.arc(px, py, 4.2, 0, 7); cx.fill();
+          }
+          cx.fillStyle = "#5c5043";
+        }
+        cx.beginPath(); cx.roundRect(-7,-3,12,9,4); cx.fill(); cx.stroke();
+        cx.beginPath(); cx.ellipse(6,-2,4,3,0,0,7); cx.fill(); cx.stroke();
+        if (kind === "cattle") {
+          cx.strokeStyle = "#e2c78b"; cx.lineWidth = 1.2;
+          cx.beginPath(); cx.moveTo(5,-4); cx.lineTo(3,-8); cx.moveTo(7,-4); cx.lineTo(10,-7); cx.stroke();
+        }
+      }
+      break;
+    }
+    case "fish":
+    case "whale": {
+      cx.fillStyle = kind === "whale" ? "#5b8ca7" : "#6eb2b6";
+      cx.strokeStyle = "#101817"; cx.lineWidth = 1;
+      cx.beginPath(); cx.ellipse(-1, 0, kind === "whale" ? 8.5 : 7, kind === "whale" ? 4 : 4.8, 0, 0, 7); cx.fill(); cx.stroke();
+      cx.beginPath(); cx.moveTo(-8,0); cx.lineTo(-12,-5); cx.lineTo(-11,4); cx.closePath(); cx.fill(); cx.stroke();
+      cx.fillStyle = "#e7eadc"; cx.beginPath(); cx.arc(4,-1,1,0,7); cx.fill();
+      if (kind === "whale") {
+        cx.strokeStyle = "#cce6ea"; cx.lineWidth = 1.15;
+        cx.beginPath(); cx.moveTo(3,-4); cx.quadraticCurveTo(5,-9,7,-6); cx.moveTo(3,-4); cx.quadraticCurveTo(1,-9,-1,-7); cx.stroke();
+      }
+      break;
+    }
+    case "crab": {
+      cx.fillStyle = "#dc7152"; cx.strokeStyle = "#171714"; cx.lineWidth = 1.15;
+      cx.beginPath(); cx.ellipse(0,2,6.5,4.5,0,0,7); cx.fill(); cx.stroke();
+      for (const side of [-1,1]) {
+        cx.beginPath(); cx.moveTo(side * 4,1); cx.lineTo(side * 9,-2); cx.lineTo(side * 11,-6); cx.stroke();
+        cx.beginPath(); cx.moveTo(side * 9,-2); cx.lineTo(side * 11,1); cx.stroke();
+        for (const yy of [3,6]) { cx.beginPath(); cx.moveTo(side*4,yy-2); cx.lineTo(side*9,yy); cx.stroke(); }
+      }
+      break;
+    }
+    case "turtle": {
+      cx.fillStyle = "#4e8b58"; cx.strokeStyle = "#111912"; cx.lineWidth = 1;
+      cx.beginPath(); cx.ellipse(0,1,7,5.5,0,0,7); cx.fill(); cx.stroke();
+      cx.fillStyle = "#87ad5a"; cx.beginPath(); cx.arc(8,0,2.5,0,7); cx.fill(); cx.stroke();
+      for (const [px,py] of [[-5,-4],[-5,5],[4,-4],[4,5]]) {
+        cx.beginPath(); cx.ellipse(px,py,2.7,1.3,Math.atan2(py,px),0,7); cx.fill(); cx.stroke();
+      }
+      cx.strokeStyle = "#bfd08a"; cx.beginPath(); cx.moveTo(-5,1); cx.lineTo(5,1); cx.moveTo(0,-4); cx.lineTo(0,6); cx.stroke();
+      break;
+    }
+    case "bananas": {
+      cx.strokeStyle = "#efd354"; cx.lineWidth = 2.5;
+      for (let i = -2; i <= 2; i++) {
+        cx.beginPath(); cx.arc(i * 1.7, -2 + Math.abs(i), 7 + i * .25, .35, 1.75); cx.stroke();
+      }
+      cx.strokeStyle = "#6f8d3e"; cx.lineWidth = 1.3;
+      cx.beginPath(); cx.moveTo(0,-5); cx.lineTo(4,-9); cx.stroke();
+      break;
+    }
+    case "maize": {
+      cx.fillStyle = "#e6c64e"; cx.strokeStyle = "#141914"; cx.lineWidth = 1;
+      cx.beginPath(); cx.ellipse(0,0,4.5,9,0,0,7); cx.fill(); cx.stroke();
+      cx.strokeStyle = "rgba(111,75,25,.65)"; cx.lineWidth = .55;
+      for (let yy=-6; yy<=6; yy+=3) { cx.beginPath(); cx.moveTo(-3.5,yy); cx.lineTo(3.5,yy); cx.stroke(); }
+      pictogramLeaf(-4,3,7,2.3,-1.05,"#659348");
+      pictogramLeaf(4,2,7,2.3,1.05,"#659348");
+      break;
+    }
+    case "cotton": {
+      cx.strokeStyle = "#7d9a4b"; cx.lineWidth = 1.2;
+      cx.beginPath(); cx.moveTo(0,9); cx.lineTo(0,0); cx.moveTo(0,4); cx.lineTo(-5,0); cx.moveTo(0,3); cx.lineTo(5,-1); cx.stroke();
+      cx.fillStyle = "#f3efe2"; cx.strokeStyle = "#9b8e74"; cx.lineWidth = .8;
+      for (const [px,py] of [[0,-3],[-5,-2],[5,-3],[-2,-6],[2,-6]]) { cx.beginPath(); cx.arc(px,py,3,0,7); cx.fill(); cx.stroke(); }
+      break;
+    }
+    case "sugar_cane": {
+      for (const dx of [-4,0,4]) {
+        cx.strokeStyle = "#78a64e"; cx.lineWidth = 2.1;
+        cx.beginPath(); cx.moveTo(dx,9); cx.lineTo(dx + 1,-8); cx.stroke();
+        cx.strokeStyle = "#d5c060"; cx.lineWidth = .75;
+        for (const yy of [-4,1,6]) { cx.beginPath(); cx.moveTo(dx-1.2,yy); cx.lineTo(dx+1.2,yy); cx.stroke(); }
+      }
+      pictogramLeaf(6,-3,5,1.7,-.45,"#659348");
+      break;
+    }
+    case "tobacco_leaf":
+      pictogramLeaf(0,0,9,5,-.85,"#6c9148");
+      cx.strokeStyle = "#c6c37b"; cx.lineWidth = 1;
+      cx.beginPath(); cx.moveTo(-7,6); cx.lineTo(7,-6); cx.stroke();
+      break;
+    case "tea_branch":
+      pictogramSprig("#d8e7a5", "#5e9a51", true); break;
+    case "coffee_branch":
+      pictogramSprig("#b94034", "#477b42", false); break;
+    case "olive_branch":
+      pictogramSprig("#4c5425", "#748a4d", true); break;
+    case "spice_pods":
+      pictogramSprig("#ce6037", "#718b44", true); break;
+    case "grapes": {
+      cx.strokeStyle = "#728847"; cx.lineWidth = 1.2;
+      cx.beginPath(); cx.moveTo(-3,-8); cx.quadraticCurveTo(0,-5,1,-3); cx.stroke();
+      pictogramLeaf(4,-6,5,2.5,.3,"#6e9e4f");
+      cx.fillStyle = "#8f64a7"; cx.strokeStyle = "#1b161e"; cx.lineWidth = .6;
+      for (const [px,py] of [[-3,-2],[0,-2],[3,-1],[-2,1],[1,1],[4,2],[-1,4],[2,5],[1,8]]) {
+        cx.beginPath(); cx.arc(px,py,2.15,0,7); cx.fill(); cx.stroke();
+      }
+      break;
+    }
+    case "citrus": {
+      cx.fillStyle = "#e8a62c"; cx.strokeStyle = "#151914"; cx.lineWidth = 1;
+      cx.beginPath(); cx.arc(-1,1,7,0,7); cx.fill(); cx.stroke();
+      pictogramLeaf(5,-6,5,2.2,.35,"#6d9f47");
+      cx.fillStyle = "#f7cd58"; cx.beginPath(); cx.arc(-3,-1,1.2,0,7); cx.fill();
+      break;
+    }
+    case "cocoa_pod": {
+      cx.fillStyle = "#bd6235"; cx.strokeStyle = "#171714"; cx.lineWidth = 1;
+      cx.beginPath(); cx.ellipse(0,1,5.5,9,-.25,0,7); cx.fill(); cx.stroke();
+      cx.strokeStyle = "#e4a65c"; cx.lineWidth = .7;
+      for (const dx of [-2,0,2]) { cx.beginPath(); cx.moveTo(dx,-6); cx.lineTo(dx,8); cx.stroke(); }
+      pictogramLeaf(5,-6,5,2.2,.35,"#668f42");
+      break;
+    }
+    case "cocoon": {
+      cx.strokeStyle = "#d7c894"; cx.lineWidth = 1;
+      cx.beginPath(); cx.moveTo(-8,-7); cx.quadraticCurveTo(0,-3,7,-8); cx.stroke();
+      cx.fillStyle = "#eee2b9"; cx.strokeStyle = "#8c7a52";
+      cx.beginPath(); cx.ellipse(0,2,5.2,8,0,0,7); cx.fill(); cx.stroke();
+      for (const yy of [-3,0,3,6]) { cx.beginPath(); cx.arc(0,yy,4.2,0,Math.PI); cx.stroke(); }
+      break;
+    }
+    case "honeycomb": {
+      cx.fillStyle = "#e5aa35"; cx.strokeStyle = "#5e471e"; cx.lineWidth = .8;
+      for (const [px,py] of [[-4,-3],[2,-3],[-1,2],[5,2],[-4,7],[2,7]]) {
+        cx.beginPath();
+        for (let i=0;i<6;i++) { const a=Math.PI/3*i; const qx=px+3.5*Math.cos(a), qy=py+3.5*Math.sin(a); i?cx.lineTo(qx,qy):cx.moveTo(qx,qy); }
+        cx.closePath(); cx.fill(); cx.stroke();
+      }
+      break;
+    }
+    case "truffles": {
+      cx.fillStyle = "#6a4935"; cx.strokeStyle = "#151412"; cx.lineWidth = 1;
+      for (const [px,py,r] of [[-4,2,5],[3,0,6],[0,5,4]]) { cx.beginPath(); cx.arc(px,py,r,Math.PI,0); cx.lineTo(px+r,py+3); cx.lineTo(px-r,py+3); cx.closePath(); cx.fill(); cx.stroke(); }
+      cx.fillStyle = "#b98a66"; for (const [px,py] of [[-5,0],[2,-2],[5,1]]) { cx.beginPath(); cx.arc(px,py,1,0,7); cx.fill(); }
+      break;
+    }
+    case "pigment_flower":
+    case "dye_flower":
+    case "lavender":
+    case "resin_branch": {
+      const flower = kind === "pigment_flower" ? "#e78c9e"
+        : kind === "dye_flower" ? "#7869bb" : kind === "lavender" ? "#9571b8" : "#d5a857";
+      cx.strokeStyle = "#668947"; cx.lineWidth = 1.25;
+      cx.beginPath(); cx.moveTo(0,9); cx.quadraticCurveTo(-1,1,1,-8); cx.stroke();
+      pictogramLeaf(-3,4,4,1.8,-.55,"#69914c");
+      pictogramLeaf(4,1,4,1.8,2.55,"#69914c");
+      cx.fillStyle = flower; cx.strokeStyle = "#17151a"; cx.lineWidth = .55;
+      const buds = kind === "lavender" ? [[0,-7],[-2,-5],[2,-4],[0,-2]] : [[0,-5],[-4,-4],[4,-4],[-2,-8],[3,-8]];
+      for (const [px,py] of buds) { cx.beginPath(); cx.ellipse(px,py,2.5,1.8,0,0,7); cx.fill(); cx.stroke(); }
+      if (kind === "resin_branch") { cx.fillStyle="#e3bd62"; cx.beginPath(); cx.arc(2,-1,2,0,7); cx.fill(); }
+      break;
+    }
+    case "pelt": {
+      cx.fillStyle = "#9b7657"; cx.strokeStyle = "#171411"; cx.lineWidth = 1;
+      cx.beginPath(); cx.moveTo(-7,-8); cx.lineTo(-3,-5); cx.lineTo(0,-9); cx.lineTo(3,-5); cx.lineTo(7,-8);
+      cx.lineTo(6,5); cx.lineTo(2,9); cx.lineTo(0,6); cx.lineTo(-3,9); cx.lineTo(-7,5); cx.closePath(); cx.fill(); cx.stroke();
+      cx.strokeStyle = "#d5b692"; cx.beginPath(); cx.moveTo(-4,-1); cx.quadraticCurveTo(0,3,4,-1); cx.stroke();
+      break;
+    }
+    case "tusks": {
+      cx.fillStyle = "#eee3bc"; cx.strokeStyle = "#4b4537"; cx.lineWidth = 1;
+      for (const side of [-1,1]) { cx.beginPath(); cx.moveTo(side*2,-8); cx.quadraticCurveTo(side*10,-2,side*6,8); cx.quadraticCurveTo(side*7,0,side*2,-8); cx.closePath(); cx.fill(); cx.stroke(); }
+      break;
+    }
+    case "pearl_shell": {
+      cx.fillStyle = "#b88978"; cx.strokeStyle = "#171514"; cx.lineWidth = 1;
+      cx.beginPath(); cx.arc(0,5,9,Math.PI,0); cx.lineTo(0,-7); cx.closePath(); cx.fill(); cx.stroke();
+      cx.strokeStyle = "#e2c6bd"; for (const x2 of [-5,-2,2,5]) { cx.beginPath(); cx.moveTo(0,-6); cx.lineTo(x2,4); cx.stroke(); }
+      cx.fillStyle = "#f7f1dd"; cx.beginPath(); cx.arc(0,3,3,0,7); cx.fill(); cx.stroke();
+      break;
+    }
+    case "indigo_cloth": {
+      cx.fillStyle = "#42659a"; cx.strokeStyle = "#131821"; cx.lineWidth = 1;
+      cx.beginPath(); cx.moveTo(-8,-7); cx.lineTo(7,-7); cx.lineTo(9,5); cx.lineTo(-4,9); cx.closePath(); cx.fill(); cx.stroke();
+      cx.strokeStyle = "#9eb5d0"; cx.lineWidth=.7; cx.beginPath(); cx.moveTo(-5,-4); cx.lineTo(6,-4); cx.moveTo(-2,5); cx.lineTo(7,2); cx.stroke();
+      break;
+    }
+    case "marble_block": {
+      cx.fillStyle = "#d8d3c7"; cx.strokeStyle = "#252724"; cx.lineWidth = 1;
+      cx.beginPath(); cx.moveTo(-8,-4); cx.lineTo(3,-8); cx.lineTo(9,-3); cx.lineTo(8,7); cx.lineTo(-5,9); cx.lineTo(-9,4); cx.closePath(); cx.fill(); cx.stroke();
+      cx.strokeStyle = "#7a8991"; cx.lineWidth=.8; cx.beginPath(); cx.moveTo(-5,-1); cx.quadraticCurveTo(0,-4,5,-2); cx.moveTo(-4,5); cx.quadraticCurveTo(1,2,7,4); cx.stroke();
+      break;
+    }
+    case "wooden_top": {
+      cx.fillStyle = "#c47c3f"; cx.strokeStyle="#1b1712"; cx.lineWidth=1;
+      cx.beginPath(); cx.moveTo(-8,-2); cx.quadraticCurveTo(0,-8,8,-2); cx.lineTo(2,6); cx.lineTo(0,10); cx.lineTo(-2,6); cx.closePath(); cx.fill(); cx.stroke();
+      cx.strokeStyle="#e4c36c"; cx.beginPath(); cx.moveTo(-6,1); cx.lineTo(6,1); cx.stroke();
+      break;
+    }
+    case "amphora": {
+      cx.fillStyle="#bd7447"; cx.strokeStyle="#201611"; cx.lineWidth=1;
+      cx.beginPath(); cx.moveTo(-3,-9); cx.lineTo(3,-9); cx.lineTo(3,-6); cx.quadraticCurveTo(8,-2,5,6); cx.lineTo(2,9); cx.lineTo(-2,9); cx.lineTo(-5,6); cx.quadraticCurveTo(-8,-2,-3,-6); cx.closePath(); cx.fill(); cx.stroke();
+      cx.beginPath(); cx.arc(-4,-3,4,Math.PI*.5,Math.PI*1.5); cx.moveTo(4,-7); cx.arc(4,-3,4,-Math.PI*.5,Math.PI*.5); cx.stroke();
+      cx.strokeStyle="#e1b17f"; cx.beginPath(); cx.moveTo(-4,2); cx.lineTo(4,2); cx.stroke();
+      break;
+    }
+    case "wreck": {
+      cx.fillStyle="#74533a"; cx.strokeStyle="#171513"; cx.lineWidth=1.1;
+      cx.beginPath(); cx.moveTo(-10,2); cx.lineTo(8,0); cx.lineTo(5,7); cx.lineTo(-6,8); cx.closePath(); cx.fill(); cx.stroke();
+      cx.strokeStyle="#d5c49a"; cx.lineWidth=1.3; cx.beginPath(); cx.moveTo(-1,2); cx.lineTo(-1,-10); cx.moveTo(-1,-8); cx.lineTo(7,-3); cx.stroke();
+      cx.fillStyle="#b64d3d"; cx.beginPath(); cx.moveTo(0,-8); cx.lineTo(6,-4); cx.lineTo(0,-3); cx.closePath(); cx.fill();
+      break;
+    }
+    default:
+      pictogramRock("#77786f", "#d6d2bd", false);
+  }
+  cx.restore();
+}
+
 function drawResourceBadge(t, x, y) {
   const rc = RULES && RULES.resources && RULES.resources[t.resource]
     ? RULES.resources[t.resource].class : "bonus";
@@ -12423,13 +12722,7 @@ function drawResourceBadge(t, x, y) {
     cx.fillStyle = "#161c14cc";
     cx.beginPath(); cx.arc(rx, ry, RES_BADGE_R, 0, 7); cx.fill();
     cx.strokeStyle = rim + "dd"; cx.lineWidth = 1.5 * RES_BADGE_K; cx.stroke();
-    // name the symbol fonts the way the unit badge does; bare "sans-serif"
-    // leaves the glyph to whatever the platform happens to fall back to, and an
-    // empty disc is a worse badge than no badge
-    cx.font = (12 * RES_BADGE_K).toFixed(1) +
-      "px 'Segoe UI Symbol', 'Segoe UI Emoji', sans-serif";
-    cx.textAlign = "center"; cx.textBaseline = "middle";
-    cx.fillText(RES_ICON[t.resource] || "●", rx, ry + 0.5 * RES_BADGE_K);
+    drawResourcePictogram(t.resource, rx, ry, RES_BADGE_R * 1.55);
   } else {
     // Zoomed out to survey the map, the icon inside the badge is under a pixel
     // and unreadable, and a few hundred dark discs read as the map being
@@ -12851,6 +13144,329 @@ const UI_K = () => 1 / Math.min(1, Math.max(cam.scale, 0.5));
 // figure at map scale reads as "somebody's soldier" and nothing more. Same
 // badge glyph the production medallion uses, so a unit looks the same coming
 // off the queue as it does standing on the map.
+function pictogramWheel(x, y, r, color) {
+  cx.strokeStyle = color; cx.lineWidth = 1.7;
+  cx.beginPath(); cx.arc(x, y, r, 0, 7); cx.stroke();
+  cx.lineWidth = .75;
+  cx.beginPath();
+  cx.moveTo(x-r,y); cx.lineTo(x+r,y); cx.moveTo(x,y-r); cx.lineTo(x,y+r);
+  cx.stroke();
+}
+
+function pictogramBow(kind, color) {
+  cx.strokeStyle = color; cx.fillStyle = color; cx.lineCap = "round";
+  if (kind === "crossbow") {
+    cx.lineWidth = 1.7;
+    cx.beginPath(); cx.moveTo(-8,7); cx.lineTo(7,-5); cx.stroke();
+    cx.lineWidth = 1.35;
+    cx.beginPath(); cx.arc(5,-4,7,Math.PI*.65,Math.PI*1.35); cx.stroke();
+    cx.lineWidth = .8;
+    cx.beginPath(); cx.moveTo(1,-9); cx.lineTo(5,-4); cx.lineTo(10,0); cx.stroke();
+    cx.beginPath(); cx.moveTo(-6,5); cx.lineTo(-1,8); cx.lineTo(1,5); cx.stroke();
+  } else {
+    cx.lineWidth = 1.8;
+    cx.beginPath(); cx.moveTo(-7,-9); cx.quadraticCurveTo(3,0,-7,9); cx.stroke();
+    cx.lineWidth = .8;
+    cx.beginPath(); cx.moveTo(-7,-9); cx.lineTo(-3,0); cx.lineTo(-7,9); cx.stroke();
+    cx.lineWidth = 1.2;
+    cx.beginPath(); cx.moveTo(-3,0); cx.lineTo(9,0); cx.stroke();
+    cx.beginPath(); cx.moveTo(9,0); cx.lineTo(6,-2); cx.lineTo(6,2); cx.closePath(); cx.fill();
+  }
+}
+
+function pictogramHorse(kind, color) {
+  cx.fillStyle = color; cx.strokeStyle = color; cx.lineJoin = "round";
+  cx.beginPath();
+  cx.moveTo(-8,5); cx.quadraticCurveTo(-6,-2,-2,-3);
+  cx.lineTo(2,-6); cx.lineTo(6,-7); cx.lineTo(9,-4);
+  cx.lineTo(6,-1); cx.lineTo(4,1); cx.lineTo(5,8);
+  cx.lineTo(3,8); cx.lineTo(0,2); cx.lineTo(-3,3); cx.lineTo(-5,9);
+  cx.lineTo(-7,9); cx.closePath(); cx.fill();
+  cx.lineWidth = 1.2;
+  cx.beginPath(); cx.moveTo(-7,4); cx.quadraticCurveTo(-11,0,-9,-4); cx.stroke();
+  if (kind === "horse_lance") {
+    cx.lineWidth = 1.3; cx.beginPath(); cx.moveTo(-3,1); cx.lineTo(10,-9); cx.stroke();
+  } else if (kind === "horse_sword" || kind === "horse_sabre") {
+    cx.lineWidth = 1.4; cx.beginPath(); cx.moveTo(-1,0); cx.lineTo(6,-8); cx.stroke();
+  } else if (kind === "horse_rifle") {
+    cx.lineWidth = 1.5; cx.beginPath(); cx.moveTo(-3,-2); cx.lineTo(8,-5); cx.stroke();
+  } else if (kind === "horse_bow") {
+    cx.save(); cx.translate(-1,-4); cx.scale(.55,.55); pictogramBow("bow", color); cx.restore();
+  }
+}
+
+function pictogramShip(kind, color) {
+  cx.fillStyle = color; cx.strokeStyle = color; cx.lineCap = "round";
+  const submarine = kind === "submarine" || kind === "nuclear_submarine";
+  if (submarine) {
+    cx.beginPath(); cx.ellipse(0,2,10,4,0,0,7); cx.fill();
+    cx.fillRect(-2,-4,5,4); cx.fillRect(0,-7,1.5,4);
+    if (kind === "nuclear_submarine") {
+      cx.globalAlpha = .5; cx.beginPath(); cx.arc(-5,2,2,0,7); cx.fill(); cx.globalAlpha = 1;
+    }
+    return;
+  }
+  const carrier = kind === "carrier";
+  cx.beginPath();
+  if (carrier) {
+    cx.moveTo(-11,-4); cx.lineTo(10,-2); cx.lineTo(8,6); cx.lineTo(-9,7);
+  } else {
+    cx.moveTo(-10,1); cx.lineTo(10,0); cx.lineTo(6,7); cx.lineTo(-6,8);
+  }
+  cx.closePath(); cx.fill();
+  if (["galley","quadrireme","caravel","frigate","privateer"].includes(kind)) {
+    cx.lineWidth = 1.1; cx.beginPath(); cx.moveTo(-1,1); cx.lineTo(-1,-10); cx.stroke();
+    cx.beginPath();
+    if (kind === "galley" || kind === "quadrireme") {
+      cx.moveTo(0,-9); cx.lineTo(7,-4); cx.lineTo(0,-2);
+    } else {
+      cx.moveTo(0,-9); cx.lineTo(8,-3); cx.lineTo(0,-3);
+    }
+    cx.closePath(); cx.fill();
+    if (kind === "privateer") { cx.globalAlpha=.55; cx.beginPath(); cx.arc(3,-5,1.7,0,7); cx.fill(); cx.globalAlpha=1; }
+  } else {
+    cx.fillRect(-2,-5,7,5);
+    cx.lineWidth = 1.25;
+    cx.beginPath(); cx.moveTo(2,-5); cx.lineTo(kind === "missile_cruiser" ? 8 : 10,-8); cx.stroke();
+    if (["battleship","missile_cruiser"].includes(kind)) {
+      cx.beginPath(); cx.moveTo(-3,-3); cx.lineTo(-9,-7); cx.stroke();
+    }
+    if (kind === "missile_cruiser") {
+      for (const dx of [-4,-1,2]) { cx.beginPath(); cx.moveTo(dx,-3); cx.lineTo(dx+1,-9); cx.stroke(); }
+    }
+  }
+  if (carrier) {
+    cx.strokeStyle = "rgba(20,25,23,.6)"; cx.lineWidth = .8;
+    cx.beginPath(); cx.moveTo(-7,1); cx.lineTo(7,0); cx.stroke();
+  }
+}
+
+function pictogramAircraft(kind, color) {
+  cx.fillStyle = color; cx.strokeStyle = color;
+  if (kind === "biplane") {
+    cx.fillRect(-9,-5,18,2); cx.fillRect(-10,2,20,2); cx.fillRect(-1,-9,2,17);
+    cx.fillRect(-4,7,8,1.5); return;
+  }
+  cx.beginPath();
+  if (kind === "stealth_bomber") {
+    cx.moveTo(0,-10); cx.lineTo(11,7); cx.lineTo(3,4); cx.lineTo(0,8);
+    cx.lineTo(-3,4); cx.lineTo(-11,7);
+  } else if (kind === "bomber") {
+    cx.moveTo(0,-10); cx.lineTo(3,-2); cx.lineTo(11,3); cx.lineTo(10,6);
+    cx.lineTo(2,3); cx.lineTo(2,8); cx.lineTo(-2,8); cx.lineTo(-2,3);
+    cx.lineTo(-10,6); cx.lineTo(-11,3); cx.lineTo(-3,-2);
+  } else {
+    cx.moveTo(0,-11); cx.lineTo(3,-2); cx.lineTo(10,4); cx.lineTo(8,7);
+    cx.lineTo(2,3); cx.lineTo(2,9); cx.lineTo(-2,9); cx.lineTo(-2,3);
+    cx.lineTo(-8,7); cx.lineTo(-10,4); cx.lineTo(-3,-2);
+  }
+  cx.closePath(); cx.fill();
+  if (kind === "jet") { cx.globalAlpha=.45; cx.fillRect(-1,-7,2,12); cx.globalAlpha=1; }
+}
+
+function pictogramCannon(kind, color) {
+  cx.fillStyle = color; cx.strokeStyle = color; cx.lineCap = "round";
+  const rocket = kind === "rocket_rack";
+  if (rocket) {
+    cx.save(); cx.rotate(-.35);
+    for (const yy of [-4,0,4]) { cx.fillRect(-5,yy-1.2,12,2.4); cx.beginPath(); cx.moveTo(7,yy-1.2); cx.lineTo(10,yy); cx.lineTo(7,yy+1.2); cx.fill(); }
+    cx.restore();
+  } else {
+    cx.lineWidth = kind === "field_cannon" ? 2.2 : 2.8;
+    cx.beginPath(); cx.moveTo(-3,-1); cx.lineTo(10, kind === "howitzer" ? -8 : -5); cx.stroke();
+    cx.beginPath(); cx.roundRect(-7,-4,8,6,1.5); cx.fill();
+  }
+  pictogramWheel(-5,6,3.4,color); pictogramWheel(4,6,3.4,color);
+  if (kind === "bombard") { cx.fillRect(-1,-6,4,4); }
+}
+
+function drawUnitPictogram(type, x, y, size, color = "#f0ead8") {
+  const kind = UNIT_PICTOGRAM[type] || "shield";
+  cx.save();
+  cx.translate(x, y); cx.scale(size / 24, size / 24);
+  cx.lineCap = "round"; cx.lineJoin = "round";
+  cx.strokeStyle = color; cx.fillStyle = color; cx.lineWidth = 1.6;
+
+  if (["bow","crossbow"].includes(kind)) {
+    pictogramBow(kind, color); cx.restore(); return;
+  }
+  if (kind.startsWith("horse")) {
+    pictogramHorse(kind, color); cx.restore(); return;
+  }
+  if (["galley","quadrireme","caravel","frigate","privateer","ironclad",
+       "battleship","destroyer","missile_cruiser","submarine",
+       "nuclear_submarine","carrier"].includes(kind)) {
+    pictogramShip(kind, color); cx.restore(); return;
+  }
+  if (["biplane","fighter","jet","bomber","stealth_bomber"].includes(kind)) {
+    pictogramAircraft(kind, color); cx.restore(); return;
+  }
+  if (["field_cannon","bombard","howitzer","rocket_rack"].includes(kind)) {
+    pictogramCannon(kind, color); cx.restore(); return;
+  }
+
+  switch (kind) {
+    case "camp":
+      cx.beginPath(); cx.moveTo(-9,7); cx.lineTo(0,-8); cx.lineTo(9,7); cx.closePath(); cx.stroke();
+      cx.beginPath(); cx.moveTo(0,-8); cx.lineTo(0,7); cx.stroke();
+      cx.beginPath(); cx.moveTo(-2,7); cx.lineTo(0,2); cx.lineTo(3,7); cx.stroke(); break;
+    case "hammer":
+      cx.save(); cx.rotate(-.7); cx.fillRect(-1.5,-4,3,14); cx.beginPath(); cx.roundRect(-7,-8,14,5,1.5); cx.fill(); cx.restore(); break;
+    case "caravan":
+      cx.beginPath(); cx.roundRect(-9,-4,13,9,2); cx.stroke();
+      cx.beginPath(); cx.moveTo(4,-2); cx.lineTo(9,-6); cx.lineTo(11,-1); cx.lineTo(8,3); cx.stroke();
+      pictogramWheel(-5,7,2.5,color); pictogramWheel(5,7,2.5,color); break;
+    case "leaf":
+      cx.beginPath(); cx.moveTo(-9,6); cx.quadraticCurveTo(-5,-9,9,-8); cx.quadraticCurveTo(9,5,-9,6); cx.closePath(); cx.stroke();
+      cx.beginPath(); cx.moveTo(-7,7); cx.lineTo(6,-5); cx.stroke(); break;
+    case "trowel":
+      cx.beginPath(); cx.moveTo(-1,-9); cx.lineTo(2,-9); cx.lineTo(2,-2); cx.stroke();
+      cx.beginPath(); cx.moveTo(-5,-2); cx.lineTo(6,-2); cx.lineTo(1,9); cx.closePath(); cx.stroke(); break;
+    case "guitar":
+      cx.beginPath(); cx.ellipse(-3,4,5,6,-.35,0,7); cx.stroke();
+      cx.beginPath(); cx.moveTo(0,0); cx.lineTo(8,-9); cx.stroke(); cx.beginPath(); cx.arc(-3,4,1.4,0,7); cx.fill(); break;
+    case "keyhole":
+      cx.beginPath(); cx.arc(0,-4,4,0,7); cx.fill();
+      cx.beginPath(); cx.moveTo(-2,-1); cx.lineTo(-4,8); cx.lineTo(4,8); cx.lineTo(2,-1); cx.closePath(); cx.fill(); break;
+    case "pilgrim_staff":
+      cx.beginPath(); cx.moveTo(-5,9); cx.lineTo(1,-10); cx.quadraticCurveTo(9,-10,6,-4); cx.stroke();
+      cx.beginPath(); cx.moveTo(-4,2); cx.lineTo(4,2); cx.stroke(); break;
+    case "sun_staff":
+      cx.beginPath(); cx.moveTo(0,9); cx.lineTo(0,-4); cx.stroke();
+      cx.beginPath(); cx.arc(0,-7,3,0,7); cx.stroke();
+      for (let i=0;i<8;i++) { const a=i*Math.PI/4; cx.beginPath(); cx.moveTo(Math.cos(a)*5, -7+Math.sin(a)*5); cx.lineTo(Math.cos(a)*7,-7+Math.sin(a)*7); cx.stroke(); } break;
+    case "lotus":
+      for (const [rot,rx] of [[0,4],[-.65,5],[.65,5]]) { cx.save(); cx.rotate(rot); cx.beginPath(); cx.ellipse(0,-2,rx,8,0,Math.PI,0); cx.stroke(); cx.restore(); }
+      cx.beginPath(); cx.moveTo(-9,7); cx.quadraticCurveTo(0,10,9,7); cx.stroke(); break;
+    case "flame":
+      cx.beginPath(); cx.moveTo(0,-10); cx.quadraticCurveTo(9,-2,5,5); cx.quadraticCurveTo(1,11,-5,6); cx.quadraticCurveTo(-10,0,0,-10); cx.closePath(); cx.fill();
+      cx.globalCompositeOperation="destination-out"; cx.beginPath(); cx.moveTo(0,-2); cx.quadraticCurveTo(4,3,1,7); cx.quadraticCurveTo(-3,4,0,-2); cx.fill(); break;
+    case "fist":
+      cx.beginPath(); cx.roundRect(-8,-3,16,9,3); cx.fill();
+      for (const dx of [-6,-2,2,6]) { cx.beginPath(); cx.roundRect(dx-1.5,-8,3,7,1.4); cx.fill(); }
+      cx.fillRect(-5,5,8,5); break;
+    case "battering_ram":
+      cx.lineWidth=2; cx.beginPath(); cx.moveTo(-9,-5); cx.lineTo(8,-5); cx.lineTo(10,1); cx.lineTo(-10,1); cx.closePath(); cx.stroke();
+      cx.lineWidth=2.5; cx.beginPath(); cx.moveTo(-8,2); cx.lineTo(10,2); cx.stroke();
+      cx.beginPath(); cx.moveTo(10,2); cx.lineTo(7,-1); cx.lineTo(7,5); cx.closePath(); cx.fill();
+      pictogramWheel(-6,7,2.5,color); pictogramWheel(6,7,2.5,color); break;
+    case "siege_tower":
+      cx.beginPath(); cx.rect(-7,-9,14,15); cx.stroke();
+      cx.beginPath(); cx.moveTo(-7,-9); cx.lineTo(-4,-6); cx.lineTo(-1,-9); cx.lineTo(2,-6); cx.lineTo(5,-9); cx.lineTo(7,-7); cx.stroke();
+      cx.beginPath(); cx.moveTo(-5,-3); cx.lineTo(5,-3); cx.moveTo(-5,1); cx.lineTo(5,1); cx.stroke();
+      pictogramWheel(-5,8,2.4,color); pictogramWheel(5,8,2.4,color); break;
+    case "tools":
+      cx.save(); cx.rotate(-.65); cx.fillRect(-1,-9,2,18); cx.beginPath(); cx.arc(0,-7,4,0,Math.PI); cx.stroke(); cx.restore();
+      cx.save(); cx.rotate(.65); cx.fillRect(-1,-9,2,18); cx.beginPath(); cx.moveTo(-4,-8); cx.lineTo(4,-8); cx.stroke(); cx.restore(); break;
+    case "balloon":
+      cx.beginPath(); cx.ellipse(0,-3,7,9,0,0,7); cx.stroke();
+      cx.beginPath(); cx.moveTo(-4,4); cx.lineTo(-2,9); cx.lineTo(2,9); cx.lineTo(4,4); cx.stroke(); cx.fillRect(-2,8,4,3); break;
+    case "medical":
+      cx.fillRect(-3,-9,6,18); cx.fillRect(-9,-3,18,6); break;
+    case "crate_truck":
+      cx.beginPath(); cx.rect(-10,-5,12,10); cx.moveTo(2,-2); cx.lineTo(7,-2); cx.lineTo(10,3); cx.lineTo(10,5); cx.lineTo(2,5); cx.stroke();
+      cx.beginPath(); cx.moveTo(-4,-5); cx.lineTo(-4,5); cx.moveTo(-10,0); cx.lineTo(2,0); cx.stroke();
+      pictogramWheel(-6,7,2.5,color); pictogramWheel(7,7,2.5,color); break;
+    case "anti_air":
+      pictogramWheel(-5,7,3,color); pictogramWheel(5,7,3,color);
+      cx.lineWidth=2; cx.beginPath(); cx.moveTo(-2,3); cx.lineTo(7,-8); cx.moveTo(2,3); cx.lineTo(10,-6); cx.stroke(); break;
+    case "missile_radar":
+      cx.beginPath(); cx.roundRect(-8,0,14,6,2); cx.stroke(); pictogramWheel(-5,8,2.5,color); pictogramWheel(5,8,2.5,color);
+      cx.beginPath(); cx.arc(0,-3,6,Math.PI*.65,Math.PI*1.35); cx.stroke();
+      cx.beginPath(); cx.moveTo(0,-3); cx.lineTo(5,-7); cx.stroke(); break;
+    case "drone":
+      cx.fillRect(-4,-2,8,4); cx.lineWidth=1.2;
+      for (const [sx,sy] of [[-1,-1],[-1,1],[1,-1],[1,1]]) { cx.beginPath(); cx.moveTo(sx*3,sy); cx.lineTo(sx*8,sy*5); cx.stroke(); cx.beginPath(); cx.ellipse(sx*8,sy*5,3,1,0,0,7); cx.stroke(); } break;
+    case "compass":
+      cx.beginPath(); cx.arc(0,0,9,0,7); cx.stroke();
+      cx.beginPath(); cx.moveTo(3,-7); cx.lineTo(-2,2); cx.lineTo(-4,7); cx.lineTo(2,-2); cx.closePath(); cx.fill(); break;
+    case "javelin":
+    case "spear":
+    case "pike":
+      cx.lineWidth = kind === "pike" ? 1.4 : 1.8; cx.beginPath(); cx.moveTo(-8,9); cx.lineTo(7,-8); cx.stroke();
+      cx.beginPath(); cx.moveTo(7,-8); cx.lineTo(2,-6); cx.lineTo(5,-3); cx.closePath(); cx.fill();
+      if (kind === "spear") { cx.beginPath(); cx.arc(-3,3,4.3,0,7); cx.stroke(); } break;
+    case "rifle":
+    case "suppressed_rifle":
+    case "musket":
+    case "long_rifle":
+      cx.lineWidth=2.2; cx.beginPath(); cx.moveTo(-9,6); cx.lineTo(7,-5); cx.stroke();
+      cx.lineWidth=1.2; cx.beginPath(); cx.moveTo(-5,3); cx.lineTo(-1,8); cx.lineTo(2,5); cx.stroke();
+      if (kind === "suppressed_rifle") { cx.lineWidth=3; cx.beginPath(); cx.moveTo(6,-5); cx.lineTo(10,-8); cx.stroke(); }
+      if (kind === "musket" || kind === "long_rifle") { cx.lineWidth=.8; cx.beginPath(); cx.moveTo(3,-2); cx.lineTo(0,-8); cx.stroke(); } break;
+    case "axe":
+      cx.save(); cx.rotate(.55); cx.fillRect(-1,-8,2,17); cx.beginPath(); cx.moveTo(0,-7); cx.quadraticCurveTo(8,-8,7,-1); cx.lineTo(0,-2); cx.closePath(); cx.fill(); cx.restore(); break;
+    case "sword":
+      cx.beginPath(); cx.moveTo(0,-10); cx.lineTo(2,4); cx.lineTo(0,7); cx.lineTo(-2,4); cx.closePath(); cx.fill();
+      cx.fillRect(-6,4,12,2); cx.fillRect(-1,6,2,5); break;
+    case "sword_shield":
+    case "gladius_shield":
+      cx.beginPath(); cx.moveTo(-8,-7); cx.lineTo(1,-5); cx.lineTo(0,5); cx.lineTo(-5,9); cx.lineTo(-9,5); cx.closePath(); cx.stroke();
+      cx.save(); cx.translate(5,0); cx.scale(.7,.7); cx.beginPath(); cx.moveTo(0,-10); cx.lineTo(2,4); cx.lineTo(0,7); cx.lineTo(-2,4); cx.closePath(); cx.fill(); cx.fillRect(-5,4,10,2); cx.restore(); break;
+    case "rifle_helmet":
+      cx.lineWidth=2; cx.beginPath(); cx.moveTo(-8,7); cx.lineTo(8,-5); cx.stroke();
+      cx.beginPath(); cx.arc(-3,-4,5,Math.PI,0); cx.lineTo(3,-3); cx.lineTo(-9,-3); cx.closePath(); cx.fill(); break;
+    case "ifv":
+    case "tank":
+    case "modern_tank":
+      cx.beginPath(); cx.roundRect(-10,1,20,7,3); cx.stroke();
+      cx.beginPath(); cx.roundRect(-6,-4,11,6,2); cx.fill();
+      cx.lineWidth=kind==="modern_tank"?2.6:2; cx.beginPath(); cx.moveTo(3,-3); cx.lineTo(11,-7); cx.stroke();
+      cx.lineWidth=.7; for (const dx of [-6,-2,2,6]) { cx.beginPath(); cx.arc(dx,5,1.5,0,7); cx.stroke(); } break;
+    case "pike_musket":
+      cx.lineWidth=1.4; cx.beginPath(); cx.moveTo(-9,9); cx.lineTo(6,-9); cx.moveTo(-6,3); cx.lineTo(9,-4); cx.stroke(); break;
+    case "anti_tank":
+      cx.lineWidth=2.5; cx.beginPath(); cx.moveTo(-8,-2); cx.lineTo(8,-5); cx.stroke();
+      cx.beginPath(); cx.moveTo(-3,0); cx.lineTo(-7,8); cx.moveTo(2,0); cx.lineTo(7,8); cx.stroke(); break;
+    case "guided_missile":
+      cx.save(); cx.rotate(.7); cx.beginPath(); cx.roundRect(-8,-2,15,4,2); cx.fill(); cx.beginPath(); cx.moveTo(7,-3); cx.lineTo(11,0); cx.lineTo(7,3); cx.fill(); cx.beginPath(); cx.moveTo(-5,-2); cx.lineTo(-8,-6); cx.lineTo(-2,-2); cx.fill(); cx.restore(); break;
+    case "helicopter":
+      cx.beginPath(); cx.ellipse(0,1,7,5,0,0,7); cx.fill(); cx.fillRect(5,-1,7,2);
+      cx.lineWidth=1.5; cx.beginPath(); cx.moveTo(-10,-6); cx.lineTo(10,-6); cx.moveTo(0,-6); cx.lineTo(0,-2); cx.stroke();
+      cx.beginPath(); cx.moveTo(-5,7); cx.lineTo(6,7); cx.stroke(); break;
+    case "chariot":
+    case "war_cart":
+    case "chariot_bow":
+      cx.beginPath(); cx.moveTo(-8,-4); cx.lineTo(4,-4); cx.lineTo(7,3); cx.lineTo(-7,3); cx.closePath(); cx.stroke();
+      pictogramWheel(-4,7,3,color); pictogramWheel(5,7,3,color);
+      cx.beginPath(); cx.moveTo(7,1); cx.lineTo(11,-4); cx.stroke();
+      if (kind === "chariot_bow") { cx.save(); cx.translate(-2,-7); cx.scale(.45,.45); pictogramBow("bow",color); cx.restore(); } break;
+    case "sling":
+      cx.lineWidth=1.5; cx.beginPath(); cx.moveTo(-8,7); cx.quadraticCurveTo(0,-2,5,-7); cx.stroke();
+      cx.beginPath(); cx.arc(7,-8,2.5,0,7); cx.fill(); cx.beginPath(); cx.moveTo(-8,7); cx.lineTo(-3,10); cx.stroke(); break;
+    case "machine_gun":
+      cx.lineWidth=2.6; cx.beginPath(); cx.moveTo(-8,-3); cx.lineTo(9,-5); cx.stroke();
+      cx.beginPath(); cx.roundRect(-6,-6,7,6,1); cx.fill();
+      cx.lineWidth=1.5; cx.beginPath(); cx.moveTo(-1,0); cx.lineTo(-7,9); cx.moveTo(1,0); cx.lineTo(7,9); cx.stroke(); break;
+    case "catapult":
+      pictogramWheel(-6,7,3,color); pictogramWheel(5,7,3,color);
+      cx.beginPath(); cx.moveTo(-8,4); cx.lineTo(5,4); cx.lineTo(-1,-5); cx.closePath(); cx.stroke();
+      cx.lineWidth=1.8; cx.beginPath(); cx.moveTo(-1,2); cx.lineTo(7,-9); cx.stroke();
+      cx.beginPath(); cx.arc(8,-10,2,0,7); cx.fill(); break;
+    case "trebuchet":
+      pictogramWheel(-6,8,2.7,color); pictogramWheel(5,8,2.7,color);
+      cx.beginPath(); cx.moveTo(-8,5); cx.lineTo(7,5); cx.moveTo(-5,5); cx.lineTo(0,-5); cx.lineTo(5,5); cx.stroke();
+      cx.lineWidth=1.6; cx.beginPath(); cx.moveTo(-7,-7); cx.lineTo(8,-2); cx.stroke();
+      cx.beginPath(); cx.rect(-9,-9,4,5); cx.fill();
+      cx.lineWidth=.8; cx.beginPath(); cx.moveTo(8,-2); cx.quadraticCurveTo(10,3,8,6); cx.stroke();
+      cx.beginPath(); cx.arc(8,7,1.7,0,7); cx.fill(); break;
+    case "robot":
+      cx.beginPath(); cx.roundRect(-6,-7,12,12,2); cx.stroke();
+      cx.beginPath(); cx.arc(-2,-2,1.3,0,7); cx.arc(2,-2,1.3,0,7); cx.fill();
+      cx.fillRect(-2,-11,4,4); cx.lineWidth=2; cx.beginPath(); cx.moveTo(-6,0); cx.lineTo(-10,7); cx.moveTo(6,0); cx.lineTo(10,7); cx.moveTo(-3,5); cx.lineTo(-5,10); cx.moveTo(3,5); cx.lineTo(5,10); cx.stroke(); break;
+    case "hoplon_spear":
+      cx.beginPath(); cx.arc(-3,2,6,0,7); cx.stroke();
+      cx.beginPath(); cx.moveTo(-3,-4); cx.lineTo(-3,8); cx.moveTo(-9,2); cx.lineTo(3,2); cx.stroke();
+      cx.beginPath(); cx.moveTo(1,9); cx.lineTo(8,-9); cx.stroke(); break;
+    case "macuahuitl":
+      cx.lineWidth=3.2; cx.beginPath(); cx.moveTo(-5,9); cx.lineTo(4,-7); cx.stroke();
+      cx.lineWidth=1; for (const d of [-4,-1,2,5]) { cx.beginPath(); cx.moveTo(d-3,6-d*.7); cx.lineTo(d-6,4-d*.7); cx.stroke(); } break;
+    default:
+      cx.beginPath(); cx.moveTo(-8,-7); cx.lineTo(8,-7); cx.lineTo(7,2); cx.quadraticCurveTo(0,10,-7,2); cx.closePath(); cx.stroke();
+  }
+  cx.restore();
+}
+
 function drawUnitBadge(u, x, y) {
   const k = UNIT_K();
   const br = 6.4 * k;
@@ -12860,10 +13476,7 @@ function drawUnitBadge(u, x, y) {
   cx.beginPath(); cx.arc(bx, by, br, 0, 7); cx.fill();
   cx.strokeStyle = pcol(u.owner); cx.lineWidth = 1.5;
   cx.beginPath(); cx.arc(bx, by, br, 0, 7); cx.stroke();
-  cx.fillStyle = "#f0ead8";
-  cx.font = (8 * k).toFixed(1) + "px 'Segoe UI Symbol', 'Segoe UI Emoji', sans-serif";
-  cx.textAlign = "center"; cx.textBaseline = "middle";
-  cx.fillText(UNIT_ICON[u.type] || u.type[0].toUpperCase(), bx, by + 0.3);
+  drawUnitPictogram(u.type, bx, by, br * 1.55, "#f0ead8");
   cx.restore();
 }
 
@@ -13415,7 +14028,7 @@ function planetFeatureGlyph(tile) {
   if (tile.feature === "jungle") return "♣";
   if (tile.feature === "ice") return "◇";
   if (tile.feature === "volcano") return "△";
-  return tile.resource ? (RES_ICON[tile.resource] || "•") : "";
+  return "";
 }
 // Tiles in painter order, nearest last, with everything behind the horizon
 // dropped. Shared by the map, the minimap, and hit testing so all three agree
@@ -14460,6 +15073,24 @@ function drawSkyLandings(place, crew, alpha) {
   cx.restore();
 }
 
+// One orbit per civilization, in the world's own frame. A craft is up there
+// whatever shape the map is drawn in, so its orbit is settled here rather than
+// by whichever view happens to be open: the same launch leans the same way and
+// crosses the equator in the same place seen from space or from underneath.
+// Only the pace is left to the view, as a dial rather than a number of
+// milliseconds — a lap of a globe is half hidden behind the world and a lap of
+// a flat board is a crossing of the whole picture, which are not the same
+// length of time to watch.
+function skyOrbit(player) {
+  return {
+    inclination:(.30 + .95 * hash2(player.id, 3)) *
+      (hash2(player.id, 13) < .5 ? 1 : -1),
+    node:6.283 * hash2(player.id, 9),
+    phase:6.283 * hash2(player.id, 7),
+    pace:hash2(player.id, 5),
+  };
+}
+
 // Orbits are real circles seen at an angle, so a satellite passing behind the
 // world goes behind it. The depth that decides is the same one the projection
 // throws away.
@@ -14482,9 +15113,7 @@ function drawSkySatellites(crew, camera, radius, centerX, centerY, alpha, now) {
             basis.ring * (basis.uz * along + basis.wz * across)];
   };
   const flight = crew.map((player, index) => {
-    const inclination = (.30 + .95 * hash2(player.id, 3)) *
-      (hash2(player.id, 13) < .5 ? 1 : -1);
-    const node = 6.283 * hash2(player.id, 9);
+    const {inclination, node, phase, pace} = skyOrbit(player);
     // Kept in Earth radii so the ring stands off the limb by the same margin
     // whatever the zoom, the way the old pixel figure did.
     const ring = 1.38 + Math.min(8, radius * .5) / Math.max(1, radius) +
@@ -14494,8 +15123,7 @@ function drawSkySatellites(crew, camera, radius, centerX, centerY, alpha, now) {
     const basis = {ring,
       ux:cosNode, uy:sinNode, uz:0,
       wx:-sinNode * cosLean, wy:cosNode * cosLean, wz:sinLean};
-    const angle = now / (9200 + 3400 * hash2(player.id, 5)) * 6.283
-      + hash2(player.id, 7) * 6.283;
+    const angle = now / (9200 + 3400 * pace) * 6.283 + phase;
     const at = planetProject(site(basis, angle), view, radius, centerX, centerY);
     return {player, basis, x:at.x, y:at.y, behind:at.z < 0};
   });
@@ -14839,6 +15467,172 @@ function planetSkyAnimating() {
   if (planetEarthRadius() > SKY_SURFACE) return false;
   const crews = skyCrews();
   return crews.satellite.length > 0 || crews.expedition.length > 0;
+}
+
+// --------------------------------------------------- the flat board's sky
+//
+// A finished launch is a fact about the world, not about the shape the world
+// is drawn in: the civilization with a satellite over the globe has the same
+// one over a flat board. What a flat board cannot show is the orbit itself,
+// because a sheet of paper has no limb for a craft to pass behind. What it
+// shows instead is the thing a flat map has always shown, and the reason
+// anybody recognises a satellite on a chart at all: the ground track, the line
+// directly under the craft. Its crest is the inclination, its length is one
+// revolution, and every pass lies west of the one before because the world
+// turned underneath while the craft went round. That drift is the whole
+// difference between an orbit and a wave scrolling across a chart — it never
+// quite repeats, which is exactly how a ground track reads.
+
+// How far the world turns under one revolution, as a fraction of its width. A
+// real low orbit takes about a sixteenth of a day and so lands a sixteenth of
+// the world west each pass; a tenth here, because the trail drawn behind the
+// craft is a little over one revolution long and at a sixteenth its two passes
+// lie close enough to read as one thick line rather than as two.
+const FLAT_SAT_DRIFT = .1;
+// One revolution in wall-clock milliseconds, before each craft's own pace.
+const FLAT_SAT_LAP = 27000;
+
+// How much of the sky is in the picture. Zoomed in, a map is a place you are
+// standing in and the four hundred kilometres above it are not part of that
+// view; pulled back to a survey of the world, they are. It fades rather than
+// switches, because a craft that appears on a zoom notch reads as a glitch.
+function flatSkyShown() {
+  if (!state || planetMap()) return 0;
+  return Math.max(0, Math.min(1, (.86 - cam.scale) / .34));
+}
+
+// Nothing else on a strategic board moves between turns, so the map only keeps
+// asking for frames while there is a craft up there and the camera is far
+// enough back to see it.
+function flatSkyAnimating() {
+  return flatSkyShown() > .02 && skyCrews().satellite.length > 0;
+}
+
+// Where the craft is over the world, `theta` round its orbit from the
+// ascending node:
+//
+//   sin(latitude) = sin(inclination) · sin(theta)
+//   longitude     = node + atan2(cos(inclination)·sin theta, cos theta)
+//                        − drift · theta
+//
+// The first is the orbit leaning over the equator. The second is that same
+// orbit's own longitude — unwrapped past the ±180° cut atan2 puts in, or the
+// track would jump a world's width every half revolution — less the turn the
+// world made underneath in the same time.
+function flatSatelliteGround(orbit, theta) {
+  const lat = Math.asin(Math.sin(orbit.inclination) * Math.sin(theta));
+  const swing = Math.atan2(Math.cos(orbit.inclination) * Math.sin(theta),
+                           Math.cos(theta));
+  const lon = orbit.node + swing + 6.283185 * Math.round((theta - swing) / 6.283185)
+    - FLAT_SAT_DRIFT * theta;
+  // Rows are latitude on a flat board — the same reading the climate bands are
+  // laid out by — so the poles are the first and last row and the equator is
+  // the middle one.
+  const span = S * 1.5 * Math.max(1, state.map.height - 1);
+  return [WW() * lon / 6.283185, span * (.5 - lat / Math.PI)];
+}
+
+// A world point folded into the copy of the world the map actually drew, then
+// turned into view coordinates by the same rotate-and-squash `hexXY` uses. The
+// track therefore lies on the ground rather than on the lens: pan, turn or
+// tilt the board and it stays over the same continent, which is the whole
+// claim a ground track makes. A cylinder folds about the camera, the way the
+// tiles themselves do. A world drawn with its ends left on — an open chart, or
+// a viewer who has switched wrapping off — folds about the middle of the one
+// sheet there is, so the craft cannot fly over paper with no world on it.
+function flatSkyProject(worldX, worldY) {
+  const at = mapWrapsX() ? wrapX(worldX)
+    : wrapNear(worldX, chartIsOpen() ? chartAnchorX() : WW() / 2, WW());
+  const wx = at - cam.x, wy = wrapY(worldY) - cam.y;
+  return {copy:at, x:COSR * wx - SINR * wy, y:(SINR * wx + COSR * wy) * YS};
+}
+
+function drawFlatSatellites(now) {
+  const shown = flatSkyShown();
+  if (shown <= .02) return;
+  const crew = skyCrews().satellite;
+  if (!crew.length) return;
+  // The marker for something four hundred kilometres up is not a scale drawing
+  // of it — at this zoom the craft is far smaller than one pixel — so it holds
+  // its size on screen while the ground under it zooms. Its height and the
+  // circle it can see from up there are real distances across a real world and
+  // are kept as fractions of the world's own width, so they zoom with it.
+  const pixel = 1 / cam.scale;
+  const lift = WW() * .012;
+  const horizon = WW() * .048;
+  const halfW = MAPW / 2 * pixel + horizon, halfH = MAPH / 2 * pixel + horizon;
+  cx.save();
+  cx.lineCap = "round";
+  // Every line goes down twice, dark and wide first. A jersey colour at a
+  // quarter alpha is legible over open sea and gone entirely over sunlit sand,
+  // which is how the track came out visible only where the world happened to
+  // be dark; the same ink the labels are cut against fixes it everywhere.
+  const inked = (colour, width, alpha) => {
+    cx.globalAlpha = shown * alpha * .5;
+    cx.strokeStyle = "#07100f"; cx.lineWidth = (width + 1.5) * pixel;
+    cx.stroke();
+    cx.globalAlpha = shown * alpha;
+    cx.strokeStyle = colour; cx.lineWidth = width * pixel;
+    cx.stroke();
+  };
+  for (const player of crew) {
+    const orbit = skyOrbit(player);
+    const theta = orbit.phase +
+      now / (FLAT_SAT_LAP * (.82 + .5 * orbit.pace)) * 6.283185;
+    const colour = pcol(player.id);
+    const track = (fromRev, toRev, width, alpha, dashed) => {
+      const steps = Math.max(8, Math.round(Math.abs(toRev - fromRev) * 60));
+      cx.setLineDash(dashed ? [3.5 * pixel, 4.5 * pixel] : []);
+      cx.beginPath();
+      let last = null;
+      for (let step = 0; step <= steps; step++) {
+        const turn = fromRev + (toRev - fromRev) * step / steps;
+        const at = flatSkyProject(
+          ...flatSatelliteGround(orbit, theta + 6.283185 * turn));
+        // Where the track folds round to the far side of a wrapping world the
+        // line stops and starts again: joining those two points would draw a
+        // stroke straight back across the picture.
+        if (last !== null && Math.abs(at.copy - last) < WW() / 2)
+          cx.lineTo(at.x, at.y);
+        else cx.moveTo(at.x, at.y);
+        last = at.copy;
+      }
+      inked(colour, width, alpha);
+    };
+    // A little over one revolution behind, so the pass before this one is
+    // still on the paper to be told apart from it, and a dashed quarter ahead
+    // to say the line goes on.
+    track(-1.35, 0, 1, .2, false);
+    track(-.38, 0, 1.4, .45, false);
+    track(0, .3, 1, .16, true);
+
+    const here = flatSkyProject(...flatSatelliteGround(orbit, theta));
+    if (Math.abs(here.x) > halfW || Math.abs(here.y) > halfH) continue;
+    cx.setLineDash([]);
+    // The ground it can see, laid on the plane the board is drawn in, and a
+    // drop line to its own point on that ground: without one the craft is a
+    // speck beside the track rather than a thing above it.
+    cx.beginPath(); cx.ellipse(here.x, here.y, horizon, horizon * YS, 0, 0, 7);
+    cx.globalAlpha = shown * .06;
+    cx.fillStyle = colour; cx.fill();
+    inked(colour, .9, .22);
+    cx.beginPath(); cx.moveTo(here.x, here.y); cx.lineTo(here.x, here.y - lift);
+    inked(colour, .9, .4);
+    // The craft itself, in the same body-and-two-wings the globe draws, so the
+    // same launch is recognisably the same object in either view — cut against
+    // the same ink, because it crosses ground of every colour there is.
+    const size = 3.8 * pixel, top = here.y - lift;
+    const panel = (x, y, w, h, fill) => {
+      cx.fillStyle = fill; cx.fillRect(x, y, w, h); cx.strokeRect(x, y, w, h);
+    };
+    cx.globalAlpha = shown;
+    cx.strokeStyle = "#07100f"; cx.lineWidth = .9 * pixel;
+    const wing = pcol2(player.id);
+    panel(here.x - size * 2.6, top - size * .3, size * 1.4, size * .6, wing);
+    panel(here.x + size * 1.2, top - size * .3, size * 1.4, size * .6, wing);
+    panel(here.x - size, top - size * .55, size * 2, size * 1.1, colour);
+  }
+  cx.restore();
 }
 
 // The flat board and the globe share the same terrain atlas, but not the same
@@ -15687,6 +16481,13 @@ function drawPlanetMap() {
     cx.textAlign = "center"; cx.textBaseline = "middle";
     cx.font = `${Math.max(9, Math.min(15, 10 * scale))}px serif`;
     for (const cell of cells) {
+      if (cell.tile.resource && cell.center.z >= (onSheet ?? .08)) {
+        cx.globalAlpha = .78;
+        drawResourcePictogram(cell.tile.resource, cell.center.x, cell.center.y,
+                              Math.max(11, Math.min(18, 12 * scale)));
+        cx.globalAlpha = 1;
+        continue;
+      }
       const glyph = planetFeatureGlyph(cell.tile);
       if (!glyph || cell.center.z < (onSheet ?? .08)) continue;
       cx.globalAlpha = .58; cx.fillStyle = "#111b17";
@@ -16840,9 +17641,13 @@ function draw() {
         }
         // family fallback here too, so the twenty-seven districts with no color
         // of their own stop coming off the queue as the same plain cream glyph
-        cx.fillStyle = it.district ? districtColor(it.district) : "#f0ead8";
-        cx.font = `${minorPlate ? 10 : 12}px 'Segoe UI Symbol', 'Segoe UI Emoji', sans-serif`;
-        cx.fillText(prodGlyph(it), mx, my + 0.5);
+        if (it.unit) {
+          drawUnitPictogram(it.unit, mx, my, mr * 1.42, "#f0ead8");
+        } else {
+          cx.fillStyle = it.district ? districtColor(it.district) : "#f0ead8";
+          cx.font = `${minorPlate ? 10 : 12}px 'Segoe UI Symbol', 'Segoe UI Emoji', sans-serif`;
+          cx.fillText(prodGlyph(it), mx, my + 0.5);
+        }
       }
     }
     if (selCity && selCity.id === c.id) {
@@ -17053,10 +17858,8 @@ function draw() {
       if (civ) cx.roundRect(x - rr, y - rr, rr * 2, rr * 2, 5);
       else cx.arc(x, y, rr, 0, 7);
       cx.stroke();
-      cx.fillStyle = "#10151d";
-      cx.font = "11px 'Segoe UI Symbol', 'Segoe UI Emoji', sans-serif";
-      cx.fillText(u.embarked ? "⛵" : (UNIT_ICON[u.type] || u.type[0].toUpperCase()),
-                  x, y + 0.5);
+      drawUnitPictogram(u.embarked ? "galley" : u.type, x, y,
+                        rr * 1.45, "#10151d");
       cx.globalAlpha = 1;
     }
     // chunky health bar — sized against zoom so it stays readable far out, and
@@ -17282,6 +18085,10 @@ function draw() {
     cx.fillStyle = f.col; cx.fillText(f.txt, f.x, fy);
     cx.globalAlpha = 1;
   }
+  // The sky over the board: above everything standing on the ground, and under
+  // the weather and the flash, which are the frame itself rather than things in
+  // the world.
+  drawFlatSatellites(now0);
   drawNuclearBlasts(now0);
   lastSmokeBucket = smokeBucket;
   if (MODE.atmosphere) drawAtmosphere(now0);
@@ -18935,7 +19742,7 @@ function tradeItemIcon(item) {
   if (item === "open_borders") return "🗺";
   const greatWorks = {writing:"✒", art:"▣", religious_art:"▣", artifact:"🏺", music:"♫", relic:"✟"};
   if (greatWorks[item]) return greatWorks[item];
-  return RES_ICON[item] || ({niter:"✹", coal:"◆", oil:"◉", aluminum:"◇", uranium:"☢"}[item]) || "◈";
+  return RESOURCE_PICTOGRAM[item] ? resourceTextMark(item) : "◈";
 }
 
 function dealTerms(items, kind) {
@@ -20090,7 +20897,6 @@ function itemName(it) {
   return (it.unit || it.building || it.project || (it.wonder ? it.wonder + " @" + it.pos : it.district + " @" + it.pos)).replaceAll("_", " ");
 }
 function prodGlyph(it) {
-  if (it.unit) return UNIT_ICON[it.unit] || it.unit[0].toUpperCase();
   if (it.building) return BLDG_ICON[it.building] || "🏛"; // wonders fall through
   if (it.project) return "🛠";
   return "⬡"; // district
@@ -22664,7 +23470,7 @@ function tileTipLines(t, pos, tileKey) {
 
   if (t.resource) {
     const resource = ruleSpec("resources", t.resource);
-    lines.push((RES_ICON[t.resource] || "●") + " Resource: " + titleCase(t.resource) +
+    lines.push(resourceTextMark(t.resource) + " Resource: " + titleCase(t.resource) +
       (resource?.class ? " (" + titleCase(resource.class) + ")" : ""));
   }
   if (t.improvement && t.improvement !== "barbarian_camp")
@@ -23889,22 +24695,7 @@ document.getElementById("gamemode").addEventListener("change", syncSetupMode);
 document.getElementById("leaderpool").addEventListener("change", syncLeaderPool);
 document.getElementById("maptype").addEventListener("change", syncEarthShape);
 document.getElementById("savebtn").onclick = () => writeSave();
-document.getElementById("luckybtn").onclick = feelingLucky;
-// A victory condition has three states, not the two a checkbox knows: on, off
-// and ?????. The browser has already applied its own toggle by the time this
-// runs — on→off needs no repair, and the other two do, so the state the click
-// started from has to come from the mark rather than from the box.
-for (const id of RANDOM_VICTORY_IDS) {
-  const box = document.getElementById(id);
-  if (!box) continue;
-  box.addEventListener("click", () => {
-    if (randomSettings.has(id)) { box.indeterminate = false; box.checked = true; }
-    else if (box.checked) { box.checked = false; box.indeterminate = true; }
-    syncRandomSettingsFromControls();
-  });
-}
-ensureRandomOptions();
-applyRandomMarks();
+syncSetupMode();
 syncEarthShape();
 document.getElementById("diplomacybtn").onclick = () => openDiplomacy();
 document.getElementById("paneltoggle").onclick = () => togglePanel();
@@ -23951,193 +24742,39 @@ document.getElementById("viewplayer").onchange = ev => {
 let newSimulationBusy = false;
 let activeSimulationSettingsKey = null;
 let settingsStageChain = Promise.resolve();
-// Every settings select carries a ????? of its own. The RULES-driven ones are
-// rebuilt from the server's lists at boot, so the mark is put back rather than
-// written once into the markup and hoped for.
-function ensureRandomOptions() {
-  for (const id of RANDOM_SELECT_IDS) {
-    const select = document.getElementById(id);
-    if (!select || [...select.options].some(option => option.value === RANDOM_SETTING))
-      continue;
-    const option = new Option(RANDOM_SETTING, RANDOM_SETTING);
-    option.title = "Rolled among this setting's own options when the game starts";
-    select.insertBefore(option, select.firstChild);
-  }
-}
-// A roll answers the question the setting was asking, so it can only come up
-// as one of that setting's own answers. "Random leader" is the server's blank
-// rather than a leader, and the disabled entries are not offers at all.
-function rollSetting(select) {
-  const choices = [...select.options].filter(option =>
-    !option.disabled && option.value && option.value !== RANDOM_SETTING);
-  return choices.length
-    ? choices[Math.floor(Math.random() * choices.length)].value : null;
-}
-// Nobody is at the keyboard in a spectated world, so its seat settings are not
-// being left to chance — they are not being used at all, and they must not
-// appear in the note over the start control either.
-function settingApplies(id) {
-  if (id !== "leader" && id !== "difficulty") return true;
-  return (document.getElementById("gamemode") || {}).value !== "ai_sim";
-}
-function pendingRandomSettings() {
-  return [...RANDOM_SELECT_IDS, ...RANDOM_VICTORY_IDS]
-    .filter(id => randomSettings.has(id) && settingApplies(id));
-}
-function rememberRandomSettings() {
-  try { localStorage.setItem(RANDOM_SETTINGS_KEY, JSON.stringify([...randomSettings])); }
-  catch (_) {}
-}
-// The controls are the truth right after somebody has touched one. Off and
-// ????? both leave a victory box unticked, so the third state is read from
-// `indeterminate`, which is the only place it lives.
-function syncRandomSettingsFromControls() {
-  randomSettings.clear();
-  for (const id of RANDOM_SELECT_IDS) {
-    const select = document.getElementById(id);
-    if (select && select.value === RANDOM_SETTING) randomSettings.add(id);
-  }
-  for (const id of RANDOM_VICTORY_IDS) {
-    const box = document.getElementById(id);
-    if (box && box.indeterminate) randomSettings.add(id);
-  }
-  rememberRandomSettings();
-}
-// ...and the remembered marks are the truth right after anything else has
-// written the panel: a world arriving from the supervisor, staged settings
-// coming back, or the mode adopting the game on screen all overwrite these
-// controls with concrete values, and a standing ????? outlives all three.
-function applyRandomMarks() {
-  for (const id of randomSettings) {
-    const control = document.getElementById(id);
-    if (!control) continue;
-    if (control.tagName === "SELECT") {
-      if ([...control.options].some(option => option.value === RANDOM_SETTING))
-        control.value = RANDOM_SETTING;
-    } else {
-      control.checked = false;
-      control.indeterminate = true;
-    }
-  }
-  syncSetupMode();
-  updateRandomNote();
-}
-function randomSettingList(names) {
-  if (names.length < 2) return names.join("");
-  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-}
-// The start control must say what it is about to decide on your behalf before
-// it is pressed. The note names the settings rather than counting them: which
-// ones are unanswered is the whole question.
-function updateRandomNote() {
-  const pending = pendingRandomSettings();
-  const names = pending.map(id => RANDOM_SETTING_LABELS[id] || id);
-  const applicable = [...RANDOM_SELECT_IDS, ...RANDOM_VICTORY_IDS].filter(settingApplies);
-  const note = document.getElementById("randomnote");
-  if (note) {
-    note.hidden = !names.length;
-    // Naming them is the point, up to where the list stops being readable.
-    // Past that the count carries it and the names go to the tooltip; a lobby
-    // that is entirely unanswered has a shorter thing to say than eighteen
-    // names in a row.
-    const subject = names.length === applicable.length ? "Every setting is"
-      : names.length > 5 ? `${names.length} settings are`
-      : `${randomSettingList(names)} ${names.length === 1 ? "is" : "are"}`;
-    note.textContent = names.length
-      ? `${subject} set to ${RANDOM_SETTING} — ${names.length === 1 ? "it is" : "each is"}` +
-        ` chosen at random among its own options when this game starts.`
-      : "";
-    note.title = names.length > 5 ? randomSettingList(names) : "";
-  }
-  const help = document.getElementById("luckyhelp");
-  if (help)
-    help.textContent = names.length
-      ? `Rolls the ${names.length} setting${names.length === 1 ? "" : "s"} left at ${RANDOM_SETTING} and shows what came up.`
-      : `Nothing is ${RANDOM_SETTING} right now, so this rolls every setting at once.`;
-  const lucky = document.getElementById("luckybtn");
-  if (lucky)
-    lucky.title = names.length
-      ? `Roll every setting left at ${RANDOM_SETTING} and show what came up`
-      : "Roll every setting at once and show what came up";
-}
-// Rolling here is different from rolling at the start: the answer is written
-// into the panel, so you can see the world you are about to get and change your
-// mind about any part of it. That consumes the mark — it has been answered.
-function feelingLucky() {
-  if (newSimulationBusy) return;
-  const pending = pendingRandomSettings();
-  // Nothing marked is still a request to be surprised, so the button rolls the
-  // whole lobby rather than sitting there doing nothing — except for the game
-  // mode. Whether you are watching or playing is not a setting of the world,
-  // and flipping it under somebody would hand them a seat they never asked
-  // for. A mode explicitly left at ????? is a different matter: that was asked
-  // for, and the first branch rolls it.
-  const targets = new Set(pending.length ? pending
-    : [...RANDOM_SELECT_IDS, ...RANDOM_VICTORY_IDS]
-        .filter(id => id !== "gamemode" && settingApplies(id)));
-  // RANDOM_SELECT_IDS is in dependency order, so each answer is in place
-  // before the setting it governs is rolled: a pool's leader list is rebuilt
-  // on the way past.
-  for (const id of RANDOM_SELECT_IDS) {
-    const select = targets.has(id) && document.getElementById(id);
-    const rolled = select && rollSetting(select);
-    if (!rolled) continue;
-    select.value = rolled;
-    if (id === "gamemode") syncSetupMode();
-    if (id === "leaderpool") syncLeaderPool();
-    if (id === "maptype") syncEarthShape();
-  }
-  for (const id of RANDOM_VICTORY_IDS) {
-    const box = targets.has(id) && document.getElementById(id);
-    if (!box) continue;
-    box.indeterminate = false;
-    box.checked = Math.random() < 0.5;
-  }
-  syncRandomSettingsFromControls();
-  stageSelectedSimulationSettings();
-}
-// A ????? reaches the server as the value it came up as, never as itself.
-// Reading without resolving keeps the mark, which is what the settings key and
-// the start control's own labelling need to see.
-function readSetting(id, resolveRandom) {
+function readSetting(id) {
   const select = document.getElementById(id);
-  if (!select) return "";
-  if (select.value !== RANDOM_SETTING) return select.value;
-  if (!resolveRandom) return RANDOM_SETTING;
-  return rollSetting(select) || "";
+  return select ? select.value : "";
 }
-function readVictorySetting(id, resolveRandom) {
+function readVictorySetting(id) {
   const box = document.getElementById(id);
-  if (!box) return true;
-  if (!box.indeterminate) return box.checked;
-  return resolveRandom ? Math.random() < 0.5 : RANDOM_SETTING;
+  return box ? box.checked : true;
 }
-function selectedSimulationSettings(resolveRandom = false) {
-  const players = readSetting("np", resolveRandom);
-  const np = players === RANDOM_SETTING ? RANDOM_SETTING : +players;
-  const gameMode = readSetting("gamemode", resolveRandom);
-  const mapScript = readSetting("maptype", resolveRandom);
-  const mapTopology = readSetting("mapshape", resolveRandom);
-  const mapPoles = readSetting("mappoles", resolveRandom);
-  const gameSpeed = readSetting("gamespeed", resolveRandom);
-  const leaderPool = readSetting("leaderpool", resolveRandom);
-  const baseRuleset = readSetting("baseruleset", resolveRandom);
-  const startEra = readSetting("startera", resolveRandom);
+function selectedSimulationSettings() {
+  const np = +readSetting("np");
+  const gameMode = readSetting("gamemode");
+  const mapScript = readSetting("maptype");
+  const mapTopology = readSetting("mapshape");
+  const mapPoles = readSetting("mappoles");
+  const gameSpeed = readSetting("gamespeed");
+  const leaderPool = readSetting("leaderpool");
+  const baseRuleset = readSetting("baseruleset");
+  const startEra = readSetting("startera");
   const victoryConditions = Object.fromEntries(VICTORY_TRACKS.map(track =>
-    [track.id, readVictorySetting(`victory-${track.id}`, resolveRandom)]));
-  const leader = readSetting("leader", resolveRandom);
-  const difficulty = readSetting("difficulty", resolveRandom);
+    [track.id, readVictorySetting(`victory-${track.id}`)]));
+  const leader = readSetting("leader");
+  const difficulty = readSetting("difficulty");
   return {num_players: np, map_script: mapScript, map_topology: mapTopology,
           map_poles: mapPoles, game_speed: gameSpeed,
           leader_pool: leaderPool,
           base_ruleset: baseRuleset, start_era: startEra,
           victory_conditions: victoryConditions,
-          spectate: gameMode === RANDOM_SETTING ? RANDOM_SETTING : gameMode === "ai_sim",
+          spectate: gameMode === "ai_sim",
           // A spectated world has nobody to hand a leader or a handicap to.
           ...(gameMode === "ai_sim" ? {} : {civs: leader ? [leader] : [], difficulty})};
 }
 // The handoff screen describes the world being built, so it reports the values
-// a roll actually produced rather than the ????? that stood in for them.
+// the payload actually carries rather than re-reading the panel behind it.
 function selectedSimulationSummary(settings = null) {
   const chosenText = (id, value) => {
     const select = document.getElementById(id);
@@ -24158,14 +24795,14 @@ function selectedSimulationSummary(settings = null) {
   const speed = chosenText("gamespeed", settings?.game_speed).split(" · ")[0];
   // The era is named only when it is not the stock start: every other setting
   // on this line is one somebody chose, and "Ancient" is what you get by
-  // choosing nothing. A rolled era was chosen too, so it is compared by value
-  // rather than by where it sits in a list that ????? has shifted along — and
-  // the stock start is the first rung that can actually be picked, not the
-  // first one listed, because the ladder opens on an age nobody has built.
+  // choosing nothing. It is compared by value rather than by where it sits in
+  // the list — the stock start is the first rung that can actually be picked,
+  // not the first one listed, because the ladder opens on an age nobody has
+  // built.
   const eras = document.getElementById("startera");
   const startEra = settings ? settings.start_era : eras?.value;
   const stockEra = [...(eras?.options || [])]
-    .find(option => option.value && option.value !== RANDOM_SETTING && !option.disabled)?.value;
+    .find(option => option.value && !option.disabled)?.value;
   const era = startEra && startEra !== stockEra ? chosenText("startera", startEra) : "";
   return [mode, size, map, speed, era].filter(Boolean).join(" · ");
 }
@@ -24192,45 +24829,32 @@ function applyQueuedSimulationSettings(settings) {
   const victories = new Set(settings.victories || []);
   for (const track of VICTORY_TRACKS)
     document.getElementById(`victory-${track.id}`).checked = victories.has(track.id);
-  applyRandomMarks();
 }
 function updateRestartSimulationButton() {
   const button = document.getElementById("restart-sim");
   const settings = selectedSimulationSettings();
-  // A ????? is a change all by itself: this control cannot press twice to the
-  // same world while one is still unanswered.
-  const rolling = pendingRandomSettings().length > 0;
   // Picking single player turns the specbar's one start control into the way
   // into that game: it becomes Start new game, and always reads as a change
-  // from the world on screen. An unanswered mode may come up either way, so it
-  // reads as a start too — the one label that is true whichever it rolls.
+  // from the world on screen.
   const human = settings.spectate !== true;
-  const changed = human || rolling || (activeSimulationSettingsKey !== null &&
+  const changed = human || (activeSimulationSettingsKey !== null &&
     simulationSettingsKey(settings) !== activeSimulationSettingsKey);
   button.classList.toggle("primary", changed);
   button.classList.toggle("human-start", human);
   button.querySelector(".lbl").textContent = human
     ? "Start new game"
     : "Restart sim";
-  button.title = rolling
-    ? `Roll every setting left at ${RANDOM_SETTING}, then start that game`
-    : human
+  button.title = human
     ? "Start a single-player game with the selected settings"
     : changed
     ? "Restart with the selected settings"
     : "Restart with the same settings";
-  button.querySelector(".sub").textContent = rolling
-    ? `with ${RANDOM_SETTING} rolled`
-    : human || changed
+  button.querySelector(".sub").textContent = human || changed
     ? "with selected settings"
     : "same settings";
-  updateRandomNote();
 }
 function stageSelectedSimulationSettings() {
-  syncRandomSettingsFromControls();
-  // The staged world is a real one waiting in the wings, so it is staged with
-  // its dice already thrown rather than with the marks that stood in for them.
-  const payload = selectedSimulationSettings(true);
+  const payload = selectedSimulationSettings();
   updateRestartSimulationButton();
   settingsStageChain = settingsStageChain.catch(() => {}).then(async () => {
     const queued = await fetchJSON("/next-game-settings", {method: "POST",
@@ -24241,9 +24865,7 @@ function stageSelectedSimulationSettings() {
   settingsStageChain.catch(error => showNewSimulationError(error, "save settings"));
 }
 function newSimulationPayload() {
-  // Starting is where a ????? finally has to be an answer. The mark itself
-  // stays on the control, so the next start rolls again.
-  return {...selectedSimulationSettings(true),
+  return {...selectedSimulationSettings(),
           seed: Math.floor(Math.random() * 1e9), force: true};
 }
 const simulationBusyControls = new Map();
@@ -24279,7 +24901,7 @@ function adoptRunningMode() {
   const select = document.getElementById("gamemode");
   if (!select || !state) return;
   select.value = SPEC ? "ai_sim" : "single";
-  applyRandomMarks();
+  syncSetupMode();
   updateRestartSimulationButton();
 }
 // Leader and difficulty are meaningless in a spectated world: nobody is at
@@ -24307,11 +24929,7 @@ function syncLeaderPool() {
   select.innerHTML = `<option value="">Random leader</option>` + leaders.map(entry =>
     `<option value="${entry.civ}" title="${escapeAttr(entry.note)}">` +
     `${entry.leader} of ${entry.civ}</option>`).join("");
-  // Changing the pool rebuilds this list, and an unanswered seat survives that:
-  // it is a decision to leave the seat open, not a leader that stopped existing.
-  ensureRandomOptions();
-  if (selected === RANDOM_SETTING) select.value = RANDOM_SETTING;
-  else if (leaders.some(entry => entry.civ === selected)) select.value = selected;
+  if (leaders.some(entry => entry.civ === selected)) select.value = selected;
 }
 
 // Fixed geography chooses the coastline, not the projection. Keep the shape
@@ -24566,7 +25184,7 @@ function animTick(now) {
     anim.sparks.length > 0 || anim.deaths.length > 0 || anim.strike ||
     anim.shots.length > 0 || anim.bursts.length > 0 || anim.motes.length > 0 ||
     anim.scars.length > 0 || anim.battles.length > 0 || shakeUntil > now ||
-    anim.blasts.length > 0 || planetSkyAnimating();
+    anim.blasts.length > 0 || planetSkyAnimating() || flatSkyAnimating();
   // Never spend more than about half the wall clock painting. Cinematic asks
   // for a repaint thirty times a second so its weather and water keep moving,
   // which is right on a machine that can afford it and ruinous on one that
