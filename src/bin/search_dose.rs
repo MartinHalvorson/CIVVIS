@@ -39,8 +39,29 @@
 //!   weakest of the three doublings. Frequency and depth are not
 //!   interchangeable, and the point of a grid is to see which axis still pays.
 //!
-//! Nothing here is a promotion. A dose that reads positive on lane progress
-//! earns a pre-registered run on **wins**, which is what decides it.
+//! Nothing here is a promotion. A dose that reads positive earns a
+//! pre-registered confirmation at higher power on a disjoint seed.
+//!
+//! ## A hypothesis written down before the run finished
+//!
+//! The first dose, `20/120`, came back **+0.0625 ± 0.0320 (≈2.0 SE)** — which
+//! runs *against* the documented saturation story rather than with it. If that
+//! survives the negative control and a confirmation, the mechanism worth
+//! testing first is uncomfortable:
+//!
+//! > **Deepening past 80 may help by neutering the search rather than by
+//! > improving it.** Once every branch resolves they return exactly 1.0 or 0.0
+//! > and agree by construction, so the argmax has nothing to choose between and
+//! > the agent falls through to its adaptive default. If the search at horizon
+//! > 80 is picking *worse* than that default, more horizon helps by silencing
+//! > it.
+//!
+//! That is falsifiable and predicts something specific: an agent with the macro
+//! search disabled entirely should then also land at or above `20/80`. If it
+//! does not, the hypothesis is wrong and the gain is real depth.
+//!
+//! Written before the remaining doses reported, so it cannot be reshaped into
+//! whatever the data turns out to say.
 use civvis::ai::{Ai, AdvancedAi, Weights};
 use civvis::game::{Action, Game};
 use civvis::parallel;
