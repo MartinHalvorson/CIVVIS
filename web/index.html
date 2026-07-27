@@ -491,23 +491,32 @@
     color: #8fa29a; font-size: var(--type-control); font-weight: 800; font-variant-numeric: tabular-nums;
     line-height: 1; white-space: nowrap;
   }
+  /* One label-and-value row per setting. The single track is never narrower
+     than its widest row, so when the plate cannot hold that row the track
+     overflows the block instead of squeezing it — and that overflow is the
+     signal the responsive type fitter scales the *whole* block by. Sizing each
+     cell on its own is what used to render "Watch pace: Lightni…": the two
+     halves of a row shrank against each other, the value ellipsized, and
+     neighbouring rows settled at four different type sizes. */
   .turn-settings {
-    align-self: stretch; min-width: 0; display: grid; align-content: start; gap: 2px;
-    padding-top: 4px; color: #9fb0a9; border-top: 1px solid #d7b66a24;
-    font-size: var(--type-small); font-weight: 700; letter-spacing: -.015em; line-height: 1.18;
+    align-self: stretch; min-width: 0; display: grid;
+    grid-template-columns: minmax(max-content, 1fr); align-content: start; gap: 3px;
+    padding-top: 5px; color: #9fb0a9; border-top: 1px solid #d7b66a24;
+    font-size: var(--type-small); font-weight: 700; letter-spacing: -.015em; line-height: 1.2;
   }
+  /* The gutter is in em deliberately. The fitter scales a block by the ratio
+     its own overflow gives it, which is only exact if every part of the row
+     scales with the type — a fixed 8px gutter left the widest row one to three
+     pixels over at the small end, and one to three pixels over is a letter
+     gone. */
   .turn-setting {
     min-width: 0; display: flex; align-items: baseline; justify-content: space-between;
-    gap: 3px; white-space: nowrap;
+    gap: .7em; white-space: nowrap;
   }
-  .turn-setting span, .turn-setting b { min-width: 0; }
-  .turn-setting b {
-    overflow: hidden; color: #dce6e1; font-weight: 900; text-overflow: ellipsis;
-  }
-  .turn-settings-secondary {
-    display: grid; gap: 2px; margin-top: 2px; padding-top: 4px;
-    border-top: 1px solid #d7b66a1c;
-  }
+  /* Neither half of a row gives up width, and nothing here ellipsizes: a
+     setting is shown whole or the block is drawn a quarter-point smaller. */
+  .turn-setting > span, .turn-setting > b { flex: 0 0 auto; }
+  .turn-setting b { color: #dce6e1; font-weight: 900; }
   /* Borrowed turns. It sits under the turn cap because that cap is the thing
      it explains: the number went up because somebody asked it to. */
   .turn-playon {
@@ -2150,7 +2159,7 @@
     --hud-stat-tracks: repeat(10, minmax(var(--hud-stat-min), 1fr));
     --hud-lock-column: 13px; --hud-row-height: 26px; --hud-row-gap: 2px;
     --hud-row-pitch: calc(var(--hud-row-height) + var(--hud-row-gap));
-    display: grid; grid-template-columns: 140px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
+    display: grid; grid-template-columns: 164px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
     align-items: stretch; gap: 5px; min-width: 0; padding: 5px;
     overflow: visible; transform: none;
     border: 1px solid #526a618f; border-radius: 12px;
@@ -2587,13 +2596,13 @@
      window resize. */
   @media (min-width: 2200px) {
     #playerhud {
-      grid-template-columns: 140px minmax(0, 1fr);
+      grid-template-columns: 168px minmax(0, 1fr);
       --hud-ident-min: 66px; --hud-identity-bias: 1.3; --hud-stat-min: 44px;
     }
   }
   @media (max-width: 1580px) {
     #playerhud {
-      grid-template-columns: 132px minmax(0, 1fr);
+      grid-template-columns: 144px minmax(0, 1fr);
       --hud-ident-min: 41px; --hud-stat-min: 36px;
     }
     #maparea { --hud-rail-width: clamp(240px, 20vw, 300px); }
@@ -2602,7 +2611,7 @@
      side around here. */
   @media (max-width: 1300px) {
     #playerhud {
-      grid-template-columns: 132px minmax(0, 1fr);
+      grid-template-columns: 144px minmax(0, 1fr);
       --hud-ident-min: 33.5px; --hud-column-gap: 4px; --hud-stat-min: 34px;
     }
     #maparea { --hud-rail-width: 224px; }
@@ -2610,7 +2619,7 @@
   @media (max-width: 1180px) {
     #maparea { --hud-rail-width: 200px; --minimap-height: 158px; }
     #playerhud {
-      grid-template-columns: 132px minmax(0, 1fr);
+      grid-template-columns: 140px minmax(0, 1fr);
       --hud-ident-min: 27.5px; --hud-column-gap: 3px;
       --hud-watch-column: 64px;
       --hud-stat-min: 32px; --hud-stat-gap: 2px;
@@ -2689,7 +2698,7 @@
      layout follows the space it actually has instead of the screen it happens
      to be floating over. */
   #playerhud[data-type-size="compact"] {
-    grid-template-columns: clamp(132px, 32%, 148px) minmax(0, 1fr);
+    grid-template-columns: clamp(140px, 33%, 164px) minmax(0, 1fr);
     --hud-ident-min: 25px; --hud-column-gap: 4px;
     --hud-stat-min: 32px; --hud-stat-gap: 2px;
   }
@@ -2712,7 +2721,7 @@
   #playerhud[data-type-size="compact"] .ribbon-stat-heading,
   #playerhud[data-type-size="compact"] .diplomacy-ribbon { min-width: 680px; }
   #playerhud[data-type-size="roomy"] {
-    grid-template-columns: 148px minmax(0, 1fr);
+    grid-template-columns: 168px minmax(0, 1fr);
     --hud-ident-min: 61px; --hud-column-gap: 7px;
     --hud-identity-bias: 1.25; --hud-stat-min: 42px;
     --hud-row-height: 30px;
@@ -5935,7 +5944,11 @@ const RESPONSIVE_TEXT_RULES = [
   {selector:"#playerhud .turn-label", min:11, max:14},
   {selector:"#playerhud .victory-turn strong", min:24, max:34},
   {selector:"#playerhud .turn-total", min:10, max:14},
-  {selector:"#playerhud .turn-setting > span, #playerhud .turn-setting > b", min:9, max:13},
+  // The settings block is fitted as one piece, not cell by cell. Its single
+  // grid track holds the widest whole row, so the block's own overflow is the
+  // exact amount it is too big by — and one size for every row is what keeps
+  // four adjacent settings looking like one instrument.
+  {selector:"#playerhud .turn-settings", min:8.5, max:12, slack:4},
   {selector:"#victoryhud > .hud-section-heading > span", min:9, max:14, parentWidth:true},
   {selector:"#victoryhud .victory-heading b", min:10, max:14},
   {selector:"#victoryhud .victory-subheading span", min:9, max:11},
@@ -6046,11 +6059,18 @@ function fitResponsiveType() {
           - (parseFloat(parentStyle.paddingRight) || 0))
       : width;
     const availableHeight = Math.max(height, element.parentElement?.clientHeight || 0);
+    // A run of text is not proportional to its type size: every glyph advance
+    // rounds up, so the same words measured at the ceiling come out a few
+    // pixels wider than the ratio to a smaller size predicts — 151px of
+    // settings at 12px is 118px at 9px, not the 114px the ratio promises. A
+    // cell that ellipsizes absorbs that quietly; a rule that has none asks for
+    // those pixels back before the ratio is taken.
+    const room = Math.max(1, availableWidth - (rule.slack || 0));
     // Inline line boxes commonly report one extra device-rounded pixel even
     // when every glyph is visible. Treat only a larger difference as real
     // overflow so that harmless rounding cannot ratchet text below its ceiling.
-    const widthFit = element.scrollWidth > availableWidth + 1
-      ? availableWidth / element.scrollWidth * .985 : 1;
+    const widthFit = element.scrollWidth > room + 1
+      ? room / element.scrollWidth * .985 : 1;
     const heightFit = element.scrollHeight > availableHeight + 1
       ? availableHeight / element.scrollHeight * .985 : 1;
     const ideal = rule.max * Math.min(1, widthFit, heightFit);
@@ -20065,9 +20085,12 @@ function hudTurnPlate() {
   const speedName = titleCase(state.game_speed || "standard");
   const paceOption = document.getElementById("specspeed")?.selectedOptions[0];
   const watchPace = SPEC ? paceOption?.textContent.trim() || "Blitz" : "Manual";
-  const currentView = VIEW === "balanced" ? "Painted" : titleCase(VIEW);
-  const civCount = state.players.filter(p => !p.is_minor && !p.is_barbarian).length;
-  const cityStateCount = state.players.filter(p => p.is_minor && !p.is_barbarian).length;
+  // "Remaining" is a count of who is still playing, so a civilization that has
+  // been wiped off the map no longer appears in it.
+  const civCount = state.players
+    .filter(p => p.alive && !p.is_minor && !p.is_barbarian).length;
+  const cityStateCount = state.players
+    .filter(p => p.alive && p.is_minor && !p.is_barbarian).length;
   // The world's shape and its poles are only worth a word when they are not
   // the ones a world arrives with by default.
   const shapeNote = planetMap() ? " · Planet" : "";
@@ -20096,22 +20119,20 @@ function hudTurnPlate() {
     : "";
   const context = identityContext + (playOnLabel ? ` · ${playOnLabel}` : "");
   const plateLabel = `${context}; ${ageLabel}; turn ${state.turn} of ${turnCapLabel()}; ` +
-    `${civCount} civilizations; ${cityStateCount} city states; game speed ${speedName}; ` +
-    `current view ${currentView}; watch pace ${watchPace}`;
+    `game speed ${speedName}; ${civCount} civilizations remaining; ` +
+    `${cityStateCount} city states remaining; watch pace ${watchPace}`;
   return `<section class="victory-turn" title="${escapeAttr(context)}" aria-label="${escapeAttr(plateLabel)}">` +
     `<span class="turn-era">${ageLabel}</span>` +
     `<div class="turn-count"><div class="turn-heading"><span class="turn-label">Turn</span>` +
     (decided ? `<small class="turn-playon">Playing on</small>` : ``) +
     `</div><div class="turn-progress"><strong>${state.turn}</strong>` +
     `<small class="turn-total">/ ${turnCapLabel()}</small></div></div>` +
-    `<div class="turn-settings" aria-label="Game and display settings">` +
-    `<div class="turn-setting"><span>Civs: <b>${civCount}</b></span>` +
-    `<span>City states: <b>${cityStateCount}</b></span></div>` +
+    `<div class="turn-settings" aria-label="Game settings">` +
     `<div class="turn-setting"><span>Game speed:</span><b>${speedName}</b></div>` +
-    `<div class="turn-settings-secondary">` +
-    `<div class="turn-setting"><span>Current view:</span><b>${currentView}</b></div>` +
+    `<div class="turn-setting"><span>Civs remaining:</span><b>${civCount}</b></div>` +
+    `<div class="turn-setting"><span>City states remaining:</span><b>${cityStateCount}</b></div>` +
     `<div class="turn-setting"><span>Watch pace:</span><b>${watchPace}</b></div>` +
-    `</div></div></section>`;
+    `</div></section>`;
 }
 
 function playerHudOverview() {
