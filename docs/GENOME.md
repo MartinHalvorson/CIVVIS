@@ -691,6 +691,34 @@ is entirely practical on one machine.**
 > find and exploit. The cost of an unbiased fitness is hours; the cost of a
 > biased one is an agent that is measurably worse.
 
+## ★★ The shipped genome is a local optimum, measured on wins
+
+A (1+1) paired hill climb — one mutant per step, played head to head against
+the incumbent on the same 150 mirrored maps, accepted only on a 2 SE margin,
+scored on **wins**:
+
+```
+14 steps, 0 accepted
+significantly better:  0
+significantly worse:   2   (step 8 at -4.4 SE, step 11 at -2.7 SE)
+best seen:            +1.0 SE
+```
+
+**The asymmetry is the result.** Random perturbations of the shipped genome
+can hurt significantly and never help. That is what sitting at a local optimum
+looks like, and it is measured on the objective rather than on a proxy.
+
+It also explains, retrospectively, why every earlier tuning attempt returned
+null: they were sampling around a point that is already locally best. The
+handful of hand-tuned constants in `Weights::default` are, on this evidence,
+about as good as that parameterisation gets.
+
+**What this does not establish.** 150 maps resolves about 0.029, so effects
+below roughly 0.06 are invisible to this run. A small real improvement is not
+excluded — only a large one. Buying that resolution is the recipe above:
+600 maps a step reaches 0.014, at roughly five hours for a comparable number
+of steps.
+
 ## The conclusion this all points at
 
 Every measured attempt to make this agent stronger by **tuning parameters** has

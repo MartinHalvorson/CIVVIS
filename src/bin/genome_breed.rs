@@ -329,6 +329,13 @@ fn main() {
     // maximum-of-many inflation, and the comparison is paired at the map level.
     if args.iter().any(|arg| arg == "--climb") {
         let steps = number(&args, "--steps", 12);
+        // The climb scores WINS unconditionally -- see the match on
+        // `game.winner` below -- so say so here. The header printed above
+        // reads the `--fitness-wins` flag, which a climb run does not need to
+        // pass, and it therefore mislabelled the first climb output as lane
+        // progress. The data was right and the label was wrong, which is the
+        // second time in this work a tool has misdescribed its own output.
+        println!("  NOTE: --climb always scores WINS; ignore any statistic line above.");
         let mut incumbent = shipped.clone();
         let mut accepted = 0usize;
         println!("  (1+1) paired hill climb: {steps} steps, mutant vs incumbent head to head\n");
