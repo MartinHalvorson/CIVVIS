@@ -311,6 +311,7 @@ pub enum MapScript {
     LandOnly,
     Lakes,
     InlandSea,
+    GrandCanals,
     #[default]
     Pangaea,
     Continents,
@@ -326,6 +327,7 @@ impl MapScript {
             Self::LandOnly => "land_only",
             Self::Lakes => "lakes",
             Self::InlandSea => "inland_sea",
+            Self::GrandCanals => "grand_canals",
             Self::Pangaea => "pangaea",
             Self::Continents => "continents",
             Self::SmallContinents => "small_continents",
@@ -351,6 +353,11 @@ impl MapScript {
             Self::LandOnly => 95,
             Self::Lakes => 81,
             Self::InlandSea => 68,
+            // Ground nearly everywhere, less the six canals cut through it.
+            // What the canals take is geometry rather than a share the
+            // generator picks, so this is what is left once they have taken
+            // it; see `mapgen::grand_canals`.
+            Self::GrandCanals => 62,
             Self::Pangaea => 42,
             Self::Continents => 42,
             Self::SmallContinents => 36,
@@ -533,7 +540,7 @@ pub struct MapScriptSpec {
 
 /// The world types in the order [`MapScript`] declares them: all land at the
 /// top, all water at the bottom, Earth on the end.
-pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 9] = [
+pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 10] = [
     MapScriptSpec {
         id: "land_only",
         name: "Land Only",
@@ -551,6 +558,12 @@ pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 9] = [
         name: "Inland Sea",
         description: "A broad connected landmass surrounding a central sea.",
         script: MapScript::InlandSea,
+    },
+    MapScriptSpec {
+        id: "grand_canals",
+        name: "Grand Canals",
+        description: "A world of solid ground cut by six canals that each circle it: two around the poles, two around each of the other two axes, crossing at twenty-four junctions.",
+        script: MapScript::GrandCanals,
     },
     MapScriptSpec {
         id: "pangaea",
