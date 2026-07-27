@@ -8,8 +8,8 @@ run won 339-261 games over 300 mirrored maps, passed the promotion gate, and
 completed a pooled 540-map record of 109 favorable directions to 32 adverse.
 
 `ff083ea` then shipped the first evolved genome and correctly marked every
-previous comparison that loaded `best.json` as superseded. The genome itself
-has now transferred favorably into deep search: `docs/STRATEGIC_GENOME_TRANSFER.md`
+previous comparison that loaded `best.json` as superseded. Generation 2 itself
+transferred favorably into deep search: `docs/STRATEGIC_GENOME_TRANSFER.md`
 records a 33-27 screen against frozen default weights. That does not establish
 that the **extra search budget** still pays, because the evolved policy can
 change branch resolution, priors, game length, and the value of another forty
@@ -23,7 +23,7 @@ optional value-net path. They differ only in macro-search budget:
 | `strategic` | 40 turns | 40 rounds |
 | `strategic_deep` | 20 turns | 80 rounds |
 
-## Pre-registered evaluation
+## Generation-2 pre-registered evaluation
 
 The shipped deep agent remains the top-rung incumbent. A 60-map confirmation
 uses fresh seeds:
@@ -43,9 +43,9 @@ This is conservative because deep search already passed its original 300-map
 gate and remains an explicit higher-compute choice rather than an inherited
 default.
 
-## Result
+## Generation-2 result
 
-### Development screen
+### Generation-2 development screen
 
 Across 60 fresh mirrored maps (120 games), the evolved deep agent lost 57-63:
 
@@ -65,7 +65,7 @@ Religion (33.1% versus 31.1%) and retained more faith (329.9 versus 301.6).
 The shallow incumbent's win direction is favorable, although unresolved, so
 it earns the pre-registered disjoint 240-map reversal gate at seed 114000.
 
-### Disjoint reversal gate
+### Generation-2 disjoint reversal gate
 
 The exact gate command reversed entrant order so the shallower agent was the
 challenger whose PASS could change the ranking:
@@ -95,8 +95,31 @@ It averaged 144.0 score to 139.3, 2.54 cities to 2.41, 16.0 population to
 spending a slightly smaller share of observed turns labeled Religion (30.1%
 versus 31.1%), it converted 46 more religious victories.
 
-Across the screen and gate, 300 disjoint evolved-genome maps split 322-278
-games for deep and **45 map directions to 23** (pooled exact `p = 0.0103`).
-The 60-map screen was ordinary small-sample inversion; the powered fresh run
-restores the original ordering on the new policy. `strategic_deep` remains the
-evidence-backed top rung and no agent behavior changes.
+Across the screen and gate, 300 disjoint generation-2 maps split 322-278 games
+for deep and **45 map directions to 23** (pooled exact `p = 0.0103`). The
+60-map screen was ordinary small-sample inversion; the powered fresh run
+restored the original ordering on that policy population.
+
+## Generation-14 upstream confirmation
+
+Before this audit was finalized, `0a5afd5` replaced generation 2 with the
+generation-14 champion. The completed generation-2 screen and gate remain
+valid evidence for that frozen population, but they cannot decide the search
+budget on a materially different genome.
+
+Before observing any generation-14 games, this audit therefore registers a
+fresh 60-map confirmation with otherwise identical settings:
+
+```text
+cargo run --profile ci --locked --bin ai_eval -- \
+  strategic_deep strategic \
+  --pairs 60 --players 4 --width 24 --height 16 \
+  --turns 200 --seed 115000 --jobs 12
+```
+
+A deep-favorable or neutral win direction keeps the current ranking and stops.
+Only a favorable `strategic` win direction earns a disjoint 240-map reversal
+gate at seed 116000, with `strategic` first so that only its formal
+`promotion gate: PASS` can reverse the recommendation. This confirmation is a
+new-policy safeguard, not an extension selected in response to the
+generation-2 outcome.
