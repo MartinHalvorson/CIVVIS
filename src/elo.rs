@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 19] = [
+pub const EVAL_ONLY_AIS: [&str; 22] = [
     "advanced_lane_reachable",
     "advanced_relief_scoped",
     "strategic_score",
@@ -57,7 +57,10 @@ pub const EVAL_ONLY_AIS: [&str; 19] = [
     "policy_wide_frozen",
     "strategic_warm",
     "strategic_cold",
+    "strategic_noprophet",
     "strategic_deep_adaptive",
+    "strategic_rivals",
+    "strategic_deep_rivals",
 ];
 
 /// On-disk schema for the shared player/leader/civilization rating ledger.
@@ -499,6 +502,17 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         "strategic_score" => Box::new(crate::strategic::StrategicAi::score_only_with_weights(
             crate::evolve::load_champion("evolved").unwrap_or_default(),
         )),
+        // Public-state opponent model. The searching seat, branch set and
+        // compute budget are identical to `strategic`; only confidently
+        // inferred rival lanes remain fixed through a projection instead of
+        // being reconstructed as blank adaptive planners.
+        "strategic_rivals" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.model_rival_lanes = true;
+            Box::new(ai)
+        }
         // Treatment for the doctrine axis: identical to `strategic` in
         // weights, horizon, lane policy and priors, differing only in that
         // a review which reaches the rollouts also projects the four play
@@ -564,6 +578,18 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             ai.horizon = 80;
             Box::new(ai)
         }
+        // The same opponent-model treatment on the strongest measured macro
+        // search, isolating whether better branch fidelity still helps when
+        // each review already spends the promoted 20x80 budget.
+        "strategic_deep_rivals" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.review_every = 20;
+            ai.horizon = 80;
+            ai.model_rival_lanes = true;
+            Box::new(ai)
+        }
         // Rollout search over what a city builds, rate-limited to one
         // decision every fifteen turns so the whole feature costs about
         // what the lane search costs.
@@ -622,6 +648,19 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             ai.review_every = 20;
             ai.horizon = 80;
             ai.adaptive_horizon = true;
+            Box::new(ai)
+        }
+        // The irreversible-Prophet prior removed, so the rollouts answer the
+        // reviews it was short-circuiting. It answers about half of all
+        // reviews and the search disagrees with it 85% of the time
+        // (`search_probe --priors`), which makes it the largest single
+        // restriction on this search that has ever been measured -- and an
+        // entirely untested one.
+        "strategic_noprophet" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.trust_religious_prior = false;
             Box::new(ai)
         }
         "strategic_rot20" => {
@@ -831,6 +870,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         // The control refuses a net by construction, so it is never
         // degraded — only untrained when the genome is absent.
         "strategic_score" => (vec![genome], "strategic_score"),
+        "strategic_rivals" => (vec![genome, value(false)], "strategic_rivals"),
         // Unlike `strategic`, its netless form has no separate published
         // name to degrade *to*: the doctrine axis runs either way. A
         // missing net therefore leaves it untrained rather than renamed,
@@ -844,11 +884,13 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "strategic_rot20" => (vec![genome, value(false)], "strategic_rot20"),
         "strategic_warm" => (vec![genome, value(false)], "strategic_warm"),
         "strategic_cold" => (vec![genome, value(false)], "strategic_cold"),
+        "strategic_noprophet" => (vec![genome, value(false)], "strategic_noprophet"),
         "strategic_deep_adaptive" => (vec![genome, value(false)], "strategic_deep_adaptive"),
         // Same artifact dependencies as `strategic`: the genome tunes it,
         // and the net is non-definitional because the search runs without
         // one. There is no separate published netless name to degrade to.
         "strategic_deep" => (vec![genome, value(false)], "strategic_deep"),
+        "strategic_deep_rivals" => (vec![genome, value(false)], "strategic_deep_rivals"),
         "strategic_rot10" => (vec![genome, value(false)], "strategic_rot10"),
         // The genome tunes both its rollout policy and its scripted
         // governor; it consults no net.

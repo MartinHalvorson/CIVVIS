@@ -267,6 +267,25 @@ pub struct StrategicAi {
     /// piece of retained state does it -- the force groups, the peace
     /// cooldown, or simply the plan surviving.
     pub continue_from_plan: bool,
+    /// Let the irreversible-Prophet prior answer a review before the
+    /// rollouts run. True reproduces the shipped behaviour exactly.
+    ///
+    /// **This prior answers about half of all reviews, and the search
+    /// disagrees with it 85% of the time.** Audited over 200 four-player
+    /// positions at turn ~60 (`search_probe --priors`): 99 were answered by
+    /// a prior rather than the rollouts, **92 of them by this one**, and on
+    /// 85 of the 99 the projection would have chosen differently — always
+    /// the same way, the prior taking Religion where the search would stay
+    /// adaptive.
+    ///
+    /// That is not evidence the prior is wrong. Its argument is sound and
+    /// the search cannot check it: a Prophet slot is an irreversible global
+    /// race, and a forty-round projection scored by score share cannot see
+    /// the value of an option that pays out beyond it. It is evidence that
+    /// this one predicate, not the evaluator and not the horizon, is what
+    /// decides the lane in half of this agent's reviews — and that had never
+    /// been measured.
+    pub trust_religious_prior: bool,
     /// Search the doctrine axis as well as the lane. Off by default so
     /// `strategic` is bit-identical to its published behaviour; the
     /// `strategic_doctrine` entrant turns it on, which makes the two an
@@ -304,6 +323,24 @@ pub struct StrategicAi {
     /// evidence for spending a review's budget on depth rather than on
     /// stopping early.
     pub adaptive_horizon: bool,
+    /// Model a rival as the victory lane its public empire already reveals.
+    ///
+    /// The stock rollout reconstructs every opponent as a fresh adaptive
+    /// `AdvancedAi`. That preserves the opponent class, but erases a visible
+    /// strategic commitment: a religion founder with foreign conversions or
+    /// a tourism leader may spend the whole projection rediscovering a plan
+    /// the real empire has pursued for dozens of turns. When this treatment
+    /// is enabled, a confidently separated public victory-screen signal pins
+    /// that rival to the inferred lane for the branch. Weak and tied signals
+    /// deliberately remain adaptive.
+    ///
+    /// **Measured, not promoted.** The fires-check found inferred lanes on
+    /// 65.5% of eligible rival seats and changed 61/77 branch values, but a
+    /// fresh 120-map confirmation scored 47.9% (-14 Elo-equivalent), with
+    /// five favorable map directions to ten adverse. Terminal score was
+    /// exactly 50.0%. Kept off by default as a reproducible negative control;
+    /// see `docs/RIVAL_ROLLOUTS.md`.
+    pub model_rival_lanes: bool,
     /// Whether a prior-driven interrupt postpones the next periodic review.
     /// True reproduces the shipped behaviour exactly.
     pub defer_periodic_on_interrupt: bool,
@@ -348,6 +385,8 @@ impl StrategicAi {
             census: ReviewCensus::default(),
             continue_from_plan: true,
             adaptive_horizon: false,
+            model_rival_lanes: false,
+            trust_religious_prior: true,
             doctrine_search: false,
             defer_periodic_on_interrupt: true,
             rotate_lanes: false,
@@ -409,6 +448,106 @@ impl StrategicAi {
             VictoryTarget::Domination => g.victory_conditions.domination,
             VictoryTarget::Score => g.victory_conditions.score,
         }
+    }
+
+    /// Infer a rival's durable victory lane from public victory-screen state.
+    ///
+    /// This deliberately mirrors the signals used by `AdvancedAi`'s adaptive
+    /// victory focus without consulting hidden planner state. Science receives
+    /// its public technology-tree trajectory; the other lanes receive only
+    /// concrete tourism, religious conversion, diplomatic-victory and
+    /// suzerainty progress. A weak or nearly tied argmax returns `None`, which
+    /// leaves the rollout rival adaptive instead of pretending certainty.
+    pub fn inferred_rival_target(&self, g: &Game, rival: usize) -> Option<VictoryTarget> {
+        let player = g.players.get(rival)?;
+        if !player.alive || player.is_minor || player.is_barbarian || g.turn < FIRST_REVIEW_TURN {
+            return None;
+        }
+        let living_majors: Vec<usize> = g
+            .players
+            .iter()
+            .filter(|candidate| candidate.alive && !candidate.is_minor && !candidate.is_barbarian)
+            .map(|candidate| candidate.id)
+            .collect();
+
+        let tech_progress =
+            25 + (30 * player.techs.len() / g.rules.techs.len().max(1)).min(30) as i32;
+        let project_progress = player.science_projects.len().min(4) as i32 * 18;
+        let travel_progress = if player.science_projects.contains("exoplanet_expedition") {
+            (player.exoplanet_distance * 100.0 / 50.0).clamp(0.0, 100.0) as i32
+        } else {
+            0
+        };
+        let science = tech_progress
+            .max(project_progress)
+            .max(travel_progress)
+            .max((player.civ == "China") as i32 * 45);
+
+        let culture_target = living_majors
+            .iter()
+            .filter(|other| **other != rival)
+            .map(|other| g.domestic_tourists(*other))
+            .max()
+            .unwrap_or(1)
+            .max(1);
+        let culture = (100 * g.foreign_tourists(rival) / culture_target).clamp(0, 100) as i32;
+
+        let religion = player.religion.as_ref().map_or(0, |religion| {
+            let converted = living_majors
+                .iter()
+                .filter(|other| {
+                    let cities = g.player_city_ids(**other);
+                    let following = cities
+                        .iter()
+                        .filter(|city| g.city_religion(&g.cities[city]) == Some(religion.as_str()))
+                        .count();
+                    !cities.is_empty() && following * 2 > cities.len()
+                })
+                .count();
+            // Founding is a durable forty-point commitment in the adaptive
+            // planner; conversions then measure the public race itself.
+            40 + (60 * converted / living_majors.len().max(1)) as i32
+        });
+
+        let suzerain = g
+            .players
+            .iter()
+            .filter(|minor| {
+                minor.alive
+                    && minor.is_minor
+                    && !minor.is_barbarian
+                    && g.suzerain_of(minor.id) == Some(rival)
+            })
+            .count() as i64;
+        let diplomacy = (player.dvp * 5 + suzerain * 6).clamp(0, 100) as i32;
+
+        let mut lanes = vec![
+            (VictoryTarget::Science, science),
+            (
+                VictoryTarget::Culture,
+                culture.max((player.civ == "Greece") as i32 * 45),
+            ),
+            (VictoryTarget::Religion, religion),
+            (VictoryTarget::Diplomacy, diplomacy),
+        ];
+        lanes.retain(|(target, _)| Self::target_enabled(g, *target));
+        lanes.sort_by(|left, right| right.1.cmp(&left.1));
+        let (target, progress) = *lanes.first()?;
+        let runner_up = lanes.get(1).map_or(0, |(_, progress)| *progress);
+        // Thirty is the first point at which technology progress has moved
+        // meaningfully beyond its unearned opening floor. Five points is the
+        // smallest separation the underlying integer focus cannot reverse on
+        // one ordinary technology or envoy tick.
+        (progress >= 30 && progress >= runner_up + 5).then_some(target)
+    }
+
+    fn rival_agent(&self, g: &Game, rival: usize) -> Box<dyn Ai> {
+        if self.model_rival_lanes {
+            if let Some(target) = self.inferred_rival_target(g, rival) {
+                return Box::new(AdvancedAi::targeting(target));
+            }
+        }
+        Box::new(AdvancedAi::new())
     }
 
     /// Prophet slots are an irreversible global race. Once the opening book
@@ -700,7 +839,7 @@ impl StrategicAi {
                     // strategic layer is trying to beat. BasicAi understates
                     // victory pressure (especially religion), so a locally
                     // attractive Science rollout can be globally losing.
-                    Box::new(AdvancedAi::new()) as Box<dyn Ai>
+                    self.rival_agent(g, p.id)
                 }
             })
             .collect();
@@ -1039,7 +1178,7 @@ impl StrategicAi {
                         }
                     }
                 } else {
-                    Box::new(AdvancedAi::new()) as Box<dyn Ai>
+                    self.rival_agent(g, p.id)
                 }
             })
             .collect();
@@ -1074,7 +1213,7 @@ impl StrategicAi {
         if let Some(counter) = self.urgent_counter_target(g, pid) {
             return (Some(counter), ReviewPath::UrgentCounter);
         }
-        if Self::viable_religious_commitment(g, pid) {
+        if self.trust_religious_prior && Self::viable_religious_commitment(g, pid) {
             return (
                 Some(VictoryTarget::Religion),
                 ReviewPath::IrreversibleReligion,
@@ -1218,7 +1357,7 @@ impl Ai for StrategicAi {
 
 #[cfg(test)]
 mod tests {
-    use super::{Doctrine, StrategicAi};
+    use super::{Doctrine, StrategicAi, FIRST_REVIEW_TURN};
     use crate::ai::{run_game, Ai, BasicAi, VictoryTarget, Weights};
     use crate::game::{Action, Game};
     use crate::valuenet::ValueNet;
@@ -1240,6 +1379,49 @@ mod tests {
     #[test]
     fn default_macro_search_looks_forty_rounds_ahead() {
         assert_eq!(StrategicAi::new().horizon, 40);
+    }
+
+    #[test]
+    fn rival_lane_model_is_off_by_default() {
+        assert!(!StrategicAi::new().model_rival_lanes);
+    }
+
+    #[test]
+    fn rival_lane_inference_abstains_before_public_progress_separates() {
+        let mut game = Game::new(4, 20, 14, 200, 12, 0);
+        game.turn = FIRST_REVIEW_TURN;
+        assert_eq!(StrategicAi::new().inferred_rival_target(&game, 1), None);
+    }
+
+    #[test]
+    fn rival_lane_inference_reads_public_science_religion_and_diplomacy_state() {
+        let strategic = StrategicAi::new();
+
+        let mut science = Game::new(4, 20, 14, 201, 12, 0);
+        science.turn = FIRST_REVIEW_TURN;
+        let needed = science.rules.techs.len().div_ceil(6);
+        let techs: Vec<String> = science.rules.techs.keys().take(needed).cloned().collect();
+        science.players[1].techs.extend(techs);
+        assert_eq!(
+            strategic.inferred_rival_target(&science, 1),
+            Some(VictoryTarget::Science)
+        );
+
+        let mut religion = Game::new(4, 20, 14, 202, 12, 0);
+        religion.turn = FIRST_REVIEW_TURN;
+        religion.players[1].religion = Some("Visible Faith".to_string());
+        assert_eq!(
+            strategic.inferred_rival_target(&religion, 1),
+            Some(VictoryTarget::Religion)
+        );
+
+        let mut diplomacy = Game::new(4, 20, 14, 203, 12, 0);
+        diplomacy.turn = FIRST_REVIEW_TURN;
+        diplomacy.players[1].dvp = 10;
+        assert_eq!(
+            strategic.inferred_rival_target(&diplomacy, 1),
+            Some(VictoryTarget::Diplomacy)
+        );
     }
 
     #[test]

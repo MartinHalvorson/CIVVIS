@@ -878,7 +878,7 @@ impl BasicAi {
     }
 
     fn minor_district_family(g: &Game, pid: usize) -> &'static str {
-        match Game::cs_type(&g.players[pid].civ) {
+        match g.cs_type(&g.players[pid].civ) {
             "scientific" => "campus",
             "cultural" => "theater_square",
             "religious" => "holy_site",
@@ -889,7 +889,7 @@ impl BasicAi {
     }
 
     fn minor_tech_goal(g: &Game, pid: usize) -> Option<&'static str> {
-        let goal = match Game::cs_type(&g.players[pid].civ) {
+        let goal = match g.cs_type(&g.players[pid].civ) {
             "scientific" => "writing",
             "religious" => "astrology",
             "militaristic" => "bronze_working",
@@ -1620,7 +1620,7 @@ impl BasicAi {
         if g.players[pid].civic.is_none() {
             let avail = g.available_civics(pid);
             if !avail.is_empty() {
-                let cultural_goal = (Game::cs_type(&g.players[pid].civ) == "cultural"
+                let cultural_goal = (g.cs_type(&g.players[pid].civ) == "cultural"
                     && !g.players[pid].civics.contains("drama_poetry"))
                 .then_some("drama_poetry");
                 let pick = Self::civic_step_toward(g, &avail, cultural_goal)
