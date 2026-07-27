@@ -3364,12 +3364,9 @@
           <option value="single">Single player</option>
           <option disabled>Multiplayer · later</option>
         </select></label>
-        <label class="small">Start eon<select id="starteon" style="margin-top:4px">
-          <option value="?????" title="Rolled among this setting's own options when the game starts">?????</option>
-          <option value="civilization" selected>Civilization</option>
-        </select></label>
         <label class="small">Start era<select id="startera" style="margin-top:4px">
           <option value="?????" title="Rolled among this setting's own options when the game starts">?????</option>
+          <option value="stone_age" disabled>Stone Age · later</option>
           <option value="ancient" selected>Ancient</option>
         </select></label>
         <label class="small">Leader Pool<select id="leaderpool" style="margin-top:4px">
@@ -3945,15 +3942,15 @@ const VICTORY_TRACKS = [
 // travels — the server is only ever told what came up.
 const RANDOM_SETTING = "?????";
 // In panel order, which is also dependency order: the ruleset decides which
-// eons exist, an eon decides which eras it has, the mode decides whether a
-// seat exists at all, and the leader pool decides who may fill it.
-const RANDOM_SELECT_IDS = ["baseruleset", "gamemode", "starteon", "startera",
+// eras exist, the mode decides whether a seat exists at all, and the leader
+// pool decides who may fill it.
+const RANDOM_SELECT_IDS = ["baseruleset", "gamemode", "startera",
   "leaderpool", "leader", "difficulty",
   "mapshape", "maptype", "mappoles", "np", "gamespeed"];
 const RANDOM_VICTORY_IDS = VICTORY_TRACKS.map(track => `victory-${track.id}`);
 const RANDOM_SETTING_LABELS = {
   baseruleset: "Base game ruleset", gamemode: "Game mode",
-  starteon: "Start eon", startera: "Start era",
+  startera: "Start era",
   leaderpool: "Leader pool", leader: "Leader",
   difficulty: "Difficulty", mapshape: "World shape", maptype: "Map",
   mappoles: "Thermal distribution", np: "World size", gamespeed: "Game speed",
@@ -7298,19 +7295,22 @@ async function boot() {
         `<option value="${ruleset.id}" title="${escapeAttr(ruleset.description)}">${ruleset.name}</option>`
       ).join("");
     }
-    if (Array.isArray(RULES.start_eons)) {
-      // Oldest first, exactly as the server lists them: the eons are a
-      // timeline, and Civilization sits at its own place on it. An eon that
-      // cannot be played yet is shown as what is coming rather than hidden,
-      // and cannot be chosen.
-      document.getElementById("starteon").innerHTML = RULES.start_eons.map(eon =>
-        `<option value="${eon.id}" title="${escapeAttr(eon.description)}"` +
-        `${eon.playable ? "" : " disabled"}>${eon.name}` +
-        `${eon.playable ? "" : " · later"}</option>`
+    if (Array.isArray(RULES.start_eras)) {
+      // Earliest first, exactly as the server lists them: the ladder is a
+      // timeline. A rung nobody has built yet is shown as what is coming
+      // rather than hidden, and cannot be chosen — the Stone Age is on the
+      // list because human history does not in fact begin with a Settler and
+      // a Warrior, not because it can be played.
+      const eras = document.getElementById("startera");
+      const chosen = eras.value;
+      eras.innerHTML = RULES.start_eras.map(era =>
+        `<option value="${era.id}" title="${escapeAttr(era.description)}"` +
+        `${era.playable ? "" : " disabled"}>${era.name}` +
+        `${era.playable ? "" : " · later"}</option>`
       ).join("");
-      const playable = RULES.start_eons.find(eon => eon.playable);
-      if (playable) document.getElementById("starteon").value = playable.id;
-      syncStartEon();
+      const stock = RULES.start_eras.find(era => era.playable);
+      eras.value = RULES.start_eras.some(era => era.playable && era.id === chosen)
+        ? chosen : (stock ? stock.id : "");
     }
     if (Array.isArray(RULES.map_sizes)) {
       document.getElementById("np").innerHTML = RULES.map_sizes.map(size =>
@@ -8774,7 +8774,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
             title="Keep this world and pause before another turn runs, so you can inspect the final map.">Take a look around</button>
           <button class="winner-again winner-playon" id="play-on-next-victory"
             onclick="playOnPastVictory('until_next_victory', false)"
-            title="Keep playing this world without a turn limit. The exact result shown here will not repeat; the next distinct victory ends the game.">Continue</button>
+            title="Keep playing this world without a turn limit. The exact result shown here will not repeat; the next distinct victory ends the game.">Continue to the next Victory type</button>
           <button class="winner-again winner-playon" id="play-on-indefinite"
             onclick="playOnPastVictory('indefinite', false)"
             title="Keep playing this world without a turn limit and ignore every later victory.">To infinity and beyond</button>
@@ -23886,7 +23886,6 @@ async function autoplay(turns) {
 document.getElementById("autoplaybtn").onclick = () => autoplay(autoplayRequest());
 document.getElementById("tradebtn").onclick = () => openTrade();
 document.getElementById("gamemode").addEventListener("change", syncSetupMode);
-document.getElementById("starteon").addEventListener("change", syncStartEon);
 document.getElementById("leaderpool").addEventListener("change", syncLeaderPool);
 document.getElementById("maptype").addEventListener("change", syncEarthShape);
 document.getElementById("savebtn").onclick = () => writeSave();
@@ -23906,7 +23905,6 @@ for (const id of RANDOM_VICTORY_IDS) {
 }
 ensureRandomOptions();
 applyRandomMarks();
-syncStartEon();
 syncEarthShape();
 document.getElementById("diplomacybtn").onclick = () => openDiplomacy();
 document.getElementById("paneltoggle").onclick = () => togglePanel();
@@ -24078,15 +24076,14 @@ function feelingLucky() {
     : [...RANDOM_SELECT_IDS, ...RANDOM_VICTORY_IDS]
         .filter(id => id !== "gamemode" && settingApplies(id)));
   // RANDOM_SELECT_IDS is in dependency order, so each answer is in place
-  // before the setting it governs is rolled: an eon's era ladder and a pool's
-  // leader list are both rebuilt on the way past.
+  // before the setting it governs is rolled: a pool's leader list is rebuilt
+  // on the way past.
   for (const id of RANDOM_SELECT_IDS) {
     const select = targets.has(id) && document.getElementById(id);
     const rolled = select && rollSetting(select);
     if (!rolled) continue;
     select.value = rolled;
     if (id === "gamemode") syncSetupMode();
-    if (id === "starteon") syncStartEon();
     if (id === "leaderpool") syncLeaderPool();
     if (id === "maptype") syncEarthShape();
   }
@@ -24125,7 +24122,6 @@ function selectedSimulationSettings(resolveRandom = false) {
   const gameSpeed = readSetting("gamespeed", resolveRandom);
   const leaderPool = readSetting("leaderpool", resolveRandom);
   const baseRuleset = readSetting("baseruleset", resolveRandom);
-  const startEon = readSetting("starteon", resolveRandom);
   const startEra = readSetting("startera", resolveRandom);
   const victoryConditions = Object.fromEntries(VICTORY_TRACKS.map(track =>
     [track.id, readVictorySetting(`victory-${track.id}`, resolveRandom)]));
@@ -24134,7 +24130,7 @@ function selectedSimulationSettings(resolveRandom = false) {
   return {num_players: np, map_script: mapScript, map_topology: mapTopology,
           map_poles: mapPoles, game_speed: gameSpeed,
           leader_pool: leaderPool,
-          base_ruleset: baseRuleset, start_eon: startEon, start_era: startEra,
+          base_ruleset: baseRuleset, start_era: startEra,
           victory_conditions: victoryConditions,
           spectate: gameMode === RANDOM_SETTING ? RANDOM_SETTING : gameMode === "ai_sim",
           // A spectated world has nobody to hand a leader or a handicap to.
@@ -24163,11 +24159,13 @@ function selectedSimulationSummary(settings = null) {
   // The era is named only when it is not the stock start: every other setting
   // on this line is one somebody chose, and "Ancient" is what you get by
   // choosing nothing. A rolled era was chosen too, so it is compared by value
-  // rather than by where it sits in a list that ????? has shifted along.
+  // rather than by where it sits in a list that ????? has shifted along — and
+  // the stock start is the first rung that can actually be picked, not the
+  // first one listed, because the ladder opens on an age nobody has built.
   const eras = document.getElementById("startera");
   const startEra = settings ? settings.start_era : eras?.value;
   const stockEra = [...(eras?.options || [])]
-    .find(option => option.value && option.value !== RANDOM_SETTING)?.value;
+    .find(option => option.value && option.value !== RANDOM_SETTING && !option.disabled)?.value;
   const era = startEra && startEra !== stockEra ? chosenText("startera", startEra) : "";
   return [mode, size, map, speed, era].filter(Boolean).join(" · ");
 }
@@ -24190,10 +24188,6 @@ function applyQueuedSimulationSettings(settings) {
   document.getElementById("leaderpool").value = settings.leader_pool || "civ6";
   syncLeaderPool();
   document.getElementById("baseruleset").value = settings.base_ruleset || "civ6";
-  // The eon has to land before the era, because it is what decides which
-  // ladder the era is a rung of.
-  document.getElementById("starteon").value = settings.eon || "civilization";
-  syncStartEon();
   if (settings.start_era) document.getElementById("startera").value = settings.start_era;
   const victories = new Set(settings.victories || []);
   for (const track of VICTORY_TRACKS)
@@ -24318,28 +24312,6 @@ function syncLeaderPool() {
   ensureRandomOptions();
   if (selected === RANDOM_SETTING) select.value = RANDOM_SETTING;
   else if (leaders.some(entry => entry.civ === selected)) select.value = selected;
-}
-
-// An era only means something inside its own eon: "Ancient" is a rung of human
-// history and nothing at all under the dinosaurs. So the era control is the
-// selected eon's own ladder, rebuilt whenever that changes, and a rung is
-// never carried across from the previous one.
-function syncStartEon() {
-  const eons = document.getElementById("starteon");
-  const eras = document.getElementById("startera");
-  if (!eons || !eras || !RULES || !Array.isArray(RULES.start_eons)) return;
-  const eon = RULES.start_eons.find(entry => entry.id === eons.value);
-  const ladder = (eon && Array.isArray(eon.eras)) ? eon.eras : [];
-  if (!ladder.length) return;
-  const chosen = eras.value;
-  eras.innerHTML = ladder.map(era =>
-    `<option value="${era.id}" title="${escapeAttr(era.description)}">${era.name}</option>`
-  ).join("");
-  // A rung is not carried across, but "no rung chosen yet" is: leaving the era
-  // to chance is a decision about the eon's ladder, whichever ladder it is.
-  ensureRandomOptions();
-  eras.value = chosen === RANDOM_SETTING ? RANDOM_SETTING
-    : ladder.some(era => era.id === chosen) ? chosen : ladder[0].id;
 }
 
 // Fixed geography chooses the coastline, not the projection. Keep the shape
