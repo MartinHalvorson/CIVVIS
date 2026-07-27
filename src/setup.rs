@@ -842,7 +842,10 @@ pub const CIV6_MAP_SIZES: [MapSize; 10] = [
         default_city_states: 150,
         max_city_states: 150,
         max_religions: 51,
-        natural_wonders: 26,
+        // `players / 2 + 1` is 51 here, capped at the roster the ruleset
+        // carries. That cap was 26 while a quarter of the Natural Wonders
+        // were missing; the full Civilization VI roster is 34.
+        natural_wonders: 34,
         continents: 50,
     },
 ];
