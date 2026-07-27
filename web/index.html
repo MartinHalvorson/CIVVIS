@@ -1712,6 +1712,16 @@
     color: #e0f7ec; border-color: #8bbca7; background: linear-gradient(180deg, #365b4d, #223c33);
   }
   .war-card.ended .war-period { background: linear-gradient(90deg, #1c2924, #14211c); border-bottom-color: #435e54; }
+  /* A watched war is held still while the rest of the chronicle slides past it,
+     and a still card in a moving list is only honest if it says it is the one
+     being held. These rules follow `.ended` deliberately: they share its
+     specificity, so a concluded war that is being watched still reads as held. */
+  .war-card.watched { border-color: #d8ad5e; box-shadow: inset 0 0 0 1px #0007, 0 0 0 1px #d8ad5e55, 0 6px 18px #0004; }
+  .war-card.watched .war-period { background: linear-gradient(90deg, #4a3417, #2c2418 50%, #1c2a20); border-bottom-color: #a5813f; }
+  .war-map-action.watching, .war-map-action.aftermath.watching {
+    color: #fff6d8; border-color: #f0cf82; background: linear-gradient(180deg, #7a5f2e, #4a381c);
+    box-shadow: inset 0 1px #fff3, 0 0 0 1px #d8ad5e44;
+  }
   .war-infobox-row { border-top: 1px solid #ffffff0d; }
   .war-infobox-row:first-of-type { border-top: 0; }
   .war-row-label { padding: 3px 7px; background: #ffffff06; color: #8fa098; font-size: var(--type-caption); font-weight: 850; letter-spacing: .10em; text-align: center; text-transform: uppercase; }
@@ -21541,6 +21551,67 @@ function focusWarOnMap(warKey) {
   wakeCinema();
 }
 
+// Watching a war is a reading position, not only a camera move. This log
+// re-sorts itself every turn — an ongoing conflict grows another chronology
+// line, a rival war ends and drops out of the ongoing block into the concluded
+// one below — so the card a viewer is deliberately reading slides out from
+// under them. A watched war is therefore held at the exact offset it had inside
+// the list's own viewport, and the scroll is moved by however much the rest of
+// the chronicle shifted above it. The order is never touched: this panel is a
+// chronicle, and a concluded war must not sit among the ongoing ones merely
+// because somebody is watching it. Everything above and below keeps updating.
+let watchedWar = null;
+
+function warCardFor(el, warKey) {
+  for (const card of el.children)
+    if (card.dataset && card.dataset.warKey === warKey) return card;
+  return null;
+}
+
+// Where the held card sits below the top edge of the list's own viewport. This
+// is read before every repaint, which is what makes the hold follow the viewer:
+// wherever they scroll the card to is where it is held next.
+function measureWatchedWar(el) {
+  if (!watchedWar || !el.clientHeight) return;
+  const card = warCardFor(el, watchedWar.key);
+  if (card) watchedWar.offset = card.getBoundingClientRect().top - el.getBoundingClientRect().top;
+}
+
+// Put the held card back on that offset by paying for the shift with the
+// scroll. A list too short to place it there keeps the target rather than
+// adopting the clamped position, so the card returns to its own place as soon
+// as the chronicle grows enough to allow it again.
+function holdWatchedWar(el) {
+  if (!watchedWar || !el.clientHeight) return;
+  const card = warCardFor(el, watchedWar.key);
+  if (!card) return;
+  const within = card.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
+  const reach = Math.max(0, el.scrollHeight - el.clientHeight);
+  const target = Math.max(0, Math.min(reach, within - watchedWar.offset));
+  if (Math.abs(el.scrollTop - target) > 0.5) el.scrollTop = target;
+}
+
+function watchWar(warKey) {
+  const el = document.getElementById("wars");
+  if (!el || !state) return;
+  const key = String(warKey);
+  // Lock it exactly where the viewer clicked it: starting to watch a war must
+  // not itself move the card.
+  const card = warCardFor(el, key);
+  const offset = card
+    ? card.getBoundingClientRect().top - el.getBoundingClientRect().top
+    : (watchedWar ? watchedWar.offset : 0);
+  watchedWar = {key, seed: state.seed, offset};
+  drawWarLog();
+  focusWarOnMap(key);
+}
+
+function releaseWatchedWar() {
+  if (!watchedWar) return;
+  watchedWar = null;
+  if (state) drawWarLog();
+}
+
 function drawWarLog() {
   const el = document.getElementById("wars");
   const scope = document.getElementById("warscope");
@@ -21551,14 +21622,23 @@ function drawWarLog() {
   scope.textContent = ongoing.length
     ? `${ongoing.length} ongoing`
     : (wars.length ? "At peace" : "");
-  const signature = JSON.stringify(wars) + `|${state.turn}`;
+  // Conflict numbering restarts with the world, so a watch cannot outlive the
+  // game it was placed in — it would hold a stranger's card.
+  if (watchedWar && watchedWar.seed !== state.seed) watchedWar = null;
+  const signature = JSON.stringify(wars) + `|${state.turn}|${watchedWar ? watchedWar.key : ""}`;
   if (el.dataset.signature === signature) return;
+  // Read where the held card is sitting right now — including wherever the
+  // viewer has scrolled it to since the last repaint — before the list is
+  // rebuilt underneath it.
+  measureWatchedWar(el);
   el.dataset.signature = signature;
   if (!wars.length) {
     el.innerHTML = `<div class="empty-state">No war has been declared.</div>`;
+    watchedWar = null;
     return;
   }
   el.innerHTML = wars.map(war => {
+    const watched = watchedWar !== null && watchedWar.key === warLogKey(war);
     const over = war.ended !== null && war.ended !== undefined;
     const conquest = war.outcome === "conquest";
     const length = Math.max(0, (over ? war.ended : state.turn) - war.started);
@@ -21586,16 +21666,20 @@ function drawWarLog() {
       ? `<span class="war-nuclear-badge" title="Nuclear devices detonated in this war">` +
         `☢ ${detonations} nuclear</span>`
       : "";
-    const mapAction = over ? "View aftermath" : "Watch";
-    const mapActionTitle = over
-      ? "View what became of this war's final battlefield"
-      : "Focus the map on this war's active theater";
+    const mapAction = watched ? "Watching" : (over ? "View aftermath" : "Watch");
+    const mapActionTitle = watched
+      ? "Held in place while the rest of the log moves around it — click to release"
+      : (over
+        ? "View what became of this war's final battlefield, and hold this entry in place"
+        : "Focus the map on this war's active theater, and hold this entry in place");
     return `<div class="war-card${over ? " ended" : ""}${conquest ? " conquest" : ""}` +
-      `${detonations ? " nuclear" : ""}">` +
+      `${detonations ? " nuclear" : ""}${watched ? " watched" : ""}" ` +
+      `data-war-key="${escapeAttr(warLogKey(war))}">` +
       `<div class="war-period"><span>Started<b>Turn ${war.started}</b></span>` +
       `<span>${over ? "Ended" : "Status"}<b>${over ? `Turn ${war.ended}` : `Ongoing · ${length} turn${length === 1 ? "" : "s"}`}</b>${nuclearBadge}</span>` +
-      `<button type="button" class="war-map-action${over ? " aftermath" : ""}" ` +
-      `data-war-key="${escapeAttr(warLogKey(war))}" title="${escapeAttr(mapActionTitle)}" ` +
+      `<button type="button" class="war-map-action${over ? " aftermath" : ""}${watched ? " watching" : ""}" ` +
+      `data-war-key="${escapeAttr(warLogKey(war))}" aria-pressed="${watched ? "true" : "false"}" ` +
+      `title="${escapeAttr(mapActionTitle)}" ` +
       `aria-label="${escapeAttr(mapActionTitle)}">${mapAction}</button></div>` +
       `<div class="war-infobox-row"><div class="war-row-label">Belligerents</div>` +
       `<div class="war-columns">${warBelligerentRows(war, true, "aggressor", maxSawAction)}` +
@@ -21607,11 +21691,21 @@ function drawWarLog() {
       `<div class="war-infobox-row"><div class="war-row-label">Chronology</div>` +
       `<div class="war-moments">${moments || `<span class="war-loss-none">No recorded events</span>`}</div></div></div>`;
   }).join("");
+  // A conflict that has aged off the tail of the log, or a world that ended,
+  // cannot be held: drop the watch rather than keep an offset against a card
+  // that no longer exists.
+  if (watchedWar && !warCardFor(el, watchedWar.key)) watchedWar = null;
+  holdWatchedWar(el);
 }
 
 document.getElementById("wars")?.addEventListener("click", event => {
   const button = event.target.closest(".war-map-action");
-  if (button) focusWarOnMap(button.dataset.warKey);
+  if (!button) return;
+  const key = String(button.dataset.warKey);
+  // The same control releases the hold, so watching is never a trap: a viewer
+  // who wants the log to flow again presses the button that stopped it.
+  if (watchedWar && watchedWar.key === key) releaseWatchedWar();
+  else watchWar(key);
 });
 
 function drawSide(force = true) {
