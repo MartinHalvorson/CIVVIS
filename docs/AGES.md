@@ -110,6 +110,58 @@ for every era; that floor is now enforced, speed-scaled, via
 era past what anybody has researched reaches into wonder eligibility, Dark Age
 card windows and unit obsolescence far further than the evidence here justifies.
 
+### What the fixes did, and the answer to the question that started this
+
+Same instrument, same seed, same shape — 60 six-seat 500-turn games at seed
+900000, so the two runs are directly comparable:
+
+| | before | after |
+|---|---|---|
+| dark | 79% | **64%** |
+| normal | 20% | **33%** |
+| golden | 0.4% | **2%** |
+| heroic | 0.8% | **1.3%** |
+| era 1 dark | 98% | **36%** |
+| turns between transitions | mean 41.9, **p10 1** | mean 47.7, **p10 40** |
+
+Golden Ages went from 6 in the run to 27, and the pacing floor holds exactly.
+
+**Is it ever good to intentionally take a Dark Age? No.** The threshold gives a
+natural experiment: among seats that finished an era within a few Era Score of
+the Normal line, which side they fell on turns on one Eureka or one barbarian
+camp, and is close to independent of how strong the seat is.
+
+| margin | just dark, win% | just normal, win% | dark n | normal n |
+|---|---|---|---|---|
+| within 2 | **9.7%** | **20.5%** | 103 | 127 |
+| within 4 | 10.9% | 20.8% | 175 | 178 |
+| within 6 | 10.1% | 20.7% | 267 | 222 |
+
+**Falling just short of Normal roughly halves a seat's win rate** (base rate at
+six seats is 16.7%), and the effect is flat across all three bandwidths, which is
+what separates a real discontinuity from an artefact of where the window was
+drawn.
+
+The Heroic escape hatch does not rescue it. What follows each age:
+
+| after | dark | normal | golden | heroic | n |
+|---|---|---|---|---|---|
+| dark | **73%** | 24% | 0% | **3%** | 745 |
+| normal | 70% | 29% | 2% | 0% | 438 |
+| golden | **92%** | 8% | 0% | 0% | 26 |
+| heroic | 73% | 27% | 0% | 0% | 15 |
+
+A Dark Age converts to Heroic **3% of the time** and to another Dark Age 73% of
+the time. `THRESHOLD_SHIFT_PER_PAST_DARK_AGE` −10, the Dark Age cards and
+Heroic's three Dedications together do not pay for the Loyalty penalty and the
+lost age. The 92% after a Golden Age is not a bug — it is the Golden Age banking
+nothing, which is exactly the oscillation the mechanic is designed to produce.
+
+**Caveat on the discontinuity.** The buckets are seats, not transitions, and a
+seat with several age transitions can land in both. That biases toward finding
+nothing, so it does not manufacture the gap, but it does mean the numbers are a
+strong reading rather than a clean estimate.
+
 ### Known gaps, not closed here
 
 - **Ten of the seventeen shipped Dark Age cards are absent**: Decentralization,
@@ -123,7 +175,10 @@ card windows and unit obsolescence far further than the evidence here justifies.
   seats; the shipped game weighs the field. A runaway leader therefore drags
   every threshold up (they scale +3 per era) while the laggards' capacity to
   bank does not follow. The minimum-turn floor blunts this but does not answer
-  it, and it is the most likely remaining cause of any residual Dark Age excess.
+  it. **This is the most likely cause of the residual 64% Dark rate** and is the
+  first thing to try next; it is a one-line change to `era_from_progress` and
+  needs its own measurement, because moving the world era moves wonder
+  eligibility, Dark Age card windows and unit obsolescence with it.
 - **Historic Moments, the rest of them.** The shipped game defines 162 and this
   change closes the highest-frequency families. Still absent and worth having:
   the six `DISTRICT_CONSTRUCTED_HIGH_ADJACENCY_*` moments (+3 each), the
