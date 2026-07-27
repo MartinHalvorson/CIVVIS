@@ -463,6 +463,74 @@ perturbations move strength about six times more than random ones, and built a
 mutation-operator proposal on the ratio. Measured properly — same games, same
 seeds, both arms — the coordinated arm is *narrower*. The claim is withdrawn.
 
+### The promotion test measures against the wrong null
+
+`evolve::sprt_confirm` tests `H0 = 1/players` against `H1 = max(0.40, 1.6/players)`
+on a table `make_table` builds as **candidate + one frozen-default anchor +
+champions**. The shipped champion is +49 Elo over the default, so the anchor is
+the weakest seat and the other three split more than their nominal share.
+
+Measured — the champion played against its own table
+(`genome_gate --calibrate`):
+
+```
+86/240 = 0.358   (nominal 1/players = 0.250)      seed 9000
+83/240 = 0.346                                     seed 9100
+```
+
+**Parity for a candidate merely *equal* to the champion is 0.35, not 0.25**, and
+that sits far closer to H1 than to H0. A sequential test with those bounds
+accepts equals. The two seeds agree within a standard error of 0.031, so this
+is a property of the table rather than a sample.
+
+The effect is not theoretical. The same searcher, same budget, same draws,
+only the null changed:
+
+| null | acceptances | candidates | rate |
+|---|---|---|---|
+| nominal 0.250 | 4 | 15 | **27%** |
+| measured 0.358 | **0** | **121** | **0%** |
+
+It also explains a pattern in the 25-generation run recorded above: candidates
+that *won* their SPRT and were then vetoed by the holdout, twice. **The holdout
+was catching what the null let through.**
+
+Three repairs are possible and none is obviously right — calibrate `p0` per
+configuration, drop the anchor from the SPRT table at the cost of the
+intransitivity it exists to prevent, or keep the null and rely on the holdout,
+which demonstrably works. That call belongs to whoever owns `src/evolve.rs`.
+
+**Nothing here disturbs the shipped champion.** Its SPRT promotion was marginal
+under the corrected null (22–32 = 0.407 against 0.358), but it was validated
+independently by a pre-registered `ai_eval` against the hand-written defaults
+over 1300 mirrored maps — 54.6%, Wilson 51.9–57.3%, gate PASS — a paired
+comparison that never used the SPRT. That separation is the whole reason the
+result survives its own promotion mechanism turning out to be permissive.
+
+### How much is left on the genome axis
+
+With the null corrected, **121 random mutations of the shipped champion
+produced no candidate worth +10 percentage points (~+72 Elo)**, at 60 games per
+candidate against a 200-game cap — the test rejects fast, so these are not
+marginal calls.
+
+Set beside the spread measurements (typical mutation worth ~0.013 win rate,
+needing ~5,000 games to resolve), the reading is:
+
+> **The shipped champion sits in a neighbourhood that single-parent random
+> mutation does not improve, at any scale this hardware can resolve.**
+
+That bounds *large* improvements, not small ones, and it bounds *this operator*,
+not the genome. Crossover, restarts elsewhere in the bounds, and structured
+parameterisations each search differently — though the one structured operator
+measured here came out **narrower** than random, not wider.
+
+It also refutes the reallocation hypothesis that motivated the searcher.
+`evolve` spends 23:1 on ranking versus gating, and the ranking cannot resolve
+typical candidates — but testing 121 candidates instead of two found nothing.
+**Reallocating a budget does not help when the thing being searched has nothing
+at that scale to find.**
+
 ### What follows: select at the gate, not in the ranking
 
 Most mutations are strength-neutral at any resolution that is affordable. Yet
