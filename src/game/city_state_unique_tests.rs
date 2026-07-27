@@ -933,3 +933,60 @@ fn preslav_arms_only_cavalry_and_only_on_the_high_ground() {
     };
     assert_close(cavalry_off, cavalry_flat);
 }
+
+#[test]
+fn mitla_grows_campus_cities_and_taruga_counts_resource_kinds_not_tiles() {
+    let (mut game, cities) = game_with_capitals(2, 89_012);
+    let city = cities[0];
+    let minor = add_city_state(&mut game, "Mitla");
+    make_suzerain(&mut game, 0, minor);
+
+    // Mitla pays nothing until the city actually has a Campus.
+    assert!(!game.city_has_active_district_family(&game.cities[&city], "campus"));
+    install_district(&mut game, city, "campus");
+    assert!(game.city_has_active_district_family(&game.cities[&city], "campus"));
+
+    // Taruga scales on distinct improved Strategic resources.
+    game.players[minor].civ = "Taruga".to_string();
+    let owned: Vec<Pos> = game.cities[&city].owned_tiles.iter().copied().collect();
+    let plain: Vec<Pos> = owned
+        .into_iter()
+        .filter(|pos| *pos != game.cities[&city].pos)
+        .filter(|pos| {
+            game.map
+                .get(*pos)
+                .is_some_and(|tile| !game.rules.is_water(tile) && tile.district.is_none())
+        })
+        .take(3)
+        .collect();
+    assert!(plain.len() >= 3, "the capital needs three workable land tiles");
+    for pos in &plain {
+        let tile = game.map.tiles.get_mut(pos).unwrap();
+        tile.resource = None;
+        tile.improvement = None;
+        tile.pillaged = false;
+    }
+    let base = game.city_yields(city).science;
+
+    // Two mined Iron is one kind, so one 5% step.
+    for pos in &plain[..2] {
+        let tile = game.map.tiles.get_mut(pos).unwrap();
+        tile.resource = Some("iron".to_string());
+        tile.improvement = Some(game.rules.resources["iron"].improvement.clone());
+    }
+    let one_kind = game.city_yields(city).science;
+
+    // A second kind is a second step.
+    let third = plain[2];
+    let tile = game.map.tiles.get_mut(&third).unwrap();
+    tile.resource = Some("niter".to_string());
+    tile.improvement = Some(game.rules.resources["niter"].improvement.clone());
+    let two_kinds = game.city_yields(city).science;
+
+    assert!(
+        two_kinds > one_kind && one_kind > base,
+        "Taruga did not scale: base {base}, one kind {one_kind}, two kinds {two_kinds}"
+    );
+    // The second step is the same size as the first: 5% of the pre-bonus total.
+    assert_close(two_kinds - one_kind, one_kind - base);
+}
