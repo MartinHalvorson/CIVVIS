@@ -7089,6 +7089,58 @@ function chartDrawsGroundAt(q, r) {
   const canon = worldCanonPos([q, r]);
   return TMAP.has(canon[0] + "," + canon[1]);
 }
+// ------------------------------------------------ the edge of the known world
+// A stored map has a first row and a last one, and fog of war used to hand both
+// of them over on turn one. Undiscovered ground was drawn as parchment only
+// *inside* the storage rectangle, so the sheet stopped dead exactly where the
+// world did, the camera refused to travel a step past it, and the thumbnail
+// framed the whole thing. A civilization that had seen eighteen tiles could
+// read its world's height off the screen without sending anybody to look.
+//
+// So until a people have measured their world the chart simply carries on past
+// its real edge, and the camera is held by a soft bound some way out there
+// instead — three to fifteen tiles, drawn per world and separately per side, so
+// the give is never the same twice and never the same on two sides of one map.
+// The true edge is somewhere inside that margin and the only way to find out
+// where is to walk to it: ground that never appears is the answer, arrived at
+// the way the rest of this world's shape is. The lap that settles the extent —
+// `wentAround` — lifts the veil for good, which is the same rung that puts the
+// world's dimensions on the identity line.
+const MAP_VEIL_MIN = 3, MAP_VEIL_MAX = 15;
+let MAP_VEIL = null, MAP_VEIL_WORLD = null;
+// A spectator is not a civilization and has nothing to find out, so
+// `wentAround` answering true for one keeps the whole veil off the exhibition.
+function mapEdgeVeiled() {
+  return !!state && !planetMap() && !wentAround();
+}
+function mapEdgeVeil() {
+  const world = state?.seed ?? null;
+  if (!MAP_VEIL || world !== MAP_VEIL_WORLD) {
+    MAP_VEIL_WORLD = world;
+    const [seedA, seedB] = hiddenMapSeedWords();
+    const reach = side => MAP_VEIL_MIN +
+      Math.floor(hash2(seedA + side * 101 + 13, seedB + side * 57 + 29) *
+                 (MAP_VEIL_MAX - MAP_VEIL_MIN + 1));
+    MAP_VEIL = {left:reach(0), right:reach(1), top:reach(2), bottom:reach(3)};
+  }
+  return MAP_VEIL;
+}
+// Where the veiled camera is held, in world coordinates. An axis that wraps has
+// no edge to hide and so no bound; an open chart already has its own account of
+// how far west and east the sheet goes, and this must not argue with it.
+function mapVeilPanBounds() {
+  if (!mapEdgeVeiled()) return null;
+  const veil = mapEdgeVeil(), column = S * SQ3, row = S * 1.5;
+  const x = mapWrapsX() || chartIsOpen() ? null : {
+    min:-veil.left * column,
+    max:(state.map.width - 1 + veil.right) * column,
+  };
+  const y = mapWrapsY() ? null : {
+    min:-veil.top * row,
+    max:(state.map.height - 1 + veil.bottom) * row,
+  };
+  return x || y ? {x, y} : null;
+}
 // The offset columns and rows the frame can reach. World coordinates are an
 // affine function of column and row, so the corners of the frame bound it.
 function framedHexBounds(margin = 2) {
@@ -9140,35 +9192,62 @@ function positiveMod(value, period) {
 // Whether a coordinate belongs to blank chart rather than known ground. An
 // open chart deliberately treats everything beyond its surveyed copy as
 // parchment too: outlining the storage rectangle would reveal the world's
-// width before anybody had sailed it. Once the chart closes, physical map
-// edges stop being mistaken for undiscovered territory.
+// width before anybody had sailed it. A veiled one says the same thing about
+// the ground past its last row and column — unsurveyed, like everything else
+// nobody has walked to. Only a world whose extent has been established draws
+// its own rectangle, and there the map's physical edges stop being mistaken
+// for undiscovered territory.
 function hiddenMapCellAt(q, r, open = chartIsOpen()) {
   if (!state) return false;
   if (open) return !chartDrawsGroundAt(q, r);
   const pos = mapWrapsX() || mapWrapsY() ? canonPos([q, r]) : [q, r];
   const col = offsetColumn(pos);
   if (pos[1] < 0 || pos[1] >= state.map.height ||
-      col < 0 || col >= state.map.width) return false;
+      col < 0 || col >= state.map.width) return mapEdgeVeiled();
   return !TMAP.has(key(pos));
 }
 
+// Whether the tile loop paints ground at this exact copy of the plane. Only
+// one copy of a wrapping world is ever drawn — the one nearest the camera —
+// so every other copy is a stretch of plain background that happens to sit
+// where the world does in fact continue. Under the veil that is parchment
+// like anything else nobody has been to, which is also what stops a viewer
+// reading the world's width off the end of the drawn copy at full zoom-out.
+// The open chart says exactly the same thing through `chartDrawsGroundAt`.
+function veilDrawsGroundAt(q, r) {
+  const worldX = S * SQ3 * (q + r / 2), worldY = S * 1.5 * r;
+  if (Math.abs(wrapX(worldX) - worldX) > 1e-6) return false;
+  if (Math.abs(wrapY(worldY) - worldY) > 1e-6) return false;
+  const pos = canonPos([q, r]);
+  const col = offsetColumn(pos);
+  if (pos[1] < 0 || pos[1] >= state.map.height ||
+      col < 0 || col >= state.map.width) return false;
+  return TMAP.has(key(pos));
+}
+
 function hiddenMapViewport(halfWidth, top, bottom) {
-  if (!state) return {open:false, cells:[]};
+  if (!state) return {open:false, solid:false, cells:[], test:hiddenMapCellAt};
   const open = chartIsOpen();
-  const span = open
-    ? framedHexBounds(3)
+  // A veiled sheet is covered out to the frame on every side, not out to a
+  // fixed margin: a margin has an end and the end can be zoomed out to.
+  const veiled = !open && mapEdgeVeiled();
+  const span = open || veiled ? framedHexBounds(3)
     : {left:0, right:state.map.width - 1, top:0, bottom:state.map.height - 1};
+  const test = veiled ? (q, r) => !veilDrawsGroundAt(q, r)
+                      : (q, r) => hiddenMapCellAt(q, r, open);
   const cells = [];
   for (let row = span.top; row <= span.bottom; row++) {
     for (let col = span.left; col <= span.right; col++) {
       const q = col - ((row - (row & 1)) >> 1);
-      if (!hiddenMapCellAt(q, row, open)) continue;
-      const [x, y] = open ? hexXYRaw(q, row) : hexXY(q, row);
+      if (!test(q, row)) continue;
+      const [x, y] = open || veiled ? hexXYRaw(q, row) : hexXY(q, row);
       if (x < -halfWidth || x > halfWidth || y < top || y > bottom) continue;
       cells.push({q, r:row, col, x, y});
     }
   }
-  return {open, cells};
+  // Everything in the frame is then either this sheet or ground painted over
+  // the top of it, which is what lets the sheet be drawn as one rectangle.
+  return {open, solid:veiled, cells, test};
 }
 
 function hiddenMapSeedWords() {
@@ -9176,12 +9255,12 @@ function hiddenMapSeedWords() {
   return [seed | 0, Math.floor(seed / 4294967296) | 0];
 }
 
-function hiddenMapIsDeep(q, r, open, radius = 3) {
+function hiddenMapIsDeep(q, r, test, radius = 3) {
   for (let dq = -radius; dq <= radius; dq++) {
     const from = Math.max(-radius, -dq - radius);
     const to = Math.min(radius, -dq + radius);
     for (let dr = from; dr <= to; dr++)
-      if (!hiddenMapCellAt(q + dq, r + dr, open)) return false;
+      if (!test(q + dq, r + dr)) return false;
   }
   return true;
 }
@@ -9212,8 +9291,17 @@ function drawHiddenMapParchment(layer) {
   // One compound fill, with overlapping faces, is the important difference
   // from the former pale honeycomb. The sheet is continuous; hexes begin only
   // where a player has actual terrain to count.
+  //
+  // A veiled sheet reaches past every side of the frame, and known ground is
+  // painted over the top of it a moment later, so the union of its faces is
+  // exactly the rectangle they cover and the rectangle is what gets drawn.
+  // That is not a shortcut worth taking for its own sake — it is the only way
+  // the sheet can cover a whole frame at all. A canvas compound path costs
+  // quadratic time in its own size: 250 faces take 0.2ms, 4,000 take 49ms, and
+  // a zoomed-out veiled frame wants four and a half thousand of them.
   cx.beginPath();
-  for (const cell of layer.cells) appendHexPath(cell.x, cell.y, S + 1.15);
+  if (layer.solid) cx.rect(minX, minY, maxX - minX, maxY - minY);
+  else for (const cell of layer.cells) appendHexPath(cell.x, cell.y, S + 1.15);
   cx.fillStyle = PARCH; cx.fill();
   const age = cx.createLinearGradient(minX, minY, maxX, maxY);
   age.addColorStop(0, "rgba(245,231,191,.20)");
@@ -9250,7 +9338,7 @@ function drawHiddenMapMonsters(layer) {
   for (const cell of layer.cells) {
     if (positiveMod(cell.col - phaseColumn, strideColumns) ||
         positiveMod(cell.r - phaseRow, strideRows)) continue;
-    if (!hiddenMapIsDeep(cell.q, cell.r, layer.open)) continue;
+    if (!hiddenMapIsDeep(cell.q, cell.r, layer.test)) continue;
     // At an atlas-scale zoom, thin the fixed seats rather than shrinking every
     // engraving into visual grit. Close views keep the fuller old-chart read.
     const lod = hash2(cell.col + seedA * 3, cell.r + seedB * 5);
@@ -19918,7 +20006,11 @@ function chartUnrolledU(u) {
 function miniBounds() {
   const mapWidth = Math.max(1, state.map.width), mapHeight = Math.max(1, state.map.height);
   const tiles = state.map?.tiles;
-  if (!chartIsOpen() || !tiles?.length) {
+  // The same applies to a chart that closes north and south rather than east
+  // and west: a thumbnail drawn around the storage rectangle is the boundary
+  // the map itself has just stopped drawing, handed over in the corner of the
+  // screen instead.
+  if ((!chartIsOpen() && !mapEdgeVeiled()) || !tiles?.length) {
     // u = q + r/2 runs from 0 to mapWidth - 1 + half a column, the half coming
     // from the odd rows' offset.
     return {
@@ -20107,7 +20199,7 @@ mini.addEventListener("click", ev => {
   let x = wrapX(S * (clickX - layout.originX) / layout.size);
   let y = wrapY(S * (clickY - layout.originY) / layout.size);
   [x, y] = cameraCenterForWorld(x, y);
-  y = clampCameraY(y);
+  x = clampCameraX(x); y = clampCameraY(y);
   if (REDUCED_MOTION_QUERY.matches) {
     cam.x = x; cam.y = y; draw(); drawMini();
   } else cameraFlight = {x, y, scale:cam.scale};
@@ -23991,6 +24083,13 @@ function cameraYBounds(scale = cam.scale) {
     return {min:0, max:S * 1.5 * Math.max(1, state.map.height - 1)};
   }
   if (mapWrapsY()) return null;
+  // While the extent is unmeasured the veil owns this axis instead. Framing
+  // against the map's own last row is the one thing that must not happen here:
+  // a camera that stops dead the moment the final row reaches the bottom of
+  // the frame announces where the world ends as loudly as a drawn border, and
+  // it does it whether or not anybody has been there.
+  const veil = mapVeilPanBounds();
+  if (veil?.y) return veil.y;
   if (Math.abs(SINR) > 0.001) return null;
   const actualScale = Math.max(.01, scale);
   const focusBounds = mapFocusBounds();
@@ -24010,8 +24109,87 @@ function clampCameraY(y, scale = cam.scale) {
   const bounds = cameraYBounds(scale);
   return bounds ? Math.max(bounds.min, Math.min(bounds.max, y)) : y;
 }
+// East and west had no bound at all on a flat board that does not wrap: the
+// camera walked off into the background and kept going. Under the veil there
+// is now something to hold it, at a distance that is not the world's own edge.
+function clampCameraX(x) {
+  const bounds = mapVeilPanBounds()?.x;
+  return bounds ? Math.max(bounds.min, Math.min(bounds.max, x)) : x;
+}
+// How the soft bound behaves when it is pushed. A drag past it is resisted and
+// resisted harder the further it goes, so the chart can be pulled a little way
+// off the edge of the table but never off it: `CAMERA_GIVE` is the most that
+// stretch can ever amount to, whatever the pointer does. Letting go — or
+// coasting into the bound rather than dragging into it — hands the axis to a
+// spring that pulls it home. That is the whole point of a soft bound over a
+// hard one here: a camera that stops dead is a camera that hit something, and
+// there is nothing out there to hit.
+const CAMERA_GIVE = () => S * 5.5;
+const CAMERA_SPRING = 0.00024;   // world px per ms² per world px out
+const CAMERA_SPRING_DRAG = 0.021; // velocity decay per ms, just under critical
+let cameraBounce = {vx:0, vy:0};
+function cameraStretch(distance, give) {
+  return give * (1 - 1 / (distance / give + 1));
+}
+function cameraRubberBand(value, bounds, give = CAMERA_GIVE()) {
+  if (!bounds) return value;
+  if (value < bounds.min) return bounds.min - cameraStretch(bounds.min - value, give);
+  if (value > bounds.max) return bounds.max + cameraStretch(value - bounds.max, give);
+  return value;
+}
+// The drag itself, rubber-banded on both axes at once. A drag is computed from
+// where it started every time it moves, so the stretch is applied to a raw
+// position rather than to an already-stretched one and cannot accumulate.
+function holdCameraInBounds(x, y) {
+  const bounds = mapVeilPanBounds();
+  if (!bounds) return [x, y];
+  return [cameraRubberBand(x, bounds.x), cameraRubberBand(y, bounds.y)];
+}
+function cameraOutOfBounds(value, bounds) {
+  if (!bounds) return 0;
+  if (value < bounds.min) return value - bounds.min;
+  if (value > bounds.max) return value - bounds.max;
+  return 0;
+}
+// A coast that runs past the bound is not stopped at it — it stretches, and the
+// spring below is what it is handed to. Taking the velocity across rather than
+// discarding it is what makes the two feel like one motion.
+function handOffCameraBounce() {
+  const bounds = mapVeilPanBounds();
+  if (!bounds) return;
+  if (cameraOutOfBounds(cam.x, bounds.x)) {
+    cameraBounce.vx = cameraInertia.vx; cameraInertia.vx = 0;
+  }
+  if (cameraOutOfBounds(cam.y, bounds.y)) {
+    cameraBounce.vy = cameraInertia.vy; cameraInertia.vy = 0;
+  }
+}
+function settleCameraBounce(dt) {
+  const bounds = mapVeilPanBounds();
+  if (!bounds) { cameraBounce.vx = cameraBounce.vy = 0; return false; }
+  let moving = false;
+  for (const [axis, speed] of [["x", "vx"], ["y", "vy"]]) {
+    const out = cameraOutOfBounds(cam[axis], bounds[axis]);
+    if (!out && !cameraBounce[speed]) continue;
+    let velocity = cameraBounce[speed] - out * CAMERA_SPRING * dt;
+    velocity *= Math.exp(-CAMERA_SPRING_DRAG * dt);
+    let next = cam[axis] + velocity * dt;
+    // Home is the bound, not the middle of the map: once the spring has pulled
+    // the axis back inside there is nothing left pulling, so it stops there
+    // instead of sailing on across ground the viewer never asked to leave.
+    const home = cam[axis] - out;
+    if (out && (out > 0) !== (next > home)) { next = home; velocity = 0; }
+    if (Math.abs(velocity) < .0004 && Math.abs(next - home) < .35) {
+      next = home; velocity = 0;
+    }
+    cam[axis] = next; cameraBounce[speed] = velocity;
+    if (velocity) moving = true;
+  }
+  return moving;
+}
 function clearCameraInertia() {
   cameraInertia = stoppedCameraInertia();
+  cameraBounce.vx = cameraBounce.vy = 0;
 }
 function updateCameraFollowChip() {
   const chip = document.getElementById("cinema-follow");
@@ -24167,7 +24345,7 @@ function applyCameraAnchor(wx, wy, sx, sy, scale = cam.scale) {
                           : Math.max(.25, Math.min(3.2, scale));
   const vx = (sx - MAPW / 2) / cam.scale;
   const vy = (sy - MAPH / 2) / cam.scale / YS;
-  cam.x = wx - (COSR * vx + SINR * vy);
+  cam.x = clampCameraX(wx - (COSR * vx + SINR * vy));
   cam.y = clampCameraY(wy - (-SINR * vx + COSR * vy));
 }
 function flyCameraTo(pos, scale = cam.scale) {
@@ -24207,7 +24385,8 @@ function nudgeCamera(screenX, screenY) {
   }
   const vx = screenX / cam.scale, vy = screenY / cam.scale / YS;
   const dx = COSR * vx + SINR * vy, dy = -SINR * vx + COSR * vy;
-  cameraFlight = {x:cam.x + dx, y:clampCameraY(cam.y + dy), scale:cam.scale};
+  cameraFlight = {x:clampCameraX(cam.x + dx), y:clampCameraY(cam.y + dy),
+                  scale:cam.scale};
 }
 function zoomAt(f, sx, sy, skyAnchor = null) {
   if (planetMap()) {
@@ -24293,7 +24472,7 @@ function advanceUserCameraMotion(now = performance.now()) {
     cameraFlight = null;
     const step = EDGE_PAN_SPEED * dt / 1000 / Math.max(.25, cam.scale);
     const vx = edgePanVector.x * step, vy = edgePanVector.y * step / YS;
-    cam.x += COSR * vx + SINR * vy;
+    cam.x = clampCameraX(cam.x + COSR * vx + SINR * vy);
     cam.y = clampCameraY(cam.y - SINR * vx + COSR * vy);
     active = true;
   }
@@ -24382,7 +24561,11 @@ function advanceUserCameraMotion(now = performance.now()) {
       cam.x += cameraInertia.vx * dt; cam.y += cameraInertia.vy * dt;
       if (Math.abs(cameraInertia.vrot) > .00001) setRot(cam.rot + cameraInertia.vrot * dt);
       if (Math.abs(cameraInertia.vtilt) > .00001) setTilt(cinematicYS + cameraInertia.vtilt * dt);
-      cam.y = clampCameraY(cam.y);
+      // A coast that runs past a veiled bound is handed to the spring rather
+      // than stopped at it, carrying the speed it arrived with, so a throw and
+      // its rebound read as one motion instead of a collision.
+      if (mapVeilPanBounds()) handOffCameraBounce();
+      else cam.y = clampCameraY(cam.y);
       const decay = Math.pow(.003, dt / 1000);
       cameraInertia.vx *= decay; cameraInertia.vy *= decay;
       cameraInertia.vrot *= decay; cameraInertia.vtilt *= decay;
@@ -24392,7 +24575,10 @@ function advanceUserCameraMotion(now = performance.now()) {
         skyTurn.vlongitude *= decay; skyTurn.vlatitude *= decay;
       }
       active = true;
-    } else clearCameraInertia();
+    } else cameraInertia = stoppedCameraInertia();
+    // Not inside the speed test above: a chart let go while it is stretched has
+    // no throw left in it at all, and that is precisely when it must spring.
+    if (settleCameraBounce(dt)) active = true;
   }
   return active;
 }
@@ -25041,8 +25227,9 @@ window.addEventListener("pointermove", ev => {
       draw(); drawMini();
     } else if (dragMoved) {
       const dvx = dx / cam.scale, dvy = dy / cam.scale / YS;
-      cam.x = dragState.cx - (COSR * dvx + SINR * dvy);
-      cam.y = dragState.cy - (-SINR * dvx + COSR * dvy);
+      [cam.x, cam.y] = holdCameraInBounds(
+        dragState.cx - (COSR * dvx + SINR * dvy),
+        dragState.cy - (-SINR * dvx + COSR * dvy));
       const now = performance.now(), dt = Math.max(1, now - dragState.lastT);
       const vx = (cam.x - dragState.lastX) / dt, vy = (cam.y - dragState.lastY) / dt;
       dragState.vx = dragState.vx * .55 + vx * .45;
@@ -25202,8 +25389,9 @@ cv.addEventListener("pointermove", ev => {
       draw(); drawMini();
     } else if (touchGesture.controlled) {
       const dvx = dx / cam.scale, dvy = dy / cam.scale / YS;
-      cam.x = touchGesture.cx - (COSR * dvx + SINR * dvy);
-      cam.y = touchGesture.cy - (-SINR * dvx + COSR * dvy);
+      [cam.x, cam.y] = holdCameraInBounds(
+        touchGesture.cx - (COSR * dvx + SINR * dvy),
+        touchGesture.cy - (-SINR * dvx + COSR * dvy));
       const now = performance.now(), dt = Math.max(1, now - touchGesture.lastT);
       const vx = (cam.x - touchGesture.lastX) / dt, vy = (cam.y - touchGesture.lastY) / dt;
       touchGesture.vx = touchGesture.vx * .55 + vx * .45;
