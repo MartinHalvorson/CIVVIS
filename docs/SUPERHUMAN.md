@@ -169,6 +169,22 @@ threshold, whatever the spread is.
 candidate set changes; the plan-commitment table is the instrument, not the win
 rate.
 
+> **⚠ Do not read a commitment-rate change as a strength signal in either
+> direction.** Two treatments that lost — adaptive stopping and rank-pruned
+> focused deepening — both reduced it, and that coincidence was written up here
+> as if it were a law. `search_probe` refutes it directly. Screened at 57
+> paired positions against the stock agent:
+>
+> | knob | eval outcome | would-commit | flips toward adaptive |
+> |---|---|---|---|
+> | `--horizon 80` (`strategic_h80`) | **won 21–5, p=0.0025** | 28% → **12%** | 12 of 15 |
+> | `--rotate` (`rotate_lanes`) | **null** | 28% → **7%** | 12 of 12 |
+> | `--cold` (reverting the promotion) | **lost 34–87** | 28% → 21% | 9 of 14 |
+>
+> The knob that *won* cuts commitment further than the knob that measured
+> null, and the knob that lost cuts it least. Commitment rate is a diagnostic
+> that a treatment is doing something, not evidence about what.
+
 **Refuted by.** A margin sweep in which commitment rate moves but paired score
 does not. That would say routing is not the binding constraint, which is a
 result worth having.

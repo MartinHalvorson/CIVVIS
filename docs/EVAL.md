@@ -2027,3 +2027,45 @@ The gate binds on a minority of reviews and moving it does a minority-sized
 thing. Not promoted, not pursued further. **When quoting a spread, say which
 population it is over** — the two differ by an order of magnitude and they
 support opposite conclusions.
+
+## 2026-07-26 — `search_probe`, and what screening three known knobs says
+
+`search_probe` flips one flag on one agent at one position and reports the
+branch values a review would compare and the lane it would choose. Paired by
+construction, 48 seconds for 120 maps against about forty minutes for the
+`ai_eval` run it triages for. It is a screen: a flat reading refutes, a moved
+reading earns a pre-registered run and nothing more.
+
+Calibrating it against three knobs whose evaluation outcomes are already
+known, all at 57 paired positions, 4p 24×16, warmup 60, seeds 900..:
+
+| knob | known eval outcome | spread, paired | would-commit | flip direction |
+|---|---|---|---|---|
+| `--horizon 80` | **won** 21–5, p=0.0025 | 26 up, 11 down, p=0.0201 | 28% → 12% | 3 lane / 12 adaptive |
+| `--rotate` | **null** | 0 up, 32 down — *not comparable* | 28% → 7% | 0 lane / 12 adaptive |
+| `--cold` | **lost** 34–87 | 17 up, 20 down, p=0.7428 | 28% → 21% | 5 lane / 9 adaptive |
+
+Three things follow, and two of them retract earlier readings.
+
+**Commitment rate does not predict strength, in either direction.** The knob
+that won cuts it hardest but one (28% → 12%); the knob that measured null cuts
+it hardest (28% → 7%); the knob that lost cuts it least (28% → 21%). Two losing
+treatments happened to reduce it and that coincidence was written up as if it
+were a law. It is a diagnostic that a treatment is doing *something*, not
+evidence about what.
+
+**Spread is only comparable between arms that project the same number of
+branches.** Spread is `max − min` over the projected branches, so a treatment
+that shrinks the candidate set lowers it mechanically. `--rotate` cuts seven
+branches to about 2.7 — 224 projected branches against 85 — and duly reports
+spread lower on 32 of 32 positions with no bearing on quality. This is the same
+confound that makes the commitment margin a function of the candidate set. The
+probe now detects it and prints `[NOT COMPARABLE]`.
+
+**What the screen can honestly claim today is the negative half.** A treatment
+that leaves every branch value identical cannot change a decision, and that has
+happened here often enough to be worth two minutes (`INERT`, exit 3). Three
+calibration points cannot establish that any positive reading predicts a win,
+and this table should not be read as if they had: the winner raises spread and
+the loser is flat, but a single null sits outside that ordering because its
+spread reading is invalid. **Screen for inertness; decide with `ai_eval`.**

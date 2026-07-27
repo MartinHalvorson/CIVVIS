@@ -236,14 +236,34 @@ fn main() {
     summarise("baseline (stock)", &sampled.iter().map(|(b, _)| b).collect::<Vec<_>>());
     summarise("treatment", &sampled.iter().map(|(_, t)| t).collect::<Vec<_>>());
 
+    // Spread is max - min over the projected branches, so it is only
+    // comparable between arms that projected the SAME NUMBER of branches. A
+    // treatment that shrinks the candidate set -- `--rotate` cuts seven lanes
+    // to about two -- lowers the spread mechanically, on every position, with
+    // no bearing on quality. This is the same confound that makes the
+    // commitment margin a function of the candidate set (docs/EVAL.md,
+    // 2026-07-26): a maximum over fewer draws is smaller for free.
+    let base_branches: usize = sampled.iter().map(|(b, _)| b.branches).sum();
+    let treated_branches: usize = sampled.iter().map(|(_, t)| t.branches).sum();
+    let comparable = base_branches == treated_branches;
+    if !comparable {
+        println!(
+            "\n⚠ branch counts differ ({} vs {} projected branches in total), so the \
+             spread columns are NOT comparable -- a maximum over fewer branches is \
+             smaller for free. Read the commitment flips instead.",
+            base_branches, treated_branches
+        );
+    }
+
     let up = sampled.iter().filter(|(b, t)| t.spread > b.spread).count();
     let down = sampled.iter().filter(|(b, t)| t.spread < b.spread).count();
     let same = sampled.len() - up - down;
     println!();
     println!(
         "paired: treatment spread higher on {up}, lower on {down}, identical on {same}; \
-         two-sided sign p={:.4}",
-        sign_p(up, down)
+         two-sided sign p={:.4}{}",
+        sign_p(up, down),
+        if comparable { "" } else { "  [NOT COMPARABLE]" }
     );
 
     // The load-bearing line. A treatment that leaves every branch value
