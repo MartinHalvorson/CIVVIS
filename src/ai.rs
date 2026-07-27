@@ -233,6 +233,164 @@ const POLICY_PRIORITY: [&str; 20] = [
     "strategos",
 ];
 
+/// Turns between re-examinations of a deck that is already full. Each review
+/// costs one empire valuation per candidate card, and the answer moves on the
+/// scale of a civic unlocking, not of a turn passing.
+const POLICY_REVIEW_EVERY: u32 = 8;
+
+/// What `pid`'s empire is worth to `w` right now, in yield-equivalent points.
+///
+/// Read either side of a candidate card, the difference is that card's entire
+/// effect **as the engine computes it** — district adjacency percentages,
+/// unit-era windows, per-city production multipliers and all. Nothing here
+/// names an effect key, so the 125-card catalogue and every card a mod adds
+/// are covered by construction, and a card whose effect the engine does not
+/// implement scores exactly zero instead of scoring its own documentation.
+///
+/// This is a counterfactual, which is the only kind of estimate this
+/// repository has ever got value from: the card is applied and the result
+/// measured, rather than a regression predicting what cards tend to accompany
+/// winning. `docs/SUPERHUMAN.md` §0 is the evidence for preferring the former.
+fn empire_reading(g: &Game, pid: usize, w: &Weights) -> f64 {
+    let mut value = 0.0;
+    for cid in g.player_city_ids(pid) {
+        let y = g.city_yields(cid);
+        value += w.pol_food * y.food
+            + w.pol_production * y.production
+            + w.pol_gold * y.gold
+            + w.pol_science * y.science
+            + w.pol_culture * y.culture
+            + w.pol_faith * y.faith;
+    }
+    // Combat cards move no yield. Ask the units themselves instead: a card
+    // worth +5 strength to a standing army is visible here and nowhere else.
+    let mut strength = 0.0;
+    for uid in g.player_unit_ids(pid) {
+        if let Some(unit) = g.units.get(&uid) {
+            strength += g.unit_strength(unit, false) + g.unit_strength(unit, true);
+        }
+    }
+    value + w.pol_military * strength
+}
+
+/// Hold the deck the empire is worth most with, and change it when that
+/// changes.
+///
+/// The predecessor of this function tried twenty hard-coded cards in a fixed
+/// order, and only while a slot stood empty — so a deck filled once in the
+/// Ancient era and `policies_fit` refused every later card for the rest of the
+/// game. Measured over 64 seat-games (`src/bin/policy_census.rs`), an average
+/// seat unlocked 42.0 cards and played 7.3 of them.
+///
+/// Ordering falls back to `POLICY_PRIORITY` on ties, so wherever the
+/// counterfactual is silent — a card the engine gives no effect — the choice
+/// is exactly the one this code has always made.
+fn revise_policy_deck(g: &mut Game, pid: usize, w: &Weights) {
+    let slots = g.gov_slots(pid);
+    let total = slots.military + slots.economic + slots.diplomatic + slots.wildcard;
+    if total <= 0 {
+        return;
+    }
+    let held: Vec<String> = g.players[pid].policies.iter().cloned().collect();
+    if held.len() as i64 >= total && g.turn % POLICY_REVIEW_EVERY != 0 {
+        return;
+    }
+
+    let mut candidates = g.available_policies(pid);
+    candidates.extend(held.iter().cloned());
+    candidates.sort();
+    candidates.dedup();
+
+    let rank = |card: &str| {
+        POLICY_PRIORITY
+            .iter()
+            .position(|entry| *entry == card)
+            .unwrap_or(POLICY_PRIORITY.len())
+    };
+
+    let mut scored: Vec<(f64, usize, String, String)> = Vec::new();
+    for card in &candidates {
+        let slot = match g.rules.policies.get(card) {
+            Some(spec) => spec.slot.clone(),
+            None => continue, // a priority-list entry the ruleset never had
+        };
+        let incumbent = g.players[pid].policies.contains(card);
+        if incumbent {
+            g.players[pid].policies.remove(card);
+        }
+        let without = empire_reading(g, pid, w);
+        g.players[pid].policies.insert(card.clone());
+        let with = empire_reading(g, pid, w);
+        if !incumbent {
+            g.players[pid].policies.remove(card);
+        }
+        let gain = with - without;
+        // A sitting card keeps its slot unless beaten by the margin. Without
+        // this the deck reshuffles on arithmetic noise every review.
+        let hysteresis = if incumbent {
+            w.pol_swap_margin * gain.abs()
+        } else {
+            0.0
+        };
+        scored.push((gain + hysteresis, rank(card), slot, card.clone()));
+    }
+
+    scored.sort_by(|a, b| {
+        b.0.partial_cmp(&a.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(a.1.cmp(&b.1))
+            .then(a.3.cmp(&b.3))
+    });
+
+    let mut room = [slots.military, slots.economic, slots.diplomatic];
+    let mut wildcard = slots.wildcard;
+    let mut target: std::collections::BTreeSet<String> = Default::default();
+    for (_, _, slot, card) in &scored {
+        let kind = match slot.as_str() {
+            "military" => 0,
+            "economic" => 1,
+            "diplomatic" => 2,
+            _ => 3, // a Wildcard card fits only a Wildcard slot
+        };
+        if kind < 3 && room[kind] > 0 {
+            room[kind] -= 1;
+            target.insert(card.clone());
+        } else if wildcard > 0 {
+            wildcard -= 1;
+            target.insert(card.clone());
+        }
+    }
+
+    for card in held {
+        if !target.contains(&card) {
+            let _ = g.apply(pid, &Action::UnslotPolicy { policy: card });
+        }
+    }
+    for card in &target {
+        if !g.players[pid].policies.contains(card) {
+            let _ = g.apply(
+                pid,
+                &Action::SlotPolicy {
+                    policy: card.clone(),
+                },
+            );
+        }
+    }
+    // Floor: whatever the assignment above left empty, fill the way this code
+    // always has. An empty slot is strictly worse than a card of unknown worth,
+    // and this guarantees the change can never reduce occupancy.
+    if (g.players[pid].policies.len() as i64) < total {
+        for card in POLICY_PRIORITY {
+            let _ = g.apply(
+                pid,
+                &Action::SlotPolicy {
+                    policy: card.to_string(),
+                },
+            );
+        }
+    }
+}
+
 /// Strategy weights steering BasicAi decisions. Defaults reproduce the
 /// original hand-tuned behavior; the `evolve` GA searches this space.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -285,6 +443,22 @@ pub struct Weights {
     pub local_superiority: f64,  // caution when local hostile power is greater
     pub withdraw_hp: f64,        // enter persistent recovery at or below this HP
     pub rejoin_hp: f64,          // leave recovery at or above this HP
+    // Policy deck appetite. A card is valued by slotting it and asking the
+    // engine what changed (`Weights::card_value`), so these are the exchange
+    // rates between the things a card can buy -- not a per-card table. The
+    // catalogue is 125 cards and grows with any mod, so nothing here names one.
+    pub pol_food: f64,
+    pub pol_production: f64,
+    pub pol_gold: f64,
+    pub pol_science: f64,
+    pub pol_culture: f64,
+    pub pol_faith: f64,
+    /// Yield-equivalent of one point of fielded combat strength. Small: a card
+    /// worth +5% to ten units moves strength by tens, a yield card by ones.
+    pub pol_military: f64,
+    /// Fraction by which a challenger must beat the incumbent to take its
+    /// slot. Zero re-shuffles the deck on noise; one never swaps at all.
+    pub pol_swap_margin: f64,
 }
 
 pub const OPENING_MENU: [&str; 6] = [
@@ -334,6 +508,14 @@ impl Default for Weights {
             local_superiority: 6.0,
             withdraw_hp: 45.0,
             rejoin_hp: 80.0,
+            pol_food: 0.6,
+            pol_production: 1.0,
+            pol_gold: 0.6,
+            pol_science: 1.0,
+            pol_culture: 1.0,
+            pol_faith: 0.7,
+            pol_military: 0.05,
+            pol_swap_margin: 0.15,
         }
     }
 }
@@ -381,6 +563,14 @@ impl Weights {
             self.local_superiority,
             self.withdraw_hp,
             self.rejoin_hp,
+            self.pol_food,
+            self.pol_production,
+            self.pol_gold,
+            self.pol_science,
+            self.pol_culture,
+            self.pol_faith,
+            self.pol_military,
+            self.pol_swap_margin,
         ]
     }
 
@@ -426,11 +616,19 @@ impl Weights {
             local_superiority: v[37],
             withdraw_hp: v[38],
             rejoin_hp: v[39],
+            pol_food: v[40],
+            pol_production: v[41],
+            pol_gold: v[42],
+            pol_science: v[43],
+            pol_culture: v[44],
+            pol_faith: v[45],
+            pol_military: v[46],
+            pol_swap_margin: v[47],
         }
     }
 
     /// (lo, hi) clamp per gene, same order as to_vec.
-    pub fn bounds() -> [(f64, f64); 40] {
+    pub fn bounds() -> [(f64, f64); 48] {
         [
             (2.0, 12.0),
             (1.0, 5.0),
@@ -472,6 +670,14 @@ impl Weights {
             (0.0, 16.0),
             (20.0, 65.0),
             (60.0, 100.0),
+            (0.0, 3.0), // pol_food
+            (0.0, 3.0), // pol_production
+            (0.0, 3.0), // pol_gold
+            (0.0, 3.0), // pol_science
+            (0.0, 3.0), // pol_culture
+            (0.0, 3.0), // pol_faith
+            (0.0, 0.5), // pol_military
+            (0.0, 1.0), // pol_swap_margin
         ]
     }
 }
@@ -1713,18 +1919,7 @@ impl BasicAi {
                 }
             }
         }
-        let slots = g.gov_slots(pid);
-        let total = slots.military + slots.economic + slots.diplomatic + slots.wildcard;
-        if (g.players[pid].policies.len() as i64) < total {
-            for card in POLICY_PRIORITY {
-                let _ = g.apply(
-                    pid,
-                    &Action::SlotPolicy {
-                        policy: card.to_string(),
-                    },
-                );
-            }
-        }
+        revise_policy_deck(g, pid, &self.w);
         if g.players[pid].secret_society.is_none() {
             let society = if self.pursue_religion {
                 "voidsingers"
