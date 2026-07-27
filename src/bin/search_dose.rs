@@ -62,6 +62,31 @@
 //!
 //! Written before the remaining doses reported, so it cannot be reshaped into
 //! whatever the data turns out to say.
+//!
+//! ## The first ladder was under-powered, and the control is what said so
+//!
+//! 40 mirrored maps a dose, seed 3800000:
+//!
+//! | dose | score | edge | |
+//! |---|---|---|---|
+//! | `20/120` deeper | 0.5625 ± 0.0320 | +0.0625 | +2.0 SE |
+//! | `10/80` 2× reviews | 0.4875 ± 0.0282 | −0.0125 | −0.4 SE |
+//! | **`40/80` HALF reviews (control)** | 0.4750 ± 0.0250 | **−0.0250** | **−1.0 SE** |
+//!
+//! The control halves the review cadence of a budget promoted at +45 Elo, so
+//! it *should* lose. It points the right way and its magnitude is about what
+//! half the deep gain predicts (~0.03) — but at **−1.0 SE it is not separable
+//! from noise.**
+//!
+//! **That is a verdict on the ladder, not on the dose.** An instrument that
+//! cannot clearly see a known-bad arm has not earned belief in a surprising
+//! positive, so `20/120`'s +0.0625 is a screen and nothing more. Resolving an
+//! effect of 0.03 at 2 SE needs SE ≈ 0.015, about **160 maps** — four times
+//! this run, now going on a disjoint seed.
+//!
+//! This is why the control exists and why it should never be the last dose to
+//! report: without it, +2.0 SE against a documented saturation story would
+//! have looked like a finding.
 use civvis::ai::{Ai, AdvancedAi, Weights};
 use civvis::game::{Action, Game};
 use civvis::parallel;
