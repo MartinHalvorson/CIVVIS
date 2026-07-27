@@ -211,8 +211,46 @@ Ties — including the all-zero tie of a civilization whose first age arrives
 before it has done anything the table counts — fall back to alphabetical order,
 so the choice only moves where there is evidence to move it.
 
-`Weights::dedication_choice` selects the arm; `DedicationChoice::Alphabetical`
-is the frozen control, and the entrant `advanced_alpha_dedication` plays it.
+### And it lost. The alphabetical default ships.
+
+`ai_eval advanced advanced_measured_dedication`, 120 mirrored maps, 240 games,
+4 players, stock turn budget, seed 940000:
+
+| | measured | alphabetical |
+|---|---|---|
+| game-win share | 41.2% | **58.8%** |
+| map directions | 10 | **31** |
+| sign test | | **p=0.0015** |
+| Elo-equivalent | **−61** (CI −124..+1) | |
+| anytime-valid e-process | not crossed | **6.04e2, crossed at map 51** |
+| terminal score (diagnostic) | 46.3% | 53.7%, p=0.0000 |
+
+The alphabetical agent had more of everything — cities 2.53 vs 2.20, population
+16.0 vs 14.2, techs 14.0 vs 13.1, faith 267 vs 211 — and converted 113 religious
+victories to 82.
+
+**Why, and it is not subtle in hindsight.** In the Classical era alphabetical
+order leads with Exodus of the Evangelists, whose Golden-Age half feeds
+missionaries, apostles and Great Prophet points. Religion is the lane that
+converts in this engine. The arbitrary default was accidentally feeding the
+strongest lane, and ranking by measured Era Score routed civilizations *away*
+from it toward whatever they happened to have been doing.
+
+**The general lesson is one this repository keeps relearning.** Era Score is the
+right objective in a Normal or Dark Age — it literally buys the next age. In a
+Golden or Heroic Age it is only a **correlate** of what the Golden half is worth,
+and an argmax over a correlate optimises the correlate. Unifying both halves
+under one number was the error; it is the same shape as the state-value net that
+went to −313 Elo.
+
+**The obvious next hypothesis, unmeasured:** rank by projection only in a Normal
+or Dark Age, and leave the Golden and Heroic choice alone. That keeps the
+measured number where it is causal and drops it where it is not. It needs its own
+gate before it goes anywhere near the default.
+
+`Weights::dedication_choice` selects the arm. `Alphabetical` is the shipped
+default because it won; `Measured` is retained as the evaluator-only entrant
+`advanced_measured_dedication`.
 
 ## Measuring
 

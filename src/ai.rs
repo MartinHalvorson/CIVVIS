@@ -572,15 +572,28 @@ pub struct Weights {
 /// The two arms a Dedication experiment needs.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DedicationChoice {
+    /// The first name `available_dedications` returns, which is a `BTreeMap`
+    /// key, which is alphabetical order.
+    ///
+    /// **This is the agent that plays, because it is the agent that wins.** It
+    /// looks arbitrary and it is, but in the Classical era alphabetical order
+    /// leads with Exodus of the Evangelists, whose Golden-Age half feeds
+    /// missionaries and Great Prophet points — and religion is the lane that
+    /// converts in this engine. Measured against `Measured` over 120 mirrored
+    /// maps it took **58.8%** of games, 31 map directions to 10, sign
+    /// p=0.0015, with the anytime-valid e-process crossing at map 51. See
+    /// `docs/AGES.md`.
+    #[default]
+    Alphabetical,
     /// Ranked by what each Dedication would have paid over the era that just
     /// ended, measured from the civilization's own trigger tally.
-    #[default]
+    ///
+    /// **A recorded negative result, retained as an evaluator arm.** The
+    /// projection is the right objective in a Normal or Dark Age, where Era
+    /// Score literally buys the next age. In a Golden or Heroic Age it is only
+    /// a *correlate* of what the Golden half is worth, and an argmax over a
+    /// correlate is the failure mode this repository keeps rediscovering.
     Measured,
-    /// The pre-2026-07-27 behaviour: the first name `available_dedications`
-    /// returns, which is a `BTreeMap` key, which is alphabetical order. Kept as
-    /// the frozen control — every age number published before this date sits on
-    /// top of it.
-    Alphabetical,
 }
 
 /// The three arms a policy-deck experiment needs.
@@ -665,7 +678,7 @@ impl Default for Weights {
             // still work -- but the agent that plays is the one that always
             // played.
             policy_deck: PolicyDeck::Legacy,
-            dedication_choice: DedicationChoice::Measured,
+            dedication_choice: DedicationChoice::Alphabetical,
         }
     }
 }

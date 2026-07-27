@@ -580,11 +580,18 @@ fn a_dedication_is_projected_from_the_era_that_just_ended() {
 }
 
 #[test]
-fn the_ai_dedicates_on_its_record_rather_than_alphabetically() {
-    use crate::ai::{choose_dedications, DedicationChoice};
+fn the_two_dedication_arms_choose_differently_and_the_default_is_alphabetical() {
+    use crate::ai::{choose_dedications, DedicationChoice, Weights};
 
     // Alphabetically the Classical era offers exodus_of_the_evangelists first,
-    // and that is what both AI tiers used to take in every game ever played.
+    // and that is what both AI tiers have always taken. It measured 58.8% of
+    // games against the ranked arm over 120 mirrored maps, so it is still what
+    // ships -- see the DedicationChoice docs.
+    assert_eq!(
+        Weights::default().dedication_choice,
+        DedicationChoice::Alphabetical,
+        "the shipped agent is the one that won its gate"
+    );
     let mut game = two_player_game();
     game.world_era = 1;
     game.players[0].age = "normal".to_string();
@@ -593,13 +600,13 @@ fn the_ai_dedicates_on_its_record_rather_than_alphabetically() {
         .last_era_triggers
         .insert("eureka".to_string(), 6);
 
-    let mut control = game.clone();
-    choose_dedications(&mut control, 0, DedicationChoice::Alphabetical);
+    let mut shipped = game.clone();
+    choose_dedications(&mut shipped, 0, DedicationChoice::Alphabetical);
     assert!(
-        control.players[0]
+        shipped.players[0]
             .dedications
             .contains("exodus_of_the_evangelists"),
-        "the frozen control still takes the first name in the map"
+        "the shipped arm takes the first name in the map"
     );
 
     choose_dedications(&mut game, 0, DedicationChoice::Measured);

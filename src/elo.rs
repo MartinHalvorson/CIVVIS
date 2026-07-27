@@ -39,7 +39,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
 pub const EVAL_ONLY_AIS: [&str; 31] = [
-    "advanced_alpha_dedication",
+    "advanced_measured_dedication",
     "advanced_lane_reachable",
     "advanced_relief_scoped",
     "strategic_score",
@@ -494,15 +494,15 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
                 .map(AdvancedAi::with_weights)
                 .unwrap_or_else(AdvancedAi::new),
         ),
-        // Frozen control for the Dedication chooser. Every civilization used
-        // to take the alphabetically first Dedication its era offered, which in
-        // the Classical era is Exodus of the Evangelists — chosen by seats with
-        // no religion. This entrant keeps that behaviour so the measured
-        // chooser has something paired to beat, and so any age number published
-        // before 2026-07-27 can be reproduced.
-        "advanced_alpha_dedication" => {
+        // The Dedication chooser that ranks the offer by what each Dedication
+        // would have paid over the era just ended. **A recorded negative
+        // result**, kept as an evaluator arm: over 120 mirrored maps against
+        // the shipped alphabetical default it took 41.2% of games, 10 map
+        // directions to 31, sign p=0.0015, e-process crossing against it at
+        // map 51, and terminal score 46.3% (p=0.0000). See `docs/AGES.md`.
+        "advanced_measured_dedication" => {
             let mut w = crate::evolve::load_champion("evolved").unwrap_or_default();
-            w.dedication_choice = crate::ai::DedicationChoice::Alphabetical;
+            w.dedication_choice = crate::ai::DedicationChoice::Measured;
             Box::new(AdvancedAi::with_weights(w))
         }
         "advanced_v1" => Box::new(AdvancedAi::legacy()),
@@ -1078,7 +1078,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         ),
         "advanced" => (Vec::new(), "advanced"),
         "advanced_lane_reachable" => (Vec::new(), "advanced_lane_reachable"),
-        "advanced_alpha_dedication" => (Vec::new(), "advanced_alpha_dedication"),
+        "advanced_measured_dedication" => (Vec::new(), "advanced_measured_dedication"),
         "advanced_v1" => (Vec::new(), "advanced_v1"),
         "advanced_relief_scoped" => (Vec::new(), "advanced_relief_scoped"),
         "random" => (Vec::new(), "random"),
