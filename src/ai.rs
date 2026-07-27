@@ -570,7 +570,15 @@ impl Default for Weights {
             pol_faith: 0.7,
             pol_military: 0.05,
             pol_swap_margin: 0.15,
-            policy_deck: PolicyDeck::Live,
+            // LEGACY, not Live. The counterfactual deck is a measured null:
+            // 18 map directions to 15, p=0.7283 over 120 mirrored maps, with
+            // terminal score also flat. It costs an empire valuation per
+            // candidate card per review, so shipping it would buy a real
+            // slowdown with no evidence of strength. The mechanism stays for
+            // study -- `PolicyDeck::Live` still selects it and the eval arms
+            // still work -- but the agent that plays is the one that always
+            // played.
+            policy_deck: PolicyDeck::Legacy,
         }
     }
 }
@@ -679,11 +687,9 @@ impl Weights {
             pol_faith: v[45],
             pol_military: v[46],
             pol_swap_margin: v[47],
-            // Not a gene, so the GA's vector does not carry it and a genome
-            // that round-trips through `to_vec` comes back playing the live
-            // deck. That is the intended semantics: evolution breeds appetites,
-            // never the decision to stop using them.
-            policy_deck: PolicyDeck::Live,
+            // Not a gene: the GA's vector does not carry it, so a genome that
+            // round-trips through `to_vec` comes back on the shipped default.
+            policy_deck: PolicyDeck::Legacy,
         }
     }
 
