@@ -272,6 +272,62 @@ of **180/272** and 8-tech/11-civic prices of **204/308**. The forged-price test
 also posts a zero quote and proves the engine still charges its recomputed live
 price, so the browser's quote is never trusted as authority.
 
+## Resolved: a city-state weighed nothing for itself
+
+Every city-state in a 406-turn spectator game sat at exactly 100 Loyalty while
+the observation reported it losing **-25 a turn**. Both halves were wrong, and
+they were hiding each other.
+
+`loyalty_change_for_city` skipped every minor-owned city when it summed
+population pressure. That was meant to model the shipped rule that a minor
+projects no pressure onto its neighbours — the population tooltip really does
+drop the "also applies to other cities within 9 tiles" clause for minors:
+
+> Ranges from +20 to -20, based on the comparison of pressure coming from
+> nearby Citizens belonging to the city's owner and nearby Citizens belonging
+> to a different civilization. 1 Pressure per Citizen normally. Increased in
+> Capital.
+>
+> — `LOC_CULTURAL_IDENTITY_POPULATION_PRESSURE_TOOLTIP_MINOR_CIVS`
+
+But the skip also removed a city-state's own Citizens from its *own* domestic
+side. A pop-14 Kabul therefore compared **0** against its neighbours and pinned
+the ratio at the -20 floor forever. `process_loyalty` then returned early for
+minors, so the number was computed, published to the HUD, and never applied.
+The city survived because the second bug cancelled the first.
+
+Two shipped constants were missing beside it. `IDENTITY_PER_TURN_FROM_CITY_STATES`
+is **20** and `IDENTITY_PER_TURN_FROM_FREE_CITIES` is **10** — "Base strength as
+a City-State" and "Desire for independence" in the pressure breakdown. Only the
+Free City half was paid.
+
+CIVVIS now counts a minor's own Citizens as its domestic pressure while still
+projecting nothing outward, pays the +20, and runs city-states through the same
+`process_loyalty` as anybody else, so an overwhelmed one revolts into a Free
+City. Replaying that same 406-turn checkpoint takes the count of cities that
+claim to be bleeding Loyalty while pinned at 100 from **18 to 0**, and no
+city-state flips: the most pressured of the eighteen still clears +15 a turn,
+which is the balance the +20 base exists to produce.
+
+The occupation term went with it. Rise & Fall charged a flat penalty between
+`IDENTITY_PER_TURN_FROM_OCCUPATION_MIN` -1 and `_MAX` -5; Gathering Storm
+rescaled the range to 0..10 and added `_MULTIPLIER` **25**, which the
+Civilopedia reads as "Loyalty penalties based on the conqueror's Grievances
+caused against the city's original owner". CIVVIS charged R&F's flat -5 and
+cancelled it outright when a unit was garrisoned. It now charges 25% of those
+Grievances clamped to [0, 10] whether or not anyone is garrisoned, and a
+garrison instead pays the separate `IDENTITY_PER_TURN_FROM_MARTIAL_LAW` **+8** —
+so holding a fresh conquest down with troops raises its Loyalty rather than
+merely stopping the bleed.
+
+Verified unchanged in the same pass: the ±20 clamp is exactly
+`LOYALTY_PER_TURN_FROM_NEARBY_CITIZEN_PRESSURE_MAX_RATIO` 3.0 against
+`_NEUTRAL_RATIO` 1.0; the 10%-per-tile falloff; `CITIZEN_IDENTITY_PRESSURE_BASE`
+1 with `_CAPITAL` +1 and the Golden/Dark ±0.5 per-Citizen age terms; every
+`Governors.IdentityPressure` is **8**; the Statue of Liberty's
+`STATUELIBERTY_CITIES_ALWAYS_LOYAL` really does pin all cities within 6 tiles;
+and the `LoyaltyLevels` yield/growth bands.
+
 ## Open, and needing a judgement call: resource placement frequency
 
 `Resources.Frequency` and `SeaFrequency` weight the shipped placement lottery.
