@@ -15290,6 +15290,20 @@ impl Game {
             .is_some_and(|player| !player.is_minor && !player.is_barbarian)
     }
 
+    /// Whether this seat may take a new tile with its own Culture or Gold.
+    ///
+    /// `CivilizationLevels` grants both to `CIVILIZATION_LEVEL_FULL_CIV`
+    /// alone: `CanAnnexTilesWithCulture` and `CanAnnexTilesWithGold` are 0 for
+    /// `CITY_STATE`, `FREE_CITIES` and `TRIBE`. A city-state's territory grows
+    /// only through `CanAnnexTilesWithReceivedInfluence` — one tile per Envoy
+    /// it receives from its Suzerain — which `do_send_envoy` and liberation
+    /// already pay. Barbarian camps and Free Cities never annex at all.
+    pub(crate) fn annexes_tiles_with_own_yields(&self, pid: usize) -> bool {
+        self.players
+            .get(pid)
+            .is_some_and(|player| !player.is_minor && !player.is_barbarian)
+    }
+
     /// Flat Combat Strength this seat receives from the difficulty setting.
     pub fn handicap_combat_strength(&self, pid: usize) -> f64 {
         if !self.takes_handicap(pid) {
@@ -17541,6 +17555,8 @@ impl Game {
         let city = self.cities.get(&cid)?;
         let tile = self.map.get(pos)?;
         if city.owner != pid
+            // `CanAnnexTilesWithGold` is a full-civilization privilege.
+            || !self.annexes_tiles_with_own_yields(pid)
             || tile.owner_city.is_some()
             || !self.players.get(pid)?.explored.contains(&pos)
             || !self
@@ -36263,8 +36279,28 @@ impl Game {
             center.feature = None;
             center.improvement = None;
         }
+        // `CivilizationLevels.StartingTilesForCity` is 6 for a full
+        // civilization — the whole first ring — and 5 for a city-state, which
+        // therefore opens one tile short of a normal city and makes the rest
+        // up from Envoys. Which of the six a city-state gives up is not in the
+        // database, so the shipped plot-influence picker chooses: the ring
+        // neighbour it rates least attractive is the one left neutral.
+        let mut ring: Vec<Pos> = self.nbrs(pos).into_iter().collect();
+        if is_minor {
+            ring.retain(|position| {
+                self.map
+                    .get(*position)
+                    .is_some_and(|tile| tile.owner_city.is_none())
+            });
+            ring.sort_by(|left, right| {
+                self.border_influence_cost(pos, *left)
+                    .total_cmp(&self.border_influence_cost(pos, *right))
+                    .then(left.cmp(right))
+            });
+            ring.truncate(5);
+        }
         let mut claim = vec![pos];
-        claim.extend(self.nbrs(pos));
+        claim.extend(ring);
         for tpos in claim {
             if let Some(t) = self.map.tiles.get_mut(&tpos) {
                 if t.owner_city.is_none() {
@@ -45627,7 +45663,9 @@ impl Game {
                 }
             }
         }
-        if !self.congress_effect_active("border_control_treaty", "B", &pid.to_string()) {
+        if self.annexes_tiles_with_own_yields(pid)
+            && !self.congress_effect_active("border_control_treaty", "B", &pid.to_string())
+        {
             let owned = self.cities[&cid].owned_tiles.len() as i32;
             let border_mult = 1.0
                 + (self.pantheon_effect(pid, "border_growth_pct")
@@ -46567,7 +46605,7 @@ impl Game {
         }
         let mut scored: Vec<(Pos, f64)> = candidates
             .into_iter()
-            .map(|position| (position, self.border_influence_cost(cid, position)))
+            .map(|position| (position, self.border_influence_cost(city_pos, position)))
             .collect();
         let best_score = scored
             .iter()
@@ -46597,8 +46635,7 @@ impl Game {
     /// The -105 is calibrated against the 100 ring cost on purpose: one
     /// Resource is worth slightly more than one extra ring of distance, so a
     /// city reaches past a barren adjacent plot to take it.
-    fn border_influence_cost(&self, cid: u32, position: Pos) -> f64 {
-        let city_pos = self.cities[&cid].pos;
+    fn border_influence_cost(&self, city_pos: Pos, position: Pos) -> f64 {
         let tile = &self.map.tiles[&position];
         let mut cost = 100.0 * self.wdist(position, city_pos) as f64;
         cost += match tile.terrain.as_str() {
@@ -47771,7 +47808,12 @@ mod border_growth_tests {
     use super::*;
 
     fn controlled_game(seed: u64) -> (Game, u32, Pos) {
+        controlled_game_for(seed, false)
+    }
+
+    fn controlled_game_for(seed: u64, minor: bool) -> (Game, u32, Pos) {
         let mut game = Game::new_full(1, 24, 20, seed, 120, 0, false);
+        game.players[0].is_minor = minor;
         for unit in game.units.keys().copied().collect::<Vec<_>>() {
             game.remove_unit(unit);
         }
@@ -47815,6 +47857,79 @@ mod border_growth_tests {
             .unwrap()
             .owned_tiles
             .push(position);
+    }
+
+    #[test]
+    fn only_a_full_civilization_moves_its_border_with_its_own_culture() {
+        // CivilizationLevels.CanAnnexTilesWithCulture is 1 for FULL_CIV and 0
+        // for CITY_STATE. A city-state banking enough Culture to buy the next
+        // plot several times over still does not take it; Envoys are its only
+        // route to new ground.
+        for (minor, expected) in [(false, 8), (true, 6)] {
+            let (mut game, city, _) = controlled_game_for(941_101, minor);
+            let before = game.cities[&city].owned_tiles.len();
+            assert_eq!(before, if minor { 6 } else { 7 });
+            game.cities.get_mut(&city).unwrap().border_culture = 500.0;
+            game.process_city(0, city);
+            assert_eq!(
+                game.cities[&city].owned_tiles.len(),
+                expected,
+                "minor={minor}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_city_state_cannot_buy_a_plot_with_gold() {
+        // CanAnnexTilesWithGold is 0 for CITY_STATE, so no price is ever
+        // quoted however much Gold the city-state is holding.
+        for minor in [false, true] {
+            let (mut game, city, center) = controlled_game_for(941_102, minor);
+            game.players[0].gold = 10_000.0;
+            let target = ring(&game, center, 2)
+                .into_iter()
+                .find(|position| game.map.tiles[position].owner_city.is_none())
+                .expect("a second-ring plot is unowned");
+            game.players[0].explored.insert(target);
+            assert_eq!(
+                game.plot_purchase_cost(0, city, target).is_some(),
+                !minor,
+                "minor={minor}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_city_state_founds_one_ring_tile_short_of_a_full_civilization() {
+        // StartingTilesForCity is 6 for FULL_CIV and 5 for CITY_STATE. The
+        // database does not say which neighbour is given up, so the shipped
+        // plot-influence picker decides and the worst-scoring one stays
+        // neutral.
+        let (major, major_city, center) = controlled_game_for(941_103, false);
+        assert_eq!(major.cities[&major_city].owned_tiles.len(), 7);
+        assert!(ring(&major, center, 1)
+            .into_iter()
+            .all(|position| major.map.tiles[&position].owner_city == Some(major_city)));
+
+        let (minor, minor_city, center) = controlled_game_for(941_103, true);
+        assert_eq!(minor.cities[&minor_city].owned_tiles.len(), 6);
+        let unclaimed: Vec<Pos> = ring(&minor, center, 1)
+            .into_iter()
+            .filter(|position| minor.map.tiles[position].owner_city.is_none())
+            .collect();
+        assert_eq!(unclaimed.len(), 1);
+        // The tile left out is the one the picker rates worst, not an
+        // arbitrary member of the ring.
+        let worst = ring(&minor, center, 1)
+            .into_iter()
+            .max_by(|left, right| {
+                minor
+                    .border_influence_cost(center, *left)
+                    .total_cmp(&minor.border_influence_cost(center, *right))
+                    .then(left.cmp(right))
+            })
+            .expect("the first ring is not empty");
+        assert_eq!(unclaimed[0], worst);
     }
 
     #[test]
