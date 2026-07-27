@@ -196,9 +196,9 @@ of the four, so a zoom over the map is the zoom it has always been.
 Two things this had to be told. A world's drawn size is a property of the zoom
 alone, so an arrival is a size test **and** a distance test — at a tile's zoom
 over the Atlantic the Moon is nominally four stages wide, and the size test by
-itself calls that an arrival at the Moon. And out at the destination the stop belongs
-to the **star**: LHS 1140 is twelve times its own planet and sits at the same
-point in the catalogue, so `planetMaxScale` answers with the star's ceiling and
+itself calls that an arrival at the Moon. And out at the destination the stop
+belongs to the **star**: LHS 1140 is twelve times its own planet and sits at
+the same point in the catalogue, so `planetMaxScale` answers with its ceiling and
 the zoom ends while the planet is still a bead. Keyed to the planet alone, the
 one arrival the whole expedition is about never got past 0.46 and ran out at
 full gearing.
