@@ -207,12 +207,18 @@ fn main() {
     println!("\nblocks ranked by what scrambling them costs (most damaging first):");
     for (mean, se, block, count) in &rows {
         let cost = 0.5 - mean;
-        let verdict = if *se > 0.0 && cost < 2.0 * se {
+        // Three outcomes, and the sign matters as much as the size. A negative
+        // cost means scrambling HELPED, which is not the same as settled even
+        // when it sits inside its interval -- it points the other way, at
+        // shipped values that may be wrong rather than merely unimportant.
+        let verdict = if cost < 0.0 && *se > 0.0 && -cost > 2.0 * se {
+            "scrambling HELPED -- the shipped values are actively wrong"
+        } else if cost < 0.0 {
+            "scrambling helped, inside the interval -- a lead, sweep the genes"
+        } else if *se > 0.0 && cost < 2.0 * se {
             "settled -- shipped values are not load-bearing"
-        } else if cost > 0.0 {
-            "LOAD-BEARING -- better values could exist here"
         } else {
-            "scrambling HELPED, which indicts the shipped values"
+            "LOAD-BEARING -- better values could exist here"
         };
         println!("  {block:<14} cost {cost:+.4} +/- {se:.4}  ({count} genes)  {verdict}");
     }
