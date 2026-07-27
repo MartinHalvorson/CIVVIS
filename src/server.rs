@@ -6399,6 +6399,46 @@ mod tests {
         // through, but it leans towards the pointer exactly as a flat map does.
         assert!(!EMBEDDED_INDEX.contains("const pointerX = skyAnchor?.x ??"));
         assert!(!EMBEDDED_INDEX.contains("const scale = planetScaleClampAt(base * f, {x:0, y:0});"));
+        // A notch of zoom is a fraction of the ladder in front of it, not a
+        // fixed ratio: with a fixed ratio the galaxy is two hundred wheel
+        // notches from the ground and the far half of the sky can be built and
+        // never reached. Every zoom that arrives as a step of intent goes
+        // through the gearing; a pinch is absolute and is geared at its own
+        // site, against the spread the fingers started from.
+        assert!(EMBEDDED_INDEX.contains("function skyZoomPace(scale = cam.scale, pan = SKY_PAN)"));
+        assert!(EMBEDDED_INDEX.contains("function skyZoomStep(f)"));
+        assert!(EMBEDDED_INDEX
+            .contains("const pace = skyZoomLadder() / (SKY_ZOOM_SWEEPS * FLAT_ZOOM_LADDER);"));
+        assert!(EMBEDDED_INDEX.contains("zoomAt(skyZoomStep(factor), ev.clientX - r.left, ev.clientY - r.top);"));
+        assert!(EMBEDDED_INDEX.contains("zoomAt(skyZoomStep(1.35))"));
+        assert!(EMBEDDED_INDEX.contains("zoomAt(skyZoomStep(1 / 1.35))"));
+        assert!(EMBEDDED_INDEX
+            .contains("const want = touchGesture.scale * Math.pow(spread, touchGesture.pace || 1);"));
+        // A flat board never sees any of it, and a people who have not proved
+        // their world round have no ladder to gear: `skyZoomStep` hands the
+        // factor straight back, and the pace floors at one.
+        assert!(EMBEDDED_INDEX.contains("  if (!planetMap()) return f;"));
+        // The arrival, and the two halves of it that have to hold together. A
+        // world's drawn size is a property of the zoom alone, so the camera has
+        // to be *at* the body as well — otherwise a tile's zoom over the
+        // Atlantic reads as an arrival at the Moon, which is nominally four
+        // stages wide there. How slow an arrival is nobody chooses: the gearing
+        // is handed back until one notch is the notch the flat board has.
+        assert!(EMBEDDED_INDEX.contains("function skyArrival(body, radius, pan)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "  return size * Math.max(0, 1 - away / (span * .6 + drawn));",
+        ));
+        assert!(EMBEDDED_INDEX
+            .contains("return pace / (1 + (pace - 1) * Math.max(0, Math.min(1, arrival)));"));
+        // Home is one of the arrivals, so standing on the board the gearing is
+        // fully off and a zoom over the map is the zoom it has always been.
+        // Every notch this lengthens is a notch out in the dark.
+        assert!(EMBEDDED_INDEX.contains("const SKY_ARRIVALS = [\"earth\", \"moon\", \"mars\", \"exo\"];"));
+        // And the destination's own star with them: LHS 1140 is twelve times
+        // its planet, so the star fills the stage and stops the zoom at its own
+        // ceiling long before the planet is anything but a bead beside it.
+        // Keyed to the planet alone the arrival never got past halfway.
+        assert!(EMBEDDED_INDEX.contains("const star = skyTarget(st)?.star;"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"planet\">Planet</option>"));
         assert!(EMBEDDED_INDEX
             .contains("<option value=\"true_start_earth\">True Start Earth</option>"));

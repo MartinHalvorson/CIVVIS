@@ -17036,6 +17036,137 @@ function planetScaleClamp(scale) {
 function planetScaleClampAt(scale, pan, body = skyNearestWorld(pan)) {
   return Math.max(planetMinScale(), Math.min(planetMaxScale(pan, body), scale));
 }
+
+// ------------------------------------------------------------ the pace of a zoom
+//
+// A notch of the wheel cannot mean one fixed ratio out here. On the flat board
+// the whole zoom is a factor of thirteen and fifteen notches cross all of it;
+// above a globe the same zoom runs from a hexagon underfoot to a galaxy a
+// hundred thousand light-years across, which is fourteen orders of magnitude,
+// and at the flat board's ratio that is **two hundred notches** from the ground
+// to the stop. Nobody scrolls two hundred times. The far half of everything out
+// there could be flown to by a caption and reached by nothing else.
+//
+// So a notch is a fixed fraction of the ladder in front of it instead. The step
+// is taken in log scale — the one place a zoom is linear — and divided by the
+// height of the ladder this rung actually has, so the empty part of it costs
+// about three flat-board sweeps whether it stops at Saturn's orbit, at the fifty
+// light-year bubble or at the galaxy. A people who have only proved their world
+// round get a short ladder and the notch they always had; a people with an
+// instrument above the air get the same number of notches over a span four
+// hundred million times longer.
+//
+// Measured on a 1600x1000 stage, from a tile to the far stop and by the wheel:
+//
+//   rung    span of the ladder   before   after
+//   chart          1.9              12      12
+//   eye           14.7              87      58
+//   glass         27.3             161      64
+//   space         34.4             203      65
+//
+// Which is the property that was wanted. The journey is the same length in the
+// hand at every rung; only how far it goes changes. The arrivals below are what
+// makes 65 of those rather than the 45 the gearing alone would spend.
+const SKY_ZOOM_SWEEPS = 3;
+// One sweep of the flat board's zoom, in log scale: the `.25` floor and `3.2`
+// ceiling `zoomAt` clamps a board to. That is the unit the sky's ladder is
+// measured in, so the notch a hand already knows keeps its meaning and only the
+// distance it covers changes.
+const FLAT_ZOOM_LADDER = Math.log(3.2 / .25);
+// The whole climb this rung offers, from the far stop up to the ground. The top
+// is the Earth's own ceiling and not the nearest world's: every other body
+// stops when it fills the frame, and pacing the ladder off whichever pebble the
+// camera happens to be beside would change the gearing under the hand every
+// time the subject changed.
+function skyZoomLadder() {
+  return Math.log(planetMaxScale(SKY_PAN, SKY_EARTH) /
+                  Math.max(1e-18, planetMinScale()));
+}
+// The gearing above is for crossing the sky, and crossing it is *all* it is
+// for. Four places out there are somewhere anyone is actually going: home, the
+// Moon, Mars, and the world the expedition is aimed at — the three destinations
+// of the space programme and the one board they are launched from. Arriving at
+// one of them is the part of the journey worth having, and a ladder geared for
+// fourteen orders of magnitude crosses the whole of the Moon's approach in two
+// notches, which is how a zoom flies past the one thing it was aimed at.
+//
+// Home is in this list for the same reason as the other three and for one more:
+// standing on the board, the arrival is complete, so the gearing is fully handed
+// back and a zoom over the map is exactly the zoom it has always been. Every
+// notch this change makes longer is a notch out in the dark.
+const SKY_ARRIVALS = ["earth", "moon", "mars", "exo"];
+// Those four, and the destination's own star with them. The expedition's world
+// is in orbit around one, and out there it is the *star* that arrives: LHS 1140
+// is twelve times its planet, so it fills the stage — and stops the zoom at its
+// own ceiling — long before the planet is anything but a bead beside it. Keyed
+// to the planet alone the arrival never got past halfway, and a zoom aimed at
+// the one place the whole expedition is about ran out at full gearing.
+function skyArrivalBodies(st = state) {
+  const known = new Set(skyKnownWorlds(st).map(body => body.id));
+  const ids = [...SKY_ARRIVALS];
+  const star = skyTarget(st)?.star;
+  if (star) ids.push(star.id);
+  const out = [];
+  for (const id of ids) {
+    if (!known.has(id)) continue;
+    const body = skyBody(id);
+    if (body) out.push(body);
+  }
+  return out;
+}
+// The span of an approach: from a body a sixty-fourth of the stage across to one
+// filling it. It is the same span for every body, because how near a world looks
+// is a ratio and not a distance — and it has to be wide, because on a geared
+// ladder a narrow one is crossed in a single notch before the gearing has any
+// chance to come off.
+const SKY_ARRIVAL_SPAN = Math.log(64);
+// How far into an arrival the camera is — 0 nowhere near it, 1 standing over it.
+// Two things have to hold at once, and the second is the one that is easy to
+// forget: a world's drawn size is a property of the zoom alone, so at a tile's
+// zoom over the Atlantic the Moon is nominally four stages wide, and a size test
+// by itself would call that an arrival at the Moon.
+function skyArrival(body, radius, pan) {
+  const span = skyStageSpan();
+  const drawn = skyDrawnRadius(body, radius);
+  const along = 1 + Math.log(2 * drawn / span) / SKY_ARRIVAL_SPAN;
+  if (!(along > 0)) return 0;
+  const size = along >= 1 ? 1 : .5 - .5 * Math.cos(Math.PI * along);
+  const [px, py] = skyBodyPos(body);
+  const away = Math.hypot(px - pan.x, py - pan.y) * radius;
+  return size * Math.max(0, 1 - away / (span * .6 + drawn));
+}
+// How slow an arrival is, then, is not a number anyone has to choose: it is the
+// pace this zoom always had. The gearing is handed back in proportion to how far
+// into the arrival the camera is, so standing over a destination one notch means
+// exactly what one notch means on the flat board, and nothing in the sky is ever
+// slower than it was before there was a ladder at all.
+function skyZoomPace(scale = cam.scale, pan = SKY_PAN) {
+  const pace = skyZoomLadder() / (SKY_ZOOM_SWEEPS * FLAT_ZOOM_LADDER);
+  if (!(pace > 1)) return 1;
+  const radius = planetEarthRadius(scale);
+  let arrival = 0;
+  for (const body of skyArrivalBodies())
+    arrival = Math.max(arrival, skyArrival(body, radius, pan));
+  return pace / (1 + (pace - 1) * Math.max(0, Math.min(1, arrival)));
+}
+// Every zoom that arrives as a step of intent — the wheel, the corner buttons,
+// the keys, a double click — is geared here, against where the camera is going
+// rather than where it has got to, so a second notch on top of a running one
+// measures the same ladder the first did. A pinch is not here: its scale comes
+// from the spread of the fingers and is absolute, so it is geared at its own
+// site against the spread it started from.
+function skyZoomStep(f) {
+  if (!planetMap()) return f;
+  const pending = cameraZoom?.kind === "planet" ? cameraZoom : null;
+  return Math.pow(f, skyZoomPace(pending?.scale || cam.scale,
+                                 pending?.pan || SKY_PAN));
+}
+// How much of a hand's own spread a pinch is allowed to be geared by. A hand
+// opens by a factor of five, and five to the fourth is already most of the
+// solar system; past that a gesture stops being a zoom and becomes a teleport
+// that cannot be steered back.
+const SKY_PINCH_PACE = 4;
+
 // How much of the picture is space rather than surface: 0 while the globe still
 // fills the stage, 1 once it is a marble among others.
 function skyDepth(radius) {
@@ -26763,11 +26894,14 @@ area.addEventListener("wheel", ev => {
   takeCameraControl(true);
   const r = cv.getBoundingClientRect();
   const sensitivity = ev.ctrlKey ? .01 : .0017;
+  // The clamp is on the intent, not on the step: a jerky trackpad must not
+  // deliver a whole rung in one event, but how far one notch of honest intent
+  // travels is the ladder's business and is settled after.
   const factor = Math.max(.72, Math.min(1.4, Math.exp(-ev.deltaY * sensitivity)));
-  zoomAt(factor, ev.clientX - r.left, ev.clientY - r.top);
+  zoomAt(skyZoomStep(factor), ev.clientX - r.left, ev.clientY - r.top);
 }, { passive: false });
-document.getElementById("zin").onclick = () => { takeCameraControl(true); zoomAt(1.35); };
-document.getElementById("zout").onclick = () => { takeCameraControl(true); zoomAt(1 / 1.35); };
+document.getElementById("zin").onclick = () => { takeCameraControl(true); zoomAt(skyZoomStep(1.35)); };
+document.getElementById("zout").onclick = () => { takeCameraControl(true); zoomAt(skyZoomStep(1 / 1.35)); };
 // `zhome` was the third corner button until the controls were refined down to
 // a toggle, a zoom in and a zoom out. The handler outlived its button, and
 // `getElementById` returning null here threw before anything else in this
@@ -26968,9 +27102,14 @@ function beginTouchTransform() {
   // fingers passing over another world do not hand the camera to it.
   const skyAnchor = planetMap()
     ? skyZoomAim(mx, my, Math.max(.001, planetEarthRadius())) : null;
+  // The gearing is taken once, where the fingers land, and held for the whole
+  // gesture. Re-reading it every move would change what the hand's own spread
+  // means halfway through one pinch, and the scale would stop tracking the
+  // fingers it is supposed to be following.
+  const pace = planetMap() ? Math.min(SKY_PINCH_PACE, skyZoomPace()) : 1;
   touchGesture = {mode:"transform", mx, my, wx, wy, distance:Math.hypot(dx, dy),
                   angle:Math.atan2(dy, dx), scale:cam.scale, rot:cam.rot,
-                  basis:planetBasisNow(), skyAnchor, controlled:false};
+                  basis:planetBasisNow(), skyAnchor, pace, controlled:false};
   clearCameraInertia(); cameraFlight = null; cameraZoom = null;
 }
 cv.addEventListener("pointerdown", ev => {
@@ -27008,7 +27147,12 @@ cv.addEventListener("pointermove", ev => {
     if (touchGesture.controlled) {
       const turn = Math.atan2(Math.sin(angle - touchGesture.angle), Math.cos(angle - touchGesture.angle));
       setRot(touchGesture.rot + turn);
-      const want = touchGesture.scale * distance / Math.max(12, touchGesture.distance);
+      // A pinch is absolute: the scale follows the spread of the fingers rather
+      // than accumulating steps, so the ladder is applied to that spread as an
+      // exponent rather than by stepping. On the flat board the exponent is one
+      // and this is the ratio it always was.
+      const spread = distance / Math.max(12, touchGesture.distance);
+      const want = touchGesture.scale * Math.pow(spread, touchGesture.pace || 1);
       if (planetMap()) {
         // A globe has no world plane to anchor a pinch against, and its zoom
         // runs far below the flat map's floor, so it goes through the same path
@@ -27089,7 +27233,7 @@ cv.addEventListener("contextmenu", ev => ev.preventDefault());
 cv.addEventListener("dblclick", ev => {
   ev.preventDefault(); takeCameraControl();
   const r = cv.getBoundingClientRect();
-  zoomAt(ev.shiftKey ? 1 / 1.8 : 1.8, ev.clientX - r.left, ev.clientY - r.top);
+  zoomAt(skyZoomStep(ev.shiftKey ? 1 / 1.8 : 1.8), ev.clientX - r.left, ev.clientY - r.top);
 });
 cv.addEventListener("click", ev => {
   if (dragMoved) { dragMoved = false; return; }
@@ -28258,8 +28402,8 @@ const CIV6_BINDINGS = [
   {id: "CameraPanRight", key: "ArrowRight", spectator: true, run: ev => panCamera(ev, 1, 0)},
   {id: "CameraPanUp", key: "ArrowUp", spectator: true, run: ev => panCamera(ev, 0, -1)},
   {id: "CameraPanDown", key: "ArrowDown", spectator: true, run: ev => panCamera(ev, 0, 1)},
-  {id: "ZoomIn", key: "NumpadAdd", spectator: true, run: () => { takeCameraControl(true); zoomAt(1.35); }},
-  {id: "ZoomOut", key: "NumpadSubtract", spectator: true, run: () => { takeCameraControl(true); zoomAt(1 / 1.35); }},
+  {id: "ZoomIn", key: "NumpadAdd", spectator: true, run: () => { takeCameraControl(true); zoomAt(skyZoomStep(1.35)); }},
+  {id: "ZoomOut", key: "NumpadSubtract", spectator: true, run: () => { takeCameraControl(true); zoomAt(skyZoomStep(1 / 1.35)); }},
 ];
 // CIVVIS's own controls. The three numbers are the overrides the operator
 // asked for; the rest sit on keys and chords Civ 6 leaves unbound, so nothing
@@ -28274,8 +28418,8 @@ const CIVVIS_BINDINGS = [
   {id: "Diplomacy", key: "F8", run: () => toggleDiplomacy()},
   {id: "QuickDeals", key: "d", ctrl: true, run: () => toggleTrade()},
   {id: "NextUnitTab", key: "Tab", run: () => advanceToNextUnit(true)},
-  {id: "ZoomInRow", key: "=", spectator: true, run: () => { takeCameraControl(true); zoomAt(1.35); }},
-  {id: "ZoomOutRow", key: "-", spectator: true, run: () => { takeCameraControl(true); zoomAt(1 / 1.35); }},
+  {id: "ZoomInRow", key: "=", spectator: true, run: () => { takeCameraControl(true); zoomAt(skyZoomStep(1.35)); }},
+  {id: "ZoomOutRow", key: "-", spectator: true, run: () => { takeCameraControl(true); zoomAt(skyZoomStep(1 / 1.35)); }},
   {id: "AutoPlay", key: "a", ctrl: true, run: () => autoplay(autoplayRequest())},
   {id: "ResetFacing", key: "r", ctrl: true, spectator: true, run: () => resetMapFacing(DEFAULT_CINEMA_YS - cinematicYS)},
   {id: "HidePanel", key: "u", ctrl: true, spectator: true, run: () => togglePanel()},
