@@ -1218,7 +1218,7 @@ mod tests {
         assert_eq!(MapPoles::from_id("on"), Some(MapPoles::Poles));
         assert_eq!(MapPoles::from_id("off"), Some(MapPoles::NoPoles));
         assert_eq!(MapPoles::from_id("randomized"), Some(MapPoles::Randomized));
-        assert_eq!(MapPoles::from_id("?????"), None);
+        assert_eq!(MapPoles::from_id("hot_and_cold"), None);
         // A flat world is what a lobby gets if it says nothing, and a world
         // with poles is: both are what CIVVIS shipped before either was a
         // choice, so a client that has not been taught about them is unmoved.
