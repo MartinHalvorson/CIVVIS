@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 26] = [
+pub const EVAL_ONLY_AIS: [&str; 27] = [
     "advanced_lane_reachable",
     "advanced_relief_scoped",
     "strategic_score",
@@ -51,6 +51,7 @@ pub const EVAL_ONLY_AIS: [&str; 26] = [
     "strategic_rot20",
     "strategic_rot10",
     "strategic_deep",
+    "strategic_deep_tempo",
     "strategic_deep_expand",
     "strategic_deep_consolidate",
     "strategic_deep_militarize",
@@ -608,6 +609,21 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             ai.horizon = 80;
             Box::new(ai)
         }
+        // Same promoted 20x80 search budget, but retain the time-to-terminal
+        // signal when several deep branches all win or all lose. Outcome
+        // classes remain lexicographic, so this cannot prefer an unresolved
+        // score proxy over a projected win or prefer a projected loss over an
+        // unresolved branch. Measured 28-32 games on 30 fresh mirrored maps;
+        // retained evaluator-only because it did not earn a disjoint gate.
+        "strategic_deep_tempo" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.review_every = 20;
+            ai.horizon = 80;
+            ai.terminal_tempo = true;
+            Box::new(ai)
+        }
         // Static genome challengers for the strongest measured search
         // budget. Unlike `strategic_doctrine`, these do not ask a noisy
         // per-review rollout to choose a play style. Each applies one bounded
@@ -963,6 +979,10 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         // and the net is non-definitional because the search runs without
         // one. There is no separate published netless name to degrade to.
         "strategic_deep" => (vec![genome, value(false)], "strategic_deep"),
+        "strategic_deep_tempo" => (
+            vec![genome, value(false)],
+            "strategic_deep_tempo",
+        ),
         "strategic_deep_expand" => (vec![genome, value(false)], "strategic_deep_expand"),
         "strategic_deep_consolidate" => (vec![genome, value(false)], "strategic_deep_consolidate"),
         "strategic_deep_militarize" => (vec![genome, value(false)], "strategic_deep_militarize"),
@@ -1515,6 +1535,15 @@ mod tests {
             let ai = builtin_ai(name, 1);
             assert_eq!(ai.review_census(), Some(Default::default()), "{name}");
         }
+    }
+
+    #[test]
+    fn terminal_tempo_challenger_constructs_a_searching_agent() {
+        let ai = builtin_ai("strategic_deep_tempo", 1);
+        assert_eq!(ai.review_census(), Some(Default::default()));
+        let provenance = builtin_provenance("strategic_deep_tempo", "unused");
+        assert_eq!(provenance.effective, "strategic_deep_tempo");
+        assert!(!provenance.degraded());
     }
 
     #[test]
