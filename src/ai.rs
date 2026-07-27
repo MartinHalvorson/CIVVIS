@@ -1847,6 +1847,7 @@ impl BasicAi {
             let mark = work_mark(g, uid);
             let pos = g.units[&uid].pos;
             let motion = self.unit_motion.entry(uid).or_default();
+            let was_looping = motion.looping;
             if motion.tiles.is_empty() {
                 motion.work = mark;
             }
@@ -1867,7 +1868,10 @@ impl BasicAi {
                 motion.tiles.pop_front();
             }
             motion.looping = motion.circling();
-            if motion.looping && motion.fruitless >= LIVELOCK_STAND_DOWN_AFTER {
+            let fruitless = motion.fruitless;
+            let footprint = motion.footprint();
+            let stand_down = motion.looping && fruitless >= LIVELOCK_STAND_DOWN_AFTER;
+            if stand_down {
                 // The tabu has had a full second window to redirect this unit
                 // and has not. Stop paying for the same fruitless search, hold
                 // the ground, and come back to the problem with a clean slate
@@ -1877,6 +1881,26 @@ impl BasicAi {
                     resume_turn: g.turn + LIVELOCK_STAND_DOWN_TURNS,
                     ..UnitMotion::default()
                 };
+            }
+            let looping = !stand_down && self.unit_motion[&uid].looping;
+            if !stand_down && !(looping && !was_looping) {
+                continue;
+            }
+            let kind = g.units[&uid].kind.as_str();
+            if stand_down {
+                think!(self.journal, Military, Decision,
+                       "{kind} {uid} stands down; it is going nowhere";
+                       "{fruitless} turns inside {footprint} tiles with nothing to show for \
+                        them, and steering it out did not work; holding for \
+                        {LIVELOCK_STAND_DOWN_TURNS} turns";
+                       pos);
+            } else {
+                think!(self.journal, Military, Detail,
+                       "{kind} {uid} is walking in circles";
+                       "{fruitless} turns inside {footprint} tiles with nothing to show for \
+                        them; anywhere outside them is now worth \
+                        {LIVELOCK_ESCAPE_VALUE:.0} more";
+                       pos);
             }
         }
     }
