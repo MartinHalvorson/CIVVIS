@@ -612,8 +612,8 @@
     scene.shadow(radius, radius * .68 * scene.tilt, alpha);
   }
 
-  function crag(scene, x, y, radius, height, color, snow, random) {
-    const sides = 7 + Math.floor(random() * 3);
+  function crag(scene, x, y, radius, height, color, snow, random, fine = true) {
+    const sides = (fine ? 7 : 5) + Math.floor(random() * 3);
     const turn = random() * Math.PI * 2;
     scene.cone([x, y, 0], radius, height, color, sides, .3, turn);
     if (snow && height > 16) {
@@ -623,26 +623,95 @@
     }
   }
 
+  // The direction a range actually runs, from the edges this tile shares with
+  // other mountains. Two opposite neighbours are one line, not two vectors, so
+  // the axis comes from the orientation tensor rather than a vector sum, which
+  // would cancel them to nothing. Returns null for a mountain standing alone.
+  function ridgeAxis(ridge) {
+    if (!ridge.length) return null;
+    let xx = 0, xy = 0, yy = 0;
+    for (const [dx, dy] of ridge) {
+      const length = Math.hypot(dx, dy) || 1;
+      const ux = dx / length, uy = dy / length;
+      xx += ux * ux; xy += ux * uy; yy += uy * uy;
+    }
+    const angle = .5 * Math.atan2(2 * xy, xx - yy);
+    return [Math.cos(angle), Math.sin(angle)];
+  }
+
+  // A range is one landform that happens to occupy several tiles, so a mountain
+  // builds two things. Its own massif is turned to lie along the direction the
+  // range runs, which gives a run of tiles a single crest line instead of the
+  // same three peaks stamped over and over. Then every edge it shares with
+  // another mountain carries a saddle standing exactly on the seam: the
+  // neighbour builds the identical saddle from the identical edge seed, so the
+  // tile boundary falls inside solid rock rather than into the valley of open
+  // ground that used to separate two scoops.
   function mountains(scene, o, monument = false) {
     const random = seeded(o.seed + 71);
     const span = o.span || 1;
     const snowy = monument || o.terrain === "snow" || o.polar;
     const sandstone = o.terrain === "desert" && !snowy;
     const base = sandstone ? "#a66e45" : "#746f66";
-    groundShadow(scene, 24 * span, .25);
+    // Ridge offsets are tile-to-tile distances in the map's own world units, so
+    // unlike the model's own coordinates they are never scaled by `span`.
+    const ridge = Array.isArray(o.ridge) ? o.ridge : [];
+    groundShadow(scene, (24 + ridge.length * 2.4) * span, .25);
+    const axis = ridgeAxis(ridge) || [1, 0];
+    // Zoomed out the shoulders go and the cones lose two sides each. The col
+    // is what joins one tile to the next and stays at every distance; the
+    // shoulder only smooths the run between a peak and its col, which is
+    // nothing anybody can see once a hex is forty pixels across.
+    const fine = o.detail;
+    for (const [dx, dy, edgeSeed, owns] of ridge) {
+      const edge = seeded(Math.abs(Math.floor(edgeSeed) || 1) + 13);
+      const shoulder = .68 + edge() * .06;
+      // The col belongs to the edge and is raised once, by whichever tile owns
+      // it: rock is opaque, so building it from both sides would be invisible
+      // except for the outline, which would be laid down twice and come out
+      // darker than every other ridge on the map. The shoulder carrying this
+      // tile's own crest down into the col is per-tile.
+      if (owns) {
+        footing(scene, dx * .5, dy * .5, 21, base, fine);
+        crag(scene, dx * .5, dy * .5, 15.5 + edge() * 2.5, 24 + edge() * 7,
+          base, snowy, edge, fine);
+      }
+      if (fine)
+        crag(scene, dx * .5 * shoulder, dy * .5 * shoulder,
+          13 + random() * 3, 28 + random() * 8, base, snowy, random, fine);
+    }
+    // Along the ridge, across it, radius, height. Rotating these onto the axis
+    // is what turns a row of identical stamps into a crest.
     const peaks = monument
       ? [[0, 0, 20, 55], [-18, 3, 13, 36], [17, 4, 14, 40]]
-      : [[-13, 2, 15, 32], [1, -2, 20, 44], [15, 5, 13, 28]];
-    for (const [x, y, radius, height] of peaks) {
-      crag(scene, x * span, y * span, radius * span * (.9 + random() * .18),
-        height * span * (.9 + random() * .2), base, snowy, random);
+      : [[-15, 1, 15, 32], [1, -2, 20, 44], [16, 4, 13, 28]];
+    footing(scene, 0, 0, 26, base, fine);
+    for (const [along, across, radius, height] of peaks) {
+      const x = (along * axis[0] - across * axis[1]) * span;
+      const y = (along * axis[1] + across * axis[0]) * span;
+      crag(scene, x, y, radius * span * (.9 + random() * .18),
+        height * span * (.9 + random() * .2), base, snowy, random, fine);
     }
+  }
+
+  // The rock the crags stand on. Without it a massif is a handful of cones with
+  // the flat tile top showing between them, and a range reads as beads on a
+  // string; overlapping footings merge into one continuous apron.
+  function footing(scene, x, y, radius, color, fine = true) {
+    scene.cone([x, y, 0], radius, 5.5, color, fine ? 9 : 6, radius * .74,
+      radius * .13);
   }
 
   function hills(scene, o) {
     groundShadow(scene, 18, .12);
     const color = o.terrain === "desert" ? "#b78955"
       : o.terrain === "snow" ? "#cbd3cf" : "#738153";
+    // A seam mound was tried here and taken out again: a mountain saddle joins
+    // two masses that are already solid, but these mounds have air between
+    // them by design, and bridging every shared edge turned hill country into
+    // a carpet of overlapping coins rather than into rolling ground. Hills
+    // flow in the painted view, where the relief is light and shade laid over
+    // the ground rather than a body standing on it.
     // Centred, and the same three mounds on every hill tile: the ground under
     // a hill is what the rest of the tile is built on, so it belongs in the
     // middle of the face. Anything the tile also carries rides on top of it —
