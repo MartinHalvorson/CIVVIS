@@ -22368,6 +22368,13 @@ function reasonPlayerName(id) {
   const player = (state.players || [])[id];
   return player ? player.civ : `Player ${id}`;
 }
+// What kind of seat this is, when it is not an ordinary major.
+function reasonSeatNote(id) {
+  const player = (state.players || [])[id];
+  if (!player) return "";
+  if (player.is_barbarian) return player.is_free_city ? " (free city)" : " (barbarians)";
+  return player.is_minor ? " (city-state)" : "";
+}
 function reasonTint(id) {
   const player = (state.players || [])[id];
   if (!player) return "#49645a";
@@ -22382,15 +22389,26 @@ function syncReasonOptions() {
   const playerSelect = document.getElementById("reasonplayer");
   const topicSelect = document.getElementById("reasontopic");
   if (!playerSelect || !topicSelect) return;
-  const seats = (state.players || [])
+  // Anything the log can show, the filter can isolate. Majors and city-states
+  // are always listed, whether or not they have said anything yet — an empty
+  // civilization is an answer. Anyone else who has actually recorded a thought
+  // is added because they are already visible under "All civilizations", and a
+  // seat you can read but cannot select is a filter that does not do what it
+  // says. In practice that is a Free City, which keeps developing the cities it
+  // inherited and therefore keeps making production decisions.
+  const listed = new Set((state.players || [])
     .filter(player => player && !player.is_barbarian && player.met !== false)
-    .map(player => player.id);
+    .map(player => player.id));
+  for (const thought of reasoningLog.thoughts) listed.add(thought.player);
+  const seats = [...listed]
+    .filter(id => (state.players || [])[id])
+    .sort((a, b) => a - b);
   const signature = `${state.seed}|${seats.join(",")}`;
   if (playerSelect.dataset.signature !== signature) {
     playerSelect.dataset.signature = signature;
     playerSelect.innerHTML = `<option value="all">All civilizations</option>` +
       seats.map(id => `<option value="${id}">${reasonEscape(reasonPlayerName(id))}` +
-        `${state.players[id].is_minor ? " (city-state)" : ""}</option>`).join("");
+        `${reasonSeatNote(id)}</option>`).join("");
   }
   if (!topicSelect.dataset.built) {
     topicSelect.dataset.built = "1";
