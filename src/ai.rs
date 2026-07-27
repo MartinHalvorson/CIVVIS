@@ -6739,7 +6739,9 @@ mod tests {
 
     #[test]
     fn unfounded_empire_reserves_only_one_holy_site_for_the_prophet_race() {
-        let mut game = Game::new_full(1, 24, 16, 91_772, 120, 0, false);
+        let mut game = Game::new_full(
+            1, 24, 16, crate::rng::fixture_seed("HOLYSITE", 91_773), 120, 0, false,
+        );
         let settler = game
             .player_unit_ids(0)
             .into_iter()
@@ -8461,7 +8463,9 @@ mod tests {
 
     #[test]
     fn one_queued_spaceport_reserves_the_empire_launch_site() {
-        let mut game = Game::new_full(1, 30, 20, 324_001, 100, 0, false);
+        let mut game = Game::new_full(
+            1, 30, 20, crate::rng::fixture_seed("SPACEPORT", 324_006), 100, 0, false,
+        );
         let first_settler = game
             .player_unit_ids(0)
             .into_iter()
