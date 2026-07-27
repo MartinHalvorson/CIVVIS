@@ -33,6 +33,35 @@
 //! current yields, because nothing in its input says so. Substituting it
 //! cannot repair an information problem.
 //!
+//! **MEASURED 2026-07-26, and the horizon half is false too.**
+//! `search_probe --production` runs the check this module asked for and
+//! never had. Over 71 city decisions at four players: the evaluator
+//! separates **3.7 of 5.0** candidates and only **4%** of decisions score
+//! every candidate alike. It is not blind. And the *ranking* does not
+//! depend on the horizon either — raising the ceiling from 40 to **200**,
+//! long enough for any build in the game to land and compound, leaves the
+//! chosen item unchanged on **54 of 56** decisions (96%).
+//!
+//! So both halves of the diagnosis above are wrong. The search sees the
+//! difference, it keeps seeing the same difference when every payoff has
+//! landed, and it still loses to the governor.
+//!
+//! What that leaves is the objective, not the window. **Score share is not
+//! win probability.** The lane search works because its branches reach
+//! *decided games* and return exactly 1.0 or 0.0 — 22% of its reviews at
+//! horizon 40, 56% at 80. A production rollout starting mid-game and
+//! stopping 40 (or 200) rounds later essentially never decides, so it ranks
+//! entirely by a proxy, and on this decision the hand-written governor's
+//! sequencing beats that proxy.
+//!
+//! **This retires the whole "give the production search a longer or cheaper
+//! horizon" family** — sealed per-city rollouts, frozen rivals, payoff-length
+//! windows — as predicted-null before anyone builds one. The route the note
+//! below names, branches continued to a real result, survives; but a full
+//! continuation per candidate is roughly seventy times the cost of a game,
+//! so it is an offline labeller feeding a distilled policy, not an online
+//! agent.
+//!
 //! So this is the same root cause as `PolicyAi`, a third time:
 //! representation, not calibration and not horizon. A production search
 //! worth building needs a terminal value that sees something score share
@@ -97,6 +126,22 @@ pub struct ProductionSearchAi {
     net: Option<ValueNet>,
     /// Most candidate items projected per decision.
     pub width: usize,
+    /// Ceiling on the projection, overriding `MAX_HORIZON`.
+    ///
+    /// The module note above predicts this agent's loss comes from a horizon
+    /// too short for a build to land, on the reasoning that every branch
+    /// would then return the same number. **The second half of that is
+    /// measured false**: at the shipped ceiling the evaluator separates 3.7
+    /// of 5.0 candidates and only 4% of decisions score every candidate
+    /// alike (`search_probe --production`). The search is not blind.
+    ///
+    /// Which leaves the first half untested and sharper than before:
+    /// separating candidates is not the same as ranking them correctly. A
+    /// forty-round window can distinguish a warrior from a library and still
+    /// prefer the warrior, because the library's payoff lands outside it.
+    /// This field exists so the *ranking's* dependence on the horizon can be
+    /// measured rather than argued.
+    pub max_horizon: u32,
     /// Turns between searches.
     pub search_every: u32,
     next_search: u32,
@@ -121,6 +166,7 @@ impl ProductionSearchAi {
             weights,
             net: None,
             width: 5,
+            max_horizon: MAX_HORIZON,
             search_every: DEFAULT_SEARCH_EVERY,
             next_search: 0,
             searches: 0,
@@ -204,7 +250,7 @@ impl ProductionSearchAi {
             })
             .max()
             .unwrap_or(0);
-        (slowest + PAYOFF_WINDOW).min(MAX_HORIZON)
+        (slowest + PAYOFF_WINDOW).min(self.max_horizon)
     }
 
     /// Project one committed build and judge the resulting position by

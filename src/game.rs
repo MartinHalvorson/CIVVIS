@@ -226,14 +226,20 @@ pub const CIV6_LEADER_POOL: [&str; 50] = [
     "Indonesia",
     "Macedon",
 ];
-/// The city-states this ruleset can seat, in placement order. The first
-/// twelve carry bespoke Suzerain bonuses; the rest round out the largest
-/// map's hundred and fifty seats with their type bonuses alone. Every seat
-/// needs its own entry here — two city-states sharing a name would share an
-/// identity, and so would a city-state sharing one with a civilization or
-/// with a city that civilization can found. Append only: a city-state's
-/// index is its identity in a saved game.
-pub const CITY_STATE_NAMES: [&str; 150] = [
+/// Every city-state identity this ruleset knows. Every seat needs its own
+/// entry here — two city-states sharing a name would share an identity, and so
+/// would a city-state sharing one with a civilization or with a city that
+/// civilization can found. Append only: a city-state's index is its identity
+/// in a saved game.
+///
+/// This list is *identity*, not placement. Seating order lives in
+/// `data/city_states.json`, which puts Civilization VI's own forty-eight
+/// city-states first so an ordinary game draws only from the shipped roster
+/// and the extra names are reached only by the largest maps. Four entries here
+/// (Carthage, Stockholm, Seoul, Amsterdam) were city-states in earlier
+/// versions of the game and became playable capitals; they keep their indices
+/// so old saves still resolve, and seat after the shipped forty-eight.
+pub const CITY_STATE_NAMES: [&str; 182] = [
     "Kabul",
     "Geneva",
     "Carthage",
@@ -384,6 +390,38 @@ pub const CITY_STATE_NAMES: [&str; 150] = [
     "Cholula",
     "Chan Chan",
     "Chavin",
+    "Akkad",
+    "Anshan",
+    "Armagh",
+    "Ayutthaya",
+    "Bandar Brunei",
+    "Bologna",
+    "Buenos Aires",
+    "Caguana",
+    "Cardiff",
+    "Chinguetti",
+    "Fez",
+    "Granada",
+    "Hong Kong",
+    "Hunza",
+    "Johannesburg",
+    "Kumasi",
+    "La Venta",
+    "Lahore",
+    "Mexico City",
+    "Mitla",
+    "Muscat",
+    "Nalanda",
+    "Nan Madol",
+    "Nazca",
+    "Ngazargamu",
+    "Rapa Nui",
+    "Samarkand",
+    "Singapore",
+    "Taruga",
+    "Vatican City",
+    "Venice",
+    "Wolin",
 ];
 
 fn city_names(civ: &str) -> &'static [&'static str] {
@@ -2642,6 +2680,8 @@ fn install_test_district(game: &mut Game, city: u32, district: &str) -> Pos {
         .insert(district.to_string(), position);
     position
 }
+
+pub mod quests;
 
 #[cfg(test)]
 mod city_state_unique_tests;
@@ -13384,6 +13424,10 @@ pub struct Player {
     /// in lockstep with the ``great_work:*`` counters. Theming reads these.
     #[serde(default)]
     pub great_work_pieces: Vec<GreatWorkPiece>,
+    /// The quest each met city-state is currently asking this civilization
+    /// for, keyed by the city-state's seat. Per pair, not per city-state.
+    #[serde(default)]
+    pub quests: BTreeMap<usize, crate::game::quests::CityStateQuest>,
     #[serde(default)]
     pub boosted_techs: BTreeSet<String>,
     #[serde(default)]
@@ -13472,6 +13516,7 @@ impl Player {
             envoys: Vec::new(),
             counters: BTreeMap::new(),
             great_work_pieces: Vec::new(),
+            quests: BTreeMap::new(),
             boosted_techs: BTreeSet::new(),
             boosted_civics: BTreeSet::new(),
         }
@@ -15021,10 +15066,21 @@ impl Game {
             g.reveal(i, *pos, 3);
         }
         let major_spawns: Vec<Pos> = spawns.iter().take(num_players).cloned().collect();
+        // Seating order is the roster's, not `CITY_STATE_NAMES`'. The roster
+        // lists Civilization VI's own forty-eight city-states first, so an
+        // ordinary game seats only city-states the real game could have
+        // seated; the extra identities exist for the largest maps alone.
+        let seating: Vec<String> = g
+            .rules
+            .city_states
+            .roster
+            .iter()
+            .map(|seat| seat.name.clone())
+            .collect();
         // Only as many city-states as the ruleset has distinct identities for:
-        // every modeled city-state carries its own unique Suzerain bonus, and
-        // two seats sharing a name would share that bonus.
-        let wanted = num_city_states.min(CITY_STATE_NAMES.len());
+        // every modeled city-state carries its own Suzerain bonus, and two
+        // seats sharing a name would share that bonus.
+        let wanted = num_city_states.min(seating.len());
         for pos in spawns.iter().skip(num_players) {
             if g.players.len() - num_players >= wanted {
                 break;
@@ -15036,9 +15092,9 @@ impl Game {
                 continue;
             };
             let pid = g.players.len();
-            let name = CITY_STATE_NAMES[pid - num_players];
-            g.players.push(Player::new(pid, name, true));
-            let city = g.found_city_for(pid, pos, Some(name.to_string()));
+            let name = seating[pid - num_players].clone();
+            g.players.push(Player::new(pid, &name, true));
+            let city = g.found_city_for(pid, pos, Some(name.clone()));
             // Gathering Storm's Ancient-era minor start is two Warriors, with
             // one more per difficulty step from Emperor onward. City-states do
             // not receive the major AI's Builders or Settlers from the general
@@ -21423,15 +21479,30 @@ impl Game {
 
     // -------------------------------------------------- city-state envoys
 
-    pub fn cs_type(civ: &str) -> &'static str {
-        match civ {
-            "Geneva" | "Hattusa" | "Stockholm" | "Seoul" => "scientific",
-            "Mohenjo-Daro" | "Vilnius" | "Antananarivo" => "cultural",
-            "Yerevan" | "Kandy" | "Jerusalem" => "religious",
-            "Kabul" | "Carthage" | "Valletta" | "Preslav" => "militaristic",
-            "Auckland" | "Brussels" => "industrial",
-            _ => "trade", // Zanzibar and modded/extended trade city-states.
-        }
+    /// The shipped `MinorCivBonuses` type a city-state pays its 1/3/6 Envoy
+    /// thresholds in. Every seat the roster names carries one; a name the
+    /// roster does not know (a mod's own city-state) falls back to Trade,
+    /// which is the only type whose bonus needs no matching building tier.
+    pub fn cs_type<'a>(&'a self, civ: &str) -> &'a str {
+        self.rules
+            .city_states
+            .roster
+            .iter()
+            .find(|seat| seat.name == civ)
+            .map_or("trade", |seat| seat.kind.as_str())
+    }
+
+    /// The bespoke Suzerain bonus key a city-state carries, if the engine
+    /// implements one. A declared-but-unimplemented bonus reads as `None` so
+    /// no code path can act on a bonus that does not exist yet.
+    pub fn cs_bonus<'a>(&'a self, civ: &str) -> Option<&'a str> {
+        self.rules
+            .city_states
+            .roster
+            .iter()
+            .find(|seat| seat.name == civ)
+            .filter(|seat| seat.implemented)
+            .and_then(|seat| seat.bonus.as_deref())
     }
 
     fn envoy_tier_building_count(&self, city: &City, kind: &str, tier: i32) -> usize {
@@ -21494,7 +21565,7 @@ impl Game {
                 minor.alive
                     && minor.is_minor
                     && !minor.is_barbarian
-                    && Self::cs_type(&minor.civ) == kind
+                    && self.cs_type(&minor.civ) == kind
                     && self.suzerain_of(minor.id) == Some(pid)
             })
             .count()
@@ -21882,7 +21953,7 @@ impl Game {
         let threshold = [1, 3, 6]
             .into_iter()
             .find(|threshold| *threshold > current)?;
-        let kind = Self::cs_type(&state.civ);
+        let kind = self.cs_type(&state.civ);
         let mut gain = Yields::default();
         for city in self.cities.values().filter(|city| city.owner == pid) {
             let before = self.envoy_type_yields_for_count(city, kind, current);
@@ -21907,7 +21978,7 @@ impl Game {
         {
             yields.add(self.envoy_type_yields_for_count(
                 city,
-                Self::cs_type(&state.civ),
+                self.cs_type(&state.civ),
                 self.envoys_at(pid, state.id),
             ));
         }
@@ -22363,6 +22434,9 @@ impl Game {
                 if self.has_ability(pid, "iteru") && self.map.tiles[pos].has_river() {
                     bonus += 0.15; // Egypt: Iteru (river cities)
                 }
+                if self.grants_city_state_unique_bonus(pid, "Brussels") {
+                    bonus += 0.15;
+                }
             }
             Some(Item::Project { project }) => {
                 // Model the late-game factory, power and specialist stack that
@@ -22377,6 +22451,9 @@ impl Game {
                     bonus += 1.0;
                 }
                 bonus += self.gov_effects(pid).project_production_pct / 100.0;
+                if self.grants_city_state_unique_bonus(pid, "Hong Kong") {
+                    bonus += 0.20;
+                }
                 if matches!(
                     project.as_str(),
                     "build_nuclear_device" | "build_thermonuclear_device"
@@ -22785,6 +22862,17 @@ impl Game {
             s += self.empire_luxuries(u.owner) as f64; // Montezuma
         }
         s += self.civ_effect(u.owner, "combat_strength");
+        // Preslav arms cavalry for the high ground, attacking and defending
+        // alike -- the shipped modifier is a plain strength bonus keyed on the
+        // tile the unit is fighting on, not on who started the fight.
+        if matches!(
+            self.rules.units[u.kind.as_str()].promotion_class.as_str(),
+            "light_cavalry" | "heavy_cavalry"
+        ) && self.map.get(u.pos).is_some_and(|tile| tile.hills)
+            && self.grants_city_state_unique_bonus(u.owner, "Preslav")
+        {
+            s += 5.0;
+        }
         // Foreign Ministry applies only after a unit is actually levied.
         // While levied, `owner` is the Suzerain and `levied_from` is the
         // city-state that must regain the unit when the contract ends.
@@ -24439,6 +24527,11 @@ impl Game {
                 supply += self.district_amenity(district, *position);
                 if matches!(self.district_family(district), "canal" | "dam") {
                     supply += self.governor_effect(city.owner, city.id, "canal_dam_amenity");
+                }
+                if self.district_family(district) == "commercial_hub"
+                    && self.grants_city_state_unique_bonus(city.owner, "Muscat")
+                {
+                    supply += 1.0;
                 }
             }
         }
@@ -31428,6 +31521,28 @@ impl Game {
             && !self.at_war_with_any_civilization(city.owner)
         {
             ys.science *= 1.15;
+        }
+        if self.grants_city_state_unique_bonus(city.owner, "Taruga") {
+            // +5% Science per *different* improved Strategic resource the
+            // city has, so two Iron mines are one resource, not two.
+            let kinds: BTreeSet<&str> = city
+                .owned_tiles
+                .iter()
+                .filter_map(|position| self.map.get(*position))
+                .filter(|tile| !tile.pillaged)
+                .filter_map(|tile| {
+                    let resource = tile.resource.as_deref()?;
+                    let spec = self.rules.resources.get(resource)?;
+                    let improved = tile.improvement.as_deref().is_some_and(|improvement| {
+                        spec.improvement == improvement
+                            || self.rules.improvements.get(improvement).is_some_and(|have| {
+                                have.resources.iter().any(|listed| listed == resource)
+                            })
+                    });
+                    (spec.class == "strategic" && improved).then_some(resource)
+                })
+                .collect();
+            ys.science *= 1.0 + 0.05 * kinds.len() as f64;
         }
         ys.science *= 1.0 + self.kilwa_type_bonus_pct(city.owner, city, "scientific") / 100.0;
         ys.culture *= 1.0 + self.kilwa_type_bonus_pct(city.owner, city, "cultural") / 100.0;
@@ -44601,6 +44716,7 @@ impl Game {
         self.process_loyalty(pid);
         self.record_emergency_presence(pid);
         self.process_influence(pid);
+        self.check_city_state_quests(pid);
         self.irradiate_units(pid);
         let turn_unit_ids = self.player_unit_ids(pid);
         for uid in turn_unit_ids.iter().copied() {
@@ -45553,6 +45669,11 @@ impl Game {
             growth_bonus += self.policy_effect(pid, "foreign_continent_growth_pct");
         }
         growth_bonus += self.pantheon_effect(pid, "growth_pct");
+        if self.grants_city_state_unique_bonus(pid, "Mitla")
+            && self.city_has_active_district_family(&self.cities[&cid], "campus")
+        {
+            growth_bonus += 15.0;
+        }
         growth_bonus += self
             .city_resource_industry_effects(&self.cities[&cid])
             .growth_pct;
