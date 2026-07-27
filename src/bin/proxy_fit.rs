@@ -71,8 +71,9 @@ struct Seat {
     proxies: Vec<f64>,
 }
 
-const PROXY_NAMES: [&str; 8] = [
+const PROXY_NAMES: [&str; 9] = [
     "score share",
+    "lane progress share",
     "city share",
     "tech share",
     "civic share",
@@ -152,7 +153,7 @@ fn share(values: &[f64], index: usize) -> f64 {
 /// seeds and returned 12 map directions to 15 on wins (p=0.7011). So the wins
 /// answer is *parity*. A better selection statistic is one that also reports
 /// parity for this change, where the mean reported a 3.0 SE gain.
-fn shapes(shares: &[f64], treated: &[bool]) -> Vec<f64> {
+fn shapes(shares: &[f64], treated: &[bool], lanes: &[f64]) -> Vec<f64> {
     let mine: Vec<f64> = shares
         .iter()
         .zip(treated)
@@ -185,10 +186,34 @@ fn shapes(shares: &[f64], treated: &[bool]) -> Vec<f64> {
         .map(|(index, _)| if treated[index] { 1.0 } else { 0.0 })
         .unwrap_or(0.5);
 
-    vec![mean * shares.len() as f64 / 2.0, power(2.0), power(4.0), top]
+    // `victory_threat` is the empire's progress along its best enabled victory
+    // lane. This is the one candidate the correlation/causation finding
+    // actually predicts might work: it sits causally UPSTREAM of a victory
+    // condition rather than summarising the economy, so an intervention that
+    // moves it should move wins.
+    let lane_total: f64 = lanes.iter().sum();
+    let lane = if lane_total <= 0.0 {
+        0.5
+    } else {
+        lanes
+            .iter()
+            .zip(treated)
+            .filter(|(_, t)| **t)
+            .map(|(l, _)| *l)
+            .sum::<f64>()
+            / lane_total
+    };
+
+    vec![mean * shares.len() as f64 / 2.0, power(2.0), power(4.0), top, lane]
 }
 
-const SHAPE_NAMES: [&str; 4] = ["mean share", "share^2", "share^4", "top of table"];
+const SHAPE_NAMES: [&str; 5] = [
+    "mean share",
+    "share^2",
+    "share^4",
+    "top of table",
+    "lane progress",
+];
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -258,7 +283,8 @@ fn main() {
                 let total: f64 = scores.iter().sum::<f64>().max(1.0);
                 let normalised: Vec<f64> = scores.iter().map(|s| s / total).collect();
                 let flags: Vec<bool> = majors.iter().map(|pid| is_treated(*pid)).collect();
-                for (slot, value) in shapes(&normalised, &flags).into_iter().enumerate() {
+                let lanes: Vec<f64> = majors.iter().map(|pid| game.victory_threat(*pid)).collect();
+                for (slot, value) in shapes(&normalised, &flags, &lanes).into_iter().enumerate() {
                     out[slot] += value / 2.0;
                 }
             }
@@ -283,7 +309,13 @@ fn main() {
         println!(
             "\nThe wins answer for this change is PARITY (12 map directions to 15, p=0.7011).\n\
              A statistic that reports a large positive edge here is measuring something wins\n\
-             do not reward; one that reports parity is tracking the thing that matters."
+             do not reward; one that reports parity is tracking the thing that matters.\n\
+             \n\
+             'lane progress' is victory_threat -- progress along the empire's best enabled\n\
+             victory lane. It is the one candidate the correlation/causation result predicts\n\
+             might work, because it sits upstream of a victory CONDITION rather than\n\
+             summarising the economy. If it too reports a positive edge, then every cheap\n\
+             end-of-game quantity available here is a correlate and selection must buy wins."
         );
         return;
     }
@@ -328,6 +360,7 @@ fn main() {
             majors.iter().map(|pid| f(*pid)).collect()
         };
         let scores = column(&|pid| game.score(pid) as f64);
+        let lanes = column(&|pid| game.victory_threat(pid));
         let cities = column(&|pid| game.player_city_ids(pid).len() as f64);
         let techs = column(&|pid| game.players[pid].techs.len() as f64);
         let civics = column(&|pid| game.players[pid].civics.len() as f64);
@@ -349,6 +382,7 @@ fn main() {
                 won: game.winner == Some(*pid),
                 proxies: vec![
                     share(&scores, slot),
+                    share(&lanes, slot),
                     share(&cities, slot),
                     share(&techs, slot),
                     share(&civics, slot),
