@@ -463,6 +463,23 @@ This is measurable **in advance**, for any decision, by
 > the commitment-margin hypothesis, applied one level up: not "does the
 > treatment fire" but "is there anything here to find".
 >
+> **And the clause bites the GA too, at its shipped default.** `evolve` uses
+> `--games 8` per genome, which carries a standard error of
+> `sqrt(0.25/8) = 0.177` and therefore resolves 0.354 at two sigma. The effect
+> it is selecting on is **0.083**. The default is four times below its own
+> noise floor, so selection is dominated by drift:
+>
+> | `--games` | SE per genome | resolves at 2σ |
+> |---|---|---|
+> | 8 (default) | 0.177 | 0.354 |
+> | 32 | 0.088 | 0.177 |
+> | 96 | 0.051 | 0.102 |
+> | 156 | 0.040 | **0.080** |
+>
+> A 54-minute run at the default promoted nothing and never left generation 0.
+> That is a plausible reason the machinery has never shipped a champion, and it
+> is checkable in one line before spending a night of compute.
+>
 > **The standing implication.** `elo::builtin_ai` resolves every strategic
 > agent through `load_champion("evolved").unwrap_or_default()`; `evolved/` is
 > gitignored and **no `best.json` exists on this machine or in a fresh clone**.
