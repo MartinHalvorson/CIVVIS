@@ -431,7 +431,18 @@ fn main() {
     // quantity predicts winning". But score share came in at AUC 0.949 -- it is
     // very nearly a perfect classifier of who won, and the best of the eight.
     // "Nothing beats the best" is not "the best is bad".
-    if score_auc > 0.85 {
+    // Order matters here and got it wrong once already: this branch used to
+    // fire on score's own AUC before checking whether anything had beaten it,
+    // so it printed the score story even when another proxy came first.
+    if best.0 - score_auc > 0.02 {
+        println!(
+            "  => {} out-discriminates score share. Before believing that, ask whether it is\n     \
+             TAUTOLOGICAL: a quantity that the end of the game is defined by will classify\n     \
+             the winner for free. The useful part of such a proxy is its gradient among the\n     \
+             seats that did NOT win, which a binary win indicator throws away.",
+            best.1
+        );
+    } else if score_auc > 0.85 {
         println!(
             "  => score share is a NEAR-PERFECT classifier of the winner, not a poor one.\n\
              \n     \

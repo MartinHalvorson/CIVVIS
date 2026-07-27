@@ -416,6 +416,61 @@ lane progress, not economy — and wins cost about 865 games per genome. That is
 why breeding does not work here, stated as a mechanism rather than as a
 tally of nulls.
 
+## ★★★ A fitness that survives both tests: lane progress
+
+The causation result predicted that a statistic causally **upstream of a
+victory condition** would survive the intervention test score fails. It does.
+`victory_threat` — the empire's progress along its best enabled victory lane —
+is the only candidate that passes both halves:
+
+| statistic | AUC (observational) | edge on a change whose wins answer is parity |
+|---|---|---|
+| **lane progress** | **0.997** | **+0.0031 (0.2 SE)** ✓ |
+| score share | 0.949 | +0.0107 (1.2 SE) ✗ |
+| share² | — | +0.0155 ✗ |
+| share⁴ | — | +0.0164 ✗ |
+| top of table | — | +0.0167 ✗ |
+
+Both halves are needed and neither alone would do. **Parity under intervention
+is necessary but not sufficient** — a statistic that measures nothing also
+reports parity, which is why the AUC census had to run before any of this was
+believed. And **AUC alone is not sufficient either** — score has 0.949 and
+still fails the intervention.
+
+### The honest caveat on AUC 0.997
+
+That number is **partly tautological**. The game ends when a victory condition
+completes, so at game end the winner has, by construction, the highest
+victory-condition progress. As a classifier it is close to circular.
+
+What is *not* tautological is that it is **continuous**. A seat that reached
+90% of a religious victory outranks one at 10%, though neither won. That is
+information about every game which a binary win indicator discards, and it is
+the entire reason this is cheaper than measuring wins:
+
+| statistic | SE | games |
+|---|---|---|
+| lane progress | 0.0146 | 60 map-pairs |
+| win rate | 0.0456 | 120 games |
+
+Roughly a **10× variance advantage**, i.e. about ten times fewer games for the
+same resolution.
+
+### What this means for breeding
+
+`docs/RATING.md` and every result above say the genome cannot be bred because
+selection either has no signal or reads a correlate. Lane progress is the
+first candidate that is **cheap, discriminating, and causally aligned** at
+once. It does not make the genome worth breeding — the leverage ranking says
+only `economy` carries anything, and every value tested is already at or near
+its optimum — but it removes the *methodological* obstacle, and it is the
+right fitness for any future search on this engine, including searches over
+things that are not the genome.
+
+**Before relying on it:** one agreement on one intervention is one data point.
+It should be replicated on a second change whose wins answer is independently
+known.
+
 ## The conclusion this all points at
 
 Every measured attempt to make this agent stronger by **tuning parameters** has
