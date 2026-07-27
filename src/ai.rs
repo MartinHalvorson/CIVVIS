@@ -740,6 +740,89 @@ impl Weights {
             (0.0, 1.0), // pol_swap_margin
         ]
     }
+
+    /// Gene names, same order as `to_vec` and `bounds`.
+    ///
+    /// A search that reports per-gene results has to name them, and deriving
+    /// the name from the index by hand is how a table ends up mislabelled by
+    /// one row. `gene_names_match_the_vector` pins the length.
+    pub fn gene_names() -> [&'static str; 48] {
+        [
+            "city_target",
+            "settler_min_pop",
+            "settler_stop_turn",
+            "mil_per_city",
+            "builder_per_city",
+            "war_ratio",
+            "war_margin",
+            "peace_ratio",
+            "war_min_turn",
+            "attack_floor",
+            "kill_bonus",
+            "trade_caution",
+            "settle_food",
+            "settle_prod",
+            "settle_gold",
+            "settle_dist",
+            "min_city_dist",
+            "wonder_min_bld",
+            "faith_builder",
+            "d_campus",
+            "d_commercial",
+            "d_holy",
+            "d_theater",
+            "open0",
+            "open1",
+            "open2",
+            "open3",
+            "mv_support",
+            "mv_threat",
+            "command_radius",
+            "muster_radius",
+            "muster_readiness",
+            "cohesion",
+            "focus_fire",
+            "screen",
+            "role_spacing",
+            "objective_progress",
+            "local_superiority",
+            "withdraw_hp",
+            "rejoin_hp",
+            "pol_food",
+            "pol_production",
+            "pol_gold",
+            "pol_science",
+            "pol_culture",
+            "pol_faith",
+            "pol_military",
+            "pol_swap_margin",
+        ]
+    }
+}
+
+#[cfg(test)]
+mod gene_table_tests {
+    use super::Weights;
+
+    #[test]
+    fn gene_names_match_the_vector() {
+        let w = Weights::default();
+        assert_eq!(w.to_vec().len(), Weights::gene_names().len());
+        assert_eq!(w.to_vec().len(), Weights::bounds().len());
+    }
+
+    #[test]
+    fn every_gene_default_sits_inside_its_own_bounds() {
+        let v = Weights::default().to_vec();
+        for (index, (lo, hi)) in Weights::bounds().iter().enumerate() {
+            assert!(
+                v[index] >= *lo && v[index] <= *hi,
+                "{} default {} outside [{lo}, {hi}]",
+                Weights::gene_names()[index],
+                v[index]
+            );
+        }
+    }
 }
 
 /// Strategic job inferred from a unit's class and promotion line. Both AI
