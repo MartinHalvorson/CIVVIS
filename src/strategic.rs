@@ -382,6 +382,12 @@ pub struct StrategicAi {
     /// executes a sequence only when it strictly improves the founder's
     /// lexicographic religious-victory geometry. Off by default; the
     /// evaluator-only `strategic_deep_conversion` entrant measures it.
+    ///
+    /// **Measured, not promoted.** It lost the disjoint 120-map gate 114-126
+    /// games (five favorable map directions to 11 adverse), while terminal
+    /// score remained slightly favorable at 50.2%. Religious victories fell
+    /// from 81 to 65. Exact local conversion gains did not compose into
+    /// stronger game conversion; see `docs/RELIGIOUS_CONVERSION_FINISHER.md`.
     pub religious_finish_search: bool,
     /// Project a rotating subset of lanes instead of all of them: the
     /// adaptive baseline, the lane in force, and one challenger that
@@ -455,7 +461,14 @@ impl StrategicAi {
     /// before it flips a city, while the earlier terms prevent farming easy
     /// cities in one empire from outranking the last holdout civilization.
     fn conversion_value(g: &Game, pid: usize) -> Option<ConversionValue> {
-        if !g.victory_conditions.religious || !g.players[pid].alive {
+        // Team victory accepts any religion founded by a teammate and may
+        // record a different teammate as the winner. This single-founder
+        // value is deliberately disabled there rather than optimizing a
+        // geometry that does not match the engine's victory predicate.
+        if !g.victory_conditions.religious
+            || !g.players[pid].alive
+            || g.players[pid].team.is_some()
+        {
             return None;
         }
         let religion = g.players[pid].religion.as_deref()?;
@@ -1682,6 +1695,11 @@ mod tests {
         assert!(
             stock.religious_conversion_plan(&game, 2).is_empty(),
             "a civilization without a founded religion has no conversion plan"
+        );
+        game.players[0].team = Some(0);
+        assert!(
+            StrategicAi::conversion_value(&game, 0).is_none(),
+            "single-founder geometry must not stand in for team victory"
         );
     }
 

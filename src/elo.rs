@@ -627,7 +627,8 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         }
         // Exact one- and two-action search over religious conversions before
         // the ordinary controller takes the rest of the turn. Same promoted
-        // 20x80 macro budget as its control; evaluator-only until wins decide.
+        // 20x80 macro budget as its control. Retained evaluator-only after it
+        // lost the disjoint gate 114-126 games and religious wins fell 81-65.
         "strategic_deep_conversion" => {
             let mut ai = crate::strategic::StrategicAi::with_weights(
                 crate::evolve::load_champion("evolved").unwrap_or_default(),
