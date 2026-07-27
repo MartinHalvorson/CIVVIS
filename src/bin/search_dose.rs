@@ -39,8 +39,133 @@
 //!   weakest of the three doublings. Frequency and depth are not
 //!   interchangeable, and the point of a grid is to see which axis still pays.
 //!
-//! Nothing here is a promotion. A dose that reads positive on lane progress
-//! earns a pre-registered run on **wins**, which is what decides it.
+//! Nothing here is a promotion. A dose that reads positive earns a
+//! pre-registered confirmation at higher power on a disjoint seed.
+//!
+//! ## A hypothesis written down before the run finished
+//!
+//! The first dose, `20/120`, came back **+0.0625 ± 0.0320 (≈2.0 SE)** — which
+//! runs *against* the documented saturation story rather than with it. If that
+//! survives the negative control and a confirmation, the mechanism worth
+//! testing first is uncomfortable:
+//!
+//! > **Deepening past 80 may help by neutering the search rather than by
+//! > improving it.** Once every branch resolves they return exactly 1.0 or 0.0
+//! > and agree by construction, so the argmax has nothing to choose between and
+//! > the agent falls through to its adaptive default. If the search at horizon
+//! > 80 is picking *worse* than that default, more horizon helps by silencing
+//! > it.
+//!
+//! That is falsifiable and predicts something specific: an agent with the macro
+//! search disabled entirely should then also land at or above `20/80`. If it
+//! does not, the hypothesis is wrong and the gain is real depth.
+//!
+//! Written before the remaining doses reported, so it cannot be reshaped into
+//! whatever the data turns out to say.
+//!
+//! ## The first ladder was under-powered, and the control is what said so
+//!
+//! 40 mirrored maps a dose, seed 3800000:
+//!
+//! | dose | score | edge | |
+//! |---|---|---|---|
+//! | `20/120` deeper | 0.5625 ± 0.0320 | +0.0625 | +2.0 SE |
+//! | `10/80` 2× reviews | 0.4875 ± 0.0282 | −0.0125 | −0.4 SE |
+//! | **`40/80` HALF reviews (control)** | 0.4750 ± 0.0250 | **−0.0250** | **−1.0 SE** |
+//!
+//! The control halves the review cadence of a budget promoted at +45 Elo, so
+//! it *should* lose. It points the right way and its magnitude is about what
+//! half the deep gain predicts (~0.03) — but at **−1.0 SE it is not separable
+//! from noise.**
+//!
+//! **That is a verdict on the ladder, not on the dose.** An instrument that
+//! cannot clearly see a known-bad arm has not earned belief in a surprising
+//! positive, so `20/120`'s +0.0625 is a screen and nothing more. Resolving an
+//! effect of 0.03 at 2 SE needs SE ≈ 0.015, about **160 maps** — four times
+//! this run, now going on a disjoint seed.
+//!
+//! This is why the control exists and why it should never be the last dose to
+//! report: without it, +2.0 SE against a documented saturation story would
+//! have looked like a finding.
+//!
+//! ## ★ The promotion, isolated: stock 40/40 is not distinguishable from it
+//!
+//! `--only STOCK`, 100 mirrored maps, seed 4200000, both arms built here so
+//! the genome and the value-net status are identical and **only the budget
+//! differs**:
+//!
+//! ```text
+//! 40/40  STOCK vs promoted deep    0.4900 +/- 0.0188   -0.0100   (-0.5 SE)
+//! ```
+//!
+//! The stock budget is **indistinguishable from the 4× one**. The lean is in
+//! deep's favour and it is nothing.
+//!
+//! What this does and does not say. 100 maps resolve about 0.04, and the
+//! original promotion measured **+45 Elo ≈ 0.065 of win rate** — comfortably
+//! inside what this run could have seen. It did not see it. That is not proof
+//! the gain is gone; it is a failure to reproduce at a power that should have
+//! sufficed.
+//!
+//! It is also the **second** such failure. #477 independently measures the same
+//! comparison as "nearly neutral, 61–59 games and five map directions to four"
+//! on the generation-14 genome. The two runs use different genomes — this one
+//! `Weights::default()`, theirs gen-14 — so neither reproduces the original
+//! 300-map conditions exactly. Jointly they say the gain does not reproduce
+//! easily under conditions the repository now actually runs.
+//!
+//! **The cost side is not in doubt**: `strategic_deep` spends 4× the
+//! macro-search compute on every soak, league, fleet and exhibition game that
+//! opts in. A promotion that two independent measurements fail to reproduce,
+//! while its cost is certain, is one whose burden of proof has moved.
+//!
+//! ### Replicated on a disjoint seed; the claimed effect is excluded
+//!
+//! | seed | maps | edge |
+//! |---|---|---|
+//! | 4200000 | 100 | −0.0100 ± 0.0188 |
+//! | 4500000 | 120 | −0.0125 ± 0.0225 |
+//! | **pooled** | **220** | **−0.0110 ± 0.0144** |
+//!
+//! Elo-equivalent **−8 (95% CI −27 to +12)** against a promotion claiming
+//! **+45**. The claimed 0.065 sits **5.3 SE** away — excluded, not merely
+//! unreproduced. Pre-registered before the second run.
+//!
+//! ### The entrant-name comparison agrees, but proves less
+//!
+//! `ai_eval strategic_deep strategic --pairs 100`: 52.0% (Wilson 42.3–61.5),
+//! Elo-equivalent **+14 (CI −54..+82)**, sign p=0.5413, gate INCONCLUSIVE.
+//! Also null — but that interval **includes +45**, so it cannot exclude the
+//! promoted effect. `ai_eval` decides on map *directions* and discards
+//! neutrals; 76 of its 100 maps carried no weight.
+//!
+//! This harness uses every map, so at SE 0.0188 a 0.065 effect would appear at
+//! **3.5 SE**. That is why the isolated run above is the one to lead with: it
+//! is cleaner *and* better powered, and it is the only one of the three with
+//! the resolution to have seen the promotion.
+//!
+//! ## Cross-checked against #477, which landed mid-run
+//!
+//! `docs/GEN14_DENSE_SEARCH.md` tests the same axis and **corroborates the
+//! under-power diagnosis**: its halved-cadence arm is this ladder's control,
+//! and over ~240 games it lost 105–135 with 1 decisive map direction to 16,
+//! crossing evidence at map 54. The control was pointing the right way; 40
+//! maps simply could not see it.
+//!
+//! It also **conflicts** with the `20/120` screen, and that is worth stating
+//! rather than smoothing over. #477 finds *halving* the horizon (20/40) leaning
+//! ahead — 308–292 over a disjoint 300-map gate — where this ladder finds
+//! *raising* it (20/120) leaning ahead. Both are sub-significant, so the
+//! economical reading is that both are noise, but they cannot both be real.
+//!
+//! ⚠ **And the arms are not the same agent.** #477 tests the committed
+//! generation-14 genome; this binary builds
+//! `StrategicAi::with_weights(Weights::default())`, so it measures the search
+//! budget on the *default* weights. #477's own observation that 20×80 against
+//! 40×40 is "nearly neutral, 61–59" on gen-14 — against the +45 Elo that
+//! promoted it on default weights — says the genome changes what the budget is
+//! worth. Any comparison between these two sets of numbers has to name the
+//! genome.
 use civvis::ai::{Ai, AdvancedAi, Weights};
 use civvis::game::{Action, Game};
 use civvis::parallel;
@@ -48,12 +173,24 @@ use civvis::strategic::StrategicAi;
 
 /// (label, review_every, horizon). The control is the promoted configuration.
 const CONTROL: (&str, u32, u32) = ("deep 20/80 (shipped)", 20, 80);
-const DOSES: [(&str, u32, u32); 5] = [
+/// Three doses, not five. Each `StrategicAi` seat costs about four times an
+/// `AdvancedAi` one and a paired arm needs the search on both sides, so a dose
+/// is expensive; the first version of this ladder ran five and produced
+/// nothing in an hour. These three answer the question and include a control
+/// that should come back NEGATIVE, which is what tells you the ladder can see
+/// anything at all.
+const DOSES: [(&str, u32, u32); 4] = [
+    // The promotion itself, isolated. `ai_eval strategic_deep strategic` cannot
+    // answer this cleanly: with no `valuenet.json` on the machine, `strategic`
+    // silently degrades to `strategic_score` while `strategic_deep` blends an
+    // untrained-default net, so those two arms differ in value-net handling as
+    // well as in budget. Constructing both `StrategicAi` values here gives
+    // identical genome and identical net status, so the ONLY difference is the
+    // budget -- which is the whole question.
+    ("40/40   STOCK vs promoted deep", 40, 40),
     ("20/120  deeper", 20, 120),
     ("10/80   2x reviews", 10, 80),
-    ("10/120  both", 10, 120),
-    ("40/80   half reviews", 40, 80),
-    ("20/40   half horizon", 20, 40),
+    ("40/80   HALF reviews (expected negative)", 40, 80),
 ];
 
 fn number(args: &[String], flag: &str, default: usize) -> usize {
@@ -113,16 +250,26 @@ fn duel(
                 }
             }
         }
-        let mut mine = 0.0;
-        let mut table = 0.0;
-        for player in game.players.iter().filter(|p| !p.is_minor) {
-            let value = game.victory_threat(player.id);
-            table += value;
-            if is_treated(player.id) {
-                mine += value;
-            }
-        }
-        share += if table > 0.0 { mine / table } else { 0.5 };
+        // WINS, not victory-lane progress.
+        //
+        // This binary shipped scoring lane progress, on the strength of that
+        // statistic passing two non-adversarial checks. It was refuted: a GA
+        // over forty genes selecting on lane progress produced a champion at
+        // +0.0886 (3.2 SE) on disjoint maps that then lost 8 map directions to
+        // 30 on wins, p=0.0005. Lane progress rewards *progress toward* a
+        // lane, and domination is the lane this engine converts worst, so a
+        // search finds and exploits it.
+        //
+        // Nothing optimises against the statistic here — this is a fixed
+        // ladder, not a search — but the number is meant to inform a promotion
+        // decision, and a correlate is not what a promotion should rest on.
+        // A capped game with no victor scores 0.5: it says nothing about
+        // either arm.
+        share += match game.winner.map(is_treated) {
+            Some(true) => 1.0,
+            Some(false) => 0.0,
+            None => 0.5,
+        };
     }
     share / 2.0
 }
@@ -142,10 +289,26 @@ fn main() {
          {turns} turns, seed {seed0}",
         DOSES.len()
     );
-    println!("  control: {} | statistic: victory-lane progress", CONTROL.0);
-    println!("  parity 0.500; above means the dose beats what already shipped\n");
+    println!("  control: {} | statistic: WINS", CONTROL.0);
+    println!("  parity 0.500; above means the dose beats what already shipped");
+    println!("  a capped game with no victor scores 0.5, not a loss\n");
+
+    // Run one dose. The ladder runs them in order and the NEGATIVE CONTROL is
+    // last, so a long dose in the middle blocks the reading that says whether
+    // the instrument can see anything -- which is the one worth having first.
+    let only = args
+        .iter()
+        .position(|arg| arg == "--only")
+        .and_then(|index| args.get(index + 1))
+        .cloned();
+    if let Some(pattern) = &only {
+        println!("  restricted to doses matching {pattern:?}\n");
+    }
 
     for (label, review_every, horizon) in DOSES {
+        if only.as_ref().is_some_and(|p| !label.contains(p.as_str())) {
+            continue;
+        }
         let shares = parallel::map(maps, jobs, move |index| {
             duel(
                 (review_every, horizon),
