@@ -171,8 +171,11 @@ would invalidate the in-flight roster snapshot. Results also append to `matches.
 supplies a strict placement list, so only batch rounds can retain score ties.
 
 A snapshot of a finished league lives in the repo at `data/league/`
-(see its README for provenance), so any checkout — including other
-machines — can show rated, named players out of the box. The spectator
+(see its README for provenance) and is compiled into the binary, so any
+build — including the WASM one, which has no filesystem — can show rated,
+named players out of the box no matter which directory it was started
+from. `league::shipped_league` is the reader; it is a read-only prior and
+nothing is ever recorded into it. The spectator
 supervisor (`tools/spectator_supervisor.py`) defaults to `--league auto`,
 which seeds a runtime copy of that snapshot at the repo-root `league/`
 path (gitignored) and records into it — the committed snapshot is the

@@ -1401,22 +1401,27 @@ impl Session {
     fn load_roster(league: Option<&crate::league::League>) -> Option<crate::league::League> {
         match league {
             Some(l) => Some(l.clone()),
-            None => crate::league::load_league("data/league"),
+            None => crate::league::shipped_league(),
         }
     }
 
     /// The roster named by `--league`, else a best-effort load purely for
     /// elo labels: the runtime `league/` this checkout records into, then the
-    /// snapshot every build ships. Only the named roster is ever written to,
-    /// so a labelled game still rates nothing — but it does say what the
-    /// league already knows about the agent in each seat, which used to
-    /// require passing `--league` to see at all.
+    /// snapshot compiled into every build. Only the named roster is ever
+    /// written to, so a labelled game still rates nothing — but it does say
+    /// what the league already knows about the agent in each seat, which used
+    /// to require passing `--league` to see at all.
+    ///
+    /// The last step is `league::shipped_league` rather than a read of
+    /// `data/league`, because a directory is resolved against the working
+    /// directory and a rating must not depend on where the binary was started
+    /// from. Reading that path is what left every seat at a provisional 1500
+    /// anywhere but a checkout root.
     fn load_params_league(params: &Params) -> (Option<crate::league::League>, bool) {
         match &params.league_dir {
             Some(dir) => (crate::league::load_league(dir), true),
             None => (
-                crate::league::load_league("league")
-                    .or_else(|| crate::league::load_league("data/league")),
+                crate::league::load_league("league").or_else(crate::league::shipped_league),
                 false,
             ),
         }
@@ -7416,6 +7421,90 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("if (camera.chart && !spectator)"));
     }
 
+    /// Fog of war must not report where the stored map stops. A civilization
+    /// that has seen eighteen tiles knows eighteen tiles, and the shape of the
+    /// rectangle they are stored in is not one of the things it knows.
+    #[test]
+    fn the_map_edge_is_veiled_until_a_world_has_been_measured() {
+        // The veil is the observed civilization's, not the viewer's: a
+        // spectator is not exploring anything, and `wentAround` already
+        // answers true for one, so the exhibition keeps the whole rectangle.
+        assert!(EMBEDDED_INDEX.contains("function mapEdgeVeiled()"));
+        assert!(EMBEDDED_INDEX
+            .contains("return !!state && !planetMap() && !wentAround();"));
+        // Three to fifteen tiles, per world and per side, so the give is never
+        // the same twice and the two sides of one map never agree.
+        assert!(EMBEDDED_INDEX.contains("const MAP_VEIL_MIN = 3, MAP_VEIL_MAX = 15;"));
+        assert!(EMBEDDED_INDEX.contains("function mapEdgeVeil()"));
+        assert!(EMBEDDED_INDEX.contains(
+            "MAP_VEIL = {left:reach(0), right:reach(1), top:reach(2), bottom:reach(3)};"
+        ));
+
+        // The parchment runs past the stored rectangle rather than stopping on
+        // it, and it is drawn out to the frame on every side rather than out to
+        // the veil, so no zoom and no bearing can find the end of the sheet.
+        let hidden = EMBEDDED_INDEX
+            .split("function hiddenMapCellAt")
+            .nth(1)
+            .and_then(|tail| tail.split("function hiddenMapSeedWords").next())
+            .expect("hidden-map cell test and viewport");
+        assert!(
+            hidden.contains("col < 0 || col >= state.map.width) return mapEdgeVeiled();"),
+            "ground past the stored rectangle must read as unsurveyed, not as nothing"
+        );
+        assert!(hidden.contains("const veiled = !open && mapEdgeVeiled();"));
+        assert!(
+            hidden.contains("const span = open || veiled ? framedHexBounds(3)"),
+            "a veiled sheet is spanned by the frame, not by the map's rectangle"
+        );
+        assert!(hidden.contains("const [x, y] = open || veiled ? hexXYRaw(q, row) : hexXY(q, row);"));
+        // Only one copy of a wrapping world is drawn, so the background either
+        // side of it is somewhere nobody has been rather than somewhere that
+        // does not exist — which is what closes the same leak at full zoom-out.
+        assert!(EMBEDDED_INDEX.contains("function veilDrawsGroundAt(q, r)"));
+        assert!(hidden.contains("const test = veiled ? (q, r) => !veilDrawsGroundAt(q, r)"));
+        // A canvas compound path costs quadratic time in its own size, so a
+        // sheet that covers a whole frame has to be drawn as its rectangle.
+        assert!(hidden.contains("return {open, solid:veiled, cells, test};"));
+        assert!(EMBEDDED_INDEX
+            .contains("if (layer.solid) cx.rect(minX, minY, maxX - minX, maxY - minY);"));
+
+        // A camera that stops dead on the last row says the same thing the
+        // parchment no longer does, so the veil owns that axis while it lasts.
+        assert!(EMBEDDED_INDEX.contains("function mapVeilPanBounds()"));
+        let bounds = EMBEDDED_INDEX
+            .split("function cameraYBounds")
+            .nth(1)
+            .and_then(|tail| tail.split("function clampCameraY").next())
+            .expect("vertical camera bounds");
+        assert!(
+            bounds.contains("const veil = mapVeilPanBounds();\n  if (veil?.y) return veil.y;"),
+            "the veil must be consulted before the map's own rows frame the camera"
+        );
+        assert!(EMBEDDED_INDEX.contains("function clampCameraX(x)"));
+
+        // Soft, and bouncy: a drag past the bound is resisted rather than
+        // refused, a coast into it stretches and is handed to a spring, and
+        // both come home to the bound instead of sailing back over the world.
+        assert!(EMBEDDED_INDEX.contains("function cameraRubberBand(value, bounds, give = CAMERA_GIVE())"));
+        assert!(EMBEDDED_INDEX.contains("function holdCameraInBounds(x, y)"));
+        assert!(EMBEDDED_INDEX.contains("function handOffCameraBounce()"));
+        assert!(EMBEDDED_INDEX.contains("function settleCameraBounce(dt)"));
+        assert!(EMBEDDED_INDEX.contains("if (settleCameraBounce(dt)) active = true;"));
+        assert!(
+            EMBEDDED_INDEX.contains("[cam.x, cam.y] = holdCameraInBounds("),
+            "the drag paths must go through the rubber band"
+        );
+
+        // And the thumbnail, which is the loudest statement of extent there is.
+        let mini = EMBEDDED_INDEX
+            .split("function miniBounds()")
+            .nth(1)
+            .and_then(|tail| tail.split("function miniLayout").next())
+            .expect("minimap bounds");
+        assert!(mini.contains("if ((!chartIsOpen() && !mapEdgeVeiled()) || !tiles?.length) {"));
+    }
+
     #[test]
     fn cinematic_3d_module_covers_every_unit_renderer_family() {
         for family in [
@@ -8759,6 +8848,48 @@ mod tests {
             (shares - 1.0).abs() < 0.02,
             "one table, one winner: shares summed to {shares}"
         );
+        // An earned rating, not the base everybody starts from. The check
+        // above passes on a provisional 1500 too, which is exactly what the
+        // whole table showed while the roster was read from a relative path.
+        for player in &majors {
+            assert_eq!(
+                player["ai_elo_provisional"],
+                json!(false),
+                "the shipped roster has games behind it"
+            );
+        }
+    }
+
+    /// The roster that labels an ordinary game is compiled in, so the ratings
+    /// on screen are the same wherever the binary was started from.
+    ///
+    /// The label roster ended at a read of `data/league`, a directory resolved
+    /// against the working directory. `cargo test` runs at the crate root and
+    /// a developer is usually standing in a checkout, so the read succeeded
+    /// exactly where anyone would look and failed everywhere the program
+    /// actually ships: the installed binary run from a home directory, a
+    /// launcher that starts it from `/`, and the WASM build, which has no
+    /// filesystem at all. Every seat in those games showed a provisional 1500.
+    #[test]
+    fn the_label_roster_is_compiled_in_rather_than_read_from_the_working_directory() {
+        let shipped = crate::league::shipped_league().expect("the snapshot is compiled in");
+        let mut params = current();
+        params.league_dir = None;
+        let (league, seats) = Session::load_params_league(&params);
+        let league = league.expect("a game that names no roster is still labelled");
+        assert!(!seats, "a label roster seats nobody and rates nothing");
+        // A checkout that has been recording locally answers from its own
+        // runtime `league/` first, which is the point of that step. With no
+        // such directory — a fresh checkout, and every shipped build — the
+        // chain has to reach the compiled-in snapshot rather than stop at a
+        // path that is not there.
+        if crate::league::load_league("league").is_none() {
+            assert_eq!(
+                league.strategies.len(),
+                shipped.strategies.len(),
+                "the labels come from the shipped roster"
+            );
+        }
     }
 
     /// An interactive game rates its rivals on screen too — but only the
