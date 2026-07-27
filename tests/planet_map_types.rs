@@ -9,9 +9,9 @@ use civvis::world::Topology;
 
 /// Shape, climate and map script are independent setup choices. Keep every map
 /// type in the catalogue on both generation paths, including fixed-geography
-/// Earth, the warm no-poles variant and the randomized one; adding a type
-/// automatically adds it to this matrix, and the climate list is `MAP_POLES`
-/// itself so adding a climate does too.
+/// Earth, under both thermal distributions; adding a type automatically adds it
+/// to this matrix, and the climate list is `MAP_POLES` itself so adding or
+/// retiring a climate does too.
 #[test]
 fn every_world_type_generates_a_playable_world_on_either_shape_and_climate() {
     let rules = Rules::embedded();
@@ -142,17 +142,6 @@ fn every_world_type_generates_a_playable_world_on_either_shape_and_climate() {
                             forward,
                             world.distance(*right, *left),
                             "{case}: world distance is asymmetric"
-                        );
-                    }
-                }
-
-                if poles == MapPoles::NoPoles {
-                    for tile in world.tiles.values() {
-                        assert!(
-                            !matches!(tile.terrain.as_str(), "snow" | "tundra")
-                                && tile.feature.as_deref() != Some("ice"),
-                            "{case}: a no-poles world contains polar terrain at {:?}",
-                            tile.pos
                         );
                     }
                 }

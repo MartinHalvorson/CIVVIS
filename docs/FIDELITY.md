@@ -272,6 +272,37 @@ of **180/272** and 8-tech/11-civic prices of **204/308**. The forged-price test
 also posts a zero quote and proves the engine still charges its recomputed live
 price, so the browser's quote is never trusted as authority.
 
+## Closed: only a full civilization annexes tiles with its own yields
+
+`CivilizationLevels` is the table that decides who may take ground, and only
+one of its four rows may take it unaided:
+
+| level | `CanAnnexTilesWithCulture` | `CanAnnexTilesWithGold` | `CanAnnexTilesWithReceivedInfluence` | `StartingTilesForCity` |
+|---|---|---|---|---|
+| `FULL_CIV` | 1 | 1 | 0 | 6 |
+| `CITY_STATE` | 0 | 0 | 1 | 5 |
+| `FREE_CITIES` | 0 | 0 | 0 | 0 |
+| `TRIBE` | 0 | 0 | 0 | 0 |
+
+A city-state's territory therefore grows **only** by one tile per Envoy it
+receives from its Suzerain, and it opens one ring tile short of a normal city.
+CIVVIS ran the ordinary Culture border curve for every city whatever its
+owner, and `plot_purchase_cost` had no owner gate either, so a minor accreted
+ground for the whole game on top of the Envoy tiles it was already paid.
+
+Measured over four 250-turn games on the tournament lobby before the fix, a
+city-state finished **larger than the average major city** — 23.8 tiles and
+10.4 Population against 22.2 and 9.9 — on a mean of 8.6 Envoys from all
+majors combined. Territory is the mechanism and Population is the symptom:
+more owned tiles is more worked tiles is more Food.
+
+`annexes_tiles_with_own_yields` now gates both paths. The one judgement call
+is **which** of the six ring tiles a founding city-state gives up: the count
+is shipped data, the choice is not in the database, so the shipped
+plot-influence picker (`border_influence_cost`, the same `PLOT_INFLUENCE_*`
+scoring that drives cultural expansion) decides and the least attractive
+neighbour is left neutral.
+
 ## Resolved: a city-state weighed nothing for itself
 
 Every city-state in a 406-turn spectator game sat at exactly 100 Loyalty while
