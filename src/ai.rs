@@ -626,14 +626,6 @@ impl Weights {
             self.local_superiority,
             self.withdraw_hp,
             self.rejoin_hp,
-            self.pol_food,
-            self.pol_production,
-            self.pol_gold,
-            self.pol_science,
-            self.pol_culture,
-            self.pol_faith,
-            self.pol_military,
-            self.pol_swap_margin,
         ]
     }
 
@@ -679,22 +671,19 @@ impl Weights {
             local_superiority: v[37],
             withdraw_hp: v[38],
             rejoin_hp: v[39],
-            pol_food: v[40],
-            pol_production: v[41],
-            pol_gold: v[42],
-            pol_science: v[43],
-            pol_culture: v[44],
-            pol_faith: v[45],
-            pol_military: v[46],
-            pol_swap_margin: v[47],
-            // Not a gene: the GA's vector does not carry it, so a genome that
-            // round-trips through `to_vec` comes back on the shipped default.
-            policy_deck: PolicyDeck::Legacy,
+            // The policy appetites are NOT genes. Measured on the statistic
+            // that tracks winning, scrambling the whole policy block costs
+            // +0.0006 +/- 0.0229 -- flat. Carrying eight worthless dimensions
+            // would widen the search for nothing, and it collided with the
+            // committed 40-gene champion another agent landed on main.
+            // `PolicyDeck::Live` still reads them; the GA does not.
+            // `policy_deck` and the appetites take the shipped defaults here.
+            ..Weights::default()
         }
     }
 
     /// (lo, hi) clamp per gene, same order as to_vec.
-    pub fn bounds() -> [(f64, f64); 48] {
+    pub fn bounds() -> [(f64, f64); 40] {
         [
             (2.0, 12.0),
             (1.0, 5.0),
@@ -736,14 +725,6 @@ impl Weights {
             (0.0, 16.0),
             (20.0, 65.0),
             (60.0, 100.0),
-            (0.0, 3.0), // pol_food
-            (0.0, 3.0), // pol_production
-            (0.0, 3.0), // pol_gold
-            (0.0, 3.0), // pol_science
-            (0.0, 3.0), // pol_culture
-            (0.0, 3.0), // pol_faith
-            (0.0, 0.5), // pol_military
-            (0.0, 1.0), // pol_swap_margin
         ]
     }
 
@@ -752,7 +733,7 @@ impl Weights {
     /// A search that reports per-gene results has to name them, and deriving
     /// the name from the index by hand is how a table ends up mislabelled by
     /// one row. `gene_names_match_the_vector` pins the length.
-    pub fn gene_names() -> [&'static str; 48] {
+    pub fn gene_names() -> [&'static str; 40] {
         [
             "city_target",
             "settler_min_pop",
@@ -794,14 +775,6 @@ impl Weights {
             "local_superiority",
             "withdraw_hp",
             "rejoin_hp",
-            "pol_food",
-            "pol_production",
-            "pol_gold",
-            "pol_science",
-            "pol_culture",
-            "pol_faith",
-            "pol_military",
-            "pol_swap_margin",
         ]
     }
 }

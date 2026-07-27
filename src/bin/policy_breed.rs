@@ -60,8 +60,9 @@ use civvis::game::{Action, Game};
 use civvis::parallel;
 use civvis::rng::Rng;
 
-/// Indices into `Weights::to_vec` that this search is allowed to move.
-const POLICY_GENES: [usize; 8] = [40, 41, 42, 43, 44, 45, 46, 47];
+// The appetites are fields on `Weights` but deliberately NOT part of the GA
+// vector -- scrambling the whole block costs +0.0006 +/- 0.0229 on the
+// wins-tracking statistic, so they are set directly rather than by index.
 const GENE_NAMES: [&str; 8] = [
     "food",
     "production",
@@ -179,12 +180,31 @@ fn fitness(
 }
 
 fn with_policy_genes(genes: &[f64; 8]) -> Weights {
-    let mut v = Weights::default().to_vec();
-    for (slot, gene) in POLICY_GENES.iter().zip(genes) {
-        v[*slot] = *gene;
+    Weights {
+        pol_food: genes[0],
+        pol_production: genes[1],
+        pol_gold: genes[2],
+        pol_science: genes[3],
+        pol_culture: genes[4],
+        pol_faith: genes[5],
+        pol_military: genes[6],
+        pol_swap_margin: genes[7],
+        policy_deck: civvis::ai::PolicyDeck::Live,
+        ..Weights::default()
     }
-    Weights::from_vec(&v)
 }
+
+/// (lo, hi) for each appetite, in the order `with_policy_genes` reads them.
+const POLICY_BOUNDS: [(f64, f64); 8] = [
+    (0.0, 3.0),
+    (0.0, 3.0),
+    (0.0, 3.0),
+    (0.0, 3.0),
+    (0.0, 3.0),
+    (0.0, 3.0),
+    (0.0, 0.5),
+    (0.0, 1.0),
+];
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -240,18 +260,23 @@ fn main() {
         return;
     }
 
-    let all_bounds = Weights::bounds();
-    let bounds: Vec<(f64, f64)> = POLICY_GENES.iter().map(|i| all_bounds[*i]).collect();
+    let bounds: Vec<(f64, f64)> = POLICY_BOUNDS.to_vec();
     let mut rng = Rng::new(seed0 ^ 0x9E37_79B9_7F4A_7C15);
 
     // Seat the shipped hand-set appetites so the search must beat what it
     // replaces, then fill the rest of the population uniformly at random.
-    let shipped = Weights::default().to_vec();
+    let stock = Weights::default();
     let mut pop: Vec<[f64; 8]> = Vec::with_capacity(pop_size);
-    let mut seed_genes = [0.0f64; 8];
-    for (k, index) in POLICY_GENES.iter().enumerate() {
-        seed_genes[k] = shipped[*index];
-    }
+    let seed_genes = [
+        stock.pol_food,
+        stock.pol_production,
+        stock.pol_gold,
+        stock.pol_science,
+        stock.pol_culture,
+        stock.pol_faith,
+        stock.pol_military,
+        stock.pol_swap_margin,
+    ];
     pop.push(seed_genes);
     while pop.len() < pop_size {
         let mut genes = [0.0f64; 8];
