@@ -14,7 +14,7 @@
 //! self-play trajectories.
 use crate::ai::{run_game, AdvancedAi, Ai, PlanReport, VictoryTarget, Weights};
 use crate::evolve::features;
-use crate::game::{Action, Game, Item};
+use crate::game::{Action, ActionFamilies, Game, Item};
 use crate::obs_tensor::obs_tensor;
 use crate::valuenet::ValueNet;
 
@@ -371,6 +371,18 @@ pub struct StrategicAi {
     /// barely moved (26.2% versus 25.0%). No disjoint gate was earned; see
     /// `docs/TERMINAL_TEMPO_SEARCH.md`.
     pub terminal_tempo: bool,
+    /// Search the exact religious action that changes conversion geometry
+    /// before handing the rest of the turn to the scripted controller.
+    ///
+    /// `Action::Spread` does not name a city. When several cities are in
+    /// range, the engine applies it by deterministic adjacency order rather
+    /// than the destination the route planner had in mind. This treatment
+    /// evaluates every immediately legal religious action and every legal
+    /// religious move followed by one such action on cloned states. It
+    /// executes a sequence only when it strictly improves the founder's
+    /// lexicographic religious-victory geometry. Off by default; the
+    /// evaluator-only `strategic_deep_conversion` entrant measures it.
+    pub religious_finish_search: bool,
     /// Project a rotating subset of lanes instead of all of them: the
     /// adaptive baseline, the lane in force, and one challenger that
     /// advances each review. Cuts a review from seven branches to about
@@ -417,6 +429,7 @@ impl StrategicAi {
             doctrine_search: false,
             defer_periodic_on_interrupt: true,
             terminal_tempo: false,
+            religious_finish_search: false,
             rotate_lanes: false,
             rotation: 0,
             doctrine: Doctrine::Incumbent,
@@ -431,6 +444,158 @@ impl StrategicAi {
 
     pub fn current_target(&self) -> Option<VictoryTarget> {
         self.inner.victory_target()
+    }
+
+    /// Religious-victory geometry after an exact action sequence.
+    ///
+    /// The ordering is intentionally win-aligned: a completed victory first,
+    /// then civilizations already over their city-majority threshold, then
+    /// the least-converted rival, total converted cities, and only finally
+    /// continuous pressure share. The last term lets a spread be recognized
+    /// before it flips a city, while the earlier terms prevent farming easy
+    /// cities in one empire from outranking the last holdout civilization.
+    fn conversion_value(g: &Game, pid: usize) -> Option<ConversionValue> {
+        if !g.victory_conditions.religious || !g.players[pid].alive {
+            return None;
+        }
+        let religion = g.players[pid].religion.as_deref()?;
+        let rivals: Vec<usize> = g
+            .players
+            .iter()
+            .filter(|player| {
+                player.id != pid && player.alive && !player.is_minor && !player.is_barbarian
+            })
+            .map(|player| player.id)
+            .collect();
+        if rivals.is_empty() {
+            return None;
+        }
+
+        let mut converted_rivals = 0;
+        let mut weakest_rival: f64 = 1.0;
+        let mut following_cities = 0;
+        let mut pressure_share = 0.0;
+        for rival in rivals {
+            let cities: Vec<_> = g
+                .cities
+                .values()
+                .filter(|city| city.owner == rival)
+                .collect();
+            if cities.is_empty() {
+                weakest_rival = 0.0;
+                continue;
+            }
+            let following = cities
+                .iter()
+                .filter(|city| g.city_religion(city) == Some(religion))
+                .count();
+            let needed = cities.len() / 2 + 1;
+            converted_rivals += usize::from(following >= needed);
+            following_cities += following;
+            weakest_rival = weakest_rival.min(following as f64 / needed as f64);
+            for city in cities {
+                let own = city.pressure.get(religion).copied().unwrap_or(0.0).max(0.0);
+                let total = city.atheist_pressure.max(0.0)
+                    + city
+                        .pressure
+                        .values()
+                        .map(|pressure| pressure.max(0.0))
+                        .sum::<f64>();
+                pressure_share += own / total.max(1.0);
+            }
+        }
+        Some(ConversionValue {
+            won: g.winner == Some(pid),
+            converted_rivals,
+            weakest_rival,
+            following_cities,
+            pressure_share,
+        })
+    }
+
+    fn religious_effect_unit(action: &Action) -> Option<u32> {
+        match action {
+            Action::Spread { unit }
+            | Action::TheologicalAttack { unit, .. }
+            | Action::CondemnHeretic { unit, .. }
+            | Action::RemoveHeresy { unit }
+            | Action::PerformConcert { unit } => Some(*unit),
+            _ => None,
+        }
+    }
+
+    fn religious_move_unit(g: &Game, pid: usize, action: &Action) -> Option<u32> {
+        let unit = match action {
+            Action::Move { unit, .. } | Action::MoveTo { unit, .. } => *unit,
+            _ => return None,
+        };
+        let state = g.units.get(&unit)?;
+        (state.owner == pid
+            && g.rules.units[state.kind.as_str()].class == "religious")
+            .then_some(unit)
+    }
+
+    /// Best one- or two-action conversion sequence available at the start of
+    /// this turn. Ties retain legal-action order, keeping the search fully
+    /// deterministic. Returning an empty plan means no exact sequence
+    /// improves the current religious-victory geometry.
+    fn religious_conversion_plan(&self, g: &Game, pid: usize) -> Vec<Action> {
+        let Some(mut best_value) = Self::conversion_value(g, pid) else {
+            return Vec::new();
+        };
+        let mut best = Vec::new();
+        let legal = g.legal_actions_within(pid, ActionFamilies::UNITS);
+
+        for action in &legal {
+            if Self::religious_effect_unit(action).is_some() {
+                let mut after = g.clone();
+                if after.apply(pid, action).is_ok() {
+                    if let Some(value) = Self::conversion_value(&after, pid) {
+                        if value.better_than(&best_value) {
+                            best_value = value;
+                            best = vec![action.clone()];
+                        }
+                    }
+                }
+            }
+
+            let Some(unit) = Self::religious_move_unit(g, pid, action) else {
+                continue;
+            };
+            let mut moved = g.clone();
+            if moved.apply(pid, action).is_err() {
+                continue;
+            }
+            for followup in moved.legal_actions_within(pid, ActionFamilies::UNITS) {
+                if Self::religious_effect_unit(&followup) != Some(unit) {
+                    continue;
+                }
+                let mut after = moved.clone();
+                if after.apply(pid, &followup).is_err() {
+                    continue;
+                }
+                if let Some(value) = Self::conversion_value(&after, pid) {
+                    if value.better_than(&best_value) {
+                        best_value = value;
+                        best = vec![action.clone(), followup];
+                    }
+                }
+            }
+        }
+        best
+    }
+
+    fn apply_religious_conversion_plan(&self, g: &mut Game, pid: usize) -> bool {
+        let plan = self.religious_conversion_plan(g, pid);
+        if plan.is_empty() {
+            return false;
+        }
+        for action in plan {
+            if g.winner.is_some() || g.apply(pid, &action).is_err() {
+                break;
+            }
+        }
+        true
     }
 
     fn position_value(&self, g: &Game, pid: usize) -> f64 {
@@ -1313,6 +1478,12 @@ impl StrategicAi {
 impl Ai for StrategicAi {
     fn take_turn(&mut self, g: &mut Game, pid: usize) {
         let major = !g.players[pid].is_minor && !g.players[pid].is_barbarian;
+        if major && self.religious_finish_search && g.winner.is_none() {
+            self.apply_religious_conversion_plan(g, pid);
+            if g.winner.is_some() {
+                return;
+            }
+        }
         let counter = major.then(|| self.urgent_counter(g, pid)).flatten();
         let interrupted = counter.as_ref().is_some_and(|(rival, target)| {
             self.inner.victory_target() != Some(*target)
@@ -1387,6 +1558,27 @@ impl Ai for StrategicAi {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+struct ConversionValue {
+    won: bool,
+    converted_rivals: usize,
+    weakest_rival: f64,
+    following_cities: usize,
+    pressure_share: f64,
+}
+
+impl ConversionValue {
+    fn better_than(&self, other: &ConversionValue) -> bool {
+        self.won
+            .cmp(&other.won)
+            .then_with(|| self.converted_rivals.cmp(&other.converted_rivals))
+            .then_with(|| self.weakest_rival.total_cmp(&other.weakest_rival))
+            .then_with(|| self.following_cities.cmp(&other.following_cities))
+            .then_with(|| self.pressure_share.total_cmp(&other.pressure_share))
+            .is_gt()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Doctrine, StrategicAi, FIRST_REVIEW_TURN};
@@ -1438,6 +1630,58 @@ mod tests {
         assert!(
             tempo.branch_value(&game, 0) > loss,
             "later losses rank first"
+        );
+    }
+
+    #[test]
+    fn religious_finisher_applies_only_an_exact_conversion_gain() {
+        let mut game = Game::new_full(3, 20, 14, 28, 120, 0, false);
+        found_capitals(&mut game, 3);
+        game.players[0].religion = Some("Home Faith".to_string());
+        let target = game.player_city_ids(1)[0];
+        game.cities
+            .get_mut(&target)
+            .unwrap()
+            .pressure
+            .insert("Rival Faith".to_string(), 500.0);
+        let missionary = game.spawn_test_unit("missionary", 0, game.cities[&target].pos);
+        game.units.get_mut(&missionary).unwrap().religion = Some("Home Faith".to_string());
+        game.current = 0;
+
+        let stock = StrategicAi::new();
+        assert!(!stock.religious_finish_search);
+        let before = StrategicAi::conversion_value(&game, 0).unwrap();
+        let plan = stock.religious_conversion_plan(&game, 0);
+        assert!(
+            matches!(
+                plan.as_slice(),
+                [Action::Move { unit, .. }, Action::Spread { unit: spread }]
+                    if *unit == missionary && *spread == missionary
+            ),
+            "the exact search should find the stronger move-then-spread sequence: {plan:?}"
+        );
+        assert!(game.cities.values().all(|city| city
+            .pressure
+            .get("Home Faith")
+            .copied()
+            .unwrap_or(0.0)
+            == 0.0), "planning must not mutate the live game");
+
+        assert!(stock.apply_religious_conversion_plan(&mut game, 0));
+        let after = StrategicAi::conversion_value(&game, 0).unwrap();
+        assert!(after.better_than(&before));
+        assert!(game.cities.values().any(|city| {
+            city.owner != 0
+                && city
+                    .pressure
+                    .get("Home Faith")
+                    .copied()
+                    .unwrap_or(0.0)
+                    > 0.0
+        }));
+        assert!(
+            stock.religious_conversion_plan(&game, 2).is_empty(),
+            "a civilization without a founded religion has no conversion plan"
         );
     }
 
