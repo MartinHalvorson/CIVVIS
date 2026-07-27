@@ -6442,10 +6442,11 @@ mod tests {
         // fully off and a zoom over the map is the zoom it has always been.
         // Every notch this lengthens is a notch out in the dark.
         assert!(EMBEDDED_INDEX.contains("const SKY_ARRIVALS = [\"earth\", \"moon\", \"mars\", \"exo\"];"));
-        // And the destination's own star with them: LHS 1140 is twelve times
-        // its planet, so the star fills the stage and stops the zoom at its own
-        // ceiling long before the planet is anything but a bead beside it.
-        // Keyed to the planet alone the arrival never got past halfway.
+        // And the destination's own star with them, because out there the stop
+        // belongs to the star: LHS 1140 is twelve times its own planet and sits
+        // at the same catalogue point, so `planetMaxScale` answers with the
+        // star's ceiling and the zoom ends while the planet is still a bead.
+        // Keyed to the planet alone the arrival never got past 0.46.
         assert!(EMBEDDED_INDEX.contains("const star = skyTarget(st)?.star;"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"planet\">Planet</option>"));
         assert!(EMBEDDED_INDEX

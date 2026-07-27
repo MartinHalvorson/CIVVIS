@@ -17099,12 +17099,14 @@ function skyZoomLadder() {
 // back and a zoom over the map is exactly the zoom it has always been. Every
 // notch this change makes longer is a notch out in the dark.
 const SKY_ARRIVALS = ["earth", "moon", "mars", "exo"];
-// Those four, and the destination's own star with them. The expedition's world
-// is in orbit around one, and out there it is the *star* that arrives: LHS 1140
-// is twelve times its planet, so it fills the stage — and stops the zoom at its
-// own ceiling — long before the planet is anything but a bead beside it. Keyed
-// to the planet alone the arrival never got past halfway, and a zoom aimed at
-// the one place the whole expedition is about ran out at full gearing.
+// Those four, and the destination's own star with them, because out there the
+// stop belongs to the star. LHS 1140 is twelve times its own planet and sits at
+// the same point in the catalogue, so `planetMaxScale` answers with the star's
+// ceiling and the zoom ends while the planet is still a bead. That is the stop
+// this approach really has, so it is the one the last sixty-fourfold has to be
+// measured against: keyed to the planet alone the arrival never got past 0.46,
+// and a zoom aimed at the one place the whole expedition is about ran out at
+// full gearing before it stopped.
 function skyArrivalBodies(st = state) {
   const known = new Set(skyKnownWorlds(st).map(body => body.id));
   const ids = [...SKY_ARRIVALS];
