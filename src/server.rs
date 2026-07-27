@@ -5102,8 +5102,8 @@ mod tests {
             "leaderpool",
             "leader",
             "difficulty",
-            "maptype",
             "mapshape",
+            "maptype",
             "mappoles",
             "np",
             "gamespeed",
@@ -5531,10 +5531,21 @@ mod tests {
         assert!(!EMBEDDED_INDEX.contains("id=\"specchk\""));
         assert!(!EMBEDDED_INDEX.contains("RULES.map_sizes.filter"));
 
+        // The lobby's reading order. `#newgame-options` is a two-column grid
+        // filled row by row, so document order *is* left-then-right,
+        // top-to-bottom on screen. A world is described from the outside in:
+        // what shape it is, then what is drawn on that shape, then how heat is
+        // laid out across it, then how big it is and how fast it runs.
         let mode_setting = EMBEDDED_INDEX
             .find("id=\"gamemode\"")
             .expect("game mode setting");
+        let shape_setting = EMBEDDED_INDEX
+            .find("id=\"mapshape\"")
+            .expect("world shape setting");
         let map_setting = EMBEDDED_INDEX.find("id=\"maptype\"").expect("map setting");
+        let thermal_setting = EMBEDDED_INDEX
+            .find("id=\"mappoles\"")
+            .expect("thermal distribution setting");
         let world_setting = EMBEDDED_INDEX
             .find("id=\"np\"")
             .expect("world size setting");
@@ -5542,10 +5553,23 @@ mod tests {
             .find("id=\"gamespeed\"")
             .expect("game speed setting");
         assert!(
-            mode_setting < map_setting
-                && map_setting < world_setting
-                && world_setting < speed_setting
+            mode_setting < shape_setting
+                && shape_setting < map_setting
+                && map_setting < thermal_setting
+                && thermal_setting < world_setting
+                && world_setting < speed_setting,
+            "lobby order must read mode, world shape, map, thermal distribution, size, speed"
         );
+        // The ????? roll walks RANDOM_SELECT_IDS in order, so that list has to
+        // agree with the panel or a rolled answer lands before the setting it
+        // depends on has one.
+        assert!(EMBEDDED_INDEX.contains("\"mapshape\", \"maptype\", \"mappoles\", \"np\", \"gamespeed\""));
+        // Heat is a setting about climate, not about whether two ice caps
+        // exist, so it is named for what it decides.
+        assert!(EMBEDDED_INDEX.contains("Thermal distribution<select id=\"mappoles\""));
+        assert!(EMBEDDED_INDEX.contains("mappoles: \"Thermal distribution\""));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"randomized\">Randomized</option>"));
+        assert!(!EMBEDDED_INDEX.contains("Poles<select id=\"mappoles\""));
 
         let game_settings = EMBEDDED_INDEX
             .find("id=\"game-settings\"")

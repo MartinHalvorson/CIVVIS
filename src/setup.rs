@@ -447,19 +447,23 @@ pub const MAP_TOPOLOGIES: [MapTopologySpec; 2] = [
     },
 ];
 
-/// Whether the world has cold ends.
+/// How heat is laid out across the world.
 ///
 /// With poles, latitude runs the climate: the middle of the world is its
 /// hottest ground and every step towards an extreme is colder, ending in
 /// tundra, snow and sea ice. Without them the world has no cold end at all —
 /// no ice, no snow, no tundra — and what terrain a tile gets is decided by
 /// rainfall alone, so jungle and desert reach the top and bottom rows.
+/// Randomized keeps both ends of the range but unhitches them from latitude:
+/// a tile is as cold as its own patch of noise says, so snow and jungle are
+/// neighbours as readily as antipodes.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MapPoles {
     #[default]
     Poles,
     NoPoles,
+    Randomized,
 }
 
 impl MapPoles {
@@ -467,9 +471,13 @@ impl MapPoles {
         match self {
             Self::Poles => "poles",
             Self::NoPoles => "no_poles",
+            Self::Randomized => "randomized",
         }
     }
 
+    /// Whether cold ground sits at the world's extremes. This gates the polar
+    /// sea-ice band and the polar cap on start placement, so it is false for
+    /// `Randomized`: that world has cold ground, but nowhere in particular.
     pub const fn has_poles(self) -> bool {
         matches!(self, Self::Poles)
     }
@@ -478,6 +486,7 @@ impl MapPoles {
         match id {
             "poles" | "on" | "true" => Some(Self::Poles),
             "no_poles" | "none" | "off" | "false" => Some(Self::NoPoles),
+            "randomized" | "random" | "scattered" => Some(Self::Randomized),
             _ => None,
         }
     }
@@ -492,18 +501,24 @@ pub struct MapPolesSpec {
     pub poles: MapPoles,
 }
 
-pub const MAP_POLES: [MapPolesSpec; 2] = [
+pub const MAP_POLES: [MapPolesSpec; 3] = [
     MapPolesSpec {
         id: "poles",
-        name: "Poles",
+        name: "Hot equator, cold poles",
         description: "Hottest across the middle of the world, colder towards each extreme, ending in tundra, snow and sea ice.",
         poles: MapPoles::Poles,
     },
     MapPolesSpec {
         id: "no_poles",
-        name: "No poles",
-        description: "No cold ends: one warm climate from edge to edge, with no snow, tundra or ice anywhere.",
+        name: "No cold ends",
+        description: "One warm climate from edge to edge, with no snow, tundra or ice anywhere.",
         poles: MapPoles::NoPoles,
+    },
+    MapPolesSpec {
+        id: "randomized",
+        name: "Randomized",
+        description: "Heat scattered in patches instead of banded by latitude: snow, desert and jungle turn up anywhere, and the poles are no colder than the equator.",
+        poles: MapPoles::Randomized,
     },
 ];
 
@@ -1195,6 +1210,15 @@ mod tests {
         assert!(!MapTopology::Flat.is_globe());
         assert!(MapPoles::Poles.has_poles());
         assert!(!MapPoles::NoPoles.has_poles());
+        // Randomized heat has cold ground but no cold *ends*, so it does not
+        // get the polar sea-ice band or the polar cap on start placement.
+        assert!(!MapPoles::Randomized.has_poles());
+        // The old boolean spellings still name the two settings that used to
+        // be a boolean, and nothing spells its way into Randomized by accident.
+        assert_eq!(MapPoles::from_id("on"), Some(MapPoles::Poles));
+        assert_eq!(MapPoles::from_id("off"), Some(MapPoles::NoPoles));
+        assert_eq!(MapPoles::from_id("randomized"), Some(MapPoles::Randomized));
+        assert_eq!(MapPoles::from_id("?????"), None);
         // A flat world is what a lobby gets if it says nothing, and a world
         // with poles is: both are what CIVVIS shipped before either was a
         // choice, so a client that has not been taught about them is unmoved.

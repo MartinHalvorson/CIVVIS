@@ -3405,6 +3405,11 @@
         <label class="small human-setting">Difficulty<select id="difficulty" style="margin-top:4px">
           <option value="?????" title="Rolled among this setting's own options when the game starts">?????</option>
         </select></label>
+        <label class="small">World shape<select id="mapshape" style="margin-top:4px">
+          <option value="?????" title="Rolled among this setting's own options when the game starts">?????</option>
+          <option value="flat">Flat</option>
+          <option value="planet">Planet</option>
+        </select></label>
         <label class="small">Map<select id="maptype" style="margin-top:4px">
           <option value="?????" title="Rolled among this setting's own options when the game starts">?????</option>
           <option value="land_only">Land Only</option>
@@ -3417,15 +3422,11 @@
           <option value="water_world">Water World</option>
           <option value="true_start_earth">True Start Earth</option>
         </select></label>
-        <label class="small">World shape<select id="mapshape" style="margin-top:4px">
+        <label class="small">Thermal distribution<select id="mappoles" style="margin-top:4px">
           <option value="?????" title="Rolled among this setting's own options when the game starts">?????</option>
-          <option value="flat">Flat</option>
-          <option value="planet">Planet</option>
-        </select></label>
-        <label class="small">Poles<select id="mappoles" style="margin-top:4px">
-          <option value="?????" title="Rolled among this setting's own options when the game starts">?????</option>
-          <option value="poles">Poles</option>
-          <option value="no_poles">No poles</option>
+          <option value="poles">Hot equator, cold poles</option>
+          <option value="no_poles">No cold ends</option>
+          <option value="randomized">Randomized</option>
         </select></label>
         <label class="small">World size<select id="np" style="margin-top:4px">
           <option value="?????" title="Rolled among this setting's own options when the game starts">?????</option>
@@ -3969,14 +3970,14 @@ const RANDOM_SETTING = "?????";
 // seat exists at all, and the leader pool decides who may fill it.
 const RANDOM_SELECT_IDS = ["baseruleset", "gamemode", "starteon", "startera",
   "leaderpool", "leader", "difficulty",
-  "maptype", "mapshape", "mappoles", "np", "gamespeed"];
+  "mapshape", "maptype", "mappoles", "np", "gamespeed"];
 const RANDOM_VICTORY_IDS = VICTORY_TRACKS.map(track => `victory-${track.id}`);
 const RANDOM_SETTING_LABELS = {
   baseruleset: "Base game ruleset", gamemode: "Game mode",
   starteon: "Start eon", startera: "Start era",
   leaderpool: "Leader pool", leader: "Leader",
-  difficulty: "Difficulty", maptype: "Map", mapshape: "World shape",
-  mappoles: "Poles", np: "World size", gamespeed: "Game speed",
+  difficulty: "Difficulty", mapshape: "World shape", maptype: "Map",
+  mappoles: "Thermal distribution", np: "World size", gamespeed: "Game speed",
   ...Object.fromEntries(VICTORY_TRACKS.map(track =>
     [`victory-${track.id}`, `${track.label} victory`])),
 };
