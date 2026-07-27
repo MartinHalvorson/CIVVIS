@@ -98,9 +98,10 @@ struct Gate {
 }
 
 impl Gate {
-    fn new(players: usize, max_games: usize) -> Gate {
-        let p0 = 1.0 / players as f64;
-        let p1 = 0.40f64.max(1.6 / players as f64);
+    /// Build the test from a MEASURED null rather than a nominal one. See
+    /// `--calibrate`: at a four-player table with a frozen-default anchor the
+    /// champion beats its own table 0.358 of the time, not 0.250.
+    fn calibrated(p0: f64, p1: f64, max_games: usize) -> Gate {
         Gate {
             accept: 2.94,
             win: (p1 / p0).ln(),
@@ -156,12 +157,7 @@ fn main() {
     // every acceptance it produces is uninterpretable — including this
     // binary's, and including the ones `evolve::sprt_confirm` produces, which
     // uses the same H0 and the same table.
-    if flag_present(&args, "--calibrate") {
-        let games = number(&args, "--calibrate-games", 240);
-        let cfg = EvoCfg {
-            generations: 1, pop: 1, games: chunk, players, width, height,
-            max_turns: turns, seed, threads: jobs, dir: dir.clone(),
-        };
+    let calibrate = |games: usize| -> f64 {
         let champ = champion.clone();
         let blocks = games.div_ceil(chunk);
         let wins: usize = parallel::map(blocks, jobs, move |b| {
@@ -179,28 +175,35 @@ fn main() {
         let played = blocks * chunk;
         let rate = wins as f64 / played as f64;
         let nominal = 1.0 / players as f64;
-        let h1 = 0.40f64.max(1.6 / players as f64);
         println!("H0 calibration: the champion against its own table");
-        println!("  {wins}/{played} = {rate:.3}");
-        println!("  nominal H0 (1/players) = {nominal:.3}   H1 = {h1:.3}");
+        println!("  {wins}/{played} = {rate:.3}   (nominal 1/players = {nominal:.3})");
         if rate > nominal + 0.03 {
             println!(
-                "  -> MIS-SPECIFIED. A candidate merely equal to the champion wins {rate:.3}, \
-                 not {nominal:.3}, because the frozen-default anchor is the weakest seat. \
-                 An SPRT testing {nominal:.3} against {h1:.3} will accept equals."
+                "  -> the nominal null is mis-specified; a candidate merely equal to the \
+                 champion wins {rate:.3}, because the frozen-default anchor is the weakest seat"
             );
-        } else {
-            println!("  -> H0 is about right; acceptances mean what they claim.");
         }
-        let _ = cfg;
+        rate
+    };
+
+    // Always calibrate. A sequential test against a null that is 10 points too
+    // low accepts candidates that are merely equal, which is how the first
+    // version of this binary produced four "improvements" of which two were at
+    // or below true parity.
+    let parity = calibrate(number(&args, "--calibrate-games", 240));
+    if flag_present(&args, "--calibrate") {
         return;
     }
+    // H1 is set a fixed margin above the MEASURED parity rather than at a
+    // constant, so the test asks "is this genuinely better than the champion"
+    // rather than "is this better than a table average that no equal candidate
+    // achieves".
+    let margin = number(&args, "--margin-pct", 10) as f64 / 100.0;
 
     println!(
         "genome_gate: budget {budget} games · {players}p {width}x{height} {turns}t · \
-         SPRT H0={:.2} H1={:.2} bound 2.94, max {max_games} games/candidate",
-        1.0 / players as f64,
-        0.40f64.max(1.6 / players as f64)
+         SPRT H0={parity:.3} (measured) H1={:.3} bound 2.94, max {max_games} games/candidate",
+        parity + margin
     );
     println!("  every game is a gate game; no games are spent ranking candidates");
     println!();
@@ -240,7 +243,7 @@ fn main() {
         };
         let results = parallel::map(contenders.len(), jobs, move |i| {
             let (index, contender) = &contenders[i];
-            let gate = Gate::new(cfg.players, max_games);
+                let gate = Gate::calibrated(parity, parity + margin, max_games);
             let (mut wins, mut losses) = (0usize, 0usize);
             loop {
                 let obs = fitness_observations(
