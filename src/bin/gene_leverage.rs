@@ -1,0 +1,185 @@
+//! What does each block of the genome cost when you get it wrong?
+//!
+//! `gene_probe` answered which genes can change a game and eleven of forty-eight
+//! cannot. Then the opening book — the most reachable block by that measure,
+//! `open0` diverging 12/12 by turn 8 — turned out to be worth **nothing**:
+//! deleting it entirely costs −0.0028 ± 0.0164. So divergence is necessary for
+//! a gene to matter and nowhere near sufficient, and ranking work by it is a
+//! mistake I made and paid for.
+//!
+//! This ranks by the right thing. For each block of related genes, replace the
+//! shipped values with **random draws from their own bounds** and measure what
+//! that costs against the shipped agent, paired and seat-mirrored. Averaged
+//! over several draws, the loss is a Sobol-flavoured importance: *how much does
+//! getting this block right matter at all?*
+//!
+//! It reads in the useful direction. A block whose randomisation costs nothing
+//! is **settled** — the shipped values are not carrying anything, so no search
+//! over them can pay, whatever a divergence probe says. A block whose
+//! randomisation costs a lot is one where the shipped values are load-bearing,
+//! which is the only situation in which better values can exist.
+//!
+//! ```text
+//! gene_leverage --maps 16 --draws 3
+//! ```
+//!
+//! **A null here is the informative outcome.** Every parameter-tuning attempt
+//! on this agent has returned null — policy appetites three ways, the opening
+//! book two ways, the war threshold, a thousand rounds of whole-genome
+//! evolution — while every promoted gain came from more counterfactual rollout.
+//! If no block's randomisation costs anything, that is the whole genome
+//! answering at once, and the conclusion is to stop searching it.
+use civvis::ai::{AdvancedAi, Ai, Weights};
+use civvis::game::{Action, Game};
+use civvis::parallel;
+use civvis::rng::Rng;
+
+/// Named blocks of related genes, by index into `Weights::to_vec`.
+const BLOCKS: [(&str, &[usize]); 8] = [
+    ("expansion", &[0, 1, 2, 16]),
+    ("economy", &[4, 17, 18, 19, 20, 21, 22]),
+    ("opening", &[23, 24, 25, 26]),
+    ("movement", &[27, 28]),
+    ("doctrine", &[29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39]),
+    ("combat_value", &[9, 10, 11]),
+    ("war_decl", &[3, 5, 6, 7, 8]),
+    ("policy", &[40, 41, 42, 43, 44, 45, 46, 47]),
+];
+
+fn number(args: &[String], flag: &str, default: usize) -> usize {
+    args.iter()
+        .position(|arg| arg == flag)
+        .and_then(|index| args.get(index + 1))
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(default)
+}
+
+/// One mirrored map pair: the scrambled genome against the shipped one.
+fn duel(candidate: &Weights, players: usize, w: i32, h: i32, seed: u64, turns: u32) -> f64 {
+    let mut share = 0.0;
+    for treated in 0..2usize {
+        let mut game = Game::new(players, w, h, seed, turns, 0);
+        let control = Weights::default();
+        let mut treatment: Vec<AdvancedAi> = AdvancedAi::fleet_weighted(&game, candidate);
+        let mut rivals: Vec<AdvancedAi> = AdvancedAi::fleet_weighted(&game, &control);
+        let is_treated = |pid: usize| pid % 2 == treated;
+        for _ in 0..turns {
+            if game.winner.is_some() {
+                break;
+            }
+            for pid in 0..game.players.len() {
+                if game.winner.is_some() {
+                    break;
+                }
+                if is_treated(pid) {
+                    treatment[pid].take_turn(&mut game, pid);
+                } else {
+                    rivals[pid].take_turn(&mut game, pid);
+                }
+                if game.winner.is_none() && game.current == pid {
+                    let _ = game.apply(pid, &Action::EndTurn);
+                }
+            }
+        }
+        let mut mine = 0.0;
+        let mut table = 0.0;
+        for player in game.players.iter().filter(|p| !p.is_minor) {
+            let score = game.score(player.id) as f64;
+            table += score;
+            if is_treated(player.id) {
+                mine += score;
+            }
+        }
+        let won = if game.winner.is_some_and(is_treated) { 1.0 } else { 0.0 };
+        share += 0.8 * (mine / table.max(1.0)) + 0.2 * won;
+    }
+    share / 2.0
+}
+
+fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let players = number(&args, "--players", 4);
+    let maps = number(&args, "--maps", 16);
+    let draws = number(&args, "--draws", 3);
+    let width = number(&args, "--width", 24) as i32;
+    let height = number(&args, "--height", 16) as i32;
+    let turns = number(&args, "--turns", 500) as u32;
+    let seed0 = number(&args, "--seed", 1_100_000) as u64;
+    let jobs = number(&args, "--jobs", parallel::default_jobs());
+
+    let bounds = Weights::bounds();
+    let names = Weights::gene_names();
+    let shipped = Weights::default().to_vec();
+
+    println!(
+        "gene_leverage: {} blocks x {draws} random draws x {maps} mirrored maps, \
+         {players}p {width}x{height}, {turns} turns, seed {seed0}",
+        BLOCKS.len()
+    );
+    println!("  each draw replaces a block with uniform samples from its own bounds");
+    println!("  parity 0.500; a block that matters scores BELOW parity when scrambled\n");
+
+    let mut rows: Vec<(f64, f64, &str, usize)> = Vec::new();
+    for (block_index, (block, genes)) in BLOCKS.iter().enumerate() {
+        let mut per_draw: Vec<f64> = Vec::new();
+        for draw in 0..draws {
+            // Deterministic per (block, draw) so a rerun reproduces exactly.
+            let mut rng = Rng::new(seed0 ^ ((block_index as u64) << 32) ^ draw as u64);
+            let mut v = shipped.clone();
+            for gene in genes.iter() {
+                let (lo, hi) = bounds[*gene];
+                v[*gene] = rng.uniform(lo, hi);
+            }
+            let genome = Weights::from_vec(&v);
+            let map_seed = seed0 + 1_000 * (draw as u64 + 1);
+            let shares = parallel::map(maps, jobs, move |index| {
+                duel(&genome, players, width, height, map_seed + index as u64, turns)
+            });
+            per_draw.push(shares.iter().sum::<f64>() / shares.len().max(1) as f64);
+        }
+        let n = per_draw.len().max(1) as f64;
+        let mean = per_draw.iter().sum::<f64>() / n;
+        let variance = if per_draw.len() > 1 {
+            per_draw.iter().map(|s| (s - mean).powi(2)).sum::<f64>() / (n - 1.0)
+        } else {
+            0.0
+        };
+        let se = (variance / n).sqrt();
+        println!(
+            "  {block:<14} {mean:.4} +/- {se:.4}   cost {:+.4}   [{}]",
+            mean - 0.5,
+            genes
+                .iter()
+                .map(|g| names[*g])
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        rows.push((mean, se, block, genes.len()));
+    }
+
+    rows.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    println!("\nblocks ranked by what scrambling them costs (most damaging first):");
+    for (mean, se, block, count) in &rows {
+        let cost = 0.5 - mean;
+        let verdict = if *se > 0.0 && cost < 2.0 * se {
+            "settled -- shipped values are not load-bearing"
+        } else if cost > 0.0 {
+            "LOAD-BEARING -- better values could exist here"
+        } else {
+            "scrambling HELPED, which indicts the shipped values"
+        };
+        println!("  {block:<14} cost {cost:+.4} +/- {se:.4}  ({count} genes)  {verdict}");
+    }
+
+    let any = rows
+        .iter()
+        .any(|(mean, se, _, _)| *se > 0.0 && (0.5 - mean) > 2.0 * se);
+    if !any {
+        println!(
+            "\nNo block's randomisation costs anything outside its interval. Read that as the\n\
+             whole genome answering at once: if getting a block WRONG is free, getting it\n\
+             righter cannot pay, and a search over these genes is not the way to a stronger\n\
+             agent. Every promoted gain in this repository came from more rollout instead."
+        );
+    }
+}
