@@ -48155,11 +48155,15 @@ mod dedication_era_tests {
     #[test]
     fn every_dedication_opens_in_the_eras_its_commemoration_ships_for() {
         // CommemorationTypes carries MinimumGameEra/MaximumGameEra per
-        // category, and Policies_XP1 carries the same window again for each
-        // Golden Age card. The two agree wherever both exist -- Free Enquiry
-        // and SCIENTIFIC both Classical-Medieval, To Arms and MILITARY both
-        // Industrial-Atomic, and four more -- which is what makes these
-        // windows trustworthy rather than inferred.
+        // category, and Policies_XP1 carries a window again for each
+        // same-named Golden Age card. They agree almost everywhere -- Free
+        // Enquiry and SCIENTIFIC both Classical-Medieval, To Arms and MILITARY
+        // both Industrial-Atomic, and four more -- which is what makes these
+        // windows trustworthy rather than inferred. Sky and Stars is the one
+        // exception; see the note on its row.
+        //
+        // Eras.ChronologyIndex is ONE-based (ERA_ANCIENT is 1), so every index
+        // here is that column minus one.
         let expected: &[(&str, usize, usize)] = &[
             ("free_inquiry", 1, 2),          // SCIENTIFIC / POLICY_FREE_ENQUIRY
             ("pen_brush_and_voice", 1, 2),   // CULTURAL
@@ -48171,7 +48175,14 @@ mod dedication_era_tests {
             ("to_arms", 4, 6),               // MILITARY / POLICY_TO_ARMS
             ("wish_you_were_here", 6, 8),    // TOURISM / same-named card
             ("bodyguard_of_lies", 6, 8),     // ESPIONAGE
-            ("sky_and_stars", 6, 8),         // POLICY_SKY_AND_STARS
+            // The ONE place the two sources disagree, and the only one where it
+            // matters which is authoritative. COMMEMORATION_AERONAUTICAL opens
+            // at ERA_INFORMATION; the leftover POLICY_SKY_AND_STARS card says
+            // ERA_ATOMIC. The Commemoration governs -- it is the table the age
+            // transition reads, and CommemorationModifiers already carries the
+            // Golden-Age half directly, which is what makes the same-named
+            // RequiresGoldenAge cards dead data rather than a second opinion.
+            ("sky_and_stars", 7, 8),         // COMMEMORATION_AERONAUTICAL
             ("automaton_warfare", 7, 8),     // AUTOMATON
         ];
         let mut game = Game::new_full(1, 24, 16, 22_508, 120, 0, false);
@@ -53827,6 +53838,9 @@ mod victory_conditions {
         g.world_era = 3;
         g.players[0].civics.clear();
         g.players[0].techs.insert("smart_materials".to_string());
+        // An era is held open for its shipped 40-turn minimum before the next
+        // one may start, so stand far enough into this one to leave it.
+        g.turn = 40;
         g.process_eras();
         assert_eq!(
             g.world_era, 4,

@@ -1565,9 +1565,10 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 6] = [
+            const SCRIPTED: [&str; 7] = [
                 "advanced",
                 "advanced_lane_reachable",
+                "advanced_measured_dedication",
                 "advanced_relief_scoped",
                 "advanced_v1",
                 "basic",
