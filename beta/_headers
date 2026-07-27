@@ -1,0 +1,23 @@
+# Cloudflare Pages response headers. Any host that does not read this file
+# simply ignores it.
+
+/beta/civvis.wasm
+  Content-Type: application/wasm
+  # The module keeps its name across builds, so it must be revalidated rather
+  # than trusted: a cached engine from the previous published build beside a
+  # freshly published page is a mismatch nobody can see and nobody can clear.
+  # Revalidation is one small conditional request; the 6MB body is only re-sent
+  # when the build actually changed.
+  Cache-Control: public, max-age=0, must-revalidate
+
+/beta/*
+  Cache-Control: public, max-age=0, must-revalidate
+  X-Content-Type-Options: nosniff
+
+/beta/assets/*
+  # Sprite atlases are regenerated rarely and are content, not code.
+  Cache-Control: public, max-age=86400
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
