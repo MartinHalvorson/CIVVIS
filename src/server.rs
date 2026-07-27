@@ -1401,22 +1401,27 @@ impl Session {
     fn load_roster(league: Option<&crate::league::League>) -> Option<crate::league::League> {
         match league {
             Some(l) => Some(l.clone()),
-            None => crate::league::load_league("data/league"),
+            None => crate::league::shipped_league(),
         }
     }
 
     /// The roster named by `--league`, else a best-effort load purely for
     /// elo labels: the runtime `league/` this checkout records into, then the
-    /// snapshot every build ships. Only the named roster is ever written to,
-    /// so a labelled game still rates nothing — but it does say what the
-    /// league already knows about the agent in each seat, which used to
-    /// require passing `--league` to see at all.
+    /// snapshot compiled into every build. Only the named roster is ever
+    /// written to, so a labelled game still rates nothing — but it does say
+    /// what the league already knows about the agent in each seat, which used
+    /// to require passing `--league` to see at all.
+    ///
+    /// The last step is `league::shipped_league` rather than a read of
+    /// `data/league`, because a directory is resolved against the working
+    /// directory and a rating must not depend on where the binary was started
+    /// from. Reading that path is what left every seat at a provisional 1500
+    /// anywhere but a checkout root.
     fn load_params_league(params: &Params) -> (Option<crate::league::League>, bool) {
         match &params.league_dir {
             Some(dir) => (crate::league::load_league(dir), true),
             None => (
-                crate::league::load_league("league")
-                    .or_else(|| crate::league::load_league("data/league")),
+                crate::league::load_league("league").or_else(crate::league::shipped_league),
                 false,
             ),
         }
@@ -8645,6 +8650,48 @@ mod tests {
             (shares - 1.0).abs() < 0.02,
             "one table, one winner: shares summed to {shares}"
         );
+        // An earned rating, not the base everybody starts from. The check
+        // above passes on a provisional 1500 too, which is exactly what the
+        // whole table showed while the roster was read from a relative path.
+        for player in &majors {
+            assert_eq!(
+                player["ai_elo_provisional"],
+                json!(false),
+                "the shipped roster has games behind it"
+            );
+        }
+    }
+
+    /// The roster that labels an ordinary game is compiled in, so the ratings
+    /// on screen are the same wherever the binary was started from.
+    ///
+    /// The label roster ended at a read of `data/league`, a directory resolved
+    /// against the working directory. `cargo test` runs at the crate root and
+    /// a developer is usually standing in a checkout, so the read succeeded
+    /// exactly where anyone would look and failed everywhere the program
+    /// actually ships: the installed binary run from a home directory, a
+    /// launcher that starts it from `/`, and the WASM build, which has no
+    /// filesystem at all. Every seat in those games showed a provisional 1500.
+    #[test]
+    fn the_label_roster_is_compiled_in_rather_than_read_from_the_working_directory() {
+        let shipped = crate::league::shipped_league().expect("the snapshot is compiled in");
+        let mut params = current();
+        params.league_dir = None;
+        let (league, seats) = Session::load_params_league(&params);
+        let league = league.expect("a game that names no roster is still labelled");
+        assert!(!seats, "a label roster seats nobody and rates nothing");
+        // A checkout that has been recording locally answers from its own
+        // runtime `league/` first, which is the point of that step. With no
+        // such directory — a fresh checkout, and every shipped build — the
+        // chain has to reach the compiled-in snapshot rather than stop at a
+        // path that is not there.
+        if crate::league::load_league("league").is_none() {
+            assert_eq!(
+                league.strategies.len(),
+                shipped.strategies.len(),
+                "the labels come from the shipped roster"
+            );
+        }
     }
 
     /// An interactive game rates its rivals on screen too — but only the
