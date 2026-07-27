@@ -836,3 +836,100 @@ fn leading_sent_envoys_expand_borders_and_strengthen_the_city_state() {
         3.0,
     );
 }
+
+#[test]
+fn brussels_hong_kong_and_muscat_pay_wonders_projects_and_amenities() {
+    let (mut game, cities) = game_with_capitals(2, 89_010);
+    let city = cities[0];
+    let brussels = add_city_state(&mut game, "Brussels");
+
+    // +15% Production towards wonders.
+    let wonder = Item::Wonder {
+        wonder: "pyramids".to_string(),
+        pos: game.cities[&city].pos,
+    };
+    let before = game.item_prod_mult(0, city, Some(&wonder));
+    make_suzerain(&mut game, 0, brussels);
+    assert_close(
+        game.item_prod_mult(0, city, Some(&wonder)),
+        before + 0.15,
+    );
+
+    // +20% Production towards city projects, and not towards wonders.
+    game.players[brussels].civ = "Hong Kong".to_string();
+    let project = Item::Project {
+        project: "campus_research_grants".to_string(),
+    };
+    let base = {
+        game.players[0].envoys.clear();
+        game.item_prod_mult(0, city, Some(&project))
+    };
+    make_suzerain(&mut game, 0, brussels);
+    assert_close(
+        game.item_prod_mult(0, city, Some(&project)),
+        base + 0.20,
+    );
+    assert_close(game.item_prod_mult(0, city, Some(&wonder)), before);
+
+    // +1 Amenity in cities with a Commercial Hub, and nothing without one.
+    game.players[brussels].civ = "Muscat".to_string();
+    let without = game.city_local_amenities(&game.cities[&city]);
+    install_district(&mut game, city, "commercial_hub");
+    let with_hub = game.city_local_amenities(&game.cities[&city]);
+    game.players[0].envoys.clear();
+    let unsuzerained = game.city_local_amenities(&game.cities[&city]);
+    assert_eq!(
+        with_hub,
+        unsuzerained + 1,
+        "Muscat paid nothing for the Commercial Hub"
+    );
+    assert!(with_hub > without || unsuzerained > without);
+}
+
+#[test]
+fn preslav_arms_only_cavalry_and_only_on_the_high_ground() {
+    let (mut game, cities) = game_with_capitals(2, 89_011);
+    let preslav = add_city_state(&mut game, "Preslav");
+    let centre = game.cities[&cities[0]].pos;
+    let hill = game
+        .nbrs(centre)
+        .into_iter()
+        .find(|pos| {
+            game.map
+                .get(*pos)
+                .is_some_and(|tile| !game.rules.is_water(tile))
+        })
+        .unwrap();
+    game.map.tiles.get_mut(&hill).unwrap().hills = true;
+    game.map.tiles.get_mut(&centre).unwrap().hills = false;
+
+    let horseman = game.spawn_unit("horseman", 0, hill);
+    let warrior = game.spawn_unit("warrior", 0, centre);
+    let cavalry_flat = {
+        let unit = game.units[&horseman].clone();
+        game.unit_unembarked_strength(&unit)
+    };
+    let footman = {
+        let unit = game.units[&warrior].clone();
+        game.unit_unembarked_strength(&unit)
+    };
+    make_suzerain(&mut game, 0, preslav);
+    let cavalry_hill = {
+        let unit = game.units[&horseman].clone();
+        game.unit_unembarked_strength(&unit)
+    };
+    assert_close(cavalry_hill, cavalry_flat + 5.0);
+    // A melee unit gets nothing, hill or not.
+    let footman_after = {
+        let unit = game.units[&warrior].clone();
+        game.unit_unembarked_strength(&unit)
+    };
+    assert_close(footman_after, footman);
+    // And the cavalry loses it the moment it steps off the hill.
+    game.map.tiles.get_mut(&hill).unwrap().hills = false;
+    let cavalry_off = {
+        let unit = game.units[&horseman].clone();
+        game.unit_unembarked_strength(&unit)
+    };
+    assert_close(cavalry_off, cavalry_flat);
+}

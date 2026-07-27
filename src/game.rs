@@ -22437,6 +22437,9 @@ impl Game {
                 if self.has_ability(pid, "iteru") && self.map.tiles[pos].has_river() {
                     bonus += 0.15; // Egypt: Iteru (river cities)
                 }
+                if self.grants_city_state_unique_bonus(pid, "Brussels") {
+                    bonus += 0.15;
+                }
             }
             Some(Item::Project { project }) => {
                 // Model the late-game factory, power and specialist stack that
@@ -22451,6 +22454,9 @@ impl Game {
                     bonus += 1.0;
                 }
                 bonus += self.gov_effects(pid).project_production_pct / 100.0;
+                if self.grants_city_state_unique_bonus(pid, "Hong Kong") {
+                    bonus += 0.20;
+                }
                 if matches!(
                     project.as_str(),
                     "build_nuclear_device" | "build_thermonuclear_device"
@@ -22859,6 +22865,17 @@ impl Game {
             s += self.empire_luxuries(u.owner) as f64; // Montezuma
         }
         s += self.civ_effect(u.owner, "combat_strength");
+        // Preslav arms cavalry for the high ground, attacking and defending
+        // alike -- the shipped modifier is a plain strength bonus keyed on the
+        // tile the unit is fighting on, not on who started the fight.
+        if matches!(
+            self.rules.units[u.kind.as_str()].promotion_class.as_str(),
+            "light_cavalry" | "heavy_cavalry"
+        ) && self.map.get(u.pos).is_some_and(|tile| tile.hills)
+            && self.grants_city_state_unique_bonus(u.owner, "Preslav")
+        {
+            s += 5.0;
+        }
         // Foreign Ministry applies only after a unit is actually levied.
         // While levied, `owner` is the Suzerain and `levied_from` is the
         // city-state that must regain the unit when the contract ends.
@@ -24513,6 +24530,11 @@ impl Game {
                 supply += self.district_amenity(district, *position);
                 if matches!(self.district_family(district), "canal" | "dam") {
                     supply += self.governor_effect(city.owner, city.id, "canal_dam_amenity");
+                }
+                if self.district_family(district) == "commercial_hub"
+                    && self.grants_city_state_unique_bonus(city.owner, "Muscat")
+                {
+                    supply += 1.0;
                 }
             }
         }
@@ -31502,6 +31524,28 @@ impl Game {
             && !self.at_war_with_any_civilization(city.owner)
         {
             ys.science *= 1.15;
+        }
+        if self.grants_city_state_unique_bonus(city.owner, "Taruga") {
+            // +5% Science per *different* improved Strategic resource the
+            // city has, so two Iron mines are one resource, not two.
+            let kinds: BTreeSet<&str> = city
+                .owned_tiles
+                .iter()
+                .filter_map(|position| self.map.get(*position))
+                .filter(|tile| !tile.pillaged)
+                .filter_map(|tile| {
+                    let resource = tile.resource.as_deref()?;
+                    let spec = self.rules.resources.get(resource)?;
+                    let improved = tile.improvement.as_deref().is_some_and(|improvement| {
+                        spec.improvement == improvement
+                            || self.rules.improvements.get(improvement).is_some_and(|have| {
+                                have.resources.iter().any(|listed| listed == resource)
+                            })
+                    });
+                    (spec.class == "strategic" && improved).then_some(resource)
+                })
+                .collect();
+            ys.science *= 1.0 + 0.05 * kinds.len() as f64;
         }
         ys.science *= 1.0 + self.kilwa_type_bonus_pct(city.owner, city, "scientific") / 100.0;
         ys.culture *= 1.0 + self.kilwa_type_bonus_pct(city.owner, city, "cultural") / 100.0;
@@ -45608,6 +45652,11 @@ impl Game {
             growth_bonus += self.policy_effect(pid, "foreign_continent_growth_pct");
         }
         growth_bonus += self.pantheon_effect(pid, "growth_pct");
+        if self.grants_city_state_unique_bonus(pid, "Mitla")
+            && self.city_has_active_district_family(&self.cities[&cid], "campus")
+        {
+            growth_bonus += 15.0;
+        }
         growth_bonus += self
             .city_resource_industry_effects(&self.cities[&cid])
             .growth_pct;

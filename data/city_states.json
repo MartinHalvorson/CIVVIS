@@ -94,7 +94,7 @@
    "name": "Brussels",
    "type": "industrial",
    "bonus": "brussels",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your cities get +15% Production towards wonders."
   },
@@ -102,7 +102,7 @@
    "name": "Preslav",
    "type": "militaristic",
    "bonus": "preslav",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your light and heavy cavalry units have +5 Strength when fighting on hill tiles."
   },
@@ -230,7 +230,7 @@
    "name": "Hong Kong",
    "type": "industrial",
    "bonus": "hong_kong",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your cities get +20% Production towards city projects."
   },
@@ -286,7 +286,7 @@
    "name": "Mitla",
    "type": "scientific",
    "bonus": "mitla",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "City growth rate is 15% higher in cities with a Campus district."
   },
@@ -294,7 +294,7 @@
    "name": "Muscat",
    "type": "trade",
    "bonus": "muscat",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "+1 Amenity in cities with a Commercial Hub district."
   },
@@ -358,7 +358,7 @@
    "name": "Taruga",
    "type": "scientific",
    "bonus": "taruga",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "+5% Science in all cities for each different improved Strategic resource they have."
   },
