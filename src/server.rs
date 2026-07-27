@@ -141,7 +141,6 @@ pub struct Session {
     chronicle: ChronicleState,
     /// Manual new-game handoff consumed by the external spectator supervisor.
     /// The current process stays available until the requested runtime is ready.
-    supervisor_request: Option<Value>,
     /// Setup selected while this world is running. It is inert until the next
     /// automatic or explicitly requested simulation boundary.
     next_game_params: Option<Params>,
@@ -837,6 +836,20 @@ pub struct Shared {
     /// whether the supervised process has changed.
     pub current_seed: AtomicU64,
     pub session: Mutex<Session>,
+    /// A restart the viewer asked for, and the settings the live world was
+    /// started from, both kept off the simulation lock for exactly the reason
+    /// `current_seed` is.
+    ///
+    /// Pressing Restart used to take `session`, so it queued behind whatever
+    /// AI turn was in flight. On the live exhibition that is not a theoretical
+    /// wait: a late turn on a 74x46 six-player world held the lock for over
+    /// two minutes, `/state` and `/status` both timed out, and the page — which
+    /// gives up at fifteen seconds — cleared its veil and flashed an error
+    /// while the supervisor, whose only view of the request is that same
+    /// `/state`, never learned a restart had been asked for at all. Neither
+    /// mutex here is ever held across anything but a field read.
+    supervisor_request: Mutex<Option<Value>>,
+    live_params: Mutex<Params>,
     pub pace_ms: AtomicU64,
     pub paused: AtomicBool,
     pub restart_in: AtomicU64, // ms until auto-restart; u64::MAX = not pending
@@ -1317,6 +1330,51 @@ impl Shared {
     /// turn-bound surface must complete one shared-snapshot render before the
     /// next turn begins. With no viewer inside `VIEWER_ACTIVE` there is
     /// nothing to wait for and an unattended exhibition still runs flat out.
+    /// Ask the supervisor to replace this process with a new simulation.
+    ///
+    /// Deliberately touches nothing the AI holds. The whole point of the
+    /// control is to get out of the world that is running, so it cannot be the
+    /// one request that waits on it: see the `supervisor_request` field.
+    fn request_supervised_new_game(&self, request: &Value) -> Result<(), String> {
+        let base = self.live_params.lock().unwrap().clone();
+        if !base.supervised {
+            return Err("fresh-code launches require the spectator supervisor".into());
+        }
+        let mode = request["mode"]
+            .as_str()
+            .ok_or_else(|| "mode must be restart or fresh_code".to_string())?;
+        if mode != "restart" && mode != "fresh_code" {
+            return Err("mode must be restart or fresh_code".into());
+        }
+
+        let paused = request["paused"]
+            .as_bool()
+            .unwrap_or_else(|| self.paused.load(Ordering::Relaxed));
+        let mut params = new_game_params(&base, request);
+        params.spectate = true;
+        *self.supervisor_request.lock().unwrap() = Some(json!({
+            "mode": mode,
+            "server_instance": process_identity(),
+            "paused": paused,
+            "settings": simulation_settings(&params),
+        }));
+        // The world on screen is being replaced. Stop stepping it rather than
+        // spending the handoff computing turns nobody will ever be shown.
+        self.paused.store(true, Ordering::Relaxed);
+        Ok(())
+    }
+
+    /// The request the supervisor is being asked to act on, if any.
+    fn pending_new_game_request(&self) -> Option<Value> {
+        self.supervisor_request.lock().unwrap().clone()
+    }
+
+    /// Adopt the settings a freshly started world runs under, so the next
+    /// new-game request can be normalized against them without the lock.
+    fn adopt_live_params(&self, params: &Params) {
+        *self.live_params.lock().unwrap() = params.clone();
+    }
+
     /// Whether any viewer still present is owed `frame`.
     ///
     /// The same question `wait_for_turn_frame` blocks on, asked once. The
@@ -1562,7 +1620,6 @@ impl Session {
             spectator_paused: false,
             view_player: None,
             chronicle,
-            supervisor_request: None,
             next_game_params: None,
             league,
             seat_strategy,
@@ -1654,7 +1711,6 @@ impl Session {
             spectator_paused: false,
             view_player: None,
             chronicle,
-            supervisor_request: None,
             next_game_params,
             league,
             seat_strategy,
@@ -1735,30 +1791,6 @@ impl Session {
             });
         }
         *self = next;
-        Ok(())
-    }
-
-    fn request_supervised_new_game(&mut self, request: &Value) -> Result<(), String> {
-        if !self.params.supervised {
-            return Err("fresh-code launches require the spectator supervisor".into());
-        }
-        let mode = request["mode"]
-            .as_str()
-            .ok_or_else(|| "mode must be restart or fresh_code".to_string())?;
-        if mode != "restart" && mode != "fresh_code" {
-            return Err("mode must be restart or fresh_code".into());
-        }
-
-        let paused = request["paused"].as_bool().unwrap_or(self.spectator_paused);
-        let mut params = new_game_params(&self.params, request);
-        params.spectate = true;
-        self.supervisor_request = Some(json!({
-            "mode": mode,
-            "server_instance": process_identity(),
-            "paused": paused,
-            "settings": simulation_settings(&params),
-        }));
-        self.spectator_paused = true;
         Ok(())
     }
 
@@ -2112,7 +2144,6 @@ impl Session {
             o["leader_pool"] = json!(self.game.leader_pool.id());
             o["teams"] = json!(major_teams(&self.game));
             o["victory_conditions"] = json!(self.game.victory_conditions);
-            o["supervisor_request"] = json!(self.supervisor_request);
             o["next_game_settings"] = self
                 .next_game_params
                 .as_ref()
@@ -2139,7 +2170,6 @@ impl Session {
         o["leader_pool"] = json!(self.game.leader_pool.id());
         o["teams"] = json!(major_teams(&self.game));
         o["victory_conditions"] = json!(self.game.victory_conditions);
-        o["supervisor_request"] = json!(self.supervisor_request);
         o["next_game_settings"] = self
             .next_game_params
             .as_ref()
@@ -3049,6 +3079,7 @@ fn auto_step_loop(sh: Arc<Shared>) {
                 if left == 0 {
                     s.start_automatic_next_game();
                     sh.current_seed.store(s.game.seed, Ordering::Relaxed);
+                    sh.adopt_live_params(&s.params);
                     over_since = None;
                     watched_turn = None;
                     sh.restart_in.store(u64::MAX, Ordering::Relaxed);
@@ -3180,6 +3211,16 @@ fn decorate(o: &mut Value, sh: &Shared) {
     if compute > 0 {
         o["turn_compute_ms"] = json!(compute as f64 / 1000.0);
     }
+    // The request lives beside the session rather than inside it, so it is
+    // attached here for every reader that used to find it in `state()`.
+    if let Some(request) = sh.pending_new_game_request() {
+        o["supervisor_request"] = request;
+        // A world being handed over is not a world that has stalled: the
+        // supervisor reads this before deciding to nudge it.
+        o["spectator_paused"] = json!(true);
+    } else {
+        o["supervisor_request"] = Value::Null;
+    }
 }
 
 fn handle(stream: &mut TcpStream, sh: &Shared) {
@@ -3255,6 +3296,11 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "server_instance": process_identity(),
                     "seed": sh.current_seed.load(Ordering::Relaxed),
                     "commit": option_env!("CIVVIS_COMMIT").unwrap_or("unknown"),
+                    // The supervisor's only view of a restart used to be
+                    // `/state`, which is exactly what a long AI turn makes
+                    // unavailable. This probe takes no lock the simulation
+                    // holds, so a restart is seen while the turn runs.
+                    "supervisor_request": sh.pending_new_game_request(),
                 }),
             );
         }
@@ -3840,6 +3886,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             if result.is_ok() {
                 sh.current_seed
                     .store(session.game.seed, Ordering::Relaxed);
+                sh.adopt_live_params(&session.params);
                 let paused = parsed["paused"]
                     .as_bool()
                     .unwrap_or_else(|| sh.paused.load(Ordering::Relaxed));
@@ -3856,16 +3903,22 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             respond_json(stream, &o);
         }
         ("POST", "/supervisor-new") => {
-            let mut session = sh.session.lock().unwrap();
-            let result = session.request_supervised_new_game(&parsed);
-            let mut out = session.state();
-            out["error"] = match result {
-                Ok(()) => Value::Null,
-                Err(error) => Value::String(error),
-            };
-            drop(session);
-            decorate(&mut out, sh);
-            respond_json(stream, &out);
+            // Answered without the simulation lock, and answered *small*. The
+            // page reads only `error` from this, and building a full
+            // observation for it would put the one control that escapes a
+            // wedged turn right back behind that turn.
+            let result = sh.request_supervised_new_game(&parsed);
+            respond_json(
+                stream,
+                &json!({
+                    "error": match result {
+                        Ok(()) => Value::Null,
+                        Err(error) => Value::String(error),
+                    },
+                    "server_instance": process_identity(),
+                    "supervisor_request": sh.pending_new_game_request(),
+                }),
+            );
         }
         _ => {
             respond(
@@ -3992,6 +4045,8 @@ mod tests {
         let seed = session.game.seed;
         let shared = Arc::new(Shared {
             current_seed: AtomicU64::new(seed),
+            supervisor_request: Mutex::new(None),
+            live_params: Mutex::new(session.params.clone()),
             session: Mutex::new(session),
             pace_ms: AtomicU64::new(0),
             paused: AtomicBool::new(false),
@@ -4686,6 +4741,11 @@ mod tests {
         assert_eq!(runtime["server_instance"], state["server_instance"]);
         assert_eq!(runtime["seed"], state["seed"]);
         assert_eq!(runtime["commit"], state["server_commit"]);
+        // The supervisor's whole view of a pending restart. It rides here
+        // rather than only on `/state` because a long AI turn is exactly when
+        // a restart is asked for and exactly when `/state` cannot be built.
+        assert!(runtime["supervisor_request"].is_null());
+        assert_eq!(runtime["supervisor_request"], state["supervisor_request"]);
         assert!(
             runtime_body.len() < 256,
             "successor identity should stay tiny, got {} bytes",
@@ -7854,15 +7914,47 @@ mod tests {
         assert!(session.state()["next_game_settings"].is_null());
     }
 
+    /// A `Shared` around one session. The new-game request deliberately lives
+    /// beside the simulation rather than inside it, so a test of it needs the
+    /// same wrapper the server runs behind.
+    fn shared_for(session: Session) -> Arc<Shared> {
+        let seed = session.game.seed;
+        Arc::new(Shared {
+            current_seed: AtomicU64::new(seed),
+            supervisor_request: Mutex::new(None),
+            live_params: Mutex::new(session.params.clone()),
+            session: Mutex::new(session),
+            pace_ms: AtomicU64::new(0),
+            paused: AtomicBool::new(false),
+            restart_in: AtomicU64::new(u64::MAX),
+            turn_us: AtomicU64::new(0),
+            turn_compute_us: AtomicU64::new(0),
+            frame_delivery: Mutex::new(FrameDelivery::default()),
+            frame_painted: Condvar::new(),
+            simulation_frame_gate: Mutex::new(()),
+            latest: Mutex::new(None),
+            turn_ready: Condvar::new(),
+        })
+    }
+
+    /// What a reader of `/state` actually sees: the session's observation with
+    /// everything `decorate` attaches from beside it.
+    fn decorated_state(shared: &Shared) -> Value {
+        let mut state = shared.session.lock().unwrap().state();
+        super::decorate(&mut state, shared);
+        state
+    }
+
     #[test]
     fn supervised_new_game_request_normalizes_settings_without_replacing_the_live_game() {
         let mut params = current();
         params.spectate = true;
         params.supervised = true;
-        let mut session = Session::new(params);
+        let session = Session::new(params);
         let original_seed = session.game.seed;
+        let shared = shared_for(session);
 
-        session
+        shared
             .request_supervised_new_game(&json!({
                 "mode": "fresh_code",
                 "paused": false,
@@ -7874,9 +7966,17 @@ mod tests {
             }))
             .unwrap();
 
-        let state = session.state();
-        assert_eq!(session.game.seed, original_seed);
-        assert!(session.spectator_paused);
+        let state = decorated_state(&shared);
+        assert_eq!(shared.session.lock().unwrap().game.seed, original_seed);
+        // The outgoing world stops stepping, and reads as held rather than
+        // stalled, without the request ever having touched the session.
+        assert!(shared.paused.load(std::sync::atomic::Ordering::Relaxed));
+        assert_eq!(state["spectator_paused"], json!(true));
+        // The same request is on the lock-free probe the supervisor polls.
+        assert_eq!(
+            shared.pending_new_game_request().expect("a pending request")["mode"],
+            "fresh_code"
+        );
         assert_eq!(state["supervisor_request"]["mode"], "fresh_code");
         assert_eq!(state["supervisor_request"]["paused"], false);
         assert_eq!(
@@ -7904,13 +8004,49 @@ mod tests {
         );
     }
 
+    /// The control that leaves a world must not queue behind that world.
+    ///
+    /// Pressing Restart took the simulation lock, so it waited out whatever AI
+    /// turn was in flight. On the live exhibition that is not a small wait: a
+    /// late turn on a 74x46 six-player world held it long enough that `/state`
+    /// did not answer in 120 seconds and `/status` did not answer in 30, so
+    /// the page gave up at its own fifteen, cleared the veil and flashed an
+    /// error — and the supervisor, which read the request out of that same
+    /// `/state`, never saw one. Holding the lock here is what a turn does.
+    #[test]
+    fn a_restart_is_accepted_while_the_simulation_lock_is_held() {
+        let mut params = current();
+        params.spectate = true;
+        params.supervised = true;
+        let shared = shared_for(Session::new(params));
+
+        let turn_in_flight = shared.session.lock().unwrap();
+        let started = Instant::now();
+        shared
+            .request_supervised_new_game(&json!({"mode": "restart", "paused": false}))
+            .expect("a restart is accepted mid-turn");
+        let accepted = started.elapsed();
+
+        // And the supervisor can read it without the lock either.
+        let pending = shared
+            .pending_new_game_request()
+            .expect("the supervisor's probe carries the request");
+        assert_eq!(pending["mode"], "restart");
+        assert!(
+            accepted < Duration::from_millis(50),
+            "the restart waited {accepted:?} on a turn it exists to abandon"
+        );
+        drop(turn_in_flight);
+    }
+
     #[test]
     fn unsupervised_server_rejects_supervisor_new_game_requests() {
-        let mut session = Session::new(current());
-        assert!(session
+        let shared = shared_for(Session::new(current()));
+        assert!(shared
             .request_supervised_new_game(&json!({"mode": "fresh_code"}))
             .is_err());
-        assert!(session.state()["supervisor_request"].is_null());
+        assert!(shared.pending_new_game_request().is_none());
+        assert!(decorated_state(&shared)["supervisor_request"].is_null());
     }
 
     /// The supervisor replaces the AI exhibition process by process, so this
@@ -7941,7 +8077,7 @@ mod tests {
         assert_eq!(state["supervised"], json!(true));
         assert!(!state["legal_actions"].as_array().unwrap().is_empty());
 
-        assert!(session
+        assert!(shared_for(session)
             .request_supervised_new_game(&json!({"mode": "restart", "paused": false}))
             .is_ok());
     }
@@ -9700,6 +9836,8 @@ pub fn serve_with_game(
     let current_seed = session.game.seed;
     let shared = Arc::new(Shared {
         current_seed: AtomicU64::new(current_seed),
+        supervisor_request: Mutex::new(None),
+        live_params: Mutex::new(session.params.clone()),
         session: Mutex::new(session),
         pace_ms: AtomicU64::new(1_000), // one second per turn by default
         paused: AtomicBool::new(initially_paused),
