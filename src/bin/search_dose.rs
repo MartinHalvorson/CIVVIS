@@ -88,6 +88,37 @@
 //! report: without it, +2.0 SE against a documented saturation story would
 //! have looked like a finding.
 //!
+//! ## ★ The promotion, isolated: stock 40/40 is not distinguishable from it
+//!
+//! `--only STOCK`, 100 mirrored maps, seed 4200000, both arms built here so
+//! the genome and the value-net status are identical and **only the budget
+//! differs**:
+//!
+//! ```text
+//! 40/40  STOCK vs promoted deep    0.4900 +/- 0.0188   -0.0100   (-0.5 SE)
+//! ```
+//!
+//! The stock budget is **indistinguishable from the 4× one**. The lean is in
+//! deep's favour and it is nothing.
+//!
+//! What this does and does not say. 100 maps resolve about 0.04, and the
+//! original promotion measured **+45 Elo ≈ 0.065 of win rate** — comfortably
+//! inside what this run could have seen. It did not see it. That is not proof
+//! the gain is gone; it is a failure to reproduce at a power that should have
+//! sufficed.
+//!
+//! It is also the **second** such failure. #477 independently measures the same
+//! comparison as "nearly neutral, 61–59 games and five map directions to four"
+//! on the generation-14 genome. The two runs use different genomes — this one
+//! `Weights::default()`, theirs gen-14 — so neither reproduces the original
+//! 300-map conditions exactly. Jointly they say the gain does not reproduce
+//! easily under conditions the repository now actually runs.
+//!
+//! **The cost side is not in doubt**: `strategic_deep` spends 4× the
+//! macro-search compute on every soak, league, fleet and exhibition game that
+//! opts in. A promotion that two independent measurements fail to reproduce,
+//! while its cost is certain, is one whose burden of proof has moved.
+//!
 //! ## Cross-checked against #477, which landed mid-run
 //!
 //! `docs/GEN14_DENSE_SEARCH.md` tests the same axis and **corroborates the
