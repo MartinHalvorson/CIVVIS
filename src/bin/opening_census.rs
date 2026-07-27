@@ -482,31 +482,74 @@ fn main() {
             .filter_map(|s| s.second_city_turn.map(|t| t as f64))
             .collect();
         let (second_mean, _) = mean_se(&second);
+        // No seat founded a second city inside the window. Printing the mean
+        // of nothing as 0.0 reads as "second city on turn zero", which is the
+        // opposite of what happened.
+        let second_col = if second.is_empty() {
+            "never".to_string()
+        } else {
+            format!("{second_mean:.1}")
+        };
         let cities: Vec<f64> = rows.iter().map(|s| s.cities_at_window as f64).collect();
         let (cities_mean, _) = mean_se(&cities);
         println!(
-            "{:<14} {:>5} {:>8} {:>5.0}%  {:>7.1} {:>6.2}  {}",
+            "{:<14} {:>5} {:>8} {:>5.0}%  {:>7} {:>6.2}  {}",
             civ,
             rows.len(),
             own.len(),
             100.0 * share,
-            second_mean,
+            second_col,
             cities_mean,
             top
         );
     }
 
     // ---- 3. opening against outcome ------------------------------------
+    // Name the confound with a number before using the table it distorts.
+    let by_length: Vec<f64> = seats
+        .iter()
+        .filter(|s| s.builds.len() == depth)
+        .map(|s| s.score_share)
+        .collect();
+    let short: Vec<f64> = seats
+        .iter()
+        .filter(|s| s.builds.len() < depth)
+        .map(|s| s.score_share)
+        .collect();
+    let (long_mean, long_se) = mean_se(&by_length);
+    let (short_mean, short_se) = mean_se(&short);
+    println!(
+        "\nsequence length is early survival: seats recording all {depth} builds score \
+         {long_mean:.4} +/- {long_se:.4} ({} seats); seats recording fewer score \
+         {short_mean:.4} +/- {short_se:.4} ({} seats)",
+        by_length.len(),
+        short.len()
+    );
+
     let min_seats = number(&args, "--min-seats", 8);
     println!(
         "\nopening against outcome (>= {min_seats} seats) -- CORRELATIONAL, the start is inside \
          both columns"
     );
+    // Full-depth sequences only. A seat whose capital fell on turn 12 records
+    // two builds and then scores nothing, so *sequence length is a proxy for
+    // early survival* -- pool the short ones in and the table ranks openings
+    // by how long their owner lived, which is exactly backwards.
+    println!(
+        "restricted to the {full_depth} seats that recorded all {depth} builds, because a short \
+         sequence means an early death and would rank survival instead"
+    );
     println!(
         "{:<6} {:>6} {:>16} {:>7}  {}",
         "seats", "wins", "score share", "win%", "opening"
     );
-    let counts = tally(build_key.iter());
+    let counts = tally(
+        seats
+            .iter()
+            .zip(build_key.iter())
+            .filter(|(seat, _)| seat.builds.len() == depth)
+            .map(|(_, key)| key),
+    );
     let mut rows: Vec<(usize, usize, f64, f64, String)> = Vec::new();
     for (key, count) in &counts {
         if *count < min_seats {
@@ -515,7 +558,7 @@ fn main() {
         let group: Vec<&Seat> = seats
             .iter()
             .zip(build_key.iter())
-            .filter(|(_, k)| *k == key)
+            .filter(|(seat, k)| *k == key && seat.builds.len() == depth)
             .map(|(seat, _)| seat)
             .collect();
         let shares: Vec<f64> = group.iter().map(|s| s.score_share).collect();
