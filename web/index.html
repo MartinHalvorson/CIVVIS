@@ -522,12 +522,33 @@
      gone. */
   .turn-setting {
     min-width: 0; display: flex; align-items: baseline; justify-content: space-between;
-    gap: .7em; white-space: nowrap;
+    gap: .55em; white-space: nowrap;
   }
   /* Neither half of a row gives up width, and nothing here ellipsizes: a
      setting is shown whole or the block is drawn a quarter-point smaller. */
   .turn-setting > span, .turn-setting > b { flex: 0 0 auto; }
-  .turn-setting b { color: #dce6e1; font-weight: 900; }
+  /* Tabular figures so a count changing from 10 to 9 moves the row by exactly
+     one digit's width instead of an arbitrary one — the block is refitted on
+     that width, and a proportional 1 would re-size all four rows mid-game. */
+  .turn-setting b {
+    color: #dce6e1; font-weight: 900; font-variant-numeric: tabular-nums;
+  }
+  /* A roster row carries what is left and what it was taken out of. The toll
+     rides *inside* the value so the row is still two flex items — one label,
+     one reading — rather than three fighting over the same width, and it is
+     sized in em so it scales with whatever size the fitter settles the block
+     at. It keeps the label's quieter ink: the living count is the number being
+     read, the toll is its footnote.
+
+     .7em is measured, not chosen by eye: the widest roster line the shipped map
+     sizes can produce is "City states: 100 (50 eliminated)" — the largest world
+     seats 150 of them — and at the block's 8.5px floor that line needs 123.2px
+     against the 128px a 144px plate gives it. .75em leaves 1.4px, which is
+     inside the rounding the fitter works in; this leaves 4.8px. */
+  .turn-setting .turn-toll {
+    margin-left: .32em; color: #90a29b; font-size: .7em; font-weight: 700;
+    font-variant-numeric: tabular-nums; letter-spacing: -.01em; white-space: nowrap;
+  }
   /* Borrowed turns. It sits under the turn cap because that cap is the thing
      it explains: the number went up because somebody asked it to. */
   .turn-playon {
@@ -2676,6 +2697,12 @@
       --hud-ident-min: 66px; --hud-identity-bias: 1.3; --hud-stat-min: 44px;
     }
   }
+  /* This step stays at 144px. Adding the toll to a roster row made it tempting
+     to take four more pixels here, and measuring said no: at 1440x900 a 148px
+     plate pushes LEADER 2px past its cell at the head fitter's own 8.5px floor
+     and costs every already-truncated identity cell another pixel. A head that
+     clips is a corrupted word, so the roster row is fitted into 128px instead —
+     see the toll's own type size. */
   @media (max-width: 1580px) {
     #playerhud {
       grid-template-columns: 144px minmax(0, 1fr);
@@ -2694,6 +2721,10 @@
   }
   @media (max-width: 1180px) {
     #maparea { --hud-rail-width: 200px; --minimap-height: 158px; }
+    /* This 140px is not the plate width anyone sees below 1180: the masthead is
+       already in its compact band here, and that band's own clamp() outranks
+       this rule. The floor that matters for a roster row is the one on
+       #playerhud[data-type-size="compact"]. */
     #playerhud {
       grid-template-columns: 140px minmax(0, 1fr);
       --hud-ident-min: 27.5px; --hud-column-gap: 3px;
@@ -2773,8 +2804,13 @@
      are written from each box's live ResizeObserver measurement, so its inner
      layout follows the space it actually has instead of the screen it happens
      to be floating over. */
+  /* The floor is 148px, not 140: a compact masthead is exactly where a roster
+     row runs out of room, and 140px could not hold "City states: 100 (50
+     eliminated)" at the fitter's own floor. It costs the standings nothing —
+     they have already passed their 680px minimum in this band and scroll
+     inside the panel, so their heads overflow by the same 3px either way. */
   #playerhud[data-type-size="compact"] {
-    grid-template-columns: clamp(140px, 33%, 164px) minmax(0, 1fr);
+    grid-template-columns: clamp(148px, 33%, 164px) minmax(0, 1fr);
     --hud-ident-min: 25px; --hud-column-gap: 4px;
     --hud-stat-min: 32px; --hud-stat-gap: 2px;
   }
@@ -20213,11 +20249,17 @@ function hudTurnPlate() {
   const paceOption = document.getElementById("specspeed")?.selectedOptions[0];
   const watchPace = SPEC ? paceOption?.textContent.trim() || "Blitz" : "Manual";
   // "Remaining" is a count of who is still playing, so a civilization that has
-  // been wiped off the map no longer appears in it.
-  const civCount = state.players
-    .filter(p => p.alive && !p.is_minor && !p.is_barbarian).length;
-  const cityStateCount = state.players
-    .filter(p => p.alive && p.is_minor && !p.is_barbarian).length;
+  // been wiped off the map no longer appears in it. The count it was taken out
+  // of is worth as much as the count itself — eight remaining reads very
+  // differently when nobody has fallen than when six have — so each row carries
+  // its own toll beside it. Both halves come off the same seats, so they always
+  // add up to the roster the world was dealt.
+  const isCiv = p => !p.is_minor && !p.is_barbarian;
+  const isCityState = p => p.is_minor && !p.is_barbarian;
+  const civCount = state.players.filter(p => p.alive && isCiv(p)).length;
+  const civsLost = state.players.filter(p => !p.alive && isCiv(p)).length;
+  const cityStateCount = state.players.filter(p => p.alive && isCityState(p)).length;
+  const cityStatesLost = state.players.filter(p => !p.alive && isCityState(p)).length;
   // The world's shape and its poles are only worth a word when they are not
   // the ones a world arrives with by default.
   const shapeNote = planetMap() ? " · Planet" : "";
@@ -20246,8 +20288,18 @@ function hudTurnPlate() {
     : "";
   const context = identityContext + (playOnLabel ? ` · ${playOnLabel}` : "");
   const plateLabel = `${context}; ${ageLabel}; turn ${state.turn} of ${turnCapLabel()}; ` +
-    `game speed ${speedName}; ${civCount} civilizations remaining; ` +
-    `${cityStateCount} city states remaining; watch pace ${watchPace}`;
+    `game speed ${speedName}; watch pace ${watchPace}; ` +
+    `${civCount} civilizations remaining, ${civsLost} eliminated; ` +
+    `${cityStateCount} city states remaining, ${cityStatesLost} eliminated`;
+  // A count and the toll it was taken out of are one reading, so they share a
+  // row: the survivors keep the value's weight and colour, the fallen follow in
+  // the label's own ink so the eye lands on the living number first.
+  // The label drops "remaining" because the toll beside the number now says
+  // what the number is: "Civs: 8 (4 eliminated)" cannot be read any other way,
+  // and the word cost more width than the whole plate has to spare.
+  const rosterRow = (label, alive, lost) =>
+    `<div class="turn-setting"><span>${label}</span>` +
+    `<b>${alive}<small class="turn-toll">(${lost} eliminated)</small></b></div>`;
   return `<section class="victory-turn" title="${escapeAttr(context)}" aria-label="${escapeAttr(plateLabel)}">` +
     `<span class="turn-era">${ageLabel}</span>` +
     `<div class="turn-count"><div class="turn-heading"><span class="turn-label">Turn</span>` +
@@ -20256,9 +20308,9 @@ function hudTurnPlate() {
     `<small class="turn-total">/ ${turnCapLabel()}</small></div></div>` +
     `<div class="turn-settings" aria-label="Game settings">` +
     `<div class="turn-setting"><span>Game speed:</span><b>${speedName}</b></div>` +
-    `<div class="turn-setting"><span>Civs remaining:</span><b>${civCount}</b></div>` +
-    `<div class="turn-setting"><span>City states remaining:</span><b>${cityStateCount}</b></div>` +
     `<div class="turn-setting"><span>Watch pace:</span><b>${watchPace}</b></div>` +
+    rosterRow("Civs:", civCount, civsLost) +
+    rosterRow("City states:", cityStateCount, cityStatesLost) +
     `</div></section>`;
 }
 
