@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 30] = [
+pub const EVAL_ONLY_AIS: [&str; 31] = [
     "advanced_lane_reachable",
     "advanced_relief_scoped",
     "strategic_score",
@@ -51,6 +51,7 @@ pub const EVAL_ONLY_AIS: [&str; 30] = [
     "strategic_rot20",
     "strategic_rot10",
     "strategic_deep",
+    "strategic_ultra",
     "strategic_deep_default",
     "strategic_deep_tempo",
     "strategic_deep_conversion",
@@ -612,6 +613,19 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             ai.horizon = 80;
             Box::new(ai)
         }
+        // The first strength-first budget above `strategic_deep`: preserve
+        // its full 80-round horizon and spend another doubling on the
+        // generation-14-favored review cadence. This is deliberately an
+        // evaluator-only 8x entrant until an independent promotion gate says
+        // that the extra compute buys strength.
+        "strategic_ultra" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.review_every = 10;
+            ai.horizon = 80;
+            Box::new(ai)
+        }
         // Frozen control for testing whether the committed AdvancedAi
         // champion transfers through StrategicAi's 20x80 macro search. It
         // retains the same optional value-net path but deliberately refuses
@@ -1024,6 +1038,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         // and the net is non-definitional because the search runs without
         // one. There is no separate published netless name to degrade to.
         "strategic_deep" => (vec![genome, value(false)], "strategic_deep"),
+        "strategic_ultra" => (vec![genome, value(false)], "strategic_ultra"),
         // The frozen genome is in code; only the same optional value net read
         // by `strategic_deep` remains in its provenance.
         "strategic_deep_default" => (vec![value(false)], "strategic_deep_default"),
@@ -1599,6 +1614,15 @@ mod tests {
         assert_eq!(ai.review_census(), Some(Default::default()));
         let provenance = builtin_provenance("strategic_deep_tempo", "unused");
         assert_eq!(provenance.effective, "strategic_deep_tempo");
+        assert!(!provenance.degraded());
+    }
+
+    #[test]
+    fn ultra_challenger_constructs_a_searching_agent() {
+        let ai = builtin_ai("strategic_ultra", 1);
+        assert_eq!(ai.review_census(), Some(Default::default()));
+        let provenance = builtin_provenance("strategic_ultra", "unused");
+        assert_eq!(provenance.effective, "strategic_ultra");
         assert!(!provenance.degraded());
     }
 
